@@ -37,6 +37,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:-change-me}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENCLOUD_BASE_URL: ${OPENCLOUD_BASE_URL:-}
+      OPENCLOUD_APP_TOKEN: ${OPENCLOUD_APP_TOKEN:-}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -58,6 +59,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:-change-me}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENCLOUD_BASE_URL: ${OPENCLOUD_BASE_URL:-}
+      OPENCLOUD_APP_TOKEN: ${OPENCLOUD_APP_TOKEN:-}
     command: ["python", "-m", "arq", "photosort.worker.WorkerSettings"]
     volumes:
       - photo_cache:/data/photo-cache

@@ -1,14 +1,14 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-07-19
+**Letzte Aktualisierung:** 2026-07-19 (OpenCloud-Anbindung gemäß [`features/0001`](../features/0001-opencloud-project-connection.md) konkretisiert)
 
 ## Systemkontext
 
 PhotoSort verwaltet keine eigenen Bilddateien dauerhaft — die Fotos bleiben auf einer externen **OpenCloud**-Instanz. PhotoSort speichert Metadaten, Bewertungen und einen lokalen Verarbeitungs-Cache (Thumbnails).
 
 ```
-┌─────────────┐      WebDAV (App-Token)      ┌──────────────┐
+┌─────────────┐   WebDAV (App-Token aus .env)  ┌──────────────┐
 │  OpenCloud   │◄─────────────────────────────►│   Backend    │
 │  (extern)    │      dav/spaces/{id}/{path}    │  (FastAPI)   │
 └─────────────┘                                └──────┬───────┘
@@ -38,9 +38,9 @@ PhotoSort verwaltet keine eigenen Bilddateien dauerhaft — die Fotos bleiben au
 ## Datenmodell (Skizze, wird pro Feature-Spec verfeinert)
 
 - **User**: Account (Daniel, Ehefrau), getrennt authentifiziert.
-- **Project**: z.B. "Costa Rica"; referenziert einen oder mehrere OpenCloud-Ordner.
-- **OpenCloudConnection**: Basis-URL + App-Token-Referenz (verschlüsselt gespeichert), pro User oder pro Instanz — Details offen, siehe [`features/0001-opencloud-project-connection.md`](../features/0001-opencloud-project-connection.md).
-- **Photo**: gehört zu einem Project, referenziert Pfad/ETag auf OpenCloud, EXIF-Metadaten, Thumbnail-Cache-Pfad.
+- **Project**: z.B. "Costa Rica"; referenziert genau einen OpenCloud-Ordner (rekursiv inkl. Unterordner).
+- **OpenCloud-Verbindung**: kein eigenes DB-Modell — eine einzige, instanzweite Verbindung, konfiguriert über `OPENCLOUD_BASE_URL`/`OPENCLOUD_APP_TOKEN` in `.env`. Details siehe [`features/0001-opencloud-project-connection.md`](../features/0001-opencloud-project-connection.md).
+- **Photo**: gehört zu einem Project, referenziert Pfad/ETag auf OpenCloud, EXIF-Metadaten, Thumbnail-Cache-Pfad. Nur JPEG/PNG/HEIC (MVP).
 - **PhotoScore**: Ergebnis der lokalen Heuristiken (Schärfe, Belichtung, Duplikat-Cluster) und optional der Cloud-Bewertung.
 - **Rating**: Bewertung eines Photos durch einen User (`favorite` / `album_worthy` / `rejected`), pro User getrennt gespeichert.
 

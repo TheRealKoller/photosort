@@ -1,12 +1,13 @@
 # 0001 - OpenCloud-Projekt-Anbindung
 
-**Status:** Proposed
+**Status:** Accepted
 **Erstellt:** 2026-07-19
+**Akzeptiert:** 2026-07-19
 **Bezug:** Ausgangsgespräch Projekt-Setup
 
 ## Ziel
 
-Nutzer können in PhotoSort ein "Projekt" (z.B. "Costa Rica") anlegen und diesem einen oder mehrere Ordner auf ihrer OpenCloud-Instanz zuordnen. Das ist die Grundlage für alle weiteren Features (manuelle Kategorisierung, automatische Auswahl, Export).
+Nutzer können in PhotoSort ein "Projekt" (z.B. "Costa Rica") anlegen und diesem einen Ordner auf der OpenCloud-Instanz zuordnen. Das ist die Grundlage für alle weiteren Features (manuelle Kategorisierung, automatische Auswahl, Export).
 
 ## User Story
 
@@ -14,24 +15,26 @@ Als Nutzer möchte ich ein neues Projekt anlegen und einen OpenCloud-Ordner dami
 
 ## Akzeptanzkriterien
 
-- [ ] Nutzer kann OpenCloud-Zugangsdaten (Server-URL + App-Token) einmalig hinterlegen.
-- [ ] Nutzer kann per Ordner-Browser (WebDAV `PROPFIND`) einen oder mehrere Ordner auf der verbundenen OpenCloud-Instanz auswählen.
-- [ ] Nutzer kann ein Projekt mit Namen (z.B. "Costa Rica") anlegen, dem die ausgewählten Ordner zugeordnet sind.
-- [ ] PhotoSort listet beim Öffnen eines Projekts alle Bilddateien aus den verknüpften Ordnern (inkl. Unterordnern) und speichert deren Metadaten (Pfad, ETag, Aufnahmedatum aus EXIF) in der Datenbank.
+- [ ] Die OpenCloud-Zugangsdaten (Server-URL + App-Token) werden als Umgebungsvariablen (`OPENCLOUD_BASE_URL`, `OPENCLOUD_APP_TOKEN`) konfiguriert — kein Credential-UI, keine Speicherung in der Datenbank.
+- [ ] Nutzer kann per Ordner-Browser (WebDAV `PROPFIND` gegen `dav/spaces/{id}/{path}`) genau einen Ordner auf der konfigurierten OpenCloud-Instanz auswählen.
+- [ ] Nutzer kann ein Projekt mit Namen (z.B. "Costa Rica") anlegen, dem der ausgewählte Ordner zugeordnet ist.
+- [ ] PhotoSort listet beim Anlegen eines Projekts alle Bilddateien (JPEG, PNG, HEIC) aus dem verknüpften Ordner **und allen Unterordnern rekursiv** und speichert deren Metadaten (Pfad, ETag, Aufnahmedatum aus EXIF) in der Datenbank.
+- [ ] Andere Dateitypen (Video, RAW, etc.) werden beim Scan ignoriert (nicht verarbeitet, nicht gelöscht) und in der Scan-Zusammenfassung als "übersprungen" gezählt.
+- [ ] Ein manueller "Aktualisieren"-Button auf der Projektseite stößt einen erneuten Scan des Ordners an und gleicht neue/gelöschte Dateien ab (Abgleich über ETag/Pfad-Vergleich).
 - [ ] Verbindungsfehler (falsches Token, Ordner nicht erreichbar) werden dem Nutzer verständlich angezeigt.
 
 ## Datenmodell-Bezug
 
-Neu: `OpenCloudConnection`, `Project`, `Photo` (Ingest-Teil). Siehe [`architecture/0001-overview.md`](../architecture/0001-overview.md).
+Neu: `Project`, `Photo` (Ingest-Teil). Kein eigenes `OpenCloudConnection`-Datenbankmodell — die Verbindung ist eine global konfigurierte, für beide Nutzer gemeinsame Instanz-Einstellung (siehe Entscheidungen unten). Siehe [`architecture/0001-overview.md`](../architecture/0001-overview.md).
 
-## Offene Fragen
+## Entscheidungen (2026-07-19, im Stakeholder-Dialog geklärt)
 
-- Wie wird das App-Token verschlüsselt gespeichert (z.B. Fernet mit Secret aus `.env`)? Reicht das für den Homeserver-Kontext oder wird mehr benötigt?
-- Ein OpenCloudConnection pro User oder eine gemeinsame Verbindung für beide Nutzer (da beide vermutlich denselben OpenCloud-Account/dieselbe Instanz nutzen)?
-- Sollen Unterordner automatisch rekursiv einbezogen werden, oder wählt der Nutzer explizit?
-- Wie wird mit Nicht-Bild-Dateien (Videos, RAW-Formate) im Ordner umgegangen — ignorieren, separat kennzeichnen?
-- Erkennung neuer/gelöschter Dateien bei erneutem Öffnen eines Projekts: automatischer Re-Sync oder manueller "Aktualisieren"-Button?
+- **Eine gemeinsame OpenCloud-Verbindung** für beide Nutzer (kein `OpenCloudConnection`-Modell pro User) — beide greifen auf dieselbe Instanz zu.
+- **Token-Speicherung:** ausschließlich als Umgebungsvariable (`OPENCLOUD_APP_TOKEN`), analog zu `OPENCLOUD_BASE_URL`. Keine Verschlüsselung in der DB nötig, da nicht dort gespeichert.
+- **Unterordner:** werden automatisch rekursiv einbezogen, keine explizite Auswahl nötig.
+- **Dateitypen:** initial nur JPEG/PNG/HEIC. RAW- und Video-Unterstützung ist explizit spätere Erweiterung (eigene Spec).
+- **Re-Sync:** manueller "Aktualisieren"-Button statt automatischem Abgleich beim Öffnen (Performance bei tausenden Dateien, Einfachheit).
 
 ## Out of Scope
 
-Manuelle Kategorisierung, automatische Auswahl, Export — jeweils eigene Specs.
+Manuelle Kategorisierung, automatische Auswahl, Export — jeweils eigene Specs. RAW-/Video-Unterstützung, mehrere Ordner pro Projekt, mehrere OpenCloud-Instanzen.
