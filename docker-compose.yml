@@ -37,14 +37,16 @@ services:
       SECRET_KEY: ${SECRET_KEY:-change-me}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENCLOUD_BASE_URL: ${OPENCLOUD_BASE_URL:-}
+      OPENCLOUD_USERNAME: ${OPENCLOUD_USERNAME:-}
       OPENCLOUD_APP_TOKEN: ${OPENCLOUD_APP_TOKEN:-}
+      OPENCLOUD_DRIVE_NAME: ${OPENCLOUD_DRIVE_NAME:-}
+    command: ["sh", "-c", "alembic upgrade head && uvicorn photosort.main:app --host 0.0.0.0 --port 8000"]
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - photo_cache:/data/photo-cache
 
-  # Verarbeitet Hintergrund-Jobs (Foto-Ingest, Thumbnails, KI-Scoring).
-  # Worker-Einstiegspunkt wird mit den Feature-Specs implementiert (siehe specs/features/).
+  # Verarbeitet Hintergrund-Jobs (Foto-Ingest, Thumbnails, KI-Scoring) via arq.
   worker:
     build: ./backend
     restart: unless-stopped
@@ -59,8 +61,10 @@ services:
       SECRET_KEY: ${SECRET_KEY:-change-me}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENCLOUD_BASE_URL: ${OPENCLOUD_BASE_URL:-}
+      OPENCLOUD_USERNAME: ${OPENCLOUD_USERNAME:-}
       OPENCLOUD_APP_TOKEN: ${OPENCLOUD_APP_TOKEN:-}
-    command: ["python", "-m", "arq", "photosort.worker.WorkerSettings"]
+      OPENCLOUD_DRIVE_NAME: ${OPENCLOUD_DRIVE_NAME:-}
+    command: ["sh", "-c", "alembic upgrade head && python -m arq photosort.worker.WorkerSettings"]
     volumes:
       - photo_cache:/data/photo-cache
 

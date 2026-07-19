@@ -8,3 +8,5 @@ def test_settings_have_sane_defaults() -> None:
     assert settings.redis_url.startswith("redis://")
     assert settings.opencloud_base_url == ""
     assert settings.opencloud_app_token == ""
+    assert settings.opencloud_username == ""
+    assert settings.opencloud_drive_name == ""

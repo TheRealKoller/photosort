@@ -8,7 +8,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     secret_key: str = "change-me"
     opencloud_base_url: str = ""
+    opencloud_username: str = ""
     opencloud_app_token: str = ""
+    opencloud_drive_name: str = ""
 
 
 settings = Settings()
