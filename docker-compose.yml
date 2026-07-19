@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-photosort}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-photosort}
+      POSTGRES_DB: ${POSTGRES_DB:-photosort}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-photosort}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-photosort}:${POSTGRES_PASSWORD:-photosort}@postgres:5432/${POSTGRES_DB:-photosort}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENCLOUD_BASE_URL: ${OPENCLOUD_BASE_URL:-}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - photo_cache:/data/photo-cache
+
+  # Verarbeitet Hintergrund-Jobs (Foto-Ingest, Thumbnails, KI-Scoring).
+  # Worker-Einstiegspunkt wird mit den Feature-Specs implementiert (siehe specs/features/).
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-photosort}:${POSTGRES_PASSWORD:-photosort}@postgres:5432/${POSTGRES_DB:-photosort}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENCLOUD_BASE_URL: ${OPENCLOUD_BASE_URL:-}
+    command: ["python", "-m", "arq", "photosort.worker.WorkerSettings"]
+    volumes:
+      - photo_cache:/data/photo-cache
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+
+volumes:
+  postgres_data:
+  photo_cache:

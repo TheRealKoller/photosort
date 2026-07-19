@@ -1,0 +1,29 @@
+name: Feature Request / Idee
+description: Neue Anforderung oder Idee für PhotoSort beschreiben
+labels: ["feature", "needs-spec"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Beschreibe die Anforderung aus Stakeholder-Sicht. Die KI leitet daraus eine Spec unter `specs/features/` ab und stellt Rückfragen als Kommentar zu diesem Issue, falls etwas unklar ist.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Bedarf
+      description: Was fehlt aktuell oder was soll besser werden?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idee / gewünschtes Verhalten
+      description: Wie stellst du dir die Lösung vor? (Skizze reicht, muss keine fertige Lösung sein)
+    validations:
+      required: true
+  - type: input
+    id: spec
+    attributes:
+      label: Bezug zu bestehender Spec (falls vorhanden)
+      placeholder: z.B. specs/features/0002-manual-categorization.md
+    validations:
+      required: false

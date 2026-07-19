@@ -1,0 +1,30 @@
+name: Bug Report
+description: Ein Problem mit PhotoSort melden
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Was ist passiert?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Was hättest du erwartet?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Schritte zur Reproduktion
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: false
+  - type: input
+    id: context
+    attributes:
+      label: Kontext (Projekt, Foto, Browser/Gerät)
+      required: false
