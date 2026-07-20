@@ -60,6 +60,8 @@ docker compose up --build
 - Backend: http://localhost:8000 (`/health`)
 - Frontend: http://localhost:5173
 
+Bis auf `/health` und `POST /auth/login` verlangt die API ein gültiges Login (siehe [`specs/decisions/0005-auth-implementation.md`](./specs/decisions/0005-auth-implementation.md)). Die beiden Konten werden beim ersten Start per Alembic-Seed-Migration aus `AUTH_SEED_USER1_*`/`AUTH_SEED_USER2_*` (siehe `.env.example`) angelegt.
+
 ### Tests
 
 ```bash

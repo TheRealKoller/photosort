@@ -1,0 +1,108 @@
+# Sicherheitskonzept
+
+**Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
+**Letzte Aktualisierung:** 2026-07-20 (initial angelegt im Zuge der Sicherheits-Konsultation zu Spec "Minimales Projekt-Frontend" (`features/0005-minimal-project-frontend.md`); noch am selben Tag ergänzt um die konkreten Auth-Entscheidungen aus der Sicherheits-Konsultation zu Spec "Auth-Implementierung" (`features/0006-auth.md`, ADR [`decisions/0005-auth-implementation.md`](../decisions/0005-auth-implementation.md)) — erste Spec mit echter Login-Grenze, JWT-Signing-Secret und Passwort-Handling; noch am selben Tag ein drittes Mal aktualisiert, nachdem Daniel die zuvor offene Rückfrage beantwortet hat: PhotoSort ist tatsächlich aus dem offenen Internet erreichbar, nicht nur LAN/VPN — Rate-Limiting am Login-Endpunkt wechselt damit vom akzeptierten Restrisiko zum Muss-Kriterium für Spec 0006)
+
+## Zweck
+
+Projektweite, von der jeweiligen Feature-Implementierung unabhängige Sicherheitsstrategie. Ergänzt (nicht ersetzt) den `## Security`-Abschnitt der einzelnen Feature-Specs — dort steht, was *pro Feature* an Bedrohungen/Gegenmaßnahmen relevant ist, hier steht, was *projektweit* konsistent gelten soll (Bedrohungsmodell, Auth-Grundsatz, Secrets-Handling, bekannte übergreifende Lücken). Gepflegt vom `security-engineer`-Agenten, siehe `specs/README.md`.
+
+## Bedrohungsmodell
+
+**Schützenswerte Assets:**
+
+- Familienfotos auf OpenCloud (die eigentlich sensiblen Inhalte des Projekts — private Aufnahmen, potenziell auch von Kindern).
+- Zugangsdaten zur OpenCloud-Verbindung (`OPENCLOUD_USERNAME`/`OPENCLOUD_APP_TOKEN`) sowie `SECRET_KEY` (JWT-Signing) und Datenbank-Zugangsdaten.
+- Nutzer-Accounts (Passwort-Hashes, Argon2, sobald Spec 0006 umgesetzt ist).
+- Bewertungen (`Rating`) als personenbezogene, pro Nutzer getrennte Daten — Vertraulichkeit hier ist eine Produktanforderung (siehe `decisions/0003-auth-model.md`), keine primär sicherheitsgetriebene.
+
+**Realistische Angreifer** bei einem privaten, selbstgehosteten Zwei-Personen-Projekt:
+
+- Opportunistische Internet-Scanner/Bots, falls das Homeserver-Setup versehentlich Ports offener exponiert als beabsichtigt (Standard-Credential-Versuche, bekannte CVEs in Basis-Images).
+- Client-seitige Angriffe über eine kompromittierte Browser-Session (XSS), z.B. durch unerwarteten Inhalt in Datei-/Ordnernamen, die aus OpenCloud angezeigt werden.
+- Kein Innentäter-Modell zwischen Daniel und seiner Frau — beide sind die vertrauenswürdige Basis des Systems; die Trennung der Bewertungen ist ein Produkt-, kein Sicherheitsmerkmal.
+
+**Explizit kein Ziel:**
+
+- Schutz vor staatlichen Akteuren oder gezielten, ressourcenstarken Angreifern.
+- Schutz vor physischem Zugriff auf den Homeserver selbst.
+- Schutz vor den beiden legitimen Nutzern gegeneinander (kein Zero-Trust-Modell innerhalb der Familie).
+
+**Vertrauensgrenzen:**
+
+- Browser (Frontend) gilt als nicht vertrauenswürdig gegenüber Secrets — App-Token/DB-Zugangsdaten dürfen ihn nie erreichen.
+- Backend gilt als vertrauenswürdig und ist der einzige Ort, der Secrets hält.
+- OpenCloud (extern, aber Daniels eigene Instanz) wird als potenziell fehlerhaft/unerwartet antwortend behandelt, nicht als aktiv böswillig.
+
+## Auth-Modell
+
+Siehe [`decisions/0003-auth-model.md`](../decisions/0003-auth-model.md): getrennte Accounts, Argon2-Passwort-Hashing, Sessions via JWT, kein Self-Signup. Konsistent mit dem Bedrohungsmodell oben (zwei bekannte Nutzer, kein Bedarf an Registrierung/OAuth/Rollenmodell).
+
+**Grundsatz, projektweit verbindlich** (aus dem Blocker-Muster von Spec 0002 übernommen, gilt nicht nur dort): Jeder Endpunkt, der auf Nutzer-, Projekt- oder Bewertungsdaten zugreift, muss die FastAPI-Dependency `get_current_user` real gegen ein gültiges JWT prüfen. Eine Platzhalter-Dependency (z.B. fest verdrahteter Nutzer) darf nie nach `main`. Bei Endpunkten mit Bezug zu einem konkreten Nutzer (z.B. `Rating`) wird die `user_id` ausschließlich aus dem JWT-Claim abgeleitet, nie aus Body/Query-Parametern (Broken Object-Level Authorization vermeiden).
+
+**Konkrete Umsetzung** (entschieden mit [`decisions/0005-auth-implementation.md`](../decisions/0005-auth-implementation.md) im Zuge von Spec 0006 — zum Zeitpunkt dieser Aktualisierung spezifiziert, Code-Umsetzung folgt mit der Spec selbst, siehe "Bekannte Lücken"):
+
+- Passwort-Hashing mit `argon2-cffi`, JWT mit `PyJWT`, Algorithmus **HS256**, signiert mit `settings.secret_key`, `exp` = 30 Tage, kein Refresh-Token, kein Logout-Endpunkt (kein Server-Session-Store, der etwas invalidieren könnte — Tokens sind bis Ablauf gültig, auch nach Passwortänderung oder falls ein Account gelöscht würde; akzeptierte Konsequenz der Refresh-losen 30-Tage-Session, siehe ADR 0005).
+- Token-Transport: ausschließlich `Authorization: Bearer <token>`-Header, Speicherung im Frontend über `localStorage`. **Damit ist die vormals offene CSRF-Frage entschieden: kein CSRF-Schutzmechanismus nötig** (Browser hängen den Authorization-Header nie automatisch an fremdinitiierte Requests an, anders als bei Cookies) — siehe Frontend-Abschnitt unten für die Kehrseite (erhöhte XSS-Relevanz durch `localStorage`).
+- **JWT-Decode muss den erlaubten Algorithmus explizit fixieren** (`jwt.decode(token, settings.secret_key, algorithms=["HS256"])`, nie `algorithms` weglassen oder aus dem Token-Header übernehmen) — sonst klassische Algorithm-Confusion-/`alg: none`-Schwachstelle, die eine Signaturprüfung komplett umgehen könnte. Muss-Kriterium für Spec 0006.
+- **`settings.secret_key` muss beim Start hart geprüft werden**, nicht erst beim ersten Signiervorgang: Anwendung darf nicht starten, wenn `secret_key` dem dokumentierten Platzhalter `"change-me"` entspricht oder kürzer als 32 Zeichen ist. Begründung: Der Platzhalter steht bereits öffentlich in `.env.example` und in dieser Spec/ADR — ein HS256-Secret, das diesem bekannten Wert entspricht, erlaubt beliebige JWT-Fälschung und damit vollen Zugriff auf beide Accounts (und darüber transitiv auf alle Familienfotos, da das Backend als OpenCloud-Proxy fungiert). Muss-Kriterium für Spec 0006, siehe dort.
+- **Anti-Enumeration bei `POST /auth/login`**: identische 401-Antwort (Status, Body, Header) bei unbekanntem Username und bei falschem Passwort; Verifikation läuft in beiden Fällen gegen einen echten Argon2-Hash (bei unbekanntem Username gegen einen fest hinterlegten Dummy-Hash mit identischen Kostenparametern wie reale Hashes), damit die Laufzeit nicht unterscheidbar ist. Verbleibende Mikro-Differenzen (ein zusätzlicher, aber ebenfalls indizierter DB-Lookup) sind für dieses private Zwei-Nutzer-Setup als nicht praktisch ausnutzbar eingestuft — kein zusätzlicher Härtungsaufwand (z.B. künstliche Verzögerung) nötig.
+- **Eingabegrößen am Login-Endpunkt begrenzen** (`username`/`password` via Pydantic `max_length`, z.B. 128 Zeichen) — verhindert, dass ein übergroßer Passwort-Body unnötig CPU-Zeit im (bewusst langsamen) Argon2-Verify bindet; einziger unauthentifizierter Endpunkt mit echter Rechenlast.
+- **Rate-Limiting an `POST /auth/login`, IP-basiert, seit Klärung der Internet-Erreichbarkeit ein Muss-Kriterium/Blocker für Spec 0006** (nicht mehr Soll, siehe "Bewusst akzeptierte Restrisiken" für die Historie dieser Einschätzung): Daniel hat bestätigt, dass PhotoSort tatsächlich aus dem offenen Internet erreichbar ist (auch seine Frau soll unterwegs zugreifen können), nicht nur aus LAN/VPN. Damit ist der Login-Endpunkt einem unbegrenzten Kreis potenzieller Angreifer ausgesetzt, und Argon2 allein (~50-200ms/Versuch) bremst verteilte automatisierte Credential-Stuffing-/Brute-Force-Versuche nicht ausreichend. Konkrete Umsetzung: `slowapi` (FastAPI-Middleware auf Basis von `limits`), Limit **5 Versuche pro Minute pro Client-IP** an `POST /auth/login` (kein globales API-weites Limit nötig, nur dieser eine unauthentifizierte Endpunkt mit Rechenlast), Zähler-Speicherort **Redis** über die bereits vorhandene `settings.redis_url` (kein neuer Infrastruktur-Baustein — Redis ist über `arq`/`REDIS_URL` ohnehin schon Teil des Compose-Stacks, `docker-compose.yml`), damit das Limit über mehrere Backend-Worker/Prozesse hinweg konsistent gilt statt nur in-memory pro Prozess. Bei Überschreitung: `429 Too Many Requests`, keine Detailauskunft über verbleibende Sperrzeit im Body nötig. `slowapi` ist eine neue Backend-Abhängigkeit (`backend/pyproject.toml`) — der `architect` sollte prüfen, ob dafür ergänzend zu ADR 0005 ein kurzer Vermerk sinnvoll ist, da CLAUDE.md neue externe Abhängigkeiten grundsätzlich als architekturrelevant einstuft.
+
+Wie das JWT übertragen wird ist damit entschieden (siehe oben), ebenso das Rate-Limiting (siehe Bullet oben) — beide vormals offenen Punkte aus dieser Spec sind damit geklärt.
+
+## Secrets-Handling
+
+- App-Token/Zugangsdaten ausschließlich über Umgebungsvariablen (`.env`, nie eingecheckt), `.env.example` dient als Vorlage ohne echte Werte (aktueller Stand geprüft — enthält nur leere Platzhalter für `OPENCLOUD_*`/`ANTHROPIC_API_KEY`).
+- `docker-compose.yml` reicht Secrets als Umgebungsvariablen an die Container weiter, keine Secrets in der Compose-Datei selbst. Die dortigen Fallback-Defaults (`change-me`, `photosort`) sind bewusste Platzhalter, keine scharfen Secrets im Repo — siehe Restrisiken.
+- Keine Secrets in Code, Specs, Logs oder Fehlermeldungen. Aktuell geprüft: `OpenCloudError`-Meldungen (`opencloud/client.py::_raise_for_status`) geben nur Statuscode/Reason-Phrase aus, keine Auth-Header/Tokens — dieses Muster ist beizubehalten, wenn neue Fehlerpfade entstehen.
+- **Seed-Migration (Spec 0006, `AUTH_SEED_USER1/2_USERNAME/PASSWORD` aus `.env`)**: Passwörter dürfen nirgends geloggt werden — kein `print()`/Debug-Log mit Klartext-Passwort, keine Fehlermeldung, die das Passwort einbettet. Geprüft: `backend/alembic.ini` setzt `logger_sqlalchemy` auf `WARNING` (keine SQL-Statement-/Parameter-Logs) und `logger_alembic` auf `INFO` (nur Revisions-Fortschritt, keine Daten) — der Default ist sicher, solange niemand diese Logger versehentlich auf `DEBUG` stellt oder `echo=True` auf der Engine setzt (aktuell nicht der Fall, `db.py::make_engine`). Als Test-Kriterium für Spec 0006 festzuhalten: Migrations-Stdout/-Stderr in einem Test abfangen und sicherstellen, dass die konfigurierten Passwörter dort nie auftauchen.
+- App-Token/DB-Zugangsdaten sind nie clientseitig sichtbar: Das Frontend hat keinen direkten OpenCloud-Zugriff, sondern kommuniziert ausschließlich über die Backend-API (siehe `architecture/0001-overview.md`) — diese Architekturentscheidung ist zugleich die wichtigste Absicherung gegen Token-Exposition im Browser und wird hier bewusst als Sicherheitsgrundsatz festgehalten, nicht nur als Architekturdetail.
+
+## Angriffsflächen
+
+### REST-API (Backend)
+
+- Aktuell (Stand Spec 0001) implementierte Endpunkte (`/opencloud/browse`, `/projects` CRUD) sind noch **nicht** durch Auth geschützt, da `get_current_user` noch nicht existiert — siehe Bekannte Lücken.
+- Input-Validierung über Pydantic-Schemas an der API-Grenze ist Pflicht für jeden Endpunkt. Query-/Body-Parameter, die in Pfad- oder Dateioperationen einfließen (z.B. `path` bei `/opencloud/browse`, `variant` bei künftigen Bild-Endpunkten), müssen vor Weitergabe an den OpenCloud-Client bzw. an Dateisystemzugriffe serverseitig eingeschränkt/normalisiert werden (siehe WebDAV-Client unten und das Path-Traversal-Muster in Spec 0002 zum `variant`-Parameter).
+- **CORS** (neu entdeckt im Zuge von Spec 0005): `backend/src/photosort/main.py` hat aktuell keine `CORSMiddleware` konfiguriert — bislang unkritisch, da es keinen browserseitigen Aufrufer gab. Sobald das Frontend (eigener Origin/Port, `FRONTEND_PORT` 8080 vs. `BACKEND_PORT` 8000 laut `docker-compose.yml`) Requests aus dem Browser an die API stellt, wird eine explizite, restriktive CORS-Konfiguration zur Grundvoraussetzung: nur die konfigurierte Frontend-Origin erlauben, kein Wildcard `*`. Mit ADR 0005 entschieden: Token-Transport via Bearer-Header statt Cookie, daher `allow_credentials` **nicht** nötig — die CORS-Konfiguration (Spec 0005) bleibt dadurch einfacher als ursprünglich befürchtet.
+- **`POST /auth/login`** (Spec 0006) ist der einzige beschriebene, bewusst unauthentifizierte Endpunkt mit echter Rechenlast (Argon2-Verify) und echtem Nutzereingabe-Angriffsvektor (Credential-Stuffing/Brute-Force). Siehe Auth-Modell oben für Anti-Enumeration, Eingabegrößen-Limit und Algorithmus-Pinning beim JWT-Decode. `get_current_user` (`HTTPBearer(auto_error=False)`) muss bei fehlendem/ungültigem/abgelaufenem Token oder nicht mehr existierendem User einheitlich 401 liefern, nie stillschweigend durchlassen.
+
+### WebDAV-/OpenCloud-Client
+
+- Externes System; Umgang mit malformed XML/unerwarteten Statuscodes ist bereits über `webdav_xml.py`/`OpenCloudError` abgedeckt (Stand Spec 0001).
+- **Path-Traversal** (neu entdeckt im Zuge von Spec 0005): `_join()` in `backend/src/photosort/opencloud/client.py` zerlegt den übergebenen Pfad in `/`-getrennte Segmente und URL-encoded jedes einzeln, filtert dabei aber `..`-Segmente **nicht** heraus. Ein Aufrufer, der einen Pfad mit `..`-Segmenten durchreicht (z.B. über den `path`-Query-Parameter von `GET /opencloud/browse`, oder künftig über einen von Nutzern angegebenen Projekt-Ordnerpfad), kann dadurch aus dem vorgesehenen Wurzelverzeichnis "herauslaufen" und andere, über WebDAV erreichbare Bereiche des Namespace ansprechen, als die Anwendung vorsieht. Kein klassischer Server-Dateisystem-Escape (WebDAV bleibt durch OpenClouds eigene Rechteverwaltung begrenzt), aber ein Bruch der Anwendungsannahme "ein Projekt sieht nur seinen eigenen, konfigurierten Ordner". **Muss-Fix, projektweit verbindlich:** `..`-Segmente (nach Normalisierung) ablehnen bzw. herausfiltern, bevor ein Pfad in `_join`/`list_folder`/`get_range`/`walk` einfließt — als konkretes Muss-Kriterium in Spec 0005 aufgenommen (siehe dort). Jeder künftige Aufrufer mit nutzergesteuertem Pfad muss sich auf diesen Fix verlassen können.
+- SSRF-Betrachtung: `base_url`/`webdav_url` stammen ausschließlich aus serverseitiger Konfiguration (`.env` bzw. dem in der DB gespeicherten `opencloud_drive_id`/`opencloud_path` eines Projekts), nie aus direkter Nutzereingabe des Ziel-Hosts — kein SSRF-Risiko über die Wahl des Ziels, nur über den Pfad-Anteil (siehe oben).
+
+### Frontend
+
+- Kein direkter OpenCloud-Zugriff vom Client — Secrets bleiben ausschließlich serverseitig (siehe Secrets-Handling).
+- XSS: Datei-/Ordnernamen von OpenCloud sind letztlich außerhalb der Anwendung entstandener Text und werden im Ordner-Browser (Spec 0005) sowie später in Grid-/Vergleichsansicht (Spec 0002) angezeigt. React escaped Textinhalte standardmäßig — Grundsatz: kein `dangerouslySetInnerHTML` für solche Werte, auch nicht "weil es ja nur die eigene OpenCloud-Instanz ist". **Seit ADR 0005 mit erhöhtem Einsatz:** Das Session-Token liegt in `localStorage` (nicht httpOnly-Cookie) und ist damit für jedes erfolgreich eingeschleuste Skript unmittelbar auslesbar (Token-Diebstahl, effektiv Session-Hijacking für bis zu 30 Tage ohne Widerrufsmöglichkeit). Die Stakeholder-Entscheidung dafür (siehe ADR 0005) stützt sich explizit darauf, dass es *aktuell* keinen nutzergenerierten HTML-Inhalt und keine Drittanbieter-Skripte gibt — das `dangerouslySetInnerHTML`-Verbot ist damit von einer allgemeinen Konvention zur tragenden Voraussetzung dieser Auth-Entscheidung geworden. Jedes künftige Feature, das einen der beiden Faktoren ändert (z.B. Freitext-Notizen zu Fotos, Einbindung eines externen Skripts/Trackers), macht diese Restrisiko-Abwägung hinfällig und muss hier erneut mit dem Stakeholder bewertet werden, nicht nur technisch nachgezogen werden.
+- CSRF: **entschieden** (ADR 0005) — Token-Transport ausschließlich via `Authorization`-Bearer-Header, nie als Cookie. Kein CSRF-Schutzmechanismus nötig, da Browser diesen Header nie automatisch an fremdinitiierte Requests anhängen (anders als bei Cookies). Die in Spec 0002/0005 offen gelassene Frage ist damit für beide Specs geschlossen.
+- Keine Backend-Secrets im Frontend-Build — falls künftig Frontend-Umgebungsvariablen nötig werden, gilt die Vite-Konvention (`VITE_`-Prefix macht Werte Teil des Client-Bundles), aktuell nicht relevant, da keine vorhanden.
+
+### Docker-Compose-Netzwerk
+
+- Nach außen exponierte Ports: `BACKEND_PORT` (Default 8000) und `FRONTEND_PORT` (Default 8080), beide direkt auf den Host gemappt. `postgres`/`redis` haben bewusst kein `ports:`-Mapping nach außen, nur intern im Compose-Netzwerk erreichbar — korrekt so, beizubehalten.
+- Kein TLS/Reverse Proxy in `docker-compose.yml` — siehe Restrisiken unten.
+- Solange Auth nicht implementiert ist, ist der Backend-Port für jeden mit Netzwerkzugriff auf den Host praktisch ungeschützt nutzbar (siehe Bekannte Lücken).
+
+## Bewusst akzeptierte Restrisiken
+
+- **Kein eingebauter Reverse Proxy/TLS** in `docker-compose.yml` — das Homeserver-Setup von Daniel übernimmt TLS-Terminierung (konsistent mit `architecture/0001-overview.md`, Abschnitt "Bewusste Annahmen"). Akzeptiert, da außerhalb des Scopes dieses Repos.
+- **Kein Passwort-Reset-Flow per E-Mail** (laut `decisions/0003-auth-model.md`) — vertretbar für zwei bekannte Nutzer im selben Haushalt; Reset kann administrativ (CLI/DB) erfolgen.
+- ~~**Kein Rate-Limiting** auf Login-/API-Endpunkten~~ — **nicht mehr als Restrisiko akzeptiert, sondern zum Muss-Kriterium eskaliert.** Ursprünglich war das Fehlen von Rate-Limiting hier als akzeptables Restrisiko eingestuft, ausdrücklich unter der Bedingung "bei zwei bekannten Nutzern und ohne öffentliche Bewerbung des Diensts" bzw. solange der Zugriff auf LAN/VPN beschränkt bleibt. Die dazu offene Rückfrage an Daniel ist beantwortet: PhotoSort ist tatsächlich aus dem offenen Internet erreichbar (auch die Ehefrau soll unterwegs zugreifen können), nicht nur aus dem Heimnetz. Damit entfällt die Grundlage für die Restrisiko-Einstufung — siehe Auth-Modell oben für die konkrete Umsetzung (`slowapi`, 5/Minute pro IP, Redis-Zähler über `redis_url`), jetzt als Muss-Kriterium/Blocker für Spec 0006 geführt, nicht mehr hier unter akzeptierten Restrisiken.
+- **Platzhalter-Defaults** in `.env.example`/`docker-compose.yml` (`change-me`, `photosort`) sind bewusst keine scharfen Secrets im Repo — Restrisiko liegt darin, dass Daniel sie lokal tatsächlich ändern muss; kein automatisierter Zwang dazu vorgesehen (kein Blocker bei selbstgehostetem Einzelbetrieb ohne Multi-Tenancy).
+- **OpenCloud wird nicht als böswillig behandelt**, nur als potenziell fehlerhaft antwortend — vertretbar, da es sich um Daniels eigene, selbstverwaltete Instanz handelt, kein Drittanbieter-SaaS mit fremdem Zugriff auf die Daten.
+
+## Bekannte Lücken (Stand 2026-07-20)
+
+- **Auth/JWT (`get_current_user`) ist spezifiziert (Spec 0006, ADR 0005), aber zum Zeitpunkt dieser Aktualisierung noch nicht im Code umgesetzt** — alle bisher existierenden Endpunkte (`/opencloud/browse`, `/projects/*`) sind faktisch ungeschützt. Kein Feature mit echten personenbezogenen Nutzerdaten (allen voran `Rating` in Spec 0002) darf live gehen, solange das nicht real umgesetzt ist — Blocker-Muster aus Spec 0002 gilt projektweit, nicht nur für diese eine Spec.
+- **`settings.secret_key`-Startup-Validierung (Mindestlänge 32 Zeichen, Ablehnung des dokumentierten Platzhalters `"change-me"`) ist noch nicht implementiert** — Muss-Kriterium für Spec 0006, siehe Auth-Modell oben. Solange dieser Guard fehlt, kann die Anwendung mit einem öffentlich bekannten Signing-Secret in Produktion laufen, ohne dass das auffällt.
+- **CORS-Konfiguration existiert noch nicht** (`main.py` ohne `CORSMiddleware`) — wird mit Spec 0005 zum ersten Mal notwendig, da dort erstmals ein Browser-Frontend auf einem anderen Origin/Port die API aufruft. Muss vor bzw. mit dieser Spec ergänzt werden. Durch ADR 0005 (Bearer-Header statt Cookie) vereinfacht sich das: kein `allow_credentials` nötig.
+- **Path-Traversal-Lücke in `opencloud/client.py::_join`** (`..`-Segmente werden nicht gefiltert) — Fix als Muss-Kriterium in Spec 0005 aufgenommen, zum Zeitpunkt dieser Aktualisierung noch nicht umgesetzt.
+- **Kein automatisiertes Dependency-Scanning** (z.B. `pip-audit`/`npm audit`) in CI etabliert — Prüfung neuer Abhängigkeiten erfolgt aktuell nur manuell im Security-Review (siehe Rollenbeschreibung `security-engineer`); relevant für Spec 0006, da `argon2-cffi`/`PyJWT` und (seit dieser Aktualisierung) `slowapi` neu hinzukommen (Kurzprüfung: alle drei sind etablierte, aktiv gepflegte Pakete ohne bekannte offene kritische CVEs zum Zeitpunkt dieser Aktualisierung — ersetzt keine echte automatisierte Prüfung).
+- **Rate-Limiting am Login-Endpunkt ist spezifiziert (Muss-Kriterium Spec 0006: `slowapi`, IP-basiert, 5 Versuche/Minute, Redis-Zähler über `settings.redis_url`), aber zum Zeitpunkt dieser Aktualisierung noch nicht implementiert** — die vormals offene Rückfrage an Daniel zur Internet-Erreichbarkeit ist beantwortet (siehe Auth-Modell/Restrisiken oben), das Fehlen dieses Schutzes ist damit kein akzeptiertes Restrisiko mehr, sondern eine noch offene Umsetzungslücke gegen ein feststehendes Muss-Kriterium. Kein Feature mit dem Login-Endpunkt darf live gehen, solange dieser Guard fehlt — analog zum Blocker-Muster bei `get_current_user` oben.
+- CSRF-Handling ist **entschieden und geschlossen** (ADR 0005: Bearer-Header, kein Cookie, daher kein CSRF-Schutz nötig) — hier der Vollständigkeit halber nicht mehr als offene Lücke geführt.
+- Kein Passwort-Reset-Flow: siehe "Bewusst akzeptierte Restrisiken" oben — bewusste Entscheidung, keine Lücke im engeren Sinn, hier der Vollständigkeit halber referenziert.
