@@ -4,9 +4,10 @@ from contextlib import redirect_stderr, redirect_stdout
 from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Connection
 
+from photosort.config import Settings
 from photosort.db import Base
 from photosort.security import verify_password
-from photosort.seed import seed_configured_users, users_table
+from photosort.seed import configured_seed_users, seed_configured_users, users_table
 
 
 def _make_connection() -> Connection:
@@ -77,3 +78,24 @@ def test_seed_never_logs_cleartext_passwords() -> None:
     combined_output = stdout.getvalue() + stderr.getvalue()
     assert "super-secret-cleartext" not in combined_output
     assert "other-secret" not in combined_output
+
+
+def test_configured_seed_users_maps_both_settings_users_in_order() -> None:
+    # Regressionsschutz (Review-Fund test-engineer): die Migration selbst
+    # (alembic/versions/1574f8180817_seed_auth_users.py) baut die Nutzerliste aus den
+    # Settings-Feldern - ein Tippfehler/vertauschtes Feld dort waere durch keinen anderen Test
+    # abgesichert, da "alembic upgrade" bewusst nicht in der Testsuite laeuft (siehe
+    # architecture/0002-testkonzept.md). configured_seed_users() ist die dafuer ausgelagerte,
+    # ohne Alembic-Runtime testbare Zuordnung.
+    settings = Settings(
+        _env_file=None,
+        auth_seed_user1_username="daniel",
+        auth_seed_user1_password="pw-daniel",
+        auth_seed_user2_username="frau",
+        auth_seed_user2_password="pw-frau",
+    )
+
+    assert configured_seed_users(settings) == [
+        ("daniel", "pw-daniel"),
+        ("frau", "pw-frau"),
+    ]

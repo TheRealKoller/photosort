@@ -58,6 +58,7 @@ export function LoginPage() {
             id="login-username"
             name="username"
             type="text"
+            autoComplete="username"
             required
             autoFocus
             disabled={mutation.isPending}
@@ -71,6 +72,7 @@ export function LoginPage() {
             id="login-password"
             name="password"
             type="password"
+            autoComplete="current-password"
             required
             disabled={mutation.isPending}
             value={password}

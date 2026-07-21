@@ -3,11 +3,18 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
-import { UNAUTHORIZED_EVENT } from './api/client'
-import { clearToken, getToken, setToken } from './auth/token'
+import { apiFetch } from './api/client'
+import { getToken, setToken } from './auth/token'
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
 
 function makeToken(payload: Record<string, unknown>): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -34,6 +41,11 @@ function renderApp(initialEntries: string[] = ['/']) {
 describe('App', () => {
   beforeEach(() => {
     window.localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('redirects to /login when no token is present', () => {
@@ -63,19 +75,23 @@ describe('App', () => {
     expect(screen.getByLabelText(/benutzername/i)).toBeInTheDocument()
   })
 
-  it('navigates to /login with an expired-session hint on a global unauthorized event', async () => {
+  it('navigates to /login with an expired-session hint when a real API call returns 401 mid-session', async () => {
+    // Deckt den in architecture/0002-testkonzept.md geforderten Testfall "401 mitten in
+    // laufender Session" ab: statt das Event manuell zu dispatchen, wird ein zweiter,
+    // tatsaechlicher apiFetch-Aufruf simuliert (gueltiges Token beim Laden, die Anfrage selbst
+    // liefert wegen zwischenzeitlichem Ablauf 401) - apiFetch loescht das Token und feuert das
+    // Event dabei selbst, als echter Seiteneffekt, nicht als Testkonstruktion.
     setToken(makeToken({ sub: '1', username: 'daniel' }))
+    vi.stubGlobal('fetch', vi.fn())
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(401, { detail: 'Nicht authentifiziert.' }))
 
     renderApp(['/'])
     expect(screen.getByText('PhotoSort')).toBeInTheDocument()
 
-    // Spiegelt das reale Verhalten von api/client.ts::apiFetch bei 401: Token wird geloescht,
-    // BEVOR das Event gefeuert wird - sonst wuerde LoginPages eigener
-    // "bereits angemeldet"-Redirect (siehe LoginPage.tsx) hier faelschlich zurueck navigieren.
-    clearToken()
-    window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT))
+    await expect(apiFetch('/projects')).rejects.toBeInstanceOf(Error)
 
     await waitFor(() => expect(screen.getByLabelText(/benutzername/i)).toBeInTheDocument())
     expect(screen.getByText(/sitzung abgelaufen/i)).toBeInTheDocument()
+    expect(getToken()).toBeNull()
   })
 })

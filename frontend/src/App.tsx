@@ -1,10 +1,9 @@
-import { useEffect } from 'react'
 import { Link, Navigate, Outlet, Route, Routes, useNavigate } from 'react-router'
 
-import { UNAUTHORIZED_EVENT } from './api/client'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { decodeUsername } from './auth/jwt'
 import { clearToken, getToken } from './auth/token'
+import { useUnauthorizedRedirect } from './auth/useUnauthorizedRedirect'
 import { LoginPage } from './pages/LoginPage'
 
 function AppShell() {
@@ -28,7 +27,9 @@ function AppShell() {
           Abmelden
         </button>
       </header>
-      <Outlet />
+      <main>
+        <Outlet />
+      </main>
     </>
   )
 }
@@ -38,16 +39,7 @@ function Placeholder() {
 }
 
 function App() {
-  const navigate = useNavigate()
-
-  useEffect(() => {
-    function handleUnauthorized(): void {
-      navigate('/login', { state: { reason: 'expired' } })
-    }
-
-    window.addEventListener(UNAUTHORIZED_EVENT, handleUnauthorized)
-    return () => window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized)
-  }, [navigate])
+  useUnauthorizedRedirect()
 
   return (
     <Routes>

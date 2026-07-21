@@ -10,7 +10,7 @@ from typing import Sequence, Union
 from alembic import op
 
 from photosort.config import settings
-from photosort.seed import seed_configured_users
+from photosort.seed import configured_seed_users, seed_configured_users
 
 # revision identifiers, used by Alembic.
 revision: str = '1574f8180817'
@@ -26,13 +26,7 @@ def upgrade() -> None:
     password_hash-Werte werden nie ueberschrieben (siehe specs/features/0006-auth.md).
     """
     bind = op.get_bind()
-    seed_configured_users(
-        bind,
-        [
-            (settings.auth_seed_user1_username, settings.auth_seed_user1_password),
-            (settings.auth_seed_user2_username, settings.auth_seed_user2_password),
-        ],
-    )
+    seed_configured_users(bind, configured_seed_users(settings))
 
 
 def downgrade() -> None:

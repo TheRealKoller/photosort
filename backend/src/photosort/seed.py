@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import Column, MetaData, String, Table, insert, select
 from sqlalchemy.engine import Connection
 
+from photosort.config import Settings
 from photosort.security import hash_password
 
 # Bewusst eine eigene, minimale Tabellen-Definition mit eigener MetaData statt des ORM-Modells
@@ -38,3 +39,14 @@ def seed_user(connection: Connection, username: str, password: str) -> None:
 def seed_configured_users(connection: Connection, users: list[tuple[str, str]]) -> None:
     for username, password in users:
         seed_user(connection, username, password)
+
+
+def configured_seed_users(settings: Settings) -> list[tuple[str, str]]:
+    """Baut die (username, password)-Liste aus den Settings-Feldern - ausgelagert aus der
+    Alembic-Migration selbst, damit diese Zuordnung ohne Alembic-Runtime testbar ist (siehe
+    architecture/0002-testkonzept.md).
+    """
+    return [
+        (settings.auth_seed_user1_username, settings.auth_seed_user1_password),
+        (settings.auth_seed_user2_username, settings.auth_seed_user2_password),
+    ]

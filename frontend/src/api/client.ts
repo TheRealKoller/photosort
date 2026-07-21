@@ -56,7 +56,13 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   })
 
-  if (response.status === 401) {
+  // /auth/login ist der einzige oeffentliche, unauthentifizierte Endpunkt - dessen eigener 401
+  // (falsches Passwort/unbekannter User) ist ein regulaerer Login-Fehlschlag, keine
+  // Session-Ablauf-Signalisierung. Die generische Behandlung wuerde sonst bei jedem
+  // Tippfehler den globalen "Sitzung abgelaufen"-Redirect ausloesen und dabei ein evtl.
+  // gesetztes state.from (Tiefenlink) zerstoeren (siehe App.tsx).
+  const isLoginRequest = path === '/auth/login'
+  if (response.status === 401 && !isLoginRequest) {
     clearToken()
     window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT))
     throw new ApiError(401, await extractDetail(response))

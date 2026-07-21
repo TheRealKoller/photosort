@@ -89,4 +89,23 @@ describe('api/client', () => {
 
     window.removeEventListener('photosort:unauthorized', listener)
   })
+
+  it('does not clear the token or dispatch photosort:unauthorized for a 401 from /auth/login', async () => {
+    // /auth/login ist der einzige oeffentliche, unauthentifizierte Endpunkt - dessen eigener
+    // 401 (falsches Passwort/unbekannter User) ist ein Login-Fehlschlag, keine
+    // Session-Ablauf-Signalisierung. Wuerde apiFetch das generisch behandeln, wuerde ein
+    // simpler Tippfehler beim Login den globalen "Sitzung abgelaufen"-Redirect ausloesen und
+    // dabei state.from eines Tiefenlinks zerstoeren (siehe App.tsx).
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(401, { detail: 'Ungültige Anmeldedaten' }))
+    const listener = vi.fn()
+    window.addEventListener('photosort:unauthorized', listener)
+
+    await expect(
+      apiFetch('/auth/login', { method: 'POST', body: { username: 'x', password: 'y' } })
+    ).rejects.toBeInstanceOf(ApiError)
+
+    expect(listener).toHaveBeenCalledTimes(0)
+
+    window.removeEventListener('photosort:unauthorized', listener)
+  })
 })
