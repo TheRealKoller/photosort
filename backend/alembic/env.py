@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from photosort.config import settings
 from photosort.db import Base
-from photosort.models import Photo, Project, ScanRun  # noqa: F401  (registers tables on Base)
+from photosort.models import Photo, Project, ScanRun, User  # noqa: F401  (registers tables on Base)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

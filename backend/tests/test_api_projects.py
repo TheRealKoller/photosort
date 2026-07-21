@@ -31,10 +31,10 @@ class FakeEnqueuer:
         self.calls.append((function, args))
 
 
-async def test_create_project(api_client: httpx.AsyncClient) -> None:
+async def test_create_project(authenticated_api_client: httpx.AsyncClient) -> None:
     app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
 
-    response = await api_client.post(
+    response = await authenticated_api_client.post(
         "/projects", json={"name": "Costa Rica", "opencloud_path": "CostaRica"}
     )
 
@@ -45,65 +45,83 @@ async def test_create_project(api_client: httpx.AsyncClient) -> None:
     assert body["last_scan"] is None
 
 
-async def test_create_project_rejects_invalid_folder(api_client: httpx.AsyncClient) -> None:
+async def test_create_project_rejects_invalid_folder(
+    authenticated_api_client: httpx.AsyncClient,
+) -> None:
     app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient(
         fail=OpenCloudError("Ordner nicht gefunden")
     )
 
-    response = await api_client.post("/projects", json={"name": "X", "opencloud_path": "Nope"})
+    response = await authenticated_api_client.post(
+        "/projects", json={"name": "X", "opencloud_path": "Nope"}
+    )
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Ordner nicht gefunden"
 
 
-async def test_create_project_rejects_duplicate_name(api_client: httpx.AsyncClient) -> None:
+async def test_create_project_rejects_duplicate_name(
+    authenticated_api_client: httpx.AsyncClient,
+) -> None:
     app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
 
-    first = await api_client.post("/projects", json={"name": "Costa Rica", "opencloud_path": "A"})
+    first = await authenticated_api_client.post(
+        "/projects", json={"name": "Costa Rica", "opencloud_path": "A"}
+    )
     assert first.status_code == 201
 
-    second = await api_client.post("/projects", json={"name": "Costa Rica", "opencloud_path": "B"})
+    second = await authenticated_api_client.post(
+        "/projects", json={"name": "Costa Rica", "opencloud_path": "B"}
+    )
     assert second.status_code == 409
 
 
-async def test_list_and_get_project(api_client: httpx.AsyncClient) -> None:
+async def test_list_and_get_project(authenticated_api_client: httpx.AsyncClient) -> None:
     app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
-    created = await api_client.post("/projects", json={"name": "Costa Rica", "opencloud_path": "A"})
+    created = await authenticated_api_client.post(
+        "/projects", json={"name": "Costa Rica", "opencloud_path": "A"}
+    )
     project_id = created.json()["id"]
 
-    listing = await api_client.get("/projects")
+    listing = await authenticated_api_client.get("/projects")
     assert len(listing.json()) == 1
 
-    detail = await api_client.get(f"/projects/{project_id}")
+    detail = await authenticated_api_client.get(f"/projects/{project_id}")
     assert detail.status_code == 200
     assert detail.json()["id"] == project_id
 
 
-async def test_get_project_returns_404_for_unknown_id(api_client: httpx.AsyncClient) -> None:
-    response = await api_client.get("/projects/999")
+async def test_get_project_returns_404_for_unknown_id(
+    authenticated_api_client: httpx.AsyncClient,
+) -> None:
+    response = await authenticated_api_client.get("/projects/999")
 
     assert response.status_code == 404
 
 
-async def test_trigger_scan_enqueues_job(api_client: httpx.AsyncClient) -> None:
+async def test_trigger_scan_enqueues_job(authenticated_api_client: httpx.AsyncClient) -> None:
     app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
-    created = await api_client.post("/projects", json={"name": "Costa Rica", "opencloud_path": "A"})
+    created = await authenticated_api_client.post(
+        "/projects", json={"name": "Costa Rica", "opencloud_path": "A"}
+    )
     project_id = created.json()["id"]
 
     fake_enqueuer = FakeEnqueuer()
     app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
 
-    response = await api_client.post(f"/projects/{project_id}/scan")
+    response = await authenticated_api_client.post(f"/projects/{project_id}/scan")
 
     assert response.status_code == 202
     assert fake_enqueuer.calls == [("scan_project", (project_id,))]
 
 
-async def test_trigger_scan_returns_404_for_unknown_project(api_client: httpx.AsyncClient) -> None:
+async def test_trigger_scan_returns_404_for_unknown_project(
+    authenticated_api_client: httpx.AsyncClient,
+) -> None:
     fake_enqueuer = FakeEnqueuer()
     app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
 
-    response = await api_client.post("/projects/999/scan")
+    response = await authenticated_api_client.post("/projects/999/scan")
 
     assert response.status_code == 404
     assert fake_enqueuer.calls == []

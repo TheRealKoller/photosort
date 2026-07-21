@@ -8,12 +8,18 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.api.deps import JobEnqueuer, get_job_enqueuer, get_opencloud_client, get_session
+from photosort.api.deps import (
+    JobEnqueuer,
+    get_current_user,
+    get_job_enqueuer,
+    get_opencloud_client,
+    get_session,
+)
 from photosort.config import settings
 from photosort.models import Project, ScanRun, ScanStatus
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
 
-router = APIRouter(prefix="/projects", tags=["projects"])
+router = APIRouter(prefix="/projects", tags=["projects"], dependencies=[Depends(get_current_user)])
 
 
 class ProjectCreate(BaseModel):

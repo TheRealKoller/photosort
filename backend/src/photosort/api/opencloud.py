@@ -3,11 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from photosort.api.deps import get_opencloud_client
+from photosort.api.deps import get_current_user, get_opencloud_client
 from photosort.config import settings
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
 
-router = APIRouter(prefix="/opencloud", tags=["opencloud"])
+router = APIRouter(
+    prefix="/opencloud", tags=["opencloud"], dependencies=[Depends(get_current_user)]
+)
 
 
 class BrowseEntry(BaseModel):
