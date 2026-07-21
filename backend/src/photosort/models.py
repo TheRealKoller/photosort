@@ -68,3 +68,12 @@ class ScanRun(Base):
     error_message: Mapped[str | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="scan_runs")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(unique=True)
+    password_hash: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

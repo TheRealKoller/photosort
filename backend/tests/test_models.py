@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.models import Photo, Project, ScanRun, ScanStatus
+from photosort.models import Photo, Project, ScanRun, ScanStatus, User
 
 
 async def test_create_project(db_session: AsyncSession) -> None:
@@ -76,3 +76,23 @@ async def test_scan_run_defaults(db_session: AsyncSession) -> None:
     assert stored.files_found == 0
     assert stored.photos_added == 0
     assert stored.error_message is None
+
+
+async def test_create_user(db_session: AsyncSession) -> None:
+    user = User(username="daniel", password_hash="hashed-value")
+    db_session.add(user)
+    await db_session.commit()
+
+    result = await db_session.execute(select(User).where(User.username == "daniel"))
+    stored = result.scalar_one()
+    assert stored.password_hash == "hashed-value"
+    assert stored.created_at is not None
+
+
+async def test_user_username_is_unique(db_session: AsyncSession) -> None:
+    db_session.add(User(username="daniel", password_hash="a"))
+    await db_session.commit()
+
+    db_session.add(User(username="daniel", password_hash="b"))
+    with pytest.raises(IntegrityError):
+        await db_session.commit()

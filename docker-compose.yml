@@ -40,6 +40,10 @@ services:
       OPENCLOUD_USERNAME: ${OPENCLOUD_USERNAME:-}
       OPENCLOUD_APP_TOKEN: ${OPENCLOUD_APP_TOKEN:-}
       OPENCLOUD_DRIVE_NAME: ${OPENCLOUD_DRIVE_NAME:-}
+      AUTH_SEED_USER1_USERNAME: ${AUTH_SEED_USER1_USERNAME:-change-me}
+      AUTH_SEED_USER1_PASSWORD: ${AUTH_SEED_USER1_PASSWORD:-change-me}
+      AUTH_SEED_USER2_USERNAME: ${AUTH_SEED_USER2_USERNAME:-change-me}
+      AUTH_SEED_USER2_PASSWORD: ${AUTH_SEED_USER2_PASSWORD:-change-me}
     command: ["sh", "-c", "alembic upgrade head && uvicorn photosort.main:app --host 0.0.0.0 --port 8000"]
     ports:
       - "${BACKEND_PORT:-8000}:8000"
@@ -64,6 +68,10 @@ services:
       OPENCLOUD_USERNAME: ${OPENCLOUD_USERNAME:-}
       OPENCLOUD_APP_TOKEN: ${OPENCLOUD_APP_TOKEN:-}
       OPENCLOUD_DRIVE_NAME: ${OPENCLOUD_DRIVE_NAME:-}
+      AUTH_SEED_USER1_USERNAME: ${AUTH_SEED_USER1_USERNAME:-change-me}
+      AUTH_SEED_USER1_PASSWORD: ${AUTH_SEED_USER1_PASSWORD:-change-me}
+      AUTH_SEED_USER2_USERNAME: ${AUTH_SEED_USER2_USERNAME:-change-me}
+      AUTH_SEED_USER2_PASSWORD: ${AUTH_SEED_USER2_PASSWORD:-change-me}
     command: ["sh", "-c", "alembic upgrade head && python -m arq photosort.worker.WorkerSettings"]
     volumes:
       - photo_cache:/data/photo-cache

@@ -35,21 +35,23 @@ def _entry(name: str, is_collection: bool) -> DavEntry:
     )
 
 
-async def test_browse_returns_only_folders(api_client: httpx.AsyncClient) -> None:
+async def test_browse_returns_only_folders(authenticated_api_client: httpx.AsyncClient) -> None:
     fake = FakeClient(entries=[_entry("Sub", True), _entry("img.jpg", False)])
     app.dependency_overrides[get_opencloud_client] = lambda: fake
 
-    response = await api_client.get("/opencloud/browse", params={"path": "CostaRica"})
+    response = await authenticated_api_client.get("/opencloud/browse", params={"path": "CostaRica"})
 
     assert response.status_code == 200
     assert response.json() == [{"name": "Sub", "path": "CostaRica/Sub"}]
 
 
-async def test_browse_returns_400_on_opencloud_error(api_client: httpx.AsyncClient) -> None:
+async def test_browse_returns_400_on_opencloud_error(
+    authenticated_api_client: httpx.AsyncClient,
+) -> None:
     fake = FakeClient(fail=OpenCloudError("nicht erreichbar"))
     app.dependency_overrides[get_opencloud_client] = lambda: fake
 
-    response = await api_client.get("/opencloud/browse")
+    response = await authenticated_api_client.get("/opencloud/browse")
 
     assert response.status_code == 400
     assert response.json()["detail"] == "nicht erreichbar"

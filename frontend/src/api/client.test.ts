@@ -1,0 +1,92 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { setToken } from '../auth/token'
+import { apiFetch, ApiError } from './client'
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+describe('api/client', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('does not attach an Authorization header when no token is stored', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { ok: true }))
+
+    await apiFetch('/projects')
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]
+    const headers = init?.headers as Record<string, string>
+    expect(headers.Authorization).toBeUndefined()
+  })
+
+  it('attaches the Authorization header when a token is stored', async () => {
+    setToken('my-token')
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { ok: true }))
+
+    await apiFetch('/projects')
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]
+    const headers = init?.headers as Record<string, string>
+    expect(headers.Authorization).toBe('Bearer my-token')
+  })
+
+  it('resolves with the parsed JSON body on success', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { id: 1, name: 'Costa Rica' }))
+
+    const result = await apiFetch<{ id: number; name: string }>('/projects/1')
+
+    expect(result).toEqual({ id: 1, name: 'Costa Rica' })
+  })
+
+  it('throws an ApiError with the backend detail message on 4xx', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(404, { detail: 'Projekt nicht gefunden.' }))
+
+    await expect(apiFetch('/projects/999')).rejects.toMatchObject(
+      new ApiError(404, 'Projekt nicht gefunden.')
+    )
+  })
+
+  it('falls back to a generic message when the detail field is missing', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(500, {}))
+
+    await expect(apiFetch('/projects')).rejects.toMatchObject({ status: 500 })
+  })
+
+  it('falls back to a generic message when the response body is not valid JSON', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response('not json', { status: 500 })
+    )
+
+    const error = await apiFetch('/projects').catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).status).toBe(500)
+    expect((error as ApiError).detail.length).toBeGreaterThan(0)
+  })
+
+  it('clears the token and dispatches photosort:unauthorized exactly once on 401', async () => {
+    setToken('expired-token')
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(401, { detail: 'Nicht authentifiziert.' }))
+    const listener = vi.fn()
+    window.addEventListener('photosort:unauthorized', listener)
+
+    await expect(apiFetch('/projects')).rejects.toBeInstanceOf(ApiError)
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(window.localStorage.getItem('photosort_token')).toBeNull()
+
+    window.removeEventListener('photosort:unauthorized', listener)
+  })
+})
