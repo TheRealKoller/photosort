@@ -10,6 +10,8 @@ Setzt ein Feature von der akzeptierten Spec bis zum eröffneten Pull Request um:
 
 Du arbeitest weitgehend eigenständig, ohne dass jemand live mitliest. Wenn du an einem der unten genannten Punkte eine Rückfrage stellen musst, nutze AskUserQuestion und warte auf die Antwort, bevor du weitermachst — rate nicht und triff keine Annahmen bei Dingen, die dem Nutzer/Stakeholder vorbehalten sind. Bei allem, was eine reine technische Detailentscheidung innerhalb der bereits akzeptierten Spec ist, entscheide selbst und dokumentiere kurz warum.
 
+**Commit-Freigabe für diesen Agenten:** Du bist ausdrücklich autorisiert, auf dem in Schritt 0 angelegten Feature-Branch eigenständig lokal zu committen, ohne den Nutzer jedes Mal zu fragen — das gilt nur für diesen isolierten Branch, nicht für `main`. Committe nach jedem größeren abgeschlossenen Schritt (z.B. nach einem abgeschlossenen TDD-Zyklus/einer Einheit, nach bestandener Codequalitätsprüfung, vor dem Review durch die Review-Agenten, nach dem Beheben der Findings, nach dem finalen Qualitätscheck), jeweils mit der im Projekt üblichen Commit-Konvention. Das macht den Fortschritt nachvollziehbar und jeden Zwischenstand einzeln wiederherstellbar, falls ein späterer Schritt schiefgeht.
+
 ## Warum dieser Ablauf
 
 Jeder Schritt hier existiert, weil er einen konkreten Fehler verhindert, der bei KI-getriebener Entwicklung ohne menschlichen Schritt-für-Schritt-Blick leicht passiert: TDD verhindert, dass Tests nachträglich an bestehendes (ggf. falsches) Verhalten angepasst werden. Kleine Rot-Grün-Refactor-Zyklen statt einem großen machen Fehler sofort lokalisierbar. Ein separater Review-Schritt mit frischem Blick findet Dinge, die beim Implementieren selbst leicht übersehen werden. Der Feature-Branch sorgt dafür, dass die eingerichtete Branch Protection (Pflicht-CI-Checks) tatsächlich greift, statt als Repo-Owner umgangen zu werden.
@@ -35,11 +37,11 @@ Zerlege das Feature in kleine, unabhängig testbare Einheiten (oft schon durch d
 2. **Grün:** Implementiere genau so viel Code wie nötig, damit der Test besteht. Keine Vorgriffe auf spätere Teilschritte.
 3. **Refactor:** Räume auf (Duplikate, unklare Namen, verpasste Abstraktionen) während der Test grün bleibt. Nach jeder Änderung Test(s) erneut laufen lassen.
 
-Wiederhole das für die nächste Einheit. Kleine Zyklen bedeutet: lieber zehn kurze Rot-Grün-Refactor-Durchläufe als einen großen, bei dem am Ende zehn Dinge gleichzeitig kaputt sein können. Nutze TaskCreate/TaskUpdate, um die Teilschritte nachvollziehbar zu tracken — bei einem allein laufenden Agenten ist das die einzige Fortschrittsanzeige, die es gibt.
+Wiederhole das für die nächste Einheit. Kleine Zyklen bedeutet: lieber zehn kurze Rot-Grün-Refactor-Durchläufe als einen großen, bei dem am Ende zehn Dinge gleichzeitig kaputt sein können. Nutze TaskCreate/TaskUpdate, um die Teilschritte nachvollziehbar zu tracken — bei einem allein laufenden Agenten ist das die einzige Fortschrittsanzeige, die es gibt. Committe nach jeder abgeschlossenen Einheit (Grün + Refactor, Tests laufen) lokal auf dem Feature-Branch, statt Änderungen über mehrere Einheiten hinweg uncommittet zu sammeln.
 
 ## Schritt 3: Codequalität prüfen
 
-Nach Abschluss aller TDD-Zyklen: Linting und Type-Checking über die geänderten Bereiche laufen lassen (Beispielbefehle aus diesem Projekt: Backend `ruff check .` und `mypy src` in `backend/`, Frontend `npm run lint` und `npm run typecheck` in `frontend/` — im Zweifel die tatsächlich konfigurierten Befehle aus `pyproject.toml`/`package.json`/CI-Workflow nehmen). Gefundene Probleme direkt beheben, bevor es weitergeht.
+Nach Abschluss aller TDD-Zyklen: Linting und Type-Checking über die geänderten Bereiche laufen lassen (Beispielbefehle aus diesem Projekt: Backend `ruff check .` und `mypy src` in `backend/`, Frontend `npm run lint` und `npm run typecheck` in `frontend/` — im Zweifel die tatsächlich konfigurierten Befehle aus `pyproject.toml`/`package.json`/CI-Workflow nehmen). Gefundene Probleme direkt beheben, bevor es weitergeht. Committe den Stand danach, bevor du in Schritt 4 die Review-Agenten startest — sie sollen einen sauberen, committeten Diff gegen `main` begutachten.
 
 ## Schritt 4: Review
 
@@ -51,11 +53,11 @@ Lass die Änderungen von einer frischen Perspektive prüfen, nicht nur von dir s
 - **`requirements-engineer`** (`subagent_type: requirements-engineer`): Anforderungstreue — sind alle Akzeptanzkriterien der Spec umgesetzt, wurde nichts (Scope Creep) oder etwas explizit als "Out of Scope" Ausgeschlossenes zusätzlich gebaut.
 - **`ux-ui-designer`** (`subagent_type: ux-ui-designer`, nur wenn der Branch Frontend-/UI-Dateien ändert): Konsistenz mit dem Design-System (`specs/architecture/0004-design-system.md`), Usability, abgedeckte Zustände (leer/ladend/Fehler), Barrierefreiheit, Responsivität.
 
-Führe alle Findings-Listen zusammen, bevor du zu Schritt 5 weitergehst.
+Führe alle Findings-Listen zusammen und gib eine kurze Zusammenfassung aus, bevor du zu Schritt 5 weitergehst — pro Agent die Anzahl der Findings sowie jeweils ein Stichwort/Kurztitel je Finding (Must-Fix vs. nice-to-have kenntlich machen). Das ist eine sichtbare Statusmeldung während des Laufs, kein Ersatz für die ausführliche Behandlung im Abschlussbericht.
 
 ## Schritt 5: Findings beheben
 
-Arbeite die gemeldeten Findings ab. Bei jedem Fix: den betroffenen Test zuerst anpassen/ergänzen, falls der Fund eine Lücke in der Testabdeckung war (nicht den Code stillschweigend ändern und hoffen, dass es passt). Findings, die du für unbegründet hältst, nicht kommentarlos ignorieren — kurz im Abschlussbericht begründen, warum kein Fix nötig war.
+Arbeite die gemeldeten Findings ab. Bei jedem Fix: den betroffenen Test zuerst anpassen/ergänzen, falls der Fund eine Lücke in der Testabdeckung war (nicht den Code stillschweigend ändern und hoffen, dass es passt). Findings, die du für unbegründet hältst, nicht kommentarlos ignorieren — kurz im Abschlussbericht begründen, warum kein Fix nötig war. Committe die Fixes, sobald sie abgeschlossen sind.
 
 ## Schritt 6: Abschließender Qualitätscheck
 
@@ -69,7 +71,7 @@ Erst wenn hier wirklich alles grün ist, geht es weiter — ein "sollte eigentli
 
 ## Schritt 7: Commit, Push, Pull Request
 
-1. Committe mit der im Projekt üblichen Commit-Konvention (siehe `CLAUDE.md`, in diesem Projekt z.B. Conventional Commits).
+1. Falls seit dem letzten Zwischencommit noch uncommittete Änderungen bestehen (z.B. aus dem finalen Qualitätscheck): committen, mit der im Projekt üblichen Commit-Konvention (siehe `CLAUDE.md`, in diesem Projekt z.B. Conventional Commits).
 2. Push den Feature-Branch (`git push -u origin <branch>`), nicht `main`.
 3. Eröffne einen PR mit `gh pr create`. Halte dich an eine vorhandene `.github/pull_request_template.md`, sonst mindestens: Bezug zur Spec/zum Issue, kurze Zusammenfassung (Was und Warum), Testplan/was geprüft wurde.
 4. Aktualisiere den Spec-Status in `specs/features/` von `Accepted` auf `Implemented` mit Verweis auf den PR, falls das Projekt diesen Lifecycle nutzt (siehe `specs/README.md`) — als Teil desselben oder eines direkt folgenden Commits.
