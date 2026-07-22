@@ -39,3 +39,30 @@ def test_rate_limit_storage_uri_override_takes_precedence() -> None:
     )
 
     assert settings.resolved_rate_limit_storage_uri() == "memory://"
+
+
+def test_cors_allowed_origins_has_sane_local_dev_defaults() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.cors_allowed_origins_list() == [
+        "http://localhost:5173",
+        "http://localhost:8080",
+    ]
+
+
+def test_cors_allowed_origins_list_parses_comma_separated_env_value() -> None:
+    settings = Settings(_env_file=None, cors_allowed_origins="https://photos.example.com")
+
+    assert settings.cors_allowed_origins_list() == ["https://photos.example.com"]
+
+
+def test_cors_allowed_origins_list_strips_whitespace_around_entries() -> None:
+    settings = Settings(
+        _env_file=None,
+        cors_allowed_origins=" https://a.example.com , https://b.example.com ",
+    )
+
+    assert settings.cors_allowed_origins_list() == [
+        "https://a.example.com",
+        "https://b.example.com",
+    ]

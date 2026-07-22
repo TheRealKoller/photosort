@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -38,6 +39,19 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _handle_rate_limit_exceeded)
     app.add_middleware(SlowAPIMiddleware)
+    # Muss-Kriterium (specs/features/0005-minimal-project-frontend.md,
+    # architecture/0003-securitykonzept.md): ohne diese Middleware koennte jede Website im
+    # selben Netzwerksegment Anfragen an die API stellen, sobald ein Browser-Frontend existiert.
+    # Nur die konfigurierten Frontend-Origins, kein Wildcard "*". allow_credentials bleibt False
+    # (Default) - Token-Transport laeuft ueber den Authorization-Header, nie ueber Cookies
+    # (decisions/0005-auth-implementation.md), daher nicht noetig.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allowed_origins_list(),
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.get("/health")
     def health() -> dict[str, str]:

@@ -31,5 +31,15 @@ class Settings(BaseSettings):
     def resolved_rate_limit_storage_uri(self) -> str:
         return self.rate_limit_storage_uri or self.redis_url
 
+    # Erlaubte Frontend-Origins fuer CORS (specs/features/0005-minimal-project-frontend.md,
+    # architecture/0003-securitykonzept.md) - komma-getrennt, kein Wildcard "*". Defaults decken
+    # lokale Entwicklung ab (Vite-Dev-Server auf 5173, das ueber docker-compose gebaute
+    # nginx-Frontend auf FRONTEND_PORT-Default 8080); in Produktion ueber CORS_ALLOWED_ORIGINS
+    # auf die tatsaechliche(n) Frontend-Origin(s) setzen.
+    cors_allowed_origins: str = "http://localhost:5173,http://localhost:8080"
+
+    def cors_allowed_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
 
 settings = Settings()
