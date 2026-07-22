@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
 import { apiFetch } from './api/client'
+import * as projectsApi from './api/projects'
 import { getToken, setToken } from './auth/token'
+
+vi.mock('./api/projects')
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -41,6 +44,8 @@ function renderApp(initialEntries: string[] = ['/']) {
 describe('App', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    vi.mocked(projectsApi.listProjects).mockReset()
+    vi.mocked(projectsApi.listProjects).mockResolvedValue([])
   })
 
   afterEach(() => {

@@ -35,7 +35,15 @@ class Drive:
 
 def _join(base_url: str, path: str) -> str:
     base = base_url.rstrip("/")
-    segments = [quote(segment) for segment in path.strip("/").split("/") if segment]
+    raw_segments = [segment for segment in path.strip("/").split("/") if segment]
+    # Security-Haertung (specs/features/0005-minimal-project-frontend.md,
+    # architecture/0003-securitykonzept.md): ohne diese Pruefung wuerde ein "..''-Segment aus
+    # dem vorgesehenen Projekt-Wurzelverzeichnis herauslaufen und andere, ueber WebDAV
+    # erreichbare Bereiche des Namespace ansprechen, als die Anwendung vorsieht. Betrifft jeden
+    # Aufrufer mit nutzergesteuertem Pfad (list_folder/get_range/walk), da alle ueber _join laufen.
+    if any(segment == ".." for segment in raw_segments):
+        raise OpenCloudError(f"Ungültiger Pfad: '{path}' enthält nicht erlaubte '..'-Segmente.")
+    segments = [quote(segment) for segment in raw_segments]
     return "/".join([base, *segments]) if segments else base
 
 

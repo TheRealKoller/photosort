@@ -1,6 +1,6 @@
 # 0005 - Minimales Projekt-Frontend
 
-**Status:** Accepted
+**Status:** Implemented ([PR #2](https://github.com/TheRealKoller/photosort/pull/2), 2026-07-22)
 **Erstellt:** 2026-07-20
 **Akzeptiert:** 2026-07-20
 **Bezug:** Als fehlendes Prerequisite beim Schärfen von Spec 0002 (Manuelle Kategorisierung) entdeckt, siehe `specs/features/0002-manual-categorization.md` Abschnitt "Architektur / Umsetzung"; jetzt im idea-sharpener-Gespräch vom 2026-07-20 selbst geschärft.

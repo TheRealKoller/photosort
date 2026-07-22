@@ -3,7 +3,7 @@ import base64
 import httpx
 import pytest
 
-from photosort.opencloud.client import OpenCloudClient, OpenCloudError
+from photosort.opencloud.client import OpenCloudClient, OpenCloudError, _join
 
 DRIVES_RESPONSE = {
     "value": [
@@ -190,6 +190,47 @@ async def test_walk_recurses_into_subfolders() -> None:
 
     relative_paths = {relative_path for relative_path, _entry in results}
     assert relative_paths == {"CostaRica/img001.jpg", "CostaRica/Sub/img002.jpg"}
+
+
+def test_join_builds_url_from_plain_segments() -> None:
+    assert _join(WEBDAV_URL, "CostaRica/Sub") == f"{WEBDAV_URL}/CostaRica/Sub"
+
+
+def test_join_returns_base_for_empty_path() -> None:
+    assert _join(WEBDAV_URL, "") == WEBDAV_URL
+
+
+def test_join_rejects_parent_traversal_segment() -> None:
+    # Security-Haertung (specs/features/0005-minimal-project-frontend.md, Muss-Kriterium):
+    # ohne diesen Fix wuerde ein "../"-Segment aus dem konfigurierten Projekt-Wurzelverzeichnis
+    # herauslaufen und andere, ueber WebDAV erreichbare Bereiche ansprechen.
+    with pytest.raises(OpenCloudError):
+        _join(WEBDAV_URL, "../secret")
+
+
+def test_join_rejects_parent_traversal_segment_in_the_middle_of_the_path() -> None:
+    with pytest.raises(OpenCloudError):
+        _join(WEBDAV_URL, "CostaRica/../../secret")
+
+
+async def test_list_folder_rejects_path_with_parent_traversal_segment() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request should be sent for a rejected path")
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.list_folder(WEBDAV_URL, "../secret")
+
+
+async def test_get_range_rejects_path_with_parent_traversal_segment() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request should be sent for a rejected path")
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.get_range(WEBDAV_URL, "../secret", length=10)
 
 
 async def test_get_range_sends_range_header() -> None:
