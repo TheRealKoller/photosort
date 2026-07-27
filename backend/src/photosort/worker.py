@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol
 
 from arq.connections import RedisSettings
@@ -14,6 +15,7 @@ from photosort.models import Photo, Project, ScanRun, ScanStatus
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
 from photosort.opencloud.exif import extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
+from photosort.thumbnails import generate_variants
 
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".heic", ".heif"}
 _EXIF_CANDIDATE_EXTENSIONS = {".jpg", ".jpeg"}
@@ -28,6 +30,8 @@ class OpenCloudScanClient(Protocol):
     def walk(self, webdav_url: str, root_path: str) -> Any: ...
 
     async def get_range(self, webdav_url: str, relative_path: str, length: int) -> bytes: ...
+
+    async def download(self, webdav_url: str, relative_path: str) -> bytes: ...
 
 
 def _extension(relative_path: str) -> str:
@@ -47,11 +51,30 @@ def _now_utc() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+async def _generate_thumbnails(
+    client: OpenCloudScanClient,
+    webdav_url: str,
+    relative_path: str,
+    photo: Photo,
+    cache_dir: Path,
+) -> None:
+    """Best-effort (specs/features/0002-manual-categorization.md): weder ein Download- noch ein
+    Dekodierfehler duerfen den Scan des Projekts abbrechen (anders als die uebrigen
+    OpenCloudError-Faelle unten, die den ganzen Scan als FAILED markieren) - ein fehlendes
+    Thumbnail aeussert sich nur als 404-Platzhalter im Bild-Endpunkt, siehe thumbnails.py."""
+    try:
+        content = await client.download(webdav_url, relative_path)
+    except OpenCloudError:
+        return
+    generate_variants(cache_dir, photo.id, photo.etag, content)
+
+
 async def run_project_scan(
     session: AsyncSession,
     client: OpenCloudScanClient,
     project: Project,
     drive_name: str | None,
+    cache_dir: Path,
 ) -> ScanRun:
     scan_run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
     session.add(scan_run)
@@ -99,19 +122,22 @@ async def run_project_scan(
                 existing_photo.content_length = entry.content_length or 0
                 existing_photo.taken_at = taken_at
                 existing_photo.last_modified = last_modified
+                photo = existing_photo
                 photos_updated += 1
             else:
-                session.add(
-                    Photo(
-                        project_id=project.id,
-                        relative_path=relative_path,
-                        etag=entry.etag or "",
-                        content_length=entry.content_length or 0,
-                        taken_at=taken_at,
-                        last_modified=last_modified,
-                    )
+                photo = Photo(
+                    project_id=project.id,
+                    relative_path=relative_path,
+                    etag=entry.etag or "",
+                    content_length=entry.content_length or 0,
+                    taken_at=taken_at,
+                    last_modified=last_modified,
                 )
+                session.add(photo)
                 photos_added += 1
+
+            await session.flush()  # assigns photo.id for newly added rows, needed below
+            await _generate_thumbnails(client, drive.webdav_url, relative_path, photo, cache_dir)
 
         removed_paths = set(existing_photos) - seen_paths
         for path in removed_paths:
@@ -145,7 +171,11 @@ async def scan_project(ctx: dict[str, Any], project_id: int) -> int:
             settings.opencloud_base_url, settings.opencloud_username, settings.opencloud_app_token
         ) as client:
             scan_run = await run_project_scan(
-                session, client, project, settings.opencloud_drive_name or None
+                session,
+                client,
+                project,
+                settings.opencloud_drive_name or None,
+                cache_dir=Path(settings.photo_cache_dir),
             )
         return scan_run.id
 

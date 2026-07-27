@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.models import Photo, Project, ScanStatus
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
+from photosort.thumbnails import display_path, thumbnail_path
 from photosort.worker import run_project_scan
 
 DRIVE = Drive(id="drive-1", name="Family", drive_type="project", webdav_url="https://cloud.example.com/dav/spaces/drive-1")
@@ -23,6 +25,16 @@ def _entry(name: str, etag: str, last_modified: datetime, content_length: int = 
     )
 
 
+def _jpeg_bytes() -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (20, 10), color="blue").save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
 class FakeOpenCloudClient:
     def __init__(
         self,
@@ -34,6 +46,7 @@ class FakeOpenCloudClient:
         self._file_contents = file_contents or {}
         self._fail_with = fail_with
         self.range_requests: list[str] = []
+        self.download_requests: list[str] = []
 
     async def resolve_drive(self, name: str | None) -> Drive:
         if self._fail_with:
@@ -48,6 +61,10 @@ class FakeOpenCloudClient:
         self.range_requests.append(relative_path)
         return self._file_contents.get(relative_path, b"")
 
+    async def download(self, webdav_url: str, relative_path: str) -> bytes:
+        self.download_requests.append(relative_path)
+        return self._file_contents.get(relative_path, b"")
+
 
 async def _make_project(session: AsyncSession) -> Project:
     project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="CostaRica")
@@ -57,7 +74,9 @@ async def _make_project(session: AsyncSession) -> Project:
     return project
 
 
-async def test_scan_adds_new_photos(db_session: AsyncSession) -> None:
+async def test_scan_adds_new_photos(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
@@ -66,7 +85,9 @@ async def test_scan_adds_new_photos(db_session: AsyncSession) -> None:
         ]
     )
 
-    scan_run = await run_project_scan(db_session, client, project, drive_name=None)
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
 
     assert scan_run.status == ScanStatus.SUCCESS
     assert scan_run.photos_added == 1
@@ -81,7 +102,9 @@ async def test_scan_adds_new_photos(db_session: AsyncSession) -> None:
     assert photos[0].taken_at == modified.replace(tzinfo=None)
 
 
-async def test_scan_updates_photo_on_etag_change(db_session: AsyncSession) -> None:
+async def test_scan_updates_photo_on_etag_change(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     db_session.add(
@@ -101,7 +124,9 @@ async def test_scan_updates_photo_on_etag_change(db_session: AsyncSession) -> No
         entries=[("CostaRica/img001.png", _entry("img001.png", "new-etag", new_modified))]
     )
 
-    scan_run = await run_project_scan(db_session, client, project, drive_name=None)
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
 
     assert scan_run.photos_added == 0
     assert scan_run.photos_updated == 1
@@ -109,7 +134,9 @@ async def test_scan_updates_photo_on_etag_change(db_session: AsyncSession) -> No
     assert photo.etag == "new-etag"
 
 
-async def test_scan_skips_photo_with_unchanged_etag(db_session: AsyncSession) -> None:
+async def test_scan_skips_photo_with_unchanged_etag(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     db_session.add(
@@ -128,14 +155,19 @@ async def test_scan_skips_photo_with_unchanged_etag(db_session: AsyncSession) ->
         entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "same-etag", modified))]
     )
 
-    scan_run = await run_project_scan(db_session, client, project, drive_name=None)
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
 
     assert scan_run.photos_updated == 0
     assert scan_run.photos_added == 0
     assert client.range_requests == []  # unchanged files must not trigger an EXIF re-fetch
+    assert client.download_requests == []  # ...nor a redundant thumbnail regeneration
 
 
-async def test_scan_removes_photos_no_longer_present(db_session: AsyncSession) -> None:
+async def test_scan_removes_photos_no_longer_present(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     db_session.add(
@@ -152,29 +184,38 @@ async def test_scan_removes_photos_no_longer_present(db_session: AsyncSession) -
 
     client = FakeOpenCloudClient(entries=[])
 
-    scan_run = await run_project_scan(db_session, client, project, drive_name=None)
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
 
     assert scan_run.photos_removed == 1
     result = await db_session.execute(select(Photo).where(Photo.project_id == project.id))
     assert result.scalars().all() == []
 
 
-async def test_scan_skips_non_image_files(db_session: AsyncSession) -> None:
+async def test_scan_skips_non_image_files(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
         entries=[("CostaRica/notes.txt", _entry("notes.txt", "etag", modified))]
     )
 
-    scan_run = await run_project_scan(db_session, client, project, drive_name=None)
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
 
     assert scan_run.files_skipped == 1
     assert scan_run.photos_added == 0
     photos = (await db_session.execute(select(Photo))).scalars().all()
     assert photos == []
+    assert client.download_requests == []
 
 
-async def test_scan_extracts_exif_for_jpeg(db_session: AsyncSession) -> None:
+async def test_scan_extracts_exif_for_jpeg(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
     import io
 
     from PIL import Image
@@ -193,20 +234,116 @@ async def test_scan_extracts_exif_for_jpeg(db_session: AsyncSession) -> None:
         file_contents={"CostaRica/img.jpg": buffer.getvalue()},
     )
 
-    await run_project_scan(db_session, client, project, drive_name=None)
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
 
     photo = (await db_session.execute(select(Photo))).scalar_one()
     assert photo.taken_at == datetime(2022, 1, 2, 3, 4, 5)
     assert client.range_requests == ["CostaRica/img.jpg"]
 
 
-async def test_scan_run_marked_failed_on_opencloud_error(db_session: AsyncSession) -> None:
+async def test_scan_run_marked_failed_on_opencloud_error(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
     project = await _make_project(db_session)
     client = FakeOpenCloudClient(entries=[], fail_with=OpenCloudError("Ordner nicht erreichbar"))
 
-    scan_run = await run_project_scan(db_session, client, project, drive_name=None)
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
 
     assert scan_run.status == ScanStatus.FAILED
     assert scan_run.error_message == "Ordner nicht erreichbar"
     photos = (await db_session.execute(select(Photo))).scalars().all()
     assert photos == []
+
+
+async def test_scan_generates_thumbnails_for_new_photo(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert client.download_requests == ["CostaRica/img.jpg"]
+    assert thumbnail_path(tmp_path, photo.id, photo.etag).is_file()
+    assert display_path(tmp_path, photo.id, photo.etag).is_file()
+
+
+async def test_scan_regenerates_thumbnails_when_etag_changes(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    db_session.add(
+        Photo(
+            project_id=project.id,
+            relative_path="CostaRica/img.jpg",
+            etag="old-etag",
+            content_length=10,
+            taken_at=modified,
+            last_modified=modified,
+        )
+    )
+    await db_session.commit()
+
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img.jpg", _entry("img.jpg", "new-etag", modified))],
+        file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.etag == "new-etag"
+    assert thumbnail_path(tmp_path, photo.id, "new-etag").is_file()
+
+
+async def test_scan_survives_undecodable_image_without_failing(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ein einzelnes kaputtes/nicht dekodierbares Foto darf den gesamten Scan nicht abbrechen
+    (specs/features/0002-manual-categorization.md) - die Metadaten werden trotzdem gespeichert,
+    nur die Thumbnail-Variante bleibt fehlend (Frontend zeigt dafuer einen Platzhalter)."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/broken.jpg", _entry("broken.jpg", "etag-broken", modified))],
+        file_contents={"CostaRica/broken.jpg": b"not a real jpeg"},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.relative_path == "CostaRica/broken.jpg"
+    assert not thumbnail_path(tmp_path, photo.id, photo.etag).is_file()
+
+
+async def test_scan_survives_thumbnail_download_failure_without_failing(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+
+    class FailingDownloadClient(FakeOpenCloudClient):
+        async def download(self, webdav_url: str, relative_path: str) -> bytes:
+            raise OpenCloudError("Download fehlgeschlagen")
+
+    client = FailingDownloadClient(
+        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    assert scan_run.photos_added == 1

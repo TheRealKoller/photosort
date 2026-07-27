@@ -10,6 +10,7 @@ def test_settings_have_sane_defaults() -> None:
     assert settings.opencloud_app_token == ""
     assert settings.opencloud_username == ""
     assert settings.opencloud_drive_name == ""
+    assert settings.photo_cache_dir == "/data/photo-cache"
 
 
 def test_auth_seed_user_placeholder_defaults_are_distinct() -> None:
