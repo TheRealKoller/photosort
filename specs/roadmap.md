@@ -12,7 +12,7 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 ### Als Nächstes
 
-- **Automatische Vorauswahl** — [`specs/features/0003-automatic-best-photo-selection.md`](./features/0003-automatic-best-photo-selection.md) (Status: Proposed). Baut auf dem `Rating`-Modell aus Spec 0002 auf (Vorschläge dürfen manuelle Bewertungen nie überschreiben) — ergibt erst nach 0002 Sinn.
+- **Automatische Vorauswahl (Phase A: lokale Heuristiken)** — [`specs/features/0003-automatic-best-photo-selection.md`](./features/0003-automatic-best-photo-selection.md) (Status: **Accepted**, im idea-sharpener-Ablauf vollständig geschärft, 2026-07-27). Baut auf dem `Rating`-Modell aus Spec 0002 auf (Vorschläge dürfen manuelle Bewertungen nie überschreiben) — ergibt erst nach 0002 Sinn. **Scope-Entscheidung (2026-07-27, mit Daniel geklärt):** deckt nur Phase A ab (lokale Heuristiken: Schärfe, Belichtung, Duplikat-/Burst-Erkennung, lokaler Qualitäts-Score, Zeit-/Motiv-Clustering, gemäß [`decisions/0002-hybrid-ai-scoring.md`](./decisions/0002-hybrid-ai-scoring.md)). Phase B (optionale Cloud-Feinbewertung) ist explizit Out-of-Scope dieser Spec und in eine eigene, spätere Spec verschoben, siehe Eintrag unten unter "Ideenspeicher". **Architekturentscheidung (ADR [`decisions/0006-local-scoring-datamodel.md`](./decisions/0006-local-scoring-datamodel.md)):** Vorschläge landen NICHT als `source=auto`-Zeile im bestehenden `Rating`-Modell (das bleibt unangetastet), sondern in zwei neuen, eigenen Tabellen (`PhotoScore`, `ScoringRun`) und werden dem Frontend über ein separates `PhotoOut.suggestion`-Feld angeboten — Berechnung ausschließlich mit dem bereits vorhandenen `pillow`, keine neue Abhängigkeit. Bereit für die Umsetzung durch den `developer`-Agenten.
 
 ### Später
 
@@ -20,7 +20,7 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 ### Ideenspeicher
 
-- (aktuell leer)
+- **Automatische Vorauswahl — Phase B (Cloud-Feinbewertung)**: aus Spec 0003 ausgegliedert (2026-07-27), noch keine eigene Spec-Nummer. Optionale, per Konfiguration abschaltbare Fein-Bewertung (Komposition/Ästhetik) der Top-Kandidaten pro Cluster via Vision-LLM-API (z.B. Anthropic), siehe [`decisions/0002-hybrid-ai-scoring.md`](./decisions/0002-hybrid-ai-scoring.md). Sinnvoll erst nach Implementierung von Spec 0003 (Phase A liefert das Clustering und die Perceptual-Hashes, auf denen Phase B aufbaut). Bereits mit Daniel vorentschiedene Punkte, die beim späteren Schärfen nicht neu verhandelt werden müssen: Kostenschätzung/-anzeige vor Start von Phase B — ja; Top-Kandidaten pro Cluster — vom Nutzer einstellbar; Clustering-Basis — Zeitfenster + visuelle Ähnlichkeit (Wiederverwendung des Perceptual-Hash aus der Duplikat-Erkennung von Phase A).
 
 ## Status auf einen Blick
 
@@ -28,7 +28,7 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 |---|---|---|
 | [0001](./features/0001-opencloud-project-connection.md) | OpenCloud-Projekt-Anbindung | Implemented (Backend) — Frontend-Oberfläche und API-Authentifizierung noch offen, siehe Abhängigkeiten unten |
 | [0002](./features/0002-manual-categorization.md) | Manuelle Kategorisierung | Implemented ([PR #3](https://github.com/TheRealKoller/photosort/pull/3)) |
-| [0003](./features/0003-automatic-best-photo-selection.md) | Automatische Vorauswahl | Proposed |
+| [0003](./features/0003-automatic-best-photo-selection.md) | Automatische Vorauswahl (Phase A) | Accepted |
 | [0004](./features/0004-opencloud-export.md) | Export nach OpenCloud | Proposed |
 | [0005](./features/0005-minimal-project-frontend.md) | Minimales Projekt-Frontend | Implemented ([PR #2](https://github.com/TheRealKoller/photosort/pull/2)) |
 | [0006](./features/0006-auth.md) | Auth-Implementierung | Implemented ([PR #1](https://github.com/TheRealKoller/photosort/pull/1)) |
@@ -36,5 +36,6 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 ## Bekannte Abhängigkeiten
 
 - ~~**0001 → 0006 (Auth-Implementierung, Implemented) → 0005 (Minimales Projekt-Frontend, Implemented) → 0002**~~ — alle vier Specs sind jetzt implementiert (0006: [PR #1](https://github.com/TheRealKoller/photosort/pull/1), 0005: [PR #2](https://github.com/TheRealKoller/photosort/pull/2), 0002: [PR #3](https://github.com/TheRealKoller/photosort/pull/3)). Kette vollständig abgeschlossen, hier nur noch der Vollständigkeit halber referenziert.
-- **0002 (Implemented) → 0003:** Spec 0003 nutzt dasselbe `Rating`-Datenmodell wie 0002 und muss dessen `source`-Unterscheidung (`manual` vs. `auto`) respektieren — 0002 ist jetzt umgesetzt, Spec 0003 ist entsperrt.
+- **0002 (Implemented) → 0003:** Spec 0003 darf das produktive `Rating`-Modell aus 0002 nicht verändern — Vorschläge landen laut ADR 0006 in eigenen Tabellen (`PhotoScore`/`ScoringRun`), `Rating` bleibt unangetastet, ein Vorschlag wird erst über den bestehenden `PUT /photos/{id}/rating`-Endpunkt zu einer echten Bewertung — 0002 ist jetzt umgesetzt, Spec 0003 ist entsperrt und akzeptiert.
 - **0002 (Implemented) → 0004:** Spec 0004 exportiert Fotos anhand der Bewertungen aus 0002 und klärt dort die von 0002 übernommene offene Frage zur Konfliktbehandlung unterschiedlicher Bewertungen beider Nutzer — 0002 ist jetzt umgesetzt, Spec 0004 ist entsperrt.
+- **0003 (Phase A) → Phase B (Ideenspeicher, noch keine Spec):** Phase B baut auf dem Perceptual-Hash-/Cluster-Ergebnis aus Phase A auf (Wiederverwendung, keine Neuimplementierung) — ergibt erst nach Implementierung und praktischer Nutzung von Spec 0003 Sinn.

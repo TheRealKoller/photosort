@@ -1,39 +1,129 @@
-# 0003 - Automatische Auswahl der besten Fotos
+# 0003 - Automatische Auswahl der besten Fotos (Phase A: lokale Heuristiken)
 
-**Status:** Proposed
+**Status:** Accepted
 **Erstellt:** 2026-07-19
-**Bezug:** Ausgangsgespräch Projekt-Setup, [`decisions/0002-hybrid-ai-scoring.md`](../decisions/0002-hybrid-ai-scoring.md)
+**Bezug:** Ausgangsgespräch Projekt-Setup, [`decisions/0002-hybrid-ai-scoring.md`](../decisions/0002-hybrid-ai-scoring.md), [`decisions/0006-local-scoring-datamodel.md`](../decisions/0006-local-scoring-datamodel.md), Idea-Sharpening-Gespräch mit Daniel am 2026-07-27
 
 ## Ziel
 
-PhotoSort schlägt automatisch die besten Fotos eines Projekts für ein Album vor, basierend auf dem in ADR 0002 beschriebenen hybriden Scoring (lokale Heuristiken + optionale Cloud-Bewertung).
+PhotoSort schlägt automatisch die besten Fotos eines Projekts für ein Album vor, basierend auf dem in ADR 0002 beschriebenen hybriden Scoring. Diese Spec deckt ausschließlich **Phase A** ab (rein lokale Heuristiken, CPU-only, keine Cloud-Anbindung, keine privaten Familienfotos verlassen den Server) — Phase B (optionale Cloud-Feinbewertung) ist ausdrücklich Out-of-Scope und wird als eigene, spätere Spec geschärft (siehe `specs/roadmap.md`, Ideenspeicher).
 
 ## User Story
 
-Als Nutzer möchte ich per Knopfdruck eine automatische Vorauswahl der besten Fotos eines Projekts erhalten, damit ich nicht alle tausend Fotos manuell durchsehen muss, sondern nur noch die Vorschläge prüfen muss.
+Als Nutzer (Daniel oder seine Frau) möchte ich für ein Projekt per Knopfdruck eine automatische, rein lokal berechnete Vorauswahl der besten Fotos anstoßen, damit offensichtlich unbrauchbare Fotos (unscharf, Duplikate/Burst-Ausschuss, Fehlbelichtung) automatisch niedrig bewertet bzw. aussortiert werden und ich beim manuellen Durchsehen die vielversprechenden Kandidaten priorisieren kann — ohne dass dafür private Familienfotos einen Cloud-Dienst verlassen.
 
 ## Akzeptanzkriterien
 
-- [ ] Nutzer kann für ein Projekt "Beste Fotos automatisch vorschlagen" anstoßen (asynchroner Hintergrund-Job).
-- [ ] Phase A (lokal) läuft immer: Schärfe-, Belichtungs- und Duplikat-/Burst-Erkennung; klar unbrauchbare Fotos (starke Unschärfe, Duplikate, geschlossene Augen) werden automatisch aussortiert bzw. niedrig gewichtet.
-- [ ] Verbleibende Fotos erhalten einen lokalen Qualitäts-Score und werden nach Zeit-/Motiv-Clustern gruppiert.
-- [ ] Phase B (Cloud) ist optional zuschaltbar/deaktivierbar (globale Einstellung) und wird nur auf die Top-Kandidaten pro Cluster angewendet.
-- [ ] Ergebnis erscheint als **Vorschlag** (nicht als verbindliche Bewertung) im selben Rating-Modell wie die manuelle Kategorisierung — der Nutzer bestätigt oder korrigiert.
-- [ ] Automatische Vorschläge überschreiben nie bereits vorhandene manuelle Bewertungen desselben Nutzers.
-- [ ] Fortschritt des Hintergrund-Jobs ist in der UI sichtbar (läuft über tausende Fotos, kann dauern).
+- [ ] `POST /projects/{id}/score` legt für authentifizierte Nutzer einen `ScoringRun` (Status `running`) an und enqueued den `score_project`-Job (analog `POST /{id}/scan`); Antwort `202 Accepted`. Ohne gültiges Token: `401`.
+- [ ] `ScoringRun.photos_processed` wird während der Verarbeitung periodisch (mind. alle 25 Fotos) zwischen-committet — ein pollender Client sieht einen monoton wachsenden Fortschritt, nicht nur Start-/Endzustand. `ProjectOut` bekommt analog zu `last_scan` ein Feld `last_scoring_run`.
+- [ ] Für jedes Foto, dessen `display`-Cache-Datei lesbar ist, legt/aktualisiert der Job eine `PhotoScore`-Zeile mit `sharpness`, `exposure`, `phash`, `computed_at` an — unabhängig davon, ob bereits eine `Rating`-Zeile irgendeines Nutzers für dieses Foto existiert (Berechnung und Anzeige sind getrennt, siehe Edge Cases unten).
+- [ ] Fotos, deren dHash innerhalb eines dokumentierten Hamming-Distanz-Schwellwerts zu einem anderen Foto desselben Projekts liegt, bilden einen Duplikat-/Burst-Cluster. Innerhalb eines Clusters gilt das Foto mit der höchsten `sharpness` als "behalten" (bei Gleichstand: niedrigere `Photo.id`, deterministisch) — es bekommt kein `duplicate_of` und kein duplikat-bedingtes `suggested_status=REJECTED`. Alle anderen Cluster-Mitglieder bekommen `duplicate_of` = ID des behaltenen Fotos und `suggested_status=REJECTED`.
+- [ ] Fotos mit `sharpness` unterhalb eines dokumentierten Schwellwerts (konkreter Zahlenwert als benannte Konstante im Code, mit Kommentar begründet) erhalten `suggested_status=REJECTED`, unabhängig von Duplikat-Zugehörigkeit.
+- [ ] Alle übrigen Fotos (weder Duplikat-Verlierer noch zu unscharf) erhalten `local_quality_score` (dokumentierte Formel aus Schärfe+Belichtung) und `cluster_key` (Zeitfenster-Cluster-Label, pro Lauf neu vergeben); `suggested_status` bleibt für sie `None` — Phase A spricht bewusst keine positive Empfehlung aus (siehe ADR 0006).
+- [ ] `PhotoOut` bekommt ein neues Feld `suggestion: SuggestionOut | None`. Es ist nur dann befüllt, wenn (a) eine `PhotoScore`-Zeile mit `suggested_status != None` existiert **und** (b) der aktuell authentifizierte Nutzer noch **keine eigene** `Rating`-Zeile für dieses Foto hat — sonst `null`, auch wenn `PhotoScore` vorhanden ist.
+- [ ] `SuggestionOut` enthält `status` (=`suggested_status`) und eine regelbasiert abgeleitete `reason` (`"duplicate"` inkl. `duplicate_of`-Foto-ID, sonst `"low_quality"`).
+- [ ] Es gibt keinen Codepfad, über den `score_project` selbst eine `Rating`-Zeile schreibt/ändert — ein Vorschlag wird ausschließlich über den bestehenden `PUT /photos/{id}/rating` bestätigt (Frontend füllt das Formular mit `suggested_status` vor).
+- [ ] Ein fehlgeschlagener Lauf (`ScoringRun.status=failed`) lässt bereits committete `PhotoScore`-Zeilen und den letzten committeten `photos_processed`-Stand unangetastet — kein Rollback.
+- [ ] Ein erneuter `score_project`-Lauf verarbeitet alle Fotos des Projekts neu und überschreibt bestehende `PhotoScore`-Zeilen vollständig, ohne je eine `Rating`-Zeile zu berühren.
+- [ ] Fotos ohne lesbare `display`-Cache-Datei werden übersprungen (kein `PhotoScore` für dieses Foto, kein Job-Abbruch), zählen aber zu `photos_processed`.
+- [ ] Trigger-Button "Beste Fotos automatisch vorschlagen" auf der Projekt-Detailseite mit echtem Fortschritt ("X von Y Fotos verarbeitet"); Grid/Detail/Compare bleiben während des Laufs voll benutzbar.
+- [ ] Vorschlags-Badge in Grid, Detail und Compare (siehe UI/UX), klar unterscheidbar von einer echten Bewertung, mit direktem "Übernehmen" auf der Grid-Kachel (eigenes Tap-Ziel, ohne Detailansicht öffnen zu müssen).
 
 ## Datenmodell-Bezug
 
-Neu: `PhotoScore` (sharpness, exposure, duplicate_of, local_quality_score, cloud_aesthetic_score, computed_at). Vorschläge nutzen `Rating` mit einem Kennzeichen `source=auto` vs. `source=manual` (Detail offen, siehe unten).
+Neu (siehe ADR 0006 für Details/Begründung): `PhotoScore` (1:1 zu `Photo`: `sharpness`, `exposure`, `phash`, `duplicate_of`, `cluster_key`, `local_quality_score`, `suggested_status`, `computed_at`) und `ScoringRun` (analog `ScanRun`, mit granularem `photos_total`/`photos_processed`-Fortschritt). Das bestehende `Rating`-Modell aus Spec 0002 bleibt **unverändert** — kein `source`-Feld, keine Migration/kein Backfill. Ein automatischer Vorschlag ist strukturell nie eine `Rating`-Zeile, sondern wird über `PhotoOut.suggestion` transportiert und erst durch aktive Nutzerbestätigung (bestehender `PUT /photos/{id}/rating`) zu einer echten Bewertung.
+
+## Architektur / Umsetzung
+
+**Bezug:** [`decisions/0002-hybrid-ai-scoring.md`](../decisions/0002-hybrid-ai-scoring.md), [`decisions/0006-local-scoring-datamodel.md`](../decisions/0006-local-scoring-datamodel.md)
+
+### Datenmodell
+
+- **`PhotoScore`** (neu, 1:1 zu `Photo`, `photo_id` als Primary Key): `sharpness: float`, `exposure: float`, `phash: str | None` (64-Bit dHash, hex), `duplicate_of: int | None` (self-FK auf `photos.id`, zeigt auf das behaltene Foto eines Duplikat-/Burst-Clusters), `cluster_key: str | None` (Zeitfenster-Cluster-Label, pro Lauf neu vergeben — siehe "Technische Detailentscheidungen" unten zur Begrenzung auf reine Zeitfenster-Bildung), `local_quality_score: float | None`, `suggested_status: RatingStatus | None` (wiederverwendet das bestehende Enum; Phase A setzt praktisch nur `REJECTED`), `computed_at: datetime`. `cloud_aesthetic_score` bewusst nicht angelegt — kommt mit Phase B als eigene Migration.
+- **`ScoringRun`** (neu, analog `ScanRun`): `status`/`started_at`/`finished_at`/Zähler wie beim Scan, zusätzlich `photos_total`/`photos_processed` für granularen, periodisch (batchweise, alle ~25 Fotos) zwischen-committeten Live-Fortschritt.
+- **`Rating`** bleibt exakt wie in Spec 0002 (keine neue Spalte, keine Migration/kein Backfill). Ein Auto-Vorschlag ist nie eine `Rating`-Zeile.
+- Migration: additiv, zwei neue Tabellen (`photo_scores`, `scoring_runs`), keine Änderung an `photos`, `ratings`, `users`, `projects`, `scan_runs`.
+
+### Backend / API
+
+- Neues Modul `backend/src/photosort/scoring.py` (analog `thumbnails.py`): reine, DB-freie Funktionen für Schärfe (Laplace-Kernel-Varianz via `PIL.ImageFilter`/`ImageStat`), Belichtung (Histogramm), dHash (Graustufen-Resize 9×8 + Bitvergleich) und Hamming-Distanz — **keine neue Abhängigkeit**, nur `pillow` (Begründung: ADR 0006). Jede Einzelfoto-Verarbeitung läuft in einem pro-Foto isolierten Best-effort-Block (bewusst breiter `except Exception`, gleiches Muster wie `thumbnails.py::generate_variants`) — ein problematisches Foto darf den `ScoringRun` nicht abbrechen.
+- Reine Cluster-/Duplikat-Erkennung als weitere pure Funktion (Liste von `(photo_id, taken_at, phash, sharpness)` → Cluster-Zuordnung + Duplikat-Markierung), unabhängig von DB/Worker testbar.
+- Neuer `score_project`-Job in `worker.py` (analog `scan_project`, in `WorkerSettings.functions` ergänzt): arbeitet auf der bereits vom Scan gecachten `display`-Variante (`thumbnails.py`/`variant_path`) — **kein erneuter OpenCloud-Download**. Ablauf: `ScoringRun` anlegen → `photos_total` setzen → pro Foto Heuristiken berechnen, `PhotoScore` upserten, `photos_processed` periodisch committen → projektweite Duplikat-/Cluster-Erkennung → `suggested_status`/`local_quality_score` setzen → `ScoringRun` auf `success`/`failed` setzen.
+- Neuer Endpoint `POST /projects/{id}/score` (analog `POST /projects/{id}/scan`, `202 Accepted`, enqueued `score_project`), auth-pflichtig, beiden authentifizierten Nutzern offen — konsistent mit dem bestehenden Scan-Trigger.
+- `GET /projects/{id}` (`ProjectOut`) bekommt `last_scoring_run: ScoringRunSummary | None`, analog `last_scan`.
+- `PhotoOut` (`api/photos.py`) bekommt ein neues, von `ratings: RatingOut[]` getrenntes Feld `suggestion: SuggestionOut | None` (`suggested_status`, `local_quality_score`, `sharpness`, `exposure`, `duplicate_of`, `cluster_key`, `computed_at`) — bewusst **nicht** Teil der `ratings`-Liste, siehe ADR 0006. Befüllt nur, wenn der anfragende Nutzer keine eigene `Rating`-Zeile für dieses Foto hat.
+- Bestätigen/Korrigieren eines Vorschlags nutzt den bestehenden `PUT /photos/{id}/rating`-Endpunkt unverändert; kein neuer Schreibpfad.
+
+### Frontend
+
+- `api/types.ts`: `SuggestionOut`, `ScoringRunSummary` ergänzen; neue Mutation/Poll-Hooks analog `useTriggerScanMutation`/`POLL_INTERVAL_MS` in `hooks/useProjects.ts`.
+- **Grid:** Badge/Marker aus `photo.suggestion?.suggested_status`, visuell erkennbar von `RatingBadge` unterschieden (siehe UI/UX), plus sekundärer "Übernehmen"-Button auf der Kachel.
+- **Detail:** zeigt den Vorschlag (Status + Kurzbegründung) mit Aktion "Vorschlag übernehmen" (ruft die bestehende Rating-Mutation mit vorbefülltem `suggested_status` auf); bestehende manuelle Bewertungsbuttons unverändert als Korrektur.
+- **Compare:** Vorschlag ersetzt innerhalb der bestehenden "Ich"-Position nur die "–"-Darstellung, solange keine eigene Bewertung vorliegt — kein dritter Spalten-Slot.
+- `ProjectDetailPage.tsx`: neuer Trigger-Button neben dem bestehenden Scan-Trigger, Fortschrittsanzeige aus `last_scoring_run`, Poll-Verhalten analog zum bestehenden Scan-Muster.
+
+### Technische Detailentscheidungen (im Rahmen der Idea-Sharpening-Session getroffen)
+
+- **Zeit-/Motiv-Clustering (`cluster_key`) nutzt ausschließlich Zeitfenster**, nicht zusätzlich den dHash: Der dHash wird in Phase A bereits für die Duplikat-/Burst-Erkennung berechnet (eigener Zweck: nahezu identische Aufnahmen erkennen), das ist ein anderes Problem als die grobe Gruppierung "welche Fotos gehören zum selben Anlass". `cluster_key` wird in dieser Spec an keiner Stelle in der UI angezeigt (reine Vorbereitung für die künftige Phase-B-Spec, die für ihre eigene Top-N-Auswahl ausdrücklich Zeitfenster **und** visuelle Ähnlichkeit kombinieren soll, siehe `specs/roadmap.md`) — zusätzliche Komplexität würde hier keinen in dieser Spec sichtbaren Nutzen bringen. Passt zum Minimalismus-Grundsatz aus ADR 0006.
+- **Jeder `score_project`-Lauf scort alle Fotos des Projekts neu** (kein inkrementelles Scoring nur neuer/geänderter Fotos): `cluster_key` wird pro Lauf neu vergeben, ein inkrementeller Lauf würde altes und neues Cluster-Schema vermischen und Duplikate zwischen alten und neu hinzugekommenen Fotos verpassen. Kostenfolge (CPU-Zeit wächst mit Projektgröße bei jedem erneuten Lauf) ist rein lokal (kein Geld, kein OpenCloud-Traffic) und wird bewusst in Kauf genommen; falls das bei sehr großen Projekten spürbar stört, ist das ein späterer, isolierter Optimierungsschritt ohne Auswirkung auf das Datenmodell.
+
+## UI/UX
+
+Design-System: [`architecture/0004-design-system.md`](../architecture/0004-design-system.md) — für diese Spec ergänzt um das "Vorschlags-Badge"-Muster, ein determiniertes Fortschritts-Muster und eine gedrosselte `aria-live`-Regel für hochfrequente Zähler.
+
+- **Trigger + Fortschritt (`ProjectDetailPage.tsx`):** neuer Button "Beste Fotos automatisch vorschlagen" neben dem bestehenden Scan-Trigger, gleiches Busy-Button-Muster. Anders als beim Scan zusätzlich ein determinierter Fortschritt, da `photos_total`/`photos_processed` granular bekannt sind: Textzeile "X von Y Fotos verarbeitet" + natives `<progress value max>`-Element. `aria-live="polite"` announced nur bei vollen 10%-Schritten, nicht bei jedem Poll-Tick. Grid/Detail/Compare bleiben während des Laufs voll benutzbar — bereits verarbeitete Fotos zeigen ihren Vorschlag schon, während der Rest noch läuft; kein Vollbild-Blocker.
+- **Vorschlags-Badge (Grid + Detail + Compare):** vierter, klar von den drei Bewertungsstufen unterschiedener, aber erkennbar verwandter Zustand, gespeist aus `PhotoOut.suggestion`, nicht aus `ratings`. Zahnrad-Präfix vor dem Stufensymbol, gedämpfte/umrandete statt volle Füllung derselben Farbe (Faustregel: **volle Füllung = von einem Menschen entschieden, gedämpft/umrandet = maschineller Vorschlag, noch offen**), `aria-label` immer mit Präfix "Vorschlag: …". **Anzeigeregel:** eigene Bewertung hat immer Vorrang — existiert bereits eine `Rating`-Zeile des Nutzers, wird ausschließlich diese gezeigt, die Vorschlags-Badge entfällt unabhängig davon, ob `suggestion` noch gesetzt ist. Der bestehende "Unbewertet"-Filter erfasst Fotos mit offenem Vorschlag automatisch mit (da weiterhin keine `Rating`-Zeile existiert) — keine neue Filteroption nötig.
+- **Grid (`PhotoGridPage.tsx`):** Kachel zeigt die Vorschlags-Badge, sobald `suggestion` gesetzt und keine eigene Bewertung vorhanden ist, plus einen sekundären "Übernehmen"-Button (separates Tap-Ziel von der Kachel selbst, die weiterhin die Detailansicht öffnet) — bestätigt per `PUT /photos/{id}/rating`, ohne die Detailansicht zu öffnen. **Entscheidung (mit Daniel bestätigt):** ermöglicht zügiges Batch-Bestätigen vieler ähnlicher Ausschuss-Kandidaten (Burst-Duplikate) rein anhand des Thumbnails, vertretbar weil (a) Phase A ausschließlich `rejected` vorschlägt, nie `favorite` (kein Risiko, versehentlich einen echten Favoriten zu bestätigen), (b) eine Bestätigung jederzeit trivial per Toggle rückgängig zu machen ist, (c) Bestätigungsdialoge laut Design-System nur für schwer rückgängig zu machende Aktionen vorgesehen sind. Wer lieber jedes Foto einzeln in Groß sieht, kann die Kachel selbst antippen.
+- **Einzelbild-/Detail (`PhotoDetailPage.tsx`):** existiert ein Vorschlag und keine eigene Bewertung, erscheint oberhalb der bestehenden `RatingButtons` eine kurze Zeile "Automatischer Vorschlag: Verworfen" + Kurzbegründung ("Duplikat von Foto #X" falls `duplicate_of` gesetzt, sonst "Geringe Bildqualität"). Danach ein primärer Button **"Vorschlag übernehmen"** (ruft denselben Mutation-Pfad wie ein manueller Klick auf die passende `RatingButtons`-Option auf) sowie normale Weiternavigation als implizites "Ignorieren": kein eigener "Vorschlag verwerfen"-Button/-Zustand, da das Datenmodell keinen `dismissed`-Flag vorsieht — ein unbestätigter Vorschlag bleibt einfach unverbindlich sichtbar, bis er bestätigt oder durch eine abweichende manuelle Bewertung überschrieben wird. Nach "Vorschlag übernehmen" greift der bestehende Auto-Advance unverändert.
+- **Vergleichsansicht (`PhotoComparePage.tsx`):** kein dritter Spalten-/Personen-Slot neben "Ich"/"Andere" — der Vorschlag ersetzt innerhalb der bestehenden "Ich"-Position nur die bisherige "–"-Darstellung, solange keine eigene Bewertung vorliegt, unter Verwendung derselben Vorschlags-Badge. Verhindert Verwechslungsgefahr mit einer dritten bewertenden Person, ohne das bestehende Zwei-Spalten-Layout aufzubrechen.
+- **Zustände:**
+  - *Nie ausgelöst:* kein `ScoringRun` vorhanden — Trigger-Button plus knapper Hinweistext, keine Vorschlags-Badges irgendwo sichtbar.
+  - *Ladend:* siehe Fortschrittsanzeige oben; Rest der App bleibt bedienbar.
+  - *Fehler:* `ScoringRun.status === "failed"` — Inline-Banner neben dem Trigger-Button mit "Erneut versuchen"; bereits committete Vorschläge bleiben erhalten und nutzbar, kein Rollback.
+  - *Alle offenen Vorschläge bereits entschieden:* Vorschlags-Badges verschwinden strukturell von selbst (Anzeigeregel oben) — kein eigener Leerzustand-Text nötig. Optional (nice-to-have): kurze Zusammenfassung nach dem letzten Lauf neben dem Trigger-Button, analog zum bestehenden `last_scan`-Text.
+- **Responsivität/PWA:** Vorschlags-Badge und Übernehmen-Button auf Grid-Kacheln erfüllen dieselbe 44×44px-Touch-Ziel-Vorgabe wie bestehende interaktive Elemente; Fortschrittsbalken skaliert mit Container-Breite, kein horizontales Scrollen auf Smartphone-Breite.
+
+## Security
+
+**Sicherheitsrelevant:** Ja — neuer auth-pflichtiger Endpunkt, neue projektweit sichtbare Datenkategorie (`PhotoScore`), Wiederverwendung eines bereits bekannten Bildverarbeitungs-Robustheitsmusters.
+
+- **Autorisierung `POST /projects/{id}/score`:** hängt am selben Router wie `POST /projects/{id}/scan` (`dependencies=[Depends(get_current_user)]` in `api/projects.py`) — jedes gültige JWT eines der beiden bekannten Nutzer reicht, keine Rollenunterscheidung, konsistent mit dem bestehenden Scan-Trigger. Muss-Kriterium: der Endpunkt darf nicht versehentlich außerhalb dieses Routers oder mit einer eigenen, schwächeren Dependency registriert werden.
+- **Sichtbarkeit von `PhotoScore`/`PhotoOut.suggestion`:** an das Projekt gebunden, nicht an den einzelnen Nutzer — jeder authentifizierte Nutzer mit Zugriff auf `GET /projects/{id}/photos` sieht denselben Vorschlag. Konsistent mit der bestehenden, bereits im Sicherheitskonzept dokumentierten Eigenschaft und dem Bedrohungsmodell-Grundsatz "kein Innentäter-Modell zwischen Daniel und seiner Frau" (`architecture/0003-securitykonzept.md`). Keine neue Lücke, kein zusätzlicher Autorisierungs-Aufwand nötig.
+- **Strukturelle Trennung Vorschlag/Bewertung:** Der Scoring-Job schreibt nie eine `Rating`-Zeile (ADR 0006) — ein Vorschlag wird ausschließlich über `PUT /photos/{id}/rating` verbindlich, exakt derselbe Schreibpfad wie eine manuelle Bewertung, `user_id` weiterhin ausschließlich aus dem JWT. "Automatischer Vorschlag überschreibt nie eine vorhandene manuelle Bewertung" ist damit strukturell garantiert, nicht nur durch eine zusätzlich zu prüfende Bedingung im Job.
+- **Robustheit der neuen Bildverarbeitung, Bezug zum `DecompressionBombError`-Fund aus Spec 0002:** Die Berechnungen laufen auf der bereits vom Scan-Job erzeugten `display`-Variante (von Pillow auf max. 2048×2048 Pixel begrenzt) — `DecompressionBombError` beim erneuten Öffnen ist damit praktisch ausgeschlossen. Trotzdem: (a) die `display`-Cache-Datei kann fehlen (Scan-Thumbnail-Generierung war best-effort und kann fehlgeschlagen sein) — der Job muss dieses Foto überspringen, nicht crashen; (b) ungewöhnliche, aber valide Bilder (einfarbige Fläche mit Varianz 0 o.ä.) dürfen die Laplace-/Histogramm-/dHash-Berechnung nicht mit einer unbehandelten Exception abbrechen lassen. **Muss-Kriterium:** jede Einzelfoto-Verarbeitung in `scoring.py` läuft in einem pro-Foto isolierten Best-effort-Block (bewusst breiter `except Exception`, gleiche Begründung wie in `thumbnails.py`), damit ein einzelnes problematisches Foto nicht den gesamten `ScoringRun` abbricht.
+- **`duplicate_of`-Selbstreferenz:** rein intern berechnet (kein Nutzereingabepfad), Cluster-/Duplikat-Logik sollte defensiv gegen Zyklen sein — Implementierungsdetail, keine Sicherheitslücke im engeren Sinn.
+- **Keine neue Abhängigkeit, keine neue externe Schnittstelle:** ADR 0006 verzichtet bewusst auf `opencv`/`imagehash`/`numpy`; keine neue CVE-Fläche. Kein erneuter OpenCloud-Download, kein neuer nutzergesteuerter Pfad Richtung WebDAV-Client — SSRF-/Path-Traversal-Betrachtung aus dem Sicherheitskonzept bleibt unverändert.
+- **Ressourcenverbrauch/DoS:** `POST /projects/{id}/score` hat wie `POST /projects/{id}/scan` aktuell keine Guard gegen mehrfaches gleichzeitiges Anstoßen desselben Projekts — kein neues Problem dieser Spec, sondern ein bereits bestehendes Muster von Spec 0001. Da der Endpunkt ausschließlich den beiden vertrauenswürdigen, authentifizierten Nutzern offensteht, ist dies kein Sicherheits-, sondern ein Robustheits-/Produktthema — außerhalb des Scopes dieser Spec.
+- **Out of Scope (bestätigt):** Phase B (Versand von Bilddaten an einen externen Dienst) braucht bei ihrer eigenen Schärfung einen eigenen `## Security`-Abschnitt (neue externe Schnittstelle, neue Secrets, Datenschutz-Betrachtung).
+
+`specs/architecture/0003-securitykonzept.md` wird durch diese Spec nicht ergänzt — keine neue Angriffsflächen-Klasse, nur Erweiterung bestehender, bereits dokumentierter Muster. Empfehlung: beim Security-Review des Feature-Branches den `DecompressionBombError`-Fund aus `thumbnails.py` als projektweites Prinzip ("Best-effort-Robustheit bei lokaler Bildverarbeitung auf potenziell außergewöhnlichen, aber nicht böswilligen Bilddaten") explizit im Sicherheitskonzept verankern statt nur im Code-Kommentar — Dokumentationsverbesserung, kein Blocker.
+
+## Teststrategie
+
+- *Unit-Ebene* (`backend/tests/test_scoring.py`, analog `test_thumbnails.py`): reine, DB-freie Funktionen in `scoring.py` gegen synthetische Pillow-Bilder — Schärfe (scharf vs. `GaussianBlur`-Variante), Belichtung (dunkel/hell vs. neutral), dHash+Hamming-Distanz (identisch → 0, leicht verändert → klein, anderes Motiv → groß), Cluster-Gewinner-Tie-Break-Determinismus, Zeitfenster-Clustering (Lücken knapp unter/über Schwellwert).
+- *Integrations-Ebene* (`backend/tests/test_worker_score_project.py`, analog `test_worker_scan_project.py`): `score_project` gegen echte In-Memory-SQLite + tatsächlich geschriebene `display`-Varianten. Fälle: Erfolgslauf, Duplikat-Cluster mit erwartetem Gewinner, unscharfes Foto → `REJECTED`, fehlende/kaputte Cache-Datei → übersprungen aber `photos_processed` erhöht, erneuter Lauf überschreibt `PhotoScore` vollständig ohne `Rating` zu berühren. Batch-Konstante für Zwischen-Commits per Monkeypatch auf einen kleinen Wert setzen, um das Verhalten mit wenigen Testfotos zu prüfen (neues Testmuster).
+- *API-Ebene*: `POST /{id}/score` (202, Enqueue-Fake, 401 ohne Token), `PhotoOut.suggestion`-Serialisierung (befüllt wenn kein eigenes Rating, `null` wenn eigenes Rating existiert — auch wenn `PhotoScore` vorhanden ist).
+- *Frontend*: Trigger-Button + Fortschrittsbalken via Polling (gemockt), `RatingBadge`-Vorschlagsvariante (alle `suggested_status`-Werte inkl. `None`), Grid-Kachel-Sekundärbutton (eigenes Tap-Ziel, `stopPropagation` gegenüber Kachel-Navigation), Detail-Ansicht (Vorschlag+Begründung+Button ruft dieselbe Mutation wie manuelles Rating), Compare-Ansicht (drei Zustände: nichts/Vorschlag/eigene Bewertung).
+- **Neues Testmuster:** (1) periodischer Zwischen-Commit statt Einmal-Commit am Jobende (Batch-Konstante per Monkeypatch verkleinern) — wiederverwendbar für künftige lang laufende Jobs; (2) "berechnet, aber bedingt nicht angezeigt"-Datenmodell (`PhotoScore` unabhängig von `Rating`, Sichtbarkeit erst zur Laufzeit anhand einer zweiten Tabelle entschieden) — braucht eigene, explizite Serialisierungstests statt sich aus dem ORM-Mapping zu ergeben.
+- **Bewusst nicht getestet:** konkrete Zahlenwerte der Schwellenwerte (Sharpness-Cutoff, Hamming-Distanz-Schwelle) werden nicht gegen echte Kamera-Fotos kalibriert (kein Korpus echter Fotos im Repo) — nur die Logik (Wert unter/über Schwelle → erwartetes Verhalten) wird mit synthetischen Bildern getestet. Tatsächliche Kalibrierung bleibt manueller Smoke-Test mit echten Projektfotos vor Merge.
+- `specs/architecture/0002-testkonzept.md` wird bewusst erst **nach** der Implementierung ergänzt (analog zum bisherigen Vorgehen), nicht schon jetzt — vorgemerkt: neuer Unterabschnitt "Scoring/Vorschläge", die beiden neuen Testmuster oben, ggf. ein Eintrag zu manuell kalibrierten Schwellenwerten als bekannte Lücke.
+
+## Entscheidungen (2026-07-27, im Idea-Sharpening-Gespräch mit Daniel geklärt)
+
+- **Scope auf Phase A begrenzt:** Phase B (Cloud-Feinbewertung) explizit aus dieser Spec ausgegliedert, kommt als eigene, spätere Spec (siehe `specs/roadmap.md`, Ideenspeicher). Grund: kleinerer, risikoärmerer Schnitt jetzt.
+- **Bereits vorentschiedene Punkte für die künftige Phase-B-Spec** (nicht Teil dieser Spec, aber festgehalten, damit sie später nicht neu verhandelt werden müssen): Kostenschätzung/-anzeige vor Start von Phase B — ja; Top-Kandidaten pro Cluster — vom Nutzer einstellbar; Clustering-Basis für Phase B — Zeitfenster + visuelle Ähnlichkeit (Wiederverwendung des in Phase A gebauten Perceptual-Hash).
+- **UI-Integrationstiefe:** Vorschläge werden voll in die bestehende Rating-UI (Grid/Detail/Compare) integriert statt in einer separaten, isolierten Ansicht — bewusster Mehraufwand für ein durchgängiges Erlebnis.
+- **Datenmodell:** `PhotoScore`/`ScoringRun` als eigene Tabellen statt eines `source`-Felds am bestehenden `Rating` — siehe ADR 0006. Das bestehende, bereits produktive `Rating`-Modell aus Spec 0002 bleibt dadurch vollständig unangetastet.
+- **Keine neue Backend-Abhängigkeit:** Schärfe/Belichtung/Perceptual-Hash ausschließlich mit dem bereits vorhandenen `pillow` (kein `opencv`/`imagehash`/`numpy`) — siehe ADR 0006.
+- **Grid-Schnellbestätigung:** Vorschläge können direkt auf der Grid-Kachel bestätigt werden (separates Tap-Ziel), nicht nur über die Detailansicht — mit Daniel bestätigt, siehe UI/UX-Abschnitt.
+- **Clustering-Algorithmus für `cluster_key` (Phase A):** reines Zeitfenster, keine zusätzliche visuelle Ähnlichkeit — technische Detailentscheidung, siehe Begründung im Architektur-Abschnitt.
+- **Rescoring-Verhalten:** jeder Lauf scort alle Fotos neu, kein inkrementelles Scoring — technische Detailentscheidung, siehe Begründung im Architektur-Abschnitt.
+- **Kein E2E-Test-Setup** für dieses Feature, konsistent mit Spec 0002 (keine Infrastruktur vorhanden, Aufwand für Zwei-Personen-Projekt nicht gerechtfertigt).
 
 ## Offene Fragen
 
-- Konkrete Gewichtung/Schwellenwerte der lokalen Heuristiken (z.B. ab welcher Laplace-Varianz gilt ein Foto als "zu unscharf")?
-- Wie werden automatische Vorschläge von manuellen Bewertungen im Datenmodell unterschieden (eigenes Feld `source`, oder komplett getrennte Tabelle `Suggestion`)?
-- Wie groß sollen "Top-Kandidaten pro Cluster" für Phase B sein (z.B. Top 3 pro Zeit-Cluster)?
-- Soll es eine Kostenanzeige/-schätzung geben, bevor Phase B ausgelöst wird?
-- Clustering-Kriterium für "Zeit-/Motiv-Cluster": reine Zeitfenster (z.B. Aufnahmen < 2 Minuten auseinander) oder zusätzlich visuelle Ähnlichkeit?
+Keine offenen Fragen mehr für den Scope dieser Spec. Alle ursprünglich offenen Punkte (Schwellenwerte, `source`-Modellierung, Cluster-Größe für Phase B, Kostenanzeige) sind oben geklärt bzw. bewusst auf die künftige Phase-B-Spec verschoben.
 
 ## Out of Scope
 
-Manuelle Kategorisierungs-UI (Spec 0002), Export (Spec 0004).
+Phase B (Cloud-Feinbewertung, eigene spätere Spec), manuelle Kategorisierungs-UI (Spec 0002, bereits implementiert), Export (Spec 0004), Konfigurierbarkeit der Heuristik-Schwellenwerte durch den Nutzer (feste, im Code dokumentierte Konstanten für dieses MVP).
