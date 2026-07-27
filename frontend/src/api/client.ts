@@ -78,3 +78,31 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 
   return (await response.json()) as T
 }
+
+/**
+ * Wie apiFetch, aber liefert den rohen Response-Body als Blob statt JSON zu parsen - fuer
+ * Foto-Bilddaten (siehe api/photos.ts::fetchPhotoImageBlobUrl). Ein <img src="..."> haengt
+ * keinen Authorization-Header an; Bild-Anfragen muessen deshalb ueber fetch() mit Header laufen
+ * und das Ergebnis als Object-URL bereitstellen (specs/features/0002-manual-categorization.md).
+ */
+export async function apiFetchBlob(path: string): Promise<Blob> {
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, { headers })
+
+  if (response.status === 401) {
+    clearToken()
+    window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT))
+    throw new ApiError(401, await extractDetail(response))
+  }
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await extractDetail(response))
+  }
+
+  return response.blob()
+}
