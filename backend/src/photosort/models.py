@@ -33,6 +33,12 @@ class Project(Base):
     )
 
 
+class RatingStatus(enum.StrEnum):
+    FAVORITE = "favorite"
+    ALBUM_WORTHY = "album_worthy"
+    REJECTED = "rejected"
+
+
 class Photo(Base):
     __tablename__ = "photos"
     __table_args__ = (
@@ -50,6 +56,9 @@ class Photo(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     project: Mapped[Project] = relationship(back_populates="photos")
+    ratings: Mapped[list[Rating]] = relationship(
+        back_populates="photo", cascade="all, delete-orphan"
+    )
 
 
 class ScanRun(Base):
@@ -77,3 +86,26 @@ class User(Base):
     username: Mapped[str] = mapped_column(unique=True)
     password_hash: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Rating(Base):
+    """Bewertung eines Photos durch einen User (specs/features/0002-manual-categorization.md).
+
+    "Unbewertet" wird bewusst nicht als eigener Enum-Wert modelliert, sondern als Fehlen einer
+    Zeile fuer (photo_id, user_id) - macht Toggle/Ueberschreiben zu einem einfachen Upsert ueber
+    den Unique-Constraint, siehe api/ratings.py.
+    """
+
+    __tablename__ = "ratings"
+    __table_args__ = (UniqueConstraint("photo_id", "user_id", name="uq_rating_photo_user"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    status: Mapped[RatingStatus] = mapped_column(
+        SQLEnum(RatingStatus, native_enum=False, length=20)
+    )
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+    photo: Mapped[Photo] = relationship(back_populates="ratings")
+    user: Mapped[User] = relationship()

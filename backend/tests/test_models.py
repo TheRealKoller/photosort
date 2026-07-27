@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.models import Photo, Project, ScanRun, ScanStatus, User
+from photosort.models import Photo, Project, Rating, RatingStatus, ScanRun, ScanStatus, User
 
 
 async def test_create_project(db_session: AsyncSession) -> None:
@@ -96,3 +96,59 @@ async def test_user_username_is_unique(db_session: AsyncSession) -> None:
     db_session.add(User(username="daniel", password_hash="b"))
     with pytest.raises(IntegrityError):
         await db_session.commit()
+
+
+async def _make_photo_and_user(db_session: AsyncSession) -> tuple[Photo, User]:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+
+    now = datetime.now(UTC)
+    photo = Photo(
+        project_id=project.id,
+        relative_path="img001.jpg",
+        etag="etag-1",
+        content_length=123,
+        taken_at=now,
+        last_modified=now,
+    )
+    user = User(username="daniel", password_hash="hashed-value")
+    db_session.add_all([photo, user])
+    await db_session.flush()
+    return photo, user
+
+
+async def test_create_rating(db_session: AsyncSession) -> None:
+    photo, user = await _make_photo_and_user(db_session)
+
+    rating = Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.FAVORITE)
+    db_session.add(rating)
+    await db_session.commit()
+
+    result = await db_session.execute(select(Rating).where(Rating.photo_id == photo.id))
+    stored = result.scalar_one()
+    assert stored.status == RatingStatus.FAVORITE
+    assert stored.updated_at is not None
+
+
+async def test_rating_unique_per_photo_and_user(db_session: AsyncSession) -> None:
+    photo, user = await _make_photo_and_user(db_session)
+
+    db_session.add(Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.FAVORITE))
+    await db_session.commit()
+
+    db_session.add(Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.REJECTED))
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+async def test_deleting_photo_cascades_to_ratings(db_session: AsyncSession) -> None:
+    photo, user = await _make_photo_and_user(db_session)
+    db_session.add(Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.FAVORITE))
+    await db_session.commit()
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    result = await db_session.execute(select(Rating))
+    assert result.scalars().all() == []
