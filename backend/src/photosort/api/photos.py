@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
+from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
 from photosort.api.deps import get_current_user, get_session
+from photosort.config import settings
 from photosort.models import Photo, Project, Rating, RatingStatus, User
+from photosort.thumbnails import variant_path
 
 router = APIRouter(tags=["photos"])
 
@@ -118,3 +123,33 @@ async def list_photos(
     photos_by_id = await _photos_by_id(session, ids)
     items = [_to_photo_out(photos_by_id[photo_id]) for photo_id in ids]
     return PhotoListOut(items=items, total=total)
+
+
+@router.get("/photos/{photo_id}/image")
+async def get_photo_image(
+    photo_id: int,
+    # Literal["thumbnail", "display"] statt ein freier str-Parameter: FastAPI/Pydantic validiert
+    # gegen genau diese Allowlist und liefert 422 fuer alles andere, BEVOR der Wert unten in eine
+    # Datei-Pfadoperation einfliesst - Muss-Kriterium gegen Path-Traversal ueber den
+    # variant-Parameter (specs/features/0002-manual-categorization.md, architecture/
+    # 0003-securitykonzept.md).
+    variant: Literal["thumbnail", "display"],
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    photo = await session.get(Photo, photo_id)
+    if photo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Foto nicht gefunden.")
+
+    path = variant_path(Path(settings.photo_cache_dir), photo.id, photo.etag, variant)
+    if not path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Bild wird noch verarbeitet."
+        )
+
+    # Content-Type explizit gesetzt (immer JPEG, siehe thumbnails.py), nicht vom Dateisystem
+    # erraten; X-Content-Type-Options verhindert MIME-Sniffing-XSS bei falsch benannten Dateien
+    # (architecture/0003-securitykonzept.md).
+    return FileResponse(
+        path, media_type="image/jpeg", headers={"X-Content-Type-Options": "nosniff"}
+    )

@@ -1,11 +1,15 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.config import settings
 from photosort.models import Photo, Project, Rating, RatingStatus, User
 from photosort.security import hash_password
+from photosort.thumbnails import display_path, thumbnail_path
 
 
 async def _make_project(session: AsyncSession) -> Project:
@@ -181,5 +185,96 @@ async def test_list_photos_requires_auth(
     project = await _make_project(db_session)
 
     response = await api_client.get(f"/projects/{project.id}/photos")
+
+    assert response.status_code == 401
+
+
+async def test_get_photo_image_returns_cached_thumbnail_bytes(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "photo_cache_dir", str(tmp_path))
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    thumbnail_path(tmp_path, photo.id, photo.etag).write_bytes(b"fake-thumbnail-bytes")
+
+    response = await authenticated_api_client.get(
+        f"/photos/{photo.id}/image", params={"variant": "thumbnail"}
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"fake-thumbnail-bytes"
+    assert response.headers["content-type"] == "image/jpeg"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+async def test_get_photo_image_returns_display_variant(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "photo_cache_dir", str(tmp_path))
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    display_path(tmp_path, photo.id, photo.etag).write_bytes(b"fake-display-bytes")
+
+    response = await authenticated_api_client.get(
+        f"/photos/{photo.id}/image", params={"variant": "display"}
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"fake-display-bytes"
+
+
+async def test_get_photo_image_returns_404_when_not_yet_generated(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "photo_cache_dir", str(tmp_path))
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+    response = await authenticated_api_client.get(
+        f"/photos/{photo.id}/image", params={"variant": "thumbnail"}
+    )
+
+    assert response.status_code == 404
+
+
+async def test_get_photo_image_returns_404_for_unknown_photo(
+    authenticated_api_client: httpx.AsyncClient,
+) -> None:
+    response = await authenticated_api_client.get(
+        "/photos/999/image", params={"variant": "thumbnail"}
+    )
+
+    assert response.status_code == 404
+
+
+async def test_get_photo_image_rejects_invalid_variant(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+    response = await authenticated_api_client.get(
+        f"/photos/{photo.id}/image", params={"variant": "../../etc/passwd"}
+    )
+
+    assert response.status_code == 422
+
+
+async def test_get_photo_image_requires_auth(
+    db_session: AsyncSession, api_client: httpx.AsyncClient
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+    response = await api_client.get(f"/photos/{photo.id}/image", params={"variant": "thumbnail"})
 
     assert response.status_code == 401
