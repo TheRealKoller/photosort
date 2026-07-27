@@ -55,12 +55,14 @@ describe('PhotoGridPage', () => {
     setToken(makeToken({ sub: '1', username: 'testuser' }))
   })
 
-  it('shows a loading state before photos arrive', () => {
+  it('shows skeleton placeholder tiles instead of a blocking spinner while loading', () => {
     vi.mocked(photosApi.listPhotos).mockReturnValue(new Promise(() => {}))
 
     renderPage()
 
-    expect(screen.getByRole('status')).toBeInTheDocument()
+    const status = screen.getByRole('status')
+    expect(status.tagName).toBe('UL')
+    expect(status.children.length).toBeGreaterThan(1)
   })
 
   it('renders one tile per photo with the own rating badge', async () => {

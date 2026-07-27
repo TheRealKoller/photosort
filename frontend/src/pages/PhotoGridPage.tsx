@@ -9,6 +9,11 @@ import { RatingBadge } from '../components/RatingBadge'
 import { usePhotoSequenceQuery } from '../hooks/usePhotos'
 import { ownRatingStatus } from '../utils/ownRating'
 
+// Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln"
+// (specs/architecture/0004-design-system.md) statt eines vollflaechigen Spinners - Anzahl ist
+// nur eine plausible Annaeherung an einen typischen Batch, keine harte Vorgabe.
+const SKELETON_TILE_COUNT = 6
+
 const FILTERS: { value: RatingFilter | ''; label: string }[] = [
   { value: '', label: 'Alle' },
   { value: 'unrated', label: 'Unbewertet' },
@@ -57,7 +62,13 @@ export function PhotoGridPage() {
         ))}
       </div>
 
-      {query.isLoading && <p role="status">Fotos werden geladen…</p>}
+      {query.isLoading && (
+        <ul role="status" aria-label="Fotos werden geladen…">
+          {Array.from({ length: SKELETON_TILE_COUNT }, (_, index) => (
+            <li key={index} aria-hidden="true" />
+          ))}
+        </ul>
+      )}
 
       {query.isError && (
         <div role="alert">
