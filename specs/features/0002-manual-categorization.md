@@ -1,8 +1,9 @@
 # 0002 - Manuelle Kategorisierung
 
-**Status:** Accepted
+**Status:** Implemented
 **Erstellt:** 2026-07-19
 **Akzeptiert:** 2026-07-19
+**Implementiert:** 2026-07-27, [PR #3](https://github.com/TheRealKoller/photosort/pull/3)
 **Bezug:** Ausgangsgespräch Projekt-Setup; geschärft im idea-sharpener-Gespräch vom 2026-07-19
 
 ## Ziel

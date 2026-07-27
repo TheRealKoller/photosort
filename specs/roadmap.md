@@ -8,7 +8,7 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 - ~~**Auth-Implementierung**~~ — [`specs/features/0006-auth.md`](./features/0006-auth.md) (Status: **Implemented**, [PR #1](https://github.com/TheRealKoller/photosort/pull/1), 2026-07-21). Login/JWT gemäß [`decisions/0003-auth-model.md`](./decisions/0003-auth-model.md) und [`decisions/0005-auth-implementation.md`](./decisions/0005-auth-implementation.md) (Argon2, PyJWT, Bearer+localStorage, Rate-Limiting via `slowapi`) umgesetzt, inkl. React Router + TanStack Query als erster sichtbarer Oberfläche des Projekts. War Prerequisite für Spec 0002 und Spec 0005 — beide sind jetzt entsperrt.
 - ~~**Minimales Projekt-Frontend**~~ — [`specs/features/0005-minimal-project-frontend.md`](./features/0005-minimal-project-frontend.md) (Status: **Implemented**, [PR #2](https://github.com/TheRealKoller/photosort/pull/2), 2026-07-22). Projektliste, Projekt-Anlage-Formular mit Ordner-Browser, Projekt-Detailseite mit Scan-Trigger/-Polling umgesetzt, inkl. der beiden Backend-Härtungen (CORS-Allowlist, Path-Traversal-Fix in `opencloud/client.py::_join`). War Prerequisite für Spec 0002 — jetzt entsperrt.
-- **Manuelle Kategorisierung** — [`specs/features/0002-manual-categorization.md`](./features/0002-manual-categorization.md) (Status: Accepted, geschärft im idea-sharpener-Gespräch vom 2026-07-19). Direkt anschließend an die Backend-Grundlage aus Spec 0001; ohne diese Kategorisierungs-Oberfläche gibt es für Daniel und seine Frau noch keinen nutzbaren Workflow. Beide Prerequisite-Specs (Auth → Minimales Projekt-Frontend) sind jetzt implementiert — 0002 ist entsperrt und laut Roadmap-Reihenfolge das nächste Ticket für `developer`.
+- ~~**Manuelle Kategorisierung**~~ — [`specs/features/0002-manual-categorization.md`](./features/0002-manual-categorization.md) (Status: **Implemented**, [PR #3](https://github.com/TheRealKoller/photosort/pull/3), 2026-07-27). Grid-/Einzelbild-/Vergleichsansicht, `Rating`-Modell, Thumbnail-Erzeugung im Worker umgesetzt — erster nutzbarer Kern-Workflow für Daniel und seine Frau. War Prerequisite für Spec 0003 und Spec 0004 — beide sind jetzt entsperrt.
 
 ### Als Nächstes
 
@@ -27,7 +27,7 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 | Spec | Titel | Status |
 |---|---|---|
 | [0001](./features/0001-opencloud-project-connection.md) | OpenCloud-Projekt-Anbindung | Implemented (Backend) — Frontend-Oberfläche und API-Authentifizierung noch offen, siehe Abhängigkeiten unten |
-| [0002](./features/0002-manual-categorization.md) | Manuelle Kategorisierung | Accepted |
+| [0002](./features/0002-manual-categorization.md) | Manuelle Kategorisierung | Implemented ([PR #3](https://github.com/TheRealKoller/photosort/pull/3)) |
 | [0003](./features/0003-automatic-best-photo-selection.md) | Automatische Vorauswahl | Proposed |
 | [0004](./features/0004-opencloud-export.md) | Export nach OpenCloud | Proposed |
 | [0005](./features/0005-minimal-project-frontend.md) | Minimales Projekt-Frontend | Implemented ([PR #2](https://github.com/TheRealKoller/photosort/pull/2)) |
@@ -35,6 +35,6 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 ## Bekannte Abhängigkeiten
 
-- **0001 → 0006 (Auth-Implementierung, Implemented) → 0005 (Minimales Projekt-Frontend, Implemented) → 0002:** Spec 0001 deckt nur das Backend ab (kein Frontend, kein Auth). Ursprünglich als zwei parallele Prerequisites zu 0002 eingeordnet; seit der Stakeholder-Entscheidung vom 2026-07-20 war die Reihenfolge **sequenziell**: Spec 0005 setzte eine bereits umgesetzte Auth-Spec (0006) voraus (Login-Screen, geschützte Routen, Token-Handling sind Teil der Auth-Spec, nicht des Frontend-Grundgerüsts). Spec 0006 ist mit [PR #1](https://github.com/TheRealKoller/photosort/pull/1) umgesetzt, Spec 0005 mit [PR #2](https://github.com/TheRealKoller/photosort/pull/2) (Projektliste/-anlage/-detail, CORS-Allowlist, Path-Traversal-Fix) — beide Prerequisites sind jetzt erfüllt, Spec 0002 ist entsperrt und ist laut Stakeholder das nächste Ticket.
-- **0002 → 0003:** Spec 0003 nutzt dasselbe `Rating`-Datenmodell wie 0002 und muss dessen `source`-Unterscheidung (`manual` vs. `auto`) respektieren — sollte nach 0002 umgesetzt werden.
-- **0002 → 0004:** Spec 0004 exportiert Fotos anhand der Bewertungen aus 0002 und klärt dort die von 0002 übernommene offene Frage zur Konfliktbehandlung unterschiedlicher Bewertungen beider Nutzer — kann erst nach 0002 sinnvoll abgeschlossen werden.
+- ~~**0001 → 0006 (Auth-Implementierung, Implemented) → 0005 (Minimales Projekt-Frontend, Implemented) → 0002**~~ — alle vier Specs sind jetzt implementiert (0006: [PR #1](https://github.com/TheRealKoller/photosort/pull/1), 0005: [PR #2](https://github.com/TheRealKoller/photosort/pull/2), 0002: [PR #3](https://github.com/TheRealKoller/photosort/pull/3)). Kette vollständig abgeschlossen, hier nur noch der Vollständigkeit halber referenziert.
+- **0002 (Implemented) → 0003:** Spec 0003 nutzt dasselbe `Rating`-Datenmodell wie 0002 und muss dessen `source`-Unterscheidung (`manual` vs. `auto`) respektieren — 0002 ist jetzt umgesetzt, Spec 0003 ist entsperrt.
+- **0002 (Implemented) → 0004:** Spec 0004 exportiert Fotos anhand der Bewertungen aus 0002 und klärt dort die von 0002 übernommene offene Frage zur Konfliktbehandlung unterschiedlicher Bewertungen beider Nutzer — 0002 ist jetzt umgesetzt, Spec 0004 ist entsperrt.
