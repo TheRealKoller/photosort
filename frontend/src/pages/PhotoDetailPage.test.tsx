@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import type { PhotoListOut, PhotoOut } from '../api/types'
@@ -183,6 +184,12 @@ describe('PhotoDetailPage', () => {
 
     expect(ratingsApi.deleteRating).toHaveBeenCalledWith(1)
     expect(ratingsApi.setRating).not.toHaveBeenCalled()
+    // Anders als beim Setzen einer Bewertung (spec: "Nach dem Setzen einer Bewertung springt...")
+    // ist ein Toggle-zurueck-auf-unbewertet eine Korrektur, kein "fertig mit diesem Foto" -
+    // Auto-Advance waere hier ueberraschend (Nutzer klickt erneut, um einen Fehlklick
+    // rueckgaengig zu machen, nicht um weiterzuspringen).
+    await waitFor(() => expect(ratingsApi.deleteRating).toHaveBeenCalled())
+    expect(screen.getByText('1/2')).toBeInTheDocument()
   })
 
   it('shows a completion message instead of a fatal error once no unrated photo is left', async () => {
@@ -200,7 +207,20 @@ describe('PhotoDetailPage', () => {
 
     await user.click(screen.getByRole('button', { name: /favorit/i }))
 
-    expect(await screen.findByText(/keine weiteren unbewerteten fotos/i)).toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent(/keine weiteren unbewerteten fotos/i)
+  })
+
+  it('shows an inline error banner with a retry option on failure', async () => {
+    vi.mocked(photosApi.listPhotos).mockRejectedValue(new ApiError(500, 'Serverfehler'))
+    const user = userEvent.setup()
+
+    renderPage('/projects/1/photos/1')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Serverfehler')
+
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 1 })], total: 1 })
+    await user.click(screen.getByRole('button', { name: /erneut versuchen/i }))
+
+    await screen.findByText('1/1')
   })
 
   it('ignores keyboard shortcuts while a text input is focused elsewhere on the page', async () => {

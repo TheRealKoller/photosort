@@ -37,4 +37,16 @@ describe('RatingButtons', () => {
     expect(screen.getByRole('button', { name: /album-würdig/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /verwerfen/i })).toBeDisabled()
   })
+
+  it('shows an inline busy indicator while a rating request is in flight', () => {
+    render(<RatingButtons currentStatus={null} onToggle={vi.fn()} disabled busy />)
+
+    expect(screen.getByRole('status')).toHaveTextContent(/speichert/i)
+  })
+
+  it('shows no busy indicator when not busy', () => {
+    render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
 })

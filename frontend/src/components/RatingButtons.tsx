@@ -16,9 +16,20 @@ interface RatingButtonsProps {
    */
   onToggle: (status: RatingStatus) => void
   disabled?: boolean
+  /**
+   * Busy-Button-Muster (specs/architecture/0004-design-system.md: "gilt ab jetzt für jeden
+   * auslösenden Button im Produkt") - zeigt einen Inline-Indikator, solange die auslösende
+   * Bewertungsanfrage noch unterwegs ist, statt die Buttons nur stumm zu deaktivieren.
+   */
+  busy?: boolean
 }
 
-export function RatingButtons({ currentStatus, onToggle, disabled = false }: RatingButtonsProps) {
+export function RatingButtons({
+  currentStatus,
+  onToggle,
+  disabled = false,
+  busy = false,
+}: RatingButtonsProps) {
   return (
     <div role="group" aria-label="Bewertung">
       {OPTIONS.map((option) => (
@@ -33,6 +44,7 @@ export function RatingButtons({ currentStatus, onToggle, disabled = false }: Rat
           {option.label}
         </button>
       ))}
+      {busy && <span role="status">Speichert…</span>}
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -81,6 +82,15 @@ describe('PhotoComparePage', () => {
     expect(screen.getByLabelText('Verworfen')).toBeInTheDocument()
   })
 
+  it('loads the display resolution, not the thumbnail (spec: Vergleichsansicht Display-Auflösung)', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 1 })], total: 1 })
+
+    renderPage()
+
+    await screen.findAllByRole('listitem')
+    expect(photosApi.fetchPhotoImageBlobUrl).toHaveBeenCalledWith(1, 'display')
+  })
+
   it('shows "unbewertet" as an explicit, visible state for a missing rating', async () => {
     const list: PhotoListOut = { items: [photo({ id: 1, ratings: [] })], total: 1 }
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
@@ -100,12 +110,17 @@ describe('PhotoComparePage', () => {
     expect(link).toHaveAttribute('href', '/projects/1/photos/7')
   })
 
-  it('shows an inline error banner on failure', async () => {
+  it('shows an inline error banner with a retry option on failure', async () => {
     vi.mocked(photosApi.listPhotos).mockRejectedValue(new ApiError(500, 'Serverfehler'))
+    const user = userEvent.setup()
 
     renderPage()
-
     expect(await screen.findByRole('alert')).toHaveTextContent('Serverfehler')
+
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 1 })], total: 1 })
+    await user.click(screen.getByRole('button', { name: /erneut versuchen/i }))
+
+    await screen.findAllByRole('listitem')
   })
 
   it('shows an empty state when the project has no photos', async () => {

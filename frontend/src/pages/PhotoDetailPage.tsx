@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type { PhotoOut, RatingFilter, RatingStatus } from '../api/types'
+import type { RatingFilter, RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { PhotoImage } from '../components/PhotoImage'
@@ -12,6 +12,7 @@ import {
   usePhotoSequenceQuery,
   useSetRatingMutation,
 } from '../hooks/usePhotos'
+import { findOwnRating, ownRatingStatus } from '../utils/ownRating'
 
 // Bounded so a broken/degenerate filter can never spin forever fetching pages while searching
 // for the next unrated photo - 80 * PHOTOS_PAGE_SIZE(60) covers well beyond any realistic
@@ -29,13 +30,6 @@ function isTextInputFocused(): boolean {
     return true
   }
   return (active as HTMLElement).isContentEditable
-}
-
-function ownRatingStatus(photo: PhotoOut | undefined, username: string | null): RatingStatus | null {
-  if (!photo || username === null) {
-    return null
-  }
-  return photo.ratings.find((rating) => rating.username === username)?.status ?? null
 }
 
 export function PhotoDetailPage() {
@@ -103,8 +97,7 @@ export function PhotoDetailPage() {
     for (;;) {
       while (i < currentPhotos.length) {
         const candidate = currentPhotos[i]
-        const hasOwnRating = candidate.ratings.some((rating) => rating.username === username)
-        if (!hasOwnRating) {
+        if (findOwnRating(candidate.ratings, username) === undefined) {
           goTo(candidate.id)
           return
         }
@@ -120,18 +113,19 @@ export function PhotoDetailPage() {
     setCompleted(true)
   }
 
-  const currentOwnStatus = ownRatingStatus(currentPhoto, username)
+  const currentOwnStatus = ownRatingStatus(currentPhoto?.ratings ?? [], username)
 
   function handleToggleRating(status: RatingStatus): void {
     if (!currentPhoto || setMutation.isPending || deleteMutation.isPending) {
       return
     }
-    const fromIndex = index + 1
+    // Auto-Advance gilt laut Spec nur "nach dem Setzen einer Bewertung" - ein Toggle zurueck auf
+    // unbewertet ist eine Korrektur (Nutzer macht einen Fehlklick rueckgaengig), kein "fertig mit
+    // diesem Foto"; automatisches Weiterspringen waere hier ueberraschend statt hilfreich.
     if (currentOwnStatus === status) {
-      deleteMutation.mutate(currentPhoto.id, {
-        onSuccess: () => void advanceToNextUnrated(fromIndex),
-      })
+      deleteMutation.mutate(currentPhoto.id)
     } else {
+      const fromIndex = index + 1
       setMutation.mutate(
         { photoId: currentPhoto.id, status },
         { onSuccess: () => void advanceToNextUnrated(fromIndex) }
@@ -205,6 +199,9 @@ export function PhotoDetailPage() {
     return (
       <div role="alert">
         <p>{query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden der Fotos.'}</p>
+        <button type="button" onClick={() => void query.refetch()}>
+          Erneut versuchen
+        </button>
         <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
       </div>
     )
@@ -213,7 +210,7 @@ export function PhotoDetailPage() {
   if (completed) {
     return (
       <div>
-        <p>Fertig! Keine weiteren unbewerteten Fotos.</p>
+        <p role="status">Fertig! Keine weiteren unbewerteten Fotos.</p>
         <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
         <Link to={`/projects/${id}/compare`}>Zur Vergleichsansicht</Link>
       </div>
@@ -258,6 +255,7 @@ export function PhotoDetailPage() {
         currentStatus={currentOwnStatus}
         onToggle={handleToggleRating}
         disabled={isMutating}
+        busy={isMutating}
       />
 
       <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>

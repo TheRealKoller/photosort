@@ -1,12 +1,13 @@
 import { Link, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type { RatingFilter, RatingOut, RatingStatus } from '../api/types'
+import type { RatingFilter } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingBadge } from '../components/RatingBadge'
 import { usePhotoSequenceQuery } from '../hooks/usePhotos'
+import { ownRatingStatus } from '../utils/ownRating'
 
 const FILTERS: { value: RatingFilter | ''; label: string }[] = [
   { value: '', label: 'Alle' },
@@ -15,13 +16,6 @@ const FILTERS: { value: RatingFilter | ''; label: string }[] = [
   { value: 'album_worthy', label: 'Album-würdig' },
   { value: 'rejected', label: 'Verworfen' },
 ]
-
-function ownStatus(ratings: RatingOut[], username: string | null): RatingStatus | null {
-  if (username === null) {
-    return null
-  }
-  return ratings.find((rating) => rating.username === username)?.status ?? null
-}
 
 export function PhotoGridPage() {
   const { projectId } = useParams()
@@ -95,7 +89,7 @@ export function PhotoGridPage() {
                 to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
               >
                 <PhotoImage photoId={photo.id} variant="thumbnail" alt={photo.relative_path} />
-                <RatingBadge status={ownStatus(photo.ratings, username)} />
+                <RatingBadge status={ownRatingStatus(photo.ratings, username)} />
               </Link>
             </li>
           ))}

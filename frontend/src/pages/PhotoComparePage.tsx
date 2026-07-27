@@ -1,19 +1,12 @@
 import { Link, useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type { RatingOut } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingBadge } from '../components/RatingBadge'
 import { usePhotoSequenceQuery } from '../hooks/usePhotos'
-
-function ownRating(ratings: RatingOut[], username: string | null): RatingOut | undefined {
-  if (username === null) {
-    return undefined
-  }
-  return ratings.find((rating) => rating.username === username)
-}
+import { findOwnRating } from '../utils/ownRating'
 
 /**
  * Vergleichsansicht (specs/features/0002-manual-categorization.md): zeigt pro Foto beide
@@ -43,6 +36,9 @@ export function PhotoComparePage() {
           <p>
             {query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden der Fotos.'}
           </p>
+          <button type="button" onClick={() => void query.refetch()}>
+            Erneut versuchen
+          </button>
         </div>
       )}
 
@@ -51,12 +47,15 @@ export function PhotoComparePage() {
       {photos.length > 0 && (
         <ul>
           {photos.map((photo) => {
-            const mine = ownRating(photo.ratings, username)
+            const mine = findOwnRating(photo.ratings, username)
             const others = photo.ratings.filter((rating) => rating.username !== username)
             return (
               <li key={photo.id}>
                 <Link to={`/projects/${id}/photos/${photo.id}`}>
-                  <PhotoImage photoId={photo.id} variant="thumbnail" alt={photo.relative_path} />
+                  {/* Spec 0002 (Bild-Auflösungen): "Einzelbild-/Vergleichsansicht
+                      Display-Auflösung" - bewusst dieselbe Auflösung wie PhotoDetailPage,
+                      nicht die Grid-Thumbnail-Auflösung. */}
+                  <PhotoImage photoId={photo.id} variant="display" alt={photo.relative_path} />
                 </Link>
                 <span>
                   Ich: <RatingBadge status={mine?.status ?? null} />
