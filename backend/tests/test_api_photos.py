@@ -1,0 +1,185 @@
+from datetime import UTC, datetime
+
+import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from photosort.models import Photo, Project, Rating, RatingStatus, User
+from photosort.security import hash_password
+
+
+async def _make_project(session: AsyncSession) -> Project:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    session.add(project)
+    await session.commit()
+    await session.refresh(project)
+    return project
+
+
+async def _make_photo(
+    session: AsyncSession, project: Project, path: str, taken_at: datetime
+) -> Photo:
+    photo = Photo(
+        project_id=project.id,
+        relative_path=path,
+        etag="etag-1",
+        content_length=100,
+        taken_at=taken_at,
+        last_modified=taken_at,
+    )
+    session.add(photo)
+    await session.commit()
+    await session.refresh(photo)
+    return photo
+
+
+async def _make_second_user(session: AsyncSession) -> User:
+    user = User(username="other-user", password_hash=hash_password("irrelevant"))
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+async def test_list_photos_returns_photos_ordered_by_taken_at(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    later = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+    earlier = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+    response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert [item["id"] for item in body["items"]] == [earlier.id, later.id]
+
+
+async def test_list_photos_includes_ratings_of_all_users(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    other_user = await _make_second_user(db_session)
+
+    # Der eigene Nutzer der authenticated_api_client-Fixture ist "testuser".
+    me = (
+        await db_session.execute(select(User).where(User.username == "testuser"))
+    ).scalar_one()
+    db_session.add(Rating(photo_id=photo.id, user_id=me.id, status=RatingStatus.FAVORITE))
+    db_session.add(Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.REJECTED))
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+    assert response.status_code == 200
+    ratings = response.json()["items"][0]["ratings"]
+    by_username = {r["username"]: r["status"] for r in ratings}
+    assert by_username == {"testuser": "favorite", "other-user": "rejected"}
+
+
+async def test_list_photos_filters_by_own_unrated(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    rated = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    unrated = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+    await authenticated_api_client.put(f"/photos/{rated.id}/rating", json={"status": "favorite"})
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "unrated"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["items"]] == [unrated.id]
+    assert body["total"] == 1
+
+
+async def test_list_photos_filters_by_own_rating_status(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    favorite = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    rejected = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+    await authenticated_api_client.put(f"/photos/{favorite.id}/rating", json={"status": "favorite"})
+    await authenticated_api_client.put(f"/photos/{rejected.id}/rating", json={"status": "rejected"})
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "favorite"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["items"]] == [favorite.id]
+
+
+async def test_list_photos_filter_is_scoped_to_own_rating_not_others(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Filter "unbewertet" darf nicht durch die Bewertung des ANDEREN Nutzers beeinflusst
+    werden - jeder Nutzer filtert ausschliesslich nach der eigenen Bewertung
+    (specs/features/0002)."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    other_user = await _make_second_user(db_session)
+    db_session.add(Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.FAVORITE))
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "unrated"}
+    )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [photo.id]
+
+
+async def test_list_photos_pagination(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    for i in range(5):
+        await _make_photo(db_session, project, f"{i}.jpg", datetime(2023, 1, i + 1, tzinfo=UTC))
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"limit": 2, "offset": 2}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["items"]) == 2
+    assert body["total"] == 5
+    assert body["items"][0]["relative_path"] == "2.jpg"
+
+
+async def test_list_photos_returns_empty_list_when_filter_matches_nothing(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "favorite"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0}
+
+
+async def test_list_photos_returns_404_for_unknown_project(
+    authenticated_api_client: httpx.AsyncClient,
+) -> None:
+    response = await authenticated_api_client.get("/projects/999/photos")
+
+    assert response.status_code == 404
+
+
+async def test_list_photos_requires_auth(
+    db_session: AsyncSession, api_client: httpx.AsyncClient
+) -> None:
+    project = await _make_project(db_session)
+
+    response = await api_client.get(f"/projects/{project.id}/photos")
+
+    assert response.status_code == 401
