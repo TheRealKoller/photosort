@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type { RatingFilter, RatingStatus } from '../api/types'
+import type { RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { PhotoImage } from '../components/PhotoImage'
@@ -13,6 +13,7 @@ import {
   useSetRatingMutation,
 } from '../hooks/usePhotos'
 import { findOwnRating, ownRatingStatus } from '../utils/ownRating'
+import { parseRatingFilter } from '../utils/ratingFilter'
 
 // Bounded so a broken/degenerate filter can never spin forever fetching pages while searching
 // for the next unrated photo - 80 * PHOTOS_PAGE_SIZE(60) covers well beyond any realistic
@@ -38,7 +39,7 @@ export function PhotoDetailPage() {
   const currentPhotoId = Number(photoId)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const filterParam = (searchParams.get('filter') ?? '') as RatingFilter | ''
+  const filterParam = parseRatingFilter(searchParams.get('filter'))
   const ratingStatus = filterParam === '' ? undefined : filterParam
   const filterQuery = filterParam ? `?filter=${filterParam}` : ''
 

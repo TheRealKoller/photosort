@@ -8,6 +8,7 @@ import { PhotoImage } from '../components/PhotoImage'
 import { RatingBadge } from '../components/RatingBadge'
 import { usePhotoSequenceQuery } from '../hooks/usePhotos'
 import { ownRatingStatus } from '../utils/ownRating'
+import { parseRatingFilter } from '../utils/ratingFilter'
 
 // Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln"
 // (specs/architecture/0004-design-system.md) statt eines vollflaechigen Spinners - Anzahl ist
@@ -26,7 +27,7 @@ export function PhotoGridPage() {
   const { projectId } = useParams()
   const id = Number(projectId)
   const [searchParams, setSearchParams] = useSearchParams()
-  const filterParam = (searchParams.get('filter') ?? '') as RatingFilter | ''
+  const filterParam = parseRatingFilter(searchParams.get('filter'))
   const ratingStatus = filterParam === '' ? undefined : filterParam
 
   const token = getToken()

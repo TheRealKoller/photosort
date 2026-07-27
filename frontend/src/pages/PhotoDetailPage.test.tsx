@@ -112,6 +112,19 @@ describe('PhotoDetailPage', () => {
     await screen.findByText('2/2')
   })
 
+  it('ignores an unknown/tampered filter value in the URL instead of forwarding it to the API', async () => {
+    const list: PhotoListOut = { items: [photo({ id: 1 })], total: 1 }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage('/projects/1/photos/1?filter=not-a-real-filter')
+    await screen.findByText('1/1')
+
+    expect(photosApi.listPhotos).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ ratingStatus: undefined })
+    )
+  })
+
   it('navigates to the next photo on ArrowRight', async () => {
     const list: PhotoListOut = { items: [photo({ id: 1 }), photo({ id: 2 })], total: 2 }
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)

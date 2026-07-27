@@ -114,6 +114,20 @@ describe('PhotoGridPage', () => {
     expect(link).toHaveAttribute('href', '/projects/1/photos/5?filter=unrated')
   })
 
+  it('ignores an unknown/tampered filter value in the URL instead of forwarding it to the API', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 1 })], total: 1 })
+
+    renderPage('/projects/1/photos?filter=not-a-real-filter')
+
+    await waitFor(() =>
+      expect(photosApi.listPhotos).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ ratingStatus: undefined })
+      )
+    )
+    expect(screen.getByRole('button', { name: 'Alle' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('requests the selected filter and reflects it in the URL', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
     const user = userEvent.setup()
