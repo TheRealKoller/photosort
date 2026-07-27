@@ -25,3 +25,25 @@ export interface BrowseEntry {
   name: string
   path: string
 }
+
+export type RatingStatus = 'favorite' | 'album_worthy' | 'rejected'
+export type RatingFilter = 'unrated' | RatingStatus
+export type PhotoVariant = 'thumbnail' | 'display'
+
+export interface RatingOut {
+  user_id: number
+  username: string
+  status: RatingStatus
+}
+
+export interface PhotoOut {
+  id: number
+  relative_path: string
+  taken_at: string
+  ratings: RatingOut[]
+}
+
+export interface PhotoListOut {
+  items: PhotoOut[]
+  total: number
+}

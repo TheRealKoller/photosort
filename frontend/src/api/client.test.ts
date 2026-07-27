@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setToken } from '../auth/token'
-import { apiFetch, ApiError } from './client'
+import { apiFetch, apiFetchBlob, ApiError } from './client'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -83,6 +83,43 @@ describe('api/client', () => {
     window.addEventListener('photosort:unauthorized', listener)
 
     await expect(apiFetch('/projects')).rejects.toBeInstanceOf(ApiError)
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(window.localStorage.getItem('photosort_token')).toBeNull()
+
+    window.removeEventListener('photosort:unauthorized', listener)
+  })
+
+  it('fetches a blob with the Authorization header attached (apiFetchBlob)', async () => {
+    setToken('my-token')
+    vi.mocked(fetch).mockResolvedValue(
+      new Response('fake-image-bytes', { status: 200, headers: { 'Content-Type': 'image/jpeg' } })
+    )
+
+    const result = await apiFetchBlob('/photos/1/image?variant=thumbnail')
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]
+    const headers = init?.headers as Record<string, string>
+    expect(headers.Authorization).toBe('Bearer my-token')
+    expect(result.type).toBe('image/jpeg')
+    expect(result.size).toBe(16)
+  })
+
+  it('apiFetchBlob throws an ApiError with the backend detail on a non-2xx response', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(404, { detail: 'Bild wird noch verarbeitet.' }))
+
+    await expect(apiFetchBlob('/photos/1/image?variant=thumbnail')).rejects.toMatchObject(
+      new ApiError(404, 'Bild wird noch verarbeitet.')
+    )
+  })
+
+  it('apiFetchBlob clears the token and dispatches photosort:unauthorized on 401', async () => {
+    setToken('expired-token')
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(401, { detail: 'Nicht authentifiziert.' }))
+    const listener = vi.fn()
+    window.addEventListener('photosort:unauthorized', listener)
+
+    await expect(apiFetchBlob('/photos/1/image?variant=thumbnail')).rejects.toBeInstanceOf(ApiError)
 
     expect(listener).toHaveBeenCalledTimes(1)
     expect(window.localStorage.getItem('photosort_token')).toBeNull()

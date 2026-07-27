@@ -238,6 +238,22 @@ describe('ProjectDetailPage', () => {
     expect(screen.getByRole('link', { name: /zurück/i })).toHaveAttribute('href', '/')
   })
 
+  it('links to the photo grid and compare view of this project', async () => {
+    vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+
+    renderPage()
+
+    await screen.findByText('Costa Rica')
+    expect(screen.getByRole('link', { name: /fotos ansehen/i })).toHaveAttribute(
+      'href',
+      '/projects/1/photos'
+    )
+    expect(screen.getByRole('link', { name: /vergleichen/i })).toHaveAttribute(
+      'href',
+      '/projects/1/compare'
+    )
+  })
+
   it('stops fetching after unmount while polling is active (no leaked interval)', async () => {
     vi.mocked(projectsApi.getProject).mockResolvedValue(
       project({ last_scan: scan({ status: 'running' }) })

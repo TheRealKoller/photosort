@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     opencloud_app_token: str = ""
     opencloud_drive_name: str = ""
 
+    # Lokaler Verarbeitungs-Cache fuer Thumbnails (specs/features/0002-manual-categorization.md),
+    # ueber das "photo_cache"-Docker-Volume auf backend/worker gemountet (docker-compose.yml).
+    photo_cache_dir: str = "/data/photo-cache"
+
     # Initiale Benutzerkonten fuer die Seed-Migration (specs/features/0006-auth.md). Die
     # Usernamen-Platzhalter sind bewusst unterschiedlich: identische Defaults wuerden bei
     # unveraendertem .env dazu fuehren, dass die idempotente Seed-Migration nur EINEN statt

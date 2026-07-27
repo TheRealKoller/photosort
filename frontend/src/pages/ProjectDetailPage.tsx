@@ -123,6 +123,11 @@ export function ProjectDetailPage() {
         <p role="alert">{project.last_scan.error_message}</p>
       )}
 
+      <nav aria-label="Fotos">
+        <Link to={`/projects/${project.id}/photos`}>Fotos ansehen</Link>
+        <Link to={`/projects/${project.id}/compare`}>Bewertungen vergleichen</Link>
+      </nav>
+
       <Link to="/">Zurück zur Projektliste</Link>
     </div>
   )
