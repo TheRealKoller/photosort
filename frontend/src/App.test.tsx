@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
 import { apiFetch } from './api/client'
+import * as photosApi from './api/photos'
 import * as projectsApi from './api/projects'
 import { getToken, setToken } from './auth/token'
 
 vi.mock('./api/projects')
+vi.mock('./api/photos')
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -46,6 +48,8 @@ describe('App', () => {
     window.localStorage.clear()
     vi.mocked(projectsApi.listProjects).mockReset()
     vi.mocked(projectsApi.listProjects).mockResolvedValue([])
+    vi.mocked(photosApi.listPhotos).mockReset()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
   })
 
   afterEach(() => {
@@ -98,5 +102,23 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByLabelText(/benutzername/i)).toBeInTheDocument())
     expect(screen.getByText(/sitzung abgelaufen/i)).toBeInTheDocument()
     expect(getToken()).toBeNull()
+  })
+
+  it('routes /projects/:id/photos to the photo grid within the app shell', async () => {
+    setToken(makeToken({ sub: '1', username: 'daniel' }))
+
+    renderApp(['/projects/1/photos'])
+
+    expect(screen.getByText('PhotoSort')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Fotos' })).toBeInTheDocument()
+  })
+
+  it('routes /projects/:id/compare to the comparison view within the app shell', async () => {
+    setToken(makeToken({ sub: '1', username: 'daniel' }))
+
+    renderApp(['/projects/1/compare'])
+
+    expect(screen.getByText('PhotoSort')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Vergleich' })).toBeInTheDocument()
   })
 })

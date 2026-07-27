@@ -5,6 +5,9 @@ import { decodeUsername } from './auth/jwt'
 import { clearToken, getToken } from './auth/token'
 import { useUnauthorizedRedirect } from './auth/useUnauthorizedRedirect'
 import { LoginPage } from './pages/LoginPage'
+import { PhotoComparePage } from './pages/PhotoComparePage'
+import { PhotoDetailPage } from './pages/PhotoDetailPage'
+import { PhotoGridPage } from './pages/PhotoGridPage'
 import { ProjectCreatePage } from './pages/ProjectCreatePage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ProjectListPage } from './pages/ProjectListPage'
@@ -48,6 +51,9 @@ function App() {
           <Route path="/" element={<ProjectListPage />} />
           <Route path="/projects/new" element={<ProjectCreatePage />} />
           <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+          <Route path="/projects/:projectId/photos" element={<PhotoGridPage />} />
+          <Route path="/projects/:projectId/photos/:photoId" element={<PhotoDetailPage />} />
+          <Route path="/projects/:projectId/compare" element={<PhotoComparePage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
