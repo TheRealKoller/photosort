@@ -36,7 +36,7 @@ PhotoSort wird in zwei Modi weiterentwickelt:
 ## Konventionen
 
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
-- **PRs:** klein und fokussiert, referenzieren die zugehörige Spec/das Issue (siehe `.github/pull_request_template.md`).
+- **PRs:** klein und fokussiert, referenzieren die zugehörige Spec/das Issue (siehe `.github/pull_request_template.md`). Nach dem Eröffnen wird immer ein Copilot-Review angefordert (`gh pr edit <PR> --add-reviewer "@copilot"`); sobald es vorliegt, werden die Findings bewertet und notwendige Fixes umgesetzt (siehe `developer`-Agent, Schritt 8).
 - **Backend:** Python 3.12, FastAPI, `ruff` (Lint), `mypy --strict` (Typprüfung), `pytest` (Test).
 - **Frontend:** React + TypeScript + Vite, `oxlint` (Lint), `tsc` (Typprüfung), `vitest` (Test).
 - Keine Bilddaten der Familie werden je ins Repository committet — Fotos bleiben ausschließlich auf OpenCloud, lokal nur als Cache (siehe `.gitignore`).

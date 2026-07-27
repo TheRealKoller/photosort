@@ -77,6 +77,19 @@ Erst wenn hier wirklich alles grün ist, geht es weiter — ein "sollte eigentli
 4. Aktualisiere den Spec-Status in `specs/features/` von `Accepted` auf `Implemented` mit Verweis auf den PR, falls das Projekt diesen Lifecycle nutzt (siehe `specs/README.md`) — als Teil desselben oder eines direkt folgenden Commits.
 5. Aktualisiere den zugehörigen Eintrag in `specs/roadmap.md` auf `Implemented` — reine Status-Synchronisation, kein Agenten-Aufruf nötig. Sonst veraltet die Roadmap nach jedem fertigen Feature stillschweigend.
 
+## Schritt 8: Copilot-Review anfordern und auswerten
+
+Jeder PR bekommt zusätzlich zu Schritt 4 ein automatisiertes Copilot-Review — das ist eine feste Projektkonvention (`CLAUDE.md`), kein optionaler Schritt.
+
+1. **Anfordern:** `gh pr edit <PR-Nummer> --add-reviewer "@copilot"` direkt nach dem Eröffnen des PR in Schritt 7.
+2. **Warten:** Copilot braucht üblicherweise ein bis wenige Minuten. Poll in angemessenen Abständen (z.B. alle 20-30s, mit vernünftigem Timeout statt endlos) `gh pr view <PR-Nummer> --json reviewRequests,reviews` — fertig ist es, sobald `reviewRequests` keinen Copilot-Eintrag mehr enthält bzw. `reviews` einen Eintrag mit `author.login == "copilot-pull-request-reviewer"` zeigt. Nicht selbst raten/simulieren, was das Review ergibt.
+3. **Kommentare holen:** `gh api repos/<owner>/<repo>/pulls/<PR-Nummer>/comments --paginate` liefert die Inline-Findings (Autor `Copilot`).
+4. **Bewerten wie jeden anderen Review-Fund:** Jeden Kommentar am tatsächlichen Code prüfen (lesen, nicht nur den Kommentartext glauben) — echtes Problem oder Fehlalarm/bereits abgedeckt? Bei echten Findings: Test zuerst (falls eine Testlücke der Grund war), dann Fix, dann committen — gleicher Maßstab wie Schritt 5. Bei Fehlalarmen: kurz im Abschlussbericht begründen, warum kein Fix nötig war, statt kommentarlos zu ignorieren.
+5. **Nach Fixes:** kompletten Qualitätscheck aus Schritt 6 erneut laufen lassen, dann pushen (kein neuer PR nötig, derselbe Branch).
+6. **Antworten:** Auf jeden Copilot-Kommentar per `gh api repos/<owner>/<repo>/pulls/<PR-Nummer>/comments/<comment-id>/replies -f body="..."` kurz antworten — was gefixt wurde (mit Commit-Referenz) oder warum bewusst nicht. Das hält den PR-Verlauf nachvollziehbar, auch wenn niemand live mitliest.
+
+Dieser Schritt läuft **vor** einem eventuellen Merge, ersetzt aber Schritt 4 nicht — beide Review-Runden sind unabhängig voneinander, weil Copilot andere Dinge findet als die projekteigenen Review-Agenten (bzw. umgekehrt).
+
 ## Abschlussbericht
 
 Da niemand live mitliest, muss dein finaler Bericht für sich stehen. Nenne: was implementiert wurde (Spec-Bezug), Ergebnis von Tests/Review (inkl. behobener und ggf. bewusst nicht behobener Findings), den PR-Link, und alle Stellen, an denen du eine Annahme statt einer Rückfrage getroffen hast, weil sie eindeutig eine technische Detailentscheidung war.
