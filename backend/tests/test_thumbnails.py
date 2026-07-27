@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from photosort.thumbnails import (
@@ -54,6 +55,20 @@ def test_generate_variants_writes_both_files_downsized(tmp_path: Path) -> None:
         assert max(image.size) <= DISPLAY_MAX_SIZE
 
 
+def test_generate_variants_converts_non_rgb_images(tmp_path: Path) -> None:
+    # Test-Review-Fund: der Konvertierungspfad fuer Nicht-RGB/L-Bilder (z.B. RGBA-PNGs mit
+    # Alphakanal, wie sie aus Screenshots/manchen Kamera-Exports vorkommen) war zuvor ungetestet.
+    image = Image.new("RGBA", (30, 20), color=(255, 0, 0, 128))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+
+    ok = generate_variants(tmp_path, photo_id=1, etag="etag-rgba", image_bytes=buffer.getvalue())
+
+    assert ok is True
+    with Image.open(thumbnail_path(tmp_path, 1, "etag-rgba")) as saved:
+        assert saved.mode == "RGB"
+
+
 def test_generate_variants_does_not_upscale_small_images(tmp_path: Path) -> None:
     content = _jpeg_bytes(50, 40)
 
@@ -69,3 +84,23 @@ def test_generate_variants_returns_false_for_undecodable_bytes(tmp_path: Path) -
     assert ok is False
     assert not thumbnail_path(tmp_path, 1, "etag-a").exists()
     assert not display_path(tmp_path, 1, "etag-a").exists()
+
+
+def test_generate_variants_returns_false_instead_of_crashing_on_decompression_bomb(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Security-Review-Fund (specs/features/0002-manual-categorization.md): Pillows
+    # DecompressionBombError erbt NICHT von OSError - ohne diesen Test wuerde ein
+    # ungewoehnlich hochaufloesendes, aber nicht boeswilliges Foto (Panorama/Drohnenaufnahme,
+    # siehe Bedrohungsmodell "OpenCloud potenziell fehlerhaft, nicht boeswillig") den gesamten
+    # scan_project-Job crashen lassen statt nur diese eine Thumbnail-Generierung best-effort
+    # zu ueberspringen. MAX_IMAGE_PIXELS wird hier auf einen winzigen Wert gesetzt, damit ein
+    # gewoehnliches kleines Testbild deterministisch die Bombe simuliert, statt ein echtes
+    # Riesenbild erzeugen zu muessen.
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
+    content = _jpeg_bytes(100, 100)
+
+    ok = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=content)
+
+    assert ok is False
+    assert not thumbnail_path(tmp_path, 1, "etag-a").exists()

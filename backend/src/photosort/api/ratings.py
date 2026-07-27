@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.api.deps import get_current_user, get_session
 from photosort.models import Photo, Rating, RatingStatus, User
 
+# Siehe photos.py fuer die Begruendung: current_user als Depends()-Parameter statt Router-Level
+# dependencies=[...], da jeder Endpunkt hier das User-Objekt selbst braucht (user_id fuer die
+# eigene Bewertung), nicht nur eine reine Auth-Pruefung.
 router = APIRouter(tags=["ratings"])
 
 

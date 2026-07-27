@@ -5,7 +5,7 @@ import io
 from pathlib import Path
 from typing import Literal
 
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageOps
 
 # Groessen laut UI/UX-Abschnitt von specs/features/0002-manual-categorization.md: Grid nutzt
 # Thumbnail-, Einzelbild-/Vergleichsansicht Display-Auflösung.
@@ -59,7 +59,13 @@ def generate_variants(cache_dir: Path, photo_id: int, etag: str, image_bytes: by
         image: Image.Image = ImageOps.exif_transpose(opened) or opened
         if image.mode not in ("RGB", "L"):
             image = image.convert("RGB")
-    except (UnidentifiedImageError, OSError, ValueError):
+    except Exception:
+        # Bewusst breiter Except-Block statt einer festen Liste von PIL-Exceptions (Security-
+        # Review-Fund, specs/features/0002-manual-categorization.md): Image.DecompressionBombError
+        # erbt NICHT von OSError und wuerde von einer engeren Liste durchgelassen - ein
+        # ungewoehnlich hochaufloesendes, aber nicht boeswilliges Foto (Panorama/Drohnenaufnahme)
+        # duerfte den gesamten Scan-Job trotzdem nicht crashen lassen. Gleiches Best-effort-Muster
+        # wie opencloud/exif.py::extract_taken_at.
         return False
 
     cache_dir.mkdir(parents=True, exist_ok=True)

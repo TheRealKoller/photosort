@@ -17,6 +17,11 @@ from photosort.config import settings
 from photosort.models import Photo, Project, Rating, RatingStatus, User
 from photosort.thumbnails import variant_path
 
+# Bewusste Abweichung vom Router-Level-dependencies=[Depends(get_current_user)]-Muster aus
+# projects.py/opencloud.py (Architektur-Review-Fund): jeder Endpunkt hier braucht das tatsaechliche
+# User-Objekt (fuer die eigene Bewertung/den Datenzugriff), nicht nur die Auth-Pruefung als reinen
+# Torwaechter - deshalb current_user als normaler Depends()-Parameter statt Router-weiter
+# dependencies-Liste. Sicherheitswirkung ist identisch (jeder Endpunkt bleibt auth-pflichtig).
 router = APIRouter(tags=["photos"])
 
 
