@@ -245,3 +245,37 @@ async def test_get_range_sends_range_header() -> None:
 
     assert seen["range"] == "bytes=0-1023"
     assert content == b"partial-bytes"
+
+
+async def test_download_returns_full_content_without_range_header() -> None:
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["has_range"] = str("range" in request.headers)
+        return httpx.Response(200, content=b"full-file-bytes")
+
+    client = _client(httpx.MockTransport(handler))
+    content = await client.download(WEBDAV_URL, "CostaRica/img001.jpg")
+
+    assert seen["has_range"] == "False"
+    assert content == b"full-file-bytes"
+
+
+async def test_download_rejects_path_with_parent_traversal_segment() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request should be sent for a rejected path")
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.download(WEBDAV_URL, "../secret")
+
+
+async def test_download_raises_on_error_status() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.download(WEBDAV_URL, "CostaRica/img001.jpg")

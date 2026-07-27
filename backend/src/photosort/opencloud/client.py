@@ -156,3 +156,12 @@ class OpenCloudClient:
         response = await self._send("GET", url, headers={"Range": f"bytes=0-{length - 1}"})
         _raise_for_status(response)
         return response.content
+
+    async def download(self, webdav_url: str, relative_path: str) -> bytes:
+        """Full-file download, used by the worker for thumbnail generation (specs/features/0002-
+        manual-categorization.md) - get_range's partial content isn't reliably enough for a
+        complete image."""
+        url = _join(webdav_url, relative_path)
+        response = await self._send("GET", url)
+        _raise_for_status(response)
+        return response.content
