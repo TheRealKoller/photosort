@@ -59,26 +59,32 @@ def generate_variants(cache_dir: Path, photo_id: int, etag: str, image_bytes: by
         image: Image.Image = ImageOps.exif_transpose(opened) or opened
         if image.mode not in ("RGB", "L"):
             image = image.convert("RGB")
+
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        thumb = image.copy()
+        thumb.thumbnail((THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE))
+        thumb.save(
+            thumbnail_path(cache_dir, photo_id, etag),
+            format="JPEG",
+            quality=JPEG_QUALITY_THUMBNAIL,
+        )
+
+        display = image.copy()
+        display.thumbnail((DISPLAY_MAX_SIZE, DISPLAY_MAX_SIZE))
+        display.save(
+            display_path(cache_dir, photo_id, etag), format="JPEG", quality=JPEG_QUALITY_DISPLAY
+        )
     except Exception:
-        # Bewusst breiter Except-Block statt einer festen Liste von PIL-Exceptions (Security-
-        # Review-Fund, specs/features/0002-manual-categorization.md): Image.DecompressionBombError
-        # erbt NICHT von OSError und wuerde von einer engeren Liste durchgelassen - ein
-        # ungewoehnlich hochaufloesendes, aber nicht boeswilliges Foto (Panorama/Drohnenaufnahme)
-        # duerfte den gesamten Scan-Job trotzdem nicht crashen lassen. Gleiches Best-effort-Muster
-        # wie opencloud/exif.py::extract_taken_at.
+        # Bewusst breiter Except-Block statt einer festen Liste von PIL-/OS-Exceptions (Security-
+        # Review-Fund, specs/features/0002-manual-categorization.md, erweitert um Code-Review-Fund
+        # zu Schreibfehlern): Image.DecompressionBombError erbt NICHT von OSError und wuerde von
+        # einer engeren Liste durchgelassen - ein ungewoehnlich hochaufloesendes, aber nicht
+        # boeswilliges Foto (Panorama/Drohnenaufnahme) duerfte den gesamten Scan-Job trotzdem nicht
+        # crashen lassen. Aus demselben Grund deckt der Block jetzt auch mkdir()/save() ab: ein
+        # Schreibfehler (Volume read-only, Platte voll) darf den Scan-Job ebenfalls nicht crashen
+        # und den ScanRun dauerhaft auf RUNNING haengen lassen, statt nur dieses eine Thumbnail
+        # best-effort zu ueberspringen. Gleiches Best-effort-Muster wie
+        # opencloud/exif.py::extract_taken_at.
         return False
-
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    thumb = image.copy()
-    thumb.thumbnail((THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE))
-    thumb.save(
-        thumbnail_path(cache_dir, photo_id, etag), format="JPEG", quality=JPEG_QUALITY_THUMBNAIL
-    )
-
-    display = image.copy()
-    display.thumbnail((DISPLAY_MAX_SIZE, DISPLAY_MAX_SIZE))
-    display.save(
-        display_path(cache_dir, photo_id, etag), format="JPEG", quality=JPEG_QUALITY_DISPLAY
-    )
     return True

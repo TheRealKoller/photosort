@@ -86,6 +86,24 @@ def test_generate_variants_returns_false_for_undecodable_bytes(tmp_path: Path) -
     assert not display_path(tmp_path, 1, "etag-a").exists()
 
 
+def test_generate_variants_returns_false_instead_of_crashing_on_write_failure(
+    tmp_path: Path,
+) -> None:
+    # Code-Review-Fund: mkdir()/save() lagen zuvor ausserhalb des Except-Blocks - ein
+    # Schreibfehler (z.B. read-only Volume, volle Platte) haette den scan_project-Job crashen
+    # und den ScanRun dauerhaft auf RUNNING haengen lassen, statt wie bei einem undekodierbaren
+    # Bild nur diese eine Thumbnail-Generierung best-effort zu ueberspringen. Ein regulaeres File
+    # an der Zielstelle simuliert den Schreibfehler unabhaengig von Dateisystem-Rechten (die als
+    # root im Testcontainer wirkungslos waeren).
+    content = _jpeg_bytes(100, 100)
+    blocked_cache_dir = tmp_path / "blocked"
+    blocked_cache_dir.write_text("occupies the path generate_variants tries to mkdir into")
+
+    ok = generate_variants(blocked_cache_dir, photo_id=1, etag="etag-a", image_bytes=content)
+
+    assert ok is False
+
+
 def test_generate_variants_returns_false_instead_of_crashing_on_decompression_bomb(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

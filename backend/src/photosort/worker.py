@@ -135,8 +135,11 @@ async def run_project_scan(
                 )
                 session.add(photo)
                 photos_added += 1
+                # Only newly added rows lack a DB-assigned id; existing_photo already has one
+                # from the initial select above, so flushing there on every file would be an
+                # unnecessary DB roundtrip per photo (Code-Review-Fund).
+                await session.flush()
 
-            await session.flush()  # assigns photo.id for newly added rows, needed below
             await _generate_thumbnails(client, drive.webdav_url, relative_path, photo, cache_dir)
 
         removed_paths = set(existing_photos) - seen_paths
