@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
-import type { ProjectOut, ScanSummary } from '../api/types'
+import type { ProjectOut, ScanSummary, ScoringRunSummary } from '../api/types'
 import { ProjectDetailPage } from './ProjectDetailPage'
 
 vi.mock('../api/projects')
@@ -40,6 +40,18 @@ function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
   }
 }
 
+function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSummary {
+  return {
+    status: 'running',
+    started_at: '2026-07-20T10:00:00Z',
+    finished_at: null,
+    photos_total: 0,
+    photos_processed: 0,
+    error_message: null,
+    ...overrides,
+  }
+}
+
 function renderPage(initialPath = '/projects/1') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -65,6 +77,7 @@ describe('ProjectDetailPage', () => {
   beforeEach(() => {
     vi.mocked(projectsApi.getProject).mockReset()
     vi.mocked(projectsApi.triggerScan).mockReset()
+    vi.mocked(projectsApi.triggerScore).mockReset()
   })
 
   it('shows a dedicated not-found state on a 404 instead of a broken page', async () => {
@@ -268,5 +281,135 @@ describe('ProjectDetailPage', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBe(callsBeforeUnmount)
+  })
+
+  describe('Beste Fotos automatisch vorschlagen (scoring)', () => {
+    it('shows an active trigger button and a hint when never scored', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(project({ last_scoring_run: null }))
+
+      renderPage()
+
+      expect(
+        await screen.findByRole('button', { name: /beste fotos automatisch vorschlagen/i })
+      ).toBeEnabled()
+      expect(screen.getByText(/noch nicht vorgeschlagen/i)).toBeInTheDocument()
+    })
+
+    it('disables the score button synchronously on click, before the response arrives', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(project({ last_scoring_run: null }))
+      vi.mocked(projectsApi.triggerScore).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+
+      renderPage()
+      const button = await screen.findByRole('button', {
+        name: /beste fotos automatisch vorschlagen/i,
+      })
+      await user.click(button)
+
+      expect(button).toBeDisabled()
+    })
+
+    it('sends exactly one score request on a rapid double click', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(project({ last_scoring_run: null }))
+      vi.mocked(projectsApi.triggerScore).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+
+      renderPage()
+      const button = await screen.findByRole('button', {
+        name: /beste fotos automatisch vorschlagen/i,
+      })
+      await user.click(button)
+      await user.click(button)
+
+      expect(projectsApi.triggerScore).toHaveBeenCalledTimes(1)
+    })
+
+    it(
+      'shows granular "X von Y" progress with a native progress element while running',
+      { timeout: 10000 },
+      async () => {
+        vi.mocked(projectsApi.getProject)
+          .mockResolvedValueOnce(project({ last_scoring_run: null }))
+          .mockResolvedValue(
+            project({ last_scoring_run: scoringRun({ photos_total: 10, photos_processed: 4 }) })
+          )
+        vi.mocked(projectsApi.triggerScore).mockResolvedValue({ status: 'queued' })
+        const user = userEvent.setup()
+
+        renderPage()
+        const button = await screen.findByRole('button', {
+          name: /beste fotos automatisch vorschlagen/i,
+        })
+        await user.click(button)
+
+        expect(await screen.findByText(/4 von 10 fotos verarbeitet/i)).toBeInTheDocument()
+        const progress = screen.getByRole('progressbar') as HTMLProgressElement
+        expect(progress.max).toBe(10)
+        expect(progress.value).toBe(4)
+      }
+    )
+
+    it('throttles the aria-live announcement to 10%-steps instead of every poll tick', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scoring_run: scoringRun({ photos_total: 100, photos_processed: 34 }) })
+      )
+
+      renderPage()
+
+      const liveRegion = await screen.findByText(/30% verarbeitet/i)
+      expect(liveRegion).toHaveAttribute('aria-live', 'polite')
+      // 34% wird NICHT direkt angesagt (kein "34%"-Text) - nur der gerundete 10%-Schritt.
+      expect(screen.queryByText(/34% verarbeitet/i)).not.toBeInTheDocument()
+    })
+
+    it('shows a summary once scoring succeeded', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scoring_run: scoringRun({
+            status: 'success',
+            finished_at: '2026-07-20T10:05:00Z',
+            photos_total: 10,
+            photos_processed: 10,
+          }),
+        })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText(/vorschläge aktualisiert/i)).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: /beste fotos automatisch vorschlagen/i })
+      ).toBeEnabled()
+    })
+
+    it('shows an inline error banner with a retry button on a failed scoring run, keeping suggestions usable', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scoring_run: scoringRun({
+            status: 'failed',
+            error_message: 'Unerwarteter Fehler',
+          }),
+        })
+      )
+
+      renderPage()
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Unerwarteter Fehler')
+      expect(screen.getByRole('button', { name: /erneut versuchen/i })).toBeEnabled()
+    })
+
+    it('retries scoring when the "Erneut versuchen" button is clicked', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scoring_run: scoringRun({ status: 'failed' }) })
+      )
+      vi.mocked(projectsApi.triggerScore).mockResolvedValue({ status: 'queued' })
+      const user = userEvent.setup()
+
+      renderPage()
+      const retryButton = await screen.findByRole('button', { name: /erneut versuchen/i })
+      await user.click(retryButton)
+
+      expect(projectsApi.triggerScore).toHaveBeenCalledWith(1)
+    })
   })
 })

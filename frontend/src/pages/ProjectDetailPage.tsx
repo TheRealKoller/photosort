@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
-import { POLL_INTERVAL_MS, useProjectQuery, useTriggerScanMutation } from '../hooks/useProjects'
+import {
+  POLL_INTERVAL_MS,
+  useProjectQuery,
+  useTriggerScanMutation,
+  useTriggerScoreMutation,
+} from '../hooks/useProjects'
 
 export function ProjectDetailPage() {
   const { projectId } = useParams()
@@ -10,6 +15,7 @@ export function ProjectDetailPage() {
 
   const query = useProjectQuery(id)
   const scanMutation = useTriggerScanMutation(id)
+  const scoreMutation = useTriggerScoreMutation(id)
 
   // Ueberbrueckt das Zeitfenster zwischen erfolgreichem Trigger (202) und dem ersten Poll, der
   // den neuen Scan tatsaechlich als "running" bestaetigt (siehe
@@ -43,6 +49,27 @@ export function ProjectDetailPage() {
     }, POLL_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [awaitingConfirmation, scanStatus])
+
+  // Analoge Ueberbrueckung wie oben fuer den Scan-Trigger, hier fuer den Scoring-Trigger
+  // (specs/features/0003-automatic-best-photo-selection.md) - derselbe Grund: score_project
+  // setzt status="running" erst asynchron im Worker, nicht synchron mit der 202-Antwort.
+  const [awaitingScoreConfirmation, setAwaitingScoreConfirmation] = useState(false)
+  const scoringRun = query.data?.last_scoring_run ?? null
+  const scoringStatus = scoringRun?.status ?? null
+
+  useEffect(() => {
+    if (!awaitingScoreConfirmation) {
+      return
+    }
+    if (scoringStatus === 'running') {
+      setAwaitingScoreConfirmation(false)
+      return
+    }
+    const interval = setInterval(() => {
+      void refetchRef.current()
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [awaitingScoreConfirmation, scoringStatus])
 
   if (query.isError && query.error instanceof ApiError && query.error.status === 404) {
     return (
@@ -86,6 +113,35 @@ export function ProjectDetailPage() {
         ? 'Fehler beim Auslösen des Scans.'
         : null
 
+  const isScoreBusy =
+    scoreMutation.isPending || awaitingScoreConfirmation || scoringStatus === 'running'
+
+  function handleTriggerScore(): void {
+    if (isScoreBusy) {
+      return
+    }
+    setAwaitingScoreConfirmation(true)
+    scoreMutation.mutate(undefined, {
+      onError: () => setAwaitingScoreConfirmation(false),
+    })
+  }
+
+  const scoreTriggerErrorDetail =
+    scoreMutation.isError && scoreMutation.error instanceof ApiError
+      ? scoreMutation.error.detail
+      : scoreMutation.isError
+        ? 'Fehler beim Auslösen der automatischen Vorauswahl.'
+        : null
+
+  const photosProcessed = scoringRun?.photos_processed ?? 0
+  const photosTotal = scoringRun?.photos_total ?? 0
+  const scoringPercent = photosTotal > 0 ? Math.floor((photosProcessed / photosTotal) * 100) : 0
+  // Gedrosselte aria-live-Regel fuer hochfrequente Zaehler (UI/UX-Abschnitt der Spec): der
+  // Screenreader bekommt nur bei vollen 10%-Schritten eine neue Ansage, nicht bei jedem
+  // Poll-Tick - die exakte "X von Y"-Zeile darunter aktualisiert sich weiterhin bei jedem Poll,
+  // ist aber bewusst NICHT Teil der aria-live-Region.
+  const scoringAnnouncedDecile = Math.floor(scoringPercent / 10) * 10
+
   return (
     <div>
       <h1>{project.name}</h1>
@@ -121,6 +177,37 @@ export function ProjectDetailPage() {
 
       {project.last_scan?.status === 'failed' && (
         <p role="alert">{project.last_scan.error_message}</p>
+      )}
+
+      <button type="button" onClick={handleTriggerScore} disabled={isScoreBusy}>
+        {isScoreBusy ? 'Wird vorgeschlagen…' : 'Beste Fotos automatisch vorschlagen'}
+      </button>
+
+      {scoreTriggerErrorDetail && <p role="alert">{scoreTriggerErrorDetail}</p>}
+
+      <p>
+        {scoringRun === null && 'Noch nicht vorgeschlagen'}
+        {scoringStatus === 'running' && `${photosProcessed} von ${photosTotal} Fotos verarbeitet`}
+        {scoringStatus === 'success' && 'Vorschläge aktualisiert'}
+        {scoringStatus === 'failed' && 'Fehlgeschlagen'}
+      </p>
+
+      {scoringStatus === 'running' && (
+        <>
+          <progress value={photosProcessed} max={photosTotal}>
+            {photosProcessed}/{photosTotal}
+          </progress>
+          <p aria-live="polite">{scoringAnnouncedDecile}% verarbeitet</p>
+        </>
+      )}
+
+      {scoringStatus === 'failed' && !isScoreBusy && (
+        <div role="alert">
+          <p>{scoringRun?.error_message}</p>
+          <button type="button" onClick={handleTriggerScore}>
+            Erneut versuchen
+          </button>
+        </div>
       )}
 
       <nav aria-label="Fotos">
