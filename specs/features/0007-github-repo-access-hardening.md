@@ -1,6 +1,6 @@
 # 0007 - GitHub-Repo-Zugriffshärtung & Issue-Freigabe-Vorsorge
 
-**Status:** Accepted
+**Status:** Implemented ([PR #5](https://github.com/TheRealKoller/photosort/pull/5))
 **Erstellt:** 2026-07-28
 **Bezug:** `idea-sharpener`-Gespräch mit Daniel, 2026-07-28. ADR: [`decisions/0007-github-repo-access-hardening.md`](../decisions/0007-github-repo-access-hardening.md).
 
