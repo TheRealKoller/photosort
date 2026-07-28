@@ -49,6 +49,11 @@ export function PhotoComparePage() {
           {photos.map((photo) => {
             const mine = findOwnRating(photo.ratings, username)
             const others = photo.ratings.filter((rating) => rating.username !== username)
+            // ADR 0006 / UI/UX-Abschnitt der Spec 0003: der Vorschlag ersetzt innerhalb der
+            // bestehenden "Ich"-Position nur die bisherige "–"-Darstellung, solange keine eigene
+            // Bewertung vorliegt - kein dritter Spalten-/Personen-Slot neben "Ich"/"Andere".
+            const myStatus = mine?.status ?? photo.suggestion?.status ?? null
+            const myStatusIsSuggested = mine === undefined && photo.suggestion !== null
             return (
               <li key={photo.id}>
                 <Link to={`/projects/${id}/photos/${photo.id}`}>
@@ -58,7 +63,7 @@ export function PhotoComparePage() {
                   <PhotoImage photoId={photo.id} variant="display" alt={photo.relative_path} />
                 </Link>
                 <span>
-                  Ich: <RatingBadge status={mine?.status ?? null} />
+                  Ich: <RatingBadge status={myStatus} suggested={myStatusIsSuggested} />
                 </span>
                 {others.length > 0 ? (
                   others.map((rating) => (
