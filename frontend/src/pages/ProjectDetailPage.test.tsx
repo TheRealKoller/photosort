@@ -349,6 +349,23 @@ describe('ProjectDetailPage', () => {
       }
     )
 
+    it('shows an indeterminate progress bar instead of an invalid max=0 during the brief photos_total=0 window', async () => {
+      // Copilot-Review-Fund (PR #6): direkt nach dem Trigger ist last_scoring_run.status bereits
+      // "running", aber photos_total kann noch kurz 0 sein (wird im Worker erst NACH dem Anlegen
+      // des ScoringRun gesetzt, siehe backend/src/photosort/worker.py). <progress max={0}> ist
+      // fuer native progress-Elemente ungueltig/mehrdeutig - stattdessen soll in diesem Fall ein
+      // indeterminiertes <progress> (ohne value/max) gerendert werden.
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scoring_run: scoringRun({ photos_total: 0, photos_processed: 0 }) })
+      )
+
+      renderPage()
+
+      const progress = (await screen.findByRole('progressbar')) as HTMLProgressElement
+      expect(progress.hasAttribute('value')).toBe(false)
+      expect(progress.hasAttribute('max')).toBe(false)
+    })
+
     it('throttles the aria-live announcement to 10%-steps instead of every poll tick', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({ last_scoring_run: scoringRun({ photos_total: 100, photos_processed: 34 }) })

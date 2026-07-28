@@ -202,9 +202,18 @@ export function ProjectDetailPage() {
       {scoringStatus === 'running' && (
         <>
           <p>{photosProcessed} von {photosTotal} Fotos verarbeitet</p>
-          <progress value={photosProcessed} max={photosTotal}>
-            {photosProcessed}/{photosTotal}
-          </progress>
+          {/* Copilot-Review-Fund (PR #6): direkt nach dem Trigger ist der Status bereits
+              "running", aber photos_total kann noch kurz 0 sein (wird im Worker erst NACH dem
+              Anlegen des ScoringRun gesetzt) - <progress max={0}> ist fuer native
+              progress-Elemente ungueltig/mehrdeutig. Solange photosTotal 0 ist, daher bewusst ein
+              indeterminiertes <progress/> ohne value/max statt eines irrefuehrenden 0/0-Balkens. */}
+          {photosTotal > 0 ? (
+            <progress value={photosProcessed} max={photosTotal}>
+              {photosProcessed}/{photosTotal}
+            </progress>
+          ) : (
+            <progress />
+          )}
           <p aria-live="polite">{scoringAnnouncedDecile}% verarbeitet</p>
         </>
       )}
