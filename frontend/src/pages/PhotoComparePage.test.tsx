@@ -25,6 +25,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     relative_path: 'a.jpg',
     taken_at: '2026-07-20T10:00:00Z',
     ratings: [],
+    suggestion: null,
     ...overrides,
   }
 }

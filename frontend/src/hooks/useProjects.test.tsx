@@ -22,6 +22,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     opencloud_path: 'CostaRica',
     created_at: '2026-07-20T10:00:00Z',
     last_scan: null,
+    last_scoring_run: null,
     ...overrides,
   }
 }
