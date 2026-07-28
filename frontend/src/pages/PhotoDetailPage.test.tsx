@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
-import type { PhotoListOut, PhotoOut } from '../api/types'
+import type { PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { PhotoDetailPage } from './PhotoDetailPage'
 
@@ -28,6 +28,20 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     taken_at: '2026-07-20T10:00:00Z',
     ratings: [],
     suggestion: null,
+    ...overrides,
+  }
+}
+
+function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
+  return {
+    status: 'rejected',
+    reason: 'low_quality',
+    duplicate_of: null,
+    local_quality_score: null,
+    sharpness: 1.0,
+    exposure: 0.5,
+    cluster_key: null,
+    computed_at: '2026-07-20T10:00:00Z',
     ...overrides,
   }
 }
@@ -251,5 +265,80 @@ describe('PhotoDetailPage', () => {
 
     await waitFor(() => expect(ratingsApi.setRating).not.toHaveBeenCalled())
     document.body.removeChild(input)
+  })
+
+  it('shows the suggestion reason and a confirm button for a low-quality suggestion', async () => {
+    const list: PhotoListOut = {
+      items: [photo({ id: 1, ratings: [], suggestion: suggestion({ reason: 'low_quality' }) })],
+      total: 1,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage('/projects/1/photos/1')
+
+    expect(await screen.findByText(/automatischer vorschlag: verworfen/i)).toBeInTheDocument()
+    expect(screen.getByText(/geringe bildqualität/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /vorschlag übernehmen/i })).toBeInTheDocument()
+  })
+
+  it('shows the duplicate-of reason for a duplicate suggestion', async () => {
+    const list: PhotoListOut = {
+      items: [
+        photo({
+          id: 1,
+          ratings: [],
+          suggestion: suggestion({ reason: 'duplicate', duplicate_of: 42 }),
+        }),
+      ],
+      total: 1,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage('/projects/1/photos/1')
+
+    expect(await screen.findByText(/duplikat von foto #42/i)).toBeInTheDocument()
+  })
+
+  it('does not show a suggestion once an own rating exists', async () => {
+    const list: PhotoListOut = {
+      items: [
+        photo({
+          id: 1,
+          ratings: [{ user_id: 1, username: 'testuser', status: 'rejected' }],
+          suggestion: null,
+        }),
+      ],
+      total: 1,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage('/projects/1/photos/1')
+
+    await screen.findByText('1/1')
+    expect(screen.queryByText(/automatischer vorschlag/i)).not.toBeInTheDocument()
+  })
+
+  it('confirms a suggestion via the same mutation path as a manual rating and auto-advances', async () => {
+    const list: PhotoListOut = {
+      items: [
+        photo({ id: 1, ratings: [], suggestion: suggestion({ status: 'rejected' }) }),
+        photo({ id: 2, ratings: [] }),
+      ],
+      total: 2,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+    vi.mocked(ratingsApi.setRating).mockResolvedValue({
+      user_id: 1,
+      username: 'testuser',
+      status: 'rejected',
+    })
+    const user = userEvent.setup()
+
+    renderPage('/projects/1/photos/1')
+    const confirmButton = await screen.findByRole('button', { name: /vorschlag übernehmen/i })
+    await user.click(confirmButton)
+
+    expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'rejected')
+    await screen.findByText('2/2')
   })
 })

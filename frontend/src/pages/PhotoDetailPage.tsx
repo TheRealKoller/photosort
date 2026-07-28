@@ -22,6 +22,15 @@ const MAX_AUTO_ADVANCE_PAGE_FETCHES = 80
 
 const SWIPE_THRESHOLD_PX = 50
 
+// Gleiche Beschriftung wie components/RatingBadge.tsx (dort nicht exportiert) - fuer die
+// ausgeschriebene Vorschlagszeile "Automatischer Vorschlag: ..." (UI/UX-Abschnitt von
+// specs/features/0003-automatic-best-photo-selection.md).
+const SUGGESTION_STATUS_LABELS: Record<RatingStatus, string> = {
+  favorite: 'Favorit',
+  album_worthy: 'Album-würdig',
+  rejected: 'Verworfen',
+}
+
 function isTextInputFocused(): boolean {
   const active = document.activeElement
   if (active === null) {
@@ -115,6 +124,10 @@ export function PhotoDetailPage() {
   }
 
   const currentOwnStatus = ownRatingStatus(currentPhoto?.ratings ?? [], username)
+  // Anzeigeregel (Akzeptanzkriterium der Spec): eigene Bewertung hat immer Vorrang - der Server
+  // liefert suggestion in diesem Fall ohnehin bereits als null, currentOwnStatus wird hier
+  // trotzdem zusaetzlich geprueft (defensiv, gleiche Regel wie Grid-/Vergleichsansicht).
+  const suggestion = currentOwnStatus === null ? (currentPhoto?.suggestion ?? null) : null
 
   function handleToggleRating(status: RatingStatus): void {
     if (!currentPhoto || setMutation.isPending || deleteMutation.isPending) {
@@ -251,6 +264,28 @@ export function PhotoDetailPage() {
       >
         Weiter
       </button>
+
+      {suggestion && (
+        <div>
+          <p>Automatischer Vorschlag: {SUGGESTION_STATUS_LABELS[suggestion.status]}</p>
+          <p>
+            {suggestion.duplicate_of !== null
+              ? `Duplikat von Foto #${suggestion.duplicate_of}`
+              : 'Geringe Bildqualität'}
+          </p>
+          {/* Ruft denselben Mutation-Pfad wie ein manueller Klick auf die passende
+              RatingButtons-Option auf (UI/UX-Abschnitt der Spec) - der bestehende Auto-Advance
+              greift danach unveraendert. Kein eigener "Vorschlag verwerfen"-Zustand: normale
+              Weiternavigation ist das implizite Ignorieren. */}
+          <button
+            type="button"
+            onClick={() => handleToggleRating(suggestion.status)}
+            disabled={isMutating}
+          >
+            Vorschlag übernehmen
+          </button>
+        </div>
+      )}
 
       <RatingButtons
         currentStatus={currentOwnStatus}
