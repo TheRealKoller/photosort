@@ -14,7 +14,7 @@ from sqlalchemy.orm import aliased, selectinload
 
 from photosort.api.deps import get_current_user, get_session
 from photosort.config import settings
-from photosort.models import Photo, Project, Rating, RatingStatus, User
+from photosort.models import Photo, PhotoScore, Project, Rating, RatingStatus, User
 from photosort.thumbnails import variant_path
 
 # Bewusste Abweichung vom Router-Level-dependencies=[Depends(get_current_user)]-Muster aus
@@ -38,11 +38,28 @@ class RatingOut(BaseModel):
     status: RatingStatus
 
 
+class SuggestionOut(BaseModel):
+    """Automatischer Vorschlag aus PhotoScore, bewusst getrennt von RatingOut/ratings[] (ADR 0006,
+    decisions/0006-local-scoring-datamodel.md) - ein Vorschlag ist strukturell nie eine
+    Rating-Zeile. `reason` ist regelbasiert aus duplicate_of abgeleitet (Akzeptanzkriterium der
+    Spec), nicht separat in PhotoScore gespeichert."""
+
+    status: RatingStatus
+    reason: Literal["duplicate", "low_quality"]
+    duplicate_of: int | None
+    local_quality_score: float | None
+    sharpness: float
+    exposure: float
+    cluster_key: str | None
+    computed_at: datetime
+
+
 class PhotoOut(BaseModel):
     id: int
     relative_path: str
     taken_at: datetime
     ratings: list[RatingOut]
+    suggestion: SuggestionOut | None
 
 
 class PhotoListOut(BaseModel):
@@ -94,12 +111,37 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
     result = await session.execute(
         select(Photo)
         .where(Photo.id.in_(ids))
-        .options(selectinload(Photo.ratings).selectinload(Rating.user))
+        .options(
+            selectinload(Photo.ratings).selectinload(Rating.user),
+            selectinload(Photo.score),
+        )
     )
     return {photo.id: photo for photo in result.scalars()}
 
 
-def _to_photo_out(photo: Photo) -> PhotoOut:
+def _to_suggestion_out(score: PhotoScore) -> SuggestionOut:
+    return SuggestionOut(
+        status=score.suggested_status,  # type: ignore[arg-type]  # caller already checked not None
+        reason="duplicate" if score.duplicate_of is not None else "low_quality",
+        duplicate_of=score.duplicate_of,
+        local_quality_score=score.local_quality_score,
+        sharpness=score.sharpness,
+        exposure=score.exposure,
+        cluster_key=score.cluster_key,
+        computed_at=score.computed_at,
+    )
+
+
+def _to_photo_out(photo: Photo, current_user_id: int) -> PhotoOut:
+    # Anzeigeregel (Akzeptanzkriterium der Spec): ein Vorschlag ist nur sichtbar, wenn (a)
+    # PhotoScore.suggested_status gesetzt ist UND (b) der anfragende Nutzer noch KEINE eigene
+    # Rating-Zeile fuer dieses Foto hat - unabhaengig davon, ob eine ANDERE Person das Foto schon
+    # bewertet hat (eigene Bewertung hat immer Vorrang, siehe UI/UX-Abschnitt der Spec).
+    has_own_rating = any(rating.user_id == current_user_id for rating in photo.ratings)
+    has_suggestion = (
+        photo.score is not None and photo.score.suggested_status is not None and not has_own_rating
+    )
+    suggestion = _to_suggestion_out(photo.score) if has_suggestion and photo.score else None
     return PhotoOut(
         id=photo.id,
         relative_path=photo.relative_path,
@@ -108,6 +150,7 @@ def _to_photo_out(photo: Photo) -> PhotoOut:
             RatingOut(user_id=r.user_id, username=r.user.username, status=r.status)
             for r in photo.ratings
         ],
+        suggestion=suggestion,
     )
 
 
@@ -126,7 +169,7 @@ async def list_photos(
         session, project_id, current_user.id, rating_status, limit, offset
     )
     photos_by_id = await _photos_by_id(session, ids)
-    items = [_to_photo_out(photos_by_id[photo_id]) for photo_id in ids]
+    items = [_to_photo_out(photos_by_id[photo_id], current_user.id) for photo_id in ids]
     return PhotoListOut(items=items, total=total)
 
 

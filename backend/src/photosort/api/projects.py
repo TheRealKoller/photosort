@@ -16,7 +16,7 @@ from photosort.api.deps import (
     get_session,
 )
 from photosort.config import settings
-from photosort.models import Project, ScanRun, ScanStatus
+from photosort.models import Project, ScanRun, ScanStatus, ScoringRun
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
 
 router = APIRouter(prefix="/projects", tags=["projects"], dependencies=[Depends(get_current_user)])
@@ -41,6 +41,17 @@ class ScanSummary(BaseModel):
     error_message: str | None
 
 
+class ScoringRunSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: ScanStatus
+    started_at: datetime
+    finished_at: datetime | None
+    photos_total: int
+    photos_processed: int
+    error_message: str | None
+
+
 class ProjectOut(BaseModel):
     id: int
     name: str
@@ -48,6 +59,7 @@ class ProjectOut(BaseModel):
     opencloud_path: str
     created_at: datetime
     last_scan: ScanSummary | None = None
+    last_scoring_run: ScoringRunSummary | None = None
 
 
 async def _latest_scan_run(session: AsyncSession, project_id: int) -> ScanRun | None:
@@ -60,8 +72,19 @@ async def _latest_scan_run(session: AsyncSession, project_id: int) -> ScanRun | 
     return result.scalars().first()
 
 
+async def _latest_scoring_run(session: AsyncSession, project_id: int) -> ScoringRun | None:
+    result = await session.execute(
+        select(ScoringRun)
+        .where(ScoringRun.project_id == project_id)
+        .order_by(ScoringRun.started_at.desc())
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
 async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut:
     scan_run = await _latest_scan_run(session, project.id)
+    scoring_run = await _latest_scoring_run(session, project.id)
     return ProjectOut(
         id=project.id,
         name=project.name,
@@ -69,6 +92,9 @@ async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut
         opencloud_path=project.opencloud_path,
         created_at=project.created_at,
         last_scan=ScanSummary.model_validate(scan_run) if scan_run is not None else None,
+        last_scoring_run=(
+            ScoringRunSummary.model_validate(scoring_run) if scoring_run is not None else None
+        ),
     )
 
 
@@ -132,4 +158,18 @@ async def trigger_scan(
 ) -> dict[str, str]:
     await _get_project_or_404(project_id, session)
     await enqueuer.enqueue_job("scan_project", project_id)
+    return {"status": "queued"}
+
+
+@router.post("/{project_id}/score", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_score(
+    project_id: int,
+    session: AsyncSession = Depends(get_session),
+    enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
+) -> dict[str, str]:
+    # Analog trigger_scan oben (specs/features/0003-automatic-best-photo-selection.md): derselbe
+    # Router-weite dependencies=[Depends(get_current_user)]-Torwaechter, keine Rollenunterscheidung
+    # zwischen den beiden bekannten Nutzern - Muss-Kriterium aus dem Security-Abschnitt der Spec.
+    await _get_project_or_404(project_id, session)
+    await enqueuer.enqueue_job("score_project", project_id)
     return {"status": "queued"}

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.config import settings
-from photosort.models import Photo, Project, Rating, RatingStatus, User
+from photosort.models import Photo, PhotoScore, Project, Rating, RatingStatus, User
 from photosort.security import hash_password
 from photosort.thumbnails import display_path, thumbnail_path
 
@@ -81,6 +81,106 @@ async def test_list_photos_includes_ratings_of_all_users(
     ratings = response.json()["items"][0]["ratings"]
     by_username = {r["username"]: r["status"] for r in ratings}
     assert by_username == {"testuser": "favorite", "other-user": "rejected"}
+
+
+async def test_list_photos_includes_suggestion_when_no_own_rating_exists(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    other = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.2,
+            duplicate_of=other.id,
+            suggested_status=RatingStatus.REJECTED,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+    assert response.status_code == 200
+    by_id = {item["id"]: item for item in response.json()["items"]}
+    suggestion = by_id[photo.id]["suggestion"]
+    assert suggestion["status"] == "rejected"
+    assert suggestion["reason"] == "duplicate"
+    assert suggestion["duplicate_of"] == other.id
+    assert by_id[other.id]["suggestion"] is None
+
+
+async def test_suggestion_reason_is_low_quality_without_duplicate_of(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.2,
+            suggested_status=RatingStatus.REJECTED,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+    suggestion = response.json()["items"][0]["suggestion"]
+    assert suggestion["reason"] == "low_quality"
+    assert suggestion["duplicate_of"] is None
+
+
+async def test_list_photos_hides_suggestion_once_own_rating_exists(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Akzeptanzkriterium der Spec: suggestion ist null, sobald der anfragende Nutzer eine eigene
+    Rating-Zeile fuer dieses Foto hat - auch wenn PhotoScore weiterhin einen Vorschlag traegt."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.2,
+            suggested_status=RatingStatus.REJECTED,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+    await authenticated_api_client.put(f"/photos/{photo.id}/rating", json={"status": "rejected"})
+
+    response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+    assert response.json()["items"][0]["suggestion"] is None
+
+
+async def test_list_photos_suggestion_is_null_without_suggested_status(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Ein PhotoScore ohne suggested_status (regulaerer Fall der Spec: "Alle uebrigen Fotos ...
+    suggested_status bleibt fuer sie None") darf keine sichtbare suggestion erzeugen."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=100.0,
+            exposure=0.0,
+            local_quality_score=100.0,
+            cluster_key="cluster-0",
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+    assert response.json()["items"][0]["suggestion"] is None
 
 
 async def test_list_photos_filters_by_own_unrated(

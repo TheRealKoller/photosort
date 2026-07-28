@@ -1,9 +1,11 @@
 from typing import Any
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import get_job_enqueuer, get_opencloud_client
 from photosort.main import app
+from photosort.models import ScanStatus, ScoringRun
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
 
@@ -125,3 +127,75 @@ async def test_trigger_scan_returns_404_for_unknown_project(
 
     assert response.status_code == 404
     assert fake_enqueuer.calls == []
+
+
+async def test_get_project_has_no_last_scoring_run_before_any_score_call(
+    authenticated_api_client: httpx.AsyncClient,
+) -> None:
+    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
+    created = await authenticated_api_client.post(
+        "/projects", json={"name": "Costa Rica", "opencloud_path": "A"}
+    )
+
+    assert created.json()["last_scoring_run"] is None
+
+
+async def test_trigger_score_enqueues_job(authenticated_api_client: httpx.AsyncClient) -> None:
+    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
+    created = await authenticated_api_client.post(
+        "/projects", json={"name": "Costa Rica", "opencloud_path": "A"}
+    )
+    project_id = created.json()["id"]
+
+    fake_enqueuer = FakeEnqueuer()
+    app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+    response = await authenticated_api_client.post(f"/projects/{project_id}/score")
+
+    assert response.status_code == 202
+    assert fake_enqueuer.calls == [("score_project", (project_id,))]
+
+
+async def test_trigger_score_returns_404_for_unknown_project(
+    authenticated_api_client: httpx.AsyncClient,
+) -> None:
+    fake_enqueuer = FakeEnqueuer()
+    app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+    response = await authenticated_api_client.post("/projects/999/score")
+
+    assert response.status_code == 404
+    assert fake_enqueuer.calls == []
+
+
+async def test_trigger_score_requires_auth(api_client: httpx.AsyncClient) -> None:
+    response = await api_client.post("/projects/1/score")
+
+    assert response.status_code == 401
+
+
+async def test_get_project_reports_last_scoring_run_progress(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
+    created = await authenticated_api_client.post(
+        "/projects", json={"name": "Costa Rica", "opencloud_path": "A"}
+    )
+    project_id = created.json()["id"]
+
+    scoring_run = ScoringRun(
+        project_id=project_id,
+        status=ScanStatus.RUNNING,
+        photos_total=10,
+        photos_processed=4,
+    )
+    db_session.add(scoring_run)
+    await db_session.commit()
+
+    detail = await authenticated_api_client.get(f"/projects/{project_id}")
+
+    assert detail.status_code == 200
+    last_scoring_run = detail.json()["last_scoring_run"]
+    assert last_scoring_run["status"] == "running"
+    assert last_scoring_run["photos_total"] == 10
+    assert last_scoring_run["photos_processed"] == 4
