@@ -32,6 +32,7 @@ PhotoSort wird in zwei Modi weiterentwickelt:
 
 - **Interaktive Sessions:** Daniel bespricht Anforderungen/Ideen/Bugs direkt mit Claude Code in diesem Repo. Gut geeignet für Diskussion, Spec-Verfeinerung, größere oder mehrdeutige Themen.
 - **Hintergrund-Automatisierung (Ausbaustufe):** GitHub Issues mit klar definierter, akzeptierter Spec können von einem automatisiert laufenden Agent selbstständig abgearbeitet werden. Blockierende Unklarheiten werden als Issue-Kommentar zurückgemeldet statt geraten. Diese Automatisierung ist zum Zeitpunkt des Projekt-Setups noch nicht eingerichtet und ein separater Folgeschritt.
+  - **Issue-Freigabe-Policy** (vorbereitet mit Spec [`0007`](./specs/features/0007-github-repo-access-hardening.md)/ADR [`0007`](./specs/decisions/0007-github-repo-access-hardening.md), technisch noch nicht durchgesetzt, da die Automatisierung selbst noch nicht existiert): Issues, deren Autor nicht Daniels eigener GitHub-Account ist, dürfen von der künftigen Automatisierung erst bearbeitet werden, nachdem Daniel das Label `approved-for-agent` vergeben hat. Von Daniel selbst erstellte Issues benötigen das Label nicht. Maßgeblich ist der Label-**Zustand zum Zeitpunkt der automatisierten Bearbeitung** — ein zwischenzeitlich wieder entferntes Label gilt nicht mehr als Freigabe, unabhängig davon, ob es früher einmal vergeben war. Die eigentliche technische Prüflogik (Label-Abfrage vor Bearbeitung) ist Teil der künftigen Automatisierungs-Spec, nicht dieser Policy-Vorgabe.
 
 ## Konventionen
 

@@ -1,7 +1,7 @@
 # Testkonzept
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-07-28 (Test-Review von Spec 0003 "Automatische Auswahl der besten Fotos, Phase A": erster periodisch zwischen-committender Worker-Job, erstes "berechnet, aber bedingt nicht angezeigt"-Datenmodell — siehe neue Unterabschnitte "Scoring/Vorschläge" unten)
+**Letzte Aktualisierung:** 2026-07-28 (Test-Review von Spec 0003 "Automatische Auswahl der besten Fotos, Phase A": erster periodisch zwischen-committender Worker-Job, erstes "berechnet, aber bedingt nicht angezeigt"-Datenmodell — siehe neue Unterabschnitte "Scoring/Vorschläge" unten. Zuvor am selben Tag: Umsetzung von Spec 0007 "GitHub-Repo-Zugriffshärtung & Issue-Freigabe-Vorsorge": neue Sektion "Repo-Konfiguration & Dokumentation (kein Anwendungscode)" — erstes Feature ganz ohne Anwendungscode, dreistufiges Verifikationsmuster Config-Check/Funktionaler Repro-Test/Dokumentations-Review. Zuvor am 2026-07-20: Teststrategie-Konsultation zu Spec 0006 "Auth-Implementierung": erste Auth-pflichtige Endpunkte, erster JWT-Umgang in Tests, erster globaler Frontend-Event-Listener — ergänzt die bisher offene Lücke "Auth/JWT existiert noch nicht")
 
 ## Zweck
 
@@ -53,6 +53,14 @@ Projektweite, von der jeweiligen Feature-Implementierung unabhängige Teststrate
 - **Unit-Ebene:** `auth/token.ts` (`getToken`/`setToken`/`clearToken` als reiner `localStorage`-Wrapper); `api/client.ts` erweitert um Header-Anhängen bei vorhandenem Token und 401-Verhalten (Token löschen + `CustomEvent("photosort:unauthorized")` dispatchen — per `window.addEventListener`-Spy im Test verifizieren, nicht nur den Aufruf von `clearToken` prüfen).
 - **Integrations-Ebene:** `LoginPage` (echter `MemoryRouter` + `QueryClientProvider`, `vi.mock` auf `api/auth.ts`-Modulebene) inkl. Redirect-Ziel-Test bei Tiefenlink (`MemoryRouter initialEntries` mit `state.from` simulieren, nach Login-Erfolg Navigation zu diesem Ziel statt nur zu `/` prüfen); `ProtectedRoute` (kein Token → Redirect zu `/login` mit gesetztem `state.from`; Token vorhanden → `Outlet` rendert); globaler `photosort:unauthorized`-Listener (Event via `window.dispatchEvent` auslösen, **echten** `MemoryRouter` statt gemocktem `useNavigate` verwenden und die tatsächlich gerenderte Route prüfen — konsistent mit dem bestehenden Grundsatz "echter Router" statt Navigation-Mocks) — deckt den Fall "401 mitten in laufender Session durch abgelaufenes Token" ab.
 - **Neues Element gegenüber bisheriger Konvention:** erstmals ein globaler, event-basierter Cross-Component-Mechanismus (`CustomEvent` statt Props/Context) — Testkonvention dafür: immer gegen die echte Browser-Event-API testen (`dispatchEvent`/`addEventListener`), nicht durch Mocken der Event-Funktionen selbst, sonst wird nur die Verdrahtung statt des Verhaltens geprüft.
+
+## Repo-Konfiguration & Dokumentation (kein Anwendungscode)
+
+**Neu seit Spec [`0007`](../features/0007-github-repo-access-hardening.md)** ("GitHub-Repo-Zugriffshärtung & Issue-Freigabe-Vorsorge") — erstes Feature ohne jeden Anwendungscode (reine GitHub-Repo-Konfiguration + Markdown). `pytest`/`vitest` und das Backend-Coverage-Gate greifen hier nicht; stattdessen ein eigenes, dreistufiges Verifikationsmuster für künftige Features desselben Zuschnitts:
+
+1. **Config-Check:** vollständiger `gh api`-Vorher/Nachher-Diff des betroffenen GitHub-Zustands (z.B. Branch Protection, Collaborators, Deploy Keys) gegen den echten Repo-Zustand — es gibt keine Sandbox/Staging-Kopie eines GitHub-Repos, daher zwingend am echten Repo, mit Sorgfalt bei Objekt-Replace-Operationen (`PUT` ersetzt das gesamte Objekt, nicht nur genannte Felder).
+2. **Funktionaler Repro-Test:** an einem Wegwerf-Branch/-PR nachweisen, dass eine Konfigurationsänderung tatsächlich wirkt, nicht nur, dass die API sie als aktiviert meldet. Praktikabler Nachweisweg, falls ein echter Merge-Versuch aus der Ausführungsumgebung heraus nicht möglich ist (z.B. durch eine Sandbox-Restriktion blockiert): GitHubs eigenes berechnetes `mergeable_state`-Feld auf dem PR (`gh api repos/.../pulls/<n>`) vor/nach der zu prüfenden Bedingung vergleichen — das ist GitHubs eigene autoritative Einschätzung, kein Selbstbericht der geänderten Einstellung. Wegwerf-Artefakte (Branch, PR, ggf. Review-Kommentare) werden danach entfernt/geschlossen, nie mit `main` gemerged.
+3. **Dokumentations-Review:** Checkliste, dass die betroffenen Dokumente (hier `CLAUDE.md`, `architecture/0003-securitykonzept.md`) die konkreten, unzweideutigen Policy-/Baseline-Inhalte enthalten, nicht nur Verweise darauf.
 
 ## Was bewusst nicht getestet wird
 
