@@ -277,6 +277,13 @@ async def run_project_scoring(
         for photo in photos:
             path = variant_path(cache_dir, photo.id, photo.etag, "display")
             metrics = _compute_photo_metrics(path) if path.is_file() else None
+            # Bekannte, akzeptierte Luecke (Architektur-Review-Fund, siehe Konsequenzen-Abschnitt
+            # von decisions/0006-local-scoring-datamodel.md): wird die display-Cache-Datei eines
+            # bereits in einem frueheren Lauf erfolgreich gescorten Fotos bis zu diesem Lauf
+            # unlesbar, bleibt dessen alte PhotoScore-Zeile unveraendert stehen statt geloescht/
+            # invalidiert zu werden - dieser Zweig wird dann einfach nicht betreten. In der Praxis
+            # unwahrscheinlich (persistentes Cache-Volume ohne Eviction), aber relevant fuer
+            # Phase B, die auf phash/cluster_key aufbaut.
             if metrics is not None:
                 sharpness, exposure, phash = metrics
                 computed[photo.id] = metrics

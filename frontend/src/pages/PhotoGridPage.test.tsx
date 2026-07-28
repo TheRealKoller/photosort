@@ -206,14 +206,19 @@ describe('PhotoGridPage', () => {
 
   it('shows a suggestion badge and an "Übernehmen" button when a photo has an open suggestion', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
-      items: [photo({ id: 1, ratings: [], suggestion: suggestion() })],
+      items: [photo({ id: 1, relative_path: 'sunset.jpg', ratings: [], suggestion: suggestion() })],
       total: 1,
     })
 
     renderPage()
 
     expect(await screen.findByLabelText('Vorschlag: Verworfen')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /übernehmen/i })).toBeInTheDocument()
+    // Photo-spezifisches aria-label (UI/UX-Review-Fund): mehrere offene Vorschlaege in einem Grid
+    // sind sonst per Tastatur/Screenreader nicht auseinanderzuhalten, da alle Buttons denselben
+    // sichtbaren Text "Uebernehmen" tragen.
+    expect(
+      screen.getByRole('button', { name: 'Vorschlag übernehmen: sunset.jpg' })
+    ).toBeInTheDocument()
   })
 
   it('does not show a suggestion badge/button when the photo has no open suggestion', async () => {
@@ -226,6 +231,56 @@ describe('PhotoGridPage', () => {
 
     await screen.findAllByRole('listitem')
     expect(screen.queryByRole('button', { name: /übernehmen/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a busy state only on the confirming tile\'s own button while its request is in flight', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({ id: 1, ratings: [], suggestion: suggestion() }),
+        photo({ id: 2, ratings: [], suggestion: suggestion() }),
+      ],
+      total: 2,
+    })
+    vi.mocked(ratingsApi.setRating).mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+
+    renderPage()
+    const [firstButton, secondButton] = await screen.findAllByRole('button', {
+      name: /übernehmen/i,
+    })
+    await user.click(firstButton)
+
+    await waitFor(() => expect(firstButton).toBeDisabled())
+    expect(secondButton).toBeEnabled()
+  })
+
+  it('allows confirming a second tile while an earlier tile\'s confirm is still in flight', async () => {
+    // Regression fuer einen im UI/UX-Review gefundenen Bug: eine gemeinsam genutzte
+    // useSetRatingMutation-Instanz fuer die ganze Seite hat frueher jeden weiteren Klick
+    // stillschweigend ignoriert, solange irgendeine andere Kachel noch "isPending" war - genau
+    // das Batch-Bestaetigen, das dieser Button laut Spec ermoeglichen soll, war dadurch kaputt.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({ id: 1, ratings: [], suggestion: suggestion() }),
+        photo({ id: 2, ratings: [], suggestion: suggestion() }),
+      ],
+      total: 2,
+    })
+    vi.mocked(ratingsApi.setRating).mockImplementation((photoId) =>
+      photoId === 1
+        ? new Promise(() => {})
+        : Promise.resolve({ user_id: 1, username: 'testuser', status: 'rejected' })
+    )
+    const user = userEvent.setup()
+
+    renderPage()
+    const [firstButton, secondButton] = await screen.findAllByRole('button', {
+      name: /übernehmen/i,
+    })
+    await user.click(firstButton)
+    await user.click(secondButton)
+
+    await waitFor(() => expect(ratingsApi.setRating).toHaveBeenCalledWith(2, 'rejected'))
   })
 
   it('confirms a suggestion on click without navigating to the detail view', async () => {

@@ -185,15 +185,23 @@ export function ProjectDetailPage() {
 
       {scoreTriggerErrorDetail && <p role="alert">{scoreTriggerErrorDetail}</p>}
 
-      <p>
+      {/* aria-live="polite" mit bewusst STABILEM Text waehrend "running" (UI/UX-Review-Fund):
+          vorher stand der sich bei jedem Poll aendernde "X von Y"-Zaehler direkt in dieser
+          aria-live-Zeile - das haette die 10%-Drosselung unten wirkungslos gemacht, da diese
+          Zeile trotzdem bei jedem Tick neu angesagt worden waere. Aendert sich hier nur beim
+          Uebergang zwischen Zustaenden (null -> running -> success/failed), nicht bei jedem Poll -
+          dadurch wird ein abgeschlossener oder fehlgeschlagener Lauf zuverlaessig angesagt, ohne
+          waehrend des Laufs selbst zu spammen. Der exakte Zaehler lebt separat unten. */}
+      <p aria-live="polite">
         {scoringRun === null && 'Noch nicht vorgeschlagen'}
-        {scoringStatus === 'running' && `${photosProcessed} von ${photosTotal} Fotos verarbeitet`}
+        {scoringStatus === 'running' && 'Wird verarbeitet…'}
         {scoringStatus === 'success' && 'Vorschläge aktualisiert'}
         {scoringStatus === 'failed' && 'Fehlgeschlagen'}
       </p>
 
       {scoringStatus === 'running' && (
         <>
+          <p>{photosProcessed} von {photosTotal} Fotos verarbeitet</p>
           <progress value={photosProcessed} max={photosTotal}>
             {photosProcessed}/{photosTotal}
           </progress>

@@ -1,15 +1,9 @@
 import type { RatingStatus } from '../api/types'
+import { RATING_STATUS_LABELS } from '../utils/ratingLabels'
 
-// Farb-/Symbol-Zuordnung gemaess specs/architecture/0004-design-system.md ("Bewertungsstufen auf
-// einen Blick unterscheidbar" - Farbe UND Symbol, nicht nur Text). Kein Styling-System gewaehlt
-// (siehe Design-System-Dokument), daher hier nur semantisches Markup + data-Attribut als
-// zukuenftiger CSS-Hook; die tatsaechliche Farbcodierung folgt, sobald ein Styling-System steht.
-const LABELS: Record<RatingStatus, string> = {
-  favorite: 'Favorit',
-  album_worthy: 'Album-würdig',
-  rejected: 'Verworfen',
-}
-
+// Kein Styling-System gewaehlt (siehe specs/architecture/0004-design-system.md), daher hier nur
+// semantisches Markup + data-Attribut als zukuenftiger CSS-Hook; die tatsaechliche Farbcodierung
+// folgt, sobald ein Styling-System steht.
 const SYMBOLS: Record<RatingStatus, string> = {
   favorite: '★',
   album_worthy: '✓',
@@ -44,7 +38,9 @@ export function RatingBadge({ status, suggested = false, className }: RatingBadg
     )
   }
 
-  const label = suggested ? `Vorschlag: ${LABELS[status]}` : LABELS[status]
+  const label = suggested
+    ? `Vorschlag: ${RATING_STATUS_LABELS[status]}`
+    : RATING_STATUS_LABELS[status]
   const symbol = suggested ? `${SUGGESTION_PREFIX}${SYMBOLS[status]}` : SYMBOLS[status]
 
   return (

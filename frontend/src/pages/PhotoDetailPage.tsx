@@ -14,6 +14,7 @@ import {
 } from '../hooks/usePhotos'
 import { findOwnRating, ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
+import { RATING_STATUS_LABELS } from '../utils/ratingLabels'
 
 // Bounded so a broken/degenerate filter can never spin forever fetching pages while searching
 // for the next unrated photo - 80 * PHOTOS_PAGE_SIZE(60) covers well beyond any realistic
@@ -21,15 +22,6 @@ import { parseRatingFilter } from '../utils/ratingFilter'
 const MAX_AUTO_ADVANCE_PAGE_FETCHES = 80
 
 const SWIPE_THRESHOLD_PX = 50
-
-// Gleiche Beschriftung wie components/RatingBadge.tsx (dort nicht exportiert) - fuer die
-// ausgeschriebene Vorschlagszeile "Automatischer Vorschlag: ..." (UI/UX-Abschnitt von
-// specs/features/0003-automatic-best-photo-selection.md).
-const SUGGESTION_STATUS_LABELS: Record<RatingStatus, string> = {
-  favorite: 'Favorit',
-  album_worthy: 'Album-würdig',
-  rejected: 'Verworfen',
-}
 
 function isTextInputFocused(): boolean {
   const active = document.activeElement
@@ -267,9 +259,13 @@ export function PhotoDetailPage() {
 
       {suggestion && (
         <div>
-          <p>Automatischer Vorschlag: {SUGGESTION_STATUS_LABELS[suggestion.status]}</p>
+          <p>Automatischer Vorschlag: {RATING_STATUS_LABELS[suggestion.status]}</p>
           <p>
-            {suggestion.duplicate_of !== null
+            {/* Server liefert die Begruendung bereits regelbasiert ueber `reason`
+                (backend/src/photosort/api/photos.py::_to_suggestion_out) - hier bewusst nicht
+                erneut aus duplicate_of abgeleitet (Test-Review-Fund: doppelte, potenziell
+                auseinanderlaufende Business-Logik). */}
+            {suggestion.reason === 'duplicate'
               ? `Duplikat von Foto #${suggestion.duplicate_of}`
               : 'Geringe Bildqualität'}
           </p>

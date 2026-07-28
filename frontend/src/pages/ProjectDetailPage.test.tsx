@@ -382,6 +382,29 @@ describe('ProjectDetailPage', () => {
       ).toBeEnabled()
     })
 
+    it('announces completion/failure via aria-live, not just the granular running progress', async () => {
+      // UI/UX-Review-Fund: die gedrosselte 10%-Ansage lag zuvor nur INNERHALB des
+      // "running"-Blocks (der beim Abschluss unmountet) - ein Screenreader-Nutzer hoerte "10%...
+      // 20%... 30%..." waehrend des Laufs, danach aber gar nichts mehr, wenn der Lauf fertig war
+      // oder fehlschlug. Die aeussere Statuszeile braucht deshalb ebenfalls aria-live="polite",
+      // analog zur bestehenden Scan-Statuszeile weiter oben in dieser Datei.
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scoring_run: scoringRun({
+            status: 'success',
+            finished_at: '2026-07-20T10:05:00Z',
+            photos_total: 10,
+            photos_processed: 10,
+          }),
+        })
+      )
+
+      renderPage()
+
+      const summary = await screen.findByText(/vorschläge aktualisiert/i)
+      expect(summary).toHaveAttribute('aria-live', 'polite')
+    })
+
     it('shows an inline error banner with a retry button on a failed scoring run, keeping suggestions usable', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
