@@ -25,3 +25,7 @@ export function getProject(id: number): Promise<ProjectOut> {
 export function triggerScan(id: number): Promise<TriggerScanResponse> {
   return apiFetch<TriggerScanResponse>(`/projects/${id}/scan`, { method: 'POST' })
 }
+
+export function triggerScore(id: number): Promise<TriggerScanResponse> {
+  return apiFetch<TriggerScanResponse>(`/projects/${id}/score`, { method: 'POST' })
+}
