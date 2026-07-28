@@ -9,7 +9,7 @@ Repo `TheRealKoller/photosort` ist public. Ist-Zustand-Prüfung (`gh api`) ergab
 
 Auslöser für die Klärung *jetzt*: Daniel plant, PhotoSort künftig über ein separates, externes Tool ("Dockhand") automatisiert aus dem main-Branch auszuchecken, zu bauen und zu deployen. Dockhand selbst ist nicht Teil dieser Spec/ADR (eigenes künftiges Thema), aber sobald es angebunden ist, hat automatisiert deployter Code direkten Zugriff auf reale Zugangsdaten (OpenCloud App-Token, JWT `secret_key`, DB-Credentials, siehe `specs/architecture/0003-securitykonzept.md`). Diese ADR ist daher als Vorbedingung/Gate *vor* der Dockhand-Anbindung zu verstehen, nicht als Reaktion auf einen bereits laufenden Automatismus.
 
-Ein zweiter, unabhängiger Punkt: Vorsorge für eine künftige, noch nicht gebaute Hintergrund-Automatisierung (siehe `CLAUDE.md`, Abschnitt "Hintergrund-Automatisierung"), die Issues nur bearbeiten soll, wenn Daniel sie explizit freigegeben hat — auch für von Daniel selbst erstellte Issues nicht automatisch impliziert.
+Ein zweiter, unabhängiger Punkt: Vorsorge für eine künftige, noch nicht gebaute Hintergrund-Automatisierung (siehe `CLAUDE.md`, Abschnitt "Hintergrund-Automatisierung"), die von Dritten erstellte Issues nur bearbeiten soll, wenn Daniel sie explizit freigegeben hat — bei von Daniel selbst erstellten Issues ist die Freigabe hingegen automatisch impliziert, ein Label ist dafür nicht nötig (siehe Spec 0007, Akzeptanzkriterium Teil 2b, und `CLAUDE.md`).
 
 2FA/Account-Absicherung ist explizit nicht Teil dieser ADR — Daniels persönliche Verantwortung außerhalb des Projekt-Scopes.
 
