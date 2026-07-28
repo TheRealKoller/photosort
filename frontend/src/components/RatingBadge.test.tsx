@@ -27,4 +27,22 @@ describe('RatingBadge', () => {
 
     expect(screen.getByLabelText('Verworfen')).toBeInTheDocument()
   })
+
+  it('prefixes a suggested rating with "Vorschlag:" in the accessible label', () => {
+    render(<RatingBadge status="rejected" suggested />)
+
+    expect(screen.getByLabelText('Vorschlag: Verworfen')).toBeInTheDocument()
+  })
+
+  it('marks a suggested badge with a data attribute, distinct from a confirmed rating', () => {
+    const { container } = render(<RatingBadge status="rejected" suggested />)
+
+    expect(container.querySelector('[data-suggested="true"]')).toBeInTheDocument()
+  })
+
+  it('does not set the suggested data attribute for a confirmed rating', () => {
+    const { container } = render(<RatingBadge status="rejected" />)
+
+    expect(container.querySelector('[data-suggested]')).not.toBeInTheDocument()
+  })
 })

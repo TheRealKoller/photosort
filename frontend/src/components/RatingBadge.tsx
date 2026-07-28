@@ -16,12 +16,26 @@ const SYMBOLS: Record<RatingStatus, string> = {
   rejected: '✕',
 }
 
+// Zahnrad-Praefix vor dem Stufensymbol fuer einen automatischen Vorschlag (Design-System-Ergaenzung
+// "Vorschlags-Badge", specs/features/0003-automatic-best-photo-selection.md): gedaempfte/
+// erkennbar-verwandte statt volle Darstellung derselben Bewertungsstufe - Faustregel "volle
+// Fuellung = von einem Menschen entschieden, gedaempft/umrandet + Praefix = maschineller
+// Vorschlag, noch offen".
+const SUGGESTION_PREFIX = '⚙'
+
 interface RatingBadgeProps {
   status: RatingStatus | null
+  /**
+   * true fuer einen unbestaetigten automatischen Vorschlag aus PhotoOut.suggestion statt einer
+   * echten Bewertung aus ratings[] - siehe Anzeigeregel im UI/UX-Abschnitt der Spec: eine eigene
+   * Bewertung hat immer Vorrang, ein Vorschlag wird nur gezeigt, solange keine eigene Bewertung
+   * existiert (diese Entscheidung trifft der Aufrufer, nicht diese Komponente).
+   */
+  suggested?: boolean
   className?: string
 }
 
-export function RatingBadge({ status, className }: RatingBadgeProps) {
+export function RatingBadge({ status, suggested = false, className }: RatingBadgeProps) {
   if (status === null) {
     return (
       <span className={className} data-rating-status="unrated" aria-label="Unbewertet">
@@ -30,9 +44,17 @@ export function RatingBadge({ status, className }: RatingBadgeProps) {
     )
   }
 
+  const label = suggested ? `Vorschlag: ${LABELS[status]}` : LABELS[status]
+  const symbol = suggested ? `${SUGGESTION_PREFIX}${SYMBOLS[status]}` : SYMBOLS[status]
+
   return (
-    <span className={className} data-rating-status={status} aria-label={LABELS[status]}>
-      {SYMBOLS[status]}
+    <span
+      className={className}
+      data-rating-status={status}
+      data-suggested={suggested ? 'true' : undefined}
+      aria-label={label}
+    >
+      {symbol}
     </span>
   )
 }
