@@ -31,7 +31,8 @@ TIME_CLUSTER_GAP = timedelta(hours=1)
 
 _LAPLACE_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
 
-# dHash-Rastergroesse: 9x8 Graustufen-Pixel liefern 8x8=64 paarweise Helligkeitsvergleiche -> 64 Bit.
+# dHash-Rastergroesse: 9x8 Graustufen-Pixel liefern 8x8=64 paarweise Helligkeitsvergleiche
+# -> 64 Bit.
 _DHASH_WIDTH = 9
 _DHASH_HEIGHT = 8
 

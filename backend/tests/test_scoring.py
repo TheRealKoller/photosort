@@ -153,16 +153,12 @@ class TestAssignDuplicateClusters:
     def test_transitively_close_hashes_form_a_single_cluster(self) -> None:
         # a<->b within threshold, b<->c within threshold, a<->c NOT within threshold directly -
         # still one cluster via transitivity (burst sequence drifting slowly).
+        hash_b_value = 1 << DUPLICATE_HAMMING_THRESHOLD
+        hash_c_value = hash_b_value | (1 << (DUPLICATE_HAMMING_THRESHOLD + 5))
         candidates = [
             DuplicateCandidate(photo_id=1, phash="0000000000000000", sharpness=10.0),
-            DuplicateCandidate(
-                photo_id=2, phash=f"{(1 << DUPLICATE_HAMMING_THRESHOLD):016x}", sharpness=20.0
-            ),
-            DuplicateCandidate(
-                photo_id=3,
-                phash=f"{((1 << DUPLICATE_HAMMING_THRESHOLD) | (1 << (DUPLICATE_HAMMING_THRESHOLD + 5))):016x}",
-                sharpness=30.0,
-            ),
+            DuplicateCandidate(photo_id=2, phash=f"{hash_b_value:016x}", sharpness=20.0),
+            DuplicateCandidate(photo_id=3, phash=f"{hash_c_value:016x}", sharpness=30.0),
         ]
 
         result = assign_duplicate_clusters(candidates)
