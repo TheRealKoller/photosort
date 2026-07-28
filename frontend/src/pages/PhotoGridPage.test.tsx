@@ -7,11 +7,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
-import type { PhotoListOut, PhotoOut } from '../api/types'
+import * as ratingsApi from '../api/ratings'
+import type { PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { PhotoGridPage } from './PhotoGridPage'
 
 vi.mock('../api/photos')
+vi.mock('../api/ratings')
 
 function makeToken(payload: unknown): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -26,6 +28,20 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     taken_at: '2026-07-20T10:00:00Z',
     ratings: [],
     suggestion: null,
+    ...overrides,
+  }
+}
+
+function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
+  return {
+    status: 'rejected',
+    reason: 'low_quality',
+    duplicate_of: null,
+    local_quality_score: null,
+    sharpness: 1.0,
+    exposure: 0.5,
+    cluster_key: null,
+    computed_at: '2026-07-20T10:00:00Z',
     ...overrides,
   }
 }
@@ -53,6 +69,7 @@ describe('PhotoGridPage', () => {
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+    vi.mocked(ratingsApi.setRating).mockReset()
     setToken(makeToken({ sub: '1', username: 'testuser' }))
   })
 
@@ -185,5 +202,49 @@ describe('PhotoGridPage', () => {
 
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
     expect(screen.queryByRole('button', { name: /weitere laden/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a suggestion badge and an "Übernehmen" button when a photo has an open suggestion', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [photo({ id: 1, ratings: [], suggestion: suggestion() })],
+      total: 1,
+    })
+
+    renderPage()
+
+    expect(await screen.findByLabelText('Vorschlag: Verworfen')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /übernehmen/i })).toBeInTheDocument()
+  })
+
+  it('does not show a suggestion badge/button when the photo has no open suggestion', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [photo({ id: 1, ratings: [], suggestion: null })],
+      total: 1,
+    })
+
+    renderPage()
+
+    await screen.findAllByRole('listitem')
+    expect(screen.queryByRole('button', { name: /übernehmen/i })).not.toBeInTheDocument()
+  })
+
+  it('confirms a suggestion on click without navigating to the detail view', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [photo({ id: 7, ratings: [], suggestion: suggestion({ status: 'rejected' }) })],
+      total: 1,
+    })
+    vi.mocked(ratingsApi.setRating).mockResolvedValue({
+      user_id: 1,
+      username: 'testuser',
+      status: 'rejected',
+    })
+    const user = userEvent.setup()
+
+    renderPage()
+    const confirmButton = await screen.findByRole('button', { name: /übernehmen/i })
+    await user.click(confirmButton)
+
+    expect(ratingsApi.setRating).toHaveBeenCalledWith(7, 'rejected')
+    expect(screen.queryByText('Einzelbild-Seite')).not.toBeInTheDocument()
   })
 })

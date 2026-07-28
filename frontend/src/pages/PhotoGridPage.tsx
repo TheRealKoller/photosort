@@ -6,7 +6,7 @@ import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingBadge } from '../components/RatingBadge'
-import { usePhotoSequenceQuery } from '../hooks/usePhotos'
+import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
 import { ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
 
@@ -34,6 +34,7 @@ export function PhotoGridPage() {
   const username = token ? decodeUsername(token) : null
 
   const query = usePhotoSequenceQuery(id, ratingStatus)
+  const setRatingMutation = useSetRatingMutation(id)
   const photos = query.data?.pages.flatMap((page) => page.items) ?? []
 
   function handleFilterChange(value: RatingFilter | ''): void {
@@ -95,16 +96,42 @@ export function PhotoGridPage() {
 
       {photos.length > 0 && (
         <ul>
-          {photos.map((photo) => (
-            <li key={photo.id}>
-              <Link
-                to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
-              >
-                <PhotoImage photoId={photo.id} variant="thumbnail" alt={photo.relative_path} />
-                <RatingBadge status={ownRatingStatus(photo.ratings, username)} />
-              </Link>
-            </li>
-          ))}
+          {photos.map((photo) => {
+            const ownStatus = ownRatingStatus(photo.ratings, username)
+            // Anzeigeregel (Akzeptanzkriterium der Spec): eigene Bewertung hat immer Vorrang -
+            // eine Vorschlags-Badge erscheint nur, solange keine eigene Bewertung existiert.
+            // Der Server garantiert bereits, dass photo.suggestion in diesem Fall null ist, aber
+            // ownStatus wird hier zusaetzlich geprueft statt sich blind auf suggestion zu
+            // verlassen (defensiv, gleiche Anzeigeregel wie Detail-/Vergleichsansicht).
+            const isSuggested = ownStatus === null && photo.suggestion !== null
+            const badgeStatus = ownStatus ?? photo.suggestion?.status ?? null
+
+            function handleConfirmSuggestion(): void {
+              if (photo.suggestion === null || setRatingMutation.isPending) {
+                return
+              }
+              setRatingMutation.mutate({ photoId: photo.id, status: photo.suggestion.status })
+            }
+
+            return (
+              <li key={photo.id}>
+                <Link
+                  to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
+                >
+                  <PhotoImage photoId={photo.id} variant="thumbnail" alt={photo.relative_path} />
+                  <RatingBadge status={badgeStatus} suggested={isSuggested} />
+                </Link>
+                {/* Separates Tap-Ziel ausserhalb des Link-<a> (UI/UX-Abschnitt der Spec): die
+                    Kachel selbst oeffnet weiterhin die Detailansicht, "Uebernehmen" bestaetigt
+                    den Vorschlag direkt per PUT /photos/{id}/rating, ohne zu navigieren. */}
+                {isSuggested && (
+                  <button type="button" onClick={handleConfirmSuggestion}>
+                    Übernehmen
+                  </button>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
 
