@@ -7,11 +7,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
-import type { PhotoListOut, PhotoOut } from '../api/types'
+import * as ratingsApi from '../api/ratings'
+import type { PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { PhotoGridPage } from './PhotoGridPage'
 
 vi.mock('../api/photos')
+vi.mock('../api/ratings')
 
 function makeToken(payload: unknown): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -25,6 +27,21 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     relative_path: 'a.jpg',
     taken_at: '2026-07-20T10:00:00Z',
     ratings: [],
+    suggestion: null,
+    ...overrides,
+  }
+}
+
+function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
+  return {
+    status: 'rejected',
+    reason: 'low_quality',
+    duplicate_of: null,
+    local_quality_score: null,
+    sharpness: 1.0,
+    exposure: 0.5,
+    cluster_key: null,
+    computed_at: '2026-07-20T10:00:00Z',
     ...overrides,
   }
 }
@@ -52,6 +69,7 @@ describe('PhotoGridPage', () => {
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+    vi.mocked(ratingsApi.setRating).mockReset()
     setToken(makeToken({ sub: '1', username: 'testuser' }))
   })
 
@@ -184,5 +202,104 @@ describe('PhotoGridPage', () => {
 
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
     expect(screen.queryByRole('button', { name: /weitere laden/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a suggestion badge and an "Übernehmen" button when a photo has an open suggestion', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [photo({ id: 1, relative_path: 'sunset.jpg', ratings: [], suggestion: suggestion() })],
+      total: 1,
+    })
+
+    renderPage()
+
+    expect(await screen.findByLabelText('Vorschlag: Verworfen')).toBeInTheDocument()
+    // Photo-spezifisches aria-label (UI/UX-Review-Fund): mehrere offene Vorschlaege in einem Grid
+    // sind sonst per Tastatur/Screenreader nicht auseinanderzuhalten, da alle Buttons denselben
+    // sichtbaren Text "Uebernehmen" tragen.
+    expect(
+      screen.getByRole('button', { name: 'Vorschlag übernehmen: sunset.jpg' })
+    ).toBeInTheDocument()
+  })
+
+  it('does not show a suggestion badge/button when the photo has no open suggestion', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [photo({ id: 1, ratings: [], suggestion: null })],
+      total: 1,
+    })
+
+    renderPage()
+
+    await screen.findAllByRole('listitem')
+    expect(screen.queryByRole('button', { name: /übernehmen/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a busy state only on the confirming tile\'s own button while its request is in flight', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({ id: 1, ratings: [], suggestion: suggestion() }),
+        photo({ id: 2, ratings: [], suggestion: suggestion() }),
+      ],
+      total: 2,
+    })
+    vi.mocked(ratingsApi.setRating).mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+
+    renderPage()
+    const [firstButton, secondButton] = await screen.findAllByRole('button', {
+      name: /übernehmen/i,
+    })
+    await user.click(firstButton)
+
+    await waitFor(() => expect(firstButton).toBeDisabled())
+    expect(secondButton).toBeEnabled()
+  })
+
+  it('allows confirming a second tile while an earlier tile\'s confirm is still in flight', async () => {
+    // Regression fuer einen im UI/UX-Review gefundenen Bug: eine gemeinsam genutzte
+    // useSetRatingMutation-Instanz fuer die ganze Seite hat frueher jeden weiteren Klick
+    // stillschweigend ignoriert, solange irgendeine andere Kachel noch "isPending" war - genau
+    // das Batch-Bestaetigen, das dieser Button laut Spec ermoeglichen soll, war dadurch kaputt.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({ id: 1, ratings: [], suggestion: suggestion() }),
+        photo({ id: 2, ratings: [], suggestion: suggestion() }),
+      ],
+      total: 2,
+    })
+    vi.mocked(ratingsApi.setRating).mockImplementation((photoId) =>
+      photoId === 1
+        ? new Promise(() => {})
+        : Promise.resolve({ user_id: 1, username: 'testuser', status: 'rejected' })
+    )
+    const user = userEvent.setup()
+
+    renderPage()
+    const [firstButton, secondButton] = await screen.findAllByRole('button', {
+      name: /übernehmen/i,
+    })
+    await user.click(firstButton)
+    await user.click(secondButton)
+
+    await waitFor(() => expect(ratingsApi.setRating).toHaveBeenCalledWith(2, 'rejected'))
+  })
+
+  it('confirms a suggestion on click without navigating to the detail view', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [photo({ id: 7, ratings: [], suggestion: suggestion({ status: 'rejected' }) })],
+      total: 1,
+    })
+    vi.mocked(ratingsApi.setRating).mockResolvedValue({
+      user_id: 1,
+      username: 'testuser',
+      status: 'rejected',
+    })
+    const user = userEvent.setup()
+
+    renderPage()
+    const confirmButton = await screen.findByRole('button', { name: /übernehmen/i })
+    await user.click(confirmButton)
+
+    expect(ratingsApi.setRating).toHaveBeenCalledWith(7, 'rejected')
+    expect(screen.queryByText('Einzelbild-Seite')).not.toBeInTheDocument()
   })
 })

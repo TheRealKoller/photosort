@@ -5,6 +5,7 @@ import {
   getProject,
   listProjects,
   triggerScan,
+  triggerScore,
   type CreateProjectPayload,
 } from '../api/projects'
 import type { ProjectOut } from '../api/types'
@@ -16,9 +17,11 @@ export function useProjectsQuery() {
 }
 
 /**
- * Pollt, solange der letzte Scan laeuft (`last_scan.status === "running"`), und stoppt
- * automatisch, sobald der Scan fertig ist - siehe specs/features/0005-minimal-project-frontend.md
- * und decisions/0004-frontend-app-shell.md.
+ * Pollt, solange der letzte Scan ODER der letzte Scoring-Lauf laeuft (`status === "running"`),
+ * und stoppt automatisch, sobald beide fertig sind - siehe
+ * specs/features/0005-minimal-project-frontend.md, decisions/0004-frontend-app-shell.md und
+ * specs/features/0003-automatic-best-photo-selection.md (granularer Live-Fortschritt fuer den
+ * Scoring-Trigger, analog zum bestehenden Scan-Polling-Muster).
  */
 export function useProjectQuery(id: number) {
   return useQuery({
@@ -26,7 +29,9 @@ export function useProjectQuery(id: number) {
     queryFn: () => getProject(id),
     refetchInterval: (query) => {
       const data = query.state.data as ProjectOut | undefined
-      return data?.last_scan?.status === 'running' ? POLL_INTERVAL_MS : false
+      const isRunning =
+        data?.last_scan?.status === 'running' || data?.last_scoring_run?.status === 'running'
+      return isRunning ? POLL_INTERVAL_MS : false
     },
   })
 }
@@ -45,6 +50,16 @@ export function useTriggerScanMutation(id: number) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => triggerScan(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+    },
+  })
+}
+
+export function useTriggerScoreMutation(id: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => triggerScore(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
     },

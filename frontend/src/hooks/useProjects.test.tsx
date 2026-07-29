@@ -10,6 +10,7 @@ import {
   useProjectQuery,
   useProjectsQuery,
   useTriggerScanMutation,
+  useTriggerScoreMutation,
 } from './useProjects'
 
 vi.mock('../api/projects')
@@ -22,6 +23,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     opencloud_path: 'CostaRica',
     created_at: '2026-07-20T10:00:00Z',
     last_scan: null,
+    last_scoring_run: null,
     ...overrides,
   }
 }
@@ -96,6 +98,26 @@ describe('useProjectQuery', () => {
     expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBe(callsAfterFirstFetch)
     vi.useRealTimers()
   })
+
+  it('keeps polling while the last scoring run is running', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      project({ last_scoring_run: runningScoringRun() })
+    )
+    const { wrapper } = makeWrapper()
+
+    const { result } = renderHook(() => useProjectQuery(1), { wrapper })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    const callsAfterFirstFetch = vi.mocked(projectsApi.getProject).mock.calls.length
+
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBeGreaterThan(
+      callsAfterFirstFetch
+    )
+    vi.useRealTimers()
+  })
 })
 
 describe('useCreateProjectMutation', () => {
@@ -128,6 +150,21 @@ describe('useTriggerScanMutation', () => {
   })
 })
 
+describe('useTriggerScoreMutation', () => {
+  it('invalidates the project detail query after a successful trigger', async () => {
+    vi.mocked(projectsApi.triggerScore).mockResolvedValue({ status: 'queued' })
+    const { wrapper, queryClient } = makeWrapper()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const { result } = renderHook(() => useTriggerScoreMutation(1), { wrapper })
+    result.current.mutate()
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(projectsApi.triggerScore).toHaveBeenCalledWith(1)
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
+  })
+})
+
 function runningScan(): ProjectOut['last_scan'] {
   return {
     status: 'running',
@@ -138,6 +175,17 @@ function runningScan(): ProjectOut['last_scan'] {
     photos_updated: 0,
     photos_removed: 0,
     files_skipped: 0,
+    error_message: null,
+  }
+}
+
+function runningScoringRun(): ProjectOut['last_scoring_run'] {
+  return {
+    status: 'running',
+    started_at: '2026-07-20T10:00:00Z',
+    finished_at: null,
+    photos_total: 10,
+    photos_processed: 3,
     error_message: null,
   }
 }

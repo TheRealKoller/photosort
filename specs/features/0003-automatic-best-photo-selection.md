@@ -1,6 +1,6 @@
 # 0003 - Automatische Auswahl der besten Fotos (Phase A: lokale Heuristiken)
 
-**Status:** Accepted
+**Status:** Implemented ([PR #6](https://github.com/TheRealKoller/photosort/pull/6))
 **Erstellt:** 2026-07-19
 **Bezug:** Ausgangsgespräch Projekt-Setup, [`decisions/0002-hybrid-ai-scoring.md`](../decisions/0002-hybrid-ai-scoring.md), [`decisions/0006-local-scoring-datamodel.md`](../decisions/0006-local-scoring-datamodel.md), Idea-Sharpening-Gespräch mit Daniel am 2026-07-27
 

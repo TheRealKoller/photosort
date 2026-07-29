@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
@@ -6,7 +7,7 @@ import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingBadge } from '../components/RatingBadge'
-import { usePhotoSequenceQuery } from '../hooks/usePhotos'
+import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
 import { ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
 
@@ -34,7 +35,16 @@ export function PhotoGridPage() {
   const username = token ? decodeUsername(token) : null
 
   const query = usePhotoSequenceQuery(id, ratingStatus)
+  const setRatingMutation = useSetRatingMutation(id)
   const photos = query.data?.pages.flatMap((page) => page.items) ?? []
+
+  // UI/UX-Review-Fund: setRatingMutation ist EINE Instanz fuer die ganze Seite (ein einzelner
+  // useMutation-Hook) - ihr eigenes `isPending` haette bei jedem weiteren Klick, waehrend
+  // irgendeine ANDERE Kachel noch unterwegs ist, den Klick stillschweigend blockiert. Das
+  // widerspricht dem in der Spec genannten Zweck des Buttons ("zuegiges Batch-Bestaetigen vieler
+  // aehnlicher Ausschuss-Kandidaten"). Eigener, photo-spezifischer Pending-Zustand statt dessen:
+  // jede Kachel trackt unabhaengig, ob IHR EIGENER Bestaetigungs-Request noch laeuft.
+  const [confirmingPhotoIds, setConfirmingPhotoIds] = useState<ReadonlySet<number>>(new Set())
 
   function handleFilterChange(value: RatingFilter | ''): void {
     const next = new URLSearchParams(searchParams)
@@ -95,16 +105,63 @@ export function PhotoGridPage() {
 
       {photos.length > 0 && (
         <ul>
-          {photos.map((photo) => (
-            <li key={photo.id}>
-              <Link
-                to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
-              >
-                <PhotoImage photoId={photo.id} variant="thumbnail" alt={photo.relative_path} />
-                <RatingBadge status={ownRatingStatus(photo.ratings, username)} />
-              </Link>
-            </li>
-          ))}
+          {photos.map((photo) => {
+            const ownStatus = ownRatingStatus(photo.ratings, username)
+            // Anzeigeregel (Akzeptanzkriterium der Spec): eigene Bewertung hat immer Vorrang -
+            // eine Vorschlags-Badge erscheint nur, solange keine eigene Bewertung existiert.
+            // Der Server garantiert bereits, dass photo.suggestion in diesem Fall null ist, aber
+            // ownStatus wird hier zusaetzlich geprueft statt sich blind auf suggestion zu
+            // verlassen (defensiv, gleiche Anzeigeregel wie Detail-/Vergleichsansicht).
+            const isSuggested = ownStatus === null && photo.suggestion !== null
+            const badgeStatus = ownStatus ?? photo.suggestion?.status ?? null
+            const isConfirming = confirmingPhotoIds.has(photo.id)
+
+            function handleConfirmSuggestion(): void {
+              if (photo.suggestion === null || isConfirming) {
+                return
+              }
+              setConfirmingPhotoIds((prev) => new Set(prev).add(photo.id))
+              setRatingMutation.mutate(
+                { photoId: photo.id, status: photo.suggestion.status },
+                {
+                  onSettled: () => {
+                    setConfirmingPhotoIds((prev) => {
+                      const next = new Set(prev)
+                      next.delete(photo.id)
+                      return next
+                    })
+                  },
+                }
+              )
+            }
+
+            return (
+              <li key={photo.id}>
+                <Link
+                  to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
+                >
+                  <PhotoImage photoId={photo.id} variant="thumbnail" alt={photo.relative_path} />
+                  <RatingBadge status={badgeStatus} suggested={isSuggested} />
+                </Link>
+                {/* Separates Tap-Ziel ausserhalb des Link-<a> (UI/UX-Abschnitt der Spec): die
+                    Kachel selbst oeffnet weiterhin die Detailansicht, "Uebernehmen" bestaetigt
+                    den Vorschlag direkt per PUT /photos/{id}/rating, ohne zu navigieren.
+                    aria-label enthaelt den Dateinamen (UI/UX-Review-Fund): mehrere offene
+                    Vorschlaege im selben Grid sind sonst per Tastatur/Screenreader nicht
+                    auseinanderzuhalten, da jeder Button denselben sichtbaren Text traegt. */}
+                {isSuggested && (
+                  <button
+                    type="button"
+                    aria-label={`Vorschlag übernehmen: ${photo.relative_path}`}
+                    onClick={handleConfirmSuggestion}
+                    disabled={isConfirming}
+                  >
+                    {isConfirming ? 'Wird übernommen…' : 'Übernehmen'}
+                  </button>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
 

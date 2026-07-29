@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { apiFetch } from './client'
-import { createProject, getProject, listProjects, triggerScan } from './projects'
+import { createProject, getProject, listProjects, triggerScan, triggerScore } from './projects'
 import type { ProjectOut } from './types'
 
 vi.mock('./client', () => ({
@@ -15,6 +15,7 @@ const PROJECT: ProjectOut = {
   opencloud_path: 'CostaRica',
   created_at: '2026-07-20T10:00:00Z',
   last_scan: null,
+  last_scoring_run: null,
 }
 
 describe('api/projects', () => {
@@ -54,6 +55,15 @@ describe('api/projects', () => {
     const result = await triggerScan(1)
 
     expect(apiFetch).toHaveBeenCalledWith('/projects/1/scan', { method: 'POST' })
+    expect(result).toEqual({ status: 'queued' })
+  })
+
+  it('triggers scoring via POST /projects/{id}/score', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
+
+    const result = await triggerScore(1)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/score', { method: 'POST' })
     expect(result).toEqual({ status: 'queued' })
   })
 })

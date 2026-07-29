@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
-import type { PhotoListOut, PhotoOut } from '../api/types'
+import type { PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { PhotoComparePage } from './PhotoComparePage'
 
@@ -25,6 +25,21 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     relative_path: 'a.jpg',
     taken_at: '2026-07-20T10:00:00Z',
     ratings: [],
+    suggestion: null,
+    ...overrides,
+  }
+}
+
+function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
+  return {
+    status: 'rejected',
+    reason: 'low_quality',
+    duplicate_of: null,
+    local_quality_score: null,
+    sharpness: 1.0,
+    exposure: 0.5,
+    cluster_key: null,
+    computed_at: '2026-07-20T10:00:00Z',
     ...overrides,
   }
 }
@@ -129,5 +144,46 @@ describe('PhotoComparePage', () => {
     renderPage()
 
     expect(await screen.findByText(/keine fotos/i)).toBeInTheDocument()
+  })
+
+  it('shows a suggestion badge in the "Ich" position instead of "unbewertet" when open', async () => {
+    const list: PhotoListOut = {
+      items: [
+        photo({
+          id: 1,
+          ratings: [{ user_id: 2, username: 'other-user', status: 'favorite' }],
+          suggestion: suggestion({ status: 'rejected' }),
+        }),
+      ],
+      total: 1,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage()
+
+    expect(await screen.findByLabelText('Vorschlag: Verworfen')).toBeInTheDocument()
+    // Kein dritter Spalten-/Personen-Slot: weiterhin nur "Ich"/der andere Nutzername als
+    // Beschriftungen, keine zusaetzliche dritte Person/Spalte fuer den Vorschlag.
+    expect(screen.getByText(/^ich:/i)).toBeInTheDocument()
+    expect(screen.getByText(/^other-user:/i)).toBeInTheDocument()
+  })
+
+  it('shows the own rating instead of the suggestion once an own rating exists', async () => {
+    const list: PhotoListOut = {
+      items: [
+        photo({
+          id: 1,
+          ratings: [{ user_id: 1, username: 'testuser', status: 'favorite' }],
+          suggestion: null,
+        }),
+      ],
+      total: 1,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage()
+
+    expect(await screen.findByLabelText('Favorit')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/^Vorschlag:/)).not.toBeInTheDocument()
   })
 })
