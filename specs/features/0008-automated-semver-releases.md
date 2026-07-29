@@ -53,7 +53,7 @@ Keines — reine GitHub-Workflow-/Repo-Konfiguration, keine Berührung mit der P
 
 ### Tooling
 
-`googleapis/release-please-action@v4` (gepinnt auf Commit-SHA) als neue externe Abhängigkeit — implementiert das vorgegebene Release-PR-Muster produktionsreif (Conventional-Commit-Parsing, releasable/nicht-releasable Unterscheidung, Changelog-Grouping, Pre-1.0-Bump-Regeln). Details/Begründung siehe ADR 0008.
+`googleapis/release-please-action@<commit-sha> # v4.x.x` (gepinnt auf Commit-SHA, nicht auf den beweglichen Tag `v4`) als neue externe Abhängigkeit — implementiert das vorgegebene Release-PR-Muster produktionsreif (Conventional-Commit-Parsing, releasable/nicht-releasable Unterscheidung, Changelog-Grouping, Pre-1.0-Bump-Regeln). Details/Begründung siehe ADR 0008.
 
 ### Neue/geänderte Dateien
 

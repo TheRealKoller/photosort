@@ -17,7 +17,7 @@ Diese ADR entscheidet die **technische Umsetzung** dieses bereits vorgegebenen M
 
 ### Tooling: `googleapis/release-please-action`
 
-Neue externe Abhängigkeit: GitHub Action `googleapis/release-please-action@v4` (MIT-lizenziert, von Google betrieben, der De-facto-Standard für exakt das vorgegebene Release-PR-Muster). Kein selbstgebauter Workflow — die Logik "Conventional Commits seit letztem Release auswerten, Release-PR fortlaufend pflegen, bei dessen Merge Tag+Release erzeugen, releasable vs. nicht-releasable Commit-Typen unterscheiden" ist genau das, was das Tool tut, und ein Eigenbau würde denselben Umfang an Edge-Cases (Merge-Commit-Parsing, Changelog-Grouping, Pre-1.0-Bump-Regeln) neu und schlechter erfinden.
+Neue externe Abhängigkeit: GitHub Action `googleapis/release-please-action`, Major-Version 4, referenziert über Commit-SHA statt beweglichem Tag (siehe "Token/Berechtigungen") — MIT-lizenziert, von Google betrieben, der De-facto-Standard für exakt das vorgegebene Release-PR-Muster. Kein selbstgebauter Workflow — die Logik "Conventional Commits seit letztem Release auswerten, Release-PR fortlaufend pflegen, bei dessen Merge Tag+Release erzeugen, releasable vs. nicht-releasable Commit-Typen unterscheiden" ist genau das, was das Tool tut, und ein Eigenbau würde denselben Umfang an Edge-Cases (Merge-Commit-Parsing, Changelog-Grouping, Pre-1.0-Bump-Regeln) neu und schlechter erfinden.
 
 ### Workflow-Datei: eine neue Datei, `ci.yml` bleibt unverändert
 
@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@<commit-sha> # v4.x.x, siehe "Token/Berechtigungen" — bewusst nicht der bewegliche Tag @v4
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
@@ -112,13 +112,13 @@ Als Teil der Umsetzung dieser Spec (nicht Teil dieser ADR, sondern konkrete Impl
 3. Direkt nach dem Merge dieser PR: Tag `v0.1.0` auf den Merge-Commit setzen und einen passenden GitHub-Release "v0.1.0" anlegen (z.B. `gh release create v0.1.0 --notes "Start der automatisierten Versionierung, siehe ADR 0008"`) — das ist der reale, sichtbare Anker "Startversion v0.1.0" (Punkt 7 der Vorgabe).
 4. Ab da läuft die Automatisierung: der **erste automatisch erzeugte** Release ist die Version, die sich aus dem *nächsten* releasable Commit nach `v0.1.0` ergibt (z.B. `v0.1.1` bei einem `fix:`, `v0.2.0` bei einem `feat:`) — nicht nochmal `v0.1.0` selbst. Ohne einen echten Tag `v0.1.0` als Anker würde `release-please` sonst versuchen, die gesamte bisherige Commit-Historie seit Repo-Beginn (Specs 0001–0007, viele `feat:`-Commits) auszuwerten, was zu einer deutlich höheren, unbeabsichtigten ersten Versionsnummer führen würde.
 
-*Anmerkung an Daniel/den Aufrufer: "Startversion für den ersten automatischen Release-Lauf: v0.1.0" wurde hier so interpretiert, dass v0.1.0 der Bootstrap-Anker ist, ab dem automatisch weitergezählt wird — nicht, dass der erste automatisch von release-please erzeugte Tag zwingend selbst "v0.1.0" heißen muss (das widerspräche der ebenfalls vorgegebenen automatischen Bump-Logik). Bitte in Schritt 9 der Spec-Verfeinerung explizit bestätigen.*
+*Anmerkung: "Startversion für den ersten automatischen Release-Lauf: v0.1.0" wurde hier so interpretiert, dass v0.1.0 der Bootstrap-Anker ist, ab dem automatisch weitergezählt wird — nicht, dass der erste automatisch von release-please erzeugte Tag zwingend selbst "v0.1.0" heißen muss (das widerspräche der ebenfalls vorgegebenen automatischen Bump-Logik). Diese Interpretation wurde in Schritt 9 der Spec-Verfeinerung mit Daniel bestätigt (siehe Spec 0008, Abschnitt "Offene Fragen").*
 
 ## Begründung
 
 - **`release-please-action` statt Eigenbau:** Punkt 5 der Vorgabe beschreibt exakt das Verhaltensmuster, das dieses Tool bereits produktionsreif implementiert (u.a. bei Google selbst in hunderten Repos im Einsatz). Ein Eigenbau-Workflow müsste Conventional-Commit-Parsing, Pre-1.0-Bump-Regeln, Changelog-Grouping und Merge-Erkennung selbst nachbauen — deutlich mehr Wartungsaufwand für denselben Nutzen. Neue externe Abhängigkeit ist damit gerechtfertigt (siehe CLAUDE.md-Vorgabe zu externen Abhängigkeiten).
 - **`release-type: simple` + `extra-files` statt Zwei-Komponenten-Manifest:** direkte Konsequenz aus Punkt 1+6 der Vorgabe (ein Tag, eine Release, eine gemeinsame Version) — eine technisch elegantere Zwei-Komponenten-Lösung wurde bewusst verworfen, weil sie diese explizite Vorgabe verletzt hätte.
-- **Fine-grained PAT statt GitHub App:** Verhältnismäßigkeit für ein Solo-Projekt (Pragmatiker-Abwägung) bei gleichzeitig engem Scope (nur dieses Repo, minimale Permissions, Ablaufdatum) als Kompromiss zur Senior-Sichtweise (eine GitHub App wäre die langfristig sauberere Lösung, aber erst gerechtfertigt, wenn mehr as ein Repo/Bot-Use-Case sie teilen würde).
+- **Fine-grained PAT statt GitHub App:** Verhältnismäßigkeit für ein Solo-Projekt (Pragmatiker-Abwägung) bei gleichzeitig engem Scope (nur dieses Repo, minimale Permissions, Ablaufdatum) als Kompromiss zur Senior-Sichtweise (eine GitHub App wäre die langfristig sauberere Lösung, aber erst gerechtfertigt, wenn mehr als ein Repo/Bot-Use-Case sie teilen würde).
 - **Kein Copilot-Review auf Release-PRs:** verhindert, dass eine allgemeine Prozessregel (die für inhaltliche Code-Reviews gedacht ist) die hier explizit gewünschte Vollautomatisierung (Punkt 8) lahmlegt. Eng gefasste, dokumentierte Ausnahme statt stillschweigender Abweichung.
 
 ## Konsequenzen
