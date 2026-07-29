@@ -14,7 +14,9 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 ### Als Nächstes
 
-Aktuell keine akzeptierte Spec ohne offene Blocker in dieser Kategorie — Spec 0004 (siehe "Später") ist bereits entsperrt und der naheliegende nächste Kandidat für eine Schärfung.
+- **Automatisierte SemVer-Releases bei Merge nach `main`** — [`specs/features/0008-automated-semver-releases.md`](./features/0008-automated-semver-releases.md) (Status: **Accepted**, 2026-07-29). Release-PR-Muster (`googleapis/release-please-action`) statt Direct-Push, da die durch Spec 0007 gehärtete Branch Protection auf `main` (`required_pull_request_reviews`-Objekt) einen PR-basierten Merge erzwingt. ADR: [`decisions/0008-automated-semver-releases.md`](./decisions/0008-automated-semver-releases.md). Baut technisch auf Spec 0007 (Implemented) auf — keine Abhängigkeit zu 0003/0004.
+
+Spec 0004 (siehe "Später") ist zusätzlich bereits entsperrt und ein weiterer möglicher nächster Kandidat für eine Schärfung.
 
 ### Später
 
@@ -35,6 +37,7 @@ Aktuell keine akzeptierte Spec ohne offene Blocker in dieser Kategorie — Spec 
 | [0005](./features/0005-minimal-project-frontend.md) | Minimales Projekt-Frontend | Implemented ([PR #2](https://github.com/TheRealKoller/photosort/pull/2)) |
 | [0006](./features/0006-auth.md) | Auth-Implementierung | Implemented ([PR #1](https://github.com/TheRealKoller/photosort/pull/1)) |
 | [0007](./features/0007-github-repo-access-hardening.md) | GitHub-Repo-Zugriffshärtung & Issue-Freigabe-Vorsorge | Implemented ([PR #5](https://github.com/TheRealKoller/photosort/pull/5)) |
+| [0008](./features/0008-automated-semver-releases.md) | Automatisierte SemVer-Releases bei Merge nach `main` | Accepted |
 
 ## Bekannte Abhängigkeiten
 
@@ -43,3 +46,4 @@ Aktuell keine akzeptierte Spec ohne offene Blocker in dieser Kategorie — Spec 
 - **0002 (Implemented) → 0004:** Spec 0004 exportiert Fotos anhand der Bewertungen aus 0002 und klärt dort die von 0002 übernommene offene Frage zur Konfliktbehandlung unterschiedlicher Bewertungen beider Nutzer — 0002 ist jetzt umgesetzt, Spec 0004 ist entsperrt.
 - **0003 (Phase A, Implemented) → Phase B (Ideenspeicher, noch keine Spec):** Phase B baut auf dem Perceptual-Hash-/Cluster-Ergebnis aus Phase A auf (Wiederverwendung, keine Neuimplementierung) — Phase A ist jetzt implementiert und im Alltag nutzbar, Phase B ist damit entsperrt und bereit für eine eigene Schärfungs-Session.
 - **0007 — keine technische Abhängigkeit zu 0001–0006:** reine GitHub-Repo-Konfiguration + Doku, betrifft kein bestehendes Datenmodell und keinen bestehenden Code. Reihenfolge gegenüber 0003 mit Daniel geklärt: beliebig, konnte parallel laufen. Teil 2 von 0007 (Issue-Freigabe-Label) ist inhaltliche Voraussetzung/Vorarbeit für eine künftige, noch nicht spezifizierte "Hintergrund-Automatisierung"-Spec — diese wird die eigentliche Label-Prüflogik implementieren und auf der hier geschaffenen Policy/dem Label aufbauen. Ebenso Vorbedingung für die Anbindung des externen Deploy-Tools "Dockhand" (noch keine Spec, außerhalb dieses Repos). Jetzt implementiert ([PR #5](https://github.com/TheRealKoller/photosort/pull/5)).
+- **0007 (Implemented) → 0008 (Accepted):** echte technische Abhängigkeit — der Release-Workflow muss mit der von 0007 gehärteten Branch Protection auf `main` funktionieren (`enforce_admins: true`, `required_status_checks` strict, `required_pull_request_reviews`-Objekt). Deshalb Release-PR-Muster (Self-Merge über den normalen PR-Prozess) statt Direct-Push-Tooling, siehe ADR 0008. Keine Abhängigkeit zu 0003/0004 — orthogonal, beliebige Reihenfolge möglich.
