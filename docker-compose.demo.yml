@@ -1,0 +1,76 @@
+# Optionales Overlay fuer ein lokales Ausprobieren ohne echten OpenCloud-Server (siehe
+# specs/features/0009-local-opencloud-demo-stack.md, specs/decisions/0009-local-opencloud-demo-stack.md,
+# specs/decisions/0010-demo-seed-script-as-compose-service.md). Rein additiv - ergaenzt die
+# bestehenden Services aus docker-compose.yml (postgres, redis, backend, worker, frontend), ersetzt
+# keinen davon:
+#
+#   cp .env.demo.example .env
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build -d
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml --profile seed run --rm seed
+#
+# NUR LOKAL STARTEN: der opencloud-demo-Container ist bewusst schwach abgesichert
+# (Basic-Auth mit oeffentlich bekannten Demo-Zugangsdaten, kein TLS) - niemals auf einem
+# gemeinsam genutzten/oeffentlich erreichbaren Host verwenden.
+services:
+  opencloud-demo:
+    image: opencloudeu/opencloud-rolling
+    restart: unless-stopped
+    environment:
+      # Selbstreferenz-URL des Containers (u.a. fuer das von der Graph-API zurueckgelieferte
+      # webDavUrl-Feld) - muss auf den Docker-DNS-Servicenamen zeigen, damit sie fuer alle drei
+      # Konsumenten (backend, worker, seed) im selben Compose-Netzwerk konsistent aufloesbar ist
+      # (siehe ADR 0010, das diese Frage klaert).
+      OC_URL: http://opencloud-demo:9200
+      # Serviert die APIs als reines HTTP statt mit dem eingebauten Self-Signed-TLS - passt zu
+      # OPENCLOUD_BASE_URL=http://... in .env.demo.example und vermeidet, dass Backend/Worker/Seed
+      # ein zusaetzliches "TLS-Zertifikat ignorieren"-Sonderverhalten brauchen.
+      PROXY_TLS: "false"
+      OC_INSECURE: "true"
+      IDM_CREATE_DEMO_USERS: "true"
+      PROXY_ENABLE_BASIC_AUTH: "true"
+      # PhotoSort authentifiziert sich ausschliesslich per HTTP Basic Auth (siehe
+      # OpenCloudClient), nicht per OIDC - der eingebaute "idp"-Dienst (OpenID-Connect-Provider)
+      # wird nicht gebraucht und lehnt beim Start ohnehin jeden nicht-https OC_URL-Issuer ab
+      # (unvereinbar mit PROXY_TLS=false oben). Deaktiviert statt erzwungenermassen ungenutzt
+      # mitzulaufen.
+      OC_EXCLUDE_RUN_SERVICES: idp
+    # Ohne eine per "opencloud init" generierte Config (/etc/opencloud) startet "opencloud server"
+    # gar nicht erst (fehlende interne Service-Secrets/System-User-IDs - empirisch beim manuellen
+    # Smoke-Test dieser Spec festgestellt, in der Doku nicht explizit als Voraussetzung fuer den
+    # Single-Container-Modus benannt). "init" laeuft daher einmalig vor "server"; idempotent (die
+    # test-Bedingung ueberspringt es, sobald die Config-Datei im persistenten Volume existiert -
+    # auch nach einem Neustart des Containers).
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        test -f /etc/opencloud/opencloud.yaml || opencloud init --insecure true -q
+        exec opencloud server
+    # Explizit auf 127.0.0.1 gebunden statt ungebunden wie der Hauptstack (Security-Muss-Kriterium,
+    # specs/architecture/0003-securitykonzept.md, Abschnitt "Docker-Compose-Netzwerk") - PhotoSort
+    # ist bewusst aus dem offenen Internet erreichbar, ein auf allen Interfaces lauschender
+    # Container mit oeffentlich bekannten Demo-Zugangsdaten waere sonst sofort real ausnutzbar.
+    ports:
+      - "127.0.0.1:${OPENCLOUD_DEMO_PORT:-9200}:9200"
+    volumes:
+      - opencloud_demo_data:/var/lib/opencloud
+      - opencloud_demo_config:/etc/opencloud
+    # Kein eigenes "networks:" - tritt dem gemeinsamen Default-Netzwerk bei, in dem
+    # backend/worker/seed es per Servicename "opencloud-demo" erreichen.
+
+  # Einmaliger Job, kein Dauer-Service - laeuft nur explizit per
+  # "--profile seed run --rm seed" (siehe Kommentar oben), nicht bei einem normalen "up".
+  seed:
+    build: ./scripts
+    depends_on:
+      - opencloud-demo
+    environment:
+      OPENCLOUD_BASE_URL: http://opencloud-demo:9200
+      OPENCLOUD_USERNAME: ${OPENCLOUD_USERNAME:-alan}
+      OPENCLOUD_APP_TOKEN: ${OPENCLOUD_APP_TOKEN:-demo}
+      OPENCLOUD_DRIVE_NAME: ${OPENCLOUD_DRIVE_NAME:-}
+    profiles: ["seed"]
+
+volumes:
+  opencloud_demo_data:
+  opencloud_demo_config:

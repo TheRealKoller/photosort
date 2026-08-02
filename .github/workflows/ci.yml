@@ -50,9 +50,34 @@ jobs:
       - name: Build
         run: npm run build
 
+  demo-scripts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Test (pytest)
+        run: pytest
+
   docker-compose-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Validate docker-compose.yml
         run: docker compose config -q
+      - name: Validate docker-compose.yml + docker-compose.demo.yml overlay
+        run: |
+          cp .env.demo.example .env
+          docker compose -f docker-compose.yml -f docker-compose.demo.yml --profile seed config -q
+      - name: Build seed image (Dockerfile smoke test, no real OpenCloud container)
+        run: docker compose -f docker-compose.yml -f docker-compose.demo.yml --profile seed build seed
