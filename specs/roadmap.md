@@ -15,8 +15,9 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 ### Als Nächstes
 
 - **Automatisierte SemVer-Releases bei Merge nach `main`** — [`specs/features/0008-automated-semver-releases.md`](./features/0008-automated-semver-releases.md) (Status: **Accepted**, 2026-07-29). Release-PR-Muster (`googleapis/release-please-action`) statt Direct-Push, da die durch Spec 0007 gehärtete Branch Protection auf `main` (`required_pull_request_reviews`-Objekt) einen PR-basierten Merge erzwingt. ADR: [`decisions/0008-automated-semver-releases.md`](./decisions/0008-automated-semver-releases.md). Baut technisch auf Spec 0007 (Implemented) auf — keine Abhängigkeit zu 0003/0004.
+- **Lokal ausprobieren ohne echten OpenCloud-Server** — [`specs/features/0009-local-opencloud-demo-stack.md`](./features/0009-local-opencloud-demo-stack.md) (Status: **Accepted**, vorrangig gegenüber Spec 0004, "Mock zuerst" — Entscheidung Daniel, 2026-08-02). Ermöglicht `docker compose up` zum lokalen Ausprobieren ohne echten OpenCloud-Server/Zugangsdaten — kein selbstgebauter Mock, sondern ein optionaler zweiter Compose-Stack (`docker-compose.demo.yml`) mit dem echten OpenCloud-Single-Container (`opencloudeu/opencloud-rolling`, ADR [`decisions/0009-local-opencloud-demo-stack.md`](./decisions/0009-local-opencloud-demo-stack.md)), befüllt über ein eigenständiges Seed-Skript mit Beispielfotos. Reine Entwicklungs-/Testinfrastruktur, kein Nutzerfeature für Daniel/Ehefrau im Betrieb. Keine Abhängigkeit zu Spec 0008 (Automatisierte SemVer-Releases) oder anderen Specs; deckt bewusst nur Lesezugriffe ab, da Spec 0004 (Export/Upload) noch nicht umgesetzt ist. Bereit zur Umsetzung durch den `developer`-Agenten.
 
-Spec 0004 (siehe "Später") ist zusätzlich bereits entsperrt und ein weiterer möglicher nächster Kandidat für eine Schärfung.
+Spec 0004 (siehe "Später") ist zusätzlich bereits entsperrt, tritt aber gemäß Daniels Entscheidung hinter Spec 0009 zurück.
 
 ### Später
 
@@ -38,6 +39,7 @@ Spec 0004 (siehe "Später") ist zusätzlich bereits entsperrt und ein weiterer m
 | [0006](./features/0006-auth.md) | Auth-Implementierung | Implemented ([PR #1](https://github.com/TheRealKoller/photosort/pull/1)) |
 | [0007](./features/0007-github-repo-access-hardening.md) | GitHub-Repo-Zugriffshärtung & Issue-Freigabe-Vorsorge | Implemented ([PR #5](https://github.com/TheRealKoller/photosort/pull/5)) |
 | [0008](./features/0008-automated-semver-releases.md) | Automatisierte SemVer-Releases bei Merge nach `main` | Accepted |
+| [0009](./features/0009-local-opencloud-demo-stack.md) | Lokal ausprobieren ohne echten OpenCloud-Server | Accepted |
 
 ## Bekannte Abhängigkeiten
 
