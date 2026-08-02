@@ -16,7 +16,7 @@ Als Daniel (und seine Frau als Endnutzerin) möchte ich, dass PhotoSort sich war
 ## Akzeptanzkriterien
 
 - [ ] Eine Komponentenbibliothek (Tailwind CSS + Radix UI + shadcn/ui, ADR 0010) ist eingeführt und ersetzt das bisherige unstyled HTML/JSX in allen 9 betroffenen Views/Komponenten (`App.tsx`/AppShell, `LoginPage`, `ProjectListPage`, `ProjectCreatePage`, `ProjectDetailPage`, `FolderBrowser`, `PhotoGridPage`, `PhotoDetailPage`, `PhotoComparePage`, `RatingButtons`/`RatingBadge`/`PhotoImage`).
-- [ ] Vite-Template-Reste (`index.css` lila Akzentfarbe `#aa3bff`/`#863bff`, `#social`-Regeln, `favicon.svg`) sind entfernt/ersetzt.
+- [ ] Vite-Template-Reste (`index.css` lila Akzentfarbe `#aa3bff`/`#c084fc`, `#social`-Regeln, `favicon.svg`) sind entfernt/ersetzt.
 - [ ] Terracotta-Akzentfarbe (`#d97757` hell / `#e8916d` dunkel) und warme Neutraltöne (siehe `architecture/0004-design-system.md`) sind als Design-Tokens (CSS-Variablen) umgesetzt.
 - [ ] Die 4 Bewertungsfarben (favorite/album_worthy/rejected/unbewertet) sind visuell inkl. Symbol umgesetzt, unverändert gegenüber den bereits definierten Hex-Werten, WCAG-AA-Kontrast (4.5:1) gegen den neuen Hintergrund geprüft.
 - [ ] Die 3 Prozess-Status-Farben (running/success/failed) sind visuell umgesetzt.
@@ -105,6 +105,7 @@ Sicherheitsrelevant mit begrenztem Scope: keine neuen Endpunkte/Eingaben/Auth-Ä
 - **Bewertungsfarben bleiben unverändert**, nur die Akzent-/Neutralfarben ändern sich — ux-ui-designer-Konsultation: Gold/Grün/Rot sind gelernte Ampel-Signalfarben, kein Stimmungsanstrich nötig.
 - **Die drei bekannten funktionalen Lücken (Retry-Button, `autocomplete`, Busy-Button `RatingButtons`) werden mit dieser Spec behoben**, nicht separat — Daniel bestätigt im Sharpening-Gespräch: würden ohnehin bei der visuellen Überarbeitung derselben Komponenten berührt, separat zu fixen wäre doppelte Arbeit.
 - **Kein visuelles Regressionstesting** — test-engineer-Konsultation: Aufwand/Nutzen-Verhältnis für ein Zwei-Personen-Projekt nicht gerechtfertigt, manueller Smoke-Test pro PR-Gruppe reicht.
+- **Projektlokaler Skill `.claude/skills/design-system/SKILL.md` angelegt** (Copilot-Review-Fund auf PR #13, 2026-08-02): ADR 0010 verwies ursprünglich auf einen im Environment verfügbaren, aber nicht im Repo versionierten globalen System-Skill `ui-design-system` als zusätzliches Argument — zu Recht bemängelt, da eine künftige Session/ein künftiger Agent ohne diesen globalen Skill dastehen könnte. Statt die Entscheidung an eine nicht garantierte Laufzeitumgebung zu koppeln, kapselt der neue, repo-eigene Skill die Design-Tokens/-Muster als griffige Schnellreferenz für die eigentliche Code-Arbeit (verweist auf `architecture/0004-design-system.md`/ADR 0010 als Quelle der Wahrheit statt sie zu duplizieren als Ersatz). Daniel entschied: als Teil dieser Spec statt als eigenes Feature, da inhaltlich direkt aus dieser Spec hervorgehend. `ux-ui-designer` pflegt den Skill ab jetzt mit, sobald sich `architecture/0004-design-system.md` inhaltlich ändert (siehe `.claude/agents/ux-ui-designer.md`, Aufgabe 1).
 
 ## Out of Scope
 
