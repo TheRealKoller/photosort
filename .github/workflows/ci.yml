@@ -84,3 +84,19 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.demo.yml --profile seed config -q
       - name: Build seed image (Dockerfile smoke test, no real OpenCloud container)
         run: docker compose -f docker-compose.yml -f docker-compose.demo.yml --profile seed build seed
+      - name: Functional check - explicit IPv4-only default network (spec 0010)
+        run: |
+          set -euo pipefail
+          docker compose up -d postgres redis
+          network=$(docker compose config --format json | python3 -c "import json,sys; print(list(json.load(sys.stdin)['networks'].values())[0]['name'])")
+          echo "Inspecting network: $network"
+          enable_ipv6=$(docker network inspect "$network" --format '{{.EnableIPv6}}')
+          driver=$(docker network inspect "$network" --format '{{.Driver}}')
+          echo "EnableIPv6=$enable_ipv6 Driver=$driver"
+          test "$enable_ipv6" = "false"
+          test "$driver" = "bridge"
+          docker compose down
+          if docker network ls --format '{{.Name}}' | grep -qx "$network"; then
+            echo "Network $network still exists after 'docker compose down'" >&2
+            exit 1
+          fi
