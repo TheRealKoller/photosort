@@ -1,4 +1,4 @@
-# 0010 - UI-Komponentenbibliothek: Tailwind CSS + Radix UI + shadcn/ui
+# 0011 - UI-Komponentenbibliothek: Tailwind CSS + Radix UI + shadcn/ui
 
 **Status:** Accepted
 **Datum:** 2026-08-02

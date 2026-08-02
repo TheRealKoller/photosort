@@ -5,7 +5,7 @@ description: Kapselt PhotoSorts Design-System (Farben, Formsprache, wiederkehren
 
 # PhotoSort Design-System
 
-Schnellreferenz für konsistente UI-Arbeit in diesem Repo. Die eigentliche Quelle der Wahrheit sind [`specs/architecture/0004-design-system.md`](../../../specs/architecture/0004-design-system.md) (lebendes Dokument, gepflegt vom `ux-ui-designer`-Agenten) und [`specs/decisions/0010-ui-component-library.md`](../../../specs/decisions/0010-ui-component-library.md) — bei Unsicherheit oder Widerspruch dort nachschlagen statt zu raten, dieser Skill ist nur die griffige Zusammenfassung für den täglichen Gebrauch.
+Schnellreferenz für konsistente UI-Arbeit in diesem Repo. Die eigentliche Quelle der Wahrheit sind [`specs/architecture/0004-design-system.md`](../../../specs/architecture/0004-design-system.md) (lebendes Dokument, gepflegt vom `ux-ui-designer`-Agenten) und [`specs/decisions/0011-ui-component-library.md`](../../../specs/decisions/0011-ui-component-library.md) — bei Unsicherheit oder Widerspruch dort nachschlagen statt zu raten, dieser Skill ist nur die griffige Zusammenfassung für den täglichen Gebrauch.
 
 ## Warum dieser Skill existiert
 
@@ -43,7 +43,7 @@ Aktueller Stand aus `architecture/0004-design-system.md` — bei Änderungen dor
 
 ## Komponentenbibliothek: Tailwind CSS + Radix UI + shadcn/ui
 
-Siehe ADR [`decisions/0010-ui-component-library.md`](../../../specs/decisions/0010-ui-component-library.md) für die volle Begründung. Praktisch relevant:
+Siehe ADR [`decisions/0011-ui-component-library.md`](../../../specs/decisions/0011-ui-component-library.md) für die volle Begründung. Praktisch relevant:
 
 - **shadcn/ui-Komponenten werden als Quellcode kopiert**, nicht als npm-Paket installiert — sie leben in `frontend/src/components/ui/` und sind normaler, editierbarer App-Code. Neue wiederkehrende UI-Bausteine (Button, Card, Badge, Progress, …) dort ablegen statt pro View neu zu erfinden.
 - **Radix-Primitives nur dort einsetzen, wo natives HTML nicht reicht** (z.B. Dialog, Popover). Für Buttons/Formulare/Listen bleibt natives HTML + Tailwind-Klassen der Standard — kein `div`-Onclick, keine unnötige Abstraktion über ein natives `<button>`.
