@@ -111,18 +111,22 @@ class TestWaitUntilReady:
 
 
 _DRIVES_PAYLOAD = {
+    # Shape empirisch gegen den echten opencloud-demo-Container verifiziert (manueller Smoke-Test
+    # dieser Spec): "webDavUrl" liegt unter "root", NICHT auf oberster Ebene des Drive-Objekts -
+    # bewusst abweichend von der (fehlerhaften) Annahme in
+    # backend/src/photosort/opencloud/client.py::list_drives, siehe Abschlussbericht/Rueckfrage.
     "value": [
         {
             "id": "project-space-id",
             "name": "Projects",
             "driveType": "project",
-            "webDavUrl": "http://opencloud-demo:9200/dav/spaces/project-space-id",
+            "root": {"webDavUrl": "http://opencloud-demo:9200/dav/spaces/project-space-id"},
         },
         {
             "id": "alan-personal-id",
             "name": "Alan Shepard",
             "driveType": "personal",
-            "webDavUrl": "http://opencloud-demo:9200/dav/spaces/alan-personal-id",
+            "root": {"webDavUrl": "http://opencloud-demo:9200/dav/spaces/alan-personal-id"},
         },
     ]
 }

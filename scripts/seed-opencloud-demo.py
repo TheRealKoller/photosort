@@ -110,23 +110,30 @@ async def fetch_drives(client: httpx.AsyncClient, base_url: str) -> list[dict]:
     return list(payload.get("value", []))
 
 
+def _drive_webdav_url(drive: dict) -> str:
+    # Empirisch gegen den echten opencloud-demo-Container verifiziert (manueller Smoke-Test
+    # dieser Spec, siehe Abschlussbericht): die Graph-API liefert "webDavUrl" verschachtelt unter
+    # "root", nicht auf oberster Ebene des Drive-Objekts.
+    return str(drive["root"]["webDavUrl"])
+
+
 def resolve_drive_webdav_url(drives: list[dict], drive_name: str | None) -> str:
     """Waehlt den Ziel-Space: bei explizitem Namen exaktes Match, sonst das persoenliche Drive des
-    Demo-Nutzers (driveType == "personal"), sonst das erste vorhandene Drive - analog zu
-    OpenCloudClient.resolve_drive, aber eigenstaendig implementiert (siehe ADR 0009)."""
+    Demo-Nutzers (driveType == "personal"), sonst das erste vorhandene Drive - analog zur Absicht
+    von OpenCloudClient.resolve_drive, aber eigenstaendig implementiert (siehe ADR 0009)."""
     if not drives:
         raise SeedError("Keine OpenCloud-Spaces gefunden.")
 
     if drive_name:
         for drive in drives:
             if drive.get("name") == drive_name:
-                return str(drive["webDavUrl"])
+                return _drive_webdav_url(drive)
         raise SeedError(f"OpenCloud-Space '{drive_name}' wurde nicht gefunden.")
 
     for drive in drives:
         if drive.get("driveType") == "personal":
-            return str(drive["webDavUrl"])
-    return str(drives[0]["webDavUrl"])
+            return _drive_webdav_url(drive)
+    return _drive_webdav_url(drives[0])
 
 
 def _folder_url(webdav_url: str, folder_name: str) -> str:
