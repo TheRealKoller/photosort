@@ -114,7 +114,14 @@ def _drive_webdav_url(drive: dict) -> str:
     # Empirisch gegen den echten opencloud-demo-Container verifiziert (manueller Smoke-Test
     # dieser Spec, siehe Abschlussbericht): die Graph-API liefert "webDavUrl" verschachtelt unter
     # "root", nicht auf oberster Ebene des Drive-Objekts.
-    return str(drive["root"]["webDavUrl"])
+    try:
+        return str(drive["root"]["webDavUrl"])
+    except (KeyError, TypeError) as exc:
+        name = drive.get("name", "<unbekannt>")
+        raise SeedError(
+            f"OpenCloud-Space '{name}' hat kein 'root.webDavUrl'-Feld in der Graph-API-Antwort "
+            "(unerwartete Antwortstruktur)."
+        ) from exc
 
 
 def resolve_drive_webdav_url(drives: list[dict], drive_name: str | None) -> str:
@@ -148,7 +155,10 @@ async def ensure_folder(client: httpx.AsyncClient, webdav_url: str, folder_name:
     """Legt den Demo-Ordner per WebDAV MKCOL an. Idempotent (AK "erneutes Ausfuehren ... erzeugt
     keine Duplikate"): ein 405 (Method Not Allowed) bedeutet laut WebDAV-Spezifikation, dass die
     Ressource bereits existiert - kein Fehler, kein erneuter Anlegeversuch noetig."""
-    response = await client.request("MKCOL", _folder_url(webdav_url, folder_name))
+    try:
+        response = await client.request("MKCOL", _folder_url(webdav_url, folder_name))
+    except httpx.HTTPError as exc:
+        raise SeedError(f"Anlegen des Demo-Ordners '{folder_name}' fehlgeschlagen: {exc}") from exc
     if response.status_code == 201 or response.status_code == 405:
         return
     raise SeedError(

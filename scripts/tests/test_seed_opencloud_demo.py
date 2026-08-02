@@ -175,6 +175,14 @@ class TestResolveDriveWebdavUrl:
         with pytest.raises(seed_module.SeedError):
             seed_module.resolve_drive_webdav_url([], None)
 
+    def test_raises_seed_error_when_root_webdav_url_missing(self, seed_module) -> None:
+        """Review-Finding test-engineer: ein unerwartet fehlendes root/webDavUrl-Feld (genau das
+        Feld, das sich beim Smoke-Test schon einmal als verschachtelt herausstellte) sollte eine
+        klare SeedError ergeben statt einer rohen KeyError."""
+        malformed_drives = [{"id": "x", "name": "Broken", "driveType": "personal"}]
+        with pytest.raises(seed_module.SeedError):
+            seed_module.resolve_drive_webdav_url(malformed_drives, None)
+
     def test_falls_back_to_first_drive_without_personal_type(self, seed_module) -> None:
         drives = [_DRIVES_PAYLOAD["value"][0]]  # nur das "project"-Drive, kein "personal"
         url = seed_module.resolve_drive_webdav_url(drives, None)
@@ -214,6 +222,18 @@ class TestEnsureFolder:
     async def test_other_failure_raises(self, seed_module) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(500, request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        with pytest.raises(seed_module.SeedError):
+            await seed_module.ensure_folder(client, _WEBDAV_URL, "PhotoSort Demo")
+        await client.aclose()
+
+    async def test_transport_error_raises_seed_error_not_raw_httpx_error(self, seed_module) -> None:
+        """Review-Finding test-engineer: MKCOL sollte wie upload_photo/fetch_drives einen
+        httpx.HTTPError in eine SeedError uebersetzen statt roh durchzureichen."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("connection refused", request=request)
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         with pytest.raises(seed_module.SeedError):
@@ -420,3 +440,63 @@ class TestMain:
         assert args.username == "alan"
         assert args.app_token == "demo"
         assert args.folder_name == "PhotoSort Demo"
+
+    def test_forwards_cli_args_unchanged_to_seed(self, seed_module, monkeypatch) -> None:
+        """Findet z.B. einen Bug wie username=args.app_token, den ein reines
+        "wirft nicht"-Assertion nicht aufdecken wuerde (Review-Finding test-engineer)."""
+        captured: dict = {}
+
+        async def fake_seed(**kwargs):
+            captured.update(kwargs)
+            return seed_module.SeedResult(uploaded=["x"], skipped=[], failed=[])
+
+        monkeypatch.setattr(seed_module, "seed", fake_seed)
+
+        seed_module.main(
+            [
+                "--base-url",
+                "http://opencloud-demo:9999",
+                "--username",
+                "the-user",
+                "--app-token",
+                "the-token",
+                "--drive-name",
+                "the-drive",
+                "--folder-name",
+                "the-folder",
+                "--photos-dir",
+                "/some/dir",
+                "--max-wait-attempts",
+                "7",
+                "--poll-interval",
+                "1.5",
+            ]
+        )
+
+        assert captured["base_url"] == "http://opencloud-demo:9999"
+        assert captured["username"] == "the-user"
+        assert captured["app_token"] == "the-token"
+        assert captured["drive_name"] == "the-drive"
+        assert captured["folder_name"] == "the-folder"
+        assert str(captured["photos_dir"]) == "/some/dir"
+        assert captured["max_wait_attempts"] == 7
+        assert captured["poll_interval"] == 1.5
+
+    def test_empty_drive_name_env_becomes_none(self, seed_module) -> None:
+        """docker-compose.demo.yml setzt OPENCLOUD_DRIVE_NAME als leeren String
+        (${OPENCLOUD_DRIVE_NAME:-}), damit resolve_drive_webdav_url automatisch das
+        persoenliche Drive waehlt statt nach einem leeren Namen zu suchen."""
+        # Simuliert das Compose-Verhalten direkt ueber os.environ, ohne echten Prozessstart.
+        import os
+
+        old = os.environ.get("OPENCLOUD_DRIVE_NAME")
+        os.environ["OPENCLOUD_DRIVE_NAME"] = ""
+        try:
+            args = seed_module.build_arg_parser().parse_args([])
+        finally:
+            if old is None:
+                os.environ.pop("OPENCLOUD_DRIVE_NAME", None)
+            else:
+                os.environ["OPENCLOUD_DRIVE_NAME"] = old
+
+        assert args.drive_name is None
