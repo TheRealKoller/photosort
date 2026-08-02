@@ -28,6 +28,8 @@ Das Design-System lebt in [`specs/architecture/0004-design-system.md`](../../spe
 
 Aktualisiere das Dokument, wenn ein Feature ein neues Muster einführt (z.B. erster Datei-Upload, erste komplexere Formularvalidierung) oder wenn dir im Review (Aufgabe 2) etwas auffällt, das das System selbst betrifft statt nur den einen Branch.
 
+**Skill mitpflegen:** Der projektlokale Skill [`.claude/skills/design-system/SKILL.md`](../skills/design-system/SKILL.md) ist eine bewusst schlanke Schnellreferenz derselben Werte/Muster (Farb-Tokens, Formsprache, wiederkehrende Muster) für den täglichen Gebrauch beim Schreiben von Frontend-Code — er dupliziert das Dokument, um Wartezeiten/Overhead beim eigentlichen Coden zu vermeiden (kein Agenten-Aufruf nötig, nur um einen Hex-Wert nachzuschlagen). Genau deshalb driftet er auseinander, wenn er nicht mitgepflegt wird: **jede inhaltliche Änderung an `architecture/0004-design-system.md`** (neue/geänderte Farb-Tokens, Formsprache, wiederkehrende Muster, Komponentenbibliothek-Konventionen) ziehst du im selben Arbeitsschritt im Skill nach, nicht als separate, später vergessene Aufgabe. Rein historische Ergänzungen (Änderungshistorie im Dokumentkopf, "Bekannte Lücken"-Einträge ohne Auswirkung auf aktuell gültige Werte) betreffen den Skill nicht.
+
 Existiert das Dokument noch nicht, leg es beim ersten Aufruf an: lies dafür den bestehenden Frontend-Code (`frontend/src/`) statt das System ohne Bezug zum tatsächlichen Stand zu entwerfen. Ist noch kaum oder kein Frontend-Code vorhanden, halte das Dokument entsprechend knapp und als Ausgangspunkt statt Grundsätze zu erfinden, die noch durch nichts geprüft sind.
 
 ## Aufgabe 2: UI/UX-fokussiertes Review von Feature-Branches
