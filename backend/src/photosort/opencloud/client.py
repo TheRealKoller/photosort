@@ -56,21 +56,31 @@ def _raise_for_status(response: httpx.Response, *, not_found_message: str | None
         )
 
 
-def _drive_webdav_url(item: dict[str, Any]) -> str:
-    # Die Graph-API liefert "webDavUrl" verschachtelt unter "root", nicht auf oberster Ebene des
-    # Drive-Objekts - empirisch gegen einen echten OpenCloud-Server verifiziert (siehe
-    # specs/roadmap.md, "[Bug bestaetigt]"-Eintrag 2026-08-02; dieselbe Struktur wird bereits in
+def _drive_from_graph_api_item(item: Any) -> Drive:
+    # Baut ein einzelnes Drive-Objekt aus einem Eintrag der Graph-API-Antwort
+    # (GET /graph/v1.0/me/drives, Feld "value"). "webDavUrl" liegt dabei verschachtelt unter
+    # "root", nicht auf oberster Ebene des Drive-Objekts - empirisch gegen einen echten
+    # OpenCloud-Server verifiziert (siehe specs/roadmap.md, "[Bug bestaetigt]"-Eintrag
+    # 2026-08-02; dieselbe Struktur wird bereits in
     # scripts/seed-opencloud-demo.py::_drive_webdav_url korrekt gehandhabt).
+    #
+    # item ist bewusst nicht als dict[str, Any] typisiert: die gesamte Funktion behandelt jede
+    # unerwartete Struktur (item selbst kein dict, fehlende Pflichtfelder, "root" kein dict) als
+    # gleichwertigen Fall - ein KeyError/TypeError/AttributeError an irgendeiner Stelle hier soll
+    # immer als OpenCloudError propagieren, nie als roher, von api/opencloud.py::browse_folder
+    # unabgefangener Python-Fehler (der sonst zu einem 500 ohne CORS-Header fuehrt, siehe PR
+    # #12).
     try:
-        return str(item["root"]["webDavUrl"])
-    except (KeyError, TypeError) as exc:
-        # item selbst kann bei einer unerwarteten Antwortstruktur kein dict sein (z.B. ein
-        # String/int-Eintrag in payload["value"]) - dann wuerde item.get(...) mit einem
-        # AttributeError abbrechen und den beabsichtigten OpenCloudError maskieren.
-        name = item.get("name", "<unbekannt>") if isinstance(item, dict) else "<unbekannt>"
+        return Drive(
+            id=item["id"],
+            name=item["name"],
+            drive_type=item.get("driveType", ""),
+            webdav_url=str(item["root"]["webDavUrl"]),
+        )
+    except (KeyError, TypeError, AttributeError) as exc:
         raise OpenCloudError(
-            f"OpenCloud-Space '{name}' hat kein 'root.webDavUrl'-Feld in der "
-            "Graph-API-Antwort (unerwartete Antwortstruktur)."
+            "Unerwartete Antwortstruktur eines OpenCloud-Spaces in der Graph-API-Antwort "
+            "(GET /graph/v1.0/me/drives)."
         ) from exc
 
 
@@ -112,15 +122,16 @@ class OpenCloudClient:
         response = await self._send("GET", f"{self._base_url}/graph/v1.0/me/drives")
         _raise_for_status(response)
         payload = response.json()
-        return [
-            Drive(
-                id=item["id"],
-                name=item["name"],
-                drive_type=item.get("driveType", ""),
-                webdav_url=_drive_webdav_url(item),
-            )
-            for item in payload.get("value", [])
-        ]
+        try:
+            raw_drives = payload.get("value", [])
+        except AttributeError as exc:
+            # payload selbst ist kein JSON-Objekt (z.B. ein Array/String an oberster Ebene) -
+            # .get() existiert dann nicht.
+            raise OpenCloudError(
+                "Unerwartete Antwortstruktur der Graph-API-Space-Liste "
+                "(GET /graph/v1.0/me/drives)."
+            ) from exc
+        return [_drive_from_graph_api_item(item) for item in raw_drives]
 
     async def resolve_drive(self, name: str | None) -> Drive:
         drives = await self.list_drives()

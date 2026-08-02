@@ -3,7 +3,7 @@ import base64
 import httpx
 import pytest
 
-from photosort.opencloud.client import OpenCloudClient, OpenCloudError, _drive_webdav_url, _join
+from photosort.opencloud.client import OpenCloudClient, OpenCloudError, _join
 
 DRIVES_RESPONSE = {
     "value": [
@@ -126,15 +126,31 @@ async def test_list_drives_raises_opencloud_error_for_missing_root_webdav_url() 
         await client.list_drives()
 
 
-def test_drive_webdav_url_raises_opencloud_error_for_non_dict_item() -> None:
-    # Copilot-Review-Fund auf PR #12: item.get(...) im except-Zweig wuerde bei einem Nicht-dict-
-    # Eintrag (z.B. ein String/int in payload["value"]) mit AttributeError abbrechen und den
-    # beabsichtigten OpenCloudError maskieren. Direkter Whitebox-Test der Hilfsfunktion, da
-    # list_drives() diesen Pfad nie erreicht (item["id"] in der Drive-Konstruktion schlaegt fuer
-    # ein Nicht-dict-item bereits vorher fehl) - trotzdem soll die Funktion in Isolation robust
-    # sein, falls sie je anderweitig wiederverwendet wird.
+async def test_list_drives_raises_opencloud_error_for_non_dict_item() -> None:
+    # Zweiter Copilot-Review-Fund auf PR #12: ein Nicht-dict-Eintrag in payload["value"] (z.B. ein
+    # String/int) liess vorher einen rohen TypeError aus "item[\"id\"]" durchschlagen, statt als
+    # OpenCloudError abgefangen zu werden - _drive_from_graph_api_item() umschliesst jetzt die
+    # gesamte Drive-Konstruktion, nicht nur den root.webDavUrl-Zugriff.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"value": ["not-a-dict"]})
+
+    client = _client(httpx.MockTransport(handler))
+
     with pytest.raises(OpenCloudError):
-        _drive_webdav_url("not-a-dict")  # type: ignore[arg-type]
+        await client.list_drives()
+
+
+async def test_list_drives_raises_opencloud_error_for_non_object_payload() -> None:
+    # Dritter Copilot-Review-Fund: liefert die Graph-API kein JSON-Objekt auf oberster Ebene
+    # (z.B. ein Array statt {"value": [...]}), wuerde payload.get(...) mit AttributeError
+    # abbrechen statt einer verstaendlichen OpenCloudError.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=["unexpected", "top-level", "array"])
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.list_drives()
 
 
 async def test_network_failure_is_wrapped_as_opencloud_error() -> None:
