@@ -1,8 +1,9 @@
 # 0011 - Least-Privilege GITHUB_TOKEN-Berechtigungen in ci.yml
 
-**Status:** Accepted
+**Status:** Implemented
 **Erstellt:** 2026-08-02
 **Akzeptiert:** 2026-08-02
+**Implementiert:** 2026-08-02, PR [#14](https://github.com/TheRealKoller/photosort/pull/14)
 **Bezug:** Ausgelöst durch 3 offene CodeQL-Findings (Rule `actions/missing-workflow-permissions`, `security_severity_level: medium`, Tags `security`/`maintainability`, CWE-275) — kein Chat-Wunsch von Daniel, sondern automatisierter Security-Scan des Repos. Idea-Sharpening-Gespräch mit Daniel im Chat, 2026-08-02.
 
 ## Ziel
@@ -18,9 +19,9 @@ Als Repo-Betreiber möchte ich, dass der `GITHUB_TOKEN` in `ci.yml` nur die mini
 ## Akzeptanzkriterien
 
 - [x] `.github/workflows/ci.yml` enthält direkt unter `on:` genau einen Block `permissions:\n  contents: read`, ohne job-spezifische `permissions:`-Blöcke in `backend`, `frontend`, `demo-scripts` oder `docker-compose-check`.
-- [ ] Nach dem Merge nach `main` (nächster automatischer CodeQL-Scan der Kategorie `/language:actions`, ausgelöst durch `push`) sind die drei Alerts #1, #2, #3 (`actions/missing-workflow-permissions`, `.github/workflows/ci.yml`) im Status `fixed`/`closed` — verifizierbar via `gh api repos/{owner}/{repo}/code-scanning/alerts/{1,2,3}` (Feld `state`).
+- [ ] Nach dem Merge nach `main` (nächster automatischer CodeQL-Scan der Kategorie `/language:actions`, ausgelöst durch `push`) sind die drei Alerts #1, #2, #3 (`actions/missing-workflow-permissions`, `.github/workflows/ci.yml`) im Status `fixed`/`closed` — verifizierbar via `gh api repos/{owner}/{repo}/code-scanning/alerts/{1,2,3}` (Feld `state`). **Noch offen zum Zeitpunkt `Implemented`:** erst nach dem tatsächlichen Merge von PR #14 nach `main` prüfbar (neuer CodeQL-Scan läuft bei jedem Push nach `main`), nicht bereits im PR selbst — laut Teststrategie der Spec bewusst ein Post-Merge-Schritt.
 - [x] Alle vier Jobs (`backend`, `frontend`, `demo-scripts`, `docker-compose-check`) laufen nach der Änderung unverändert erfolgreich durch (`checkout`, Dependency-Install, Lint, Typecheck, Test, Build/`docker compose config -q`) — kein Job scheitert an einem Permissions-Fehler.
-- [ ] Kein Job in `ci.yml` führt einen Schritt aus, der mehr als Lesezugriff auf den Checkout benötigt (kein Push, kein PR-Kommentar, kein Release, kein Package-Publish).
+- [x] Kein Job in `ci.yml` führt einen Schritt aus, der mehr als Lesezugriff auf den Checkout benötigt (kein Push, kein PR-Kommentar, kein Release, kein Package-Publish).
 
 ## Datenmodell-Bezug
 
