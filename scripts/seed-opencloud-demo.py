@@ -2,7 +2,8 @@
 """Seeds a local OpenCloud demo container with a small set of bundled example photos.
 
 Eigenstaendiges Dev-/Demo-Tooling, bewusst ausserhalb von backend/src/photosort/ (siehe
-specs/features/0009-local-opencloud-demo-stack.md, specs/decisions/0009-local-opencloud-demo-stack.md,
+specs/features/0009-local-opencloud-demo-stack.md,
+specs/decisions/0009-local-opencloud-demo-stack.md,
 specs/decisions/0010-demo-seed-script-as-compose-service.md). Laeuft als eigener Compose-Service
 (profile "seed") im selben Docker-Netzwerk wie der opencloud-demo-Container - siehe README.md.
 
@@ -13,8 +14,12 @@ von dort (eigenstaendiges Tool, kein Upload-Feature im Produktivcode - siehe ADR
 
 from __future__ import annotations
 
+import argparse
 import asyncio
+import os
+import sys
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
@@ -178,3 +183,123 @@ def discover_demo_photos(photos_dir: Path) -> list[Path]:
     if not photos:
         raise SeedError(f"Keine Beispielfotos in '{photos_dir}' gefunden.")
     return photos
+
+
+@dataclass
+class SeedResult:
+    uploaded: list[str] = field(default_factory=list)
+    skipped: list[str] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
+
+
+async def seed(
+    *,
+    base_url: str,
+    username: str,
+    app_token: str,
+    drive_name: str | None,
+    folder_name: str,
+    photos_dir: Path,
+    max_wait_attempts: int = DEFAULT_MAX_WAIT_ATTEMPTS,
+    poll_interval: float = DEFAULT_POLL_INTERVAL,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    client: httpx.AsyncClient | None = None,
+) -> SeedResult:
+    """Orchestriert den vollstaendigen Seed-Lauf: URL-Sicherheitscheck -> Fotos lokal
+    ermitteln (fail-fast, bevor ueberhaupt ein Request rausgeht) -> auf Container warten ->
+    Ziel-Space aufloesen -> Ordner anlegen -> Fotos hochladen (siehe Akzeptanzkriterien,
+    specs/features/0009-local-opencloud-demo-stack.md).
+
+    `client` ist fuer Tests injizierbar (httpx.MockTransport); ohne Angabe wird ein echter,
+    Basic-Auth-authentifizierter Client erzeugt und am Ende wieder geschlossen."""
+    validate_demo_base_url(base_url)
+    photos = discover_demo_photos(photos_dir)
+
+    owns_client = client is None
+    if client is None:
+        client = httpx.AsyncClient(auth=(username, app_token), timeout=30.0)
+
+    try:
+        await wait_until_ready(
+            client,
+            base_url,
+            max_attempts=max_wait_attempts,
+            poll_interval=poll_interval,
+            sleep=sleep,
+        )
+        drives = await fetch_drives(client, base_url)
+        webdav_url = resolve_drive_webdav_url(drives, drive_name)
+        await ensure_folder(client, webdav_url, folder_name)
+
+        result = SeedResult()
+        for photo in photos:
+            outcome = await upload_photo(
+                client, webdav_url, folder_name, photo.name, photo.read_bytes()
+            )
+            getattr(result, outcome).append(photo.name)
+        return result
+    finally:
+        if owns_client:
+            await client.aclose()
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    """CLI-/Env-Var-Schnittstelle. Nutzt bewusst dieselben Env-Var-Namen wie das Backend
+    (OPENCLOUD_BASE_URL/OPENCLOUD_USERNAME/OPENCLOUD_APP_TOKEN/OPENCLOUD_DRIVE_NAME, siehe
+    backend/src/photosort/config.py) - Defaults passen zum Demo-Container laut .env.demo.example
+    und zur Ausfuehrung als eigener Compose-Service im selben Docker-Netzwerk (ADR 0010), sodass
+    das Skript ohne jede manuelle Konfiguration laeuft."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--base-url", default=os.environ.get("OPENCLOUD_BASE_URL", "http://opencloud-demo:9200")
+    )
+    parser.add_argument("--username", default=os.environ.get("OPENCLOUD_USERNAME", "alan"))
+    parser.add_argument("--app-token", default=os.environ.get("OPENCLOUD_APP_TOKEN", "demo"))
+    parser.add_argument(
+        "--drive-name", default=os.environ.get("OPENCLOUD_DRIVE_NAME") or None
+    )
+    parser.add_argument("--folder-name", default="PhotoSort Demo")
+    parser.add_argument("--photos-dir", default=str(DEFAULT_PHOTOS_DIR))
+    parser.add_argument("--max-wait-attempts", type=int, default=DEFAULT_MAX_WAIT_ATTEMPTS)
+    parser.add_argument("--poll-interval", type=float, default=DEFAULT_POLL_INTERVAL)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+
+    try:
+        result = asyncio.run(
+            seed(
+                base_url=args.base_url,
+                username=args.username,
+                app_token=args.app_token,
+                drive_name=args.drive_name,
+                folder_name=args.folder_name,
+                photos_dir=Path(args.photos_dir),
+                max_wait_attempts=args.max_wait_attempts,
+                poll_interval=args.poll_interval,
+            )
+        )
+    except SeedError as exc:
+        print(f"FEHLER: {exc}", file=sys.stderr)
+        return 1
+
+    print(
+        f"Hochgeladen: {len(result.uploaded)}, "
+        f"uebersprungen (bereits vorhanden): {len(result.skipped)}, "
+        f"fehlgeschlagen: {len(result.failed)}"
+    )
+    if result.failed:
+        print(f"Fehlgeschlagene Dateien: {', '.join(result.failed)}", file=sys.stderr)
+    if not result.uploaded and not result.skipped:
+        print(
+            "FEHLER: keine einzige Datei erfolgreich hochgeladen oder bereits vorhanden.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

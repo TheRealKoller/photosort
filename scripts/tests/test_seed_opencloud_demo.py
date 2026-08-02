@@ -65,7 +65,11 @@ class TestWaitUntilReady:
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         await seed_module.wait_until_ready(
-            client, "http://opencloud-demo:9200", max_attempts=5, poll_interval=3.0, sleep=fake_sleep
+            client,
+            "http://opencloud-demo:9200",
+            max_attempts=5,
+            poll_interval=3.0,
+            sleep=fake_sleep,
         )
         await client.aclose()
 
@@ -97,7 +101,11 @@ class TestWaitUntilReady:
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         with pytest.raises(seed_module.SeedError, match="nicht erreichbar"):
             await seed_module.wait_until_ready(
-                client, "http://opencloud-demo:9200", max_attempts=3, poll_interval=0, sleep=_no_sleep
+                client,
+                "http://opencloud-demo:9200",
+                max_attempts=3,
+                poll_interval=0,
+                sleep=_no_sleep,
             )
         await client.aclose()
 
@@ -283,3 +291,128 @@ class TestDiscoverDemoPhotos:
     def test_raises_when_directory_missing(self, seed_module, tmp_path: Path) -> None:
         with pytest.raises(seed_module.SeedError):
             seed_module.discover_demo_photos(tmp_path / "does-not-exist")
+
+
+class TestSeedOrchestration:
+    """End-to-end-Ablauf (Warten -> Space aufloesen -> Ordner anlegen -> Fotos hochladen), AK aus
+    specs/features/0009-local-opencloud-demo-stack.md."""
+
+    def _photos_dir(self, tmp_path: Path) -> Path:
+        photos_dir = tmp_path / "photos"
+        photos_dir.mkdir()
+        (photos_dir / "demo-01.jpg").write_bytes(b"new-photo")
+        (photos_dir / "demo-02.jpg").write_bytes(b"existing-photo")
+        return photos_dir
+
+    async def test_full_run_uploads_and_skips(self, seed_module, tmp_path: Path) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append((request.method, request.url.path))
+            if request.url.path == "/":
+                return httpx.Response(200, request=request)
+            if request.url.path == "/graph/v1.0/me/drives":
+                return httpx.Response(200, json=_DRIVES_PAYLOAD, request=request)
+            if request.method == "MKCOL":
+                return httpx.Response(201, request=request)
+            if request.method == "HEAD" and request.url.path.endswith("demo-01.jpg"):
+                return httpx.Response(404, request=request)
+            if request.method == "PUT" and request.url.path.endswith("demo-01.jpg"):
+                return httpx.Response(201, request=request)
+            if request.method == "HEAD" and request.url.path.endswith("demo-02.jpg"):
+                return httpx.Response(200, request=request)  # existiert schon
+            raise AssertionError(f"unerwarteter Request: {request.method} {request.url.path}")
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        result = await seed_module.seed(
+            base_url="http://opencloud-demo:9200",
+            username="alan",
+            app_token="demo",
+            drive_name=None,
+            folder_name="PhotoSort Demo",
+            photos_dir=self._photos_dir(tmp_path),
+            client=client,
+        )
+
+        assert result.uploaded == ["demo-01.jpg"]
+        assert result.skipped == ["demo-02.jpg"]
+        assert result.failed == []
+
+    async def test_rejects_non_demo_url_before_any_network_call(
+        self, seed_module, tmp_path: Path
+    ) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise AssertionError("es haette gar kein Request rausgehen duerfen")
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        with pytest.raises(seed_module.SeedError):
+            await seed_module.seed(
+                base_url="https://cloud.example.com",
+                username="alan",
+                app_token="demo",
+                drive_name=None,
+                folder_name="PhotoSort Demo",
+                photos_dir=self._photos_dir(tmp_path),
+                client=client,
+            )
+
+    async def test_fails_fast_when_no_photos_bundled(self, seed_module, tmp_path: Path) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise AssertionError("es haette gar kein Request rausgehen duerfen")
+
+        empty_dir = tmp_path / "empty"
+        empty_dir.mkdir()
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        with pytest.raises(seed_module.SeedError):
+            await seed_module.seed(
+                base_url="http://opencloud-demo:9200",
+                username="alan",
+                app_token="demo",
+                drive_name=None,
+                folder_name="PhotoSort Demo",
+                photos_dir=empty_dir,
+                client=client,
+            )
+
+
+class TestMain:
+    def test_exits_zero_on_full_success(self, seed_module, tmp_path: Path, monkeypatch) -> None:
+        photos_dir = tmp_path / "photos"
+        photos_dir.mkdir()
+        (photos_dir / "demo-01.jpg").write_bytes(b"content")
+
+        async def fake_seed(**kwargs):
+            return seed_module.SeedResult(uploaded=["demo-01.jpg"], skipped=[], failed=[])
+
+        monkeypatch.setattr(seed_module, "seed", fake_seed)
+
+        exit_code = seed_module.main(["--photos-dir", str(photos_dir)])
+
+        assert exit_code == 0
+
+    def test_exits_nonzero_on_seed_error(self, seed_module, monkeypatch) -> None:
+        async def fake_seed(**kwargs):
+            raise seed_module.SeedError("boom")
+
+        monkeypatch.setattr(seed_module, "seed", fake_seed)
+
+        exit_code = seed_module.main([])
+
+        assert exit_code == 1
+
+    def test_exits_nonzero_when_everything_failed(self, seed_module, monkeypatch) -> None:
+        async def fake_seed(**kwargs):
+            return seed_module.SeedResult(uploaded=[], skipped=[], failed=["demo-01.jpg"])
+
+        monkeypatch.setattr(seed_module, "seed", fake_seed)
+
+        exit_code = seed_module.main([])
+
+        assert exit_code == 1
+
+    def test_defaults_match_demo_container(self, seed_module) -> None:
+        args = seed_module.build_arg_parser().parse_args([])
+        assert args.base_url == "http://opencloud-demo:9200"
+        assert args.username == "alan"
+        assert args.app_token == "demo"
+        assert args.folder_name == "PhotoSort Demo"
