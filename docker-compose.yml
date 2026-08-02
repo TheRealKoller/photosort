@@ -95,9 +95,9 @@ volumes:
 # Expliziter Default-Netzwerk-Block statt des von Docker Compose automatisch angelegten
 # Default-Netzwerks (siehe specs/features/0010-explicit-ipv4-only-network.md): das externe
 # Deploy-Tool "Dockhand" hat Probleme, automatisch angelegte IPv6-fähige Netzwerke sauber
-# zu loeschen. Der Schluessel heisst bewusst weiterhin "default" (kein neuer Name) - dadurch
-# haengen sich alle Services oben automatisch weiter an dieses Netzwerk, ohne dass eine der
-# Service-Definitionen ein eigenes "networks:" braucht. Kein driver_opts/Subnetz noetig,
+# zu löschen. Der Schlüssel heißt bewusst weiterhin "default" (kein neuer Name) - dadurch
+# hängen sich alle Services oben automatisch weiter an dieses Netzwerk, ohne dass eine der
+# Service-Definitionen ein eigenes "networks:" braucht. Kein driver_opts/Subnetz nötig,
 # Docker vergibt weiterhin automatisch ein IPv4-Subnetz.
 networks:
   default:

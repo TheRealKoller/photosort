@@ -88,8 +88,8 @@ jobs:
         run: |
           set -euo pipefail
           # Isoliert vom vorherigen Overlay-Schritt: das dort kopierte Demo-.env soll
-          # dieses Check nicht implizit beeinflussen (Compose liest .env automatisch
-          # aus dem CWD, unabhaengig von -f).
+          # diesen Check nicht implizit beeinflussen (Compose liest .env automatisch
+          # aus dem CWD, unabhängig von -f).
           rm -f .env
           trap 'docker compose down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
           docker compose up -d postgres redis
