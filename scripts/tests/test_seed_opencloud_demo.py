@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import httpx
 import pytest
+
+
+async def _no_sleep(_seconds: float) -> None:
+    """Ersetzt asyncio.sleep in Tests - kein echtes Warten, aber Aufrufe zaehlbar ueber Closure."""
 
 
 class TestValidateDemoBaseUrl:
@@ -34,3 +39,62 @@ class TestValidateDemoBaseUrl:
     def test_rejects_non_demo_hosts(self, seed_module, base_url: str) -> None:
         with pytest.raises(seed_module.SeedError):
             seed_module.validate_demo_base_url(base_url)
+
+
+class TestWaitUntilReady:
+    """AK aus specs/features/0009-local-opencloud-demo-stack.md: das Skript wartet aktiv auf den
+    Demo-Container statt sofort mit Verbindungsfehler abzubrechen (Container braucht nach dem
+    Start eine Weile, bis er antwortet)."""
+
+    async def test_succeeds_after_container_becomes_reachable(self, seed_module) -> None:
+        attempts = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise httpx.ConnectError("connection refused", request=request)
+            return httpx.Response(200, request=request)
+
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        await seed_module.wait_until_ready(
+            client, "http://opencloud-demo:9200", max_attempts=5, poll_interval=3.0, sleep=fake_sleep
+        )
+        await client.aclose()
+
+        assert attempts == 3
+        assert sleeps == [3.0, 3.0]  # zwei Wartezyklen zwischen den drei Versuchen
+
+    async def test_treats_server_error_as_not_ready_yet(self, seed_module) -> None:
+        attempts = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 2:
+                return httpx.Response(503, request=request)
+            return httpx.Response(200, request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        await seed_module.wait_until_ready(
+            client, "http://opencloud-demo:9200", max_attempts=5, poll_interval=0, sleep=_no_sleep
+        )
+        await client.aclose()
+
+        assert attempts == 2
+
+    async def test_gives_up_after_max_attempts(self, seed_module) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("connection refused", request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        with pytest.raises(seed_module.SeedError, match="nicht erreichbar"):
+            await seed_module.wait_until_ready(
+                client, "http://opencloud-demo:9200", max_attempts=3, poll_interval=0, sleep=_no_sleep
+            )
+        await client.aclose()
