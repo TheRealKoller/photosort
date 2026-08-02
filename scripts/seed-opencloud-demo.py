@@ -112,7 +112,25 @@ async def fetch_drives(client: httpx.AsyncClient, base_url: str) -> list[dict]:
             f"Graph-API-Space-Liste fehlgeschlagen: {response.status_code} {response.reason_phrase}"
         )
     payload = response.json()
-    return list(payload.get("value", []))
+    try:
+        raw_drives = payload.get("value", [])
+    except AttributeError as exc:
+        # payload selbst ist kein JSON-Objekt (z.B. ein Array/String an oberster Ebene) - .get()
+        # existiert dann nicht (analoger Fund im Backend-Client, Copilot-Review auf PR #12).
+        raise SeedError(
+            "Unerwartete Antwortstruktur der Graph-API-Space-Liste "
+            "(GET /graph/v1.0/me/drives)."
+        ) from exc
+    if not isinstance(raw_drives, list):
+        # "value" ist zwar vorhanden, aber kein Array (z.B. explizit null) - payload.get(...)
+        # liefert bei einem vorhandenen, aber null-wertigen Key den Default NICHT (der greift nur
+        # bei fehlendem Key), das wuerde list(...) sonst mit einem rohen TypeError abbrechen
+        # lassen statt einer verstaendlichen SeedError.
+        raise SeedError(
+            "Unerwartete Antwortstruktur der Graph-API-Space-Liste "
+            "(GET /graph/v1.0/me/drives): 'value' ist kein Array."
+        )
+    return list(raw_drives)
 
 
 def _drive_webdav_url(drive: Any) -> str:

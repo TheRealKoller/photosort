@@ -159,6 +159,29 @@ class TestFetchDrives:
             await seed_module.fetch_drives(client, "http://opencloud-demo:9200")
         await client.aclose()
 
+    async def test_raises_seed_error_for_non_object_payload(self, seed_module) -> None:
+        # Analoger Copilot-Review-Fund im Backend-Client (PR #12): ein Nicht-Objekt an oberster
+        # Ebene der Antwort liesse payload.get(...) mit AttributeError abbrechen.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=["unexpected", "array"], request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        with pytest.raises(seed_module.SeedError):
+            await seed_module.fetch_drives(client, "http://opencloud-demo:9200")
+        await client.aclose()
+
+    async def test_raises_seed_error_for_null_value_field(self, seed_module) -> None:
+        # Analoger Copilot-Review-Fund im Backend-Client (PR #12): ein vorhandenes, aber explizit
+        # auf null gesetztes "value"-Feld umgeht den .get()-Default und liess list(None) mit
+        # einem rohen TypeError abbrechen.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"value": None}, request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        with pytest.raises(seed_module.SeedError):
+            await seed_module.fetch_drives(client, "http://opencloud-demo:9200")
+        await client.aclose()
+
 
 class TestResolveDriveWebdavUrl:
     def test_picks_personal_drive_when_no_name_given(self, seed_module) -> None:
