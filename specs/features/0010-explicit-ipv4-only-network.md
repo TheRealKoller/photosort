@@ -21,6 +21,7 @@ Als Betreiber, der PhotoSort über Dockhand deployt, möchte ich, dass der Compo
 - [ ] Alle 5 Services (postgres, redis, backend, worker, frontend) erreichen sich weiterhin gegenseitig per Servicename (Regressionscheck: `backend` erreicht `postgres:5432`/`redis:6379`, Migrationen laufen durch) — IPv4-only darf nichts brechen.
 - [ ] `docker compose down` entfernt das Netzwerk vollständig (`docker network ls` listet es danach nicht mehr) — direkter, mit Docker-CLI prüfbarer Indikator für das eigentliche Dockhand-Problem, ohne Dockhand selbst zu benötigen.
 - [ ] Der geplante Service `opencloud-demo` aus dem `docker-compose.demo.yml`-Overlay (Spec 0009, noch nicht implementiert) deklariert kein eigenes `networks:` und tritt damit automatisch demselben `default`-Netzwerk bei.
+- [ ] Manuell verifiziert (`ss -tlnp`/`docker port` auf dem Host nach `docker compose up -d`), ob für `BACKEND_PORT`/`FRONTEND_PORT` weiterhin ein IPv6-Host-Listener existiert — Ergebnis wird in `architecture/0003-securitykonzept.md` als tatsächlich verifizierter Wert nachgetragen (siehe Security-Abschnitt, aktuell nicht belastbar zugesichert).
 
 ## Datenmodell-Bezug
 
@@ -55,7 +56,7 @@ Nicht relevant. Reine Docker-Netzwerkkonfiguration (ein `networks:`-Block in `do
 
 ## Security
 
-Reduziert die Angriffsfläche geringfügig, statt sie zu vergrößern: `enable_ipv6: false` verhindert, dass für `BACKEND_PORT`/`FRONTEND_PORT` bei dual-stack-fähigen Docker-Hosts zusätzlich ein IPv6-Listener entsteht, der ggf. nicht von rein IPv4-fokussierten Host-Firewall-Regeln erfasst wäre (potenzieller Bypass-Pfad). Die bestehende IPv4-Port-Bindung (ungebunden auf allen Interfaces, siehe `architecture/0003-securitykonzept.md`, Abschnitt "Docker-Compose-Netzwerk") bleibt unverändert, da Netzwerk-`enable_ipv6` und Host-Port-Publishing unabhängige Docker-Mechanismen sind. Keine Auswirkung auf Auth, interne Container-Kommunikation (läuft über Docker-DNS/Servicenamen) oder bestehende Sicherheitsannahmen.
+Primär durch das Dockhand-Deploy-Problem motiviert, nicht durch einen Sicherheitsfund. `enable_ipv6: false` nimmt Containern im `default`-Netzwerk die IPv6-Adresse und ist tendenziell eher eine Reduktion der Angriffsfläche als eine Vergrößerung — ob es auch verhindert, dass für `BACKEND_PORT`/`FRONTEND_PORT` bei dual-stack-fähigen Docker-Hosts zusätzlich ein IPv6-Host-Listener entsteht, ist **nicht belastbar zugesichert**: Netzwerk-`enable_ipv6` (Container-seitige Adressvergabe) und Host-Port-Publishing (`ports:`) sind technisch unabhängige, versions-/konfigurationsabhängige Docker-Mechanismen. Bei der Umsetzung per `ss -tlnp`/`docker port` tatsächlich zu verifizieren statt hier als gesichert zu behaupten (siehe Akzeptanzkriterien). Die bestehende IPv4-Port-Bindung (ungebunden auf allen Interfaces, siehe `architecture/0003-securitykonzept.md`, Abschnitt "Docker-Compose-Netzwerk") bleibt in jedem Fall unverändert. Keine Auswirkung auf Auth, interne Container-Kommunikation (läuft über Docker-DNS/Servicenamen) oder bestehende Sicherheitsannahmen.
 
 ## Teststrategie
 
