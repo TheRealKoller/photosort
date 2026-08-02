@@ -21,6 +21,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -114,38 +115,51 @@ async def fetch_drives(client: httpx.AsyncClient, base_url: str) -> list[dict]:
     return list(payload.get("value", []))
 
 
-def _drive_webdav_url(drive: dict) -> str:
+def _drive_webdav_url(drive: Any) -> str:
     # Empirisch gegen den echten opencloud-demo-Container verifiziert (manueller Smoke-Test
     # dieser Spec, siehe Abschlussbericht): die Graph-API liefert "webDavUrl" verschachtelt unter
     # "root", nicht auf oberster Ebene des Drive-Objekts.
+    #
+    # drive ist bewusst nicht als dict typisiert: jede unerwartete Struktur (drive selbst kein
+    # dict, "root" kein dict, fehlendes "webDavUrl") wird gleichwertig behandelt - ein
+    # KeyError/TypeError hier soll immer als SeedError propagieren (siehe auch das analoge Muster
+    # in backend/src/photosort/opencloud/client.py, Fund aus dem Copilot-Review von PR #12).
     try:
         return str(drive["root"]["webDavUrl"])
     except (KeyError, TypeError) as exc:
-        # drive selbst kann bei einer unerwarteten Antwortstruktur kein dict sein (z.B. ein
-        # String/int-Eintrag in payload["value"]) - dann wuerde drive.get(...) mit einem
-        # AttributeError abbrechen und den beabsichtigten SeedError maskieren.
-        name = drive.get("name", "<unbekannt>") if isinstance(drive, dict) else "<unbekannt>"
         raise SeedError(
-            f"OpenCloud-Space '{name}' hat kein 'root.webDavUrl'-Feld in der Graph-API-Antwort "
-            "(unerwartete Antwortstruktur)."
+            "Unerwartete Antwortstruktur eines OpenCloud-Spaces in der Graph-API-Antwort "
+            "(fehlendes 'root.webDavUrl'-Feld)."
         ) from exc
+
+
+def _drive_name(drive: Any) -> Any:
+    return drive.get("name") if isinstance(drive, dict) else None
+
+
+def _drive_type(drive: Any) -> Any:
+    return drive.get("driveType") if isinstance(drive, dict) else None
 
 
 def resolve_drive_webdav_url(drives: list[dict], drive_name: str | None) -> str:
     """Waehlt den Ziel-Space: bei explizitem Namen exaktes Match, sonst das persoenliche Drive des
     Demo-Nutzers (driveType == "personal"), sonst das erste vorhandene Drive - analog zur Absicht
-    von OpenCloudClient.resolve_drive, aber eigenstaendig implementiert (siehe ADR 0009)."""
+    von OpenCloudClient.resolve_drive, aber eigenstaendig implementiert (siehe ADR 0009). Nutzt
+    _drive_name()/_drive_type() statt drive.get(...) direkt, damit ein Nicht-dict-Eintrag in
+    "drives" (z.B. ein String/int) hier nicht mit einem rohen AttributeError abbricht, sondern
+    beim eigentlichen Ziel-Match einfach nicht passt und weiter unten regulaer als SeedError
+    endet."""
     if not drives:
         raise SeedError("Keine OpenCloud-Spaces gefunden.")
 
     if drive_name:
         for drive in drives:
-            if drive.get("name") == drive_name:
+            if _drive_name(drive) == drive_name:
                 return _drive_webdav_url(drive)
         raise SeedError(f"OpenCloud-Space '{drive_name}' wurde nicht gefunden.")
 
     for drive in drives:
-        if drive.get("driveType") == "personal":
+        if _drive_type(drive) == "personal":
             return _drive_webdav_url(drive)
     return _drive_webdav_url(drives[0])
 

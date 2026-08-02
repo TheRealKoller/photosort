@@ -192,6 +192,15 @@ class TestResolveDriveWebdavUrl:
         with pytest.raises(seed_module.SeedError):
             seed_module._drive_webdav_url("not-a-dict")
 
+    def test_raises_seed_error_for_non_dict_entry_in_drives_list(self, seed_module) -> None:
+        """Zweiter Copilot-Review-Fund auf PR #12 (analog im Backend-Client behoben): ein
+        Nicht-dict-Eintrag in der drives-Liste liess vorher einen rohen AttributeError aus
+        drive.get(...) in resolve_drive_webdav_url() selbst durchschlagen, bevor
+        _drive_webdav_url() ueberhaupt erreicht wurde."""
+        drives = ["not-a-dict", *_DRIVES_PAYLOAD["value"]]
+        url = seed_module.resolve_drive_webdav_url(drives, None)
+        assert url  # findet weiterhin ein gueltiges Drive, statt an "not-a-dict" abzubrechen
+
     def test_falls_back_to_first_drive_without_personal_type(self, seed_module) -> None:
         drives = [_DRIVES_PAYLOAD["value"][0]]  # nur das "project"-Drive, kein "personal"
         url = seed_module.resolve_drive_webdav_url(drives, None)
