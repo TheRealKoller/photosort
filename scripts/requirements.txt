@@ -1,0 +1,3 @@
+# Laufzeit-Abhaengigkeit fuer das Demo-Seed-Tooling (siehe scripts/Dockerfile), bewusst minimal
+# und unabhaengig vom Backend-Package (specs/features/0009-local-opencloud-demo-stack.md).
+httpx>=0.27
