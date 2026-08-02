@@ -83,3 +83,38 @@ async def wait_until_ready(
         f"OpenCloud-Demo-Container unter {base_url} nach {max_attempts} Versuchen "
         f"(je {poll_interval}s Abstand) nicht erreichbar - letzter Fehler: {last_error}."
     )
+
+
+async def fetch_drives(client: httpx.AsyncClient, base_url: str) -> list[dict]:
+    """Graph-API-Space-Liste - derselbe Codepfad wie OpenCloudClient.list_drives (AK aus
+    specs/features/0009-local-opencloud-demo-stack.md), eigenstaendig implementiert (kein Import
+    aus backend/src/photosort, siehe ADR 0009)."""
+    try:
+        response = await client.get(f"{base_url.rstrip('/')}/graph/v1.0/me/drives")
+    except httpx.HTTPError as exc:
+        raise SeedError(f"OpenCloud nicht erreichbar: {exc}") from exc
+    if response.status_code >= 400:
+        raise SeedError(
+            f"Graph-API-Space-Liste fehlgeschlagen: {response.status_code} {response.reason_phrase}"
+        )
+    payload = response.json()
+    return list(payload.get("value", []))
+
+
+def resolve_drive_webdav_url(drives: list[dict], drive_name: str | None) -> str:
+    """Waehlt den Ziel-Space: bei explizitem Namen exaktes Match, sonst das persoenliche Drive des
+    Demo-Nutzers (driveType == "personal"), sonst das erste vorhandene Drive - analog zu
+    OpenCloudClient.resolve_drive, aber eigenstaendig implementiert (siehe ADR 0009)."""
+    if not drives:
+        raise SeedError("Keine OpenCloud-Spaces gefunden.")
+
+    if drive_name:
+        for drive in drives:
+            if drive.get("name") == drive_name:
+                return str(drive["webDavUrl"])
+        raise SeedError(f"OpenCloud-Space '{drive_name}' wurde nicht gefunden.")
+
+    for drive in drives:
+        if drive.get("driveType") == "personal":
+            return str(drive["webDavUrl"])
+    return str(drives[0]["webDavUrl"])

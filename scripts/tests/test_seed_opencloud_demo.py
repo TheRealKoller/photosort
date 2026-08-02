@@ -98,3 +98,70 @@ class TestWaitUntilReady:
                 client, "http://opencloud-demo:9200", max_attempts=3, poll_interval=0, sleep=_no_sleep
             )
         await client.aclose()
+
+
+_DRIVES_PAYLOAD = {
+    "value": [
+        {
+            "id": "project-space-id",
+            "name": "Projects",
+            "driveType": "project",
+            "webDavUrl": "http://opencloud-demo:9200/dav/spaces/project-space-id",
+        },
+        {
+            "id": "alan-personal-id",
+            "name": "Alan Shepard",
+            "driveType": "personal",
+            "webDavUrl": "http://opencloud-demo:9200/dav/spaces/alan-personal-id",
+        },
+    ]
+}
+
+
+class TestFetchDrives:
+    """Nutzt denselben Graph-API-Codepfad wie OpenCloudClient.list_drives (AK aus
+    specs/features/0009-local-opencloud-demo-stack.md), aber eigenstaendig implementiert (kein
+    Import aus backend/src/photosort, siehe ADR 0009)."""
+
+    async def test_returns_parsed_drives_on_success(self, seed_module) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/graph/v1.0/me/drives"
+            return httpx.Response(200, json=_DRIVES_PAYLOAD, request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        drives = await seed_module.fetch_drives(client, "http://opencloud-demo:9200")
+        await client.aclose()
+
+        assert drives == _DRIVES_PAYLOAD["value"]
+
+    async def test_raises_seed_error_on_http_failure(self, seed_module) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(401, request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        with pytest.raises(seed_module.SeedError):
+            await seed_module.fetch_drives(client, "http://opencloud-demo:9200")
+        await client.aclose()
+
+
+class TestResolveDriveWebdavUrl:
+    def test_picks_personal_drive_when_no_name_given(self, seed_module) -> None:
+        url = seed_module.resolve_drive_webdav_url(_DRIVES_PAYLOAD["value"], None)
+        assert url == "http://opencloud-demo:9200/dav/spaces/alan-personal-id"
+
+    def test_picks_drive_by_exact_name(self, seed_module) -> None:
+        url = seed_module.resolve_drive_webdav_url(_DRIVES_PAYLOAD["value"], "Projects")
+        assert url == "http://opencloud-demo:9200/dav/spaces/project-space-id"
+
+    def test_raises_when_named_drive_not_found(self, seed_module) -> None:
+        with pytest.raises(seed_module.SeedError, match="nicht gefunden"):
+            seed_module.resolve_drive_webdav_url(_DRIVES_PAYLOAD["value"], "Does Not Exist")
+
+    def test_raises_when_no_drives_at_all(self, seed_module) -> None:
+        with pytest.raises(seed_module.SeedError):
+            seed_module.resolve_drive_webdav_url([], None)
+
+    def test_falls_back_to_first_drive_without_personal_type(self, seed_module) -> None:
+        drives = [_DRIVES_PAYLOAD["value"][0]]  # nur das "project"-Drive, kein "personal"
+        url = seed_module.resolve_drive_webdav_url(drives, None)
+        assert url == "http://opencloud-demo:9200/dav/spaces/project-space-id"
