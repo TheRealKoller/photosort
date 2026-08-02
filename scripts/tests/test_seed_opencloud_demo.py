@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -261,3 +263,23 @@ class TestUploadPhoto:
         await client.aclose()
 
         assert outcome == "failed"
+
+
+class TestDiscoverDemoPhotos:
+    def test_returns_sorted_image_files(self, seed_module, tmp_path: Path) -> None:
+        (tmp_path / "b.jpg").write_bytes(b"b")
+        (tmp_path / "a.jpg").write_bytes(b"a")
+        (tmp_path / "c.png").write_bytes(b"c")
+        (tmp_path / "readme.txt").write_bytes(b"not a photo")  # muss ignoriert werden
+
+        photos = seed_module.discover_demo_photos(tmp_path)
+
+        assert [p.name for p in photos] == ["a.jpg", "b.jpg", "c.png"]
+
+    def test_raises_when_no_photos_found(self, seed_module, tmp_path: Path) -> None:
+        with pytest.raises(seed_module.SeedError, match="[Kk]eine"):
+            seed_module.discover_demo_photos(tmp_path)
+
+    def test_raises_when_directory_missing(self, seed_module, tmp_path: Path) -> None:
+        with pytest.raises(seed_module.SeedError):
+            seed_module.discover_demo_photos(tmp_path / "does-not-exist")

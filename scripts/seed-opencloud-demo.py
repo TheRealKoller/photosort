@@ -15,9 +15,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from urllib.parse import quote, urlparse
 
 import httpx
+
+_IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png"})
+DEFAULT_PHOTOS_DIR = Path(__file__).parent / "demo_photos"
 
 # Standardwerte fuer die Warte-/Retry-Logik: 40 Versuche a 3s Wartezeit dazwischen ergeben ein
 # Timeout von ca. 120s (AK aus specs/features/0009-local-opencloud-demo-stack.md: "innerhalb
@@ -161,3 +165,16 @@ async def upload_photo(
         return "failed"
     except httpx.HTTPError:
         return "failed"
+
+
+def discover_demo_photos(photos_dir: Path) -> list[Path]:
+    """Findet die mitgelieferten Beispielfotos (scripts/demo_photos/ standardmaessig, siehe
+    Architektur-Abschnitt der Spec) - sortiert fuer ein deterministisches Upload-/Test-Verhalten."""
+    if not photos_dir.is_dir():
+        raise SeedError(f"Foto-Verzeichnis '{photos_dir}' existiert nicht.")
+    photos = sorted(
+        p for p in photos_dir.iterdir() if p.is_file() and p.suffix.lower() in _IMAGE_EXTENSIONS
+    )
+    if not photos:
+        raise SeedError(f"Keine Beispielfotos in '{photos_dir}' gefunden.")
+    return photos
