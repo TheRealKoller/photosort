@@ -153,6 +153,20 @@ async def test_list_drives_raises_opencloud_error_for_non_object_payload() -> No
         await client.list_drives()
 
 
+async def test_list_drives_raises_opencloud_error_for_null_value_field() -> None:
+    # Vierter Copilot-Review-Fund: ein vorhandenes, aber explizit auf null gesetztes "value"-Feld
+    # liess payload.get("value", []) den Default umgehen (der Key existiert ja) und lieferte
+    # None zurueck - "for item in None" brach dann mit einem rohen TypeError ab statt einer
+    # OpenCloudError.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"value": None})
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.list_drives()
+
+
 async def test_network_failure_is_wrapped_as_opencloud_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("Connection refused", request=request)

@@ -131,6 +131,16 @@ class OpenCloudClient:
                 "Unerwartete Antwortstruktur der Graph-API-Space-Liste "
                 "(GET /graph/v1.0/me/drives)."
             ) from exc
+        if not isinstance(raw_drives, list):
+            # "value" ist zwar vorhanden, aber kein Array (z.B. explizit null oder eine Zahl) -
+            # payload.get("value", []) liefert bei einem vorhandenen, aber null-wertigen Key den
+            # Default NICHT (der greift nur bei fehlendem Key), das wuerde die Iteration unten
+            # sonst mit einem rohen TypeError statt einer verstaendlichen OpenCloudError
+            # abbrechen lassen.
+            raise OpenCloudError(
+                "Unerwartete Antwortstruktur der Graph-API-Space-Liste "
+                "(GET /graph/v1.0/me/drives): 'value' ist kein Array."
+            )
         return [_drive_from_graph_api_item(item) for item in raw_drives]
 
     async def resolve_drive(self, name: str | None) -> Drive:
