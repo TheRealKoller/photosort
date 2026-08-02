@@ -64,7 +64,10 @@ def _drive_webdav_url(item: dict[str, Any]) -> str:
     try:
         return str(item["root"]["webDavUrl"])
     except (KeyError, TypeError) as exc:
-        name = item.get("name", "<unbekannt>")
+        # item selbst kann bei einer unerwarteten Antwortstruktur kein dict sein (z.B. ein
+        # String/int-Eintrag in payload["value"]) - dann wuerde item.get(...) mit einem
+        # AttributeError abbrechen und den beabsichtigten OpenCloudError maskieren.
+        name = item.get("name", "<unbekannt>") if isinstance(item, dict) else "<unbekannt>"
         raise OpenCloudError(
             f"OpenCloud-Space '{name}' hat kein 'root.webDavUrl'-Feld in der "
             "Graph-API-Antwort (unerwartete Antwortstruktur)."
