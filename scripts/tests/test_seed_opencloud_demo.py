@@ -185,6 +185,13 @@ class TestResolveDriveWebdavUrl:
         with pytest.raises(seed_module.SeedError):
             seed_module.resolve_drive_webdav_url(malformed_drives, None)
 
+    def test_drive_webdav_url_raises_seed_error_for_non_dict_item(self, seed_module) -> None:
+        """Copilot-Review-Fund auf PR #12 (analoger Fund im Backend-Client): drive.get(...) im
+        except-Zweig wuerde bei einem Nicht-dict-Eintrag (z.B. ein String/int in payload["value"])
+        mit AttributeError abbrechen und den beabsichtigten SeedError maskieren."""
+        with pytest.raises(seed_module.SeedError):
+            seed_module._drive_webdav_url("not-a-dict")
+
     def test_falls_back_to_first_drive_without_personal_type(self, seed_module) -> None:
         drives = [_DRIVES_PAYLOAD["value"][0]]  # nur das "project"-Drive, kein "personal"
         url = seed_module.resolve_drive_webdav_url(drives, None)

@@ -121,7 +121,10 @@ def _drive_webdav_url(drive: dict) -> str:
     try:
         return str(drive["root"]["webDavUrl"])
     except (KeyError, TypeError) as exc:
-        name = drive.get("name", "<unbekannt>")
+        # drive selbst kann bei einer unerwarteten Antwortstruktur kein dict sein (z.B. ein
+        # String/int-Eintrag in payload["value"]) - dann wuerde drive.get(...) mit einem
+        # AttributeError abbrechen und den beabsichtigten SeedError maskieren.
+        name = drive.get("name", "<unbekannt>") if isinstance(drive, dict) else "<unbekannt>"
         raise SeedError(
             f"OpenCloud-Space '{name}' hat kein 'root.webDavUrl'-Feld in der Graph-API-Antwort "
             "(unerwartete Antwortstruktur)."
