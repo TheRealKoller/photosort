@@ -165,3 +165,99 @@ class TestResolveDriveWebdavUrl:
         drives = [_DRIVES_PAYLOAD["value"][0]]  # nur das "project"-Drive, kein "personal"
         url = seed_module.resolve_drive_webdav_url(drives, None)
         assert url == "http://opencloud-demo:9200/dav/spaces/project-space-id"
+
+
+_WEBDAV_URL = "http://opencloud-demo:9200/dav/spaces/alan-personal-id"
+
+
+class TestEnsureFolder:
+    """AK "Idempotenz": erneutes Ausfuehren gegen einen bereits geseedeten Container bricht nicht
+    ab (specs/features/0009-local-opencloud-demo-stack.md)."""
+
+    async def test_creates_folder_via_mkcol(self, seed_module) -> None:
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(201, request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        await seed_module.ensure_folder(client, _WEBDAV_URL, "PhotoSort Demo")
+        await client.aclose()
+
+        assert len(requests) == 1
+        assert requests[0].method == "MKCOL"
+        assert requests[0].url.path == "/dav/spaces/alan-personal-id/PhotoSort Demo"
+
+    async def test_existing_folder_is_not_an_error(self, seed_module) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(405, request=request)  # WebDAV: Ordner existiert bereits
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        await seed_module.ensure_folder(client, _WEBDAV_URL, "PhotoSort Demo")  # darf nicht werfen
+        await client.aclose()
+
+    async def test_other_failure_raises(self, seed_module) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500, request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        with pytest.raises(seed_module.SeedError):
+            await seed_module.ensure_folder(client, _WEBDAV_URL, "PhotoSort Demo")
+        await client.aclose()
+
+
+class TestUploadPhoto:
+    """AK "Idempotenz" fuer Dateien: existiert eine Datei bereits, wird sie uebersprungen statt
+    dupliziert (Testkonzept-Ergaenzung, architecture/0002-testkonzept.md)."""
+
+    async def test_uploads_new_file(self, seed_module) -> None:
+        calls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request.method)
+            if request.method == "HEAD":
+                return httpx.Response(404, request=request)
+            assert request.method == "PUT"
+            assert request.url.path == "/dav/spaces/alan-personal-id/PhotoSort Demo/demo-01.jpg"
+            assert request.content == b"fake-jpeg-bytes"
+            return httpx.Response(201, request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        outcome = await seed_module.upload_photo(
+            client, _WEBDAV_URL, "PhotoSort Demo", "demo-01.jpg", b"fake-jpeg-bytes"
+        )
+        await client.aclose()
+
+        assert outcome == "uploaded"
+        assert calls == ["HEAD", "PUT"]
+
+    async def test_skips_existing_file_without_reupload(self, seed_module) -> None:
+        calls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request.method)
+            return httpx.Response(200, request=request)  # HEAD: Datei existiert bereits
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        outcome = await seed_module.upload_photo(
+            client, _WEBDAV_URL, "PhotoSort Demo", "demo-01.jpg", b"fake-jpeg-bytes"
+        )
+        await client.aclose()
+
+        assert outcome == "skipped"
+        assert calls == ["HEAD"]  # kein PUT, kein Duplikat
+
+    async def test_failed_upload_is_reported_not_raised(self, seed_module) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "HEAD":
+                return httpx.Response(404, request=request)
+            return httpx.Response(500, request=request)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        outcome = await seed_module.upload_photo(
+            client, _WEBDAV_URL, "PhotoSort Demo", "demo-01.jpg", b"fake-jpeg-bytes"
+        )
+        await client.aclose()
+
+        assert outcome == "failed"

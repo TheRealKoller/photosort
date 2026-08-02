@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -118,3 +118,46 @@ def resolve_drive_webdav_url(drives: list[dict], drive_name: str | None) -> str:
         if drive.get("driveType") == "personal":
             return str(drive["webDavUrl"])
     return str(drives[0]["webDavUrl"])
+
+
+def _folder_url(webdav_url: str, folder_name: str) -> str:
+    return f"{webdav_url.rstrip('/')}/{quote(folder_name)}"
+
+
+def _file_url(webdav_url: str, folder_name: str, filename: str) -> str:
+    return f"{_folder_url(webdav_url, folder_name)}/{quote(filename)}"
+
+
+async def ensure_folder(client: httpx.AsyncClient, webdav_url: str, folder_name: str) -> None:
+    """Legt den Demo-Ordner per WebDAV MKCOL an. Idempotent (AK "erneutes Ausfuehren ... erzeugt
+    keine Duplikate"): ein 405 (Method Not Allowed) bedeutet laut WebDAV-Spezifikation, dass die
+    Ressource bereits existiert - kein Fehler, kein erneuter Anlegeversuch noetig."""
+    response = await client.request("MKCOL", _folder_url(webdav_url, folder_name))
+    if response.status_code == 201 or response.status_code == 405:
+        return
+    raise SeedError(
+        f"Anlegen des Demo-Ordners '{folder_name}' fehlgeschlagen: "
+        f"{response.status_code} {response.reason_phrase}"
+    )
+
+
+async def upload_photo(
+    client: httpx.AsyncClient, webdav_url: str, folder_name: str, filename: str, content: bytes
+) -> str:
+    """Laedt ein einzelnes Beispielfoto per WebDAV PUT hoch. Idempotent (AK "erneutes Ausfuehren
+    ... erzeugt keine Duplikate"): existiert die Datei bereits (HEAD 200), wird sie uebersprungen
+    statt erneut hochgeladen. Ein einzelner fehlgeschlagener Upload bricht den Gesamtlauf nicht ab
+    (siehe architecture/0002-testkonzept.md) - der Aufrufer sammelt die Ergebnisse pro Datei und
+    entscheidet ueber den Gesamterfolg."""
+    url = _file_url(webdav_url, folder_name, filename)
+    try:
+        head_response = await client.head(url)
+        if head_response.status_code == 200:
+            return "skipped"
+
+        put_response = await client.put(url, content=content)
+        if put_response.status_code in (200, 201, 204):
+            return "uploaded"
+        return "failed"
+    except httpx.HTTPError:
+        return "failed"
