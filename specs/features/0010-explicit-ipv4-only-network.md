@@ -1,8 +1,9 @@
 # 0010 - Explizites IPv4-only Docker-Netzwerk
 
-**Status:** Accepted
+**Status:** Implemented ([PR #15](https://github.com/TheRealKoller/photosort/pull/15))
 **Erstellt:** 2026-08-02
 **Akzeptiert:** 2026-08-02
+**Implementiert:** 2026-08-02, Feature-Branch `feature/0010-ipv4-only-network`
 **Bezug:** Idea-Sharpening-Gespräch mit Daniel im Chat, 2026-08-02. Vorbedingung/Vorarbeit für die künftige Anbindung des externen Deploy-Tools "Dockhand" (siehe Spec/ADR [`0007`](./0007-github-repo-access-hardening.md)), analog zu dessen Teil 1 — anderes technisches Problem, gemeinsamer Auslöser.
 
 ## Ziel
