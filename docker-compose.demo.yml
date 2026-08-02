@@ -43,6 +43,7 @@ services:
     entrypoint: ["sh", "-c"]
     command:
       - |
+        set -e
         test -f /etc/opencloud/opencloud.yaml || opencloud init --insecure true -q
         exec opencloud server
     # Explizit auf 127.0.0.1 gebunden statt ungebunden wie der Hauptstack (Security-Muss-Kriterium,

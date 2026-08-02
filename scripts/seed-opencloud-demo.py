@@ -53,12 +53,16 @@ def validate_demo_base_url(base_url: str) -> None:
     produktiven .env (echte OPENCLOUD_BASE_URL) Fotos in einen echten Familien-Space schreibt
     (Security-Muss-Kriterium, specs/features/0009-local-opencloud-demo-stack.md)."""
     parsed = urlparse(base_url)
-    if parsed.scheme != "http" or parsed.hostname not in _DEMO_HOSTS:
+    # Review-Finding (Copilot): ohne explizite Port-Pruefung wuerde z.B. "http://localhost"
+    # (impliziter Port 80) akzeptiert, obwohl die Fehlermeldung unten selbst einen Port verlangt -
+    # koennte einen ganz anderen lokalen Dienst treffen statt des tatsaechlichen Demo-Containers.
+    if parsed.scheme != "http" or parsed.hostname not in _DEMO_HOSTS or parsed.port is None:
         raise SeedError(
             f"'{base_url}' sieht nicht wie der lokale OpenCloud-Demo-Container aus (erwartet: "
-            f"http://<{'|'.join(sorted(_DEMO_HOSTS))}>:<port>). Abbruch, um nicht versehentlich "
-            "in einen echten OpenCloud-Space zu schreiben. Falls dies tatsaechlich der "
-            "Demo-Container ist, den Hostnamen pruefen bzw. _DEMO_HOSTS anpassen."
+            f"http://<{'|'.join(sorted(_DEMO_HOSTS))}>:<port>, Port explizit angegeben). Abbruch, "
+            "um nicht versehentlich in einen echten OpenCloud-Space zu schreiben. Falls dies "
+            "tatsaechlich der Demo-Container ist, den Hostnamen/Port pruefen bzw. _DEMO_HOSTS "
+            "anpassen."
         )
 
 

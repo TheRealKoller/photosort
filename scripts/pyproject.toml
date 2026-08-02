@@ -14,6 +14,19 @@ dev = [
     "ruff>=0.7",
 ]
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# Review-Finding (Copilot): ohne explizites [build-system] fiel "pip install -e .[dev]" auf
+# setuptools' impliziten Auto-Discovery-Fallback zurueck - funktionierte zufaellig (kein
+# importierbares Package hier, nur lose Skripte/Tests/Bilddateien), war aber
+# versions-/tool-abhaengig und daher nicht garantiert stabil. "scripts/" ist bewusst kein
+# importierbares Package (seed-opencloud-demo.py wird per Pfad geladen, siehe
+# tests/conftest.py) - py-modules explizit leer, damit setuptools nichts zu discovern versucht.
+[tool.setuptools]
+py-modules = []
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

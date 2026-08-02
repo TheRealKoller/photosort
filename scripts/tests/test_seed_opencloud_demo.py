@@ -36,6 +36,8 @@ class TestValidateDemoBaseUrl:
             "http://192.168.1.50:9200",
             "not-a-url",
             "",
+            "http://localhost",  # Review-Finding (Copilot): kein Port -> impliziter Port 80,
+            "http://opencloud-demo",  # koennte versehentlich einen anderen lokalen Dienst treffen
         ],
     )
     def test_rejects_non_demo_hosts(self, seed_module, base_url: str) -> None:
@@ -348,15 +350,18 @@ class TestSeedOrchestration:
             raise AssertionError(f"unerwarteter Request: {request.method} {request.url.path}")
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        result = await seed_module.seed(
-            base_url="http://opencloud-demo:9200",
-            username="alan",
-            app_token="demo",
-            drive_name=None,
-            folder_name="PhotoSort Demo",
-            photos_dir=self._photos_dir(tmp_path),
-            client=client,
-        )
+        try:
+            result = await seed_module.seed(
+                base_url="http://opencloud-demo:9200",
+                username="alan",
+                app_token="demo",
+                drive_name=None,
+                folder_name="PhotoSort Demo",
+                photos_dir=self._photos_dir(tmp_path),
+                client=client,
+            )
+        finally:
+            await client.aclose()
 
         assert result.uploaded == ["demo-01.jpg"]
         assert result.skipped == ["demo-02.jpg"]
@@ -369,16 +374,19 @@ class TestSeedOrchestration:
             raise AssertionError("es haette gar kein Request rausgehen duerfen")
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        with pytest.raises(seed_module.SeedError):
-            await seed_module.seed(
-                base_url="https://cloud.example.com",
-                username="alan",
-                app_token="demo",
-                drive_name=None,
-                folder_name="PhotoSort Demo",
-                photos_dir=self._photos_dir(tmp_path),
-                client=client,
-            )
+        try:
+            with pytest.raises(seed_module.SeedError):
+                await seed_module.seed(
+                    base_url="https://cloud.example.com",
+                    username="alan",
+                    app_token="demo",
+                    drive_name=None,
+                    folder_name="PhotoSort Demo",
+                    photos_dir=self._photos_dir(tmp_path),
+                    client=client,
+                )
+        finally:
+            await client.aclose()
 
     async def test_fails_fast_when_no_photos_bundled(self, seed_module, tmp_path: Path) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -387,16 +395,19 @@ class TestSeedOrchestration:
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        with pytest.raises(seed_module.SeedError):
-            await seed_module.seed(
-                base_url="http://opencloud-demo:9200",
-                username="alan",
-                app_token="demo",
-                drive_name=None,
-                folder_name="PhotoSort Demo",
-                photos_dir=empty_dir,
-                client=client,
-            )
+        try:
+            with pytest.raises(seed_module.SeedError):
+                await seed_module.seed(
+                    base_url="http://opencloud-demo:9200",
+                    username="alan",
+                    app_token="demo",
+                    drive_name=None,
+                    folder_name="PhotoSort Demo",
+                    photos_dir=empty_dir,
+                    client=client,
+                )
+        finally:
+            await client.aclose()
 
 
 class TestMain:
