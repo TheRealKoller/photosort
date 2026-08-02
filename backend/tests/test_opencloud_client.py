@@ -11,13 +11,17 @@ DRIVES_RESPONSE = {
             "id": "storage-users-1$personal-id",
             "name": "Daniel",
             "driveType": "personal",
-            "webDavUrl": "https://cloud.example.com/dav/spaces/storage-users-1$personal-id",
+            "root": {
+                "webDavUrl": "https://cloud.example.com/dav/spaces/storage-users-1$personal-id"
+            },
         },
         {
             "id": "storage-project-1$family-id",
             "name": "Family",
             "driveType": "project",
-            "webDavUrl": "https://cloud.example.com/dav/spaces/storage-project-1$family-id",
+            "root": {
+                "webDavUrl": "https://cloud.example.com/dav/spaces/storage-project-1$family-id"
+            },
         },
     ]
 }
@@ -99,6 +103,27 @@ async def test_list_drives_parses_response() -> None:
 
     assert [d.name for d in drives] == ["Daniel", "Family"]
     assert drives[1].webdav_url == "https://cloud.example.com/dav/spaces/storage-project-1$family-id"
+
+
+async def test_list_drives_raises_opencloud_error_for_missing_root_webdav_url() -> None:
+    # Regressionstest: die reale Graph-API liefert "webDavUrl" verschachtelt unter "root" statt
+    # auf oberster Ebene des Drive-Objekts (siehe specs/roadmap.md, "[Bug bestaetigt]"-Eintrag
+    # 2026-08-02, empirisch gegen einen echten opencloud-rolling-Container verifiziert - der
+    # frueher hier verwendete flache DRIVES_RESPONSE-Fixture spiegelte eine falsche, nie real
+    # existierende Antwortstruktur und liess den Bug im Testlauf unentdeckt). Eine unerwartete
+    # Struktur (fehlendes "root" oder "webDavUrl") muss als OpenCloudError statt als roher
+    # KeyError propagieren, sonst faengt api/opencloud.py::browse_folder ihn nicht ab und der
+    # Client bekommt einen 500er ohne CORS-Header statt einer verstaendlichen 400-Fehlermeldung.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"value": [{"id": "x", "name": "Broken", "driveType": "personal"}]},
+        )
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.list_drives()
 
 
 async def test_network_failure_is_wrapped_as_opencloud_error() -> None:

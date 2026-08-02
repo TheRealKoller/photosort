@@ -56,6 +56,21 @@ def _raise_for_status(response: httpx.Response, *, not_found_message: str | None
         )
 
 
+def _drive_webdav_url(item: dict[str, Any]) -> str:
+    # Die Graph-API liefert "webDavUrl" verschachtelt unter "root", nicht auf oberster Ebene des
+    # Drive-Objekts - empirisch gegen einen echten OpenCloud-Server verifiziert (siehe
+    # specs/roadmap.md, "[Bug bestaetigt]"-Eintrag 2026-08-02; dieselbe Struktur wird bereits in
+    # scripts/seed-opencloud-demo.py::_drive_webdav_url korrekt gehandhabt).
+    try:
+        return str(item["root"]["webDavUrl"])
+    except (KeyError, TypeError) as exc:
+        name = item.get("name", "<unbekannt>")
+        raise OpenCloudError(
+            f"OpenCloud-Space '{name}' hat kein 'root.webDavUrl'-Feld in der "
+            "Graph-API-Antwort (unerwartete Antwortstruktur)."
+        ) from exc
+
+
 class OpenCloudClient:
     def __init__(
         self,
@@ -99,7 +114,7 @@ class OpenCloudClient:
                 id=item["id"],
                 name=item["name"],
                 drive_type=item.get("driveType", ""),
-                webdav_url=item["webDavUrl"],
+                webdav_url=_drive_webdav_url(item),
             )
             for item in payload.get("value", [])
         ]
