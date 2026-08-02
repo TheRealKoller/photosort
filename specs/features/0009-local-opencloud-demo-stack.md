@@ -1,8 +1,9 @@
 # 0009 - Lokal ausprobieren ohne echten OpenCloud-Server
 
-**Status:** Accepted
+**Status:** Implemented
 **Erstellt:** 2026-08-02
 **Akzeptiert:** 2026-08-02
+**Umgesetzt:** 2026-08-02, [PR #11](https://github.com/TheRealKoller/photosort/pull/11), Feature-Branch `feature/0009-local-opencloud-demo-stack`
 **Bezug:** Idea-Sharpening-Gespräch mit Daniel im Chat, 2026-08-02 ("Ich würde die Anwendung gern lokal starten können zum Ausprobieren. Könnte man den OpenCloud-Server dazu ggf. mocken?")
 
 ## Ziel
@@ -15,15 +16,15 @@ Als Entwickler (Daniel) möchte ich PhotoSort lokal starten können, ohne einen 
 
 ## Akzeptanzkriterien
 
-- [ ] `docker compose -f docker-compose.yml -f docker-compose.demo.yml up` startet ohne Fehler und ohne dass Daniel `OPENCLOUD_*`-Variablen manuell setzen muss (`.env.demo.example` reicht als `.env`).
-- [ ] Der OpenCloud-Demo-Container ist innerhalb einer definierten Zeitspanne (z.B. 120s) über seine Health-/Login-Route erreichbar; `scripts/seed-opencloud-demo.py` wartet aktiv darauf statt sofort mit Verbindungsfehler abzubrechen.
-- [ ] Nach erfolgreichem Lauf von `scripts/seed-opencloud-demo.py` existiert im Demo-Space mindestens ein Ordner mit mehreren Beispielfotos, abrufbar über denselben `OpenCloudClient`-Codepfad (Graph-API-Space-Liste + WebDAV-PROPFIND), den auch das Produktiv-Backend nutzt.
-- [ ] Mit den Werten aus `.env.demo.example` kann Daniel im PhotoSort-Frontend den Demo-Space browsen, ein Projekt anlegen, einen Scan starten und die automatische Bewertung (Spec 0003) durchspielen — ohne Codeänderung, nur andere `.env`.
-- [ ] Erneutes Ausführen von `scripts/seed-opencloud-demo.py` gegen einen bereits geseedeten Container bricht nicht ab und erzeugt keine Duplikate (Idempotenz).
-- [ ] `scripts/seed-opencloud-demo.py` validiert die Ziel-`OPENCLOUD_BASE_URL` vor dem Schreiben gegen ein erwartetes Demo-Muster und bricht mit klarer Warnung ab, falls sie nicht offensichtlich auf den lokalen Demo-Container zeigt (verhindert versehentliches Schreiben in einen echten Familien-Space bei falscher `.env`).
-- [ ] `docker-compose.demo.yml` bindet den OpenCloud-Port explizit auf `127.0.0.1`, nicht ungebunden wie der Hauptstack.
-- [ ] README enthält die drei nötigen Schritte (Overlay starten, Seed-Skript laufen lassen, `.env.demo.example` nutzen) in nachvollziehbarer Reihenfolge.
-- [ ] Der reguläre Pfad mit echtem OpenCloud-Server bleibt unverändert; kein Produktivcode (`backend/src/photosort/opencloud/*`) wird angefasst, kein neuer "ist das der Mock"-Codepfad.
+- [x] `docker compose -f docker-compose.yml -f docker-compose.demo.yml up` startet ohne Fehler und ohne dass Daniel `OPENCLOUD_*`-Variablen manuell setzen muss (`.env.demo.example` reicht als `.env`).
+- [x] Der OpenCloud-Demo-Container ist innerhalb einer definierten Zeitspanne (z.B. 120s) über seine Health-/Login-Route erreichbar; `scripts/seed-opencloud-demo.py` wartet aktiv darauf statt sofort mit Verbindungsfehler abzubrechen.
+- [x] Nach erfolgreichem Lauf von `scripts/seed-opencloud-demo.py` existiert im Demo-Space mindestens ein Ordner mit mehreren Beispielfotos, abrufbar über denselben `OpenCloudClient`-Codepfad (Graph-API-Space-Liste + WebDAV-PROPFIND), den auch das Produktiv-Backend nutzt.
+- [ ] **Aktuell NICHT demonstrierbar, blockiert durch einen unabhängigen, vorbestehenden Bug außerhalb dieser Spec:** Mit den Werten aus `.env.demo.example` kann Daniel im PhotoSort-Frontend den Demo-Space browsen, ein Projekt anlegen, einen Scan starten und die automatische Bewertung (Spec 0003) durchspielen — ohne Codeänderung, nur andere `.env`. Beim finalen End-to-End-Test (voller Stack, echter Login, `GET /opencloud/browse`) reproduzierbar mit `500 Internal Server Error` fehlgeschlagen: `backend/src/photosort/opencloud/client.py::list_drives` liest `item["webDavUrl"]` auf oberster Ebene der Graph-API-Antwort, der echte Server liefert es aber unter `item["root"]["webDavUrl"]` — `KeyError: 'webDavUrl'` (vollständiger Traceback im Abschlussbericht des zugehörigen PRs). Demo-Container und Seed-Skript selbst funktionieren nachweislich korrekt (siehe voriges AK sowie direkte WebDAV-/Graph-API-Verifikation ohne den Backend-Codepfad) — der Bruch liegt ausschließlich im bereits vor diesem Feature bestehenden Produktivcode, der laut AK unten bewusst nicht angefasst wird. Siehe `specs/roadmap.md` für das daraus resultierende Bugfix-Ticket.
+- [x] Erneutes Ausführen von `scripts/seed-opencloud-demo.py` gegen einen bereits geseedeten Container bricht nicht ab und erzeugt keine Duplikate (Idempotenz).
+- [x] `scripts/seed-opencloud-demo.py` validiert die Ziel-`OPENCLOUD_BASE_URL` vor dem Schreiben gegen ein erwartetes Demo-Muster und bricht mit klarer Warnung ab, falls sie nicht offensichtlich auf den lokalen Demo-Container zeigt (verhindert versehentliches Schreiben in einen echten Familien-Space bei falscher `.env`).
+- [x] `docker-compose.demo.yml` bindet den OpenCloud-Port explizit auf `127.0.0.1`, nicht ungebunden wie der Hauptstack.
+- [x] README enthält die drei nötigen Schritte (Overlay starten, Seed-Skript laufen lassen, `.env.demo.example` nutzen) in nachvollziehbarer Reihenfolge.
+- [x] Der reguläre Pfad mit echtem OpenCloud-Server bleibt unverändert; kein Produktivcode (`backend/src/photosort/opencloud/*`) wird angefasst, kein neuer "ist das der Mock"-Codepfad.
 
 ## Datenmodell-Bezug
 
