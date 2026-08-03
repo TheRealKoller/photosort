@@ -11,18 +11,24 @@ import {
   useTriggerScanMutation,
   useTriggerScoreMutation,
 } from '../hooks/useProjects'
+import { PROCESS_STATUS_DOT_CLASSES } from '../utils/processStatus'
+import type { ProcessStatus } from '../utils/processStatus'
 
-// Prozess-Status-Farben (specs/architecture/0004-design-system.md) - siehe ProjectListPage fuer
-// dieselbe Farb-/Bedeutungszuordnung; hier als reiner Text-Chip statt Punkt, da die Statuszeile
-// hier bereits ausfuehrlicher Text ist ("Scan läuft…" statt nur "Läuft").
-const STATUS_TEXT_CLASSES: Record<'running' | 'success' | 'failed', string> = {
-  running: 'text-status-running',
-  success: 'text-status-success',
-  failed: 'text-status-failed',
-}
-
-function statusTextClass(status: 'running' | 'success' | 'failed' | null | undefined): string {
-  return status ? STATUS_TEXT_CLASSES[status] : 'text-text'
+/**
+ * UX-/Architect-Review-Fund (Branch feature/0012-visual-redesign-views): faerbte urspruenglich den
+ * sichtbaren Statustext direkt ein (`text-status-*`) - `--status-success`/`--status-failed` sind
+ * aber nur als Flaechenfarbe kalibriert, nicht als Text-/Symbolfarbe (WCAG-AA gegen `--bg`
+ * verfehlt, siehe architecture/0004-design-system.md, Abschnitt Farbpalette). Gleiches Muster wie
+ * ProjectListPage jetzt auch hier: nur ein dekorativer, `aria-hidden` Punkt traegt die Farbe, der
+ * Text daneben bleibt neutral (`text-text`/`text-text-h`).
+ */
+function StatusDot({ status }: { status: ProcessStatus | null | undefined }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`size-2.5 shrink-0 rounded-full ${status ? PROCESS_STATUS_DOT_CLASSES[status] : 'bg-border'}`}
+    />
+  )
 }
 
 export function ProjectDetailPage() {
@@ -182,7 +188,8 @@ export function ProjectDetailPage() {
 
         {triggerErrorDetail && <Alert>{triggerErrorDetail}</Alert>}
 
-        <p aria-live="polite" className={statusTextClass(project.last_scan?.status)}>
+        <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
+          <StatusDot status={project.last_scan?.status} />
           {project.last_scan === null && 'Noch nicht gescannt'}
           {project.last_scan?.status === 'running' && 'Scan läuft…'}
           {project.last_scan?.status === 'success' && 'Erfolgreich'}
@@ -223,7 +230,8 @@ export function ProjectDetailPage() {
             Uebergang zwischen Zustaenden (null -> running -> success/failed), nicht bei jedem Poll -
             dadurch wird ein abgeschlossener oder fehlgeschlagener Lauf zuverlaessig angesagt, ohne
             waehrend des Laufs selbst zu spammen. Der exakte Zaehler lebt separat unten. */}
-        <p aria-live="polite" className={statusTextClass(scoringStatus)}>
+        <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
+          <StatusDot status={scoringStatus} />
           {scoringRun === null && 'Noch nicht vorgeschlagen'}
           {scoringStatus === 'running' && 'Wird verarbeitet…'}
           {scoringStatus === 'success' && 'Vorschläge aktualisiert'}

@@ -49,4 +49,21 @@ describe('RatingButtons', () => {
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
+
+  // Regressionstest fuer den urspruenglich benannten Bug (Funktionaler Fix 1, specs/features/
+  // 0012-visual-redesign.md): "disabled- und busy-Prop bisher unabhaengig" - busy alleine (ohne
+  // dass der Aufrufer zusaetzlich disabled setzt) muss trotzdem tatsaechlich deaktivieren, nicht
+  // nur den Inline-Indikator zeigen.
+  it('disables all buttons and ignores clicks while busy is true, even without an explicit disabled prop', async () => {
+    const onToggle = vi.fn()
+    const user = userEvent.setup()
+
+    render(<RatingButtons currentStatus={null} onToggle={onToggle} busy />)
+    const button = screen.getByRole('button', { name: /favorit/i })
+
+    expect(button).toBeDisabled()
+    await user.click(button)
+
+    expect(onToggle).not.toHaveBeenCalled()
+  })
 })

@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
 import { Skeleton } from '../components/ui/skeleton'
 import { useProjectsQuery } from '../hooks/useProjects'
+import { PROCESS_STATUS_DOT_CLASSES } from '../utils/processStatus'
 import { deriveScanStatus } from '../utils/scanStatus'
 import type { ScanStatusLabel } from '../utils/scanStatus'
 
@@ -19,12 +20,12 @@ const STATUS_LABELS: Record<ScanStatusLabel, string> = {
 // Prozess-Status-Farben (specs/architecture/0004-design-system.md) - "running" neutraler Akzent,
 // "success"/"failed" teilen sich die Toene mit den Bewertungsfarben album_worthy/rejected. Nur der
 // dekorative Punkt traegt die Farbe (aria-hidden), der Text daneben bleibt die primaere,
-// screenreader-erreichbare Information (UX-Review-Nice-to-have "Status auf einen Blick").
+// screenreader-erreichbare Information (UX-Review-Nice-to-have "Status auf einen Blick"). Die
+// running/success/failed-Faelle sind mit ProjectDetailPage geteilt (`utils/processStatus.ts`),
+// "never" existiert nur hier (ProjectDetailPage hat kein eigenes "nie gescannt"-Dot-Aequivalent).
 const STATUS_DOT_CLASSES: Record<ScanStatusLabel, string> = {
   never: 'bg-border',
-  running: 'bg-status-running animate-pulse motion-reduce:animate-none',
-  success: 'bg-status-success',
-  failed: 'bg-status-failed',
+  ...PROCESS_STATUS_DOT_CLASSES,
 }
 
 const SKELETON_CARD_COUNT = 4
@@ -44,7 +45,7 @@ export function ProjectListPage() {
       {query.isLoading && (
         <ul role="status" aria-label="Projekte werden geladen…" className="flex flex-col gap-3">
           {Array.from({ length: SKELETON_CARD_COUNT }, (_, index) => (
-            <li key={index}>
+            <li key={index} aria-hidden="true">
               <Skeleton className="h-20 w-full rounded-xl" />
             </li>
           ))}

@@ -41,6 +41,16 @@ export function RatingButtons({
   disabled = false,
   busy = false,
 }: RatingButtonsProps) {
+  // Funktionaler Fix 1 (specs/features/0012-visual-redesign.md) zentral hier statt ueber die
+  // Button-eigene busy-Prop erzwungen: `isDisabled` bleibt garantiert wahr, sobald `busy` gesetzt
+  // ist, unabhaengig davon, ob der Aufrufer `disabled` synchron mithaelt. UX-Review-Fund: das
+  // Button-eigene busy-Prop (eigener Spinner pro Button) bewusst NICHT an alle drei Buttons
+  // gleichzeitig weitergereicht - drei parallele Spinner plus die separate "Speichert…"-Zeile
+  // waren redundante Bewegungsunruhe fuer eine haeufig wiederholte, schnelle Aktion (Designprinzip
+  // "Durchsatz vor Erklaerung" / "keine Bewegungseffekte, die das zuegige Durchsehen bremsen").
+  // Die zentrale Statuszeile bleibt der einzige Busy-Indikator.
+  const isDisabled = disabled || busy
+
   return (
     <div role="group" aria-label="Bewertung" className="flex flex-wrap items-center gap-2">
       {OPTIONS.map((option) => {
@@ -52,8 +62,7 @@ export function RatingButtons({
             variant={isActive ? 'default' : 'outline'}
             aria-label={option.label}
             aria-pressed={isActive}
-            disabled={disabled}
-            busy={busy}
+            disabled={isDisabled}
             className={isActive ? ACTIVE_TONE_CLASSES[option.status] : undefined}
             onClick={() => onToggle(option.status)}
           >
