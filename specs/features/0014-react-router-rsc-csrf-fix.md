@@ -16,9 +16,9 @@ Als Repo-Betreiber möchte ich, dass keine offenen Dependabot-Alerts mit `severi
 ## Akzeptanzkriterien
 
 - [ ] `frontend/package-lock.json` löst `react-router` auf Version `8.3.0` (oder neuer, innerhalb `^8.2.0`) auf — Update via `npm update react-router` bzw. `npm install` im Verzeichnis `frontend/`, **kein** manueller Edit der Lockfile-Hashes.
-- [ ] `frontend/package.json` bleibt unverändert bei `"react-router": "^8.2.0"` (siehe Architektur/Umsetzung — die Caret-Range deckt `8.3.0` bereits ab, eine Bump der deklarierten Range ist nicht nötig), **es sei denn**, die Verifikation zum Zeitpunkt der Umsetzung ergibt ein abweichendes Bild (siehe Teststrategie, erster Schritt).
+- [ ] `frontend/package.json` bleibt unverändert bei `"react-router": "^8.2.0"` (siehe Architektur/Umsetzung — die Caret-Range deckt `8.3.0` bereits ab, ein Bump der deklarierten Range ist nicht nötig), **es sei denn**, die Verifikation zum Zeitpunkt der Umsetzung ergibt ein abweichendes Bild (siehe Teststrategie, erster Schritt).
 - [ ] `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build` laufen im `frontend/`-Verzeichnis nach dem Update unverändert erfolgreich durch (reines Patch-Level-Verhalten für unsere Nutzung, siehe Security-Abschnitt).
-- [ ] Nach Merge nach `main` (nächster Dependabot-Scan) ist Alert [#2](https://github.com/TheRealKoller/photosort/security/dependabot/2) im Status `fixed`/`dismissed:resolved` — verifizierbar via `gh api repos/{owner}/{repo}/dependabot/alerts/2` (Feld `state`).
+- [ ] Nach Merge nach `main` (nächster Dependabot-Scan) ist Alert [#2](https://github.com/TheRealKoller/photosort/security/dependabot/2) im Status `fixed`/`dismissed` — verifizierbar via `gh api repos/{owner}/{repo}/dependabot/alerts/2` (Feld `state`).
 - [ ] `specs/architecture/0003-securitykonzept.md` erhält nach Umsetzung einen kurzen, datierten Vermerk analog zum bestehenden Muster (siehe Security-Abschnitt unten).
 
 ## Datenmodell-Bezug
@@ -30,7 +30,7 @@ Keines. Reine Frontend-Dependency-Aktualisierung, kein Datenmodell betroffen.
 **Verifizierter Sachverhalt (2026-08-03):**
 
 - `frontend/package.json`, Zeile 18: `"react-router": "^8.2.0"`. Die Caret-Range `^8.2.0` erlaubt laut Semver-Semantik `>=8.2.0 <9.0.0` — `8.3.0` liegt bereits innerhalb dieser Range.
-- `npm outdated react-router` im Verzeichnis `frontend/` bestätigt: `Current: 8.2.0`, `Wanted: 8.3.0`, `Latest: 8.3.0`. "Wanted" ist npms eigene Berechnung "höchste Version, die die deklarierte Range in `package.json` noch erlaubt" — `8.3.0` ist danach bereits ohne jede `package.json`-Änderung erreichbar.
+- `npm outdated react-router` im Verzeichnis `frontend/` bestätigt: `Current: 8.2.0`, `Wanted: 8.3.0`, `Latest: 8.3.0`. "Wanted" ist die von npm berechnete höchste Version, die die in `package.json` deklarierte Range noch erlaubt — `8.3.0` ist danach bereits ohne jede `package.json`-Änderung erreichbar.
 - `npm view react-router versions --json` listet `8.3.0` als existierende, veröffentlichte Version (letzte in der Liste nach `8.2.0`).
 - **Folgerung:** `frontend/package.json` muss **nicht** geändert werden. Es genügt, `frontend/package-lock.json` neu aufzulösen (`npm update react-router` oder `npm install` im `frontend/`-Verzeichnis), damit die dort gepinnte Version und der `integrity`-Hash von `8.2.0` auf `8.3.0` wechseln (aktuell `package-lock.json` Zeile ~6060: `resolved: .../react-router-8.2.0.tgz`).
 
