@@ -1,111 +1,145 @@
+@import 'tailwindcss';
+
+/*
+ * Design-Tokens (specs/architecture/0004-design-system.md, specs/features/0012-visual-redesign.md).
+ * Rohwerte liegen in :root/prefers-color-scheme (wie zuvor), die Zuordnung zu Tailwind-Utilities
+ * passiert unten im @theme-Block - so bleibt die Hell/Dunkel-Umschaltung eine reine CSS-Variablen-
+ * Aufloesung ohne zusaetzliche JS-Logik oder `dark:`-Klassen.
+ */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --bg: #faf7f2;
+  --border: #e8e0d5;
+  --text: #6b6358;
+  --text-h: #241f1a;
+
+  /*
+   * Terracotta-Akzentfarbe: Design-System/ADR 0011 nennen #d97757 (hell) als Zielwert. Bei der
+   * Umsetzung erreicht dieser Ton als Text-/Link-Farbe gegen den neuen warmen Hintergrund nur
+   * 2.92:1 (< WCAG-AA 4.5:1 fuer Text) - siehe architecture/0004-design-system.md, "Bekannte
+   * Lücken" fuer die vollstaendige Kontrastpruefung. Deshalb hier eine dunklere Variante
+   * derselben Terracotta-Farbfamilie (gleicher Farbton/Saettigung, geringere Helligkeit), die
+   * 4.64:1 erreicht - eine bei der Umsetzung noetige Kontrastanpassung, wie in der Spec
+   * ausdruecklich vorgesehen ("Abweichungen ... werden im Design-System-Dokument nachgetragen,
+   * nicht stillschweigend im Code entschieden").
+   */
+  --accent: #bb4e2a;
+  --accent-fg: #fdfbf8;
+  --accent-bg: rgba(187, 78, 42, 0.1);
+  --accent-border: rgba(187, 78, 42, 0.45);
+
+  /* Bewertungsfarben (specs/features/0002-manual-categorization.md) - Hex-Werte unveraendert. */
+  --rating-favorite: #d9a441;
+  --rating-album-worthy: #3f9142;
+  --rating-rejected: #c94f4f;
+
+  /*
+   * Symbol-/Beschriftungsfarbe auf vollflaechig gefuellten Bewertungs-/Status-Chips: weder Weiss
+   * noch die bisherige dunkle Textfarbe (--text-h) erreichen gegen ALLE vier Ton-Werte (hell UND
+   * dunkel) zuverlaessig 4.5:1. Reines Schwarz erreicht das gerade noch (min. 4.71:1 bei
+   * "rejected" hell - Review-Fund auf Branch feature/0012-visual-redesign-foundation: ein
+   * vorheriger, fast-aber-nicht-ganz-schwarzer Wert (#140f0c) erreichte dort nur 4.27:1, siehe
+   * Kontrastpruefung in architecture/0004-design-system.md). Die Marge bleibt bei "rejected" hell
+   * knapp (4.71:1) - bei einer kuenftigen Anpassung von --rating-rejected erneut nachrechnen.
+   */
+  --chip-fg: #000000;
+
+  /* Allgemeine Prozess-Status-Farben (specs/architecture/0004-design-system.md) - wiederverwenden
+     statt neu erfinden. */
+  --status-running: var(--accent);
+  --status-success: var(--rating-album-worthy);
+  --status-failed: var(--rating-rejected);
+
+  --shadow: 0 1px 2px rgba(36, 31, 26, 0.06), 0 4px 10px rgba(36, 31, 26, 0.06);
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+    --bg: #1f1b18;
+    --border: #35302b;
+    --text: #b3a89c;
+    --text-h: #f5f0ea;
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
+    /* Dunkelmodus-Terracotta (#e8916d, ADR 0011) erreicht als Text gegen den dunklen Hintergrund
+       bereits 7.09:1 - keine Anpassung noetig. */
+    --accent: #e8916d;
+    --accent-fg: #140f0c;
+    --accent-bg: rgba(232, 145, 109, 0.15);
+    --accent-border: rgba(232, 145, 109, 0.5);
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
+    --rating-favorite: #f0c674;
+    --rating-album-worthy: #7fce82;
+    --rating-rejected: #e08080;
 
-body {
-  margin: 0;
-}
+    --chip-fg: #000000;
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+    --shadow: none;
   }
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+/* Tailwind-Theme: ordnet die obigen Roh-Tokens den generierten Utility-Klassen zu
+   (bg-bg/text-text/border-border/bg-accent/text-accent-fg/... siehe
+   .claude/skills/design-system/SKILL.md fuer die Kurzreferenz). */
+@theme {
+  --color-bg: var(--bg);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-h: var(--text-h);
+
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-bg: var(--accent-bg);
+  --color-accent-border: var(--accent-border);
+
+  --color-rating-favorite: var(--rating-favorite);
+  --color-rating-album-worthy: var(--rating-album-worthy);
+  --color-rating-rejected: var(--rating-rejected);
+  --color-chip-fg: var(--chip-fg);
+
+  --color-status-running: var(--status-running);
+  --color-status-success: var(--status-success);
+  --color-status-failed: var(--status-failed);
+
+  --shadow-warm: var(--shadow);
+
+  --font-sans: var(--sans);
+  --font-heading: var(--heading);
+  --font-mono: var(--mono);
+
+  /* Formsprache (specs/architecture/0004-design-system.md): gemaessigt gerundet statt Pill-Design -
+     8px Standard (Buttons/Formularfelder/Kacheln), 12px fuer Karten/Dialoge/Panels. */
+  --radius-md: 8px;
+  --radius-xl: 12px;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
   }
-}
-p {
-  margin: 0;
-}
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
+  html {
+    color-scheme: light dark;
+  }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    color: var(--text);
+    background: var(--bg);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--heading);
+    font-weight: 500;
+    color: var(--text-h);
+  }
 }

@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -7,6 +8,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default defineConfig({
   plugins: [
     react(),
+    tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
@@ -14,8 +16,9 @@ export default defineConfig({
         name: 'PhotoSort',
         short_name: 'PhotoSort',
         description: 'Urlaubsfotos sortieren, kategorisieren und die besten auswählen.',
-        theme_color: '#111111',
-        background_color: '#111111',
+        // Warme Markenfarben statt Vite-Template-Platzhalter (specs/features/0012-visual-redesign.md).
+        theme_color: '#bb4e2a',
+        background_color: '#faf7f2',
         display: 'standalone',
         start_url: '/',
         icons: [
