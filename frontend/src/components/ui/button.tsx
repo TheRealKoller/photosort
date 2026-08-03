@@ -77,18 +77,36 @@ export function Button({
 }: ButtonProps) {
   const Comp = asChild ? Slot : 'button'
   const isDisabled = disabled || busy
+  const isDisabledSlot = asChild && isDisabled
 
   // Radix Slot verlangt genau EIN valides Element als Kind (klont Props direkt auf das Kind statt
   // ein eigenes DOM-Element zu rendern) - der Spinner wird deshalb nur im nativen <button>-Fall
   // zusaetzlich eingefuegt. `asChild` wird in dieser App ausschliesslich fuer navigierende Links
   // (kein eigener Pending-Zustand) verwendet, `busy` fuer native Aktions-Buttons - beide Props
   // gleichzeitig sind daher kein vorgesehener Anwendungsfall.
+  //
+  // Copilot-Review-Fund (PR "Tailwind-Fundament"): `aria-disabled` allein blockiert bei `asChild`
+  // keine echte Interaktion, weil das native `disabled`-Attribut nicht an ein `<a href>`
+  // gebunden werden kann - ein `onClick`, der nur `event.preventDefault()` aufruft, reicht bei
+  // react-router `Link` NICHT aus: Radix Slot ruft laut eigener `mergeProps`-Implementierung
+  // IMMER zuerst den Handler des Kindes auf (hier Links eigener Klick-Handler, der synchron
+  // `navigate()` ausloest) und erst danach den hier uebergebenen - `preventDefault()` kommt also
+  // zu spaet. Stattdessen wird die Interaktion an der Wurzel unterbunden: `pointer-events-none`
+  // verhindert, dass ein Mausklick das Element ueberhaupt trifft (kein Klick-Event entsteht),
+  // `tabIndex={-1}` entfernt es aus der Tab-Reihenfolge, sodass Enter/Leertaste es nicht ausloesen
+  // koennen - dieselbe Kombination, die z.B. auch andere Bibliotheken fuer "deaktivierte Links"
+  // verwenden. Aktuell kein realer Aufrufer dieser Kombination (kein `asChild disabled` im Code),
+  // daher praeventive Absicherung der Basiskomponente, nicht Fix eines beobachteten Bugs.
   return (
     <Comp
       type={asChild ? undefined : type}
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(
+        buttonVariants({ variant, size, className }),
+        isDisabledSlot && 'pointer-events-none opacity-50'
+      )}
       disabled={asChild ? undefined : isDisabled}
-      aria-disabled={asChild && isDisabled ? true : undefined}
+      aria-disabled={isDisabledSlot ? true : undefined}
+      tabIndex={isDisabledSlot ? -1 : undefined}
       onClick={isDisabled ? undefined : onClick}
       {...props}
     >

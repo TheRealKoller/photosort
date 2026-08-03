@@ -94,4 +94,22 @@ describe('Button', () => {
     const link = screen.getByRole('link', { name: 'Neues Projekt anlegen' })
     expect(link).toHaveAttribute('href', '/projects/new')
   })
+
+  // Copilot-Review-Fund (PR "Tailwind-Fundament"): `aria-disabled` allein blockiert bei `asChild`
+  // keine echte Interaktion, da das native `disabled`-Attribut nicht an ein `<a href>` gebunden
+  // werden kann. `pointer-events-none`/`tabIndex={-1}` sind die tatsaechliche Absicherung (siehe
+  // Kommentar in button.tsx) - deren Wirkung selbst (echte Browser-Hit-Test-/Fokus-Logik) ist in
+  // jsdom nicht sinnvoll pruefbar, wohl aber der resultierende DOM-Vertrag (Attribute/Klassen).
+  it('marks an asChild link as non-interactive when disabled, instead of only aria-disabled', () => {
+    render(
+      <Button asChild disabled>
+        <a href="/projects/new">Neues Projekt anlegen</a>
+      </Button>
+    )
+
+    const link = screen.getByRole('link', { name: 'Neues Projekt anlegen' })
+    expect(link).toHaveAttribute('aria-disabled', 'true')
+    expect(link).toHaveAttribute('tabIndex', '-1')
+    expect(link.className).toMatch(/(^|\s)pointer-events-none(\s|$)/)
+  })
 })

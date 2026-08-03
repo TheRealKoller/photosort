@@ -54,4 +54,19 @@ describe('Badge', () => {
     expect(screen.getByText('i').className).toContain('text-accent-fg')
     expect(screen.getByText('i').className).not.toContain('text-chip-fg')
   })
+
+  // Copilot-Review-Fund (PR "Tailwind-Fundament"): der gedaempfte Vorschlags-Hintergrund ist nur
+  // eine 10%-Tinte auf `--bg`, nicht die volle Bewertungsfarbe - `--chip-fg` ist in beiden
+  // Farbschemata identisch (#000000) und waere im Dunkelmodus praktisch unsichtbar auf dem dann
+  // ebenfalls sehr dunklen `--bg`-Tint. `--text-h` ist stattdessen pro Modus kalibriert.
+  it('uses the mode-aware text-h token (not chip-fg) for the dampened suggested tone', () => {
+    render(
+      <Badge tone="rejected" suggested>
+        ⚙✕
+      </Badge>
+    )
+
+    expect(screen.getByText('⚙✕').className).toContain('text-text-h')
+    expect(screen.getByText('⚙✕').className).not.toContain('text-chip-fg')
+  })
 })
