@@ -3,6 +3,9 @@ import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 
 import { ApiError } from '../api/client'
+import { Alert } from '../components/ui/alert'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
 import { FolderBrowser } from '../components/FolderBrowser'
 import { useCreateProjectMutation } from '../hooks/useProjects'
 
@@ -37,13 +40,15 @@ export function ProjectCreatePage() {
   const isNameConflict = mutation.isError && mutation.error instanceof ApiError && mutation.error.status === 409
 
   return (
-    <div>
-      <h1>Neues Projekt anlegen</h1>
-      {errorDetail && <p role="alert">{errorDetail}</p>}
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label htmlFor="project-name">Name</label>
-          <input
+    <div className="flex flex-col gap-6">
+      <h1 className="text-2xl font-semibold text-text-h">Neues Projekt anlegen</h1>
+      {errorDetail && <Alert>{errorDetail}</Alert>}
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="project-name" className="text-sm font-medium text-text-h">
+            Name
+          </label>
+          <Input
             id="project-name"
             name="name"
             type="text"
@@ -61,10 +66,14 @@ export function ProjectCreatePage() {
           onErrorChange={setBrowseHasError}
         />
 
-        <button type="submit" disabled={isSubmitDisabled}>
-          {mutation.isPending ? 'Wird angelegt…' : 'Projekt anlegen'}
-        </button>
-        <Link to="/">Abbrechen</Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" busy={mutation.isPending} disabled={isSubmitDisabled}>
+            {mutation.isPending ? 'Wird angelegt…' : 'Projekt anlegen'}
+          </Button>
+          <Button asChild variant="ghost">
+            <Link to="/">Abbrechen</Link>
+          </Button>
+        </div>
       </form>
     </div>
   )

@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 
 import { ApiError } from '../api/client'
+import { Alert } from './ui/alert'
+import { Button } from './ui/button'
 import { useOpenCloudBrowseQuery } from '../hooks/useOpenCloudBrowse'
 
 interface Breadcrumb {
@@ -51,28 +53,35 @@ export function FolderBrowser({ value, onChange, onErrorChange }: FolderBrowserP
         : null
 
   return (
-    <div>
-      <nav aria-label="Ordnerpfad">
+    <div className="flex flex-col gap-2 rounded-xl border border-border p-3">
+      <nav aria-label="Ordnerpfad" className="flex flex-wrap items-center gap-1 text-sm text-text">
         {breadcrumbsFor(value).map((crumb, index, all) => (
-          <span key={crumb.path}>
-            <button type="button" onClick={() => onChange(crumb.path)}>
+          <span key={crumb.path} className="flex items-center gap-1">
+            <Button type="button" variant="ghost" size="sm" onClick={() => onChange(crumb.path)}>
               {crumb.label}
-            </button>
-            {index < all.length - 1 && ' / '}
+            </Button>
+            {index < all.length - 1 && <span aria-hidden="true">/</span>}
           </span>
         ))}
       </nav>
 
-      {query.isLoading && <p role="status">Ordner werden geladen…</p>}
-      {errorDetail && <p role="alert">{errorDetail}</p>}
-      {query.isSuccess && query.data.length === 0 && <p>Keine Unterordner</p>}
+      {query.isLoading && <p role="status" className="text-sm text-text">Ordner werden geladen…</p>}
+      {errorDetail && <Alert>{errorDetail}</Alert>}
+      {query.isSuccess && query.data.length === 0 && (
+        <p className="text-sm text-text">Keine Unterordner</p>
+      )}
       {query.isSuccess && query.data.length > 0 && (
-        <ul>
+        <ul className="flex flex-col gap-1">
           {query.data.map((entry) => (
             <li key={entry.path}>
-              <button type="button" onClick={() => onChange(entry.path)}>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full justify-start"
+                onClick={() => onChange(entry.path)}
+              >
                 {entry.name}
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
