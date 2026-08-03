@@ -35,10 +35,13 @@
   /*
    * Symbol-/Beschriftungsfarbe auf vollflaechig gefuellten Bewertungs-/Status-Chips: weder Weiss
    * noch die bisherige dunkle Textfarbe (--text-h) erreichen gegen ALLE vier Ton-Werte (hell UND
-   * dunkel) zuverlaessig 4.5:1 - ein nahezu schwarzes Warmton-Ink erreicht das (min. 4.71:1 bei
-   * "rejected" hell), siehe Kontrastpruefung in architecture/0004-design-system.md.
+   * dunkel) zuverlaessig 4.5:1. Reines Schwarz erreicht das gerade noch (min. 4.71:1 bei
+   * "rejected" hell - Review-Fund auf Branch feature/0012-visual-redesign-foundation: ein
+   * vorheriger, fast-aber-nicht-ganz-schwarzer Wert (#140f0c) erreichte dort nur 4.27:1, siehe
+   * Kontrastpruefung in architecture/0004-design-system.md). Die Marge bleibt bei "rejected" hell
+   * knapp (4.71:1) - bei einer kuenftigen Anpassung von --rating-rejected erneut nachrechnen.
    */
-  --chip-fg: #140f0c;
+  --chip-fg: #000000;
 
   /* Allgemeine Prozess-Status-Farben (specs/architecture/0004-design-system.md) - wiederverwenden
      statt neu erfinden. */
@@ -71,7 +74,7 @@
     --rating-album-worthy: #7fce82;
     --rating-rejected: #e08080;
 
-    --chip-fg: #140f0c;
+    --chip-fg: #000000;
 
     --shadow: none;
   }

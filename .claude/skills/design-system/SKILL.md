@@ -24,15 +24,16 @@ Das Design-System-Dokument ist lang und wächst mit jeder Spec weiter — beim e
 
 Aktueller Stand aus `architecture/0004-design-system.md` — bei Änderungen dort zuerst aktualisieren, dann hier nachziehen:
 
-- **Akzentfarbe (Terracotta):** `#d97757` hell / `#e8916d` dunkel — Buttons, Links, Fokus-Ring, aktive Filter. Getrennt von den Bewertungsfarben halten, damit Aktion und Status nicht verwechselbar sind.
+- **Akzentfarbe (Terracotta):** `--accent: #bb4e2a` hell / `#e8916d` dunkel — Buttons, Links, Fokus-Ring, aktive Filter. **Hinweis:** der ursprüngliche Zielwert `#d97757` (hell) erreichte als Text-/Link-Farbe gegen den warmen Hintergrund nur 2.92:1 (< WCAG-AA 4.5:1) und wurde auf `#bb4e2a` (4.64:1, gleicher Farbton/Sättigung, nur dunkler) abgedunkelt — siehe `architecture/0004-design-system.md`. Getrennt von den Bewertungsfarben halten, damit Aktion und Status nicht verwechselbar sind. Für Text/Symbole AUF `--accent` (z.B. Button-Beschriftung) `--accent-fg` verwenden (`#fdfbf8` hell / `#140f0c` dunkel), nicht `--chip-fg`.
 - **Neutraltöne:** hell `#faf7f2` (bg) / `#e8e0d5` (border); dunkel `#1f1b18` (bg) / `#35302b` (border) — warme Creme-/Sandtöne, nicht kühles Weiß/Grau.
 - **Bewertungsfarben** (unverändert seit Spec 0002, bewusst nicht an die Terracotta-Richtung angepasst — Gold/Grün/Rot sind gelernte Ampel-Signalfarben):
   - `favorite`: `#d9a441` hell / `#f0c674` dunkel + Stern-Symbol
   - `album_worthy`: `#3f9142` hell / `#7fce82` dunkel + Haken-Symbol
   - `rejected`: `#c94f4f` hell / `#e08080` dunkel + Kreuz-Symbol
   - unbewertet: neutrale Border-Farbe, kein Symbol (bewusst unauffällig)
-- **Prozess-Status-Farben** (running/success/failed — für Hintergrundprozesse wie Scan/Scoring, nicht Bewertungen): `success`/`failed` teilen sich die Töne mit `album_worthy`/`rejected`, `running` ist neutraler Akzent-Ton + rotierendes Icon.
-- Alle Farben gegen den jeweiligen Hintergrund auf WCAG-AA (4.5:1 für Text/Symbole) prüfen.
+  - **Wichtig:** diese vier Hex-Werte NIE direkt als Text-/Symbolfarbe auf `--bg` verwenden — im Hellmodus erreichen sie dort nur 2.10–4.17:1 (< 4.5:1). Immer als gefüllte Chip-/Badge-Fläche mit `--chip-fg` (`#140f0c`, ein einheitliches nahezu-schwarzes Ink für alle vier Farben/beide Modi) als Symbolfarbe verwenden, siehe `components/ui/badge.tsx`. **Bekannte Lücke:** `--chip-fg` gegen `rejected` hell erreicht nur 4.27:1, knapp unter 4.5:1 (siehe `architecture/0004-design-system.md`, Bekannte Lücken) — beim nächsten Antasten dieses Tokens beheben (z.B. `--chip-fg` Richtung `#000000`).
+- **Prozess-Status-Farben** (running/success/failed — für Hintergrundprozesse wie Scan/Scoring, nicht Bewertungen): `success`/`failed` teilen sich die Töne mit `album_worthy`/`rejected`, `running` ist neutraler Akzent-Ton + rotierendes Icon. Gilt dieselbe Chip-Regel wie oben — Ausnahme nur für rein dekorative, `aria-hidden`-Icons mit redundantem Text daneben (dann reicht 3:1 statt 4.5:1, siehe `Alert`-Komponente).
+- Alle Farben gegen den jeweiligen Hintergrund auf WCAG-AA (4.5:1 für Text/Symbole) prüfen — nicht rechnerisch annehmen, siehe die beiden offenen Lücken oben.
 
 ## Formsprache & Spacing
 
@@ -48,6 +49,7 @@ Siehe ADR [`decisions/0011-ui-component-library.md`](../../../specs/decisions/00
 - **shadcn/ui-Komponenten werden als Quellcode kopiert**, nicht als npm-Paket installiert — sie leben in `frontend/src/components/ui/` und sind normaler, editierbarer App-Code. Neue wiederkehrende UI-Bausteine (Button, Card, Badge, Progress, …) dort ablegen statt pro View neu zu erfinden.
 - **Radix-Primitives nur dort einsetzen, wo natives HTML nicht reicht** (z.B. Dialog, Popover). Für Buttons/Formulare/Listen bleibt natives HTML + Tailwind-Klassen der Standard — kein `div`-Onclick, keine unnötige Abstraktion über ein natives `<button>`.
 - **Utility-Klassen direkt in JSX**, keine neue CSS-in-JS-Laufzeit, keine `styled-components`-artige Abstraktion — widerspräche der Bundle-Size-Begründung der ADR.
+- **Vorsicht bei `Button`, `variant="link"`:** die `link`-Variante (`p-0 h-auto min-h-0 min-w-0`) wird von den Größen-Klassen der `size`-Prop (`h-11 min-w-11 px-4 py-2`) überschrieben, solange `cva`/`tailwind-merge` Varianten-Klassen vor Größen-Klassen einreihen (bekannte, noch offene Lücke, siehe `architecture/0004-design-system.md`, Bekannte Lücken) — vor dem ersten produktiven Einsatz dieser Variante prüfen/fixen, nicht blind verwenden.
 
 ## Wiederkehrende Muster
 

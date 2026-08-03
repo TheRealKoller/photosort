@@ -71,6 +71,19 @@ describe('Button', () => {
     expect(screen.getByRole('button', { name: 'Abbrechen' })).toHaveAttribute('type', 'button')
   })
 
+  // Review-Fund (Branch feature/0012-visual-redesign-foundation): cva reiht Varianten- vor
+  // Groessen-Klassen ein, tailwind-merge loest Konflikte zugunsten der zuletzt vorkommenden Klasse
+  // auf - ohne compoundVariants ueberschrieb die (Default-)Groesse (h-11/min-w-11/px-4 py-2) die
+  // bewusst kompakten link-Klassen, ein Link-Button sah dadurch wie ein 44px-Vollbutton statt
+  // einem Inline-Link aus.
+  it('keeps the link variant compact instead of the default button size', () => {
+    render(<Button variant="link">Zurück zum Grid</Button>)
+
+    const button = screen.getByRole('button', { name: 'Zurück zum Grid' })
+    expect(button.className).toContain('h-auto')
+    expect(button.className).not.toMatch(/(^|\s)h-11(\s|$)/)
+  })
+
   it('renders as the child element when asChild is set, preserving its own semantics', () => {
     render(
       <Button asChild>

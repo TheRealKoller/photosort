@@ -26,6 +26,18 @@ const buttonVariants = cva(
         icon: 'h-11 w-11',
       },
     },
+    // Review-Fund (Branch feature/0012-visual-redesign-foundation): cva reiht die `size`-Klassen
+    // NACH den `variant`-Klassen ein, tailwind-merge loest Konflikte zugunsten der zuletzt
+    // vorkommenden Klasse auf - ohne diesen compoundVariant wuerden `size`s h-11/min-w-11/px-4 py-2
+    // die bewusst kompakten link-Klassen (h-auto/min-w-0/p-0) immer ueberschreiben, unabhaengig von
+    // der gewaehlten Groesse. Das Fehlen von `size` als Bedingung heisst laut cva "passt auf jede
+    // Groesse" - reicht deshalb als ein einziger Eintrag fuer alle drei Groessen.
+    compoundVariants: [
+      {
+        variant: 'link',
+        class: 'h-auto min-h-0 min-w-0 p-0',
+      },
+    ],
     defaultVariants: {
       variant: 'default',
       size: 'default',
@@ -88,7 +100,7 @@ export function Button({
             <span
               data-testid="button-spinner"
               aria-hidden="true"
-              className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+              className="size-3.5 animate-spin motion-reduce:animate-none rounded-full border-2 border-current border-t-transparent"
             />
           )}
           {children}
