@@ -1,6 +1,6 @@
 # 0013 - Alembic-Migrationen ausschließlich in `backend` ausführen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #16](https://github.com/TheRealKoller/photosort/pull/16))
 **Erstellt:** 2026-08-03
 **Akzeptiert:** 2026-08-03
 **Bezug:** Live im Chat mit Daniel entdeckt (2026-08-03), ausgelöst durch einen produktiven Deploy-Fehler über seine Dockhand-Instanz: nach Löschen von `postgres`-Container+Volume und Neu-Deploy schlug der Login mit `401 Unauthorized` fehl; Postgres-Logs zeigten `duplicate key value violates unique constraint "pg_type_typname_nsp_index"` beim Anlegen von `alembic_version`. Das zugrunde liegende Problem war bereits als bekannte Lücke in `specs/architecture/0002-testkonzept.md:85` dokumentiert (entdeckt als Nebenbefund beim Smoke-Test zu Spec 0010), aber noch nicht als eigene Spec/Fix umgesetzt. Idea-Sharpening-Gespräch mit Daniel im Chat, 2026-08-03.
