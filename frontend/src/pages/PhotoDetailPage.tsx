@@ -7,6 +7,8 @@ import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
+import { Alert } from '../components/ui/alert'
+import { Button } from '../components/ui/button'
 import {
   useDeleteRatingMutation,
   usePhotoSequenceQuery,
@@ -198,36 +200,51 @@ export function PhotoDetailPage() {
   }
 
   if (query.isLoading) {
-    return <p role="status">Fotos werden geladen…</p>
+    return (
+      <p role="status" className="text-sm text-text">
+        Fotos werden geladen…
+      </p>
+    )
   }
 
   if (query.isError) {
     return (
-      <div role="alert">
-        <p>{query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden der Fotos.'}</p>
-        <button type="button" onClick={() => void query.refetch()}>
-          Erneut versuchen
-        </button>
-        <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
+      <div className="flex flex-col items-start gap-3">
+        <Alert onRetry={() => void query.refetch()}>
+          {query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden der Fotos.'}
+        </Alert>
+        <Button asChild variant="ghost">
+          <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
+        </Button>
       </div>
     )
   }
 
   if (completed) {
     return (
-      <div>
-        <p role="status">Fertig! Keine weiteren unbewerteten Fotos.</p>
-        <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
-        <Link to={`/projects/${id}/compare`}>Zur Vergleichsansicht</Link>
+      <div className="flex flex-col items-start gap-3">
+        <p role="status" className="text-text-h">
+          Fertig! Keine weiteren unbewerteten Fotos.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <Button asChild variant="secondary">
+            <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
+          </Button>
+          <Button asChild variant="secondary">
+            <Link to={`/projects/${id}/compare`}>Zur Vergleichsansicht</Link>
+          </Button>
+        </div>
       </div>
     )
   }
 
   if (!currentPhoto) {
     return (
-      <div>
-        <p>Foto nicht in der aktuellen Auswahl gefunden.</p>
-        <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
+      <div className="flex flex-col items-start gap-3">
+        <p className="text-text">Foto nicht in der aktuellen Auswahl gefunden.</p>
+        <Button asChild variant="ghost">
+          <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
+        </Button>
       </div>
     )
   }
@@ -235,32 +252,44 @@ export function PhotoDetailPage() {
   const isMutating = setMutation.isPending || deleteMutation.isPending
 
   return (
-    <div>
-      <p>Shortcuts: 1 Favorit, 2 Album-würdig, 3 Verwerfen, ←/→ navigieren</p>
-      <p>
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-text">Shortcuts: 1 Favorit, 2 Album-würdig, 3 Verwerfen, ←/→ navigieren</p>
+      <p className="text-sm text-text">
         {index + 1}/{total}
       </p>
 
-      <div onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-        <PhotoImage photoId={currentPhoto.id} variant="display" alt={currentPhoto.relative_path} />
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className="mx-auto w-full max-w-2xl"
+      >
+        <PhotoImage
+          photoId={currentPhoto.id}
+          variant="display"
+          alt={currentPhoto.relative_path}
+          className="aspect-[4/3] w-full rounded-xl object-contain"
+        />
       </div>
 
-      <button type="button" aria-label="Vorheriges Foto" onClick={handlePrev} disabled={index <= 0}>
-        Zurück
-      </button>
-      <button
-        type="button"
-        aria-label="Nächstes Foto"
-        onClick={() => void handleNext()}
-        disabled={index + 1 >= photos.length && !query.hasNextPage}
-      >
-        Weiter
-      </button>
+      <div className="flex justify-between gap-3">
+        <Button type="button" variant="outline" aria-label="Vorheriges Foto" onClick={handlePrev} disabled={index <= 0}>
+          Zurück
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          aria-label="Nächstes Foto"
+          onClick={() => void handleNext()}
+          disabled={index + 1 >= photos.length && !query.hasNextPage}
+        >
+          Weiter
+        </Button>
+      </div>
 
       {suggestion && (
-        <div>
-          <p>Automatischer Vorschlag: {RATING_STATUS_LABELS[suggestion.status]}</p>
-          <p>
+        <div className="flex flex-col items-start gap-1.5 rounded-xl border border-accent-border bg-accent-bg p-3 text-sm">
+          <p className="text-text-h">Automatischer Vorschlag: {RATING_STATUS_LABELS[suggestion.status]}</p>
+          <p className="text-text">
             {/* Server liefert die Begruendung bereits regelbasiert ueber `reason`
                 (backend/src/photosort/api/photos.py::_to_suggestion_out) - hier bewusst nicht
                 erneut aus duplicate_of abgeleitet (Test-Review-Fund: doppelte, potenziell
@@ -273,13 +302,15 @@ export function PhotoDetailPage() {
               RatingButtons-Option auf (UI/UX-Abschnitt der Spec) - der bestehende Auto-Advance
               greift danach unveraendert. Kein eigener "Vorschlag verwerfen"-Zustand: normale
               Weiternavigation ist das implizite Ignorieren. */}
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
+            busy={isMutating}
             onClick={() => handleToggleRating(suggestion.status)}
-            disabled={isMutating}
           >
             Vorschlag übernehmen
-          </button>
+          </Button>
         </div>
       )}
 
@@ -290,7 +321,9 @@ export function PhotoDetailPage() {
         busy={isMutating}
       />
 
-      <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
+      <Button asChild variant="ghost" className="self-start">
+        <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
+      </Button>
     </div>
   )
 }
