@@ -58,10 +58,10 @@ services:
       - photo_cache:/data/photo-cache
 
   # Verarbeitet Hintergrund-Jobs (Foto-Ingest, Thumbnails, KI-Scoring) via arq.
-  # Fuehrt selbst keine Migration mehr aus (siehe specs/decisions/0012-single-service-migration-ownership.md)
-  # - wartet stattdessen per depends_on auf einen bereits vollstaendig migrierten backend-Service,
-  # um die Race gegen eine frische DB strukturell auszuschliessen (beide Services fuehrten zuvor
-  # unabhaengig "alembic upgrade head" aus).
+  # Führt selbst keine Migration mehr aus (siehe specs/decisions/0012-single-service-migration-ownership.md)
+  # - wartet stattdessen per depends_on auf einen bereits vollständig migrierten backend-Service,
+  # um die Race gegen eine frische DB strukturell auszuschließen (beide Services führten zuvor
+  # unabhängig "alembic upgrade head" aus).
   worker:
     build: ./backend
     restart: unless-stopped
