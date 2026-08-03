@@ -1,9 +1,14 @@
 import type { RatingStatus } from '../api/types'
+import { Badge } from './ui/badge'
+import type { BadgeTone } from './ui/badge'
 import { RATING_STATUS_LABELS } from '../utils/ratingLabels'
 
-// Kein Styling-System gewaehlt (siehe specs/architecture/0004-design-system.md), daher hier nur
-// semantisches Markup + data-Attribut als zukuenftiger CSS-Hook; die tatsaechliche Farbcodierung
-// folgt, sobald ein Styling-System steht.
+const TONE_BY_STATUS: Record<RatingStatus, BadgeTone> = {
+  favorite: 'favorite',
+  album_worthy: 'album-worthy',
+  rejected: 'rejected',
+}
+
 const SYMBOLS: Record<RatingStatus, string> = {
   favorite: '★',
   album_worthy: '✓',
@@ -32,9 +37,9 @@ interface RatingBadgeProps {
 export function RatingBadge({ status, suggested = false, className }: RatingBadgeProps) {
   if (status === null) {
     return (
-      <span className={className} data-rating-status="unrated" aria-label="Unbewertet">
+      <Badge className={className} data-rating-status="unrated" aria-label="Unbewertet">
         –
-      </span>
+      </Badge>
     )
   }
 
@@ -44,13 +49,15 @@ export function RatingBadge({ status, suggested = false, className }: RatingBadg
   const symbol = suggested ? `${SUGGESTION_PREFIX}${SYMBOLS[status]}` : SYMBOLS[status]
 
   return (
-    <span
+    <Badge
       className={className}
+      tone={TONE_BY_STATUS[status]}
+      suggested={suggested}
       data-rating-status={status}
       data-suggested={suggested ? 'true' : undefined}
       aria-label={label}
     >
       {symbol}
-    </span>
+    </Badge>
   )
 }

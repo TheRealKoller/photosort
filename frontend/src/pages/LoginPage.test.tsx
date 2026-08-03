@@ -140,6 +140,16 @@ describe('LoginPage', () => {
     expect(screen.queryByLabelText(/benutzername/i)).not.toBeInTheDocument()
   })
 
+  // Funktionaler Fix 3 (specs/features/0012-visual-redesign.md): autocomplete-Attribute fuer
+  // Passwortmanager/Browser-Autofill. War bereits vor dieser Spec im Code vorhanden, aber bisher
+  // ohne Regressionstest - siehe Teststrategie-Abschnitt der Spec (explizit gefordert).
+  it('sets the standard autocomplete values on the credential fields', () => {
+    renderLoginPage(['/login'])
+
+    expect(screen.getByLabelText(/benutzername/i)).toHaveAttribute('autocomplete', 'username')
+    expect(screen.getByLabelText(/passwort/i)).toHaveAttribute('autocomplete', 'current-password')
+  })
+
   it('shows a neutral session-expired hint when navigated with state.reason "expired"', () => {
     renderLoginPage([{ pathname: '/login', state: { reason: 'expired' } }])
 

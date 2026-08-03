@@ -6,6 +6,10 @@ import { Navigate, useLocation, useNavigate } from 'react-router'
 import { login } from '../api/auth'
 import { ApiError } from '../api/client'
 import { getToken, setToken } from '../auth/token'
+import { Alert } from '../components/ui/alert'
+import { Button } from '../components/ui/button'
+import { Card } from '../components/ui/card'
+import { Input } from '../components/ui/input'
 
 interface LocationState {
   from?: { pathname: string }
@@ -47,42 +51,54 @@ export function LoginPage() {
     mutation.isError && mutation.error instanceof ApiError ? mutation.error.detail : null
 
   return (
-    <main>
-      <h1>PhotoSort</h1>
-      {state.reason === 'expired' && !errorDetail && <p>Sitzung abgelaufen — bitte erneut anmelden.</p>}
-      {errorDetail && <p role="alert">{errorDetail}</p>}
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label htmlFor="login-username">Benutzername</label>
-          <input
-            id="login-username"
-            name="username"
-            type="text"
-            autoComplete="username"
-            required
-            autoFocus
-            disabled={mutation.isPending}
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-          />
-        </div>
-        <div>
-          <label htmlFor="login-password">Passwort</label>
-          <input
-            id="login-password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            disabled={mutation.isPending}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </div>
-        <button type="submit" disabled={mutation.isPending}>
-          {mutation.isPending ? 'Anmelden…' : 'Anmelden'}
-        </button>
-      </form>
+    <main className="flex min-h-screen items-center justify-center bg-bg px-4 py-8">
+      <Card className="w-full max-w-sm p-6 sm:p-8">
+        <h1 className="mb-6 text-center text-2xl font-semibold text-text-h">PhotoSort</h1>
+        {state.reason === 'expired' && !errorDetail && (
+          <p className="mb-4 text-sm text-text">Sitzung abgelaufen — bitte erneut anmelden.</p>
+        )}
+        {errorDetail && (
+          <div className="mb-4">
+            <Alert>{errorDetail}</Alert>
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="login-username" className="text-sm font-medium text-text-h">
+              Benutzername
+            </label>
+            <Input
+              id="login-username"
+              name="username"
+              type="text"
+              autoComplete="username"
+              required
+              autoFocus
+              disabled={mutation.isPending}
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="login-password" className="text-sm font-medium text-text-h">
+              Passwort
+            </label>
+            <Input
+              id="login-password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              required
+              disabled={mutation.isPending}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </div>
+          <Button type="submit" busy={mutation.isPending} className="mt-2 w-full">
+            {mutation.isPending ? 'Anmelden…' : 'Anmelden'}
+          </Button>
+        </form>
+      </Card>
     </main>
   )
 }

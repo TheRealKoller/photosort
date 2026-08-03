@@ -7,6 +7,9 @@ import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingBadge } from '../components/RatingBadge'
+import { Alert } from '../components/ui/alert'
+import { Button } from '../components/ui/button'
+import { Skeleton } from '../components/ui/skeleton'
 import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
 import { ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
@@ -57,54 +60,57 @@ export function PhotoGridPage() {
   }
 
   return (
-    <div>
-      <h1>Fotos</h1>
+    <div className="flex flex-col gap-6">
+      <h1 className="text-2xl font-semibold text-text-h">Fotos</h1>
 
-      <div role="group" aria-label="Filter">
+      <div role="group" aria-label="Filter" className="flex flex-wrap gap-2">
         {FILTERS.map((option) => (
-          <button
+          <Button
             key={option.value || 'all'}
             type="button"
+            variant={filterParam === option.value ? 'default' : 'outline'}
+            size="sm"
             aria-pressed={filterParam === option.value}
             onClick={() => handleFilterChange(option.value)}
           >
             {option.label}
-          </button>
+          </Button>
         ))}
       </div>
 
       {query.isLoading && (
-        <ul role="status" aria-label="Fotos werden geladen…">
+        <ul
+          role="status"
+          aria-label="Fotos werden geladen…"
+          className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
+        >
           {Array.from({ length: SKELETON_TILE_COUNT }, (_, index) => (
-            <li key={index} aria-hidden="true" />
+            <li key={index} aria-hidden="true">
+              <Skeleton className="aspect-square w-full rounded-md" />
+            </li>
           ))}
         </ul>
       )}
 
       {query.isError && (
-        <div role="alert">
-          <p>
-            {query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden der Fotos.'}
-          </p>
-          <button type="button" onClick={() => void query.refetch()}>
-            Erneut versuchen
-          </button>
-        </div>
+        <Alert onRetry={() => void query.refetch()}>
+          {query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden der Fotos.'}
+        </Alert>
       )}
 
       {query.isSuccess && photos.length === 0 && (
-        <div>
+        <div className="flex flex-col items-start gap-3 text-sm text-text">
           <p>Keine Fotos mit diesem Filter.</p>
           {filterParam !== '' && (
-            <button type="button" onClick={() => handleFilterChange('')}>
+            <Button type="button" variant="outline" onClick={() => handleFilterChange('')}>
               Filter zurücksetzen
-            </button>
+            </Button>
           )}
         </div>
       )}
 
       {photos.length > 0 && (
-        <ul>
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {photos.map((photo) => {
             const ownStatus = ownRatingStatus(photo.ratings, username)
             // Anzeigeregel (Akzeptanzkriterium der Spec): eigene Bewertung hat immer Vorrang -
@@ -136,12 +142,25 @@ export function PhotoGridPage() {
             }
 
             return (
-              <li key={photo.id}>
+              <li key={photo.id} className="flex flex-col gap-1.5">
                 <Link
                   to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
+                  className="group relative block aspect-square overflow-hidden rounded-md border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
                 >
-                  <PhotoImage photoId={photo.id} variant="thumbnail" alt={photo.relative_path} />
-                  <RatingBadge status={badgeStatus} suggested={isSuggested} />
+                  <PhotoImage
+                    photoId={photo.id}
+                    variant="thumbnail"
+                    alt={photo.relative_path}
+                    className="size-full object-cover"
+                  />
+                  {/* UX-Review-Fund (Branch feature/0012-visual-redesign-views): der neutrale
+                      ("unbewertet") und der gedaempfte Vorschlags-Ton der Badge haben keine bzw.
+                      nur eine 10%-Deckkraft-Flaeche - direkt ueber einem beliebigen Foto ist das
+                      Symbol/"–" ohne Backdrop je nach Bildinhalt kaum lesbar. Ein halbtransparenter
+                      `--bg`-Kreis dahinter garantiert Kontrast unabhaengig vom Fotohintergrund. */}
+                  <span className="absolute right-1.5 top-1.5 rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
+                    <RatingBadge status={badgeStatus} suggested={isSuggested} />
+                  </span>
                 </Link>
                 {/* Separates Tap-Ziel ausserhalb des Link-<a> (UI/UX-Abschnitt der Spec): die
                     Kachel selbst oeffnet weiterhin die Detailansicht, "Uebernehmen" bestaetigt
@@ -150,14 +169,16 @@ export function PhotoGridPage() {
                     Vorschlaege im selben Grid sind sonst per Tastatur/Screenreader nicht
                     auseinanderzuhalten, da jeder Button denselben sichtbaren Text traegt. */}
                 {isSuggested && (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     aria-label={`Vorschlag übernehmen: ${photo.relative_path}`}
+                    busy={isConfirming}
                     onClick={handleConfirmSuggestion}
-                    disabled={isConfirming}
                   >
                     {isConfirming ? 'Wird übernommen…' : 'Übernehmen'}
-                  </button>
+                  </Button>
                 )}
               </li>
             )
@@ -166,16 +187,20 @@ export function PhotoGridPage() {
       )}
 
       {query.hasNextPage && (
-        <button
+        <Button
           type="button"
+          variant="outline"
+          busy={query.isFetchingNextPage}
           onClick={() => void query.fetchNextPage()}
-          disabled={query.isFetchingNextPage}
+          className="self-start"
         >
           {query.isFetchingNextPage ? 'Lädt…' : 'Weitere laden'}
-        </button>
+        </Button>
       )}
 
-      <Link to={`/projects/${id}`}>Zurück zum Projekt</Link>
+      <Button asChild variant="ghost" className="self-start">
+        <Link to={`/projects/${id}`}>Zurück zum Projekt</Link>
+      </Button>
     </div>
   )
 }

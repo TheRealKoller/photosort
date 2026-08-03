@@ -2,12 +2,34 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
+import { Alert } from '../components/ui/alert'
+import { Button } from '../components/ui/button'
+import { Progress } from '../components/ui/progress'
 import {
   POLL_INTERVAL_MS,
   useProjectQuery,
   useTriggerScanMutation,
   useTriggerScoreMutation,
 } from '../hooks/useProjects'
+import { PROCESS_STATUS_DOT_CLASSES } from '../utils/processStatus'
+import type { ProcessStatus } from '../utils/processStatus'
+
+/**
+ * UX-/Architect-Review-Fund (Branch feature/0012-visual-redesign-views): faerbte urspruenglich den
+ * sichtbaren Statustext direkt ein (`text-status-*`) - `--status-success`/`--status-failed` sind
+ * aber nur als Flaechenfarbe kalibriert, nicht als Text-/Symbolfarbe (WCAG-AA gegen `--bg`
+ * verfehlt, siehe architecture/0004-design-system.md, Abschnitt Farbpalette). Gleiches Muster wie
+ * ProjectListPage jetzt auch hier: nur ein dekorativer, `aria-hidden` Punkt traegt die Farbe, der
+ * Text daneben bleibt neutral (`text-text`/`text-text-h`).
+ */
+function StatusDot({ status }: { status: ProcessStatus | null | undefined }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`size-2.5 shrink-0 rounded-full ${status ? PROCESS_STATUS_DOT_CLASSES[status] : 'bg-border'}`}
+    />
+  )
+}
 
 export function ProjectDetailPage() {
   const { projectId } = useParams()
@@ -73,22 +95,32 @@ export function ProjectDetailPage() {
 
   if (query.isError && query.error instanceof ApiError && query.error.status === 404) {
     return (
-      <div>
-        <p>Projekt nicht gefunden.</p>
-        <Link to="/">Zurück zur Projektliste</Link>
+      <div className="flex flex-col items-start gap-3">
+        <p className="text-text">Projekt nicht gefunden.</p>
+        <Button asChild variant="ghost">
+          <Link to="/">Zurück zur Projektliste</Link>
+        </Button>
       </div>
     )
   }
 
   if (query.isLoading) {
-    return <p role="status">Projekt wird geladen…</p>
+    return (
+      <p role="status" className="text-sm text-text">
+        Projekt wird geladen…
+      </p>
+    )
   }
 
   if (query.isError || !query.data) {
     return (
-      <div role="alert">
-        <p>{query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden des Projekts.'}</p>
-        <Link to="/">Zurück zur Projektliste</Link>
+      <div className="flex flex-col items-start gap-3">
+        <Alert>
+          {query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden des Projekts.'}
+        </Alert>
+        <Button asChild variant="ghost">
+          <Link to="/">Zurück zur Projektliste</Link>
+        </Button>
       </div>
     )
   }
@@ -143,96 +175,109 @@ export function ProjectDetailPage() {
   const scoringAnnouncedDecile = Math.floor(scoringPercent / 10) * 10
 
   return (
-    <div>
-      <h1>{project.name}</h1>
-      <p>{project.opencloud_path}</p>
+    <div className="flex flex-col gap-6">
+      <header>
+        <h1 className="text-2xl font-semibold text-text-h">{project.name}</h1>
+        <p className="text-sm text-text">{project.opencloud_path}</p>
+      </header>
 
-      <button type="button" onClick={handleTriggerScan} disabled={isBusy}>
-        {isBusy ? 'Scan läuft…' : 'Aktualisieren'}
-      </button>
+      <section className="flex flex-col items-start gap-3">
+        <Button type="button" onClick={handleTriggerScan} disabled={isBusy} busy={isBusy}>
+          {isBusy ? 'Scan läuft…' : 'Aktualisieren'}
+        </Button>
 
-      {triggerErrorDetail && <p role="alert">{triggerErrorDetail}</p>}
+        {triggerErrorDetail && <Alert>{triggerErrorDetail}</Alert>}
 
-      <p aria-live="polite">
-        {project.last_scan === null && 'Noch nicht gescannt'}
-        {project.last_scan?.status === 'running' && 'Scan läuft…'}
-        {project.last_scan?.status === 'success' && 'Erfolgreich'}
-        {project.last_scan?.status === 'failed' && 'Fehlgeschlagen'}
-      </p>
+        <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
+          <StatusDot status={project.last_scan?.status} />
+          {project.last_scan === null && 'Noch nicht gescannt'}
+          {project.last_scan?.status === 'running' && 'Scan läuft…'}
+          {project.last_scan?.status === 'success' && 'Erfolgreich'}
+          {project.last_scan?.status === 'failed' && 'Fehlgeschlagen'}
+        </p>
 
-      {project.last_scan?.status === 'success' && (
-        <dl>
-          <dt>Hinzugefügt</dt>
-          <dd>{project.last_scan.photos_added}</dd>
-          <dt>Aktualisiert</dt>
-          <dd>{project.last_scan.photos_updated}</dd>
-          <dt>Entfernt</dt>
-          <dd>{project.last_scan.photos_removed}</dd>
-          <dt>Übersprungen</dt>
-          <dd>{project.last_scan.files_skipped}</dd>
-          <dt>Dateien gefunden</dt>
-          <dd>{project.last_scan.files_found}</dd>
-        </dl>
-      )}
+        {project.last_scan?.status === 'success' && (
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-text sm:grid-cols-3">
+            <dt className="text-text">Hinzugefügt</dt>
+            <dd className="text-text-h">{project.last_scan.photos_added}</dd>
+            <dt className="text-text">Aktualisiert</dt>
+            <dd className="text-text-h">{project.last_scan.photos_updated}</dd>
+            <dt className="text-text">Entfernt</dt>
+            <dd className="text-text-h">{project.last_scan.photos_removed}</dd>
+            <dt className="text-text">Übersprungen</dt>
+            <dd className="text-text-h">{project.last_scan.files_skipped}</dd>
+            <dt className="text-text">Dateien gefunden</dt>
+            <dd className="text-text-h">{project.last_scan.files_found}</dd>
+          </dl>
+        )}
 
-      {project.last_scan?.status === 'failed' && (
-        <p role="alert">{project.last_scan.error_message}</p>
-      )}
+        {project.last_scan?.status === 'failed' && (
+          <Alert>{project.last_scan.error_message}</Alert>
+        )}
+      </section>
 
-      <button type="button" onClick={handleTriggerScore} disabled={isScoreBusy}>
-        {isScoreBusy ? 'Wird vorgeschlagen…' : 'Beste Fotos automatisch vorschlagen'}
-      </button>
+      <section className="flex flex-col items-start gap-3">
+        <Button type="button" onClick={handleTriggerScore} disabled={isScoreBusy} busy={isScoreBusy}>
+          {isScoreBusy ? 'Wird vorgeschlagen…' : 'Beste Fotos automatisch vorschlagen'}
+        </Button>
 
-      {scoreTriggerErrorDetail && <p role="alert">{scoreTriggerErrorDetail}</p>}
+        {scoreTriggerErrorDetail && <Alert>{scoreTriggerErrorDetail}</Alert>}
 
-      {/* aria-live="polite" mit bewusst STABILEM Text waehrend "running" (UI/UX-Review-Fund):
-          vorher stand der sich bei jedem Poll aendernde "X von Y"-Zaehler direkt in dieser
-          aria-live-Zeile - das haette die 10%-Drosselung unten wirkungslos gemacht, da diese
-          Zeile trotzdem bei jedem Tick neu angesagt worden waere. Aendert sich hier nur beim
-          Uebergang zwischen Zustaenden (null -> running -> success/failed), nicht bei jedem Poll -
-          dadurch wird ein abgeschlossener oder fehlgeschlagener Lauf zuverlaessig angesagt, ohne
-          waehrend des Laufs selbst zu spammen. Der exakte Zaehler lebt separat unten. */}
-      <p aria-live="polite">
-        {scoringRun === null && 'Noch nicht vorgeschlagen'}
-        {scoringStatus === 'running' && 'Wird verarbeitet…'}
-        {scoringStatus === 'success' && 'Vorschläge aktualisiert'}
-        {scoringStatus === 'failed' && 'Fehlgeschlagen'}
-      </p>
+        {/* aria-live="polite" mit bewusst STABILEM Text waehrend "running" (UI/UX-Review-Fund):
+            vorher stand der sich bei jedem Poll aendernde "X von Y"-Zaehler direkt in dieser
+            aria-live-Zeile - das haette die 10%-Drosselung unten wirkungslos gemacht, da diese
+            Zeile trotzdem bei jedem Tick neu angesagt worden waere. Aendert sich hier nur beim
+            Uebergang zwischen Zustaenden (null -> running -> success/failed), nicht bei jedem Poll -
+            dadurch wird ein abgeschlossener oder fehlgeschlagener Lauf zuverlaessig angesagt, ohne
+            waehrend des Laufs selbst zu spammen. Der exakte Zaehler lebt separat unten. */}
+        <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
+          <StatusDot status={scoringStatus} />
+          {scoringRun === null && 'Noch nicht vorgeschlagen'}
+          {scoringStatus === 'running' && 'Wird verarbeitet…'}
+          {scoringStatus === 'success' && 'Vorschläge aktualisiert'}
+          {scoringStatus === 'failed' && 'Fehlgeschlagen'}
+        </p>
 
-      {scoringStatus === 'running' && (
-        <>
-          <p>{photosProcessed} von {photosTotal} Fotos verarbeitet</p>
-          {/* Copilot-Review-Fund (PR #6): direkt nach dem Trigger ist der Status bereits
-              "running", aber photos_total kann noch kurz 0 sein (wird im Worker erst NACH dem
-              Anlegen des ScoringRun gesetzt) - <progress max={0}> ist fuer native
-              progress-Elemente ungueltig/mehrdeutig. Solange photosTotal 0 ist, daher bewusst ein
-              indeterminiertes <progress/> ohne value/max statt eines irrefuehrenden 0/0-Balkens. */}
-          {photosTotal > 0 ? (
-            <progress value={photosProcessed} max={photosTotal}>
-              {photosProcessed}/{photosTotal}
-            </progress>
-          ) : (
-            <progress />
-          )}
-          <p aria-live="polite">{scoringAnnouncedDecile}% verarbeitet</p>
-        </>
-      )}
+        {scoringStatus === 'running' && (
+          <div className="flex w-full max-w-sm flex-col gap-1.5">
+            <p className="text-sm text-text">
+              {photosProcessed} von {photosTotal} Fotos verarbeitet
+            </p>
+            {/* Copilot-Review-Fund (PR #6): direkt nach dem Trigger ist der Status bereits
+                "running", aber photos_total kann noch kurz 0 sein (wird im Worker erst NACH dem
+                Anlegen des ScoringRun gesetzt) - <progress max={0}> ist fuer native
+                progress-Elemente ungueltig/mehrdeutig. Solange photosTotal 0 ist, daher bewusst ein
+                indeterminiertes <progress/> ohne value/max statt eines irrefuehrenden 0/0-Balkens. */}
+            {photosTotal > 0 ? (
+              <Progress value={photosProcessed} max={photosTotal}>
+                {photosProcessed}/{photosTotal}
+              </Progress>
+            ) : (
+              <Progress />
+            )}
+            <p aria-live="polite" className="text-sm text-text">
+              {scoringAnnouncedDecile}% verarbeitet
+            </p>
+          </div>
+        )}
 
-      {scoringStatus === 'failed' && !isScoreBusy && (
-        <div role="alert">
-          <p>{scoringRun?.error_message}</p>
-          <button type="button" onClick={handleTriggerScore}>
-            Erneut versuchen
-          </button>
-        </div>
-      )}
+        {scoringStatus === 'failed' && !isScoreBusy && (
+          <Alert onRetry={handleTriggerScore}>{scoringRun?.error_message}</Alert>
+        )}
+      </section>
 
-      <nav aria-label="Fotos">
-        <Link to={`/projects/${project.id}/photos`}>Fotos ansehen</Link>
-        <Link to={`/projects/${project.id}/compare`}>Bewertungen vergleichen</Link>
+      <nav aria-label="Fotos" className="flex flex-wrap gap-3">
+        <Button asChild variant="secondary">
+          <Link to={`/projects/${project.id}/photos`}>Fotos ansehen</Link>
+        </Button>
+        <Button asChild variant="secondary">
+          <Link to={`/projects/${project.id}/compare`}>Bewertungen vergleichen</Link>
+        </Button>
       </nav>
 
-      <Link to="/">Zurück zur Projektliste</Link>
+      <Button asChild variant="ghost" className="self-start">
+        <Link to="/">Zurück zur Projektliste</Link>
+      </Button>
     </div>
   )
 }

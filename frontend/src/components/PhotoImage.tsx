@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { ApiError } from '../api/client'
 import { fetchPhotoImageBlobUrl } from '../api/photos'
 import type { PhotoVariant } from '../api/types'
+import { Skeleton } from './ui/skeleton'
+import { cn } from '../lib/utils'
 
 interface PhotoImageProps {
   photoId: number
@@ -61,22 +63,36 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
   }, [photoId, variant])
 
   if (state.status === 'loading') {
-    return <div className={className} role="status" aria-label={`${alt} wird geladen…`} />
+    return (
+      <div className={className} role="status" aria-label={`${alt} wird geladen…`}>
+        <Skeleton className="size-full" />
+      </div>
+    )
   }
 
   if (state.status === 'placeholder') {
     return (
-      <div className={className} role="img" aria-label={`${alt}: wird noch verarbeitet`} />
+      <div
+        className={cn('flex items-center justify-center rounded-md bg-border/60 text-xs text-text', className)}
+        role="img"
+        aria-label={`${alt}: wird noch verarbeitet`}
+      />
     )
   }
 
   if (state.status === 'error') {
     return (
-      <div className={className} role="alert">
+      <div
+        className={cn(
+          'flex items-center justify-center rounded-md border border-status-failed/40 bg-status-failed/10 px-2 text-center text-xs text-text-h',
+          className
+        )}
+        role="alert"
+      >
         Bild konnte nicht geladen werden.
       </div>
     )
   }
 
-  return <img className={className} src={state.url} alt={alt} />
+  return <img className={cn('rounded-md object-cover', className)} src={state.url} alt={alt} />
 }
