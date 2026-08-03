@@ -107,3 +107,96 @@ jobs:
             echo "Network $network still exists after 'docker compose down'" >&2
             exit 1
           fi
+      - name: Static check - worker command runs no migration (spec 0013)
+        run: |
+          set -euo pipefail
+          worker_command=$(docker compose config --format json | jq -r '.services.worker.command | join(" ")')
+          echo "worker command: $worker_command"
+          if echo "$worker_command" | grep -qi "alembic"; then
+            echo "worker command still runs alembic - migrations must run only in backend" >&2
+            exit 1
+          fi
+          backend_command=$(docker compose config --format json | jq -r '.services.backend.command | join(" ")')
+          echo "backend command: $backend_command"
+          echo "$backend_command" | grep -q "alembic upgrade head"
+          echo "$backend_command" | grep -q "uvicorn"
+      - name: Functional check - single-service migration ownership against a fresh DB (spec 0013)
+        run: |
+          set -euo pipefail
+          # Isoliert vom vorherigen Schritt, siehe Kommentar oben zum IPv4-Check.
+          rm -f .env
+          trap 'docker compose down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
+
+          export AUTH_SEED_USER1_USERNAME=ci-user1
+          export AUTH_SEED_USER1_PASSWORD="ci-password-1-$RANDOM"
+          export AUTH_SEED_USER2_USERNAME=ci-user2
+          export AUTH_SEED_USER2_PASSWORD="ci-password-2-$RANDOM"
+          export SECRET_KEY="ci-only-secret-key-not-for-production-0013-$RANDOM"
+
+          docker compose up -d --build backend worker
+
+          # "docker compose up" blockiert wegen worker's "depends_on: backend: condition:
+          # service_healthy" bereits selbst, bis backend healthy ist - diese Wartschleife ist
+          # eine bewusste zweite Verteidigungslinie (u.a. gegen Compose-Versionsunterschiede
+          # zwischen lokal und CI-Runner) und liefert im Fehlerfall eine klare Fehlermeldung
+          # statt eines reinen "dependency failed to start"-Abbruchs von "up" selbst.
+          echo "Waiting for backend to become healthy..."
+          backend_cid=$(docker compose ps -q backend)
+          healthy=0
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' "$backend_cid")
+            if [ "$status" = "healthy" ]; then
+              healthy=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$healthy" != "1" ]; then
+            echo "backend did not become healthy in time" >&2
+            docker compose logs
+            exit 1
+          fi
+
+          backend_log=$(docker compose logs backend)
+          worker_log=$(docker compose logs worker)
+
+          echo "--- backend ran the migration exactly once (revision 1574f8180817) ---"
+          # alembic loggt jede Revision zweimal in der Kette (einmal als Ziel des eigenen
+          # Upgrade-Schritts, einmal als Quelle des nächsten) - "-> 1574f8180817," matcht
+          # gezielt nur den eigenen Upgrade-Schritt, nicht den Folgeschritt.
+          revision_hits=$(echo "$backend_log" | grep -c -- "-> 1574f8180817," || true)
+          test "$revision_hits" = "1"
+
+          echo "--- worker never invoked alembic ---"
+          if echo "$worker_log" | grep -qi "alembic"; then
+            echo "worker log unexpectedly mentions alembic" >&2
+            exit 1
+          fi
+
+          echo "--- known race error does not appear in either log ---"
+          if printf '%s\n%s\n' "$backend_log" "$worker_log" | grep -q 'duplicate key value violates unique constraint "pg_type_typname_nsp_index"'; then
+            echo "race condition error present in logs" >&2
+            exit 1
+          fi
+
+          echo "--- alembic_version has exactly one row matching the current head ---"
+          expected_head=$(docker compose exec -T backend alembic heads | awk '{print $1}')
+          actual_rows=$(docker compose exec -T postgres psql -U "${POSTGRES_USER:-photosort}" -d "${POSTGRES_DB:-photosort}" -tAc "SELECT version_num FROM alembic_version;")
+          row_count=$(printf '%s' "$actual_rows" | grep -c . || true)
+          test "$row_count" = "1"
+          test "$(printf '%s' "$actual_rows" | tr -d '[:space:]')" = "$expected_head"
+
+          echo "--- RestartCount is 0 for both containers ---"
+          backend_restarts=$(docker inspect --format '{{.RestartCount}}' "$backend_cid")
+          worker_restarts=$(docker inspect --format '{{.RestartCount}}' "$(docker compose ps -q worker)")
+          test "$backend_restarts" = "0"
+          test "$worker_restarts" = "0"
+
+          echo "--- login with the seeded user succeeds ---"
+          login_response_file=$(mktemp)
+          login_status=$(curl -s -o "$login_response_file" -w '%{http_code}' -X POST "http://localhost:${BACKEND_PORT:-8000}/auth/login" -H 'Content-Type: application/json' -d "{\"username\": \"$AUTH_SEED_USER1_USERNAME\", \"password\": \"$AUTH_SEED_USER1_PASSWORD\"}")
+          test "$login_status" = "200"
+          grep -q "access_token" "$login_response_file"
+          rm -f "$login_response_file"
+          # Kein explizites "docker compose down" hier nötig - der "trap ... EXIT" oben
+          # räumt den Stack inkl. Volume bereits auf.
