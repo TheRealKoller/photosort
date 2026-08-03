@@ -1,8 +1,9 @@
 # 0012 - Visuelles Redesign & UI-Komponentenbibliothek
 
-**Status:** Accepted
+**Status:** Implemented
 **Erstellt:** 2026-08-02
 **Akzeptiert:** 2026-08-02
+**Implementiert:** 2026-08-03 — [PR #20](https://github.com/TheRealKoller/photosort/pull/20) (Tailwind/shadcn-Fundament + `components/ui/`-Basiskomponenten, ohne View-Migration) und [PR #21](https://github.com/TheRealKoller/photosort/pull/21) (View-Migration aller 9 Views/Komponenten + die drei funktionalen Fixes), beide gemergt nach main.
 **Bezug:** Idea-Sharpening-Gespräch mit Daniel im Chat, 2026-08-02 ("Die Anwendung soll ein ansprechendes Design bekommen"). Seit der allerersten Anlage von [`architecture/0004-design-system.md`](../architecture/0004-design-system.md) wiederholt vertagte Lücke "kein Styling-System gewählt", zuletzt in jedem UX-Review von Spec 0002/0003/0005/0006 vermerkt.
 
 ## Ziel
@@ -15,19 +16,19 @@ Als Daniel (und seine Frau als Endnutzerin) möchte ich, dass PhotoSort sich war
 
 ## Akzeptanzkriterien
 
-- [ ] Eine Komponentenbibliothek (Tailwind CSS + Radix UI + shadcn/ui, ADR 0011) ist eingeführt und ersetzt das bisherige unstyled HTML/JSX in allen 9 betroffenen Views/Komponenten (`App.tsx`/AppShell, `LoginPage`, `ProjectListPage`, `ProjectCreatePage`, `ProjectDetailPage`, `FolderBrowser`, `PhotoGridPage`, `PhotoDetailPage`, `PhotoComparePage`, `RatingButtons`/`RatingBadge`/`PhotoImage`).
-- [ ] Vite-Template-Reste (`index.css` lila Akzentfarbe `#aa3bff`/`#c084fc`, `#social`-Regeln, `favicon.svg`) sind entfernt/ersetzt.
-- [ ] Terracotta-Akzentfarbe (`#d97757` hell / `#e8916d` dunkel) und warme Neutraltöne (siehe `architecture/0004-design-system.md`) sind als Design-Tokens (CSS-Variablen) umgesetzt.
-- [ ] Die 4 Bewertungsfarben (favorite/album_worthy/rejected/unbewertet) sind visuell inkl. Symbol umgesetzt, unverändert gegenüber den bereits definierten Hex-Werten, WCAG-AA-Kontrast (4.5:1) gegen den neuen Hintergrund geprüft.
-- [ ] Die 3 Prozess-Status-Farben (running/success/failed) sind visuell umgesetzt.
-- [ ] Das Vorschlags-Badge-Muster (volle Füllung = entschieden, Umrandung/gedämpfte Fläche = Vorschlag) ist visuell umgesetzt.
-- [ ] Skeleton-Ladezustände (statt reinem Text) sind umgesetzt, wo im Design-System vorgesehen (u.a. Grid).
-- [ ] Interaktive Elemente erfüllen ≥44×44px Touch-Ziele tatsächlich messbar (nicht nur strukturelle Absicht).
-- [ ] **Funktionaler Fix 1:** `RatingButtons` zeigen während einer laufenden Anfrage konsistent das Busy-Button-Muster (Inline-Indikator/Label-Wechsel, tatsächlich `disabled`) — behebt die bestehende Lücke, dass `disabled`- und `busy`-Prop bisher unabhängig sind.
-- [ ] **Funktionaler Fix 2:** `PhotoDetailPage` und `PhotoComparePage` zeigen bei Ladefehler einen "Erneut versuchen"-Button (Klick löst `refetch()` aus), analog zu `PhotoGridPage`.
-- [ ] **Funktionaler Fix 3:** `LoginPage`-Felder haben `autocomplete="username"` bzw. `autocomplete="current-password"`.
-- [ ] Bestehende Testing-Library-Selektoren (`getByRole`/`getByLabelText`/`aria-*`/`data-suggested`/`data-status`) bleiben nach der Migration gültig — alle bestehenden Frontend-Tests laufen ohne Anpassung der Assertions weiter grün; eine zwangsläufige Rollenänderung (z.B. natives `<button>` → Radix-Trigger mit anderer impliziter Rolle) wird explizit im PR benannt, nicht stillschweigend gefixt.
-- [ ] `docker-compose-check`/CI bleibt grün (neue Frontend-Abhängigkeiten ändern nichts an Build/Lint/Typecheck-Konfiguration außer den neuen Tailwind/PostCSS-Configs).
+- [x] Eine Komponentenbibliothek (Tailwind CSS + Radix UI + shadcn/ui, ADR 0011) ist eingeführt und ersetzt das bisherige unstyled HTML/JSX in allen 9 betroffenen Views/Komponenten (`App.tsx`/AppShell, `LoginPage`, `ProjectListPage`, `ProjectCreatePage`, `ProjectDetailPage`, `FolderBrowser`, `PhotoGridPage`, `PhotoDetailPage`, `PhotoComparePage`, `RatingButtons`/`RatingBadge`/`PhotoImage`).
+- [x] Vite-Template-Reste (`index.css` lila Akzentfarbe `#aa3bff`/`#c084fc`, `#social`-Regeln, `favicon.svg`) sind entfernt/ersetzt.
+- [x] Terracotta-Akzentfarbe (`#d97757` hell / `#e8916d` dunkel) und warme Neutraltöne (siehe `architecture/0004-design-system.md`) sind als Design-Tokens (CSS-Variablen) umgesetzt.
+- [x] Die 4 Bewertungsfarben (favorite/album_worthy/rejected/unbewertet) sind visuell inkl. Symbol umgesetzt, unverändert gegenüber den bereits definierten Hex-Werten, WCAG-AA-Kontrast (4.5:1) gegen den neuen Hintergrund geprüft.
+- [x] Die 3 Prozess-Status-Farben (running/success/failed) sind visuell umgesetzt.
+- [x] Das Vorschlags-Badge-Muster (volle Füllung = entschieden, Umrandung/gedämpfte Fläche = Vorschlag) ist visuell umgesetzt.
+- [x] Skeleton-Ladezustände (statt reinem Text) sind umgesetzt, wo im Design-System vorgesehen (u.a. Grid).
+- [x] Interaktive Elemente erfüllen ≥44×44px Touch-Ziele tatsächlich messbar (nicht nur strukturelle Absicht).
+- [x] **Funktionaler Fix 1:** `RatingButtons` zeigen während einer laufenden Anfrage konsistent das Busy-Button-Muster (Inline-Indikator/Label-Wechsel, tatsächlich `disabled`) — behebt die bestehende Lücke, dass `disabled`- und `busy`-Prop bisher unabhängig sind.
+- [x] **Funktionaler Fix 2:** `PhotoDetailPage` und `PhotoComparePage` zeigen bei Ladefehler einen "Erneut versuchen"-Button (Klick löst `refetch()` aus), analog zu `PhotoGridPage`.
+- [x] **Funktionaler Fix 3:** `LoginPage`-Felder haben `autocomplete="username"` bzw. `autocomplete="current-password"`.
+- [x] Bestehende Testing-Library-Selektoren (`getByRole`/`getByLabelText`/`aria-*`/`data-suggested`/`data-status`) bleiben nach der Migration gültig — alle bestehenden Frontend-Tests laufen ohne Anpassung der Assertions weiter grün; eine zwangsläufige Rollenänderung (z.B. natives `<button>` → Radix-Trigger mit anderer impliziter Rolle) wird explizit im PR benannt, nicht stillschweigend gefixt.
+- [x] `docker-compose-check`/CI bleibt grün (neue Frontend-Abhängigkeiten ändern nichts an Build/Lint/Typecheck-Konfiguration außer den neuen Tailwind/PostCSS-Configs).
 
 ## Datenmodell-Bezug
 
