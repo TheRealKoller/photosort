@@ -4,6 +4,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { decodeUsername } from './auth/jwt'
 import { clearToken, getToken } from './auth/token'
 import { useUnauthorizedRedirect } from './auth/useUnauthorizedRedirect'
+import { Button } from './components/ui/button'
 import { LoginPage } from './pages/LoginPage'
 import { PhotoComparePage } from './pages/PhotoComparePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
@@ -25,18 +26,22 @@ function AppShell() {
   }
 
   return (
-    <>
-      <header>
-        <Link to="/">PhotoSort</Link>
-        {username && <span>Angemeldet als {username}</span>}
-        <button type="button" onClick={handleLogout}>
-          Abmelden
-        </button>
+    <div className="flex min-h-screen flex-col bg-bg text-text">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
+        <Link to="/" className="text-lg font-semibold text-text-h">
+          PhotoSort
+        </Link>
+        <div className="flex items-center gap-3">
+          {username && <span className="text-sm text-text">Angemeldet als {username}</span>}
+          <Button type="button" variant="outline" size="sm" onClick={handleLogout}>
+            Abmelden
+          </Button>
+        </div>
       </header>
-      <main>
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">
         <Outlet />
       </main>
-    </>
+    </div>
   )
 }
 
