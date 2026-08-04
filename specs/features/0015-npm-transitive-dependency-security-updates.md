@@ -39,13 +39,15 @@ Keines. Reine Frontend-Dependency-Aktualisierung (Dev-/Build-Toolchain), kein Da
 
 ## Architektur / Umsetzung
 
-**Verifizierter Sachverhalt (2026-08-04):**
+**Verifizierter Sachverhalt (2026-08-04, Stand vor dem Update — siehe "Update bei Umsetzung" unten für den implementierten Zielzustand):**
 
 - `npm ls fast-uri undici` im Verzeichnis `frontend/` zeigt beide Pakete als rein transitiv:
   - `undici@7.28.0` ← `jsdom@29.1.1` (Vitest-Testumgebung, ausschließlich zur Testlaufzeit, nicht im ausgelieferten Bundle).
   - `fast-uri@3.1.4` ← `vite-plugin-pwa@1.3.0` → `workbox-build@7.4.1` → `ajv@8.20.0` (Build-Zeit-Tool zur Service-Worker-Generierung, nicht im Browser-Runtime-Code).
 - Beide Pakete tauchen nicht in `frontend/package.json` auf — kein direkter Versions-Constraint anzupassen, das Update läuft ausschließlich über die Lockfile-Neuauflösung ihrer jeweiligen Elternpakete.
 - Dependabot hat die passende Lockfile-Änderung bereits als PR #22 vorbereitet (`npm_and_yarn`-Group-Update), CI (`backend`, `frontend`, `demo-scripts`, `docker-compose-check`, CodeQL, GitGuardian) bereits grün zum Zeitpunkt der Spec-Erstellung.
+
+**Update bei Umsetzung (2026-08-04):** PR #22 wie geplant als Basis übernommen (Branch `dependabot/npm_and_yarn/frontend/npm_and_yarn-294b92ad74` ausgecheckt, Doku-Commits auf diesem Branch ergänzt). `frontend/package-lock.json` löst auf diesem Branch bereits `undici@7.29.0` (weiterhin ausschließlich über `jsdom`) und `fast-uri@3.1.5` (weiterhin ausschließlich über `vite-plugin-pwa`→`workbox-build`→`ajv`) auf — die transitive Abhängigkeitskette selbst ist unverändert, nur die Versionen wurden auf die gefixten Stände gehoben. `frontend/package.json` bleibt unverändert. Merge nach `main` folgt nach Abschluss dieses Reviews.
 
 **Vorgehen:** PR #22 als Basis übernehmen (Branch auschecken oder Änderung äquivalent nachvollziehen), um den nach Umsetzung fälligen Sicherheitskonzept-Vermerk (siehe Security-Abschnitt) ergänzen, dann reguläre CI-Prüfung + Merge — analog zum Vorgehen bei Spec 0014 (dort war der Dependency-Bump bereits anderweitig gelandet, hier liegt er als eigener Dependabot-PR vor).
 
