@@ -8,6 +8,10 @@ description: Hilft dabei, eine neue Produkt-/Feature-Idee zu schärfen, bevor si
 
 Begleitet eine rohe Idee bis zu einer belastbaren, ins Projekt eingeordneten Feature-Spec. Der Punkt des Skills ist, dass eine Idee erst dann zur Spec wird, wenn sie drei Dinge überstanden hat: echtes gegenseitiges Verständnis, Abgleich mit dem, was schon existiert, und kritischen Gegenwind. Jeder dieser drei Schritte fängt eine andere Art von Fehler ab — Verständnisfragen verhindern, dass an der eigentlichen Absicht vorbei geplant wird; der Code-/Spec-Abgleich verhindert Doppelarbeit und stille Konflikte mit bereits Bestehendem; die kritische Prüfung verhindert, dass Ideen ungeprüft durchgewunken werden, nur weil sie zuerst gut klingen.
 
+## Schritt 0: Herkunft prüfen — kommt die Idee aus der Inbox?
+
+Verweist der Nutzer auf einen `capture`-Inbox-Eintrag (`specs/inbox/NNNN-*.md`, z.B. "schärf Inbox-Eintrag 3") oder sollen offene Inbox-Einträge grundsätzlich abgearbeitet werden, lies die Datei und nimm ihren Rohtext als Ausgangspunkt für Schritt 1 statt bei einer neuen, roh im Chat geäußerten Idee zu starten. Lösche die Inbox-Datei erst in Schritt 9, nachdem die Spec tatsächlich angelegt/erweitert wurde — vorher bleibt sie als Rückfallebene bestehen, falls das Schärfen abgebrochen wird.
+
 ## Schritt 1: Verständnis schärfen
 
 Stell Rückfragen, bis du die Idee wirklich verstehst — nicht nur, was gebaut werden soll, sondern warum und für wen. Typische Lücken, die es zu füllen lohnt: Welches konkrete Problem löst das? Wer nutzt es (beide Nutzer, nur einer, ein bestimmter Anwendungsfall)? Wie sieht "fertig"/"gut gelöst" aus? Gibt es einen Auslöser (z.B. gerade erlebtes Problem) oder ist es eine allgemeine Idee?
