@@ -1,8 +1,9 @@
 # 0015 - npm-Sicherheitsupdates für transitive Dependencies (fast-uri, undici)
 
-**Status:** Accepted
+**Status:** Implemented ([PR #22](https://github.com/TheRealKoller/photosort/pull/22))
 **Erstellt:** 2026-08-04
 **Akzeptiert:** 2026-08-04
+**Implementiert:** 2026-08-04
 **Bezug:** Ausgelöst durch 6 offene Dependabot-Alerts (`state: open`) in `frontend/package-lock.json` — kein Chat-Wunsch von Daniel, sondern automatisierter Dependabot-Scan des Repos. Analog zu Spec 0011/0014: rein mechanischer, automatisiert entdeckter Security-Fix ohne Produktentscheidung, direkt akzeptiert ohne vollen idea-sharpener-Zyklus.
 
 ## Ziel
@@ -26,11 +27,11 @@ Als Repo-Betreiber möchte ich, dass keine offenen Dependabot-Alerts mit `severi
 
 ## Akzeptanzkriterien
 
-- [ ] `frontend/package-lock.json` löst `fast-uri` auf `3.1.5` (oder neuer) und `undici` auf `7.29.0` (oder neuer) auf — via PR #22 oder äquivalentem `npm update`/`npm install` in `frontend/`, kein manueller Lockfile-Edit.
-- [ ] `frontend/package.json` unverändert — beide Pakete sind transitive Dependencies (siehe Architektur/Umsetzung), keine direkten Einträge dort.
-- [ ] `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build` im `frontend/`-Verzeichnis laufen nach dem Update unverändert erfolgreich durch.
-- [ ] Nach Merge nach `main` (nächster Dependabot-Scan) sind Alerts #4–#9 im Status `fixed`/`dismissed` — verifizierbar via `gh api repos/{owner}/{repo}/dependabot/alerts/{4..9}` (Feld `state`).
-- [ ] `specs/architecture/0003-securitykonzept.md` erhält nach Umsetzung einen kurzen, datierten Vermerk analog zum bestehenden Muster (siehe Security-Abschnitt).
+- [x] `frontend/package-lock.json` löst `fast-uri` auf `3.1.5` (oder neuer) und `undici` auf `7.29.0` (oder neuer) auf — via PR #22 oder äquivalentem `npm update`/`npm install` in `frontend/`, kein manueller Lockfile-Edit.
+- [x] `frontend/package.json` unverändert — beide Pakete sind transitive Dependencies (siehe Architektur/Umsetzung), keine direkten Einträge dort.
+- [x] `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build` im `frontend/`-Verzeichnis laufen nach dem Update unverändert erfolgreich durch.
+- [ ] Nach Merge nach `main` (nächster Dependabot-Scan) sind Alerts #4–#9 im Status `fixed`/`dismissed` — verifizierbar via `gh api repos/{owner}/{repo}/dependabot/alerts/{4..9}` (Feld `state`). **Steht noch aus** — manueller Post-Merge-Schritt, nicht Teil dieser Umsetzung (siehe Auftrag).
+- [x] `specs/architecture/0003-securitykonzept.md` erhält nach Umsetzung einen kurzen, datierten Vermerk analog zum bestehenden Muster (siehe Security-Abschnitt).
 
 ## Datenmodell-Bezug
 
