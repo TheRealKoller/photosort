@@ -1,8 +1,9 @@
 # 0014 - react-router-Update (Dependabot-Alert #2: RSC-Mode-CSRF)
 
-**Status:** Accepted
+**Status:** Implemented
 **Erstellt:** 2026-08-03
 **Akzeptiert:** 2026-08-03
+**Implementiert:** 2026-08-04, PR [#24](https://github.com/TheRealKoller/photosort/pull/24)
 **Bezug:** Ausgelöst durch offenen Dependabot-Alert [#2](https://github.com/TheRealKoller/photosort/security/dependabot/2) (`state: open`, severity high, GHSA-qwww-vcr4-c8h2, kein CVE vergeben) für `react-router` in `frontend/package-lock.json` — kein Chat-Wunsch von Daniel, sondern automatisierter Dependabot-Scan des Repos. Analog zu Spec 0011 (least-privilege CI-Token-Permissions): rein mechanischer, technischer Dependency-Fix ohne Produktentscheidung, direkt akzeptiert ohne vollen idea-sharpener-Zyklus.
 
 ## Ziel
@@ -15,11 +16,11 @@ Als Repo-Betreiber möchte ich, dass keine offenen Dependabot-Alerts mit `severi
 
 ## Akzeptanzkriterien
 
-- [ ] `frontend/package-lock.json` löst `react-router` auf Version `8.3.0` (oder neuer, innerhalb `^8.2.0`) auf — Update via `npm update react-router` bzw. `npm install` im Verzeichnis `frontend/`, **kein** manueller Edit der Lockfile-Hashes.
-- [ ] `frontend/package.json` bleibt unverändert bei `"react-router": "^8.2.0"` (siehe Architektur/Umsetzung — die Caret-Range deckt `8.3.0` bereits ab, ein Bump der deklarierten Range ist nicht nötig), **es sei denn**, die Verifikation zum Zeitpunkt der Umsetzung ergibt ein abweichendes Bild (siehe Teststrategie, erster Schritt).
-- [ ] `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build` laufen im `frontend/`-Verzeichnis nach dem Update unverändert erfolgreich durch (reines Patch-Level-Verhalten für unsere Nutzung, siehe Security-Abschnitt).
-- [ ] Nach Merge nach `main` (nächster Dependabot-Scan) ist Alert [#2](https://github.com/TheRealKoller/photosort/security/dependabot/2) im Status `fixed`/`dismissed` — verifizierbar via `gh api repos/{owner}/{repo}/dependabot/alerts/2` (Feld `state`).
-- [ ] `specs/architecture/0003-securitykonzept.md` erhält nach Umsetzung einen kurzen, datierten Vermerk analog zum bestehenden Muster (siehe Security-Abschnitt unten).
+- [x] `frontend/package-lock.json` löst `react-router` auf Version `8.3.0` (oder neuer, innerhalb `^8.2.0`) auf — Update via `npm update react-router` bzw. `npm install` im Verzeichnis `frontend/`, **kein** manueller Edit der Lockfile-Hashes. **Erfüllt, aber ohne Verdienst des Feature-Branches:** bei erneuter Verifikation zu Umsetzungsbeginn (2026-08-04) bereits auf `8.3.0` — siehe "Update bei Umsetzung" in Architektur/Umsetzung.
+- [x] `frontend/package.json` bleibt unverändert bei `"react-router": "^8.2.0"` (siehe Architektur/Umsetzung — die Caret-Range deckt `8.3.0` bereits ab, ein Bump der deklarierten Range ist nicht nötig), **es sei denn**, die Verifikation zum Zeitpunkt der Umsetzung ergibt ein abweichendes Bild (siehe Teststrategie, erster Schritt). Verifikation ergab kein abweichendes Bild bei `package.json` selbst — unverändert bei `^8.2.0`.
+- [x] `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build` laufen im `frontend/`-Verzeichnis nach dem Update unverändert erfolgreich durch (reines Patch-Level-Verhalten für unsere Nutzung, siehe Security-Abschnitt). Verifiziert am 2026-08-04, alle vier grün (200/200 Tests).
+- [ ] Nach Merge nach `main` (nächster Dependabot-Scan) ist Alert [#2](https://github.com/TheRealKoller/photosort/security/dependabot/2) im Status `fixed`/`dismissed` — verifizierbar via `gh api repos/{owner}/{repo}/dependabot/alerts/2` (Feld `state`). **Bewusst offen gelassen:** Post-Merge-Schritt, nicht Teil von PR #24 (siehe Teststrategie).
+- [x] `specs/architecture/0003-securitykonzept.md` erhält nach Umsetzung einen kurzen, datierten Vermerk analog zum bestehenden Muster (siehe Security-Abschnitt unten).
 
 ## Datenmodell-Bezug
 
