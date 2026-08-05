@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import type { RefObject } from 'react'
 import { Link, useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
@@ -74,13 +73,21 @@ function StatusDot({ status }: { status: ProcessStatus | null | undefined }) {
 function useTriggerConfirmation(
   status: ProcessStatus | null,
   startedAt: string | null,
-  refetchRef: RefObject<() => unknown>
+  refetch: () => unknown
 ): [boolean, (value: boolean) => void] {
   const [awaiting, setAwaiting] = useState(false)
 
+  // Ref statt Abhaengigkeit auf `refetch` selbst: `query.refetch` ist bei jedem Render eine neue
+  // Funktionsreferenz, eine Abhaengigkeit darauf wuerde das Intervall bei jedem Render neu
+  // aufsetzen. Bewusst als lokaler `useRef` INNERHALB des Hooks (statt als von aussen
+  // hereingereichter Ref-Parameter) - so kann das react-hooks-Lint-Plugin die Stabilitaet der Ref
+  // selbst erkennen, statt sie faelschlich als fehlende Abhaengigkeit zu melden.
+  const refetchRef = useRef(refetch)
+  refetchRef.current = refetch
+
   // Wird bei jedem Render aktualisiert, SOLANGE nicht gewartet wird - friert dadurch beim
   // Setzen von awaiting=true (Klick) automatisch auf den zuletzt bekannten, "alten" started_at
-  // ein (gleiches Ref-statt-Effect-Update-Muster wie bei refetchRef weiter unten).
+  // ein (gleiches Ref-statt-Effect-Update-Muster wie oben bei refetchRef).
   const baselineStartedAtRef = useRef(startedAt)
   if (!awaiting) {
     baselineStartedAtRef.current = startedAt
@@ -112,19 +119,12 @@ export function ProjectDetailPage() {
   const scanMutation = useTriggerScanMutation(id)
   const scoreMutation = useTriggerScoreMutation(id)
 
-  // Ref statt Abhaengigkeit auf `query` selbst: `query` ist ein bei jedem Render neues Objekt,
-  // eine Abhaengigkeit darauf wuerde das Intervall bei jedem Render neu aufsetzen. Wird von
-  // beiden useTriggerConfirmation-Instanzen (Scan, Scoring) geteilt, da beide denselben
-  // Projekt-Refetch ausloesen.
-  const refetchRef = useRef(query.refetch)
-  refetchRef.current = query.refetch
-
   const scanStatus = query.data?.last_scan?.status ?? null
   const scanStartedAt = query.data?.last_scan?.started_at ?? null
   const [awaitingConfirmation, setAwaitingConfirmation] = useTriggerConfirmation(
     scanStatus,
     scanStartedAt,
-    refetchRef
+    query.refetch
   )
 
   const scoringRun = query.data?.last_scoring_run ?? null
@@ -133,7 +133,7 @@ export function ProjectDetailPage() {
   const [awaitingScoreConfirmation, setAwaitingScoreConfirmation] = useTriggerConfirmation(
     scoringStatus,
     scoringStartedAt,
-    refetchRef
+    query.refetch
   )
 
   if (query.isError && query.error instanceof ApiError && query.error.status === 404) {
