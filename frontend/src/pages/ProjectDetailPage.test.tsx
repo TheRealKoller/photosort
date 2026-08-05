@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
 import type { ProjectOut, ScanSummary, ScoringRunSummary } from '../api/types'
+import { POLL_INTERVAL_MS } from '../hooks/useProjects'
 import { ProjectDetailPage } from './ProjectDetailPage'
 
 vi.mock('../api/projects')
@@ -268,6 +269,66 @@ describe('ProjectDetailPage', () => {
     )
   })
 
+  it(
+    're-enables the button and stops polling when the scan status jumps directly to "success" without ever observing "running" (fast path, specs/features/0017)',
+    { timeout: 10000 },
+    async () => {
+      // Regression fuer Spec 0017: laeuft der Job so schnell durch, dass der 2-Sekunden-Poll den
+      // Zwischenzustand "running" nie beobachtet, sprang der Status bisher direkt auf "success",
+      // ohne dass das interne awaitingConfirmation-Flag je zurueckgesetzt wurde - der Button blieb
+      // dauerhaft im Busy-Zustand haengen und ein setInterval lief unbegrenzt weiter.
+      vi.mocked(projectsApi.getProject)
+        .mockResolvedValueOnce(project({ last_scan: null }))
+        .mockResolvedValue(
+          project({
+            last_scan: scan({ status: 'success', finished_at: '2026-07-20T10:00:01Z' }),
+          })
+        )
+      vi.mocked(projectsApi.triggerScan).mockResolvedValue({ status: 'queued' })
+      const user = userEvent.setup()
+
+      renderPage()
+      const button = await screen.findByRole('button', { name: /aktualisieren/i })
+      await user.click(button)
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled()
+      )
+
+      // Test-engineer-Review-Fund (Spec 0017): AC3 fordert einen Nachweis "ueber eine
+      // Poll-Periode hinaus" - ein kurzer Wait unterhalb von POLL_INTERVAL_MS (2000ms) wuerde
+      // einen tatsaechlich geleakten setInterval nicht zuverlaessig erkennen, da dessen naechster
+      // Tick erst nach 2000ms faellig waere.
+      const callsAfterConfirmation = vi.mocked(projectsApi.getProject).mock.calls.length
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 500))
+      expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBe(callsAfterConfirmation)
+    }
+  )
+
+  it(
+    're-enables the button and shows the error immediately when the scan status jumps directly to "failed" without ever observing "running" (fast path, specs/features/0017)',
+    async () => {
+      vi.mocked(projectsApi.getProject)
+        .mockResolvedValueOnce(project({ last_scan: null }))
+        .mockResolvedValue(
+          project({
+            last_scan: scan({ status: 'failed', error_message: 'Sehr schneller Fehler' }),
+          })
+        )
+      vi.mocked(projectsApi.triggerScan).mockResolvedValue({ status: 'queued' })
+      const user = userEvent.setup()
+
+      renderPage()
+      const button = await screen.findByRole('button', { name: /aktualisieren/i })
+      await user.click(button)
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled()
+      )
+      expect(screen.getByText('Sehr schneller Fehler')).toBeInTheDocument()
+    }
+  )
+
   it('stops fetching after unmount while polling is active (no leaked interval)', async () => {
     vi.mocked(projectsApi.getProject).mockResolvedValue(
       project({ last_scan: scan({ status: 'running' }) })
@@ -451,5 +512,113 @@ describe('ProjectDetailPage', () => {
 
       expect(projectsApi.triggerScore).toHaveBeenCalledWith(1)
     })
+
+    it(
+      're-enables the score button and stops polling when the scoring status jumps directly to "success" without ever observing "running" (fast path < 25 Fotos, specs/features/0017)',
+      { timeout: 10000 },
+      async () => {
+        vi.mocked(projectsApi.getProject)
+          .mockResolvedValueOnce(project({ last_scoring_run: null }))
+          .mockResolvedValue(
+            project({
+              last_scoring_run: scoringRun({
+                status: 'success',
+                finished_at: '2026-07-20T10:00:01Z',
+                photos_total: 10,
+                photos_processed: 10,
+              }),
+            })
+          )
+        vi.mocked(projectsApi.triggerScore).mockResolvedValue({ status: 'queued' })
+        const user = userEvent.setup()
+
+        renderPage()
+        const button = await screen.findByRole('button', {
+          name: /beste fotos automatisch vorschlagen/i,
+        })
+        await user.click(button)
+
+        await waitFor(() =>
+          expect(
+            screen.getByRole('button', { name: /beste fotos automatisch vorschlagen/i })
+          ).toBeEnabled()
+        )
+
+        // Test-engineer-Review-Fund (Spec 0017): siehe analoger Kommentar beim Scan-Pendant
+        // weiter oben in dieser Datei - Wait muss ueber POLL_INTERVAL_MS hinausgehen, um einen
+        // tatsaechlichen Interval-Leak zuverlaessig zu erkennen.
+        const callsAfterConfirmation = vi.mocked(projectsApi.getProject).mock.calls.length
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 500))
+        expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBe(callsAfterConfirmation)
+      }
+    )
+
+    it(
+      'shows the error alert with retry immediately when the scoring status jumps directly to "failed" without ever observing "running" (Nachweis, dass die entfernte !isScoreBusy-Gate-Bedingung die Anzeige nicht mehr verzoegert, specs/features/0017)',
+      async () => {
+        vi.mocked(projectsApi.getProject)
+          .mockResolvedValueOnce(project({ last_scoring_run: null }))
+          .mockResolvedValue(
+            project({
+              last_scoring_run: scoringRun({
+                status: 'failed',
+                error_message: 'Sehr schneller Scoring-Fehler',
+              }),
+            })
+          )
+        vi.mocked(projectsApi.triggerScore).mockResolvedValue({ status: 'queued' })
+        const user = userEvent.setup()
+
+        renderPage()
+        const button = await screen.findByRole('button', {
+          name: /beste fotos automatisch vorschlagen/i,
+        })
+        await user.click(button)
+
+        await waitFor(() =>
+          expect(
+            screen.getByRole('button', { name: /beste fotos automatisch vorschlagen/i })
+          ).toBeEnabled()
+        )
+        expect(await screen.findByRole('alert')).toHaveTextContent('Sehr schneller Scoring-Fehler')
+        expect(screen.getByRole('button', { name: /erneut versuchen/i })).toBeEnabled()
+      }
+    )
   })
+
+  it(
+    'keeps the score button busy from its own independent awaitingScoreConfirmation state, unaffected by the scan status jumping directly to "success" (keine Cross-Contamination zwischen den beiden Hook-Instanzen, specs/features/0017)',
+    async () => {
+      vi.mocked(projectsApi.getProject)
+        .mockResolvedValueOnce(project({ last_scan: null, last_scoring_run: null }))
+        .mockResolvedValueOnce(
+          project({ last_scan: scan({ status: 'success' }), last_scoring_run: null })
+        )
+        .mockResolvedValue(
+          project({ last_scan: scan({ status: 'success' }), last_scoring_run: null })
+        )
+      vi.mocked(projectsApi.triggerScan).mockResolvedValue({ status: 'queued' })
+      vi.mocked(projectsApi.triggerScore).mockResolvedValue({ status: 'queued' })
+      const user = userEvent.setup()
+
+      renderPage()
+      const scanButton = await screen.findByRole('button', { name: /aktualisieren/i })
+      await user.click(scanButton)
+      await waitFor(() => expect(scanButton).toBeEnabled())
+
+      const scoreButton = screen.getByRole('button', {
+        name: /beste fotos automatisch vorschlagen/i,
+      })
+      await user.click(scoreButton)
+      await waitFor(() => expect(projectsApi.triggerScore).toHaveBeenCalledTimes(1))
+
+      // Scoring beobachtet in diesem Test nie "running"/"success"/"failed" (last_scoring_run
+      // bleibt dauerhaft null) - der Score-Button muss trotzdem busy bleiben, gesteuert nur durch
+      // seine eigene awaitingScoreConfirmation-Instanz, unbeeinflusst davon, dass die Scan-Instanz
+      // des Hooks ihr eigenes Flag bereits zurueckgesetzt hat.
+      expect(scoreButton).toBeDisabled()
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(scoreButton).toBeDisabled()
+    }
+  )
 })
