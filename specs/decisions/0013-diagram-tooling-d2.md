@@ -5,7 +5,7 @@
 
 ## Kontext
 
-Bisher existiert genau ein Diagramm im gesamten Repository: das Workflow-Flowchart in `README.md` (zwei Subgraphs `Refine`/`Implement`, Mermaid-Syntax, live gerendert von GitHubs Markdown-Viewer über ` ```mermaid `-Codeblöcke). Auslöser dieser ADR (`specs/inbox/0003-bessere-diagramm-generierung-als-mermaid.md`): Daniel empfindet dieses Diagramm sowohl optisch als generisch als auch beim Rendern auf GitHub als zu groß/unhandlich.
+Bisher existiert genau ein Diagramm im gesamten Repository: das Workflow-Flowchart in `README.md` (zwei Subgraphs `Refine`/`Implement`, Mermaid-Syntax, live gerendert von GitHubs Markdown-Viewer über ` ```mermaid `-Codeblöcke). Auslöser dieser ADR (`specs/inbox/0003-bessere-diagramm-generierung-als-mermaid.md`, nach Aufnahme in ADR/Spec gelöscht, daher hier nur noch als Text statt als Link genannt): Daniel empfindet dieses Diagramm optisch als generisch und zugleich beim Rendern auf GitHub als zu groß/unhandlich.
 
 Im Schärfungsgespräch wurde der Scope bewusst erweitert: statt nur das eine bestehende Diagramm zu überarbeiten, wird hier eine generelle Richtlinie samt Werkzeugwahl für **alle künftigen Diagramme** im Projekt getroffen (README, `specs/architecture/`, künftige Specs/ADRs) — mit der Begründung, dass sich das auszahlt, sobald weitere Diagramme dazukommen. Daniel hat außerdem explizit akzeptiert, dass vorgerenderte, eingecheckte Bilddateien (SVG/PNG) statt Live-Rendering im Markdown-Viewer eine gangbare Lösung sind.
 

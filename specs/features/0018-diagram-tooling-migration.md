@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Erstellt:** 2026-08-05
-**Bezug:** Idee aus `specs/inbox/0003-bessere-diagramm-generierung-als-mermaid.md`, geschärft in interaktiver Session mit Daniel (2026-08-05)
+**Bezug:** Idee aus `specs/inbox/0003-bessere-diagramm-generierung-als-mermaid.md`, geschärft in interaktiver Session mit Daniel (2026-08-05); Inbox-Notiz nach Aufnahme in diese Spec gelöscht, daher hier nur noch als Text statt als Link genannt.
 
 ## Ziel
 
