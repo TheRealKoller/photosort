@@ -1,6 +1,6 @@
 # 0018 - Diagramm-Tooling: Migration von Mermaid zu D2
 
-**Status:** Accepted
+**Status:** Implemented ([PR #29](https://github.com/TheRealKoller/photosort/pull/29))
 **Erstellt:** 2026-08-05
 **Bezug:** Idee aus `specs/inbox/0003-bessere-diagramm-generierung-als-mermaid.md`, geschärft in interaktiver Session mit Daniel (2026-08-05)
 
