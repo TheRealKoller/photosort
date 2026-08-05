@@ -63,7 +63,11 @@ function StatusDot({ status }: { status: ProcessStatus | null | undefined }) {
  * Anti-Regressions-Testerwartung (Grund 1) vereinbar macht. Das awaiting-Flag wird deshalb
  * zurueckgesetzt, sobald "running" beobachtet wird (kann nie ein stale Wert sein, das Projekt
  * kann nicht schon vor dem Klick "running" gewesen sein) ODER sobald ein NEUER `started_at`
- * zusammen mit einem beliebigen Endzustand (success/failed) beobachtet wird.
+ * zusammen mit einem beliebigen Endzustand (success/failed) beobachtet wird. Architect-Review-Fund
+ * (Spec 0017): eine Kollision zweier `started_at`-Werte (alter und neuer Lauf identisch) ist
+ * praktisch ausgeschlossen, da Postgres `func.now()` Mikrosekunden-Praezision liefert und der
+ * Button ohnehin waehrend des Wartens deaktiviert ist - vernachlaessigbares Restrisiko, kein Fix
+ * noetig.
  *
  * Dateilokal statt exportiert (nicht in hooks/useProjects.ts): das Muster wird aktuell
  * nachweislich nur hier zweimal gebraucht (Scan-Trigger, Scoring-Trigger, per grep verifiziert) -

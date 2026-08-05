@@ -84,6 +84,7 @@ Bestehende Running-Pfad-Tests bleiben unverändert als Regressionsschutz (keine 
 - **Keine Mindest-Anzeigedauer für den Busy-Zustand:** widerspräche dem Design-Prinzip "ehrliche Ladezustände", unnötig da das Ergebnis dauerhaft sichtbar bleibt (ux-ui-designer-Konsultation, 2026-08-05).
 - **Keine `vi.useFakeTimers()`:** konsistent mit bestehender Testkonvention in `ProjectDetailPage.test.tsx`, für die kritischen Fälle nicht nötig (test-engineer-Konsultation, 2026-08-05).
 - **Keine ADR:** reine Implementierungsdetail-Entscheidung innerhalb bereits akzeptierter Richtung (architect-Konsultation, 2026-08-05).
+- **`started_at`-Vergleich statt blossem `status !== null`:** beim Implementieren stellte sich heraus, dass ein simples "Reset bei jedem nicht-null Status" (wörtliche Lesart von Entwurfsentscheidung 2) den bestehenden Regressionstest für Grund 1 (stale Status vom vorherigen Lauf direkt nach dem Trigger) gebrochen hätte. Der Hook vergleicht deshalb zusätzlich den beobachteten `started_at`-Zeitstempel (jeder Lauf bekommt serverseitig einen neuen, `backend/src/photosort/worker.py`) gegen einen vor dem Klick eingefrorenen Baseline-Wert, um einen genuinely neuen Lauf von einem stehengebliebenen alten zu unterscheiden. Technische Detailentscheidung des `developer`-Agenten innerhalb der akzeptierten Spec, im architect-Review (Pragmatiker/Senior-Entwickler/Pedant-Perspektive) als der `status !== null`-Alternative und den Alternativen (Generation-Zähler, `query.dataUpdatedAt`) überlegen bestätigt.
 
 ## Offene Fragen
 

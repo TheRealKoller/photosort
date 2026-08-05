@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
 import type { ProjectOut, ScanSummary, ScoringRunSummary } from '../api/types'
+import { POLL_INTERVAL_MS } from '../hooks/useProjects'
 import { ProjectDetailPage } from './ProjectDetailPage'
 
 vi.mock('../api/projects')
@@ -270,6 +271,7 @@ describe('ProjectDetailPage', () => {
 
   it(
     're-enables the button and stops polling when the scan status jumps directly to "success" without ever observing "running" (fast path, specs/features/0017)',
+    { timeout: 10000 },
     async () => {
       // Regression fuer Spec 0017: laeuft der Job so schnell durch, dass der 2-Sekunden-Poll den
       // Zwischenzustand "running" nie beobachtet, sprang der Status bisher direkt auf "success",
@@ -293,8 +295,12 @@ describe('ProjectDetailPage', () => {
         expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled()
       )
 
+      // Test-engineer-Review-Fund (Spec 0017): AC3 fordert einen Nachweis "ueber eine
+      // Poll-Periode hinaus" - ein kurzer Wait unterhalb von POLL_INTERVAL_MS (2000ms) wuerde
+      // einen tatsaechlich geleakten setInterval nicht zuverlaessig erkennen, da dessen naechster
+      // Tick erst nach 2000ms faellig waere.
       const callsAfterConfirmation = vi.mocked(projectsApi.getProject).mock.calls.length
-      await new Promise((resolve) => setTimeout(resolve, 100))
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 500))
       expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBe(callsAfterConfirmation)
     }
   )
@@ -509,6 +515,7 @@ describe('ProjectDetailPage', () => {
 
     it(
       're-enables the score button and stops polling when the scoring status jumps directly to "success" without ever observing "running" (fast path < 25 Fotos, specs/features/0017)',
+      { timeout: 10000 },
       async () => {
         vi.mocked(projectsApi.getProject)
           .mockResolvedValueOnce(project({ last_scoring_run: null }))
@@ -537,8 +544,11 @@ describe('ProjectDetailPage', () => {
           ).toBeEnabled()
         )
 
+        // Test-engineer-Review-Fund (Spec 0017): siehe analoger Kommentar beim Scan-Pendant
+        // weiter oben in dieser Datei - Wait muss ueber POLL_INTERVAL_MS hinausgehen, um einen
+        // tatsaechlichen Interval-Leak zuverlaessig zu erkennen.
         const callsAfterConfirmation = vi.mocked(projectsApi.getProject).mock.calls.length
-        await new Promise((resolve) => setTimeout(resolve, 100))
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 500))
         expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBe(callsAfterConfirmation)
       }
     )
