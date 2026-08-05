@@ -1,8 +1,9 @@
 # 0017 - Fortschrittsbalken/Button hängen bei schnellen Scan-/Scoring-Läufen
 
-**Status:** Accepted
+**Status:** Implemented
 **Erstellt:** 2026-08-05
 **Bezug:** Bug-Report aus `specs/inbox/0001-fortschrittsbalken-verschwindet-bei-vorauswahl.md`, geschärft in interaktiver Session mit Daniel (2026-08-05)
+**Umgesetzt:** [PR #28](https://github.com/TheRealKoller/photosort/pull/28)
 
 ## Ziel
 
