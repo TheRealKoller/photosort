@@ -33,6 +33,10 @@ Fortlaufend nummeriert pro Verzeichnis: `NNNN-kurzer-titel.md` (z.B. `0001-openc
 
 Siehe [`TEMPLATE.md`](./TEMPLATE.md) für das Feature-Spec-Format.
 
+## Diagramme
+
+Alle Diagramme im Projekt (README, hier unter `architecture/`, künftige Specs/ADRs) werden mit [D2](https://d2lang.com) statt Mermaid erzeugt (ADR [`decisions/0013-diagram-tooling-d2.md`](./decisions/0013-diagram-tooling-d2.md)). Quelldateien liegen unter `specs/diagrams/<kebab-case-name>.d2`, das gerenderte SVG daneben unter demselben Namen; beide Dateien werden eingecheckt. Generierung lokal über `scripts/render-diagrams.sh` (setzt ein installiertes `d2`-Binary voraus, siehe Skript-Fehlermeldung für den Installationslink).
+
 ## Siehe auch
 
 Das Root-[`README.md`](../README.md) (außerhalb von `specs/`, lokales Setup/Betrieb) wird ebenfalls vom `architect`-Agenten gepflegt — als operative Kehrseite von `architecture/0001-overview.md`.

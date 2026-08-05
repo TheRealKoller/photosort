@@ -23,32 +23,11 @@ Statt eines einzelnen KI-Entwicklers arbeitet ein Team spezialisierter Claude-Ag
 
 Der `idea-sharpener`-Skill begleitet eine rohe Idee bis zur akzeptierten Feature-Spec und zieht dabei die vier Fachspezialisten der Reihe nach hinzu. Der `developer`-Agent setzt eine akzeptierte Spec um und lässt sie am Ende von allen zutreffenden Spezialisten parallel reviewen:
 
-```mermaid
-flowchart TD
-    Idea(["Idee / Anforderung"]) --> Understand["Verständnis schärfen"]
-
-    subgraph Refine["Verfeinern — idea-sharpener"]
-        Understand --> RE["requirements-engineer:<br/>Roadmap-Einordnung"]
-        RE --> Research["Code-/Spec-Recherche<br/>+ Nachfragen"]
-        Research --> Devil["Devil's Advocate"]
-        Devil --> Arch["architect:<br/>Architektur-Ansatz"]
-        Arch --> UX["ux-ui-designer:<br/>UI/UX-Ansatz"]
-        UX --> TestSec["test-engineer + security-engineer<br/>(parallel)"]
-        TestSec --> Spec[["Feature-Spec: Accepted"]]
-    end
-
-    subgraph Implement["Umsetzen — developer"]
-        Spec --> Plan["Umsetzungsplan lesen<br/>(von architect)"]
-        Plan --> TDD["TDD-Zyklus<br/>(Rot-Grün-Refactor)"]
-        TDD --> Quality["Codequalität prüfen"]
-        Quality --> Review["Review, parallel:<br/>test-engineer, security-engineer,<br/>architect, requirements-engineer,<br/>ux-ui-designer*"]
-        Review --> Fix["Findings beheben"]
-        Fix --> Final["Abschließender Qualitätscheck"]
-        Final --> PR(["Pull Request +<br/>Spec: Implemented"])
-    end
-```
+![Workflow-Übersicht: Verfeinern (idea-sharpener) und Umsetzen (developer)](./specs/diagrams/workflow-overview.svg)
 
 <sub>\* `ux-ui-designer` reviewt nur Feature-Branches mit Frontend-/UI-Änderungen.</sub>
+
+<sub>Diagramm-Quelle: [`specs/diagrams/workflow-overview.d2`](./specs/diagrams/workflow-overview.d2), gerendert per `scripts/render-diagrams.sh` (siehe ADR [`decisions/0013-diagram-tooling-d2.md`](./specs/decisions/0013-diagram-tooling-d2.md)).</sub>
 
 ## Quick Start (Entwicklung)
 

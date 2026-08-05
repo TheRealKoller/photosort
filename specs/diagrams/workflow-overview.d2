@@ -1,0 +1,51 @@
+# Migriert aus dem bisherigen Mermaid-Flowchart in README.md.
+# Siehe ADR specs/decisions/0013-diagram-tooling-d2.md und
+# Feature-Spec specs/features/0018-diagram-tooling-migration.md.
+# Rendern: scripts/render-diagrams.sh (ruft "d2 --sketch" auf).
+#
+# Layout bewusst als kompaktes Grid statt einer einzelnen langen Kette pro
+# Subgraph (Akzeptanzkriterium "kompakter/weniger vertikaler Platzverbrauch"
+# als das bisherige Mermaid-Flowchart) - Inhalt/Knoten/Kanten sind eine reine
+# 1:1-Uebersetzung des bisherigen Diagramms, nur die Anordnung ist neu.
+
+direction: right
+
+idea: "Idee / Anforderung" {
+  shape: oval
+}
+understand: "Verständnis schärfen"
+
+idea -> understand
+
+refine: "Verfeinern — idea-sharpener" {
+  grid-columns: 2
+  re: "requirements-engineer:\nRoadmap-Einordnung"
+  research: "Code-/Spec-Recherche\n+ Nachfragen"
+  devil: "Devil's Advocate"
+  arch: "architect:\nArchitektur-Ansatz"
+  ux: "ux-ui-designer:\nUI/UX-Ansatz"
+  testsec: "test-engineer + security-engineer\n(parallel)"
+  spec: "Feature-Spec: Accepted" {
+    shape: oval
+  }
+
+  re -> research -> devil -> arch -> ux -> testsec -> spec
+}
+
+implement: "Umsetzen — developer" {
+  grid-columns: 2
+  plan: "Umsetzungsplan lesen\n(von architect)"
+  tdd: "TDD-Zyklus\n(Rot-Grün-Refactor)"
+  quality: "Codequalität prüfen"
+  review: "Review, parallel:\ntest-engineer, security-engineer,\narchitect, requirements-engineer,\nux-ui-designer*"
+  fix: "Findings beheben"
+  final: "Abschließender Qualitätscheck"
+  pr: "Pull Request +\nSpec: Implemented" {
+    shape: oval
+  }
+
+  plan -> tdd -> quality -> review -> fix -> final -> pr
+}
+
+understand -> refine.re
+refine.spec -> implement.plan
