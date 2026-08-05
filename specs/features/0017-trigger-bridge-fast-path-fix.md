@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 **Erstellt:** 2026-08-05
-**Bezug:** Bug-Report aus `specs/inbox/0001-fortschrittsbalken-verschwindet-bei-vorauswahl.md`, geschärft in interaktiver Session mit Daniel (2026-08-05)
+**Bezug:** Bug-Report von Daniel selbst (interaktive Session, 2026-08-05), geschärft direkt im Gespräch. Die ursprüngliche Inbox-Notiz (`specs/inbox/0001-fortschrittsbalken-verschwindet-bei-vorauswahl.md`) wurde nach Aufnahme in diese Spec gelöscht.
 **Umgesetzt:** [PR #28](https://github.com/TheRealKoller/photosort/pull/28)
 
 ## Ziel

@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Erstellt:** 2026-08-05
-**Bezug:** Bug-Report aus `specs/inbox/0002-f5-refresh-404.md`, geschärft in interaktiver Session mit Daniel (2026-08-05)
+**Bezug:** Bug-Report von Daniel selbst (interaktive Session, 2026-08-05), geschärft direkt im Gespräch. Die ursprüngliche Inbox-Notiz (`specs/inbox/0002-f5-refresh-404.md`) wurde nach Aufnahme in diese Spec gelöscht.
 
 ## Ziel
 
