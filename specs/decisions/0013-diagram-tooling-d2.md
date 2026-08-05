@@ -13,7 +13,7 @@ Wichtiger Rahmen: PhotoSort wird ausschließlich von KI-Agenten (Claude Code) en
 
 Geprüfte Kandidaten (alle text-zu-diagramm, alle CLI-fähig): **D2**, **PlantUML**, **Graphviz** (DOT), sowie — als Referenzpunkt für "was wir loswerden wollen" — das bisherige Mermaid.
 
-Umgebungscheck (Node 22 + npm, Python 3.14, Java 17 sind im Entwicklungs-/Agenten-Environment bereits vorhanden; kein Go, kein `d2`/`dot`/`plantuml`-Binary):
+Umgebungscheck (Node 22 + npm, Java 17 und ein System-Python 3.14 sind im Entwicklungs-/Agenten-Sandbox-Environment bereits vorhanden — losgelöst vom Backend-Ziel-Runtime Python 3.12 aus `decisions/0001-tech-stack.md`/`CLAUDE.md`, hier nur relevant für die Tool-Verfügbarkeitsprüfung selbst; kein Go, kein `d2`/`dot`/`plantuml`-Binary):
 
 - **D2** (`https://d2lang.com`): eigenständiges, statisch gelinktes Go-Binary. Kein offizielles npm- oder PyPI-Paket — die gleichnamigen Pakete `d2` auf npm (DHIS2-Frontend-Library) und PyPI (ein Python-ORM) sind fachfremde Namenskollisionen, verifiziert per `npm view d2` / `pip download d2`. Installation nur über das offizielle Install-Skript, ein GitHub-Release-Download oder Homebrew — nicht über die im Projekt bereits etablierten Paketmanager (`npm`, `uv pip`).
 - **PlantUML**: benötigt eine JVM. Node-Wrapper `node-plantuml` (npm, bündelt das `.jar`) existiert und würde eine JVM-Abhängigkeit indirekt über npm reproduzierbar machen. Java ist im aktuellen Environment zwar vorhanden, aber im gesamten PhotoSort-Stack (Python + TypeScript, siehe `decisions/0001-tech-stack.md`) sonst nirgends ein Laufzeit-Bestandteil — ein dritter Sprach-/Laufzeit-Kontext ausschließlich für Doku-Tooling.
