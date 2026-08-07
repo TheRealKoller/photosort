@@ -1,6 +1,6 @@
 # 0020 - Agenten-Nutzung im Review optimieren (bedingte Review-Agenten + situative Modellzuweisung)
 
-**Status:** Accepted
+**Status:** Accepted — teilweise umgesetzt ([PR #32](https://github.com/TheRealKoller/photosort/pull/32), gemerged 2026-08-07: nur AK13/Copilot-Review-Bedingung; AK1–AK12 stehen noch aus)
 **Erstellt:** 2026-08-07
 **Bezug:** `specs/inbox/0005-agenten-nutzung-review-optimieren.md` (Daniel selbst, interaktive Session; Inbox-Notiz nach Aufnahme in diese Spec gelöscht), geschärft im idea-sharpener-Ablauf 2026-08-07. ADR: [`decisions/0014-review-agenten-selektion-und-modellzuweisung.md`](../decisions/0014-review-agenten-selektion-und-modellzuweisung.md).
 
@@ -26,7 +26,7 @@ Als Daniel möchte ich, dass beim Review eines Feature-Branches nur die tatsäch
 - [ ] AK10: `specs/architecture/0002-testkonzept.md` enthält die neue Sektion "Agenten-Steuerungslogik selbst" (bereits von `test-engineer` in dieser Schärfungs-Session ergänzt) mit dem beschriebenen Vier-Ebenen-Verifikationsmuster (statischer Konsistenz-Check, synthetische Dry-Run-Diffs, laufende Stichproben-Audits, Qualitäts-Beobachtung).
 - [ ] AK11: `specs/architecture/0003-securitykonzept.md` enthält einen neuen Restrisiko-Vermerk zur getriggerten (statt unbedingten) Sicherheits-Review-Abdeckung seit ADR 0014 (Formulierungsvorschlag: siehe Security-Konsultation, `architect`/`developer` übernimmt ihn wörtlich oder sinngemäß).
 - [ ] AK12: Mindestens ein synthetisches Dry-Run-Szenario pro Tabellenzeile aus ADR 0014 wurde real gegen `developer` Schritt 4 getestet (siehe Teststrategie/Edge Cases unten), inkl. der Kombinationsfälle (Frontend+Auth gleichzeitig; neue Top-Level-Datei unter `backend/src/photosort/`; reine `specs/decisions/**`-Änderung ohne Code).
-- [ ] AK13: `developer` Schritt 8 (Copilot-Review) wird nur noch angefordert, wenn der PR mindestens eine Code-Datei ändert (identische Bedingung wie der `test-engineer`-Skip-Trigger aus AK1). Bei einem PR, der ausschließlich Doku-/Spec-Dateien (`specs/`, `docs/`, `*.md`, reine Config-Kommentare) ändert, entfällt Schritt 8 vollständig. `CLAUDE.md` (Konventionen-Abschnitt, Zeile zur PR-Konvention) ist entsprechend von "immer ein Copilot-Review anfordern" auf die bedingte Formulierung aktualisiert.
+- [x] AK13: `developer` Schritt 8 (Copilot-Review) wird nur noch angefordert, wenn der PR mindestens eine Code-Datei ändert (identische Bedingung wie der `test-engineer`-Skip-Trigger aus AK1). Bei einem PR, der ausschließlich Doku-/Spec-Dateien (`specs/`, `docs/`, `*.md`, reine Config-Kommentare) ändert, entfällt Schritt 8 vollständig. `CLAUDE.md` (Konventionen-Abschnitt, Zeile zur PR-Konvention) ist entsprechend von "immer ein Copilot-Review anfordern" auf die bedingte Formulierung aktualisiert. Umgesetzt in [PR #32](https://github.com/TheRealKoller/photosort/pull/32).
 
 ## Datenmodell-Bezug
 
