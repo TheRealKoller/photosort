@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from types import TracebackType
 from typing import Any
 from urllib.parse import quote, unquote, urlparse
+from xml.etree import ElementTree
 
 import httpx
 
@@ -173,7 +174,19 @@ class OpenCloudClient:
             response, not_found_message=f"Ordner '{path}' wurde auf OpenCloud nicht gefunden."
         )
 
-        entries = parse_multistatus(response.content)
+        # Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): eine
+        # unerwartete/kaputte WebDAV-Antwort (z.B. abgeschnittenes XML-Tag, nicht-numerischer
+        # content-length, unparsbares Datum in _parse_last_modified) darf hier nicht als roher
+        # ParseError/ValueError/TypeError propagieren - sonst laeuft die Exception ungefangen bis
+        # in worker.py::run_project_scan durch, dessen (frueher zu enger) Fehlerbehandlungs-Block
+        # den zugehoerigen ScanRun dann dauerhaft auf "running" stehen laesst. Analog zum
+        # bestehenden Muster in _drive_from_graph_api_item (gleiche Datei).
+        try:
+            entries = parse_multistatus(response.content)
+        except (ElementTree.ParseError, ValueError, TypeError) as exc:
+            raise OpenCloudError(
+                f"Unerwartete/kaputte WebDAV-Antwort beim Auflisten von '{path}'."
+            ) from exc
         target_path = unquote(urlparse(target_url).path).rstrip("/")
         return [entry for entry in entries if unquote(entry.href).rstrip("/") != target_path]
 

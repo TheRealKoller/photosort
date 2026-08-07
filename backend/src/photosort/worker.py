@@ -58,7 +58,16 @@ SCORE_COMMIT_BATCH_SIZE = 25
 # sitzt deshalb an JEDEM Ausstiegspunkt der Schleife, nicht nur am regulaeren Ende, sonst waere er
 # im dominanten Realweltfall (Re-Scan mit ueberwiegend unveraenderten Dateien) faktisch nie
 # erreichbar (Review-Fund).
-SCAN_COMMIT_BATCH_SIZE = 25
+#
+# Batch-Groessen-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): auf 1 statt 25
+# gesetzt, anders als SCORE_COMMIT_BATCH_SIZE oben. run_project_scoring ist CPU-only (lokale
+# Heuristiken auf bereits gecachten Bildern) und schnell genug, dass Batching den Commit-Overhead
+# sinnvoll reduziert - run_project_scan dagegen ist netzwerkgebunden (EXIF-Range-Read und
+# Thumbnail-Generierung pro Datei ueber OpenCloud-WebDAV), ein zusaetzlicher DB-Commit pro Datei
+# faellt gegenueber der Netzwerklatenz nicht messbar ins Gewicht. Bei 25 blieb der Live-Zaehler
+# bei jedem Scan mit weniger als 25 Dateien waehrend der gesamten Laufzeit bei 0 eingefroren
+# (typischer Fall: Familienfoto-Ergaenzung, Spec 0022 nachgebessert).
+SCAN_COMMIT_BATCH_SIZE = 1
 
 
 class OpenCloudScanClient(Protocol):
@@ -211,7 +220,16 @@ async def run_project_scan(
         scan_run.files_skipped = files_skipped
         await session.commit()
         return scan_run
-    except OpenCloudError as exc:
+    except Exception as exc:
+        # Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): vorher
+        # wurde hier ausschliesslich OpenCloudError abgefangen - jede andere Exception (z.B. aus
+        # dem WebDAV-XML-Parsing, siehe opencloud/client.py::list_folder) lief ungefangen durch
+        # und liess den ScanRun dauerhaft auf status="running" haengen, ohne Watchdog/Recovery.
+        # OpenCloudError ist eine Teilmenge von Exception, ein einzelner breiter Handler reicht
+        # deshalb aus - exakt das bereits bestehende Muster in run_project_scoring unten.
+        # asyncio.CancelledError ist seit Python 3.8 BaseException statt Exception-Subtyp und wird
+        # von diesem `except Exception` daher NICHT abgefangen: ein geplanter Worker-Shutdown
+        # markiert einen Lauf nicht faelschlich als "failed", keine Sonderbehandlung noetig.
         await session.rollback()
         scan_run.status = ScanStatus.FAILED
         scan_run.error_message = str(exc)

@@ -243,6 +243,25 @@ async def test_list_folder_raises_on_404() -> None:
         await client.list_folder(WEBDAV_URL, "DoesNotExist")
 
 
+async def test_list_folder_raises_opencloud_error_for_malformed_xml_body() -> None:
+    # Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): eine
+    # syntaktisch kaputte WebDAV-Antwort (z.B. abgeschnittenes Tag) darf list_folder() nicht als
+    # rohe ElementTree.ParseError verlassen - sonst laeuft die Exception ungefangen bis in
+    # worker.py::run_project_scan durch und der zugehoerige ScanRun bleibt dauerhaft auf
+    # "running" haengen. Analog zum bestehenden Muster in _drive_from_graph_api_item.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            207,
+            content=b"<?xml version=\"1.0\"?><d:multistatus xmlns:d=\"DAV:\"><d:response>",
+            headers={"content-type": "application/xml"},
+        )
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.list_folder(WEBDAV_URL, "CostaRica")
+
+
 async def test_walk_recurses_into_subfolders() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.rstrip("/").endswith("/CostaRica"):

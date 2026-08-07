@@ -66,7 +66,7 @@ Spec 0004 (siehe "Später") ist zusätzlich bereits entsperrt — Spec 0009 (vor
 | [0020](./features/0020-agenten-review-optimierung.md) | Agenten-Nutzung im Review optimieren (bedingte Review-Agenten + situative Modellzuweisung) | Implemented ([PR #32](https://github.com/TheRealKoller/photosort/pull/32) für AK13, [PR #34](https://github.com/TheRealKoller/photosort/pull/34) für AK1–AK12) |
 | [0021](./features/0021-scoring-run-vorschlagszaehler.md) | Zusammenfassung nach Scoring-Lauf: Anzahl gefundener Vorschläge | Implemented ([PR #38](https://github.com/TheRealKoller/photosort/pull/38)) |
 | [0022](./features/0022-scan-live-fortschrittszaehler.md) | Live-Fortschrittszähler beim Scannen eines Projekts | Implemented ([PR #40](https://github.com/TheRealKoller/photosort/pull/40)) |
-| [0023](./features/0023-scan-fortschritt-batch-groesse-fix.md) | Scan-Zuverlässigkeit: hängender Job + eingefrorener Live-Zähler | Accepted |
+| [0023](./features/0023-scan-fortschritt-batch-groesse-fix.md) | Scan-Zuverlässigkeit: hängender Job + eingefrorener Live-Zähler | Implemented ([PR #43](https://github.com/TheRealKoller/photosort/pull/43)) |
 
 ## Bekannte Abhängigkeiten
 
