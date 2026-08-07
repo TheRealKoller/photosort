@@ -44,11 +44,17 @@ Nicht betroffen — reine Deployment-/Serving-Konfiguration, kein Datenmodell-Be
       root /usr/share/nginx/html;
       index index.html;
 
+      location /assets/ {
+          try_files $uri =404;
+      }
+
       location / {
           try_files $uri $uri/ /index.html;
       }
   }
   ```
+
+  **Abweichung von der ursprünglichen Planung (bei Umsetzung entdeckt, siehe "Entscheidungen"):** der zusätzliche `location /assets/ { try_files $uri =404; }`-Block vor dem allgemeinen Fallback stand in der ursprünglichen Fassung dieses Abschnitts noch nicht — ohne ihn hätte die reine `try_files $uri $uri/ /index.html;`-Regel das eigene, weiter unten formulierte Akzeptanzkriterium "nicht existierendes, asset-artiges Pfad bleibt 404" verletzt (jeder fehlende Pfad, auch unter `/assets/`, wäre auf `index.html` zurückgefallen).
 
 - **`frontend/Dockerfile`:** eine Zeile in der finalen Stufe ergänzt, nach `COPY --from=build /app/dist /usr/share/nginx/html`:
 
@@ -98,6 +104,7 @@ Kein separater statischer Config-Diff-Schritt nötig (anders als bei Spec 0013) 
 
 - **Keine eigene ADR:** reine Implementierungsdetail-Entscheidung, keine architekturrelevante. nginx als statischer Server ist bereits seit dem ersten `frontend/Dockerfile` gesetzt (keine neue Technologie), kein Datenmodell-Bezug, keine neue externe Abhängigkeit, und `try_files $uri $uri/ /index.html;` ist das einzige etablierte Muster für SPA-Fallback hinter nginx — kein echter Alternativen-Trade-off, der eine ADR rechtfertigen würde (architect-Konsultation, 2026-08-05).
 - **`--no-deps` beim CI-Smoke-Test** ist eine bewusste Testdesign-Entscheidung: stellt sicher, dass der Test wirklich nur die nginx-Serving-Eigenschaft prüft, unabhängig von Backend-Verfügbarkeit (test-engineer-Konsultation, 2026-08-05).
+- **Zusätzlicher `location /assets/ { try_files $uri =404; }`-Block, abweichend vom ursprünglichen Umsetzungsvorschlag** (developer-Entscheidung während der Implementierung, 2026-08-07, bestätigt im nachfolgenden Review durch `architect`/`security-engineer`/`test-engineer`): die wörtlich vorgegebene, minimale `try_files $uri $uri/ /index.html;`-Regel allein wurde lokal gegen den echten Vite-Build getestet und verletzte dabei nachweisbar das eigene Akzeptanzkriterium zum "Lackmustest" (nicht existierendes, asset-artiges Pfad muss 404 bleiben) — jeder fehlende Pfad fiel auf `index.html` (200) zurück, auch unter `/assets/`. Behoben durch eine engere, dem allgemeinen Fallback vorgelagerte Location speziell für den Vite-Asset-Präfix `/assets/` (dort liegen alle gehashten Build-Assets), die bei einer fehlenden Datei explizit `404` statt eines impliziten Fallbacks liefert. Reine technische Detailkorrektur innerhalb der bereits akzeptierten Spec (kein neuer Trade-off, kein neues architektonisches Muster, `try_files`-basierter SPA-Fallback bleibt der Ansatz) — keine neue ADR nötig, `architect`-Review bestätigt das. Lehre für künftige Specs mit konkret vorgegebenem Umsetzungscode: Code-Vorschläge im Abschnitt "Architektur / Umsetzung" vor Übernahme gegen alle eigenen Akzeptanzkriterien der Spec durchspielen, nicht nur auf Plausibilität prüfen.
 - **Kein separater statischer Config-Diff-CI-Schritt** (anders als Spec 0013): kein eigenständiger Erkenntniswert gegenüber dem funktionalen Test, daher weggelassen (test-engineer-Konsultation, 2026-08-05).
 
 ## Offene Fragen
