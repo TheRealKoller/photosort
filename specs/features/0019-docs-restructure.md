@@ -1,6 +1,6 @@
 # 0019 - Doku-Restrukturierung: neuer `docs/`-Ordner, schlanke README
 
-**Status:** Accepted
+**Status:** Implemented ([PR #31](https://github.com/TheRealKoller/photosort/pull/31))
 **Erstellt:** 2026-08-05
 **Bezug:** Neue Idee aus interaktiver Session mit Daniel (2026-08-05), kein Inbox-Eintrag
 
