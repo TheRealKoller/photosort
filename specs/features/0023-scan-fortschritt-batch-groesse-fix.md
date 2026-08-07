@@ -1,6 +1,6 @@
 # 0023 - Scan-Zuverlässigkeit: hängender Job + eingefrorener Live-Zähler
 
-**Status:** Accepted
+**Status:** Implemented — alle Akzeptanzkriterien (Terminierungs-Fix und Batch-Größen-Fix) umgesetzt in [PR #43](https://github.com/TheRealKoller/photosort/pull/43)
 **Erstellt:** 2026-08-07
 **Bezug:** Bug-Report von Daniel selbst (interaktive Session, 2026-08-07), direkt im Gespräch diagnostiziert, unmittelbar nach Merge von [Spec 0022](./0022-scan-live-fortschrittszaehler.md) (PR #40). Ursprünglich als reiner Batch-Größen-Bug vermutet; Nachfrage bei Daniel ergab, dass das eigentliche, schon länger beobachtete Problem schwerwiegender ist (siehe "Ziel"). Zwei technische Konsultationen (`architect`) haben den vollständigen Fix erarbeitet.
 
@@ -21,20 +21,20 @@ Als Nutzer (Daniel oder seine Frau) möchte ich, dass ein Scan-Vorgang zuverläs
 
 **Terminierungs-Fix (kritisch):**
 
-- [ ] `run_project_scan` fängt jede Exception ab (`except Exception`, nicht mehr nur `OpenCloudError`) und setzt `scan_run.status = FAILED` mit `error_message = str(exc)`, `finished_at` gesetzt, zuverlässig in jedem Fall — analog zum bereits bestehenden, identischen Muster in `run_project_scoring` (Zeile ~381, seit Spec 0003).
-- [ ] `asyncio.CancelledError` (kein `Exception`-Subtyp seit Python 3.8, sondern `BaseException`) wird von der breiteren `except Exception`-Klausel weiterhin **nicht** abgefangen — ein geplanter Worker-Shutdown markiert einen Lauf nicht fälschlich als `failed`.
-- [ ] `opencloud/client.py::list_folder` fängt `ElementTree.ParseError`/`ValueError`/`TypeError` beim Aufruf von `parse_multistatus` ab und übersetzt sie in eine `OpenCloudError` mit verständlicher deutscher Fehlermeldung — konsistent mit dem bestehenden Muster in `_drive_from_graph_api_item` (gleiche Datei), das dieselbe Art von Fehlerklassen bereits für die Graph-API-Antworten übersetzt.
-- [ ] Neuer Test, der eine unerwartete, nicht-`OpenCloudError`-Exception mitten im Scan-Loop simuliert (z.B. ein Fake-`walk()`, der nach einigen Einträgen einen generischen `RuntimeError` wirft) und nachweist: `scan_run.status == FAILED`, `error_message` enthält die Exception-Nachricht, kein unbegrenztes Hängen.
-- [ ] Neuer Test in `test_opencloud_client.py`: `list_folder` gegen eine Response mit kaputtem XML-Body wirft `OpenCloudError` (nicht die rohe `ParseError`).
-- [ ] Bestehender Regressionstest `test_scan_run_marked_failed_on_opencloud_error` bleibt unverändert grün.
+- [x] `run_project_scan` fängt jede Exception ab (`except Exception`, nicht mehr nur `OpenCloudError`) und setzt `scan_run.status = FAILED` mit `error_message = str(exc)`, `finished_at` gesetzt, zuverlässig in jedem Fall — analog zum bereits bestehenden, identischen Muster in `run_project_scoring` (Zeile ~381, seit Spec 0003).
+- [x] `asyncio.CancelledError` (kein `Exception`-Subtyp seit Python 3.8, sondern `BaseException`) wird von der breiteren `except Exception`-Klausel weiterhin **nicht** abgefangen — ein geplanter Worker-Shutdown markiert einen Lauf nicht fälschlich als `failed`.
+- [x] `opencloud/client.py::list_folder` fängt `ElementTree.ParseError`/`ValueError`/`TypeError` beim Aufruf von `parse_multistatus` ab und übersetzt sie in eine `OpenCloudError` mit verständlicher deutscher Fehlermeldung — konsistent mit dem bestehenden Muster in `_drive_from_graph_api_item` (gleiche Datei), das dieselbe Art von Fehlerklassen bereits für die Graph-API-Antworten übersetzt.
+- [x] Neuer Test, der eine unerwartete, nicht-`OpenCloudError`-Exception mitten im Scan-Loop simuliert (z.B. ein Fake-`walk()`, der nach einigen Einträgen einen generischen `RuntimeError` wirft) und nachweist: `scan_run.status == FAILED`, `error_message` enthält die Exception-Nachricht, kein unbegrenztes Hängen.
+- [x] Neuer Test in `test_opencloud_client.py`: `list_folder` gegen eine Response mit kaputtem XML-Body wirft `OpenCloudError` (nicht die rohe `ParseError`).
+- [x] Bestehender Regressionstest `test_scan_run_marked_failed_on_opencloud_error` bleibt unverändert grün.
 
 **Batch-Größen-Fix (kosmetisch, Spec 0022 nachgebessert):**
 
-- [ ] `SCAN_COMMIT_BATCH_SIZE` wird von `25` auf `1` geändert — jede verarbeitete/übersprungene Datei löst einen Zwischen-Commit von `scan_run.files_found` aus, unabhängig von der Gesamtzahl der Dateien im Scan.
-- [ ] Ein Scan mit z.B. 3 Dateien zeigt während der Laufzeit sichtbar wachsende Zwischenstände (1, 2, 3), nicht nur einen Sprung von 0 auf 3 am Ende.
-- [ ] Bestehendes Verhalten bei großen Scans (≥25 Dateien) bleibt funktional unverändert (Zähler wächst weiterhin monoton).
-- [ ] Bestehende Tests, die `SCAN_COMMIT_BATCH_SIZE` per Monkeypatch auf `1`/`2` setzen, bleiben unverändert grün.
-- [ ] Neuer Test ohne Monkeypatch auf den (jetzt korrekten) Produktivwert zeigt einen Zwischen-Commit vor dem finalen Commit bei einem kleinen Scan.
+- [x] `SCAN_COMMIT_BATCH_SIZE` wird von `25` auf `1` geändert — jede verarbeitete/übersprungene Datei löst einen Zwischen-Commit von `scan_run.files_found` aus, unabhängig von der Gesamtzahl der Dateien im Scan.
+- [x] Ein Scan mit z.B. 3 Dateien zeigt während der Laufzeit sichtbar wachsende Zwischenstände (1, 2, 3), nicht nur einen Sprung von 0 auf 3 am Ende.
+- [x] Bestehendes Verhalten bei großen Scans (≥25 Dateien) bleibt funktional unverändert (Zähler wächst weiterhin monoton).
+- [x] Bestehende Tests, die `SCAN_COMMIT_BATCH_SIZE` per Monkeypatch auf `1`/`2` setzen, bleiben unverändert grün.
+- [x] Neuer Test ohne Monkeypatch auf den (jetzt korrekten) Produktivwert zeigt einen Zwischen-Commit vor dem finalen Commit bei einem kleinen Scan.
 
 ## Datenmodell-Bezug
 
