@@ -63,6 +63,7 @@ Spec 0004 (siehe "Später") ist zusätzlich bereits entsperrt — Spec 0009 (vor
 | [0018](./features/0018-diagram-tooling-migration.md) | Diagramm-Tooling: Migration von Mermaid zu D2 | Implemented ([PR #29](https://github.com/TheRealKoller/photosort/pull/29)) |
 | [0019](./features/0019-docs-restructure.md) | Doku-Restrukturierung: neuer `docs/`-Ordner, schlanke README | Implemented ([PR #31](https://github.com/TheRealKoller/photosort/pull/31)) |
 | [0020](./features/0020-agenten-review-optimierung.md) | Agenten-Nutzung im Review optimieren (bedingte Review-Agenten + situative Modellzuweisung) | Implemented ([PR #32](https://github.com/TheRealKoller/photosort/pull/32) für AK13, [PR #34](https://github.com/TheRealKoller/photosort/pull/34) für AK1–AK12) |
+| [0021](./features/0021-scoring-run-vorschlagszaehler.md) | Zusammenfassung nach Scoring-Lauf: Anzahl gefundener Vorschläge | Accepted |
 
 ## Bekannte Abhängigkeiten
 
