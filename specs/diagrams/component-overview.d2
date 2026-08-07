@@ -1,0 +1,27 @@
+# Migriert aus dem ASCII-Systemkontext-Diagramm, das bisher in
+# specs/architecture/0001-overview.md stand (jetzt docs/architecture.md).
+# Siehe ADR specs/decisions/0013-diagram-tooling-d2.md und
+# Feature-Spec specs/features/0019-docs-restructure.md.
+# Rendern: scripts/render-diagrams.sh (ruft "d2 --sketch" auf).
+#
+# Inhalt/Komponenten/Beziehungen sind eine 1:1-Uebersetzung des bisherigen
+# ASCII-Blocks, nur die Darstellung ist neu.
+#
+# Gerendert/verifiziert mit d2 v0.7.1 (https://github.com/d2lang/d2/releases).
+
+direction: right
+
+opencloud: "OpenCloud\n(extern)"
+
+backend: "Backend\n(FastAPI)"
+
+postgres: "Postgres\n(Metadaten)"
+redis: "Redis\n(Queue)"
+worker: "Worker\n(arq)"
+frontend: "Frontend\n(React PWA)"
+
+opencloud <-> backend: "WebDAV (App-Token aus .env)\ndav/spaces/{id}/{path}"
+backend -> postgres
+backend -> redis
+backend -> worker
+backend -> frontend
