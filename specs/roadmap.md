@@ -65,6 +65,7 @@ Spec 0004 (siehe "Später") ist zusätzlich bereits entsperrt — Spec 0009 (vor
 | [0019](./features/0019-docs-restructure.md) | Doku-Restrukturierung: neuer `docs/`-Ordner, schlanke README | Implemented ([PR #31](https://github.com/TheRealKoller/photosort/pull/31)) |
 | [0020](./features/0020-agenten-review-optimierung.md) | Agenten-Nutzung im Review optimieren (bedingte Review-Agenten + situative Modellzuweisung) | Implemented ([PR #32](https://github.com/TheRealKoller/photosort/pull/32) für AK13, [PR #34](https://github.com/TheRealKoller/photosort/pull/34) für AK1–AK12) |
 | [0021](./features/0021-scoring-run-vorschlagszaehler.md) | Zusammenfassung nach Scoring-Lauf: Anzahl gefundener Vorschläge | Implemented ([PR #38](https://github.com/TheRealKoller/photosort/pull/38)) |
+| [0022](./features/0022-scan-live-fortschrittszaehler.md) | Live-Fortschrittszähler beim Scannen eines Projekts | Accepted |
 
 ## Bekannte Abhängigkeiten
 
