@@ -4,7 +4,7 @@ Dieses Verzeichnis ist die "Single Source of Truth" für Anforderungen und Archi
 
 ## Struktur
 
-- `architecture/` — Systemarchitektur, Datenmodell, Komponentenübersicht (`0001-overview.md`, gepflegt vom `architect`-Agenten), das Testkonzept (`0002-testkonzept.md`, gepflegt vom `test-engineer`-Agenten), das Sicherheitskonzept (`0003-securitykonzept.md`, gepflegt vom `security-engineer`-Agenten), sowie das Design-System (`0004-design-system.md`, gepflegt vom `ux-ui-designer`-Agenten). Wird laufend aktualisiert, wenn sich Architektur, Teststrategie, Sicherheitslage oder Design ändern (kein Lifecycle wie bei Features, sondern lebende Dokumente).
+- `architecture/` — das Testkonzept (`0002-testkonzept.md`, gepflegt vom `test-engineer`-Agenten), das Sicherheitskonzept (`0003-securitykonzept.md`, gepflegt vom `security-engineer`-Agenten), sowie das Design-System (`0004-design-system.md`, gepflegt vom `ux-ui-designer`-Agenten) — agenteninterne Arbeitsdokumente, die beim Review/bei der Umsetzungsplanung konsultiert werden. Wird laufend aktualisiert, wenn sich Teststrategie, Sicherheitslage oder Design ändern (kein Lifecycle wie bei Features, sondern lebende Dokumente). Die Systemarchitektur/Komponentenübersicht selbst lebt seit Spec 0019 unter [`docs/architecture.md`](../docs/architecture.md) (siehe Abgrenzung unten).
 - `decisions/` — Architecture Decision Records (ADRs), verfasst vom `architect`-Agenten. Unveränderlich nach Annahme; eine spätere Änderung der Entscheidung erzeugt eine neue ADR, die die alte als "Superseded" markiert.
 - `features/` — Feature-Spezifikationen. Durchlaufen den unten beschriebenen Lifecycle.
 - `roadmap.md` — Priorisierung und Status der geplanten Features im Überblick, gepflegt vom `requirements-engineer`-Agenten. Lebendes Dokument, kein Ersatz für die einzelnen Spec-Dateien, sondern die Einordnung/Reihenfolge darüber.
@@ -39,4 +39,8 @@ Alle Diagramme im Projekt (README, hier unter `architecture/`, künftige Specs/A
 
 ## Siehe auch
 
-Das Root-[`README.md`](../README.md) (außerhalb von `specs/`, lokales Setup/Betrieb) wird ebenfalls vom `architect`-Agenten gepflegt — als operative Kehrseite von `architecture/0001-overview.md`.
+Das Root-[`README.md`](../README.md) sowie [`docs/`](../docs/) (außerhalb von `specs/`, aufbereitete Doku für Nutzung/Außenwirkung: Setup, Architektur, AI-Workflow) werden ebenfalls vom `architect`-Agenten gepflegt — als operative Kehrseite der fachlichen/technischen Quelle der Wahrheit hier in `specs/`.
+
+## `docs/` vs. `specs/`
+
+`specs/` ist die fachliche/technische Quelle der Wahrheit für die Agenten selbst (Features, ADRs, Roadmap, sowie die drei agenteninternen Arbeitsdokumente Testkonzept/Securitykonzept/Design-System). `docs/` ist aufbereitete Dokumentation für Nutzung/Außenwirkung (Setup-Anleitung, Architekturübersicht, AI-Workflow-Beschreibung für Außenstehende) — siehe [`docs/architecture.md`](../docs/architecture.md), [`docs/setup.md`](../docs/setup.md), [`docs/ai-workflow.md`](../docs/ai-workflow.md).
