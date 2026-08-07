@@ -200,3 +200,77 @@ jobs:
           rm -f "$login_response_file"
           # Kein explizites "docker compose down" hier nötig - der "trap ... EXIT" oben
           # räumt den Stack inkl. Volume bereits auf.
+      - name: Functional check - SPA fallback in frontend nginx (spec 0016)
+        run: |
+          set -euo pipefail
+          # Isoliert vom vorherigen Schritt, siehe Kommentar oben zum IPv4-Check.
+          rm -f .env
+          trap 'docker compose down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
+
+          # Bewusst "--no-deps": der SPA-Fallback ist rein nginx-seitig und haengt nicht
+          # von backend/postgres/redis ab (siehe Teststrategie, Spec 0016).
+          docker compose up -d --no-deps --build frontend
+
+          echo "Waiting for frontend to respond..."
+          base_url="http://localhost:${FRONTEND_PORT:-8080}"
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null "$base_url/"; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            echo "frontend did not respond in time" >&2
+            docker compose logs frontend
+            exit 1
+          fi
+
+          # Holt Status+Body in einem einzigen curl-Aufruf statt getrennter Requests fuer
+          # Status und Body (weniger redundante Requests, ein Trennzeichen am Ende reicht).
+          # Ergebnis in FETCH_STATUS/FETCH_BODY, plus Echo des Status vor jeder Assertion
+          # fuer bessere Diagnose bei einem CI-Fehlschlag (analog zum IPv4-Check oben).
+          fetch() {
+            local url="$1" response
+            response=$(curl -s -w '\n%{http_code}' "$url")
+            FETCH_STATUS="${response##*$'\n'}"
+            FETCH_BODY="${response%$'\n'*}"
+          }
+
+          echo "--- GET / returns 200 with index.html content ---"
+          fetch "$base_url/"
+          echo "status: $FETCH_STATUS"
+          test "$FETCH_STATUS" = "200"
+          index_body="$FETCH_BODY"
+
+          echo "--- GET /projects/3 (erfundene Client-Route) faellt auf index.html-Body zurueck, 200 ---"
+          fetch "$base_url/projects/3"
+          echo "status: $FETCH_STATUS"
+          test "$FETCH_STATUS" = "200"
+          test "$FETCH_BODY" = "$index_body"
+
+          echo "--- GET /this/path/does/not/exist (generischer Pfad) faellt auf index.html-Body zurueck, 200 ---"
+          fetch "$base_url/this/path/does/not/exist"
+          echo "status: $FETCH_STATUS"
+          test "$FETCH_STATUS" = "200"
+          test "$FETCH_BODY" = "$index_body"
+
+          echo "--- echtes statisches Asset wird direkt ausgeliefert (200, korrekter Content-Type, kein index.html-Body) ---"
+          asset_path=$(docker compose exec -T frontend sh -c "find /usr/share/nginx/html/assets -maxdepth 1 -type f -name '*.js' | head -n1" | tr -d '\r\n')
+          if [ -z "$asset_path" ]; then
+            echo "kein gebautes JS-Asset im Image gefunden" >&2
+            exit 1
+          fi
+          asset_url_path="/assets/$(basename "$asset_path")"
+          fetch "$base_url$asset_url_path"
+          asset_content_type=$(curl -s -o /dev/null -w '%{content_type}' "$base_url$asset_url_path")
+          echo "status: $FETCH_STATUS, content-type: $asset_content_type"
+          test "$FETCH_STATUS" = "200"
+          echo "$asset_content_type" | grep -qi "javascript"
+          test "$FETCH_BODY" != "$index_body"
+
+          echo "--- nicht existentes, asset-artiges Pfad bleibt 404 (try_files nicht zu breit gefasst) ---"
+          fetch "$base_url/assets/definitiv-nicht-vorhanden.js"
+          echo "status: $FETCH_STATUS"
+          test "$FETCH_STATUS" = "404"
