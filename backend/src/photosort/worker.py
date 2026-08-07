@@ -345,6 +345,7 @@ async def run_project_scoring(
                 score.local_quality_score = local_quality_score(sharpness, exposure)
                 score.cluster_key = cluster_map[photo_id]
 
+        scoring_run.suggestions_found = len(rejected_ids)
         scoring_run.status = ScanStatus.SUCCESS
         scoring_run.finished_at = datetime.now(UTC).replace(tzinfo=None)
         await session.commit()

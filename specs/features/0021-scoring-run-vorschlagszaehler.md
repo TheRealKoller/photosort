@@ -1,6 +1,6 @@
 # 0021 - Zusammenfassung nach Scoring-Lauf: Anzahl gefundener Vorschläge
 
-**Status:** Accepted
+**Status:** Implemented ([PR #38](https://github.com/TheRealKoller/photosort/pull/38))
 **Erstellt:** 2026-08-07
 **Bezug:** Bug-Report von Daniel selbst (interaktive Session, 2026-08-07), als vermeintlicher Bug erfasst in `specs/inbox/0005-keine-sichtbaren-automatischen-vorschlaege.md`. Untersuchung ergab: kein Bug — Spec [0003](./0003-automatic-best-photo-selection.md) verhält sich korrekt (Phase A spricht laut ADR 0006 bewusst nie eine positive Empfehlung aus, nur Ablehnungen für unscharfe/duplizierte Fotos; ein Projekt ohne solche Fotos zeigt zurecht null Badges). Der eigentliche Missstand war der in Spec 0003 selbst als "Nice-to-have" vorgesehene, aber nie umgesetzte Zähler ("Optional: kurze Zusammenfassung nach dem letzten Lauf … analog zum bestehenden `last_scan`-Text"). Diese Spec holt genau das nach, direkt mit Daniel vereinbart (kein separates Schärfungsgespräch, kleine, in sich abgeschlossene Ergänzung eines bereits implementierten Features).
 
@@ -14,12 +14,12 @@ Als Nutzer (Daniel oder seine Frau) möchte ich nach einem Klick auf "Beste Foto
 
 ## Akzeptanzkriterien
 
-- [ ] `ScoringRun` bekommt ein neues Feld `suggestions_found: int` (Default `0`), das am Ende eines erfolgreichen Laufs auf die Anzahl der Fotos gesetzt wird, deren `PhotoScore.suggested_status` in diesem Lauf gesetzt wurde (Duplikat-Verlierer + zu unscharfe Fotos, siehe `worker.py::run_project_scoring`, Variable `rejected_ids`).
-- [ ] Ein fehlgeschlagener Lauf (`status=failed`) lässt `suggestions_found` auf `0` (Default) — der zählende Verarbeitungsschritt läuft erst nach der Duplikat-/Cluster-Erkennung, die bei einem Fehler davor möglicherweise nicht erreicht wurde; kein irreführender Teilstand.
-- [ ] `ScoringRunSummary` (Backend-Response-Model, `api/projects.py`) und das gleichnamige Frontend-Interface (`api/types.ts`) bekommen das neue Feld `suggestions_found: number`.
-- [ ] Projekt-Detailseite: nach einem erfolgreichen Lauf steht statt "Vorschläge aktualisiert" jetzt "`N` Vorschlag gefunden" (N=1) bzw. "`N` Vorschläge gefunden" (N≠1), unverändert `aria-live="polite"` bei Zustandswechsel angesagt (bestehendes Muster aus Spec 0017, nicht bei jedem Poll-Tick).
-- [ ] Bestehende Tests (`ProjectDetailPage.test.tsx`) für den bisherigen generischen Text werden auf den neuen, zählerbasierten Text angepasst; neue Testfälle für N=0, N=1, N>1.
-- [ ] Migration additiv (neue nullable-freie Spalte mit Server-Default `0` auf `scoring_runs`), keine Änderung an `photo_scores`, `ratings`, `photos`, `projects`, `scan_runs`.
+- [x] `ScoringRun` bekommt ein neues Feld `suggestions_found: int` (Default `0`), das am Ende eines erfolgreichen Laufs auf die Anzahl der Fotos gesetzt wird, deren `PhotoScore.suggested_status` in diesem Lauf gesetzt wurde (Duplikat-Verlierer + zu unscharfe Fotos, siehe `worker.py::run_project_scoring`, Variable `rejected_ids`).
+- [x] Ein fehlgeschlagener Lauf (`status=failed`) lässt `suggestions_found` auf `0` (Default) — der zählende Verarbeitungsschritt läuft erst nach der Duplikat-/Cluster-Erkennung, die bei einem Fehler davor möglicherweise nicht erreicht wurde; kein irreführender Teilstand.
+- [x] `ScoringRunSummary` (Backend-Response-Model, `api/projects.py`) und das gleichnamige Frontend-Interface (`api/types.ts`) bekommen das neue Feld `suggestions_found: number`.
+- [x] Projekt-Detailseite: nach einem erfolgreichen Lauf steht statt "Vorschläge aktualisiert" jetzt "`N` Vorschlag gefunden" (N=1) bzw. "`N` Vorschläge gefunden" (N≠1), unverändert `aria-live="polite"` bei Zustandswechsel angesagt (bestehendes Muster aus Spec 0017, nicht bei jedem Poll-Tick).
+- [x] Bestehende Tests (`ProjectDetailPage.test.tsx`) für den bisherigen generischen Text werden auf den neuen, zählerbasierten Text angepasst; neue Testfälle für N=0, N=1, N>1.
+- [x] Migration additiv (neue nullable-freie Spalte mit Server-Default `0` auf `scoring_runs`), keine Änderung an `photo_scores`, `ratings`, `photos`, `projects`, `scan_runs`.
 
 ## Datenmodell-Bezug
 

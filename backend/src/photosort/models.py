@@ -142,6 +142,11 @@ class ScoringRun(Base):
     photos_total: Mapped[int] = mapped_column(default=0)
     photos_processed: Mapped[int] = mapped_column(default=0)
     error_message: Mapped[str | None] = mapped_column(default=None)
+    # Anzahl der Fotos, deren PhotoScore.suggested_status in diesem Lauf gesetzt wurde
+    # (Duplikat-Verlierer + zu unscharfe Fotos, siehe worker.py::run_project_scoring,
+    # Variable rejected_ids). Bleibt bei einem fehlgeschlagenen Lauf auf dem Default 0 - kein
+    # irrefuehrender Teilstand (specs/features/0021-scoring-run-vorschlagszaehler.md).
+    suggestions_found: Mapped[int] = mapped_column(default=0, server_default="0")
 
     project: Mapped[Project] = relationship(back_populates="scoring_runs")
 

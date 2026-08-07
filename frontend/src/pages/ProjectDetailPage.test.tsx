@@ -48,6 +48,7 @@ function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSumma
     finished_at: null,
     photos_total: 0,
     photos_processed: 0,
+    suggestions_found: 0,
     error_message: null,
     ...overrides,
   }
@@ -440,7 +441,7 @@ describe('ProjectDetailPage', () => {
       expect(screen.queryByText(/34% verarbeitet/i)).not.toBeInTheDocument()
     })
 
-    it('shows a summary once scoring succeeded', async () => {
+    it('shows a summary with the plural suggestion count once scoring succeeded', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
           last_scoring_run: scoringRun({
@@ -448,16 +449,55 @@ describe('ProjectDetailPage', () => {
             finished_at: '2026-07-20T10:05:00Z',
             photos_total: 10,
             photos_processed: 10,
+            suggestions_found: 3,
           }),
         })
       )
 
       renderPage()
 
-      expect(await screen.findByText(/vorschläge aktualisiert/i)).toBeInTheDocument()
+      expect(await screen.findByText('3 Vorschläge gefunden')).toBeInTheDocument()
       expect(
         screen.getByRole('button', { name: /beste fotos automatisch vorschlagen/i })
       ).toBeEnabled()
+    })
+
+    it('shows a singular suggestion count when exactly one suggestion was found', async () => {
+      // Akzeptanzkriterium der Spec 0021: N=1 -> Singular "1 Vorschlag gefunden", nicht "1
+      // Vorschläge gefunden".
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scoring_run: scoringRun({
+            status: 'success',
+            finished_at: '2026-07-20T10:05:00Z',
+            photos_total: 10,
+            photos_processed: 10,
+            suggestions_found: 1,
+          }),
+        })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText('1 Vorschlag gefunden')).toBeInTheDocument()
+    })
+
+    it('shows "0 Vorschläge gefunden" without an embellishing special-case text when nothing stood out', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scoring_run: scoringRun({
+            status: 'success',
+            finished_at: '2026-07-20T10:05:00Z',
+            photos_total: 10,
+            photos_processed: 10,
+            suggestions_found: 0,
+          }),
+        })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText('0 Vorschläge gefunden')).toBeInTheDocument()
     })
 
     it('announces completion/failure via aria-live, not just the granular running progress', async () => {
@@ -473,13 +513,14 @@ describe('ProjectDetailPage', () => {
             finished_at: '2026-07-20T10:05:00Z',
             photos_total: 10,
             photos_processed: 10,
+            suggestions_found: 3,
           }),
         })
       )
 
       renderPage()
 
-      const summary = await screen.findByText(/vorschläge aktualisiert/i)
+      const summary = await screen.findByText('3 Vorschläge gefunden')
       expect(summary).toHaveAttribute('aria-live', 'polite')
     })
 

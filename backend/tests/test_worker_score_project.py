@@ -166,6 +166,135 @@ async def test_scoring_run_marks_duplicate_cluster_loser_and_keeps_sharper_winne
     assert scores[loser.id].suggested_status == RatingStatus.REJECTED
 
 
+async def test_scoring_run_counts_no_suggestions_when_nothing_stands_out(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    assert scoring_run.suggestions_found == 0
+
+
+async def test_scoring_run_counts_blurry_photo_as_suggestion(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _add_photo(
+        db_session, project, "blurry.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, photo, _blurry_photo_image())
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    assert scoring_run.suggestions_found == 1
+
+
+async def test_scoring_run_counts_duplicate_cluster_loser_as_suggestion(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    base_image = _sharp_photo_image()
+    winner = await _add_photo(
+        db_session, project, "burst1.jpg", "etag-1", datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC)
+    )
+    loser = await _add_photo(
+        db_session, project, "burst2.jpg", "etag-2", datetime(2023, 1, 1, 10, 0, 1, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, winner, base_image)
+    _write_display_variant(tmp_path, loser, _slightly_blurred(base_image))
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    assert scoring_run.suggestions_found == 1
+
+
+async def test_scoring_run_counts_mix_of_blurry_and_duplicate_suggestions(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    base_image = _sharp_photo_image()
+    winner = await _add_photo(
+        db_session, project, "burst1.jpg", "etag-1", datetime(2023, 1, 1, 10, 0, 0, tzinfo=UTC)
+    )
+    loser = await _add_photo(
+        db_session, project, "burst2.jpg", "etag-2", datetime(2023, 1, 1, 10, 0, 1, tzinfo=UTC)
+    )
+    blurry = await _add_photo(
+        db_session, project, "blurry.jpg", "etag-3", datetime(2023, 1, 1, 11, 0, 0, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, winner, base_image)
+    _write_display_variant(tmp_path, loser, _slightly_blurred(base_image))
+    _write_display_variant(tmp_path, blurry, _blurry_photo_image())
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    assert scoring_run.suggestions_found == 2
+
+
+async def test_scoring_run_marked_failed_keeps_suggestions_found_at_default(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import photosort.worker as worker_module
+
+    monkeypatch.setattr(worker_module, "SCORE_COMMIT_BATCH_SIZE", 1)
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("unexpected clustering failure")
+
+    monkeypatch.setattr(worker_module, "assign_duplicate_clusters", _boom)
+
+    project = await _make_project(db_session)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    assert scoring_run.status == ScanStatus.FAILED
+    assert scoring_run.suggestions_found == 0
+
+
+async def test_scoring_run_suggestions_found_not_persisted_when_final_commit_fails(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Copilot-Review-Fund (PR #38): suggestions_found wird VOR dem finalen Erfolgs-Commit
+    gesetzt (worker.py). Faellt genau dieser Commit fehl, greift derselbe bereits etablierte
+    Rollback-Mechanismus wie fuer photos_processed (session.rollback() expired das ORM-Objekt,
+    der noch nicht committete In-Memory-Wert geht verloren, der anschliessende FAILED-Commit
+    schreibt daher keinen len(rejected_ids)-Teilstand) - kein Sonderfall noetig."""
+    project = await _make_project(db_session)
+    photo = await _add_photo(
+        db_session, project, "blurry.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, photo, _blurry_photo_image())
+
+    original_commit = db_session.commit
+    call_count = {"n": 0}
+
+    async def flaky_commit() -> None:
+        call_count["n"] += 1
+        # Commit-Reihenfolge fuer einen Einzelfoto-Lauf: 1) ScoringRun anlegen (RUNNING),
+        # 2) photos_total setzen, 3) photos_processed nach der Verarbeitungsschleife,
+        # 4) der finale Erfolgs-Commit (status=SUCCESS, suggestions_found gesetzt) - genau
+        # dieser soll hier fehlschlagen.
+        if call_count["n"] == 4:
+            raise RuntimeError("simulated final commit failure")
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", flaky_commit)
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    assert scoring_run.status == ScanStatus.FAILED
+    assert scoring_run.suggestions_found == 0
+
+
 async def test_scoring_run_skips_photo_without_readable_display_cache(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
