@@ -79,9 +79,9 @@ Erst wenn hier wirklich alles grün ist, geht es weiter — ein "sollte eigentli
 
 ## Schritt 8: Copilot-Review anfordern und auswerten
 
-Jeder PR bekommt zusätzlich zu Schritt 4 ein automatisiertes Copilot-Review — das ist eine feste Projektkonvention (`CLAUDE.md`), kein optionaler Schritt.
+Jeder PR mit mindestens einer Code-Datei im Diff (mind. eine Datei unter `backend/src`, `backend/tests`, `frontend/src`, `frontend/tests` oder Äquivalent) bekommt zusätzlich zu Schritt 4 ein automatisiertes Copilot-Review — das ist eine feste Projektkonvention (`CLAUDE.md`), kein optionaler Schritt. **Ausnahme:** Ändert der PR ausschließlich Doku-/Spec-Dateien (`specs/`, `docs/`, `*.md`, reine Config-Kommentare) ohne jede Code-Datei, entfällt dieser gesamte Schritt (kein Anfordern, kein Warten, kein Auswerten) — ein PR ganz ohne Code-Diff hat strukturell nichts, was ein Code-Review dort finden könnte. Im Abschlussbericht kurz vermerken, dass Schritt 8 aus diesem Grund übersprungen wurde.
 
-1. **Anfordern:** `gh pr edit <PR-Nummer> --add-reviewer "@copilot"` direkt nach dem Eröffnen des PR in Schritt 7.
+1. **Anfordern:** `gh pr edit <PR-Nummer> --add-reviewer "@copilot"` direkt nach dem Eröffnen des PR in Schritt 7 (nur falls die obige Bedingung zutrifft).
 2. **Warten:** Copilot braucht üblicherweise ein bis wenige Minuten. Poll in angemessenen Abständen (z.B. alle 20-30s, mit vernünftigem Timeout statt endlos) `gh pr view <PR-Nummer> --json reviewRequests,reviews` — fertig ist es, sobald `reviewRequests` keinen Copilot-Eintrag mehr enthält bzw. `reviews` einen Eintrag mit `author.login == "copilot-pull-request-reviewer"` zeigt. Nicht selbst raten/simulieren, was das Review ergibt.
 3. **Kommentare holen:** `gh api repos/<owner>/<repo>/pulls/<PR-Nummer>/comments --paginate` liefert die Inline-Findings (Autor `Copilot`).
 4. **Bewerten wie jeden anderen Review-Fund:** Jeden Kommentar am tatsächlichen Code prüfen (lesen, nicht nur den Kommentartext glauben) — echtes Problem oder Fehlalarm/bereits abgedeckt? Bei echten Findings: Test zuerst (falls eine Testlücke der Grund war), dann Fix, dann committen — gleicher Maßstab wie Schritt 5. Bei Fehlalarmen: kurz im Abschlussbericht begründen, warum kein Fix nötig war, statt kommentarlos zu ignorieren.
