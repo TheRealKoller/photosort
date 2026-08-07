@@ -211,7 +211,16 @@ async def run_project_scan(
         scan_run.files_skipped = files_skipped
         await session.commit()
         return scan_run
-    except OpenCloudError as exc:
+    except Exception as exc:
+        # Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): vorher
+        # wurde hier ausschliesslich OpenCloudError abgefangen - jede andere Exception (z.B. aus
+        # dem WebDAV-XML-Parsing, siehe opencloud/client.py::list_folder) lief ungefangen durch
+        # und liess den ScanRun dauerhaft auf status="running" haengen, ohne Watchdog/Recovery.
+        # OpenCloudError ist eine Teilmenge von Exception, ein einzelner breiter Handler reicht
+        # deshalb aus - exakt das bereits bestehende Muster in run_project_scoring unten.
+        # asyncio.CancelledError ist seit Python 3.8 BaseException statt Exception-Subtyp und wird
+        # von diesem `except Exception` daher NICHT abgefangen: ein geplanter Worker-Shutdown
+        # markiert einen Lauf nicht faelschlich als "failed", keine Sonderbehandlung noetig.
         await session.rollback()
         scan_run.status = ScanStatus.FAILED
         scan_run.error_message = str(exc)

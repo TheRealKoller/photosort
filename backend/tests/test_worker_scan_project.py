@@ -80,6 +80,18 @@ class WalkFailsMidwayClient(FakeOpenCloudClient):
         raise OpenCloudError("WebDAV-Verbindung waehrend des Durchlaufs verloren")
 
 
+class WalkFailsWithUnexpectedErrorClient(FakeOpenCloudClient):
+    """Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): simuliert
+    eine unerwartete, NICHT-OpenCloudError-Exception mitten im Scan-Loop (z.B. ein Bug im
+    XML-Parsing oder eine andere heute unbekannte Fehlerquelle). Vor dem Fix lief das ungefangen
+    durch run_project_scan durch, der ScanRun blieb dauerhaft auf status="running" haengen."""
+
+    async def walk(self, webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
+        for item in self._entries:
+            yield item
+        raise RuntimeError("Unerwarteter Parsing-Fehler")
+
+
 async def _make_project(session: AsyncSession) -> Project:
     project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="CostaRica")
     session.add(project)
@@ -278,6 +290,30 @@ async def test_scan_run_marked_failed_on_opencloud_error(
     assert scan_run.error_message == "Ordner nicht erreichbar"
     photos = (await db_session.execute(select(Photo))).scalars().all()
     assert photos == []
+
+
+async def test_scan_run_marked_failed_on_unexpected_non_opencloud_error(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): vor dem Fix
+    fing run_project_scan ausschliesslich OpenCloudError ab - jede andere Exception (z.B. aus dem
+    ungeschuetzten WebDAV-XML-Parsing) lief ungefangen durch und liess den ScanRun dauerhaft auf
+    "running" haengen. Belegt, dass ein generischer RuntimeError mitten im Walk denselben
+    FAILED-Pfad wie OpenCloudError durchlaeuft - kein Haengen, kein Timeout."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = WalkFailsWithUnexpectedErrorClient(
+        entries=[
+            ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
+        ]
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.FAILED
+    assert "Unerwarteter Parsing-Fehler" in (scan_run.error_message or "")
 
 
 async def test_scan_marked_failed_after_partial_progress_keeps_committed_photos(
