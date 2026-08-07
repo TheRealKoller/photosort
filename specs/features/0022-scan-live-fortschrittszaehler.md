@@ -1,6 +1,6 @@
 # 0022 - Live-Fortschrittszähler beim Scannen eines Projekts
 
-**Status:** Accepted
+**Status:** Implemented — AK1–AK9 umgesetzt in [PR #40](https://github.com/TheRealKoller/photosort/pull/40)
 **Erstellt:** 2026-08-07
 **Bezug:** Idee von Daniel selbst (interaktive Session, 2026-08-07), geschärft im Idea-Sharpening-Gespräch. Ursprüngliche Inbox-Notiz `specs/inbox/0007-fortschrittsanzeige-beim-scannen.md` wird nach Anlage dieser Spec gelöscht. Wiederverwendet das in [`decisions/0006-local-scoring-datamodel.md`](../decisions/0006-local-scoring-datamodel.md) etablierte Muster "periodischer Zwischen-Commit für Live-Fortschritt" (dort für `ScoringRun`/Spec 0003, hier zweitmalig angewendet auf `ScanRun`).
 
