@@ -127,9 +127,9 @@ class ScoringRun(Base):
     Semantik (running/success/failed) fuer einen asynchron laufenden Worker-Job.
 
     photos_total/photos_processed liefern granularen Live-Fortschritt (periodisch
-    zwischen-committet, siehe worker.py::run_project_scoring) - anders als ScanRun, das nur einmal
-    am Ende committet, weil der Scoring-Job pro Foto ein Bild verarbeitet und ueber tausende Fotos
-    mehrere Minuten laufen kann.
+    zwischen-committet, siehe worker.py::run_project_scoring) - analog zu ScanRun.files_found, das
+    seit specs/features/0022-scan-live-fortschrittszaehler.md ebenfalls periodisch statt nur am
+    Ende committet wird (siehe worker.py::run_project_scan, SCAN_COMMIT_BATCH_SIZE).
     """
 
     __tablename__ = "scoring_runs"

@@ -1,6 +1,6 @@
 # 0022 - Live-Fortschrittszähler beim Scannen eines Projekts
 
-**Status:** Accepted
+**Status:** Implemented — AK1–AK9 umgesetzt in [PR #40](https://github.com/TheRealKoller/photosort/pull/40)
 **Erstellt:** 2026-08-07
 **Bezug:** Idee von Daniel selbst (interaktive Session, 2026-08-07), geschärft im Idea-Sharpening-Gespräch. Ursprüngliche Inbox-Notiz `specs/inbox/0007-fortschrittsanzeige-beim-scannen.md` wird nach Anlage dieser Spec gelöscht. Wiederverwendet das in [`decisions/0006-local-scoring-datamodel.md`](../decisions/0006-local-scoring-datamodel.md) etablierte Muster "periodischer Zwischen-Commit für Live-Fortschritt" (dort für `ScoringRun`/Spec 0003, hier zweitmalig angewendet auf `ScanRun`).
 
@@ -14,15 +14,15 @@ Als Nutzer (Daniel oder seine Frau) möchte ich beim Scannen eines Projekts sehe
 
 ## Akzeptanzkriterien
 
-- [ ] Während `project.last_scan?.status === 'running'` zeigt die Projekt-Detailseite eine Textzeile, die an `project.last_scan.files_found` gebunden ist. Über mehrere Polls hinweg wächst der angezeigte Wert monoton (nie rückläufig), gespeist durch periodische Backend-Commits statt eines einzigen Commits am Jobende.
-- [ ] Text-Formatierung (analog Spec 0021): "0 Dateien verarbeitet" bei `files_found === 0`, "1 Datei verarbeitet" bei `=== 1` (Singular), "N Dateien verarbeitet" bei `> 1` (Plural).
-- [ ] Kein `<progress>`-Element und kein "X von Y"-Text — nur der reine Zähler, zu keinem Zeitpunkt ein fester Nenner.
-- [ ] Die neue Zählertextzeile trägt selbst kein `aria-live`; einziger Ansage-Träger bleibt die bestehende Statuszeile ("Scan läuft…", bereits `aria-live="polite"`).
-- [ ] Sobald der Status auf `success` wechselt, verschwindet der laufende Zähler-Block; die bestehende Abschluss-Statistiktabelle (Hinzugefügt/Aktualisiert/Entfernt/Übersprungen inkl. "Dateien gefunden") zeigt weiterhin den finalen `files_found`-Wert unverändert.
-- [ ] Regression: Ein `OpenCloudError` aus `resolve_drive` (tritt vor Schleifenbeginn auf, z.B. ungültiges Laufwerk) liefert weiterhin `scan_run.status == FAILED`, `files_found` bleibt am Default (0), keine `Photo`-Zeilen in der DB — Verhalten unverändert gegenüber heute.
-- [ ] Neue, bewusst akzeptierte Verhaltensänderung: Ein Fehler, der während der Schleife auftritt, nachdem mindestens ein periodischer Zwischen-Commit stattgefunden hat, lässt die bis dahin bereits verarbeiteten `Photo`-Zeilen dauerhaft in der DB — kein `session.rollback()` verwirft den bereits committeten Fortschritt, trotz `scan_run.status == FAILED`.
-- [ ] `SCAN_COMMIT_BATCH_SIZE` ist eine modulweite, per Monkeypatch überschreibbare Konstante in `worker.py` mit Default `25`, analog `SCORE_COMMIT_BATCH_SIZE`.
-- [ ] Kein API-/Datenmodell-Impact: keine neue Spalte, keine Migration, kein geändertes `ScanSummary`/`ScanRun`-Frontend-Typ — nur geänderte Commit-Frequenz einer bereits existierenden Spalte (`ScanRun.files_found`).
+- [x] Während `project.last_scan?.status === 'running'` zeigt die Projekt-Detailseite eine Textzeile, die an `project.last_scan.files_found` gebunden ist. Über mehrere Polls hinweg wächst der angezeigte Wert monoton (nie rückläufig), gespeist durch periodische Backend-Commits statt eines einzigen Commits am Jobende.
+- [x] Text-Formatierung (analog Spec 0021): "0 Dateien verarbeitet" bei `files_found === 0`, "1 Datei verarbeitet" bei `=== 1` (Singular), "N Dateien verarbeitet" bei `> 1` (Plural).
+- [x] Kein `<progress>`-Element und kein "X von Y"-Text — nur der reine Zähler, zu keinem Zeitpunkt ein fester Nenner.
+- [x] Die neue Zählertextzeile trägt selbst kein `aria-live`; einziger Ansage-Träger bleibt die bestehende Statuszeile ("Scan läuft…", bereits `aria-live="polite"`).
+- [x] Sobald der Status auf `success` wechselt, verschwindet der laufende Zähler-Block; die bestehende Abschluss-Statistiktabelle (Hinzugefügt/Aktualisiert/Entfernt/Übersprungen inkl. "Dateien gefunden") zeigt weiterhin den finalen `files_found`-Wert unverändert.
+- [x] Regression: Ein `OpenCloudError` aus `resolve_drive` (tritt vor Schleifenbeginn auf, z.B. ungültiges Laufwerk) liefert weiterhin `scan_run.status == FAILED`, `files_found` bleibt am Default (0), keine `Photo`-Zeilen in der DB — Verhalten unverändert gegenüber heute.
+- [x] Neue, bewusst akzeptierte Verhaltensänderung: Ein Fehler, der während der Schleife auftritt, nachdem mindestens ein periodischer Zwischen-Commit stattgefunden hat, lässt die bis dahin bereits verarbeiteten `Photo`-Zeilen dauerhaft in der DB — kein `session.rollback()` verwirft den bereits committeten Fortschritt, trotz `scan_run.status == FAILED`.
+- [x] `SCAN_COMMIT_BATCH_SIZE` ist eine modulweite, per Monkeypatch überschreibbare Konstante in `worker.py` mit Default `25`, analog `SCORE_COMMIT_BATCH_SIZE`.
+- [x] Kein API-/Datenmodell-Impact: keine neue Spalte, keine Migration, kein geändertes `ScanSummary`/`ScanRun`-Frontend-Typ — nur geänderte Commit-Frequenz einer bereits existierenden Spalte (`ScanRun.files_found`).
 
 ## Datenmodell-Bezug
 
@@ -35,6 +35,7 @@ Keine Änderung. `ScanRun.files_found` (`backend/src/photosort/models.py`) exist
 ### Backend
 
 - `backend/src/photosort/worker.py::run_project_scan`: neue Modul-Konstante `SCAN_COMMIT_BATCH_SIZE` (analog `SCORE_COMMIT_BATCH_SIZE`, Default `25`, monkeypatchbar in Tests), die steuert, alle wie viele durchlaufene Dateien `scan_run.files_found` zwischen-committet wird. Platzierung des Checks **am Ende** jeder Schleifeniteration (nach `_generate_thumbnails`, analog zur Platzierung in `run_project_scoring`) — stellt sicher, dass die für diese Datei bereits vorgenommenen `Photo`-Mutationen vollständig abgeschlossen sind, bevor committet wird.
+  - **Technische Korrektur nach Review (test-engineer/architect, 2026-08-07):** anders als `run_project_scoring` hat der Scan-Loop zwei `continue`-Zweige (übersprungene Dateiendung, unveränderter Etag) — ein Checkpoint ausschließlich nach `_generate_thumbnails` wäre für Iterationen, die einen dieser Zweige treffen, nie erreichbar und hätte im dominanten Realweltfall (erneuter Scan eines bereits gescannten Projekts, überwiegend unveränderte Dateien) den Live-Zähler faktisch nicht wachsen lassen. Tatsächliche Umsetzung: eine kleine lokale Closure `_commit_progress_checkpoint()`, aufgerufen an **allen drei** Ausstiegspunkten der Schleife (beide `continue`-Zweige sowie das reguläre Ende nach `_generate_thumbnails`) — erfüllt damit weiterhin die Kernanforderung "am Ende jeder Schleifeniteration, nachdem etwaige Mutationen für diese Datei abgeschlossen sind", nur für alle drei Ausstiegspfade statt nur für den einen ursprünglich benannten. Reine technische Detailkorrektur innerhalb der bereits akzeptierten Architektur, keine neue ADR nötig.
 - **Entwurfsentscheidung/Konsequenz (bewusst, analog ADR 0006, mit Daniel bestätigt):** Da `session.commit()` die gesamte offene Transaktion committet, nicht nur das `files_found`-Feld, persistieren mit dieser Änderung ab sofort auch bereits verarbeitete `Photo`-Zeilen (neu/aktualisiert) unwiderruflich, auch wenn der Scan danach mit `OpenCloudError` fehlschlägt — anders als bisher, wo ein Fehlschlag den gesamten Lauf durch `session.rollback()` folgenlos macht. Bereits eingelesene Foto-Metadaten für tatsächlich verarbeitete Dateien sind korrekte Daten, kein Datenrisiko; ein erneuter Scan setzt dort fort. `photos_added`/`photos_updated`/`photos_removed`/`files_skipped` sowie die Entfernungs-Erkennung (`removed_paths`) bleiben unverändert nur am Ende gesetzt — dafür gibt es kein Akzeptanzkriterium für Live-Fortschritt, nur `files_found` soll live wachsen.
 - Docstring-Korrektur: Kommentar an `ScoringRun` in `models.py` ("anders als `ScanRun`, das nur einmal am Ende committet") entfällt/wird angepasst, da nicht mehr zutreffend.
 - `docs/architecture.md`: Beschreibung von `ScanRun`/`ScoringRun` entsprechend nachziehen (Klammerzusatz zu `ScoringRun`, der auf das bisherige Nur-Scoring-Verhalten verweist, streichen/umformulieren).
@@ -96,6 +97,7 @@ Die bewusst akzeptierte Verhaltensänderung, dass bei einem mittendrin fehlschla
 
 ## Entscheidungen
 
+- **Checkpoint-Platzierung im Review korrigiert (rein technisch, keine Rückfrage nötig):** die ursprünglich beschriebene Platzierung "nach `_generate_thumbnails`" hätte im Scan-Loop (zwei `continue`-Zweige, anders als bei `run_project_scoring`) im dominanten Realweltfall (Re-Scan mit überwiegend unveränderten Dateien) den Checkpoint faktisch nie erreicht. Korrigiert auf einen Aufruf an allen drei Ausstiegspunkten der Schleife (test-engineer-/architect-Review, 2026-08-07) — siehe Architektur-Abschnitt oben.
 - **Kein Prozent-/"X von Y"-Balken, nur reiner Zähler:** der OpenCloud-Ordnerbaum wird lazy per BFS über WebDAV durchlaufen (`OpenCloudClient.walk()`), die Gesamtzahl der Dateien ist vor vollständigem Durchlauf nicht bekannt. Ein Vorab-Zähl-Durchlauf (doppelter WebDAV-Traversierungs-Aufwand) oder ein live wachsendes, potenziell "zurückspringendes" Y wurden von Daniel explizit verworfen — direkt mit Daniel geklärt, 2026-08-07.
 - **Kein neues Datenmodell/keine Migration:** `ScanRun.files_found` existiert bereits vollständig verdrahtet bis zum Frontend-Typ — reine Änderung der Commit-Frequenz im Worker (architect-Konsultation, 2026-08-07).
 - **Bereits verarbeitete Fotos bleiben bei einem späteren Fehlschlag erhalten** (kein Alles-oder-nichts-Rollback mehr): explizit mit Daniel bestätigt, nachdem der `architect` diese Konsequenz des periodischen Zwischen-Commits benannt hatte — analog zum bereits akzeptierten `ScoringRun`/`PhotoScore`-Verhalten (ADR 0006), 2026-08-07.

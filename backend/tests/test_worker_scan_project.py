@@ -2,9 +2,11 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort import worker
 from photosort.models import Photo, Project, ScanStatus
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
@@ -64,6 +66,18 @@ class FakeOpenCloudClient:
     async def download(self, webdav_url: str, relative_path: str) -> bytes:
         self.download_requests.append(relative_path)
         return self._file_contents.get(relative_path, b"")
+
+
+class WalkFailsMidwayClient(FakeOpenCloudClient):
+    """Simuliert einen WebDAV-Abbruch mitten im Ordnerbaum-Durchlauf: `walk()` liefert einige
+    Eintraege und wirft danach OpenCloudError, statt (wie bei fail_with) sofort in resolve_drive
+    zu scheitern. Belegt den periodischen Zwischen-Commit von scan_run.files_found
+    (specs/features/0022-scan-live-fortschrittszaehler.md)."""
+
+    async def walk(self, webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
+        for item in self._entries:
+            yield item
+        raise OpenCloudError("WebDAV-Verbindung waehrend des Durchlaufs verloren")
 
 
 async def _make_project(session: AsyncSession) -> Project:
@@ -244,6 +258,15 @@ async def test_scan_extracts_exif_for_jpeg(
 async def test_scan_run_marked_failed_on_opencloud_error(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
+    """Fehler VOR Schleifenbeginn (resolve_drive schlaegt sofort fehl): kein Zwischen-Commit hat
+    je stattgefunden, also verwirft session.rollback() die gesamte (leere) Transaktion -
+    photos == [] bleibt korrekt. Nicht zu verwechseln mit
+    test_scan_marked_failed_after_partial_progress_keeps_committed_photos unten, wo der Fehler
+    ERST NACH mindestens einem periodischen Zwischen-Commit auftritt und deshalb bereits
+    verarbeitete Photo-Zeilen bewusst erhalten bleiben (specs/features/0022-scan-live-
+    fortschrittszaehler.md, Akzeptanzkriterium "Neue, bewusst akzeptierte Verhaltensaenderung").
+    Beide Assertions (photos == [] hier vs. photos vorhanden dort) sind korrekt, weil sie
+    unterschiedliche Fehlerzeitpunkte relativ zum ersten Commit abbilden."""
     project = await _make_project(db_session)
     client = FakeOpenCloudClient(entries=[], fail_with=OpenCloudError("Ordner nicht erreichbar"))
 
@@ -255,6 +278,76 @@ async def test_scan_run_marked_failed_on_opencloud_error(
     assert scan_run.error_message == "Ordner nicht erreichbar"
     photos = (await db_session.execute(select(Photo))).scalars().all()
     assert photos == []
+
+
+async def test_scan_marked_failed_after_partial_progress_keeps_committed_photos(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gegenstueck zu test_scan_run_marked_failed_on_opencloud_error oben: der Fehler tritt
+    waehrend der Schleife auf, nachdem SCAN_COMMIT_BATCH_SIZE=1 bereits mehrere Zwischen-Commits
+    ausgeloest hat. Belegt zugleich den periodischen Commit von scan_run.files_found und die
+    bewusst akzeptierte Verhaltensaenderung, dass session.rollback() danach nur noch die seit dem
+    letzten Commit offene (leere) Transaktion verwirft, nicht die bereits committeten
+    Photo-Zeilen."""
+    monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", 1)
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = WalkFailsMidwayClient(
+        entries=[
+            ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
+            ("CostaRica/img002.png", _entry("img002.png", "etag-2", modified)),
+            ("CostaRica/img003.png", _entry("img003.png", "etag-3", modified)),
+        ]
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.FAILED
+    photos = (await db_session.execute(select(Photo))).scalars().all()
+    assert len(photos) == 3
+
+
+async def test_scan_commits_periodically_even_when_a_batch_boundary_lands_on_a_skipped_file(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review-Fund (test-engineer/architect, specs/features/0022): der Zwischen-Commit-Checkpoint
+    darf nicht hinter den `continue`-Zweigen fuer uebersprungene Dateiendungen/unveraenderte
+    Etags liegen, sonst wird er im DOMINANTEN Realweltfall (erneuter Scan eines bereits
+    gescannten Projekts, ueberwiegend unveraenderte Dateien) faktisch nie erreicht - der Live-
+    Zaehler wuerde dann trotz periodischem-Commit-Code effektiv nicht live wachsen.
+
+    Aufbau (SCAN_COMMIT_BATCH_SIZE=2): Eintrag 1 (neues Bild) erhoeht files_found auf 1 (kein
+    Commit, 1%2 != 0). Eintrag 2 ist eine NICHT-Bilddatei (loest den fruehen `continue` fuer
+    unpassende Endung aus) und erhoeht files_found auf 2 - der Checkpoint muss trotz des
+    `continue` dieser Iteration greifen (2 % 2 == 0), sonst geht die Commit-Gelegenheit
+    ersatzlos verloren. Eintrag 3 (neues Bild) erhoeht files_found auf 3 (kein Commit). Danach
+    bricht der Walk mit OpenCloudError ab.
+
+    Faehrt der Checkpoint korrekt bei Eintrag 2, ist zu diesem Zeitpunkt bereits das Foto aus
+    Eintrag 1 vollstaendig verarbeitet und wird durch diesen Commit mit persistiert - das Foto
+    aus Eintrag 3 bleibt dagegen unkommittet und wird beim abschliessenden Rollback verworfen.
+    Erwartung: genau 1 Photo-Zeile in der DB (aus Eintrag 1), nicht 0 (Checkpoint nie erreicht)
+    und nicht 2 (Eintrag 3 faelschlich auch committet)."""
+    monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", 2)
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = WalkFailsMidwayClient(
+        entries=[
+            ("CostaRica/img_a.png", _entry("img_a.png", "etag-a", modified)),
+            ("CostaRica/notes.txt", _entry("notes.txt", "etag-notes", modified)),
+            ("CostaRica/img_b.png", _entry("img_b.png", "etag-b", modified)),
+        ]
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.FAILED
+    photos = (await db_session.execute(select(Photo))).scalars().all()
+    assert [photo.relative_path for photo in photos] == ["CostaRica/img_a.png"]
 
 
 async def test_scan_generates_thumbnails_for_new_photo(

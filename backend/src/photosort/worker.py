@@ -49,6 +49,17 @@ _EXIF_RANGE_BYTES = 131_072
 # der Spec, "neues Testmuster").
 SCORE_COMMIT_BATCH_SIZE = 25
 
+# Analog SCORE_COMMIT_BATCH_SIZE, aber fuer ScanRun.files_found (specs/features/0022-scan-live-
+# fortschrittszaehler.md, zweitmalige Anwendung des in decisions/0006-local-scoring-datamodel.md
+# etablierten Musters). Modul-Konstante statt Default-Parameterwert, damit Tests sie per
+# monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", ...) verkleinern koennen. Anders als bei
+# run_project_scoring hat der Scan-Loop in run_project_scan zwei `continue`-Zweige (uebersprungene
+# Endung, unveraenderter Etag) - der Checkpoint-Aufruf (siehe _commit_progress_checkpoint dort)
+# sitzt deshalb an JEDEM Ausstiegspunkt der Schleife, nicht nur am regulaeren Ende, sonst waere er
+# im dominanten Realweltfall (Re-Scan mit ueberwiegend unveraenderten Dateien) faktisch nie
+# erreichbar (Review-Fund).
+SCAN_COMMIT_BATCH_SIZE = 25
+
 
 class OpenCloudScanClient(Protocol):
     """The subset of OpenCloudClient that scanning needs — kept narrow so tests can fake it."""
@@ -124,17 +135,33 @@ async def run_project_scan(
         photos_updated = 0
         files_skipped = 0
 
+        async def _commit_progress_checkpoint() -> None:
+            # Review-Fund (specs/features/0022-scan-live-fortschrittszaehler.md): muss an JEDEM
+            # Ausstiegspunkt der Schleife unten aufgerufen werden (Skip wegen Endung, Skip wegen
+            # unveraendertem Etag, vollstaendige Verarbeitung) - nicht nur am Ende einer
+            # vollstaendigen Verarbeitung. Anders als run_project_scoring hat dieser Loop zwei
+            # `continue`-Zweige; ein Checkpoint nur "am Ende" (nach _generate_thumbnails) waere
+            # fuer Iterationen, die einen der beiden Zweige treffen, nie erreichbar - im
+            # dominanten Realweltfall (Re-Scan mit ueberwiegend unveraenderten Dateien) wuerde der
+            # Live-Zaehler dann faktisch nicht wachsen. `files_found` wird per Closure gelesen
+            # (kein `nonlocal` noetig, da hier nur gelesen, nicht neu zugewiesen wird).
+            if files_found % SCAN_COMMIT_BATCH_SIZE == 0:
+                scan_run.files_found = files_found
+                await session.commit()
+
         entry: DavEntry
         async for relative_path, entry in client.walk(drive.webdav_url, project.opencloud_path):
             files_found += 1
             extension = _extension(relative_path)
             if extension not in _IMAGE_EXTENSIONS:
                 files_skipped += 1
+                await _commit_progress_checkpoint()
                 continue
 
             seen_paths.add(relative_path)
             existing_photo = existing_photos.get(relative_path)
             if existing_photo is not None and existing_photo.etag == entry.etag:
+                await _commit_progress_checkpoint()
                 continue
 
             last_modified = _naive_utc(entry.last_modified) if entry.last_modified else _now_utc()
@@ -169,6 +196,7 @@ async def run_project_scan(
                 await session.flush()
 
             await _generate_thumbnails(client, drive.webdav_url, relative_path, photo, cache_dir)
+            await _commit_progress_checkpoint()
 
         removed_paths = set(existing_photos) - seen_paths
         for path in removed_paths:

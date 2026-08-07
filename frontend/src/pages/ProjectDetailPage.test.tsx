@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -177,6 +177,125 @@ describe('ProjectDetailPage', () => {
     expect(screen.getByText('2')).toBeInTheDocument()
     expect(screen.getByText('0')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled()
+  })
+
+  describe('live progress counter while a scan is running (specs/features/0022)', () => {
+    it('shows "0 Dateien verarbeitet" when no file has been processed yet', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', files_found: 0 }) })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText('0 Dateien verarbeitet')).toBeInTheDocument()
+    })
+
+    it('shows the singular "1 Datei verarbeitet" when exactly one file has been processed', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', files_found: 1 }) })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText('1 Datei verarbeitet')).toBeInTheDocument()
+    })
+
+    it('shows the plural "N Dateien verarbeitet" for more than one processed file', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', files_found: 7 }) })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText('7 Dateien verarbeitet')).toBeInTheDocument()
+    })
+
+    it('renders no progress element and no "X von Y" text within the scan section for the running scan counter', async () => {
+      // Akzeptanzkriterium der Spec: die Gesamtdateizahl ist beim lazy OpenCloud-Ordnerdurchlauf
+      // vorab nicht bekannt - anders als beim Scoring-Fortschritt darf hier zu keinem Zeitpunkt
+      // ein Nenner ("X von Y") oder ein <progress>-Element auftauchen.
+      //
+      // Copilot-Review-Fund (PR #40): eine ungescopte Assertion ueber die gesamte Seite waere
+      // hier zu breit/nicht an der eigentlichen Anforderung ausgerichtet gewesen - die Seite darf
+      // durchaus an ANDERER Stelle (Scoring-Abschnitt) einen "X von Y"-Text und ein
+      // <progress>-Element zeigen. Deshalb hier bewusst ein gleichzeitig laufender Scoring-Lauf
+      // mit granularem "X von Y"-Fortschritt UND die Scope-Einschraenkung auf den Scan-Abschnitt,
+      // damit die Negativ-Assertion tatsaechlich nur die Scan-Zeile prueft, statt zufaellig durch
+      // die (aktuell leeren) Default-Fixtures "durchzukommen".
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scan: scan({ status: 'running', files_found: 5 }),
+          last_scoring_run: scoringRun({ status: 'running', photos_total: 10, photos_processed: 4 }),
+        })
+      )
+
+      renderPage()
+
+      const counterLine = await screen.findByText('5 Dateien verarbeitet')
+      expect(await screen.findByText(/4 von 10 fotos verarbeitet/i)).toBeInTheDocument()
+      expect(screen.getByRole('progressbar')).toBeInTheDocument()
+
+      const scanSection = counterLine.closest('section')
+      expect(scanSection).not.toBeNull()
+      expect(within(scanSection!).queryByRole('progressbar')).not.toBeInTheDocument()
+      expect(within(scanSection!).queryByText(/\bvon\b/i)).not.toBeInTheDocument()
+    })
+
+    it('keeps the scan status line as the sole aria-live carrier - the new counter line has no aria-live of its own', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', files_found: 5 }) })
+      )
+
+      renderPage()
+
+      const statusLine = await screen.findByText('Scan läuft…', { selector: 'p' })
+      const counterLine = await screen.findByText('5 Dateien verarbeitet')
+      expect(statusLine).toHaveAttribute('aria-live', 'polite')
+      expect(counterLine).not.toHaveAttribute('aria-live')
+
+      const scanSection = statusLine.closest('section')
+      expect(scanSection).not.toBeNull()
+      expect(scanSection!.querySelectorAll('[aria-live]')).toHaveLength(1)
+    })
+
+    it('grows monotonically across two consecutive polls instead of jumping around', async () => {
+      vi.mocked(projectsApi.getProject)
+        .mockResolvedValueOnce(project({ last_scan: scan({ status: 'running', files_found: 3 }) }))
+        .mockResolvedValue(project({ last_scan: scan({ status: 'running', files_found: 7 }) }))
+
+      renderPage()
+
+      expect(await screen.findByText('3 Dateien verarbeitet')).toBeInTheDocument()
+      await waitFor(
+        () => expect(screen.getByText('7 Dateien verarbeitet')).toBeInTheDocument(),
+        { timeout: POLL_INTERVAL_MS + 1500 }
+      )
+      expect(screen.queryByText('3 Dateien verarbeitet')).not.toBeInTheDocument()
+    })
+
+    it('removes the running counter block once the scan transitions to success, keeping the final "Dateien gefunden" stat', async () => {
+      vi.mocked(projectsApi.getProject)
+        .mockResolvedValueOnce(project({ last_scan: scan({ status: 'running', files_found: 9 }) }))
+        .mockResolvedValue(
+          project({
+            last_scan: scan({
+              status: 'success',
+              finished_at: '2026-07-20T10:05:00Z',
+              files_found: 12,
+            }),
+          })
+        )
+
+      renderPage()
+
+      expect(await screen.findByText('9 Dateien verarbeitet')).toBeInTheDocument()
+      await waitFor(
+        () => expect(screen.getByText('Erfolgreich')).toBeInTheDocument(),
+        { timeout: POLL_INTERVAL_MS + 1500 }
+      )
+      expect(screen.queryByText(/dateien verarbeitet/i)).not.toBeInTheDocument()
+      expect(screen.getByText('Dateien gefunden').nextElementSibling).toHaveTextContent('12')
+    })
   })
 
   it(
