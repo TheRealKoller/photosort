@@ -1,6 +1,6 @@
 # 0020 - Agenten-Nutzung im Review optimieren (bedingte Review-Agenten + situative Modellzuweisung)
 
-**Status:** Accepted — AK1–AK12 umgesetzt auf Branch `feature/0020-review-trigger-modellzuweisung`, PR ausstehend (AK13/Copilot-Review-Bedingung bereits zuvor mit [PR #32](https://github.com/TheRealKoller/photosort/pull/32), gemerged 2026-08-07, umgesetzt). Wird nach PR-Eröffnung auf `Implemented` mit PR-Verweis aktualisiert.
+**Status:** Implemented — AK1–AK12 umgesetzt in [PR #34](https://github.com/TheRealKoller/photosort/pull/34) (AK13/Copilot-Review-Bedingung bereits zuvor mit [PR #32](https://github.com/TheRealKoller/photosort/pull/32), gemerged 2026-08-07, umgesetzt).
 **Erstellt:** 2026-08-07
 **Bezug:** `specs/inbox/0005-agenten-nutzung-review-optimieren.md` (Daniel selbst, interaktive Session; Inbox-Notiz nach Aufnahme in diese Spec gelöscht), geschärft im idea-sharpener-Ablauf 2026-08-07. ADR: [`decisions/0014-review-agenten-selektion-und-modellzuweisung.md`](../decisions/0014-review-agenten-selektion-und-modellzuweisung.md).
 
