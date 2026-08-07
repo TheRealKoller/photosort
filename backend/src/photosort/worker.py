@@ -49,6 +49,15 @@ _EXIF_RANGE_BYTES = 131_072
 # der Spec, "neues Testmuster").
 SCORE_COMMIT_BATCH_SIZE = 25
 
+# Analog SCORE_COMMIT_BATCH_SIZE, aber fuer ScanRun.files_found (specs/features/0022-scan-live-
+# fortschrittszaehler.md, zweitmalige Anwendung des in decisions/0006-local-scoring-datamodel.md
+# etablierten Musters). Modul-Konstante statt Default-Parameterwert, damit Tests sie per
+# monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", ...) verkleinern koennen. Check am Ende
+# jeder Schleifeniteration in run_project_scan, nach _generate_thumbnails - stellt sicher, dass die
+# fuer diese Datei vorgenommenen Photo-Mutationen vollstaendig abgeschlossen sind, bevor committet
+# wird.
+SCAN_COMMIT_BATCH_SIZE = 25
+
 
 class OpenCloudScanClient(Protocol):
     """The subset of OpenCloudClient that scanning needs — kept narrow so tests can fake it."""
@@ -169,6 +178,10 @@ async def run_project_scan(
                 await session.flush()
 
             await _generate_thumbnails(client, drive.webdav_url, relative_path, photo, cache_dir)
+
+            if files_found % SCAN_COMMIT_BATCH_SIZE == 0:
+                scan_run.files_found = files_found
+                await session.commit()
 
         removed_paths = set(existing_photos) - seen_paths
         for path in removed_paths:
