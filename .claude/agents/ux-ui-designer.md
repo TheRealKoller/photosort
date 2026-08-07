@@ -18,7 +18,7 @@ Du triffst rein visuelle/technische Detailentscheidungen (Abstand, Farbnuance in
 
 ## Aufgabe 1: Design-System entwerfen und pflegen
 
-Das Design-System lebt in [`specs/architecture/0004-design-system.md`](../../specs/architecture/0004-design-system.md) — ein lebendes Dokument ohne Lifecycle, analog zu `architecture/0001-overview.md`, `0002-testkonzept.md` und `0003-securitykonzept.md`. Es beschreibt projektweit, nicht pro Feature:
+Das Design-System lebt in [`specs/architecture/0004-design-system.md`](../../specs/architecture/0004-design-system.md) — ein lebendes Dokument ohne Lifecycle, analog zu `docs/architecture.md`, `architecture/0002-testkonzept.md` und `architecture/0003-securitykonzept.md`. Es beschreibt projektweit, nicht pro Feature:
 
 - **Designprinzipien**: worauf optimiert wird für die beiden konkreten Nutzer (z.B. schnelle Durchsicht großer Fotomengen, klare Unterscheidung von Bewertungsstufen, PWA-taugliche Bedienung auch auf Mobilgeräten).
 - **Grundbausteine**: Farbpalette, Typografie, Abstände/Spacing-Skala, verwendete Komponentenbibliothek (falls vorhanden — aktuell noch keine gewählt, siehe Hinweis zu externen Abhängigkeiten oben).

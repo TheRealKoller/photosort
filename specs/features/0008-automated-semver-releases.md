@@ -66,7 +66,7 @@ Keines — reine GitHub-Workflow-/Repo-Konfiguration, keine Berührung mit der P
 
 ### Explizit unverändert
 
-- `.github/workflows/ci.yml`, `specs/architecture/0001-overview.md`, `README.md` (kein lokales Setup-Bezug), keine Kopplung an Dockhand, kein Docker-Image-Tagging.
+- `.github/workflows/ci.yml`, `docs/architecture.md`, `README.md` (kein lokales Setup-Bezug), keine Kopplung an Dockhand, kein Docker-Image-Tagging.
 
 ### Umsetzungsreihenfolge
 

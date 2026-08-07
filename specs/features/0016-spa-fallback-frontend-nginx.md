@@ -56,7 +56,7 @@ Nicht betroffen — reine Deployment-/Serving-Konfiguration, kein Datenmodell-Be
   COPY nginx.conf /etc/nginx/conf.d/default.conf
   ```
 
-- **Nicht betroffen:** `docker-compose.yml`, `docker-compose.demo.yml`, `specs/architecture/0001-overview.md`, `README.md` — keine strukturelle Architektur-/Setup-/Datenmodelländerung.
+- **Nicht betroffen:** `docker-compose.yml`, `docker-compose.demo.yml`, `docs/architecture.md`, `README.md` — keine strukturelle Architektur-/Setup-/Datenmodelländerung.
 
 **Reihenfolge der Umsetzung (Test First, Infrastruktur-Ebene, analog Spec 0013):**
 

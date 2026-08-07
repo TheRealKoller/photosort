@@ -19,7 +19,7 @@ Als [Rolle] möchte ich [Fähigkeit], damit [Nutzen].
 
 ## Datenmodell-Bezug
 
-Betroffene/neue Entitäten, Verweis auf `architecture/0001-overview.md`.
+Betroffene/neue Entitäten, Verweis auf [`docs/architecture.md`](../docs/architecture.md).
 
 ## Architektur / Umsetzung
 

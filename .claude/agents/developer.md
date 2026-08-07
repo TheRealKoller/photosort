@@ -49,7 +49,7 @@ Lass die Änderungen von einer frischen Perspektive prüfen, nicht nur von dir s
 
 - **`test-engineer`** (`subagent_type: test-engineer`): TDD eingehalten, Abdeckung der Akzeptanzkriterien, Testqualität, Abgleich mit dem Testkonzept (`specs/architecture/0002-testkonzept.md`), sowie klassische Bugs/Logikfehler und Abweichungen von Code-Konventionen (Stil, Namensgebung, Patterns).
 - **`security-engineer`** (`subagent_type: security-engineer`): Sicherheitsprobleme (OWASP-relevante Muster, Secrets, Eingabevalidierung, Auth-Durchsetzung), Abgleich mit dem Sicherheitskonzept (`specs/architecture/0003-securitykonzept.md`).
-- **`architect`** (`subagent_type: architect`): ob die Architekturentscheidungen (ADRs, `architecture/0001-overview.md`, Abschnitt "Architektur / Umsetzung" der Spec) eingehalten wurden, bewertet aus drei Blickwinkeln (Pragmatiker, Senior-Entwickler, Pedant).
+- **`architect`** (`subagent_type: architect`): ob die Architekturentscheidungen (ADRs, `docs/architecture.md`, Abschnitt "Architektur / Umsetzung" der Spec) eingehalten wurden, bewertet aus drei Blickwinkeln (Pragmatiker, Senior-Entwickler, Pedant).
 - **`requirements-engineer`** (`subagent_type: requirements-engineer`): Anforderungstreue — sind alle Akzeptanzkriterien der Spec umgesetzt, wurde nichts (Scope Creep) oder etwas explizit als "Out of Scope" Ausgeschlossenes zusätzlich gebaut.
 - **`ux-ui-designer`** (`subagent_type: ux-ui-designer`, nur wenn der Branch Frontend-/UI-Dateien ändert): Konsistenz mit dem Design-System (`specs/architecture/0004-design-system.md`), Usability, abgedeckte Zustände (leer/ladend/Fehler), Barrierefreiheit, Responsivität.
 

@@ -44,11 +44,20 @@ PhotoSort wird in zwei Modi weiterentwickelt:
 - Secrets (App-Tokens, API-Keys) niemals im Code oder in Specs, nur über Umgebungsvariablen (`.env`, nie eingecheckt — siehe `.env.example`).
 - **Diagramme:** einheitlich mit [D2](https://d2lang.com) (`--sketch`-Modus) statt Mermaid erzeugen, siehe ADR [`decisions/0013-diagram-tooling-d2.md`](./specs/decisions/0013-diagram-tooling-d2.md). Quelle + gerendertes SVG liegen nebeneinander unter `specs/diagrams/<name>.d2`/`.svg` und werden beide eingecheckt; Generierung über `scripts/render-diagrams.sh`.
 
+## Doku-Pflege
+
+Architektur- oder Setup-relevante Änderungen (neue Komponente, geändertes Datenmodell, neuer
+lokaler Setup-Schritt, neue Umgebungsvariable) müssen die betroffene(n) `docs/`-Datei(en)
+(`docs/architecture.md`, `docs/setup.md`) im selben Pull Request aktualisieren, nicht in einem
+späteren Nachzieh-Commit. Zuständig bleibt dafür der `architect`-Agent (siehe auch
+`.claude/agents/architect.md`). `docs/ai-workflow.md` ändert sich dagegen nur, wenn sich der
+Workflow/das Rollenmodell selbst ändert, nicht bei jedem Feature.
+
 ## Wegweiser
 
 | Frage | Antwort in |
 |---|---|
 | Was soll gebaut werden? | `specs/features/` |
 | Warum wurde X so entschieden? | `specs/decisions/` |
-| Wie ist das System aufgebaut? | `specs/architecture/0001-overview.md` |
-| Wie wird lokal entwickelt/getestet? | `README.md` |
+| Wie ist das System aufgebaut? | [`docs/architecture.md`](./docs/architecture.md) |
+| Wie wird lokal entwickelt/getestet? | [`docs/setup.md`](./docs/setup.md) |
