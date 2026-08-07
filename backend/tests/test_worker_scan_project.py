@@ -395,10 +395,15 @@ async def test_scan_commits_files_found_progress_before_final_commit_at_producti
     Produktivwert nach dem Fix (1). Vorher (25) blieb der Live-Zaehler bei jedem Scan mit weniger
     als 25 Dateien waehrend der gesamten Laufzeit bei 0 eingefroren (Spec 0022, Bug).
 
-    Verifiziert ueber eine ZWEITE, unabhaengige Session auf demselben In-Memory-Engine, die
-    zwischen den walk()-Eintraegen den tatsaechlich COMMITTETEN DB-Zustand liest - eine reine
-    Attribut-Pruefung auf demselben Session-Objekt waere kein Beweis fuer einen echten Commit
-    (expire_on_commit=False haelt Attribute unabhaengig davon aktuell)."""
+    Verifiziert ueber eine ZWEITE, unabhaengige Session auf demselben In-Memory-Engine (geteilte
+    StaticPool-Connection bei sqlite+aiosqlite:///:memory:), die zwischen den walk()-Eintraegen den
+    ueber diese Connection sichtbaren DB-Zustand liest - eine reine Attribut-Pruefung auf demselben
+    Session-Objekt waere kein Beweis fuer einen echten DB-Roundtrip (expire_on_commit=False haelt
+    Attribute unabhaengig davon aktuell). Review-Praezisierung (test-engineer, Spec 0023): beweist
+    strenggenommen einen DB-Roundtrip auf der geteilten Connection (flush ODER commit), nicht
+    zwingend ausschliesslich commit() - fuer den Testzweck (Nachweis, dass SCAN_COMMIT_BATCH_SIZE=1
+    tatsaechlich zu sichtbar wachsenden Zwischenstaenden fuehrt) ausreichend, da der Produktivcode
+    an der geprueften Stelle tatsaechlich commit() aufruft."""
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     inspection_session_factory = make_session_factory(db_session.bind)
