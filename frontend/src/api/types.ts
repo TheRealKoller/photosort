@@ -20,6 +20,7 @@ export interface ScoringRunSummary {
   finished_at: string | null
   photos_total: number
   photos_processed: number
+  suggestions_found: number
   error_message: string | null
 }
 

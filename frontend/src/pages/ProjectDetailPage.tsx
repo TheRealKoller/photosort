@@ -221,6 +221,15 @@ export function ProjectDetailPage() {
   // ist aber bewusst NICHT Teil der aria-live-Region.
   const scoringAnnouncedDecile = Math.floor(scoringPercent / 10) * 10
 
+  // Ersetzt den vormals generischen "Vorschläge aktualisiert"-Text durch die tatsächliche Anzahl
+  // gefundener Vorschläge (specs/features/0021-scoring-run-vorschlagszaehler.md) - Singular nur
+  // bei genau einem Treffer, sonst Plural, kein Sondertext bei 0 (UI/UX-Abschnitt der Spec).
+  const suggestionsFound = scoringRun?.suggestions_found ?? 0
+  const suggestionsFoundText =
+    suggestionsFound === 1
+      ? '1 Vorschlag gefunden'
+      : `${suggestionsFound} Vorschläge gefunden`
+
   return (
     <div className="flex flex-col gap-6">
       <header>
@@ -281,7 +290,7 @@ export function ProjectDetailPage() {
           <StatusDot status={scoringStatus} />
           {scoringRun === null && 'Noch nicht vorgeschlagen'}
           {scoringStatus === 'running' && 'Wird verarbeitet…'}
-          {scoringStatus === 'success' && 'Vorschläge aktualisiert'}
+          {scoringStatus === 'success' && suggestionsFoundText}
           {scoringStatus === 'failed' && 'Fehlgeschlagen'}
         </p>
 
