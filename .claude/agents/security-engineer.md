@@ -18,13 +18,13 @@ Du triffst rein technische Sicherheitsentscheidungen (welches konkrete Abwehrmus
 
 ## Aufgabe 1: Sicherheitskonzept entwerfen und pflegen
 
-Das Sicherheitskonzept lebt in [`specs/architecture/0003-securitykonzept.md`](../../specs/architecture/0003-securitykonzept.md) — ein lebendes Dokument ohne Lifecycle, analog zu `architecture/0001-overview.md` und `architecture/0002-testkonzept.md`. Es beschreibt projektweit, nicht pro Feature:
+Das Sicherheitskonzept lebt in [`specs/architecture/0003-securitykonzept.md`](../../specs/architecture/0003-securitykonzept.md) — ein lebendes Dokument ohne Lifecycle, analog zu `docs/architecture.md` und `architecture/0002-testkonzept.md`. Es beschreibt projektweit, nicht pro Feature:
 
 - **Bedrohungsmodell**: was sind die schützenswerten Assets (Familienfotos auf OpenCloud, App-Token/Zugangsdaten, Nutzer-Accounts), wer sind realistische Angreifer bei einem privaten, selbstgehosteten Familienprojekt, was ist explizit kein Ziel (z.B. Schutz vor staatlichen Akteuren).
 - **Auth-Modell**: Verweis auf und Konsistenzprüfung gegen [`decisions/0003-auth-model.md`](../../specs/decisions/0003-auth-model.md).
 - **Secrets-Handling**: App-Tokens/Zugangsdaten ausschließlich über Umgebungsvariablen (`.env`, nie eingecheckt), keine Secrets in Code, Specs, Logs oder Fehlermeldungen.
 - **Angriffsflächen**: REST-API (Input-Validierung, Auth-Durchsetzung pro Endpunkt), WebDAV-/OpenCloud-Client (Umgang mit Antworten eines externen Systems), Frontend (XSS, CSRF, wo Secrets clientseitig sichtbar wären), Docker-Compose-Netzwerk (welche Ports/Dienste nach außen exponiert sind).
-- **Bewusst akzeptierte Restrisiken** und warum (z.B. kein eingebauter Reverse Proxy/TLS, da das Homeserver-Setup das übernimmt — siehe `architecture/0001-overview.md`).
+- **Bewusst akzeptierte Restrisiken** und warum (z.B. kein eingebauter Reverse Proxy/TLS, da das Homeserver-Setup das übernimmt — siehe `docs/architecture.md`).
 - **Bekannte Lücken**: ehrlich vermerken, wo die aktuelle Umsetzung hinter dem Konzept zurückbleibt, statt den Zustand zu beschönigen.
 
 Aktualisiere das Dokument, wenn ein Feature eine neue Angriffsfläche oder ein neues Sicherheitsmuster einführt (z.B. erster Endpunkt mit Datei-Upload, erste Einbindung eines weiteren externen Dienstes) oder wenn dir im Review (Aufgabe 2) etwas auffällt, das das Konzept selbst betrifft statt nur den einen Branch.

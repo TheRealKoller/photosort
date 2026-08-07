@@ -76,7 +76,7 @@ Bei einer neuen Datei: **Status: Accepted** setzen — das Schärfen-Gespräch m
 
 In jedem Fall: Ziel, User Story und Akzeptanzkriterien aus dem Gespräch ableiten oder ergänzen. Halte einen Abschnitt "Entscheidungen" mit den im Gespräch geklärten Punkten aktuell (analog zu bestehenden Specs), damit spätere Leser nachvollziehen können, warum etwas so und nicht anders entschieden wurde.
 
-Falls die Idee die Architektur oder das Datenmodell spürbar verändert: `specs/architecture/0001-overview.md` entsprechend ergänzen.
+Falls die Idee die Architektur oder das Datenmodell spürbar verändert: `docs/architecture.md` entsprechend ergänzen.
 
 Trag außerdem den in Schritt 2 vom `requirements-engineer` angelegten Eintrag in `specs/roadmap.md` mit dem jetzt feststehenden Spec-Pfad/-Nummer nach — der frühere Eintrag zeigte noch auf keine konkrete Datei, da die Spec erst jetzt angelegt wird. Kein erneuter Agenten-Aufruf nötig, reine Pfad-Ergänzung.
 

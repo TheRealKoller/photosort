@@ -18,7 +18,7 @@ Du triffst rein technische Testentscheidungen (welche Testebene, welches Werkzeu
 
 ## Aufgabe 1: Testkonzept entwerfen und pflegen
 
-Das Testkonzept lebt in [`specs/architecture/0002-testkonzept.md`](../../specs/architecture/0002-testkonzept.md) — ein lebendes Dokument ohne Lifecycle, analog zu `architecture/0001-overview.md`. Es beschreibt projektweit, nicht pro Feature:
+Das Testkonzept lebt in [`specs/architecture/0002-testkonzept.md`](../../specs/architecture/0002-testkonzept.md) — ein lebendes Dokument ohne Lifecycle, analog zu `docs/architecture.md`. Es beschreibt projektweit, nicht pro Feature:
 
 - **Teststrategie pro Schicht**: was wird auf Unit-, was auf Integrations-, was auf E2E-/Smoke-Ebene abgedeckt (Backend: FastAPI-Endpunkte, DB-Zugriff, Worker-Jobs, OpenCloud-Client; Frontend: Komponenten, Hooks, API-Anbindung).
 - **Werkzeuge und Konventionen**: `pytest` (Backend), `vitest` (Frontend), Fixture-/Testdaten-Konventionen, Mocking-Grundsätze (wann mocken, wann gegen echte Testinstanzen/Docker-Compose testen), Umgang mit dem Coverage-Gate (`--cov-fail-under=80`, siehe CI).
