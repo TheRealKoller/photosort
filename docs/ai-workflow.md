@@ -48,7 +48,7 @@ reviewen:
 
 ![Workflow-Übersicht: Verfeinern (idea-sharpener) und Umsetzen (developer)](../specs/diagrams/workflow-overview.svg)
 
-<sub>\* `ux-ui-designer` reviewt nur Feature-Branches mit Frontend-/UI-Änderungen.</sub>
+<sub>\* `security-engineer`, `architect` und `ux-ui-designer` reviewen nur, wenn ihr jeweiliger Trigger aus ADR 0014 zutrifft (z.B. Auth-/Secrets-Pfade, neue Abhängigkeiten bzw. Frontend-/UI-Änderungen); `test-engineer`/`requirements-engineer` bilden die faktisch unbedingte Basis.</sub>
 
 <sub>Diagramm-Quelle: [`specs/diagrams/workflow-overview.d2`](../specs/diagrams/workflow-overview.d2), gerendert per `scripts/render-diagrams.sh` (siehe ADR [`decisions/0013-diagram-tooling-d2.md`](../specs/decisions/0013-diagram-tooling-d2.md)).</sub>
 
@@ -68,6 +68,31 @@ unterschreitet ein Pull Request diese Schwelle, kann er nicht gemergt werden.
   abgearbeitet werden, ohne dass Daniel live mitliest. Blockierende Unklarheiten werden dann
   als Issue-Kommentar zurückgemeldet statt geraten. Diese Automatisierung ist zum
   Zeitpunkt dieser Beschreibung noch nicht eingerichtet.
+
+## Kosteneffiziente Agenten-Nutzung
+
+Da Claude-Code-Subagenten-Aufrufe ein spürbarer Verbrauchsposten auf Daniels Nutzungskontingent
+sind, laufen im `developer`-Review (Schritt 4) nicht mehr grundsätzlich alle fünf Review-Agenten:
+eine feste, aus dem Diff mechanisch ableitbare Trigger-Tabelle entscheidet pro Feature-Branch,
+welche Agenten tatsächlich etwas zu prüfen haben. `test-engineer` und `requirements-engineer`
+laufen dabei faktisch immer (jede Umsetzung bringt per TDD-Zwang Code+Tests und per Definition
+zu prüfende Akzeptanzkriterien mit), `security-engineer`, `architect` und `ux-ui-designer` nur,
+wenn der Diff einen ihrer dokumentierten Trigger berührt (z.B. Auth-/Secrets-Pfade, neue
+Abhängigkeiten, Frontend-Dateien). Sicherheitsnetz: Ist die Zuordnung unklar, läuft der Agent
+trotzdem — die Tabelle ist bewusst konservativ statt aggressiv Kontingent sparend.
+
+Zusätzlich bekommt jeder Agenten-Aufruf ein festes Modell zugewiesen: die beiden am stärksten
+checklistenartigen Review-Aufrufe (`requirements-engineer`, `ux-ui-designer`) laufen mit dem
+günstigeren Haiku-Modell, alles mit echtem fachlichem Urteilsvermögen — inkl. `security-engineer`
+und sämtlicher `idea-sharpener`-Konsultationen — bleibt beim Standardmodell.
+
+Beide Tabellen (Trigger und Modellzuweisung) sind vollständig und verbindlich in
+[ADR 0014](../specs/decisions/0014-review-agenten-selektion-und-modellzuweisung.md) festgehalten;
+`.claude/agents/developer.md` (Schritt 4) trägt sie zur unmittelbaren Ausführbarkeit direkt an
+der jeweiligen Aufruf-Anweisung ein. Review-Qualität wird dabei nicht einmalig, sondern laufend
+beobachtet (`test-engineer`) — sollte die günstigere Modellstufe die Qualität spürbar
+verschlechtern, führt das zu einer neuen, ADR 0014 ablösenden ADR, nicht zu einem stillschweigenden
+Unterlaufen der Tabelle.
 
 ## Wo die eigentlichen Regeln stehen
 
