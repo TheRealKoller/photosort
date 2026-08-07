@@ -200,3 +200,66 @@ jobs:
           rm -f "$login_response_file"
           # Kein explizites "docker compose down" hier nötig - der "trap ... EXIT" oben
           # räumt den Stack inkl. Volume bereits auf.
+      - name: Functional check - SPA fallback in frontend nginx (spec 0016)
+        run: |
+          set -euo pipefail
+          # Isoliert vom vorherigen Schritt, siehe Kommentar oben zum IPv4-Check.
+          rm -f .env
+          trap 'docker compose down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
+
+          # Bewusst "--no-deps": der SPA-Fallback ist rein nginx-seitig und haengt nicht
+          # von backend/postgres/redis ab (siehe Teststrategie, Spec 0016).
+          docker compose up -d --no-deps --build frontend
+
+          echo "Waiting for frontend to respond..."
+          base_url="http://localhost:${FRONTEND_PORT:-8080}"
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null "$base_url/"; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            echo "frontend did not respond in time" >&2
+            docker compose logs frontend
+            exit 1
+          fi
+
+          index_body=$(curl -s "$base_url/")
+
+          echo "--- GET / returns 200 with index.html content ---"
+          root_status=$(curl -s -o /dev/null -w '%{http_code}' "$base_url/")
+          test "$root_status" = "200"
+
+          echo "--- GET /projects/3 (erfundene Client-Route) faellt auf index.html-Body zurueck, 200 ---"
+          route_status=$(curl -s -o /dev/null -w '%{http_code}' "$base_url/projects/3")
+          route_body=$(curl -s "$base_url/projects/3")
+          test "$route_status" = "200"
+          test "$route_body" = "$index_body"
+
+          echo "--- GET /this/path/does/not/exist (generischer Pfad) faellt auf index.html-Body zurueck, 200 ---"
+          generic_status=$(curl -s -o /dev/null -w '%{http_code}' "$base_url/this/path/does/not/exist")
+          generic_body=$(curl -s "$base_url/this/path/does/not/exist")
+          test "$generic_status" = "200"
+          test "$generic_body" = "$index_body"
+
+          echo "--- echtes statisches Asset wird direkt ausgeliefert (200, korrekter Content-Type, kein index.html-Body) ---"
+          asset_path=$(docker compose exec -T frontend sh -c "find /usr/share/nginx/html/assets -maxdepth 1 -type f -name '*.js' | head -n1" | tr -d '\r\n')
+          if [ -z "$asset_path" ]; then
+            echo "kein gebautes JS-Asset im Image gefunden" >&2
+            exit 1
+          fi
+          asset_url_path="/assets/$(basename "$asset_path")"
+          asset_status=$(curl -s -o /dev/null -w '%{http_code}' "$base_url$asset_url_path")
+          asset_content_type=$(curl -s -o /dev/null -w '%{content_type}' "$base_url$asset_url_path")
+          asset_body=$(curl -s "$base_url$asset_url_path")
+          test "$asset_status" = "200"
+          echo "asset content-type: $asset_content_type"
+          echo "$asset_content_type" | grep -qi "javascript"
+          test "$asset_body" != "$index_body"
+
+          echo "--- nicht existentes, asset-artiges Pfad bleibt 404 (try_files nicht zu breit gefasst) ---"
+          missing_asset_status=$(curl -s -o /dev/null -w '%{http_code}' "$base_url/assets/definitiv-nicht-vorhanden.js")
+          test "$missing_asset_status" = "404"
