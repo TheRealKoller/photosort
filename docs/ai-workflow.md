@@ -35,7 +35,7 @@ Aufgabengebiet und ein zugehöriges, lebendes Konzept-Dokument unter
 | Agent | Verantwortung | Konzept-Dokument |
 |---|---|---|
 | `requirements-engineer` | Roadmap & Priorisierung, Anforderungen verfeinern, Review auf Anforderungstreue (kein Scope Creep) | `specs/roadmap.md` |
-| `architect` | Architekturentscheidungen (ADRs), Umsetzungsplanung, Review aus drei Blickwinkeln (Pragmatiker / Senior-Entwickler / Pedant) | [`docs/architecture.md`](./architecture.md), [`docs/setup.md`](./setup.md) |
+| `architect` | Architekturentscheidungen (ADRs), Umsetzungsplanung, Review aus drei Blickwinkeln (Pragmatiker / Senior-Entwickler / Pedant) | `specs/decisions/` (ADRs); pflegt zusätzlich die aufbereitete Doku [`docs/architecture.md`](./architecture.md)/[`docs/setup.md`](./setup.md) |
 | `ux-ui-designer` | Design-System, UI/UX-Ansatz pro Feature, UI/UX-Review (nur bei Frontend-Änderungen) | `specs/architecture/0004-design-system.md` |
 | `test-engineer` | Testkonzept, Teststrategie pro Feature, testfokussiertes Review | `specs/architecture/0002-testkonzept.md` |
 | `security-engineer` | Sicherheitskonzept, Security-Einschätzung pro Feature, sicherheitsfokussiertes Review | `specs/architecture/0003-securitykonzept.md` |
