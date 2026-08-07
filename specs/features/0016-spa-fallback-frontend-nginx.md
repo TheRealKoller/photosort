@@ -1,6 +1,6 @@
 # 0016 - SPA-Fallback in der Frontend-nginx-Konfiguration
 
-**Status:** Accepted
+**Status:** Implemented ([PR #35](https://github.com/TheRealKoller/photosort/pull/35))
 **Erstellt:** 2026-08-05
 **Bezug:** Bug-Report von Daniel selbst (interaktive Session, 2026-08-05), geschärft direkt im Gespräch. Die ursprüngliche Inbox-Notiz (`specs/inbox/0002-f5-refresh-404.md`) wurde nach Aufnahme in diese Spec gelöscht.
 
