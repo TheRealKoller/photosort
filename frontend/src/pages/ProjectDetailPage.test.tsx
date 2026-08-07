@@ -179,6 +179,109 @@ describe('ProjectDetailPage', () => {
     expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled()
   })
 
+  describe('live progress counter while a scan is running (specs/features/0022)', () => {
+    it('shows "0 Dateien verarbeitet" when no file has been processed yet', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', files_found: 0 }) })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText('0 Dateien verarbeitet')).toBeInTheDocument()
+    })
+
+    it('shows the singular "1 Datei verarbeitet" when exactly one file has been processed', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', files_found: 1 }) })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText('1 Datei verarbeitet')).toBeInTheDocument()
+    })
+
+    it('shows the plural "N Dateien verarbeitet" for more than one processed file', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', files_found: 7 }) })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText('7 Dateien verarbeitet')).toBeInTheDocument()
+    })
+
+    it('renders no progress element and no "X von Y" text for the running scan counter', async () => {
+      // Akzeptanzkriterium der Spec: die Gesamtdateizahl ist beim lazy OpenCloud-Ordnerdurchlauf
+      // vorab nicht bekannt - anders als beim Scoring-Fortschritt darf hier zu keinem Zeitpunkt
+      // ein Nenner ("X von Y") oder ein <progress>-Element auftauchen.
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', files_found: 5 }) })
+      )
+
+      renderPage()
+
+      await screen.findByText('5 Dateien verarbeitet')
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+      expect(screen.queryByText(/\bvon\b/i)).not.toBeInTheDocument()
+    })
+
+    it('keeps the scan status line as the sole aria-live carrier - the new counter line has no aria-live of its own', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', files_found: 5 }) })
+      )
+
+      renderPage()
+
+      const statusLine = await screen.findByText('Scan läuft…', { selector: 'p' })
+      const counterLine = await screen.findByText('5 Dateien verarbeitet')
+      expect(statusLine).toHaveAttribute('aria-live', 'polite')
+      expect(counterLine).not.toHaveAttribute('aria-live')
+
+      const scanSection = statusLine.closest('section')
+      expect(scanSection).not.toBeNull()
+      expect(scanSection!.querySelectorAll('[aria-live]')).toHaveLength(1)
+    })
+
+    it('grows monotonically across two consecutive polls instead of jumping around', async () => {
+      vi.mocked(projectsApi.getProject)
+        .mockResolvedValueOnce(project({ last_scan: scan({ status: 'running', files_found: 3 }) }))
+        .mockResolvedValue(project({ last_scan: scan({ status: 'running', files_found: 7 }) }))
+
+      renderPage()
+
+      expect(await screen.findByText('3 Dateien verarbeitet')).toBeInTheDocument()
+      await waitFor(
+        () => expect(screen.getByText('7 Dateien verarbeitet')).toBeInTheDocument(),
+        { timeout: POLL_INTERVAL_MS + 1500 }
+      )
+      expect(screen.queryByText('3 Dateien verarbeitet')).not.toBeInTheDocument()
+    })
+
+    it('removes the running counter block once the scan transitions to success, keeping the final "Dateien gefunden" stat', async () => {
+      vi.mocked(projectsApi.getProject)
+        .mockResolvedValueOnce(project({ last_scan: scan({ status: 'running', files_found: 9 }) }))
+        .mockResolvedValue(
+          project({
+            last_scan: scan({
+              status: 'success',
+              finished_at: '2026-07-20T10:05:00Z',
+              files_found: 12,
+            }),
+          })
+        )
+
+      renderPage()
+
+      expect(await screen.findByText('9 Dateien verarbeitet')).toBeInTheDocument()
+      await waitFor(
+        () => expect(screen.getByText('Erfolgreich')).toBeInTheDocument(),
+        { timeout: POLL_INTERVAL_MS + 1500 }
+      )
+      expect(screen.queryByText(/dateien verarbeitet/i)).not.toBeInTheDocument()
+      expect(screen.getByText('Dateien gefunden').nextElementSibling).toHaveTextContent('12')
+    })
+  })
+
   it(
     'keeps the button disabled after a successful trigger response for a re-scan, until polling actually confirms "running"',
     { timeout: 10000 },

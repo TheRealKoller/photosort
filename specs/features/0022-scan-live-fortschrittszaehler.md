@@ -14,15 +14,15 @@ Als Nutzer (Daniel oder seine Frau) möchte ich beim Scannen eines Projekts sehe
 
 ## Akzeptanzkriterien
 
-- [ ] Während `project.last_scan?.status === 'running'` zeigt die Projekt-Detailseite eine Textzeile, die an `project.last_scan.files_found` gebunden ist. Über mehrere Polls hinweg wächst der angezeigte Wert monoton (nie rückläufig), gespeist durch periodische Backend-Commits statt eines einzigen Commits am Jobende.
-- [ ] Text-Formatierung (analog Spec 0021): "0 Dateien verarbeitet" bei `files_found === 0`, "1 Datei verarbeitet" bei `=== 1` (Singular), "N Dateien verarbeitet" bei `> 1` (Plural).
-- [ ] Kein `<progress>`-Element und kein "X von Y"-Text — nur der reine Zähler, zu keinem Zeitpunkt ein fester Nenner.
-- [ ] Die neue Zählertextzeile trägt selbst kein `aria-live`; einziger Ansage-Träger bleibt die bestehende Statuszeile ("Scan läuft…", bereits `aria-live="polite"`).
-- [ ] Sobald der Status auf `success` wechselt, verschwindet der laufende Zähler-Block; die bestehende Abschluss-Statistiktabelle (Hinzugefügt/Aktualisiert/Entfernt/Übersprungen inkl. "Dateien gefunden") zeigt weiterhin den finalen `files_found`-Wert unverändert.
-- [ ] Regression: Ein `OpenCloudError` aus `resolve_drive` (tritt vor Schleifenbeginn auf, z.B. ungültiges Laufwerk) liefert weiterhin `scan_run.status == FAILED`, `files_found` bleibt am Default (0), keine `Photo`-Zeilen in der DB — Verhalten unverändert gegenüber heute.
-- [ ] Neue, bewusst akzeptierte Verhaltensänderung: Ein Fehler, der während der Schleife auftritt, nachdem mindestens ein periodischer Zwischen-Commit stattgefunden hat, lässt die bis dahin bereits verarbeiteten `Photo`-Zeilen dauerhaft in der DB — kein `session.rollback()` verwirft den bereits committeten Fortschritt, trotz `scan_run.status == FAILED`.
-- [ ] `SCAN_COMMIT_BATCH_SIZE` ist eine modulweite, per Monkeypatch überschreibbare Konstante in `worker.py` mit Default `25`, analog `SCORE_COMMIT_BATCH_SIZE`.
-- [ ] Kein API-/Datenmodell-Impact: keine neue Spalte, keine Migration, kein geändertes `ScanSummary`/`ScanRun`-Frontend-Typ — nur geänderte Commit-Frequenz einer bereits existierenden Spalte (`ScanRun.files_found`).
+- [x] Während `project.last_scan?.status === 'running'` zeigt die Projekt-Detailseite eine Textzeile, die an `project.last_scan.files_found` gebunden ist. Über mehrere Polls hinweg wächst der angezeigte Wert monoton (nie rückläufig), gespeist durch periodische Backend-Commits statt eines einzigen Commits am Jobende.
+- [x] Text-Formatierung (analog Spec 0021): "0 Dateien verarbeitet" bei `files_found === 0`, "1 Datei verarbeitet" bei `=== 1` (Singular), "N Dateien verarbeitet" bei `> 1` (Plural).
+- [x] Kein `<progress>`-Element und kein "X von Y"-Text — nur der reine Zähler, zu keinem Zeitpunkt ein fester Nenner.
+- [x] Die neue Zählertextzeile trägt selbst kein `aria-live`; einziger Ansage-Träger bleibt die bestehende Statuszeile ("Scan läuft…", bereits `aria-live="polite"`).
+- [x] Sobald der Status auf `success` wechselt, verschwindet der laufende Zähler-Block; die bestehende Abschluss-Statistiktabelle (Hinzugefügt/Aktualisiert/Entfernt/Übersprungen inkl. "Dateien gefunden") zeigt weiterhin den finalen `files_found`-Wert unverändert.
+- [x] Regression: Ein `OpenCloudError` aus `resolve_drive` (tritt vor Schleifenbeginn auf, z.B. ungültiges Laufwerk) liefert weiterhin `scan_run.status == FAILED`, `files_found` bleibt am Default (0), keine `Photo`-Zeilen in der DB — Verhalten unverändert gegenüber heute.
+- [x] Neue, bewusst akzeptierte Verhaltensänderung: Ein Fehler, der während der Schleife auftritt, nachdem mindestens ein periodischer Zwischen-Commit stattgefunden hat, lässt die bis dahin bereits verarbeiteten `Photo`-Zeilen dauerhaft in der DB — kein `session.rollback()` verwirft den bereits committeten Fortschritt, trotz `scan_run.status == FAILED`.
+- [x] `SCAN_COMMIT_BATCH_SIZE` ist eine modulweite, per Monkeypatch überschreibbare Konstante in `worker.py` mit Default `25`, analog `SCORE_COMMIT_BATCH_SIZE`.
+- [x] Kein API-/Datenmodell-Impact: keine neue Spalte, keine Migration, kein geändertes `ScanSummary`/`ScanRun`-Frontend-Typ — nur geänderte Commit-Frequenz einer bereits existierenden Spalte (`ScanRun.files_found`).
 
 ## Datenmodell-Bezug
 

@@ -230,6 +230,14 @@ export function ProjectDetailPage() {
       ? '1 Vorschlag gefunden'
       : `${suggestionsFound} Vorschläge gefunden`
 
+  // Live-Fortschrittszaehler waehrend eines laufenden Scans (specs/features/0022-scan-live-
+  // fortschrittszaehler.md) - bewusst OHNE Nenner/Progress-Element, da die Gesamtdateizahl beim
+  // lazy OpenCloud-Ordnerdurchlauf vorab nicht bekannt ist. Singular/Plural-Regel analog
+  // suggestionsFoundText oben (Spec 0021).
+  const filesFound = project.last_scan?.files_found ?? 0
+  const filesFoundText =
+    filesFound === 1 ? '1 Datei verarbeitet' : `${filesFound} Dateien verarbeitet`
+
   return (
     <div className="flex flex-col gap-6">
       <header>
@@ -251,6 +259,10 @@ export function ProjectDetailPage() {
           {project.last_scan?.status === 'success' && 'Erfolgreich'}
           {project.last_scan?.status === 'failed' && 'Fehlgeschlagen'}
         </p>
+
+        {project.last_scan?.status === 'running' && (
+          <p className="text-sm text-text">{filesFoundText}</p>
+        )}
 
         {project.last_scan?.status === 'success' && (
           <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-text sm:grid-cols-3">
