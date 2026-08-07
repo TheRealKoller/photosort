@@ -45,15 +45,43 @@ Nach Abschluss aller TDD-Zyklen: Linting und Type-Checking über die geänderten
 
 ## Schritt 4: Review
 
-Lass die Änderungen von einer frischen Perspektive prüfen, nicht nur von dir selbst noch einmal durchgelesen. Prüfe zuerst knapp, ob der Branch Frontend-/UI-Dateien ändert (z.B. `git diff --name-only main...HEAD` auf Pfade unter `frontend/`) — das entscheidet, ob `ux-ui-designer` diesmal mit dazugehört. Starte danach **alle zutreffenden** Agenten in einem einzigen parallelen Aufruf auf dem aktuellen Diff gegen `main` (alle Agent-Tool-Aufrufe in derselben Nachricht), alle im Vordergrund/`run_in_background: false`, da du auf ihre Ergebnisse wartest, bevor du weitermachst:
+Lass die Änderungen von einer frischen Perspektive prüfen, nicht nur von dir selbst noch einmal durchgelesen. Welche der fünf Review-Agenten tatsächlich laufen, entscheidet **nicht** eine freie Einzelfalleinschätzung, sondern eine feste, mechanisch ausgewertete Trigger-Tabelle — identisch zu [ADR 0014](../../specs/decisions/0014-review-agenten-selektion-und-modellzuweisung.md), Teil 1. Zusätzlich bekommt jeder tatsächlich aufgerufene Agent ein festes Modell gemäß derselben ADR, Teil 2. Sicherheitsnetz für beides: **im Zweifel läuft der Agent, und zwar mit Standardmodell** — eine unklare Zuordnung ist niemals ein Grund, einen Agenten zu überspringen oder auf Haiku herabzustufen.
 
-- **`test-engineer`** (`subagent_type: test-engineer`): TDD eingehalten, Abdeckung der Akzeptanzkriterien, Testqualität, Abgleich mit dem Testkonzept (`specs/architecture/0002-testkonzept.md`), sowie klassische Bugs/Logikfehler und Abweichungen von Code-Konventionen (Stil, Namensgebung, Patterns).
+**1. Diff ermitteln:** `git diff --name-only main...HEAD` gegen den aktuellen Stand des Feature-Branches.
+
+**2. Trigger-Tabelle auswerten** (identisch zu ADR 0014, Teil 1 — bei jeder künftigen Änderung an dieser Tabelle zuerst dort, dann hier synchron aktualisieren):
+
+| Agent | Verhalten | Trigger (läuft, wenn mindestens einer zutrifft) |
+|---|---|---|
+| `test-engineer` | Fast immer aktiv. Skip nur im Entartungsfall. | Läuft immer, **außer** der Diff enthält ausschließlich Nicht-Code-Dateien (`specs/`, `docs/`, `*.md`, reine Config-Kommentare) und **keine** Datei unter `backend/src`, `backend/tests`, `frontend/src`, `frontend/tests` (oder Äquivalent). |
+| `requirements-engineer` | Immer aktiv, unverändert. | Kein Skip-Pfad. |
+| `security-engineer` | Echt bedingt. | Diff enthält mind. eine Datei unter `backend/src/photosort/api/`, `backend/src/photosort/opencloud/`; **oder** eine der explizit benannten Auth-/Secrets-tragenden Dateien `backend/src/photosort/main.py`, `security.py`, `rate_limit.py`, `config.py`, `seed.py`; **oder** eine neue Datei direkt unter `backend/src/photosort/` (nicht in einem bestehenden Unterordner — mechanischer Fallback für künftige neue Top-Level-Module); **oder** eine Dependency-Datei (`backend/pyproject.toml`, `backend/uv.lock`, `frontend/package.json`, `frontend/package-lock.json`); **oder** `.env.example`; **oder** eine Datei unter `.github/workflows/**`; **oder** Docker-Compose-Netzwerkkonfiguration; **oder** eine Datei unter `frontend/src/auth/**` bzw. `frontend/src/api/client.ts`. |
+| `architect` | Echt bedingt. | Diff enthält neue Dateien/ein neues Modul; **oder** `specs/decisions/**`; **oder** Datenmodell-/Migrations-Dateien (`backend/alembic/**`); **oder** eine neue externe Abhängigkeit; **oder** der Abschnitt "Architektur / Umsetzung" der Spec ist nicht trivial (nicht "Wiederverwendung von X, 1–2 Dateien") — **einzige Bedingung, die nicht rein mechanisch aus `git diff --name-only` ableitbar ist; dafür zusätzlich diesen Spec-Abschnitt lesen.** |
+| `ux-ui-designer` | Unverändert (bestehendes Vorbild). | Diff enthält Dateien unter `frontend/`. |
+
+Trifft für einen Agenten kein Trigger zu, aber die Zuordnung ist unklar (z.B. eine neue Datei an einer nicht eindeutig zuordenbaren Stelle): der Agent läuft trotzdem, und du vermerkst im Abschlussbericht explizit "Trigger unklar, deshalb ausgeführt" statt es stillschweigend als "läuft ohnehin" zu verbuchen.
+
+**3. Modell je aufgerufenem Agenten festlegen** (identisch zu ADR 0014, Teil 2 — betrifft nur die Review-Aufrufe hier in Schritt 4, nicht Schritt 1):
+
+| Review-Aufruf | Modell |
+|---|---|
+| `test-engineer` | Standard (kein `model`-Parameter) |
+| `security-engineer` | Standard (kein `model`-Parameter) — **nie herabstufen**, auch nicht bei kleinem/trivial wirkendem Diff |
+| `architect` | Standard (kein `model`-Parameter) |
+| `requirements-engineer` | **Günstig:** `model: "haiku"` |
+| `ux-ui-designer` | **Günstig:** `model: "haiku"` |
+
+**4. Ermittelte Agenten parallel starten**, jeweils mit dem in Schritt 3 festgelegten `model`-Wert, in einem einzigen Aufruf (alle Agent-Tool-Aufrufe in derselben Nachricht), alle im Vordergrund/`run_in_background: false`, da du auf ihre Ergebnisse wartest, bevor du weitermachst. Prüfumfang je Agent, wenn er läuft:
+
+- **`test-engineer`** (`subagent_type: test-engineer`): TDD eingehalten, Abdeckung der Akzeptanzkriterien, Testqualität, Abgleich mit dem Testkonzept (`specs/architecture/0002-testkonzept.md`), sowie klassische Bugs/Logikfehler und Abweichungen von Code-Konventionen (Stil, Namensgebung, Patterns). Prüft dabei zusätzlich (dauerhafte Stichproben-Audit-Pflicht laut Testkonzept, Sektion "Agenten-Steuerungslogik selbst"), ob dein Skip-/Modell-Protokoll aus diesem Schritt tatsächlich zur Trigger-/Modelltabelle und zum realen Diff passt.
 - **`security-engineer`** (`subagent_type: security-engineer`): Sicherheitsprobleme (OWASP-relevante Muster, Secrets, Eingabevalidierung, Auth-Durchsetzung), Abgleich mit dem Sicherheitskonzept (`specs/architecture/0003-securitykonzept.md`).
 - **`architect`** (`subagent_type: architect`): ob die Architekturentscheidungen (ADRs, `docs/architecture.md`, Abschnitt "Architektur / Umsetzung" der Spec) eingehalten wurden, bewertet aus drei Blickwinkeln (Pragmatiker, Senior-Entwickler, Pedant).
 - **`requirements-engineer`** (`subagent_type: requirements-engineer`): Anforderungstreue — sind alle Akzeptanzkriterien der Spec umgesetzt, wurde nichts (Scope Creep) oder etwas explizit als "Out of Scope" Ausgeschlossenes zusätzlich gebaut.
-- **`ux-ui-designer`** (`subagent_type: ux-ui-designer`, nur wenn der Branch Frontend-/UI-Dateien ändert): Konsistenz mit dem Design-System (`specs/architecture/0004-design-system.md`), Usability, abgedeckte Zustände (leer/ladend/Fehler), Barrierefreiheit, Responsivität.
+- **`ux-ui-designer`** (`subagent_type: ux-ui-designer`, nur wenn getriggert): Konsistenz mit dem Design-System (`specs/architecture/0004-design-system.md`), Usability, abgedeckte Zustände (leer/ladend/Fehler), Barrierefreiheit, Responsivität.
 
-Führe alle Findings-Listen zusammen und gib eine kurze Zusammenfassung aus, bevor du zu Schritt 5 weitergehst — pro Agent die Anzahl der Findings sowie jeweils ein Stichwort/Kurztitel je Finding (Must-Fix vs. nice-to-have kenntlich machen). Das ist eine sichtbare Statusmeldung während des Laufs, kein Ersatz für die ausführliche Behandlung im Abschlussbericht.
+**5. Qualitäts-Beobachtung der Haiku-Stufe (dauerhaft, kein einmaliges Gate, ADR 0014/Testkonzept "Agenten-Steuerungslogik selbst"):** Stellt sich im selben PR-Zyklus (Copilot-Review in Schritt 8, ein anderer Standard-Review-Agent, oder ein zeitnaher Folge-Bugfix) heraus, dass ein von `requirements-engineer`(Haiku) oder `ux-ui-designer`(Haiku) als erfüllt/konform bewertetes Kriterium tatsächlich nicht erfüllt/konform war, ist das kein normaler Fund: vermerke es explizit im Abschlussbericht und benenne es als Auslöser für eine neue, ADR-0014-ablösende ADR (Rückstufung der betroffenen Aufrufstelle auf Standard) — nicht nur als einzelnes Finding beheben und weitermachen.
+
+Führe alle Findings-Listen zusammen und gib eine kurze Zusammenfassung aus, bevor du zu Schritt 5 weitergehst — für **jeden** der fünf Review-Agenten (nicht nur die gelaufenen): gelaufen ja/nein; bei "nein" der konkrete Trigger-Tabelleneintrag, der nicht zutraf; bei "ja" die Anzahl der Findings, ein Stichwort/Kurztitel je Finding (Must-Fix vs. nice-to-have kenntlich machen) sowie das verwendete Modell (Standard/Haiku). Das ist eine sichtbare Statusmeldung während des Laufs, kein Ersatz für die ausführliche Behandlung im Abschlussbericht.
 
 ## Schritt 5: Findings beheben
 
@@ -93,3 +121,5 @@ Dieser Schritt läuft **vor** einem eventuellen Merge, ersetzt aber Schritt 4 ni
 ## Abschlussbericht
 
 Da niemand live mitliest, muss dein finaler Bericht für sich stehen. Nenne: was implementiert wurde (Spec-Bezug), Ergebnis von Tests/Review (inkl. behobener und ggf. bewusst nicht behobener Findings), den PR-Link, und alle Stellen, an denen du eine Annahme statt einer Rückfrage getroffen hast, weil sie eindeutig eine technische Detailentscheidung war.
+
+**Review-Protokoll (Pflichtbestandteil, ADR 0014):** für jeden der fünf Review-Agenten aus Schritt 4 explizit auflisten — gelaufen ja/nein; bei "nein" der zutreffende Trigger-Tabelleneintrag, der nicht griff; bei "ja" das verwendete Modell (Standard/Haiku) sowie ggf. der Hinweis "Trigger unklar, deshalb ausgeführt" (AK3). Ein etwaiger Qualitäts-Beobachtungsfall der Haiku-Stufe (Schritt 4, Punkt 5) gehört ebenfalls hierher, auch wenn er schon während des Laufs vermerkt wurde.
