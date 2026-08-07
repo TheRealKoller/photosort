@@ -1,6 +1,6 @@
 # 0020 - Agenten-Nutzung im Review optimieren (bedingte Review-Agenten + situative Modellzuweisung)
 
-**Status:** Accepted — teilweise umgesetzt ([PR #32](https://github.com/TheRealKoller/photosort/pull/32), gemerged 2026-08-07: nur AK13/Copilot-Review-Bedingung; AK1–AK12 stehen noch aus)
+**Status:** Accepted — AK1–AK12 umgesetzt auf Branch `feature/0020-review-trigger-modellzuweisung`, PR ausstehend (AK13/Copilot-Review-Bedingung bereits zuvor mit [PR #32](https://github.com/TheRealKoller/photosort/pull/32), gemerged 2026-08-07, umgesetzt). Wird nach PR-Eröffnung auf `Implemented` mit PR-Verweis aktualisiert.
 **Erstellt:** 2026-08-07
 **Bezug:** `specs/inbox/0005-agenten-nutzung-review-optimieren.md` (Daniel selbst, interaktive Session; Inbox-Notiz nach Aufnahme in diese Spec gelöscht), geschärft im idea-sharpener-Ablauf 2026-08-07. ADR: [`decisions/0014-review-agenten-selektion-und-modellzuweisung.md`](../decisions/0014-review-agenten-selektion-und-modellzuweisung.md).
 
@@ -95,6 +95,21 @@ Kein neues CI-Gate, kein neues Testframework — konsistent mit allen bisherigen
 - Diff nur unter `specs/decisions/**`, kein Code → `architect`/`requirements-engineer` laufen, `test-engineer` korrekt übersprungen.
 - Diff trivial, aber Spec-Abschnitt "Architektur/Umsetzung" nicht-trivial → `architect`-Trigger hängt vom Spec-Inhalt ab, nicht rein mechanisch aus `git diff --name-only` ableitbar.
 - Neue Top-Level-Datei direkt unter `backend/src/photosort/` → mechanischer `security-engineer`-Fallback-Trigger muss greifen, auch ohne explizite Nennung in der Pfadliste.
+
+**AK12-Verifikationsergebnis (durchgeführt bei der Umsetzung, 2026-08-07):** Acht synthetische Dry-Run-Szenarien wurden auf einem Wegwerf-Branch (`chore/0020-dry-run-verification`, von `main` abgezweigt, nach Verifikation gelöscht — Muster analog zu Spec 0007) real nachgestellt: minimale Commits an den jeweils relevanten Pfaden, danach `git diff --name-only main...HEAD` real ausgeführt und das Ergebnis gegen die in `.claude/agents/developer.md` Schritt 4 hinterlegte Trigger-Tabelle ausgewertet. Alle acht Szenarien lieferten das erwartete Agenten-Set, keine Abweichung gefunden:
+
+| # | Szenario | Erwartetes Set (laut Tabelle) | Ergebnis |
+|---|---|---|---|
+| 1 | Nur `specs/roadmap.md` geändert | nur `requirements-engineer` (`test-engineer` einziger Skip-Pfad) | ✅ Pass |
+| 2 | Nur `specs/decisions/0014-....md` geändert | `architect` + `requirements-engineer`, `test-engineer` übersprungen | ✅ Pass |
+| 3 | `frontend/src/components/...tsx` + `backend/src/photosort/security.py` gleichzeitig | `ux-ui-designer` UND `security-engineer` beide aktiv (zusätzlich `test-engineer`/`requirements-engineer`/`architect` über den Neue-Datei-Trigger) | ✅ Pass |
+| 4 | Neue Top-Level-Datei `backend/src/photosort/dryrun_newmodule.py` | `security-engineer`-Fallback-Trigger greift, `architect` zusätzlich über Neue-Datei-Trigger | ✅ Pass |
+| 5 | `frontend/package.json` geändert (neue Abhängigkeit) | `security-engineer` (Dependency-Datei) UND `architect` (neue externe Abhängigkeit) unabhängig voneinander aktiv | ✅ Pass |
+| 6 | 1-Zeilen-Diff in `backend/src/photosort/security.py` | `security-engineer` aktiv über Pfad-Trigger, nicht über Diff-Größe; `architect` korrekt inaktiv | ✅ Pass |
+| 7 | Neue Datei an unklarer Stelle (`infra/terraform/main.tf`, in keiner Pfadliste) | `architect` über Neue-Datei-Trigger aktiv; `security-engineer` nicht mechanisch triggerbar, aber über das Sicherheitsnetz ("im Zweifel aufrufen") als "Trigger unklar, deshalb ausgeführt" aktiv (AK3) | ✅ Pass — zeigt das Sicherheitsnetz in Aktion |
+| 8 | Trivialer Code-Diff (`backend/src/photosort/main.py`, Kommentarzeile) bei angenommen nicht-trivialem Spec-Abschnitt "Architektur/Umsetzung" | `architect` triggert ausschließlich über den Spec-Inhalt, nicht über `git diff --name-only` (bestätigt die in AK1 dokumentierte Ausnahme); `security-engineer` zusätzlich über den `main.py`-Pfad-Trigger aktiv | ✅ Pass |
+
+Zusätzlich als statischer Konsistenz-Check durchgeführt: Trigger-/Modelltabelle in `.claude/agents/developer.md` wurde Zeile für Zeile gegen ADR 0014 Teil 1/2 abgeglichen (per `grep`-Gegenüberstellung) — inhaltlich deckungsgleich, keine fehlende Zeile, keine Abweichung in den Pfadlisten oder der Modellzuordnung.
 
 ## Entscheidungen
 
