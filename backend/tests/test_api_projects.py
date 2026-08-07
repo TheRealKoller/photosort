@@ -199,3 +199,29 @@ async def test_get_project_reports_last_scoring_run_progress(
     assert last_scoring_run["status"] == "running"
     assert last_scoring_run["photos_total"] == 10
     assert last_scoring_run["photos_processed"] == 4
+
+
+async def test_get_project_reports_last_scoring_run_suggestions_found(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
+    created = await authenticated_api_client.post(
+        "/projects", json={"name": "Costa Rica", "opencloud_path": "A"}
+    )
+    project_id = created.json()["id"]
+
+    scoring_run = ScoringRun(
+        project_id=project_id,
+        status=ScanStatus.SUCCESS,
+        photos_total=10,
+        photos_processed=10,
+        suggestions_found=3,
+    )
+    db_session.add(scoring_run)
+    await db_session.commit()
+
+    detail = await authenticated_api_client.get(f"/projects/{project_id}")
+
+    assert detail.status_code == 200
+    last_scoring_run = detail.json()["last_scoring_run"]
+    assert last_scoring_run["suggestions_found"] == 3

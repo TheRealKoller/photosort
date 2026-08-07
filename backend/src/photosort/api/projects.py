@@ -49,6 +49,7 @@ class ScoringRunSummary(BaseModel):
     finished_at: datetime | None
     photos_total: int
     photos_processed: int
+    suggestions_found: int
     error_message: str | None
 
 
