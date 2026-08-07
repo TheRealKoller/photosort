@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import worker
-from photosort.models import Photo, Project, ScanStatus
+from photosort.db import make_session_factory
+from photosort.models import Photo, Project, ScanRun, ScanStatus
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.thumbnails import display_path, thumbnail_path
@@ -384,6 +385,56 @@ async def test_scan_commits_periodically_even_when_a_batch_boundary_lands_on_a_s
     assert scan_run.status == ScanStatus.FAILED
     photos = (await db_session.execute(select(Photo))).scalars().all()
     assert [photo.relative_path for photo in photos] == ["CostaRica/img_a.png"]
+
+
+async def test_scan_commits_files_found_progress_before_final_commit_at_production_batch_size(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Batch-Groessen-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): bewusst
+    OHNE monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", ...) - prueft den echten
+    Produktivwert nach dem Fix (1). Vorher (25) blieb der Live-Zaehler bei jedem Scan mit weniger
+    als 25 Dateien waehrend der gesamten Laufzeit bei 0 eingefroren (Spec 0022, Bug).
+
+    Verifiziert ueber eine ZWEITE, unabhaengige Session auf demselben In-Memory-Engine, die
+    zwischen den walk()-Eintraegen den tatsaechlich COMMITTETEN DB-Zustand liest - eine reine
+    Attribut-Pruefung auf demselben Session-Objekt waere kein Beweis fuer einen echten Commit
+    (expire_on_commit=False haelt Attribute unabhaengig davon aktuell)."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    inspection_session_factory = make_session_factory(db_session.bind)
+    observed_committed_counts: list[int] = []
+
+    class ObservingClient(FakeOpenCloudClient):
+        async def walk(
+            self, webdav_url: str, root_path: str
+        ) -> AsyncIterator[tuple[str, DavEntry]]:
+            for item in self._entries:
+                yield item
+                # Laeuft erst, wenn der Konsument (run_project_scan) das aktuelle Element
+                # vollstaendig verarbeitet und den naechsten Wert angefragt hat - liest also
+                # exakt den Zwischenstand NACH dem periodischen Commit dieses Elements.
+                async with inspection_session_factory() as inspection_session:
+                    committed_scan_run = (
+                        await inspection_session.execute(
+                            select(ScanRun).where(ScanRun.project_id == project.id)
+                        )
+                    ).scalar_one()
+                    observed_committed_counts.append(committed_scan_run.files_found)
+
+    client = ObservingClient(
+        entries=[
+            ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
+            ("CostaRica/img002.png", _entry("img002.png", "etag-2", modified)),
+            ("CostaRica/img003.png", _entry("img003.png", "etag-3", modified)),
+        ]
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    assert observed_committed_counts == [1, 2, 3]
 
 
 async def test_scan_generates_thumbnails_for_new_photo(

@@ -58,7 +58,16 @@ SCORE_COMMIT_BATCH_SIZE = 25
 # sitzt deshalb an JEDEM Ausstiegspunkt der Schleife, nicht nur am regulaeren Ende, sonst waere er
 # im dominanten Realweltfall (Re-Scan mit ueberwiegend unveraenderten Dateien) faktisch nie
 # erreichbar (Review-Fund).
-SCAN_COMMIT_BATCH_SIZE = 25
+#
+# Batch-Groessen-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): auf 1 statt 25
+# gesetzt, anders als SCORE_COMMIT_BATCH_SIZE oben. run_project_scoring ist CPU-only (lokale
+# Heuristiken auf bereits gecachten Bildern) und schnell genug, dass Batching den Commit-Overhead
+# sinnvoll reduziert - run_project_scan dagegen ist netzwerkgebunden (EXIF-Range-Read und
+# Thumbnail-Generierung pro Datei ueber OpenCloud-WebDAV), ein zusaetzlicher DB-Commit pro Datei
+# faellt gegenueber der Netzwerklatenz nicht messbar ins Gewicht. Bei 25 blieb der Live-Zaehler
+# bei jedem Scan mit weniger als 25 Dateien waehrend der gesamten Laufzeit bei 0 eingefroren
+# (typischer Fall: Familienfoto-Ergaenzung, Spec 0022 nachgebessert).
+SCAN_COMMIT_BATCH_SIZE = 1
 
 
 class OpenCloudScanClient(Protocol):
