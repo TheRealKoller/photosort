@@ -48,7 +48,7 @@ reviewen:
 
 ![Workflow-Übersicht: Verfeinern (idea-sharpener) und Umsetzen (developer)](../specs/diagrams/workflow-overview.svg)
 
-<sub>\* `ux-ui-designer` reviewt nur Feature-Branches mit Frontend-/UI-Änderungen.</sub>
+<sub>\* `security-engineer`, `architect` und `ux-ui-designer` reviewen nur, wenn ihr jeweiliger Trigger aus ADR 0014 zutrifft (z.B. Auth-/Secrets-Pfade, neue Abhängigkeiten bzw. Frontend-/UI-Änderungen); `test-engineer`/`requirements-engineer` bilden die faktisch unbedingte Basis.</sub>
 
 <sub>Diagramm-Quelle: [`specs/diagrams/workflow-overview.d2`](../specs/diagrams/workflow-overview.d2), gerendert per `scripts/render-diagrams.sh` (siehe ADR [`decisions/0013-diagram-tooling-d2.md`](../specs/decisions/0013-diagram-tooling-d2.md)).</sub>
 
