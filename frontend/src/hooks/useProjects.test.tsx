@@ -186,6 +186,7 @@ function runningScoringRun(): ProjectOut['last_scoring_run'] {
     finished_at: null,
     photos_total: 10,
     photos_processed: 3,
+    suggestions_found: 0,
     error_message: null,
   }
 }
