@@ -85,6 +85,12 @@ class ProjectOut(BaseModel):
     last_scan: ScanSummary | None = None
     last_scoring_run: ScoringRunSummary | None = None
     last_top_selection_run: TopSelectionRunSummary | None = None
+    # Globales Feature-Flag, nicht projektspezifisch (specs/features/0024-top-photo-selection-
+    # category-mix.md) - hier statt in einem neuen Endpunkt exponiert: technische
+    # Detailentscheidung der Umsetzung, damit das Frontend-Verfuegbarkeitsgate proaktiv aus den
+    # ohnehin bereits geladenen Projektdaten dieser Seite ableiten kann (UI/UX-Abschnitt der Spec),
+    # statt erst nach einem fehlgeschlagenen 403 auf POST /select-top.
+    category_selection_enabled: bool
 
 
 async def _latest_scan_run(session: AsyncSession, project_id: int) -> ScanRun | None:
@@ -138,6 +144,7 @@ async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut
             if top_selection_run is not None
             else None
         ),
+        category_selection_enabled=settings.category_selection_enabled,
     )
 
 

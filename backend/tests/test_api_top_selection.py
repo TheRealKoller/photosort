@@ -161,6 +161,25 @@ async def test_select_top_rejects_top_n_per_cluster_outside_valid_range(
     assert response.status_code == 422
 
 
+async def test_project_out_exposes_category_selection_enabled_flag(
+    authenticated_api_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # UI/UX-Abschnitt der Spec: das Verfuegbarkeitsgate im Frontend muss proaktiv aus bereits
+    # geladenen Projektdaten abgeleitet werden koennen, statt erst nach einem fehlgeschlagenen
+    # 403-Request - dafuer muss das Feature-Flag ueberhaupt irgendwo in der API sichtbar sein.
+    # Technische Detailentscheidung der Umsetzung: auf ProjectOut, da das ohnehin die bereits
+    # geladenen Projektdaten dieser Seite sind (kein neuer Endpunkt fuer einen einzelnen globalen
+    # Konfigurationswert).
+    project_id = await _create_project(authenticated_api_client)
+
+    default_detail = await authenticated_api_client.get(f"/projects/{project_id}")
+    assert default_detail.json()["category_selection_enabled"] is True
+
+    monkeypatch.setattr(settings, "category_selection_enabled", False)
+    disabled_detail = await authenticated_api_client.get(f"/projects/{project_id}")
+    assert disabled_detail.json()["category_selection_enabled"] is False
+
+
 async def test_project_out_has_no_last_top_selection_run_before_any_select_top_call(
     authenticated_api_client: httpx.AsyncClient,
 ) -> None:
