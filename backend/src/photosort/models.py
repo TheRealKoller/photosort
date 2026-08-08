@@ -198,8 +198,9 @@ class PhotoScore(Base):
     # Additiv, specs/features/0024-top-photo-selection-category-mix.md: NICHT in Phase A
     # (run_project_scoring) mitberechnet, sondern erst im neuen select_top_photos-Job, nur fuer den
     # dort bereits begrenzten Kandidatenpool pro Cluster - sonst wuerde mediapipe fuer jedes
-    # gescannte Foto laufen (auch fuer nie betrachtete Duplikat-Verlierer). Bei jedem select-top-Lauf
-    # neu berechnet (kein Reuse-Tracking, da lokal/kostenlos), siehe worker.py::select_top_photos.
+    # gescannte Foto laufen (auch fuer nie betrachtete Duplikat-Verlierer). Bei jedem
+    # select-top-Lauf neu berechnet (kein Reuse-Tracking, da lokal/kostenlos), siehe
+    # worker.py::select_top_photos.
     category: Mapped[PhotoCategory | None] = mapped_column(
         SQLEnum(PhotoCategory, native_enum=False, length=20), default=None
     )
