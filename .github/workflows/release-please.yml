@@ -29,4 +29,10 @@ jobs:
         if: steps.release.outputs.pr
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-        run: gh pr merge --auto --squash "${{ fromJson(steps.release.outputs.pr).number }}"
+          # Ueber eine env-Variable statt direkter "${{ }}"-Interpolation in
+          # "run:" uebergeben (Defense-in-Depth gegen die generelle GitHub
+          # Actions Script-Injection-Musterklasse, siehe security-engineer-
+          # Review zu Spec 0008; PR_NUMBER ist ein von GitHub selbst
+          # generierter Integer, kein von Dritten beeinflussbarer Freitext).
+          PR_NUMBER: ${{ fromJson(steps.release.outputs.pr).number }}
+        run: gh pr merge --auto --squash "$PR_NUMBER"

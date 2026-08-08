@@ -97,7 +97,9 @@ Da `release-please` bei jedem Push nach `main` (also bei jedem regulären Featur
 
 Der Standard-`GITHUB_TOKEN` eines Workflow-Laufs löst laut GitHub keine Folge-Workflows aus, die auf von ihm selbst erzeugte Events reagieren (u.a. `pull_request`-Events für einen von ihm selbst erstellten PR) — das ist eine bewusste GitHub-Anti-Rekursions-Regel. Für den Release-PR bedeutet das konkret: würde `release-please-action` mit dem Standard-`GITHUB_TOKEN` laufen, würde `ci.yml` (Trigger `pull_request`) auf dem Release-PR **nicht** anlaufen — die für den Merge nötigen Status-Checks (`backend`/`frontend`/`docker-compose-check`) blieben dauerhaft aus, der Auto-Merge könnte nie greifen.
 
-Lösung: ein **fine-grained Personal Access Token** (PAT), erstellt unter Daniels eigenem GitHub-Account, gescoped **ausschließlich auf `TheRealKoller/photosort`**, mit minimalen Repository-Permissions: `Contents: Read & write`, `Pull requests: Read & write`, `Metadata: Read` (Pflicht-Minimum). Kein Admin, keine Organisations-weite Berechtigung, Ablaufdatum gesetzt (z.B. 1 Jahr, danach manuell zu erneuern). Gespeichert als Repo-Secret `RELEASE_PLEASE_TOKEN`.
+Lösung: ein **fine-grained Personal Access Token** (PAT), erstellt unter Daniels eigenem GitHub-Account, gescoped **ausschließlich auf `TheRealKoller/photosort`**, mit minimalen Repository-Permissions: `Contents: Read & write`, `Pull requests: Read & write`, `Issues: Read & write`, `Metadata: Read` (Pflicht-Minimum). Kein Admin, keine Organisations-weite Berechtigung, Ablaufdatum gesetzt (z.B. 1 Jahr, danach manuell zu erneuern). Gespeichert als Repo-Secret `RELEASE_PLEASE_TOKEN`.
+
+**Korrektur (2026-08-08, `security-engineer`-Review der Umsetzung):** Der ursprünglich hier genannte Scope (`Contents`/`Pull requests`/`Metadata`) war unvollständig — `Issues: Read & write` fehlte. `release-please` setzt/entfernt die Zustands-Labels `autorelease: pending`/`autorelease: tagged` (interner Wiedererkennungsmechanismus für den eigenen Release-PR) über `octokit.issues.addLabels`/`removeLabel`; der zugrundeliegende REST-Endpunkt (`POST /repos/{owner}/{repo}/issues/{issue_number}/labels`) gehört laut GitHubs OpenAPI-Beschreibung zur Permission-Kategorie "Issues", nicht "Pull requests" — auch wenn die Nummer eine PR referenziert. Ohne diesen Scope schlägt der Label-Aufruf mit `403` fehl (ungefangene Exception, reißt den gesamten Action-Lauf mit), und ein bereits angelegter Release-PR bliebe für künftige Läufe unerkennbar. Der obige Scope-Text ist bereits korrigiert; siehe `specs/architecture/0003-securitykonzept.md` ("GitHub-Repository-Zugriff"/"Bekannte Lücken") für die vollständige Herleitung.
 
 Eine GitHub-App-Installation (Token via `actions/create-github-app-token`) wäre die "sauberere" Lösung (kurzlebige Installations-Tokens statt eines langlebigen PATs) — für ein Solo-Projekt mit einem einzigen Collaborator ist der Betriebsaufwand einer eigenen GitHub-App-Registrierung/-Wartung gegenüber einem fine-grained, eng gescopten PAT jedoch nicht gerechtfertigt (Pragmatiker-Abwägung). Sollte das Projekt je einen zweiten menschlichen Collaborator bekommen, ist dieser Punkt zu revisitieren.
 
@@ -138,3 +140,27 @@ Als Teil der Umsetzung dieser Spec (nicht Teil dieser ADR, sondern konkrete Impl
 4. Bewusste Ausnahme "kein Copilot-Review auf Release-PRs" — gegenprüfen, ob das akzeptabel ist oder ob z.B. ein nicht-blockierendes Review (angefordert, aber nicht auflösungspflichtig) ein besserer Mittelweg wäre.
 5. Fehlende Tag-Protection auf `v*`-Tags — aktuell kein Problem (ein Akteur), aber als Nachtrag für `architecture/0003-securitykonzept.md` (GitHub-Repository-Zugriff-Sektion) zu dokumentieren, analog zur Baseline-Dokumentation aus ADR 0007.
 6. Sicherstellen, dass `RELEASE_PLEASE_TOKEN` in Workflow-Logs nirgends im Klartext auftaucht (GitHub maskiert Secrets standardmäßig, aber explizit prüfen bei `gh pr merge`-Ausgabe/Debug-Logging).
+
+## Nachtrag (2026-08-08): Korrektur des Konfigurationsbeispiels
+
+Die getroffene **Entscheidung** ("Versionierungsmechanik / Source of Truth", oben) bleibt unverändert: ein Manifest-Eintrag `"."`, `release-type: "simple"`, ein Tag/eine Release/eine gemeinsame Version, dieselben Flags und `extra-files`. Nur das illustrative JSON-Beispiel darin war unvollständig: es zeigt `release-please-config.json` ohne einen Top-Level-`packages`-Key. Bei der Umsetzung stellte sich heraus, dass `packages` laut offiziellem JSON-Schema (`https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json`, `allOf[1].required == ["packages"]`) ein Pflichtfeld ist — das ursprüngliche Beispiel wäre gegen dieses Schema **nicht valide** gewesen (verifiziert: Entfernen von `packages` aus der tatsächlich umgesetzten Config lässt die Schema-Validierung fehlschlagen).
+
+Umgesetzt (und gegen das Schema erfolgreich validiert) wurde stattdessen:
+
+```jsonc
+// release-please-config.json (tatsächlich umgesetzt)
+{
+  "release-type": "simple",
+  "bump-minor-pre-major": false,
+  "bump-patch-for-minor-pre-major": false,
+  "include-component-in-tag": false,
+  "extra-files": [ /* wie oben */ ],
+  "packages": { ".": {} }
+}
+```
+
+Die Top-Level-Felder (`release-type`, `bump-*`, `include-component-in-tag`, `extra-files`) bleiben als Defaults stehen und werden von der leeren Package-Override `packages["."] = {}` geerbt — verifiziert anhand des `release-please`-Quellcodes (`src/manifest.ts`, `extractPathConfig`: `pathConfig.releaseType ?? defaultConfig.releaseType ?? 'node'` u.ä. `??`-Ketten für jedes Feld) sowie empirisch gegen das reale Schema getestet. Funktional identisch zur ursprünglich skizzierten Absicht (ein Tag/eine Release über `release-type: simple` für den Root-Pfad `.`).
+
+**Beobachtung, kein Fehler:** In der Praxis legen die meisten real existierenden `release-please`-Konfigurationen (u.a. `googleapis/release-please` selbst, `googlemaps/google-maps-ios-utils`, `osiegmar/FastCSV`) release-typische Felder wie `release-type`/`extra-files` direkt unter `packages["."]` statt top-level ab — beide Formen sind laut Schema und Quellcode gültig und für ein Repo mit genau einem Root-Package funktional gleichwertig. Die top-level-Variante folgt nicht der verbreitetsten Konvention, ist aber nicht falsch; falls dieses Repo je ein zweites Package bekäme (aktuell nicht geplant, siehe "Out of Scope" in Spec 0008), würden die Top-Level-Werte automatisch auch für das neue Package als Default gelten, sofern nicht explizit überschrieben — ein potenzieller, aber aktuell irrelevanter Stolperstein.
+
+Da sich an der Entscheidung selbst nichts ändert (dieselbe Tool-Wahl, derselbe `release-type`, dieselbe Source of Truth, dieselben Flags — nur eine im ursprünglichen Beispiel fehlende Pflichteigenschaft des JSON-Schemas wird ergänzt), wird hierfür **keine neue, superseding ADR** angelegt; dieser Nachtrag korrigiert ausschließlich das fehlerhafte Beispiel in der bereits akzeptierten ADR, ohne deren Kernentscheidung anzutasten.
