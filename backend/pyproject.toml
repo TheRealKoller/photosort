@@ -41,6 +41,14 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Gepinnte .tflite-Modelldatei fuer die lokale Gesichtserkennung
+# (specs/features/0024-top-photo-selection-category-mix.md, classification.py) - ohne diese
+# Deklaration wuerde `pip install .` (siehe backend/Dockerfile) das committete Binaerasset NICHT ins
+# installierte Package uebernehmen (anders als bei "pip install -e ." im lokalen Dev-Setup, das
+# direkt auf den Quellbaum zeigt).
+[tool.setuptools.package-data]
+photosort = ["assets/*.tflite"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

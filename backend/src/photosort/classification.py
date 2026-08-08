@@ -41,9 +41,17 @@ LANDSCAPE_UNIFORM_FRACTION_THRESHOLD = 0.5
 # (siehe FakeFaceDetector in test_classification.py).
 FACE_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 
-# Gepinnte, zur Build-Zeit ins Docker-Image gebuendelte .tflite-Modelldatei (Security-Abschnitt der
-# Spec: kein Laufzeit-Download vom Worker aus). Pfad relativ zu diesem Modul, siehe Dockerfile.
-_FACE_DETECTOR_MODEL_PATH = Path(__file__).parent / "models" / "blaze_face_short_range.tflite"
+# Gepinnte, direkt im Repository eingecheckte .tflite-Modelldatei (Security-Abschnitt der Spec:
+# kein Laufzeit-Download vom Worker aus einer externen CDN-URL) - technische Detailentscheidung der
+# Umsetzung: statt eines Download-Schritts WAEHREND `docker build` (der selbst wieder eine
+# Pruefsummen-Verifikation braeuchte und einen Netzwerkzugriff zur Build-Zeit voraussetzt) wird die
+# ~230KB grosse Datei wie ein normales Code-Asset direkt committet - reproduzierbar ueber die
+# Git-Historie, kein zusaetzlicher Build-Schritt. Quelle: offizielles mediapipe-Modell-Repository
+# (https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/
+# blaze_face_short_range.tflite, sha256 b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380
+# b0152f). "assets/" statt "models/" als Verzeichnisname, um keine Namenskollision mit dem
+# bestehenden Modul photosort/models.py (Datenmodelle) zu erzeugen.
+_FACE_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "blaze_face_short_range.tflite"
 
 _LAPLACE_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
 
