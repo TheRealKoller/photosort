@@ -958,6 +958,29 @@ describe('ProjectDetailPage', () => {
       }
     )
 
+    it('throttles the aria-live announcement to 10%-steps instead of every poll tick', async () => {
+      // Test-Engineer-Review-Fund (Nice-to-have): Pendant zum bereits bestehenden Test fuer die
+      // Scoring-Sektion ("throttles the aria-live announcement..." weiter oben in dieser Datei) -
+      // die neue Select-Top-Sektion nutzt denselben gedrosselten Zaehler, war aber bislang nur
+      // ueber die reine "X von Y"-Textpruefung, nicht das Throttling selbst, abgedeckt.
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          category_selection_enabled: true,
+          last_scoring_run: scoringRun({ status: 'success' }),
+          last_top_selection_run: topSelectionRun({
+            candidates_total: 100,
+            candidates_processed: 34,
+          }),
+        })
+      )
+
+      renderPage()
+
+      const liveRegion = await screen.findByText(/30% verarbeitet/i)
+      expect(liveRegion).toHaveAttribute('aria-live', 'polite')
+      expect(screen.queryByText(/34% verarbeitet/i)).not.toBeInTheDocument()
+    })
+
     it('shows an indeterminate progress bar during the brief candidates_total=0 window', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({

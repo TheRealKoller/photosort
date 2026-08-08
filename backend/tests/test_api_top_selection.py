@@ -80,6 +80,26 @@ async def test_select_top_returns_403_when_feature_flag_disabled(
     assert response.status_code == 403
 
 
+async def test_select_top_returns_403_before_404_for_an_unknown_project_when_flag_disabled(
+    authenticated_api_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Test-Engineer-Review-Fund (Nice-to-have, dokumentiertes Verhalten statt Fix): der
+    # Feature-Flag-Check laeuft VOR dem Projekt-Existenz-Check (trigger_select_top prueft
+    # settings.category_selection_enabled zuerst) - eine unbekannte project_id liefert bei
+    # deaktiviertem Flag deshalb 403 statt 404. Das folgt woertlich der im Architektur-Abschnitt
+    # der Spec genannten Pruefreihenfolge ("403 ... 409 ... sonst") und verraet nichts
+    # Projektspezifisches (das Flag ist global, nicht projektbezogen) - keine Aenderung noetig,
+    # nur bislang untestete Kombination.
+    monkeypatch.setattr(settings, "category_selection_enabled", False)
+    app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+    response = await authenticated_api_client.post(
+        "/projects/999999/select-top", json={"top_n_per_cluster": 3}
+    )
+
+    assert response.status_code == 403
+
+
 async def test_select_top_allows_request_with_default_feature_flag(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

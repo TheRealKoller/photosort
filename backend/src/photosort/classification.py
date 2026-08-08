@@ -53,6 +53,11 @@ FACE_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 # bestehenden Modul photosort/models.py (Datenmodelle) zu erzeugen.
 _FACE_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "blaze_face_short_range.tflite"
 
+# Security-Review-Fund (Nice-to-have): ohne einen automatisierten Abgleich wuerde eine kuenftige
+# versehentliche Beschaedigung/Ersetzung der Binaerdatei (fehlerhaftes Merge, LFS-Fehlkonfiguration)
+# nicht auffallen, bevor die Erkennungsguete spuerbar leidet - siehe test_classification.py.
+FACE_DETECTOR_MODEL_SHA256 = "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f"
+
 _LAPLACE_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
 
 

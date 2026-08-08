@@ -382,3 +382,122 @@ async def test_progress_is_committed_periodically(
 
     assert run.candidates_total == 3
     assert run.candidates_processed == 3
+
+
+async def test_a_classification_failure_still_counts_toward_candidates_processed(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Test-Engineer-Review-Fund (Nice-to-have): der Live-Fortschrittszaehler soll auch fuer ein
+    # Foto weiterlaufen, dessen Klassifikation best-effort fehlschlaegt - sonst wuerde der Zaehler
+    # bei einer defekten Cache-Datei mitten im Cluster haengen bleiben (analog zum bereits
+    # etablierten Verhalten in scoring.py).
+    import photosort.worker as worker_module
+
+    monkeypatch.setattr(worker_module, "TOP_SELECTION_COMMIT_BATCH_SIZE", 1)
+
+    project = await _make_project(db_session)
+    await _add_successful_scoring_run(db_session, project)
+    broken = await _add_photo(
+        db_session, project, "broken.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, broken, cluster_key="cluster-0", local_quality_score=10.0)
+    working = await _add_photo(
+        db_session, project, "ok.jpg", "etag-2", datetime(2023, 1, 1, 0, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, working, cluster_key="cluster-0", local_quality_score=5.0)
+    _write_display_variant(tmp_path, working, _flat_image())
+
+    run = await run_top_selection(
+        db_session,
+        project,
+        top_n_per_cluster=2,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+    )
+
+    assert run.candidates_total == 2
+    assert run.candidates_processed == 2
+
+
+async def test_failure_mid_run_leaves_already_committed_progress_and_category_untouched(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Test-Engineer-Review-Fund (Nice-to-have): analog zu run_project_scoring's bereits
+    # bestehendem Test dieses Verhaltens (test_worker_score_project.py) - ein Fehler NACH dem
+    # Klassifikations-Loop (hier: beim Quotenverfahren) darf bereits committete
+    # candidates_processed/category-Zwischenstaende nicht zuruecksetzen.
+    import photosort.worker as worker_module
+
+    monkeypatch.setattr(worker_module, "TOP_SELECTION_COMMIT_BATCH_SIZE", 1)
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("unexpected quota failure")
+
+    monkeypatch.setattr(worker_module, "select_top_n_with_category_mix", _boom)
+
+    project = await _make_project(db_session)
+    await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, cluster_key="cluster-0", local_quality_score=10.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_top_selection(
+        db_session,
+        project,
+        top_n_per_cluster=1,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+    )
+
+    assert run.status == ScanStatus.FAILED
+    assert run.error_message == "unexpected quota failure"
+    # Bereits vor dem Fehler committeter Fortschritt bleibt erhalten (kein Rollback).
+    assert run.candidates_processed == 1
+    score = (
+        await db_session.execute(select(PhotoScore).where(PhotoScore.photo_id == photo.id))
+    ).scalar_one()
+    assert score.category == PhotoCategory.LANDSCAPE
+    assert score.suggested_status is None
+
+
+async def test_clusters_are_isolated_from_each_other(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Test-Engineer-Review-Fund (Nice-to-have): select_top_n_with_category_mix ist als reine
+    # Funktion bereits gruendlich getestet (test_classification.py) - dieser Test verifiziert
+    # zusaetzlich, dass der Worker den Kandidatenpool/das Quotenverfahren tatsaechlich PRO CLUSTER
+    # getrennt anwendet, statt versehentlich ueber Cluster hinweg zu mischen.
+    project = await _make_project(db_session)
+    await _add_successful_scoring_run(db_session, project)
+
+    cluster_a_photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, cluster_a_photo, cluster_key="cluster-a", local_quality_score=1.0)
+    _write_display_variant(tmp_path, cluster_a_photo, _flat_image())
+
+    cluster_b_photo = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 2, tzinfo=UTC)
+    )
+    await _add_score(db_session, cluster_b_photo, cluster_key="cluster-b", local_quality_score=1.0)
+    _write_display_variant(tmp_path, cluster_b_photo, _flat_image())
+
+    run = await run_top_selection(
+        db_session,
+        project,
+        top_n_per_cluster=1,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    # Beide Cluster haben je genau 1 Foto -> je top_n_per_cluster=1 werden BEIDE unabhaengig
+    # voneinander gewaehlt (2 Treffer insgesamt), nicht nur eines aus dem "gewinnenden" Cluster.
+    assert run.suggestions_found == 2
+    scores = {
+        s.photo_id: s for s in (await db_session.execute(select(PhotoScore))).scalars()
+    }
+    assert scores[cluster_a_photo.id].suggested_status == RatingStatus.ALBUM_WORTHY
+    assert scores[cluster_b_photo.id].suggested_status == RatingStatus.ALBUM_WORTHY

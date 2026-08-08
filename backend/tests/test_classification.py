@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import random
 from types import SimpleNamespace
 
 from PIL import Image, ImageDraw
 
 from photosort.classification import (
+    _FACE_DETECTOR_MODEL_PATH,
+    FACE_DETECTOR_MODEL_SHA256,
     CategoryCandidate,
     classify_category,
     compute_uniform_area_fraction,
@@ -42,6 +45,16 @@ def _half_uniform_half_noisy(size: int = 160) -> Image.Image:
     return image
 
 
+class TestFaceDetectorModelAsset:
+    def test_committed_tflite_model_matches_the_documented_sha256(self) -> None:
+        # Security-Review-Fund (Nice-to-have): erkennt eine kuenftige versehentliche
+        # Beschaedigung/Ersetzung der committeten Binaerdatei (fehlerhaftes Merge,
+        # LFS-Fehlkonfiguration) sofort in CI, statt erst durch spuerbar schlechtere
+        # Erkennungsguete aufzufallen.
+        digest = hashlib.sha256(_FACE_DETECTOR_MODEL_PATH.read_bytes()).hexdigest()
+        assert digest == FACE_DETECTOR_MODEL_SHA256
+
+
 class TestComputeUniformAreaFraction:
     def test_uniform_image_has_fraction_near_one(self) -> None:
         assert compute_uniform_area_fraction(_solid()) > 0.9
@@ -52,6 +65,14 @@ class TestComputeUniformAreaFraction:
     def test_half_uniform_half_noisy_image_is_about_half(self) -> None:
         fraction = compute_uniform_area_fraction(_half_uniform_half_noisy())
         assert 0.35 <= fraction <= 0.65
+
+    def test_image_smaller_than_the_tile_grid_does_not_crash(self) -> None:
+        # Test-Engineer-Review-Fund (Nice-to-have): ein Bild kleiner als das 8x8-Kachelraster
+        # (in der Praxis unwahrscheinlich, die display-Cache-Variante hat eine deutlich groessere
+        # Mindestgroesse, siehe thumbnails.py::DISPLAY_MAX_SIZE) darf die degenerierte
+        # Kachel-`continue`-Behandlung nicht mit einer Exception verlassen.
+        fraction = compute_uniform_area_fraction(_solid(size=4))
+        assert 0.0 <= fraction <= 1.0
 
 
 class FakeFaceDetector:
