@@ -69,6 +69,7 @@ on:
     branches: [main]
 permissions:
   contents: write
+  issues: write
   pull-requests: write
 jobs:
   release-please:
