@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.models import (
     Photo,
+    PhotoCategory,
     PhotoScore,
     Project,
     Rating,
@@ -15,6 +16,7 @@ from photosort.models import (
     ScanRun,
     ScanStatus,
     ScoringRun,
+    TopSelectionRun,
     User,
 )
 
@@ -253,6 +255,71 @@ async def test_deleting_photo_cascades_to_photo_score(db_session: AsyncSession) 
     await db_session.commit()
 
     result = await db_session.execute(select(PhotoScore))
+    assert result.scalars().all() == []
+
+
+async def test_photo_score_category_defaults_to_none(db_session: AsyncSession) -> None:
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoScore(photo_id=photo.id, sharpness=1.0, exposure=0.0, computed_at=datetime.now(UTC))
+    )
+    await db_session.commit()
+
+    result = await db_session.execute(select(PhotoScore).where(PhotoScore.photo_id == photo.id))
+    assert result.scalar_one().category is None
+
+
+async def test_photo_score_category_can_be_set(db_session: AsyncSession) -> None:
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.0,
+            category=PhotoCategory.LANDSCAPE,
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    result = await db_session.execute(select(PhotoScore).where(PhotoScore.photo_id == photo.id))
+    assert result.scalar_one().category == PhotoCategory.LANDSCAPE
+
+
+async def test_top_selection_run_defaults(db_session: AsyncSession) -> None:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+
+    run = TopSelectionRun(project_id=project.id, status=ScanStatus.RUNNING, top_n_per_cluster=3)
+    db_session.add(run)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(TopSelectionRun).where(TopSelectionRun.project_id == project.id)
+    )
+    stored = result.scalar_one()
+    assert stored.status == ScanStatus.RUNNING
+    assert stored.top_n_per_cluster == 3
+    assert stored.candidates_total == 0
+    assert stored.candidates_processed == 0
+    assert stored.suggestions_found == 0
+    assert stored.error_message is None
+
+
+async def test_deleting_project_cascades_to_top_selection_runs(db_session: AsyncSession) -> None:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(
+        TopSelectionRun(project_id=project.id, status=ScanStatus.SUCCESS, top_n_per_cluster=3)
+    )
+    await db_session.commit()
+
+    await db_session.delete(project)
+    await db_session.commit()
+
+    result = await db_session.execute(select(TopSelectionRun))
     assert result.scalars().all() == []
 
 
