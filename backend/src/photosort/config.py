@@ -45,5 +45,11 @@ class Settings(BaseSettings):
     def cors_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
 
+    # Feature-Flag fuer die lokale Top-Foto-Auswahl mit Kategorie-Mix
+    # (specs/features/0024-top-photo-selection-category-mix.md). Default AN (anders als ein
+    # Cloud-Feature): rein lokale/kostenlose Verarbeitung, kein Grund fuer einen restriktiven
+    # Default.
+    category_selection_enabled: bool = True
+
 
 settings = Settings()

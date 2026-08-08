@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import type { RatingFilter } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
+import { CategoryBadge } from '../components/CategoryBadge'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingBadge } from '../components/RatingBadge'
 import { Alert } from '../components/ui/alert'
@@ -161,6 +162,19 @@ export function PhotoGridPage() {
                   <span className="absolute right-1.5 top-1.5 rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
                     <RatingBadge status={badgeStatus} suggested={isSuggested} />
                   </span>
+                  {/* Kategorie-Chip (specs/features/0024-top-photo-selection-category-mix.md):
+                      zweiter, von RatingBadge getrennter Chip in der GEGENUEBERLIEGENDEN Ecke,
+                      damit beide nicht kollidieren. Folgt derselben Sichtbarkeitsregel wie die
+                      Vorschlags-Badge (nur sichtbar, solange keine eigene Bewertung existiert) -
+                      category ist ohnehin nur fuer "top_pick"-Vorschlaege gesetzt (siehe
+                      SuggestionOut-Dokumentation), verschwindet also automatisch nach
+                      Bestaetigung. Kein Qualitaets-Meter hier (nur in der Detailansicht, UI/UX-
+                      Abschnitt der Spec). */}
+                  {isSuggested && photo.suggestion?.category && (
+                    <span className="absolute left-1.5 top-1.5 rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
+                      <CategoryBadge category={photo.suggestion.category} />
+                    </span>
+                  )}
                 </Link>
                 {/* Separates Tap-Ziel ausserhalb des Link-<a> (UI/UX-Abschnitt der Spec): die
                     Kachel selbst oeffnet weiterhin die Detailansicht, "Uebernehmen" bestaetigt

@@ -57,6 +57,14 @@ def test_cors_allowed_origins_list_parses_comma_separated_env_value() -> None:
     assert settings.cors_allowed_origins_list() == ["https://photos.example.com"]
 
 
+def test_category_selection_enabled_defaults_to_true() -> None:
+    # Rein lokal/kostenlos (specs/features/0024-top-photo-selection-category-mix.md) - kein Grund
+    # fuer einen restriktiven Default wie bei einem Cloud-Feature.
+    settings = Settings(_env_file=None)
+
+    assert settings.category_selection_enabled is True
+
+
 def test_cors_allowed_origins_list_strips_whitespace_around_entries() -> None:
     settings = Settings(
         _env_file=None,

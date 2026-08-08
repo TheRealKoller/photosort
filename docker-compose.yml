@@ -45,6 +45,11 @@ services:
       AUTH_SEED_USER2_USERNAME: ${AUTH_SEED_USER2_USERNAME:-change-me}
       AUTH_SEED_USER2_PASSWORD: ${AUTH_SEED_USER2_PASSWORD:-change-me}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8080}
+      # Feature-Flag fuer die lokale Top-Foto-Auswahl mit Kategorie-Mix
+      # (specs/features/0024-top-photo-selection-category-mix.md). Nur hier im API-Service noetig
+      # (der 403-Gate-Check sitzt in api/projects.py), der Worker-Job selbst prueft dieses Flag
+      # nicht - seine einzige Vorbedingung ist ein erfolgreicher ScoringRun.
+      CATEGORY_SELECTION_ENABLED: ${CATEGORY_SELECTION_ENABLED:-true}
     command: ["sh", "-c", "alembic upgrade head && uvicorn photosort.main:app --host 0.0.0.0 --port 8000"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]

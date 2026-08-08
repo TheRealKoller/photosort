@@ -41,6 +41,7 @@ function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
     sharpness: 1.0,
     exposure: 0.5,
     cluster_key: null,
+    category: null,
     computed_at: '2026-07-20T10:00:00Z',
     ...overrides,
   }
@@ -219,6 +220,60 @@ describe('PhotoGridPage', () => {
     expect(
       screen.getByRole('button', { name: 'Vorschlag übernehmen: sunset.jpg' })
     ).toBeInTheDocument()
+  })
+
+  it('shows a category chip alongside the rating badge for a top-pick suggestion with a category', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          ratings: [],
+          suggestion: suggestion({ status: 'album_worthy', reason: 'top_pick', category: 'landscape' }),
+        }),
+      ],
+      total: 1,
+    })
+
+    renderPage()
+
+    expect(await screen.findByLabelText('Landschaft')).toBeInTheDocument()
+  })
+
+  it('does not show a category chip when the suggestion has no category (duplicate/low_quality)', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [photo({ id: 1, ratings: [], suggestion: suggestion({ category: null }) })],
+      total: 1,
+    })
+
+    renderPage()
+
+    await screen.findAllByRole('listitem')
+    expect(screen.queryByLabelText('Landschaft')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Detailaufnahme')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Menschen')).not.toBeInTheDocument()
+  })
+
+  it('does not show a quality meter on the grid tile (detail-view-only per spec)', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          ratings: [],
+          suggestion: suggestion({
+            status: 'album_worthy',
+            reason: 'top_pick',
+            category: 'landscape',
+            local_quality_score: 90,
+          }),
+        }),
+      ],
+      total: 1,
+    })
+
+    renderPage()
+
+    await screen.findByLabelText('Landschaft')
+    expect(screen.queryByText('Hohe Bildqualität')).not.toBeInTheDocument()
   })
 
   it('does not show a suggestion badge/button when the photo has no open suggestion', async () => {

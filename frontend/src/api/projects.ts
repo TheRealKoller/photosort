@@ -29,3 +29,13 @@ export function triggerScan(id: number): Promise<TriggerScanResponse> {
 export function triggerScore(id: number): Promise<TriggerScanResponse> {
   return apiFetch<TriggerScanResponse>(`/projects/${id}/score`, { method: 'POST' })
 }
+
+export function triggerSelectTop(
+  id: number,
+  topNPerCluster: number
+): Promise<TriggerScanResponse> {
+  return apiFetch<TriggerScanResponse>(`/projects/${id}/select-top`, {
+    method: 'POST',
+    body: { top_n_per_cluster: topNPerCluster },
+  })
+}

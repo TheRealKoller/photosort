@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.config import settings
-from photosort.models import Photo, PhotoScore, Project, Rating, RatingStatus, User
+from photosort.models import Photo, PhotoCategory, PhotoScore, Project, Rating, RatingStatus, User
 from photosort.security import hash_password
 from photosort.thumbnails import display_path, thumbnail_path
 
@@ -133,6 +133,56 @@ async def test_suggestion_reason_is_low_quality_without_duplicate_of(
     suggestion = response.json()["items"][0]["suggestion"]
     assert suggestion["reason"] == "low_quality"
     assert suggestion["duplicate_of"] is None
+
+
+async def test_suggestion_reason_is_top_pick_for_album_worthy_status(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    # specs/features/0024-top-photo-selection-category-mix.md: ALBUM_WORTHY wird ausschliesslich
+    # vom neuen select_top_photos-Job gesetzt (Phase A setzt praktisch nur REJECTED) - reason muss
+    # in diesem Fall "top_pick" sein, nicht "low_quality"/"duplicate".
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.2,
+            local_quality_score=5.0,
+            category=PhotoCategory.LANDSCAPE,
+            suggested_status=RatingStatus.ALBUM_WORTHY,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+    suggestion = response.json()["items"][0]["suggestion"]
+    assert suggestion["status"] == "album_worthy"
+    assert suggestion["reason"] == "top_pick"
+    assert suggestion["category"] == "landscape"
+
+
+async def test_suggestion_category_is_null_when_not_classified(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.2,
+            suggested_status=RatingStatus.REJECTED,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+    assert response.json()["items"][0]["suggestion"]["category"] is None
 
 
 async def test_list_photos_hides_suggestion_once_own_rating_exists(

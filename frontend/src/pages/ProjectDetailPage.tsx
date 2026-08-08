@@ -4,12 +4,14 @@ import { Link, useParams } from 'react-router'
 import { ApiError } from '../api/client'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
 import { Progress } from '../components/ui/progress'
 import {
   POLL_INTERVAL_MS,
   useProjectQuery,
   useTriggerScanMutation,
   useTriggerScoreMutation,
+  useTriggerSelectTopMutation,
 } from '../hooks/useProjects'
 import { PROCESS_STATUS_DOT_CLASSES } from '../utils/processStatus'
 import type { ProcessStatus } from '../utils/processStatus'
@@ -122,6 +124,7 @@ export function ProjectDetailPage() {
   const query = useProjectQuery(id)
   const scanMutation = useTriggerScanMutation(id)
   const scoreMutation = useTriggerScoreMutation(id)
+  const selectTopMutation = useTriggerSelectTopMutation(id)
 
   const scanStatus = query.data?.last_scan?.status ?? null
   const scanStartedAt = query.data?.last_scan?.started_at ?? null
@@ -139,6 +142,26 @@ export function ProjectDetailPage() {
     scoringStartedAt,
     query.refetch
   )
+
+  const topSelectionRun = query.data?.last_top_selection_run ?? null
+  const topSelectionStatus = topSelectionRun?.status ?? null
+  const topSelectionStartedAt = topSelectionRun?.started_at ?? null
+  const [awaitingSelectTopConfirmation, setAwaitingSelectTopConfirmation] = useTriggerConfirmation(
+    topSelectionStatus,
+    topSelectionStartedAt,
+    query.refetch
+  )
+  // Default 3 (UI/UX-Abschnitt der Spec) - min=1/max=10 sind nur clientseitige Hinweise
+  // (native <input>-Attribute), die eigentliche Grenze wird serverseitig durchgesetzt
+  // (Field(ge=1, le=10), 422 sonst). `''` ist ein bewusst erlaubter Zwischenzustand fuer ein
+  // geleertes Eingabefeld (Copilot-Review-Fund, PR #51) - haette der State stattdessen sofort auf
+  // den zuletzt gueltigen Wert zurueckgesetzt werden muessen, waere das kontrollierte
+  // <input>-Element beim Tippen mitten im Loeschen/Neueintippen "zurueckgesprungen" (React
+  // erzwingt den DOM-Wert bei jedem Render), was den naechsten Tastendruck an eine falsche
+  // Cursor-Position angehaengt haette. Der leere Zwischenzustand wird erst beim tatsaechlichen
+  // Start (handleTriggerSelectTop) auf den Default 3 aufgeloest, nicht schon bei jedem Tastendruck.
+  const [topNPerCluster, setTopNPerCluster] = useState<number | ''>(3)
+  const effectiveTopNPerCluster = topNPerCluster === '' ? 3 : topNPerCluster
 
   if (query.isError && query.error instanceof ApiError && query.error.status === 404) {
     return (
@@ -238,6 +261,50 @@ export function ProjectDetailPage() {
   const filesFoundText =
     filesFound === 1 ? '1 Datei verarbeitet' : `${filesFound} Dateien verarbeitet`
 
+  // Verfuegbarkeitsgate (UI/UX-Abschnitt der Spec 0024): proaktiv aus bereits geladenen
+  // Projektdaten abgeleitet (category_selection_enabled, last_scoring_run.status), NICHT erst
+  // reaktiv nach einem fehlgeschlagenen 403/409. Bereich bleibt in beiden Faellen sichtbar, nur
+  // Eingabe/Button werden deaktiviert (kein verschwindender UI-Teil).
+  const isSelectTopFeatureDisabled = project.category_selection_enabled === false
+  const isSelectTopPreconditionMissing = scoringStatus !== 'success'
+  const isSelectTopGateDisabled = isSelectTopFeatureDisabled || isSelectTopPreconditionMissing
+  const isSelectTopBusy =
+    selectTopMutation.isPending ||
+    awaitingSelectTopConfirmation ||
+    topSelectionStatus === 'running'
+  const isSelectTopDisabled = isSelectTopGateDisabled || isSelectTopBusy
+
+  function handleTriggerSelectTop(): void {
+    if (isSelectTopDisabled) {
+      return
+    }
+    setAwaitingSelectTopConfirmation(true)
+    selectTopMutation.mutate(effectiveTopNPerCluster, {
+      onError: () => setAwaitingSelectTopConfirmation(false),
+    })
+  }
+
+  const selectTopTriggerErrorDetail =
+    selectTopMutation.isError && selectTopMutation.error instanceof ApiError
+      ? selectTopMutation.error.detail
+      : selectTopMutation.isError
+        ? 'Fehler beim Auslösen der Top-Foto-Auswahl.'
+        : null
+
+  const candidatesProcessed = topSelectionRun?.candidates_processed ?? 0
+  const candidatesTotal = topSelectionRun?.candidates_total ?? 0
+  const topSelectionPercent =
+    candidatesTotal > 0 ? Math.floor((candidatesProcessed / candidatesTotal) * 100) : 0
+  const topSelectionAnnouncedDecile = Math.floor(topSelectionPercent / 10) * 10
+
+  // "N unterschritten" ist ein normales Ergebnis, kein Fehler (UI/UX-Abschnitt der Spec) - kein
+  // Vergleich zur angeforderten topNPerCluster-Zielanzahl im Text, analog suggestionsFoundText.
+  const topSelectionSuggestionsFound = topSelectionRun?.suggestions_found ?? 0
+  const topSelectionSuggestionsFoundText =
+    topSelectionSuggestionsFound === 1
+      ? '1 Top-Foto ausgewählt'
+      : `${topSelectionSuggestionsFound} Top-Fotos ausgewählt`
+
   return (
     <div className="flex flex-col gap-6">
       <header>
@@ -286,7 +353,7 @@ export function ProjectDetailPage() {
 
       <section className="flex flex-col items-start gap-3">
         <Button type="button" onClick={handleTriggerScore} disabled={isScoreBusy} busy={isScoreBusy}>
-          {isScoreBusy ? 'Wird vorgeschlagen…' : 'Beste Fotos automatisch vorschlagen'}
+          {isScoreBusy ? 'Wird aussortiert…' : 'Ausschuss aussortieren'}
         </Button>
 
         {scoreTriggerErrorDetail && <Alert>{scoreTriggerErrorDetail}</Alert>}
@@ -333,6 +400,104 @@ export function ProjectDetailPage() {
             ebenso schnell fehlschlagenden Laeufen, analog zur bereits ungegateten
             Scan-Fehleranzeige oben in dieser Datei. */}
         {scoringStatus === 'failed' && <Alert onRetry={handleTriggerScore}>{scoringRun?.error_message}</Alert>}
+      </section>
+
+      {/* Top-Fotos auswählen (specs/features/0024-top-photo-selection-category-mix.md): bewusst
+          eine eigenstaendige, von der Ausschuss-Aussortierung getrennte Section - kein
+          Kostenschaetzungs-Schritt, da rein lokal/kostenlos. Bereich bleibt IMMER an dieser Stelle
+          sichtbar, auch wenn das Feature-Flag aus ist oder die Vorbedingung fehlt (Design-System-
+          Muster "Nicht verfuegbare Aktion"). */}
+      <section className="flex flex-col items-start gap-3">
+        <h2 className="text-lg font-semibold text-text-h">Top-Fotos auswählen</h2>
+        <p className="text-sm text-text">
+          Ordnet Fotos automatisch einer Kategorie zu (Landschaft/Detail/Menschen) und wählt pro
+          Foto-Moment bis zu N Top-Fotos aus — läuft vollständig lokal auf diesem Server.
+        </p>
+
+        {isSelectTopGateDisabled && (
+          <p className="text-sm text-text">
+            {isSelectTopFeatureDisabled
+              ? 'Diese Funktion ist derzeit nicht aktiviert.'
+              : 'Führe zuerst die lokale Vorauswahl oben aus.'}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label htmlFor="top-n-per-cluster" className="flex flex-col gap-1 text-sm text-text">
+            Top-Fotos pro Foto-Moment
+            <Input
+              id="top-n-per-cluster"
+              type="number"
+              min={1}
+              max={10}
+              value={topNPerCluster}
+              disabled={isSelectTopDisabled}
+              onChange={(event) => {
+                // Copilot-Review-Fund (PR #51): `Number(event.target.value)` liefert bei einem
+                // geleerten Feld 0 statt NaN (anders als `valueAsNumber`), das waere unbemerkt als
+                // gueltiger State-Wert durchgerutscht und haette top_n_per_cluster=0 an die API
+                // gesendet (422). Ein geleertes Feld wird hier bewusst als eigener `''`-State
+                // gehalten statt sofort auf den letzten gueltigen Wert zurueckzuspringen (siehe
+                // Kommentar bei der State-Deklaration oben) - erst handleTriggerSelectTop loest
+                // `''` auf den Default 3 auf. Getippte Werte werden auf 1..10 geklemmt (client-
+                // seitige Entsprechung zu Field(ge=1, le=10), das serverseitig ohnehin gilt).
+                if (event.target.value === '') {
+                  setTopNPerCluster('')
+                  return
+                }
+                const value = event.target.valueAsNumber
+                if (!Number.isNaN(value)) {
+                  setTopNPerCluster(Math.min(10, Math.max(1, Math.round(value))))
+                }
+              }}
+              className="w-24"
+            />
+          </label>
+          <Button
+            type="button"
+            onClick={handleTriggerSelectTop}
+            disabled={isSelectTopDisabled}
+            busy={isSelectTopBusy}
+          >
+            {isSelectTopBusy ? 'Wird ausgewählt…' : 'Auswahl starten'}
+          </Button>
+        </div>
+        <p className="text-sm text-text">
+          Pro Foto-Moment werden bis zu N Top-Fotos vorgeschlagen (weniger, falls nicht genug
+          passende Motive vorhanden sind).
+        </p>
+
+        {selectTopTriggerErrorDetail && <Alert>{selectTopTriggerErrorDetail}</Alert>}
+
+        <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
+          <StatusDot status={topSelectionStatus} />
+          {topSelectionRun === null && 'Noch nicht ausgewählt'}
+          {topSelectionStatus === 'running' && 'Wird verarbeitet…'}
+          {topSelectionStatus === 'success' && topSelectionSuggestionsFoundText}
+          {topSelectionStatus === 'failed' && 'Fehlgeschlagen'}
+        </p>
+
+        {topSelectionStatus === 'running' && (
+          <div className="flex w-full max-w-sm flex-col gap-1.5">
+            <p className="text-sm text-text">
+              {candidatesProcessed} von {candidatesTotal} Fotos verarbeitet
+            </p>
+            {candidatesTotal > 0 ? (
+              <Progress value={candidatesProcessed} max={candidatesTotal}>
+                {candidatesProcessed}/{candidatesTotal}
+              </Progress>
+            ) : (
+              <Progress />
+            )}
+            <p aria-live="polite" className="text-sm text-text">
+              {topSelectionAnnouncedDecile}% verarbeitet
+            </p>
+          </div>
+        )}
+
+        {topSelectionStatus === 'failed' && (
+          <Alert onRetry={handleTriggerSelectTop}>{topSelectionRun?.error_message}</Alert>
+        )}
       </section>
 
       <nav aria-label="Fotos" className="flex flex-wrap gap-3">

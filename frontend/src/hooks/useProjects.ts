@@ -6,6 +6,7 @@ import {
   listProjects,
   triggerScan,
   triggerScore,
+  triggerSelectTop,
   type CreateProjectPayload,
 } from '../api/projects'
 import type { ProjectOut } from '../api/types'
@@ -17,11 +18,12 @@ export function useProjectsQuery() {
 }
 
 /**
- * Pollt, solange der letzte Scan ODER der letzte Scoring-Lauf laeuft (`status === "running"`),
- * und stoppt automatisch, sobald beide fertig sind - siehe
- * specs/features/0005-minimal-project-frontend.md, decisions/0004-frontend-app-shell.md und
- * specs/features/0003-automatic-best-photo-selection.md (granularer Live-Fortschritt fuer den
- * Scoring-Trigger, analog zum bestehenden Scan-Polling-Muster).
+ * Pollt, solange der letzte Scan, der letzte Scoring-Lauf ODER der letzte Top-Auswahl-Lauf laeuft
+ * (`status === "running"`), und stoppt automatisch, sobald alle fertig sind - siehe
+ * specs/features/0005-minimal-project-frontend.md, decisions/0004-frontend-app-shell.md,
+ * specs/features/0003-automatic-best-photo-selection.md und
+ * specs/features/0024-top-photo-selection-category-mix.md (dritte Anwendung desselben
+ * granularen Live-Fortschritt-Polling-Musters).
  */
 export function useProjectQuery(id: number) {
   return useQuery({
@@ -30,7 +32,9 @@ export function useProjectQuery(id: number) {
     refetchInterval: (query) => {
       const data = query.state.data as ProjectOut | undefined
       const isRunning =
-        data?.last_scan?.status === 'running' || data?.last_scoring_run?.status === 'running'
+        data?.last_scan?.status === 'running' ||
+        data?.last_scoring_run?.status === 'running' ||
+        data?.last_top_selection_run?.status === 'running'
       return isRunning ? POLL_INTERVAL_MS : false
     },
   })
@@ -60,6 +64,16 @@ export function useTriggerScoreMutation(id: number) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => triggerScore(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+    },
+  })
+}
+
+export function useTriggerSelectTopMutation(id: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (topNPerCluster: number) => triggerSelectTop(id, topNPerCluster),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
     },

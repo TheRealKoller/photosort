@@ -24,6 +24,21 @@ export interface ScoringRunSummary {
   error_message: string | null
 }
 
+// specs/features/0024-top-photo-selection-category-mix.md: wiederverwendet ScanStatus wie
+// ScoringRunSummary oben - identische Semantik fuer einen asynchron laufenden Worker-Job.
+// candidates_total/candidates_processed statt photos_total/photos_processed, da hier nur der
+// bereits begrenzte Kandidatenpool pro Cluster gezaehlt wird.
+export interface TopSelectionRunSummary {
+  status: ScanStatus
+  started_at: string
+  finished_at: string | null
+  top_n_per_cluster: number
+  candidates_total: number
+  candidates_processed: number
+  suggestions_found: number
+  error_message: string | null
+}
+
 export interface ProjectOut {
   id: number
   name: string
@@ -32,6 +47,10 @@ export interface ProjectOut {
   created_at: string
   last_scan: ScanSummary | null
   last_scoring_run: ScoringRunSummary | null
+  last_top_selection_run: TopSelectionRunSummary | null
+  // Globales Feature-Flag (specs/features/0024-top-photo-selection-category-mix.md), auf
+  // ProjectOut statt einem eigenen Endpunkt exponiert - siehe backend api/projects.py-Kommentar.
+  category_selection_enabled: boolean
 }
 
 export interface BrowseEntry {
@@ -49,7 +68,12 @@ export interface RatingOut {
   status: RatingStatus
 }
 
-export type SuggestionReason = 'duplicate' | 'low_quality'
+export type SuggestionReason = 'duplicate' | 'low_quality' | 'top_pick'
+
+// Lokal klassifizierte Motiv-Kategorie (specs/features/0024-top-photo-selection-category-mix.md,
+// decisions/0015-lokale-kategorie-klassifikation.md) - nur 3 statt urspruenglich 4 geplanter
+// Kategorien, siehe backend photosort.models.PhotoCategory.
+export type PhotoCategory = 'landscape' | 'detail' | 'people'
 
 // Automatischer Vorschlag aus PhotoScore, bewusst getrennt von RatingOut/ratings[] (ADR 0006,
 // specs/decisions/0006-local-scoring-datamodel.md) - ein Vorschlag ist strukturell nie eine
@@ -62,6 +86,9 @@ export interface SuggestionOut {
   sharpness: number
   exposure: number
   cluster_key: string | null
+  // Additiv (Spec 0024): nur fuer reason "top_pick" gesetzt - Phase-A-Vorschlaege (duplicate/
+  // low_quality) werden nie lokal klassifiziert (kein Kandidat des select-top-Jobs).
+  category: PhotoCategory | null
   computed_at: string
 }
 

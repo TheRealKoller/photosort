@@ -34,12 +34,27 @@ class Project(Base):
     scoring_runs: Mapped[list[ScoringRun]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
+    top_selection_runs: Mapped[list[TopSelectionRun]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
 
 
 class RatingStatus(enum.StrEnum):
     FAVORITE = "favorite"
     ALBUM_WORTHY = "album_worthy"
     REJECTED = "rejected"
+
+
+class PhotoCategory(enum.StrEnum):
+    """Lokal (kein Cloud-Aufruf) klassifizierte Motiv-Kategorie eines Fotos
+    (specs/features/0024-top-photo-selection-category-mix.md, decisions/0015-lokale-kategorie-
+    klassifikation.md). Nur 3 statt urspruenglich 4 geplanter Kategorien - "Sehenswuerdigkeit"
+    wurde fuer v1 gestrichen (ohne GPS oder ein schweres Landmark-Modell lokal nicht sinnvoll
+    erkennbar, siehe Entscheidungen-Abschnitt der Spec)."""
+
+    LANDSCAPE = "landscape"
+    DETAIL = "detail"
+    PEOPLE = "people"
 
 
 class Photo(Base):
@@ -180,5 +195,42 @@ class PhotoScore(Base):
         SQLEnum(RatingStatus, native_enum=False, length=20), default=None
     )
     computed_at: Mapped[datetime]
+    # Additiv, specs/features/0024-top-photo-selection-category-mix.md: NICHT in Phase A
+    # (run_project_scoring) mitberechnet, sondern erst im neuen select_top_photos-Job, nur fuer den
+    # dort bereits begrenzten Kandidatenpool pro Cluster - sonst wuerde mediapipe fuer jedes
+    # gescannte Foto laufen (auch fuer nie betrachtete Duplikat-Verlierer). Bei jedem
+    # select-top-Lauf neu berechnet (kein Reuse-Tracking, da lokal/kostenlos), siehe
+    # worker.py::select_top_photos.
+    category: Mapped[PhotoCategory | None] = mapped_column(
+        SQLEnum(PhotoCategory, native_enum=False, length=20), default=None
+    )
 
     photo: Mapped[Photo] = relationship(back_populates="score", foreign_keys=[photo_id])
+
+
+class TopSelectionRun(Base):
+    """Ein Lauf des lokalen Top-Auswahl-Jobs (specs/features/0024-top-photo-selection-category-
+    mix.md), analog ScoringRun/ScanRun. Nutzt wie ScoringRun den bestehenden ScanStatus-Enum
+    (running/success/failed) statt eines eigenen Status-Enums - identische Semantik fuer einen
+    asynchron laufenden Worker-Job.
+
+    candidates_total/candidates_processed liefern granularen Live-Fortschritt (periodisch
+    zwischen-committet, siehe worker.py::select_top_photos) - mediapipe-Inferenz hat pro Foto eine
+    spuerbare Laufzeit, deshalb ein eigener asynchroner Job statt synchroner Verarbeitung, analog
+    zu ScoringRun.photos_total/photos_processed (decisions/0006-local-scoring-datamodel.md).
+    """
+
+    __tablename__ = "top_selection_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    status: Mapped[ScanStatus] = mapped_column(SQLEnum(ScanStatus, native_enum=False, length=20))
+    started_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(default=None)
+    top_n_per_cluster: Mapped[int] = mapped_column(default=0)
+    candidates_total: Mapped[int] = mapped_column(default=0)
+    candidates_processed: Mapped[int] = mapped_column(default=0)
+    suggestions_found: Mapped[int] = mapped_column(default=0)
+    error_message: Mapped[str | None] = mapped_column(default=None)
+
+    project: Mapped[Project] = relationship(back_populates="top_selection_runs")

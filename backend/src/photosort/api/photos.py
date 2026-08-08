@@ -14,7 +14,7 @@ from sqlalchemy.orm import aliased, selectinload
 
 from photosort.api.deps import get_current_user, get_session
 from photosort.config import settings
-from photosort.models import Photo, PhotoScore, Project, Rating, RatingStatus, User
+from photosort.models import Photo, PhotoCategory, PhotoScore, Project, Rating, RatingStatus, User
 from photosort.thumbnails import variant_path
 
 # Bewusste Abweichung vom Router-Level-dependencies=[Depends(get_current_user)]-Muster aus
@@ -41,16 +41,20 @@ class RatingOut(BaseModel):
 class SuggestionOut(BaseModel):
     """Automatischer Vorschlag aus PhotoScore, bewusst getrennt von RatingOut/ratings[] (ADR 0006,
     decisions/0006-local-scoring-datamodel.md) - ein Vorschlag ist strukturell nie eine
-    Rating-Zeile. `reason` ist regelbasiert aus duplicate_of abgeleitet (Akzeptanzkriterium der
-    Spec), nicht separat in PhotoScore gespeichert."""
+    Rating-Zeile. `reason` ist regelbasiert aus duplicate_of/suggested_status abgeleitet
+    (Akzeptanzkriterium der Spec), nicht separat in PhotoScore gespeichert. "top_pick" (additiv,
+    specs/features/0024-top-photo-selection-category-mix.md) gilt fuer jeden ALBUM_WORTHY-Vorschlag
+    - dieser Status wird ausschliesslich vom neuen select_top_photos-Job gesetzt, Phase A setzt
+    praktisch nur REJECTED (siehe models.py::PhotoScore-Docstring)."""
 
     status: RatingStatus
-    reason: Literal["duplicate", "low_quality"]
+    reason: Literal["duplicate", "low_quality", "top_pick"]
     duplicate_of: int | None
     local_quality_score: float | None
     sharpness: float
     exposure: float
     cluster_key: str | None
+    category: PhotoCategory | None
     computed_at: datetime
 
 
@@ -119,15 +123,22 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
     return {photo.id: photo for photo in result.scalars()}
 
 
+def _suggestion_reason(score: PhotoScore) -> Literal["duplicate", "low_quality", "top_pick"]:
+    if score.suggested_status == RatingStatus.ALBUM_WORTHY:
+        return "top_pick"
+    return "duplicate" if score.duplicate_of is not None else "low_quality"
+
+
 def _to_suggestion_out(score: PhotoScore) -> SuggestionOut:
     return SuggestionOut(
         status=score.suggested_status,  # type: ignore[arg-type]  # caller already checked not None
-        reason="duplicate" if score.duplicate_of is not None else "low_quality",
+        reason=_suggestion_reason(score),
         duplicate_of=score.duplicate_of,
         local_quality_score=score.local_quality_score,
         sharpness=score.sharpness,
         exposure=score.exposure,
         cluster_key=score.cluster_key,
+        category=score.category,
         computed_at=score.computed_at,
     )
 
