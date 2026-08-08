@@ -48,6 +48,9 @@ export interface ProjectOut {
   last_scan: ScanSummary | null
   last_scoring_run: ScoringRunSummary | null
   last_top_selection_run: TopSelectionRunSummary | null
+  // Globales Feature-Flag (specs/features/0024-top-photo-selection-category-mix.md), auf
+  // ProjectOut statt einem eigenen Endpunkt exponiert - siehe backend api/projects.py-Kommentar.
+  category_selection_enabled: boolean
 }
 
 export interface BrowseEntry {

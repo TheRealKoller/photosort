@@ -24,6 +24,7 @@ const PROJECT: ProjectOut = {
   last_scan: null,
   last_scoring_run: null,
   last_top_selection_run: null,
+  category_selection_enabled: true,
 }
 
 describe('api/projects', () => {
