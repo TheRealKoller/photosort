@@ -4,7 +4,7 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 ## Status auf einen Blick
 
-Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, geordnet nach den unten stehenden Prioritätskategorien (Später vor Ideenspeicher — für "Jetzt"/"Als Nächstes" gibt es aktuell keine offenen Specs mehr, alle dort eingeordneten sind bereits umgesetzt); bereits implementierte Specs stehen als Referenz ganz unten.
+Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, geordnet nach den unten stehenden Prioritätskategorien (Später vor Ideenspeicher — für "Jetzt"/"Als Nächstes" gibt es aktuell keine offenen Specs mehr, alle dort eingeordneten sind bereits umgesetzt), danach die noch ungeschärften Inbox-Einträge ohne eigene Spec; bereits implementierte Specs stehen als Referenz ganz unten.
 
 ### Offen — Später
 
@@ -17,6 +17,19 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, ge
 | Spec | Titel | Status |
 |---|---|---|
 | [0025](./features/0025-test-engineer-review-kompaktierung.md) | `test-engineer` kompaktieren: TDD-Ritual-Check raus, Instruktionen straffen | Accepted |
+
+### Inbox — ungeschärfte Ideen
+
+Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf gegangen — daher keine Spec-Nummer und kein offizieller Status, nur eine grobe Kurzbeschreibung zur Orientierung. Rangiert absichtlich unter "Ideenspeicher": erst nach dem Schärfen ist überhaupt klar, ob und wie groß der Aufwand ist.
+
+| Datei | Kurzbeschreibung |
+|---|---|
+| [0004](./inbox/0004-ki-app-im-browser-lokal-ansehen.md) | KI soll die laufende App lokal im Browser ansehen können (z.B. via `docker compose`) — offen, ob/wie sinnvoll umsetzbar |
+| [0006](./inbox/0006-dateianzahl-beim-ordner-heraussuchen.md) | Beim Heraussuchen des OpenCloud-Ordners Dateianzahl im Ordner anzeigen |
+| [0008](./inbox/0008-statistiken-darstellung-unklar.md) | Scan-Statistiken-Darstellung uneinheitlich (Text/Zahl mal neben-, mal untereinander); Grund für übersprungene/entfernte Dateien fehlt |
+| [0009](./inbox/0009-sticky-titelleiste-zurueck-link.md) | Sticky Titelleiste mit Zurück-Link zum Projekt auf jeder Seite |
+| [0010](./inbox/0010-berechnete-bewertungsdetails-anzeigen.md) | Berechnete Bewertungsdetails zu einem Bild anzeigen (Info-Icon mit Hover, ggf. auch in der Einzelbildansicht) |
+| [0013](./inbox/0013-recherche-agent.md) | Neuer Recherche-Agent: Internetsuche/Tool- und Modellrecherche, Doku finden/durchsuchen/extrahieren |
 
 ### Bereits umgesetzt
 
