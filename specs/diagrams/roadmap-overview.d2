@@ -1,0 +1,40 @@
+# Kompakte Kanban-Uebersicht ueber specs/roadmap.md, Abschnitt "Priorisierung".
+# Siehe Feature-Spec specs/features/0026-roadmap-kompaktuebersicht-und-readme-link.md.
+#
+# Nur nicht-implementierte Specs bekommen eine eigene Karte, bereits
+# implementierte Specs werden pro Spalte als ein einzelner Zaehler
+# zusammengefasst (haelt das Diagramm bei ueber 20 Specs insgesamt lesbar,
+# statt eine Karte pro Spec zu zeigen - siehe Spec 0026, "Architektur /
+# Umsetzung").
+#
+# Pflege: wird vom requirements-engineer mitaktualisiert, wenn er ohnehin
+# roadmap.md aendert (neue Spec, Status-/Prioritaetswechsel) - Diagramm und
+# die Tabelle "Status auf einen Blick" im selben Schritt aktualisieren, sonst
+# laufen beide auseinander.
+#
+# Rendern: scripts/render-diagrams.sh (ruft "d2 --sketch" auf).
+# Gerendert/verifiziert mit d2 v0.7.1 (https://github.com/d2lang/d2/releases).
+
+board: "Roadmap — Prioritäten auf einen Blick" {
+  grid-columns: 4
+  grid-gap: 60
+
+  jetzt: "Jetzt" {
+    zaehler: "19 umgesetzt"
+  }
+
+  als_naechstes: "Als Nächstes" {
+    zaehler: "1 umgesetzt"
+    "0024: Top-Fotos mit\nKategorie-Mix (Accepted)"
+  }
+
+  spaeter: "Später" {
+    zaehler: "0 umgesetzt"
+    "0004: Export nach\nOpenCloud (Proposed)"
+  }
+
+  ideenspeicher: "Ideenspeicher" {
+    zaehler: "3 umgesetzt"
+    "0025: test-engineer\nkompaktieren (Accepted)"
+  }
+}
