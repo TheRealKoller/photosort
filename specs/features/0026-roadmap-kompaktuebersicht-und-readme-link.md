@@ -1,6 +1,6 @@
 # 0026 - Roadmap-Kompaktübersicht und README-Verlinkung
 
-**Status:** Accepted
+**Status:** Implemented ([PR #48](https://github.com/TheRealKoller/photosort/pull/48))
 **Erstellt:** 2026-08-08
 **Bezug:** Inbox-Notiz `specs/inbox/0012-roadmap-kompaktuebersicht-und-readme-link.md` (Daniel selbst, interaktive Session; nach Aufnahme in diese Spec gelöscht), Idea-Sharpening-Gespräch mit Daniel am 2026-08-08
 
