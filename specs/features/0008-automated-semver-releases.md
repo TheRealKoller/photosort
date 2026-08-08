@@ -1,8 +1,8 @@
 # 0008 - Automatisierte SemVer-Releases bei Merge nach `main`
 
-**Status:** Accepted
+**Status:** Implemented
 **Erstellt:** 2026-07-29
-**Bezug:** `idea-sharpener`-Gespräch mit Daniel, 2026-07-29. ADR: [`decisions/0008-automated-semver-releases.md`](../decisions/0008-automated-semver-releases.md).
+**Bezug:** `idea-sharpener`-Gespräch mit Daniel, 2026-07-29. ADR: [`decisions/0008-automated-semver-releases.md`](../decisions/0008-automated-semver-releases.md). Umgesetzt in [PR #46](https://github.com/TheRealKoller/photosort/pull/46), Feature-Branch `feature/0008-automated-semver-releases`. Bewusst noch offene, nicht automatisierbare Post-Merge-Schritte (siehe Akzeptanzkriterien/Umsetzungsreihenfolge): PAT-Erstellung (`RELEASE_PLEASE_TOKEN`), Bootstrap-Tag `v0.1.0` + GitHub-Release, Tag-Protection-Ruleset für `v*`.
 
 ## Ziel
 
@@ -20,26 +20,26 @@ Als Daniel (alleiniger Entwickler und Betreiber von PhotoSort) möchte ich, dass
 
 **Teil 1 — Tooling & Bootstrap**
 
-- [ ] `frontend/package.json` (aktuell `0.0.0`) und `frontend/package-lock.json` werden einmalig auf `0.1.0` gebracht — synchron zu `backend/pyproject.toml` (bereits `0.1.0`).
-- [ ] `release-please-config.json` (Repo-Root) und `.release-please-manifest.json` (Repo-Root, Bootstrap-Inhalt `{".": "0.1.0"}`) werden gemäß ADR 0008 angelegt (`release-type: "simple"`, `extra-files` für `backend/pyproject.toml` und `frontend/package.json`/`package-lock.json`, `bump-minor-pre-major: false`, `bump-patch-for-minor-pre-major: false`, `include-component-in-tag: false`).
-- [ ] Neuer Workflow `.github/workflows/release-please.yml` (Trigger `push: branches: [main]`, `permissions: contents: write, pull-requests: write`) läuft additiv zu `ci.yml` — `ci.yml` selbst bleibt unverändert.
-- [ ] Repo-Setting `allow_auto_merge` wird von `false` auf `true` gesetzt.
-- [ ] Fine-grained PAT (`RELEASE_PLEASE_TOKEN`) wird erstellt (Scope: nur `TheRealKoller/photosort`, Permissions `Contents: Read & write`, `Pull requests: Read & write`, `Metadata: Read`, mit Ablaufdatum) und als Repo-Secret hinterlegt.
-- [ ] Nach Merge dieser Umsetzung: Tag `v0.1.0` + GitHub-Release "v0.1.0" wird manuell auf den Merge-Commit gesetzt (Bootstrap-Anker, damit `release-please` nicht die gesamte bisherige Commit-Historie auswertet). Bestätigt mit Daniel: `v0.1.0` ist der Anker, der nächste automatisch erzeugte Release baut darauf auf (z.B. `v0.1.1`/`v0.2.0`), ist nicht selbst nochmal `v0.1.0`.
-- [ ] `googleapis/release-please-action` wird auf einen konkreten Commit-SHA gepinnt (Kommentar mit der entsprechenden `v4.x.x`-Version), nicht auf den beweglichen Tag `v4`.
+- [x] `frontend/package.json` (aktuell `0.0.0`) und `frontend/package-lock.json` werden einmalig auf `0.1.0` gebracht — synchron zu `backend/pyproject.toml` (bereits `0.1.0`).
+- [x] `release-please-config.json` (Repo-Root) und `.release-please-manifest.json` (Repo-Root, Bootstrap-Inhalt `{".": "0.1.0"}`) werden gemäß ADR 0008 angelegt (`release-type: "simple"`, `extra-files` für `backend/pyproject.toml` und `frontend/package.json`/`package-lock.json`, `bump-minor-pre-major: false`, `bump-patch-for-minor-pre-major: false`, `include-component-in-tag: false`).
+- [x] Neuer Workflow `.github/workflows/release-please.yml` (Trigger `push: branches: [main]`, `permissions: contents: write, issues: write, pull-requests: write`) läuft additiv zu `ci.yml` — `ci.yml` selbst bleibt unverändert. (`issues: write` bei der Copilot-Review-Runde ergänzt — Copilot bemängelte zu Recht, dass der ursprüngliche `permissions:`-Block ohne `issues: write` unvollständig/missverständlich war, siehe `## Security`.)
+- [x] Repo-Setting `allow_auto_merge` wird von `false` auf `true` gesetzt.
+- [ ] Fine-grained PAT (`RELEASE_PLEASE_TOKEN`) wird erstellt (Scope: nur `TheRealKoller/photosort`, Permissions `Contents: Read & write`, `Pull requests: Read & write`, `Issues: Read & write`, `Metadata: Read`, mit Ablaufdatum) und als Repo-Secret hinterlegt. (`Issues: Read & write` bei der Umsetzung ergänzt — `release-please` verwaltet seine Zustands-Labels am Release-PR über den Issues-Label-Endpunkt, siehe ADR 0008, Abschnitt "Token/Berechtigungen".) **Offen — erfordert manuelle Aktion von Daniel im GitHub-UI, kein Agent kann fine-grained PATs automatisiert erstellen.**
+- [ ] Nach Merge dieser Umsetzung: Tag `v0.1.0` + GitHub-Release "v0.1.0" wird manuell auf den Merge-Commit gesetzt (Bootstrap-Anker, damit `release-please` nicht die gesamte bisherige Commit-Historie auswertet). Bestätigt mit Daniel: `v0.1.0` ist der Anker, der nächste automatisch erzeugte Release baut darauf auf (z.B. `v0.1.1`/`v0.2.0`), ist nicht selbst nochmal `v0.1.0`. **Offen — nach Merge dieses PRs auszuführen.**
+- [x] `googleapis/release-please-action` wird auf einen konkreten Commit-SHA gepinnt (Kommentar mit der entsprechenden `v4.x.x`-Version), nicht auf den beweglichen Tag `v4`. (`5c625bfb5d1ff62eadeeb3772007f7f66fdcf071` = Tag `v4.4.1`, verifiziert per `gh api`.)
 
 **Teil 2 — Laufendes Verhalten**
 
-- [ ] Ein PR-Merge nach `main` mit mind. einem `feat:`/`fix:`/`BREAKING CHANGE`-Commit seit dem letzten Release führt dazu, dass `release-please` einen offenen Release-PR anlegt bzw. aktualisiert (korrekter SemVer-Bump, korrekt gruppierter Changelog-Eintrag).
-- [ ] Ein PR-Merge nach `main`, der ausschließlich `docs:`/`chore:`/`test:`-Commits enthält, löst **keinen** neuen/aktualisierten Release-PR aus.
-- [ ] Der offene Release-PR wird automatisch gemerged (GitHubs natives Auto-Merge), sobald `required_status_checks` (backend/frontend/docker-compose-check) grün sind und `required_conversation_resolution` erfüllt ist (keine offenen Konversationen) — ohne Klick von Daniel.
-- [ ] Merge des Release-PRs erzeugt automatisch Git-Tag + GitHub-Release mit generiertem Changelog.
-- [ ] Für Release-PRs wird bewusst **kein** Copilot-Review angefordert (dokumentierte Ausnahme von der sonstigen CLAUDE.md-Konvention, siehe ADR 0008/Security-Abschnitt).
+- [ ] Ein PR-Merge nach `main` mit mind. einem `feat:`/`fix:`/`BREAKING CHANGE`-Commit seit dem letzten Release führt dazu, dass `release-please` einen offenen Release-PR anlegt bzw. aktualisiert (korrekter SemVer-Bump, korrekt gruppierter Changelog-Eintrag). **Nicht vorab prüfbar — Workflow triggert ausschließlich auf `push: branches: [main]`, siehe Teststrategie; Nachweis erfolgt am ersten echten `feat:`/`fix:`-Merge nach diesem PR.**
+- [x] Ein PR-Merge nach `main`, der ausschließlich `docs:`/`chore:`/`test:`-Commits enthält, löst **keinen** neuen/aktualisierten Release-PR aus. (Konfigurativ durch `release-please`-Standardverhalten sichergestellt; PR-Titel dieses Umsetzungs-PRs bewusst `chore:` gewählt, damit dessen eigener Merge zugleich als Negativ-Probe dient.)
+- [ ] Der offene Release-PR wird automatisch gemerged (GitHubs natives Auto-Merge), sobald `required_status_checks` (backend/frontend/docker-compose-check) grün sind und `required_conversation_resolution` erfüllt ist (keine offenen Konversationen) — ohne Klick von Daniel. **Nicht vorab prüfbar, siehe oben.**
+- [ ] Merge des Release-PRs erzeugt automatisch Git-Tag + GitHub-Release mit generiertem Changelog. **Nicht vorab prüfbar, siehe oben.**
+- [x] Für Release-PRs wird bewusst **kein** Copilot-Review angefordert (dokumentierte Ausnahme von der sonstigen CLAUDE.md-Konvention, siehe ADR 0008/Security-Abschnitt). (Workflow fordert kein Copilot-Review an; dieser Umsetzungs-PR selbst ist kein Release-PR und bekommt regulär eines.)
 
 **Teil 3 — Dokumentation**
 
-- [ ] ADR [`decisions/0008-automated-semver-releases.md`](../decisions/0008-automated-semver-releases.md) — bereits angelegt, Status `Accepted`.
-- [ ] `specs/architecture/0002-testkonzept.md` und `specs/architecture/0003-securitykonzept.md` enthalten die in dieser Spec beschriebenen Ergänzungen (siehe Teststrategie/Security unten).
+- [x] ADR [`decisions/0008-automated-semver-releases.md`](../decisions/0008-automated-semver-releases.md) — bereits angelegt, Status `Accepted`; bei der Umsetzung um einen datierten Nachtrag (Config-Schema-Korrektur, PAT-Scope-Korrektur) ergänzt.
+- [x] `specs/architecture/0002-testkonzept.md` und `specs/architecture/0003-securitykonzept.md` enthalten die in dieser Spec beschriebenen Ergänzungen (siehe Teststrategie/Security unten).
 
 ## Datenmodell-Bezug
 
@@ -108,7 +108,7 @@ Im weiteren Sinn ist der von `release-please` gepflegte Release-PR sowie die gen
 
 1. Action auf Commit-SHA statt `@v4` gepinnt.
 2. Trigger bleibt strikt `push: branches: [main]`, nie `pull_request_target`.
-3. `permissions:` im Workflow explizit minimal (`contents: write`, `pull-requests: write`, kein `write-all`).
+3. `permissions:` im Workflow explizit minimal (`contents: write`, `issues: write`, `pull-requests: write`, kein `write-all`). (`issues: write` bei der Copilot-Review-Runde ergänzt, siehe unten.)
 4. PAT-Rotation: bei Erstellung sofort ein GitHub-Issue mit dem Ablaufdatum als Erinnerungs-Anker anlegen — **mit Daniel bestätigt:** Ablaufdatum + Erinnerungs-Issue reicht als Rotationsprozess (pragmatisch für ein Solo-/Familienprojekt; Folgeschaden bei vergessener Rotation ist gering — Releases bleiben einfach aus, kein Sicherheitsvorfall). Eine GitHub-App-Migration ist erst zu revisitieren, falls das Projekt einen zweiten menschlichen Collaborator bekommt.
 5. Tag-Protection für `v*`-Tags ergänzen (aktuell keine vorhanden) — verhindert versehentliches/böswilliges Überschreiben bestehender Release-Tags.
 6. Keine zusätzliche Audit-Logik nötig — GitHub zeigt PAT-Merges weiterhin unter Daniels Account, `release-please` setzt eigene Label (`autorelease: pending`/`tagged`) am Release-PR.

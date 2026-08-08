@@ -1,0 +1,39 @@
+name: release-please
+
+# Laeuft additiv zu ci.yml (das unveraendert bleibt). Trigger bewusst strikt
+# auf "push: branches: [main]" begrenzt und darf laut Spec 0008/ADR 0008
+# (Security-Abschnitt) nie auf "pull_request_target" erweitert werden - das
+# Repo ist public, ein solcher Trigger wuerde Fork-PRs Zugriff auf das
+# RELEASE_PLEASE_TOKEN-Secret geben.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - id: release
+        # v4.4.1, gepinnt auf Commit-SHA statt auf den beweglichen Tag "v4"
+        # (Supply-Chain-Haertung, siehe ADR 0008/Spec 0008 Security-Abschnitt).
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - name: Auto-Merge fuer den Release-PR aktivieren
+        if: steps.release.outputs.pr
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # Ueber eine env-Variable statt direkter "${{ }}"-Interpolation in
+          # "run:" uebergeben (Defense-in-Depth gegen die generelle GitHub
+          # Actions Script-Injection-Musterklasse, siehe security-engineer-
+          # Review zu Spec 0008; PR_NUMBER ist ein von GitHub selbst
+          # generierter Integer, kein von Dritten beeinflussbarer Freitext).
+          PR_NUMBER: ${{ fromJson(steps.release.outputs.pr).number }}
+        run: gh pr merge --auto --squash "$PR_NUMBER"
