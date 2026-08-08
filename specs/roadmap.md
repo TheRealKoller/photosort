@@ -4,16 +4,27 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 ## Status auf einen Blick
 
-![Roadmap – Prioritäten auf einen Blick: Kanban-Spalten Jetzt/Als Nächstes/Später/Ideenspeicher, bereits implementierte Specs pro Spalte als Zähler zusammengefasst, offene Specs als Einzelkarte](./diagrams/roadmap-overview.svg)
+Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, geordnet nach den unten stehenden Prioritätskategorien (Später vor Ideenspeicher — für "Jetzt"/"Als Nächstes" gibt es aktuell keine offenen Specs mehr, alle dort eingeordneten sind bereits umgesetzt); bereits implementierte Specs stehen als Referenz ganz unten.
 
-*Grafik zeigt nur offene (nicht-implementierte) Specs als Einzelkarte, siehe Tabelle unten für den vollständigen Stand. Wird vom `requirements-engineer` mitaktualisiert, siehe Kopfkommentar in [`diagrams/roadmap-overview.d2`](./diagrams/roadmap-overview.d2).*
+### Offen — Später
+
+| Spec | Titel | Status |
+|---|---|---|
+| [0004](./features/0004-opencloud-export.md) | Export nach OpenCloud | Proposed |
+
+### Offen — Ideenspeicher
+
+| Spec | Titel | Status |
+|---|---|---|
+| [0025](./features/0025-test-engineer-review-kompaktierung.md) | `test-engineer` kompaktieren: TDD-Ritual-Check raus, Instruktionen straffen | Accepted |
+
+### Bereits umgesetzt
 
 | Spec | Titel | Status |
 |---|---|---|
 | [0001](./features/0001-opencloud-project-connection.md) | OpenCloud-Projekt-Anbindung | Implemented — die bei Fertigstellung noch offenen Teile (Frontend, Auth) sind über 0005/0006 umgesetzt, siehe Spec |
 | [0002](./features/0002-manual-categorization.md) | Manuelle Kategorisierung | Implemented ([PR #3](https://github.com/TheRealKoller/photosort/pull/3)) |
 | [0003](./features/0003-automatic-best-photo-selection.md) | Automatische Vorauswahl (Phase A) | Implemented ([PR #6](https://github.com/TheRealKoller/photosort/pull/6)) |
-| [0004](./features/0004-opencloud-export.md) | Export nach OpenCloud | Proposed |
 | [0005](./features/0005-minimal-project-frontend.md) | Minimales Projekt-Frontend | Implemented ([PR #2](https://github.com/TheRealKoller/photosort/pull/2)) |
 | [0006](./features/0006-auth.md) | Auth-Implementierung | Implemented ([PR #1](https://github.com/TheRealKoller/photosort/pull/1)) |
 | [0007](./features/0007-github-repo-access-hardening.md) | GitHub-Repo-Zugriffshärtung & Issue-Freigabe-Vorsorge | Implemented ([PR #5](https://github.com/TheRealKoller/photosort/pull/5)) |
@@ -34,8 +45,7 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 | [0022](./features/0022-scan-live-fortschrittszaehler.md) | Live-Fortschrittszähler beim Scannen eines Projekts | Implemented ([PR #40](https://github.com/TheRealKoller/photosort/pull/40)) |
 | [0023](./features/0023-scan-fortschritt-batch-groesse-fix.md) | Scan-Zuverlässigkeit: hängender Job + eingefrorener Live-Zähler | Implemented ([PR #43](https://github.com/TheRealKoller/photosort/pull/43)) |
 | [0024](./features/0024-top-photo-selection-category-mix.md) | Top-Fotos auswählen mit Kategorie-Mix (lokal) | Implemented ([PR #51](https://github.com/TheRealKoller/photosort/pull/51)) |
-| [0025](./features/0025-test-engineer-review-kompaktierung.md) | `test-engineer` kompaktieren: TDD-Ritual-Check raus, Instruktionen straffen | Accepted |
-| [0026](./features/0026-roadmap-kompaktuebersicht-und-readme-link.md) | Roadmap-Kompaktübersicht (D2-Grafik) und README-Verlinkung | Implemented ([PR #48](https://github.com/TheRealKoller/photosort/pull/48)) |
+| [0026](./features/0026-roadmap-kompaktuebersicht-und-readme-link.md) | Roadmap-Kompaktübersicht (D2-Grafik) und README-Verlinkung — Grafik in einer späteren Iteration wieder entfernt, siehe Spec | Implemented ([PR #48](https://github.com/TheRealKoller/photosort/pull/48)) |
 
 ## Priorisierung
 
