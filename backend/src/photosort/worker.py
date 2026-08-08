@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -10,16 +11,25 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.classification import (
+    CategoryCandidate,
+    FaceDetectorLike,
+    build_face_detector,
+    classify_category,
+    select_top_n_with_category_mix,
+)
 from photosort.config import settings
 from photosort.db import async_session_factory
 from photosort.models import (
     Photo,
+    PhotoCategory,
     PhotoScore,
     Project,
     RatingStatus,
     ScanRun,
     ScanStatus,
     ScoringRun,
+    TopSelectionRun,
 )
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
 from photosort.opencloud.exif import extract_taken_at
@@ -68,6 +78,22 @@ SCORE_COMMIT_BATCH_SIZE = 25
 # bei jedem Scan mit weniger als 25 Dateien waehrend der gesamten Laufzeit bei 0 eingefroren
 # (typischer Fall: Familienfoto-Ergaenzung, Spec 0022 nachgebessert).
 SCAN_COMMIT_BATCH_SIZE = 1
+
+# Analog SCORE_COMMIT_BATCH_SIZE, fuer TopSelectionRun.candidates_processed
+# (specs/features/0024-top-photo-selection-category-mix.md). Kleiner als SCORE_COMMIT_BATCH_SIZE,
+# da mediapipe-Inferenz pro Kandidatenfoto eine spuerbare Laufzeit hat (Architektur-Abschnitt der
+# Spec) - ein grober Batch von 25 wuerde den Live-Fortschritt bei typischen Kandidatenpool-Groessen
+# (wenige bis niedrige zweistellige Anzahl pro Cluster) faktisch einfrieren, aehnlich dem in Spec
+# 0023 behobenen Scan-Zaehler-Problem. Modul-Konstante statt Default-Parameterwert, damit Tests sie
+# per monkeypatch.setattr(worker, "TOP_SELECTION_COMMIT_BATCH_SIZE", ...) verkleinern koennen.
+TOP_SELECTION_COMMIT_BATCH_SIZE = 5
+
+# Kandidatenpool-Formel je Cluster (Akzeptanzkriterium der Spec): begrenzt, wie viele Fotos pro
+# Cluster ueberhaupt lokal klassifiziert werden (mediapipe-Inferenz ist der teuerste Schritt) - das
+# 3-fache der Zielanzahl, mindestens aber 6, damit auch bei kleinem top_n_per_cluster genug
+# Kategorie-Vielfalt fuer das Quotenverfahren zur Verfuegung steht.
+TOP_SELECTION_CANDIDATE_POOL_MULTIPLIER = 3
+TOP_SELECTION_CANDIDATE_POOL_MINIMUM = 6
 
 
 class OpenCloudScanClient(Protocol):
@@ -421,6 +447,160 @@ async def score_project(ctx: dict[str, Any], project_id: int) -> int:
         return scoring_run.id
 
 
+class TopSelectionGuardError(Exception):
+    """Fachliche Vorbedingung fuer select_top_photos nicht erfuellt (kein erfolgreicher
+    ScoringRun) - wird wie jede andere Exception im umgebenden try/except von run_top_selection als
+    FAILED-Lauf mit error_message behandelt (Akzeptanzkriterium der Spec: Guard im Worker-Job,
+    zusaetzlich zum eigenen 409 der API-Schicht)."""
+
+
+def _candidate_pool_size(cluster_size: int, top_n_per_cluster: int) -> int:
+    return min(
+        cluster_size,
+        max(
+            top_n_per_cluster * TOP_SELECTION_CANDIDATE_POOL_MULTIPLIER,
+            TOP_SELECTION_CANDIDATE_POOL_MINIMUM,
+        ),
+    )
+
+
+def _classify_candidate(
+    cache_dir: Path, photo: Photo, detector: FaceDetectorLike
+) -> PhotoCategory | None:
+    """Best-effort wie scoring.py::_compute_photo_metrics (Akzeptanzkriterium der Spec): ein
+    einzelner fehlgeschlagener Klassifikationsversuch (fehlende/defekte display-Cache-Datei) darf
+    den gesamten Lauf nicht abbrechen - das betroffene Foto bleibt einfach ohne category."""
+    path = variant_path(cache_dir, photo.id, photo.etag, "display")
+    if not path.is_file():
+        return None
+    try:
+        with Image.open(path) as opened:
+            opened.load()
+            image: Image.Image = opened
+            if image.mode not in ("RGB", "L"):
+                image = image.convert("RGB")
+            return classify_category(image, detector)
+    except Exception:
+        return None
+
+
+async def run_top_selection(
+    session: AsyncSession,
+    project: Project,
+    top_n_per_cluster: int,
+    cache_dir: Path,
+    build_detector: Callable[[], FaceDetectorLike] = build_face_detector,
+) -> TopSelectionRun:
+    """Waehlt pro Zeitcluster bis zu top_n_per_cluster Top-Fotos aus, unter Beruecksichtigung eines
+    Kategorie-Mix (specs/features/0024-top-photo-selection-category-mix.md). Ablauf (Architektur-
+    Abschnitt der Spec): TopSelectionRun anlegen -> Guard (letzter ScoringRun muss success sein) ->
+    Kandidatenpool pro Cluster bilden (nur suggested_status IS NULL) -> jeden Kandidaten
+    klassifizieren (best-effort, periodisch zwischen-committet) -> select_top_n_with_category_mix
+    pro Cluster anwenden -> Treffer auf ALBUM_WORTHY setzen -> TopSelectionRun auf success/failed
+    setzen. `build_detector` ist injizierbar (Default: die echte, teure Modellkonstruktion) - Tests
+    uebergeben stattdessen einen Fake ohne echtes .tflite-Modell (siehe
+    test_worker_top_selection.py)."""
+    run = TopSelectionRun(
+        project_id=project.id, status=ScanStatus.RUNNING, top_n_per_cluster=top_n_per_cluster
+    )
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+
+    try:
+        latest_scoring_run = (
+            await session.execute(
+                select(ScoringRun)
+                .where(ScoringRun.project_id == project.id)
+                .order_by(ScoringRun.started_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+        if latest_scoring_run is None or latest_scoring_run.status != ScanStatus.SUCCESS:
+            raise TopSelectionGuardError(
+                "Kein erfolgreicher Scoring-Lauf (Phase A) fuer dieses Projekt vorhanden."
+            )
+
+        rows = (
+            await session.execute(
+                select(Photo, PhotoScore)
+                .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+                .where(Photo.project_id == project.id, PhotoScore.suggested_status.is_(None))
+            )
+        ).all()
+
+        clusters: dict[str, list[tuple[Photo, PhotoScore]]] = {}
+        for photo, score in rows:
+            clusters.setdefault(score.cluster_key or "", []).append((photo, score))
+
+        candidate_pools: dict[str, list[tuple[Photo, PhotoScore]]] = {}
+        for cluster_key, members in clusters.items():
+            pool_size = _candidate_pool_size(len(members), top_n_per_cluster)
+            ordered = sorted(
+                members, key=lambda member: (-(member[1].local_quality_score or 0.0), member[0].id)
+            )
+            candidate_pools[cluster_key] = ordered[:pool_size]
+
+        run.candidates_total = sum(len(pool) for pool in candidate_pools.values())
+        run.candidates_processed = 0
+        await session.commit()
+
+        detector = build_detector()
+        classified_by_cluster: dict[str, list[CategoryCandidate]] = {}
+        score_by_photo_id: dict[int, PhotoScore] = {photo.id: score for photo, score in rows}
+        processed = 0
+        for cluster_key, pool in candidate_pools.items():
+            candidates: list[CategoryCandidate] = []
+            for photo, score in pool:
+                category = _classify_candidate(cache_dir, photo, detector)
+                if category is not None:
+                    score.category = category
+                    candidates.append(
+                        CategoryCandidate(photo.id, category, score.local_quality_score or 0.0)
+                    )
+                processed += 1
+                if processed % TOP_SELECTION_COMMIT_BATCH_SIZE == 0:
+                    run.candidates_processed = processed
+                    await session.commit()
+            classified_by_cluster[cluster_key] = candidates
+
+        run.candidates_processed = processed
+        await session.commit()
+
+        suggestions_found = 0
+        for candidates in classified_by_cluster.values():
+            for photo_id in select_top_n_with_category_mix(candidates, top_n_per_cluster):
+                score_by_photo_id[photo_id].suggested_status = RatingStatus.ALBUM_WORTHY
+                suggestions_found += 1
+
+        run.suggestions_found = suggestions_found
+        run.status = ScanStatus.SUCCESS
+        run.finished_at = _now_utc()
+        await session.commit()
+        return run
+    except Exception as exc:
+        # Kein Rollback bereits committeter Fortschritts-/Kategorie-Zwischenstaende
+        # (Akzeptanzkriterium der Spec, identisches Muster wie run_project_scoring oben).
+        await session.rollback()
+        run.status = ScanStatus.FAILED
+        run.error_message = str(exc)
+        run.finished_at = _now_utc()
+        await session.commit()
+        return run
+
+
+async def select_top_photos(ctx: dict[str, Any], project_id: int, top_n_per_cluster: int) -> int:
+    async with async_session_factory() as session:
+        project = await session.get(Project, project_id)
+        if project is None:
+            raise ValueError(f"Project {project_id} not found")
+
+        run = await run_top_selection(
+            session, project, top_n_per_cluster, cache_dir=Path(settings.photo_cache_dir)
+        )
+        return run.id
+
+
 class WorkerSettings:
-    functions = (scan_project, score_project)
+    functions = (scan_project, score_project, select_top_photos)
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
