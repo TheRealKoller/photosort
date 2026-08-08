@@ -4,16 +4,40 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 ## Status auf einen Blick
 
-![Roadmap – Prioritäten auf einen Blick: Kanban-Spalten Jetzt/Als Nächstes/Später/Ideenspeicher, bereits implementierte Specs pro Spalte als Zähler zusammengefasst, offene Specs als Einzelkarte](./diagrams/roadmap-overview.svg)
+Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, geordnet nach den unten stehenden Prioritätskategorien (Später vor Ideenspeicher — für "Jetzt"/"Als Nächstes" gibt es aktuell keine offenen Specs mehr, alle dort eingeordneten sind bereits umgesetzt), danach die noch ungeschärften Inbox-Einträge ohne eigene Spec; bereits implementierte Specs stehen als Referenz ganz unten.
 
-*Grafik zeigt nur offene (nicht-implementierte) Specs als Einzelkarte, siehe Tabelle unten für den vollständigen Stand. Wird vom `requirements-engineer` mitaktualisiert, siehe Kopfkommentar in [`diagrams/roadmap-overview.d2`](./diagrams/roadmap-overview.d2).*
+### Offen — Später
+
+| Spec | Titel | Status |
+|---|---|---|
+| [0004](./features/0004-opencloud-export.md) | Export nach OpenCloud | Proposed |
+
+### Offen — Ideenspeicher
+
+| Spec | Titel | Status |
+|---|---|---|
+| [0025](./features/0025-test-engineer-review-kompaktierung.md) | `test-engineer` kompaktieren: TDD-Ritual-Check raus, Instruktionen straffen | Accepted |
+
+### Inbox — ungeschärfte Ideen
+
+Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf gegangen — daher keine Spec-Nummer und kein offizieller Status, nur eine grobe Kurzbeschreibung zur Orientierung. Rangiert absichtlich unter "Ideenspeicher": erst nach dem Schärfen ist überhaupt klar, ob und wie groß der Aufwand ist.
+
+| Datei | Kurzbeschreibung |
+|---|---|
+| [0004](./inbox/0004-ki-app-im-browser-lokal-ansehen.md) | KI soll die laufende App lokal im Browser ansehen können (z.B. via `docker compose`) — offen, ob/wie sinnvoll umsetzbar |
+| [0006](./inbox/0006-dateianzahl-beim-ordner-heraussuchen.md) | Beim Heraussuchen des OpenCloud-Ordners Dateianzahl im Ordner anzeigen |
+| [0008](./inbox/0008-statistiken-darstellung-unklar.md) | Scan-Statistiken-Darstellung uneinheitlich (Text/Zahl mal neben-, mal untereinander); Grund für übersprungene/entfernte Dateien fehlt |
+| [0009](./inbox/0009-sticky-titelleiste-zurueck-link.md) | Sticky Titelleiste mit Zurück-Link zum Projekt auf jeder Seite |
+| [0010](./inbox/0010-berechnete-bewertungsdetails-anzeigen.md) | Berechnete Bewertungsdetails zu einem Bild anzeigen (Info-Icon mit Hover, ggf. auch in der Einzelbildansicht) |
+| [0013](./inbox/0013-recherche-agent.md) | Neuer Recherche-Agent: Internetsuche/Tool- und Modellrecherche, Doku finden/durchsuchen/extrahieren |
+
+### Bereits umgesetzt
 
 | Spec | Titel | Status |
 |---|---|---|
 | [0001](./features/0001-opencloud-project-connection.md) | OpenCloud-Projekt-Anbindung | Implemented — die bei Fertigstellung noch offenen Teile (Frontend, Auth) sind über 0005/0006 umgesetzt, siehe Spec |
 | [0002](./features/0002-manual-categorization.md) | Manuelle Kategorisierung | Implemented ([PR #3](https://github.com/TheRealKoller/photosort/pull/3)) |
 | [0003](./features/0003-automatic-best-photo-selection.md) | Automatische Vorauswahl (Phase A) | Implemented ([PR #6](https://github.com/TheRealKoller/photosort/pull/6)) |
-| [0004](./features/0004-opencloud-export.md) | Export nach OpenCloud | Proposed |
 | [0005](./features/0005-minimal-project-frontend.md) | Minimales Projekt-Frontend | Implemented ([PR #2](https://github.com/TheRealKoller/photosort/pull/2)) |
 | [0006](./features/0006-auth.md) | Auth-Implementierung | Implemented ([PR #1](https://github.com/TheRealKoller/photosort/pull/1)) |
 | [0007](./features/0007-github-repo-access-hardening.md) | GitHub-Repo-Zugriffshärtung & Issue-Freigabe-Vorsorge | Implemented ([PR #5](https://github.com/TheRealKoller/photosort/pull/5)) |
@@ -34,8 +58,7 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 | [0022](./features/0022-scan-live-fortschrittszaehler.md) | Live-Fortschrittszähler beim Scannen eines Projekts | Implemented ([PR #40](https://github.com/TheRealKoller/photosort/pull/40)) |
 | [0023](./features/0023-scan-fortschritt-batch-groesse-fix.md) | Scan-Zuverlässigkeit: hängender Job + eingefrorener Live-Zähler | Implemented ([PR #43](https://github.com/TheRealKoller/photosort/pull/43)) |
 | [0024](./features/0024-top-photo-selection-category-mix.md) | Top-Fotos auswählen mit Kategorie-Mix (lokal) | Implemented ([PR #51](https://github.com/TheRealKoller/photosort/pull/51)) |
-| [0025](./features/0025-test-engineer-review-kompaktierung.md) | `test-engineer` kompaktieren: TDD-Ritual-Check raus, Instruktionen straffen | Accepted |
-| [0026](./features/0026-roadmap-kompaktuebersicht-und-readme-link.md) | Roadmap-Kompaktübersicht (D2-Grafik) und README-Verlinkung | Implemented ([PR #48](https://github.com/TheRealKoller/photosort/pull/48)) |
+| [0026](./features/0026-roadmap-kompaktuebersicht-und-readme-link.md) | Roadmap-Kompaktübersicht (D2-Grafik) und README-Verlinkung — Grafik in einer späteren Iteration wieder entfernt, siehe Spec | Implemented ([PR #48](https://github.com/TheRealKoller/photosort/pull/48)) |
 
 ## Priorisierung
 
