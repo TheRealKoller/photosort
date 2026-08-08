@@ -1,12 +1,12 @@
 # 0001 - OpenCloud-Projekt-Anbindung
 
-**Status:** Implemented (Backend)
+**Status:** Implemented
 **Erstellt:** 2026-07-19
 **Akzeptiert:** 2026-07-19
-**Implementiert:** 2026-07-19 (Commit "feat: implement OpenCloud project connection backend (spec 0001)")
+**Implementiert:** 2026-07-19 (Backend, Commit "feat: implement OpenCloud project connection backend (spec 0001)")
 **Bezug:** Ausgangsgespräch Projekt-Setup
 
-**Scope-Hinweis:** Implementiert ist die Backend-API (WebDAV/Graph-API-Client, Datenmodell, Scan-Worker, REST-Endpunkte). Die Frontend-Oberfläche (Ordner-Browser-UI, Projekt-Anlage-Formular) sowie Authentifizierung der Endpunkte sind eigene, noch offene Erweiterungen — siehe "Out of Scope".
+**Scope-Hinweis:** Implementiert ist die Backend-API (WebDAV/Graph-API-Client, Datenmodell, Scan-Worker, REST-Endpunkte). Die bei Fertigstellung dieser Spec noch offenen Erweiterungen — Frontend-Oberfläche (Ordner-Browser-UI, Projekt-Anlage-Formular) und Authentifizierung der Endpunkte — siehe "Out of Scope" — sind inzwischen über die eigenen Folge-Specs [`0005`](./0005-minimal-project-frontend.md) (Implemented, [PR #2](https://github.com/TheRealKoller/photosort/pull/2)) und [`0006`](./0006-auth.md) (Implemented, [PR #1](https://github.com/TheRealKoller/photosort/pull/1)) umgesetzt — verifiziert: `/projects` und `/opencloud` sind per `dependencies=[Depends(get_current_user)]` geschützt (`backend/src/photosort/api/projects.py`, `opencloud.py`). Diese Spec selbst gilt damit vollständig als abgeschlossen, dieser Hinweis bleibt nur als historischer Kontext stehen.
 
 ## Ziel
 
