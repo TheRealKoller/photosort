@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { apiFetch } from './client'
-import { createProject, getProject, listProjects, triggerScan, triggerScore } from './projects'
+import {
+  createProject,
+  getProject,
+  listProjects,
+  triggerScan,
+  triggerScore,
+  triggerSelectTop,
+} from './projects'
 import type { ProjectOut } from './types'
 
 vi.mock('./client', () => ({
@@ -16,6 +23,7 @@ const PROJECT: ProjectOut = {
   created_at: '2026-07-20T10:00:00Z',
   last_scan: null,
   last_scoring_run: null,
+  last_top_selection_run: null,
 }
 
 describe('api/projects', () => {
@@ -64,6 +72,18 @@ describe('api/projects', () => {
     const result = await triggerScore(1)
 
     expect(apiFetch).toHaveBeenCalledWith('/projects/1/score', { method: 'POST' })
+    expect(result).toEqual({ status: 'queued' })
+  })
+
+  it('triggers the top-photo selection via POST /projects/{id}/select-top with top_n_per_cluster', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
+
+    const result = await triggerSelectTop(1, 5)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/select-top', {
+      method: 'POST',
+      body: { top_n_per_cluster: 5 },
+    })
     expect(result).toEqual({ status: 'queued' })
   })
 })

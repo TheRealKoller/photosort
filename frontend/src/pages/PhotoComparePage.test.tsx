@@ -39,6 +39,7 @@ function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
     sharpness: 1.0,
     exposure: 0.5,
     cluster_key: null,
+    category: null,
     computed_at: '2026-07-20T10:00:00Z',
     ...overrides,
   }
