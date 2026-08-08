@@ -254,7 +254,9 @@ async def test_stale_category_from_a_previous_run_is_cleared_on_a_failed_reclass
     # Widerspricht dem Akzeptanzkriterium "das betroffene Foto bleibt ohne category".
     project = await _make_project(db_session)
     await _add_successful_scoring_run(db_session, project)
-    photo = await _add_photo(db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC))
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
     score = await _add_score(db_session, photo, cluster_key="cluster-0", local_quality_score=10.0)
     # Simuliert eine bereits aus einem frueheren Lauf vorhandene Kategorie.
     score.category = PhotoCategory.PEOPLE
