@@ -6,6 +6,7 @@ import type { RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { PhotoImage } from '../components/PhotoImage'
+import { QualityMeter } from '../components/QualityMeter'
 import { RatingButtons } from '../components/RatingButtons'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
@@ -14,7 +15,9 @@ import {
   usePhotoSequenceQuery,
   useSetRatingMutation,
 } from '../hooks/usePhotos'
+import { CATEGORY_LABELS } from '../utils/categoryLabels'
 import { findOwnRating, ownRatingStatus } from '../utils/ownRating'
+import { qualityLevel } from '../utils/qualityLevel'
 import { parseRatingFilter } from '../utils/ratingFilter'
 import { RATING_STATUS_LABELS } from '../utils/ratingLabels'
 
@@ -293,10 +296,26 @@ export function PhotoDetailPage() {
             {/* Server liefert die Begruendung bereits regelbasiert ueber `reason`
                 (backend/src/photosort/api/photos.py::_to_suggestion_out) - hier bewusst nicht
                 erneut aus duplicate_of abgeleitet (Test-Review-Fund: doppelte, potenziell
-                auseinanderlaufende Business-Logik). */}
-            {suggestion.reason === 'duplicate'
-              ? `Duplikat von Foto #${suggestion.duplicate_of}`
-              : 'Geringe Bildqualität'}
+                auseinanderlaufende Business-Logik). "top_pick" (Spec 0024) zeigt zusaetzlich
+                Kategorie + eine grobe Qualitaets-Einordnung statt eines Rohwerts (UI/UX-Abschnitt
+                der Spec) - beide nur fuer top_pick gesetzt (category/local_quality_score sind bei
+                duplicate/low_quality entweder null oder fachlich nicht gemeint). */}
+            {suggestion.reason === 'duplicate' && `Duplikat von Foto #${suggestion.duplicate_of}`}
+            {suggestion.reason === 'low_quality' && 'Geringe Bildqualität'}
+            {suggestion.reason === 'top_pick' && suggestion.category && (
+              <>
+                Kategorie: {CATEGORY_LABELS[suggestion.category]}
+                {(() => {
+                  const level = qualityLevel(suggestion.local_quality_score)
+                  return level ? (
+                    <>
+                      {' · '}
+                      <QualityMeter level={level} />
+                    </>
+                  ) : null
+                })()}
+              </>
+            )}
           </p>
           {/* Ruft denselben Mutation-Pfad wie ein manueller Klick auf die passende
               RatingButtons-Option auf (UI/UX-Abschnitt der Spec) - der bestehende Auto-Advance

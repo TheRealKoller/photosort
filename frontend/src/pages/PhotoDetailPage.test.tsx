@@ -300,6 +300,44 @@ describe('PhotoDetailPage', () => {
     expect(await screen.findByText(/duplikat von foto #42/i)).toBeInTheDocument()
   })
 
+  it('shows the category and a quality meter as part of the suggestion text for a top-pick suggestion', async () => {
+    const list: PhotoListOut = {
+      items: [
+        photo({
+          id: 1,
+          ratings: [],
+          suggestion: suggestion({
+            status: 'album_worthy',
+            reason: 'top_pick',
+            category: 'landscape',
+            local_quality_score: 90,
+          }),
+        }),
+      ],
+      total: 1,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage('/projects/1/photos/1')
+
+    expect(await screen.findByText(/automatischer vorschlag: album-würdig/i)).toBeInTheDocument()
+    expect(screen.getByText(/kategorie: landschaft/i)).toBeInTheDocument()
+    expect(screen.getByText('Hohe Bildqualität')).toBeInTheDocument()
+  })
+
+  it('does not show a category/quality meter for a low-quality (non-top-pick) suggestion', async () => {
+    const list: PhotoListOut = {
+      items: [photo({ id: 1, ratings: [], suggestion: suggestion({ reason: 'low_quality' }) })],
+      total: 1,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage('/projects/1/photos/1')
+
+    await screen.findByText(/automatischer vorschlag/i)
+    expect(screen.queryByText(/kategorie:/i)).not.toBeInTheDocument()
+  })
+
   it('does not show a suggestion once an own rating exists', async () => {
     const list: PhotoListOut = {
       items: [
