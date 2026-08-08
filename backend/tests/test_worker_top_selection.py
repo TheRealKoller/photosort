@@ -244,6 +244,37 @@ async def test_best_effort_classification_failure_does_not_fail_the_run(
     assert scores[working.id].suggested_status == RatingStatus.ALBUM_WORTHY
 
 
+async def test_stale_category_from_a_previous_run_is_cleared_on_a_failed_reclassification(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Copilot-Review-Fund (PR #51): score.category wurde bisher nur bei ERFOLGREICHER
+    # Klassifikation neu gesetzt - schlug die Klassifikation in einem SPAETEREN Lauf best-effort
+    # fehl (z.B. inzwischen kaputte/fehlende display-Datei), blieb eine bereits aus einem
+    # frueheren Lauf vorhandene category-Zeile unveraendert stehen, statt geleert zu werden.
+    # Widerspricht dem Akzeptanzkriterium "das betroffene Foto bleibt ohne category".
+    project = await _make_project(db_session)
+    await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC))
+    score = await _add_score(db_session, photo, cluster_key="cluster-0", local_quality_score=10.0)
+    # Simuliert eine bereits aus einem frueheren Lauf vorhandene Kategorie.
+    score.category = PhotoCategory.PEOPLE
+    await db_session.commit()
+    # KEINE display-Cache-Datei diesmal -> Klassifikation schlaegt best-effort fehl.
+
+    await run_top_selection(
+        db_session,
+        project,
+        top_n_per_cluster=1,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+    )
+
+    refreshed = (
+        await db_session.execute(select(PhotoScore).where(PhotoScore.photo_id == photo.id))
+    ).scalar_one()
+    assert refreshed.category is None
+
+
 async def test_candidate_pool_is_capped_per_cluster_formula(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

@@ -553,8 +553,12 @@ async def run_top_selection(
             candidates: list[CategoryCandidate] = []
             for photo, score in pool:
                 category = _classify_candidate(cache_dir, photo, detector)
+                # Copilot-Review-Fund (PR #51): `category` immer explizit setzen, auch bei
+                # best-effort Fehlschlag (None) - sonst bliebe eine aus einem FRUEHEREN Lauf
+                # bereits vorhandene category-Zeile faelschlich stehen, statt geleert zu werden
+                # (Akzeptanzkriterium: "das betroffene Foto bleibt ohne category").
+                score.category = category
                 if category is not None:
-                    score.category = category
                     candidates.append(
                         CategoryCandidate(photo.id, category, score.local_quality_score or 0.0)
                     )

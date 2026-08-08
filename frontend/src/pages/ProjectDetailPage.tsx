@@ -153,8 +153,15 @@ export function ProjectDetailPage() {
   )
   // Default 3 (UI/UX-Abschnitt der Spec) - min=1/max=10 sind nur clientseitige Hinweise
   // (native <input>-Attribute), die eigentliche Grenze wird serverseitig durchgesetzt
-  // (Field(ge=1, le=10), 422 sonst).
-  const [topNPerCluster, setTopNPerCluster] = useState(3)
+  // (Field(ge=1, le=10), 422 sonst). `''` ist ein bewusst erlaubter Zwischenzustand fuer ein
+  // geleertes Eingabefeld (Copilot-Review-Fund, PR #51) - haette der State stattdessen sofort auf
+  // den zuletzt gueltigen Wert zurueckgesetzt werden muessen, waere das kontrollierte
+  // <input>-Element beim Tippen mitten im Loeschen/Neueintippen "zurueckgesprungen" (React
+  // erzwingt den DOM-Wert bei jedem Render), was den naechsten Tastendruck an eine falsche
+  // Cursor-Position angehaengt haette. Der leere Zwischenzustand wird erst beim tatsaechlichen
+  // Start (handleTriggerSelectTop) auf den Default 3 aufgeloest, nicht schon bei jedem Tastendruck.
+  const [topNPerCluster, setTopNPerCluster] = useState<number | ''>(3)
+  const effectiveTopNPerCluster = topNPerCluster === '' ? 3 : topNPerCluster
 
   if (query.isError && query.error instanceof ApiError && query.error.status === 404) {
     return (
@@ -272,7 +279,7 @@ export function ProjectDetailPage() {
       return
     }
     setAwaitingSelectTopConfirmation(true)
-    selectTopMutation.mutate(topNPerCluster, {
+    selectTopMutation.mutate(effectiveTopNPerCluster, {
       onError: () => setAwaitingSelectTopConfirmation(false),
     })
   }
@@ -426,9 +433,21 @@ export function ProjectDetailPage() {
               value={topNPerCluster}
               disabled={isSelectTopDisabled}
               onChange={(event) => {
-                const value = Number(event.target.value)
+                // Copilot-Review-Fund (PR #51): `Number(event.target.value)` liefert bei einem
+                // geleerten Feld 0 statt NaN (anders als `valueAsNumber`), das waere unbemerkt als
+                // gueltiger State-Wert durchgerutscht und haette top_n_per_cluster=0 an die API
+                // gesendet (422). Ein geleertes Feld wird hier bewusst als eigener `''`-State
+                // gehalten statt sofort auf den letzten gueltigen Wert zurueckzuspringen (siehe
+                // Kommentar bei der State-Deklaration oben) - erst handleTriggerSelectTop loest
+                // `''` auf den Default 3 auf. Getippte Werte werden auf 1..10 geklemmt (client-
+                // seitige Entsprechung zu Field(ge=1, le=10), das serverseitig ohnehin gilt).
+                if (event.target.value === '') {
+                  setTopNPerCluster('')
+                  return
+                }
+                const value = event.target.valueAsNumber
                 if (!Number.isNaN(value)) {
-                  setTopNPerCluster(value)
+                  setTopNPerCluster(Math.min(10, Math.max(1, Math.round(value))))
                 }
               }}
               className="w-24"

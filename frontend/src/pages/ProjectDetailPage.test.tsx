@@ -887,6 +887,48 @@ describe('ProjectDetailPage', () => {
       expect(projectsApi.triggerSelectTop).toHaveBeenCalledWith(1, 5)
     })
 
+    it('keeps the previous valid value instead of falling through to 0 when the field is cleared', async () => {
+      // Copilot-Review-Fund (PR #51): Number('') ist 0, nicht NaN - ein geleertes Feld haette
+      // zuvor unbemerkt top_n_per_cluster=0 in den State uebernommen (auf Klick waere das dann
+      // als serverseitig ungueltiger Wert an /select-top gesendet worden, 422).
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          category_selection_enabled: true,
+          last_scoring_run: scoringRun({ status: 'success' }),
+        })
+      )
+      vi.mocked(projectsApi.triggerSelectTop).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+
+      renderPage()
+      const input = (await screen.findByLabelText(
+        /top-fotos pro foto-moment/i
+      )) as HTMLInputElement
+      await user.clear(input)
+      await user.click(screen.getByRole('button', { name: /auswahl starten/i }))
+
+      expect(projectsApi.triggerSelectTop).toHaveBeenCalledWith(1, 3)
+    })
+
+    it('clamps a typed value above the 1-10 range instead of forwarding it as-is', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          category_selection_enabled: true,
+          last_scoring_run: scoringRun({ status: 'success' }),
+        })
+      )
+      vi.mocked(projectsApi.triggerSelectTop).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+
+      renderPage()
+      const input = await screen.findByLabelText(/top-fotos pro foto-moment/i)
+      await user.clear(input)
+      await user.type(input, '20')
+      await user.click(screen.getByRole('button', { name: /auswahl starten/i }))
+
+      expect(projectsApi.triggerSelectTop).toHaveBeenCalledWith(1, 10)
+    })
+
     it('disables the button synchronously on click, before the response arrives', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
