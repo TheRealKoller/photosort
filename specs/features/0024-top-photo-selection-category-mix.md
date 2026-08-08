@@ -1,6 +1,6 @@
 # 0024 - Top-Fotos auswählen mit Kategorie-Mix (lokal)
 
-**Status:** Accepted
+**Status:** Implemented ([PR #51](https://github.com/TheRealKoller/photosort/pull/51))
 **Erstellt:** 2026-08-07
 **Bezug:** Inbox-Notiz `specs/inbox/0011-beste-fotos-vorschlagen-neu-denken.md` (Daniel selbst, interaktive Session; nach Aufnahme in diese Spec gelöscht), [`decisions/0002-hybrid-ai-scoring.md`](../decisions/0002-hybrid-ai-scoring.md), [`decisions/0006-local-scoring-datamodel.md`](../decisions/0006-local-scoring-datamodel.md), [`decisions/0015-lokale-kategorie-klassifikation.md`](../decisions/0015-lokale-kategorie-klassifikation.md), [`features/0003-automatic-best-photo-selection.md`](./0003-automatic-best-photo-selection.md), Idea-Sharpening-Gespräch mit Daniel am 2026-08-07
 
