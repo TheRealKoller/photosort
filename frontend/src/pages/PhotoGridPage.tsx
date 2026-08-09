@@ -23,6 +23,7 @@ const SKELETON_TILE_COUNT = 6
 const FILTERS: { value: RatingFilter | ''; label: string }[] = [
   { value: '', label: 'Alle' },
   { value: 'unrated', label: 'Unbewertet' },
+  { value: 'suggested', label: 'Vorgeschlagen' },
   { value: 'favorite', label: 'Favorit' },
   { value: 'album_worthy', label: 'Album-würdig' },
   { value: 'rejected', label: 'Verworfen' },

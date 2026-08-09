@@ -2,6 +2,7 @@ import type { RatingFilter } from '../api/types'
 
 const VALID_RATING_FILTERS: readonly RatingFilter[] = [
   'unrated',
+  'suggested',
   'favorite',
   'album_worthy',
   'rejected',
