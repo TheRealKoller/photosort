@@ -78,6 +78,6 @@ In jedem Fall: Ziel, User Story und Akzeptanzkriterien aus dem Gespräch ableite
 
 Falls die Idee die Architektur oder das Datenmodell spürbar verändert: `docs/architecture.md` entsprechend ergänzen.
 
-Trag außerdem den in Schritt 2 vom `requirements-engineer` angelegten Eintrag in `specs/roadmap.md` mit dem jetzt feststehenden Spec-Pfad/-Nummer nach — der frühere Eintrag zeigte noch auf keine konkrete Datei, da die Spec erst jetzt angelegt wird. Kein erneuter Agenten-Aufruf nötig, reine Pfad-Ergänzung.
+Bestätige oder korrigiere an dieser Stelle verpflichtend die in Schritt 2 vom `requirements-engineer` vorläufig vergebene Priorität (Hoch/Mittel/Niedrig) — zu diesem Zeitpunkt liegt deutlich mehr Kontext vor (Code-/Spec-Recherche, Devil's Advocate, ggf. Architektur/UX/Test/Security) als in Schritt 2, die vorläufige Priorität wird also nie unreflektiert übernommen. Trag danach den in Schritt 2 vom `requirements-engineer` angelegten Eintrag in `specs/roadmap.md` mit dem jetzt feststehenden Spec-Pfad/-Nummer und der finalisierten Priorität nach — der frühere Eintrag zeigte noch auf keine konkrete Datei, da die Spec erst jetzt angelegt wird. Kein erneuter Agenten-Aufruf nötig, reine Pfad-/Prioritäts-Ergänzung.
 
 Fasse am Ende kurz zusammen, was angelegt/geändert wurde, mit Datei-Pfaden.
