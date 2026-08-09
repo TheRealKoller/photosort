@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
 from arq.connections import RedisSettings
+from arq.cron import cron
+from arq.worker import func as arq_func
 from PIL import Image
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.classification import (
     CategoryCandidate,
@@ -125,6 +128,31 @@ def _now_utc() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+async def _fail_run(
+    session: AsyncSession,
+    run: ScanRun | ScoringRun | TopSelectionRun,
+    error_message: str,
+) -> None:
+    """Gemeinsame "Lauf auf FAILED setzen"-Logik fuer alle drei run_*-Funktionen
+    (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019) - kein Decorator/Wrapper
+    um die drei Funktionen (die bleiben strukturell eigenstaendig, ihre Erfolgspfade unterscheiden
+    sich zu stark), nur Vermeidung von vier identischen Zeilen an sechs Call-Sites (drei
+    Funktionen x je CancelledError- und Exception-Zweig). Kein Kontrollfluss (kein raise/return)
+    hier drin - das bleibt an jeder Call-Site sichtbar."""
+    await session.rollback()
+    run.status = ScanStatus.FAILED
+    run.error_message = error_message
+    run.finished_at = _now_utc()
+    await session.commit()
+    # Copilot-Review-Fund (PR #67): das vorangehende rollback() expired ORM-Objekte der Session -
+    # ohne dieses refresh() koennte ein direkter Attributzugriff auf `run` NACH der Rueckkehr aus
+    # _fail_run (z.B. `run.id` in scan_project/score_project/select_top_photos, die den
+    # Rueckgabewert von run_project_scan/run_project_scoring/run_top_selection unmittelbar
+    # weiterverwenden) einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
+    # ausloesen (sqlalchemy.exc.MissingGreenlet) - siehe test_worker_fail_run.py.
+    await session.refresh(run)
+
+
 async def _generate_thumbnails(
     client: OpenCloudScanClient,
     webdav_url: str,
@@ -182,6 +210,11 @@ async def run_project_scan(
             # (kein `nonlocal` noetig, da hier nur gelesen, nicht neu zugewiesen wird).
             if files_found % SCAN_COMMIT_BATCH_SIZE == 0:
                 scan_run.files_found = files_found
+                # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-
+                # watchdog.md, ADR 0019, Schicht 2): Zweitverwendung dieses bereits bestehenden
+                # Zwischen-Commit-Checkpoints - reap_stalled_runs (worker.py) liest diesen Wert,
+                # keine neue Checkpoint-Kadenz noetig.
+                scan_run.last_progress_at = _now_utc()
                 await session.commit()
 
         entry: DavEntry
@@ -246,6 +279,18 @@ async def run_project_scan(
         scan_run.files_skipped = files_skipped
         await session.commit()
         return scan_run
+    except asyncio.CancelledError:
+        # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+        # watchdog.md, ADR 0019): ein arq job_timeout-Ablauf, ein geplanter Worker-Shutdown und ein
+        # kuenftiger Job.abort() loesen alle denselben asyncio.CancelledError-Pfad aus (verifiziert
+        # im arq-Quellcode, siehe ADR). Anders als die fruehere Annahme (siehe Git-Historie) wird
+        # das jetzt bewusst NICHT mehr unbehandelt durchgelassen: der Lauf wird sofort auf FAILED
+        # gesetzt, danach re-raised (kein Verschlucken einer BaseException) - arqs eigene
+        # Task-/Retry-Buchhaltung funktioniert dadurch unveraendert weiter.
+        await _fail_run(
+            session, scan_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
+        )
+        raise
     except Exception as exc:
         # Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): vorher
         # wurde hier ausschliesslich OpenCloudError abgefangen - jede andere Exception (z.B. aus
@@ -253,14 +298,7 @@ async def run_project_scan(
         # und liess den ScanRun dauerhaft auf status="running" haengen, ohne Watchdog/Recovery.
         # OpenCloudError ist eine Teilmenge von Exception, ein einzelner breiter Handler reicht
         # deshalb aus - exakt das bereits bestehende Muster in run_project_scoring unten.
-        # asyncio.CancelledError ist seit Python 3.8 BaseException statt Exception-Subtyp und wird
-        # von diesem `except Exception` daher NICHT abgefangen: ein geplanter Worker-Shutdown
-        # markiert einen Lauf nicht faelschlich als "failed", keine Sonderbehandlung noetig.
-        await session.rollback()
-        scan_run.status = ScanStatus.FAILED
-        scan_run.error_message = str(exc)
-        scan_run.finished_at = _now_utc()
-        await session.commit()
+        await _fail_run(session, scan_run, str(exc))
         return scan_run
 
 
@@ -381,6 +419,9 @@ async def run_project_scoring(
             processed += 1
             if processed % SCORE_COMMIT_BATCH_SIZE == 0:
                 scoring_run.photos_processed = processed
+                # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-
+                # watchdog.md, ADR 0019, Schicht 2) - analog run_project_scan oben.
+                scoring_run.last_progress_at = _now_utc()
                 await session.commit()
 
         scoring_run.photos_processed = processed
@@ -422,16 +463,19 @@ async def run_project_scoring(
         scoring_run.finished_at = datetime.now(UTC).replace(tzinfo=None)
         await session.commit()
         return scoring_run
+    except asyncio.CancelledError:
+        # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+        # watchdog.md, ADR 0019) - analog run_project_scan oben.
+        await _fail_run(
+            session, scoring_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
+        )
+        raise
     except Exception as exc:
         # Kein Rollback bereits committeter PhotoScore-Zeilen/des letzten committeten
         # photos_processed-Stands (Akzeptanzkriterium der Spec) - session.rollback() verwirft nur
         # die seit dem letzten commit() offene, noch nicht persistierte Transaktion, exakt wie im
         # OpenCloudError-Pfad von run_project_scan oben.
-        await session.rollback()
-        scoring_run.status = ScanStatus.FAILED
-        scoring_run.error_message = str(exc)
-        scoring_run.finished_at = datetime.now(UTC).replace(tzinfo=None)
-        await session.commit()
+        await _fail_run(session, scoring_run, str(exc))
         return scoring_run
 
 
@@ -565,6 +609,9 @@ async def run_top_selection(
                 processed += 1
                 if processed % TOP_SELECTION_COMMIT_BATCH_SIZE == 0:
                     run.candidates_processed = processed
+                    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-
+                    # watchdog.md, ADR 0019, Schicht 2) - analog run_project_scan oben.
+                    run.last_progress_at = _now_utc()
                     await session.commit()
             classified_by_cluster[cluster_key] = candidates
 
@@ -582,14 +629,15 @@ async def run_top_selection(
         run.finished_at = _now_utc()
         await session.commit()
         return run
+    except asyncio.CancelledError:
+        # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+        # watchdog.md, ADR 0019) - analog run_project_scan/run_project_scoring oben.
+        await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
+        raise
     except Exception as exc:
         # Kein Rollback bereits committeter Fortschritts-/Kategorie-Zwischenstaende
         # (Akzeptanzkriterium der Spec, identisches Muster wie run_project_scoring oben).
-        await session.rollback()
-        run.status = ScanStatus.FAILED
-        run.error_message = str(exc)
-        run.finished_at = _now_utc()
-        await session.commit()
+        await _fail_run(session, run, str(exc))
         return run
 
 
@@ -605,6 +653,141 @@ async def select_top_photos(ctx: dict[str, Any], project_id: int, top_n_per_clus
         return run.id
 
 
+# Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
+# grosszuegiger Not-Anker (24h), NICHT der primaere Terminierungsmechanismus - Schicht 2
+# (STALL_THRESHOLD, siehe reap_stalled_runs) greift fuer jeden echten Stillstand immer zuerst.
+# Begrenzt nur den Ressourcenverbrauch eines (heute nicht vorstellbaren) Defekts in Schicht 2
+# selbst. arq-Default waere 300s (5 Minuten) - deutlich zu kurz fuer legitim lange Scans grosser
+# Fotobibliotheken (bindende Stakeholder-Anforderung, siehe Spec).
+JOB_TIMEOUT_SECONDS = 86400
+
+# Schicht 2 des Fortschritts-Watchdogs (ADR 0019): der eigentliche, fortschrittsbasierte
+# Stillstands-Schwellwert - ein RUNNING-Lauf, dessen last_progress_at strikt aelter als dieser Wert
+# ist, gilt als haengend, unabhaengig von seiner Gesamtlaufzeit (bindende Stakeholder-Anforderung:
+# "nur ein echter Stillstand ist ein Fehler, keine feste Obergrenze").
+STALL_THRESHOLD = timedelta(minutes=15)
+
+def _stall_message() -> str:
+    # Copilot-Review-Fund (PR #67): die Minutenzahl wird bewusst aus STALL_THRESHOLD abgeleitet
+    # statt hart codiert - ein spaeteres Anpassen von STALL_THRESHOLD kann die Meldung damit nicht
+    # mehr unbemerkt veralten lassen.
+    minutes = int(STALL_THRESHOLD.total_seconds() // 60)
+    return (
+        f"Kein Fortschritt seit über {minutes} Minuten erkannt — "
+        "vermutlich hängender Verarbeitungsschritt."
+    )
+
+
+async def _fail_if_stalled(
+    session: AsyncSession, run: ScanRun | ScoringRun | TopSelectionRun
+) -> bool:
+    """Setzt eine einzelne Zeile ueber _fail_run auf FAILED, isoliert von den uebrigen Zeilen/
+    Tabellen (Akzeptanzkriterium der Spec 0034: ein Fehler bei einer Zeile/Tabelle darf die
+    Bereinigung der uebrigen nicht blockieren) - ein Fehlschlag hier (z.B. ein DB-Fehler beim
+    Commit dieser einen Zeile) rollt nur die aktuelle, noch nicht committete Teiltransaktion
+    zurueck, bereits zuvor erfolgreich committete Zeilen bleiben unberuehrt."""
+    try:
+        await _fail_run(session, run, _stall_message())
+        return True
+    except Exception:
+        await session.rollback()
+        return False
+
+
+async def reap_stalled_runs(
+    ctx: dict[str, Any],
+    session_factory: async_sessionmaker[AsyncSession] = async_session_factory,
+) -> int:
+    """Schicht 2 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+    watchdog.md, ADR 0019): periodischer arq-Cron-Job (alle 5 Minuten, siehe
+    WorkerSettings.cron_jobs), unabhaengig von einer ggf. tatsaechlich noch haengenden Coroutine -
+    deckt exakt den Fall ab, den reines Exception-Handling (Schicht 1, _fail_run oben) strukturell
+    nie schliessen kann (ein nie zurueckkehrender await liefert nie eine Exception, an die sich
+    anknuepfen liesse). session_factory ist injizierbar (Default: die echte, produktive
+    async_session_factory) - Tests uebergeben stattdessen eine an eine In-Memory-SQLite-
+    Testdatenbank gebundene Factory, analog zu run_top_selection's build_detector-Parameter. Die
+    drei Tabellen werden bewusst nacheinander in drei eigenstaendigen Bloecken behandelt statt
+    ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/ScoringRun/
+    TopSelectionRun bleiben drei eigenstaendige Modelle ohne gemeinsame Basisklasse, ADR 0019)."""
+    reaped = 0
+    threshold = _now_utc() - STALL_THRESHOLD
+    async with session_factory() as session:
+        try:
+            stalled_scan_runs = (
+                await session.execute(
+                    select(ScanRun).where(
+                        ScanRun.status == ScanStatus.RUNNING,
+                        ScanRun.last_progress_at < threshold,
+                    )
+                )
+            ).scalars().all()
+        except Exception:
+            # architect-Review-Fund (Spec 0034): ohne rollback() bliebe die Transaktion auf einer
+            # echten Postgres-Verbindung nach einem fehlgeschlagenen SELECT im Zustand "current
+            # transaction is aborted" - die nachfolgenden SELECTs fuer ScoringRun/TopSelectionRun
+            # wuerden dann selbst fehlschlagen, obwohl inhaltlich nichts mit ihnen falsch ist. Das
+            # wuerde das Akzeptanzkriterium "ein Fehler bei einer Tabelle blockiert die
+            # Bereinigung der uebrigen nicht" in Produktion unterlaufen - im SQLite-Testsetup
+            # unsichtbar, da dort eine vor jedem DB-Zugriff geworfene Python-Exception die
+            # DBAPI-Transaktion nie tatsaechlich invalidiert.
+            await session.rollback()
+            stalled_scan_runs = []
+        for scan_run in stalled_scan_runs:
+            if await _fail_if_stalled(session, scan_run):
+                reaped += 1
+
+        try:
+            stalled_scoring_runs = (
+                await session.execute(
+                    select(ScoringRun).where(
+                        ScoringRun.status == ScanStatus.RUNNING,
+                        ScoringRun.last_progress_at < threshold,
+                    )
+                )
+            ).scalars().all()
+        except Exception:
+            await session.rollback()
+            stalled_scoring_runs = []
+        for scoring_run in stalled_scoring_runs:
+            if await _fail_if_stalled(session, scoring_run):
+                reaped += 1
+
+        try:
+            stalled_top_selection_runs = (
+                await session.execute(
+                    select(TopSelectionRun).where(
+                        TopSelectionRun.status == ScanStatus.RUNNING,
+                        TopSelectionRun.last_progress_at < threshold,
+                    )
+                )
+            ).scalars().all()
+        except Exception:
+            await session.rollback()
+            stalled_top_selection_runs = []
+        for top_selection_run in stalled_top_selection_runs:
+            if await _fail_if_stalled(session, top_selection_run):
+                reaped += 1
+
+    return reaped
+
+
 class WorkerSettings:
-    functions = (scan_project, score_project, select_top_photos)
+    # arq.worker.func(...) statt nackter Funktionsreferenzen (Fortschritts-Watchdog, ADR 0019):
+    # max_tries=1 deaktiviert arqs automatischen Hintergrund-Retry vollstaendig - ein durch
+    # job_timeout abgebrochener Job erzeugt dadurch KEINE zweite Run-Zeile (arq prueft
+    # job_try > max_tries VOR dem erneuten Coroutine-Aufruf, verifiziert im arq-Quellcode). Damit
+    # gilt strukturell: ein Nutzer-Trigger -> genau ein Lauf -> ein eindeutiger Endzustand,
+    # sichtbar ueber die bestehende "Erneut versuchen"-UI (Spec 0017/0023) statt eines
+    # unsichtbaren automatischen Wiederholungsversuchs.
+    functions = (
+        arq_func(scan_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
+        arq_func(score_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
+        arq_func(select_top_photos, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
+    )
+    # Schicht 2 des Fortschritts-Watchdogs (ADR 0019), erste Nutzung von arqs Cron-Mechanismus im
+    # Projekt: run_at_startup=True sorgt dafuer, dass ein Worker-Neustart sofort eine erste
+    # Pruefung ausloest, statt bis zu 5 Minuten auf den naechsten regulaeren Tick zu warten (genau
+    # der Bug-Report-Fall: eine bereits vor dem Neustart haengende Zeile soll nicht unnoetig lang
+    # unentdeckt bleiben).
+    cron_jobs = (cron(reap_stalled_runs, minute=set(range(0, 60, 5)), run_at_startup=True),)
     redis_settings = RedisSettings.from_dsn(settings.redis_url)

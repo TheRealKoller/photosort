@@ -193,12 +193,25 @@ class OpenCloudClient:
     async def walk(
         self, webdav_url: str, root_path: str
     ) -> AsyncIterator[tuple[str, DavEntry]]:
-        queue: deque[str] = deque([root_path.strip("/")])
+        # Zyklenschutz (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
+        # ohne dieses Set wuerde ein (hypothetischer) Zyklus in der WebDAV-Verzeichnisstruktur
+        # (ein Kind-Ordner-Eintrag verweist auf einen bereits besuchten Pfad) denselben Pfad
+        # immer wieder in die BFS-Queue einreihen - files_found/last_progress_at wuerden dabei
+        # laufend "fortschreiten", ohne dass Schicht 2 (reap_stalled_runs) einen echten Stillstand
+        # erkennen wuerde. child_relative wird VOR dem queue.append geprueft, nicht erst beim
+        # Dequeuen - so wird auch eine doppelte Referenz innerhalb DERSELBEN Listing-Antwort
+        # abgefangen.
+        start = root_path.strip("/")
+        visited: set[str] = {start}
+        queue: deque[str] = deque([start])
         while queue:
             current = queue.popleft()
             for entry in await self.list_folder(webdav_url, current):
                 child_relative = f"{current}/{entry.name}" if current else entry.name
                 if entry.is_collection:
+                    if child_relative in visited:
+                        continue
+                    visited.add(child_relative)
                     queue.append(child_relative)
                 else:
                     yield child_relative, entry

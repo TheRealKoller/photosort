@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError, _join
+from photosort.opencloud.webdav_xml import DavEntry
 
 DRIVES_RESPONSE = {
     "value": [
@@ -275,6 +276,53 @@ async def test_walk_recurses_into_subfolders() -> None:
 
     relative_paths = {relative_path for relative_path, _entry in results}
     assert relative_paths == {"CostaRica/img001.jpg", "CostaRica/Sub/img002.jpg"}
+
+
+async def test_walk_terminates_when_a_child_entry_points_at_an_already_visited_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Zyklenschutz (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019): ein
+    (hypothetischer) Zyklus in der WebDAV-Verzeichnisstruktur wuerde ohne Schutz denselben Pfad
+    immer wieder liefern/erneut in die BFS-Queue einreihen. Simuliert hier ueber eine duplizierte
+    "Sub"-Ordner-Referenz in derselben Listing-Antwort von CostaRica - list_folder() wird direkt
+    gemockt (nicht ueber echtes WebDAV-XML), analog zum Teststrategie-Abschnitt der Spec.
+    child_relative wird VOR dem queue.append gegen bereits besuchte Pfade geprueft, deshalb wird
+    "CostaRica/Sub" trotz der doppelten Referenz nur EINMAL besucht/gelistet."""
+
+    def _entry(name: str, is_collection: bool) -> DavEntry:
+        return DavEntry(
+            href=f"/dav/spaces/x/CostaRica/{name}",
+            name=name,
+            is_collection=is_collection,
+            etag="etag",
+            last_modified=None,
+            content_length=None,
+        )
+
+    calls: list[str] = []
+
+    async def fake_list_folder(
+        webdav_url: str, path: str = "", depth: str = "1"
+    ) -> list[DavEntry]:
+        calls.append(path)
+        if path == "CostaRica":
+            # "Sub" wird hier absichtlich ZWEIMAL referenziert - simuliert eine kaputte/
+            # zyklische WebDAV-Antwort, in der ein Kind-Ordner-Eintrag auf einen Pfad
+            # zurueckverweist, der bereits (in dieser selben Iteration) als besucht markiert
+            # wurde.
+            return [_entry("Sub", is_collection=True), _entry("Sub", is_collection=True)]
+        if path == "CostaRica/Sub":
+            return [_entry("img.jpg", is_collection=False)]
+        raise AssertionError(f"unexpected path {path}")
+
+    client = _client(httpx.MockTransport(lambda request: httpx.Response(500)))
+    monkeypatch.setattr(client, "list_folder", fake_list_folder)
+
+    results = [item async for item in client.walk(WEBDAV_URL, "CostaRica")]
+
+    assert [relative_path for relative_path, _entry in results] == ["CostaRica/Sub/img.jpg"]
+    # "CostaRica/Sub" wurde trotz der doppelten Referenz nur EINMAL gelistet, nicht zweimal.
+    assert calls == ["CostaRica", "CostaRica/Sub"]
 
 
 def test_join_builds_url_from_plain_segments() -> None:

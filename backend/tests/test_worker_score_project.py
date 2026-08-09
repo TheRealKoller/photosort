@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,7 +9,16 @@ from PIL import Image, ImageDraw, ImageFilter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.models import Photo, PhotoScore, Project, Rating, RatingStatus, ScanStatus, User
+from photosort.models import (
+    Photo,
+    PhotoScore,
+    Project,
+    Rating,
+    RatingStatus,
+    ScanStatus,
+    ScoringRun,
+    User,
+)
 from photosort.scoring import SHARPNESS_REJECT_THRESHOLD
 from photosort.security import hash_password
 from photosort.thumbnails import display_path
@@ -420,6 +430,70 @@ async def test_scoring_run_marked_failed_leaves_committed_progress_untouched(
     # photos_processed wurde bereits vor dem Fehler committet (Zwischen-Commit-Batch=1) und bleibt
     # erhalten - kein Rollback des bereits Verarbeiteten (Akzeptanzkriterium der Spec).
     assert scoring_run.photos_processed == 1
+
+
+async def test_scoring_run_marked_failed_on_cancelled_error(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+    watchdog.md, ADR 0019), Pendant zu test_scan_run_marked_failed_on_cancelled_error - hier aus
+    der Verarbeitungsschleife (nicht walk()) heraus ausgeloest: compute_sharpness wirft mitten in
+    _compute_photo_metrics asyncio.CancelledError, was dessen eigener `except Exception`-Block
+    NICHT abfaengt (BaseException seit Python 3.8) - die Exception propagiert bis in
+    run_project_scoring durch.
+
+    project_id wird VOR dem Aufruf gelesen und als lokale Variable verwendet (nicht project.id
+    danach): session.rollback() in _fail_run expired alle Objekte der Session - ein direkter
+    project.id-Zugriff DANACH wuerde einen impliziten Lazy-Load ausloesen, der ausserhalb des
+    von SQLAlchemy fuer Async-Sessions vorausgesetzten greenlet-Kontexts mit
+    sqlalchemy.exc.MissingGreenlet fehlschlaegt (kein Bug dieser Spec, sondern ein bekanntes
+    SQLAlchemy-Async-Verhalten - see auch die anderen beiden Cancelled-Error-Tests, die aus
+    genau diesem Grund denselben lokalen project_id-Zwischenwert verwenden)."""
+    import photosort.worker as worker_module
+
+    def _boom(*args: object, **kwargs: object) -> float:
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(worker_module, "compute_sharpness", _boom)
+
+    project = await _make_project(db_session)
+    project_id = project.id
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    scoring_run = (
+        await db_session.execute(select(ScoringRun).where(ScoringRun.project_id == project_id))
+    ).scalar_one()
+    assert scoring_run.status == ScanStatus.FAILED
+    assert scoring_run.error_message
+
+
+async def test_scoring_updates_last_progress_at_at_each_checkpoint(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR
+    0019), Pendant zu test_scan_updates_last_progress_at_at_each_checkpoint - hier am
+    SCORE_COMMIT_BATCH_SIZE-Zwischen-Commit-Block."""
+    import photosort.worker as worker_module
+
+    monkeypatch.setattr(worker_module, "SCORE_COMMIT_BATCH_SIZE", 1)
+    sentinel = datetime(2030, 1, 1, 12, 0, 0)
+    monkeypatch.setattr(worker_module, "_now_utc", lambda: sentinel)
+
+    project = await _make_project(db_session)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    assert scoring_run.last_progress_at == sentinel
 
 
 async def test_time_clustering_groups_photos_within_gap(

@@ -99,6 +99,12 @@ class ScanRun(Base):
     photos_removed: Mapped[int] = mapped_column(default=0)
     files_skipped: Mapped[int] = mapped_column(default=0)
     error_message: Mapped[str | None] = mapped_column(default=None)
+    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
+    # server-seitig defaultet (analog started_at), damit ein frisch angelegter Lauf sofort einen
+    # last_progress_at-Wert hat und nicht bereits ab Zeile 1 als Stillstand gilt. Wird an denselben
+    # Stellen wie files_found periodisch zwischen-committet (worker.py::_commit_progress_checkpoint)
+    # und von worker.py::reap_stalled_runs gelesen.
+    last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     project: Mapped[Project] = relationship(back_populates="scan_runs")
 
@@ -162,6 +168,9 @@ class ScoringRun(Base):
     # Variable rejected_ids). Bleibt bei einem fehlgeschlagenen Lauf auf dem Default 0 - kein
     # irrefuehrender Teilstand (specs/features/0021-scoring-run-vorschlagszaehler.md).
     suggestions_found: Mapped[int] = mapped_column(default=0, server_default="0")
+    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md), analog
+    # ScanRun.last_progress_at oben.
+    last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     project: Mapped[Project] = relationship(back_populates="scoring_runs")
 
@@ -232,5 +241,8 @@ class TopSelectionRun(Base):
     candidates_processed: Mapped[int] = mapped_column(default=0)
     suggestions_found: Mapped[int] = mapped_column(default=0)
     error_message: Mapped[str | None] = mapped_column(default=None)
+    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md), analog
+    # ScanRun.last_progress_at oben.
+    last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     project: Mapped[Project] = relationship(back_populates="top_selection_runs")
