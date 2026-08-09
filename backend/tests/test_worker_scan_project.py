@@ -486,6 +486,29 @@ async def test_scan_commits_files_found_progress_before_final_commit_at_producti
     assert observed_committed_counts == [1, 2, 3]
 
 
+async def test_scan_updates_last_progress_at_at_each_checkpoint(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR
+    0019): last_progress_at wird an genau der bestehenden Zwischen-Commit-Stelle
+    (_commit_progress_checkpoint) aktualisiert, die reap_stalled_runs (Schicht 2) spaeter liest -
+    verifiziert ueber einen kontrollierten "Uhr"-Wert statt einer echten Wartezeit."""
+    sentinel = datetime(2030, 1, 1, 12, 0, 0)
+    monkeypatch.setattr(worker, "_now_utc", lambda: sentinel)
+
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.png", _entry("img001.png", "etag-1", modified))]
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.last_progress_at == sentinel
+
+
 async def test_scan_generates_thumbnails_for_new_photo(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

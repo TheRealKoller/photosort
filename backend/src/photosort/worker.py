@@ -201,6 +201,11 @@ async def run_project_scan(
             # (kein `nonlocal` noetig, da hier nur gelesen, nicht neu zugewiesen wird).
             if files_found % SCAN_COMMIT_BATCH_SIZE == 0:
                 scan_run.files_found = files_found
+                # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-
+                # watchdog.md, ADR 0019, Schicht 2): Zweitverwendung dieses bereits bestehenden
+                # Zwischen-Commit-Checkpoints - reap_stalled_runs (worker.py) liest diesen Wert,
+                # keine neue Checkpoint-Kadenz noetig.
+                scan_run.last_progress_at = _now_utc()
                 await session.commit()
 
         entry: DavEntry
@@ -405,6 +410,9 @@ async def run_project_scoring(
             processed += 1
             if processed % SCORE_COMMIT_BATCH_SIZE == 0:
                 scoring_run.photos_processed = processed
+                # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-
+                # watchdog.md, ADR 0019, Schicht 2) - analog run_project_scan oben.
+                scoring_run.last_progress_at = _now_utc()
                 await session.commit()
 
         scoring_run.photos_processed = processed
@@ -592,6 +600,9 @@ async def run_top_selection(
                 processed += 1
                 if processed % TOP_SELECTION_COMMIT_BATCH_SIZE == 0:
                     run.candidates_processed = processed
+                    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-
+                    # watchdog.md, ADR 0019, Schicht 2) - analog run_project_scan oben.
+                    run.last_progress_at = _now_utc()
                     await session.commit()
             classified_by_cluster[cluster_key] = candidates
 

@@ -539,6 +539,37 @@ async def test_run_marked_failed_on_cancelled_error(
     assert run.error_message
 
 
+async def test_top_selection_updates_last_progress_at_at_each_checkpoint(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR
+    0019), drittes Pendant zu test_scan_updates_last_progress_at_at_each_checkpoint - hier am
+    TOP_SELECTION_COMMIT_BATCH_SIZE-Zwischen-Commit-Block."""
+    import photosort.worker as worker_module
+
+    monkeypatch.setattr(worker_module, "TOP_SELECTION_COMMIT_BATCH_SIZE", 1)
+    sentinel = datetime(2030, 1, 1, 12, 0, 0)
+    monkeypatch.setattr(worker_module, "_now_utc", lambda: sentinel)
+
+    project = await _make_project(db_session)
+    await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, cluster_key="cluster-0", local_quality_score=10.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_top_selection(
+        db_session,
+        project,
+        top_n_per_cluster=1,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+    )
+
+    assert run.last_progress_at == sentinel
+
+
 async def test_clusters_are_isolated_from_each_other(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

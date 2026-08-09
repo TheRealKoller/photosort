@@ -473,6 +473,29 @@ async def test_scoring_run_marked_failed_on_cancelled_error(
     assert scoring_run.error_message
 
 
+async def test_scoring_updates_last_progress_at_at_each_checkpoint(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR
+    0019), Pendant zu test_scan_updates_last_progress_at_at_each_checkpoint - hier am
+    SCORE_COMMIT_BATCH_SIZE-Zwischen-Commit-Block."""
+    import photosort.worker as worker_module
+
+    monkeypatch.setattr(worker_module, "SCORE_COMMIT_BATCH_SIZE", 1)
+    sentinel = datetime(2030, 1, 1, 12, 0, 0)
+    monkeypatch.setattr(worker_module, "_now_utc", lambda: sentinel)
+
+    project = await _make_project(db_session)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    assert scoring_run.last_progress_at == sentinel
+
+
 async def test_time_clustering_groups_photos_within_gap(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
