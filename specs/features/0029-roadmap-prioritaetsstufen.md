@@ -1,6 +1,6 @@
 # 0029 - Roadmap: Umstellung auf drei Prioritätsstufen (Hoch/Mittel/Niedrig)
 
-**Status:** Accepted
+**Status:** Implemented ([PR #59](https://github.com/TheRealKoller/photosort/pull/59))
 **Erstellt:** 2026-08-09
 **Bezug:** Idea-Sharpening-Gespräch mit Daniel am 2026-08-09 (direkte Chat-Idee, keine Inbox-Notiz beteiligt)
 
@@ -14,16 +14,16 @@ Als Requirements Engineer (KI) möchte ich Anforderungen in `specs/roadmap.md` m
 
 ## Akzeptanzkriterien
 
-- [ ] `specs/roadmap.md` verwendet für alle offenen Specs (Status `Proposed`/`Accepted`) ausschließlich die drei Kategorien **Hoch/Mittel/Niedrig** — sowohl als Tabellen-Abschnittsüberschriften unter "Status auf einen Blick" ("Offen — Hoch"/"Offen — Mittel"/"Offen — Niedrig") als auch als `###`-Zwischenüberschriften im Abschnitt "## Priorisierung". `grep -n "Offen — \(Jetzt\|Als Nächstes\|Später\|Ideenspeicher\)" specs/roadmap.md` liefert danach 0 Treffer.
-- [ ] Kein leerer "Offen — Mittel"-Abschnitt, solange keine offene (Proposed/Accepted) Spec dieser Stufe existiert — analog zum bisherigen Fehlen einer "Offen — Als Nächstes"-Tabelle. Die `###`-Zwischenüberschrift "Mittel" unter "## Priorisierung" bleibt trotzdem bestehen, auch wenn dort aktuell nur bereits-Implemented-Rückblicke stehen (z.B. Specs 0020/0024).
-- [ ] Migration der bestehenden offenen Einträge nach dem mit Daniel bestätigten Mapping: Jetzt → Hoch, Als Nächstes → Mittel, Später + Ideenspeicher → gemeinsam Niedrig. Konkret: Spec 0027 → Hoch, Spec 0004 → Niedrig, Spec 0028 → Niedrig (0004 und 0028 in derselben "Offen — Niedrig"-Tabelle, Reihenfolge: erst die ehemaligen "Später"-, dann die ehemaligen "Ideenspeicher"-Einträge).
-- [ ] Historische Inline-Begründungstexte in bestehenden Spec-Bullets (z.B. "**Priorisierung — Ideenspeicher:** analog zu Spec 0018/0019...") werden **nicht** rückwirkend umgeschrieben — nur Markdown-Überschriften (`##`/`###`) und Tabellenabschnitts-Label ("Offen — X") ändern sich. Ein Diff-Review zeigt ausschließlich Überschriften-/Tabellenzeilen-Änderungen, keine Wortänderungen innerhalb bestehender Fließtext-Absätze.
-- [ ] Jede Spec mit Status `Proposed` oder `Accepted` steht nach der Migration in **genau einer** "Offen — *"-Tabelle — kein Zwischenzustand "hat Spec, aber keine Priorität", kein Doppel-Eintrag.
-- [ ] Wechselt eine Spec von `Proposed`/`Accepted` auf `Implemented`, entfällt ihre Priorität ersatzlos (Umzug nach "Bereits umgesetzt", das war schon bisher so und bleibt unverändert).
-- [ ] Nebenbefund-Bereinigung: Spec 0025 (Status **Implemented**, PR #56) steht aktuell fälschlich noch in einer "Offen — *"-Tabelle statt unter "Bereits umgesetzt" — wird im selben Zug korrigiert. Nach der Migration steht keine Zeile mit Status `Implemented` mehr in einer "Offen — *"-Tabelle.
-- [ ] Inbox-Einträge (`specs/inbox/*.md`, noch nicht durch `idea-sharpener` geschärft) bleiben unpriorisiert — der Abschnitt "Inbox — ungeschärfte Ideen" bleibt strukturell unverändert.
-- [ ] `.claude/agents/requirements-engineer.md`, Aufgabe 1: "grobe Priorität (z.B. Jetzt / Als Nächstes / Später / Ideenspeicher)" wird zu einem geschlossenen Pflicht-Set "eine von drei Prioritätsstufen (Hoch / Mittel / Niedrig)" — kein "z.B." oder sonstiger Offenheits-Hinweis mehr.
-- [ ] `.claude/skills/idea-sharpener/SKILL.md`, Schritt 9: bekommt einen Satz, der eine verpflichtende Bestätigung/Finalisierung der in Schritt 2 vom `requirements-engineer` vorläufig vergebenen Priorität verlangt — unmittelbar bevor der Roadmap-Eintrag mit dem finalen Spec-Pfad nachgetragen wird. Keine stillschweigende Übernahme des vorläufigen Werts, kein impliziter Default.
+- [x] `specs/roadmap.md` verwendet für alle offenen Specs (Status `Proposed`/`Accepted`) ausschließlich die drei Kategorien **Hoch/Mittel/Niedrig** — sowohl als Tabellen-Abschnittsüberschriften unter "Status auf einen Blick" ("Offen — Hoch"/"Offen — Mittel"/"Offen — Niedrig") als auch als `###`-Zwischenüberschriften im Abschnitt "## Priorisierung". `grep -n "Offen — \(Jetzt\|Als Nächstes\|Später\|Ideenspeicher\)" specs/roadmap.md` liefert danach 0 Treffer.
+- [x] Kein leerer "Offen — Mittel"-Abschnitt, solange keine offene (Proposed/Accepted) Spec dieser Stufe existiert — analog zum bisherigen Fehlen einer "Offen — Als Nächstes"-Tabelle. Die `###`-Zwischenüberschrift "Mittel" unter "## Priorisierung" bleibt trotzdem bestehen, auch wenn dort aktuell nur bereits-Implemented-Rückblicke stehen (z.B. Specs 0020/0024).
+- [x] Migration der bestehenden offenen Einträge nach dem mit Daniel bestätigten Mapping: Jetzt → Hoch, Als Nächstes → Mittel, Später + Ideenspeicher → gemeinsam Niedrig. Konkret: Spec 0027 → Hoch, Spec 0004 → Niedrig, Spec 0028 → Niedrig (0004 und 0028 in derselben "Offen — Niedrig"-Tabelle, Reihenfolge: erst die ehemaligen "Später"-, dann die ehemaligen "Ideenspeicher"-Einträge).
+- [x] Historische Inline-Begründungstexte in bestehenden Spec-Bullets (z.B. "**Priorisierung — Ideenspeicher:** analog zu Spec 0018/0019...") werden **nicht** rückwirkend umgeschrieben — nur Markdown-Überschriften (`##`/`###`) und Tabellenabschnitts-Label ("Offen — X") ändern sich. Ein Diff-Review zeigt ausschließlich Überschriften-/Tabellenzeilen-Änderungen, keine Wortänderungen innerhalb bestehender Fließtext-Absätze.
+- [x] Jede Spec mit Status `Proposed` oder `Accepted` steht nach der Migration in **genau einer** "Offen — *"-Tabelle — kein Zwischenzustand "hat Spec, aber keine Priorität", kein Doppel-Eintrag.
+- [x] Wechselt eine Spec von `Proposed`/`Accepted` auf `Implemented`, entfällt ihre Priorität ersatzlos (Umzug nach "Bereits umgesetzt", das war schon bisher so und bleibt unverändert).
+- [x] Nebenbefund-Bereinigung: Spec 0025 (Status **Implemented**, PR #56) steht aktuell fälschlich noch in einer "Offen — *"-Tabelle statt unter "Bereits umgesetzt" — wird im selben Zug korrigiert. Nach der Migration steht keine Zeile mit Status `Implemented` mehr in einer "Offen — *"-Tabelle.
+- [x] Inbox-Einträge (`specs/inbox/*.md`, noch nicht durch `idea-sharpener` geschärft) bleiben unpriorisiert — der Abschnitt "Inbox — ungeschärfte Ideen" bleibt strukturell unverändert.
+- [x] `.claude/agents/requirements-engineer.md`, Aufgabe 1: "grobe Priorität (z.B. Jetzt / Als Nächstes / Später / Ideenspeicher)" wird zu einem geschlossenen Pflicht-Set "eine von drei Prioritätsstufen (Hoch / Mittel / Niedrig)" — kein "z.B." oder sonstiger Offenheits-Hinweis mehr.
+- [x] `.claude/skills/idea-sharpener/SKILL.md`, Schritt 9: bekommt einen Satz, der eine verpflichtende Bestätigung/Finalisierung der in Schritt 2 vom `requirements-engineer` vorläufig vergebenen Priorität verlangt — unmittelbar bevor der Roadmap-Eintrag mit dem finalen Spec-Pfad nachgetragen wird. Keine stillschweigende Übernahme des vorläufigen Werts, kein impliziter Default.
 
 ## Datenmodell-Bezug
 
@@ -70,6 +70,7 @@ Reine Markdown-Prozessänderung ohne Anwendungscode (analog Spec 0025/0028) — 
 - **Mapping der vier alten auf die drei neuen Stufen — per Rückfrage entschieden:** Jetzt → Hoch, Als Nächstes → Mittel, Später + Ideenspeicher → gemeinsam Niedrig (statt der Alternative "Jetzt+Als Nächstes → Hoch" oder einer komplett fallweisen Neubewertung ohne festes Mapping).
 - **Historische Begründungstexte bleiben unverändert:** nur Strukturüberschriften wandern, nicht die Wortwahl in bereits verfasster Prosa vergangener Roadmap-Einträge — Konsistenz mit dem bisherigen Umgang mit historischen Einträgen (z.B. Spec 0026, dessen Grafik-Rücknahme ebenfalls nur als Nachtrag dokumentiert wurde, nicht rückwirkend umgeschrieben).
 - **Sequenzierung nach PR #57 zunächst als Risiko eingeplant, dann verifiziert und verworfen:** PR #57 (Spec 0028) war zum Zeitpunkt der Architektur-Konsultation bereits gemerged, kein Merge-Konflikt-Risiko mehr.
+- **Status-Nachtrag (2026-08-09, Roadmap-Konsistenz-Audit):** [PR #59](https://github.com/TheRealKoller/photosort/pull/59) hat alle zehn Akzeptanzkriterien vollständig umgesetzt (verifiziert per Diff-Review gegen jedes einzelne AK, inkl. `grep`-Probe), der Spec-Status wurde danach jedoch nicht wie in `CLAUDE.md`/`specs/README.md` vorgesehen auf `Implemented` gesetzt — reiner Statuspflege-Nachtrag durch den `requirements-engineer`, keine inhaltliche Änderung.
 
 ## Offene Fragen
 
