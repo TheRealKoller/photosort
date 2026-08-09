@@ -638,6 +638,49 @@ describe('ProjectDetailPage', () => {
       expect(await screen.findByText('0 Vorschläge gefunden')).toBeInTheDocument()
     })
 
+    it('shows a link to the suggested-filter photo view after a successful "Ausschuss aussortieren" run', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scoring_run: scoringRun({
+            status: 'success',
+            finished_at: '2026-07-20T10:05:00Z',
+            photos_total: 10,
+            photos_processed: 10,
+            suggestions_found: 3,
+          }),
+        })
+      )
+
+      renderPage()
+
+      const link = await screen.findByRole('link', {
+        name: 'Vorschläge aus der Ausschuss-Aussortierung ansehen',
+      })
+      expect(link).toHaveAttribute('href', '/projects/1/photos?filter=suggested')
+      expect(link).toHaveTextContent('Vorschläge ansehen')
+    })
+
+    it('shows the suggested-filter link even when the run found zero suggestions', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scoring_run: scoringRun({
+            status: 'success',
+            finished_at: '2026-07-20T10:05:00Z',
+            photos_total: 10,
+            photos_processed: 10,
+            suggestions_found: 0,
+          }),
+        })
+      )
+
+      renderPage()
+
+      await screen.findByText('0 Vorschläge gefunden')
+      expect(
+        screen.getByRole('link', { name: 'Vorschläge aus der Ausschuss-Aussortierung ansehen' })
+      ).toBeInTheDocument()
+    })
+
     it('announces completion/failure via aria-live, not just the granular running progress', async () => {
       // UI/UX-Review-Fund: die gedrosselte 10%-Ansage lag zuvor nur INNERHALB des
       // "running"-Blocks (der beim Abschluss unmountet) - ein Screenreader-Nutzer hoerte "10%...
@@ -1098,6 +1141,81 @@ describe('ProjectDetailPage', () => {
       renderPage()
 
       expect(await screen.findByText('0 Top-Fotos ausgewählt')).toBeInTheDocument()
+    })
+
+    it('shows a link to the suggested-filter photo view after a successful "Top-Fotos auswählen" run', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          category_selection_enabled: true,
+          last_scoring_run: scoringRun({ status: 'success' }),
+          last_top_selection_run: topSelectionRun({
+            status: 'success',
+            finished_at: '2026-07-20T10:05:00Z',
+            candidates_total: 10,
+            candidates_processed: 10,
+            suggestions_found: 4,
+          }),
+        })
+      )
+
+      renderPage()
+
+      const link = await screen.findByRole('link', {
+        name: 'Vorschläge aus der Top-Foto-Auswahl ansehen',
+      })
+      expect(link).toHaveAttribute('href', '/projects/1/photos?filter=suggested')
+      expect(link).toHaveTextContent('Vorschläge ansehen')
+    })
+
+    it('shows the suggested-filter link even when the top-photo selection found zero results', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          category_selection_enabled: true,
+          last_scoring_run: scoringRun({ status: 'success' }),
+          last_top_selection_run: topSelectionRun({
+            status: 'success',
+            finished_at: '2026-07-20T10:05:00Z',
+            candidates_total: 10,
+            candidates_processed: 10,
+            suggestions_found: 0,
+          }),
+        })
+      )
+
+      renderPage()
+
+      await screen.findByText('0 Top-Fotos ausgewählt')
+      expect(
+        screen.getByRole('link', { name: 'Vorschläge aus der Top-Foto-Auswahl ansehen' })
+      ).toBeInTheDocument()
+    })
+
+    it('keeps both suggested-filter links and the generic photo-view link distinguishable and coexisting', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          category_selection_enabled: true,
+          last_scoring_run: scoringRun({ status: 'success', suggestions_found: 3 }),
+          last_top_selection_run: topSelectionRun({
+            status: 'success',
+            suggestions_found: 4,
+          }),
+        })
+      )
+
+      renderPage()
+
+      expect(
+        await screen.findByRole('link', {
+          name: 'Vorschläge aus der Ausschuss-Aussortierung ansehen',
+        })
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('link', { name: 'Vorschläge aus der Top-Foto-Auswahl ansehen' })
+      ).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Fotos ansehen' })).toHaveAttribute(
+        'href',
+        '/projects/1/photos'
+      )
     })
 
     it('shows an inline error banner with a retry button on a failed run', async () => {
