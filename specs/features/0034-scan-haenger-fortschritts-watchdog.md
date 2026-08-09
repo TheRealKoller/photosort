@@ -1,6 +1,6 @@
 # 0034 - Scan-Hänger-Detektion: Fortschritts-Watchdog gegen dauerhaft hängende Job-Läufe
 
-**Status:** Accepted
+**Status:** Implemented ([PR #67](https://github.com/TheRealKoller/photosort/pull/67))
 **Erstellt:** 2026-08-09
 **Bezug:** Bug-Report von Daniel selbst (interaktive Session, `specs/inbox/0012-scan-haengt-bei-scan-laeuft.md`, nach Aufnahme in diese Spec gelöscht). ADR [`decisions/0019-job-lauf-heartbeat-watchdog.md`](../decisions/0019-job-lauf-heartbeat-watchdog.md) (Accepted, 2026-08-09). Direkter Nachfolger von [Spec 0023](./0023-scan-fortschritt-batch-groesse-fix.md), die den Exception-basierten Hänger-Fall bereits behoben, den hier behandelten Fall aber explizit als "eigenständige, größere Funktionalität ... außerhalb des Scopes" ausgeklammert hatte ("Watchdog/Heartbeat-Mechanismus für Hänger *ohne* Exception").
 
