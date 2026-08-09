@@ -1,6 +1,6 @@
 # 0027 - Vorgeschlagene Fotos filterbar anzeigen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #61](https://github.com/TheRealKoller/photosort/pull/61))
 **Erstellt:** 2026-08-08
 **Bezug:** [`features/0003-automatic-best-photo-selection.md`](./0003-automatic-best-photo-selection.md), [`features/0024-top-photo-selection-category-mix.md`](./0024-top-photo-selection-category-mix.md), [`decisions/0006-local-scoring-datamodel.md`](../decisions/0006-local-scoring-datamodel.md), Idea-Sharpening-Gespräch mit Daniel am 2026-08-08
 
@@ -14,20 +14,20 @@ Als Daniel bzw. seine Frau, der/die gerade "Top-Fotos auswählen" oder "Ausschus
 
 ## Akzeptanzkriterien
 
-- [ ] Neuer Filterwert `suggested` (Label "Vorgeschlagen") in der Filterleiste der Foto-Grid-Ansicht (`PhotoGridPage.tsx`), Position im `FILTERS`-Array direkt nach "Unbewertet", vor "Favorit" — gleicher Button-/`aria-pressed`-Mechanismus wie die bestehenden fünf Filter.
-- [ ] `GET /projects/{id}/photos?rating_status=suggested` liefert exakt die Teilmenge, für die bei einem ungefilterten Aufruf desselben Nutzers `PhotoOut.suggestion is not None` wäre (1:1-Parität zur bestehenden `has_suggestion`-Logik in `_to_photo_out`), konkret:
+- [x] Neuer Filterwert `suggested` (Label "Vorgeschlagen") in der Filterleiste der Foto-Grid-Ansicht (`PhotoGridPage.tsx`), Position im `FILTERS`-Array direkt nach "Unbewertet", vor "Favorit" — gleicher Button-/`aria-pressed`-Mechanismus wie die bestehenden fünf Filter.
+- [x] `GET /projects/{id}/photos?rating_status=suggested` liefert exakt die Teilmenge, für die bei einem ungefilterten Aufruf desselben Nutzers `PhotoOut.suggestion is not None` wäre (1:1-Parität zur bestehenden `has_suggestion`-Logik in `_to_photo_out`), konkret:
   - Foto mit `PhotoScore.suggested_status` gesetzt, keine eigene Rating-Zeile des anfragenden Nutzers → enthalten.
   - Foto mit `PhotoScore.suggested_status` gesetzt, aber eigene Rating-Zeile vorhanden → nicht enthalten.
   - Foto ganz ohne `PhotoScore` → nicht enthalten.
   - Foto mit `PhotoScore`, aber `suggested_status IS NULL` → nicht enthalten.
   - Foto mit `PhotoScore.suggested_status` gesetzt, Rating eines *anderen* Nutzers vorhanden (nicht des anfragenden) → weiterhin enthalten (eigene Bewertung entscheidet, nicht fremde — Multi-User-Fall).
-- [ ] Der Filter deckt beide Vorschlagsarten gemeinsam ab (`reason` = `duplicate`/`low_quality` aus Phase A und `top_pick` aus Spec 0024), keine Unterteilung nach Vorschlagsart als eigene Filterwerte in v1 — gemischte Kacheln im selben gefilterten Grid sind gewollt, bleiben aber pro Kachel über die bestehenden `RatingBadge`/`CategoryBadge` unterscheidbar.
-- [ ] Nach einem "Ausschuss aussortieren"-Lauf (`scoringStatus === 'success'`) erscheint bei `suggestionsFoundText` zusätzlich ein Link "Vorschläge ansehen" zu `/projects/{id}/photos?filter=suggested` — auch wenn `suggestionsFound === 0` (kein Ausblenden bei 0 Treffern).
-- [ ] Nach einem "Top-Fotos auswählen"-Lauf (`topSelectionStatus === 'success'`) erscheint bei `topSelectionSuggestionsFoundText` derselbe Link (identischer sichtbarer Text "Vorschläge ansehen", zu `/projects/{id}/photos?filter=suggested`) — auch bei `topSelectionSuggestionsFound === 0`.
-- [ ] Beide neuen Links tragen ein je unterschiedliches, kontextualisiertes `aria-label` (z.B. "Vorschläge aus der Ausschuss-Aussortierung ansehen" / "Vorschläge aus der Top-Foto-Auswahl ansehen"), damit sie trotz identischem sichtbarem Text per Screenreader-Linkliste unterscheidbar sind.
-- [ ] Der bestehende generische, ungefilterte "Fotos ansehen"-Link (`ProjectDetailPage.tsx`, ganz unten auf der Seite) bleibt zusätzlich unverändert bestehen — wird durch die zwei neuen gefilterten Links ergänzt, nicht ersetzt.
-- [ ] 0 Treffer im `suggested`-Filter im Grid selbst → bestehender generischer Leerzustand-Mechanismus ("Keine Fotos mit diesem Filter." + "Filter zurücksetzen"-Button), keine filterspezifische Sondertext-Variante.
-- [ ] Der Filterwert ist über die URL (`?filter=suggested`) direkt verlink-/teilbar (bestehender `parseRatingFilter`/`VALID_RATING_FILTERS`-Mechanismus wird um `'suggested'` erweitert, unbekannte Werte fallen weiterhin auf `''` zurück).
+- [x] Der Filter deckt beide Vorschlagsarten gemeinsam ab (`reason` = `duplicate`/`low_quality` aus Phase A und `top_pick` aus Spec 0024), keine Unterteilung nach Vorschlagsart als eigene Filterwerte in v1 — gemischte Kacheln im selben gefilterten Grid sind gewollt, bleiben aber pro Kachel über die bestehenden `RatingBadge`/`CategoryBadge` unterscheidbar.
+- [x] Nach einem "Ausschuss aussortieren"-Lauf (`scoringStatus === 'success'`) erscheint bei `suggestionsFoundText` zusätzlich ein Link "Vorschläge ansehen" zu `/projects/{id}/photos?filter=suggested` — auch wenn `suggestionsFound === 0` (kein Ausblenden bei 0 Treffern).
+- [x] Nach einem "Top-Fotos auswählen"-Lauf (`topSelectionStatus === 'success'`) erscheint bei `topSelectionSuggestionsFoundText` derselbe Link (identischer sichtbarer Text "Vorschläge ansehen", zu `/projects/{id}/photos?filter=suggested`) — auch bei `topSelectionSuggestionsFound === 0`.
+- [x] Beide neuen Links tragen ein je unterschiedliches, kontextualisiertes `aria-label` (z.B. "Vorschläge aus der Ausschuss-Aussortierung ansehen" / "Vorschläge aus der Top-Foto-Auswahl ansehen"), damit sie trotz identischem sichtbarem Text per Screenreader-Linkliste unterscheidbar sind.
+- [x] Der bestehende generische, ungefilterte "Fotos ansehen"-Link (`ProjectDetailPage.tsx`, ganz unten auf der Seite) bleibt zusätzlich unverändert bestehen — wird durch die zwei neuen gefilterten Links ergänzt, nicht ersetzt.
+- [x] 0 Treffer im `suggested`-Filter im Grid selbst → bestehender generischer Leerzustand-Mechanismus ("Keine Fotos mit diesem Filter." + "Filter zurücksetzen"-Button), keine filterspezifische Sondertext-Variante.
+- [x] Der Filterwert ist über die URL (`?filter=suggested`) direkt verlink-/teilbar (bestehender `parseRatingFilter`/`VALID_RATING_FILTERS`-Mechanismus wird um `'suggested'` erweitert, unbekannte Werte fallen weiterhin auf `''` zurück).
 
 ## Datenmodell-Bezug
 

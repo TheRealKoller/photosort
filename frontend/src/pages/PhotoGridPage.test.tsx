@@ -164,6 +164,40 @@ describe('PhotoGridPage', () => {
     )
   })
 
+  it('requests the suggested filter and reflects it in the URL', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
+    const user = userEvent.setup()
+
+    renderPage()
+    await waitFor(() => expect(photosApi.listPhotos).toHaveBeenCalled())
+
+    await user.click(screen.getByRole('button', { name: 'Vorgeschlagen' }))
+
+    await waitFor(() =>
+      expect(photosApi.listPhotos).toHaveBeenLastCalledWith(
+        1,
+        expect.objectContaining({ ratingStatus: 'suggested' })
+      )
+    )
+  })
+
+  it('marks the suggested filter button as active when linked directly via URL', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
+
+    renderPage('/projects/1/photos?filter=suggested')
+
+    await waitFor(() =>
+      expect(photosApi.listPhotos).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ ratingStatus: 'suggested' })
+      )
+    )
+    expect(screen.getByRole('button', { name: 'Vorgeschlagen' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+  })
+
   it('shows an empty state with a filter-reset option when the filter matches nothing', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
     const user = userEvent.setup()

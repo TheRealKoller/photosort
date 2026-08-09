@@ -5,6 +5,7 @@ import { parseRatingFilter } from './ratingFilter'
 describe('parseRatingFilter', () => {
   it('accepts each known filter value', () => {
     expect(parseRatingFilter('unrated')).toBe('unrated')
+    expect(parseRatingFilter('suggested')).toBe('suggested')
     expect(parseRatingFilter('favorite')).toBe('favorite')
     expect(parseRatingFilter('album_worthy')).toBe('album_worthy')
     expect(parseRatingFilter('rejected')).toBe('rejected')

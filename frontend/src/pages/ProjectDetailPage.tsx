@@ -373,6 +373,21 @@ export function ProjectDetailPage() {
           {scoringStatus === 'failed' && 'Fehlgeschlagen'}
         </p>
 
+        {/* specs/features/0027-vorgeschlagene-fotos-filterbar-anzeigen.md: gefilterter Link zu den
+            noch unbestaetigten Vorschlaegen dieses Laufs, zusaetzlich zum generischen "Fotos
+            ansehen"-Link unten - bewusst auch bei suggestions_found === 0 sichtbar (kein
+            Ausblenden), da "0 gefunden" ein normales Laufergebnis ist. */}
+        {scoringStatus === 'success' && (
+          <Button asChild variant="secondary" size="sm">
+            <Link
+              to={`/projects/${project.id}/photos?filter=suggested`}
+              aria-label="Vorschläge aus der Ausschuss-Aussortierung ansehen"
+            >
+              Vorschläge ansehen
+            </Link>
+          </Button>
+        )}
+
         {scoringStatus === 'running' && (
           <div className="flex w-full max-w-sm flex-col gap-1.5">
             <p className="text-sm text-text">
@@ -476,6 +491,20 @@ export function ProjectDetailPage() {
           {topSelectionStatus === 'success' && topSelectionSuggestionsFoundText}
           {topSelectionStatus === 'failed' && 'Fehlgeschlagen'}
         </p>
+
+        {/* Analog zum Ausschuss-Link oben (specs/features/0027-vorgeschlagene-fotos-filterbar-
+            anzeigen.md) - identischer sichtbarer Text, unterschiedliches aria-label, damit beide
+            Links per Screenreader-Linkliste unterscheidbar bleiben. */}
+        {topSelectionStatus === 'success' && (
+          <Button asChild variant="secondary" size="sm">
+            <Link
+              to={`/projects/${project.id}/photos?filter=suggested`}
+              aria-label="Vorschläge aus der Top-Foto-Auswahl ansehen"
+            >
+              Vorschläge ansehen
+            </Link>
+          </Button>
+        )}
 
         {topSelectionStatus === 'running' && (
           <div className="flex w-full max-w-sm flex-col gap-1.5">

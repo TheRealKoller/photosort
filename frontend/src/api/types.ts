@@ -59,7 +59,7 @@ export interface BrowseEntry {
 }
 
 export type RatingStatus = 'favorite' | 'album_worthy' | 'rejected'
-export type RatingFilter = 'unrated' | RatingStatus
+export type RatingFilter = 'unrated' | 'suggested' | RatingStatus
 export type PhotoVariant = 'thumbnail' | 'display'
 
 export interface RatingOut {

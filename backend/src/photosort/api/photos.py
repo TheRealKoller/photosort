@@ -27,6 +27,7 @@ router = APIRouter(tags=["photos"])
 
 class RatingFilter(enum.StrEnum):
     UNRATED = "unrated"
+    SUGGESTED = "suggested"
     FAVORITE = "favorite"
     ALBUM_WORTHY = "album_worthy"
     REJECTED = "rejected"
@@ -97,6 +98,15 @@ async def _filtered_photo_ids(
     )
     if rating_status is RatingFilter.UNRATED:
         base = base.where(own_rating.id.is_(None))
+    elif rating_status is RatingFilter.SUGGESTED:
+        # Bildet dieselbe Regel wie has_suggestion in _to_photo_out als SQL-Praedikat nach
+        # (Architektur-Abschnitt, specs/features/0027-vorgeschlagene-fotos-filterbar-anzeigen.md):
+        # kein eigenes Rating des anfragenden Nutzers UND PhotoScore.suggested_status gesetzt.
+        # Bewusst keine gemeinsame Codebasis mit has_suggestion (ORM-Query vs. Objekt-Praedikat) -
+        # Konsistenz wird stattdessen ueber den Paritaets-Test in test_api_photos.py sichergestellt.
+        base = base.join(PhotoScore, PhotoScore.photo_id == Photo.id).where(
+            own_rating.id.is_(None), PhotoScore.suggested_status.is_not(None)
+        )
     elif rating_status is not None:
         base = base.where(own_rating.status == RatingStatus(rating_status.value))
 
