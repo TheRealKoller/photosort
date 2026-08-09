@@ -237,3 +237,44 @@ async def test_error_reaping_one_run_does_not_block_others(
     assert sorted([stalled_a.status, stalled_b.status]) == sorted(
         [ScanStatus.RUNNING, ScanStatus.FAILED]
     )
+
+
+async def test_error_selecting_one_table_does_not_block_others(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Akzeptanzkriterium der Spec: ein Fehler bei einer TABELLE (nicht nur bei einer einzelnen
+    Zeile) blockiert die Bereinigung der uebrigen nicht - hier schlaegt bereits das SELECT fuer
+    ScanRun fehl, ScoringRun wird trotzdem bereinigt."""
+    project = await _make_project(db_session)
+    stalled_scan = ScanRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    stalled_scoring = ScoringRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    db_session.add_all([stalled_scan, stalled_scoring])
+    await db_session.commit()
+
+    original_execute = AsyncSession.execute
+
+    async def flaky_execute(self: AsyncSession, statement: object, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        if "scan_runs" in str(statement):
+            raise RuntimeError("simulated table-level failure")
+        return await original_execute(self, statement, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(AsyncSession, "execute", flaky_execute)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    monkeypatch.undo()  # nicht laenger patchen, bevor db_session fuer die Assertions genutzt wird
+
+    assert reaped == 1
+    await db_session.refresh(stalled_scan)
+    await db_session.refresh(stalled_scoring)
+    assert stalled_scan.status == ScanStatus.RUNNING
+    assert stalled_scoring.status == ScanStatus.FAILED
