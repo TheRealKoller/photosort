@@ -89,6 +89,10 @@ async def test_scan_run_defaults(db_session: AsyncSession) -> None:
     assert stored.files_found == 0
     assert stored.photos_added == 0
     assert stored.error_message is None
+    # Watchdog-Spalte (specs/features/0034-scan-haenger-fortschritts-watchdog.md): analog zu
+    # started_at server-seitig defaultet, damit ein frisch angelegter Lauf sofort einen
+    # last_progress_at-Wert hat und nicht als sofortiger Stillstand gilt.
+    assert stored.last_progress_at is not None
 
 
 async def test_create_user(db_session: AsyncSession) -> None:
@@ -206,6 +210,7 @@ async def test_scoring_run_defaults(db_session: AsyncSession) -> None:
     assert stored.photos_total == 0
     assert stored.photos_processed == 0
     assert stored.error_message is None
+    assert stored.last_progress_at is not None
 
 
 async def test_create_photo_score(db_session: AsyncSession) -> None:
@@ -305,6 +310,7 @@ async def test_top_selection_run_defaults(db_session: AsyncSession) -> None:
     assert stored.candidates_processed == 0
     assert stored.suggestions_found == 0
     assert stored.error_message is None
+    assert stored.last_progress_at is not None
 
 
 async def test_deleting_project_cascades_to_top_selection_runs(db_session: AsyncSession) -> None:
