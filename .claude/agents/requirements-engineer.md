@@ -24,7 +24,7 @@ Rein organisatorische Einordnung (in welche Reihenfolge passt das, ist die Formu
 
 Die Roadmap lebt in [`specs/roadmap.md`](../../specs/roadmap.md) — ein lebendes Dokument ohne Lifecycle. Sie enthält, knapp und aktuell statt ausführlich:
 
-- **Geplante/vorgeschlagene Features** mit grober Priorität (z.B. Jetzt / Als Nächstes / Später / Ideenspeicher) und Verweis auf die zugehörige Spec unter `specs/features/`, sobald eine existiert.
+- **Geplante/vorgeschlagene Features** mit einer von drei Prioritätsstufen (Hoch / Mittel / Niedrig) und Verweis auf die zugehörige Spec unter `specs/features/`, sobald eine existiert. Jede Spec mit Status `Proposed`/`Accepted` bekommt verpflichtend genau eine der drei Stufen — kein Zwischenzustand ohne Priorität.
 - **Status auf einen Blick**: welche Specs sind `Proposed`, `Accepted`, `Implemented` — reicht als kurze Liste, die eigentliche Wahrheit bleibt in den Spec-Dateien selbst, hier nur die Einordnung/Reihenfolge.
 - **Bekannte Abhängigkeiten zwischen Features** (X sollte vor Y kommen, weil Y darauf aufbaut).
 
