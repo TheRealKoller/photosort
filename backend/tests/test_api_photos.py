@@ -321,6 +321,234 @@ async def test_list_photos_returns_empty_list_when_filter_matches_nothing(
     assert response.json() == {"items": [], "total": 0}
 
 
+async def test_list_photos_filters_by_suggested_includes_photo_without_own_rating(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.2,
+            suggested_status=RatingStatus.REJECTED,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "suggested"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["items"]] == [photo.id]
+    assert body["total"] == 1
+
+
+async def test_list_photos_filters_by_suggested_excludes_photo_with_own_rating(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.2,
+            suggested_status=RatingStatus.REJECTED,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+    await authenticated_api_client.put(f"/photos/{photo.id}/rating", json={"status": "rejected"})
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "suggested"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0}
+
+
+async def test_list_photos_filters_by_suggested_excludes_photo_without_score(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "suggested"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0}
+
+
+async def test_list_photos_filters_by_suggested_excludes_score_without_suggested_status(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.2,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "suggested"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0}
+
+
+async def test_list_photos_filters_by_suggested_includes_photo_with_other_users_rating(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Multi-User-Fall der Spec: das Rating eines ANDEREN Nutzers darf den suggested-Filter des
+    eigenen Nutzers nicht beeinflussen - nur die eigene Bewertung entscheidet."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    other_user = await _make_second_user(db_session)
+    db_session.add(Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.FAVORITE))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.2,
+            suggested_status=RatingStatus.REJECTED,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "suggested"}
+    )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [photo.id]
+
+
+async def test_list_photos_filters_by_suggested_mixes_reasons_without_split(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Spec-Akzeptanzkriterium: der suggested-Filter deckt beide Vorschlagsarten (Phase-A-Ausschuss
+    und Top-Picks aus Spec 0024) gemeinsam ab, keine serverseitige Unterteilung nach reason."""
+    project = await _make_project(db_session)
+    duplicate = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    low_quality = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+    top_pick = await _make_photo(db_session, project, "c.jpg", datetime(2023, 1, 3, tzinfo=UTC))
+    db_session.add_all(
+        [
+            PhotoScore(
+                photo_id=duplicate.id,
+                sharpness=1.0,
+                exposure=0.2,
+                duplicate_of=low_quality.id,
+                suggested_status=RatingStatus.REJECTED,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            ),
+            PhotoScore(
+                photo_id=low_quality.id,
+                sharpness=1.0,
+                exposure=0.2,
+                suggested_status=RatingStatus.REJECTED,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            ),
+            PhotoScore(
+                photo_id=top_pick.id,
+                sharpness=1.0,
+                exposure=0.2,
+                suggested_status=RatingStatus.ALBUM_WORTHY,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "suggested"}
+    )
+
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()["items"]} == {
+        duplicate.id,
+        low_quality.id,
+        top_pick.id,
+    }
+
+
+async def test_list_photos_suggested_filter_matches_has_suggestion_parity(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Paritaets-Test (Architektur-Abschnitt der Spec): die Menge der IDs mit
+    rating_status=suggested muss exakt der Menge der IDs entsprechen, fuer die im ungefilterten
+    Aufruf suggestion != null ist - sichert die bewusste Doppelimplementierung (SQL-WHERE vs.
+    Python-has_suggestion) ab."""
+    project = await _make_project(db_session)
+    no_score = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    unsuggested_score = await _make_photo(
+        db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC)
+    )
+    suggested_no_rating = await _make_photo(
+        db_session, project, "c.jpg", datetime(2023, 1, 3, tzinfo=UTC)
+    )
+    suggested_with_own_rating = await _make_photo(
+        db_session, project, "d.jpg", datetime(2023, 1, 4, tzinfo=UTC)
+    )
+    db_session.add_all(
+        [
+            PhotoScore(
+                photo_id=unsuggested_score.id,
+                sharpness=1.0,
+                exposure=0.2,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            ),
+            PhotoScore(
+                photo_id=suggested_no_rating.id,
+                sharpness=1.0,
+                exposure=0.2,
+                suggested_status=RatingStatus.REJECTED,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            ),
+            PhotoScore(
+                photo_id=suggested_with_own_rating.id,
+                sharpness=1.0,
+                exposure=0.2,
+                suggested_status=RatingStatus.ALBUM_WORTHY,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            ),
+        ]
+    )
+    await db_session.commit()
+    await authenticated_api_client.put(
+        f"/photos/{suggested_with_own_rating.id}/rating", json={"status": "album_worthy"}
+    )
+    del no_score  # nur zur Vollstaendigkeit der Fallmatrix angelegt, keine eigene Assertion noetig
+
+    unfiltered = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+    filtered = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "suggested"}
+    )
+
+    assert unfiltered.status_code == 200
+    assert filtered.status_code == 200
+    expected_ids = {
+        item["id"] for item in unfiltered.json()["items"] if item["suggestion"] is not None
+    }
+    actual_ids = {item["id"] for item in filtered.json()["items"]}
+    assert expected_ids == actual_ids
+    assert actual_ids == {suggested_no_rating.id}
+
+
 async def test_list_photos_returns_404_for_unknown_project(
     authenticated_api_client: httpx.AsyncClient,
 ) -> None:
