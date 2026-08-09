@@ -3,15 +3,16 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
 from arq.connections import RedisSettings
+from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.classification import (
     CategoryCandidate,
@@ -653,6 +654,98 @@ async def select_top_photos(ctx: dict[str, Any], project_id: int, top_n_per_clus
 # Fotobibliotheken (bindende Stakeholder-Anforderung, siehe Spec).
 JOB_TIMEOUT_SECONDS = 86400
 
+# Schicht 2 des Fortschritts-Watchdogs (ADR 0019): der eigentliche, fortschrittsbasierte
+# Stillstands-Schwellwert - ein RUNNING-Lauf, dessen last_progress_at strikt aelter als dieser Wert
+# ist, gilt als haengend, unabhaengig von seiner Gesamtlaufzeit (bindende Stakeholder-Anforderung:
+# "nur ein echter Stillstand ist ein Fehler, keine feste Obergrenze").
+STALL_THRESHOLD = timedelta(minutes=15)
+
+_STALL_MESSAGE = (
+    "Kein Fortschritt seit über 15 Minuten erkannt — vermutlich hängender Verarbeitungsschritt."
+)
+
+
+async def _fail_if_stalled(
+    session: AsyncSession, run: ScanRun | ScoringRun | TopSelectionRun
+) -> bool:
+    """Setzt eine einzelne Zeile ueber _fail_run auf FAILED, isoliert von den uebrigen Zeilen/
+    Tabellen (Akzeptanzkriterium der Spec 0034: ein Fehler bei einer Zeile/Tabelle darf die
+    Bereinigung der uebrigen nicht blockieren) - ein Fehlschlag hier (z.B. ein DB-Fehler beim
+    Commit dieser einen Zeile) rollt nur die aktuelle, noch nicht committete Teiltransaktion
+    zurueck, bereits zuvor erfolgreich committete Zeilen bleiben unberuehrt."""
+    try:
+        await _fail_run(session, run, _STALL_MESSAGE)
+        return True
+    except Exception:
+        await session.rollback()
+        return False
+
+
+async def reap_stalled_runs(
+    ctx: dict[str, Any],
+    session_factory: async_sessionmaker[AsyncSession] = async_session_factory,
+) -> int:
+    """Schicht 2 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+    watchdog.md, ADR 0019): periodischer arq-Cron-Job (alle 5 Minuten, siehe
+    WorkerSettings.cron_jobs), unabhaengig von einer ggf. tatsaechlich noch haengenden Coroutine -
+    deckt exakt den Fall ab, den reines Exception-Handling (Schicht 1, _fail_run oben) strukturell
+    nie schliessen kann (ein nie zurueckkehrender await liefert nie eine Exception, an die sich
+    anknuepfen liesse). session_factory ist injizierbar (Default: die echte, produktive
+    async_session_factory) - Tests uebergeben stattdessen eine an eine In-Memory-SQLite-
+    Testdatenbank gebundene Factory, analog zu run_top_selection's build_detector-Parameter. Die
+    drei Tabellen werden bewusst nacheinander in drei eigenstaendigen Bloecken behandelt statt
+    ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/ScoringRun/
+    TopSelectionRun bleiben drei eigenstaendige Modelle ohne gemeinsame Basisklasse, ADR 0019)."""
+    reaped = 0
+    threshold = _now_utc() - STALL_THRESHOLD
+    async with session_factory() as session:
+        try:
+            stalled_scan_runs = (
+                await session.execute(
+                    select(ScanRun).where(
+                        ScanRun.status == ScanStatus.RUNNING,
+                        ScanRun.last_progress_at < threshold,
+                    )
+                )
+            ).scalars().all()
+        except Exception:
+            stalled_scan_runs = []
+        for scan_run in stalled_scan_runs:
+            if await _fail_if_stalled(session, scan_run):
+                reaped += 1
+
+        try:
+            stalled_scoring_runs = (
+                await session.execute(
+                    select(ScoringRun).where(
+                        ScoringRun.status == ScanStatus.RUNNING,
+                        ScoringRun.last_progress_at < threshold,
+                    )
+                )
+            ).scalars().all()
+        except Exception:
+            stalled_scoring_runs = []
+        for scoring_run in stalled_scoring_runs:
+            if await _fail_if_stalled(session, scoring_run):
+                reaped += 1
+
+        try:
+            stalled_top_selection_runs = (
+                await session.execute(
+                    select(TopSelectionRun).where(
+                        TopSelectionRun.status == ScanStatus.RUNNING,
+                        TopSelectionRun.last_progress_at < threshold,
+                    )
+                )
+            ).scalars().all()
+        except Exception:
+            stalled_top_selection_runs = []
+        for top_selection_run in stalled_top_selection_runs:
+            if await _fail_if_stalled(session, top_selection_run):
+                reaped += 1
+
+    return reaped
+
 
 class WorkerSettings:
     # arq.worker.func(...) statt nackter Funktionsreferenzen (Fortschritts-Watchdog, ADR 0019):
@@ -667,4 +760,10 @@ class WorkerSettings:
         arq_func(score_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
         arq_func(select_top_photos, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
     )
+    # Schicht 2 des Fortschritts-Watchdogs (ADR 0019), erste Nutzung von arqs Cron-Mechanismus im
+    # Projekt: run_at_startup=True sorgt dafuer, dass ein Worker-Neustart sofort eine erste
+    # Pruefung ausloest, statt bis zu 5 Minuten auf den naechsten regulaeren Tick zu warten (genau
+    # der Bug-Report-Fall: eine bereits vor dem Neustart haengende Zeile soll nicht unnoetig lang
+    # unentdeckt bleiben).
+    cron_jobs = (cron(reap_stalled_runs, minute=set(range(0, 60, 5)), run_at_startup=True),)
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
