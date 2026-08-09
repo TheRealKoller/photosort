@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -91,6 +92,20 @@ class WalkFailsWithUnexpectedErrorClient(FakeOpenCloudClient):
         for item in self._entries:
             yield item
         raise RuntimeError("Unerwarteter Parsing-Fehler")
+
+
+class WalkFailsWithCancelledErrorClient(FakeOpenCloudClient):
+    """Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+    watchdog.md, ADR 0019): simuliert einen arq job_timeout-Ablauf/Worker-Shutdown mitten im
+    Scan-Loop - beide loesen denselben asyncio.CancelledError-Pfad aus. Vor dem Fix lief das als
+    BaseException ungefangen durch run_project_scan durch, der ScanRun blieb dauerhaft auf
+    status="running" haengen (siehe WalkFailsWithUnexpectedErrorClient oben fuer den analogen,
+    bereits behobenen Exception-Fall)."""
+
+    async def walk(self, webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
+        for item in self._entries:
+            yield item
+        raise asyncio.CancelledError()
 
 
 async def _make_project(session: AsyncSession) -> Project:
@@ -315,6 +330,35 @@ async def test_scan_run_marked_failed_on_unexpected_non_opencloud_error(
 
     assert scan_run.status == ScanStatus.FAILED
     assert "Unerwarteter Parsing-Fehler" in (scan_run.error_message or "")
+
+
+async def test_scan_run_marked_failed_on_cancelled_error(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium der Spec: CancelledError wird VOR dem erneuten raise abgefangen, der
+    ScanRun sofort auf FAILED mit erklaerender error_message gesetzt - die Exception selbst wird
+    NICHT verschluckt (arqs eigene Task-/Retry-Buchhaltung braucht sie weiterhin)."""
+    project = await _make_project(db_session)
+    project_id = project.id
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = WalkFailsWithCancelledErrorClient(
+        entries=[
+            ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
+        ]
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    # project_id wurde VOR dem Aufruf gelesen (nicht project.id danach): session.rollback() in
+    # _fail_run expired alle Objekte der Session - ein direkter project.id-Zugriff danach wuerde
+    # einen impliziten Lazy-Load ausserhalb des von SQLAlchemy fuer Async-Sessions vorausgesetzten
+    # greenlet-Kontexts ausloesen (sqlalchemy.exc.MissingGreenlet, kein Bug dieser Spec).
+    scan_run = (
+        await db_session.execute(select(ScanRun).where(ScanRun.project_id == project_id))
+    ).scalar_one()
+    assert scan_run.status == ScanStatus.FAILED
+    assert scan_run.error_message
 
 
 async def test_scan_marked_failed_after_partial_progress_keeps_committed_photos(

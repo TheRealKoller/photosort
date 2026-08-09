@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -125,6 +126,24 @@ def _now_utc() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+async def _fail_run(
+    session: AsyncSession,
+    run: ScanRun | ScoringRun | TopSelectionRun,
+    error_message: str,
+) -> None:
+    """Gemeinsame "Lauf auf FAILED setzen"-Logik fuer alle drei run_*-Funktionen
+    (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019) - kein Decorator/Wrapper
+    um die drei Funktionen (die bleiben strukturell eigenstaendig, ihre Erfolgspfade unterscheiden
+    sich zu stark), nur Vermeidung von vier identischen Zeilen an sechs Call-Sites (drei
+    Funktionen x je CancelledError- und Exception-Zweig). Kein Kontrollfluss (kein raise/return)
+    hier drin - das bleibt an jeder Call-Site sichtbar."""
+    await session.rollback()
+    run.status = ScanStatus.FAILED
+    run.error_message = error_message
+    run.finished_at = _now_utc()
+    await session.commit()
+
+
 async def _generate_thumbnails(
     client: OpenCloudScanClient,
     webdav_url: str,
@@ -246,6 +265,18 @@ async def run_project_scan(
         scan_run.files_skipped = files_skipped
         await session.commit()
         return scan_run
+    except asyncio.CancelledError:
+        # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+        # watchdog.md, ADR 0019): ein arq job_timeout-Ablauf, ein geplanter Worker-Shutdown und ein
+        # kuenftiger Job.abort() loesen alle denselben asyncio.CancelledError-Pfad aus (verifiziert
+        # im arq-Quellcode, siehe ADR). Anders als die fruehere Annahme (siehe Git-Historie) wird
+        # das jetzt bewusst NICHT mehr unbehandelt durchgelassen: der Lauf wird sofort auf FAILED
+        # gesetzt, danach re-raised (kein Verschlucken einer BaseException) - arqs eigene
+        # Task-/Retry-Buchhaltung funktioniert dadurch unveraendert weiter.
+        await _fail_run(
+            session, scan_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
+        )
+        raise
     except Exception as exc:
         # Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): vorher
         # wurde hier ausschliesslich OpenCloudError abgefangen - jede andere Exception (z.B. aus
@@ -253,14 +284,7 @@ async def run_project_scan(
         # und liess den ScanRun dauerhaft auf status="running" haengen, ohne Watchdog/Recovery.
         # OpenCloudError ist eine Teilmenge von Exception, ein einzelner breiter Handler reicht
         # deshalb aus - exakt das bereits bestehende Muster in run_project_scoring unten.
-        # asyncio.CancelledError ist seit Python 3.8 BaseException statt Exception-Subtyp und wird
-        # von diesem `except Exception` daher NICHT abgefangen: ein geplanter Worker-Shutdown
-        # markiert einen Lauf nicht faelschlich als "failed", keine Sonderbehandlung noetig.
-        await session.rollback()
-        scan_run.status = ScanStatus.FAILED
-        scan_run.error_message = str(exc)
-        scan_run.finished_at = _now_utc()
-        await session.commit()
+        await _fail_run(session, scan_run, str(exc))
         return scan_run
 
 
@@ -422,16 +446,19 @@ async def run_project_scoring(
         scoring_run.finished_at = datetime.now(UTC).replace(tzinfo=None)
         await session.commit()
         return scoring_run
+    except asyncio.CancelledError:
+        # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+        # watchdog.md, ADR 0019) - analog run_project_scan oben.
+        await _fail_run(
+            session, scoring_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
+        )
+        raise
     except Exception as exc:
         # Kein Rollback bereits committeter PhotoScore-Zeilen/des letzten committeten
         # photos_processed-Stands (Akzeptanzkriterium der Spec) - session.rollback() verwirft nur
         # die seit dem letzten commit() offene, noch nicht persistierte Transaktion, exakt wie im
         # OpenCloudError-Pfad von run_project_scan oben.
-        await session.rollback()
-        scoring_run.status = ScanStatus.FAILED
-        scoring_run.error_message = str(exc)
-        scoring_run.finished_at = datetime.now(UTC).replace(tzinfo=None)
-        await session.commit()
+        await _fail_run(session, scoring_run, str(exc))
         return scoring_run
 
 
@@ -582,14 +609,15 @@ async def run_top_selection(
         run.finished_at = _now_utc()
         await session.commit()
         return run
+    except asyncio.CancelledError:
+        # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+        # watchdog.md, ADR 0019) - analog run_project_scan/run_project_scoring oben.
+        await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
+        raise
     except Exception as exc:
         # Kein Rollback bereits committeter Fortschritts-/Kategorie-Zwischenstaende
         # (Akzeptanzkriterium der Spec, identisches Muster wie run_project_scoring oben).
-        await session.rollback()
-        run.status = ScanStatus.FAILED
-        run.error_message = str(exc)
-        run.finished_at = _now_utc()
-        await session.commit()
+        await _fail_run(session, run, str(exc))
         return run
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +18,7 @@ from photosort.models import (
     RatingStatus,
     ScanStatus,
     ScoringRun,
+    TopSelectionRun,
 )
 from photosort.thumbnails import display_path
 from photosort.worker import run_project_scoring, run_top_selection
@@ -493,6 +495,48 @@ async def test_failure_mid_run_leaves_already_committed_progress_and_category_un
     ).scalar_one()
     assert score.category == PhotoCategory.LANDSCAPE
     assert score.suggested_status is None
+
+
+async def test_run_marked_failed_on_cancelled_error(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+    watchdog.md, ADR 0019), drittes Pendant zu test_scan_run_marked_failed_on_cancelled_error -
+    hier aus der Klassifikations-Schleife heraus (detector.detect wirft mitten im Kandidatenpool
+    asyncio.CancelledError). _classify_candidate faengt nur `except Exception`, BaseException
+    propagiert unveraendert bis in run_top_selection durch."""
+
+    class CancellingDetector:
+        def detect(self, image: object) -> object:
+            raise asyncio.CancelledError()
+
+    project = await _make_project(db_session)
+    project_id = project.id
+    await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, cluster_key="cluster-0", local_quality_score=10.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_top_selection(
+            db_session,
+            project,
+            top_n_per_cluster=1,
+            cache_dir=tmp_path,
+            build_detector=CancellingDetector,
+        )
+
+    # project_id wurde VOR dem Aufruf gelesen (nicht project.id danach) - siehe Kommentar in
+    # test_worker_scan_project.py::test_scan_run_marked_failed_on_cancelled_error.
+    run = (
+        await db_session.execute(
+            select(TopSelectionRun).where(TopSelectionRun.project_id == project_id)
+        )
+    ).scalar_one()
+    assert run.status == ScanStatus.FAILED
+    assert run.error_message
 
 
 async def test_clusters_are_isolated_from_each_other(
