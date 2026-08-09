@@ -144,6 +144,13 @@ async def _fail_run(
     run.error_message = error_message
     run.finished_at = _now_utc()
     await session.commit()
+    # Copilot-Review-Fund (PR #67): das vorangehende rollback() expired ORM-Objekte der Session -
+    # ohne dieses refresh() koennte ein direkter Attributzugriff auf `run` NACH der Rueckkehr aus
+    # _fail_run (z.B. `run.id` in scan_project/score_project/select_top_photos, die den
+    # Rueckgabewert von run_project_scan/run_project_scoring/run_top_selection unmittelbar
+    # weiterverwenden) einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
+    # ausloesen (sqlalchemy.exc.MissingGreenlet) - siehe test_worker_fail_run.py.
+    await session.refresh(run)
 
 
 async def _generate_thumbnails(
@@ -660,9 +667,15 @@ JOB_TIMEOUT_SECONDS = 86400
 # "nur ein echter Stillstand ist ein Fehler, keine feste Obergrenze").
 STALL_THRESHOLD = timedelta(minutes=15)
 
-_STALL_MESSAGE = (
-    "Kein Fortschritt seit über 15 Minuten erkannt — vermutlich hängender Verarbeitungsschritt."
-)
+def _stall_message() -> str:
+    # Copilot-Review-Fund (PR #67): die Minutenzahl wird bewusst aus STALL_THRESHOLD abgeleitet
+    # statt hart codiert - ein spaeteres Anpassen von STALL_THRESHOLD kann die Meldung damit nicht
+    # mehr unbemerkt veralten lassen.
+    minutes = int(STALL_THRESHOLD.total_seconds() // 60)
+    return (
+        f"Kein Fortschritt seit über {minutes} Minuten erkannt — "
+        "vermutlich hängender Verarbeitungsschritt."
+    )
 
 
 async def _fail_if_stalled(
@@ -674,7 +687,7 @@ async def _fail_if_stalled(
     Commit dieser einen Zeile) rollt nur die aktuelle, noch nicht committete Teiltransaktion
     zurueck, bereits zuvor erfolgreich committete Zeilen bleiben unberuehrt."""
     try:
-        await _fail_run(session, run, _STALL_MESSAGE)
+        await _fail_run(session, run, _stall_message())
         return True
     except Exception:
         await session.rollback()

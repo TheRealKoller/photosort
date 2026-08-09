@@ -53,6 +53,31 @@ async def test_reaps_scan_run_stalled_beyond_threshold(db_session: AsyncSession)
     assert "15 Minuten" in stalled.error_message
 
 
+async def test_stall_message_reflects_the_configured_threshold(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Copilot-Review-Fund (PR #67): die Fehlermeldung leitet die genannte Minutenzahl aus
+    STALL_THRESHOLD ab statt sie hart zu codieren - passt sich also automatisch an, statt bei
+    einer kuenftigen Anpassung von STALL_THRESHOLD unbemerkt auseinanderzudriften."""
+    monkeypatch.setattr(worker_module, "STALL_THRESHOLD", timedelta(minutes=30))
+    project = await _make_project(db_session)
+    stalled = ScanRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=45),
+    )
+    db_session.add(stalled)
+    await db_session.commit()
+
+    session_factory = make_session_factory(db_session.bind)
+    await reap_stalled_runs({}, session_factory=session_factory)
+
+    await db_session.refresh(stalled)
+    assert stalled.error_message
+    assert "30 Minuten" in stalled.error_message
+    assert "15 Minuten" not in stalled.error_message
+
+
 async def test_does_not_reap_scan_run_within_threshold(db_session: AsyncSession) -> None:
     project = await _make_project(db_session)
     active = ScanRun(
