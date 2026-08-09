@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from arq.connections import RedisSettings
+from arq.worker import func as arq_func
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -644,6 +645,26 @@ async def select_top_photos(ctx: dict[str, Any], project_id: int, top_n_per_clus
         return run.id
 
 
+# Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
+# grosszuegiger Not-Anker (24h), NICHT der primaere Terminierungsmechanismus - Schicht 2
+# (STALL_THRESHOLD, siehe reap_stalled_runs) greift fuer jeden echten Stillstand immer zuerst.
+# Begrenzt nur den Ressourcenverbrauch eines (heute nicht vorstellbaren) Defekts in Schicht 2
+# selbst. arq-Default waere 300s (5 Minuten) - deutlich zu kurz fuer legitim lange Scans grosser
+# Fotobibliotheken (bindende Stakeholder-Anforderung, siehe Spec).
+JOB_TIMEOUT_SECONDS = 86400
+
+
 class WorkerSettings:
-    functions = (scan_project, score_project, select_top_photos)
+    # arq.worker.func(...) statt nackter Funktionsreferenzen (Fortschritts-Watchdog, ADR 0019):
+    # max_tries=1 deaktiviert arqs automatischen Hintergrund-Retry vollstaendig - ein durch
+    # job_timeout abgebrochener Job erzeugt dadurch KEINE zweite Run-Zeile (arq prueft
+    # job_try > max_tries VOR dem erneuten Coroutine-Aufruf, verifiziert im arq-Quellcode). Damit
+    # gilt strukturell: ein Nutzer-Trigger -> genau ein Lauf -> ein eindeutiger Endzustand,
+    # sichtbar ueber die bestehende "Erneut versuchen"-UI (Spec 0017/0023) statt eines
+    # unsichtbaren automatischen Wiederholungsversuchs.
+    functions = (
+        arq_func(scan_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
+        arq_func(score_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
+        arq_func(select_top_photos, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
+    )
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
