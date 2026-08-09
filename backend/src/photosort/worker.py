@@ -709,6 +709,15 @@ async def reap_stalled_runs(
                 )
             ).scalars().all()
         except Exception:
+            # architect-Review-Fund (Spec 0034): ohne rollback() bliebe die Transaktion auf einer
+            # echten Postgres-Verbindung nach einem fehlgeschlagenen SELECT im Zustand "current
+            # transaction is aborted" - die nachfolgenden SELECTs fuer ScoringRun/TopSelectionRun
+            # wuerden dann selbst fehlschlagen, obwohl inhaltlich nichts mit ihnen falsch ist. Das
+            # wuerde das Akzeptanzkriterium "ein Fehler bei einer Tabelle blockiert die
+            # Bereinigung der uebrigen nicht" in Produktion unterlaufen - im SQLite-Testsetup
+            # unsichtbar, da dort eine vor jedem DB-Zugriff geworfene Python-Exception die
+            # DBAPI-Transaktion nie tatsaechlich invalidiert.
+            await session.rollback()
             stalled_scan_runs = []
         for scan_run in stalled_scan_runs:
             if await _fail_if_stalled(session, scan_run):
@@ -724,6 +733,7 @@ async def reap_stalled_runs(
                 )
             ).scalars().all()
         except Exception:
+            await session.rollback()
             stalled_scoring_runs = []
         for scoring_run in stalled_scoring_runs:
             if await _fail_if_stalled(session, scoring_run):
@@ -739,6 +749,7 @@ async def reap_stalled_runs(
                 )
             ).scalars().all()
         except Exception:
+            await session.rollback()
             stalled_top_selection_runs = []
         for top_selection_run in stalled_top_selection_runs:
             if await _fail_if_stalled(session, top_selection_run):

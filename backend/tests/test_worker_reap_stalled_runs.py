@@ -278,3 +278,94 @@ async def test_error_selecting_one_table_does_not_block_others(
     await db_session.refresh(stalled_scoring)
     assert stalled_scan.status == ScanStatus.RUNNING
     assert stalled_scoring.status == ScanStatus.FAILED
+
+
+async def test_error_selecting_scoring_runs_does_not_block_the_other_tables(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pendant zu test_error_selecting_one_table_does_not_block_others fuer ScoringRun - deckt
+    denselben (bewusst dreifach duplizierten, nicht generisch geloopten - ADR 0019) Code-Pfad fuer
+    die zweite der drei Tabellen ab (test-engineer-Review-Fund, Spec 0034)."""
+    project = await _make_project(db_session)
+    stalled_scan = ScanRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    stalled_scoring = ScoringRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    stalled_top_selection = TopSelectionRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        top_n_per_cluster=3,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    db_session.add_all([stalled_scan, stalled_scoring, stalled_top_selection])
+    await db_session.commit()
+
+    original_execute = AsyncSession.execute
+
+    async def flaky_execute(self: AsyncSession, statement: object, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        if "scoring_runs" in str(statement):
+            raise RuntimeError("simulated table-level failure")
+        return await original_execute(self, statement, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(AsyncSession, "execute", flaky_execute)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    monkeypatch.undo()
+
+    assert reaped == 2
+    await db_session.refresh(stalled_scan)
+    await db_session.refresh(stalled_scoring)
+    await db_session.refresh(stalled_top_selection)
+    assert stalled_scan.status == ScanStatus.FAILED
+    assert stalled_scoring.status == ScanStatus.RUNNING
+    assert stalled_top_selection.status == ScanStatus.FAILED
+
+
+async def test_error_selecting_top_selection_runs_does_not_block_the_other_tables(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Drittes Pendant, fuer TopSelectionRun - schliesst die Coverage-Luecke fuer alle drei
+    (bewusst duplizierten) SELECT-except-Bloecke vollstaendig (test-engineer-Review-Fund, Spec
+    0034)."""
+    project = await _make_project(db_session)
+    stalled_scan = ScanRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    stalled_top_selection = TopSelectionRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        top_n_per_cluster=3,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    db_session.add_all([stalled_scan, stalled_top_selection])
+    await db_session.commit()
+
+    original_execute = AsyncSession.execute
+
+    async def flaky_execute(self: AsyncSession, statement: object, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        if "top_selection_runs" in str(statement):
+            raise RuntimeError("simulated table-level failure")
+        return await original_execute(self, statement, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(AsyncSession, "execute", flaky_execute)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    monkeypatch.undo()
+
+    assert reaped == 1
+    await db_session.refresh(stalled_scan)
+    await db_session.refresh(stalled_top_selection)
+    assert stalled_scan.status == ScanStatus.FAILED
+    assert stalled_top_selection.status == ScanStatus.RUNNING
