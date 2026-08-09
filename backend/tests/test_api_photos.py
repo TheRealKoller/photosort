@@ -494,7 +494,9 @@ async def test_list_photos_suggested_filter_matches_has_suggestion_parity(
     Aufruf suggestion != null ist - sichert die bewusste Doppelimplementierung (SQL-WHERE vs.
     Python-has_suggestion) ab."""
     project = await _make_project(db_session)
-    no_score = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    # Praefix _ statt eigenem Namen: nur zur Vollstaendigkeit der Fallmatrix angelegt (Foto ganz
+    # ohne PhotoScore), keine eigene Assertion darauf noetig.
+    await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
     unsuggested_score = await _make_photo(
         db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC)
     )
@@ -532,7 +534,6 @@ async def test_list_photos_suggested_filter_matches_has_suggestion_parity(
     await authenticated_api_client.put(
         f"/photos/{suggested_with_own_rating.id}/rating", json={"status": "album_worthy"}
     )
-    del no_score  # nur zur Vollstaendigkeit der Fallmatrix angelegt, keine eigene Assertion noetig
 
     unfiltered = await authenticated_api_client.get(f"/projects/{project.id}/photos")
     filtered = await authenticated_api_client.get(
