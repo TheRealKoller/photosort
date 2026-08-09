@@ -58,6 +58,7 @@ Zuordnungskriterium: **überwiegt beim jeweiligen Aufruf mechanischer Checkliste
 | `idea-sharpener` Schritt 8 → `test-engineer` / `security-engineer` | Standard | Grundsatzentscheidung (Strategie, nicht Review). |
 | Hauptchat/Orchestrator → `developer` | Standard | Nie herabstufen — das ist die eigentliche Implementierungsarbeit. |
 | `architect` (dieser Agent) → `AskUserQuestion` bei Kosten-/Produktentscheidungen | — | Kein Modell-Aspekt; siehe Kontext zur fehlenden Tool-Verfügbarkeit in diesem Lauf. |
+| Hauptchat/Daniel direkt **oder** einer der fünf Fachagenten → `research-engineer` (externe Recherche) | Standard | Quellenbewertung (Aktualität/Vertrauenswürdigkeit/Relevanz) ist Kernbestandteil der Rolle und strukturell Abwägen ohne feste Checkliste, keine Checklisten-Prüfung gegen bereits fixierte Kriterien — analog zu `security-engineer`, nie herabstufen. Nachgetragen bei Umsetzung von Spec [`0028`](../features/0028-research-engineer-agent.md)/ADR [`0016`](./0016-research-engineer-agent.md), additive Ergänzung dieser Tabelle, siehe Konsequenzen dort. |
 
 Diese Tabelle ist die **einzige Quelle der Wahrheit** für Modellzuordnung; `docs/ai-workflow.md` bekommt eine gekürzte, für Außenstehende lesbare Zusammenfassung mit Verweis hierher, `.claude/agents/developer.md` und `.claude/skills/idea-sharpener/SKILL.md` tragen die konkreten `model`-Werte direkt an der jeweiligen Aufruf-Anweisung ein (nicht nur als Verweis), da sie zur Laufzeit unmittelbar ausführbar sein müssen, ohne eine externe Datei nachschlagen zu müssen.
 

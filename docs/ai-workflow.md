@@ -40,6 +40,7 @@ Aufgabengebiet und ein zugehöriges, lebendes Konzept-Dokument unter
 | `test-engineer` | Testkonzept, Teststrategie pro Feature, testfokussiertes Review | `specs/architecture/0002-testkonzept.md` |
 | `security-engineer` | Sicherheitskonzept, Security-Einschätzung pro Feature, sicherheitsfokussiertes Review | `specs/architecture/0003-securitykonzept.md` |
 | `developer` | Setzt eine akzeptierte Feature-Spec testgetrieben um (TDD-Zyklus, Branch, Pull Request) | — |
+| `research-engineer` | Strukturierte, quellenbelegte Web-Recherche — direkt für Daniel oder delegiert von den fünf anderen Agenten während ihrer eigenen Arbeit | — (kein eigenes Konzept-Dokument, siehe unten) |
 
 Der `idea-sharpener`-Skill begleitet eine rohe Idee bis zur akzeptierten Feature-Spec und zieht
 dabei die vier Fachspezialisten der Reihe nach hinzu. Der `developer`-Agent setzt eine
@@ -93,6 +94,11 @@ der jeweiligen Aufruf-Anweisung ein. Review-Qualität wird dabei nicht einmalig,
 beobachtet (`test-engineer`) — sollte die günstigere Modellstufe die Qualität spürbar
 verschlechtern, führt das zu einer neuen, ADR 0014 ablösenden ADR, nicht zu einem stillschweigenden
 Unterlaufen der Tabelle.
+
+Aufrufe des `research-engineer`-Agenten (direkt von Daniel oder delegiert von einem der fünf
+anderen Agenten, siehe [ADR 0016](../specs/decisions/0016-research-engineer-agent.md)) laufen
+immer mit dem Standardmodell, ohne Ausnahme — Quellenbewertung ist echtes fachliches Abwägen
+ohne feste Checkliste, kein Kandidat für die günstigere Modellstufe.
 
 ## Wo die eigentlichen Regeln stehen
 
