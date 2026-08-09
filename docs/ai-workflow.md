@@ -82,10 +82,10 @@ wenn der Diff einen ihrer dokumentierten Trigger berührt (z.B. Auth-/Secrets-Pf
 Abhängigkeiten, Frontend-Dateien). Sicherheitsnetz: Ist die Zuordnung unklar, läuft der Agent
 trotzdem — die Tabelle ist bewusst konservativ statt aggressiv Kontingent sparend.
 
-Zusätzlich bekommt jeder Agenten-Aufruf ein festes Modell zugewiesen: die beiden am stärksten
-checklistenartigen Review-Aufrufe (`requirements-engineer`, `ux-ui-designer`) laufen mit dem
-günstigeren Haiku-Modell, alles mit echtem fachlichem Urteilsvermögen — inkl. `security-engineer`
-und sämtlicher `idea-sharpener`-Konsultationen — bleibt beim Standardmodell.
+Zusätzlich bekommt jeder Agenten-Aufruf im `developer`-Review ein festes Modell zugewiesen: die
+beiden am stärksten checklistenartigen Review-Aufrufe (`requirements-engineer`, `ux-ui-designer`)
+laufen mit dem günstigeren Haiku-Modell, alles mit echtem fachlichem Urteilsvermögen — inkl.
+`security-engineer` — bleibt beim Standardmodell.
 
 Beide Tabellen (Trigger und Modellzuweisung) sind vollständig und verbindlich in
 [ADR 0014](../specs/decisions/0014-review-agenten-selektion-und-modellzuweisung.md) festgehalten;
@@ -94,6 +94,17 @@ der jeweiligen Aufruf-Anweisung ein. Review-Qualität wird dabei nicht einmalig,
 beobachtet (`test-engineer`) — sollte die günstigere Modellstufe die Qualität spürbar
 verschlechtern, führt das zu einer neuen, ADR 0014 ablösenden ADR, nicht zu einem stillschweigenden
 Unterlaufen der Tabelle.
+
+Dieselbe Kosten-Logik wurde auf den `idea-sharpener`-Ablauf selbst ausgeweitet
+([ADR 0018](../specs/decisions/0018-idea-sharpener-kalibrierung-und-skip-logik.md), ohne ADR 0014
+zu ändern): Die Konsultationen in Schritt 2 (`requirements-engineer`) und Schritt 7
+(`ux-ui-designer`) sowie die beiden optionalen Explore-Agenten in Schritt 3 laufen jetzt mit
+Haiku statt Standard, während `architect` (Schritt 6), `test-engineer` und `security-engineer`
+(beide Schritt 8) Standard bleiben. Zusätzlich steht vor Schritt 6/7/8 (bei Schritt 8 für
+`test-engineer` und `security-engineer` einzeln) je eine eng gefasste, dokumentationspflichtige
+Ja/Nein-Skip-Frage — urteilsbasiert statt mechanisch, da vor der eigentlichen Umsetzung noch kein
+Diff existiert, mit demselben Sicherheitsnetz "im Zweifel eher konsultieren" wie in ADR 0014.
+`requirements-engineer` (Schritt 2) bleibt davon ausgenommen und läuft immer.
 
 Aufrufe des `research-engineer`-Agenten (direkt von Daniel oder delegiert von einem der fünf
 anderen Agenten, siehe [ADR 0016](../specs/decisions/0016-research-engineer-agent.md)) laufen
