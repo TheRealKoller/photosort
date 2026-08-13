@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 import os
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -113,6 +115,85 @@ class OpenCloudScanClient(Protocol):
 
 def _extension(relative_path: str) -> str:
     return os.path.splitext(relative_path)[1].lower()
+
+
+class SkipReason(enum.Enum):
+    """specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020 (Phase 2a): warum ein
+    Eintrag NICHT zu einem Arbeitsposten fuer Phase 2b wird. Zwei getrennte Werte statt eines
+    einzelnen bool-Flags, weil nur UNSUPPORTED_EXTENSION zusaetzlich ScanRun.files_skipped
+    hochzaehlt (bestehende Semantik, siehe run_project_scan) - UNCHANGED_ETAG zaehlt nur in
+    files_found (Fortschritt), nicht in files_skipped."""
+
+    UNSUPPORTED_EXTENSION = "unsupported_extension"
+    UNCHANGED_ETAG = "unchanged_etag"
+
+
+@dataclass
+class ScanWorkItem:
+    """Ein Eintrag aus Phase 1, der in Phase 2b tatsaechlich verarbeitet werden muss (neue Datei
+    oder geaenderter Etag) - `existing_photo` ist `None` fuer neue Dateien, sonst die zu
+    aktualisierende Zeile."""
+
+    relative_path: str
+    entry: DavEntry
+    existing_photo: Photo | None
+
+
+@dataclass
+class ScanEntryDecision:
+    """Ergebnis der Klassifikation eines einzelnen Phase-1-Eintrags: entweder ein Skip-Grund ODER
+    ein Arbeitsposten, nie beides - siehe _classify_scan_entries."""
+
+    relative_path: str
+    skip_reason: SkipReason | None
+    work_item: ScanWorkItem | None
+
+
+@dataclass
+class ScanClassification:
+    """Ergebnis von _classify_scan_entries fuer die vollstaendige Phase-1-Liste.
+
+    `decisions` behaelt bewusst die Eingabereihenfolge bei (run_project_scan iteriert sie fuer die
+    Checkpoint-Kadenz von files_found/files_skipped in Phase 2a, siehe ADR 0020) - `work_items` ist
+    eine reine Teilmenge davon (nur die Eintraege mit skip_reason is None), fuer Phase 2b."""
+
+    decisions: list[ScanEntryDecision] = field(default_factory=list)
+    work_items: list[ScanWorkItem] = field(default_factory=list)
+    seen_paths: set[str] = field(default_factory=set)
+
+
+def _classify_scan_entries(
+    entries: list[tuple[str, DavEntry]],
+    existing_photos: dict[str, Photo],
+) -> ScanClassification:
+    """specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020 (Phase 2a): reine
+    Funktion, keine Session-/DB-Zugriffe - isoliert unit-testbar (siehe
+    test_worker_scan_classification.py). Identische fachliche Entscheidungslogik wie der fruehere
+    inline Loop-Koerper in run_project_scan (unsupported extension -> Skip + files_skipped;
+    unveraenderter Etag -> Skip ohne files_skipped; sonst -> Arbeitsposten), nur ohne die
+    Verarbeitung selbst."""
+    classification = ScanClassification()
+    for relative_path, entry in entries:
+        extension = _extension(relative_path)
+        if extension not in _IMAGE_EXTENSIONS:
+            classification.decisions.append(
+                ScanEntryDecision(relative_path, SkipReason.UNSUPPORTED_EXTENSION, None)
+            )
+            continue
+
+        classification.seen_paths.add(relative_path)
+        existing_photo = existing_photos.get(relative_path)
+        if existing_photo is not None and existing_photo.etag == entry.etag:
+            classification.decisions.append(
+                ScanEntryDecision(relative_path, SkipReason.UNCHANGED_ETAG, None)
+            )
+            continue
+
+        work_item = ScanWorkItem(relative_path, entry, existing_photo)
+        classification.decisions.append(ScanEntryDecision(relative_path, None, work_item))
+        classification.work_items.append(work_item)
+
+    return classification
 
 
 def _naive_utc(value: datetime) -> datetime:
