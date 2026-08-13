@@ -8,7 +8,9 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, ge
 
 ### Offen — Hoch
 
-_Aktuell keine offenen Einträge._
+| Spec | Titel | Status |
+|---|---|---|
+| [0037](./features/0037-gateführte-bewertungs-pipeline-mit-backfill.md) | Gateführte Bewertungs-Pipeline mit Kriterien-Scoring und Kategorie-Kuratierung | Accepted |
 
 ### Offen — Mittel
 
@@ -39,7 +41,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 |---|---|---|
 | [0001](./features/0001-opencloud-project-connection.md) | OpenCloud-Projekt-Anbindung | Implemented — die bei Fertigstellung noch offenen Teile (Frontend, Auth) sind über 0005/0006 umgesetzt, siehe Spec |
 | [0002](./features/0002-manual-categorization.md) | Manuelle Kategorisierung | Implemented ([PR #3](https://github.com/TheRealKoller/photosort/pull/3)) |
-| [0003](./features/0003-automatic-best-photo-selection.md) | Automatische Vorauswahl (Phase A) | Implemented ([PR #6](https://github.com/TheRealKoller/photosort/pull/6)) |
+| [0003](./features/0003-automatic-best-photo-selection.md) | Automatische Vorauswahl (Phase A) | Superseded durch [0037](./features/0037-gateführte-bewertungs-pipeline-mit-backfill.md) |
 | [0005](./features/0005-minimal-project-frontend.md) | Minimales Projekt-Frontend | Implemented ([PR #2](https://github.com/TheRealKoller/photosort/pull/2)) |
 | [0006](./features/0006-auth.md) | Auth-Implementierung | Implemented ([PR #1](https://github.com/TheRealKoller/photosort/pull/1)) |
 | [0007](./features/0007-github-repo-access-hardening.md) | GitHub-Repo-Zugriffshärtung & Issue-Freigabe-Vorsorge | Implemented ([PR #5](https://github.com/TheRealKoller/photosort/pull/5)) |
@@ -59,7 +61,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0021](./features/0021-scoring-run-vorschlagszaehler.md) | Zusammenfassung nach Scoring-Lauf: Anzahl gefundener Vorschläge | Implemented ([PR #38](https://github.com/TheRealKoller/photosort/pull/38)) |
 | [0022](./features/0022-scan-live-fortschrittszaehler.md) | Live-Fortschrittszähler beim Scannen eines Projekts | Implemented ([PR #40](https://github.com/TheRealKoller/photosort/pull/40)) |
 | [0023](./features/0023-scan-fortschritt-batch-groesse-fix.md) | Scan-Zuverlässigkeit: hängender Job + eingefrorener Live-Zähler | Implemented ([PR #43](https://github.com/TheRealKoller/photosort/pull/43)) |
-| [0024](./features/0024-top-photo-selection-category-mix.md) | Top-Fotos auswählen mit Kategorie-Mix (lokal) | Implemented ([PR #51](https://github.com/TheRealKoller/photosort/pull/51)) |
+| [0024](./features/0024-top-photo-selection-category-mix.md) | Top-Fotos auswählen mit Kategorie-Mix (lokal) | Superseded durch [0037](./features/0037-gateführte-bewertungs-pipeline-mit-backfill.md) |
 | [0025](./features/0025-test-engineer-review-kompaktierung.md) | `test-engineer` kompaktieren: TDD-Ritual-Check raus, Instruktionen straffen | Implemented ([PR #56](https://github.com/TheRealKoller/photosort/pull/56)) |
 | [0026](./features/0026-roadmap-kompaktuebersicht-und-readme-link.md) | Roadmap-Kompaktübersicht (D2-Grafik) und README-Verlinkung — Grafik in einer späteren Iteration wieder entfernt, siehe Spec | Implemented ([PR #48](https://github.com/TheRealKoller/photosort/pull/48)) |
 | [0029](./features/0029-roadmap-prioritaetsstufen.md) | Roadmap: Umstellung auf drei Prioritätsstufen (Hoch/Mittel/Niedrig) | Implemented ([PR #59](https://github.com/TheRealKoller/photosort/pull/59)) |

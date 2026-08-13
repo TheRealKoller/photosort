@@ -1,8 +1,10 @@
 # 0024 - Top-Fotos auswählen mit Kategorie-Mix (lokal)
 
-**Status:** Implemented ([PR #51](https://github.com/TheRealKoller/photosort/pull/51))
+**Status:** Superseded, abgelöst durch [`0037`](./0037-gateführte-bewertungs-pipeline-mit-backfill.md) ([PR #51](https://github.com/TheRealKoller/photosort/pull/51))
 **Erstellt:** 2026-08-07
 **Bezug:** Inbox-Notiz `specs/inbox/0011-beste-fotos-vorschlagen-neu-denken.md` (Daniel selbst, interaktive Session; nach Aufnahme in diese Spec gelöscht), [`decisions/0002-hybrid-ai-scoring.md`](../decisions/0002-hybrid-ai-scoring.md), [`decisions/0006-local-scoring-datamodel.md`](../decisions/0006-local-scoring-datamodel.md), [`decisions/0015-lokale-kategorie-klassifikation.md`](../decisions/0015-lokale-kategorie-klassifikation.md), [`features/0003-automatic-best-photo-selection.md`](./0003-automatic-best-photo-selection.md), Idea-Sharpening-Gespräch mit Daniel am 2026-08-07
+
+**Nachtrag (2026-08-13):** Durch Spec [`0037`](./0037-gateführte-bewertungs-pipeline-mit-backfill.md) vollständig abgelöst — die Top-Auswahl-Mechanik (Kategorie-Klassifikation, Kategorie-Mix) wird dort durch ein generisches Kriterien-/Rangfolge-Datenmodell mit Backfill-Mechanismus ersetzt. Diese Datei bleibt als historisches Dokument stehen (beschreibt korrekt, was zum Zeitpunkt der Umsetzung gebaut wurde).
 
 ## Ziel
 
