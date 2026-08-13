@@ -20,6 +20,7 @@ describe('deriveScanStatus', () => {
         started_at: '2026-07-20T10:00:00Z',
         finished_at: null,
         files_found: 0,
+        total_files: null,
         photos_added: 0,
         photos_updated: 0,
         photos_removed: 0,

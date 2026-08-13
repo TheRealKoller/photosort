@@ -34,6 +34,10 @@ function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
     started_at: '2026-07-20T10:00:00Z',
     finished_at: null,
     files_found: 0,
+    // specs/features/0036-scan-performance-zweiphasig-parallel.md: null = Enumerationsphase noch
+    // nicht abgeschlossen (Default hier, wie beim frisch gestarteten Scan) - Tests fuer die
+    // Verarbeitungsphase setzen total_files explizit.
+    total_files: null,
     photos_added: 0,
     photos_updated: 0,
     photos_removed: 0,
@@ -198,121 +202,150 @@ describe('ProjectDetailPage', () => {
     expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled()
   })
 
-  describe('live progress counter while a scan is running (specs/features/0022)', () => {
-    it('shows "0 Dateien verarbeitet" when no file has been processed yet', async () => {
+  describe('two-phase scan progress (specs/features/0022, 0036)', () => {
+    it('shows "Dateien werden gezählt…" and an indeterminate progress bar during the enumeration phase (total_files === null)', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({ last_scan: scan({ status: 'running', files_found: 0 }) })
+        project({ last_scan: scan({ status: 'running', total_files: null, files_found: 5 }) })
       )
 
       renderPage()
 
-      expect(await screen.findByText('0 Dateien verarbeitet')).toBeInTheDocument()
-    })
-
-    it('shows the singular "1 Datei verarbeitet" when exactly one file has been processed', async () => {
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({ last_scan: scan({ status: 'running', files_found: 1 }) })
-      )
-
-      renderPage()
-
-      expect(await screen.findByText('1 Datei verarbeitet')).toBeInTheDocument()
-    })
-
-    it('shows the plural "N Dateien verarbeitet" for more than one processed file', async () => {
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({ last_scan: scan({ status: 'running', files_found: 7 }) })
-      )
-
-      renderPage()
-
-      expect(await screen.findByText('7 Dateien verarbeitet')).toBeInTheDocument()
-    })
-
-    it('renders no progress element and no "X von Y" text within the scan section for the running scan counter', async () => {
-      // Akzeptanzkriterium der Spec: die Gesamtdateizahl ist beim lazy OpenCloud-Ordnerdurchlauf
-      // vorab nicht bekannt - anders als beim Scoring-Fortschritt darf hier zu keinem Zeitpunkt
-      // ein Nenner ("X von Y") oder ein <progress>-Element auftauchen.
-      //
-      // Copilot-Review-Fund (PR #40): eine ungescopte Assertion ueber die gesamte Seite waere
-      // hier zu breit/nicht an der eigentlichen Anforderung ausgerichtet gewesen - die Seite darf
-      // durchaus an ANDERER Stelle (Scoring-Abschnitt) einen "X von Y"-Text und ein
-      // <progress>-Element zeigen. Deshalb hier bewusst ein gleichzeitig laufender Scoring-Lauf
-      // mit granularem "X von Y"-Fortschritt UND die Scope-Einschraenkung auf den Scan-Abschnitt,
-      // damit die Negativ-Assertion tatsaechlich nur die Scan-Zeile prueft, statt zufaellig durch
-      // die (aktuell leeren) Default-Fixtures "durchzukommen".
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({
-          last_scan: scan({ status: 'running', files_found: 5 }),
-          last_scoring_run: scoringRun({ status: 'running', photos_total: 10, photos_processed: 4 }),
-        })
-      )
-
-      renderPage()
-
-      const counterLine = await screen.findByText('5 Dateien verarbeitet')
-      expect(await screen.findByText(/4 von 10 fotos verarbeitet/i)).toBeInTheDocument()
-      expect(screen.getByRole('progressbar')).toBeInTheDocument()
+      const counterLine = await screen.findByText('Dateien werden gezählt…')
+      const progress = screen.getByRole('progressbar') as HTMLProgressElement
+      // Indeterminiert: kein value/max (Akzeptanzkriterium der Spec) - anders als bei der
+      // frueheren, rein textuellen Rohzaehler-Anzeige gibt es jetzt zwar ein <progress>-Element,
+      // aber ohne Nenner.
+      expect(progress.hasAttribute('value')).toBe(false)
+      expect(progress.hasAttribute('max')).toBe(false)
 
       const scanSection = counterLine.closest('section')
       expect(scanSection).not.toBeNull()
-      expect(within(scanSection!).queryByRole('progressbar')).not.toBeInTheDocument()
       expect(within(scanSection!).queryByText(/\bvon\b/i)).not.toBeInTheDocument()
     })
 
-    it('keeps the scan status line as the sole aria-live carrier - the new counter line has no aria-live of its own', async () => {
+    it('shows no percent aria-live announcement during the enumeration phase - only the status line carries aria-live', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({ last_scan: scan({ status: 'running', files_found: 5 }) })
+        project({ last_scan: scan({ status: 'running', total_files: null, files_found: 5 }) })
       )
 
       renderPage()
 
       const statusLine = await screen.findByText('Scan läuft…', { selector: 'p' })
-      const counterLine = await screen.findByText('5 Dateien verarbeitet')
+      await screen.findByText('Dateien werden gezählt…')
       expect(statusLine).toHaveAttribute('aria-live', 'polite')
-      expect(counterLine).not.toHaveAttribute('aria-live')
+      expect(screen.queryByText(/%\s*verarbeitet/i)).not.toBeInTheDocument()
 
       const scanSection = statusLine.closest('section')
       expect(scanSection).not.toBeNull()
       expect(scanSection!.querySelectorAll('[aria-live]')).toHaveLength(1)
     })
 
-    it('grows monotonically across two consecutive polls instead of jumping around', async () => {
-      vi.mocked(projectsApi.getProject)
-        .mockResolvedValueOnce(project({ last_scan: scan({ status: 'running', files_found: 3 }) }))
-        .mockResolvedValue(project({ last_scan: scan({ status: 'running', files_found: 7 }) }))
+    it('shows "X von Y Dateien verarbeitet" and a determinate progress bar during the processing phase (total_files known)', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', total_files: 12, files_found: 4 }) })
+      )
 
       renderPage()
 
-      expect(await screen.findByText('3 Dateien verarbeitet')).toBeInTheDocument()
-      await waitFor(
-        () => expect(screen.getByText('7 Dateien verarbeitet')).toBeInTheDocument(),
-        { timeout: POLL_INTERVAL_MS + 1500 }
-      )
-      expect(screen.queryByText('3 Dateien verarbeitet')).not.toBeInTheDocument()
+      expect(await screen.findByText('4 von 12 Dateien verarbeitet')).toBeInTheDocument()
+      const progress = screen.getByRole('progressbar') as HTMLProgressElement
+      expect(progress.max).toBe(12)
+      expect(progress.value).toBe(4)
     })
 
-    it('removes the running counter block once the scan transitions to success, keeping the final "Dateien gefunden" stat', async () => {
+    it('shows an indeterminate progress bar instead of an invalid max=0 for an empty project (total_files === 0)', async () => {
+      // Sonderfall des Akzeptanzkriteriums: total_files === 0 ist bereits Phase 2 (Phase 1
+      // abgeschlossen), nicht Phase 1 - der Text lautet also "0 von 0", aber <progress max={0}>
+      // ist fuer native progress-Elemente ungueltig/mehrdeutig (identisches Muster wie beim
+      // Scoring-Fortschritt, siehe Beschreibung "Ausschuss aussortieren" unten).
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', total_files: 0, files_found: 0 }) })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText('0 von 0 Dateien verarbeitet')).toBeInTheDocument()
+      const progress = screen.getByRole('progressbar') as HTMLProgressElement
+      expect(progress.hasAttribute('value')).toBe(false)
+      expect(progress.hasAttribute('max')).toBe(false)
+    })
+
+    it('announces the percent value only during the processing phase, throttled to 10%-steps', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', total_files: 100, files_found: 34 }) })
+      )
+
+      renderPage()
+
+      const liveRegion = await screen.findByText(/30% verarbeitet/i)
+      expect(liveRegion).toHaveAttribute('aria-live', 'polite')
+      // 34% wird NICHT direkt angesagt (kein "34%"-Text) - nur der gerundete 10%-Schritt.
+      expect(screen.queryByText(/34% verarbeitet/i)).not.toBeInTheDocument()
+    })
+
+    it('grows monotonically across two consecutive polls during the processing phase', async () => {
       vi.mocked(projectsApi.getProject)
-        .mockResolvedValueOnce(project({ last_scan: scan({ status: 'running', files_found: 9 }) }))
+        .mockResolvedValueOnce(
+          project({ last_scan: scan({ status: 'running', total_files: 10, files_found: 3 }) })
+        )
+        .mockResolvedValue(
+          project({ last_scan: scan({ status: 'running', total_files: 10, files_found: 7 }) })
+        )
+
+      renderPage()
+
+      expect(await screen.findByText('3 von 10 Dateien verarbeitet')).toBeInTheDocument()
+      await waitFor(
+        () => expect(screen.getByText('7 von 10 Dateien verarbeitet')).toBeInTheDocument(),
+        { timeout: POLL_INTERVAL_MS + 1500 }
+      )
+      expect(screen.queryByText('3 von 10 Dateien verarbeitet')).not.toBeInTheDocument()
+    })
+
+    it('transitions from the enumeration to the processing phase across two polls', async () => {
+      vi.mocked(projectsApi.getProject)
+        .mockResolvedValueOnce(
+          project({ last_scan: scan({ status: 'running', total_files: null, files_found: 9 }) })
+        )
+        .mockResolvedValue(
+          project({ last_scan: scan({ status: 'running', total_files: 15, files_found: 0 }) })
+        )
+
+      renderPage()
+
+      expect(await screen.findByText('Dateien werden gezählt…')).toBeInTheDocument()
+      await waitFor(
+        () => expect(screen.getByText('0 von 15 Dateien verarbeitet')).toBeInTheDocument(),
+        { timeout: POLL_INTERVAL_MS + 1500 }
+      )
+      expect(screen.queryByText('Dateien werden gezählt…')).not.toBeInTheDocument()
+    })
+
+    it('removes the running progress block once the scan transitions to success, keeping the final "Dateien gefunden" stat', async () => {
+      vi.mocked(projectsApi.getProject)
+        .mockResolvedValueOnce(
+          project({ last_scan: scan({ status: 'running', total_files: 12, files_found: 9 }) })
+        )
         .mockResolvedValue(
           project({
             last_scan: scan({
               status: 'success',
               finished_at: '2026-07-20T10:05:00Z',
               files_found: 12,
+              total_files: 12,
             }),
           })
         )
 
       renderPage()
 
-      expect(await screen.findByText('9 Dateien verarbeitet')).toBeInTheDocument()
+      expect(await screen.findByText('9 von 12 Dateien verarbeitet')).toBeInTheDocument()
       await waitFor(
         () => expect(screen.getByText('Erfolgreich')).toBeInTheDocument(),
         { timeout: POLL_INTERVAL_MS + 1500 }
       )
       expect(screen.queryByText(/dateien verarbeitet/i)).not.toBeInTheDocument()
+      expect(screen.queryByText('Dateien werden gezählt…')).not.toBeInTheDocument()
       expect(screen.getByText('Dateien gefunden').nextElementSibling).toHaveTextContent('12')
     })
   })

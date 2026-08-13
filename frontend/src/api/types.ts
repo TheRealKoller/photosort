@@ -5,6 +5,10 @@ export interface ScanSummary {
   started_at: string
   finished_at: string | null
   files_found: number
+  // specs/features/0036-scan-performance-zweiphasig-parallel.md: null solange die
+  // Enumerationsphase noch nicht abgeschlossen ist - unterscheidet sich bewusst von 0 (leeres
+  // Projekt). Immer explizit `!== null`/`=== null` pruefen, nie truthy.
+  total_files: number | null
   photos_added: number
   photos_updated: number
   photos_removed: number
