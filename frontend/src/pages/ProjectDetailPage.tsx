@@ -253,13 +253,27 @@ export function ProjectDetailPage() {
       ? '1 Vorschlag gefunden'
       : `${suggestionsFound} Vorschläge gefunden`
 
-  // Live-Fortschrittszaehler waehrend eines laufenden Scans (specs/features/0022-scan-live-
-  // fortschrittszaehler.md) - bewusst OHNE Nenner/Progress-Element, da die Gesamtdateizahl beim
-  // lazy OpenCloud-Ordnerdurchlauf vorab nicht bekannt ist. Singular/Plural-Regel analog
-  // suggestionsFoundText oben (Spec 0021).
-  const filesFound = project.last_scan?.files_found ?? 0
-  const filesFoundText =
-    filesFound === 1 ? '1 Datei verarbeitet' : `${filesFound} Dateien verarbeitet`
+  // Zweiphasiger Scan-Fortschritt (specs/features/0022-scan-live-fortschrittszaehler.md, erweitert
+  // durch specs/features/0036-scan-performance-zweiphasig-parallel.md): `total_files` ist `null`,
+  // solange die Enumerationsphase (Phase 1) noch nicht abgeschlossen ist - explizit `!== null`
+  // geprueft, NIE truthy (0 ist ein gueltiger, informativer Wert fuer ein leeres Projekt, siehe
+  // ADR 0020, Punkt 6). Erst danach (Phase 2, Verarbeitung) ist ein echter Nenner bekannt.
+  const scanTotalFiles = project.last_scan?.total_files ?? null
+  const scanFilesFound = project.last_scan?.files_found ?? 0
+  const isScanEnumerating = project.last_scan?.status === 'running' && scanTotalFiles === null
+  const isScanProcessing = project.last_scan?.status === 'running' && scanTotalFiles !== null
+  // <progress max={0}> ist fuer native progress-Elemente ungueltig/mehrdeutig (identisches Muster
+  // wie beim Scoring-/Top-Selection-Fortschritt unten) - bei total_files === 0 (leeres Projekt,
+  // Phase 1 bereits abgeschlossen) bleibt der Balken deshalb indeterminiert, obwohl der Text
+  // bereits "0 von 0" zeigt.
+  const scanPercent =
+    scanTotalFiles !== null && scanTotalFiles > 0
+      ? Math.floor((scanFilesFound / scanTotalFiles) * 100)
+      : 0
+  // Gedrosselte aria-live-Regel (UI/UX-Abschnitt der Spec 0036, analog Scoring/Top-Selection unten)
+  // - nur in der Verarbeitungsphase aktiv, mit unbekanntem Nenner in der Enumerationsphase nicht
+  // sinnvoll.
+  const scanAnnouncedDecile = Math.floor(scanPercent / 10) * 10
 
   // Verfuegbarkeitsgate (UI/UX-Abschnitt der Spec 0024): proaktiv aus bereits geladenen
   // Projektdaten abgeleitet (category_selection_enabled, last_scoring_run.status), NICHT erst
@@ -327,8 +341,29 @@ export function ProjectDetailPage() {
           {project.last_scan?.status === 'failed' && 'Fehlgeschlagen'}
         </p>
 
-        {project.last_scan?.status === 'running' && (
-          <p className="text-sm text-text">{filesFoundText}</p>
+        {isScanEnumerating && (
+          <div className="flex w-full max-w-sm flex-col gap-1.5">
+            <p className="text-sm text-text">Dateien werden gezählt…</p>
+            <Progress />
+          </div>
+        )}
+
+        {isScanProcessing && (
+          <div className="flex w-full max-w-sm flex-col gap-1.5">
+            <p className="text-sm text-text">
+              {scanFilesFound} von {scanTotalFiles} Dateien verarbeitet
+            </p>
+            {scanTotalFiles !== null && scanTotalFiles > 0 ? (
+              <Progress value={scanFilesFound} max={scanTotalFiles}>
+                {scanFilesFound}/{scanTotalFiles}
+              </Progress>
+            ) : (
+              <Progress />
+            )}
+            <p aria-live="polite" className="text-sm text-text">
+              {scanAnnouncedDecile}% verarbeitet
+            </p>
+          </div>
         )}
 
         {project.last_scan?.status === 'success' && (

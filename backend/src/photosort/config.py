@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,6 +51,19 @@ class Settings(BaseSettings):
     # Cloud-Feature): rein lokale/kostenlose Verarbeitung, kein Grund fuer einen restriktiven
     # Default.
     category_selection_enabled: bool = True
+
+    # Obergrenze fuer die begrenzte Parallelisierung von Download + Thumbnail-Erzeugung in Phase 2b
+    # des Scans (specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020). Echter
+    # Betriebsparameter (Ueberlastschutz fuer den Einzelnutzer-Homeserver-OpenCloud), deshalb ein
+    # env-ueberschreibbares Settings-Feld statt einer reinen Modul-Konstante wie
+    # worker.py::SCAN_COMMIT_BATCH_SIZE (das ist reiner Test-Kalibrierungswert). Default 4:
+    # spuerbare Parallelisierung gegenueber dem bisherigen strikt seriellen Ablauf, ohne den Server
+    # mit Dutzenden gleichzeitigen Downloads zu fluten. `Field(ge=1)` (test-engineer-/security-
+    # engineer-Review-Fund): faellt bei einer fehlerhaften .env-Konfiguration (0/negativ) bereits
+    # beim Prozessstart auf, statt sich erst mitten im naechsten Scan-Lauf als range(step=0)-Crash
+    # zu aeussern - worker.py verlaesst sich seitdem direkt auf diesen validierten Wert, ohne
+    # eigenen Laufzeit-Clamp.
+    scan_download_concurrency: int = Field(default=4, ge=1)
 
 
 settings = Settings()
