@@ -51,5 +51,14 @@ class Settings(BaseSettings):
     # Default.
     category_selection_enabled: bool = True
 
+    # Obergrenze fuer die begrenzte Parallelisierung von Download + Thumbnail-Erzeugung in Phase 2b
+    # des Scans (specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020). Echter
+    # Betriebsparameter (Ueberlastschutz fuer den Einzelnutzer-Homeserver-OpenCloud), deshalb ein
+    # env-ueberschreibbares Settings-Feld statt einer reinen Modul-Konstante wie
+    # worker.py::SCAN_COMMIT_BATCH_SIZE (das ist reiner Test-Kalibrierungswert). Default 4:
+    # spuerbare Parallelisierung gegenueber dem bisherigen strikt seriellen Ablauf, ohne den Server
+    # mit Dutzenden gleichzeitigen Downloads zu fluten.
+    scan_download_concurrency: int = 4
+
 
 settings = Settings()

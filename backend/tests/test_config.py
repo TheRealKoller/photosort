@@ -65,6 +65,21 @@ def test_category_selection_enabled_defaults_to_true() -> None:
     assert settings.category_selection_enabled is True
 
 
+def test_scan_download_concurrency_defaults_to_four() -> None:
+    # specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020: echter
+    # Betriebsparameter (Ueberlastschutz fuer den Einzelnutzer-Homeserver-OpenCloud), env-
+    # ueberschreibbar via SCAN_DOWNLOAD_CONCURRENCY - Default 4 konservativ gewaehlt.
+    settings = Settings(_env_file=None)
+
+    assert settings.scan_download_concurrency == 4
+
+
+def test_scan_download_concurrency_is_env_overridable() -> None:
+    settings = Settings(_env_file=None, scan_download_concurrency=8)
+
+    assert settings.scan_download_concurrency == 8
+
+
 def test_cors_allowed_origins_list_strips_whitespace_around_entries() -> None:
     settings = Settings(
         _env_file=None,
