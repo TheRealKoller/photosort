@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -45,12 +45,21 @@ class FakeOpenCloudClient:
         entries: list[tuple[str, DavEntry]],
         file_contents: dict[str, bytes] | None = None,
         fail_with: OpenCloudError | None = None,
+        download_delay: float = 0.0,
+        on_download: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         self._entries = entries
         self._file_contents = file_contents or {}
         self._fail_with = fail_with
+        self._download_delay = download_delay
+        self._on_download = on_download
         self.range_requests: list[str] = []
         self.download_requests: list[str] = []
+        # specs/features/0036-scan-performance-zweiphasig-parallel.md: Nachweis echter
+        # Nebenlaeufigkeit ohne Wall-Clock-Timing-Assertions (Teststrategie-Abschnitt der Spec) -
+        # zaehlt, wie viele download()-Aufrufe gleichzeitig "in Flight" waren.
+        self._active_downloads = 0
+        self.max_concurrent_downloads = 0
 
     async def resolve_drive(self, name: str | None) -> Drive:
         if self._fail_with:
@@ -67,14 +76,25 @@ class FakeOpenCloudClient:
 
     async def download(self, webdav_url: str, relative_path: str) -> bytes:
         self.download_requests.append(relative_path)
-        return self._file_contents.get(relative_path, b"")
+        self._active_downloads += 1
+        self.max_concurrent_downloads = max(self.max_concurrent_downloads, self._active_downloads)
+        try:
+            if self._download_delay:
+                await asyncio.sleep(self._download_delay)
+            if self._on_download is not None:
+                await self._on_download(relative_path)
+            return self._file_contents.get(relative_path, b"")
+        finally:
+            self._active_downloads -= 1
 
 
 class WalkFailsMidwayClient(FakeOpenCloudClient):
     """Simuliert einen WebDAV-Abbruch mitten im Ordnerbaum-Durchlauf: `walk()` liefert einige
     Eintraege und wirft danach OpenCloudError, statt (wie bei fail_with) sofort in resolve_drive
-    zu scheitern. Belegt den periodischen Zwischen-Commit von scan_run.files_found
-    (specs/features/0022-scan-live-fortschrittszaehler.md)."""
+    zu scheitern. Da `walk()` seit der Zwei-Phasen-Umstrukturierung (specs/features/0036) nur noch
+    in Phase 1 (Enumeration) aufgerufen wird, faellt ein hier simulierter Fehler IMMER in Phase 1 -
+    unabhaengig davon, wie viele Eintraege vorher bereits geliefert wurden, hat Phase 2
+    (Klassifikation/Verarbeitung) zu diesem Zeitpunkt noch gar nicht begonnen."""
 
     async def walk(self, webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
         for item in self._entries:
@@ -108,6 +128,42 @@ class WalkFailsWithCancelledErrorClient(FakeOpenCloudClient):
         raise asyncio.CancelledError()
 
 
+class DownloadFailsOnceClient(FakeOpenCloudClient):
+    """specs/features/0036-scan-performance-zweiphasig-parallel.md, Resume-/Idempotenz-
+    Absicherung: simuliert einen einzelnen, unerwarteten Download-Fehler fuer EINEN bestimmten
+    Pfad (typischerweise in einem SPAETEREN Block als bereits erfolgreich committete Eintraege) -
+    laesst den gesamten Scan fehlschlagen (identisches Verhalten wie ein OpenCloudError), ohne die
+    Verarbeitung anderer, bereits abgeschlossener Bloecke rueckwirkend zu beeinflussen."""
+
+    def __init__(self, *args: object, fail_path: str, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self._fail_path = fail_path
+        self.fail_count = 0
+
+    async def download(self, webdav_url: str, relative_path: str) -> bytes:
+        if relative_path == self._fail_path:
+            self.fail_count += 1
+            raise RuntimeError(f"Unerwarteter Download-Fehler fuer {relative_path}")
+        return await super().download(webdav_url, relative_path)
+
+
+class DownloadRaisesCancelledErrorClient(FakeOpenCloudClient):
+    """specs/features/0036, Edge Case "CancelledError aus einer I/O-Coroutine in gather": simuliert
+    einen Abbruch NICHT beim Walk (siehe WalkFailsWithCancelledErrorClient oben), sondern in einer
+    der parallel laufenden Phase-2b-I/O-Coroutinen selbst - genau der Fall, den
+    asyncio.gather(..., return_exceptions=True) OHNE explizite Sonderbehandlung verschlucken
+    wuerde (siehe worker.py::_process_scan_block, Kommentar zur CancelledError-Pruefung)."""
+
+    def __init__(self, *args: object, cancel_path: str, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self._cancel_path = cancel_path
+
+    async def download(self, webdav_url: str, relative_path: str) -> bytes:
+        if relative_path == self._cancel_path:
+            raise asyncio.CancelledError("simulierter Abbruch waehrend eines parallelen Downloads")
+        return await super().download(webdav_url, relative_path)
+
+
 async def _make_project(session: AsyncSession) -> Project:
     project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="CostaRica")
     session.add(project)
@@ -135,6 +191,7 @@ async def test_scan_adds_new_photos(
     assert scan_run.photos_added == 1
     assert scan_run.files_found == 1
     assert scan_run.files_skipped == 0
+    assert scan_run.total_files == 1
 
     result = await db_session.execute(select(Photo).where(Photo.project_id == project.id))
     photos = result.scalars().all()
@@ -288,13 +345,7 @@ async def test_scan_run_marked_failed_on_opencloud_error(
 ) -> None:
     """Fehler VOR Schleifenbeginn (resolve_drive schlaegt sofort fehl): kein Zwischen-Commit hat
     je stattgefunden, also verwirft session.rollback() die gesamte (leere) Transaktion -
-    photos == [] bleibt korrekt. Nicht zu verwechseln mit
-    test_scan_marked_failed_after_partial_progress_keeps_committed_photos unten, wo der Fehler
-    ERST NACH mindestens einem periodischen Zwischen-Commit auftritt und deshalb bereits
-    verarbeitete Photo-Zeilen bewusst erhalten bleiben (specs/features/0022-scan-live-
-    fortschrittszaehler.md, Akzeptanzkriterium "Neue, bewusst akzeptierte Verhaltensaenderung").
-    Beide Assertions (photos == [] hier vs. photos vorhanden dort) sind korrekt, weil sie
-    unterschiedliche Fehlerzeitpunkte relativ zum ersten Commit abbilden."""
+    photos == [] bleibt korrekt."""
     project = await _make_project(db_session)
     client = FakeOpenCloudClient(entries=[], fail_with=OpenCloudError("Ordner nicht erreichbar"))
 
@@ -304,6 +355,7 @@ async def test_scan_run_marked_failed_on_opencloud_error(
 
     assert scan_run.status == ScanStatus.FAILED
     assert scan_run.error_message == "Ordner nicht erreichbar"
+    assert scan_run.total_files is None
     photos = (await db_session.execute(select(Photo))).scalars().all()
     assert photos == []
 
@@ -361,15 +413,55 @@ async def test_scan_run_marked_failed_on_cancelled_error(
     assert scan_run.error_message
 
 
-async def test_scan_marked_failed_after_partial_progress_keeps_committed_photos(
+async def test_scan_run_marked_failed_on_cancelled_error_from_a_parallel_download(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Gegenstueck zu test_scan_run_marked_failed_on_opencloud_error oben: der Fehler tritt
-    waehrend der Schleife auf, nachdem SCAN_COMMIT_BATCH_SIZE=1 bereits mehrere Zwischen-Commits
-    ausgeloest hat. Belegt zugleich den periodischen Commit von scan_run.files_found und die
-    bewusst akzeptierte Verhaltensaenderung, dass session.rollback() danach nur noch die seit dem
-    letzten Commit offene (leere) Transaktion verwirft, nicht die bereits committeten
-    Photo-Zeilen."""
+    """specs/features/0036, Pflicht-Edge-Case: ein asyncio.CancelledError aus einer parallel
+    laufenden Phase-2b-I/O-Coroutine muss unveraendert (roh, nicht als generische Exception) den
+    bestehenden `except asyncio.CancelledError`-Zweig erreichen (ADR-0019-Kompatibilitaet).
+
+    Kritischer, verifizierter Python-Async-Fallstrick (kein Implementierungsdetail, sondern der
+    eigentliche Grund fuer diesen Test): `asyncio.gather(..., return_exceptions=True)` faengt ein
+    CancelledError, das eine EINZELNE Kind-Coroutine wirft (statt einer echten aeusseren
+    Task-Cancellation), NICHT als Exception ab, sondern reicht es als gewoehnliches Element der
+    Ergebnisliste durch (await gather(...) wirft in diesem Fall NICHTS) - siehe
+    worker.py::_process_scan_block, das genau deshalb die Ergebnisliste explizit auf
+    CancelledError-Instanzen prueft und sie manuell erneut wirft. Ohne diese explizite Pruefung
+    wuerde dieser Test fehlschlagen (kein pytest.raises(CancelledError), Scan faelschlich SUCCESS
+    oder FAILED mit generischer Fehlermeldung statt des korrekten Watchdog-Schicht-1-Pfads)."""
+    monkeypatch.setattr(worker.settings, "scan_download_concurrency", 2)
+    project = await _make_project(db_session)
+    project_id = project.id
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = DownloadRaisesCancelledErrorClient(
+        entries=[
+            ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
+            ("CostaRica/img002.png", _entry("img002.png", "etag-2", modified)),
+        ],
+        cancel_path="CostaRica/img002.png",
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    scan_run = (
+        await db_session.execute(select(ScanRun).where(ScanRun.project_id == project_id))
+    ).scalar_one()
+    assert scan_run.status == ScanStatus.FAILED
+    assert scan_run.error_message
+
+
+async def test_scan_phase_one_failure_leaves_total_files_unset_and_no_photos_processed(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Architektur-Konsequenz der Zwei-Phasen-Umstrukturierung (specs/features/0036, ADR 0020):
+    `walk()` wird jetzt AUSSCHLIESSLICH in der Enumerationsphase (Phase 1) aufgerufen - ein dort
+    auftretender Fehler tritt zwangslaeufig auf, BEVOR Phase 2 (Klassifikation/Verarbeitung)
+    ueberhaupt beginnt, selbst wenn `walk()` vorher bereits mehrere echte Eintraege geliefert hat.
+    Ersetzt den bisherigen Test `test_scan_marked_failed_after_partial_progress_keeps_committed_
+    photos`, dessen Erwartung (3 bereits verarbeitete Photo-Zeilen bleiben trotz Fehler committet)
+    auf dem alten, einphasigen interleaved Loop beruhte und mit der neuen Architektur nicht mehr
+    zutrifft - Phase 1 legt selbst nie Photo-Zeilen an, das war schon immer Aufgabe von Phase 2."""
     monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", 1)
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
@@ -386,68 +478,25 @@ async def test_scan_marked_failed_after_partial_progress_keeps_committed_photos(
     )
 
     assert scan_run.status == ScanStatus.FAILED
+    # Der letzte Enumerations-Checkpoint (3 gelistete Eintraege) bleibt committet - der
+    # Live-Zaehler waehrend einer langen Enumerationsphase funktioniert also weiterhin.
+    assert scan_run.files_found == 3
+    assert scan_run.total_files is None
     photos = (await db_session.execute(select(Photo))).scalars().all()
-    assert len(photos) == 3
+    assert photos == []
 
 
-async def test_scan_commits_periodically_even_when_a_batch_boundary_lands_on_a_skipped_file(
-    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Review-Fund (test-engineer/architect, specs/features/0022): der Zwischen-Commit-Checkpoint
-    darf nicht hinter den `continue`-Zweigen fuer uebersprungene Dateiendungen/unveraenderte
-    Etags liegen, sonst wird er im DOMINANTEN Realweltfall (erneuter Scan eines bereits
-    gescannten Projekts, ueberwiegend unveraenderte Dateien) faktisch nie erreicht - der Live-
-    Zaehler wuerde dann trotz periodischem-Commit-Code effektiv nicht live wachsen.
-
-    Aufbau (SCAN_COMMIT_BATCH_SIZE=2): Eintrag 1 (neues Bild) erhoeht files_found auf 1 (kein
-    Commit, 1%2 != 0). Eintrag 2 ist eine NICHT-Bilddatei (loest den fruehen `continue` fuer
-    unpassende Endung aus) und erhoeht files_found auf 2 - der Checkpoint muss trotz des
-    `continue` dieser Iteration greifen (2 % 2 == 0), sonst geht die Commit-Gelegenheit
-    ersatzlos verloren. Eintrag 3 (neues Bild) erhoeht files_found auf 3 (kein Commit). Danach
-    bricht der Walk mit OpenCloudError ab.
-
-    Faehrt der Checkpoint korrekt bei Eintrag 2, ist zu diesem Zeitpunkt bereits das Foto aus
-    Eintrag 1 vollstaendig verarbeitet und wird durch diesen Commit mit persistiert - das Foto
-    aus Eintrag 3 bleibt dagegen unkommittet und wird beim abschliessenden Rollback verworfen.
-    Erwartung: genau 1 Photo-Zeile in der DB (aus Eintrag 1), nicht 0 (Checkpoint nie erreicht)
-    und nicht 2 (Eintrag 3 faelschlich auch committet)."""
-    monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", 2)
-    project = await _make_project(db_session)
-    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
-    client = WalkFailsMidwayClient(
-        entries=[
-            ("CostaRica/img_a.png", _entry("img_a.png", "etag-a", modified)),
-            ("CostaRica/notes.txt", _entry("notes.txt", "etag-notes", modified)),
-            ("CostaRica/img_b.png", _entry("img_b.png", "etag-b", modified)),
-        ]
-    )
-
-    scan_run = await run_project_scan(
-        db_session, client, project, drive_name=None, cache_dir=tmp_path
-    )
-
-    assert scan_run.status == ScanStatus.FAILED
-    photos = (await db_session.execute(select(Photo))).scalars().all()
-    assert [photo.relative_path for photo in photos] == ["CostaRica/img_a.png"]
-
-
-async def test_scan_commits_files_found_progress_before_final_commit_at_production_batch_size(
+async def test_scan_commits_files_found_progress_during_enumeration_at_production_batch_size(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     """Batch-Groessen-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): bewusst
     OHNE monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", ...) - prueft den echten
-    Produktivwert nach dem Fix (1). Vorher (25) blieb der Live-Zaehler bei jedem Scan mit weniger
-    als 25 Dateien waehrend der gesamten Laufzeit bei 0 eingefroren (Spec 0022, Bug).
+    Produktivwert nach dem Fix (1), jetzt fuer die Enumerationsphase (Phase 1, specs/features/0036).
 
     Verifiziert ueber eine ZWEITE, unabhaengige Session auf demselben In-Memory-Engine (geteilte
     StaticPool-Connection bei sqlite+aiosqlite:///:memory:), die zwischen den walk()-Eintraegen den
     ueber diese Connection sichtbaren DB-Zustand liest - eine reine Attribut-Pruefung auf demselben
-    Session-Objekt waere kein Beweis fuer einen echten DB-Roundtrip (expire_on_commit=False haelt
-    Attribute unabhaengig davon aktuell). Review-Praezisierung (test-engineer, Spec 0023): beweist
-    strenggenommen einen DB-Roundtrip auf der geteilten Connection (flush ODER commit), nicht
-    zwingend ausschliesslich commit() - fuer den Testzweck (Nachweis, dass SCAN_COMMIT_BATCH_SIZE=1
-    tatsaechlich zu sichtbar wachsenden Zwischenstaenden fuehrt) ausreichend, da der Produktivcode
-    an der geprueften Stelle tatsaechlich commit() aufruft."""
+    Session-Objekt waere kein Beweis fuer einen echten DB-Roundtrip."""
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     inspection_session_factory = make_session_factory(db_session.bind)
@@ -459,9 +508,6 @@ async def test_scan_commits_files_found_progress_before_final_commit_at_producti
         ) -> AsyncIterator[tuple[str, DavEntry]]:
             for item in self._entries:
                 yield item
-                # Laeuft erst, wenn der Konsument (run_project_scan) das aktuelle Element
-                # vollstaendig verarbeitet und den naechsten Wert angefragt hat - liest also
-                # exakt den Zwischenstand NACH dem periodischen Commit dieses Elements.
                 async with inspection_session_factory() as inspection_session:
                     committed_scan_run = (
                         await inspection_session.execute(
@@ -490,9 +536,9 @@ async def test_scan_updates_last_progress_at_at_each_checkpoint(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR
-    0019): last_progress_at wird an genau der bestehenden Zwischen-Commit-Stelle
-    (_commit_progress_checkpoint) aktualisiert, die reap_stalled_runs (Schicht 2) spaeter liest -
-    verifiziert ueber einen kontrollierten "Uhr"-Wert statt einer echten Wartezeit."""
+    0019): last_progress_at wird an den bestehenden Zwischen-Commit-Stellen aktualisiert, die
+    reap_stalled_runs (Schicht 2) spaeter liest - verifiziert ueber einen kontrollierten "Uhr"-Wert
+    statt einer echten Wartezeit."""
     sentinel = datetime(2030, 1, 1, 12, 0, 0)
     monkeypatch.setattr(worker, "_now_utc", lambda: sentinel)
 
@@ -599,3 +645,253 @@ async def test_scan_survives_thumbnail_download_failure_without_failing(
 
     assert scan_run.status == ScanStatus.SUCCESS
     assert scan_run.photos_added == 1
+
+
+class TestTotalFilesTracking:
+    """specs/features/0036-scan-performance-zweiphasig-parallel.md: `ScanRun.total_files` wird
+    nach Abschluss von Phase 1 einmalig gesetzt (`is not None`-Prueflogik, siehe ADR 0020 Punkt 6)
+    und danach nicht mehr veraendert."""
+
+    async def test_total_files_set_after_enumeration_for_mixed_entries(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project = await _make_project(db_session)
+        modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+        client = FakeOpenCloudClient(
+            entries=[
+                ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
+                ("CostaRica/notes.txt", _entry("notes.txt", "etag-2", modified)),
+            ]
+        )
+
+        scan_run = await run_project_scan(
+            db_session, client, project, drive_name=None, cache_dir=tmp_path
+        )
+
+        assert scan_run.total_files == 2
+
+    async def test_total_files_is_zero_not_none_for_an_empty_project(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        # Der explizit testpflichtige Sonderfall aus dem Akzeptanzkriterium: 0 ist ein
+        # vollstaendig gueltiges, informatives Ergebnis (Phase 1 IST abgeschlossen), nicht
+        # gleichbedeutend mit "noch nicht abgeschlossen" (None).
+        project = await _make_project(db_session)
+        client = FakeOpenCloudClient(entries=[])
+
+        scan_run = await run_project_scan(
+            db_session, client, project, drive_name=None, cache_dir=tmp_path
+        )
+
+        assert scan_run.status == ScanStatus.SUCCESS
+        assert scan_run.total_files == 0
+        assert scan_run.total_files is not None
+
+    async def test_total_files_reset_of_files_found_is_committed_before_phase_two_starts(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Pflicht-Edge-Case der Spec ("Phasenuebergang"): direkt nach Phase 1 muss total_files
+        bereits gesetzt UND files_found bereits auf 0 zurueckgesetzt sein, BEVOR der erste
+        Phase-2-Commit stattfindet - beobachtet ueber eine zweite, unabhaengige Session, die beim
+        allerersten download()-Aufruf (zwingend nach dem Phase-1-Commit, da Downloads nur in
+        Phase 2b passieren) den zu diesem Zeitpunkt sichtbaren DB-Zustand liest."""
+        project = await _make_project(db_session)
+        modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+        inspection_session_factory = make_session_factory(db_session.bind)
+        observed: dict[str, object] = {}
+
+        async def _observe(_relative_path: str) -> None:
+            if observed:
+                return
+            async with inspection_session_factory() as inspection_session:
+                committed = (
+                    await inspection_session.execute(
+                        select(ScanRun).where(ScanRun.project_id == project.id)
+                    )
+                ).scalar_one()
+                observed["total_files"] = committed.total_files
+                observed["files_found"] = committed.files_found
+
+        client = FakeOpenCloudClient(
+            entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-1", modified))],
+            on_download=_observe,
+        )
+
+        await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+        assert observed == {"total_files": 1, "files_found": 0}
+
+
+class TestBlockOrchestration:
+    """specs/features/0036, Phase 2b: begrenzte Parallelisierung in festen Bloecken der Groesse
+    settings.scan_download_concurrency (ADR 0020). Pflicht-Edge-Cases der Spec: Blockgrenzen
+    (Menge = Blockgroesse, Blockgroesse+1, < Blockgroesse)."""
+
+    @pytest.mark.parametrize(
+        ("file_count", "concurrency", "expected_max_concurrent"),
+        [
+            (2, 2, 2),  # Menge = Blockgroesse: genau ein voller Block
+            (3, 2, 2),  # Menge = Blockgroesse + 1: ein voller + ein unvollstaendiger Block
+            (1, 2, 1),  # Menge < Blockgroesse: ein einzelner, unvollstaendiger Block
+        ],
+    )
+    async def test_downloads_run_concurrently_bounded_by_block_size(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        file_count: int,
+        concurrency: int,
+        expected_max_concurrent: int,
+    ) -> None:
+        monkeypatch.setattr(worker.settings, "scan_download_concurrency", concurrency)
+        project = await _make_project(db_session)
+        modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+        entries = [
+            (f"CostaRica/img{i:03d}.png", _entry(f"img{i:03d}.png", f"etag-{i}", modified))
+            for i in range(file_count)
+        ]
+        # Kuenstliche Verzoegerung (kein Wall-Clock-Assert, siehe Klassen-Docstring) - stellt
+        # sicher, dass sich die Downloads eines Blocks tatsaechlich zeitlich ueberlappen, statt
+        # durch reine Zufalls-Terminierung ohnehin sequentiell durchzulaufen.
+        client = FakeOpenCloudClient(entries=entries, download_delay=0.01)
+
+        scan_run = await run_project_scan(
+            db_session, client, project, drive_name=None, cache_dir=tmp_path
+        )
+
+        assert scan_run.status == ScanStatus.SUCCESS
+        assert scan_run.photos_added == file_count
+        assert client.max_concurrent_downloads == expected_max_concurrent
+
+    async def test_scan_run_marked_failed_on_unexpected_download_error_in_a_block(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(worker.settings, "scan_download_concurrency", 2)
+        project = await _make_project(db_session)
+        modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+        client = DownloadFailsOnceClient(
+            entries=[
+                ("CostaRica/img001.png", _entry("img001.png", "etag-1", modified)),
+                ("CostaRica/img002.png", _entry("img002.png", "etag-2", modified)),
+            ],
+            fail_path="CostaRica/img002.png",
+        )
+
+        scan_run = await run_project_scan(
+            db_session, client, project, drive_name=None, cache_dir=tmp_path
+        )
+
+        assert scan_run.status == ScanStatus.FAILED
+        assert "img002.png" in (scan_run.error_message or "")
+
+
+class TestResumeIdempotency:
+    """specs/features/0036, Resume-/Idempotenz-Absicherung: die bestehende Etag-basierte
+    Skip-Idempotenz darf durch die Block-Umstrukturierung (flush() ohne commit() vor Abschluss der
+    I/O je Block, ADR 0020) nicht gebrochen werden."""
+
+    async def test_full_rescan_of_unchanged_project_triggers_zero_downloads(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(worker.settings, "scan_download_concurrency", 2)
+        project = await _make_project(db_session)
+        modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+        entries = [
+            ("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified)),
+            ("CostaRica/img002.jpg", _entry("img002.jpg", "etag-2", modified)),
+            ("CostaRica/img003.jpg", _entry("img003.jpg", "etag-3", modified)),
+        ]
+        first_client = FakeOpenCloudClient(entries=entries)
+        first_run = await run_project_scan(
+            db_session, first_client, project, drive_name=None, cache_dir=tmp_path
+        )
+        assert first_run.status == ScanStatus.SUCCESS
+        assert first_run.photos_added == 3
+
+        second_client = FakeOpenCloudClient(entries=entries)
+        second_run = await run_project_scan(
+            db_session, second_client, project, drive_name=None, cache_dir=tmp_path
+        )
+
+        assert second_run.status == ScanStatus.SUCCESS
+        assert second_run.photos_added == 0
+        assert second_run.photos_updated == 0
+        assert second_client.download_requests == []
+        assert second_client.range_requests == []
+
+    async def test_scan_aborted_mid_block_is_fully_reprocessed_on_a_later_scan_without_duplicates(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Kernbeleg der Crash-Sicherheits-Invariante (ADR 0020, Fallstrick 2): der erste Block
+        wird erfolgreich committet, der zweite Block bricht mitten in einem unerwarteten
+        Download-Fehler ab (kein commit() fuer diesen Block) - ein Neustart darf weder Duplikate
+        erzeugen noch bereits committete Eintraege erneut herunterladen, muss aber die Eintraege
+        des abgebrochenen Blocks vollstaendig nachholen."""
+        monkeypatch.setattr(worker.settings, "scan_download_concurrency", 2)
+        project = await _make_project(db_session)
+        project_id = project.id
+        modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+        entries = [
+            ("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified)),
+            ("CostaRica/img002.jpg", _entry("img002.jpg", "etag-2", modified)),
+            ("CostaRica/img003.jpg", _entry("img003.jpg", "etag-3", modified)),
+            ("CostaRica/img004.jpg", _entry("img004.jpg", "etag-4", modified)),
+        ]
+        failing_client = DownloadFailsOnceClient(
+            entries=entries, fail_path="CostaRica/img003.jpg"
+        )
+
+        first_run = await run_project_scan(
+            db_session, failing_client, project, drive_name=None, cache_dir=tmp_path
+        )
+        assert first_run.status == ScanStatus.FAILED
+
+        # project.id (NICHT mehr direkt gelesen, siehe project_id oben): _fail_run's
+        # session.rollback() expired alle Objekte der Session, siehe Kommentar bei
+        # test_scan_run_marked_failed_on_cancelled_error oben. project wird unten fuer den
+        # zweiten Scan-Aufruf trotzdem weiterverwendet - run_project_scan liest project.id selbst
+        # innerhalb eines aktiven greenlet-Kontexts, das ist unproblematisch.
+        photos_after_failure = (
+            (await db_session.execute(select(Photo).where(Photo.project_id == project_id)))
+            .scalars()
+            .all()
+        )
+        assert sorted(photo.relative_path for photo in photos_after_failure) == [
+            "CostaRica/img001.jpg",
+            "CostaRica/img002.jpg",
+        ]
+
+        # Un-expired `project` fuer den zweiten Scan-Aufruf unten (rollback() in _fail_run hat es
+        # expired) - analog zum bestehenden refresh()-Muster in _fail_run selbst (worker.py).
+        await db_session.refresh(project)
+        recovering_client = FakeOpenCloudClient(entries=entries)
+        second_run = await run_project_scan(
+            db_session, recovering_client, project, drive_name=None, cache_dir=tmp_path
+        )
+
+        assert second_run.status == ScanStatus.SUCCESS
+        # Nur der abgebrochene Block wird nachgeholt/heruntergeladen - der bereits erfolgreich
+        # committete erste Block wird NICHT erneut heruntergeladen (Etag unveraendert).
+        assert second_run.photos_added == 2
+        assert second_run.photos_updated == 0
+        assert sorted(recovering_client.download_requests) == [
+            "CostaRica/img003.jpg",
+            "CostaRica/img004.jpg",
+        ]
+
+        all_photos = (
+            (await db_session.execute(select(Photo).where(Photo.project_id == project.id)))
+            .scalars()
+            .all()
+        )
+        assert sorted(photo.relative_path for photo in all_photos) == [
+            "CostaRica/img001.jpg",
+            "CostaRica/img002.jpg",
+            "CostaRica/img003.jpg",
+            "CostaRica/img004.jpg",
+        ]
+        # Keine Duplikate: der Unique-Constraint (project_id, relative_path) haette einen
+        # doppelten Insert-Versuch fuer img001/img002 ohnehin verhindert - diese Assertion
+        # dokumentiert die Erwartung zusaetzlich explizit ueber die Zeilenanzahl.
+        assert len(all_photos) == 4
