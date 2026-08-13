@@ -105,6 +105,13 @@ class ScanRun(Base):
     # Stellen wie files_found periodisch zwischen-committet (worker.py::_commit_progress_checkpoint)
     # und von worker.py::reap_stalled_runs gelesen.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020: additiv, default=None
+    # (nicht 0) - unterscheidet bewusst "Enumerationsphase (Phase 1) noch nicht abgeschlossen,
+    # Gesamtzahl unbekannt" von "Projekt enthaelt 0 Dateien". Ueberall mit `is not None` statt
+    # truthy zu pruefen (0 ist ein gueltiger, informativer Wert). Wird nach Abschluss von Phase 1
+    # (worker.py::run_project_scan) einmalig auf len(entries) gesetzt und danach nicht mehr
+    # veraendert.
+    total_files: Mapped[int | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="scan_runs")
 
