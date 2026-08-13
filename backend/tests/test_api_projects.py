@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import get_job_enqueuer, get_opencloud_client
 from photosort.main import app
-from photosort.models import ScanStatus, ScoringRun
+from photosort.models import ScanRun, ScanStatus, ScoringRun
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
 
@@ -172,6 +172,77 @@ async def test_trigger_score_requires_auth(api_client: httpx.AsyncClient) -> Non
     response = await api_client.post("/projects/1/score")
 
     assert response.status_code == 401
+
+
+async def test_get_project_reports_last_scan_total_files_as_null_during_enumeration(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """specs/features/0036-scan-performance-zweiphasig-parallel.md: waehrend der Enumerationsphase
+    (total_files in der DB noch NULL) muss die Serialisierung `null` liefern - kein `0`, das vom
+    Frontend faelschlich als "leeres Projekt" statt "Phase 1 laeuft noch" interpretiert wuerde."""
+    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
+    created = await authenticated_api_client.post(
+        "/projects", json={"name": "Costa Rica", "opencloud_path": "A"}
+    )
+    project_id = created.json()["id"]
+
+    scan_run = ScanRun(project_id=project_id, status=ScanStatus.RUNNING, files_found=7)
+    db_session.add(scan_run)
+    await db_session.commit()
+
+    detail = await authenticated_api_client.get(f"/projects/{project_id}")
+
+    assert detail.status_code == 200
+    last_scan = detail.json()["last_scan"]
+    assert last_scan["total_files"] is None
+    assert last_scan["files_found"] == 7
+
+
+async def test_get_project_reports_last_scan_total_files_including_zero(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Sonderfall leeres Projekt (Akzeptanzkriterium der Spec): total_files == 0 muss von `null`
+    unterscheidbar in der API-Antwort ankommen."""
+    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
+    created = await authenticated_api_client.post(
+        "/projects", json={"name": "Costa Rica", "opencloud_path": "A"}
+    )
+    project_id = created.json()["id"]
+
+    scan_run = ScanRun(
+        project_id=project_id, status=ScanStatus.SUCCESS, files_found=0, total_files=0
+    )
+    db_session.add(scan_run)
+    await db_session.commit()
+
+    detail = await authenticated_api_client.get(f"/projects/{project_id}")
+
+    assert detail.status_code == 200
+    last_scan = detail.json()["last_scan"]
+    assert last_scan["total_files"] == 0
+
+
+async def test_get_project_reports_last_scan_total_files_after_enumeration(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
+    created = await authenticated_api_client.post(
+        "/projects", json={"name": "Costa Rica", "opencloud_path": "A"}
+    )
+    project_id = created.json()["id"]
+
+    scan_run = ScanRun(
+        project_id=project_id, status=ScanStatus.RUNNING, files_found=3, total_files=12
+    )
+    db_session.add(scan_run)
+    await db_session.commit()
+
+    detail = await authenticated_api_client.get(f"/projects/{project_id}")
+
+    assert detail.status_code == 200
+    last_scan = detail.json()["last_scan"]
+    assert last_scan["total_files"] == 12
+    assert last_scan["files_found"] == 3
 
 
 async def test_get_project_reports_last_scoring_run_progress(
