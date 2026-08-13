@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.0](https://github.com/TheRealKoller/photosort/compare/v0.5.0...v0.6.0) (2026-08-13)
+
+
+### Features
+
+* reine Phase-2a-Klassifikationsfunktion fuer den Scan extrahieren ([fdfb3f5](https://github.com/TheRealKoller/photosort/commit/fdfb3f518dc1a06e20bcd2dd1e87440ffb5c1154))
+* scan_download_concurrency-Einstellung hinzufuegen ([70dc2ff](https://github.com/TheRealKoller/photosort/commit/70dc2ff66b36a5ef1522497f795845462b01ef4e))
+* Scan-Performance — Enumerationsphase, begrenzte Parallelisierung, echter Prozent-Fortschritt (Spec 0036) ([294295c](https://github.com/TheRealKoller/photosort/commit/294295c65096eadfd840c7eb6c239e4c1b579ad7))
+* Scan-Worker auf Zwei-Phasen-Ablauf mit begrenzter Parallelisierung umstellen ([6953490](https://github.com/TheRealKoller/photosort/commit/69534905ada3e3f8a7a77912153c3152fb303f62))
+* ScanRun.total_files-Spalte fuer Spec 0036 hinzufuegen ([ca087eb](https://github.com/TheRealKoller/photosort/commit/ca087ebb6e18dd8d99c87f70cce9a316b14ea758))
+* ScanSummary.total_files in der Projekt-API exponieren ([c2ee684](https://github.com/TheRealKoller/photosort/commit/c2ee6844fcd653e4b4423a044531b67525531c02))
+* zweiphasigen Scan-Fortschritt im Frontend anzeigen ([e841d74](https://github.com/TheRealKoller/photosort/commit/e841d746687c33a9594d57474d8ace0db4e516d4))
+
+
+### Bug Fixes
+
+* Review-Findings aus Schritt 4 beheben (Spec 0036) ([b99f16c](https://github.com/TheRealKoller/photosort/commit/b99f16ce2f17ad7055456494fa137717ebf014ed))
+
 ## [0.5.0](https://github.com/TheRealKoller/photosort/compare/v0.4.0...v0.5.0) (2026-08-09)
 
 
