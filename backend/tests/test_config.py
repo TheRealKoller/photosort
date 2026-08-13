@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from photosort.config import Settings
 
 
@@ -78,6 +81,16 @@ def test_scan_download_concurrency_is_env_overridable() -> None:
     settings = Settings(_env_file=None, scan_download_concurrency=8)
 
     assert settings.scan_download_concurrency == 8
+
+
+def test_scan_download_concurrency_rejects_non_positive_values() -> None:
+    # test-engineer-/security-engineer-Review-Fund (PR zu Spec 0036): fail-fast am
+    # Konfigurationsrand statt eines stillen Clamps tief im Worker-Code (worker.py verlaesst sich
+    # seitdem auf diese Validierung statt selbst zu klemmen).
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, scan_download_concurrency=0)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, scan_download_concurrency=-1)
 
 
 def test_cors_allowed_origins_list_strips_whitespace_around_entries() -> None:

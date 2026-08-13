@@ -102,8 +102,10 @@ class ScanRun(Base):
     # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
     # server-seitig defaultet (analog started_at), damit ein frisch angelegter Lauf sofort einen
     # last_progress_at-Wert hat und nicht bereits ab Zeile 1 als Stillstand gilt. Wird an denselben
-    # Stellen wie files_found periodisch zwischen-committet (worker.py::_commit_progress_checkpoint)
-    # und von worker.py::reap_stalled_runs gelesen.
+    # Stellen wie files_found periodisch zwischen-committet (worker.py::
+    # _maybe_commit_progress_checkpoint, seit specs/features/0036-scan-performance-zweiphasig-
+    # parallel.md aus Phase 1/Phase 2a von run_project_scan aufgerufen) und von
+    # worker.py::reap_stalled_runs gelesen.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020: additiv, default=None
     # (nicht 0) - unterscheidet bewusst "Enumerationsphase (Phase 1) noch nicht abgeschlossen,

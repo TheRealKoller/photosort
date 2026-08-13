@@ -784,6 +784,11 @@ class TestBlockOrchestration:
 
         assert scan_run.status == ScanStatus.FAILED
         assert "img002.png" in (scan_run.error_message or "")
+        # test-engineer-Review-Fund: belegt explizit den in der Spec ("Edge Cases (Pflicht)")
+        # geforderten Teil des `return_exceptions=True`-Verhaltens - die NICHT fehlgeschlagene
+        # Geschwister-Coroutine desselben Blocks (img001.png) laeuft tatsaechlich vollstaendig zu
+        # Ende, statt durch den Fehler in img002.png sofort abgebrochen zu werden.
+        assert "CostaRica/img001.png" in client.download_requests
 
 
 class TestResumeIdempotency:

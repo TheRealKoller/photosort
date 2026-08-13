@@ -253,6 +253,20 @@ describe('ProjectDetailPage', () => {
       expect(progress.value).toBe(4)
     })
 
+    it('announces "0% verarbeitet" right at the start of the processing phase, before any file was processed', async () => {
+      // ux-ui-designer-Review-Fund: dokumentiert explizit, dass die erste aria-live-Ansage beim
+      // Eintritt in Phase 2 (files_found === 0) bereits "0%" lautet, statt bis zum ersten
+      // Poll-Tick mit files_found > 0 stumm zu bleiben.
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scan: scan({ status: 'running', total_files: 10, files_found: 0 }) })
+      )
+
+      renderPage()
+
+      const liveRegion = await screen.findByText('0% verarbeitet')
+      expect(liveRegion).toHaveAttribute('aria-live', 'polite')
+    })
+
     it('shows an indeterminate progress bar instead of an invalid max=0 for an empty project (total_files === 0)', async () => {
       // Sonderfall des Akzeptanzkriteriums: total_files === 0 ist bereits Phase 2 (Phase 1
       // abgeschlossen), nicht Phase 1 - der Text lautet also "0 von 0", aber <progress max={0}>

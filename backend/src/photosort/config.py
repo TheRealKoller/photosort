@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,8 +58,12 @@ class Settings(BaseSettings):
     # env-ueberschreibbares Settings-Feld statt einer reinen Modul-Konstante wie
     # worker.py::SCAN_COMMIT_BATCH_SIZE (das ist reiner Test-Kalibrierungswert). Default 4:
     # spuerbare Parallelisierung gegenueber dem bisherigen strikt seriellen Ablauf, ohne den Server
-    # mit Dutzenden gleichzeitigen Downloads zu fluten.
-    scan_download_concurrency: int = 4
+    # mit Dutzenden gleichzeitigen Downloads zu fluten. `Field(ge=1)` (test-engineer-/security-
+    # engineer-Review-Fund): faellt bei einer fehlerhaften .env-Konfiguration (0/negativ) bereits
+    # beim Prozessstart auf, statt sich erst mitten im naechsten Scan-Lauf als range(step=0)-Crash
+    # zu aeussern - worker.py verlaesst sich seitdem direkt auf diesen validierten Wert, ohne
+    # eigenen Laufzeit-Clamp.
+    scan_download_concurrency: int = Field(default=4, ge=1)
 
 
 settings = Settings()

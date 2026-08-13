@@ -67,12 +67,17 @@ SCORE_COMMIT_BATCH_SIZE = 25
 # Analog SCORE_COMMIT_BATCH_SIZE, aber fuer ScanRun.files_found (specs/features/0022-scan-live-
 # fortschrittszaehler.md, zweitmalige Anwendung des in decisions/0006-local-scoring-datamodel.md
 # etablierten Musters). Modul-Konstante statt Default-Parameterwert, damit Tests sie per
-# monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", ...) verkleinern koennen. Anders als bei
-# run_project_scoring hat der Scan-Loop in run_project_scan zwei `continue`-Zweige (uebersprungene
-# Endung, unveraenderter Etag) - der Checkpoint-Aufruf (siehe _commit_progress_checkpoint dort)
-# sitzt deshalb an JEDEM Ausstiegspunkt der Schleife, nicht nur am regulaeren Ende, sonst waere er
-# im dominanten Realweltfall (Re-Scan mit ueberwiegend unveraenderten Dateien) faktisch nie
-# erreichbar (Review-Fund).
+# monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", ...) verkleinern koennen. Urspruenglich
+# (vor specs/features/0036-scan-performance-zweiphasig-parallel.md) sass der Checkpoint-Aufruf an
+# JEDEM Ausstiegspunkt eines einzigen interleaved Loops (zwei `continue`-Zweige fuer uebersprungene
+# Endung/unveraenderten Etag) - seit der Zwei-Phasen-Umstrukturierung gilt dieselbe Kadenz jetzt
+# ueber den gemeinsamen Helfer _maybe_commit_progress_checkpoint (unten), einmal aufgerufen aus
+# Phase 1 (_enumerate_scan_entries, je gelistetem Eintrag) und einmal aus der Skip-Schleife von
+# Phase 2a in run_project_scan (je Skip-Entscheidung) - strukturell ausgeschlossen, dass ein
+# Skip-Fall den Checkpoint verpasst, da beide Phasen denselben einzigen Aufrufpunkt durchlaufen
+# (kein `continue`-Zweig mehr, der ihn versehentlich umgehen koennte). Ohne diese Kadenz waere der
+# Live-Zaehler im dominanten Realweltfall (Re-Scan mit ueberwiegend unveraenderten Dateien)
+# faktisch nie erreichbar (urspruenglicher Review-Fund, gilt fuer die neue Struktur unveraendert).
 #
 # Batch-Groessen-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): auf 1 statt 25
 # gesetzt, anders als SCORE_COMMIT_BATCH_SIZE oben. run_project_scoring ist CPU-only (lokale
@@ -470,7 +475,10 @@ async def run_project_scan(
         # Crash-Sicherheits-Grenze (Fallstrick 2).
         photos_added = 0
         photos_updated = 0
-        concurrency = max(1, settings.scan_download_concurrency)
+        # settings.scan_download_concurrency ist per Field(ge=1) in config.py bereits gegen
+        # 0/negative Werte validiert (faellt beim Prozessstart auf, test-engineer-/security-
+        # engineer-Review-Fund) - kein zusaetzlicher Laufzeit-Clamp hier noetig.
+        concurrency = settings.scan_download_concurrency
         work_items = classification.work_items
         for start in range(0, len(work_items), concurrency):
             block = work_items[start : start + concurrency]
