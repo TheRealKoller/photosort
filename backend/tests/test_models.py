@@ -93,6 +93,29 @@ async def test_scan_run_defaults(db_session: AsyncSession) -> None:
     # started_at server-seitig defaultet, damit ein frisch angelegter Lauf sofort einen
     # last_progress_at-Wert hat und nicht als sofortiger Stillstand gilt.
     assert stored.last_progress_at is not None
+    # specs/features/0036-scan-performance-zweiphasig-parallel.md: total_files defaultet auf None
+    # (nicht 0) - unterscheidet "Enumerationsphase noch nicht abgeschlossen" explizit von "Projekt
+    # enthaelt 0 Dateien" (ADR 0020, Punkt 6).
+    assert stored.total_files is None
+
+
+async def test_scan_run_total_files_distinguishes_none_from_zero(db_session: AsyncSession) -> None:
+    """specs/features/0036: total_files=0 (leeres Projekt, Phase 1 abgeschlossen) muss von
+    total_files=None (Phase 1 noch nicht abgeschlossen) unterscheidbar bleiben - insbesondere darf
+    eine `is not None`-Pruefung nicht durch eine truthy-Pruefung ersetzt werden koennen, die 0
+    faelschlich als "noch nicht abgeschlossen" behandeln wuerde."""
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+
+    scan_run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING, total_files=0)
+    db_session.add(scan_run)
+    await db_session.commit()
+
+    result = await db_session.execute(select(ScanRun).where(ScanRun.project_id == project.id))
+    stored = result.scalar_one()
+    assert stored.total_files == 0
+    assert stored.total_files is not None
 
 
 async def test_create_user(db_session: AsyncSession) -> None:

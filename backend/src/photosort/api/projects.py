@@ -34,6 +34,10 @@ class ScanSummary(BaseModel):
     started_at: datetime
     finished_at: datetime | None
     files_found: int
+    # specs/features/0036-scan-performance-zweiphasig-parallel.md: None solange die
+    # Enumerationsphase noch nicht abgeschlossen ist, unterscheidet sich bewusst von 0 (leeres
+    # Projekt) - das Frontend muss `is not None`/`!= null` statt truthy pruefen (ADR 0020).
+    total_files: int | None
     photos_added: int
     photos_updated: int
     photos_removed: int

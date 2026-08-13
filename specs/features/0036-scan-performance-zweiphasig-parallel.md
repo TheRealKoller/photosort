@@ -1,6 +1,6 @@
 # 0036 - Scan-Performance: Enumerationsphase, begrenzte Parallelisierung, echter Prozent-Fortschritt
 
-**Status:** Accepted
+**Status:** Implemented ([PR #73](https://github.com/TheRealKoller/photosort/pull/73))
 **Erstellt:** 2026-08-09
 **Bezug:** Inbox-Eintrag `specs/inbox/0014-scan-performance-zweiphasig-parallel.md` (nach Aufnahme in diese Spec gelöscht). ADR [`decisions/0020-scan-enumeration-und-parallele-verarbeitung.md`](../decisions/0020-scan-enumeration-und-parallele-verarbeitung.md) (Accepted). Baut auf Spec [`0022`](./0022-scan-live-fortschrittszaehler.md) (Live-Fortschrittszähler), [`0023`](./0023-scan-fortschritt-batch-groesse-fix.md) (Batch-Größe/Terminierung) und [`0034`](./0034-scan-haenger-fortschritts-watchdog.md)/ADR [`0019`](../decisions/0019-job-lauf-heartbeat-watchdog.md) (Fortschritts-Watchdog, gerade erst gemergt) auf.
 

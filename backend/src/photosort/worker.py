@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 import os
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -65,12 +67,17 @@ SCORE_COMMIT_BATCH_SIZE = 25
 # Analog SCORE_COMMIT_BATCH_SIZE, aber fuer ScanRun.files_found (specs/features/0022-scan-live-
 # fortschrittszaehler.md, zweitmalige Anwendung des in decisions/0006-local-scoring-datamodel.md
 # etablierten Musters). Modul-Konstante statt Default-Parameterwert, damit Tests sie per
-# monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", ...) verkleinern koennen. Anders als bei
-# run_project_scoring hat der Scan-Loop in run_project_scan zwei `continue`-Zweige (uebersprungene
-# Endung, unveraenderter Etag) - der Checkpoint-Aufruf (siehe _commit_progress_checkpoint dort)
-# sitzt deshalb an JEDEM Ausstiegspunkt der Schleife, nicht nur am regulaeren Ende, sonst waere er
-# im dominanten Realweltfall (Re-Scan mit ueberwiegend unveraenderten Dateien) faktisch nie
-# erreichbar (Review-Fund).
+# monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", ...) verkleinern koennen. Urspruenglich
+# (vor specs/features/0036-scan-performance-zweiphasig-parallel.md) sass der Checkpoint-Aufruf an
+# JEDEM Ausstiegspunkt eines einzigen interleaved Loops (zwei `continue`-Zweige fuer uebersprungene
+# Endung/unveraenderten Etag) - seit der Zwei-Phasen-Umstrukturierung gilt dieselbe Kadenz jetzt
+# ueber den gemeinsamen Helfer _maybe_commit_progress_checkpoint (unten), einmal aufgerufen aus
+# Phase 1 (_enumerate_scan_entries, je gelistetem Eintrag) und einmal aus der Skip-Schleife von
+# Phase 2a in run_project_scan (je Skip-Entscheidung) - strukturell ausgeschlossen, dass ein
+# Skip-Fall den Checkpoint verpasst, da beide Phasen denselben einzigen Aufrufpunkt durchlaufen
+# (kein `continue`-Zweig mehr, der ihn versehentlich umgehen koennte). Ohne diese Kadenz waere der
+# Live-Zaehler im dominanten Realweltfall (Re-Scan mit ueberwiegend unveraenderten Dateien)
+# faktisch nie erreichbar (urspruenglicher Review-Fund, gilt fuer die neue Struktur unveraendert).
 #
 # Batch-Groessen-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): auf 1 statt 25
 # gesetzt, anders als SCORE_COMMIT_BATCH_SIZE oben. run_project_scoring ist CPU-only (lokale
@@ -115,6 +122,85 @@ def _extension(relative_path: str) -> str:
     return os.path.splitext(relative_path)[1].lower()
 
 
+class SkipReason(enum.Enum):
+    """specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020 (Phase 2a): warum ein
+    Eintrag NICHT zu einem Arbeitsposten fuer Phase 2b wird. Zwei getrennte Werte statt eines
+    einzelnen bool-Flags, weil nur UNSUPPORTED_EXTENSION zusaetzlich ScanRun.files_skipped
+    hochzaehlt (bestehende Semantik, siehe run_project_scan) - UNCHANGED_ETAG zaehlt nur in
+    files_found (Fortschritt), nicht in files_skipped."""
+
+    UNSUPPORTED_EXTENSION = "unsupported_extension"
+    UNCHANGED_ETAG = "unchanged_etag"
+
+
+@dataclass
+class ScanWorkItem:
+    """Ein Eintrag aus Phase 1, der in Phase 2b tatsaechlich verarbeitet werden muss (neue Datei
+    oder geaenderter Etag) - `existing_photo` ist `None` fuer neue Dateien, sonst die zu
+    aktualisierende Zeile."""
+
+    relative_path: str
+    entry: DavEntry
+    existing_photo: Photo | None
+
+
+@dataclass
+class ScanEntryDecision:
+    """Ergebnis der Klassifikation eines einzelnen Phase-1-Eintrags: entweder ein Skip-Grund ODER
+    ein Arbeitsposten, nie beides - siehe _classify_scan_entries."""
+
+    relative_path: str
+    skip_reason: SkipReason | None
+    work_item: ScanWorkItem | None
+
+
+@dataclass
+class ScanClassification:
+    """Ergebnis von _classify_scan_entries fuer die vollstaendige Phase-1-Liste.
+
+    `decisions` behaelt bewusst die Eingabereihenfolge bei (run_project_scan iteriert sie fuer die
+    Checkpoint-Kadenz von files_found/files_skipped in Phase 2a, siehe ADR 0020) - `work_items` ist
+    eine reine Teilmenge davon (nur die Eintraege mit skip_reason is None), fuer Phase 2b."""
+
+    decisions: list[ScanEntryDecision] = field(default_factory=list)
+    work_items: list[ScanWorkItem] = field(default_factory=list)
+    seen_paths: set[str] = field(default_factory=set)
+
+
+def _classify_scan_entries(
+    entries: list[tuple[str, DavEntry]],
+    existing_photos: dict[str, Photo],
+) -> ScanClassification:
+    """specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020 (Phase 2a): reine
+    Funktion, keine Session-/DB-Zugriffe - isoliert unit-testbar (siehe
+    test_worker_scan_classification.py). Identische fachliche Entscheidungslogik wie der fruehere
+    inline Loop-Koerper in run_project_scan (unsupported extension -> Skip + files_skipped;
+    unveraenderter Etag -> Skip ohne files_skipped; sonst -> Arbeitsposten), nur ohne die
+    Verarbeitung selbst."""
+    classification = ScanClassification()
+    for relative_path, entry in entries:
+        extension = _extension(relative_path)
+        if extension not in _IMAGE_EXTENSIONS:
+            classification.decisions.append(
+                ScanEntryDecision(relative_path, SkipReason.UNSUPPORTED_EXTENSION, None)
+            )
+            continue
+
+        classification.seen_paths.add(relative_path)
+        existing_photo = existing_photos.get(relative_path)
+        if existing_photo is not None and existing_photo.etag == entry.etag:
+            classification.decisions.append(
+                ScanEntryDecision(relative_path, SkipReason.UNCHANGED_ETAG, None)
+            )
+            continue
+
+        work_item = ScanWorkItem(relative_path, entry, existing_photo)
+        classification.decisions.append(ScanEntryDecision(relative_path, None, work_item))
+        classification.work_items.append(work_item)
+
+    return classification
+
+
 def _naive_utc(value: datetime) -> datetime:
     # Stored as naive UTC throughout (matches sqlite/Postgres TIMESTAMP WITHOUT TIME ZONE);
     # WebDAV last-modified values arrive timezone-aware and must be normalized before storing
@@ -157,18 +243,180 @@ async def _generate_thumbnails(
     client: OpenCloudScanClient,
     webdav_url: str,
     relative_path: str,
-    photo: Photo,
+    photo_id: int,
+    etag: str,
     cache_dir: Path,
 ) -> None:
     """Best-effort (specs/features/0002-manual-categorization.md): weder ein Download- noch ein
     Dekodierfehler duerfen den Scan des Projekts abbrechen (anders als die uebrigen
     OpenCloudError-Faelle unten, die den ganzen Scan als FAILED markieren) - ein fehlendes
-    Thumbnail aeussert sich nur als 404-Platzhalter im Bild-Endpunkt, siehe thumbnails.py."""
+    Thumbnail aeussert sich nur als 404-Platzhalter im Bild-Endpunkt, siehe thumbnails.py.
+
+    Nimmt bewusst `photo_id`/`etag` statt eines `Photo`-Objekts entgegen (specs/features/0036-
+    scan-performance-zweiphasig-parallel.md, ADR 0020, Punkt 2): wird als Teil von
+    _fetch_and_thumbnail parallel zu Geschwister-Aufrufen desselben Blocks ausgefuehrt und darf
+    deshalb keinerlei Session-Zugriff ausloesen - ein ORM-Objekt hier entgegenzunehmen wuerde dazu
+    verleiten, versehentlich weitere (nicht nebenlaeufigkeitssichere) Attribute zu lesen/zu
+    setzen."""
     try:
         content = await client.download(webdav_url, relative_path)
     except OpenCloudError:
         return
-    generate_variants(cache_dir, photo.id, photo.etag, content)
+    generate_variants(cache_dir, photo_id, etag, content)
+
+
+async def _fetch_and_thumbnail(
+    client: OpenCloudScanClient,
+    webdav_url: str,
+    relative_path: str,
+    extension: str,
+    fallback_taken_at: datetime,
+    photo_id: int,
+    etag: str,
+    cache_dir: Path,
+) -> datetime:
+    """Der reine I/O-/CPU-Teil eines einzelnen Arbeitspostens aus Phase 2b (specs/features/0036,
+    ADR 0020, Punkt 2): EXIF-Range-Read (nur fuer JPEG-Kandidaten) fuer `taken_at`, danach
+    best-effort Download + Thumbnail-Erzeugung - bewusst OHNE jeglichen Session-Zugriff, damit
+    mehrere Aufrufe sicher parallel per asyncio.gather laufen koennen (_process_scan_block unten).
+    Ein EXIF-Lesefehler wird NICHT abgefangen (identisches Verhalten wie vor der Umstrukturierung):
+    ein einzelner OpenCloud-Fehler hier laesst den gesamten Scan fehlschlagen, siehe ADR."""
+    taken_at = fallback_taken_at
+    if extension in _EXIF_CANDIDATE_EXTENSIONS:
+        content = await client.get_range(webdav_url, relative_path, _EXIF_RANGE_BYTES)
+        exif_taken_at = extract_taken_at(content)
+        if exif_taken_at is not None:
+            taken_at = exif_taken_at
+
+    await _generate_thumbnails(client, webdav_url, relative_path, photo_id, etag, cache_dir)
+    return taken_at
+
+
+async def _process_scan_block(
+    session: AsyncSession,
+    client: OpenCloudScanClient,
+    webdav_url: str,
+    cache_dir: Path,
+    project_id: int,
+    block: list[ScanWorkItem],
+) -> tuple[int, int]:
+    """Verarbeitet einen einzelnen Block von Arbeitsposten (Groesse = settings.
+    scan_download_concurrency, specs/features/0036, ADR 0020, Punkt 1/4): zunaechst sequentiell
+    Photo-Zeilen anlegen/aktualisieren + flush() (Fallstrick 2 der ADR: KEIN commit() hier - ein
+    Absturz in diesem Fenster ist dadurch folgenlos, die Transaktion wird beim Neuverbinden
+    verworfen), danach die reinen I/O-Coroutinen des Blocks parallel per asyncio.gather. Der
+    Aufrufer (run_project_scan) committet erst NACH erfolgreicher Rueckkehr dieser Funktion - ein
+    Commit pro vollstaendig abgearbeitetem Block. Gibt (photos_added, photos_updated) fuer diesen
+    Block zurueck."""
+    photos: list[Photo] = []
+    added = 0
+    updated = 0
+    for item in block:
+        last_modified = (
+            _naive_utc(item.entry.last_modified) if item.entry.last_modified else _now_utc()
+        )
+        if item.existing_photo is not None:
+            photo = item.existing_photo
+            photo.etag = item.entry.etag or ""
+            photo.content_length = item.entry.content_length or 0
+            photo.last_modified = last_modified
+            updated += 1
+        else:
+            photo = Photo(
+                project_id=project_id,
+                relative_path=item.relative_path,
+                etag=item.entry.etag or "",
+                content_length=item.entry.content_length or 0,
+                taken_at=last_modified,  # vorlaeufig, wird unten nach dem gather() ersetzt
+                last_modified=last_modified,
+            )
+            session.add(photo)
+            added += 1
+        photos.append(photo)
+
+    if added:
+        # Nur neu angelegte Zeilen brauchen flush() fuer eine DB-vergebene ID (fuer den
+        # Thumbnail-Dateinamen unten) - bereits bestehende Zeilen haben schon eine ID (Code-Review-
+        # Fund aus der Vorversion, weiterhin gueltig).
+        await session.flush()
+
+    results = await asyncio.gather(
+        *[
+            _fetch_and_thumbnail(
+                client,
+                webdav_url,
+                item.relative_path,
+                _extension(item.relative_path),
+                photos[index].last_modified,
+                photos[index].id,
+                photos[index].etag,
+                cache_dir,
+            )
+            for index, item in enumerate(block)
+        ],
+        return_exceptions=True,
+    )
+
+    # Verifizierter Python-Async-Fallstrick (ADR 0020, siehe auch test_worker_scan_project.py::
+    # test_scan_run_marked_failed_on_cancelled_error_from_a_parallel_download): mit
+    # return_exceptions=True faengt asyncio.gather() ein CancelledError, das eine EINZELNE Kind-
+    # Coroutine wirft, NICHT als Exception ab, sondern reicht es als gewoehnliches Element der
+    # Ergebnisliste durch - `await gather(...)` selbst wirft in diesem Fall NICHTS. Ohne diese
+    # explizite Pruefung wuerde ein Abbruch mitten in einer parallelen I/O-Coroutine NICHT den
+    # bestehenden `except asyncio.CancelledError`-Zweig in run_project_scan erreichen (ADR-0019-
+    # Kompatibilitaet, Akzeptanzkriterium der Spec). Eine ECHTE aeussere Task-Cancellation (arq
+    # job_timeout) propagiert dagegen bereits ohne Sonderbehandlung roh durch `await gather(...)`
+    # hindurch - dieser Fall betrifft ausschliesslich eine Kind-Coroutine, die CancelledError
+    # selbst wirft/traegt.
+    for result in results:
+        if isinstance(result, asyncio.CancelledError):
+            raise result
+    for result in results:
+        if isinstance(result, BaseException):
+            raise result
+
+    for photo, taken_at in zip(photos, results, strict=True):
+        assert isinstance(taken_at, datetime)  # bereits oben auf Exceptions geprueft
+        photo.taken_at = taken_at
+
+    return added, updated
+
+
+async def _maybe_commit_progress_checkpoint(
+    session: AsyncSession, run: ScanRun, count: int
+) -> None:
+    """Gemeinsamer Zwischen-Commit-Checkpoint (specs/features/0022-scan-live-fortschrittszaehler.md,
+    ADR 0019 Schicht 2) fuer Phase 1 (Enumeration) UND Phase 2a (Skip-Faelle) - ein einziger
+    Aufrufpunkt statt der frueheren Closure mit zwei `continue`-Zweigen (specs/features/0036):
+    strukturell ausgeschlossen, dass ein Skip-Zweig den Checkpoint verpasst, da jede Iteration in
+    Phase 2a denselben Aufruf durchlaeuft."""
+    if count % SCAN_COMMIT_BATCH_SIZE == 0:
+        run.files_found = count
+        run.last_progress_at = _now_utc()
+        await session.commit()
+
+
+async def _enumerate_scan_entries(
+    session: AsyncSession,
+    client: OpenCloudScanClient,
+    webdav_url: str,
+    root_path: str,
+    scan_run: ScanRun,
+) -> list[tuple[str, DavEntry]]:
+    """Phase 1 (Enumeration, specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR
+    0020, Punkt 1): materialisiert `client.walk(...)` zu einer In-Memory-Liste - KEIN Photo-DB-
+    Schreibzugriff, nur periodische files_found/last_progress_at-Checkpoints (bestehende
+    Checkpoint-Kadenz, Zweitverwendung von _maybe_commit_progress_checkpoint). Erst nach
+    vollstaendigem Abschluss ist die Gesamtzahl bekannt (run_project_scan setzt danach
+    ScanRun.total_files)."""
+    entries: list[tuple[str, DavEntry]] = []
+    files_found = 0
+    entry: DavEntry
+    async for relative_path, entry in client.walk(webdav_url, root_path):
+        entries.append((relative_path, entry))
+        files_found += 1
+        await _maybe_commit_progress_checkpoint(session, scan_run, files_found)
+    return entries
 
 
 async def run_project_scan(
@@ -192,81 +440,59 @@ async def run_project_scan(
                 await session.execute(select(Photo).where(Photo.project_id == project.id))
             ).scalars()
         }
-        seen_paths: set[str] = set()
+
+        # Phase 1 (Enumeration) - siehe _enumerate_scan_entries.
+        entries = await _enumerate_scan_entries(
+            session, client, drive.webdav_url, project.opencloud_path, scan_run
+        )
+
+        # Phasenuebergang (ADR 0020, Punkt 1): total_files wird HIER einmalig gesetzt,
+        # files_found auf 0 zurueckgesetzt - das Feld wechselt die Bedeutung von "in Phase 1
+        # gelistet" auf "in Phase 2 verarbeitet" (Datenmodell-Bezug der Spec). Sofort committet,
+        # damit ein zwischen Phase 1 und Phase 2 beobachtender Client (Polling) diesen konsistenten
+        # Zwischenzustand sehen kann (total_files gesetzt, files_found == 0).
+        scan_run.total_files = len(entries)
+        scan_run.files_found = 0
+        scan_run.last_progress_at = _now_utc()
+        await session.commit()
+
+        # Phase 2a (Klassifikation, reine Funktion) - siehe _classify_scan_entries.
+        classification = _classify_scan_entries(entries, existing_photos)
+
         files_found = 0
+        files_skipped = 0
+        for decision in classification.decisions:
+            if decision.skip_reason is not None:
+                files_found += 1
+                if decision.skip_reason is SkipReason.UNSUPPORTED_EXTENSION:
+                    files_skipped += 1
+                await _maybe_commit_progress_checkpoint(session, scan_run, files_found)
+
+        # Phase 2b (begrenzt parallele Verarbeitung in festen Bloecken) - siehe
+        # _process_scan_block. Blockgroesse = settings.scan_download_concurrency (env-
+        # ueberschreibbar, ADR 0020 Punkt 5); ein Commit PRO BLOCK (nicht an die
+        # SCAN_COMMIT_BATCH_SIZE-Kadenz von Phase 1/2a gekoppelt), das ist zugleich die
+        # Crash-Sicherheits-Grenze (Fallstrick 2).
         photos_added = 0
         photos_updated = 0
-        files_skipped = 0
+        # settings.scan_download_concurrency ist per Field(ge=1) in config.py bereits gegen
+        # 0/negative Werte validiert (faellt beim Prozessstart auf, test-engineer-/security-
+        # engineer-Review-Fund) - kein zusaetzlicher Laufzeit-Clamp hier noetig.
+        concurrency = settings.scan_download_concurrency
+        work_items = classification.work_items
+        for start in range(0, len(work_items), concurrency):
+            block = work_items[start : start + concurrency]
+            added, updated = await _process_scan_block(
+                session, client, drive.webdav_url, cache_dir, project.id, block
+            )
+            photos_added += added
+            photos_updated += updated
+            files_found += len(block)
+            scan_run.files_found = files_found
+            scan_run.last_progress_at = _now_utc()
+            await session.commit()
 
-        async def _commit_progress_checkpoint() -> None:
-            # Review-Fund (specs/features/0022-scan-live-fortschrittszaehler.md): muss an JEDEM
-            # Ausstiegspunkt der Schleife unten aufgerufen werden (Skip wegen Endung, Skip wegen
-            # unveraendertem Etag, vollstaendige Verarbeitung) - nicht nur am Ende einer
-            # vollstaendigen Verarbeitung. Anders als run_project_scoring hat dieser Loop zwei
-            # `continue`-Zweige; ein Checkpoint nur "am Ende" (nach _generate_thumbnails) waere
-            # fuer Iterationen, die einen der beiden Zweige treffen, nie erreichbar - im
-            # dominanten Realweltfall (Re-Scan mit ueberwiegend unveraenderten Dateien) wuerde der
-            # Live-Zaehler dann faktisch nicht wachsen. `files_found` wird per Closure gelesen
-            # (kein `nonlocal` noetig, da hier nur gelesen, nicht neu zugewiesen wird).
-            if files_found % SCAN_COMMIT_BATCH_SIZE == 0:
-                scan_run.files_found = files_found
-                # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-
-                # watchdog.md, ADR 0019, Schicht 2): Zweitverwendung dieses bereits bestehenden
-                # Zwischen-Commit-Checkpoints - reap_stalled_runs (worker.py) liest diesen Wert,
-                # keine neue Checkpoint-Kadenz noetig.
-                scan_run.last_progress_at = _now_utc()
-                await session.commit()
-
-        entry: DavEntry
-        async for relative_path, entry in client.walk(drive.webdav_url, project.opencloud_path):
-            files_found += 1
-            extension = _extension(relative_path)
-            if extension not in _IMAGE_EXTENSIONS:
-                files_skipped += 1
-                await _commit_progress_checkpoint()
-                continue
-
-            seen_paths.add(relative_path)
-            existing_photo = existing_photos.get(relative_path)
-            if existing_photo is not None and existing_photo.etag == entry.etag:
-                await _commit_progress_checkpoint()
-                continue
-
-            last_modified = _naive_utc(entry.last_modified) if entry.last_modified else _now_utc()
-            taken_at = last_modified
-            if extension in _EXIF_CANDIDATE_EXTENSIONS:
-                content = await client.get_range(drive.webdav_url, relative_path, _EXIF_RANGE_BYTES)
-                exif_taken_at = extract_taken_at(content)
-                if exif_taken_at is not None:
-                    taken_at = exif_taken_at
-
-            if existing_photo is not None:
-                existing_photo.etag = entry.etag or ""
-                existing_photo.content_length = entry.content_length or 0
-                existing_photo.taken_at = taken_at
-                existing_photo.last_modified = last_modified
-                photo = existing_photo
-                photos_updated += 1
-            else:
-                photo = Photo(
-                    project_id=project.id,
-                    relative_path=relative_path,
-                    etag=entry.etag or "",
-                    content_length=entry.content_length or 0,
-                    taken_at=taken_at,
-                    last_modified=last_modified,
-                )
-                session.add(photo)
-                photos_added += 1
-                # Only newly added rows lack a DB-assigned id; existing_photo already has one
-                # from the initial select above, so flushing there on every file would be an
-                # unnecessary DB roundtrip per photo (Code-Review-Fund).
-                await session.flush()
-
-            await _generate_thumbnails(client, drive.webdav_url, relative_path, photo, cache_dir)
-            await _commit_progress_checkpoint()
-
-        removed_paths = set(existing_photos) - seen_paths
+        removed_paths = set(existing_photos) - classification.seen_paths
         for path in removed_paths:
             await session.delete(existing_photos[path])
 

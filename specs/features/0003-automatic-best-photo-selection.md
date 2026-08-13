@@ -1,8 +1,10 @@
 # 0003 - Automatische Auswahl der besten Fotos (Phase A: lokale Heuristiken)
 
-**Status:** Implemented ([PR #6](https://github.com/TheRealKoller/photosort/pull/6))
+**Status:** Superseded, abgelöst durch [`0037`](./0037-gateführte-bewertungs-pipeline-mit-backfill.md) ([PR #6](https://github.com/TheRealKoller/photosort/pull/6))
 **Erstellt:** 2026-07-19
 **Bezug:** Ausgangsgespräch Projekt-Setup, [`decisions/0002-hybrid-ai-scoring.md`](../decisions/0002-hybrid-ai-scoring.md), [`decisions/0006-local-scoring-datamodel.md`](../decisions/0006-local-scoring-datamodel.md), Idea-Sharpening-Gespräch mit Daniel am 2026-07-27
+
+**Nachtrag (2026-08-13):** Durch Spec [`0037`](./0037-gateführte-bewertungs-pipeline-mit-backfill.md) abgelöst — die Ausschuss-Erkennung selbst bleibt inhaltlich bestehen, wird dort aber Teil eines durchgängigen, gateführten Ablaufs statt eines eigenständig auslösbaren Buttons. Diese Datei bleibt als historisches Dokument stehen (beschreibt korrekt, was zum Zeitpunkt der Umsetzung gebaut wurde).
 
 ## Ziel
 
