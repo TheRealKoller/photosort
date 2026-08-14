@@ -173,6 +173,44 @@ describe('CurateCategoriesPage', () => {
     )
   })
 
+  it(
+    'keeps a section visible with an empty-pool placeholder once its last photo is rejected ' +
+      'instead of silently disappearing',
+    async () => {
+      // test-engineer-Review-Fund: der Kernfall, fuer den knownGroupKeysRef ueberhaupt gebaut
+      // wurde - eine Partition, deren letztes Foto per Live-Ablehnung entfernt wird, MUSS mit
+      // eigenem Leerzustand sichtbar bleiben statt spurlos aus der Gruppierung zu verschwinden.
+      vi.mocked(photosApi.listPhotos)
+        .mockResolvedValueOnce({
+          items: [
+            photo({
+              id: 1,
+              ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }),
+            }),
+          ],
+          total: 1,
+        })
+        .mockResolvedValueOnce({ items: [], total: 0 })
+      vi.mocked(ratingsApi.setRating).mockResolvedValue({
+        user_id: 1,
+        username: 'testuser',
+        status: 'rejected',
+      })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/curate?topN=1')
+      const rejectButton = await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
+      await user.click(rejectButton)
+
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Verwerfen: a.jpg' })).not.toBeInTheDocument()
+      )
+      expect(screen.getByText('cluster-0')).toBeInTheDocument()
+      expect(screen.getByText('Landscape')).toBeInTheDocument()
+      expect(screen.getByText('Kein weiteres Foto verfügbar')).toBeInTheDocument()
+    }
+  )
+
   it('shows a quality meter derived from rank_score', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
       items: [photo({ id: 1, ranking: ranking({ rank_score: 0.9 }) })],

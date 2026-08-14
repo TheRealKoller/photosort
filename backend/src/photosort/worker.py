@@ -804,6 +804,13 @@ async def run_criterion_scoring(
                 "Scoring-Lauf (Re-Scan/Re-Scoring waehrend der Kuratierung)."
             )
 
+        # Bekannter, akzeptierter Performance-Trade-off (ADR 0021 "Konsequenzen", architect-
+        # Review-Fund Spec 0037): anders als der fruehere run_top_selection gibt es HIER bewusst
+        # KEINEN Kandidatenpool-Vorfilter pro Cluster mehr (Spec 0024: min(cluster_size,
+        # max(N*3,6))) - N ist beim Scoren nicht mehr bekannt (wird erst beim Lesen ueber
+        # top_n_per_category angewendet), also werden ALLE Ausschuss-Ueberlebenden verarbeitet,
+        # nicht nur die aussichtsreichsten. Fuer sehr grosse Projekte potenziell spuerbar, siehe
+        # docs/architecture.md.
         rows = (
             await session.execute(
                 select(Photo, PhotoScore)
