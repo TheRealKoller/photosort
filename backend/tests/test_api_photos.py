@@ -652,7 +652,9 @@ class TestTopNPerCategory:
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
         other_user = await _make_second_user(db_session)
-        db_session.add(Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.REJECTED))
+        db_session.add(
+            Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.REJECTED)
+        )
         await db_session.commit()
 
         response = await authenticated_api_client.get(

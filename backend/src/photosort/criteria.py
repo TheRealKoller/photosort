@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from PIL import Image
 
 from photosort.classification import (
-    FaceDetectorLike,
     LANDSCAPE_UNIFORM_FRACTION_THRESHOLD,
+    FaceDetectorLike,
     compute_uniform_area_fraction,
     detect_person,
 )

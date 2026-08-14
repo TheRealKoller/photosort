@@ -854,11 +854,15 @@ async def run_criterion_scoring(
             values: dict[str, float] = {}
 
             sharpness_value = normalize_sharpness(score.sharpness)
-            _upsert_criterion(photo.id, "sharpness", sharpness_value, CriterionSource.LOCAL_HEURISTIC)
+            _upsert_criterion(
+                photo.id, "sharpness", sharpness_value, CriterionSource.LOCAL_HEURISTIC
+            )
             values["sharpness"] = sharpness_value
 
             exposure_value = normalize_exposure(score.exposure)
-            _upsert_criterion(photo.id, "exposure", exposure_value, CriterionSource.LOCAL_HEURISTIC)
+            _upsert_criterion(
+                photo.id, "exposure", exposure_value, CriterionSource.LOCAL_HEURISTIC
+            )
             values["exposure"] = exposure_value
 
             assert detector is not None  # rows nicht leer => Detector wurde oben gebaut
@@ -994,9 +998,10 @@ async def reap_stalled_runs(
     anknuepfen liesse). session_factory ist injizierbar (Default: die echte, produktive
     async_session_factory) - Tests uebergeben stattdessen eine an eine In-Memory-SQLite-
     Testdatenbank gebundene Factory, analog zu run_criterion_scoring's build_detector-Parameter.
-    Die drei Tabellen werden bewusst nacheinander in drei eigenstaendigen Bloecken behandelt statt
-    ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/ScoringRun/
-    CriterionScoringRun bleiben drei eigenstaendige Modelle ohne gemeinsame Basisklasse, ADR 0019)."""
+    Die drei Tabellen werden bewusst nacheinander in drei eigenstaendigen Bloecken behandelt
+    statt ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/
+    ScoringRun/CriterionScoringRun bleiben drei eigenstaendige Modelle ohne gemeinsame
+    Basisklasse, ADR 0019)."""
     reaped = 0
     threshold = _now_utc() - STALL_THRESHOLD
     async with session_factory() as session:
@@ -1012,8 +1017,9 @@ async def reap_stalled_runs(
         except Exception:
             # architect-Review-Fund (Spec 0034): ohne rollback() bliebe die Transaktion auf einer
             # echten Postgres-Verbindung nach einem fehlgeschlagenen SELECT im Zustand "current
-            # transaction is aborted" - die nachfolgenden SELECTs fuer ScoringRun/CriterionScoringRun
-            # wuerden dann selbst fehlschlagen, obwohl inhaltlich nichts mit ihnen falsch ist. Das
+            # transaction is aborted" - die nachfolgenden SELECTs fuer ScoringRun/
+            # CriterionScoringRun wuerden dann selbst fehlschlagen, obwohl inhaltlich nichts mit
+            # ihnen falsch ist. Das
             # wuerde das Akzeptanzkriterium "ein Fehler bei einer Tabelle blockiert die
             # Bereinigung der uebrigen nicht" in Produktion unterlaufen - im SQLite-Testsetup
             # unsichtbar, da dort eine vor jedem DB-Zugriff geworfene Python-Exception die
