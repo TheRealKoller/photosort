@@ -86,6 +86,10 @@ Diese Spec ersetzt Spec 0024 vollständig (Top-Auswahl-Mechanik) und baut Spec 0
 - `GET /projects/{id}/photos`: neuer Query-Parameter `top_n_per_category` (`Field(ge=1, le=10)`) — liefert je Partition die besten N nach `rank_position`, gefiltert um vom aktuellen Nutzer `REJECTED`-bewertete Fotos. Das ist zugleich der gesamte Backfill-Mechanismus — keine eigene Backfill-Route, keine Mutation, reine Query.
 - `SuggestionOut`: `category` → `category_key: str`, `reason` um einen Wert für "Rang-Vorschlag" erweitert (Detail-Benennung technische Umsetzungsentscheidung des `developer`-Agenten).
 
+### Vorgriffs-Ergänzung (2026-08-14, `architect`-Konsultation für Spec 0038, ADR [`decisions/0022-lokale-modellwahl-tier-gebaeude-aesthetik-kriterien.md`](../decisions/0022-lokale-modellwahl-tier-gebaeude-aesthetik-kriterien.md))
+
+`classification.py::detect_person` wird beim TDD-Einstieg dieser Spec **nicht** mehr mit `bool`-Rückgabewert gebaut, sondern gibt `list[FaceBoundingBox]` zurück (neue, kleine `@dataclass(frozen=True)`, auf Bildgröße normierte `x_center`/`y_center`/`width`/`height` ∈ `[0,1]` + `confidence`) — Grund: die spätere Spec 0038 (Goldener Schnitt) braucht diese Positionsdaten, und der günstigste Zeitpunkt für diese Vertragserweiterung ist der ohnehin bevorstehende Neubau von `criteria.py`, nicht ein späterer Rework. Für den `content_people`-Kriterien-Compute dieser Spec ändert sich funktional nichts (`bool(detect_person(...))` als Score-Grundlage) — nur die zugrunde liegende Rückgabe ist reichhaltiger. `classify_category`/bestehende Tests passen sich entsprechend trivial an.
+
 ### Reihenfolge für den TDD-Einstieg
 
 1. `PhotoCriterionScore`-Modell + Migration (inkl. Spalten-Drop `category`/`local_quality_score`, Tabellen-Drop `top_selection_runs`) + Migrations-Inspector-Test.
