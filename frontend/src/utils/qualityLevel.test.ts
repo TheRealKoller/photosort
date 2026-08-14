@@ -3,20 +3,20 @@ import { describe, expect, it } from 'vitest'
 import { QUALITY_LEVEL_LABELS, qualityLevel } from './qualityLevel'
 
 describe('qualityLevel', () => {
-  it('returns null when there is no local_quality_score', () => {
+  it('returns null when there is no rank_score', () => {
     expect(qualityLevel(null)).toBeNull()
   })
 
   it('returns "low" for a score below the low threshold', () => {
-    expect(qualityLevel(10)).toBe('low')
+    expect(qualityLevel(0.1)).toBe('low')
   })
 
   it('returns "medium" for a score between the two thresholds', () => {
-    expect(qualityLevel(50)).toBe('medium')
+    expect(qualityLevel(0.5)).toBe('medium')
   })
 
   it('returns "high" for a score at or above the high threshold', () => {
-    expect(qualityLevel(80)).toBe('high')
+    expect(qualityLevel(0.8)).toBe('high')
   })
 })
 

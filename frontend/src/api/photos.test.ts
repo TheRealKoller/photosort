@@ -17,6 +17,7 @@ const PHOTO_LIST: PhotoListOut = {
       taken_at: '2026-07-20T10:00:00Z',
       ratings: [],
       suggestion: null,
+      ranking: null,
     },
   ],
   total: 1,
@@ -40,6 +41,14 @@ describe('api/photos', () => {
     expect(apiFetch).toHaveBeenCalledWith(
       '/projects/1/photos?rating_status=unrated&limit=30&offset=60'
     )
+  })
+
+  it('encodes top_n_per_category as a query param', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
+
+    await listPhotos(1, { topNPerCategory: 3 })
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?top_n_per_category=3')
   })
 
   it('fetchPhotoImageBlobUrl requests the image and returns an object URL', async () => {

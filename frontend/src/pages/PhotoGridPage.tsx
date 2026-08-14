@@ -1,16 +1,16 @@
 import { useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { RatingFilter } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
-import { CategoryBadge } from '../components/CategoryBadge'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingBadge } from '../components/RatingBadge'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
+import { useConfirmAusschussGateMutation } from '../hooks/useProjects'
 import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
 import { ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
@@ -32,16 +32,31 @@ const FILTERS: { value: RatingFilter | ''; label: string }[] = [
 export function PhotoGridPage() {
   const { projectId } = useParams()
   const id = Number(projectId)
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const filterParam = parseRatingFilter(searchParams.get('filter'))
   const ratingStatus = filterParam === '' ? undefined : filterParam
+  // Ausschuss-Gate-Modus (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md,
+  // UI/UX-Abschnitt): kein neuer Screen, sondern diese bestehende Seite um `&gate=1` erweitert.
+  const isGateMode = searchParams.get('gate') === '1'
 
   const token = getToken()
   const username = token ? decodeUsername(token) : null
 
   const query = usePhotoSequenceQuery(id, ratingStatus)
   const setRatingMutation = useSetRatingMutation(id)
+  const gateMutation = useConfirmAusschussGateMutation(id)
   const photos = query.data?.pages.flatMap((page) => page.items) ?? []
+  const totalSuggested = query.data?.pages[0]?.total ?? 0
+
+  function handleConfirmGate(): void {
+    if (gateMutation.isPending) {
+      return
+    }
+    gateMutation.mutate(undefined, {
+      onSuccess: () => navigate(`/projects/${id}`),
+    })
+  }
 
   // UI/UX-Review-Fund: setRatingMutation ist EINE Instanz fuer die ganze Seite (ein einzelner
   // useMutation-Hook) - ihr eigenes `isPending` haette bei jedem weiteren Klick, waehrend
@@ -64,6 +79,32 @@ export function PhotoGridPage() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold text-text-h">Fotos</h1>
+
+      {isGateMode && (
+        <div className="flex flex-col items-start gap-3 rounded-xl border border-accent-border bg-accent-bg p-4 text-sm">
+          <p className="text-text-h">
+            Sichte den erkannten Ausschuss ({totalSuggested}{' '}
+            {totalSuggested === 1 ? 'Kandidat' : 'Kandidaten'}), bevor du fortfährst. Einzelne
+            Fotos kannst du hier korrigieren ("Übernehmen"-Button/Bewertung in der
+            Detailansicht) - das ist aber nicht Voraussetzung, um fortzufahren.
+          </p>
+          <Button
+            type="button"
+            onClick={handleConfirmGate}
+            disabled={gateMutation.isPending}
+            busy={gateMutation.isPending}
+          >
+            {gateMutation.isPending ? 'Wird bestätigt…' : 'Ausschuss gesichtet, weiter'}
+          </Button>
+          {gateMutation.isError && (
+            <Alert>
+              {gateMutation.error instanceof ApiError
+                ? gateMutation.error.detail
+                : 'Fehler beim Bestätigen des Ausschuss-Gates.'}
+            </Alert>
+          )}
+        </div>
+      )}
 
       <div role="group" aria-label="Filter" className="flex flex-wrap gap-2">
         {FILTERS.map((option) => (
@@ -163,19 +204,6 @@ export function PhotoGridPage() {
                   <span className="absolute right-1.5 top-1.5 rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
                     <RatingBadge status={badgeStatus} suggested={isSuggested} />
                   </span>
-                  {/* Kategorie-Chip (specs/features/0024-top-photo-selection-category-mix.md):
-                      zweiter, von RatingBadge getrennter Chip in der GEGENUEBERLIEGENDEN Ecke,
-                      damit beide nicht kollidieren. Folgt derselben Sichtbarkeitsregel wie die
-                      Vorschlags-Badge (nur sichtbar, solange keine eigene Bewertung existiert) -
-                      category ist ohnehin nur fuer "top_pick"-Vorschlaege gesetzt (siehe
-                      SuggestionOut-Dokumentation), verschwindet also automatisch nach
-                      Bestaetigung. Kein Qualitaets-Meter hier (nur in der Detailansicht, UI/UX-
-                      Abschnitt der Spec). */}
-                  {isSuggested && photo.suggestion?.category && (
-                    <span className="absolute left-1.5 top-1.5 rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
-                      <CategoryBadge category={photo.suggestion.category} />
-                    </span>
-                  )}
                 </Link>
                 {/* Separates Tap-Ziel ausserhalb des Link-<a> (UI/UX-Abschnitt der Spec): die
                     Kachel selbst oeffnet weiterhin die Detailansicht, "Uebernehmen" bestaetigt

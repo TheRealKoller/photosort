@@ -46,10 +46,12 @@ class Settings(BaseSettings):
     def cors_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
 
-    # Feature-Flag fuer die lokale Top-Foto-Auswahl mit Kategorie-Mix
-    # (specs/features/0024-top-photo-selection-category-mix.md). Default AN (anders als ein
-    # Cloud-Feature): rein lokale/kostenlose Verarbeitung, kein Grund fuer einen restriktiven
-    # Default.
+    # Feature-Flag fuer die lokale Kriterien-Bewertung + Kategorie-Kuratierung
+    # (urspruenglich specs/features/0024-top-photo-selection-category-mix.md, seit
+    # specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md bewusst unter demselben
+    # Namen weiterverwendet fuer POST /score-criteria - keine funktionale Aenderung des Flags
+    # selbst, nur ein neuer Endpunkt dahinter). Default AN (anders als ein Cloud-Feature): rein
+    # lokale/kostenlose Verarbeitung, kein Grund fuer einen restriktiven Default.
     category_selection_enabled: bool = True
 
     # Obergrenze fuer die begrenzte Parallelisierung von Download + Thumbnail-Erzeugung in Phase 2b

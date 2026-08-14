@@ -26,6 +26,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     taken_at: '2026-07-20T10:00:00Z',
     ratings: [],
     suggestion: null,
+    ranking: null,
     ...overrides,
   }
 }
@@ -35,11 +36,9 @@ function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
     status: 'rejected',
     reason: 'low_quality',
     duplicate_of: null,
-    local_quality_score: null,
     sharpness: 1.0,
     exposure: 0.5,
     cluster_key: null,
-    category: null,
     computed_at: '2026-07-20T10:00:00Z',
     ...overrides,
   }

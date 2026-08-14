@@ -30,12 +30,23 @@ export function triggerScore(id: number): Promise<TriggerScanResponse> {
   return apiFetch<TriggerScanResponse>(`/projects/${id}/score`, { method: 'POST' })
 }
 
-export function triggerSelectTop(
-  id: number,
-  topNPerCluster: number
-): Promise<TriggerScanResponse> {
-  return apiFetch<TriggerScanResponse>(`/projects/${id}/select-top`, {
+// Ausschuss-Gate (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md) -
+// synchron (kein Job-Trigger, kein 202), setzt gate_confirmed_at direkt.
+export function confirmAusschussGate(id: number): Promise<TriggerScanResponse> {
+  return apiFetch<TriggerScanResponse>(`/projects/${id}/confirm-ausschuss-gate`, {
     method: 'POST',
-    body: { top_n_per_cluster: topNPerCluster },
+  })
+}
+
+// Ersetzt triggerSelectTop (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md)
+// - kein top_n_per_cluster-Parameter mehr, stattdessen scoring_run_id (Staleness-Guard bei einem
+// zwischenzeitlichen Re-Scan/Re-Scoring, siehe ScoringRunSummary.id).
+export function triggerScoreCriteria(
+  id: number,
+  scoringRunId: number
+): Promise<TriggerScanResponse> {
+  return apiFetch<TriggerScanResponse>(`/projects/${id}/score-criteria`, {
+    method: 'POST',
+    body: { scoring_run_id: scoringRunId },
   })
 }

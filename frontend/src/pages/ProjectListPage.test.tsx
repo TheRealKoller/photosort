@@ -21,7 +21,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     created_at: '2026-07-20T10:00:00Z',
     last_scan: null,
     last_scoring_run: null,
-    last_top_selection_run: null,
+    last_criterion_scoring_run: null,
     category_selection_enabled: true,
     ...overrides,
   }

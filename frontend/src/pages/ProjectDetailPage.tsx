@@ -10,8 +10,8 @@ import {
   POLL_INTERVAL_MS,
   useProjectQuery,
   useTriggerScanMutation,
+  useTriggerScoreCriteriaMutation,
   useTriggerScoreMutation,
-  useTriggerSelectTopMutation,
 } from '../hooks/useProjects'
 import { PROCESS_STATUS_DOT_CLASSES } from '../utils/processStatus'
 import type { ProcessStatus } from '../utils/processStatus'
@@ -124,7 +124,7 @@ export function ProjectDetailPage() {
   const query = useProjectQuery(id)
   const scanMutation = useTriggerScanMutation(id)
   const scoreMutation = useTriggerScoreMutation(id)
-  const selectTopMutation = useTriggerSelectTopMutation(id)
+  const scoreCriteriaMutation = useTriggerScoreCriteriaMutation(id)
 
   const scanStatus = query.data?.last_scan?.status ?? null
   const scanStartedAt = query.data?.last_scan?.started_at ?? null
@@ -143,25 +143,23 @@ export function ProjectDetailPage() {
     query.refetch
   )
 
-  const topSelectionRun = query.data?.last_top_selection_run ?? null
-  const topSelectionStatus = topSelectionRun?.status ?? null
-  const topSelectionStartedAt = topSelectionRun?.started_at ?? null
-  const [awaitingSelectTopConfirmation, setAwaitingSelectTopConfirmation] = useTriggerConfirmation(
-    topSelectionStatus,
-    topSelectionStartedAt,
-    query.refetch
-  )
-  // Default 3 (UI/UX-Abschnitt der Spec) - min=1/max=10 sind nur clientseitige Hinweise
-  // (native <input>-Attribute), die eigentliche Grenze wird serverseitig durchgesetzt
-  // (Field(ge=1, le=10), 422 sonst). `''` ist ein bewusst erlaubter Zwischenzustand fuer ein
-  // geleertes Eingabefeld (Copilot-Review-Fund, PR #51) - haette der State stattdessen sofort auf
-  // den zuletzt gueltigen Wert zurueckgesetzt werden muessen, waere das kontrollierte
-  // <input>-Element beim Tippen mitten im Loeschen/Neueintippen "zurueckgesprungen" (React
-  // erzwingt den DOM-Wert bei jedem Render), was den naechsten Tastendruck an eine falsche
-  // Cursor-Position angehaengt haette. Der leere Zwischenzustand wird erst beim tatsaechlichen
-  // Start (handleTriggerSelectTop) auf den Default 3 aufgeloest, nicht schon bei jedem Tastendruck.
-  const [topNPerCluster, setTopNPerCluster] = useState<number | ''>(3)
-  const effectiveTopNPerCluster = topNPerCluster === '' ? 3 : topNPerCluster
+  // Ersetzt topSelectionRun (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md).
+  const criterionScoringRun = query.data?.last_criterion_scoring_run ?? null
+  const criterionScoringStatus = criterionScoringRun?.status ?? null
+  const criterionScoringStartedAt = criterionScoringRun?.started_at ?? null
+  const [awaitingScoreCriteriaConfirmation, setAwaitingScoreCriteriaConfirmation] =
+    useTriggerConfirmation(criterionScoringStatus, criterionScoringStartedAt, query.refetch)
+
+  // Default 3 (UI/UX-Abschnitt der Spec) - min=1/max=10 sind nur clientseitige Hinweise, die
+  // eigentliche Grenze wird serverseitig durchgesetzt (Field(ge=1, le=10) auf GET /photos, 422
+  // sonst). `''` ist ein bewusst erlaubter Zwischenzustand fuer ein geleertes Eingabefeld
+  // (Copilot-Review-Fund, PR #51, fortgefuehrt aus Spec 0024) - haette der State stattdessen
+  // sofort auf den zuletzt gueltigen Wert zurueckgesetzt werden muessen, waere das kontrollierte
+  // <input>-Element beim Tippen mitten im Loeschen/Neueintippen "zurueckgesprungen". Anders als
+  // in Spec 0024 wird dieser Wert nicht mehr an einen Trigger-Endpunkt gesendet, sondern nur noch
+  // als Query-Parameter der /curate-Route verwendet (N wird erst beim Lesen angewendet).
+  const [topNPerCategory, setTopNPerCategory] = useState<number | ''>(3)
+  const effectiveTopNPerCategory = topNPerCategory === '' ? 3 : topNPerCategory
 
   if (query.isError && query.error instanceof ApiError && query.error.status === 404) {
     return (
@@ -279,45 +277,57 @@ export function ProjectDetailPage() {
   // Projektdaten abgeleitet (category_selection_enabled, last_scoring_run.status), NICHT erst
   // reaktiv nach einem fehlgeschlagenen 403/409. Bereich bleibt in beiden Faellen sichtbar, nur
   // Eingabe/Button werden deaktiviert (kein verschwindender UI-Teil).
-  const isSelectTopFeatureDisabled = project.category_selection_enabled === false
-  const isSelectTopPreconditionMissing = scoringStatus !== 'success'
-  const isSelectTopGateDisabled = isSelectTopFeatureDisabled || isSelectTopPreconditionMissing
-  const isSelectTopBusy =
-    selectTopMutation.isPending ||
-    awaitingSelectTopConfirmation ||
-    topSelectionStatus === 'running'
-  const isSelectTopDisabled = isSelectTopGateDisabled || isSelectTopBusy
+  //
+  // Ausschuss-Gate (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md, neu):
+  // aktiv, sobald die Ausschuss-Erkennung erfolgreich war - unabhaengig von category_selection_
+  // enabled (das Gate selbst ist kein Feature-Flag-Feature). gate_confirmed_at wird entweder vom
+  // Worker automatisch gesetzt (suggestions_found === 0) oder ueber den Gate-Screen bestaetigt
+  // (PhotoGridPage?filter=suggested&gate=1, siehe dort).
+  const isGateSectionActive = scoringStatus === 'success'
+  const gateConfirmedAt = scoringRun?.gate_confirmed_at ?? null
+  const isGateAutoConfirmed = gateConfirmedAt !== null && suggestionsFound === 0
 
-  function handleTriggerSelectTop(): void {
-    if (isSelectTopDisabled) {
+  // Kriterien-Bewertung (ersetzt "Top-Fotos auswählen"/select-top aus Spec 0024): dieselbe
+  // category_selection_enabled-Flag-Semantik (technische Detailentscheidung, siehe backend
+  // config.py-Kommentar), zusaetzlich gate-abhaengig statt nur scoring-abhaengig.
+  const isCriteriaFeatureDisabled = project.category_selection_enabled === false
+  const isCriteriaPreconditionMissing = gateConfirmedAt === null
+  const isCriteriaGateDisabled = isCriteriaFeatureDisabled || isCriteriaPreconditionMissing
+  const isCriteriaBusy =
+    scoreCriteriaMutation.isPending ||
+    awaitingScoreCriteriaConfirmation ||
+    criterionScoringStatus === 'running'
+  const isCriteriaDisabled = isCriteriaGateDisabled || isCriteriaBusy
+
+  function handleTriggerScoreCriteria(): void {
+    if (isCriteriaDisabled || scoringRun === null) {
       return
     }
-    setAwaitingSelectTopConfirmation(true)
-    selectTopMutation.mutate(effectiveTopNPerCluster, {
-      onError: () => setAwaitingSelectTopConfirmation(false),
+    setAwaitingScoreCriteriaConfirmation(true)
+    scoreCriteriaMutation.mutate(scoringRun.id, {
+      onError: () => setAwaitingScoreCriteriaConfirmation(false),
     })
   }
 
-  const selectTopTriggerErrorDetail =
-    selectTopMutation.isError && selectTopMutation.error instanceof ApiError
-      ? selectTopMutation.error.detail
-      : selectTopMutation.isError
-        ? 'Fehler beim Auslösen der Top-Foto-Auswahl.'
+  const scoreCriteriaTriggerErrorDetail =
+    scoreCriteriaMutation.isError && scoreCriteriaMutation.error instanceof ApiError
+      ? scoreCriteriaMutation.error.detail
+      : scoreCriteriaMutation.isError
+        ? 'Fehler beim Auslösen der Kriterien-Bewertung.'
         : null
 
-  const candidatesProcessed = topSelectionRun?.candidates_processed ?? 0
-  const candidatesTotal = topSelectionRun?.candidates_total ?? 0
-  const topSelectionPercent =
-    candidatesTotal > 0 ? Math.floor((candidatesProcessed / candidatesTotal) * 100) : 0
-  const topSelectionAnnouncedDecile = Math.floor(topSelectionPercent / 10) * 10
+  const criteriaPhotosProcessed = criterionScoringRun?.photos_processed ?? 0
+  const criteriaPhotosTotal = criterionScoringRun?.photos_total ?? 0
+  const criteriaPercent =
+    criteriaPhotosTotal > 0
+      ? Math.floor((criteriaPhotosProcessed / criteriaPhotosTotal) * 100)
+      : 0
+  const criteriaAnnouncedDecile = Math.floor(criteriaPercent / 10) * 10
 
-  // "N unterschritten" ist ein normales Ergebnis, kein Fehler (UI/UX-Abschnitt der Spec) - kein
-  // Vergleich zur angeforderten topNPerCluster-Zielanzahl im Text, analog suggestionsFoundText.
-  const topSelectionSuggestionsFound = topSelectionRun?.suggestions_found ?? 0
-  const topSelectionSuggestionsFoundText =
-    topSelectionSuggestionsFound === 1
-      ? '1 Top-Foto ausgewählt'
-      : `${topSelectionSuggestionsFound} Top-Fotos ausgewählt`
+  // Kategorie-Kuratierung (neu, specs/features/0037): nur verfuegbar, sobald die
+  // Kriterien-Bewertung erfolgreich abgeschlossen ist - Top-N wird erst hier, beim Lesen,
+  // angewendet (kein Job-Parameter mehr).
+  const isCurationAvailable = criterionScoringStatus === 'success'
 
   return (
     <div className="flex flex-col gap-6">
@@ -452,116 +462,149 @@ export function ProjectDetailPage() {
         {scoringStatus === 'failed' && <Alert onRetry={handleTriggerScore}>{scoringRun?.error_message}</Alert>}
       </section>
 
-      {/* Top-Fotos auswählen (specs/features/0024-top-photo-selection-category-mix.md): bewusst
-          eine eigenstaendige, von der Ausschuss-Aussortierung getrennte Section - kein
-          Kostenschaetzungs-Schritt, da rein lokal/kostenlos. Bereich bleibt IMMER an dieser Stelle
-          sichtbar, auch wenn das Feature-Flag aus ist oder die Vorbedingung fehlt (Design-System-
-          Muster "Nicht verfuegbare Aktion"). */}
+      {/* Ausschuss-Gate (neu, specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+          backfill.md): aktiv, sobald die Ausschuss-Erkennung oben erfolgreich war. Kein neuer
+          Screen - der eigentliche Sichtungsvorgang findet auf PhotoGridPage?filter=suggested&
+          gate=1 statt (Link unten), diese Section zeigt nur den aktuellen Gate-Status. */}
       <section className="flex flex-col items-start gap-3">
-        <h2 className="text-lg font-semibold text-text-h">Top-Fotos auswählen</h2>
-        <p className="text-sm text-text">
-          Ordnet Fotos automatisch einer Kategorie zu (Landschaft/Detail/Menschen) und wählt pro
-          Foto-Moment bis zu N Top-Fotos aus — läuft vollständig lokal auf diesem Server.
-        </p>
+        <h2 className="text-lg font-semibold text-text-h">Ausschuss-Gate</h2>
 
-        {isSelectTopGateDisabled && (
-          <p className="text-sm text-text">
-            {isSelectTopFeatureDisabled
-              ? 'Diese Funktion ist derzeit nicht aktiviert.'
-              : 'Führe zuerst die lokale Vorauswahl oben aus.'}
+        {!isGateSectionActive && (
+          <p className="text-sm text-text">Sichte zuerst den Ausschuss oben.</p>
+        )}
+
+        {isGateSectionActive && (
+          <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
+            <StatusDot status={gateConfirmedAt !== null ? 'success' : null} />
+            {gateConfirmedAt === null && 'Ausstehend'}
+            {isGateAutoConfirmed && 'Kein Ausschuss gefunden — automatisch bestätigt'}
+            {gateConfirmedAt !== null &&
+              !isGateAutoConfirmed &&
+              `Ausschuss gesichtet am ${new Date(gateConfirmedAt).toLocaleString('de-DE')}`}
           </p>
         )}
 
-        <div className="flex flex-wrap items-end gap-3">
-          <label htmlFor="top-n-per-cluster" className="flex flex-col gap-1 text-sm text-text">
-            Top-Fotos pro Foto-Moment
-            <Input
-              id="top-n-per-cluster"
-              type="number"
-              min={1}
-              max={10}
-              value={topNPerCluster}
-              disabled={isSelectTopDisabled}
-              onChange={(event) => {
-                // Copilot-Review-Fund (PR #51): `Number(event.target.value)` liefert bei einem
-                // geleerten Feld 0 statt NaN (anders als `valueAsNumber`), das waere unbemerkt als
-                // gueltiger State-Wert durchgerutscht und haette top_n_per_cluster=0 an die API
-                // gesendet (422). Ein geleertes Feld wird hier bewusst als eigener `''`-State
-                // gehalten statt sofort auf den letzten gueltigen Wert zurueckzuspringen (siehe
-                // Kommentar bei der State-Deklaration oben) - erst handleTriggerSelectTop loest
-                // `''` auf den Default 3 auf. Getippte Werte werden auf 1..10 geklemmt (client-
-                // seitige Entsprechung zu Field(ge=1, le=10), das serverseitig ohnehin gilt).
-                if (event.target.value === '') {
-                  setTopNPerCluster('')
-                  return
-                }
-                const value = event.target.valueAsNumber
-                if (!Number.isNaN(value)) {
-                  setTopNPerCluster(Math.min(10, Math.max(1, Math.round(value))))
-                }
-              }}
-              className="w-24"
-            />
-          </label>
-          <Button
-            type="button"
-            onClick={handleTriggerSelectTop}
-            disabled={isSelectTopDisabled}
-            busy={isSelectTopBusy}
-          >
-            {isSelectTopBusy ? 'Wird ausgewählt…' : 'Auswahl starten'}
-          </Button>
-        </div>
-        <p className="text-sm text-text">
-          Pro Foto-Moment werden bis zu N Top-Fotos vorgeschlagen (weniger, falls nicht genug
-          passende Motive vorhanden sind).
-        </p>
-
-        {selectTopTriggerErrorDetail && <Alert>{selectTopTriggerErrorDetail}</Alert>}
-
-        <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
-          <StatusDot status={topSelectionStatus} />
-          {topSelectionRun === null && 'Noch nicht ausgewählt'}
-          {topSelectionStatus === 'running' && 'Wird verarbeitet…'}
-          {topSelectionStatus === 'success' && topSelectionSuggestionsFoundText}
-          {topSelectionStatus === 'failed' && 'Fehlgeschlagen'}
-        </p>
-
-        {/* Analog zum Ausschuss-Link oben (specs/features/0027-vorgeschlagene-fotos-filterbar-
-            anzeigen.md) - identischer sichtbarer Text, unterschiedliches aria-label, damit beide
-            Links per Screenreader-Linkliste unterscheidbar bleiben. */}
-        {topSelectionStatus === 'success' && (
+        {isGateSectionActive && gateConfirmedAt === null && (
           <Button asChild variant="secondary" size="sm">
-            <Link
-              to={`/projects/${project.id}/photos?filter=suggested`}
-              aria-label="Vorschläge aus der Top-Foto-Auswahl ansehen"
-            >
-              Vorschläge ansehen
+            <Link to={`/projects/${project.id}/photos?filter=suggested&gate=1`}>
+              Ausschuss sichten
             </Link>
           </Button>
         )}
+      </section>
 
-        {topSelectionStatus === 'running' && (
+      {/* Kriterien-Bewertung (ersetzt "Top-Fotos auswählen"/select-top, specs/features/0024) -
+          bewusst eine eigenstaendige Section, kein top_n_per_cluster-Parameter mehr (N wird erst
+          in der Kategorie-Kuratierung unten beim Lesen angewendet). Bereich bleibt IMMER an
+          dieser Stelle sichtbar, auch wenn das Feature-Flag aus ist oder das Gate noch offen ist
+          (Design-System-Muster "Nicht verfuegbare Aktion"). */}
+      <section className="flex flex-col items-start gap-3">
+        <h2 className="text-lg font-semibold text-text-h">Kriterien-Bewertung</h2>
+        <p className="text-sm text-text">
+          Bewertet jedes verbleibende Foto nach mehreren Kriterien (Schärfe, Belichtung,
+          Bildinhalt) und bildet daraus eine Rangfolge je Foto-Moment und Kategorie — läuft
+          vollständig lokal auf diesem Server.
+        </p>
+
+        {isCriteriaGateDisabled && (
+          <p className="text-sm text-text">
+            {isCriteriaFeatureDisabled
+              ? 'Diese Funktion ist derzeit nicht aktiviert.'
+              : 'Bestätige zuerst den Ausschuss oben.'}
+          </p>
+        )}
+
+        <Button
+          type="button"
+          onClick={handleTriggerScoreCriteria}
+          disabled={isCriteriaDisabled}
+          busy={isCriteriaBusy}
+        >
+          {isCriteriaBusy ? 'Wird bewertet…' : 'Kriterien-Bewertung starten'}
+        </Button>
+
+        {scoreCriteriaTriggerErrorDetail && <Alert>{scoreCriteriaTriggerErrorDetail}</Alert>}
+
+        <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
+          <StatusDot status={criterionScoringStatus} />
+          {criterionScoringRun === null && 'Noch nicht bewertet'}
+          {criterionScoringStatus === 'running' && 'Wird verarbeitet…'}
+          {criterionScoringStatus === 'success' && 'Erfolgreich bewertet'}
+          {criterionScoringStatus === 'failed' && 'Fehlgeschlagen'}
+        </p>
+
+        {criterionScoringStatus === 'running' && (
           <div className="flex w-full max-w-sm flex-col gap-1.5">
             <p className="text-sm text-text">
-              {candidatesProcessed} von {candidatesTotal} Fotos verarbeitet
+              {criteriaPhotosProcessed} von {criteriaPhotosTotal} Fotos verarbeitet
             </p>
-            {candidatesTotal > 0 ? (
-              <Progress value={candidatesProcessed} max={candidatesTotal}>
-                {candidatesProcessed}/{candidatesTotal}
+            {criteriaPhotosTotal > 0 ? (
+              <Progress value={criteriaPhotosProcessed} max={criteriaPhotosTotal}>
+                {criteriaPhotosProcessed}/{criteriaPhotosTotal}
               </Progress>
             ) : (
               <Progress />
             )}
             <p aria-live="polite" className="text-sm text-text">
-              {topSelectionAnnouncedDecile}% verarbeitet
+              {criteriaAnnouncedDecile}% verarbeitet
             </p>
           </div>
         )}
 
-        {topSelectionStatus === 'failed' && (
-          <Alert onRetry={handleTriggerSelectTop}>{topSelectionRun?.error_message}</Alert>
+        {criterionScoringStatus === 'failed' && (
+          <Alert onRetry={handleTriggerScoreCriteria}>{criterionScoringRun?.error_message}</Alert>
         )}
+      </section>
+
+      {/* Kategorie-Kuratierung (neu, specs/features/0037): Top-N-Eingabefeld + Link zur
+          eigenstaendigen /curate-Route. Nur verfuegbar, sobald die Kriterien-Bewertung
+          erfolgreich war. */}
+      <section className="flex flex-col items-start gap-3">
+        <h2 className="text-lg font-semibold text-text-h">Kategorie-Kuratierung</h2>
+        <p className="text-sm text-text">
+          Zeigt pro Foto-Moment und Kategorie die besten N Fotos — sortierst du eines aus, rückt
+          automatisch das nächstbeste derselben Kategorie nach.
+        </p>
+
+        {!isCurationAvailable && (
+          <p className="text-sm text-text">Führe zuerst die Kriterien-Bewertung oben aus.</p>
+        )}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label htmlFor="top-n-per-category" className="flex flex-col gap-1 text-sm text-text">
+            Top-Fotos pro Kategorie
+            <Input
+              id="top-n-per-category"
+              type="number"
+              min={1}
+              max={10}
+              value={topNPerCategory}
+              disabled={!isCurationAvailable}
+              onChange={(event) => {
+                if (event.target.value === '') {
+                  setTopNPerCategory('')
+                  return
+                }
+                const value = event.target.valueAsNumber
+                if (!Number.isNaN(value)) {
+                  setTopNPerCategory(Math.min(10, Math.max(1, Math.round(value))))
+                }
+              }}
+              className="w-24"
+            />
+          </label>
+          {isCurationAvailable ? (
+            <Button asChild variant="secondary">
+              <Link to={`/projects/${project.id}/curate?topN=${effectiveTopNPerCategory}`}>
+                Kuratierung öffnen
+              </Link>
+            </Button>
+          ) : (
+            <Button type="button" variant="secondary" disabled>
+              Kuratierung öffnen
+            </Button>
+          )}
+        </div>
       </section>
 
       <nav aria-label="Fotos" className="flex flex-wrap gap-3">

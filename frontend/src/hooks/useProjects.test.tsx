@@ -6,12 +6,13 @@ import { describe, expect, it, vi } from 'vitest'
 import * as projectsApi from '../api/projects'
 import type { ProjectOut } from '../api/types'
 import {
+  useConfirmAusschussGateMutation,
   useCreateProjectMutation,
   useProjectQuery,
   useProjectsQuery,
   useTriggerScanMutation,
+  useTriggerScoreCriteriaMutation,
   useTriggerScoreMutation,
-  useTriggerSelectTopMutation,
 } from './useProjects'
 
 vi.mock('../api/projects')
@@ -25,7 +26,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     created_at: '2026-07-20T10:00:00Z',
     last_scan: null,
     last_scoring_run: null,
-    last_top_selection_run: null,
+    last_criterion_scoring_run: null,
     category_selection_enabled: true,
     ...overrides,
   }
@@ -122,10 +123,10 @@ describe('useProjectQuery', () => {
     vi.useRealTimers()
   })
 
-  it('keeps polling while the last top-selection run is running', async () => {
+  it('keeps polling while the last criterion-scoring run is running', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.mocked(projectsApi.getProject).mockResolvedValue(
-      project({ last_top_selection_run: runningTopSelectionRun() })
+      project({ last_criterion_scoring_run: runningCriterionScoringRun() })
     )
     const { wrapper } = makeWrapper()
 
@@ -188,17 +189,32 @@ describe('useTriggerScoreMutation', () => {
   })
 })
 
-describe('useTriggerSelectTopMutation', () => {
-  it('invalidates the project detail query after a successful trigger, forwarding top_n_per_cluster', async () => {
-    vi.mocked(projectsApi.triggerSelectTop).mockResolvedValue({ status: 'queued' })
+describe('useConfirmAusschussGateMutation', () => {
+  it('invalidates the project detail query after a successful confirm', async () => {
+    vi.mocked(projectsApi.confirmAusschussGate).mockResolvedValue({ status: 'confirmed' })
     const { wrapper, queryClient } = makeWrapper()
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
-    const { result } = renderHook(() => useTriggerSelectTopMutation(1), { wrapper })
+    const { result } = renderHook(() => useConfirmAusschussGateMutation(1), { wrapper })
+    result.current.mutate()
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(projectsApi.confirmAusschussGate).toHaveBeenCalledWith(1)
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
+  })
+})
+
+describe('useTriggerScoreCriteriaMutation', () => {
+  it('invalidates the project detail query after a successful trigger, forwarding scoring_run_id', async () => {
+    vi.mocked(projectsApi.triggerScoreCriteria).mockResolvedValue({ status: 'queued' })
+    const { wrapper, queryClient } = makeWrapper()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const { result } = renderHook(() => useTriggerScoreCriteriaMutation(1), { wrapper })
     result.current.mutate(5)
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(projectsApi.triggerSelectTop).toHaveBeenCalledWith(1, 5)
+    expect(projectsApi.triggerScoreCriteria).toHaveBeenCalledWith(1, 5)
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
   })
 })
@@ -220,6 +236,7 @@ function runningScan(): ProjectOut['last_scan'] {
 
 function runningScoringRun(): ProjectOut['last_scoring_run'] {
   return {
+    id: 1,
     status: 'running',
     started_at: '2026-07-20T10:00:00Z',
     finished_at: null,
@@ -227,18 +244,17 @@ function runningScoringRun(): ProjectOut['last_scoring_run'] {
     photos_processed: 3,
     suggestions_found: 0,
     error_message: null,
+    gate_confirmed_at: null,
   }
 }
 
-function runningTopSelectionRun(): ProjectOut['last_top_selection_run'] {
+function runningCriterionScoringRun(): ProjectOut['last_criterion_scoring_run'] {
   return {
     status: 'running',
     started_at: '2026-07-20T10:00:00Z',
     finished_at: null,
-    top_n_per_cluster: 3,
-    candidates_total: 10,
-    candidates_processed: 3,
-    suggestions_found: 0,
+    photos_total: 10,
+    photos_processed: 3,
     error_message: null,
   }
 }
