@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.1](https://github.com/TheRealKoller/photosort/compare/v0.6.0...v0.6.1) (2026-08-14)
+
+
+### Bug Fixes
+
+* also install libgles2 for mediapipe FaceDetector ([850a431](https://github.com/TheRealKoller/photosort/commit/850a431c73b5bbe9e8a8d7d2ec65685b7124c9ee))
+* install libegl1 for mediapipe FaceDetector in CI and Docker image ([8c806b8](https://github.com/TheRealKoller/photosort/commit/8c806b8ef1b5f8d68f45335ac4c9735043aec382))
+* libegl1 fehlt für mediapipe FaceDetector in CI/Docker ([5911f9f](https://github.com/TheRealKoller/photosort/commit/5911f9f8f8409f3b6cd218c295a9f4d2d085c1bd))
+
 ## [0.6.0](https://github.com/TheRealKoller/photosort/compare/v0.5.0...v0.6.0) (2026-08-13)
 
 
