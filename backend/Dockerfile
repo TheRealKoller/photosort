@@ -10,10 +10,15 @@ WORKDIR /app
 # vorab in der Spec genannte Risiko betraf nur die Wheel-Installierbarkeit, nicht den tatsaechlichen
 # Laufzeit-Import in diesem konkreten Basisimage). --no-install-recommends haelt das Image schlank,
 # kein GUI-/X11-Server noetig - nur die von OpenCV dynamisch verlinkten Bibliotheken.
+# libegl1 (2026-08-14 ergaenzt): eine neuere mediapipe-Version verlangt beim Instanziieren
+# von FaceDetector zusaetzlich libEGL.so.1 (auch im reinen CPU-Betrieb, ohne GPU-Delegate) -
+# ohne dieses Paket schlaegt jede FaceDetector-Nutzung mit "OSError: libEGL.so.1: cannot
+# open shared object file" fehl.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libxcb1 \
+    libegl1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml alembic.ini ./
