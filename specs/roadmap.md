@@ -6,12 +6,6 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, geordnet nach den unten stehenden Prioritätskategorien, danach die noch ungeschärften Inbox-Einträge ohne eigene Spec; bereits implementierte Specs stehen als Referenz ganz unten.
 
-### Offen — Hoch
-
-| Spec | Titel | Status |
-|---|---|---|
-| [0037](./features/0037-gateführte-bewertungs-pipeline-mit-backfill.md) | Gateführte Bewertungs-Pipeline mit Kriterien-Scoring und Kategorie-Kuratierung | Accepted |
-
 ### Offen — Mittel
 
 | Spec | Titel | Status |
@@ -71,6 +65,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0034](./features/0034-scan-haenger-fortschritts-watchdog.md) | Scan-Hänger-Detektion: Fortschritts-Watchdog gegen dauerhaft hängende Job-Läufe | Implemented ([PR #67](https://github.com/TheRealKoller/photosort/pull/67)) |
 | [0035](./features/0035-klassifizierung-qualitaet-inhalt-recherche.md) | Klassifizierung: Recherche zu Qualitäts- und Bildinhalt-Bestimmung (lokal + Cloud) | Implemented (reine Recherche/Doku, kein PR — Ergebnis direkt in der Spec) |
 | [0036](./features/0036-scan-performance-zweiphasig-parallel.md) | Scan-Performance: Enumerationsphase, begrenzte Parallelisierung, echter Prozent-Fortschritt | Implemented ([PR #73](https://github.com/TheRealKoller/photosort/pull/73)) |
+| [0037](./features/0037-gateführte-bewertungs-pipeline-mit-backfill.md) | Gateführte Bewertungs-Pipeline mit Kriterien-Scoring und Kategorie-Kuratierung | Implemented ([PR #80](https://github.com/TheRealKoller/photosort/pull/80)) — ersetzt [0003](./features/0003-automatic-best-photo-selection.md)/[0024](./features/0024-top-photo-selection-category-mix.md) (beide `Superseded`) |
 
 ## Priorisierung
 
