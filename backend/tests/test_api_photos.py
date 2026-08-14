@@ -7,7 +7,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.config import settings
-from photosort.models import Photo, PhotoCategory, PhotoScore, Project, Rating, RatingStatus, User
+from photosort.models import (
+    CriterionScoringRun,
+    Photo,
+    PhotoRanking,
+    PhotoScore,
+    Project,
+    Rating,
+    RatingStatus,
+    ScanStatus,
+    ScoringRun,
+    User,
+)
 from photosort.security import hash_password
 from photosort.thumbnails import display_path, thumbnail_path
 
@@ -135,56 +146,6 @@ async def test_suggestion_reason_is_low_quality_without_duplicate_of(
     assert suggestion["duplicate_of"] is None
 
 
-async def test_suggestion_reason_is_top_pick_for_album_worthy_status(
-    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    # specs/features/0024-top-photo-selection-category-mix.md: ALBUM_WORTHY wird ausschliesslich
-    # vom neuen select_top_photos-Job gesetzt (Phase A setzt praktisch nur REJECTED) - reason muss
-    # in diesem Fall "top_pick" sein, nicht "low_quality"/"duplicate".
-    project = await _make_project(db_session)
-    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-    db_session.add(
-        PhotoScore(
-            photo_id=photo.id,
-            sharpness=1.0,
-            exposure=0.2,
-            local_quality_score=5.0,
-            category=PhotoCategory.LANDSCAPE,
-            suggested_status=RatingStatus.ALBUM_WORTHY,
-            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
-        )
-    )
-    await db_session.commit()
-
-    response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-
-    suggestion = response.json()["items"][0]["suggestion"]
-    assert suggestion["status"] == "album_worthy"
-    assert suggestion["reason"] == "top_pick"
-    assert suggestion["category"] == "landscape"
-
-
-async def test_suggestion_category_is_null_when_not_classified(
-    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    project = await _make_project(db_session)
-    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-    db_session.add(
-        PhotoScore(
-            photo_id=photo.id,
-            sharpness=1.0,
-            exposure=0.2,
-            suggested_status=RatingStatus.REJECTED,
-            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
-        )
-    )
-    await db_session.commit()
-
-    response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-
-    assert response.json()["items"][0]["suggestion"]["category"] is None
-
-
 async def test_list_photos_hides_suggestion_once_own_rating_exists(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -221,7 +182,6 @@ async def test_list_photos_suggestion_is_null_without_suggested_status(
             photo_id=photo.id,
             sharpness=100.0,
             exposure=0.0,
-            local_quality_score=100.0,
             cluster_key="cluster-0",
             computed_at=datetime(2023, 1, 1, tzinfo=UTC),
         )
@@ -440,12 +400,13 @@ async def test_list_photos_filters_by_suggested_includes_photo_with_other_users_
 async def test_list_photos_filters_by_suggested_mixes_reasons_without_split(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Spec-Akzeptanzkriterium: der suggested-Filter deckt beide Vorschlagsarten (Phase-A-Ausschuss
-    und Top-Picks aus Spec 0024) gemeinsam ab, keine serverseitige Unterteilung nach reason."""
+    """Spec-Akzeptanzkriterium: der suggested-Filter deckt beide Ausschuss-Vorschlagsarten
+    (Duplikat/geringe Qualitaet) gemeinsam ab, keine serverseitige Unterteilung nach reason. Der
+    fruehere dritte "top_pick"-Fall (Spec 0024) ist mit Spec 0037 entfallen - siehe SuggestionOut-
+    Docstring in api/photos.py."""
     project = await _make_project(db_session)
     duplicate = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
     low_quality = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
-    top_pick = await _make_photo(db_session, project, "c.jpg", datetime(2023, 1, 3, tzinfo=UTC))
     db_session.add_all(
         [
             PhotoScore(
@@ -463,13 +424,6 @@ async def test_list_photos_filters_by_suggested_mixes_reasons_without_split(
                 suggested_status=RatingStatus.REJECTED,
                 computed_at=datetime(2023, 1, 1, tzinfo=UTC),
             ),
-            PhotoScore(
-                photo_id=top_pick.id,
-                sharpness=1.0,
-                exposure=0.2,
-                suggested_status=RatingStatus.ALBUM_WORTHY,
-                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
-            ),
         ]
     )
     await db_session.commit()
@@ -479,11 +433,7 @@ async def test_list_photos_filters_by_suggested_mixes_reasons_without_split(
     )
 
     assert response.status_code == 200
-    assert {item["id"] for item in response.json()["items"]} == {
-        duplicate.id,
-        low_quality.id,
-        top_pick.id,
-    }
+    assert {item["id"] for item in response.json()["items"]} == {duplicate.id, low_quality.id}
 
 
 async def test_list_photos_suggested_filter_matches_has_suggestion_parity(
@@ -548,6 +498,191 @@ async def test_list_photos_suggested_filter_matches_has_suggestion_parity(
     actual_ids = {item["id"] for item in filtered.json()["items"]}
     assert expected_ids == actual_ids
     assert actual_ids == {suggested_no_rating.id}
+
+
+async def _make_criterion_scoring_run(
+    session: AsyncSession, project: Project, *, status: ScanStatus = ScanStatus.SUCCESS
+) -> CriterionScoringRun:
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    session.add(scoring_run)
+    await session.flush()
+    run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run.id, status=status
+    )
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    return run
+
+
+async def _add_ranking(
+    session: AsyncSession,
+    run: CriterionScoringRun,
+    photo: Photo,
+    *,
+    cluster_key: str = "cluster-0",
+    category_key: str = "landscape",
+    rank_score: float,
+    rank_position: int,
+) -> None:
+    session.add(
+        PhotoRanking(
+            criterion_scoring_run_id=run.id,
+            photo_id=photo.id,
+            cluster_key=cluster_key,
+            category_key=category_key,
+            rank_score=rank_score,
+            rank_position=rank_position,
+        )
+    )
+    await session.commit()
+
+
+class TestTopNPerCategory:
+    """Kategorie-Kuratierung + Backfill (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+    backfill.md)."""
+
+    async def test_returns_top_n_per_partition_with_ranking_details(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        second = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        third = await _make_photo(db_session, project, "c.jpg", datetime(2023, 1, 3, tzinfo=UTC))
+        await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
+        await _add_ranking(db_session, run, second, rank_score=0.5, rank_position=2)
+        await _add_ranking(db_session, run, third, rank_score=0.1, rank_position=3)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 2}
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 2
+        assert [item["id"] for item in body["items"]] == [first.id, second.id]
+        ranking = body["items"][0]["ranking"]
+        assert ranking == {
+            "cluster_key": "cluster-0",
+            "category_key": "landscape",
+            "rank_score": 0.9,
+            "rank_position": 1,
+        }
+
+    async def test_partitions_are_independent(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        landscape_photo = await _make_photo(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        people_photo = await _make_photo(
+            db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC)
+        )
+        await _add_ranking(
+            db_session, run, landscape_photo, category_key="landscape", rank_score=0.9,
+            rank_position=1,
+        )
+        await _add_ranking(
+            db_session, run, people_photo, category_key="people", rank_score=0.1, rank_position=1
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
+        )
+
+        assert {item["id"] for item in response.json()["items"]} == {
+            landscape_photo.id,
+            people_photo.id,
+        }
+
+    async def test_fewer_than_n_candidates_returns_fewer_without_error(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        only = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, only, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["id"] == only.id
+
+    async def test_backfill_shows_next_best_photo_after_rejecting_the_top_one(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Kernfall der Spec: nach REJECTED des aktuell sichtbaren Top-Fotos liefert ein erneuter
+        # Abruf automatisch das naechstbeste, bisher nicht gezeigte Foto DERSELBEN Partition -
+        # reiner Query-Effekt, kein Backfill-Endpoint, kein aktives "Nachruecken" im Server-Code.
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        second = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
+        await _add_ranking(db_session, run, second, rank_score=0.5, rank_position=2)
+
+        before = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
+        )
+        assert [item["id"] for item in before.json()["items"]] == [first.id]
+
+        await authenticated_api_client.put(
+            f"/photos/{first.id}/rating", json={"status": "rejected"}
+        )
+
+        after = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
+        )
+        assert [item["id"] for item in after.json()["items"]] == [second.id]
+
+    async def test_rejection_filter_is_scoped_to_the_current_user(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Personenbezug (Akzeptanzkriterium der Spec): ein von Nutzer A abgelehntes Foto bleibt
+        # fuer Nutzer B sichtbar, solange der es nicht selbst ablehnt.
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        other_user = await _make_second_user(db_session)
+        db_session.add(Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.REJECTED))
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
+        )
+
+        assert [item["id"] for item in response.json()["items"]] == [photo.id]
+
+    async def test_empty_before_any_successful_criterion_scoring_run(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 3}
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"items": [], "total": 0}
+
+    async def test_rejects_top_n_per_category_outside_valid_range(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 11}
+        )
+
+        assert response.status_code == 422
 
 
 async def test_list_photos_returns_404_for_unknown_project(

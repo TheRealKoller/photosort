@@ -9,7 +9,10 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from photosort.config import settings
 from photosort.db import Base
 from photosort.models import (  # noqa: F401  (registers tables on Base)
+    CriterionScoringRun,
     Photo,
+    PhotoCriterionScore,
+    PhotoRanking,
     PhotoScore,
     Project,
     Rating,

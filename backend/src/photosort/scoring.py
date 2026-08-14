@@ -80,15 +80,6 @@ def hamming_distance(hash_a: str, hash_b: str) -> int:
     return bin(int(hash_a, 16) ^ int(hash_b, 16)).count("1")
 
 
-def local_quality_score(sharpness: float, exposure: float) -> float:
-    """Dokumentierte Formel aus Schaerfe+Belichtung (Akzeptanzkriterium der Spec): belohnt hohe
-    Schaerfe, bestraft proportional zum Anteil geclippter Pixel. Bewusst simpel (kein weiteres
-    Normalisierungsmodell fuer die unbeschraenkte Laplace-Varianz-Skala) - ausreichend, um
-    innerhalb eines Clusters die relative Reihenfolge sinnvoll abzubilden; Phase A spricht ohnehin
-    keine positive Empfehlung anhand dieses Werts aus (siehe ADR 0006)."""
-    return sharpness * (1.0 - exposure)
-
-
 @dataclass(frozen=True)
 class DuplicateCandidate:
     photo_id: int

@@ -9,13 +9,10 @@ from PIL import Image, ImageDraw
 from photosort.classification import (
     _FACE_DETECTOR_MODEL_PATH,
     FACE_DETECTOR_MODEL_SHA256,
-    CategoryCandidate,
-    classify_category,
+    FaceBoundingBox,
     compute_uniform_area_fraction,
     detect_person,
-    select_top_n_with_category_mix,
 )
-from photosort.models import PhotoCategory
 
 
 def _solid(color: tuple[int, int, int] = (120, 120, 120), size: int = 160) -> Image.Image:
@@ -77,100 +74,56 @@ class TestComputeUniformAreaFraction:
 
 class FakeFaceDetector:
     """Faket die schmale Teilmenge der mediapipe-FaceDetector-API, die detect_person braucht -
-    kein echtes .tflite-Modell in Tests (Teststrategie-Abschnitt der Spec)."""
+    kein echtes .tflite-Modell in Tests (Teststrategie-Abschnitt der Spec). Jeder Score erzeugt
+    eine Erkennung mit einer festen, plausiblen Pixel-Bounding-Box (specs/features/0037-
+    gatefuehrte-bewertungs-pipeline-mit-backfill.md: detect_person gibt seit dieser Spec
+    normierte FaceBoundingBox-Objekte statt bool zurueck)."""
 
-    def __init__(self, scores: list[float]) -> None:
+    def __init__(
+        self,
+        scores: list[float],
+        box: tuple[int, int, int, int] = (10, 20, 40, 40),
+    ) -> None:
         self._scores = scores
+        self._box = box
 
     def detect(self, image: object) -> object:
+        origin_x, origin_y, width, height = self._box
         return SimpleNamespace(
             detections=[
-                SimpleNamespace(categories=[SimpleNamespace(score=score)])
+                SimpleNamespace(
+                    categories=[SimpleNamespace(score=score)],
+                    bounding_box=SimpleNamespace(
+                        origin_x=origin_x, origin_y=origin_y, width=width, height=height
+                    ),
+                )
                 for score in self._scores
             ]
         )
 
 
 class TestDetectPerson:
-    def test_returns_true_when_a_detection_meets_the_confidence_threshold(self) -> None:
-        assert detect_person(_solid(), FakeFaceDetector([0.9])) is True
+    def test_returns_a_box_when_a_detection_meets_the_confidence_threshold(self) -> None:
+        boxes = detect_person(_solid(size=160), FakeFaceDetector([0.9]))
+        assert len(boxes) == 1
+        assert boxes[0].confidence == 0.9
 
-    def test_returns_false_when_the_only_detection_is_below_the_confidence_threshold(
+    def test_returns_empty_list_when_the_only_detection_is_below_the_confidence_threshold(
         self,
     ) -> None:
-        assert detect_person(_solid(), FakeFaceDetector([0.1])) is False
+        assert detect_person(_solid(), FakeFaceDetector([0.1])) == []
 
-    def test_returns_false_with_no_detections_at_all(self) -> None:
-        assert detect_person(_solid(), FakeFaceDetector([])) is False
+    def test_returns_empty_list_with_no_detections_at_all(self) -> None:
+        assert detect_person(_solid(), FakeFaceDetector([])) == []
 
-    def test_returns_true_if_any_of_several_detections_meets_the_threshold(self) -> None:
-        assert detect_person(_solid(), FakeFaceDetector([0.1, 0.95])) is True
+    def test_returns_a_box_for_each_detection_meeting_the_threshold(self) -> None:
+        boxes = detect_person(_solid(), FakeFaceDetector([0.1, 0.95]))
+        assert len(boxes) == 1
 
-
-class TestClassifyCategory:
-    def test_detected_face_wins_over_everything_else(self) -> None:
-        category = classify_category(_solid(), None, detect_person=lambda image, detector: True)
-        assert category == PhotoCategory.PEOPLE
-
-    def test_uniform_image_without_a_face_is_landscape(self) -> None:
-        category = classify_category(_solid(), None, detect_person=lambda image, detector: False)
-        assert category == PhotoCategory.LANDSCAPE
-
-    def test_textured_image_without_a_face_falls_back_to_detail(self) -> None:
-        category = classify_category(_noisy(), None, detect_person=lambda image, detector: False)
-        assert category == PhotoCategory.DETAIL
-
-
-class TestSelectTopNWithCategoryMix:
-    def test_distributes_via_divmod_across_three_categories_in_fixed_order(self) -> None:
-        candidates = [
-            CategoryCandidate(1, PhotoCategory.LANDSCAPE, 9.0),
-            CategoryCandidate(2, PhotoCategory.LANDSCAPE, 8.0),
-            CategoryCandidate(3, PhotoCategory.DETAIL, 9.0),
-            CategoryCandidate(4, PhotoCategory.DETAIL, 8.0),
-            CategoryCandidate(5, PhotoCategory.PEOPLE, 9.0),
-            CategoryCandidate(6, PhotoCategory.PEOPLE, 8.0),
-        ]
-        # divmod(4, 3) = (1, 1) -> LANDSCAPE (erste in fester Reihenfolge) bekommt den einen
-        # Rest-Sitz zusaetzlich: LANDSCAPE=2, DETAIL=1, PEOPLE=1.
-        selected = select_top_n_with_category_mix(candidates, 4)
-        assert selected == sorted([1, 2, 3, 5])
-
-    def test_tie_break_picks_the_lower_photo_id(self) -> None:
-        candidates = [
-            CategoryCandidate(2, PhotoCategory.LANDSCAPE, 5.0),
-            CategoryCandidate(1, PhotoCategory.LANDSCAPE, 5.0),
-        ]
-        assert select_top_n_with_category_mix(candidates, 1) == [1]
-
-    def test_only_one_category_present_gets_the_full_quota(self) -> None:
-        candidates = [
-            CategoryCandidate(i, PhotoCategory.DETAIL, float(i)) for i in range(1, 6)
-        ]
-        assert select_top_n_with_category_mix(candidates, 3) == [3, 4, 5]
-
-    def test_category_with_too_few_photos_is_not_backfilled_from_other_categories(self) -> None:
-        # Kernfall der Spec: divmod(6, 3) = (2, 0) -> Quote 2 je Kategorie. LANDSCAPE hat nur 1
-        # Foto -> nur 1 wird gewaehlt, KEIN Nachziehen aus DETAIL/PEOPLE trotz dort vorhandener
-        # weiterer Kandidaten - die Gesamttrefferzahl bleibt unter N.
-        candidates = [
-            CategoryCandidate(1, PhotoCategory.LANDSCAPE, 9.0),
-            CategoryCandidate(2, PhotoCategory.DETAIL, 9.0),
-            CategoryCandidate(3, PhotoCategory.DETAIL, 8.0),
-            CategoryCandidate(4, PhotoCategory.DETAIL, 7.0),
-            CategoryCandidate(5, PhotoCategory.PEOPLE, 9.0),
-            CategoryCandidate(6, PhotoCategory.PEOPLE, 8.0),
-        ]
-        selected = select_top_n_with_category_mix(candidates, 6)
-        assert selected == sorted([1, 2, 3, 5, 6])
-
-    def test_n_greater_than_cluster_size_returns_all_available_without_padding(self) -> None:
-        candidates = [CategoryCandidate(1, PhotoCategory.LANDSCAPE, 5.0)]
-        assert select_top_n_with_category_mix(candidates, 10) == [1]
-
-    def test_single_photo_cluster(self) -> None:
-        candidates = [CategoryCandidate(42, PhotoCategory.PEOPLE, 1.0)]
-        assert select_top_n_with_category_mix(candidates, 3) == [42]
-
-    def test_empty_candidates_returns_empty_list(self) -> None:
-        assert select_top_n_with_category_mix([], 3) == []
+    def test_bounding_box_is_normalized_to_image_size(self) -> None:
+        # 160x160 Bild, Box bei (10, 20, 40, 40) Pixeln -> Zentrum bei (30/160, 40/160).
+        boxes = detect_person(_solid(size=160), FakeFaceDetector([0.9], box=(10, 20, 40, 40)))
+        box = boxes[0]
+        assert box == FaceBoundingBox(
+            x_center=30 / 160, y_center=40 / 160, width=40 / 160, height=40 / 160, confidence=0.9
+        )

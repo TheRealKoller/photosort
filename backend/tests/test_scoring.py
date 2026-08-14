@@ -16,7 +16,6 @@ from photosort.scoring import (
     compute_exposure,
     compute_sharpness,
     hamming_distance,
-    local_quality_score,
 )
 
 
@@ -109,16 +108,6 @@ class TestComputeDhash:
 
         assert len(digest) == 16  # 64 bit == 16 hex chars
         int(digest, 16)  # must be parseable as hex
-
-
-class TestLocalQualityScore:
-    def test_sharper_and_better_exposed_photo_scores_higher(self) -> None:
-        assert local_quality_score(sharpness=100.0, exposure=0.0) > local_quality_score(
-            sharpness=100.0, exposure=0.5
-        )
-        assert local_quality_score(sharpness=200.0, exposure=0.0) > local_quality_score(
-            sharpness=100.0, exposure=0.0
-        )
 
 
 class TestAssignDuplicateClusters:

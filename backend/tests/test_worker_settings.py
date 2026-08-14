@@ -7,8 +7,8 @@ from photosort.worker import (
     WorkerSettings,
     reap_stalled_runs,
     scan_project,
+    score_criteria,
     score_project,
-    select_top_photos,
 )
 
 # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
@@ -39,11 +39,11 @@ def test_score_project_registered_with_generous_timeout_and_no_background_retry(
     assert by_coroutine[score_project].max_tries == _EXPECTED_MAX_TRIES
 
 
-def test_select_top_photos_registered_with_generous_timeout_and_no_background_retry() -> None:
+def test_score_criteria_registered_with_generous_timeout_and_no_background_retry() -> None:
     by_coroutine = _registered_by_coroutine()
 
-    assert by_coroutine[select_top_photos].timeout_s == _EXPECTED_TIMEOUT_S
-    assert by_coroutine[select_top_photos].max_tries == _EXPECTED_MAX_TRIES
+    assert by_coroutine[score_criteria].timeout_s == _EXPECTED_TIMEOUT_S
+    assert by_coroutine[score_criteria].max_tries == _EXPECTED_MAX_TRIES
 
 
 def test_reap_stalled_runs_registered_as_cron_job_every_five_minutes_at_startup() -> None:
