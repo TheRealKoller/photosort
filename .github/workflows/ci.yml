@@ -25,7 +25,7 @@ jobs:
         # schlaegt sonst zur Laufzeit (z.B. FaceDetector-Instanziierung in
         # test_classification.py) mit "OSError: libEGL.so.1/libGL.so.1/... cannot open
         # shared object file" fehl.
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libxcb1 libegl1
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libxcb1 libegl1 libgles2
       - name: Install uv
         run: pip install uv
       - name: Install dependencies
