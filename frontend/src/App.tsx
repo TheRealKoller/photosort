@@ -5,6 +5,7 @@ import { decodeUsername } from './auth/jwt'
 import { clearToken, getToken } from './auth/token'
 import { useUnauthorizedRedirect } from './auth/useUnauthorizedRedirect'
 import { Button } from './components/ui/button'
+import { CurateCategoriesPage } from './pages/CurateCategoriesPage'
 import { LoginPage } from './pages/LoginPage'
 import { PhotoComparePage } from './pages/PhotoComparePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
@@ -67,6 +68,7 @@ function App() {
           <Route path="/projects/:projectId/photos" element={<PhotoGridPage />} />
           <Route path="/projects/:projectId/photos/:photoId" element={<PhotoDetailPage />} />
           <Route path="/projects/:projectId/compare" element={<PhotoComparePage />} />
+          <Route path="/projects/:projectId/curate" element={<CurateCategoriesPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
