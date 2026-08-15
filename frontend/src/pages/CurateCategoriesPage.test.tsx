@@ -27,6 +27,7 @@ function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
     category_key: 'landscape',
     rank_score: 0.8,
     rank_position: 1,
+    partition_size: 1,
     ...overrides,
   }
 }
@@ -39,6 +40,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     ratings: [],
     suggestion: null,
     ranking: ranking(),
+    criterion_scores: [],
     ...overrides,
   }
 }

@@ -106,13 +106,32 @@ export interface SuggestionOut {
 export type CategoryKey = string
 
 // Kuratierungs-Kontext eines Fotos aus der Kriterien-/Rangfolgen-Pipeline
-// (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md) - nur gesetzt, wenn das
-// Foto Teil des per `top_n_per_category` abgefragten Top-N-Ergebnisses ist.
+// (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md). Seit
+// specs/features/0040-bewertungsdetails-info-popover.md auch im Standard-Listing befuellt (nicht
+// mehr nur bei `top_n_per_category`).
 export interface RankingOut {
   cluster_key: string
   category_key: CategoryKey
   rank_score: number
   rank_position: number
+  // Groesse der GESAMTEN Cluster x Kategorie-Partition (nicht nur der angeforderten top_n), fuer
+  // "Rang M von N" im Info-Popover (specs/features/0040-bewertungsdetails-info-popover.md).
+  partition_size: number
+}
+
+// Herkunft eines Kriterien-Werts (backend models.py::CriterionSource) - aktuell nur zur Anzeige
+// im Info-Popover, kein Frontend-Verhalten haengt vom konkreten Wert ab.
+export type CriterionSource = 'local_heuristic' | 'local_ml' | 'cloud'
+
+// Ein einzelner, bereits normierter Kriterien-Wert eines Fotos
+// (specs/features/0040-bewertungsdetails-info-popover.md) - exponiert die seit Spec 0037
+// vorhandene PhotoCriterionScore-Tabelle. Best-effort: nur Kriterien, fuer die tatsaechlich ein
+// Wert berechnet wurde, sind enthalten (kein 0/Platzhalter fuer fehlende).
+export interface CriterionScoreOut {
+  criterion_key: string
+  display_name: string
+  value: number
+  source: CriterionSource
 }
 
 export interface PhotoOut {
@@ -122,6 +141,7 @@ export interface PhotoOut {
   ratings: RatingOut[]
   suggestion: SuggestionOut | null
   ranking: RankingOut | null
+  criterion_scores: CriterionScoreOut[]
 }
 
 export interface PhotoListOut {
