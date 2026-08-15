@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.0](https://github.com/TheRealKoller/photosort/compare/v0.8.0...v0.9.0) (2026-08-15)
+
+
+### Features
+
+* Aesthetik-Kriterium (NIMA/MobileNet ueber tensorflow) ([b57f776](https://github.com/TheRealKoller/photosort/commit/b57f7762a3f34eb7f7fba0eb56ca5d6e4b4584ce))
+* Gebaeude-Kriterium (classify_scene, EfficientNet-Lite0) ([8006135](https://github.com/TheRealKoller/photosort/commit/8006135b115b1ce4e151bab1fb8ceaa3ae3ea810))
+* Goldener-Schnitt-Kriterium (compute_golden_ratio_score) ([995f082](https://github.com/TheRealKoller/photosort/commit/995f0822934d58bf878b3414e209d201b0ebc023))
+* Tier-Kriterium (detect_animals, EfficientDet-Lite0) + Goldener-Schnitt-Verdrahtung ([dbecb44](https://github.com/TheRealKoller/photosort/commit/dbecb442401557edab6ac7a10603b96984f7b448))
+* Vier zusätzliche Kriterien (Tier, Gebäude, Goldener Schnitt, Ästhetik) ([5e1490f](https://github.com/TheRealKoller/photosort/commit/5e1490f5b7acfd937a16e703a6dd3d065646637b))
+
+
+### Bug Fixes
+
+* Copilot-Review-Findings beheben (PR [#88](https://github.com/TheRealKoller/photosort/issues/88)) ([95f3ed6](https://github.com/TheRealKoller/photosort/commit/95f3ed609351cb7a536f5069e40d08cbd86ff292))
+
 ## [0.8.0](https://github.com/TheRealKoller/photosort/compare/v0.7.0...v0.8.0) (2026-08-15)
 
 
