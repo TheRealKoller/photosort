@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,14 +107,63 @@ def _no_face_detector() -> NoFaceDetector:
     return NoFaceDetector()
 
 
+class NoAnimalDetector:
+    """Faket den mediapipe ObjectDetector so, dass nie ein Tier gefunden wird - der injizierte
+    build_animal_detector-Callable ersetzt worker.py::build_object_detector (specs/features/0038:
+    build_object_detector darf wie build_face_detector NIE in einem automatisierten Test
+    aufgerufen werden, kein echtes .tflite-Modell in Tests)."""
+
+    def detect(self, image: object) -> object:
+        return SimpleNamespace(detections=[])
+
+
+def _no_animal_detector() -> NoAnimalDetector:
+    return NoAnimalDetector()
+
+
+class NoSceneLabels:
+    """Faket den mediapipe ImageClassifier so, dass keine Szenen-Kategorie gefunden wird - der
+    injizierte build_classifier-Callable ersetzt worker.py::build_scene_classifier
+    (specs/features/0038: build_scene_classifier darf wie build_face_detector NIE in einem
+    automatisierten Test aufgerufen werden, kein echtes .tflite-Modell in Tests)."""
+
+    def classify(self, image: object) -> object:
+        return SimpleNamespace(classifications=[SimpleNamespace(categories=[])])
+
+
+def _no_scene_classifier() -> NoSceneLabels:
+    return NoSceneLabels()
+
+
+class NeutralAestheticsModel:
+    """Faket das Keras-Modell so, dass eine neutrale, gleichverteilte NIMA-Ratingverteilung
+    zurueckgegeben wird - der injizierte build_aesthetics-Callable ersetzt
+    worker.py::build_aesthetics_model (specs/features/0038: build_aesthetics_model darf wie
+    build_face_detector NIE in einem automatisierten Test aufgerufen werden, kein echtes
+    tensorflow-Modell in Tests)."""
+
+    def predict(self, batch: object) -> object:
+        return np.array([[0.1] * 10], dtype="float32")
+
+
+def _no_aesthetics_model() -> NeutralAestheticsModel:
+    return NeutralAestheticsModel()
+
+
 async def test_guard_fails_run_when_scoring_run_id_does_not_exist(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     project = await _make_project(db_session)
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run_id=999, cache_dir=tmp_path,
+        db_session,
+        project,
+        scoring_run_id=999,
+        cache_dir=tmp_path,
         build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -135,8 +185,14 @@ async def test_guard_fails_run_when_scoring_run_id_is_stale(
     )
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run_id=stale_run.id, cache_dir=tmp_path,
+        db_session,
+        project,
+        scoring_run_id=stale_run.id,
+        cache_dir=tmp_path,
         build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -152,8 +208,14 @@ async def test_guard_fails_run_when_latest_scoring_run_is_not_successful(
     await db_session.refresh(run_row)
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run_id=run_row.id, cache_dir=tmp_path,
+        db_session,
+        project,
+        scoring_run_id=run_row.id,
+        cache_dir=tmp_path,
         build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -171,7 +233,14 @@ async def test_writes_sharpness_and_exposure_criteria_from_existing_photo_score(
     _write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -201,7 +270,14 @@ async def test_upserts_existing_criterion_score_instead_of_duplicating(
     _write_display_variant(tmp_path, photo, _flat_image())
 
     await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
     # Zweiter Lauf mit geaenderten Rohwerten - der bestehende Wert wird ueberschrieben (Upsert),
     # keine zweite Zeile (UniqueConstraint(photo_id, criterion_key)).
@@ -212,45 +288,63 @@ async def test_upserts_existing_criterion_score_instead_of_duplicating(
     await db_session.commit()
 
     await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     rows = (
-        await db_session.execute(
-            select(PhotoCriterionScore).where(
-                PhotoCriterionScore.photo_id == photo.id,
-                PhotoCriterionScore.criterion_key == "sharpness",
+        (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(
+                    PhotoCriterionScore.photo_id == photo.id,
+                    PhotoCriterionScore.criterion_key == "sharpness",
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     assert rows[0].value == 1.0  # 200.0 / 200.0 ceiling, geklemmt
 
 
-async def test_only_considers_ausschuss_survivors(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_only_considers_ausschuss_survivors(db_session: AsyncSession, tmp_path: Path) -> None:
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     rejected = await _add_photo(
         db_session, project, "rejected.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    await _add_score(
-        db_session, rejected, cluster_key=None, suggested_status=RatingStatus.REJECTED
-    )
+    await _add_score(db_session, rejected, cluster_key=None, suggested_status=RatingStatus.REJECTED)
     _write_display_variant(tmp_path, rejected, _flat_image())
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.SUCCESS
     assert run.photos_total == 0
     criteria = (
-        await db_session.execute(
-            select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == rejected.id)
+        (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == rejected.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert criteria == []
 
 
@@ -268,7 +362,14 @@ async def test_best_effort_content_criteria_failure_does_not_fail_the_run(
     # noetig).
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -281,6 +382,466 @@ async def test_best_effort_content_criteria_failure_does_not_fail_the_run(
         ).scalars()
     }
     assert criteria == {"sharpness", "exposure"}
+
+
+class AnimalDetectorStub:
+    """Faket den mediapipe ObjectDetector so, dass GENAU EIN Tier gefunden wird (specs/features/
+    0038) - analog NoAnimalDetector, aber mit einem echten Treffer statt einer leeren Liste."""
+
+    def __init__(self, category: str = "dog", score: float = 0.9) -> None:
+        self._category = category
+        self._score = score
+
+    def detect(self, image: object) -> object:
+        return SimpleNamespace(
+            detections=[
+                SimpleNamespace(
+                    categories=[SimpleNamespace(category_name=self._category, score=self._score)],
+                    bounding_box=SimpleNamespace(origin_x=10, origin_y=10, width=40, height=40),
+                )
+            ]
+        )
+
+
+def _animal_detector_stub() -> AnimalDetectorStub:
+    return AnimalDetectorStub()
+
+
+class SceneClassifierStub:
+    """Faket den mediapipe ImageClassifier so, dass GENAU EINE (architekturbezogene) Kategorie
+    gefunden wird - analog AnimalDetectorStub."""
+
+    def __init__(self, category: str = "church", score: float = 0.8) -> None:
+        self._category = category
+        self._score = score
+
+    def classify(self, image: object) -> object:
+        return SimpleNamespace(
+            classifications=[
+                SimpleNamespace(
+                    categories=[SimpleNamespace(category_name=self._category, score=self._score)]
+                )
+            ]
+        )
+
+
+def _scene_classifier_stub() -> SceneClassifierStub:
+    return SceneClassifierStub()
+
+
+class CountingDetector:
+    """Zaehlt Aufrufe von detect() - Wiederverwendungsnachweis (Akzeptanzkriterium der Spec 0038:
+    detect_person/detect_animals werden je Foto hoechstens einmal aufgerufen und fuer mehrere
+    davon abhaengige Kriterien wiederverwendet, statt fuer jedes Kriterium erneut zu
+    detektieren)."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def detect(self, image: object) -> object:
+        self.call_count += 1
+        return SimpleNamespace(detections=[])
+
+
+async def test_tier_criterion_is_written_when_an_animal_is_detected(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "dog.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_animal_detector_stub,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert criteria["tier"] == 0.9
+
+
+async def test_a_failing_model_builder_does_not_fail_the_run_or_unrelated_criteria(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Copilot-Review-Fund (PR #88): anders als ein detect()-Aufruf, der WAEHREND der Foto-
+    # Schleife fehlschlaegt (siehe die uebrigen best-effort-Tests), simuliert dieser Test einen
+    # Fehlschlag des BUILDERS selbst (z.B. fehlendes/defektes Modell-Asset) - passiert VOR der
+    # Schleife, einmalig fuer den gesamten Lauf. sharpness/exposure/content_landscape duerfen
+    # trotzdem fuer JEDES Foto geschrieben werden, nur die vom fehlgeschlagenen Face-Detector
+    # abhaengigen Kriterien (content_people/goldener_schnitt) bleiben ungeschrieben.
+    def _broken_face_detector_builder() -> NoFaceDetector:
+        raise RuntimeError("Modell-Asset fehlt/ist defekt")
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_broken_face_detector_builder,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert "content_people" not in criteria
+    assert "goldener_schnitt" not in criteria
+    assert "sharpness" in criteria
+    assert "exposure" in criteria
+    assert "content_landscape" in criteria
+    assert "tier" in criteria  # haengt nicht vom Face-Detector-Builder ab
+    assert "gebaeude" in criteria
+    assert "aesthetics" in criteria
+
+
+async def test_tier_criterion_best_effort_failure_does_not_fail_the_run_or_other_criteria(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Eigener Fehlerfall-Testlauf spezifisch fuer "tier" (Akzeptanzkriterium der Spec: "Je
+    # Kriterium mindestens ein eigener Fehlerfall-Testlauf, nicht nur ein generischer").
+    class BrokenAnimalDetector:
+        def detect(self, image: object) -> object:
+            raise RuntimeError("Modell-Ladefehler")
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=BrokenAnimalDetector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    # tier UND goldener_schnitt haengen beide von detect_animals ab, bleiben also beide
+    # ungeschrieben - content_people/content_landscape (haengen nicht von detect_animals ab)
+    # werden trotzdem geschrieben.
+    assert "tier" not in criteria
+    assert "goldener_schnitt" not in criteria
+    assert "content_people" in criteria
+    assert "content_landscape" in criteria
+    assert "gebaeude" in criteria  # haengt nicht von detect_animals ab
+
+
+async def test_gebaeude_criterion_is_written_when_an_architecture_label_is_detected(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "church.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_scene_classifier_stub,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert criteria["gebaeude"] == 0.8
+
+
+async def test_gebaeude_criterion_best_effort_failure_does_not_fail_the_run_or_other_criteria(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Eigener Fehlerfall-Testlauf spezifisch fuer "gebaeude" (Akzeptanzkriterium der Spec: "Je
+    # Kriterium mindestens ein eigener Fehlerfall-Testlauf, nicht nur ein generischer").
+    class BrokenSceneClassifier:
+        def classify(self, image: object) -> object:
+            raise RuntimeError("Modell-Ladefehler")
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=BrokenSceneClassifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    # gebaeude haengt NICHT von detect_person/detect_animals ab - ein Fehler dort darf weder
+    # goldener_schnitt (unbetroffen) noch tier/content_people mit sich reissen.
+    assert "gebaeude" not in criteria
+    assert "goldener_schnitt" in criteria
+    assert "tier" in criteria
+    assert "content_people" in criteria
+    assert "aesthetics" in criteria  # haengt nicht von classify_scene ab
+
+
+async def test_aesthetics_criterion_is_written_from_the_model_prediction(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    class HighRatingAestheticsModel:
+        def predict(self, batch: object) -> object:
+            return np.array([[0.0] * 8 + [0.1, 0.9]], dtype="float32")  # Erwartungswert nahe 10
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=HighRatingAestheticsModel,
+    )
+
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert criteria["aesthetics"] > 0.95
+
+
+async def test_aesthetics_criterion_best_effort_failure_does_not_fail_the_run_or_other_criteria(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Eigener Fehlerfall-Testlauf spezifisch fuer "aesthetics" (Akzeptanzkriterium der Spec: "Je
+    # Kriterium mindestens ein eigener Fehlerfall-Testlauf, nicht nur ein generischer").
+    class BrokenAestheticsModel:
+        def predict(self, batch: object) -> object:
+            raise RuntimeError("Modell-Ladefehler")
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=BrokenAestheticsModel,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert "aesthetics" not in criteria
+    assert "gebaeude" in criteria
+    assert "tier" in criteria
+    assert "content_people" in criteria
+    assert "goldener_schnitt" in criteria
+
+
+async def test_goldener_schnitt_best_effort_failure_when_face_detection_fails(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Eigener, von der Tier-Fehlerfall-Variante UNTERSCHIEDLICHER Ausloeser (Face- statt
+    # Animal-Detektor) - goldener_schnitt haengt von BEIDEN Detektionen ab, faellt also auch bei
+    # einem reinen Face-Detector-Fehler aus, obwohl der Animal-Detektor erfolgreich war.
+    class BrokenFaceDetector:
+        def detect(self, image: object) -> object:
+            raise RuntimeError("Modell-Ladefehler")
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=BrokenFaceDetector,
+        build_animal_detector=_animal_detector_stub,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert "content_people" not in criteria
+    assert "goldener_schnitt" not in criteria
+    assert "tier" in criteria  # haengt nur vom (hier funktionierenden) Animal-Detektor ab
+
+
+async def test_goldener_schnitt_is_written_when_both_detections_succeed_even_without_a_subject(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    # Weder Gesicht noch Tier erkannt (beide Detektoren liefern erfolgreich eine leere Liste) -
+    # dokumentierter niedriger Fallback-Wert (0.0), kein fehlendes Kriterium.
+    assert criteria["goldener_schnitt"] == 0.0
+
+
+async def test_detect_person_and_detect_animals_are_each_called_at_most_once_per_photo(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Wiederverwendungsnachweis via Spy/Aufrufzaehler (Akzeptanzkriterium der Spec 0038):
+    # content_people UND goldener_schnitt teilen sich EINEN detect_person-Aufruf, tier UND
+    # goldener_schnitt teilen sich EINEN detect_animals-Aufruf - kein Kriterium detektiert
+    # eigenstaendig ein zweites Mal.
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    face_detector = CountingDetector()
+    animal_detector = CountingDetector()
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=lambda: face_detector,
+        build_animal_detector=lambda: animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    assert face_detector.call_count == 1
+    assert animal_detector.call_count == 1
 
 
 async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
@@ -298,14 +859,25 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
         photos.append(photo)
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     rankings = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     # Voller Pool (nicht nur Top-N) - alle 3 Fotos landen ausserdem in derselben Partition
     # (gleicher cluster_key, alle als LANDSCAPE klassifiziert -> content_people=0, uniform hoch).
     assert len(rankings) == 3
@@ -336,14 +908,25 @@ async def test_partitions_are_isolated_by_cluster_and_category(
     _write_display_variant(tmp_path, cluster_b, _flat_image())
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     rankings = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     # Beide Cluster haben je genau 1 Foto -> je rank_position 1, unabhaengig voneinander.
     assert {r.rank_position for r in rankings} == {1}
     assert {r.cluster_key for r in rankings} == {"cluster-a", "cluster-b"}
@@ -366,7 +949,14 @@ async def test_progress_is_committed_periodically(
         _write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.photos_total == 3
@@ -391,7 +981,14 @@ async def test_criterion_scoring_updates_last_progress_at_at_each_checkpoint(
     _write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.last_progress_at == sentinel
@@ -419,8 +1016,14 @@ async def test_run_marked_failed_on_cancelled_error(
 
     try:
         await run_criterion_scoring(
-            db_session, project, scoring_run.id, cache_dir=tmp_path,
+            db_session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
             build_detector=CancellingDetector,
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_no_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
         )
         raised = False
     except asyncio.CancelledError:
@@ -451,10 +1054,24 @@ async def test_rescoring_does_not_overwrite_ratings(
     _write_display_variant(tmp_path, photo, _flat_image())
 
     first_run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
     second_run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert first_run.status == ScanStatus.SUCCESS
@@ -478,13 +1095,24 @@ async def test_end_to_end_with_run_project_scoring(
     assert scoring_run.gate_confirmed_at is not None  # keine Duplikate/Unschaerfe -> Auto-Gate
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.SUCCESS
     rankings = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rankings) == 1

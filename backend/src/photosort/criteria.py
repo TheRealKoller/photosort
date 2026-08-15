@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import math
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 from PIL import Image
 
 from photosort.classification import (
     LANDSCAPE_UNIFORM_FRACTION_THRESHOLD,
+    AnimalDetection,
+    FaceBoundingBox,
     FaceDetectorLike,
+    SceneLabel,
     compute_uniform_area_fraction,
     detect_person,
 )
@@ -35,6 +41,13 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
     "content_landscape": CriterionDefinition(
         "content_landscape", "Landschaft/Flächig", CriterionSource.LOCAL_HEURISTIC
     ),
+    # specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md ab hier:
+    "tier": CriterionDefinition("tier", "Tier erkannt", CriterionSource.LOCAL_ML),
+    "goldener_schnitt": CriterionDefinition(
+        "goldener_schnitt", "Goldener Schnitt", CriterionSource.LOCAL_HEURISTIC
+    ),
+    "gebaeude": CriterionDefinition("gebaeude", "Gebäude erkannt", CriterionSource.LOCAL_ML),
+    "aesthetics": CriterionDefinition("aesthetics", "Ästhetik", CriterionSource.LOCAL_ML),
 }
 
 # Obergrenze fuer die Normierung der unbeschraenkten Laplace-Varianz-Skala (scoring.py::
@@ -59,13 +72,29 @@ def normalize_exposure(raw_exposure: float) -> float:
     return 1.0 - max(0.0, min(1.0, raw_exposure))
 
 
+def content_people_from_faces(faces: list[FaceBoundingBox]) -> float:
+    """Reine Score-Berechnung aus einer bereits vorhandenen FaceBoundingBox-Liste, OHNE eigene
+    Detektion (Spec 0038: worker.py::_compute_content_criteria ruft detect_person nur EINMAL auf
+    und nutzt das Ergebnis sowohl fuer content_people als auch fuer goldener_schnitt weiter, statt
+    detect_person zweimal aufzurufen)."""
+    return 1.0 if faces else 0.0
+
+
 def compute_content_people(image: Image.Image, detector: FaceDetectorLike) -> float:
-    """`content_people`-Kriterium (Akzeptanzkriterium der Spec: mind. zwei Inhalts-Kriterien,
+    """`content_people`-Kriterium (Akzeptanzkriterium der Spec 0037: mind. zwei Inhalts-Kriterien,
     wiederverwendet aus classification.py). Score-Grundlage bleibt `bool(detect_person(...))`
-    (Vorgriffs-Ergaenzung der Spec: detect_person liefert seit dieser Spec zwar bereits
+    (Vorgriffs-Ergaenzung der Spec 0037: detect_person liefert seit dieser Spec zwar bereits
     FaceBoundingBox-Listen fuer die kuenftige Goldener-Schnitt-Kriterien-Spec 0038, funktional
-    aendert sich fuer dieses Kriterium hier nichts)."""
-    return 1.0 if detect_person(image, detector) else 0.0
+    aendert sich fuer dieses Kriterium hier nichts).
+
+    Hinweis (Spec 0038, Review-Nachtrag 2026-08-15): worker.py::_compute_content_criteria ruft
+    diese Funktion seit Spec 0038 NICHT mehr direkt auf, sondern detect_person +
+    content_people_from_faces getrennt (um die bereits erkannten faces auch fuer goldener_schnitt
+    wiederzuverwenden, ohne detect_person zweimal aufzurufen). compute_content_people bleibt
+    trotzdem als eigenstaendige, weiterhin getestete Einheit bestehen (Spec-0037-Vertrag, nicht
+    Teil des Scopes dieser Spec, hier entfernt zu werden) - reiner Delegations-Wrapper um
+    content_people_from_faces, kein doppelt gepflegter Logikpfad."""
+    return content_people_from_faces(detect_person(image, detector))
 
 
 def compute_content_landscape(image: Image.Image) -> float:
@@ -73,6 +102,167 @@ def compute_content_landscape(image: Image.Image) -> float:
     compute_uniform_area_fraction) ist bereits auf [0, 1] normiert, "hoeher = flaechiger/eher
     Landschaft" - keine weitere Transformation noetig."""
     return compute_uniform_area_fraction(image)
+
+
+class SubjectBoxLike(Protocol):
+    """Schmale strukturelle Schnittstelle, die compute_golden_ratio_score fuer ein Kompositions-
+    Subjekt braucht - sowohl FaceBoundingBox (classification.py) als auch die kuenftige
+    AnimalDetection (Spec 0038, Tier-Kriterium) erfuellen sie, ohne dass criteria.py eine harte
+    Abhaengigkeit auf den Tier-Erkennungscode braucht (Reihenfolge der Spec: Goldener Schnitt vor
+    Tier implementiert). Als Nur-Lese-Properties (statt einfacher Attribut-Annotationen)
+    deklariert, damit auch @dataclass(frozen=True)-Implementierungen (FaceBoundingBox) den
+    Vertrag strukturell erfuellen - mypy --strict wertet einfache Attribut-Annotationen in einem
+    Protocol als lese-/schreibbar, was ein unveraenderliches Dataclass-Feld nicht erfuellen kann."""
+
+    @property
+    def x_center(self) -> float: ...
+    @property
+    def y_center(self) -> float: ...
+    @property
+    def width(self) -> float: ...
+    @property
+    def height(self) -> float: ...
+
+
+# Die vier Drittel-Schnittpunkte der Drittelregel/des Goldenen Schnitts (Architektur-Abschnitt der
+# Spec 0038: "Distanz des/der Subjekt-Zentren zu den vier Drittel-Schnittpunkten"). Ursprung oben
+# links, normiert auf [0, 1] wie FaceBoundingBox.
+_GOLDEN_RATIO_THIRD_POINTS: tuple[tuple[float, float], ...] = (
+    (1 / 3, 1 / 3),
+    (2 / 3, 1 / 3),
+    (1 / 3, 2 / 3),
+    (2 / 3, 2 / 3),
+)
+
+# Groesstmoeglicher Abstand eines Punkts im Einheitsquadrat zu seinem naechstgelegenen
+# Drittel-Schnittpunkt - liegt an den vier Bildecken (z.B. (0,0) -> naechster Punkt (1/3,1/3)),
+# Abstand dort ist sqrt(2)/3. Dient als Nenner, um die raueumliche Distanz auf [0, 1] zu normieren
+# (technische Detailentscheidung der Umsetzung, geometrisch exakt hergeleitet, keine
+# Kalibrierungsfrage wie bei den uebrigen SCHWELLWERT-Konstanten dieses Moduls).
+_GOLDEN_RATIO_MAX_DISTANCE = math.sqrt(2) / 3
+
+
+def _bounding_box_area(box: SubjectBoxLike) -> float:
+    return box.width * box.height
+
+
+def _largest_by_area[T: SubjectBoxLike](boxes: Sequence[T]) -> T:
+    # Eigene kleine generische Hilfsfunktion statt max(boxes, key=_bounding_box_area) direkt am
+    # Aufrufort - mypy --strict kann den Rueckgabetyp von max() sonst nicht praezise an den
+    # jeweils konkreten Sequenztyp (list[FaceBoundingBox] vs. Sequence[SubjectBoxLike]) binden,
+    # wenn `key` als Protocol-Parameter typisiert ist (bekannte mypy-Ungenauigkeit bei
+    # max()-Ueberladungen mit Protocol-Argumenten).
+    return max(boxes, key=_bounding_box_area)
+
+
+def _select_primary_subject(
+    faces: list[FaceBoundingBox], animals: Sequence[SubjectBoxLike]
+) -> SubjectBoxLike | None:
+    """Waehlt EIN Subjekt-Zentrum fuer die Kompositions-Bewertung (Akzeptanzkriterium der Spec:
+    "getestete, dokumentierte Auswahlregel, keine implizite/zufaellige Auswahl der ersten
+    Bounding-Box"). Regel: erkannte Gesichter haben grundsaetzlich Vorrang vor Tier-Erkennungen
+    (Menschen sind fuer Daniel/seine Frau typischerweise das relevantere Kompositions-Subjekt,
+    ADR 0022 Punkt 4: Tier nur als Fallback "falls kein Gesicht erkannt wurde"); bei mehreren
+    Kandidaten derselben Art gewinnt die groesste Bounding-Box-Flaeche (Prominenz-Mass, konsistent
+    mit der in ADR 0022 Punkt 1 fuer den Tier-Score gewaehlten Flaechen-Gewichtung)."""
+    if faces:
+        return _largest_by_area(faces)
+    if animals:
+        return _largest_by_area(animals)
+    return None
+
+
+def compute_golden_ratio_score(
+    faces: list[FaceBoundingBox], animals: Sequence[SubjectBoxLike] = ()
+) -> float:
+    """`goldener_schnitt`-Kriterium (Spec 0038): reine geometrische Heuristik ohne eigenes
+    ML-Modell, wiederverwendet ausschliesslich Positionsdaten aus bereits vorhandenen Detektionen
+    (`detect_person`/eine kuenftige Tier-Erkennung, ADR 0022 Punkt 4) - kein neuer
+    Bildverarbeitungsschritt. Bewertet, wie nah das primaere Subjekt (siehe
+    _select_primary_subject) an einem der vier Drittel-Schnittpunkte liegt, invers auf [0, 1]
+    normiert ueber _GOLDEN_RATIO_MAX_DISTANCE. Horizont-Linien-Erkennung ist bewusst nicht
+    umgesetzt (Out-of-Scope der Spec: "keine neuen Bildverarbeitungsschritte fuer die
+    Kompositions-Analyse").
+
+    Bewusst eine reine Funktion OHNE eigenen detect_person/detect_animals-Aufruf (anders als ein
+    frueherer Entwurf mit einer zusaetzlichen `compute_golden_ratio(image, ...)`-Wrapper-Funktion,
+    Review-Fund: totes Produktionscode-Fragment, siehe Commit-Historie) - worker.py::
+    _compute_content_criteria ruft detect_person/detect_animals bereits fuer content_people/tier
+    auf und reicht die Ergebnislisten hier direkt durch (ein zusaetzlicher detect()-Aufruf pro
+    Foto waere angesichts des in ADR 0022 dokumentierten Compute-Overhead-Risikos unnoetig). Der
+    Wiederverwendungsnachweis (Akzeptanzkriterium der Spec: "Spy/Aufrufzaehler statt
+    Reimplementierung") liegt deshalb konsequent auf Worker-Integrationsebene, siehe
+    test_worker_criterion_scoring.py::
+    test_detect_person_and_detect_animals_are_each_called_at_most_once_per_photo."""
+    subject = _select_primary_subject(faces, animals)
+    if subject is None:
+        # Dokumentierter, niedriger (nicht neutraler) Fallback-Wert (Akzeptanzkriterium der Spec)
+        # - ohne erkennbares Subjekt gibt es kein Kompositions-Signal; 0.0 statt eines
+        # "neutralen" 0.5 vermeidet, ein diesbezueglich nicht messbares Foto positiv zu werten.
+        # Kein Fehler/keine Exception (bewusste Entscheidung, kein neuer Bildverarbeitungsschritt
+        # wie eine Horizont-Erkennung wird dafuer nachgerüstet).
+        return 0.0
+    distance = min(
+        math.sqrt((subject.x_center - tx) ** 2 + (subject.y_center - ty) ** 2)
+        for tx, ty in _GOLDEN_RATIO_THIRD_POINTS
+    )
+    return max(0.0, min(1.0, 1.0 - distance / _GOLDEN_RATIO_MAX_DISTANCE))
+
+
+def compute_tier_score(animals: Sequence[AnimalDetection]) -> float:
+    """`tier`-Kriterium (ADR 0022 Punkt 1): Score = Konfidenz des PROMINENTESTEN erkannten Tieres
+    (bereits in [0, 1], da detect_animals nur oberhalb von ANIMAL_DETECTION_CONFIDENCE_THRESHOLD
+    liefert). Aggregationsregel bei mehreren erkannten Tieren (Akzeptanzkriterium der Spec: "muss
+    dokumentiert UND getestet sein, keine stillschweigende Auswahl") - die groesste Bounding-Box-
+    Flaeche gewinnt, NICHT die hoechste Konfidenz: ein kleines, aber sehr sicher erkanntes Tier am
+    Bildrand soll nicht automatisch ueber ein grossflaechig im Bild praesentes Tier mit etwas
+    niedrigerer Konfidenz gewinnen (konsistent mit der Subjekt-Auswahl in
+    _select_primary_subject/compute_golden_ratio_score)."""
+    if not animals:
+        return 0.0
+    return _largest_by_area(animals).confidence
+
+
+# Kuratierte Allow-Liste architekturbezogener ImageNet-1k-Klassen (ADR 0022 Punkt 2) - die acht
+# im Architektur-Abschnitt der Spec 0038 explizit genannten Klassen plus eine kleine, ebenfalls
+# gut belegte Erweiterung ("u.a." in der Spec) verwandter ImageNet-Architektur-Synsets. Technische
+# Detailentscheidung der Umsetzung (die Spec selbst laesst die genaue Liste bewusst offen) - siehe
+# Modul-Kommentar in classification.py fuer die Begruendung, warum die Filterung HIER und nicht in
+# classify_scene selbst passiert. Dokumentierte, bewusst akzeptierte Luecke (AK-Pflicht der Spec,
+# ADR 0022 Punkt 2): ImageNet hat kaum Innenraum-Klassen, `living_room`/`kitchen`/`office` werden
+# strukturell nicht erkannt - nur Aussenarchitektur wird zuverlaessig erfasst.
+ARCHITECTURE_CATEGORIES = frozenset(
+    {
+        "church",
+        "castle",
+        "palace",
+        "dome",
+        "library",
+        "lighthouse",
+        "barn",
+        "mosque",
+        "monastery",
+        "bell_cote",
+        "boathouse",
+        "obelisk",
+        "stupa",
+        "triumphal_arch",
+        "viaduct",
+        "suspension_bridge",
+    }
+)
+
+
+def compute_gebaeude_score(labels: Sequence[SceneLabel]) -> float:
+    """`gebaeude`-Kriterium (ADR 0022 Punkt 2): Score = Konfidenz des besten Treffers INNERHALB
+    der ARCHITECTURE_CATEGORIES-Allow-Liste, 0.0 falls keiner der uebergebenen `labels` in der
+    Allow-Liste enthalten ist - auch bei hoher Modell-Konfidenz einer nicht-architekturbezogenen
+    Kategorie (Akzeptanzkriterium der Spec: "Nachweis, dass tatsaechlich die Allow-Liste filtert
+    und nicht nur die rohe Modell-Konfidenz durchgereicht wird")."""
+    allowed = [label for label in labels if label.category in ARCHITECTURE_CATEGORIES]
+    if not allowed:
+        return 0.0
+    return max(label.confidence for label in allowed)
 
 
 # Schwelle, ab der content_people als "Gesicht erkannt" gilt (compute_content_people liefert nur
