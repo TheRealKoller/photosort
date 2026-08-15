@@ -86,11 +86,17 @@ mypy_path = "src"
 module = ["mediapipe.*"]
 ignore_missing_imports = true
 
-# tensorflow liefert eigene Typstubs, aber das lokale Dev-Environment dieses Repos laeuft auf
-# einer Python-Version, fuer die (Stand Umsetzung) noch kein tensorflow-Wheel existiert (Ziel-
-# Image ist python:3.12-slim, siehe pyproject.toml-Dependency-Kommentar) - ignore_missing_imports
-# haelt mypy --strict trotzdem lauffaehig, ohne die Typpruefung fuer den Rest des Projekts
-# aufzuweichen (gleiches Muster wie beim mediapipe-Override oben).
+# tensorflow liefert eigene Typstubs, aber nicht jede lokale Dev-Umgebung dieses Repos kann
+# tensorflow tatsaechlich installieren (Copilot-Review-Fund, PR #88: praezisiert, welche Groesse
+# hier eigentlich das Problem ist - NICHT die oben konfigurierte `python_version = "3.12"`
+# [das ist die von mypy fuer die STATISCHE Typpruefung angenommene Zielversion, unabhaengig vom
+# tatsaechlichen Interpreter], sondern die konkrete lokale Interpreter-/Plattform-Kombination:
+# z.B. eine neuere CPython-Version, fuer die zum jeweiligen Zeitpunkt noch kein passendes
+# tensorflow-Wheel auf PyPI existiert - das Ziel-Image `python:3.12-slim`/x86_64/aarch64 selbst
+# ist unproblematisch, siehe pyproject.toml-Dependency-Kommentar oben) - ignore_missing_imports
+# haelt mypy --strict trotzdem lauffaehig, entkoppelt von der lokalen tensorflow-
+# Installierbarkeit, ohne die Typpruefung fuer den Rest des Projekts aufzuweichen (gleiches
+# Muster wie beim mediapipe-Override oben).
 [[tool.mypy.overrides]]
 module = ["tensorflow.*"]
 ignore_missing_imports = true

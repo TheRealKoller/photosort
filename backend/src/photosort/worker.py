@@ -752,27 +752,46 @@ class CriterionScoringGuardError(Exception):
     Worker-Job, zusaetzlich zum eigenen 409 der API-Schicht, ADR 0021 Punkt 7)."""
 
 
-# criterion_key -> CriterionSource fuer alle in _compute_content_criteria best-effort berechneten
-# Kriterien (specs/features/0037/0038) - eine Tabelle statt vier einzelner if-Bloecke im
-# Aufrufer, damit ein weiteres kuenftiges Bild-basiertes Kriterium (z.B. gebaeude/aesthetics)
-# keine Kopie des Upsert-Codes braucht.
+# Die von _compute_content_criteria best-effort berechneten Kriterien-Keys (specs/features/
+# 0037/0038) - eine Liste statt sechs einzelner if-Bloecke im Aufrufer, damit ein weiteres
+# kuenftiges Bild-basiertes Kriterium keine Kopie des Upsert-Codes braucht. Die zugehoerige
+# CriterionSource wird bewusst NICHT hier dupliziert, sondern direkt aus criteria.py::
+# CRITERIA_REGISTRY abgeleitet (Copilot-Review-Fund, PR #88) - eine kuenftige Aenderung an der
+# Registry (z.B. ein Kriterium wechselt von local_heuristic zu local_ml) bleibt so automatisch
+# konsistent, ohne dass diese Stelle separat nachgepflegt werden muss.
+_CONTENT_CRITERION_KEYS: tuple[str, ...] = (
+    "content_people",
+    "content_landscape",
+    "tier",
+    "goldener_schnitt",
+    "gebaeude",
+    "aesthetics",
+)
 _CONTENT_CRITERION_SOURCES: dict[str, CriterionSource] = {
-    "content_people": CriterionSource.LOCAL_ML,
-    "content_landscape": CriterionSource.LOCAL_HEURISTIC,
-    "tier": CriterionSource.LOCAL_ML,
-    "goldener_schnitt": CriterionSource.LOCAL_HEURISTIC,
-    "gebaeude": CriterionSource.LOCAL_ML,
-    "aesthetics": CriterionSource.LOCAL_ML,
+    key: CRITERIA_REGISTRY[key].source for key in _CONTENT_CRITERION_KEYS
 }
+
+
+def _try_build[T](build: Callable[[], T]) -> T | None:
+    """Best-effort Modell-/Detektor-Konstruktion (Copilot-Review-Fund, PR #88): ein Fehlschlag
+    GENAU EINES Builders (fehlendes/defektes Asset, mediapipe-/tensorflow-Laufzeitproblem) darf
+    weder den gesamten CriterionScoringRun noch die von den UEBRIGEN, erfolgreich gebauten
+    Modellen abhaengigen Kriterien mit sich reissen - konsistent mit dem Best-effort-Grundsatz,
+    der bereits fuer die einzelnen Kriterien-Berechnungen selbst gilt (siehe
+    _compute_content_criteria)."""
+    try:
+        return build()
+    except Exception:
+        return None
 
 
 def _compute_content_criteria(
     cache_dir: Path,
     photo: Photo,
-    face_detector: FaceDetectorLike,
-    animal_detector: ObjectDetectorLike,
-    scene_classifier: SceneClassifierLike,
-    aesthetics_model: AestheticsModelLike,
+    face_detector: FaceDetectorLike | None,
+    animal_detector: ObjectDetectorLike | None,
+    scene_classifier: SceneClassifierLike | None,
+    aesthetics_model: AestheticsModelLike | None,
 ) -> dict[str, float]:
     """Best-effort wie scoring.py::_compute_photo_metrics (Akzeptanzkriterium der Spec 0037/0038):
     JEDES hier berechnete Kriterium hat sein EIGENES try/except - ein einzelner fehlgeschlagener
@@ -780,7 +799,11 @@ def _compute_content_criteria(
     Detektor) darf weder den gesamten Lauf noch die UEBRIGEN, unabhaengig berechenbaren Kriterien
     desselben Fotos mit sich reissen (Spec-0038-AK: "Je Kriterium mindestens ein eigener
     Fehlerfall-Testlauf") - das jeweils betroffene Kriterium bleibt fuer dieses Foto einfach
-    ungeschrieben (kein Platzhalterwert wie 0).
+    ungeschrieben (kein Platzhalterwert wie 0). Die vier Detektoren/Modelle sind hier bewusst
+    `| None` typisiert (Copilot-Review-Fund, PR #88): schlug der zugehoerige `_try_build`-Aufruf
+    im Aufrufer bereits fehl, wird das betroffene Kriterium (bzw. die davon abhaengigen) hier
+    einfach uebersprungen, statt mit einem ungueltigen Objekt eine Exception zu provozieren, die
+    erst durch das try/except unten "zufaellig" richtig behandelt wuerde.
 
     detect_person/detect_animals werden je HOECHSTENS einmal aufgerufen und fuer mehrere davon
     abhaengige Kriterien wiederverwendet (content_people+goldener_schnitt bzw.
@@ -805,33 +828,37 @@ def _compute_content_criteria(
     values: dict[str, float] = {}
 
     faces: list[FaceBoundingBox] | None = None
-    try:
-        faces = detect_person(image, face_detector)
-        values["content_people"] = content_people_from_faces(faces)
-    except Exception:
-        faces = None
+    if face_detector is not None:
+        try:
+            faces = detect_person(image, face_detector)
+            values["content_people"] = content_people_from_faces(faces)
+        except Exception:
+            faces = None
 
     animals: list[AnimalDetection] | None = None
-    try:
-        animals = detect_animals(image, animal_detector)
-        values["tier"] = compute_tier_score(animals)
-    except Exception:
-        animals = None
+    if animal_detector is not None:
+        try:
+            animals = detect_animals(image, animal_detector)
+            values["tier"] = compute_tier_score(animals)
+        except Exception:
+            animals = None
 
     try:
         values["content_landscape"] = compute_content_landscape(image)
     except Exception:
         pass
 
-    try:
-        values["gebaeude"] = compute_gebaeude_score(classify_scene(image, scene_classifier))
-    except Exception:
-        pass
+    if scene_classifier is not None:
+        try:
+            values["gebaeude"] = compute_gebaeude_score(classify_scene(image, scene_classifier))
+        except Exception:
+            pass
 
-    try:
-        values["aesthetics"] = compute_aesthetics(image, aesthetics_model)
-    except Exception:
-        pass
+    if aesthetics_model is not None:
+        try:
+            values["aesthetics"] = compute_aesthetics(image, aesthetics_model)
+        except Exception:
+            pass
 
     if faces is not None and animals is not None:
         try:
@@ -925,14 +952,19 @@ async def run_criterion_scoring(
                 ).scalars()
             }
 
-        detector: FaceDetectorLike | None = build_detector() if rows else None
-        animal_detector: ObjectDetectorLike | None = build_animal_detector() if rows else None
-        scene_classifier: SceneClassifierLike | None = (
-            build_classifier() if rows else None
-        )
-        aesthetics_model: AestheticsModelLike | None = (
-            build_aesthetics() if rows else None
-        )
+        # Copilot-Review-Fund (PR #88): die Modell-Builder selbst liefen bisher UNGESCHUETZT vor
+        # der Foto-Schleife - ein Fehlschlag eines einzelnen Builders (fehlendes/defektes
+        # .tflite-/.hdf5-Asset, mediapipe-/tensorflow-Laufzeitproblem) haette den GESAMTEN Lauf
+        # als FAILED markiert, obwohl die Kriterien pro Foto bewusst best-effort behandelt werden
+        # (Akzeptanzkriterium der Spec 0038). Jeder Builder bekommt deshalb sein eigenes
+        # try/except: schlaegt einer fehl, bleibt der zugehoerige Detektor/Klassifikator/das
+        # Modell None, _compute_content_criteria ueberspringt dann NUR die davon abhaengigen
+        # Kriterien (siehe dortige `if ... is not None`-Wächter) - sharpness/exposure und alle
+        # anderen, unabhaengig berechenbaren Kriterien werden trotzdem geschrieben.
+        detector = _try_build(build_detector) if rows else None
+        animal_detector = _try_build(build_animal_detector) if rows else None
+        scene_classifier = _try_build(build_classifier) if rows else None
+        aesthetics_model = _try_build(build_aesthetics) if rows else None
         now = _now_utc()
 
         def _upsert_criterion(
@@ -967,10 +999,10 @@ async def run_criterion_scoring(
             )
             values["exposure"] = exposure_value
 
-            assert detector is not None  # rows nicht leer => Detektoren wurden oben gebaut
-            assert animal_detector is not None
-            assert scene_classifier is not None
-            assert aesthetics_model is not None
+            # Kein assert-is-not-None mehr hier (Copilot-Review-Fund, PR #88): jeder der vier
+            # Builder oben ist ueber _try_build best-effort abgesichert und kann legitim None
+            # sein - _compute_content_criteria ueberspringt die davon abhaengigen Kriterien dann
+            # selbst, statt dass ein fehlgeschlagener Builder den gesamten Lauf abbricht.
             content_values = _compute_content_criteria(
                 cache_dir, photo, detector, animal_detector, scene_classifier, aesthetics_model
             )

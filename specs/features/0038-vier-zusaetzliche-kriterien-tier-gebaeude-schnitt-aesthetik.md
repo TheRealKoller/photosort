@@ -2,7 +2,7 @@
 
 **Status:** Implemented ([PR #88](https://github.com/TheRealKoller/photosort/pull/88))
 **Erstellt:** 2026-08-13
-**Bezug:** Entscheidung mit Daniel am 2026-08-13 im Kontext der Recherche-Ergebnisse (Spec 0035, PR #72) zu lokalen vs. Cloud-Kriterien. Abhängig von Spec 0037 (gateführte Bewertungs-Pipeline, Status Accepted, noch nicht implementiert). Nicht Teil dieser Spec: Sehenswürdigkeit-Erkennung (Cloud-only, eigene Inbox-Notiz `specs/inbox/0017-sehenswuerdigkeit-erkennung-cloud.md`).
+**Bezug:** Entscheidung mit Daniel am 2026-08-13 im Kontext der Recherche-Ergebnisse (Spec 0035, PR #72) zu lokalen vs. Cloud-Kriterien. Abhängig von Spec 0037 (gateführte Bewertungs-Pipeline, Status **Implemented**, [PR #80](https://github.com/TheRealKoller/photosort/pull/80) — zum Zeitpunkt der Entscheidung/Schärfung dieser Spec noch Accepted/nicht implementiert, seitdem umgesetzt; Copilot-Review-Fund PR #88, hier nachträglich korrigiert). Nicht Teil dieser Spec: Sehenswürdigkeit-Erkennung (Cloud-only, eigene Inbox-Notiz `specs/inbox/0017-sehenswuerdigkeit-erkennung-cloud.md`).
 
 ## Ziel
 
