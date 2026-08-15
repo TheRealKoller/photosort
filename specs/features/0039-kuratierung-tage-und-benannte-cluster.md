@@ -1,6 +1,6 @@
 # 0039 - Kategorie-Kuratierung: Gruppierung nach Tagen und benannte Zeitfenster-Cluster
 
-**Status:** Accepted
+**Status:** Implemented ([PR #91](https://github.com/TheRealKoller/photosort/pull/91))
 **Erstellt:** 2026-08-15
 **Bezug:** Inbox-Eintrag [`specs/inbox/0020-kuratierung-tage-und-benannte-cluster.md`](../inbox/0020-kuratierung-tage-und-benannte-cluster.md), idea-sharpener-Gespräch mit Daniel
 
