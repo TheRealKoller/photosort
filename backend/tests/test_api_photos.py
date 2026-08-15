@@ -25,8 +25,8 @@ from photosort.security import hash_password
 from photosort.thumbnails import display_path, thumbnail_path
 
 
-async def _make_project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Project:
+    project = Project(name=name, opencloud_drive_id="d", opencloud_path="/a")
     session.add(project)
     await session.commit()
     await session.refresh(project)
@@ -692,6 +692,35 @@ class TestTopNPerCategory:
 
         assert response.status_code == 422
 
+    async def test_includes_criterion_scores_alongside_ranking(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Test-Review-Fund: criterion_scores und ranking wurden bisher nur je einzeln getestet,
+        # nie im selben (top_n_per_category-)Zweig kombiniert - _to_photo_out setzt aber beide in
+        # derselben Funktion.
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="sharpness",
+                value=0.5,
+                source=CriterionSource.LOCAL_HEURISTIC,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
+        )
+
+        item = response.json()["items"][0]
+        assert item["ranking"] is not None
+        assert [c["criterion_key"] for c in item["criterion_scores"]] == ["sharpness"]
+
 
 class TestCriterionScores:
     """Bewertungsdetails-Info-Popover (specs/features/0040-bewertungsdetails-info-popover.md):
@@ -847,6 +876,38 @@ class TestDefaultListingRanking:
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
         assert response.json()["items"][0]["ranking"] is None
+
+    async def test_partition_size_is_isolated_per_project_in_default_listing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Security-Review-Fund: kein dedizierter Cross-Project-Isolationstest fuer den neuen,
+        # im Default-Listing-Zweig befuellten partition_size/RankingOut-Pfad - beide Projekte
+        # nutzen absichtlich dieselben cluster_key/category_key-Werte ("cluster-0"/"landscape"),
+        # damit ein etwaiges fehlendes project_id-Scoping in _partition_sizes/
+        # _latest_successful_criterion_scoring_run_id sichtbar wuerde (Partition-Groesse 3 statt 1).
+        other_project = await _make_project(db_session, name="Other Trip")
+        other_run = await _make_criterion_scoring_run(db_session, other_project)
+        for index in range(3):
+            other_photo = await _make_photo(
+                db_session,
+                other_project,
+                f"other-{index}.jpg",
+                datetime(2023, 1, index + 1, tzinfo=UTC),
+            )
+            await _add_ranking(
+                db_session, other_run, other_photo, rank_score=0.5, rank_position=index + 1
+            )
+
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.status_code == 200
+        [item] = response.json()["items"]
+        assert item["ranking"]["partition_size"] == 1
 
 
 async def test_list_photos_returns_404_for_unknown_project(

@@ -11,7 +11,16 @@ export function formatSuggestionReason(suggestion: SuggestionOut): string {
   if (suggestion.reason === 'duplicate') {
     return `Duplikat von Foto #${suggestion.duplicate_of}`
   }
-  return 'Geringe Bildqualität'
+  if (suggestion.reason === 'low_quality') {
+    return 'Geringe Bildqualität'
+  }
+  // Test-Review-Fund: ein reiner else-Fallback wuerde einen kuenftigen dritten
+  // SuggestionReason-Wert stillschweigend als "Geringe Bildqualität" ausgeben, statt sichtbar zu
+  // brechen. `SuggestionReason` ist aktuell ein geschlossener Zwei-Wert-Union-Typ - die
+  // `never`-Zuweisung erzwingt einen Compile-Fehler genau hier, sobald ein dritter Wert ergaenzt
+  // wird, ohne diese Funktion anzupassen.
+  const exhaustive: never = suggestion.reason
+  return exhaustive
 }
 
 export function formatSuggestionStatusLabel(suggestion: SuggestionOut): string {

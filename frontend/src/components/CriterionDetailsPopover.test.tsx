@@ -234,6 +234,115 @@ describe('CriterionDetailsPopover', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
+  // Test-Review-Fund: die eigentliche Hover-vor-Klick-Falle war bisher ungetestet - jede
+  // bestehende Klick-Assertion lief mit stubMatchMedia(false), der Ref-Pfad in
+  // handleTriggerClick wurde also nie durchlaufen. Diese Sequenz deckt genau den Pfad ab, fuer
+  // den justOpenedByHoverRef gebaut wurde.
+  it('stays open through the click that immediately follows a hover-open, then closes on a genuinely separate click (matches: true)', async () => {
+    stubMatchMedia(true)
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsPopover
+        criterionScores={[criterionScore()]}
+        ranking={null}
+        suggestion={null}
+      />
+    )
+    const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+    // Ein echter Mausklick loest zuerst pointerenter (oeffnet per Hover), dann erst click aus -
+    // userEvent.click() bildet genau diese Ereignisfolge nach.
+    await user.click(trigger)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    // Ein zweiter, unabhaengiger Klick (Maus bleibt ueber dem Trigger, kein erneutes
+    // pointerenter noetig) schliesst wie in Akzeptanzkriterium 4 gefordert ganz normal.
+    await user.click(trigger)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  // Test-Review-Fund (echter Bug in einer frueheren Fassung): eine generische
+  // "erste Schliessen-Anfrage nach Hover-Oeffnen schlucken"-Logik in onOpenChange haette hier
+  // faelschlich auch Escape unmittelbar nach einem Hover-Oeffnen verschluckt - Akzeptanzkriterium
+  // 4 verlangt aber, dass Escape zuverlaessig schliesst.
+  it('closes on Escape immediately after a hover-open, without needing a second attempt (matches: true)', async () => {
+    stubMatchMedia(true)
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsPopover
+        criterionScores={[criterionScore()]}
+        ranking={null}
+        suggestion={null}
+      />
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  // Derselbe Bug wie oben, hier fuer den Aussenklick-Schliessweg.
+  it('closes on an outside click immediately after a hover-open (matches: true)', async () => {
+    stubMatchMedia(true)
+    const user = userEvent.setup()
+    render(
+      <div>
+        <CriterionDetailsPopover
+          criterionScores={[criterionScore()]}
+          ranking={null}
+          suggestion={null}
+        />
+        <button type="button">Ausserhalb</button>
+      </div>
+    )
+
+    await user.hover(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Ausserhalb' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  // Akzeptanzkriterium 15: Trigger per Tab erreichbar, Enter oeffnet.
+  it('opens the popover via keyboard (Tab then Enter)', async () => {
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsPopover
+        criterionScores={[criterionScore()]}
+        ranking={null}
+        suggestion={null}
+      />
+    )
+
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })).toHaveFocus()
+
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  // Akzeptanzkriterium 9: kaufmaennische Rundung auch am .5-Grenzfall (0.005 -> 0.5 -> aufwaerts
+  // auf 1, nicht abwaerts auf 0).
+  it('rounds a .5 percentage point boundary up (commercial rounding)', async () => {
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsPopover
+        criterionScores={[criterionScore({ value: 0.005 })]}
+        ranking={null}
+        suggestion={null}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+
+    expect(screen.getByText('1%')).toBeInTheDocument()
+  })
+
   it('does not fill a missing criterion with a placeholder, only renders what is given', async () => {
     const user = userEvent.setup()
     render(

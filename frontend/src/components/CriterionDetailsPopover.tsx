@@ -42,9 +42,17 @@ function formatCriterionPercent(value: number): string {
  * eigene Toggle-Logik sofort wieder schliessen, sodass ein Klick auf einem hover-faehigen Geraet
  * nie sichtbar oeffnen wuerde (widerspricht Testkonzept-Punkt 3: Klick muss geraeteunabhaengig
  * gleich funktionieren). `justOpenedByHoverRef` merkt sich deshalb, dass der aktuelle
- * Offen-Zustand NUR durch Hover ausgeloest wurde, und schluckt genau die eine, unmittelbar
- * folgende Schliessen-Anfrage - ein zweiter, davon unabhaengiger Klick schliesst wie in
- * Akzeptanzkriterium 4 gefordert ganz normal.
+ * Offen-Zustand NUR durch Hover ausgeloest wurde.
+ *
+ * Test-Review-Fund: eine fruehere Fassung schluckte dafuer JEDE erste Schliessen-Anfrage nach
+ * einem Hover-Oeffnen generisch in `onOpenChange` - das schloss faelschlich auch Escape/
+ * Aussenklick unmittelbar nach einem Hover-Oeffnen (entgegen Akzeptanzkriterium 4). Die
+ * Unterdrueckung passiert deshalb jetzt gezielt NUR im `onClick` des Triggers selbst (als Prop an
+ * `PopoverTrigger`, nicht an das Kind-Button - nur DORT komponiert Radix ueber
+ * `composeEventHandlers`, das `event.preventDefault()` respektiert und dadurch selektiv genau
+ * Radix' eigenes Klick-Toggle unterdrueckt; `PopoverTrigger`s Slot-Merge mit dem Kind-Button
+ * wuerde `preventDefault()` ignorieren). Escape/Aussenklick/der "×"-Button laufen dadurch
+ * unveraendert direkt ueber `Popover.onOpenChange={setOpen}`.
  */
 export function CriterionDetailsPopover({
   criterionScores,
@@ -68,24 +76,22 @@ export function CriterionDetailsPopover({
     }
   }
 
-  function handleOpenChange(next: boolean): void {
-    if (!next && justOpenedByHoverRef.current) {
-      justOpenedByHoverRef.current = false
-      return
+  function handleTriggerClick(event: { preventDefault: () => void }): void {
+    if (justOpenedByHoverRef.current) {
+      event.preventDefault()
     }
     justOpenedByHoverRef.current = false
-    setOpen(next)
   }
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild onClick={handleTriggerClick}>
         <button
           type="button"
           aria-label="Bewertungsdetails anzeigen"
           onPointerEnter={handlePointerEnter}
           className={cn(
-            'flex size-11 shrink-0 items-center justify-center rounded-full border border-border ' +
+            'flex size-11 shrink-0 items-center justify-center rounded-md border border-border ' +
               'bg-bg/85 text-xs font-semibold text-text backdrop-blur-sm transition-colors ' +
               'hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 ' +
               'focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg',

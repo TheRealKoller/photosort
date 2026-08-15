@@ -198,29 +198,34 @@ export function PhotoGridPage() {
                       alt={photo.relative_path}
                       className="size-full object-cover"
                     />
+                  </Link>
+                  {/* Review-Fund (requirements-engineer/ux-ui-designer): eine fruehere Fassung
+                      wich fuer den Trigger auf "oben links" aus, weil "oben rechts" hier schon
+                      von der RatingBadge belegt war - das widersprach der Spec-Vorgabe
+                      "einheitliche Position an allen drei Stellen" (UI/UX-Abschnitt). Beide
+                      Elemente sitzen deshalb jetzt GEMEINSAM oben rechts (`gap-1`-Reihe), statt
+                      den Trigger in eine andere Ecke auszuweichen. Als Geschwisterelement NEBEN,
+                      nicht INNERHALB des <Link> (Akzeptanzkriterium 17) - `relative` wandert
+                      dafuer vom <Link> auf den umschliessenden <div> (Architektur-Abschnitt der
+                      Spec). RatingBadge zieht dafuer aus dem <Link> in dieselbe Zeile - rein
+                      visuell/positionell unveraendert (weiterhin absolut im selben `relative`-
+                      Container), badge bleibt aber weiterhin dekorativ/nicht interaktiv, die
+                      Klickflaeche der Kachel aendert sich dadurch nicht. */}
+                  <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
+                    <CriterionDetailsPopover
+                      criterionScores={photo.criterion_scores}
+                      ranking={photo.ranking}
+                      suggestion={photo.suggestion}
+                    />
                     {/* UX-Review-Fund (Branch feature/0012-visual-redesign-views): der neutrale
                         ("unbewertet") und der gedaempfte Vorschlags-Ton der Badge haben keine bzw.
                         nur eine 10%-Deckkraft-Flaeche - direkt ueber einem beliebigen Foto ist das
                         Symbol/"–" ohne Backdrop je nach Bildinhalt kaum lesbar. Ein halbtransparenter
                         `--bg`-Kreis dahinter garantiert Kontrast unabhaengig vom Fotohintergrund. */}
-                    <span className="absolute right-1.5 top-1.5 rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
+                    <span className="rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
                       <RatingBadge status={badgeStatus} suggested={isSuggested} />
                     </span>
-                  </Link>
-                  {/* Geschwisterelement NEBEN, nicht INNERHALB des <Link> (Akzeptanzkriterium 17,
-                      specs/features/0040-bewertungsdetails-info-popover.md) - `relative` wandert
-                      dafuer vom <Link> auf diesen neuen umschliessenden <div> (Architektur-
-                      Abschnitt der Spec). Bewusst oben LINKS statt der sonst einheitlichen
-                      Position oben rechts (UI/UX-Abschnitt der Spec) - genau dort sitzt in dieser
-                      einen Ansicht bereits die RatingBadge; technische Detailentscheidung des
-                      developer-Agenten, um zwei interaktive/informative Elemente nicht in
-                      derselben Ecke zu ueberlappen. */}
-                  <CriterionDetailsPopover
-                    criterionScores={photo.criterion_scores}
-                    ranking={photo.ranking}
-                    suggestion={photo.suggestion}
-                    className="absolute left-1.5 top-1.5"
-                  />
+                  </div>
                 </div>
                 {/* Separates Tap-Ziel ausserhalb des Link-<a> (UI/UX-Abschnitt der Spec): die
                     Kachel selbst oeffnet weiterhin die Detailansicht, "Uebernehmen" bestaetigt
