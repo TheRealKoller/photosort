@@ -13,6 +13,7 @@ import { Skeleton } from '../components/ui/skeleton'
 import { useCurationQuery, useSetRatingMutation } from '../hooks/usePhotos'
 import { formatCategoryKey } from '../utils/categoryLabels'
 import { qualityLevel } from '../utils/qualityLevel'
+import { formatClusterHeading, formatDayHeading } from '../utils/timeOfDay'
 
 // specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md: serverseitig deklarativ
 // begrenzt (Field(ge=1, le=10) auf GET /photos) - client-seitiges Klemmen ist nur ein Hinweis,
@@ -32,24 +33,78 @@ function parseTopN(value: string | null): number {
   return Math.min(MAX_TOP_N, Math.max(MIN_TOP_N, Math.round(parsed)))
 }
 
+interface ClusterMeta {
+  dayKey: string
+  heading: string
+  // Nur fuer die chronologische Cluster-Sortierung innerhalb eines Tages (Akzeptanzkriterium 2)
+  // - formatClusterHeading() selbst liefert bewusst nur die fertige Anzeige-Ueberschrift, kein
+  // sortierbares Roh-Datum (siehe frontend/src/utils/timeOfDay.ts).
+  earliestTakenAt: string
+}
+
 interface GroupedPhotos {
-  [clusterKey: string]: {
-    [categoryKey: string]: PhotoOut[]
+  [dayKey: string]: {
+    [clusterKey: string]: {
+      [categoryKey: string]: PhotoOut[]
+    }
   }
 }
 
-function groupByClusterAndCategory(items: PhotoOut[]): GroupedPhotos {
+/**
+ * Erster Durchlauf sammelt pro `cluster_key` alle zugehoerigen Fotos (kategorieuebergreifend)
+ * und berechnet einmal die Cluster-Meta-Info (Tag + Ueberschrift), zweiter Durchlauf sortiert die
+ * Fotos in die dreistufige {Tag: {Cluster: {Kategorie: Fotos}}}-Struktur ein (Architektur-
+ * Abschnitt der Spec 0039).
+ */
+function groupByClusterAndCategory(items: PhotoOut[]): {
+  groups: GroupedPhotos
+  clusterMeta: Map<string, ClusterMeta>
+} {
+  const photosByCluster = new Map<string, PhotoOut[]>()
+  for (const photo of items) {
+    if (photo.ranking === null) {
+      continue
+    }
+    const clusterKey = photo.ranking.cluster_key
+    const clusterPhotos = photosByCluster.get(clusterKey) ?? []
+    clusterPhotos.push(photo)
+    photosByCluster.set(clusterKey, clusterPhotos)
+  }
+
+  const clusterMeta = new Map<string, ClusterMeta>()
+  for (const [clusterKey, photos] of photosByCluster) {
+    const { dayKey, heading } = formatClusterHeading(photos)
+    const earliestTakenAt = photos.reduce(
+      (min, photo) => (photo.taken_at < min ? photo.taken_at : min),
+      photos[0].taken_at
+    )
+    clusterMeta.set(clusterKey, { dayKey, heading, earliestTakenAt })
+  }
+
   const groups: GroupedPhotos = {}
   for (const photo of items) {
     if (photo.ranking === null) {
       continue
     }
     const { cluster_key: clusterKey, category_key: categoryKey } = photo.ranking
-    groups[clusterKey] ??= {}
-    groups[clusterKey][categoryKey] ??= []
-    groups[clusterKey][categoryKey].push(photo)
+    const meta = clusterMeta.get(clusterKey)
+    if (meta === undefined) {
+      // Unerreichbar: photosByCluster wurde aus denselben `items` gebaut, jeder hier
+      // auftauchende clusterKey hat also zwingend einen Eintrag. Defensive Absicherung statt
+      // einer Non-Null-Assertion.
+      continue
+    }
+    groups[meta.dayKey] ??= {}
+    groups[meta.dayKey][clusterKey] ??= {}
+    groups[meta.dayKey][clusterKey][categoryKey] ??= []
+    groups[meta.dayKey][clusterKey][categoryKey].push(photo)
   }
-  return groups
+  return { groups, clusterMeta }
+}
+
+/** Ob mindestens eine Kategorie in dieser Cluster-Ebene noch (sichtbare) Fotos hat. */
+function categoriesHavePhotos(categories: { [categoryKey: string]: PhotoOut[] }): boolean {
+  return Object.values(categories).some((photos) => photos.length > 0)
 }
 
 const SKELETON_TILE_COUNT = 6
@@ -80,25 +135,40 @@ export function CurateCategoriesPage() {
     }
   }, [items, rejectingPhotoId])
 
-  // Erschoepfter Pool (Akzeptanzkriterium der Spec): eine Partition, die inzwischen komplett leer
-  // ist (letztes Foto gerade abgelehnt), wuerde sonst spurlos aus der Gruppierung verschwinden -
-  // einmal gesehene Partitionen bleiben deshalb fuer die Dauer des Seitenbesuchs bekannt, damit
-  // ihr Abschnitt (mit eigenem Leerzustand statt kommentarlosem Verschwinden) sichtbar bleibt.
-  // Schluessel via JSON.stringify() statt eines zusammengesetzten Strings mit Trennzeichen
-  // (Review-Fund test-engineer/security-engineer/architect): ein einzelnes Trennzeichen waere
-  // anfaellig fuer eine Kollision, sollte ein kuenftiger cluster_key/category_key es selbst
-  // enthalten - JSON.stringify(["a","b"]) ist immer eindeutig umkehrbar.
+  // Erschoepfter Pool (Akzeptanzkriterium 7 der Spec): eine Partition, die inzwischen komplett
+  // leer ist (letztes Foto gerade abgelehnt), wuerde sonst spurlos aus der Gruppierung
+  // verschwinden - einmal gesehene Partitionen bleiben deshalb fuer die Dauer des Seitenbesuchs
+  // bekannt, damit ihr Abschnitt (mit eigenem Leerzustand statt kommentarlosem Verschwinden)
+  // sichtbar bleibt. Schluessel via JSON.stringify() statt eines zusammengesetzten Strings mit
+  // Trennzeichen (Review-Fund test-engineer/security-engineer/architect): ein einzelnes
+  // Trennzeichen waere anfaellig fuer eine Kollision, sollte ein kuenftiger cluster_key/
+  // category_key es selbst enthalten - JSON.stringify(["a","b","c"]) ist immer eindeutig
+  // umkehrbar. Seit Spec 0039 3-Tupel [dayKey, clusterKey, categoryKey] statt 2-Tupel.
   const knownGroupKeysRef = useRef<Set<string>>(new Set())
-  const groups = groupByClusterAndCategory(items)
-  for (const clusterKey of Object.keys(groups)) {
-    for (const categoryKey of Object.keys(groups[clusterKey])) {
-      knownGroupKeysRef.current.add(JSON.stringify([clusterKey, categoryKey]))
+  // Cache fuer die Cluster-Meta-Info (Tag + Ueberschrift + Sortier-Zeitstempel): sobald das
+  // letzte Foto eines Clusters abgelehnt wird, verschwindet der cluster_key komplett aus `items`
+  // - formatClusterHeading() laesst sich dann nicht mehr aus aktuellen Daten neu berechnen. Wird
+  // bei jedem Render fuer alle in `items` noch vorhandenen Cluster ueberschrieben, liefert fuer
+  // erschoepfte Cluster weiterhin die zuletzt bekannte Meta-Info.
+  const clusterMetaRef = useRef<Map<string, ClusterMeta>>(new Map())
+
+  const { groups, clusterMeta } = groupByClusterAndCategory(items)
+  for (const [clusterKey, meta] of clusterMeta) {
+    clusterMetaRef.current.set(clusterKey, meta)
+  }
+
+  for (const dayKey of Object.keys(groups)) {
+    for (const clusterKey of Object.keys(groups[dayKey])) {
+      for (const categoryKey of Object.keys(groups[dayKey][clusterKey])) {
+        knownGroupKeysRef.current.add(JSON.stringify([dayKey, clusterKey, categoryKey]))
+      }
     }
   }
   for (const key of knownGroupKeysRef.current) {
-    const [clusterKey, categoryKey] = JSON.parse(key) as [string, string]
-    groups[clusterKey] ??= {}
-    groups[clusterKey][categoryKey] ??= []
+    const [dayKey, clusterKey, categoryKey] = JSON.parse(key) as [string, string, string]
+    groups[dayKey] ??= {}
+    groups[dayKey][clusterKey] ??= {}
+    groups[dayKey][clusterKey][categoryKey] ??= []
   }
 
   function handleReject(photo: PhotoOut): void {
@@ -112,7 +182,8 @@ export function CurateCategoriesPage() {
     )
   }
 
-  const clusterKeys = Object.keys(groups).sort()
+  // dayKey-Format YYYY-MM-DD sortiert lexikographisch = chronologisch (Akzeptanzkriterium 1).
+  const dayKeys = Object.keys(groups).sort()
 
   return (
     <div className="flex flex-col gap-6">
@@ -143,79 +214,108 @@ export function CurateCategoriesPage() {
         </Alert>
       )}
 
-      {query.isSuccess && clusterKeys.length === 0 && (
+      {query.isSuccess && dayKeys.length === 0 && (
         <p className="text-sm text-text">
           Noch keine Kategorie-Kuratierung verfügbar — führe zuerst eine Kriterien-Bewertung aus.
         </p>
       )}
 
-      {clusterKeys.map((clusterKey) => {
-        const categoryKeys = Object.keys(groups[clusterKey]).sort()
+      {dayKeys.map((dayKey) => {
+        const clustersForDay = groups[dayKey]
+        // Chronologisch nach dem fruehesten taken_at im Cluster sortiert, nicht lexikographisch
+        // nach cluster_key (Akzeptanzkriterium 2, behebt den latenten Sortier-Bug
+        // "cluster-10" < "cluster-2").
+        const clusterKeysForDay = Object.keys(clustersForDay).sort((a, b) => {
+          const earliestA = clusterMetaRef.current.get(a)?.earliestTakenAt ?? ''
+          const earliestB = clusterMetaRef.current.get(b)?.earliestTakenAt ?? ''
+          if (earliestA < earliestB) return -1
+          if (earliestA > earliestB) return 1
+          return 0
+        })
+        const dayIsEmpty = !Object.values(clustersForDay).some(categoriesHavePhotos)
         return (
-          <section key={clusterKey} className="flex flex-col gap-4">
-            <h2 className="text-lg font-semibold text-text-h">{clusterKey}</h2>
-            {categoryKeys.map((categoryKey) => {
-              const photos = groups[clusterKey][categoryKey]
-              return (
-                <div key={categoryKey} className="flex flex-col gap-2">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-text-h">
-                    <CategoryBadge categoryKey={categoryKey} />
-                    {formatCategoryKey(categoryKey)}
-                  </h3>
-                  <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                    {photos.map((photo) => {
-                      const isRejecting = rejectingPhotoId === photo.id
-                      const level = qualityLevel(photo.ranking?.rank_score ?? null)
-                      return (
-                        <li key={photo.id} className="flex flex-col gap-1.5">
-                          <div className="relative">
-                            {isRejecting ? (
-                              <Skeleton className="aspect-square w-full rounded-md" />
-                            ) : (
-                              <>
-                                <PhotoImage
-                                  photoId={photo.id}
-                                  variant="thumbnail"
-                                  alt={photo.relative_path}
-                                  className="aspect-square w-full rounded-md object-cover"
-                                />
-                                {/* Einheitliche Position "oben rechts" (UI/UX-Abschnitt,
-                                    specs/features/0040-bewertungsdetails-info-popover.md) - kein
-                                    bereits belegtes Element in dieser Ecke. Waehrend isRejecting
-                                    zeigt die Kachel nur den Skeleton-Platzhalter, kein Trigger. */}
-                                <CriterionDetailsPopover
-                                  criterionScores={photo.criterion_scores}
-                                  ranking={photo.ranking}
-                                  suggestion={photo.suggestion}
-                                  className="absolute right-1.5 top-1.5"
-                                />
-                              </>
-                            )}
-                          </div>
-                          {level && <QualityMeter level={level} className="text-xs" />}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={isRejecting}
-                            busy={isRejecting}
-                            aria-label={`Verwerfen: ${photo.relative_path}`}
-                            onClick={() => handleReject(photo)}
-                          >
-                            {isRejecting ? 'Wird verworfen…' : 'Verwerfen'}
-                          </Button>
-                        </li>
-                      )
-                    })}
-                    {photos.length < topN && (
-                      <li className="flex aspect-square w-full flex-col items-center justify-center rounded-md border border-dashed border-border p-2 text-center text-xs text-text">
-                        Kein weiteres Foto verfügbar
-                      </li>
+          <section key={dayKey} className="flex flex-col gap-6">
+            <h2 className="text-xl font-semibold text-text-h">{formatDayHeading(dayKey)}</h2>
+            {dayIsEmpty && <p className="text-sm text-text">Keine Fotos für diesen Tag</p>}
+            {!dayIsEmpty &&
+              clusterKeysForDay.map((clusterKey) => {
+                const categories = clustersForDay[clusterKey]
+                const categoryKeys = Object.keys(categories).sort()
+                const clusterIsEmpty = !categoriesHavePhotos(categories)
+                const heading = clusterMetaRef.current.get(clusterKey)?.heading ?? clusterKey
+                return (
+                  <section key={clusterKey} className="flex flex-col gap-4">
+                    <h3 className="text-lg font-semibold text-text-h">{heading}</h3>
+                    {clusterIsEmpty && (
+                      <p className="text-sm text-text">Keine Fotos in dieser Tageszeit</p>
                     )}
-                  </ul>
-                </div>
-              )
-            })}
+                    {!clusterIsEmpty &&
+                      categoryKeys.map((categoryKey) => {
+                        const photos = categories[categoryKey]
+                        return (
+                          <div key={categoryKey} className="flex flex-col gap-2">
+                            <h4 className="flex items-center gap-2 text-sm font-semibold text-text-h">
+                              <CategoryBadge categoryKey={categoryKey} />
+                              {formatCategoryKey(categoryKey)}
+                            </h4>
+                            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                              {photos.map((photo) => {
+                                const isRejecting = rejectingPhotoId === photo.id
+                                const level = qualityLevel(photo.ranking?.rank_score ?? null)
+                                return (
+                                  <li key={photo.id} className="flex flex-col gap-1.5">
+                                    <div className="relative">
+                                      {isRejecting ? (
+                                        <Skeleton className="aspect-square w-full rounded-md" />
+                                      ) : (
+                                        <>
+                                          <PhotoImage
+                                            photoId={photo.id}
+                                            variant="thumbnail"
+                                            alt={photo.relative_path}
+                                            className="aspect-square w-full rounded-md object-cover"
+                                          />
+                                          {/* Einheitliche Position "oben rechts" (UI/UX-Abschnitt,
+                                              specs/features/0040-bewertungsdetails-info-popover.md) -
+                                              kein bereits belegtes Element in dieser Ecke. Waehrend
+                                              isRejecting zeigt die Kachel nur den Skeleton-
+                                              Platzhalter, kein Trigger. */}
+                                          <CriterionDetailsPopover
+                                            criterionScores={photo.criterion_scores}
+                                            ranking={photo.ranking}
+                                            suggestion={photo.suggestion}
+                                            className="absolute right-1.5 top-1.5"
+                                          />
+                                        </>
+                                      )}
+                                    </div>
+                                    {level && <QualityMeter level={level} className="text-xs" />}
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={isRejecting}
+                                      busy={isRejecting}
+                                      aria-label={`Verwerfen: ${photo.relative_path}`}
+                                      onClick={() => handleReject(photo)}
+                                    >
+                                      {isRejecting ? 'Wird verworfen…' : 'Verwerfen'}
+                                    </Button>
+                                  </li>
+                                )
+                              })}
+                              {photos.length < topN && (
+                                <li className="flex aspect-square w-full flex-col items-center justify-center rounded-md border border-dashed border-border p-2 text-center text-xs text-text">
+                                  Kein weiteres Foto verfügbar
+                                </li>
+                              )}
+                            </ul>
+                          </div>
+                        )
+                      })}
+                  </section>
+                )
+              })}
           </section>
         )
       })}
