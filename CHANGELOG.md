@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.8.0](https://github.com/TheRealKoller/photosort/compare/v0.7.0...v0.8.0) (2026-08-15)
+
+
+### Features
+
+* **api:** criterion_scores und RankingOut.partition_size exponieren ([260672b](https://github.com/TheRealKoller/photosort/commit/260672bf7b79b3fa1ad12a77e2df93c9dbeb15bd))
+* **frontend:** api/types.ts um CriterionScoreOut/partition_size erweitern ([79f2cfd](https://github.com/TheRealKoller/photosort/commit/79f2cfd3e4add0bdbb8f12f8c5a9675b343fb7b5))
+* **frontend:** CriterionDetailsPopover-Komponente ([3b33e1b](https://github.com/TheRealKoller/photosort/commit/3b33e1b628a93c8deed86e3695a801b34a83951f))
+* **frontend:** duennen Radix-Popover-Wrapper ui/popover.tsx ergaenzen ([ddc14fe](https://github.com/TheRealKoller/photosort/commit/ddc14fe8a61beeef5a11cb2e37bdacd301ab8999))
+* **frontend:** Info-Popover in CurateCategoriesPage.tsx einbinden ([80e6848](https://github.com/TheRealKoller/photosort/commit/80e68489aab53361dde5289c6052adda4a28ef88))
+* **frontend:** Info-Popover in PhotoDetailPage.tsx einbinden ([d539549](https://github.com/TheRealKoller/photosort/commit/d539549f6e957ca0cc13e0ca71b263e7c129e5ae))
+* **frontend:** Info-Popover in PhotoGridPage.tsx einbinden ([50f77a6](https://github.com/TheRealKoller/photosort/commit/50f77a6e6061e61344b412c2694bc31d2125c974))
+
+
+### Bug Fixes
+
+* **frontend:** pointer-events-none auf dem Badge-Overlay, damit die Kachel klickbar bleibt ([5c44016](https://github.com/TheRealKoller/photosort/commit/5c440163090d0a0f6c04f846d20eb046ef7b368b))
+* Review-Findings der Runde 0040 beheben ([912e560](https://github.com/TheRealKoller/photosort/commit/912e560df715acd3c53fcd5651669ce60d2fe96c))
+
 ## [0.7.0](https://github.com/TheRealKoller/photosort/compare/v0.6.1...v0.7.0) (2026-08-15)
 
 
