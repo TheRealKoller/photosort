@@ -1,6 +1,6 @@
 # 0037 - Gateführte Bewertungs-Pipeline mit Kriterien-Scoring und Kategorie-Kuratierung
 
-**Status:** Accepted
+**Status:** Implemented ([PR #80](https://github.com/TheRealKoller/photosort/pull/80))
 **Erstellt:** 2026-08-13
 **Bezug:** Idea-Sharpening-Gespräch mit Daniel am 2026-08-13. Ersetzt/fusioniert [`features/0003-automatic-best-photo-selection.md`](./0003-automatic-best-photo-selection.md) und [`features/0024-top-photo-selection-category-mix.md`](./0024-top-photo-selection-category-mix.md) (beide auf `Superseded` gesetzt, siehe dort). ADR [`decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md`](../decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md) (neu). Bezug zu [`features/0035-klassifizierung-qualitaet-inhalt-recherche.md`](./0035-klassifizierung-qualitaet-inhalt-recherche.md) (Recherche-Ergebnis in offenem PR #72) — die Wahl konkreter Kriterien und ihrer Quelle (lokal/Cloud) ist explizit **nicht** Teil dieser Spec, siehe "Out of Scope". Baut auf [`decisions/0019-job-lauf-heartbeat-watchdog.md`](../decisions/0019-job-lauf-heartbeat-watchdog.md) (Fortschritts-Watchdog) auf.
 

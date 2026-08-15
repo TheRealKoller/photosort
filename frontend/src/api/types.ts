@@ -19,6 +19,10 @@ export interface ScanSummary {
 // Wiederverwendet ScanStatus (running/success/failed) statt eines eigenen Typs - identische
 // Semantik fuer einen asynchron laufenden Worker-Job, siehe backend models.py::ScoringRun.
 export interface ScoringRunSummary {
+  // Additiv (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md): wird als
+  // scoring_run_id an POST /score-criteria weitergereicht (Staleness-Guard bei einem
+  // zwischenzeitlichen Re-Scan/Re-Scoring).
+  id: number
   status: ScanStatus
   started_at: string
   finished_at: string | null
@@ -26,20 +30,20 @@ export interface ScoringRunSummary {
   photos_processed: number
   suggestions_found: number
   error_message: string | null
+  // Ausschuss-Gate (specs/features/0037): null = noch nicht bestaetigt.
+  gate_confirmed_at: string | null
 }
 
-// specs/features/0024-top-photo-selection-category-mix.md: wiederverwendet ScanStatus wie
-// ScoringRunSummary oben - identische Semantik fuer einen asynchron laufenden Worker-Job.
-// candidates_total/candidates_processed statt photos_total/photos_processed, da hier nur der
-// bereits begrenzte Kandidatenpool pro Cluster gezaehlt wird.
-export interface TopSelectionRunSummary {
+// Ersetzt TopSelectionRunSummary (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+// backfill.md) - kein top_n_per_cluster/candidates_total/suggestions_found mehr: N wird erst
+// beim Lesen angewendet (GET /photos?top_n_per_category=N), der Job berechnet immer den vollen
+// Rangfolge-Pool je Partition statt eine Top-N-Auswahl zu treffen.
+export interface CriterionScoringRunSummary {
   status: ScanStatus
   started_at: string
   finished_at: string | null
-  top_n_per_cluster: number
-  candidates_total: number
-  candidates_processed: number
-  suggestions_found: number
+  photos_total: number
+  photos_processed: number
   error_message: string | null
 }
 
@@ -51,9 +55,10 @@ export interface ProjectOut {
   created_at: string
   last_scan: ScanSummary | null
   last_scoring_run: ScoringRunSummary | null
-  last_top_selection_run: TopSelectionRunSummary | null
-  // Globales Feature-Flag (specs/features/0024-top-photo-selection-category-mix.md), auf
-  // ProjectOut statt einem eigenen Endpunkt exponiert - siehe backend api/projects.py-Kommentar.
+  last_criterion_scoring_run: CriterionScoringRunSummary | null
+  // Globales Feature-Flag (specs/features/0024-top-photo-selection-category-mix.md, weiterhin
+  // verwendet fuer POST /score-criteria seit Spec 0037), auf ProjectOut statt einem eigenen
+  // Endpunkt exponiert - siehe backend api/projects.py-Kommentar.
   category_selection_enabled: boolean
 }
 
@@ -72,28 +77,42 @@ export interface RatingOut {
   status: RatingStatus
 }
 
-export type SuggestionReason = 'duplicate' | 'low_quality' | 'top_pick'
-
-// Lokal klassifizierte Motiv-Kategorie (specs/features/0024-top-photo-selection-category-mix.md,
-// decisions/0015-lokale-kategorie-klassifikation.md) - nur 3 statt urspruenglich 4 geplanter
-// Kategorien, siehe backend photosort.models.PhotoCategory.
-export type PhotoCategory = 'landscape' | 'detail' | 'people'
+export type SuggestionReason = 'duplicate' | 'low_quality'
 
 // Automatischer Vorschlag aus PhotoScore, bewusst getrennt von RatingOut/ratings[] (ADR 0006,
 // specs/decisions/0006-local-scoring-datamodel.md) - ein Vorschlag ist strukturell nie eine
 // Bewertung, sondern wird erst durch aktive Bestaetigung (PUT /photos/{id}/rating) zu einer.
+//
+// "top_pick"/`category` (Spec 0024) sind mit specs/features/0037-gatefuehrte-bewertungs-
+// pipeline-mit-backfill.md entfallen - der fruehere Top-Pick-Mechanismus ist durch die neue
+// Kriterien-/Rangfolgen-Pipeline (PhotoRanking) ersetzt, deren Kontext jetzt im eigenstaendigen
+// `PhotoOut.ranking`-Feld lebt statt in SuggestionOut (siehe backend api/photos.py::
+// SuggestionOut-Docstring fuer die Begruendung dieser Trennung).
 export interface SuggestionOut {
   status: RatingStatus
   reason: SuggestionReason
   duplicate_of: number | null
-  local_quality_score: number | null
   sharpness: number
   exposure: number
   cluster_key: string | null
-  // Additiv (Spec 0024): nur fuer reason "top_pick" gesetzt - Phase-A-Vorschlaege (duplicate/
-  // low_quality) werden nie lokal klassifiziert (kein Kandidat des select-top-Jobs).
-  category: PhotoCategory | null
   computed_at: string
+}
+
+// Freier Kategorie-Schluessel (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+// backfill.md) - kein festes L/D/M-Kuerzelschema mehr (ersetzt den frueheren PhotoCategory-Enum
+// aus Spec 0024). Server-seitig aktuell "landscape"/"detail"/"people", aber bewusst als `string`
+// typisiert - das Frontend darf keine feste, geschlossene Liste annehmen (Registry-Erweiterung
+// ist rein serverseitig, siehe backend criteria.py::CRITERIA_REGISTRY).
+export type CategoryKey = string
+
+// Kuratierungs-Kontext eines Fotos aus der Kriterien-/Rangfolgen-Pipeline
+// (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md) - nur gesetzt, wenn das
+// Foto Teil des per `top_n_per_category` abgefragten Top-N-Ergebnisses ist.
+export interface RankingOut {
+  cluster_key: string
+  category_key: CategoryKey
+  rank_score: number
+  rank_position: number
 }
 
 export interface PhotoOut {
@@ -102,6 +121,7 @@ export interface PhotoOut {
   taken_at: string
   ratings: RatingOut[]
   suggestion: SuggestionOut | null
+  ranking: RankingOut | null
 }
 
 export interface PhotoListOut {

@@ -7,8 +7,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.models import (
+    CriterionScoringRun,
+    CriterionSource,
     Photo,
-    PhotoCategory,
+    PhotoCriterionScore,
+    PhotoRanking,
     PhotoScore,
     Project,
     Rating,
@@ -16,7 +19,6 @@ from photosort.models import (
     ScanRun,
     ScanStatus,
     ScoringRun,
-    TopSelectionRun,
     User,
 )
 
@@ -234,6 +236,10 @@ async def test_scoring_run_defaults(db_session: AsyncSession) -> None:
     assert stored.photos_processed == 0
     assert stored.error_message is None
     assert stored.last_progress_at is not None
+    # Ausschuss-Gate (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md):
+    # additiv, defaultet auf None (nicht bestaetigt) - kein server_default noetig, ein frischer
+    # Lauf startet immer ungate-bestaetigt.
+    assert stored.gate_confirmed_at is None
 
 
 async def test_create_photo_score(db_session: AsyncSession) -> None:
@@ -254,7 +260,6 @@ async def test_create_photo_score(db_session: AsyncSession) -> None:
     assert stored.sharpness == 42.0
     assert stored.duplicate_of is None
     assert stored.cluster_key is None
-    assert stored.local_quality_score is None
     assert stored.suggested_status is None
 
 
@@ -286,70 +291,196 @@ async def test_deleting_photo_cascades_to_photo_score(db_session: AsyncSession) 
     assert result.scalars().all() == []
 
 
-async def test_photo_score_category_defaults_to_none(db_session: AsyncSession) -> None:
+async def test_create_photo_criterion_score(db_session: AsyncSession) -> None:
     photo = await _make_photo(db_session)
-    db_session.add(
-        PhotoScore(photo_id=photo.id, sharpness=1.0, exposure=0.0, computed_at=datetime.now(UTC))
+
+    score = PhotoCriterionScore(
+        photo_id=photo.id,
+        criterion_key="sharpness",
+        value=0.8,
+        source=CriterionSource.LOCAL_HEURISTIC,
+        computed_at=datetime.now(UTC),
     )
+    db_session.add(score)
     await db_session.commit()
 
-    result = await db_session.execute(select(PhotoScore).where(PhotoScore.photo_id == photo.id))
-    assert result.scalar_one().category is None
+    result = await db_session.execute(
+        select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+    )
+    stored = result.scalar_one()
+    assert stored.criterion_key == "sharpness"
+    assert stored.value == 0.8
+    assert stored.source == CriterionSource.LOCAL_HEURISTIC
 
 
-async def test_photo_score_category_can_be_set(db_session: AsyncSession) -> None:
+async def test_photo_criterion_score_unique_per_photo_and_criterion_key(
+    db_session: AsyncSession,
+) -> None:
     photo = await _make_photo(db_session)
     db_session.add(
-        PhotoScore(
+        PhotoCriterionScore(
             photo_id=photo.id,
-            sharpness=1.0,
-            exposure=0.0,
-            category=PhotoCategory.LANDSCAPE,
+            criterion_key="sharpness",
+            value=0.8,
+            source=CriterionSource.LOCAL_HEURISTIC,
             computed_at=datetime.now(UTC),
         )
     )
     await db_session.commit()
 
-    result = await db_session.execute(select(PhotoScore).where(PhotoScore.photo_id == photo.id))
-    assert result.scalar_one().category == PhotoCategory.LANDSCAPE
+    db_session.add(
+        PhotoCriterionScore(
+            photo_id=photo.id,
+            criterion_key="sharpness",
+            value=0.5,
+            source=CriterionSource.LOCAL_HEURISTIC,
+            computed_at=datetime.now(UTC),
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
 
 
-async def test_top_selection_run_defaults(db_session: AsyncSession) -> None:
+async def test_deleting_photo_cascades_to_criterion_scores(db_session: AsyncSession) -> None:
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoCriterionScore(
+            photo_id=photo.id,
+            criterion_key="sharpness",
+            value=0.8,
+            source=CriterionSource.LOCAL_HEURISTIC,
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    result = await db_session.execute(select(PhotoCriterionScore))
+    assert result.scalars().all() == []
+
+
+async def test_criterion_scoring_run_defaults(db_session: AsyncSession) -> None:
     project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
     db_session.add(project)
     await db_session.flush()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(scoring_run)
+    await db_session.flush()
 
-    run = TopSelectionRun(project_id=project.id, status=ScanStatus.RUNNING, top_n_per_cluster=3)
+    run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.RUNNING
+    )
     db_session.add(run)
     await db_session.commit()
 
     result = await db_session.execute(
-        select(TopSelectionRun).where(TopSelectionRun.project_id == project.id)
+        select(CriterionScoringRun).where(CriterionScoringRun.project_id == project.id)
     )
     stored = result.scalar_one()
     assert stored.status == ScanStatus.RUNNING
-    assert stored.top_n_per_cluster == 3
-    assert stored.candidates_total == 0
-    assert stored.candidates_processed == 0
-    assert stored.suggestions_found == 0
+    assert stored.scoring_run_id == scoring_run.id
+    assert stored.photos_total == 0
+    assert stored.photos_processed == 0
     assert stored.error_message is None
     assert stored.last_progress_at is not None
 
 
-async def test_deleting_project_cascades_to_top_selection_runs(db_session: AsyncSession) -> None:
+async def test_deleting_project_cascades_to_criterion_scoring_runs(
+    db_session: AsyncSession,
+) -> None:
     project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
     db_session.add(project)
     await db_session.flush()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(scoring_run)
+    await db_session.flush()
     db_session.add(
-        TopSelectionRun(project_id=project.id, status=ScanStatus.SUCCESS, top_n_per_cluster=3)
+        CriterionScoringRun(
+            project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
+        )
     )
     await db_session.commit()
 
     await db_session.delete(project)
     await db_session.commit()
 
-    result = await db_session.execute(select(TopSelectionRun))
+    result = await db_session.execute(select(CriterionScoringRun))
     assert result.scalars().all() == []
+
+
+async def test_create_photo_ranking(db_session: AsyncSession) -> None:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(scoring_run)
+    await db_session.flush()
+    run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
+    )
+    db_session.add(run)
+    await db_session.flush()
+    photo = await _make_photo(db_session, project)
+
+    ranking = PhotoRanking(
+        criterion_scoring_run_id=run.id,
+        photo_id=photo.id,
+        cluster_key="cluster-0",
+        category_key="landscape",
+        rank_score=0.9,
+        rank_position=1,
+    )
+    db_session.add(ranking)
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+    )
+    stored = result.scalar_one()
+    assert stored.photo_id == photo.id
+    assert stored.category_key == "landscape"
+    assert stored.rank_position == 1
+
+
+async def test_photo_ranking_unique_per_run_and_photo(db_session: AsyncSession) -> None:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(scoring_run)
+    await db_session.flush()
+    run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
+    )
+    db_session.add(run)
+    await db_session.flush()
+    photo = await _make_photo(db_session, project)
+    db_session.add(
+        PhotoRanking(
+            criterion_scoring_run_id=run.id,
+            photo_id=photo.id,
+            cluster_key="cluster-0",
+            category_key="landscape",
+            rank_score=0.9,
+            rank_position=1,
+        )
+    )
+    await db_session.commit()
+
+    db_session.add(
+        PhotoRanking(
+            criterion_scoring_run_id=run.id,
+            photo_id=photo.id,
+            cluster_key="cluster-0",
+            category_key="landscape",
+            rank_score=0.1,
+            rank_position=2,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
 
 
 async def test_photo_score_duplicate_of_references_another_photo(db_session: AsyncSession) -> None:

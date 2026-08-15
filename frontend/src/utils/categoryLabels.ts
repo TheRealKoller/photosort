@@ -1,18 +1,22 @@
-import type { PhotoCategory } from '../api/types'
-
-// Ausgeschriebene Kategorienamen (Detailansicht, aria-label/title auf der Grid-Kachel) - Muster
-// analog ratingLabels.ts (specs/features/0024-top-photo-selection-category-mix.md).
-export const CATEGORY_LABELS: Record<PhotoCategory, string> = {
-  landscape: 'Landschaft',
-  detail: 'Detailaufnahme',
-  people: 'Menschen',
+// Formatiert einen freien category_key (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+// backfill.md) fuer die Anzeige - kein festes Uebersetzungs-Woerterbuch mehr wie zu Spec-0024-
+// Zeiten (PhotoCategory war ein geschlossenes 3-Wert-Enum). category_key ist jetzt ein freier,
+// server-seitig erweiterbarer String (backend criteria.py::derive_category_key) - eine feste
+// Uebersetzungsliste im Frontend wuerde bei jedem neuen Kriterium/jeder neuen Kategorie eine
+// Frontend-Aenderung erzwingen und genau die Erweiterbarkeit wieder zunichtemachen, die das
+// Datenmodell bewusst gewinnt (UI/UX-Abschnitt der Spec: "kein festes Kuerzel-Schema mehr
+// moeglich"). Grossschreibung des ersten Buchstabens ist eine rein kosmetische Formatierung, kein
+// Uebersetzungsschritt - der Rohwert selbst dient laut Spec als ausgeschriebener Name.
+export function formatCategoryKey(categoryKey: string): string {
+  if (categoryKey.length === 0) {
+    return categoryKey
+  }
+  return categoryKey.charAt(0).toUpperCase() + categoryKey.slice(1)
 }
 
-// Kollisionsfreie Ein-Buchstaben-Kuerzel fuer die Grid-Kachel (begrenzter Platz) - L/D/M statt der
-// jeweils ersten Buchstaben von "landscape"/"detail"/"people", da "detail" und "people" sonst beide
-// mit dem Buchstaben D anfangen wuerden bzw. keine natuerliche deutsche Abkuerzung ergaeben.
-export const CATEGORY_ABBREVIATIONS: Record<PhotoCategory, string> = {
-  landscape: 'L',
-  detail: 'D',
-  people: 'M',
+// Grid-Kachel-Chip (UI/UX-Abschnitt der Spec): erste drei Zeichen von category_key in
+// Grossbuchstaben - seltene Praefix-Kollisionen (z.B. zwei kuenftige Kategorien mit identischem
+// Praefix) sind fuer zwei bekannte Nutzer ein akzeptables Restrisiko, siehe Spec.
+export function categoryAbbreviation(categoryKey: string): string {
+  return categoryKey.slice(0, 3).toUpperCase()
 }

@@ -7,7 +7,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
-import type { ProjectOut, ScanSummary, ScoringRunSummary, TopSelectionRunSummary } from '../api/types'
+import type {
+  CriterionScoringRunSummary,
+  ProjectOut,
+  ScanSummary,
+  ScoringRunSummary,
+} from '../api/types'
 import { POLL_INTERVAL_MS } from '../hooks/useProjects'
 import { ProjectDetailPage } from './ProjectDetailPage'
 
@@ -22,7 +27,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     created_at: '2026-07-20T10:00:00Z',
     last_scan: null,
     last_scoring_run: null,
-    last_top_selection_run: null,
+    last_criterion_scoring_run: null,
     category_selection_enabled: true,
     ...overrides,
   }
@@ -49,6 +54,7 @@ function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
 
 function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSummary {
   return {
+    id: 1,
     status: 'running',
     started_at: '2026-07-20T10:00:00Z',
     finished_at: null,
@@ -56,21 +62,20 @@ function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSumma
     photos_processed: 0,
     suggestions_found: 0,
     error_message: null,
+    gate_confirmed_at: null,
     ...overrides,
   }
 }
 
-function topSelectionRun(
-  overrides: Partial<TopSelectionRunSummary> = {}
-): TopSelectionRunSummary {
+function criterionScoringRun(
+  overrides: Partial<CriterionScoringRunSummary> = {}
+): CriterionScoringRunSummary {
   return {
     status: 'running',
     started_at: '2026-07-20T10:00:00Z',
     finished_at: null,
-    top_n_per_cluster: 3,
-    candidates_total: 0,
-    candidates_processed: 0,
-    suggestions_found: 0,
+    photos_total: 0,
+    photos_processed: 0,
     error_message: null,
     ...overrides,
   }
@@ -102,7 +107,8 @@ describe('ProjectDetailPage', () => {
     vi.mocked(projectsApi.getProject).mockReset()
     vi.mocked(projectsApi.triggerScan).mockReset()
     vi.mocked(projectsApi.triggerScore).mockReset()
-    vi.mocked(projectsApi.triggerSelectTop).mockReset()
+    vi.mocked(projectsApi.confirmAusschussGate).mockReset()
+    vi.mocked(projectsApi.triggerScoreCriteria).mockReset()
   })
 
   it('shows a dedicated not-found state on a 404 instead of a broken page', async () => {
@@ -891,146 +897,157 @@ describe('ProjectDetailPage', () => {
     }
   )
 
-  describe('Top-Fotos auswählen (select-top, specs/features/0024)', () => {
-    it('disables input and button with an explanatory text when the feature flag is off', async () => {
+  describe('Ausschuss-Gate (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md)', () => {
+    it('shows an explanatory text when the ausschuss detection has not succeeded yet', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_scoring_run: scoringRun({ status: 'running' }) })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText(/sichte zuerst den ausschuss oben/i)).toBeInTheDocument()
+    })
+
+    it('shows "Ausstehend" and a link into the gate screen while unconfirmed', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scoring_run: scoringRun({
+            status: 'success',
+            suggestions_found: 2,
+            gate_confirmed_at: null,
+          }),
+        })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText('Ausstehend')).toBeInTheDocument()
+      const link = screen.getByRole('link', { name: 'Ausschuss sichten' })
+      expect(link).toHaveAttribute('href', '/projects/1/photos?filter=suggested&gate=1')
+    })
+
+    it('shows a persistent auto-confirmed status when no suggestions were found', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scoring_run: scoringRun({
+            status: 'success',
+            suggestions_found: 0,
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
+        })
+      )
+
+      renderPage()
+
+      expect(
+        await screen.findByText('Kein Ausschuss gefunden — automatisch bestätigt')
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: 'Ausschuss sichten' })).not.toBeInTheDocument()
+    })
+
+    it('shows the confirmation date once manually confirmed', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scoring_run: scoringRun({
+            status: 'success',
+            suggestions_found: 3,
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
+        })
+      )
+
+      renderPage()
+
+      expect(await screen.findByText(/ausschuss gesichtet am/i)).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: 'Ausschuss sichten' })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('Kriterien-Bewertung (ersetzt select-top, specs/features/0037)', () => {
+    it('disables the button with an explanatory text when the feature flag is off', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
           category_selection_enabled: false,
-          last_scoring_run: scoringRun({ status: 'success' }),
+          last_scoring_run: scoringRun({
+            status: 'success',
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
         })
       )
 
       renderPage()
 
       expect(await screen.findByText(/diese funktion ist derzeit nicht aktiviert/i)).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /auswahl starten/i })).toBeDisabled()
-      expect(screen.getByLabelText(/top-fotos pro foto-moment/i)).toBeDisabled()
+      expect(
+        screen.getByRole('button', { name: 'Kriterien-Bewertung starten' })
+      ).toBeDisabled()
     })
 
-    it('disables input and button with an explanatory text when no successful scoring run exists yet', async () => {
+    it('disables the button with an explanatory text while the gate is unconfirmed', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({ category_selection_enabled: true, last_scoring_run: null })
+        project({
+          last_scoring_run: scoringRun({ status: 'success', gate_confirmed_at: null }),
+        })
       )
 
       renderPage()
 
+      expect(await screen.findByText(/bestätige zuerst den ausschuss oben/i)).toBeInTheDocument()
       expect(
-        await screen.findByText(/führe zuerst die lokale vorauswahl oben aus/i)
-      ).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /auswahl starten/i })).toBeDisabled()
+        screen.getByRole('button', { name: 'Kriterien-Bewertung starten' })
+      ).toBeDisabled()
     })
 
-    it('stays gated when the last scoring run failed rather than succeeded', async () => {
+    it('enables the button once the gate is confirmed', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'failed' }),
+          last_scoring_run: scoringRun({
+            status: 'success',
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
         })
       )
 
       renderPage()
 
       expect(
-        await screen.findByText(/führe zuerst die lokale vorauswahl oben aus/i)
-      ).toBeInTheDocument()
+        await screen.findByRole('button', { name: 'Kriterien-Bewertung starten' })
+      ).toBeEnabled()
     })
 
-    it('enables input and button with a default of 3 once the flag is on and scoring succeeded', async () => {
+    it('sends the scoring_run_id of last_scoring_run when triggered', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
+          last_scoring_run: scoringRun({
+            id: 42,
+            status: 'success',
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
         })
       )
-
-      renderPage()
-
-      const button = await screen.findByRole('button', { name: /auswahl starten/i })
-      expect(button).toBeEnabled()
-      const input = screen.getByLabelText(/top-fotos pro foto-moment/i) as HTMLInputElement
-      expect(input).toBeEnabled()
-      expect(input.value).toBe('3')
-      expect(
-        screen.queryByText(/diese funktion ist derzeit nicht aktiviert/i)
-      ).not.toBeInTheDocument()
-      expect(
-        screen.queryByText(/führe zuerst die lokale vorauswahl oben aus/i)
-      ).not.toBeInTheDocument()
-    })
-
-    it('sends the current top_n_per_cluster value when starting the selection', async () => {
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-        })
-      )
-      vi.mocked(projectsApi.triggerSelectTop).mockReturnValue(new Promise(() => {}))
+      vi.mocked(projectsApi.triggerScoreCriteria).mockReturnValue(new Promise(() => {}))
       const user = userEvent.setup()
 
       renderPage()
-      const input = await screen.findByLabelText(/top-fotos pro foto-moment/i)
-      await user.clear(input)
-      await user.type(input, '5')
-      await user.click(screen.getByRole('button', { name: /auswahl starten/i }))
+      await user.click(await screen.findByRole('button', { name: 'Kriterien-Bewertung starten' }))
 
-      expect(projectsApi.triggerSelectTop).toHaveBeenCalledWith(1, 5)
-    })
-
-    it('keeps the previous valid value instead of falling through to 0 when the field is cleared', async () => {
-      // Copilot-Review-Fund (PR #51): Number('') ist 0, nicht NaN - ein geleertes Feld haette
-      // zuvor unbemerkt top_n_per_cluster=0 in den State uebernommen (auf Klick waere das dann
-      // als serverseitig ungueltiger Wert an /select-top gesendet worden, 422).
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-        })
-      )
-      vi.mocked(projectsApi.triggerSelectTop).mockReturnValue(new Promise(() => {}))
-      const user = userEvent.setup()
-
-      renderPage()
-      const input = (await screen.findByLabelText(
-        /top-fotos pro foto-moment/i
-      )) as HTMLInputElement
-      await user.clear(input)
-      await user.click(screen.getByRole('button', { name: /auswahl starten/i }))
-
-      expect(projectsApi.triggerSelectTop).toHaveBeenCalledWith(1, 3)
-    })
-
-    it('clamps a typed value above the 1-10 range instead of forwarding it as-is', async () => {
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-        })
-      )
-      vi.mocked(projectsApi.triggerSelectTop).mockReturnValue(new Promise(() => {}))
-      const user = userEvent.setup()
-
-      renderPage()
-      const input = await screen.findByLabelText(/top-fotos pro foto-moment/i)
-      await user.clear(input)
-      await user.type(input, '20')
-      await user.click(screen.getByRole('button', { name: /auswahl starten/i }))
-
-      expect(projectsApi.triggerSelectTop).toHaveBeenCalledWith(1, 10)
+      expect(projectsApi.triggerScoreCriteria).toHaveBeenCalledWith(1, 42)
     })
 
     it('disables the button synchronously on click, before the response arrives', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
+          last_scoring_run: scoringRun({
+            status: 'success',
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
         })
       )
-      vi.mocked(projectsApi.triggerSelectTop).mockReturnValue(new Promise(() => {}))
+      vi.mocked(projectsApi.triggerScoreCriteria).mockReturnValue(new Promise(() => {}))
       const user = userEvent.setup()
 
       renderPage()
-      const button = await screen.findByRole('button', { name: /auswahl starten/i })
+      const button = await screen.findByRole('button', { name: 'Kriterien-Bewertung starten' })
       await user.click(button)
 
       expect(button).toBeDisabled()
@@ -1039,19 +1056,21 @@ describe('ProjectDetailPage', () => {
     it('sends exactly one request on a rapid double click', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
+          last_scoring_run: scoringRun({
+            status: 'success',
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
         })
       )
-      vi.mocked(projectsApi.triggerSelectTop).mockReturnValue(new Promise(() => {}))
+      vi.mocked(projectsApi.triggerScoreCriteria).mockReturnValue(new Promise(() => {}))
       const user = userEvent.setup()
 
       renderPage()
-      const button = await screen.findByRole('button', { name: /auswahl starten/i })
+      const button = await screen.findByRole('button', { name: 'Kriterien-Bewertung starten' })
       await user.click(button)
       await user.click(button)
 
-      expect(projectsApi.triggerSelectTop).toHaveBeenCalledTimes(1)
+      expect(projectsApi.triggerScoreCriteria).toHaveBeenCalledTimes(1)
     })
 
     it(
@@ -1061,26 +1080,30 @@ describe('ProjectDetailPage', () => {
         vi.mocked(projectsApi.getProject)
           .mockResolvedValueOnce(
             project({
-              category_selection_enabled: true,
-              last_scoring_run: scoringRun({ status: 'success' }),
-              last_top_selection_run: null,
+              last_scoring_run: scoringRun({
+                status: 'success',
+                gate_confirmed_at: '2026-07-20T10:05:00Z',
+              }),
+              last_criterion_scoring_run: null,
             })
           )
           .mockResolvedValue(
             project({
-              category_selection_enabled: true,
-              last_scoring_run: scoringRun({ status: 'success' }),
-              last_top_selection_run: topSelectionRun({
-                candidates_total: 10,
-                candidates_processed: 4,
+              last_scoring_run: scoringRun({
+                status: 'success',
+                gate_confirmed_at: '2026-07-20T10:05:00Z',
+              }),
+              last_criterion_scoring_run: criterionScoringRun({
+                photos_total: 10,
+                photos_processed: 4,
               }),
             })
           )
-        vi.mocked(projectsApi.triggerSelectTop).mockResolvedValue({ status: 'queued' })
+        vi.mocked(projectsApi.triggerScoreCriteria).mockResolvedValue({ status: 'queued' })
         const user = userEvent.setup()
 
         renderPage()
-        const button = await screen.findByRole('button', { name: /auswahl starten/i })
+        const button = await screen.findByRole('button', { name: 'Kriterien-Bewertung starten' })
         await user.click(button)
 
         expect(await screen.findByText(/4 von 10 fotos verarbeitet/i)).toBeInTheDocument()
@@ -1091,17 +1114,15 @@ describe('ProjectDetailPage', () => {
     )
 
     it('throttles the aria-live announcement to 10%-steps instead of every poll tick', async () => {
-      // Test-Engineer-Review-Fund (Nice-to-have): Pendant zum bereits bestehenden Test fuer die
-      // Scoring-Sektion ("throttles the aria-live announcement..." weiter oben in dieser Datei) -
-      // die neue Select-Top-Sektion nutzt denselben gedrosselten Zaehler, war aber bislang nur
-      // ueber die reine "X von Y"-Textpruefung, nicht das Throttling selbst, abgedeckt.
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-          last_top_selection_run: topSelectionRun({
-            candidates_total: 100,
-            candidates_processed: 34,
+          last_scoring_run: scoringRun({
+            status: 'success',
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
+          last_criterion_scoring_run: criterionScoringRun({
+            photos_total: 100,
+            photos_processed: 34,
           }),
         })
       )
@@ -1113,12 +1134,17 @@ describe('ProjectDetailPage', () => {
       expect(screen.queryByText(/34% verarbeitet/i)).not.toBeInTheDocument()
     })
 
-    it('shows an indeterminate progress bar during the brief candidates_total=0 window', async () => {
+    it('shows an indeterminate progress bar during the brief photos_total=0 window', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-          last_top_selection_run: topSelectionRun({ candidates_total: 0, candidates_processed: 0 }),
+          last_scoring_run: scoringRun({
+            status: 'success',
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
+          last_criterion_scoring_run: criterionScoringRun({
+            photos_total: 0,
+            photos_processed: 0,
+          }),
         })
       )
 
@@ -1129,148 +1155,38 @@ describe('ProjectDetailPage', () => {
       expect(progress.hasAttribute('max')).toBe(false)
     })
 
-    it('shows a summary with the plural top-photo count once selection succeeded', async () => {
+    it('shows a success status once the run succeeded', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-          last_top_selection_run: topSelectionRun({
+          last_scoring_run: scoringRun({
+            status: 'success',
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
+          last_criterion_scoring_run: criterionScoringRun({
             status: 'success',
             finished_at: '2026-07-20T10:05:00Z',
-            candidates_total: 10,
-            candidates_processed: 10,
-            suggestions_found: 4,
+            photos_total: 10,
+            photos_processed: 10,
           }),
         })
       )
 
       renderPage()
 
-      expect(await screen.findByText('4 Top-Fotos ausgewählt')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /auswahl starten/i })).toBeEnabled()
-    })
-
-    it('shows the singular "1 Top-Foto ausgewählt" for exactly one result', async () => {
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-          last_top_selection_run: topSelectionRun({
-            status: 'success',
-            finished_at: '2026-07-20T10:05:00Z',
-            candidates_total: 10,
-            candidates_processed: 10,
-            suggestions_found: 1,
-          }),
-        })
-      )
-
-      renderPage()
-
-      expect(await screen.findByText('1 Top-Foto ausgewählt')).toBeInTheDocument()
-    })
-
-    it('shows "0 Top-Fotos ausgewählt" without an embellishing special-case text (a shortfall is a normal result, not an error)', async () => {
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-          last_top_selection_run: topSelectionRun({
-            status: 'success',
-            finished_at: '2026-07-20T10:05:00Z',
-            candidates_total: 10,
-            candidates_processed: 10,
-            suggestions_found: 0,
-          }),
-        })
-      )
-
-      renderPage()
-
-      expect(await screen.findByText('0 Top-Fotos ausgewählt')).toBeInTheDocument()
-    })
-
-    it('shows a link to the suggested-filter photo view after a successful "Top-Fotos auswählen" run', async () => {
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-          last_top_selection_run: topSelectionRun({
-            status: 'success',
-            finished_at: '2026-07-20T10:05:00Z',
-            candidates_total: 10,
-            candidates_processed: 10,
-            suggestions_found: 4,
-          }),
-        })
-      )
-
-      renderPage()
-
-      const link = await screen.findByRole('link', {
-        name: 'Vorschläge aus der Top-Foto-Auswahl ansehen',
-      })
-      expect(link).toHaveAttribute('href', '/projects/1/photos?filter=suggested')
-      expect(link).toHaveTextContent('Vorschläge ansehen')
-    })
-
-    it('shows the suggested-filter link even when the top-photo selection found zero results', async () => {
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-          last_top_selection_run: topSelectionRun({
-            status: 'success',
-            finished_at: '2026-07-20T10:05:00Z',
-            candidates_total: 10,
-            candidates_processed: 10,
-            suggestions_found: 0,
-          }),
-        })
-      )
-
-      renderPage()
-
-      await screen.findByText('0 Top-Fotos ausgewählt')
+      expect(await screen.findByText('Erfolgreich bewertet')).toBeInTheDocument()
       expect(
-        screen.getByRole('link', { name: 'Vorschläge aus der Top-Foto-Auswahl ansehen' })
-      ).toBeInTheDocument()
-    })
-
-    it('keeps both suggested-filter links and the generic photo-view link distinguishable and coexisting', async () => {
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success', suggestions_found: 3 }),
-          last_top_selection_run: topSelectionRun({
-            status: 'success',
-            suggestions_found: 4,
-          }),
-        })
-      )
-
-      renderPage()
-
-      expect(
-        await screen.findByRole('link', {
-          name: 'Vorschläge aus der Ausschuss-Aussortierung ansehen',
-        })
-      ).toBeInTheDocument()
-      expect(
-        screen.getByRole('link', { name: 'Vorschläge aus der Top-Foto-Auswahl ansehen' })
-      ).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: 'Fotos ansehen' })).toHaveAttribute(
-        'href',
-        '/projects/1/photos'
-      )
+        screen.getByRole('button', { name: 'Kriterien-Bewertung starten' })
+      ).toBeEnabled()
     })
 
     it('shows an inline error banner with a retry button on a failed run', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-          last_top_selection_run: topSelectionRun({
+          last_scoring_run: scoringRun({
+            status: 'success',
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
+          last_criterion_scoring_run: criterionScoringRun({
             status: 'failed',
             error_message: 'Unerwarteter Fehler',
           }),
@@ -1283,22 +1199,108 @@ describe('ProjectDetailPage', () => {
       expect(screen.getByRole('button', { name: /erneut versuchen/i })).toBeEnabled()
     })
 
-    it('retries the selection when "Erneut versuchen" is clicked', async () => {
+    it('retries the run when "Erneut versuchen" is clicked', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         project({
-          category_selection_enabled: true,
-          last_scoring_run: scoringRun({ status: 'success' }),
-          last_top_selection_run: topSelectionRun({ status: 'failed' }),
+          last_scoring_run: scoringRun({
+            id: 7,
+            status: 'success',
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
+          last_criterion_scoring_run: criterionScoringRun({ status: 'failed' }),
         })
       )
-      vi.mocked(projectsApi.triggerSelectTop).mockResolvedValue({ status: 'queued' })
+      vi.mocked(projectsApi.triggerScoreCriteria).mockResolvedValue({ status: 'queued' })
       const user = userEvent.setup()
 
       renderPage()
       const retryButton = await screen.findByRole('button', { name: /erneut versuchen/i })
       await user.click(retryButton)
 
-      expect(projectsApi.triggerSelectTop).toHaveBeenCalledWith(1, 3)
+      expect(projectsApi.triggerScoreCriteria).toHaveBeenCalledWith(1, 7)
+    })
+  })
+
+  describe('Kategorie-Kuratierung (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md)', () => {
+    it('shows an explanatory text and a disabled button before criterion scoring succeeded', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_criterion_scoring_run: null })
+      )
+
+      renderPage()
+
+      expect(
+        await screen.findByText(/führe zuerst die kriterien-bewertung oben aus/i)
+      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Kuratierung öffnen' })).toBeDisabled()
+      expect(
+        screen.queryByRole('link', { name: 'Kuratierung öffnen' })
+      ).not.toBeInTheDocument()
+    })
+
+    it('links to /curate with the default top-N of 3 once available', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_criterion_scoring_run: criterionScoringRun({ status: 'success' }) })
+      )
+
+      renderPage()
+
+      const link = await screen.findByRole('link', { name: 'Kuratierung öffnen' })
+      expect(link).toHaveAttribute('href', '/projects/1/curate?topN=3')
+      const input = screen.getByLabelText(/top-fotos pro kategorie/i) as HTMLInputElement
+      expect(input.value).toBe('3')
+    })
+
+    it('reflects a typed top-N value in the curate link', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_criterion_scoring_run: criterionScoringRun({ status: 'success' }) })
+      )
+      const user = userEvent.setup()
+
+      renderPage()
+      const input = await screen.findByLabelText(/top-fotos pro kategorie/i)
+      await user.clear(input)
+      await user.type(input, '5')
+
+      expect(screen.getByRole('link', { name: 'Kuratierung öffnen' })).toHaveAttribute(
+        'href',
+        '/projects/1/curate?topN=5'
+      )
+    })
+
+    it('clamps a typed value above the 1-10 range instead of forwarding it as-is', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_criterion_scoring_run: criterionScoringRun({ status: 'success' }) })
+      )
+      const user = userEvent.setup()
+
+      renderPage()
+      const input = await screen.findByLabelText(/top-fotos pro kategorie/i)
+      await user.clear(input)
+      await user.type(input, '20')
+
+      expect(screen.getByRole('link', { name: 'Kuratierung öffnen' })).toHaveAttribute(
+        'href',
+        '/projects/1/curate?topN=10'
+      )
+    })
+
+    it('keeps the previous valid value instead of falling through to 0 when the field is cleared', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({ last_criterion_scoring_run: criterionScoringRun({ status: 'success' }) })
+      )
+      const user = userEvent.setup()
+
+      renderPage()
+      const input = (await screen.findByLabelText(
+        /top-fotos pro kategorie/i
+      )) as HTMLInputElement
+      await user.clear(input)
+
+      expect(screen.getByRole('link', { name: 'Kuratierung öffnen' })).toHaveAttribute(
+        'href',
+        '/projects/1/curate?topN=3'
+      )
     })
   })
 })

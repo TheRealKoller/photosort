@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,7 @@ from photosort.api.deps import (
     get_session,
 )
 from photosort.config import settings
-from photosort.models import Project, ScanRun, ScanStatus, ScoringRun, TopSelectionRun
+from photosort.models import CriterionScoringRun, Project, ScanRun, ScanStatus, ScoringRun
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
 
 router = APIRouter(prefix="/projects", tags=["projects"], dependencies=[Depends(get_current_user)])
@@ -48,6 +48,11 @@ class ScanSummary(BaseModel):
 class ScoringRunSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    # Additiv (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md): der Client
+    # (POST /score-criteria) muss die id des ScoringRun kennen, dessen Stand er zu scoren
+    # beabsichtigt, damit der Server einen zwischenzeitlichen Re-Scan/Re-Scoring erkennen kann
+    # (409-Staleness-Guard, siehe trigger_score_criteria unten).
+    id: int
     status: ScanStatus
     started_at: datetime
     finished_at: datetime | None
@@ -55,29 +60,34 @@ class ScoringRunSummary(BaseModel):
     photos_processed: int
     suggestions_found: int
     error_message: str | None
+    # Ausschuss-Gate (specs/features/0037): None = noch nicht bestaetigt.
+    gate_confirmed_at: datetime | None
 
 
-class TopSelectionRunSummary(BaseModel):
-    """Analog ScoringRunSummary (specs/features/0024-top-photo-selection-category-mix.md) -
-    candidates_total/candidates_processed statt photos_total/photos_processed, da hier nur der
-    bereits begrenzte Kandidatenpool pro Cluster gezaehlt wird, nicht alle Projektfotos."""
+class CriterionScoringRunSummary(BaseModel):
+    """Ersetzt TopSelectionRunSummary (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+    backfill.md) - kein top_n_per_cluster/candidates_total/suggestions_found mehr: N ist beim
+    Scoren nicht mehr bekannt (wird erst beim Lesen angewendet), und der Job waehlt keine Top-N
+    mehr aus, sondern berechnet immer den vollen Rangfolge-Pool je Partition."""
 
     model_config = ConfigDict(from_attributes=True)
 
     status: ScanStatus
     started_at: datetime
     finished_at: datetime | None
-    top_n_per_cluster: int
-    candidates_total: int
-    candidates_processed: int
-    suggestions_found: int
+    photos_total: int
+    photos_processed: int
     error_message: str | None
 
 
-class SelectTopRequest(BaseModel):
-    # ge=1/le=10 serverseitig durchgesetzt (Akzeptanzkriterium der Spec) - nicht nur clientseitig
-    # begrenzt.
-    top_n_per_cluster: int = Field(ge=1, le=10)
+class ScoreCriteriaRequest(BaseModel):
+    """specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md: kein
+    top_n_per_cluster-Parameter mehr (ersetzt durch `scoring_run_id` - der Client uebergibt die
+    id des ScoringRun, dessen Stand er beim Anzeigen von last_scoring_run gesehen hat, damit der
+    Server einen zwischenzeitlichen Re-Scan/Re-Scoring als 409 ablehnen kann, statt auf einem
+    veralteten cluster_key-Stand weiterzuarbeiten - siehe Edge Cases der Spec)."""
+
+    scoring_run_id: int
 
 
 class ProjectOut(BaseModel):
@@ -88,12 +98,12 @@ class ProjectOut(BaseModel):
     created_at: datetime
     last_scan: ScanSummary | None = None
     last_scoring_run: ScoringRunSummary | None = None
-    last_top_selection_run: TopSelectionRunSummary | None = None
+    last_criterion_scoring_run: CriterionScoringRunSummary | None = None
     # Globales Feature-Flag, nicht projektspezifisch (specs/features/0024-top-photo-selection-
-    # category-mix.md) - hier statt in einem neuen Endpunkt exponiert: technische
-    # Detailentscheidung der Umsetzung, damit das Frontend-Verfuegbarkeitsgate proaktiv aus den
-    # ohnehin bereits geladenen Projektdaten dieser Seite ableiten kann (UI/UX-Abschnitt der Spec),
-    # statt erst nach einem fehlgeschlagenen 403 auf POST /select-top.
+    # category-mix.md, weiterhin verwendet fuer POST /score-criteria seit Spec 0037) - hier statt
+    # in einem neuen Endpunkt exponiert: technische Detailentscheidung der Umsetzung, damit das
+    # Frontend-Verfuegbarkeitsgate proaktiv aus den ohnehin bereits geladenen Projektdaten dieser
+    # Seite ableiten kann (UI/UX-Abschnitt der Spec), statt erst nach einem fehlgeschlagenen 403.
     category_selection_enabled: bool
 
 
@@ -117,13 +127,13 @@ async def _latest_scoring_run(session: AsyncSession, project_id: int) -> Scoring
     return result.scalars().first()
 
 
-async def _latest_top_selection_run(
+async def _latest_criterion_scoring_run(
     session: AsyncSession, project_id: int
-) -> TopSelectionRun | None:
+) -> CriterionScoringRun | None:
     result = await session.execute(
-        select(TopSelectionRun)
-        .where(TopSelectionRun.project_id == project_id)
-        .order_by(TopSelectionRun.started_at.desc())
+        select(CriterionScoringRun)
+        .where(CriterionScoringRun.project_id == project_id)
+        .order_by(CriterionScoringRun.started_at.desc())
         .limit(1)
     )
     return result.scalars().first()
@@ -132,7 +142,7 @@ async def _latest_top_selection_run(
 async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut:
     scan_run = await _latest_scan_run(session, project.id)
     scoring_run = await _latest_scoring_run(session, project.id)
-    top_selection_run = await _latest_top_selection_run(session, project.id)
+    criterion_scoring_run = await _latest_criterion_scoring_run(session, project.id)
     return ProjectOut(
         id=project.id,
         name=project.name,
@@ -143,9 +153,9 @@ async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut
         last_scoring_run=(
             ScoringRunSummary.model_validate(scoring_run) if scoring_run is not None else None
         ),
-        last_top_selection_run=(
-            TopSelectionRunSummary.model_validate(top_selection_run)
-            if top_selection_run is not None
+        last_criterion_scoring_run=(
+            CriterionScoringRunSummary.model_validate(criterion_scoring_run)
+            if criterion_scoring_run is not None
             else None
         ),
         category_selection_enabled=settings.category_selection_enabled,
@@ -229,19 +239,47 @@ async def trigger_score(
     return {"status": "queued"}
 
 
-@router.post("/{project_id}/select-top", status_code=status.HTTP_202_ACCEPTED)
-async def trigger_select_top(
+@router.post("/{project_id}/confirm-ausschuss-gate", status_code=status.HTTP_200_OK)
+async def confirm_ausschuss_gate(
     project_id: int,
-    payload: SelectTopRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """Ausschuss-Gate (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md): `409`
+    ohne erfolgreichen `ScoringRun`; setzt bei vorhandenem erfolgreichem `ScoringRun`
+    `gate_confirmed_at`; wiederholter Aufruf ist idempotent (kein Fehler, kein zweiter Effekt -
+    ein bereits gesetzter Zeitstempel wird nicht ueberschrieben). Projektweit, nicht
+    personenbezogen (kein user_id-Bezug, siehe Security-Abschnitt der Spec, konsistent mit
+    ScanRun/ScoringRun/CriterionScoringRun)."""
+    await _get_project_or_404(project_id, session)
+
+    latest_scoring_run = await _latest_scoring_run(session, project_id)
+    if latest_scoring_run is None or latest_scoring_run.status != ScanStatus.SUCCESS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Fuehre zuerst die Ausschuss-Erkennung erfolgreich aus.",
+        )
+
+    if latest_scoring_run.gate_confirmed_at is None:
+        latest_scoring_run.gate_confirmed_at = datetime.now(UTC).replace(tzinfo=None)
+        await session.commit()
+
+    return {"status": "confirmed"}
+
+
+@router.post("/{project_id}/score-criteria", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_score_criteria(
+    project_id: int,
+    payload: ScoreCriteriaRequest,
     session: AsyncSession = Depends(get_session),
     enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
 ) -> dict[str, str]:
-    """specs/features/0024-top-photo-selection-category-mix.md: `403` wenn das Feature-Flag aus
-    ist, `409` ohne erfolgreichen `ScoringRun` (Phase A muss vorher erfolgreich gelaufen sein),
-    sonst enqueue des neuen select_top_photos-Jobs. Legt selbst KEINE TopSelectionRun-Zeile an -
-    das erledigt der Job beim tatsaechlichen Start (run_top_selection in worker.py), identisches
-    Muster wie trigger_scan/trigger_score oben (ScanRun/ScoringRun werden ebenfalls erst vom Job
-    angelegt, nicht synchron hier im Request-Handler)."""
+    """specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md (ersetzt /select-top):
+    `403` wenn das Feature-Flag aus ist, `409` ohne erfolgreichen `ScoringRun`, `409` ohne
+    bestaetigtes Gate, `409` bei veraltetem `scoring_run_id`-Bezug (Re-Scan/Re-Scoring waehrend
+    der Kuratierung) - kein `top_n_per_cluster`-Parameter mehr (N wird erst beim Lesen
+    angewendet). Legt selbst KEINE CriterionScoringRun-Zeile an - das erledigt der Job beim
+    tatsaechlichen Start (run_criterion_scoring in worker.py), identisches Muster wie
+    trigger_scan/trigger_score oben."""
     if not settings.category_selection_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -254,8 +292,19 @@ async def trigger_select_top(
     if latest_scoring_run is None or latest_scoring_run.status != ScanStatus.SUCCESS:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Fuehre zuerst die lokale Vorauswahl (Ausschuss aussortieren) erfolgreich aus.",
+            detail="Fuehre zuerst die Ausschuss-Erkennung erfolgreich aus.",
+        )
+    if latest_scoring_run.gate_confirmed_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bestaetige zuerst das Ausschuss-Gate.",
+        )
+    if payload.scoring_run_id != latest_scoring_run.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Der Ausschuss wurde zwischenzeitlich neu ermittelt (Re-Scan/Re-Scoring) - "
+            "lade das Projekt neu und starte die Kriterien-Bewertung erneut.",
         )
 
-    await enqueuer.enqueue_job("select_top_photos", project_id, payload.top_n_per_cluster)
+    await enqueuer.enqueue_job("score_criteria", project_id, payload.scoring_run_id)
     return {"status": "queued"}

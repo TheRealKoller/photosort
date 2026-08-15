@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import photosort.worker as worker_module
 from photosort.db import make_session_factory
-from photosort.models import Project, ScanRun, ScanStatus, ScoringRun, TopSelectionRun
+from photosort.models import CriterionScoringRun, Project, ScanRun, ScanStatus, ScoringRun
 from photosort.worker import reap_stalled_runs
 
 # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019),
@@ -30,6 +30,14 @@ async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Proj
     await session.commit()
     await session.refresh(project)
     return project
+
+
+async def _make_scoring_run(session: AsyncSession, project: Project) -> ScoringRun:
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    session.add(scoring_run)
+    await session.commit()
+    await session.refresh(scoring_run)
+    return scoring_run
 
 
 async def test_reaps_scan_run_stalled_beyond_threshold(db_session: AsyncSession) -> None:
@@ -139,12 +147,13 @@ async def test_reaps_stalled_scoring_run(db_session: AsyncSession) -> None:
     assert stalled.status == ScanStatus.FAILED
 
 
-async def test_reaps_stalled_top_selection_run(db_session: AsyncSession) -> None:
+async def test_reaps_stalled_criterion_scoring_run(db_session: AsyncSession) -> None:
     project = await _make_project(db_session)
-    stalled = TopSelectionRun(
+    scoring_run = await _make_scoring_run(db_session, project)
+    stalled = CriterionScoringRun(
         project_id=project.id,
+        scoring_run_id=scoring_run.id,
         status=ScanStatus.RUNNING,
-        top_n_per_cluster=3,
         last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
     )
     db_session.add(stalled)
@@ -165,6 +174,7 @@ async def test_reaps_stalled_runs_of_different_types_independently(
     """Akzeptanzkriterium der Spec: reap_stalled_runs behandelt alle drei Tabellen unabhaengig
     voneinander."""
     project = await _make_project(db_session)
+    scoring_run = await _make_scoring_run(db_session, project)
     stalled_scan = ScanRun(
         project_id=project.id,
         status=ScanStatus.RUNNING,
@@ -175,20 +185,20 @@ async def test_reaps_stalled_runs_of_different_types_independently(
         status=ScanStatus.RUNNING,
         last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
     )
-    stalled_top_selection = TopSelectionRun(
+    stalled_criterion_scoring = CriterionScoringRun(
         project_id=project.id,
+        scoring_run_id=scoring_run.id,
         status=ScanStatus.RUNNING,
-        top_n_per_cluster=3,
         last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
     )
-    db_session.add_all([stalled_scan, stalled_scoring, stalled_top_selection])
+    db_session.add_all([stalled_scan, stalled_scoring, stalled_criterion_scoring])
     await db_session.commit()
 
     session_factory = make_session_factory(db_session.bind)
     reaped = await reap_stalled_runs({}, session_factory=session_factory)
 
     assert reaped == 3
-    for run in (stalled_scan, stalled_scoring, stalled_top_selection):
+    for run in (stalled_scan, stalled_scoring, stalled_criterion_scoring):
         await db_session.refresh(run)
         assert run.status == ScanStatus.FAILED
 
@@ -312,6 +322,7 @@ async def test_error_selecting_scoring_runs_does_not_block_the_other_tables(
     denselben (bewusst dreifach duplizierten, nicht generisch geloopten - ADR 0019) Code-Pfad fuer
     die zweite der drei Tabellen ab (test-engineer-Review-Fund, Spec 0034)."""
     project = await _make_project(db_session)
+    scoring_run = await _make_scoring_run(db_session, project)
     stalled_scan = ScanRun(
         project_id=project.id,
         status=ScanStatus.RUNNING,
@@ -322,19 +333,22 @@ async def test_error_selecting_scoring_runs_does_not_block_the_other_tables(
         status=ScanStatus.RUNNING,
         last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
     )
-    stalled_top_selection = TopSelectionRun(
+    stalled_criterion_scoring = CriterionScoringRun(
         project_id=project.id,
+        scoring_run_id=scoring_run.id,
         status=ScanStatus.RUNNING,
-        top_n_per_cluster=3,
         last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
     )
-    db_session.add_all([stalled_scan, stalled_scoring, stalled_top_selection])
+    db_session.add_all([stalled_scan, stalled_scoring, stalled_criterion_scoring])
     await db_session.commit()
 
     original_execute = AsyncSession.execute
 
     async def flaky_execute(self: AsyncSession, statement: object, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
-        if "scoring_runs" in str(statement):
+        # "FROM scoring_runs" statt nur "scoring_runs" (Regressions-Fix): letzteres waere auch
+        # als Substring in "FROM criterion_scoring_runs" enthalten und haette faelschlich auch
+        # DEREN SELECT scheitern lassen - dieser Test soll ausschliesslich ScoringRun treffen.
+        if "FROM scoring_runs" in str(statement):
             raise RuntimeError("simulated table-level failure")
         return await original_execute(self, statement, *args, **kwargs)  # type: ignore[arg-type]
 
@@ -348,37 +362,38 @@ async def test_error_selecting_scoring_runs_does_not_block_the_other_tables(
     assert reaped == 2
     await db_session.refresh(stalled_scan)
     await db_session.refresh(stalled_scoring)
-    await db_session.refresh(stalled_top_selection)
+    await db_session.refresh(stalled_criterion_scoring)
     assert stalled_scan.status == ScanStatus.FAILED
     assert stalled_scoring.status == ScanStatus.RUNNING
-    assert stalled_top_selection.status == ScanStatus.FAILED
+    assert stalled_criterion_scoring.status == ScanStatus.FAILED
 
 
-async def test_error_selecting_top_selection_runs_does_not_block_the_other_tables(
+async def test_error_selecting_criterion_scoring_runs_does_not_block_the_other_tables(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Drittes Pendant, fuer TopSelectionRun - schliesst die Coverage-Luecke fuer alle drei
+    """Drittes Pendant, fuer CriterionScoringRun - schliesst die Coverage-Luecke fuer alle drei
     (bewusst duplizierten) SELECT-except-Bloecke vollstaendig (test-engineer-Review-Fund, Spec
     0034)."""
     project = await _make_project(db_session)
+    scoring_run = await _make_scoring_run(db_session, project)
     stalled_scan = ScanRun(
         project_id=project.id,
         status=ScanStatus.RUNNING,
         last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
     )
-    stalled_top_selection = TopSelectionRun(
+    stalled_criterion_scoring = CriterionScoringRun(
         project_id=project.id,
+        scoring_run_id=scoring_run.id,
         status=ScanStatus.RUNNING,
-        top_n_per_cluster=3,
         last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
     )
-    db_session.add_all([stalled_scan, stalled_top_selection])
+    db_session.add_all([stalled_scan, stalled_criterion_scoring])
     await db_session.commit()
 
     original_execute = AsyncSession.execute
 
     async def flaky_execute(self: AsyncSession, statement: object, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
-        if "top_selection_runs" in str(statement):
+        if "criterion_scoring_runs" in str(statement):
             raise RuntimeError("simulated table-level failure")
         return await original_execute(self, statement, *args, **kwargs)  # type: ignore[arg-type]
 
@@ -391,6 +406,6 @@ async def test_error_selecting_top_selection_runs_does_not_block_the_other_table
 
     assert reaped == 1
     await db_session.refresh(stalled_scan)
-    await db_session.refresh(stalled_top_selection)
+    await db_session.refresh(stalled_criterion_scoring)
     assert stalled_scan.status == ScanStatus.FAILED
-    assert stalled_top_selection.status == ScanStatus.RUNNING
+    assert stalled_criterion_scoring.status == ScanStatus.RUNNING

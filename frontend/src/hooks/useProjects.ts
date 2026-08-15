@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
+  confirmAusschussGate,
   createProject,
   getProject,
   listProjects,
   triggerScan,
   triggerScore,
-  triggerSelectTop,
+  triggerScoreCriteria,
   type CreateProjectPayload,
 } from '../api/projects'
 import type { ProjectOut } from '../api/types'
@@ -18,12 +19,12 @@ export function useProjectsQuery() {
 }
 
 /**
- * Pollt, solange der letzte Scan, der letzte Scoring-Lauf ODER der letzte Top-Auswahl-Lauf laeuft
- * (`status === "running"`), und stoppt automatisch, sobald alle fertig sind - siehe
+ * Pollt, solange der letzte Scan, der letzte Scoring-Lauf ODER der letzte Kriterien-Scoring-Lauf
+ * laeuft (`status === "running"`), und stoppt automatisch, sobald alle fertig sind - siehe
  * specs/features/0005-minimal-project-frontend.md, decisions/0004-frontend-app-shell.md,
  * specs/features/0003-automatic-best-photo-selection.md und
- * specs/features/0024-top-photo-selection-category-mix.md (dritte Anwendung desselben
- * granularen Live-Fortschritt-Polling-Musters).
+ * specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md (dritte Anwendung
+ * desselben granularen Live-Fortschritt-Polling-Musters, ersetzt last_top_selection_run).
  */
 export function useProjectQuery(id: number) {
   return useQuery({
@@ -34,7 +35,7 @@ export function useProjectQuery(id: number) {
       const isRunning =
         data?.last_scan?.status === 'running' ||
         data?.last_scoring_run?.status === 'running' ||
-        data?.last_top_selection_run?.status === 'running'
+        data?.last_criterion_scoring_run?.status === 'running'
       return isRunning ? POLL_INTERVAL_MS : false
     },
   })
@@ -70,10 +71,20 @@ export function useTriggerScoreMutation(id: number) {
   })
 }
 
-export function useTriggerSelectTopMutation(id: number) {
+export function useConfirmAusschussGateMutation(id: number) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (topNPerCluster: number) => triggerSelectTop(id, topNPerCluster),
+    mutationFn: () => confirmAusschussGate(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+    },
+  })
+}
+
+export function useTriggerScoreCriteriaMutation(id: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (scoringRunId: number) => triggerScoreCriteria(id, scoringRunId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
     },

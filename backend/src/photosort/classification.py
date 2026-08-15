@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -8,13 +7,15 @@ from typing import Protocol
 import numpy as np
 from PIL import Image, ImageFilter, ImageStat
 
-from photosort.models import PhotoCategory
-
 # specs/features/0024-top-photo-selection-category-mix.md, decisions/0015-lokale-kategorie-
 # klassifikation.md: bewusst ein eigenes Modul statt Erweiterung von scoring.py, damit die neue
 # mediapipe-Abhaengigkeit nicht in den leichten Phase-A-Importpfad (worker.py::run_project_scoring,
-# laeuft fuer JEDES gescannte Foto) einsickert - classification.py wird nur vom neuen, separaten
-# select_top_photos-Job importiert.
+# laeuft fuer JEDES gescannte Foto) einsickert - classification.py wird nur von criteria.py (und
+# darueber vom neuen run_criterion_scoring-Job, specs/features/0037-gatefuehrte-bewertungs-
+# pipeline-mit-backfill.md) importiert. `classify_category`/`CategoryCandidate`/
+# `select_top_n_with_category_mix` sind mit Spec 0037 entfallen - die Kategorie-Ableitung lebt jetzt
+# in criteria.py::derive_category_key (datengetrieben aus Kriterien-Werten statt eines hart
+# codierten Einzelaufrufs), die Rangfolge in ranking.py::rank_photos (ersetzt das Quotenverfahren).
 
 # Laplace-Kernel-Varianz-Schwellwert je 8x8-Kachel, unterhalb dessen eine Kachel als "flaechig/
 # uniform" gilt - dieselbe Kennzahl wie scoring.py::compute_sharpness (Laplace-Kernel-Varianz),
@@ -108,16 +109,47 @@ def compute_uniform_area_fraction(image: Image.Image) -> float:
     return uniform_tiles / total_tiles if total_tiles else 0.0
 
 
+class BoundingBoxLike(Protocol):
+    """Die schmale Teilmenge von mediapipe.tasks.python.components.containers.BoundingBox, die
+    detect_person braucht (Pixel-Koordinaten, nicht normiert)."""
+
+    origin_x: int
+    origin_y: int
+    width: int
+    height: int
+
+
+class DetectionLike(Protocol):
+    categories: list[object]
+    bounding_box: BoundingBoxLike
+
+
 class DetectionResultLike(Protocol):
     """Die schmale Teilmenge von mediapipe.tasks.python.components.containers.DetectionResult, die
     detect_person braucht - erlaubt einen FakeFaceDetector in Tests ohne echte mediapipe-Typen
     (Teststrategie-Abschnitt der Spec)."""
 
-    detections: list[object]
+    detections: list[DetectionLike]
 
 
 class FaceDetectorLike(Protocol):
     def detect(self, image: object) -> DetectionResultLike: ...
+
+
+@dataclass(frozen=True)
+class FaceBoundingBox:
+    """Auf die Bildgroesse normierte Position eines erkannten Gesichts (specs/features/0037-
+    gatefuehrte-bewertungs-pipeline-mit-backfill.md, Abschnitt "Vorgriffs-Ergaenzung" fuer die
+    kuenftige Spec 0038, ADR 0022) - `detect_person` gab bis hierhin nur `bool` zurueck; die
+    Positionsdaten braucht erst die spaetere Goldener-Schnitt-Kriterien-Spec, der guenstigste
+    Zeitpunkt fuer diese Vertragserweiterung ist aber der ohnehin bevorstehende Neubau von
+    criteria.py, nicht ein spaeterer Rework. Alle Werte in [0, 1], Ursprung oben links."""
+
+    x_center: float
+    y_center: float
+    width: float
+    height: float
+    confidence: float
 
 
 def _to_mp_image(image: Image.Image) -> object:
@@ -132,16 +164,35 @@ def _to_mp_image(image: Image.Image) -> object:
     return mp.Image(image_format=mp.ImageFormat.SRGB, data=np.asarray(rgb))
 
 
-def detect_person(image: Image.Image, detector: FaceDetectorLike) -> bool:
+def detect_person(image: Image.Image, detector: FaceDetectorLike) -> list[FaceBoundingBox]:
     """mediapipe Face Detector Task-API (Architektur-Abschnitt der Spec) auf der bereits gecachten
     display-Variante. `detector` ist injizierbar (siehe FaceDetectorLike) - die reale
-    Modellkonstruktion (build_face_detector) laeuft in keinem automatisierten Test."""
+    Modellkonstruktion (build_face_detector) laeuft in keinem automatisierten Test.
+
+    Gibt seit specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md eine Liste
+    normierter FaceBoundingBox-Treffer zurueck statt eines blossen bool (Vorgriff auf die
+    Positionsdaten, die die kuenftige Goldener-Schnitt-Kriterien-Spec 0038 braucht) - fuer den
+    aktuellen content_people-Kriterien-Compute aendert sich funktional nichts
+    (`bool(detect_person(...))` als Score-Grundlage, siehe criteria.py)."""
+    width, height = image.size
     result = detector.detect(_to_mp_image(image))
+    boxes: list[FaceBoundingBox] = []
     for detection in result.detections:
         categories = getattr(detection, "categories", [])
-        if any(category.score >= FACE_DETECTION_CONFIDENCE_THRESHOLD for category in categories):
-            return True
-    return False
+        best_confidence = max((category.score for category in categories), default=0.0)
+        if best_confidence < FACE_DETECTION_CONFIDENCE_THRESHOLD:
+            continue
+        box = detection.bounding_box
+        boxes.append(
+            FaceBoundingBox(
+                x_center=(box.origin_x + box.width / 2) / width,
+                y_center=(box.origin_y + box.height / 2) / height,
+                width=box.width / width,
+                height=box.height / height,
+                confidence=best_confidence,
+            )
+        )
+    return boxes
 
 
 def build_face_detector() -> FaceDetectorLike:
@@ -157,64 +208,3 @@ def build_face_detector() -> FaceDetectorLike:
     )
     detector: FaceDetectorLike = vision.FaceDetector.create_from_options(options)
     return detector
-
-
-def classify_category(
-    image: Image.Image,
-    detector: FaceDetectorLike,
-    *,
-    detect_person: Callable[[Image.Image, FaceDetectorLike], bool] = detect_person,
-) -> PhotoCategory:
-    """Deterministische Prioritaetskette (Akzeptanzkriterium der Spec): Gesicht erkannt -> PEOPLE;
-    sonst hoher Uniform-Flaechen-Anteil -> LANDSCAPE; sonst -> DETAIL (Fallback). `detect_person`
-    ist injizierbar (Default: das echte, oben definierte detect_person) fuer Testbarkeit ohne
-    echtes mediapipe-Modell - Tests uebergeben stattdessen ein einfaches Lambda und einen
-    beliebigen Platzhalter fuer `detector` (wird vom Fake ohnehin ignoriert). `detector` ist ein
-    Pflichtparameter (kein Default): worker.py baut ihn EINMAL pro Job (build_face_detector),
-    nicht pro Foto - eine Default-Konstruktion hier wuerde entweder das echte Modell schon beim
-    Import laden (teuer, in Tests unerwuenscht) oder pro Aufruf neu bauen (Performance)."""
-    if detect_person(image, detector):
-        return PhotoCategory.PEOPLE
-    if compute_uniform_area_fraction(image) >= LANDSCAPE_UNIFORM_FRACTION_THRESHOLD:
-        return PhotoCategory.LANDSCAPE
-    return PhotoCategory.DETAIL
-
-
-# Feste Kategorie-Reihenfolge fuer das Quotenverfahren (Akzeptanzkriterium der Spec) - bestimmt,
-# welche Kategorie(n) bei einem divmod-Rest den zusaetzlichen Sitz bekommen.
-_CATEGORY_ORDER = (PhotoCategory.LANDSCAPE, PhotoCategory.DETAIL, PhotoCategory.PEOPLE)
-
-
-@dataclass(frozen=True)
-class CategoryCandidate:
-    photo_id: int
-    category: PhotoCategory
-    local_quality_score: float
-
-
-def select_top_n_with_category_mix(candidates: list[CategoryCandidate], n: int) -> list[int]:
-    """Pure, DB-freie Funktion (analog scoring.py::assign_time_clusters): verteilt N per divmod auf
-    die im Cluster tatsaechlich vorhandenen Kategorien (feste Reihenfolge LANDSCAPE/DETAIL/PEOPLE),
-    waehlt pro Kategorie bis zur Quote die Fotos mit dem hoechsten local_quality_score (Tie-Break:
-    niedrigere photo_id). KEIN Nachziehen aus anderen Kategorien, wenn eine Kategorie ihre Quote
-    nicht erreicht (Akzeptanzkriterium der Spec) - die tatsaechliche Trefferzahl kann unter N
-    bleiben."""
-    by_category: dict[PhotoCategory, list[CategoryCandidate]] = {}
-    for candidate in candidates:
-        by_category.setdefault(candidate.category, []).append(candidate)
-
-    present_categories = [category for category in _CATEGORY_ORDER if category in by_category]
-    if not present_categories:
-        return []
-
-    quotient, remainder = divmod(n, len(present_categories))
-
-    selected: list[int] = []
-    for index, category in enumerate(present_categories):
-        quota = quotient + (1 if index < remainder else 0)
-        pool = sorted(
-            by_category[category], key=lambda c: (-c.local_quality_score, c.photo_id)
-        )
-        selected.extend(candidate.photo_id for candidate in pool[:quota])
-
-    return sorted(selected)

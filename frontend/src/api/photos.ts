@@ -5,6 +5,10 @@ export interface ListPhotosParams {
   ratingStatus?: RatingFilter
   limit?: number
   offset?: number
+  // Kategorie-Kuratierung + Backfill (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+  // backfill.md) - wenn gesetzt, ersetzt dieser Query-Modus ratingStatus/limit/offset vollstaendig
+  // (eigenstaendige Kuratierungs-Ansicht, siehe backend api/photos.py::list_photos-Kommentar).
+  topNPerCategory?: number
 }
 
 export function listPhotos(
@@ -20,6 +24,9 @@ export function listPhotos(
   }
   if (params.offset !== undefined) {
     query.set('offset', String(params.offset))
+  }
+  if (params.topNPerCategory !== undefined) {
+    query.set('top_n_per_category', String(params.topNPerCategory))
   }
   const queryString = query.toString()
   return apiFetch<PhotoListOut>(

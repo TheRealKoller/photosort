@@ -7,12 +7,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
+import * as projectsApi from '../api/projects'
 import * as ratingsApi from '../api/ratings'
 import type { PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { PhotoGridPage } from './PhotoGridPage'
 
 vi.mock('../api/photos')
+vi.mock('../api/projects')
 vi.mock('../api/ratings')
 
 function makeToken(payload: unknown): string {
@@ -28,6 +30,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     taken_at: '2026-07-20T10:00:00Z',
     ratings: [],
     suggestion: null,
+    ranking: null,
     ...overrides,
   }
 }
@@ -37,11 +40,9 @@ function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
     status: 'rejected',
     reason: 'low_quality',
     duplicate_of: null,
-    local_quality_score: null,
     sharpness: 1.0,
     exposure: 0.5,
     cluster_key: null,
-    category: null,
     computed_at: '2026-07-20T10:00:00Z',
     ...overrides,
   }
@@ -57,6 +58,7 @@ function renderPage(initialPath = '/projects/1/photos') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
+        <Route path="/projects/:projectId" element={<p>Projekt-Detailseite</p>} />
         <Route path="/projects/:projectId/photos" element={<PhotoGridPage />} />
         <Route path="/projects/:projectId/photos/:photoId" element={<p>Einzelbild-Seite</p>} />
       </Routes>
@@ -71,6 +73,8 @@ describe('PhotoGridPage', () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
     vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(projectsApi.confirmAusschussGate).mockReset()
+    vi.mocked(projectsApi.confirmAusschussGate).mockResolvedValue({ status: 'confirmed' })
     setToken(makeToken({ sub: '1', username: 'testuser' }))
   })
 
@@ -256,60 +260,6 @@ describe('PhotoGridPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows a category chip alongside the rating badge for a top-pick suggestion with a category', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue({
-      items: [
-        photo({
-          id: 1,
-          ratings: [],
-          suggestion: suggestion({ status: 'album_worthy', reason: 'top_pick', category: 'landscape' }),
-        }),
-      ],
-      total: 1,
-    })
-
-    renderPage()
-
-    expect(await screen.findByLabelText('Landschaft')).toBeInTheDocument()
-  })
-
-  it('does not show a category chip when the suggestion has no category (duplicate/low_quality)', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue({
-      items: [photo({ id: 1, ratings: [], suggestion: suggestion({ category: null }) })],
-      total: 1,
-    })
-
-    renderPage()
-
-    await screen.findAllByRole('listitem')
-    expect(screen.queryByLabelText('Landschaft')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Detailaufnahme')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Menschen')).not.toBeInTheDocument()
-  })
-
-  it('does not show a quality meter on the grid tile (detail-view-only per spec)', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue({
-      items: [
-        photo({
-          id: 1,
-          ratings: [],
-          suggestion: suggestion({
-            status: 'album_worthy',
-            reason: 'top_pick',
-            category: 'landscape',
-            local_quality_score: 90,
-          }),
-        }),
-      ],
-      total: 1,
-    })
-
-    renderPage()
-
-    await screen.findByLabelText('Landschaft')
-    expect(screen.queryByText('Hohe Bildqualität')).not.toBeInTheDocument()
-  })
-
   it('does not show a suggestion badge/button when the photo has no open suggestion', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
       items: [photo({ id: 1, ratings: [], suggestion: null })],
@@ -390,5 +340,65 @@ describe('PhotoGridPage', () => {
 
     expect(ratingsApi.setRating).toHaveBeenCalledWith(7, 'rejected')
     expect(screen.queryByText('Einzelbild-Seite')).not.toBeInTheDocument()
+  })
+
+  describe('gate mode (&gate=1)', () => {
+    it('shows a banner with candidate count and confirm button, hidden without the gate param', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1 }), photo({ id: 2 })],
+        total: 2,
+      })
+
+      renderPage('/projects/1/photos?filter=suggested')
+      await screen.findAllByRole('listitem')
+      expect(
+        screen.queryByRole('button', { name: /ausschuss gesichtet/i })
+      ).not.toBeInTheDocument()
+    })
+
+    it('shows the banner and candidate count when gate=1', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1 }), photo({ id: 2 })],
+        total: 2,
+      })
+
+      renderPage('/projects/1/photos?filter=suggested&gate=1')
+
+      expect(await screen.findByText(/2 kandidaten/i)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Ausschuss gesichtet, weiter' })).toBeInTheDocument()
+    })
+
+    it('confirms the gate and navigates back to the project detail page on click', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1 })],
+        total: 1,
+      })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos?filter=suggested&gate=1')
+      const confirmButton = await screen.findByRole('button', {
+        name: 'Ausschuss gesichtet, weiter',
+      })
+      await user.click(confirmButton)
+
+      await waitFor(() => expect(projectsApi.confirmAusschussGate).toHaveBeenCalledWith(1))
+      expect(await screen.findByText('Projekt-Detailseite')).toBeInTheDocument()
+    })
+
+    it('shows an error alert when confirming the gate fails', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 1 })], total: 1 })
+      vi.mocked(projectsApi.confirmAusschussGate).mockRejectedValue(
+        new ApiError(409, 'Kein erfolgreicher Ausschuss-Lauf.')
+      )
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos?filter=suggested&gate=1')
+      const confirmButton = await screen.findByRole('button', {
+        name: 'Ausschuss gesichtet, weiter',
+      })
+      await user.click(confirmButton)
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Kein erfolgreicher Ausschuss-Lauf.')
+    })
   })
 })

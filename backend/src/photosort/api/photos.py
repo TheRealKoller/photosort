@@ -14,7 +14,17 @@ from sqlalchemy.orm import aliased, selectinload
 
 from photosort.api.deps import get_current_user, get_session
 from photosort.config import settings
-from photosort.models import Photo, PhotoCategory, PhotoScore, Project, Rating, RatingStatus, User
+from photosort.models import (
+    CriterionScoringRun,
+    Photo,
+    PhotoRanking,
+    PhotoScore,
+    Project,
+    Rating,
+    RatingStatus,
+    ScanStatus,
+    User,
+)
 from photosort.thumbnails import variant_path
 
 # Bewusste Abweichung vom Router-Level-dependencies=[Depends(get_current_user)]-Muster aus
@@ -42,21 +52,39 @@ class RatingOut(BaseModel):
 class SuggestionOut(BaseModel):
     """Automatischer Vorschlag aus PhotoScore, bewusst getrennt von RatingOut/ratings[] (ADR 0006,
     decisions/0006-local-scoring-datamodel.md) - ein Vorschlag ist strukturell nie eine
-    Rating-Zeile. `reason` ist regelbasiert aus duplicate_of/suggested_status abgeleitet
-    (Akzeptanzkriterium der Spec), nicht separat in PhotoScore gespeichert. "top_pick" (additiv,
-    specs/features/0024-top-photo-selection-category-mix.md) gilt fuer jeden ALBUM_WORTHY-Vorschlag
-    - dieser Status wird ausschliesslich vom neuen select_top_photos-Job gesetzt, Phase A setzt
-    praktisch nur REJECTED (siehe models.py::PhotoScore-Docstring)."""
+    Rating-Zeile. `reason` ist regelbasiert aus duplicate_of abgeleitet (Akzeptanzkriterium der
+    Spec), nicht separat in PhotoScore gespeichert.
+
+    "top_pick"/`category` sind mit specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+    backfill.md entfallen: PhotoScore.suggested_status wird seitdem "praktisch nur noch REJECTED"
+    gesetzt (ADR 0021) - der fruehere Top-Pick-Mechanismus (Spec 0024, select_top_photos-Job) ist
+    durch die neue Kriterien-/Rangfolgen-Pipeline (PhotoRanking, siehe RankingOut unten) ersetzt.
+    Technische Umsetzungsentscheidung des developer-Agenten (von der Spec explizit an dieser
+    Stelle delegiert): statt `reason` um einen dritten Wert ("Rang-Vorschlag") zu erweitern, lebt
+    die Rangfolgen-Information in einem eigenen, additiven `PhotoOut.ranking`-Feld - strukturell
+    sauberer getrennt, da "Top-N-Kandidat einer Partition" kein Duplikat-/Qualitaets-Ausschuss-
+    Urteil ist, sondern eine andere Art von Information (Kuratierungs-Kontext statt
+    Ausschluss-Begruendung)."""
 
     status: RatingStatus
-    reason: Literal["duplicate", "low_quality", "top_pick"]
+    reason: Literal["duplicate", "low_quality"]
     duplicate_of: int | None
-    local_quality_score: float | None
     sharpness: float
     exposure: float
     cluster_key: str | None
-    category: PhotoCategory | None
     computed_at: datetime
+
+
+class RankingOut(BaseModel):
+    """Kuratierungs-Kontext eines Fotos aus der Kriterien-/Rangfolgen-Pipeline
+    (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md) - nur gesetzt, wenn das
+    Foto Teil des per `top_n_per_category` abgefragten Top-N-Ergebnisses ist (siehe
+    list_photos unten). Getrennt von SuggestionOut, siehe dessen Docstring."""
+
+    cluster_key: str
+    category_key: str
+    rank_score: float
+    rank_position: int
 
 
 class PhotoOut(BaseModel):
@@ -65,6 +93,7 @@ class PhotoOut(BaseModel):
     taken_at: datetime
     ratings: list[RatingOut]
     suggestion: SuggestionOut | None
+    ranking: RankingOut | None = None
 
 
 class PhotoListOut(BaseModel):
@@ -133,9 +162,7 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
     return {photo.id: photo for photo in result.scalars()}
 
 
-def _suggestion_reason(score: PhotoScore) -> Literal["duplicate", "low_quality", "top_pick"]:
-    if score.suggested_status == RatingStatus.ALBUM_WORTHY:
-        return "top_pick"
+def _suggestion_reason(score: PhotoScore) -> Literal["duplicate", "low_quality"]:
     return "duplicate" if score.duplicate_of is not None else "low_quality"
 
 
@@ -144,16 +171,16 @@ def _to_suggestion_out(score: PhotoScore) -> SuggestionOut:
         status=score.suggested_status,  # type: ignore[arg-type]  # caller already checked not None
         reason=_suggestion_reason(score),
         duplicate_of=score.duplicate_of,
-        local_quality_score=score.local_quality_score,
         sharpness=score.sharpness,
         exposure=score.exposure,
         cluster_key=score.cluster_key,
-        category=score.category,
         computed_at=score.computed_at,
     )
 
 
-def _to_photo_out(photo: Photo, current_user_id: int) -> PhotoOut:
+def _to_photo_out(
+    photo: Photo, current_user_id: int, ranking: PhotoRanking | None = None
+) -> PhotoOut:
     # Anzeigeregel (Akzeptanzkriterium der Spec): ein Vorschlag ist nur sichtbar, wenn (a)
     # PhotoScore.suggested_status gesetzt ist UND (b) der anfragende Nutzer noch KEINE eigene
     # Rating-Zeile fuer dieses Foto hat - unabhaengig davon, ob eine ANDERE Person das Foto schon
@@ -172,19 +199,135 @@ def _to_photo_out(photo: Photo, current_user_id: int) -> PhotoOut:
             for r in photo.ratings
         ],
         suggestion=suggestion,
+        ranking=(
+            RankingOut(
+                cluster_key=ranking.cluster_key,
+                category_key=ranking.category_key,
+                rank_score=ranking.rank_score,
+                rank_position=ranking.rank_position,
+            )
+            if ranking is not None
+            else None
+        ),
     )
+
+
+async def _latest_successful_criterion_scoring_run_id(
+    session: AsyncSession, project_id: int
+) -> int | None:
+    return (
+        await session.execute(
+            select(CriterionScoringRun.id)
+            .where(
+                CriterionScoringRun.project_id == project_id,
+                CriterionScoringRun.status == ScanStatus.SUCCESS,
+            )
+            .order_by(CriterionScoringRun.started_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+async def _top_n_per_category_photo_ids(
+    session: AsyncSession, project_id: int, current_user_id: int, top_n: int
+) -> tuple[list[int], int | None]:
+    """Kategorie-Kuratierung + Backfill (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+    backfill.md): liefert je Partition (cluster_key x category_key) des LETZTEN erfolgreichen
+    CriterionScoringRun die besten `top_n` nach rank_position, serverseitig um vom aktuellen
+    Nutzer REJECTED-bewertete Fotos gefiltert. Backfill ist dabei reiner Query-Effekt (kein
+    Server-Code "rueckt aktiv nach", ADR 0021 Punkt 4): row_number() wird ERST NACH dem Ausschluss
+    der abgelehnten Fotos berechnet, ein abgelehntes Foto rueckt darin also automatisch fuer das
+    naechste, bisher nicht gezeigte Foto derselben Partition Platz."""
+    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    if latest_run_id is None:
+        return [], None
+
+    own_rejection = aliased(Rating)
+    ranked = (
+        select(
+            PhotoRanking.photo_id,
+            PhotoRanking.cluster_key,
+            PhotoRanking.category_key,
+            PhotoRanking.rank_position,
+            func.row_number()
+            .over(
+                partition_by=(PhotoRanking.cluster_key, PhotoRanking.category_key),
+                order_by=PhotoRanking.rank_position,
+            )
+            .label("rn"),
+        )
+        .select_from(PhotoRanking)
+        .outerjoin(
+            own_rejection,
+            and_(
+                own_rejection.photo_id == PhotoRanking.photo_id,
+                own_rejection.user_id == current_user_id,
+                own_rejection.status == RatingStatus.REJECTED,
+            ),
+        )
+        .where(
+            PhotoRanking.criterion_scoring_run_id == latest_run_id,
+            own_rejection.id.is_(None),
+        )
+        .subquery()
+    )
+    result = await session.execute(
+        select(ranked.c.photo_id)
+        .where(ranked.c.rn <= top_n)
+        .order_by(ranked.c.cluster_key, ranked.c.category_key, ranked.c.rank_position)
+    )
+    return [row[0] for row in result.all()], latest_run_id
+
+
+async def _rankings_by_photo_id(
+    session: AsyncSession, criterion_scoring_run_id: int, photo_ids: list[int]
+) -> dict[int, PhotoRanking]:
+    if not photo_ids:
+        return {}
+    result = await session.execute(
+        select(PhotoRanking).where(
+            PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id,
+            PhotoRanking.photo_id.in_(photo_ids),
+        )
+    )
+    return {row.photo_id: row for row in result.scalars()}
 
 
 @router.get("/projects/{project_id}/photos", response_model=PhotoListOut)
 async def list_photos(
     project_id: int,
     rating_status: RatingFilter | None = None,
+    # Kategorie-Kuratierung + Backfill (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+    # backfill.md): serverseitig deklarativ begrenzt (Field(ge=1, le=10), analog zum bisherigen
+    # top_n_per_cluster-Muster aus Spec 0024) - Robustheits-/Ressourcen-Kriterium, kein
+    # Sicherheitskriterium (Security-Abschnitt der Spec). Wenn gesetzt, ersetzt dieser
+    # Query-Modus rating_status vollstaendig (eigenstaendige Kuratierungs-Ansicht, siehe UI/UX-
+    # Abschnitt der Spec: eigene Route /curate statt einer Kombination mit dem bestehenden
+    # Grid-Filter) - limit/offset werden in diesem Modus ignoriert, da der volle Partitions-Pool
+    # (N x Partitionsanzahl) fuer ein Zwei-Personen-Familienprojekt naturgemaess klein bleibt.
+    top_n_per_category: int | None = Query(None, ge=1, le=10),
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> PhotoListOut:
     await _get_project_or_404(project_id, session)
+
+    if top_n_per_category is not None:
+        ids, criterion_scoring_run_id = await _top_n_per_category_photo_ids(
+            session, project_id, current_user.id, top_n_per_category
+        )
+        photos_by_id = await _photos_by_id(session, ids)
+        rankings_by_id = (
+            await _rankings_by_photo_id(session, criterion_scoring_run_id, ids)
+            if criterion_scoring_run_id is not None
+            else {}
+        )
+        items = [
+            _to_photo_out(photos_by_id[photo_id], current_user.id, rankings_by_id.get(photo_id))
+            for photo_id in ids
+        ]
+        return PhotoListOut(items=items, total=len(items))
 
     ids, total = await _filtered_photo_ids(
         session, project_id, current_user.id, rating_status, limit, offset

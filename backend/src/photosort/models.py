@@ -34,7 +34,9 @@ class Project(Base):
     scoring_runs: Mapped[list[ScoringRun]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
-    top_selection_runs: Mapped[list[TopSelectionRun]] = relationship(
+    # Ersetzt top_selection_runs (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+    # backfill.md, decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md, Punkt 5).
+    criterion_scoring_runs: Mapped[list[CriterionScoringRun]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
 
@@ -45,16 +47,15 @@ class RatingStatus(enum.StrEnum):
     REJECTED = "rejected"
 
 
-class PhotoCategory(enum.StrEnum):
-    """Lokal (kein Cloud-Aufruf) klassifizierte Motiv-Kategorie eines Fotos
-    (specs/features/0024-top-photo-selection-category-mix.md, decisions/0015-lokale-kategorie-
-    klassifikation.md). Nur 3 statt urspruenglich 4 geplanter Kategorien - "Sehenswuerdigkeit"
-    wurde fuer v1 gestrichen (ohne GPS oder ein schweres Landmark-Modell lokal nicht sinnvoll
-    erkennbar, siehe Entscheidungen-Abschnitt der Spec)."""
+class CriterionSource(enum.StrEnum):
+    """Herkunft eines PhotoCriterionScore-Werts (specs/features/0037-gatefuehrte-bewertungs-
+    pipeline-mit-backfill.md, decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md, Punkt
+    1). `CLOUD` ist ein reiner Registry-Wert in dieser Spec - kein source=cloud-Compute-Pfad wird
+    hier implementiert (siehe Security-Abschnitt der Spec)."""
 
-    LANDSCAPE = "landscape"
-    DETAIL = "detail"
-    PEOPLE = "people"
+    LOCAL_HEURISTIC = "local_heuristic"
+    LOCAL_ML = "local_ml"
+    CLOUD = "cloud"
 
 
 class Photo(Base):
@@ -82,6 +83,9 @@ class Photo(Base):
         foreign_keys="PhotoScore.photo_id",
         uselist=False,
         cascade="all, delete-orphan",
+    )
+    criterion_scores: Mapped[list[PhotoCriterionScore]] = relationship(
+        back_populates="photo", cascade="all, delete-orphan"
     )
 
 
@@ -180,6 +184,13 @@ class ScoringRun(Base):
     # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md), analog
     # ScanRun.last_progress_at oben.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Ausschuss-Gate (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md,
+    # decisions/0021, Punkt 6): additiv, projektweit (kein user_id-Bezug, bewusst konsistent mit
+    # allen anderen Run-Tabellen - nur Rating ist personenbezogen, siehe Security-Abschnitt der
+    # Spec). None = Gate noch nicht bestaetigt. Wird entweder ueber POST /confirm-ausschuss-gate
+    # gesetzt oder automatisch von run_project_scoring, wenn suggestions_found == 0 (kein
+    # Ausschuss zum Sichten vorhanden).
+    gate_confirmed_at: Mapped[datetime | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="scoring_runs")
 
@@ -205,7 +216,6 @@ class PhotoScore(Base):
     # braucht, um referenziert werden zu koennen.
     duplicate_of: Mapped[int | None] = mapped_column(ForeignKey("photos.id"), default=None)
     cluster_key: Mapped[str | None] = mapped_column(default=None)
-    local_quality_score: Mapped[float | None] = mapped_column(default=None)
     # Wiederverwendet das bestehende RatingStatus-Enum (Akzeptanzkriterium der Spec) - Phase A
     # setzt darueber praktisch nur REJECTED, offene Positivempfehlungen bleiben Phase B
     # vorbehalten, ohne dass das Feld dafuer erneut migriert werden muesste.
@@ -213,45 +223,99 @@ class PhotoScore(Base):
         SQLEnum(RatingStatus, native_enum=False, length=20), default=None
     )
     computed_at: Mapped[datetime]
-    # Additiv, specs/features/0024-top-photo-selection-category-mix.md: NICHT in Phase A
-    # (run_project_scoring) mitberechnet, sondern erst im neuen select_top_photos-Job, nur fuer den
-    # dort bereits begrenzten Kandidatenpool pro Cluster - sonst wuerde mediapipe fuer jedes
-    # gescannte Foto laufen (auch fuer nie betrachtete Duplikat-Verlierer). Bei jedem
-    # select-top-Lauf neu berechnet (kein Reuse-Tracking, da lokal/kostenlos), siehe
-    # worker.py::select_top_photos.
-    category: Mapped[PhotoCategory | None] = mapped_column(
-        SQLEnum(PhotoCategory, native_enum=False, length=20), default=None
-    )
+    # `category`/`local_quality_score` (specs/features/0024) entfallen ersatzlos
+    # (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md, decisions/0021, Punkt
+    # 2) - reiner, nie manuell editierter Ableitungszustand, dessen Nachfolge jetzt strukturell
+    # durch PhotoCriterionScore+PhotoRanking (Kriterien-/Rangfolgen-Schicht) uebernommen wird statt
+    # in eigenen PhotoScore-Spalten.
 
     photo: Mapped[Photo] = relationship(back_populates="score", foreign_keys=[photo_id])
 
 
-class TopSelectionRun(Base):
-    """Ein Lauf des lokalen Top-Auswahl-Jobs (specs/features/0024-top-photo-selection-category-
-    mix.md), analog ScoringRun/ScanRun. Nutzt wie ScoringRun den bestehenden ScanStatus-Enum
-    (running/success/failed) statt eines eigenen Status-Enums - identische Semantik fuer einen
-    asynchron laufenden Worker-Job.
+class PhotoCriterionScore(Base):
+    """Ein normierter Kriterien-Wert fuer ein Foto (specs/features/0037-gatefuehrte-bewertungs-
+    pipeline-mit-backfill.md, decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md, Punkt
+    1) - generische Tabelle statt weiterer fixer PhotoScore-Spalten, damit neue Kriterien nie eine
+    neue Migration erzwingen (nur einen neuen Eintrag in criteria.py::CRITERIA_REGISTRY).
+    `criterion_key` ist bewusst ein freier String (kein Enum) - genau das macht die Erweiterbarkeit
+    aus. `value` ist immer bereits auf [0, 1] normiert, "hoeher = besser", zum
+    Berechnungszeitpunkt (nicht erst beim Lesen). UniqueConstraint(photo_id, criterion_key): ein
+    erneuter Kriterien-Lauf ueberschreibt (Upsert) den bestehenden Wert, keine Historie."""
 
-    candidates_total/candidates_processed liefern granularen Live-Fortschritt (periodisch
-    zwischen-committet, siehe worker.py::select_top_photos) - mediapipe-Inferenz hat pro Foto eine
-    spuerbare Laufzeit, deshalb ein eigener asynchroner Job statt synchroner Verarbeitung, analog
-    zu ScoringRun.photos_total/photos_processed (decisions/0006-local-scoring-datamodel.md).
-    """
+    __tablename__ = "photo_criterion_scores"
+    __table_args__ = (
+        UniqueConstraint("photo_id", "criterion_key", name="uq_criterion_score_photo_key"),
+    )
 
-    __tablename__ = "top_selection_runs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
+    criterion_key: Mapped[str]
+    value: Mapped[float]
+    source: Mapped[CriterionSource] = mapped_column(
+        SQLEnum(CriterionSource, native_enum=False, length=20)
+    )
+    computed_at: Mapped[datetime]
+
+    photo: Mapped[Photo] = relationship(back_populates="criterion_scores")
+
+
+class CriterionScoringRun(Base):
+    """Ein Lauf des Kriterien-/Rangfolgen-Jobs (specs/features/0037-gatefuehrte-bewertungs-
+    pipeline-mit-backfill.md, decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md, Punkt
+    5) - ersetzt TopSelectionRun/select_top_photos vollstaendig. Analog ScoringRun/ScanRun (nutzt
+    denselben ScanStatus-Enum). `scoring_run_id` bindet den Lauf explizit an den ScoringRun, dessen
+    Ausschuss-Ergebnis (insb. cluster_key) er voraussetzt - Grundlage fuer den 409-Staleness-Guard
+    bei einem zwischenzeitlichen Re-Scan/Re-Scoring (ADR 0021, Punkt 7).
+
+    photos_total/photos_processed liefern granularen Live-Fortschritt (periodisch zwischen-
+    committet, siehe worker.py::run_criterion_scoring) - analog ScoringRun.photos_total/
+    photos_processed. Kein top_n_per_cluster/candidates_total mehr (anders als das fruehere
+    TopSelectionRun): N ist beim Scoren nicht mehr bekannt, wird erst beim Lesen angewendet (ADR
+    0021, Punkt 4) - der Job verarbeitet immer alle Ausschuss-Ueberlebenden. Kein suggestions_found
+    mehr: der Job waehlt keine Top-N mehr aus, sondern berechnet immer den vollen Rangfolge-Pool je
+    Partition (siehe PhotoRanking)."""
+
+    __tablename__ = "criterion_scoring_runs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    scoring_run_id: Mapped[int] = mapped_column(ForeignKey("scoring_runs.id"))
     status: Mapped[ScanStatus] = mapped_column(SQLEnum(ScanStatus, native_enum=False, length=20))
     started_at: Mapped[datetime] = mapped_column(server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(default=None)
-    top_n_per_cluster: Mapped[int] = mapped_column(default=0)
-    candidates_total: Mapped[int] = mapped_column(default=0)
-    candidates_processed: Mapped[int] = mapped_column(default=0)
-    suggestions_found: Mapped[int] = mapped_column(default=0)
+    photos_total: Mapped[int] = mapped_column(default=0)
+    photos_processed: Mapped[int] = mapped_column(default=0)
     error_message: Mapped[str | None] = mapped_column(default=None)
     # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md), analog
     # ScanRun.last_progress_at oben.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
-    project: Mapped[Project] = relationship(back_populates="top_selection_runs")
+    project: Mapped[Project] = relationship(back_populates="criterion_scoring_runs")
+
+
+class PhotoRanking(Base):
+    """Der volle, sortierte Kandidatenpool einer Partition (cluster_key x category_key) fuer einen
+    CriterionScoringRun (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md,
+    decisions/0021, Punkt 4) - NICHT nur die Top-N. Macht "zeig die besten X pro Kategorie" zu
+    einer reinen Lese-Query (GET /projects/{id}/photos?top_n_per_category=N) statt eines
+    Job-Parameters, und macht Backfill zu einem reinen Nebeneffekt eines erneuten Abrufs nach einer
+    Rating-Aenderung, ohne dass irgendein Server-Code aktiv "nachrueckt".
+    `category_key` ist wie `criterion_key` ein freier String (kein PhotoCategory-Enum mehr) -
+    dieselbe Erweiterbarkeits-Begruendung. `rank_position` ist 1-basiert innerhalb der Partition.
+    UniqueConstraint(criterion_scoring_run_id, photo_id): jedes Foto taucht pro Lauf hoechstens
+    einmal auf (es gehoert zu genau einer Partition)."""
+
+    __tablename__ = "photo_rankings"
+    __table_args__ = (
+        UniqueConstraint(
+            "criterion_scoring_run_id", "photo_id", name="uq_photo_ranking_run_photo"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    criterion_scoring_run_id: Mapped[int] = mapped_column(ForeignKey("criterion_scoring_runs.id"))
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
+    cluster_key: Mapped[str]
+    category_key: Mapped[str]
+    rank_score: Mapped[float]
+    rank_position: Mapped[int]

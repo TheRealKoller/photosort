@@ -16,29 +16,34 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from photosort.classification import (
-    CategoryCandidate,
-    FaceDetectorLike,
-    build_face_detector,
-    classify_category,
-    select_top_n_with_category_mix,
-)
+from photosort.classification import FaceDetectorLike, build_face_detector
 from photosort.config import settings
+from photosort.criteria import (
+    CRITERIA_REGISTRY,
+    compute_content_landscape,
+    compute_content_people,
+    derive_category_key,
+    normalize_exposure,
+    normalize_sharpness,
+)
 from photosort.db import async_session_factory
 from photosort.models import (
+    CriterionScoringRun,
+    CriterionSource,
     Photo,
-    PhotoCategory,
+    PhotoCriterionScore,
+    PhotoRanking,
     PhotoScore,
     Project,
     RatingStatus,
     ScanRun,
     ScanStatus,
     ScoringRun,
-    TopSelectionRun,
 )
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
 from photosort.opencloud.exif import extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
+from photosort.ranking import rank_photos
 from photosort.scoring import (
     SHARPNESS_REJECT_THRESHOLD,
     DuplicateCandidate,
@@ -48,7 +53,6 @@ from photosort.scoring import (
     compute_dhash,
     compute_exposure,
     compute_sharpness,
-    local_quality_score,
 )
 from photosort.thumbnails import generate_variants, variant_path
 
@@ -89,21 +93,22 @@ SCORE_COMMIT_BATCH_SIZE = 25
 # (typischer Fall: Familienfoto-Ergaenzung, Spec 0022 nachgebessert).
 SCAN_COMMIT_BATCH_SIZE = 1
 
-# Analog SCORE_COMMIT_BATCH_SIZE, fuer TopSelectionRun.candidates_processed
-# (specs/features/0024-top-photo-selection-category-mix.md). Kleiner als SCORE_COMMIT_BATCH_SIZE,
-# da mediapipe-Inferenz pro Kandidatenfoto eine spuerbare Laufzeit hat (Architektur-Abschnitt der
-# Spec) - ein grober Batch von 25 wuerde den Live-Fortschritt bei typischen Kandidatenpool-Groessen
-# (wenige bis niedrige zweistellige Anzahl pro Cluster) faktisch einfrieren, aehnlich dem in Spec
-# 0023 behobenen Scan-Zaehler-Problem. Modul-Konstante statt Default-Parameterwert, damit Tests sie
-# per monkeypatch.setattr(worker, "TOP_SELECTION_COMMIT_BATCH_SIZE", ...) verkleinern koennen.
-TOP_SELECTION_COMMIT_BATCH_SIZE = 5
+# Analog SCORE_COMMIT_BATCH_SIZE, fuer CriterionScoringRun.photos_processed
+# (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md, ersetzt das fruehere
+# TOP_SELECTION_COMMIT_BATCH_SIZE/TopSelectionRun). Kleiner als SCORE_COMMIT_BATCH_SIZE, da
+# mediapipe-Inferenz (content_people-Kriterium) pro Foto eine spuerbare Laufzeit hat (Architektur-
+# Abschnitt der Spec) - ein grober Batch von 25 wuerde den Live-Fortschritt bei typischen
+# Ausschuss-Ueberlebenden-Mengen faktisch einfrieren, aehnlich dem in Spec 0023 behobenen
+# Scan-Zaehler-Problem. Modul-Konstante statt Default-Parameterwert, damit Tests sie per
+# monkeypatch.setattr(worker, "CRITERION_SCORING_COMMIT_BATCH_SIZE", ...) verkleinern koennen.
+CRITERION_SCORING_COMMIT_BATCH_SIZE = 5
 
-# Kandidatenpool-Formel je Cluster (Akzeptanzkriterium der Spec): begrenzt, wie viele Fotos pro
-# Cluster ueberhaupt lokal klassifiziert werden (mediapipe-Inferenz ist der teuerste Schritt) - das
-# 3-fache der Zielanzahl, mindestens aber 6, damit auch bei kleinem top_n_per_cluster genug
-# Kategorie-Vielfalt fuer das Quotenverfahren zur Verfuegung steht.
-TOP_SELECTION_CANDIDATE_POOL_MULTIPLIER = 3
-TOP_SELECTION_CANDIDATE_POOL_MINIMUM = 6
+# Default-Gewichtung fuer ranking.py::rank_photos (Akzeptanzkriterium der Spec: "nur die
+# strukturelle Faehigkeit ist Teil dieser Spec, kein konkreter Default" - Gleichgewichtung aller
+# im Register bekannten Kriterien ist der einfachste, austauschbare Platzhalter, siehe ADR 0021
+# Punkt 3). Die eigentliche, spaetere Gewichtungs-/Formel-Entscheidung aendert nur diesen
+# Aufrufer-Default, nie das Datenmodell oder rank_photos selbst.
+DEFAULT_CRITERION_WEIGHTS: dict[str, float] = {key: 1.0 for key in CRITERIA_REGISTRY}
 
 
 class OpenCloudScanClient(Protocol):
@@ -216,7 +221,7 @@ def _now_utc() -> datetime:
 
 async def _fail_run(
     session: AsyncSession,
-    run: ScanRun | ScoringRun | TopSelectionRun,
+    run: ScanRun | ScoringRun | CriterionScoringRun,
     error_message: str,
 ) -> None:
     """Gemeinsame "Lauf auf FAILED setzen"-Logik fuer alle drei run_*-Funktionen
@@ -232,7 +237,7 @@ async def _fail_run(
     await session.commit()
     # Copilot-Review-Fund (PR #67): das vorangehende rollback() expired ORM-Objekte der Session -
     # ohne dieses refresh() koennte ein direkter Attributzugriff auf `run` NACH der Rueckkehr aus
-    # _fail_run (z.B. `run.id` in scan_project/score_project/select_top_photos, die den
+    # _fail_run (z.B. `run.id` in scan_project/score_project/score_criteria, die den
     # Rueckgabewert von run_project_scan/run_project_scoring/run_top_selection unmittelbar
     # weiterverwenden) einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
     # ausloesen (sqlalchemy.exc.MissingGreenlet) - siehe test_worker_fail_run.py.
@@ -576,7 +581,9 @@ async def run_project_scoring(
     erneuter OpenCloud-Download. Ablauf (Architektur-Abschnitt der Spec): ScoringRun anlegen ->
     photos_total setzen -> pro Foto Heuristiken berechnen, PhotoScore upserten,
     photos_processed periodisch committen -> projektweite Duplikat-/Cluster-Erkennung ->
-    suggested_status/local_quality_score setzen -> ScoringRun auf success/failed setzen.
+    suggested_status setzen -> ScoringRun auf success/failed setzen. `local_quality_score` (Spec
+    0024) ist mit specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md entfallen -
+    Ranking-Grundlage ist jetzt die Kriterien-/Rangfolgen-Schicht (criteria.py/ranking.py).
     """
     scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.RUNNING)
     session.add(scoring_run)
@@ -630,15 +637,14 @@ async def run_project_scoring(
                     existing_scores[photo.id] = score
                 # Vollstaendig ueberschreiben statt nur einzelner Felder (Akzeptanzkriterium:
                 # "ein erneuter Lauf ... ueberschreibt bestehende PhotoScore-Zeilen vollstaendig")
-                # - alte duplicate_of/cluster_key/local_quality_score/suggested_status-Werte aus
-                # einem frueheren Lauf duerfen nicht stehen bleiben, bevor der neue Cluster-Pass
-                # unten sie ggf. neu setzt.
+                # - alte duplicate_of/cluster_key/suggested_status-Werte aus einem frueheren Lauf
+                # duerfen nicht stehen bleiben, bevor der neue Cluster-Pass unten sie ggf. neu
+                # setzt.
                 score.sharpness = sharpness
                 score.exposure = exposure
                 score.phash = phash
                 score.duplicate_of = None
                 score.cluster_key = None
-                score.local_quality_score = None
                 score.suggested_status = None
                 score.computed_at = now
 
@@ -675,18 +681,23 @@ async def run_project_scoring(
             ]
         )
 
-        for photo_id, (sharpness, exposure, _phash) in computed.items():
+        for photo_id in computed:
             score = existing_scores[photo_id]
             if photo_id in rejected_ids:
                 score.suggested_status = RatingStatus.REJECTED
                 score.duplicate_of = duplicate_of_map.get(photo_id)
             else:
-                score.local_quality_score = local_quality_score(sharpness, exposure)
                 score.cluster_key = cluster_map[photo_id]
 
         scoring_run.suggestions_found = len(rejected_ids)
         scoring_run.status = ScanStatus.SUCCESS
         scoring_run.finished_at = datetime.now(UTC).replace(tzinfo=None)
+        # Ausschuss-Gate-Autoset (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+        # backfill.md): kein Ausschuss gefunden -> nichts zu sichten, das Gate blockiert dann
+        # nicht mit einer leeren Liste. Ein nachfolgender expliziter confirm-ausschuss-gate-
+        # Aufruf bleibt trotzdem fehlerfrei moeglich (Idempotenz, siehe api/projects.py).
+        if scoring_run.suggestions_found == 0:
+            scoring_run.gate_confirmed_at = _now_utc()
         await session.commit()
         return scoring_run
     except asyncio.CancelledError:
@@ -717,61 +728,58 @@ async def score_project(ctx: dict[str, Any], project_id: int) -> int:
         return scoring_run.id
 
 
-class TopSelectionGuardError(Exception):
-    """Fachliche Vorbedingung fuer select_top_photos nicht erfuellt (kein erfolgreicher
-    ScoringRun) - wird wie jede andere Exception im umgebenden try/except von run_top_selection als
-    FAILED-Lauf mit error_message behandelt (Akzeptanzkriterium der Spec: Guard im Worker-Job,
-    zusaetzlich zum eigenen 409 der API-Schicht)."""
+class CriterionScoringGuardError(Exception):
+    """Fachliche Vorbedingung fuer run_criterion_scoring nicht erfuellt (die uebergebene
+    scoring_run_id ist nicht mehr der aktuell neueste erfolgreiche ScoringRun, z.B. wegen eines
+    zwischenzeitlichen Re-Scan/Re-Scoring) - wird wie jede andere Exception im umgebenden
+    try/except als FAILED-Lauf mit error_message behandelt (Akzeptanzkriterium der Spec: Guard im
+    Worker-Job, zusaetzlich zum eigenen 409 der API-Schicht, ADR 0021 Punkt 7)."""
 
 
-def _candidate_pool_size(cluster_size: int, top_n_per_cluster: int) -> int:
-    return min(
-        cluster_size,
-        max(
-            top_n_per_cluster * TOP_SELECTION_CANDIDATE_POOL_MULTIPLIER,
-            TOP_SELECTION_CANDIDATE_POOL_MINIMUM,
-        ),
-    )
-
-
-def _classify_candidate(
+def _compute_content_criteria(
     cache_dir: Path, photo: Photo, detector: FaceDetectorLike
-) -> PhotoCategory | None:
+) -> dict[str, float]:
     """Best-effort wie scoring.py::_compute_photo_metrics (Akzeptanzkriterium der Spec): ein
-    einzelner fehlgeschlagener Klassifikationsversuch (fehlende/defekte display-Cache-Datei) darf
-    den gesamten Lauf nicht abbrechen - das betroffene Foto bleibt einfach ohne category."""
+    einzelner fehlgeschlagener Kriterien-Berechnungsversuch (fehlende/defekte display-Cache-Datei)
+    darf den gesamten Lauf nicht abbrechen - das betroffene Foto behaelt die uebrigen erfolgreich
+    berechneten Kriterien, die beiden Inhalts-Kriterien bleiben fuer dieses Foto einfach
+    ungeschrieben (kein Platzhalterwert wie 0)."""
     path = variant_path(cache_dir, photo.id, photo.etag, "display")
     if not path.is_file():
-        return None
+        return {}
     try:
         with Image.open(path) as opened:
             opened.load()
             image: Image.Image = opened
             if image.mode not in ("RGB", "L"):
                 image = image.convert("RGB")
-            return classify_category(image, detector)
+            return {
+                "content_people": compute_content_people(image, detector),
+                "content_landscape": compute_content_landscape(image),
+            }
     except Exception:
-        return None
+        return {}
 
 
-async def run_top_selection(
+async def run_criterion_scoring(
     session: AsyncSession,
     project: Project,
-    top_n_per_cluster: int,
+    scoring_run_id: int,
     cache_dir: Path,
     build_detector: Callable[[], FaceDetectorLike] = build_face_detector,
-) -> TopSelectionRun:
-    """Waehlt pro Zeitcluster bis zu top_n_per_cluster Top-Fotos aus, unter Beruecksichtigung eines
-    Kategorie-Mix (specs/features/0024-top-photo-selection-category-mix.md). Ablauf (Architektur-
-    Abschnitt der Spec): TopSelectionRun anlegen -> Guard (letzter ScoringRun muss success sein) ->
-    Kandidatenpool pro Cluster bilden (nur suggested_status IS NULL) -> jeden Kandidaten
-    klassifizieren (best-effort, periodisch zwischen-committet) -> select_top_n_with_category_mix
-    pro Cluster anwenden -> Treffer auf ALBUM_WORTHY setzen -> TopSelectionRun auf success/failed
-    setzen. `build_detector` ist injizierbar (Default: die echte, teure Modellkonstruktion) - Tests
-    uebergeben stattdessen einen Fake ohne echtes .tflite-Modell (siehe
-    test_worker_top_selection.py)."""
-    run = TopSelectionRun(
-        project_id=project.id, status=ScanStatus.RUNNING, top_n_per_cluster=top_n_per_cluster
+) -> CriterionScoringRun:
+    """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
+    abgeleitete Rangfolge je Partition (cluster_key x category_key) - ersetzt run_top_selection/
+    select_top_photos vollstaendig (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+    backfill.md). Ablauf (Architektur-Abschnitt der Spec): CriterionScoringRun anlegen -> Guard
+    (scoring_run_id muss der aktuell neueste erfolgreiche ScoringRun sein) -> Kriterien je Foto
+    berechnen (sharpness/exposure immer, Inhalts-Kriterien best-effort, periodisch zwischen-
+    committet) -> rank_photos je Partition anwenden (reine In-Memory-Aggregation ueber die in
+    diesem Lauf berechneten Werte) -> PhotoRanking-Zeilen schreiben -> CriterionScoringRun auf
+    success/failed setzen. `build_detector` ist injizierbar (Default: die echte, teure
+    Modellkonstruktion) - Tests uebergeben stattdessen einen Fake ohne echtes .tflite-Modell."""
+    run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run_id, status=ScanStatus.RUNNING
     )
     session.add(run)
     await session.commit()
@@ -786,11 +794,23 @@ async def run_top_selection(
                 .limit(1)
             )
         ).scalars().first()
-        if latest_scoring_run is None or latest_scoring_run.status != ScanStatus.SUCCESS:
-            raise TopSelectionGuardError(
-                "Kein erfolgreicher Scoring-Lauf (Phase A) fuer dieses Projekt vorhanden."
+        if (
+            latest_scoring_run is None
+            or latest_scoring_run.status != ScanStatus.SUCCESS
+            or latest_scoring_run.id != scoring_run_id
+        ):
+            raise CriterionScoringGuardError(
+                "scoring_run_id entspricht nicht mehr dem aktuell neuesten erfolgreichen "
+                "Scoring-Lauf (Re-Scan/Re-Scoring waehrend der Kuratierung)."
             )
 
+        # Bekannter, akzeptierter Performance-Trade-off (ADR 0021 "Konsequenzen", architect-
+        # Review-Fund Spec 0037): anders als der fruehere run_top_selection gibt es HIER bewusst
+        # KEINEN Kandidatenpool-Vorfilter pro Cluster mehr (Spec 0024: min(cluster_size,
+        # max(N*3,6))) - N ist beim Scoren nicht mehr bekannt (wird erst beim Lesen ueber
+        # top_n_per_category angewendet), also werden ALLE Ausschuss-Ueberlebenden verarbeitet,
+        # nicht nur die aussichtsreichsten. Fuer sehr grosse Projekte potenziell spuerbar, siehe
+        # docs/architecture.md.
         rows = (
             await session.execute(
                 select(Photo, PhotoScore)
@@ -799,58 +819,111 @@ async def run_top_selection(
             )
         ).all()
 
-        clusters: dict[str, list[tuple[Photo, PhotoScore]]] = {}
-        for photo, score in rows:
-            clusters.setdefault(score.cluster_key or "", []).append((photo, score))
-
-        candidate_pools: dict[str, list[tuple[Photo, PhotoScore]]] = {}
-        for cluster_key, members in clusters.items():
-            pool_size = _candidate_pool_size(len(members), top_n_per_cluster)
-            ordered = sorted(
-                members, key=lambda member: (-(member[1].local_quality_score or 0.0), member[0].id)
-            )
-            candidate_pools[cluster_key] = ordered[:pool_size]
-
-        run.candidates_total = sum(len(pool) for pool in candidate_pools.values())
-        run.candidates_processed = 0
+        run.photos_total = len(rows)
+        run.photos_processed = 0
         await session.commit()
 
-        detector = build_detector()
-        classified_by_cluster: dict[str, list[CategoryCandidate]] = {}
-        score_by_photo_id: dict[int, PhotoScore] = {photo.id: score for photo, score in rows}
-        processed = 0
-        for cluster_key, pool in candidate_pools.items():
-            candidates: list[CategoryCandidate] = []
-            for photo, score in pool:
-                category = _classify_candidate(cache_dir, photo, detector)
-                # Copilot-Review-Fund (PR #51): `category` immer explizit setzen, auch bei
-                # best-effort Fehlschlag (None) - sonst bliebe eine aus einem FRUEHEREN Lauf
-                # bereits vorhandene category-Zeile faelschlich stehen, statt geleert zu werden
-                # (Akzeptanzkriterium: "das betroffene Foto bleibt ohne category").
-                score.category = category
-                if category is not None:
-                    candidates.append(
-                        CategoryCandidate(photo.id, category, score.local_quality_score or 0.0)
+        existing_criterion_scores: dict[tuple[int, str], PhotoCriterionScore] = {}
+        if rows:
+            photo_ids = [photo.id for photo, _score in rows]
+            existing_criterion_scores = {
+                (row.photo_id, row.criterion_key): row
+                for row in (
+                    await session.execute(
+                        select(PhotoCriterionScore).where(
+                            PhotoCriterionScore.photo_id.in_(photo_ids)
+                        )
                     )
-                processed += 1
-                if processed % TOP_SELECTION_COMMIT_BATCH_SIZE == 0:
-                    run.candidates_processed = processed
-                    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-
-                    # watchdog.md, ADR 0019, Schicht 2) - analog run_project_scan oben.
-                    run.last_progress_at = _now_utc()
-                    await session.commit()
-            classified_by_cluster[cluster_key] = candidates
+                ).scalars()
+            }
 
-        run.candidates_processed = processed
+        detector: FaceDetectorLike | None = build_detector() if rows else None
+        now = _now_utc()
+
+        def _upsert_criterion(
+            photo_id: int, criterion_key: str, value: float, source: CriterionSource
+        ) -> None:
+            existing = existing_criterion_scores.get((photo_id, criterion_key))
+            if existing is None:
+                existing = PhotoCriterionScore(photo_id=photo_id, criterion_key=criterion_key)
+                session.add(existing)
+                existing_criterion_scores[(photo_id, criterion_key)] = existing
+            existing.value = value
+            existing.source = source
+            existing.computed_at = now
+
+        # photo_id -> {criterion_key: value}, nur die in DIESEM Lauf erfolgreich berechneten
+        # Werte (reine In-Memory-Grundlage fuer rank_photos unten, kein erneutes DB-Read noetig).
+        candidate_values: dict[int, dict[str, float]] = {}
+        cluster_by_photo: dict[int, str] = {}
+        processed = 0
+        for photo, score in rows:
+            values: dict[str, float] = {}
+
+            sharpness_value = normalize_sharpness(score.sharpness)
+            _upsert_criterion(
+                photo.id, "sharpness", sharpness_value, CriterionSource.LOCAL_HEURISTIC
+            )
+            values["sharpness"] = sharpness_value
+
+            exposure_value = normalize_exposure(score.exposure)
+            _upsert_criterion(
+                photo.id, "exposure", exposure_value, CriterionSource.LOCAL_HEURISTIC
+            )
+            values["exposure"] = exposure_value
+
+            assert detector is not None  # rows nicht leer => Detector wurde oben gebaut
+            content_values = _compute_content_criteria(cache_dir, photo, detector)
+            if "content_people" in content_values:
+                _upsert_criterion(
+                    photo.id,
+                    "content_people",
+                    content_values["content_people"],
+                    CriterionSource.LOCAL_ML,
+                )
+                values["content_people"] = content_values["content_people"]
+            if "content_landscape" in content_values:
+                _upsert_criterion(
+                    photo.id,
+                    "content_landscape",
+                    content_values["content_landscape"],
+                    CriterionSource.LOCAL_HEURISTIC,
+                )
+                values["content_landscape"] = content_values["content_landscape"]
+
+            candidate_values[photo.id] = values
+            cluster_by_photo[photo.id] = score.cluster_key or ""
+
+            processed += 1
+            if processed % CRITERION_SCORING_COMMIT_BATCH_SIZE == 0:
+                run.photos_processed = processed
+                # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-
+                # watchdog.md, ADR 0019, Schicht 2) - analog run_project_scan oben.
+                run.last_progress_at = _now_utc()
+                await session.commit()
+
+        run.photos_processed = processed
         await session.commit()
 
-        suggestions_found = 0
-        for candidates in classified_by_cluster.values():
-            for photo_id in select_top_n_with_category_mix(candidates, top_n_per_cluster):
-                score_by_photo_id[photo_id].suggested_status = RatingStatus.ALBUM_WORTHY
-                suggestions_found += 1
+        partitions: dict[tuple[str, str], dict[int, dict[str, float]]] = {}
+        for photo_id, values in candidate_values.items():
+            category_key = derive_category_key(values)
+            partition_key = (cluster_by_photo[photo_id], category_key)
+            partitions.setdefault(partition_key, {})[photo_id] = values
 
-        run.suggestions_found = suggestions_found
+        for (cluster_key, category_key), partition_candidates in partitions.items():
+            for ranked_photo in rank_photos(partition_candidates, DEFAULT_CRITERION_WEIGHTS):
+                session.add(
+                    PhotoRanking(
+                        criterion_scoring_run_id=run.id,
+                        photo_id=ranked_photo.photo_id,
+                        cluster_key=cluster_key,
+                        category_key=category_key,
+                        rank_score=ranked_photo.rank_score,
+                        rank_position=ranked_photo.rank_position,
+                    )
+                )
+
         run.status = ScanStatus.SUCCESS
         run.finished_at = _now_utc()
         await session.commit()
@@ -861,20 +934,20 @@ async def run_top_selection(
         await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
         raise
     except Exception as exc:
-        # Kein Rollback bereits committeter Fortschritts-/Kategorie-Zwischenstaende
+        # Kein Rollback bereits committeter Fortschritts-/Kriterien-Zwischenstaende
         # (Akzeptanzkriterium der Spec, identisches Muster wie run_project_scoring oben).
         await _fail_run(session, run, str(exc))
         return run
 
 
-async def select_top_photos(ctx: dict[str, Any], project_id: int, top_n_per_cluster: int) -> int:
+async def score_criteria(ctx: dict[str, Any], project_id: int, scoring_run_id: int) -> int:
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
             raise ValueError(f"Project {project_id} not found")
 
-        run = await run_top_selection(
-            session, project, top_n_per_cluster, cache_dir=Path(settings.photo_cache_dir)
+        run = await run_criterion_scoring(
+            session, project, scoring_run_id, cache_dir=Path(settings.photo_cache_dir)
         )
         return run.id
 
@@ -905,7 +978,7 @@ def _stall_message() -> str:
 
 
 async def _fail_if_stalled(
-    session: AsyncSession, run: ScanRun | ScoringRun | TopSelectionRun
+    session: AsyncSession, run: ScanRun | ScoringRun | CriterionScoringRun
 ) -> bool:
     """Setzt eine einzelne Zeile ueber _fail_run auf FAILED, isoliert von den uebrigen Zeilen/
     Tabellen (Akzeptanzkriterium der Spec 0034: ein Fehler bei einer Zeile/Tabelle darf die
@@ -931,10 +1004,11 @@ async def reap_stalled_runs(
     nie schliessen kann (ein nie zurueckkehrender await liefert nie eine Exception, an die sich
     anknuepfen liesse). session_factory ist injizierbar (Default: die echte, produktive
     async_session_factory) - Tests uebergeben stattdessen eine an eine In-Memory-SQLite-
-    Testdatenbank gebundene Factory, analog zu run_top_selection's build_detector-Parameter. Die
-    drei Tabellen werden bewusst nacheinander in drei eigenstaendigen Bloecken behandelt statt
-    ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/ScoringRun/
-    TopSelectionRun bleiben drei eigenstaendige Modelle ohne gemeinsame Basisklasse, ADR 0019)."""
+    Testdatenbank gebundene Factory, analog zu run_criterion_scoring's build_detector-Parameter.
+    Die drei Tabellen werden bewusst nacheinander in drei eigenstaendigen Bloecken behandelt
+    statt ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/
+    ScoringRun/CriterionScoringRun bleiben drei eigenstaendige Modelle ohne gemeinsame
+    Basisklasse, ADR 0019)."""
     reaped = 0
     threshold = _now_utc() - STALL_THRESHOLD
     async with session_factory() as session:
@@ -950,8 +1024,9 @@ async def reap_stalled_runs(
         except Exception:
             # architect-Review-Fund (Spec 0034): ohne rollback() bliebe die Transaktion auf einer
             # echten Postgres-Verbindung nach einem fehlgeschlagenen SELECT im Zustand "current
-            # transaction is aborted" - die nachfolgenden SELECTs fuer ScoringRun/TopSelectionRun
-            # wuerden dann selbst fehlschlagen, obwohl inhaltlich nichts mit ihnen falsch ist. Das
+            # transaction is aborted" - die nachfolgenden SELECTs fuer ScoringRun/
+            # CriterionScoringRun wuerden dann selbst fehlschlagen, obwohl inhaltlich nichts mit
+            # ihnen falsch ist. Das
             # wuerde das Akzeptanzkriterium "ein Fehler bei einer Tabelle blockiert die
             # Bereinigung der uebrigen nicht" in Produktion unterlaufen - im SQLite-Testsetup
             # unsichtbar, da dort eine vor jedem DB-Zugriff geworfene Python-Exception die
@@ -979,19 +1054,19 @@ async def reap_stalled_runs(
                 reaped += 1
 
         try:
-            stalled_top_selection_runs = (
+            stalled_criterion_scoring_runs = (
                 await session.execute(
-                    select(TopSelectionRun).where(
-                        TopSelectionRun.status == ScanStatus.RUNNING,
-                        TopSelectionRun.last_progress_at < threshold,
+                    select(CriterionScoringRun).where(
+                        CriterionScoringRun.status == ScanStatus.RUNNING,
+                        CriterionScoringRun.last_progress_at < threshold,
                     )
                 )
             ).scalars().all()
         except Exception:
             await session.rollback()
-            stalled_top_selection_runs = []
-        for top_selection_run in stalled_top_selection_runs:
-            if await _fail_if_stalled(session, top_selection_run):
+            stalled_criterion_scoring_runs = []
+        for criterion_scoring_run in stalled_criterion_scoring_runs:
+            if await _fail_if_stalled(session, criterion_scoring_run):
                 reaped += 1
 
     return reaped
@@ -1008,7 +1083,7 @@ class WorkerSettings:
     functions = (
         arq_func(scan_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
         arq_func(score_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
-        arq_func(select_top_photos, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
+        arq_func(score_criteria, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
     )
     # Schicht 2 des Fortschritts-Watchdogs (ADR 0019), erste Nutzung von arqs Cron-Mechanismus im
     # Projekt: run_at_startup=True sorgt dafuer, dass ein Worker-Neustart sofort eine erste

@@ -122,7 +122,6 @@ async def test_scoring_run_success_scores_photo(
     assert score.sharpness > 0
     assert score.phash is not None
     assert score.suggested_status is None
-    assert score.local_quality_score is not None
     assert score.cluster_key is not None
     assert score.duplicate_of is None
 
@@ -143,7 +142,6 @@ async def test_scoring_run_rejects_photo_below_sharpness_threshold(
     ).scalar_one()
     assert score.sharpness < SHARPNESS_REJECT_THRESHOLD
     assert score.suggested_status == RatingStatus.REJECTED
-    assert score.local_quality_score is None
     assert score.cluster_key is None
     assert score.duplicate_of is None
 
@@ -519,3 +517,36 @@ async def test_time_clustering_groups_photos_within_gap(
     }
     assert scores[close_a.id].cluster_key == scores[close_b.id].cluster_key
     assert scores[far.id].cluster_key != scores[close_a.id].cluster_key
+
+
+async def test_gate_is_auto_confirmed_when_no_suggestions_are_found(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Ausschuss-Gate-Autoset (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+    # backfill.md): kein Ausschuss gefunden -> nichts zu sichten, das Gate darf nicht mit einer
+    # leeren Liste blockieren.
+    project = await _make_project(db_session)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, photo, _sharp_photo_image())
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    assert scoring_run.suggestions_found == 0
+    assert scoring_run.gate_confirmed_at is not None
+
+
+async def test_gate_is_not_auto_confirmed_when_suggestions_are_found(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _add_photo(
+        db_session, project, "blurry.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, photo, _blurry_photo_image())
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    assert scoring_run.suggestions_found > 0
+    assert scoring_run.gate_confirmed_at is None

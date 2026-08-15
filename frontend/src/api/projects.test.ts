@@ -2,12 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { apiFetch } from './client'
 import {
+  confirmAusschussGate,
   createProject,
   getProject,
   listProjects,
   triggerScan,
   triggerScore,
-  triggerSelectTop,
+  triggerScoreCriteria,
 } from './projects'
 import type { ProjectOut } from './types'
 
@@ -23,7 +24,7 @@ const PROJECT: ProjectOut = {
   created_at: '2026-07-20T10:00:00Z',
   last_scan: null,
   last_scoring_run: null,
-  last_top_selection_run: null,
+  last_criterion_scoring_run: null,
   category_selection_enabled: true,
 }
 
@@ -76,14 +77,25 @@ describe('api/projects', () => {
     expect(result).toEqual({ status: 'queued' })
   })
 
-  it('triggers the top-photo selection via POST /projects/{id}/select-top with top_n_per_cluster', async () => {
+  it('confirms the ausschuss gate via POST /projects/{id}/confirm-ausschuss-gate', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ status: 'confirmed' })
+
+    const result = await confirmAusschussGate(1)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/confirm-ausschuss-gate', {
+      method: 'POST',
+    })
+    expect(result).toEqual({ status: 'confirmed' })
+  })
+
+  it('triggers criterion scoring via POST /projects/{id}/score-criteria with scoring_run_id', async () => {
     vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
 
-    const result = await triggerSelectTop(1, 5)
+    const result = await triggerScoreCriteria(1, 5)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/select-top', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/score-criteria', {
       method: 'POST',
-      body: { top_n_per_cluster: 5 },
+      body: { scoring_run_id: 5 },
     })
     expect(result).toEqual({ status: 'queued' })
   })
