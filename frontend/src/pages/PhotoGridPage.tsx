@@ -207,15 +207,22 @@ export function PhotoGridPage() {
                       den Trigger in eine andere Ecke auszuweichen. Als Geschwisterelement NEBEN,
                       nicht INNERHALB des <Link> (Akzeptanzkriterium 17) - `relative` wandert
                       dafuer vom <Link> auf den umschliessenden <div> (Architektur-Abschnitt der
-                      Spec). RatingBadge zieht dafuer aus dem <Link> in dieselbe Zeile - rein
-                      visuell/positionell unveraendert (weiterhin absolut im selben `relative`-
-                      Container), badge bleibt aber weiterhin dekorativ/nicht interaktiv, die
-                      Klickflaeche der Kachel aendert sich dadurch nicht. */}
-                  <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
+                      Spec).
+                      Copilot-Review-Fund: RatingBadge zieht dafuer aus dem <Link> in dieselbe
+                      Zeile - als eigenes absolut positioniertes Geschwisterelement UEBER der
+                      Kachel wuerde ein Klick in ihrem Bereich sonst nicht mehr zur Detailseite
+                      navigieren (die Badge selbst hat keinen eigenen Klick-Handler, faengt den
+                      Klick aber trotzdem ab, bevor er den darunterliegenden <Link> erreicht).
+                      `pointer-events-none` auf dem umschliessenden div laesst Klicks im
+                      Badge-Bereich zum <Link> durch (Badge bleibt rein dekorativ), der Info-
+                      Trigger reaktiviert Pointer-Events gezielt fuer sich selbst
+                      (`pointer-events-auto`), da er einen eigenen Klick-Handler braucht (AK17). */}
+                  <div className="pointer-events-none absolute right-1.5 top-1.5 flex items-center gap-1">
                     <CriterionDetailsPopover
                       criterionScores={photo.criterion_scores}
                       ranking={photo.ranking}
                       suggestion={photo.suggestion}
+                      className="pointer-events-auto"
                     />
                     {/* UX-Review-Fund (Branch feature/0012-visual-redesign-views): der neutrale
                         ("unbewertet") und der gedaempfte Vorschlags-Ton der Badge haben keine bzw.

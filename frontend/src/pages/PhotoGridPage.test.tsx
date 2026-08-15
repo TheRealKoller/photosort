@@ -399,6 +399,30 @@ describe('PhotoGridPage', () => {
       ).not.toBeInTheDocument()
     })
 
+    // Copilot-Review-Fund: die RatingBadge zieht als absolut positioniertes Geschwisterelement
+    // UEBER den <Link>, damit sie mit dem Info-Trigger in derselben Ecke gruppiert werden kann -
+    // ohne Gegenmassnahme wuerde ein Klick in ihrem (rein dekorativen) Bereich den darunterliegenden
+    // <Link> nicht mehr erreichen und die Kachel dort nicht mehr navigieren. jsdom hat keine echte
+    // Layout-/Hit-Testing-Engine (vgl. specs/architecture/0002-testkonzept.md, "Popover-
+    // Positionierungsverhalten" - bleibt manueller visueller Smoke-Test), ein tatsaechlicher
+    // Ueberlappungs-Klicktest ist hier deshalb nicht moeglich - stattdessen wird die dafuer
+    // verantwortliche CSS-Absicherung strukturell verifiziert: der umschliessende Overlay-Wrapper
+    // ist `pointer-events-none` (Klicks fallen durch zum <Link>), der Info-Trigger reaktiviert
+    // Pointer-Events explizit fuer sich selbst (`pointer-events-auto`).
+    it('keeps the decorative rating-badge overlay pointer-events-none so clicks fall through to the tile link', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
+        total: 1,
+      })
+
+      renderPage()
+
+      const trigger = await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      const overlay = trigger.closest('div.absolute')
+      expect(overlay).toHaveClass('pointer-events-none')
+      expect(trigger).toHaveClass('pointer-events-auto')
+    })
+
     it('clicking the trigger does not navigate to the detail view', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
