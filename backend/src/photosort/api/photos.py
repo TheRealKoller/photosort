@@ -14,8 +14,10 @@ from sqlalchemy.orm import aliased, selectinload
 
 from photosort.api.deps import get_current_user, get_session
 from photosort.config import settings
+from photosort.criteria import CRITERIA_REGISTRY
 from photosort.models import (
     CriterionScoringRun,
+    CriterionSource,
     Photo,
     PhotoRanking,
     PhotoScore,
@@ -77,14 +79,33 @@ class SuggestionOut(BaseModel):
 
 class RankingOut(BaseModel):
     """Kuratierungs-Kontext eines Fotos aus der Kriterien-/Rangfolgen-Pipeline
-    (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md) - nur gesetzt, wenn das
-    Foto Teil des per `top_n_per_category` abgefragten Top-N-Ergebnisses ist (siehe
-    list_photos unten). Getrennt von SuggestionOut, siehe dessen Docstring."""
+    (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md). Seit
+    specs/features/0040-bewertungsdetails-info-popover.md auch im Standard-Listing-Zweig befuellt
+    (vorher nur bei `top_n_per_category`), nicht mehr nur, wenn das Foto Teil des abgefragten
+    Top-N-Ergebnisses ist. Getrennt von SuggestionOut, siehe dessen Docstring."""
 
     cluster_key: str
     category_key: str
     rank_score: float
     rank_position: int
+    # Groesse der GESAMTEN Cluster x Kategorie-Partition (nicht nur der angeforderten top_n),
+    # fuer "Rang M von N" im Info-Popover (specs/features/0040-bewertungsdetails-info-popover.md,
+    # Architektur-Abschnitt) - lauf-global berechnet (siehe _partition_sizes), nicht
+    # nutzerspezifisch gefiltert.
+    partition_size: int
+
+
+class CriterionScoreOut(BaseModel):
+    """Ein einzelner, bereits normierter Kriterien-Wert eines Fotos
+    (specs/features/0040-bewertungsdetails-info-popover.md) - exponiert die seit Spec 0037
+    bereits vorhandene, aber bisher nicht ueber die API sichtbare `PhotoCriterionScore`-Tabelle.
+    `display_name` kommt aus criteria.py::CRITERIA_REGISTRY (Fallback auf `criterion_key`, falls
+    ein DB-Wert nicht im Register steht - defensiv gegen Registry-/Daten-Drift)."""
+
+    criterion_key: str
+    display_name: str
+    value: float
+    source: CriterionSource
 
 
 class PhotoOut(BaseModel):
@@ -94,6 +115,10 @@ class PhotoOut(BaseModel):
     ratings: list[RatingOut]
     suggestion: SuggestionOut | None
     ranking: RankingOut | None = None
+    # Immer eine Liste, nie None (analog `ratings`) - best-effort: enthaelt nur Kriterien, fuer
+    # die tatsaechlich eine PhotoCriterionScore-Zeile existiert, sortiert nach
+    # CRITERIA_REGISTRY-Reihenfolge (specs/features/0040-bewertungsdetails-info-popover.md).
+    criterion_scores: list[CriterionScoreOut]
 
 
 class PhotoListOut(BaseModel):
@@ -157,6 +182,10 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
         .options(
             selectinload(Photo.ratings).selectinload(Rating.user),
             selectinload(Photo.score),
+            # Photo.criterion_scores ist bereits eine ORM-Relationship (models.py) - eager laden
+            # statt eines Query pro Foto (specs/features/0040-bewertungsdetails-info-popover.md,
+            # Architektur-Abschnitt).
+            selectinload(Photo.criterion_scores),
         )
     )
     return {photo.id: photo for photo in result.scalars()}
@@ -178,8 +207,38 @@ def _to_suggestion_out(score: PhotoScore) -> SuggestionOut:
     )
 
 
+def _criterion_scores_out(photo: Photo) -> list[CriterionScoreOut]:
+    """Sortiert die vorhandenen PhotoCriterionScore-Zeilen des Fotos nach CRITERIA_REGISTRY-
+    Reihenfolge (Akzeptanzkriterium 7 der Spec); Zeilen, deren criterion_key nicht in der
+    Registry steht (Registry-/Daten-Drift), landen ans Ende, sortiert nach ihrem eigenen Key fuer
+    ein deterministisches Ergebnis, und bekommen den rohen Key als display_name-Fallback. Fehlt
+    umgekehrt ein Registry-Kriterium in der DB, taucht es einfach nicht auf (kein Platzhalter,
+    Akzeptanzkriterium 8)."""
+    registry_order = {key: index for index, key in enumerate(CRITERIA_REGISTRY)}
+    sorted_scores = sorted(
+        photo.criterion_scores,
+        key=lambda s: (registry_order.get(s.criterion_key, len(registry_order)), s.criterion_key),
+    )
+    return [
+        CriterionScoreOut(
+            criterion_key=s.criterion_key,
+            display_name=(
+                CRITERIA_REGISTRY[s.criterion_key].display_name
+                if s.criterion_key in CRITERIA_REGISTRY
+                else s.criterion_key
+            ),
+            value=s.value,
+            source=s.source,
+        )
+        for s in sorted_scores
+    ]
+
+
 def _to_photo_out(
-    photo: Photo, current_user_id: int, ranking: PhotoRanking | None = None
+    photo: Photo,
+    current_user_id: int,
+    ranking: PhotoRanking | None = None,
+    partition_size: int = 0,
 ) -> PhotoOut:
     # Anzeigeregel (Akzeptanzkriterium der Spec): ein Vorschlag ist nur sichtbar, wenn (a)
     # PhotoScore.suggested_status gesetzt ist UND (b) der anfragende Nutzer noch KEINE eigene
@@ -205,10 +264,12 @@ def _to_photo_out(
                 category_key=ranking.category_key,
                 rank_score=ranking.rank_score,
                 rank_position=ranking.rank_position,
+                partition_size=partition_size,
             )
             if ranking is not None
             else None
         ),
+        criterion_scores=_criterion_scores_out(photo),
     )
 
 
@@ -279,6 +340,21 @@ async def _top_n_per_category_photo_ids(
     return [row[0] for row in result.all()], latest_run_id
 
 
+async def _partition_sizes(
+    session: AsyncSession, criterion_scoring_run_id: int
+) -> dict[tuple[str, str], int]:
+    """Groesse jeder Cluster x Kategorie-Partition eines Laufs, fuer "Rang M von N" im Info-
+    Popover (specs/features/0040-bewertungsdetails-info-popover.md, Architektur-Abschnitt) - ein
+    einzelner GROUP BY-Query pro list_photos-Aufruf (nicht pro Foto). Bewusst lauf-global, nicht
+    nutzerspezifisch gefiltert - siehe RankingOut.partition_size-Docstring."""
+    result = await session.execute(
+        select(PhotoRanking.cluster_key, PhotoRanking.category_key, func.count())
+        .where(PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id)
+        .group_by(PhotoRanking.cluster_key, PhotoRanking.category_key)
+    )
+    return {(cluster_key, category_key): count for cluster_key, category_key, count in result.all()}
+
+
 async def _rankings_by_photo_id(
     session: AsyncSession, criterion_scoring_run_id: int, photo_ids: list[int]
 ) -> dict[int, PhotoRanking]:
@@ -291,6 +367,14 @@ async def _rankings_by_photo_id(
         )
     )
     return {row.photo_id: row for row in result.scalars()}
+
+
+def _partition_size_for(
+    ranking: PhotoRanking | None, partition_sizes: dict[tuple[str, str], int]
+) -> int:
+    if ranking is None:
+        return 0
+    return partition_sizes.get((ranking.cluster_key, ranking.category_key), 0)
 
 
 @router.get("/projects/{project_id}/photos", response_model=PhotoListOut)
@@ -323,8 +407,18 @@ async def list_photos(
             if criterion_scoring_run_id is not None
             else {}
         )
+        partition_sizes = (
+            await _partition_sizes(session, criterion_scoring_run_id)
+            if criterion_scoring_run_id is not None
+            else {}
+        )
         items = [
-            _to_photo_out(photos_by_id[photo_id], current_user.id, rankings_by_id.get(photo_id))
+            _to_photo_out(
+                photos_by_id[photo_id],
+                current_user.id,
+                rankings_by_id.get(photo_id),
+                _partition_size_for(rankings_by_id.get(photo_id), partition_sizes),
+            )
             for photo_id in ids
         ]
         return PhotoListOut(items=items, total=len(items))
@@ -333,7 +427,28 @@ async def list_photos(
         session, project_id, current_user.id, rating_status, limit, offset
     )
     photos_by_id = await _photos_by_id(session, ids)
-    items = [_to_photo_out(photos_by_id[photo_id], current_user.id) for photo_id in ids]
+    # RankingOut wird seit specs/features/0040-bewertungsdetails-info-popover.md AUCH hier im
+    # Standard-Listing-Zweig befuellt (vorher nur bei top_n_per_category, siehe Architektur-
+    # Abschnitt der Spec) - Grid-/Detailansicht sollen ebenfalls Rang-Score/-Position zeigen
+    # koennen, unabhaengig vom top_n_per_category-Kuratierungsmodus.
+    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    rankings_by_id = (
+        await _rankings_by_photo_id(session, latest_run_id, ids)
+        if latest_run_id is not None
+        else {}
+    )
+    partition_sizes = (
+        await _partition_sizes(session, latest_run_id) if latest_run_id is not None else {}
+    )
+    items = [
+        _to_photo_out(
+            photos_by_id[photo_id],
+            current_user.id,
+            rankings_by_id.get(photo_id),
+            _partition_size_for(rankings_by_id.get(photo_id), partition_sizes),
+        )
+        for photo_id in ids
+    ]
     return PhotoListOut(items=items, total=total)
 
 

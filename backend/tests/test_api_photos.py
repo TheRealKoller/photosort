@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.config import settings
 from photosort.models import (
     CriterionScoringRun,
+    CriterionSource,
     Photo,
+    PhotoCriterionScore,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -563,11 +565,15 @@ class TestTopNPerCategory:
         assert body["total"] == 2
         assert [item["id"] for item in body["items"]] == [first.id, second.id]
         ranking = body["items"][0]["ranking"]
+        # partition_size ist die GROESSE DER GESAMTEN Partition (hier 3 Fotos), nicht die
+        # angeforderte top_n_per_category=2 - "Rang M von N" soll immer den vollen Pool zeigen
+        # (Architektur-Abschnitt der Spec 0040).
         assert ranking == {
             "cluster_key": "cluster-0",
             "category_key": "landscape",
             "rank_score": 0.9,
             "rank_position": 1,
+            "partition_size": 3,
         }
 
     async def test_partitions_are_independent(
@@ -685,6 +691,162 @@ class TestTopNPerCategory:
         )
 
         assert response.status_code == 422
+
+
+class TestCriterionScores:
+    """Bewertungsdetails-Info-Popover (specs/features/0040-bewertungsdetails-info-popover.md):
+    `PhotoOut.criterion_scores` exponiert die bereits vorhandenen `PhotoCriterionScore`-Zeilen."""
+
+    async def test_includes_criterion_scores_in_registry_order(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        computed_at = datetime(2023, 1, 1, tzinfo=UTC)
+        # Bewusst NICHT in Registry-Reihenfolge (sharpness, exposure, content_people,
+        # content_landscape) eingefuegt - die Response muss trotzdem in Registry-Reihenfolge
+        # sortieren (Akzeptanzkriterium 7 der Spec).
+        db_session.add_all(
+            [
+                PhotoCriterionScore(
+                    photo_id=photo.id,
+                    criterion_key="content_people",
+                    value=1.0,
+                    source=CriterionSource.LOCAL_ML,
+                    computed_at=computed_at,
+                ),
+                PhotoCriterionScore(
+                    photo_id=photo.id,
+                    criterion_key="sharpness",
+                    value=0.734,
+                    source=CriterionSource.LOCAL_HEURISTIC,
+                    computed_at=computed_at,
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.status_code == 200
+        criterion_scores = response.json()["items"][0]["criterion_scores"]
+        assert criterion_scores == [
+            {
+                "criterion_key": "sharpness",
+                "display_name": "Schärfe",
+                "value": 0.734,
+                "source": "local_heuristic",
+            },
+            {
+                "criterion_key": "content_people",
+                "display_name": "Menschen erkannt",
+                "value": 1.0,
+                "source": "local_ml",
+            },
+        ]
+
+    async def test_criterion_scores_is_empty_list_when_none_exist(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["criterion_scores"] == []
+
+    async def test_missing_criterion_is_omitted_not_filled_with_placeholder(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Best-effort-Luecke (Akzeptanzkriterium 8): nur `sharpness` wurde berechnet, `exposure`
+        # fehlt - die Antwort darf `exposure` weder mit 0 noch einem Platzhalter auffuellen.
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="sharpness",
+                value=0.5,
+                source=CriterionSource.LOCAL_HEURISTIC,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        criterion_scores = response.json()["items"][0]["criterion_scores"]
+        assert [c["criterion_key"] for c in criterion_scores] == ["sharpness"]
+
+    async def test_unknown_criterion_key_falls_back_to_key_as_display_name(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Defensiv gegen Registry-/Daten-Drift (Architektur-Abschnitt der Spec): ein
+        # criterion_key, der (nicht mehr) in CRITERIA_REGISTRY steht, wird trotzdem angezeigt,
+        # mit dem rohen Key als display_name.
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="future_criterion",
+                value=0.3,
+                source=CriterionSource.CLOUD,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        criterion_scores = response.json()["items"][0]["criterion_scores"]
+        assert criterion_scores == [
+            {
+                "criterion_key": "future_criterion",
+                "display_name": "future_criterion",
+                "value": 0.3,
+                "source": "cloud",
+            }
+        ]
+
+
+class TestDefaultListingRanking:
+    """Bewertungsdetails-Info-Popover (specs/features/0040): `RankingOut` wird jetzt auch im
+    Standard-Listing-Zweig befuellt (bisher nur bei `top_n_per_category`), damit Grid-/
+    Detailansicht ebenfalls Rang-Score/-Position zeigen koennen."""
+
+    async def test_default_listing_includes_ranking_and_partition_size(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        second = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
+        await _add_ranking(db_session, run, second, rank_score=0.5, rank_position=2)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.status_code == 200
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[first.id]["ranking"] == {
+            "cluster_key": "cluster-0",
+            "category_key": "landscape",
+            "rank_score": 0.9,
+            "rank_position": 1,
+            "partition_size": 2,
+        }
+        assert items[second.id]["ranking"]["rank_position"] == 2
+
+    async def test_default_listing_ranking_is_null_without_criterion_scoring_run(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["ranking"] is None
 
 
 async def test_list_photos_returns_404_for_unknown_project(
