@@ -73,6 +73,12 @@ export function formatClusterHeading(photos: { taken_at: string }[]): {
   // chronologische Cluster-Sortierung (Akzeptanzkriterium 2).
   earliestIso: string
 } {
+  // Copilot-Review-Fund (PR #91): expliziter Guard statt eines unklaren "cannot read properties
+  // of undefined" beim naechsten Zeilenzugriff auf photos[0] - der Vertrag "nicht-leeres Array"
+  // war zuvor nur im Docstring, nicht zur Laufzeit geprueft.
+  if (photos.length === 0) {
+    throw new Error('formatClusterHeading() erwartet ein nicht-leeres Array')
+  }
   let minIso = photos[0].taken_at
   let maxIso = photos[0].taken_at
   for (const photo of photos) {

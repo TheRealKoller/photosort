@@ -36,9 +36,10 @@ function parseTopN(value: string | null): number {
 interface ClusterMeta {
   dayKey: string
   heading: string
-  // Nur fuer die chronologische Cluster-Sortierung innerhalb eines Tages (Akzeptanzkriterium 2)
-  // - formatClusterHeading() selbst liefert bewusst nur die fertige Anzeige-Ueberschrift, kein
-  // sortierbares Roh-Datum (siehe frontend/src/utils/timeOfDay.ts).
+  // Nur fuer die chronologische Cluster-Sortierung innerhalb eines Tages (Akzeptanzkriterium 2) -
+  // 1:1 aus `formatClusterHeading()`s `earliestIso`-Rueckgabewert uebernommen (siehe
+  // frontend/src/utils/timeOfDay.ts), damit der rohe Zeitstempel nicht ein zweites Mal separat
+  // berechnet werden muss.
   earliestTakenAt: string
 }
 

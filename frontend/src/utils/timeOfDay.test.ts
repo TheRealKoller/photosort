@@ -57,6 +57,15 @@ describe('formatTimeRange', () => {
 })
 
 describe('formatClusterHeading', () => {
+  it('throws a clear error instead of accessing photos[0] on an empty array', () => {
+    // Copilot-Review-Fund (PR #91): ohne expliziten Guard waere der Fehler beim Aufruf mit einem
+    // leeren Array ein unklares "cannot read properties of undefined" statt einer nachvollziehbaren
+    // Meldung, die auf den verletzten Vertrag (nicht-leeres Array) hinweist.
+    expect(() => formatClusterHeading([])).toThrow(
+      'formatClusterHeading() erwartet ein nicht-leeres Array'
+    )
+  })
+
   it('derives day and bucket from the single photo of a one-photo cluster', () => {
     const result = formatClusterHeading([{ taken_at: '2026-07-20T14:32:00' }])
     expect(result.dayKey).toBe('2026-07-20')
