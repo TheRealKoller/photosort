@@ -13,6 +13,7 @@ from photosort.classification import (
     FaceBoundingBox,
     FaceDetectorLike,
     ObjectDetectorLike,
+    SceneLabel,
     compute_uniform_area_fraction,
     detect_animals,
     detect_person,
@@ -47,6 +48,7 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
     "goldener_schnitt": CriterionDefinition(
         "goldener_schnitt", "Goldener Schnitt", CriterionSource.LOCAL_HEURISTIC
     ),
+    "gebaeude": CriterionDefinition("gebaeude", "Gebäude erkannt", CriterionSource.LOCAL_ML),
 }
 
 # Obergrenze fuer die Normierung der unbeschraenkten Laplace-Varianz-Skala (scoring.py::
@@ -219,6 +221,48 @@ def compute_tier_score(animals: Sequence[AnimalDetection]) -> float:
     if not animals:
         return 0.0
     return _largest_by_area(animals).confidence
+
+
+# Kuratierte Allow-Liste architekturbezogener ImageNet-1k-Klassen (ADR 0022 Punkt 2) - die acht
+# im Architektur-Abschnitt der Spec 0038 explizit genannten Klassen plus eine kleine, ebenfalls
+# gut belegte Erweiterung ("u.a." in der Spec) verwandter ImageNet-Architektur-Synsets. Technische
+# Detailentscheidung der Umsetzung (die Spec selbst laesst die genaue Liste bewusst offen) - siehe
+# Modul-Kommentar in classification.py fuer die Begruendung, warum die Filterung HIER und nicht in
+# classify_scene selbst passiert. Dokumentierte, bewusst akzeptierte Luecke (AK-Pflicht der Spec,
+# ADR 0022 Punkt 2): ImageNet hat kaum Innenraum-Klassen, `living_room`/`kitchen`/`office` werden
+# strukturell nicht erkannt - nur Aussenarchitektur wird zuverlaessig erfasst.
+ARCHITECTURE_CATEGORIES = frozenset(
+    {
+        "church",
+        "castle",
+        "palace",
+        "dome",
+        "library",
+        "lighthouse",
+        "barn",
+        "mosque",
+        "monastery",
+        "bell_cote",
+        "boathouse",
+        "obelisk",
+        "stupa",
+        "triumphal_arch",
+        "viaduct",
+        "suspension_bridge",
+    }
+)
+
+
+def compute_gebaeude_score(labels: Sequence[SceneLabel]) -> float:
+    """`gebaeude`-Kriterium (ADR 0022 Punkt 2): Score = Konfidenz des besten Treffers INNERHALB
+    der ARCHITECTURE_CATEGORIES-Allow-Liste, 0.0 falls keiner der uebergebenen `labels` in der
+    Allow-Liste enthalten ist - auch bei hoher Modell-Konfidenz einer nicht-architekturbezogenen
+    Kategorie (Akzeptanzkriterium der Spec: "Nachweis, dass tatsaechlich die Allow-Liste filtert
+    und nicht nur die rohe Modell-Konfidenz durchgereicht wird")."""
+    allowed = [label for label in labels if label.category in ARCHITECTURE_CATEGORIES]
+    if not allowed:
+        return 0.0
+    return max(label.confidence for label in allowed)
 
 
 # Schwelle, ab der content_people als "Gesicht erkannt" gilt (compute_content_people liefert nur

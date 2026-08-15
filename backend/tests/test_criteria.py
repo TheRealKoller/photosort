@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from PIL import Image, ImageDraw
 
-from photosort.classification import AnimalDetection, FaceBoundingBox
+from photosort.classification import AnimalDetection, FaceBoundingBox, SceneLabel
 from photosort.criteria import (
     CATEGORY_DETAIL,
     CATEGORY_LANDSCAPE,
@@ -13,6 +13,7 @@ from photosort.criteria import (
     CRITERIA_REGISTRY,
     compute_content_landscape,
     compute_content_people,
+    compute_gebaeude_score,
     compute_golden_ratio,
     compute_golden_ratio_score,
     compute_tier_score,
@@ -71,6 +72,9 @@ class TestCriteriaRegistry:
         # (reine Geometrie, kein eigenes Modell).
         assert CRITERIA_REGISTRY["tier"].source == CriterionSource.LOCAL_ML
         assert CRITERIA_REGISTRY["goldener_schnitt"].source == CriterionSource.LOCAL_HEURISTIC
+
+    def test_registry_contains_gebaeude_with_the_correct_source(self) -> None:
+        assert CRITERIA_REGISTRY["gebaeude"].source == CriterionSource.LOCAL_ML
 
 
 class TestNormalizeSharpness:
@@ -192,6 +196,29 @@ class TestComputeTierScore:
         large_lower_confidence = _animal("dog", confidence=0.6, size=0.6)
         score = compute_tier_score([small_high_confidence, large_lower_confidence])
         assert score == 0.6
+
+
+class TestComputeGebaeudeScore:
+    def test_allow_listed_category_scores_high(self) -> None:
+        score = compute_gebaeude_score([SceneLabel(category="church", confidence=0.9)])
+        assert score == 0.9
+
+    def test_non_allow_listed_category_scores_zero_despite_high_confidence(self) -> None:
+        # Akzeptanzkriterium der Spec: Nachweis, dass tatsaechlich die Allow-Liste filtert und
+        # nicht nur die rohe Modell-Konfidenz durchgereicht wird.
+        score = compute_gebaeude_score([SceneLabel(category="dog", confidence=0.95)])
+        assert score == 0.0
+
+    def test_no_labels_at_all_scores_zero(self) -> None:
+        assert compute_gebaeude_score([]) == 0.0
+
+    def test_picks_the_highest_confidence_allow_listed_label_among_several(self) -> None:
+        labels = [
+            SceneLabel(category="dog", confidence=0.99),  # nicht in der Allow-Liste
+            SceneLabel(category="castle", confidence=0.6),
+            SceneLabel(category="church", confidence=0.8),
+        ]
+        assert compute_gebaeude_score(labels) == 0.8
 
 
 class SpyFaceDetector:

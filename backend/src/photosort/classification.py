@@ -327,3 +327,90 @@ def build_object_detector() -> ObjectDetectorLike:
     )
     detector: ObjectDetectorLike = vision.ObjectDetector.create_from_options(options)
     return detector
+
+
+# --- Gebaeude-Erkennung (specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-
+# aesthetik.md, decisions/0022-lokale-modellwahl-tier-gebaeude-aesthetik-kriterien.md Punkt 2):
+# mediapipe Image Classifier Task API, ImageNet-1k-Modell EfficientNet-Lite0 - drittes Task-API-
+# Paar derselben bereits vorhandenen mediapipe-Abhaengigkeit, keine neue Abhaengigkeit.
+#
+# WICHTIG, anders als bei Tier: classify_scene filtert NICHT auf die Architektur-Allow-Liste -
+# sie liefert alle Klassifikations-Ergebnisse oberhalb von SCENE_CLASSIFICATION_CONFIDENCE_
+# THRESHOLD unveraendert zurueck (rohe Modell-Ausgabe). Die Allow-Liste-Filterung passiert bewusst
+# erst in criteria.py::compute_gebaeude_score - Akzeptanzkriterium der Spec 0038 verlangt einen
+# Testnachweis, "dass tatsaechlich die Allow-Liste filtert und nicht nur die rohe Modell-Konfidenz
+# durchgereicht wird"; dieser Nachweis waere hier auf classify_scene-Ebene sinnlos, wenn schon
+# hier gefiltert wuerde.
+
+# Mindest-Konfidenz, ab der eine Szenen-Klassifikation ueberhaupt in Betracht gezogen wird -
+# analog FACE_DETECTION_CONFIDENCE_THRESHOLD/ANIMAL_DETECTION_CONFIDENCE_THRESHOLD.
+SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.5
+
+# Gepinnte, im Repository eingecheckte .tflite-Modelldatei (Security-Abschnitt der Spec 0038,
+# kein Laufzeit-Download). Quelle: offizielles mediapipe-Modell-Repository
+# (https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/1/
+# efficientnet_lite0.tflite), int8-quantisierte Variante (~5,4 MB).
+_SCENE_CLASSIFIER_MODEL_PATH = Path(__file__).parent / "assets" / "efficientnet_lite0.tflite"
+
+# Security-Muss-Kriterium (Spec-0038-Security-Abschnitt, Punkt 3).
+SCENE_CLASSIFIER_MODEL_SHA256 = "bc2ffe19c1118de0c0c2a9088992da5589722656e0fba81421385300a4a34b16"
+
+
+class ClassificationsLike(Protocol):
+    """Die schmale Teilmenge von mediapipe.tasks.python.components.containers.Classifications,
+    die classify_scene braucht."""
+
+    categories: list[DetectionCategoryLike]
+
+
+class ImageClassificationResultLike(Protocol):
+    classifications: list[ClassificationsLike]
+
+
+class SceneClassifierLike(Protocol):
+    def classify(self, image: object) -> ImageClassificationResultLike: ...
+
+
+@dataclass(frozen=True)
+class SceneLabel:
+    """Eine einzelne, oberhalb von SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD klassifizierte
+    ImageNet-1k-Szenen-/Objekt-Kategorie (ADR 0022 Punkt 2) - UNGEFILTERT, siehe Modul-Kommentar
+    oben. Kein Bounding-Box-Feld (anders als AnimalDetection/FaceBoundingBox): ein Image
+    Classifier bewertet das GESAMTE Bild, keine einzelne Bildregion."""
+
+    category: str
+    confidence: float
+
+
+def classify_scene(image: Image.Image, classifier: SceneClassifierLike) -> list[SceneLabel]:
+    """mediapipe Image Classifier Task-API (ADR 0022 Punkt 2) auf der bereits gecachten
+    display-Variante - liefert ALLE Klassifikationen oberhalb von
+    SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD, unabhaengig davon, ob sie architekturbezogen sind
+    (siehe Modul-Kommentar). `classifier` ist injizierbar (siehe SceneClassifierLike) - die reale
+    Modellkonstruktion (build_scene_classifier) laeuft in keinem automatisierten Test."""
+    result = classifier.classify(_to_mp_image(image))
+    labels: list[SceneLabel] = []
+    for classifications in result.classifications:
+        for category in classifications.categories:
+            name = getattr(category, "category_name", None)
+            score = getattr(category, "score", 0.0)
+            if name is None or score < SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD:
+                continue
+            labels.append(SceneLabel(category=name, confidence=score))
+    return labels
+
+
+def build_scene_classifier() -> SceneClassifierLike:
+    """Baut den echten mediapipe ImageClassifier aus dem zur Build-Zeit gebuendelten .tflite-
+    Modell (Security-Abschnitt der Spec 0038 - kein Laufzeit-Download). Wird NIE in einem
+    automatisierten Test aufgerufen (Infrastruktur-/CI-Risiko, analog build_face_detector/
+    build_object_detector), nur vom Worker-Job."""
+    from mediapipe.tasks.python import vision
+    from mediapipe.tasks.python.core.base_options import BaseOptions
+
+    options = vision.ImageClassifierOptions(
+        base_options=BaseOptions(model_asset_path=str(_SCENE_CLASSIFIER_MODEL_PATH)),
+        score_threshold=SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
+    )
+    classifier: SceneClassifierLike = vision.ImageClassifier.create_from_options(options)
+    return classifier

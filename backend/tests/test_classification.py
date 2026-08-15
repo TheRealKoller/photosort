@@ -9,11 +9,16 @@ from PIL import Image, ImageDraw
 from photosort.classification import (
     _FACE_DETECTOR_MODEL_PATH,
     _OBJECT_DETECTOR_MODEL_PATH,
+    _SCENE_CLASSIFIER_MODEL_PATH,
     ANIMAL_DETECTION_CONFIDENCE_THRESHOLD,
     FACE_DETECTOR_MODEL_SHA256,
     OBJECT_DETECTOR_MODEL_SHA256,
+    SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
+    SCENE_CLASSIFIER_MODEL_SHA256,
     AnimalDetection,
     FaceBoundingBox,
+    SceneLabel,
+    classify_scene,
     compute_uniform_area_fraction,
     detect_animals,
     detect_person,
@@ -63,6 +68,12 @@ class TestObjectDetectorModelAsset:
         # "nice to have"): je gepinntem Modell-Asset ein eigener Integritaets-Test.
         digest = hashlib.sha256(_OBJECT_DETECTOR_MODEL_PATH.read_bytes()).hexdigest()
         assert digest == OBJECT_DETECTOR_MODEL_SHA256
+
+
+class TestSceneClassifierModelAsset:
+    def test_committed_tflite_model_matches_the_documented_sha256(self) -> None:
+        digest = hashlib.sha256(_SCENE_CLASSIFIER_MODEL_PATH.read_bytes()).hexdigest()
+        assert digest == SCENE_CLASSIFIER_MODEL_SHA256
 
 
 class TestComputeUniformAreaFraction:
@@ -227,3 +238,49 @@ class TestDetectAnimals:
         )
         assert len(detections) == 1
         assert 0.0 <= detections[0].x_center <= 1.0
+
+
+class FakeSceneClassifier:
+    """Faket die schmale Teilmenge der mediapipe-ImageClassifier-API, die classify_scene braucht -
+    kein echtes .tflite-Modell in Tests. `categories` ist eine Liste von (category_name, score)."""
+
+    def __init__(self, categories: list[tuple[str, float]]) -> None:
+        self._categories = categories
+
+    def classify(self, image: object) -> object:
+        return SimpleNamespace(
+            classifications=[
+                SimpleNamespace(
+                    categories=[
+                        SimpleNamespace(category_name=name, score=score)
+                        for name, score in self._categories
+                    ]
+                )
+            ]
+        )
+
+
+class TestClassifyScene:
+    def test_returns_a_label_above_the_confidence_threshold(self) -> None:
+        labels = classify_scene(_solid(), FakeSceneClassifier([("church", 0.9)]))
+        assert labels == [SceneLabel(category="church", confidence=0.9)]
+
+    def test_ignores_a_label_below_the_confidence_threshold(self) -> None:
+        assert SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD == 0.5
+        assert classify_scene(_solid(), FakeSceneClassifier([("church", 0.1)])) == []
+
+    def test_does_not_filter_by_architecture_allow_list_itself(self) -> None:
+        # WICHTIG (Modul-Kommentar in classification.py): classify_scene liefert die ROHE
+        # Modell-Ausgabe zurueck, auch fuer nicht-architekturbezogene Kategorien - die
+        # Allow-Liste-Filterung passiert erst in criteria.py::compute_gebaeude_score.
+        labels = classify_scene(_solid(), FakeSceneClassifier([("dog", 0.95)]))
+        assert labels == [SceneLabel(category="dog", confidence=0.95)]
+
+    def test_returns_all_labels_above_threshold_not_just_the_top_one(self) -> None:
+        labels = classify_scene(
+            _solid(), FakeSceneClassifier([("church", 0.9), ("castle", 0.7), ("dog", 0.1)])
+        )
+        assert {label.category for label in labels} == {"church", "castle"}
+
+    def test_returns_empty_list_with_no_categories_at_all(self) -> None:
+        assert classify_scene(_solid(), FakeSceneClassifier([])) == []

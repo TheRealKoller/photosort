@@ -120,6 +120,20 @@ def _no_animal_detector() -> NoAnimalDetector:
     return NoAnimalDetector()
 
 
+class NoSceneLabels:
+    """Faket den mediapipe ImageClassifier so, dass keine Szenen-Kategorie gefunden wird - der
+    injizierte build_scene_classifier_fn-Callable ersetzt worker.py::build_scene_classifier
+    (specs/features/0038: build_scene_classifier darf wie build_face_detector NIE in einem
+    automatisierten Test aufgerufen werden, kein echtes .tflite-Modell in Tests)."""
+
+    def classify(self, image: object) -> object:
+        return SimpleNamespace(classifications=[SimpleNamespace(categories=[])])
+
+
+def _no_scene_classifier() -> NoSceneLabels:
+    return NoSceneLabels()
+
+
 async def test_guard_fails_run_when_scoring_run_id_does_not_exist(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
@@ -132,6 +146,7 @@ async def test_guard_fails_run_when_scoring_run_id_does_not_exist(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -159,6 +174,7 @@ async def test_guard_fails_run_when_scoring_run_id_is_stale(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -180,6 +196,7 @@ async def test_guard_fails_run_when_latest_scoring_run_is_not_successful(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -203,6 +220,7 @@ async def test_writes_sharpness_and_exposure_criteria_from_existing_photo_score(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -238,6 +256,7 @@ async def test_upserts_existing_criterion_score_instead_of_duplicating(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
     # Zweiter Lauf mit geaenderten Rohwerten - der bestehende Wert wird ueberschrieben (Upsert),
     # keine zweite Zeile (UniqueConstraint(photo_id, criterion_key)).
@@ -254,6 +273,7 @@ async def test_upserts_existing_criterion_score_instead_of_duplicating(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     rows = (
@@ -288,6 +308,7 @@ async def test_only_considers_ausschuss_survivors(db_session: AsyncSession, tmp_
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -324,6 +345,7 @@ async def test_best_effort_content_criteria_failure_does_not_fail_the_run(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -361,6 +383,28 @@ def _animal_detector_stub() -> AnimalDetectorStub:
     return AnimalDetectorStub()
 
 
+class SceneClassifierStub:
+    """Faket den mediapipe ImageClassifier so, dass GENAU EINE (architekturbezogene) Kategorie
+    gefunden wird - analog AnimalDetectorStub."""
+
+    def __init__(self, category: str = "church", score: float = 0.8) -> None:
+        self._category = category
+        self._score = score
+
+    def classify(self, image: object) -> object:
+        return SimpleNamespace(
+            classifications=[
+                SimpleNamespace(
+                    categories=[SimpleNamespace(category_name=self._category, score=self._score)]
+                )
+            ]
+        )
+
+
+def _scene_classifier_stub() -> SceneClassifierStub:
+    return SceneClassifierStub()
+
+
 class CountingDetector:
     """Zaehlt Aufrufe von detect() - Wiederverwendungsnachweis (Akzeptanzkriterium der Spec 0038:
     detect_person/detect_animals werden je Foto hoechstens einmal aufgerufen und fuer mehrere
@@ -393,6 +437,7 @@ async def test_tier_criterion_is_written_when_an_animal_is_detected(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_animal_detector_stub,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     criteria = {
@@ -430,6 +475,7 @@ async def test_tier_criterion_best_effort_failure_does_not_fail_the_run_or_other
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=BrokenAnimalDetector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -448,6 +494,83 @@ async def test_tier_criterion_best_effort_failure_does_not_fail_the_run_or_other
     assert "goldener_schnitt" not in criteria
     assert "content_people" in criteria
     assert "content_landscape" in criteria
+    assert "gebaeude" in criteria  # haengt nicht von detect_animals ab
+
+
+async def test_gebaeude_criterion_is_written_when_an_architecture_label_is_detected(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "church.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_scene_classifier_stub,
+    )
+
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert criteria["gebaeude"] == 0.8
+
+
+async def test_gebaeude_criterion_best_effort_failure_does_not_fail_the_run_or_other_criteria(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Eigener Fehlerfall-Testlauf spezifisch fuer "gebaeude" (Akzeptanzkriterium der Spec: "Je
+    # Kriterium mindestens ein eigener Fehlerfall-Testlauf, nicht nur ein generischer").
+    class BrokenSceneClassifier:
+        def classify(self, image: object) -> object:
+            raise RuntimeError("Modell-Ladefehler")
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=BrokenSceneClassifier,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    # gebaeude haengt NICHT von detect_person/detect_animals ab - ein Fehler dort darf weder
+    # goldener_schnitt (unbetroffen) noch tier/content_people mit sich reissen.
+    assert "gebaeude" not in criteria
+    assert "goldener_schnitt" in criteria
+    assert "tier" in criteria
+    assert "content_people" in criteria
 
 
 async def test_goldener_schnitt_best_effort_failure_when_face_detection_fails(
@@ -475,6 +598,7 @@ async def test_goldener_schnitt_best_effort_failure_when_face_detection_fails(
         cache_dir=tmp_path,
         build_detector=BrokenFaceDetector,
         build_animal_detector=_animal_detector_stub,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -509,6 +633,7 @@ async def test_goldener_schnitt_is_written_when_both_detections_succeed_even_wit
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     criteria = {
@@ -549,6 +674,7 @@ async def test_detect_person_and_detect_animals_are_each_called_at_most_once_per
         cache_dir=tmp_path,
         build_detector=lambda: face_detector,
         build_animal_detector=lambda: animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert face_detector.call_count == 1
@@ -576,6 +702,7 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     rankings = (
@@ -623,6 +750,7 @@ async def test_partitions_are_isolated_by_cluster_and_category(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     rankings = (
@@ -662,6 +790,7 @@ async def test_progress_is_committed_periodically(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert run.photos_total == 3
@@ -692,6 +821,7 @@ async def test_criterion_scoring_updates_last_progress_at_at_each_checkpoint(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert run.last_progress_at == sentinel
@@ -725,6 +855,7 @@ async def test_run_marked_failed_on_cancelled_error(
             cache_dir=tmp_path,
             build_detector=CancellingDetector,
             build_animal_detector=_no_animal_detector,
+            build_scene_classifier_fn=_no_scene_classifier,
         )
         raised = False
     except asyncio.CancelledError:
@@ -761,6 +892,7 @@ async def test_rescoring_does_not_overwrite_ratings(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
     second_run = await run_criterion_scoring(
         db_session,
@@ -769,6 +901,7 @@ async def test_rescoring_does_not_overwrite_ratings(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert first_run.status == ScanStatus.SUCCESS
@@ -798,6 +931,7 @@ async def test_end_to_end_with_run_project_scoring(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
+        build_scene_classifier_fn=_no_scene_classifier,
     )
 
     assert run.status == ScanStatus.SUCCESS

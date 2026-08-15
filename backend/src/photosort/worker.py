@@ -21,8 +21,11 @@ from photosort.classification import (
     FaceBoundingBox,
     FaceDetectorLike,
     ObjectDetectorLike,
+    SceneClassifierLike,
     build_face_detector,
     build_object_detector,
+    build_scene_classifier,
+    classify_scene,
     detect_animals,
     detect_person,
 )
@@ -30,6 +33,7 @@ from photosort.config import settings
 from photosort.criteria import (
     CRITERIA_REGISTRY,
     compute_content_landscape,
+    compute_gebaeude_score,
     compute_golden_ratio_score,
     compute_tier_score,
     content_people_from_faces,
@@ -756,6 +760,7 @@ _CONTENT_CRITERION_SOURCES: dict[str, CriterionSource] = {
     "content_landscape": CriterionSource.LOCAL_HEURISTIC,
     "tier": CriterionSource.LOCAL_ML,
     "goldener_schnitt": CriterionSource.LOCAL_HEURISTIC,
+    "gebaeude": CriterionSource.LOCAL_ML,
 }
 
 
@@ -764,6 +769,7 @@ def _compute_content_criteria(
     photo: Photo,
     face_detector: FaceDetectorLike,
     animal_detector: ObjectDetectorLike,
+    scene_classifier: SceneClassifierLike,
 ) -> dict[str, float]:
     """Best-effort wie scoring.py::_compute_photo_metrics (Akzeptanzkriterium der Spec 0037/0038):
     JEDES hier berechnete Kriterium hat sein EIGENES try/except - ein einzelner fehlgeschlagener
@@ -814,6 +820,11 @@ def _compute_content_criteria(
     except Exception:
         pass
 
+    try:
+        values["gebaeude"] = compute_gebaeude_score(classify_scene(image, scene_classifier))
+    except Exception:
+        pass
+
     if faces is not None and animals is not None:
         try:
             values["goldener_schnitt"] = compute_golden_ratio_score(faces, animals)
@@ -830,6 +841,7 @@ async def run_criterion_scoring(
     cache_dir: Path,
     build_detector: Callable[[], FaceDetectorLike] = build_face_detector,
     build_animal_detector: Callable[[], ObjectDetectorLike] = build_object_detector,
+    build_scene_classifier_fn: Callable[[], SceneClassifierLike] = build_scene_classifier,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
     abgeleitete Rangfolge je Partition (cluster_key x category_key) - ersetzt run_top_selection/
@@ -839,11 +851,11 @@ async def run_criterion_scoring(
     berechnen (sharpness/exposure immer, Inhalts-Kriterien best-effort, periodisch zwischen-
     committet) -> rank_photos je Partition anwenden (reine In-Memory-Aggregation ueber die in
     diesem Lauf berechneten Werte) -> PhotoRanking-Zeilen schreiben -> CriterionScoringRun auf
-    success/failed setzen. `build_detector`/`build_animal_detector` sind injizierbar (Default: die
-    echte, teure Modellkonstruktion) - Tests uebergeben stattdessen Fakes ohne echtes
-    .tflite-Modell (specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-
-    aesthetik.md: build_object_detector darf wie build_face_detector NIE in einem automatisierten
-    Test aufgerufen werden)."""
+    success/failed setzen. `build_detector`/`build_animal_detector`/`build_scene_classifier_fn`
+    sind injizierbar (Default: die echte, teure Modellkonstruktion) - Tests uebergeben stattdessen
+    Fakes ohne echtes .tflite-Modell (specs/features/0038-vier-zusaetzliche-kriterien-tier-
+    gebaeude-schnitt-aesthetik.md: build_object_detector/build_scene_classifier duerfen wie
+    build_face_detector NIE in einem automatisierten Test aufgerufen werden)."""
     run = CriterionScoringRun(
         project_id=project.id, scoring_run_id=scoring_run_id, status=ScanStatus.RUNNING
     )
@@ -905,6 +917,9 @@ async def run_criterion_scoring(
 
         detector: FaceDetectorLike | None = build_detector() if rows else None
         animal_detector: ObjectDetectorLike | None = build_animal_detector() if rows else None
+        scene_classifier: SceneClassifierLike | None = (
+            build_scene_classifier_fn() if rows else None
+        )
         now = _now_utc()
 
         def _upsert_criterion(
@@ -941,7 +956,10 @@ async def run_criterion_scoring(
 
             assert detector is not None  # rows nicht leer => Detektoren wurden oben gebaut
             assert animal_detector is not None
-            content_values = _compute_content_criteria(cache_dir, photo, detector, animal_detector)
+            assert scene_classifier is not None
+            content_values = _compute_content_criteria(
+                cache_dir, photo, detector, animal_detector, scene_classifier
+            )
             for criterion_key, source in _CONTENT_CRITERION_SOURCES.items():
                 if criterion_key in content_values:
                     _upsert_criterion(
