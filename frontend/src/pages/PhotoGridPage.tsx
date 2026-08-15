@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import type { RatingFilter } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
+import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingBadge } from '../components/RatingBadge'
 import { Alert } from '../components/ui/alert'
@@ -186,25 +187,41 @@ export function PhotoGridPage() {
 
             return (
               <li key={photo.id} className="flex flex-col gap-1.5">
-                <Link
-                  to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
-                  className="group relative block aspect-square overflow-hidden rounded-md border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-                >
-                  <PhotoImage
-                    photoId={photo.id}
-                    variant="thumbnail"
-                    alt={photo.relative_path}
-                    className="size-full object-cover"
+                <div className="relative">
+                  <Link
+                    to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
+                    className="group block aspect-square overflow-hidden rounded-md border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                  >
+                    <PhotoImage
+                      photoId={photo.id}
+                      variant="thumbnail"
+                      alt={photo.relative_path}
+                      className="size-full object-cover"
+                    />
+                    {/* UX-Review-Fund (Branch feature/0012-visual-redesign-views): der neutrale
+                        ("unbewertet") und der gedaempfte Vorschlags-Ton der Badge haben keine bzw.
+                        nur eine 10%-Deckkraft-Flaeche - direkt ueber einem beliebigen Foto ist das
+                        Symbol/"–" ohne Backdrop je nach Bildinhalt kaum lesbar. Ein halbtransparenter
+                        `--bg`-Kreis dahinter garantiert Kontrast unabhaengig vom Fotohintergrund. */}
+                    <span className="absolute right-1.5 top-1.5 rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
+                      <RatingBadge status={badgeStatus} suggested={isSuggested} />
+                    </span>
+                  </Link>
+                  {/* Geschwisterelement NEBEN, nicht INNERHALB des <Link> (Akzeptanzkriterium 17,
+                      specs/features/0040-bewertungsdetails-info-popover.md) - `relative` wandert
+                      dafuer vom <Link> auf diesen neuen umschliessenden <div> (Architektur-
+                      Abschnitt der Spec). Bewusst oben LINKS statt der sonst einheitlichen
+                      Position oben rechts (UI/UX-Abschnitt der Spec) - genau dort sitzt in dieser
+                      einen Ansicht bereits die RatingBadge; technische Detailentscheidung des
+                      developer-Agenten, um zwei interaktive/informative Elemente nicht in
+                      derselben Ecke zu ueberlappen. */}
+                  <CriterionDetailsPopover
+                    criterionScores={photo.criterion_scores}
+                    ranking={photo.ranking}
+                    suggestion={photo.suggestion}
+                    className="absolute left-1.5 top-1.5"
                   />
-                  {/* UX-Review-Fund (Branch feature/0012-visual-redesign-views): der neutrale
-                      ("unbewertet") und der gedaempfte Vorschlags-Ton der Badge haben keine bzw.
-                      nur eine 10%-Deckkraft-Flaeche - direkt ueber einem beliebigen Foto ist das
-                      Symbol/"–" ohne Backdrop je nach Bildinhalt kaum lesbar. Ein halbtransparenter
-                      `--bg`-Kreis dahinter garantiert Kontrast unabhaengig vom Fotohintergrund. */}
-                  <span className="absolute right-1.5 top-1.5 rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
-                    <RatingBadge status={badgeStatus} suggested={isSuggested} />
-                  </span>
-                </Link>
+                </div>
                 {/* Separates Tap-Ziel ausserhalb des Link-<a> (UI/UX-Abschnitt der Spec): die
                     Kachel selbst oeffnet weiterhin die Detailansicht, "Uebernehmen" bestaetigt
                     den Vorschlag direkt per PUT /photos/{id}/rating, ohne zu navigieren.

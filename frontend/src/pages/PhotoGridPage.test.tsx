@@ -9,7 +9,7 @@ import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
 import * as projectsApi from '../api/projects'
 import * as ratingsApi from '../api/ratings'
-import type { PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
+import type { CriterionScoreOut, PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { PhotoGridPage } from './PhotoGridPage'
 
@@ -32,6 +32,16 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     suggestion: null,
     ranking: null,
     criterion_scores: [],
+    ...overrides,
+  }
+}
+
+function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionScoreOut {
+  return {
+    criterion_key: 'sharpness',
+    display_name: 'Schärfe',
+    value: 0.8,
+    source: 'local_heuristic',
     ...overrides,
   }
 }
@@ -70,6 +80,19 @@ function renderPage(initialPath = '/projects/1/photos') {
 
 describe('PhotoGridPage', () => {
   beforeEach(() => {
+    // window.matchMedia existiert in jsdom nicht (specs/architecture/0002-testkonzept.md) -
+    // CriterionDetailsPopover fragt es beim Pointer-Enter des Info-Triggers ab, das auch
+    // userEvent.click() vor dem eigentlichen Klick ausloest. Nur das Klick-Verhalten selbst wird
+    // hier getestet, Hover-spezifisches Verhalten deckt CriterionDetailsPopover.test.tsx ab.
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: false,
+        media: '(hover: hover) and (pointer: fine)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })
+    )
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
@@ -341,6 +364,55 @@ describe('PhotoGridPage', () => {
 
     expect(ratingsApi.setRating).toHaveBeenCalledWith(7, 'rejected')
     expect(screen.queryByText('Einzelbild-Seite')).not.toBeInTheDocument()
+  })
+
+  // Spec 0040 (Bewertungsdetails-Info-Popover), Akzeptanzkriterien 1, 2, 17.
+  describe('info popover trigger', () => {
+    it('shows the trigger as a sibling of the tile link when criterion_scores is not empty', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
+        total: 1,
+      })
+
+      renderPage()
+
+      const trigger = await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      const [item] = await screen.findAllByRole('listitem')
+      const link = item.querySelector('a')
+      // Geschwisterelement NEBEN, nicht INNERHALB des <Link>-Kachel-Wrappers (Akzeptanzkriterium
+      // 17) - ein Klick auf den Trigger darf nicht zur Detailseite navigieren.
+      expect(link?.contains(trigger)).toBe(false)
+      expect(item.contains(trigger)).toBe(true)
+    })
+
+    it('does not show the trigger when criterion_scores is empty', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, criterion_scores: [] })],
+        total: 1,
+      })
+
+      renderPage()
+
+      await screen.findAllByRole('listitem')
+      expect(
+        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      ).not.toBeInTheDocument()
+    })
+
+    it('clicking the trigger does not navigate to the detail view', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
+        total: 1,
+      })
+      const user = userEvent.setup()
+
+      renderPage()
+      const trigger = await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      await user.click(trigger)
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(screen.queryByText('Einzelbild-Seite')).not.toBeInTheDocument()
+    })
   })
 
   describe('gate mode (&gate=1)', () => {
