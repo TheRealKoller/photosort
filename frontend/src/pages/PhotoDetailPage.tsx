@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import type { RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
+import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
 import { Alert } from '../components/ui/alert'
@@ -261,13 +262,22 @@ export function PhotoDetailPage() {
       <div
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="mx-auto w-full max-w-2xl"
+        className="relative mx-auto w-full max-w-2xl"
       >
         <PhotoImage
           photoId={currentPhoto.id}
           variant="display"
           alt={currentPhoto.relative_path}
           className="aspect-[4/3] w-full rounded-xl object-contain"
+        />
+        {/* Einheitliche Position "oben rechts" ueber allen drei Einbindungsstellen (UI/UX-
+            Abschnitt, specs/features/0040-bewertungsdetails-info-popover.md) - hier anders als in
+            PhotoGridPage.tsx kein bereits belegtes Element in dieser Ecke. */}
+        <CriterionDetailsPopover
+          criterionScores={currentPhoto.criterion_scores}
+          ranking={currentPhoto.ranking}
+          suggestion={currentPhoto.suggestion}
+          className="absolute right-2 top-2"
         />
       </div>
 
