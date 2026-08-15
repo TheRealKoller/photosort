@@ -106,14 +106,32 @@ def _no_face_detector() -> NoFaceDetector:
     return NoFaceDetector()
 
 
+class NoAnimalDetector:
+    """Faket den mediapipe ObjectDetector so, dass nie ein Tier gefunden wird - der injizierte
+    build_animal_detector-Callable ersetzt worker.py::build_object_detector (specs/features/0038:
+    build_object_detector darf wie build_face_detector NIE in einem automatisierten Test
+    aufgerufen werden, kein echtes .tflite-Modell in Tests)."""
+
+    def detect(self, image: object) -> object:
+        return SimpleNamespace(detections=[])
+
+
+def _no_animal_detector() -> NoAnimalDetector:
+    return NoAnimalDetector()
+
+
 async def test_guard_fails_run_when_scoring_run_id_does_not_exist(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     project = await _make_project(db_session)
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run_id=999, cache_dir=tmp_path,
+        db_session,
+        project,
+        scoring_run_id=999,
+        cache_dir=tmp_path,
         build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -135,8 +153,12 @@ async def test_guard_fails_run_when_scoring_run_id_is_stale(
     )
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run_id=stale_run.id, cache_dir=tmp_path,
+        db_session,
+        project,
+        scoring_run_id=stale_run.id,
+        cache_dir=tmp_path,
         build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -152,8 +174,12 @@ async def test_guard_fails_run_when_latest_scoring_run_is_not_successful(
     await db_session.refresh(run_row)
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run_id=run_row.id, cache_dir=tmp_path,
+        db_session,
+        project,
+        scoring_run_id=run_row.id,
+        cache_dir=tmp_path,
         build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -171,7 +197,12 @@ async def test_writes_sharpness_and_exposure_criteria_from_existing_photo_score(
     _write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -201,7 +232,12 @@ async def test_upserts_existing_criterion_score_instead_of_duplicating(
     _write_display_variant(tmp_path, photo, _flat_image())
 
     await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
     # Zweiter Lauf mit geaenderten Rohwerten - der bestehende Wert wird ueberschrieben (Upsert),
     # keine zweite Zeile (UniqueConstraint(photo_id, criterion_key)).
@@ -212,45 +248,59 @@ async def test_upserts_existing_criterion_score_instead_of_duplicating(
     await db_session.commit()
 
     await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     rows = (
-        await db_session.execute(
-            select(PhotoCriterionScore).where(
-                PhotoCriterionScore.photo_id == photo.id,
-                PhotoCriterionScore.criterion_key == "sharpness",
+        (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(
+                    PhotoCriterionScore.photo_id == photo.id,
+                    PhotoCriterionScore.criterion_key == "sharpness",
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     assert rows[0].value == 1.0  # 200.0 / 200.0 ceiling, geklemmt
 
 
-async def test_only_considers_ausschuss_survivors(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_only_considers_ausschuss_survivors(db_session: AsyncSession, tmp_path: Path) -> None:
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     rejected = await _add_photo(
         db_session, project, "rejected.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    await _add_score(
-        db_session, rejected, cluster_key=None, suggested_status=RatingStatus.REJECTED
-    )
+    await _add_score(db_session, rejected, cluster_key=None, suggested_status=RatingStatus.REJECTED)
     _write_display_variant(tmp_path, rejected, _flat_image())
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     assert run.status == ScanStatus.SUCCESS
     assert run.photos_total == 0
     criteria = (
-        await db_session.execute(
-            select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == rejected.id)
+        (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == rejected.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert criteria == []
 
 
@@ -268,7 +318,12 @@ async def test_best_effort_content_criteria_failure_does_not_fail_the_run(
     # noetig).
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -281,6 +336,223 @@ async def test_best_effort_content_criteria_failure_does_not_fail_the_run(
         ).scalars()
     }
     assert criteria == {"sharpness", "exposure"}
+
+
+class AnimalDetectorStub:
+    """Faket den mediapipe ObjectDetector so, dass GENAU EIN Tier gefunden wird (specs/features/
+    0038) - analog NoAnimalDetector, aber mit einem echten Treffer statt einer leeren Liste."""
+
+    def __init__(self, category: str = "dog", score: float = 0.9) -> None:
+        self._category = category
+        self._score = score
+
+    def detect(self, image: object) -> object:
+        return SimpleNamespace(
+            detections=[
+                SimpleNamespace(
+                    categories=[SimpleNamespace(category_name=self._category, score=self._score)],
+                    bounding_box=SimpleNamespace(origin_x=10, origin_y=10, width=40, height=40),
+                )
+            ]
+        )
+
+
+def _animal_detector_stub() -> AnimalDetectorStub:
+    return AnimalDetectorStub()
+
+
+class CountingDetector:
+    """Zaehlt Aufrufe von detect() - Wiederverwendungsnachweis (Akzeptanzkriterium der Spec 0038:
+    detect_person/detect_animals werden je Foto hoechstens einmal aufgerufen und fuer mehrere
+    davon abhaengige Kriterien wiederverwendet, statt fuer jedes Kriterium erneut zu
+    detektieren)."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def detect(self, image: object) -> object:
+        self.call_count += 1
+        return SimpleNamespace(detections=[])
+
+
+async def test_tier_criterion_is_written_when_an_animal_is_detected(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "dog.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_animal_detector_stub,
+    )
+
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert criteria["tier"] == 0.9
+
+
+async def test_tier_criterion_best_effort_failure_does_not_fail_the_run_or_other_criteria(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Eigener Fehlerfall-Testlauf spezifisch fuer "tier" (Akzeptanzkriterium der Spec: "Je
+    # Kriterium mindestens ein eigener Fehlerfall-Testlauf, nicht nur ein generischer").
+    class BrokenAnimalDetector:
+        def detect(self, image: object) -> object:
+            raise RuntimeError("Modell-Ladefehler")
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=BrokenAnimalDetector,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    # tier UND goldener_schnitt haengen beide von detect_animals ab, bleiben also beide
+    # ungeschrieben - content_people/content_landscape (haengen nicht von detect_animals ab)
+    # werden trotzdem geschrieben.
+    assert "tier" not in criteria
+    assert "goldener_schnitt" not in criteria
+    assert "content_people" in criteria
+    assert "content_landscape" in criteria
+
+
+async def test_goldener_schnitt_best_effort_failure_when_face_detection_fails(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Eigener, von der Tier-Fehlerfall-Variante UNTERSCHIEDLICHER Ausloeser (Face- statt
+    # Animal-Detektor) - goldener_schnitt haengt von BEIDEN Detektionen ab, faellt also auch bei
+    # einem reinen Face-Detector-Fehler aus, obwohl der Animal-Detektor erfolgreich war.
+    class BrokenFaceDetector:
+        def detect(self, image: object) -> object:
+            raise RuntimeError("Modell-Ladefehler")
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=BrokenFaceDetector,
+        build_animal_detector=_animal_detector_stub,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert "content_people" not in criteria
+    assert "goldener_schnitt" not in criteria
+    assert "tier" in criteria  # haengt nur vom (hier funktionierenden) Animal-Detektor ab
+
+
+async def test_goldener_schnitt_is_written_when_both_detections_succeed_even_without_a_subject(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+    )
+
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    # Weder Gesicht noch Tier erkannt (beide Detektoren liefern erfolgreich eine leere Liste) -
+    # dokumentierter niedriger Fallback-Wert (0.0), kein fehlendes Kriterium.
+    assert criteria["goldener_schnitt"] == 0.0
+
+
+async def test_detect_person_and_detect_animals_are_each_called_at_most_once_per_photo(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Wiederverwendungsnachweis via Spy/Aufrufzaehler (Akzeptanzkriterium der Spec 0038):
+    # content_people UND goldener_schnitt teilen sich EINEN detect_person-Aufruf, tier UND
+    # goldener_schnitt teilen sich EINEN detect_animals-Aufruf - kein Kriterium detektiert
+    # eigenstaendig ein zweites Mal.
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    face_detector = CountingDetector()
+    animal_detector = CountingDetector()
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=lambda: face_detector,
+        build_animal_detector=lambda: animal_detector,
+    )
+
+    assert face_detector.call_count == 1
+    assert animal_detector.call_count == 1
 
 
 async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
@@ -298,14 +570,23 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
         photos.append(photo)
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     rankings = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     # Voller Pool (nicht nur Top-N) - alle 3 Fotos landen ausserdem in derselben Partition
     # (gleicher cluster_key, alle als LANDSCAPE klassifiziert -> content_people=0, uniform hoch).
     assert len(rankings) == 3
@@ -336,14 +617,23 @@ async def test_partitions_are_isolated_by_cluster_and_category(
     _write_display_variant(tmp_path, cluster_b, _flat_image())
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     rankings = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     # Beide Cluster haben je genau 1 Foto -> je rank_position 1, unabhaengig voneinander.
     assert {r.rank_position for r in rankings} == {1}
     assert {r.cluster_key for r in rankings} == {"cluster-a", "cluster-b"}
@@ -366,7 +656,12 @@ async def test_progress_is_committed_periodically(
         _write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     assert run.photos_total == 3
@@ -391,7 +686,12 @@ async def test_criterion_scoring_updates_last_progress_at_at_each_checkpoint(
     _write_display_variant(tmp_path, photo, _flat_image())
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     assert run.last_progress_at == sentinel
@@ -419,8 +719,12 @@ async def test_run_marked_failed_on_cancelled_error(
 
     try:
         await run_criterion_scoring(
-            db_session, project, scoring_run.id, cache_dir=tmp_path,
+            db_session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
             build_detector=CancellingDetector,
+            build_animal_detector=_no_animal_detector,
         )
         raised = False
     except asyncio.CancelledError:
@@ -451,10 +755,20 @@ async def test_rescoring_does_not_overwrite_ratings(
     _write_display_variant(tmp_path, photo, _flat_image())
 
     first_run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
     second_run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     assert first_run.status == ScanStatus.SUCCESS
@@ -478,13 +792,22 @@ async def test_end_to_end_with_run_project_scoring(
     assert scoring_run.gate_confirmed_at is not None  # keine Duplikate/Unschaerfe -> Auto-Gate
 
     run = await run_criterion_scoring(
-        db_session, project, scoring_run.id, cache_dir=tmp_path, build_detector=_no_face_detector
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
     )
 
     assert run.status == ScanStatus.SUCCESS
     rankings = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rankings) == 1

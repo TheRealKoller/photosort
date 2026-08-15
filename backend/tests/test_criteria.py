@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from PIL import Image, ImageDraw
 
-from photosort.classification import FaceBoundingBox
+from photosort.classification import AnimalDetection, FaceBoundingBox
 from photosort.criteria import (
     CATEGORY_DETAIL,
     CATEGORY_LANDSCAPE,
@@ -13,7 +13,9 @@ from photosort.criteria import (
     CRITERIA_REGISTRY,
     compute_content_landscape,
     compute_content_people,
+    compute_golden_ratio,
     compute_golden_ratio_score,
+    compute_tier_score,
     derive_category_key,
     normalize_exposure,
     normalize_sharpness,
@@ -63,6 +65,12 @@ class TestCriteriaRegistry:
         for definition in CRITERIA_REGISTRY.values():
             assert isinstance(definition.source, CriterionSource)
             assert definition.display_name
+
+    def test_registry_contains_tier_and_goldener_schnitt_with_the_correct_source(self) -> None:
+        # specs/features/0038: tier=local_ml (mediapipe-Modell), goldener_schnitt=local_heuristic
+        # (reine Geometrie, kein eigenes Modell).
+        assert CRITERIA_REGISTRY["tier"].source == CriterionSource.LOCAL_ML
+        assert CRITERIA_REGISTRY["goldener_schnitt"].source == CriterionSource.LOCAL_HEURISTIC
 
 
 class TestNormalizeSharpness:
@@ -158,6 +166,64 @@ class TestComputeGoldenRatioScore:
         # fuer die Normierung, darf nicht unter 0 rutschen.
         score = compute_golden_ratio_score([_face(0.0, 0.0)])
         assert 0.0 <= score <= 1.0
+
+
+def _animal(
+    category: str, confidence: float, x: float = 0.5, y: float = 0.5, size: float = 0.2
+) -> AnimalDetection:
+    return AnimalDetection(
+        category=category, confidence=confidence, x_center=x, y_center=y, width=size, height=size
+    )
+
+
+class TestComputeTierScore:
+    def test_typical_pet_hit_scores_high(self) -> None:
+        assert compute_tier_score([_animal("dog", 0.9)]) > 0.8
+
+    def test_no_animal_scores_zero(self) -> None:
+        assert compute_tier_score([]) == 0.0
+
+    def test_multiple_animals_the_largest_by_area_wins_not_highest_confidence(self) -> None:
+        # Aggregationsregel (Akzeptanzkriterium der Spec: "muss dokumentiert UND getestet sein,
+        # keine stillschweigende Auswahl") - konsistent mit der Subjekt-Auswahl in
+        # compute_golden_ratio_score: die groesste Bounding-Box-Flaeche gewinnt, nicht die
+        # hoechste Konfidenz.
+        small_high_confidence = _animal("cat", confidence=0.95, size=0.05)
+        large_lower_confidence = _animal("dog", confidence=0.6, size=0.6)
+        score = compute_tier_score([small_high_confidence, large_lower_confidence])
+        assert score == 0.6
+
+
+class SpyFaceDetector:
+    """Zaehlt Aufrufe von detect() - Wiederverwendungsnachweis fuer compute_golden_ratio
+    (Akzeptanzkriterium der Spec: "Spy/Aufrufzaehler statt Reimplementierung")."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def detect(self, image: object) -> object:
+        self.call_count += 1
+        return SimpleNamespace(detections=[])
+
+
+class SpyAnimalDetector:
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def detect(self, image: object) -> object:
+        self.call_count += 1
+        return SimpleNamespace(detections=[])
+
+
+class TestComputeGoldenRatioReusesDetection:
+    def test_calls_detect_person_and_detect_animals_instead_of_reimplementing(self) -> None:
+        face_detector = SpyFaceDetector()
+        animal_detector = SpyAnimalDetector()
+
+        compute_golden_ratio(_solid(), face_detector, animal_detector)
+
+        assert face_detector.call_count == 1
+        assert animal_detector.call_count == 1
 
 
 class TestDeriveCategoryKey:

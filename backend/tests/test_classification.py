@@ -8,9 +8,14 @@ from PIL import Image, ImageDraw
 
 from photosort.classification import (
     _FACE_DETECTOR_MODEL_PATH,
+    _OBJECT_DETECTOR_MODEL_PATH,
+    ANIMAL_DETECTION_CONFIDENCE_THRESHOLD,
     FACE_DETECTOR_MODEL_SHA256,
+    OBJECT_DETECTOR_MODEL_SHA256,
+    AnimalDetection,
     FaceBoundingBox,
     compute_uniform_area_fraction,
+    detect_animals,
     detect_person,
 )
 
@@ -50,6 +55,14 @@ class TestFaceDetectorModelAsset:
         # Erkennungsguete aufzufallen.
         digest = hashlib.sha256(_FACE_DETECTOR_MODEL_PATH.read_bytes()).hexdigest()
         assert digest == FACE_DETECTOR_MODEL_SHA256
+
+
+class TestObjectDetectorModelAsset:
+    def test_committed_tflite_model_matches_the_documented_sha256(self) -> None:
+        # Security-Muss-Kriterium (Spec-0038-Security-Abschnitt, Punkt 3, hochgestuft von
+        # "nice to have"): je gepinntem Modell-Asset ein eigener Integritaets-Test.
+        digest = hashlib.sha256(_OBJECT_DETECTOR_MODEL_PATH.read_bytes()).hexdigest()
+        assert digest == OBJECT_DETECTOR_MODEL_SHA256
 
 
 class TestComputeUniformAreaFraction:
@@ -127,3 +140,90 @@ class TestDetectPerson:
         assert box == FaceBoundingBox(
             x_center=30 / 160, y_center=40 / 160, width=40 / 160, height=40 / 160, confidence=0.9
         )
+
+
+class FakeObjectDetector:
+    """Faket die schmale Teilmenge der mediapipe-ObjectDetector-API, die detect_animals braucht -
+    kein echtes .tflite-Modell in Tests (analog FakeFaceDetector). Jeder Eintrag in `detections`
+    ist (category_name, score); nur die JEWEILS erste Kategorie pro Erkennung wird von
+    detect_animals beruecksichtigt (siehe dortige Docstring-Begruendung)."""
+
+    def __init__(
+        self,
+        detections: list[tuple[str, float]],
+        box: tuple[int, int, int, int] = (10, 20, 40, 40),
+    ) -> None:
+        self._detections = detections
+        self._box = box
+
+    def detect(self, image: object) -> object:
+        origin_x, origin_y, width, height = self._box
+        return SimpleNamespace(
+            detections=[
+                SimpleNamespace(
+                    categories=[SimpleNamespace(category_name=name, score=score)],
+                    bounding_box=SimpleNamespace(
+                        origin_x=origin_x, origin_y=origin_y, width=width, height=height
+                    ),
+                )
+                for name, score in self._detections
+            ]
+        )
+
+
+class TestDetectAnimals:
+    def test_returns_a_detection_for_an_animal_category_above_the_threshold(self) -> None:
+        detections = detect_animals(_solid(size=160), FakeObjectDetector([("dog", 0.9)]))
+        assert len(detections) == 1
+        assert detections[0].category == "dog"
+        assert detections[0].confidence == 0.9
+
+    def test_returns_empty_list_when_no_detections_at_all(self) -> None:
+        assert detect_animals(_solid(), FakeObjectDetector([])) == []
+
+    def test_ignores_a_non_animal_category_even_with_high_confidence(self) -> None:
+        # "car" ist eine reguläre COCO-Klasse, aber kein Tier - muss trotz hoher Konfidenz
+        # herausgefiltert werden (Verifikation, dass tatsaechlich ANIMAL_CATEGORIES filtert).
+        # Dieselbe Filterlogik trifft auch die dokumentierte, bewusst akzeptierte Luecke aus
+        # ADR 0022 Punkt 1: COCO enthaelt keine Insekten-/Fisch-Klasse ueberhaupt, ein Foto eines
+        # Schmetterlings oder Fischs kann mit diesem Modell strukturell nicht als "tier" erkannt
+        # werden (kein eigener Testfall dafuer, analog zum unkalibrierten
+        # SHARPNESS_REJECT_THRESHOLD-Kommentar in scoring.py - die Limitierung ist hier nur
+        # referenziert, nicht separat assertiert).
+        assert detect_animals(_solid(), FakeObjectDetector([("car", 0.95)])) == []
+
+    def test_ignores_an_animal_detection_below_the_confidence_threshold(self) -> None:
+        assert ANIMAL_DETECTION_CONFIDENCE_THRESHOLD == 0.5
+        assert detect_animals(_solid(), FakeObjectDetector([("cat", 0.1)])) == []
+
+    def test_bounding_box_is_normalized_to_image_size(self) -> None:
+        detections = detect_animals(
+            _solid(size=160), FakeObjectDetector([("horse", 0.8)], box=(10, 20, 40, 40))
+        )
+        assert detections[0] == AnimalDetection(
+            category="horse",
+            confidence=0.8,
+            x_center=30 / 160,
+            y_center=40 / 160,
+            width=40 / 160,
+            height=40 / 160,
+        )
+
+    def test_multiple_animal_detections_are_all_returned(self) -> None:
+        # Aggregation/Auswahl EINES primaeren Tieres (z.B. fuer den Tier-Score) ist Aufgabe von
+        # criteria.py::compute_tier_score, nicht von detect_animals selbst - detect_animals liefert
+        # bewusst die vollstaendige Liste aller Treffer.
+        detections = detect_animals(
+            _solid(), FakeObjectDetector([("dog", 0.9), ("cat", 0.7)], box=(0, 0, 20, 20))
+        )
+        assert {d.category for d in detections} == {"dog", "cat"}
+
+    def test_image_smaller_than_the_detection_box_does_not_crash(self) -> None:
+        # Degenerierter Grenzfall analog test_image_smaller_than_the_tile_grid_does_not_crash oben
+        # (Teststrategie-Abschnitt der Spec 0038) - kein Crash bei ungewoehnlichen
+        # Groessenverhaeltnissen.
+        detections = detect_animals(
+            _solid(size=4), FakeObjectDetector([("dog", 0.9)], box=(0, 0, 2, 2))
+        )
+        assert len(detections) == 1
+        assert 0.0 <= detections[0].x_center <= 1.0

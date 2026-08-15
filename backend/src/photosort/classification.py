@@ -208,3 +208,122 @@ def build_face_detector() -> FaceDetectorLike:
     )
     detector: FaceDetectorLike = vision.FaceDetector.create_from_options(options)
     return detector
+
+
+# --- Tier-Erkennung (specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-
+# aesthetik.md, decisions/0022-lokale-modellwahl-tier-gebaeude-aesthetik-kriterien.md Punkt 1):
+# mediapipe Object Detector Task API, EfficientDet-Lite0 (COCO-80-Klassen) - exakt dasselbe
+# Muster wie der obige FaceDetector, nur eine andere Task-API derselben bereits vorhandenen
+# mediapipe-Abhaengigkeit. Keine neue Abhaengigkeit.
+
+# Tier-relevante COCO-Klassen (ADR 0022 Punkt 1) - 10 von 80 COCO-Klassen. Dokumentierte, bewusst
+# akzeptierte Luecke (AK-Pflicht der Spec): COCO enthaelt KEINE Insekten- oder Fisch-Klasse, diese
+# werden mit diesem Modell strukturell nicht erkannt (waere eine eigenstaendige, spaetere
+# Ergaenzung mit einem anderen Modell, nicht Teil dieser Spec).
+ANIMAL_CATEGORIES = frozenset(
+    {"bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"}
+)
+
+# Mindest-Konfidenz, ab der eine Tier-Erkennung gewertet wird - analog
+# FACE_DETECTION_CONFIDENCE_THRESHOLD, eigene explizite Schwelle statt sich auf den vom Detector
+# intern konfigurierten score_threshold zu verlassen (gleiche Testbarkeits-Begruendung wie dort).
+ANIMAL_DETECTION_CONFIDENCE_THRESHOLD = 0.5
+
+# Gepinnte, im Repository eingecheckte .tflite-Modelldatei (Security-Abschnitt der Spec 0038,
+# kein Laufzeit-Download) - analog zum FaceDetector-Muster oben. Quelle: offizielles
+# mediapipe-Modell-Repository (https://storage.googleapis.com/mediapipe-models/object_detector/
+# efficientdet_lite0/int8/1/efficientdet_lite0.tflite), int8-quantisierte Variante (~4,4 MB,
+# innerhalb der von ADR 0022 erwarteten ~4-7 MB).
+_OBJECT_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "efficientdet_lite0.tflite"
+
+# Security-Muss-Kriterium (Spec-0038-Security-Abschnitt, Punkt 3: "automatisierter Test fuer jedes
+# der vier Modell-Assets, nicht nur nice to have") - siehe test_classification.py.
+OBJECT_DETECTOR_MODEL_SHA256 = (
+    "0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb"
+)
+
+
+class DetectionCategoryLike(Protocol):
+    """Die schmale Teilmenge von mediapipe.tasks.python.components.containers.Category, die
+    detect_animals braucht."""
+
+    category_name: str | None
+    score: float
+
+
+class ObjectDetectionLike(Protocol):
+    categories: list[DetectionCategoryLike]
+    bounding_box: BoundingBoxLike
+
+
+class ObjectDetectionResultLike(Protocol):
+    detections: list[ObjectDetectionLike]
+
+
+class ObjectDetectorLike(Protocol):
+    def detect(self, image: object) -> ObjectDetectionResultLike: ...
+
+
+@dataclass(frozen=True)
+class AnimalDetection:
+    """Eine einzelne, oberhalb von ANIMAL_DETECTION_CONFIDENCE_THRESHOLD erkannte Tier-Instanz
+    (ADR 0022 Punkt 1) - Bounding-Box-Felder normiert wie FaceBoundingBox (auf die Bildgroesse
+    bezogen, [0, 1], Ursprung oben links), damit beide Typen strukturell denselben
+    Kompositions-Subjekt-Vertrag (criteria.py::SubjectBoxLike) erfuellen und die Goldener-Schnitt-
+    Heuristik sie ohne Sonderfall gleich behandeln kann."""
+
+    category: str
+    confidence: float
+    x_center: float
+    y_center: float
+    width: float
+    height: float
+
+
+def detect_animals(image: Image.Image, detector: ObjectDetectorLike) -> list[AnimalDetection]:
+    """mediapipe Object Detector Task-API (ADR 0022 Punkt 1) auf der bereits gecachten
+    display-Variante, gefiltert auf ANIMAL_CATEGORIES. `detector` ist injizierbar (siehe
+    ObjectDetectorLike) - die reale Modellkonstruktion (build_object_detector) laeuft in keinem
+    automatisierten Test. Nur die JEWEILS hoechstbewertete Kategorie pro Erkennung wird betrachtet
+    (das Modell liefert typischerweise bereits eine nach Score sortierte Kandidatenliste je
+    erkanntem Objekt) - keine zweitplatzierte Tier-Kategorie "rettet" eine primaer als etwas
+    anderes klassifizierte Erkennung."""
+    width, height = image.size
+    result = detector.detect(_to_mp_image(image))
+    detections: list[AnimalDetection] = []
+    for detection in result.detections:
+        categories = getattr(detection, "categories", [])
+        if not categories:
+            continue
+        top = categories[0]
+        name = getattr(top, "category_name", None)
+        score = getattr(top, "score", 0.0)
+        if name not in ANIMAL_CATEGORIES or score < ANIMAL_DETECTION_CONFIDENCE_THRESHOLD:
+            continue
+        box = detection.bounding_box
+        detections.append(
+            AnimalDetection(
+                category=name,
+                confidence=score,
+                x_center=(box.origin_x + box.width / 2) / width,
+                y_center=(box.origin_y + box.height / 2) / height,
+                width=box.width / width,
+                height=box.height / height,
+            )
+        )
+    return detections
+
+
+def build_object_detector() -> ObjectDetectorLike:
+    """Baut den echten mediapipe ObjectDetector aus dem zur Build-Zeit gebuendelten .tflite-Modell
+    (Security-Abschnitt der Spec 0038 - kein Laufzeit-Download). Wird NIE in einem automatisierten
+    Test aufgerufen (Infrastruktur-/CI-Risiko, analog build_face_detector), nur vom Worker-Job."""
+    from mediapipe.tasks.python import vision
+    from mediapipe.tasks.python.core.base_options import BaseOptions
+
+    options = vision.ObjectDetectorOptions(
+        base_options=BaseOptions(model_asset_path=str(_OBJECT_DETECTOR_MODEL_PATH)),
+        score_threshold=ANIMAL_DETECTION_CONFIDENCE_THRESHOLD,
+    )
+    detector: ObjectDetectorLike = vision.ObjectDetector.create_from_options(options)
+    return detector
