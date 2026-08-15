@@ -12,7 +12,6 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, ge
 |---|---|---|
 | [0039](./features/0039-kuratierung-tage-und-benannte-cluster.md) | Kategorie-Kuratierung: Tagesweise Gruppierung und benannte Zeitfenster-Cluster | Accepted |
 | [0038](./features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md) | Vier zusätzliche Kriterien: Tier, Gebäude, Goldener Schnitt, Ästhetik | Accepted |
-| [0040](./features/0040-bewertungsdetails-info-popover.md) | Berechnete Bewertungsdetails zu Fotos anzeigen (Info-Popover) | Accepted |
 
 ### Offen — Niedrig
 
@@ -71,6 +70,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0035](./features/0035-klassifizierung-qualitaet-inhalt-recherche.md) | Klassifizierung: Recherche zu Qualitäts- und Bildinhalt-Bestimmung (lokal + Cloud) | Implemented (reine Recherche/Doku, kein PR — Ergebnis direkt in der Spec) |
 | [0036](./features/0036-scan-performance-zweiphasig-parallel.md) | Scan-Performance: Enumerationsphase, begrenzte Parallelisierung, echter Prozent-Fortschritt | Implemented ([PR #73](https://github.com/TheRealKoller/photosort/pull/73)) |
 | [0037](./features/0037-gateführte-bewertungs-pipeline-mit-backfill.md) | Gateführte Bewertungs-Pipeline mit Kriterien-Scoring und Kategorie-Kuratierung | Implemented ([PR #80](https://github.com/TheRealKoller/photosort/pull/80)) — ersetzt [0003](./features/0003-automatic-best-photo-selection.md)/[0024](./features/0024-top-photo-selection-category-mix.md) (beide `Superseded`) |
+| [0040](./features/0040-bewertungsdetails-info-popover.md) | Berechnete Bewertungsdetails zu Fotos anzeigen (Info-Popover) | Implemented ([PR #85](https://github.com/TheRealKoller/photosort/pull/85)) |
 
 ## Priorisierung
 
