@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.0](https://github.com/TheRealKoller/photosort/compare/v0.9.0...v0.10.0) (2026-08-15)
+
+
+### Features
+
+* Kuratierung nach Tagen gruppieren, Cluster mit Tageszeit-Ueberschrift ([3925595](https://github.com/TheRealKoller/photosort/commit/3925595ccc2baaab73357bccaab54994ffd94001))
+* Kuratierung nach Tagen gruppieren, Cluster mit Tageszeit-Ueberschrift ([9436233](https://github.com/TheRealKoller/photosort/commit/9436233ee4faec4c234a823807d7ba5a72951456))
+* timeOfDay-Utility fuer Tag-/Tageszeit-Ableitung aus taken_at ([b8586c7](https://github.com/TheRealKoller/photosort/commit/b8586c7980022c64d13ce37b3d6853b9bb816402))
+
+
+### Bug Fixes
+
+* Copilot-Review-Findings beheben (PR [#91](https://github.com/TheRealKoller/photosort/issues/91)) ([7ac84c2](https://github.com/TheRealKoller/photosort/commit/7ac84c29a420410057bd49875b61272db600a492))
+* Review-Findings zu Spec 0039 beheben ([1bce61b](https://github.com/TheRealKoller/photosort/commit/1bce61bf44902e286c2ab2b1473ace652f9578e9))
+
 ## [0.9.0](https://github.com/TheRealKoller/photosort/compare/v0.8.0...v0.9.0) (2026-08-15)
 
 
