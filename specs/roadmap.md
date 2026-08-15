@@ -6,6 +6,17 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, geordnet nach den unten stehenden Prioritätskategorien, danach die noch ungeschärften Inbox-Einträge ohne eigene Spec; bereits implementierte Specs stehen als Referenz ganz unten.
 
+### Offen — Hoch
+
+| Spec | Titel | Status |
+|---|---|---|
+| [0042](./features/0042-automatisierter-flow-stepper-detailseiten.md) | Automatisierter Flow als Stepper-Übersicht + separate Detailseiten (Umstrukturierung von 0037-Navigation) | Accepted |
+
+### Offen — Mittel
+
+| Spec | Titel | Status |
+|---|---|---|
+
 ### Offen — Niedrig
 
 | Spec | Titel | Status |
@@ -26,8 +37,10 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0017](./inbox/0017-sehenswuerdigkeit-erkennung-cloud.md) | Sehenswürdigkeit-Erkennung (Landmark) als künftiges Kriterium über eine Cloud-Vision-API — am 2026-08-13 mit Daniel bewusst zurückgestellt (siehe Spec 0038), da die dafür nötige Cloud-Anbindung (Einwilligung, Kosten, DPA) aktuell nicht gerechtfertigt ist |
 | [0018](./inbox/0018-nur-frontend-nach-aussen-exposen.md) | Nur noch Frontend nach außen exposen, Backend nicht mehr direkt über den Reverse Proxy erreichbar machen müssen |
 | [0019](./inbox/0019-projekte-loeschen.md) | Projekte (inkl. aller zugehörigen Daten) löschen können, mit vorheriger Warnung und Bestätigung |
-| [0021](./inbox/0021-visualisierung-automatisierter-flow.md) | Automatisierten Flow als Schritt-Übersicht (Fortschritt, Detailseite je Schritt mit Aktion/Ergebnis/Fortschrittsanzeige) visualisieren |
 | [0022](./inbox/0022-gps-zeit-clusterbildung-benannte-cluster.md) | GPS-/Zeit-/Sehenswürdigkeit-basierte Clusterbildung für benannte Cluster (gegenseitige Herleitung bei fehlenden Einzelmerkmalen) |
+| [0023](./inbox/0023-kriterium-bildkomposition.md) | Neues Kriterium "Bildkomposition" — erst prüfen ob/wie feststellbar, dann ggf. implementieren |
+| [0024](./inbox/0024-kuratierung-tage-zuklappbar.md) | Tage in der Kuratierungsansicht zuklappbar/aufklappbar machen (Platzersparnis) |
+| [0025](./inbox/0025-kategorien-aus-bildstatistiken-ableiten.md) | Kategorien projektspezifisch aus Bild-Statistiken ableiten (z.B. Tier/Gebäude nur bei ausreichend Vorkommen), Detail/People/Landscape nicht mehr als feste Standard-Kategorien, Qualitätsmerkmale bilden keine Kategorien |
 
 ### Bereits umgesetzt
 
