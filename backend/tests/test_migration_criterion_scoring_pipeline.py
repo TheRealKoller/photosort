@@ -179,6 +179,40 @@ def test_migration_creates_new_tables_and_columns(tmp_path: Path) -> None:
     }
 
 
+def test_migration_clears_stale_album_worthy_suggested_status(tmp_path: Path) -> None:
+    """Copilot-Review-Finding auf PR #80 (specs/features/0037): der alte, jetzt entfernte
+    select_top-Job (worker.py auf main vor dieser Migration) setzte suggested_status=ALBUM_WORTHY.
+    Seit Spec 0037 kennt SuggestionOut nur noch duplicate/low_quality; ein bestehender
+    ALBUM_WORTHY-Altwert wuerde ohne Bereinigung nach dem Deploy faelschlich als low_quality-
+    Ausschuss-Vorschlag angezeigt. Die Migration muss solche Altwerte auf NULL setzen, waehrend ein
+    echter REJECTED-Wert (weiterhin gueltiger Ausschuss-Vorschlag) unangetastet bleibt."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    try:
+        with engine.begin() as connection:
+            _create_pre_migration_schema(connection)
+            connection.execute(text("INSERT INTO projects (id) VALUES (1)"))
+            connection.execute(text("INSERT INTO photos (id) VALUES (1), (2)"))
+            connection.execute(
+                text(
+                    "INSERT INTO photo_scores "
+                    "(photo_id, sharpness, exposure, suggested_status, computed_at) "
+                    "VALUES "
+                    "(1, 1.0, 0.2, 'album_worthy', '2023-01-01 00:00:00'), "
+                    "(2, 1.0, 0.2, 'rejected', '2023-01-01 00:00:00')"
+                )
+            )
+            _apply_upgrade(connection)
+
+        with engine.begin() as connection:
+            rows = connection.execute(
+                text("SELECT photo_id, suggested_status FROM photo_scores ORDER BY photo_id")
+            ).fetchall()
+    finally:
+        engine.dispose()
+
+    assert rows == [(1, None), (2, "rejected")]
+
+
 def test_downgrade_restores_the_dropped_columns_and_table(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
     try:

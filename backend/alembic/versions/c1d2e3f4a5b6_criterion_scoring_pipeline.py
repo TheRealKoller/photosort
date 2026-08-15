@@ -91,6 +91,18 @@ def upgrade() -> None:
         ),
     )
 
+    # Copilot-Review-Finding auf PR #80 (specs/features/0037): der alte, hiermit entfernte
+    # select_top-Job setzte suggested_status=ALBUM_WORTHY. Seit Spec 0037 kennt SuggestionOut nur
+    # noch duplicate/low_quality - ein bestehender ALBUM_WORTHY-Altwert wuerde ohne Bereinigung
+    # nach dem Deploy faelschlich als low_quality-Ausschuss-Vorschlag angezeigt. REJECTED-Werte
+    # bleiben unangetastet, da sie weiterhin gueltige Ausschuss-Vorschlaege sind.
+    op.execute(
+        sa.text(
+            "UPDATE photo_scores SET suggested_status = NULL "
+            "WHERE suggested_status = 'album_worthy'"
+        )
+    )
+
     op.drop_table('top_selection_runs')
     op.drop_column('photo_scores', 'category')
     op.drop_column('photo_scores', 'local_quality_score')
