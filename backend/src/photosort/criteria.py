@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import math
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 from PIL import Image
 
 from photosort.classification import (
     LANDSCAPE_UNIFORM_FRACTION_THRESHOLD,
+    FaceBoundingBox,
     FaceDetectorLike,
     compute_uniform_area_fraction,
     detect_person,
@@ -73,6 +77,100 @@ def compute_content_landscape(image: Image.Image) -> float:
     compute_uniform_area_fraction) ist bereits auf [0, 1] normiert, "hoeher = flaechiger/eher
     Landschaft" - keine weitere Transformation noetig."""
     return compute_uniform_area_fraction(image)
+
+
+class SubjectBoxLike(Protocol):
+    """Schmale strukturelle Schnittstelle, die compute_golden_ratio_score fuer ein Kompositions-
+    Subjekt braucht - sowohl FaceBoundingBox (classification.py) als auch die kuenftige
+    AnimalDetection (Spec 0038, Tier-Kriterium) erfuellen sie, ohne dass criteria.py eine harte
+    Abhaengigkeit auf den Tier-Erkennungscode braucht (Reihenfolge der Spec: Goldener Schnitt vor
+    Tier implementiert). Als Nur-Lese-Properties (statt einfacher Attribut-Annotationen)
+    deklariert, damit auch @dataclass(frozen=True)-Implementierungen (FaceBoundingBox) den
+    Vertrag strukturell erfuellen - mypy --strict wertet einfache Attribut-Annotationen in einem
+    Protocol als lese-/schreibbar, was ein unveraenderliches Dataclass-Feld nicht erfuellen kann."""
+
+    @property
+    def x_center(self) -> float: ...
+    @property
+    def y_center(self) -> float: ...
+    @property
+    def width(self) -> float: ...
+    @property
+    def height(self) -> float: ...
+
+
+# Die vier Drittel-Schnittpunkte der Drittelregel/des Goldenen Schnitts (Architektur-Abschnitt der
+# Spec 0038: "Distanz des/der Subjekt-Zentren zu den vier Drittel-Schnittpunkten"). Ursprung oben
+# links, normiert auf [0, 1] wie FaceBoundingBox.
+_GOLDEN_RATIO_THIRD_POINTS: tuple[tuple[float, float], ...] = (
+    (1 / 3, 1 / 3),
+    (2 / 3, 1 / 3),
+    (1 / 3, 2 / 3),
+    (2 / 3, 2 / 3),
+)
+
+# Groesstmoeglicher Abstand eines Punkts im Einheitsquadrat zu seinem naechstgelegenen
+# Drittel-Schnittpunkt - liegt an den vier Bildecken (z.B. (0,0) -> naechster Punkt (1/3,1/3)),
+# Abstand dort ist sqrt(2)/3. Dient als Nenner, um die raueumliche Distanz auf [0, 1] zu normieren
+# (technische Detailentscheidung der Umsetzung, geometrisch exakt hergeleitet, keine
+# Kalibrierungsfrage wie bei den uebrigen SCHWELLWERT-Konstanten dieses Moduls).
+_GOLDEN_RATIO_MAX_DISTANCE = math.sqrt(2) / 3
+
+
+def _bounding_box_area(box: SubjectBoxLike) -> float:
+    return box.width * box.height
+
+
+def _largest_by_area[T: SubjectBoxLike](boxes: Sequence[T]) -> T:
+    # Eigene kleine generische Hilfsfunktion statt max(boxes, key=_bounding_box_area) direkt am
+    # Aufrufort - mypy --strict kann den Rueckgabetyp von max() sonst nicht praezise an den
+    # jeweils konkreten Sequenztyp (list[FaceBoundingBox] vs. Sequence[SubjectBoxLike]) binden,
+    # wenn `key` als Protocol-Parameter typisiert ist (bekannte mypy-Ungenauigkeit bei
+    # max()-Ueberladungen mit Protocol-Argumenten).
+    return max(boxes, key=_bounding_box_area)
+
+
+def _select_primary_subject(
+    faces: list[FaceBoundingBox], animals: Sequence[SubjectBoxLike]
+) -> SubjectBoxLike | None:
+    """Waehlt EIN Subjekt-Zentrum fuer die Kompositions-Bewertung (Akzeptanzkriterium der Spec:
+    "getestete, dokumentierte Auswahlregel, keine implizite/zufaellige Auswahl der ersten
+    Bounding-Box"). Regel: erkannte Gesichter haben grundsaetzlich Vorrang vor Tier-Erkennungen
+    (Menschen sind fuer Daniel/seine Frau typischerweise das relevantere Kompositions-Subjekt,
+    ADR 0022 Punkt 4: Tier nur als Fallback "falls kein Gesicht erkannt wurde"); bei mehreren
+    Kandidaten derselben Art gewinnt die groesste Bounding-Box-Flaeche (Prominenz-Mass, konsistent
+    mit der in ADR 0022 Punkt 1 fuer den Tier-Score gewaehlten Flaechen-Gewichtung)."""
+    if faces:
+        return _largest_by_area(faces)
+    if animals:
+        return _largest_by_area(animals)
+    return None
+
+
+def compute_golden_ratio_score(
+    faces: list[FaceBoundingBox], animals: Sequence[SubjectBoxLike] = ()
+) -> float:
+    """`goldener_schnitt`-Kriterium (Spec 0038): reine geometrische Heuristik ohne eigenes
+    ML-Modell, wiederverwendet ausschliesslich Positionsdaten aus bereits vorhandenen Detektionen
+    (`detect_person`/eine kuenftige Tier-Erkennung, ADR 0022 Punkt 4) - kein neuer
+    Bildverarbeitungsschritt. Bewertet, wie nah das primaere Subjekt (siehe
+    _select_primary_subject) an einem der vier Drittel-Schnittpunkte liegt, invers auf [0, 1]
+    normiert ueber _GOLDEN_RATIO_MAX_DISTANCE. Horizont-Linien-Erkennung ist bewusst nicht
+    umgesetzt (Out-of-Scope der Spec: "keine neuen Bildverarbeitungsschritte fuer die
+    Kompositions-Analyse")."""
+    subject = _select_primary_subject(faces, animals)
+    if subject is None:
+        # Dokumentierter, niedriger (nicht neutraler) Fallback-Wert (Akzeptanzkriterium der Spec)
+        # - ohne erkennbares Subjekt gibt es kein Kompositions-Signal; 0.0 statt eines
+        # "neutralen" 0.5 vermeidet, ein diesbezueglich nicht messbares Foto positiv zu werten.
+        # Kein Fehler/keine Exception (bewusste Entscheidung, kein neuer Bildverarbeitungsschritt
+        # wie eine Horizont-Erkennung wird dafuer nachgerüstet).
+        return 0.0
+    distance = min(
+        math.sqrt((subject.x_center - tx) ** 2 + (subject.y_center - ty) ** 2)
+        for tx, ty in _GOLDEN_RATIO_THIRD_POINTS
+    )
+    return max(0.0, min(1.0, 1.0 - distance / _GOLDEN_RATIO_MAX_DISTANCE))
 
 
 # Schwelle, ab der content_people als "Gesicht erkannt" gilt (compute_content_people liefert nur

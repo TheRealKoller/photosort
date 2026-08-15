@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 from PIL import Image, ImageDraw
 
+from photosort.classification import FaceBoundingBox
 from photosort.criteria import (
     CATEGORY_DETAIL,
     CATEGORY_LANDSCAPE,
@@ -11,6 +13,7 @@ from photosort.criteria import (
     CRITERIA_REGISTRY,
     compute_content_landscape,
     compute_content_people,
+    compute_golden_ratio_score,
     derive_category_key,
     normalize_exposure,
     normalize_sharpness,
@@ -98,6 +101,63 @@ class TestComputeContentLandscape:
 
     def test_textured_image_scores_low(self) -> None:
         assert compute_content_landscape(_textured()) < 0.3
+
+
+@dataclass(frozen=True)
+class _FakeSubjectBox:
+    """Test-Double fuer ein beliebiges Subjekt mit Bounding-Box (strukturell kompatibel zu
+    FaceBoundingBox/AnimalDetection - compute_golden_ratio_score braucht nur x_center/y_center/
+    width/height, siehe SubjectBoxLike-Protocol in criteria.py). Steht hier fuer eine Tier-
+    Erkennung, bevor AnimalDetection selbst existiert (Spec 0038, Reihenfolge "Goldener Schnitt
+    vor Tier") - der Fallback-Pfad ist bewusst gegen den Protocol-Vertrag getestet, nicht gegen
+    eine konkrete spaetere Implementierung, siehe test_criteria.py-Ergaenzung nach der
+    Tier-Umsetzung fuer den Wiederverwendungsnachweis mit der echten AnimalDetection."""
+
+    x_center: float
+    y_center: float
+    width: float
+    height: float
+
+
+def _face(x: float, y: float, width: float = 0.1, height: float = 0.1) -> FaceBoundingBox:
+    return FaceBoundingBox(x_center=x, y_center=y, width=width, height=height, confidence=0.9)
+
+
+class TestComputeGoldenRatioScore:
+    def test_subject_near_a_third_point_scores_high(self) -> None:
+        # Oberer linker Drittel-Schnittpunkt (1/3, 1/3).
+        score = compute_golden_ratio_score([_face(1 / 3, 1 / 3)])
+        assert score > 0.9
+
+    def test_subject_exactly_centered_scores_noticeably_lower(self) -> None:
+        centered = compute_golden_ratio_score([_face(0.5, 0.5)])
+        near_third = compute_golden_ratio_score([_face(1 / 3, 1 / 3)])
+        assert centered < near_third
+        assert centered < 0.6
+
+    def test_falls_back_to_the_largest_animal_box_when_no_face_was_detected(self) -> None:
+        # Kein Gesicht, aber eine (hier: gefakte) Tier-Erkennung nah an einem Drittelpunkt -
+        # Akzeptanzkriterium der Spec: der Fallback muss nachweislich greifen.
+        score = compute_golden_ratio_score([], animals=[_FakeSubjectBox(2 / 3, 2 / 3, 0.2, 0.2)])
+        assert score > 0.9
+
+    def test_returns_a_low_documented_fallback_when_neither_face_nor_animal_detected(self) -> None:
+        score = compute_golden_ratio_score([], animals=[])
+        assert score == 0.0
+
+    def test_multiple_faces_select_the_largest_by_area_not_the_first(self) -> None:
+        # Erstes (kleines) Gesicht liegt exakt mittig (niedriger Score), zweites (grosses) Gesicht
+        # liegt nah an einem Drittelpunkt (hoher Score) - die groessere Flaeche muss gewinnen.
+        score = compute_golden_ratio_score(
+            [_face(0.5, 0.5, width=0.05, height=0.05), _face(1 / 3, 1 / 3, width=0.3, height=0.3)]
+        )
+        assert score > 0.9
+
+    def test_result_stays_within_zero_to_one_for_a_corner_subject(self) -> None:
+        # Bildecke (0, 0) ist der Punkt mit dem groessten Abstand zu jedem Drittelpunkt - Grenzfall
+        # fuer die Normierung, darf nicht unter 0 rutschen.
+        score = compute_golden_ratio_score([_face(0.0, 0.0)])
+        assert 0.0 <= score <= 1.0
 
 
 class TestDeriveCategoryKey:
