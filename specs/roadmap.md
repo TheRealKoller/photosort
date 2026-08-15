@@ -10,7 +10,9 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, ge
 
 | Spec | Titel | Status |
 |---|---|---|
+| [0039](./features/0039-kuratierung-tage-und-benannte-cluster.md) | Kategorie-Kuratierung: Tagesweise Gruppierung und benannte Zeitfenster-Cluster | Accepted |
 | [0038](./features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md) | Vier zusätzliche Kriterien: Tier, Gebäude, Goldener Schnitt, Ästhetik | Accepted |
+| [0040](./features/0040-bewertungsdetails-info-popover.md) | Berechnete Bewertungsdetails zu Fotos anzeigen (Info-Popover) | Accepted |
 
 ### Offen — Niedrig
 
@@ -27,7 +29,10 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 |---|---|
 | [0004](./inbox/0004-ki-app-im-browser-lokal-ansehen.md) | KI soll die laufende App lokal im Browser ansehen können (z.B. via `docker compose`) — offen, ob/wie sinnvoll umsetzbar |
 | [0006](./inbox/0006-dateianzahl-beim-ordner-heraussuchen.md) | Beim Heraussuchen des OpenCloud-Ordners Dateianzahl im Ordner anzeigen |
-| [0010](./inbox/0010-berechnete-bewertungsdetails-anzeigen.md) | Berechnete Bewertungsdetails zu einem Bild anzeigen (Info-Icon mit Hover, ggf. auch in der Einzelbildansicht) |
+| [0016](./inbox/0016-roadmap-nur-uebersicht.md) | Roadmap soll nur eine knappe Übersicht sein, ohne die ausführlichen Fließtext-Begründungen — durch Spec 0026 (Tabelle an den Anfang) und 0029 (drei Prioritätsstufen) nur teilweise berührt, der eigentliche Fließtext unter "Priorisierung" bleibt bestehen |
+| [0017](./inbox/0017-sehenswuerdigkeit-erkennung-cloud.md) | Sehenswürdigkeit-Erkennung (Landmark) als künftiges Kriterium über eine Cloud-Vision-API — am 2026-08-13 mit Daniel bewusst zurückgestellt (siehe Spec 0038), da die dafür nötige Cloud-Anbindung (Einwilligung, Kosten, DPA) aktuell nicht gerechtfertigt ist |
+| [0018](./inbox/0018-nur-frontend-nach-aussen-exposen.md) | Nur noch Frontend nach außen exposen, Backend nicht mehr direkt über den Reverse Proxy erreichbar machen müssen |
+| [0019](./inbox/0019-projekte-loeschen.md) | Projekte (inkl. aller zugehörigen Daten) löschen können, mit vorheriger Warnung und Bestätigung |
 
 ### Bereits umgesetzt
 
