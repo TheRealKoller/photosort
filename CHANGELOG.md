@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.0](https://github.com/TheRealKoller/photosort/compare/v0.6.1...v0.7.0) (2026-08-15)
+
+
+### Features
+
+* frontend anpassung an gateführte pipeline (spec 0037, teil 3/4) ([587d9f2](https://github.com/TheRealKoller/photosort/commit/587d9f2ce1c802c8064ae4ba652bc20d7d5d0bfc))
+* gateführte Bewertungs-Pipeline mit Kriterien-Scoring und Kategorie-Kuratierung ([770ea9e](https://github.com/TheRealKoller/photosort/commit/770ea9e0865ce2ed4d10fca72a10fa84903a84f3))
+* kategorie-kuratierungs-ansicht /curate mit backfill (spec 0037, teil 4/4) ([495eb67](https://github.com/TheRealKoller/photosort/commit/495eb6716f4ccead8a4afe744828ec5e2f65488e))
+* kriterien-datenmodell und rangfolgen-pipeline (spec 0037, teil 1/3) ([2b952ae](https://github.com/TheRealKoller/photosort/commit/2b952ae374040bc2cef5c456764d789d4c9ffe05))
+
+
+### Bug Fixes
+
+* review-findings aus schritt 4 beheben (spec 0037) ([024d98d](https://github.com/TheRealKoller/photosort/commit/024d98d73a47468d9d921e7784798cd1d1079853))
+* stale ALBUM_WORTHY-Vorschläge in Migration bereinigen (Copilot-Review PR [#80](https://github.com/TheRealKoller/photosort/issues/80)) ([e55b83a](https://github.com/TheRealKoller/photosort/commit/e55b83ad5a3d2fbee32216cc137ee0839ea6c0cf))
+
 ## [0.6.1](https://github.com/TheRealKoller/photosort/compare/v0.6.0...v0.6.1) (2026-08-14)
 
 
