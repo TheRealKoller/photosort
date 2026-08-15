@@ -18,6 +18,7 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, ge
 |---|---|---|
 | [0004](./features/0004-opencloud-export.md) | Export nach OpenCloud | Proposed |
 | [0031](./features/0031-zweiwege-sync-specs-github-projekt.md) | Zwei-Wege-Sync Feature-Specs ↔ GitHub-Projekt | Accepted |
+| [0041](./features/0041-bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md) | Bewertungsdetails permanent in der Detailansicht + Hover-Auto-Close im Popover | Accepted |
 
 ### Inbox — ungeschärfte Ideen
 
@@ -31,6 +32,8 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0017](./inbox/0017-sehenswuerdigkeit-erkennung-cloud.md) | Sehenswürdigkeit-Erkennung (Landmark) als künftiges Kriterium über eine Cloud-Vision-API — am 2026-08-13 mit Daniel bewusst zurückgestellt (siehe Spec 0038), da die dafür nötige Cloud-Anbindung (Einwilligung, Kosten, DPA) aktuell nicht gerechtfertigt ist |
 | [0018](./inbox/0018-nur-frontend-nach-aussen-exposen.md) | Nur noch Frontend nach außen exposen, Backend nicht mehr direkt über den Reverse Proxy erreichbar machen müssen |
 | [0019](./inbox/0019-projekte-loeschen.md) | Projekte (inkl. aller zugehörigen Daten) löschen können, mit vorheriger Warnung und Bestätigung |
+| [0021](./inbox/0021-visualisierung-automatisierter-flow.md) | Automatisierten Flow als Schritt-Übersicht (Fortschritt, Detailseite je Schritt mit Aktion/Ergebnis/Fortschrittsanzeige) visualisieren |
+| [0022](./inbox/0022-gps-zeit-clusterbildung-benannte-cluster.md) | GPS-/Zeit-/Sehenswürdigkeit-basierte Clusterbildung für benannte Cluster (gegenseitige Herleitung bei fehlenden Einzelmerkmalen) |
 
 ### Bereits umgesetzt
 
