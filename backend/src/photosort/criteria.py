@@ -49,6 +49,7 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         "goldener_schnitt", "Goldener Schnitt", CriterionSource.LOCAL_HEURISTIC
     ),
     "gebaeude": CriterionDefinition("gebaeude", "Gebäude erkannt", CriterionSource.LOCAL_ML),
+    "aesthetics": CriterionDefinition("aesthetics", "Ästhetik", CriterionSource.LOCAL_ML),
 }
 
 # Obergrenze fuer die Normierung der unbeschraenkten Laplace-Varianz-Skala (scoring.py::

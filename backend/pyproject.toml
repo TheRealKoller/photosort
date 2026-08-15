@@ -22,6 +22,17 @@ dependencies = [
     # sowohl x86_64 als auch aarch64 ab, kompatibel mit dem python:3.12-slim-Dockerfile.
     "mediapipe>=0.10",
     "numpy>=1.26",
+    # Lokale Aesthetik-Bewertung (NIMA) fuer criterion_key="aesthetics"
+    # (specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md,
+    # decisions/0022-lokale-modellwahl-tier-gebaeude-aesthetik-kriterien.md Punkt 3) - regulaerer
+    # Paketname "tensorflow" statt des urspruenglich erwogenen "tensorflow-cpu": Verifikation vor
+    # der Umsetzung (PyPI Simple-API) ergab, dass tensorflow-cpu fuer KEINE Version eine
+    # aarch64-Linux-Wheel liefert, waehrend "tensorflow" seit Version 2.16 fuer x86_64 UND aarch64
+    # (cp312, manylinux) verfuegbar UND dort ohne das optionale [and-cuda]-Extra CPU-only ist (kein
+    # GPU-Runtime-Bundle) - siehe ADR-0022-Nachtrag vom 2026-08-15. Installierbarkeit auf dem
+    # Ziel-Image (python:3.12-slim) UND CPU-only-Verhalten real per Docker-Smoke-Test verifiziert
+    # (kein zusaetzliches apt-Paket noetig, anders als bei mediapipe/opencv).
+    "tensorflow>=2.16",
 ]
 
 [project.optional-dependencies]
@@ -41,13 +52,12 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-# Gepinnte .tflite-Modelldatei fuer die lokale Gesichtserkennung
-# (specs/features/0024-top-photo-selection-category-mix.md, classification.py) - ohne diese
-# Deklaration wuerde `pip install .` (siehe backend/Dockerfile) das committete Binaerasset NICHT ins
-# installierte Package uebernehmen (anders als bei "pip install -e ." im lokalen Dev-Setup, das
-# direkt auf den Quellbaum zeigt).
+# Gepinnte Modelldateien (.tflite fuer mediapipe, .hdf5 fuer die NIMA-Gewichte, Spec 0038) - ohne
+# diese Deklaration wuerde `pip install .` (siehe backend/Dockerfile) die committeten Binaerassets
+# NICHT ins installierte Package uebernehmen (anders als bei "pip install -e ." im lokalen
+# Dev-Setup, das direkt auf den Quellbaum zeigt).
 [tool.setuptools.package-data]
-photosort = ["assets/*.tflite"]
+photosort = ["assets/*.tflite", "assets/*.hdf5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -74,4 +84,13 @@ mypy_path = "src"
 # untypisierte Drittanbieter-Bibliothek, kein Grund, --strict projektweit aufzuweichen.
 [[tool.mypy.overrides]]
 module = ["mediapipe.*"]
+ignore_missing_imports = true
+
+# tensorflow liefert eigene Typstubs, aber das lokale Dev-Environment dieses Repos laeuft auf
+# einer Python-Version, fuer die (Stand Umsetzung) noch kein tensorflow-Wheel existiert (Ziel-
+# Image ist python:3.12-slim, siehe pyproject.toml-Dependency-Kommentar) - ignore_missing_imports
+# haelt mypy --strict trotzdem lauffaehig, ohne die Typpruefung fuer den Rest des Projekts
+# aufzuweichen (gleiches Muster wie beim mediapipe-Override oben).
+[[tool.mypy.overrides]]
+module = ["tensorflow.*"]
 ignore_missing_imports = true

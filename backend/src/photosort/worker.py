@@ -16,6 +16,7 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
 from photosort.classification import (
     AnimalDetection,
     FaceBoundingBox,
@@ -761,6 +762,7 @@ _CONTENT_CRITERION_SOURCES: dict[str, CriterionSource] = {
     "tier": CriterionSource.LOCAL_ML,
     "goldener_schnitt": CriterionSource.LOCAL_HEURISTIC,
     "gebaeude": CriterionSource.LOCAL_ML,
+    "aesthetics": CriterionSource.LOCAL_ML,
 }
 
 
@@ -770,6 +772,7 @@ def _compute_content_criteria(
     face_detector: FaceDetectorLike,
     animal_detector: ObjectDetectorLike,
     scene_classifier: SceneClassifierLike,
+    aesthetics_model: AestheticsModelLike,
 ) -> dict[str, float]:
     """Best-effort wie scoring.py::_compute_photo_metrics (Akzeptanzkriterium der Spec 0037/0038):
     JEDES hier berechnete Kriterium hat sein EIGENES try/except - ein einzelner fehlgeschlagener
@@ -825,6 +828,11 @@ def _compute_content_criteria(
     except Exception:
         pass
 
+    try:
+        values["aesthetics"] = compute_aesthetics(image, aesthetics_model)
+    except Exception:
+        pass
+
     if faces is not None and animals is not None:
         try:
             values["goldener_schnitt"] = compute_golden_ratio_score(faces, animals)
@@ -842,6 +850,7 @@ async def run_criterion_scoring(
     build_detector: Callable[[], FaceDetectorLike] = build_face_detector,
     build_animal_detector: Callable[[], ObjectDetectorLike] = build_object_detector,
     build_scene_classifier_fn: Callable[[], SceneClassifierLike] = build_scene_classifier,
+    build_aesthetics_model_fn: Callable[[], AestheticsModelLike] = build_aesthetics_model,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
     abgeleitete Rangfolge je Partition (cluster_key x category_key) - ersetzt run_top_selection/
@@ -851,11 +860,12 @@ async def run_criterion_scoring(
     berechnen (sharpness/exposure immer, Inhalts-Kriterien best-effort, periodisch zwischen-
     committet) -> rank_photos je Partition anwenden (reine In-Memory-Aggregation ueber die in
     diesem Lauf berechneten Werte) -> PhotoRanking-Zeilen schreiben -> CriterionScoringRun auf
-    success/failed setzen. `build_detector`/`build_animal_detector`/`build_scene_classifier_fn`
-    sind injizierbar (Default: die echte, teure Modellkonstruktion) - Tests uebergeben stattdessen
-    Fakes ohne echtes .tflite-Modell (specs/features/0038-vier-zusaetzliche-kriterien-tier-
-    gebaeude-schnitt-aesthetik.md: build_object_detector/build_scene_classifier duerfen wie
-    build_face_detector NIE in einem automatisierten Test aufgerufen werden)."""
+    success/failed setzen. `build_detector`/`build_animal_detector`/`build_scene_classifier_fn`/
+    `build_aesthetics_model_fn` sind injizierbar (Default: die echte, teure Modellkonstruktion) -
+    Tests uebergeben stattdessen Fakes ohne echtes Modell (specs/features/0038-vier-zusaetzliche-
+    kriterien-tier-gebaeude-schnitt-aesthetik.md: build_object_detector/build_scene_classifier/
+    build_aesthetics_model duerfen wie build_face_detector NIE in einem automatisierten Test
+    aufgerufen werden)."""
     run = CriterionScoringRun(
         project_id=project.id, scoring_run_id=scoring_run_id, status=ScanStatus.RUNNING
     )
@@ -920,6 +930,9 @@ async def run_criterion_scoring(
         scene_classifier: SceneClassifierLike | None = (
             build_scene_classifier_fn() if rows else None
         )
+        aesthetics_model: AestheticsModelLike | None = (
+            build_aesthetics_model_fn() if rows else None
+        )
         now = _now_utc()
 
         def _upsert_criterion(
@@ -957,8 +970,9 @@ async def run_criterion_scoring(
             assert detector is not None  # rows nicht leer => Detektoren wurden oben gebaut
             assert animal_detector is not None
             assert scene_classifier is not None
+            assert aesthetics_model is not None
             content_values = _compute_content_criteria(
-                cache_dir, photo, detector, animal_detector, scene_classifier
+                cache_dir, photo, detector, animal_detector, scene_classifier, aesthetics_model
             )
             for criterion_key, source in _CONTENT_CRITERION_SOURCES.items():
                 if criterion_key in content_values:

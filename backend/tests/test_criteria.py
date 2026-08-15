@@ -76,6 +76,9 @@ class TestCriteriaRegistry:
     def test_registry_contains_gebaeude_with_the_correct_source(self) -> None:
         assert CRITERIA_REGISTRY["gebaeude"].source == CriterionSource.LOCAL_ML
 
+    def test_registry_contains_aesthetics_with_the_correct_source(self) -> None:
+        assert CRITERIA_REGISTRY["aesthetics"].source == CriterionSource.LOCAL_ML
+
 
 class TestNormalizeSharpness:
     def test_zero_stays_zero(self) -> None:
