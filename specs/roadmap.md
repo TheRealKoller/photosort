@@ -10,6 +10,7 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, ge
 
 | Spec | Titel | Status |
 |---|---|---|
+| [0039](./features/0039-kuratierung-tage-und-benannte-cluster.md) | Kategorie-Kuratierung: Tagesweise Gruppierung und benannte Zeitfenster-Cluster | Accepted |
 | [0038](./features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md) | Vier zusätzliche Kriterien: Tier, Gebäude, Goldener Schnitt, Ästhetik | Accepted |
 
 ### Offen — Niedrig
