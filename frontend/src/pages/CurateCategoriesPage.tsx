@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router'
 import { ApiError } from '../api/client'
 import type { PhotoOut } from '../api/types'
 import { CategoryBadge } from '../components/CategoryBadge'
+import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
 import { PhotoImage } from '../components/PhotoImage'
 import { QualityMeter } from '../components/QualityMeter'
 import { Alert } from '../components/ui/alert'
@@ -167,16 +168,30 @@ export function CurateCategoriesPage() {
                       const level = qualityLevel(photo.ranking?.rank_score ?? null)
                       return (
                         <li key={photo.id} className="flex flex-col gap-1.5">
-                          {isRejecting ? (
-                            <Skeleton className="aspect-square w-full rounded-md" />
-                          ) : (
-                            <PhotoImage
-                              photoId={photo.id}
-                              variant="thumbnail"
-                              alt={photo.relative_path}
-                              className="aspect-square w-full rounded-md object-cover"
-                            />
-                          )}
+                          <div className="relative">
+                            {isRejecting ? (
+                              <Skeleton className="aspect-square w-full rounded-md" />
+                            ) : (
+                              <>
+                                <PhotoImage
+                                  photoId={photo.id}
+                                  variant="thumbnail"
+                                  alt={photo.relative_path}
+                                  className="aspect-square w-full rounded-md object-cover"
+                                />
+                                {/* Einheitliche Position "oben rechts" (UI/UX-Abschnitt,
+                                    specs/features/0040-bewertungsdetails-info-popover.md) - kein
+                                    bereits belegtes Element in dieser Ecke. Waehrend isRejecting
+                                    zeigt die Kachel nur den Skeleton-Platzhalter, kein Trigger. */}
+                                <CriterionDetailsPopover
+                                  criterionScores={photo.criterion_scores}
+                                  ranking={photo.ranking}
+                                  suggestion={photo.suggestion}
+                                  className="absolute right-1.5 top-1.5"
+                                />
+                              </>
+                            )}
+                          </div>
                           {level && <QualityMeter level={level} className="text-xs" />}
                           <Button
                             type="button"
