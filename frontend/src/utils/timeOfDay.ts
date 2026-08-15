@@ -67,6 +67,11 @@ export function formatTimeRange(minIso: string, maxIso: string): string {
 export function formatClusterHeading(photos: { taken_at: string }[]): {
   dayKey: string
   heading: string
+  // Roher (nicht formatierter) Zeitstempel des chronologisch fruehesten Fotos - Review-Fund
+  // architect: statt diesen Wert ein zweites Mal im Aufrufer (`CurateCategoriesPage.tsx`) zu
+  // berechnen, liefert diese Funktion ihn als Single Source of Truth gleich mit, genutzt fuer die
+  // chronologische Cluster-Sortierung (Akzeptanzkriterium 2).
+  earliestIso: string
 } {
   let minIso = photos[0].taken_at
   let maxIso = photos[0].taken_at
@@ -81,7 +86,7 @@ export function formatClusterHeading(photos: { taken_at: string }[]): {
   const dayKey = dayKeyOf(minIso)
   const bucketLabel = timeOfDayBucketLabel(hourOf(minIso))
   const timeRange = formatTimeRange(minIso, maxIso)
-  return { dayKey, heading: `${bucketLabel} (${timeRange})` }
+  return { dayKey, heading: `${bucketLabel} (${timeRange})`, earliestIso: minIso }
 }
 
 const WEEKDAY_LABELS = [

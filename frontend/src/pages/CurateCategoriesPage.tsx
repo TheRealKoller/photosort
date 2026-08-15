@@ -73,12 +73,8 @@ function groupByClusterAndCategory(items: PhotoOut[]): {
 
   const clusterMeta = new Map<string, ClusterMeta>()
   for (const [clusterKey, photos] of photosByCluster) {
-    const { dayKey, heading } = formatClusterHeading(photos)
-    const earliestTakenAt = photos.reduce(
-      (min, photo) => (photo.taken_at < min ? photo.taken_at : min),
-      photos[0].taken_at
-    )
-    clusterMeta.set(clusterKey, { dayKey, heading, earliestTakenAt })
+    const { dayKey, heading, earliestIso } = formatClusterHeading(photos)
+    clusterMeta.set(clusterKey, { dayKey, heading, earliestTakenAt: earliestIso })
   }
 
   const groups: GroupedPhotos = {}
@@ -234,7 +230,12 @@ export function CurateCategoriesPage() {
         })
         const dayIsEmpty = !Object.values(clustersForDay).some(categoriesHavePhotos)
         return (
-          <section key={dayKey} className="flex flex-col gap-6">
+          // UI/UX-Abschnitt der Spec: gap-6 (24px) gilt zwischen Tagen - das liefert bereits der
+          // aeussere Seiten-Wrapper (naechste Zeile im JSX-Baum, `flex flex-col gap-6`), da jede
+          // Tag-<section> dort ein direktes Geschwisterelement ist. Innerhalb eines Tages gilt
+          // stattdessen gap-4 (16px) zwischen den Clustern (Review-Fund ux-ui-designer: gap-6
+          // hier haette faelschlich auch zwischen Clustern 24px statt 16px erzeugt).
+          <section key={dayKey} className="flex flex-col gap-4">
             <h2 className="text-xl font-semibold text-text-h">{formatDayHeading(dayKey)}</h2>
             {dayIsEmpty && <p className="text-sm text-text">Keine Fotos für diesen Tag</p>}
             {!dayIsEmpty &&

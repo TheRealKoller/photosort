@@ -61,6 +61,7 @@ describe('formatClusterHeading', () => {
     const result = formatClusterHeading([{ taken_at: '2026-07-20T14:32:00' }])
     expect(result.dayKey).toBe('2026-07-20')
     expect(result.heading).toBe('Nachmittags (14:32 Uhr)')
+    expect(result.earliestIso).toBe('2026-07-20T14:32:00')
   })
 
   it('derives the exact min/max range across multiple photos of the same cluster', () => {
@@ -73,6 +74,9 @@ describe('formatClusterHeading', () => {
     // 12:00 Uhr (fruehestes Foto) faellt in den Mittags-Bucket [11:00, 13:00), auch wenn die
     // Spanne selbst den Nachmittags-Bucket ueberschreitet (Akzeptanzkriterium 6).
     expect(result.heading).toBe('Mittags (12:00–14:00 Uhr)')
+    // earliestIso ist der rohe (nicht formatierte) Zeitstempel des fruehesten Fotos - genutzt fuer
+    // die chronologische Cluster-Sortierung in CurateCategoriesPage.tsx (Akzeptanzkriterium 2).
+    expect(result.earliestIso).toBe('2026-07-20T12:00:00')
   })
 
   it('resolves day and bucket from the earliest photo for a midnight-spanning cluster', () => {
@@ -82,6 +86,7 @@ describe('formatClusterHeading', () => {
     ])
     expect(result.dayKey).toBe('2026-07-20')
     expect(result.heading).toBe('Nachts (23:50–00:10 Uhr)')
+    expect(result.earliestIso).toBe('2026-07-20T23:50:00')
   })
 })
 
