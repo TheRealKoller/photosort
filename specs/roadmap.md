@@ -6,12 +6,6 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, geordnet nach den unten stehenden Prioritätskategorien, danach die noch ungeschärften Inbox-Einträge ohne eigene Spec; bereits implementierte Specs stehen als Referenz ganz unten.
 
-### Offen — Mittel
-
-| Spec | Titel | Status |
-|---|---|---|
-| [0039](./features/0039-kuratierung-tage-und-benannte-cluster.md) | Kategorie-Kuratierung: Tagesweise Gruppierung und benannte Zeitfenster-Cluster | Accepted |
-
 ### Offen — Niedrig
 
 | Spec | Titel | Status |
@@ -74,6 +68,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0037](./features/0037-gateführte-bewertungs-pipeline-mit-backfill.md) | Gateführte Bewertungs-Pipeline mit Kriterien-Scoring und Kategorie-Kuratierung | Implemented ([PR #80](https://github.com/TheRealKoller/photosort/pull/80)) — ersetzt [0003](./features/0003-automatic-best-photo-selection.md)/[0024](./features/0024-top-photo-selection-category-mix.md) (beide `Superseded`) |
 | [0040](./features/0040-bewertungsdetails-info-popover.md) | Berechnete Bewertungsdetails zu Fotos anzeigen (Info-Popover) | Implemented ([PR #85](https://github.com/TheRealKoller/photosort/pull/85)) |
 | [0038](./features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md) | Vier zusätzliche Kriterien: Tier, Gebäude, Goldener Schnitt, Ästhetik | Implemented ([PR #88](https://github.com/TheRealKoller/photosort/pull/88)) |
+| [0039](./features/0039-kuratierung-tage-und-benannte-cluster.md) | Kategorie-Kuratierung: Tagesweise Gruppierung und benannte Zeitfenster-Cluster | Implemented ([PR #91](https://github.com/TheRealKoller/photosort/pull/91)) |
 
 ## Priorisierung
 

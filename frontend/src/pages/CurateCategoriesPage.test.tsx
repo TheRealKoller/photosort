@@ -46,7 +46,10 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
   return {
     id: 1,
     relative_path: 'a.jpg',
-    taken_at: '2026-07-20T10:00:00Z',
+    // taken_at ist ein naives, zeitzonenloses Backend-Datetime ohne `Z`-Suffix (Spec 0039,
+    // specs/architecture/0002-testkonzept.md) - die Fixture spiegelte das reale Format zuvor
+    // fälschlich mit `Z` wider.
+    taken_at: '2026-07-20T10:00:00',
     ratings: [],
     suggestion: null,
     ranking: ranking(),
@@ -114,7 +117,7 @@ describe('CurateCategoriesPage', () => {
     )
   })
 
-  it('groups photos by cluster then category, showing the category chip and name', async () => {
+  it('groups photos by day, then cluster, then category, showing day/cluster headings and the category chip/name', async () => {
     const list: PhotoListOut = {
       items: [
         photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }) }),
@@ -126,11 +129,101 @@ describe('CurateCategoriesPage', () => {
 
     renderPage()
 
-    expect(await screen.findByText('cluster-0')).toBeInTheDocument()
+    // Beide Fotos sind am 20.07.2026 (Montag) um 10:00 Uhr entstanden (Fixture-Default) - ein
+    // Tag-Abschnitt, ein Cluster mit Tageszeit-Ueberschrift statt der technischen cluster_key-ID.
+    expect(await screen.findByText('Montag 20.07.2026')).toBeInTheDocument()
+    expect(screen.getByText('Vormittags (10:00 Uhr)')).toBeInTheDocument()
+    expect(screen.queryByText('cluster-0')).not.toBeInTheDocument()
     expect(screen.getByText('Landscape')).toBeInTheDocument()
     expect(screen.getByText('People')).toBeInTheDocument()
     expect(screen.getAllByRole('listitem').length).toBeGreaterThanOrEqual(2)
   })
+
+  it('groups photos into day sections sorted chronologically ascending (Akzeptanzkriterium 1)', async () => {
+    const list: PhotoListOut = {
+      items: [
+        photo({
+          id: 1,
+          taken_at: '2026-07-21T10:00:00',
+          ranking: ranking({ cluster_key: 'cluster-b', category_key: 'landscape' }),
+        }),
+        photo({
+          id: 2,
+          taken_at: '2026-07-20T10:00:00',
+          ranking: ranking({ cluster_key: 'cluster-a', category_key: 'landscape' }),
+        }),
+      ],
+      total: 2,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage()
+
+    const headings = await screen.findAllByRole('heading', { level: 2 })
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      'Montag 20.07.2026',
+      'Dienstag 21.07.2026',
+    ])
+  })
+
+  it(
+    'sorts clusters within a day chronologically by earliest taken_at, not lexicographically ' +
+      'by cluster_key (Akzeptanzkriterium 2, behebt "cluster-10" < "cluster-2")',
+    async () => {
+      const list: PhotoListOut = {
+        items: [
+          photo({
+            id: 1,
+            taken_at: '2026-07-20T14:00:00',
+            ranking: ranking({ cluster_key: 'cluster-10', category_key: 'landscape' }),
+          }),
+          photo({
+            id: 2,
+            taken_at: '2026-07-20T09:00:00',
+            ranking: ranking({ cluster_key: 'cluster-2', category_key: 'landscape' }),
+          }),
+        ],
+        total: 2,
+      }
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+      renderPage()
+
+      const headings = await screen.findAllByRole('heading', { level: 3 })
+      expect(headings.map((heading) => heading.textContent)).toEqual([
+        'Vormittags (09:00 Uhr)',
+        'Nachmittags (14:00 Uhr)',
+      ])
+    }
+  )
+
+  it(
+    'derives day and time-of-day bucket from the earliest photo for a midnight-spanning ' +
+      'cluster, while the displayed range covers all visible photos (Akzeptanzkriterium 6)',
+    async () => {
+      const list: PhotoListOut = {
+        items: [
+          photo({
+            id: 1,
+            taken_at: '2026-07-21T00:10:00',
+            ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }),
+          }),
+          photo({
+            id: 2,
+            taken_at: '2026-07-20T23:50:00',
+            ranking: ranking({ cluster_key: 'cluster-0', category_key: 'people' }),
+          }),
+        ],
+        total: 2,
+      }
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+      renderPage()
+
+      expect(await screen.findByText('Montag 20.07.2026')).toBeInTheDocument()
+      expect(screen.getByText('Nachts (23:50–00:10 Uhr)')).toBeInTheDocument()
+    }
+  )
 
   it('shows an empty-pool placeholder when a category has fewer than N photos', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
@@ -198,12 +291,15 @@ describe('CurateCategoriesPage', () => {
   })
 
   it(
-    'keeps a section visible with an empty-pool placeholder once its last photo is rejected ' +
-      'instead of silently disappearing',
+    'keeps the day section visible with its own empty-state text once all its photos are ' +
+      'rejected instead of silently disappearing (Akzeptanzkriterium 7, Tag-Ebene)',
     async () => {
-      // test-engineer-Review-Fund: der Kernfall, fuer den knownGroupKeysRef ueberhaupt gebaut
-      // wurde - eine Partition, deren letztes Foto per Live-Ablehnung entfernt wird, MUSS mit
-      // eigenem Leerzustand sichtbar bleiben statt spurlos aus der Gruppierung zu verschwinden.
+      // test-engineer-Review-Fund (urspruenglich fuer die 2-Ebenen-Gruppierung, jetzt auf die
+      // Tag-Ebene uebertragen): der Kernfall, fuer den knownGroupKeysRef ueberhaupt gebaut wurde
+      // - eine Partition, deren letztes Foto per Live-Ablehnung entfernt wird, MUSS mit eigenem
+      // Leerzustand sichtbar bleiben statt spurlos aus der Gruppierung zu verschwinden. Da hier
+      // Tag/Cluster/Kategorie gleichzeitig auf genau ein Element schrumpfen, kollabiert die
+      // Anzeige auf die oberste (Tag-)Ebene statt verschachtelte Leerzustaende zu zeigen.
       vi.mocked(photosApi.listPhotos)
         .mockResolvedValueOnce({
           items: [
@@ -229,9 +325,122 @@ describe('CurateCategoriesPage', () => {
       await waitFor(() =>
         expect(screen.queryByRole('button', { name: 'Verwerfen: a.jpg' })).not.toBeInTheDocument()
       )
-      expect(screen.getByText('cluster-0')).toBeInTheDocument()
+      expect(screen.getByText('Montag 20.07.2026')).toBeInTheDocument()
+      expect(screen.getByText('Keine Fotos für diesen Tag')).toBeInTheDocument()
+      expect(screen.queryByText('Vormittags (10:00 Uhr)')).not.toBeInTheDocument()
+    }
+  )
+
+  it(
+    'keeps a category section visible with the unchanged empty-pool placeholder once it alone ' +
+      'is exhausted, while a sibling category in the same cluster still has photos ' +
+      '(Akzeptanzkriterium 7, Kategorie-Ebene, unverändert)',
+    async () => {
+      vi.mocked(photosApi.listPhotos)
+        .mockResolvedValueOnce({
+          items: [
+            photo({
+              id: 1,
+              ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }),
+            }),
+            photo({
+              id: 2,
+              relative_path: 'b.jpg',
+              ranking: ranking({ cluster_key: 'cluster-0', category_key: 'people' }),
+            }),
+          ],
+          total: 2,
+        })
+        .mockResolvedValueOnce({
+          items: [
+            photo({
+              id: 2,
+              relative_path: 'b.jpg',
+              ranking: ranking({ cluster_key: 'cluster-0', category_key: 'people' }),
+            }),
+          ],
+          total: 1,
+        })
+      vi.mocked(ratingsApi.setRating).mockResolvedValue({
+        user_id: 1,
+        username: 'testuser',
+        status: 'rejected',
+      })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/curate?topN=1')
+      const rejectButton = await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
+      await user.click(rejectButton)
+
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Verwerfen: a.jpg' })).not.toBeInTheDocument()
+      )
+      expect(screen.getByText('Montag 20.07.2026')).toBeInTheDocument()
+      expect(screen.getByText('Vormittags (10:00 Uhr)')).toBeInTheDocument()
       expect(screen.getByText('Landscape')).toBeInTheDocument()
+      expect(screen.getByText('People')).toBeInTheDocument()
       expect(screen.getByText('Kein weiteres Foto verfügbar')).toBeInTheDocument()
+      expect(screen.queryByText('Keine Fotos in dieser Tageszeit')).not.toBeInTheDocument()
+    }
+  )
+
+  it(
+    'keeps a cluster heading available from the clusterMetaRef cache once that cluster is ' +
+      'fully exhausted, while a sibling cluster in the same day still has photos ' +
+      '(Regressionstest laut Architektur-Abschnitt der Spec)',
+    async () => {
+      vi.mocked(photosApi.listPhotos)
+        .mockResolvedValueOnce({
+          items: [
+            photo({
+              id: 1,
+              taken_at: '2026-07-20T09:00:00',
+              ranking: ranking({ cluster_key: 'cluster-a', category_key: 'landscape' }),
+            }),
+            photo({
+              id: 2,
+              relative_path: 'b.jpg',
+              taken_at: '2026-07-20T14:00:00',
+              ranking: ranking({ cluster_key: 'cluster-b', category_key: 'landscape' }),
+            }),
+          ],
+          total: 2,
+        })
+        .mockResolvedValueOnce({
+          items: [
+            photo({
+              id: 2,
+              relative_path: 'b.jpg',
+              taken_at: '2026-07-20T14:00:00',
+              ranking: ranking({ cluster_key: 'cluster-b', category_key: 'landscape' }),
+            }),
+          ],
+          total: 1,
+        })
+      vi.mocked(ratingsApi.setRating).mockResolvedValue({
+        user_id: 1,
+        username: 'testuser',
+        status: 'rejected',
+      })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/curate?topN=1')
+      const rejectButton = await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
+      await user.click(rejectButton)
+
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Verwerfen: a.jpg' })).not.toBeInTheDocument()
+      )
+      expect(screen.getByText('Montag 20.07.2026')).toBeInTheDocument()
+      expect(screen.getByText('Vormittags (09:00 Uhr)')).toBeInTheDocument()
+      expect(screen.getByText('Keine Fotos in dieser Tageszeit')).toBeInTheDocument()
+      expect(screen.getByText('Nachmittags (14:00 Uhr)')).toBeInTheDocument()
+
+      const clusterHeadings = screen.getAllByRole('heading', { level: 3 })
+      expect(clusterHeadings.map((heading) => heading.textContent)).toEqual([
+        'Vormittags (09:00 Uhr)',
+        'Nachmittags (14:00 Uhr)',
+      ])
     }
   )
 
