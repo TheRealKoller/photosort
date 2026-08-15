@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
-import type { PhotoListOut, PhotoOut, RankingOut } from '../api/types'
+import type { CriterionScoreOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { CurateCategoriesPage } from './CurateCategoriesPage'
 
@@ -27,6 +27,17 @@ function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
     category_key: 'landscape',
     rank_score: 0.8,
     rank_position: 1,
+    partition_size: 1,
+    ...overrides,
+  }
+}
+
+function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionScoreOut {
+  return {
+    criterion_key: 'sharpness',
+    display_name: 'Schärfe',
+    value: 0.8,
+    source: 'local_heuristic',
     ...overrides,
   }
 }
@@ -39,6 +50,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     ratings: [],
     suggestion: null,
     ranking: ranking(),
+    criterion_scores: [],
     ...overrides,
   }
 }
@@ -63,6 +75,18 @@ function renderPage(initialPath = '/projects/1/curate?topN=3') {
 
 describe('CurateCategoriesPage', () => {
   beforeEach(() => {
+    // window.matchMedia existiert in jsdom nicht (specs/architecture/0002-testkonzept.md) -
+    // CriterionDetailsPopover fragt es beim Pointer-Enter des Info-Triggers ab, das auch
+    // userEvent.click() vor dem eigentlichen Klick ausloest.
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: false,
+        media: '(hover: hover) and (pointer: fine)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })
+    )
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
@@ -220,6 +244,36 @@ describe('CurateCategoriesPage', () => {
     renderPage()
 
     expect(await screen.findByText('Hohe Bildqualität')).toBeInTheDocument()
+  })
+
+  // Spec 0040 (Bewertungsdetails-Info-Popover), Akzeptanzkriterien 1, 2.
+  describe('info popover trigger', () => {
+    it('shows the trigger when the photo has criterion_scores', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
+        total: 1,
+      })
+
+      renderPage()
+
+      expect(
+        await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      ).toBeInTheDocument()
+    })
+
+    it('does not show the trigger when criterion_scores is empty', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, criterion_scores: [] })],
+        total: 1,
+      })
+
+      renderPage()
+
+      await screen.findAllByRole('listitem')
+      expect(
+        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      ).not.toBeInTheDocument()
+    })
   })
 
   it('links back to the project detail page', async () => {

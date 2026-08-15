@@ -18,6 +18,7 @@ const PHOTO_LIST: PhotoListOut = {
       ratings: [],
       suggestion: null,
       ranking: null,
+      criterion_scores: [],
     },
   ],
   total: 1,

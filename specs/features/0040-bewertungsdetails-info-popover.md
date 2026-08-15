@@ -1,6 +1,6 @@
 # 0040 - Berechnete Bewertungsdetails zu Fotos anzeigen (Info-Popover)
 
-**Status:** Accepted
+**Status:** Implemented ([PR #85](https://github.com/TheRealKoller/photosort/pull/85))
 **Erstellt:** 2026-08-15
 **Bezug:** Inbox-Eintrag [`specs/inbox/0010-berechnete-bewertungsdetails-anzeigen.md`](../inbox/0010-berechnete-bewertungsdetails-anzeigen.md) (2026-08-07, vor Spec 0037 erfasst), idea-sharpener-Gespräch mit Daniel
 

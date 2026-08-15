@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
-import type { PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
+import type { CriterionScoreOut, PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { PhotoDetailPage } from './PhotoDetailPage'
 
@@ -29,6 +29,17 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     ratings: [],
     suggestion: null,
     ranking: null,
+    criterion_scores: [],
+    ...overrides,
+  }
+}
+
+function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionScoreOut {
+  return {
+    criterion_key: 'sharpness',
+    display_name: 'Schärfe',
+    value: 0.8,
+    source: 'local_heuristic',
     ...overrides,
   }
 }
@@ -66,6 +77,18 @@ function renderPage(initialPath: string) {
 
 describe('PhotoDetailPage', () => {
   beforeEach(() => {
+    // window.matchMedia existiert in jsdom nicht (specs/architecture/0002-testkonzept.md) -
+    // CriterionDetailsPopover fragt es beim Pointer-Enter des Info-Triggers ab, das auch
+    // userEvent.click() vor dem eigentlichen Klick ausloest.
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: false,
+        media: '(hover: hover) and (pointer: fine)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })
+    )
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
@@ -340,5 +363,34 @@ describe('PhotoDetailPage', () => {
 
     expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'rejected')
     await screen.findByText('2/2')
+  })
+
+  // Spec 0040 (Bewertungsdetails-Info-Popover), Akzeptanzkriterien 1, 2.
+  describe('info popover trigger', () => {
+    it('shows the trigger when the photo has criterion_scores', async () => {
+      const list: PhotoListOut = {
+        items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
+        total: 1,
+      }
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+      renderPage('/projects/1/photos/1')
+
+      expect(
+        await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      ).toBeInTheDocument()
+    })
+
+    it('does not show the trigger when criterion_scores is empty', async () => {
+      const list: PhotoListOut = { items: [photo({ id: 1, criterion_scores: [] })], total: 1 }
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByText('1/1')
+      expect(
+        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      ).not.toBeInTheDocument()
+    })
   })
 })

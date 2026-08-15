@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import type { RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
+import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
 import { Alert } from '../components/ui/alert'
@@ -16,7 +17,7 @@ import {
 } from '../hooks/usePhotos'
 import { findOwnRating, ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
-import { RATING_STATUS_LABELS } from '../utils/ratingLabels'
+import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 
 // Bounded so a broken/degenerate filter can never spin forever fetching pages while searching
 // for the next unrated photo - 80 * PHOTOS_PAGE_SIZE(60) covers well beyond any realistic
@@ -261,13 +262,22 @@ export function PhotoDetailPage() {
       <div
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="mx-auto w-full max-w-2xl"
+        className="relative mx-auto w-full max-w-2xl"
       >
         <PhotoImage
           photoId={currentPhoto.id}
           variant="display"
           alt={currentPhoto.relative_path}
           className="aspect-[4/3] w-full rounded-xl object-contain"
+        />
+        {/* Einheitliche Position "oben rechts" ueber allen drei Einbindungsstellen (UI/UX-
+            Abschnitt, specs/features/0040-bewertungsdetails-info-popover.md) - hier anders als in
+            PhotoGridPage.tsx kein bereits belegtes Element in dieser Ecke. */}
+        <CriterionDetailsPopover
+          criterionScores={currentPhoto.criterion_scores}
+          ranking={currentPhoto.ranking}
+          suggestion={currentPhoto.suggestion}
+          className="absolute right-2 top-2"
         />
       </div>
 
@@ -288,18 +298,15 @@ export function PhotoDetailPage() {
 
       {suggestion && (
         <div className="flex flex-col items-start gap-1.5 rounded-xl border border-accent-border bg-accent-bg p-3 text-sm">
-          <p className="text-text-h">Automatischer Vorschlag: {RATING_STATUS_LABELS[suggestion.status]}</p>
-          <p className="text-text">
-            {/* Server liefert die Begruendung bereits regelbasiert ueber `reason`
-                (backend/src/photosort/api/photos.py::_to_suggestion_out) - hier bewusst nicht
-                erneut aus duplicate_of abgeleitet (Test-Review-Fund: doppelte, potenziell
-                auseinanderlaufende Business-Logik). Der fruehere dritte Fall "top_pick" (Spec
-                0024, Kategorie + Qualitaets-Einordnung) ist mit Spec 0037 entfallen - dieser
-                Kuratierungs-Kontext lebt jetzt in der eigenstaendigen /curate-Ansicht statt in
-                diesem Ausschuss-Vorschlagskasten (siehe api/types.ts::SuggestionOut-Docstring). */}
-            {suggestion.reason === 'duplicate' && `Duplikat von Foto #${suggestion.duplicate_of}`}
-            {suggestion.reason === 'low_quality' && 'Geringe Bildqualität'}
-          </p>
+          <p className="text-text-h">Automatischer Vorschlag: {formatSuggestionStatusLabel(suggestion)}</p>
+          {/* Formatierung aus utils/suggestionLabels.ts (specs/features/0040-bewertungsdetails-
+              info-popover.md, Architektur-Abschnitt) - dasselbe Muster wird jetzt auch vom neuen
+              CriterionDetailsPopover.tsx verwendet, keine zweite Kopie derselben Logik. Der
+              fruehere dritte Fall "top_pick" (Spec 0024, Kategorie + Qualitaets-Einordnung) ist
+              mit Spec 0037 entfallen - dieser Kuratierungs-Kontext lebt jetzt in der
+              eigenstaendigen /curate-Ansicht statt in diesem Ausschuss-Vorschlagskasten (siehe
+              api/types.ts::SuggestionOut-Docstring). */}
+          <p className="text-text">{formatSuggestionReason(suggestion)}</p>
           {/* Ruft denselben Mutation-Pfad wie ein manueller Klick auf die passende
               RatingButtons-Option auf (UI/UX-Abschnitt der Spec) - der bestehende Auto-Advance
               greift danach unveraendert. Kein eigener "Vorschlag verwerfen"-Zustand: normale

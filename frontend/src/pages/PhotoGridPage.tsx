@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import type { RatingFilter } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
+import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingBadge } from '../components/RatingBadge'
 import { Alert } from '../components/ui/alert'
@@ -186,25 +187,53 @@ export function PhotoGridPage() {
 
             return (
               <li key={photo.id} className="flex flex-col gap-1.5">
-                <Link
-                  to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
-                  className="group relative block aspect-square overflow-hidden rounded-md border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-                >
-                  <PhotoImage
-                    photoId={photo.id}
-                    variant="thumbnail"
-                    alt={photo.relative_path}
-                    className="size-full object-cover"
-                  />
-                  {/* UX-Review-Fund (Branch feature/0012-visual-redesign-views): der neutrale
-                      ("unbewertet") und der gedaempfte Vorschlags-Ton der Badge haben keine bzw.
-                      nur eine 10%-Deckkraft-Flaeche - direkt ueber einem beliebigen Foto ist das
-                      Symbol/"–" ohne Backdrop je nach Bildinhalt kaum lesbar. Ein halbtransparenter
-                      `--bg`-Kreis dahinter garantiert Kontrast unabhaengig vom Fotohintergrund. */}
-                  <span className="absolute right-1.5 top-1.5 rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
-                    <RatingBadge status={badgeStatus} suggested={isSuggested} />
-                  </span>
-                </Link>
+                <div className="relative">
+                  <Link
+                    to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
+                    className="group block aspect-square overflow-hidden rounded-md border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                  >
+                    <PhotoImage
+                      photoId={photo.id}
+                      variant="thumbnail"
+                      alt={photo.relative_path}
+                      className="size-full object-cover"
+                    />
+                  </Link>
+                  {/* Review-Fund (requirements-engineer/ux-ui-designer): eine fruehere Fassung
+                      wich fuer den Trigger auf "oben links" aus, weil "oben rechts" hier schon
+                      von der RatingBadge belegt war - das widersprach der Spec-Vorgabe
+                      "einheitliche Position an allen drei Stellen" (UI/UX-Abschnitt). Beide
+                      Elemente sitzen deshalb jetzt GEMEINSAM oben rechts (`gap-1`-Reihe), statt
+                      den Trigger in eine andere Ecke auszuweichen. Als Geschwisterelement NEBEN,
+                      nicht INNERHALB des <Link> (Akzeptanzkriterium 17) - `relative` wandert
+                      dafuer vom <Link> auf den umschliessenden <div> (Architektur-Abschnitt der
+                      Spec).
+                      Copilot-Review-Fund: RatingBadge zieht dafuer aus dem <Link> in dieselbe
+                      Zeile - als eigenes absolut positioniertes Geschwisterelement UEBER der
+                      Kachel wuerde ein Klick in ihrem Bereich sonst nicht mehr zur Detailseite
+                      navigieren (die Badge selbst hat keinen eigenen Klick-Handler, faengt den
+                      Klick aber trotzdem ab, bevor er den darunterliegenden <Link> erreicht).
+                      `pointer-events-none` auf dem umschliessenden div laesst Klicks im
+                      Badge-Bereich zum <Link> durch (Badge bleibt rein dekorativ), der Info-
+                      Trigger reaktiviert Pointer-Events gezielt fuer sich selbst
+                      (`pointer-events-auto`), da er einen eigenen Klick-Handler braucht (AK17). */}
+                  <div className="pointer-events-none absolute right-1.5 top-1.5 flex items-center gap-1">
+                    <CriterionDetailsPopover
+                      criterionScores={photo.criterion_scores}
+                      ranking={photo.ranking}
+                      suggestion={photo.suggestion}
+                      className="pointer-events-auto"
+                    />
+                    {/* UX-Review-Fund (Branch feature/0012-visual-redesign-views): der neutrale
+                        ("unbewertet") und der gedaempfte Vorschlags-Ton der Badge haben keine bzw.
+                        nur eine 10%-Deckkraft-Flaeche - direkt ueber einem beliebigen Foto ist das
+                        Symbol/"–" ohne Backdrop je nach Bildinhalt kaum lesbar. Ein halbtransparenter
+                        `--bg`-Kreis dahinter garantiert Kontrast unabhaengig vom Fotohintergrund. */}
+                    <span className="rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
+                      <RatingBadge status={badgeStatus} suggested={isSuggested} />
+                    </span>
+                  </div>
+                </div>
                 {/* Separates Tap-Ziel ausserhalb des Link-<a> (UI/UX-Abschnitt der Spec): die
                     Kachel selbst oeffnet weiterhin die Detailansicht, "Uebernehmen" bestaetigt
                     den Vorschlag direkt per PUT /photos/{id}/rating, ohne zu navigieren.
