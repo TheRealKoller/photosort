@@ -849,8 +849,8 @@ async def run_criterion_scoring(
     cache_dir: Path,
     build_detector: Callable[[], FaceDetectorLike] = build_face_detector,
     build_animal_detector: Callable[[], ObjectDetectorLike] = build_object_detector,
-    build_scene_classifier_fn: Callable[[], SceneClassifierLike] = build_scene_classifier,
-    build_aesthetics_model_fn: Callable[[], AestheticsModelLike] = build_aesthetics_model,
+    build_classifier: Callable[[], SceneClassifierLike] = build_scene_classifier,
+    build_aesthetics: Callable[[], AestheticsModelLike] = build_aesthetics_model,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
     abgeleitete Rangfolge je Partition (cluster_key x category_key) - ersetzt run_top_selection/
@@ -860,8 +860,8 @@ async def run_criterion_scoring(
     berechnen (sharpness/exposure immer, Inhalts-Kriterien best-effort, periodisch zwischen-
     committet) -> rank_photos je Partition anwenden (reine In-Memory-Aggregation ueber die in
     diesem Lauf berechneten Werte) -> PhotoRanking-Zeilen schreiben -> CriterionScoringRun auf
-    success/failed setzen. `build_detector`/`build_animal_detector`/`build_scene_classifier_fn`/
-    `build_aesthetics_model_fn` sind injizierbar (Default: die echte, teure Modellkonstruktion) -
+    success/failed setzen. `build_detector`/`build_animal_detector`/`build_classifier`/
+    `build_aesthetics` sind injizierbar (Default: die echte, teure Modellkonstruktion) -
     Tests uebergeben stattdessen Fakes ohne echtes Modell (specs/features/0038-vier-zusaetzliche-
     kriterien-tier-gebaeude-schnitt-aesthetik.md: build_object_detector/build_scene_classifier/
     build_aesthetics_model duerfen wie build_face_detector NIE in einem automatisierten Test
@@ -928,10 +928,10 @@ async def run_criterion_scoring(
         detector: FaceDetectorLike | None = build_detector() if rows else None
         animal_detector: ObjectDetectorLike | None = build_animal_detector() if rows else None
         scene_classifier: SceneClassifierLike | None = (
-            build_scene_classifier_fn() if rows else None
+            build_classifier() if rows else None
         )
         aesthetics_model: AestheticsModelLike | None = (
-            build_aesthetics_model_fn() if rows else None
+            build_aesthetics() if rows else None
         )
         now = _now_utc()
 

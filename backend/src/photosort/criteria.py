@@ -12,10 +12,8 @@ from photosort.classification import (
     AnimalDetection,
     FaceBoundingBox,
     FaceDetectorLike,
-    ObjectDetectorLike,
     SceneLabel,
     compute_uniform_area_fraction,
-    detect_animals,
     detect_person,
 )
 from photosort.models import CriterionSource
@@ -83,11 +81,19 @@ def content_people_from_faces(faces: list[FaceBoundingBox]) -> float:
 
 
 def compute_content_people(image: Image.Image, detector: FaceDetectorLike) -> float:
-    """`content_people`-Kriterium (Akzeptanzkriterium der Spec: mind. zwei Inhalts-Kriterien,
+    """`content_people`-Kriterium (Akzeptanzkriterium der Spec 0037: mind. zwei Inhalts-Kriterien,
     wiederverwendet aus classification.py). Score-Grundlage bleibt `bool(detect_person(...))`
-    (Vorgriffs-Ergaenzung der Spec: detect_person liefert seit dieser Spec zwar bereits
+    (Vorgriffs-Ergaenzung der Spec 0037: detect_person liefert seit dieser Spec zwar bereits
     FaceBoundingBox-Listen fuer die kuenftige Goldener-Schnitt-Kriterien-Spec 0038, funktional
-    aendert sich fuer dieses Kriterium hier nichts)."""
+    aendert sich fuer dieses Kriterium hier nichts).
+
+    Hinweis (Spec 0038, Review-Nachtrag 2026-08-15): worker.py::_compute_content_criteria ruft
+    diese Funktion seit Spec 0038 NICHT mehr direkt auf, sondern detect_person +
+    content_people_from_faces getrennt (um die bereits erkannten faces auch fuer goldener_schnitt
+    wiederzuverwenden, ohne detect_person zweimal aufzurufen). compute_content_people bleibt
+    trotzdem als eigenstaendige, weiterhin getestete Einheit bestehen (Spec-0037-Vertrag, nicht
+    Teil des Scopes dieser Spec, hier entfernt zu werden) - reiner Delegations-Wrapper um
+    content_people_from_faces, kein doppelt gepflegter Logikpfad."""
     return content_people_from_faces(detect_person(image, detector))
 
 
@@ -176,7 +182,18 @@ def compute_golden_ratio_score(
     _select_primary_subject) an einem der vier Drittel-Schnittpunkte liegt, invers auf [0, 1]
     normiert ueber _GOLDEN_RATIO_MAX_DISTANCE. Horizont-Linien-Erkennung ist bewusst nicht
     umgesetzt (Out-of-Scope der Spec: "keine neuen Bildverarbeitungsschritte fuer die
-    Kompositions-Analyse")."""
+    Kompositions-Analyse").
+
+    Bewusst eine reine Funktion OHNE eigenen detect_person/detect_animals-Aufruf (anders als ein
+    frueherer Entwurf mit einer zusaetzlichen `compute_golden_ratio(image, ...)`-Wrapper-Funktion,
+    Review-Fund: totes Produktionscode-Fragment, siehe Commit-Historie) - worker.py::
+    _compute_content_criteria ruft detect_person/detect_animals bereits fuer content_people/tier
+    auf und reicht die Ergebnislisten hier direkt durch (ein zusaetzlicher detect()-Aufruf pro
+    Foto waere angesichts des in ADR 0022 dokumentierten Compute-Overhead-Risikos unnoetig). Der
+    Wiederverwendungsnachweis (Akzeptanzkriterium der Spec: "Spy/Aufrufzaehler statt
+    Reimplementierung") liegt deshalb konsequent auf Worker-Integrationsebene, siehe
+    test_worker_criterion_scoring.py::
+    test_detect_person_and_detect_animals_are_each_called_at_most_once_per_photo."""
     subject = _select_primary_subject(faces, animals)
     if subject is None:
         # Dokumentierter, niedriger (nicht neutraler) Fallback-Wert (Akzeptanzkriterium der Spec)
@@ -190,24 +207,6 @@ def compute_golden_ratio_score(
         for tx, ty in _GOLDEN_RATIO_THIRD_POINTS
     )
     return max(0.0, min(1.0, 1.0 - distance / _GOLDEN_RATIO_MAX_DISTANCE))
-
-
-def compute_golden_ratio(
-    image: Image.Image, face_detector: FaceDetectorLike, animal_detector: ObjectDetectorLike
-) -> float:
-    """Registrierte `goldener_schnitt`-Kriterien-Funktion: ruft detect_person/detect_animals
-    WIEDER auf, statt Erkennung neu zu implementieren (Akzeptanzkriterium der Spec:
-    "Wiederverwendungsnachweis ... ueber Spy/Aufrufzaehler statt Reimplementierung", siehe
-    test_criteria.py::TestComputeGoldenRatioReusesDetection). worker.py::run_criterion_scoring
-    ruft diese Funktion bewusst NICHT direkt auf, sondern verwendet die dort ohnehin fuer
-    content_people/tier bereits berechneten Detektionslisten weiter (compute_golden_ratio_score
-    direkt) - ein zusaetzlicher detect()-Aufruf pro Foto und Detektortyp waere angesichts des in
-    ADR 0022 dokumentierten Compute-Overhead-Risikos unnoetig. Diese Funktion bleibt trotzdem als
-    eigenstaendig test- und aufrufbare Einheit bestehen (z.B. fuer einen isolierten
-    goldener_schnitt-Nachtrag-Lauf)."""
-    faces = detect_person(image, face_detector)
-    animals = detect_animals(image, animal_detector)
-    return compute_golden_ratio_score(faces, animals)
 
 
 def compute_tier_score(animals: Sequence[AnimalDetection]) -> float:

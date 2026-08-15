@@ -123,7 +123,7 @@ def _no_animal_detector() -> NoAnimalDetector:
 
 class NoSceneLabels:
     """Faket den mediapipe ImageClassifier so, dass keine Szenen-Kategorie gefunden wird - der
-    injizierte build_scene_classifier_fn-Callable ersetzt worker.py::build_scene_classifier
+    injizierte build_classifier-Callable ersetzt worker.py::build_scene_classifier
     (specs/features/0038: build_scene_classifier darf wie build_face_detector NIE in einem
     automatisierten Test aufgerufen werden, kein echtes .tflite-Modell in Tests)."""
 
@@ -137,7 +137,7 @@ def _no_scene_classifier() -> NoSceneLabels:
 
 class NeutralAestheticsModel:
     """Faket das Keras-Modell so, dass eine neutrale, gleichverteilte NIMA-Ratingverteilung
-    zurueckgegeben wird - der injizierte build_aesthetics_model_fn-Callable ersetzt
+    zurueckgegeben wird - der injizierte build_aesthetics-Callable ersetzt
     worker.py::build_aesthetics_model (specs/features/0038: build_aesthetics_model darf wie
     build_face_detector NIE in einem automatisierten Test aufgerufen werden, kein echtes
     tensorflow-Modell in Tests)."""
@@ -162,8 +162,8 @@ async def test_guard_fails_run_when_scoring_run_id_does_not_exist(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -191,8 +191,8 @@ async def test_guard_fails_run_when_scoring_run_id_is_stale(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -214,8 +214,8 @@ async def test_guard_fails_run_when_latest_scoring_run_is_not_successful(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.FAILED
@@ -239,8 +239,8 @@ async def test_writes_sharpness_and_exposure_criteria_from_existing_photo_score(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -276,8 +276,8 @@ async def test_upserts_existing_criterion_score_instead_of_duplicating(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
     # Zweiter Lauf mit geaenderten Rohwerten - der bestehende Wert wird ueberschrieben (Upsert),
     # keine zweite Zeile (UniqueConstraint(photo_id, criterion_key)).
@@ -294,8 +294,8 @@ async def test_upserts_existing_criterion_score_instead_of_duplicating(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     rows = (
@@ -330,8 +330,8 @@ async def test_only_considers_ausschuss_survivors(db_session: AsyncSession, tmp_
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -368,8 +368,8 @@ async def test_best_effort_content_criteria_failure_does_not_fail_the_run(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -461,8 +461,8 @@ async def test_tier_criterion_is_written_when_an_animal_is_detected(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_animal_detector_stub,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     criteria = {
@@ -500,8 +500,8 @@ async def test_tier_criterion_best_effort_failure_does_not_fail_the_run_or_other
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=BrokenAnimalDetector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -541,8 +541,8 @@ async def test_gebaeude_criterion_is_written_when_an_architecture_label_is_detec
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_scene_classifier_stub,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_scene_classifier_stub,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     criteria = {
@@ -580,8 +580,8 @@ async def test_gebaeude_criterion_best_effort_failure_does_not_fail_the_run_or_o
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=BrokenSceneClassifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=BrokenSceneClassifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -624,8 +624,8 @@ async def test_aesthetics_criterion_is_written_from_the_model_prediction(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=HighRatingAestheticsModel,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=HighRatingAestheticsModel,
     )
 
     criteria = {
@@ -663,8 +663,8 @@ async def test_aesthetics_criterion_best_effort_failure_does_not_fail_the_run_or
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=BrokenAestheticsModel,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=BrokenAestheticsModel,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -708,8 +708,8 @@ async def test_goldener_schnitt_best_effort_failure_when_face_detection_fails(
         cache_dir=tmp_path,
         build_detector=BrokenFaceDetector,
         build_animal_detector=_animal_detector_stub,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -744,8 +744,8 @@ async def test_goldener_schnitt_is_written_when_both_detections_succeed_even_wit
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     criteria = {
@@ -786,8 +786,8 @@ async def test_detect_person_and_detect_animals_are_each_called_at_most_once_per
         cache_dir=tmp_path,
         build_detector=lambda: face_detector,
         build_animal_detector=lambda: animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert face_detector.call_count == 1
@@ -815,8 +815,8 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     rankings = (
@@ -864,8 +864,8 @@ async def test_partitions_are_isolated_by_cluster_and_category(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     rankings = (
@@ -905,8 +905,8 @@ async def test_progress_is_committed_periodically(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.photos_total == 3
@@ -937,8 +937,8 @@ async def test_criterion_scoring_updates_last_progress_at_at_each_checkpoint(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.last_progress_at == sentinel
@@ -972,8 +972,8 @@ async def test_run_marked_failed_on_cancelled_error(
             cache_dir=tmp_path,
             build_detector=CancellingDetector,
             build_animal_detector=_no_animal_detector,
-            build_scene_classifier_fn=_no_scene_classifier,
-            build_aesthetics_model_fn=_no_aesthetics_model,
+            build_classifier=_no_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
         )
         raised = False
     except asyncio.CancelledError:
@@ -1010,8 +1010,8 @@ async def test_rescoring_does_not_overwrite_ratings(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
     second_run = await run_criterion_scoring(
         db_session,
@@ -1020,8 +1020,8 @@ async def test_rescoring_does_not_overwrite_ratings(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert first_run.status == ScanStatus.SUCCESS
@@ -1051,8 +1051,8 @@ async def test_end_to_end_with_run_project_scoring(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_scene_classifier_fn=_no_scene_classifier,
-        build_aesthetics_model_fn=_no_aesthetics_model,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
     )
 
     assert run.status == ScanStatus.SUCCESS

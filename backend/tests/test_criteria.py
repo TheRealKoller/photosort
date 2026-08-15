@@ -14,7 +14,6 @@ from photosort.criteria import (
     compute_content_landscape,
     compute_content_people,
     compute_gebaeude_score,
-    compute_golden_ratio,
     compute_golden_ratio_score,
     compute_tier_score,
     derive_category_key,
@@ -224,36 +223,13 @@ class TestComputeGebaeudeScore:
         assert compute_gebaeude_score(labels) == 0.8
 
 
-class SpyFaceDetector:
-    """Zaehlt Aufrufe von detect() - Wiederverwendungsnachweis fuer compute_golden_ratio
-    (Akzeptanzkriterium der Spec: "Spy/Aufrufzaehler statt Reimplementierung")."""
-
-    def __init__(self) -> None:
-        self.call_count = 0
-
-    def detect(self, image: object) -> object:
-        self.call_count += 1
-        return SimpleNamespace(detections=[])
-
-
-class SpyAnimalDetector:
-    def __init__(self) -> None:
-        self.call_count = 0
-
-    def detect(self, image: object) -> object:
-        self.call_count += 1
-        return SimpleNamespace(detections=[])
-
-
-class TestComputeGoldenRatioReusesDetection:
-    def test_calls_detect_person_and_detect_animals_instead_of_reimplementing(self) -> None:
-        face_detector = SpyFaceDetector()
-        animal_detector = SpyAnimalDetector()
-
-        compute_golden_ratio(_solid(), face_detector, animal_detector)
-
-        assert face_detector.call_count == 1
-        assert animal_detector.call_count == 1
+# Wiederverwendungsnachweis fuer detect_person/detect_animals im Goldener-Schnitt-Kontext
+# (Akzeptanzkriterium der Spec: "Spy/Aufrufzaehler statt Reimplementierung") lebt bewusst auf
+# Worker-Integrationsebene statt hier, siehe test_worker_criterion_scoring.py::
+# test_detect_person_and_detect_animals_are_each_called_at_most_once_per_photo -
+# compute_golden_ratio_score selbst ist eine reine Funktion ohne eigenen detect()-Aufruf (siehe
+# Docstring in criteria.py), ein Spy-Test dagegen wuerde nur die Aufrufliste der Testfunktion
+# selbst zaehlen, nicht die tatsaechliche Produktions-Verdrahtung.
 
 
 class TestDeriveCategoryKey:

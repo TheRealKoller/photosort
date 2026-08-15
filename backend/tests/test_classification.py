@@ -192,6 +192,24 @@ class TestDetectAnimals:
     def test_returns_empty_list_when_no_detections_at_all(self) -> None:
         assert detect_animals(_solid(), FakeObjectDetector([])) == []
 
+    def test_ignores_a_detection_with_an_empty_categories_list(self) -> None:
+        # Degenerierter Grenzfall: das Modell liefert eine Erkennung (Bounding-Box), aber ohne
+        # jede Kategorie-Zuordnung - darf nicht crashen (IndexError bei categories[0]).
+        class NoCategoryDetector:
+            def detect(self, image: object) -> object:
+                return SimpleNamespace(
+                    detections=[
+                        SimpleNamespace(
+                            categories=[],
+                            bounding_box=SimpleNamespace(
+                                origin_x=0, origin_y=0, width=10, height=10
+                            ),
+                        )
+                    ]
+                )
+
+        assert detect_animals(_solid(), NoCategoryDetector()) == []
+
     def test_ignores_a_non_animal_category_even_with_high_confidence(self) -> None:
         # "car" ist eine reguläre COCO-Klasse, aber kein Tier - muss trotz hoher Konfidenz
         # herausgefiltert werden (Verifikation, dass tatsaechlich ANIMAL_CATEGORIES filtert).
