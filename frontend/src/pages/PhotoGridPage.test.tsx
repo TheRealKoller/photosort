@@ -102,6 +102,15 @@ describe('PhotoGridPage', () => {
     setToken(makeToken({ sub: '1', username: 'testuser' }))
   })
 
+  it('no longer renders its own "Zurück zum Projekt" link (specs/features/0033, AK7 - now covered by the sticky header link)', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
+
+    renderPage()
+
+    await screen.findByText('Keine Fotos mit diesem Filter.')
+    expect(screen.queryByRole('link', { name: /zurück zum projekt/i })).not.toBeInTheDocument()
+  })
+
   it('shows skeleton placeholder tiles instead of a blocking spinner while loading', () => {
     vi.mocked(photosApi.listPhotos).mockReturnValue(new Promise(() => {}))
 
