@@ -1,6 +1,6 @@
 # 0030 - Scan-Statistik: Layout-Fix und Hilfetext für "Entfernt"/"Übersprungen"
 
-**Status:** Accepted
+**Status:** Implemented ([PR #97](https://github.com/TheRealKoller/photosort/pull/97))
 **Erstellt:** 2026-08-09
 **Bezug:** [`inbox/0008-statistiken-darstellung-unklar.md`](../inbox/0008-statistiken-darstellung-unklar.md), [`features/0005-minimal-project-frontend.md`](./0005-minimal-project-frontend.md), Idea-Sharpening-Gespräch mit Daniel am 2026-08-09
 
