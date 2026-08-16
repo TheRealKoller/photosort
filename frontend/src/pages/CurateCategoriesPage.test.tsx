@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -126,7 +126,10 @@ function renderPage(initialPath = '/projects/1/curate?topN=3') {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   )
-  return render(
+  // `queryClient` wird mit zurueckgegeben (Erweiterung fuer Spec 0043): einzelne Tests loesen
+  // damit gezielt einen Refetch aus (`queryClient.invalidateQueries(...)`), ohne denselben Pfad
+  // wie eine echte Verwerfen-Mutation ueber die UI nachstellen zu muessen.
+  return { ...render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
         <Route path="/projects/:projectId" element={<p>Projekt-Detailseite</p>} />
@@ -134,7 +137,7 @@ function renderPage(initialPath = '/projects/1/curate?topN=3') {
       </Routes>
     </MemoryRouter>,
     { wrapper }
-  )
+  ), queryClient }
 }
 
 describe('CurateCategoriesPage', () => {
@@ -220,11 +223,15 @@ describe('CurateCategoriesPage', () => {
 
     renderPage()
 
+    // Die Tages-Kopfzeile ist seit Spec 0043 ein <button> innerhalb des <h2> (klappbarer
+    // Trigger, dessen textContent zusätzlich das rein dekorative Auf-/Zuklapp-Symbol enthält) -
+    // die Reihenfolge wird deshalb per Regex auf den Wochentag/Datum-Teil geprüft statt über
+    // exakte Gleichheit des rohen h2-textContent.
     const headings = await screen.findAllByRole('heading', { level: 2 })
-    expect(headings.map((heading) => heading.textContent)).toEqual([
-      'Montag 20.07.2026',
-      'Dienstag 21.07.2026',
-    ])
+    const dayLabels = headings.map(
+      (heading) => heading.textContent?.match(/(Montag|Dienstag) \d{2}\.\d{2}\.\d{4}/)?.[0]
+    )
+    expect(dayLabels).toEqual(['Montag 20.07.2026', 'Dienstag 21.07.2026'])
   })
 
   it(
@@ -553,5 +560,289 @@ describe('CurateCategoriesPage', () => {
 
     const link = await screen.findByRole('link', { name: /zurück zum projekt/i })
     expect(link).toHaveAttribute('href', '/projects/1')
+  })
+
+  // Spec 0043 (Kuratierung: Tage auf-/zuklappbar).
+  describe('collapsible day sections (Spec 0043)', () => {
+    function twoCategoryDayList(): PhotoListOut {
+      return {
+        items: [
+          photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }) }),
+          photo({ id: 2, ranking: ranking({ cluster_key: 'cluster-0', category_key: 'people' }) }),
+        ],
+        total: 2,
+      }
+    }
+
+    it('renders every day header as an expanded trigger by default (Akzeptanzkriterium 2)', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(twoCategoryDayList())
+
+      renderPage()
+
+      const trigger = await screen.findByRole('button', { name: 'Montag 20.07.2026' })
+      expect(trigger).toHaveAttribute('aria-expanded', 'true')
+      // Kein Kurzinfo-Text im aufgeklappten Zustand (Akzeptanzkriterium 5).
+      expect(screen.queryByText(/\(\d+ Fotos\)/)).not.toBeInTheDocument()
+      // Cluster-/Kategorie-Teilbaum ist sichtbar.
+      expect(screen.getByText('Landscape')).toBeInTheDocument()
+    })
+
+    it(
+      'collapses only the clicked day on trigger click, removes its subtree from the DOM and ' +
+        'shows the (X Fotos) short info, leaving other days untouched (Akzeptanzkriterien 1, 3, 4, 5, 6)',
+      async () => {
+        const list: PhotoListOut = {
+          items: [
+            ...twoCategoryDayList().items,
+            // Bewusst ein anderer Zeitstempel/Bucket (Nachmittags statt Vormittags) als der
+            // Montags-Cluster, damit sich die beiden Tage per eindeutiger Cluster-Ueberschrift
+            // unterscheiden lassen statt ueber die (in beiden Tagen gleich benannte)
+            // Kategorie "Landscape".
+            photo({
+              id: 3,
+              taken_at: '2026-07-21T14:00:00',
+              ranking: ranking({ cluster_key: 'cluster-1', category_key: 'landscape' }),
+            }),
+          ],
+          total: 3,
+        }
+        vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+        const user = userEvent.setup()
+
+        renderPage()
+        const mondayTrigger = await screen.findByRole('button', { name: 'Montag 20.07.2026' })
+        const tuesdayTrigger = screen.getByRole('button', { name: 'Dienstag 21.07.2026' })
+        expect(screen.getByText('Vormittags (10:00 Uhr)')).toBeInTheDocument()
+        expect(screen.getByText('Nachmittags (14:00 Uhr)')).toBeInTheDocument()
+
+        await user.click(mondayTrigger)
+
+        expect(mondayTrigger).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.getByRole('button', { name: 'Montag 20.07.2026 (2 Fotos)' })).toBe(
+          mondayTrigger
+        )
+        // Teilbaum ist nicht nur CSS-versteckt, sondern per conditional JSX gar nicht gerendert.
+        expect(screen.queryByText('Vormittags (10:00 Uhr)')).not.toBeInTheDocument()
+        expect(screen.queryByText('People')).not.toBeInTheDocument()
+        // Der andere Tag bleibt unveraendert aufgeklappt.
+        expect(tuesdayTrigger).toHaveAttribute('aria-expanded', 'true')
+        expect(screen.getByText('Nachmittags (14:00 Uhr)')).toBeInTheDocument()
+      }
+    )
+
+    it(
+      'shows the correct (0 Fotos) short info for a collapsed empty day and hides its ' +
+        'empty-state text (Akzeptanzkriterium 8)',
+      async () => {
+        vi.mocked(photosApi.listPhotos)
+          .mockResolvedValueOnce({
+            items: [photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0' }) })],
+            total: 1,
+          })
+          .mockResolvedValueOnce({ items: [], total: 0 })
+        vi.mocked(ratingsApi.setRating).mockResolvedValue({
+          user_id: 1,
+          username: 'testuser',
+          status: 'rejected',
+        })
+        const user = userEvent.setup()
+
+        renderPage('/projects/1/curate?topN=1')
+        const rejectButton = await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
+        await user.click(rejectButton)
+        await waitFor(() =>
+          expect(screen.queryByRole('button', { name: 'Verwerfen: a.jpg' })).not.toBeInTheDocument()
+        )
+        expect(screen.getByText('Keine Fotos für diesen Tag')).toBeInTheDocument()
+
+        const trigger = screen.getByRole('button', { name: 'Montag 20.07.2026' })
+        await user.click(trigger)
+
+        expect(trigger).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.getByRole('button', { name: 'Montag 20.07.2026 (0 Fotos)' })).toBeInTheDocument()
+        expect(screen.queryByText('Keine Fotos für diesen Tag')).not.toBeInTheDocument()
+      }
+    )
+
+    it(
+      'sets aria-expanded/aria-controls correctly and links the trigger to an existing panel ' +
+        'id while expanded (Akzeptanzkriterium 11)',
+      async () => {
+        vi.mocked(photosApi.listPhotos).mockResolvedValue(twoCategoryDayList())
+
+        renderPage()
+
+        const trigger = await screen.findByRole('button', { name: 'Montag 20.07.2026' })
+        const controlsId = trigger.getAttribute('aria-controls')
+        expect(controlsId).toBeTruthy()
+        expect(trigger).toHaveAttribute('aria-expanded', 'true')
+        // eslint-disable-next-line testing-library/no-node-access -- Verifiziert die aria-controls-Verknuepfung selbst per ID-Lookup, kein Ersatz fuer eine Rollen-Query.
+        expect(document.getElementById(controlsId as string)).not.toBeNull()
+      }
+    )
+
+    it(
+      'renders two always-visible global "expand/collapse all" buttons above the day list that ' +
+        'work with a single day in the project (Akzeptanzkriterium 7)',
+      async () => {
+        vi.mocked(photosApi.listPhotos).mockResolvedValue(twoCategoryDayList())
+        const user = userEvent.setup()
+
+        renderPage()
+        const dayTrigger = await screen.findByRole('button', { name: 'Montag 20.07.2026' })
+        const collapseAll = screen.getByRole('button', { name: 'Alle Tage zuklappen' })
+        const expandAll = screen.getByRole('button', { name: 'Alle Tage aufklappen' })
+
+        await user.click(collapseAll)
+        expect(dayTrigger).toHaveAttribute('aria-expanded', 'false')
+
+        await user.click(expandAll)
+        expect(dayTrigger).toHaveAttribute('aria-expanded', 'true')
+      }
+    )
+
+    it(
+      'does not retroactively collapse a dayKey that appears only after "Alle Tage zuklappen" ' +
+        'was clicked (Akzeptanzkriterium 10)',
+      async () => {
+        vi.mocked(photosApi.listPhotos)
+          .mockResolvedValueOnce({
+            items: [photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0' }) })],
+            total: 1,
+          })
+          .mockResolvedValueOnce({
+            items: [
+              photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0' }) }),
+              photo({
+                id: 2,
+                taken_at: '2026-07-21T10:00:00',
+                ranking: ranking({ cluster_key: 'cluster-1' }),
+              }),
+            ],
+            total: 2,
+          })
+        const user = userEvent.setup()
+
+        const { queryClient } = renderPage()
+        await screen.findByRole('button', { name: 'Montag 20.07.2026' })
+        await user.click(screen.getByRole('button', { name: 'Alle Tage zuklappen' }))
+        expect(screen.getByRole('button', { name: /Montag 20\.07\.2026/ })).toHaveAttribute(
+          'aria-expanded',
+          'false'
+        )
+
+        // Der neue Tag "erscheint" ueber denselben Invalidierungs-/Refetch-Pfad, den auch eine
+        // echte Verwerfen-Mutation ausloest (useSetRatingMutation:
+        // `queryClient.invalidateQueries({ queryKey: ['photos', projectId] })`) - hier direkt
+        // ausgeloest, um unabhaengig vom (im zugeklappten Zustand ohnehin unsichtbaren)
+        // Verwerfen-Button ausschliesslich das Klapp-Verhalten des neuen Tages zu pruefen.
+        await act(async () => {
+          await queryClient.invalidateQueries({ queryKey: ['photos', 1] })
+        })
+
+        await screen.findByRole('button', { name: 'Dienstag 21.07.2026' })
+
+        expect(screen.getByRole('button', { name: /Montag 20\.07\.2026/ })).toHaveAttribute(
+          'aria-expanded',
+          'false'
+        )
+        expect(screen.getByRole('button', { name: 'Dienstag 21.07.2026' })).toHaveAttribute(
+          'aria-expanded',
+          'true'
+        )
+      }
+    )
+
+    it(
+      'live-updates the (X Fotos) short info of a collapsed day once its last visible photo ' +
+        'resolves as rejected, without changing any collapse state (Akzeptanzkriterium 9)',
+      async () => {
+        let resolveRefetch: (value: PhotoListOut) => void = () => {}
+        vi.mocked(photosApi.listPhotos)
+          .mockResolvedValueOnce({
+            items: [photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0' }) })],
+            total: 1,
+          })
+          .mockReturnValueOnce(
+            new Promise((resolve) => {
+              resolveRefetch = resolve
+            })
+          )
+        vi.mocked(ratingsApi.setRating).mockResolvedValue({
+          user_id: 1,
+          username: 'testuser',
+          status: 'rejected',
+        })
+        const user = userEvent.setup()
+
+        renderPage('/projects/1/curate?topN=1')
+        const rejectButton = await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
+        await user.click(rejectButton)
+        // Kurzinfo erscheint erst nach dem Zuklappen (Akzeptanzkriterium 5) - vorher traegt der
+        // Trigger noch keine Fotoanzahl im Namen.
+        const trigger = screen.getByRole('button', { name: 'Montag 20.07.2026' })
+        await user.click(trigger)
+        expect(trigger).toHaveAttribute('aria-expanded', 'false')
+        expect(trigger).toHaveTextContent('(1 Fotos)')
+
+        resolveRefetch({ items: [], total: 0 })
+
+        await waitFor(() =>
+          expect(
+            screen.getByRole('button', { name: 'Montag 20.07.2026 (0 Fotos)' })
+          ).toBeInTheDocument()
+        )
+        expect(
+          screen.getByRole('button', { name: 'Montag 20.07.2026 (0 Fotos)' })
+        ).toHaveAttribute('aria-expanded', 'false')
+      }
+    )
+
+    it(
+      'leaves no permanently hanging skeleton tile after collapsing and re-expanding a day ' +
+        'while its reject mutation is still pending (Akzeptanzkriterium 12)',
+      async () => {
+        let resolveRefetch: (value: PhotoListOut) => void = () => {}
+        vi.mocked(photosApi.listPhotos)
+          .mockResolvedValueOnce({
+            items: [photo({ id: 1, ranking: ranking({ rank_position: 1 }) })],
+            total: 1,
+          })
+          .mockReturnValueOnce(
+            new Promise((resolve) => {
+              resolveRefetch = resolve
+            })
+          )
+        vi.mocked(ratingsApi.setRating).mockResolvedValue({
+          user_id: 1,
+          username: 'testuser',
+          status: 'rejected',
+        })
+        const user = userEvent.setup()
+
+        renderPage()
+        const rejectButton = await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
+        await user.click(rejectButton)
+
+        // Kurzinfo erscheint erst nach dem Zuklappen (Akzeptanzkriterium 5), der Trigger wird
+        // deshalb ueber seinen aufgeklappten Namen gefunden - `trigger` bleibt danach dieselbe
+        // DOM-Referenz, unabhaengig vom sich aendernden zugaenglichen Namen.
+        const trigger = screen.getByRole('button', { name: 'Montag 20.07.2026' })
+        await user.click(trigger) // collapse while the mutation is still pending
+        expect(trigger).toHaveTextContent('(1 Fotos)')
+        await user.click(trigger) // expand again, still pending
+
+        resolveRefetch({
+          items: [photo({ id: 2, relative_path: 'b.jpg', ranking: ranking({ rank_position: 2 }) })],
+          total: 1,
+        })
+
+        await waitFor(() =>
+          expect(screen.getByRole('button', { name: 'Verwerfen: b.jpg' })).toBeInTheDocument()
+        )
+        expect(screen.queryByRole('button', { name: 'Verwerfen: a.jpg' })).not.toBeInTheDocument()
+        expect(screen.queryByTestId('button-spinner')).not.toBeInTheDocument()
+      }
+    )
   })
 })
