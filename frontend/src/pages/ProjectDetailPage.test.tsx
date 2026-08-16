@@ -255,7 +255,7 @@ describe('ProjectDetailPage', () => {
       expect(removedDetails).not.toBeNull()
       expect(removedDetails).not.toHaveAttribute('open')
 
-      const skippedDetails = screen.getByText('Übersprungen').closest('details')
+      const skippedDetails = (await screen.findByText('Übersprungen')).closest('details')
       expect(skippedDetails).not.toBeNull()
       expect(skippedDetails).not.toHaveAttribute('open')
     })
@@ -306,7 +306,7 @@ describe('ProjectDetailPage', () => {
       renderWithScan()
 
       const removedSummary = await screen.findByText('Entfernt')
-      const skippedSummary = screen.getByText('Übersprungen')
+      const skippedSummary = await screen.findByText('Übersprungen')
       const removedDetails = removedSummary.closest('details')!
       const skippedDetails = skippedSummary.closest('details')!
 
@@ -322,7 +322,7 @@ describe('ProjectDetailPage', () => {
       renderWithScan({ photos_removed: 0, files_skipped: 0 })
 
       const removedDetails = (await screen.findByText('Entfernt')).closest('details')!
-      const skippedDetails = screen.getByText('Übersprungen').closest('details')!
+      const skippedDetails = (await screen.findByText('Übersprungen')).closest('details')!
       expect(removedDetails).not.toHaveAttribute('open')
       expect(skippedDetails).not.toHaveAttribute('open')
 
