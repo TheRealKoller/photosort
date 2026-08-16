@@ -165,9 +165,6 @@ export function ProjectDetailPage() {
     return (
       <div className="flex flex-col items-start gap-3">
         <p className="text-text">Projekt nicht gefunden.</p>
-        <Button asChild variant="ghost">
-          <Link to="/">Zurück zur Projektliste</Link>
-        </Button>
       </div>
     )
   }
@@ -186,9 +183,6 @@ export function ProjectDetailPage() {
         <Alert>
           {query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden des Projekts.'}
         </Alert>
-        <Button asChild variant="ghost">
-          <Link to="/">Zurück zur Projektliste</Link>
-        </Button>
       </div>
     )
   }
@@ -655,10 +649,6 @@ export function ProjectDetailPage() {
           <Link to={`/projects/${project.id}/compare`}>Bewertungen vergleichen</Link>
         </Button>
       </nav>
-
-      <Button asChild variant="ghost" className="self-start">
-        <Link to="/">Zurück zur Projektliste</Link>
-      </Button>
     </div>
   )
 }

@@ -104,10 +104,6 @@ export function PhotoComparePage() {
           {query.isFetchingNextPage ? 'Lädt…' : 'Weitere laden'}
         </Button>
       )}
-
-      <Button asChild variant="ghost" className="self-start">
-        <Link to={`/projects/${id}`}>Zurück zum Projekt</Link>
-      </Button>
     </div>
   )
 }

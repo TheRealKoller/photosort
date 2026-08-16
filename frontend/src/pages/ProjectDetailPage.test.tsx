@@ -562,22 +562,31 @@ describe('ProjectDetailPage', () => {
     expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled()
   })
 
-  it('has a back link to the project list even in the generic (non-404) error state', async () => {
+  it('no longer renders its own "Zurück zur Projektliste" link in the generic (non-404) error state (specs/features/0033, AK7 - now covered by the sticky header/wordmark link)', async () => {
     vi.mocked(projectsApi.getProject).mockRejectedValue(new ApiError(500, 'Serverfehler'))
 
     renderPage()
 
     await screen.findByRole('alert')
-    expect(screen.getByRole('link', { name: /zurück/i })).toHaveAttribute('href', '/')
+    expect(screen.queryByRole('link', { name: /zurück/i })).not.toBeInTheDocument()
   })
 
-  it('has a back link to the project list', async () => {
+  it('no longer renders its own "Zurück zur Projektliste" link on the not-found state (specs/features/0033, AK7 - now covered by the sticky header/wordmark link)', async () => {
+    vi.mocked(projectsApi.getProject).mockRejectedValue(new ApiError(404, 'Projekt nicht gefunden.'))
+
+    renderPage()
+
+    await screen.findByText(/projekt nicht gefunden/i)
+    expect(screen.queryByRole('link', { name: /zurück/i })).not.toBeInTheDocument()
+  })
+
+  it('no longer renders its own "Zurück zur Projektliste" link once loaded successfully (specs/features/0033, AK7 - now covered by the sticky header/wordmark link)', async () => {
     vi.mocked(projectsApi.getProject).mockResolvedValue(project())
 
     renderPage()
 
     await screen.findByText('Costa Rica')
-    expect(screen.getByRole('link', { name: /zurück/i })).toHaveAttribute('href', '/')
+    expect(screen.queryByRole('link', { name: /zurück/i })).not.toBeInTheDocument()
   })
 
   it('links to the photo grid and compare view of this project', async () => {
