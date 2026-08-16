@@ -377,17 +377,57 @@ export function ProjectDetailPage() {
         )}
 
         {project.last_scan?.status === 'success' && (
+          // specs/features/0030-scan-statistik-layout-und-hilfetext.md: jedes dt/dd-Paar in einen
+          // eigenen Wrapper-div gruppiert, statt als flache dt,dd,dt,dd,...-Folge - bei 10 direkten
+          // Kind-Elementen auf einem CSS-Grid landeten Label und Wert bei sm:grid-cols-3 (10 ist
+          // kein Vielfaches von 3) "ausser Phase" in unterschiedlichen Zeilen. Die 5 Wrapper-divs
+          // sind jetzt die tatsaechlichen Grid-Items, ein <dl><div><dt/><dd/></div>...</dl> ist
+          // gueltiges HTML5 (dl erlaubt entweder direkte dt/dd-Folgen oder eine Reihe von divs mit
+          // je einem Paar).
           <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-text sm:grid-cols-3">
-            <dt className="text-text">Hinzugefügt</dt>
-            <dd className="text-text-h">{project.last_scan.photos_added}</dd>
-            <dt className="text-text">Aktualisiert</dt>
-            <dd className="text-text-h">{project.last_scan.photos_updated}</dd>
-            <dt className="text-text">Entfernt</dt>
-            <dd className="text-text-h">{project.last_scan.photos_removed}</dd>
-            <dt className="text-text">Übersprungen</dt>
-            <dd className="text-text-h">{project.last_scan.files_skipped}</dd>
-            <dt className="text-text">Dateien gefunden</dt>
-            <dd className="text-text-h">{project.last_scan.files_found}</dd>
+            <div className="flex gap-1">
+              <dt className="text-text">Hinzugefügt</dt>
+              <dd className="text-text-h">{project.last_scan.photos_added}</dd>
+            </div>
+            <div className="flex gap-1">
+              <dt className="text-text">Aktualisiert</dt>
+              <dd className="text-text-h">{project.last_scan.photos_updated}</dd>
+            </div>
+            <div className="flex gap-1">
+              {/* Statischer Hilfetext auf Label-Ebene (specs/features/0030, Design-System-Muster):
+                  natives <details>/<summary> statt title-Attribut, da title auf Touchgeraeten
+                  meist nicht auslösbar ist. Kein gemeinsames name-Attribut auf den beiden
+                  <details> - togglen sonst exklusiv wie ein Akkordeon statt unabhaengig. */}
+              <dt className="text-text">
+                <details>
+                  <summary className="cursor-pointer underline decoration-dotted decoration-text/60">
+                    Entfernt
+                  </summary>
+                  <p className="mt-1 text-xs text-text">
+                    Datei wurde am Ursprungsort in OpenCloud nicht mehr gefunden und daher aus
+                    PhotoSort entfernt.
+                  </p>
+                </details>
+              </dt>
+              <dd className="text-text-h">{project.last_scan.photos_removed}</dd>
+            </div>
+            <div className="flex gap-1">
+              <dt className="text-text">
+                <details>
+                  <summary className="cursor-pointer underline decoration-dotted decoration-text/60">
+                    Übersprungen
+                  </summary>
+                  <p className="mt-1 text-xs text-text">
+                    Dateiendung wird nicht unterstützt (unterstützt: JPG, PNG, HEIC, HEIF).
+                  </p>
+                </details>
+              </dt>
+              <dd className="text-text-h">{project.last_scan.files_skipped}</dd>
+            </div>
+            <div className="flex gap-1">
+              <dt className="text-text">Dateien gefunden</dt>
+              <dd className="text-text-h">{project.last_scan.files_found}</dd>
+            </div>
           </dl>
         )}
 
