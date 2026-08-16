@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react'
 import { Link, Navigate, Outlet, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router'
 
 import { ProtectedRoute } from './auth/ProtectedRoute'
@@ -21,8 +22,12 @@ import { ProjectListPage } from './pages/ProjectListPage'
 // bekommt. Explizite Aufzaehlung statt eines Wildcards wie "/projects/:projectId/*", da ein
 // Wildcard "/projects/new" faelschlich als Projektkontext mit projectId="new" matchen wuerde
 // (AK3). /projects/:projectId/curate ist bewusst NICHT enthalten (Spec-Entscheidung, nur die
-// vier explizit genannten Routen).
-const PROJECT_ROUTES: { path: string; element: JSX.Element }[] = [
+// vier explizit genannten Routen). `element` ist als `ReactElement` typisiert statt des
+// woertlich in der Spec genannten globalen `JSX.Element` - unter diesem tsconfig
+// (moduleDetection: "force", kein globaler JSX-Namespace importiert) loest `JSX.Element` TS2503
+// ("Cannot find namespace 'JSX'") aus; `ReactElement` aus `react` ist das Modul-basierte
+// Aequivalent und typprueft sauber.
+const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   { path: '/projects/:projectId', element: <ProjectDetailPage /> },
   { path: '/projects/:projectId/photos', element: <PhotoGridPage /> },
   { path: '/projects/:projectId/photos/:photoId', element: <PhotoDetailPage /> },
