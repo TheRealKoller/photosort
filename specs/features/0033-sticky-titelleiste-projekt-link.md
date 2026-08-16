@@ -1,6 +1,6 @@
 # 0033 - Sticky Titelleiste mit Projekt-Kontext-Link
 
-**Status:** Accepted
+**Status:** Implemented ([PR #99](https://github.com/TheRealKoller/photosort/pull/99))
 **Erstellt:** 2026-08-09
 **Bezug:** [`inbox/0009-sticky-titelleiste-zurueck-link.md`](../inbox/0009-sticky-titelleiste-zurueck-link.md), [`features/0006-auth.md`](./0006-auth.md), Idea-Sharpening-Gespräch mit Daniel am 2026-08-09
 
@@ -105,7 +105,7 @@ function useProjectIdFromRoute(): string | null {
 }
 ```
 
-> **Korrektur bei der Umsetzung (PR #98):** Dieses Codebeispiel matcht `/projects/new`
+> **Korrektur bei der Umsetzung (PR #99):** Dieses Codebeispiel matcht `/projects/new`
 > fälschlich mit `projectId="new"` und verletzt damit AK3 — durch TDD im Rot-Schritt entdeckt.
 > Die tatsächliche Implementierung ergänzt einen `RESERVED_PROJECT_ID_SEGMENTS`-Ausschluss und
 > nutzt `ReactElement` statt `JSX.Element` (Typprüfungsfehler unter dem Projekt-`tsconfig`).
