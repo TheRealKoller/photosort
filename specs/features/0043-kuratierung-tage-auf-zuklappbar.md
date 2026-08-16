@@ -1,6 +1,6 @@
 # 0043 - Tage in der Kuratierungsansicht auf-/zuklappbar
 
-**Status:** Accepted
+**Status:** Implemented ([PR #100](https://github.com/TheRealKoller/photosort/pull/100))
 **Erstellt:** 2026-08-16
 **Bezug:** `specs/inbox/0024-kuratierung-tage-zuklappbar.md` (Ursprungs-Idee), revidiert Teile von Spec [`0039`](./0039-kuratierung-tage-und-benannte-cluster.md)
 

@@ -104,6 +104,37 @@ function categoriesHavePhotos(categories: { [categoryKey: string]: PhotoOut[] })
   return Object.values(categories).some((photos) => photos.length > 0)
 }
 
+/**
+ * Fotoanzahl eines Tages fuer die Kurzinfo im zugeklappten Zustand (Akzeptanzkriterium 6 der Spec
+ * 0043) - reine Ableitung aus bereits geladenen Daten (Summe `photos.length` ueber alle Cluster/
+ * Kategorien des Tages), kein neuer State/Request.
+ */
+export function countPhotosInDay(clustersForDay: {
+  [clusterKey: string]: { [categoryKey: string]: PhotoOut[] }
+}): number {
+  let total = 0
+  for (const categories of Object.values(clustersForDay)) {
+    for (const photos of Object.values(categories)) {
+      total += photos.length
+    }
+  }
+  return total
+}
+
+/**
+ * Toggelt den Klapp-Zustand eines einzelnen Tages (Akzeptanzkriterium 3 der Spec 0043) - liefert
+ * ein neues `Set` statt das uebergebene zu mutieren, andere `dayKey`s bleiben unveraendert.
+ */
+export function toggleDayCollapse(collapsedDayKeys: Set<string>, dayKey: string): Set<string> {
+  const next = new Set(collapsedDayKeys)
+  if (next.has(dayKey)) {
+    next.delete(dayKey)
+  } else {
+    next.add(dayKey)
+  }
+  return next
+}
+
 const SKELETON_TILE_COUNT = 6
 
 export function CurateCategoriesPage() {
@@ -125,6 +156,15 @@ export function CurateCategoriesPage() {
   // Query tauscht `data` erst aus, sobald die neuen Daten vorliegen (kein Zwischenzustand ohne
   // Daten), der Rest des Grids bleibt bis dahin unveraendert stehen.
   const [rejectingPhotoId, setRejectingPhotoId] = useState<number | null>(null)
+
+  // Klapp-Zustand der Tages-Abschnitte (Spec 0043): leeres Set = alles aufgeklappt (Default,
+  // Akzeptanzkriterium 2) - kein localStorage/sessionStorage/Query-Param, keine Persistierung
+  // ueber einen Reload hinaus (Out-of-Scope-Abschnitt der Spec).
+  const [collapsedDayKeys, setCollapsedDayKeys] = useState<Set<string>>(new Set())
+
+  function toggleDay(dayKey: string): void {
+    setCollapsedDayKeys((prev) => toggleDayCollapse(prev, dayKey))
+  }
 
   useEffect(() => {
     if (rejectingPhotoId !== null && !items.some((photo) => photo.id === rejectingPhotoId)) {
@@ -217,6 +257,30 @@ export function CurateCategoriesPage() {
         </p>
       )}
 
+      {dayKeys.length > 0 && (
+        // Zwei globale Aktionen (Akzeptanzkriterium 7 der Spec 0043) - bleiben auch bei genau
+        // einem Tag im Projekt sichtbar/funktionsfaehig, da hier nicht extra auf `dayKeys.length
+        // > 1` geprueft wird. Sekundaerer Ton (Hilfsfunktion, keine Akzentfarbe, UI/UX-Abschnitt).
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setCollapsedDayKeys(new Set())}
+          >
+            Alle Tage aufklappen
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setCollapsedDayKeys(new Set(dayKeys))}
+          >
+            Alle Tage zuklappen
+          </Button>
+        </div>
+      )}
+
       {dayKeys.map((dayKey) => {
         const clustersForDay = groups[dayKey]
         // Chronologisch nach dem fruehesten taken_at im Cluster sortiert, nicht lexikographisch
@@ -230,6 +294,9 @@ export function CurateCategoriesPage() {
           return 0
         })
         const dayIsEmpty = !Object.values(clustersForDay).some(categoriesHavePhotos)
+        // dayKey (Format YYYY-MM-DD) ist bereits ID-sicher (Architektur-Abschnitt der Spec 0043).
+        const panelId = `day-panel-${dayKey}`
+        const isCollapsed = collapsedDayKeys.has(dayKey)
         return (
           // UI/UX-Abschnitt der Spec: gap-6 (24px) gilt zwischen Tagen - das liefert bereits der
           // aeussere Seiten-Wrapper (naechste Zeile im JSX-Baum, `flex flex-col gap-6`), da jede
@@ -237,87 +304,123 @@ export function CurateCategoriesPage() {
           // stattdessen gap-4 (16px) zwischen den Clustern (Review-Fund ux-ui-designer: gap-6
           // hier haette faelschlich auch zwischen Clustern 24px statt 16px erzeugt).
           <section key={dayKey} className="flex flex-col gap-4">
-            <h2 className="text-xl font-semibold text-text-h">{formatDayHeading(dayKey)}</h2>
-            {dayIsEmpty && <p className="text-sm text-text">Keine Fotos für diesen Tag</p>}
-            {!dayIsEmpty &&
-              clusterKeysForDay.map((clusterKey) => {
-                const categories = clustersForDay[clusterKey]
-                const categoryKeys = Object.keys(categories).sort()
-                const clusterIsEmpty = !categoriesHavePhotos(categories)
-                const heading = clusterMetaRef.current.get(clusterKey)?.heading ?? clusterKey
-                return (
-                  <section key={clusterKey} className="flex flex-col gap-4">
-                    <h3 className="text-lg font-semibold text-text-h">{heading}</h3>
-                    {clusterIsEmpty && (
-                      <p className="text-sm text-text">Keine Fotos in dieser Tageszeit</p>
-                    )}
-                    {!clusterIsEmpty &&
-                      categoryKeys.map((categoryKey) => {
-                        const photos = categories[categoryKey]
-                        return (
-                          <div key={categoryKey} className="flex flex-col gap-2">
-                            <h4 className="flex items-center gap-2 text-sm font-semibold text-text-h">
-                              <CategoryBadge categoryKey={categoryKey} />
-                              {formatCategoryKey(categoryKey)}
-                            </h4>
-                            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                              {photos.map((photo) => {
-                                const isRejecting = rejectingPhotoId === photo.id
-                                const level = qualityLevel(photo.ranking?.rank_score ?? null)
-                                return (
-                                  <li key={photo.id} className="flex flex-col gap-1.5">
-                                    <div className="relative">
-                                      {isRejecting ? (
-                                        <Skeleton className="aspect-square w-full rounded-md" />
-                                      ) : (
-                                        <>
-                                          <PhotoImage
-                                            photoId={photo.id}
-                                            variant="thumbnail"
-                                            alt={photo.relative_path}
-                                            className="aspect-square w-full rounded-md object-cover"
-                                          />
-                                          {/* Einheitliche Position "oben rechts" (UI/UX-Abschnitt,
-                                              specs/features/0040-bewertungsdetails-info-popover.md) -
-                                              kein bereits belegtes Element in dieser Ecke. Waehrend
-                                              isRejecting zeigt die Kachel nur den Skeleton-
-                                              Platzhalter, kein Trigger. */}
-                                          <CriterionDetailsPopover
-                                            criterionScores={photo.criterion_scores}
-                                            ranking={photo.ranking}
-                                            suggestion={photo.suggestion}
-                                            className="absolute right-1.5 top-1.5"
-                                          />
-                                        </>
-                                      )}
-                                    </div>
-                                    {level && <QualityMeter level={level} className="text-xs" />}
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      disabled={isRejecting}
-                                      busy={isRejecting}
-                                      aria-label={`Verwerfen: ${photo.relative_path}`}
-                                      onClick={() => handleReject(photo)}
-                                    >
-                                      {isRejecting ? 'Wird verworfen…' : 'Verwerfen'}
-                                    </Button>
-                                  </li>
-                                )
-                              })}
-                              {photos.length < topN && (
-                                <li className="flex aspect-square w-full flex-col items-center justify-center rounded-md border border-dashed border-border p-2 text-center text-xs text-text">
-                                  Kein weiteres Foto verfügbar
-                                </li>
-                              )}
-                            </ul>
-                          </div>
-                        )
-                      })}
-                  </section>
-                )
-              })}
+            <h2 className="text-xl font-semibold text-text-h">
+              {/* Gesamte Kopfzeile als Trigger (Akzeptanzkriterium 1) - kein separates Icon als
+                  alleiniger interaktiver Traeger, `w-full`+`text-left` macht die ganze Zeile
+                  klickbar, `min-h-11` sichert ein Touch-Ziel von mindestens 44px. */}
+              <button
+                type="button"
+                aria-expanded={!isCollapsed}
+                aria-controls={panelId}
+                onClick={() => toggleDay(dayKey)}
+                className="flex min-h-11 w-full items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+              >
+                <span aria-hidden="true">{isCollapsed ? '▶' : '▼'}</span>
+                <span>{formatDayHeading(dayKey)}</span>
+                {/* Kurzinfo nur im zugeklappten Zustand (Akzeptanzkriterium 5) - reine Ableitung
+                    aus bereits geladenen Daten, kein neuer State/Request (Akzeptanzkriterium 6).
+                    Explizites `{' '}` (statt sich auf das visuelle `gap-2` zu verlassen): der
+                    zugaengliche Name eines Elements wird aus dem Text seiner Kindknoten
+                    zusammengesetzt, CSS-`gap` erzeugt dabei keinen Text-/Namensraum. */}
+                {isCollapsed && (
+                  <>
+                    {' '}
+                    <span className="font-normal text-text">
+                      {`(${countPhotosInDay(clustersForDay)} Fotos)`}
+                    </span>
+                  </>
+                )}
+              </button>
+            </h2>
+            {!isCollapsed && (
+              // Kompletter Cluster-Teilbaum wird bei Zugeklapptheit per conditional JSX gar nicht
+              // gerendert statt nur CSS-versteckt (Akzeptanzkriterium 4) - spart bei grossen
+              // Projekten auch tatsaechliche Render-Arbeit (Architektur-Abschnitt der Spec).
+              <div id={panelId} className="flex flex-col gap-4">
+                {dayIsEmpty && <p className="text-sm text-text">Keine Fotos für diesen Tag</p>}
+                {!dayIsEmpty &&
+                  clusterKeysForDay.map((clusterKey) => {
+                    const categories = clustersForDay[clusterKey]
+                    const categoryKeys = Object.keys(categories).sort()
+                    const clusterIsEmpty = !categoriesHavePhotos(categories)
+                    const heading = clusterMetaRef.current.get(clusterKey)?.heading ?? clusterKey
+                    return (
+                      <section key={clusterKey} className="flex flex-col gap-4">
+                        <h3 className="text-lg font-semibold text-text-h">{heading}</h3>
+                        {clusterIsEmpty && (
+                          <p className="text-sm text-text">Keine Fotos in dieser Tageszeit</p>
+                        )}
+                        {!clusterIsEmpty &&
+                          categoryKeys.map((categoryKey) => {
+                            const photos = categories[categoryKey]
+                            return (
+                              <div key={categoryKey} className="flex flex-col gap-2">
+                                <h4 className="flex items-center gap-2 text-sm font-semibold text-text-h">
+                                  <CategoryBadge categoryKey={categoryKey} />
+                                  {formatCategoryKey(categoryKey)}
+                                </h4>
+                                <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                                  {photos.map((photo) => {
+                                    const isRejecting = rejectingPhotoId === photo.id
+                                    const level = qualityLevel(photo.ranking?.rank_score ?? null)
+                                    return (
+                                      <li key={photo.id} className="flex flex-col gap-1.5">
+                                        <div className="relative">
+                                          {isRejecting ? (
+                                            <Skeleton className="aspect-square w-full rounded-md" />
+                                          ) : (
+                                            <>
+                                              <PhotoImage
+                                                photoId={photo.id}
+                                                variant="thumbnail"
+                                                alt={photo.relative_path}
+                                                className="aspect-square w-full rounded-md object-cover"
+                                              />
+                                              {/* Einheitliche Position "oben rechts" (UI/UX-Abschnitt,
+                                                  specs/features/0040-bewertungsdetails-info-popover.md) -
+                                                  kein bereits belegtes Element in dieser Ecke. Waehrend
+                                                  isRejecting zeigt die Kachel nur den Skeleton-
+                                                  Platzhalter, kein Trigger. */}
+                                              <CriterionDetailsPopover
+                                                criterionScores={photo.criterion_scores}
+                                                ranking={photo.ranking}
+                                                suggestion={photo.suggestion}
+                                                className="absolute right-1.5 top-1.5"
+                                              />
+                                            </>
+                                          )}
+                                        </div>
+                                        {level && (
+                                          <QualityMeter level={level} className="text-xs" />
+                                        )}
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          disabled={isRejecting}
+                                          busy={isRejecting}
+                                          aria-label={`Verwerfen: ${photo.relative_path}`}
+                                          onClick={() => handleReject(photo)}
+                                        >
+                                          {isRejecting ? 'Wird verworfen…' : 'Verwerfen'}
+                                        </Button>
+                                      </li>
+                                    )
+                                  })}
+                                  {photos.length < topN && (
+                                    <li className="flex aspect-square w-full flex-col items-center justify-center rounded-md border border-dashed border-border p-2 text-center text-xs text-text">
+                                      Kein weiteres Foto verfügbar
+                                    </li>
+                                  )}
+                                </ul>
+                              </div>
+                            )
+                          })}
+                      </section>
+                    )
+                  })}
+              </div>
+            )}
           </section>
         )
       })}
