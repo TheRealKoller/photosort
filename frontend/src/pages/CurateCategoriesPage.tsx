@@ -104,6 +104,37 @@ function categoriesHavePhotos(categories: { [categoryKey: string]: PhotoOut[] })
   return Object.values(categories).some((photos) => photos.length > 0)
 }
 
+/**
+ * Fotoanzahl eines Tages fuer die Kurzinfo im zugeklappten Zustand (Akzeptanzkriterium 6 der Spec
+ * 0043) - reine Ableitung aus bereits geladenen Daten (Summe `photos.length` ueber alle Cluster/
+ * Kategorien des Tages), kein neuer State/Request.
+ */
+export function countPhotosInDay(clustersForDay: {
+  [clusterKey: string]: { [categoryKey: string]: PhotoOut[] }
+}): number {
+  let total = 0
+  for (const categories of Object.values(clustersForDay)) {
+    for (const photos of Object.values(categories)) {
+      total += photos.length
+    }
+  }
+  return total
+}
+
+/**
+ * Toggelt den Klapp-Zustand eines einzelnen Tages (Akzeptanzkriterium 3 der Spec 0043) - liefert
+ * ein neues `Set` statt das uebergebene zu mutieren, andere `dayKey`s bleiben unveraendert.
+ */
+export function toggleDayCollapse(collapsedDayKeys: Set<string>, dayKey: string): Set<string> {
+  const next = new Set(collapsedDayKeys)
+  if (next.has(dayKey)) {
+    next.delete(dayKey)
+  } else {
+    next.add(dayKey)
+  }
+  return next
+}
+
 const SKELETON_TILE_COUNT = 6
 
 export function CurateCategoriesPage() {

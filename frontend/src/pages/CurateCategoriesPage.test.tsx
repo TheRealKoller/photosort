@@ -10,7 +10,7 @@ import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import type { CriterionScoreOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
 import { setToken } from '../auth/token'
-import { CurateCategoriesPage } from './CurateCategoriesPage'
+import { countPhotosInDay, CurateCategoriesPage, toggleDayCollapse } from './CurateCategoriesPage'
 
 vi.mock('../api/photos')
 vi.mock('../api/ratings')
@@ -57,6 +57,67 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     ...overrides,
   }
 }
+
+describe('countPhotosInDay', () => {
+  it('returns 0 for a day with no clusters', () => {
+    expect(countPhotosInDay({})).toBe(0)
+  })
+
+  it('sums photos.length across every cluster and category of the day', () => {
+    const clustersForDay = {
+      'cluster-a': {
+        landscape: [photo({ id: 1 }), photo({ id: 2 })],
+        people: [photo({ id: 3 })],
+      },
+      'cluster-b': {
+        landscape: [photo({ id: 4 })],
+      },
+    }
+
+    expect(countPhotosInDay(clustersForDay)).toBe(4)
+  })
+
+  it('ignores categories whose pool is already exhausted (photos.length === 0)', () => {
+    const clustersForDay = {
+      'cluster-a': {
+        landscape: [] as PhotoOut[],
+        people: [photo({ id: 1 })],
+      },
+    }
+
+    expect(countPhotosInDay(clustersForDay)).toBe(1)
+  })
+})
+
+describe('toggleDayCollapse', () => {
+  it('adds a dayKey that is not yet in the set (collapses it)', () => {
+    const result = toggleDayCollapse(new Set(), '2026-07-20')
+
+    expect(result.has('2026-07-20')).toBe(true)
+  })
+
+  it('removes a dayKey that is already in the set (expands it)', () => {
+    const result = toggleDayCollapse(new Set(['2026-07-20']), '2026-07-20')
+
+    expect(result.has('2026-07-20')).toBe(false)
+  })
+
+  it('leaves other dayKeys in the set untouched', () => {
+    const result = toggleDayCollapse(new Set(['2026-07-19', '2026-07-20']), '2026-07-20')
+
+    expect(result.has('2026-07-19')).toBe(true)
+    expect(result.has('2026-07-20')).toBe(false)
+  })
+
+  it('returns a new Set instance instead of mutating the argument', () => {
+    const original = new Set<string>()
+
+    const result = toggleDayCollapse(original, '2026-07-20')
+
+    expect(result).not.toBe(original)
+    expect(original.has('2026-07-20')).toBe(false)
+  })
+})
 
 function renderPage(initialPath = '/projects/1/curate?topN=3') {
   const queryClient = new QueryClient({
