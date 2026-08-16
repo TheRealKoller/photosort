@@ -41,6 +41,9 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
 // projectId="new", was AK3 direkt verletzen wuerde. "new" ist der einzige aktuell reservierte
 // literale Sibling-Segment-Name unter /projects/ - wird ausgeschlossen, waehrend echte (auch
 // nicht-numerische, z.B. "abc") projectId-Werte weiterhin funktionieren.
+// ACHTUNG: anders als PROJECT_ROUTES ist dies KEINE automatisch aus den Routen abgeleitete Liste -
+// eine kuenftige neue literale Sibling-Route unter /projects/ (z.B. "/projects/import") muss hier
+// manuell ergaenzt werden, sonst matcht sie faelschlich als Projektkontext.
 const RESERVED_PROJECT_ID_SEGMENTS = new Set(['new'])
 
 function useProjectIdFromRoute(): string | null {
