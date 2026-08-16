@@ -208,6 +208,141 @@ describe('ProjectDetailPage', () => {
     expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled()
   })
 
+  describe('Scan-Statistik: Layout und Hilfetext (specs/features/0030-scan-statistik-layout-und-hilfetext.md)', () => {
+    function renderWithScan(overrides: Partial<ScanSummary> = {}) {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        project({
+          last_scan: scan({
+            status: 'success',
+            finished_at: '2026-07-20T10:05:00Z',
+            photos_added: 10,
+            photos_updated: 1,
+            photos_removed: 3,
+            files_skipped: 2,
+            files_found: 16,
+            ...overrides,
+          }),
+        })
+      )
+      return renderPage()
+    }
+
+    it('groups each of the five label/value pairs in a shared parent element (layout fix)', async () => {
+      renderWithScan()
+
+      const pairs: Array<[string, string]> = [
+        ['Hinzugefügt', '10'],
+        ['Aktualisiert', '1'],
+        ['Entfernt', '3'],
+        ['Übersprungen', '2'],
+        ['Dateien gefunden', '16'],
+      ]
+
+      for (const [label, value] of pairs) {
+        const labelNode = await screen.findByText(label)
+        const dt = labelNode.closest('dt')
+        expect(dt).not.toBeNull()
+        const dd = dt!.parentElement!.querySelector('dd')
+        expect(dd).not.toBeNull()
+        expect(dd).toHaveTextContent(value)
+      }
+    })
+
+    it('renders "Entfernt" and "Übersprungen" as initially collapsed <details>/<summary> disclosures', async () => {
+      renderWithScan()
+
+      const removedDetails = (await screen.findByText('Entfernt')).closest('details')
+      expect(removedDetails).not.toBeNull()
+      expect(removedDetails).not.toHaveAttribute('open')
+
+      const skippedDetails = (await screen.findByText('Übersprungen')).closest('details')
+      expect(skippedDetails).not.toBeNull()
+      expect(skippedDetails).not.toHaveAttribute('open')
+    })
+
+    it('toggles the "Entfernt" disclosure open and closed repeatedly on click', async () => {
+      const user = userEvent.setup()
+      renderWithScan()
+
+      const summary = await screen.findByText('Entfernt')
+      const details = summary.closest('details')!
+
+      await user.click(summary)
+      expect(details).toHaveAttribute('open')
+
+      await user.click(summary)
+      expect(details).not.toHaveAttribute('open')
+
+      await user.click(summary)
+      expect(details).toHaveAttribute('open')
+    })
+
+    it('shows the exact explanation text for "Entfernt" once expanded', async () => {
+      const user = userEvent.setup()
+      renderWithScan()
+
+      await user.click(await screen.findByText('Entfernt'))
+
+      expect(
+        screen.getByText(
+          'Datei wurde am Ursprungsort in OpenCloud nicht mehr gefunden und daher aus PhotoSort entfernt.'
+        )
+      ).toBeInTheDocument()
+    })
+
+    it('shows the exact explanation text for "Übersprungen" once expanded', async () => {
+      const user = userEvent.setup()
+      renderWithScan()
+
+      await user.click(await screen.findByText('Übersprungen'))
+
+      expect(
+        screen.getByText('Dateiendung wird nicht unterstützt (unterstützt: JPG, PNG, HEIC, HEIF).')
+      ).toBeInTheDocument()
+    })
+
+    it('toggles the two disclosures independently (no shared "name" accordion behavior)', async () => {
+      const user = userEvent.setup()
+      renderWithScan()
+
+      const removedSummary = await screen.findByText('Entfernt')
+      const skippedSummary = await screen.findByText('Übersprungen')
+      const removedDetails = removedSummary.closest('details')!
+      const skippedDetails = skippedSummary.closest('details')!
+
+      await user.click(removedSummary)
+      await user.click(skippedSummary)
+
+      expect(removedDetails).toHaveAttribute('open')
+      expect(skippedDetails).toHaveAttribute('open')
+    })
+
+    it('keeps both disclosures present and togglable even when their counters are 0', async () => {
+      const user = userEvent.setup()
+      renderWithScan({ photos_removed: 0, files_skipped: 0 })
+
+      const removedDetails = (await screen.findByText('Entfernt')).closest('details')!
+      const skippedDetails = (await screen.findByText('Übersprungen')).closest('details')!
+      expect(removedDetails).not.toHaveAttribute('open')
+      expect(skippedDetails).not.toHaveAttribute('open')
+
+      await user.click(screen.getByText('Entfernt'))
+      await user.click(screen.getByText('Übersprungen'))
+
+      expect(removedDetails).toHaveAttribute('open')
+      expect(skippedDetails).toHaveAttribute('open')
+    })
+
+    it('does not wrap the other three labels ("Hinzugefügt", "Aktualisiert", "Dateien gefunden") in a <details> ancestor', async () => {
+      renderWithScan()
+
+      for (const label of ['Hinzugefügt', 'Aktualisiert', 'Dateien gefunden']) {
+        const labelNode = await screen.findByText(label)
+        expect(labelNode.closest('details')).toBeNull()
+      }
+    })
+  })
+
   describe('two-phase scan progress (specs/features/0022, 0036)', () => {
     it('shows "Dateien werden gezählt…" and an indeterminate progress bar during the enumeration phase (total_files === null)', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(
