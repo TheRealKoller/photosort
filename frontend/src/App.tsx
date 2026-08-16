@@ -29,12 +29,22 @@ const PROJECT_ROUTES: { path: string; element: JSX.Element }[] = [
   { path: '/projects/:projectId/compare', element: <PhotoComparePage /> },
 ]
 
+// Technische Korrektur gegenueber dem woertlichen Codebeispiel der Spec (Architektur-Abschnitt):
+// matchPath('/projects/:projectId', ...) kennt die als Geschwister-Route registrierte, literale
+// "/projects/new" nicht - anders als React Routers eigentliches Routing (das statische Segmente
+// vor dynamischen bevorzugt) matcht ein isolierter matchPath-Aufruf "/projects/new" trotzdem mit
+// projectId="new", was AK3 direkt verletzen wuerde. "new" ist der einzige aktuell reservierte
+// literale Sibling-Segment-Name unter /projects/ - wird ausgeschlossen, waehrend echte (auch
+// nicht-numerische, z.B. "abc") projectId-Werte weiterhin funktionieren.
+const RESERVED_PROJECT_ID_SEGMENTS = new Set(['new'])
+
 function useProjectIdFromRoute(): string | null {
   const location = useLocation()
   for (const { path } of PROJECT_ROUTES) {
     const match = matchPath(path, location.pathname)
-    if (match?.params.projectId) {
-      return match.params.projectId
+    const projectId = match?.params.projectId
+    if (projectId && !RESERVED_PROJECT_ID_SEGMENTS.has(projectId)) {
+      return projectId
     }
   }
   return null
@@ -44,6 +54,7 @@ function AppShell() {
   const navigate = useNavigate()
   const token = getToken()
   const username = token ? decodeUsername(token) : null
+  const projectId = useProjectIdFromRoute()
 
   function handleLogout(): void {
     // Bestaetigungslose Aktion (siehe specs/features/0006-auth.md) - kein Backend-Aufruf, da es
@@ -54,18 +65,46 @@ function AppShell() {
 
   return (
     <div className="flex min-h-screen flex-col bg-bg text-text">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
+      {/* Sticky Header (specs/features/0033-sticky-titelleiste-projekt-link.md, AK1): bleibt beim
+          Scrollen einer Seite am oberen Viewport-Rand sichtbar. z-10 ist der erste Eintrag einer
+          projektweiten Z-Index-Konvention - bleibt unter Radix-Portal-Overlays (Dialoge/Tooltips
+          landen per Portal mit eigenen, hoeheren Werten ausserhalb des normalen Baums). bg-bg wird
+          hier jetzt explizit gesetzt (bisher trug nur der aeussere Wrapper die Hintergrundfarbe),
+          damit scrollender Inhalt im Sticky-Zustand nicht sichtbar durchscheinen kann, falls eine
+          kuenftige Seite einen abweichenden Hintergrund einfuehrt. CSS-Sticky-Verhalten ist in
+          jsdom nicht automatisiert pruefbar - manueller Smoke-Test vor Merge (Scrollen durch eine
+          Fotoliste, kein Layout-Overlap, Light/Dark). */}
+      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-bg px-4 py-3 sm:px-6">
         {/* Requirements-Review-Fund (Branch feature/0012-visual-redesign-views): als einziges
             interaktives Element im Header nicht ueber die Button-Komponente verdrahtet, dadurch
             unter dem 44x44px-Touch-Ziel (AK "tatsaechlich messbar") - jetzt per Button asChild
             konsistent zu "Abmelden" gehalten, mit ueberschriebener Groesse/Optik fuers Wortmarke. */}
-        <Button
-          asChild
-          variant="ghost"
-          className="h-11 justify-start px-2 text-lg font-semibold text-text-h hover:bg-transparent"
-        >
-          <Link to="/">PhotoSort</Link>
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            asChild
+            variant="ghost"
+            className="h-11 justify-start px-2 text-lg font-semibold text-text-h hover:bg-transparent"
+          >
+            <Link to="/">PhotoSort</Link>
+          </Button>
+          {/* Projekt-Kontext-Link (specs/features/0033-sticky-titelleiste-projekt-link.md, AK2-AK4,
+              AK8): rendert nur mit Projektkontext, zeigt immer auf die Projekt-Detailseite selbst -
+              auch auf der Projekt-Detailseite selbst (Self-Link, bewusst keine Ausblendung/
+              Deaktivierung, AK8). Gleiches Button-asChild+Link-Muster wie die Wortmarke (AK5).
+              Chevron rein dekorativ/aria-hidden (AK6) - der zugaengliche Name ist ausschliesslich
+              der Text "Projekt". */}
+          {projectId !== null && (
+            <Button
+              asChild
+              variant="ghost"
+              className="h-11 px-2 text-text-h hover:bg-transparent"
+            >
+              <Link to={`/projects/${projectId}`}>
+                <span aria-hidden="true">‹</span> Projekt
+              </Link>
+            </Button>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           {username && <span className="text-sm text-text">Angemeldet als {username}</span>}
           <Button type="button" variant="outline" size="sm" onClick={handleLogout}>
