@@ -313,7 +313,7 @@ export function CurateCategoriesPage() {
                 aria-expanded={!isCollapsed}
                 aria-controls={panelId}
                 onClick={() => toggleDay(dayKey)}
-                className="flex min-h-11 w-full items-center gap-2 py-1 text-left"
+                className="flex min-h-11 w-full items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
               >
                 <span aria-hidden="true">{isCollapsed ? '▶' : '▼'}</span>
                 <span>{formatDayHeading(dayKey)}</span>
