@@ -1,4 +1,4 @@
-import { Link, Navigate, Outlet, Route, Routes, useNavigate } from 'react-router'
+import { Link, Navigate, Outlet, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router'
 
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { decodeUsername } from './auth/jwt'
@@ -13,6 +13,32 @@ import { PhotoGridPage } from './pages/PhotoGridPage'
 import { ProjectCreatePage } from './pages/ProjectCreatePage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ProjectListPage } from './pages/ProjectListPage'
+
+// Einzige Quelle der Wahrheit fuer die vier Routen mit Projektkontext (specs/features/
+// 0033-sticky-titelleiste-projekt-link.md): speist sowohl die <Route>-Erzeugung unten als auch
+// den matchPath-Aufruf in useProjectIdFromRoute - verhindert, dass eine kuenftige
+// :projectId-Route nur in <Routes> ergaenzt wird, aber stillschweigend keinen Header-Link
+// bekommt. Explizite Aufzaehlung statt eines Wildcards wie "/projects/:projectId/*", da ein
+// Wildcard "/projects/new" faelschlich als Projektkontext mit projectId="new" matchen wuerde
+// (AK3). /projects/:projectId/curate ist bewusst NICHT enthalten (Spec-Entscheidung, nur die
+// vier explizit genannten Routen).
+const PROJECT_ROUTES: { path: string; element: JSX.Element }[] = [
+  { path: '/projects/:projectId', element: <ProjectDetailPage /> },
+  { path: '/projects/:projectId/photos', element: <PhotoGridPage /> },
+  { path: '/projects/:projectId/photos/:photoId', element: <PhotoDetailPage /> },
+  { path: '/projects/:projectId/compare', element: <PhotoComparePage /> },
+]
+
+function useProjectIdFromRoute(): string | null {
+  const location = useLocation()
+  for (const { path } of PROJECT_ROUTES) {
+    const match = matchPath(path, location.pathname)
+    if (match?.params.projectId) {
+      return match.params.projectId
+    }
+  }
+  return null
+}
 
 function AppShell() {
   const navigate = useNavigate()
@@ -64,10 +90,9 @@ function App() {
         <Route element={<AppShell />}>
           <Route path="/" element={<ProjectListPage />} />
           <Route path="/projects/new" element={<ProjectCreatePage />} />
-          <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
-          <Route path="/projects/:projectId/photos" element={<PhotoGridPage />} />
-          <Route path="/projects/:projectId/photos/:photoId" element={<PhotoDetailPage />} />
-          <Route path="/projects/:projectId/compare" element={<PhotoComparePage />} />
+          {PROJECT_ROUTES.map(({ path, element }) => (
+            <Route key={path} path={path} element={element} />
+          ))}
           <Route path="/projects/:projectId/curate" element={<CurateCategoriesPage />} />
         </Route>
       </Route>
