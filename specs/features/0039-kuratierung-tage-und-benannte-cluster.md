@@ -77,6 +77,8 @@ Kein Backend-, kein `docs/architecture.md`-Update in diesem Schritt nötig.
 
 **Layout:** Einfache, kontinuierliche Abfolge von Tagen ohne Einklappbarkeit. Begründung: die zwei wiederkehrenden Nutzer arbeiten ein Projekt in Sitzungen durch, nicht den ganzen Bestand auf einmal; zusätzliche Expand-Klicks würden das Durchsatz-Designprinzip verletzen. Bei sehr großen Projekten (>100 Tage) kann ein optionaler Sticky-Header/Springe-zu-Selektor als spätere Erweiterung ergänzt werden — nicht Teil dieser Spec.
 
+> **Revidiert durch Spec [`0043`](./0043-kuratierung-tage-auf-zuklappbar.md) (2026-08-16):** Die Ablehnung der Einklappbarkeit gilt nicht mehr. Projekte sind seither größer geworden, die durchgehende Liste wurde bei vielen Tagen unübersichtlich — das überwiegt jetzt den ursprünglichen Durchsatz-Einwand. Der hier angedachte Sticky-Header/Springe-zu-Alternativ-Ansatz wurde im Rahmen von 0043 geprüft und verworfen (löst Navigation, aber nicht das Platzsparen-Ziel). Alle übrigen Festlegungen dieser Spec (Gruppierung, Sortierung, Sticky Leerzustand, Datenmodell) bleiben unverändert gültig.
+
 **Sticky Leerzustand über alle Ebenen:** siehe Akzeptanzkriterium 7. Technisch: `knownGroupKeysRef` von `[clusterKey, categoryKey]` auf `[dayKey, clusterKey, categoryKey]` erweitert.
 
 **Barrierefreiheit:** unverändert (semantisches HTML mit `<h2>`/`<h3>`/`<h4>`, bestehende `aria-label`-Konventionen auf Buttons bleiben erhalten).
@@ -102,5 +104,5 @@ Keine — alle im Gespräch aufgekommenen Punkte wurden geklärt (siehe Entschei
 
 - Änderung der 1h-Zeitfenster-Cluster-Bildungslogik selbst.
 - Backend-Aggregation für eine vollständige (nicht Top-N-gefilterte) Cluster-Zeitspanne.
-- Einklappbare/kollabierbare Tages-Abschnitte.
+- ~~Einklappbare/kollabierbare Tages-Abschnitte.~~ (revidiert durch Spec [`0043`](./0043-kuratierung-tage-auf-zuklappbar.md))
 - Anpassung der Bucket-Grenzen/des Wortlauts über die in dieser Spec festgelegte Tabelle hinaus.
