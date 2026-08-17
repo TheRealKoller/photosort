@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Link, Navigate, Outlet, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router'
+import { Link, Navigate, Outlet, Route, Routes, matchPath, useLocation, useNavigate, useParams } from 'react-router'
 
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { decodeUsername } from './auth/jwt'
@@ -11,28 +11,51 @@ import { LoginPage } from './pages/LoginPage'
 import { PhotoComparePage } from './pages/PhotoComparePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { PhotoGridPage } from './pages/PhotoGridPage'
+import { PipelineStepView } from './pages/pipeline/PipelineStepView'
+import { ProjectPipelineLayout } from './pages/pipeline/ProjectPipelineLayout'
 import { ProjectCreatePage } from './pages/ProjectCreatePage'
-import { ProjectDetailPage } from './pages/ProjectDetailPage'
 import { ProjectListPage } from './pages/ProjectListPage'
 
-// Einzige Quelle der Wahrheit fuer die vier Routen mit Projektkontext (specs/features/
+/**
+ * Reiner Redirect (specs/features/0042-automatisierter-flow-stepper-detailseiten.md,
+ * Akzeptanzkriterium 1): ersetzt die bisherige, jetzt entfernte ProjectDetailPage.tsx als Ziel
+ * dieser Route - Bestandsschutz fuer bestehende Links/Bookmarks auf /projects/:projectId. Bewusst
+ * absoluter Template-String statt relativem `to="pipeline"`, konsistent mit dem im Projekt
+ * durchgehend etablierten Muster expliziter absoluter Pfade (Architektur-Abschnitt der Spec).
+ */
+function ProjectDetailRedirect() {
+  const { projectId } = useParams()
+  return <Navigate to={`/projects/${projectId}/pipeline`} replace />
+}
+
+// Einzige Quelle der Wahrheit fuer die flachen Routen mit Projektkontext (specs/features/
 // 0033-sticky-titelleiste-projekt-link.md): speist sowohl die <Route>-Erzeugung unten als auch
 // den matchPath-Aufruf in useProjectIdFromRoute - verhindert, dass eine kuenftige
 // :projectId-Route nur in <Routes> ergaenzt wird, aber stillschweigend keinen Header-Link
 // bekommt. Explizite Aufzaehlung statt eines Wildcards wie "/projects/:projectId/*", da ein
 // Wildcard "/projects/new" faelschlich als Projektkontext mit projectId="new" matchen wuerde
 // (AK3). /projects/:projectId/curate ist bewusst NICHT enthalten (Spec-Entscheidung, nur die
-// vier explizit genannten Routen). `element` ist als `ReactElement` typisiert statt des
-// woertlich in der Spec genannten globalen `JSX.Element` - unter diesem tsconfig
-// (moduleDetection: "force", kein globaler JSX-Namespace importiert) loest `JSX.Element` TS2503
-// ("Cannot find namespace 'JSX'") aus; `ReactElement` aus `react` ist das Modul-basierte
+// hier bzw. in PIPELINE_STEP_ROUTE_PATH genannten Routen). `element` ist als `ReactElement`
+// typisiert statt des woertlich in der Spec genannten globalen `JSX.Element` - unter diesem
+// tsconfig (moduleDetection: "force", kein globaler JSX-Namespace importiert) loest `JSX.Element`
+// TS2503 ("Cannot find namespace 'JSX'") aus; `ReactElement` aus `react` ist das Modul-basierte
 // Aequivalent und typprueft sauber.
+//
+// Die neue, verschachtelte Pipeline-Route (specs/features/0042, erste Verwendung von
+// React-Router-Nested-Routes im Projekt) kann NICHT ueber dieses flache PROJECT_ROUTES.map()
+// erzeugt werden (Layout + eigene Kind-Route noetig fuer den Outlet-Context) - ihr Pfad wird
+// deshalb separat als PIPELINE_STEP_ROUTE_PATH gefuehrt, aber ausdruecklich an DERSELBEN Stelle
+// wie PROJECT_ROUTES fuer matchPath ergaenzt (siehe useProjectIdFromRoute unten), damit sie nicht
+// denselben stillschweigenden Header-Link-Bug reproduziert, den der obige Kommentar verhindern
+// soll.
 const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
-  { path: '/projects/:projectId', element: <ProjectDetailPage /> },
+  { path: '/projects/:projectId', element: <ProjectDetailRedirect /> },
   { path: '/projects/:projectId/photos', element: <PhotoGridPage /> },
   { path: '/projects/:projectId/photos/:photoId', element: <PhotoDetailPage /> },
   { path: '/projects/:projectId/compare', element: <PhotoComparePage /> },
 ]
+
+const PIPELINE_STEP_ROUTE_PATH = '/projects/:projectId/pipeline/:step'
 
 // Technische Korrektur gegenueber dem woertlichen Codebeispiel der Spec (Architektur-Abschnitt):
 // matchPath('/projects/:projectId', ...) kennt die als Geschwister-Route registrierte, literale
@@ -48,7 +71,7 @@ const RESERVED_PROJECT_ID_SEGMENTS = new Set(['new'])
 
 function useProjectIdFromRoute(): string | null {
   const location = useLocation()
-  for (const { path } of PROJECT_ROUTES) {
+  for (const path of [...PROJECT_ROUTES.map((route) => route.path), PIPELINE_STEP_ROUTE_PATH]) {
     const match = matchPath(path, location.pathname)
     const projectId = match?.params.projectId
     if (projectId && !RESERVED_PROJECT_ID_SEGMENTS.has(projectId)) {
@@ -140,6 +163,9 @@ function App() {
           {PROJECT_ROUTES.map(({ path, element }) => (
             <Route key={path} path={path} element={element} />
           ))}
+          <Route path="/projects/:projectId/pipeline" element={<ProjectPipelineLayout />}>
+            <Route path=":step" element={<PipelineStepView />} />
+          </Route>
           <Route path="/projects/:projectId/curate" element={<CurateCategoriesPage />} />
         </Route>
       </Route>

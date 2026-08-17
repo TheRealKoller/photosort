@@ -69,7 +69,7 @@ function renderPage(initialPath = '/projects/1/photos') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
-        <Route path="/projects/:projectId" element={<p>Projekt-Detailseite</p>} />
+        <Route path="/projects/:projectId/pipeline" element={<p>Projekt-Pipeline-Uebersicht</p>} />
         <Route path="/projects/:projectId/photos" element={<PhotoGridPage />} />
         <Route path="/projects/:projectId/photos/:photoId" element={<p>Einzelbild-Seite</p>} />
       </Routes>
@@ -474,7 +474,7 @@ describe('PhotoGridPage', () => {
       expect(screen.getByRole('button', { name: 'Ausschuss gesichtet, weiter' })).toBeInTheDocument()
     })
 
-    it('confirms the gate and navigates back to the project detail page on click', async () => {
+    it('confirms the gate and navigates to the project pipeline overview on click (Spec 0042, AK9)', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [photo({ id: 1 })],
         total: 1,
@@ -488,7 +488,7 @@ describe('PhotoGridPage', () => {
       await user.click(confirmButton)
 
       await waitFor(() => expect(projectsApi.confirmAusschussGate).toHaveBeenCalledWith(1))
-      expect(await screen.findByText('Projekt-Detailseite')).toBeInTheDocument()
+      expect(await screen.findByText('Projekt-Pipeline-Uebersicht')).toBeInTheDocument()
     })
 
     it('shows an error alert when confirming the gate fails', async () => {
