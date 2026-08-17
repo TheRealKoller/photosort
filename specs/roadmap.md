@@ -8,9 +8,7 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, ge
 
 ### Offen — Hoch
 
-| Spec | Titel | Status |
-|---|---|---|
-| [0042](./features/0042-automatisierter-flow-stepper-detailseiten.md) | Automatisierter Flow als Stepper-Übersicht + separate Detailseiten (Umstrukturierung von 0037-Navigation) | Accepted |
+Keine offenen Einträge.
 
 ### Offen — Mittel
 
@@ -84,6 +82,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0030](./features/0030-scan-statistik-layout-und-hilfetext.md) | Scan-Statistik: Layout-Fix + aufklappbarer Hilfetext für "Entfernt"/"Übersprungen" | Implemented ([PR #97](https://github.com/TheRealKoller/photosort/pull/97)) |
 | [0033](./features/0033-sticky-titelleiste-projekt-link.md) | Sticky Titelleiste mit Projekt-Kontext-Link | Implemented ([PR #99](https://github.com/TheRealKoller/photosort/pull/99)) |
 | [0043](./features/0043-kuratierung-tage-auf-zuklappbar.md) | Tage in der Kuratierungsansicht auf-/zuklappbar (einzeln + global), revidiert Teile von 0039 | Implemented ([PR #100](https://github.com/TheRealKoller/photosort/pull/100)) |
+| [0042](./features/0042-automatisierter-flow-stepper-detailseiten.md) | Automatisierter Flow als Stepper-Übersicht + separate Detailseiten (Umstrukturierung von 0037-Navigation) | Implemented ([PR #101](https://github.com/TheRealKoller/photosort/pull/101)) |
 
 ## Priorisierung
 
