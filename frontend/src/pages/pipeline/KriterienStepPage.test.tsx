@@ -143,6 +143,22 @@ describe('KriterienStepPage', () => {
     expect(progress.value).toBe(4)
   })
 
+  it(
+    'shows an indeterminate progress bar instead of an invalid max=0 during the brief ' +
+      'photos_total=0 window right after the trigger',
+    () => {
+      renderPage(
+        project({
+          last_criterion_scoring_run: criterionScoringRun({ photos_total: 0, photos_processed: 0 }),
+        })
+      )
+
+      const progress = screen.getByRole('progressbar') as HTMLProgressElement
+      expect(progress.hasAttribute('value')).toBe(false)
+      expect(progress.hasAttribute('max')).toBe(false)
+    }
+  )
+
   it('shows a success status once the run succeeded', () => {
     renderPage(
       project({

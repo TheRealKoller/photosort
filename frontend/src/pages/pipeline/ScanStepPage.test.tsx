@@ -142,6 +142,19 @@ describe('ScanStepPage', () => {
     expect(screen.queryByText(/34% verarbeitet/i)).not.toBeInTheDocument()
   })
 
+  it(
+    'shows an indeterminate progress bar instead of an invalid max=0 for an empty project ' +
+      '(total_files === 0, already processing phase, not enumeration)',
+    () => {
+      renderPage(project({ last_scan: scan({ status: 'running', total_files: 0, files_found: 0 }) }))
+
+      expect(screen.getByText('0 von 0 Dateien verarbeitet')).toBeInTheDocument()
+      const progress = screen.getByRole('progressbar') as HTMLProgressElement
+      expect(progress.hasAttribute('value')).toBe(false)
+      expect(progress.hasAttribute('max')).toBe(false)
+    }
+  )
+
   it('shows the five-stat summary once the scan succeeded, with two initially-collapsed disclosures', () => {
     renderPage(
       project({
