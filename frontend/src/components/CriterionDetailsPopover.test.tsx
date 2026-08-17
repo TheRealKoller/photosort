@@ -88,30 +88,28 @@ describe('CriterionDetailsPopover', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('opens the popover on click, showing criteria as rounded percentages in the given order', async () => {
+  // Schlanker Integrations-Nachweis statt der vollen Content-Matrix (die lebt seit Spec 0041 in
+  // CriterionDetailsList.test.tsx, specs/architecture/0002-testkonzept.md Punkt 8) - prueft nur,
+  // dass Props korrekt an CriterionDetailsList durchgereicht werden: ein Kriterium, ein Ranking und
+  // eine Suggestion gemeinsam sichtbar nach dem Oeffnen.
+  it('opens the popover on click and passes criterionScores/ranking/suggestion through to CriterionDetailsList', async () => {
     const user = userEvent.setup()
     render(
       <CriterionDetailsPopover
-        criterionScores={[
-          criterionScore({ criterion_key: 'sharpness', display_name: 'Schärfe', value: 0.734 }),
-          criterionScore({
-            criterion_key: 'exposure',
-            display_name: 'Belichtung',
-            value: 0.2,
-          }),
-        ]}
-        ranking={null}
-        suggestion={null}
+        criterionScores={[criterionScore({ display_name: 'Schärfe', value: 0.734 })]}
+        ranking={ranking({ category_key: 'landscape', rank_position: 2, partition_size: 5 })}
+        suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
       />
     )
 
     await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
 
     const dialog = screen.getByRole('dialog')
-    const dtTexts = within(dialog).getAllByText(/Schärfe|Belichtung/).map((el) => el.textContent)
-    expect(dtTexts).toEqual(['Schärfe', 'Belichtung'])
+    expect(within(dialog).getByText('Schärfe')).toBeInTheDocument()
     expect(within(dialog).getByText('73%')).toBeInTheDocument()
-    expect(within(dialog).getByText('20%')).toBeInTheDocument()
+    expect(within(dialog).getByText('Landscape')).toBeInTheDocument()
+    expect(within(dialog).getByText('Rang 2 von 5')).toBeInTheDocument()
+    expect(within(dialog).getByText('Duplikat von Foto #42')).toBeInTheDocument()
   })
 
   it('closes the popover on a second click of the trigger', async () => {
@@ -326,121 +324,8 @@ describe('CriterionDetailsPopover', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
-  // Akzeptanzkriterium 9: kaufmaennische Rundung auch am .5-Grenzfall (0.005 -> 0.5 -> aufwaerts
-  // auf 1, nicht abwaerts auf 0).
-  it('rounds a .5 percentage point boundary up (commercial rounding)', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore({ value: 0.005 })]}
-        ranking={null}
-        suggestion={null}
-      />
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
-
-    expect(screen.getByText('1%')).toBeInTheDocument()
-  })
-
-  it('does not fill a missing criterion with a placeholder, only renders what is given', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore({ criterion_key: 'sharpness', display_name: 'Schärfe' })]}
-        ranking={null}
-        suggestion={null}
-      />
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
-
-    expect(screen.queryByText('Belichtung')).not.toBeInTheDocument()
-  })
-
-  // Akzeptanzkriterium 10: Kategorie/Rang-Gruppe bei vorhandenem ranking.
-  it('shows category and rank when ranking is not null', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore()]}
-        ranking={ranking({ category_key: 'landscape', rank_position: 2, partition_size: 5 })}
-        suggestion={null}
-      />
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
-
-    expect(screen.getByText('Landscape')).toBeInTheDocument()
-    expect(screen.getByText('Rang 2 von 5')).toBeInTheDocument()
-  })
-
-  // Akzeptanzkriterium 11: Kategorie/Rang-Gruppe entfaellt vollstaendig ohne ranking.
-  it('omits the category/rank group entirely when ranking is null', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore()]}
-        ranking={null}
-        suggestion={null}
-      />
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
-
-    expect(screen.queryByText(/^Rang /)).not.toBeInTheDocument()
-  })
-
-  // Akzeptanzkriterium 12: Ausschuss-Gruppe bei vorhandenem suggestion, ueber suggestionLabels.ts.
-  it('shows the suggestion reason when suggestion is not null', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore()]}
-        ranking={null}
-        suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
-      />
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
-
-    expect(screen.getByText('Verworfen')).toBeInTheDocument()
-    expect(screen.getByText('Duplikat von Foto #42')).toBeInTheDocument()
-  })
-
-  // Akzeptanzkriterium 13: Ausschuss-Gruppe entfaellt vollstaendig ohne suggestion.
-  it('omits the suggestion group entirely when suggestion is null', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore()]}
-        ranking={null}
-        suggestion={null}
-      />
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
-
-    expect(screen.queryByText('Duplikat von Foto #42')).not.toBeInTheDocument()
-    expect(screen.queryByText('Geringe Bildqualität')).not.toBeInTheDocument()
-  })
-
-  // Akzeptanzkriterium 16: dl/dt/dd-Semantik.
-  it('renders the criteria group using dl/dt/dd semantics', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore()]}
-        ranking={null}
-        suggestion={null}
-      />
-    )
-
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
-
-    const dialog = screen.getByRole('dialog')
-    expect(dialog.querySelector('dl')).not.toBeNull()
-    expect(dialog.querySelector('dt')).not.toBeNull()
-    expect(dialog.querySelector('dd')).not.toBeNull()
-  })
+  // Die volle Content-Matrix (Rundung, fehlendes Kriterium, Kategorie/Rang vorhanden/entfaellt,
+  // Ausschuss-Gruppe vorhanden/entfaellt, dl/dt/dd-Semantik) lebt seit Spec 0041 in
+  // CriterionDetailsList.test.tsx (specs/architecture/0002-testkonzept.md Punkt 8) - der obige
+  // Integrationstest deckt die korrekte Durchreichung ab, keine Duplizierung hier.
 })
