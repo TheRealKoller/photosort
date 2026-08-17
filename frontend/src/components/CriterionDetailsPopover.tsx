@@ -47,6 +47,20 @@ interface CriterionDetailsPopoverProps {
  * Radix' eigenes Klick-Toggle unterdrueckt; `PopoverTrigger`s Slot-Merge mit dem Kind-Button
  * wuerde `preventDefault()` ignorieren). Escape/Aussenklick/der "×"-Button laufen dadurch
  * unveraendert direkt ueber `Popover.onOpenChange={setOpen}`.
+ *
+ * Hover-Auto-Close mit Grace-Bereich ueber Trigger UND Content (Akzeptanzkriterien 7-10, Spec
+ * 0041): `openedByHoverRef` ist - anders als `justOpenedByHoverRef` oben, der nur den EINEN Klick
+ * direkt nach einem Hover-Oeffnen unterdrueckt und danach zurueckgesetzt wird - ueber die gesamte
+ * Offen-Dauer persistent und haelt fest, ob der aktuelle Offen-Zustand ueberhaupt per Hover
+ * zustandegekommen ist. `handleOpenChange` setzt ihn synchron zu `justOpenedByHoverRef` beim
+ * Oeffnen und setzt ihn beim Schliessen zurueck. `handlePossibleHoverClose` haengt an
+ * `onMouseLeave` von Trigger-Button UND `PopoverContent` und prueft bei
+ * `openedByHoverRef.current === true` per `Node.contains()` gegen `triggerRef`/`contentRef`, ob
+ * `event.relatedTarget` (das neue Ziel des Pointers) ausserhalb beider liegt - nur dann schliesst
+ * es. Ref-basiert statt eines naiven `event.currentTarget.contains(event.relatedTarget)`-
+ * Bubbling-Checks, weil `PopoverContent` ueber `PopoverPrimitive.Portal` an einer anderen Stelle im
+ * DOM-Baum liegt als der Trigger - ein Uebergang Trigger->Content wuerde sonst faelschlich als
+ * "verlassen" gewertet. Kein Timer/Delay noetig.
  */
 export function CriterionDetailsPopover({
   criterionScores,
@@ -56,6 +70,9 @@ export function CriterionDetailsPopover({
 }: CriterionDetailsPopoverProps) {
   const [open, setOpen] = useState(false)
   const justOpenedByHoverRef = useRef(false)
+  const openedByHoverRef = useRef(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   if (criterionScores.length === 0) {
     return null
@@ -66,7 +83,7 @@ export function CriterionDetailsPopover({
       if (!open) {
         justOpenedByHoverRef.current = true
       }
-      setOpen(true)
+      handleOpenChange(true)
     }
   }
 
@@ -77,13 +94,36 @@ export function CriterionDetailsPopover({
     justOpenedByHoverRef.current = false
   }
 
+  function handleOpenChange(nextOpen: boolean): void {
+    if (nextOpen) {
+      openedByHoverRef.current = justOpenedByHoverRef.current
+    } else {
+      openedByHoverRef.current = false
+    }
+    setOpen(nextOpen)
+  }
+
+  function handlePossibleHoverClose(event: { relatedTarget: EventTarget | null }): void {
+    if (!openedByHoverRef.current) {
+      return
+    }
+    const relatedTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null
+    const staysWithinTrigger = relatedTarget !== null && triggerRef.current?.contains(relatedTarget)
+    const staysWithinContent = relatedTarget !== null && contentRef.current?.contains(relatedTarget)
+    if (!staysWithinTrigger && !staysWithinContent) {
+      handleOpenChange(false)
+    }
+  }
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild onClick={handleTriggerClick}>
         <button
+          ref={triggerRef}
           type="button"
           aria-label="Bewertungsdetails anzeigen"
           onPointerEnter={handlePointerEnter}
+          onMouseLeave={handlePossibleHoverClose}
           className={cn(
             'flex size-11 shrink-0 items-center justify-center rounded-md border border-border ' +
               'bg-bg/85 text-xs font-semibold text-text backdrop-blur-sm transition-colors ' +
@@ -95,7 +135,7 @@ export function CriterionDetailsPopover({
           i
         </button>
       </PopoverTrigger>
-      <PopoverContent>
+      <PopoverContent ref={contentRef} onMouseLeave={handlePossibleHoverClose}>
         <div className="flex items-center justify-between gap-3 pb-3">
           <p className="text-sm font-semibold text-text-h">Bewertungsdetails</p>
           <PopoverClose

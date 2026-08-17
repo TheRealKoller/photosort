@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -328,4 +328,191 @@ describe('CriterionDetailsPopover', () => {
   // Ausschuss-Gruppe vorhanden/entfaellt, dl/dt/dd-Semantik) lebt seit Spec 0041 in
   // CriterionDetailsList.test.tsx (specs/architecture/0002-testkonzept.md Punkt 8) - der obige
   // Integrationstest deckt die korrekte Durchreichung ab, keine Duplizierung hier.
+
+  // Akzeptanzkriterien 7-10 (Spec 0041): Hover-Auto-Close mit Grace-Bereich ueber Trigger UND
+  // Content, ueber die Portal-Grenze hinweg (specs/architecture/0002-testkonzept.md, Punkt 7).
+  //
+  // TDD-Rot-Fund, abweichend von der urspruenglichen Testkonzept-Annahme "userEvent.hover()/
+  // unhover() reicht": @testing-library/user-event@14 setzt bei zwei direkt aufeinanderfolgenden
+  // hover()-Aufrufen auf unterschiedliche Elemente KEIN reales relatedTarget auf dem dabei
+  // ausgeloesten mouseleave (system/pointer/mouse.js::Mouse.move() uebergibt der internen
+  // dispatchUIEvent()-Hilfsfunktion nur Koordinaten/Buttons, kein relatedTarget) - jsdom liefert in
+  // diesem Fall konsistent `window` statt des tatsaechlichen Zielelements oder `null` zurueck,
+  // unabhaengig davon ob das Ziel der Content, der Trigger oder ein voellig unbeteiligtes Element
+  // ist. Ohne Gegenmassnahme waeren damit weder der Grace-Bereich (`window` faellt faelschlich aus
+  // triggerRef/contentRef heraus) noch der eigentliche Schliessfall zuverlaessig unterscheidbar
+  // pruefbar. Fuer die Faelle, in denen es auf ein PRAEZISES relatedTarget ankommt, wird deshalb
+  // gezielt `fireEvent.mouseLeave(element, { relatedTarget })` statt `userEvent.hover()`
+  // verwendet (userEvent bleibt fuer das anfaengliche Oeffnen im Einsatz, das funktioniert
+  // nachweislich zuverlaessig, siehe Tests oben) - deterministisch, ohne Abhaengigkeit von jsdoms
+  // fehlender Layout-Engine (vgl. Testkonzept Punkt 6, "kein Layout-Rendering in jsdom").
+  describe('hover auto-close', () => {
+    beforeEach(() => {
+      stubMatchMedia(true)
+    })
+
+    it('stays open when the pointer moves from the trigger directly into the content (portal gap)', async () => {
+      const user = userEvent.setup()
+      render(
+        <CriterionDetailsPopover
+          criterionScores={[criterionScore()]}
+          ranking={null}
+          suggestion={null}
+        />
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+      await user.hover(trigger)
+      const content = screen.getByRole('dialog')
+
+      fireEvent.mouseLeave(trigger, { relatedTarget: content })
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    it('stays open on the symmetric reverse path, content back to trigger', async () => {
+      const user = userEvent.setup()
+      render(
+        <CriterionDetailsPopover
+          criterionScores={[criterionScore()]}
+          ranking={null}
+          suggestion={null}
+        />
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+      await user.hover(trigger)
+      const content = screen.getByRole('dialog')
+      fireEvent.mouseLeave(trigger, { relatedTarget: content })
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      fireEvent.mouseLeave(content, { relatedTarget: trigger })
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    it('closes immediately when the pointer leaves the trigger to an unrelated element', async () => {
+      const user = userEvent.setup()
+      render(
+        <div>
+          <CriterionDetailsPopover
+            criterionScores={[criterionScore()]}
+            ranking={null}
+            suggestion={null}
+          />
+          <button type="button">Woanders</button>
+        </div>
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+      await user.hover(trigger)
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      fireEvent.mouseLeave(trigger, {
+        relatedTarget: screen.getByRole('button', { name: 'Woanders' }),
+      })
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('closes immediately when the pointer leaves the content to an unrelated element', async () => {
+      const user = userEvent.setup()
+      render(
+        <div>
+          <CriterionDetailsPopover
+            criterionScores={[criterionScore()]}
+            ranking={null}
+            suggestion={null}
+          />
+          <button type="button">Woanders</button>
+        </div>
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+      await user.hover(trigger)
+      const content = screen.getByRole('dialog')
+      fireEvent.mouseLeave(trigger, { relatedTarget: content })
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      fireEvent.mouseLeave(content, {
+        relatedTarget: screen.getByRole('button', { name: 'Woanders' }),
+      })
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('closes immediately when the pointer leaves the trigger with no new target (relatedTarget null)', async () => {
+      const user = userEvent.setup()
+      render(
+        <CriterionDetailsPopover
+          criterionScores={[criterionScore()]}
+          ranking={null}
+          suggestion={null}
+        />
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+      await user.hover(trigger)
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      fireEvent.mouseLeave(trigger, { relatedTarget: null })
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    // Akzeptanzkriterium 9: bei Klick/Tap-geoeffnet hat mouseleave auf Trigger/Content KEINE Wirkung.
+    it('does not close on mouseleave when the popover was opened by click, not hover', async () => {
+      stubMatchMedia(false)
+      const user = userEvent.setup()
+      render(
+        <div>
+          <CriterionDetailsPopover
+            criterionScores={[criterionScore()]}
+            ranking={null}
+            suggestion={null}
+          />
+          <button type="button">Woanders</button>
+        </div>
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+      await user.click(trigger)
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      fireEvent.mouseLeave(trigger, {
+        relatedTarget: screen.getByRole('button', { name: 'Woanders' }),
+      })
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    // Akzeptanzkriterium 10 (Zusammenspiel mit der bestehenden Klick-Unterdrueckung): der
+    // unterdrueckte erste Klick nach Hover-Oeffnen setzt openedByHoverRef NICHT zurueck - das
+    // Popover bleibt weiterhin ueber die Auto-Close-Logik schliessbar.
+    it('still auto-closes on mouseleave after a hover-open followed by the suppressed immediate click', async () => {
+      const user = userEvent.setup()
+      render(
+        <div>
+          <CriterionDetailsPopover
+            criterionScores={[criterionScore()]}
+            ranking={null}
+            suggestion={null}
+          />
+          <button type="button">Woanders</button>
+        </div>
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+      // Ein echter Mausklick loest zuerst pointerenter (oeffnet per Hover), dann erst click aus -
+      // der direkt folgende Klick wird durch justOpenedByHoverRef unterdrueckt (bleibt offen).
+      await user.click(trigger)
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      fireEvent.mouseLeave(trigger, {
+        relatedTarget: screen.getByRole('button', { name: 'Woanders' }),
+      })
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
 })

@@ -20,14 +20,24 @@ export const PopoverClose = PopoverPrimitive.Close
 // (Bannermuster). `shadow-warm` loest sich ueber index.css automatisch je Farbschema auf
 // (`--shadow: none` im Dunkelmodus) - dieselbe "Schatten durch Rahmen ersetzt"-Regel wie bei Card,
 // ohne eine eigene `dark:`-Klasse noetig zu haben.
+//
+// `ref` als normale Prop (React 19, kein `forwardRef` noetig, specs/features/0041-
+// bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md, Architektur-Abschnitt) - laesst
+// CriterionDetailsPopover.tsx einen contentRef an den tatsaechlichen DOM-Knoten binden, fuer den
+// Ref-basierten Grace-Bereich-Check des Hover-Auto-Close ueber die Portal-Grenze hinweg. Kein
+// eigener Unit-Test hier (Testkonzept Punkt 7, "duenne generische Primitive") - ein kaputtes
+// Forwarding zeigt sich indirekt, aber vollstaendig in jedem Grace-Bereich-Test von
+// CriterionDetailsPopover.test.tsx.
 export function PopoverContent({
   className,
   sideOffset = 8,
+  ref,
   ...props
 }: ComponentProps<typeof PopoverPrimitive.Content>) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
+        ref={ref}
         sideOffset={sideOffset}
         className={cn(
           'z-50 max-h-[60vh] w-72 overflow-y-auto rounded-md border border-border bg-bg p-3 text-sm text-text shadow-warm outline-none',
