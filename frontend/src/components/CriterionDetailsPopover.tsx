@@ -99,6 +99,12 @@ export function CriterionDetailsPopover({
       openedByHoverRef.current = justOpenedByHoverRef.current
     } else {
       openedByHoverRef.current = false
+      // Copilot-Review-Fund auf PR #103 (Spec 0041): ohne diesen Reset blieb
+      // justOpenedByHoverRef nach einem Schliessen ueber einen anderen Weg als den direkt
+      // folgenden Trigger-Klick (Escape/Aussenklick/"x"-Button/Hover-Auto-Close) faelschlich
+      // `true` stehen - ein spaeterer, voellig unabhaengiger Klick (z.B. per Tastatur) haette
+      // dadurch faelschlich per preventDefault() unterdrueckt und das Popover nicht geoeffnet.
+      justOpenedByHoverRef.current = false
     }
     setOpen(nextOpen)
   }

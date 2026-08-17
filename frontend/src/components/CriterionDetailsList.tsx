@@ -28,10 +28,13 @@ function formatCriterionPercent(value: number): string {
  * (specs/features/0041-bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md,
  * Architektur-Abschnitt), damit sowohl das Popover (Grid/Kuratierung) als auch die permanente
  * Sektion in PhotoDetailPage.tsx dieselbe Darstellung/Formatierungslogik teilen (DRY,
- * Akzeptanzkriterium 5/13). Rendert unveraendert nichts, wenn criterionScores leer ist - diese
- * Entscheidung bleibt bei den jeweiligen Aufrufern (Popover-Sichtbarkeit vs. permanente Sektion),
- * nicht hier, da beide Stellen die gleiche Bedingung ohnehin schon selbst pruefen muessen (Popover
- * fuer den Trigger, PhotoDetailPage.tsx fuer den Abschnitts-Rahmen).
+ * Akzeptanzkriterium 5/13). Prueft selbst NICHT, ob `criterionScores` leer ist, und rendert in
+ * diesem Fall unveraendert ein leeres `<dl>` - die Entscheidung, den Bereich bei leerer Liste gar
+ * nicht erst einzubinden, bleibt bewusst bei den jeweiligen Aufrufern (Popover-Sichtbarkeit vs.
+ * permanente Sektion), da beide Stellen die gleiche Bedingung ohnehin schon selbst pruefen muessen
+ * (Popover fuer den Trigger, PhotoDetailPage.tsx fuer den Abschnitts-Rahmen). Copilot-Review-Fund
+ * auf PR #103: eine fruehere Fassung dieses Kommentars behauptete faelschlich, die Komponente
+ * selbst rendere bei leerer Liste nichts.
  */
 export function CriterionDetailsList({
   criterionScores,

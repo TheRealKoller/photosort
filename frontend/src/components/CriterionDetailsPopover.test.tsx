@@ -305,6 +305,37 @@ describe('CriterionDetailsPopover', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  // Copilot-Review-Fund auf PR #103 (Spec 0041): justOpenedByHoverRef wurde bisher nur beim
+  // direkt folgenden Trigger-Klick zurueckgesetzt - schloss das Popover stattdessen ueber einen
+  // anderen Weg (hier: Escape), blieb das Flag faelschlich `true` stehen und haette einen
+  // spaeteren, voellig unabhaengigen Klick auf den Trigger faelschlich per preventDefault()
+  // unterdrueckt (der Klick haette das Popover dann nicht geoeffnet). Die Maus bleibt bewusst
+  // ununterbrochen ueber dem Trigger (kein erneutes pointerenter zwischen den beiden Klicks noetig,
+  // gleiches Muster wie im Test "stays open through the click that immediately follows..." oben) -
+  // sonst wuerde ein erneutes Hover-Oeffnen den eigentlichen Fehler maskieren.
+  it('opens on a genuinely separate click after a hover-open was closed via Escape', async () => {
+    stubMatchMedia(true)
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsPopover
+        criterionScores={[criterionScore()]}
+        ranking={null}
+        suggestion={null}
+      />
+    )
+    const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+    await user.hover(trigger)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(trigger)
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
   // Akzeptanzkriterium 15: Trigger per Tab erreichbar, Enter oeffnet.
   it('opens the popover via keyboard (Tab then Enter)', async () => {
     const user = userEvent.setup()
