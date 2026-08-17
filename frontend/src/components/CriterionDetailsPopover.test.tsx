@@ -329,7 +329,7 @@ describe('CriterionDetailsPopover', () => {
   // CriterionDetailsList.test.tsx (specs/architecture/0002-testkonzept.md Punkt 8) - der obige
   // Integrationstest deckt die korrekte Durchreichung ab, keine Duplizierung hier.
 
-  // Akzeptanzkriterien 7-10 (Spec 0041): Hover-Auto-Close mit Grace-Bereich ueber Trigger UND
+  // Akzeptanzkriterien 7-11 (Spec 0041): Hover-Auto-Close mit Grace-Bereich ueber Trigger UND
   // Content, ueber die Portal-Grenze hinweg (specs/architecture/0002-testkonzept.md, Punkt 7).
   //
   // TDD-Rot-Fund, abweichend von der urspruenglichen Testkonzept-Annahme "userEvent.hover()/
@@ -486,7 +486,7 @@ describe('CriterionDetailsPopover', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
 
-    // Akzeptanzkriterium 10 (Zusammenspiel mit der bestehenden Klick-Unterdrueckung): der
+    // Akzeptanzkriterium 11 (Zusammenspiel mit der bestehenden Klick-Unterdrueckung): der
     // unterdrueckte erste Klick nach Hover-Oeffnen setzt openedByHoverRef NICHT zurueck - das
     // Popover bleibt weiterhin ueber die Auto-Close-Logik schliessbar.
     it('still auto-closes on mouseleave after a hover-open followed by the suppressed immediate click', async () => {

@@ -48,7 +48,7 @@ interface CriterionDetailsPopoverProps {
  * wuerde `preventDefault()` ignorieren). Escape/Aussenklick/der "×"-Button laufen dadurch
  * unveraendert direkt ueber `Popover.onOpenChange={setOpen}`.
  *
- * Hover-Auto-Close mit Grace-Bereich ueber Trigger UND Content (Akzeptanzkriterien 7-10, Spec
+ * Hover-Auto-Close mit Grace-Bereich ueber Trigger UND Content (Akzeptanzkriterien 7-11, Spec
  * 0041): `openedByHoverRef` ist - anders als `justOpenedByHoverRef` oben, der nur den EINEN Klick
  * direkt nach einem Hover-Oeffnen unterdrueckt und danach zurueckgesetzt wird - ueber die gesamte
  * Offen-Dauer persistent und haelt fest, ob der aktuelle Offen-Zustand ueberhaupt per Hover
