@@ -77,18 +77,9 @@ function renderPage(initialPath: string) {
 
 describe('PhotoDetailPage', () => {
   beforeEach(() => {
-    // window.matchMedia existiert in jsdom nicht (specs/architecture/0002-testkonzept.md) -
-    // CriterionDetailsPopover fragt es beim Pointer-Enter des Info-Triggers ab, das auch
-    // userEvent.click() vor dem eigentlichen Klick ausloest.
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn().mockReturnValue({
-        matches: false,
-        media: '(hover: hover) and (pointer: fine)',
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      })
-    )
+    // Kein window.matchMedia-Stub mehr noetig (anders als vor Spec 0041) - CriterionDetailsPopover
+    // wird auf dieser Seite seit der permanenten Sektion nicht mehr eingebunden, die neue
+    // CriterionDetailsList ist eine reine Praesentationskomponente ohne matchMedia-Zugriff.
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
