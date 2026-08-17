@@ -1,6 +1,6 @@
 # 0041 - Bewertungsdetails permanent in der Detailansicht + Hover-Auto-Close im Popover
 
-**Status:** Accepted
+**Status:** Implemented ([PR #103](https://github.com/TheRealKoller/photosort/pull/103), 2026-08-17)
 **Erstellt:** 2026-08-15
 **Bezug:** Inbox-Eintrag [`specs/inbox/0020-bewertungsdetails-immer-sichtbar-in-detailansicht.md`](../inbox/0020-bewertungsdetails-immer-sichtbar-in-detailansicht.md) (2026-08-15), idea-sharpener-Gespräch mit Daniel; erweitert Spec [0040](./0040-bewertungsdetails-info-popover.md).
 
