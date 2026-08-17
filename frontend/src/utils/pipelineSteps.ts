@@ -95,3 +95,24 @@ export function getDefaultStepId(states: PipelineStepState[]): StepId {
 export function getHighestReachableStepId(states: PipelineStepState[]): StepId {
   return getFrontierStepId(states)
 }
+
+/**
+ * Erklaertext fuer einen aktuell blockierten Schritt (Akzeptanzkriterium 5, Stepper-Popover) -
+ * 1:1 aus den bisherigen Erklaertexten von ProjectDetailPage.tsx uebernommen. `scan`/`ausschuss`
+ * sind nie blockiert (siehe computeStepStates), der leere Default-Fall wird deshalb praktisch nie
+ * gerendert - nur als defensiver Fallback vorhanden.
+ */
+export function getBlockedReason(id: StepId, project: ProjectOut): string {
+  switch (id) {
+    case 'gate':
+      return 'Sichte zuerst den Ausschuss oben.'
+    case 'kriterien':
+      return project.category_selection_enabled === false
+        ? 'Diese Funktion ist derzeit nicht aktiviert.'
+        : 'Bestätige zuerst den Ausschuss oben.'
+    case 'kuratierung':
+      return 'Führe zuerst die Kriterien-Bewertung oben aus.'
+    default:
+      return ''
+  }
+}
