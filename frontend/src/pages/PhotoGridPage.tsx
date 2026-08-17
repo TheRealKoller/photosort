@@ -55,7 +55,11 @@ export function PhotoGridPage() {
       return
     }
     gateMutation.mutate(undefined, {
-      onSuccess: () => navigate(`/projects/${id}`),
+      // specs/features/0042-automatisierter-flow-stepper-detailseiten.md, Akzeptanzkriterium 9:
+      // Redirect-Ziel wechselt von /projects/:id (feste Einzelseite) auf /projects/:id/pipeline
+      // (ohne festen :step) - landet ueber getDefaultStepId automatisch beim naechsten sinnvollen
+      // Schritt, statt immer auf der (jetzt entfallenen) statischen Projekt-Detailseite.
+      onSuccess: () => navigate(`/projects/${id}/pipeline`),
     })
   }
 

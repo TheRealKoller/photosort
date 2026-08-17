@@ -1,0 +1,205 @@
+import { useRef, useState } from 'react'
+import { Link } from 'react-router'
+
+import type { ProjectOut } from '../api/types'
+import { cn } from '../lib/utils'
+import { getBlockedReason, PIPELINE_STEPS, type PipelineStepState, type StepId } from '../utils/pipelineSteps'
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from './ui/popover'
+
+interface StepperProps {
+  projectId: number
+  project: ProjectOut
+  states: PipelineStepState[]
+  activeStepId: StepId
+}
+
+// Gemeinsame Kreis-Groesse fuer JEDEN Schritt-Eintrag, auch die nicht-klickbaren (Akzeptanzkriterium
+// 15, UI/UX-Abschnitt der Spec 0042: "Konsistenz wichtiger als Platzersparnis"). Identisch zur
+// bestehenden Button-Konvention (h-11/min-w-11 = 44px, siehe ui/button.tsx).
+const CIRCLE_BASE_CLASSES =
+  'flex size-11 shrink-0 items-center justify-center rounded-full border-2 text-xs font-semibold ' +
+  'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
+  'focus-visible:ring-offset-2 focus-visible:ring-offset-bg'
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4" fill="none">
+      <path
+        d="M3 8.5 6.5 12 13 4.5"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4" fill="none">
+      <rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" strokeWidth={1.5} />
+      <path
+        d="M5 7V5a3 3 0 0 1 6 0v2"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+/**
+ * Info-Popover fuer den Blockiert-Grund eines Schritts (Akzeptanzkriterium 5, UI/UX-Abschnitt) -
+ * wiederverwendet dieselbe Radix-Popover-Primitive samt geraeteunabhaengigem Oeffnungsverhalten
+ * wie components/CriterionDetailsPopover.tsx (specs/architecture/0004-design-system.md, Muster
+ * "Info-Popover fuer situative Kurzerklaerungen"). Bewusst dateilokal statt extrahiert - analog zur
+ * bisherigen "erst ab drittem Konsumenten auslagern"-Praxis dieses Projekts (siehe historischer
+ * Kommentar zu useTriggerConfirmation vor dessen Umzug nach hooks/) - aktuell nur hier gebraucht.
+ */
+function BlockedReasonPopover({ stepLabel, reason }: { stepLabel: string; reason: string }) {
+  const [open, setOpen] = useState(false)
+  const justOpenedByHoverRef = useRef(false)
+
+  function handlePointerEnter(): void {
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      if (!open) {
+        justOpenedByHoverRef.current = true
+      }
+      setOpen(true)
+    }
+  }
+
+  function handleTriggerClick(event: { preventDefault: () => void }): void {
+    if (justOpenedByHoverRef.current) {
+      event.preventDefault()
+    }
+    justOpenedByHoverRef.current = false
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild onClick={handleTriggerClick}>
+        <button
+          type="button"
+          aria-label={`Grund für Sperrung von ${stepLabel} anzeigen`}
+          onPointerEnter={handlePointerEnter}
+          className="flex size-11 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-text hover:bg-border/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+        >
+          i
+        </button>
+      </PopoverTrigger>
+      <PopoverContent>
+        <div className="flex items-center justify-between gap-3 pb-2">
+          <p className="text-sm font-semibold text-text-h">{stepLabel}</p>
+          <PopoverClose
+            aria-label="Schließen"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <span aria-hidden="true">×</span>
+          </PopoverClose>
+        </div>
+        <p className="text-sm text-text">{reason}</p>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
+ * Sticky Stepper-Fortschrittsuebersicht (Akzeptanzkriterien 1-2, 5-6, 15 der Spec 0042,
+ * specs/architecture/0004-design-system.md, Muster "Sticky Stepper-Fortschrittsnavigation") - rein
+ * praesentational, steuert nichts selbst: Klickbarkeit (AK5) haengt ausschliesslich von
+ * `isReachable` ab, der "aktuelle" Schritt kommt ausschliesslich aus der URL (`activeStepId`), nicht
+ * algorithmisch aus `states` hergeleitet.
+ */
+export function Stepper({ projectId, project, states, activeStepId }: StepperProps) {
+  const stateById = new Map(states.map((state) => [state.id, state]))
+  const activeIndex = PIPELINE_STEPS.findIndex((step) => step.id === activeStepId)
+  const activeLabel = PIPELINE_STEPS[activeIndex]?.label ?? ''
+
+  return (
+    <>
+      {/* Erste Verwendung eines Skip-Links im Produkt (UI/UX-Abschnitt) - visuell verborgen bis
+          zum Fokus (Standard-sr-only/focus:not-sr-only-Muster). */}
+      <a
+        href="#pipeline-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-20 focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-accent-fg"
+      >
+        Zum Seiteninhalt springen
+      </a>
+      <nav
+        aria-label="Fortschritt der Pipeline"
+        className="sticky top-0 z-10 border-b border-border bg-bg/95 px-4 py-3 backdrop-blur-sm sm:px-6"
+      >
+        {/* Schmale Orientierungszeile unterhalb sm: (UI/UX-Abschnitt) - ersetzt die ab sm:
+            sichtbaren Labels unter den Kreisen, verhindert Umbruch/Horizontal-Scroll der Leiste. */}
+        <p className="mb-2 text-sm text-text sm:hidden" aria-hidden="true">
+          {activeIndex >= 0 && `Schritt ${activeIndex + 1} von 5: ${activeLabel}`}
+        </p>
+        <ol className="flex items-center gap-1 sm:gap-2">
+          {PIPELINE_STEPS.map((definition, index) => {
+            const state = stateById.get(definition.id)
+            const isDone = state?.isDone ?? false
+            const isReachable = state?.isReachable ?? false
+            const isCurrent = definition.id === activeStepId
+            const isBlocked = !isReachable
+            const statusLabel = isBlocked ? 'blockiert' : isDone ? 'erledigt' : isCurrent ? 'aktuell' : 'ausstehend'
+            const stepLabel = `Schritt ${index + 1} von 5: ${definition.label}`
+            const ariaLabel = `${stepLabel}, ${statusLabel}`
+
+            const circleClasses = cn(
+              CIRCLE_BASE_CLASSES,
+              isDone ? 'border-transparent bg-status-success text-chip-fg' : 'border-border bg-bg text-text',
+              isCurrent && 'ring-2 ring-accent ring-offset-2 ring-offset-bg',
+              isBlocked && 'opacity-50'
+            )
+
+            return (
+              <li key={definition.id} className="flex flex-1 items-center gap-1 sm:gap-2 last:flex-initial">
+                <div className="flex flex-col items-center gap-2 sm:flex-row">
+                  {isBlocked ? (
+                    <span
+                      aria-disabled="true"
+                      tabIndex={-1}
+                      aria-label={ariaLabel}
+                      className={circleClasses}
+                    >
+                      <LockIcon />
+                    </span>
+                  ) : (
+                    <Link
+                      to={`/projects/${projectId}/pipeline/${definition.id}`}
+                      aria-label={ariaLabel}
+                      aria-current={isCurrent ? 'step' : undefined}
+                      className={circleClasses}
+                    >
+                      {isDone ? <CheckIcon /> : null}
+                    </Link>
+                  )}
+                  {isBlocked && (
+                    <BlockedReasonPopover
+                      stepLabel={stepLabel}
+                      reason={getBlockedReason(definition.id, project)}
+                    />
+                  )}
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'hidden text-xs text-text sm:block',
+                      isCurrent && 'font-semibold text-text-h'
+                    )}
+                  >
+                    {definition.label}
+                  </span>
+                </div>
+                {index < PIPELINE_STEPS.length - 1 && (
+                  <span aria-hidden="true" className="h-0.5 flex-1 bg-border" />
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      </nav>
+    </>
+  )
+}
