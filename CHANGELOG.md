@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/TheRealKoller/photosort/compare/v0.10.0...v0.11.0) (2026-08-16)
+
+
+### Features
+
+* Kuratierungs-Tage einzeln und global auf-/zuklappbar ([#100](https://github.com/TheRealKoller/photosort/issues/100)) ([430d757](https://github.com/TheRealKoller/photosort/commit/430d757cef7d62b0a6ea12f84aea23ffe4257dcb))
+* Sticky Titelleiste mit Projekt-Kontext-Link ([#99](https://github.com/TheRealKoller/photosort/issues/99)) ([d529a59](https://github.com/TheRealKoller/photosort/commit/d529a59fadc624add3246e77d3e8dba15072fd8c))
+
+
+### Bug Fixes
+
+* Scan-Statistik Grid-Layout und aufklappbarer Hilfetext ([#97](https://github.com/TheRealKoller/photosort/issues/97)) ([c4827a0](https://github.com/TheRealKoller/photosort/commit/c4827a08ff5ea173932aa140823ea280f2f2b916))
+
 ## [0.10.0](https://github.com/TheRealKoller/photosort/compare/v0.9.0...v0.10.0) (2026-08-15)
 
 
