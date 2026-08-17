@@ -257,4 +257,23 @@ describe('App - Header-Link "Projekt"', () => {
     link.focus()
     expect(link).toHaveFocus()
   })
+
+  // Copilot-Review-Fund auf PR #101 (Spec 0042): die Pipeline-Basis-Route ohne :step
+  // (/projects/:id/pipeline) ist ein real erreichbarer Zwischenzustand - ProjectDetailRedirect und
+  // PhotoGridPage navigieren gezielt dorthin, bevor ProjectPipelineLayouts eigener Redirect-Guard
+  // (erst NACH Abschluss der useProjectQuery) auf einen konkreten Schritt weiterspringt. Waehrend
+  // dieses Ladezustands blieb der URL-basierte Header-Link zuvor faelschlich unsichtbar, da
+  // useProjectIdFromRoute nur PIPELINE_STEP_ROUTE_PATH (mit :step), nicht aber die Basis-Route
+  // kannte. getProject bleibt hier bewusst unresolved (kein mockResolvedValue), damit der Test die
+  // Layout-Ladeanzeige ("Projekt wird geladen…") faengt, bevor irgendein Redirect feuern kann.
+  it('renders a "Projekt" link already on the pipeline base route while the project is still loading (edge case)', async () => {
+    vi.mocked(projectsApi.getProject).mockReset()
+    vi.mocked(projectsApi.getProject).mockReturnValue(new Promise(() => {}))
+
+    renderApp(['/projects/1/pipeline'])
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Projekt wird geladen')
+    const link = await screen.findByRole('link', { name: 'Projekt' })
+    expect(link).toHaveAttribute('href', '/projects/1')
+  })
 })

@@ -35,7 +35,7 @@ function ProjectDetailRedirect() {
 // bekommt. Explizite Aufzaehlung statt eines Wildcards wie "/projects/:projectId/*", da ein
 // Wildcard "/projects/new" faelschlich als Projektkontext mit projectId="new" matchen wuerde
 // (AK3). /projects/:projectId/curate ist bewusst NICHT enthalten (Spec-Entscheidung, nur die
-// hier bzw. in PIPELINE_STEP_ROUTE_PATH genannten Routen). `element` ist als `ReactElement`
+// hier bzw. in PIPELINE_BASE_ROUTE_PATH/PIPELINE_STEP_ROUTE_PATH genannten Routen). `element` ist als `ReactElement`
 // typisiert statt des woertlich in der Spec genannten globalen `JSX.Element` - unter diesem
 // tsconfig (moduleDetection: "force", kein globaler JSX-Namespace importiert) loest `JSX.Element`
 // TS2503 ("Cannot find namespace 'JSX'") aus; `ReactElement` aus `react` ist das Modul-basierte
@@ -44,10 +44,14 @@ function ProjectDetailRedirect() {
 // Die neue, verschachtelte Pipeline-Route (specs/features/0042, erste Verwendung von
 // React-Router-Nested-Routes im Projekt) kann NICHT ueber dieses flache PROJECT_ROUTES.map()
 // erzeugt werden (Layout + eigene Kind-Route noetig fuer den Outlet-Context) - ihr Pfad wird
-// deshalb separat als PIPELINE_STEP_ROUTE_PATH gefuehrt, aber ausdruecklich an DERSELBEN Stelle
-// wie PROJECT_ROUTES fuer matchPath ergaenzt (siehe useProjectIdFromRoute unten), damit sie nicht
-// denselben stillschweigenden Header-Link-Bug reproduziert, den der obige Kommentar verhindern
-// soll.
+// deshalb separat als PIPELINE_BASE_ROUTE_PATH/PIPELINE_STEP_ROUTE_PATH gefuehrt, aber ausdruecklich
+// an DERSELBEN Stelle wie PROJECT_ROUTES fuer matchPath ergaenzt (siehe useProjectIdFromRoute unten),
+// damit sie nicht denselben stillschweigenden Header-Link-Bug reproduziert, den der obige Kommentar
+// verhindern soll. Beide Pfade sind noetig: die Basis-Route ohne :step ist ein real erreichbarer
+// Zwischenzustand (ProjectDetailRedirect sowie PhotoGridPage navigieren gezielt dorthin, bevor der
+// Redirect-Guard in ProjectPipelineLayout auf einen konkreten Schritt weiterspringt) - Copilot-Review-
+// Fund auf PR #101 (Spec 0042): ohne PIPELINE_BASE_ROUTE_PATH fehlte der Projekt-Kontext-Link im
+// Sticky-Header genau waehrend dieses kurzen Zwischenzustands.
 const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   { path: '/projects/:projectId', element: <ProjectDetailRedirect /> },
   { path: '/projects/:projectId/photos', element: <PhotoGridPage /> },
@@ -55,6 +59,7 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   { path: '/projects/:projectId/compare', element: <PhotoComparePage /> },
 ]
 
+const PIPELINE_BASE_ROUTE_PATH = '/projects/:projectId/pipeline'
 const PIPELINE_STEP_ROUTE_PATH = '/projects/:projectId/pipeline/:step'
 
 // Technische Korrektur gegenueber dem woertlichen Codebeispiel der Spec (Architektur-Abschnitt):
@@ -71,7 +76,11 @@ const RESERVED_PROJECT_ID_SEGMENTS = new Set(['new'])
 
 function useProjectIdFromRoute(): string | null {
   const location = useLocation()
-  for (const path of [...PROJECT_ROUTES.map((route) => route.path), PIPELINE_STEP_ROUTE_PATH]) {
+  for (const path of [
+    ...PROJECT_ROUTES.map((route) => route.path),
+    PIPELINE_BASE_ROUTE_PATH,
+    PIPELINE_STEP_ROUTE_PATH,
+  ]) {
     const match = matchPath(path, location.pathname)
     const projectId = match?.params.projectId
     if (projectId && !RESERVED_PROJECT_ID_SEGMENTS.has(projectId)) {
