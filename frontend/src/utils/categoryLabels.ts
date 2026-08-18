@@ -7,7 +7,20 @@
 // Datenmodell bewusst gewinnt (UI/UX-Abschnitt der Spec: "kein festes Kuerzel-Schema mehr
 // moeglich"). Grossschreibung des ersten Buchstabens ist eine rein kosmetische Formatierung, kein
 // Uebersetzungsschritt - der Rohwert selbst dient laut Spec als ausgeschriebener Name.
+
+// specs/features/0045-kategorien-aus-statistiken-ableiten.md: explizites Mapping NUR fuer
+// category_keys mit Sonderzeichen-Bedarf (Umlaute lassen sich nicht generisch aus dem
+// Roh-Key ableiten) - kein Eintrag fuer jedes kuenftige, kategorie-faehige Kriterium noetig, der
+// generische Fallback unten deckt alle unbekannten/kuenftigen Keys weiterhin ab.
+const CATEGORY_DISPLAY_NAME_OVERRIDES: Readonly<Record<string, string>> = {
+  gebaeude: 'Gebäude',
+}
+
 export function formatCategoryKey(categoryKey: string): string {
+  const override = CATEGORY_DISPLAY_NAME_OVERRIDES[categoryKey]
+  if (override !== undefined) {
+    return override
+  }
   if (categoryKey.length === 0) {
     return categoryKey
   }
