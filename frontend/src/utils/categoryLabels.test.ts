@@ -21,6 +21,16 @@ describe('formatCategoryKey', () => {
   it('handles the empty string without throwing', () => {
     expect(formatCategoryKey('')).toBe('')
   })
+
+  it('does not fall through to an inherited Object.prototype property for keys like "toString"', () => {
+    // Copilot-Review-Fund (PR #106): ein reiner Plain-Object-Zugriff ohne Own-Property-Check
+    // liefert fuer "toString"/"constructor"/etc. das geerbte Prototype-Property statt undefined -
+    // die Funktion darf so einen Key niemals als "Treffer" im Override-Mapping behandeln.
+    // category_key ist laut Spec ein freier String, keine geschlossene Aufzaehlung.
+    expect(formatCategoryKey('toString')).toBe('ToString')
+    expect(formatCategoryKey('constructor')).toBe('Constructor')
+    expect(formatCategoryKey('hasOwnProperty')).toBe('HasOwnProperty')
+  })
 })
 
 describe('categoryAbbreviation', () => {

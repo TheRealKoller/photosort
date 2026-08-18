@@ -17,9 +17,12 @@ const CATEGORY_DISPLAY_NAME_OVERRIDES: Readonly<Record<string, string>> = {
 }
 
 export function formatCategoryKey(categoryKey: string): string {
-  const override = CATEGORY_DISPLAY_NAME_OVERRIDES[categoryKey]
-  if (override !== undefined) {
-    return override
+  // Own-Property-Check statt reinem `!== undefined` (Copilot-Review-Fund, PR #106): category_key
+  // ist laut Spec ein freier, server-seitig erweiterbarer String, keine geschlossene Aufzaehlung
+  // - ein reiner Plain-Object-Zugriff wuerde fuer Werte wie "toString"/"constructor" das geerbte
+  // Object.prototype-Property statt undefined liefern und faelschlich als Treffer gewertet.
+  if (Object.hasOwn(CATEGORY_DISPLAY_NAME_OVERRIDES, categoryKey)) {
+    return CATEGORY_DISPLAY_NAME_OVERRIDES[categoryKey]
   }
   if (categoryKey.length === 0) {
     return categoryKey
