@@ -8,7 +8,13 @@
 # als das bisherige Mermaid-Flowchart) - Inhalt/Knoten/Kanten sind eine reine
 # 1:1-Uebersetzung des bisherigen Diagramms, nur die Anordnung ist neu.
 #
-# Gerendert/verifiziert mit d2 v0.7.1 (https://github.com/d2lang/d2/releases).
+# Aktualisiert fuer Feature-Spec specs/features/0046-review-agenten-und-pr-workflow-orchestrator.md /
+# ADR specs/decisions/0024-review-agenten-und-pr-workflow-beim-orchestrator.md: Review- und
+# PR-Knoten liegen jetzt im eigenen "shipfeature"-Subgraph (Orchestrator, Skill ship-feature)
+# statt im "implement"-Subgraph (developer) - developer endet stattdessen mit dem
+# SendMessage-faehigen Abschlussbericht.
+#
+# Gerendert/verifiziert mit d2 v0.8.1 (https://github.com/d2lang/d2/releases).
 
 direction: right
 
@@ -39,15 +45,24 @@ implement: "Umsetzen — developer" {
   plan: "Umsetzungsplan lesen\n(von architect)"
   tdd: "TDD-Zyklus\n(Rot-Grün-Refactor)"
   quality: "Codequalität prüfen"
-  review: "Review, parallel:\ntest-engineer, requirements-engineer\n(faktisch immer) +\nsecurity-engineer*, architect*,\nux-ui-designer* (alle bedingt)"
-  fix: "Findings beheben"
   final: "Abschließender Qualitätscheck"
+  report: "Abschlussbericht\n(SendMessage-fähig)"
+
+  plan -> tdd -> quality -> final -> report
+}
+
+shipfeature: "Nachbereiten — Orchestrator (Skill ship-feature)" {
+  grid-columns: 2
+  review: "Review, parallel:\ntest-engineer, requirements-engineer\n(faktisch immer) +\nsecurity-engineer*, architect*,\nux-ui-designer* (alle bedingt)"
+  fix: "Findings beheben\n(SendMessage an developer)"
   pr: "Pull Request +\nSpec: Implemented" {
     shape: oval
   }
 
-  plan -> tdd -> quality -> review -> fix -> final -> pr
+  review -> fix -> pr
 }
+
+implement.report -> shipfeature.review
 
 understand -> refine.re
 refine.spec -> implement.plan
