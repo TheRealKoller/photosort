@@ -30,23 +30,64 @@ class CriterionDefinition:
     key: str
     display_name: str
     source: CriterionSource
+    # specs/features/0045-kategorien-aus-statistiken-ableiten.md, decisions/0023-dynamische-
+    # kategorie-ableitung-aus-kriterien-haeufigkeit.md: Kategorie-Faehigkeit ist ein reines
+    # Registry-Attribut statt einer im Code gepflegten Prioritaetskette. Invariante (durch einen
+    # eigenen Registry-Test erzwungen): category_eligible == (category_presence_threshold is not
+    # None) - reine Qualitaetskriterien (sharpness/exposure/goldener_schnitt/aesthetics) behalten
+    # den Default False/None und koennen nie eine Kategorie bilden.
+    category_eligible: bool = False
+    category_presence_threshold: float | None = None
 
+
+# Schwelle, ab der content_people als "Gesicht erkannt" gilt (compute_content_people liefert nur
+# 0.0/1.0, 0.5 trennt beide Faelle eindeutig) - zugleich die category_presence_threshold dieses
+# Kriteriums (ADR 0023, Punkt 2: Wiederverwendung bestehender Konstanten, keine neue Kalibrierung).
+_CONTENT_PEOPLE_DETECTED_THRESHOLD = 0.5
+
+# Presence-Schwellen fuer tier/gebaeude (ADR 0023, Punkt 2): beide Scores sind entweder exakt 0.0
+# (nichts erkannt) oder liegen bereits oberhalb der jeweiligen Detektor-eigenen
+# Konfidenzschwelle (ANIMAL_DETECTION_CONFIDENCE_THRESHOLD/SCENE_CLASSIFICATION_CONFIDENCE_
+# THRESHOLD, classification.py) - diese Konstanten trennen nur "nichts erkannt" von "irgendetwas
+# erkannt", keine zweite inhaltliche Kalibrierung.
+_TIER_CATEGORY_PRESENCE_THRESHOLD = 0.01
+_GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD = 0.01
 
 CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
     "sharpness": CriterionDefinition("sharpness", "Schärfe", CriterionSource.LOCAL_HEURISTIC),
     "exposure": CriterionDefinition("exposure", "Belichtung", CriterionSource.LOCAL_HEURISTIC),
     "content_people": CriterionDefinition(
-        "content_people", "Menschen erkannt", CriterionSource.LOCAL_ML
+        "content_people",
+        "Menschen erkannt",
+        CriterionSource.LOCAL_ML,
+        category_eligible=True,
+        category_presence_threshold=_CONTENT_PEOPLE_DETECTED_THRESHOLD,
     ),
     "content_landscape": CriterionDefinition(
-        "content_landscape", "Landschaft/Flächig", CriterionSource.LOCAL_HEURISTIC
+        "content_landscape",
+        "Landschaft/Flächig",
+        CriterionSource.LOCAL_HEURISTIC,
+        category_eligible=True,
+        category_presence_threshold=LANDSCAPE_UNIFORM_FRACTION_THRESHOLD,
     ),
     # specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md ab hier:
-    "tier": CriterionDefinition("tier", "Tier erkannt", CriterionSource.LOCAL_ML),
+    "tier": CriterionDefinition(
+        "tier",
+        "Tier erkannt",
+        CriterionSource.LOCAL_ML,
+        category_eligible=True,
+        category_presence_threshold=_TIER_CATEGORY_PRESENCE_THRESHOLD,
+    ),
     "goldener_schnitt": CriterionDefinition(
         "goldener_schnitt", "Goldener Schnitt", CriterionSource.LOCAL_HEURISTIC
     ),
-    "gebaeude": CriterionDefinition("gebaeude", "Gebäude erkannt", CriterionSource.LOCAL_ML),
+    "gebaeude": CriterionDefinition(
+        "gebaeude",
+        "Gebäude erkannt",
+        CriterionSource.LOCAL_ML,
+        category_eligible=True,
+        category_presence_threshold=_GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD,
+    ),
     "aesthetics": CriterionDefinition("aesthetics", "Ästhetik", CriterionSource.LOCAL_ML),
 }
 
@@ -265,24 +306,70 @@ def compute_gebaeude_score(labels: Sequence[SceneLabel]) -> float:
     return max(label.confidence for label in allowed)
 
 
-# Schwelle, ab der content_people als "Gesicht erkannt" gilt (compute_content_people liefert nur
-# 0.0/1.0, 0.5 trennt beide Faelle eindeutig).
-_CONTENT_PEOPLE_DETECTED_THRESHOLD = 0.5
-
-CATEGORY_PEOPLE = "people"
-CATEGORY_LANDSCAPE = "landscape"
 CATEGORY_DETAIL = "detail"
 
+# Anteil der Kandidaten-Fotos eines Laufs, ab dem ein category_eligible-Kriterium als "aktiv" gilt
+# (ADR 0023, Punkt 2) - 15%, hoch genug um reines Rauschen (2-3 Zufallstreffer) in einem
+# mittelgrossen Projekt zu vermeiden, niedrig genug um einen thematisch relevanten, aber nicht
+# dominanten Anteil zuverlaessig eine eigene Kategorie ausloesen zu lassen. Dokumentierte, nicht
+# gegen einen echten Fotokorpus kalibrierte Setzung (gleiche Klasse wie SHARPNESS_NORMALIZATION_
+# CEILING/LANDSCAPE_UNIFORM_FRACTION_THRESHOLD), austauschbar ohne Architektur-Aenderung.
+CATEGORY_ACTIVE_THRESHOLD_FRACTION = 0.15
 
-def derive_category_key(criterion_values: dict[str, float]) -> str:
-    """Deterministische Prioritaetskette (Akzeptanzkriterium der Spec, analog zur bisherigen
-    classify_category-Kette): Menschen erkannt -> "people"; sonst hoher Uniform-Flaechen-Anteil ->
-    "landscape"; sonst -> "detail" (Fallback). Jetzt datengetrieben aus bereits berechneten
-    Kriterien-Werten statt eines hart codierten Einzelaufrufs - fehlt ein Kriterium (best-effort
-    fehlgeschlagene Berechnung), faellt die Kette einfach auf die naechste Stufe durch, kein
-    Crash."""
-    if criterion_values.get("content_people", 0.0) >= _CONTENT_PEOPLE_DETECTED_THRESHOLD:
-        return CATEGORY_PEOPLE
-    if criterion_values.get("content_landscape", 0.0) >= LANDSCAPE_UNIFORM_FRACTION_THRESHOLD:
-        return CATEGORY_LANDSCAPE
-    return CATEGORY_DETAIL
+
+def derive_active_categories(
+    candidate_values: dict[int, dict[str, float]],
+    threshold_fraction: float = CATEGORY_ACTIVE_THRESHOLD_FRACTION,
+) -> frozenset[str]:
+    """Reine Aggregationsfunktion (Akzeptanzkriterium der Spec 0045): ermittelt EINMAL pro Lauf,
+    projektweit ueber ALLE Kandidaten-Fotos (nicht pro cluster_key, ADR 0023 Punkt 2), welche
+    category_eligible-Kriterien im jeweiligen Lauf ueberhaupt eine eigene Kategorie bilden duerfen.
+    Ein Kriterium gilt als aktiv, wenn der Anteil der Kandidaten-Fotos, deren Wert die jeweilige
+    category_presence_threshold erreicht/ueberschreitet (inklusiver Vergleich in beide
+    Richtungen), >= threshold_fraction ist. Fehlende Werte fuer einzelne Fotos (best-effort-
+    Kriterium fuer dieses Foto nicht berechenbar) zaehlen als "nicht vorhanden", kein Sonderfall.
+    Kein DB-/IO-Zugriff, keine Exception bei einem leeren Kandidatenpool."""
+    total = len(candidate_values)
+    if total == 0:
+        return frozenset()
+
+    active: set[str] = set()
+    for criterion_key, definition in CRITERIA_REGISTRY.items():
+        if not definition.category_eligible or definition.category_presence_threshold is None:
+            continue
+        threshold = definition.category_presence_threshold
+        present_count = sum(
+            1
+            for values in candidate_values.values()
+            if values.get(criterion_key, 0.0) >= threshold
+        )
+        if (present_count / total) >= threshold_fraction:
+            active.add(criterion_key)
+    return frozenset(active)
+
+
+def derive_category_key(criterion_values: dict[str, float], active_criteria: frozenset[str]) -> str:
+    """Weist EIN Foto einer Kategorie zu (Akzeptanzkriterium der Spec 0045, ADR 0023 Punkt 3):
+    prueft nur noch gegen die fuer den Lauf ermittelte aktive Menge (derive_active_categories),
+    nicht mehr gegen eine fest codierte Prioritaetskette. Erfuellt ein Foto mehrere aktive
+    Kriterien gleichzeitig (Wert >= der jeweiligen category_presence_threshold), gewinnt der
+    hoechste normierte Score; bei exakt gleichem Score entscheidet die alphabetische Reihenfolge
+    des criterion_key (deterministisch, testbar). Kein erfuelltes aktives Kriterium -> Catch-all
+    CATEGORY_DETAIL. category_key wird generisch aus dem gewinnenden criterion_key gebildet
+    (`removeprefix("content_")`) - liefert fuer Bestandskriterien identische Werte wie bisher
+    ("people"/"landscape"), fuer tier/gebaeude automatisch die richtigen Keys, ohne manuelles
+    Mapping (ADR 0023 Punkt 4)."""
+    qualifying: list[str] = []
+    for criterion_key in active_criteria:
+        definition = CRITERIA_REGISTRY.get(criterion_key)
+        if definition is None or definition.category_presence_threshold is None:
+            continue
+        value = criterion_values.get(criterion_key, 0.0)
+        if value >= definition.category_presence_threshold:
+            qualifying.append(criterion_key)
+
+    if not qualifying:
+        return CATEGORY_DETAIL
+
+    winner = min(qualifying, key=lambda key: (-criterion_values.get(key, 0.0), key))
+    return winner.removeprefix("content_")
