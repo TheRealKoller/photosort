@@ -1,9 +1,8 @@
 import { useRef, useState } from 'react'
 
 import type { CriterionScoreOut, RankingOut, SuggestionOut } from '../api/types'
-import { formatCategoryKey } from '../utils/categoryLabels'
-import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 import { cn } from '../lib/utils'
+import { CriterionDetailsList } from './CriterionDetailsList'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from './ui/popover'
 
 interface CriterionDetailsPopoverProps {
@@ -13,20 +12,15 @@ interface CriterionDetailsPopoverProps {
   className?: string
 }
 
-// Kaufmaennisch gerundete Prozentzahl ohne Nachkommastelle (Akzeptanzkriterium 9 der Spec) -
-// vermeidet eine Scheingenauigkeit, die die zugrundeliegenden, teils heuristischen Scores nicht
-// hergeben. Kriterien-Werte sind immer bereits auf [0, 1] normiert (backend criteria.py), also nie
-// negativ - Math.round rundet in diesem Bereich identisch zu "kaufmaennisch" (0.5 aufwaerts).
-function formatCriterionPercent(value: number): string {
-  return `${Math.round(value * 100)}%`
-}
-
 /**
  * Info-Popover mit den berechneten Bewertungsdetails eines Fotos (specs/features/0040-
  * bewertungsdetails-info-popover.md) - feature-spezifische Komposition auf ui/popover.tsx, analog
  * zum bestehenden Muster ui/badge.tsx -> CategoryBadge.tsx. Rendert bewusst nichts, wenn
  * criterionScores leer ist (Akzeptanzkriterium 1) - EINE Stelle entscheidet das statt jeder der
- * drei Einbindungsstellen einzeln.
+ * drei Einbindungsstellen einzeln. Die eigentliche `<dl>`-Darstellung des Inhalts lebt seit Spec
+ * 0041 in der wiederverwendbaren Praesentationskomponente CriterionDetailsList.tsx (hier mit
+ * showSuggestion={true} eingebunden) - dieses Popover selbst traegt nur noch Trigger/Portal/
+ * Oeffnungslogik.
  *
  * Geraeteunabhaengige Interaktion (Akzeptanzkriterien 3-6): Klick/Tap oeffnet/schliesst ueberall
  * (Radix' eigener Trigger-Klick-Handler beim kontrollierten `open`-State), zusaetzlich oeffnet
@@ -53,6 +47,20 @@ function formatCriterionPercent(value: number): string {
  * Radix' eigenes Klick-Toggle unterdrueckt; `PopoverTrigger`s Slot-Merge mit dem Kind-Button
  * wuerde `preventDefault()` ignorieren). Escape/Aussenklick/der "×"-Button laufen dadurch
  * unveraendert direkt ueber `Popover.onOpenChange={setOpen}`.
+ *
+ * Hover-Auto-Close mit Grace-Bereich ueber Trigger UND Content (Akzeptanzkriterien 7-11, Spec
+ * 0041): `openedByHoverRef` ist - anders als `justOpenedByHoverRef` oben, der nur den EINEN Klick
+ * direkt nach einem Hover-Oeffnen unterdrueckt und danach zurueckgesetzt wird - ueber die gesamte
+ * Offen-Dauer persistent und haelt fest, ob der aktuelle Offen-Zustand ueberhaupt per Hover
+ * zustandegekommen ist. `handleOpenChange` setzt ihn synchron zu `justOpenedByHoverRef` beim
+ * Oeffnen und setzt ihn beim Schliessen zurueck. `handlePossibleHoverClose` haengt an
+ * `onMouseLeave` von Trigger-Button UND `PopoverContent` und prueft bei
+ * `openedByHoverRef.current === true` per `Node.contains()` gegen `triggerRef`/`contentRef`, ob
+ * `event.relatedTarget` (das neue Ziel des Pointers) ausserhalb beider liegt - nur dann schliesst
+ * es. Ref-basiert statt eines naiven `event.currentTarget.contains(event.relatedTarget)`-
+ * Bubbling-Checks, weil `PopoverContent` ueber `PopoverPrimitive.Portal` an einer anderen Stelle im
+ * DOM-Baum liegt als der Trigger - ein Uebergang Trigger->Content wuerde sonst faelschlich als
+ * "verlassen" gewertet. Kein Timer/Delay noetig.
  */
 export function CriterionDetailsPopover({
   criterionScores,
@@ -62,6 +70,9 @@ export function CriterionDetailsPopover({
 }: CriterionDetailsPopoverProps) {
   const [open, setOpen] = useState(false)
   const justOpenedByHoverRef = useRef(false)
+  const openedByHoverRef = useRef(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   if (criterionScores.length === 0) {
     return null
@@ -72,7 +83,7 @@ export function CriterionDetailsPopover({
       if (!open) {
         justOpenedByHoverRef.current = true
       }
-      setOpen(true)
+      handleOpenChange(true)
     }
   }
 
@@ -83,13 +94,42 @@ export function CriterionDetailsPopover({
     justOpenedByHoverRef.current = false
   }
 
+  function handleOpenChange(nextOpen: boolean): void {
+    if (nextOpen) {
+      openedByHoverRef.current = justOpenedByHoverRef.current
+    } else {
+      openedByHoverRef.current = false
+      // Copilot-Review-Fund auf PR #103 (Spec 0041): ohne diesen Reset blieb
+      // justOpenedByHoverRef nach einem Schliessen ueber einen anderen Weg als den direkt
+      // folgenden Trigger-Klick (Escape/Aussenklick/"x"-Button/Hover-Auto-Close) faelschlich
+      // `true` stehen - ein spaeterer, voellig unabhaengiger Klick (z.B. per Tastatur) haette
+      // dadurch faelschlich per preventDefault() unterdrueckt und das Popover nicht geoeffnet.
+      justOpenedByHoverRef.current = false
+    }
+    setOpen(nextOpen)
+  }
+
+  function handlePossibleHoverClose(event: { relatedTarget: EventTarget | null }): void {
+    if (!openedByHoverRef.current) {
+      return
+    }
+    const relatedTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null
+    const staysWithinTrigger = relatedTarget !== null && triggerRef.current?.contains(relatedTarget)
+    const staysWithinContent = relatedTarget !== null && contentRef.current?.contains(relatedTarget)
+    if (!staysWithinTrigger && !staysWithinContent) {
+      handleOpenChange(false)
+    }
+  }
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild onClick={handleTriggerClick}>
         <button
+          ref={triggerRef}
           type="button"
           aria-label="Bewertungsdetails anzeigen"
           onPointerEnter={handlePointerEnter}
+          onMouseLeave={handlePossibleHoverClose}
           className={cn(
             'flex size-11 shrink-0 items-center justify-center rounded-md border border-border ' +
               'bg-bg/85 text-xs font-semibold text-text backdrop-blur-sm transition-colors ' +
@@ -101,7 +141,7 @@ export function CriterionDetailsPopover({
           i
         </button>
       </PopoverTrigger>
-      <PopoverContent>
+      <PopoverContent ref={contentRef} onMouseLeave={handlePossibleHoverClose}>
         <div className="flex items-center justify-between gap-3 pb-3">
           <p className="text-sm font-semibold text-text-h">Bewertungsdetails</p>
           <PopoverClose
@@ -111,47 +151,12 @@ export function CriterionDetailsPopover({
             <span aria-hidden="true">×</span>
           </PopoverClose>
         </div>
-        <dl className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            {criterionScores.map((score) => (
-              <div
-                key={score.criterion_key}
-                className="flex items-baseline justify-between gap-3"
-              >
-                <dt className="text-text">{score.display_name}</dt>
-                <dd className="font-medium text-text-h">{formatCriterionPercent(score.value)}</dd>
-              </div>
-            ))}
-          </div>
-          {ranking !== null && (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-text">Kategorie</dt>
-                <dd className="font-medium text-text-h">{formatCategoryKey(ranking.category_key)}</dd>
-              </div>
-              <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-text">Rang</dt>
-                <dd className="font-medium text-text-h">
-                  Rang {ranking.rank_position} von {ranking.partition_size}
-                </dd>
-              </div>
-            </div>
-          )}
-          {suggestion !== null && (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-text">Ausschuss-Vorschlag</dt>
-                <dd className="font-medium text-text-h">
-                  {formatSuggestionStatusLabel(suggestion)}
-                </dd>
-              </div>
-              <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-text">Grund</dt>
-                <dd className="font-medium text-text-h">{formatSuggestionReason(suggestion)}</dd>
-              </div>
-            </div>
-          )}
-        </dl>
+        <CriterionDetailsList
+          criterionScores={criterionScores}
+          ranking={ranking}
+          suggestion={suggestion}
+          showSuggestion={true}
+        />
       </PopoverContent>
     </Popover>
   )

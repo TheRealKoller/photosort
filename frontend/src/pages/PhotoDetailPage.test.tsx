@@ -77,18 +77,9 @@ function renderPage(initialPath: string) {
 
 describe('PhotoDetailPage', () => {
   beforeEach(() => {
-    // window.matchMedia existiert in jsdom nicht (specs/architecture/0002-testkonzept.md) -
-    // CriterionDetailsPopover fragt es beim Pointer-Enter des Info-Triggers ab, das auch
-    // userEvent.click() vor dem eigentlichen Klick ausloest.
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn().mockReturnValue({
-        matches: false,
-        media: '(hover: hover) and (pointer: fine)',
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      })
-    )
+    // Kein window.matchMedia-Stub mehr noetig (anders als vor Spec 0041) - CriterionDetailsPopover
+    // wird auf dieser Seite seit der permanenten Sektion nicht mehr eingebunden, die neue
+    // CriterionDetailsList ist eine reine Praesentationskomponente ohne matchMedia-Zugriff.
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
@@ -365,9 +356,49 @@ describe('PhotoDetailPage', () => {
     await screen.findByText('2/2')
   })
 
-  // Spec 0040 (Bewertungsdetails-Info-Popover), Akzeptanzkriterien 1, 2.
-  describe('info popover trigger', () => {
-    it('shows the trigger when the photo has criterion_scores', async () => {
+  // Spec 0041 (Bewertungsdetails permanent in der Detailansicht), Akzeptanzkriterien 1-4, 12.
+  describe('permanent Bewertungsdetails section', () => {
+    it('shows criteria and category/rank directly under the photo when the photo has criterion_scores', async () => {
+      const list: PhotoListOut = {
+        items: [
+          photo({
+            id: 1,
+            criterion_scores: [criterionScore({ display_name: 'Schärfe', value: 0.734 })],
+            ranking: {
+              cluster_key: 'cluster-0',
+              category_key: 'landscape',
+              rank_score: 0.8,
+              rank_position: 2,
+              partition_size: 5,
+            },
+          }),
+        ],
+        total: 1,
+      }
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+      renderPage('/projects/1/photos/1')
+
+      expect(await screen.findByText('Schärfe')).toBeInTheDocument()
+      expect(screen.getByText('73%')).toBeInTheDocument()
+      expect(screen.getByText('Landscape')).toBeInTheDocument()
+      expect(screen.getByText('Rang 2 von 5')).toBeInTheDocument()
+    })
+
+    // Akzeptanzkriterium 2: kein leerer Bereich, wenn criterion_scores leer ist (gleiche Regel wie
+    // die bisherige Icon-Sichtbarkeit, Spec 0040 AK1).
+    it('renders no permanent section when criterion_scores is empty', async () => {
+      const list: PhotoListOut = { items: [photo({ id: 1, criterion_scores: [] })], total: 1 }
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByText('1/1')
+      expect(document.querySelector('dl')).not.toBeInTheDocument()
+    })
+
+    // Akzeptanzkriterium 3: das Info-Icon/Popover entfaellt in der Detailansicht vollstaendig.
+    it('does not render the info-icon trigger/popover anymore', async () => {
       const list: PhotoListOut = {
         items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
         total: 1,
@@ -376,21 +407,34 @@ describe('PhotoDetailPage', () => {
 
       renderPage('/projects/1/photos/1')
 
+      await screen.findByText('Schärfe')
       expect(
-        await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
-      ).toBeInTheDocument()
+        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      ).not.toBeInTheDocument()
     })
 
-    it('does not show the trigger when criterion_scores is empty', async () => {
-      const list: PhotoListOut = { items: [photo({ id: 1, criterion_scores: [] })], total: 1 }
+    // Akzeptanzkriterium 6/showSuggestion=false: die permanente Sektion reicht suggestion nicht
+    // durch, auch wenn eine Suggestion vorhanden ist - die Ausschuss-Gruppe der CriterionDetailsList
+    // ("Ausschuss-Vorschlag"/"Grund") darf dort nicht erscheinen, unabhaengig vom separaten
+    // "Automatischer Vorschlag"-Kasten weiter unten auf der Seite.
+    it('does not pass suggestion into the permanent section, even when a suggestion exists', async () => {
+      const list: PhotoListOut = {
+        items: [
+          photo({
+            id: 1,
+            criterion_scores: [criterionScore()],
+            ratings: [],
+            suggestion: suggestion({ reason: 'low_quality' }),
+          }),
+        ],
+        total: 1,
+      }
       vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
 
       renderPage('/projects/1/photos/1')
 
-      await screen.findByText('1/1')
-      expect(
-        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' })
-      ).not.toBeInTheDocument()
+      await screen.findByText('Schärfe')
+      expect(screen.queryByText('Ausschuss-Vorschlag')).not.toBeInTheDocument()
     })
   })
 })

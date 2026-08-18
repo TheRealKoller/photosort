@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -88,30 +88,28 @@ describe('CriterionDetailsPopover', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('opens the popover on click, showing criteria as rounded percentages in the given order', async () => {
+  // Schlanker Integrations-Nachweis statt der vollen Content-Matrix (die lebt seit Spec 0041 in
+  // CriterionDetailsList.test.tsx, specs/architecture/0002-testkonzept.md Punkt 8) - prueft nur,
+  // dass Props korrekt an CriterionDetailsList durchgereicht werden: ein Kriterium, ein Ranking und
+  // eine Suggestion gemeinsam sichtbar nach dem Oeffnen.
+  it('opens the popover on click and passes criterionScores/ranking/suggestion through to CriterionDetailsList', async () => {
     const user = userEvent.setup()
     render(
       <CriterionDetailsPopover
-        criterionScores={[
-          criterionScore({ criterion_key: 'sharpness', display_name: 'Schärfe', value: 0.734 }),
-          criterionScore({
-            criterion_key: 'exposure',
-            display_name: 'Belichtung',
-            value: 0.2,
-          }),
-        ]}
-        ranking={null}
-        suggestion={null}
+        criterionScores={[criterionScore({ display_name: 'Schärfe', value: 0.734 })]}
+        ranking={ranking({ category_key: 'landscape', rank_position: 2, partition_size: 5 })}
+        suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
       />
     )
 
     await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
 
     const dialog = screen.getByRole('dialog')
-    const dtTexts = within(dialog).getAllByText(/Schärfe|Belichtung/).map((el) => el.textContent)
-    expect(dtTexts).toEqual(['Schärfe', 'Belichtung'])
+    expect(within(dialog).getByText('Schärfe')).toBeInTheDocument()
     expect(within(dialog).getByText('73%')).toBeInTheDocument()
-    expect(within(dialog).getByText('20%')).toBeInTheDocument()
+    expect(within(dialog).getByText('Landscape')).toBeInTheDocument()
+    expect(within(dialog).getByText('Rang 2 von 5')).toBeInTheDocument()
+    expect(within(dialog).getByText('Duplikat von Foto #42')).toBeInTheDocument()
   })
 
   it('closes the popover on a second click of the trigger', async () => {
@@ -307,6 +305,37 @@ describe('CriterionDetailsPopover', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  // Copilot-Review-Fund auf PR #103 (Spec 0041): justOpenedByHoverRef wurde bisher nur beim
+  // direkt folgenden Trigger-Klick zurueckgesetzt - schloss das Popover stattdessen ueber einen
+  // anderen Weg (hier: Escape), blieb das Flag faelschlich `true` stehen und haette einen
+  // spaeteren, voellig unabhaengigen Klick auf den Trigger faelschlich per preventDefault()
+  // unterdrueckt (der Klick haette das Popover dann nicht geoeffnet). Die Maus bleibt bewusst
+  // ununterbrochen ueber dem Trigger (kein erneutes pointerenter zwischen den beiden Klicks noetig,
+  // gleiches Muster wie im Test "stays open through the click that immediately follows..." oben) -
+  // sonst wuerde ein erneutes Hover-Oeffnen den eigentlichen Fehler maskieren.
+  it('opens on a genuinely separate click after a hover-open was closed via Escape', async () => {
+    stubMatchMedia(true)
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsPopover
+        criterionScores={[criterionScore()]}
+        ranking={null}
+        suggestion={null}
+      />
+    )
+    const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+    await user.hover(trigger)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(trigger)
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
   // Akzeptanzkriterium 15: Trigger per Tab erreichbar, Enter oeffnet.
   it('opens the popover via keyboard (Tab then Enter)', async () => {
     const user = userEvent.setup()
@@ -326,121 +355,195 @@ describe('CriterionDetailsPopover', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
-  // Akzeptanzkriterium 9: kaufmaennische Rundung auch am .5-Grenzfall (0.005 -> 0.5 -> aufwaerts
-  // auf 1, nicht abwaerts auf 0).
-  it('rounds a .5 percentage point boundary up (commercial rounding)', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore({ value: 0.005 })]}
-        ranking={null}
-        suggestion={null}
-      />
-    )
+  // Die volle Content-Matrix (Rundung, fehlendes Kriterium, Kategorie/Rang vorhanden/entfaellt,
+  // Ausschuss-Gruppe vorhanden/entfaellt, dl/dt/dd-Semantik) lebt seit Spec 0041 in
+  // CriterionDetailsList.test.tsx (specs/architecture/0002-testkonzept.md Punkt 8) - der obige
+  // Integrationstest deckt die korrekte Durchreichung ab, keine Duplizierung hier.
 
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+  // Akzeptanzkriterien 7-11 (Spec 0041): Hover-Auto-Close mit Grace-Bereich ueber Trigger UND
+  // Content, ueber die Portal-Grenze hinweg (specs/architecture/0002-testkonzept.md, Punkt 7).
+  //
+  // TDD-Rot-Fund, abweichend von der urspruenglichen Testkonzept-Annahme "userEvent.hover()/
+  // unhover() reicht": @testing-library/user-event@14 setzt bei zwei direkt aufeinanderfolgenden
+  // hover()-Aufrufen auf unterschiedliche Elemente KEIN reales relatedTarget auf dem dabei
+  // ausgeloesten mouseleave (system/pointer/mouse.js::Mouse.move() uebergibt der internen
+  // dispatchUIEvent()-Hilfsfunktion nur Koordinaten/Buttons, kein relatedTarget) - jsdom liefert in
+  // diesem Fall konsistent `window` statt des tatsaechlichen Zielelements oder `null` zurueck,
+  // unabhaengig davon ob das Ziel der Content, der Trigger oder ein voellig unbeteiligtes Element
+  // ist. Ohne Gegenmassnahme waeren damit weder der Grace-Bereich (`window` faellt faelschlich aus
+  // triggerRef/contentRef heraus) noch der eigentliche Schliessfall zuverlaessig unterscheidbar
+  // pruefbar. Fuer die Faelle, in denen es auf ein PRAEZISES relatedTarget ankommt, wird deshalb
+  // gezielt `fireEvent.mouseLeave(element, { relatedTarget })` statt `userEvent.hover()`
+  // verwendet (userEvent bleibt fuer das anfaengliche Oeffnen im Einsatz, das funktioniert
+  // nachweislich zuverlaessig, siehe Tests oben) - deterministisch, ohne Abhaengigkeit von jsdoms
+  // fehlender Layout-Engine (vgl. Testkonzept Punkt 6, "kein Layout-Rendering in jsdom").
+  describe('hover auto-close', () => {
+    beforeEach(() => {
+      stubMatchMedia(true)
+    })
 
-    expect(screen.getByText('1%')).toBeInTheDocument()
-  })
+    it('stays open when the pointer moves from the trigger directly into the content (portal gap)', async () => {
+      const user = userEvent.setup()
+      render(
+        <CriterionDetailsPopover
+          criterionScores={[criterionScore()]}
+          ranking={null}
+          suggestion={null}
+        />
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
-  it('does not fill a missing criterion with a placeholder, only renders what is given', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore({ criterion_key: 'sharpness', display_name: 'Schärfe' })]}
-        ranking={null}
-        suggestion={null}
-      />
-    )
+      await user.hover(trigger)
+      const content = screen.getByRole('dialog')
 
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+      fireEvent.mouseLeave(trigger, { relatedTarget: content })
 
-    expect(screen.queryByText('Belichtung')).not.toBeInTheDocument()
-  })
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
 
-  // Akzeptanzkriterium 10: Kategorie/Rang-Gruppe bei vorhandenem ranking.
-  it('shows category and rank when ranking is not null', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore()]}
-        ranking={ranking({ category_key: 'landscape', rank_position: 2, partition_size: 5 })}
-        suggestion={null}
-      />
-    )
+    it('stays open on the symmetric reverse path, content back to trigger', async () => {
+      const user = userEvent.setup()
+      render(
+        <CriterionDetailsPopover
+          criterionScores={[criterionScore()]}
+          ranking={null}
+          suggestion={null}
+        />
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+      await user.hover(trigger)
+      const content = screen.getByRole('dialog')
+      fireEvent.mouseLeave(trigger, { relatedTarget: content })
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
 
-    expect(screen.getByText('Landscape')).toBeInTheDocument()
-    expect(screen.getByText('Rang 2 von 5')).toBeInTheDocument()
-  })
+      fireEvent.mouseLeave(content, { relatedTarget: trigger })
 
-  // Akzeptanzkriterium 11: Kategorie/Rang-Gruppe entfaellt vollstaendig ohne ranking.
-  it('omits the category/rank group entirely when ranking is null', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore()]}
-        ranking={null}
-        suggestion={null}
-      />
-    )
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
 
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+    it('closes immediately when the pointer leaves the trigger to an unrelated element', async () => {
+      const user = userEvent.setup()
+      render(
+        <div>
+          <CriterionDetailsPopover
+            criterionScores={[criterionScore()]}
+            ranking={null}
+            suggestion={null}
+          />
+          <button type="button">Woanders</button>
+        </div>
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
-    expect(screen.queryByText(/^Rang /)).not.toBeInTheDocument()
-  })
+      await user.hover(trigger)
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
 
-  // Akzeptanzkriterium 12: Ausschuss-Gruppe bei vorhandenem suggestion, ueber suggestionLabels.ts.
-  it('shows the suggestion reason when suggestion is not null', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore()]}
-        ranking={null}
-        suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
-      />
-    )
+      fireEvent.mouseLeave(trigger, {
+        relatedTarget: screen.getByRole('button', { name: 'Woanders' }),
+      })
 
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
 
-    expect(screen.getByText('Verworfen')).toBeInTheDocument()
-    expect(screen.getByText('Duplikat von Foto #42')).toBeInTheDocument()
-  })
+    it('closes immediately when the pointer leaves the content to an unrelated element', async () => {
+      const user = userEvent.setup()
+      render(
+        <div>
+          <CriterionDetailsPopover
+            criterionScores={[criterionScore()]}
+            ranking={null}
+            suggestion={null}
+          />
+          <button type="button">Woanders</button>
+        </div>
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
-  // Akzeptanzkriterium 13: Ausschuss-Gruppe entfaellt vollstaendig ohne suggestion.
-  it('omits the suggestion group entirely when suggestion is null', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore()]}
-        ranking={null}
-        suggestion={null}
-      />
-    )
+      await user.hover(trigger)
+      const content = screen.getByRole('dialog')
+      fireEvent.mouseLeave(trigger, { relatedTarget: content })
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+      fireEvent.mouseLeave(content, {
+        relatedTarget: screen.getByRole('button', { name: 'Woanders' }),
+      })
 
-    expect(screen.queryByText('Duplikat von Foto #42')).not.toBeInTheDocument()
-    expect(screen.queryByText('Geringe Bildqualität')).not.toBeInTheDocument()
-  })
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
 
-  // Akzeptanzkriterium 16: dl/dt/dd-Semantik.
-  it('renders the criteria group using dl/dt/dd semantics', async () => {
-    const user = userEvent.setup()
-    render(
-      <CriterionDetailsPopover
-        criterionScores={[criterionScore()]}
-        ranking={null}
-        suggestion={null}
-      />
-    )
+    it('closes immediately when the pointer leaves the trigger with no new target (relatedTarget null)', async () => {
+      const user = userEvent.setup()
+      render(
+        <CriterionDetailsPopover
+          criterionScores={[criterionScore()]}
+          ranking={null}
+          suggestion={null}
+        />
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
-    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+      await user.hover(trigger)
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
 
-    const dialog = screen.getByRole('dialog')
-    expect(dialog.querySelector('dl')).not.toBeNull()
-    expect(dialog.querySelector('dt')).not.toBeNull()
-    expect(dialog.querySelector('dd')).not.toBeNull()
+      fireEvent.mouseLeave(trigger, { relatedTarget: null })
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    // Akzeptanzkriterium 9: bei Klick/Tap-geoeffnet hat mouseleave auf Trigger/Content KEINE Wirkung.
+    it('does not close on mouseleave when the popover was opened by click, not hover', async () => {
+      stubMatchMedia(false)
+      const user = userEvent.setup()
+      render(
+        <div>
+          <CriterionDetailsPopover
+            criterionScores={[criterionScore()]}
+            ranking={null}
+            suggestion={null}
+          />
+          <button type="button">Woanders</button>
+        </div>
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+      await user.click(trigger)
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      fireEvent.mouseLeave(trigger, {
+        relatedTarget: screen.getByRole('button', { name: 'Woanders' }),
+      })
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    // Akzeptanzkriterium 11 (Zusammenspiel mit der bestehenden Klick-Unterdrueckung): der
+    // unterdrueckte erste Klick nach Hover-Oeffnen setzt openedByHoverRef NICHT zurueck - das
+    // Popover bleibt weiterhin ueber die Auto-Close-Logik schliessbar.
+    it('still auto-closes on mouseleave after a hover-open followed by the suppressed immediate click', async () => {
+      const user = userEvent.setup()
+      render(
+        <div>
+          <CriterionDetailsPopover
+            criterionScores={[criterionScore()]}
+            ranking={null}
+            suggestion={null}
+          />
+          <button type="button">Woanders</button>
+        </div>
+      )
+      const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
+
+      // Ein echter Mausklick loest zuerst pointerenter (oeffnet per Hover), dann erst click aus -
+      // der direkt folgende Klick wird durch justOpenedByHoverRef unterdrueckt (bleibt offen).
+      await user.click(trigger)
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      fireEvent.mouseLeave(trigger, {
+        relatedTarget: screen.getByRole('button', { name: 'Woanders' }),
+      })
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
   })
 })

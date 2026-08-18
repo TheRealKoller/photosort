@@ -5,7 +5,7 @@ import { ApiError } from '../api/client'
 import type { RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
-import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
+import { CriterionDetailsList } from '../components/CriterionDetailsList'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
 import { Alert } from '../components/ui/alert'
@@ -270,16 +270,28 @@ export function PhotoDetailPage() {
           alt={currentPhoto.relative_path}
           className="aspect-[4/3] w-full rounded-xl object-contain"
         />
-        {/* Einheitliche Position "oben rechts" ueber allen drei Einbindungsstellen (UI/UX-
-            Abschnitt, specs/features/0040-bewertungsdetails-info-popover.md) - hier anders als in
-            PhotoGridPage.tsx kein bereits belegtes Element in dieser Ecke. */}
-        <CriterionDetailsPopover
-          criterionScores={currentPhoto.criterion_scores}
-          ranking={currentPhoto.ranking}
-          suggestion={currentPhoto.suggestion}
-          className="absolute right-2 top-2"
-        />
       </div>
+
+      {/* Permanente Sektion statt Info-Popover (Akzeptanzkriterien 1-4,
+          specs/features/0041-bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md) -
+          hier steht im Gegensatz zu Grid/Kuratierung ohnehin nur ein einziges Foto im Fokus, der
+          zusaetzliche Klick auf ein Info-Icon ist unnoetig. Gleiche Sichtbarkeitsregel wie die
+          bisherige Icon-Sichtbarkeit (Spec 0040 AK1): kein leerer Bereich bei leerer Liste.
+          showSuggestion={false} - die Ausschuss-Gruppe bleibt exklusiv im "Automatischer
+          Vorschlag"-Kasten weiter unten, suggestion wird hier bewusst nicht durchgereicht (kein
+          Feld-/Logik-Merge zwischen beiden Bereichen). Bewusst kein Card-Rahmen/Schatten wie das
+          Popover (Designprinzip "Die Fotos sind der Star", UI/UX-Abschnitt der Spec) - ein
+          schlichter, dezenter Block, der sich optisch unterordnet. */}
+      {currentPhoto.criterion_scores.length > 0 && (
+        <div className="text-sm text-text">
+          <CriterionDetailsList
+            criterionScores={currentPhoto.criterion_scores}
+            ranking={currentPhoto.ranking}
+            suggestion={null}
+            showSuggestion={false}
+          />
+        </div>
+      )}
 
       <div className="flex justify-between gap-3">
         <Button type="button" variant="outline" aria-label="Vorheriges Foto" onClick={handlePrev} disabled={index <= 0}>
