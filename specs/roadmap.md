@@ -24,7 +24,7 @@ Keine offenen Einträge.
 | [0031](./features/0031-zweiwege-sync-specs-github-projekt.md) | Zwei-Wege-Sync Feature-Specs ↔ GitHub-Projekt | Accepted |
 | [0044](./features/0044-projekte-loeschen.md) | Projekte löschen (nur PhotoSort-Daten, mit Namenseingabe-Bestätigung) | Accepted |
 | [0048](./features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md) | Drei Kompositions-Kriterien: Symmetrie, Horizont-Neigung, Freiraum/Fluchtrichtung | Accepted |
-| [0018-i.S.](./inbox/0018-nur-frontend-nach-aussen-exposen.md) *[in Schärfung]* | Nur Frontend nach außen exposen (Backend über Docker-internes Netzwerk) | Proposed |
+| [0049](./features/0049-single-origin-api-proxy-frontend-nginx.md) | Nur Frontend nach außen exposen: Single-Origin-API-Proxy über Frontend-nginx | Accepted |
 
 ### Inbox — ungeschärfte Ideen
 
