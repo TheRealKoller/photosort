@@ -24,6 +24,7 @@ Keine offenen Einträge.
 | [0031](./features/0031-zweiwege-sync-specs-github-projekt.md) | Zwei-Wege-Sync Feature-Specs ↔ GitHub-Projekt | Accepted |
 | [0044](./features/0044-projekte-loeschen.md) | Projekte löschen (nur PhotoSort-Daten, mit Namenseingabe-Bestätigung) | Accepted |
 | [0048](./features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md) | Drei Kompositions-Kriterien: Symmetrie, Horizont-Neigung, Freiraum/Fluchtrichtung | Accepted |
+| [0018-i.S.](./inbox/0018-nur-frontend-nach-aussen-exposen.md) *[in Schärfung]* | Nur Frontend nach außen exposen (Backend über Docker-internes Netzwerk) | Proposed |
 
 ### Inbox — ungeschärfte Ideen
 
@@ -34,7 +35,6 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0004](./inbox/0004-ki-app-im-browser-lokal-ansehen.md) | KI soll die laufende App lokal im Browser ansehen können (z.B. via `docker compose`) — offen, ob/wie sinnvoll umsetzbar |
 | [0006](./inbox/0006-dateianzahl-beim-ordner-heraussuchen.md) | Beim Heraussuchen des OpenCloud-Ordners Dateianzahl im Ordner anzeigen |
 | [0016](./inbox/0016-roadmap-nur-uebersicht.md) | Roadmap soll nur eine knappe Übersicht sein, ohne die ausführlichen Fließtext-Begründungen — durch Spec 0026 (Tabelle an den Anfang) und 0029 (drei Prioritätsstufen) nur teilweise berührt, der eigentliche Fließtext unter "Priorisierung" bleibt bestehen |
-| [0018](./inbox/0018-nur-frontend-nach-aussen-exposen.md) | Nur noch Frontend nach außen exposen, Backend nicht mehr direkt über den Reverse Proxy erreichbar machen müssen |
 | [0022](./inbox/0022-gps-zeit-clusterbildung-benannte-cluster.md) | GPS-/Zeit-/Sehenswürdigkeit-basierte Clusterbildung für benannte Cluster (gegenseitige Herleitung bei fehlenden Einzelmerkmalen) |
 
 ### Bereits umgesetzt
