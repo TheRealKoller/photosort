@@ -8,14 +8,13 @@ from PIL import Image, ImageDraw
 from photosort.classification import AnimalDetection, FaceBoundingBox, SceneLabel
 from photosort.criteria import (
     CATEGORY_DETAIL,
-    CATEGORY_LANDSCAPE,
-    CATEGORY_PEOPLE,
     CRITERIA_REGISTRY,
     compute_content_landscape,
     compute_content_people,
     compute_gebaeude_score,
     compute_golden_ratio_score,
     compute_tier_score,
+    derive_active_categories,
     derive_category_key,
     normalize_exposure,
     normalize_sharpness,
@@ -77,6 +76,28 @@ class TestCriteriaRegistry:
 
     def test_registry_contains_aesthetics_with_the_correct_source(self) -> None:
         assert CRITERIA_REGISTRY["aesthetics"].source == CriterionSource.LOCAL_ML
+
+    def test_category_eligible_and_presence_threshold_are_set_together_or_not_at_all(
+        self,
+    ) -> None:
+        # Registry-Invariante (Akzeptanzkriterium der Spec 0045): category_eligible == (threshold
+        # is not None), fuer JEDEN Eintrag der Registry - kein Eintrag darf nur eines von beiden
+        # setzen.
+        for key, definition in CRITERIA_REGISTRY.items():
+            assert definition.category_eligible == (
+                definition.category_presence_threshold is not None
+            ), f"{key}: category_eligible und category_presence_threshold widersprechen sich"
+
+    def test_exactly_the_four_content_criteria_are_category_eligible(self) -> None:
+        # Akzeptanzkriterium der Spec 0045: genau content_people/content_landscape/tier/gebaeude
+        # sind category_eligible=True - reine Qualitaetskriterien nie.
+        eligible = {key for key, d in CRITERIA_REGISTRY.items() if d.category_eligible}
+        assert eligible == {"content_people", "content_landscape", "tier", "gebaeude"}
+
+    def test_quality_criteria_are_never_category_eligible(self) -> None:
+        for key in ("sharpness", "exposure", "goldener_schnitt", "aesthetics"):
+            assert CRITERIA_REGISTRY[key].category_eligible is False
+            assert CRITERIA_REGISTRY[key].category_presence_threshold is None
 
 
 class TestNormalizeSharpness:
@@ -232,20 +253,102 @@ class TestComputeGebaeudeScore:
 # selbst zaehlen, nicht die tatsaechliche Produktions-Verdrahtung.
 
 
-class TestDeriveCategoryKey:
-    def test_people_wins_over_everything_else(self) -> None:
-        values = {"content_people": 1.0, "content_landscape": 1.0}
-        assert derive_category_key(values) == CATEGORY_PEOPLE
+class TestDeriveActiveCategories:
+    def test_empty_candidate_pool_yields_empty_set_without_zero_division(self) -> None:
+        assert derive_active_categories({}) == frozenset()
 
-    def test_uniform_without_people_is_landscape(self) -> None:
+    def test_criterion_with_zero_hits_stays_inactive(self) -> None:
+        candidate_values = {
+            1: {"content_people": 0.0, "content_landscape": 0.9},
+            2: {"content_people": 0.0, "content_landscape": 0.9},
+        }
+        active = derive_active_categories(candidate_values)
+        assert "content_people" not in active
+        assert "content_landscape" in active
+
+    def test_exactly_at_the_fifteen_percent_threshold_is_active_inclusive(self) -> None:
+        # 15 von 100 Kandidaten erfuellen die Presence-Schwelle -> genau 15% -> aktiv (inklusiv).
+        candidate_values = {i: {"tier": 0.9 if i < 15 else 0.0} for i in range(100)}
+        active = derive_active_categories(candidate_values)
+        assert "tier" in active
+
+    def test_just_below_the_threshold_stays_inactive(self) -> None:
+        candidate_values = {i: {"tier": 0.9 if i < 14 else 0.0} for i in range(100)}
+        active = derive_active_categories(candidate_values)
+        assert "tier" not in active
+
+    def test_just_above_the_threshold_is_active(self) -> None:
+        candidate_values = {i: {"tier": 0.9 if i < 16 else 0.0} for i in range(100)}
+        active = derive_active_categories(candidate_values)
+        assert "tier" in active
+
+    def test_missing_values_for_some_photos_count_as_not_present(self) -> None:
+        # Best-effort: fuer photo 2/3 wurde content_landscape gar nicht erst berechnet (fehlender
+        # Key statt 0.0) - zaehlt trotzdem als "nicht vorhanden", kein KeyError. Nur 1 von 3 (33%)
+        # erfuellt die Presence-Schwelle, unter der 50%-Testschwelle.
+        candidate_values = {
+            1: {"content_landscape": 0.9},
+            2: {},
+            3: {},
+        }
+        active = derive_active_categories(candidate_values, threshold_fraction=0.5)
+        assert "content_landscape" not in active
+
+    def test_custom_threshold_fraction_is_respected(self) -> None:
+        candidate_values = {i: {"tier": 0.9 if i < 5 else 0.0} for i in range(10)}
+        assert "tier" not in derive_active_categories(candidate_values, threshold_fraction=0.6)
+        assert "tier" in derive_active_categories(candidate_values, threshold_fraction=0.5)
+
+
+class TestDeriveCategoryKey:
+    def test_people_wins_when_only_people_is_active(self) -> None:
+        values = {"content_people": 1.0, "content_landscape": 1.0}
+        active = frozenset({"content_people"})
+        assert derive_category_key(values, active) == "people"
+
+    def test_uniform_without_people_active_is_landscape(self) -> None:
         values = {"content_people": 0.0, "content_landscape": 0.9}
-        assert derive_category_key(values) == CATEGORY_LANDSCAPE
+        active = frozenset({"content_people", "content_landscape"})
+        assert derive_category_key(values, active) == "landscape"
 
     def test_textured_without_people_falls_back_to_detail(self) -> None:
         values = {"content_people": 0.0, "content_landscape": 0.1}
-        assert derive_category_key(values) == CATEGORY_DETAIL
+        active = frozenset({"content_people", "content_landscape"})
+        assert derive_category_key(values, active) == CATEGORY_DETAIL
 
     def test_missing_criteria_falls_back_to_detail_without_crashing(self) -> None:
         # Best-effort-Fall: beide Inhalts-Kriterien fuer dieses Foto konnten nicht berechnet
         # werden (z.B. fehlende display-Cache-Datei) - die Kette darf nicht crashen.
-        assert derive_category_key({}) == CATEGORY_DETAIL
+        assert derive_category_key({}, frozenset({"content_people"})) == CATEGORY_DETAIL
+
+    def test_no_active_categories_at_all_falls_back_to_detail(self) -> None:
+        # Kein Kriterium im Lauf erreichte die 15%-Haeufigkeitsschwelle - jedes Foto landet im
+        # Catch-all, unabhaengig von den einzelnen Kriterien-Werten.
+        values = {"content_people": 1.0, "content_landscape": 1.0}
+        assert derive_category_key(values, frozenset()) == CATEGORY_DETAIL
+
+    def test_highest_score_wins_among_several_active_criteria(self) -> None:
+        # tier (0.4) schlaegt gebaeude (0.2), obwohl content_people nicht erfuellt ist -
+        # Akzeptanzkriterium: "gewinnt der hoechste normierte Score".
+        values = {"tier": 0.4, "gebaeude": 0.2, "content_people": 0.0}
+        active = frozenset({"tier", "gebaeude", "content_people"})
+        assert derive_category_key(values, active) == "tier"
+
+    def test_tie_break_is_alphabetical_by_criterion_key(self) -> None:
+        # content_landscape und tier erreichen exakt denselben Score -> alphabetisch fruehester
+        # criterion_key gewinnt ("content_landscape" < "tier").
+        values = {"content_landscape": 0.6, "tier": 0.6}
+        active = frozenset({"content_landscape", "tier"})
+        assert derive_category_key(values, active) == "landscape"
+
+    def test_gebaeude_and_tier_derive_category_keys_without_manual_mapping(self) -> None:
+        assert derive_category_key({"tier": 0.5}, frozenset({"tier"})) == "tier"
+        assert derive_category_key({"gebaeude": 0.5}, frozenset({"gebaeude"})) == "gebaeude"
+
+    def test_active_but_below_the_photos_own_presence_threshold_does_not_win(self) -> None:
+        # tier ist AKTIV im Lauf (Haeufigkeitsschwelle erreicht), aber DIESES Foto selbst hat nur
+        # einen sehr niedrigen tier-Score unterhalb der Presence-Schwelle - gewinnt trotzdem nicht,
+        # nur weil es das aktivste unter den Werten waere.
+        values = {"tier": 0.001, "content_people": 0.0}
+        active = frozenset({"tier", "content_people"})
+        assert derive_category_key(values, active) == CATEGORY_DETAIL

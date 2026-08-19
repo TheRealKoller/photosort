@@ -1,6 +1,6 @@
 # 0045 - Kategorien aus Bild-Statistiken ableiten
 
-**Status:** Accepted
+**Status:** Implemented ([PR #106](https://github.com/TheRealKoller/photosort/pull/106))
 **Erstellt:** 2026-08-16
 **Bezug:** `specs/inbox/0025-kategorien-aus-bildstatistiken-ableiten.md` (Ursprungs-Idee), idea-sharpener-Gespräch mit Daniel, ADR [`decisions/0023-dynamische-kategorie-ableitung-aus-kriterien-haeufigkeit.md`](../decisions/0023-dynamische-kategorie-ableitung-aus-kriterien-haeufigkeit.md). Revidiert bewusst Teile von ADR [`0021`](../decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md) (nur Punkt 2, Kategorie-Ableitung) und den UI/UX-Abschnitt von Spec [`0038`](./0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md).
 

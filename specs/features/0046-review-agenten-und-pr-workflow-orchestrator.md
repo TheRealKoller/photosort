@@ -1,6 +1,6 @@
 # 0046 - Review-Agenten und PR-/Copilot-Workflow vom Orchestrator statt vom `developer`-Subagenten
 
-**Status:** Accepted
+**Status:** Implemented ([PR #105](https://github.com/TheRealKoller/photosort/pull/105))
 **Erstellt:** 2026-08-18
 **Bezug:** [`inbox/0024-review-agenten-vom-orchestrator-statt-developer-aufrufen.md`](../inbox/0024-review-agenten-vom-orchestrator-statt-developer-aufrufen.md) (nach Anlage dieser Spec gelöscht), ADR [`decisions/0024-review-agenten-und-pr-workflow-beim-orchestrator.md`](../decisions/0024-review-agenten-und-pr-workflow-beim-orchestrator.md), Idea-Sharpening-Gespräch mit Daniel am 2026-08-18
 

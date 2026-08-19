@@ -38,6 +38,7 @@ from photosort.criteria import (
     compute_golden_ratio_score,
     compute_tier_score,
     content_people_from_faces,
+    derive_active_categories,
     derive_category_key,
     normalize_exposure,
     normalize_sharpness,
@@ -759,7 +760,14 @@ class CriterionScoringGuardError(Exception):
 # CRITERIA_REGISTRY abgeleitet (Copilot-Review-Fund, PR #88) - eine kuenftige Aenderung an der
 # Registry (z.B. ein Kriterium wechselt von local_heuristic zu local_ml) bleibt so automatisch
 # konsistent, ohne dass diese Stelle separat nachgepflegt werden muss.
-_CONTENT_CRITERION_KEYS: tuple[str, ...] = (
+#
+# Umbenannt von _CONTENT_CRITERION_KEYS/_CONTENT_CRITERION_SOURCES (specs/features/0045-
+# kategorien-aus-statistiken-ableiten.md, ADR 0023): bezeichnet weiterhin die bildbasiert
+# berechneten Kriterien fuer die Upsert-Buchhaltung (inkl. goldener_schnitt/aesthetics, die NIE
+# eine Kategorie bilden duerfen) - eine fachlich andere Menge als CriterionDefinition.
+# category_eligible (welche Kriterien ueberhaupt eine Kategorie bilden DUERFEN). Rein kosmetische
+# Umbenennung, keine Verhaltensaenderung.
+_IMAGE_ANALYSIS_CRITERION_KEYS: tuple[str, ...] = (
     "content_people",
     "content_landscape",
     "tier",
@@ -767,8 +775,8 @@ _CONTENT_CRITERION_KEYS: tuple[str, ...] = (
     "gebaeude",
     "aesthetics",
 )
-_CONTENT_CRITERION_SOURCES: dict[str, CriterionSource] = {
-    key: CRITERIA_REGISTRY[key].source for key in _CONTENT_CRITERION_KEYS
+_IMAGE_ANALYSIS_CRITERION_SOURCES: dict[str, CriterionSource] = {
+    key: CRITERIA_REGISTRY[key].source for key in _IMAGE_ANALYSIS_CRITERION_KEYS
 }
 
 
@@ -1006,7 +1014,7 @@ async def run_criterion_scoring(
             content_values = _compute_content_criteria(
                 cache_dir, photo, detector, animal_detector, scene_classifier, aesthetics_model
             )
-            for criterion_key, source in _CONTENT_CRITERION_SOURCES.items():
+            for criterion_key, source in _IMAGE_ANALYSIS_CRITERION_SOURCES.items():
                 if criterion_key in content_values:
                     _upsert_criterion(
                         photo.id, criterion_key, content_values[criterion_key], source
@@ -1027,9 +1035,15 @@ async def run_criterion_scoring(
         run.photos_processed = processed
         await session.commit()
 
+        # specs/features/0045-kategorien-aus-statistiken-ableiten.md, ADR 0023: GENAU EINMAL pro
+        # Lauf, projektweit ueber ALLE Kandidaten-Fotos (nicht pro cluster_key), NACH der
+        # Foto-Schleife - candidate_values enthaelt an dieser Stelle bereits die vollstaendigen,
+        # in diesem Lauf erfolgreich berechneten Kriterien-Werte aller Kandidaten.
+        active_categories = derive_active_categories(candidate_values)
+
         partitions: dict[tuple[str, str], dict[int, dict[str, float]]] = {}
         for photo_id, values in candidate_values.items():
-            category_key = derive_category_key(values)
+            category_key = derive_category_key(values, active_categories)
             partition_key = (cluster_by_photo[photo_id], category_key)
             partitions.setdefault(partition_key, {})[photo_id] = values
 

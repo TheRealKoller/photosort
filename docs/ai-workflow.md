@@ -39,17 +39,19 @@ Aufgabengebiet und ein zugehöriges, lebendes Konzept-Dokument unter
 | `ux-ui-designer` | Design-System, UI/UX-Ansatz pro Feature, UI/UX-Review (nur bei Frontend-Änderungen) | `specs/architecture/0004-design-system.md` |
 | `test-engineer` | Testkonzept, Teststrategie pro Feature, testfokussiertes Review | `specs/architecture/0002-testkonzept.md` |
 | `security-engineer` | Sicherheitskonzept, Security-Einschätzung pro Feature, sicherheitsfokussiertes Review | `specs/architecture/0003-securitykonzept.md` |
-| `developer` | Setzt eine akzeptierte Feature-Spec testgetrieben um (TDD-Zyklus, Branch, Pull Request) | — |
+| `developer` | Setzt eine akzeptierte Feature-Spec testgetrieben um (TDD-Zyklus, Branch, Abschlussbericht) — Review, Pull Request und Copilot-Review liegen seit ADR 0024 beim Orchestrator (Skill `ship-feature`) | — |
 | `research-engineer` | Strukturierte, quellenbelegte Web-Recherche — direkt für Daniel oder delegiert von den fünf anderen Agenten während ihrer eigenen Arbeit | — (kein eigenes Konzept-Dokument, siehe unten) |
 
 Der `idea-sharpener`-Skill begleitet eine rohe Idee bis zur akzeptierten Feature-Spec und zieht
 dabei die vier Fachspezialisten der Reihe nach hinzu. Der `developer`-Agent setzt eine
-akzeptierte Spec um und lässt sie am Ende von allen zutreffenden Spezialisten parallel
-reviewen:
+akzeptierte Spec testgetrieben um und übergibt danach per fest formatiertem Abschlussbericht an
+den Orchestrator (Skill `ship-feature`), der sie von allen zutreffenden Spezialisten parallel
+reviewen lässt, den Pull Request eröffnet und das Copilot-Review anfordert/auswertet — siehe
+ADR 0024:
 
-![Workflow-Übersicht: Verfeinern (idea-sharpener) und Umsetzen (developer)](../specs/diagrams/workflow-overview.svg)
+![Workflow-Übersicht: Verfeinern (idea-sharpener) und Umsetzen (developer + ship-feature)](../specs/diagrams/workflow-overview.svg)
 
-<sub>\* `security-engineer`, `architect` und `ux-ui-designer` reviewen nur, wenn ihr jeweiliger Trigger aus ADR 0014 zutrifft (z.B. Auth-/Secrets-Pfade, neue Abhängigkeiten bzw. Frontend-/UI-Änderungen); `test-engineer`/`requirements-engineer` bilden die faktisch unbedingte Basis.</sub>
+<sub>\* `security-engineer`, `architect` und `ux-ui-designer` reviewen nur, wenn ihr jeweiliger Trigger aus ADR 0014 zutrifft (z.B. Auth-/Secrets-Pfade, neue Abhängigkeiten bzw. Frontend-/UI-Änderungen); `test-engineer`/`requirements-engineer` bilden die faktisch unbedingte Basis. Review, Pull-Request-Erstellung und Copilot-Review führt seit ADR 0024 der Orchestrator (Skill `ship-feature`) aus, nicht mehr `developer` selbst.</sub>
 
 <sub>Diagramm-Quelle: [`specs/diagrams/workflow-overview.d2`](../specs/diagrams/workflow-overview.d2), gerendert per `scripts/render-diagrams.sh` (siehe ADR [`decisions/0013-diagram-tooling-d2.md`](../specs/decisions/0013-diagram-tooling-d2.md)).</sub>
 
@@ -73,7 +75,7 @@ unterschreitet ein Pull Request diese Schwelle, kann er nicht gemergt werden.
 ## Kosteneffiziente Agenten-Nutzung
 
 Da Claude-Code-Subagenten-Aufrufe ein spürbarer Verbrauchsposten auf Daniels Nutzungskontingent
-sind, laufen im `developer`-Review (Schritt 4) nicht mehr grundsätzlich alle fünf Review-Agenten:
+sind, laufen in der Review-Runde nicht mehr grundsätzlich alle fünf Review-Agenten:
 eine feste, aus dem Diff mechanisch ableitbare Trigger-Tabelle entscheidet pro Feature-Branch,
 welche Agenten tatsächlich etwas zu prüfen haben. `test-engineer` und `requirements-engineer`
 laufen dabei faktisch immer (jede Umsetzung bringt per TDD-Zwang Code+Tests und per Definition
@@ -82,18 +84,22 @@ wenn der Diff einen ihrer dokumentierten Trigger berührt (z.B. Auth-/Secrets-Pf
 Abhängigkeiten, Frontend-Dateien). Sicherheitsnetz: Ist die Zuordnung unklar, läuft der Agent
 trotzdem — die Tabelle ist bewusst konservativ statt aggressiv Kontingent sparend.
 
-Zusätzlich bekommt jeder Agenten-Aufruf im `developer`-Review ein festes Modell zugewiesen: die
+Zusätzlich bekommt jeder Review-Agenten-Aufruf ein festes Modell zugewiesen: die
 beiden am stärksten checklistenartigen Review-Aufrufe (`requirements-engineer`, `ux-ui-designer`)
 laufen mit dem günstigeren Haiku-Modell, alles mit echtem fachlichem Urteilsvermögen — inkl.
 `security-engineer` — bleibt beim Standardmodell.
 
 Beide Tabellen (Trigger und Modellzuweisung) sind vollständig und verbindlich in
 [ADR 0014](../specs/decisions/0014-review-agenten-selektion-und-modellzuweisung.md) festgehalten;
-`.claude/agents/developer.md` (Schritt 4) trägt sie zur unmittelbaren Ausführbarkeit direkt an
-der jeweiligen Aufruf-Anweisung ein. Review-Qualität wird dabei nicht einmalig, sondern laufend
-beobachtet (`test-engineer`) — sollte die günstigere Modellstufe die Qualität spürbar
-verschlechtern, führt das zu einer neuen, ADR 0014 ablösenden ADR, nicht zu einem stillschweigenden
-Unterlaufen der Tabelle.
+seit [ADR 0024](../specs/decisions/0024-review-agenten-und-pr-workflow-beim-orchestrator.md) führt
+nicht mehr `developer` selbst diese Review-Runde aus, sondern der Orchestrator (Skill
+`ship-feature`), nachdem `developer` per fest formatiertem Abschlussbericht übergeben hat — Inhalt
+und Modellzuordnung der beiden ADR-0014-Tabellen bleiben dabei unverändert, nur die Aufrufer-Spalte
+wandert (ADR 0024 Teil 6). `.claude/skills/ship-feature/SKILL.md` trägt sie zur unmittelbaren
+Ausführbarkeit direkt an der jeweiligen Aufruf-Anweisung ein. Review-Qualität wird dabei nicht
+einmalig, sondern laufend beobachtet (`test-engineer`) — sollte die günstigere Modellstufe die
+Qualität spürbar verschlechtern, führt das zu einer neuen, ADR 0014/0024 ablösenden ADR, nicht zu
+einem stillschweigenden Unterlaufen der Tabelle.
 
 Dieselbe Kosten-Logik wurde auf den `idea-sharpener`-Ablauf selbst ausgeweitet
 ([ADR 0018](../specs/decisions/0018-idea-sharpener-kalibrierung-und-skip-logik.md), ohne ADR 0014

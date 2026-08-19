@@ -10,6 +10,7 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.criteria import CATEGORY_DETAIL
 from photosort.models import (
     CriterionScoringRun,
     Photo,
@@ -25,8 +26,8 @@ from photosort.thumbnails import display_path
 from photosort.worker import run_criterion_scoring, run_project_scoring
 
 
-async def _make_project(session: AsyncSession) -> Project:
-    project = Project(name="Costa Rica", opencloud_drive_id="drive-1", opencloud_path="CostaRica")
+async def _make_project(session: AsyncSession, *, name: str = "Costa Rica") -> Project:
+    project = Project(name=name, opencloud_drive_id=f"drive-{name}", opencloud_path=name)
     session.add(project)
     await session.commit()
     await session.refresh(project)
@@ -1116,3 +1117,270 @@ async def test_end_to_end_with_run_project_scoring(
         .all()
     )
     assert len(rankings) == 1
+
+
+# specs/features/0045-kategorien-aus-statistiken-ableiten.md, decisions/0023-dynamische-
+# kategorie-ableitung-aus-kriterien-haeufigkeit.md ab hier: derive_active_categories wird EINMAL
+# pro Lauf, projektweit, nach der Foto-Schleife aufgerufen; derive_category_key bekommt die
+# aktive Menge durchgereicht statt einer fest codierten Prioritaetskette.
+
+# Beliebige, von der Standard-Testbildgroesse (160) abweichende Bildgroesse - dient als
+# deterministischer Marker fuer "dieses Foto soll ein Tier enthalten", unabhaengig von der
+# (nicht garantierten) DB-Verarbeitungsreihenfolge - robuster als ein reiner Aufruf-Counter im
+# Fake-Detektor, der implizit von der Zeilenreihenfolge abhinge.
+_ANIMAL_MARKER_SIZE = 168
+
+
+def _animal_marked_image() -> Image.Image:
+    # Textur statt einer flachen Farbe (Abgrenzung zu _flat_image): ein Marker-Foto soll NICHT
+    # gleichzeitig auch als content_landscape-Kandidat gelten - sonst wuerde der (hoehere)
+    # content_landscape-Score in derive_category_key immer gewinnen und das Tier-Szenario waere
+    # nicht beobachtbar.
+    from PIL import ImageDraw
+
+    image = Image.new("RGB", (_ANIMAL_MARKER_SIZE, _ANIMAL_MARKER_SIZE), color=(30, 60, 120))
+    draw = ImageDraw.Draw(image)
+    for offset in range(0, _ANIMAL_MARKER_SIZE, 8):
+        draw.line(
+            (offset, 0, _ANIMAL_MARKER_SIZE - offset, _ANIMAL_MARKER_SIZE),
+            fill=(220, 180, 90),
+            width=2,
+        )
+    return image
+
+
+class SizeGatedAnimalDetector:
+    """Faket den mediapipe ObjectDetector so, dass NUR Bilder mit der Marker-Groesse
+    (_ANIMAL_MARKER_SIZE) ein Tier liefern - ermoeglicht ein deterministisches
+    Haeufigkeits-Szenario (einige Fotos mit, einige ohne Tier) im selben Lauf."""
+
+    def detect(self, image: object) -> object:
+        if getattr(image, "width", None) == _ANIMAL_MARKER_SIZE:
+            return SimpleNamespace(
+                detections=[
+                    SimpleNamespace(
+                        categories=[SimpleNamespace(category_name="dog", score=0.9)],
+                        bounding_box=SimpleNamespace(origin_x=10, origin_y=10, width=40, height=40),
+                    )
+                ]
+            )
+        return SimpleNamespace(detections=[])
+
+
+def _size_gated_animal_detector() -> SizeGatedAnimalDetector:
+    return SizeGatedAnimalDetector()
+
+
+async def _add_photos_with_optional_animal_marker(
+    session: AsyncSession, project: Project, tmp_path: Path, *, total: int, marked: int
+) -> list[Photo]:
+    photos = []
+    for i in range(total):
+        photo = await _add_photo(
+            session, project, f"{i}.jpg", f"etag-{i}", datetime(2023, 1, 1, 0, i, tzinfo=UTC)
+        )
+        await _add_score(session, photo, sharpness=100.0, exposure=0.0)
+        image = _animal_marked_image() if i < marked else _flat_image()
+        _write_display_variant(tmp_path, photo, image)
+        photos.append(photo)
+    return photos
+
+
+async def test_derive_active_categories_is_called_exactly_once_per_run_projectwide(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: object
+) -> None:
+    import photosort.worker as worker_module
+    from photosort.criteria import derive_active_categories as real_derive_active_categories
+
+    calls: list[dict[int, dict[str, float]]] = []
+
+    def _spy(
+        candidate_values: dict[int, dict[str, float]], *args: object, **kwargs: object
+    ) -> frozenset[str]:
+        calls.append(candidate_values)
+        return real_derive_active_categories(candidate_values, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(worker_module, "derive_active_categories", _spy)  # type: ignore[attr-defined]
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo_a = await _add_photo(
+        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo_a, cluster_key="cluster-a")
+    _write_display_variant(tmp_path, photo_a, _flat_image())
+    photo_b = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 2, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo_b, cluster_key="cluster-b")
+    _write_display_variant(tmp_path, photo_b, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    # Genau EIN Aufruf fuer den gesamten Lauf, projektweit ueber BEIDE cluster hinweg - nicht
+    # zweimal, einmal pro cluster_key.
+    assert len(calls) == 1
+    assert set(calls[0]) == {photo_a.id, photo_b.id}
+
+
+async def test_identical_per_photo_tier_score_lands_in_different_categories_depending_on_frequency(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Kernverhaltensaenderung der Spec (Regressionstest, kein Bug): ein und dasselbe Einzelfoto
+    mit identischem tier-Score landet je nach Lauf in einer anderen Kategorie, abhaengig davon, ob
+    die 15%-Haeufigkeitsschwelle IM JEWEILIGEN LAUF erreicht wird."""
+    concentrated_project = await _make_project(db_session, name="Concentrated")
+    concentrated_run = await _add_successful_scoring_run(db_session, concentrated_project)
+    # 3 von 10 Fotos (30%) markiert -> ueber der 15%-Schwelle -> tier wird aktiv.
+    concentrated_photos = await _add_photos_with_optional_animal_marker(
+        db_session, concentrated_project, tmp_path, total=10, marked=3
+    )
+
+    concentrated = await run_criterion_scoring(
+        db_session,
+        concentrated_project,
+        concentrated_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_size_gated_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+    assert concentrated.status == ScanStatus.SUCCESS
+    concentrated_rankings = {
+        r.photo_id: r.category_key
+        for r in (
+            (
+                await db_session.execute(
+                    select(PhotoRanking).where(
+                        PhotoRanking.criterion_scoring_run_id == concentrated.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    }
+    assert concentrated_rankings[concentrated_photos[0].id] == "tier"
+
+    diluted_project = await _make_project(db_session, name="Diluted")
+    diluted_run = await _add_successful_scoring_run(db_session, diluted_project)
+    # 3 von 30 Fotos (10%) markiert -> unter der 15%-Schwelle -> tier bleibt inaktiv.
+    diluted_photos = await _add_photos_with_optional_animal_marker(
+        db_session, diluted_project, tmp_path, total=30, marked=3
+    )
+
+    diluted = await run_criterion_scoring(
+        db_session,
+        diluted_project,
+        diluted_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_size_gated_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+    assert diluted.status == ScanStatus.SUCCESS
+    diluted_rankings = {
+        r.photo_id: r.category_key
+        for r in (
+            (
+                await db_session.execute(
+                    select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == diluted.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    }
+    # Dasselbe Marker-Foto (identischer tier-Score) landet diesmal NICHT in "tier", weil die
+    # Haeufigkeitsschwelle in DIESEM Lauf nicht erreicht wird - Catch-all "detail".
+    assert diluted_rankings[diluted_photos[0].id] == CATEGORY_DETAIL
+
+
+async def test_existing_behavior_is_unchanged_when_frequency_threshold_is_still_met(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Bestandsverhalten-Regression (Akzeptanzkriterium der Spec): ein Projekt, in dem
+    # content_landscape weiterhin die 15%-Schwelle erreicht (hier: alle Fotos), liefert denselben
+    # category_key wie bisher.
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photos = []
+    for i in range(5):
+        photo = await _add_photo(
+            db_session, project, f"{i}.jpg", f"etag-{i}", datetime(2023, 1, 1, 0, i, tzinfo=UTC)
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+        photos.append(photo)
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    rankings = (
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {r.category_key for r in rankings} == {"landscape"}
+
+
+async def test_empty_candidate_pool_does_not_crash_category_derivation(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Leerer Kandidatenpool (Akzeptanzkriterium der Spec: derive_active_categories({}) darf
+    # keinen ZeroDivisionError werfen) - kein einziges Foto passiert das Ausschuss-Gate.
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    rejected = await _add_photo(
+        db_session, project, "rejected.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, rejected, cluster_key=None, suggested_status=RatingStatus.REJECTED)
+    _write_display_variant(tmp_path, rejected, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    rankings = (
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rankings == []
