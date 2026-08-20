@@ -198,5 +198,25 @@ describe('FolderBrowser', () => {
 
       expect(await screen.findByRole('button', { name: 'Sub' })).toBeInTheDocument()
     })
+
+    it('shows an error indicator for every row when the whole count request fails, without breaking the list', async () => {
+      // Review-Fund (test-engineer): der bisherige "Fehler"-Test deckte nur einen einzelnen
+      // error:true-Eintrag ab, nicht den kompletten Fehlschlag der Anfrage selbst (z.B.
+      // Netzwerkfehler) - der Code behandelt das bereits ueber counts.isError, aber es fehlte
+      // eine Testabsicherung dafuer.
+      vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
+        { name: 'Sub1', path: 'CostaRica/Sub1' },
+        { name: 'Sub2', path: 'CostaRica/Sub2' },
+      ])
+      vi.mocked(opencloudApi.fetchFolderCounts).mockRejectedValue(new Error('Netzwerkfehler'))
+
+      renderBrowser('CostaRica')
+
+      const errorIndicators = await screen.findAllByText('?')
+      expect(errorIndicators).toHaveLength(2)
+      // Die Liste selbst bleibt unbeeinflusst - beide Ordner weiterhin navigierbar.
+      expect(screen.getByRole('button', { name: 'Sub1' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Sub2' })).toBeEnabled()
+    })
   })
 })

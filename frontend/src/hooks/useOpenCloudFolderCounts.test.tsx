@@ -63,4 +63,17 @@ describe('useOpenCloudFolderCountsQuery', () => {
 
     expect(opencloudApi.fetchFolderCounts).toHaveBeenCalledTimes(2)
   })
+
+  it('surfaces a complete request failure (e.g. network error) as isError, not just a per-entry error flag', async () => {
+    // Review-Fund (test-engineer): bisher nur getestet, dass ein EINZELNER Eintrag error:true
+    // tragen kann - hier geht die gesamte Anfrage fehl (Netzwerkfehler o.ae.), nicht nur ein
+    // Element der Antwortliste.
+    vi.mocked(opencloudApi.fetchFolderCounts).mockRejectedValue(new Error('Netzwerkfehler'))
+
+    const { result } = renderHook(() => useOpenCloudFolderCountsQuery('CostaRica'), { wrapper })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(result.current.data).toBeUndefined()
+  })
 })
