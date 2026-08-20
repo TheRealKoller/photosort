@@ -34,6 +34,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 |---|---|
 | [0004](./inbox/0004-ki-app-im-browser-lokal-ansehen.md) | KI soll die laufende App lokal im Browser ansehen können (z.B. via `docker compose`) — offen, ob/wie sinnvoll umsetzbar |
 | [0016](./inbox/0016-roadmap-nur-uebersicht.md) | Roadmap soll nur eine knappe Übersicht sein, ohne die ausführlichen Fließtext-Begründungen — durch Spec 0026 (Tabelle an den Anfang) und 0029 (drei Prioritätsstufen) nur teilweise berührt, der eigentliche Fließtext unter "Priorisierung" bleibt bestehen |
+| [0026](./inbox/0026-idea-sharpener-tokenverbrauch-senken.md) | idea-sharpener soll weniger Tokens verbrauchen — erst herausfinden wie, dann umsetzen |
 
 ### Bereits umgesetzt
 
