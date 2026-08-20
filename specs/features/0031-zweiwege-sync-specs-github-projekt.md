@@ -1,6 +1,6 @@
 # 0031 - Zwei-Wege-Sync Feature-Specs ↔ GitHub-Projekt
 
-**Status:** Accepted
+**Status:** Implemented ([PR #115](https://github.com/TheRealKoller/photosort/pull/115))
 **Erstellt:** 2026-08-09
 **Bezug:** [`inbox/0011-zweiwege-sync-specs-github-projekt.md`](../inbox/0011-zweiwege-sync-specs-github-projekt.md), ADR [`decisions/0017-github-projects-v2-spec-sync.md`](../decisions/0017-github-projects-v2-spec-sync.md), Idea-Sharpening-Gespräch mit Daniel am 2026-08-09
 
