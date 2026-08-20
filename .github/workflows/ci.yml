@@ -79,6 +79,29 @@ jobs:
       - name: Test (pytest)
         run: pytest
 
+  github-project-sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts/github-project-sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Test (pytest)
+        # Kein numerisches Coverage-Gate (anders als backend) - vollstaendige eigene
+        # Unit-Testabdeckung stattdessen ueber die Teststrategie in
+        # specs/features/0031-zweiwege-sync-specs-github-projekt.md sichergestellt.
+        # Kein echtes gh/Netzwerk hier (siehe Teststrategie "E2E/Smoke").
+        run: pytest
+
   docker-compose-check:
     runs-on: ubuntu-latest
     steps:

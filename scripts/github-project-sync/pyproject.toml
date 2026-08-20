@@ -1,0 +1,31 @@
+[project]
+name = "github-project-sync"
+version = "0.1.0"
+description = "Eigenstaendiges Sync-Tool: Feature-Specs (specs/features/*.md) <-> GitHub Project (V2), siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md und ADR decisions/0017-github-projects-v2-spec-sync.md. Getrennt von photosort-demo-scripts, da unabhaengiges Tooling-Anliegen (ADR 0017, Abschnitt 5)."
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.7",
+]
+
+[project.scripts]
+github-project-sync = "github_project_sync.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

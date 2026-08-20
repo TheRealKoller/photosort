@@ -1,0 +1,147 @@
+"""Kommandozeilen-Einstiegspunkt fuer den Skill .claude/skills/github-project-sync/SKILL.md.
+
+Gibt strukturiertes JSON auf stdout aus, damit der aufrufende Skill (Claude) das Ergebnis
+zuverlaessig auswerten kann (Konflikte/pulled-Faelle an Daniel bzw. requirements-engineer
+weiterreichen). Siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from collections.abc import Callable, Sequence
+from pathlib import Path
+
+from github_project_sync.gh_adapter import (
+    DEFAULT_PROJECT_TITLE,
+    GhAdapter,
+    GhAdapterError,
+    GhCliAdapter,
+)
+from github_project_sync.spec_parser import validate_spec_number
+from github_project_sync.sync import Resolution, SyncError, SyncRunResult, run_sync
+
+GhFactory = Callable[[str], GhAdapter]
+
+_RESOLUTION_VALUES = {"keep_spec", "keep_issue"}
+
+
+def _parse_resolutions(raw: list[str]) -> dict[str, Resolution]:
+    resolutions: dict[str, Resolution] = {}
+    for item in raw:
+        if "=" not in item:
+            raise SyncError(
+                f"Ungueltiges --resolve-Argument (erwartet NNNN=keep_spec|keep_issue): {item!r}"
+            )
+        number, _, value = item.partition("=")
+        validate_spec_number(number)
+        if value not in _RESOLUTION_VALUES:
+            raise SyncError(
+                f"Ungueltiger Aufloesungswert fuer Spec {number}: {value!r} "
+                f"(erwartet einen von {sorted(_RESOLUTION_VALUES)})."
+            )
+        resolutions[number] = value  # type: ignore[assignment]
+    return resolutions
+
+
+def _discover_repo_root(start: Path) -> Path:
+    current = start.resolve()
+    for candidate in [current, *current.parents]:
+        if (candidate / "specs").is_dir() and (candidate / ".git").exists():
+            return candidate
+    raise SyncError(
+        f"Kein Repo-Root (specs/ + .git) ausgehend von {start} gefunden. "
+        "Mit --repo-root explizit angeben."
+    )
+
+
+def _result_to_dict(result: SyncRunResult) -> dict[str, object]:
+    return {
+        "specs": [
+            {
+                "number": r.number,
+                "title": r.title,
+                "issue_number": r.issue_number,
+                "classification": r.classification,
+                "aborted_reason": r.aborted_reason,
+                "priority_warning": r.priority_warning,
+                "conflict": (
+                    {
+                        "local_content_zone": r.conflict.local_content_zone,
+                        "remote_content_zone": r.conflict.remote_content_zone,
+                    }
+                    if r.conflict is not None
+                    else None
+                ),
+                "pulled_content_zone": r.pulled_content_zone,
+            }
+            for r in result.specs
+        ],
+        "orphaned": [
+            {"number": o.number, "issue_number": o.issue_number} for o in result.orphaned
+        ],
+    }
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="github-project-sync",
+        description=(
+            "Zwei-Wege-Sync zwischen specs/features/*.md und einem GitHub Project (V2). "
+            "Siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md."
+        ),
+    )
+    parser.add_argument(
+        "--only", metavar="NNNN", default=None, help="Nur diese eine Spec-Nummer syncen."
+    )
+    parser.add_argument(
+        "--owner",
+        default="TheRealKoller",
+        help="GitHub-Owner des Projects (Default: TheRealKoller).",
+    )
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=None,
+        help="Repo-Root explizit angeben statt automatisch ausgehend vom cwd zu suchen.",
+    )
+    parser.add_argument(
+        "--resolve",
+        action="append",
+        default=[],
+        metavar="NNNN=keep_spec|keep_issue",
+        help="Konflikt fuer eine Spec-Nummer explizit aufloesen. Mehrfach angebbar.",
+    )
+    return parser
+
+
+def _default_gh_factory(owner: str) -> GhAdapter:
+    return GhCliAdapter(owner=owner, project_title=DEFAULT_PROJECT_TITLE)
+
+
+def main(argv: Sequence[str] | None = None, *, gh_factory: GhFactory = _default_gh_factory) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        resolutions = _parse_resolutions(args.resolve)
+        repo_root = args.repo_root or _discover_repo_root(Path.cwd())
+        gh = gh_factory(args.owner)
+        result = run_sync(repo_root=repo_root, gh=gh, only=args.only, resolutions=resolutions)
+    except SyncError as exc:
+        print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        return 1
+    except GhAdapterError as exc:
+        print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        return 2
+    except ValueError as exc:
+        print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        return 1
+
+    print(json.dumps(_result_to_dict(result), indent=2, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(main())
