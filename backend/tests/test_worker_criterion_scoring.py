@@ -257,6 +257,44 @@ async def test_writes_sharpness_and_exposure_criteria_from_existing_photo_score(
     assert criteria["exposure"].value == 0.9  # 1.0 - 0.1
     assert criteria["content_landscape"].value > 0.9  # flat image
     assert criteria["content_people"].value == 0.0  # no face detector
+    assert criteria["symmetrie"].value == 1.0  # flat image, keine Asymmetrie messbar
+
+
+async def test_symmetrie_criterion_is_written_unconditionally_like_content_landscape(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md, ADR 0026: keine
+    # Modell-/Detektor-Abhaengigkeit fuer symmetrie - wird wie content_landscape UNCONDITIONAL
+    # berechnet, unabhaengig davon, ob irgendein Detektor/Modell erfolgreich gebaut wurde.
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert criteria["symmetrie"] == 1.0
 
 
 async def test_upserts_existing_criterion_score_instead_of_duplicating(

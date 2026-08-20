@@ -13,6 +13,7 @@ from photosort.criteria import (
     compute_content_people,
     compute_gebaeude_score,
     compute_golden_ratio_score,
+    compute_symmetrie_score,
     compute_tier_score,
     derive_active_categories,
     derive_category_key,
@@ -77,6 +78,18 @@ class TestCriteriaRegistry:
     def test_registry_contains_aesthetics_with_the_correct_source(self) -> None:
         assert CRITERIA_REGISTRY["aesthetics"].source == CriterionSource.LOCAL_ML
 
+    def test_registry_contains_the_three_composition_criteria_with_the_correct_source(
+        self,
+    ) -> None:
+        # specs/features/0048: symmetrie/horizont = local_heuristic (keine trainierten Gewichte),
+        # freiraum = local_ml (mediapipe FaceLandmarker) - alle drei category_eligible=False.
+        assert CRITERIA_REGISTRY["symmetrie"].source == CriterionSource.LOCAL_HEURISTIC
+        assert CRITERIA_REGISTRY["horizont"].source == CriterionSource.LOCAL_HEURISTIC
+        assert CRITERIA_REGISTRY["freiraum"].source == CriterionSource.LOCAL_ML
+        for key in ("symmetrie", "horizont", "freiraum"):
+            assert CRITERIA_REGISTRY[key].category_eligible is False
+            assert CRITERIA_REGISTRY[key].category_presence_threshold is None
+
     def test_category_eligible_and_presence_threshold_are_set_together_or_not_at_all(
         self,
     ) -> None:
@@ -98,6 +111,14 @@ class TestCriteriaRegistry:
         for key in ("sharpness", "exposure", "goldener_schnitt", "aesthetics"):
             assert CRITERIA_REGISTRY[key].category_eligible is False
             assert CRITERIA_REGISTRY[key].category_presence_threshold is None
+
+
+class TestComputeSymmetrieScore:
+    def test_delegates_to_classification_compute_symmetry_score(self) -> None:
+        # Reiner Namens-/Modul-Wrapper (Betroffene-Dateien-Abschnitt der Spec 0048:
+        # "compute_symmetrie_score-Delegate"), analog compute_content_landscape ->
+        # compute_uniform_area_fraction - kein eigener Algorithmus hier, nur derselbe Wert.
+        assert compute_symmetrie_score(_solid()) == 1.0
 
 
 class TestNormalizeSharpness:

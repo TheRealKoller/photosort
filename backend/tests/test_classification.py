@@ -4,6 +4,8 @@ import hashlib
 import random
 from types import SimpleNamespace
 
+import numpy as np
+import pytest
 from PIL import Image, ImageDraw
 
 from photosort.classification import (
@@ -19,6 +21,7 @@ from photosort.classification import (
     FaceBoundingBox,
     SceneLabel,
     classify_scene,
+    compute_symmetry_score,
     compute_uniform_area_fraction,
     detect_animals,
     detect_person,
@@ -94,6 +97,80 @@ class TestComputeUniformAreaFraction:
         # Kachel-`continue`-Behandlung nicht mit einer Exception verlassen.
         fraction = compute_uniform_area_fraction(_solid(size=4))
         assert 0.0 <= fraction <= 1.0
+
+
+def _quadrant_mirrored(size: int = 160) -> Image.Image:
+    # Doppelt spiegelsymmetrisches Bild (links-rechts UND oben-unten) - jede der vier Quadranten-
+    # Energien ist dadurch exakt (nicht nur ungefaehr) gleich, da der Laplace-Kernel bei einem
+    # mit "edge"-Padding gepolsterten, spiegelsymmetrischen Bild spiegel-kovariant rechnet (siehe
+    # Kommentar in test_perfectly_symmetric_textured_image_scores_one_point_zero unten).
+    half = size // 2
+    quadrant = _noisy(size=half, seed=1)
+    image = Image.new("RGB", (size, size))
+    image.paste(quadrant, (0, 0))
+    image.paste(quadrant.transpose(Image.Transpose.FLIP_LEFT_RIGHT), (half, 0))
+    image.paste(quadrant.transpose(Image.Transpose.FLIP_TOP_BOTTOM), (0, half))
+    image.paste(quadrant.transpose(Image.Transpose.ROTATE_180), (half, half))
+    return image
+
+
+def _one_quadrant_textured(size: int = 160) -> Image.Image:
+    half = size // 2
+    image = _solid(size=size)
+    image.paste(_noisy(size=half, seed=2), (0, 0))
+    return image
+
+
+class TestComputeSymmetryScore:
+    def test_uniform_image_scores_exactly_one(self) -> None:
+        # Dokumentiertes, kein-Bug-Verhalten (AK der Spec 0048): Gesamtenergie 0 -> beide Diffs
+        # per Definition 0 -> score = 1.0, ein flaechiges Bild ist trivial "balanciert".
+        assert compute_symmetry_score(_solid()) == 1.0
+
+    def test_extremely_asymmetric_image_scores_well_below_half(self) -> None:
+        # Energie nur in einem der vier Quadranten - AK der Spec: "score deutlich unter 0.5".
+        assert compute_symmetry_score(_one_quadrant_textured()) < 0.3
+
+    def test_perfectly_symmetric_textured_image_scores_one_point_zero(self) -> None:
+        # AK der Spec 0048: "Perfekt symmetrisches, texturiertes Bild -> score == 1.0". Der
+        # Laplace-Kernel (kleine ganzzahlige Gewichte auf 8-Bit-Graustufenwerten) rechnet exakt
+        # ohne Rundungsverlust, und ein "edge"-gepolstertes, doppelt spiegelsymmetrisches Bild
+        # bleibt unter dieser Faltung spiegelsymmetrisch - toleranter Vergleich nur als Schutz vor
+        # einer nicht vorhergesehenen Gleitkomma-Feinheit, kein weicher Toleranzwert im
+        # eigentlichen Sinn.
+        assert compute_symmetry_score(_quadrant_mirrored()) == pytest.approx(1.0, abs=1e-9)
+
+    def test_odd_width_and_height_follow_the_uniform_area_fraction_rounding_rule(self) -> None:
+        # AK der Spec 0048: gleiche Rundungsregel wie compute_uniform_area_fraction's 8x8-
+        # Kachelraster (`width // 2`, letzter Bereich nimmt den Rest), hier auf ein 2x2-
+        # Quadranten-Raster angewendet - unabhaengig ueber dieselbe, bereits an anderer Stelle
+        # (TestComputeUniformAreaFraction) getestete Kantenkarte nachgerechnet, NICHT ueber eine
+        # Kopie der Score-Formel selbst.
+        from photosort.classification import _laplace_edges_without_border_artifact
+
+        image = _noisy(size=160, seed=3).resize((7, 5))
+        grayscale = image.convert("L")
+        width, height = grayscale.size
+        edges = np.abs(
+            np.asarray(_laplace_edges_without_border_artifact(grayscale), dtype=np.float64)
+        )
+        mid_x, mid_y = width // 2, height // 2
+        top_left = edges[:mid_y, :mid_x].mean()
+        top_right = edges[:mid_y, mid_x:].mean()
+        bottom_left = edges[mid_y:, :mid_x].mean()
+        bottom_right = edges[mid_y:, mid_x:].mean()
+        e_left, e_right = (top_left + bottom_left) / 2, (top_right + bottom_right) / 2
+        e_top, e_bottom = (top_left + top_right) / 2, (bottom_left + bottom_right) / 2
+        horizontal_diff = abs(e_left - e_right) / (e_left + e_right)
+        vertical_diff = abs(e_top - e_bottom) / (e_top + e_bottom)
+        expected = max(0.0, min(1.0, 1.0 - (horizontal_diff + vertical_diff) / 2))
+
+        assert compute_symmetry_score(image) == pytest.approx(expected)
+
+    def test_image_smaller_than_the_quadrant_grid_does_not_crash(self) -> None:
+        # Degenerierter Grenzfall analog test_image_smaller_than_the_tile_grid_does_not_crash.
+        score = compute_symmetry_score(_solid(size=1))
+        assert 0.0 <= score <= 1.0
 
 
 class FakeFaceDetector:

@@ -109,6 +109,73 @@ def compute_uniform_area_fraction(image: Image.Image) -> float:
     return uniform_tiles / total_tiles if total_tiles else 0.0
 
 
+# --- Symmetrie (specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md,
+# decisions/0026-modellwahl-symmetrie-horizont-freiraum-kriterien.md Punkt 1): Quadranten-Energie-
+# Vergleich auf der bereits vorhandenen Laplace-Kantenkarte - keine neue Abhaengigkeit, reine
+# Wiederverwendung von _laplace_edges_without_border_artifact (bisher nur fuer
+# compute_uniform_area_fraction genutzt).
+
+
+def _mean_abs_edge_energy(edges: np.ndarray) -> float:
+    """"Energie" eines Bildbereichs (ADR 0026 Punkt 1) = mittlerer Betrag der Laplace-
+    Kantenwerte - ein Aktivitaets-/Kontrastmass, keine Positions-/Motivbewertung (Abgrenzung zu
+    goldener_schnitt). 0-geschuetzt gegen ein leeres Array (degenerierter Quadrant bei sehr
+    kleinen Bildern, analog compute_uniform_area_fraction's total_tiles-Schutz)."""
+    return float(np.abs(edges).mean()) if edges.size else 0.0
+
+
+def _safe_relative_diff(a: float, b: float) -> float:
+    """0-geschuetzte relative Differenz (ADR 0026 Punkt 1: `|E_a - E_b| / (E_a + E_b)`) - liefert
+    0.0 statt ZeroDivisionError/NaN, wenn beide Seiten keine Energie haben (z.B. komplett
+    flaechiges Bild)."""
+    total = a + b
+    if total == 0:
+        return 0.0
+    return abs(a - b) / total
+
+
+def compute_symmetry_score(image: Image.Image) -> float:
+    """`symmetrie`-Kriterium (ADR 0026 Punkt 1): Quadranten-Energie-Vergleich auf der
+    Laplace-Kantenkarte des GESAMTEN Bildes (nicht auf einem 8x8-Kachelraster wie
+    compute_uniform_area_fraction, sondern auf einem 2x2-Quadranten-Raster). Bild wird in vier
+    Quadranten geteilt (oben-links/-rechts, unten-links/-rechts); je Quadrant die mittlere
+    Kantenenergie, danach paarweise zu E_links/E_rechts/E_oben/E_unten gemittelt (technische
+    Detailentscheidung der Umsetzung: gleichgewichtete Mittelung der beiden angrenzenden
+    Quadranten-Energien, NICHT eine flaechengewichtete Mittelung ueber alle betroffenen Pixel -
+    beide Varianten sind bei einer geraden Bildgroesse identisch, unterscheiden sich nur bei
+    ungeraden Massen geringfuegig). `score = clip(1.0 - (horizontal_diff + vertical_diff) / 2, 0,
+    1)`.
+
+    Rundungsregel bei ungeraden Bildmassen (AK der Spec 0048, durch Testfall gepinnt): identisch
+    zu compute_uniform_area_fraction's 8x8-Kachelraster - `width // 2`/`height // 2` als Grenze
+    der ERSTEN Haelfte, die ZWEITE Haelfte nimmt den Rest (`array[mid:]` statt einer symmetrischen
+    Aufteilung um die Mitte).
+
+    Fallback (ADR 0026, dokumentiert, kein Bug): komplett flaechiges Bild (Gesamtenergie 0) ->
+    beide Diffs per Definition 0 (siehe _safe_relative_diff) -> score = 1.0, ein flaechiges Bild
+    ist trivial "balanciert", keine Asymmetrie messbar."""
+    grayscale = image.convert("L")
+    width, height = grayscale.size
+    edges = np.asarray(_laplace_edges_without_border_artifact(grayscale), dtype=np.float64)
+
+    mid_x = width // 2
+    mid_y = height // 2
+
+    top_left = _mean_abs_edge_energy(edges[:mid_y, :mid_x])
+    top_right = _mean_abs_edge_energy(edges[:mid_y, mid_x:])
+    bottom_left = _mean_abs_edge_energy(edges[mid_y:, :mid_x])
+    bottom_right = _mean_abs_edge_energy(edges[mid_y:, mid_x:])
+
+    e_left = (top_left + bottom_left) / 2
+    e_right = (top_right + bottom_right) / 2
+    e_top = (top_left + top_right) / 2
+    e_bottom = (bottom_left + bottom_right) / 2
+
+    horizontal_diff = _safe_relative_diff(e_left, e_right)
+    vertical_diff = _safe_relative_diff(e_top, e_bottom)
+    return max(0.0, min(1.0, 1.0 - (horizontal_diff + vertical_diff) / 2))
+
+
 class BoundingBoxLike(Protocol):
     """Die schmale Teilmenge von mediapipe.tasks.python.components.containers.BoundingBox, die
     detect_person braucht (Pixel-Koordinaten, nicht normiert)."""

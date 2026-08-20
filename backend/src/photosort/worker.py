@@ -36,6 +36,7 @@ from photosort.criteria import (
     compute_content_landscape,
     compute_gebaeude_score,
     compute_golden_ratio_score,
+    compute_symmetrie_score,
     compute_tier_score,
     content_people_from_faces,
     derive_active_categories,
@@ -773,6 +774,10 @@ _IMAGE_ANALYSIS_CRITERION_KEYS: tuple[str, ...] = (
     "goldener_schnitt",
     "gebaeude",
     "aesthetics",
+    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ab hier.
+    "symmetrie",
+    "horizont",
+    "freiraum",
 )
 _IMAGE_ANALYSIS_CRITERION_SOURCES: dict[str, CriterionSource] = {
     key: CRITERIA_REGISTRY[key].source for key in _IMAGE_ANALYSIS_CRITERION_KEYS
@@ -852,6 +857,13 @@ def _compute_content_criteria(
 
     try:
         values["content_landscape"] = compute_content_landscape(image)
+    except Exception:
+        pass
+
+    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md, ADR 0026 Punkt 1:
+    # keine Modell-/Detektor-Abhaengigkeit - wie content_landscape UNCONDITIONAL berechnet.
+    try:
+        values["symmetrie"] = compute_symmetrie_score(image)
     except Exception:
         pass
 

@@ -13,6 +13,7 @@ from photosort.classification import (
     FaceBoundingBox,
     FaceDetectorLike,
     SceneLabel,
+    compute_symmetry_score,
     compute_uniform_area_fraction,
     detect_person,
 )
@@ -89,6 +90,19 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         category_presence_threshold=_GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD,
     ),
     "aesthetics": CriterionDefinition("aesthetics", "Ästhetik", CriterionSource.LOCAL_ML),
+    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ab hier: drei
+    # weitere, davon unabhaengige Kompositions-Ranking-Signale (analog goldener_schnitt/
+    # aesthetics) - alle drei category_eligible=False (reine Ranking-Signale, keine neuen
+    # Kuratierungs-Kategorien, ADR 0026).
+    "symmetrie": CriterionDefinition(
+        "symmetrie", "Symmetrie", CriterionSource.LOCAL_HEURISTIC
+    ),
+    "horizont": CriterionDefinition(
+        "horizont", "Horizont-Neigung", CriterionSource.LOCAL_HEURISTIC
+    ),
+    "freiraum": CriterionDefinition(
+        "freiraum", "Freiraum/Fluchtrichtung", CriterionSource.LOCAL_ML
+    ),
 }
 
 # Obergrenze fuer die Normierung der unbeschraenkten Laplace-Varianz-Skala (scoring.py::
@@ -143,6 +157,14 @@ def compute_content_landscape(image: Image.Image) -> float:
     compute_uniform_area_fraction) ist bereits auf [0, 1] normiert, "hoeher = flaechiger/eher
     Landschaft" - keine weitere Transformation noetig."""
     return compute_uniform_area_fraction(image)
+
+
+def compute_symmetrie_score(image: Image.Image) -> float:
+    """`symmetrie`-Kriterium (specs/features/0048-kompositions-kriterien-symmetrie-horizont-
+    freiraum.md, ADR 0026 Punkt 1): reiner Namens-/Modul-Wrapper um classification.py::
+    compute_symmetry_score (bereits auf [0, 1] normiert) - kein eigener Algorithmus hier, analog
+    compute_content_landscape -> compute_uniform_area_fraction."""
+    return compute_symmetry_score(image)
 
 
 class SubjectBoxLike(Protocol):
