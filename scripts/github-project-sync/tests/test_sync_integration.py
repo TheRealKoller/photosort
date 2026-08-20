@@ -602,3 +602,47 @@ def test_state_file_missing_roadmap_still_syncs_with_empty_priorities(tmp_path: 
 
     item_id = next(iter(gh.items))
     assert gh.items[item_id]["F_PRIO"] is None  # keine Prioritaets-Tabelle -> Feld geleert
+
+
+def test_invalid_status_aborts_only_that_spec_not_the_whole_run(tmp_path: Path) -> None:
+    # Regressionstest fuer einen echten Bug (zweiter manueller Sync-Lauf gegen echtes GitHub nach
+    # Merge von PR #117): ein ungueltiger/unbekannter Status brach bisher den GESAMTEN
+    # Mehr-Spec-Lauf per SyncError ab, noch bevor irgendeine andere Spec verarbeitet wurde -
+    # analog zum bereits bestehenden Marker-Integritaets-Mechanismus soll stattdessen nur die
+    # betroffene Spec ueber aborted_reason abbrechen, andere Specs laufen unbeeinflusst weiter.
+    repo_root = _make_repo(
+        tmp_path,
+        specs={
+            "0031": _spec_text("0031", "Kaputte Spec", "Draft"),  # kein bekannter Lifecycle-Wert
+            "0032": _spec_text("0032", "Gesunde Spec", "Accepted"),
+        },
+        roadmap=_roadmap_text(niedrig=[("0032", "Gesunde Spec")]),
+    )
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    broken = next(r for r in result.specs if r.number == "0031")
+    assert broken.classification is None
+    assert broken.aborted_reason is not None
+    assert "Draft" in broken.aborted_reason
+
+    healthy = next(r for r in result.specs if r.number == "0032")
+    assert healthy.classification == "created"
+    assert healthy.issue_number is not None
+
+
+def test_invalid_status_without_prior_state_writes_no_state_entry(tmp_path: Path) -> None:
+    # Fuer eine noch nie synchronisierte Spec (kein State-Eintrag) gibt es beim Abbruch nichts zu
+    # bewahren - ein erneuter Lauf versucht es (nach einer Korrektur der Spec-Datei) erneut.
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Kaputte Spec", "Draft")},
+        roadmap=_roadmap_text(),
+    )
+    gh = FakeGhAdapter()
+
+    run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert "0031" not in state
