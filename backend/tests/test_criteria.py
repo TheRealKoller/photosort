@@ -3,14 +3,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from types import SimpleNamespace
 
+import pytest
 from PIL import Image, ImageDraw
 
-from photosort.classification import AnimalDetection, FaceBoundingBox, SceneLabel
+from photosort.classification import (
+    AnimalDetection,
+    FaceBoundingBox,
+    FaceOrientation,
+    SceneLabel,
+)
 from photosort.criteria import (
     CATEGORY_DETAIL,
     CRITERIA_REGISTRY,
+    FREIRAUM_YAW_DEADZONE_DEGREES,
     compute_content_landscape,
     compute_content_people,
+    compute_freiraum_score,
     compute_gebaeude_score,
     compute_golden_ratio_score,
     compute_symmetrie_score,
@@ -240,6 +248,61 @@ class TestComputeTierScore:
         large_lower_confidence = _animal("dog", confidence=0.6, size=0.6)
         score = compute_tier_score([small_high_confidence, large_lower_confidence])
         assert score == 0.6
+
+
+class TestComputeFreiraumScore:
+    def test_no_face_detected_scores_zero(self) -> None:
+        # AK der Spec 0048: "Kein Gesicht erkannt -> score == 0.0" (niedriger, NICHT neutraler
+        # Fallback - analog goldener_schnitt: kein Subjekt = kein Kompositionswert).
+        assert compute_freiraum_score(None) == 0.0
+
+    def test_yaw_within_the_deadzone_scores_the_neutral_fallback(self) -> None:
+        # AK: "|Yaw| < FREIRAUM_YAW_DEADZONE_DEGREES -> score == 0.5" (kein klares
+        # Richtungssignal bei einem nahezu frontalen Blick).
+        orientation = FaceOrientation(yaw_degrees=5.0, min_x=0.2, max_x=0.6)
+        assert compute_freiraum_score(orientation) == 0.5
+        orientation_negative = FaceOrientation(yaw_degrees=-5.0, min_x=0.2, max_x=0.6)
+        assert compute_freiraum_score(orientation_negative) == 0.5
+
+    def test_yaw_exactly_at_the_deadzone_boundary_counts_as_outside_not_neutral(self) -> None:
+        # AK der Spec 0048: "Yaw exakt an der Deadzone-Grenze zaehlt als AUSSERHALB (`<`, nicht
+        # `<=`) -> gerichteter Score, nicht 0.5" - Grenzfall explizit gepinnt.
+        assert FREIRAUM_YAW_DEADZONE_DEGREES == 10.0
+        orientation = FaceOrientation(yaw_degrees=10.0, min_x=0.1, max_x=0.5)
+        score = compute_freiraum_score(orientation)
+        assert score != 0.5
+        assert score == pytest.approx(0.5 / 0.6)  # looking_space=1-0.5=0.5, opposite=min_x=0.1
+
+    def test_positive_yaw_looks_toward_the_right_edge_of_the_frame(self) -> None:
+        # Gesicht weit links im Bild, nach rechts (steigendes x) gedreht - viel Freiraum in
+        # Blickrichtung -> hoher Score.
+        orientation = FaceOrientation(yaw_degrees=20.0, min_x=0.05, max_x=0.15)
+        assert compute_freiraum_score(orientation) == pytest.approx(0.85 / 0.9)
+
+    def test_negative_yaw_looks_toward_the_left_edge_of_the_frame(self) -> None:
+        # Gesicht weit rechts im Bild, nach links (fallendes x) gedreht - viel Freiraum in
+        # Blickrichtung -> hoher Score. Spiegelbildlich zum vorigen Test (looking_space/
+        # opposite_space vertauscht).
+        orientation = FaceOrientation(yaw_degrees=-20.0, min_x=0.85, max_x=0.95)
+        assert compute_freiraum_score(orientation) == pytest.approx(0.85 / 0.9)
+
+    def test_subject_crowded_against_the_edge_it_looks_toward_scores_low(self) -> None:
+        # Gesicht am Bildrand IN Blickrichtung gedraengt (typischer Kompositionsfehler) - wenig
+        # Freiraum vor dem Blick -> niedriger Score.
+        orientation = FaceOrientation(yaw_degrees=20.0, min_x=0.7, max_x=0.95)
+        assert compute_freiraum_score(orientation) == pytest.approx(0.05 / 0.75)
+
+    def test_face_filling_the_entire_image_width_falls_back_to_the_neutral_value(self) -> None:
+        # AK der Spec 0048: "looking_space + opposite_space == 0 (Gesicht fuellt die volle
+        # Bildbreite) -> score == 0.5" - 0-Schutz, gleiche Argumentationsklasse wie die
+        # Yaw-Deadzone.
+        orientation = FaceOrientation(yaw_degrees=30.0, min_x=0.0, max_x=1.0)
+        assert compute_freiraum_score(orientation) == 0.5
+
+    def test_result_always_stays_within_zero_and_one(self) -> None:
+        orientation = FaceOrientation(yaw_degrees=45.0, min_x=0.0, max_x=0.5)
+        score = compute_freiraum_score(orientation)
+        assert 0.0 <= score <= 1.0
 
 
 class TestComputeGebaeudeScore:

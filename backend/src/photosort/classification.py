@@ -481,3 +481,131 @@ def build_scene_classifier() -> SceneClassifierLike:
     )
     classifier: SceneClassifierLike = vision.ImageClassifier.create_from_options(options)
     return classifier
+
+
+# --- Freiraum/Fluchtrichtung (specs/features/0048-kompositions-kriterien-symmetrie-horizont-
+# freiraum.md, decisions/0026-modellwahl-symmetrie-horizont-freiraum-kriterien.md Punkt 3):
+# viertes mediapipe Task-API-Paar (FaceLandmarker) - EIGENSTAENDIGER, zusaetzlicher Modellaufruf
+# neben dem obigen FaceDetector, kein Ersatz (content_people/goldener_schnitt bleiben unveraendert
+# auf dem bestehenden, leichteren FaceDetector). Blickrichtung (Yaw) wird aus der von mediapipe
+# gelieferten 4x4-Kopfpose-Rotationsmatrix (`facial_transformation_matrixes`) abgeleitet, NICHT
+# aus einem selbst konstruierten Landmark-Vektor (ADR 0026 Punkt 3: robuster als ein Vektor
+# zwischen zwei einzelnen, fehleranfaellig zu zitierenden Landmark-Indizes).
+
+# Gepinnte, im Repository eingecheckte .task-Modelldatei (Security-Abschnitt der Spec 0048,
+# Muss-Kriterium - kein Laufzeit-Download, analog den drei .tflite-Assets oben). Quelle:
+# offizielles mediapipe-Modell-Repository (https://storage.googleapis.com/mediapipe-models/
+# face_landmarker/face_landmarker/float16/1/face_landmarker.task, per direktem Download vor dem
+# TDD-Einstieg verifiziert - float16-quantisierte Variante, ~3,6 MB). output_face_blendshapes wird
+# zur Laufzeit ueber ein Options-Flag desselben Bundles gesteuert (siehe build_face_landmarker
+# unten), es gibt kein separates "ohne Blendshapes"-Asset im mediapipe-Modell-Repository.
+_FACE_LANDMARKER_MODEL_PATH = Path(__file__).parent / "assets" / "face_landmarker.task"
+
+FACE_LANDMARKER_MODEL_SHA256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+
+# Deadzone um einen frontalen Blick (ADR 0026 Punkt 3) - lebt in criteria.py::
+# compute_freiraum_score (FREIRAUM_YAW_DEADZONE_DEGREES), nicht hier: detect_face_orientation
+# liefert nur die Rohdaten (Yaw + Bounding-Box), die Fallback-/Score-Logik ist criteria.py
+# vorbehalten (Trennung analog detect_animals/compute_tier_score).
+
+
+class LandmarkLike(Protocol):
+    """Die schmale Teilmenge eines mediapipe NormalizedLandmark, die detect_face_orientation
+    braucht - normierte Bild-Koordinaten in [0, 1]."""
+
+    x: float
+    y: float
+
+
+class FaceLandmarkerResultLike(Protocol):
+    """Die schmale Teilmenge von mediapipe.tasks.python.components.containers.
+    FaceLandmarkerResult, die detect_face_orientation braucht - erlaubt einen FakeFaceLandmarker
+    in Tests ohne echte mediapipe-Typen (Teststrategie-Abschnitt der Spec 0048)."""
+
+    face_landmarks: list[list[LandmarkLike]]
+    # Liste von 4x4-Rotations-/Transformationsmatrizen (eine je erkanntem Gesicht) - als `object`
+    # statt `np.ndarray` typisiert, damit ein FakeFaceLandmarker in Tests keine echte mediapipe-
+    # Ausgabe nachbauen muss (_yaw_degrees_from_rotation_matrix akzeptiert alles, was
+    # np.asarray(...) versteht).
+    facial_transformation_matrixes: list[object]
+
+
+class FaceLandmarkerLike(Protocol):
+    def detect(self, image: object) -> FaceLandmarkerResultLike: ...
+
+
+@dataclass(frozen=True)
+class FaceOrientation:
+    """Blickrichtung + Bounding-Box eines erkannten Gesichts (ADR 0026 Punkt 3), Grundlage fuer
+    criteria.py::compute_freiraum_score.
+
+    `yaw_degrees` - Vorzeichenkonvention dieser Umsetzung (mangels verfuegbarem seitlich
+    gedrehten Test-Referenzbild nicht gegen eine echte Modellausgabe verifizierbar, siehe ADR 0026
+    "offene Achsen-/Vorzeichenkonvention"; die MatrixSTRUKTUR selbst - R[0,0]/R[0,2]/R[2,0]/R[2,2]
+    als Rotation-um-die-Y-Achse-Block - wurde dagegen gegen eine ECHTE FaceLandmarker-Inferenz auf
+    mediapipes eigenem "portrait.jpg"-Testbild verifiziert, siehe _yaw_degrees_from_rotation_
+    matrix): positiv = Gesicht Richtung steigendem x (Bild-rechte Seite) gedreht. `min_x`/`max_x`
+    - kleinste/groesste normierte x-Koordinate ueber ALLE Landmarks des erkannten Gesichts (kein
+    separater Bounding-Box-Ausgabewert im FaceLandmarkerResult, ADR 0026 Punkt 3)."""
+
+    yaw_degrees: float
+    min_x: float
+    max_x: float
+
+
+def _yaw_degrees_from_rotation_matrix(matrix: object) -> float:
+    """Extrahiert den Gier-/Yaw-Winkel (Kopfdrehung links/rechts) aus dem Rotationsanteil (obere-
+    linke 3x3) einer 4x4-Transformationsmatrix - Standard-Rotationsmatrix-zu-Winkel-Mathematik,
+    KEIN mediapipe-spezifischer Code, isoliert mit synthetischen Matrizen testbar (siehe
+    test_classification.py::TestYawDegreesFromRotationMatrix). Konvention: Rotation um die
+    Y-Achse mit `R[0,0] = cos(yaw)`, `R[0,2] = sin(yaw)` - `atan2(R[0,2], R[0,0])` ist robust
+    gegen den entarteten Fall `cos(yaw) == 0` (90 Grad), anders als eine reine `asin`/`acos`-
+    basierte Extraktion."""
+    array = np.asarray(matrix, dtype=np.float64)
+    return float(np.degrees(np.arctan2(array[0, 2], array[0, 0])))
+
+
+def detect_face_orientation(
+    image: Image.Image, landmarker: FaceLandmarkerLike
+) -> FaceOrientation | None:
+    """mediapipe Face Landmarker Task-API (ADR 0026 Punkt 3) auf der bereits gecachten display-
+    Variante. `landmarker` ist injizierbar (siehe FaceLandmarkerLike) - die reale
+    Modellkonstruktion (build_face_landmarker) laeuft in keinem automatisierten Test.
+
+    Kein Gesicht erkannt -> None (Fallback-Entscheidung liegt bei criteria.py::
+    compute_freiraum_score, analog detect_animals/compute_tier_score). `num_faces=1` ist
+    modellseitig konfiguriert (build_face_landmarker) - trotzdem defensiv nur das ERSTE Gesicht
+    verwendet, falls das Modell wider Erwarten mehrere liefert (Teststrategie-Abschnitt der Spec
+    0048)."""
+    result = landmarker.detect(_to_mp_image(image))
+    if not result.face_landmarks:
+        return None
+    landmarks = result.face_landmarks[0]
+    xs = [landmark.x for landmark in landmarks]
+    matrix = result.facial_transformation_matrixes[0]
+    return FaceOrientation(
+        yaw_degrees=_yaw_degrees_from_rotation_matrix(matrix),
+        min_x=min(xs),
+        max_x=max(xs),
+    )
+
+
+def build_face_landmarker() -> FaceLandmarkerLike:
+    """Baut den echten mediapipe FaceLandmarker aus dem zur Build-Zeit gebuendelten .task-Modell
+    (Security-Abschnitt der Spec 0048 - kein Laufzeit-Download). Wird NIE in einem automatisierten
+    Test aufgerufen (Infrastruktur-/CI-Risiko, analog build_face_detector/build_object_detector/
+    build_scene_classifier), nur vom Worker-Job. `num_faces=1` (modellseitige Begrenzung auf das
+    prominenteste Gesicht statt einer App-seitigen Flaechen-Auswahl wie bei FaceDetector/
+    ObjectDetector - ADR 0026 Punkt 3), `output_facial_transformation_matrixes=True` (Grundlage
+    fuer die Yaw-Extraktion), `output_face_blendshapes=False` (nicht gebraucht)."""
+    from mediapipe.tasks.python import vision
+    from mediapipe.tasks.python.core.base_options import BaseOptions
+
+    options = vision.FaceLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path=str(_FACE_LANDMARKER_MODEL_PATH)),
+        num_faces=1,
+        output_facial_transformation_matrixes=True,
+        output_face_blendshapes=False,
+    )
+    landmarker: FaceLandmarkerLike = vision.FaceLandmarker.create_from_options(options)
+    return landmarker

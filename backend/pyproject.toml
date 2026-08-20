@@ -64,12 +64,12 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-# Gepinnte Modelldateien (.tflite fuer mediapipe, .hdf5 fuer die NIMA-Gewichte, Spec 0038) - ohne
-# diese Deklaration wuerde `pip install .` (siehe backend/Dockerfile) die committeten Binaerassets
-# NICHT ins installierte Package uebernehmen (anders als bei "pip install -e ." im lokalen
-# Dev-Setup, das direkt auf den Quellbaum zeigt).
+# Gepinnte Modelldateien (.tflite fuer mediapipe, .hdf5 fuer die NIMA-Gewichte, Spec 0038; .task
+# fuer den FaceLandmarker, Spec 0048) - ohne diese Deklaration wuerde `pip install .` (siehe
+# backend/Dockerfile) die committeten Binaerassets NICHT ins installierte Package uebernehmen
+# (anders als bei "pip install -e ." im lokalen Dev-Setup, das direkt auf den Quellbaum zeigt).
 [tool.setuptools.package-data]
-photosort = ["assets/*.tflite", "assets/*.hdf5"]
+photosort = ["assets/*.tflite", "assets/*.hdf5", "assets/*.task"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

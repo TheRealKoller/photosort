@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import random
 from types import SimpleNamespace
 
@@ -10,20 +11,25 @@ from PIL import Image, ImageDraw
 
 from photosort.classification import (
     _FACE_DETECTOR_MODEL_PATH,
+    _FACE_LANDMARKER_MODEL_PATH,
     _OBJECT_DETECTOR_MODEL_PATH,
     _SCENE_CLASSIFIER_MODEL_PATH,
     ANIMAL_DETECTION_CONFIDENCE_THRESHOLD,
     FACE_DETECTOR_MODEL_SHA256,
+    FACE_LANDMARKER_MODEL_SHA256,
     OBJECT_DETECTOR_MODEL_SHA256,
     SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
     SCENE_CLASSIFIER_MODEL_SHA256,
     AnimalDetection,
     FaceBoundingBox,
+    FaceOrientation,
     SceneLabel,
+    _yaw_degrees_from_rotation_matrix,
     classify_scene,
     compute_symmetry_score,
     compute_uniform_area_fraction,
     detect_animals,
+    detect_face_orientation,
     detect_person,
 )
 
@@ -77,6 +83,19 @@ class TestSceneClassifierModelAsset:
     def test_committed_tflite_model_matches_the_documented_sha256(self) -> None:
         digest = hashlib.sha256(_SCENE_CLASSIFIER_MODEL_PATH.read_bytes()).hexdigest()
         assert digest == SCENE_CLASSIFIER_MODEL_SHA256
+
+
+class TestFaceLandmarkerModelAsset:
+    def test_committed_task_model_matches_the_documented_sha256(self) -> None:
+        # Security-Muss-Kriterium (AK der Spec 0048, analog den drei bestehenden .tflite-Assets)
+        # - viertes gepinntes Modell-Asset, .task statt .tflite aendert am Testmuster nichts
+        # (reiner Byte-Hash-Vergleich). Quelle: offizielles mediapipe-Modell-Repository
+        # (https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/
+        # float16/1/face_landmarker.task, per direktem Download vor dem TDD-Einstieg verifiziert,
+        # keine with_blendshapes-Variante noetig - output_face_blendshapes=False steuert das zur
+        # Laufzeit ueber ein Options-Flag desselben Bundles, nicht ueber ein anderes Asset).
+        digest = hashlib.sha256(_FACE_LANDMARKER_MODEL_PATH.read_bytes()).hexdigest()
+        assert digest == FACE_LANDMARKER_MODEL_SHA256
 
 
 class TestComputeUniformAreaFraction:
@@ -379,3 +398,97 @@ class TestClassifyScene:
 
     def test_returns_empty_list_with_no_categories_at_all(self) -> None:
         assert classify_scene(_solid(), FakeSceneClassifier([])) == []
+
+
+# --- Freiraum (specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md,
+# decisions/0026-modellwahl-symmetrie-horizont-freiraum-kriterien.md Punkt 3): viertes mediapipe
+# Task-API-Paar (FaceLandmarker), Blickrichtung (Yaw) aus der 4x4-Kopfpose-Rotationsmatrix statt
+# einem selbst konstruierten Landmark-Vektor.
+
+
+def _rotation_matrix_y(degrees_value: float) -> np.ndarray:
+    """Baut eine synthetische 4x4-Rotationsmatrix um die Y-Achse (Konvention dieser Umsetzung,
+    siehe classification.py::_yaw_degrees_from_rotation_matrix-Docstring) - erlaubt das Testen der
+    Rotationsmatrix-zu-Winkel-Mathematik OHNE echtes Modell (Teststrategie-Abschnitt der Spec
+    0048: "deckt die offene Achsen-/Vorzeichenkonvention ab")."""
+    theta = math.radians(degrees_value)
+    matrix = np.eye(4)
+    matrix[0, 0] = math.cos(theta)
+    matrix[0, 2] = math.sin(theta)
+    matrix[2, 0] = -math.sin(theta)
+    matrix[2, 2] = math.cos(theta)
+    return matrix
+
+
+class TestYawDegreesFromRotationMatrix:
+    def test_identity_matrix_yields_zero_yaw(self) -> None:
+        assert _yaw_degrees_from_rotation_matrix(np.eye(4)) == pytest.approx(0.0)
+
+    def test_positive_rotation_yields_positive_yaw(self) -> None:
+        assert _yaw_degrees_from_rotation_matrix(_rotation_matrix_y(30.0)) == pytest.approx(30.0)
+
+    def test_negative_rotation_yields_negative_yaw(self) -> None:
+        assert _yaw_degrees_from_rotation_matrix(_rotation_matrix_y(-20.0)) == pytest.approx(-20.0)
+
+    def test_translation_component_of_the_matrix_does_not_affect_the_extracted_yaw(self) -> None:
+        # Reale mediapipe-facial_transformation_matrixes-Ausgaben tragen zusaetzlich eine
+        # Translation in der letzten Spalte (Kopfposition im Raum, in Millimetern) - die
+        # Yaw-Extraktion darf sich ausschliesslich auf den Rotationsanteil (obere-linke 3x3)
+        # stuetzen.
+        matrix = _rotation_matrix_y(15.0)
+        matrix[0, 3] = 12.5
+        matrix[1, 3] = -40.0
+        matrix[2, 3] = 100.0
+        assert _yaw_degrees_from_rotation_matrix(matrix) == pytest.approx(15.0)
+
+
+class FakeFaceLandmarker:
+    """Faket die schmale Teilmenge der mediapipe-FaceLandmarker-API, die detect_face_orientation
+    braucht - kein echtes .task-Modell in Tests (Teststrategie-Abschnitt der Spec 0048), analog
+    FakeFaceDetector. `faces` ist eine Liste von Gesichtern, jedes eine Liste normierter
+    (x, y)-Landmark-Koordinaten; `matrixes` eine parallele Liste von 4x4-Rotationsmatrizen
+    (Default: Einheitsmatrix je Gesicht)."""
+
+    def __init__(
+        self,
+        faces: list[list[tuple[float, float]]],
+        matrixes: list[np.ndarray] | None = None,
+    ) -> None:
+        self._faces = faces
+        self._matrixes = matrixes if matrixes is not None else [np.eye(4) for _ in faces]
+
+    def detect(self, image: object) -> object:
+        return SimpleNamespace(
+            face_landmarks=[
+                [SimpleNamespace(x=x, y=y) for x, y in face] for face in self._faces
+            ],
+            facial_transformation_matrixes=self._matrixes,
+        )
+
+
+class TestDetectFaceOrientation:
+    def test_no_face_detected_returns_none(self) -> None:
+        assert detect_face_orientation(_solid(), FakeFaceLandmarker([])) is None
+
+    def test_returns_orientation_with_yaw_and_bounding_box_from_the_detected_face(self) -> None:
+        landmarks = [(0.3, 0.2), (0.7, 0.2), (0.5, 0.8)]
+        landmarker = FakeFaceLandmarker([landmarks], matrixes=[_rotation_matrix_y(25.0)])
+        orientation = detect_face_orientation(_solid(), landmarker)
+        assert orientation == FaceOrientation(
+            yaw_degrees=pytest.approx(25.0), min_x=0.3, max_x=0.7
+        )
+
+    def test_multiple_faces_despite_num_faces_one_uses_only_the_first(self) -> None:
+        # Edge Case aus dem Teststrategie-Abschnitt der Spec 0048: "mehrere Gesichter trotz
+        # num_faces=1" (sollte laut Modell-Konfiguration nicht vorkommen, defensiv trotzdem
+        # deterministisch behandelt) - nur das ERSTE Gesicht wird beruecksichtigt.
+        first = [(0.1, 0.1), (0.2, 0.2)]
+        second = [(0.8, 0.8), (0.9, 0.9)]
+        landmarker = FakeFaceLandmarker(
+            [first, second], matrixes=[np.eye(4), _rotation_matrix_y(40.0)]
+        )
+        orientation = detect_face_orientation(_solid(), landmarker)
+        assert orientation is not None
+        assert orientation.min_x == 0.1
+        assert orientation.max_x == 0.2
+        assert orientation.yaw_degrees == pytest.approx(0.0)
