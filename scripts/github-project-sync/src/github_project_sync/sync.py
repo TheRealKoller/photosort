@@ -140,9 +140,29 @@ def _sync_one(
     fields: ProjectFields,
     resolution: Resolution | None,
     now: Callable[[], str],
-) -> tuple[SpecSyncResult, SyncStateEntry]:
+) -> tuple[SpecSyncResult, SyncStateEntry | None]:
     if status not in _VALID_STATUSES:
-        raise SyncError(f"Spec {number}: unbekannter Status {status!r}.")
+        # Wie bei einem Marker-Integritaetsbruch (siehe unten): ein Problem, das nur diese eine
+        # Spec betrifft, darf nicht den gesamten Mehr-Spec-Lauf mit einer laufabbrechenden
+        # SyncError toeten (Akzeptanzkriterium "Marker-Integritaet": andere Specs im selben Lauf
+        # laufen unbeeinflusst weiter). Bug gefunden im zweiten manuellen Sync-Lauf gegen echtes
+        # GitHub nach Merge von PR #117 - ein einzelner unerwarteter Statuswert (z.B. weil
+        # spec_parser trotz seines Fixes doch mal mehr als das Enum-Schluesselwort erfasst) brach
+        # bisher via "raise SyncError" den kompletten Lauf ab, bevor irgendeine andere Spec
+        # verarbeitet wurde. stored_entry (falls vorhanden) bleibt unveraendert; fuer eine noch
+        # nie synchronisierte Spec (stored_entry is None) gibt es naturgemaess nichts zu bewahren.
+        result = SpecSyncResult(
+            number=number,
+            title=title,
+            issue_number=stored_entry.issue_number if stored_entry is not None else None,
+            classification=None,
+            aborted_reason=(
+                f"Ungueltiger/unbekannter Status {status!r} (erwartet einen von "
+                f"{sorted(_VALID_STATUSES)}). Sync fuer diese Spec abgebrochen, andere Specs "
+                "sind unbeeinflusst."
+            ),
+        )
+        return result, stored_entry
 
     priority_warning = None
     if priority is None and status in _OPEN_STATUSES:
@@ -341,7 +361,11 @@ def run_sync(
                 now=now,
             )
             results.append(result)
-            new_state[number] = updated_entry
+            # updated_entry ist None, wenn eine noch nie synchronisierte Spec (kein
+            # stored_entry) mit ungueltigem Status abgebrochen wurde (siehe _sync_one) - dann
+            # gibt es nichts zu speichern, ein Retry beim naechsten Lauf bleibt moeglich.
+            if updated_entry is not None:
+                new_state[number] = updated_entry
 
         if only is None:
             for number in find_orphaned_numbers(state, existing_numbers=set(parsed_by_number)):

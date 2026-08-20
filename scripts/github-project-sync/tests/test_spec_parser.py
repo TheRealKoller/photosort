@@ -123,6 +123,60 @@ def test_replace_content_zone_ignores_metadata_edits_in_new_zone() -> None:
     assert "**Status:** Accepted" in result
 
 
+def _spec_with_status_line(status_line: str) -> str:
+    return (
+        "# 0099 - Titel\n\n"
+        f"**Status:** {status_line}\n"
+        "**Erstellt:** 2026-08-09\n"
+        "**Bezug:** x\n\n"
+        "## Ziel\n\nfoo\n"
+    )
+
+
+# Regressionstest fuer einen echten Bug (zweiter manueller Sync-Lauf gegen echtes GitHub nach
+# Merge von PR #117): _STATUS_RE uebernahm bisher die komplette Zeile hinter "**Status:**" statt
+# nur das fuehrende Enum-Schluesselwort - dadurch scheiterte sync.py's Status-Validierung fuer
+# praktisch den gesamten Bestand bereits abgeschlossener Specs. Alle Varianten unten sind reale,
+# per "grep -h '^\*\*Status:\*\*' specs/features/*.md" im Repo gefundene Zeilen (nicht nur
+# synthetische Faelle), siehe Sync-Lauf-Fehlermeldung fuer Spec 0003.
+_PR = "https://github.com/TheRealKoller/photosort/pull"  # kuerzt die Fixtures unten ab
+
+
+@pytest.mark.parametrize(
+    ("status_line", "expected"),
+    [
+        ("Accepted", "Accepted"),
+        ("Proposed", "Proposed"),
+        ("Implemented", "Implemented"),
+        (f"Implemented ([PR #100]({_PR}/100))", "Implemented"),
+        (f"Implemented ([PR #101]({_PR}/101), 2026-08-17)", "Implemented"),
+        (f"Implemented — AK1–AK9 umgesetzt in [PR #40]({_PR}/40)", "Implemented"),
+        (
+            f"Implemented — AK1–AK12 umgesetzt in [PR #34]({_PR}/34) "
+            f"(AK13/Copilot-Review-Bedingung bereits zuvor mit [PR #32]({_PR}/32), "
+            "gemerged 2026-08-07, umgesetzt).",
+            "Implemented",
+        ),
+        (
+            "Superseded, abgelöst durch "
+            f"[`0037`](./0037-gateführte-bewertungs-pipeline-mit-backfill.md) ([PR #6]({_PR}/6))",
+            "Superseded",
+        ),
+        (
+            "Superseded, abgelöst durch "
+            f"[`0037`](./0037-gateführte-bewertungs-pipeline-mit-backfill.md) ([PR #51]({_PR}/51))",
+            "Superseded",
+        ),
+    ],
+)
+def test_parse_spec_text_status_extracts_only_leading_keyword(
+    status_line: str, expected: str
+) -> None:
+    parsed = parse_spec_text(_spec_with_status_line(status_line))
+
+    assert parsed.status == expected
+
+
 def test_parsed_spec_is_frozen_dataclass() -> None:
     import dataclasses
 

@@ -14,7 +14,15 @@ from pathlib import Path
 
 _SPEC_NUMBER_RE = re.compile(r"^\d{4}$")
 _H1_RE = re.compile(r"^#\s+(\d{4})\s*-\s*(.+?)\s*$", re.MULTILINE)
-_STATUS_RE = re.compile(r"^\*\*Status:\*\*\s*(.+?)\s*$", re.MULTILINE)
+# Nur das fuehrende Enum-Schluesselwort (Proposed/Accepted/Implemented/Superseded) erfassen,
+# alles danach (Kommas, Klammern mit PR-Link/Datum, Gedankenstrich-Freitext) ignorieren. Real im
+# Repo vorkommende Varianten: "Implemented ([PR #NN](...))", "Implemented ([PR #NN](...), Datum)",
+# "Implemented — AK... umgesetzt in [PR #NN](...)", "Superseded, abgelöst durch [...](...)" -
+# siehe tests/test_spec_parser.py fuer die vollstaendige, aus dem echten Bestand entnommene Liste.
+# Bug gefunden im zweiten manuellen Sync-Lauf gegen echtes GitHub nach Merge von PR #117: die
+# vorherige Fassung uebernahm die komplette Zeile, wodurch sync.py's Status-Validierung fuer
+# praktisch den gesamten Bestand bereits abgeschlossener Specs scheiterte.
+_STATUS_RE = re.compile(r"^\*\*Status:\*\*\s*([A-Za-z]+)", re.MULTILINE)
 _CONTENT_ZONE_START_RE = re.compile(r"^## ", re.MULTILINE)
 
 
