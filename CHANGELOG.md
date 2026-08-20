@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0](https://github.com/TheRealKoller/photosort/compare/v0.11.0...v0.12.0) (2026-08-20)
+
+
+### Features
+
+* Automatisierter Flow als Stepper-Übersicht + Detailseiten (Spec 0042) ([#101](https://github.com/TheRealKoller/photosort/issues/101)) ([a8c8919](https://github.com/TheRealKoller/photosort/commit/a8c8919586fb7d88f194a5a3e4404c28560f9506))
+* Bewertungsdetails permanent in Detailansicht + Hover-Auto-Close im Popover (Spec 0041) ([#103](https://github.com/TheRealKoller/photosort/issues/103)) ([871f012](https://github.com/TheRealKoller/photosort/commit/871f012810ee910195612b9c0d02f7d948354962))
+
 ## [0.11.0](https://github.com/TheRealKoller/photosort/compare/v0.10.0...v0.11.0) (2026-08-16)
 
 
