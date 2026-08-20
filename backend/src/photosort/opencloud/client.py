@@ -22,6 +22,14 @@ _PROPFIND_BODY = (
 )
 
 
+# specs/features/0050-dateianzahl-im-ordner-browser.md: umgezogen von worker.py::_IMAGE_EXTENSIONS
+# (dort ehemals privat) - api/opencloud.py darf worker.py nicht importieren (zieht dessen schwere
+# mediapipe-/tensorflow-Abhaengigkeiten in den API-Request-Pfad, siehe ADR
+# decisions/0028-ordner-browser-bilddatei-zaehlung.md Punkt 3), client.py ist dagegen der bereits
+# heute gemeinsame, leichte Baustein fuer beide Konsumenten.
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".heic", ".heif"}
+
+
 class OpenCloudError(Exception):
     """Raised for any failure talking to OpenCloud (auth, network, missing folder, ...)."""
 

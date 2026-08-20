@@ -57,7 +57,7 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
-from photosort.opencloud.client import OpenCloudClient, OpenCloudError
+from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
 from photosort.opencloud.exif import extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.ranking import rank_photos
@@ -73,7 +73,6 @@ from photosort.scoring import (
 )
 from photosort.thumbnails import generate_variants, variant_path
 
-_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".heic", ".heif"}
 _EXIF_CANDIDATE_EXTENSIONS = {".jpg", ".jpeg"}
 _EXIF_RANGE_BYTES = 131_072
 
@@ -202,7 +201,7 @@ def _classify_scan_entries(
     classification = ScanClassification()
     for relative_path, entry in entries:
         extension = _extension(relative_path)
-        if extension not in _IMAGE_EXTENSIONS:
+        if extension not in IMAGE_EXTENSIONS:
             classification.decisions.append(
                 ScanEntryDecision(relative_path, SkipReason.UNSUPPORTED_EXTENSION, None)
             )
