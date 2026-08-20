@@ -21,21 +21,26 @@ from photosort.classification import (
     AnimalDetection,
     FaceBoundingBox,
     FaceDetectorLike,
+    FaceLandmarkerLike,
     ObjectDetectorLike,
     SceneClassifierLike,
     build_face_detector,
+    build_face_landmarker,
     build_object_detector,
     build_scene_classifier,
     classify_scene,
     detect_animals,
+    detect_face_orientation,
     detect_person,
 )
 from photosort.config import settings
 from photosort.criteria import (
     CRITERIA_REGISTRY,
     compute_content_landscape,
+    compute_freiraum_score,
     compute_gebaeude_score,
     compute_golden_ratio_score,
+    compute_symmetrie_score,
     compute_tier_score,
     content_people_from_faces,
     derive_active_categories,
@@ -44,6 +49,7 @@ from photosort.criteria import (
     normalize_sharpness,
 )
 from photosort.db import async_session_factory
+from photosort.horizon import compute_horizon_tilt_score
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
@@ -773,6 +779,10 @@ _IMAGE_ANALYSIS_CRITERION_KEYS: tuple[str, ...] = (
     "goldener_schnitt",
     "gebaeude",
     "aesthetics",
+    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ab hier.
+    "symmetrie",
+    "horizont",
+    "freiraum",
 )
 _IMAGE_ANALYSIS_CRITERION_SOURCES: dict[str, CriterionSource] = {
     key: CRITERIA_REGISTRY[key].source for key in _IMAGE_ANALYSIS_CRITERION_KEYS
@@ -799,6 +809,7 @@ def _compute_content_criteria(
     animal_detector: ObjectDetectorLike | None,
     scene_classifier: SceneClassifierLike | None,
     aesthetics_model: AestheticsModelLike | None,
+    face_landmarker: FaceLandmarkerLike | None,
 ) -> dict[str, float]:
     """Best-effort wie scoring.py::_compute_photo_metrics (Akzeptanzkriterium der Spec 0037/0038):
     JEDES hier berechnete Kriterium hat sein EIGENES try/except - ein einzelner fehlgeschlagener
@@ -806,11 +817,12 @@ def _compute_content_criteria(
     Detektor) darf weder den gesamten Lauf noch die UEBRIGEN, unabhaengig berechenbaren Kriterien
     desselben Fotos mit sich reissen (Spec-0038-AK: "Je Kriterium mindestens ein eigener
     Fehlerfall-Testlauf") - das jeweils betroffene Kriterium bleibt fuer dieses Foto einfach
-    ungeschrieben (kein Platzhalterwert wie 0). Die vier Detektoren/Modelle sind hier bewusst
-    `| None` typisiert (Copilot-Review-Fund, PR #88): schlug der zugehoerige `_try_build`-Aufruf
-    im Aufrufer bereits fehl, wird das betroffene Kriterium (bzw. die davon abhaengigen) hier
-    einfach uebersprungen, statt mit einem ungueltigen Objekt eine Exception zu provozieren, die
-    erst durch das try/except unten "zufaellig" richtig behandelt wuerde.
+    ungeschrieben (kein Platzhalterwert wie 0). Die fuenf Detektoren/Modelle (face_landmarker seit
+    specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md dazugekommen) sind
+    hier bewusst `| None` typisiert (Copilot-Review-Fund, PR #88): schlug der zugehoerige
+    `_try_build`-Aufruf im Aufrufer bereits fehl, wird das betroffene Kriterium (bzw. die davon
+    abhaengigen) hier einfach uebersprungen, statt mit einem ungueltigen Objekt eine Exception zu
+    provozieren, die erst durch das try/except unten "zufaellig" richtig behandelt wuerde.
 
     detect_person/detect_animals werden je HOECHSTENS einmal aufgerufen und fuer mehrere davon
     abhaengige Kriterien wiederverwendet (content_people+goldener_schnitt bzw.
@@ -855,6 +867,20 @@ def _compute_content_criteria(
     except Exception:
         pass
 
+    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md, ADR 0026 Punkt 1:
+    # keine Modell-/Detektor-Abhaengigkeit - wie content_landscape UNCONDITIONAL berechnet.
+    try:
+        values["symmetrie"] = compute_symmetrie_score(image)
+    except Exception:
+        pass
+
+    # ADR 0026 Punkt 2: klassischer cv2-Algorithmus ohne trainiertes Modell - ebenfalls
+    # UNCONDITIONAL berechnet, kein injizierbarer Detektor/Builder noetig.
+    try:
+        values["horizont"] = compute_horizon_tilt_score(image)
+    except Exception:
+        pass
+
     if scene_classifier is not None:
         try:
             values["gebaeude"] = compute_gebaeude_score(classify_scene(image, scene_classifier))
@@ -873,6 +899,17 @@ def _compute_content_criteria(
         except Exception:
             pass
 
+    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md, ADR 0026 Punkt 3:
+    # EIGENSTAENDIGER, zusaetzlicher Modellaufruf neben dem obigen face_detector - kein Ersatz,
+    # content_people/goldener_schnitt bleiben unveraendert auf dem bestehenden face_detector.
+    if face_landmarker is not None:
+        try:
+            values["freiraum"] = compute_freiraum_score(
+                detect_face_orientation(image, face_landmarker)
+            )
+        except Exception:
+            pass
+
     return values
 
 
@@ -885,6 +922,7 @@ async def run_criterion_scoring(
     build_animal_detector: Callable[[], ObjectDetectorLike] = build_object_detector,
     build_classifier: Callable[[], SceneClassifierLike] = build_scene_classifier,
     build_aesthetics: Callable[[], AestheticsModelLike] = build_aesthetics_model,
+    build_landmarker: Callable[[], FaceLandmarkerLike] = build_face_landmarker,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
     abgeleitete Rangfolge je Partition (cluster_key x category_key) - ersetzt run_top_selection/
@@ -895,11 +933,13 @@ async def run_criterion_scoring(
     committet) -> rank_photos je Partition anwenden (reine In-Memory-Aggregation ueber die in
     diesem Lauf berechneten Werte) -> PhotoRanking-Zeilen schreiben -> CriterionScoringRun auf
     success/failed setzen. `build_detector`/`build_animal_detector`/`build_classifier`/
-    `build_aesthetics` sind injizierbar (Default: die echte, teure Modellkonstruktion) -
-    Tests uebergeben stattdessen Fakes ohne echtes Modell (specs/features/0038-vier-zusaetzliche-
-    kriterien-tier-gebaeude-schnitt-aesthetik.md: build_object_detector/build_scene_classifier/
-    build_aesthetics_model duerfen wie build_face_detector NIE in einem automatisierten Test
-    aufgerufen werden)."""
+    `build_aesthetics`/`build_landmarker` sind injizierbar (Default: die echte, teure
+    Modellkonstruktion) - Tests uebergeben stattdessen Fakes ohne echtes Modell
+    (specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md:
+    build_object_detector/build_scene_classifier/build_aesthetics_model duerfen wie
+    build_face_detector NIE in einem automatisierten Test aufgerufen werden - gilt seit
+    specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ebenso fuer
+    build_face_landmarker)."""
     run = CriterionScoringRun(
         project_id=project.id, scoring_run_id=scoring_run_id, status=ScanStatus.RUNNING
     )
@@ -972,6 +1012,7 @@ async def run_criterion_scoring(
         animal_detector = _try_build(build_animal_detector) if rows else None
         scene_classifier = _try_build(build_classifier) if rows else None
         aesthetics_model = _try_build(build_aesthetics) if rows else None
+        face_landmarker = _try_build(build_landmarker) if rows else None
         now = _now_utc()
 
         def _upsert_criterion(
@@ -1006,12 +1047,18 @@ async def run_criterion_scoring(
             )
             values["exposure"] = exposure_value
 
-            # Kein assert-is-not-None mehr hier (Copilot-Review-Fund, PR #88): jeder der vier
+            # Kein assert-is-not-None mehr hier (Copilot-Review-Fund, PR #88): jeder der fuenf
             # Builder oben ist ueber _try_build best-effort abgesichert und kann legitim None
             # sein - _compute_content_criteria ueberspringt die davon abhaengigen Kriterien dann
             # selbst, statt dass ein fehlgeschlagener Builder den gesamten Lauf abbricht.
             content_values = _compute_content_criteria(
-                cache_dir, photo, detector, animal_detector, scene_classifier, aesthetics_model
+                cache_dir,
+                photo,
+                detector,
+                animal_detector,
+                scene_classifier,
+                aesthetics_model,
+                face_landmarker,
             )
             for criterion_key, source in _IMAGE_ANALYSIS_CRITERION_SOURCES.items():
                 if criterion_key in content_values:

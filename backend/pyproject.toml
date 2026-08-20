@@ -33,6 +33,21 @@ dependencies = [
     # Ziel-Image (python:3.12-slim) UND CPU-only-Verhalten real per Docker-Smoke-Test verifiziert
     # (kein zusaetzliches apt-Paket noetig, anders als bei mediapipe/opencv).
     "tensorflow>=2.16",
+    # Klassische Kantendetektion/Hough-Liniendetektion fuer criterion_key="horizont"
+    # (specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md,
+    # decisions/0026-modellwahl-symmetrie-horizont-freiraum-kriterien.md Punkt 2) - bewusst
+    # "opencv-contrib-python", NICHT "opencv-python-headless": mediapipe deklariert
+    # opencv-contrib-python bereits als eigene, transitive Laufzeit-Abhaengigkeit (seit Spec 0024
+    # bereits im Image vorhanden, verifiziert im Dev-.venv), diese Zeile macht das nur explizit,
+    # statt sich blind auf mediapipes Abhaengigkeitsbaum zu verlassen - kein neuer Netto-Footprint
+    # erwartet (siehe ADR 0026) - verifiziert per direkter .venv-Inspektion (opencv-contrib-python
+    # bereits transitiv ueber mediapipe installiert, gleicher Paketname); ein echter
+    # docker-build-Beweis steht als Nachzieh-Punkt noch aus (kein Docker-Daemon in der
+    # Umsetzungs-Sandbox verfuegbar). Die vier `opencv*`-Distributionen auf PyPI
+    # installieren alle ein `cv2`-Modul an denselben Ort und sind gegenseitig konflikttraechtig -
+    # ein anderer Name als der von mediapipe geforderte wuerde das Risiko zweier sich
+    # ueberschreibender cv2-Installationen einfuehren.
+    "opencv-contrib-python>=4.10",
 ]
 
 [project.optional-dependencies]
@@ -52,12 +67,12 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-# Gepinnte Modelldateien (.tflite fuer mediapipe, .hdf5 fuer die NIMA-Gewichte, Spec 0038) - ohne
-# diese Deklaration wuerde `pip install .` (siehe backend/Dockerfile) die committeten Binaerassets
-# NICHT ins installierte Package uebernehmen (anders als bei "pip install -e ." im lokalen
-# Dev-Setup, das direkt auf den Quellbaum zeigt).
+# Gepinnte Modelldateien (.tflite fuer mediapipe, .hdf5 fuer die NIMA-Gewichte, Spec 0038; .task
+# fuer den FaceLandmarker, Spec 0048) - ohne diese Deklaration wuerde `pip install .` (siehe
+# backend/Dockerfile) die committeten Binaerassets NICHT ins installierte Package uebernehmen
+# (anders als bei "pip install -e ." im lokalen Dev-Setup, das direkt auf den Quellbaum zeigt).
 [tool.setuptools.package-data]
-photosort = ["assets/*.tflite", "assets/*.hdf5"]
+photosort = ["assets/*.tflite", "assets/*.hdf5", "assets/*.task"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,26 +1,35 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import random
 from types import SimpleNamespace
 
+import numpy as np
+import pytest
 from PIL import Image, ImageDraw
 
 from photosort.classification import (
     _FACE_DETECTOR_MODEL_PATH,
+    _FACE_LANDMARKER_MODEL_PATH,
     _OBJECT_DETECTOR_MODEL_PATH,
     _SCENE_CLASSIFIER_MODEL_PATH,
     ANIMAL_DETECTION_CONFIDENCE_THRESHOLD,
     FACE_DETECTOR_MODEL_SHA256,
+    FACE_LANDMARKER_MODEL_SHA256,
     OBJECT_DETECTOR_MODEL_SHA256,
     SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
     SCENE_CLASSIFIER_MODEL_SHA256,
     AnimalDetection,
     FaceBoundingBox,
+    FaceOrientation,
     SceneLabel,
+    _yaw_degrees_from_rotation_matrix,
     classify_scene,
+    compute_symmetry_score,
     compute_uniform_area_fraction,
     detect_animals,
+    detect_face_orientation,
     detect_person,
 )
 
@@ -76,6 +85,19 @@ class TestSceneClassifierModelAsset:
         assert digest == SCENE_CLASSIFIER_MODEL_SHA256
 
 
+class TestFaceLandmarkerModelAsset:
+    def test_committed_task_model_matches_the_documented_sha256(self) -> None:
+        # Security-Muss-Kriterium (AK der Spec 0048, analog den drei bestehenden .tflite-Assets)
+        # - viertes gepinntes Modell-Asset, .task statt .tflite aendert am Testmuster nichts
+        # (reiner Byte-Hash-Vergleich). Quelle: offizielles mediapipe-Modell-Repository
+        # (https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/
+        # float16/1/face_landmarker.task, per direktem Download vor dem TDD-Einstieg verifiziert,
+        # keine with_blendshapes-Variante noetig - output_face_blendshapes=False steuert das zur
+        # Laufzeit ueber ein Options-Flag desselben Bundles, nicht ueber ein anderes Asset).
+        digest = hashlib.sha256(_FACE_LANDMARKER_MODEL_PATH.read_bytes()).hexdigest()
+        assert digest == FACE_LANDMARKER_MODEL_SHA256
+
+
 class TestComputeUniformAreaFraction:
     def test_uniform_image_has_fraction_near_one(self) -> None:
         assert compute_uniform_area_fraction(_solid()) > 0.9
@@ -94,6 +116,80 @@ class TestComputeUniformAreaFraction:
         # Kachel-`continue`-Behandlung nicht mit einer Exception verlassen.
         fraction = compute_uniform_area_fraction(_solid(size=4))
         assert 0.0 <= fraction <= 1.0
+
+
+def _quadrant_mirrored(size: int = 160) -> Image.Image:
+    # Doppelt spiegelsymmetrisches Bild (links-rechts UND oben-unten) - jede der vier Quadranten-
+    # Energien ist dadurch exakt (nicht nur ungefaehr) gleich, da der Laplace-Kernel bei einem
+    # mit "edge"-Padding gepolsterten, spiegelsymmetrischen Bild spiegel-kovariant rechnet (siehe
+    # Kommentar in test_perfectly_symmetric_textured_image_scores_one_point_zero unten).
+    half = size // 2
+    quadrant = _noisy(size=half, seed=1)
+    image = Image.new("RGB", (size, size))
+    image.paste(quadrant, (0, 0))
+    image.paste(quadrant.transpose(Image.Transpose.FLIP_LEFT_RIGHT), (half, 0))
+    image.paste(quadrant.transpose(Image.Transpose.FLIP_TOP_BOTTOM), (0, half))
+    image.paste(quadrant.transpose(Image.Transpose.ROTATE_180), (half, half))
+    return image
+
+
+def _one_quadrant_textured(size: int = 160) -> Image.Image:
+    half = size // 2
+    image = _solid(size=size)
+    image.paste(_noisy(size=half, seed=2), (0, 0))
+    return image
+
+
+class TestComputeSymmetryScore:
+    def test_uniform_image_scores_exactly_one(self) -> None:
+        # Dokumentiertes, kein-Bug-Verhalten (AK der Spec 0048): Gesamtenergie 0 -> beide Diffs
+        # per Definition 0 -> score = 1.0, ein flaechiges Bild ist trivial "balanciert".
+        assert compute_symmetry_score(_solid()) == 1.0
+
+    def test_extremely_asymmetric_image_scores_well_below_half(self) -> None:
+        # Energie nur in einem der vier Quadranten - AK der Spec: "score deutlich unter 0.5".
+        assert compute_symmetry_score(_one_quadrant_textured()) < 0.3
+
+    def test_perfectly_symmetric_textured_image_scores_one_point_zero(self) -> None:
+        # AK der Spec 0048: "Perfekt symmetrisches, texturiertes Bild -> score == 1.0". Der
+        # Laplace-Kernel (kleine ganzzahlige Gewichte auf 8-Bit-Graustufenwerten) rechnet exakt
+        # ohne Rundungsverlust, und ein "edge"-gepolstertes, doppelt spiegelsymmetrisches Bild
+        # bleibt unter dieser Faltung spiegelsymmetrisch - toleranter Vergleich nur als Schutz vor
+        # einer nicht vorhergesehenen Gleitkomma-Feinheit, kein weicher Toleranzwert im
+        # eigentlichen Sinn.
+        assert compute_symmetry_score(_quadrant_mirrored()) == pytest.approx(1.0, abs=1e-9)
+
+    def test_odd_width_and_height_follow_the_uniform_area_fraction_rounding_rule(self) -> None:
+        # AK der Spec 0048: gleiche Rundungsregel wie compute_uniform_area_fraction's 8x8-
+        # Kachelraster (`width // 2`, letzter Bereich nimmt den Rest), hier auf ein 2x2-
+        # Quadranten-Raster angewendet - unabhaengig ueber dieselbe, bereits an anderer Stelle
+        # (TestComputeUniformAreaFraction) getestete Kantenkarte nachgerechnet, NICHT ueber eine
+        # Kopie der Score-Formel selbst.
+        from photosort.classification import _laplace_edges_without_border_artifact
+
+        image = _noisy(size=160, seed=3).resize((7, 5))
+        grayscale = image.convert("L")
+        width, height = grayscale.size
+        edges = np.abs(
+            np.asarray(_laplace_edges_without_border_artifact(grayscale), dtype=np.float64)
+        )
+        mid_x, mid_y = width // 2, height // 2
+        top_left = edges[:mid_y, :mid_x].mean()
+        top_right = edges[:mid_y, mid_x:].mean()
+        bottom_left = edges[mid_y:, :mid_x].mean()
+        bottom_right = edges[mid_y:, mid_x:].mean()
+        e_left, e_right = (top_left + bottom_left) / 2, (top_right + bottom_right) / 2
+        e_top, e_bottom = (top_left + top_right) / 2, (bottom_left + bottom_right) / 2
+        horizontal_diff = abs(e_left - e_right) / (e_left + e_right)
+        vertical_diff = abs(e_top - e_bottom) / (e_top + e_bottom)
+        expected = max(0.0, min(1.0, 1.0 - (horizontal_diff + vertical_diff) / 2))
+
+        assert compute_symmetry_score(image) == pytest.approx(expected)
+
+    def test_image_smaller_than_the_quadrant_grid_does_not_crash(self) -> None:
+        # Degenerierter Grenzfall analog test_image_smaller_than_the_tile_grid_does_not_crash.
+        score = compute_symmetry_score(_solid(size=1))
+        assert 0.0 <= score <= 1.0
 
 
 class FakeFaceDetector:
@@ -302,3 +398,97 @@ class TestClassifyScene:
 
     def test_returns_empty_list_with_no_categories_at_all(self) -> None:
         assert classify_scene(_solid(), FakeSceneClassifier([])) == []
+
+
+# --- Freiraum (specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md,
+# decisions/0026-modellwahl-symmetrie-horizont-freiraum-kriterien.md Punkt 3): viertes mediapipe
+# Task-API-Paar (FaceLandmarker), Blickrichtung (Yaw) aus der 4x4-Kopfpose-Rotationsmatrix statt
+# einem selbst konstruierten Landmark-Vektor.
+
+
+def _rotation_matrix_y(degrees_value: float) -> np.ndarray:
+    """Baut eine synthetische 4x4-Rotationsmatrix um die Y-Achse (Konvention dieser Umsetzung,
+    siehe classification.py::_yaw_degrees_from_rotation_matrix-Docstring) - erlaubt das Testen der
+    Rotationsmatrix-zu-Winkel-Mathematik OHNE echtes Modell (Teststrategie-Abschnitt der Spec
+    0048: "deckt die offene Achsen-/Vorzeichenkonvention ab")."""
+    theta = math.radians(degrees_value)
+    matrix = np.eye(4)
+    matrix[0, 0] = math.cos(theta)
+    matrix[0, 2] = math.sin(theta)
+    matrix[2, 0] = -math.sin(theta)
+    matrix[2, 2] = math.cos(theta)
+    return matrix
+
+
+class TestYawDegreesFromRotationMatrix:
+    def test_identity_matrix_yields_zero_yaw(self) -> None:
+        assert _yaw_degrees_from_rotation_matrix(np.eye(4)) == pytest.approx(0.0)
+
+    def test_positive_rotation_yields_positive_yaw(self) -> None:
+        assert _yaw_degrees_from_rotation_matrix(_rotation_matrix_y(30.0)) == pytest.approx(30.0)
+
+    def test_negative_rotation_yields_negative_yaw(self) -> None:
+        assert _yaw_degrees_from_rotation_matrix(_rotation_matrix_y(-20.0)) == pytest.approx(-20.0)
+
+    def test_translation_component_of_the_matrix_does_not_affect_the_extracted_yaw(self) -> None:
+        # Reale mediapipe-facial_transformation_matrixes-Ausgaben tragen zusaetzlich eine
+        # Translation in der letzten Spalte (Kopfposition im Raum, in Millimetern) - die
+        # Yaw-Extraktion darf sich ausschliesslich auf den Rotationsanteil (obere-linke 3x3)
+        # stuetzen.
+        matrix = _rotation_matrix_y(15.0)
+        matrix[0, 3] = 12.5
+        matrix[1, 3] = -40.0
+        matrix[2, 3] = 100.0
+        assert _yaw_degrees_from_rotation_matrix(matrix) == pytest.approx(15.0)
+
+
+class FakeFaceLandmarker:
+    """Faket die schmale Teilmenge der mediapipe-FaceLandmarker-API, die detect_face_orientation
+    braucht - kein echtes .task-Modell in Tests (Teststrategie-Abschnitt der Spec 0048), analog
+    FakeFaceDetector. `faces` ist eine Liste von Gesichtern, jedes eine Liste normierter
+    (x, y)-Landmark-Koordinaten; `matrixes` eine parallele Liste von 4x4-Rotationsmatrizen
+    (Default: Einheitsmatrix je Gesicht)."""
+
+    def __init__(
+        self,
+        faces: list[list[tuple[float, float]]],
+        matrixes: list[np.ndarray] | None = None,
+    ) -> None:
+        self._faces = faces
+        self._matrixes = matrixes if matrixes is not None else [np.eye(4) for _ in faces]
+
+    def detect(self, image: object) -> object:
+        return SimpleNamespace(
+            face_landmarks=[
+                [SimpleNamespace(x=x, y=y) for x, y in face] for face in self._faces
+            ],
+            facial_transformation_matrixes=self._matrixes,
+        )
+
+
+class TestDetectFaceOrientation:
+    def test_no_face_detected_returns_none(self) -> None:
+        assert detect_face_orientation(_solid(), FakeFaceLandmarker([])) is None
+
+    def test_returns_orientation_with_yaw_and_bounding_box_from_the_detected_face(self) -> None:
+        landmarks = [(0.3, 0.2), (0.7, 0.2), (0.5, 0.8)]
+        landmarker = FakeFaceLandmarker([landmarks], matrixes=[_rotation_matrix_y(25.0)])
+        orientation = detect_face_orientation(_solid(), landmarker)
+        assert orientation == FaceOrientation(
+            yaw_degrees=pytest.approx(25.0), min_x=0.3, max_x=0.7
+        )
+
+    def test_multiple_faces_despite_num_faces_one_uses_only_the_first(self) -> None:
+        # Edge Case aus dem Teststrategie-Abschnitt der Spec 0048: "mehrere Gesichter trotz
+        # num_faces=1" (sollte laut Modell-Konfiguration nicht vorkommen, defensiv trotzdem
+        # deterministisch behandelt) - nur das ERSTE Gesicht wird beruecksichtigt.
+        first = [(0.1, 0.1), (0.2, 0.2)]
+        second = [(0.8, 0.8), (0.9, 0.9)]
+        landmarker = FakeFaceLandmarker(
+            [first, second], matrixes=[np.eye(4), _rotation_matrix_y(40.0)]
+        )
+        orientation = detect_face_orientation(_solid(), landmarker)
+        assert orientation is not None
+        assert orientation.min_x == 0.1
+        assert orientation.max_x == 0.2
+        assert orientation.yaw_degrees == pytest.approx(0.0)

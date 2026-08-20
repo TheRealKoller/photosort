@@ -12,7 +12,9 @@ from photosort.classification import (
     AnimalDetection,
     FaceBoundingBox,
     FaceDetectorLike,
+    FaceOrientation,
     SceneLabel,
+    compute_symmetry_score,
     compute_uniform_area_fraction,
     detect_person,
 )
@@ -89,6 +91,19 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         category_presence_threshold=_GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD,
     ),
     "aesthetics": CriterionDefinition("aesthetics", "Ästhetik", CriterionSource.LOCAL_ML),
+    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ab hier: drei
+    # weitere, davon unabhaengige Kompositions-Ranking-Signale (analog goldener_schnitt/
+    # aesthetics) - alle drei category_eligible=False (reine Ranking-Signale, keine neuen
+    # Kuratierungs-Kategorien, ADR 0026).
+    "symmetrie": CriterionDefinition(
+        "symmetrie", "Symmetrie", CriterionSource.LOCAL_HEURISTIC
+    ),
+    "horizont": CriterionDefinition(
+        "horizont", "Horizont-Neigung", CriterionSource.LOCAL_HEURISTIC
+    ),
+    "freiraum": CriterionDefinition(
+        "freiraum", "Freiraum/Fluchtrichtung", CriterionSource.LOCAL_ML
+    ),
 }
 
 # Obergrenze fuer die Normierung der unbeschraenkten Laplace-Varianz-Skala (scoring.py::
@@ -143,6 +158,14 @@ def compute_content_landscape(image: Image.Image) -> float:
     compute_uniform_area_fraction) ist bereits auf [0, 1] normiert, "hoeher = flaechiger/eher
     Landschaft" - keine weitere Transformation noetig."""
     return compute_uniform_area_fraction(image)
+
+
+def compute_symmetrie_score(image: Image.Image) -> float:
+    """`symmetrie`-Kriterium (specs/features/0048-kompositions-kriterien-symmetrie-horizont-
+    freiraum.md, ADR 0026 Punkt 1): reiner Namens-/Modul-Wrapper um classification.py::
+    compute_symmetry_score (bereits auf [0, 1] normiert) - kein eigener Algorithmus hier, analog
+    compute_content_landscape -> compute_uniform_area_fraction."""
+    return compute_symmetry_score(image)
 
 
 class SubjectBoxLike(Protocol):
@@ -304,6 +327,55 @@ def compute_gebaeude_score(labels: Sequence[SceneLabel]) -> float:
     if not allowed:
         return 0.0
     return max(label.confidence for label in allowed)
+
+
+# specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md, ADR 0026 Punkt 3:
+# Deadzone um einen frontalen Blick (Yaw nahe 0) - kein klares Richtungssignal, ein nahezu
+# frontaler Blick sagt nichts darueber aus, ob rechts oder links mehr Freiraum "in Blickrichtung"
+# noetig waere. Unkalibriert dokumentiert (gleiche Klasse wie SHARPNESS_NORMALIZATION_CEILING/
+# LANDSCAPE_UNIFORM_FRACTION_THRESHOLD, kein Fotokorpus im Repo zur Kalibrierung).
+FREIRAUM_YAW_DEADZONE_DEGREES = 10.0
+
+
+def compute_freiraum_score(orientation: FaceOrientation | None) -> float:
+    """`freiraum`-Kriterium (ADR 0026 Punkt 3): reine Score-Berechnung aus einer bereits
+    vorhandenen FaceOrientation, OHNE eigenen detect_face_orientation-Aufruf (Trennung analog
+    compute_tier_score/compute_gebaeude_score) - worker.py::_compute_content_criteria ruft
+    detect_face_orientation genau einmal auf und reicht das Ergebnis hier durch.
+
+    Drei bewusst unterschiedliche Fallback-Werte (ADR 0026, "Begruendung": "bedeutet die
+    Abwesenheit eines Signals ein schlechtes Foto, oder nur ein nicht messbares?" - jeder Fall
+    einzeln beantwortet, kein einheitliches Schema):
+    1. Kein Gesicht erkannt (`orientation is None`) -> 0.0 (niedrig, NICHT neutral) - analog
+       goldener_schnitt: dieses Kriterium bewertet fundamental die Rahmung eines Subjekts, ohne
+       jedes Subjekt gibt es keinen positiven Kompositionswert.
+    2. Nahezu frontaler Blick (`|yaw| < FREIRAUM_YAW_DEADZONE_DEGREES`) -> 0.5 (neutral) - kein
+       klares Richtungssignal. Der Vergleich ist bewusst `<`, NICHT `<=` (AK der Spec 0048): Yaw
+       EXAKT an der Deadzone-Grenze zaehlt als AUSSERHALB, nicht als neutral.
+    3. Sonst: `score = clip(looking_space / (looking_space + opposite_space), 0, 1)` -
+       `looking_space` ist der verfuegbare Bildraum auf der Seite, der das Gesicht zugewandt ist
+       (Vorzeichenkonvention siehe FaceOrientation.yaw_degrees-Docstring in classification.py:
+       positiver Yaw -> Blick Richtung steigendem x -> looking_space = 1 - max_x, negativer Yaw ->
+       looking_space = min_x), `opposite_space` die jeweilige Gegenseite. Zusaetzlicher 0-Schutz
+       (AK der Spec 0048, gleiche Argumentationsklasse wie die Deadzone): fuellt das Gesicht die
+       VOLLE Bildbreite (`min_x == 0`, `max_x == 1`), sind beide Raeume 0 - neutraler Fallback
+       0.5 statt ZeroDivisionError."""
+    if orientation is None:
+        return 0.0
+    if abs(orientation.yaw_degrees) < FREIRAUM_YAW_DEADZONE_DEGREES:
+        return 0.5
+
+    if orientation.yaw_degrees > 0:
+        looking_space = 1.0 - orientation.max_x
+        opposite_space = orientation.min_x
+    else:
+        looking_space = orientation.min_x
+        opposite_space = 1.0 - orientation.max_x
+
+    total_space = looking_space + opposite_space
+    if total_space <= 0:
+        return 0.5
+    return max(0.0, min(1.0, looking_space / total_space))
 
 
 CATEGORY_DETAIL = "detail"
