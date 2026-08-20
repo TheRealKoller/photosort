@@ -1,6 +1,6 @@
 # 0048 - Drei Kompositions-Kriterien: Symmetrie, Horizont-Neigung, Freiraum/Fluchtrichtung
 
-**Status:** Accepted
+**Status:** Implemented ([PR #111](https://github.com/TheRealKoller/photosort/pull/111))
 **Erstellt:** 2026-08-19
 **Bezug:** [`inbox/0023-kriterium-bildkomposition.md`](../inbox/0023-kriterium-bildkomposition.md) (Ursprung, nach Anlage dieser Spec gelöscht), ADR [`decisions/0026-modellwahl-symmetrie-horizont-freiraum-kriterien.md`](../decisions/0026-modellwahl-symmetrie-horizont-freiraum-kriterien.md), [`decisions/0022-lokale-modellwahl-tier-gebaeude-aesthetik-kriterien.md`](../decisions/0022-lokale-modellwahl-tier-gebaeude-aesthetik-kriterien.md) (Vorbild-Muster), [`features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md`](./0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md) (`goldener_schnitt` als strukturelles Vorbild), Idea-Sharpening-Gespräch mit Daniel am 2026-08-19.
 
