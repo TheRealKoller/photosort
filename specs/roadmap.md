@@ -25,7 +25,6 @@ Keine offenen Einträge.
 | [0044](./features/0044-projekte-loeschen.md) | Projekte löschen (nur PhotoSort-Daten, mit Namenseingabe-Bestätigung) | Accepted |
 | [0048](./features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md) | Drei Kompositions-Kriterien: Symmetrie, Horizont-Neigung, Freiraum/Fluchtrichtung | Accepted |
 | [0049](./features/0049-single-origin-api-proxy-frontend-nginx.md) | Nur Frontend nach außen exposen: Single-Origin-API-Proxy über Frontend-nginx | Accepted |
-| [0050](./features/0050-dateianzahl-im-ordner-browser.md) | Dateianzahl pro Unterordner im OpenCloud-Ordner-Browser | Accepted |
 
 ### Inbox — ungeschärfte Ideen
 
@@ -84,6 +83,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0041](./features/0041-bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md) | Bewertungsdetails permanent in der Detailansicht + Hover-Auto-Close im Popover | Implemented ([PR #103](https://github.com/TheRealKoller/photosort/pull/103)) |
 | [0045](./features/0045-kategorien-aus-statistiken-ableiten.md) | Kategorien dynamisch aus Bild-Statistiken ableiten, revidiert Teile von ADR 0021/Spec 0038 | Implemented ([PR #106](https://github.com/TheRealKoller/photosort/pull/106)) |
 | [0046](./features/0046-review-agenten-und-pr-workflow-orchestrator.md) | Review-Agenten und PR-/Copilot-Workflow vom Orchestrator statt vom `developer`-Subagenten | Implemented ([PR #105](https://github.com/TheRealKoller/photosort/pull/105)) |
+| [0050](./features/0050-dateianzahl-im-ordner-browser.md) | Dateianzahl pro Unterordner im OpenCloud-Ordner-Browser | Implemented ([PR #110](https://github.com/TheRealKoller/photosort/pull/110)) |
 
 ## Priorisierung
 

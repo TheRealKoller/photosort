@@ -1,6 +1,6 @@
 # 0050 - Dateianzahl pro Unterordner im OpenCloud-Ordner-Browser
 
-**Status:** Accepted
+**Status:** Implemented ([PR #110](https://github.com/TheRealKoller/photosort/pull/110))
 **Erstellt:** 2026-08-19
 **Bezug:** [`inbox/0006-dateianzahl-beim-ordner-heraussuchen.md`](../inbox/0006-dateianzahl-beim-ordner-heraussuchen.md) (Ursprung, nach Anlage dieser Spec gelöscht), ADR [`decisions/0028-ordner-browser-bilddatei-zaehlung.md`](../decisions/0028-ordner-browser-bilddatei-zaehlung.md), Idea-Sharpening-Gespräch mit Daniel am 2026-08-19.
 

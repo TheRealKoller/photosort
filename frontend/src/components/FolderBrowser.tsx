@@ -1,9 +1,11 @@
 import { useEffect } from 'react'
 
 import { ApiError } from '../api/client'
+import type { FolderCountOut } from '../api/types'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
 import { useOpenCloudBrowseQuery } from '../hooks/useOpenCloudBrowse'
+import { useOpenCloudFolderCountsQuery } from '../hooks/useOpenCloudFolderCounts'
 
 interface Breadcrumb {
   label: string
@@ -18,6 +20,70 @@ interface FolderBrowserProps {
   // (specs/features/0005-minimal-project-frontend.md) - der Elternseite bleibt sonst keine
   // Moeglichkeit, den internen Ladefehler dieser Komponente zu kennen.
   onErrorChange?: (hasError: boolean) => void
+}
+
+// specs/features/0050-dateianzahl-im-ordner-browser.md, UI/UX-Abschnitt "Eager-Zaehler neben
+// Listeneintraegen": vier moegliche Anzeigezustaende pro gelistetem Unterordner.
+type FolderCountDisplay =
+  | { kind: 'loading' }
+  | { kind: 'count'; count: number }
+  | { kind: 'at_limit' }
+  | { kind: 'error' }
+
+function folderCountDisplayFor(
+  path: string,
+  counts: { isLoading: boolean; isError: boolean; data: FolderCountOut[] | undefined }
+): FolderCountDisplay {
+  if (counts.isLoading) {
+    return { kind: 'loading' }
+  }
+  const match = counts.data?.find((item) => item.path === path)
+  if (counts.isError || !match || match.error) {
+    return { kind: 'error' }
+  }
+  if (match.at_limit) {
+    return { kind: 'at_limit' }
+  }
+  return { kind: 'count', count: match.count }
+}
+
+/**
+ * Rechtsbuendiger Zaehler-/Statusbereich neben einem Unterordner-Namen. Blockiert nie die
+ * Navigation in den betroffenen Ordner - auch der Fehlerzustand ist rein informativ.
+ */
+function FolderCountIndicator({ display }: { display: FolderCountDisplay }) {
+  if (display.kind === 'loading') {
+    return (
+      <span
+        data-testid="folder-count-loading"
+        aria-hidden="true"
+        className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none rounded-full border-2 border-current border-t-transparent text-text"
+      />
+    )
+  }
+  if (display.kind === 'error') {
+    return (
+      <span
+        className="shrink-0 text-sm text-text"
+        title="Zählung nicht verfügbar"
+        aria-label="Zählung nicht verfügbar"
+      >
+        ?
+      </span>
+    )
+  }
+  if (display.kind === 'at_limit') {
+    return (
+      <span
+        className="shrink-0 text-sm text-text"
+        title="Mindestens 500 Bilder"
+        aria-label="Mindestens 500 Bilder"
+      >
+        500+
+      </span>
+    )
+  }
+  return <span className="shrink-0 text-sm text-text">{display.count}</span>
 }
 
 function breadcrumbsFor(path: string): Breadcrumb[] {
@@ -40,6 +106,10 @@ function breadcrumbsFor(path: string): Breadcrumb[] {
  */
 export function FolderBrowser({ value, onChange, onErrorChange }: FolderBrowserProps) {
   const query = useOpenCloudBrowseQuery(value)
+  // Loest eager parallel zum Browse-Request desselben Pfads aus (specs/features/0050-
+  // dateianzahl-im-ordner-browser.md) - kein Klick noetig, die Liste rendert unveraendert sobald
+  // browseFolder zurueck ist, die Zaehler trudeln pro Zeile nach.
+  const counts = useOpenCloudFolderCountsQuery(value)
 
   useEffect(() => {
     onErrorChange?.(query.isError)
@@ -73,15 +143,16 @@ export function FolderBrowser({ value, onChange, onErrorChange }: FolderBrowserP
       {query.isSuccess && query.data.length > 0 && (
         <ul className="flex flex-col gap-1">
           {query.data.map((entry) => (
-            <li key={entry.path}>
+            <li key={entry.path} className="flex items-center justify-between gap-3">
               <Button
                 type="button"
                 variant="ghost"
-                className="w-full justify-start"
+                className="flex-1 justify-start"
                 onClick={() => onChange(entry.path)}
               >
                 {entry.name}
               </Button>
+              <FolderCountIndicator display={folderCountDisplayFor(entry.path, counts)} />
             </li>
           ))}
         </ul>

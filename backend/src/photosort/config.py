@@ -67,5 +67,16 @@ class Settings(BaseSettings):
     # eigenen Laufzeit-Clamp.
     scan_download_concurrency: int = Field(default=4, ge=1)
 
+    # Obergrenze fuer die begrenzte Parallelisierung der pro-Unterordner-Bilddatei-Zaehlung im
+    # Ordner-Browser (specs/features/0050-dateianzahl-im-ordner-browser.md, ADR
+    # decisions/0028-ordner-browser-bilddatei-zaehlung.md). Echter Betriebsparameter
+    # (Ueberlastschutz fuer den Einzelnutzer-Homeserver-OpenCloud bei parallelen
+    # Zaehl-Traversierungen mehrerer Unterordner), deshalb analog scan_download_concurrency ein
+    # env-ueberschreibbares Settings-Feld statt einer reinen Modul-Konstante wie
+    # api/opencloud.py::FOLDER_COUNT_LIMIT (das ist reiner Anzeige-/UX-Wert ohne Tuning-Bedarf).
+    # Default 4, `Field(ge=1)` faellt bei fehlerhafter .env-Konfiguration bereits beim
+    # Prozessstart auf statt sich erst als Semaphore(0)-Deadlock zu aeussern.
+    opencloud_folder_count_concurrency: int = Field(default=4, ge=1)
+
 
 settings = Settings()

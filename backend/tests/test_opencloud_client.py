@@ -3,7 +3,7 @@ import base64
 import httpx
 import pytest
 
-from photosort.opencloud.client import OpenCloudClient, OpenCloudError, _join
+from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError, _join
 from photosort.opencloud.webdav_xml import DavEntry
 
 DRIVES_RESPONSE = {
@@ -323,6 +323,14 @@ async def test_walk_terminates_when_a_child_entry_points_at_an_already_visited_p
     assert [relative_path for relative_path, _entry in results] == ["CostaRica/Sub/img.jpg"]
     # "CostaRica/Sub" wurde trotz der doppelten Referenz nur EINMAL gelistet, nicht zweimal.
     assert calls == ["CostaRica", "CostaRica/Sub"]
+
+
+def test_image_extensions_contains_expected_set() -> None:
+    # specs/features/0050-dateianzahl-im-ordner-browser.md: Umzug von worker.py::_IMAGE_EXTENSIONS
+    # (dort privat) hierher (oeffentlich) - ein einziger Ort fuer "was zaehlt als Bild", den sowohl
+    # worker.py als auch api/opencloud.py importieren koennen, ohne dass api/opencloud.py
+    # worker.py (und damit dessen mediapipe-/tensorflow-Abhaengigkeiten) importieren muss.
+    assert IMAGE_EXTENSIONS == {".jpg", ".jpeg", ".png", ".heic", ".heif"}
 
 
 def test_join_builds_url_from_plain_segments() -> None:
