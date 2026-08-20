@@ -538,3 +538,10 @@ def test_state_file_missing_roadmap_still_syncs_with_empty_priorities(tmp_path: 
 
     assert result.specs[0].classification == "created"
     assert result.specs[0].priority_warning is None  # Implemented braucht keine Prioritaet
+
+    issue_number = result.specs[0].issue_number
+    assert issue_number is not None
+    assert gh.issue(issue_number).state == "closed"  # Implemented -> nativer Issue-Zustand zu
+
+    item_id = next(iter(gh.items))
+    assert gh.items[item_id]["F_PRIO"] is None  # keine Prioritaets-Tabelle -> Feld geleert

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Literal
 
 from github_project_sync.classify import SyncClassification, SyncStateEntry, classify
-from github_project_sync.gh_adapter import GhAdapter, ProjectFields
+from github_project_sync.gh_adapter import GhAdapter, Project, ProjectFields
 from github_project_sync.hashing import push_state_hash, text_hash
 from github_project_sync.issue_body import (
     build_issue_body,
@@ -78,18 +78,10 @@ class SyncRunResult:
     specs: list[SpecSyncResult]
     orphaned: list[OrphanCleanup]
 
-    @property
-    def pulled(self) -> list[SpecSyncResult]:
-        return [r for r in self.specs if r.classification == "pulled"]
-
-    @property
-    def conflicts(self) -> list[SpecSyncResult]:
-        return [r for r in self.specs if r.classification == "conflict"]
-
 
 def _apply_fields(
     gh: GhAdapter,
-    project: object,
+    project: Project,
     fields: ProjectFields,
     item_id: str,
     *,
@@ -125,11 +117,11 @@ def _sync_one(
     priority: str | None,
     stored_entry: SyncStateEntry | None,
     gh: GhAdapter,
-    project: object,
+    project: Project,
     fields: ProjectFields,
     resolution: Resolution | None,
     now: Callable[[], str],
-) -> tuple[SpecSyncResult, SyncStateEntry | None]:
+) -> tuple[SpecSyncResult, SyncStateEntry]:
     if status not in _VALID_STATUSES:
         raise SyncError(f"Spec {number}: unbekannter Status {status!r}.")
 
@@ -169,6 +161,18 @@ def _sync_one(
         return result, new_entry
 
     issue = gh.get_issue(stored_entry.issue_number)
+    # ADR decisions/0017-github-projects-v2-spec-sync.md, Bedrohung 1, nennt als zusaetzliche
+    # Gegenmassnahme "ein Fallback bei fehlendem State-Eintrag verifiziert zusaetzlich
+    # issue.author.login == 'TheRealKoller'". Dieser Fallback wird hier bewusst NICHT
+    # implementiert: er greift nur, wenn ein Spec<->Issue-Match ueber einen Such-/Lookup-Pfad
+    # (Titel/Marker ueber die gesamte Repo-Issue-Liste) zustande kommt - genau diesen Pfad gibt
+    # es im GhAdapter-Protokoll strukturell nicht (siehe AC "Fremd-Issues": Zuordnung
+    # ausschliesslich ueber den hier bereits vorliegenden stored_entry.issue_number). Fehlt ein
+    # State-Eintrag komplett (stored_entry is None, siehe Zweig oben), wird immer ein neues
+    # Issue angelegt (create_issue), nie ein bestehendes fremdes adoptiert - der Angriffspfad,
+    # den der Fallback abdecken soll, existiert also gar nicht erst. `IssueView.author_login`
+    # wird deshalb aktuell nicht ausgewertet; er ist fuer eine etwaige kuenftige Erweiterung des
+    # Lookups vorgehalten (siehe gh_adapter.py), keine unbeabsichtigte Luecke.
     marker_number = parse_marker(issue.body)
     if marker_number != number:
         result = SpecSyncResult(
@@ -318,10 +322,7 @@ def run_sync(
                 now=now,
             )
             results.append(result)
-            if updated_entry is not None:
-                new_state[number] = updated_entry
-            else:
-                new_state.pop(number, None)
+            new_state[number] = updated_entry
 
         if only is None:
             for number in find_orphaned_numbers(state, existing_numbers=set(parsed_by_number)):

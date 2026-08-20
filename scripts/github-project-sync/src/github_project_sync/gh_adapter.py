@@ -48,6 +48,12 @@ class IssueView:
     number: int
     body: str
     state: str  # "open" | "closed"
+    # Aktuell von sync.py bewusst nicht ausgewertet - vorgehalten fuer eine etwaige kuenftige
+    # Erweiterung um einen Marker-/Titel-Lookup-Pfad (dann waere der in ADR
+    # decisions/0017-github-projects-v2-spec-sync.md, Bedrohung 1, beschriebene
+    # issue.author.login-Fallback noetig). Solange die Zuordnung ausschliesslich ueber den
+    # gespeicherten issue_number laeuft (siehe Kommentar in sync.py::_sync_one), gibt es dafuer
+    # keinen Verwendungszweck. Siehe auch Review-Finding zu dieser Abweichung.
     author_login: str
     url: str
 
