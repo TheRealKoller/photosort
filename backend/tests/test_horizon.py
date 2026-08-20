@@ -55,6 +55,22 @@ class TestComputeHorizonTiltScore:
         score = compute_horizon_tilt_score(image)
         assert 0.0 < score < 1.0
 
+    def test_a_line_beyond_the_penalty_ceiling_but_within_the_candidate_range_is_clamped_to_zero(
+        self,
+    ) -> None:
+        # AK der Spec 0048 (test-engineer-Review-Fund, End-to-End-Nachweis statt nur ueber die
+        # getrennt getesteten Bausteine): "Linie jenseits HORIZON_MAX_PENALIZED_ANGLE_DEGREES
+        # (15 Grad), aber innerhalb HORIZON_MAX_CANDIDATE_ANGLE (45 Grad) -> score auf 0.0
+        # geklemmt, zaehlt trotzdem als Kandidat/Gewinner falls laengste". Die Linie unten hat
+        # eine real per Canny/HoughLinesP gemessene Neigung von ca. 21 Grad (verifiziert per
+        # direktem cv2-Aufruf vor diesem Test) - eindeutig zwischen beiden Schwellwerten. Waere
+        # sie faelschlich NICHT als Kandidat gezaehlt worden, ergaebe sich der neutrale Fallback
+        # 0.5 statt 0.0 - der Test unterscheidet damit tatsaechlich beide moeglichen Bugs
+        # (faelschlich ausgeschlossen vs. nicht korrekt geklemmt), nicht nur einen.
+        assert HORIZON_MAX_PENALIZED_ANGLE_DEGREES < 21.0 < HORIZON_MAX_CANDIDATE_ANGLE
+        image = _line_image((20, 80, 180, 142))
+        assert compute_horizon_tilt_score(image) == 0.0
+
     def test_the_longest_candidate_line_wins_over_a_shorter_more_tilted_one(self) -> None:
         # ADR 0026 Punkt 2: "laengste Kandidatenlinie gewinnt" - eine lange, fast horizontale
         # Linie MUSS den Score dominieren, obwohl gleichzeitig eine kurze, staerker geneigte

@@ -973,6 +973,61 @@ async def test_freiraum_criterion_best_effort_failure_does_not_fail_the_run_or_o
     assert "horizont" in criteria
 
 
+async def test_freiraum_criterion_is_unaffected_by_a_failing_face_detector(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Umkehr-Test zu test_freiraum_criterion_best_effort_failure_does_not_fail_the_run_or_other_
+    # criteria (test-engineer-Review-Fund): macht die "eigenstaendiger Modellaufruf, kein Ersatz"-
+    # Eigenschaft aus ADR 0026 Punkt 3 in BEIDE Richtungen nachweisbar - ein fehlschlagender
+    # face_detector darf freiraum (haengt nur vom eigenstaendigen face_landmarker ab) nicht
+    # beeintraechtigen, exakt spiegelbildlich zum bereits bestehenden Test in der anderen
+    # Richtung (fehlschlagender face_landmarker beeintraechtigt content_people/goldener_schnitt
+    # nicht).
+    class BrokenFaceDetector:
+        def detect(self, image: object) -> object:
+            raise RuntimeError("Modell-Ladefehler")
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    stub = FaceLandmarkerStub(
+        landmarks=[(0.05, 0.1), (0.15, 0.3)], matrix=_rotation_matrix_y(20.0)
+    )
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=BrokenFaceDetector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=lambda: stub,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    # content_people/goldener_schnitt haengen vom (hier fehlgeschlagenen) face_detector ab und
+    # bleiben ungeschrieben - freiraum haengt ausschliesslich vom eigenstaendigen face_landmarker
+    # ab und wird trotzdem mit dem korrekten Wert geschrieben.
+    assert "content_people" not in criteria
+    assert "goldener_schnitt" not in criteria
+    assert criteria["freiraum"] == pytest.approx(0.85 / 0.9)
+
+
 async def test_freiraum_builder_failure_does_not_fail_the_run_or_unrelated_criteria(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

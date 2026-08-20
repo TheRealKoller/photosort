@@ -40,7 +40,10 @@ dependencies = [
     # opencv-contrib-python bereits als eigene, transitive Laufzeit-Abhaengigkeit (seit Spec 0024
     # bereits im Image vorhanden, verifiziert im Dev-.venv), diese Zeile macht das nur explizit,
     # statt sich blind auf mediapipes Abhaengigkeitsbaum zu verlassen - kein neuer Netto-Footprint
-    # (siehe ADR 0026, per docker build verifiziert). Die vier `opencv*`-Distributionen auf PyPI
+    # erwartet (siehe ADR 0026) - verifiziert per direkter .venv-Inspektion (opencv-contrib-python
+    # bereits transitiv ueber mediapipe installiert, gleicher Paketname); ein echter
+    # docker-build-Beweis steht als Nachzieh-Punkt noch aus (kein Docker-Daemon in der
+    # Umsetzungs-Sandbox verfuegbar). Die vier `opencv*`-Distributionen auf PyPI
     # installieren alle ein `cv2`-Modul an denselben Ort und sind gegenseitig konflikttraechtig -
     # ein anderer Name als der von mediapipe geforderte wuerde das Risiko zweier sich
     # ueberschreibender cv2-Installationen einfuehren.
