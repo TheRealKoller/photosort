@@ -93,6 +93,28 @@ def test_scan_download_concurrency_rejects_non_positive_values() -> None:
         Settings(_env_file=None, scan_download_concurrency=-1)
 
 
+def test_opencloud_folder_count_concurrency_defaults_to_four() -> None:
+    # specs/features/0050-dateianzahl-im-ordner-browser.md, ADR decisions/0028: echter
+    # Betriebsparameter (Ueberlastschutz fuer den Einzelnutzer-Homeserver-OpenCloud beim parallelen
+    # Zaehlen mehrerer Unterordner), analog scan_download_concurrency (ADR 0020).
+    settings = Settings(_env_file=None)
+
+    assert settings.opencloud_folder_count_concurrency == 4
+
+
+def test_opencloud_folder_count_concurrency_is_env_overridable() -> None:
+    settings = Settings(_env_file=None, opencloud_folder_count_concurrency=8)
+
+    assert settings.opencloud_folder_count_concurrency == 8
+
+
+def test_opencloud_folder_count_concurrency_rejects_non_positive_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, opencloud_folder_count_concurrency=0)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, opencloud_folder_count_concurrency=-1)
+
+
 def test_cors_allowed_origins_list_strips_whitespace_around_entries() -> None:
     settings = Settings(
         _env_file=None,
