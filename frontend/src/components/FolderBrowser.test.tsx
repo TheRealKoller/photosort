@@ -161,7 +161,10 @@ describe('FolderBrowser', () => {
       expect(await screen.findByText('0')).toBeInTheDocument()
     })
 
-    it('shows "500+" when the folder is at the count limit', async () => {
+    it('shows "500+" when the folder is at the count limit, with an accessible label (not just title)', async () => {
+      // Copilot-Review-Fund (PR #110): title allein ist auf Touch-Geraeten nicht nutzbar und wird
+      // von Screenreadern i.d.R. nicht vorgelesen - analog zum Fehlerzustand ("?") braucht "500+"
+      // deshalb zusaetzlich ein aria-label, nicht nur title.
       vi.mocked(opencloudApi.browseFolder).mockResolvedValue([{ name: 'Sub', path: 'CostaRica/Sub' }])
       vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([
         { path: 'CostaRica/Sub', count: 500, at_limit: true, error: false },
@@ -169,7 +172,9 @@ describe('FolderBrowser', () => {
 
       renderBrowser('CostaRica')
 
-      expect(await screen.findByText('500+')).toBeInTheDocument()
+      const indicator = await screen.findByText('500+')
+      expect(indicator).toBeInTheDocument()
+      expect(indicator).toHaveAttribute('aria-label', 'Mindestens 500 Bilder')
     })
 
     it('shows an error indicator for a subfolder whose count failed, without affecting others', async () => {

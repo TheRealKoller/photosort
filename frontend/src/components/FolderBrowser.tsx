@@ -74,7 +74,11 @@ function FolderCountIndicator({ display }: { display: FolderCountDisplay }) {
   }
   if (display.kind === 'at_limit') {
     return (
-      <span className="shrink-0 text-sm text-text" title="Mindestens 500 Bilder">
+      <span
+        className="shrink-0 text-sm text-text"
+        title="Mindestens 500 Bilder"
+        aria-label="Mindestens 500 Bilder"
+      >
         500+
       </span>
     )
