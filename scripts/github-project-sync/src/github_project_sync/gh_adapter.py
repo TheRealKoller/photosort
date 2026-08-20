@@ -10,6 +10,7 @@ Merge verifiziert, nicht in CI.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -91,11 +92,42 @@ def _default_run(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, capture_output=True, text=True, check=False)  # noqa: S603
 
 
-STATUS_FIELD_NAME = "Status"
+# Bewusst NICHT "Status": GitHub Projects (V2) legt bei JEDEM neuen Project automatisch ein
+# eingebautes Single-Select-Feld exakt mit diesem Namen an (Optionen "Todo"/"In Progress"/"Done",
+# fuer die klassische Kanban-Ansicht) - verifiziert per "gh project field-list" gegen das echte,
+# bereits per Smoke-Test selbstprovisionierte Project (Owner TheRealKoller, "PhotoSort Roadmap").
+# ensure_fields() matcht rein ueber den Feldnamen (siehe unten); mit "Status" als Name haette es
+# faelschlich dieses eingebaute Feld als "unseres" uebernommen - dessen Optionen enthalten aber
+# keinen unserer vier Lifecycle-Werte, wodurch _apply_fields() in sync.py bei jedem Lauf mit einer
+# SyncError abgebrochen waere. Zusaetzlicher, beim manuellen Smoke-Test nach Merge von PR #115
+# entdeckter Bug (ueber den urspruenglich gemeldeten "gh issue create --json"-Fehler hinaus).
+STATUS_FIELD_NAME = "Spec Status"
 STATUS_OPTIONS = ["Proposed", "Accepted", "Implemented", "Superseded"]
 PRIORITY_FIELD_NAME = "Priorität"
 PRIORITY_OPTIONS = ["Hoch", "Mittel", "Niedrig"]
 DEFAULT_PROJECT_TITLE = "PhotoSort Roadmap"
+
+# "gh issue create" hat - anders als z.B. "gh issue view" - kein --json/--format-Flag (verifiziert
+# gegen "gh issue create --help", gh 2.97.0) und gibt bei Erfolg nur die Issue-URL als Klartext auf
+# stdout aus (z.B. "https://github.com/TheRealKoller/photosort/issues/123"). Bug gefunden im
+# manuellen Smoke-Test nach Merge von PR #115 ("unknown flag: --json").
+_ISSUE_URL_NUMBER_RE = re.compile(r"/issues/(\d+)/?\s*$")
+
+
+def _parse_issue_number_from_create_output(stdout: str) -> int:
+    lines = [line.strip() for line in stdout.strip().splitlines() if line.strip()]
+    if not lines:
+        raise GhAdapterError(
+            "'gh issue create' lieferte keine Ausgabe - erwartet wurde die Issue-URL auf stdout."
+        )
+    last_line = lines[-1]
+    match = _ISSUE_URL_NUMBER_RE.search(last_line)
+    if match is None:
+        raise GhAdapterError(
+            "Konnte keine Issue-Nummer aus der Ausgabe von 'gh issue create' extrahieren "
+            f"(erwartet eine Issue-URL, z.B. '.../issues/123'): {last_line!r}"
+        )
+    return int(match.group(1))
 
 
 class GhCliAdapter:
@@ -230,19 +262,19 @@ class GhCliAdapter:
             url=data.get("url", ""),
         )
 
-    def _with_body_file(self, body: str, build_args: Callable[[str], list[str]]) -> Any:
+    def _with_body_file(self, body: str, build_args: Callable[[str], list[str]]) -> str:
         with tempfile.NamedTemporaryFile(
             "w", suffix=".md", delete=False, encoding="utf-8"
         ) as handle:
             handle.write(body)
             body_path = handle.name
         try:
-            return self._run_json(build_args(body_path))
+            return self._run_text(build_args(body_path))
         finally:
             Path(body_path).unlink(missing_ok=True)
 
     def create_issue(self, title: str, body: str) -> int:
-        data = self._with_body_file(
+        stdout = self._with_body_file(
             body,
             lambda body_path: [
                 "gh",
@@ -252,22 +284,22 @@ class GhCliAdapter:
                 title,
                 "--body-file",
                 body_path,
-                "--json",
-                "number",
             ],
         )
-        return int(data["number"])
+        return _parse_issue_number_from_create_output(stdout)
 
     def edit_issue_body(self, issue_number: int, body: str) -> None:
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".md", delete=False, encoding="utf-8"
-        ) as handle:
-            handle.write(body)
-            body_path = handle.name
-        try:
-            self._run_text(["gh", "issue", "edit", str(issue_number), "--body-file", body_path])
-        finally:
-            Path(body_path).unlink(missing_ok=True)
+        self._with_body_file(
+            body,
+            lambda body_path: [
+                "gh",
+                "issue",
+                "edit",
+                str(issue_number),
+                "--body-file",
+                body_path,
+            ],
+        )
 
     def set_issue_state(self, issue_number: int, *, open: bool) -> None:
         subcommand = "reopen" if open else "close"
