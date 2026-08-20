@@ -67,6 +67,17 @@ export interface BrowseEntry {
   path: string
 }
 
+// specs/features/0050-dateianzahl-im-ordner-browser.md: rekursive Bilddatei-Anzahl (mit
+// Obergrenze) pro direktem Unterordner, wie von GET /opencloud/folder-counts geliefert. Bewusst
+// kein Freitext-/Meldungsfeld (Security-Abschnitt der Spec) - error=true transportiert kein
+// str(exc) vom Backend.
+export interface FolderCountOut {
+  path: string
+  count: number
+  at_limit: boolean
+  error: boolean
+}
+
 export type RatingStatus = 'favorite' | 'album_worthy' | 'rejected'
 export type RatingFilter = 'unrated' | 'suggested' | RatingStatus
 export type PhotoVariant = 'thumbnail' | 'display'

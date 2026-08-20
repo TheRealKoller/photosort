@@ -25,6 +25,10 @@ function renderBrowser(value: string, onChange = vi.fn(), onErrorChange = vi.fn(
 describe('FolderBrowser', () => {
   beforeEach(() => {
     vi.mocked(opencloudApi.browseFolder).mockReset()
+    vi.mocked(opencloudApi.fetchFolderCounts).mockReset()
+    // Standard-Fixture fuer Tests, denen die konkreten Zaehler egal sind - vermeidet ein
+    // dauerhaft haengendes Ladeicon (unresolved Promise) in jedem bereits bestehenden Test.
+    vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([])
   })
 
   it('loads the root level (no path) when value is empty', async () => {
@@ -112,5 +116,87 @@ describe('FolderBrowser', () => {
     // Zurueckspringen auf eine bereits geladene Ebene darf keinen dritten Request ausloesen
     // (React-Query-Cache pro Pfad, siehe specs/features/0005-minimal-project-frontend.md).
     expect(opencloudApi.browseFolder).toHaveBeenCalledTimes(2)
+  })
+
+  describe('Dateianzahl pro Unterordner (specs/features/0050-dateianzahl-im-ordner-browser.md)', () => {
+    it('eagerly fetches folder counts for the same path as the browse request, without a click', async () => {
+      vi.mocked(opencloudApi.browseFolder).mockResolvedValue([{ name: 'Sub', path: 'CostaRica/Sub' }])
+      vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([
+        { path: 'CostaRica/Sub', count: 3, at_limit: false, error: false },
+      ])
+
+      renderBrowser('CostaRica')
+
+      await waitFor(() => expect(opencloudApi.fetchFolderCounts).toHaveBeenCalledWith('CostaRica'))
+    })
+
+    it('shows a loading indicator while the count request is pending', async () => {
+      vi.mocked(opencloudApi.browseFolder).mockResolvedValue([{ name: 'Sub', path: 'CostaRica/Sub' }])
+      vi.mocked(opencloudApi.fetchFolderCounts).mockReturnValue(new Promise(() => {}))
+
+      renderBrowser('CostaRica')
+
+      expect(await screen.findByTestId('folder-count-loading')).toBeInTheDocument()
+    })
+
+    it('shows the exact count once loaded', async () => {
+      vi.mocked(opencloudApi.browseFolder).mockResolvedValue([{ name: 'Sub', path: 'CostaRica/Sub' }])
+      vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([
+        { path: 'CostaRica/Sub', count: 42, at_limit: false, error: false },
+      ])
+
+      renderBrowser('CostaRica')
+
+      expect(await screen.findByText('42')).toBeInTheDocument()
+    })
+
+    it('shows "0" (not hidden) for a folder with zero images', async () => {
+      vi.mocked(opencloudApi.browseFolder).mockResolvedValue([{ name: 'Sub', path: 'CostaRica/Sub' }])
+      vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([
+        { path: 'CostaRica/Sub', count: 0, at_limit: false, error: false },
+      ])
+
+      renderBrowser('CostaRica')
+
+      expect(await screen.findByText('0')).toBeInTheDocument()
+    })
+
+    it('shows "500+" when the folder is at the count limit', async () => {
+      vi.mocked(opencloudApi.browseFolder).mockResolvedValue([{ name: 'Sub', path: 'CostaRica/Sub' }])
+      vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([
+        { path: 'CostaRica/Sub', count: 500, at_limit: true, error: false },
+      ])
+
+      renderBrowser('CostaRica')
+
+      expect(await screen.findByText('500+')).toBeInTheDocument()
+    })
+
+    it('shows an error indicator for a subfolder whose count failed, without affecting others', async () => {
+      vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
+        { name: 'Good', path: 'CostaRica/Good' },
+        { name: 'Bad', path: 'CostaRica/Bad' },
+      ])
+      vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([
+        { path: 'CostaRica/Good', count: 7, at_limit: false, error: false },
+        { path: 'CostaRica/Bad', count: 0, at_limit: false, error: true },
+      ])
+
+      renderBrowser('CostaRica')
+
+      expect(await screen.findByText('7')).toBeInTheDocument()
+      expect(await screen.findByText('?')).toBeInTheDocument()
+      // Navigation in den fehlerhaften Ordner bleibt unangetastet (kein disabled-Button).
+      expect(screen.getByRole('button', { name: 'Bad' })).toBeEnabled()
+    })
+
+    it('does not block or delay rendering the folder list while counts are still loading', async () => {
+      vi.mocked(opencloudApi.browseFolder).mockResolvedValue([{ name: 'Sub', path: 'CostaRica/Sub' }])
+      vi.mocked(opencloudApi.fetchFolderCounts).mockReturnValue(new Promise(() => {}))
+
+      renderBrowser('CostaRica')
+
+      expect(await screen.findByRole('button', { name: 'Sub' })).toBeInTheDocument()
+    })
   })
 })
