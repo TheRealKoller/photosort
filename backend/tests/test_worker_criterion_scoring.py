@@ -297,6 +297,44 @@ async def test_symmetrie_criterion_is_written_unconditionally_like_content_lands
     assert criteria["symmetrie"] == 1.0
 
 
+async def test_horizont_criterion_is_written_unconditionally_like_content_landscape(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md, ADR 0026 Punkt 2:
+    # klassischer cv2-Algorithmus ohne trainiertes Modell - keine Detektor-Abhaengigkeit, wird wie
+    # content_landscape/symmetrie UNCONDITIONAL berechnet. Ein voellig flaechiges Testbild hat
+    # keine Kanten/Linien -> neutraler Fallback-Wert 0.5 (kein Kandidat gefunden).
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert criteria["horizont"] == 0.5
+
+
 async def test_upserts_existing_criterion_score_instead_of_duplicating(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

@@ -45,6 +45,7 @@ from photosort.criteria import (
     normalize_sharpness,
 )
 from photosort.db import async_session_factory
+from photosort.horizon import compute_horizon_tilt_score
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
@@ -864,6 +865,13 @@ def _compute_content_criteria(
     # keine Modell-/Detektor-Abhaengigkeit - wie content_landscape UNCONDITIONAL berechnet.
     try:
         values["symmetrie"] = compute_symmetrie_score(image)
+    except Exception:
+        pass
+
+    # ADR 0026 Punkt 2: klassischer cv2-Algorithmus ohne trainiertes Modell - ebenfalls
+    # UNCONDITIONAL berechnet, kein injizierbarer Detektor/Builder noetig.
+    try:
+        values["horizont"] = compute_horizon_tilt_score(image)
     except Exception:
         pass
 
