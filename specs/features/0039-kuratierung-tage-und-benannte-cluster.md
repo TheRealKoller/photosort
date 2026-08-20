@@ -102,7 +102,7 @@ Keine — alle im Gespräch aufgekommenen Punkte wurden geklärt (siehe Entschei
 
 ## Out of Scope
 
-- Änderung der 1h-Zeitfenster-Cluster-Bildungslogik selbst.
+- ~~Änderung der 1h-Zeitfenster-Cluster-Bildungslogik selbst.~~ (teilweise aufgehoben durch Spec [`0051`](./0051-gps-landmark-cluster-bildung.md): GPS-Nähe und erkannte Sehenswürdigkeiten können ab dort zusätzlich zur Zeit einen Cluster-Split auslösen; die reine Tageszeit-Bezeichnung und -Anzeige dieser Spec bleiben unverändert gültig.)
 - Backend-Aggregation für eine vollständige (nicht Top-N-gefilterte) Cluster-Zeitspanne.
 - ~~Einklappbare/kollabierbare Tages-Abschnitte.~~ (revidiert durch Spec [`0043`](./0043-kuratierung-tage-auf-zuklappbar.md))
 - Anpassung der Bucket-Grenzen/des Wortlauts über die in dieser Spec festgelegte Tabelle hinaus.
