@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from github_project_sync.gh_adapter import GhAuthScopeError
+from github_project_sync.gh_adapter import GhAuthScopeError, ProjectFields
 from github_project_sync.hashing import push_state_hash, text_hash
 from github_project_sync.issue_body import build_issue_body
 from github_project_sync.spec_parser import parse_spec_file
@@ -119,6 +119,63 @@ def test_missing_priority_for_open_spec_yields_warning_but_still_syncs(tmp_path:
     assert result.specs[0].classification == "created"
     assert result.specs[0].priority_warning is not None
     assert "0031" in result.specs[0].priority_warning
+
+
+def _drop_field_option(
+    fields: ProjectFields, *, field_name: str, option_name: str
+) -> ProjectFields:
+    """Simuliert Board-Drift: eine erwartete Option fehlt im Project-Feld (z.B. manuell
+    umbenannt/geloescht), obwohl das Feld selbst unter dem erwarteten Namen existiert."""
+    if field_name == "status":
+        return ProjectFields(
+            status_field_id=fields.status_field_id,
+            status_options={k: v for k, v in fields.status_options.items() if k != option_name},
+            priority_field_id=fields.priority_field_id,
+            priority_options=fields.priority_options,
+        )
+    return ProjectFields(
+        status_field_id=fields.status_field_id,
+        status_options=fields.status_options,
+        priority_field_id=fields.priority_field_id,
+        priority_options={k: v for k, v in fields.priority_options.items() if k != option_name},
+    )
+
+
+def test_missing_status_option_aborts_with_sync_error_instead_of_silent_no_op(
+    tmp_path: Path,
+) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
+    )
+    gh = FakeGhAdapter()
+    project = gh.ensure_project()
+    fields = gh.ensure_fields(project)
+    gh.fields = _drop_field_option(fields, field_name="status", option_name="Accepted")
+
+    with pytest.raises(SyncError, match="Status"):
+        run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+
+def test_missing_priority_option_aborts_with_sync_error_instead_of_clearing_field(
+    tmp_path: Path,
+) -> None:
+    # Regressionstest fuer den Copilot-Review-Fund auf PR #115: eine fehlende Options-ID durfte
+    # nicht faelschlich als "priority is None" behandelt werden (das haette das Feld
+    # stillschweigend geleert, obwohl die Spec eine echte, nicht-leere Prioritaet hat).
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
+    )
+    gh = FakeGhAdapter()
+    project = gh.ensure_project()
+    fields = gh.ensure_fields(project)
+    gh.fields = _drop_field_option(fields, field_name="priority", option_name="Niedrig")
+
+    with pytest.raises(SyncError, match="Priorität"):
+        run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
 
 
 def _existing_state_entry(*, issue_number: int, push_hash: str, pull_hash: str) -> dict:

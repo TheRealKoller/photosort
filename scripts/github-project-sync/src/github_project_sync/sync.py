@@ -88,22 +88,41 @@ def _apply_fields(
     status: str,
     priority: str | None,
 ) -> None:
+    # Board-Drift (Daniel/ein Dritter bearbeitet die Optionen eines Project-Felds manuell) darf
+    # nie still hingenommen werden - ensure_fields() uebernimmt ein bereits existierendes Feld
+    # unveraendert, auch wenn dessen Optionen nicht mehr zu STATUS_OPTIONS/PRIORITY_OPTIONS
+    # passen. Ein No-Op (Status) bzw. ein faelschliches Leeren (Prioritaet trotz vorhandenem
+    # Wert) waere genau die Art von unbemerktem Abweichen, die ADR 0017 (Status/Prioritaet als
+    # bei jedem Lauf durchgesetzte Einbahnstrasse) verhindern soll - deshalb hart abbrechen statt
+    # stillschweigend weiterzumachen (Copilot-Review-Finding auf PR #115).
     status_option_id = fields.status_options.get(status)
-    if status_option_id is not None:
-        gh.set_item_single_select(
-            project, item_id=item_id, field_id=fields.status_field_id, option_id=status_option_id
+    if status_option_id is None:
+        raise SyncError(
+            f"Project-Feld 'Status' hat keine Option fuer {status!r} (vorhanden: "
+            f"{sorted(fields.status_options)}). Vermutlich wurden die Feld-Optionen manuell im "
+            "GitHub Project veraendert - bitte das Status-Feld reparieren, bevor der Sync "
+            "erneut laeuft."
         )
+    gh.set_item_single_select(
+        project, item_id=item_id, field_id=fields.status_field_id, option_id=status_option_id
+    )
 
-    priority_option_id = fields.priority_options.get(priority) if priority is not None else None
-    if priority_option_id is not None:
-        gh.set_item_single_select(
-            project,
-            item_id=item_id,
-            field_id=fields.priority_field_id,
-            option_id=priority_option_id,
-        )
-    else:
+    if priority is None:
+        # Implemented/Superseded-Specs haben laut Design keine Prioritaet - Feld bewusst leeren.
         gh.clear_item_field(project, item_id=item_id, field_id=fields.priority_field_id)
+        return
+
+    priority_option_id = fields.priority_options.get(priority)
+    if priority_option_id is None:
+        raise SyncError(
+            f"Project-Feld 'Priorität' hat keine Option fuer {priority!r} (vorhanden: "
+            f"{sorted(fields.priority_options)}). Vermutlich wurden die Feld-Optionen manuell "
+            "im GitHub Project veraendert - bitte das Prioritaets-Feld reparieren, bevor der "
+            "Sync erneut laeuft."
+        )
+    gh.set_item_single_select(
+        project, item_id=item_id, field_id=fields.priority_field_id, option_id=priority_option_id
+    )
 
 
 def _sync_one(
