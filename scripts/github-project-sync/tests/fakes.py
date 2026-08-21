@@ -29,6 +29,7 @@ class _FakeIssue:
     author_login: str
     url: str
     comments: list[str] = field(default_factory=list)
+    labels: frozenset[str] = field(default_factory=frozenset)
 
 
 class FakeGhAdapter:
@@ -43,10 +44,20 @@ class FakeGhAdapter:
         self._next_item_id = 1
         self.ensure_project_calls = 0
         self.ensure_fields_calls = 0
+        # Repo-weit existierende Labels - "bug" ist im echten Repo bereits vorhanden (siehe ADR
+        # 0030, Abschnitt 6: Wiederverwendung statt Neuanlage eines spezifischeren Labels).
+        self.repo_labels: set[str] = {"bug"}
+        self.ensure_label_calls: list[str] = []
 
     # -- Setup-Helfer fuer Tests -------------------------------------------------
     def seed_issue(
-        self, number: int, *, body: str, state: str = "open", author_login: str | None = None
+        self,
+        number: int,
+        *,
+        body: str,
+        state: str = "open",
+        author_login: str | None = None,
+        labels: frozenset[str] = frozenset(),
     ) -> None:
         self._issues[number] = _FakeIssue(
             title=f"issue-{number}",
@@ -54,6 +65,7 @@ class FakeGhAdapter:
             state=state,
             author_login=author_login or self.owner,
             url=f"https://github.com/{self.owner}/photosort/issues/{number}",
+            labels=labels,
         )
         self._next_issue_number = max(self._next_issue_number, number + 1)
 
@@ -90,6 +102,7 @@ class FakeGhAdapter:
             state=issue.state,
             author_login=issue.author_login,
             url=issue.url,
+            labels=issue.labels,
         )
 
     def create_issue(self, title: str, body: str) -> int:
@@ -131,3 +144,13 @@ class FakeGhAdapter:
 
     def clear_item_field(self, project: Project, *, item_id: str, field_id: str) -> None:
         self.items.setdefault(item_id, {})[field_id] = None
+
+    def ensure_label(self, name: str, *, description: str, color: str) -> None:
+        self.ensure_label_calls.append(name)
+        self.repo_labels.add(name)
+
+    def set_issue_labels(
+        self, issue_number: int, *, add: frozenset[str], remove: frozenset[str]
+    ) -> None:
+        issue = self._issues[issue_number]
+        issue.labels = (issue.labels | add) - remove
