@@ -81,6 +81,37 @@ def _result_to_dict(result: SyncRunResult) -> dict[str, object]:
         "orphaned": [
             {"number": o.number, "issue_number": o.issue_number} for o in result.orphaned
         ],
+        "inbox": [
+            {
+                "number": r.number,
+                "title": r.title,
+                "issue_number": r.issue_number,
+                "classification": r.classification,
+                "aborted_reason": r.aborted_reason,
+                "conflict": (
+                    {
+                        "local_content_zone": r.conflict.local_content_zone,
+                        "remote_content_zone": r.conflict.remote_content_zone,
+                    }
+                    if r.conflict is not None
+                    else None
+                ),
+                "pulled_content_zone": r.pulled_content_zone,
+            }
+            for r in result.inbox
+        ],
+        "orphaned_inbox": [
+            {"number": o.number, "issue_number": o.issue_number} for o in result.orphaned_inbox
+        ],
+        "supersede": (
+            {
+                "inbox_number": result.supersede.inbox_number,
+                "inbox_issue_number": result.supersede.inbox_issue_number,
+                "new_issue_number": result.supersede.new_issue_number,
+            }
+            if result.supersede is not None
+            else None
+        ),
     }
 
 
@@ -93,7 +124,22 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--only", metavar="NNNN", default=None, help="Nur diese eine Spec-Nummer syncen."
+        "--only",
+        metavar="NNNN|inbox:NNNN",
+        default=None,
+        help=(
+            "Nur diese eine Spec-Nummer syncen (bare NNNN, rueckwaertskompatibel Feature-Scope) "
+            "oder nur diesen einen Inbox-Eintrag (inbox:NNNN)."
+        ),
+    )
+    parser.add_argument(
+        "--supersede-inbox",
+        metavar="MMMM",
+        default=None,
+        help=(
+            "Schliesst gezielt das Inbox-Issue MMMM mit einem auf die per --only NNNN "
+            "gesyncte Spec verlinkenden Kommentar. Erfordert --only NNNN (Feature-Scope)."
+        ),
     )
     parser.add_argument(
         "--owner",
@@ -128,7 +174,13 @@ def main(argv: Sequence[str] | None = None, *, gh_factory: GhFactory = _default_
         resolutions = _parse_resolutions(args.resolve)
         repo_root = args.repo_root or _discover_repo_root(Path.cwd())
         gh = gh_factory(args.owner)
-        result = run_sync(repo_root=repo_root, gh=gh, only=args.only, resolutions=resolutions)
+        result = run_sync(
+            repo_root=repo_root,
+            gh=gh,
+            only=args.only,
+            supersede_inbox=args.supersede_inbox,
+            resolutions=resolutions,
+        )
     except SyncError as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))
         return 1
