@@ -26,6 +26,8 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     last_scoring_run: null,
     last_criterion_scoring_run: null,
     category_selection_enabled: true,
+    cloud_landmark_detection_enabled: false,
+    cloud_landmark_consent_at: null,
     ...overrides,
   }
 }
@@ -139,6 +141,20 @@ describe('App', () => {
     expect(screen.getByText('PhotoSort')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Vergleich' })).toBeInTheDocument()
   })
+
+  it('routes /projects/:id/settings to the project settings page within the app shell', async () => {
+    // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: erste dedizierte
+    // Projekteinstellungs-Route.
+    vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+    setToken(makeToken({ sub: '1', username: 'daniel' }))
+
+    renderApp(['/projects/1/settings'])
+
+    expect(screen.getByText('PhotoSort')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Projekteinstellungen' })
+    ).toBeInTheDocument()
+  })
 })
 
 // specs/features/0033-sticky-titelleiste-projekt-link.md (AK2-AK4, AK8): der Header rendert auf
@@ -166,6 +182,7 @@ describe('App - Header-Link "Projekt"', () => {
     '/projects/1/photos',
     '/projects/1/photos/42',
     '/projects/1/compare',
+    '/projects/1/settings',
   ]
 
   it.each(PROJECT_ROUTES)(

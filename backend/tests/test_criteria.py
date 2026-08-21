@@ -21,6 +21,7 @@ from photosort.criteria import (
     compute_freiraum_score,
     compute_gebaeude_score,
     compute_golden_ratio_score,
+    compute_landmark_score,
     compute_symmetrie_score,
     compute_tier_score,
     derive_active_categories,
@@ -28,6 +29,7 @@ from photosort.criteria import (
     normalize_exposure,
     normalize_sharpness,
 )
+from photosort.landmark import LandmarkDetection
 from photosort.models import CriterionSource
 
 
@@ -109,11 +111,29 @@ class TestCriteriaRegistry:
                 definition.category_presence_threshold is not None
             ), f"{key}: category_eligible und category_presence_threshold widersprechen sich"
 
-    def test_exactly_the_four_content_criteria_are_category_eligible(self) -> None:
-        # Akzeptanzkriterium der Spec 0045: genau content_people/content_landscape/tier/gebaeude
-        # sind category_eligible=True - reine Qualitaetskriterien nie.
+    def test_exactly_five_content_criteria_are_category_eligible(self) -> None:
+        # Akzeptanzkriterium der Spec 0045, erweitert um landmark (specs/features/0047-
+        # sehenswuerdigkeit-erkennung-cloud-vision-api.md): genau content_people/
+        # content_landscape/tier/gebaeude/landmark sind category_eligible=True - reine
+        # Qualitaetskriterien nie.
         eligible = {key for key, d in CRITERIA_REGISTRY.items() if d.category_eligible}
-        assert eligible == {"content_people", "content_landscape", "tier", "gebaeude"}
+        assert eligible == {
+            "content_people",
+            "content_landscape",
+            "tier",
+            "gebaeude",
+            "landmark",
+        }
+
+    def test_registry_contains_landmark_with_the_correct_source_and_threshold(self) -> None:
+        # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR
+        # decisions/0025-cloud-landmark-erkennung.md Punkt 2: erste tatsaechlich produktiv
+        # geschriebene CriterionSource.CLOUD-Zeile.
+        definition = CRITERIA_REGISTRY["landmark"]
+        assert definition.display_name == "Sehenswürdigkeit"
+        assert definition.source == CriterionSource.CLOUD
+        assert definition.category_eligible is True
+        assert definition.category_presence_threshold == 0.5
 
     def test_quality_criteria_are_never_category_eligible(self) -> None:
         for key in ("sharpness", "exposure", "goldener_schnitt", "aesthetics"):
@@ -326,6 +346,35 @@ class TestComputeGebaeudeScore:
             SceneLabel(category="church", confidence=0.8),
         ]
         assert compute_gebaeude_score(labels) == 0.8
+
+
+class TestComputeLandmarkScore:
+    """specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR
+    decisions/0025-cloud-landmark-erkennung.md Punkt 2: reine, synchrone, netzwerkfreie
+    Funktion - kein LandmarkClientLike/Netzwerk hier noetig."""
+
+    def test_no_identified_name_scores_zero_regardless_of_confidence(self) -> None:
+        # Ein Modell-Ladefehler o.ae. koennte theoretisch trotzdem eine hohe confidence liefern -
+        # ohne Namen ist das kein Sehenswuerdigkeits-Signal.
+        detection = LandmarkDetection(name=None, confidence=0.9)
+        assert compute_landmark_score(detection) == 0.0
+
+    def test_identified_name_with_high_confidence_scores_high(self) -> None:
+        detection = LandmarkDetection(name="Eiffelturm", confidence=0.87)
+        assert compute_landmark_score(detection) == 0.87
+
+    def test_identified_name_with_low_confidence_scores_low(self) -> None:
+        detection = LandmarkDetection(name="Eiffelturm", confidence=0.1)
+        assert compute_landmark_score(detection) == 0.1
+
+    def test_confidence_above_one_is_clamped(self) -> None:
+        # Defensiv, falls das Vision-LLM je einen Wert ausserhalb [0, 1] liefert.
+        detection = LandmarkDetection(name="Eiffelturm", confidence=1.5)
+        assert compute_landmark_score(detection) == 1.0
+
+    def test_negative_confidence_is_clamped(self) -> None:
+        detection = LandmarkDetection(name="Eiffelturm", confidence=-0.3)
+        assert compute_landmark_score(detection) == 0.0
 
 
 # Wiederverwendungsnachweis fuer detect_person/detect_animals im Goldener-Schnitt-Kontext

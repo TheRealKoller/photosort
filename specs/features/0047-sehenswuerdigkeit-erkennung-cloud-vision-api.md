@@ -1,7 +1,8 @@
 # 0047 - Sehenswürdigkeit-Erkennung (Landmark) via Cloud-Vision-API
 
-**Status:** Accepted
+**Status:** Implemented
 **Erstellt:** 2026-08-19
+**PR:** [#181](https://github.com/TheRealKoller/photosort/pull/181)
 **Bezug:** [`inbox/0017-sehenswuerdigkeit-erkennung-cloud.md`](../inbox/0017-sehenswuerdigkeit-erkennung-cloud.md) (Ursprung, 2026-08-13 zurückgestellt, jetzt reaktiviert; nach Anlage dieser Spec gelöscht), ADR [`decisions/0025-cloud-landmark-erkennung.md`](../decisions/0025-cloud-landmark-erkennung.md), [`decisions/0015-lokale-kategorie-klassifikation.md`](../decisions/0015-lokale-kategorie-klassifikation.md) (ursprünglicher Cloud-Stopp, hier gezielt für dieses eine Kriterium revidiert), [`features/0035-klassifizierung-qualitaet-inhalt-recherche.md`](./0035-klassifizierung-qualitaet-inhalt-recherche.md) (Cloud-Provider-Recherchegrundlage), [`features/0037-gateführte-bewertungs-pipeline-mit-backfill.md`](./0037-gateführte-bewertungs-pipeline-mit-backfill.md) (CRITERIA_REGISTRY/`CriterionSource.CLOUD`), [`features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md`](./0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md) (dort Landmark explizit als Out-of-Scope mit Verweis hierher benannt), Idea-Sharpening-Gespräch mit Daniel am 2026-08-19.
 
 ## Ziel

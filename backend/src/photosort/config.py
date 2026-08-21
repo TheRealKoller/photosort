@@ -78,5 +78,21 @@ class Settings(BaseSettings):
     # Prozessstart auf statt sich erst als Semaphore(0)-Deadlock zu aeussern.
     opencloud_folder_count_concurrency: int = Field(default=4, ge=1)
 
+    # Erste tatsaechlich produktive Cloud-Abhaengigkeit im Kriterien-Scoring-Pfad
+    # (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-
+    # landmark-erkennung.md) - exakt das opencloud_app_token-Muster (Secret nur ueber Env-Variable,
+    # nie eingecheckt), kein Format-Check. Der ".env.example"-Platzhalter existierte bereits (aus
+    # einem nie umgesetzten frueheren Cloud-Entwurf, ADR-0015-Kontext), war aber nie in Settings
+    # verdrahtet - wird jetzt fuer einen echten, neuen Zweck reaktiviert.
+    anthropic_api_key: str = ""
+
+    # Obergrenze fuer die begrenzte Parallelisierung der Anthropic-Vision-Aufrufe in
+    # run_criterion_scoring (ADR 0025 Punkt 3) - bewusst deutlich konservativer als
+    # scan_download_concurrency (Default 4): reales Geld pro Anfrage und ein fremdes Rate-Limit,
+    # nicht nur ein selbst betriebener OpenCloud-Server. `Field(ge=1)` faellt bei einer
+    # fehlerhaften .env-Konfiguration bereits beim Prozessstart auf, analog den beiden
+    # Concurrency-Feldern oben.
+    landmark_api_concurrency: int = Field(default=2, ge=1)
+
 
 settings = Settings()

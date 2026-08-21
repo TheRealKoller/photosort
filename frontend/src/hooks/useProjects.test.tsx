@@ -10,6 +10,7 @@ import {
   useCreateProjectMutation,
   useProjectQuery,
   useProjectsQuery,
+  useSetCloudLandmarkConsentMutation,
   useTriggerScanMutation,
   useTriggerScoreCriteriaMutation,
   useTriggerScoreMutation,
@@ -28,6 +29,8 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     last_scoring_run: null,
     last_criterion_scoring_run: null,
     category_selection_enabled: true,
+    cloud_landmark_detection_enabled: false,
+    cloud_landmark_consent_at: null,
     ...overrides,
   }
 }
@@ -215,6 +218,24 @@ describe('useTriggerScoreCriteriaMutation', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(projectsApi.triggerScoreCriteria).toHaveBeenCalledWith(1, 5)
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
+  })
+})
+
+describe('useSetCloudLandmarkConsentMutation', () => {
+  it('invalidates the project detail query after a successful update, forwarding enabled', async () => {
+    vi.mocked(projectsApi.setCloudLandmarkConsent).mockResolvedValue({
+      cloud_landmark_detection_enabled: true,
+      cloud_landmark_consent_at: '2026-08-21T10:00:00Z',
+    })
+    const { wrapper, queryClient } = makeWrapper()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const { result } = renderHook(() => useSetCloudLandmarkConsentMutation(1), { wrapper })
+    result.current.mutate(true)
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(projectsApi.setCloudLandmarkConsent).toHaveBeenCalledWith(1, true)
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
   })
 })

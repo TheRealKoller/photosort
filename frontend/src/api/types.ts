@@ -60,6 +60,11 @@ export interface ProjectOut {
   // verwendet fuer POST /score-criteria seit Spec 0037), auf ProjectOut statt einem eigenen
   // Endpunkt exponiert - siehe backend api/projects.py-Kommentar.
   category_selection_enabled: boolean
+  // Projektweiter Einwilligungs-Schalter fuer die Cloud-Sehenswuerdigkeit-Erkennung
+  // (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) - Default false,
+  // consent_at null solange nicht aktiviert.
+  cloud_landmark_detection_enabled: boolean
+  cloud_landmark_consent_at: string | null
 }
 
 export interface BrowseEntry {

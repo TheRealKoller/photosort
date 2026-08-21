@@ -40,6 +40,7 @@ from photosort.criteria import (
     compute_freiraum_score,
     compute_gebaeude_score,
     compute_golden_ratio_score,
+    compute_landmark_score,
     compute_symmetrie_score,
     compute_tier_score,
     content_people_from_faces,
@@ -50,11 +51,17 @@ from photosort.criteria import (
 )
 from photosort.db import async_session_factory
 from photosort.horizon import compute_horizon_tilt_score
+from photosort.landmark import (
+    LandmarkClientLike,
+    LandmarkDetection,
+    build_landmark_client,
+)
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     Photo,
     PhotoCriterionScore,
+    PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -124,6 +131,12 @@ SCAN_COMMIT_BATCH_SIZE = 1
 # Scan-Zaehler-Problem. Modul-Konstante statt Default-Parameterwert, damit Tests sie per
 # monkeypatch.setattr(worker, "CRITERION_SCORING_COMMIT_BATCH_SIZE", ...) verkleinern koennen.
 CRITERION_SCORING_COMMIT_BATCH_SIZE = 5
+
+# specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR decisions/0025-cloud-
+# landmark-erkennung.md Punkt 4: der Cloud-Aufruf nutzt ausschliesslich die bestehende
+# display-Cache-Variante, die thumbnails.py::generate_variants immer als JPEG schreibt - fester
+# Wert statt einer Format-Erkennung.
+_LANDMARK_IMAGE_MIME_TYPE = "image/jpeg"
 
 # Default-Gewichtung fuer ranking.py::rank_photos (Akzeptanzkriterium der Spec: "nur die
 # strukturelle Faehigkeit ist Teil dieser Spec, kein konkreter Default" - Gleichgewichtung aller
@@ -802,6 +815,66 @@ def _try_build[T](build: Callable[[], T]) -> T | None:
         return None
 
 
+def _select_landmark_candidates(
+    candidate_values: dict[int, dict[str, float]], already_scored_photo_ids: set[int]
+) -> list[int]:
+    """Vorfilterung + Skip-bereits-gescorter-Fotos fuer den landmark-Cloud-Aufruf
+    (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR decisions/0025-
+    cloud-landmark-erkennung.md Punkt 3) - reine, DB-freie Funktion, isoliert unit-testbar (analog
+    _classify_scan_entries). Ein Foto wird nur dann Kandidat, wenn im selben Lauf content_landscape
+    ODER gebaeude die jeweils registrierte category_presence_threshold erreicht (`>=`, inklusiv,
+    Wiederverwendung der bereits vorhandenen Registry-Schwellwerte statt eines neuen, doppelt
+    gepflegten Grenzwerts) UND noch keine landmark-Zeile aus einem frueheren Lauf existiert (die
+    einzige, bewusst dokumentierte Ausnahme vom sonst projektweiten "jeder Lauf scort neu"-
+    Prinzip). Gibt die photo_id-Reihenfolge von candidate_values zurueck (Einfuege-/Verarbeitungs-
+    reihenfolge der Foto-Schleife, keine weitere Sortierung noetig)."""
+    landscape_threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
+    gebaeude_threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
+    assert landscape_threshold is not None
+    assert gebaeude_threshold is not None
+    candidates: list[int] = []
+    for photo_id, values in candidate_values.items():
+        if photo_id in already_scored_photo_ids:
+            continue
+        if (
+            values.get("content_landscape", 0.0) >= landscape_threshold
+            or values.get("gebaeude", 0.0) >= gebaeude_threshold
+        ):
+            candidates.append(photo_id)
+    return candidates
+
+
+async def _detect_landmark_for_photo(
+    client: LandmarkClientLike, cache_dir: Path, photo: Photo
+) -> LandmarkDetection:
+    """Der reine I/O-/Netzwerk-Teil eines einzelnen Landmark-Kandidaten (analog
+    _fetch_and_thumbnail) - bewusst OHNE Session-Zugriff, damit mehrere Aufrufe sicher parallel
+    per asyncio.gather laufen koennen (siehe die Block-Schleife in run_criterion_scoring). Nutzt
+    ausschliesslich die bereits vorhandene display-Cache-Variante (ADR 0025 Punkt 4), nie das
+    Original - kein erneuter OpenCloud-Zugriff. Ein fehlender/nicht lesbarer Cache-Eintrag
+    propagiert als gewoehnliche Exception (best-effort ueber return_exceptions=True in der
+    aufrufenden Block-Schleife abgefangen), exakt wie ein LandmarkApiError des Clients selbst."""
+    path = variant_path(cache_dir, photo.id, photo.etag, "display")
+    image_bytes = path.read_bytes()
+    return await client.detect(image_bytes, _LANDMARK_IMAGE_MIME_TYPE)
+
+
+async def _upsert_landmark_detection(
+    session: AsyncSession, photo_id: int, detection: LandmarkDetection, now: datetime
+) -> None:
+    """Legt eine photo_landmark_detections-Zeile nur an, wenn tatsaechlich ein Name identifiziert
+    wurde (ADR 0025 Punkt 6, kein Platzhalter-"unbekannt") - wird nur aufgerufen, wenn
+    detection.name is not None (siehe Aufrufer)."""
+    assert detection.name is not None
+    existing = await session.get(PhotoLandmarkDetection, photo_id)
+    if existing is None:
+        existing = PhotoLandmarkDetection(photo_id=photo_id)
+        session.add(existing)
+    existing.name = detection.name
+    existing.confidence = detection.confidence
+    existing.computed_at = now
+
+
 def _compute_content_criteria(
     cache_dir: Path,
     photo: Photo,
@@ -923,6 +996,7 @@ async def run_criterion_scoring(
     build_classifier: Callable[[], SceneClassifierLike] = build_scene_classifier,
     build_aesthetics: Callable[[], AestheticsModelLike] = build_aesthetics_model,
     build_landmarker: Callable[[], FaceLandmarkerLike] = build_face_landmarker,
+    build_landmark_client: Callable[[], LandmarkClientLike] = build_landmark_client,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
     abgeleitete Rangfolge je Partition (cluster_key x category_key) - ersetzt run_top_selection/
@@ -1080,6 +1154,70 @@ async def run_criterion_scoring(
 
         run.photos_processed = processed
         await session.commit()
+
+        # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR
+        # decisions/0025-cloud-landmark-erkennung.md ab hier: erste tatsaechlich produktive
+        # Cloud-Phase im Kriterien-Scoring-Pfad, laeuft NACH der obigen (rein lokalen/synchronen)
+        # Foto-Schleife, VOR derive_active_categories/rank_photos (Punkt 3), damit landmark-Werte
+        # noch in die Kategorie-/Rangfolgenbildung einfliessen koennen. `project.
+        # cloud_landmark_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread waehrend
+        # des Laufs, dokumentierte Vereinfachung) - ist der Schalter aus (Default), wird
+        # build_landmark_client GAR NICHT ERST aufgerufen: keine Netzwerkverbindung, kein API-Key
+        # noetig, kein Byte verlaesst den Server (Security-Muss-Kriterium der Spec).
+        if project.cloud_landmark_detection_enabled and rows:
+            landmark_client = _try_build(build_landmark_client)
+            if landmark_client is not None:
+                try:
+                    already_scored_photo_ids = {
+                        photo_id
+                        for photo_id, criterion_key in existing_criterion_scores
+                        if criterion_key == "landmark"
+                    }
+                    landmark_candidate_ids = _select_landmark_candidates(
+                        candidate_values, already_scored_photo_ids
+                    )
+                    photos_by_id = {photo.id: photo for photo, _score in rows}
+                    landmark_concurrency = settings.landmark_api_concurrency
+                    for start in range(0, len(landmark_candidate_ids), landmark_concurrency):
+                        block_ids = landmark_candidate_ids[start : start + landmark_concurrency]
+                        results = await asyncio.gather(
+                            *[
+                                _detect_landmark_for_photo(
+                                    landmark_client, cache_dir, photos_by_id[photo_id]
+                                )
+                                for photo_id in block_ids
+                            ],
+                            return_exceptions=True,
+                        )
+                        # Derselbe verifizierte Async-Fallstrick wie in _process_scan_block (ADR
+                        # 0020, hier zum zweiten Mal zu beachten, ADR 0025 Punkt 3): ein
+                        # CancelledError einer einzelnen Kind-Coroutine wird von
+                        # return_exceptions=True sonst als gewoehnliches Ergebniselement
+                        # durchgereicht statt propagiert.
+                        for result in results:
+                            if isinstance(result, asyncio.CancelledError):
+                                raise result
+                        for photo_id, result in zip(block_ids, results, strict=True):
+                            if isinstance(result, BaseException):
+                                # Best-effort (ADR 0025 Punkt 3): ein einzelner fehlgeschlagener
+                                # Cloud-Aufruf (Timeout, 4xx/5xx, fehlender Cache-Eintrag) laesst
+                                # fuer dieses Foto keine landmark-Zeile entstehen, alle anderen
+                                # Kriterien dieses Fotos bleiben unberuehrt, kein Laufabbruch.
+                                continue
+                            detection = result
+                            landmark_value = compute_landmark_score(detection)
+                            _upsert_criterion(
+                                photo_id, "landmark", landmark_value, CriterionSource.CLOUD
+                            )
+                            candidate_values[photo_id]["landmark"] = landmark_value
+                            if detection.name is not None:
+                                await _upsert_landmark_detection(
+                                    session, photo_id, detection, now
+                                )
+                finally:
+                    aclose = getattr(landmark_client, "aclose", None)
+                    if aclose is not None:
+                        await aclose()
 
         # specs/features/0045-kategorien-aus-statistiken-ableiten.md, ADR 0023: GENAU EINMAL pro
         # Lauf, projektweit ueber ALLE Kandidaten-Fotos (nicht pro cluster_key), NACH der

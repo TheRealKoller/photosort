@@ -5,6 +5,7 @@ import math
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import NoReturn
 
 import numpy as np
 import pytest
@@ -12,11 +13,15 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort import worker
 from photosort.criteria import CATEGORY_DETAIL
+from photosort.landmark import LandmarkApiError, LandmarkDetection
 from photosort.models import (
     CriterionScoringRun,
+    CriterionSource,
     Photo,
     PhotoCriterionScore,
+    PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -25,7 +30,7 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.thumbnails import display_path
-from photosort.worker import run_criterion_scoring, run_project_scoring
+from photosort.worker import _select_landmark_candidates, run_criterion_scoring, run_project_scoring
 
 
 async def _make_project(session: AsyncSession, *, name: str = "Costa Rica") -> Project:
@@ -1737,3 +1742,519 @@ async def test_empty_candidate_pool_does_not_crash_category_derivation(
         .all()
     )
     assert rankings == []
+
+
+# specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR decisions/0025-cloud-
+# landmark-erkennung.md ab hier: erste tatsaechlich produktive CriterionSource.CLOUD-Anbindung im
+# Kriterien-Scoring-Pfad. Kein `unittest.mock.patch` - build_landmark_client ist injizierbar
+# (Teststrategie-Abschnitt der Spec), analog build_detector/build_animal_detector/...
+
+
+def _textured_image_below_landscape_threshold() -> Image.Image:
+    # Abgrenzung zu _flat_image (siehe dortiger Kommentar zu content_landscape oben) - Textur
+    # statt flacher Farbe, damit ohne SceneClassifierStub weder content_landscape noch gebaeude
+    # die Vorfilterungs-Schwelle erreichen.
+    from PIL import ImageDraw
+
+    image = Image.new("RGB", (160, 160), color=(30, 60, 120))
+    draw = ImageDraw.Draw(image)
+    for offset in range(0, 160, 8):
+        draw.line((offset, 0, 160 - offset, 160), fill=(220, 180, 90), width=2)
+    return image
+
+
+class RecordingLandmarkClient:
+    """Fake LandmarkClientLike (Teststrategie-Abschnitt der Spec), zeichnet jeden detect()-Aufruf
+    auf - der Aufrufnachweis selbst ist der eigentliche Testgegenstand, nicht nur "keine
+    landmark-Zeile in der DB" (das waere auch bei einem defekten, aber tatsaechlich aufgerufenen
+    Client wahr)."""
+
+    def __init__(
+        self, detection: LandmarkDetection | None = None, raise_error: bool = False
+    ) -> None:
+        self._detection = (
+            detection
+            if detection is not None
+            else LandmarkDetection(name="Eiffelturm", confidence=0.9)
+        )
+        self._raise_error = raise_error
+        self.calls: list[tuple[bytes, str]] = []
+        # Review-Fund (ship-feature-Runde): kein bisheriger Fake bot aclose() an, der
+        # worker.py::run_criterion_scoring's `getattr(landmark_client, "aclose", None)`-Zweig
+        # nahm deshalb immer den None-Pfad - ein versehentlich falsch benannter/entfernter Aufruf
+        # waere unbemerkt geblieben. Zaehlt Aufrufe statt nur bool, damit ein Doppel-Close
+        # ebenfalls auffiele.
+        self.aclose_calls = 0
+
+    async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+        self.calls.append((image_bytes, mime_type))
+        if self._raise_error:
+            raise LandmarkApiError("simulierter Cloud-Fehler")
+        return self._detection
+
+    async def aclose(self) -> None:
+        self.aclose_calls += 1
+
+
+class ConcurrencyTrackingLandmarkClient:
+    """Analog FakeOpenCloudClient.max_concurrent_downloads (test_worker_scan_project.py) - zaehlt
+    gleichzeitig aktive detect()-Aufrufe, kein Wall-Clock-Timing-Assertion."""
+
+    def __init__(self) -> None:
+        self._active = 0
+        self.max_concurrent = 0
+        self.call_count = 0
+
+    async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+        self.call_count += 1
+        self._active += 1
+        self.max_concurrent = max(self.max_concurrent, self._active)
+        try:
+            await asyncio.sleep(0.01)
+            return LandmarkDetection(name="Eiffelturm", confidence=0.9)
+        finally:
+            self._active -= 1
+
+
+class CancellingLandmarkClient:
+    """Simuliert einen asyncio.CancelledError WAEHREND eines parallelen detect()-Aufrufs (ADR
+    0025, analog DownloadRaisesCancelledErrorClient in test_worker_scan_project.py) -
+    Regressionsnachweis, dass return_exceptions=True das CancelledError nicht verschluckt."""
+
+    async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+        raise asyncio.CancelledError(
+            "simulierter Abbruch waehrend eines parallelen Cloud-Aufrufs"
+        )
+
+
+def _failing_landmark_client_builder() -> NoReturn:
+    pytest.fail("build_landmark_client darf bei deaktivierter Einwilligung nie aufgerufen werden")
+
+
+class TestSelectLandmarkCandidates:
+    """Reine, DB-freie Funktion (analog _classify_scan_entries) - isoliert testbar, inkl. dem
+    Grenzfall exakt auf der Schwelle, ohne einen echten Kandidatenlauf aufzusetzen."""
+
+    def test_below_both_thresholds_is_not_a_candidate(self) -> None:
+        candidate_values = {1: {"content_landscape": 0.4, "gebaeude": 0.0}}
+        assert _select_landmark_candidates(candidate_values, set()) == []
+
+    def test_content_landscape_at_exactly_the_threshold_is_a_candidate_inclusive(self) -> None:
+        candidate_values = {1: {"content_landscape": 0.5, "gebaeude": 0.0}}
+        assert _select_landmark_candidates(candidate_values, set()) == [1]
+
+    def test_gebaeude_at_exactly_the_threshold_is_a_candidate_inclusive(self) -> None:
+        candidate_values = {1: {"content_landscape": 0.0, "gebaeude": 0.01}}
+        assert _select_landmark_candidates(candidate_values, set()) == [1]
+
+    def test_just_below_content_landscape_threshold_is_not_a_candidate(self) -> None:
+        candidate_values = {1: {"content_landscape": 0.499999, "gebaeude": 0.0}}
+        assert _select_landmark_candidates(candidate_values, set()) == []
+
+    def test_missing_values_count_as_not_present(self) -> None:
+        assert _select_landmark_candidates({1: {}}, set()) == []
+
+    def test_already_scored_photo_is_excluded_even_if_it_would_pass_the_threshold(self) -> None:
+        candidate_values = {1: {"content_landscape": 0.9}}
+        assert _select_landmark_candidates(candidate_values, {1}) == []
+
+
+async def test_consent_disabled_by_default_never_calls_landmark_client_builder(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria_keys = {
+        c.criterion_key
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert "landmark" not in criteria_keys
+
+
+async def test_consent_enabled_sends_a_landscape_photo_to_the_landmark_client(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_landmark_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    client = RecordingLandmarkClient(
+        detection=LandmarkDetection(name="Eiffelturm", confidence=0.87)
+    )
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: client,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert len(client.calls) == 1
+    image_bytes, mime_type = client.calls[0]
+    assert mime_type == "image/jpeg"
+    assert image_bytes  # echte Bilddaten, kein leerer Platzhalter
+    # Review-Fund (ship-feature-Runde): run_criterion_scoring muss einen vom Client angebotenen
+    # aclose() tatsaechlich aufrufen (Ressourcen-Cleanup des echten httpx.AsyncClient), genau
+    # einmal - kein Doppel-Close.
+    assert client.aclose_calls == 1
+
+    criteria = {
+        c.criterion_key: c
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert criteria["landmark"].value == 0.87
+    assert criteria["landmark"].source == CriterionSource.CLOUD
+
+    detection_row = (
+        await db_session.execute(
+            select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+        )
+    ).scalar_one()
+    assert detection_row.name == "Eiffelturm"
+    assert detection_row.confidence == 0.87
+
+
+async def test_photo_without_an_identified_landmark_name_gets_zero_score_and_no_detection_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_landmark_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    client = RecordingLandmarkClient(detection=LandmarkDetection(name=None, confidence=0.0))
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: client,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert criteria["landmark"] == 0.0
+
+    detections = (await db_session.execute(select(PhotoLandmarkDetection))).scalars().all()
+    assert detections == []
+
+
+async def test_vorfilterung_sends_photo_that_only_meets_the_gebaeude_threshold(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_landmark_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
+
+    client = RecordingLandmarkClient()
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_scene_classifier_stub,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: client,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert len(client.calls) == 1
+
+
+async def test_vorfilterung_does_not_send_photo_below_both_thresholds_empty_candidate_pool(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Zugleich der "leerer Kandidatenpool nach Vorfilterung"-Edge-Case der Teststrategie: das
+    # einzige Foto des Laufs erreicht weder content_landscape noch gebaeude, LandmarkClientLike.
+    # detect() wird nie aufgerufen, kein photo_landmark_detections-Eintrag.
+    project = await _make_project(db_session)
+    project.cloud_landmark_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
+
+    client = RecordingLandmarkClient()
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: client,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert client.calls == []
+    detections = (await db_session.execute(select(PhotoLandmarkDetection))).scalars().all()
+    assert detections == []
+
+
+async def test_skip_already_scored_photo_but_local_criteria_are_recomputed(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_landmark_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo, sharpness=50.0)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    db_session.add(
+        PhotoCriterionScore(
+            photo_id=photo.id,
+            criterion_key="landmark",
+            value=0.42,
+            source=CriterionSource.CLOUD,
+            computed_at=datetime(2023, 1, 1),
+        )
+    )
+    await db_session.commit()
+
+    client = RecordingLandmarkClient()
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: client,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert client.calls == []  # nicht erneut gesendet, obwohl die Vorfilterung erneut passen wuerde
+
+    criteria = {
+        c.criterion_key: c.value
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert criteria["landmark"] == 0.42  # unveraendert stehen geblieben
+    assert criteria["sharpness"] == 0.25  # 50.0 / 200.0 - trotzdem neu berechnet (nur landmark
+    # ist die Ausnahme vom "jeder Lauf scort neu"-Grundsatz, kein versehentliches Ueberspringen
+    # des gesamten Fotos).
+
+
+async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_next_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_landmark_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    failing_client = RecordingLandmarkClient(raise_error=True)
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: failing_client,
+    )
+
+    assert run.status == ScanStatus.SUCCESS  # best-effort, kein Laufabbruch
+    assert len(failing_client.calls) == 1
+    # aclose() muss auch dann laufen, wenn der Cloud-Aufruf selbst fehlschlaegt (finally-Block).
+    assert failing_client.aclose_calls == 1
+    criteria_keys = {
+        c.criterion_key
+        for c in (
+            await db_session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+    assert "landmark" not in criteria_keys
+    # Andere Kriterien dieses Fotos bleiben unberuehrt.
+    assert "sharpness" in criteria_keys
+    assert "content_landscape" in criteria_keys
+
+    succeeding_client = RecordingLandmarkClient()
+    run2 = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: succeeding_client,
+    )
+
+    assert run2.status == ScanStatus.SUCCESS
+    # kein landmark-Eintrag vorhanden -> automatisch erneut Kandidat (ersetzt einen dedizierten
+    # Retry-Mechanismus, ADR 0025 Punkt 3).
+    assert len(succeeding_client.calls) == 1
+
+
+async def test_landmark_calls_are_limited_by_landmark_api_concurrency(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 2)
+    project = await _make_project(db_session)
+    project.cloud_landmark_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+
+    for index in range(5):
+        photo = await _add_photo(
+            db_session, project, f"p{index}.jpg", f"etag-{index}", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+    client = ConcurrencyTrackingLandmarkClient()
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: client,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert client.call_count == 5
+    assert client.max_concurrent > 1
+    assert client.max_concurrent <= 2
+
+
+async def test_cancelled_error_from_a_parallel_landmark_call_propagates_and_fails_the_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_landmark_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_criterion_scoring(
+            db_session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
+            build_detector=_no_face_detector,
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_no_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+            build_landmark_client=lambda: CancellingLandmarkClient(),
+        )
+
+    result = await db_session.execute(
+        select(CriterionScoringRun).where(CriterionScoringRun.project_id == project.id)
+    )
+    run_row = result.scalars().first()
+    assert run_row is not None
+    assert run_row.status == ScanStatus.FAILED

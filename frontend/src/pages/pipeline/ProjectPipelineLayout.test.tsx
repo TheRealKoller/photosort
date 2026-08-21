@@ -27,6 +27,8 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     last_scoring_run: null,
     last_criterion_scoring_run: null,
     category_selection_enabled: true,
+    cloud_landmark_detection_enabled: false,
+    cloud_landmark_consent_at: null,
     ...overrides,
   }
 }
@@ -202,6 +204,12 @@ describe('ProjectPipelineLayout', () => {
     expect(screen.getByRole('link', { name: /vergleichen/i })).toHaveAttribute(
       'href',
       '/projects/1/compare'
+    )
+    // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: einzige aktuelle
+    // Navigations-Einstiegsstelle in die neue Projekteinstellungs-Route.
+    expect(screen.getByRole('link', { name: /einstellungen/i })).toHaveAttribute(
+      'href',
+      '/projects/1/settings'
     )
   })
 
