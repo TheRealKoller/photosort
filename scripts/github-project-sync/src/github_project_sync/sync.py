@@ -603,6 +603,12 @@ def run_sync(
     resolutions: Mapping[str, Resolution] | None = None,
     now: Callable[[], str] = _utcnow_iso,
 ) -> SyncRunResult:
+    """resolutions ist bewusst NICHT nach Namespace praefixiert (nackte Nummer als Key, geteilt
+    zwischen _sync_one() und _sync_one_inbox() via resolutions.get(number)). Bei einer echten
+    Nummernkollision (inbox/NNNN + features/NNNN, siehe issue_body.py) mit Konflikt auf BEIDEN
+    Seiten im selben Voll-Lauf wuerde dieselbe Aufloesung unbeabsichtigt auf beide wirken - siehe
+    cli.py::_parse_resolutions() fuer die ausfuehrliche Begruendung, warum das in der Praxis
+    unkritisch ist (Konfliktaufloesung laeuft immer ueber einen auf --only gescopten Aufruf)."""
     resolutions = resolutions or {}
     features_dir = repo_root / "specs" / "features"
     inbox_dir = repo_root / "specs" / "inbox"

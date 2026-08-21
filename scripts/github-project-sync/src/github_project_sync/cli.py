@@ -28,6 +28,17 @@ _RESOLUTION_VALUES = {"keep_spec", "keep_issue"}
 
 
 def _parse_resolutions(raw: list[str]) -> dict[str, Resolution]:
+    # Bekannte, bewusst nicht behobene Einschraenkung (Review-Finding auf Spec 0052/PR): der
+    # Resolution-Key ist eine nackte Nummer, nicht nach Namespace praefixiert (kein
+    # "inbox:NNNN=..." analog zu --only). Bei einer echten Nummernkollision (z.B. inbox/0004 +
+    # features/0004, real vorkommend) mit gleichzeitigem Konflikt in BEIDEN Namespaces wuerde
+    # "--resolve 0004=keep_spec" unbeabsichtigt auf beide Eintraege wirken - keine isolierte
+    # Aufloesung moeglich. In der Praxis unkritisch, weil Konfliktaufloesung laut
+    # .claude/skills/github-project-sync/SKILL.md (Schritt 4) immer in Kombination mit einem auf
+    # eine einzelne Entitaet gescopten "--only NNNN"/"--only inbox:NNNN"-Aufruf erfolgt - dort
+    # ist "resolutions" ohnehin nur fuer die eine verarbeitete Nummer relevant. Der Randfall
+    # (Voll-Lauf ohne --only, Kollision, Konflikt auf beiden Seiten gleichzeitig) ist nicht durch
+    # ein Akzeptanzkriterium gefordert und wird hier nicht extra abgefangen.
     resolutions: dict[str, Resolution] = {}
     for item in raw:
         if "=" not in item:
@@ -157,7 +168,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="NNNN=keep_spec|keep_issue",
-        help="Konflikt fuer eine Spec-Nummer explizit aufloesen. Mehrfach angebbar.",
+        help=(
+            "Konflikt fuer eine Spec-/Inbox-Nummer explizit aufloesen. Mehrfach angebbar. "
+            "Nummer ist NICHT nach Namespace praefixiert - bei einer Nummernkollision "
+            "zwischen specs/features/ und specs/inbox/ mit Konflikt auf beiden Seiten im "
+            "selben Voll-Lauf wirkt dieselbe Nummer auf beide (siehe _parse_resolutions())."
+        ),
     )
     return parser
 

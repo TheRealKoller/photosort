@@ -48,6 +48,11 @@ class FakeGhAdapter:
         # 0030, Abschnitt 6: Wiederverwendung statt Neuanlage eines spezifischeren Labels).
         self.repo_labels: set[str] = {"bug"}
         self.ensure_label_calls: list[str] = []
+        # Nur Namen, fuer die tatsaechlich NEU angelegt wurde (Label war vorher nicht in
+        # repo_labels) - im Unterschied zu ensure_label_calls (jeder Aufruf, unabhaengig vom
+        # Ergebnis). Damit koennen Tests "kein Duplikat angelegt" praezise pruefen (Review-
+        # Finding: die vorherige Fake-Implementierung war unbedingt, verzweigte nie).
+        self.ensure_label_created: list[str] = []
 
     # -- Setup-Helfer fuer Tests -------------------------------------------------
     def seed_issue(
@@ -147,7 +152,10 @@ class FakeGhAdapter:
 
     def ensure_label(self, name: str, *, description: str, color: str) -> None:
         self.ensure_label_calls.append(name)
+        if name in self.repo_labels:
+            return
         self.repo_labels.add(name)
+        self.ensure_label_created.append(name)
 
     def set_issue_labels(
         self, issue_number: int, *, add: frozenset[str], remove: frozenset[str]

@@ -779,11 +779,44 @@ def test_inbox_bug_type_reuses_existing_bug_label_no_duplicate(tmp_path: Path) -
 
     result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
 
-    # "bug" existierte bereits im (Fake-)Repo - ensure_label darf es nicht doppelt anlegen:
-    assert gh.ensure_label_calls.count("bug") <= 1
+    # "bug" existierte bereits im (Fake-)Repo - ensure_label() wird zwar aufgerufen (jeder Lauf
+    # provisioniert alle drei Labels einheitlich, siehe sync.py::_LABEL_PROVISIONING), legt es
+    # aber nicht neu an (ensure_label_created bleibt frei von "bug" - siehe FakeGhAdapter, das
+    # echte "existiert schon"-Verhalten wird eigenstaendig in test_gh_adapter.py::
+    # test_ensure_label_does_nothing_when_label_already_exists gegen GhCliAdapter geprueft):
+    assert "bug" in gh.ensure_label_calls
+    assert "bug" not in gh.ensure_label_created
     issue_number = result.inbox[0].issue_number
     assert issue_number is not None
     assert "bug" in gh.issue(issue_number).labels
+
+
+def test_inbox_typ_change_between_runs_switches_label(tmp_path: Path) -> None:
+    # Review-Finding (test-engineer): _reconcile_labels() war bisher nur ueber den
+    # Superseded-Fall (Features) bewiesen - fuer Inbox-Eintraege fehlte ein Test, der einen
+    # tatsaechlichen Typ-Wechsel (Idee -> Bug) zwischen zwei Laeufen abbildet.
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={"0029": _inbox_text("0029", "Titel", "Unrefined", "Idee", rohtext="Text.")},
+    )
+    gh = FakeGhAdapter()
+
+    first = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+    issue_number = first.inbox[0].issue_number
+    assert issue_number is not None
+    assert gh.issue(issue_number).labels == frozenset({"idee"})
+
+    (repo_root / "specs" / "inbox" / "0029-x.md").write_text(
+        _inbox_text("0029", "Titel", "Unrefined", "Bug (vermeintlich)", rohtext="Text."),
+        encoding="utf-8",
+    )
+
+    second = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert second.inbox[0].classification == "pushed"  # Typ fliesst in den Push-Hash ein
+    assert gh.issue(issue_number).labels == frozenset({"bug"})
 
 
 def test_inbox_unknown_typ_yields_non_fatal_aborted_reason(tmp_path: Path) -> None:
@@ -1085,6 +1118,44 @@ def test_supersede_inbox_raises_clear_error_when_no_state_entry_exists(tmp_path:
             supersede_inbox="9999",
             now=lambda: _FIXED_NOW,
         )
+
+
+def test_supersede_inbox_raises_when_target_spec_sync_itself_fails(tmp_path: Path) -> None:
+    # Review-Finding (test-engineer): sync.py behandelt den Fall bereits korrekt
+    # (feature_entry is None -> SyncError statt eines KeyError/stillen No-ops), war aber
+    # ungetestet. "Draft" ist kein bekannter Lifecycle-Status - die Ziel-Spec 0052 wird deshalb
+    # mit aborted_reason statt einer erfolgreichen Klassifikation verarbeitet, bekommt also
+    # keinen new_features-Eintrag zum Verlinken.
+    content_zone = "## Rohtext\n\nText.\n"
+    push_hash = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0052": _spec_text("0052", "Kaputte Spec", "Draft")},
+        roadmap=_roadmap_text(),
+        inbox_state={
+            "0028": _existing_state_entry(
+                issue_number=88, push_hash=push_hash, pull_hash=pull_hash
+            )
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(88, body=build_inbox_issue_body("0028", content_zone))
+
+    with pytest.raises(SyncError):
+        run_sync(
+            repo_root=repo_root,
+            gh=gh,
+            only="0052",
+            supersede_inbox="0028",
+            now=lambda: _FIXED_NOW,
+        )
+
+    # Kein Effekt auf das Inbox-Issue/den State-Eintrag, da die Verlinkung nie stattfand:
+    assert gh.issue(88).state == "open"
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert "0028" in state.inbox
 
 
 def test_supersede_inbox_requires_feature_only_scope(tmp_path: Path) -> None:
