@@ -57,6 +57,10 @@ class IssueView:
     # keinen Verwendungszweck. Siehe auch Review-Finding zu dieser Abweichung.
     author_login: str
     url: str
+    # Seit Spec 0052 / ADR 0030, Abschnitt 6: Label-Reconciliation (superseded/idee/bug) braucht
+    # den aktuellen Label-Stand, um nur die selbst verwalteten Labels gezielt hinzuzufuegen/zu
+    # entfernen, ohne fremd gesetzte Labels anzutasten.
+    labels: frozenset[str] = frozenset()
 
 
 class GhAdapter(Protocol):
@@ -87,22 +91,30 @@ class GhAdapter(Protocol):
 
     def clear_item_field(self, project: Project, *, item_id: str, field_id: str) -> None: ...
 
+    def ensure_label(self, name: str, *, description: str, color: str) -> None: ...
+
+    def set_issue_labels(
+        self, issue_number: int, *, add: frozenset[str], remove: frozenset[str]
+    ) -> None: ...
+
 
 def _default_run(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, capture_output=True, text=True, check=False)  # noqa: S603
 
 
-# Bewusst NICHT "Status": GitHub Projects (V2) legt bei JEDEM neuen Project automatisch ein
-# eingebautes Single-Select-Feld exakt mit diesem Namen an (Optionen "Todo"/"In Progress"/"Done",
-# fuer die klassische Kanban-Ansicht) - verifiziert per "gh project field-list" gegen das echte,
-# bereits per Smoke-Test selbstprovisionierte Project (Owner TheRealKoller, "PhotoSort Roadmap").
-# ensure_fields() matcht rein ueber den Feldnamen (siehe unten); mit "Status" als Name haette es
-# faelschlich dieses eingebaute Feld als "unseres" uebernommen - dessen Optionen enthalten aber
-# keinen unserer vier Lifecycle-Werte, wodurch _apply_fields() in sync.py bei jedem Lauf mit einer
-# SyncError abgebrochen waere. Zusaetzlicher, beim manuellen Smoke-Test nach Merge von PR #115
-# entdeckter Bug (ueber den urspruenglich gemeldeten "gh issue create --json"-Fehler hinaus).
-STATUS_FIELD_NAME = "Spec Status"
-STATUS_OPTIONS = ["Proposed", "Accepted", "Implemented", "Superseded"]
+# Seit Spec 0052 / ADR decisions/0030-github-sync-natives-status-feld-inbox-einbindung.md,
+# Abschnitt 3: bewusst wieder "Status" (nicht mehr "Spec Status"). GitHub Projects (V2) legt bei
+# JEDEM neuen Project automatisch ein eingebautes Single-Select-Feld exakt mit diesem Namen an
+# (Optionen "Todo"/"In Progress"/"Done") - das war der urspruengliche Grund fuer "Spec Status"
+# (siehe ADR decisions/0017-github-projects-v2-spec-sync.md, Abschnitt 3). Dieser Namenskonflikt
+# wird jetzt bewusst in Kauf genommen: ein einmaliger, manueller Rollout-Schritt (ADR 0030,
+# Abschnitt 3) loescht das ungenutzte eingebaute Feld UND das alte "Spec Status"-Feld im echten,
+# bereits produktiven Project, bevor dieser Code dagegen laeuft - ensure_fields() legt "Status"
+# danach frisch mit den vier neuen Optionen an. Fuer ein hypothetisches, komplett neues Project
+# (nie erstellt mit dem alten Code) wuerde der alte Bug erneut auftreten - das ist ein bewusst
+# akzeptiertes Restrisiko (ADR 0030, Begruendung), kein automatischer Dauerbetrieb-Reparaturpfad.
+STATUS_FIELD_NAME = "Status"
+STATUS_OPTIONS = ["Proposed", "Accepted", "Implemented", "Unrefined"]
 PRIORITY_FIELD_NAME = "Priorität"
 PRIORITY_OPTIONS = ["Hoch", "Mittel", "Niedrig"]
 DEFAULT_PROJECT_TITLE = "PhotoSort Roadmap"
@@ -252,7 +264,14 @@ class GhCliAdapter:
 
     def get_issue(self, issue_number: int) -> IssueView:
         data = self._run_json(
-            ["gh", "issue", "view", str(issue_number), "--json", "number,body,state,author,url"]
+            [
+                "gh",
+                "issue",
+                "view",
+                str(issue_number),
+                "--json",
+                "number,body,state,author,url,labels",
+            ]
         )
         return IssueView(
             number=data["number"],
@@ -260,6 +279,7 @@ class GhCliAdapter:
             state=str(data["state"]).lower(),
             author_login=data.get("author", {}).get("login", ""),
             url=data.get("url", ""),
+            labels=frozenset(label["name"] for label in data.get("labels", [])),
         )
 
     def _with_body_file(self, body: str, build_args: Callable[[str], list[str]]) -> str:
@@ -359,3 +379,39 @@ class GhCliAdapter:
                 "--clear",
             ]
         )
+
+    def ensure_label(self, name: str, *, description: str, color: str) -> None:
+        # Bewusst nicht behoben (Copilot-Review-Finding auf PR #173, Nice-to-have): "--limit 100"
+        # ist nicht paginiert - bei >100 Repo-Labels wuerde ein bereits existierendes Label
+        # uebersehen und "gh label create" faelschlich erneut versucht (dann vom bestehenden
+        # _run_text()-Fehlerpfad abgefangen, kein stiller Fehlschlag). Repo hat aktuell ~14
+        # Labels, weit unter der Schwelle - Pagination wuerde hier unverhaeltnismaessig viel
+        # Komplexitaet fuer ein derzeit nicht real existierendes Risiko einfuehren.
+        data = self._run_json(["gh", "label", "list", "--json", "name", "--limit", "100"])
+        existing_names = {item["name"] for item in data}
+        if name in existing_names:
+            return
+        self._run_text(
+            [
+                "gh",
+                "label",
+                "create",
+                name,
+                "--description",
+                description,
+                "--color",
+                color,
+            ]
+        )
+
+    def set_issue_labels(
+        self, issue_number: int, *, add: frozenset[str], remove: frozenset[str]
+    ) -> None:
+        if not add and not remove:
+            return
+        args = ["gh", "issue", "edit", str(issue_number)]
+        if add:
+            args += ["--add-label", ",".join(sorted(add))]
+        if remove:
+            args += ["--remove-label", ",".join(sorted(remove))]
+        self._run_text(args)

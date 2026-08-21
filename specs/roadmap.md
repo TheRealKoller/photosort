@@ -85,6 +85,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0050](./features/0050-dateianzahl-im-ordner-browser.md) | Dateianzahl pro Unterordner im OpenCloud-Ordner-Browser | Implemented ([PR #110](https://github.com/TheRealKoller/photosort/pull/110)) |
 | [0048](./features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md) | Drei Kompositions-Kriterien: Symmetrie, Horizont-Neigung, Freiraum/Fluchtrichtung | Implemented ([PR #111](https://github.com/TheRealKoller/photosort/pull/111)) |
 | [0031](./features/0031-zweiwege-sync-specs-github-projekt.md) | Zwei-Wege-Sync Feature-Specs ↔ GitHub-Projekt | Implemented ([PR #115](https://github.com/TheRealKoller/photosort/pull/115)) |
+| [0052](./features/0052-github-sync-natives-status-feld-inbox-einbindung.md) | GitHub-Sync: natives Status-Feld statt Custom-Field, Inbox-Einbindung | Implemented ([PR #173](https://github.com/TheRealKoller/photosort/pull/173)) |
 
 ## Priorisierung
 

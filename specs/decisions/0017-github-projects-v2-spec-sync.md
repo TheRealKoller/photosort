@@ -4,6 +4,8 @@
 **Datum:** 2026-08-09
 **Bezug:** `idea-sharpener`-Konsultation für die künftige Feature-Spec zu `specs/inbox/0011-zweiwege-sync-specs-github-projekt.md` (Spec-Nummer zum Zeitpunkt dieser ADR noch nicht vergeben).
 
+**Nachtrag (2026-08-21):** Abschnitt 3 (Feldname/-optionen `Status`/`Spec Status`) ist durch ADR [`decisions/0030-github-sync-natives-status-feld-inbox-einbindung.md`](./0030-github-sync-natives-status-feld-inbox-einbindung.md) teilweise abgelöst — das native `Status`-Feld wird jetzt bewusst verwendet, `Spec Status` entfällt. Alle übrigen Abschnitte dieser ADR (1, 2, 4–7) bleiben unverändert gültig, diese ADR bleibt `Accepted`. Reiner Verweis, kein nachträgliches Editieren der ursprünglichen Entscheidung/Begründung unten.
+
 ## Kontext
 
 Daniel möchte den Status (`Proposed`/`Accepted`/`Implemented`/`Superseded`) und die Priorität (`Hoch`/`Mittel`/`Niedrig`) aller Feature-Specs unter `specs/features/` zusätzlich zur bestehenden `specs/roadmap.md`-Tabellenansicht in einem interaktiven, auch mobil bedienbaren GitHub-Project-Board sichtbar haben (ein Issue/eine Card pro Spec-Datei, 1:1), und inhaltliche Änderungen, die er direkt in einem Issue vornimmt (typischer Fall: unterwegs am Handy), in die zugehörige Spec-Datei zurückspielen können. Eine frühere, statische D2-Kanban-Grafik in `roadmap.md` (Spec 0026) wurde in PR #53 wieder verworfen — dieses Feature ist bewusst etwas anderes (ein echtes, interaktives, extern editierbares Board), kein Wiederaufguss.

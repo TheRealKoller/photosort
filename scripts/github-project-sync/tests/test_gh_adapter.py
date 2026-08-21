@@ -9,6 +9,7 @@ import pytest
 from github_project_sync.gh_adapter import (
     PRIORITY_FIELD_NAME,
     STATUS_FIELD_NAME,
+    STATUS_OPTIONS,
     GhAdapterError,
     GhAuthScopeError,
     GhCliAdapter,
@@ -160,12 +161,17 @@ def test_ensure_fields_creates_missing_fields_self_provisioning() -> None:
     assert PRIORITY_FIELD_NAME in run.calls[2]
 
 
-def test_ensure_fields_does_not_adopt_githubs_built_in_status_field() -> None:
-    # Regressionstest fuer einen zweiten, beim manuellen Smoke-Test nach Merge von PR #115
-    # entdeckten Bug: GitHub Projects (V2) legt bei jedem neuen Project automatisch ein
-    # eingebautes Single-Select-Feld namens exakt "Status" an (Optionen Todo/In Progress/Done).
-    # ensure_fields() darf dieses NICHT faelschlich als unser Lifecycle-Feld uebernehmen, nur
-    # weil der Name uebereinstimmt - STATUS_FIELD_NAME ist deshalb bewusst nicht "Status".
+def test_ensure_fields_adopts_native_status_field_after_rollout_migration() -> None:
+    # Seit Spec 0052 / ADR 0030 (Abschnitt 3) ist STATUS_FIELD_NAME wieder bewusst "Status" -
+    # der frueher vermiedene Namenskonflikt mit GitHubs eingebautem Feld ist kein Problem mehr,
+    # weil der einmalige, manuelle Rollout-Schritt das eingebaute Feld vorher loescht (kein
+    # automatischer Dauerbetrieb-Codepfad, siehe ADR 0030, Abschnitt 3). ensure_fields() matcht
+    # weiterhin rein ueber den Feldnamen und uebernimmt ein bereits existierendes Feld
+    # "Status" unveraendert - das ist nach dem Rollout genau das gewuenschte Verhalten.
+    # Fixture bildet den erwarteten Zustand NACH dem manuellen Rollout ab (ADR 0030, Abschnitt 3:
+    # frisch angelegtes Feld mit allen vier Optionen aus STATUS_OPTIONS) - nicht nur zwei
+    # Optionen, sonst bleibt ungetestet, ob ensure_fields() tatsaechlich alle vier durchreicht
+    # (Copilot-Review-Finding auf PR #173, Nice-to-have).
     run = _FakeRun(
         [
             _ok(
@@ -173,18 +179,15 @@ def test_ensure_fields_does_not_adopt_githubs_built_in_status_field() -> None:
                     "fields": [
                         {"id": "F_TITLE", "name": "Title"},
                         {
-                            "id": "F_BUILTIN_STATUS",
+                            "id": "F_STATUS",
                             "name": "Status",
                             "options": [
-                                {"id": "T1", "name": "Todo"},
-                                {"id": "T2", "name": "In Progress"},
-                                {"id": "T3", "name": "Done"},
+                                {"id": f"O_{name}", "name": name} for name in STATUS_OPTIONS
                             ],
                         },
                     ]
                 }
             ),
-            _ok({"id": "F_SPEC_STATUS", "options": [{"id": "O1", "name": "Proposed"}]}),
             _ok({"id": "F_PRIO", "options": [{"id": "O3", "name": "Hoch"}]}),
         ]
     )
@@ -193,9 +196,17 @@ def test_ensure_fields_does_not_adopt_githubs_built_in_status_field() -> None:
 
     fields = adapter.ensure_fields(project)
 
-    assert fields.status_field_id == "F_SPEC_STATUS"  # nicht das eingebaute F_BUILTIN_STATUS
+    assert fields.status_field_id == "F_STATUS"
+    assert set(fields.status_options) == set(STATUS_OPTIONS)
+    assert fields.status_options == {name: f"O_{name}" for name in STATUS_OPTIONS}
+    # Kein zweiter field-create-Aufruf fuer Status noetig, das Feld existierte bereits:
     assert run.calls[1][:3] == ["gh", "project", "field-create"]
-    assert STATUS_FIELD_NAME in run.calls[1]
+    assert PRIORITY_FIELD_NAME in run.calls[1]
+
+
+def test_status_options_include_unrefined_not_superseded() -> None:
+    assert STATUS_OPTIONS == ["Proposed", "Accepted", "Implemented", "Unrefined"]
+    assert "Superseded" not in STATUS_OPTIONS
 
 
 def test_get_issue_parses_json_output() -> None:
@@ -208,6 +219,7 @@ def test_get_issue_parses_json_output() -> None:
                     "state": "OPEN",
                     "author": {"login": "TheRealKoller"},
                     "url": "https://github.com/TheRealKoller/photosort/issues/42",
+                    "labels": [{"name": "idee"}, {"name": "bug"}],
                 }
             )
         ]
@@ -222,8 +234,32 @@ def test_get_issue_parses_json_output() -> None:
         state="open",
         author_login="TheRealKoller",
         url="https://github.com/TheRealKoller/photosort/issues/42",
+        labels=frozenset({"idee", "bug"}),
     )
-    assert run.calls == [["gh", "issue", "view", "42", "--json", "number,body,state,author,url"]]
+    assert run.calls == [
+        ["gh", "issue", "view", "42", "--json", "number,body,state,author,url,labels"]
+    ]
+
+
+def test_get_issue_defaults_to_empty_labels_when_field_missing() -> None:
+    run = _FakeRun(
+        [
+            _ok(
+                {
+                    "number": 42,
+                    "body": "foo",
+                    "state": "OPEN",
+                    "author": {"login": "TheRealKoller"},
+                    "url": "https://github.com/TheRealKoller/photosort/issues/42",
+                }
+            )
+        ]
+    )
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+
+    issue = adapter.get_issue(42)
+
+    assert issue.labels == frozenset()
 
 
 def test_get_issue_raises_on_failure() -> None:
@@ -356,3 +392,62 @@ def test_clear_item_field_when_no_option() -> None:
     call = run.calls[0]
     assert call[:3] == ["gh", "project", "item-edit"]
     assert "--clear" in call
+
+
+# -- ensure_label() / set_issue_labels() (neu in Spec 0052 / ADR 0030, Abschnitt 6) ---------
+
+
+def test_ensure_label_does_nothing_when_label_already_exists() -> None:
+    run = _FakeRun([_ok([{"name": "bug"}, {"name": "idee"}])])
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+
+    adapter.ensure_label("bug", description="Something isn't working", color="d73a4a")
+
+    assert len(run.calls) == 1
+    assert run.calls[0][:3] == ["gh", "label", "list"]
+
+
+def test_ensure_label_creates_missing_label_self_provisioning() -> None:
+    run = _FakeRun([_ok([{"name": "bug"}]), _ok("")])
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+
+    adapter.ensure_label("superseded", description="Spec wurde abgeloest.", color="cfd3d7")
+
+    assert run.calls[1][:3] == ["gh", "label", "create"]
+    assert "superseded" in run.calls[1]
+    assert "--description" in run.calls[1]
+    assert "Spec wurde abgeloest." in run.calls[1]
+    assert "--color" in run.calls[1]
+    assert "cfd3d7" in run.calls[1]
+
+
+def test_ensure_label_raises_on_list_failure() -> None:
+    run = _FakeRun([_fail("not logged in")])
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+
+    with pytest.raises(GhAdapterError):
+        adapter.ensure_label("idee", description="Idee", color="0e8a16")
+
+
+def test_set_issue_labels_adds_and_removes() -> None:
+    run = _FakeRun([_ok("")])
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+
+    adapter.set_issue_labels(42, add=frozenset({"idee"}), remove=frozenset({"bug"}))
+
+    call = run.calls[0]
+    assert call[:3] == ["gh", "issue", "edit"]
+    assert "42" in call
+    assert "--add-label" in call
+    assert "idee" in call
+    assert "--remove-label" in call
+    assert "bug" in call
+
+
+def test_set_issue_labels_no_op_when_nothing_to_change() -> None:
+    run = _FakeRun([])
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+
+    adapter.set_issue_labels(42, add=frozenset(), remove=frozenset())
+
+    assert run.calls == []

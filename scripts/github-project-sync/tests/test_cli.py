@@ -48,7 +48,7 @@ def test_discover_repo_root_raises_when_not_found(tmp_path: Path) -> None:
         _discover_repo_root(tmp_path)
 
 
-def _make_repo(tmp_path: Path) -> Path:
+def _make_repo(tmp_path: Path, *, with_inbox: bool = False) -> Path:
     repo_root = tmp_path / "repo"
     (repo_root / ".git").mkdir(parents=True)
     features_dir = repo_root / "specs" / "features"
@@ -65,6 +65,14 @@ def _make_repo(tmp_path: Path) -> Path:
         "| [0031](./features/0031-x.md) | Titel | Accepted |\n",
         encoding="utf-8",
     )
+    if with_inbox:
+        inbox_dir = repo_root / "specs" / "inbox"
+        inbox_dir.mkdir(parents=True)
+        (inbox_dir / "0029-x.md").write_text(
+            "# 0029 - Inbox-Titel\n\n**Typ:** Idee\n**Erfasst:** 2026-08-09\n"
+            "**Status:** Unrefined\n\n## Rohtext\n\nFoo.\n",
+            encoding="utf-8",
+        )
     return repo_root
 
 
@@ -120,3 +128,101 @@ def test_main_passes_resolve_argument_through(
     )
 
     assert exit_code == 0
+
+
+def test_main_json_output_includes_inbox_branch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path, with_inbox=True)
+    fake = FakeGhAdapter()
+
+    exit_code = main(["--repo-root", str(repo_root)], gh_factory=lambda owner: fake)
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["inbox"][0]["number"] == "0029"
+    assert output["inbox"][0]["classification"] == "created"
+    assert output["orphaned_inbox"] == []
+    assert output["supersede"] is None
+
+
+def test_main_only_inbox_prefix_scopes_to_inbox_entry(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path, with_inbox=True)
+    fake = FakeGhAdapter()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--only", "inbox:0029"], gh_factory=lambda owner: fake
+    )
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["specs"] == []
+    assert len(output["inbox"]) == 1
+    assert output["inbox"][0]["number"] == "0029"
+
+
+def test_main_only_bare_number_still_scopes_to_feature(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path, with_inbox=True)
+    fake = FakeGhAdapter()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--only", "0031"], gh_factory=lambda owner: fake
+    )
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert len(output["specs"]) == 1
+    assert output["inbox"] == []
+
+
+def test_main_supersede_inbox_reports_link_in_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path, with_inbox=True)
+    fake = FakeGhAdapter()
+    # Ersten Lauf ohne --only, damit der Inbox-Eintrag einen State-Eintrag bekommt:
+    main(["--repo-root", str(repo_root)], gh_factory=lambda owner: fake)
+    capsys.readouterr()
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(repo_root),
+            "--only",
+            "0031",
+            "--supersede-inbox",
+            "0029",
+        ],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["supersede"]["inbox_number"] == "0029"
+
+
+def test_main_returns_nonzero_on_supersede_inbox_without_state_entry(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(repo_root),
+            "--only",
+            "0031",
+            "--supersede-inbox",
+            "9999",
+        ],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    output = json.loads(capsys.readouterr().out)
+    assert "error" in output

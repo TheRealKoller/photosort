@@ -33,3 +33,15 @@ def push_state_hash(*, status: str, priority: str | None, content_zone: str) -> 
     priority_marker = _MISSING_PRIORITY_MARKER if priority is None else priority
     composite = f"STATUS:{status}\nPRIORITY:{priority_marker}\n---\n{content_zone}"
     return text_hash(composite)
+
+
+def push_state_hash_inbox(*, status: str, typ: str, content_zone: str) -> str:
+    """Hash aus (Status, Typ, Inhalts-Zone) fuer Inbox-Eintraege (Spec 0052).
+
+    Eigene Funktion statt Wiederverwendung von push_state_hash()'s priority-Parameter fuer den
+    Typ - Inbox-Eintraege haben keine Prioritaet, ein umgedeuteter Parametername waere
+    irrefuehrend. Nutzt denselben text_hash()-Baustein wie push_state_hash(), keine Duplikation
+    der eigentlichen Hash-/Normalisierungslogik.
+    """
+    composite = f"STATUS:{status}\nTYP:{typ}\n---\n{content_zone}"
+    return text_hash(composite)

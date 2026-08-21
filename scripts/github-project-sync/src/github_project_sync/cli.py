@@ -28,6 +28,17 @@ _RESOLUTION_VALUES = {"keep_spec", "keep_issue"}
 
 
 def _parse_resolutions(raw: list[str]) -> dict[str, Resolution]:
+    # Bekannte, bewusst nicht behobene Einschraenkung (Review-Finding auf Spec 0052/PR): der
+    # Resolution-Key ist eine nackte Nummer, nicht nach Namespace praefixiert (kein
+    # "inbox:NNNN=..." analog zu --only). Bei einer echten Nummernkollision (z.B. inbox/0004 +
+    # features/0004, real vorkommend) mit gleichzeitigem Konflikt in BEIDEN Namespaces wuerde
+    # "--resolve 0004=keep_spec" unbeabsichtigt auf beide Eintraege wirken - keine isolierte
+    # Aufloesung moeglich. In der Praxis unkritisch, weil Konfliktaufloesung laut
+    # .claude/skills/github-project-sync/SKILL.md (Schritt 4) immer in Kombination mit einem auf
+    # eine einzelne Entitaet gescopten "--only NNNN"/"--only inbox:NNNN"-Aufruf erfolgt - dort
+    # ist "resolutions" ohnehin nur fuer die eine verarbeitete Nummer relevant. Der Randfall
+    # (Voll-Lauf ohne --only, Kollision, Konflikt auf beiden Seiten gleichzeitig) ist nicht durch
+    # ein Akzeptanzkriterium gefordert und wird hier nicht extra abgefangen.
     resolutions: dict[str, Resolution] = {}
     for item in raw:
         if "=" not in item:
@@ -81,6 +92,37 @@ def _result_to_dict(result: SyncRunResult) -> dict[str, object]:
         "orphaned": [
             {"number": o.number, "issue_number": o.issue_number} for o in result.orphaned
         ],
+        "inbox": [
+            {
+                "number": r.number,
+                "title": r.title,
+                "issue_number": r.issue_number,
+                "classification": r.classification,
+                "aborted_reason": r.aborted_reason,
+                "conflict": (
+                    {
+                        "local_content_zone": r.conflict.local_content_zone,
+                        "remote_content_zone": r.conflict.remote_content_zone,
+                    }
+                    if r.conflict is not None
+                    else None
+                ),
+                "pulled_content_zone": r.pulled_content_zone,
+            }
+            for r in result.inbox
+        ],
+        "orphaned_inbox": [
+            {"number": o.number, "issue_number": o.issue_number} for o in result.orphaned_inbox
+        ],
+        "supersede": (
+            {
+                "inbox_number": result.supersede.inbox_number,
+                "inbox_issue_number": result.supersede.inbox_issue_number,
+                "new_issue_number": result.supersede.new_issue_number,
+            }
+            if result.supersede is not None
+            else None
+        ),
     }
 
 
@@ -93,7 +135,22 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--only", metavar="NNNN", default=None, help="Nur diese eine Spec-Nummer syncen."
+        "--only",
+        metavar="NNNN|inbox:NNNN",
+        default=None,
+        help=(
+            "Nur diese eine Spec-Nummer syncen (bare NNNN, rueckwaertskompatibel Feature-Scope) "
+            "oder nur diesen einen Inbox-Eintrag (inbox:NNNN)."
+        ),
+    )
+    parser.add_argument(
+        "--supersede-inbox",
+        metavar="MMMM",
+        default=None,
+        help=(
+            "Schliesst gezielt das Inbox-Issue MMMM mit einem auf die per --only NNNN "
+            "gesyncte Spec verlinkenden Kommentar. Erfordert --only NNNN (Feature-Scope)."
+        ),
     )
     parser.add_argument(
         "--owner",
@@ -111,7 +168,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="NNNN=keep_spec|keep_issue",
-        help="Konflikt fuer eine Spec-Nummer explizit aufloesen. Mehrfach angebbar.",
+        help=(
+            "Konflikt fuer eine Spec-/Inbox-Nummer explizit aufloesen. Mehrfach angebbar. "
+            "Nummer ist NICHT nach Namespace praefixiert - bei einer Nummernkollision "
+            "zwischen specs/features/ und specs/inbox/ mit Konflikt auf beiden Seiten im "
+            "selben Voll-Lauf wirkt dieselbe Nummer auf beide (siehe _parse_resolutions())."
+        ),
     )
     return parser
 
@@ -128,7 +190,13 @@ def main(argv: Sequence[str] | None = None, *, gh_factory: GhFactory = _default_
         resolutions = _parse_resolutions(args.resolve)
         repo_root = args.repo_root or _discover_repo_root(Path.cwd())
         gh = gh_factory(args.owner)
-        result = run_sync(repo_root=repo_root, gh=gh, only=args.only, resolutions=resolutions)
+        result = run_sync(
+            repo_root=repo_root,
+            gh=gh,
+            only=args.only,
+            supersede_inbox=args.supersede_inbox,
+            resolutions=resolutions,
+        )
     except SyncError as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))
         return 1
