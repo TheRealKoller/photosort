@@ -6,6 +6,7 @@ import {
   createProject,
   getProject,
   listProjects,
+  setCloudLandmarkConsent,
   triggerScan,
   triggerScore,
   triggerScoreCriteria,
@@ -100,5 +101,21 @@ describe('api/projects', () => {
       body: { scoring_run_id: 5 },
     })
     expect(result).toEqual({ status: 'queued' })
+  })
+
+  it('sets the cloud landmark consent via PUT /projects/{id}/cloud-landmark-consent', async () => {
+    const response = {
+      cloud_landmark_detection_enabled: true,
+      cloud_landmark_consent_at: '2026-08-21T10:00:00Z',
+    }
+    vi.mocked(apiFetch).mockResolvedValue(response)
+
+    const result = await setCloudLandmarkConsent(1, true)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/cloud-landmark-consent', {
+      method: 'PUT',
+      body: { enabled: true },
+    })
+    expect(result).toEqual(response)
   })
 })

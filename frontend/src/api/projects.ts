@@ -1,6 +1,11 @@
 import { apiFetch } from './client'
 import type { ProjectOut } from './types'
 
+export interface CloudLandmarkConsentOut {
+  cloud_landmark_detection_enabled: boolean
+  cloud_landmark_consent_at: string | null
+}
+
 export interface CreateProjectPayload {
   name: string
   opencloud_path: string
@@ -48,5 +53,17 @@ export function triggerScoreCriteria(
   return apiFetch<TriggerScanResponse>(`/projects/${id}/score-criteria`, {
     method: 'POST',
     body: { scoring_run_id: scoringRunId },
+  })
+}
+
+// specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: PUT statt POST, da ein
+// Zustand gesetzt wird statt ein Job ausgeloest (siehe backend api/projects.py-Kommentar).
+export function setCloudLandmarkConsent(
+  id: number,
+  enabled: boolean
+): Promise<CloudLandmarkConsentOut> {
+  return apiFetch<CloudLandmarkConsentOut>(`/projects/${id}/cloud-landmark-consent`, {
+    method: 'PUT',
+    body: { enabled },
   })
 }
