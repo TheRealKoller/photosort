@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.0](https://github.com/TheRealKoller/photosort/compare/v0.13.0...v0.14.0) (2026-08-21)
+
+
+### Features
+
+* **landmark:** Sehenswürdigkeit-Erkennung via Cloud-Vision-API (Spec 0047) ([#181](https://github.com/TheRealKoller/photosort/issues/181)) ([9a8e162](https://github.com/TheRealKoller/photosort/commit/9a8e162a7baf36a36d713710189807f1af6f18ab))
+
+
+### Bug Fixes
+
+* **frontend:** allow the settings row to wrap on very narrow viewports (review finding) ([9a8e162](https://github.com/TheRealKoller/photosort/commit/9a8e162a7baf36a36d713710189807f1af6f18ab))
+
 ## [0.13.0](https://github.com/TheRealKoller/photosort/compare/v0.12.0...v0.13.0) (2026-08-21)
 
 
