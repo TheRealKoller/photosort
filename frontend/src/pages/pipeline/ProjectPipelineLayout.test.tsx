@@ -205,6 +205,12 @@ describe('ProjectPipelineLayout', () => {
       'href',
       '/projects/1/compare'
     )
+    // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: einzige aktuelle
+    // Navigations-Einstiegsstelle in die neue Projekteinstellungs-Route.
+    expect(screen.getByRole('link', { name: /einstellungen/i })).toHaveAttribute(
+      'href',
+      '/projects/1/settings'
+    )
   })
 
   it(

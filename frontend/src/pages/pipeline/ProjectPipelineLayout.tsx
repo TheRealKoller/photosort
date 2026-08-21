@@ -124,6 +124,11 @@ export function ProjectPipelineLayout() {
         <Button asChild variant="secondary">
           <Link to={`/projects/${project.id}/compare`}>Bewertungen vergleichen</Link>
         </Button>
+        {/* specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: einzige
+            Navigations-Einstiegsstelle in die neue Projekteinstellungs-Route. */}
+        <Button asChild variant="secondary">
+          <Link to={`/projects/${project.id}/settings`}>Einstellungen</Link>
+        </Button>
       </nav>
     </div>
   )

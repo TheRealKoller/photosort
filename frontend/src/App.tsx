@@ -15,6 +15,7 @@ import { PipelineStepView } from './pages/pipeline/PipelineStepView'
 import { ProjectPipelineLayout } from './pages/pipeline/ProjectPipelineLayout'
 import { ProjectCreatePage } from './pages/ProjectCreatePage'
 import { ProjectListPage } from './pages/ProjectListPage'
+import { ProjectSettingsPage } from './pages/ProjectSettingsPage'
 
 /**
  * Reiner Redirect (specs/features/0042-automatisierter-flow-stepper-detailseiten.md,
@@ -57,6 +58,10 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   { path: '/projects/:projectId/photos', element: <PhotoGridPage /> },
   { path: '/projects/:projectId/photos/:photoId', element: <PhotoDetailPage /> },
   { path: '/projects/:projectId/compare', element: <PhotoComparePage /> },
+  // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: erste dedizierte
+  // Projekteinstellungs-Route - hier statt separat ergaenzt, damit sie automatisch denselben
+  // Sticky-Header-"Projekt"-Link bekommt (siehe Kommentar oben).
+  { path: '/projects/:projectId/settings', element: <ProjectSettingsPage /> },
 ]
 
 const PIPELINE_BASE_ROUTE_PATH = '/projects/:projectId/pipeline'
