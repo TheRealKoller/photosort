@@ -168,6 +168,10 @@ def test_ensure_fields_adopts_native_status_field_after_rollout_migration() -> N
     # automatischer Dauerbetrieb-Codepfad, siehe ADR 0030, Abschnitt 3). ensure_fields() matcht
     # weiterhin rein ueber den Feldnamen und uebernimmt ein bereits existierendes Feld
     # "Status" unveraendert - das ist nach dem Rollout genau das gewuenschte Verhalten.
+    # Fixture bildet den erwarteten Zustand NACH dem manuellen Rollout ab (ADR 0030, Abschnitt 3:
+    # frisch angelegtes Feld mit allen vier Optionen aus STATUS_OPTIONS) - nicht nur zwei
+    # Optionen, sonst bleibt ungetestet, ob ensure_fields() tatsaechlich alle vier durchreicht
+    # (Copilot-Review-Finding auf PR #173, Nice-to-have).
     run = _FakeRun(
         [
             _ok(
@@ -178,8 +182,7 @@ def test_ensure_fields_adopts_native_status_field_after_rollout_migration() -> N
                             "id": "F_STATUS",
                             "name": "Status",
                             "options": [
-                                {"id": "O1", "name": "Proposed"},
-                                {"id": "O4", "name": "Unrefined"},
+                                {"id": f"O_{name}", "name": name} for name in STATUS_OPTIONS
                             ],
                         },
                     ]
@@ -194,7 +197,8 @@ def test_ensure_fields_adopts_native_status_field_after_rollout_migration() -> N
     fields = adapter.ensure_fields(project)
 
     assert fields.status_field_id == "F_STATUS"
-    assert fields.status_options == {"Proposed": "O1", "Unrefined": "O4"}
+    assert set(fields.status_options) == set(STATUS_OPTIONS)
+    assert fields.status_options == {name: f"O_{name}" for name in STATUS_OPTIONS}
     # Kein zweiter field-create-Aufruf fuer Status noetig, das Feld existierte bereits:
     assert run.calls[1][:3] == ["gh", "project", "field-create"]
     assert PRIORITY_FIELD_NAME in run.calls[1]

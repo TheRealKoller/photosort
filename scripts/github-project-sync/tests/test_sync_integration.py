@@ -1041,6 +1041,50 @@ def test_only_bare_number_scopes_to_feature_only_skips_inbox(tmp_path: Path) -> 
     assert result.inbox == []
 
 
+def test_only_feature_scope_ignores_structurally_broken_inbox_files(tmp_path: Path) -> None:
+    # Copilot-Review-Finding (PR #173): parse_inbox_file() wirft ungefangen SpecParseError bei
+    # fehlendem **Typ:**-Feld - das darf einen reinen Feature-Scope-Lauf (--only NNNN) nicht
+    # zum Absturz bringen, wenn Inbox in diesem Lauf gar nicht relevant ist.
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Feature", "Accepted")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Feature")]),
+    )
+    broken_inbox_dir = repo_root / "specs" / "inbox"
+    broken_inbox_dir.mkdir(parents=True, exist_ok=True)
+    (broken_inbox_dir / "0099-kaputt.md").write_text(
+        "# 0099 - Kaputter Eintrag\n\n**Erfasst:** 2026-08-09\n**Status:** Unrefined\n\n"
+        "## Rohtext\n\nfoo\n",
+        encoding="utf-8",
+    )  # kein **Typ:**-Feld -> parse_inbox_file() wuerde SpecParseError werfen
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, only="0031", now=lambda: _FIXED_NOW)
+
+    assert result.specs[0].classification == "created"
+    assert result.inbox == []
+
+
+def test_only_inbox_scope_ignores_structurally_broken_feature_files(tmp_path: Path) -> None:
+    # Symmetrisch zum obigen Fund: ein strukturell kaputter Feature-Spec darf einen reinen
+    # Inbox-Scope-Lauf (--only inbox:NNNN) ebenfalls nicht zum Absturz bringen.
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={"0029": _inbox_text("0029", "Inbox", "Unrefined", "Idee")},
+    )
+    (repo_root / "specs" / "features" / "0099-kaputt.md").write_text(
+        "kein Titel hier\n\n## Ziel\n\nfoo\n", encoding="utf-8"
+    )  # keine H1-Ueberschrift -> parse_spec_file() wuerde SpecParseError werfen
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, only="inbox:0029", now=lambda: _FIXED_NOW)
+
+    assert result.inbox[0].classification == "created"
+    assert result.specs == []
+
+
 def test_only_inbox_prefixed_scopes_to_inbox_only_skips_features(tmp_path: Path) -> None:
     repo_root = _make_repo(
         tmp_path,

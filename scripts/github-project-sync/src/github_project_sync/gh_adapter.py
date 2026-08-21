@@ -381,6 +381,12 @@ class GhCliAdapter:
         )
 
     def ensure_label(self, name: str, *, description: str, color: str) -> None:
+        # Bewusst nicht behoben (Copilot-Review-Finding auf PR #173, Nice-to-have): "--limit 100"
+        # ist nicht paginiert - bei >100 Repo-Labels wuerde ein bereits existierendes Label
+        # uebersehen und "gh label create" faelschlich erneut versucht (dann vom bestehenden
+        # _run_text()-Fehlerpfad abgefangen, kein stiller Fehlschlag). Repo hat aktuell ~14
+        # Labels, weit unter der Schwelle - Pagination wuerde hier unverhaeltnismaessig viel
+        # Komplexitaet fuer ein derzeit nicht real existierendes Risiko einfuehren.
         data = self._run_json(["gh", "label", "list", "--json", "name", "--limit", "100"])
         existing_names = {item["name"] for item in data}
         if name in existing_names:

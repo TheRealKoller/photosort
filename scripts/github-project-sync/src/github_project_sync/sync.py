@@ -639,7 +639,19 @@ def run_sync(
                 "gefunden."
             )
 
-    spec_paths = sorted(features_dir.glob("*.md")) if features_dir.exists() else []
+    process_features = only_scope is None or only_scope[0] == "feature"
+    process_inbox = only_scope is None or only_scope[0] == "inbox"
+
+    # Copilot-Review-Finding (PR #173): beide Parsing-Schleifen NUR ausfuehren, wenn der
+    # jeweilige Entitaetstyp im aktuellen Lauf tatsaechlich gebraucht wird (process_features/
+    # process_inbox) - vorher wurden bei einem auf einen Typ gescopten --only-Lauf trotzdem
+    # BEIDE Verzeichnisse eager geparst, sodass ein einzelner strukturell kaputter Eintrag des
+    # gerade IRRELEVANTEN Typs (parse_spec_file()/parse_inbox_file() werfen ungefangen
+    # SpecParseError) auch diesen Lauf zum Absturz gebracht haette, obwohl dieser Typ gar nicht
+    # verarbeitet wird. Symmetrisch fuer beide Richtungen behoben, nicht nur fuer Inbox.
+    spec_paths = (
+        sorted(features_dir.glob("*.md")) if process_features and features_dir.exists() else []
+    )
     parsed_by_number = {}
     path_by_number: dict[str, Path] = {}
     for spec_path in spec_paths:
@@ -647,16 +659,15 @@ def run_sync(
         parsed_by_number[parsed.number] = parsed
         path_by_number[parsed.number] = spec_path
 
-    inbox_paths = sorted(inbox_dir.glob("*.md")) if inbox_dir.exists() else []
+    inbox_paths = (
+        sorted(inbox_dir.glob("*.md")) if process_inbox and inbox_dir.exists() else []
+    )
     inbox_by_number = {}
     inbox_path_by_number: dict[str, Path] = {}
     for inbox_path in inbox_paths:
         parsed_inbox = parse_inbox_file(inbox_path)
         inbox_by_number[parsed_inbox.number] = parsed_inbox
         inbox_path_by_number[parsed_inbox.number] = inbox_path
-
-    process_features = only_scope is None or only_scope[0] == "feature"
-    process_inbox = only_scope is None or only_scope[0] == "inbox"
 
     if only_scope is not None and only_scope[0] == "feature":
         if only_scope[1] not in parsed_by_number:
