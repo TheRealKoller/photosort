@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.13.0](https://github.com/TheRealKoller/photosort/compare/v0.12.0...v0.13.0) (2026-08-21)
+
+
+### Features
+
+* **github-project-sync:** natives Status-Feld statt Custom-Field, Inbox-Einbindung ([#173](https://github.com/TheRealKoller/photosort/issues/173)) ([fb09996](https://github.com/TheRealKoller/photosort/commit/fb09996dd1a3eaee2d26252ebccc86a8871bbcfe))
+* **github-project-sync:** Zwei-Wege-Sync Feature-Specs ↔ GitHub-Projekt (Spec 0031) ([#115](https://github.com/TheRealKoller/photosort/issues/115)) ([c07414e](https://github.com/TheRealKoller/photosort/commit/c07414ea2bdcc9c9fb240fb7971a02703d015493))
+
+
+### Bug Fixes
+
+* **github-project-sync:** gh issue create liefert kein JSON, plus Status-Feld-Namenskollision ([#117](https://github.com/TheRealKoller/photosort/issues/117)) ([a04c4ce](https://github.com/TheRealKoller/photosort/commit/a04c4ced6b976da9ef531d812d1ad3880c6fe368))
+* **github-project-sync:** Status-Extraktion auf Enum-Schluesselwort begrenzen, Lauf-Resilienz ([#120](https://github.com/TheRealKoller/photosort/issues/120)) ([6f9cd04](https://github.com/TheRealKoller/photosort/commit/6f9cd04e9bea783122d38b6d4052e84a0c27faaf))
+
 ## [0.12.0](https://github.com/TheRealKoller/photosort/compare/v0.11.0...v0.12.0) (2026-08-20)
 
 
