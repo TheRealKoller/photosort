@@ -125,3 +125,33 @@ def test_cors_allowed_origins_list_strips_whitespace_around_entries() -> None:
         "https://a.example.com",
         "https://b.example.com",
     ]
+
+
+def test_anthropic_api_key_defaults_to_empty_string() -> None:
+    # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR
+    # decisions/0025-cloud-landmark-erkennung.md: exakt das opencloud_app_token-Muster, kein
+    # Format-Check - der Platzhalter existierte bereits in .env.example, war aber nie verdrahtet.
+    settings = Settings(_env_file=None)
+
+    assert settings.anthropic_api_key == ""
+
+
+def test_landmark_api_concurrency_defaults_to_two() -> None:
+    # ADR 0025 Punkt 3: bewusst konservativer als scan_download_concurrency (Default 4) - reales
+    # Geld pro Anfrage und ein fremdes Rate-Limit.
+    settings = Settings(_env_file=None)
+
+    assert settings.landmark_api_concurrency == 2
+
+
+def test_landmark_api_concurrency_is_env_overridable() -> None:
+    settings = Settings(_env_file=None, landmark_api_concurrency=8)
+
+    assert settings.landmark_api_concurrency == 8
+
+
+def test_landmark_api_concurrency_rejects_non_positive_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, landmark_api_concurrency=0)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, landmark_api_concurrency=-1)
