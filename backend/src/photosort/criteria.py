@@ -18,6 +18,7 @@ from photosort.classification import (
     compute_uniform_area_fraction,
     detect_person,
 )
+from photosort.landmark import LandmarkDetection
 from photosort.models import CriterionSource
 
 # specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md, decisions/0021-kriterien-
@@ -54,6 +55,16 @@ _CONTENT_PEOPLE_DETECTED_THRESHOLD = 0.5
 # erkannt", keine zweite inhaltliche Kalibrierung.
 _TIER_CATEGORY_PRESENCE_THRESHOLD = 0.01
 _GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD = 0.01
+
+# specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR decisions/0025-cloud-
+# landmark-erkennung.md Punkt 2: Confidence-Schwelle des Vision-LLM, ab der ein Foto als
+# "Sehenswuerdigkeit erkannt" gilt - zugleich Vorfilterungs-Schwelle fuer content_landscape/
+# gebaeude in worker.py::run_criterion_scoring (Wiederverwendung derselben Registry-Werte).
+# Dokumentiert-unkalibriert (gleiche Klasse wie SHARPNESS_NORMALIZATION_CEILING/
+# LANDSCAPE_UNIFORM_FRACTION_THRESHOLD, kein Fotokorpus im Repo zur Kalibrierung) - ADR 0025
+# benennt zusaetzlich ein bekanntes, beobachtetes Ueberidentifikations-Risiko (siehe ADR Punkt 1),
+# gegen das diese Schwelle die strukturelle, aber ggf. nicht ausreichende Gegenmassnahme ist.
+_LANDMARK_CATEGORY_PRESENCE_THRESHOLD = 0.5
 
 CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
     "sharpness": CriterionDefinition("sharpness", "Schärfe", CriterionSource.LOCAL_HEURISTIC),
@@ -103,6 +114,15 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
     ),
     "freiraum": CriterionDefinition(
         "freiraum", "Freiraum/Fluchtrichtung", CriterionSource.LOCAL_ML
+    ),
+    # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR 0025: erste
+    # tatsaechlich produktive CriterionSource.CLOUD-Zeile im Kriterien-Scoring-Pfad.
+    "landmark": CriterionDefinition(
+        "landmark",
+        "Sehenswürdigkeit",
+        CriterionSource.CLOUD,
+        category_eligible=True,
+        category_presence_threshold=_LANDMARK_CATEGORY_PRESENCE_THRESHOLD,
     ),
 }
 
@@ -327,6 +347,19 @@ def compute_gebaeude_score(labels: Sequence[SceneLabel]) -> float:
     if not allowed:
         return 0.0
     return max(label.confidence for label in allowed)
+
+
+def compute_landmark_score(detection: LandmarkDetection) -> float:
+    """`landmark`-Kriterium (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md,
+    ADR decisions/0025-cloud-landmark-erkennung.md Punkt 2): reine, synchrone, netzwerkfreie
+    Funktion (Akzeptanzkriterium der Spec) - der eigentliche Netzwerk-/Cloud-Aufruf lebt
+    ausschliesslich in landmark.py, NICHT hier. Kein identifizierter Name -> 0.0 (kein
+    Sehenswuerdigkeits-Signal, unabhaengig von einer theoretisch trotzdem gelieferten confidence -
+    ohne Namen ist der Wert bedeutungslos). Sonst die vom Vision-LLM gelieferte Konfidenz, auf
+    [0, 1] geklemmt (defensiv, falls das Modell je einen Wert ausserhalb des Bereichs liefert)."""
+    if detection.name is None:
+        return 0.0
+    return max(0.0, min(1.0, detection.confidence))
 
 
 # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md, ADR 0026 Punkt 3:
