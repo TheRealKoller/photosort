@@ -26,6 +26,8 @@ const PROJECT: ProjectOut = {
   last_scoring_run: null,
   last_criterion_scoring_run: null,
   category_selection_enabled: true,
+  cloud_landmark_detection_enabled: false,
+  cloud_landmark_consent_at: null,
 }
 
 describe('api/projects', () => {
