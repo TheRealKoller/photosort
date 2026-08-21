@@ -94,7 +94,15 @@ def _parse_detection(payload: Any) -> LandmarkDetection:
         ) from exc
     if name is not None and not isinstance(name, str):
         raise LandmarkApiError("Unerwartete Antwortstruktur der Anthropic Messages API.")
-    return LandmarkDetection(name=name, confidence=confidence)
+    # Copilot-Review-Fund (PR #181): das Vision-LLM-JSON ist nicht garantiert auf [0, 1] begrenzt -
+    # geklemmt bereits HIER (an der Quelle), nicht erst in criteria.py::compute_landmark_score.
+    # worker.py::_upsert_landmark_detection schreibt detection.confidence UNVERAENDERT nach
+    # photo_landmark_detections - ohne dieses Klemmen wuerde dieser Wert von dem separat
+    # geklemmten PhotoCriterionScore.value abweichen koennen, obwohl beide laut ADR 0025 Punkt 6
+    # atomar aus derselben API-Antwort stammen sollen. compute_landmark_score klemmt zusaetzlich
+    # weiterhin defensiv (bewusste Redundanz, kein Widerspruch).
+    clamped_confidence = max(0.0, min(1.0, confidence))
+    return LandmarkDetection(name=name, confidence=clamped_confidence)
 
 
 class AnthropicLandmarkClient:

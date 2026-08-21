@@ -22,6 +22,12 @@ export function Switch({
 }: SwitchProps) {
   return (
     <button
+      // Copilot-Review-Fund (PR #181): {...props} MUSS vor den invarianten Attributen
+      // gespreadet werden - SwitchProps omitted aus ComponentProps<'button'> aktuell nur
+      // onClick/role, nicht type/aria-checked/disabled. Kaeme der Spread zuletzt (wie zuvor),
+      // koennte ein Aufrufer versehentlich ueber `type`/`aria-checked`/`disabled` in den
+      // uebrigen Props die kontrollierte Switch-Semantik ueberschreiben.
+      {...props}
       type="button"
       role="switch"
       aria-checked={checked}
@@ -34,7 +40,6 @@ export function Switch({
         checked ? 'bg-accent' : 'bg-border',
         className
       )}
-      {...props}
     >
       <span
         aria-hidden="true"

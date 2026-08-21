@@ -80,6 +80,32 @@ async def test_detect_parses_a_response_with_no_identified_landmark() -> None:
     assert detection.confidence == 0.0
 
 
+async def test_detect_clamps_a_confidence_above_one_from_the_raw_api_response() -> None:
+    # Copilot-Review-Fund (PR #181): das Vision-LLM-JSON ist nicht garantiert auf [0, 1] begrenzt -
+    # LandmarkDetection.confidence muss bereits HIER (nicht erst in criteria.py::
+    # compute_landmark_score) geklemmt sein, sonst divergieren photo_landmark_detections.confidence
+    # (worker.py schreibt detection.confidence direkt) und PhotoCriterionScore.value (geklemmt ueber
+    # compute_landmark_score), obwohl beide laut ADR 0025 Punkt 6 atomar aus derselben Antwort
+    # stammen sollen.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _success_response("Eiffelturm", 1.2)
+
+    client = _client(httpx.MockTransport(handler))
+    detection = await client.detect(IMAGE_BYTES, "image/jpeg")
+
+    assert detection.confidence == 1.0
+
+
+async def test_detect_clamps_a_negative_confidence_from_the_raw_api_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _success_response("Eiffelturm", -0.3)
+
+    client = _client(httpx.MockTransport(handler))
+    detection = await client.detect(IMAGE_BYTES, "image/jpeg")
+
+    assert detection.confidence == 0.0
+
+
 async def test_detect_sends_the_expected_request_shape() -> None:
     # Realer Request-Konstruktions-Nachweis (Teststrategie: "Header, Body, Timeout=60s
     # mitgeprueft") - kein unittest.mock.patch auf .post().

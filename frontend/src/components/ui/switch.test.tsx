@@ -53,6 +53,26 @@ describe('Switch', () => {
     expect(onCheckedChange).not.toHaveBeenCalled()
   })
 
+  it('never lets a stray aria-checked/type prop override the controlled switch semantics (Copilot-Review-Fund PR #181)', () => {
+    // SwitchProps omits nur onClick/role aus ComponentProps<'button'>, nicht type/aria-checked -
+    // {...props} muss deshalb VOR den invarianten Attributen gespreadet werden, sonst koennte ein
+    // Aufrufer versehentlich die kontrollierte Semantik ueberschreiben (aktuell kein Live-Bug in
+    // ProjectSettingsPage.tsx, aber ein Robustheits-/Typsicherheitsproblem).
+    render(
+      <Switch
+        checked={true}
+        onCheckedChange={vi.fn()}
+        aria-label="Testschalter"
+        type="submit"
+        aria-checked="false"
+      />
+    )
+
+    const toggle = screen.getByRole('switch', { name: 'Testschalter' })
+    expect(toggle).toHaveAttribute('type', 'button')
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
+  })
+
   it('is at least 44px tall to satisfy the touch-target minimum', () => {
     render(<Switch checked={false} onCheckedChange={vi.fn()} aria-label="Testschalter" />)
 
