@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from github_project_sync.gh_adapter import GhAuthScopeError, ProjectFields
-from github_project_sync.hashing import push_state_hash, text_hash
-from github_project_sync.issue_body import build_issue_body
+from github_project_sync.hashing import push_state_hash, push_state_hash_inbox, text_hash
+from github_project_sync.issue_body import build_inbox_issue_body, build_issue_body
 from github_project_sync.spec_parser import parse_spec_file
 from github_project_sync.state import load_state
 from github_project_sync.sync import OrphanCleanup, SyncError, run_sync
@@ -23,6 +23,16 @@ def _spec_text(number: str, title: str, status: str, ziel: str = "Foo.") -> str:
         f"**Erstellt:** 2026-08-09\n"
         f"**Bezug:** (keiner)\n\n"
         f"## Ziel\n\n{ziel}\n"
+    )
+
+
+def _inbox_text(number: str, title: str, status: str, typ: str, rohtext: str = "Foo.") -> str:
+    return (
+        f"# {number} - {title}\n\n"
+        f"**Typ:** {typ}\n"
+        f"**Erfasst:** 2026-08-09\n"
+        f"**Status:** {status}\n\n"
+        f"## Rohtext\n\n{rohtext}\n"
     )
 
 
@@ -43,6 +53,9 @@ def _make_repo(
     specs: dict[str, str],
     roadmap: str,
     state: dict | None = None,
+    inbox: dict[str, str] | None = None,
+    inbox_state: dict | None = None,
+    legacy_flat_state: dict | None = None,
 ) -> Path:
     repo_root = tmp_path / "repo"
     features_dir = repo_root / "specs" / "features"
@@ -50,9 +63,19 @@ def _make_repo(
     for number, text in specs.items():
         (features_dir / f"{number}-x.md").write_text(text, encoding="utf-8")
     (repo_root / "specs" / "roadmap.md").write_text(roadmap, encoding="utf-8")
-    if state is not None:
+    if inbox:
+        inbox_dir = repo_root / "specs" / "inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        for number, text in inbox.items():
+            (inbox_dir / f"{number}-x.md").write_text(text, encoding="utf-8")
+    if legacy_flat_state is not None:
         (repo_root / "specs" / ".github-sync-state.json").write_text(
-            json.dumps(state), encoding="utf-8"
+            json.dumps(legacy_flat_state), encoding="utf-8"
+        )
+    elif state is not None or inbox_state is not None:
+        (repo_root / "specs" / ".github-sync-state.json").write_text(
+            json.dumps({"features": state or {}, "inbox": inbox_state or {}}),
+            encoding="utf-8",
         )
     return repo_root
 
@@ -86,8 +109,8 @@ def test_created_case_creates_issue_item_and_state_entry(tmp_path: Path) -> None
     assert issue.state == "open"
 
     state = load_state(repo_root / "specs" / ".github-sync-state.json")
-    assert state["0031"].issue_number == 1
-    assert state["0031"].item_id in gh.items
+    assert state.features["0031"].issue_number == 1
+    assert state.features["0031"].item_id in gh.items
 
 
 def test_created_case_sets_status_and_priority_fields(tmp_path: Path) -> None:
@@ -447,7 +470,7 @@ def test_marker_mismatch_aborts_only_that_spec(tmp_path: Path) -> None:
 
     # State fuer die abgebrochene Spec bleibt unveraendert (kein Zweit-Issue angelegt):
     state = load_state(repo_root / "specs" / ".github-sync-state.json")
-    assert state["0031"].issue_number == 42
+    assert state.features["0031"].issue_number == 42
 
 
 def test_marker_number_mismatch_also_aborts(tmp_path: Path) -> None:
@@ -499,7 +522,7 @@ def test_deleted_spec_file_closes_issue_and_removes_state_entry(tmp_path: Path) 
     assert gh.issue(42).comments == ["Spec-Datei wurde entfernt."]
 
     state = load_state(repo_root / "specs" / ".github-sync-state.json")
-    assert "0031" not in state
+    assert "0031" not in state.features
 
 
 def test_only_filter_processes_single_spec_and_skips_orphan_cleanup(tmp_path: Path) -> None:
@@ -579,8 +602,8 @@ def test_abort_mid_run_keeps_state_of_already_processed_specs(tmp_path: Path) ->
         run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
 
     state = load_state(repo_root / "specs" / ".github-sync-state.json")
-    assert "0031" in state
-    assert "0032" not in state
+    assert "0031" in state.features
+    assert "0032" not in state.features
 
 
 def test_state_file_missing_roadmap_still_syncs_with_empty_priorities(tmp_path: Path) -> None:
@@ -645,4 +668,477 @@ def test_invalid_status_without_prior_state_writes_no_state_entry(tmp_path: Path
     run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
 
     state = load_state(repo_root / "specs" / ".github-sync-state.json")
-    assert "0031" not in state
+    assert "0031" not in state.features
+
+
+# -- Superseded: Status-Feld leeren + Label statt Feldwert (Spec 0052 / ADR 0030, Abschnitt 2) --
+
+
+def test_superseded_status_clears_status_field_and_sets_label(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0003": _spec_text("0003", "Alte Spec", "Superseded")},
+        roadmap=_roadmap_text(),
+    )
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.specs[0].classification == "created"
+    item_id = next(iter(gh.items))
+    assert gh.items[item_id]["F_STATUS"] is None  # Feld geleert statt eines Werts
+    issue_number = result.specs[0].issue_number
+    assert issue_number is not None
+    assert "superseded" in gh.issue(issue_number).labels
+    assert gh.issue(issue_number).state == "closed"  # nativer Issue-Zustand bleibt geschlossen
+
+
+def test_superseded_label_removed_when_status_changes_back(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Superseded", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0003": _spec_text("0003", "Alte Spec", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(niedrig=[("0003", "Alte Spec")]),
+        state={
+            "0003": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(
+        42,
+        body=build_issue_body("0003", content_zone),
+        state="closed",
+        labels=frozenset({"superseded"}),
+    )
+
+    run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert "superseded" not in gh.issue(42).labels
+
+
+def test_non_superseded_status_never_gets_superseded_label(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
+    )
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    issue_number = result.specs[0].issue_number
+    assert issue_number is not None
+    assert "superseded" not in gh.issue(issue_number).labels
+
+
+# -- Inbox-Sync-Pfad (Spec 0052 / ADR 0030, Abschnitt 1/6/7/8) ---------------------------------
+
+
+def test_inbox_created_case_creates_issue_with_inbox_marker_and_unrefined_status(
+    tmp_path: Path,
+) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={"0029": _inbox_text("0029", "Release-please flakiness", "Unrefined", "Idee")},
+    )
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert len(result.inbox) == 1
+    inbox_result = result.inbox[0]
+    assert inbox_result.classification == "created"
+
+    issue = gh.issue(inbox_result.issue_number)
+    assert issue.title == "[inbox/0029] Release-please flakiness"
+    assert issue.body.startswith("<!-- photosort-inbox: 0029 -->")
+    assert issue.state == "open"  # Unrefined = offener Issue-Zustand
+    assert "idee" in issue.labels
+
+    item_id = next(iter(gh.items))
+    assert gh.items[item_id]["F_STATUS"] == "S_Unrefined"
+    assert "F_PRIO" not in gh.items[item_id]  # Prioritaet nie gesetzt, nicht aktiv geleert
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.inbox["0029"].issue_number == inbox_result.issue_number
+
+
+def test_inbox_bug_type_reuses_existing_bug_label_no_duplicate(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={"0029": _inbox_text("0029", "Titel", "Unrefined", "Bug (vermeintlich)")},
+    )
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    # "bug" existierte bereits im (Fake-)Repo - ensure_label darf es nicht doppelt anlegen:
+    assert gh.ensure_label_calls.count("bug") <= 1
+    issue_number = result.inbox[0].issue_number
+    assert issue_number is not None
+    assert "bug" in gh.issue(issue_number).labels
+
+
+def test_inbox_unknown_typ_yields_non_fatal_aborted_reason(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={"0029": _inbox_text("0029", "Titel", "Unrefined", "Voellig unbekannt")},
+    )
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.inbox[0].classification is None
+    assert result.inbox[0].aborted_reason is not None
+    assert "Typ" in result.inbox[0].aborted_reason
+
+
+def test_inbox_status_other_than_unrefined_yields_non_fatal_aborted_reason(
+    tmp_path: Path,
+) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={"0029": _inbox_text("0029", "Titel", "Proposed", "Idee")},
+    )
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.inbox[0].classification is None
+    assert result.inbox[0].aborted_reason is not None
+    assert "Status" in result.inbox[0].aborted_reason
+
+
+def test_inbox_pushed_case_updates_issue_body_from_inbox_file(tmp_path: Path) -> None:
+    content_zone = "## Rohtext\n\nAlter Text.\n"
+    old_push_hash = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone=content_zone)
+    old_pull_hash = text_hash(content_zone)
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={"0029": _inbox_text("0029", "Titel", "Unrefined", "Idee", rohtext="Neuer Text.")},
+        inbox_state={
+            "0029": _existing_state_entry(
+                issue_number=99, push_hash=old_push_hash, pull_hash=old_pull_hash
+            )
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(99, body=build_inbox_issue_body("0029", content_zone))
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.inbox[0].classification == "pushed"
+    assert "Neuer Text." in gh.issue(99).body
+
+
+def test_inbox_pulled_case_writes_issue_content_into_inbox_file(tmp_path: Path) -> None:
+    from github_project_sync.inbox_parser import parse_inbox_file
+
+    content_zone = "## Rohtext\n\nAlter Text.\n"
+    push_hash = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone=content_zone)
+    old_pull_hash = text_hash(content_zone)
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={"0029": _inbox_text("0029", "Titel", "Unrefined", "Idee", rohtext="Alter Text.")},
+        inbox_state={
+            "0029": _existing_state_entry(
+                issue_number=99, push_hash=push_hash, pull_hash=old_pull_hash
+            )
+        },
+    )
+    gh = FakeGhAdapter()
+    new_remote_zone = "## Rohtext\n\nVon Daniel im Issue geändert.\n"
+    gh.seed_issue(99, body=build_inbox_issue_body("0029", new_remote_zone))
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.inbox[0].classification == "pulled"
+    updated = parse_inbox_file(repo_root / "specs" / "inbox" / "0029-x.md")
+    assert "Von Daniel im Issue geändert." in updated.content_zone
+    assert updated.status == "Unrefined"  # Metadaten-Block unangetastet
+
+
+def test_inbox_conflict_case_touches_neither_side(tmp_path: Path) -> None:
+    content_zone = "## Rohtext\n\nAlter Text.\n"
+    push_hash = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone=content_zone)
+    old_pull_hash = text_hash(content_zone)
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={
+            "0029": _inbox_text("0029", "Titel", "Unrefined", "Idee", rohtext="Lokal geändert.")
+        },
+        inbox_state={
+            "0029": _existing_state_entry(
+                issue_number=99, push_hash=push_hash, pull_hash=old_pull_hash
+            )
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(99, body=build_inbox_issue_body("0029", "## Rohtext\n\nAuf GitHub geändert.\n"))
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.inbox[0].classification == "conflict"
+    assert result.inbox[0].conflict is not None
+
+
+def test_inbox_marker_mismatch_aborts_only_that_entry(tmp_path: Path) -> None:
+    content_zone = "## Rohtext\n\nText.\n"
+    push_hash = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={"0029": _inbox_text("0029", "Titel", "Unrefined", "Idee", rohtext="Text.")},
+        inbox_state={
+            "0029": _existing_state_entry(
+                issue_number=99, push_hash=push_hash, pull_hash=pull_hash
+            )
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(99, body="Kein Marker hier.\n\n## Rohtext\n\nText.\n")
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.inbox[0].classification is None
+    assert result.inbox[0].aborted_reason is not None
+
+
+# -- Nummernkollision inbox/NNNN vs. features/NNNN (real vorkommend) --------------------------
+
+
+def test_number_collision_between_inbox_and_feature_creates_two_separate_issues(
+    tmp_path: Path,
+) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0004": _spec_text("0004", "Feature Vier", "Accepted")},
+        roadmap=_roadmap_text(niedrig=[("0004", "Feature Vier")]),
+        inbox={"0004": _inbox_text("0004", "Inbox Vier", "Unrefined", "Idee")},
+    )
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.specs[0].classification == "created"
+    assert result.inbox[0].classification == "created"
+    assert result.specs[0].issue_number != result.inbox[0].issue_number
+
+    feature_issue = gh.issue(result.specs[0].issue_number)
+    inbox_issue = gh.issue(result.inbox[0].issue_number)
+    assert feature_issue.body.startswith("<!-- photosort-spec: 0004 -->")
+    assert inbox_issue.body.startswith("<!-- photosort-inbox: 0004 -->")
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.features["0004"].issue_number == result.specs[0].issue_number
+    assert state.inbox["0004"].issue_number == result.inbox[0].issue_number
+
+
+# -- Orphan-Cleanup symmetrisch fuer Inbox (Spec 0052, ADR 0030 Abschnitt 7) -------------------
+
+
+def test_deleted_inbox_file_closes_issue_and_removes_state_entry(tmp_path: Path) -> None:
+    content_zone = "## Rohtext\n\nText.\n"
+    push_hash = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={},
+        inbox_state={
+            "0029": _existing_state_entry(
+                issue_number=99, push_hash=push_hash, pull_hash=pull_hash
+            )
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(99, body=build_inbox_issue_body("0029", content_zone))
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.orphaned_inbox == [OrphanCleanup(number="0029", issue_number=99)]
+    assert gh.issue(99).state == "closed"
+    assert gh.issue(99).comments == ["Inbox-Eintrag wurde entfernt."]
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert "0029" not in state.inbox
+
+
+# -- --only NNNN vs. --only inbox:NNNN Regressions-Paar ----------------------------------------
+
+
+def test_only_bare_number_scopes_to_feature_only_skips_inbox(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Feature", "Accepted")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Feature")]),
+        inbox={"0029": _inbox_text("0029", "Inbox", "Unrefined", "Idee")},
+    )
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, only="0031", now=lambda: _FIXED_NOW)
+
+    assert len(result.specs) == 1
+    assert result.specs[0].number == "0031"
+    assert result.inbox == []
+
+
+def test_only_inbox_prefixed_scopes_to_inbox_only_skips_features(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Feature", "Accepted")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Feature")]),
+        inbox={"0029": _inbox_text("0029", "Inbox", "Unrefined", "Idee")},
+    )
+    gh = FakeGhAdapter()
+
+    result = run_sync(repo_root=repo_root, gh=gh, only="inbox:0029", now=lambda: _FIXED_NOW)
+
+    assert result.specs == []
+    assert len(result.inbox) == 1
+    assert result.inbox[0].number == "0029"
+
+
+def test_only_inbox_filter_raises_for_unknown_inbox_number(tmp_path: Path) -> None:
+    repo_root = _make_repo(tmp_path, specs={}, roadmap=_roadmap_text())
+    gh = FakeGhAdapter()
+
+    with pytest.raises(SyncError):
+        run_sync(repo_root=repo_root, gh=gh, only="inbox:9999", now=lambda: _FIXED_NOW)
+
+
+# -- --supersede-inbox (Spec 0052, ADR 0030 Abschnitt 7) ---------------------------------------
+
+
+def test_supersede_inbox_closes_inbox_issue_with_linking_comment(tmp_path: Path) -> None:
+    content_zone = "## Rohtext\n\nText.\n"
+    push_hash = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0052": _spec_text("0052", "Neue Spec", "Accepted")},
+        roadmap=_roadmap_text(niedrig=[("0052", "Neue Spec")]),
+        inbox_state={
+            "0028": _existing_state_entry(
+                issue_number=88, push_hash=push_hash, pull_hash=pull_hash
+            )
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(88, body=build_inbox_issue_body("0028", content_zone))
+
+    result = run_sync(
+        repo_root=repo_root, gh=gh, only="0052", supersede_inbox="0028", now=lambda: _FIXED_NOW
+    )
+
+    assert result.specs[0].classification == "created"
+    new_issue_number = result.specs[0].issue_number
+    assert new_issue_number is not None
+
+    assert gh.issue(88).state == "closed"
+    assert gh.issue(88).comments
+    assert f"#{new_issue_number}" in gh.issue(88).comments[0]
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert "0028" not in state.inbox
+
+
+def test_supersede_inbox_raises_clear_error_when_no_state_entry_exists(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0052": _spec_text("0052", "Neue Spec", "Accepted")},
+        roadmap=_roadmap_text(niedrig=[("0052", "Neue Spec")]),
+    )
+    gh = FakeGhAdapter()
+
+    with pytest.raises(SyncError):
+        run_sync(
+            repo_root=repo_root,
+            gh=gh,
+            only="0052",
+            supersede_inbox="9999",
+            now=lambda: _FIXED_NOW,
+        )
+
+
+def test_supersede_inbox_requires_feature_only_scope(tmp_path: Path) -> None:
+    content_zone = "## Rohtext\n\nText.\n"
+    push_hash = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        inbox={"0029": _inbox_text("0029", "Titel", "Unrefined", "Idee")},
+        inbox_state={
+            "0028": _existing_state_entry(
+                issue_number=88, push_hash=push_hash, pull_hash=pull_hash
+            )
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(88, body=build_inbox_issue_body("0028", content_zone))
+
+    with pytest.raises(SyncError):
+        run_sync(
+            repo_root=repo_root,
+            gh=gh,
+            only="inbox:0029",
+            supersede_inbox="0028",
+            now=lambda: _FIXED_NOW,
+        )
+
+
+# -- State-Datei-Migration End-to-End (altes flaches Format -> voller Lauf -> neues Format) ----
+
+
+def test_full_run_over_legacy_flat_state_does_not_reclassify_as_created(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
+        legacy_flat_state={
+            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.specs[0].classification == "unchanged"  # nicht faelschlich "created"
+
+    raw = json.loads((repo_root / "specs" / ".github-sync-state.json").read_text(encoding="utf-8"))
+    assert set(raw.keys()) == {"features", "inbox"}
+    assert raw["features"]["0031"]["issue_number"] == 42
