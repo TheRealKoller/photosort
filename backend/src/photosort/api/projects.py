@@ -80,6 +80,15 @@ class CriterionScoringRunSummary(BaseModel):
     error_message: str | None
 
 
+class CloudLandmarkConsentUpdate(BaseModel):
+    enabled: bool
+
+
+class CloudLandmarkConsentOut(BaseModel):
+    cloud_landmark_detection_enabled: bool
+    cloud_landmark_consent_at: datetime | None
+
+
 class ScoreCriteriaRequest(BaseModel):
     """specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md: kein
     top_n_per_cluster-Parameter mehr (ersetzt durch `scoring_run_id` - der Client uebergibt die
@@ -105,6 +114,12 @@ class ProjectOut(BaseModel):
     # Frontend-Verfuegbarkeitsgate proaktiv aus den ohnehin bereits geladenen Projektdaten dieser
     # Seite ableiten kann (UI/UX-Abschnitt der Spec), statt erst nach einem fehlgeschlagenen 403.
     category_selection_enabled: bool
+    # Projektweiter Einwilligungs-Schalter fuer die Cloud-Sehenswuerdigkeit-Erkennung
+    # (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-
+    # landmark-erkennung.md Punkt 5) - hier statt in einem eigenen GET exponiert, damit die neue
+    # ProjectSettingsPage den aktuellen Zustand aus den bereits geladenen Projektdaten lesen kann.
+    cloud_landmark_detection_enabled: bool
+    cloud_landmark_consent_at: datetime | None
 
 
 async def _latest_scan_run(session: AsyncSession, project_id: int) -> ScanRun | None:
@@ -159,6 +174,8 @@ async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut
             else None
         ),
         category_selection_enabled=settings.category_selection_enabled,
+        cloud_landmark_detection_enabled=project.cloud_landmark_detection_enabled,
+        cloud_landmark_consent_at=project.cloud_landmark_consent_at,
     )
 
 
@@ -308,3 +325,32 @@ async def trigger_score_criteria(
 
     await enqueuer.enqueue_job("score_criteria", project_id, payload.scoring_run_id)
     return {"status": "queued"}
+
+
+@router.put("/{project_id}/cloud-landmark-consent", response_model=CloudLandmarkConsentOut)
+async def set_cloud_landmark_consent(
+    project_id: int,
+    payload: CloudLandmarkConsentUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> CloudLandmarkConsentOut:
+    """specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR
+    decisions/0025-cloud-landmark-erkennung.md Punkt 5: `PUT` statt `POST`, da ein Zustand
+    gesetzt wird statt ein Job ausgeloest (Vorbild: `PUT /photos/{id}/rating`, nicht
+    `POST /projects/{id}/score`). Haengt am bestehenden router-weiten Auth-Torwaechter (Muss-
+    Kriterium der Spec, kein zusaetzlicher `Depends(get_current_user)` hier noetig). Setzt
+    synchron `cloud_landmark_consent_at` (Zeitstempel bei Aktivierung, `NULL` bei Deaktivierung) -
+    kein "nur beim ersten Mal"-Sonderfall, ein wiederholtes Aktivieren aktualisiert den
+    Zeitstempel jedes Mal erneut."""
+    project = await _get_project_or_404(project_id, session)
+
+    project.cloud_landmark_detection_enabled = payload.enabled
+    project.cloud_landmark_consent_at = (
+        datetime.now(UTC).replace(tzinfo=None) if payload.enabled else None
+    )
+    await session.commit()
+    await session.refresh(project)
+
+    return CloudLandmarkConsentOut(
+        cloud_landmark_detection_enabled=project.cloud_landmark_detection_enabled,
+        cloud_landmark_consent_at=project.cloud_landmark_consent_at,
+    )
