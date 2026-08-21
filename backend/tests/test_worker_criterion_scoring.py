@@ -1779,12 +1779,21 @@ class RecordingLandmarkClient:
         )
         self._raise_error = raise_error
         self.calls: list[tuple[bytes, str]] = []
+        # Review-Fund (ship-feature-Runde): kein bisheriger Fake bot aclose() an, der
+        # worker.py::run_criterion_scoring's `getattr(landmark_client, "aclose", None)`-Zweig
+        # nahm deshalb immer den None-Pfad - ein versehentlich falsch benannter/entfernter Aufruf
+        # waere unbemerkt geblieben. Zaehlt Aufrufe statt nur bool, damit ein Doppel-Close
+        # ebenfalls auffiele.
+        self.aclose_calls = 0
 
     async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
         self.calls.append((image_bytes, mime_type))
         if self._raise_error:
             raise LandmarkApiError("simulierter Cloud-Fehler")
         return self._detection
+
+    async def aclose(self) -> None:
+        self.aclose_calls += 1
 
 
 class ConcurrencyTrackingLandmarkClient:
@@ -1921,6 +1930,10 @@ async def test_consent_enabled_sends_a_landscape_photo_to_the_landmark_client(
     image_bytes, mime_type = client.calls[0]
     assert mime_type == "image/jpeg"
     assert image_bytes  # echte Bilddaten, kein leerer Platzhalter
+    # Review-Fund (ship-feature-Runde): run_criterion_scoring muss einen vom Client angebotenen
+    # aclose() tatsaechlich aufrufen (Ressourcen-Cleanup des echten httpx.AsyncClient), genau
+    # einmal - kein Doppel-Close.
+    assert client.aclose_calls == 1
 
     criteria = {
         c.criterion_key: c
@@ -2140,6 +2153,8 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
 
     assert run.status == ScanStatus.SUCCESS  # best-effort, kein Laufabbruch
     assert len(failing_client.calls) == 1
+    # aclose() muss auch dann laufen, wenn der Cloud-Aufruf selbst fehlschlaegt (finally-Block).
+    assert failing_client.aclose_calls == 1
     criteria_keys = {
         c.criterion_key
         for c in (

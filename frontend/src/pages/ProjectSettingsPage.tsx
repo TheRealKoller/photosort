@@ -66,8 +66,11 @@ export function ProjectSettingsPage() {
       </header>
 
       <div className="flex flex-col gap-4 rounded-md border border-border p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+        {/* flex-wrap + min-w-0 auf der Label-Gruppe (Review-Fund, ship-feature-Runde): auf sehr
+            engen Viewports (<400px) soll das lange, zusammengesetzte Label auf eine eigene Zeile
+            umbrechen koennen, statt den Switch aus der Zeile zu draengen/zu ueberlappen. */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
             <span id="cloud-landmark-consent-label" className="font-medium text-text-h">
               Cloud-Sehenswürdigkeit-Erkennung
             </span>
