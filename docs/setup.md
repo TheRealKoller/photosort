@@ -23,6 +23,17 @@ cd backend && pytest
 cd frontend && npm test
 ```
 
+## Cloud-Sehenswürdigkeit-Erkennung (optional)
+
+Das Kriterium "Sehenswürdigkeit" (`landmark`, siehe [`specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md`](../specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md), [`specs/decisions/0025-cloud-landmark-erkennung.md`](../specs/decisions/0025-cloud-landmark-erkennung.md)) ist die einzige Stelle im Projekt, an der Fotos den Homeserver verlassen — ein direkter `httpx`-Aufruf gegen die Anthropic Messages API. Für den Quick-Start/Demo-Stack **nicht nötig**: das Kriterium ist projektweit per Default deaktiviert (Einwilligungs-Schalter auf der Projekteinstellungsseite, `PUT /projects/{id}/cloud-landmark-consent`), ohne aktivierte Einwilligung wird `ANTHROPIC_API_KEY` nie ausgelesen und kein Netzwerkaufruf ausgeführt.
+
+Um das Kriterium tatsächlich zu nutzen, in `.env`:
+
+- `ANTHROPIC_API_KEY` auf einen echten Anthropic-API-Key setzen (leer = Feature bleibt für alle Projekte unbenutzbar, auch bei aktivierter Einwilligung schlägt der Aufruf dann fehl).
+- Optional `LANDMARK_API_CONCURRENCY` (Default `2`) anpassen — Obergrenze der parallelen Anthropic-Anfragen, bewusst konservativ wegen realer Kosten pro Anfrage und externem Rate-Limit.
+
+Danach die Einwilligung für das jeweilige Projekt einmalig über die neue Settings-Seite (`/projects/:id/settings`) aktivieren.
+
 ## Lokal ausprobieren ohne echten OpenCloud-Server
 
 Für einen ersten Eindruck (Ordner-Browsing, Foto-Scan, automatische Bewertung) braucht es keinen
