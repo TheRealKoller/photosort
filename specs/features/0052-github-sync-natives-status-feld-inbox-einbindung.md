@@ -1,6 +1,6 @@
 # 0052 - GitHub-Sync: natives Status-Feld statt Custom-Field, Inbox-Einbindung
 
-**Status:** Accepted
+**Status:** Implemented ([PR #173](https://github.com/TheRealKoller/photosort/pull/173))
 **Erstellt:** 2026-08-21
 **Bezug:** [`inbox/0028-github-sync-status-feld-und-inbox.md`](../inbox/0028-github-sync-status-feld-und-inbox.md), Feature [`0031`](./0031-zweiwege-sync-specs-github-projekt.md) (Implemented), ADR [`decisions/0017-github-projects-v2-spec-sync.md`](../decisions/0017-github-projects-v2-spec-sync.md) (Abschnitt 3 teilweise abgelöst, übrige Abschnitte weiter gültig), ADR [`decisions/0030-github-sync-natives-status-feld-inbox-einbindung.md`](../decisions/0030-github-sync-natives-status-feld-inbox-einbindung.md), `idea-sharpener`-Konsultation mit Daniel am 2026-08-21
 
