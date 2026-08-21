@@ -14,6 +14,10 @@
 // generische Fallback unten deckt alle unbekannten/kuenftigen Keys weiterhin ab.
 const CATEGORY_DISPLAY_NAME_OVERRIDES: Readonly<Record<string, string>> = {
   gebaeude: 'Gebäude',
+  // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: Sonderzeichen-Bedarf
+  // (Umlaut) wie "gebaeude" oben - der generische Fallback koennte "Sehenswürdigkeit" nicht aus
+  // dem rohen category_key "landmark" ableiten.
+  landmark: 'Sehenswürdigkeit',
 }
 
 export function formatCategoryKey(categoryKey: string): string {

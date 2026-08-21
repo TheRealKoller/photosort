@@ -7,6 +7,10 @@ describe('formatCategoryKey', () => {
     expect(formatCategoryKey('gebaeude')).toBe('Gebäude')
   })
 
+  it('maps "landmark" to the German display name "Sehenswürdigkeit" (specs/features/0047)', () => {
+    expect(formatCategoryKey('landmark')).toBe('Sehenswürdigkeit')
+  })
+
   it('falls back to generic capitalization for unmapped keys like "tier"', () => {
     // "tier" hat keinen Sonderzeichen-Bedarf - der generische Fallback reicht (Spec 0045: kein
     // Mapping-Eintrag fuer jedes kuenftige Kriterium noetig).
