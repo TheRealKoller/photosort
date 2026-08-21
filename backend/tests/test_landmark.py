@@ -160,6 +160,25 @@ async def test_detect_raises_landmark_api_error_on_missing_content_block() -> No
         await client.detect(IMAGE_BYTES, "image/jpeg")
 
 
+async def test_detect_raises_landmark_api_error_when_name_is_not_a_string() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        text = json.dumps({"name": 42, "confidence": 0.5})
+        return httpx.Response(200, json={"content": [{"type": "text", "text": text}]})
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(LandmarkApiError):
+        await client.detect(IMAGE_BYTES, "image/jpeg")
+
+
+async def test_aclose_closes_the_underlying_http_client() -> None:
+    client = AnthropicLandmarkClient(
+        api_key=API_KEY, transport=httpx.MockTransport(lambda r: _success_response("x", 0.1))
+    )
+    await client.aclose()
+    assert client._client.is_closed  # Whitebox-Konfigurationsnachweis
+
+
 async def test_detect_raises_landmark_api_error_on_unexpected_top_level_shape() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=["not", "an", "object"])
