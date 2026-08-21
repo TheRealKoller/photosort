@@ -11,6 +11,7 @@ from photosort.models import (
     CriterionSource,
     Photo,
     PhotoCriterionScore,
+    PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -502,3 +503,94 @@ async def test_photo_score_duplicate_of_references_another_photo(db_session: Asy
     stored = result.scalar_one()
     assert stored.duplicate_of == kept.id
     assert stored.suggested_status == RatingStatus.REJECTED
+
+
+# specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR decisions/0025-cloud-
+# landmark-erkennung.md Punkt 5/6 ab hier: projektweiter Einwilligungs-Schalter + neue,
+# dedizierte Tabelle fuer den erkannten Landmark-Namen.
+
+
+async def test_project_cloud_landmark_consent_defaults(db_session: AsyncSession) -> None:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.commit()
+
+    result = await db_session.execute(select(Project).where(Project.id == project.id))
+    stored = result.scalar_one()
+    assert stored.cloud_landmark_detection_enabled is False
+    assert stored.cloud_landmark_consent_at is None
+
+
+async def test_project_cloud_landmark_consent_can_be_enabled(db_session: AsyncSession) -> None:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+
+    now = datetime.now(UTC)
+    project.cloud_landmark_detection_enabled = True
+    project.cloud_landmark_consent_at = now
+    await db_session.commit()
+
+    result = await db_session.execute(select(Project).where(Project.id == project.id))
+    stored = result.scalar_one()
+    assert stored.cloud_landmark_detection_enabled is True
+    assert stored.cloud_landmark_consent_at is not None
+
+
+async def test_create_photo_landmark_detection(db_session: AsyncSession) -> None:
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoLandmarkDetection(
+            photo_id=photo.id,
+            name="Eiffelturm",
+            confidence=0.87,
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+    )
+    stored = result.scalar_one()
+    assert stored.name == "Eiffelturm"
+    assert stored.confidence == 0.87
+
+
+async def test_photo_landmark_detection_is_one_to_one_with_photo(
+    db_session: AsyncSession,
+) -> None:
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoLandmarkDetection(
+            photo_id=photo.id, name="Eiffelturm", confidence=0.87, computed_at=datetime.now(UTC)
+        )
+    )
+    await db_session.commit()
+
+    db_session.add(
+        PhotoLandmarkDetection(
+            photo_id=photo.id, name="Kolosseum", confidence=0.5, computed_at=datetime.now(UTC)
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+async def test_deleting_photo_cascades_to_landmark_detection(db_session: AsyncSession) -> None:
+    # Vorsorglich ergaenzt (specs/architecture/0002-testkonzept.md): exakt diese Art Luecke
+    # (fehlende Cascade-Relationship auf einer neuen Kind-Tabelle) trat bei Spec 0044 bereits
+    # real auf.
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoLandmarkDetection(
+            photo_id=photo.id, name="Eiffelturm", confidence=0.87, computed_at=datetime.now(UTC)
+        )
+    )
+    await db_session.commit()
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    result = await db_session.execute(select(PhotoLandmarkDetection))
+    assert result.scalars().all() == []

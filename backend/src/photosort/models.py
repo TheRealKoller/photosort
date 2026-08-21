@@ -24,6 +24,15 @@ class Project(Base):
     opencloud_drive_id: Mapped[str]
     opencloud_path: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Projektweiter Einwilligungs-Schalter fuer die Cloud-Sehenswuerdigkeit-Erkennung
+    # (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-
+    # landmark-erkennung.md Punkt 5) - Default AUS (anders als category_selection_enabled, ein
+    # rein lokales/kostenloses Feature). Projektweit statt personenbezogen (konsistent mit dem
+    # "kein Innentaeter-Modell"-Grundsatz, siehe Security-Abschnitt der Spec) - kein user_id-Bezug.
+    cloud_landmark_detection_enabled: Mapped[bool] = mapped_column(default=False)
+    # Zeitstempel, gesetzt beim Aktivieren, auf NULL zurueckgesetzt beim Deaktivieren - kein
+    # voller Audit-Log (konsistent mit ScoringRun.gate_confirmed_at, ADR 0025 Punkt 5).
+    cloud_landmark_consent_at: Mapped[datetime | None] = mapped_column(default=None)
 
     photos: Mapped[list[Photo]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
@@ -86,6 +95,11 @@ class Photo(Base):
     )
     criterion_scores: Mapped[list[PhotoCriterionScore]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
+    )
+    # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: 1:1 wie score oben,
+    # optional (nur angelegt, wenn tatsaechlich ein Landmark-Name identifiziert wurde).
+    landmark_detection: Mapped[PhotoLandmarkDetection | None] = relationship(
+        back_populates="photo", uselist=False, cascade="all, delete-orphan"
     )
 
 
@@ -319,3 +333,26 @@ class PhotoRanking(Base):
     category_key: Mapped[str]
     rank_score: Mapped[float]
     rank_position: Mapped[int]
+
+
+class PhotoLandmarkDetection(Base):
+    """Der vom Vision-LLM identifizierte Sehenswuerdigkeit-Name, 1:1 zu Photo
+    (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-
+    landmark-erkennung.md Punkt 6) - analog PhotoScore. `photo_id` ist Primary Key (kein
+    separates id+Unique-Constraint-Paar wie bei PhotoCriterionScore), weil dies eine optionale
+    Detail-Zeile pro Foto ist, kein Mehrfach-Kriterien-Fact. Nur angelegt, wenn tatsaechlich ein
+    Name identifiziert wurde (kein Platzhalter-"unbekannt"). `confidence` dupliziert bewusst den
+    zugehoerigen PhotoCriterionScore(criterion_key="landmark").value (ADR 0025 Punkt 6) - haelt
+    diese Tabelle fuer eine spaetere UI-Abfrage ohne Join selbsttragend, beide Werte stammen
+    atomar aus derselben API-Antwort (kein Divergenzrisiko). Kein UI-Verweis in v1 - reine
+    Persistenz-Vorbereitung, vermeidet einen spaeteren, erneut kostenpflichtigen Cloud-Durchlauf
+    aller bereits gescorten Fotos, falls der Name doch einmal angezeigt werden soll."""
+
+    __tablename__ = "photo_landmark_detections"
+
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), primary_key=True)
+    name: Mapped[str]
+    confidence: Mapped[float]
+    computed_at: Mapped[datetime]
+
+    photo: Mapped[Photo] = relationship(back_populates="landmark_detection")
