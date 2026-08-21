@@ -15,6 +15,7 @@ Keine offenen Einträge.
 | Spec | Titel | Status |
 |---|---|---|
 | [0047](./features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) | Sehenswürdigkeit-Erkennung (Landmark) via Cloud-Vision-API (Anthropic) | Accepted |
+| [0052](./features/0052-github-sync-natives-status-feld-inbox-einbindung.md) | GitHub-Sync: natives Status-Feld statt Custom-Field, Inbox-Einbindung | Accepted |
 
 ### Offen — Niedrig
 
