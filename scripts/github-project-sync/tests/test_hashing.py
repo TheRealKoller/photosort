@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from github_project_sync.hashing import normalize_text, push_state_hash, text_hash
+from github_project_sync.hashing import (
+    normalize_text,
+    push_state_hash,
+    push_state_hash_inbox,
+    text_hash,
+)
 
 
 def test_normalize_text_converts_crlf_to_lf() -> None:
@@ -58,6 +63,43 @@ def test_push_state_hash_stable_under_crlf_and_trailing_whitespace_normalization
     h1 = push_state_hash(status="Accepted", priority="Niedrig", content_zone="## Ziel\n\nfoo\n")
     h2 = push_state_hash(
         status="Accepted", priority="Niedrig", content_zone="## Ziel\r\n\r\nfoo   \r\n"
+    )
+
+    assert h1 == h2
+
+
+# -- push_state_hash_inbox() (neu in Spec 0052 - Inbox-Eintraege haben keine Prioritaet, dafuer
+# einen Typ; ein eigener, benannter Parameter ("typ" statt der irrefuehrenden Wiederverwendung
+# von "priority") ist klarer als eine Umdeutung des bestehenden push_state_hash()-Parameters. ---
+
+
+def test_push_state_hash_inbox_changes_with_status() -> None:
+    h1 = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone="## Rohtext\n\nfoo\n")
+    h2 = push_state_hash_inbox(status="Proposed", typ="Idee", content_zone="## Rohtext\n\nfoo\n")
+
+    assert h1 != h2
+
+
+def test_push_state_hash_inbox_changes_with_typ() -> None:
+    h1 = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone="## Rohtext\n\nfoo\n")
+    h2 = push_state_hash_inbox(
+        status="Unrefined", typ="Bug (vermeintlich)", content_zone="## Rohtext\n\nfoo\n"
+    )
+
+    assert h1 != h2
+
+
+def test_push_state_hash_inbox_changes_with_content() -> None:
+    h1 = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone="## Rohtext\n\nfoo\n")
+    h2 = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone="## Rohtext\n\nbar\n")
+
+    assert h1 != h2
+
+
+def test_push_state_hash_inbox_stable_under_normalization() -> None:
+    h1 = push_state_hash_inbox(status="Unrefined", typ="Idee", content_zone="## Rohtext\n\nfoo\n")
+    h2 = push_state_hash_inbox(
+        status="Unrefined", typ="Idee", content_zone="## Rohtext\r\n\r\nfoo   \r\n"
     )
 
     assert h1 == h2
