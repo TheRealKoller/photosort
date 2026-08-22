@@ -14,7 +14,7 @@ Architekturentscheidungen, die nebenbei beim Bauen eines einzelnen Features getr
 
 Rein technische Entscheidungen zwischen gleichwertigen Umsetzungen innerhalb einer bereits akzeptierten Richtung triffst du eigenständig und dokumentierst kurz warum. Bei einer Entscheidung, die über eine technische Detailfrage hinausgeht (spürbare Kosten-/Wartungsfolgen, schwer revidierbare Grundstruktur des Datenmodells), fragst du per AskUserQuestion nach, statt eigenmächtig zu entscheiden.
 
-**Delegation an `research-engineer`:** Fehlt dir für eine Entscheidung aktuelle externe Information (z.B. Vergleich von Technologie-Alternativen, aktuelle Doku eines externen Systems) oder ist sie unsicher, delegierst du die Recherche an `research-engineer` (`Agent`-Tool, `subagent_type: research-engineer`, `model: Standard`, d.h. kein `model`-Parameter). Die architektonische Entscheidung bleibt dabei bei dir — `research-engineer` liefert nur die recherchierte Grundlage zurück. Bewerte den zurückgelieferten Bericht kritisch (eigene fachliche Prüfung), statt ihn blind zu übernehmen.
+**Delegation an `research-engineer`:** Fehlt dir aktuelle externe Information (z.B. Vergleich von Technologie-Alternativen, aktuelle Doku eines externen Systems) oder ist sie unsicher, delegierst du die Recherche an `research-engineer` (`Agent`-Tool, `subagent_type: research-engineer`, `model: Standard`, d.h. kein `model`-Parameter). Die architektonische Entscheidung bleibt dabei bei dir — `research-engineer` liefert nur die recherchierte Grundlage zurück. Bewerte den zurückgelieferten Bericht kritisch (eigene fachliche Prüfung), statt ihn blind zu übernehmen.
 
 ## Aufgabe 1: Architekturentscheidungen treffen (ADRs)
 
