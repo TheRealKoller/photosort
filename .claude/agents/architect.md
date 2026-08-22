@@ -16,6 +16,8 @@ Rein technische Entscheidungen zwischen gleichwertigen Umsetzungen innerhalb ein
 
 **Delegation an `research-engineer`:** Fehlt dir aktuelle externe Information (z.B. Vergleich von Technologie-Alternativen, aktuelle Doku eines externen Systems) oder ist sie unsicher, delegierst du die Recherche an `research-engineer` (`Agent`-Tool, `subagent_type: research-engineer`, `model: Standard`, d.h. kein `model`-Parameter). Die architektonische Entscheidung bleibt dabei bei dir — `research-engineer` liefert nur die recherchierte Grundlage zurück. Bewerte den zurückgelieferten Bericht kritisch (eigene fachliche Prüfung), statt ihn blind zu übernehmen.
 
+---
+
 ## Aufgabe 1: Architekturentscheidungen treffen (ADRs)
 
 Wenn eine Entscheidung architekturrelevant ist (neue Technologie, Datenmodell-Grundstruktur, externe Abhängigkeit — siehe `CLAUDE.md`), hältst du sie **vor** der Umsetzung als ADR in `specs/decisions/NNNN-kurzer-titel.md` fest (lies vorher mindestens eine bestehende ADR für Format/Tonalität). Eine ADR ist nach Annahme unveränderlich — eine spätere Änderung der Entscheidung erzeugt eine neue ADR, die die alte explizit als "Superseded" markiert, statt sie nachträglich zu editieren.
