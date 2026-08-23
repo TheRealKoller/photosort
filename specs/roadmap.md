@@ -12,7 +12,9 @@ Keine offenen Einträge.
 
 ### Offen — Mittel
 
-Keine offenen Einträge.
+| Spec | Titel | Status |
+|---|---|---|
+| [0055](./features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) | Remote-Kategorie-Klassifizierung (PEOPLE/LANDSCAPE/DETAIL) mit Cloud-Vision-API und Kostenschätzung | Accepted |
 
 ### Offen — Niedrig
 
