@@ -105,7 +105,8 @@ class Settings(BaseSettings):
     landmark_provider: Literal["anthropic", "mistral"] = "anthropic"
 
     # Exakt das anthropic_api_key-Muster (Secret nur ueber Env-Variable, nie eingecheckt, kein
-    # Format-Check) - nur ausgelesen, wenn landmark_provider == "mistral".
+    # Format-Check) - der Wert wird wie jedes andere Settings-Feld beim Prozessstart eingelesen,
+    # aber nur verwendet (build_landmark_client()), wenn landmark_provider == "mistral".
     mistral_api_key: str = ""
 
 
