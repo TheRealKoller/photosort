@@ -60,7 +60,7 @@ Sicherheitsnetz für diese Tabelle: **im Zweifel läuft der Agent, und zwar mit 
 
 **Modell je aufgerufenem Agenten** (Modell-Spalte unverändert, nur die Aufrufer-Spalte ist hier aktualisiert):
 
-| Bisherige Zeile (ADR 0014, weiterhin dort so vermerkt) | Ab dieser ADR maßgebliche Zeile | Modell (unverändert) |
+| Bisherige Zuständigkeit | Jetzige Zuständigkeit | Modell (unverändert) |
 |---|---|---|
 | `developer` Schritt 1 → `architect` (Umsetzungsplanung, bei Bedarf) | Orchestrator (nach "Blockiert"-Rückmeldung von `developer`) → `architect` | Standard |
 | `developer` Schritt 4 → `test-engineer` (Review) | Orchestrator (nach `developer`-Abschlussbericht) → `test-engineer` | Standard |
