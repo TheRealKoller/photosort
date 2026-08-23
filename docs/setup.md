@@ -23,17 +23,45 @@ cd backend && pytest
 cd frontend && npm test
 ```
 
-## Cloud-Sehenswürdigkeit-Erkennung (optional)
+## Cloud-Bilderkennung (optional)
 
-Das Kriterium "Sehenswürdigkeit" (`landmark`, siehe [`specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md`](../specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md), [`specs/decisions/0025-cloud-landmark-erkennung.md`](../specs/decisions/0025-cloud-landmark-erkennung.md)) ist die einzige Stelle im Projekt, an der Fotos den Homeserver verlassen — ein direkter `httpx`-Aufruf gegen die Anthropic Messages API (Default) oder wahlweise gegen die Mistral Chat Completions API ([`specs/features/0054-mistral-provider-option-cloud-landmark.md`](../specs/features/0054-mistral-provider-option-cloud-landmark.md), [`specs/decisions/0031-mistral-provider-option-cloud-landmark.md`](../specs/decisions/0031-mistral-provider-option-cloud-landmark.md)). Für den Quick-Start/Demo-Stack **nicht nötig**: das Kriterium ist projektweit per Default deaktiviert (Einwilligungs-Schalter auf der Projekteinstellungsseite, `PUT /projects/{id}/cloud-landmark-consent`), ohne aktivierte Einwilligung wird kein API-Key verwendet und kein Netzwerkaufruf ausgeführt (die Env-Variable selbst wird wie jede andere `Settings`-Konfiguration bereits beim Prozessstart eingelesen, das ist unabhängig von Einwilligung/Provider).
+Zwei Kriterien/Funktionen verlassen den Homeserver — beide über denselben, projektweiten
+Einwilligungs-Schalter gegated (`Project.cloud_vision_detection_enabled`, Settings-Seite
+`/projects/:id/settings`): das Kriterium "Sehenswürdigkeit" (`landmark`, siehe
+[`specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md`](../specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md),
+[`specs/decisions/0025-cloud-landmark-erkennung.md`](../specs/decisions/0025-cloud-landmark-erkennung.md))
+und die optionale Remote-Kategorie-Klassifizierung (offene Schlagworte statt eines festen
+Kategorie-Enums, siehe [`specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md`](../specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md),
+[`specs/decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md`](../specs/decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md)).
+Beide sind ein direkter `httpx`-Aufruf gegen die Anthropic Messages API (Default) oder wahlweise
+gegen die Mistral Chat Completions API ([`specs/features/0054-mistral-provider-option-cloud-landmark.md`](../specs/features/0054-mistral-provider-option-cloud-landmark.md),
+[`specs/decisions/0031-mistral-provider-option-cloud-landmark.md`](../specs/decisions/0031-mistral-provider-option-cloud-landmark.md)).
+Für den Quick-Start/Demo-Stack **nicht nötig**: der Schalter ist projektweit per Default
+deaktiviert (`PUT /projects/{id}/cloud-vision-consent`), ohne aktivierte Einwilligung wird kein
+API-Key verwendet und kein Netzwerkaufruf ausgeführt (die Env-Variablen selbst werden wie jede
+andere `Settings`-Konfiguration bereits beim Prozessstart eingelesen, das ist unabhängig von
+Einwilligung/Provider). Die Remote-Kategorie-Klassifizierung braucht zusätzlich ein lokales,
+gepinntes Text-Embedding-Modell (`onnxruntime`+`tokenizers`, keine Cloud-Abhängigkeit, kein
+zusätzlicher Setup-Schritt — die Modell-Assets sind im Repository eingecheckt).
 
-Um das Kriterium tatsächlich zu nutzen, in `.env`:
+Um beide Funktionen tatsächlich zu nutzen, in `.env`:
 
-- `LANDMARK_PROVIDER` wählt den Cloud-Provider — `anthropic` (Default, USA, DPA-/Datenschutzlage geklärt siehe ADR 0025) oder `mistral` (EU-hosted Alternative, Sitz Frankreich; DPA-/Zero-Data-Retention-Lage für Privatkonten laut Recherche unklar, bewusst akzeptiertes Restrisiko siehe ADR 0031). Eine reine Betreiber-/Deployment-Entscheidung, kein Feld pro Projekt.
-- Je nach gewähltem Provider `ANTHROPIC_API_KEY` bzw. `MISTRAL_API_KEY` auf einen echten API-Key setzen (leer = Feature bleibt für alle Projekte unbenutzbar, auch bei aktivierter Einwilligung schlägt der Aufruf dann fehl).
-- Optional `LANDMARK_API_CONCURRENCY` (Default `2`) anpassen — Obergrenze der parallelen Anfragen an den gewählten Provider, bewusst konservativ wegen realer Kosten pro Anfrage und externem Rate-Limit.
+- `LANDMARK_PROVIDER` wählt den Cloud-Provider (für beide Funktionen gemeinsam, kein separates
+  Setting) — `anthropic` (Default, USA, DPA-/Datenschutzlage geklärt siehe ADR 0025) oder
+  `mistral` (EU-hosted Alternative, Sitz Frankreich; DPA-/Zero-Data-Retention-Lage für
+  Privatkonten laut Recherche unklar, bewusst akzeptiertes Restrisiko siehe ADR 0031). Eine reine
+  Betreiber-/Deployment-Entscheidung, kein Feld pro Projekt.
+- Je nach gewähltem Provider `ANTHROPIC_API_KEY` bzw. `MISTRAL_API_KEY` auf einen echten API-Key
+  setzen (leer = beide Funktionen bleiben für alle Projekte unbenutzbar, auch bei aktivierter
+  Einwilligung schlägt der Aufruf dann fehl).
+- Optional `LANDMARK_API_CONCURRENCY` (Default `2`) anpassen — Obergrenze der parallelen Anfragen
+  für `landmark`.
+- Optional `REMOTE_CATEGORY_CLASSIFICATION_CONCURRENCY` (Default `2`) anpassen — eigenständige
+  Obergrenze für die Remote-Kategorie-Klassifizierung (unabhängig von `LANDMARK_API_CONCURRENCY`,
+  da dieser Job auf einem größeren, ungefilterten Kandidatenpool läuft).
 
-Danach die Einwilligung für das jeweilige Projekt einmalig über die neue Settings-Seite (`/projects/:id/settings`) aktivieren.
+Danach die Einwilligung für das jeweilige Projekt einmalig über die Settings-Seite
+(`/projects/:id/settings`) aktivieren.
 
 ## Lokal ausprobieren ohne echten OpenCloud-Server
 
