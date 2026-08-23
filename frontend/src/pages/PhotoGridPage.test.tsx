@@ -510,4 +510,59 @@ describe('PhotoGridPage', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent('Kein erfolgreicher Ausschuss-Lauf.')
     })
   })
+
+  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt.
+  describe('category override', () => {
+    it('shows the override marker only for a photo with an active override', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({ id: 1, category_override: 'hund' }),
+          photo({ id: 2, category_override: null }),
+        ],
+        total: 2,
+      })
+
+      renderPage()
+
+      expect(await screen.findAllByRole('img')).toHaveLength(2)
+      expect(screen.getAllByLabelText('Kategorie manuell übersteuert')).toHaveLength(1)
+    })
+
+    it('overrides the category from the info popover and invalidates the photo list', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            criterion_scores: [criterionScore()],
+            ranking: {
+              cluster_key: 'cluster-0',
+              category_key: 'people',
+              rank_score: 0.5,
+              rank_position: 1,
+              partition_size: 1,
+            },
+            category_candidates: [
+              { category_key: 'hund', origin: 'remote', score: 0.9, provider: 'anthropic' },
+              { category_key: 'people', origin: 'local', score: 0.4, provider: null },
+            ],
+          }),
+        ],
+        total: 1,
+      })
+      vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
+        photo_id: 1,
+        category_key: 'hund',
+      })
+      const user = userEvent.setup()
+
+      renderPage()
+      await screen.findAllByRole('img')
+      await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+      await user.click(screen.getByRole('button', { name: /^übernehmen$/i }))
+
+      await waitFor(() =>
+        expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'hund')
+      )
+    })
+  })
 })
