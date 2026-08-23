@@ -22,6 +22,8 @@ Keine offenen Einträge.
 | [0044](./features/0044-projekte-loeschen.md) | Projekte löschen (nur PhotoSort-Daten, mit Namenseingabe-Bestätigung) | Accepted |
 | [0049](./features/0049-single-origin-api-proxy-frontend-nginx.md) | Nur Frontend nach außen exposen: Single-Origin-API-Proxy über Frontend-nginx | Accepted |
 | [0051](./features/0051-gps-landmark-cluster-bildung.md) | GPS-/Zeit-/Sehenswürdigkeits-basierte Clusterbildung mit gegenseitiger Herleitung | Accepted |
+| [0054](./features/0054-mistral-provider-option-cloud-landmark.md) | Mistral als wählbare Cloud-Provider-Alternative zu Anthropic für `landmark`-Kriterium | Accepted |
+
 ### Inbox — ungeschärfte Ideen
 
 Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf gegangen — daher keine Spec-Nummer, kein offizieller Status und keine Priorität, nur eine grobe Kurzbeschreibung zur Orientierung. Rangiert absichtlich unter allen priorisierten Einträgen: erst nach dem Schärfen ist überhaupt klar, ob, wie groß und wie dringend der Aufwand ist.
