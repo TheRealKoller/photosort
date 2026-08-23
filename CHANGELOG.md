@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/TheRealKoller/photosort/compare/v0.14.0...v0.15.0) (2026-08-23)
+
+
+### Features
+
+* **landmark:** Mistral als wählbare Cloud-Provider-Alternative für landmark-Kriterium ([#195](https://github.com/TheRealKoller/photosort/issues/195)) ([b8073fc](https://github.com/TheRealKoller/photosort/commit/b8073fc5fd942fb8d29c4d76195d6ef21c84c854))
+
 ## [0.14.0](https://github.com/TheRealKoller/photosort/compare/v0.13.0...v0.14.0) (2026-08-21)
 
 
