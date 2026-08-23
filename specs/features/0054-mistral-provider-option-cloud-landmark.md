@@ -1,6 +1,6 @@
 # 0054 - Mistral als wählbare Cloud-Provider-Alternative zu Anthropic für das `landmark`-Kriterium
 
-**Status:** Accepted
+**Status:** Implemented ([PR #195](https://github.com/TheRealKoller/photosort/pull/195))
 **Erstellt:** 2026-08-23
 **Bezug:** [`inbox/0034-bildklassifizierung-mistral-modelle.md`](../inbox/0034-bildklassifizierung-mistral-modelle.md) (Ursprung, Daniel selbst, interaktive Session), [`features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md`](./0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) (Implemented, bestehendes `landmark`-Kriterium), [`decisions/0025-cloud-landmark-erkennung.md`](../decisions/0025-cloud-landmark-erkennung.md) (Anthropic-Wahl, Punkt 1 teilweise superseded), [`decisions/0031-mistral-provider-option-cloud-landmark.md`](../decisions/0031-mistral-provider-option-cloud-landmark.md) (neue ADR dieser Spec), [`features/0035-klassifizierung-qualitaet-inhalt-recherche.md`](./0035-klassifizierung-qualitaet-inhalt-recherche.md) (Datenschutz-Recherchegrundlage Mistral).
 
