@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -93,6 +95,18 @@ class Settings(BaseSettings):
     # fehlerhaften .env-Konfiguration bereits beim Prozessstart auf, analog den beiden
     # Concurrency-Feldern oben.
     landmark_api_concurrency: int = Field(default=2, ge=1)
+
+    # Zweite, waehlbare Cloud-Provider-Option fuer das landmark-Kriterium
+    # (specs/features/0054-mistral-provider-option-cloud-landmark.md, decisions/0031-mistral-
+    # provider-option-cloud-landmark.md Punkt 3) - reine Betreiber-/Deployment-Entscheidung, kein
+    # Project-Feld/Runtime-Selektor. `Literal` statt Enum (Minimalismus-Prinzip ADR 0006,
+    # analog scan_download_concurrency-Field(ge=1) oben): pydantic validiert einen nicht
+    # unterstuetzten .env-Wert bereits beim Prozessstart (ValidationError), kein stiller Fallback.
+    landmark_provider: Literal["anthropic", "mistral"] = "anthropic"
+
+    # Exakt das anthropic_api_key-Muster (Secret nur ueber Env-Variable, nie eingecheckt, kein
+    # Format-Check) - nur ausgelesen, wenn landmark_provider == "mistral".
+    mistral_api_key: str = ""
 
 
 settings = Settings()
