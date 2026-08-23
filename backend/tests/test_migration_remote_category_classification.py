@@ -134,7 +134,13 @@ def test_migration_creates_the_three_new_tables(tmp_path: Path) -> None:
         "photo_category_detections",
         "remote_category_classification_runs",
     } <= table_names
-    assert category_label_columns == {"id", "canonical_key", "display_name", "embedding", "created_at"}
+    assert category_label_columns == {
+        "id",
+        "canonical_key",
+        "display_name",
+        "embedding",
+        "created_at",
+    }
     assert detection_columns == {
         "id",
         "photo_id",

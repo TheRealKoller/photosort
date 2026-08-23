@@ -186,3 +186,23 @@ def test_mistral_api_key_defaults_to_empty_string() -> None:
     settings = Settings(_env_file=None)
 
     assert settings.mistral_api_key == ""
+
+
+def test_remote_category_classification_concurrency_defaults_to_two() -> None:
+    # ADR 0032 Punkt 5: analog landmark_api_concurrency, aber eigenstaendig einstellbar.
+    settings = Settings(_env_file=None)
+
+    assert settings.remote_category_classification_concurrency == 2
+
+
+def test_remote_category_classification_concurrency_is_env_overridable() -> None:
+    settings = Settings(_env_file=None, remote_category_classification_concurrency=8)
+
+    assert settings.remote_category_classification_concurrency == 8
+
+
+def test_remote_category_classification_concurrency_rejects_non_positive_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, remote_category_classification_concurrency=0)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, remote_category_classification_concurrency=-1)

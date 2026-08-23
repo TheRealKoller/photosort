@@ -17,9 +17,11 @@ from photosort import worker
 from photosort.criteria import CATEGORY_DETAIL
 from photosort.landmark import LandmarkApiError, LandmarkDetection
 from photosort.models import (
+    CategoryLabel,
     CriterionScoringRun,
     CriterionSource,
     Photo,
+    PhotoCategoryDetection,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
     PhotoRanking,
@@ -2372,3 +2374,148 @@ async def test_cancelled_error_from_a_parallel_landmark_call_propagates_and_fail
     run_row = result.scalars().first()
     assert run_row is not None
     assert run_row.status == ScanStatus.FAILED
+
+
+# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 1
+# ab hier: Remote-Label-Merge VOR derive_active_categories/derive_category_key + category_override.
+
+
+async def _add_category_label(
+    session: AsyncSession, *, canonical_key: str = "hund", display_name: str = "Hund"
+) -> CategoryLabel:
+    label = CategoryLabel(
+        canonical_key=canonical_key, display_name=display_name, embedding=[0.0] * 384
+    )
+    session.add(label)
+    await session.commit()
+    await session.refresh(label)
+    return label
+
+
+async def _add_category_detection(
+    session: AsyncSession, photo: Photo, label: CategoryLabel, *, confidence: float = 0.9
+) -> None:
+    session.add(
+        PhotoCategoryDetection(
+            photo_id=photo.id,
+            category_label_id=label.id,
+            raw_label=label.display_name,
+            confidence=confidence,
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await session.commit()
+
+
+async def test_remote_labels_are_merged_before_deriving_categories(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Kann NUR gruen sein, wenn _merge_remote_category_labels tatsaechlich VOR dem
+    # derive_active_categories/derive_category_key-Aufruf lief (Reihenfolge-Beweis): 15 von 15
+    # Fotos (100%) haben eine vorhandene "hund"-Remote-Erkennung, aber KEIN lokal qualifizierendes
+    # Kriterium - ohne den Merge bliebe jedes Foto im Catch-all "detail".
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    label = await _add_category_label(db_session)
+    photos = []
+    for index in range(15):
+        photo = await _add_photo(
+            db_session, project, f"p{index}.jpg", f"etag-{index}", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
+        await _add_category_detection(db_session, photo, label)
+        photos.append(photo)
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    rankings = (
+        await db_session.execute(
+            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        )
+    ).scalars().all()
+    assert len(rankings) == len(photos)
+    assert {r.category_key for r in rankings} == {"hund"}
+
+
+async def test_no_remote_labels_behaves_like_before_the_merge_was_introduced(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    ranking = (
+        await db_session.execute(
+            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        )
+    ).scalar_one()
+    assert ranking.category_key == CATEGORY_DETAIL
+
+
+async def test_category_override_wins_over_the_automatically_derived_category_key(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Positivtest (Teststrategie-Abschnitt der Spec, Edge Case 6): eine Zielpartition unterhalb
+    # der 15%-Kategorie-Haeufigkeitsschwelle ist beim Override ausdruecklich erlaubt.
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    score = await _add_score(db_session, photo)
+    score.category_override = "urlaub"
+    await db_session.commit()
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    ranking = (
+        await db_session.execute(
+            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        )
+    ).scalar_one()
+    assert ranking.category_key == "urlaub"
