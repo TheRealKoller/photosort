@@ -12,6 +12,7 @@ from photosort.landmark import (
     LandmarkApiError,
     LandmarkClientLike,
     LandmarkDetection,
+    _landmark_detection_from_json,
 )
 
 # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md,
@@ -231,3 +232,50 @@ async def test_timeout_is_applied_to_the_underlying_http_client() -> None:
         api_key=API_KEY, transport=httpx.MockTransport(lambda r: _success_response("x", 0.1))
     )
     assert client._client.timeout.read == 60.0  # Whitebox-Konfigurationsnachweis
+
+
+# specs/features/0054-mistral-provider-option-cloud-landmark.md, decisions/0031-mistral-provider-
+# option-cloud-landmark.md Punkt 2: _landmark_detection_from_json ist die providerneutrale
+# Hilfsfunktion, die beide Clients nach ihrer jeweils providerspezifischen Extraktion des rohen
+# JSON-Texts aus ihrer unterschiedlichen Response-Huelle aufrufen - direkt gegen ein bereits
+# geparstes Dict getestet, ohne HTTP (Teststrategie-Abschnitt der Spec).
+
+
+def test_landmark_detection_from_json_parses_name_and_confidence() -> None:
+    detection = _landmark_detection_from_json({"name": "Eiffelturm", "confidence": 0.87})
+
+    assert detection.name == "Eiffelturm"
+    assert detection.confidence == 0.87
+
+
+def test_landmark_detection_from_json_treats_a_missing_name_as_no_landmark() -> None:
+    detection = _landmark_detection_from_json({"name": None, "confidence": 0.0})
+
+    assert detection.name is None
+    assert detection.confidence == 0.0
+
+
+def test_landmark_detection_from_json_clamps_a_confidence_above_one() -> None:
+    detection = _landmark_detection_from_json({"name": "Eiffelturm", "confidence": 1.2})
+
+    assert detection.confidence == 1.0
+
+
+def test_landmark_detection_from_json_clamps_a_negative_confidence() -> None:
+    detection = _landmark_detection_from_json({"name": "Eiffelturm", "confidence": -0.3})
+
+    assert detection.confidence == 0.0
+
+
+def test_landmark_detection_from_json_rejects_a_non_string_name() -> None:
+    with pytest.raises(LandmarkApiError):
+        _landmark_detection_from_json({"name": 42, "confidence": 0.5})
+
+
+def test_landmark_detection_from_json_rejects_a_non_dict_top_level_shape() -> None:
+    # Regressionsnachweis fuer die urspruenglich in _parse_detection gepruefte
+    # "unexpected_top_level_shape"-Situation (test_detect_raises_landmark_api_error_on_unexpected_
+    # top_level_shape oben) - jetzt in der providerneutralen Funktion, da AttributeError beim
+    # .get()-Aufruf auf einer Liste auftritt.
+    with pytest.raises(LandmarkApiError):
+        _landmark_detection_from_json(["not", "an", "object"])

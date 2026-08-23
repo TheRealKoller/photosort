@@ -69,20 +69,26 @@ class LandmarkClientLike(Protocol):
     async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection: ...
 
 
-def _raise_for_status(response: httpx.Response) -> None:
+def _raise_for_status(response: httpx.Response, provider_label: str) -> None:
+    """provider_label ist reiner Meldungstext (z.B. "Anthropic"/"Mistral"), keine Verzweigung -
+    beide Clients rufen dieselbe Funktion mit ihrem jeweiligen Label auf (ADR 0031 Punkt 2)."""
     if response.status_code >= 400:
         raise LandmarkApiError(
-            f"Anthropic-Anfrage fehlgeschlagen: {response.status_code} {response.reason_phrase}"
+            f"{provider_label}-Anfrage fehlgeschlagen: "
+            f"{response.status_code} {response.reason_phrase}"
         )
 
 
-def _parse_detection(payload: Any) -> LandmarkDetection:
+def _anthropic_response_to_json(payload: Any) -> Any:
+    """Extrahiert das vom Vision-LLM gelieferte JSON-Objekt aus der Anthropic-spezifischen
+    Response-Huelle (content-Blockliste mit type=="text") - der providerspezifische Teil des
+    frueheren _parse_detection (specs/decisions/0031-mistral-provider-option-cloud-landmark.md
+    Punkt 2). Typvalidierung von name/confidence lebt NICHT mehr hier, sondern in der
+    providerneutralen _landmark_detection_from_json unten."""
     try:
         content_blocks = payload["content"]
         text_block = next(block for block in content_blocks if block.get("type") == "text")
-        parsed = json.loads(text_block["text"])
-        name = parsed.get("name")
-        confidence = float(parsed.get("confidence", 0.0))
+        return json.loads(text_block["text"])
     except (KeyError, TypeError, StopIteration, ValueError, json.JSONDecodeError) as exc:
         # Bewusst generische Meldung OHNE die rohe Antwort einzubetten (Sicherheits-Muss-
         # Kriterium: keine Base64-Bilddaten/kein Key in der Fehlermeldung - die rohe Antwort
@@ -92,8 +98,35 @@ def _parse_detection(payload: Any) -> LandmarkDetection:
         raise LandmarkApiError(
             "Unerwartete Antwortstruktur der Anthropic Messages API."
         ) from exc
+
+
+def _mistral_response_to_json(payload: Any) -> Any:
+    """Extrahiert das vom Vision-LLM gelieferte JSON-Objekt aus der Mistral-spezifischen
+    Response-Huelle (choices[0].message.content, Standard-Chat-Completion-Schema, ADR 0031
+    Punkt 2) - der providerspezifische Gegenpart zu _anthropic_response_to_json oben."""
+    try:
+        text = payload["choices"][0]["message"]["content"]
+        return json.loads(text)
+    except (KeyError, TypeError, IndexError, ValueError, json.JSONDecodeError) as exc:
+        raise LandmarkApiError(
+            "Unerwartete Antwortstruktur der Mistral Chat Completions API."
+        ) from exc
+
+
+def _landmark_detection_from_json(parsed: Any) -> LandmarkDetection:
+    """Providerneutrale Extraktion von name/confidence aus dem bereits geparsten JSON-Objekt
+    (specs/decisions/0031-mistral-provider-option-cloud-landmark.md Punkt 2, Refactoring des
+    frueheren _parse_detection) - wird von beiden Clients nach ihrer jeweils providerspezifischen
+    Extraktion des rohen JSON-Texts aus ihrer unterschiedlichen Response-Huelle aufgerufen."""
+    try:
+        name = parsed.get("name")
+        confidence = float(parsed.get("confidence", 0.0))
+    except (AttributeError, TypeError, ValueError) as exc:
+        # Bewusst generische, providerneutrale Meldung (kein Provider-Name mehr bekannt an dieser
+        # Stelle) - analog der Begruendung in _anthropic_response_to_json oben.
+        raise LandmarkApiError("Unerwartete Antwortstruktur der Vision-API-Antwort.") from exc
     if name is not None and not isinstance(name, str):
-        raise LandmarkApiError("Unerwartete Antwortstruktur der Anthropic Messages API.")
+        raise LandmarkApiError("Unerwartete Antwortstruktur der Vision-API-Antwort.")
     # Copilot-Review-Fund (PR #181): das Vision-LLM-JSON ist nicht garantiert auf [0, 1] begrenzt -
     # geklemmt bereits HIER (an der Quelle), nicht erst in criteria.py::compute_landmark_score.
     # worker.py::_upsert_landmark_detection schreibt detection.confidence UNVERAENDERT nach
@@ -159,8 +192,9 @@ class AnthropicLandmarkClient:
             # in der Exception) noch die Base64-Bilddaten.
             raise LandmarkApiError(f"Anthropic Vision API nicht erreichbar: {exc}") from exc
 
-        _raise_for_status(response)
-        return _parse_detection(response.json())
+        _raise_for_status(response, "Anthropic")
+        parsed = _anthropic_response_to_json(response.json())
+        return _landmark_detection_from_json(parsed)
 
 
 def build_landmark_client() -> LandmarkClientLike:
