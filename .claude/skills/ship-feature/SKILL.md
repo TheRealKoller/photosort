@@ -1,12 +1,12 @@
 ---
 name: ship-feature
-description: Koordiniert auf oberster Ebene (Orchestrator/Hauptsession) die Nachbereitung eines `developer`-Subagenten-Laufs — Review-Agenten aufrufen, Findings per SendMessage zurückspielen, Pull Request eröffnen, Copilot-Review anfordern/auswerten. Nutze diesen Skill IMMER, wenn eine `developer`-Subagenten-Antwort mit dem wörtlichen Anker `## Blockiert: Architektur-Konsultation nötig` oder `## Abschlussbericht` zurückkommt (auch `## Abschlussbericht (Folgeauftrag: Findings behoben)`) — das ist laut ADR 0024 der verbindliche Übergabepunkt, an dem `developer` selbst keine weitere Verschachtelungsebene an Subagenten und keinen GitHub-Zugriff hat. Nicht nutzen für die Umsetzung selbst (dafür `developer`) oder das Schärfen einer Idee zur Spec (dafür `idea-sharpener`).
+description: Koordiniert auf oberster Ebene (Orchestrator/Hauptsession) die Nachbereitung eines `developer`-Subagenten-Laufs — Review-Agenten aufrufen, Findings per SendMessage zurückspielen, Pull Request eröffnen, Copilot-Review anfordern/auswerten. Nutze diesen Skill IMMER, wenn eine `developer`-Subagenten-Antwort mit dem wörtlichen Anker `## Blockiert: Architektur-Konsultation nötig` oder `## Abschlussbericht` zurückkommt (auch `## Abschlussbericht (Folgeauftrag: Findings behoben)`) — das ist der verbindliche Übergabepunkt, an dem `developer` selbst keine weitere Verschachtelungsebene an Subagenten und keinen GitHub-Zugriff hat. Nicht nutzen für die Umsetzung selbst (dafür `developer`) oder das Schärfen einer Idee zur Spec (dafür `idea-sharpener`).
 
 ---
 
 # Ship Feature — Review, PR und Copilot-Review vom Orchestrator
 
-Übernimmt genau die Verantwortung, die ein per Agent-Tool gestarteter `developer`-Subagent strukturell nicht selbst wahrnehmen kann: eine weitere Verschachtelungsebene an Subagenten (die fünf Review-Agenten, ggf. `architect` bei einer Planungslücke) und GitHub-Schreibzugriff (Push, PR-Erstellung, Copilot-Review). Siehe [ADR 0024](../../../specs/decisions/0024-review-agenten-und-pr-workflow-beim-orchestrator.md) für die vollständige Begründung und Feature-Spec [0046](../../../specs/features/0046-review-agenten-und-pr-workflow-orchestrator.md) für die daraus abgeleiteten Akzeptanzkriterien — beide sind hier die maßgebliche Quelle, dieser Skill setzt sie nur um. `developer` bleibt für die Dauer dieses gesamten Ablaufs als offener Subagent ansprechbar (SendMessage), es wird für Folgeaufträge kein neuer Lauf gestartet, solange der Subagent noch erreichbar ist.
+Übernimmt genau die Verantwortung, die ein per Agent-Tool gestarteter `developer`-Subagent strukturell nicht selbst wahrnehmen kann: eine weitere Verschachtelungsebene an Subagenten (die fünf Review-Agenten, ggf. `architect` bei einer Planungslücke) und GitHub-Schreibzugriff (Push, PR-Erstellung, Copilot-Review). `developer` bleibt für die Dauer dieses gesamten Ablaufs als offener Subagent ansprechbar (SendMessage), es wird für Folgeaufträge kein neuer Lauf gestartet, solange der Subagent noch erreichbar ist.
 
 ## Schritt 0: Trigger erkennen
 
@@ -20,7 +20,7 @@ Eine `developer`-Antwort löst diesen Skill aus, wenn sie einen der folgenden w�
 
 ## Schritt 1: "Blockiert" behandeln
 
-Format laut ADR 0024 Teil 3:
+Format:
 
 ```
 ## Blockiert: Architektur-Konsultation nötig
@@ -30,7 +30,7 @@ Format laut ADR 0024 Teil 3:
 **Bisheriger Stand:** <was schon committet ist, falls etwas>
 ```
 
-1. Ruf `architect` auf (Agent-Tool, `subagent_type: architect`, Standard-Modell — kein `model`-Parameter, wie bisher in `developer.md` Schritt 1 vorgesehen, siehe ADR 0024 Teil 6 erste Zeile), im Vordergrund/`run_in_background: false`. Gib ihm den genannten Grund, den Spec-Bezug und den bisherigen Stand mit.
+1. Ruf `architect` auf (Agent-Tool, `subagent_type: architect`, Standard-Modell — kein `model`-Parameter, wie bisher in `developer.md` Schritt 1 vorgesehen), im Vordergrund/`run_in_background: false`. Gib ihm den genannten Grund, den Spec-Bezug und den bisherigen Stand mit.
 2. Gib das Ergebnis per `SendMessage` an denselben, weiterhin offenen `developer`-Subagenten zurück, der bei Schritt 1 seines Ablaufs fortfährt.
 3. Schlägt `SendMessage` fehl (Subagenten-Fenster bereits geschlossen/Timeout): siehe Abschnitt "Recovery" unten.
 
@@ -54,13 +54,13 @@ Welche der fünf Review-Agenten tatsächlich laufen, entscheidet **nicht** eine 
 | `architect` | **Echt bedingt.** | Diff enthält neue Dateien/ein neues Modul; **oder** `specs/decisions/**`; **oder** Datenmodell-/Migrations-Dateien (`backend/alembic/**`); **oder** eine neue externe Abhängigkeit; **oder** der Abschnitt "Architektur / Umsetzung" der Spec ist nicht trivial (nicht "Wiederverwendung von X, 1–2 Dateien"). |
 | `ux-ui-designer` | **Unverändert** (bestehendes Vorbild). | Diff enthält Dateien unter `frontend/`. |
 
-Für den Orchestrator zusätzlich relevant (nicht rein mechanisch aus `git diff --name-only` ableitbar): der `architect`-Trigger "Abschnitt Architektur/Umsetzung nicht trivial" verlangt, diesen Spec-Abschnitt selbst zu lesen (siehe [ADR 0024](../../../specs/decisions/0024-review-agenten-und-pr-workflow-beim-orchestrator.md) Teil 5, Punkt 4 — vormals las `developer` diesen Abschnitt ohnehin für die eigene Umsetzungsplanung, jetzt liest ihn zusätzlich der Orchestrator selbst dafür).
+Für den Orchestrator zusätzlich relevant (nicht rein mechanisch aus `git diff --name-only` ableitbar): der `architect`-Trigger "Abschnitt Architektur/Umsetzung nicht trivial" verlangt, diesen Spec-Abschnitt selbst zu lesen.
 
 Sicherheitsnetz für diese Tabelle: **im Zweifel läuft der Agent, und zwar mit Standardmodell** — eine unklare Zuordnung ist niemals ein Grund, einen Agenten zu überspringen oder auf Haiku herabzustufen. Trifft für einen Agenten kein Trigger zu, aber die Zuordnung ist unklar (z.B. eine neue Datei an einer nicht eindeutig zuordenbaren Stelle): der Agent läuft trotzdem, im späteren Findings-Bericht explizit "Trigger unklar, deshalb ausgeführt" vermerken statt es stillschweigend als "läuft ohnehin" zu verbuchen.
 
-**Modell je aufgerufenem Agenten** — identische Kopie von [ADR 0024](../../../specs/decisions/0024-review-agenten-und-pr-workflow-beim-orchestrator.md) Teil 6 (Modell-Spalte inhaltlich unverändert zu ADR 0014 Teil 2, nur die Aufrufer-Spalte ist hier aktualisiert):
+**Modell je aufgerufenem Agenten** (Modell-Spalte unverändert, nur die Aufrufer-Spalte ist hier aktualisiert):
 
-| Bisherige Zeile (ADR 0014, weiterhin dort so vermerkt) | Ab dieser ADR maßgebliche Zeile | Modell (unverändert) |
+| Bisherige Zuständigkeit | Jetzige Zuständigkeit | Modell (unverändert) |
 |---|---|---|
 | `developer` Schritt 1 → `architect` (Umsetzungsplanung, bei Bedarf) | Orchestrator (nach "Blockiert"-Rückmeldung von `developer`) → `architect` | Standard |
 | `developer` Schritt 4 → `test-engineer` (Review) | Orchestrator (nach `developer`-Abschlussbericht) → `test-engineer` | Standard |
@@ -73,7 +73,7 @@ Für Schritt 4 dieses Skills (der eigentliche Agent-Tool-Aufruf) konkret: `test-
 
 ## Schritt 4: Review-Agenten parallel aufrufen, auf alle warten
 
-Starte die laut Schritt 3 ermittelten Agenten **parallel**, jeweils mit dem festgelegten `model`-Wert, in einem einzigen Aufruf (alle Agent-Tool-Aufrufe in derselben Nachricht), alle im Vordergrund/`run_in_background: false`. Prüfumfang je Agent, wenn er läuft (inhaltlich unverändert gegenüber dem bis ADR 0024 in `developer.md` Schritt 4 dokumentierten Umfang):
+Starte die laut Schritt 3 ermittelten Agenten **parallel**, jeweils mit dem festgelegten `model`-Wert, in einem einzigen Aufruf (alle Agent-Tool-Aufrufe in derselben Nachricht), alle im Vordergrund/`run_in_background: false`. Prüfumfang je Agent, wenn er läuft:
 
 - **`test-engineer`** (`subagent_type: test-engineer`): Abdeckung der Akzeptanzkriterien, Testqualität, Abgleich mit dem Testkonzept (`specs/architecture/0002-testkonzept.md`), klassische Bugs/Logikfehler und Abweichungen von Code-Konventionen. Prüft dabei zusätzlich (dauerhafte Stichproben-Audit-Pflicht laut Testkonzept, Sektion "Agenten-Steuerungslogik selbst"), ob dein Skip-/Modell-Protokoll aus Schritt 3 tatsächlich zur Trigger-/Modelltabelle und zum real ermittelten Diff passt.
 - **`security-engineer`** (`subagent_type: security-engineer`): Sicherheitsprobleme (OWASP-relevante Muster, Secrets, Eingabevalidierung, Auth-Durchsetzung), Abgleich mit dem Sicherheitskonzept (`specs/architecture/0003-securitykonzept.md`).
@@ -95,7 +95,7 @@ Schlägt `SendMessage` fehl: siehe Abschnitt "Recovery" unten.
 
 ## Schritt 6: Folgebericht auswerten
 
-Format laut ADR 0024 Teil 3:
+Format:
 
 ```
 ## Abschlussbericht (Folgeauftrag: Findings behoben)
@@ -115,7 +115,7 @@ Format laut ADR 0024 Teil 3:
 
 Verifiziere Branch/Status/Diff erneut mechanisch wie in Schritt 2 (dieselben drei Prüfungen). Findings, die laut Bericht "bewusst nicht behoben" wurden: kurz eigenständig plausibilisieren (nicht blind übernehmen) — wirkt die Begründung tragfähig, akzeptieren und im späteren PR-Bericht vermerken; wirkt sie nicht tragfähig, per SendMessage nachfragen/insistieren, bevor es weitergeht.
 
-Kein eigener erneuter Testlauf durch den Orchestrator (bewusste Rollenteilung, siehe Spec 0046 Teststrategie: TDD bleibt bei `developer`, Testqualität wird von den Review-Agenten geprüft) — "Tests & Codequalität: grün" im Bericht wird als Aussage übernommen, nicht selbst nachgestellt.
+Kein eigener erneuter Testlauf durch den Orchestrator (bewusste Rollenteilung: TDD bleibt bei `developer`, Testqualität wird von den Review-Agenten geprüft) — "Tests & Codequalität: grün" im Bericht wird als Aussage übernommen, nicht selbst nachgestellt.
 
 Nach Bestätigung geht es weiter zu Schritt 7 (PR-Erstellung) bzw., falls die Findings aus einer Copilot-Runde (Schritt 8) stammten, zurück in den Copilot-Ablauf (erneuter Push statt neuem PR).
 

@@ -26,7 +26,7 @@ Aktueller Stand aus `architecture/0004-design-system.md` — bei Änderungen dor
 
 - **Akzentfarbe (Terracotta):** `--accent: #bb4e2a` hell / `#e8916d` dunkel — Buttons, Links, Fokus-Ring, aktive Filter. **Hinweis:** der ursprüngliche Zielwert `#d97757` (hell) erreichte als Text-/Link-Farbe gegen den warmen Hintergrund nur 2.92:1 (< WCAG-AA 4.5:1) und wurde auf `#bb4e2a` (4.64:1, gleicher Farbton/Sättigung, nur dunkler) abgedunkelt — siehe `architecture/0004-design-system.md`. Getrennt von den Bewertungsfarben halten, damit Aktion und Status nicht verwechselbar sind. Für Text/Symbole AUF `--accent` (z.B. Button-Beschriftung) `--accent-fg` verwenden (`#fdfbf8` hell / `#140f0c` dunkel), nicht `--chip-fg`.
 - **Neutraltöne:** hell `#faf7f2` (bg) / `#e8e0d5` (border); dunkel `#1f1b18` (bg) / `#35302b` (border) — warme Creme-/Sandtöne, nicht kühles Weiß/Grau.
-- **Bewertungsfarben** (unverändert seit Spec 0002, bewusst nicht an die Terracotta-Richtung angepasst — Gold/Grün/Rot sind gelernte Ampel-Signalfarben):
+- **Bewertungsfarben** (unverändert, bewusst nicht an die Terracotta-Richtung angepasst — Gold/Grün/Rot sind gelernte Ampel-Signalfarben):
   - `favorite`: `#d9a441` hell / `#f0c674` dunkel + Stern-Symbol
   - `album_worthy`: `#3f9142` hell / `#7fce82` dunkel + Haken-Symbol
   - `rejected`: `#c94f4f` hell / `#e08080` dunkel + Kreuz-Symbol
@@ -44,7 +44,7 @@ Aktueller Stand aus `architecture/0004-design-system.md` — bei Änderungen dor
 
 ## Komponentenbibliothek: Tailwind CSS + Radix UI + shadcn/ui
 
-Siehe ADR [`decisions/0011-ui-component-library.md`](../../../specs/decisions/0011-ui-component-library.md) für die volle Begründung. Praktisch relevant:
+Praktisch relevant:
 
 - **shadcn/ui-Komponenten werden als Quellcode kopiert**, nicht als npm-Paket installiert — sie leben in `frontend/src/components/ui/` und sind normaler, editierbarer App-Code. Neue wiederkehrende UI-Bausteine (Button, Card, Badge, Progress, …) dort ablegen statt pro View neu zu erfinden.
 - **Radix-Primitives nur dort einsetzen, wo natives HTML nicht reicht** (z.B. Dialog, Popover). Für Buttons/Formulare/Listen bleibt natives HTML + Tailwind-Klassen der Standard — kein `div`-Onclick, keine unnötige Abstraktion über ein natives `<button>`.
