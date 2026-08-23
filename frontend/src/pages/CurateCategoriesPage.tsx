@@ -4,12 +4,14 @@ import { Link, useParams, useSearchParams } from 'react-router'
 import { ApiError } from '../api/client'
 import type { PhotoOut } from '../api/types'
 import { CategoryBadge } from '../components/CategoryBadge'
+import { CategoryOverrideMarker } from '../components/CategoryOverrideMarker'
 import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
 import { PhotoImage } from '../components/PhotoImage'
 import { QualityMeter } from '../components/QualityMeter'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
+import { useCategoryOverrideControls } from '../hooks/useCategoryOverrideControls'
 import { useCurationQuery, useSetRatingMutation } from '../hooks/usePhotos'
 import { formatCategoryKey } from '../utils/categoryLabels'
 import { qualityLevel } from '../utils/qualityLevel'
@@ -145,6 +147,7 @@ export function CurateCategoriesPage() {
 
   const query = useCurationQuery(id, topN)
   const setRatingMutation = useSetRatingMutation(id)
+  const categoryOverrideControls = useCategoryOverrideControls(id)
   // useMemo statt einer neuen `?? []`-Array-Referenz bei jedem Render (Lint-Fund: der Effekt
   // unten haengt von `items` ab, ein staendig neuer Referenzwert wuerde ihn bei jedem Render neu
   // ausloesen, obwohl sich die tatsaechlichen Daten nicht geaendert haben).
@@ -386,7 +389,32 @@ export function CurateCategoriesPage() {
                                                 ranking={photo.ranking}
                                                 suggestion={photo.suggestion}
                                                 className="absolute right-1.5 top-1.5"
+                                                categoryCandidates={photo.category_candidates}
+                                                categoryOverride={photo.category_override}
+                                                onOverrideCategory={(categoryKey) =>
+                                                  categoryOverrideControls.overrideCategory(
+                                                    photo.id,
+                                                    categoryKey
+                                                  )
+                                                }
+                                                onResetOverride={() =>
+                                                  categoryOverrideControls.resetOverride(photo.id)
+                                                }
+                                                pendingOverrideKey={categoryOverrideControls.pendingOverrideKeyFor(
+                                                  photo.id
+                                                )}
+                                                resetPending={categoryOverrideControls.isResetPendingFor(
+                                                  photo.id
+                                                )}
                                               />
+                                              {/* specs/features/0055-remote-kategorie-
+                                                  klassifizierung-mit-kostenschaetzung.md: bislang
+                                                  unbelegte Ecke (oben links). */}
+                                              {photo.category_override !== null && (
+                                                <div className="absolute left-1.5 top-1.5">
+                                                  <CategoryOverrideMarker />
+                                                </div>
+                                              )}
                                             </>
                                           )}
                                         </div>
