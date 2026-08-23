@@ -155,3 +155,34 @@ def test_landmark_api_concurrency_rejects_non_positive_values() -> None:
         Settings(_env_file=None, landmark_api_concurrency=0)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, landmark_api_concurrency=-1)
+
+
+# specs/features/0054-mistral-provider-option-cloud-landmark.md, decisions/0031-mistral-provider-
+# option-cloud-landmark.md Punkt 3 ab hier: Mistral als zweite, per Settings.landmark_provider
+# waehlbare Cloud-Provider-Option fuer das landmark-Kriterium.
+
+
+def test_landmark_provider_defaults_to_anthropic() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.landmark_provider == "anthropic"
+
+
+def test_landmark_provider_is_env_overridable() -> None:
+    settings = Settings(_env_file=None, landmark_provider="mistral")
+
+    assert settings.landmark_provider == "mistral"
+
+
+def test_landmark_provider_rejects_an_unknown_value() -> None:
+    # Akzeptanzkriterium der Spec: kein stiller Fallback auf "anthropic" bei einem Tippfehler,
+    # sondern ein harter Fehlschlag beim Prozessstart.
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, landmark_provider="openai")
+
+
+def test_mistral_api_key_defaults_to_empty_string() -> None:
+    # Exakt das anthropic_api_key-Muster (kein Format-Check, nur ueber Env-Variable gesetzt).
+    settings = Settings(_env_file=None)
+
+    assert settings.mistral_api_key == ""

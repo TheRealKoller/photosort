@@ -346,7 +346,16 @@ class PhotoLandmarkDetection(Base):
     diese Tabelle fuer eine spaetere UI-Abfrage ohne Join selbsttragend, beide Werte stammen
     atomar aus derselben API-Antwort (kein Divergenzrisiko). Kein UI-Verweis in v1 - reine
     Persistenz-Vorbereitung, vermeidet einen spaeteren, erneut kostenpflichtigen Cloud-Durchlauf
-    aller bereits gescorten Fotos, falls der Name doch einmal angezeigt werden soll."""
+    aller bereits gescorten Fotos, falls der Name doch einmal angezeigt werden soll.
+
+    `provider` (specs/features/0054-mistral-provider-option-cloud-landmark.md, decisions/0031-
+    mistral-provider-option-cloud-landmark.md Punkt 5) haelt fest, welcher Cloud-Provider diese
+    Zeile erzeugt hat - verhindert, dass die Herkunft bereits gescorter Fotos bei einem spaeteren
+    Umschalten von Settings.landmark_provider stillschweigend unklar wird. Atomar im selben
+    Upsert wie name/confidence gesetzt (worker.py::_upsert_landmark_detection). Python-seitiger
+    Default "anthropic" (analog Project.cloud_landmark_detection_enabled oben) deckt bereits
+    bestehende Zeilen aus der Zeit vor dieser Spalte ab, in der Anthropic der einzige Provider
+    war - worker.py setzt den Wert im produktiven Pfad trotzdem immer explizit."""
 
     __tablename__ = "photo_landmark_detections"
 
@@ -354,5 +363,6 @@ class PhotoLandmarkDetection(Base):
     name: Mapped[str]
     confidence: Mapped[float]
     computed_at: Mapped[datetime]
+    provider: Mapped[str] = mapped_column(default="anthropic")
 
     photo: Mapped[Photo] = relationship(back_populates="landmark_detection")
