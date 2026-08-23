@@ -10,6 +10,7 @@ import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
+import { useCategoryOverrideControls } from '../hooks/useCategoryOverrideControls'
 import {
   useDeleteRatingMutation,
   usePhotoSequenceQuery,
@@ -53,6 +54,7 @@ export function PhotoDetailPage() {
   const query = usePhotoSequenceQuery(id, ratingStatus)
   const setMutation = useSetRatingMutation(id)
   const deleteMutation = useDeleteRatingMutation(id)
+  const categoryOverrideControls = useCategoryOverrideControls(id)
 
   const [completed, setCompleted] = useState(false)
 
@@ -289,6 +291,14 @@ export function PhotoDetailPage() {
             ranking={currentPhoto.ranking}
             suggestion={null}
             showSuggestion={false}
+            categoryCandidates={currentPhoto.category_candidates}
+            categoryOverride={currentPhoto.category_override}
+            onOverrideCategory={(categoryKey) =>
+              categoryOverrideControls.overrideCategory(currentPhoto.id, categoryKey)
+            }
+            onResetOverride={() => categoryOverrideControls.resetOverride(currentPhoto.id)}
+            pendingOverrideKey={categoryOverrideControls.pendingOverrideKeyFor(currentPhoto.id)}
+            resetPending={categoryOverrideControls.isResetPendingFor(currentPhoto.id)}
           />
         </div>
       )}

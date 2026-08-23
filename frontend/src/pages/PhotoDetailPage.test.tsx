@@ -440,4 +440,43 @@ describe('PhotoDetailPage', () => {
       expect(screen.queryByText('Ausschuss-Vorschlag')).not.toBeInTheDocument()
     })
   })
+
+  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt.
+  describe('category override', () => {
+    it('overrides the category from the permanent details section', async () => {
+      const list: PhotoListOut = {
+        items: [
+          photo({
+            id: 1,
+            criterion_scores: [criterionScore()],
+            ranking: {
+              cluster_key: 'cluster-0',
+              category_key: 'people',
+              rank_score: 0.5,
+              rank_position: 1,
+              partition_size: 1,
+            },
+            category_candidates: [
+              { category_key: 'hund', origin: 'remote', score: 0.9, provider: 'anthropic' },
+              { category_key: 'people', origin: 'local', score: 0.4, provider: null },
+            ],
+          }),
+        ],
+        total: 1,
+      }
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+      vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
+        photo_id: 1,
+        category_key: 'hund',
+      })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByText('Kategorie-Kandidaten')
+      await user.click(screen.getByRole('button', { name: /^übernehmen$/i }))
+
+      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'hund'))
+    })
+  })
 })
