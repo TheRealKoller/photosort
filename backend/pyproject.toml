@@ -48,6 +48,16 @@ dependencies = [
     # ein anderer Name als der von mediapipe geforderte wuerde das Risiko zweier sich
     # ueberschreibender cv2-Installationen einfuehren.
     "opencv-contrib-python>=4.10",
+    # Lokales Text-Embedding-Modell fuer die Remote-Label-Aehnlichkeits-Zusammenfassung
+    # (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+    # decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 4) - bewusst
+    # NICHT sentence-transformers/transformers/torch (kein PyTorch im Image) und NICHT die
+    # TensorFlow-Hub-Alternative (tensorflow_text-Versions-Pinning-Risiko, siehe ADR) - reine
+    # CPU-/Rust-Pakete ohne GPU-Anteil, real per pip-Installation verifiziert (developer,
+    # 2026-08-23): onnxruntime-Wheel ~23 MB, tokenizers-Wheel ~3 MB - deutlich unter dem
+    # tensorflow-/mediapipe-Fussabdruck, keine transitive PyTorch-/zweite-TensorFlow-Abhaengigkeit.
+    "onnxruntime>=1.19",
+    "tokenizers>=0.20",
 ]
 
 [project.optional-dependencies]
