@@ -213,12 +213,15 @@ async def _count_remote_category_candidates(session: AsyncSession, project_id: i
     """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
     Akzeptanzkriterium "Kostenschätzung": "ermittelt über dieselbe Kandidaten-Selektion wie der
     tatsächliche Lauf" (worker.py::select_remote_category_candidates). Bewusst als eigenstaendige,
-    kleine Query HIER dupliziert statt worker.py zu importieren - api/projects.py (der uvicorn-
-    Prozess) importiert bislang keinen Code aus worker.py, um dessen schwere ML-Importkette
-    (mediapipe/tensorflow/onnxruntime ueber classification.py/aesthetics.py/label_embedding.py)
-    nicht in den API-Importpfad zu ziehen (identisches Entkopplungsprinzip wie bei classification.py
-    selbst, siehe dortiger Modul-Kommentar) - obwohl beide Prozesse im selben Docker-Image laufen,
-    bliebe der uvicorn-Start sonst unnoetig langsamer."""
+    kleine Query HIER dupliziert statt worker.py zu importieren - haelt die API-Schicht (reine
+    HTTP-/Validierungs-/Lese-Zustaendigkeit) unabhaengig von der Worker-Schicht (Job-Ausfuehrung),
+    identisches Modulgrenzen-Prinzip wie die uebrigen api/*.py-Dateien, die Jobs ausschliesslich
+    ueber den stringbasierten JobEnqueuer ausloesen statt worker.py-Funktionen direkt zu
+    importieren. (Ein direkter Import waere technisch unproblematisch - mediapipe/tensorflow/
+    onnxruntime werden in classification.py/aesthetics.py/label_embedding.py durchgaengig lokal
+    innerhalb der jeweiligen build_*()-Funktion importiert, nicht auf Modulebene - reiner
+    Architektur-Klarheitsgrund, siehe api/photos.py fuer die eine bewusste Ausnahme, wo die Spec
+    einen synchronen Aufruf im selben Request verlangt.)"""
     photo_ids = (
         await session.execute(
             select(Photo.id)
