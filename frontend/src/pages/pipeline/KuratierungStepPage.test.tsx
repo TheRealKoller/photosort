@@ -1,11 +1,22 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import * as projectsApi from '../../api/projects'
 import type { CriterionScoringRunSummary, ProjectOut } from '../../api/types'
 import { KuratierungStepPage } from './KuratierungStepPage'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
+
+// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: die neue
+// "Remote-Kategorisierung"-Section laedt die Kostenschaetzung eager - fuer diese, bereits
+// bestehenden Kuratierungs-Tests reicht ein neutraler Fake-Wert, das eigentliche Verhalten der
+// Section ist in RemoteCategoryClassificationSection.test.tsx dediziert getestet.
+vi.mock('../../api/projects', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../api/projects')>()),
+  getClassifyCategoriesRemoteEstimate: vi.fn(),
+}))
 
 function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
   return {
@@ -44,18 +55,30 @@ function OutletHost({ project: contextProject, refetchProject }: PipelineOutletC
 }
 
 function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <MemoryRouter initialEntries={['/x']}>
-      <Routes>
-        <Route element={<OutletHost project={initialProject} refetchProject={refetchProject} />}>
-          <Route path="/x" element={<KuratierungStepPage />} />
-        </Route>
-      </Routes>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/x']}>
+        <Routes>
+          <Route element={<OutletHost project={initialProject} refetchProject={refetchProject} />}>
+            <Route path="/x" element={<KuratierungStepPage />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 
 describe('KuratierungStepPage', () => {
+  beforeEach(() => {
+    vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue({
+      candidate_count: 0,
+      provider: 'anthropic',
+      price_per_image_usd: 0.0045,
+      estimated_cost_usd: 0,
+    })
+  })
+
   it('shows the explanation line and links to /curate with the default top-N of 3', () => {
     renderPage(project())
 
