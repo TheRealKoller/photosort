@@ -22,8 +22,6 @@ Keine offenen Einträge.
 | [0044](./features/0044-projekte-loeschen.md) | Projekte löschen (nur PhotoSort-Daten, mit Namenseingabe-Bestätigung) | Accepted |
 | [0049](./features/0049-single-origin-api-proxy-frontend-nginx.md) | Nur Frontend nach außen exposen: Single-Origin-API-Proxy über Frontend-nginx | Accepted |
 | [0051](./features/0051-gps-landmark-cluster-bildung.md) | GPS-/Zeit-/Sehenswürdigkeits-basierte Clusterbildung mit gegenseitiger Herleitung | Accepted |
-| [0053](./features/0053-fachagenten-definitionsdateien-kompaktieren.md) | Skill-/Agenten-Dateien kompaktieren: Prosa straffen (vier Fachagenten, analog Spec 0025) und historische ADR-/Spec-Zitate entfernen (11 Dateien + künftige Konvention in CLAUDE.md) | Accepted |
-
 ### Inbox — ungeschärfte Ideen
 
 Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf gegangen — daher keine Spec-Nummer, kein offizieller Status und keine Priorität, nur eine grobe Kurzbeschreibung zur Orientierung. Rangiert absichtlich unter allen priorisierten Einträgen: erst nach dem Schärfen ist überhaupt klar, ob, wie groß und wie dringend der Aufwand ist.
@@ -85,6 +83,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0031](./features/0031-zweiwege-sync-specs-github-projekt.md) | Zwei-Wege-Sync Feature-Specs ↔ GitHub-Projekt | Implemented ([PR #115](https://github.com/TheRealKoller/photosort/pull/115)) |
 | [0052](./features/0052-github-sync-natives-status-feld-inbox-einbindung.md) | GitHub-Sync: natives Status-Feld statt Custom-Field, Inbox-Einbindung | Implemented ([PR #173](https://github.com/TheRealKoller/photosort/pull/173)) |
 | [0047](./features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) | Sehenswürdigkeit-Erkennung (Landmark) via Cloud-Vision-API (Anthropic) | Implemented ([PR #181](https://github.com/TheRealKoller/photosort/pull/181)) |
+| [0053](./features/0053-fachagenten-definitionsdateien-kompaktieren.md) | Skill-/Agenten-Dateien kompaktieren: Prosa straffen (vier Fachagenten, analog Spec 0025) und historische ADR-/Spec-Zitate entfernen (11 Dateien + künftige Konvention in CLAUDE.md) | Implemented ([PR #188](https://github.com/TheRealKoller/photosort/pull/188), [PR #189](https://github.com/TheRealKoller/photosort/pull/189)) |
 
 ## Priorisierung
 
