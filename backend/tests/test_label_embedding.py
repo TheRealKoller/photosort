@@ -44,7 +44,8 @@ class TestMeanPoolAndNormalize:
         attention_mask = [1, 1, 0]
         pooled = _mean_pool_and_normalize(token_embeddings, attention_mask)
         # Erwarteter Mittelwert vor Normierung: (0.5, 0.5) -> normiert (1/sqrt(2), 1/sqrt(2)).
-        assert pooled == [pytest.approx(1 / math.sqrt(2), abs=1e-6), pytest.approx(1 / math.sqrt(2), abs=1e-6)]
+        expected = pytest.approx(1 / math.sqrt(2), abs=1e-6)
+        assert pooled == [expected, expected]
 
     def test_output_is_l2_normalized(self) -> None:
         token_embeddings = [[3.0, 4.0]]

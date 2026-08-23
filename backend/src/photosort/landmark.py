@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import base64
-import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx
 
+from photosort.cloud_vision import (
+    ANTHROPIC_API_VERSION,
+    ANTHROPIC_MESSAGES_URL,
+    ANTHROPIC_VISION_MODEL,
+    MISTRAL_CHAT_COMPLETIONS_URL,
+    MISTRAL_VISION_MODEL,
+    VISION_REQUEST_TIMEOUT_SECONDS,
+    anthropic_response_to_json,
+    mistral_response_to_json,
+    raise_for_vision_api_status,
+)
 from photosort.config import settings
 
 # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-
@@ -16,40 +26,19 @@ from photosort.config import settings
 # Messages API, KEIN anthropic-Python-SDK (ADR 0025 Punkt 1, Minimalismus-Prinzip ADR 0006) -
 # exakt das Muster von opencloud/client.py (eigene Exception-Klasse, httpx.AsyncClient,
 # httpx.MockTransport-testbar).
-
-ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_API_VERSION = "2023-06-01"
-
-# Guenstigstes vision-faehiges Modell der Claude-Haiku-Reihe (ADR 0025: "kein Grund fuer ein
-# teureres Modell bei dieser eng umrissenen Klassifikationsaufgabe", exakte Modell-ID eine
-# technische Detailentscheidung des developer-Agenten beim TDD-Einstieg).
-ANTHROPIC_LANDMARK_MODEL = "claude-haiku-4-5"
-
-# specs/decisions/0031-mistral-provider-option-cloud-landmark.md Punkt 2: derselbe Endpunkt wie
-# fuer reine Text-Completions, kein separater Vision-Pfad bei Mistral.
-MISTRAL_CHAT_COMPLETIONS_URL = "https://api.mistral.ai/v1/chat/completions"
-
-# Kleinstes/guenstigstes Modell der Ministral-3-Familie (analog ANTHROPIC_LANDMARK_MODEL: das
-# jeweils guenstigste vision-faehige Modell fuer diese eng umrissene Klassifikationsaufgabe, ADR
-# 0031 Punkt 2 - Pixtral-Modelle sind deprecated/retired, NICHT verwenden). Vor Implementierung
-# gegen die offizielle Modelldokumentation verifiziert (developer-Agent, 2026-08-23): Doku-Slug
-# "ministral-3-3b-25-12" (docs.mistral.ai/models/ministral-3-3b-25-12, "smallest and most
-# efficient model in the Ministral 3 family, offering robust language and vision capabilities"),
-# tatsaechliche API-Modell-ID laut dortigem ApiNamesBadges-Eintrag "ministral-3b-2512" (Alias
-# "ministral-3b-latest") - kein API-Key im Rahmen dieser Verifikation verfuegbar (GET
-# https://api.mistral.ai/v1/models liefert ohne Auth nur 401, aber bestaetigt den erreichbaren
-# Host), deshalb ueber die oeffentliche Modelldokumentation statt console.mistral.ai verifiziert.
-MISTRAL_LANDMARK_MODEL = "ministral-3b-2512"
+#
+# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 3:
+# URLs/Modell-IDs/Timeout/Response-Parsing-Envelope-Helfer sind seitdem nach cloud_vision.py
+# extrahiert (providerneutral, jetzt von landmark.py UND remote_classification.py genutzt) - die
+# bisherigen Namen bleiben hier als re-exportierte Aliase bestehen (Regressionspflicht der Spec:
+# "Bestehende test_landmark.py-Faelle bleiben ohne Assertion-Aenderung gruen").
+ANTHROPIC_LANDMARK_MODEL = ANTHROPIC_VISION_MODEL
+MISTRAL_LANDMARK_MODEL = MISTRAL_VISION_MODEL
+LANDMARK_REQUEST_TIMEOUT_SECONDS = VISION_REQUEST_TIMEOUT_SECONDS
 
 # Kurze, reine Klassifikationsantwort - kein Grund fuer ein hohes max_tokens (nur ein kleines
 # JSON-Objekt wird erwartet).
 _MAX_RESPONSE_TOKENS = 256
-
-# Modul-Konstante statt Settings-Feld (ADR 0025 Punkt 3: "reiner technischer Wert, kein
-# Betriebsparameter wie scan_download_concurrency") - grosszuegiger als der OpenCloud-Client-
-# Default (30s), da Vision-LLM-Antwortzeiten tendenziell hoeher sind und der Lauf ein Hintergrund-
-# Job ohne wartenden Nutzer ist.
-LANDMARK_REQUEST_TIMEOUT_SECONDS = 60.0
 
 _PROMPT = (
     "Analysiere dieses Foto. Ist eine bekannte oder auch weniger bekannte Sehenswuerdigkeit/ein "
@@ -85,50 +74,6 @@ class LandmarkClientLike(Protocol):
     async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection: ...
 
 
-def _raise_for_status(response: httpx.Response, provider_label: str) -> None:
-    """provider_label ist reiner Meldungstext (z.B. "Anthropic"/"Mistral"), keine Verzweigung -
-    beide Clients rufen dieselbe Funktion mit ihrem jeweiligen Label auf (ADR 0031 Punkt 2)."""
-    if response.status_code >= 400:
-        raise LandmarkApiError(
-            f"{provider_label}-Anfrage fehlgeschlagen: "
-            f"{response.status_code} {response.reason_phrase}"
-        )
-
-
-def _anthropic_response_to_json(payload: Any) -> Any:
-    """Extrahiert das vom Vision-LLM gelieferte JSON-Objekt aus der Anthropic-spezifischen
-    Response-Huelle (content-Blockliste mit type=="text") - der providerspezifische Teil des
-    frueheren _parse_detection (specs/decisions/0031-mistral-provider-option-cloud-landmark.md
-    Punkt 2). Typvalidierung von name/confidence lebt NICHT mehr hier, sondern in der
-    providerneutralen _landmark_detection_from_json unten."""
-    try:
-        content_blocks = payload["content"]
-        text_block = next(block for block in content_blocks if block.get("type") == "text")
-        return json.loads(text_block["text"])
-    except (KeyError, TypeError, StopIteration, ValueError, json.JSONDecodeError) as exc:
-        # Bewusst generische Meldung OHNE die rohe Antwort einzubetten (Sicherheits-Muss-
-        # Kriterium: keine Base64-Bilddaten/kein Key in der Fehlermeldung - die rohe Antwort
-        # selbst enthaelt zwar keine dieser Werte, aber eine feste, generische Meldung ist hier
-        # bewusst konsistent mit dem Rest des Moduls, analog opencloud/client.py::
-        # _drive_from_graph_api_item).
-        raise LandmarkApiError(
-            "Unerwartete Antwortstruktur der Anthropic Messages API."
-        ) from exc
-
-
-def _mistral_response_to_json(payload: Any) -> Any:
-    """Extrahiert das vom Vision-LLM gelieferte JSON-Objekt aus der Mistral-spezifischen
-    Response-Huelle (choices[0].message.content, Standard-Chat-Completion-Schema, ADR 0031
-    Punkt 2) - der providerspezifische Gegenpart zu _anthropic_response_to_json oben."""
-    try:
-        text = payload["choices"][0]["message"]["content"]
-        return json.loads(text)
-    except (KeyError, TypeError, IndexError, ValueError, json.JSONDecodeError) as exc:
-        raise LandmarkApiError(
-            "Unerwartete Antwortstruktur der Mistral Chat Completions API."
-        ) from exc
-
-
 def _landmark_detection_from_json(parsed: Any) -> LandmarkDetection:
     """Providerneutrale Extraktion von name/confidence aus dem bereits geparsten JSON-Objekt
     (specs/decisions/0031-mistral-provider-option-cloud-landmark.md Punkt 2, Refactoring des
@@ -139,7 +84,7 @@ def _landmark_detection_from_json(parsed: Any) -> LandmarkDetection:
         confidence = float(parsed.get("confidence", 0.0))
     except (AttributeError, TypeError, ValueError) as exc:
         # Bewusst generische, providerneutrale Meldung (kein Provider-Name mehr bekannt an dieser
-        # Stelle) - analog der Begruendung in _anthropic_response_to_json oben.
+        # Stelle) - analog der Begruendung in cloud_vision.py::anthropic_response_to_json.
         raise LandmarkApiError("Unerwartete Antwortstruktur der Vision-API-Antwort.") from exc
     if name is not None and not isinstance(name, str):
         raise LandmarkApiError("Unerwartete Antwortstruktur der Vision-API-Antwort.")
@@ -208,8 +153,8 @@ class AnthropicLandmarkClient:
             # in der Exception) noch die Base64-Bilddaten.
             raise LandmarkApiError(f"Anthropic Vision API nicht erreichbar: {exc}") from exc
 
-        _raise_for_status(response, "Anthropic")
-        parsed = _anthropic_response_to_json(response.json())
+        raise_for_vision_api_status(response, "Anthropic", LandmarkApiError)
+        parsed = anthropic_response_to_json(response.json(), LandmarkApiError)
         return _landmark_detection_from_json(parsed)
 
 
@@ -274,8 +219,8 @@ class MistralLandmarkClient:
             # Exceptions enthalten weder den API-Key noch die Base64-Bilddaten.
             raise LandmarkApiError(f"Mistral Chat Completions API nicht erreichbar: {exc}") from exc
 
-        _raise_for_status(response, "Mistral")
-        parsed = _mistral_response_to_json(response.json())
+        raise_for_vision_api_status(response, "Mistral", LandmarkApiError)
+        parsed = mistral_response_to_json(response.json(), LandmarkApiError)
         return _landmark_detection_from_json(parsed)
 
 

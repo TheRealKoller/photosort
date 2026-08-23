@@ -125,3 +125,11 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["tensorflow.*"]
 ignore_missing_imports = true
+
+# onnxruntime liefert keine Typstubs/py.typed-Marker (label_embedding.py,
+# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) - dieselbe
+# Behandlung wie mediapipe oben. tokenizers liefert dagegen einen eigenen py.typed-Marker,
+# braucht keinen Override.
+[[tool.mypy.overrides]]
+module = ["onnxruntime.*"]
+ignore_missing_imports = true
