@@ -63,8 +63,8 @@ export interface ProjectOut {
   // Projektweiter Einwilligungs-Schalter fuer die Cloud-Sehenswuerdigkeit-Erkennung
   // (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) - Default false,
   // consent_at null solange nicht aktiviert.
-  cloud_landmark_detection_enabled: boolean
-  cloud_landmark_consent_at: string | null
+  cloud_vision_detection_enabled: boolean
+  cloud_vision_consent_at: string | null
 }
 
 export interface BrowseEntry {

@@ -5,12 +5,15 @@ import { ApiError } from '../api/client'
 import { Alert } from '../components/ui/alert'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../components/ui/popover'
 import { Switch } from '../components/ui/switch'
-import { useProjectQuery, useSetCloudLandmarkConsentMutation } from '../hooks/useProjects'
+import { useProjectQuery, useSetCloudVisionConsentMutation } from '../hooks/useProjects'
 
 /**
  * Erste dedizierte Projekteinstellungs-Seite im Projekt (specs/features/0047-sehenswuerdigkeit-
  * erkennung-cloud-vision-api.md, UI/UX-Abschnitt) - Toggle-Switch fuer die projektweite Cloud-
- * Sehenswuerdigkeit-Einwilligung + Info-Popover, das den Cloud-Versand erklaert.
+ * Bilderkennungs-Einwilligung + Info-Popover, das den Cloud-Versand erklaert. Label/Erklaertext
+ * seit specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md auf
+ * "Cloud-Bilderkennung" erweitert (reine Textpflege, kein neues UI-Element) - derselbe Schalter
+ * gated ab sofort zusaetzlich die neue Remote-Kategorie-Klassifizierung.
  *
  * Bewusst OHNE die geraetespezifische Hover-Auto-Close-Logik von CriterionDetailsPopover.tsx
  * (technische Detailentscheidung der Umsetzung): dieses Popover sitzt an einer einzelnen
@@ -27,7 +30,7 @@ export function ProjectSettingsPage() {
   const { projectId } = useParams()
   const id = Number(projectId)
   const query = useProjectQuery(id)
-  const consentMutation = useSetCloudLandmarkConsentMutation(id)
+  const consentMutation = useSetCloudVisionConsentMutation(id)
   const [infoOpen, setInfoOpen] = useState(false)
 
   if (query.isError && query.error instanceof ApiError && query.error.status === 404) {
@@ -71,14 +74,14 @@ export function ProjectSettingsPage() {
             umbrechen koennen, statt den Switch aus der Zeile zu draengen/zu ueberlappen. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
-            <span id="cloud-landmark-consent-label" className="font-medium text-text-h">
-              Cloud-Sehenswürdigkeit-Erkennung
+            <span id="cloud-vision-consent-label" className="font-medium text-text-h">
+              Cloud-Bilderkennung
             </span>
             <Popover open={infoOpen} onOpenChange={setInfoOpen}>
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label="Erkläre Cloud-Sehenswürdigkeit-Erkennung"
+                  aria-label="Erkläre Cloud-Bilderkennung"
                   className="flex size-11 shrink-0 items-center justify-center rounded-md border border-border text-xs font-semibold text-text transition-colors hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
                 >
                   i
@@ -86,9 +89,7 @@ export function ProjectSettingsPage() {
               </PopoverTrigger>
               <PopoverContent>
                 <div className="flex items-center justify-between gap-3 pb-3">
-                  <p className="text-sm font-semibold text-text-h">
-                    Cloud-Sehenswürdigkeit-Erkennung
-                  </p>
+                  <p className="text-sm font-semibold text-text-h">Cloud-Bilderkennung</p>
                   <PopoverClose
                     aria-label="Schließen"
                     className="flex size-8 shrink-0 items-center justify-center rounded-md text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -98,16 +99,19 @@ export function ProjectSettingsPage() {
                 </div>
                 <p className="text-sm text-text">
                   Fotos, die als Landschaft oder Gebäude erkannt wurden, werden zur Analyse an die
-                  Anthropic-Cloud-API versendet.
+                  Anthropic-Cloud-API versendet, um Sehenswürdigkeiten zu erkennen. Derselbe
+                  Schalter gibt zusätzlich die optionale Remote-Kategorisierung frei (Kuratierungs-
+                  Schritt): dort ausgewählte Fotos werden an dieselbe Cloud-API gesendet, um offene
+                  Kategorie-Schlagworte (z. B. Ereignis, Ort, Motiv) zu erkennen.
                 </p>
               </PopoverContent>
             </Popover>
           </div>
           <Switch
-            checked={project.cloud_landmark_detection_enabled}
+            checked={project.cloud_vision_detection_enabled}
             onCheckedChange={(next) => consentMutation.mutate(next)}
             disabled={consentMutation.isPending}
-            aria-labelledby="cloud-landmark-consent-label"
+            aria-labelledby="cloud-vision-consent-label"
           />
         </div>
       </div>

@@ -6,7 +6,7 @@ import {
   createProject,
   getProject,
   listProjects,
-  setCloudLandmarkConsent,
+  setCloudVisionConsent,
   triggerScan,
   triggerScore,
   triggerScoreCriteria,
@@ -27,8 +27,8 @@ const PROJECT: ProjectOut = {
   last_scoring_run: null,
   last_criterion_scoring_run: null,
   category_selection_enabled: true,
-  cloud_landmark_detection_enabled: false,
-  cloud_landmark_consent_at: null,
+  cloud_vision_detection_enabled: false,
+  cloud_vision_consent_at: null,
 }
 
 describe('api/projects', () => {
@@ -103,16 +103,16 @@ describe('api/projects', () => {
     expect(result).toEqual({ status: 'queued' })
   })
 
-  it('sets the cloud landmark consent via PUT /projects/{id}/cloud-landmark-consent', async () => {
+  it('sets the cloud landmark consent via PUT /projects/{id}/cloud-vision-consent', async () => {
     const response = {
-      cloud_landmark_detection_enabled: true,
-      cloud_landmark_consent_at: '2026-08-21T10:00:00Z',
+      cloud_vision_detection_enabled: true,
+      cloud_vision_consent_at: '2026-08-21T10:00:00Z',
     }
     vi.mocked(apiFetch).mockResolvedValue(response)
 
-    const result = await setCloudLandmarkConsent(1, true)
+    const result = await setCloudVisionConsent(1, true)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/cloud-landmark-consent', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/cloud-vision-consent', {
       method: 'PUT',
       body: { enabled: true },
     })

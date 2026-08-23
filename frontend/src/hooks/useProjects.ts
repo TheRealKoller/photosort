@@ -5,7 +5,7 @@ import {
   createProject,
   getProject,
   listProjects,
-  setCloudLandmarkConsent,
+  setCloudVisionConsent,
   triggerScan,
   triggerScore,
   triggerScoreCriteria,
@@ -93,10 +93,10 @@ export function useTriggerScoreCriteriaMutation(id: number) {
 }
 
 // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md
-export function useSetCloudLandmarkConsentMutation(id: number) {
+export function useSetCloudVisionConsentMutation(id: number) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (enabled: boolean) => setCloudLandmarkConsent(id, enabled),
+    mutationFn: (enabled: boolean) => setCloudVisionConsent(id, enabled),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
     },
