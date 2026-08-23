@@ -277,7 +277,7 @@ async def test_get_project_reports_last_scoring_run_progress(
 # Erkennung.
 
 
-async def test_new_project_defaults_to_cloud_landmark_detection_disabled(
+async def test_new_project_defaults_to_cloud_vision_detection_disabled(
     authenticated_api_client: httpx.AsyncClient,
 ) -> None:
     app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
@@ -286,11 +286,11 @@ async def test_new_project_defaults_to_cloud_landmark_detection_disabled(
     )
 
     body = created.json()
-    assert body["cloud_landmark_detection_enabled"] is False
-    assert body["cloud_landmark_consent_at"] is None
+    assert body["cloud_vision_detection_enabled"] is False
+    assert body["cloud_vision_consent_at"] is None
 
 
-async def test_enabling_cloud_landmark_consent_sets_the_timestamp(
+async def test_enabling_cloud_vision_consent_sets_the_timestamp(
     authenticated_api_client: httpx.AsyncClient,
 ) -> None:
     app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
@@ -300,20 +300,20 @@ async def test_enabling_cloud_landmark_consent_sets_the_timestamp(
     project_id = created.json()["id"]
 
     response = await authenticated_api_client.put(
-        f"/projects/{project_id}/cloud-landmark-consent", json={"enabled": True}
+        f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["cloud_landmark_detection_enabled"] is True
-    assert body["cloud_landmark_consent_at"] is not None
+    assert body["cloud_vision_detection_enabled"] is True
+    assert body["cloud_vision_consent_at"] is not None
 
     detail = await authenticated_api_client.get(f"/projects/{project_id}")
-    assert detail.json()["cloud_landmark_detection_enabled"] is True
-    assert detail.json()["cloud_landmark_consent_at"] is not None
+    assert detail.json()["cloud_vision_detection_enabled"] is True
+    assert detail.json()["cloud_vision_consent_at"] is not None
 
 
-async def test_disabling_cloud_landmark_consent_resets_the_timestamp_to_null(
+async def test_disabling_cloud_vision_consent_resets_the_timestamp_to_null(
     authenticated_api_client: httpx.AsyncClient,
 ) -> None:
     app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
@@ -322,20 +322,20 @@ async def test_disabling_cloud_landmark_consent_resets_the_timestamp_to_null(
     )
     project_id = created.json()["id"]
     await authenticated_api_client.put(
-        f"/projects/{project_id}/cloud-landmark-consent", json={"enabled": True}
+        f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
     )
 
     response = await authenticated_api_client.put(
-        f"/projects/{project_id}/cloud-landmark-consent", json={"enabled": False}
+        f"/projects/{project_id}/cloud-vision-consent", json={"enabled": False}
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["cloud_landmark_detection_enabled"] is False
-    assert body["cloud_landmark_consent_at"] is None
+    assert body["cloud_vision_detection_enabled"] is False
+    assert body["cloud_vision_consent_at"] is None
 
 
-async def test_repeatedly_enabling_cloud_landmark_consent_refreshes_the_timestamp(
+async def test_repeatedly_enabling_cloud_vision_consent_refreshes_the_timestamp(
     authenticated_api_client: httpx.AsyncClient,
 ) -> None:
     # Kein "nur beim ersten Mal"-Sonderfall (Teststrategie-Abschnitt der Spec).
@@ -346,27 +346,27 @@ async def test_repeatedly_enabling_cloud_landmark_consent_refreshes_the_timestam
     project_id = created.json()["id"]
 
     first = await authenticated_api_client.put(
-        f"/projects/{project_id}/cloud-landmark-consent", json={"enabled": True}
+        f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
     )
-    first_timestamp = first.json()["cloud_landmark_consent_at"]
+    first_timestamp = first.json()["cloud_vision_consent_at"]
 
     second = await authenticated_api_client.put(
-        f"/projects/{project_id}/cloud-landmark-consent", json={"enabled": True}
+        f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
     )
 
     assert second.status_code == 200
-    assert second.json()["cloud_landmark_consent_at"] is not None
+    assert second.json()["cloud_vision_consent_at"] is not None
     # Kein exakter Ungleichheits-Beweis noetig (Aufloesung koennte identisch sein) - der
     # eigentliche Nachweis ist, dass ein zweiter Aufruf keinen Fehler/Sonderfall ausloest und
     # weiterhin einen gesetzten Zeitstempel liefert.
     assert first_timestamp is not None
 
 
-async def test_cloud_landmark_consent_returns_404_for_unknown_project(
+async def test_cloud_vision_consent_returns_404_for_unknown_project(
     authenticated_api_client: httpx.AsyncClient,
 ) -> None:
     response = await authenticated_api_client.put(
-        "/projects/999/cloud-landmark-consent", json={"enabled": True}
+        "/projects/999/cloud-vision-consent", json={"enabled": True}
     )
 
     assert response.status_code == 404

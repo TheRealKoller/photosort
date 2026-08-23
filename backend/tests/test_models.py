@@ -511,31 +511,31 @@ async def test_photo_score_duplicate_of_references_another_photo(db_session: Asy
 # dedizierte Tabelle fuer den erkannten Landmark-Namen.
 
 
-async def test_project_cloud_landmark_consent_defaults(db_session: AsyncSession) -> None:
+async def test_project_cloud_vision_consent_defaults(db_session: AsyncSession) -> None:
     project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
     db_session.add(project)
     await db_session.commit()
 
     result = await db_session.execute(select(Project).where(Project.id == project.id))
     stored = result.scalar_one()
-    assert stored.cloud_landmark_detection_enabled is False
-    assert stored.cloud_landmark_consent_at is None
+    assert stored.cloud_vision_detection_enabled is False
+    assert stored.cloud_vision_consent_at is None
 
 
-async def test_project_cloud_landmark_consent_can_be_enabled(db_session: AsyncSession) -> None:
+async def test_project_cloud_vision_consent_can_be_enabled(db_session: AsyncSession) -> None:
     project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
     db_session.add(project)
     await db_session.flush()
 
     now = datetime.now(UTC)
-    project.cloud_landmark_detection_enabled = True
-    project.cloud_landmark_consent_at = now
+    project.cloud_vision_detection_enabled = True
+    project.cloud_vision_consent_at = now
     await db_session.commit()
 
     result = await db_session.execute(select(Project).where(Project.id == project.id))
     stored = result.scalar_one()
-    assert stored.cloud_landmark_detection_enabled is True
-    assert stored.cloud_landmark_consent_at is not None
+    assert stored.cloud_vision_detection_enabled is True
+    assert stored.cloud_vision_consent_at is not None
 
 
 async def test_create_photo_landmark_detection(db_session: AsyncSession) -> None:

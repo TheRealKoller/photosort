@@ -1165,11 +1165,11 @@ async def run_criterion_scoring(
         # Cloud-Phase im Kriterien-Scoring-Pfad, laeuft NACH der obigen (rein lokalen/synchronen)
         # Foto-Schleife, VOR derive_active_categories/rank_photos (Punkt 3), damit landmark-Werte
         # noch in die Kategorie-/Rangfolgenbildung einfliessen koennen. `project.
-        # cloud_landmark_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread waehrend
+        # cloud_vision_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread waehrend
         # des Laufs, dokumentierte Vereinfachung) - ist der Schalter aus (Default), wird
         # build_landmark_client GAR NICHT ERST aufgerufen: keine Netzwerkverbindung, kein API-Key
         # noetig, kein Byte verlaesst den Server (Security-Muss-Kriterium der Spec).
-        if project.cloud_landmark_detection_enabled and rows:
+        if project.cloud_vision_detection_enabled and rows:
             landmark_client = _try_build(build_landmark_client)
             if landmark_client is not None:
                 try:

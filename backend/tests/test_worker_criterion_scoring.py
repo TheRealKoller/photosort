@@ -1899,7 +1899,7 @@ async def test_consent_enabled_sends_a_landscape_photo_to_the_landmark_client(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     project = await _make_project(db_session)
-    project.cloud_landmark_detection_enabled = True
+    project.cloud_vision_detection_enabled = True
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
@@ -1970,7 +1970,7 @@ async def test_landmark_detection_row_persists_the_configured_provider(
 ) -> None:
     monkeypatch.setattr(worker.settings, "landmark_provider", "mistral")
     project = await _make_project(db_session)
-    project.cloud_landmark_detection_enabled = True
+    project.cloud_vision_detection_enabled = True
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
@@ -2009,7 +2009,7 @@ async def test_provider_switch_between_runs_does_not_overwrite_the_stored_provid
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project = await _make_project(db_session)
-    project.cloud_landmark_detection_enabled = True
+    project.cloud_vision_detection_enabled = True
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
@@ -2073,7 +2073,7 @@ async def test_photo_without_an_identified_landmark_name_gets_zero_score_and_no_
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     project = await _make_project(db_session)
-    project.cloud_landmark_detection_enabled = True
+    project.cloud_vision_detection_enabled = True
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
@@ -2116,7 +2116,7 @@ async def test_vorfilterung_sends_photo_that_only_meets_the_gebaeude_threshold(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     project = await _make_project(db_session)
-    project.cloud_landmark_detection_enabled = True
+    project.cloud_vision_detection_enabled = True
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
@@ -2151,7 +2151,7 @@ async def test_vorfilterung_does_not_send_photo_below_both_thresholds_empty_cand
     # einzige Foto des Laufs erreicht weder content_landscape noch gebaeude, LandmarkClientLike.
     # detect() wird nie aufgerufen, kein photo_landmark_detections-Eintrag.
     project = await _make_project(db_session)
-    project.cloud_landmark_detection_enabled = True
+    project.cloud_vision_detection_enabled = True
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
@@ -2185,7 +2185,7 @@ async def test_skip_already_scored_photo_but_local_criteria_are_recomputed(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     project = await _make_project(db_session)
-    project.cloud_landmark_detection_enabled = True
+    project.cloud_vision_detection_enabled = True
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
@@ -2241,7 +2241,7 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     project = await _make_project(db_session)
-    project.cloud_landmark_detection_enabled = True
+    project.cloud_vision_detection_enabled = True
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
@@ -2307,7 +2307,7 @@ async def test_landmark_calls_are_limited_by_landmark_api_concurrency(
 ) -> None:
     monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 2)
     project = await _make_project(db_session)
-    project.cloud_landmark_detection_enabled = True
+    project.cloud_vision_detection_enabled = True
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
 
@@ -2343,7 +2343,7 @@ async def test_cancelled_error_from_a_parallel_landmark_call_propagates_and_fail
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     project = await _make_project(db_session)
-    project.cloud_landmark_detection_enabled = True
+    project.cloud_vision_detection_enabled = True
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(

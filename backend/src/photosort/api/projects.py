@@ -80,13 +80,13 @@ class CriterionScoringRunSummary(BaseModel):
     error_message: str | None
 
 
-class CloudLandmarkConsentUpdate(BaseModel):
+class CloudVisionConsentUpdate(BaseModel):
     enabled: bool
 
 
-class CloudLandmarkConsentOut(BaseModel):
-    cloud_landmark_detection_enabled: bool
-    cloud_landmark_consent_at: datetime | None
+class CloudVisionConsentOut(BaseModel):
+    cloud_vision_detection_enabled: bool
+    cloud_vision_consent_at: datetime | None
 
 
 class ScoreCriteriaRequest(BaseModel):
@@ -114,12 +114,15 @@ class ProjectOut(BaseModel):
     # Frontend-Verfuegbarkeitsgate proaktiv aus den ohnehin bereits geladenen Projektdaten dieser
     # Seite ableiten kann (UI/UX-Abschnitt der Spec), statt erst nach einem fehlgeschlagenen 403.
     category_selection_enabled: bool
-    # Projektweiter Einwilligungs-Schalter fuer die Cloud-Sehenswuerdigkeit-Erkennung
-    # (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-
-    # landmark-erkennung.md Punkt 5) - hier statt in einem eigenen GET exponiert, damit die neue
-    # ProjectSettingsPage den aktuellen Zustand aus den bereits geladenen Projektdaten lesen kann.
-    cloud_landmark_detection_enabled: bool
-    cloud_landmark_consent_at: datetime | None
+    # Projektweiter Einwilligungs-Schalter fuer produktive Cloud-Vision-Datenfluesse (urspruenglich
+    # nur die Cloud-Sehenswuerdigkeit-Erkennung, specs/features/0047-sehenswuerdigkeit-erkennung-
+    # cloud-vision-api.md, decisions/0025-cloud-landmark-erkennung.md Punkt 5, umbenannt seit
+    # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
+    # 2 Migration a) - hier statt in einem eigenen GET exponiert, damit ProjectSettingsPage den
+    # aktuellen Zustand aus den bereits geladenen Projektdaten lesen kann. Gated seitdem sowohl
+    # `landmark` als auch die neue Remote-Kategorie-Klassifizierung.
+    cloud_vision_detection_enabled: bool
+    cloud_vision_consent_at: datetime | None
 
 
 async def _latest_scan_run(session: AsyncSession, project_id: int) -> ScanRun | None:
@@ -174,8 +177,8 @@ async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut
             else None
         ),
         category_selection_enabled=settings.category_selection_enabled,
-        cloud_landmark_detection_enabled=project.cloud_landmark_detection_enabled,
-        cloud_landmark_consent_at=project.cloud_landmark_consent_at,
+        cloud_vision_detection_enabled=project.cloud_vision_detection_enabled,
+        cloud_vision_consent_at=project.cloud_vision_consent_at,
     )
 
 
@@ -327,30 +330,35 @@ async def trigger_score_criteria(
     return {"status": "queued"}
 
 
-@router.put("/{project_id}/cloud-landmark-consent", response_model=CloudLandmarkConsentOut)
-async def set_cloud_landmark_consent(
+@router.put("/{project_id}/cloud-vision-consent", response_model=CloudVisionConsentOut)
+async def set_cloud_vision_consent(
     project_id: int,
-    payload: CloudLandmarkConsentUpdate,
+    payload: CloudVisionConsentUpdate,
     session: AsyncSession = Depends(get_session),
-) -> CloudLandmarkConsentOut:
+) -> CloudVisionConsentOut:
     """specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR
     decisions/0025-cloud-landmark-erkennung.md Punkt 5: `PUT` statt `POST`, da ein Zustand
     gesetzt wird statt ein Job ausgeloest (Vorbild: `PUT /photos/{id}/rating`, nicht
     `POST /projects/{id}/score`). Haengt am bestehenden router-weiten Auth-Torwaechter (Muss-
     Kriterium der Spec, kein zusaetzlicher `Depends(get_current_user)` hier noetig). Setzt
-    synchron `cloud_landmark_consent_at` (Zeitstempel bei Aktivierung, `NULL` bei Deaktivierung) -
+    synchron `cloud_vision_consent_at` (Zeitstempel bei Aktivierung, `NULL` bei Deaktivierung) -
     kein "nur beim ersten Mal"-Sonderfall, ein wiederholtes Aktivieren aktualisiert den
-    Zeitstempel jedes Mal erneut."""
+    Zeitstempel jedes Mal erneut.
+
+    Umbenannt von `cloud-landmark-consent` (specs/features/0055-remote-kategorie-klassifizierung-
+    mit-kostenschaetzung.md, ADR 0032 Punkt 2 Migration a): derselbe Schalter gated seitdem
+    zusaetzlich die neue Remote-Kategorie-Klassifizierung (worker.py::
+    run_remote_category_classification) - kein zweiter, granularerer Consent-Schalter."""
     project = await _get_project_or_404(project_id, session)
 
-    project.cloud_landmark_detection_enabled = payload.enabled
-    project.cloud_landmark_consent_at = (
+    project.cloud_vision_detection_enabled = payload.enabled
+    project.cloud_vision_consent_at = (
         datetime.now(UTC).replace(tzinfo=None) if payload.enabled else None
     )
     await session.commit()
     await session.refresh(project)
 
-    return CloudLandmarkConsentOut(
-        cloud_landmark_detection_enabled=project.cloud_landmark_detection_enabled,
-        cloud_landmark_consent_at=project.cloud_landmark_consent_at,
+    return CloudVisionConsentOut(
+        cloud_vision_detection_enabled=project.cloud_vision_detection_enabled,
+        cloud_vision_consent_at=project.cloud_vision_consent_at,
     )
