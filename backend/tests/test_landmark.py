@@ -468,3 +468,14 @@ async def test_mistral_timeout_is_applied_to_the_underlying_http_client() -> Non
     )
     assert client._client.timeout.read == 60.0  # Whitebox-Konfigurationsnachweis, geteilte
     # LANDMARK_REQUEST_TIMEOUT_SECONDS-Konstante (Akzeptanzkriterium der Spec, keine eigene)
+
+
+def test_mistral_error_message_never_embeds_the_api_key_or_base64_image_data() -> None:
+    # Mistral-Variante von test_error_message_never_embeds_the_api_key_or_base64_image_data oben
+    # (Nice-to-have-Fund security-engineer, ship-feature-Review-Runde) - dasselbe Sicherheits-
+    # Muss-Kriterium der Spec ("identisch zum Anthropic-Client") jetzt direkt mit MISTRAL_API_KEY
+    # demonstriert statt nur ueber die gemeinsame _raise_for_status-Codepfad-Identitaet gefolgert.
+    encoded_image = base64.b64encode(IMAGE_BYTES).decode()
+    error = LandmarkApiError("Mistral-Anfrage fehlgeschlagen: 401 Unauthorized")
+    assert MISTRAL_API_KEY not in str(error)
+    assert encoded_image not in str(error)
