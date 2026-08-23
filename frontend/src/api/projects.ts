@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { ProjectOut } from './types'
+import type { ClassifyCategoriesRemoteEstimateOut, ProjectOut } from './types'
 
 export interface CloudVisionConsentOut {
   cloud_vision_detection_enabled: boolean
@@ -65,5 +65,21 @@ export function setCloudVisionConsent(
   return apiFetch<CloudVisionConsentOut>(`/projects/${id}/cloud-vision-consent`, {
     method: 'PUT',
     body: { enabled },
+  })
+}
+
+// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
+// 6.1: funktioniert unabhaengig vom Consent-Schalter (auch bei deaktiviertem Consent 200).
+export function getClassifyCategoriesRemoteEstimate(
+  id: number
+): Promise<ClassifyCategoriesRemoteEstimateOut> {
+  return apiFetch<ClassifyCategoriesRemoteEstimateOut>(
+    `/projects/${id}/classify-categories-remote/estimate`
+  )
+}
+
+export function triggerClassifyCategoriesRemote(id: number): Promise<TriggerScanResponse> {
+  return apiFetch<TriggerScanResponse>(`/projects/${id}/classify-categories-remote`, {
+    method: 'POST',
   })
 }

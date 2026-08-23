@@ -1,5 +1,5 @@
 import { apiFetch, apiFetchBlob } from './client'
-import type { PhotoListOut, PhotoVariant, RatingFilter } from './types'
+import type { CategoryKey, CategoryOverrideOut, PhotoListOut, PhotoVariant, RatingFilter } from './types'
 
 export interface ListPhotosParams {
   ratingStatus?: RatingFilter
@@ -46,4 +46,20 @@ export async function fetchPhotoImageBlobUrl(
 ): Promise<string> {
   const blob = await apiFetchBlob(`/photos/${photoId}/image?variant=${variant}`)
   return URL.createObjectURL(blob)
+}
+
+// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
+// 6.3: der gesetzte Wert wird direkt zurueckgegeben (analog PUT /photos/{id}/rating).
+export function setCategoryOverride(
+  photoId: number,
+  categoryKey: CategoryKey
+): Promise<CategoryOverrideOut> {
+  return apiFetch<CategoryOverrideOut>(`/photos/${photoId}/category-override`, {
+    method: 'PUT',
+    body: { category_key: categoryKey },
+  })
+}
+
+export function deleteCategoryOverride(photoId: number): Promise<void> {
+  return apiFetch<void>(`/photos/${photoId}/category-override`, { method: 'DELETE' })
 }

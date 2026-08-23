@@ -4,9 +4,11 @@ import { apiFetch } from './client'
 import {
   confirmAusschussGate,
   createProject,
+  getClassifyCategoriesRemoteEstimate,
   getProject,
   listProjects,
   setCloudVisionConsent,
+  triggerClassifyCategoriesRemote,
   triggerScan,
   triggerScore,
   triggerScoreCriteria,
@@ -118,5 +120,31 @@ describe('api/projects', () => {
       body: { enabled: true },
     })
     expect(result).toEqual(response)
+  })
+
+  it('fetches the estimate via GET /projects/{id}/classify-categories-remote/estimate', async () => {
+    const response = {
+      candidate_count: 42,
+      provider: 'anthropic',
+      price_per_image_usd: 0.0045,
+      estimated_cost_usd: 0.189,
+    }
+    vi.mocked(apiFetch).mockResolvedValue(response)
+
+    const result = await getClassifyCategoriesRemoteEstimate(1)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify-categories-remote/estimate')
+    expect(result).toEqual(response)
+  })
+
+  it('triggers the remote classification via POST /projects/{id}/classify-categories-remote', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
+
+    const result = await triggerClassifyCategoriesRemote(1)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify-categories-remote', {
+      method: 'POST',
+    })
+    expect(result).toEqual({ status: 'queued' })
   })
 })

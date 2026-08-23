@@ -6,11 +6,13 @@ import { describe, expect, it, vi } from 'vitest'
 import * as projectsApi from '../api/projects'
 import type { ProjectOut } from '../api/types'
 import {
+  useClassifyCategoriesRemoteEstimateQuery,
   useConfirmAusschussGateMutation,
   useCreateProjectMutation,
   useProjectQuery,
   useProjectsQuery,
   useSetCloudVisionConsentMutation,
+  useTriggerClassifyCategoriesRemoteMutation,
   useTriggerScanMutation,
   useTriggerScoreCriteriaMutation,
   useTriggerScoreMutation,
@@ -146,6 +148,26 @@ describe('useProjectQuery', () => {
     )
     vi.useRealTimers()
   })
+
+  it('keeps polling while the last remote category classification run is running', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      project({ last_remote_category_classification_run: runningRemoteCategoryRun() })
+    )
+    const { wrapper } = makeWrapper()
+
+    const { result } = renderHook(() => useProjectQuery(1), { wrapper })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    const callsAfterFirstFetch = vi.mocked(projectsApi.getProject).mock.calls.length
+
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBeGreaterThan(
+      callsAfterFirstFetch
+    )
+    vi.useRealTimers()
+  })
 })
 
 describe('useCreateProjectMutation', () => {
@@ -241,6 +263,44 @@ describe('useSetCloudVisionConsentMutation', () => {
   })
 })
 
+describe('useClassifyCategoriesRemoteEstimateQuery', () => {
+  it('fetches the estimate for a project', async () => {
+    vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue({
+      candidate_count: 42,
+      provider: 'anthropic',
+      price_per_image_usd: 0.0045,
+      estimated_cost_usd: 0.189,
+    })
+    const { wrapper } = makeWrapper()
+
+    const { result } = renderHook(() => useClassifyCategoriesRemoteEstimateQuery(1), { wrapper })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(projectsApi.getClassifyCategoriesRemoteEstimate).toHaveBeenCalledWith(1)
+    expect(result.current.data?.candidate_count).toBe(42)
+  })
+})
+
+describe('useTriggerClassifyCategoriesRemoteMutation', () => {
+  it('invalidates the project detail AND estimate query after a successful trigger', async () => {
+    vi.mocked(projectsApi.triggerClassifyCategoriesRemote).mockResolvedValue({ status: 'queued' })
+    const { wrapper, queryClient } = makeWrapper()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const { result } = renderHook(() => useTriggerClassifyCategoriesRemoteMutation(1), {
+      wrapper,
+    })
+    result.current.mutate()
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(projectsApi.triggerClassifyCategoriesRemote).toHaveBeenCalledWith(1)
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['classify-categories-remote-estimate', 1],
+    })
+  })
+})
+
 function runningScan(): ProjectOut['last_scan'] {
   return {
     status: 'running',
@@ -271,6 +331,17 @@ function runningScoringRun(): ProjectOut['last_scoring_run'] {
 }
 
 function runningCriterionScoringRun(): ProjectOut['last_criterion_scoring_run'] {
+  return {
+    status: 'running',
+    started_at: '2026-07-20T10:00:00Z',
+    finished_at: null,
+    photos_total: 10,
+    photos_processed: 3,
+    error_message: null,
+  }
+}
+
+function runningRemoteCategoryRun(): ProjectOut['last_remote_category_classification_run'] {
   return {
     status: 'running',
     started_at: '2026-07-20T10:00:00Z',
