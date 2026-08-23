@@ -1,6 +1,6 @@
 # 0053 - Skill-/Agenten-Dateien kompaktieren: Prosa straffen und historische ADR-/Spec-Zitate entfernen
 
-**Status:** Accepted (Strang 1 umgesetzt, [PR #188](https://github.com/TheRealKoller/photosort/pull/188) — Gesamtstatus wechselt erst nach Merge von Strang 2/PR 2 auf `Implemented`)
+**Status:** Accepted (Strang 1 gemergt, [PR #188](https://github.com/TheRealKoller/photosort/pull/188); Strang 2 in Review, [PR #189](https://github.com/TheRealKoller/photosort/pull/189) — Gesamtstatus wechselt erst nach Merge von PR #189 auf `Implemented`)
 **Erstellt:** 2026-08-22
 **Bezug:** [`inbox/0026-idea-sharpener-tokenverbrauch-senken.md`](../inbox/0026-idea-sharpener-tokenverbrauch-senken.md) (Strang 1), [`inbox/0030-skills-agents-keine-adr-verweise.md`](../inbox/0030-skills-agents-keine-adr-verweise.md) (Strang 2), Spec [`0025`](./0025-test-engineer-review-kompaktierung.md) (Präzedenzfall für `test-engineer.md`, dort explizit als "eigene, separate Idee" für die übrigen Agenten vorgemerkt), Spec [`0032`](./0032-idea-sharpener-kalibrierung-und-skip-logik.md)/ADR [`0018`](../decisions/0018-idea-sharpener-kalibrierung-und-skip-logik.md) (bereits umgesetzte Modellzuweisung/Skip-Logik für den `idea-sharpener`-Ablauf selbst), Idea-Sharpening-Gespräche mit Daniel am 2026-08-22.
 
