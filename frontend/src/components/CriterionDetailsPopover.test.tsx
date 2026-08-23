@@ -112,6 +112,34 @@ describe('CriterionDetailsPopover', () => {
     expect(within(dialog).getByText('Duplikat von Foto #42')).toBeInTheDocument()
   })
 
+  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: analog schlanker
+  // Integrations-Nachweis - die volle Kategorie-Kandidaten-Matrix lebt in
+  // CriterionDetailsList.test.tsx, hier nur der Durchreichungs-Nachweis.
+  it('passes categoryCandidates/categoryOverride through to CriterionDetailsList', async () => {
+    const onOverrideCategory = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsPopover
+        criterionScores={[criterionScore()]}
+        ranking={ranking({ category_key: 'hund' })}
+        suggestion={null}
+        categoryCandidates={[
+          { category_key: 'hund', origin: 'remote', score: 0.9, provider: 'anthropic' },
+          { category_key: 'people', origin: 'local', score: 0.4, provider: null },
+        ]}
+        categoryOverride={null}
+        onOverrideCategory={onOverrideCategory}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Kategorie-Kandidaten')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /übernehmen/i }))
+
+    expect(onOverrideCategory).toHaveBeenCalledWith('people')
+  })
+
   it('closes the popover on a second click of the trigger', async () => {
     const user = userEvent.setup()
     render(
