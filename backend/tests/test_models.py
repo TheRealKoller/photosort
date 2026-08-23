@@ -2,9 +2,10 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from photosort.models import (
     CriterionScoringRun,
@@ -594,3 +595,60 @@ async def test_deleting_photo_cascades_to_landmark_detection(db_session: AsyncSe
 
     result = await db_session.execute(select(PhotoLandmarkDetection))
     assert result.scalars().all() == []
+
+
+# specs/features/0054-mistral-provider-option-cloud-landmark.md, decisions/0031-mistral-provider-
+# option-cloud-landmark.md Punkt 5 ab hier: neue additive Spalte photo_landmark_detections.provider
+# - verhindert, dass die Herkunft bereits gescorter Fotos bei einem spaeteren Umschalten von
+# LANDMARK_PROVIDER stillschweigend unklar wird.
+
+
+async def test_photo_landmark_detection_provider_defaults_to_anthropic(
+    db_session: AsyncSession,
+) -> None:
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoLandmarkDetection(
+            photo_id=photo.id, name="Eiffelturm", confidence=0.87, computed_at=datetime.now(UTC)
+        )
+    )
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+    )
+    assert result.scalar_one().provider == "anthropic"
+
+
+async def test_photo_landmark_detection_provider_can_be_set_to_mistral(
+    db_session: AsyncSession,
+) -> None:
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoLandmarkDetection(
+            photo_id=photo.id,
+            name="Eiffelturm",
+            confidence=0.87,
+            computed_at=datetime.now(UTC),
+            provider="mistral",
+        )
+    )
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+    )
+    assert result.scalar_one().provider == "mistral"
+
+
+async def test_photo_landmark_detection_has_a_provider_column(db_session: AsyncSession) -> None:
+    # Migrations-Nachweis der Teststrategie ("neue Spalte per inspect() verifiziert") - schema
+    # wird hier ueber Base.metadata.create_all() (conftest.py::db_session) aus den Models erzeugt,
+    # nicht ueber die echte Alembic-Migration; inspect() bestaetigt trotzdem, dass die Spalte
+    # tatsaechlich als eigene DB-Spalte existiert statt nur als Python-Attribut.
+    def _get_columns(sync_session: Session) -> set[str]:
+        bind = sync_session.get_bind()
+        return {col["name"] for col in inspect(bind).get_columns("photo_landmark_detections")}
+
+    columns = await db_session.run_sync(_get_columns)
+    assert "provider" in columns

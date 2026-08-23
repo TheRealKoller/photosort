@@ -860,11 +860,15 @@ async def _detect_landmark_for_photo(
 
 
 async def _upsert_landmark_detection(
-    session: AsyncSession, photo_id: int, detection: LandmarkDetection, now: datetime
+    session: AsyncSession, photo_id: int, detection: LandmarkDetection, now: datetime, provider: str
 ) -> None:
     """Legt eine photo_landmark_detections-Zeile nur an, wenn tatsaechlich ein Name identifiziert
     wurde (ADR 0025 Punkt 6, kein Platzhalter-"unbekannt") - wird nur aufgerufen, wenn
-    detection.name is not None (siehe Aufrufer)."""
+    detection.name is not None (siehe Aufrufer). `provider` (specs/features/0054-mistral-
+    provider-option-cloud-landmark.md, ADR 0031 Punkt 5) wird atomar mit name/confidence gesetzt -
+    dieser Aufruf feuert praktisch nie fuer ein bereits gescortes Foto (Skip ueber
+    _select_landmark_candidates anhand von PhotoCriterionScore, providerunabhaengig), ein
+    Providerwechsel ueberschreibt das Feld bei bereits gescorten Fotos deshalb nicht."""
     assert detection.name is not None
     existing = await session.get(PhotoLandmarkDetection, photo_id)
     if existing is None:
@@ -873,6 +877,7 @@ async def _upsert_landmark_detection(
     existing.name = detection.name
     existing.confidence = detection.confidence
     existing.computed_at = now
+    existing.provider = provider
 
 
 def _compute_content_criteria(
@@ -1212,7 +1217,7 @@ async def run_criterion_scoring(
                             candidate_values[photo_id]["landmark"] = landmark_value
                             if detection.name is not None:
                                 await _upsert_landmark_detection(
-                                    session, photo_id, detection, now
+                                    session, photo_id, detection, now, settings.landmark_provider
                                 )
                 finally:
                     aclose = getattr(landmark_client, "aclose", None)

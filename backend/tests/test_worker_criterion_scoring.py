@@ -1953,6 +1953,120 @@ async def test_consent_enabled_sends_a_landscape_photo_to_the_landmark_client(
     ).scalar_one()
     assert detection_row.name == "Eiffelturm"
     assert detection_row.confidence == 0.87
+    # specs/features/0054-mistral-provider-option-cloud-landmark.md: unveraendertes
+    # LANDMARK_PROVIDER (Default) -> "anthropic" wird atomar mit name/confidence persistiert.
+    assert detection_row.provider == "anthropic"
+
+
+# specs/features/0054-mistral-provider-option-cloud-landmark.md, decisions/0031-mistral-provider-
+# option-cloud-landmark.md Punkt 5 ab hier: provider-Wert wird korrekt persistiert +
+# Umschalt-Regressionstest (altes provider-Feld bleibt bei einem Providerwechsel unveraendert -
+# das bestehende Skip-Verhalten fuer bereits gescorte Fotos, ADR 0025 Punkt 3, greift providerun-
+# abhaengig weiterhin).
+
+
+async def test_landmark_detection_row_persists_the_configured_provider(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(worker.settings, "landmark_provider", "mistral")
+    project = await _make_project(db_session)
+    project.cloud_landmark_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    client = RecordingLandmarkClient(
+        detection=LandmarkDetection(name="Eiffelturm", confidence=0.9)
+    )
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: client,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    detection_row = (
+        await db_session.execute(
+            select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+        )
+    ).scalar_one()
+    assert detection_row.provider == "mistral"
+
+
+async def test_provider_switch_between_runs_does_not_overwrite_the_stored_provider(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_landmark_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    first_client = RecordingLandmarkClient(
+        detection=LandmarkDetection(name="Eiffelturm", confidence=0.87)
+    )
+    first_run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: first_client,
+    )
+    assert first_run.status == ScanStatus.SUCCESS
+    assert len(first_client.calls) == 1
+
+    # LANDMARK_PROVIDER wird "mitten im Projektverlauf" umgeschaltet (ADR 0031 Punkt 5) - das
+    # bereits gescorte Foto bleibt aber ein Skip-Kandidat (existierende PhotoCriterionScore-Zeile),
+    # der Client wird fuer dieses Foto also gar nicht erneut aufgerufen.
+    monkeypatch.setattr(worker.settings, "landmark_provider", "mistral")
+    second_client = RecordingLandmarkClient(
+        detection=LandmarkDetection(name="Kolosseum", confidence=0.5)
+    )
+    second_run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: second_client,
+    )
+
+    assert second_run.status == ScanStatus.SUCCESS
+    assert second_client.calls == []  # nicht erneut gesendet (bestehendes Skip-Verhalten)
+
+    detection_row = (
+        await db_session.execute(
+            select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+        )
+    ).scalar_one()
+    # provider bleibt beim alten Wert stehen, wird nicht ueberschrieben (Akzeptanzkriterium).
+    assert detection_row.provider == "anthropic"
+    assert detection_row.name == "Eiffelturm"
 
 
 async def test_photo_without_an_identified_landmark_name_gets_zero_score_and_no_detection_row(
