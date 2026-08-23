@@ -8,6 +8,7 @@ import {
   useTriggerClassifyCategoriesRemoteMutation,
 } from '../hooks/useProjects'
 import { useTriggerConfirmation } from '../hooks/useTriggerConfirmation'
+import { formatProviderLabel } from '../utils/categoryLabels'
 import { StatusDot } from './StatusDot'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
@@ -16,11 +17,6 @@ import { Progress } from './ui/progress'
 interface RemoteCategoryClassificationSectionProps {
   project: ProjectOut
   refetchProject: () => unknown
-}
-
-const PROVIDER_LABELS: Readonly<Record<string, string>> = {
-  anthropic: 'Anthropic',
-  mistral: 'Mistral',
 }
 
 function formatUsd(value: number): string {
@@ -105,7 +101,7 @@ export function RemoteCategoryClassificationSection({
   const percent = photosTotal > 0 ? Math.floor((photosProcessed / photosTotal) * 100) : 0
   const announcedDecile = Math.floor(percent / 10) * 10
 
-  const providerLabel = estimate ? (PROVIDER_LABELS[estimate.provider] ?? estimate.provider) : ''
+  const providerLabel = estimate ? formatProviderLabel(estimate.provider) : ''
 
   return (
     <section className="flex flex-col items-start gap-3">

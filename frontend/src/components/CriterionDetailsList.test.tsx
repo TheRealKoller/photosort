@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
 
-import type { CriterionScoreOut, RankingOut, SuggestionOut } from '../api/types'
+import type { CategoryCandidateOut, CriterionScoreOut, RankingOut, SuggestionOut } from '../api/types'
 import { CriterionDetailsList } from './CriterionDetailsList'
 
 function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionScoreOut {
@@ -21,6 +22,16 @@ function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
     rank_score: 0.8,
     rank_position: 2,
     partition_size: 5,
+    ...overrides,
+  }
+}
+
+function candidate(overrides: Partial<CategoryCandidateOut> = {}): CategoryCandidateOut {
+  return {
+    category_key: 'hund',
+    origin: 'remote',
+    score: 0.9,
+    provider: 'anthropic',
     ...overrides,
   }
 }
@@ -178,5 +189,216 @@ describe('CriterionDetailsList', () => {
     expect(container.querySelector('dl')).not.toBeNull()
     expect(container.querySelector('dt')).not.toBeNull()
     expect(container.querySelector('dd')).not.toBeNull()
+  })
+})
+
+// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt:
+// "Mehrfachkandidaten-Vergleich mit Override-Aktion" - nur bei mehr als einem Kandidaten
+// eingeblendet, ersetzt dann die einzeilige "Kategorie"-Anzeige (das "Rang"-Feld bleibt).
+describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
+  it('keeps the single-line category display when there is only one candidate', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: 'hund' })}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[candidate({ category_key: 'hund' })]}
+      />
+    )
+
+    expect(screen.getByText('Kategorie')).toBeInTheDocument()
+    expect(screen.getByText('Hund')).toBeInTheDocument()
+    expect(screen.queryByText('Kategorie-Kandidaten')).not.toBeInTheDocument()
+  })
+
+  it('shows the candidate group instead of the single-line display with more than one candidate', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: 'hund' })}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[
+          candidate({ category_key: 'hund', origin: 'remote', score: 0.9, provider: 'anthropic' }),
+          candidate({ category_key: 'people', origin: 'local', score: 0.6, provider: null }),
+        ]}
+      />
+    )
+
+    expect(screen.getByText('Kategorie-Kandidaten')).toBeInTheDocument()
+    expect(screen.getByText('Hund')).toBeInTheDocument()
+    expect(screen.getByText('People')).toBeInTheDocument()
+    // Genau EINE "Kategorie"-dt (aus der Rang-Gruppe entfaellt sie hier, aber "Rang" bleibt).
+    expect(screen.queryByText('Kategorie')).not.toBeInTheDocument()
+    expect(screen.getByText(/rang 2 von 5/i)).toBeInTheDocument()
+  })
+
+  it('sorts candidates by score descending', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[
+          candidate({ category_key: 'people', score: 0.4 }),
+          candidate({ category_key: 'hund', score: 0.9 }),
+        ]}
+      />
+    )
+
+    const rows = screen.getAllByRole('listitem')
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Hund'),
+      expect.stringContaining('People'),
+    ])
+  })
+
+  it('shows the provider name for a remote candidate and "Lokal erkannt" for a local one', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[
+          candidate({ category_key: 'hund', origin: 'remote', provider: 'anthropic' }),
+          candidate({ category_key: 'people', origin: 'local', provider: null }),
+        ]}
+      />
+    )
+
+    expect(screen.getByText('Anthropic')).toBeInTheDocument()
+    expect(screen.getByText('Lokal erkannt')).toBeInTheDocument()
+  })
+
+  it('shows a neutral "Aktuell" chip without a button for the currently effective candidate', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: 'hund' })}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[
+          candidate({ category_key: 'hund' }),
+          candidate({ category_key: 'people', score: 0.1 }),
+        ]}
+        categoryOverride={null}
+      />
+    )
+
+    const currentRow = screen.getByTestId('category-candidate-row-hund')
+    expect(currentRow).toHaveTextContent('Aktuell')
+    expect(within(currentRow).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('shows "Manuell übernommen" + a reset button for the active override target', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: 'hund' })}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[
+          candidate({ category_key: 'hund' }),
+          candidate({ category_key: 'people', score: 0.1 }),
+        ]}
+        categoryOverride="hund"
+      />
+    )
+
+    const currentRow = screen.getByTestId('category-candidate-row-hund')
+    expect(currentRow).toHaveTextContent('Manuell übernommen')
+    expect(within(currentRow).getByRole('button', { name: /zurücksetzen/i })).toBeInTheDocument()
+  })
+
+  it('shows an "Übernehmen" button for a candidate that is neither effective nor the override target', async () => {
+    const onOverrideCategory = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: 'hund' })}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[
+          candidate({ category_key: 'hund' }),
+          candidate({ category_key: 'people', score: 0.1 }),
+        ]}
+        categoryOverride={null}
+        onOverrideCategory={onOverrideCategory}
+      />
+    )
+
+    const otherRow = screen.getByTestId('category-candidate-row-people')
+    const button = within(otherRow).getByRole('button', { name: /übernehmen/i })
+    await user.click(button)
+
+    expect(onOverrideCategory).toHaveBeenCalledWith('people')
+  })
+
+  it('calls onResetOverride when the reset button is clicked', async () => {
+    const onResetOverride = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: 'hund' })}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[candidate({ category_key: 'hund' }), candidate({ category_key: 'people' })]}
+        categoryOverride="hund"
+        onResetOverride={onResetOverride}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /zurücksetzen/i }))
+
+    expect(onResetOverride).toHaveBeenCalled()
+  })
+
+  it('shows an orphaned override as an extra row instead of letting it disappear', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: 'detail' })}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[
+          candidate({ category_key: 'people', origin: 'local', score: 0.6 }),
+          candidate({ category_key: 'hund', origin: 'remote', score: 0.2 }),
+        ]}
+        categoryOverride="urlaub"
+      />
+    )
+
+    const orphanRow = screen.getByTestId('category-candidate-row-urlaub')
+    expect(orphanRow).toHaveTextContent('Urlaub')
+    expect(orphanRow).toHaveTextContent('Manuell übernommen')
+    expect(within(orphanRow).getByRole('button', { name: /zurücksetzen/i })).toBeInTheDocument()
+  })
+
+  it('disables the specific pending button without blocking the rest of the list', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: 'hund' })}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[
+          candidate({ category_key: 'hund' }),
+          candidate({ category_key: 'people', score: 0.1 }),
+          candidate({ category_key: 'strand', score: 0.05 }),
+        ]}
+        categoryOverride={null}
+        pendingOverrideKey="people"
+      />
+    )
+
+    const pendingRow = screen.getByTestId('category-candidate-row-people')
+    const otherRow = screen.getByTestId('category-candidate-row-strand')
+    expect(within(pendingRow).getByRole('button', { name: /übernehmen/i })).toBeDisabled()
+    expect(within(otherRow).getByRole('button', { name: /übernehmen/i })).toBeEnabled()
   })
 })
