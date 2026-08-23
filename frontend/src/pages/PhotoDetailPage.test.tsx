@@ -30,6 +30,9 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     suggestion: null,
     ranking: null,
     criterion_scores: [],
+    remote_category_labels: [],
+    category_override: null,
+    category_candidates: [],
     ...overrides,
   }
 }

@@ -47,6 +47,17 @@ export interface CriterionScoringRunSummary {
   error_message: string | null
 }
 
+// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 6:
+// Run-Tracking analog CriterionScoringRunSummary, aber ohne Ausschuss-Gate-Bezug.
+export interface RemoteCategoryClassificationRunSummary {
+  status: ScanStatus
+  started_at: string
+  finished_at: string | null
+  photos_total: number
+  photos_processed: number
+  error_message: string | null
+}
+
 export interface ProjectOut {
   id: number
   name: string
@@ -56,15 +67,28 @@ export interface ProjectOut {
   last_scan: ScanSummary | null
   last_scoring_run: ScoringRunSummary | null
   last_criterion_scoring_run: CriterionScoringRunSummary | null
+  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md
+  last_remote_category_classification_run: RemoteCategoryClassificationRunSummary | null
   // Globales Feature-Flag (specs/features/0024-top-photo-selection-category-mix.md, weiterhin
   // verwendet fuer POST /score-criteria seit Spec 0037), auf ProjectOut statt einem eigenen
   // Endpunkt exponiert - siehe backend api/projects.py-Kommentar.
   category_selection_enabled: boolean
-  // Projektweiter Einwilligungs-Schalter fuer die Cloud-Sehenswuerdigkeit-Erkennung
-  // (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) - Default false,
-  // consent_at null solange nicht aktiviert.
+  // Projektweiter Einwilligungs-Schalter fuer produktive Cloud-Vision-Datenfluesse (urspruenglich
+  // nur die Cloud-Sehenswuerdigkeit-Erkennung, specs/features/0047-sehenswuerdigkeit-erkennung-
+  // cloud-vision-api.md) - Default false, consent_at null solange nicht aktiviert. Gated seit
+  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md zusaetzlich die
+  // Remote-Kategorie-Klassifizierung.
   cloud_vision_detection_enabled: boolean
   cloud_vision_consent_at: string | null
+}
+
+// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
+// 6.1: Kostenschaetzung vor dem Remote-Kategorisierungs-Lauf.
+export interface ClassifyCategoriesRemoteEstimateOut {
+  candidate_count: number
+  provider: string
+  price_per_image_usd: number
+  estimated_cost_usd: number
 }
 
 export interface BrowseEntry {
@@ -150,6 +174,30 @@ export interface CriterionScoreOut {
   source: CriterionSource
 }
 
+// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 6:
+// ein vom Vision-LLM geliefertes, auf einen kanonischen Eintrag aufgeloestes Roh-Label - immer
+// eine Liste (0-3 Eintraege), nie null, analog `ratings`/`criterion_scores`.
+export interface RemoteCategoryLabelOut {
+  canonical_key: string
+  display_name: string
+  raw_label: string
+  confidence: number
+  provider: string
+}
+
+// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt
+// "Datenbedarf": die fuer DIESES Foto tatsaechlich gueltige Kategorie-Kandidatenmenge (lokal
+// qualifizierende Kriterien + Remote-Erkennungen zusammen) - verhindert, dass das Frontend die
+// Praesenz-Schwellenlogik (backend criteria.py::CRITERIA_REGISTRY) selbst nachbilden muss.
+// `category_key` ist bereits im generischen Format (wie `RankingOut.category_key`). `provider`
+// ist nur bei `origin === 'remote'` gesetzt.
+export interface CategoryCandidateOut {
+  category_key: CategoryKey
+  origin: 'local' | 'remote'
+  score: number
+  provider: string | null
+}
+
 export interface PhotoOut {
   id: number
   relative_path: string
@@ -158,6 +206,14 @@ export interface PhotoOut {
   suggestion: SuggestionOut | null
   ranking: RankingOut | null
   criterion_scores: CriterionScoreOut[]
+  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: immer eine
+  // Liste (0-3 Eintraege), nie null.
+  remote_category_labels: RemoteCategoryLabelOut[]
+  // Dauerhafte manuelle Uebersteuerung (PhotoScore.category_override), null ohne aktiven
+  // Override.
+  category_override: CategoryKey | null
+  // Sortiert nach Score/Konfidenz absteigend (UI/UX-Abschnitt der Spec).
+  category_candidates: CategoryCandidateOut[]
 }
 
 export interface PhotoListOut {

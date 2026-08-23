@@ -26,6 +26,9 @@ function page(items: number[], total: number): PhotoListOut {
       suggestion: null,
       ranking: null,
       criterion_scores: [],
+      remote_category_labels: [],
+      category_override: null,
+      category_candidates: [],
     })),
     total,
   }
