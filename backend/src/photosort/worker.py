@@ -1352,6 +1352,37 @@ async def _classify_photo_for_remote_category(
     return await client.classify(image_bytes, _CLOUD_VISION_IMAGE_MIME_TYPE)
 
 
+async def select_remote_category_candidates(session: AsyncSession, project_id: int) -> list[Photo]:
+    """Kandidatenmenge fuer die Remote-Kategorie-Klassifizierung (specs/features/0055-remote-
+    kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 5): der KOMPLETTE Ausschuss-
+    Ueberlebender-Bestand (PhotoScore.suggested_status IS NULL) OHNE Vorfilter (anders als
+    landmark, ADR 0021), abzueglich bereits klassifizierter Fotos (mindestens eine
+    `photo_category_detections`-Zeile). Von `run_remote_category_classification` UND
+    `GET .../classify-categories-remote/estimate` (api/projects.py) genutzt - "ermittelt ueber
+    dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf" (Akzeptanzkriterium der Spec)."""
+    rows = (
+        await session.execute(
+            select(Photo)
+            .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+            .where(Photo.project_id == project_id, PhotoScore.suggested_status.is_(None))
+        )
+    ).scalars().all()
+
+    if not rows:
+        return []
+
+    already_classified_ids = set(
+        (
+            await session.execute(
+                select(PhotoCategoryDetection.photo_id).where(
+                    PhotoCategoryDetection.photo_id.in_([photo.id for photo in rows])
+                )
+            )
+        ).scalars()
+    )
+    return [photo for photo in rows if photo.id not in already_classified_ids]
+
+
 async def run_remote_category_classification(
     session: AsyncSession,
     project: Project,
@@ -1361,40 +1392,19 @@ async def run_remote_category_classification(
 ) -> RemoteCategoryClassificationRun:
     """Eigenstaendiger, expliziter Job (specs/features/0055-remote-kategorie-klassifizierung-mit-
     kostenschaetzung.md, ADR 0032 Punkt 5) - KEIN Teil von run_criterion_scoring, eigene Run-
-    Tabelle, eigenes Concurrency-Setting. Kandidatenmenge: der KOMPLETTE Ausschuss-Ueberlebender-
-    Bestand (PhotoScore.suggested_status IS NULL) OHNE Vorfilter (anders als landmark, ADR 0021),
-    abzueglich bereits klassifizierter Fotos (mindestens eine `photo_category_detections`-Zeile).
-    Best-effort ohne Retry: ein einzelner Fehlschlag bricht den Lauf nicht ab, das Foto bleibt beim
-    naechsten Lauf erneut Kandidat. `project.cloud_vision_detection_enabled` wird hier EINMALIG
-    gelesen (kein Live-Reread, dokumentierte Vereinfachung analog run_criterion_scoring) - ist der
-    Schalter aus (Default) ODER der Kandidatenpool leer, wird `build_client` GAR NICHT ERST
-    aufgerufen (Security-Muss-Kriterium, geteiltes Consent-Gate mit `landmark`)."""
+    Tabelle, eigenes Concurrency-Setting. Best-effort ohne Retry: ein einzelner Fehlschlag bricht
+    den Lauf nicht ab, das Foto bleibt beim naechsten Lauf erneut Kandidat.
+    `project.cloud_vision_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread,
+    dokumentierte Vereinfachung analog run_criterion_scoring) - ist der Schalter aus (Default)
+    ODER der Kandidatenpool leer, wird `build_client` GAR NICHT ERST aufgerufen (Security-Muss-
+    Kriterium, geteiltes Consent-Gate mit `landmark`)."""
     run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.RUNNING)
     session.add(run)
     await session.commit()
     await session.refresh(run)
 
     try:
-        rows = (
-            await session.execute(
-                select(Photo)
-                .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-                .where(Photo.project_id == project.id, PhotoScore.suggested_status.is_(None))
-            )
-        ).scalars().all()
-
-        already_classified_ids: set[int] = set()
-        if rows:
-            already_classified_ids = set(
-                (
-                    await session.execute(
-                        select(PhotoCategoryDetection.photo_id).where(
-                            PhotoCategoryDetection.photo_id.in_([photo.id for photo in rows])
-                        )
-                    )
-                ).scalars()
-            )
-        candidates = [photo for photo in rows if photo.id not in already_classified_ids]
+        candidates = await select_remote_category_candidates(session, project.id)
 
         run.photos_total = len(candidates)
         run.photos_processed = 0

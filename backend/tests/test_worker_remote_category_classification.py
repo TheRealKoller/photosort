@@ -24,7 +24,7 @@ from photosort.models import (
 )
 from photosort.remote_classification import CategoryLabelDetection
 from photosort.thumbnails import display_path
-from photosort.worker import run_remote_category_classification
+from photosort.worker import run_remote_category_classification, select_remote_category_candidates
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
 # decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 5: eigenstaendiger
@@ -560,3 +560,43 @@ async def test_a_new_canonical_label_is_reused_across_two_projects(
 
     detections = (await db_session.execute(select(PhotoCategoryDetection))).scalars().all()
     assert {d.photo_id for d in detections} == {photo_a.id, photo_b.id}
+
+
+async def test_select_remote_category_candidates_excludes_rejected_and_already_classified(
+    db_session: AsyncSession,
+) -> None:
+    """Dediziert getestete, wiederverwendbare Kandidaten-Selektion (auch von GET .../estimate
+    genutzt, api/projects.py) - identisch zu der bereits ueber run_remote_category_classification
+    indirekt getesteten Logik, hier isoliert."""
+    project = await _make_project(db_session)
+    survivor = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, survivor)
+    rejected = await _add_photo(db_session, project, "b.jpg", "etag-2")
+    await _add_score(db_session, rejected, suggested_status=RatingStatus.REJECTED)
+    already_classified = await _add_photo(db_session, project, "c.jpg", "etag-3")
+    await _add_score(db_session, already_classified)
+    label = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
+    db_session.add(label)
+    await db_session.flush()
+    db_session.add(
+        PhotoCategoryDetection(
+            photo_id=already_classified.id,
+            category_label_id=label.id,
+            raw_label="Hund",
+            confidence=0.9,
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    candidates = await select_remote_category_candidates(db_session, project.id)
+
+    assert [photo.id for photo in candidates] == [survivor.id]
+
+
+async def test_select_remote_category_candidates_returns_empty_list_for_no_photos(
+    db_session: AsyncSession,
+) -> None:
+    project = await _make_project(db_session)
+    assert await select_remote_category_candidates(db_session, project.id) == []
