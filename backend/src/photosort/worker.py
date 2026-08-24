@@ -51,21 +51,25 @@ from photosort.criteria import (
 )
 from photosort.db import async_session_factory
 from photosort.horizon import compute_horizon_tilt_score
+from photosort.label_embedding import LabelEmbedderLike, build_label_embedder
 from photosort.landmark import (
     LandmarkClientLike,
     LandmarkDetection,
     build_landmark_client,
 )
 from photosort.models import (
+    CategoryLabel,
     CriterionScoringRun,
     CriterionSource,
     Photo,
+    PhotoCategoryDetection,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
     Project,
     RatingStatus,
+    RemoteCategoryClassificationRun,
     ScanRun,
     ScanStatus,
     ScoringRun,
@@ -74,6 +78,13 @@ from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCl
 from photosort.opencloud.exif import extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.ranking import rank_photos
+from photosort.remote_classification import (
+    CategoryDetectionClientLike,
+    CategoryLabelDetection,
+    CategoryLabelSnapshotEntry,
+    build_category_classification_client,
+    resolve_canonical_label,
+)
 from photosort.scoring import (
     SHARPNESS_REJECT_THRESHOLD,
     DuplicateCandidate,
@@ -135,8 +146,10 @@ CRITERION_SCORING_COMMIT_BATCH_SIZE = 5
 # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR decisions/0025-cloud-
 # landmark-erkennung.md Punkt 4: der Cloud-Aufruf nutzt ausschliesslich die bestehende
 # display-Cache-Variante, die thumbnails.py::generate_variants immer als JPEG schreibt - fester
-# Wert statt einer Format-Erkennung.
-_LANDMARK_IMAGE_MIME_TYPE = "image/jpeg"
+# Wert statt einer Format-Erkennung. Umbenannt von _LANDMARK_IMAGE_MIME_TYPE
+# (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md): identisches
+# Bildquellen-Muss-Kriterium (ADR 0032 Punkt 5) gilt jetzt fuer BEIDE Cloud-Vision-Pfade.
+_CLOUD_VISION_IMAGE_MIME_TYPE = "image/jpeg"
 
 # Default-Gewichtung fuer ranking.py::rank_photos (Akzeptanzkriterium der Spec: "nur die
 # strukturelle Faehigkeit ist Teil dieser Spec, kein konkreter Default" - Gleichgewichtung aller
@@ -256,7 +269,7 @@ def _now_utc() -> datetime:
 
 async def _fail_run(
     session: AsyncSession,
-    run: ScanRun | ScoringRun | CriterionScoringRun,
+    run: ScanRun | ScoringRun | CriterionScoringRun | RemoteCategoryClassificationRun,
     error_message: str,
 ) -> None:
     """Gemeinsame "Lauf auf FAILED setzen"-Logik fuer alle drei run_*-Funktionen
@@ -856,7 +869,7 @@ async def _detect_landmark_for_photo(
     aufrufenden Block-Schleife abgefangen), exakt wie ein LandmarkApiError des Clients selbst."""
     path = variant_path(cache_dir, photo.id, photo.etag, "display")
     image_bytes = path.read_bytes()
-    return await client.detect(image_bytes, _LANDMARK_IMAGE_MIME_TYPE)
+    return await client.detect(image_bytes, _CLOUD_VISION_IMAGE_MIME_TYPE)
 
 
 async def _upsert_landmark_detection(
@@ -878,6 +891,42 @@ async def _upsert_landmark_detection(
     existing.confidence = detection.confidence
     existing.computed_at = now
     existing.provider = provider
+
+
+async def _merge_remote_category_labels(
+    session: AsyncSession, candidate_values: dict[int, dict[str, float]]
+) -> frozenset[str]:
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
+    Punkt 1/7: liest bereits vorhandene `photo_category_detections`-Zeilen (aus einem frueheren,
+    separaten `classify-categories-remote`-Lauf - KEIN Cloud-Aufruf hier) fuer die photo_ids in
+    `candidate_values` und merged sie als zusaetzliche `f"remote:{canonical_key}"`-Pseudo-
+    Kriterien-Eintraege IN-PLACE in dieselbe Struktur, die ohnehin fuer alle lokalen Kriterien
+    gefuehrt wird. Jedes Foto hat wegen `UniqueConstraint(photo_id, category_label_id)` hoechstens
+    eine Zeile je `canonical_key` - kein Max-Aggregat noetig, reine 1:1-Uebernahme der
+    `confidence`. Gemeinsam genutzt von `run_criterion_scoring` (vor dem `derive_active_
+    categories`/`derive_category_key`-Aufruf) UND der Override-Rekonstruktion in `api/photos.py`
+    (DRY, ADR 0032 Punkt 6.4). Gibt die Menge der tatsaechlich vorkommenden Pseudo-Keys zurueck."""
+    if not candidate_values:
+        return frozenset()
+
+    rows = (
+        await session.execute(
+            select(
+                PhotoCategoryDetection.photo_id,
+                CategoryLabel.canonical_key,
+                PhotoCategoryDetection.confidence,
+            )
+            .join(CategoryLabel, CategoryLabel.id == PhotoCategoryDetection.category_label_id)
+            .where(PhotoCategoryDetection.photo_id.in_(candidate_values.keys()))
+        )
+    ).all()
+
+    dynamic_keys: set[str] = set()
+    for photo_id, canonical_key, confidence in rows:
+        pseudo_key = f"remote:{canonical_key}"
+        dynamic_keys.add(pseudo_key)
+        candidate_values[photo_id][pseudo_key] = confidence
+    return frozenset(dynamic_keys)
 
 
 def _compute_content_criteria(
@@ -1165,11 +1214,11 @@ async def run_criterion_scoring(
         # Cloud-Phase im Kriterien-Scoring-Pfad, laeuft NACH der obigen (rein lokalen/synchronen)
         # Foto-Schleife, VOR derive_active_categories/rank_photos (Punkt 3), damit landmark-Werte
         # noch in die Kategorie-/Rangfolgenbildung einfliessen koennen. `project.
-        # cloud_landmark_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread waehrend
+        # cloud_vision_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread waehrend
         # des Laufs, dokumentierte Vereinfachung) - ist der Schalter aus (Default), wird
         # build_landmark_client GAR NICHT ERST aufgerufen: keine Netzwerkverbindung, kein API-Key
         # noetig, kein Byte verlaesst den Server (Security-Muss-Kriterium der Spec).
-        if project.cloud_landmark_detection_enabled and rows:
+        if project.cloud_vision_detection_enabled and rows:
             landmark_client = _try_build(build_landmark_client)
             if landmark_client is not None:
                 try:
@@ -1224,15 +1273,29 @@ async def run_criterion_scoring(
                     if aclose is not None:
                         await aclose()
 
+        # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
+        # Punkt 1: merged bereits vorhandene Remote-Label-Ergebnisse (aus einem frueheren,
+        # separaten classify-categories-remote-Lauf - KEIN neuer Cloud-Aufruf hier) als zusaetzliche
+        # Pseudo-Kriterien-Eintraege in candidate_values, VOR dem folgenden derive_active_
+        # categories/derive_category_key-Aufruf (Reihenfolge ist Akzeptanzkriterium der Spec).
+        dynamic_keys = await _merge_remote_category_labels(session, candidate_values)
+
         # specs/features/0045-kategorien-aus-statistiken-ableiten.md, ADR 0023: GENAU EINMAL pro
         # Lauf, projektweit ueber ALLE Kandidaten-Fotos (nicht pro cluster_key), NACH der
         # Foto-Schleife - candidate_values enthaelt an dieser Stelle bereits die vollstaendigen,
-        # in diesem Lauf erfolgreich berechneten Kriterien-Werte aller Kandidaten.
-        active_categories = derive_active_categories(candidate_values)
+        # in diesem Lauf erfolgreich berechneten Kriterien-Werte aller Kandidaten (lokal + Remote-
+        # Pseudo-Keys).
+        active_categories = derive_active_categories(candidate_values, dynamic_keys=dynamic_keys)
+
+        scores_by_photo_id = {photo.id: score for photo, score in rows}
 
         partitions: dict[tuple[str, str], dict[int, dict[str, float]]] = {}
         for photo_id, values in candidate_values.items():
-            category_key = derive_category_key(values, active_categories)
+            # specs/features/0055, ADR 0032 Punkt 2 Migration b: ein manueller Override ueberlebt
+            # damit automatisch jeden kuenftigen vollen Re-Scoring-Lauf, ohne Sonderfallcode.
+            category_key = scores_by_photo_id[photo_id].category_override or derive_category_key(
+                values, active_categories, dynamic_keys=dynamic_keys
+            )
             partition_key = (cluster_by_photo[photo_id], category_key)
             partitions.setdefault(partition_key, {})[photo_id] = values
 
@@ -1277,6 +1340,271 @@ async def score_criteria(ctx: dict[str, Any], project_id: int, scoring_run_id: i
         return run.id
 
 
+async def _classify_photo_for_remote_category(
+    client: CategoryDetectionClientLike, cache_dir: Path, photo: Photo
+) -> list[CategoryLabelDetection]:
+    """Der reine I/O-/Netzwerk-Teil eines einzelnen Remote-Kategorie-Kandidaten (analog
+    _detect_landmark_for_photo) - bewusst OHNE Session-Zugriff, damit mehrere Aufrufe sicher
+    parallel per asyncio.gather laufen koennen. Nutzt ausschliesslich die bereits vorhandene
+    display-Cache-Variante (ADR 0032 Punkt 5), nie das Original."""
+    path = variant_path(cache_dir, photo.id, photo.etag, "display")
+    image_bytes = path.read_bytes()
+    return await client.classify(image_bytes, _CLOUD_VISION_IMAGE_MIME_TYPE)
+
+
+async def select_remote_category_candidates(session: AsyncSession, project_id: int) -> list[Photo]:
+    """Kandidatenmenge fuer die Remote-Kategorie-Klassifizierung (specs/features/0055-remote-
+    kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 5): der KOMPLETTE Ausschuss-
+    Ueberlebender-Bestand (PhotoScore.suggested_status IS NULL) OHNE Vorfilter (anders als
+    landmark, ADR 0021), abzueglich bereits klassifizierter Fotos (mindestens eine
+    `photo_category_detections`-Zeile). Von `run_remote_category_classification` UND
+    `GET .../classify-categories-remote/estimate` (api/projects.py) genutzt - "ermittelt ueber
+    dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf" (Akzeptanzkriterium der Spec)."""
+    rows = (
+        await session.execute(
+            select(Photo)
+            .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+            .where(Photo.project_id == project_id, PhotoScore.suggested_status.is_(None))
+        )
+    ).scalars().all()
+
+    if not rows:
+        return []
+
+    already_classified_ids = set(
+        (
+            await session.execute(
+                select(PhotoCategoryDetection.photo_id).where(
+                    PhotoCategoryDetection.photo_id.in_([photo.id for photo in rows])
+                )
+            )
+        ).scalars()
+    )
+    return [photo for photo in rows if photo.id not in already_classified_ids]
+
+
+async def run_remote_category_classification(
+    session: AsyncSession,
+    project: Project,
+    cache_dir: Path,
+    build_client: Callable[[], CategoryDetectionClientLike] = build_category_classification_client,
+    build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
+) -> RemoteCategoryClassificationRun:
+    """Eigenstaendiger, expliziter Job (specs/features/0055-remote-kategorie-klassifizierung-mit-
+    kostenschaetzung.md, ADR 0032 Punkt 5) - KEIN Teil von run_criterion_scoring, eigene Run-
+    Tabelle, eigenes Concurrency-Setting. Best-effort ohne Retry: ein einzelner Fehlschlag bricht
+    den Lauf nicht ab, das Foto bleibt beim naechsten Lauf erneut Kandidat.
+    `project.cloud_vision_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread,
+    dokumentierte Vereinfachung analog run_criterion_scoring) - ist der Schalter aus (Default)
+    ODER der Kandidatenpool leer, wird `build_client` GAR NICHT ERST aufgerufen (Security-Muss-
+    Kriterium, geteiltes Consent-Gate mit `landmark`)."""
+    run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.RUNNING)
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+
+    try:
+        candidates = await select_remote_category_candidates(session, project.id)
+
+        run.photos_total = len(candidates)
+        run.photos_processed = 0
+        await session.commit()
+
+        if not project.cloud_vision_detection_enabled or not candidates:
+            run.status = ScanStatus.SUCCESS
+            run.finished_at = _now_utc()
+            await session.commit()
+            return run
+
+        client = _try_build(build_client)
+        embedder = _try_build(build_embedder)
+        if client is None or embedder is None:
+            # Best-effort auf Job-Ebene (analog _try_build-Philosophie der uebrigen Modell-
+            # Builder): ein Ladefehler eines der beiden noetigen Bausteine laesst den Lauf
+            # erfolgreich, aber wirkungslos enden - kein Crash, kein FAILED-Zustand fuer ein
+            # Infrastrukturproblem, das der naechste Lauf ggf. von selbst behebt.
+            run.status = ScanStatus.SUCCESS
+            run.finished_at = _now_utc()
+            await session.commit()
+            return run
+
+        try:
+            snapshot_rows = (await session.execute(select(CategoryLabel))).scalars().all()
+            snapshot = [
+                CategoryLabelSnapshotEntry(
+                    canonical_key=row.canonical_key,
+                    display_name=row.display_name,
+                    embedding=list(row.embedding),
+                    id=row.id,
+                )
+                for row in snapshot_rows
+            ]
+
+            now = _now_utc()
+            concurrency = settings.remote_category_classification_concurrency
+            processed = 0
+            for start in range(0, len(candidates), concurrency):
+                block = candidates[start : start + concurrency]
+                results = await asyncio.gather(
+                    *[
+                        _classify_photo_for_remote_category(client, cache_dir, photo)
+                        for photo in block
+                    ],
+                    return_exceptions=True,
+                )
+                # Verifizierter Async-Fallstrick (ADR 0020/0025) - siehe run_criterion_scoring.
+                for result in results:
+                    if isinstance(result, asyncio.CancelledError):
+                        raise result
+
+                for photo, result in zip(block, results, strict=True):
+                    if isinstance(result, BaseException):
+                        # Best-effort (ADR 0032 Punkt 5): ein einzelner fehlgeschlagener Cloud-
+                        # Aufruf laesst fuer dieses Foto keine Zeile entstehen, das Foto bleibt
+                        # beim naechsten Lauf erneut Kandidat.
+                        continue
+                    detections = result
+
+                    # Jedes der 1-3 Roh-Labels auf einen kanonischen Eintrag aufloesen; werden
+                    # zwei Labels auf denselben canonical_key aufgeloest, gewinnt die hoehere
+                    # confidence (ADR 0032 Punkt 5) - kein IntegrityError durch
+                    # UniqueConstraint(photo_id, category_label_id).
+                    best_by_canonical: dict[
+                        str, tuple[CategoryLabelSnapshotEntry, CategoryLabelDetection]
+                    ] = {}
+                    for detection in detections:
+                        entry = resolve_canonical_label(detection.label, snapshot, embedder)
+                        existing = best_by_canonical.get(entry.canonical_key)
+                        if existing is None or detection.confidence > existing[1].confidence:
+                            best_by_canonical[entry.canonical_key] = (entry, detection)
+
+                    for entry, detection in best_by_canonical.values():
+                        if entry.id is None:
+                            label_row = CategoryLabel(
+                                canonical_key=entry.canonical_key,
+                                display_name=entry.display_name,
+                                embedding=entry.embedding,
+                            )
+                            session.add(label_row)
+                            await session.flush()
+                            entry.id = label_row.id
+                        session.add(
+                            PhotoCategoryDetection(
+                                photo_id=photo.id,
+                                category_label_id=entry.id,
+                                raw_label=detection.label,
+                                confidence=detection.confidence,
+                                provider=settings.landmark_provider,
+                                computed_at=now,
+                            )
+                        )
+
+                processed += len(block)
+                run.photos_processed = processed
+                run.last_progress_at = _now_utc()
+                await session.commit()
+        finally:
+            aclose = getattr(client, "aclose", None)
+            if aclose is not None:
+                await aclose()
+
+        run.status = ScanStatus.SUCCESS
+        run.finished_at = _now_utc()
+        await session.commit()
+        return run
+    except asyncio.CancelledError:
+        await _fail_run(
+            session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
+        )
+        raise
+    except Exception as exc:
+        await _fail_run(session, run, str(exc))
+        return run
+
+
+async def classify_categories_remote(ctx: dict[str, Any], project_id: int) -> int:
+    async with async_session_factory() as session:
+        project = await session.get(Project, project_id)
+        if project is None:
+            raise ValueError(f"Project {project_id} not found")
+
+        run = await run_remote_category_classification(
+            session, project, cache_dir=Path(settings.photo_cache_dir)
+        )
+        return run.id
+
+
+async def reassign_photo_category(
+    session: AsyncSession,
+    criterion_scoring_run_id: int,
+    photo_id: int,
+    cluster_key: str,
+    new_category_key: str,
+) -> None:
+    """Sofortige Wirkung eines manuellen Kategorie-Overrides (specs/features/0055, ADR 0032 Punkt
+    7) - verschiebt EIN Foto synchron zwischen zwei `(cluster_key, category_key)`-Partitionen
+    desselben Laufs und ruft `ranking.py::rank_photos` NUR fuer diese zwei Partitionen erneut auf
+    (kein neuer Ranking-Algorithmus, kein voller Re-Scoring-Lauf). No-op (0 rank_photos-Aufrufe),
+    wenn `new_category_key` bereits der aktuelle Wert ist. Nutzt ausschliesslich bereits
+    persistierte `PhotoCriterionScore`-Werte (inkl. der zur-Laufzeit gemergten Remote-Pseudo-
+    Kriterien, `_merge_remote_category_labels`) - KEINE Neuberechnung."""
+    ranking = (
+        await session.execute(
+            select(PhotoRanking).where(
+                PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id,
+                PhotoRanking.photo_id == photo_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if ranking is None or ranking.category_key == new_category_key:
+        return
+
+    ranking.category_key = new_category_key
+
+    # Autoflush (SQLAlchemy-Default) sorgt dafuer, dass die obige Zuweisung bereits VOR dieser
+    # SELECT-Ausfuehrung an die DB geschrieben wird - die folgende Abfrage liefert deshalb bereits
+    # den Zielzustand (das verschobene Foto erscheint schon in seiner neuen Partition), ohne dass
+    # hier manuell zwischen "alter"/"neuer" Partition unterschieden werden muesste.
+    partition_rankings = (
+        await session.execute(
+            select(PhotoRanking).where(
+                PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id,
+                PhotoRanking.cluster_key == cluster_key,
+                PhotoRanking.category_key.in_({ranking.category_key, new_category_key}),
+            )
+        )
+    ).scalars().all()
+
+    photo_ids = [row.photo_id for row in partition_rankings]
+    criterion_rows = (
+        await session.execute(
+            select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id.in_(photo_ids))
+        )
+    ).scalars().all() if photo_ids else []
+
+    values_by_photo_id: dict[int, dict[str, float]] = {}
+    for row in criterion_rows:
+        values_by_photo_id.setdefault(row.photo_id, {})[row.criterion_key] = row.value
+    for photo_id_in_partition in photo_ids:
+        values_by_photo_id.setdefault(photo_id_in_partition, {})
+
+    await _merge_remote_category_labels(session, values_by_photo_id)
+
+    rankings_by_photo_id = {ranking_row.photo_id: ranking_row for ranking_row in partition_rankings}
+    for category_key in {ranking_row.category_key for ranking_row in partition_rankings}:
+        partition_candidates = {
+            pid: values_by_photo_id[pid]
+            for pid, ranking_row in rankings_by_photo_id.items()
+            if ranking_row.category_key == category_key
+        }
+        for ranked_photo in rank_photos(partition_candidates, DEFAULT_CRITERION_WEIGHTS):
+            ranking_row = rankings_by_photo_id[ranked_photo.photo_id]
+            ranking_row.rank_score = ranked_photo.rank_score
+            ranking_row.rank_position = ranked_photo.rank_position
+
+    await session.commit()
+
+
 # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
 # grosszuegiger Not-Anker (24h), NICHT der primaere Terminierungsmechanismus - Schicht 2
 # (STALL_THRESHOLD, siehe reap_stalled_runs) greift fuer jeden echten Stillstand immer zuerst.
@@ -1303,7 +1631,8 @@ def _stall_message() -> str:
 
 
 async def _fail_if_stalled(
-    session: AsyncSession, run: ScanRun | ScoringRun | CriterionScoringRun
+    session: AsyncSession,
+    run: ScanRun | ScoringRun | CriterionScoringRun | RemoteCategoryClassificationRun,
 ) -> bool:
     """Setzt eine einzelne Zeile ueber _fail_run auf FAILED, isoliert von den uebrigen Zeilen/
     Tabellen (Akzeptanzkriterium der Spec 0034: ein Fehler bei einer Zeile/Tabelle darf die
@@ -1330,10 +1659,11 @@ async def reap_stalled_runs(
     anknuepfen liesse). session_factory ist injizierbar (Default: die echte, produktive
     async_session_factory) - Tests uebergeben stattdessen eine an eine In-Memory-SQLite-
     Testdatenbank gebundene Factory, analog zu run_criterion_scoring's build_detector-Parameter.
-    Die drei Tabellen werden bewusst nacheinander in drei eigenstaendigen Bloecken behandelt
+    Die vier Tabellen werden bewusst nacheinander in vier eigenstaendigen Bloecken behandelt
     statt ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/
-    ScoringRun/CriterionScoringRun bleiben drei eigenstaendige Modelle ohne gemeinsame
-    Basisklasse, ADR 0019)."""
+    ScoringRun/CriterionScoringRun/RemoteCategoryClassificationRun bleiben vier eigenstaendige
+    Modelle ohne gemeinsame Basisklasse, ADR 0019). Vierter Block seit specs/features/0055-remote-
+    kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 2 Migration d."""
     reaped = 0
     threshold = _now_utc() - STALL_THRESHOLD
     async with session_factory() as session:
@@ -1394,6 +1724,22 @@ async def reap_stalled_runs(
             if await _fail_if_stalled(session, criterion_scoring_run):
                 reaped += 1
 
+        try:
+            stalled_remote_category_runs = (
+                await session.execute(
+                    select(RemoteCategoryClassificationRun).where(
+                        RemoteCategoryClassificationRun.status == ScanStatus.RUNNING,
+                        RemoteCategoryClassificationRun.last_progress_at < threshold,
+                    )
+                )
+            ).scalars().all()
+        except Exception:
+            await session.rollback()
+            stalled_remote_category_runs = []
+        for remote_category_run in stalled_remote_category_runs:
+            if await _fail_if_stalled(session, remote_category_run):
+                reaped += 1
+
     return reaped
 
 
@@ -1409,6 +1755,9 @@ class WorkerSettings:
         arq_func(scan_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
         arq_func(score_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
         arq_func(score_criteria, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
+        # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
+        # Punkt 5: eigenstaendiger Job, kein Teil von score_criteria.
+        arq_func(classify_categories_remote, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
     )
     # Schicht 2 des Fortschritts-Watchdogs (ADR 0019), erste Nutzung von arqs Cron-Mechanismus im
     # Projekt: run_at_startup=True sorgt dafuer, dass ein Worker-Neustart sofort eine erste

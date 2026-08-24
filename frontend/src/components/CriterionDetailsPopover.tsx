@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 
-import type { CriterionScoreOut, RankingOut, SuggestionOut } from '../api/types'
+import type { CategoryCandidateOut, CategoryKey, CriterionScoreOut, RankingOut, SuggestionOut } from '../api/types'
 import { cn } from '../lib/utils'
 import { CriterionDetailsList } from './CriterionDetailsList'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from './ui/popover'
@@ -10,6 +10,15 @@ interface CriterionDetailsPopoverProps {
   ranking: RankingOut | null
   suggestion: SuggestionOut | null
   className?: string
+  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: reine
+  // Durchreichung an CriterionDetailsList.tsx (siehe dortige Props-Dokumentation) - dieselben
+  // neutralen Defaults, kein eigenes Verhalten hier.
+  categoryCandidates?: CategoryCandidateOut[]
+  categoryOverride?: CategoryKey | null
+  onOverrideCategory?: (categoryKey: CategoryKey) => void
+  onResetOverride?: () => void
+  pendingOverrideKey?: CategoryKey | null
+  resetPending?: boolean
 }
 
 /**
@@ -67,6 +76,12 @@ export function CriterionDetailsPopover({
   ranking,
   suggestion,
   className,
+  categoryCandidates,
+  categoryOverride,
+  onOverrideCategory,
+  onResetOverride,
+  pendingOverrideKey,
+  resetPending,
 }: CriterionDetailsPopoverProps) {
   const [open, setOpen] = useState(false)
   const justOpenedByHoverRef = useRef(false)
@@ -156,6 +171,12 @@ export function CriterionDetailsPopover({
           ranking={ranking}
           suggestion={suggestion}
           showSuggestion={true}
+          categoryCandidates={categoryCandidates}
+          categoryOverride={categoryOverride}
+          onOverrideCategory={onOverrideCategory}
+          onResetOverride={onResetOverride}
+          pendingOverrideKey={pendingOverrideKey}
+          resetPending={resetPending}
         />
       </PopoverContent>
     </Popover>

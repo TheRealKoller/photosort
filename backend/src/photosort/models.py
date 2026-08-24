@@ -3,6 +3,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
+from sqlalchemy import JSON as SQLJSON
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import ForeignKey, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -24,15 +25,23 @@ class Project(Base):
     opencloud_drive_id: Mapped[str]
     opencloud_path: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    # Projektweiter Einwilligungs-Schalter fuer die Cloud-Sehenswuerdigkeit-Erkennung
-    # (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-
-    # landmark-erkennung.md Punkt 5) - Default AUS (anders als category_selection_enabled, ein
-    # rein lokales/kostenloses Feature). Projektweit statt personenbezogen (konsistent mit dem
-    # "kein Innentaeter-Modell"-Grundsatz, siehe Security-Abschnitt der Spec) - kein user_id-Bezug.
-    cloud_landmark_detection_enabled: Mapped[bool] = mapped_column(default=False)
+    # Projektweiter Einwilligungs-Schalter fuer produktive Cloud-Vision-Datenfluesse
+    # (urspruenglich nur die Cloud-Sehenswuerdigkeit-Erkennung, specs/features/0047-
+    # sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-landmark-erkennung.md
+    # Punkt 5) - Default AUS (anders als category_selection_enabled, ein rein lokales/kostenloses
+    # Feature). Projektweit statt personenbezogen (konsistent mit dem "kein Innentaeter-Modell"-
+    # Grundsatz, siehe Security-Abschnitt der Spec) - kein user_id-Bezug.
+    #
+    # Umbenannt von cloud_landmark_detection_enabled/cloud_landmark_consent_at
+    # (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+    # decisions/0032, Punkt 2 Migration a): wertsicheres RENAME COLUMN, kein neuer, zweiter
+    # Consent-Schalter - dieselbe Einwilligung gated seitdem sowohl `landmark` als auch die neue
+    # Remote-Kategorie-Klassifizierung. Ein Projekt, das die Cloud-Erkennung bereits aktiviert
+    # hatte, bleibt nach der Migration technisch identisch aktiv.
+    cloud_vision_detection_enabled: Mapped[bool] = mapped_column(default=False)
     # Zeitstempel, gesetzt beim Aktivieren, auf NULL zurueckgesetzt beim Deaktivieren - kein
     # voller Audit-Log (konsistent mit ScoringRun.gate_confirmed_at, ADR 0025 Punkt 5).
-    cloud_landmark_consent_at: Mapped[datetime | None] = mapped_column(default=None)
+    cloud_vision_consent_at: Mapped[datetime | None] = mapped_column(default=None)
 
     photos: Mapped[list[Photo]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
@@ -47,6 +56,14 @@ class Project(Base):
     # backfill.md, decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md, Punkt 5).
     criterion_scoring_runs: Mapped[list[CriterionScoringRun]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
+    )
+    # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
+    # 2 Migration d - kein Cascade-Ziel fuer category_labels selbst (projektuebergreifend, siehe
+    # CategoryLabel-Docstring): DELETE /projects/{id} loescht ueber die photos-Kaskade oben die
+    # projekteigenen photo_category_detections-Zeilen, laesst einen weiterhin von einem ANDEREN
+    # Projekt referenzierten category_labels-Eintrag unangetastet.
+    remote_category_classification_runs: Mapped[list[RemoteCategoryClassificationRun]] = (
+        relationship(back_populates="project", cascade="all, delete-orphan")
     )
 
 
@@ -100,6 +117,11 @@ class Photo(Base):
     # optional (nur angelegt, wenn tatsaechlich ein Landmark-Name identifiziert wurde).
     landmark_detection: Mapped[PhotoLandmarkDetection | None] = relationship(
         back_populates="photo", uselist=False, cascade="all, delete-orphan"
+    )
+    # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
+    # 2 Migration c2: 1:N statt 1:1 (bis zu drei Zeilen pro Foto, ein Roh-Label je Zeile).
+    category_label_detections: Mapped[list[PhotoCategoryDetection]] = relationship(
+        back_populates="photo", cascade="all, delete-orphan"
     )
 
 
@@ -242,6 +264,14 @@ class PhotoScore(Base):
     # 2) - reiner, nie manuell editierter Ableitungszustand, dessen Nachfolge jetzt strukturell
     # durch PhotoCriterionScore+PhotoRanking (Kriterien-/Rangfolgen-Schicht) uebernommen wird statt
     # in eigenen PhotoScore-Spalten.
+    #
+    # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
+    # 2 Migration b: additiv, dauerhafte manuelle Uebersteuerung des sonst automatisch abgeleiteten
+    # category_key (worker.py::run_criterion_scoring verwendet `score.category_override or
+    # derive_category_key(...)`) - ueberlebt damit auch kuenftige volle Re-Scoring-Laeufe. Ein
+    # beliebiger `canonical_key` aus `category_labels` statt eines von drei festen Werten (freier
+    # String, keine FK - die Existenzpruefung lebt am Override-Endpunkt selbst, nicht hier).
+    category_override: Mapped[str | None] = mapped_column(default=None)
 
     photo: Mapped[Photo] = relationship(back_populates="score", foreign_keys=[photo_id])
 
@@ -353,7 +383,7 @@ class PhotoLandmarkDetection(Base):
     Zeile erzeugt hat - verhindert, dass die Herkunft bereits gescorter Fotos bei einem spaeteren
     Umschalten von Settings.landmark_provider stillschweigend unklar wird. Atomar im selben
     Upsert wie name/confidence gesetzt (worker.py::_upsert_landmark_detection). Python-seitiger
-    Default "anthropic" (analog Project.cloud_landmark_detection_enabled oben) deckt bereits
+    Default "anthropic" (analog Project.cloud_vision_detection_enabled oben) deckt bereits
     bestehende Zeilen aus der Zeit vor dieser Spalte ab, in der Anthropic der einzige Provider
     war - worker.py setzt den Wert im produktiven Pfad trotzdem immer explizit."""
 
@@ -366,3 +396,93 @@ class PhotoLandmarkDetection(Base):
     provider: Mapped[str] = mapped_column(default="anthropic")
 
     photo: Mapped[Photo] = relationship(back_populates="landmark_detection")
+
+
+class CategoryLabel(Base):
+    """Kanonische Label-Registry fuer die offene Remote-Kategorie-Klassifizierung
+    (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+    decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 2 Migration c1).
+
+    Bewusst PROJEKTUEBERGREIFEND (kein project_id-Bezug, ADR 0032 Begruendung): reine
+    Vokabular-Eintraege ("hund" ist kein personenbezogenes/projektspezifisches Datum), keine
+    Fotoinhalte. Eine projektgebundene Registry wuerde bei mehreren Projekten identische Label
+    wiederholt neu anlegen und die Cluster-Qualitaet unnoetig verschlechtern (weniger Beispiele
+    pro Cluster) - fuer dieses Zwei-Personen-Familienprojekt (keine Mandantentrennung zwischen
+    Projekten noetig) eine bewusste, dokumentierte Vereinfachung.
+
+    `canonical_key` ist ein URL-/Key-sicherer Slug (remote_classification.py::_slugify),
+    `display_name` der zuerst gesehene Roh-Label-Text in Originalschreibweise (reine Anzeige-
+    Hilfe, keine kuratierte Uebersetzung). `embedding` ist der 384-dimensionale Text-Embedding-
+    Vektor (label_embedding.py) als JSON-Liste von float - kein pgvector/Vektor-Index noetig
+    (ADR 0032: kleine, langsam wachsende Menge, ein voller Scan pro Aufloesung ist unproblematisch).
+    """
+
+    __tablename__ = "category_labels"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    canonical_key: Mapped[str] = mapped_column(unique=True)
+    display_name: Mapped[str]
+    embedding: Mapped[list[float]] = mapped_column(SQLJSON)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    photo_detections: Mapped[list[PhotoCategoryDetection]] = relationship(
+        back_populates="category_label"
+    )
+
+
+class PhotoCategoryDetection(Base):
+    """Ein vom Vision-LLM geliefertes, auf einen kanonischen Eintrag aufgeloestes Roh-Label
+    (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, decisions/0032,
+    Punkt 2 Migration c2) - 1:N zu Photo (bis zu drei Zeilen pro erfolgreich klassifiziertem Foto,
+    nie 0 - der Prompt erzwingt mindestens ein Label, kein "nichts erkannt"-Fall, anders als
+    `landmark`). `raw_label` ist der ungekuerzte, vom Vision-LLM gelieferte Text (Audit-/Debug-
+    Spur, welche konkrete Formulierung auf welchen canonical_key gemappt wurde) - `confidence`/
+    `provider`/`computed_at` analog PhotoLandmarkDetection.
+
+    UniqueConstraint(photo_id, category_label_id): verhindert zwei Zeilen fuer dasselbe
+    Foto x kanonisches-Label-Paar (relevant, falls zwei der bis zu drei Roh-Labels eines Fotos auf
+    denselben canonical_key clustern - dann wird die Zeile mit der hoeheren confidence behalten,
+    kein Duplikat geschrieben, siehe worker.py::run_remote_category_classification)."""
+
+    __tablename__ = "photo_category_detections"
+    __table_args__ = (
+        UniqueConstraint(
+            "photo_id", "category_label_id", name="uq_category_detection_photo_label"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
+    category_label_id: Mapped[int] = mapped_column(ForeignKey("category_labels.id"))
+    raw_label: Mapped[str]
+    confidence: Mapped[float]
+    provider: Mapped[str]
+    computed_at: Mapped[datetime]
+
+    photo: Mapped[Photo] = relationship(back_populates="category_label_detections")
+    category_label: Mapped[CategoryLabel] = relationship(back_populates="photo_detections")
+
+
+class RemoteCategoryClassificationRun(Base):
+    """Ein Lauf des Remote-Kategorie-Klassifizierungs-Jobs (specs/features/0055-remote-kategorie-
+    klassifizierung-mit-kostenschaetzung.md, decisions/0032, Punkt 2 Migration d) - Run-Tracking
+    analog CriterionScoringRun/ScoringRun/ScanRun, aber bewusst OHNE scoring_run_id-FK: dieser Job
+    schreibt ausschliesslich in photo_category_detections/category_labels, beruehrt weder
+    cluster_key noch PhotoRanking direkt - kein 409-Staleness-Guard, kein Ausschuss-Gate-
+    Erfordernis (anders als run_criterion_scoring)."""
+
+    __tablename__ = "remote_category_classification_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    status: Mapped[ScanStatus] = mapped_column(SQLEnum(ScanStatus, native_enum=False, length=20))
+    started_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(default=None)
+    photos_total: Mapped[int] = mapped_column(default=0)
+    photos_processed: Mapped[int] = mapped_column(default=0)
+    error_message: Mapped[str | None] = mapped_column(default=None)
+    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md), analog
+    # ScanRun.last_progress_at/ScoringRun.last_progress_at/CriterionScoringRun.last_progress_at.
+    last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    project: Mapped[Project] = relationship(back_populates="remote_category_classification_runs")

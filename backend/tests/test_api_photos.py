@@ -839,6 +839,161 @@ class TestCriterionScores:
         ]
 
 
+class TestRemoteCategoryFields:
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md:
+    `PhotoOut.remote_category_labels`/`category_override`/`category_candidates`."""
+
+    async def test_remote_category_labels_is_empty_list_when_none_exist(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        item = response.json()["items"][0]
+        assert item["remote_category_labels"] == []
+        assert item["category_override"] is None
+        assert item["category_candidates"] == []
+
+    async def test_remote_category_labels_and_candidates_reflect_persisted_detections(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        from photosort.models import CategoryLabel, PhotoCategoryDetection
+
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        label = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
+        db_session.add(label)
+        await db_session.flush()
+        db_session.add(
+            PhotoCategoryDetection(
+                photo_id=photo.id,
+                category_label_id=label.id,
+                raw_label="Hund",
+                confidence=0.9,
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        item = response.json()["items"][0]
+        assert item["remote_category_labels"] == [
+            {
+                "canonical_key": "hund",
+                "display_name": "Hund",
+                "raw_label": "Hund",
+                "confidence": 0.9,
+                "provider": "anthropic",
+            }
+        ]
+        assert item["category_candidates"] == [
+            {"category_key": "hund", "origin": "remote", "score": 0.9, "provider": "anthropic"}
+        ]
+
+    async def test_local_qualifying_criterion_becomes_a_category_candidate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="content_people",
+                value=1.0,
+                source=CriterionSource.LOCAL_ML,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        candidates = response.json()["items"][0]["category_candidates"]
+        assert candidates == [
+            {"category_key": "people", "origin": "local", "score": 1.0, "provider": None}
+        ]
+
+    async def test_non_qualifying_local_criterion_is_not_a_candidate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="content_people",
+                value=0.0,
+                source=CriterionSource.LOCAL_ML,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["category_candidates"] == []
+
+    async def test_category_override_reflects_the_photo_score_field(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoScore(
+                photo_id=photo.id,
+                sharpness=1.0,
+                exposure=0.0,
+                category_override="urlaub",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["category_override"] == "urlaub"
+
+    async def test_candidates_are_sorted_by_score_descending(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        from photosort.models import CategoryLabel, PhotoCategoryDetection
+
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="content_people",
+                value=0.6,
+                source=CriterionSource.LOCAL_ML,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        label = CategoryLabel(canonical_key="strand", display_name="Strand", embedding=[1.0, 0.0])
+        db_session.add(label)
+        await db_session.flush()
+        db_session.add(
+            PhotoCategoryDetection(
+                photo_id=photo.id,
+                category_label_id=label.id,
+                raw_label="Strand",
+                confidence=0.9,
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        candidates = response.json()["items"][0]["category_candidates"]
+        assert [c["category_key"] for c in candidates] == ["strand", "people"]
+
+
 class TestDefaultListingRanking:
     """Bewertungsdetails-Info-Popover (specs/features/0040): `RankingOut` wird jetzt auch im
     Standard-Listing-Zweig befuellt (bisher nur bei `top_n_per_category`), damit Grid-/

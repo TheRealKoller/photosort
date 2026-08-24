@@ -40,3 +40,20 @@ export function formatCategoryKey(categoryKey: string): string {
 export function categoryAbbreviation(categoryKey: string): string {
   return categoryKey.slice(0, 3).toUpperCase()
 }
+
+// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: Anzeigename eines
+// Cloud-Vision-Providers (backend `provider`-Feld, aktuell "anthropic"/"mistral") - geteilt
+// zwischen RemoteCategoryClassificationSection.tsx (Bestaetigungsdialog) und der neuen
+// "Kategorie-Kandidaten"-Gruppe in CriterionDetailsList.tsx ("Herkunft"-Chip). Fallback auf den
+// rohen Wert fuer einen kuenftigen, hier noch nicht gepflegten Provider - kein Absturz.
+const PROVIDER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  anthropic: 'Anthropic',
+  mistral: 'Mistral',
+}
+
+export function formatProviderLabel(provider: string): string {
+  if (Object.hasOwn(PROVIDER_DISPLAY_NAMES, provider)) {
+    return PROVIDER_DISPLAY_NAMES[provider]
+  }
+  return provider
+}

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,8 +16,19 @@ from photosort.api.deps import (
     get_session,
 )
 from photosort.config import settings
-from photosort.models import CriterionScoringRun, Project, ScanRun, ScanStatus, ScoringRun
+from photosort.models import (
+    CriterionScoringRun,
+    Photo,
+    PhotoCategoryDetection,
+    PhotoScore,
+    Project,
+    RemoteCategoryClassificationRun,
+    ScanRun,
+    ScanStatus,
+    ScoringRun,
+)
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
+from photosort.remote_classification import COST_PER_IMAGE_USD
 
 router = APIRouter(prefix="/projects", tags=["projects"], dependencies=[Depends(get_current_user)])
 
@@ -80,13 +91,39 @@ class CriterionScoringRunSummary(BaseModel):
     error_message: str | None
 
 
-class CloudLandmarkConsentUpdate(BaseModel):
+class RemoteCategoryClassificationRunSummary(BaseModel):
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
+    Punkt 6: Run-Tracking analog CriterionScoringRunSummary, aber ohne scoring_run_id/Gate-Bezug
+    (dieser Job ist unabhaengig von einem Ausschuss-Gate/ScoringRun)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    status: ScanStatus
+    started_at: datetime
+    finished_at: datetime | None
+    photos_total: int
+    photos_processed: int
+    error_message: str | None
+
+
+class ClassifyCategoriesRemoteEstimateOut(BaseModel):
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
+    Punkt 6.1: Kostenschaetzung vor dem Lauf - funktioniert unabhaengig vom Consent-Schalter (auch
+    bei deaktiviertem Consent 200, kein 403)."""
+
+    candidate_count: int
+    provider: str
+    price_per_image_usd: float
+    estimated_cost_usd: float
+
+
+class CloudVisionConsentUpdate(BaseModel):
     enabled: bool
 
 
-class CloudLandmarkConsentOut(BaseModel):
-    cloud_landmark_detection_enabled: bool
-    cloud_landmark_consent_at: datetime | None
+class CloudVisionConsentOut(BaseModel):
+    cloud_vision_detection_enabled: bool
+    cloud_vision_consent_at: datetime | None
 
 
 class ScoreCriteriaRequest(BaseModel):
@@ -108,18 +145,24 @@ class ProjectOut(BaseModel):
     last_scan: ScanSummary | None = None
     last_scoring_run: ScoringRunSummary | None = None
     last_criterion_scoring_run: CriterionScoringRunSummary | None = None
+    # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
+    # Punkt 6: analog last_criterion_scoring_run.
+    last_remote_category_classification_run: RemoteCategoryClassificationRunSummary | None = None
     # Globales Feature-Flag, nicht projektspezifisch (specs/features/0024-top-photo-selection-
     # category-mix.md, weiterhin verwendet fuer POST /score-criteria seit Spec 0037) - hier statt
     # in einem neuen Endpunkt exponiert: technische Detailentscheidung der Umsetzung, damit das
     # Frontend-Verfuegbarkeitsgate proaktiv aus den ohnehin bereits geladenen Projektdaten dieser
     # Seite ableiten kann (UI/UX-Abschnitt der Spec), statt erst nach einem fehlgeschlagenen 403.
     category_selection_enabled: bool
-    # Projektweiter Einwilligungs-Schalter fuer die Cloud-Sehenswuerdigkeit-Erkennung
-    # (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-
-    # landmark-erkennung.md Punkt 5) - hier statt in einem eigenen GET exponiert, damit die neue
-    # ProjectSettingsPage den aktuellen Zustand aus den bereits geladenen Projektdaten lesen kann.
-    cloud_landmark_detection_enabled: bool
-    cloud_landmark_consent_at: datetime | None
+    # Projektweiter Einwilligungs-Schalter fuer produktive Cloud-Vision-Datenfluesse (urspruenglich
+    # nur die Cloud-Sehenswuerdigkeit-Erkennung, specs/features/0047-sehenswuerdigkeit-erkennung-
+    # cloud-vision-api.md, decisions/0025-cloud-landmark-erkennung.md Punkt 5, umbenannt seit
+    # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
+    # 2 Migration a) - hier statt in einem eigenen GET exponiert, damit ProjectSettingsPage den
+    # aktuellen Zustand aus den bereits geladenen Projektdaten lesen kann. Gated seitdem sowohl
+    # `landmark` als auch die neue Remote-Kategorie-Klassifizierung.
+    cloud_vision_detection_enabled: bool
+    cloud_vision_consent_at: datetime | None
 
 
 async def _latest_scan_run(session: AsyncSession, project_id: int) -> ScanRun | None:
@@ -154,10 +197,56 @@ async def _latest_criterion_scoring_run(
     return result.scalars().first()
 
 
+async def _latest_remote_category_classification_run(
+    session: AsyncSession, project_id: int
+) -> RemoteCategoryClassificationRun | None:
+    result = await session.execute(
+        select(RemoteCategoryClassificationRun)
+        .where(RemoteCategoryClassificationRun.project_id == project_id)
+        .order_by(RemoteCategoryClassificationRun.started_at.desc())
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
+async def _count_remote_category_candidates(session: AsyncSession, project_id: int) -> int:
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+    Akzeptanzkriterium "Kostenschätzung": "ermittelt über dieselbe Kandidaten-Selektion wie der
+    tatsächliche Lauf" (worker.py::select_remote_category_candidates). Bewusst als eigenstaendige,
+    kleine Query HIER dupliziert statt worker.py zu importieren - haelt die API-Schicht (reine
+    HTTP-/Validierungs-/Lese-Zustaendigkeit) unabhaengig von der Worker-Schicht (Job-Ausfuehrung),
+    identisches Modulgrenzen-Prinzip wie die uebrigen api/*.py-Dateien, die Jobs ausschliesslich
+    ueber den stringbasierten JobEnqueuer ausloesen statt worker.py-Funktionen direkt zu
+    importieren. (Ein direkter Import waere technisch unproblematisch - mediapipe/tensorflow/
+    onnxruntime werden in classification.py/aesthetics.py/label_embedding.py durchgaengig lokal
+    innerhalb der jeweiligen build_*()-Funktion importiert, nicht auf Modulebene - reiner
+    Architektur-Klarheitsgrund, siehe api/photos.py fuer die eine bewusste Ausnahme, wo die Spec
+    einen synchronen Aufruf im selben Request verlangt.)
+
+    Copilot-Review-Fund (PR #201): vorher zwei getrennte SELECTs (alle Kandidaten-`photo_id`s nach
+    Python laden, dann ein zweites SELECT + Python-seitiger Filter) - bei einem grossen Projekt
+    unnoetig viel Speicher/IO, gerade weil die Kostenschaetzung eager beim Laden der
+    Kuratierungs-Seite ausgefuehrt wird. Jetzt ein einzelnes `COUNT` mit `NOT EXISTS`, komplett
+    serverseitig ausgewertet - keine Zeile verlaesst die Datenbank."""
+    already_classified = exists().where(PhotoCategoryDetection.photo_id == Photo.id)
+    result = await session.execute(
+        select(func.count())
+        .select_from(Photo)
+        .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+        .where(
+            Photo.project_id == project_id,
+            PhotoScore.suggested_status.is_(None),
+            ~already_classified,
+        )
+    )
+    return result.scalar_one()
+
+
 async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut:
     scan_run = await _latest_scan_run(session, project.id)
     scoring_run = await _latest_scoring_run(session, project.id)
     criterion_scoring_run = await _latest_criterion_scoring_run(session, project.id)
+    remote_category_run = await _latest_remote_category_classification_run(session, project.id)
     return ProjectOut(
         id=project.id,
         name=project.name,
@@ -173,9 +262,14 @@ async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut
             if criterion_scoring_run is not None
             else None
         ),
+        last_remote_category_classification_run=(
+            RemoteCategoryClassificationRunSummary.model_validate(remote_category_run)
+            if remote_category_run is not None
+            else None
+        ),
         category_selection_enabled=settings.category_selection_enabled,
-        cloud_landmark_detection_enabled=project.cloud_landmark_detection_enabled,
-        cloud_landmark_consent_at=project.cloud_landmark_consent_at,
+        cloud_vision_detection_enabled=project.cloud_vision_detection_enabled,
+        cloud_vision_consent_at=project.cloud_vision_consent_at,
     )
 
 
@@ -327,30 +421,91 @@ async def trigger_score_criteria(
     return {"status": "queued"}
 
 
-@router.put("/{project_id}/cloud-landmark-consent", response_model=CloudLandmarkConsentOut)
-async def set_cloud_landmark_consent(
+@router.put("/{project_id}/cloud-vision-consent", response_model=CloudVisionConsentOut)
+async def set_cloud_vision_consent(
     project_id: int,
-    payload: CloudLandmarkConsentUpdate,
+    payload: CloudVisionConsentUpdate,
     session: AsyncSession = Depends(get_session),
-) -> CloudLandmarkConsentOut:
+) -> CloudVisionConsentOut:
     """specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR
     decisions/0025-cloud-landmark-erkennung.md Punkt 5: `PUT` statt `POST`, da ein Zustand
     gesetzt wird statt ein Job ausgeloest (Vorbild: `PUT /photos/{id}/rating`, nicht
     `POST /projects/{id}/score`). Haengt am bestehenden router-weiten Auth-Torwaechter (Muss-
     Kriterium der Spec, kein zusaetzlicher `Depends(get_current_user)` hier noetig). Setzt
-    synchron `cloud_landmark_consent_at` (Zeitstempel bei Aktivierung, `NULL` bei Deaktivierung) -
+    synchron `cloud_vision_consent_at` (Zeitstempel bei Aktivierung, `NULL` bei Deaktivierung) -
     kein "nur beim ersten Mal"-Sonderfall, ein wiederholtes Aktivieren aktualisiert den
-    Zeitstempel jedes Mal erneut."""
+    Zeitstempel jedes Mal erneut.
+
+    Umbenannt von `cloud-landmark-consent` (specs/features/0055-remote-kategorie-klassifizierung-
+    mit-kostenschaetzung.md, ADR 0032 Punkt 2 Migration a): derselbe Schalter gated seitdem
+    zusaetzlich die neue Remote-Kategorie-Klassifizierung (worker.py::
+    run_remote_category_classification) - kein zweiter, granularerer Consent-Schalter."""
     project = await _get_project_or_404(project_id, session)
 
-    project.cloud_landmark_detection_enabled = payload.enabled
-    project.cloud_landmark_consent_at = (
+    project.cloud_vision_detection_enabled = payload.enabled
+    project.cloud_vision_consent_at = (
         datetime.now(UTC).replace(tzinfo=None) if payload.enabled else None
     )
     await session.commit()
     await session.refresh(project)
 
-    return CloudLandmarkConsentOut(
-        cloud_landmark_detection_enabled=project.cloud_landmark_detection_enabled,
-        cloud_landmark_consent_at=project.cloud_landmark_consent_at,
+    return CloudVisionConsentOut(
+        cloud_vision_detection_enabled=project.cloud_vision_detection_enabled,
+        cloud_vision_consent_at=project.cloud_vision_consent_at,
     )
+
+
+@router.get(
+    "/{project_id}/classify-categories-remote/estimate",
+    response_model=ClassifyCategoriesRemoteEstimateOut,
+)
+async def estimate_classify_categories_remote(
+    project_id: int, session: AsyncSession = Depends(get_session)
+) -> ClassifyCategoriesRemoteEstimateOut:
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+    Akzeptanzkriterium "Kostenschätzung": funktioniert UNABHAENGIG vom Consent-Schalter (auch bei
+    deaktiviertem Consent 200, kein 403) - der Nutzer soll die Kosten VOR einer Consent-
+    Entscheidung sehen koennen. `candidate_count=0` liefert weiterhin 200 mit
+    estimated_cost_usd=0.0 (kein Sonderfall)."""
+    await _get_project_or_404(project_id, session)
+
+    candidate_count = await _count_remote_category_candidates(session, project_id)
+    provider = settings.landmark_provider
+    price_per_image_usd = COST_PER_IMAGE_USD[provider]
+    return ClassifyCategoriesRemoteEstimateOut(
+        candidate_count=candidate_count,
+        provider=provider,
+        price_per_image_usd=price_per_image_usd,
+        estimated_cost_usd=candidate_count * price_per_image_usd,
+    )
+
+
+@router.post("/{project_id}/classify-categories-remote", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_classify_categories_remote(
+    project_id: int,
+    session: AsyncSession = Depends(get_session),
+    enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
+) -> dict[str, str]:
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+    Akzeptanzkriterium "Remote-Klassifizierungs-Lauf": `403` ohne Consent, `409` ohne aktuellen
+    erfolgreichen `ScoringRun` (dieselbe Vorbedingung wie score-criteria - der Kandidatenpool
+    basiert auf `PhotoScore.suggested_status`, das braucht einen erfolgreichen Scan+Scoring-
+    Durchlauf), sonst `202`. Legt selbst KEINE RemoteCategoryClassificationRun-Zeile an - das
+    erledigt der Job beim tatsaechlichen Start (identisches Muster wie trigger_score_criteria)."""
+    project = await _get_project_or_404(project_id, session)
+
+    if not project.cloud_vision_detection_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cloud-Bilderkennung ist fuer dieses Projekt nicht aktiviert.",
+        )
+
+    latest_scoring_run = await _latest_scoring_run(session, project_id)
+    if latest_scoring_run is None or latest_scoring_run.status != ScanStatus.SUCCESS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Fuehre zuerst die Ausschuss-Erkennung erfolgreich aus.",
+        )
+
+    await enqueuer.enqueue_job("classify_categories_remote", project_id)
+    return {"status": "queued"}

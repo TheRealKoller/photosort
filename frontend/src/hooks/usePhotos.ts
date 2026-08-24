@@ -1,8 +1,8 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { listPhotos } from '../api/photos'
+import { deleteCategoryOverride, listPhotos, setCategoryOverride } from '../api/photos'
 import { deleteRating, setRating } from '../api/ratings'
-import type { PhotoListOut, RatingFilter, RatingStatus } from '../api/types'
+import type { CategoryKey, PhotoListOut, RatingFilter, RatingStatus } from '../api/types'
 
 /**
  * Batch-Groesse fuer das Foto-Listing (specs/features/0002-manual-categorization.md: "Fotos
@@ -70,6 +70,31 @@ export function useDeleteRatingMutation(projectId: number) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (photoId: number) => deleteRating(photoId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['photos', projectId] })
+    },
+  })
+}
+
+// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 7:
+// wirkt sofort (worker.py::reassign_photo_category im selben API-Request) - dieselbe breite
+// Invalidierung wie useSetRatingMutation genuegt, das Foto wechselt dadurch sichtbar in seine neue
+// Cluster x Kategorie-Sektion, sobald die Kuratierungs-Query neu geladen wird.
+export function useSetCategoryOverrideMutation(projectId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ photoId, categoryKey }: { photoId: number; categoryKey: CategoryKey }) =>
+      setCategoryOverride(photoId, categoryKey),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['photos', projectId] })
+    },
+  })
+}
+
+export function useDeleteCategoryOverrideMutation(projectId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (photoId: number) => deleteCategoryOverride(photoId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['photos', projectId] })
     },

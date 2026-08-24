@@ -28,9 +28,10 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     last_scan: null,
     last_scoring_run: null,
     last_criterion_scoring_run: null,
+    last_remote_category_classification_run: null,
     category_selection_enabled: true,
-    cloud_landmark_detection_enabled: false,
-    cloud_landmark_consent_at: null,
+    cloud_vision_detection_enabled: false,
+    cloud_vision_consent_at: null,
     ...overrides,
   }
 }
@@ -53,7 +54,7 @@ function renderPage() {
 describe('ProjectSettingsPage', () => {
   beforeEach(() => {
     vi.mocked(projectsApi.getProject).mockReset()
-    vi.mocked(projectsApi.setCloudLandmarkConsent).mockReset()
+    vi.mocked(projectsApi.setCloudVisionConsent).mockReset()
   })
 
   it('shows a loading state while the project is being fetched', () => {
@@ -80,7 +81,7 @@ describe('ProjectSettingsPage', () => {
     renderPage()
 
     const toggle = await screen.findByRole('switch', {
-      name: /cloud-sehenswürdigkeit-erkennung/i,
+      name: /cloud-bilderkennung/i,
     })
     expect(toggle).toHaveAttribute('aria-checked', 'false')
   })
@@ -88,15 +89,15 @@ describe('ProjectSettingsPage', () => {
   it('renders the toggle checked when consent is currently enabled', async () => {
     vi.mocked(projectsApi.getProject).mockResolvedValue(
       project({
-        cloud_landmark_detection_enabled: true,
-        cloud_landmark_consent_at: '2026-08-21T10:00:00Z',
+        cloud_vision_detection_enabled: true,
+        cloud_vision_consent_at: '2026-08-21T10:00:00Z',
       })
     )
 
     renderPage()
 
     const toggle = await screen.findByRole('switch', {
-      name: /cloud-sehenswürdigkeit-erkennung/i,
+      name: /cloud-bilderkennung/i,
     })
     expect(toggle).toHaveAttribute('aria-checked', 'true')
   })
@@ -104,19 +105,19 @@ describe('ProjectSettingsPage', () => {
   it('enables the consent via the PUT endpoint when the toggle is switched on', async () => {
     const user = userEvent.setup()
     vi.mocked(projectsApi.getProject).mockResolvedValue(project())
-    vi.mocked(projectsApi.setCloudLandmarkConsent).mockResolvedValue({
-      cloud_landmark_detection_enabled: true,
-      cloud_landmark_consent_at: '2026-08-21T10:00:00Z',
+    vi.mocked(projectsApi.setCloudVisionConsent).mockResolvedValue({
+      cloud_vision_detection_enabled: true,
+      cloud_vision_consent_at: '2026-08-21T10:00:00Z',
     })
 
     renderPage()
     const toggle = await screen.findByRole('switch', {
-      name: /cloud-sehenswürdigkeit-erkennung/i,
+      name: /cloud-bilderkennung/i,
     })
     await user.click(toggle)
 
     await waitFor(() =>
-      expect(projectsApi.setCloudLandmarkConsent).toHaveBeenCalledWith(1, true)
+      expect(projectsApi.setCloudVisionConsent).toHaveBeenCalledWith(1, true)
     )
   })
 
@@ -124,23 +125,23 @@ describe('ProjectSettingsPage', () => {
     const user = userEvent.setup()
     vi.mocked(projectsApi.getProject).mockResolvedValue(
       project({
-        cloud_landmark_detection_enabled: true,
-        cloud_landmark_consent_at: '2026-08-21T10:00:00Z',
+        cloud_vision_detection_enabled: true,
+        cloud_vision_consent_at: '2026-08-21T10:00:00Z',
       })
     )
-    vi.mocked(projectsApi.setCloudLandmarkConsent).mockResolvedValue({
-      cloud_landmark_detection_enabled: false,
-      cloud_landmark_consent_at: null,
+    vi.mocked(projectsApi.setCloudVisionConsent).mockResolvedValue({
+      cloud_vision_detection_enabled: false,
+      cloud_vision_consent_at: null,
     })
 
     renderPage()
     const toggle = await screen.findByRole('switch', {
-      name: /cloud-sehenswürdigkeit-erkennung/i,
+      name: /cloud-bilderkennung/i,
     })
     await user.click(toggle)
 
     await waitFor(() =>
-      expect(projectsApi.setCloudLandmarkConsent).toHaveBeenCalledWith(1, false)
+      expect(projectsApi.setCloudVisionConsent).toHaveBeenCalledWith(1, false)
     )
   })
 
@@ -150,7 +151,7 @@ describe('ProjectSettingsPage', () => {
 
     renderPage()
     const infoTrigger = await screen.findByRole('button', {
-      name: /erkläre cloud-sehenswürdigkeit-erkennung/i,
+      name: /erkläre cloud-bilderkennung/i,
     })
     await user.click(infoTrigger)
 
@@ -162,11 +163,11 @@ describe('ProjectSettingsPage', () => {
   it('disables the toggle while the consent update is in flight (busy-button pattern)', async () => {
     const user = userEvent.setup()
     vi.mocked(projectsApi.getProject).mockResolvedValue(project())
-    vi.mocked(projectsApi.setCloudLandmarkConsent).mockReturnValue(new Promise(() => {}))
+    vi.mocked(projectsApi.setCloudVisionConsent).mockReturnValue(new Promise(() => {}))
 
     renderPage()
     const toggle = await screen.findByRole('switch', {
-      name: /cloud-sehenswürdigkeit-erkennung/i,
+      name: /cloud-bilderkennung/i,
     })
     await user.click(toggle)
 

@@ -7,7 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import photosort.worker as worker_module
 from photosort.db import make_session_factory
-from photosort.models import CriterionScoringRun, Project, ScanRun, ScanStatus, ScoringRun
+from photosort.models import (
+    CriterionScoringRun,
+    Project,
+    RemoteCategoryClassificationRun,
+    ScanRun,
+    ScanStatus,
+    ScoringRun,
+)
 from photosort.worker import reap_stalled_runs
 
 # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019),
@@ -168,10 +175,33 @@ async def test_reaps_stalled_criterion_scoring_run(db_session: AsyncSession) -> 
     assert stalled.status == ScanStatus.FAILED
 
 
+async def test_reaps_stalled_remote_category_classification_run(
+    db_session: AsyncSession,
+) -> None:
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
+    Punkt 2 Migration d: vierter, eigenstaendiger Tabellen-Block (kein scoring_run_id-Bezug)."""
+    project = await _make_project(db_session)
+    stalled = RemoteCategoryClassificationRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    db_session.add(stalled)
+    await db_session.commit()
+    await db_session.refresh(stalled)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    assert reaped == 1
+    await db_session.refresh(stalled)
+    assert stalled.status == ScanStatus.FAILED
+
+
 async def test_reaps_stalled_runs_of_different_types_independently(
     db_session: AsyncSession,
 ) -> None:
-    """Akzeptanzkriterium der Spec: reap_stalled_runs behandelt alle drei Tabellen unabhaengig
+    """Akzeptanzkriterium der Spec: reap_stalled_runs behandelt alle vier Tabellen unabhaengig
     voneinander."""
     project = await _make_project(db_session)
     scoring_run = await _make_scoring_run(db_session, project)
@@ -191,14 +221,26 @@ async def test_reaps_stalled_runs_of_different_types_independently(
         status=ScanStatus.RUNNING,
         last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
     )
-    db_session.add_all([stalled_scan, stalled_scoring, stalled_criterion_scoring])
+    stalled_remote_category = RemoteCategoryClassificationRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    db_session.add_all(
+        [stalled_scan, stalled_scoring, stalled_criterion_scoring, stalled_remote_category]
+    )
     await db_session.commit()
 
     session_factory = make_session_factory(db_session.bind)
     reaped = await reap_stalled_runs({}, session_factory=session_factory)
 
-    assert reaped == 3
-    for run in (stalled_scan, stalled_scoring, stalled_criterion_scoring):
+    assert reaped == 4
+    for run in (
+        stalled_scan,
+        stalled_scoring,
+        stalled_criterion_scoring,
+        stalled_remote_category,
+    ):
         await db_session.refresh(run)
         assert run.status == ScanStatus.FAILED
 
@@ -409,3 +451,42 @@ async def test_error_selecting_criterion_scoring_runs_does_not_block_the_other_t
     await db_session.refresh(stalled_criterion_scoring)
     assert stalled_scan.status == ScanStatus.FAILED
     assert stalled_criterion_scoring.status == ScanStatus.RUNNING
+
+
+async def test_error_selecting_remote_category_classification_runs_does_not_block_the_other_tables(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Viertes Pendant (specs/features/0055) fuer RemoteCategoryClassificationRun."""
+    project = await _make_project(db_session)
+    stalled_scan = ScanRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    stalled_remote_category = RemoteCategoryClassificationRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    db_session.add_all([stalled_scan, stalled_remote_category])
+    await db_session.commit()
+
+    original_execute = AsyncSession.execute
+
+    async def flaky_execute(self: AsyncSession, statement: object, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        if "remote_category_classification_runs" in str(statement):
+            raise RuntimeError("simulated table-level failure")
+        return await original_execute(self, statement, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(AsyncSession, "execute", flaky_execute)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    monkeypatch.undo()
+
+    assert reaped == 1
+    await db_session.refresh(stalled_scan)
+    await db_session.refresh(stalled_remote_category)
+    assert stalled_scan.status == ScanStatus.FAILED
+    assert stalled_remote_category.status == ScanStatus.RUNNING

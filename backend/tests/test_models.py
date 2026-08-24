@@ -8,9 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from photosort.models import (
+    CategoryLabel,
     CriterionScoringRun,
     CriterionSource,
     Photo,
+    PhotoCategoryDetection,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
     PhotoRanking,
@@ -18,6 +20,7 @@ from photosort.models import (
     Project,
     Rating,
     RatingStatus,
+    RemoteCategoryClassificationRun,
     ScanRun,
     ScanStatus,
     ScoringRun,
@@ -511,31 +514,31 @@ async def test_photo_score_duplicate_of_references_another_photo(db_session: Asy
 # dedizierte Tabelle fuer den erkannten Landmark-Namen.
 
 
-async def test_project_cloud_landmark_consent_defaults(db_session: AsyncSession) -> None:
+async def test_project_cloud_vision_consent_defaults(db_session: AsyncSession) -> None:
     project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
     db_session.add(project)
     await db_session.commit()
 
     result = await db_session.execute(select(Project).where(Project.id == project.id))
     stored = result.scalar_one()
-    assert stored.cloud_landmark_detection_enabled is False
-    assert stored.cloud_landmark_consent_at is None
+    assert stored.cloud_vision_detection_enabled is False
+    assert stored.cloud_vision_consent_at is None
 
 
-async def test_project_cloud_landmark_consent_can_be_enabled(db_session: AsyncSession) -> None:
+async def test_project_cloud_vision_consent_can_be_enabled(db_session: AsyncSession) -> None:
     project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
     db_session.add(project)
     await db_session.flush()
 
     now = datetime.now(UTC)
-    project.cloud_landmark_detection_enabled = True
-    project.cloud_landmark_consent_at = now
+    project.cloud_vision_detection_enabled = True
+    project.cloud_vision_consent_at = now
     await db_session.commit()
 
     result = await db_session.execute(select(Project).where(Project.id == project.id))
     stored = result.scalar_one()
-    assert stored.cloud_landmark_detection_enabled is True
-    assert stored.cloud_landmark_consent_at is not None
+    assert stored.cloud_vision_detection_enabled is True
+    assert stored.cloud_vision_consent_at is not None
 
 
 async def test_create_photo_landmark_detection(db_session: AsyncSession) -> None:
@@ -652,3 +655,129 @@ async def test_photo_landmark_detection_has_a_provider_column(db_session: AsyncS
 
     columns = await db_session.run_sync(_get_columns)
     assert "provider" in columns
+
+
+# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+# specs/architecture/0002-testkonzept.md ab hier: Cascade-Tests fuer die drei neuen Tabellen
+# (category_labels, photo_category_detections, remote_category_classification_runs) - Review-Fund
+# (test-engineer): fehlten trotz explizitem Testkonzept-Verweis. Realer Codepfad, der das
+# betrifft: worker.py::run_project_scan loescht Photo-Zeilen bei Rescan fuer entfernte Dateien -
+# ein bereits remote-klassifiziertes Foto mit photo_category_detections-Zeilen durchlaeuft diesen
+# Pfad tatsaechlich.
+
+
+async def test_deleting_photo_cascades_to_category_detections_but_keeps_category_label(
+    db_session: AsyncSession,
+) -> None:
+    photo = await _make_photo(db_session)
+    hund = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[0.1, 0.2])
+    strand = CategoryLabel(canonical_key="strand", display_name="Strand", embedding=[0.3, 0.4])
+    db_session.add_all([hund, strand])
+    await db_session.flush()
+    now = datetime.now(UTC)
+    db_session.add_all(
+        [
+            PhotoCategoryDetection(
+                photo_id=photo.id,
+                category_label_id=hund.id,
+                raw_label="Hund",
+                confidence=0.9,
+                provider="anthropic",
+                computed_at=now,
+            ),
+            PhotoCategoryDetection(
+                photo_id=photo.id,
+                category_label_id=strand.id,
+                raw_label="Strand",
+                confidence=0.6,
+                provider="anthropic",
+                computed_at=now,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    detections = (await db_session.execute(select(PhotoCategoryDetection))).scalars().all()
+    assert detections == []
+    # category_labels ist bewusst KEIN Cascade-Ziel (ADR 0032: projektuebergreifende Registry,
+    # keine Fotoinhalte) - beide Eintraege bleiben nach dem Loeschen des einzigen referenzierenden
+    # Fotos bestehen.
+    remaining_labels = (await db_session.execute(select(CategoryLabel))).scalars().all()
+    assert {label.canonical_key for label in remaining_labels} == {"hund", "strand"}
+
+
+async def test_deleting_project_cascades_to_remote_category_classification_runs(
+    db_session: AsyncSession,
+) -> None:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(
+        RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    )
+    await db_session.commit()
+
+    await db_session.delete(project)
+    await db_session.commit()
+
+    result = await db_session.execute(select(RemoteCategoryClassificationRun))
+    assert result.scalars().all() == []
+
+
+async def test_deleting_project_leaves_shared_category_label_and_other_project_untouched(
+    db_session: AsyncSession,
+) -> None:
+    # Zwei Projekte referenzieren denselben (projektuebergreifenden) category_labels-Eintrag -
+    # das Loeschen eines Projekts darf weder den geteilten Label-Eintrag noch den Foto-/Detection-
+    # Bestand des ANDEREN Projekts beruehren (ADR 0032, Isolationsgarantie trotz geteilter
+    # Registry).
+    project_a = Project(name="Projekt A", opencloud_drive_id="d", opencloud_path="/a")
+    project_b = Project(name="Projekt B", opencloud_drive_id="d", opencloud_path="/b")
+    db_session.add_all([project_a, project_b])
+    await db_session.flush()
+    photo_a = await _make_photo(db_session, project_a)
+    photo_b = await _make_photo(db_session, project_b)
+
+    shared_label = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[0.1, 0.2])
+    db_session.add(shared_label)
+    await db_session.flush()
+    now = datetime.now(UTC)
+    db_session.add_all(
+        [
+            PhotoCategoryDetection(
+                photo_id=photo_a.id,
+                category_label_id=shared_label.id,
+                raw_label="Hund",
+                confidence=0.9,
+                provider="anthropic",
+                computed_at=now,
+            ),
+            PhotoCategoryDetection(
+                photo_id=photo_b.id,
+                category_label_id=shared_label.id,
+                raw_label="hund",
+                confidence=0.8,
+                provider="mistral",
+                computed_at=now,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    await db_session.delete(project_a)
+    await db_session.commit()
+
+    remaining_labels = (await db_session.execute(select(CategoryLabel))).scalars().all()
+    assert [label.canonical_key for label in remaining_labels] == ["hund"]
+
+    remaining_photos = (await db_session.execute(select(Photo))).scalars().all()
+    assert [p.id for p in remaining_photos] == [photo_b.id]
+
+    remaining_detections = (
+        (await db_session.execute(select(PhotoCategoryDetection))).scalars().all()
+    )
+    assert [d.photo_id for d in remaining_detections] == [photo_b.id]
+    assert remaining_detections[0].category_label_id == shared_label.id

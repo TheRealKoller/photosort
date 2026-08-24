@@ -109,5 +109,15 @@ class Settings(BaseSettings):
     # aber nur verwendet (build_landmark_client()), wenn landmark_provider == "mistral".
     mistral_api_key: str = ""
 
+    # Obergrenze fuer die begrenzte Parallelisierung der Remote-Kategorie-Klassifizierungs-Cloud-
+    # Aufrufe (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+    # decisions/0032 Punkt 5) - analog landmark_api_concurrency (Default 2, konservativer als
+    # scan_download_concurrency: reales Geld pro Anfrage und ein fremdes Rate-Limit). Eigenes,
+    # neues Setting statt Wiederverwendung von landmark_api_concurrency - ein eigenstaendiger Job
+    # mit eigener Kandidatenmenge (kompletter Ausschuss-Bestand statt eines Vorfilter-Ergebnisses),
+    # soll unabhaengig voneinander tunbar bleiben. `Field(ge=1)` analog den uebrigen Concurrency-
+    # Feldern.
+    remote_category_classification_concurrency: int = Field(default=2, ge=1)
+
 
 settings = Settings()

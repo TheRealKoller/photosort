@@ -5,12 +5,14 @@ import { ApiError } from '../api/client'
 import type { RatingFilter } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
+import { CategoryOverrideMarker } from '../components/CategoryOverrideMarker'
 import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingBadge } from '../components/RatingBadge'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
+import { useCategoryOverrideControls } from '../hooks/useCategoryOverrideControls'
 import { useConfirmAusschussGateMutation } from '../hooks/useProjects'
 import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
 import { ownRatingStatus } from '../utils/ownRating'
@@ -47,6 +49,7 @@ export function PhotoGridPage() {
   const query = usePhotoSequenceQuery(id, ratingStatus)
   const setRatingMutation = useSetRatingMutation(id)
   const gateMutation = useConfirmAusschussGateMutation(id)
+  const categoryOverrideControls = useCategoryOverrideControls(id)
   const photos = query.data?.pages.flatMap((page) => page.items) ?? []
   const totalSuggested = query.data?.pages[0]?.total ?? 0
 
@@ -221,12 +224,28 @@ export function PhotoGridPage() {
                       Badge-Bereich zum <Link> durch (Badge bleibt rein dekorativ), der Info-
                       Trigger reaktiviert Pointer-Events gezielt fuer sich selbst
                       (`pointer-events-auto`), da er einen eigenen Klick-Handler braucht (AK17). */}
+                  {/* specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+                      UI/UX-Abschnitt: Override-Marker in der bislang unbelegten Ecke (oben links),
+                      RatingBadge/Info-Trigger bleiben oben rechts unveraendert. */}
+                  {photo.category_override !== null && (
+                    <div className="pointer-events-none absolute left-1.5 top-1.5">
+                      <CategoryOverrideMarker />
+                    </div>
+                  )}
                   <div className="pointer-events-none absolute right-1.5 top-1.5 flex items-center gap-1">
                     <CriterionDetailsPopover
                       criterionScores={photo.criterion_scores}
                       ranking={photo.ranking}
                       suggestion={photo.suggestion}
                       className="pointer-events-auto"
+                      categoryCandidates={photo.category_candidates}
+                      categoryOverride={photo.category_override}
+                      onOverrideCategory={(categoryKey) =>
+                        categoryOverrideControls.overrideCategory(photo.id, categoryKey)
+                      }
+                      onResetOverride={() => categoryOverrideControls.resetOverride(photo.id)}
+                      pendingOverrideKey={categoryOverrideControls.pendingOverrideKeyFor(photo.id)}
+                      resetPending={categoryOverrideControls.isResetPendingFor(photo.id)}
                     />
                     {/* UX-Review-Fund (Branch feature/0012-visual-redesign-views): der neutrale
                         ("unbewertet") und der gedaempfte Vorschlags-Ton der Badge haben keine bzw.

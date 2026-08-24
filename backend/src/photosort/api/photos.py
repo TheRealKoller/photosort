@@ -14,11 +14,14 @@ from sqlalchemy.orm import aliased, selectinload
 
 from photosort.api.deps import get_current_user, get_session
 from photosort.config import settings
-from photosort.criteria import CRITERIA_REGISTRY
+from photosort.criteria import CRITERIA_REGISTRY, derive_active_categories, derive_category_key
 from photosort.models import (
+    CategoryLabel,
     CriterionScoringRun,
     CriterionSource,
     Photo,
+    PhotoCategoryDetection,
+    PhotoCriterionScore,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -28,6 +31,17 @@ from photosort.models import (
     User,
 )
 from photosort.thumbnails import variant_path
+from photosort.worker import _merge_remote_category_labels, reassign_photo_category
+
+# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 7:
+# einzige bewusste Ausnahme vom sonst in api/*.py durchgehaltenen Prinzip, keine worker.py-
+# Funktionen direkt zu importieren (api/projects.py-Kommentar bei _count_remote_category_
+# candidates) - die Spec verlangt hier ausdruecklich einen SYNCHRONEN Aufruf im selben API-Request
+# ("sofortige Wirkung", kein Hintergrund-Job), reassign_photo_category/_merge_remote_category_
+# labels sind dafuer die einzig richtige, bereits bestehende Implementierungsstelle (DRY mit
+# run_criterion_scoring). Der Import selbst ist unproblematisch, da worker.py mediapipe/
+# tensorflow/onnxruntime ausschliesslich lokal innerhalb der jeweiligen build_*()-Funktionen
+# importiert (nicht auf Modulebene) - kein zusaetzliches Gewicht im uvicorn-Importpfad.
 
 # Bewusste Abweichung vom Router-Level-dependencies=[Depends(get_current_user)]-Muster aus
 # projects.py/opencloud.py (Architektur-Review-Fund): jeder Endpunkt hier braucht das tatsaechliche
@@ -108,6 +122,33 @@ class CriterionScoreOut(BaseModel):
     source: CriterionSource
 
 
+class RemoteCategoryLabelOut(BaseModel):
+    """Ein vom Vision-LLM geliefertes, auf einen kanonischen Eintrag aufgeloestes Roh-Label
+    (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
+    6) - ersetzt das vormals vorgesehene einzelne optionale Feld: immer eine Liste (0-3
+    Eintraege), nie None, analog `ratings`/`criterion_scores`."""
+
+    canonical_key: str
+    display_name: str
+    raw_label: str
+    confidence: float
+    provider: str
+
+
+class CategoryCandidateOut(BaseModel):
+    """Die fuer DIESES Foto tatsaechlich gueltige Kategorie-Kandidatenmenge - lokal qualifizierende
+    Kriterien (Wert >= der jeweiligen `category_presence_threshold`) UND Remote-Erkennungen
+    zusammen (UI/UX-Abschnitt der Spec 0055, "Datenbedarf"-Hinweis: verhindert, dass das Frontend
+    die Praesenz-Schwellenlogik selbst nachbilden muesste). `category_key` ist bereits im
+    generischen Format (`removeprefix("content_")`) - dieselbe Formatierung wie
+    `PhotoRanking.category_key`. `provider` ist nur bei `origin="remote"` gesetzt."""
+
+    category_key: str
+    origin: Literal["local", "remote"]
+    score: float
+    provider: str | None = None
+
+
 class PhotoOut(BaseModel):
     id: int
     relative_path: str
@@ -119,6 +160,15 @@ class PhotoOut(BaseModel):
     # die tatsaechlich eine PhotoCriterionScore-Zeile existiert, sortiert nach
     # CRITERIA_REGISTRY-Reihenfolge (specs/features/0040-bewertungsdetails-info-popover.md).
     criterion_scores: list[CriterionScoreOut]
+    # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
+    # Punkt 6: immer eine Liste (0-3 Eintraege), nie None.
+    remote_category_labels: list[RemoteCategoryLabelOut]
+    # Dauerhafte manuelle Uebersteuerung (PhotoScore.category_override), None ohne aktiven
+    # Override.
+    category_override: str | None = None
+    # Siehe CategoryCandidateOut-Docstring - sortiert nach Score/Konfidenz absteigend (UI/UX-
+    # Abschnitt der Spec), Tie-Break alphabetisch nach category_key fuer Determinismus.
+    category_candidates: list[CategoryCandidateOut]
 
 
 class PhotoListOut(BaseModel):
@@ -186,6 +236,12 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
             # statt eines Query pro Foto (specs/features/0040-bewertungsdetails-info-popover.md,
             # Architektur-Abschnitt).
             selectinload(Photo.criterion_scores),
+            # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: analog
+            # eager geladen, inkl. der verknuepften category_labels-Zeile (fuer canonical_key/
+            # display_name, ohne N+1-Query pro Detection).
+            selectinload(Photo.category_label_detections).selectinload(
+                PhotoCategoryDetection.category_label
+            ),
         )
     )
     return {photo.id: photo for photo in result.scalars()}
@@ -234,6 +290,62 @@ def _criterion_scores_out(photo: Photo) -> list[CriterionScoreOut]:
     ]
 
 
+def _remote_category_labels_out(photo: Photo) -> list[RemoteCategoryLabelOut]:
+    return [
+        RemoteCategoryLabelOut(
+            canonical_key=detection.category_label.canonical_key,
+            display_name=detection.category_label.display_name,
+            raw_label=detection.raw_label,
+            confidence=detection.confidence,
+            provider=detection.provider,
+        )
+        for detection in photo.category_label_detections
+    ]
+
+
+def _category_candidates_out(photo: Photo) -> list[CategoryCandidateOut]:
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-
+    Abschnitt "Datenbedarf": die fuer DIESES Foto tatsaechlich gueltige Kandidatenmenge - lokal
+    qualifizierende Kriterien (criteria.py::CRITERIA_REGISTRY-Schwelle erreicht) UND Remote-
+    Erkennungen, fuer die PhotoOut-Anzeige (`GET /projects/{id}/photos`, `photo` dort ueber
+    selectinload eager geladen).
+
+    Review-Klarstellung (architect-Fund): `PUT /photos/{id}/category-override` validiert NICHT
+    diese Funktion direkt, sondern `_photo_category_candidate_keys` unten - dieselbe
+    Schwellenwert-Regel, aber eine eigene, session-basierte Query statt eines Zugriffs auf
+    `photo.criterion_scores`/`.category_label_detections`: der dort verwendete `photo` kommt aus
+    `_get_photo_or_404` (reines `session.get()`, keine Eager-Loading-Options) - ein Lazy-Load
+    dieser Relationships wuerde im async-SQLAlchemy-Kontext eine `MissingGreenlet`-Exception
+    auslsoen. Zwei Implementierungen derselben Regel statt einer gemeinsamen Funktion, bewusst so
+    belassen (Nice-to-have, nicht behoben): ein Merge haette entweder `_get_photo_or_404` auf
+    Eager-Loading umstellen muessen (Overhead fuer die haeufigeren Endpunkte, die keine
+    Kandidatenliste brauchen) oder eine dritte, session-generische Variante gebraucht - beides
+    groesserer Umbau fuer einen rein internen Duplikat-Fund ohne Verhaltensauswirkung."""
+    candidates: list[CategoryCandidateOut] = []
+    for score in photo.criterion_scores:
+        definition = CRITERIA_REGISTRY.get(score.criterion_key)
+        if definition is None or definition.category_presence_threshold is None:
+            continue
+        if score.value >= definition.category_presence_threshold:
+            candidates.append(
+                CategoryCandidateOut(
+                    category_key=score.criterion_key.removeprefix("content_"),
+                    origin="local",
+                    score=score.value,
+                )
+            )
+    for detection in photo.category_label_detections:
+        candidates.append(
+            CategoryCandidateOut(
+                category_key=detection.category_label.canonical_key,
+                origin="remote",
+                score=detection.confidence,
+                provider=detection.provider,
+            )
+        )
+    return sorted(candidates, key=lambda c: (-c.score, c.category_key))
+
+
 def _to_photo_out(
     photo: Photo,
     current_user_id: int,
@@ -270,6 +382,9 @@ def _to_photo_out(
             else None
         ),
         criterion_scores=_criterion_scores_out(photo),
+        remote_category_labels=_remote_category_labels_out(photo),
+        category_override=photo.score.category_override if photo.score is not None else None,
+        category_candidates=_category_candidates_out(photo),
     )
 
 
@@ -480,3 +595,192 @@ async def get_photo_image(
     return FileResponse(
         path, media_type="image/jpeg", headers={"X-Content-Type-Options": "nosniff"}
     )
+
+
+class CategoryOverrideIn(BaseModel):
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
+    Punkt 6.3: `category_key` ist jetzt ein beliebiger `canonical_key`/lokaler Kriterien-Key statt
+    einer von drei festen Werten - weiterhin kein Freitext-Risiko, die Injection-Freiheit beruht
+    auf der foto-skopierten Existenzpruefung in `_photo_category_candidate_keys` unten
+    (Security-Abschnitt der Spec, Punkt 3), nicht mehr auf einem geschlossenen Enum."""
+
+    category_key: str
+
+
+class CategoryOverrideOut(BaseModel):
+    photo_id: int
+    category_key: str
+
+
+async def _get_photo_or_404(photo_id: int, session: AsyncSession) -> Photo:
+    photo = await session.get(Photo, photo_id)
+    if photo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Foto nicht gefunden.")
+    return photo
+
+
+async def _photo_category_candidate_keys(session: AsyncSession, photo_id: int) -> set[str]:
+    """Die foto-skopierte Existenzpruefungs-Menge fuer den Override-Endpunkt (Security-Abschnitt
+    der Spec 0055, Punkt 3): lokal qualifizierende Kriterien (dieselbe Schwellenlogik wie
+    `_category_candidates_out`) UND fuer DIESES Foto tatsaechlich persistierte
+    `photo_category_detections`-canonical_keys - ein `category_key`, der zwar real existiert
+    (z.B. fuer ein ANDERES Foto erkannt), aber fuer dieses Foto nie erkannt wurde, ist NICHT in
+    dieser Menge enthalten (Cross-Photo-Isolation, kein IDOR)."""
+    criterion_rows = (
+        await session.execute(
+            select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo_id)
+        )
+    ).scalars().all()
+    keys: set[str] = set()
+    for row in criterion_rows:
+        definition = CRITERIA_REGISTRY.get(row.criterion_key)
+        if definition is None or definition.category_presence_threshold is None:
+            continue
+        if row.value >= definition.category_presence_threshold:
+            keys.add(row.criterion_key.removeprefix("content_"))
+
+    remote_keys = (
+        await session.execute(
+            select(CategoryLabel.canonical_key)
+            .join(
+                PhotoCategoryDetection,
+                PhotoCategoryDetection.category_label_id == CategoryLabel.id,
+            )
+            .where(PhotoCategoryDetection.photo_id == photo_id)
+        )
+    ).scalars().all()
+    keys.update(remote_keys)
+    return keys
+
+
+async def _current_ranking_for_photo(
+    session: AsyncSession, project_id: int, photo_id: int
+) -> tuple[int, PhotoRanking] | None:
+    """`None`, wenn kein erfolgreicher CriterionScoringRun existiert ODER dieses Foto darin keine
+    PhotoRanking-Zeile hat (409-Faelle des PUT-Endpunkts, ADR 0032 Punkt 6.3) - sonst
+    `(criterion_scoring_run_id, ranking)`."""
+    run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    if run_id is None:
+        return None
+    ranking = (
+        await session.execute(
+            select(PhotoRanking).where(
+                PhotoRanking.criterion_scoring_run_id == run_id,
+                PhotoRanking.photo_id == photo_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if ranking is None:
+        return None
+    return run_id, ranking
+
+
+async def _full_candidate_pool_values(
+    session: AsyncSession, criterion_scoring_run_id: int
+) -> dict[int, dict[str, float]]:
+    """Der vollstaendige Kandidatenpool eines Laufs (alle Fotos mit einer PhotoRanking-Zeile in
+    diesem Lauf), als `candidate_values`-Struktur fuer `derive_active_categories`/
+    `derive_category_key` - ADR 0032 Punkt 6.4 (Override-Ruecknahme): "rekonstruiert ... auf dem
+    vollstaendigen Kandidatenpool des Laufs", nicht nur den zwei betroffenen Partitionen."""
+    photo_ids = (
+        await session.execute(
+            select(PhotoRanking.photo_id).where(
+                PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id
+            )
+        )
+    ).scalars().all()
+    if not photo_ids:
+        return {}
+    values: dict[int, dict[str, float]] = {photo_id: {} for photo_id in photo_ids}
+    criterion_rows = (
+        await session.execute(
+            select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id.in_(photo_ids))
+        )
+    ).scalars().all()
+    for row in criterion_rows:
+        values[row.photo_id][row.criterion_key] = row.value
+    return values
+
+
+@router.put("/photos/{photo_id}/category-override", response_model=CategoryOverrideOut)
+async def set_category_override(
+    photo_id: int,
+    payload: CategoryOverrideIn,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> CategoryOverrideOut:
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+    Akzeptanzkriterium "Manuelle Übernahme (Override) mit sofortiger Wirkung": `404` bei
+    fehlendem Foto, `409` ohne `PhotoRanking`-Zeile im aktuellen Lauf ODER falls `category_key`
+    keiner fuer dieses Foto tatsaechlich vorhandenen Erkennung entspricht. Wirkt SOFORT im selben
+    Request (`worker.py::reassign_photo_category`) - kein neuer Ranking-Algorithmus, kein voller
+    Re-Scoring-Lauf."""
+    photo = await _get_photo_or_404(photo_id, session)
+
+    current = await _current_ranking_for_photo(session, photo.project_id, photo_id)
+    if current is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Kein aktueller Rangfolgen-Eintrag fuer dieses Foto.",
+        )
+    run_id, ranking = current
+
+    candidate_keys = await _photo_category_candidate_keys(session, photo_id)
+    if payload.category_key not in candidate_keys:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="category_key entspricht keiner fuer dieses Foto vorhandenen Erkennung.",
+        )
+
+    await reassign_photo_category(
+        session, run_id, photo_id, ranking.cluster_key, payload.category_key
+    )
+
+    score = await session.get(PhotoScore, photo_id)
+    if score is not None:
+        score.category_override = payload.category_key
+        await session.commit()
+
+    return CategoryOverrideOut(photo_id=photo_id, category_key=payload.category_key)
+
+
+@router.delete("/photos/{photo_id}/category-override", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_category_override(
+    photo_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+    Akzeptanzkriterium "Manuelle Übernahme (Override) mit sofortiger Wirkung": nimmt die
+    Uebernahme zurueck, rekonstruiert den automatisch abgeleiteten `category_key` ueber
+    `worker.py::_merge_remote_category_labels` + `derive_active_categories`/`derive_category_key`
+    auf dem vollstaendigen Kandidatenpool des Laufs. Idempotent (`204` auch ohne aktiven
+    Override)."""
+    await _get_photo_or_404(photo_id, session)
+
+    score = await session.get(PhotoScore, photo_id)
+    if score is None or score.category_override is None:
+        return
+
+    photo = await session.get(Photo, photo_id)
+    assert photo is not None
+    current = await _current_ranking_for_photo(session, photo.project_id, photo_id)
+    if current is None:
+        # Kein aktiver Lauf/keine Rangfolgen-Zeile (mehr) - Override trotzdem zuruecksetzen
+        # (dokumentierter, sicherer Fallback), aber keine Neusortierung ohne Kontext moeglich.
+        score.category_override = None
+        await session.commit()
+        return
+    run_id, ranking = current
+
+    candidate_values = await _full_candidate_pool_values(session, run_id)
+    dynamic_keys = await _merge_remote_category_labels(session, candidate_values)
+    active_categories = derive_active_categories(candidate_values, dynamic_keys=dynamic_keys)
+    new_category_key = derive_category_key(
+        candidate_values.get(photo_id, {}), active_categories, dynamic_keys=dynamic_keys
+    )
+
+    await reassign_photo_category(session, run_id, photo_id, ranking.cluster_key, new_category_key)
+
+    score.category_override = None
+    await session.commit()

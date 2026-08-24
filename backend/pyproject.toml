@@ -48,6 +48,16 @@ dependencies = [
     # ein anderer Name als der von mediapipe geforderte wuerde das Risiko zweier sich
     # ueberschreibender cv2-Installationen einfuehren.
     "opencv-contrib-python>=4.10",
+    # Lokales Text-Embedding-Modell fuer die Remote-Label-Aehnlichkeits-Zusammenfassung
+    # (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+    # decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 4) - bewusst
+    # NICHT sentence-transformers/transformers/torch (kein PyTorch im Image) und NICHT die
+    # TensorFlow-Hub-Alternative (tensorflow_text-Versions-Pinning-Risiko, siehe ADR) - reine
+    # CPU-/Rust-Pakete ohne GPU-Anteil, real per pip-Installation verifiziert (developer,
+    # 2026-08-23): onnxruntime-Wheel ~23 MB, tokenizers-Wheel ~3 MB - deutlich unter dem
+    # tensorflow-/mediapipe-Fussabdruck, keine transitive PyTorch-/zweite-TensorFlow-Abhaengigkeit.
+    "onnxruntime>=1.19",
+    "tokenizers>=0.20",
 ]
 
 [project.optional-dependencies]
@@ -72,7 +82,12 @@ where = ["src"]
 # backend/Dockerfile) die committeten Binaerassets NICHT ins installierte Package uebernehmen
 # (anders als bei "pip install -e ." im lokalen Dev-Setup, das direkt auf den Quellbaum zeigt).
 [tool.setuptools.package-data]
-photosort = ["assets/*.tflite", "assets/*.hdf5", "assets/*.task"]
+# assets/*.onnx/*.json (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md):
+# label_embedding.py-Assets - Review-Fund waehrend des finalen Qualitaetschecks (echter
+# Docker-Build+Smoke-Test): "pip install ." schliesst Nicht-Python-Dateien NICHT automatisch ein,
+# ohne diesen Eintrag fehlten die Assets im installierten Package (funktioniert in der lokalen
+# editable .venv-Installation zufaellig trotzdem, da dort direkt aus dem Quellbaum importiert wird).
+photosort = ["assets/*.tflite", "assets/*.hdf5", "assets/*.task", "assets/*.onnx", "assets/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -114,4 +129,12 @@ ignore_missing_imports = true
 # Muster wie beim mediapipe-Override oben).
 [[tool.mypy.overrides]]
 module = ["tensorflow.*"]
+ignore_missing_imports = true
+
+# onnxruntime liefert keine Typstubs/py.typed-Marker (label_embedding.py,
+# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) - dieselbe
+# Behandlung wie mediapipe oben. tokenizers liefert dagegen einen eigenen py.typed-Marker,
+# braucht keinen Override.
+[[tool.mypy.overrides]]
+module = ["onnxruntime.*"]
 ignore_missing_imports = true

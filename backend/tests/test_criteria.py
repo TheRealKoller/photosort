@@ -15,6 +15,7 @@ from photosort.classification import (
 from photosort.criteria import (
     CATEGORY_DETAIL,
     CRITERIA_REGISTRY,
+    DYNAMIC_LABEL_PRESENCE_THRESHOLD,
     FREIRAUM_YAW_DEADZONE_DEGREES,
     compute_content_landscape,
     compute_content_people,
@@ -485,3 +486,98 @@ class TestDeriveCategoryKey:
         values = {"tier": 0.001, "content_people": 0.0}
         active = frozenset({"tier", "content_people"})
         assert derive_category_key(values, active) == CATEGORY_DETAIL
+
+
+class TestDeriveActiveCategoriesDynamicKeys:
+    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
+    decisions/0032 Punkt 1: neuer, optionaler dritter Parameter `dynamic_keys` - zur Laufzeit
+    entdeckte Remote-Label-Pseudo-Keys (`f"remote:{canonical_key}"`) werden an derselben 15%-
+    Haeufigkeitsschwelle gemessen wie die registrierten lokalen Kriterien. Regressionspflicht
+    zuerst: alle obigen TestDeriveActiveCategories-Faelle bleiben mit dem Default
+    `dynamic_keys=frozenset()` unveraendert gruen (siehe oben, keine Aenderung noetig)."""
+
+    def test_dynamic_key_becomes_active_when_it_reaches_the_threshold(self) -> None:
+        candidate_values = {i: {"remote:hund": 0.9 if i < 15 else 0.0} for i in range(100)}
+        active = derive_active_categories(
+            candidate_values, dynamic_keys=frozenset({"remote:hund"})
+        )
+        assert "remote:hund" in active
+
+    def test_dynamic_key_below_the_threshold_stays_inactive(self) -> None:
+        candidate_values = {i: {"remote:hund": 0.9 if i < 14 else 0.0} for i in range(100)}
+        active = derive_active_categories(
+            candidate_values, dynamic_keys=frozenset({"remote:hund"})
+        )
+        assert "remote:hund" not in active
+
+    def test_dynamic_presence_threshold_is_exactly_inclusive(self) -> None:
+        # Ein Wert exakt an DYNAMIC_LABEL_PRESENCE_THRESHOLD zaehlt als "vorhanden" (inklusiv,
+        # `>=`) - ein von einem Vision-LLM gelieferter Wert ist bereits eine "erkannt"-Aussage,
+        # dieser Schwellwert trennt nur "vorhanden" von "fehlender Eintrag".
+        candidate_values = {
+            i: {"remote:hund": DYNAMIC_LABEL_PRESENCE_THRESHOLD if i < 15 else 0.0}
+            for i in range(100)
+        }
+        active = derive_active_categories(
+            candidate_values, dynamic_keys=frozenset({"remote:hund"})
+        )
+        assert "remote:hund" in active
+
+    def test_a_dynamic_key_not_present_in_any_candidate_stays_inactive(self) -> None:
+        candidate_values = {1: {"content_people": 1.0}, 2: {"content_people": 1.0}}
+        active = derive_active_categories(
+            candidate_values, dynamic_keys=frozenset({"remote:hund"})
+        )
+        assert "remote:hund" not in active
+
+    def test_local_and_dynamic_keys_are_evaluated_independently(self) -> None:
+        candidate_values = {
+            i: {
+                "content_people": 1.0 if i < 15 else 0.0,
+                "remote:hund": 1.0 if i < 50 else 0.0,
+            }
+            for i in range(100)
+        }
+        active = derive_active_categories(
+            candidate_values, dynamic_keys=frozenset({"remote:hund"})
+        )
+        assert "content_people" in active
+        assert "remote:hund" in active
+
+
+class TestDeriveCategoryKeyDynamicKeys:
+    def test_dynamic_key_wins_when_it_has_the_highest_score(self) -> None:
+        values = {"tier": 0.4, "remote:hund": 0.6}
+        active = frozenset({"tier", "remote:hund"})
+        assert (
+            derive_category_key(values, active, dynamic_keys=frozenset({"remote:hund"}))
+            == "hund"
+        )
+
+    def test_local_key_wins_over_a_lower_scoring_dynamic_key(self) -> None:
+        values = {"tier": 0.6, "remote:hund": 0.4}
+        active = frozenset({"tier", "remote:hund"})
+        assert (
+            derive_category_key(values, active, dynamic_keys=frozenset({"remote:hund"}))
+            == "tier"
+        )
+
+    def test_dynamic_key_below_its_own_presence_threshold_does_not_win(self) -> None:
+        values = {"remote:hund": 0.001}
+        active = frozenset({"remote:hund"})
+        result = derive_category_key(values, active, dynamic_keys=frozenset({"remote:hund"}))
+        assert result == CATEGORY_DETAIL
+
+    def test_tie_break_is_alphabetical_on_the_full_prefixed_key(self) -> None:
+        # "remote:hund" < "tier" alphabetisch (volle, praefixierte Keys, nicht die entpraefixierten
+        # Anzeigenamen) - ADR 0032 Punkt 1.
+        values = {"tier": 0.5, "remote:hund": 0.5}
+        active = frozenset({"tier", "remote:hund"})
+        result = derive_category_key(values, active, dynamic_keys=frozenset({"remote:hund"}))
+        assert result == "hund"
+
+    def test_remote_prefix_is_stripped_symmetrically_to_the_content_prefix(self) -> None:
+        values = {"remote:strand": 0.9}
+        active = frozenset({"remote:strand"})
+        result = derive_category_key(values, active, dynamic_keys=frozenset({"remote:strand"}))
+        assert result == "strand"

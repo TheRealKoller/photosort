@@ -422,9 +422,18 @@ CATEGORY_DETAIL = "detail"
 CATEGORY_ACTIVE_THRESHOLD_FRACTION = 0.15
 
 
+# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, decisions/0032-
+# remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 1: gleiche Konstanten-Klasse wie
+# _TIER_CATEGORY_PRESENCE_THRESHOLD/_GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD - ein vom Vision-LLM
+# gelieferter Wert ist bereits eine "erkannt"-Aussage, dieser Schwellwert trennt nur "vorhanden"
+# von "fehlender Eintrag" (candidate_values.get(key, 0.0)), keine zweite Konfidenzkalibrierung.
+DYNAMIC_LABEL_PRESENCE_THRESHOLD = 0.01
+
+
 def derive_active_categories(
     candidate_values: dict[int, dict[str, float]],
     threshold_fraction: float = CATEGORY_ACTIVE_THRESHOLD_FRACTION,
+    dynamic_keys: frozenset[str] = frozenset(),
 ) -> frozenset[str]:
     """Reine Aggregationsfunktion (Akzeptanzkriterium der Spec 0045): ermittelt EINMAL pro Lauf,
     projektweit ueber ALLE Kandidaten-Fotos (nicht pro cluster_key, ADR 0023 Punkt 2), welche
@@ -433,7 +442,13 @@ def derive_active_categories(
     category_presence_threshold erreicht/ueberschreitet (inklusiver Vergleich in beide
     Richtungen), >= threshold_fraction ist. Fehlende Werte fuer einzelne Fotos (best-effort-
     Kriterium fuer dieses Foto nicht berechenbar) zaehlen als "nicht vorhanden", kein Sonderfall.
-    Kein DB-/IO-Zugriff, keine Exception bei einem leeren Kandidatenpool."""
+    Kein DB-/IO-Zugriff, keine Exception bei einem leeren Kandidatenpool.
+
+    `dynamic_keys` (specs/features/0055, ADR 0032 Punkt 1): zur Laufzeit entdeckte Remote-Label-
+    Pseudo-Keys (`f"remote:{canonical_key}"`) - werden an derselben Haeufigkeitsschwelle gemessen
+    wie die registrierten lokalen Kriterien, aber gegen DYNAMIC_LABEL_PRESENCE_THRESHOLD statt
+    einer registrierten category_presence_threshold (es gibt keine CriterionDefinition fuer sie).
+    Default `frozenset()` - bestehende Aufrufer/Tests ohne dynamic_keys bleiben unveraendert."""
     total = len(candidate_values)
     if total == 0:
         return frozenset()
@@ -450,31 +465,57 @@ def derive_active_categories(
         )
         if (present_count / total) >= threshold_fraction:
             active.add(criterion_key)
+
+    for key in dynamic_keys:
+        present_count = sum(
+            1
+            for values in candidate_values.values()
+            if values.get(key, 0.0) >= DYNAMIC_LABEL_PRESENCE_THRESHOLD
+        )
+        if (present_count / total) >= threshold_fraction:
+            active.add(key)
+
     return frozenset(active)
 
 
-def derive_category_key(criterion_values: dict[str, float], active_criteria: frozenset[str]) -> str:
+def derive_category_key(
+    criterion_values: dict[str, float],
+    active_criteria: frozenset[str],
+    dynamic_keys: frozenset[str] = frozenset(),
+) -> str:
     """Weist EIN Foto einer Kategorie zu (Akzeptanzkriterium der Spec 0045, ADR 0023 Punkt 3):
     prueft nur noch gegen die fuer den Lauf ermittelte aktive Menge (derive_active_categories),
     nicht mehr gegen eine fest codierte Prioritaetskette. Erfuellt ein Foto mehrere aktive
     Kriterien gleichzeitig (Wert >= der jeweiligen category_presence_threshold), gewinnt der
     hoechste normierte Score; bei exakt gleichem Score entscheidet die alphabetische Reihenfolge
-    des criterion_key (deterministisch, testbar). Kein erfuelltes aktives Kriterium -> Catch-all
-    CATEGORY_DETAIL. category_key wird generisch aus dem gewinnenden criterion_key gebildet
-    (`removeprefix("content_")`) - liefert fuer Bestandskriterien identische Werte wie bisher
-    ("people"/"landscape"), fuer tier/gebaeude automatisch die richtigen Keys, ohne manuelles
-    Mapping (ADR 0023 Punkt 4)."""
+    des VOLLEN (inkl. "remote:"-Praefix) criterion_key (deterministisch, testbar). Kein erfuelltes
+    aktives Kriterium -> Catch-all CATEGORY_DETAIL. category_key wird generisch aus dem
+    gewinnenden criterion_key gebildet (`removeprefix("content_")`, bzw. symmetrisch
+    `removeprefix("remote:")` fuer dynamische Keys, ADR 0032 Punkt 1) - liefert fuer
+    Bestandskriterien identische Werte wie bisher ("people"/"landscape"), fuer tier/gebaeude/
+    Remote-Label automatisch die richtigen Keys, ohne manuelles Mapping (ADR 0023 Punkt 4).
+
+    `dynamic_keys` (specs/features/0055, ADR 0032 Punkt 1): Pseudo-Keys aus `active_criteria`, die
+    NICHT in CRITERIA_REGISTRY stehen - werden gegen DYNAMIC_LABEL_PRESENCE_THRESHOLD statt einer
+    registrierten category_presence_threshold geprueft. Default `frozenset()` - bestehende
+    Aufrufer/Tests ohne dynamic_keys bleiben unveraendert."""
     qualifying: list[str] = []
     for criterion_key in active_criteria:
-        definition = CRITERIA_REGISTRY.get(criterion_key)
-        if definition is None or definition.category_presence_threshold is None:
-            continue
+        if criterion_key in dynamic_keys:
+            threshold = DYNAMIC_LABEL_PRESENCE_THRESHOLD
+        else:
+            definition = CRITERIA_REGISTRY.get(criterion_key)
+            if definition is None or definition.category_presence_threshold is None:
+                continue
+            threshold = definition.category_presence_threshold
         value = criterion_values.get(criterion_key, 0.0)
-        if value >= definition.category_presence_threshold:
+        if value >= threshold:
             qualifying.append(criterion_key)
 
     if not qualifying:
         return CATEGORY_DETAIL
 
     winner = min(qualifying, key=lambda key: (-criterion_values.get(key, 0.0), key))
+    if winner.startswith("remote:"):
+        return winner.removeprefix("remote:")
     return winner.removeprefix("content_")

@@ -4,9 +4,11 @@ import { apiFetch } from './client'
 import {
   confirmAusschussGate,
   createProject,
+  getClassifyCategoriesRemoteEstimate,
   getProject,
   listProjects,
-  setCloudLandmarkConsent,
+  setCloudVisionConsent,
+  triggerClassifyCategoriesRemote,
   triggerScan,
   triggerScore,
   triggerScoreCriteria,
@@ -26,9 +28,10 @@ const PROJECT: ProjectOut = {
   last_scan: null,
   last_scoring_run: null,
   last_criterion_scoring_run: null,
+  last_remote_category_classification_run: null,
   category_selection_enabled: true,
-  cloud_landmark_detection_enabled: false,
-  cloud_landmark_consent_at: null,
+  cloud_vision_detection_enabled: false,
+  cloud_vision_consent_at: null,
 }
 
 describe('api/projects', () => {
@@ -103,19 +106,45 @@ describe('api/projects', () => {
     expect(result).toEqual({ status: 'queued' })
   })
 
-  it('sets the cloud landmark consent via PUT /projects/{id}/cloud-landmark-consent', async () => {
+  it('sets the cloud landmark consent via PUT /projects/{id}/cloud-vision-consent', async () => {
     const response = {
-      cloud_landmark_detection_enabled: true,
-      cloud_landmark_consent_at: '2026-08-21T10:00:00Z',
+      cloud_vision_detection_enabled: true,
+      cloud_vision_consent_at: '2026-08-21T10:00:00Z',
     }
     vi.mocked(apiFetch).mockResolvedValue(response)
 
-    const result = await setCloudLandmarkConsent(1, true)
+    const result = await setCloudVisionConsent(1, true)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/cloud-landmark-consent', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/cloud-vision-consent', {
       method: 'PUT',
       body: { enabled: true },
     })
     expect(result).toEqual(response)
+  })
+
+  it('fetches the estimate via GET /projects/{id}/classify-categories-remote/estimate', async () => {
+    const response = {
+      candidate_count: 42,
+      provider: 'anthropic',
+      price_per_image_usd: 0.0045,
+      estimated_cost_usd: 0.189,
+    }
+    vi.mocked(apiFetch).mockResolvedValue(response)
+
+    const result = await getClassifyCategoriesRemoteEstimate(1)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify-categories-remote/estimate')
+    expect(result).toEqual(response)
+  })
+
+  it('triggers the remote classification via POST /projects/{id}/classify-categories-remote', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
+
+    const result = await triggerClassifyCategoriesRemote(1)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify-categories-remote', {
+      method: 'POST',
+    })
+    expect(result).toEqual({ status: 'queued' })
   })
 })

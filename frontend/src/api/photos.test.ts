@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { apiFetch, apiFetchBlob } from './client'
-import { fetchPhotoImageBlobUrl, listPhotos } from './photos'
+import { deleteCategoryOverride, fetchPhotoImageBlobUrl, listPhotos, setCategoryOverride } from './photos'
 import type { PhotoListOut } from './types'
 
 vi.mock('./client', () => ({
@@ -19,6 +19,9 @@ const PHOTO_LIST: PhotoListOut = {
       suggestion: null,
       ranking: null,
       criterion_scores: [],
+      remote_category_labels: [],
+      category_override: null,
+      category_candidates: [],
     },
   ],
   total: 1,
@@ -65,5 +68,25 @@ describe('api/photos', () => {
     expect(result).toBe('blob:fake-url')
 
     vi.unstubAllGlobals()
+  })
+
+  it('sets the category override via PUT /photos/{id}/category-override', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ photo_id: 1, category_key: 'hund' })
+
+    const result = await setCategoryOverride(1, 'hund')
+
+    expect(apiFetch).toHaveBeenCalledWith('/photos/1/category-override', {
+      method: 'PUT',
+      body: { category_key: 'hund' },
+    })
+    expect(result).toEqual({ photo_id: 1, category_key: 'hund' })
+  })
+
+  it('deletes the category override via DELETE /photos/{id}/category-override', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(undefined)
+
+    await deleteCategoryOverride(1)
+
+    expect(apiFetch).toHaveBeenCalledWith('/photos/1/category-override', { method: 'DELETE' })
   })
 })

@@ -8,8 +8,10 @@ import * as ratingsApi from '../api/ratings'
 import type { PhotoListOut } from '../api/types'
 import {
   PHOTOS_PAGE_SIZE,
+  useDeleteCategoryOverrideMutation,
   useDeleteRatingMutation,
   usePhotoSequenceQuery,
+  useSetCategoryOverrideMutation,
   useSetRatingMutation,
 } from './usePhotos'
 
@@ -26,6 +28,9 @@ function page(items: number[], total: number): PhotoListOut {
       suggestion: null,
       ranking: null,
       criterion_scores: [],
+      remote_category_labels: [],
+      category_override: null,
+      category_candidates: [],
     })),
     total,
   }
@@ -107,6 +112,47 @@ describe('useDeleteRatingMutation', () => {
     await result.current.mutateAsync(1)
 
     expect(ratingsApi.deleteRating).toHaveBeenCalledWith(1)
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['photos', 1] })
+  })
+})
+
+describe('useSetCategoryOverrideMutation', () => {
+  it('sets the category override and invalidates all photo queries of the project', async () => {
+    vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
+      photo_id: 1,
+      category_key: 'hund',
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const listWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const { result } = renderHook(() => useSetCategoryOverrideMutation(1), {
+      wrapper: listWrapper,
+    })
+    await result.current.mutateAsync({ photoId: 1, categoryKey: 'hund' })
+
+    expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'hund')
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['photos', 1] })
+  })
+})
+
+describe('useDeleteCategoryOverrideMutation', () => {
+  it('deletes the category override and invalidates all photo queries of the project', async () => {
+    vi.mocked(photosApi.deleteCategoryOverride).mockResolvedValue(undefined)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const listWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const { result } = renderHook(() => useDeleteCategoryOverrideMutation(1), {
+      wrapper: listWrapper,
+    })
+    await result.current.mutateAsync(1)
+
+    expect(photosApi.deleteCategoryOverride).toHaveBeenCalledWith(1)
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['photos', 1] })
   })
 })

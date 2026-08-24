@@ -32,6 +32,9 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     suggestion: null,
     ranking: null,
     criterion_scores: [],
+    remote_category_labels: [],
+    category_override: null,
+    category_candidates: [],
     ...overrides,
   }
 }
@@ -505,6 +508,74 @@ describe('PhotoGridPage', () => {
       await user.click(confirmButton)
 
       expect(await screen.findByRole('alert')).toHaveTextContent('Kein erfolgreicher Ausschuss-Lauf.')
+    })
+  })
+
+  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt.
+  describe('category override', () => {
+    it('shows the override marker only for a photo with an active override', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({ id: 1, category_override: 'hund' }),
+          photo({ id: 2, category_override: null }),
+        ],
+        total: 2,
+      })
+
+      renderPage()
+
+      // Beide Fotos laden asynchron ueber PhotoImage (role="status" waehrend des Ladens) - erst
+      // abwarten, bis beide fertig sind, bevor die role="img"-Elemente gezaehlt werden. Sonst
+      // koennte "findAllByRole('img')" (loest bereits beim ERSTEN Treffer auf, wartet NICHT bis
+      // sich nichts mehr aendert) faelschlich schon beim synchron gerenderten Override-Marker
+      // allein aufloesen, bevor die beiden async geladenen Foto-<img>-Elemente ueberhaupt
+      // existieren - Flaky-Test-Fund, entdeckt beim Nachziehen des Copilot-Accessibility-Fixes
+      // (PR #201: CategoryOverrideMarker bekam zusaetzlich role="img").
+      await waitFor(() => {
+        expect(screen.queryAllByRole('status')).toHaveLength(0)
+      })
+
+      // Zwei geladene Foto-Thumbnails (role="img" ueber das native <img alt=...>) + ein
+      // Override-Marker (role="img", nur fuer das eine Foto mit aktivem Override).
+      expect(screen.getAllByRole('img')).toHaveLength(3)
+      expect(screen.getAllByLabelText('Kategorie manuell übersteuert')).toHaveLength(1)
+    })
+
+    it('overrides the category from the info popover and invalidates the photo list', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            criterion_scores: [criterionScore()],
+            ranking: {
+              cluster_key: 'cluster-0',
+              category_key: 'people',
+              rank_score: 0.5,
+              rank_position: 1,
+              partition_size: 1,
+            },
+            category_candidates: [
+              { category_key: 'hund', origin: 'remote', score: 0.9, provider: 'anthropic' },
+              { category_key: 'people', origin: 'local', score: 0.4, provider: null },
+            ],
+          }),
+        ],
+        total: 1,
+      })
+      vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
+        photo_id: 1,
+        category_key: 'hund',
+      })
+      const user = userEvent.setup()
+
+      renderPage()
+      await screen.findAllByRole('img')
+      await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+      await user.click(screen.getByRole('button', { name: /^übernehmen$/i }))
+
+      await waitFor(() =>
+        expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'hund')
+      )
     })
   })
 })

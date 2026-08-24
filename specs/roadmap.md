@@ -12,9 +12,7 @@ Keine offenen Einträge.
 
 ### Offen — Mittel
 
-| Spec | Titel | Status |
-|---|---|---|
-| [0055](./features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) | Remote-Kategorie-Klassifizierung mit offenen Schlagworten (Cloud-Vision-API) und Kostenschätzung | Accepted |
+Keine offenen Einträge.
 
 ### Offen — Niedrig
 
@@ -88,6 +86,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0047](./features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) | Sehenswürdigkeit-Erkennung (Landmark) via Cloud-Vision-API (Anthropic) | Implemented ([PR #181](https://github.com/TheRealKoller/photosort/pull/181)) |
 | [0053](./features/0053-fachagenten-definitionsdateien-kompaktieren.md) | Skill-/Agenten-Dateien kompaktieren: Prosa straffen (vier Fachagenten, analog Spec 0025) und historische ADR-/Spec-Zitate entfernen (11 Dateien + künftige Konvention in CLAUDE.md) | Implemented ([PR #188](https://github.com/TheRealKoller/photosort/pull/188), [PR #189](https://github.com/TheRealKoller/photosort/pull/189)) |
 | [0054](./features/0054-mistral-provider-option-cloud-landmark.md) | Mistral als wählbare Cloud-Provider-Alternative zu Anthropic für `landmark`-Kriterium | Implemented ([PR #195](https://github.com/TheRealKoller/photosort/pull/195)) |
+| [0055](./features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) | Remote-Kategorie-Klassifizierung mit offenen Schlagworten (Cloud-Vision-API) und Kostenschätzung | Implemented ([PR #201](https://github.com/TheRealKoller/photosort/pull/201)) |
 
 ## Priorisierung
 

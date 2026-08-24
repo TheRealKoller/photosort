@@ -54,6 +54,9 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     suggestion: null,
     ranking: ranking(),
     criterion_scores: [],
+    remote_category_labels: [],
+    category_override: null,
+    category_candidates: [],
     ...overrides,
   }
 }
@@ -844,5 +847,48 @@ describe('CurateCategoriesPage', () => {
         expect(screen.queryByTestId('button-spinner')).not.toBeInTheDocument()
       }
     )
+  })
+
+  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt.
+  describe('category override', () => {
+    it('shows the override marker for a photo with an active override', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, category_override: 'hund' })],
+        total: 1,
+      })
+
+      renderPage()
+
+      expect(await screen.findByLabelText('Kategorie manuell übersteuert')).toBeInTheDocument()
+    })
+
+    it('overrides the category from the info popover', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            criterion_scores: [criterionScore()],
+            ranking: ranking({ category_key: 'people' }),
+            category_candidates: [
+              { category_key: 'hund', origin: 'remote', score: 0.9, provider: 'anthropic' },
+              { category_key: 'people', origin: 'local', score: 0.4, provider: null },
+            ],
+          }),
+        ],
+        total: 1,
+      })
+      vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
+        photo_id: 1,
+        category_key: 'hund',
+      })
+      const user = userEvent.setup()
+
+      renderPage()
+      await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+      await user.click(screen.getByRole('button', { name: /^übernehmen$/i }))
+
+      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'hund'))
+    })
   })
 })
