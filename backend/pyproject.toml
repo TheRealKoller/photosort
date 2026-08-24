@@ -82,7 +82,12 @@ where = ["src"]
 # backend/Dockerfile) die committeten Binaerassets NICHT ins installierte Package uebernehmen
 # (anders als bei "pip install -e ." im lokalen Dev-Setup, das direkt auf den Quellbaum zeigt).
 [tool.setuptools.package-data]
-photosort = ["assets/*.tflite", "assets/*.hdf5", "assets/*.task"]
+# assets/*.onnx/*.json (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md):
+# label_embedding.py-Assets - Review-Fund waehrend des finalen Qualitaetschecks (echter
+# Docker-Build+Smoke-Test): "pip install ." schliesst Nicht-Python-Dateien NICHT automatisch ein,
+# ohne diesen Eintrag fehlten die Assets im installierten Package (funktioniert in der lokalen
+# editable .venv-Installation zufaellig trotzdem, da dort direkt aus dem Quellbaum importiert wird).
+photosort = ["assets/*.tflite", "assets/*.hdf5", "assets/*.task", "assets/*.onnx", "assets/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

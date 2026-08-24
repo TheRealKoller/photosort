@@ -220,3 +220,11 @@ export interface PhotoListOut {
   items: PhotoOut[]
   total: number
 }
+
+// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
+// 6.3: Antwort von PUT /photos/{id}/category-override (der gesetzte Wert wird direkt
+// zurueckgegeben, analog PUT /photos/{id}/rating).
+export interface CategoryOverrideOut {
+  photo_id: number
+  category_key: CategoryKey
+}
