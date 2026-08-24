@@ -524,7 +524,20 @@ describe('PhotoGridPage', () => {
 
       renderPage()
 
-      expect(await screen.findAllByRole('img')).toHaveLength(2)
+      // Beide Fotos laden asynchron ueber PhotoImage (role="status" waehrend des Ladens) - erst
+      // abwarten, bis beide fertig sind, bevor die role="img"-Elemente gezaehlt werden. Sonst
+      // koennte "findAllByRole('img')" (loest bereits beim ERSTEN Treffer auf, wartet NICHT bis
+      // sich nichts mehr aendert) faelschlich schon beim synchron gerenderten Override-Marker
+      // allein aufloesen, bevor die beiden async geladenen Foto-<img>-Elemente ueberhaupt
+      // existieren - Flaky-Test-Fund, entdeckt beim Nachziehen des Copilot-Accessibility-Fixes
+      // (PR #201: CategoryOverrideMarker bekam zusaetzlich role="img").
+      await waitFor(() => {
+        expect(screen.queryAllByRole('status')).toHaveLength(0)
+      })
+
+      // Zwei geladene Foto-Thumbnails (role="img" ueber das native <img alt=...>) + ein
+      // Override-Marker (role="img", nur fuer das eine Foto mit aktivem Override).
+      expect(screen.getAllByRole('img')).toHaveLength(3)
       expect(screen.getAllByLabelText('Kategorie manuell übersteuert')).toHaveLength(1)
     })
 

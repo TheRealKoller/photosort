@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -221,26 +221,25 @@ async def _count_remote_category_candidates(session: AsyncSession, project_id: i
     onnxruntime werden in classification.py/aesthetics.py/label_embedding.py durchgaengig lokal
     innerhalb der jeweiligen build_*()-Funktion importiert, nicht auf Modulebene - reiner
     Architektur-Klarheitsgrund, siehe api/photos.py fuer die eine bewusste Ausnahme, wo die Spec
-    einen synchronen Aufruf im selben Request verlangt.)"""
-    photo_ids = (
-        await session.execute(
-            select(Photo.id)
-            .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-            .where(Photo.project_id == project_id, PhotoScore.suggested_status.is_(None))
+    einen synchronen Aufruf im selben Request verlangt.)
+
+    Copilot-Review-Fund (PR #201): vorher zwei getrennte SELECTs (alle Kandidaten-`photo_id`s nach
+    Python laden, dann ein zweites SELECT + Python-seitiger Filter) - bei einem grossen Projekt
+    unnoetig viel Speicher/IO, gerade weil die Kostenschaetzung eager beim Laden der
+    Kuratierungs-Seite ausgefuehrt wird. Jetzt ein einzelnes `COUNT` mit `NOT EXISTS`, komplett
+    serverseitig ausgewertet - keine Zeile verlaesst die Datenbank."""
+    already_classified = exists().where(PhotoCategoryDetection.photo_id == Photo.id)
+    result = await session.execute(
+        select(func.count())
+        .select_from(Photo)
+        .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+        .where(
+            Photo.project_id == project_id,
+            PhotoScore.suggested_status.is_(None),
+            ~already_classified,
         )
-    ).scalars().all()
-    if not photo_ids:
-        return 0
-    already_classified_ids = set(
-        (
-            await session.execute(
-                select(PhotoCategoryDetection.photo_id).where(
-                    PhotoCategoryDetection.photo_id.in_(photo_ids)
-                )
-            )
-        ).scalars()
     )
-    return len([photo_id for photo_id in photo_ids if photo_id not in already_classified_ids])
+    return result.scalar_one()
 
 
 async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut:

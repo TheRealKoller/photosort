@@ -23,8 +23,15 @@ from typing import Protocol
 # (huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2, MIT-Lizenz, Transformers.js-
 # Community-Export DESSELBEN in der ADR genannten Basismodells, config.json bestaetigt
 # "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2" als _name_or_path, hidden_size=384)
-# verwendet - "onnx/model_int8.onnx" + "tokenizer.json", beide einmalig heruntergeladen und SHA256-
-# gepinnt eingecheckt (kein Laufzeit-Download). Reale Groesse VOR dem Commit gemessen (ADR-Pflicht):
+# verwendet - "onnx/model_int8.onnx" + "tokenizer.json". Beide werden SHA256-gepinnt verifiziert,
+# aber NICHT mehr beide eingecheckt (Copilot-Review-Fund, PR #201 - korrigiert diesen zuvor
+# veralteten Satz): "tokenizer.json" (label_embedder_tokenizer.json, 17 MB) bleibt wie gewohnt
+# committet, "model_int8.onnx" (label_embedder.onnx, ~113 MiB) ueberschreitet GitHubs 100-MiB-
+# Push-Limit und wird stattdessen bei Bedarf per verifiziertem Download bezogen (kein Commit-
+# Versuch mehr!) - siehe specs/decisions/0033-modell-asset-download-statt-commit-label-embedder.md,
+# scripts/fetch-label-embedder-model.sh (aufgerufen aus backend/Dockerfile, .github/workflows/
+# ci.yml, sowie einmalig manuell im lokalen Bare-Metal-Dev-Setup, docs/setup.md). Reale Groesse
+# VOR dem urspruenglichen (inzwischen wieder entfernten) Commit gemessen (ADR-Pflicht):
 # model_int8.onnx 118.054.609 Bytes (~113 MiB), tokenizer.json 17.082.913 Bytes (~16 MiB) - liegt
 # innerhalb der in der ADR grob geschaetzten Bandbreite (~100-150 MB), kein Ruecksprache-Anlass.
 # Ein-Wort-Cosinus-Stichprobe vor dem Commit verifiziert (siehe TestRealAssetOutputDimension):
