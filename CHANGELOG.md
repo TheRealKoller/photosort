@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/TheRealKoller/photosort/compare/v0.15.0...v0.16.0) (2026-08-24)
+
+
+### Features
+
+* **spec-0055:** Remote-Kategorie-Klassifizierung mit Kostenschätzung ([#201](https://github.com/TheRealKoller/photosort/issues/201)) ([0ad636a](https://github.com/TheRealKoller/photosort/commit/0ad636a0380b98b13f6670d1b88ab87bef673059))
+
 ## [0.15.0](https://github.com/TheRealKoller/photosort/compare/v0.14.0...v0.15.0) (2026-08-23)
 
 
