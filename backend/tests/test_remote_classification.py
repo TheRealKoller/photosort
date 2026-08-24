@@ -210,6 +210,22 @@ class TestSlugify:
     def test_strips_leading_and_trailing_underscores(self) -> None:
         assert _slugify("  Hund  ") == "hund"
 
+    def test_falls_back_to_a_hash_based_slug_when_no_latin_chars_remain(self) -> None:
+        # Review-Fund (security-engineer, spec 0055-Followup): ein rein nicht-lateinisches
+        # Rohlabel (z.B. japanisch) slugifiert ohne Fallback zu einem leeren String - zwei
+        # verschiedene solche Label wuerden dann denselben (leeren) canonical_key produzieren und
+        # an UniqueConstraint(category_labels.canonical_key) scheitern (Verfuegbarkeitsrisiko:
+        # bricht den ganzen Batch-Lauf statt nur dieses eine Foto zu ueberspringen).
+        dog_slug = _slugify("犬")
+        cat_slug = _slugify("猫")
+
+        assert dog_slug != ""
+        assert cat_slug != ""
+        assert dog_slug != cat_slug
+
+    def test_hash_fallback_is_deterministic_for_the_same_text(self) -> None:
+        assert _slugify("犬") == _slugify("犬")
+
 
 class TestNormalizeLabelText:
     def test_casefolds_and_strips(self) -> None:

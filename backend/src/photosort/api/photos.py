@@ -307,8 +307,20 @@ def _category_candidates_out(photo: Photo) -> list[CategoryCandidateOut]:
     """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-
     Abschnitt "Datenbedarf": die fuer DIESES Foto tatsaechlich gueltige Kandidatenmenge - lokal
     qualifizierende Kriterien (criteria.py::CRITERIA_REGISTRY-Schwelle erreicht) UND Remote-
-    Erkennungen. Wird auch von PUT /photos/{id}/category-override zur Validierung wiederverwendet
-    (dieselbe Funktion, keine zweite Logik)."""
+    Erkennungen, fuer die PhotoOut-Anzeige (`GET /projects/{id}/photos`, `photo` dort ueber
+    selectinload eager geladen).
+
+    Review-Klarstellung (architect-Fund): `PUT /photos/{id}/category-override` validiert NICHT
+    diese Funktion direkt, sondern `_photo_category_candidate_keys` unten - dieselbe
+    Schwellenwert-Regel, aber eine eigene, session-basierte Query statt eines Zugriffs auf
+    `photo.criterion_scores`/`.category_label_detections`: der dort verwendete `photo` kommt aus
+    `_get_photo_or_404` (reines `session.get()`, keine Eager-Loading-Options) - ein Lazy-Load
+    dieser Relationships wuerde im async-SQLAlchemy-Kontext eine `MissingGreenlet`-Exception
+    auslsoen. Zwei Implementierungen derselben Regel statt einer gemeinsamen Funktion, bewusst so
+    belassen (Nice-to-have, nicht behoben): ein Merge haette entweder `_get_photo_or_404` auf
+    Eager-Loading umstellen muessen (Overhead fuer die haeufigeren Endpunkte, die keine
+    Kandidatenliste brauchen) oder eine dritte, session-generische Variante gebraucht - beides
+    groesserer Umbau fuer einen rein internen Duplikat-Fund ohne Verhaltensauswirkung."""
     candidates: list[CategoryCandidateOut] = []
     for score in photo.criterion_scores:
         definition = CRITERIA_REGISTRY.get(score.criterion_key)

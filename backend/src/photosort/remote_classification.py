@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -337,9 +338,22 @@ def _slugify(text: str) -> str:
     zusaetzlich selbst (funktioniert damit unabhaengig davon, ob der Aufrufer bereits normalisiert
     hat), Sonderzeichen/Leerzeichen zu `_`, doppelte `_` reduziert, fuehrende/abschliessende `_`
     entfernt - dieselbe Klasse einfacher, reiner Textfunktion wie andernorts im Projekt (z.B.
-    worker.py-Cache-Key-Bildung), keine neue Bibliothek."""
-    slug = _SLUG_INVALID_CHARS.sub("_", text.casefold())
-    return slug.strip("_")
+    worker.py-Cache-Key-Bildung), keine neue Bibliothek.
+
+    Hash-Fallback (Review-Fund, security-engineer): `_SLUG_INVALID_CHARS` matcht nur
+    a-z/0-9 als gueltig - ein rein nicht-lateinisches Rohlabel (z.B. japanisch/chinesisch, ein vom
+    offenen Remote-Vokabular (ADR 0032) explizit nicht ausgeschlossener Fall) wuerde sonst zu
+    einem leeren String slugifien. Zwei verschiedene solche Label wuerden dann denselben (leeren)
+    canonical_key produzieren und an UniqueConstraint(category_labels.canonical_key) scheitern -
+    ein Verfuegbarkeitsrisiko, das den ganzen Batch-Lauf abbricht statt nur das eine betroffene
+    Foto zu ueberspringen (ADR 0032 Punkt 5: best-effort ohne Retry gilt pro Foto, nicht fuer eine
+    IntegrityError beim Label-Anlegen). Deterministischer SHA256-Praefix statt Zufallswert -
+    derselbe Rohtext liefert bei einem Wiederholungslauf denselben Slug, kein Duplikat-Risiko."""
+    slug = _SLUG_INVALID_CHARS.sub("_", text.casefold()).strip("_")
+    if slug:
+        return slug
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    return f"label_{digest}"
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:

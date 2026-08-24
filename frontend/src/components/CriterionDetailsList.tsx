@@ -54,7 +54,12 @@ function buildCategoryCandidateRows(
   categoryCandidates: CategoryCandidateOut[],
   categoryOverride: CategoryKey | null
 ): CategoryCandidateRow[] {
-  const rows: CategoryCandidateRow[] = [...categoryCandidates].sort((a, b) => b.score - a.score)
+  // Review-Fund (test-engineer): expliziter Sekundaer-Schluessel statt eines impliziten Verlasses
+  // auf Sortier-Stabilitaet - Score/Konfidenz absteigend, bei Gleichstand alphabetisch nach
+  // category_key (dieselbe Tie-Break-Regel wie backend api/photos.py::_category_candidates_out).
+  const rows: CategoryCandidateRow[] = [...categoryCandidates].sort(
+    (a, b) => b.score - a.score || a.category_key.localeCompare(b.category_key)
+  )
   const overrideIsOrphan =
     categoryOverride !== null && !categoryCandidates.some((c) => c.category_key === categoryOverride)
   if (overrideIsOrphan) {

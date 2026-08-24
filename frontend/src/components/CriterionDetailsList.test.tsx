@@ -255,6 +255,31 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
     ])
   })
 
+  it('breaks a score tie alphabetically by category_key, independent of input order', () => {
+    // Review-Fund (test-engineer): buildCategoryCandidateRows verliess sich bei Score-Gleichstand
+    // bisher implizit auf die (zwar per ECMAScript garantierte, aber nicht explizit im Code
+    // sichtbare) Sortier-Stabilitaet statt eines expliziten Sekundaer-Schluessels - Eingabe hier
+    // bewusst NICHT bereits alphabetisch sortiert, um das nachzuweisen.
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[
+          candidate({ category_key: 'strand', score: 0.5 }),
+          candidate({ category_key: 'hund', score: 0.5 }),
+        ]}
+      />
+    )
+
+    const rows = screen.getAllByRole('listitem')
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Hund'),
+      expect.stringContaining('Strand'),
+    ])
+  })
+
   it('shows the provider name for a remote candidate and "Lokal erkannt" for a local one', () => {
     render(
       <CriterionDetailsList

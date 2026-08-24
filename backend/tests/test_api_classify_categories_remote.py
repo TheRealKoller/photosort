@@ -9,7 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.api.deps import get_job_enqueuer, get_opencloud_client
 from photosort.config import settings
 from photosort.main import app
-from photosort.models import Photo, PhotoScore, RatingStatus, ScanStatus, ScoringRun
+from photosort.models import (
+    CategoryLabel,
+    Photo,
+    PhotoCategoryDetection,
+    PhotoScore,
+    RatingStatus,
+    ScanStatus,
+    ScoringRun,
+)
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.remote_classification import COST_PER_IMAGE_USD
@@ -137,6 +145,42 @@ class TestEstimateEndpoint:
         price = COST_PER_IMAGE_USD[settings.landmark_provider]
         assert body["price_per_image_usd"] == price
         assert body["estimated_cost_usd"] == 2 * price
+
+    async def test_excludes_already_classified_photos_from_the_candidate_count(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Review-Fund (test-engineer): der "bereits klassifiziert"-Ausschluss
+        # (_count_remote_category_candidates, api/projects.py) war bisher nur indirekt ueber den
+        # Worker-Unit-Test (select_remote_category_candidates) abgedeckt, nicht auf API-Ebene.
+        project_id = await _create_project(authenticated_api_client)
+        candidate = await _add_photo_candidate(db_session, project_id, "a.jpg")
+        already_classified = await _add_photo_candidate(db_session, project_id, "b.jpg")
+
+        label = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[0.1, 0.2])
+        db_session.add(label)
+        await db_session.commit()
+        await db_session.refresh(label)
+        db_session.add(
+            PhotoCategoryDetection(
+                photo_id=already_classified.id,
+                category_label_id=label.id,
+                raw_label="Hund",
+                confidence=0.9,
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project_id}/classify-categories-remote/estimate"
+        )
+
+        assert response.status_code == 200
+        assert response.json()["candidate_count"] == 1
+        # Nur der noch nicht klassifizierte Kandidat zaehlt mit - reine Regressionsabsicherung
+        # gegen ein versehentlich vertauschtes Filterkriterium.
+        assert candidate.id != already_classified.id
 
 
 class TestTriggerEndpoint:
