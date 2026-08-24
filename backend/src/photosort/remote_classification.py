@@ -272,6 +272,20 @@ def build_category_classification_client() -> CategoryDetectionClientLike:
 # Reprae­sentativer Mittelwert ~3900 Bild-Tokens -> $0.0039 Input; Output (JSON-Array mit 1-3
 # Objekten, ADR-Schaetzung 80-160 Tokens, Mittelwert 120) -> $0.0006. Summe gerundet $0.0045/Bild.
 #
+# Bewusste, begruendete Abweichung vom ADR-0032-Schaetzbereich ($0,0020-0,0028/Bild) - kein
+# stillschweigendes Abweichen (Review-Fund, requirements-engineer): der ADR-Bereich stuetzt sich
+# laut ADR-Text auf einen "unveraendert" aus der Vorfassung uebernommenen Bildtoken-Anteil von ca.
+# $0,0016 - das entspricht rechnerisch genau dem in der ADR selbst als Referenzwert zitierten
+# 1092x1092px-Beispiel (1092*1092/750 ≈ 1590 Tokens * $1/MTok ≈ $0,0016), NICHT der tatsaechlich
+# in diesem Feature versendeten Bildquelle. Real verschickt wird ausschliesslich die
+# `display`-Cache-Variante mit einer Obergrenze von 2048px langer Kante (siehe oben) - ein
+# typisches Landschaftsfoto an dieser Obergrenze braucht mit ca. 3900 Tokens gut 2,4x so viele
+# Bild-Tokens wie das 1092px-Referenzbeispiel. Die ADR-Schaetzgrundlage war damit nicht falsch
+# gerechnet, sondern basierte auf einer kleineren, nicht repraesentativen Bildaufloesung als der
+# tatsaechlich implementierten Bildquelle - der hier verwendete, hoehere Wert ist die gegen die
+# reale Bildquelle nachgerechnete Korrektur, keine Abweichung vom eigentlichen ADR-Rechenweg
+# (gleiche Preise/gleiche Formel, andere - jetzt korrekte - Eingangsaufloesung).
+#
 # Mistral (ministral-3b-2512): $0.10/MTok Input UND Output (docs.mistral.ai/models/
 # ministral-3-3b-25-12, verifiziert 2026-08-23 - symmetrische Input-/Output-Preisgestaltung, anders
 # als bei Anthropic). Mistral veroeffentlicht fuer dieses Modell KEINE offizielle Bild-Token-Formel
