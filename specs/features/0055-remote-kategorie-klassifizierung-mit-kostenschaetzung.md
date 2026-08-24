@@ -1,7 +1,8 @@
 # 0055 - Remote-Kategorie-Klassifizierung mit Kostenschätzung
 
-**Status:** Accepted
+**Status:** Implemented
 **Erstellt:** 2026-08-23
+**PR:** [#201](https://github.com/TheRealKoller/photosort/pull/201)
 **Bezug:** [`inbox/0035-remote-klassifizierung-mit-kostenschaetzung.md`](../inbox/0035-remote-klassifizierung-mit-kostenschaetzung.md) (Ursprung, Daniel selbst, interaktive Session), [`decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md`](../decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) (neue ADR dieser Spec), [`decisions/0015-lokale-kategorie-klassifikation.md`](../decisions/0015-lokale-kategorie-klassifikation.md) (bestehende lokale Klassifizierung), [`decisions/0021-top-selection-ranking-kriterien-pipeline.md`](../decisions/0021-top-selection-ranking-kriterien-pipeline.md)/[`decisions/0023-dynamische-kategorie-ableitung-aus-kriterien-haeufigkeit.md`](../decisions/0023-dynamische-kategorie-ableitung-aus-kriterien-haeufigkeit.md) (aktuelles Kategorie-/Ranking-Modell), [`decisions/0025-cloud-landmark-erkennung.md`](../decisions/0025-cloud-landmark-erkennung.md)/[`decisions/0031-mistral-provider-option-cloud-landmark.md`](../decisions/0031-mistral-provider-option-cloud-landmark.md) (bestehende Cloud-Vision-Anbindung, `landmark`-Kriterium, Vorbild dieser Spec), [`features/0035-klassifizierung-qualitaet-inhalt-recherche.md`](./0035-klassifizierung-qualitaet-inhalt-recherche.md) (Recherchegrundlage), [`features/0054-mistral-provider-option-cloud-landmark.md`](./0054-mistral-provider-option-cloud-landmark.md) (Out-of-Scope-Vormerkung: "Lokale mediapipe-Klassifizierung auf Mistral/Cloud umstellen — separate, spätere Idee", genau diese Spec).
 
 ## Ziel
