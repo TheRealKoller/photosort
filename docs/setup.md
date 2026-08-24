@@ -41,8 +41,16 @@ deaktiviert (`PUT /projects/{id}/cloud-vision-consent`), ohne aktivierte Einwill
 API-Key verwendet und kein Netzwerkaufruf ausgeführt (die Env-Variablen selbst werden wie jede
 andere `Settings`-Konfiguration bereits beim Prozessstart eingelesen, das ist unabhängig von
 Einwilligung/Provider). Die Remote-Kategorie-Klassifizierung braucht zusätzlich ein lokales,
-gepinntes Text-Embedding-Modell (`onnxruntime`+`tokenizers`, keine Cloud-Abhängigkeit, kein
-zusätzlicher Setup-Schritt — die Modell-Assets sind im Repository eingecheckt).
+gepinntes Text-Embedding-Modell (`onnxruntime`+`tokenizers`, keine Cloud-Abhängigkeit zur
+Laufzeit). Das ONNX-Modell-Asset selbst überschreitet GitHubs 100-MB-Push-Limit und ist daher
+**nicht** im Repository eingecheckt (siehe [`specs/decisions/0033-modell-asset-download-statt-commit-label-embedder.md`](../specs/decisions/0033-modell-asset-download-statt-commit-label-embedder.md)) —
+`docker compose up --build` lädt es automatisch beim Image-Build (`backend/Dockerfile` ruft
+`scripts/fetch-label-embedder-model.sh` auf, SHA256-verifiziert). Nur für ein Bare-Metal-Dev-Setup
+ohne Docker (`pip install -e .` direkt im `backend/`-Ordner) einmalig manuell nötig:
+
+```bash
+scripts/fetch-label-embedder-model.sh
+```
 
 Um beide Funktionen tatsächlich zu nutzen, in `.env`:
 

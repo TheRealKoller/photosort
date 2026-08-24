@@ -26,6 +26,23 @@ jobs:
         # test_classification.py) mit "OSError: libEGL.so.1/libGL.so.1/... cannot open
         # shared object file" fehl.
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libxcb1 libegl1 libgles2
+      # specs/decisions/0033-modell-asset-download-statt-commit-label-embedder.md: das
+      # label_embedder.onnx-Asset (~113 MiB) ueberschreitet GitHubs 100-MiB-Push-Limit und ist
+      # deshalb nicht mehr Teil des Repositorys - test_label_embedding.py::TestLabelEmbedderAssets/
+      # TestRealAssetOutputDimension laufen direkt gegen die Datei auf der Festplatte, muss also
+      # vor dem Testlauf vorliegen. actions/cache (Schluessel = der bereits im Code hinterlegte
+      # SHA256-Hash) haelt die tatsaechliche HuggingFace-Abrufhaeufigkeit gering - das Skript
+      # selbst ist ohnehin idempotent (ueberspringt den Download bei bereits passendem Hash), der
+      # Cache spart zusaetzlich den wiederholten Download bei einem Cache-Hit.
+      - name: Read pinned label-embedder model hash
+        id: label-embedder-hash
+        run: echo "sha256=$(sed -n 's/^LABEL_EMBEDDER_ONNX_SHA256 = "\([0-9a-f]\{64\}\)"$/\1/p' src/photosort/label_embedding.py)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: backend/src/photosort/assets/label_embedder.onnx
+          key: label-embedder-onnx-${{ steps.label-embedder-hash.outputs.sha256 }}
+      - name: Download pinned model assets
+        run: ../scripts/fetch-label-embedder-model.sh
       - name: Install uv
         run: pip install uv
       - name: Install dependencies
