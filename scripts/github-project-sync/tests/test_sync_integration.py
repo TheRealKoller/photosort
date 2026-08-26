@@ -60,6 +60,7 @@ def _make_repo(
     state: dict | None = None,
     stories_state: dict | None = None,
     legacy_flat_state: dict | None = None,
+    raw_state: dict | None = None,
 ) -> Path:
     repo_root = tmp_path / "repo"
     features_dir = repo_root / "specs" / "features"
@@ -67,7 +68,11 @@ def _make_repo(
     for number, text in specs.items():
         (features_dir / f"{number}-x.md").write_text(text, encoding="utf-8")
     (repo_root / "specs" / "roadmap.md").write_text(roadmap, encoding="utf-8")
-    if legacy_flat_state is not None:
+    if raw_state is not None:
+        (repo_root / "specs" / ".github-sync-state.json").write_text(
+            json.dumps(raw_state), encoding="utf-8"
+        )
+    elif legacy_flat_state is not None:
         (repo_root / "specs" / ".github-sync-state.json").write_text(
             json.dumps(legacy_flat_state), encoding="utf-8"
         )
@@ -754,6 +759,54 @@ def test_full_run_over_legacy_flat_state_does_not_reclassify_as_created(tmp_path
 
     raw = json.loads((repo_root / "specs" / ".github-sync-state.json").read_text(encoding="utf-8"))
     assert set(raw.keys()) == {"features", "stories"}
+    assert raw["features"]["0031"]["issue_number"] == 42
+
+
+def test_full_run_over_old_inbox_namespace_state_does_not_touch_orphaned_inbox_issues(
+    tmp_path: Path,
+) -> None:
+    # Testkonzept-Ergaenzung "Erweiterung fuer ADR 0036" (specs/architecture/0002-testkonzept.md):
+    # eine vor Spec 0059 im "inbox"-Namensraum vorliegende Zustandsdatei (Format aus ADR 0030,
+    # z.B. fuer die bewusst unangetastet bleibenden Alteintraege 0027/0031) darf nach diesem
+    # Umbau NICHT dazu fuehren, dass die verwaisten alten Inbox-Issues angefasst/geschlossen
+    # werden - load_state() ignoriert den "inbox"-Schluessel bereits beim Lesen (siehe
+    # test_state.py), hier zusaetzlich End-to-End ueber einen vollen Sync-Lauf nachgewiesen.
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
+        raw_state={
+            "features": {
+                "0031": _existing_state_entry(
+                    issue_number=42, push_hash=push_hash, pull_hash=pull_hash
+                )
+            },
+            "inbox": {
+                "0027": _existing_state_entry(
+                    issue_number=77, push_hash="alt-push", pull_hash="alt-pull"
+                )
+            },
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+    gh.seed_issue(77, body="<!-- photosort-inbox: 0027 -->\n\n## Rohtext\n\nAlt.\n")
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.specs[0].classification == "unchanged"
+    assert result.orphaned == []  # das verwaiste alte Inbox-Issue zaehlt NICHT als Feature-Orphan
+    # Das alte Inbox-Issue #77 bleibt komplett unangetastet - weder geschlossen noch kommentiert:
+    assert gh.issue(77).state == "open"
+    assert gh.issue(77).comments == []
+
+    raw = json.loads((repo_root / "specs" / ".github-sync-state.json").read_text(encoding="utf-8"))
+    assert set(raw.keys()) == {"features", "stories"}
+    assert "inbox" not in raw
     assert raw["features"]["0031"]["issue_number"] == 42
 
 
