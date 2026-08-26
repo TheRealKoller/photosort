@@ -200,6 +200,32 @@ def test_load_state_rejects_leading_zero_issue_number_keys_in_stories(tmp_path: 
         load_state(state_path)
 
 
+def test_load_state_rejects_story_key_issue_number_drift(tmp_path: Path) -> None:
+    # Copilot-Review-Finding auf PR #220: der JSON-Schluessel (String-Issue-Nummer) wurde bisher
+    # nur auf Format geprueft, nie gegen entry["issue_number"] abgeglichen - eine manuell
+    # inkonsistent editierte Zustandsdatei (Schluessel "215" mit issue_number=999) haette sonst
+    # zu einem falschen item_id-Lookup fuer Operationen auf Issue 215 fuehren koennen.
+    state_path = tmp_path / ".github-sync-state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "features": {},
+                "stories": {
+                    "215": {
+                        "issue_number": 999,
+                        "item_id": "ITEM_1",
+                        "last_synced_at": "2026-08-09T00:00:00Z",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="215.*999|999.*215"):
+        load_state(state_path)
+
+
 def test_save_state_round_trips(tmp_path: Path) -> None:
     state_path = tmp_path / ".github-sync-state.json"
 

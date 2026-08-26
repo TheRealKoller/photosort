@@ -63,6 +63,24 @@ def test_parses_priority_for_issue_referenced_rows_with_issue_prefix_key() -> No
     assert "215" not in priorities
 
 
+def test_issue_referenced_row_with_leading_zero_normalizes_key() -> None:
+    # Copilot-Review-Finding auf PR #220: state.py::validate_issue_number_key() lehnt
+    # Schluessel mit fuehrender Null strikt ab (Keys sind dort immer str(int)) - eine
+    # versehentlich mit fuehrender Null geschriebene Roadmap-Zeile darf deshalb nicht "issue:0215"
+    # liefern (wuerde nie gegen einen echten stories-Eintrag matchen, Prioritaet stillschweigend
+    # verworfen), sondern muss auf "issue:215" normalisiert werden.
+    text = (
+        "# Roadmap\n\n## Status auf einen Blick\n\n### Offen — Hoch\n\n"
+        "| Spec | Titel | Status |\n|---|---|---|\n"
+        "| [#0215](https://github.com/TheRealKoller/photosort/issues/215) | Story | Story |\n"
+    )
+
+    priorities = parse_roadmap_priorities(text)
+
+    assert priorities["issue:215"] == "Hoch"
+    assert "issue:0215" not in priorities
+
+
 def test_issue_referenced_row_ignored_outside_priority_subsections() -> None:
     text = (
         "# Roadmap\n\n## Status auf einen Blick\n\n### Offen — Hoch\n\n"

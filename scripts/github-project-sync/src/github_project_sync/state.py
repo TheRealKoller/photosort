@@ -91,8 +91,19 @@ def _parse_stories_namespace(raw: Mapping[str, dict[str, Any]]) -> StoryStateDic
     state: StoryStateDict = {}
     for number, entry in raw.items():
         validate_issue_number_key(number)
+        issue_number = entry["issue_number"]
+        if int(number) != issue_number:
+            # Verteidigung in der Tiefe (Copilot-Review-Finding auf PR #220): eine manuell
+            # inkonsistent editierte Zustandsdatei (Schluessel "215" mit issue_number=999)
+            # wuerde sonst dazu fuehren, dass _get_story_entry() (sync.py) das falsche
+            # item_id fuer eine Operation auf Issue 215 zurueckliefert - --adopt-issue/
+            # --only issue:NNN koennten so das falsche GitHub-Project-Item aktualisieren.
+            raise ValueError(
+                f"Inkonsistenter stories-Eintrag: Schluessel {number!r} weicht von "
+                f"issue_number {issue_number!r} im Wert ab."
+            )
         state[number] = StoryStateEntry(
-            issue_number=entry["issue_number"],
+            issue_number=issue_number,
             item_id=entry["item_id"],
             last_synced_at=entry["last_synced_at"],
         )

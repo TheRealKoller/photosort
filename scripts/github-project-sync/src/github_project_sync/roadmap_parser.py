@@ -41,6 +41,12 @@ def parse_roadmap_priorities(text: str) -> dict[str, str]:
         for row_match in _TABLE_ROW_SPEC_RE.finditer(table_text):
             priorities[row_match.group(1)] = priority
         for issue_row_match in _TABLE_ROW_ISSUE_RE.finditer(table_text):
-            priorities[f"{_ISSUE_KEY_PREFIX}{issue_row_match.group(1)}"] = priority
+            # int(...) normalisiert eine versehentliche fuehrende Null weg (Copilot-Review-
+            # Finding auf PR #220): state.py::validate_issue_number_key() lehnt Schluessel mit
+            # fuehrender Null strikt ab (Keys sind dort immer str(int)), ein roher Match-String
+            # wie "0215" wuerde also nie gegen einen echten stories-Eintrag matchen und die
+            # Prioritaet fuer diese Zeile stillschweigend verworfen statt gepusht.
+            issue_number = int(issue_row_match.group(1))
+            priorities[f"{_ISSUE_KEY_PREFIX}{issue_number}"] = priority
 
     return priorities
