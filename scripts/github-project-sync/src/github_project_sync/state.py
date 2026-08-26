@@ -29,6 +29,7 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from github_project_sync.classify import SyncStateEntry
 from github_project_sync.spec_parser import validate_spec_number
@@ -86,7 +87,7 @@ def _parse_namespace(raw: Mapping[str, dict]) -> StateDict:
     return state
 
 
-def _parse_stories_namespace(raw: Mapping[str, dict]) -> StoryStateDict:
+def _parse_stories_namespace(raw: Mapping[str, dict[str, Any]]) -> StoryStateDict:
     state: StoryStateDict = {}
     for number, entry in raw.items():
         validate_issue_number_key(number)
@@ -133,7 +134,7 @@ def _serialize_namespace(state: Mapping[str, SyncStateEntry]) -> dict:
     }
 
 
-def _serialize_stories_namespace(state: Mapping[str, StoryStateEntry]) -> dict:
+def _serialize_stories_namespace(state: Mapping[str, StoryStateEntry]) -> dict[str, Any]:
     for number in state:
         validate_issue_number_key(number)
     # Numerisch statt lexikalisch sortiert (Issue-Nummern haben, anders als die vierstelligen

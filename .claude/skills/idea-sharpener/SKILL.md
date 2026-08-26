@@ -15,6 +15,8 @@ Bevor irgendetwas passiert, den aktuellen Status des referenzierten Issues per `
 PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only issue:<NNN> --show-status
 ```
 
+Ein `{"error": "..."}` (z.B. unbekannte Issue-Nummer, fehlender `project`-Scope) unverändert an Daniel weitergeben statt eines eigenen Lösungsversuchs, analog zum `github-project-sync`-Skill.
+
 Ist `status` **nicht** `"Story"` (z.B. noch `Unrefined`, oder bereits `Proposed`/`Accepted`/`Implemented`, weil die Story schon einmal adoptiert wurde): **abbrechen** und Daniel klar mitteilen, dass das Issue erst über `story-refiner` fachlich geschärft werden muss (bzw., bei bereits vorhandenem Spec-Bezug, dass es keine gültige Story mehr ist). Kein eigenmächtiges Weiterarbeiten mit einem unerwarteten Status.
 
 Lies danach den vollständigen Issue-Inhalt:

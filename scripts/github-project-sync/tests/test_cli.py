@@ -126,8 +126,8 @@ def test_main_returns_nonzero_on_unknown_only_spec(
 def test_main_returns_nonzero_on_old_inbox_only_prefix(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # --only inbox:NNNN wurde mit Spec 0059 vollstaendig entfernt - muss weiterhin mit einer
-    # klaren Fehlermeldung abgelehnt werden statt stillschweigend etwas anderes zu tun.
+    # --only inbox:NNNN wurde mit Spec 0059 vollstaendig entfernt - muss mit einer praezisen
+    # Fehlermeldung (nicht der generischen "Ungueltige Spec-Nummer") abgelehnt werden.
     repo_root = _make_repo(tmp_path)
     fake = FakeGhAdapter()
 
@@ -138,6 +138,30 @@ def test_main_returns_nonzero_on_old_inbox_only_prefix(
     assert exit_code != 0
     output = json.loads(capsys.readouterr().out)
     assert "error" in output
+    assert "entfernt" in output["error"]
+    assert "issue:NNN" in output["error"]
+
+
+def test_main_returns_json_error_on_removed_supersede_inbox_flag(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # --supersede-inbox wurde mit Spec 0059 entfernt - anders als ein schlicht aus dem Parser
+    # entferntes Flag (das auf argparses generisches stderr/Exit-Code-2-Verhalten faellt) bleibt
+    # es hier bewusst registriert, damit ein alter Aufruf dieselbe {"error": ...}-JSON-Konvention
+    # auf stdout bekommt wie jeder andere abgelehnte Fall.
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--only", "0031", "--supersede-inbox", "0004"],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    output = json.loads(capsys.readouterr().out)
+    assert "error" in output
+    assert "entfernt" in output["error"]
+    assert "adopt-issue" in output["error"]
 
 
 def test_main_passes_resolve_argument_through(

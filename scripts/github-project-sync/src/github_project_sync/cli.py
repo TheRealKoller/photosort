@@ -35,6 +35,10 @@ GhFactory = Callable[[str], GhAdapter]
 
 _RESOLUTION_VALUES = {"keep_spec", "keep_issue"}
 _ISSUE_ONLY_PREFIX = "issue:"
+# Mit Spec 0059 entfernter Inbox-Pfad (ADR 0036) - beide Werte werden weiterhin erkannt, um eine
+# praezise Fehlermeldung statt eines generischen/kryptischen Fehlschlags zu liefern, falls ein
+# altes Skript/eine alte Doku-Stelle sie noch aufruft (siehe main()).
+_REMOVED_INBOX_ONLY_PREFIX = "inbox:"
 
 
 def _parse_resolutions(raw: list[str]) -> dict[str, Resolution]:
@@ -196,6 +200,15 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="NNNN=keep_spec|keep_issue",
         help="Konflikt fuer eine Spec-Nummer explizit aufloesen. Mehrfach angebbar.",
     )
+    parser.add_argument(
+        "--supersede-inbox",
+        default=None,
+        # Mit Spec 0059 entferntes Flag (ADR 0036) - bleibt im Parser registriert, damit ein
+        # versehentlich noch aufgerufener alter Skript-/Doku-Wortlaut nicht auf argparses
+        # generisches "unrecognized arguments" (stderr, Exit-Code 2) faellt, sondern in main()
+        # dieselbe {"error": "..."}-JSON-Konvention wie jeder andere Fehler bekommt.
+        help=argparse.SUPPRESS,
+    )
     return parser
 
 
@@ -214,6 +227,19 @@ def main(argv: Sequence[str] | None = None, *, gh_factory: GhFactory = _default_
     args = parser.parse_args(argv)
 
     try:
+        if args.supersede_inbox is not None:
+            raise SyncError(
+                "--supersede-inbox wurde mit Spec 0059 entfernt (ADR 0036: der bidirektionale "
+                "Inbox-Pfad entfaellt ersatzlos) - fuer den Story->Feature-Spec-Uebergang jetzt "
+                "'--only NNNN --adopt-issue MMM' verwenden."
+            )
+        if args.only is not None and args.only.startswith(_REMOVED_INBOX_ONLY_PREFIX):
+            raise SyncError(
+                f"--only {args.only!r} wurde mit Spec 0059 entfernt (ADR 0036: der "
+                "bidirektionale Inbox-Pfad entfaellt ersatzlos, specs/inbox/*.md wird nicht "
+                "mehr gesynct) - fuer ein Story-Issue jetzt '--only issue:NNN' verwenden."
+            )
+
         repo_root = args.repo_root or _discover_repo_root(Path.cwd())
         gh = gh_factory(args.owner)
 
