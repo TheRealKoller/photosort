@@ -26,6 +26,7 @@ Keine offenen Einträge.
 |---|---|---|
 | [0004](./features/0004-opencloud-export.md) | Export nach OpenCloud | Proposed |
 | [0031](./features/0031-zweiwege-sync.md) | Zwei-Wege-Sync | Accepted |
+| [#215](https://github.com/TheRealKoller/photosort/issues/215) | Story-Issue | Story |
 
 ### Inbox — ungeschärfte Ideen
 
@@ -52,6 +53,26 @@ def test_parses_priority_per_spec_number() -> None:
     assert priorities["0047"] == "Mittel"
     assert priorities["0004"] == "Niedrig"
     assert priorities["0031"] == "Niedrig"
+
+
+def test_parses_priority_for_issue_referenced_rows_with_issue_prefix_key() -> None:
+    priorities = parse_roadmap_priorities(ROADMAP)
+
+    assert priorities["issue:215"] == "Niedrig"
+    # Reine Spec-Nummern und Issue-Nummern kollidieren nie (unterschiedliche Key-Praefixe):
+    assert "215" not in priorities
+
+
+def test_issue_referenced_row_ignored_outside_priority_subsections() -> None:
+    text = (
+        "# Roadmap\n\n## Status auf einen Blick\n\n### Offen — Hoch\n\n"
+        "Keine offenen Einträge.\n\n## Priorisierung\n\n"
+        "Freitext, hier koennte '[#999](https://github.com/x/y/issues/999)' auftauchen.\n"
+    )
+
+    priorities = parse_roadmap_priorities(text)
+
+    assert "issue:999" not in priorities
 
 
 def test_ignores_inbox_and_implemented_sections() -> None:
