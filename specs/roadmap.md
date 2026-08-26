@@ -4,7 +4,7 @@ Lebendes Dokument, gepflegt vom `requirements-engineer`-Agenten. Enthält die Pr
 
 ## Status auf einen Blick
 
-Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, geordnet nach den unten stehenden Prioritätskategorien, danach die noch ungeschärften Inbox-Einträge ohne eigene Spec; bereits implementierte Specs stehen als Referenz ganz unten.
+Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs und Story-Issues zuerst, geordnet nach den unten stehenden Prioritätskategorien; bereits implementierte Specs stehen als Referenz ganz unten.
 
 ### Offen — Hoch
 
@@ -30,12 +30,7 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, ge
 
 ### Inbox — ungeschärfte Ideen
 
-Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf gegangen — daher keine Spec-Nummer, kein offizieller Status und keine Priorität, nur eine grobe Kurzbeschreibung zur Orientierung. Rangiert absichtlich unter allen priorisierten Einträgen: erst nach dem Schärfen ist überhaupt klar, ob, wie groß und wie dringend der Aufwand ist.
-
-| Datei | Kurzbeschreibung |
-|---|---|
-| [0004](./inbox/0004-ki-app-im-browser-lokal-ansehen.md) | KI soll die laufende App lokal im Browser ansehen können (z.B. via `docker compose`) — offen, ob/wie sinnvoll umsetzbar |
-| [0016](./inbox/0016-roadmap-nur-uebersicht.md) | Roadmap soll nur eine knappe Übersicht sein, ohne die ausführlichen Fließtext-Begründungen — durch Spec 0026 (Tabelle an den Anfang) und 0029 (drei Prioritätsstufen) nur teilweise berührt, der eigentliche Fließtext unter "Priorisierung" bleibt bestehen |
+Frisch erfasste, noch nicht fachlich verfeinerte Ideen/Bugs entstehen direkt als GitHub-Issue (`capture`-Skill, Status `Unrefined`) und sind ausschließlich auf dem GitHub-Project-Board sichtbar — sie erscheinen hier nicht, bis sie per `story-refiner` zu einer Story verfeinert wurden (Status `Story`, ab dann mit Priorität in den Tabellen oben). Zwei historische Ausnahmen bleiben als lokale Dateien bestehen (nicht Teil dieser Umsetzung, siehe ADR 0036): [0027](./inbox/0027-ai-workflow-ueberarbeiten.md), [0031](./inbox/0031-spec-nummern-github-projekt-angleichen.md).
 
 ### Bereits umgesetzt
 
@@ -92,6 +87,7 @@ Roher Text unter `specs/inbox/`, noch nicht durch den `idea-sharpener`-Ablauf ge
 | [0053](./features/0053-fachagenten-definitionsdateien-kompaktieren.md) | Skill-/Agenten-Dateien kompaktieren: Prosa straffen (vier Fachagenten, analog Spec 0025) und historische ADR-/Spec-Zitate entfernen (11 Dateien + künftige Konvention in CLAUDE.md) | Implemented ([PR #188](https://github.com/TheRealKoller/photosort/pull/188), [PR #189](https://github.com/TheRealKoller/photosort/pull/189)) |
 | [0054](./features/0054-mistral-provider-option-cloud-landmark.md) | Mistral als wählbare Cloud-Provider-Alternative zu Anthropic für `landmark`-Kriterium | Implemented ([PR #195](https://github.com/TheRealKoller/photosort/pull/195)) |
 | [0055](./features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) | Remote-Kategorie-Klassifizierung mit offenen Schlagworten (Cloud-Vision-API) und Kostenschätzung | Implemented ([PR #201](https://github.com/TheRealKoller/photosort/pull/201)) |
+| [0059](./features/0059-story-lebenszyklus-github-issues.md) | Story-Lebenszyklus über GitHub-Issues: Capture, Refinement und Spec-Erstellung trennen | Implemented ([PR #220](https://github.com/TheRealKoller/photosort/pull/220)) |
 
 ## Priorisierung
 

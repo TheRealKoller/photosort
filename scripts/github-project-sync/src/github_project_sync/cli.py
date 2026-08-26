@@ -1,8 +1,9 @@
 """Kommandozeilen-Einstiegspunkt fuer den Skill .claude/skills/github-project-sync/SKILL.md.
 
 Gibt strukturiertes JSON auf stdout aus, damit der aufrufende Skill (Claude) das Ergebnis
-zuverlaessig auswerten kann (Konflikte/pulled-Faelle an Daniel bzw. requirements-engineer
-weiterreichen). Siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md.
+zuverlaessig auswerten kann (Konflikte an Daniel bzw. requirements-engineer weiterreichen).
+Siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md und
+specs/features/0059-story-lebenszyklus-github-issues.md.
 """
 
 from __future__ import annotations
@@ -20,25 +21,27 @@ from github_project_sync.gh_adapter import (
     GhCliAdapter,
 )
 from github_project_sync.spec_parser import validate_spec_number
-from github_project_sync.sync import Resolution, SyncError, SyncRunResult, run_sync
+from github_project_sync.sync import (
+    Resolution,
+    SyncError,
+    SyncRunResult,
+    create_story_issue,
+    run_sync,
+    show_story_status,
+    sync_story,
+)
 
 GhFactory = Callable[[str], GhAdapter]
 
 _RESOLUTION_VALUES = {"keep_spec", "keep_issue"}
+_ISSUE_ONLY_PREFIX = "issue:"
+# Mit Spec 0059 entfernter Inbox-Pfad (ADR 0036) - beide Werte werden weiterhin erkannt, um eine
+# praezise Fehlermeldung statt eines generischen/kryptischen Fehlschlags zu liefern, falls ein
+# altes Skript/eine alte Doku-Stelle sie noch aufruft (siehe main()).
+_REMOVED_INBOX_ONLY_PREFIX = "inbox:"
 
 
 def _parse_resolutions(raw: list[str]) -> dict[str, Resolution]:
-    # Bekannte, bewusst nicht behobene Einschraenkung (Review-Finding auf Spec 0052/PR): der
-    # Resolution-Key ist eine nackte Nummer, nicht nach Namespace praefixiert (kein
-    # "inbox:NNNN=..." analog zu --only). Bei einer echten Nummernkollision (z.B. inbox/0004 +
-    # features/0004, real vorkommend) mit gleichzeitigem Konflikt in BEIDEN Namespaces wuerde
-    # "--resolve 0004=keep_spec" unbeabsichtigt auf beide Eintraege wirken - keine isolierte
-    # Aufloesung moeglich. In der Praxis unkritisch, weil Konfliktaufloesung laut
-    # .claude/skills/github-project-sync/SKILL.md (Schritt 4) immer in Kombination mit einem auf
-    # eine einzelne Entitaet gescopten "--only NNNN"/"--only inbox:NNNN"-Aufruf erfolgt - dort
-    # ist "resolutions" ohnehin nur fuer die eine verarbeitete Nummer relevant. Der Randfall
-    # (Voll-Lauf ohne --only, Kollision, Konflikt auf beiden Seiten gleichzeitig) ist nicht durch
-    # ein Akzeptanzkriterium gefordert und wird hier nicht extra abgefangen.
     resolutions: dict[str, Resolution] = {}
     for item in raw:
         if "=" not in item:
@@ -54,6 +57,16 @@ def _parse_resolutions(raw: list[str]) -> dict[str, Resolution]:
             )
         resolutions[number] = value  # type: ignore[assignment]
     return resolutions
+
+
+def _parse_issue_only(value: str) -> int:
+    raw_number = value[len(_ISSUE_ONLY_PREFIX) :]
+    if not raw_number.isdigit() or raw_number.startswith("0"):
+        raise SyncError(
+            f"Ungueltiger Issue-Scope {value!r} (erwartet 'issue:NNN' mit einer positiven "
+            "Ganzzahl ohne fuehrende Null)."
+        )
+    return int(raw_number)
 
 
 def _discover_repo_root(start: Path) -> Path:
@@ -89,38 +102,13 @@ def _result_to_dict(result: SyncRunResult) -> dict[str, object]:
             }
             for r in result.specs
         ],
-        "orphaned": [
-            {"number": o.number, "issue_number": o.issue_number} for o in result.orphaned
-        ],
-        "inbox": [
+        "orphaned": [{"number": o.number, "issue_number": o.issue_number} for o in result.orphaned],
+        "adopted": (
             {
-                "number": r.number,
-                "title": r.title,
-                "issue_number": r.issue_number,
-                "classification": r.classification,
-                "aborted_reason": r.aborted_reason,
-                "conflict": (
-                    {
-                        "local_content_zone": r.conflict.local_content_zone,
-                        "remote_content_zone": r.conflict.remote_content_zone,
-                    }
-                    if r.conflict is not None
-                    else None
-                ),
-                "pulled_content_zone": r.pulled_content_zone,
+                "spec_number": result.adopted.spec_number,
+                "issue_number": result.adopted.issue_number,
             }
-            for r in result.inbox
-        ],
-        "orphaned_inbox": [
-            {"number": o.number, "issue_number": o.issue_number} for o in result.orphaned_inbox
-        ],
-        "supersede": (
-            {
-                "inbox_number": result.supersede.inbox_number,
-                "inbox_issue_number": result.supersede.inbox_issue_number,
-                "new_issue_number": result.supersede.new_issue_number,
-            }
-            if result.supersede is not None
+            if result.adopted is not None
             else None
         ),
     }
@@ -130,27 +118,69 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="github-project-sync",
         description=(
-            "Zwei-Wege-Sync zwischen specs/features/*.md und einem GitHub Project (V2). "
-            "Siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md."
+            "Zwei-Wege-Sync zwischen specs/features/*.md und einem GitHub Project (V2), plus "
+            "dateiloser Story-Stufe (issue:NNN). Siehe "
+            "specs/features/0031-zweiwege-sync-specs-github-projekt.md und "
+            "specs/features/0059-story-lebenszyklus-github-issues.md."
         ),
     )
     parser.add_argument(
         "--only",
-        metavar="NNNN|inbox:NNNN",
+        metavar="NNNN|issue:NNN",
         default=None,
         help=(
-            "Nur diese eine Spec-Nummer syncen (bare NNNN, rueckwaertskompatibel Feature-Scope) "
-            "oder nur diesen einen Inbox-Eintrag (inbox:NNNN)."
+            "Nur diese eine Spec-Nummer syncen (bare NNNN, Feature-Scope) oder nur dieses eine "
+            "Story-Issue (issue:NNN, dateiloser Scope ohne Pull/Konflikt-Handling)."
         ),
     )
     parser.add_argument(
-        "--supersede-inbox",
-        metavar="MMMM",
+        "--adopt-issue",
+        type=int,
         default=None,
+        metavar="MMM",
         help=(
-            "Schliesst gezielt das Inbox-Issue MMMM mit einem auf die per --only NNNN "
-            "gesyncte Spec verlinkenden Kommentar. Erfordert --only NNNN (Feature-Scope)."
+            "Story -> Feature-Spec-Uebergang: das bestehende Story-Issue MMM wird adoptiert "
+            "(kein neues Issue). Erfordert --only NNNN (Feature-Scope)."
         ),
+    )
+    parser.add_argument(
+        "--create-issue",
+        action="store_true",
+        help=(
+            "Legt ein neues, dateiloses Story-Issue an (Status Unrefined). "
+            "Braucht --type/--title/--body-file."
+        ),
+    )
+    parser.add_argument(
+        "--type",
+        choices=["idee", "bug"],
+        default=None,
+        help="Typ des neuen Story-Issues (nur mit --create-issue).",
+    )
+    parser.add_argument(
+        "--title",
+        default=None,
+        help="Titel des neuen Story-Issues (nur mit --create-issue).",
+    )
+    parser.add_argument(
+        "--body-file",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Body aus Datei lesen - mit --create-issue fuer den neuen Issue-Body, mit "
+            "--only issue:NNN fuer eine Aktualisierung des bestehenden Issue-Bodys."
+        ),
+    )
+    parser.add_argument(
+        "--status",
+        default=None,
+        help="Status-Feld setzen (nur mit --only issue:NNN, z.B. 'Story').",
+    )
+    parser.add_argument(
+        "--show-status",
+        action="store_true",
+        help="Nur den aktuellen Status lesen, nichts veraendern (erfordert --only issue:NNN).",
     )
     parser.add_argument(
         "--owner",
@@ -168,12 +198,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="NNNN=keep_spec|keep_issue",
-        help=(
-            "Konflikt fuer eine Spec-/Inbox-Nummer explizit aufloesen. Mehrfach angebbar. "
-            "Nummer ist NICHT nach Namespace praefixiert - bei einer Nummernkollision "
-            "zwischen specs/features/ und specs/inbox/ mit Konflikt auf beiden Seiten im "
-            "selben Voll-Lauf wirkt dieselbe Nummer auf beide (siehe _parse_resolutions())."
-        ),
+        help="Konflikt fuer eine Spec-Nummer explizit aufloesen. Mehrfach angebbar.",
+    )
+    parser.add_argument(
+        "--supersede-inbox",
+        default=None,
+        # Mit Spec 0059 entferntes Flag (ADR 0036) - bleibt im Parser registriert, damit ein
+        # versehentlich noch aufgerufener alter Skript-/Doku-Wortlaut nicht auf argparses
+        # generisches "unrecognized arguments" (stderr, Exit-Code 2) faellt, sondern in main()
+        # dieselbe {"error": "..."}-JSON-Konvention wie jeder andere Fehler bekommt.
+        help=argparse.SUPPRESS,
     )
     return parser
 
@@ -182,19 +216,72 @@ def _default_gh_factory(owner: str) -> GhAdapter:
     return GhCliAdapter(owner=owner, project_title=DEFAULT_PROJECT_TITLE)
 
 
+def _read_body_file(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    return path.read_text(encoding="utf-8")
+
+
 def main(argv: Sequence[str] | None = None, *, gh_factory: GhFactory = _default_gh_factory) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
     try:
-        resolutions = _parse_resolutions(args.resolve)
+        if args.supersede_inbox is not None:
+            raise SyncError(
+                "--supersede-inbox wurde mit Spec 0059 entfernt (ADR 0036: der bidirektionale "
+                "Inbox-Pfad entfaellt ersatzlos) - fuer den Story->Feature-Spec-Uebergang jetzt "
+                "'--only NNNN --adopt-issue MMM' verwenden."
+            )
+        if args.only is not None and args.only.startswith(_REMOVED_INBOX_ONLY_PREFIX):
+            raise SyncError(
+                f"--only {args.only!r} wurde mit Spec 0059 entfernt (ADR 0036: der "
+                "bidirektionale Inbox-Pfad entfaellt ersatzlos, specs/inbox/*.md wird nicht "
+                "mehr gesynct) - fuer ein Story-Issue jetzt '--only issue:NNN' verwenden."
+            )
+
         repo_root = args.repo_root or _discover_repo_root(Path.cwd())
         gh = gh_factory(args.owner)
+
+        if args.create_issue:
+            if not args.type or not args.title or not args.body_file:
+                raise SyncError("--create-issue erfordert --type, --title und --body-file.")
+            body = _read_body_file(args.body_file)
+            assert body is not None
+            issue_number = create_story_issue(
+                repo_root=repo_root, gh=gh, typ=args.type, title=args.title, body=body
+            )
+            print(json.dumps({"issue_number": issue_number}, ensure_ascii=False))
+            return 0
+
+        if args.only is not None and args.only.startswith(_ISSUE_ONLY_PREFIX):
+            issue_number = _parse_issue_only(args.only)
+
+            if args.show_status:
+                status = show_story_status(repo_root=repo_root, gh=gh, issue_number=issue_number)
+                print(json.dumps({"status": status}, ensure_ascii=False))
+                return 0
+
+            body = _read_body_file(args.body_file)
+            story_result = sync_story(
+                repo_root=repo_root,
+                gh=gh,
+                issue_number=issue_number,
+                status=args.status,
+                body=body,
+            )
+            print(json.dumps(story_result, ensure_ascii=False))
+            return 0
+
+        if args.show_status:
+            raise SyncError("--show-status erfordert --only issue:NNN.")
+
+        resolutions = _parse_resolutions(args.resolve)
         result = run_sync(
             repo_root=repo_root,
             gh=gh,
             only=args.only,
-            supersede_inbox=args.supersede_inbox,
+            adopt_issue=args.adopt_issue,
             resolutions=resolutions,
         )
     except SyncError as exc:

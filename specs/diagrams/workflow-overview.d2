@@ -14,6 +14,13 @@
 # statt im "implement"-Subgraph (developer) - developer endet stattdessen mit dem
 # SendMessage-faehigen Abschlussbericht.
 #
+# Aktualisiert fuer Feature-Spec specs/features/0059-story-lebenszyklus-github-issues.md /
+# ADR specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md: der
+# bisherige monolithische "refine"-Subgraph (idea-sharpener) ist in zwei Subgraphen aufgeteilt -
+# "refine" (story-refiner, faktisch immer/Haiku-lastig, Ergebnis: Story-Issue statt Datei) und
+# "sharpen" (idea-sharpener, reduziert auf Architektur/UX/Test/Security/Spec-Anlage, adoptiert
+# das bestehende Issue statt ein neues anzulegen).
+#
 # Gerendert/verifiziert mit d2 v0.8.1 (https://github.com/d2lang/d2/releases).
 
 direction: right
@@ -21,23 +28,34 @@ direction: right
 idea: "Idee / Anforderung" {
   shape: oval
 }
-understand: "Verständnis schärfen"
+capture: "capture:\nGitHub-Issue (Unrefined)"
 
-idea -> understand
+idea -> capture
 
-refine: "Verfeinern — idea-sharpener" {
+refine: "Fachlich schärfen — story-refiner" {
   grid-columns: 2
+  understand: "Verständnis schärfen"
   re: "requirements-engineer:\nRoadmap-Einordnung"
   research: "Code-/Spec-Recherche\n+ Nachfragen"
   devil: "Devil's Advocate"
-  arch: "architect:\nArchitektur-Ansatz"
-  ux: "ux-ui-designer:\nUI/UX-Ansatz"
-  testsec: "test-engineer + security-engineer\n(parallel)"
-  spec: "Feature-Spec: Accepted" {
+  story: "Issue: Status Story" {
     shape: oval
   }
 
-  re -> research -> devil -> arch -> ux -> testsec -> spec
+  understand -> re -> research -> devil -> story
+}
+
+sharpen: "Technisch planen — idea-sharpener" {
+  grid-columns: 2
+  precheck: "Vorbedingung:\nStatus == Story"
+  arch: "architect:\nArchitektur-Ansatz"
+  ux: "ux-ui-designer:\nUI/UX-Ansatz"
+  testsec: "test-engineer + security-engineer\n(parallel)"
+  spec: "Feature-Spec: Accepted\n(Issue adoptiert)" {
+    shape: oval
+  }
+
+  precheck -> arch -> ux -> testsec -> spec
 }
 
 implement: "Umsetzen — developer" {
@@ -64,5 +82,6 @@ shipfeature: "Nachbereiten — Orchestrator (Skill ship-feature)" {
 
 implement.report -> shipfeature.review
 
-understand -> refine.re
-refine.spec -> implement.plan
+capture -> refine.understand
+refine.story -> sharpen.precheck
+sharpen.spec -> implement.plan

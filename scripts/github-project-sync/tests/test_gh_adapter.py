@@ -204,8 +204,9 @@ def test_ensure_fields_adopts_native_status_field_after_rollout_migration() -> N
     assert PRIORITY_FIELD_NAME in run.calls[1]
 
 
-def test_status_options_include_unrefined_not_superseded() -> None:
-    assert STATUS_OPTIONS == ["Proposed", "Accepted", "Implemented", "Unrefined"]
+def test_status_options_include_story_between_unrefined_and_proposed() -> None:
+    # Seit Spec 0059 / ADR 0036, Abschnitt 2: neuer Zwischenwert "Story".
+    assert STATUS_OPTIONS == ["Unrefined", "Story", "Proposed", "Accepted", "Implemented"]
     assert "Superseded" not in STATUS_OPTIONS
 
 
@@ -349,9 +350,7 @@ def test_close_issue_with_comment() -> None:
 
     adapter.close_issue_with_comment(42, "Spec-Datei wurde entfernt.")
 
-    assert run.calls == [
-        ["gh", "issue", "close", "42", "--comment", "Spec-Datei wurde entfernt."]
-    ]
+    assert run.calls == [["gh", "issue", "close", "42", "--comment", "Spec-Datei wurde entfernt."]]
 
 
 def test_add_item_to_project() -> None:
@@ -451,3 +450,47 @@ def test_set_issue_labels_no_op_when_nothing_to_change() -> None:
     adapter.set_issue_labels(42, add=frozenset(), remove=frozenset())
 
     assert run.calls == []
+
+
+# -- get_item_field_value() (neu in Spec 0059 / ADR 0036, Abschnitt 5: Grundlage --show-status) --
+
+
+def test_get_item_field_value_returns_current_option_display_name() -> None:
+    run = _FakeRun(
+        [
+            _ok(
+                {
+                    "items": [
+                        {"id": "ITEM_1", "Status": "Story", "title": "issue-215"},
+                        {"id": "ITEM_2", "Status": "Proposed", "title": "issue-42"},
+                    ]
+                }
+            )
+        ]
+    )
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+    project = Project(number=3, id="PVT_1", title="PhotoSort Roadmap")
+
+    value = adapter.get_item_field_value(project, item_id="ITEM_1", field_name=STATUS_FIELD_NAME)
+
+    assert value == "Story"
+    assert run.calls[0][:3] == ["gh", "project", "item-list"]
+
+
+def test_get_item_field_value_returns_none_when_field_unset() -> None:
+    run = _FakeRun([_ok({"items": [{"id": "ITEM_1", "title": "issue-215"}]})])
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+    project = Project(number=3, id="PVT_1", title="PhotoSort Roadmap")
+
+    value = adapter.get_item_field_value(project, item_id="ITEM_1", field_name=STATUS_FIELD_NAME)
+
+    assert value is None
+
+
+def test_get_item_field_value_raises_when_item_not_found() -> None:
+    run = _FakeRun([_ok({"items": []})])
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+    project = Project(number=3, id="PVT_1", title="PhotoSort Roadmap")
+
+    with pytest.raises(GhAdapterError, match="ITEM_1"):
+        adapter.get_item_field_value(project, item_id="ITEM_1", field_name=STATUS_FIELD_NAME)

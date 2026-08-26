@@ -1,17 +1,19 @@
-"""Orchestrierung des vollen Zwei-Wege-Sync-Laufs (Feature-Specs UND Inbox-Eintraege).
+"""Orchestrierung des Zwei-Wege-Sync-Laufs fuer Feature-Specs sowie der dateilosen Story-Stufe.
 
-Verdrahtet die reinen Bausteine (spec_parser, inbox_parser, roadmap_parser, hashing, classify,
-issue_body, state) mit dem GhAdapter-Protokoll. Siehe
-specs/features/0031-zweiwege-sync-specs-github-projekt.md,
-specs/features/0052-github-sync-natives-status-feld-inbox-einbindung.md und
+Verdrahtet die reinen Bausteine (spec_parser, roadmap_parser, hashing, classify, issue_body,
+state) mit dem GhAdapter-Protokoll. Siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md,
+specs/features/0059-story-lebenszyklus-github-issues.md und
 ADR decisions/0017-github-projects-v2-spec-sync.md /
-ADR decisions/0030-github-sync-natives-status-feld-inbox-einbindung.md.
+ADR decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md.
 
-Seit Spec 0052 gibt es zwei eigene Sync-Pfade (_sync_one fuer Feature-Specs, _sync_one_inbox fuer
-Inbox-Eintraege) statt eines gemeinsamen, generischen Pfads - beide Entitaeten unterscheiden sich
-strukturell genug (Prioritaet/Superseded-Feldleerung nur bei Features, Typ/Label nur bei Inbox,
-Unrefined = immer offener Issue-Zustand), dass eine erzwungene Vereinheitlichung mehr Komplexitaet
-als Nutzen gebracht haette (siehe Spec 0052, Architektur/Umsetzung: "eigener Inbox-Sync-Pfad").
+Seit Spec 0059 gibt es zwei strukturell unterschiedliche Pfade: `run_sync()` fuer den
+bidirektionalen Feature-Spec-Sync (unveraendert gegenueber ADR 0017, plus Prioritaets-Push fuer
+issue-referenzierte Roadmap-Zeilen im Vollauf) sowie drei dateilose Story-Funktionen
+(`create_story_issue`, `sync_story`, `show_story_status`), die ausschliesslich gegen den
+`stories`-Namensraum der Zustandsdatei arbeiten - kein Pull/Konflikt-Handling noetig, da eine
+Story nur eine einzige Kopie der Wahrheit hat (das GitHub-Issue selbst, siehe ADR 0036, Kontext).
+Der vorherige, bidirektionale Inbox-Pfad (`_sync_one_inbox`, `--only inbox:NNNN`,
+`--supersede-inbox`) wurde ersatzlos entfernt.
 """
 
 from __future__ import annotations
@@ -23,18 +25,17 @@ from pathlib import Path
 from typing import Literal
 
 from github_project_sync.classify import SyncClassification, SyncStateEntry, classify
-from github_project_sync.gh_adapter import GhAdapter, Project, ProjectFields
-from github_project_sync.hashing import push_state_hash, push_state_hash_inbox, text_hash
-from github_project_sync.inbox_parser import (
-    VALID_INBOX_STATUSES,
-    VALID_INBOX_TYPES,
-    parse_inbox_file,
+from github_project_sync.gh_adapter import (
+    STATUS_FIELD_NAME,
+    STATUS_OPTIONS,
+    GhAdapter,
+    Project,
+    ProjectFields,
 )
+from github_project_sync.hashing import push_state_hash, text_hash
 from github_project_sync.issue_body import (
-    build_inbox_issue_body,
     build_issue_body,
     extract_content_zone_from_issue_body,
-    parse_inbox_marker,
     parse_marker,
 )
 from github_project_sync.roadmap_parser import parse_roadmap_priorities
@@ -46,40 +47,40 @@ from github_project_sync.spec_parser import (
 from github_project_sync.state import (
     NestedState,
     StateDict,
+    StoryStateEntry,
     find_orphaned_numbers,
     load_state,
     save_state,
+    validate_issue_number_key,
 )
 
 Resolution = Literal["keep_spec", "keep_issue"]
-_OnlyKind = Literal["feature", "inbox"]
 
 _OPEN_STATUSES = {"Proposed", "Accepted"}
 _CLOSED_STATUSES = {"Implemented", "Superseded"}
 _VALID_STATUSES = _OPEN_STATUSES | _CLOSED_STATUSES
 
 _ORPHAN_CLOSE_COMMENT = "Spec-Datei wurde entfernt."
-_ORPHAN_CLOSE_COMMENT_INBOX = "Inbox-Eintrag wurde entfernt."
 
-_INBOX_ONLY_PREFIX = "inbox:"
+_ISSUE_ONLY_PREFIX = "issue:"
 
 # Labels: Superseded verschwindet als Feldwert und wird stattdessen ein Label (ADR 0030,
-# Abschnitt 2); Idee/Bug bilden den Inbox-**Typ:** ab (ADR 0030, Abschnitt 6). "bug" existiert im
-# Repo bereits (wiederverwendet statt eines eigenen, spezifischeren Labels) - ensure_label() ist
-# trotzdem idempotent-sicher fuer alle drei, daher einheitlich fuer alle drei aufgerufen.
+# Abschnitt 2); Idee/Bug bilden den Story-**Typ:** ab (aehnlich ADR 0030, Abschnitt 6, jetzt fuer
+# Story-Issues statt Inbox-Dateien). "bug" existiert im Repo bereits (wiederverwendet statt eines
+# eigenen, spezifischeren Labels).
 _LABEL_SUPERSEDED = "superseded"
 _LABEL_IDEE = "idee"
 _LABEL_BUG = "bug"
 _MANAGED_FEATURE_LABELS: frozenset[str] = frozenset({_LABEL_SUPERSEDED})
-_MANAGED_INBOX_LABELS: frozenset[str] = frozenset({_LABEL_IDEE, _LABEL_BUG})
-_TYPE_TO_LABEL = {"Idee": _LABEL_IDEE, "Bug (vermeintlich)": _LABEL_BUG}
+_MANAGED_STORY_LABELS: frozenset[str] = frozenset({_LABEL_IDEE, _LABEL_BUG})
+_STORY_TYPE_TO_LABEL = {"idee": _LABEL_IDEE, "bug": _LABEL_BUG}
 _LABEL_PROVISIONING = {
     _LABEL_SUPERSEDED: {
         "description": "Spec wurde durch eine neuere abgeloest.",
         "color": "cfd3d7",
     },
     _LABEL_IDEE: {
-        "description": "Inbox-Eintrag: neue Idee, noch ungeschaerft.",
+        "description": "Story-Issue: neue Idee, noch ungeschaerft/in Verfeinerung.",
         "color": "0e8a16",
     },
     _LABEL_BUG: {
@@ -119,54 +120,34 @@ class SpecSyncResult:
 
 
 @dataclass(frozen=True)
-class InboxSyncResult:
-    number: str
-    title: str
-    issue_number: int | None
-    classification: SyncClassification | None
-    aborted_reason: str | None = None
-    conflict: ConflictDiff | None = None
-    pulled_content_zone: str | None = None
-
-
-@dataclass(frozen=True)
 class OrphanCleanup:
     number: str
     issue_number: int
 
 
 @dataclass(frozen=True)
-class SupersedeResult:
-    inbox_number: str
-    inbox_issue_number: int
-    new_issue_number: int
+class AdoptedResult:
+    """Ergebnis von `--only NNNN --adopt-issue MMM` (Story -> Feature-Spec-Uebergang)."""
+
+    spec_number: str
+    issue_number: int
 
 
 @dataclass(frozen=True)
 class SyncRunResult:
     specs: list[SpecSyncResult]
     orphaned: list[OrphanCleanup]
-    inbox: list[InboxSyncResult]
-    orphaned_inbox: list[OrphanCleanup]
-    supersede: SupersedeResult | None = None
+    adopted: AdoptedResult | None = None
 
 
-def _parse_only(value: str | None) -> tuple[_OnlyKind, str] | None:
-    """Liefert (kind, number) mit kind in {"feature", "inbox"}, oder None fuer einen vollen Lauf.
-
-    Bare "NNNN" bleibt rueckwaertskompatibel Feature-Scope (ADR 0030, Abschnitt 7); "inbox:NNNN"
-    adressiert einen einzelnen Inbox-Eintrag. Beide Faelle nutzen dieselbe, parametrisierte
-    Nummernvalidierung wie die Pfadkonstruktion selbst (kein zweiter, unabhaengig driftender
-    Regex).
-    """
+def _parse_only(value: str | None) -> str | None:
+    """Bare "NNNN" (Feature-Scope) oder None fuer einen vollen Lauf. Ein "issue:NNN"-Scope wird
+    NICHT hier behandelt - das ist Aufgabe von cli.py, das dafuer direkt sync_story()/
+    show_story_status() aufruft, ohne je run_sync() zu erreichen (siehe Modul-Docstring)."""
     if value is None:
         return None
-    if value.startswith(_INBOX_ONLY_PREFIX):
-        number = value[len(_INBOX_ONLY_PREFIX) :]
-        validate_spec_number(number)
-        return ("inbox", number)
     validate_spec_number(value)
-    return ("feature", value)
+    return value
 
 
 def _reconcile_labels(
@@ -182,6 +163,42 @@ def _reconcile_labels(
     remove = (current & managed) - desired
     if add or remove:
         gh.set_issue_labels(issue_number, add=add, remove=remove)
+
+
+def _apply_priority_only(
+    gh: GhAdapter, project: Project, fields: ProjectFields, item_id: str, priority: str | None
+) -> None:
+    if priority is None:
+        gh.clear_item_field(project, item_id=item_id, field_id=fields.priority_field_id)
+        return
+
+    priority_option_id = fields.priority_options.get(priority)
+    if priority_option_id is None:
+        raise SyncError(
+            f"Project-Feld 'Priorität' hat keine Option fuer {priority!r} (vorhanden: "
+            f"{sorted(fields.priority_options)}). Vermutlich wurden die Feld-Optionen manuell "
+            "im GitHub Project veraendert - bitte das Prioritaets-Feld reparieren, bevor der "
+            "Sync erneut laeuft."
+        )
+    gh.set_item_single_select(
+        project, item_id=item_id, field_id=fields.priority_field_id, option_id=priority_option_id
+    )
+
+
+def _apply_status_only(
+    gh: GhAdapter, project: Project, fields: ProjectFields, item_id: str, *, status: str
+) -> None:
+    status_option_id = fields.status_options.get(status)
+    if status_option_id is None:
+        raise SyncError(
+            f"Project-Feld 'Status' hat keine Option fuer {status!r} (vorhanden: "
+            f"{sorted(fields.status_options)}). Vermutlich wurden die Feld-Optionen manuell im "
+            "GitHub Project veraendert - bitte das Status-Feld reparieren, bevor der Sync "
+            "erneut laeuft."
+        )
+    gh.set_item_single_select(
+        project, item_id=item_id, field_id=fields.status_field_id, option_id=status_option_id
+    )
 
 
 def _apply_fields(
@@ -203,56 +220,12 @@ def _apply_fields(
     if status == "Superseded":
         # Seit ADR 0030, Abschnitt 2: Superseded ist kein Feldwert mehr (STATUS_OPTIONS enthaelt
         # ihn nicht), das Status-Feld wird stattdessen geleert - exakt dasselbe Muster wie das
-        # bereits bestehende Leeren des Prioritaets-Felds unten.
+        # bereits bestehende Leeren des Prioritaets-Felds.
         gh.clear_item_field(project, item_id=item_id, field_id=fields.status_field_id)
     else:
-        status_option_id = fields.status_options.get(status)
-        if status_option_id is None:
-            raise SyncError(
-                f"Project-Feld 'Status' hat keine Option fuer {status!r} (vorhanden: "
-                f"{sorted(fields.status_options)}). Vermutlich wurden die Feld-Optionen manuell "
-                "im GitHub Project veraendert - bitte das Status-Feld reparieren, bevor der "
-                "Sync erneut laeuft."
-            )
-        gh.set_item_single_select(
-            project, item_id=item_id, field_id=fields.status_field_id, option_id=status_option_id
-        )
+        _apply_status_only(gh, project, fields, item_id, status=status)
 
-    if priority is None:
-        # Implemented/Superseded-Specs haben laut Design keine Prioritaet - Feld bewusst leeren.
-        gh.clear_item_field(project, item_id=item_id, field_id=fields.priority_field_id)
-        return
-
-    priority_option_id = fields.priority_options.get(priority)
-    if priority_option_id is None:
-        raise SyncError(
-            f"Project-Feld 'Priorität' hat keine Option fuer {priority!r} (vorhanden: "
-            f"{sorted(fields.priority_options)}). Vermutlich wurden die Feld-Optionen manuell "
-            "im GitHub Project veraendert - bitte das Prioritaets-Feld reparieren, bevor der "
-            "Sync erneut laeuft."
-        )
-    gh.set_item_single_select(
-        project, item_id=item_id, field_id=fields.priority_field_id, option_id=priority_option_id
-    )
-
-
-def _apply_status_only(
-    gh: GhAdapter, project: Project, fields: ProjectFields, item_id: str, *, status: str
-) -> None:
-    """Wie _apply_fields, aber ohne jede Beruehrung des Prioritaets-Felds (Inbox-Eintraege haben
-    laut Design keine Prioritaet - nie gesetzt, nicht aktiv geleert, siehe Spec 0052 AK
-    "Inbox 1:1-Sync")."""
-    status_option_id = fields.status_options.get(status)
-    if status_option_id is None:
-        raise SyncError(
-            f"Project-Feld 'Status' hat keine Option fuer {status!r} (vorhanden: "
-            f"{sorted(fields.status_options)}). Vermutlich wurden die Feld-Optionen manuell im "
-            "GitHub Project veraendert - bitte das Status-Feld reparieren, bevor der Sync "
-            "erneut laeuft."
-        )
-    gh.set_item_single_select(
-        project, item_id=item_id, field_id=fields.status_field_id, option_id=status_option_id
-    )
+    _apply_priority_only(gh, project, fields, item_id, priority)
 
 
 def _sync_one(
@@ -272,15 +245,11 @@ def _sync_one(
     now: Callable[[], str],
 ) -> tuple[SpecSyncResult, SyncStateEntry | None]:
     if status not in _VALID_STATUSES:
-        # Wie bei einem Marker-Integritaetsbruch (siehe unten): ein Problem, das nur diese eine
-        # Spec betrifft, darf nicht den gesamten Mehr-Spec-Lauf mit einer laufabbrechenden
-        # SyncError toeten (Akzeptanzkriterium "Marker-Integritaet": andere Specs im selben Lauf
-        # laufen unbeeinflusst weiter). Bug gefunden im zweiten manuellen Sync-Lauf gegen echtes
-        # GitHub nach Merge von PR #117 - ein einzelner unerwarteter Statuswert (z.B. weil
-        # spec_parser trotz seines Fixes doch mal mehr als das Enum-Schluesselwort erfasst) brach
-        # bisher via "raise SyncError" den kompletten Lauf ab, bevor irgendeine andere Spec
-        # verarbeitet wurde. stored_entry (falls vorhanden) bleibt unveraendert; fuer eine noch
-        # nie synchronisierte Spec (stored_entry is None) gibt es naturgemaess nichts zu bewahren.
+        # Ein Problem, das nur diese eine Spec betrifft, darf nicht den gesamten Mehr-Spec-Lauf
+        # mit einer laufabbrechenden SyncError toeten (Akzeptanzkriterium "Marker-Integritaet":
+        # andere Specs im selben Lauf laufen unbeeinflusst weiter). stored_entry (falls
+        # vorhanden) bleibt unveraendert; fuer eine noch nie synchronisierte Spec (stored_entry
+        # is None) gibt es naturgemaess nichts zu bewahren.
         result = SpecSyncResult(
             number=number,
             title=title,
@@ -343,15 +312,8 @@ def _sync_one(
     # ADR decisions/0017-github-projects-v2-spec-sync.md, Bedrohung 1, nennt als zusaetzliche
     # Gegenmassnahme "ein Fallback bei fehlendem State-Eintrag verifiziert zusaetzlich
     # issue.author.login == 'TheRealKoller'". Dieser Fallback wird hier bewusst NICHT
-    # implementiert: er greift nur, wenn ein Spec<->Issue-Match ueber einen Such-/Lookup-Pfad
-    # (Titel/Marker ueber die gesamte Repo-Issue-Liste) zustande kommt - genau diesen Pfad gibt
-    # es im GhAdapter-Protokoll strukturell nicht (siehe AC "Fremd-Issues": Zuordnung
-    # ausschliesslich ueber den hier bereits vorliegenden stored_entry.issue_number). Fehlt ein
-    # State-Eintrag komplett (stored_entry is None, siehe Zweig oben), wird immer ein neues
-    # Issue angelegt (create_issue), nie ein bestehendes fremdes adoptiert - der Angriffspfad,
-    # den der Fallback abdecken soll, existiert also gar nicht erst. `IssueView.author_login`
-    # wird deshalb aktuell nicht ausgewertet; er ist fuer eine etwaige kuenftige Erweiterung des
-    # Lookups vorgehalten (siehe gh_adapter.py), keine unbeabsichtigte Luecke.
+    # implementiert, siehe dortige Begruendung - IssueView.author_login wird deshalb aktuell
+    # nicht ausgewertet.
     marker_number = parse_marker(issue.body)
     if marker_number != number:
         result = SpecSyncResult(
@@ -442,154 +404,60 @@ def _sync_one(
     return result, new_entry
 
 
-def _sync_one_inbox(
+def _adopt_story_and_push_first_content(
     *,
     number: str,
     title: str,
     status: str,
-    typ: str,
     content_zone: str,
-    full_text: str,
-    path: Path,
-    stored_entry: SyncStateEntry | None,
+    priority: str | None,
+    issue_number: int,
+    item_id: str,
     gh: GhAdapter,
     project: Project,
     fields: ProjectFields,
-    resolution: Resolution | None,
     now: Callable[[], str],
-) -> tuple[InboxSyncResult, SyncStateEntry | None]:
-    if status not in VALID_INBOX_STATUSES or typ not in VALID_INBOX_TYPES:
-        reasons = []
-        if status not in VALID_INBOX_STATUSES:
-            reasons.append(
-                f"unbekannter/ungueltiger Status {status!r} (erwartet 'Unrefined')"
-            )
-        if typ not in VALID_INBOX_TYPES:
-            reasons.append(
-                f"unbekannter Typ {typ!r} (erwartet einen von {sorted(VALID_INBOX_TYPES)})"
-            )
-        result = InboxSyncResult(
-            number=number,
-            title=title,
-            issue_number=stored_entry.issue_number if stored_entry is not None else None,
-            classification=None,
-            aborted_reason=(
-                "; ".join(reasons) + ". Sync fuer diesen Inbox-Eintrag abgebrochen, andere "
-                "Eintraege sind unbeeinflusst."
-            ),
-        )
-        return result, stored_entry
-
-    push_hash_now = push_state_hash_inbox(status=status, typ=typ, content_zone=content_zone)
-    issue_title = f"[inbox/{number}] {title}"
-    desired_label = _TYPE_TO_LABEL[typ]
-
-    if stored_entry is None:
-        body = build_inbox_issue_body(number, content_zone)
-        issue_number = gh.create_issue(issue_title, body)
-        issue = gh.get_issue(issue_number)
-        item_id = gh.add_item_to_project(project, issue_url=issue.url)
-        _apply_status_only(gh, project, fields, item_id, status=status)
-        gh.set_issue_state(issue_number, open=True)  # Unrefined = immer offener Issue-Zustand
-        _reconcile_labels(
-            gh,
-            issue_number,
-            current=issue.labels,
-            desired=frozenset({desired_label}),
-            managed=_MANAGED_INBOX_LABELS,
+) -> tuple[SpecSyncResult, SyncStateEntry]:
+    """Story -> Feature-Spec-Uebergang (`--adopt-issue`, ADR 0036 Abschnitt 6): das bestehende
+    Story-Issue/-Item wird uebernommen (kein `create_issue`/`add_item_to_project`), stattdessen
+    wird die Spec zum ersten Mal als Marker+Inhalt in den bestehenden Issue-Body geschrieben.
+    Bewusst NICHT ueber `_sync_one()` geloest: dessen Marker-Integritaetspruefung wuerde bei
+    einem frisch adoptierten Issue (noch kein `photosort-spec`-Marker vorhanden) faelschlich
+    abbrechen."""
+    if status not in _VALID_STATUSES:
+        raise SyncError(
+            f"--adopt-issue: Spec {number} hat einen ungueltigen/unbekannten Status {status!r} "
+            f"(erwartet einen von {sorted(_VALID_STATUSES)})."
         )
 
-        new_entry = SyncStateEntry(
-            issue_number=issue_number,
-            item_id=item_id,
-            pushed_state_hash=push_hash_now,
-            pulled_body_hash=text_hash(content_zone),
-            last_synced_at=now(),
-        )
-        result = InboxSyncResult(
-            number=number, title=title, issue_number=issue_number, classification="created"
-        )
-        return result, new_entry
-
-    issue = gh.get_issue(stored_entry.issue_number)
-    marker_number = parse_inbox_marker(issue.body)
-    if marker_number != number:
-        result = InboxSyncResult(
-            number=number,
-            title=title,
-            issue_number=stored_entry.issue_number,
-            classification=None,
-            aborted_reason=(
-                f"Marker-Integritaet verletzt: Issue #{stored_entry.issue_number} enthaelt "
-                f"keinen zu Inbox-Eintrag {number} passenden photosort-inbox-Marker (gefunden: "
-                f"{marker_number!r}). Sync fuer diesen Eintrag abgebrochen, andere Eintraege "
-                "sind unbeeinflusst."
-            ),
-        )
-        return result, stored_entry
-
-    remote_content_zone = extract_content_zone_from_issue_body(issue.body)
-    pull_hash_now = text_hash(remote_content_zone)
-    classification = classify(
-        stored_entry, push_hash_now=push_hash_now, pull_hash_now=pull_hash_now
+    is_open = status in _OPEN_STATUSES
+    desired_labels: frozenset[str] = (
+        frozenset({_LABEL_SUPERSEDED}) if status == "Superseded" else frozenset()
     )
 
-    _apply_status_only(gh, project, fields, stored_entry.item_id, status=status)
-    gh.set_issue_state(stored_entry.issue_number, open=True)
+    gh.edit_issue_body(issue_number, build_issue_body(number, content_zone))
+    issue = gh.get_issue(issue_number)
+    _apply_fields(gh, project, fields, item_id, status=status, priority=priority)
+    gh.set_issue_state(issue_number, open=is_open)
     _reconcile_labels(
         gh,
-        stored_entry.issue_number,
+        issue_number,
         current=issue.labels,
-        desired=frozenset({desired_label}),
-        managed=_MANAGED_INBOX_LABELS,
+        desired=desired_labels,
+        managed=_MANAGED_FEATURE_LABELS,
     )
-
-    if classification == "conflict" and resolution is None:
-        result = InboxSyncResult(
-            number=number,
-            title=title,
-            issue_number=stored_entry.issue_number,
-            classification="conflict",
-            conflict=ConflictDiff(
-                local_content_zone=content_zone, remote_content_zone=remote_content_zone
-            ),
-        )
-        return result, stored_entry
-
-    effective: SyncClassification = classification
-    if classification == "conflict" and resolution == "keep_spec":
-        effective = "pushed"
-    elif classification == "conflict" and resolution == "keep_issue":
-        effective = "pulled"
-
-    pulled_content_zone: str | None = None
-    effective_local_content_zone = content_zone
-
-    if effective == "pushed":
-        gh.edit_issue_body(
-            stored_entry.issue_number, build_inbox_issue_body(number, content_zone)
-        )
-    elif effective == "pulled":
-        pulled_content_zone = remote_content_zone
-        effective_local_content_zone = remote_content_zone
-        updated_text = replace_content_zone(full_text, remote_content_zone)
-        path.write_text(updated_text, encoding="utf-8")
 
     new_entry = SyncStateEntry(
-        issue_number=stored_entry.issue_number,
-        item_id=stored_entry.item_id,
-        pushed_state_hash=push_state_hash_inbox(
-            status=status, typ=typ, content_zone=effective_local_content_zone
+        issue_number=issue_number,
+        item_id=item_id,
+        pushed_state_hash=push_state_hash(
+            status=status, priority=priority, content_zone=content_zone
         ),
-        pulled_body_hash=text_hash(effective_local_content_zone),
+        pulled_body_hash=text_hash(content_zone),
         last_synced_at=now(),
     )
-    result = InboxSyncResult(
-        number=number,
-        title=title,
-        issue_number=stored_entry.issue_number,
-        classification=effective,
-        pulled_content_zone=pulled_content_zone,
+    result = SpecSyncResult(
+        number=number, title=title, issue_number=issue_number, classification="pushed"
     )
     return result, new_entry
 
@@ -599,19 +467,12 @@ def run_sync(
     repo_root: Path,
     gh: GhAdapter,
     only: str | None = None,
-    supersede_inbox: str | None = None,
+    adopt_issue: int | None = None,
     resolutions: Mapping[str, Resolution] | None = None,
     now: Callable[[], str] = _utcnow_iso,
 ) -> SyncRunResult:
-    """resolutions ist bewusst NICHT nach Namespace praefixiert (nackte Nummer als Key, geteilt
-    zwischen _sync_one() und _sync_one_inbox() via resolutions.get(number)). Bei einer echten
-    Nummernkollision (inbox/NNNN + features/NNNN, siehe issue_body.py) mit Konflikt auf BEIDEN
-    Seiten im selben Voll-Lauf wuerde dieselbe Aufloesung unbeabsichtigt auf beide wirken - siehe
-    cli.py::_parse_resolutions() fuer die ausfuehrliche Begruendung, warum das in der Praxis
-    unkritisch ist (Konfliktaufloesung laeuft immer ueber einen auf --only gescopten Aufruf)."""
     resolutions = resolutions or {}
     features_dir = repo_root / "specs" / "features"
-    inbox_dir = repo_root / "specs" / "inbox"
     roadmap_path = repo_root / "specs" / "roadmap.md"
     state_path = repo_root / "specs" / ".github-sync-state.json"
 
@@ -624,34 +485,25 @@ def run_sync(
         else {}
     )
 
-    only_scope = _parse_only(only)
+    only_number = _parse_only(only)
 
-    if supersede_inbox is not None:
-        validate_spec_number(supersede_inbox)
-        if only_scope is None or only_scope[0] != "feature":
+    if adopt_issue is not None:
+        if only_number is None:
+            raise SyncError("--adopt-issue erfordert --only NNNN (Feature-Scope) im selben Aufruf.")
+        story_key = str(adopt_issue)
+        validate_issue_number_key(story_key)
+        if story_key not in nested_state.stories:
             raise SyncError(
-                "--supersede-inbox erfordert --only NNNN (Feature-Scope, kein inbox:-Praefix) "
-                "im selben Aufruf."
+                f"--adopt-issue: kein Story-State-Eintrag fuer Issue {adopt_issue} gefunden "
+                "(wurde es per --create-issue/--only issue: erfasst?)."
             )
-        if supersede_inbox not in nested_state.inbox:
+        if only_number in nested_state.features:
             raise SyncError(
-                f"--supersede-inbox: kein State-Eintrag fuer Inbox-Eintrag {supersede_inbox} "
-                "gefunden."
+                f"--adopt-issue: Spec {only_number} hat bereits einen Feature-State-Eintrag - "
+                "Adoption ist nur fuer die erstmalige Spec-Anlage vorgesehen."
             )
 
-    process_features = only_scope is None or only_scope[0] == "feature"
-    process_inbox = only_scope is None or only_scope[0] == "inbox"
-
-    # Copilot-Review-Finding (PR #173): beide Parsing-Schleifen NUR ausfuehren, wenn der
-    # jeweilige Entitaetstyp im aktuellen Lauf tatsaechlich gebraucht wird (process_features/
-    # process_inbox) - vorher wurden bei einem auf einen Typ gescopten --only-Lauf trotzdem
-    # BEIDE Verzeichnisse eager geparst, sodass ein einzelner strukturell kaputter Eintrag des
-    # gerade IRRELEVANTEN Typs (parse_spec_file()/parse_inbox_file() werfen ungefangen
-    # SpecParseError) auch diesen Lauf zum Absturz gebracht haette, obwohl dieser Typ gar nicht
-    # verarbeitet wird. Symmetrisch fuer beide Richtungen behoben, nicht nur fuer Inbox.
-    spec_paths = (
-        sorted(features_dir.glob("*.md")) if process_features and features_dir.exists() else []
-    )
+    spec_paths = sorted(features_dir.glob("*.md")) if features_dir.exists() else []
     parsed_by_number = {}
     path_by_number: dict[str, Path] = {}
     for spec_path in spec_paths:
@@ -659,29 +511,12 @@ def run_sync(
         parsed_by_number[parsed.number] = parsed
         path_by_number[parsed.number] = spec_path
 
-    inbox_paths = (
-        sorted(inbox_dir.glob("*.md")) if process_inbox and inbox_dir.exists() else []
-    )
-    inbox_by_number = {}
-    inbox_path_by_number: dict[str, Path] = {}
-    for inbox_path in inbox_paths:
-        parsed_inbox = parse_inbox_file(inbox_path)
-        inbox_by_number[parsed_inbox.number] = parsed_inbox
-        inbox_path_by_number[parsed_inbox.number] = inbox_path
-
-    if only_scope is not None and only_scope[0] == "feature":
-        if only_scope[1] not in parsed_by_number:
-            raise SyncError(f"Spec {only_scope[1]} nicht unter {features_dir} gefunden.")
-        feature_numbers = [only_scope[1]]
+    if only_number is not None:
+        if only_number not in parsed_by_number:
+            raise SyncError(f"Spec {only_number} nicht unter {features_dir} gefunden.")
+        feature_numbers = [only_number]
     else:
-        feature_numbers = sorted(parsed_by_number) if process_features else []
-
-    if only_scope is not None and only_scope[0] == "inbox":
-        if only_scope[1] not in inbox_by_number:
-            raise SyncError(f"Inbox-Eintrag {only_scope[1]} nicht unter {inbox_dir} gefunden.")
-        inbox_numbers = [only_scope[1]]
-    else:
-        inbox_numbers = sorted(inbox_by_number) if process_inbox else []
+        feature_numbers = sorted(parsed_by_number)
 
     project = gh.ensure_project()
     fields = gh.ensure_fields(project)
@@ -689,12 +524,10 @@ def run_sync(
         gh.ensure_label(label_name, description=meta["description"], color=meta["color"])
 
     spec_results: list[SpecSyncResult] = []
-    inbox_results: list[InboxSyncResult] = []
     orphaned: list[OrphanCleanup] = []
-    orphaned_inbox: list[OrphanCleanup] = []
     new_features: StateDict = dict(nested_state.features)
-    new_inbox: StateDict = dict(nested_state.inbox)
-    supersede_result: SupersedeResult | None = None
+    new_stories: dict[str, StoryStateEntry] = dict(nested_state.stories)
+    adopted_result: AdoptedResult | None = None
 
     # try/finally statt eines einzigen Schreibvorgangs am Ende: bricht der Lauf mitten in einem
     # Mehr-Eintrags-Durchlauf ab (z.B. ein unerwarteter gh-Fehler), behalten bereits verarbeitete
@@ -702,21 +535,44 @@ def run_sync(
     try:
         for number in feature_numbers:
             spec = parsed_by_number[number]
-            result, updated_entry = _sync_one(
-                number=number,
-                title=spec.title,
-                status=spec.status,
-                content_zone=spec.content_zone,
-                full_text=spec.full_text,
-                path=path_by_number[number],
-                priority=roadmap_priorities.get(number),
-                stored_entry=nested_state.features.get(number),
-                gh=gh,
-                project=project,
-                fields=fields,
-                resolution=resolutions.get(number),
-                now=now,
-            )
+            result: SpecSyncResult
+            updated_entry: SyncStateEntry | None
+            if adopt_issue is not None and number == only_number:
+                story_key = str(adopt_issue)
+                adopted_story_entry = nested_state.stories[story_key]
+                result, updated_entry = _adopt_story_and_push_first_content(
+                    number=number,
+                    title=spec.title,
+                    status=spec.status,
+                    content_zone=spec.content_zone,
+                    priority=roadmap_priorities.get(number),
+                    issue_number=adopted_story_entry.issue_number,
+                    item_id=adopted_story_entry.item_id,
+                    gh=gh,
+                    project=project,
+                    fields=fields,
+                    now=now,
+                )
+                new_stories.pop(story_key, None)
+                adopted_result = AdoptedResult(
+                    spec_number=number, issue_number=adopted_story_entry.issue_number
+                )
+            else:
+                result, updated_entry = _sync_one(
+                    number=number,
+                    title=spec.title,
+                    status=spec.status,
+                    content_zone=spec.content_zone,
+                    full_text=spec.full_text,
+                    path=path_by_number[number],
+                    priority=roadmap_priorities.get(number),
+                    stored_entry=nested_state.features.get(number),
+                    gh=gh,
+                    project=project,
+                    fields=fields,
+                    resolution=resolutions.get(number),
+                    now=now,
+                )
             spec_results.append(result)
             # updated_entry ist None, wenn eine noch nie synchronisierte Spec (kein
             # stored_entry) mit ungueltigem Status abgebrochen wurde - dann gibt es nichts zu
@@ -724,28 +580,7 @@ def run_sync(
             if updated_entry is not None:
                 new_features[number] = updated_entry
 
-        for number in inbox_numbers:
-            entry = inbox_by_number[number]
-            result_inbox, updated_inbox_entry = _sync_one_inbox(
-                number=number,
-                title=entry.title,
-                status=entry.status,
-                typ=entry.typ,
-                content_zone=entry.content_zone,
-                full_text=entry.full_text,
-                path=inbox_path_by_number[number],
-                stored_entry=nested_state.inbox.get(number),
-                gh=gh,
-                project=project,
-                fields=fields,
-                resolution=resolutions.get(number),
-                now=now,
-            )
-            inbox_results.append(result_inbox)
-            if updated_inbox_entry is not None:
-                new_inbox[number] = updated_inbox_entry
-
-        if only_scope is None:
+        if only_number is None:
             for number in find_orphaned_numbers(
                 nested_state.features, existing_numbers=set(parsed_by_number)
             ):
@@ -756,44 +591,159 @@ def run_sync(
                     OrphanCleanup(number=number, issue_number=orphan_entry.issue_number)
                 )
 
-            for number in find_orphaned_numbers(
-                nested_state.inbox, existing_numbers=set(inbox_by_number)
-            ):
-                orphan_entry = nested_state.inbox[number]
-                gh.close_issue_with_comment(
-                    orphan_entry.issue_number, _ORPHAN_CLOSE_COMMENT_INBOX
+            # Batch-Prioritaets-Push fuer issue-referenzierte Roadmap-Zeilen (ADR 0036,
+            # Abschnitt 5): faengt manuelle Prioritaets-Aenderungen in roadmap.md zwischen
+            # gezielten `--only issue:NNN`-Aufrufen ab. Status/Body bleiben unangetastet - nur
+            # eine bereits per --create-issue/--only issue: erfasste Story (State-Eintrag
+            # vorhanden) wird beruecksichtigt, alles andere wird stillschweigend uebersprungen.
+            for key, priority in roadmap_priorities.items():
+                if not key.startswith(_ISSUE_ONLY_PREFIX):
+                    continue
+                story_key = key[len(_ISSUE_ONLY_PREFIX) :]
+                batch_story_entry = new_stories.get(story_key)
+                if batch_story_entry is None:
+                    continue
+                _apply_priority_only(gh, project, fields, batch_story_entry.item_id, priority)
+                new_stories[story_key] = StoryStateEntry(
+                    issue_number=batch_story_entry.issue_number,
+                    item_id=batch_story_entry.item_id,
+                    last_synced_at=now(),
                 )
-                new_inbox.pop(number, None)
-                orphaned_inbox.append(
-                    OrphanCleanup(number=number, issue_number=orphan_entry.issue_number)
-                )
-
-        if supersede_inbox is not None:
-            assert only_scope is not None  # bereits oben validiert
-            feature_entry = new_features.get(only_scope[1])
-            if feature_entry is None:
-                raise SyncError(
-                    f"--supersede-inbox: Spec {only_scope[1]} wurde nicht erfolgreich gesynct "
-                    "(siehe aborted_reason), kein Ziel-Issue zum Verlinken vorhanden."
-                )
-            inbox_entry = nested_state.inbox[supersede_inbox]  # Existenz bereits geprueft
-            gh.close_issue_with_comment(
-                inbox_entry.issue_number,
-                f"In Spec-Issue #{feature_entry.issue_number} überführt.",
-            )
-            new_inbox.pop(supersede_inbox, None)
-            supersede_result = SupersedeResult(
-                inbox_number=supersede_inbox,
-                inbox_issue_number=inbox_entry.issue_number,
-                new_issue_number=feature_entry.issue_number,
-            )
     finally:
-        save_state(state_path, NestedState(features=new_features, inbox=new_inbox))
+        save_state(state_path, NestedState(features=new_features, stories=new_stories))
 
-    return SyncRunResult(
-        specs=spec_results,
-        orphaned=orphaned,
-        inbox=inbox_results,
-        orphaned_inbox=orphaned_inbox,
-        supersede=supersede_result,
+    return SyncRunResult(specs=spec_results, orphaned=orphaned, adopted=adopted_result)
+
+
+# -- Dateiloser Story-Pfad (Spec 0059 / ADR 0036, Abschnitt 5) ---------------------------------
+
+
+def create_story_issue(
+    *,
+    repo_root: Path,
+    gh: GhAdapter,
+    typ: str,
+    title: str,
+    body: str,
+    now: Callable[[], str] = _utcnow_iso,
+) -> int:
+    """`--create-issue`: legt ein neues, dateiloses Story-Issue an (Status Unrefined). Verwendet
+    von `capture` und der einmaligen Alteintrags-Migration."""
+    if typ not in _STORY_TYPE_TO_LABEL:
+        raise SyncError(
+            f"Unbekannter Typ {typ!r} (erwartet einen von {sorted(_STORY_TYPE_TO_LABEL)})."
+        )
+
+    state_path = repo_root / "specs" / ".github-sync-state.json"
+    gh.check_auth_scope()
+    nested_state = load_state(state_path)
+
+    project = gh.ensure_project()
+    fields = gh.ensure_fields(project)
+    for label_name, meta in _LABEL_PROVISIONING.items():
+        gh.ensure_label(label_name, description=meta["description"], color=meta["color"])
+
+    issue_number = gh.create_issue(title, body)
+    issue = gh.get_issue(issue_number)
+    item_id = gh.add_item_to_project(project, issue_url=issue.url)
+    _apply_status_only(gh, project, fields, item_id, status="Unrefined")
+    gh.set_issue_state(issue_number, open=True)
+    desired_label = _STORY_TYPE_TO_LABEL[typ]
+    _reconcile_labels(
+        gh,
+        issue_number,
+        current=issue.labels,
+        desired=frozenset({desired_label}),
+        managed=_MANAGED_STORY_LABELS,
     )
+
+    new_stories = dict(nested_state.stories)
+    new_stories[str(issue_number)] = StoryStateEntry(
+        issue_number=issue_number, item_id=item_id, last_synced_at=now()
+    )
+    save_state(state_path, NestedState(features=nested_state.features, stories=new_stories))
+    return issue_number
+
+
+def _get_story_entry(nested_state: NestedState, issue_number: int) -> StoryStateEntry:
+    key = str(issue_number)
+    entry = nested_state.stories.get(key)
+    if entry is not None:
+        return entry
+
+    adopted_spec_number = next(
+        (
+            number
+            for number, feature_entry in nested_state.features.items()
+            if feature_entry.issue_number == issue_number
+        ),
+        None,
+    )
+    if adopted_spec_number is not None:
+        raise SyncError(
+            f"Issue {issue_number} ist bereits Spec {adopted_spec_number} (per --adopt-issue "
+            "adoptiert) - Story-Scope-Befehle sind dafuer nicht mehr gueltig."
+        )
+    raise SyncError(
+        f"Story-Issue {issue_number} nicht im stories-Namensraum gefunden - wurde es per "
+        "--create-issue angelegt?"
+    )
+
+
+def sync_story(
+    *,
+    repo_root: Path,
+    gh: GhAdapter,
+    issue_number: int,
+    status: str | None = None,
+    body: str | None = None,
+    now: Callable[[], str] = _utcnow_iso,
+) -> dict[str, object]:
+    """`--only issue:NNN [--status ...] [--body-file ...]`: aktualisiert optional Body/Status
+    eines bestehenden Story-Issues und pusht in jedem Fall die aus roadmap.md neu berechnete
+    Prioritaet (Einbahnstrasse, ADR 0017 Abschnitt 4, hier auf die Story-Stufe uebertragen)."""
+    if status is not None and status not in STATUS_OPTIONS:
+        raise SyncError(f"Unbekannter Status {status!r} (erwartet einen von {STATUS_OPTIONS}).")
+
+    state_path = repo_root / "specs" / ".github-sync-state.json"
+    roadmap_path = repo_root / "specs" / "roadmap.md"
+
+    gh.check_auth_scope()
+    nested_state = load_state(state_path)
+    entry = _get_story_entry(nested_state, issue_number)
+
+    project = gh.ensure_project()
+    fields = gh.ensure_fields(project)
+
+    if body is not None:
+        gh.edit_issue_body(issue_number, body)
+    if status is not None:
+        _apply_status_only(gh, project, fields, entry.item_id, status=status)
+
+    roadmap_priorities = (
+        parse_roadmap_priorities(roadmap_path.read_text(encoding="utf-8"))
+        if roadmap_path.exists()
+        else {}
+    )
+    priority = roadmap_priorities.get(f"{_ISSUE_ONLY_PREFIX}{issue_number}")
+    _apply_priority_only(gh, project, fields, entry.item_id, priority)
+
+    new_stories = dict(nested_state.stories)
+    new_stories[str(issue_number)] = StoryStateEntry(
+        issue_number=issue_number, item_id=entry.item_id, last_synced_at=now()
+    )
+    save_state(state_path, NestedState(features=nested_state.features, stories=new_stories))
+
+    return {"issue_number": issue_number, "status": status, "priority": priority}
+
+
+def show_story_status(*, repo_root: Path, gh: GhAdapter, issue_number: int) -> str | None:
+    """`--only issue:NNN --show-status`: rein lesend, veraendert nichts."""
+    state_path = repo_root / "specs" / ".github-sync-state.json"
+    gh.check_auth_scope()
+    nested_state = load_state(state_path)
+    entry = _get_story_entry(nested_state, issue_number)
+
+    project = gh.ensure_project()
+    gh.ensure_fields(project)  # stellt sicher, dass ProjectFields (Fake und real) initialisiert ist
+    return gh.get_item_field_value(project, item_id=entry.item_id, field_name=STATUS_FIELD_NAME)

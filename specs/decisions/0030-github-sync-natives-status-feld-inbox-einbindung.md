@@ -4,6 +4,8 @@
 **Datum:** 2026-08-21
 **Bezug:** `specs/inbox/0028-github-sync-status-feld-und-inbox.md`, ADR [`decisions/0017-github-projects-v2-spec-sync.md`](./0017-github-projects-v2-spec-sync.md) (Abschnitt 3 wird hiermit teilweise abgelöst, die ADR selbst bleibt für alle übrigen Abschnitte gültig), `idea-sharpener`-Konsultation mit Daniel am 2026-08-21.
 
+**Nachtrag (2026-08-26):** Die Abschnitte 4, 5, 7 und 8 (Marker-Namensraum `photosort-inbox`, State-Namensraum `inbox`, CLI-Scope `--only inbox:NNNN`/`--supersede-inbox`, `inbox_parser.py`) sind durch ADR [`decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md`](./0036-github-issue-natives-story-refinement-inbox-entfaellt.md) abgelöst — der bidirektionale Sync für `specs/inbox/*.md` entfällt vollständig, `capture` legt seither direkt ein GitHub-Issue an. Die Abschnitte 1–3 und 6 (natives `Status`-Feld, Superseded-als-Label, Label-Self-Provisioning) bleiben für Feature-Specs unverändert gültig, diese ADR bleibt `Accepted`. Reiner Verweis, kein nachträgliches Editieren der ursprünglichen Entscheidung/Begründung unten.
+
 ## Kontext
 
 Seit Umsetzung von Spec [`0031`](../features/0031-zweiwege-sync-specs-github-projekt.md) (PR #115 ff.) läuft der Zwei-Wege-Sync produktiv gegen das GitHub Project "PhotoSort Roadmap" (Owner `TheRealKoller`), mit 51 gesyncten Feature-Specs. Ein Live-Check gegen das echte Project hat zwei Dinge bestätigt:
