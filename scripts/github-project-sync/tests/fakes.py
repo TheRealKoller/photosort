@@ -12,8 +12,11 @@ from dataclasses import dataclass, field
 
 from github_project_sync.gh_adapter import (
     DEFAULT_PROJECT_TITLE,
+    PRIORITY_FIELD_NAME,
     PRIORITY_OPTIONS,
+    STATUS_FIELD_NAME,
     STATUS_OPTIONS,
+    GhAdapterError,
     GhAuthScopeError,
     IssueView,
     Project,
@@ -162,3 +165,21 @@ class FakeGhAdapter:
     ) -> None:
         issue = self._issues[issue_number]
         issue.labels = (issue.labels | add) - remove
+
+    def get_item_field_value(
+        self, project: Project, *, item_id: str, field_name: str
+    ) -> str | None:
+        assert self.fields is not None, "ensure_fields() muss vor get_item_field_value() laufen."
+        if field_name == STATUS_FIELD_NAME:
+            field_id, options = self.fields.status_field_id, self.fields.status_options
+        elif field_name == PRIORITY_FIELD_NAME:
+            field_id, options = self.fields.priority_field_id, self.fields.priority_options
+        else:
+            raise GhAdapterError(f"Fake kennt kein Feld {field_name!r}.")
+        if item_id not in self.items:
+            raise GhAdapterError(f"Fake: Item {item_id!r} nicht bekannt.")
+        option_id = self.items[item_id].get(field_id)
+        if option_id is None:
+            return None
+        reverse = {v: k for k, v in options.items()}
+        return reverse.get(option_id, option_id)

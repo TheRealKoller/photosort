@@ -97,6 +97,10 @@ class GhAdapter(Protocol):
         self, issue_number: int, *, add: frozenset[str], remove: frozenset[str]
     ) -> None: ...
 
+    def get_item_field_value(
+        self, project: Project, *, item_id: str, field_name: str
+    ) -> str | None: ...
+
 
 def _default_run(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, capture_output=True, text=True, check=False)  # noqa: S603
@@ -113,8 +117,14 @@ def _default_run(args: list[str]) -> subprocess.CompletedProcess[str]:
 # danach frisch mit den vier neuen Optionen an. Fuer ein hypothetisches, komplett neues Project
 # (nie erstellt mit dem alten Code) wuerde der alte Bug erneut auftreten - das ist ein bewusst
 # akzeptiertes Restrisiko (ADR 0030, Begruendung), kein automatischer Dauerbetrieb-Reparaturpfad.
+# Seit Spec 0059 / ADR decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md,
+# Abschnitt 2: neuer Zwischenwert "Story" zwischen "Unrefined" und "Proposed" (Story-Lebenszyklus
+# ueber GitHub-Issues statt der bisherigen lokalen Inbox-Dateien) - erfordert denselben
+# einmaligen, manuellen Migrationsschritt wie beim Einfuehren von "Unrefined" selbst (ADR 0030,
+# Abschnitt 3: Feld loeschen, mit den fuenf neuen Optionen neu anlegen, kein automatischer
+# Dauerbetrieb-Reparaturpfad).
 STATUS_FIELD_NAME = "Status"
-STATUS_OPTIONS = ["Proposed", "Accepted", "Implemented", "Unrefined"]
+STATUS_OPTIONS = ["Unrefined", "Story", "Proposed", "Accepted", "Implemented"]
 PRIORITY_FIELD_NAME = "Priorität"
 PRIORITY_OPTIONS = ["Hoch", "Mittel", "Niedrig"]
 DEFAULT_PROJECT_TITLE = "PhotoSort Roadmap"
@@ -415,3 +425,37 @@ class GhCliAdapter:
         if remove:
             args += ["--remove-label", ",".join(sorted(remove))]
         self._run_text(args)
+
+    def get_item_field_value(
+        self, project: Project, *, item_id: str, field_name: str
+    ) -> str | None:
+        # Grundlage fuer "--show-status" (Spec 0059 / ADR 0036, Abschnitt 5): rein lesender
+        # Zugriff auf den aktuellen Anzeigenamen eines Single-Select-Feldwerts. "gh project
+        # item-list" liefert pro Item die konfigurierten Feldwerte direkt als Klartext unter dem
+        # exakten Feldnamen (z.B. {"Status": "Story"}) - anders als beim Schreiben braucht das
+        # Lesen keine interne Options-Id (die liefert "gh project item-list" nicht). Wie beim
+        # bereits bestehenden ensure_label()-Pagination-Kommentar unten: "--limit 100" ist nicht
+        # paginiert, bei aktuell < 100 Project-Items unkritisch. Nicht in CI gegen echtes gh
+        # verifiziert (siehe Modul-Docstring), nur manuell vor dem Rollout.
+        data = self._run_json(
+            [
+                "gh",
+                "project",
+                "item-list",
+                str(project.number),
+                "--owner",
+                self._owner,
+                "--format",
+                "json",
+                "--limit",
+                "100",
+            ]
+        )
+        for item in data.get("items", []):
+            if item.get("id") == item_id:
+                value = item.get(field_name)
+                return str(value) if value not in (None, "") else None
+        raise GhAdapterError(
+            f"Project-Item {item_id!r} nicht in 'gh project item-list' gefunden (Project "
+            f"#{project.number})."
+        )
