@@ -18,6 +18,7 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs zuerst, ge
 |---|---|---|
 | [0056](./features/0056-structured-logging-cloud-vision-errors.md) | Strukturiertes Logging für Cloud-Vision-Fehler (Landmark + Remote-Kategorie) | Accepted |
 | [0058](./features/0058-cloud-vision-status-transparenz.md) | Cloud-Vision-Status-Transparenz in den Foto-Details | Accepted |
+| [0059](./features/0059-story-lebenszyklus-github-issues.md) | Story-Lebenszyklus über GitHub-Issues: Capture, Refinement und Spec-Erstellung trennen | Accepted |
 
 ### Offen — Niedrig
 
