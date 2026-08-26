@@ -350,9 +350,7 @@ def test_close_issue_with_comment() -> None:
 
     adapter.close_issue_with_comment(42, "Spec-Datei wurde entfernt.")
 
-    assert run.calls == [
-        ["gh", "issue", "close", "42", "--comment", "Spec-Datei wurde entfernt."]
-    ]
+    assert run.calls == [["gh", "issue", "close", "42", "--comment", "Spec-Datei wurde entfernt."]]
 
 
 def test_add_item_to_project() -> None:

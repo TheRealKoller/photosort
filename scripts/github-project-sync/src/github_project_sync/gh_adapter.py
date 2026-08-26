@@ -196,14 +196,10 @@ class GhCliAdapter:
             )
 
     def ensure_project(self) -> Project:
-        data = self._run_json(
-            ["gh", "project", "list", "--owner", self._owner, "--format", "json"]
-        )
+        data = self._run_json(["gh", "project", "list", "--owner", self._owner, "--format", "json"])
         for project in data.get("projects", []):
             if project.get("title") == self._project_title:
-                return Project(
-                    number=project["number"], id=project["id"], title=project["title"]
-                )
+                return Project(number=project["number"], id=project["id"], title=project["title"])
 
         created = self._run_json(
             [
