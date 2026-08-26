@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/TheRealKoller/photosort/compare/v0.16.0...v0.17.0) (2026-08-26)
+
+
+### Features
+
+* Story-Lebenszyklus über GitHub-Issues (Capture/Refinement/Spec trennen) ([#220](https://github.com/TheRealKoller/photosort/issues/220)) ([2d827ee](https://github.com/TheRealKoller/photosort/commit/2d827eee2779b22918fe4c26e29b0a99c7b9c3fb))
+
 ## [0.16.0](https://github.com/TheRealKoller/photosort/compare/v0.15.0...v0.16.0) (2026-08-24)
 
 
