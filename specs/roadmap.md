@@ -18,7 +18,6 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs und Story-
 |---|---|---|
 | [0056](./features/0056-structured-logging-cloud-vision-errors.md) | Strukturiertes Logging für Cloud-Vision-Fehler (Landmark + Remote-Kategorie) | Accepted |
 | [0058](./features/0058-cloud-vision-status-transparenz.md) | Cloud-Vision-Status-Transparenz in den Foto-Details | Accepted |
-| [0059](./features/0059-story-lebenszyklus-github-issues.md) | Story-Lebenszyklus über GitHub-Issues: Capture, Refinement und Spec-Erstellung trennen | Accepted |
 
 ### Offen — Niedrig
 
@@ -88,6 +87,7 @@ Frisch erfasste, noch nicht fachlich verfeinerte Ideen/Bugs entstehen direkt als
 | [0053](./features/0053-fachagenten-definitionsdateien-kompaktieren.md) | Skill-/Agenten-Dateien kompaktieren: Prosa straffen (vier Fachagenten, analog Spec 0025) und historische ADR-/Spec-Zitate entfernen (11 Dateien + künftige Konvention in CLAUDE.md) | Implemented ([PR #188](https://github.com/TheRealKoller/photosort/pull/188), [PR #189](https://github.com/TheRealKoller/photosort/pull/189)) |
 | [0054](./features/0054-mistral-provider-option-cloud-landmark.md) | Mistral als wählbare Cloud-Provider-Alternative zu Anthropic für `landmark`-Kriterium | Implemented ([PR #195](https://github.com/TheRealKoller/photosort/pull/195)) |
 | [0055](./features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) | Remote-Kategorie-Klassifizierung mit offenen Schlagworten (Cloud-Vision-API) und Kostenschätzung | Implemented ([PR #201](https://github.com/TheRealKoller/photosort/pull/201)) |
+| [0059](./features/0059-story-lebenszyklus-github-issues.md) | Story-Lebenszyklus über GitHub-Issues: Capture, Refinement und Spec-Erstellung trennen | Implemented ([PR #220](https://github.com/TheRealKoller/photosort/pull/220)) |
 
 ## Priorisierung
 

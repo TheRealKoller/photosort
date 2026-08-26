@@ -1,6 +1,6 @@
 # 0059 - Story-Lebenszyklus über GitHub-Issues: Capture, Refinement und Spec-Erstellung trennen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #220](https://github.com/TheRealKoller/photosort/pull/220))
 **Erstellt:** 2026-08-26
 **Bezug:** Chat-Gespräch mit Daniel (idea-sharpener-Ablauf), 2026-08-26. Löst [ADR 0036](../decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md) um (die den Inbox-Teil von [ADR 0030](../decisions/0030-github-sync-natives-status-feld-inbox-einbindung.md) ablöst; [ADR 0017](../decisions/0017-github-projects-v2-spec-sync.md) bleibt unverändert gültig). Löst `specs/inbox/0033-status-lifecycle-ueberarbeiten.md` und `specs/inbox/0034-inbox-direkt-als-github-issue.md` inhaltlich ab.
 
