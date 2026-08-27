@@ -11,7 +11,6 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs und Story-
 | Spec | Titel | Status |
 |---|---|---|
 | [0057](./features/0057-docker-compose-env-vars-landmark-mistral.md) | Docker-Compose: LANDMARK_PROVIDER und MISTRAL_API_KEY durchreichen | Accepted |
-| [0062](./features/0062-ideen-pipeline-kosteneffizienz-skip-schwelle-devils-advocate-gate.md) | Kosteneffizientere Ideen-Pipeline: härtere Vorfilterung in refinement + gelockertes Konsultations-Sicherheitsnetz in spec-writer | Accepted |
 | [#224](https://github.com/TheRealKoller/photosort/issues/224) | Roadmap.md entfernen, Priorität direkt im GitHub-Project-Board pflegen | Story |
 
 ### Offen — Mittel
@@ -92,6 +91,7 @@ Frisch erfasste, noch nicht fachlich verfeinerte Ideen/Bugs entstehen direkt als
 | [0055](./features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) | Remote-Kategorie-Klassifizierung mit offenen Schlagworten (Cloud-Vision-API) und Kostenschätzung | Implemented ([PR #201](https://github.com/TheRealKoller/photosort/pull/201)) |
 | [0059](./features/0059-story-lebenszyklus-github-issues.md) | Story-Lebenszyklus über GitHub-Issues: Capture, Refinement und Spec-Erstellung trennen | Implemented ([PR #220](https://github.com/TheRealKoller/photosort/pull/220)) |
 | [0060](./features/0060-status-lebenszyklus-umsetzungsfortschritt.md) | Status-Lebenszyklus mit Umsetzungsfortschritt (Ready/Todo/In Progress/Review/Done) | Implemented ([PR #229](https://github.com/TheRealKoller/photosort/pull/229)) |
+| [0062](./features/0062-ideen-pipeline-kosteneffizienz-skip-schwelle-devils-advocate-gate.md) | Kosteneffizientere Ideen-Pipeline: härtere Vorfilterung in refinement + gelockertes Konsultations-Sicherheitsnetz in spec-writer | Implemented ([PR #235](https://github.com/TheRealKoller/photosort/pull/235)) |
 
 ## Priorisierung
 

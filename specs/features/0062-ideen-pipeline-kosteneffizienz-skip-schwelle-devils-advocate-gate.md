@@ -1,6 +1,6 @@
 # 0062 - Kosteneffizientere Ideen-Pipeline: gelockerte Skip-Schwelle in `spec-writer` + verstärktes Devil's-Advocate-Gate in `refinement`
 
-**Status:** Accepted
+**Status:** Implemented ([PR #235](https://github.com/TheRealKoller/photosort/pull/235))
 **Erstellt:** 2026-08-27
 **Bezug:** GitHub-Issue [`#230`](https://github.com/TheRealKoller/photosort/issues/230) ("skill idea sharpener überarbeiten" / "Kosteneffizientere Ideen-Pipeline", löst inhaltlich auch Issue #232 mit ab). Technische Konsultation im `spec-writer`-Ablauf am 2026-08-27 (`architect`, `test-engineer`, `security-engineer`). ADR [`0038`](../decisions/0038-spec-writer-skip-schwelle-lockern-refinement-vorfilterung.md) (Accepted, im Rahmen dieser Spec angelegt) löst **Teil 2 von ADR [`0018`](../decisions/0018-idea-sharpener-kalibrierung-und-skip-logik.md)** ab.
 
