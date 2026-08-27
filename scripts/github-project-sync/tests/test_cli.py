@@ -365,3 +365,148 @@ def test_main_adopt_issue_without_only_is_an_error(
     assert exit_code != 0
     output = json.loads(capsys.readouterr().out)
     assert "error" in output
+
+
+# -- --runtime-status/--pr-number (Spec 0060 / ADR 0037, Abschnitt 3/4) -------------------------
+
+
+def _sync_once(repo_root: Path, fake: FakeGhAdapter) -> None:
+    exit_code = main(["--repo-root", str(repo_root)], gh_factory=lambda owner: fake)
+    assert exit_code == 0
+
+
+def test_main_runtime_status_sets_in_progress_override(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+    _sync_once(repo_root, fake)
+    capsys.readouterr()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--only", "0031", "--runtime-status", "In Progress"],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output == {"spec_number": "0031", "runtime_status": "In Progress", "pr_number": None}
+
+
+def test_main_runtime_status_review_requires_pr_number(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+    _sync_once(repo_root, fake)
+    capsys.readouterr()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--only", "0031", "--runtime-status", "Review"],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    output = json.loads(capsys.readouterr().out)
+    assert "error" in output
+
+
+def test_main_runtime_status_review_with_pr_number_succeeds(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+    _sync_once(repo_root, fake)
+    capsys.readouterr()
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(repo_root),
+            "--only",
+            "0031",
+            "--runtime-status",
+            "Review",
+            "--pr-number",
+            "101",
+        ],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output == {"spec_number": "0031", "runtime_status": "Review", "pr_number": 101}
+
+
+def test_main_runtime_status_requires_bare_feature_scope_not_issue_scope(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root, fake = _make_repo_with_story(tmp_path)
+    capsys.readouterr()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--only", "issue:1", "--runtime-status", "In Progress"],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    output = json.loads(capsys.readouterr().out)
+    assert "error" in output
+
+
+def test_main_runtime_status_requires_only_flag(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--runtime-status", "In Progress"],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    output = json.loads(capsys.readouterr().out)
+    assert "error" in output
+
+
+def test_main_runtime_status_rejects_unknown_value(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+
+    with pytest.raises(SystemExit):
+        main(
+            ["--repo-root", str(repo_root), "--only", "0031", "--runtime-status", "Done"],
+            gh_factory=lambda owner: fake,
+        )
+
+
+def test_main_pr_number_without_runtime_status_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--only", "0031", "--pr-number", "101"],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    output = json.loads(capsys.readouterr().out)
+    assert "error" in output
+
+
+def test_main_run_sync_output_includes_finalized_from_pr_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+
+    exit_code = main(["--repo-root", str(repo_root)], gh_factory=lambda owner: fake)
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["specs"][0]["finalized_from_pr"] is None
