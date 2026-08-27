@@ -19,9 +19,20 @@ PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync [--onl
 
 `--only NNNN` (nackte Zahl) synct nur diese eine Feature-Spec. Ohne `--only` läuft ein voller Durchlauf über alle `specs/features/*.md` und pusht zusätzlich die Priorität für jede issue-referenzierte Story-Zeile aus `specs/roadmap.md`.
 
-`--adopt-issue MMM` nur zusammen mit `--only NNNN` setzen, wenn die frisch angelegte Spec `NNNN` aus dem Story-Issue `MMM` hervorgegangen ist (siehe `.claude/skills/idea-sharpener/SKILL.md`, letzter Schritt) — adoptiert das bestehende Issue (kein neues Issue, kein Verlust von Historie/Labels), schreibt erstmals den Marker-Kommentar `<!-- photosort-spec: NNNN -->` plus den vollen Spec-Inhalt in den Issue-Body und setzt `Status=Accepted`.
+`--adopt-issue MMM` nur zusammen mit `--only NNNN` setzen, wenn die frisch angelegte Spec `NNNN` aus dem Story-Issue `MMM` hervorgegangen ist (siehe `.claude/skills/idea-sharpener/SKILL.md`, letzter Schritt) — adoptiert das bestehende Issue (kein neues Issue, kein Verlust von Historie/Labels), schreibt erstmals den Marker-Kommentar `<!-- photosort-spec: NNNN -->` plus den vollen Spec-Inhalt in den Issue-Body und setzt den Spec-Datei-Status auf `Accepted` (Board-Feld zeigt dafür die Baseline `Todo`, siehe unten).
 
-Die Ausgabe ist ein einziges JSON-Objekt auf stdout: entweder `{"error": "..."}` oder `{"specs": [...], "orphaned": [...], "adopted": {...} | null}` (siehe `scripts/github-project-sync/src/github_project_sync/cli.py` für das genaue Format).
+Die Ausgabe ist ein einziges JSON-Objekt auf stdout: entweder `{"error": "..."}` oder `{"specs": [...], "orphaned": [...], "adopted": {...} | null}` (siehe `scripts/github-project-sync/src/github_project_sync/cli.py` für das genaue Format). Jeder Eintrag in `specs` hat seit Spec 0060 zusätzlich das Feld `finalized_from_pr` (siehe unten).
+
+### Statusfeld-Baseline+Override (Spec 0060 / ADR 0037)
+
+Das native Board-`Status`-Feld ist keine 1:1-Kopie des Spec-Datei-Status mehr, sondern eine Projektion: Datei-Status `Proposed`/`Accepted` → Baseline `Todo`, `Implemented` → Baseline `Done` (`Superseded` bleibt der bestehende Sonderfall — Feld leeren + Label). Ein optionaler Laufzeit-Override (`In Progress`/`Review`) verfeinert diese Baseline, wirkt aber nur, solange sie `Todo` ist — das setzt nicht dieser Skill selbst, sondern gezielt der `developer`-Aufrufer (`In Progress`, vor dem Start) bzw. `ship-feature` Schritt 7 (`Review` + `--pr-number`, direkt nach `gh pr create`):
+
+```bash
+PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --runtime-status "In Progress"
+PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --runtime-status "Review" --pr-number <PR-Nummer>
+```
+
+`--runtime-status` erfordert `--only NNNN` (bare Feature-Scope, kein `issue:NNN`); `Review` erfordert zusätzlich `--pr-number`. Gibt `{"spec_number": NNNN, "runtime_status": ..., "pr_number": ...}` zurück (kein voller Content-Abgleich, nur Status/Priorität). Ein `{"error": "..."}` unverändert weitergeben.
 
 ### Fehler zuerst behandeln
 
@@ -41,6 +52,10 @@ Für jeden Eintrag in `specs` (Feld `classification`):
 - **`classification` ist `"pulled"`**: siehe unten (das Skript hat die Spec-Datei bereits geschrieben, hier fehlt nur noch die fachliche Bewertung).
 
 Einträge in `orphaned` (Spec-Datei gelöscht, zugehöriges Issue automatisch geschlossen): für die Zusammenfassung vormerken, keine weitere Aktion nötig. Ist `adopted` nicht `null`, ebenfalls erwähnen (welches Story-Issue wurde zu welcher Spec adoptiert).
+
+### `finalized_from_pr` — automatische PR-Merge-Erkennung (Spec 0060 / ADR 0037, Abschnitt 5)
+
+Ist `finalized_from_pr` für einen Spec-Eintrag nicht `null` (die referenzierte PR wurde gemerged, `sync.py` hat die Spec-Datei bereits selbst auf `Implemented ([PR #NNN](url))` umgeschrieben und `Done` gepusht): ruf für jede so finalisierte Spec einmal den `requirements-engineer`-Agenten auf (`Agent`-Tool, `subagent_type: requirements-engineer`, `model: "haiku"` — reines, mechanisches Verschieben einer bereits eindeutigen Roadmap-Zeile), der die zugehörige Zeile in `specs/roadmap.md` von der "Offen"-Tabelle in "Bereits umgesetzt" verschiebt (physisches Verschieben, kein reines Status-Text-Update). Für die Zusammenfassung vormerken, welche Spec(s) auf diesem Weg finalisiert wurden.
 
 ### Konflikte — nie automatisch auflösen
 
@@ -66,7 +81,7 @@ Für jede Spec mit `classification == "pulled"` (Inhalt wurde bereits mechanisch
 Diese drei Modi adressieren ein Story-Issue ausschließlich über seine Nummer (kein lokales File) und werden i.d.R. nicht direkt von Daniel angefragt, sondern von `capture`/`story-refiner`/`idea-sharpener` selbst aufgerufen — siehe dort für den jeweiligen Aufrufkontext:
 
 - **`--create-issue --type idee|bug --title TITLE --body-file PATH`**: legt ein neues Story-Issue an (Status `Unrefined`). Gibt `{"issue_number": NNN}` zurück.
-- **`--only issue:NNN [--status Story] [--body-file PATH]`**: aktualisiert optional Body/Status eines bestehenden Story-Issues, pusht in jedem Fall die aus `roadmap.md` neu berechnete Priorität. Gibt `{"issue_number": NNN, "status": ..., "priority": ...}` zurück.
+- **`--only issue:NNN [--status Ready|Unrefined|Done] [--body-file PATH]`**: aktualisiert optional Body/Status eines bestehenden Story-Issues, pusht in jedem Fall die aus `roadmap.md` neu berechnete Priorität. Gibt `{"issue_number": NNN, "status": ..., "priority": ...}` zurück. `--status Done` schließt das Issue zusätzlich nativ (ADR 0037, Abschnitt 6 — deckt sowohl eine tatsächlich umgesetzte als auch eine ohne Umsetzung verworfene Story ab, kein eigener Statuswert für den Unterschied).
 - **`--only issue:NNN --show-status`** (rein lesend): liefert `{"status": "<aktueller Wert>"}`.
 
 Ein `{"error": "..."}` bei einem dieser drei Modi unveraendert an den aufrufenden Skill/Daniel weitergeben, kein eigener Lösungsversuch.

@@ -23,6 +23,14 @@ Jeder Schritt hier existiert, weil er einen konkreten Fehler verhindert, der bei
 3. **Git-Ausgangszustand prüfen:** `git status`. Bei uncommitteten Änderungen: per Rückfrage klären, ob sie zur aktuellen Aufgabe gehören oder gesichert werden müssen (stash/commit), nicht stillschweigend überschreiben.
 4. **Feature-Branch anlegen** von einem aktuellen `main` (z.B. `git checkout -b feature/<kurzer-slug>`, benannt nach Spec-Nummer/-Titel). Der gesamte Rest des Ablaufs passiert auf diesem Branch, niemals direkt auf `main`.
 
+**Hinweis an den Aufrufer (nicht an diesen Agenten selbst):** Dieser Agent hat laut eigener Definition keinen GitHub-Schreibzugriff. Wer ihn per Agent-Tool startet, sollte unmittelbar davor das Board-Statusfeld der Spec auf `In Progress` setzen (ADR [`decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md`](../../specs/decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md), Abschnitt 3):
+
+```bash
+PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --runtime-status "In Progress"
+```
+
+Schlägt dieser Aufruf fehl (`{"error": ...}`), ist das **nicht blockierend** — der Agent startet trotzdem, der Fehler wird im späteren Abschlussbericht an Daniel vermerkt.
+
 ## Schritt 1: Umsetzungsplan lesen bzw. Architektur-Konsultation anfordern
 
 Du planst nicht mehr selbst. Lies den Abschnitt `## Architektur / Umsetzung` der Spec — er wurde vom `architect`-Agenten im idea-sharpener-Ablauf befüllt und nennt betroffene Dateien/Komponenten, die wesentlichen Entwurfsentscheidungen und eine sinnvolle Reihenfolge. Bei kleinen, eindeutigen Änderungen (ein, zwei Dateien, klarer Weg, Abschnitt bestätigt das) direkt mit Schritt 2 weitermachen.

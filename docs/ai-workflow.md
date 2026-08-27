@@ -46,7 +46,7 @@ Eine rohe Idee durchläuft seit ADR 0036 zwei getrennte Skills statt eines einzi
 hält sie sofort ungefiltert als GitHub-Issue fest (Status `Unrefined`), `story-refiner`
 übernimmt danach die rein fachliche Schärfung (Verständnis, Roadmap-Einordnung über
 `requirements-engineer`, Code-/Spec-Konfliktprüfung, Devil's Advocate) und schreibt Ziel/User
-Story/Akzeptanzkriterien direkt in den Issue-Body (Status `Story`) — ohne technische Details
+Story/Akzeptanzkriterien direkt in den Issue-Body (Status `Ready`) — ohne technische Details
 und ohne lokale Zwischendatei. Erst wenn eine Story tatsächlich umgesetzt werden soll, zieht der
 stark reduzierte `idea-sharpener` die übrigen drei Fachspezialisten (Architektur, UI/UX,
 Test/Security) hinzu und legt die akzeptierte Feature-Spec an, wobei er das bestehende Issue

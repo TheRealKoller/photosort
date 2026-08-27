@@ -1,13 +1,13 @@
 ---
 name: story-refiner
-description: Schärft eine neue Produkt-/Feature-Idee rein fachlich zu einer Story — stellt Verständnisfragen, ordnet sie über `requirements-engineer` in die Roadmap ein, untersucht parallel den bestehenden Code und die vorhandenen specs/features/*.md auf Konflikte/Überschneidungen, hakt bei Unklarheiten nach, stellt kritische Gegenfragen (Devil's Advocate) und schreibt Ziel/User Story/Akzeptanzkriterien danach direkt in den GitHub-Issue-Body (Status `Story`) — ausdrücklich OHNE technische Details, die übernimmt erst später `idea-sharpener`. Nutze diesen Skill IMMER, wenn der Nutzer eine neue Idee, einen Feature-Wunsch oder eine Anforderung informell einwirft — z.B. "ich hab da eine Idee", "was hältst du davon, wenn wir X einbauen", "könnten wir nicht auch Y machen", "neue Anforderung: ...", oder wenn er auf ein per `capture` erfasstes Issue verweist ("schärf Issue #NNN"). Nicht nutzen, wenn der Nutzer eine bereits als `Story` markierte Idee tatsächlich technisch umsetzen lassen will (dafür `idea-sharpener`) oder eine bereits akzeptierte Spec umsetzen lassen will (dafür der `developer`-Agent).
+description: Schärft eine neue Produkt-/Feature-Idee rein fachlich zu einer Story — stellt Verständnisfragen, ordnet sie über `requirements-engineer` in die Roadmap ein, untersucht parallel den bestehenden Code und die vorhandenen specs/features/*.md auf Konflikte/Überschneidungen, hakt bei Unklarheiten nach, stellt kritische Gegenfragen (Devil's Advocate) und schreibt Ziel/User Story/Akzeptanzkriterien danach direkt in den GitHub-Issue-Body (Status `Ready`) — ausdrücklich OHNE technische Details, die übernimmt erst später `idea-sharpener`. Nutze diesen Skill IMMER, wenn der Nutzer eine neue Idee, einen Feature-Wunsch oder eine Anforderung informell einwirft — z.B. "ich hab da eine Idee", "was hältst du davon, wenn wir X einbauen", "könnten wir nicht auch Y machen", "neue Anforderung: ...", oder wenn er auf ein per `capture` erfasstes Issue verweist ("schärf Issue #NNN"). Nicht nutzen, wenn der Nutzer eine bereits als `Ready` markierte Idee tatsächlich technisch umsetzen lassen will (dafür `idea-sharpener`) oder eine bereits akzeptierte Spec umsetzen lassen will (dafür der `developer`-Agent).
 ---
 
 # Story Refiner — von der Idee zur fachlich geschärften Story
 
 Übernimmt die fachliche Hälfte des früheren `idea-sharpener`-Ablaufs (Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md)): eine Idee wird erst dann als `Story` markiert, wenn sie drei Dinge überstanden hat — echtes gegenseitiges Verständnis, Abgleich mit dem, was schon existiert, und kritischen Gegenwind. Die technische Umsetzungsplanung (Architektur/UI-UX/Test/Security/Spec-Anlage) ist bewusst **nicht** Teil dieses Skills — das übernimmt, wenn die Story tatsächlich umgesetzt werden soll, `idea-sharpener`.
 
-Ergebnis dieses Skills ist **kein** neues Spec-File, sondern ein strukturierter GitHub-Issue-Body (`## Ziel`, `## User Story`, `## Akzeptanzkriterien`) mit Status `Story` — keine lokale Zwischendatei.
+Ergebnis dieses Skills ist **kein** neues Spec-File, sondern ein strukturierter GitHub-Issue-Body (`## Ziel`, `## User Story`, `## Akzeptanzkriterien`) mit Status `Ready` — keine lokale Zwischendatei.
 
 ## Schritt 0: Herkunft prüfen — kommt die Idee aus einem bestehenden Issue?
 
@@ -58,6 +58,14 @@ Bevor irgendetwas geschrieben wird, stell dich bewusst gegen die Idee — jede I
 
 Das ist keine Formalität — wenn die Idee unter der Prüfung merklich schwächer wird oder sich ändert, ist das ein gutes Ergebnis: schärfen oder verwerfen, statt schönreden. Erst wenn die Idee (ggf. in angepasster Form) plausibel Stand hält, geht es weiter.
 
+**Entscheidet sich Daniel hier für "verwerfen"** (die Idee hält der Prüfung nicht stand, z.B. weil sie obsolet geworden ist oder ein einfacherer Weg existiert): kein Schritt 6 nötig, stattdessen das Issue direkt ohne technische Umsetzung schließen (ADR [`decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md`](../../../specs/decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md), Abschnitt 6):
+
+```bash
+PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only issue:<NNN> --status Done
+```
+
+Das setzt das Board-Statusfeld auf `Done` und schließt das Issue nativ — derselbe Statuswert wie bei einer tatsächlich umgesetzten Story, da es dafür kein eigenes, unterscheidbares Signal gibt (ADR 0037, Begründung).
+
 ## Schritt 6: Ergebnis in den Issue-Body schreiben
 
 Schreib das Ergebnis strukturiert und **rein fachlich/business-orientiert — ausdrücklich ohne technische Details** (keine Komponenten, kein Datenmodell, keine Architektur-Entscheidung; das ist bewusst `idea-sharpener` vorbehalten):
@@ -84,11 +92,11 @@ Schreib den Issue-Body und den Status per `scripts/github-project-sync`:
 
 ```bash
 PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync \
-  --only issue:<NNN> --status Story --body-file <pfad-zum-neuen-body>
+  --only issue:<NNN> --status Ready --body-file <pfad-zum-neuen-body>
 ```
 
 Trag danach die Prioritäts-Zeile für dieses Issue in `specs/roadmap.md` ein/aktualisiere sie (issue-referenzierte Zeile `[#NNN](<Issue-URL>)` in der passenden `### Offen — <Priorität>`-Tabelle, analog zu einer Spec-Zeile) — das war in Schritt 2 vom `requirements-engineer` bereits vorbereitet, hier nur mit der jetzt feststehenden Priorität nachgetragen. Ein erneuter `--only issue:<NNN>`-Aufruf ohne `--status`/`--body-file` würde die Priorität allein aus `roadmap.md` neu berechnen und pushen, falls du sie nachträglich noch anpasst.
 
-Erwartetes Ergebnis des obigen Aufrufs: `{"issue_number": NNN, "status": "Story", "priority": "<Hoch|Mittel|Niedrig>"}`. Ein `{"error": "..."}` unverändert an Daniel weitergeben.
+Erwartetes Ergebnis des obigen Aufrufs: `{"issue_number": NNN, "status": "Ready", "priority": "<Hoch|Mittel|Niedrig>"}`. Ein `{"error": "..."}` unverändert an Daniel weitergeben.
 
 Fasse am Ende kurz zusammen: Issue-Nummer, Titel, Priorität, und dass Daniel bei Bedarf `idea-sharpener` mit "setz Story #NNN um" aufrufen kann, sobald die technische Umsetzung ansteht.
