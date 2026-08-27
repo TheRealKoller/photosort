@@ -13,13 +13,22 @@ SyncClassification = Literal["created", "pushed", "pulled", "conflict", "unchang
 
 @dataclass(frozen=True)
 class SyncStateEntry:
-    """Ein Eintrag aus specs/.github-sync-state.json (ein Eintrag pro Spec-Nummer)."""
+    """Ein Eintrag aus specs/.github-sync-state.json (ein Eintrag pro Spec-Nummer).
+
+    runtime_status/pr_number seit Spec 0060 / ADR 0037, Abschnitt 2: optionaler
+    Laufzeit-Override ("In Progress"/"Review"/None), der den aus dem Datei-Status berechneten
+    Baseline-Board-Wert verfeinert, solange die Baseline "Todo" ist (siehe sync.py,
+    _BOARD_STATUS_BASELINE/_RUNTIME_OVERRIDE_STATUSES). pr_number ist die Grundlage fuer die
+    automatische Merge-/"Done"-Erkennung, nur gesetzt waehrend runtime_status == "Review".
+    """
 
     issue_number: int
     item_id: str
     pushed_state_hash: str
     pulled_body_hash: str
     last_synced_at: str
+    runtime_status: str | None = None
+    pr_number: int | None = None
 
 
 def classify(

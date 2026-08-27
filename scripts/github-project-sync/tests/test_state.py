@@ -313,3 +313,65 @@ def test_find_orphaned_numbers_empty_when_all_present() -> None:
     state = {"0031": SyncStateEntry(1, "a", "x", "y", "2026-08-09T00:00:00Z")}
 
     assert find_orphaned_numbers(state, existing_numbers={"0031"}) == []
+
+
+# -- runtime_status/pr_number (Spec 0060 / ADR 0037, Abschnitt 2) ------------------------------
+
+
+def test_load_state_parses_runtime_status_and_pr_number_when_present(tmp_path: Path) -> None:
+    state_path = tmp_path / ".github-sync-state.json"
+    entry_dict = _entry_dict()
+    entry_dict["runtime_status"] = "Review"
+    entry_dict["pr_number"] = 101
+    state_path.write_text(
+        json.dumps({"features": {"0031": entry_dict}, "stories": {}}), encoding="utf-8"
+    )
+
+    state = load_state(state_path)
+
+    assert state.features["0031"].runtime_status == "Review"
+    assert state.features["0031"].pr_number == 101
+
+
+def test_load_state_defaults_runtime_status_and_pr_number_to_none_when_absent(
+    tmp_path: Path,
+) -> None:
+    # Rueckwaertskompatibilitaet: eine bereits bestehende Zustandsdatei (vor Spec 0060) kennt
+    # diese beiden Felder noch nicht - fehlen sie, wird None angenommen statt eines KeyError.
+    state_path = tmp_path / ".github-sync-state.json"
+    state_path.write_text(
+        json.dumps({"features": {"0031": _entry_dict()}, "stories": {}}), encoding="utf-8"
+    )
+
+    state = load_state(state_path)
+
+    assert state.features["0031"].runtime_status is None
+    assert state.features["0031"].pr_number is None
+
+
+def test_save_state_round_trips_runtime_status_and_pr_number(tmp_path: Path) -> None:
+    state_path = tmp_path / ".github-sync-state.json"
+    entry_with_override = SyncStateEntry(
+        issue_number=42,
+        item_id="ITEM_1",
+        pushed_state_hash="abc",
+        pulled_body_hash="def",
+        last_synced_at="2026-08-09T00:00:00Z",
+        runtime_status="In Progress",
+        pr_number=None,
+    )
+
+    save_state(state_path, NestedState(features={"0031": entry_with_override}, stories={}))
+    reloaded = load_state(state_path)
+
+    assert reloaded.features["0031"] == entry_with_override
+
+
+def test_save_state_writes_null_runtime_override_fields_when_unset(tmp_path: Path) -> None:
+    state_path = tmp_path / ".github-sync-state.json"
+
+    save_state(state_path, NestedState(features={"0031": _ENTRY}, stories={}))
+
+    raw = json.loads(state_path.read_text(encoding="utf-8"))
+    assert raw["features"]["0031"]["runtime_status"] is None
+    assert raw["features"]["0031"]["pr_number"] is None
