@@ -21,6 +21,7 @@ from github_project_sync.gh_adapter import (
     IssueView,
     Project,
     ProjectFields,
+    PullRequestView,
 )
 
 
@@ -56,8 +57,16 @@ class FakeGhAdapter:
         # Ergebnis). Damit koennen Tests "kein Duplikat angelegt" praezise pruefen (Review-
         # Finding: die vorherige Fake-Implementierung war unbedingt, verzweigte nie).
         self.ensure_label_created: list[str] = []
+        # Seit Spec 0060 / ADR 0037, Abschnitt 5: Grundlage der automatischen
+        # PR-Merge-Erkennung. Tests seeden gezielt per seed_pull_request().
+        self._pull_requests: dict[int, PullRequestView] = {}
 
     # -- Setup-Helfer fuer Tests -------------------------------------------------
+    def seed_pull_request(self, number: int, *, state: str, url: str | None = None) -> None:
+        self._pull_requests[number] = PullRequestView(
+            state=state,
+            url=url or f"https://github.com/{self.owner}/photosort/pull/{number}",
+        )
     def seed_issue(
         self,
         number: int,
@@ -112,6 +121,11 @@ class FakeGhAdapter:
             url=issue.url,
             labels=issue.labels,
         )
+
+    def get_pull_request(self, pr_number: int) -> PullRequestView:
+        if pr_number not in self._pull_requests:
+            raise GhAdapterError(f"Fake: PR {pr_number!r} nicht bekannt (seed_pull_request()?).")
+        return self._pull_requests[pr_number]
 
     def create_issue(self, title: str, body: str) -> int:
         number = self._next_issue_number

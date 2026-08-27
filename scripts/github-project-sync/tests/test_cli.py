@@ -270,7 +270,7 @@ def test_main_only_issue_updates_status_and_body(
             "--only",
             "issue:1",
             "--status",
-            "Story",
+            "Ready",
             "--body-file",
             str(_write_body(tmp_path, "## Ziel\n\nNeu.\n")),
         ],
@@ -280,7 +280,7 @@ def test_main_only_issue_updates_status_and_body(
     assert exit_code == 0
     output = json.loads(capsys.readouterr().out)
     assert output["issue_number"] == 1
-    assert output["status"] == "Story"
+    assert output["status"] == "Ready"
     assert fake.issue(1).body == "## Ziel\n\nNeu.\n"
 
 

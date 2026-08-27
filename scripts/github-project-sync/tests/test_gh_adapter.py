@@ -15,6 +15,7 @@ from github_project_sync.gh_adapter import (
     GhCliAdapter,
     IssueView,
     Project,
+    PullRequestView,
 )
 
 
@@ -204,10 +205,14 @@ def test_ensure_fields_adopts_native_status_field_after_rollout_migration() -> N
     assert PRIORITY_FIELD_NAME in run.calls[1]
 
 
-def test_status_options_include_story_between_unrefined_and_proposed() -> None:
-    # Seit Spec 0059 / ADR 0036, Abschnitt 2: neuer Zwischenwert "Story".
-    assert STATUS_OPTIONS == ["Unrefined", "Story", "Proposed", "Accepted", "Implemented"]
+def test_status_options_are_the_six_value_umsetzungsfortschritt_lebenszyklus() -> None:
+    # Seit Spec 0060 / ADR 0037, Abschnitt 1: "Story"->"Ready" (reine Umbenennung), "Proposed"
+    # verschwindet als Board-Wert (bleibt nur Datei-intern), neu "Todo"/"In Progress"/"Review".
+    assert STATUS_OPTIONS == ["Unrefined", "Ready", "Todo", "In Progress", "Review", "Done"]
     assert "Superseded" not in STATUS_OPTIONS
+    assert "Proposed" not in STATUS_OPTIONS
+    assert "Accepted" not in STATUS_OPTIONS
+    assert "Story" not in STATUS_OPTIONS
 
 
 def test_get_issue_parses_json_output() -> None:
@@ -496,3 +501,49 @@ def test_get_item_field_value_raises_when_item_not_found() -> None:
 
     with pytest.raises(GhAdapterError, match="ITEM_1"):
         adapter.get_item_field_value(project, item_id="ITEM_1", field_name=STATUS_FIELD_NAME)
+
+
+# -- get_pull_request() (neu in Spec 0060 / ADR 0037, Abschnitt 5: Grundlage der automatischen
+# PR-Merge-Erkennung fuer "Done") --------------------------------------------------------------
+
+
+def test_get_pull_request_parses_json_output() -> None:
+    run = _FakeRun(
+        [
+            _ok(
+                {
+                    "state": "MERGED",
+                    "url": "https://github.com/TheRealKoller/photosort/pull/101",
+                }
+            )
+        ]
+    )
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+
+    pr = adapter.get_pull_request(101)
+
+    assert pr == PullRequestView(
+        state="merged", url="https://github.com/TheRealKoller/photosort/pull/101"
+    )
+    assert run.calls == [["gh", "pr", "view", "101", "--json", "state,url"]]
+
+
+def test_get_pull_request_lowercases_state() -> None:
+    # "gh pr view --json state" liefert den Zustand in Grossbuchstaben (OPEN/CLOSED/MERGED,
+    # analog zu get_issue()'s state-Normalisierung) - sync.py vergleicht gegen "merged".
+    run = _FakeRun(
+        [_ok({"state": "OPEN", "url": "https://github.com/TheRealKoller/photosort/pull/101"})]
+    )
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+
+    pr = adapter.get_pull_request(101)
+
+    assert pr.state == "open"
+
+
+def test_get_pull_request_raises_on_failure() -> None:
+    run = _FakeRun([_fail("no pull requests found")])
+    adapter = GhCliAdapter(owner="TheRealKoller", run=run)
+
+    with pytest.raises(GhAdapterError):
+        adapter.get_pull_request(999)

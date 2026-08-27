@@ -27,7 +27,6 @@ from typing import Literal
 from github_project_sync.classify import SyncClassification, SyncStateEntry, classify
 from github_project_sync.gh_adapter import (
     STATUS_FIELD_NAME,
-    STATUS_OPTIONS,
     GhAdapter,
     Project,
     ProjectFields,
@@ -42,6 +41,7 @@ from github_project_sync.roadmap_parser import parse_roadmap_priorities
 from github_project_sync.spec_parser import (
     parse_spec_file,
     replace_content_zone,
+    set_status_line,
     validate_spec_number,
 )
 from github_project_sync.state import (
@@ -59,6 +59,20 @@ Resolution = Literal["keep_spec", "keep_issue"]
 _OPEN_STATUSES = {"Proposed", "Accepted"}
 _CLOSED_STATUSES = {"Implemented", "Superseded"}
 _VALID_STATUSES = _OPEN_STATUSES | _CLOSED_STATUSES
+
+# Seit Spec 0060 / ADR decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-
+# erkennung.md, Abschnitt 2: das Board-Status-Feld ist keine 1:1-Kopie des Datei-Status mehr,
+# sondern eine Baseline-Projektion (Datei-Status -> Board-Wert), optional verfeinert durch einen
+# in specs/.github-sync-state.json persistierten Laufzeit-Override ("In Progress"/"Review") -
+# der Override wirkt strukturell nur, solange die Baseline "Todo" ist (siehe _apply_fields()).
+# "Superseded" ist bewusst NICHT Teil dieser Tabelle (bleibt eigener Sonderfall: Feld leeren +
+# Label, ADR 0030 Abschnitt 2).
+_BOARD_STATUS_BASELINE = {"Proposed": "Todo", "Accepted": "Todo", "Implemented": "Done"}
+_RUNTIME_OVERRIDE_STATUSES = {"In Progress", "Review"}
+# Story-Ebene (ADR 0037, Abschnitt 6): kein Baseline/Override-Modell noetig (keine lokale Datei,
+# aus der sich der Status rekonstruieren liesse) - deshalb eine eigene, engere Werteliste statt
+# der vollen STATUS_OPTIONS (die jetzt auch die drei Feature-only-Werte enthaelt).
+_STORY_VALID_STATUSES = {"Unrefined", "Ready", "Done"}
 
 _ORPHAN_CLOSE_COMMENT = "Spec-Datei wurde entfernt."
 
@@ -117,6 +131,10 @@ class SpecSyncResult:
     priority_warning: str | None = None
     conflict: ConflictDiff | None = None
     pulled_content_zone: str | None = None
+    # Seit Spec 0060 / ADR 0037, Abschnitt 5: gesetzt, wenn dieser Lauf gerade eine automatische
+    # PR-Merge-Erkennung fuer diese Spec ausgefuehrt hat (Signal an den aufrufenden Skill, z.B.
+    # fuer den requirements-engineer-Aufruf zum Verschieben der Roadmap-Zeile).
+    finalized_from_pr: int | None = None
 
 
 @dataclass(frozen=True)
@@ -209,6 +227,7 @@ def _apply_fields(
     *,
     status: str,
     priority: str | None,
+    runtime_status: str | None = None,
 ) -> None:
     # Board-Drift (Daniel/ein Dritter bearbeitet die Optionen eines Project-Felds manuell) darf
     # nie still hingenommen werden - ensure_fields() uebernimmt ein bereits existierendes Feld
@@ -223,7 +242,15 @@ def _apply_fields(
         # bereits bestehende Leeren des Prioritaets-Felds.
         gh.clear_item_field(project, item_id=item_id, field_id=fields.status_field_id)
     else:
-        _apply_status_only(gh, project, fields, item_id, status=status)
+        # Seit Spec 0060 / ADR 0037, Abschnitt 2: der gepushte Board-Wert ist die aus dem
+        # Datei-Status berechnete Baseline, optional verfeinert durch runtime_status - aber
+        # strukturell NIE mehr als eine Verfeinerung von "Todo": sobald die Baseline "Done" ist,
+        # gewinnt sie immer, unabhaengig davon, was runtime_status noch traegt (der Aufrufer
+        # muss den State-Eintrag dafuer nicht separat "kennen").
+        baseline = _BOARD_STATUS_BASELINE[status]
+        use_override = runtime_status is not None and baseline == "Todo"
+        board_status = runtime_status if use_override else baseline
+        _apply_status_only(gh, project, fields, item_id, status=board_status)
 
     _apply_priority_only(gh, project, fields, item_id, priority)
 
@@ -244,6 +271,28 @@ def _sync_one(
     resolution: Resolution | None,
     now: Callable[[], str],
 ) -> tuple[SpecSyncResult, SyncStateEntry | None]:
+    # Automatische PR-Merge-Erkennung (Spec 0060 / ADR 0037, Abschnitt 5) - ganz am Anfang der
+    # Funktion, vor der Status-Validitaetspruefung: nur aktiv fuer eine bereits getrackte
+    # ("stored_entry is not None"), noch "Accepted" gefuehrte Spec mit stehendem
+    # "Review"-Override und referenziertem PR. Ist der PR gemerged, wird die Spec-Datei hier
+    # selbst (einzige Schreibstelle, ADR 0017 Abschnitt 4) auf "Implemented" umgeschrieben -
+    # alle nachgelagerte Logik (Hash, _apply_fields, is_open, Labels) behandelt sie danach wie
+    # jede regulaer auf "Implemented" gesetzte Spec, kein weiterer Sonderpfad noetig.
+    finalized_from_pr: int | None = None
+    if (
+        stored_entry is not None
+        and status == "Accepted"
+        and stored_entry.runtime_status == "Review"
+        and stored_entry.pr_number is not None
+    ):
+        pull_request = gh.get_pull_request(stored_entry.pr_number)
+        if pull_request.state == "merged":
+            new_status_line = f"Implemented ([PR #{stored_entry.pr_number}]({pull_request.url}))"
+            full_text = set_status_line(full_text, new_status_line)
+            path.write_text(full_text, encoding="utf-8")
+            status = "Implemented"
+            finalized_from_pr = stored_entry.pr_number
+
     if status not in _VALID_STATUSES:
         # Ein Problem, das nur diese eine Spec betrifft, darf nicht den gesamten Mehr-Spec-Lauf
         # mit einer laufabbrechenden SyncError toeten (Akzeptanzkriterium "Marker-Integritaet":
@@ -327,6 +376,7 @@ def _sync_one(
                 "Sync fuer diese Spec abgebrochen, andere Specs sind unbeeinflusst."
             ),
             priority_warning=priority_warning,
+            finalized_from_pr=finalized_from_pr,
         )
         return result, stored_entry
 
@@ -342,7 +392,15 @@ def _sync_one(
     # Issue wieder zurueck, siehe Akzeptanzkriterium "Status-Feld + Issue-Zustand"). Labels
     # (superseded) werden aus demselben Grund ebenfalls unabhaengig von der Klassifikation
     # reconciled (ADR 0030, Abschnitt 6: "pro Sync-Lauf voll reconciled").
-    _apply_fields(gh, project, fields, stored_entry.item_id, status=status, priority=priority)
+    _apply_fields(
+        gh,
+        project,
+        fields,
+        stored_entry.item_id,
+        status=status,
+        priority=priority,
+        runtime_status=stored_entry.runtime_status,
+    )
     gh.set_issue_state(stored_entry.issue_number, open=is_open)
     _reconcile_labels(
         gh,
@@ -362,6 +420,7 @@ def _sync_one(
             conflict=ConflictDiff(
                 local_content_zone=content_zone, remote_content_zone=remote_content_zone
             ),
+            finalized_from_pr=finalized_from_pr,
         )
         # Baseline-Hashes bleiben unveraendert, bis Daniel den Konflikt explizit aufloest -
         # ein erneuter Lauf ohne Aufloesung meldet denselben Konflikt wieder (idempotent).
@@ -384,6 +443,11 @@ def _sync_one(
         updated_text = replace_content_zone(full_text, remote_content_zone)
         path.write_text(updated_text, encoding="utf-8")
 
+    # Ein Laufzeit-Override ist strukturell nie mehr als eine Verfeinerung der Baseline "Todo"
+    # (ADR 0037, Abschnitt 2) - sobald die (ggf. gerade per Merge-Erkennung finalisierte)
+    # Baseline "Done" wird, wird ein noch gespeicherter Override defensiv geleert, statt
+    # unveraendert fuer den naechsten Lauf stehen zu bleiben.
+    carries_override = _BOARD_STATUS_BASELINE.get(status) == "Todo"
     new_entry = SyncStateEntry(
         issue_number=stored_entry.issue_number,
         item_id=stored_entry.item_id,
@@ -392,6 +456,8 @@ def _sync_one(
         ),
         pulled_body_hash=text_hash(effective_local_content_zone),
         last_synced_at=now(),
+        runtime_status=stored_entry.runtime_status if carries_override else None,
+        pr_number=stored_entry.pr_number if carries_override else None,
     )
     result = SpecSyncResult(
         number=number,
@@ -400,6 +466,7 @@ def _sync_one(
         classification=effective,
         priority_warning=priority_warning,
         pulled_content_zone=pulled_content_zone,
+        finalized_from_pr=finalized_from_pr,
     )
     return result, new_entry
 
@@ -615,6 +682,92 @@ def run_sync(
     return SyncRunResult(specs=spec_results, orphaned=orphaned, adopted=adopted_result)
 
 
+def _find_spec_path(features_dir: Path, spec_number: str) -> Path:
+    if features_dir.exists():
+        for candidate in sorted(features_dir.glob(f"{spec_number}-*.md")):
+            return candidate
+    raise SyncError(f"Spec {spec_number} nicht unter {features_dir} gefunden.")
+
+
+def set_feature_runtime_status(
+    *,
+    repo_root: Path,
+    gh: GhAdapter,
+    spec_number: str,
+    runtime_status: str,
+    pr_number: int | None = None,
+    now: Callable[[], str] = _utcnow_iso,
+) -> dict[str, object]:
+    """`--only NNNN --runtime-status {In Progress,Review} [--pr-number NNN]` (ADR 0037, Abschnitt
+    3/4): leichtgewichtiger, zielgerichteter Schreibzugriff auf eine bereits getrackte
+    Feature-Spec - laedt die Spec-Datei nur zur Bestimmung der Baseline, pusht Status+Prioritaet
+    ueber _apply_fields(), kein voller bidirektionaler Content-Abgleich (kein Pull/Konflikt-
+    Handling, Hashes im State-Eintrag bleiben unangetastet)."""
+    validate_spec_number(spec_number)
+    if runtime_status not in _RUNTIME_OVERRIDE_STATUSES:
+        raise SyncError(
+            f"Ungueltiger Laufzeit-Status {runtime_status!r} (erwartet einen von "
+            f"{sorted(_RUNTIME_OVERRIDE_STATUSES)})."
+        )
+
+    state_path = repo_root / "specs" / ".github-sync-state.json"
+    features_dir = repo_root / "specs" / "features"
+    roadmap_path = repo_root / "specs" / "roadmap.md"
+
+    gh.check_auth_scope()
+    nested_state = load_state(state_path)
+    stored_entry = nested_state.features.get(spec_number)
+    if stored_entry is None:
+        raise SyncError(
+            f"Spec {spec_number} hat noch keinen Feature-State-Eintrag - erst ueber einen "
+            "regulaeren Sync-Lauf (--only NNNN oder voller Lauf) anlegen."
+        )
+
+    parsed = parse_spec_file(_find_spec_path(features_dir, spec_number))
+    baseline = _BOARD_STATUS_BASELINE.get(parsed.status)
+    if baseline != "Todo":
+        raise SyncError(
+            f"Spec {spec_number} hat Datei-Status {parsed.status!r} (Baseline {baseline!r}) - "
+            "ein Laufzeit-Override ist nur wirksam, solange die Baseline 'Todo' ist "
+            "(Datei-Status Proposed/Accepted)."
+        )
+
+    project = gh.ensure_project()
+    fields = gh.ensure_fields(project)
+
+    roadmap_priorities = (
+        parse_roadmap_priorities(roadmap_path.read_text(encoding="utf-8"))
+        if roadmap_path.exists()
+        else {}
+    )
+    priority = roadmap_priorities.get(spec_number)
+
+    _apply_fields(
+        gh,
+        project,
+        fields,
+        stored_entry.item_id,
+        status=parsed.status,
+        priority=priority,
+        runtime_status=runtime_status,
+    )
+
+    new_entry = SyncStateEntry(
+        issue_number=stored_entry.issue_number,
+        item_id=stored_entry.item_id,
+        pushed_state_hash=stored_entry.pushed_state_hash,
+        pulled_body_hash=stored_entry.pulled_body_hash,
+        last_synced_at=now(),
+        runtime_status=runtime_status,
+        pr_number=pr_number,
+    )
+    new_features = dict(nested_state.features)
+    new_features[spec_number] = new_entry
+    save_state(state_path, NestedState(features=new_features, stories=nested_state.stories))
+
+    return {"spec_number": spec_number, "runtime_status": runtime_status, "pr_number": pr_number}
+
+
 # -- Dateiloser Story-Pfad (Spec 0059 / ADR 0036, Abschnitt 5) ---------------------------------
 
 
@@ -702,8 +855,14 @@ def sync_story(
     """`--only issue:NNN [--status ...] [--body-file ...]`: aktualisiert optional Body/Status
     eines bestehenden Story-Issues und pusht in jedem Fall die aus roadmap.md neu berechnete
     Prioritaet (Einbahnstrasse, ADR 0017 Abschnitt 4, hier auf die Story-Stufe uebertragen)."""
-    if status is not None and status not in STATUS_OPTIONS:
-        raise SyncError(f"Unbekannter Status {status!r} (erwartet einen von {STATUS_OPTIONS}).")
+    if status is not None and status not in _STORY_VALID_STATUSES:
+        # Seit Spec 0060 / ADR 0037, Abschnitt 6: verengt auf {"Unrefined", "Ready", "Done"} -
+        # die drei neuen Feature-only-Werte (Todo/In Progress/Review) ergeben fuer eine Story
+        # keinen Sinn (kein Baseline/Override-Modell auf Story-Ebene).
+        raise SyncError(
+            f"Unbekannter Story-Status {status!r} (erwartet einen von "
+            f"{sorted(_STORY_VALID_STATUSES)})."
+        )
 
     state_path = repo_root / "specs" / ".github-sync-state.json"
     roadmap_path = repo_root / "specs" / "roadmap.md"
@@ -719,6 +878,11 @@ def sync_story(
         gh.edit_issue_body(issue_number, body)
     if status is not None:
         _apply_status_only(gh, project, fields, entry.item_id, status=status)
+        if status == "Done":
+            # Abschnitt 6: eine ohne technische Umsetzung verworfene/obsolet gewordene Story
+            # wird zusaetzlich geschlossen (der Doppelbedeutung "fertig umgesetzt" vs.
+            # "verworfen" wird bewusst nicht mit einem eigenen Statuswert begegnet).
+            gh.set_issue_state(issue_number, open=False)
 
     roadmap_priorities = (
         parse_roadmap_priorities(roadmap_path.read_text(encoding="utf-8"))

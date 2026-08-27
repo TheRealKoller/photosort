@@ -15,6 +15,7 @@ from github_project_sync.sync import (
     SyncError,
     create_story_issue,
     run_sync,
+    set_feature_runtime_status,
     show_story_status,
     sync_story,
 )
@@ -128,7 +129,7 @@ def test_created_case_sets_status_and_priority_fields(tmp_path: Path) -> None:
     result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
 
     item_id = gh.items and next(iter(gh.items))
-    assert gh.items[item_id]["F_STATUS"] == "S_Accepted"
+    assert gh.items[item_id]["F_STATUS"] == "S_Todo"  # Baseline Accepted -> Todo (ADR 0037)
     assert gh.items[item_id]["F_PRIO"] == "P_Niedrig"
     assert result.specs[0].priority_warning is None
 
@@ -146,6 +147,213 @@ def test_missing_priority_for_open_spec_yields_warning_but_still_syncs(tmp_path:
     assert result.specs[0].classification == "created"
     assert result.specs[0].priority_warning is not None
     assert "0031" in result.specs[0].priority_warning
+
+
+# -- Baseline+Override (Spec 0060 / ADR 0037, Abschnitte 1-2/5) --------------------------------
+
+
+def test_created_case_proposed_status_maps_to_todo_baseline(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Proposed")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
+    )
+    gh = FakeGhAdapter()
+
+    run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    item_id = next(iter(gh.items))
+    assert gh.items[item_id]["F_STATUS"] == "S_Todo"
+
+
+def test_created_case_implemented_status_maps_to_done_baseline(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Implemented")},
+        roadmap=_roadmap_text(),
+    )
+    gh = FakeGhAdapter()
+
+    run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    item_id = next(iter(gh.items))
+    assert gh.items[item_id]["F_STATUS"] == "S_Done"
+
+
+def test_stored_runtime_override_wins_over_todo_baseline(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry["runtime_status"] = "In Progress"
+    entry["pr_number"] = None
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
+        state={"0031": entry},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+
+    run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_In Progress"
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    # Override bleibt fuer den naechsten Lauf erhalten, solange die Baseline "Todo" bleibt:
+    assert state.features["0031"].runtime_status == "In Progress"
+
+
+def test_runtime_override_defensively_cleared_once_baseline_becomes_done(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry["runtime_status"] = "Review"
+    entry["pr_number"] = 55
+
+    repo_root = _make_repo(
+        tmp_path,
+        # Datei-Status ist jetzt (unabhaengig von einer Merge-Erkennung) bereits "Implemented" -
+        # ein stehengebliebener Override darf die Baseline "Done" nie mehr verfeinern.
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Implemented", ziel="Text.")},
+        roadmap=_roadmap_text(),
+        state={"0031": entry},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+
+    run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Done"
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.features["0031"].runtime_status is None
+    assert state.features["0031"].pr_number is None
+
+
+# -- Automatische PR-Merge-Erkennung -> "Done" (Spec 0060 / ADR 0037, Abschnitt 5) --------------
+
+
+def test_merged_pr_finalizes_spec_to_implemented_and_pushes_done(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry["runtime_status"] = "Review"
+    entry["pr_number"] = 101
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(),
+        state={"0031": entry},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+    gh.seed_pull_request(
+        101, state="merged", url="https://github.com/TheRealKoller/photosort/pull/101"
+    )
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    spec_result = result.specs[0]
+    assert spec_result.finalized_from_pr == 101
+
+    spec_text = (repo_root / "specs" / "features" / "0031-x.md").read_text(encoding="utf-8")
+    expected_status_line = (
+        "**Status:** Implemented ([PR #101](https://github.com/TheRealKoller/photosort/pull/101))"
+    )
+    assert expected_status_line in spec_text
+    assert "## Ziel" in spec_text  # Inhalts-Zone unangetastet
+
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Done"
+    assert gh.issue(42).state == "closed"  # Implemented -> nativer Issue-Zustand zu
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.features["0031"].runtime_status is None
+    assert state.features["0031"].pr_number is None
+
+
+def test_open_pr_does_not_finalize_spec_yet(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry["runtime_status"] = "Review"
+    entry["pr_number"] = 101
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(),
+        state={"0031": entry},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+    gh.seed_pull_request(101, state="open")
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.specs[0].finalized_from_pr is None
+    spec_text = (repo_root / "specs" / "features" / "0031-x.md").read_text(encoding="utf-8")
+    assert "**Status:** Accepted" in spec_text
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Review"
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.features["0031"].runtime_status == "Review"
+    assert state.features["0031"].pr_number == 101
+
+
+def test_merge_detection_not_triggered_without_review_override(tmp_path: Path) -> None:
+    # Guard-Bedingung: stored_entry.runtime_status muss exakt "Review" sein - ein "In Progress"-
+    # Override (auch mit zufaellig gesetztem pr_number) darf gh.get_pull_request() nie aufrufen.
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry["runtime_status"] = "In Progress"
+    entry["pr_number"] = None
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(),
+        state={"0031": entry},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+    # Kein seed_pull_request() - ein Aufruf wuerde GhAdapterError werfen und den Test scheitern
+    # lassen.
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.specs[0].finalized_from_pr is None
+
+
+def test_merge_detection_not_triggered_when_spec_status_is_not_accepted(tmp_path: Path) -> None:
+    # Guard-Bedingung: status == "Accepted" - eine bereits "Superseded"-Spec mit stehengebliebenem
+    # Review-Override darf gh.get_pull_request() nie aufrufen.
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Superseded", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry["runtime_status"] = "Review"
+    entry["pr_number"] = 101
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Superseded", ziel="Text.")},
+        roadmap=_roadmap_text(),
+        state={"0031": entry},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone), state="closed")
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.specs[0].finalized_from_pr is None
 
 
 def _drop_field_option(
@@ -179,7 +387,9 @@ def test_missing_status_option_aborts_with_sync_error_instead_of_silent_no_op(
     gh = FakeGhAdapter()
     project = gh.ensure_project()
     fields = gh.ensure_fields(project)
-    gh.fields = _drop_field_option(fields, field_name="status", option_name="Accepted")
+    # Seit Spec 0060 / ADR 0037: "Accepted" ist kein Board-Wert mehr, der gepushte Wert ist die
+    # Baseline "Todo" - die fehlende Option muss deshalb hier simuliert werden, nicht "Accepted".
+    gh.fields = _drop_field_option(fields, field_name="status", option_name="Todo")
 
     with pytest.raises(SyncError, match="Status"):
         run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
@@ -884,15 +1094,15 @@ def test_sync_story_sets_status_and_body_and_pushes_priority_from_roadmap(
         repo_root=repo_root,
         gh=gh,
         issue_number=215,
-        status="Story",
+        status="Ready",
         body="## Ziel\n\nNeuer Inhalt.\n",
         now=lambda: _FIXED_NOW,
     )
 
-    assert result["status"] == "Story"
+    assert result["status"] == "Ready"
     assert result["priority"] == "Niedrig"
     assert gh.issue(215).body == "## Ziel\n\nNeuer Inhalt.\n"
-    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Story"
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Ready"
     assert gh.items["ITEM_1"]["F_PRIO"] == "P_Niedrig"
 
     state = load_state(repo_root / "specs" / ".github-sync-state.json")
@@ -955,6 +1165,60 @@ def test_sync_story_rejects_unknown_status(tmp_path: Path) -> None:
         sync_story(repo_root=repo_root, gh=gh, issue_number=215, status="VoelligUnbekannt")
 
 
+@pytest.mark.parametrize("status", ["Todo", "In Progress", "Review"])
+def test_sync_story_rejects_feature_only_board_statuses(tmp_path: Path, status: str) -> None:
+    # Seit Spec 0060 / ADR 0037, Abschnitt 6: die Statuswert-Validierung fuer Stories ist auf
+    # {"Unrefined", "Ready", "Done"} verengt - die drei neuen Umsetzungsfortschritt-Werte sind
+    # nur fuer Feature-Specs sinnvoll (kein Baseline/Override-Modell fuer dateilose Stories).
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(215, body="Text.")
+
+    with pytest.raises(SyncError):
+        sync_story(repo_root=repo_root, gh=gh, issue_number=215, status=status)
+
+
+def test_sync_story_done_closes_the_issue(tmp_path: Path) -> None:
+    # Abschnitt 6: eine ohne technische Umsetzung verworfene Story wird bei --status Done
+    # zusaetzlich geschlossen (sync_story() ist der einzige Ort, der das nativ tut).
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(215, body="Text.", state="open")
+    gh.items["ITEM_1"] = {}
+
+    sync_story(repo_root=repo_root, gh=gh, issue_number=215, status="Done", now=lambda: _FIXED_NOW)
+
+    assert gh.issue(215).state == "closed"
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Done"
+
+
+def test_sync_story_ready_status_does_not_close_the_issue(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={},
+        roadmap=_roadmap_text(),
+        stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(215, body="Text.", state="open")
+
+    sync_story(
+        repo_root=repo_root, gh=gh, issue_number=215, status="Ready", now=lambda: _FIXED_NOW
+    )
+
+    assert gh.issue(215).state == "open"
+
+
 # -- Dateiloser Story-Pfad: --only issue:NNN --show-status (rein lesend) -----------------------
 
 
@@ -969,14 +1233,14 @@ def test_show_story_status_returns_current_status_without_changing_anything(tmp_
     gh.seed_issue(215, body="Text.")
     project = gh.ensure_project()
     fields = gh.ensure_fields(project)
-    gh.items["ITEM_1"] = {fields.status_field_id: fields.status_options["Story"]}
+    gh.items["ITEM_1"] = {fields.status_field_id: fields.status_options["Ready"]}
 
     status = show_story_status(repo_root=repo_root, gh=gh, issue_number=215)
 
-    assert status == "Story"
+    assert status == "Ready"
     # Rein lesend - Issue/Item unveraendert:
     assert gh.issue(215).body == "Text."
-    assert gh.items["ITEM_1"][fields.status_field_id] == fields.status_options["Story"]
+    assert gh.items["ITEM_1"][fields.status_field_id] == fields.status_options["Ready"]
 
 
 def test_show_story_status_raises_for_unknown_issue(tmp_path: Path) -> None:
@@ -1033,7 +1297,7 @@ def test_adopt_issue_migrates_story_state_into_features_and_writes_marker(tmp_pa
 
     issue = gh.issue(215)
     assert issue.body.startswith("<!-- photosort-spec: 0052 -->")
-    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Accepted"
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Todo"  # Baseline Accepted -> Todo (ADR 0037)
     assert gh.items["ITEM_1"]["F_PRIO"] == "P_Niedrig"
 
     state = load_state(repo_root / "specs" / ".github-sync-state.json")
@@ -1162,3 +1426,132 @@ def test_full_run_with_only_scope_does_not_touch_issue_priorities(tmp_path: Path
     run_sync(repo_root=repo_root, gh=gh, only="0032", now=lambda: _FIXED_NOW)
 
     assert "F_PRIO" not in gh.items["ITEM_STORY"]
+
+
+# -- set_feature_runtime_status() (--only NNNN --runtime-status ...): leichtgewichtiger,
+# zielgerichteter Schreibzugriff ohne vollen Content-Abgleich (Spec 0060 / ADR 0037, Abschnitt 3) -
+
+
+def test_set_feature_runtime_status_sets_in_progress_when_baseline_is_todo(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
+        state={
+            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+    gh.items["ITEM_1"] = {}
+
+    result = set_feature_runtime_status(
+        repo_root=repo_root,
+        gh=gh,
+        spec_number="0031",
+        runtime_status="In Progress",
+        now=lambda: _FIXED_NOW,
+    )
+
+    assert result == {"spec_number": "0031", "runtime_status": "In Progress", "pr_number": None}
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_In Progress"
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.features["0031"].runtime_status == "In Progress"
+    assert state.features["0031"].pr_number is None
+    assert state.features["0031"].last_synced_at == _FIXED_NOW
+    # Hashes bleiben unangetastet - kein voller Content-Abgleich:
+    assert state.features["0031"].pushed_state_hash == push_hash
+    assert state.features["0031"].pulled_body_hash == pull_hash
+
+
+def test_set_feature_runtime_status_sets_review_with_pr_number(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(),
+        state={
+            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+    gh.items["ITEM_1"] = {}
+
+    result = set_feature_runtime_status(
+        repo_root=repo_root,
+        gh=gh,
+        spec_number="0031",
+        runtime_status="Review",
+        pr_number=101,
+        now=lambda: _FIXED_NOW,
+    )
+
+    assert result == {"spec_number": "0031", "runtime_status": "Review", "pr_number": 101}
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Review"
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.features["0031"].runtime_status == "Review"
+    assert state.features["0031"].pr_number == 101
+
+
+def test_set_feature_runtime_status_raises_when_baseline_is_not_todo(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Implemented", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Implemented", ziel="Text.")},
+        roadmap=_roadmap_text(),
+        state={
+            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone), state="closed")
+
+    with pytest.raises(SyncError, match="Todo"):
+        set_feature_runtime_status(
+            repo_root=repo_root, gh=gh, spec_number="0031", runtime_status="In Progress"
+        )
+
+
+def test_set_feature_runtime_status_raises_when_no_state_entry_exists(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
+        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
+    )
+    gh = FakeGhAdapter()
+
+    with pytest.raises(SyncError):
+        set_feature_runtime_status(
+            repo_root=repo_root, gh=gh, spec_number="0031", runtime_status="In Progress"
+        )
+
+
+def test_set_feature_runtime_status_rejects_unknown_value(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(),
+        state={
+            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+
+    with pytest.raises(SyncError):
+        set_feature_runtime_status(
+            repo_root=repo_root, gh=gh, spec_number="0031", runtime_status="Done"
+        )

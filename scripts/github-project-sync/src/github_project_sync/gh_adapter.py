@@ -45,6 +45,16 @@ class ProjectFields:
 
 
 @dataclass(frozen=True)
+class PullRequestView:
+    """Minimaler Ausschnitt aus `gh pr view` - Grundlage der automatischen PR-Merge-Erkennung
+    fuer "Done" (Spec 0060 / ADR 0037, Abschnitt 5). `state` ist einer von
+    "open"/"closed"/"merged" (lowercase, analog zu IssueView.state)."""
+
+    state: str
+    url: str
+
+
+@dataclass(frozen=True)
 class IssueView:
     number: int
     body: str
@@ -74,6 +84,8 @@ class GhAdapter(Protocol):
     def ensure_fields(self, project: Project) -> ProjectFields: ...
 
     def get_issue(self, issue_number: int) -> IssueView: ...
+
+    def get_pull_request(self, pr_number: int) -> PullRequestView: ...
 
     def create_issue(self, title: str, body: str) -> int: ...
 
@@ -123,8 +135,14 @@ def _default_run(args: list[str]) -> subprocess.CompletedProcess[str]:
 # einmaligen, manuellen Migrationsschritt wie beim Einfuehren von "Unrefined" selbst (ADR 0030,
 # Abschnitt 3: Feld loeschen, mit den fuenf neuen Optionen neu anlegen, kein automatischer
 # Dauerbetrieb-Reparaturpfad).
+# Seit Spec 0060 / ADR decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-
+# erkennung.md, Abschnitt 1: sechs Board-Werte statt fuenf - "Story" wird zu "Ready"
+# umbenannt (inhaltlich unveraendert), "Proposed" verschwindet als Board-Wert vollstaendig
+# (bleibt Datei-intern in specs/README.md), neu "Todo"/"In Progress"/"Review" fuer den
+# granuleren Umsetzungsfortschritt. Erfordert denselben einmaligen, manuellen
+# Migrationsschritt wie jede vorherige Aenderung dieser Liste (ADR 0030, Abschnitt 3).
 STATUS_FIELD_NAME = "Status"
-STATUS_OPTIONS = ["Unrefined", "Story", "Proposed", "Accepted", "Implemented"]
+STATUS_OPTIONS = ["Unrefined", "Ready", "Todo", "In Progress", "Review", "Done"]
 PRIORITY_FIELD_NAME = "Priorität"
 PRIORITY_OPTIONS = ["Hoch", "Mittel", "Niedrig"]
 DEFAULT_PROJECT_TITLE = "PhotoSort Roadmap"
@@ -287,6 +305,10 @@ class GhCliAdapter:
             url=data.get("url", ""),
             labels=frozenset(label["name"] for label in data.get("labels", [])),
         )
+
+    def get_pull_request(self, pr_number: int) -> PullRequestView:
+        data = self._run_json(["gh", "pr", "view", str(pr_number), "--json", "state,url"])
+        return PullRequestView(state=str(data["state"]).lower(), url=data.get("url", ""))
 
     def _with_body_file(self, body: str, build_args: Callable[[str], list[str]]) -> str:
         with tempfile.NamedTemporaryFile(
