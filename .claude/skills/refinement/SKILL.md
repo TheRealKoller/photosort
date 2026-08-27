@@ -46,25 +46,38 @@ Das Ziel ist nicht erschöpfende Recherche, sondern genug, um echte Konflikte un
 
 Wenn die Recherche aus Schritt 3 etwas zutage fördert, das der ursprünglichen Vorstellung widerspricht oder eine neue Frage aufwirft (z.B. "die Idee setzt X voraus, aber im Code/in Spec Y ist das anders gelöst"), frag genau danach nach — nicht raten oder die Idee stillschweigend anpassen. Wenn nach Schritt 1 bis 3 wirklich nichts unklar ist, diesen Schritt einfach überspringen.
 
-## Schritt 5: Kritisch hinterfragen (Devil's Advocate)
+## Schritt 5: Lohnenswert-Gate (Devil's Advocate)
 
-Bevor irgendetwas geschrieben wird, stell dich bewusst gegen die Idee — jede Idee sollte ein wenig Gegenwind aushalten müssen, sonst ist sie nicht wirklich geprüft. Nütz­liche Angriffspunkte:
+Dieser Schritt ist ein **eigenständiges Gate mit explizitem Urteil**, kein zur Ergebnisformulierung gehörender Abschluss-Handgriff. Er läuft **immer** und hat genau zwei mögliche Ausgänge: "hält stand" oder "verworfen". Stell dich bewusst gegen die Idee — jede Idee muss echten Gegenwind aushalten, sonst ist sie nicht wirklich geprüft.
 
-- Gibt es einen einfacheren Weg zum selben Ergebnis?
-- Was ist der Aufwand im Verhältnis zum Nutzen — lohnt sich das wirklich jetzt?
-- Was passiert im Fehlerfall / bei Edge Cases, die die Idee bisher nicht berücksichtigt?
-- Steht das im Widerspruch zu einer bestehenden Priorität oder einem MVP-Zuschnitt (z.B. aus `specs/decisions/`)?
-- Wer genau braucht das, und was passiert, wenn man es einfach nicht baut?
+**Prüfkatalog — mindestens diese vier Fragen einzeln beantworten:**
 
-Das ist keine Formalität — wenn die Idee unter der Prüfung merklich schwächer wird oder sich ändert, ist das ein gutes Ergebnis: schärfen oder verwerfen, statt schönreden. Erst wenn die Idee (ggf. in angepasster Form) plausibel Stand hält, geht es weiter.
+- **(a) Echtes, benennbares Problem?** Löst die Idee ein konkret benennbares Problem, das jemand tatsächlich hat — oder nur ein vermutetes/hypothetisches?
+- **(b) Aufwand vs. Nutzen — jetzt?** Steht der Aufwand im Verhältnis zum Nutzen, und lohnt sich das *jetzt* (nicht "irgendwann vielleicht")?
+- **(c) Einfacherer Weg?** Gibt es einen einfacheren Weg zum selben Ergebnis (bestehende Funktion, Konfiguration, Verzicht auf einen Teilaspekt)?
+- **(d) Widerspruch zu bestehender Festlegung?** Steht die Idee im Widerspruch zu einer bestehenden Priorität, einem MVP-Zuschnitt oder einer bestehenden Entscheidung in `specs/decisions/` bzw. `specs/roadmap.md`?
 
-**Entscheidet sich Daniel hier für "verwerfen"** (die Idee hält der Prüfung nicht stand, z.B. weil sie obsolet geworden ist oder ein einfacherer Weg existiert): kein Schritt 6 nötig, stattdessen das Issue direkt ohne technische Umsetzung schließen (ADR [`decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md`](../../../specs/decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md), Abschnitt 6):
+Ergänzend nützlich, aber nicht verpflichtend: Was passiert im Fehlerfall / bei bisher nicht berücksichtigten Edge Cases? Wer genau braucht das, und was passiert, wenn man es einfach nicht baut?
 
-```bash
-PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only issue:<NNN> --status Done
-```
+**Verpflichtendes Urteil als eigener Satz.** Formuliere am Ende des Schritts explizit eines von beiden — kein implizites Weitergleiten:
 
-Das setzt das Board-Statusfeld auf `Done` und schließt das Issue nativ — derselbe Statuswert wie bei einer tatsächlich umgesetzten Story, da es dafür kein eigenes, unterscheidbares Signal gibt (ADR 0037, Begründung).
+- "Die Idee hält stand." → weiter zu Schritt 6.
+- "Die Idee hält nicht stand → verworfen." → Verwerfen-Pfad unten, **kein** Schritt 6, **kein** Setzen auf `Ready`.
+
+Wird die Idee unter der Prüfung merklich schwächer oder ändert sich, ist das ein gutes Ergebnis: schärfen (dann erneut gegen den Katalog prüfen) oder verwerfen — nicht schönreden. Bei "hält stand" nach Anpassung wird das Urteil auf die angepasste Fassung bezogen.
+
+**Verwerfen-Pfad ("verworfen"):**
+
+1. **Begründung sichtbar festhalten, bevor irgendein Status gesetzt wird:** Halte die Verwerf-Begründung (welche Katalog-Frage(n) die Idee nicht bestanden hat, mit kurzer Erläuterung — deine eigene Synthese, kein wörtliches Echo unvalidierten Issue-Texts) sichtbar am Issue fest: als Issue-Kommentar oder als kurzer Abschnitt im Issue-Body. Diese dokumentierte Begründung muss vorliegen, **bevor** der folgende Aufruf das Issue schließt.
+2. **Erst danach** das Issue ohne technische Umsetzung schließen:
+
+   ```bash
+   PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only issue:<NNN> --status Done
+   ```
+
+   Das setzt das Board-Statusfeld auf `Done` und schließt das Issue nativ. Es wird **nicht** auf `Ready` gesetzt — eine verworfene Idee wird nicht an `spec-writer` durchgereicht.
+
+`requirements-engineer` (Schritt 2, Roadmap-Einordnung) bleibt von diesem Gate unberührt und läuft unabhängig davon immer.
 
 ## Schritt 6: Ergebnis in den Issue-Body schreiben
 
