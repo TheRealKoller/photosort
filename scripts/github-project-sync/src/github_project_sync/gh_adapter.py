@@ -427,12 +427,14 @@ class GhCliAdapter:
     ) -> str | None:
         # Grundlage fuer "--show-status" (Spec 0059 / ADR 0036, Abschnitt 5): rein lesender
         # Zugriff auf den aktuellen Anzeigenamen eines Single-Select-Feldwerts. "gh project
-        # item-list" liefert pro Item die konfigurierten Feldwerte direkt als Klartext unter dem
-        # exakten Feldnamen (z.B. {"Status": "Story"}) - anders als beim Schreiben braucht das
-        # Lesen keine interne Options-Id (die liefert "gh project item-list" nicht). Wie beim
-        # bereits bestehenden ensure_label()-Pagination-Kommentar unten: "--limit 100" ist nicht
-        # paginiert, bei aktuell < 100 Project-Items unkritisch. Nicht in CI gegen echtes gh
-        # verifiziert (siehe Modul-Docstring), nur manuell vor dem Rollout.
+        # item-list" liefert pro Item die konfigurierten Feldwerte als Klartext, aber unter dem
+        # klein geschriebenen Feldnamen (z.B. {"status": "Story"}, verifiziert gegen echtes gh
+        # 2.x) - unabhaengig davon, wie das Feld im Project selbst geschrieben ist (z.B.
+        # "Priorität" -> Key "priorität"). Deshalb hier bewusst .lower() auf field_name.
+        # Anders als beim Schreiben braucht das Lesen keine interne Options-Id (die liefert
+        # "gh project item-list" nicht). Wie beim bereits bestehenden ensure_label()-Pagination-
+        # Kommentar unten: "--limit 100" ist nicht paginiert, bei aktuell < 100 Project-Items
+        # unkritisch.
         data = self._run_json(
             [
                 "gh",
@@ -449,7 +451,7 @@ class GhCliAdapter:
         )
         for item in data.get("items", []):
             if item.get("id") == item_id:
-                value = item.get(field_name)
+                value = item.get(field_name.lower())
                 return str(value) if value not in (None, "") else None
         raise GhAdapterError(
             f"Project-Item {item_id!r} nicht in 'gh project item-list' gefunden (Project "

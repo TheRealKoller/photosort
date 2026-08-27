@@ -456,13 +456,15 @@ def test_set_issue_labels_no_op_when_nothing_to_change() -> None:
 
 
 def test_get_item_field_value_returns_current_option_display_name() -> None:
+    # "gh project item-list --format json" liefert Feldwerte unter dem klein geschriebenen
+    # Feldnamen (verifiziert gegen echtes gh 2.x), unabhaengig von der Schreibweise im Project.
     run = _FakeRun(
         [
             _ok(
                 {
                     "items": [
-                        {"id": "ITEM_1", "Status": "Story", "title": "issue-215"},
-                        {"id": "ITEM_2", "Status": "Proposed", "title": "issue-42"},
+                        {"id": "ITEM_1", "status": "Story", "title": "issue-215"},
+                        {"id": "ITEM_2", "status": "Proposed", "title": "issue-42"},
                     ]
                 }
             )
