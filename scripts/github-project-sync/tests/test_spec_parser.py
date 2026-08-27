@@ -10,6 +10,7 @@ from github_project_sync.spec_parser import (
     parse_spec_file,
     parse_spec_text,
     replace_content_zone,
+    set_status_line,
     validate_spec_number,
 )
 
@@ -175,6 +176,97 @@ def test_parse_spec_text_status_extracts_only_leading_keyword(
     parsed = parse_spec_text(_spec_with_status_line(status_line))
 
     assert parsed.status == expected
+
+
+# -- set_status_line() (Spec 0060 / ADR 0037, Abschnitt 5): Merge-Erkennung schreibt den finalen
+# "Implemented ([PR #NNN](url))"-Freitext in den Header, analog zu replace_content_zone() aber
+# fuer den Header statt die Inhalts-Zone. ------------------------------------------------------
+
+
+def test_set_status_line_replaces_status_keyword_only() -> None:
+    result = set_status_line(SAMPLE, "Implemented")
+
+    assert "**Status:** Implemented\n" in result
+    assert "**Status:** Accepted" not in result
+
+
+def test_set_status_line_accepts_full_freetext_value_with_pr_link() -> None:
+    new_status = "Implemented ([PR #101](https://github.com/TheRealKoller/photosort/pull/101))"
+
+    result = set_status_line(SAMPLE, new_status)
+
+    assert f"**Status:** {new_status}\n" in result
+
+
+def test_set_status_line_keeps_everything_else_untouched() -> None:
+    result = set_status_line(SAMPLE, "Implemented")
+
+    assert result.startswith("# 0031 -")
+    assert "**Erstellt:** 2026-08-09" in result
+    assert "## Ziel" in result
+    assert "Als Daniel möchte ich ..." in result
+
+
+def test_set_status_line_raises_when_no_status_field_found() -> None:
+    text = "# 0031 - Titel\n\n**Erstellt:** 2026-08-09\n\n## Ziel\n\nfoo\n"
+
+    with pytest.raises(SpecParseError):
+        set_status_line(text, "Implemented")
+
+
+def test_set_status_line_raises_when_status_missing_in_header_even_if_present_in_content_zone() -> (
+    None
+):
+    # Copilot-Review-Finding auf PR #229: _STATUS_LINE_RE.search() suchte bisher ueber den
+    # GESAMTEN Text statt nur den Header - fehlt das "**Status:**"-Feld im Header, aber die
+    # Inhalts-Zone enthaelt eine Zeile, die mit "**Status:**" beginnt, wurde diese bisher
+    # faelschlich als Treffer gewertet und ueberschrieben statt eines SpecParseError.
+    text = (
+        "# 0031 - Titel\n\n"
+        "**Erstellt:** 2026-08-09\n\n"
+        "## Beispiel\n\n"
+        "**Status:** Accepted\n"
+    )
+
+    with pytest.raises(SpecParseError):
+        set_status_line(text, "Implemented")
+
+
+def test_set_status_line_raises_when_no_content_zone_found() -> None:
+    # Konsistent mit replace_content_zone(): set_status_line() setzt wie diese Schwesterfunktion
+    # eine vorhandene Inhalts-Zone voraus, statt bei ihrem Fehlen den gesamten Text als "Header"
+    # zu behandeln (vermeidet einen mehrdeutigen Fallback fuer einen in der Praxis nie
+    # vorkommenden, malformten Zustand).
+    text = "# 0031 - Titel\n\n**Status:** Accepted\n**Erstellt:** 2026-08-09\n"
+
+    with pytest.raises(SpecParseError):
+        set_status_line(text, "Implemented")
+
+
+def test_set_status_line_ignores_status_occurrence_in_content_zone() -> None:
+    # Regressionstest (test-engineer, Testkonzept "Erweiterung fuer ADR 0037"): diese Spec
+    # handelt selbst ueber das "**Status:**"-Feld, ihre eigene Inhalts-Zone enthaelt deshalb
+    # naheliegenderweise weitere Vorkommen einer Zeile, die (wie der echte Header) mit
+    # "**Status:**" beginnt (z.B. als zitiertes Beispiel eines Metadaten-Blocks) -
+    # set_status_line() darf ausschliesslich die erste, tatsaechliche Header-Zeile ersetzen.
+    text = (
+        "# 0060 - Status-Lebenszyklus\n\n"
+        "**Status:** Accepted\n"
+        "**Erstellt:** 2026-08-27\n\n"
+        "## Beispiel\n\n"
+        "Ein Metadaten-Block sieht z.B. so aus:\n\n"
+        "**Status:** Implemented ([PR #101](https://example.com/pull/101))\n"
+    )
+
+    result = set_status_line(text, "Implemented ([PR #200](https://example.com/pull/200))")
+
+    header, _, content_zone = result.partition("## Beispiel")
+    assert header.count("**Status:**") == 1
+    assert "**Status:** Implemented ([PR #200](https://example.com/pull/200))" in header
+    # Die Inhalts-Zone bleibt unangetastet - inkl. ihres eigenen "**Status:**"-Vorkommens, das
+    # NICHT auf den neuen Wert umgeschrieben werden darf:
+    assert content_zone.count("**Status:**") == 1
+    assert "**Status:** Implemented ([PR #101](https://example.com/pull/101))" in content_zone
 
 
 def test_parsed_spec_is_frozen_dataclass() -> None:

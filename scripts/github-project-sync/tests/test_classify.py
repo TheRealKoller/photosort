@@ -31,3 +31,27 @@ def test_pulled_when_only_pull_hash_differs() -> None:
 
 def test_conflict_when_both_hashes_differ() -> None:
     assert classify(_state(), push_hash_now="p2", pull_hash_now="b2") == "conflict"
+
+
+def test_sync_state_entry_runtime_override_fields_default_to_none() -> None:
+    # Seit Spec 0060 / ADR 0037, Abschnitt 2: neue, optionale Laufzeit-Override-Felder - eine
+    # Spec, die noch nie ueber --runtime-status gesetzt wurde, hat beide auf None.
+    entry = _state()
+
+    assert entry.runtime_status is None
+    assert entry.pr_number is None
+
+
+def test_sync_state_entry_accepts_runtime_override_fields() -> None:
+    entry = SyncStateEntry(
+        issue_number=42,
+        item_id="item-1",
+        pushed_state_hash="p1",
+        pulled_body_hash="b1",
+        last_synced_at="2026-08-09T00:00:00Z",
+        runtime_status="Review",
+        pr_number=101,
+    )
+
+    assert entry.runtime_status == "Review"
+    assert entry.pr_number == 101

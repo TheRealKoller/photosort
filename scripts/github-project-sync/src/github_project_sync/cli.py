@@ -27,6 +27,7 @@ from github_project_sync.sync import (
     SyncRunResult,
     create_story_issue,
     run_sync,
+    set_feature_runtime_status,
     show_story_status,
     sync_story,
 )
@@ -35,6 +36,7 @@ GhFactory = Callable[[str], GhAdapter]
 
 _RESOLUTION_VALUES = {"keep_spec", "keep_issue"}
 _ISSUE_ONLY_PREFIX = "issue:"
+_RUNTIME_STATUS_CHOICES = ["In Progress", "Review"]
 # Mit Spec 0059 entfernter Inbox-Pfad (ADR 0036) - beide Werte werden weiterhin erkannt, um eine
 # praezise Fehlermeldung statt eines generischen/kryptischen Fehlschlags zu liefern, falls ein
 # altes Skript/eine alte Doku-Stelle sie noch aufruft (siehe main()).
@@ -99,6 +101,7 @@ def _result_to_dict(result: SyncRunResult) -> dict[str, object]:
                     else None
                 ),
                 "pulled_content_zone": r.pulled_content_zone,
+                "finalized_from_pr": r.finalized_from_pr,
             }
             for r in result.specs
         ],
@@ -183,6 +186,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Nur den aktuellen Status lesen, nichts veraendern (erfordert --only issue:NNN).",
     )
     parser.add_argument(
+        "--runtime-status",
+        choices=_RUNTIME_STATUS_CHOICES,
+        default=None,
+        help=(
+            "Laufzeit-Override fuer eine bereits getrackte Feature-Spec setzen (nur mit "
+            "--only NNNN, bare Feature-Scope). 'Review' erfordert zusaetzlich --pr-number."
+        ),
+    )
+    parser.add_argument(
+        "--pr-number",
+        type=int,
+        default=None,
+        metavar="NNN",
+        help="Pull-Request-Nummer, nur zusammen mit --runtime-status 'Review'.",
+    )
+    parser.add_argument(
         "--owner",
         default="TheRealKoller",
         help="GitHub-Owner des Projects (Default: TheRealKoller).",
@@ -253,6 +272,27 @@ def main(argv: Sequence[str] | None = None, *, gh_factory: GhFactory = _default_
             )
             print(json.dumps({"issue_number": issue_number}, ensure_ascii=False))
             return 0
+
+        if args.runtime_status is not None:
+            if args.only is None or args.only.startswith(_ISSUE_ONLY_PREFIX):
+                raise SyncError(
+                    "--runtime-status erfordert --only NNNN (bare Feature-Scope, kein "
+                    "issue:NNN-Story-Scope)."
+                )
+            if args.runtime_status == "Review" and args.pr_number is None:
+                raise SyncError("--runtime-status 'Review' erfordert zusaetzlich --pr-number.")
+            runtime_result = set_feature_runtime_status(
+                repo_root=repo_root,
+                gh=gh,
+                spec_number=args.only,
+                runtime_status=args.runtime_status,
+                pr_number=args.pr_number,
+            )
+            print(json.dumps(runtime_result, ensure_ascii=False))
+            return 0
+
+        if args.pr_number is not None:
+            raise SyncError("--pr-number erfordert --runtime-status 'Review'.")
 
         if args.only is not None and args.only.startswith(_ISSUE_ONLY_PREFIX):
             issue_number = _parse_issue_only(args.only)

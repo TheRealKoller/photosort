@@ -126,8 +126,13 @@ Inhaltlich unverändert gegenüber dem bisherigen `developer.md` Schritt 7, nur 
 1. Falls seit dem letzten Zwischencommit noch uncommittete Änderungen bestehen: committen, mit der im Projekt üblichen Commit-Konvention (siehe `CLAUDE.md`, Conventional Commits).
 2. Push den Feature-Branch (`git push -u origin <branch>`), nicht `main`.
 3. Eröffne einen PR mit `gh pr create`. Halte dich an eine vorhandene `.github/pull_request_template.md`, sonst mindestens: Bezug zur Spec/zum Issue, kurze Zusammenfassung (Was und Warum), Testplan/was geprüft wurde.
-4. Aktualisiere den Spec-Status in `specs/features/` von `Accepted` auf `Implemented` mit Verweis auf den PR, falls das Projekt diesen Lifecycle nutzt (siehe `specs/README.md`) — als Teil desselben oder eines direkt folgenden Commits.
-5. Aktualisiere den zugehörigen Eintrag in `specs/roadmap.md` auf `Implemented` — reine Status-Synchronisation, kein Agenten-Aufruf nötig.
+4. Setz direkt danach das Board-Statusfeld der Spec auf `Review` (ADR [`decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md`](../../../specs/decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md), Abschnitt 4):
+
+   ```bash
+   PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --runtime-status "Review" --pr-number <PR-Nummer>
+   ```
+
+   Ein früherer, verfrühter `Implemented`-Bump von Spec-Status/Roadmap-Eintrag direkt nach der PR-Erstellung entfällt ersatzlos (ADR 0037, Abschnitt 4) — die eigentliche Finalisierung (`Implemented`, Roadmap-Zeile verschieben) übernimmt seit ADR 0037 die automatische PR-Merge-Erkennung beim nächsten regulären `github-project-sync`-Lauf, siehe `.claude/skills/github-project-sync/SKILL.md` (Fall `finalized_from_pr`).
 
 ## Schritt 8: Copilot-Review anfordern und auswerten
 

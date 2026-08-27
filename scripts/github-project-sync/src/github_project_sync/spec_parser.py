@@ -23,6 +23,10 @@ _H1_RE = re.compile(r"^#\s+(\d{4})\s*-\s*(.+?)\s*$", re.MULTILINE)
 # vorherige Fassung uebernahm die komplette Zeile, wodurch sync.py's Status-Validierung fuer
 # praktisch den gesamten Bestand bereits abgeschlossener Specs scheiterte.
 _STATUS_RE = re.compile(r"^\*\*Status:\*\*\s*([A-Za-z]+)", re.MULTILINE)
+# Fuer set_status_line(): die komplette Status-Zeile (nicht nur das fuehrende Schluesselwort wie
+# bei _STATUS_RE oben), damit sie sich als Ganzes durch einen neuen Freitextwert ersetzen laesst
+# (z.B. "Implemented ([PR #101](...))", siehe ADR decisions/0037, Abschnitt 5).
+_STATUS_LINE_RE = re.compile(r"^\*\*Status:\*\*.*$", re.MULTILINE)
 _CONTENT_ZONE_START_RE = re.compile(r"^## ", re.MULTILINE)
 
 
@@ -112,3 +116,34 @@ def replace_content_zone(original_text: str, new_content_zone: str) -> str:
     header = original_text[: content_match.start()].rstrip("\n") + "\n"
     zone = new_content_zone if new_content_zone.endswith("\n") else new_content_zone + "\n"
     return header + "\n" + zone
+
+
+def set_status_line(original_text: str, new_status: str) -> str:
+    """Ersetzt nur die '**Status:**'-Header-Zeile durch einen neuen Freitextwert.
+
+    Analog zu replace_content_zone(), aber fuer den Header statt die Inhalts-Zone - genutzt von
+    der automatischen PR-Merge-Erkennung (sync.py::_sync_one(), ADR decisions/0037, Abschnitt 5),
+    um die Status-Zeile z.B. auf "Implemented ([PR #101](...))" umzuschreiben. new_status ist der
+    komplette neue Wert (nicht nur ein Schluesselwort) - alles andere in der Datei bleibt
+    unangetastet.
+
+    Copilot-Review-Finding auf PR #229: Suche/Ersetzung muessen strikt auf den Header (den Teil
+    VOR der ersten '## '-Ueberschrift) beschraenkt bleiben, analog zu replace_content_zone()/
+    parse_spec_text() - sonst wuerde ein '**Status:**'-Vorkommen in der Inhalts-Zone (z.B. ein
+    zitiertes Beispiel eines Metadaten-Blocks) faelschlich getroffen, falls der Header selbst aus
+    irgendeinem Grund kein gueltiges Feld enthaelt.
+    """
+    content_match = _CONTENT_ZONE_START_RE.search(original_text)
+    if content_match is None:
+        raise SpecParseError("keine Inhalts-Zone (erste '## '-Ueberschrift) gefunden.")
+
+    header = original_text[: content_match.start()]
+    rest = original_text[content_match.start() :]
+
+    if _STATUS_LINE_RE.search(header) is None:
+        raise SpecParseError("kein '**Status:**'-Metadaten-Feld im Header gefunden.")
+
+    new_header = _STATUS_LINE_RE.sub(
+        lambda _match: f"**Status:** {new_status}", header, count=1
+    )
+    return new_header + rest

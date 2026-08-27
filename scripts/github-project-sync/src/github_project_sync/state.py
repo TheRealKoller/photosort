@@ -83,6 +83,8 @@ def _parse_namespace(raw: Mapping[str, dict]) -> StateDict:
             pushed_state_hash=entry["pushed_state_hash"],
             pulled_body_hash=entry["pulled_body_hash"],
             last_synced_at=entry["last_synced_at"],
+            runtime_status=entry.get("runtime_status"),
+            pr_number=entry.get("pr_number"),
         )
     return state
 
@@ -140,6 +142,8 @@ def _serialize_namespace(state: Mapping[str, SyncStateEntry]) -> dict:
             "pushed_state_hash": entry.pushed_state_hash,
             "pulled_body_hash": entry.pulled_body_hash,
             "last_synced_at": entry.last_synced_at,
+            "runtime_status": entry.runtime_status,
+            "pr_number": entry.pr_number,
         }
         for number, entry in sorted(state.items())
     }
