@@ -43,19 +43,19 @@ Aufgabengebiet und ein zugehöriges, lebendes Konzept-Dokument unter
 | `research-engineer` | Strukturierte, quellenbelegte Web-Recherche — direkt für Daniel oder delegiert von den fünf anderen Agenten während ihrer eigenen Arbeit | — (kein eigenes Konzept-Dokument, siehe unten) |
 
 Eine rohe Idee durchläuft seit ADR 0036 zwei getrennte Skills statt eines einzigen: `capture`
-hält sie sofort ungefiltert als GitHub-Issue fest (Status `Unrefined`), `story-refiner`
+hält sie sofort ungefiltert als GitHub-Issue fest (Status `Unrefined`), `refinement`
 übernimmt danach die rein fachliche Schärfung (Verständnis, Roadmap-Einordnung über
 `requirements-engineer`, Code-/Spec-Konfliktprüfung, Devil's Advocate) und schreibt Ziel/User
 Story/Akzeptanzkriterien direkt in den Issue-Body (Status `Ready`) — ohne technische Details
 und ohne lokale Zwischendatei. Erst wenn eine Story tatsächlich umgesetzt werden soll, zieht der
-stark reduzierte `idea-sharpener` die übrigen drei Fachspezialisten (Architektur, UI/UX,
+stark reduzierte `spec-writer` die übrigen drei Fachspezialisten (Architektur, UI/UX,
 Test/Security) hinzu und legt die akzeptierte Feature-Spec an, wobei er das bestehende Issue
 adoptiert statt ein neues anzulegen. Der `developer`-Agent setzt eine akzeptierte Spec
 testgetrieben um und übergibt danach per fest formatiertem Abschlussbericht an den Orchestrator
 (Skill `ship-feature`), der sie von allen zutreffenden Spezialisten parallel reviewen lässt, den
 Pull Request eröffnet und das Copilot-Review anfordert/auswertet — siehe ADR 0024:
 
-![Workflow-Übersicht: Erfassen/Schärfen (capture, story-refiner), Verfeinern (idea-sharpener) und Umsetzen (developer + ship-feature)](../specs/diagrams/workflow-overview.svg)
+![Workflow-Übersicht: Erfassen/Schärfen (capture, refinement), Verfeinern (spec-writer) und Umsetzen (developer + ship-feature)](../specs/diagrams/workflow-overview.svg)
 
 <sub>\* `security-engineer`, `architect` und `ux-ui-designer` reviewen nur, wenn ihr jeweiliger Trigger aus ADR 0014 zutrifft (z.B. Auth-/Secrets-Pfade, neue Abhängigkeiten bzw. Frontend-/UI-Änderungen); `test-engineer`/`requirements-engineer` bilden die faktisch unbedingte Basis. Review, Pull-Request-Erstellung und Copilot-Review führt seit ADR 0024 der Orchestrator (Skill `ship-feature`) aus, nicht mehr `developer` selbst.</sub>
 
@@ -108,13 +108,13 @@ Qualität spürbar verschlechtern, führt das zu einer neuen, ADR 0014/0024 abl�
 einem stillschweigenden Unterlaufen der Tabelle.
 
 Dieselbe Kosten-Logik wurde auf den Verfeinerungs-Ablauf selbst ausgeweitet
-([ADR 0018](../specs/decisions/0018-idea-sharpener-kalibrierung-und-skip-logik.md), ohne ADR 0014
-zu ändern; seit ADR 0036 auf zwei Skills verteilt): In `story-refiner` laufen die Konsultation
+([ADR 0018](../specs/decisions/0018-spec-writer-kalibrierung-und-skip-logik.md), ohne ADR 0014
+zu ändern; seit ADR 0036 auf zwei Skills verteilt): In `refinement` laufen die Konsultation
 von `requirements-engineer` sowie die beiden optionalen Explore-Agenten mit Haiku statt Standard
-und immer (keine Skip-Option). In `idea-sharpener` läuft `ux-ui-designer` ebenfalls mit Haiku,
+und immer (keine Skip-Option). In `spec-writer` läuft `ux-ui-designer` ebenfalls mit Haiku,
 während `architect`, `test-engineer` und `security-engineer` beim Standardmodell bleiben.
 Zusätzlich steht vor jeder `architect`/`ux-ui-designer`/`test-engineer`/`security-engineer`-
-Konsultation in `idea-sharpener` je eine eng gefasste, dokumentationspflichtige Ja/Nein-Skip-Frage
+Konsultation in `spec-writer` je eine eng gefasste, dokumentationspflichtige Ja/Nein-Skip-Frage
 — urteilsbasiert statt mechanisch, da vor der eigentlichen Umsetzung noch kein Diff existiert, mit
 demselben Sicherheitsnetz "im Zweifel eher konsultieren" wie in ADR 0014.
 

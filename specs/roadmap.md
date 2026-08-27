@@ -11,7 +11,7 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs und Story-
 | Spec | Titel | Status |
 |---|---|---|
 | [0057](./features/0057-docker-compose-env-vars-landmark-mistral.md) | Docker-Compose: LANDMARK_PROVIDER und MISTRAL_API_KEY durchreichen | Accepted |
-| [#230](https://github.com/TheRealKoller/photosort/issues/230) | Kosteneffizientere Ideen-Pipeline: härtere Vorfilterung in story-refiner + gelockertes Konsultations-Sicherheitsnetz in idea-sharpener | Ready |
+| [#230](https://github.com/TheRealKoller/photosort/issues/230) | Kosteneffizientere Ideen-Pipeline: härtere Vorfilterung in refinement + gelockertes Konsultations-Sicherheitsnetz in spec-writer | Ready |
 | [#224](https://github.com/TheRealKoller/photosort/issues/224) | Roadmap.md entfernen, Priorität direkt im GitHub-Project-Board pflegen | Story |
 
 ### Offen — Mittel
@@ -32,7 +32,7 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs und Story-
 
 ### Inbox — ungeschärfte Ideen
 
-Frisch erfasste, noch nicht fachlich verfeinerte Ideen/Bugs entstehen direkt als GitHub-Issue (`capture`-Skill, Status `Unrefined`) und sind ausschließlich auf dem GitHub-Project-Board sichtbar — sie erscheinen hier nicht, bis sie per `story-refiner` zu einer Story verfeinert wurden (Status `Story`, ab dann mit Priorität in den Tabellen oben). Zwei historische Ausnahmen bleiben als lokale Dateien bestehen (nicht Teil dieser Umsetzung, siehe ADR 0036): [0027](./inbox/0027-ai-workflow-ueberarbeiten.md), [0031](./inbox/0031-spec-nummern-github-projekt-angleichen.md).
+Frisch erfasste, noch nicht fachlich verfeinerte Ideen/Bugs entstehen direkt als GitHub-Issue (`capture`-Skill, Status `Unrefined`) und sind ausschließlich auf dem GitHub-Project-Board sichtbar — sie erscheinen hier nicht, bis sie per `refinement` zu einer Story verfeinert wurden (Status `Ready`, ab dann mit Priorität in den Tabellen oben). Zwei historische Ausnahmen bleiben als lokale Dateien bestehen (nicht Teil dieser Umsetzung, siehe ADR 0036): [0027](./inbox/0027-ai-workflow-ueberarbeiten.md), [0031](./inbox/0031-spec-nummern-github-projekt-angleichen.md).
 
 ### Bereits umgesetzt
 

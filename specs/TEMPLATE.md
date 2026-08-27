@@ -23,15 +23,15 @@ Betroffene/neue Entitäten, Verweis auf [`docs/architecture.md`](../docs/archite
 
 ## Architektur / Umsetzung
 
-Vom `architect`-Agenten ausgefüllt (siehe `idea-sharpener`-Ablauf): gewählter technischer Ansatz, betroffene/neue Komponenten, Verweis auf ggf. neue ADR in `specs/decisions/`. Grundlage für die Umsetzungsplanung im `developer`-Agenten.
+Vom `architect`-Agenten ausgefüllt (siehe `spec-writer`-Ablauf): gewählter technischer Ansatz, betroffene/neue Komponenten, Verweis auf ggf. neue ADR in `specs/decisions/`. Grundlage für die Umsetzungsplanung im `developer`-Agenten.
 
 ## UI/UX
 
-Vom `ux-ui-designer`-Agenten ausgefüllt (siehe `idea-sharpener`-Ablauf). Bei fehlender sichtbarer Oberfläche: "nicht relevant" eintragen statt den Abschnitt leer zu lassen oder wegzulassen.
+Vom `ux-ui-designer`-Agenten ausgefüllt (siehe `spec-writer`-Ablauf). Bei fehlender sichtbarer Oberfläche: "nicht relevant" eintragen statt den Abschnitt leer zu lassen oder wegzulassen.
 
 ## Security
 
-Vom `security-engineer`-Agenten ausgefüllt (siehe `idea-sharpener`-Ablauf). Bei fehlender Sicherheitsrelevanz: "nicht relevant" eintragen statt den Abschnitt leer zu lassen oder wegzulassen.
+Vom `security-engineer`-Agenten ausgefüllt (siehe `spec-writer`-Ablauf). Bei fehlender Sicherheitsrelevanz: "nicht relevant" eintragen statt den Abschnitt leer zu lassen oder wegzulassen.
 
 ## Offene Fragen
 
