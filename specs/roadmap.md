@@ -19,7 +19,7 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs und Story-
 |---|---|---|
 | [0056](./features/0056-structured-logging-cloud-vision-errors.md) | Strukturiertes Logging für Cloud-Vision-Fehler (Landmark + Remote-Kategorie) | Accepted |
 | [0058](./features/0058-cloud-vision-status-transparenz.md) | Cloud-Vision-Status-Transparenz in den Foto-Details | Accepted |
-| [#222](https://github.com/TheRealKoller/photosort/issues/222) | Status-Lebenszyklus: Umsetzungsfortschritt statt Proposed/Accepted (Ready/Todo/In Progress/Review/Done) | Story |
+| [0060](./features/0060-status-lebenszyklus-umsetzungsfortschritt.md) | Status-Lebenszyklus mit Umsetzungsfortschritt (Ready/Todo/In Progress/Review/Done) | Accepted |
 
 ### Offen — Niedrig
 
