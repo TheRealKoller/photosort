@@ -214,6 +214,35 @@ def test_set_status_line_raises_when_no_status_field_found() -> None:
         set_status_line(text, "Implemented")
 
 
+def test_set_status_line_raises_when_status_missing_in_header_even_if_present_in_content_zone() -> (
+    None
+):
+    # Copilot-Review-Finding auf PR #229: _STATUS_LINE_RE.search() suchte bisher ueber den
+    # GESAMTEN Text statt nur den Header - fehlt das "**Status:**"-Feld im Header, aber die
+    # Inhalts-Zone enthaelt eine Zeile, die mit "**Status:**" beginnt, wurde diese bisher
+    # faelschlich als Treffer gewertet und ueberschrieben statt eines SpecParseError.
+    text = (
+        "# 0031 - Titel\n\n"
+        "**Erstellt:** 2026-08-09\n\n"
+        "## Beispiel\n\n"
+        "**Status:** Accepted\n"
+    )
+
+    with pytest.raises(SpecParseError):
+        set_status_line(text, "Implemented")
+
+
+def test_set_status_line_raises_when_no_content_zone_found() -> None:
+    # Konsistent mit replace_content_zone(): set_status_line() setzt wie diese Schwesterfunktion
+    # eine vorhandene Inhalts-Zone voraus, statt bei ihrem Fehlen den gesamten Text als "Header"
+    # zu behandeln (vermeidet einen mehrdeutigen Fallback fuer einen in der Praxis nie
+    # vorkommenden, malformten Zustand).
+    text = "# 0031 - Titel\n\n**Status:** Accepted\n**Erstellt:** 2026-08-09\n"
+
+    with pytest.raises(SpecParseError):
+        set_status_line(text, "Implemented")
+
+
 def test_set_status_line_ignores_status_occurrence_in_content_zone() -> None:
     # Regressionstest (test-engineer, Testkonzept "Erweiterung fuer ADR 0037"): diese Spec
     # handelt selbst ueber das "**Status:**"-Feld, ihre eigene Inhalts-Zone enthaelt deshalb

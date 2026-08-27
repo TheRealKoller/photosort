@@ -1598,3 +1598,60 @@ def test_set_feature_runtime_status_rejects_unknown_value(tmp_path: Path) -> Non
         set_feature_runtime_status(
             repo_root=repo_root, gh=gh, spec_number="0031", runtime_status="Done"
         )
+
+
+def test_set_feature_runtime_status_review_requires_pr_number(tmp_path: Path) -> None:
+    # Copilot-Review-Finding auf PR #229: bisher erzwang nur cli.py "Review braucht pr_number" -
+    # die Funktion selbst akzeptierte jede Kombination, was einen inkonsistenten State-Eintrag
+    # (runtime_status="Review" ohne pr_number) erzeugen und die spaetere Merge-Erkennung in
+    # _sync_one() verhindern konnte (deren Guard-Bedingung pr_number is not None voraussetzt).
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(),
+        state={
+            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+
+    with pytest.raises(SyncError, match="pr_number|PR-Nummer"):
+        set_feature_runtime_status(
+            repo_root=repo_root, gh=gh, spec_number="0031", runtime_status="Review"
+        )
+
+    # Kein State-Eintrag mit inkonsistenter Kombination geschrieben:
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.features["0031"].runtime_status is None
+
+
+def test_set_feature_runtime_status_in_progress_rejects_pr_number(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        roadmap=_roadmap_text(),
+        state={
+            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+
+    with pytest.raises(SyncError, match="pr_number|PR-Nummer"):
+        set_feature_runtime_status(
+            repo_root=repo_root,
+            gh=gh,
+            spec_number="0031",
+            runtime_status="In Progress",
+            pr_number=101,
+        )
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.features["0031"].runtime_status is None

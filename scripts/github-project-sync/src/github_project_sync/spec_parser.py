@@ -126,7 +126,24 @@ def set_status_line(original_text: str, new_status: str) -> str:
     um die Status-Zeile z.B. auf "Implemented ([PR #101](...))" umzuschreiben. new_status ist der
     komplette neue Wert (nicht nur ein Schluesselwort) - alles andere in der Datei bleibt
     unangetastet.
+
+    Copilot-Review-Finding auf PR #229: Suche/Ersetzung muessen strikt auf den Header (den Teil
+    VOR der ersten '## '-Ueberschrift) beschraenkt bleiben, analog zu replace_content_zone()/
+    parse_spec_text() - sonst wuerde ein '**Status:**'-Vorkommen in der Inhalts-Zone (z.B. ein
+    zitiertes Beispiel eines Metadaten-Blocks) faelschlich getroffen, falls der Header selbst aus
+    irgendeinem Grund kein gueltiges Feld enthaelt.
     """
-    if _STATUS_LINE_RE.search(original_text) is None:
-        raise SpecParseError("kein '**Status:**'-Metadaten-Feld gefunden.")
-    return _STATUS_LINE_RE.sub(lambda _match: f"**Status:** {new_status}", original_text, count=1)
+    content_match = _CONTENT_ZONE_START_RE.search(original_text)
+    if content_match is None:
+        raise SpecParseError("keine Inhalts-Zone (erste '## '-Ueberschrift) gefunden.")
+
+    header = original_text[: content_match.start()]
+    rest = original_text[content_match.start() :]
+
+    if _STATUS_LINE_RE.search(header) is None:
+        raise SpecParseError("kein '**Status:**'-Metadaten-Feld im Header gefunden.")
+
+    new_header = _STATUS_LINE_RE.sub(
+        lambda _match: f"**Status:** {new_status}", header, count=1
+    )
+    return new_header + rest

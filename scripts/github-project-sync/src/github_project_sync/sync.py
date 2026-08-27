@@ -730,6 +730,15 @@ def set_feature_runtime_status(
             f"Ungueltiger Laufzeit-Status {runtime_status!r} (erwartet einen von "
             f"{sorted(_RUNTIME_OVERRIDE_STATUSES)})."
         )
+    # Copilot-Review-Finding auf PR #229: Defense-in-Depth - dieselbe Validierung wie in cli.py,
+    # direkt in der Funktion selbst, unabhaengig davon, ob sie kuenftig von anderer Stelle ohne
+    # den CLI-Umweg aufgerufen wird. Ein inkonsistenter State-Eintrag (z.B. runtime_status=
+    # "Review" ohne pr_number) wuerde sonst die Merge-Erkennung in _sync_one() verhindern (deren
+    # Guard-Bedingung pr_number is not None voraussetzt).
+    if runtime_status == "Review" and pr_number is None:
+        raise SyncError("--runtime-status 'Review' erfordert zusaetzlich eine pr_number.")
+    if runtime_status == "In Progress" and pr_number is not None:
+        raise SyncError("--runtime-status 'In Progress' erlaubt keine pr_number.")
 
     state_path = repo_root / "specs" / ".github-sync-state.json"
     features_dir = repo_root / "specs" / "features"
