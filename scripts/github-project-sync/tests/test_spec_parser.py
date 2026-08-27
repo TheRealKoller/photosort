@@ -10,6 +10,7 @@ from github_project_sync.spec_parser import (
     parse_spec_file,
     parse_spec_text,
     replace_content_zone,
+    set_status_line,
     validate_spec_number,
 )
 
@@ -175,6 +176,42 @@ def test_parse_spec_text_status_extracts_only_leading_keyword(
     parsed = parse_spec_text(_spec_with_status_line(status_line))
 
     assert parsed.status == expected
+
+
+# -- set_status_line() (Spec 0060 / ADR 0037, Abschnitt 5): Merge-Erkennung schreibt den finalen
+# "Implemented ([PR #NNN](url))"-Freitext in den Header, analog zu replace_content_zone() aber
+# fuer den Header statt die Inhalts-Zone. ------------------------------------------------------
+
+
+def test_set_status_line_replaces_status_keyword_only() -> None:
+    result = set_status_line(SAMPLE, "Implemented")
+
+    assert "**Status:** Implemented\n" in result
+    assert "**Status:** Accepted" not in result
+
+
+def test_set_status_line_accepts_full_freetext_value_with_pr_link() -> None:
+    new_status = "Implemented ([PR #101](https://github.com/TheRealKoller/photosort/pull/101))"
+
+    result = set_status_line(SAMPLE, new_status)
+
+    assert f"**Status:** {new_status}\n" in result
+
+
+def test_set_status_line_keeps_everything_else_untouched() -> None:
+    result = set_status_line(SAMPLE, "Implemented")
+
+    assert result.startswith("# 0031 -")
+    assert "**Erstellt:** 2026-08-09" in result
+    assert "## Ziel" in result
+    assert "Als Daniel möchte ich ..." in result
+
+
+def test_set_status_line_raises_when_no_status_field_found() -> None:
+    text = "# 0031 - Titel\n\n**Erstellt:** 2026-08-09\n\n## Ziel\n\nfoo\n"
+
+    with pytest.raises(SpecParseError):
+        set_status_line(text, "Implemented")
 
 
 def test_parsed_spec_is_frozen_dataclass() -> None:
