@@ -1,6 +1,6 @@
 # 0060 - Status-Lebenszyklus mit Umsetzungsfortschritt (Ready/Todo/In Progress/Review/Done)
 
-**Status:** Accepted
+**Status:** Implemented ([PR #229](https://github.com/TheRealKoller/photosort/pull/229))
 **Erstellt:** 2026-08-27
 **Bezug:** GitHub-Issue [`#222`](https://github.com/TheRealKoller/photosort/issues/222) ("Status-Lebenszyklus: Umsetzungsfortschritt statt Proposed/Accepted"), `architect`/`test-engineer`/`security-engineer`-Konsultation im `idea-sharpener`-Ablauf am 2026-08-27. Löst [ADR 0037](../decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md) um; diese ADR löst Abschnitt 2 von [ADR 0036](../decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md) ab (alle übrigen Abschnitte von ADR 0036 bleiben unverändert gültig).
 

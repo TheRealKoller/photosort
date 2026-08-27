@@ -534,11 +534,11 @@
     "0060": {
       "issue_number": 222,
       "item_id": "PVTI_lAHOAdvbTs4Bg-8xzg4KVAA",
-      "pushed_state_hash": "1c596795eae35f83c58554c1ca299c0c44652581346d8d3ce4f29d523caf7a9a",
+      "pushed_state_hash": "c206827e59c1cc23c4630ee8160cb6ba259b7d390c2d554b55c239fe979847f7",
       "pulled_body_hash": "8b81d01aecee2c09f49975a0916601e8d1b252d03024bebe099d22ecca8de223",
-      "last_synced_at": "2026-08-27T16:08:23.635932+00:00",
-      "runtime_status": "Review",
-      "pr_number": 229
+      "last_synced_at": "2026-08-27T16:35:24.749440+00:00",
+      "runtime_status": null,
+      "pr_number": null
     }
   },
   "stories": {
