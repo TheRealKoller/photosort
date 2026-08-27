@@ -214,6 +214,32 @@ def test_set_status_line_raises_when_no_status_field_found() -> None:
         set_status_line(text, "Implemented")
 
 
+def test_set_status_line_ignores_status_occurrence_in_content_zone() -> None:
+    # Regressionstest (test-engineer, Testkonzept "Erweiterung fuer ADR 0037"): diese Spec
+    # handelt selbst ueber das "**Status:**"-Feld, ihre eigene Inhalts-Zone enthaelt deshalb
+    # naheliegenderweise weitere Vorkommen einer Zeile, die (wie der echte Header) mit
+    # "**Status:**" beginnt (z.B. als zitiertes Beispiel eines Metadaten-Blocks) -
+    # set_status_line() darf ausschliesslich die erste, tatsaechliche Header-Zeile ersetzen.
+    text = (
+        "# 0060 - Status-Lebenszyklus\n\n"
+        "**Status:** Accepted\n"
+        "**Erstellt:** 2026-08-27\n\n"
+        "## Beispiel\n\n"
+        "Ein Metadaten-Block sieht z.B. so aus:\n\n"
+        "**Status:** Implemented ([PR #101](https://example.com/pull/101))\n"
+    )
+
+    result = set_status_line(text, "Implemented ([PR #200](https://example.com/pull/200))")
+
+    header, _, content_zone = result.partition("## Beispiel")
+    assert header.count("**Status:**") == 1
+    assert "**Status:** Implemented ([PR #200](https://example.com/pull/200))" in header
+    # Die Inhalts-Zone bleibt unangetastet - inkl. ihres eigenen "**Status:**"-Vorkommens, das
+    # NICHT auf den neuen Wert umgeschrieben werden darf:
+    assert content_zone.count("**Status:**") == 1
+    assert "**Status:** Implemented ([PR #101](https://example.com/pull/101))" in content_zone
+
+
 def test_parsed_spec_is_frozen_dataclass() -> None:
     import dataclasses
 

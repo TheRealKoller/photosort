@@ -356,6 +356,49 @@ def test_merge_detection_not_triggered_when_spec_status_is_not_accepted(tmp_path
     assert result.specs[0].finalized_from_pr is None
 
 
+def test_merge_detection_error_aborts_only_that_spec_not_the_whole_run(tmp_path: Path) -> None:
+    # Regressionstest fuer ein Review-Finding (test-engineer): gh.get_pull_request() lief bisher
+    # ohne Error-Handling - ein GhAdapterError (PR nicht auffindbar, gh-CLI-Fehler) haette den
+    # gesamten Mehr-Spec-Lauf per Exception abgebrochen, statt (wie bei ungueltigem Status/
+    # Marker-Integritaet bereits etabliert) nur diese eine Spec mit aborted_reason zu markieren.
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    broken_entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    broken_entry["runtime_status"] = "Review"
+    broken_entry["pr_number"] = 999  # bewusst nicht per seed_pull_request() bekannt gemacht
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={
+            "0031": _spec_text("0031", "Kaputte Spec", "Accepted", ziel="Text."),
+            "0032": _spec_text("0032", "Gesunde Spec", "Accepted"),
+        },
+        roadmap=_roadmap_text(niedrig=[("0032", "Gesunde Spec")]),
+        state={"0031": broken_entry},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+    # Kein seed_pull_request(999) - gh.get_pull_request(999) wirft GhAdapterError.
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    broken = next(r for r in result.specs if r.number == "0031")
+    assert broken.classification is None
+    assert broken.aborted_reason is not None
+    assert "999" in broken.aborted_reason
+
+    healthy = next(r for r in result.specs if r.number == "0032")
+    assert healthy.classification == "created"
+    assert healthy.issue_number is not None
+
+    # Der State-Eintrag der kaputten Spec bleibt unveraendert - ein erneuter Lauf versucht die
+    # Merge-Erkennung erneut, sobald der zugrundeliegende Fehler behoben ist (idempotent).
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.features["0031"].runtime_status == "Review"
+    assert state.features["0031"].pr_number == 999
+
+
 def _drop_field_option(
     fields: ProjectFields, *, field_name: str, option_name: str
 ) -> ProjectFields:

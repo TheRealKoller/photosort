@@ -28,6 +28,7 @@ from github_project_sync.classify import SyncClassification, SyncStateEntry, cla
 from github_project_sync.gh_adapter import (
     STATUS_FIELD_NAME,
     GhAdapter,
+    GhAdapterError,
     Project,
     ProjectFields,
 )
@@ -248,8 +249,10 @@ def _apply_fields(
         # gewinnt sie immer, unabhaengig davon, was runtime_status noch traegt (der Aufrufer
         # muss den State-Eintrag dafuer nicht separat "kennen").
         baseline = _BOARD_STATUS_BASELINE[status]
-        use_override = runtime_status is not None and baseline == "Todo"
-        board_status = runtime_status if use_override else baseline
+        if runtime_status is not None and baseline == "Todo":
+            board_status = runtime_status
+        else:
+            board_status = baseline
         _apply_status_only(gh, project, fields, item_id, status=board_status)
 
     _apply_priority_only(gh, project, fields, item_id, priority)
@@ -285,7 +288,25 @@ def _sync_one(
         and stored_entry.runtime_status == "Review"
         and stored_entry.pr_number is not None
     ):
-        pull_request = gh.get_pull_request(stored_entry.pr_number)
+        try:
+            pull_request = gh.get_pull_request(stored_entry.pr_number)
+        except GhAdapterError as exc:
+            # Wie bei ungueltigem Status/Marker-Integritaet (unten): ein Problem, das nur diese
+            # eine Spec betrifft (PR nicht auffindbar, gh-CLI-Fehler, Rate-Limit), darf nicht
+            # den gesamten Mehr-Spec-Lauf per Exception toeten. stored_entry bleibt unveraendert -
+            # ein erneuter Lauf versucht die Merge-Erkennung erneut, sobald behoben (idempotent).
+            result = SpecSyncResult(
+                number=number,
+                title=title,
+                issue_number=stored_entry.issue_number,
+                classification=None,
+                aborted_reason=(
+                    f"PR-Merge-Erkennung fuer Spec {number} fehlgeschlagen (PR "
+                    f"#{stored_entry.pr_number}): {exc}. Sync fuer diese Spec abgebrochen, "
+                    "andere Specs sind unbeeinflusst."
+                ),
+            )
+            return result, stored_entry
         if pull_request.state == "merged":
             new_status_line = f"Implemented ([PR #{stored_entry.pr_number}]({pull_request.url}))"
             full_text = set_status_line(full_text, new_status_line)
