@@ -11,6 +11,7 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs und Story-
 | Spec | Titel | Status |
 |---|---|---|
 | [0057](./features/0057-docker-compose-env-vars-landmark-mistral.md) | Docker-Compose: LANDMARK_PROVIDER und MISTRAL_API_KEY durchreichen | Accepted |
+| [#230](https://github.com/TheRealKoller/photosort/issues/230) | Kosteneffizientere Ideen-Pipeline: härtere Vorfilterung in story-refiner + gelockertes Konsultations-Sicherheitsnetz in idea-sharpener | Ready |
 | [#224](https://github.com/TheRealKoller/photosort/issues/224) | Roadmap.md entfernen, Priorität direkt im GitHub-Project-Board pflegen | Story |
 
 ### Offen — Mittel
