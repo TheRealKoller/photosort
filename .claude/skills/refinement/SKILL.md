@@ -68,8 +68,9 @@ Wird die Idee unter der Prüfung merklich schwächer oder ändert sich, ist das 
 
 **Verwerfen-Pfad ("verworfen"):**
 
-1. **Begründung sichtbar festhalten, bevor irgendein Status gesetzt wird:** Halte die Verwerf-Begründung (welche Katalog-Frage(n) die Idee nicht bestanden hat, mit kurzer Erläuterung — deine eigene Synthese, kein wörtliches Echo unvalidierten Issue-Texts) sichtbar am Issue fest: als Issue-Kommentar oder als kurzer Abschnitt im Issue-Body. Diese dokumentierte Begründung muss vorliegen, **bevor** der folgende Aufruf das Issue schließt.
-2. **Erst danach** das Issue ohne technische Umsetzung schließen:
+1. **Urteil Daniel vorlegen, bevor die irreversible Board-Aktion läuft:** Leg dein Verworfen-Urteil samt Begründung Daniel einmal im Chat vor und führe den `--status Done`-Aufruf erst aus, wenn er nicht widerspricht — das Urteil bleibt deines, es wird nur vor dem schwer umkehrbaren, außenwirksamen Issue-Close sichtbar gemacht.
+2. **Begründung sichtbar festhalten, bevor irgendein Status gesetzt wird:** Halte die Verwerf-Begründung (welche Katalog-Frage(n) die Idee nicht bestanden hat, mit kurzer Erläuterung — deine eigene Synthese, kein wörtliches Echo unvalidierten Issue-Texts) sichtbar am Issue fest: als Issue-Kommentar oder als kurzer Abschnitt im Issue-Body. Diese dokumentierte Begründung muss vorliegen, **bevor** der folgende Aufruf das Issue schließt.
+3. **Erst danach** das Issue ohne technische Umsetzung schließen:
 
    ```bash
    PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only issue:<NNN> --status Done
