@@ -1,6 +1,6 @@
 ---
 name: github-project-sync
-description: Zwei-Wege-Sync zwischen den Feature-Specs unter `specs/features/*.md` (Status/Priorität) und einem gemeinsamen GitHub Project (V2) — Status/Priorität gehen immer einseitig von Spec/`specs/roadmap.md` zum Board, inhaltliche Änderungen, die Daniel direkt in einem GitHub-Issue vorgenommen hat, fließen zurück in die jeweilige Spec-Datei. Zusätzlich der dateilose Story-Pfad (`--create-issue`, `--only issue:NNN`, `--show-status`, `--adopt-issue`) für Story-Issues ohne lokale Datei. Nutze diesen Skill, wenn Daniel danach fragt, mit GitHub zu syncen ("sync jetzt mit GitHub", "gleich das GitHub-Board ab", "schau nach, ob ich unterwegs was im Issue geändert habe", o.ä.), oder wenn `idea-sharpener` am Ende des Story→Spec-Übergangs automatisch `--adopt-issue` aufruft. Führt selbst keine Anforderungsbewertung durch (das übernimmt bei zurückgespielten Inhalten `requirements-engineer`) und löst Konflikte nie automatisch auf.
+description: Zwei-Wege-Sync zwischen den Feature-Specs unter `specs/features/*.md` (Status/Priorität) und einem gemeinsamen GitHub Project (V2) — Status/Priorität gehen immer einseitig von Spec/`specs/roadmap.md` zum Board, inhaltliche Änderungen, die Daniel direkt in einem GitHub-Issue vorgenommen hat, fließen zurück in die jeweilige Spec-Datei. Zusätzlich der dateilose Story-Pfad (`--create-issue`, `--only issue:NNN`, `--show-status`, `--adopt-issue`) für Story-Issues ohne lokale Datei. Nutze diesen Skill, wenn Daniel danach fragt, mit GitHub zu syncen ("sync jetzt mit GitHub", "gleich das GitHub-Board ab", "schau nach, ob ich unterwegs was im Issue geändert habe", o.ä.), oder wenn `spec-writer` am Ende des Story→Spec-Übergangs automatisch `--adopt-issue` aufruft. Führt selbst keine Anforderungsbewertung durch (das übernimmt bei zurückgespielten Inhalten `requirements-engineer`) und löst Konflikte nie automatisch auf.
 ---
 
 # GitHub Project Sync — mechanischer Zwei-Wege-Abgleich
@@ -19,7 +19,7 @@ PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync [--onl
 
 `--only NNNN` (nackte Zahl) synct nur diese eine Feature-Spec. Ohne `--only` läuft ein voller Durchlauf über alle `specs/features/*.md` und pusht zusätzlich die Priorität für jede issue-referenzierte Story-Zeile aus `specs/roadmap.md`.
 
-`--adopt-issue MMM` nur zusammen mit `--only NNNN` setzen, wenn die frisch angelegte Spec `NNNN` aus dem Story-Issue `MMM` hervorgegangen ist (siehe `.claude/skills/idea-sharpener/SKILL.md`, letzter Schritt) — adoptiert das bestehende Issue (kein neues Issue, kein Verlust von Historie/Labels), schreibt erstmals den Marker-Kommentar `<!-- photosort-spec: NNNN -->` plus den vollen Spec-Inhalt in den Issue-Body und setzt den Spec-Datei-Status auf `Accepted` (Board-Feld zeigt dafür die Baseline `Todo`, siehe unten).
+`--adopt-issue MMM` nur zusammen mit `--only NNNN` setzen, wenn die frisch angelegte Spec `NNNN` aus dem Story-Issue `MMM` hervorgegangen ist (siehe `.claude/skills/spec-writer/SKILL.md`, letzter Schritt) — adoptiert das bestehende Issue (kein neues Issue, kein Verlust von Historie/Labels), schreibt erstmals den Marker-Kommentar `<!-- photosort-spec: NNNN -->` plus den vollen Spec-Inhalt in den Issue-Body und setzt den Spec-Datei-Status auf `Accepted` (Board-Feld zeigt dafür die Baseline `Todo`, siehe unten).
 
 Die Ausgabe ist ein einziges JSON-Objekt auf stdout: entweder `{"error": "..."}` oder `{"specs": [...], "orphaned": [...], "adopted": {...} | null}` (siehe `scripts/github-project-sync/src/github_project_sync/cli.py` für das genaue Format). Jeder Eintrag in `specs` hat seit Spec 0060 zusätzlich das Feld `finalized_from_pr` (siehe unten).
 
@@ -78,7 +78,7 @@ Für jede Spec mit `classification == "pulled"` (Inhalt wurde bereits mechanisch
 
 ## Dateiloser Story-Pfad (kein Pull/Konflikt-Handling)
 
-Diese drei Modi adressieren ein Story-Issue ausschließlich über seine Nummer (kein lokales File) und werden i.d.R. nicht direkt von Daniel angefragt, sondern von `capture`/`story-refiner`/`idea-sharpener` selbst aufgerufen — siehe dort für den jeweiligen Aufrufkontext:
+Diese drei Modi adressieren ein Story-Issue ausschließlich über seine Nummer (kein lokales File) und werden i.d.R. nicht direkt von Daniel angefragt, sondern von `capture`/`refinement`/`spec-writer` selbst aufgerufen — siehe dort für den jeweiligen Aufrufkontext:
 
 - **`--create-issue --type idee|bug --title TITLE --body-file PATH`**: legt ein neues Story-Issue an (Status `Unrefined`). Gibt `{"issue_number": NNN}` zurück.
 - **`--only issue:NNN [--status Ready|Unrefined|Done] [--body-file PATH]`**: aktualisiert optional Body/Status eines bestehenden Story-Issues, pusht in jedem Fall die aus `roadmap.md` neu berechnete Priorität. Gibt `{"issue_number": NNN, "status": ..., "priority": ...}` zurück. `--status Done` schließt das Issue zusätzlich nativ (ADR 0037, Abschnitt 6 — deckt sowohl eine tatsächlich umgesetzte als auch eine ohne Umsetzung verworfene Story ab, kein eigener Statuswert für den Unterschied).

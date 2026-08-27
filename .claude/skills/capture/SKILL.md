@@ -1,13 +1,13 @@
 ---
 name: capture
-description: Hält eine neue Idee oder einen (vermeintlichen) Bug schnell und ungefiltert als GitHub-Issue fest — ohne Rückfragen, ohne Recherche, ohne Schärfen/Challengen (das passiert erst später, separat, über `story-refiner`). Nutze diesen Skill SOFORT, wenn der Nutzer erkennbar nur festhalten will, nicht besprechen — z.B. "notier das für später", "halt das mal fest", "das ist erstmal nur eine Idee", "ich glaube da ist ein Bug, schreib's auf", "leg das in die Inbox", "quick note:". NICHT nutzen, wenn der Nutzer eine Idee direkt besprechen/ausarbeiten will (dafür `story-refiner`) oder einen klaren, trivialen Bug sofort behoben haben will.
+description: Hält eine neue Idee oder einen (vermeintlichen) Bug schnell und ungefiltert als GitHub-Issue fest — ohne Rückfragen, ohne Recherche, ohne Schärfen/Challengen (das passiert erst später, separat, über `refinement`). Nutze diesen Skill SOFORT, wenn der Nutzer erkennbar nur festhalten will, nicht besprechen — z.B. "notier das für später", "halt das mal fest", "das ist erstmal nur eine Idee", "ich glaube da ist ein Bug, schreib's auf", "leg das in die Inbox", "quick note:". NICHT nutzen, wenn der Nutzer eine Idee direkt besprechen/ausarbeiten will (dafür `refinement`) oder einen klaren, trivialen Bug sofort behoben haben will.
 ---
 
 # Capture — Idee oder Bug schnell als GitHub-Issue festhalten
 
-Der Sinn dieses Skills ist Geschwindigkeit: eine Idee oder ein (vermeintlicher) Bug wird roh festgehalten, ohne sie im selben Moment zu bewerten, zu hinterfragen oder auszuarbeiten — das übernimmt später `story-refiner`. Stell deshalb **keine** inhaltlichen Rückfragen zur Sache selbst (kein "warum", kein "für wen", keine Recherche im Code oder in `specs/`) — nur die technischen Minimal-Angaben unten, falls sie nicht eindeutig aus dem Gesagten hervorgehen.
+Der Sinn dieses Skills ist Geschwindigkeit: eine Idee oder ein (vermeintlicher) Bug wird roh festgehalten, ohne sie im selben Moment zu bewerten, zu hinterfragen oder auszuarbeiten — das übernimmt später `refinement`. Stell deshalb **keine** inhaltlichen Rückfragen zur Sache selbst (kein "warum", kein "für wen", keine Recherche im Code oder in `specs/`) — nur die technischen Minimal-Angaben unten, falls sie nicht eindeutig aus dem Gesagten hervorgehen.
 
-Seit Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) entsteht dabei **keine** lokale Datei mehr unter `specs/inbox/` — der Rohtext lebt ausschließlich als neues GitHub-Issue (Status `Unrefined`), das `story-refiner` später direkt liest und verfeinert.
+Seit Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) entsteht dabei **keine** lokale Datei mehr unter `specs/inbox/` — der Rohtext lebt ausschließlich als neues GitHub-Issue (Status `Unrefined`), das `refinement` später direkt liest und verfeinert.
 
 ## Schritt 1: Typ bestimmen
 
@@ -47,4 +47,4 @@ Eine knappe Bestätigung im Chat, kein längerer Kommentar: z.B. "Als GitHub-Iss
 - Keine Spec-Erstellung, kein Roadmap-Eintrag.
 - Kein Aufruf von `requirements-engineer`/`architect`/anderen Agenten.
 
-Das alles passiert erst, wenn jemand das Issue später ausdrücklich verfeinern will — für Ideen über `story-refiner`, für Bugs in einem eigenen Gespräch (reproduzieren, Ursache prüfen, entscheiden ob und wie behoben wird).
+Das alles passiert erst, wenn jemand das Issue später ausdrücklich verfeinern will — für Ideen über `refinement`, für Bugs in einem eigenen Gespräch (reproduzieren, Ursache prüfen, entscheiden ob und wie behoben wird).

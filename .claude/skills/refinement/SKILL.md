@@ -1,11 +1,11 @@
 ---
-name: story-refiner
-description: Schärft eine neue Produkt-/Feature-Idee rein fachlich zu einer Story — stellt Verständnisfragen, ordnet sie über `requirements-engineer` in die Roadmap ein, untersucht parallel den bestehenden Code und die vorhandenen specs/features/*.md auf Konflikte/Überschneidungen, hakt bei Unklarheiten nach, stellt kritische Gegenfragen (Devil's Advocate) und schreibt Ziel/User Story/Akzeptanzkriterien danach direkt in den GitHub-Issue-Body (Status `Ready`) — ausdrücklich OHNE technische Details, die übernimmt erst später `idea-sharpener`. Nutze diesen Skill IMMER, wenn der Nutzer eine neue Idee, einen Feature-Wunsch oder eine Anforderung informell einwirft — z.B. "ich hab da eine Idee", "was hältst du davon, wenn wir X einbauen", "könnten wir nicht auch Y machen", "neue Anforderung: ...", oder wenn er auf ein per `capture` erfasstes Issue verweist ("schärf Issue #NNN"). Nicht nutzen, wenn der Nutzer eine bereits als `Ready` markierte Idee tatsächlich technisch umsetzen lassen will (dafür `idea-sharpener`) oder eine bereits akzeptierte Spec umsetzen lassen will (dafür der `developer`-Agent).
+name: refinement
+description: Schärft eine neue Produkt-/Feature-Idee rein fachlich zu einer Story — stellt Verständnisfragen, ordnet sie über `requirements-engineer` in die Roadmap ein, untersucht parallel den bestehenden Code und die vorhandenen specs/features/*.md auf Konflikte/Überschneidungen, hakt bei Unklarheiten nach, stellt kritische Gegenfragen (Devil's Advocate) und schreibt Ziel/User Story/Akzeptanzkriterien danach direkt in den GitHub-Issue-Body (Status `Ready`) — ausdrücklich OHNE technische Details, die übernimmt erst später `spec-writer`. Nutze diesen Skill IMMER, wenn der Nutzer eine neue Idee, einen Feature-Wunsch oder eine Anforderung informell einwirft — z.B. "ich hab da eine Idee", "was hältst du davon, wenn wir X einbauen", "könnten wir nicht auch Y machen", "neue Anforderung: ...", oder wenn er auf ein per `capture` erfasstes Issue verweist ("schärf Issue #NNN"). Nicht nutzen, wenn der Nutzer eine bereits als `Ready` markierte Idee tatsächlich technisch umsetzen lassen will (dafür `spec-writer`) oder eine bereits akzeptierte Spec umsetzen lassen will (dafür der `developer`-Agent).
 ---
 
-# Story Refiner — von der Idee zur fachlich geschärften Story
+# Refinement — von der Idee zur fachlich geschärften Story
 
-Übernimmt die fachliche Hälfte des früheren `idea-sharpener`-Ablaufs (Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md)): eine Idee wird erst dann als `Story` markiert, wenn sie drei Dinge überstanden hat — echtes gegenseitiges Verständnis, Abgleich mit dem, was schon existiert, und kritischen Gegenwind. Die technische Umsetzungsplanung (Architektur/UI-UX/Test/Security/Spec-Anlage) ist bewusst **nicht** Teil dieses Skills — das übernimmt, wenn die Story tatsächlich umgesetzt werden soll, `idea-sharpener`.
+Übernimmt die fachliche Hälfte des früheren `idea-sharpener`-Ablaufs (Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md)): eine Idee wird erst dann als `Ready` markiert, wenn sie drei Dinge überstanden hat — echtes gegenseitiges Verständnis, Abgleich mit dem, was schon existiert, und kritischen Gegenwind. Die technische Umsetzungsplanung (Architektur/UI-UX/Test/Security/Spec-Anlage) ist bewusst **nicht** Teil dieses Skills — das übernimmt, wenn die Story tatsächlich umgesetzt werden soll, `spec-writer`.
 
 Ergebnis dieses Skills ist **kein** neues Spec-File, sondern ein strukturierter GitHub-Issue-Body (`## Ziel`, `## User Story`, `## Akzeptanzkriterien`) mit Status `Ready` — keine lokale Zwischendatei.
 
@@ -68,7 +68,7 @@ Das setzt das Board-Statusfeld auf `Done` und schließt das Issue nativ — ders
 
 ## Schritt 6: Ergebnis in den Issue-Body schreiben
 
-Schreib das Ergebnis strukturiert und **rein fachlich/business-orientiert — ausdrücklich ohne technische Details** (keine Komponenten, kein Datenmodell, keine Architektur-Entscheidung; das ist bewusst `idea-sharpener` vorbehalten):
+Schreib das Ergebnis strukturiert und **rein fachlich/business-orientiert — ausdrücklich ohne technische Details** (keine Komponenten, kein Datenmodell, keine Architektur-Entscheidung; das ist bewusst `spec-writer` vorbehalten):
 
 ```markdown
 ## Ziel
@@ -99,4 +99,4 @@ Trag danach die Prioritäts-Zeile für dieses Issue in `specs/roadmap.md` ein/ak
 
 Erwartetes Ergebnis des obigen Aufrufs: `{"issue_number": NNN, "status": "Ready", "priority": "<Hoch|Mittel|Niedrig>"}`. Ein `{"error": "..."}` unverändert an Daniel weitergeben.
 
-Fasse am Ende kurz zusammen: Issue-Nummer, Titel, Priorität, und dass Daniel bei Bedarf `idea-sharpener` mit "setz Story #NNN um" aufrufen kann, sobald die technische Umsetzung ansteht.
+Fasse am Ende kurz zusammen: Issue-Nummer, Titel, Priorität, und dass Daniel bei Bedarf `spec-writer` mit "setz Story #NNN um" aufrufen kann, sobald die technische Umsetzung ansteht.

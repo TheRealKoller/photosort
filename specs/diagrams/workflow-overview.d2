@@ -16,10 +16,10 @@
 #
 # Aktualisiert fuer Feature-Spec specs/features/0059-story-lebenszyklus-github-issues.md /
 # ADR specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md: der
-# bisherige monolithische "refine"-Subgraph (idea-sharpener) ist in zwei Subgraphen aufgeteilt -
-# "refine" (story-refiner, faktisch immer/Haiku-lastig, Ergebnis: Story-Issue statt Datei) und
-# "sharpen" (idea-sharpener, reduziert auf Architektur/UX/Test/Security/Spec-Anlage, adoptiert
-# das bestehende Issue statt ein neues anzulegen).
+# bisherige monolithische "refine"-Subgraph (damals idea-sharpener) ist in zwei Subgraphen
+# aufgeteilt - "refine" (Skill refinement, faktisch immer/Haiku-lastig, Ergebnis: Story-Issue
+# statt Datei) und "sharpen" (Skill spec-writer, reduziert auf Architektur/UX/Test/Security/
+# Spec-Anlage, adoptiert das bestehende Issue statt ein neues anzulegen).
 #
 # Gerendert/verifiziert mit d2 v0.8.1 (https://github.com/d2lang/d2/releases).
 
@@ -32,22 +32,22 @@ capture: "capture:\nGitHub-Issue (Unrefined)"
 
 idea -> capture
 
-refine: "Fachlich schärfen — story-refiner" {
+refine: "Fachlich schärfen — refinement" {
   grid-columns: 2
   understand: "Verständnis schärfen"
   re: "requirements-engineer:\nRoadmap-Einordnung"
   research: "Code-/Spec-Recherche\n+ Nachfragen"
   devil: "Devil's Advocate"
-  story: "Issue: Status Story" {
+  story: "Issue: Status Ready" {
     shape: oval
   }
 
   understand -> re -> research -> devil -> story
 }
 
-sharpen: "Technisch planen — idea-sharpener" {
+sharpen: "Technisch planen — spec-writer" {
   grid-columns: 2
-  precheck: "Vorbedingung:\nStatus == Story"
+  precheck: "Vorbedingung:\nStatus == Ready"
   arch: "architect:\nArchitektur-Ansatz"
   ux: "ux-ui-designer:\nUI/UX-Ansatz"
   testsec: "test-engineer + security-engineer\n(parallel)"

@@ -1,6 +1,6 @@
 ---
 name: ship-feature
-description: Koordiniert auf oberster Ebene (Orchestrator/Hauptsession) die Nachbereitung eines `developer`-Subagenten-Laufs — Review-Agenten aufrufen, Findings per SendMessage zurückspielen, Pull Request eröffnen, Copilot-Review anfordern/auswerten. Nutze diesen Skill IMMER, wenn eine `developer`-Subagenten-Antwort mit dem wörtlichen Anker `## Blockiert: Architektur-Konsultation nötig` oder `## Abschlussbericht` zurückkommt (auch `## Abschlussbericht (Folgeauftrag: Findings behoben)`) — das ist der verbindliche Übergabepunkt, an dem `developer` selbst keine weitere Verschachtelungsebene an Subagenten und keinen GitHub-Zugriff hat. Nicht nutzen für die Umsetzung selbst (dafür `developer`) oder das Schärfen einer Idee zur Spec (dafür `idea-sharpener`).
+description: Koordiniert auf oberster Ebene (Orchestrator/Hauptsession) die Nachbereitung eines `developer`-Subagenten-Laufs — Review-Agenten aufrufen, Findings per SendMessage zurückspielen, Pull Request eröffnen, Copilot-Review anfordern/auswerten. Nutze diesen Skill IMMER, wenn eine `developer`-Subagenten-Antwort mit dem wörtlichen Anker `## Blockiert: Architektur-Konsultation nötig` oder `## Abschlussbericht` zurückkommt (auch `## Abschlussbericht (Folgeauftrag: Findings behoben)`) — das ist der verbindliche Übergabepunkt, an dem `developer` selbst keine weitere Verschachtelungsebene an Subagenten und keinen GitHub-Zugriff hat. Nicht nutzen für die Umsetzung selbst (dafür `developer`) oder das Schärfen einer Idee zur Spec (dafür `spec-writer`).
 
 ---
 

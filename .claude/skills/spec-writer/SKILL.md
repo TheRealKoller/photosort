@@ -1,11 +1,11 @@
 ---
-name: idea-sharpener
-description: Setzt eine bereits fachlich geschärfte Story (Status `Ready` auf dem GitHub-Issue, siehe `story-refiner`) technisch um — legt den architektonischen Ansatz fest, prüft UI/UX-Bezug, klärt Teststrategie und Security-Aspekt, und legt danach eine neue, direkt akzeptierte Feature-Spec an (adoptiert dabei das bestehende Issue, legt kein neues an). Nutze diesen Skill IMMER, wenn der Nutzer eine bereits als Story markierte Idee jetzt technisch umgesetzt haben will — z.B. "setz Story #NNN um", "mach aus Issue #NNN eine Spec", "lass uns Story #NNN technisch planen". NICHT nutzen für eine neue, noch nicht fachlich geschärfte Idee (dafür `story-refiner`) oder für eine bereits akzeptierte Spec, die tatsächlich implementiert werden soll (dafür der `developer`-Agent).
+name: spec-writer
+description: Setzt eine bereits fachlich geschärfte Story (Status `Ready` auf dem GitHub-Issue, siehe `refinement`) technisch um — legt den architektonischen Ansatz fest, prüft UI/UX-Bezug, klärt Teststrategie und Security-Aspekt, und legt danach eine neue, direkt akzeptierte Feature-Spec an (adoptiert dabei das bestehende Issue, legt kein neues an). Nutze diesen Skill IMMER, wenn der Nutzer eine bereits als Story markierte Idee jetzt technisch umgesetzt haben will — z.B. "setz Story #NNN um", "mach aus Issue #NNN eine Spec", "lass uns Story #NNN technisch planen". NICHT nutzen für eine neue, noch nicht fachlich geschärfte Idee (dafür `refinement`) oder für eine bereits akzeptierte Spec, die tatsächlich implementiert werden soll (dafür der `developer`-Agent).
 ---
 
-# Idea Sharpener — von der geschärften Story zur akzeptierten technischen Spec
+# Spec Writer — von der geschärften Story zur akzeptierten technischen Spec
 
-Übernimmt die technische Hälfte des früheren monolithischen `idea-sharpener`-Ablaufs (Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md)): die fachliche Schärfung (Verständnis, Roadmap-Einordnung, Devil's Advocate) ist an dieser Stelle bereits über `story-refiner` abgeschlossen — dieser Skill setzt direkt bei einer bestätigten Story an und beantwortet ausschließlich noch die Frage "wie bauen wir das technisch?".
+Übernimmt die technische Hälfte des früheren monolithischen `idea-sharpener`-Ablaufs (Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md)): die fachliche Schärfung (Verständnis, Roadmap-Einordnung, Devil's Advocate) ist an dieser Stelle bereits über `refinement` abgeschlossen — dieser Skill setzt direkt bei einer bestätigten Story an und beantwortet ausschließlich noch die Frage "wie bauen wir das technisch?".
 
 ## Schritt 0: Vorbedingung prüfen — ist das Issue wirklich eine Story?
 
@@ -17,7 +17,7 @@ PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only
 
 Ein `{"error": "..."}` (z.B. unbekannte Issue-Nummer, fehlender `project`-Scope) unverändert an Daniel weitergeben statt eines eigenen Lösungsversuchs, analog zum `github-project-sync`-Skill.
 
-Ist `status` **nicht** `"Ready"` (z.B. noch `Unrefined`, oder bereits `Todo`/`In Progress`/`Review`/`Done`, weil die Story schon einmal adoptiert wurde): **abbrechen** und Daniel klar mitteilen, dass das Issue erst über `story-refiner` fachlich geschärft werden muss (bzw., bei bereits vorhandenem Spec-Bezug, dass es keine gültige Story mehr ist). Kein eigenmächtiges Weiterarbeiten mit einem unerwarteten Status.
+Ist `status` **nicht** `"Ready"` (z.B. noch `Unrefined`, oder bereits `Todo`/`In Progress`/`Review`/`Done`, weil die Story schon einmal adoptiert wurde): **abbrechen** und Daniel klar mitteilen, dass das Issue erst über `refinement` fachlich geschärft werden muss (bzw., bei bereits vorhandenem Spec-Bezug, dass es keine gültige Story mehr ist). Kein eigenmächtiges Weiterarbeiten mit einem unerwarteten Status.
 
 Lies danach den vollständigen Issue-Inhalt:
 
@@ -60,7 +60,7 @@ Ziel, User Story und Akzeptanzkriterien aus dem Issue-Body übernehmen (ggf. dur
 
 Falls die Story die Architektur oder das Datenmodell spürbar verändert: `docs/architecture.md` entsprechend ergänzen.
 
-Trag den in `story-refiner` bereits angelegten Roadmap-Eintrag in `specs/roadmap.md` mit dem jetzt feststehenden Spec-Pfad um (dieselbe Zeile wird in-place aktualisiert — Link wechselt von `[#NNN](<Issue-URL>)` auf `[NNNN](./features/NNNN-....md)`, Priorität bleibt unverändert, kein Entfernen+Neuanlegen).
+Trag den in `refinement` bereits angelegten Roadmap-Eintrag in `specs/roadmap.md` mit dem jetzt feststehenden Spec-Pfad um (dieselbe Zeile wird in-place aktualisiert — Link wechselt von `[#NNN](<Issue-URL>)` auf `[NNNN](./features/NNNN-....md)`, Priorität bleibt unverändert, kein Entfernen+Neuanlegen).
 
 **Issue adoptieren statt neues anzulegen:** ruf abschließend den Skill `github-project-sync` mit `--only <NNNN> --adopt-issue <NNN>` auf (`NNNN` = neue Spec-Nummer, `NNN` = die Story-Issue-Nummer aus Schritt 0). Das überführt den bestehenden State-Eintrag in den Feature-Namensraum (kein neues Issue, keine Historie-/Label-Verluste), schreibt erstmals den Marker-Kommentar `<!-- photosort-spec: NNNN -->` plus den vollen Spec-Inhalt in den Issue-Body, und setzt den Spec-Datei-Status auf `Accepted` — das native Board-Feld zeigt dafür seit ADR 0037 die Baseline `Todo` (keine 1:1-Kopie des Datei-Status mehr). Erwartetes Ergebnis ist ein `adopted`-Feld mit `spec_number`/`issue_number` sowie `classification: "pushed"` im zugehörigen `specs`-Eintrag; jedes `{"error": "..."}` unverändert an Daniel weitergeben statt es stillschweigend zu ignorieren.
 
