@@ -19,6 +19,7 @@ Sortiert nach Dringlichkeit: offene (noch nicht implementierte) Specs und Story-
 |---|---|---|
 | [0056](./features/0056-structured-logging-cloud-vision-errors.md) | Strukturiertes Logging für Cloud-Vision-Fehler (Landmark + Remote-Kategorie) | Accepted |
 | [0058](./features/0058-cloud-vision-status-transparenz.md) | Cloud-Vision-Status-Transparenz in den Foto-Details | Accepted |
+| [#177](https://github.com/TheRealKoller/photosort/issues/177) | AI-Workflow Schritte 2–8 konsolidieren: Review-Runde als Hauptsession-Skills, Agent/Skill-Grenzen klären, überlagerte ADRs ablösen (abhängig von #224) | Ready |
 
 ### Offen — Niedrig
 
