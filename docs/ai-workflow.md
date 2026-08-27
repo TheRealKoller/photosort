@@ -108,15 +108,25 @@ Qualität spürbar verschlechtern, führt das zu einer neuen, ADR 0014/0024 abl�
 einem stillschweigenden Unterlaufen der Tabelle.
 
 Dieselbe Kosten-Logik wurde auf den Verfeinerungs-Ablauf selbst ausgeweitet
-([ADR 0018](../specs/decisions/0018-spec-writer-kalibrierung-und-skip-logik.md), ohne ADR 0014
-zu ändern; seit ADR 0036 auf zwei Skills verteilt): In `refinement` laufen die Konsultation
-von `requirements-engineer` sowie die beiden optionalen Explore-Agenten mit Haiku statt Standard
-und immer (keine Skip-Option). In `spec-writer` läuft `ux-ui-designer` ebenfalls mit Haiku,
+([ADR 0018](../specs/decisions/0018-idea-sharpener-kalibrierung-und-skip-logik.md) und
+[ADR 0038](../specs/decisions/0038-spec-writer-skip-schwelle-lockern-refinement-vorfilterung.md),
+ohne ADR 0014 zu ändern; seit ADR 0036 auf zwei Skills verteilt): In `refinement` laufen die
+Konsultation von `requirements-engineer` sowie die beiden optionalen Explore-Agenten mit Haiku statt
+Standard und immer (keine Skip-Option). In `spec-writer` läuft `ux-ui-designer` ebenfalls mit Haiku,
 während `architect`, `test-engineer` und `security-engineer` beim Standardmodell bleiben.
 Zusätzlich steht vor jeder `architect`/`ux-ui-designer`/`test-engineer`/`security-engineer`-
 Konsultation in `spec-writer` je eine eng gefasste, dokumentationspflichtige Ja/Nein-Skip-Frage
-— urteilsbasiert statt mechanisch, da vor der eigentlichen Umsetzung noch kein Diff existiert, mit
-demselben Sicherheitsnetz "im Zweifel eher konsultieren" wie in ADR 0014.
+— urteilsbasiert statt mechanisch, da vor der eigentlichen Umsetzung noch kein Diff existiert.
+Seit ADR 0038 ist deren Schwelle für alle vier Konsultationen (`architect`, `ux-ui-designer`,
+`test-engineer` und `security-engineer` gleichermaßen) bewusst gelockert: übersprungen wird,
+solange die Story keinen **konkret benennbaren** Anhaltspunkt für den jeweiligen
+Zuständigkeitsbereich hat; ein rein theoretischer Restzweifel zwingt — anders als früher
+("im Zweifel eher konsultieren") — nicht mehr zum Aufruf. Ein dadurch übersehener Bedarf wird als
+Zweitlinie vom späteren `developer`-Review und der laufenden Qualitätsbeobachtung aufgefangen.
+Ergänzend verschärft ADR 0038 in `refinement` den Devil's-Advocate-Schritt zu einem
+eigenständigen, immer durchlaufenden Lohnenswert-Gate mit explizitem Ja/Nein-Urteil — Ideen, die
+nicht standhalten, werden mit dokumentierter Begründung verworfen, statt in die
+kostenintensivere `spec-writer`-Phase durchgereicht zu werden.
 
 Aufrufe des `research-engineer`-Agenten (direkt von Daniel oder delegiert von einem der fünf
 anderen Agenten, siehe [ADR 0016](../specs/decisions/0016-research-engineer-agent.md)) laufen
