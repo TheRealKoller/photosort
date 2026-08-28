@@ -1,18 +1,20 @@
-"""Orchestrierung des Zwei-Wege-Sync-Laufs fuer Feature-Specs sowie der dateilosen Story-Stufe.
+"""Orchestrierung des Push-Sync-Laufs fuer Feature-Specs sowie der dateilosen Story-Stufe.
 
 Verdrahtet die reinen Bausteine (spec_parser, hashing, classify, issue_body, state) mit dem
-GhAdapter-Protokoll. Siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md,
-specs/features/0059-story-lebenszyklus-github-issues.md und
+GhAdapter-Protokoll. Siehe specs/features/0059-story-lebenszyklus-github-issues.md und
 ADR decisions/0017-github-projects-v2-spec-sync.md /
-ADR decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md.
+ADR decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md /
+ADR decisions/0041-feature-spec-content-sync-nur-noch-push.md.
 
 Seit Spec 0059 gibt es zwei strukturell unterschiedliche Pfade: `run_sync()` fuer den
-bidirektionalen Feature-Spec-Sync sowie drei dateilose Story-Funktionen
-(`create_story_issue`, `sync_story`, `show_story_status`), die ausschliesslich gegen den
-`stories`-Namensraum der Zustandsdatei arbeiten - kein Pull/Konflikt-Handling noetig, da eine
-Story nur eine einzige Kopie der Wahrheit hat (das GitHub-Issue selbst, siehe ADR 0036, Kontext).
-Der vorherige, bidirektionale Inbox-Pfad (`_sync_one_inbox`, `--only inbox:NNNN`,
-`--supersede-inbox`) wurde ersatzlos entfernt.
+Feature-Spec-Sync sowie drei dateilose Story-Funktionen (`create_story_issue`, `sync_story`,
+`show_story_status`), die ausschliesslich gegen den `stories`-Namensraum der Zustandsdatei
+arbeiten - kein Pull/Konflikt-Handling noetig, da eine Story nur eine einzige Kopie der Wahrheit
+hat (das GitHub-Issue selbst, siehe ADR 0036, Kontext). Der vorherige, bidirektionale Inbox-Pfad
+(`_sync_one_inbox`, `--only inbox:NNNN`, `--supersede-inbox`) wurde ersatzlos entfernt. Seit
+Spec 0065 / ADR 0041 gilt dasselbe fuer den Pull-/Konflikt-Zweig des Feature-Spec-Sync selbst -
+`run_sync()` schreibt den Spec-Inhalt nur noch einseitig in den Issue-Body, ein Rueckfluss aus
+dem Issue findet nicht mehr statt.
 
 Seit ADR decisions/0039-prioritaet-nativ-im-board-roadmap-entfaellt.md fasst das Sync-Tool das
 Board-Feld `Prioritaet` nicht mehr an (weder lesend noch schreibend) - Prioritaet wird nativ im
@@ -22,11 +24,10 @@ GitHub-Project-Board gepflegt. Das Feld wird lediglich weiter selbstprovisionier
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
 
 from github_project_sync.classify import SyncClassification, SyncStateEntry, classify
 from github_project_sync.gh_adapter import (
@@ -36,18 +37,9 @@ from github_project_sync.gh_adapter import (
     Project,
     ProjectFields,
 )
-from github_project_sync.hashing import push_state_hash, text_hash
-from github_project_sync.issue_body import (
-    build_issue_body,
-    extract_content_zone_from_issue_body,
-    parse_marker,
-)
-from github_project_sync.spec_parser import (
-    parse_spec_file,
-    replace_content_zone,
-    set_status_line,
-    validate_spec_number,
-)
+from github_project_sync.hashing import push_state_hash
+from github_project_sync.issue_body import build_issue_body, parse_marker
+from github_project_sync.spec_parser import parse_spec_file, set_status_line, validate_spec_number
 from github_project_sync.state import (
     NestedState,
     StateDict,
@@ -57,8 +49,6 @@ from github_project_sync.state import (
     save_state,
     validate_issue_number_key,
 )
-
-Resolution = Literal["keep_spec", "keep_issue"]
 
 _OPEN_STATUSES = {"Proposed", "Accepted"}
 _CLOSED_STATUSES = {"Implemented", "Superseded"}
@@ -118,20 +108,12 @@ def _utcnow_iso() -> str:
 
 
 @dataclass(frozen=True)
-class ConflictDiff:
-    local_content_zone: str
-    remote_content_zone: str
-
-
-@dataclass(frozen=True)
 class SpecSyncResult:
     number: str
     title: str
     issue_number: int | None
     classification: SyncClassification | None
     aborted_reason: str | None = None
-    conflict: ConflictDiff | None = None
-    pulled_content_zone: str | None = None
     # Seit Spec 0060 / ADR 0037, Abschnitt 5: gesetzt, wenn dieser Lauf gerade eine automatische
     # PR-Merge-Erkennung fuer diese Spec ausgefuehrt hat (Signal an den aufrufenden Skill).
     finalized_from_pr: int | None = None
@@ -248,7 +230,6 @@ def _sync_one(
     gh: GhAdapter,
     project: Project,
     fields: ProjectFields,
-    resolution: Resolution | None,
     now: Callable[[], str],
 ) -> tuple[SpecSyncResult, SyncStateEntry | None]:
     # Automatische PR-Merge-Erkennung (Spec 0060 / ADR 0037, Abschnitt 5) - ganz am Anfang der
@@ -336,7 +317,6 @@ def _sync_one(
             issue_number=issue_number,
             item_id=item_id,
             pushed_state_hash=push_hash_now,
-            pulled_body_hash=text_hash(content_zone),
             last_synced_at=now(),
         )
         result = SpecSyncResult(
@@ -369,11 +349,7 @@ def _sync_one(
         )
         return result, stored_entry
 
-    remote_content_zone = extract_content_zone_from_issue_body(issue.body)
-    pull_hash_now = text_hash(remote_content_zone)
-    classification = classify(
-        stored_entry, push_hash_now=push_hash_now, pull_hash_now=pull_hash_now
-    )
+    classification = classify(stored_entry, push_hash_now=push_hash_now)
 
     # Status/Prioritaet + nativer Issue-Zustand sind eine bewusste Einbahnstrasse und werden bei
     # jedem Sync-Lauf neu gesetzt, unabhaengig von der Inhalts-Klassifikation (ADR 0017, Abschnitt
@@ -398,37 +374,8 @@ def _sync_one(
         managed=_MANAGED_FEATURE_LABELS,
     )
 
-    if classification == "conflict" and resolution is None:
-        result = SpecSyncResult(
-            number=number,
-            title=title,
-            issue_number=stored_entry.issue_number,
-            classification="conflict",
-            conflict=ConflictDiff(
-                local_content_zone=content_zone, remote_content_zone=remote_content_zone
-            ),
-            finalized_from_pr=finalized_from_pr,
-        )
-        # Baseline-Hashes bleiben unveraendert, bis Daniel den Konflikt explizit aufloest -
-        # ein erneuter Lauf ohne Aufloesung meldet denselben Konflikt wieder (idempotent).
-        return result, stored_entry
-
-    effective: SyncClassification = classification
-    if classification == "conflict" and resolution == "keep_spec":
-        effective = "pushed"
-    elif classification == "conflict" and resolution == "keep_issue":
-        effective = "pulled"
-
-    pulled_content_zone: str | None = None
-    effective_local_content_zone = content_zone
-
-    if effective == "pushed":
+    if classification == "pushed":
         gh.edit_issue_body(stored_entry.issue_number, build_issue_body(number, content_zone))
-    elif effective == "pulled":
-        pulled_content_zone = remote_content_zone
-        effective_local_content_zone = remote_content_zone
-        updated_text = replace_content_zone(full_text, remote_content_zone)
-        path.write_text(updated_text, encoding="utf-8")
 
     # Ein Laufzeit-Override ist strukturell nie mehr als eine Verfeinerung der Baseline "Todo"
     # (ADR 0037, Abschnitt 2) - sobald die (ggf. gerade per Merge-Erkennung finalisierte)
@@ -438,10 +385,7 @@ def _sync_one(
     new_entry = SyncStateEntry(
         issue_number=stored_entry.issue_number,
         item_id=stored_entry.item_id,
-        pushed_state_hash=push_state_hash(
-            status=status, content_zone=effective_local_content_zone
-        ),
-        pulled_body_hash=text_hash(effective_local_content_zone),
+        pushed_state_hash=push_hash_now,
         last_synced_at=now(),
         runtime_status=stored_entry.runtime_status if carries_override else None,
         pr_number=stored_entry.pr_number if carries_override else None,
@@ -450,8 +394,7 @@ def _sync_one(
         number=number,
         title=title,
         issue_number=stored_entry.issue_number,
-        classification=effective,
-        pulled_content_zone=pulled_content_zone,
+        classification=classification,
         finalized_from_pr=finalized_from_pr,
     )
     return result, new_entry
@@ -503,7 +446,6 @@ def _adopt_story_and_push_first_content(
         issue_number=issue_number,
         item_id=item_id,
         pushed_state_hash=push_state_hash(status=status, content_zone=content_zone),
-        pulled_body_hash=text_hash(content_zone),
         last_synced_at=now(),
     )
     result = SpecSyncResult(
@@ -518,10 +460,8 @@ def run_sync(
     gh: GhAdapter,
     only: str | None = None,
     adopt_issue: int | None = None,
-    resolutions: Mapping[str, Resolution] | None = None,
     now: Callable[[], str] = _utcnow_iso,
 ) -> SyncRunResult:
-    resolutions = resolutions or {}
     features_dir = repo_root / "specs" / "features"
     state_path = repo_root / "specs" / ".github-sync-state.json"
 
@@ -612,7 +552,6 @@ def run_sync(
                     gh=gh,
                     project=project,
                     fields=fields,
-                    resolution=resolutions.get(number),
                     now=now,
                 )
             spec_results.append(result)
@@ -712,7 +651,6 @@ def set_feature_runtime_status(
         issue_number=stored_entry.issue_number,
         item_id=stored_entry.item_id,
         pushed_state_hash=stored_entry.pushed_state_hash,
-        pulled_body_hash=stored_entry.pulled_body_hash,
         last_synced_at=now(),
         runtime_status=runtime_status,
         pr_number=pr_number,

@@ -8,7 +8,6 @@ import pytest
 from github_project_sync.gh_adapter import GhAuthScopeError, ProjectFields
 from github_project_sync.hashing import push_state_hash, text_hash
 from github_project_sync.issue_body import build_issue_body
-from github_project_sync.spec_parser import parse_spec_file
 from github_project_sync.state import load_state
 from github_project_sync.sync import (
     OrphanCleanup,
@@ -145,8 +144,7 @@ def test_created_case_implemented_status_maps_to_done_baseline(tmp_path: Path) -
 def test_stored_runtime_override_wins_over_todo_baseline(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
-    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash)
     entry["runtime_status"] = "In Progress"
     entry["pr_number"] = None
 
@@ -170,8 +168,7 @@ def test_stored_runtime_override_wins_over_todo_baseline(tmp_path: Path) -> None
 def test_runtime_override_defensively_cleared_once_baseline_becomes_done(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
-    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash)
     entry["runtime_status"] = "Review"
     entry["pr_number"] = 55
 
@@ -199,8 +196,7 @@ def test_runtime_override_defensively_cleared_once_baseline_becomes_done(tmp_pat
 def test_merged_pr_finalizes_spec_to_implemented_and_pushes_done(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
-    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash)
     entry["runtime_status"] = "Review"
     entry["pr_number"] = 101
 
@@ -238,8 +234,7 @@ def test_merged_pr_finalizes_spec_to_implemented_and_pushes_done(tmp_path: Path)
 def test_open_pr_does_not_finalize_spec_yet(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
-    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash)
     entry["runtime_status"] = "Review"
     entry["pr_number"] = 101
 
@@ -269,8 +264,7 @@ def test_merge_detection_not_triggered_without_review_override(tmp_path: Path) -
     # Override (auch mit zufaellig gesetztem pr_number) darf gh.get_pull_request() nie aufrufen.
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
-    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash)
     entry["runtime_status"] = "In Progress"
     entry["pr_number"] = None
 
@@ -294,8 +288,7 @@ def test_merge_detection_not_triggered_when_spec_status_is_not_accepted(tmp_path
     # Review-Override darf gh.get_pull_request() nie aufrufen.
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Superseded", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
-    entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash)
     entry["runtime_status"] = "Review"
     entry["pr_number"] = 101
 
@@ -319,8 +312,7 @@ def test_merge_detection_error_aborts_only_that_spec_not_the_whole_run(tmp_path:
     # Marker-Integritaet bereits etabliert) nur diese eine Spec mit aborted_reason zu markieren.
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
-    broken_entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+    broken_entry = _existing_state_entry(issue_number=42, push_hash=push_hash)
     broken_entry["runtime_status"] = "Review"
     broken_entry["pr_number"] = 999  # bewusst nicht per seed_pull_request() bekannt gemacht
 
@@ -383,12 +375,11 @@ def test_missing_status_option_aborts_with_sync_error_instead_of_silent_no_op(
         run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
 
 
-def _existing_state_entry(*, issue_number: int, push_hash: str, pull_hash: str) -> dict:
+def _existing_state_entry(*, issue_number: int, push_hash: str) -> dict:
     return {
         "issue_number": issue_number,
         "item_id": "ITEM_1",
         "pushed_state_hash": push_hash,
-        "pulled_body_hash": pull_hash,
         "last_synced_at": "2026-08-09T00:00:00Z",
     }
 
@@ -403,19 +394,12 @@ def _story_state_entry_dict(*, issue_number: int, item_id: str = "ITEM_1") -> di
 
 def test_pushed_case_updates_issue_body_from_spec(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nAlter Text.\n"
-    old_push_hash = push_state_hash(
-        status="Accepted", content_zone=content_zone
-    )
-    old_pull_hash = text_hash(content_zone)
+    old_push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Neuer Text.")},
-        state={
-            "0031": _existing_state_entry(
-                issue_number=42, push_hash=old_push_hash, pull_hash=old_pull_hash
-            )
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=old_push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))
@@ -427,163 +411,14 @@ def test_pushed_case_updates_issue_body_from_spec(tmp_path: Path) -> None:
     assert "Alter Text." not in gh.issue(42).body
 
 
-def test_pulled_case_writes_issue_content_into_spec_file(tmp_path: Path) -> None:
-    content_zone = "## Ziel\n\nAlter Text.\n"
-    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    old_pull_hash = text_hash(content_zone)
-
-    repo_root = _make_repo(
-        tmp_path,
-        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Alter Text.")},
-        state={
-            "0031": _existing_state_entry(
-                issue_number=42, push_hash=push_hash, pull_hash=old_pull_hash
-            )
-        },
-    )
-    gh = FakeGhAdapter()
-    new_remote_zone = "## Ziel\n\nVon Daniel im Issue geändert.\n"
-    gh.seed_issue(42, body=build_issue_body("0031", new_remote_zone))
-
-    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
-
-    assert result.specs[0].classification == "pulled"
-    assert result.specs[0].pulled_content_zone == new_remote_zone
-
-    updated = parse_spec_file(repo_root / "specs" / "features" / "0031-x.md")
-    assert "Von Daniel im Issue geändert." in updated.content_zone
-    assert updated.status == "Accepted"  # Metadaten-Block unangetastet
-    assert updated.title == "Sync-Feature"
-
-
-def test_pulled_case_ignores_metadata_edits_in_issue_body(tmp_path: Path) -> None:
-    content_zone = "## Ziel\n\nAlter Text.\n"
-    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    old_pull_hash = text_hash(content_zone)
-
-    repo_root = _make_repo(
-        tmp_path,
-        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Alter Text.")},
-        state={
-            "0031": _existing_state_entry(
-                issue_number=42, push_hash=push_hash, pull_hash=old_pull_hash
-            )
-        },
-    )
-    gh = FakeGhAdapter()
-    # Daniel hat versehentlich versucht, den Status im Issue-Body mitzuaendern - hat nur
-    # Wirkung, wenn es Teil der Inhalts-Zone waere; hier simuliert als Freitext in "## Ziel".
-    new_remote_zone = "## Ziel\n\n**Status:** Proposed (das darf keine Wirkung haben)\n"
-    gh.seed_issue(42, body=build_issue_body("0031", new_remote_zone))
-
-    run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
-
-    updated = parse_spec_file(repo_root / "specs" / "features" / "0031-x.md")
-    assert updated.status == "Accepted"
-
-
-def test_conflict_case_touches_neither_side_and_is_idempotent(tmp_path: Path) -> None:
-    content_zone = "## Ziel\n\nAlter Text.\n"
-    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    old_pull_hash = text_hash(content_zone)
-
-    repo_root = _make_repo(
-        tmp_path,
-        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Lokal geändert.")},
-        state={
-            "0031": _existing_state_entry(
-                issue_number=42, push_hash=push_hash, pull_hash=old_pull_hash
-            )
-        },
-    )
-    gh = FakeGhAdapter()
-    remote_zone = "## Ziel\n\nAuf GitHub geändert.\n"
-    gh.seed_issue(42, body=build_issue_body("0031", remote_zone))
-
-    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
-
-    spec_result = result.specs[0]
-    assert spec_result.classification == "conflict"
-    assert spec_result.conflict is not None
-    assert "Lokal geändert." in spec_result.conflict.local_content_zone
-    assert "Auf GitHub geändert." in spec_result.conflict.remote_content_zone
-
-    # Keine Seite automatisch ueberschrieben:
-    assert "Auf GitHub geändert." in gh.issue(42).body
-    updated = parse_spec_file(repo_root / "specs" / "features" / "0031-x.md")
-    assert "Lokal geändert." in updated.content_zone
-
-    # Erneuter Lauf ohne Aufloesung meldet denselben Konflikt wieder (idempotent):
-    result_again = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
-    assert result_again.specs[0].classification == "conflict"
-
-
-def test_conflict_resolution_keep_spec_pushes_local_content(tmp_path: Path) -> None:
-    content_zone = "## Ziel\n\nAlter Text.\n"
-    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    old_pull_hash = text_hash(content_zone)
-
-    repo_root = _make_repo(
-        tmp_path,
-        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Lokal geändert.")},
-        state={
-            "0031": _existing_state_entry(
-                issue_number=42, push_hash=push_hash, pull_hash=old_pull_hash
-            )
-        },
-    )
-    gh = FakeGhAdapter()
-    gh.seed_issue(42, body=build_issue_body("0031", "## Ziel\n\nAuf GitHub geändert.\n"))
-
-    result = run_sync(
-        repo_root=repo_root, gh=gh, resolutions={"0031": "keep_spec"}, now=lambda: _FIXED_NOW
-    )
-
-    assert result.specs[0].classification == "pushed"
-    assert "Lokal geändert." in gh.issue(42).body
-
-    # Aufloesung wird als neue Baseline gespeichert - naechster Lauf ist wieder unchanged:
-    result_again = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
-    assert result_again.specs[0].classification == "unchanged"
-
-
-def test_conflict_resolution_keep_issue_pulls_remote_content(tmp_path: Path) -> None:
-    content_zone = "## Ziel\n\nAlter Text.\n"
-    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    old_pull_hash = text_hash(content_zone)
-
-    repo_root = _make_repo(
-        tmp_path,
-        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Lokal geändert.")},
-        state={
-            "0031": _existing_state_entry(
-                issue_number=42, push_hash=push_hash, pull_hash=old_pull_hash
-            )
-        },
-    )
-    gh = FakeGhAdapter()
-    gh.seed_issue(42, body=build_issue_body("0031", "## Ziel\n\nAuf GitHub geändert.\n"))
-
-    result = run_sync(
-        repo_root=repo_root, gh=gh, resolutions={"0031": "keep_issue"}, now=lambda: _FIXED_NOW
-    )
-
-    assert result.specs[0].classification == "pulled"
-    updated = parse_spec_file(repo_root / "specs" / "features" / "0031-x.md")
-    assert "Auf GitHub geändert." in updated.content_zone
-
-
 def test_unchanged_case_does_not_touch_issue_body(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     original_body = build_issue_body("0031", content_zone)
@@ -598,14 +433,11 @@ def test_unchanged_case_does_not_touch_issue_body(tmp_path: Path) -> None:
 def test_manually_closed_issue_is_reopened_on_next_sync_even_when_unchanged(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone), state="closed")
@@ -618,7 +450,6 @@ def test_manually_closed_issue_is_reopened_on_next_sync_even_when_unchanged(tmp_
 def test_marker_mismatch_aborts_only_that_spec(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
@@ -626,9 +457,7 @@ def test_marker_mismatch_aborts_only_that_spec(tmp_path: Path) -> None:
             "0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text."),
             "0032": _spec_text("0032", "Anderes Feature", "Accepted"),
         },
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     # Marker fehlt komplett im referenzierten Issue:
@@ -651,14 +480,11 @@ def test_marker_mismatch_aborts_only_that_spec(tmp_path: Path) -> None:
 def test_marker_number_mismatch_also_aborts(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     # Marker verweist auf eine andere Spec-Nummer als der State-Eintrag erwartet:
@@ -672,14 +498,11 @@ def test_marker_number_mismatch_also_aborts(tmp_path: Path) -> None:
 def test_deleted_spec_file_closes_issue_and_removes_state_entry(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))
@@ -697,15 +520,12 @@ def test_deleted_spec_file_closes_issue_and_removes_state_entry(tmp_path: Path) 
 def test_only_filter_processes_single_spec_and_skips_orphan_cleanup(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0032": _spec_text("0032", "Neues Feature", "Accepted")},
         # 0031 hat einen State-Eintrag, aber keine Datei mehr (waere sonst ein Orphan):
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))
@@ -836,14 +656,11 @@ def test_superseded_status_clears_status_field_and_sets_label(tmp_path: Path) ->
 def test_superseded_label_removed_when_status_changes_back(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Superseded", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0003": _spec_text("0003", "Alte Spec", "Accepted", ziel="Text.")},
-        state={
-            "0003": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0003": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(
@@ -878,14 +695,11 @@ def test_non_superseded_status_never_gets_superseded_label(tmp_path: Path) -> No
 def test_full_run_over_legacy_flat_state_does_not_reclassify_as_created(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        legacy_flat_state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        legacy_flat_state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))
@@ -910,22 +724,13 @@ def test_full_run_over_old_inbox_namespace_state_does_not_touch_orphaned_inbox_i
     # test_state.py), hier zusaetzlich End-to-End ueber einen vollen Sync-Lauf nachgewiesen.
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
         raw_state={
-            "features": {
-                "0031": _existing_state_entry(
-                    issue_number=42, push_hash=push_hash, pull_hash=pull_hash
-                )
-            },
-            "inbox": {
-                "0027": _existing_state_entry(
-                    issue_number=77, push_hash="alt-push", pull_hash="alt-pull"
-                )
-            },
+            "features": {"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
+            "inbox": {"0027": _existing_state_entry(issue_number=77, push_hash="alt-push")},
         },
     )
     gh = FakeGhAdapter()
@@ -1124,9 +929,7 @@ def test_sync_story_ready_status_does_not_close_the_issue(tmp_path: Path) -> Non
     gh = FakeGhAdapter()
     gh.seed_issue(215, body="Text.", state="open")
 
-    sync_story(
-        repo_root=repo_root, gh=gh, issue_number=215, status="Ready", now=lambda: _FIXED_NOW
-    )
+    sync_story(repo_root=repo_root, gh=gh, issue_number=215, status="Ready", now=lambda: _FIXED_NOW)
 
     assert gh.issue(215).state == "open"
 
@@ -1165,15 +968,10 @@ def test_show_story_status_raises_for_unknown_issue(tmp_path: Path) -> None:
 def test_show_story_status_raises_helpful_error_when_already_adopted(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        state={
-            "0052": _existing_state_entry(
-                issue_number=215, push_hash=push_hash, pull_hash=pull_hash
-            )
-        },
+        state={"0052": _existing_state_entry(issue_number=215, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
 
@@ -1261,13 +1059,10 @@ def test_adopt_issue_raises_when_no_story_state_entry_exists(tmp_path: Path) -> 
 def test_adopt_issue_raises_when_feature_already_has_state_entry(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0052": _spec_text("0052", "Neue Spec", "Accepted", ziel="Text.")},
-        state={
-            "0052": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0052": _existing_state_entry(issue_number=42, push_hash=push_hash)},
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
@@ -1289,13 +1084,10 @@ def _assert_priority_field_untouched(gh: FakeGhAdapter) -> None:
 def test_full_run_never_writes_priority_and_preexisting_value_survives(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))
@@ -1331,9 +1123,7 @@ def test_only_issue_scope_never_writes_priority(tmp_path: Path) -> None:
     gh.seed_issue(215, body="Text.")
     gh.items["ITEM_1"] = {"F_PRIO": "P_Hoch"}
 
-    sync_story(
-        repo_root=repo_root, gh=gh, issue_number=215, status="Ready", now=lambda: _FIXED_NOW
-    )
+    sync_story(repo_root=repo_root, gh=gh, issue_number=215, status="Ready", now=lambda: _FIXED_NOW)
 
     assert gh.items["ITEM_1"]["F_PRIO"] == "P_Hoch"
     _assert_priority_field_untouched(gh)
@@ -1358,13 +1148,10 @@ def test_adopt_issue_never_writes_priority(tmp_path: Path) -> None:
 def test_runtime_status_scope_never_writes_priority(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))
@@ -1410,15 +1197,10 @@ def test_old_priority_baseline_heals_once_as_pushed_then_stays_unchanged(tmp_pat
     legacy_hash = _legacy_priority_push_hash(
         status="Accepted", content_zone=content_zone, priority="Niedrig"
     )
-    pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(
-                issue_number=42, push_hash=legacy_hash, pull_hash=pull_hash
-            )
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=legacy_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))
@@ -1432,33 +1214,6 @@ def test_old_priority_baseline_heals_once_as_pushed_then_stays_unchanged(tmp_pat
     assert second.specs[0].classification == "unchanged"
 
 
-def test_old_priority_baseline_plus_real_issue_edit_is_a_conflict_not_a_silent_push(
-    tmp_path: Path,
-) -> None:
-    content_zone = "## Ziel\n\nAlter Text.\n"
-    legacy_hash = _legacy_priority_push_hash(
-        status="Accepted", content_zone=content_zone, priority="Niedrig"
-    )
-    pull_hash = text_hash(content_zone)
-    repo_root = _make_repo(
-        tmp_path,
-        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Alter Text.")},
-        state={
-            "0031": _existing_state_entry(
-                issue_number=42, push_hash=legacy_hash, pull_hash=pull_hash
-            )
-        },
-    )
-    gh = FakeGhAdapter()
-    gh.seed_issue(42, body=build_issue_body("0031", "## Ziel\n\nIm Issue geaendert.\n"))
-
-    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
-
-    assert result.specs[0].classification == "conflict"
-    # Keine Seite still ueberschrieben:
-    assert "Im Issue geaendert." in gh.issue(42).body
-
-
 # -- set_feature_runtime_status() (--only NNNN --runtime-status ...): leichtgewichtiger,
 # zielgerichteter Schreibzugriff ohne vollen Content-Abgleich (Spec 0060 / ADR 0037, Abschnitt 3) -
 
@@ -1466,13 +1221,10 @@ def test_old_priority_baseline_plus_real_issue_edit_is_a_conflict_not_a_silent_p
 def test_set_feature_runtime_status_sets_in_progress_when_baseline_is_todo(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))
@@ -1493,21 +1245,17 @@ def test_set_feature_runtime_status_sets_in_progress_when_baseline_is_todo(tmp_p
     assert state.features["0031"].runtime_status == "In Progress"
     assert state.features["0031"].pr_number is None
     assert state.features["0031"].last_synced_at == _FIXED_NOW
-    # Hashes bleiben unangetastet - kein voller Content-Abgleich:
+    # Hash bleibt unangetastet - kein voller Content-Abgleich:
     assert state.features["0031"].pushed_state_hash == push_hash
-    assert state.features["0031"].pulled_body_hash == pull_hash
 
 
 def test_set_feature_runtime_status_sets_review_with_pr_number(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))
@@ -1533,13 +1281,10 @@ def test_set_feature_runtime_status_sets_review_with_pr_number(tmp_path: Path) -
 def test_set_feature_runtime_status_raises_when_baseline_is_not_todo(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Implemented", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Implemented", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone), state="closed")
@@ -1566,13 +1311,10 @@ def test_set_feature_runtime_status_raises_when_no_state_entry_exists(tmp_path: 
 def test_set_feature_runtime_status_rejects_unknown_value(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))
@@ -1590,13 +1332,10 @@ def test_set_feature_runtime_status_review_requires_pr_number(tmp_path: Path) ->
     # _sync_one() verhindern konnte (deren Guard-Bedingung pr_number is not None voraussetzt).
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))
@@ -1614,13 +1353,10 @@ def test_set_feature_runtime_status_review_requires_pr_number(tmp_path: Path) ->
 def test_set_feature_runtime_status_in_progress_rejects_pr_number(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
     push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
-    pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        state={
-            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
-        },
+        state={"0031": _existing_state_entry(issue_number=42, push_hash=push_hash)},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(42, body=build_issue_body("0031", content_zone))

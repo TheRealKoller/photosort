@@ -127,7 +127,5 @@ def set_status_line(original_text: str, new_status: str) -> str:
     if _STATUS_LINE_RE.search(header) is None:
         raise SpecParseError("kein '**Status:**'-Metadaten-Feld im Header gefunden.")
 
-    new_header = _STATUS_LINE_RE.sub(
-        lambda _match: f"**Status:** {new_status}", header, count=1
-    )
+    new_header = _STATUS_LINE_RE.sub(lambda _match: f"**Status:** {new_status}", header, count=1)
     return new_header + rest

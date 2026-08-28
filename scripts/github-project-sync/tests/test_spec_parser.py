@@ -197,12 +197,7 @@ def test_set_status_line_raises_when_status_missing_in_header_even_if_present_in
     # GESAMTEN Text statt nur den Header - fehlt das "**Status:**"-Feld im Header, aber die
     # Inhalts-Zone enthaelt eine Zeile, die mit "**Status:**" beginnt, wurde diese bisher
     # faelschlich als Treffer gewertet und ueberschrieben statt eines SpecParseError.
-    text = (
-        "# 0031 - Titel\n\n"
-        "**Erstellt:** 2026-08-09\n\n"
-        "## Beispiel\n\n"
-        "**Status:** Accepted\n"
-    )
+    text = "# 0031 - Titel\n\n**Erstellt:** 2026-08-09\n\n## Beispiel\n\n**Status:** Accepted\n"
 
     with pytest.raises(SpecParseError):
         set_status_line(text, "Implemented")
