@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.config import settings
+from photosort.criteria import CRITERIA_REGISTRY
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
@@ -837,6 +838,392 @@ class TestCriterionScores:
                 "source": "cloud",
             }
         ]
+
+
+class TestCloudVisionStatus:
+    """specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-
+    attempt-fehler-persistierung.md: `PhotoOut.cloud_vision_status` - immer genau 2 Eintraege in
+    fester Reihenfolge [landmark, remote_category], Prioritaets-Kaskade ueber 5 Raenge je Phase.
+    """
+
+    async def test_always_returns_exactly_two_entries_in_fixed_order(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        status_list = response.json()["items"][0]["cloud_vision_status"]
+        assert [entry["phase"] for entry in status_list] == ["landmark", "remote_category"]
+
+    async def test_photo_without_any_score_row_is_not_candidate_for_both_phases_with_consent(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # ADR 0035/Spec 0058, Akzeptanzkriterium: ein Foto ganz ohne PhotoScore-Zeile ->
+        # not_candidate (NICHT not_run) fuer beide Phasen, sobald Consent aktiv ist.
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        status_list = response.json()["items"][0]["cloud_vision_status"]
+        assert {entry["phase"]: entry["status"] for entry in status_list} == {
+            "landmark": "not_candidate",
+            "remote_category": "not_candidate",
+        }
+
+    async def test_default_consent_disabled_wins_over_not_candidate_for_both_phases(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Explizit bindender Ueberschneidungsfall der Spec: consent_disabled UND not_candidate
+        # gleichzeitig zutreffend -> consent_disabled gewinnt.
+        project = await _make_project(db_session)
+        assert project.cloud_vision_detection_enabled is False
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        status_list = response.json()["items"][0]["cloud_vision_status"]
+        assert {entry["phase"]: entry["status"] for entry in status_list} == {
+            "landmark": "consent_disabled",
+            "remote_category": "consent_disabled",
+        }
+
+    async def test_landmark_result_when_a_landmark_detection_row_exists(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        from photosort.models import PhotoLandmarkDetection
+
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoLandmarkDetection(
+                photo_id=photo.id,
+                name="Eiffelturm",
+                confidence=0.9,
+                computed_at=datetime(2023, 6, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "landmark"
+        )
+        assert entry["status"] == "result"
+        assert entry["attempted_at"] is not None
+        assert entry["error_message"] is None
+
+    async def test_landmark_no_result_when_criterion_score_exists_without_detection_row(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Datenanomalie-Regressionstest (Teststrategie-Abschnitt der Spec): ein POSITIVER Wert
+        # (nicht nur 0.0) ohne PhotoLandmarkDetection-Zeile muss trotzdem no_result liefern - die
+        # Kaskade prueft die PRAESENZ der Score-Zeile, nicht den konkreten Wert.
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="landmark",
+                value=0.7,
+                source=CriterionSource.CLOUD,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "landmark"
+        )
+        assert entry["status"] == "no_result"
+        assert entry["attempted_at"] is not None
+
+    async def test_landmark_error_status_includes_message_and_timestamp(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        from photosort.models import CloudVisionPhase, PhotoCloudVisionError
+
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCloudVisionError(
+                photo_id=photo.id,
+                phase=CloudVisionPhase.LANDMARK,
+                error_type="LandmarkApiError",
+                error_message="Anthropic Vision API nicht erreichbar: timeout",
+                attempted_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "landmark"
+        )
+        assert entry["status"] == "error"
+        assert entry["error_message"] == "Anthropic Vision API nicht erreichbar: timeout"
+        assert entry["attempted_at"] is not None
+
+    async def test_landmark_error_persists_even_after_consent_is_disabled_again(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Explizit bindender Ueberschneidungsfall der Spec: error UND Consent inzwischen
+        # deaktiviert -> error bleibt bestehen (Consent ist bereits Default False hier).
+        from photosort.models import CloudVisionPhase, PhotoCloudVisionError
+
+        project = await _make_project(db_session)
+        assert project.cloud_vision_detection_enabled is False
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCloudVisionError(
+                photo_id=photo.id,
+                phase=CloudVisionPhase.LANDMARK,
+                error_type="LandmarkApiError",
+                error_message="Fehler",
+                attempted_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "landmark"
+        )
+        assert entry["status"] == "error"
+
+    async def test_landmark_success_wins_over_an_orphaned_error_row(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Edge Case der Teststrategie: verwaiste Fehler-Zeile trotz vorhandenem Erfolgssignal -
+        # die Kaskade muss trotzdem korrekt "result" liefern (Erfolg schlaegt Fehler, ADR 0035
+        # Punkt 1).
+        from photosort.models import CloudVisionPhase, PhotoCloudVisionError, PhotoLandmarkDetection
+
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoLandmarkDetection(
+                photo_id=photo.id,
+                name="Eiffelturm",
+                confidence=0.9,
+                computed_at=datetime(2023, 6, 1, tzinfo=UTC),
+            )
+        )
+        db_session.add(
+            PhotoCloudVisionError(
+                photo_id=photo.id,
+                phase=CloudVisionPhase.LANDMARK,
+                error_type="LandmarkApiError",
+                error_message="veraltete Fehler-Zeile",
+                attempted_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "landmark"
+        )
+        assert entry["status"] == "result"
+
+    async def test_landmark_not_candidate_when_no_local_criterion_reaches_the_threshold(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="content_landscape",
+                value=0.0,
+                source=CriterionSource.LOCAL_HEURISTIC,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "landmark"
+        )
+        assert entry["status"] == "not_candidate"
+
+    async def test_landmark_not_run_when_a_local_criterion_reaches_the_threshold(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
+        assert threshold is not None
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="gebaeude",
+                value=threshold,
+                source=CriterionSource.LOCAL_ML,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "landmark"
+        )
+        assert entry["status"] == "not_run"
+
+    async def test_remote_category_result_uses_the_latest_computed_at_of_several_detections(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Edge Case der Teststrategie: mehrere PhotoCategoryDetection-Zeilen desselben Fotos mit
+        # potenziell unterschiedlichem computed_at (defensiv max()).
+        from photosort.models import CategoryLabel, PhotoCategoryDetection
+
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        label_a = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
+        label_b = CategoryLabel(canonical_key="strand", display_name="Strand", embedding=[0.0, 1.0])
+        db_session.add_all([label_a, label_b])
+        await db_session.flush()
+        db_session.add_all(
+            [
+                PhotoCategoryDetection(
+                    photo_id=photo.id,
+                    category_label_id=label_a.id,
+                    raw_label="Hund",
+                    confidence=0.9,
+                    provider="anthropic",
+                    computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+                ),
+                PhotoCategoryDetection(
+                    photo_id=photo.id,
+                    category_label_id=label_b.id,
+                    raw_label="Strand",
+                    confidence=0.8,
+                    provider="anthropic",
+                    computed_at=datetime(2023, 6, 1, tzinfo=UTC),
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "remote_category"
+        )
+        assert entry["status"] == "result"
+        assert entry["attempted_at"].startswith("2023-06-01")
+
+    async def test_remote_category_error_status_includes_message_and_timestamp(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        from photosort.models import CloudVisionPhase, PhotoCloudVisionError
+
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCloudVisionError(
+                photo_id=photo.id,
+                phase=CloudVisionPhase.REMOTE_CATEGORY,
+                error_type="RemoteCategoryClassificationApiError",
+                error_message="Fehler beim Klassifizieren",
+                attempted_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "remote_category"
+        )
+        assert entry["status"] == "error"
+        assert entry["error_message"] == "Fehler beim Klassifizieren"
+
+    async def test_remote_category_not_candidate_when_photo_was_rejected(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoScore(
+                photo_id=photo.id,
+                sharpness=1.0,
+                exposure=0.0,
+                suggested_status=RatingStatus.REJECTED,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "remote_category"
+        )
+        assert entry["status"] == "not_candidate"
+
+    async def test_remote_category_not_run_when_photo_is_an_ausschuss_survivor(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoScore(
+                photo_id=photo.id,
+                sharpness=1.0,
+                exposure=0.0,
+                suggested_status=None,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "remote_category"
+        )
+        assert entry["status"] == "not_run"
 
 
 class TestRemoteCategoryFields:

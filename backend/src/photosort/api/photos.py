@@ -14,13 +14,20 @@ from sqlalchemy.orm import aliased, selectinload
 
 from photosort.api.deps import get_current_user, get_session
 from photosort.config import settings
-from photosort.criteria import CRITERIA_REGISTRY, derive_active_categories, derive_category_key
+from photosort.criteria import (
+    CRITERIA_REGISTRY,
+    derive_active_categories,
+    derive_category_key,
+    is_landmark_candidate,
+)
 from photosort.models import (
     CategoryLabel,
+    CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
     Photo,
     PhotoCategoryDetection,
+    PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoRanking,
     PhotoScore,
@@ -149,6 +156,32 @@ class CategoryCandidateOut(BaseModel):
     provider: str | None = None
 
 
+class CloudVisionStatus(enum.StrEnum):
+    """specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-
+    attempt-fehler-persistierung.md Punkt 1: einer von sechs Zustaenden je Foto x
+    CloudVisionPhase, zur Anfragezeit aus bereits vorhandenen Signalen abgeleitet (siehe
+    _cloud_vision_status_out)."""
+
+    NOT_RUN = "not_run"
+    NOT_CANDIDATE = "not_candidate"
+    CONSENT_DISABLED = "consent_disabled"
+    ERROR = "error"
+    NO_RESULT = "no_result"
+    RESULT = "result"
+
+
+class CloudVisionStatusOut(BaseModel):
+    """Ein Eintrag von `PhotoOut.cloud_vision_status` (immer genau zwei, einer je
+    CloudVisionPhase, feste Reihenfolge [landmark, remote_category])."""
+
+    phase: CloudVisionPhase
+    status: CloudVisionStatus
+    # Nur bei status == ERROR gesetzt.
+    error_message: str | None = None
+    # Nur bei status in {ERROR, NO_RESULT, RESULT} gesetzt.
+    attempted_at: datetime | None = None
+
+
 class PhotoOut(BaseModel):
     id: int
     relative_path: str
@@ -169,6 +202,10 @@ class PhotoOut(BaseModel):
     # Siehe CategoryCandidateOut-Docstring - sortiert nach Score/Konfidenz absteigend (UI/UX-
     # Abschnitt der Spec), Tie-Break alphabetisch nach category_key fuer Determinismus.
     category_candidates: list[CategoryCandidateOut]
+    # specs/features/0058-cloud-vision-status-transparenz.md: immer genau 2 Eintraege (einer je
+    # CloudVisionPhase), feste Reihenfolge [landmark, remote_category] - siehe
+    # _cloud_vision_status_out.
+    cloud_vision_status: list[CloudVisionStatusOut]
 
 
 class PhotoListOut(BaseModel):
@@ -242,6 +279,14 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
             selectinload(Photo.category_label_detections).selectinload(
                 PhotoCategoryDetection.category_label
             ),
+            # specs/features/0058-cloud-vision-status-transparenz.md: eager geladen (analog
+            # criterion_scores/category_label_detections oben), kein zusaetzliches Query je Foto
+            # fuer _cloud_vision_status_out. Photo.landmark_detection war zuvor NIE eager geladen
+            # (kein bestehender Aufrufer griff bislang darauf zu) - ohne dieses selectinload
+            # loest photo.landmark_detection ein Lazy-Load aus und schlaegt im Async-Kontext mit
+            # MissingGreenlet fehl (Review-verifiziert).
+            selectinload(Photo.landmark_detection),
+            selectinload(Photo.cloud_vision_errors),
         )
     )
     return {photo.id: photo for photo in result.scalars()}
@@ -346,9 +391,96 @@ def _category_candidates_out(photo: Photo) -> list[CategoryCandidateOut]:
     return sorted(candidates, key=lambda c: (-c.score, c.category_key))
 
 
+def _cloud_vision_status_for_phase(
+    phase: CloudVisionPhase,
+    *,
+    success: tuple[CloudVisionStatus, datetime] | None,
+    error: PhotoCloudVisionError | None,
+    consent_enabled: bool,
+    is_candidate: bool,
+) -> CloudVisionStatusOut:
+    """Wendet die 5-Raenge-Prioritaets-Kaskade fuer EINE Phase an (specs/features/0058-cloud-
+    vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-fehler-persistierung.md
+    Punkt 1) - erster zutreffender Rang gewinnt, kein Merge mehrerer gleichzeitig zutreffender
+    Signale. `success` ist bereits das fertige (Status, attempted_at)-Paar der jeweils
+    aufrufenden Phase (RESULT/NO_RESULT unterscheiden sich nur bei landmark, siehe
+    _cloud_vision_status_out)."""
+    if success is not None:
+        status, attempted_at = success
+        return CloudVisionStatusOut(phase=phase, status=status, attempted_at=attempted_at)
+    if error is not None:
+        return CloudVisionStatusOut(
+            phase=phase,
+            status=CloudVisionStatus.ERROR,
+            error_message=error.error_message,
+            attempted_at=error.attempted_at,
+        )
+    if not consent_enabled:
+        return CloudVisionStatusOut(phase=phase, status=CloudVisionStatus.CONSENT_DISABLED)
+    if not is_candidate:
+        return CloudVisionStatusOut(phase=phase, status=CloudVisionStatus.NOT_CANDIDATE)
+    return CloudVisionStatusOut(phase=phase, status=CloudVisionStatus.NOT_RUN)
+
+
+def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVisionStatusOut]:
+    """specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-
+    attempt-fehler-persistierung.md: read-time abgeleiteter Cloud-Vision-Status fuer beide Phasen,
+    IMMER genau 2 Eintraege in fester Reihenfolge [landmark, remote_category] (unabhaengig von
+    DB-/Insert-Reihenfolge von photo.cloud_vision_errors). Erwartet, dass `photo` bereits ueber
+    selectinload(Photo.criterion_scores/landmark_detection/category_label_detections/
+    cloud_vision_errors) eager geladen ist (siehe _photos_by_id) - kein Lazy-Load hier."""
+    errors_by_phase = {row.phase: row for row in photo.cloud_vision_errors}
+
+    # Landmark: Erfolgssignal ist entweder eine tatsaechliche Detection ("gefunden", RESULT) oder
+    # eine PhotoCriterionScore(criterion_key="landmark")-Zeile ohne Detection ("nichts gefunden",
+    # NO_RESULT eigener Sonderfall, ADR 0035 Punkt 1) - die PRAESENZ der Score-Zeile entscheidet,
+    # nicht ihr konkreter Wert (Datenanomalie-Regressionstest der Teststrategie).
+    landmark_score = next(
+        (score for score in photo.criterion_scores if score.criterion_key == "landmark"), None
+    )
+    landmark_success: tuple[CloudVisionStatus, datetime] | None = None
+    if photo.landmark_detection is not None:
+        landmark_success = (CloudVisionStatus.RESULT, photo.landmark_detection.computed_at)
+    elif landmark_score is not None:
+        landmark_success = (CloudVisionStatus.NO_RESULT, landmark_score.computed_at)
+
+    # Remote-Kategorie: kein "nichts gefunden"-Fall (ADR 0032 Punkt 3, Erfolg schreibt immer 1-3
+    # Zeilen) - mehrere Zeilen desselben Fotos koennen unterschiedliches computed_at haben
+    # (defensiv max(), Edge Case der Teststrategie).
+    remote_category_success: tuple[CloudVisionStatus, datetime] | None = None
+    if photo.category_label_detections:
+        remote_category_success = (
+            CloudVisionStatus.RESULT,
+            max(detection.computed_at for detection in photo.category_label_detections),
+        )
+
+    return [
+        _cloud_vision_status_for_phase(
+            CloudVisionPhase.LANDMARK,
+            success=landmark_success,
+            error=errors_by_phase.get(CloudVisionPhase.LANDMARK),
+            consent_enabled=project.cloud_vision_detection_enabled,
+            is_candidate=is_landmark_candidate(
+                {score.criterion_key: score.value for score in photo.criterion_scores}
+            ),
+        ),
+        _cloud_vision_status_for_phase(
+            CloudVisionPhase.REMOTE_CATEGORY,
+            success=remote_category_success,
+            error=errors_by_phase.get(CloudVisionPhase.REMOTE_CATEGORY),
+            consent_enabled=project.cloud_vision_detection_enabled,
+            # Spiegelt exakt die WHERE-Klausel von worker.py::select_remote_category_candidates
+            # (ADR 0035 Punkt 1) - kein PhotoScore vorhanden ODER bereits aussortiert -> kein
+            # Kandidat.
+            is_candidate=photo.score is not None and photo.score.suggested_status is None,
+        ),
+    ]
+
+
 def _to_photo_out(
     photo: Photo,
     current_user_id: int,
+    project: Project,
     ranking: PhotoRanking | None = None,
     partition_size: int = 0,
 ) -> PhotoOut:
@@ -385,6 +517,7 @@ def _to_photo_out(
         remote_category_labels=_remote_category_labels_out(photo),
         category_override=photo.score.category_override if photo.score is not None else None,
         category_candidates=_category_candidates_out(photo),
+        cloud_vision_status=_cloud_vision_status_out(photo, project),
     )
 
 
@@ -510,7 +643,7 @@ async def list_photos(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> PhotoListOut:
-    await _get_project_or_404(project_id, session)
+    project = await _get_project_or_404(project_id, session)
 
     if top_n_per_category is not None:
         ids, criterion_scoring_run_id = await _top_n_per_category_photo_ids(
@@ -531,6 +664,7 @@ async def list_photos(
             _to_photo_out(
                 photos_by_id[photo_id],
                 current_user.id,
+                project,
                 rankings_by_id.get(photo_id),
                 _partition_size_for(rankings_by_id.get(photo_id), partition_sizes),
             )
@@ -559,6 +693,7 @@ async def list_photos(
         _to_photo_out(
             photos_by_id[photo_id],
             current_user.id,
+            project,
             rankings_by_id.get(photo_id),
             _partition_size_for(rankings_by_id.get(photo_id), partition_sizes),
         )
