@@ -6,6 +6,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from photosort.api import auth, opencloud, photos, projects, ratings
 from photosort.config import settings
+from photosort.logging_config import configure_logging
 from photosort.rate_limit import limiter
 
 # Muss-Kriterium (specs/features/0006-auth.md, architecture/0003-securitykonzept.md): ein
@@ -25,6 +26,11 @@ def _handle_rate_limit_exceeded(request: Request, exc: Exception) -> Response:
 
 
 def create_app() -> FastAPI:
+    # specs/features/0056-structured-logging-cloud-vision-errors.md, ADR 0034 Punkt 2: einer der
+    # beiden Prozess-Einstiegspunkte (API-Prozess) - derselbe Aufruf sitzt fuer den Worker-Prozess
+    # in worker.py::WorkerSettings.on_startup.
+    configure_logging()
+
     if (
         settings.secret_key == PLACEHOLDER_SECRET_KEY
         or len(settings.secret_key) < MIN_SECRET_KEY_LENGTH

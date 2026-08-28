@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1709,7 +1710,7 @@ async def test_existing_behavior_is_unchanged_when_frequency_threshold_is_still_
 
 
 async def test_empty_candidate_pool_does_not_crash_category_derivation(
-    db_session: AsyncSession, tmp_path: Path
+    db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     # Leerer Kandidatenpool (Akzeptanzkriterium der Spec: derive_active_categories({}) darf
     # keinen ZeroDivisionError werfen) - kein einziges Foto passiert das Ausschuss-Gate.
@@ -1721,17 +1722,18 @@ async def test_empty_candidate_pool_does_not_crash_category_derivation(
     await _add_score(db_session, rejected, cluster_key=None, suggested_status=RatingStatus.REJECTED)
     _write_display_variant(tmp_path, rejected, _flat_image())
 
-    run = await run_criterion_scoring(
-        db_session,
-        project,
-        scoring_run.id,
-        cache_dir=tmp_path,
-        build_detector=_no_face_detector,
-        build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
-        build_aesthetics=_no_aesthetics_model,
-        build_landmarker=_no_face_landmarker,
-    )
+    with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+        run = await run_criterion_scoring(
+            db_session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
+            build_detector=_no_face_detector,
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_no_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+        )
 
     assert run.status == ScanStatus.SUCCESS
     rankings = (
@@ -1744,6 +1746,9 @@ async def test_empty_candidate_pool_does_not_crash_category_derivation(
         .all()
     )
     assert rankings == []
+    # Spec 0056/ADR 0034: nur Fehler werden geloggt, ein erfolgreich durchgelaufener Gesamtlauf
+    # erzeugt keinen Log-Eintrag.
+    assert len(caplog.records) == 0
 
 
 # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR decisions/0025-cloud-
@@ -1816,6 +1821,23 @@ class ConcurrencyTrackingLandmarkClient:
             return LandmarkDetection(name="Eiffelturm", confidence=0.9)
         finally:
             self._active -= 1
+
+
+class PerPhotoLandmarkClient:
+    """Liefert unterschiedliche Detections/Fehler je Aufrufindex (analog PerPhotoCategoryClient
+    in test_worker_remote_category_classification.py) - fuer Tests mit mehreren gleichzeitig
+    fehlschlagenden Fotos im selben Nebenlaeufigkeits-Block."""
+
+    def __init__(self, results: list[LandmarkDetection | Exception]) -> None:
+        self._results = results
+        self.calls = 0
+
+    async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+        result = self._results[self.calls]
+        self.calls += 1
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
 class CancellingLandmarkClient:
@@ -2240,7 +2262,7 @@ async def test_skip_already_scored_photo_but_local_criteria_are_recomputed(
 
 
 async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_next_run(
-    db_session: AsyncSession, tmp_path: Path
+    db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
@@ -2254,18 +2276,21 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
 
     failing_client = RecordingLandmarkClient(raise_error=True)
 
-    run = await run_criterion_scoring(
-        db_session,
-        project,
-        scoring_run.id,
-        cache_dir=tmp_path,
-        build_detector=_no_face_detector,
-        build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
-        build_aesthetics=_no_aesthetics_model,
-        build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: failing_client,
-    )
+    # Spec 0056/ADR 0034: der fehlgeschlagene Cloud-Aufruf muss genau einen WARNING-Log-Eintrag
+    # erzeugen, bevor das bestehende continue greift.
+    with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+        run = await run_criterion_scoring(
+            db_session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
+            build_detector=_no_face_detector,
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_no_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+            build_landmark_client=lambda: failing_client,
+        )
 
     assert run.status == ScanStatus.SUCCESS  # best-effort, kein Laufabbruch
     assert len(failing_client.calls) == 1
@@ -2283,6 +2308,16 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
     # Andere Kriterien dieses Fotos bleiben unberuehrt.
     assert "sharpness" in criteria_keys
     assert "content_landscape" in criteria_keys
+
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    assert record.name == "photosort.worker"
+    assert record.levelno == logging.WARNING
+    assert record.exc_info is None  # ADR 0034 Punkt 5: kein exc_info=True/Traceback.
+    assert "LandmarkApiError" in record.message
+    assert str(photo.id) in record.message
+    assert photo.relative_path in record.message
+    assert "landmark" in record.message.lower()
 
     succeeding_client = RecordingLandmarkClient()
     run2 = await run_criterion_scoring(
@@ -2341,8 +2376,70 @@ async def test_landmark_calls_are_limited_by_landmark_api_concurrency(
     assert client.max_concurrent <= 2
 
 
+async def test_multiple_simultaneously_failing_landmark_calls_each_log_their_own_photo(
+    db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Spec 0056/ADR 0034, Edge Case "mehrere gleichzeitig fehlschlagende Fotos in einem Block":
+    # jede Message muss ihr eigenes photo.id referenzieren, keine Vertauschung durch die parallele
+    # zip(block_ids, results, strict=True)-Zuordnung. Bisher fehlte fuer die Landmark-Phase ein
+    # Test mit MEHREREN gleichzeitigen Fehlschlaegen im selben Block, nur Einzelfehlschlag war
+    # abgedeckt (test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_next_run).
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+
+    photo_a = await _add_photo(
+        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo_a)
+    _write_display_variant(tmp_path, photo_a, _flat_image())
+    photo_b = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo_b)
+    _write_display_variant(tmp_path, photo_b, _flat_image())
+    photo_c = await _add_photo(
+        db_session, project, "c.jpg", "etag-c", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo_c)
+    _write_display_variant(tmp_path, photo_c, _flat_image())
+
+    client = PerPhotoLandmarkClient(
+        [
+            LandmarkApiError("Fehler fuer a"),
+            LandmarkDetection(name="Eiffelturm", confidence=0.9),
+            LandmarkApiError("Fehler fuer c"),
+        ]
+    )
+
+    with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+        run = await run_criterion_scoring(
+            db_session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
+            build_detector=_no_face_detector,
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_no_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+            build_landmark_client=lambda: client,
+        )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert client.calls == 3
+    assert len(caplog.records) == 2
+    messages = [record.message for record in caplog.records]
+    assert any(str(photo_a.id) in message and photo_a.relative_path in message
+               for message in messages)
+    assert any(str(photo_c.id) in message and photo_c.relative_path in message
+               for message in messages)
+    assert not any(str(photo_b.id) in message for message in messages)
+
+
 async def test_cancelled_error_from_a_parallel_landmark_call_propagates_and_fails_the_run(
-    db_session: AsyncSession, tmp_path: Path
+    db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
@@ -2354,19 +2451,25 @@ async def test_cancelled_error_from_a_parallel_landmark_call_propagates_and_fail
     await _add_score(db_session, photo)
     _write_display_variant(tmp_path, photo, _flat_image())
 
-    with pytest.raises(asyncio.CancelledError):
-        await run_criterion_scoring(
-            db_session,
-            project,
-            scoring_run.id,
-            cache_dir=tmp_path,
-            build_detector=_no_face_detector,
-            build_animal_detector=_no_animal_detector,
-            build_classifier=_no_scene_classifier,
-            build_aesthetics=_no_aesthetics_model,
-            build_landmarker=_no_face_landmarker,
-            build_landmark_client=lambda: CancellingLandmarkClient(),
-        )
+    # Spec 0056/ADR 0034: ein CancelledError durchlaeuft die separate, dem continue-Loop
+    # vorgelagerte Propagations-Schleife und erreicht die neuen logger.warning(...)-Aufrufe
+    # strukturell nie - ein Lauf-Abbruch ist keine best-effort-Situation.
+    with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+        with pytest.raises(asyncio.CancelledError):
+            await run_criterion_scoring(
+                db_session,
+                project,
+                scoring_run.id,
+                cache_dir=tmp_path,
+                build_detector=_no_face_detector,
+                build_animal_detector=_no_animal_detector,
+                build_classifier=_no_scene_classifier,
+                build_aesthetics=_no_aesthetics_model,
+                build_landmarker=_no_face_landmarker,
+                build_landmark_client=lambda: CancellingLandmarkClient(),
+            )
+
+    assert len(caplog.records) == 0
 
     result = await db_session.execute(
         select(CriterionScoringRun).where(CriterionScoringRun.project_id == project.id)
