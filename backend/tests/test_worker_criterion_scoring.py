@@ -2435,6 +2435,78 @@ async def test_successful_landmark_call_after_a_previous_failure_clears_the_erro
     assert result.scalar_one_or_none() is None
 
 
+async def test_successful_landmark_call_without_a_name_still_clears_the_error_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # specs/architecture/0002-testkonzept.md ("Read-Time-Prioritaets-Kaskade..." fuer ADR 0035):
+    # "Landmark-Erfolg ohne erkannten Namen (no_result) loescht eine vorher bestehende Fehler-
+    # Zeile ebenfalls" - eigener Testfall, der das explizit vom Erfolgspfad MIT Namen (RESULT,
+    # siehe test_successful_landmark_call_after_a_previous_failure_clears_the_error_row oben)
+    # abgrenzt: hier bleibt die PhotoLandmarkDetection-Zeile bewusst aus (detection.name is None),
+    # trotzdem muss die Fehler-Zeile geloescht werden - der Loesch-Aufruf haengt am erfolgreichen
+    # Cloud-Aufruf selbst, nicht an der (bedingten) PhotoLandmarkDetection-Anlage.
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: RecordingLandmarkClient(raise_error=True),
+    )
+    assert (
+        await db_session.execute(
+            select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+        )
+    ).scalar_one_or_none() is not None
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: RecordingLandmarkClient(
+            detection=LandmarkDetection(name=None, confidence=0.0)
+        ),
+    )
+
+    error_result = await db_session.execute(
+        select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+    )
+    assert error_result.scalar_one_or_none() is None
+
+    detection_result = await db_session.execute(
+        select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+    )
+    assert detection_result.scalar_one_or_none() is None  # kein Name -> keine Detection-Zeile.
+
+    criterion_result = await db_session.execute(
+        select(PhotoCriterionScore).where(
+            PhotoCriterionScore.photo_id == photo.id,
+            PhotoCriterionScore.criterion_key == "landmark",
+        )
+    )
+    assert criterion_result.scalar_one().value == 0.0  # no_result-Signal bleibt bestehen.
+
+
 async def test_repeated_landmark_failures_upsert_the_same_error_row(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

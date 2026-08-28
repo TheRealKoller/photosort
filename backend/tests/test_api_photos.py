@@ -1008,6 +1008,38 @@ class TestCloudVisionStatus:
         )
         assert entry["status"] == "error"
 
+    async def test_landmark_result_persists_even_after_consent_is_disabled_again(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # specs/architecture/0002-testkonzept.md ("Read-Time-Prioritaets-Kaskade..." fuer ADR
+        # 0035): "Erfolgssignal vorhanden UND Consent nachtraeglich deaktiviert -> weiterhin
+        # result/no_result (Rang 1 vor Rang 3)" - explizit bindender Ueberschneidungsfall,
+        # spiegelbildlich zu test_landmark_error_persists_even_after_consent_is_disabled_again
+        # oben (dort Rang 2 vor Rang 3).
+        from photosort.models import PhotoLandmarkDetection
+
+        project = await _make_project(db_session)
+        assert project.cloud_vision_detection_enabled is False
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoLandmarkDetection(
+                photo_id=photo.id,
+                name="Eiffelturm",
+                confidence=0.9,
+                computed_at=datetime(2023, 6, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "landmark"
+        )
+        assert entry["status"] == "result"
+
     async def test_landmark_success_wins_over_an_orphaned_error_row(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
@@ -1144,6 +1176,42 @@ class TestCloudVisionStatus:
         )
         assert entry["status"] == "result"
         assert entry["attempted_at"].startswith("2023-06-01")
+
+    async def test_remote_category_result_persists_even_after_consent_is_disabled_again(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # specs/architecture/0002-testkonzept.md ("Read-Time-Prioritaets-Kaskade..." fuer ADR
+        # 0035): "Erfolgssignal vorhanden UND Consent nachtraeglich deaktiviert -> weiterhin
+        # result/no_result (Rang 1 vor Rang 3)" - Remote-Kategorie-Pendant zu
+        # test_landmark_result_persists_even_after_consent_is_disabled_again oben.
+        from photosort.models import CategoryLabel, PhotoCategoryDetection
+
+        project = await _make_project(db_session)
+        assert project.cloud_vision_detection_enabled is False
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        label = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
+        db_session.add(label)
+        await db_session.flush()
+        db_session.add(
+            PhotoCategoryDetection(
+                photo_id=photo.id,
+                category_label_id=label.id,
+                raw_label="Hund",
+                confidence=0.9,
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "remote_category"
+        )
+        assert entry["status"] == "result"
 
     async def test_remote_category_error_status_includes_message_and_timestamp(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
