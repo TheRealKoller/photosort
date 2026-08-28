@@ -62,10 +62,12 @@ from photosort.landmark import (
 from photosort.logging_config import configure_logging
 from photosort.models import (
     CategoryLabel,
+    CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
     Photo,
     PhotoCategoryDetection,
+    PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
     PhotoRanking,
@@ -890,6 +892,50 @@ def _log_cloud_vision_failure(
     )
 
 
+# specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
+# fehler-persistierung.md Punkt 2: defensive Obergrenze fuer eine entartete Fehlermeldung, analog
+# remote_classification.py::MAX_REMOTE_LABEL_LENGTH - die eigentliche Absicherung bleibt die in
+# ADR 0034 Punkt 5 verifizierte str(exc)-Konstruktion (keine Secrets/Rohdaten), diese Kappung ist
+# nur eine Storage-/Degenerationsgrenze.
+_MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH = 500
+
+
+async def _record_cloud_vision_error(
+    session: AsyncSession,
+    photo_id: int,
+    phase: CloudVisionPhase,
+    exc: BaseException,
+    now: datetime,
+) -> None:
+    """Upsert der letzten bekannten Fehler-Zeile fuer dieses Foto x CloudVisionPhase (ADR 0035
+    Punkt 2/3) - bewusst getrennt von _log_cloud_vision_failure (ephemeres Log vs. dauerhafte,
+    per API abrufbare Persistenz mit Lösch-Pfad bei Erfolg, siehe dortiger Docstring), teilt sich
+    aber `type(exc).__name__`/`str(exc)` mit dem Aufrufer statt einer zweiten Auswertung. Reines
+    `session.add`/Attribut-Update, kein eigener Commit (Persistierung laeuft ueber die bereits
+    bestehenden periodischen Commit-Punkte der jeweiligen Schleife, analog
+    _upsert_landmark_detection)."""
+    existing = await session.get(PhotoCloudVisionError, (photo_id, phase))
+    if existing is None:
+        existing = PhotoCloudVisionError(photo_id=photo_id, phase=phase)
+        session.add(existing)
+    existing.error_type = type(exc).__name__
+    existing.error_message = str(exc)[:_MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH]
+    existing.attempted_at = now
+
+
+async def _clear_cloud_vision_error(
+    session: AsyncSession, photo_id: int, phase: CloudVisionPhase
+) -> None:
+    """Loescht eine ggf. vorhandene Fehler-Zeile nach einem erfolgreichen (Retry-)Versuch (ADR
+    0035 Punkt 2: "Aufraeumen bei Erfolg") - haelt die Tabelle konsistent mit ihrer eigenen
+    Bedeutung ("letzter bekannter Versuch ist fehlgeschlagen"), auch wenn die Prioritaets-Kaskade
+    in api/photos.py::_cloud_vision_status_out einen vergessenen Aufruf funktional abfangen
+    wuerde (Erfolg schlaegt Fehler)."""
+    existing = await session.get(PhotoCloudVisionError, (photo_id, phase))
+    if existing is not None:
+        await session.delete(existing)
+
+
 async def _detect_landmark_for_photo(
     client: LandmarkClientLike, cache_dir: Path, photo: Photo
 ) -> LandmarkDetection:
@@ -1297,6 +1343,12 @@ async def run_criterion_scoring(
                                     photos_by_id[photo_id].relative_path,
                                     result,
                                 )
+                                # specs/features/0058-cloud-vision-status-transparenz.md, ADR
+                                # 0035 Punkt 3: dauerhafte, per API abrufbare Persistenz desselben
+                                # Fehlschlags (getrennt vom Log oben).
+                                await _record_cloud_vision_error(
+                                    session, photo_id, CloudVisionPhase.LANDMARK, result, now
+                                )
                                 continue
                             detection = result
                             landmark_value = compute_landmark_score(detection)
@@ -1304,6 +1356,11 @@ async def run_criterion_scoring(
                                 photo_id, "landmark", landmark_value, CriterionSource.CLOUD
                             )
                             candidate_values[photo_id]["landmark"] = landmark_value
+                            # ADR 0035 Punkt 2 "Aufraeumen bei Erfolg": ein erfolgreicher
+                            # (Retry-)Versuch loescht eine ggf. vorhandene Fehler-Zeile.
+                            await _clear_cloud_vision_error(
+                                session, photo_id, CloudVisionPhase.LANDMARK
+                            )
                             if detection.name is not None:
                                 await _upsert_landmark_detection(
                                     session, photo_id, detection, now, settings.landmark_provider
@@ -1506,6 +1563,12 @@ async def run_remote_category_classification(
                         _log_cloud_vision_failure(
                             "remote_category", photo.id, photo.relative_path, result
                         )
+                        # specs/features/0058-cloud-vision-status-transparenz.md, ADR 0035
+                        # Punkt 3: dauerhafte, per API abrufbare Persistenz desselben Fehlschlags
+                        # (getrennt vom Log oben).
+                        await _record_cloud_vision_error(
+                            session, photo.id, CloudVisionPhase.REMOTE_CATEGORY, result, now
+                        )
                         continue
                     detections = result
 
@@ -1542,6 +1605,11 @@ async def run_remote_category_classification(
                                 computed_at=now,
                             )
                         )
+                    # ADR 0035 Punkt 2 "Aufraeumen bei Erfolg": ein erfolgreicher (Retry-)Versuch
+                    # loescht eine ggf. vorhandene Fehler-Zeile - einmal pro Foto, nicht pro Label.
+                    await _clear_cloud_vision_error(
+                        session, photo.id, CloudVisionPhase.REMOTE_CATEGORY
+                    )
 
                 processed += len(block)
                 run.photos_processed = processed

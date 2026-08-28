@@ -15,8 +15,10 @@ from photosort import worker
 from photosort.label_embedding import LabelEmbedderLike
 from photosort.models import (
     CategoryLabel,
+    CloudVisionPhase,
     Photo,
     PhotoCategoryDetection,
+    PhotoCloudVisionError,
     PhotoScore,
     Project,
     RatingStatus,
@@ -430,6 +432,156 @@ async def test_best_effort_error_isolation_does_not_abort_the_run(
     assert str(failing_photo.id) in record.message
     assert failing_photo.relative_path in record.message
     assert str(succeeding_photo.id) not in record.message
+
+
+# specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
+# fehler-persistierung.md Punkt 2/3 ab hier: worker.py::_record_cloud_vision_error/
+# _clear_cloud_vision_error - eigene DB-Zustands-Tests, unabhaengig von der API-Sichtbarkeit
+# (Teststrategie-Abschnitt der Spec), analog test_worker_criterion_scoring.py.
+
+
+async def test_failed_remote_category_call_persists_a_cloud_vision_error_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo)
+
+    client = RecordingCategoryClient(raise_error=True)
+
+    await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda: client,
+        build_embedder=_fake_embedder,
+    )
+
+    result = await db_session.execute(
+        select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+    )
+    stored = result.scalar_one()
+    assert stored.phase == CloudVisionPhase.REMOTE_CATEGORY
+    assert stored.error_type == "RuntimeError"
+    assert "simulierter Cloud-Fehler" in stored.error_message
+    assert stored.attempted_at is not None
+
+
+async def test_successful_remote_category_call_after_a_previous_failure_clears_the_error_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo)
+
+    await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda: RecordingCategoryClient(raise_error=True),
+        build_embedder=_fake_embedder,
+    )
+    assert (
+        await db_session.execute(
+            select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+        )
+    ).scalar_one_or_none() is not None
+
+    await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda: RecordingCategoryClient(),
+        build_embedder=_fake_embedder,
+    )
+
+    result = await db_session.execute(
+        select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+    )
+    assert result.scalar_one_or_none() is None
+
+
+async def test_repeated_remote_category_failures_upsert_the_same_error_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo)
+
+    class _RaisingClient:
+        def __init__(self, message: str) -> None:
+            self._message = message
+
+        async def classify(
+            self, image_bytes: bytes, mime_type: str
+        ) -> list[CategoryLabelDetection]:
+            raise RuntimeError(self._message)
+
+    await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda: _RaisingClient("erster Fehlschlag"),
+        build_embedder=_fake_embedder,
+    )
+    await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda: _RaisingClient("zweiter Fehlschlag"),
+        build_embedder=_fake_embedder,
+    )
+
+    result = await db_session.execute(
+        select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 1  # Upsert, kein Verlauf (composite PK photo_id+phase).
+    assert "zweiter Fehlschlag" in rows[0].error_message
+    assert "erster Fehlschlag" not in rows[0].error_message
+
+
+async def test_remote_category_error_message_is_capped_at_500_characters(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo)
+
+    overlong_message = "x" * 600
+
+    class _RaisingClient:
+        async def classify(
+            self, image_bytes: bytes, mime_type: str
+        ) -> list[CategoryLabelDetection]:
+            raise RuntimeError(overlong_message)
+
+    await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda: _RaisingClient(),
+        build_embedder=_fake_embedder,
+    )
+
+    result = await db_session.execute(
+        select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+    )
+    stored = result.scalar_one()
+    assert len(stored.error_message) == 500
+    assert stored.error_message == overlong_message[:500]
 
 
 async def test_empty_candidate_pool_succeeds_trivially(

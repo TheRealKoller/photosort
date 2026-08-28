@@ -19,10 +19,12 @@ from photosort.criteria import CATEGORY_DETAIL
 from photosort.landmark import LandmarkApiError, LandmarkDetection
 from photosort.models import (
     CategoryLabel,
+    CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
     Photo,
     PhotoCategoryDetection,
+    PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
     PhotoRanking,
@@ -2337,6 +2339,194 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
     # kein landmark-Eintrag vorhanden -> automatisch erneut Kandidat (ersetzt einen dedizierten
     # Retry-Mechanismus, ADR 0025 Punkt 3).
     assert len(succeeding_client.calls) == 1
+
+
+# specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
+# fehler-persistierung.md Punkt 2/3 ab hier: worker.py::_record_cloud_vision_error/
+# _clear_cloud_vision_error - eigene DB-Zustands-Tests, unabhaengig von der API-Sichtbarkeit
+# (Teststrategie-Abschnitt der Spec).
+
+
+async def test_failed_landmark_call_persists_a_cloud_vision_error_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    failing_client = RecordingLandmarkClient(raise_error=True)
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: failing_client,
+    )
+
+    result = await db_session.execute(
+        select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+    )
+    stored = result.scalar_one()
+    assert stored.phase == CloudVisionPhase.LANDMARK
+    assert stored.error_type == "LandmarkApiError"
+    assert "simulierter Cloud-Fehler" in stored.error_message
+    assert stored.attempted_at is not None
+
+
+async def test_successful_landmark_call_after_a_previous_failure_clears_the_error_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: RecordingLandmarkClient(raise_error=True),
+    )
+    assert (
+        await db_session.execute(
+            select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+        )
+    ).scalar_one_or_none() is not None
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: RecordingLandmarkClient(),
+    )
+
+    result = await db_session.execute(
+        select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+    )
+    assert result.scalar_one_or_none() is None
+
+
+async def test_repeated_landmark_failures_upsert_the_same_error_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    class _RaisingClient:
+        def __init__(self, message: str) -> None:
+            self._message = message
+
+        async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+            raise LandmarkApiError(self._message)
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: _RaisingClient("erster Fehlschlag"),
+    )
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: _RaisingClient("zweiter Fehlschlag"),
+    )
+
+    result = await db_session.execute(
+        select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 1  # Upsert, kein Verlauf (composite PK photo_id+phase).
+    assert "zweiter Fehlschlag" in rows[0].error_message
+    assert "erster Fehlschlag" not in rows[0].error_message
+
+
+async def test_landmark_error_message_is_capped_at_500_characters(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    overlong_message = "x" * 600
+
+    class _RaisingClient:
+        async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+            raise LandmarkApiError(overlong_message)
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: _RaisingClient(),
+    )
+
+    result = await db_session.execute(
+        select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+    )
+    stored = result.scalar_one()
+    assert len(stored.error_message) == 500
+    assert stored.error_message == overlong_message[:500]
 
 
 async def test_landmark_calls_are_limited_by_landmark_api_concurrency(
