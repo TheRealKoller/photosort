@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/TheRealKoller/photosort/compare/v0.18.1...v0.19.0) (2026-08-28)
+
+
+### Features
+
+* **logging:** strukturiertes Logging fuer Cloud-Vision-Fehler (Spec 0056) ([#247](https://github.com/TheRealKoller/photosort/issues/247)) ([bc1c70c](https://github.com/TheRealKoller/photosort/commit/bc1c70c80c9eae0def70484929450099620d3d16))
+
 ## [0.18.1](https://github.com/TheRealKoller/photosort/compare/v0.18.0...v0.18.1) (2026-08-28)
 
 
