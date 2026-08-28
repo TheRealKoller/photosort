@@ -27,6 +27,7 @@ from photosort.criteria import (
     compute_tier_score,
     derive_active_categories,
     derive_category_key,
+    is_landmark_candidate,
     normalize_exposure,
     normalize_sharpness,
 )
@@ -376,6 +377,59 @@ class TestComputeLandmarkScore:
     def test_negative_confidence_is_clamped(self) -> None:
         detection = LandmarkDetection(name="Eiffelturm", confidence=-0.3)
         assert compute_landmark_score(detection) == 0.0
+
+
+class TestIsLandmarkCandidate:
+    """specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-
+    attempt-fehler-persistierung.md Punkt 4: extrahiert aus worker.py::_select_landmark_candidates
+    - reine Schwellenwert-Pruefung (kein Skip-bereits-gescort, das bleibt worker-spezifisch), von
+    Live-Lauf UND API-Ableitung (api/photos.py::_cloud_vision_status_out) gemeinsam genutzt."""
+
+    def test_empty_dict_is_not_a_candidate(self) -> None:
+        assert is_landmark_candidate({}) is False
+
+    def test_content_landscape_below_threshold_and_gebaeude_absent_is_not_a_candidate(
+        self,
+    ) -> None:
+        threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
+        assert threshold is not None
+        assert is_landmark_candidate({"content_landscape": threshold - 0.01}) is False
+
+    def test_content_landscape_at_threshold_is_a_candidate(self) -> None:
+        # Inklusiver Vergleich (`>=`), analog derive_active_categories/derive_category_key.
+        threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
+        assert threshold is not None
+        assert is_landmark_candidate({"content_landscape": threshold}) is True
+
+    def test_content_landscape_above_threshold_is_a_candidate(self) -> None:
+        threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
+        assert threshold is not None
+        assert is_landmark_candidate({"content_landscape": threshold + 0.1}) is True
+
+    def test_gebaeude_at_threshold_is_a_candidate(self) -> None:
+        threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
+        assert threshold is not None
+        assert is_landmark_candidate({"gebaeude": threshold}) is True
+
+    def test_gebaeude_below_threshold_and_content_landscape_absent_is_not_a_candidate(
+        self,
+    ) -> None:
+        threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
+        assert threshold is not None
+        assert is_landmark_candidate({"gebaeude": threshold - 0.001}) is False
+
+    def test_either_criterion_reaching_its_threshold_is_sufficient(self) -> None:
+        landscape_threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
+        assert landscape_threshold is not None
+        assert (
+            is_landmark_candidate({"content_landscape": 0.0, "gebaeude": 0.0}) is False
+        )
+        assert (
+            is_landmark_candidate(
+                {"content_landscape": landscape_threshold, "gebaeude": 0.0}
+            )
+            is True
+        )
 
 
 # Wiederverwendungsnachweis fuer detect_person/detect_animals im Goldener-Schnitt-Kontext

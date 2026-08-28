@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import type { RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
+import { CloudVisionStatusList } from '../components/CloudVisionStatusList'
 import { CriterionDetailsList } from '../components/CriterionDetailsList'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
@@ -274,6 +275,19 @@ export function PhotoDetailPage() {
         />
       </div>
 
+      {/* specs/features/0058-cloud-vision-status-transparenz.md, UI/UX-Abschnitt "Layout &
+          Platzierung": unmittelbar vor der bestehenden CriterionDetailsList (technische
+          Detailentscheidung des developer-Agenten - der Spec-Text nennt zusaetzlich "nach den
+          Bewertungs-Buttons", was mit der tatsaechlichen DOM-Reihenfolge dieser Seite [RatingButtons
+          steht bereits WEITER UNTEN, nach dieser Sektion] nicht gleichzeitig erfuellbar ist; die
+          eindeutige, wortwoertlich umsetzbare Instruktion "vor CriterionDetailsList" ist
+          maßgeblich). IMMER sichtbar (bewusste Stakeholder-Entscheidung, kein Ausblenden bei
+          not_candidate/not_run, siehe Spec-Abschnitt "Entscheidungen") - anders als
+          CriterionDetailsList unten kein `.length > 0`-Sichtbarkeitsgate. */}
+      <div className="text-sm text-text" data-testid="cloud-vision-status-section">
+        <CloudVisionStatusList cloudVisionStatus={currentPhoto.cloud_vision_status} />
+      </div>
+
       {/* Permanente Sektion statt Info-Popover (Akzeptanzkriterien 1-4,
           specs/features/0041-bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md) -
           hier steht im Gegensatz zu Grid/Kuratierung ohnehin nur ein einziges Foto im Fokus, der
@@ -285,7 +299,7 @@ export function PhotoDetailPage() {
           Popover (Designprinzip "Die Fotos sind der Star", UI/UX-Abschnitt der Spec) - ein
           schlichter, dezenter Block, der sich optisch unterordnet. */}
       {currentPhoto.criterion_scores.length > 0 && (
-        <div className="text-sm text-text">
+        <div className="text-sm text-text" data-testid="criterion-details-section">
           <CriterionDetailsList
             criterionScores={currentPhoto.criterion_scores}
             ranking={currentPhoto.ranking}

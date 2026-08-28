@@ -349,6 +349,27 @@ def compute_gebaeude_score(labels: Sequence[SceneLabel]) -> float:
     return max(label.confidence for label in allowed)
 
 
+def is_landmark_candidate(values: dict[str, float]) -> bool:
+    """Reine Schwellenwert-Pruefung fuer die landmark-Vorfilterung (specs/features/0058-cloud-
+    vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-fehler-persistierung.md
+    Punkt 4) - extrahiert aus worker.py::_select_landmark_candidates (dort bleibt nur noch das
+    Skip-bereits-gescorter-Fotos-Verhalten, worker-spezifisch). Ein Foto ist Kandidat, wenn
+    content_landscape ODER gebaeude die jeweils registrierte category_presence_threshold erreicht
+    (`>=`, inklusiv, dieselben Registry-Werte wie derive_active_categories/derive_category_key).
+    Fehlende Werte gelten als 0.0 (kein Sonderfall, analog derive_active_categories). Von
+    _select_landmark_candidates (Live-Lauf) UND api/photos.py::_cloud_vision_status_out
+    (Read-Time-Ableitung) gemeinsam genutzt - verhindert ein Auseinanderlaufen beider Stellen bei
+    einer kuenftigen Schwellenwert-Aenderung."""
+    landscape_threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
+    gebaeude_threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
+    assert landscape_threshold is not None
+    assert gebaeude_threshold is not None
+    return (
+        values.get("content_landscape", 0.0) >= landscape_threshold
+        or values.get("gebaeude", 0.0) >= gebaeude_threshold
+    )
+
+
 def compute_landmark_score(detection: LandmarkDetection) -> float:
     """`landmark`-Kriterium (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md,
     ADR decisions/0025-cloud-landmark-erkennung.md Punkt 2): reine, synchrone, netzwerkfreie

@@ -123,6 +123,12 @@ class Photo(Base):
     category_label_detections: Mapped[list[PhotoCategoryDetection]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
     )
+    # specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
+    # fehler-persistierung.md Punkt 2: hoechstens zwei Zeilen pro Foto (eine je CloudVisionPhase),
+    # ausschliesslich der jeweils LETZTE bekannte Fehlschlag, kein Verlauf.
+    cloud_vision_errors: Mapped[list[PhotoCloudVisionError]] = relationship(
+        back_populates="photo", cascade="all, delete-orphan"
+    )
 
 
 class ScanRun(Base):
@@ -486,3 +492,47 @@ class RemoteCategoryClassificationRun(Base):
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     project: Mapped[Project] = relationship(back_populates="remote_category_classification_runs")
+
+
+class CloudVisionPhase(enum.StrEnum):
+    """Die beiden unabhaengigen Cloud-Vision-Laeufe, fuer die specs/features/0058-cloud-vision-
+    status-transparenz.md/decisions/0035-cloud-vision-attempt-fehler-persistierung.md pro Foto
+    einen von sechs Zustaenden ableitet - LANDMARK (ADR 0025) und REMOTE_CATEGORY (ADR 0032)."""
+
+    LANDMARK = "landmark"
+    REMOTE_CATEGORY = "remote_category"
+
+
+class PhotoCloudVisionError(Base):
+    """Der letzte bekannte Fehlschlag eines Cloud-Vision-Laufs fuer ein Foto
+    (specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
+    fehler-persistierung.md Punkt 2) - bewusst KEIN Verlauf: ein erneuter Fehlschlag ueberschreibt
+    (Upsert, worker.py::_record_cloud_vision_error) die bestehende Zeile, ein erfolgreicher Retry
+    LOESCHT sie (worker.py::_clear_cloud_vision_error). Composite PK (photo_id, phase) statt eines
+    separaten id+UniqueConstraint-Paars (wie PhotoScore/PhotoLandmarkDetection): es gibt
+    strukturell hoechstens eine sinnvolle "letzter Fehlschlag"-Zeile je Foto x CloudVisionPhase.
+
+    `error_type`/`error_message` sind identischer Inhalt wie der WARNING-Log-Eintrag aus
+    specs/features/0056-structured-logging-cloud-vision-errors.md/ADR 0034 (`type(exc).__name__`,
+    `str(exc)`) - an der jeweiligen worker.py-Call-Site EINMAL berechnet, an beide Senken (Logger,
+    hier) weitergereicht, keine zweite Auswertung. `error_message` wird beim Schreiben auf
+    worker.py::_MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH (500 Zeichen) gekappt - defensiver
+    Schutz gegen eine entartete Fehlermeldung, analog remote_classification.py::
+    MAX_REMOTE_LABEL_LENGTH. Die bereits in ADR 0034 verifizierte Sanitisierung von `str(exc)`
+    (keine Secrets/Rohdaten) bleibt die eigentliche Absicherung, die Kappung ist nur eine
+    Storage-/Degenerationsgrenze (Security-Abschnitt der Spec 0058).
+
+    `attempted_at`: Zeitpunkt des letzten Fehlschlags - keine weiteren Metadaten (kein HTTP-
+    Statuscode, kein Provider-Feld, siehe ADR 0035 Punkt 2)."""
+
+    __tablename__ = "photo_cloud_vision_errors"
+
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), primary_key=True)
+    phase: Mapped[CloudVisionPhase] = mapped_column(
+        SQLEnum(CloudVisionPhase, native_enum=False, length=20), primary_key=True
+    )
+    error_type: Mapped[str]
+    error_message: Mapped[str]
+    attempted_at: Mapped[datetime]
+
+    photo: Mapped[Photo] = relationship(back_populates="cloud_vision_errors")
