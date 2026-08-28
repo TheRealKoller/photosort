@@ -561,18 +561,18 @@
     "0063": {
       "issue_number": 224,
       "item_id": "PVTI_lAHOAdvbTs4Bg-8xzg4KctY",
-      "pushed_state_hash": "1f1cf25a666171d816e7385d63e55455d3c21d53a601b3884b4fdc9b68c22082",
+      "pushed_state_hash": "2bea87520d536d01fb6285dc14c51364950926404456b1a44ca1ea1a56e5b39a",
       "pulled_body_hash": "195ebbac99f21c9abb452a13382cff193fe055850247e70e5a0eb3b9eeaba417",
-      "last_synced_at": "2026-08-28T16:34:30.697179+00:00",
-      "runtime_status": "Review",
-      "pr_number": 239
+      "last_synced_at": "2026-08-28T18:15:32.098772+00:00",
+      "runtime_status": null,
+      "pr_number": null
     },
     "0064": {
       "issue_number": 177,
       "item_id": "PVTI_lAHOAdvbTs4Bg-8xzg3cPAU",
-      "pushed_state_hash": "709f6199f50fad8dfd7ac454c50e988eba043d5d9f4587b332ce630483e06978",
+      "pushed_state_hash": "ce73166ed401a676da2cbf23876227d0f82c8deee2504faf4ffe986b7224ec4d",
       "pulled_body_hash": "da582102b1e5905e4e61475d0c0dccaa5466ccfda601bb2e4d570dd48837c866",
-      "last_synced_at": "2026-08-28T17:31:12.572132+00:00",
+      "last_synced_at": "2026-08-28T18:14:34.602099+00:00",
       "runtime_status": null,
       "pr_number": null
     }
