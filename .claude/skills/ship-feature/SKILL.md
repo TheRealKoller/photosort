@@ -132,7 +132,7 @@ Inhaltlich unverändert gegenüber dem bisherigen `developer.md` Schritt 7, nur 
    PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --runtime-status "Review" --pr-number <PR-Nummer>
    ```
 
-   Ein früherer, verfrühter `Implemented`-Bump von Spec-Status/Roadmap-Eintrag direkt nach der PR-Erstellung entfällt ersatzlos (ADR 0037, Abschnitt 4) — die eigentliche Finalisierung (`Implemented`, Roadmap-Zeile verschieben) übernimmt seit ADR 0037 die automatische PR-Merge-Erkennung beim nächsten regulären `github-project-sync`-Lauf, siehe `.claude/skills/github-project-sync/SKILL.md` (Fall `finalized_from_pr`).
+   Ein früherer, verfrühter `Implemented`-Bump des Spec-Status direkt nach der PR-Erstellung entfällt ersatzlos (ADR 0037, Abschnitt 4) — die eigentliche Finalisierung (Spec-Datei-Status auf `Implemented`) übernimmt seit ADR 0037 die automatische PR-Merge-Erkennung beim nächsten regulären `github-project-sync`-Lauf, siehe `.claude/skills/github-project-sync/SKILL.md` (Fall `finalized_from_pr`).
 
 ## Schritt 8: Copilot-Review anfordern und auswerten
 

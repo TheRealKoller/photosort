@@ -7,7 +7,8 @@ Dieses Verzeichnis ist die "Single Source of Truth" für Anforderungen und Archi
 - `architecture/` — das Testkonzept (`0002-testkonzept.md`, gepflegt vom `test-engineer`-Agenten), das Sicherheitskonzept (`0003-securitykonzept.md`, gepflegt vom `security-engineer`-Agenten), sowie das Design-System (`0004-design-system.md`, gepflegt vom `ux-ui-designer`-Agenten) — agenteninterne Arbeitsdokumente, die beim Review/bei der Umsetzungsplanung konsultiert werden. Wird laufend aktualisiert, wenn sich Teststrategie, Sicherheitslage oder Design ändern (kein Lifecycle wie bei Features, sondern lebende Dokumente). Die Systemarchitektur/Komponentenübersicht selbst lebt seit Spec 0019 unter [`docs/architecture.md`](../docs/architecture.md) (siehe Abgrenzung unten). Der `research-engineer`-Agent (Spec [`0028`](./features/0028-research-engineer-agent.md)/ADR [`0016`](./decisions/0016-research-engineer-agent.md)) hat bewusst **kein** eigenes Dokument hier — externe Recherche hat keinen projektinternen Dauerzustand, der als lebendes Dokument gepflegt werden müsste; jede Recherche ist für sich abgeschlossen, ihr Ergebnis lebt im jeweiligen Spec-Abschnitt/der jeweiligen ADR statt in einem eigenen Konzept-Dokument.
 - `decisions/` — Architecture Decision Records (ADRs), verfasst vom `architect`-Agenten. Unveränderlich nach Annahme; eine spätere Änderung der Entscheidung erzeugt eine neue ADR, die die alte als "Superseded" markiert.
 - `features/` — Feature-Spezifikationen. Durchlaufen den unten beschriebenen Lifecycle.
-- `roadmap.md` — Priorisierung und Status der geplanten Features im Überblick, gepflegt vom `requirements-engineer`-Agenten. Lebendes Dokument, kein Ersatz für die einzelnen Spec-Dateien, sondern die Einordnung/Reihenfolge darüber.
+
+Priorität und Status offener Arbeit werden nativ im GitHub-Project-Board gepflegt (dort setzt Daniel die Priorität direkt), nicht in einer eingecheckten Datei. Der `requirements-engineer`-Agent berät dazu (Empfehlung), pflegt aber keine Übersichtsdatei.
 
 ## Feature-Lifecycle
 
@@ -43,4 +44,4 @@ Das Root-[`README.md`](../README.md) sowie [`docs/`](../docs/) (außerhalb von `
 
 ## `docs/` vs. `specs/`
 
-`specs/` ist die fachliche/technische Quelle der Wahrheit für die Agenten selbst (Features, ADRs, Roadmap, sowie die drei agenteninternen Arbeitsdokumente Testkonzept/Securitykonzept/Design-System). `docs/` ist aufbereitete Dokumentation für Nutzung/Außenwirkung (Setup-Anleitung, Architekturübersicht, AI-Workflow-Beschreibung für Außenstehende) — siehe [`docs/architecture.md`](../docs/architecture.md), [`docs/setup.md`](../docs/setup.md), [`docs/ai-workflow.md`](../docs/ai-workflow.md).
+`specs/` ist die fachliche/technische Quelle der Wahrheit für die Agenten selbst (Features, ADRs, sowie die drei agenteninternen Arbeitsdokumente Testkonzept/Securitykonzept/Design-System). `docs/` ist aufbereitete Dokumentation für Nutzung/Außenwirkung (Setup-Anleitung, Architekturübersicht, AI-Workflow-Beschreibung für Außenstehende) — siehe [`docs/architecture.md`](../docs/architecture.md), [`docs/setup.md`](../docs/setup.md), [`docs/ai-workflow.md`](../docs/ai-workflow.md).
