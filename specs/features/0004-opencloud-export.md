@@ -1,8 +1,10 @@
 # 0004 - Export nach OpenCloud
 
-**Status:** Proposed
+**Status:** Superseded — Refinement veraltet, neu erfasst als Issue [`#263`](https://github.com/TheRealKoller/photosort/issues/263)
 **Erstellt:** 2026-07-19
 **Bezug:** Ausgangsgespräch Projekt-Setup
+
+**Nachtrag (2026-08-28):** Auf Wunsch von Daniel zurückgezogen — das Refinement liegt zu lange zurück (Ausgangsgespräch beim Projekt-Setup) und seither gab es zu viele Änderungen am Projekt, um die Spec unverändert weiterzuverwenden. Die Idee selbst bleibt bestehen, wird aber frisch als Issue [`#263`](https://github.com/TheRealKoller/photosort/issues/263) neu durchlaufen (Status `Unrefined`) statt diese Spec fortzuschreiben. Diese Datei bleibt als historisches Dokument stehen.
 
 ## Ziel
 
