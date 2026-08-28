@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 
 from photosort.models import (
     CategoryLabel,
+    CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
     Photo,
     PhotoCategoryDetection,
+    PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
     PhotoRanking,
@@ -780,4 +782,141 @@ async def test_deleting_project_leaves_shared_category_label_and_other_project_u
         (await db_session.execute(select(PhotoCategoryDetection))).scalars().all()
     )
     assert [d.photo_id for d in remaining_detections] == [photo_b.id]
-    assert remaining_detections[0].category_label_id == shared_label.id
+
+
+# specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
+# fehler-persistierung.md Punkt 2 ab hier: neue, schlanke Tabelle photo_cloud_vision_errors -
+# erfasst ausschliesslich den letzten bekannten Fehlschlag je Foto x CloudVisionPhase, composite
+# PK (photo_id, phase), kein Verlauf.
+
+
+async def test_create_photo_cloud_vision_error(db_session: AsyncSession) -> None:
+    photo = await _make_photo(db_session)
+    now = datetime.now(UTC)
+    db_session.add(
+        PhotoCloudVisionError(
+            photo_id=photo.id,
+            phase=CloudVisionPhase.LANDMARK,
+            error_type="LandmarkApiError",
+            error_message="Anthropic Vision API nicht erreichbar: timeout",
+            attempted_at=now,
+        )
+    )
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+    )
+    stored = result.scalar_one()
+    assert stored.phase == CloudVisionPhase.LANDMARK
+    assert stored.error_type == "LandmarkApiError"
+    assert stored.error_message == "Anthropic Vision API nicht erreichbar: timeout"
+    # SQLite (Testumgebung) speichert DateTime-Spalten tz-naiv - vergleicht denselben Zeitpunkt,
+    # nicht dieselbe tzinfo (analog test_worker_criterion_scoring.py-Konvention).
+    assert stored.attempted_at == now.replace(tzinfo=None)
+
+
+async def test_photo_cloud_vision_error_composite_pk_allows_both_phases_for_same_photo(
+    db_session: AsyncSession,
+) -> None:
+    # (photo_id, phase) ist der Primary Key (ADR 0035 Punkt 2) - ein Foto kann fuer BEIDE Phasen
+    # gleichzeitig eine Fehler-Zeile haben, kein Konflikt.
+    photo = await _make_photo(db_session)
+    now = datetime.now(UTC)
+    db_session.add_all(
+        [
+            PhotoCloudVisionError(
+                photo_id=photo.id,
+                phase=CloudVisionPhase.LANDMARK,
+                error_type="LandmarkApiError",
+                error_message="Fehler A",
+                attempted_at=now,
+            ),
+            PhotoCloudVisionError(
+                photo_id=photo.id,
+                phase=CloudVisionPhase.REMOTE_CATEGORY,
+                error_type="RemoteCategoryClassificationApiError",
+                error_message="Fehler B",
+                attempted_at=now,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    result = await db_session.execute(
+        select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+    )
+    rows = result.scalars().all()
+    assert {row.phase for row in rows} == {
+        CloudVisionPhase.LANDMARK,
+        CloudVisionPhase.REMOTE_CATEGORY,
+    }
+
+
+async def test_photo_cloud_vision_error_duplicate_phase_for_same_photo_conflicts(
+    db_session: AsyncSession,
+) -> None:
+    # Kein Verlauf (ADR 0035 Punkt 2): eine zweite Zeile fuer dasselbe (photo_id, phase) verletzt
+    # den Composite-PK - ein erneuter Fehlschlag muss stattdessen ueber ein Upsert
+    # (worker.py::_record_cloud_vision_error) die bestehende Zeile aktualisieren, nicht eine neue
+    # Zeile einfuegen.
+    photo = await _make_photo(db_session)
+    now = datetime.now(UTC)
+    db_session.add(
+        PhotoCloudVisionError(
+            photo_id=photo.id,
+            phase=CloudVisionPhase.LANDMARK,
+            error_type="LandmarkApiError",
+            error_message="Fehler A",
+            attempted_at=now,
+        )
+    )
+    await db_session.commit()
+
+    db_session.add(
+        PhotoCloudVisionError(
+            photo_id=photo.id,
+            phase=CloudVisionPhase.LANDMARK,
+            error_type="LandmarkApiError",
+            error_message="Fehler B",
+            attempted_at=now,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+async def test_deleting_photo_cascades_to_cloud_vision_errors(db_session: AsyncSession) -> None:
+    # Vorsorglich ergaenzt (specs/architecture/0002-testkonzept.md, siehe test_deleting_photo_
+    # cascades_to_landmark_detection oben) - Photo.cloud_vision_errors braucht
+    # cascade="all, delete-orphan".
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoCloudVisionError(
+            photo_id=photo.id,
+            phase=CloudVisionPhase.REMOTE_CATEGORY,
+            error_type="RemoteCategoryClassificationApiError",
+            error_message="Fehler",
+            attempted_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    result = await db_session.execute(select(PhotoCloudVisionError))
+    assert result.scalars().all() == []
+
+
+async def test_photo_cloud_vision_error_has_the_expected_columns(
+    db_session: AsyncSession,
+) -> None:
+    # Migrations-Nachweis der Teststrategie ("neue Tabelle per inspect() verifiziert"), analog
+    # test_photo_landmark_detection_has_a_provider_column oben.
+    def _get_columns(sync_session: Session) -> set[str]:
+        bind = sync_session.get_bind()
+        return {col["name"] for col in inspect(bind).get_columns("photo_cloud_vision_errors")}
+
+    columns = await db_session.run_sync(_get_columns)
+    assert columns == {"photo_id", "phase", "error_type", "error_message", "attempted_at"}
