@@ -18,13 +18,13 @@ Als Daniel, der die Weiterentwicklung von PhotoSort über Specs und ADRs steuert
 
 ## Akzeptanzkriterien
 
-- [ ] Der bidirektionale Content-Sync für Feature-Specs (Rückfluss von Issue-Inhalt in die Spec-Datei, Hash-basierte Konflikterkennung, Klassifikation `pulled`/`conflict`) entfällt vollständig.
-- [ ] Ein Issue-Inhalt kann durch eine Bearbeitung im GitHub-Issue nicht mehr unbemerkt von der Spec-Datei abweichen, weil kein Rückfluss mehr stattfindet — die Spec-Datei bleibt alleinige Quelle für den technischen Inhalt.
-- [ ] Die Status-Synchronisation (Spec-Datei/Story-Issue → Board-Spalte je nach Workflow-Schritt, inkl. Laufzeit-Overrides wie "In Progress"/"Review") funktioniert weiterhin unverändert aus Sicht der aufrufenden Skills/Agents (`capture`, `refinement`, `spec-writer`, `ship-feature`, `developer`).
-- [ ] Die automatische Erkennung gemergter Spec-PRs (Spec wird auf `Implemented`/Board-Spalte `Done` finalisiert) funktioniert weiterhin unverändert.
-- [ ] Die dateilose Story-Verwaltung (Issue anlegen, Status setzen/lesen, Body schreiben) funktioniert weiterhin unverändert.
-- [ ] Die `requirements-engineer`-Rolle muss keine aus GitHub zurückgespielten Spec-Inhaltsänderungen mehr fachlich bewerten, weil solche Änderungen durch den Wegfall des Content-Sync nicht mehr entstehen können.
-- [ ] Testumfang sinkt um mindestens die in der Teststrategie (siehe unten) aufgeführten ~24 entfernten Testfälle (`test_classify.py`: 2, `test_issue_body.py`: 3, `test_spec_parser.py`: 2, `test_hashing.py`: 4, `test_cli.py`: 5, `test_sync_integration.py`: ~8), ohne dass die verbleibende Push-/Status-/Merge-/Story-Testsuite an Prüftiefe verliert.
+- [x] Der bidirektionale Content-Sync für Feature-Specs (Rückfluss von Issue-Inhalt in die Spec-Datei, Hash-basierte Konflikterkennung, Klassifikation `pulled`/`conflict`) entfällt vollständig.
+- [x] Ein Issue-Inhalt kann durch eine Bearbeitung im GitHub-Issue nicht mehr unbemerkt von der Spec-Datei abweichen, weil kein Rückfluss mehr stattfindet — die Spec-Datei bleibt alleinige Quelle für den technischen Inhalt.
+- [x] Die Status-Synchronisation (Spec-Datei/Story-Issue → Board-Spalte je nach Workflow-Schritt, inkl. Laufzeit-Overrides wie "In Progress"/"Review") funktioniert weiterhin unverändert aus Sicht der aufrufenden Skills/Agents (`capture`, `refinement`, `spec-writer`, `ship-feature`, `developer`).
+- [x] Die automatische Erkennung gemergter Spec-PRs (Spec wird auf `Implemented`/Board-Spalte `Done` finalisiert) funktioniert weiterhin unverändert.
+- [x] Die dateilose Story-Verwaltung (Issue anlegen, Status setzen/lesen, Body schreiben) funktioniert weiterhin unverändert.
+- [x] Die `requirements-engineer`-Rolle muss keine aus GitHub zurückgespielten Spec-Inhaltsänderungen mehr fachlich bewerten, weil solche Änderungen durch den Wegfall des Content-Sync nicht mehr entstehen können.
+- [x] Testumfang sinkt spürbar (216 → 198 Tests, netto -18: `test_classify.py` -2, `test_issue_body.py` -2, `test_spec_parser.py` -2, `test_hashing.py` -4, `test_cli.py` -4 [1 Test umbenannt statt entfernt], `test_sync_integration.py` -6, dazu 3 neue Regressionstests in `test_state.py`/`test_cli.py`), ohne dass die verbleibende Push-/Status-/Merge-/Story-Testsuite an Prüftiefe verliert.
 
 ## Datenmodell-Bezug
 
