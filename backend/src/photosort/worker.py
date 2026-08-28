@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -57,6 +58,7 @@ from photosort.landmark import (
     LandmarkDetection,
     build_landmark_client,
 )
+from photosort.logging_config import configure_logging
 from photosort.models import (
     CategoryLabel,
     CriterionScoringRun,
@@ -96,6 +98,13 @@ from photosort.scoring import (
     compute_sharpness,
 )
 from photosort.thumbnails import generate_variants, variant_path
+
+# specs/features/0056-structured-logging-cloud-vision-errors.md, ADR 0034 Punkt 2: idiomatisches
+# Standard-Pattern, Modul-Konstante direkt nach den Imports - kein Logger-Objekt wird injiziert/
+# durchgereicht. worker.py ist die einzige Stelle mit Zugriff auf sowohl die Exception als auch
+# den Foto-Kontext (landmark.py/remote_classification.py/cloud_vision.py brauchen dafuer keinen
+# eigenen Logger).
+logger = logging.getLogger(__name__)
 
 _EXIF_CANDIDATE_EXTENSIONS = {".jpg", ".jpeg"}
 _EXIF_RANGE_BYTES = 131_072
@@ -1743,6 +1752,17 @@ async def reap_stalled_runs(
     return reaped
 
 
+async def _configure_worker_logging(ctx: dict[Any, Any]) -> None:
+    """arq-`on_startup`-Hook (specs/features/0056-structured-logging-cloud-vision-errors.md, ADR
+    0034 Punkt 2, erste Nutzung von arqs on_startup-Mechanismus im Projekt) - duenner Wrapper statt
+    direkter Zuweisung `on_startup = configure_logging`: arq ruft on_startup IMMER mit einem
+    ctx-Positionalargument auf (verifiziert in arq.worker.Worker.main: `await self.on_startup(
+    self.ctx)`), waehrend `configure_logging()` bewusst als Null-Argument-Funktion spezifiziert ist
+    (Spec-Akzeptanzkriterium, identisch zum Aufruf in main.py::create_app()). Eine direkte
+    Zuweisung wuerde erst beim tatsaechlichen Worker-Start mit einem TypeError durchbrechen."""
+    configure_logging()
+
+
 class WorkerSettings:
     # arq.worker.func(...) statt nackter Funktionsreferenzen (Fortschritts-Watchdog, ADR 0019):
     # max_tries=1 deaktiviert arqs automatischen Hintergrund-Retry vollstaendig - ein durch
@@ -1766,3 +1786,7 @@ class WorkerSettings:
     # unentdeckt bleiben).
     cron_jobs = (cron(reap_stalled_runs, minute=set(range(0, 60, 5)), run_at_startup=True),)
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
+    # specs/features/0056-structured-logging-cloud-vision-errors.md, ADR 0034 Punkt 2: einer der
+    # beiden Prozess-Einstiegspunkte (Worker-Prozess) - derselbe Aufruf sitzt fuer den API-Prozess
+    # in main.py::create_app().
+    on_startup = _configure_worker_logging

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import pytest
 from arq.cron import CronJob
 from arq.worker import Function
 
+from photosort import worker
 from photosort.worker import (
     WorkerSettings,
     reap_stalled_runs,
@@ -58,3 +60,22 @@ def test_reap_stalled_runs_registered_as_cron_job_every_five_minutes_at_startup(
     assert job.coroutine == reap_stalled_runs
     assert job.run_at_startup is True
     assert job.minute == set(range(0, 60, 5))
+
+
+async def test_on_startup_hook_configures_logging(monkeypatch: pytest.MonkeyPatch) -> None:
+    # specs/features/0056-structured-logging-cloud-vision-errors.md, ADR 0034 Punkt 2: einer der
+    # beiden Prozess-Einstiegspunkte (Worker-Prozess) - derselbe Aufruf sitzt fuer den API-Prozess
+    # in main.py::create_app(). arqs eigener on_startup-Vertrag verlangt eine Coroutine mit einem
+    # ctx: dict-Positionalargument (verifiziert in arq.worker.Worker.main: `await self.on_startup
+    # (self.ctx)`) - configure_logging() ist bewusst ein Null-Argument-Funktion (Spec-
+    # Akzeptanzkriterium), deshalb ueber einen duennen Wrapper statt direkter Identitaet
+    # verdrahtet; per Spy statt Identitaetsvergleich geprueft (Wiring-Nachweis analog der main.py-
+    # Verdrahtung), da eine reine Identitaetspruefung die abweichende Signatur nicht abbilden
+    # koennte.
+    calls: list[None] = []
+    monkeypatch.setattr(worker, "configure_logging", lambda: calls.append(None))
+
+    assert WorkerSettings.on_startup is not None
+    await WorkerSettings.on_startup({})  # type: ignore[arg-type]
+
+    assert calls == [None]
