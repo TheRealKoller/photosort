@@ -22,6 +22,7 @@ const PHOTO_LIST: PhotoListOut = {
       remote_category_labels: [],
       category_override: null,
       category_candidates: [],
+      cloud_vision_status: [],
     },
   ],
   total: 1,

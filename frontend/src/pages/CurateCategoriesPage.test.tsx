@@ -57,6 +57,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     remote_category_labels: [],
     category_override: null,
     category_candidates: [],
+    cloud_vision_status: [],
     ...overrides,
   }
 }

@@ -8,7 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
-import type { CriterionScoreOut, PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
+import type {
+  CloudVisionStatusOut,
+  CriterionScoreOut,
+  PhotoListOut,
+  PhotoOut,
+  SuggestionOut,
+} from '../api/types'
 import { setToken } from '../auth/token'
 import { PhotoDetailPage } from './PhotoDetailPage'
 
@@ -33,6 +39,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     remote_category_labels: [],
     category_override: null,
     category_candidates: [],
+    cloud_vision_status: [],
     ...overrides,
   }
 }
@@ -56,6 +63,18 @@ function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
     exposure: 0.5,
     cluster_key: null,
     computed_at: '2026-07-20T10:00:00Z',
+    ...overrides,
+  }
+}
+
+function cloudVisionStatusEntry(
+  overrides: Partial<CloudVisionStatusOut> = {}
+): CloudVisionStatusOut {
+  return {
+    phase: 'landmark',
+    status: 'not_run',
+    error_message: null,
+    attempted_at: null,
     ...overrides,
   }
 }
@@ -389,15 +408,18 @@ describe('PhotoDetailPage', () => {
     })
 
     // Akzeptanzkriterium 2: kein leerer Bereich, wenn criterion_scores leer ist (gleiche Regel wie
-    // die bisherige Icon-Sichtbarkeit, Spec 0040 AK1).
-    it('renders no permanent section when criterion_scores is empty', async () => {
+    // die bisherige Icon-Sichtbarkeit, Spec 0040 AK1). Die neue Cloud-Vision-Status-Sektion
+    // (specs/features/0058) bleibt davon unberuehrt - sie ist IMMER sichtbar (eigener describe-
+    // Block unten) und rendert deshalb weiterhin ein eigenes <dl>, nur das der
+    // CriterionDetailsList entfaellt.
+    it('renders no criterion-details dl when criterion_scores is empty', async () => {
       const list: PhotoListOut = { items: [photo({ id: 1, criterion_scores: [] })], total: 1 }
       vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
 
       renderPage('/projects/1/photos/1')
 
       await screen.findByText('1/1')
-      expect(document.querySelector('dl')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('criterion-details-section')).not.toBeInTheDocument()
     })
 
     // Akzeptanzkriterium 3: das Info-Icon/Popover entfaellt in der Detailansicht vollstaendig.
@@ -438,6 +460,63 @@ describe('PhotoDetailPage', () => {
 
       await screen.findByText('Schärfe')
       expect(screen.queryByText('Ausschuss-Vorschlag')).not.toBeInTheDocument()
+    })
+  })
+
+  // specs/features/0058-cloud-vision-status-transparenz.md: neue, permanente Sektion, immer
+  // sichtbar (bewusste Stakeholder-Entscheidung, kein Ausblenden bei not_candidate/not_run).
+  describe('permanent Cloud-Vision-Status section', () => {
+    it('is visible even when criterion_scores is empty', async () => {
+      const list: PhotoListOut = {
+        items: [
+          photo({
+            id: 1,
+            criterion_scores: [],
+            cloud_vision_status: [
+              cloudVisionStatusEntry({ phase: 'landmark', status: 'not_candidate' }),
+              cloudVisionStatusEntry({ phase: 'remote_category', status: 'consent_disabled' }),
+            ],
+          }),
+        ],
+        total: 1,
+      }
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+      renderPage('/projects/1/photos/1')
+
+      expect(await screen.findByText('Nicht als Kandidat qualifiziert')).toBeInTheDocument()
+      expect(screen.getByText('Cloud-Erkennung deaktiviert')).toBeInTheDocument()
+    })
+
+    it('shows a mixed state for both phases simultaneously', async () => {
+      const list: PhotoListOut = {
+        items: [
+          photo({
+            id: 1,
+            cloud_vision_status: [
+              cloudVisionStatusEntry({
+                phase: 'landmark',
+                status: 'result',
+                attempted_at: '2026-08-24T10:00:00Z',
+              }),
+              cloudVisionStatusEntry({
+                phase: 'remote_category',
+                status: 'error',
+                error_message: 'Fehler beim Klassifizieren',
+                attempted_at: '2026-08-24T10:00:00Z',
+              }),
+            ],
+          }),
+        ],
+        total: 1,
+      }
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+      renderPage('/projects/1/photos/1')
+
+      expect(await screen.findByText('Ergebnis vorhanden')).toBeInTheDocument()
+      expect(screen.getByText('Fehler beim Versuch')).toBeInTheDocument()
+      expect(screen.getByText('Fehler beim Klassifizieren')).toBeInTheDocument()
     })
   })
 

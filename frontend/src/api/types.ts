@@ -198,6 +198,34 @@ export interface CategoryCandidateOut {
   provider: string | null
 }
 
+// specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
+// fehler-persistierung.md: die beiden unabhaengigen Cloud-Vision-Laeufe, fuer die pro Foto genau
+// einer von sechs Zustaenden angezeigt wird.
+export type CloudVisionPhase = 'landmark' | 'remote_category'
+
+// Read-time aus bereits vorhandenen Signalen abgeleitet (backend api/photos.py::
+// _cloud_vision_status_out) - kein voller Status pro Foto persistiert. `no_result` tritt nur bei
+// `phase === 'landmark'` auf (ADR 0032 Punkt 3: Remote-Kategorie kennt keinen "nichts
+// gefunden"-Fall, Erfolg schreibt immer 1-3 Zeilen).
+export type CloudVisionStatus =
+  | 'not_run'
+  | 'not_candidate'
+  | 'consent_disabled'
+  | 'error'
+  | 'no_result'
+  | 'result'
+
+// Ein Eintrag von `PhotoOut.cloud_vision_status` - immer genau zwei (einer je CloudVisionPhase),
+// feste Reihenfolge [landmark, remote_category].
+export interface CloudVisionStatusOut {
+  phase: CloudVisionPhase
+  status: CloudVisionStatus
+  // Nur bei status === 'error' gesetzt.
+  error_message: string | null
+  // Nur bei status in {'error', 'no_result', 'result'} gesetzt.
+  attempted_at: string | null
+}
+
 export interface PhotoOut {
   id: number
   relative_path: string
@@ -214,6 +242,9 @@ export interface PhotoOut {
   category_override: CategoryKey | null
   // Sortiert nach Score/Konfidenz absteigend (UI/UX-Abschnitt der Spec).
   category_candidates: CategoryCandidateOut[]
+  // specs/features/0058-cloud-vision-status-transparenz.md: immer genau 2 Eintraege, feste
+  // Reihenfolge [landmark, remote_category].
+  cloud_vision_status: CloudVisionStatusOut[]
 }
 
 export interface PhotoListOut {
