@@ -29,41 +29,22 @@ def test_text_hash_differs_for_different_content() -> None:
 
 
 def test_push_state_hash_changes_with_status() -> None:
-    h1 = push_state_hash(status="Accepted", priority="Niedrig", content_zone="## Ziel\n\nfoo\n")
-    h2 = push_state_hash(status="Proposed", priority="Niedrig", content_zone="## Ziel\n\nfoo\n")
-
-    assert h1 != h2
-
-
-def test_push_state_hash_changes_with_priority() -> None:
-    h1 = push_state_hash(status="Accepted", priority="Niedrig", content_zone="## Ziel\n\nfoo\n")
-    h2 = push_state_hash(status="Accepted", priority="Hoch", content_zone="## Ziel\n\nfoo\n")
+    h1 = push_state_hash(status="Accepted", content_zone="## Ziel\n\nfoo\n")
+    h2 = push_state_hash(status="Proposed", content_zone="## Ziel\n\nfoo\n")
 
     assert h1 != h2
 
 
 def test_push_state_hash_changes_with_content() -> None:
-    h1 = push_state_hash(status="Accepted", priority="Niedrig", content_zone="## Ziel\n\nfoo\n")
-    h2 = push_state_hash(status="Accepted", priority="Niedrig", content_zone="## Ziel\n\nbar\n")
-
-    assert h1 != h2
-
-
-def test_push_state_hash_none_priority_differs_from_empty_string() -> None:
-    # Implemented/Superseded-Specs haben keine Prioritaet (leer statt eines Werts) - das muss
-    # sich vom Fall "Prioritaet ist der leere String" unterscheiden koennen, falls das je
-    # vorkommt, sonst waeren beide Faelle im Hash nicht unterscheidbar.
-    h1 = push_state_hash(status="Implemented", priority=None, content_zone="## Ziel\n\nfoo\n")
-    h2 = push_state_hash(status="Implemented", priority="", content_zone="## Ziel\n\nfoo\n")
+    h1 = push_state_hash(status="Accepted", content_zone="## Ziel\n\nfoo\n")
+    h2 = push_state_hash(status="Accepted", content_zone="## Ziel\n\nbar\n")
 
     assert h1 != h2
 
 
 def test_push_state_hash_stable_under_crlf_and_trailing_whitespace_normalization() -> None:
-    h1 = push_state_hash(status="Accepted", priority="Niedrig", content_zone="## Ziel\n\nfoo\n")
-    h2 = push_state_hash(
-        status="Accepted", priority="Niedrig", content_zone="## Ziel\r\n\r\nfoo   \r\n"
-    )
+    h1 = push_state_hash(status="Accepted", content_zone="## Ziel\n\nfoo\n")
+    h2 = push_state_hash(status="Accepted", content_zone="## Ziel\r\n\r\nfoo   \r\n")
 
     assert h1 == h2
 

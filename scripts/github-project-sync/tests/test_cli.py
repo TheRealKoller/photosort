@@ -72,13 +72,6 @@ def _make_repo(tmp_path: Path) -> Path:
         "**Bezug:** x\n\n## Ziel\n\nFoo.\n",
         encoding="utf-8",
     )
-    (repo_root / "specs" / "roadmap.md").write_text(
-        "# Roadmap\n\n## Status auf einen Blick\n\n### Offen — Hoch\n\nKeine offenen Einträge.\n\n"
-        "### Offen — Mittel\n\nKeine offenen Einträge.\n\n"
-        "### Offen — Niedrig\n\n| Spec | Titel | Status |\n|---|---|---|\n"
-        "| [0031](./features/0031-x.md) | Titel | Accepted |\n",
-        encoding="utf-8",
-    )
     return repo_root
 
 
@@ -92,6 +85,7 @@ def test_main_runs_sync_and_prints_json(tmp_path: Path, capsys: pytest.CaptureFi
     output = json.loads(capsys.readouterr().out)
     assert output["specs"][0]["number"] == "0031"
     assert output["specs"][0]["classification"] == "created"
+    assert "priority_warning" not in output["specs"][0]  # ADR 0039: Feld entfernt
     assert output["adopted"] is None
 
 

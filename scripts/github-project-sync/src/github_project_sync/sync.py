@@ -1,19 +1,23 @@
 """Orchestrierung des Zwei-Wege-Sync-Laufs fuer Feature-Specs sowie der dateilosen Story-Stufe.
 
-Verdrahtet die reinen Bausteine (spec_parser, roadmap_parser, hashing, classify, issue_body,
-state) mit dem GhAdapter-Protokoll. Siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md,
+Verdrahtet die reinen Bausteine (spec_parser, hashing, classify, issue_body, state) mit dem
+GhAdapter-Protokoll. Siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md,
 specs/features/0059-story-lebenszyklus-github-issues.md und
 ADR decisions/0017-github-projects-v2-spec-sync.md /
 ADR decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md.
 
 Seit Spec 0059 gibt es zwei strukturell unterschiedliche Pfade: `run_sync()` fuer den
-bidirektionalen Feature-Spec-Sync (unveraendert gegenueber ADR 0017, plus Prioritaets-Push fuer
-issue-referenzierte Roadmap-Zeilen im Vollauf) sowie drei dateilose Story-Funktionen
+bidirektionalen Feature-Spec-Sync sowie drei dateilose Story-Funktionen
 (`create_story_issue`, `sync_story`, `show_story_status`), die ausschliesslich gegen den
 `stories`-Namensraum der Zustandsdatei arbeiten - kein Pull/Konflikt-Handling noetig, da eine
 Story nur eine einzige Kopie der Wahrheit hat (das GitHub-Issue selbst, siehe ADR 0036, Kontext).
 Der vorherige, bidirektionale Inbox-Pfad (`_sync_one_inbox`, `--only inbox:NNNN`,
 `--supersede-inbox`) wurde ersatzlos entfernt.
+
+Seit ADR decisions/0039-prioritaet-nativ-im-board-roadmap-entfaellt.md fasst das Sync-Tool das
+Board-Feld `Prioritaet` nicht mehr an (weder lesend noch schreibend) - Prioritaet wird nativ im
+GitHub-Project-Board gepflegt. Das Feld wird lediglich weiter selbstprovisioniert
+(gh_adapter.py::ensure_fields), damit ein frisches Board die Spalte hat.
 """
 
 from __future__ import annotations
@@ -38,7 +42,6 @@ from github_project_sync.issue_body import (
     extract_content_zone_from_issue_body,
     parse_marker,
 )
-from github_project_sync.roadmap_parser import parse_roadmap_priorities
 from github_project_sync.spec_parser import (
     parse_spec_file,
     replace_content_zone,
@@ -76,8 +79,6 @@ _RUNTIME_OVERRIDE_STATUSES = {"In Progress", "Review"}
 _STORY_VALID_STATUSES = {"Unrefined", "Ready", "Done"}
 
 _ORPHAN_CLOSE_COMMENT = "Spec-Datei wurde entfernt."
-
-_ISSUE_ONLY_PREFIX = "issue:"
 
 # Labels: Superseded verschwindet als Feldwert und wird stattdessen ein Label (ADR 0030,
 # Abschnitt 2); Idee/Bug bilden den Story-**Typ:** ab (aehnlich ADR 0030, Abschnitt 6, jetzt fuer
@@ -129,12 +130,10 @@ class SpecSyncResult:
     issue_number: int | None
     classification: SyncClassification | None
     aborted_reason: str | None = None
-    priority_warning: str | None = None
     conflict: ConflictDiff | None = None
     pulled_content_zone: str | None = None
     # Seit Spec 0060 / ADR 0037, Abschnitt 5: gesetzt, wenn dieser Lauf gerade eine automatische
-    # PR-Merge-Erkennung fuer diese Spec ausgefuehrt hat (Signal an den aufrufenden Skill, z.B.
-    # fuer den requirements-engineer-Aufruf zum Verschieben der Roadmap-Zeile).
+    # PR-Merge-Erkennung fuer diese Spec ausgefuehrt hat (Signal an den aufrufenden Skill).
     finalized_from_pr: int | None = None
 
 
@@ -184,26 +183,6 @@ def _reconcile_labels(
         gh.set_issue_labels(issue_number, add=add, remove=remove)
 
 
-def _apply_priority_only(
-    gh: GhAdapter, project: Project, fields: ProjectFields, item_id: str, priority: str | None
-) -> None:
-    if priority is None:
-        gh.clear_item_field(project, item_id=item_id, field_id=fields.priority_field_id)
-        return
-
-    priority_option_id = fields.priority_options.get(priority)
-    if priority_option_id is None:
-        raise SyncError(
-            f"Project-Feld 'Priorität' hat keine Option fuer {priority!r} (vorhanden: "
-            f"{sorted(fields.priority_options)}). Vermutlich wurden die Feld-Optionen manuell "
-            "im GitHub Project veraendert - bitte das Prioritaets-Feld reparieren, bevor der "
-            "Sync erneut laeuft."
-        )
-    gh.set_item_single_select(
-        project, item_id=item_id, field_id=fields.priority_field_id, option_id=priority_option_id
-    )
-
-
 def _apply_status_only(
     gh: GhAdapter, project: Project, fields: ProjectFields, item_id: str, *, status: str
 ) -> None:
@@ -227,35 +206,33 @@ def _apply_fields(
     item_id: str,
     *,
     status: str,
-    priority: str | None,
     runtime_status: str | None = None,
 ) -> None:
-    # Board-Drift (Daniel/ein Dritter bearbeitet die Optionen eines Project-Felds manuell) darf
-    # nie still hingenommen werden - ensure_fields() uebernimmt ein bereits existierendes Feld
-    # unveraendert, auch wenn dessen Optionen nicht mehr zu STATUS_OPTIONS/PRIORITY_OPTIONS
-    # passen. Ein No-Op (Status) bzw. ein faelschliches Leeren (Prioritaet trotz vorhandenem
-    # Wert) waere genau die Art von unbemerktem Abweichen, die ADR 0017 (Status/Prioritaet als
-    # bei jedem Lauf durchgesetzte Einbahnstrasse) verhindern soll - deshalb hart abbrechen statt
-    # stillschweigend weiterzumachen (Copilot-Review-Finding auf PR #115).
+    # Board-Drift (Daniel/ein Dritter bearbeitet die Optionen des Status-Felds manuell) darf nie
+    # still hingenommen werden - ensure_fields() uebernimmt ein bereits existierendes Feld
+    # unveraendert, auch wenn dessen Optionen nicht mehr zu STATUS_OPTIONS passen. Ein No-Op
+    # waere genau die Art von unbemerktem Abweichen, die ADR 0017 (Status als bei jedem Lauf
+    # durchgesetzte Einbahnstrasse) verhindern soll - deshalb hart abbrechen statt
+    # stillschweigend weiterzumachen (Copilot-Review-Finding auf PR #115). Das Prioritaets-Feld
+    # fasst das Tool seit ADR 0039 gar nicht mehr an.
     if status == "Superseded":
         # Seit ADR 0030, Abschnitt 2: Superseded ist kein Feldwert mehr (STATUS_OPTIONS enthaelt
         # ihn nicht), das Status-Feld wird stattdessen geleert - exakt dasselbe Muster wie das
         # bereits bestehende Leeren des Prioritaets-Felds.
         gh.clear_item_field(project, item_id=item_id, field_id=fields.status_field_id)
-    else:
-        # Seit Spec 0060 / ADR 0037, Abschnitt 2: der gepushte Board-Wert ist die aus dem
-        # Datei-Status berechnete Baseline, optional verfeinert durch runtime_status - aber
-        # strukturell NIE mehr als eine Verfeinerung von "Todo": sobald die Baseline "Done" ist,
-        # gewinnt sie immer, unabhaengig davon, was runtime_status noch traegt (der Aufrufer
-        # muss den State-Eintrag dafuer nicht separat "kennen").
-        baseline = _BOARD_STATUS_BASELINE[status]
-        if runtime_status is not None and baseline == "Todo":
-            board_status = runtime_status
-        else:
-            board_status = baseline
-        _apply_status_only(gh, project, fields, item_id, status=board_status)
+        return
 
-    _apply_priority_only(gh, project, fields, item_id, priority)
+    # Seit Spec 0060 / ADR 0037, Abschnitt 2: der gepushte Board-Wert ist die aus dem
+    # Datei-Status berechnete Baseline, optional verfeinert durch runtime_status - aber
+    # strukturell NIE mehr als eine Verfeinerung von "Todo": sobald die Baseline "Done" ist,
+    # gewinnt sie immer, unabhaengig davon, was runtime_status noch traegt (der Aufrufer
+    # muss den State-Eintrag dafuer nicht separat "kennen").
+    baseline = _BOARD_STATUS_BASELINE[status]
+    if runtime_status is not None and baseline == "Todo":
+        board_status = runtime_status
+    else:
+        board_status = baseline
+    _apply_status_only(gh, project, fields, item_id, status=board_status)
 
 
 def _sync_one(
@@ -266,7 +243,6 @@ def _sync_one(
     content_zone: str,
     full_text: str,
     path: Path,
-    priority: str | None,
     stored_entry: SyncStateEntry | None,
     gh: GhAdapter,
     project: Project,
@@ -333,14 +309,7 @@ def _sync_one(
         )
         return result, stored_entry
 
-    priority_warning = None
-    if priority is None and status in _OPEN_STATUSES:
-        priority_warning = (
-            f"Spec {number} ({status}) taucht in keiner Prioritaets-Tabelle von "
-            "specs/roadmap.md auf."
-        )
-
-    push_hash_now = push_state_hash(status=status, priority=priority, content_zone=content_zone)
+    push_hash_now = push_state_hash(status=status, content_zone=content_zone)
     issue_title = f"[{number}] {title}"
     is_open = status in _OPEN_STATUSES
     desired_labels: frozenset[str] = (
@@ -352,7 +321,7 @@ def _sync_one(
         issue_number = gh.create_issue(issue_title, body)
         issue = gh.get_issue(issue_number)
         item_id = gh.add_item_to_project(project, issue_url=issue.url)
-        _apply_fields(gh, project, fields, item_id, status=status, priority=priority)
+        _apply_fields(gh, project, fields, item_id, status=status)
         gh.set_issue_state(issue_number, open=is_open)
         _reconcile_labels(
             gh,
@@ -374,7 +343,6 @@ def _sync_one(
             title=title,
             issue_number=issue_number,
             classification="created",
-            priority_warning=priority_warning,
         )
         return result, new_entry
 
@@ -396,7 +364,6 @@ def _sync_one(
                 f"keinen zu Spec {number} passenden Marker (gefunden: {marker_number!r}). "
                 "Sync fuer diese Spec abgebrochen, andere Specs sind unbeeinflusst."
             ),
-            priority_warning=priority_warning,
             finalized_from_pr=finalized_from_pr,
         )
         return result, stored_entry
@@ -419,7 +386,6 @@ def _sync_one(
         fields,
         stored_entry.item_id,
         status=status,
-        priority=priority,
         runtime_status=stored_entry.runtime_status,
     )
     gh.set_issue_state(stored_entry.issue_number, open=is_open)
@@ -437,7 +403,6 @@ def _sync_one(
             title=title,
             issue_number=stored_entry.issue_number,
             classification="conflict",
-            priority_warning=priority_warning,
             conflict=ConflictDiff(
                 local_content_zone=content_zone, remote_content_zone=remote_content_zone
             ),
@@ -473,7 +438,7 @@ def _sync_one(
         issue_number=stored_entry.issue_number,
         item_id=stored_entry.item_id,
         pushed_state_hash=push_state_hash(
-            status=status, priority=priority, content_zone=effective_local_content_zone
+            status=status, content_zone=effective_local_content_zone
         ),
         pulled_body_hash=text_hash(effective_local_content_zone),
         last_synced_at=now(),
@@ -485,7 +450,6 @@ def _sync_one(
         title=title,
         issue_number=stored_entry.issue_number,
         classification=effective,
-        priority_warning=priority_warning,
         pulled_content_zone=pulled_content_zone,
         finalized_from_pr=finalized_from_pr,
     )
@@ -498,7 +462,6 @@ def _adopt_story_and_push_first_content(
     title: str,
     status: str,
     content_zone: str,
-    priority: str | None,
     issue_number: int,
     item_id: str,
     gh: GhAdapter,
@@ -525,7 +488,7 @@ def _adopt_story_and_push_first_content(
 
     gh.edit_issue_body(issue_number, build_issue_body(number, content_zone))
     issue = gh.get_issue(issue_number)
-    _apply_fields(gh, project, fields, item_id, status=status, priority=priority)
+    _apply_fields(gh, project, fields, item_id, status=status)
     gh.set_issue_state(issue_number, open=is_open)
     _reconcile_labels(
         gh,
@@ -538,9 +501,7 @@ def _adopt_story_and_push_first_content(
     new_entry = SyncStateEntry(
         issue_number=issue_number,
         item_id=item_id,
-        pushed_state_hash=push_state_hash(
-            status=status, priority=priority, content_zone=content_zone
-        ),
+        pushed_state_hash=push_state_hash(status=status, content_zone=content_zone),
         pulled_body_hash=text_hash(content_zone),
         last_synced_at=now(),
     )
@@ -561,17 +522,11 @@ def run_sync(
 ) -> SyncRunResult:
     resolutions = resolutions or {}
     features_dir = repo_root / "specs" / "features"
-    roadmap_path = repo_root / "specs" / "roadmap.md"
     state_path = repo_root / "specs" / ".github-sync-state.json"
 
     gh.check_auth_scope()
 
     nested_state = load_state(state_path)
-    roadmap_priorities = (
-        parse_roadmap_priorities(roadmap_path.read_text(encoding="utf-8"))
-        if roadmap_path.exists()
-        else {}
-    )
 
     only_number = _parse_only(only)
 
@@ -633,7 +588,6 @@ def run_sync(
                     title=spec.title,
                     status=spec.status,
                     content_zone=spec.content_zone,
-                    priority=roadmap_priorities.get(number),
                     issue_number=adopted_story_entry.issue_number,
                     item_id=adopted_story_entry.item_id,
                     gh=gh,
@@ -653,7 +607,6 @@ def run_sync(
                     content_zone=spec.content_zone,
                     full_text=spec.full_text,
                     path=path_by_number[number],
-                    priority=roadmap_priorities.get(number),
                     stored_entry=nested_state.features.get(number),
                     gh=gh,
                     project=project,
@@ -677,25 +630,6 @@ def run_sync(
                 new_features.pop(number, None)
                 orphaned.append(
                     OrphanCleanup(number=number, issue_number=orphan_entry.issue_number)
-                )
-
-            # Batch-Prioritaets-Push fuer issue-referenzierte Roadmap-Zeilen (ADR 0036,
-            # Abschnitt 5): faengt manuelle Prioritaets-Aenderungen in roadmap.md zwischen
-            # gezielten `--only issue:NNN`-Aufrufen ab. Status/Body bleiben unangetastet - nur
-            # eine bereits per --create-issue/--only issue: erfasste Story (State-Eintrag
-            # vorhanden) wird beruecksichtigt, alles andere wird stillschweigend uebersprungen.
-            for key, priority in roadmap_priorities.items():
-                if not key.startswith(_ISSUE_ONLY_PREFIX):
-                    continue
-                story_key = key[len(_ISSUE_ONLY_PREFIX) :]
-                batch_story_entry = new_stories.get(story_key)
-                if batch_story_entry is None:
-                    continue
-                _apply_priority_only(gh, project, fields, batch_story_entry.item_id, priority)
-                new_stories[story_key] = StoryStateEntry(
-                    issue_number=batch_story_entry.issue_number,
-                    item_id=batch_story_entry.item_id,
-                    last_synced_at=now(),
                 )
     finally:
         save_state(state_path, NestedState(features=new_features, stories=new_stories))
@@ -721,9 +655,9 @@ def set_feature_runtime_status(
 ) -> dict[str, object]:
     """`--only NNNN --runtime-status {In Progress,Review} [--pr-number NNN]` (ADR 0037, Abschnitt
     3/4): leichtgewichtiger, zielgerichteter Schreibzugriff auf eine bereits getrackte
-    Feature-Spec - laedt die Spec-Datei nur zur Bestimmung der Baseline, pusht Status+Prioritaet
-    ueber _apply_fields(), kein voller bidirektionaler Content-Abgleich (kein Pull/Konflikt-
-    Handling, Hashes im State-Eintrag bleiben unangetastet)."""
+    Feature-Spec - laedt die Spec-Datei nur zur Bestimmung der Baseline, pusht den Status ueber
+    _apply_fields(), kein voller bidirektionaler Content-Abgleich (kein Pull/Konflikt-Handling,
+    Hashes im State-Eintrag bleiben unangetastet)."""
     validate_spec_number(spec_number)
     if runtime_status not in _RUNTIME_OVERRIDE_STATUSES:
         raise SyncError(
@@ -742,7 +676,6 @@ def set_feature_runtime_status(
 
     state_path = repo_root / "specs" / ".github-sync-state.json"
     features_dir = repo_root / "specs" / "features"
-    roadmap_path = repo_root / "specs" / "roadmap.md"
 
     gh.check_auth_scope()
     nested_state = load_state(state_path)
@@ -765,20 +698,12 @@ def set_feature_runtime_status(
     project = gh.ensure_project()
     fields = gh.ensure_fields(project)
 
-    roadmap_priorities = (
-        parse_roadmap_priorities(roadmap_path.read_text(encoding="utf-8"))
-        if roadmap_path.exists()
-        else {}
-    )
-    priority = roadmap_priorities.get(spec_number)
-
     _apply_fields(
         gh,
         project,
         fields,
         stored_entry.item_id,
         status=parsed.status,
-        priority=priority,
         runtime_status=runtime_status,
     )
 
@@ -883,8 +808,8 @@ def sync_story(
     now: Callable[[], str] = _utcnow_iso,
 ) -> dict[str, object]:
     """`--only issue:NNN [--status ...] [--body-file ...]`: aktualisiert optional Body/Status
-    eines bestehenden Story-Issues und pusht in jedem Fall die aus roadmap.md neu berechnete
-    Prioritaet (Einbahnstrasse, ADR 0017 Abschnitt 4, hier auf die Story-Stufe uebertragen)."""
+    eines bestehenden Story-Issues. Ohne --status/--body-file ein sauberer No-op ohne
+    Board-Schreibzugriff (die Prioritaet fasst das Tool seit ADR 0039 nicht mehr an)."""
     if status is not None and status not in _STORY_VALID_STATUSES:
         # Seit Spec 0060 / ADR 0037, Abschnitt 6: verengt auf {"Unrefined", "Ready", "Done"} -
         # die drei neuen Feature-only-Werte (Todo/In Progress/Review) ergeben fuer eine Story
@@ -895,7 +820,6 @@ def sync_story(
         )
 
     state_path = repo_root / "specs" / ".github-sync-state.json"
-    roadmap_path = repo_root / "specs" / "roadmap.md"
 
     gh.check_auth_scope()
     nested_state = load_state(state_path)
@@ -914,21 +838,13 @@ def sync_story(
             # "verworfen" wird bewusst nicht mit einem eigenen Statuswert begegnet).
             gh.set_issue_state(issue_number, open=False)
 
-    roadmap_priorities = (
-        parse_roadmap_priorities(roadmap_path.read_text(encoding="utf-8"))
-        if roadmap_path.exists()
-        else {}
-    )
-    priority = roadmap_priorities.get(f"{_ISSUE_ONLY_PREFIX}{issue_number}")
-    _apply_priority_only(gh, project, fields, entry.item_id, priority)
-
     new_stories = dict(nested_state.stories)
     new_stories[str(issue_number)] = StoryStateEntry(
         issue_number=issue_number, item_id=entry.item_id, last_synced_at=now()
     )
     save_state(state_path, NestedState(features=nested_state.features, stories=new_stories))
 
-    return {"issue_number": issue_number, "status": status, "priority": priority}
+    return {"issue_number": issue_number, "status": status}
 
 
 def show_story_status(*, repo_root: Path, gh: GhAdapter, issue_number: int) -> str | None:

@@ -20,18 +20,14 @@ def text_hash(text: str) -> str:
     return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
 
 
-_MISSING_PRIORITY_MARKER = "\x00__none__"
+def push_state_hash(*, status: str, content_zone: str) -> str:
+    """Hash aus (Status, Inhalts-Zone).
 
-
-def push_state_hash(*, status: str, priority: str | None, content_zone: str) -> str:
-    """Hash aus (Status, aus roadmap.md abgeleiteter Prioritaet, Inhalts-Zone).
-
-    priority=None (Implemented/Superseded-Specs ohne Eintrag in den Prioritaets-Tabellen) wird
-    bewusst von priority="" unterschieden (siehe Test), damit beide Faelle im Hash nicht
-    kollidieren koennten.
+    Die Prioritaet geht seit ADR 0039 nicht mehr in den Hash ein - sie wird nativ im
+    GitHub-Project-Board gepflegt und vom Sync-Tool weder gelesen noch geschrieben. Der Hash
+    aendert sich damit nur noch bei einer Status- oder Inhalts-Zonen-Aenderung.
     """
-    priority_marker = _MISSING_PRIORITY_MARKER if priority is None else priority
-    composite = f"STATUS:{status}\nPRIORITY:{priority_marker}\n---\n{content_zone}"
+    composite = f"STATUS:{status}\n---\n{content_zone}"
     return text_hash(composite)
 
 

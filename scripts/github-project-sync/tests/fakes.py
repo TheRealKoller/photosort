@@ -46,6 +46,10 @@ class FakeGhAdapter:
         self._next_issue_number = 1
         self.items: dict[str, dict[str, str | None]] = {}
         self._next_item_id = 1
+        # Protokoll aller schreibenden Feld-Zugriffe (item_id, field_id) - fuer Regressionstests
+        # zu ADR 0039 ("das Prioritaets-Feld wird auf keinem Pfad geschrieben").
+        self.single_select_writes: list[tuple[str, str]] = []
+        self.cleared_fields: list[tuple[str, str]] = []
         self.ensure_project_calls = 0
         self.ensure_fields_calls = 0
         # Repo-weit existierende Labels - "bug" ist im echten Repo bereits vorhanden (siehe ADR
@@ -158,6 +162,7 @@ class FakeGhAdapter:
     def set_item_single_select(
         self, project: Project, *, item_id: str, field_id: str, option_id: str
     ) -> None:
+        self.single_select_writes.append((item_id, field_id))
         # setdefault statt einer harten KeyError, falls der Test einen State-Eintrag mit
         # item_id vorgibt, ohne den Fake ueber ein vorheriges add_item_to_project() zu fuehren
         # (analog: auf echtem GitHub existiert das Item bereits, unser In-Memory-Fake muss das
@@ -165,6 +170,7 @@ class FakeGhAdapter:
         self.items.setdefault(item_id, {})[field_id] = option_id
 
     def clear_item_field(self, project: Project, *, item_id: str, field_id: str) -> None:
+        self.cleared_fields.append((item_id, field_id))
         self.items.setdefault(item_id, {})[field_id] = None
 
     def ensure_label(self, name: str, *, description: str, color: str) -> None:

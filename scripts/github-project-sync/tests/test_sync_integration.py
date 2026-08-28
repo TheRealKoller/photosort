@@ -34,30 +34,10 @@ def _spec_text(number: str, title: str, status: str, ziel: str = "Foo.") -> str:
     )
 
 
-def _roadmap_text(
-    *,
-    niedrig: list[tuple[str, str]] | None = None,
-    niedrig_issues: list[int] | None = None,
-) -> str:
-    rows = [f"| [{n}](./features/{n}-x.md) | {t} | Accepted |" for n, t in (niedrig or [])]
-    rows += [
-        f"| [#{n}](https://github.com/TheRealKoller/photosort/issues/{n}) | Story | Story |"
-        for n in (niedrig_issues or [])
-    ]
-    table = "\n".join(rows)
-    return (
-        "# Roadmap\n\n## Status auf einen Blick\n\n"
-        "### Offen — Hoch\n\nKeine offenen Einträge.\n\n"
-        "### Offen — Mittel\n\nKeine offenen Einträge.\n\n"
-        f"### Offen — Niedrig\n\n| Spec | Titel | Status |\n|---|---|---|\n{table}\n"
-    )
-
-
 def _make_repo(
     tmp_path: Path,
     *,
     specs: dict[str, str],
-    roadmap: str,
     state: dict | None = None,
     stories_state: dict | None = None,
     legacy_flat_state: dict | None = None,
@@ -68,7 +48,6 @@ def _make_repo(
     features_dir.mkdir(parents=True)
     for number, text in specs.items():
         (features_dir / f"{number}-x.md").write_text(text, encoding="utf-8")
-    (repo_root / "specs" / "roadmap.md").write_text(roadmap, encoding="utf-8")
     if raw_state is not None:
         (repo_root / "specs" / ".github-sync-state.json").write_text(
             json.dumps(raw_state), encoding="utf-8"
@@ -86,7 +65,7 @@ def _make_repo(
 
 
 def test_check_auth_scope_failure_propagates(tmp_path: Path) -> None:
-    repo_root = _make_repo(tmp_path, specs={}, roadmap=_roadmap_text())
+    repo_root = _make_repo(tmp_path, specs={})
     gh = FakeGhAdapter(auth_ok=False)
 
     with pytest.raises(GhAuthScopeError):
@@ -97,7 +76,6 @@ def test_created_case_creates_issue_item_and_state_entry(tmp_path: Path) -> None
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
     )
     gh = FakeGhAdapter()
 
@@ -118,35 +96,21 @@ def test_created_case_creates_issue_item_and_state_entry(tmp_path: Path) -> None
     assert state.features["0031"].item_id in gh.items
 
 
-def test_created_case_sets_status_and_priority_fields(tmp_path: Path) -> None:
+def test_created_case_sets_status_field_and_never_touches_priority(tmp_path: Path) -> None:
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
     )
     gh = FakeGhAdapter()
 
-    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+    run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
 
-    item_id = gh.items and next(iter(gh.items))
+    item_id = next(iter(gh.items))
     assert gh.items[item_id]["F_STATUS"] == "S_Todo"  # Baseline Accepted -> Todo (ADR 0037)
-    assert gh.items[item_id]["F_PRIO"] == "P_Niedrig"
-    assert result.specs[0].priority_warning is None
-
-
-def test_missing_priority_for_open_spec_yields_warning_but_still_syncs(tmp_path: Path) -> None:
-    repo_root = _make_repo(
-        tmp_path,
-        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[]),
-    )
-    gh = FakeGhAdapter()
-
-    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
-
-    assert result.specs[0].classification == "created"
-    assert result.specs[0].priority_warning is not None
-    assert "0031" in result.specs[0].priority_warning
+    # ADR 0039: das Prioritaets-Feld wird auf keinem Pfad geschrieben.
+    assert "F_PRIO" not in gh.items[item_id]
+    assert all(field_id != "F_PRIO" for _, field_id in gh.single_select_writes)
+    assert all(field_id != "F_PRIO" for _, field_id in gh.cleared_fields)
 
 
 # -- Baseline+Override (Spec 0060 / ADR 0037, Abschnitte 1-2/5) --------------------------------
@@ -156,7 +120,6 @@ def test_created_case_proposed_status_maps_to_todo_baseline(tmp_path: Path) -> N
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Proposed")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
     )
     gh = FakeGhAdapter()
 
@@ -170,7 +133,6 @@ def test_created_case_implemented_status_maps_to_done_baseline(tmp_path: Path) -
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Implemented")},
-        roadmap=_roadmap_text(),
     )
     gh = FakeGhAdapter()
 
@@ -182,7 +144,7 @@ def test_created_case_implemented_status_maps_to_done_baseline(tmp_path: Path) -
 
 def test_stored_runtime_override_wins_over_todo_baseline(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
     entry["runtime_status"] = "In Progress"
@@ -191,7 +153,6 @@ def test_stored_runtime_override_wins_over_todo_baseline(tmp_path: Path) -> None
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         state={"0031": entry},
     )
     gh = FakeGhAdapter()
@@ -208,7 +169,7 @@ def test_stored_runtime_override_wins_over_todo_baseline(tmp_path: Path) -> None
 
 def test_runtime_override_defensively_cleared_once_baseline_becomes_done(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
     entry["runtime_status"] = "Review"
@@ -219,7 +180,6 @@ def test_runtime_override_defensively_cleared_once_baseline_becomes_done(tmp_pat
         # Datei-Status ist jetzt (unabhaengig von einer Merge-Erkennung) bereits "Implemented" -
         # ein stehengebliebener Override darf die Baseline "Done" nie mehr verfeinern.
         specs={"0031": _spec_text("0031", "Sync-Feature", "Implemented", ziel="Text.")},
-        roadmap=_roadmap_text(),
         state={"0031": entry},
     )
     gh = FakeGhAdapter()
@@ -238,7 +198,7 @@ def test_runtime_override_defensively_cleared_once_baseline_becomes_done(tmp_pat
 
 def test_merged_pr_finalizes_spec_to_implemented_and_pushes_done(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
     entry["runtime_status"] = "Review"
@@ -247,7 +207,6 @@ def test_merged_pr_finalizes_spec_to_implemented_and_pushes_done(tmp_path: Path)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(),
         state={"0031": entry},
     )
     gh = FakeGhAdapter()
@@ -278,7 +237,7 @@ def test_merged_pr_finalizes_spec_to_implemented_and_pushes_done(tmp_path: Path)
 
 def test_open_pr_does_not_finalize_spec_yet(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
     entry["runtime_status"] = "Review"
@@ -287,7 +246,6 @@ def test_open_pr_does_not_finalize_spec_yet(tmp_path: Path) -> None:
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(),
         state={"0031": entry},
     )
     gh = FakeGhAdapter()
@@ -310,7 +268,7 @@ def test_merge_detection_not_triggered_without_review_override(tmp_path: Path) -
     # Guard-Bedingung: stored_entry.runtime_status muss exakt "Review" sein - ein "In Progress"-
     # Override (auch mit zufaellig gesetztem pr_number) darf gh.get_pull_request() nie aufrufen.
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
     entry["runtime_status"] = "In Progress"
@@ -319,7 +277,6 @@ def test_merge_detection_not_triggered_without_review_override(tmp_path: Path) -
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(),
         state={"0031": entry},
     )
     gh = FakeGhAdapter()
@@ -336,7 +293,7 @@ def test_merge_detection_not_triggered_when_spec_status_is_not_accepted(tmp_path
     # Guard-Bedingung: status == "Accepted" - eine bereits "Superseded"-Spec mit stehengebliebenem
     # Review-Override darf gh.get_pull_request() nie aufrufen.
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Superseded", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Superseded", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
     entry["runtime_status"] = "Review"
@@ -345,7 +302,6 @@ def test_merge_detection_not_triggered_when_spec_status_is_not_accepted(tmp_path
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Superseded", ziel="Text.")},
-        roadmap=_roadmap_text(),
         state={"0031": entry},
     )
     gh = FakeGhAdapter()
@@ -362,7 +318,7 @@ def test_merge_detection_error_aborts_only_that_spec_not_the_whole_run(tmp_path:
     # gesamten Mehr-Spec-Lauf per Exception abgebrochen, statt (wie bei ungueltigem Status/
     # Marker-Integritaet bereits etabliert) nur diese eine Spec mit aborted_reason zu markieren.
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     broken_entry = _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
     broken_entry["runtime_status"] = "Review"
@@ -374,7 +330,6 @@ def test_merge_detection_error_aborts_only_that_spec_not_the_whole_run(tmp_path:
             "0031": _spec_text("0031", "Kaputte Spec", "Accepted", ziel="Text."),
             "0032": _spec_text("0032", "Gesunde Spec", "Accepted"),
         },
-        roadmap=_roadmap_text(niedrig=[("0032", "Gesunde Spec")]),
         state={"0031": broken_entry},
     )
     gh = FakeGhAdapter()
@@ -399,23 +354,14 @@ def test_merge_detection_error_aborts_only_that_spec_not_the_whole_run(tmp_path:
     assert state.features["0031"].pr_number == 999
 
 
-def _drop_field_option(
-    fields: ProjectFields, *, field_name: str, option_name: str
-) -> ProjectFields:
-    """Simuliert Board-Drift: eine erwartete Option fehlt im Project-Feld (z.B. manuell
+def _drop_status_option(fields: ProjectFields, *, option_name: str) -> ProjectFields:
+    """Simuliert Board-Drift: eine erwartete Option fehlt im Status-Feld (z.B. manuell
     umbenannt/geloescht), obwohl das Feld selbst unter dem erwarteten Namen existiert."""
-    if field_name == "status":
-        return ProjectFields(
-            status_field_id=fields.status_field_id,
-            status_options={k: v for k, v in fields.status_options.items() if k != option_name},
-            priority_field_id=fields.priority_field_id,
-            priority_options=fields.priority_options,
-        )
     return ProjectFields(
         status_field_id=fields.status_field_id,
-        status_options=fields.status_options,
+        status_options={k: v for k, v in fields.status_options.items() if k != option_name},
         priority_field_id=fields.priority_field_id,
-        priority_options={k: v for k, v in fields.priority_options.items() if k != option_name},
+        priority_options=fields.priority_options,
     )
 
 
@@ -425,36 +371,15 @@ def test_missing_status_option_aborts_with_sync_error_instead_of_silent_no_op(
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
     )
     gh = FakeGhAdapter()
     project = gh.ensure_project()
     fields = gh.ensure_fields(project)
     # Seit Spec 0060 / ADR 0037: "Accepted" ist kein Board-Wert mehr, der gepushte Wert ist die
     # Baseline "Todo" - die fehlende Option muss deshalb hier simuliert werden, nicht "Accepted".
-    gh.fields = _drop_field_option(fields, field_name="status", option_name="Todo")
+    gh.fields = _drop_status_option(fields, option_name="Todo")
 
     with pytest.raises(SyncError, match="Status"):
-        run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
-
-
-def test_missing_priority_option_aborts_with_sync_error_instead_of_clearing_field(
-    tmp_path: Path,
-) -> None:
-    # Regressionstest fuer den Copilot-Review-Fund auf PR #115: eine fehlende Options-ID durfte
-    # nicht faelschlich als "priority is None" behandelt werden (das haette das Feld
-    # stillschweigend geleert, obwohl die Spec eine echte, nicht-leere Prioritaet hat).
-    repo_root = _make_repo(
-        tmp_path,
-        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
-    )
-    gh = FakeGhAdapter()
-    project = gh.ensure_project()
-    fields = gh.ensure_fields(project)
-    gh.fields = _drop_field_option(fields, field_name="priority", option_name="Niedrig")
-
-    with pytest.raises(SyncError, match="Priorität"):
         run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
 
 
@@ -479,14 +404,13 @@ def _story_state_entry_dict(*, issue_number: int, item_id: str = "ITEM_1") -> di
 def test_pushed_case_updates_issue_body_from_spec(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nAlter Text.\n"
     old_push_hash = push_state_hash(
-        status="Accepted", priority="Niedrig", content_zone=content_zone
+        status="Accepted", content_zone=content_zone
     )
     old_pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Neuer Text.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         state={
             "0031": _existing_state_entry(
                 issue_number=42, push_hash=old_push_hash, pull_hash=old_pull_hash
@@ -505,13 +429,12 @@ def test_pushed_case_updates_issue_body_from_spec(tmp_path: Path) -> None:
 
 def test_pulled_case_writes_issue_content_into_spec_file(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nAlter Text.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     old_pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Alter Text.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         state={
             "0031": _existing_state_entry(
                 issue_number=42, push_hash=push_hash, pull_hash=old_pull_hash
@@ -535,13 +458,12 @@ def test_pulled_case_writes_issue_content_into_spec_file(tmp_path: Path) -> None
 
 def test_pulled_case_ignores_metadata_edits_in_issue_body(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nAlter Text.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     old_pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Alter Text.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         state={
             "0031": _existing_state_entry(
                 issue_number=42, push_hash=push_hash, pull_hash=old_pull_hash
@@ -562,13 +484,12 @@ def test_pulled_case_ignores_metadata_edits_in_issue_body(tmp_path: Path) -> Non
 
 def test_conflict_case_touches_neither_side_and_is_idempotent(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nAlter Text.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     old_pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Lokal geändert.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         state={
             "0031": _existing_state_entry(
                 issue_number=42, push_hash=push_hash, pull_hash=old_pull_hash
@@ -599,13 +520,12 @@ def test_conflict_case_touches_neither_side_and_is_idempotent(tmp_path: Path) ->
 
 def test_conflict_resolution_keep_spec_pushes_local_content(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nAlter Text.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     old_pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Lokal geändert.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         state={
             "0031": _existing_state_entry(
                 issue_number=42, push_hash=push_hash, pull_hash=old_pull_hash
@@ -629,13 +549,12 @@ def test_conflict_resolution_keep_spec_pushes_local_content(tmp_path: Path) -> N
 
 def test_conflict_resolution_keep_issue_pulls_remote_content(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nAlter Text.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     old_pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Lokal geändert.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         state={
             "0031": _existing_state_entry(
                 issue_number=42, push_hash=push_hash, pull_hash=old_pull_hash
@@ -656,13 +575,12 @@ def test_conflict_resolution_keep_issue_pulls_remote_content(tmp_path: Path) -> 
 
 def test_unchanged_case_does_not_touch_issue_body(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -679,13 +597,12 @@ def test_unchanged_case_does_not_touch_issue_body(tmp_path: Path) -> None:
 
 def test_manually_closed_issue_is_reopened_on_next_sync_even_when_unchanged(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -700,7 +617,7 @@ def test_manually_closed_issue_is_reopened_on_next_sync_even_when_unchanged(tmp_
 
 def test_marker_mismatch_aborts_only_that_spec(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
@@ -709,7 +626,6 @@ def test_marker_mismatch_aborts_only_that_spec(tmp_path: Path) -> None:
             "0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text."),
             "0032": _spec_text("0032", "Anderes Feature", "Accepted"),
         },
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature"), ("0032", "Anderes Feature")]),
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -734,13 +650,12 @@ def test_marker_mismatch_aborts_only_that_spec(tmp_path: Path) -> None:
 
 def test_marker_number_mismatch_also_aborts(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -756,13 +671,12 @@ def test_marker_number_mismatch_also_aborts(tmp_path: Path) -> None:
 
 def test_deleted_spec_file_closes_issue_and_removes_state_entry(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        roadmap=_roadmap_text(),
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -782,13 +696,12 @@ def test_deleted_spec_file_closes_issue_and_removes_state_entry(tmp_path: Path) 
 
 def test_only_filter_processes_single_spec_and_skips_orphan_cleanup(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0032": _spec_text("0032", "Neues Feature", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0032", "Neues Feature")]),
         # 0031 hat einen State-Eintrag, aber keine Datei mehr (waere sonst ein Orphan):
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
@@ -806,7 +719,7 @@ def test_only_filter_processes_single_spec_and_skips_orphan_cleanup(tmp_path: Pa
 
 
 def test_only_filter_raises_for_unknown_spec_number(tmp_path: Path) -> None:
-    repo_root = _make_repo(tmp_path, specs={}, roadmap=_roadmap_text())
+    repo_root = _make_repo(tmp_path, specs={})
     gh = FakeGhAdapter()
 
     with pytest.raises(SyncError):
@@ -817,7 +730,6 @@ def test_self_provisioning_idempotent_across_two_runs(tmp_path: Path) -> None:
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
     )
     gh = FakeGhAdapter()
 
@@ -835,7 +747,6 @@ def test_abort_mid_run_keeps_state_of_already_processed_specs(tmp_path: Path) ->
             "0031": _spec_text("0031", "Erstes Feature", "Accepted"),
             "0032": _spec_text("0032", "Zweites Feature", "Accepted"),
         },
-        roadmap=_roadmap_text(niedrig=[("0031", "Erstes Feature"), ("0032", "Zweites Feature")]),
     )
 
     class _CrashingAfterFirst(FakeGhAdapter):
@@ -859,27 +770,6 @@ def test_abort_mid_run_keeps_state_of_already_processed_specs(tmp_path: Path) ->
     assert "0032" not in state.features
 
 
-def test_state_file_missing_roadmap_still_syncs_with_empty_priorities(tmp_path: Path) -> None:
-    repo_root = tmp_path / "repo"
-    (repo_root / "specs" / "features").mkdir(parents=True)
-    (repo_root / "specs" / "features" / "0031-x.md").write_text(
-        _spec_text("0031", "Sync-Feature", "Implemented"), encoding="utf-8"
-    )
-    gh = FakeGhAdapter()
-
-    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
-
-    assert result.specs[0].classification == "created"
-    assert result.specs[0].priority_warning is None  # Implemented braucht keine Prioritaet
-
-    issue_number = result.specs[0].issue_number
-    assert issue_number is not None
-    assert gh.issue(issue_number).state == "closed"  # Implemented -> nativer Issue-Zustand zu
-
-    item_id = next(iter(gh.items))
-    assert gh.items[item_id]["F_PRIO"] is None  # keine Prioritaets-Tabelle -> Feld geleert
-
-
 def test_invalid_status_aborts_only_that_spec_not_the_whole_run(tmp_path: Path) -> None:
     # Regressionstest fuer einen echten Bug (zweiter manueller Sync-Lauf gegen echtes GitHub nach
     # Merge von PR #117): ein ungueltiger/unbekannter Status brach bisher den GESAMTEN
@@ -892,7 +782,6 @@ def test_invalid_status_aborts_only_that_spec_not_the_whole_run(tmp_path: Path) 
             "0031": _spec_text("0031", "Kaputte Spec", "Draft"),  # kein bekannter Lifecycle-Wert
             "0032": _spec_text("0032", "Gesunde Spec", "Accepted"),
         },
-        roadmap=_roadmap_text(niedrig=[("0032", "Gesunde Spec")]),
     )
     gh = FakeGhAdapter()
 
@@ -914,7 +803,6 @@ def test_invalid_status_without_prior_state_writes_no_state_entry(tmp_path: Path
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Kaputte Spec", "Draft")},
-        roadmap=_roadmap_text(),
     )
     gh = FakeGhAdapter()
 
@@ -931,7 +819,6 @@ def test_superseded_status_clears_status_field_and_sets_label(tmp_path: Path) ->
     repo_root = _make_repo(
         tmp_path,
         specs={"0003": _spec_text("0003", "Alte Spec", "Superseded")},
-        roadmap=_roadmap_text(),
     )
     gh = FakeGhAdapter()
 
@@ -948,13 +835,12 @@ def test_superseded_status_clears_status_field_and_sets_label(tmp_path: Path) ->
 
 def test_superseded_label_removed_when_status_changes_back(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Superseded", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Superseded", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0003": _spec_text("0003", "Alte Spec", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(niedrig=[("0003", "Alte Spec")]),
         state={
             "0003": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -976,7 +862,6 @@ def test_non_superseded_status_never_gets_superseded_label(tmp_path: Path) -> No
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
     )
     gh = FakeGhAdapter()
 
@@ -992,13 +877,12 @@ def test_non_superseded_status_never_gets_superseded_label(tmp_path: Path) -> No
 
 def test_full_run_over_legacy_flat_state_does_not_reclassify_as_created(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         legacy_flat_state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -1025,13 +909,12 @@ def test_full_run_over_old_inbox_namespace_state_does_not_touch_orphaned_inbox_i
     # werden - load_state() ignoriert den "inbox"-Schluessel bereits beim Lesen (siehe
     # test_state.py), hier zusaetzlich End-to-End ueber einen vollen Sync-Lauf nachgewiesen.
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         raw_state={
             "features": {
                 "0031": _existing_state_entry(
@@ -1067,7 +950,7 @@ def test_full_run_over_old_inbox_namespace_state_does_not_touch_orphaned_inbox_i
 
 
 def test_create_story_issue_sets_unrefined_status_and_idee_label(tmp_path: Path) -> None:
-    repo_root = _make_repo(tmp_path, specs={}, roadmap=_roadmap_text())
+    repo_root = _make_repo(tmp_path, specs={})
     gh = FakeGhAdapter()
 
     issue_number = create_story_issue(
@@ -1095,7 +978,7 @@ def test_create_story_issue_sets_unrefined_status_and_idee_label(tmp_path: Path)
 
 
 def test_create_story_issue_bug_type_reuses_existing_bug_label(tmp_path: Path) -> None:
-    repo_root = _make_repo(tmp_path, specs={}, roadmap=_roadmap_text())
+    repo_root = _make_repo(tmp_path, specs={})
     gh = FakeGhAdapter()
 
     issue_number = create_story_issue(
@@ -1108,7 +991,7 @@ def test_create_story_issue_bug_type_reuses_existing_bug_label(tmp_path: Path) -
 
 
 def test_create_story_issue_rejects_unknown_type(tmp_path: Path) -> None:
-    repo_root = _make_repo(tmp_path, specs={}, roadmap=_roadmap_text())
+    repo_root = _make_repo(tmp_path, specs={})
     gh = FakeGhAdapter()
 
     with pytest.raises(SyncError):
@@ -1117,16 +1000,13 @@ def test_create_story_issue_rejects_unknown_type(tmp_path: Path) -> None:
         )
 
 
-# -- Dateiloser Story-Pfad: --only issue:NNN (Body/Status setzen + Prioritaets-Push) -----------
+# -- Dateiloser Story-Pfad: --only issue:NNN (Body/Status setzen) ------------------------------
 
 
-def test_sync_story_sets_status_and_body_and_pushes_priority_from_roadmap(
-    tmp_path: Path,
-) -> None:
+def test_sync_story_sets_status_and_body(tmp_path: Path) -> None:
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        roadmap=_roadmap_text(niedrig_issues=[215]),
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
@@ -1143,51 +1023,40 @@ def test_sync_story_sets_status_and_body_and_pushes_priority_from_roadmap(
     )
 
     assert result["status"] == "Ready"
-    assert result["priority"] == "Niedrig"
+    assert "priority" not in result  # ADR 0039: kein Prioritaets-Feld im Ergebnis
     assert gh.issue(215).body == "## Ziel\n\nNeuer Inhalt.\n"
     assert gh.items["ITEM_1"]["F_STATUS"] == "S_Ready"
-    assert gh.items["ITEM_1"]["F_PRIO"] == "P_Niedrig"
+    # ADR 0039: das Prioritaets-Feld wird nie geschrieben.
+    assert "F_PRIO" not in gh.items["ITEM_1"]
+    assert all(field_id != "F_PRIO" for _, field_id in gh.single_select_writes)
+    assert all(field_id != "F_PRIO" for _, field_id in gh.cleared_fields)
 
     state = load_state(repo_root / "specs" / ".github-sync-state.json")
     assert state.stories["215"].last_synced_at == _FIXED_NOW
 
 
-def test_sync_story_without_status_or_body_only_pushes_priority(tmp_path: Path) -> None:
+def test_sync_story_without_status_or_body_is_a_clean_no_op(tmp_path: Path) -> None:
+    # ADR 0039: ohne --status/--body-file fasst sync_story() das Board gar nicht mehr an
+    # (frueher wurde hier die Prioritaet aus roadmap.md gepusht).
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        roadmap=_roadmap_text(niedrig_issues=[215]),
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(215, body="Unveraendert.")
-    gh.items["ITEM_1"] = {}
-
-    sync_story(repo_root=repo_root, gh=gh, issue_number=215, now=lambda: _FIXED_NOW)
-
-    assert gh.issue(215).body == "Unveraendert."
-    assert "F_STATUS" not in gh.items["ITEM_1"]
-    assert gh.items["ITEM_1"]["F_PRIO"] == "P_Niedrig"
-
-
-def test_sync_story_clears_priority_when_not_in_roadmap(tmp_path: Path) -> None:
-    repo_root = _make_repo(
-        tmp_path,
-        specs={},
-        roadmap=_roadmap_text(),
-        stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
-    )
-    gh = FakeGhAdapter()
-    gh.seed_issue(215, body="Text.")
     gh.items["ITEM_1"] = {"F_PRIO": "P_Hoch"}
 
     sync_story(repo_root=repo_root, gh=gh, issue_number=215, now=lambda: _FIXED_NOW)
 
-    assert gh.items["ITEM_1"]["F_PRIO"] is None
+    assert gh.issue(215).body == "Unveraendert."
+    assert gh.items["ITEM_1"] == {"F_PRIO": "P_Hoch"}  # vorab gesetzter Wert ueberlebt unveraendert
+    assert gh.single_select_writes == []
+    assert gh.cleared_fields == []
 
 
 def test_sync_story_raises_for_unknown_issue(tmp_path: Path) -> None:
-    repo_root = _make_repo(tmp_path, specs={}, roadmap=_roadmap_text())
+    repo_root = _make_repo(tmp_path, specs={})
     gh = FakeGhAdapter()
 
     with pytest.raises(SyncError):
@@ -1198,7 +1067,6 @@ def test_sync_story_rejects_unknown_status(tmp_path: Path) -> None:
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        roadmap=_roadmap_text(),
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
@@ -1216,7 +1084,6 @@ def test_sync_story_rejects_feature_only_board_statuses(tmp_path: Path, status: 
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        roadmap=_roadmap_text(),
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
@@ -1232,7 +1099,6 @@ def test_sync_story_done_closes_the_issue(tmp_path: Path) -> None:
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        roadmap=_roadmap_text(),
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
@@ -1249,7 +1115,6 @@ def test_sync_story_ready_status_does_not_close_the_issue(tmp_path: Path) -> Non
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        roadmap=_roadmap_text(),
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
@@ -1269,7 +1134,6 @@ def test_show_story_status_returns_current_status_without_changing_anything(tmp_
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        roadmap=_roadmap_text(),
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
@@ -1287,7 +1151,7 @@ def test_show_story_status_returns_current_status_without_changing_anything(tmp_
 
 
 def test_show_story_status_raises_for_unknown_issue(tmp_path: Path) -> None:
-    repo_root = _make_repo(tmp_path, specs={}, roadmap=_roadmap_text())
+    repo_root = _make_repo(tmp_path, specs={})
     gh = FakeGhAdapter()
 
     with pytest.raises(SyncError):
@@ -1296,12 +1160,11 @@ def test_show_story_status_raises_for_unknown_issue(tmp_path: Path) -> None:
 
 def test_show_story_status_raises_helpful_error_when_already_adopted(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        roadmap=_roadmap_text(),
         state={
             "0052": _existing_state_entry(
                 issue_number=215, push_hash=push_hash, pull_hash=pull_hash
@@ -1321,7 +1184,6 @@ def test_adopt_issue_migrates_story_state_into_features_and_writes_marker(tmp_pa
     repo_root = _make_repo(
         tmp_path,
         specs={"0052": _spec_text("0052", "Neue Spec", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0052", "Neue Spec")]),
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
@@ -1341,7 +1203,7 @@ def test_adopt_issue_migrates_story_state_into_features_and_writes_marker(tmp_pa
     issue = gh.issue(215)
     assert issue.body.startswith("<!-- photosort-spec: 0052 -->")
     assert gh.items["ITEM_1"]["F_STATUS"] == "S_Todo"  # Baseline Accepted -> Todo (ADR 0037)
-    assert gh.items["ITEM_1"]["F_PRIO"] == "P_Niedrig"
+    assert "F_PRIO" not in gh.items["ITEM_1"]  # ADR 0039: Prioritaet nie angefasst
 
     state = load_state(repo_root / "specs" / ".github-sync-state.json")
     assert "215" not in state.stories
@@ -1356,7 +1218,6 @@ def test_adopt_issue_subsequent_run_is_a_normal_feature_sync(tmp_path: Path) -> 
     repo_root = _make_repo(
         tmp_path,
         specs={"0052": _spec_text("0052", "Neue Spec", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0052", "Neue Spec")]),
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
@@ -1373,7 +1234,6 @@ def test_adopt_issue_requires_only_feature_scope(tmp_path: Path) -> None:
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        roadmap=_roadmap_text(),
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
@@ -1387,7 +1247,6 @@ def test_adopt_issue_raises_when_no_story_state_entry_exists(tmp_path: Path) -> 
     repo_root = _make_repo(
         tmp_path,
         specs={"0052": _spec_text("0052", "Neue Spec", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0052", "Neue Spec")]),
     )
     gh = FakeGhAdapter()
 
@@ -1397,12 +1256,11 @@ def test_adopt_issue_raises_when_no_story_state_entry_exists(tmp_path: Path) -> 
 
 def test_adopt_issue_raises_when_feature_already_has_state_entry(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0052": _spec_text("0052", "Neue Spec", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(niedrig=[("0052", "Neue Spec")]),
         state={
             "0052": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -1416,59 +1274,185 @@ def test_adopt_issue_raises_when_feature_already_has_state_entry(tmp_path: Path)
         run_sync(repo_root=repo_root, gh=gh, only="0052", adopt_issue=215, now=lambda: _FIXED_NOW)
 
 
-# -- Batch-Prioritaets-Push fuer issue-referenzierte Roadmap-Zeilen im Vollauf -----------------
+# -- ADR 0039: das Board-Feld `Prioritaet` wird auf keinem Pfad geschrieben --------------------
 
 
-def test_full_run_pushes_priority_for_issue_referenced_roadmap_rows(tmp_path: Path) -> None:
+def _assert_priority_field_untouched(gh: FakeGhAdapter) -> None:
+    assert all(field_id != "F_PRIO" for _, field_id in gh.single_select_writes)
+    assert all(field_id != "F_PRIO" for _, field_id in gh.cleared_fields)
+
+
+def test_full_run_never_writes_priority_and_preexisting_value_survives(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        state={
+            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+    gh.items["ITEM_1"] = {"F_PRIO": "P_Hoch"}
+
+    run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert gh.items["ITEM_1"]["F_PRIO"] == "P_Hoch"
+    _assert_priority_field_untouched(gh)
+
+
+def test_only_scope_never_writes_priority_and_preexisting_value_survives(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0032": _spec_text("0032", "Neues Feature", "Accepted")},
+    )
+    gh = FakeGhAdapter()
+
+    run_sync(repo_root=repo_root, gh=gh, only="0032", now=lambda: _FIXED_NOW)
+
+    item_id = next(iter(gh.items))
+    assert "F_PRIO" not in gh.items[item_id]
+    _assert_priority_field_untouched(gh)
+
+
+def test_only_issue_scope_never_writes_priority(tmp_path: Path) -> None:
     repo_root = _make_repo(
         tmp_path,
         specs={},
-        roadmap=_roadmap_text(niedrig_issues=[215]),
         stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
     )
     gh = FakeGhAdapter()
     gh.seed_issue(215, body="Text.")
-    gh.items["ITEM_1"] = {}
+    gh.items["ITEM_1"] = {"F_PRIO": "P_Hoch"}
 
-    run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+    sync_story(
+        repo_root=repo_root, gh=gh, issue_number=215, status="Ready", now=lambda: _FIXED_NOW
+    )
 
-    assert gh.items["ITEM_1"]["F_PRIO"] == "P_Niedrig"
-    state = load_state(repo_root / "specs" / ".github-sync-state.json")
-    assert state.stories["215"].last_synced_at == _FIXED_NOW
-
-
-def test_full_run_skips_issue_referenced_row_without_story_state_entry(tmp_path: Path) -> None:
-    # Eine Story, die in roadmap.md schon priorisiert ist, aber noch keinen State-Eintrag hat
-    # (z.B. weil sie noch nicht per --create-issue/--only issue: erfasst wurde), darf den Lauf
-    # nicht zum Absturz bringen - sie wird stillschweigend uebersprungen.
-    repo_root = _make_repo(tmp_path, specs={}, roadmap=_roadmap_text(niedrig_issues=[999]))
-    gh = FakeGhAdapter()
-
-    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
-
-    assert result.specs == []
+    assert gh.items["ITEM_1"]["F_PRIO"] == "P_Hoch"
+    _assert_priority_field_untouched(gh)
 
 
-def test_full_run_with_only_scope_does_not_touch_issue_priorities(tmp_path: Path) -> None:
+def test_adopt_issue_never_writes_priority(tmp_path: Path) -> None:
     repo_root = _make_repo(
         tmp_path,
-        specs={"0032": _spec_text("0032", "Feature", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0032", "Feature")], niedrig_issues=[215]),
-        stories_state={
-            "215": {
-                "issue_number": 215,
-                "item_id": "ITEM_STORY",
-                "last_synced_at": "2026-08-09T00:00:00Z",
-            }
+        specs={"0052": _spec_text("0052", "Neue Spec", "Accepted")},
+        stories_state={"215": _story_state_entry_dict(issue_number=215, item_id="ITEM_1")},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(215, body="Story-Rohtext, kein Marker.")
+    gh.items["ITEM_1"] = {"F_PRIO": "P_Mittel"}
+
+    run_sync(repo_root=repo_root, gh=gh, only="0052", adopt_issue=215, now=lambda: _FIXED_NOW)
+
+    assert gh.items["ITEM_1"]["F_PRIO"] == "P_Mittel"
+    _assert_priority_field_untouched(gh)
+
+
+def test_runtime_status_scope_never_writes_priority(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
+    pull_hash = text_hash(content_zone)
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        state={
+            "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
     )
     gh = FakeGhAdapter()
-    gh.seed_issue(215, body="Text.")
-    gh.items["ITEM_STORY"] = {}
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+    gh.items["ITEM_1"] = {"F_PRIO": "P_Hoch"}
 
-    run_sync(repo_root=repo_root, gh=gh, only="0032", now=lambda: _FIXED_NOW)
+    set_feature_runtime_status(
+        repo_root=repo_root,
+        gh=gh,
+        spec_number="0031",
+        runtime_status="In Progress",
+        now=lambda: _FIXED_NOW,
+    )
 
-    assert "F_PRIO" not in gh.items["ITEM_STORY"]
+    assert gh.items["ITEM_1"]["F_PRIO"] == "P_Hoch"
+    _assert_priority_field_untouched(gh)
+
+
+def test_superseded_path_only_clears_the_status_field_not_priority(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0003": _spec_text("0003", "Alte Spec", "Superseded")},
+    )
+    gh = FakeGhAdapter()
+
+    run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert gh.cleared_fields == [(next(iter(gh.items)), "F_STATUS")]
+    _assert_priority_field_untouched(gh)
+
+
+# -- ADR 0039: einmalige, gutartige Selbstheilung der Baseline nach der Hash-Signaturaenderung --
+
+
+def _legacy_priority_push_hash(*, status: str, content_zone: str, priority: str) -> str:
+    """Bildet den `pushed_state_hash` nach der ALTEN, prioritaetshaltigen Formel nach
+    (STATUS/PRIORITY/---/content_zone) - so lag er vor ADR 0039 in .github-sync-state.json."""
+    composite = f"STATUS:{status}\nPRIORITY:{priority}\n---\n{content_zone}"
+    return text_hash(composite)
+
+
+def test_old_priority_baseline_heals_once_as_pushed_then_stays_unchanged(tmp_path: Path) -> None:
+    content_zone = "## Ziel\n\nText.\n"
+    legacy_hash = _legacy_priority_push_hash(
+        status="Accepted", content_zone=content_zone, priority="Niedrig"
+    )
+    pull_hash = text_hash(content_zone)
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        state={
+            "0031": _existing_state_entry(
+                issue_number=42, push_hash=legacy_hash, pull_hash=pull_hash
+            )
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+
+    first = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+    assert first.specs[0].classification == "pushed"
+    # identischer Re-Push, Inhalt unveraendert:
+    assert content_zone.strip() in gh.issue(42).body
+
+    second = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+    assert second.specs[0].classification == "unchanged"
+
+
+def test_old_priority_baseline_plus_real_issue_edit_is_a_conflict_not_a_silent_push(
+    tmp_path: Path,
+) -> None:
+    content_zone = "## Ziel\n\nAlter Text.\n"
+    legacy_hash = _legacy_priority_push_hash(
+        status="Accepted", content_zone=content_zone, priority="Niedrig"
+    )
+    pull_hash = text_hash(content_zone)
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Alter Text.")},
+        state={
+            "0031": _existing_state_entry(
+                issue_number=42, push_hash=legacy_hash, pull_hash=pull_hash
+            )
+        },
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", "## Ziel\n\nIm Issue geaendert.\n"))
+
+    result = run_sync(repo_root=repo_root, gh=gh, now=lambda: _FIXED_NOW)
+
+    assert result.specs[0].classification == "conflict"
+    # Keine Seite still ueberschrieben:
+    assert "Im Issue geaendert." in gh.issue(42).body
 
 
 # -- set_feature_runtime_status() (--only NNNN --runtime-status ...): leichtgewichtiger,
@@ -1477,12 +1461,11 @@ def test_full_run_with_only_scope_does_not_touch_issue_priorities(tmp_path: Path
 
 def test_set_feature_runtime_status_sets_in_progress_when_baseline_is_todo(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority="Niedrig", content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -1513,12 +1496,11 @@ def test_set_feature_runtime_status_sets_in_progress_when_baseline_is_todo(tmp_p
 
 def test_set_feature_runtime_status_sets_review_with_pr_number(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(),
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -1546,12 +1528,11 @@ def test_set_feature_runtime_status_sets_review_with_pr_number(tmp_path: Path) -
 
 def test_set_feature_runtime_status_raises_when_baseline_is_not_todo(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Implemented", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Implemented", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Implemented", ziel="Text.")},
-        roadmap=_roadmap_text(),
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -1569,7 +1550,6 @@ def test_set_feature_runtime_status_raises_when_no_state_entry_exists(tmp_path: 
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted")},
-        roadmap=_roadmap_text(niedrig=[("0031", "Sync-Feature")]),
     )
     gh = FakeGhAdapter()
 
@@ -1581,12 +1561,11 @@ def test_set_feature_runtime_status_raises_when_no_state_entry_exists(tmp_path: 
 
 def test_set_feature_runtime_status_rejects_unknown_value(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(),
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -1606,12 +1585,11 @@ def test_set_feature_runtime_status_review_requires_pr_number(tmp_path: Path) ->
     # (runtime_status="Review" ohne pr_number) erzeugen und die spaetere Merge-Erkennung in
     # _sync_one() verhindern konnte (deren Guard-Bedingung pr_number is not None voraussetzt).
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(),
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },
@@ -1631,12 +1609,11 @@ def test_set_feature_runtime_status_review_requires_pr_number(tmp_path: Path) ->
 
 def test_set_feature_runtime_status_in_progress_rejects_pr_number(tmp_path: Path) -> None:
     content_zone = "## Ziel\n\nText.\n"
-    push_hash = push_state_hash(status="Accepted", priority=None, content_zone=content_zone)
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
     pull_hash = text_hash(content_zone)
     repo_root = _make_repo(
         tmp_path,
         specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
-        roadmap=_roadmap_text(),
         state={
             "0031": _existing_state_entry(issue_number=42, push_hash=push_hash, pull_hash=pull_hash)
         },

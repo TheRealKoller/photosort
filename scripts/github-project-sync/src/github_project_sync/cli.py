@@ -91,7 +91,6 @@ def _result_to_dict(result: SyncRunResult) -> dict[str, object]:
                 "issue_number": r.issue_number,
                 "classification": r.classification,
                 "aborted_reason": r.aborted_reason,
-                "priority_warning": r.priority_warning,
                 "conflict": (
                     {
                         "local_content_zone": r.conflict.local_content_zone,
