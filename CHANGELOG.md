@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/TheRealKoller/photosort/compare/v0.19.0...v0.20.0) (2026-08-28)
+
+
+### Features
+
+* **cloud-vision:** Cloud-Vision-Status-Transparenz in den Foto-Details (Spec 0058) ([#255](https://github.com/TheRealKoller/photosort/issues/255)) ([0abab17](https://github.com/TheRealKoller/photosort/commit/0abab1798ea8c1958e3b0f056bc2ce8a0f8be145))
+
 ## [0.19.0](https://github.com/TheRealKoller/photosort/compare/v0.18.1...v0.19.0) (2026-08-28)
 
 
