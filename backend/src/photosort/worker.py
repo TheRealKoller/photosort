@@ -866,6 +866,30 @@ def _select_landmark_candidates(
     return candidates
 
 
+def _log_cloud_vision_failure(
+    phase: str, photo_id: int, relative_path: str, exc: BaseException
+) -> None:
+    """Strukturiertes WARNING-Logging fuer einen best-effort uebersprungenen Cloud-Vision-Aufruf
+    (specs/features/0056-structured-logging-cloud-vision-errors.md, ADR 0034) - gemeinsam genutzt
+    von der Landmark-Phase (run_criterion_scoring) und der Remote-Kategorie-Phase
+    (run_remote_category_classification). Level WARNING statt ERROR (ADR 0034 Punkt 3): der Skip
+    ist erwartetes, dokumentiertes best-effort-Verhalten (ADR 0025 Punkt 3/ADR 0032 Punkt 5), der
+    Lauf selbst bleibt SUCCESS. Kein exc_info=True/Traceback (ADR 0034 Punkt 5) - eine Zeile pro
+    fehlgeschlagenem Foto reicht fuer Fehlergrund + Foto-Kontext. `str(exc)` wird ausschliesslich
+    aus der bereits an der Exception-Konstruktionsstelle sanitierten Meldung uebernommen (siehe
+    cloud_vision.py::raise_for_vision_api_status/*_response_to_json, bestehendes Sicherheits-Muss-
+    Kriterium aus ADR 0025/0031/0032) - hier NIE erneut auf response.text/.json()/.headers
+    zugreifen."""
+    logger.warning(
+        "Cloud-Vision-Aufruf fehlgeschlagen (%s): photo_id=%s relative_path=%s %s: %s",
+        phase,
+        photo_id,
+        relative_path,
+        type(exc).__name__,
+        exc,
+    )
+
+
 async def _detect_landmark_for_photo(
     client: LandmarkClientLike, cache_dir: Path, photo: Photo
 ) -> LandmarkDetection:
@@ -1266,6 +1290,13 @@ async def run_criterion_scoring(
                                 # Cloud-Aufruf (Timeout, 4xx/5xx, fehlender Cache-Eintrag) laesst
                                 # fuer dieses Foto keine landmark-Zeile entstehen, alle anderen
                                 # Kriterien dieses Fotos bleiben unberuehrt, kein Laufabbruch.
+                                # Spec 0056/ADR 0034: dennoch sichtbar ueber docker compose logs.
+                                _log_cloud_vision_failure(
+                                    "landmark",
+                                    photo_id,
+                                    photos_by_id[photo_id].relative_path,
+                                    result,
+                                )
                                 continue
                             detection = result
                             landmark_value = compute_landmark_score(detection)
