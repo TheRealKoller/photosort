@@ -563,9 +563,9 @@
       "item_id": "PVTI_lAHOAdvbTs4Bg-8xzg4KctY",
       "pushed_state_hash": "1f1cf25a666171d816e7385d63e55455d3c21d53a601b3884b4fdc9b68c22082",
       "pulled_body_hash": "195ebbac99f21c9abb452a13382cff193fe055850247e70e5a0eb3b9eeaba417",
-      "last_synced_at": "2026-08-28T16:05:04.645003+00:00",
-      "runtime_status": null,
-      "pr_number": null
+      "last_synced_at": "2026-08-28T16:34:30.697179+00:00",
+      "runtime_status": "Review",
+      "pr_number": 239
     }
   },
   "stories": {
