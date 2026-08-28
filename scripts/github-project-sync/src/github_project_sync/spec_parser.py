@@ -1,9 +1,10 @@
 """Parsing/Ersetzung von specs/features/*.md: Metadaten-Block + Inhalts-Zone ab "## ".
 
-Siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md, Akzeptanzkriterium
-"Issue-Body -> Spec-Inhalt", und ADR decisions/0017-github-projects-v2-spec-sync.md, Abschnitt 4:
-Nur der Teil ab der ersten "##"-Ueberschrift ist bidirektional, H1-Titel und Metadaten-Block
-bleiben beim Zurueckspielen unangetastet.
+Siehe ADR decisions/0017-github-projects-v2-spec-sync.md, Abschnitt 4. Seit Spec 0065 / ADR 0041
+ist der Content-Sync nur noch einseitig (Spec-Datei -> Issue-Body) - dieses Modul parst die
+Spec-Datei weiterhin (Metadaten-Block + Inhalts-Zone) und schreibt die Status-Zeile fuer die
+automatische PR-Merge-Erkennung zurueck (set_status_line()), ersetzt aber keine Inhalts-Zone mehr
+aus zurueckgespieltem Issue-Inhalt.
 """
 
 from __future__ import annotations
@@ -102,36 +103,19 @@ def parse_spec_file(path: Path) -> ParsedSpec:
     return parsed
 
 
-def replace_content_zone(original_text: str, new_content_zone: str) -> str:
-    """Ersetzt nur den Teil ab der ersten '## '-Ueberschrift, Header bleibt unangetastet.
-
-    Ein im Issue versehentlich mitgeaenderter Metadaten-Block hat dadurch technisch keine
-    Wirkung (ADR 0017, Abschnitt 4) - new_content_zone wird nicht auf einen Metadaten-Block hin
-    untersucht, sondern schlicht nicht in den Header uebernommen.
-    """
-    content_match = _CONTENT_ZONE_START_RE.search(original_text)
-    if content_match is None:
-        raise SpecParseError("keine Inhalts-Zone (erste '## '-Ueberschrift) im Original gefunden.")
-
-    header = original_text[: content_match.start()].rstrip("\n") + "\n"
-    zone = new_content_zone if new_content_zone.endswith("\n") else new_content_zone + "\n"
-    return header + "\n" + zone
-
-
 def set_status_line(original_text: str, new_status: str) -> str:
     """Ersetzt nur die '**Status:**'-Header-Zeile durch einen neuen Freitextwert.
 
-    Analog zu replace_content_zone(), aber fuer den Header statt die Inhalts-Zone - genutzt von
-    der automatischen PR-Merge-Erkennung (sync.py::_sync_one(), ADR decisions/0037, Abschnitt 5),
-    um die Status-Zeile z.B. auf "Implemented ([PR #101](...))" umzuschreiben. new_status ist der
-    komplette neue Wert (nicht nur ein Schluesselwort) - alles andere in der Datei bleibt
-    unangetastet.
+    Genutzt von der automatischen PR-Merge-Erkennung (sync.py::_sync_one(), ADR decisions/0037,
+    Abschnitt 5), um die Status-Zeile z.B. auf "Implemented ([PR #101](...))" umzuschreiben.
+    new_status ist der komplette neue Wert (nicht nur ein Schluesselwort) - alles andere in der
+    Datei bleibt unangetastet.
 
     Copilot-Review-Finding auf PR #229: Suche/Ersetzung muessen strikt auf den Header (den Teil
-    VOR der ersten '## '-Ueberschrift) beschraenkt bleiben, analog zu replace_content_zone()/
-    parse_spec_text() - sonst wuerde ein '**Status:**'-Vorkommen in der Inhalts-Zone (z.B. ein
-    zitiertes Beispiel eines Metadaten-Blocks) faelschlich getroffen, falls der Header selbst aus
-    irgendeinem Grund kein gueltiges Feld enthaelt.
+    VOR der ersten '## '-Ueberschrift) beschraenkt bleiben, analog zu parse_spec_text() - sonst
+    wuerde ein '**Status:**'-Vorkommen in der Inhalts-Zone (z.B. ein zitiertes Beispiel eines
+    Metadaten-Blocks) faelschlich getroffen, falls der Header selbst aus irgendeinem Grund kein
+    gueltiges Feld enthaelt.
     """
     content_match = _CONTENT_ZONE_START_RE.search(original_text)
     if content_match is None:
