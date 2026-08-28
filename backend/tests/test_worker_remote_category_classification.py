@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import NoReturn
@@ -389,7 +390,7 @@ async def test_two_raw_labels_with_the_same_canonical_key_keep_the_higher_confid
 
 
 async def test_best_effort_error_isolation_does_not_abort_the_run(
-    db_session: AsyncSession, tmp_path: Path
+    db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
@@ -405,36 +406,53 @@ async def test_best_effort_error_isolation_does_not_abort_the_run(
         [RuntimeError("boom"), [CategoryLabelDetection(label="Hund", confidence=0.9)]]
     )
 
-    run = await run_remote_category_classification(
-        db_session,
-        project,
-        cache_dir=tmp_path,
-        build_client=lambda: client,
-        build_embedder=_fake_embedder,
-    )
+    # Spec 0056/ADR 0034: genau ein WARNING-Record fuer das fehlgeschlagene Foto, keiner fuer das
+    # erfolgreiche (AK4: keine Erfolgsprotokollierung).
+    with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+        run = await run_remote_category_classification(
+            db_session,
+            project,
+            cache_dir=tmp_path,
+            build_client=lambda: client,
+            build_embedder=_fake_embedder,
+        )
 
     assert run.status == ScanStatus.SUCCESS
     detections = (await db_session.execute(select(PhotoCategoryDetection))).scalars().all()
     assert len(detections) == 1
 
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    assert record.name == "photosort.worker"
+    assert record.levelno == logging.WARNING
+    assert record.exc_info is None  # ADR 0034 Punkt 5: kein exc_info=True/Traceback.
+    assert "RuntimeError" in record.message
+    assert str(failing_photo.id) in record.message
+    assert failing_photo.relative_path in record.message
+    assert str(succeeding_photo.id) not in record.message
+
 
 async def test_empty_candidate_pool_succeeds_trivially(
-    db_session: AsyncSession, tmp_path: Path
+    db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
     await db_session.commit()
 
-    run = await run_remote_category_classification(
-        db_session,
-        project,
-        cache_dir=tmp_path,
-        build_client=_failing_client_builder,
-        build_embedder=_fake_embedder,
-    )
+    with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+        run = await run_remote_category_classification(
+            db_session,
+            project,
+            cache_dir=tmp_path,
+            build_client=_failing_client_builder,
+            build_embedder=_fake_embedder,
+        )
 
     assert run.status == ScanStatus.SUCCESS
     assert run.photos_total == 0
+    # Spec 0056/ADR 0034: nur Fehler werden geloggt, ein erfolgreich durchgelaufener Gesamtlauf
+    # erzeugt keinen Log-Eintrag.
+    assert len(caplog.records) == 0
 
 
 async def test_calls_are_limited_by_the_concurrency_setting(
@@ -466,7 +484,7 @@ async def test_calls_are_limited_by_the_concurrency_setting(
 
 
 async def test_cancelled_error_propagates_and_fails_the_run(
-    db_session: AsyncSession, tmp_path: Path
+    db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
@@ -475,14 +493,20 @@ async def test_cancelled_error_propagates_and_fails_the_run(
     await _add_score(db_session, photo)
     _write_display_variant(tmp_path, photo)
 
-    with pytest.raises(asyncio.CancelledError):
-        await run_remote_category_classification(
-            db_session,
-            project,
-            cache_dir=tmp_path,
-            build_client=lambda: CancellingCategoryClient(),
-            build_embedder=_fake_embedder,
-        )
+    # Spec 0056/ADR 0034: ein CancelledError durchlaeuft die separate, dem continue-Loop
+    # vorgelagerte Propagations-Schleife und erreicht die neuen logger.warning(...)-Aufrufe
+    # strukturell nie - ein Lauf-Abbruch ist keine best-effort-Situation.
+    with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+        with pytest.raises(asyncio.CancelledError):
+            await run_remote_category_classification(
+                db_session,
+                project,
+                cache_dir=tmp_path,
+                build_client=lambda: CancellingCategoryClient(),
+                build_embedder=_fake_embedder,
+            )
+
+    assert len(caplog.records) == 0
 
     # Kein Filter auf project.id (nur ein Projekt in diesem Test) - project ist nach der oben von
     # _fail_run ausgeloesten session.rollback() best-effort abgelaufen; ein direkter Attributzugriff

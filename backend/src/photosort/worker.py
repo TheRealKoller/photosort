@@ -1502,6 +1502,10 @@ async def run_remote_category_classification(
                         # Best-effort (ADR 0032 Punkt 5): ein einzelner fehlgeschlagener Cloud-
                         # Aufruf laesst fuer dieses Foto keine Zeile entstehen, das Foto bleibt
                         # beim naechsten Lauf erneut Kandidat.
+                        # Spec 0056/ADR 0034: dennoch sichtbar ueber docker compose logs.
+                        _log_cloud_vision_failure(
+                            "remote_category", photo.id, photo.relative_path, result
+                        )
                         continue
                     detections = result
 
