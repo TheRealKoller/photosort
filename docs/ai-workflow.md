@@ -34,7 +34,7 @@ Aufgabengebiet und ein zugehöriges, lebendes Konzept-Dokument unter
 
 | Agent | Verantwortung | Konzept-Dokument |
 |---|---|---|
-| `requirements-engineer` | Roadmap & Priorisierung, Anforderungen verfeinern, Review auf Anforderungstreue (kein Scope Creep) | `specs/roadmap.md` |
+| `requirements-engineer` | Priorisierung/Reihenfolge/Abhängigkeiten beraten (Priorität wird nativ im GitHub-Project-Board gepflegt), Anforderungen verfeinern, Review auf Anforderungstreue (kein Scope Creep) | — |
 | `architect` | Architekturentscheidungen (ADRs), Umsetzungsplanung, Review aus drei Blickwinkeln (Pragmatiker / Senior-Entwickler / Pedant) | `specs/decisions/` (ADRs); pflegt zusätzlich die aufbereitete Doku [`docs/architecture.md`](./architecture.md)/[`docs/setup.md`](./setup.md) |
 | `ux-ui-designer` | Design-System, UI/UX-Ansatz pro Feature, UI/UX-Review (nur bei Frontend-Änderungen) | `specs/architecture/0004-design-system.md` |
 | `test-engineer` | Testkonzept, Teststrategie pro Feature, testfokussiertes Review | `specs/architecture/0002-testkonzept.md` |
@@ -44,7 +44,7 @@ Aufgabengebiet und ein zugehöriges, lebendes Konzept-Dokument unter
 
 Eine rohe Idee durchläuft seit ADR 0036 zwei getrennte Skills statt eines einzigen: `capture`
 hält sie sofort ungefiltert als GitHub-Issue fest (Status `Unrefined`), `refinement`
-übernimmt danach die rein fachliche Schärfung (Verständnis, Roadmap-Einordnung über
+übernimmt danach die rein fachliche Schärfung (Verständnis, Prioritäts-/Reihenfolge-Einordnung über
 `requirements-engineer`, Code-/Spec-Konfliktprüfung, Devil's Advocate) und schreibt Ziel/User
 Story/Akzeptanzkriterien direkt in den Issue-Body (Status `Ready`) — ohne technische Details
 und ohne lokale Zwischendatei. Erst wenn eine Story tatsächlich umgesetzt werden soll, zieht der

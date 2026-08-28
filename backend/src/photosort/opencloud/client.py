@@ -68,10 +68,10 @@ def _raise_for_status(response: httpx.Response, *, not_found_message: str | None
 def _drive_from_graph_api_item(item: Any) -> Drive:
     # Baut ein einzelnes Drive-Objekt aus einem Eintrag der Graph-API-Antwort
     # (GET /graph/v1.0/me/drives, Feld "value"). "webDavUrl" liegt dabei verschachtelt unter
-    # "root", nicht auf oberster Ebene des Drive-Objekts - empirisch gegen einen echten
-    # OpenCloud-Server verifiziert (siehe specs/roadmap.md, "[Bug bestaetigt]"-Eintrag
-    # 2026-08-02; dieselbe Struktur wird bereits in
-    # scripts/seed-opencloud-demo.py::_drive_webdav_url korrekt gehandhabt).
+    # "root", nicht auf oberster Ebene des Drive-Objekts - bestaetigtes Verhalten des
+    # OpenCloud-Graph-API-Endpunkts, am 2026-08-02 empirisch gegen einen echten OpenCloud-Server
+    # verifiziert; dieselbe Struktur wird bereits in
+    # scripts/seed-opencloud-demo.py::_drive_webdav_url korrekt gehandhabt.
     #
     # item ist bewusst nicht als dict[str, Any] typisiert: die gesamte Funktion behandelt jede
     # unerwartete Struktur (item selbst kein dict, fehlende Pflichtfelder, "root" kein dict) als

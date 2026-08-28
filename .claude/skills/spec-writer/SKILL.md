@@ -5,7 +5,7 @@ description: Setzt eine bereits fachlich geschärfte Story (Status `Ready` auf d
 
 # Spec Writer — von der geschärften Story zur akzeptierten technischen Spec
 
-Übernimmt die technische Hälfte des früheren monolithischen `idea-sharpener`-Ablaufs (Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md)): die fachliche Schärfung (Verständnis, Roadmap-Einordnung, Devil's Advocate) ist an dieser Stelle bereits über `refinement` abgeschlossen — dieser Skill setzt direkt bei einer bestätigten Story an und beantwortet ausschließlich noch die Frage "wie bauen wir das technisch?".
+Übernimmt die technische Hälfte des früheren monolithischen `idea-sharpener`-Ablaufs (Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md)): die fachliche Schärfung (Verständnis, Prioritäts-/Reihenfolge-Einordnung, Devil's Advocate) ist an dieser Stelle bereits über `refinement` abgeschlossen — dieser Skill setzt direkt bei einer bestätigten Story an und beantwortet ausschließlich noch die Frage "wie bauen wir das technisch?".
 
 ## Schritt 0: Vorbedingung prüfen — ist das Issue wirklich eine Story?
 
@@ -59,8 +59,6 @@ Lege eine neue Datei mit der nächsten freien Nummer in `specs/features/` nach `
 Ziel, User Story und Akzeptanzkriterien aus dem Issue-Body übernehmen (ggf. durch `test-engineer` geschärft). Halte einen Abschnitt "Entscheidungen" mit den in diesem Gespräch geklärten Punkten aktuell, inkl. jeder Skip-Entscheidung aus Schritt 1–3 als eigener Punkt (kein Sammel-Vermerk).
 
 Falls die Story die Architektur oder das Datenmodell spürbar verändert: `docs/architecture.md` entsprechend ergänzen.
-
-Trag den in `refinement` bereits angelegten Roadmap-Eintrag in `specs/roadmap.md` mit dem jetzt feststehenden Spec-Pfad um (dieselbe Zeile wird in-place aktualisiert — Link wechselt von `[#NNN](<Issue-URL>)` auf `[NNNN](./features/NNNN-....md)`, Priorität bleibt unverändert, kein Entfernen+Neuanlegen).
 
 **Issue adoptieren statt neues anzulegen:** ruf abschließend den Skill `github-project-sync` mit `--only <NNNN> --adopt-issue <NNN>` auf (`NNNN` = neue Spec-Nummer, `NNN` = die Story-Issue-Nummer aus Schritt 0). Das überführt den bestehenden State-Eintrag in den Feature-Namensraum (kein neues Issue, keine Historie-/Label-Verluste), schreibt erstmals den Marker-Kommentar `<!-- photosort-spec: NNNN -->` plus den vollen Spec-Inhalt in den Issue-Body, und setzt den Spec-Datei-Status auf `Accepted` — das native Board-Feld zeigt dafür seit ADR 0037 die Baseline `Todo` (keine 1:1-Kopie des Datei-Status mehr). Erwartetes Ergebnis ist ein `adopted`-Feld mit `spec_number`/`issue_number` sowie `classification: "pushed"` im zugehörigen `specs`-Eintrag; jedes `{"error": "..."}` unverändert an Daniel weitergeben statt es stillschweigend zu ignorieren.
 

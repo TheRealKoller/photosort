@@ -1,13 +1,13 @@
 ---
 name: github-project-sync
-description: Zwei-Wege-Sync zwischen den Feature-Specs unter `specs/features/*.md` (Status/Priorität) und einem gemeinsamen GitHub Project (V2) — Status/Priorität gehen immer einseitig von Spec/`specs/roadmap.md` zum Board, inhaltliche Änderungen, die Daniel direkt in einem GitHub-Issue vorgenommen hat, fließen zurück in die jeweilige Spec-Datei. Zusätzlich der dateilose Story-Pfad (`--create-issue`, `--only issue:NNN`, `--show-status`, `--adopt-issue`) für Story-Issues ohne lokale Datei. Nutze diesen Skill, wenn Daniel danach fragt, mit GitHub zu syncen ("sync jetzt mit GitHub", "gleich das GitHub-Board ab", "schau nach, ob ich unterwegs was im Issue geändert habe", o.ä.), oder wenn `spec-writer` am Ende des Story→Spec-Übergangs automatisch `--adopt-issue` aufruft. Führt selbst keine Anforderungsbewertung durch (das übernimmt bei zurückgespielten Inhalten `requirements-engineer`) und löst Konflikte nie automatisch auf.
+description: Zwei-Wege-Sync zwischen den Feature-Specs unter `specs/features/*.md` (Status) und einem gemeinsamen GitHub Project (V2) — der Status geht immer einseitig von der Spec-Datei zum Board, inhaltliche Änderungen, die Daniel direkt in einem GitHub-Issue vorgenommen hat, fließen zurück in die jeweilige Spec-Datei. Die Priorität wird nativ im Board gepflegt und vom Sync-Tool weder gelesen noch geschrieben. Zusätzlich der dateilose Story-Pfad (`--create-issue`, `--only issue:NNN`, `--show-status`, `--adopt-issue`) für Story-Issues ohne lokale Datei. Nutze diesen Skill, wenn Daniel danach fragt, mit GitHub zu syncen ("sync jetzt mit GitHub", "gleich das GitHub-Board ab", "schau nach, ob ich unterwegs was im Issue geändert habe", o.ä.), oder wenn `spec-writer` am Ende des Story→Spec-Übergangs automatisch `--adopt-issue` aufruft. Führt selbst keine Anforderungsbewertung durch (das übernimmt bei zurückgespielten Inhalten `requirements-engineer`) und löst Konflikte nie automatisch auf.
 ---
 
 # GitHub Project Sync — mechanischer Zwei-Wege-Abgleich
 
 Dünner Wrapper um das getestete, netzwerkfreie/-arme Python-Package `scripts/github-project-sync/`. Der Skill selbst trifft keine fachliche Anforderungsentscheidung und löst nie automatisch einen Konflikt — er orchestriert den Skript-Aufruf, meldet Konflikte an Daniel zur Entscheidung, delegiert die fachliche Bewertung zurückgespielter Inhalte an `requirements-engineer`, und fasst am Ende zusammen.
 
-Seit Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md) gibt es zwei strukturell unterschiedliche Bereiche: den bidirektionalen Feature-Spec-Sync (unverändert seit ADR [`0017`](../../../specs/decisions/0017-github-projects-v2-spec-sync.md)) sowie den dateilosen Story-Pfad ohne Pull/Konflikt-Handling (eine Story lebt nur im Issue, keine zweite lokale Kopie).
+Seit Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md) gibt es zwei strukturell unterschiedliche Bereiche: den bidirektionalen Feature-Spec-Sync (Status einseitig Spec→Board, Inhalt bidirektional mit Hash-Konfliktmechanismus — die Priorität wird nativ im Board gepflegt und vom Tool nicht angefasst) sowie den dateilosen Story-Pfad ohne Pull/Konflikt-Handling (eine Story lebt nur im Issue, keine zweite lokale Kopie).
 
 ## Feature-Spec-Sync (voller Lauf oder `--only NNNN`)
 
@@ -17,7 +17,7 @@ Aus dem Repo-Root heraus:
 PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync [--only NNNN] [--adopt-issue MMM]
 ```
 
-`--only NNNN` (nackte Zahl) synct nur diese eine Feature-Spec. Ohne `--only` läuft ein voller Durchlauf über alle `specs/features/*.md` und pusht zusätzlich die Priorität für jede issue-referenzierte Story-Zeile aus `specs/roadmap.md`.
+`--only NNNN` (nackte Zahl) synct nur diese eine Feature-Spec. Ohne `--only` läuft ein voller Durchlauf über alle `specs/features/*.md`.
 
 `--adopt-issue MMM` nur zusammen mit `--only NNNN` setzen, wenn die frisch angelegte Spec `NNNN` aus dem Story-Issue `MMM` hervorgegangen ist (siehe `.claude/skills/spec-writer/SKILL.md`, letzter Schritt) — adoptiert das bestehende Issue (kein neues Issue, kein Verlust von Historie/Labels), schreibt erstmals den Marker-Kommentar `<!-- photosort-spec: NNNN -->` plus den vollen Spec-Inhalt in den Issue-Body und setzt den Spec-Datei-Status auf `Accepted` (Board-Feld zeigt dafür die Baseline `Todo`, siehe unten).
 
@@ -32,7 +32,7 @@ PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only
 PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --runtime-status "Review" --pr-number <PR-Nummer>
 ```
 
-`--runtime-status` erfordert `--only NNNN` (bare Feature-Scope, kein `issue:NNN`); `Review` erfordert zusätzlich `--pr-number`. Gibt `{"spec_number": NNNN, "runtime_status": ..., "pr_number": ...}` zurück (kein voller Content-Abgleich, nur Status/Priorität). Ein `{"error": "..."}` unverändert weitergeben.
+`--runtime-status` erfordert `--only NNNN` (bare Feature-Scope, kein `issue:NNN`); `Review` erfordert zusätzlich `--pr-number`. Gibt `{"spec_number": NNNN, "runtime_status": ..., "pr_number": ...}` zurück (kein voller Content-Abgleich, nur das Status-Feld). Ein `{"error": "..."}` unverändert weitergeben.
 
 ### Fehler zuerst behandeln
 
@@ -47,7 +47,6 @@ Für jeden Eintrag in `specs` (Feld `classification`):
 
 - **`created`/`pushed`/`unchanged`**: keine weitere Aktion nötig, nur für die Zusammenfassung vormerken.
 - **`aborted_reason` ist nicht `null`** (Marker-Integritätsbruch): als eigene, deutlich hervorgehobene Warnung vormerken — braucht Daniels manuelle Prüfung des betroffenen Issues, keinen automatischen Fix.
-- **`priority_warning` ist nicht `null`**: ebenfalls vormerken (Spec ohne Eintrag in den Prioritäts-Tabellen von `specs/roadmap.md`) — kein Blocker, aber erwähnenswert.
 - **`conflict` ist nicht `null`**: siehe unten.
 - **`classification` ist `"pulled"`**: siehe unten (das Skript hat die Spec-Datei bereits geschrieben, hier fehlt nur noch die fachliche Bewertung).
 
@@ -55,7 +54,7 @@ Einträge in `orphaned` (Spec-Datei gelöscht, zugehöriges Issue automatisch ge
 
 ### `finalized_from_pr` — automatische PR-Merge-Erkennung (Spec 0060 / ADR 0037, Abschnitt 5)
 
-Ist `finalized_from_pr` für einen Spec-Eintrag nicht `null` (die referenzierte PR wurde gemerged, `sync.py` hat die Spec-Datei bereits selbst auf `Implemented ([PR #NNN](url))` umgeschrieben und `Done` gepusht): ruf für jede so finalisierte Spec einmal den `requirements-engineer`-Agenten auf (`Agent`-Tool, `subagent_type: requirements-engineer`, `model: "haiku"` — reines, mechanisches Verschieben einer bereits eindeutigen Roadmap-Zeile), der die zugehörige Zeile in `specs/roadmap.md` von der "Offen"-Tabelle in "Bereits umgesetzt" verschiebt (physisches Verschieben, kein reines Status-Text-Update). Für die Zusammenfassung vormerken, welche Spec(s) auf diesem Weg finalisiert wurden.
+Ist `finalized_from_pr` für einen Spec-Eintrag nicht `null` (die referenzierte PR wurde gemerged, `sync.py` hat die Spec-Datei bereits selbst auf `Implemented ([PR #NNN](url))` umgeschrieben und `Done` gepusht): keine weitere Aktion nötig — nur für die Zusammenfassung vormerken, welche Spec(s) auf diesem Weg finalisiert wurden.
 
 ### Konflikte — nie automatisch auflösen
 
@@ -81,11 +80,11 @@ Für jede Spec mit `classification == "pulled"` (Inhalt wurde bereits mechanisch
 Diese drei Modi adressieren ein Story-Issue ausschließlich über seine Nummer (kein lokales File) und werden i.d.R. nicht direkt von Daniel angefragt, sondern von `capture`/`refinement`/`spec-writer` selbst aufgerufen — siehe dort für den jeweiligen Aufrufkontext:
 
 - **`--create-issue --type idee|bug --title TITLE --body-file PATH`**: legt ein neues Story-Issue an (Status `Unrefined`). Gibt `{"issue_number": NNN}` zurück.
-- **`--only issue:NNN [--status Ready|Unrefined|Done] [--body-file PATH]`**: aktualisiert optional Body/Status eines bestehenden Story-Issues, pusht in jedem Fall die aus `roadmap.md` neu berechnete Priorität. Gibt `{"issue_number": NNN, "status": ..., "priority": ...}` zurück. `--status Done` schließt das Issue zusätzlich nativ (ADR 0037, Abschnitt 6 — deckt sowohl eine tatsächlich umgesetzte als auch eine ohne Umsetzung verworfene Story ab, kein eigener Statuswert für den Unterschied).
+- **`--only issue:NNN [--status Ready|Unrefined|Done] [--body-file PATH]`**: aktualisiert optional Body/Status eines bestehenden Story-Issues. Gibt `{"issue_number": NNN, "status": ...}` zurück. Ohne `--status`/`--body-file` ein sauberer No-op ohne Board-Schreibzugriff. `--status Done` schließt das Issue zusätzlich nativ (ADR 0037, Abschnitt 6 — deckt sowohl eine tatsächlich umgesetzte als auch eine ohne Umsetzung verworfene Story ab, kein eigener Statuswert für den Unterschied).
 - **`--only issue:NNN --show-status`** (rein lesend): liefert `{"status": "<aktueller Wert>"}`.
 
 Ein `{"error": "..."}` bei einem dieser drei Modi unveraendert an den aufrufenden Skill/Daniel weitergeben, kein eigener Lösungsversuch.
 
 ## Zusammenfassung an Daniel
 
-Fasse den Lauf knapp zusammen: Anzahl `created`/`pushed`/`unchanged`, jede Warnung (Marker-Integrität, fehlende Priorität) einzeln benannt, jeder Konflikt mit seiner Auflösung (oder "unaufgelöst, wird beim nächsten Lauf erneut gemeldet"), jeder `pulled`-Fall mit der `requirements-engineer`-Einschätzung, automatisch geschlossene Issues aus `orphaned`, sowie — falls `adopted` nicht `null` war — welches Story-Issue zu welcher neuen Spec adoptiert wurde. Kein separater Report nötig — eine kompakte Chat-Antwort reicht.
+Fasse den Lauf knapp zusammen: Anzahl `created`/`pushed`/`unchanged`, jede Warnung (Marker-Integrität) einzeln benannt, jeder Konflikt mit seiner Auflösung (oder "unaufgelöst, wird beim nächsten Lauf erneut gemeldet"), jeder `pulled`-Fall mit der `requirements-engineer`-Einschätzung, automatisch geschlossene Issues aus `orphaned`, sowie — falls `adopted` nicht `null` war — welches Story-Issue zu welcher neuen Spec adoptiert wurde. Kein separater Report nötig — eine kompakte Chat-Antwort reicht.

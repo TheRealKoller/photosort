@@ -53,7 +53,7 @@ Keine neuen Entitäten. Konsumiert ausschließlich die in Spec 0001 bereits impl
 
 ## Architektur / Umsetzung
 
-**Abhängigkeit (Prerequisite-Spec):** Setzt gemäß [`roadmap.md`](../roadmap.md) eine bereits implementierte Auth-Spec voraus (Login-Screen, geschützte Routen, Token-Handling gemäß [`decisions/0003-auth-model.md`](../decisions/0003-auth-model.md)) — das ist explizit **nicht** Teil dieser Spec. Diese Spec liefert nur das Routing-/API-Client-Grundgerüst und die drei Kernrouten; wo später ein Auth-Layer eingehängt wird, ist unten (API-Client) berücksichtigt, aber nicht vorweggenommen.
+**Abhängigkeit (Prerequisite-Spec):** Setzt gemäß der damaligen `roadmap.md` eine bereits implementierte Auth-Spec voraus (Login-Screen, geschützte Routen, Token-Handling gemäß [`decisions/0003-auth-model.md`](../decisions/0003-auth-model.md)) — das ist explizit **nicht** Teil dieser Spec. Diese Spec liefert nur das Routing-/API-Client-Grundgerüst und die drei Kernrouten; wo später ein Auth-Layer eingehängt wird, ist unten (API-Client) berücksichtigt, aber nicht vorweggenommen.
 
 **Neue Abhängigkeit / ADR:** Routing (`react-router`) und Server-State-Management (`@tanstack/react-query`) sind neue externe Abhängigkeiten und damit laut `CLAUDE.md` architekturrelevant — festgehalten in [`decisions/0004-frontend-app-shell.md`](../decisions/0004-frontend-app-shell.md). React Router (declarative mode, keine Loader/Actions) für Routen und URL-Zustand; TanStack Query für sämtlichen Server-Zugriff, weil der Scan-Status-Polling-Bedarf (`refetchInterval` nur solange `status == "running"`) mit reinen Router-Loadern deutlich umständlicher wäre und dieselbe Bibliothek von Spec 0002 direkt wiederverwendet wird.
 

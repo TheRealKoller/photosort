@@ -44,7 +44,7 @@ Eine knappe Bestätigung im Chat, kein längerer Kommentar: z.B. "Als GitHub-Iss
 
 - Keine Recherche im Code oder in `specs/`.
 - Keine Bewertung, ob die Idee gut ist oder der Bug real ist.
-- Keine Spec-Erstellung, kein Roadmap-Eintrag.
+- Keine Spec-Erstellung, keine Priorisierung.
 - Kein Aufruf von `requirements-engineer`/`architect`/anderen Agenten.
 
 Das alles passiert erst, wenn jemand das Issue später ausdrücklich verfeinern will — für Ideen über `refinement`, für Bugs in einem eigenen Gespräch (reproduzieren, Ursache prüfen, entscheiden ob und wie behoben wird).

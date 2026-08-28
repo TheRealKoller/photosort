@@ -17,7 +17,7 @@ Anleitung zum lokalen Entwickeln und Ausprobieren (inkl. Demo-Stack ohne echten 
 | Pfad | Inhalt |
 |---|---|
 | [`docs/`](./docs/) | Aufbereitete Dokumentation: [Setup](./docs/setup.md), [Architektur](./docs/architecture.md), [AI-Workflow](./docs/ai-workflow.md) |
-| `specs/` | Architektur, Entscheidungen (ADRs), Feature-Spezifikationen, [Roadmap](./specs/roadmap.md) |
+| `specs/` | Architektur, Entscheidungen (ADRs), Feature-Spezifikationen |
 | `backend/` | FastAPI-Backend + Worker (Foto-Verarbeitung, KI-Scoring) |
 | `frontend/` | React/Vite PWA |
 | `scripts/` | Eigenständiges Dev-/Demo-Tooling (z.B. `seed-opencloud-demo.py`), außerhalb der Produktiv-Codebasis |
