@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 
 # specs/features/0056-structured-logging-cloud-vision-errors.md, decisions/0034-strukturiertes-
 # logging-cloud-vision-fehler.md: erste Logging-Einfuehrung im Projekt. Eigenes, sehr kleines
@@ -23,8 +24,14 @@ def configure_logging() -> None:
 
     `logging.basicConfig()` ist ein No-op, sobald der Root-Logger bereits einen Handler hat -
     ein zweiter Aufruf (z.B. falls sowohl create_app() als auch der Worker-on_startup-Hook im
-    selben Prozess liefen) erzeugt dadurch strukturell keinen doppelten Handler."""
+    selben Prozess liefen) erzeugt dadurch strukturell keinen doppelten Handler.
+
+    `stream=sys.stdout` wird explizit gesetzt (Copilot-Review-Fund, PR #247): ein
+    `logging.StreamHandler()` ohne diesen Parameter nutzt sonst standardmaessig `sys.stderr`,
+    was von der in ADR 0034 Punkt 4 dokumentierten Entscheidung "einfaches Textformat ueber
+    stdout" abweichen wuerde."""
     logging.basicConfig(
         level=logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=sys.stdout,
     )

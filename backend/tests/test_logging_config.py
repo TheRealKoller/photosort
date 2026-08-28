@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import sys
 from collections.abc import Iterator
 
 import pytest
@@ -41,9 +42,15 @@ def test_configure_logging_sets_warning_level_and_expected_format() -> None:
 
         assert logging.root.level == logging.WARNING
         assert len(logging.root.handlers) == 1
-        formatter = logging.root.handlers[0].formatter
+        handler = logging.root.handlers[0]
+        formatter = handler.formatter
         assert formatter is not None
         assert formatter._fmt == _EXPECTED_FORMAT
+        # ADR 0034 Punkt 4 ("Format: einfacher Text ueber stdout, kein JSON") - ein
+        # logging.StreamHandler() ohne expliziten stream=-Parameter nutzt sonst standardmaessig
+        # sys.stderr statt sys.stdout (Copilot-Review-Fund, PR #247).
+        assert isinstance(handler, logging.StreamHandler)
+        assert handler.stream is sys.stdout
 
 
 def test_configure_logging_is_idempotent_no_duplicate_handler_on_second_call() -> None:
