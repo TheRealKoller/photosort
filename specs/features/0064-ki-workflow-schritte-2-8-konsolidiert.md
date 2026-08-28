@@ -1,6 +1,6 @@
 # 0064 - KI-Workflow Schritte 2–8 konsolidiert: Review als Hauptsession-Skills, eine Quelle der Wahrheit
 
-**Status:** Accepted
+**Status:** Implemented ([PR #241](https://github.com/TheRealKoller/photosort/pull/241))
 **Erstellt:** 2026-08-28
 **Bezug:** GitHub-Issue [#177](https://github.com/TheRealKoller/photosort/issues/177) (Story, Status `Ready`), ADR [`0040`](../decisions/0040-ki-workflow-schritte-2-8-konsolidiert.md). Abhängigkeit #224 / ADR [`0039`](../decisions/0039-prioritaet-nativ-im-board-roadmap-entfaellt.md) ist umgesetzt (PR #239 gemergt).
 
