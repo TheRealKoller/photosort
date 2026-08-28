@@ -1,6 +1,6 @@
 # 0057 - Docker-Compose: LANDMARK_PROVIDER und MISTRAL_API_KEY durchreichen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #243](https://github.com/TheRealKoller/photosort/pull/243))
 **Erstellt:** 2026-08-24
 **Bezug:** [`inbox/0038-landmark-provider-env-var-nicht-durchgereicht.md`](../inbox/0038-landmark-provider-env-var-nicht-durchgereicht.md) (Ursprung), [`features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md`](./0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) (Landmark, produktiv live seit PR #181), [`features/0054-mistral-provider-option-cloud-landmark.md`](./0054-mistral-provider-option-cloud-landmark.md) (Mistral-Provider-Wahl, produktiv live seit PR #195), [`features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md`](./0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) (Remote-Kategorie-Klassifizierung, nutzt denselben Schalter, ADR 0032 Punkt 3), [`decisions/0025-cloud-landmark-erkennung.md`](../decisions/0025-cloud-landmark-erkennung.md), [`decisions/0031-mistral-provider-option-cloud-landmark.md`](../decisions/0031-mistral-provider-option-cloud-landmark.md)
 
