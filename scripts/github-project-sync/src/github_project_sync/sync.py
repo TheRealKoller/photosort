@@ -217,8 +217,9 @@ def _apply_fields(
     # fasst das Tool seit ADR 0039 gar nicht mehr an.
     if status == "Superseded":
         # Seit ADR 0030, Abschnitt 2: Superseded ist kein Feldwert mehr (STATUS_OPTIONS enthaelt
-        # ihn nicht), das Status-Feld wird stattdessen geleert - exakt dasselbe Muster wie das
-        # bereits bestehende Leeren des Prioritaets-Felds.
+        # ihn nicht), das Status-Feld wird stattdessen geleert (clear_item_field ist der einzige
+        # verbleibende Aufruf davon, seit das Prioritaets-Feld nach ADR 0039 nicht mehr angefasst
+        # wird).
         gh.clear_item_field(project, item_id=item_id, field_id=fields.status_field_id)
         return
 

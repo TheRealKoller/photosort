@@ -108,10 +108,10 @@ async def test_list_drives_parses_response() -> None:
 
 async def test_list_drives_raises_opencloud_error_for_missing_root_webdav_url() -> None:
     # Regressionstest: die reale Graph-API liefert "webDavUrl" verschachtelt unter "root" statt
-    # auf oberster Ebene des Drive-Objekts (siehe specs/roadmap.md, "[Bug bestaetigt]"-Eintrag
-    # 2026-08-02, empirisch gegen einen echten opencloud-rolling-Container verifiziert - der
-    # frueher hier verwendete flache DRIVES_RESPONSE-Fixture spiegelte eine falsche, nie real
-    # existierende Antwortstruktur und liess den Bug im Testlauf unentdeckt). Eine unerwartete
+    # auf oberster Ebene des Drive-Objekts (bestaetigtes Verhalten, am 2026-08-02 empirisch gegen
+    # einen echten opencloud-rolling-Container verifiziert - der frueher hier verwendete flache
+    # DRIVES_RESPONSE-Fixture spiegelte eine falsche, nie real existierende Antwortstruktur und
+    # liess den Bug im Testlauf unentdeckt). Eine unerwartete
     # Struktur (fehlendes "root" oder "webDavUrl") muss als OpenCloudError statt als roher
     # KeyError propagieren, sonst faengt api/opencloud.py::browse_folder ihn nicht ab und der
     # Client bekommt einen 500er ohne CORS-Header statt einer verstaendlichen 400-Fehlermeldung.

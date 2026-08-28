@@ -34,10 +34,12 @@ def push_state_hash(*, status: str, content_zone: str) -> str:
 def push_state_hash_inbox(*, status: str, typ: str, content_zone: str) -> str:
     """Hash aus (Status, Typ, Inhalts-Zone) fuer Inbox-Eintraege (Spec 0052).
 
-    Eigene Funktion statt Wiederverwendung von push_state_hash()'s priority-Parameter fuer den
-    Typ - Inbox-Eintraege haben keine Prioritaet, ein umgedeuteter Parametername waere
-    irrefuehrend. Nutzt denselben text_hash()-Baustein wie push_state_hash(), keine Duplikation
-    der eigentlichen Hash-/Normalisierungslogik.
+    Eigene Funktion statt eines zusaetzlichen `typ`-Parameters an push_state_hash() - die beiden
+    Zustandsschemata (Feature-Spec: Status + Inhalt; Inbox-Eintrag: Status + Typ + Inhalt) sind
+    unabhaengig und sollen sich nicht ueber einen gemeinsam gedeuteten Parameter vermischen.
+    Nutzt denselben text_hash()-Baustein wie push_state_hash(), keine Duplikation der
+    eigentlichen Hash-/Normalisierungslogik. (Seit Spec 0059 ohne Aufrufer, bewusst nicht
+    mit aufgeraeumt - ADR 0039.)
     """
     composite = f"STATUS:{status}\nTYP:{typ}\n---\n{content_zone}"
     return text_hash(composite)

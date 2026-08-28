@@ -7,7 +7,7 @@ description: Zwei-Wege-Sync zwischen den Feature-Specs unter `specs/features/*.m
 
 Dünner Wrapper um das getestete, netzwerkfreie/-arme Python-Package `scripts/github-project-sync/`. Der Skill selbst trifft keine fachliche Anforderungsentscheidung und löst nie automatisch einen Konflikt — er orchestriert den Skript-Aufruf, meldet Konflikte an Daniel zur Entscheidung, delegiert die fachliche Bewertung zurückgespielter Inhalte an `requirements-engineer`, und fasst am Ende zusammen.
 
-Seit Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md) gibt es zwei strukturell unterschiedliche Bereiche: den bidirektionalen Feature-Spec-Sync (unverändert seit ADR [`0017`](../../../specs/decisions/0017-github-projects-v2-spec-sync.md)) sowie den dateilosen Story-Pfad ohne Pull/Konflikt-Handling (eine Story lebt nur im Issue, keine zweite lokale Kopie).
+Seit Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md) gibt es zwei strukturell unterschiedliche Bereiche: den bidirektionalen Feature-Spec-Sync (Status einseitig Spec→Board, Inhalt bidirektional mit Hash-Konfliktmechanismus — die Priorität wird nativ im Board gepflegt und vom Tool nicht angefasst) sowie den dateilosen Story-Pfad ohne Pull/Konflikt-Handling (eine Story lebt nur im Issue, keine zweite lokale Kopie).
 
 ## Feature-Spec-Sync (voller Lauf oder `--only NNNN`)
 
