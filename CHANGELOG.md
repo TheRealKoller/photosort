@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/TheRealKoller/photosort/compare/v0.18.0...v0.18.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **compose:** LANDMARK_PROVIDER und MISTRAL_API_KEY durchreichen (Spec 0057) ([#243](https://github.com/TheRealKoller/photosort/issues/243)) ([1d54f9d](https://github.com/TheRealKoller/photosort/commit/1d54f9d57058319d42c5ae18c3fb8de21d120b29))
+
 ## [0.18.0](https://github.com/TheRealKoller/photosort/compare/v0.17.0...v0.18.0) (2026-08-28)
 
 
