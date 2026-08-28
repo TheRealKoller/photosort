@@ -1035,9 +1035,10 @@ def test_sync_story_sets_status_and_body(tmp_path: Path) -> None:
     assert state.stories["215"].last_synced_at == _FIXED_NOW
 
 
-def test_sync_story_without_status_or_body_is_a_clean_no_op(tmp_path: Path) -> None:
-    # ADR 0039: ohne --status/--body-file fasst sync_story() das Board gar nicht mehr an
-    # (frueher wurde hier die Prioritaet aus roadmap.md gepusht).
+def test_sync_story_without_status_or_body_changes_no_item_fields_or_body(tmp_path: Path) -> None:
+    # ADR 0039: ohne --status/--body-file aendert sync_story() keine Item-Felder und keinen
+    # Issue-Body mehr (frueher wurde hier die Prioritaet aus roadmap.md gepusht). Der
+    # last_synced_at-Touch in der lokalen State-Datei bleibt.
     repo_root = _make_repo(
         tmp_path,
         specs={},
@@ -1053,6 +1054,9 @@ def test_sync_story_without_status_or_body_is_a_clean_no_op(tmp_path: Path) -> N
     assert gh.items["ITEM_1"] == {"F_PRIO": "P_Hoch"}  # vorab gesetzter Wert ueberlebt unveraendert
     assert gh.single_select_writes == []
     assert gh.cleared_fields == []
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.stories["215"].last_synced_at == _FIXED_NOW  # lokaler Touch bleibt
 
 
 def test_sync_story_raises_for_unknown_issue(tmp_path: Path) -> None:

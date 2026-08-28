@@ -809,8 +809,10 @@ def sync_story(
     now: Callable[[], str] = _utcnow_iso,
 ) -> dict[str, object]:
     """`--only issue:NNN [--status ...] [--body-file ...]`: aktualisiert optional Body/Status
-    eines bestehenden Story-Issues. Ohne --status/--body-file ein sauberer No-op ohne
-    Board-Schreibzugriff (die Prioritaet fasst das Tool seit ADR 0039 nicht mehr an)."""
+    eines bestehenden Story-Issues. Ohne --status/--body-file werden keine Item-Felder und kein
+    Issue-Body geaendert (nur ein `last_synced_at`-Touch in der lokalen State-Datei;
+    `ensure_project`/`ensure_fields` provisionieren ggf. beim allerersten Lauf). Die Prioritaet
+    fasst das Tool seit ADR 0039 nicht mehr an."""
     if status is not None and status not in _STORY_VALID_STATUSES:
         # Seit Spec 0060 / ADR 0037, Abschnitt 6: verengt auf {"Unrefined", "Ready", "Done"} -
         # die drei neuen Feature-only-Werte (Todo/In Progress/Review) ergeben fuer eine Story
