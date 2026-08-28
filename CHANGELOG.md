@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.18.0](https://github.com/TheRealKoller/photosort/compare/v0.17.0...v0.18.0) (2026-08-28)
+
+
+### Features
+
+* **github-project-sync:** roadmap.md entfernen, Priorität nativ im GitHub-Project-Board (Spec 0063) ([#239](https://github.com/TheRealKoller/photosort/issues/239)) ([2789717](https://github.com/TheRealKoller/photosort/commit/278971752062be262f2503211d4ca06a2118aab2))
+* **github-project-sync:** Status-Lebenszyklus mit Umsetzungsfortschritt (Ready/Todo/In Progress/Review/Done) ([#229](https://github.com/TheRealKoller/photosort/issues/229)) ([c751c0d](https://github.com/TheRealKoller/photosort/commit/c751c0d508043cdd0118d35753b3953e184f8d9f))
+* **skills:** Ideen-Pipeline verschlanken — spec-writer Skip-Schwelle lockern, refinement Lohnenswert-Gate ([#230](https://github.com/TheRealKoller/photosort/issues/230)) ([#235](https://github.com/TheRealKoller/photosort/issues/235)) ([eaffe4c](https://github.com/TheRealKoller/photosort/commit/eaffe4cee0c9e1d418ad7a3cff5aa6fc3b80f63c))
+
+
+### Bug Fixes
+
+* **github-project-sync:** --show-status liest Statusfeld case-insensitiv ([#226](https://github.com/TheRealKoller/photosort/issues/226)) ([793c033](https://github.com/TheRealKoller/photosort/commit/793c033224b3d50d958f416632dfb09abc88d6c5))
+
 ## [0.17.0](https://github.com/TheRealKoller/photosort/compare/v0.16.0...v0.17.0) (2026-08-26)
 
 
