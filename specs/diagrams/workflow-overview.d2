@@ -21,6 +21,12 @@
 # statt Datei) und "sharpen" (Skill spec-writer, reduziert auf Architektur/UX/Test/Security/
 # Spec-Anlage, adoptiert das bestehende Issue statt ein neues anzulegen).
 #
+# Aktualisiert fuer Feature-Spec specs/features/0064-ki-workflow-schritte-2-8-konsolidiert.md /
+# ADR specs/decisions/0040-ki-workflow-schritte-2-8-konsolidiert.md: der Review-Knoten im
+# "shipfeature"-Subgraph laeuft jetzt als Hauptsession-Skill "review" (Orchestrator), der die
+# fuenf Perspektiven-Skills review-tests/review-requirements/review-security/review-architecture/
+# review-ux nacheinander aufruft - keine fuenf parallelen Review-Subagenten mehr.
+#
 # Gerendert/verifiziert mit d2 v0.8.1 (https://github.com/d2lang/d2/releases).
 
 direction: right
@@ -71,7 +77,7 @@ implement: "Umsetzen — developer" {
 
 shipfeature: "Nachbereiten — Orchestrator (Skill ship-feature)" {
   grid-columns: 2
-  review: "Review, parallel:\ntest-engineer, requirements-engineer\n(faktisch immer) +\nsecurity-engineer*, architect*,\nux-ui-designer* (alle bedingt)"
+  review: "Review — Hauptsession\n(Skill review → 5 review-*-Skills)"
   fix: "Findings beheben\n(SendMessage an developer)"
   pr: "Pull Request +\nSpec: Implemented" {
     shape: oval
