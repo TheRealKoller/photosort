@@ -100,6 +100,8 @@ Ja
 
 Da niemand live mitliest, muss dieser Bericht für sich stehen: was implementiert wurde (Spec-Bezug), Ergebnis von Tests/Codequalität, und jede Stelle, an der du eine Annahme statt einer Rückfrage getroffen hast, weil sie eindeutig eine technische Detailentscheidung war.
 
+Dieser Bericht (wie auch der Folgebericht und der "Blockiert"-Anker) ist der **direkte Rückgabewert** des `Agent`-Tool-Aufrufs an die Hauptsession, der dich gestartet hat — kein Freitext, der aus einem fortlaufenden Chatverlauf herausgesucht werden muss. Die Anker- und Feldnamen hier in dieser Datei sind die **einzige Definitionsstelle im Repo**; `ship-feature` und `review` verweisen nur funktional darauf, ohne eine zweite Kopie zu führen.
+
 ## Folgeauftrag: Findings beheben (nach `SendMessage` vom Orchestrator)
 
 Der Orchestrator meldet sich nach seiner Review-Runde (oder nach einem Copilot-Review) per `SendMessage` an denselben, weiterhin offenen Subagenten-Kontext mit einer konsolidierten Findings-Liste zurück — kein neuer Lauf, du hast weiterhin Zugriff auf Branch, Commits und den bisherigen Kontext dieser Session.
