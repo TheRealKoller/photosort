@@ -1,6 +1,6 @@
 # 0056 - Strukturiertes Logging für Cloud-Vision-Fehler
 
-**Status:** Accepted
+**Status:** Implemented ([PR #247](https://github.com/TheRealKoller/photosort/pull/247))
 **Erstellt:** 2026-08-24
 **Bezug:** [`inbox/0039-logging-fuer-remote-kategorie-calls-fehlt.md`](../inbox/0039-logging-fuer-remote-kategorie-calls-fehlt.md) (Ursprung), [`decisions/0034-strukturiertes-logging-cloud-vision-fehler.md`](../decisions/0034-strukturiertes-logging-cloud-vision-fehler.md) (neue ADR dieser Spec), [`decisions/0025-cloud-landmark-erkennung.md`](../decisions/0025-cloud-landmark-erkennung.md) (Punkt 3: best-effort/`continue`-Verhalten der Landmark-Phase, unverändert), [`decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md`](../decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) (Punkt 5: identisches best-effort-Verhalten für die Remote-Kategorie-Klassifizierung), [`features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md`](./0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) (dort im Betrieb aufgefallen)
 
