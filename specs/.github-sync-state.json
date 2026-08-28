@@ -575,6 +575,15 @@
       "last_synced_at": "2026-08-28T18:14:34.602099+00:00",
       "runtime_status": null,
       "pr_number": null
+    },
+    "0065": {
+      "issue_number": 240,
+      "item_id": "PVTI_lAHOAdvbTs4Bg-8xzg4dDbc",
+      "pushed_state_hash": "239764697e27d7e45c7d1af751bbc720a8ac4f4a22302fb3f87c26cdcb4f9d69",
+      "pulled_body_hash": "77ef5856dc7c683f4a670e93980bf1d437d23a0eccf53c39b1a2d79b9e559c25",
+      "last_synced_at": "2026-08-28T20:53:07.025565+00:00",
+      "runtime_status": null,
+      "pr_number": null
     }
   },
   "stories": {
@@ -622,11 +631,6 @@
       "issue_number": 232,
       "item_id": "PVTI_lAHOAdvbTs4Bg-8xzg4TR3M",
       "last_synced_at": "2026-08-27T17:30:05.586291+00:00"
-    },
-    "240": {
-      "issue_number": 240,
-      "item_id": "PVTI_lAHOAdvbTs4Bg-8xzg4dDbc",
-      "last_synced_at": "2026-08-28T16:48:57.884940+00:00"
     },
     "246": {
       "issue_number": 246,
