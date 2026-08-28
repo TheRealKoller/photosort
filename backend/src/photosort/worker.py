@@ -897,6 +897,20 @@ def _log_cloud_vision_failure(
 # remote_classification.py::MAX_REMOTE_LABEL_LENGTH - die eigentliche Absicherung bleibt die in
 # ADR 0034 Punkt 5 verifizierte str(exc)-Konstruktion (keine Secrets/Rohdaten), diese Kappung ist
 # nur eine Storage-/Degenerationsgrenze.
+#
+# Sicherheits-Muss-Kriterium der Spec 0058 (Nachschaerfung von ADR 0034 Punkt 5, da die
+# Zielgruppe dieser Fehlermeldung jetzt vom Server-Log-Leser zum App-Nutzer waechst): vor der
+# Umsetzung verifiziert, ob str(exc) bei einem von httpx.HTTPError gewrappten Netzwerkfehler
+# (landmark.py::LandmarkApiError/remote_classification.py::RemoteCategoryClassificationApiError,
+# jeweils "... API nicht erreichbar: {exc}") URL-Query-Parameter enthalten koennte. Ergebnis:
+# NEIN, aus zwei unabhaengigen Gruenden. (1) Beide Call-Sites rufen ausschliesslich die fest
+# codierten URL-Konstanten ANTHROPIC_MESSAGES_URL/MISTRAL_CHAT_COMPLETIONS_URL auf
+# (cloud_vision.py) - beide ohne Query-String, jeglicher Payload (Bilddaten/API-Key) wird per
+# POST-Body/-Header uebertragen, nie als Query-Parameter. (2) Selbst wenn eine URL Query-Parameter
+# enthielte, haengt httpx.HTTPError.__str__() diese nicht automatisch an - empirisch verifiziert
+# (httpx 0.27+): sowohl httpx.ConnectError als auch httpx.TimeoutException geben ausschliesslich
+# die dem Konstruktor uebergebene Nachricht zurueck (z.B. "Connection refused"), unabhaengig davon,
+# ob eine .request mit Query-Parametern angehaengt ist.
 _MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH = 500
 
 
