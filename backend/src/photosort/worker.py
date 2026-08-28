@@ -869,7 +869,7 @@ def _select_landmark_candidates(
 
 
 def _log_cloud_vision_failure(
-    phase: str, photo_id: int, relative_path: str, exc: BaseException
+    phase: str, photo_id: int, relative_path: str, exc_type_name: str, exc_message: str
 ) -> None:
     """Strukturiertes WARNING-Logging fuer einen best-effort uebersprungenen Cloud-Vision-Aufruf
     (specs/features/0056-structured-logging-cloud-vision-errors.md, ADR 0034) - gemeinsam genutzt
@@ -877,18 +877,26 @@ def _log_cloud_vision_failure(
     (run_remote_category_classification). Level WARNING statt ERROR (ADR 0034 Punkt 3): der Skip
     ist erwartetes, dokumentiertes best-effort-Verhalten (ADR 0025 Punkt 3/ADR 0032 Punkt 5), der
     Lauf selbst bleibt SUCCESS. Kein exc_info=True/Traceback (ADR 0034 Punkt 5) - eine Zeile pro
-    fehlgeschlagenem Foto reicht fuer Fehlergrund + Foto-Kontext. `str(exc)` wird ausschliesslich
-    aus der bereits an der Exception-Konstruktionsstelle sanitierten Meldung uebernommen (siehe
-    cloud_vision.py::raise_for_vision_api_status/*_response_to_json, bestehendes Sicherheits-Muss-
-    Kriterium aus ADR 0025/0031/0032) - hier NIE erneut auf response.text/.json()/.headers
-    zugreifen."""
+    fehlgeschlagenem Foto reicht fuer Fehlergrund + Foto-Kontext.
+
+    `exc_type_name`/`exc_message` statt der rohen Exception (Copilot-Review-Fund auf PR #255,
+    specs/features/0058-cloud-vision-status-transparenz.md/ADR 0035 Punkt 3): der Aufrufer
+    berechnet `type(exc).__name__`/`str(exc)` GENAU EINMAL an der jeweiligen Call-Site und reicht
+    beide Werte sowohl hierher als auch an `_record_cloud_vision_error` durch - keine zweite,
+    potenziell abweichende Auswertung an zwei Stellen (auch wenn `type()`/`str()` reine Funktionen
+    sind und ein tatsaechliches Auseinanderlaufen hier nie beobachtbar war, war die vorherige
+    Fassung eine dokumentierte, aber nicht eingehaltene Architektur-Vorgabe). `exc_message` wird
+    ausschliesslich aus der bereits an der Exception-Konstruktionsstelle sanitierten Meldung
+    uebernommen (siehe cloud_vision.py::raise_for_vision_api_status/*_response_to_json, bestehendes
+    Sicherheits-Muss-Kriterium aus ADR 0025/0031/0032) - hier NIE erneut auf
+    response.text/.json()/.headers zugreifen."""
     logger.warning(
         "Cloud-Vision-Aufruf fehlgeschlagen (%s): photo_id=%s relative_path=%s %s: %s",
         phase,
         photo_id,
         relative_path,
-        type(exc).__name__,
-        exc,
+        exc_type_name,
+        exc_message,
     )
 
 
@@ -918,22 +926,25 @@ async def _record_cloud_vision_error(
     session: AsyncSession,
     photo_id: int,
     phase: CloudVisionPhase,
-    exc: BaseException,
+    exc_type_name: str,
+    exc_message: str,
     now: datetime,
 ) -> None:
     """Upsert der letzten bekannten Fehler-Zeile fuer dieses Foto x CloudVisionPhase (ADR 0035
     Punkt 2/3) - bewusst getrennt von _log_cloud_vision_failure (ephemeres Log vs. dauerhafte,
-    per API abrufbare Persistenz mit Lösch-Pfad bei Erfolg, siehe dortiger Docstring), teilt sich
-    aber `type(exc).__name__`/`str(exc)` mit dem Aufrufer statt einer zweiten Auswertung. Reines
-    `session.add`/Attribut-Update, kein eigener Commit (Persistierung laeuft ueber die bereits
-    bestehenden periodischen Commit-Punkte der jeweiligen Schleife, analog
-    _upsert_landmark_detection)."""
+    per API abrufbare Persistenz mit Lösch-Pfad bei Erfolg, siehe dortiger Docstring). Nimmt
+    `exc_type_name`/`exc_message` bereits fertig berechnet entgegen (Copilot-Review-Fund auf PR
+    #255) - der Aufrufer berechnet `type(exc).__name__`/`str(exc)` GENAU EINMAL an der jeweiligen
+    Call-Site und reicht beide Werte sowohl hierher als auch an _log_cloud_vision_failure durch,
+    keine zweite Auswertung derselben Exception an zwei Stellen. Reines `session.add`/Attribut-
+    Update, kein eigener Commit (Persistierung laeuft ueber die bereits bestehenden periodischen
+    Commit-Punkte der jeweiligen Schleife, analog _upsert_landmark_detection)."""
     existing = await session.get(PhotoCloudVisionError, (photo_id, phase))
     if existing is None:
         existing = PhotoCloudVisionError(photo_id=photo_id, phase=phase)
         session.add(existing)
-    existing.error_type = type(exc).__name__
-    existing.error_message = str(exc)[:_MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH]
+    existing.error_type = exc_type_name
+    existing.error_message = exc_message[:_MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH]
     existing.attempted_at = now
 
 
@@ -1351,17 +1362,28 @@ async def run_criterion_scoring(
                                 # fuer dieses Foto keine landmark-Zeile entstehen, alle anderen
                                 # Kriterien dieses Fotos bleiben unberuehrt, kein Laufabbruch.
                                 # Spec 0056/ADR 0034: dennoch sichtbar ueber docker compose logs.
+                                # ADR 0035 Punkt 3/Copilot-Review-Fund PR #255: type(exc).__name__/
+                                # str(exc) GENAU EINMAL berechnet, an beide Senken (Logger, DB)
+                                # weitergereicht - keine zweite Auswertung.
+                                exc_type_name = type(result).__name__
+                                exc_message = str(result)
                                 _log_cloud_vision_failure(
                                     "landmark",
                                     photo_id,
                                     photos_by_id[photo_id].relative_path,
-                                    result,
+                                    exc_type_name,
+                                    exc_message,
                                 )
                                 # specs/features/0058-cloud-vision-status-transparenz.md, ADR
                                 # 0035 Punkt 3: dauerhafte, per API abrufbare Persistenz desselben
                                 # Fehlschlags (getrennt vom Log oben).
                                 await _record_cloud_vision_error(
-                                    session, photo_id, CloudVisionPhase.LANDMARK, result, now
+                                    session,
+                                    photo_id,
+                                    CloudVisionPhase.LANDMARK,
+                                    exc_type_name,
+                                    exc_message,
+                                    now,
                                 )
                                 continue
                             detection = result
@@ -1574,14 +1596,28 @@ async def run_remote_category_classification(
                         # Aufruf laesst fuer dieses Foto keine Zeile entstehen, das Foto bleibt
                         # beim naechsten Lauf erneut Kandidat.
                         # Spec 0056/ADR 0034: dennoch sichtbar ueber docker compose logs.
+                        # ADR 0035 Punkt 3/Copilot-Review-Fund PR #255: type(exc).__name__/
+                        # str(exc) GENAU EINMAL berechnet, an beide Senken (Logger, DB)
+                        # weitergereicht - keine zweite Auswertung.
+                        exc_type_name = type(result).__name__
+                        exc_message = str(result)
                         _log_cloud_vision_failure(
-                            "remote_category", photo.id, photo.relative_path, result
+                            "remote_category",
+                            photo.id,
+                            photo.relative_path,
+                            exc_type_name,
+                            exc_message,
                         )
                         # specs/features/0058-cloud-vision-status-transparenz.md, ADR 0035
                         # Punkt 3: dauerhafte, per API abrufbare Persistenz desselben Fehlschlags
                         # (getrennt vom Log oben).
                         await _record_cloud_vision_error(
-                            session, photo.id, CloudVisionPhase.REMOTE_CATEGORY, result, now
+                            session,
+                            photo.id,
+                            CloudVisionPhase.REMOTE_CATEGORY,
+                            exc_type_name,
+                            exc_message,
+                            now,
                         )
                         continue
                     detections = result
