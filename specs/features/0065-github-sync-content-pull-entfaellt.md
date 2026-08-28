@@ -19,7 +19,7 @@ Als Daniel, der die Weiterentwicklung von PhotoSort über Specs und ADRs steuert
 ## Akzeptanzkriterien
 
 - [x] Der bidirektionale Content-Sync für Feature-Specs (Rückfluss von Issue-Inhalt in die Spec-Datei, Hash-basierte Konflikterkennung, Klassifikation `pulled`/`conflict`) entfällt vollständig.
-- [x] Ein Issue-Inhalt kann durch eine Bearbeitung im GitHub-Issue nicht mehr unbemerkt von der Spec-Datei abweichen, weil kein Rückfluss mehr stattfindet — die Spec-Datei bleibt alleinige Quelle für den technischen Inhalt.
+- [x] Eine manuelle Bearbeitung des Issue-Bodys hat keine Wirkung mehr auf die Spec-Datei — sie kann weiterhin vom Spec-Inhalt abweichen (kein Rückfluss mehr stattfindet), aber die Spec-Datei bleibt bei jeder Abweichung alleinige Quelle für den technischen Inhalt, unabhängig davon, was im Issue steht.
 - [x] Die Status-Synchronisation (Spec-Datei/Story-Issue → Board-Spalte je nach Workflow-Schritt, inkl. Laufzeit-Overrides wie "In Progress"/"Review") funktioniert weiterhin unverändert aus Sicht der aufrufenden Skills/Agents (`capture`, `refinement`, `spec-writer`, `ship-feature`, `developer`).
 - [x] Die automatische Erkennung gemergter Spec-PRs (Spec wird auf `Implemented`/Board-Spalte `Done` finalisiert) funktioniert weiterhin unverändert.
 - [x] Die dateilose Story-Verwaltung (Issue anlegen, Status setzen/lesen, Body schreiben) funktioniert weiterhin unverändert.
