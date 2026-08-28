@@ -47,6 +47,7 @@ from photosort.criteria import (
     content_people_from_faces,
     derive_active_categories,
     derive_category_key,
+    is_landmark_candidate,
     normalize_exposure,
     normalize_sharpness,
 )
@@ -849,19 +850,18 @@ def _select_landmark_candidates(
     gepflegten Grenzwerts) UND noch keine landmark-Zeile aus einem frueheren Lauf existiert (die
     einzige, bewusst dokumentierte Ausnahme vom sonst projektweiten "jeder Lauf scort neu"-
     Prinzip). Gibt die photo_id-Reihenfolge von candidate_values zurueck (Einfuege-/Verarbeitungs-
-    reihenfolge der Foto-Schleife, keine weitere Sortierung noetig)."""
-    landscape_threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
-    gebaeude_threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
-    assert landscape_threshold is not None
-    assert gebaeude_threshold is not None
+    reihenfolge der Foto-Schleife, keine weitere Sortierung noetig).
+
+    Die eigentliche Schwellenwert-Pruefung lebt seit specs/features/0058-cloud-vision-status-
+    transparenz.md/decisions/0035-cloud-vision-attempt-fehler-persistierung.md Punkt 4 in
+    criteria.py::is_landmark_candidate (gemeinsam mit der API-seitigen Read-Time-Ableitung
+    genutzt) - hier bleibt nur noch das Skip-bereits-gescorter-Fotos-Verhalten, das worker-
+    spezifisch bleibt (keine API-Entsprechung)."""
     candidates: list[int] = []
     for photo_id, values in candidate_values.items():
         if photo_id in already_scored_photo_ids:
             continue
-        if (
-            values.get("content_landscape", 0.0) >= landscape_threshold
-            or values.get("gebaeude", 0.0) >= gebaeude_threshold
-        ):
+        if is_landmark_candidate(values):
             candidates.append(photo_id)
     return candidates
 
