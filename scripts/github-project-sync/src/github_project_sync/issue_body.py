@@ -2,7 +2,10 @@
 
 Siehe ADR decisions/0017-github-projects-v2-spec-sync.md, Abschnitt 3: erste Zeile jedes
 Issue-Bodys ist ein versteckter Marker `<!-- photosort-spec: NNNN -->`, danach der gespiegelte
-Inhalts-Zone-Text der Spec (ab der ersten "## "-Ueberschrift).
+Inhalts-Zone-Text der Spec (ab der ersten "## "-Ueberschrift). Seit Spec 0065 / ADR 0041 ist
+dieser Spiegel-Vorgang nur noch einseitig (Spec-Datei -> Issue-Body) - ein Rueckfluss aus dem
+Issue-Body in die Spec-Datei findet nicht mehr statt, deshalb gibt es hier keine Extraktions-
+Funktion mehr.
 
 Der frueher parallel bestehende `photosort-inbox`-Marker (ADR decisions/0030-github-sync-natives-
 status-feld-inbox-einbindung.md, Abschnitt 4) wurde mit Spec 0059 / ADR decisions/0036-github-
@@ -30,9 +33,3 @@ def parse_marker(body: str) -> str | None:
     first_line = body.split("\n", 1)[0]
     match = _MARKER_LINE_RE.match(first_line)
     return match.group(1) if match else None
-
-
-def extract_content_zone_from_issue_body(body: str) -> str:
-    """Alles nach der Marker-Zeile, fuehrende Leerzeilen entfernt."""
-    _, _, rest = body.partition("\n")
-    return rest.lstrip("\n")

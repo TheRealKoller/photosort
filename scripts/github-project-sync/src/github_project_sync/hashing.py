@@ -1,7 +1,8 @@
-"""Hash-Bildung fuer die Vier-Wege-Konflikt-Klassifikation (siehe classify.py).
+"""Hash-Bildung fuer die Drei-Wege-Push-Klassifikation (siehe classify.py).
 
-Normalisiert CRLF/Trailing-Whitespace, um False-Positive-Aenderungen zu vermeiden (Akzeptanz-
-kriterium "Issue-Body -> Spec-Inhalt" in specs/features/0031-zweiwege-sync-specs-github-projekt.md).
+Normalisiert CRLF/Trailing-Whitespace, um False-Positive-Aenderungen zu vermeiden. Seit Spec 0065
+/ ADR 0041 ausschliesslich fuer den Push-Zweig (Spec-Inhalt -> Issue-Body) relevant - der frueher
+parallel bestehende Pull-/Konflikt-Zweig entfaellt vollstaendig.
 """
 
 from __future__ import annotations
@@ -28,18 +29,4 @@ def push_state_hash(*, status: str, content_zone: str) -> str:
     aendert sich damit nur noch bei einer Status- oder Inhalts-Zonen-Aenderung.
     """
     composite = f"STATUS:{status}\n---\n{content_zone}"
-    return text_hash(composite)
-
-
-def push_state_hash_inbox(*, status: str, typ: str, content_zone: str) -> str:
-    """Hash aus (Status, Typ, Inhalts-Zone) fuer Inbox-Eintraege (Spec 0052).
-
-    Eigene Funktion statt eines zusaetzlichen `typ`-Parameters an push_state_hash() - die beiden
-    Zustandsschemata (Feature-Spec: Status + Inhalt; Inbox-Eintrag: Status + Typ + Inhalt) sind
-    unabhaengig und sollen sich nicht ueber einen gemeinsam gedeuteten Parameter vermischen.
-    Nutzt denselben text_hash()-Baustein wie push_state_hash(), keine Duplikation der
-    eigentlichen Hash-/Normalisierungslogik. (Seit Spec 0059 ohne Aufrufer, bewusst nicht
-    mit aufgeraeumt - ADR 0039.)
-    """
-    composite = f"STATUS:{status}\nTYP:{typ}\n---\n{content_zone}"
     return text_hash(composite)

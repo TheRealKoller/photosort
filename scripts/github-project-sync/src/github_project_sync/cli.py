@@ -1,9 +1,8 @@
 """Kommandozeilen-Einstiegspunkt fuer den Skill .claude/skills/github-project-sync/SKILL.md.
 
 Gibt strukturiertes JSON auf stdout aus, damit der aufrufende Skill (Claude) das Ergebnis
-zuverlaessig auswerten kann (Konflikte an Daniel bzw. requirements-engineer weiterreichen).
-Siehe specs/features/0031-zweiwege-sync-specs-github-projekt.md und
-specs/features/0059-story-lebenszyklus-github-issues.md.
+zuverlaessig auswerten kann. Siehe specs/features/0059-story-lebenszyklus-github-issues.md und
+ADR decisions/0041-feature-spec-content-sync-nur-noch-push.md.
 """
 
 from __future__ import annotations
@@ -20,9 +19,7 @@ from github_project_sync.gh_adapter import (
     GhAdapterError,
     GhCliAdapter,
 )
-from github_project_sync.spec_parser import validate_spec_number
 from github_project_sync.sync import (
-    Resolution,
     SyncError,
     SyncRunResult,
     create_story_issue,
@@ -34,31 +31,12 @@ from github_project_sync.sync import (
 
 GhFactory = Callable[[str], GhAdapter]
 
-_RESOLUTION_VALUES = {"keep_spec", "keep_issue"}
 _ISSUE_ONLY_PREFIX = "issue:"
 _RUNTIME_STATUS_CHOICES = ["In Progress", "Review"]
 # Mit Spec 0059 entfernter Inbox-Pfad (ADR 0036) - beide Werte werden weiterhin erkannt, um eine
 # praezise Fehlermeldung statt eines generischen/kryptischen Fehlschlags zu liefern, falls ein
 # altes Skript/eine alte Doku-Stelle sie noch aufruft (siehe main()).
 _REMOVED_INBOX_ONLY_PREFIX = "inbox:"
-
-
-def _parse_resolutions(raw: list[str]) -> dict[str, Resolution]:
-    resolutions: dict[str, Resolution] = {}
-    for item in raw:
-        if "=" not in item:
-            raise SyncError(
-                f"Ungueltiges --resolve-Argument (erwartet NNNN=keep_spec|keep_issue): {item!r}"
-            )
-        number, _, value = item.partition("=")
-        validate_spec_number(number)
-        if value not in _RESOLUTION_VALUES:
-            raise SyncError(
-                f"Ungueltiger Aufloesungswert fuer Spec {number}: {value!r} "
-                f"(erwartet einen von {sorted(_RESOLUTION_VALUES)})."
-            )
-        resolutions[number] = value  # type: ignore[assignment]
-    return resolutions
 
 
 def _parse_issue_only(value: str) -> int:
@@ -91,15 +69,6 @@ def _result_to_dict(result: SyncRunResult) -> dict[str, object]:
                 "issue_number": r.issue_number,
                 "classification": r.classification,
                 "aborted_reason": r.aborted_reason,
-                "conflict": (
-                    {
-                        "local_content_zone": r.conflict.local_content_zone,
-                        "remote_content_zone": r.conflict.remote_content_zone,
-                    }
-                    if r.conflict is not None
-                    else None
-                ),
-                "pulled_content_zone": r.pulled_content_zone,
                 "finalized_from_pr": r.finalized_from_pr,
             }
             for r in result.specs
@@ -120,10 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="github-project-sync",
         description=(
-            "Zwei-Wege-Sync zwischen specs/features/*.md und einem GitHub Project (V2), plus "
+            "Einseitiger Push-Sync von specs/features/*.md in ein GitHub Project (V2), plus "
             "dateiloser Story-Stufe (issue:NNN). Siehe "
-            "specs/features/0031-zweiwege-sync-specs-github-projekt.md und "
-            "specs/features/0059-story-lebenszyklus-github-issues.md."
+            "specs/features/0059-story-lebenszyklus-github-issues.md und "
+            "ADR decisions/0041-feature-spec-content-sync-nur-noch-push.md."
         ),
     )
     parser.add_argument(
@@ -132,7 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Nur diese eine Spec-Nummer syncen (bare NNNN, Feature-Scope) oder nur dieses eine "
-            "Story-Issue (issue:NNN, dateiloser Scope ohne Pull/Konflikt-Handling)."
+            "Story-Issue (issue:NNN, dateiloser Scope)."
         ),
     )
     parser.add_argument(
@@ -216,7 +185,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="NNNN=keep_spec|keep_issue",
-        help="Konflikt fuer eine Spec-Nummer explizit aufloesen. Mehrfach angebbar.",
+        # Mit Spec 0065 entferntes Flag (ADR 0041: der bidirektionale Content-Sync entfaellt
+        # vollstaendig, Konflikte zwischen Spec-Datei und Issue-Body koennen dadurch nicht mehr
+        # entstehen) - bleibt wie --supersede-inbox weiter unten im Parser registriert, damit ein
+        # versehentlich noch aufgerufener alter Skript-/Doku-Wortlaut nicht auf argparses
+        # generisches "unrecognized arguments" (stderr, Exit-Code 2) faellt, sondern in main()
+        # dieselbe {"error": "..."}-JSON-Konvention wie jeder andere Fehler bekommt.
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--supersede-inbox",
@@ -256,6 +231,13 @@ def main(argv: Sequence[str] | None = None, *, gh_factory: GhFactory = _default_
                 f"--only {args.only!r} wurde mit Spec 0059 entfernt (ADR 0036: der "
                 "bidirektionale Inbox-Pfad entfaellt ersatzlos, specs/inbox/*.md wird nicht "
                 "mehr gesynct) - fuer ein Story-Issue jetzt '--only issue:NNN' verwenden."
+            )
+        if args.resolve:
+            raise SyncError(
+                "--resolve wurde mit Spec 0065 entfernt (ADR 0041: der bidirektionale "
+                "Content-Sync fuer Feature-Specs entfaellt vollstaendig - ein Konflikt zwischen "
+                "Spec-Datei und Issue-Body kann dadurch nicht mehr entstehen, die Spec-Datei "
+                "ist alleinige Quelle fuer den technischen Inhalt)."
             )
 
         repo_root = args.repo_root or _discover_repo_root(Path.cwd())
@@ -315,13 +297,11 @@ def main(argv: Sequence[str] | None = None, *, gh_factory: GhFactory = _default_
         if args.show_status:
             raise SyncError("--show-status erfordert --only issue:NNN.")
 
-        resolutions = _parse_resolutions(args.resolve)
         result = run_sync(
             repo_root=repo_root,
             gh=gh,
             only=args.only,
             adopt_issue=args.adopt_issue,
-            resolutions=resolutions,
         )
     except SyncError as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))

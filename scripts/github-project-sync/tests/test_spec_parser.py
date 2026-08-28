@@ -9,7 +9,6 @@ from github_project_sync.spec_parser import (
     SpecParseError,
     parse_spec_file,
     parse_spec_text,
-    replace_content_zone,
     set_status_line,
     validate_spec_number,
 )
@@ -99,29 +98,6 @@ def test_validate_spec_number_accepts_four_digits(value: str) -> None:
 def test_validate_spec_number_rejects_everything_else(value: str) -> None:
     with pytest.raises(ValueError):
         validate_spec_number(value)
-
-
-def test_replace_content_zone_keeps_header_untouched() -> None:
-    new_zone = "## Ziel\n\nNeuer Text aus dem Issue.\n"
-
-    result = replace_content_zone(SAMPLE, new_zone)
-
-    assert result.startswith("# 0031 -")
-    assert "**Status:** Accepted" in result
-    assert "Neuer Text aus dem Issue." in result
-    assert "Als Daniel" not in result
-
-
-def test_replace_content_zone_ignores_metadata_edits_in_new_zone() -> None:
-    # Ein versehentlich im Issue mitgeaenderter Metadaten-Block darf keine Wirkung haben -
-    # replace_content_zone ersetzt ausschliesslich den Teil ab "## ", der Header bleibt die
-    # lokale Fassung (ADR 0017, Abschnitt 4).
-    new_zone = "## Ziel\n\nGeaendert.\n"
-
-    result = replace_content_zone(SAMPLE, new_zone)
-
-    assert result.count("**Status:**") == 1
-    assert "**Status:** Accepted" in result
 
 
 def _spec_with_status_line(status_line: str) -> str:
@@ -221,12 +197,7 @@ def test_set_status_line_raises_when_status_missing_in_header_even_if_present_in
     # GESAMTEN Text statt nur den Header - fehlt das "**Status:**"-Feld im Header, aber die
     # Inhalts-Zone enthaelt eine Zeile, die mit "**Status:**" beginnt, wurde diese bisher
     # faelschlich als Treffer gewertet und ueberschrieben statt eines SpecParseError.
-    text = (
-        "# 0031 - Titel\n\n"
-        "**Erstellt:** 2026-08-09\n\n"
-        "## Beispiel\n\n"
-        "**Status:** Accepted\n"
-    )
+    text = "# 0031 - Titel\n\n**Erstellt:** 2026-08-09\n\n## Beispiel\n\n**Status:** Accepted\n"
 
     with pytest.raises(SpecParseError):
         set_status_line(text, "Implemented")

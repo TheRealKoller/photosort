@@ -5,30 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from github_project_sync.cli import _discover_repo_root, _parse_issue_only, _parse_resolutions, main
+from github_project_sync.cli import _discover_repo_root, _parse_issue_only, main
 from github_project_sync.sync import SyncError
 from tests.fakes import FakeGhAdapter
-
-
-def test_parse_resolutions_valid() -> None:
-    resolutions = _parse_resolutions(["0031=keep_spec", "0032=keep_issue"])
-
-    assert resolutions == {"0031": "keep_spec", "0032": "keep_issue"}
-
-
-def test_parse_resolutions_rejects_missing_equals_sign() -> None:
-    with pytest.raises(SyncError):
-        _parse_resolutions(["0031-keep_spec"])
-
-
-def test_parse_resolutions_rejects_unknown_value() -> None:
-    with pytest.raises(SyncError):
-        _parse_resolutions(["0031=delete_everything"])
-
-
-def test_parse_resolutions_rejects_invalid_spec_number() -> None:
-    with pytest.raises(ValueError):
-        _parse_resolutions(["31=keep_spec"])
 
 
 def test_parse_issue_only_extracts_number() -> None:
@@ -158,9 +137,13 @@ def test_main_returns_json_error_on_removed_supersede_inbox_flag(
     assert "adopt-issue" in output["error"]
 
 
-def test_main_passes_resolve_argument_through(
+def test_main_returns_json_error_on_removed_resolve_flag(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # --resolve wurde mit Spec 0065 entfernt (ADR 0041: der bidirektionale Content-Sync
+    # entfaellt vollstaendig) - bleibt wie --supersede-inbox bewusst im Parser registriert,
+    # damit ein alter Aufruf dieselbe {"error": ...}-JSON-Konvention auf stdout bekommt statt
+    # argparses generischem stderr/Exit-Code-2-Verhalten.
     repo_root = _make_repo(tmp_path)
     fake = FakeGhAdapter()
 
@@ -169,7 +152,10 @@ def test_main_passes_resolve_argument_through(
         gh_factory=lambda owner: fake,
     )
 
-    assert exit_code == 0
+    assert exit_code != 0
+    output = json.loads(capsys.readouterr().out)
+    assert "error" in output
+    assert "entfernt" in output["error"]
 
 
 # -- --create-issue (Spec 0059) -----------------------------------------------------------
