@@ -18,7 +18,6 @@ _ENTRY = SyncStateEntry(
     issue_number=42,
     item_id="ITEM_1",
     pushed_state_hash="abc",
-    pulled_body_hash="def",
     last_synced_at="2026-08-09T00:00:00Z",
 )
 
@@ -45,7 +44,6 @@ def test_load_state_parses_existing_nested_entries(tmp_path: Path) -> None:
                         "issue_number": 42,
                         "item_id": "ITEM_1",
                         "pushed_state_hash": "abc",
-                        "pulled_body_hash": "def",
                         "last_synced_at": "2026-08-09T00:00:00Z",
                     }
                 },
@@ -300,8 +298,8 @@ def _entry_dict() -> dict:
 
 def test_find_orphaned_numbers_returns_entries_without_spec_file() -> None:
     state = {
-        "0031": SyncStateEntry(1, "a", "x", "y", "2026-08-09T00:00:00Z"),
-        "0099": SyncStateEntry(2, "b", "x", "y", "2026-08-09T00:00:00Z"),
+        "0031": SyncStateEntry(1, "a", "x", "2026-08-09T00:00:00Z"),
+        "0099": SyncStateEntry(2, "b", "x", "2026-08-09T00:00:00Z"),
     }
 
     orphaned = find_orphaned_numbers(state, existing_numbers={"0031"})
@@ -310,7 +308,7 @@ def test_find_orphaned_numbers_returns_entries_without_spec_file() -> None:
 
 
 def test_find_orphaned_numbers_empty_when_all_present() -> None:
-    state = {"0031": SyncStateEntry(1, "a", "x", "y", "2026-08-09T00:00:00Z")}
+    state = {"0031": SyncStateEntry(1, "a", "x", "2026-08-09T00:00:00Z")}
 
     assert find_orphaned_numbers(state, existing_numbers={"0031"}) == []
 
@@ -355,7 +353,6 @@ def test_save_state_round_trips_runtime_status_and_pr_number(tmp_path: Path) -> 
         issue_number=42,
         item_id="ITEM_1",
         pushed_state_hash="abc",
-        pulled_body_hash="def",
         last_synced_at="2026-08-09T00:00:00Z",
         runtime_status="In Progress",
         pr_number=None,
@@ -375,3 +372,40 @@ def test_save_state_writes_null_runtime_override_fields_when_unset(tmp_path: Pat
     raw = json.loads(state_path.read_text(encoding="utf-8"))
     assert raw["features"]["0031"]["runtime_status"] is None
     assert raw["features"]["0031"]["pr_number"] is None
+
+
+# -- pulled_body_hash-Rueckwaertskompatibilitaet (Spec 0065 / ADR 0041): erstes *subtraktives*
+# State-Feld-Entfernungsmuster im Projekt - explizit getestet statt nur angenommen. ------------
+
+
+def test_load_state_ignores_still_present_pulled_body_hash_field(tmp_path: Path) -> None:
+    # Eine Zustandsdatei aus der Zeit vor Spec 0065 hat pro Feature-Eintrag noch ein
+    # "pulled_body_hash"-Feld - das Laden darf daran nicht scheitern, das Feld wird schlicht
+    # nicht mehr referenziert (kein Migrationsschritt noetig).
+    state_path = tmp_path / ".github-sync-state.json"
+    legacy_entry = _entry_dict()
+    assert "pulled_body_hash" in legacy_entry  # Fixture-Selbstpruefung
+    state_path.write_text(
+        json.dumps({"features": {"0031": legacy_entry}, "stories": {}}), encoding="utf-8"
+    )
+
+    state = load_state(state_path)
+
+    assert state.features["0031"] == _ENTRY
+
+
+def test_save_state_after_loading_legacy_entry_drops_pulled_body_hash_field(
+    tmp_path: Path,
+) -> None:
+    # Ein direkt folgender save_state()-Aufruf schreibt die Datei ohne das Altfeld - die
+    # Selbstheilung passiert beim naechsten Schreibvorgang, nicht sofort beim Lesen.
+    state_path = tmp_path / ".github-sync-state.json"
+    state_path.write_text(
+        json.dumps({"features": {"0031": _entry_dict()}, "stories": {}}), encoding="utf-8"
+    )
+
+    state = load_state(state_path)
+    save_state(state_path, state)
+
+    raw = json.loads(state_path.read_text(encoding="utf-8"))
+    assert "pulled_body_hash" not in raw["features"]["0031"]

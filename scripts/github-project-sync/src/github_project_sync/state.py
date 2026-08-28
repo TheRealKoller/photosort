@@ -5,16 +5,19 @@ Abschnitt 5: genestetes Format {"features": {NNNN: entry}, "stories": {issue_num
 statt des vorherigen {"features", "inbox"}-Formats (ADR decisions/0030, Abschnitt 5) - der
 "inbox"-Namensraum entfaellt ersatzlos (lokale specs/inbox/*.md-Dateien werden nicht mehr
 gesynct), der neue "stories"-Namensraum bildet stattdessen dateilose GitHub-Issue-Stories ab.
-Ein Story-Eintrag hat bewusst KEINE Hash-Felder (`pushed_state_hash`/`pulled_body_hash`) - es
-gibt nichts zu vergleichen, da eine Story ausschliesslich im Issue lebt (keine zweite, lokal
-divergierende Kopie).
+Ein Story-Eintrag hat bewusst KEIN Hash-Feld (`pushed_state_hash`) - es gibt nichts zu
+vergleichen, da eine Story ausschliesslich im Issue lebt (keine zweite, lokal divergierende
+Kopie).
 
 load_state() erkennt weiterhin das ganz alte, flache Format (keine Top-Level-Schluessel
 "features"/"stories") und behandelt es transparent als {"features": <bisheriger Inhalt>,
 "stories": {}}. Ein ebenfalls noch vorkommendes altes "inbox"-Vorkommen (Format vor dieser
 Umsetzung) wird beim Lesen schlicht ignoriert statt zum Absturz zu fuehren - bewusster,
 einmaliger Datenverlust nur fuer diesen bereits obsoleten Namensraum (siehe Spec 0059,
-Akzeptanzkriterien).
+Akzeptanzkriterien). Seit Spec 0065 / ADR 0041 gilt dasselbe Prinzip fuer ein noch vorhandenes
+`pulled_body_hash`-Feld in einem Feature-Eintrag (Altformat vor dem Wegfall des Content-Pulls):
+es wird beim Lesen schlicht nicht mehr referenziert, kein eigener Migrationsschritt noetig -
+beim naechsten save_state()-Aufruf verschwindet es selbstheilend aus der Datei.
 
 Inklusive Aufraeumlogik fuer Feature-Eintraege ohne zugehoerige Spec-Datei (Akzeptanzkriterium
 "Gelöschte Spec-Datei" in specs/features/0031-zweiwege-sync-specs-github-projekt.md). Story-
@@ -81,7 +84,6 @@ def _parse_namespace(raw: Mapping[str, dict]) -> StateDict:
             issue_number=entry["issue_number"],
             item_id=entry["item_id"],
             pushed_state_hash=entry["pushed_state_hash"],
-            pulled_body_hash=entry["pulled_body_hash"],
             last_synced_at=entry["last_synced_at"],
             runtime_status=entry.get("runtime_status"),
             pr_number=entry.get("pr_number"),
@@ -140,7 +142,6 @@ def _serialize_namespace(state: Mapping[str, SyncStateEntry]) -> dict:
             "issue_number": entry.issue_number,
             "item_id": entry.item_id,
             "pushed_state_hash": entry.pushed_state_hash,
-            "pulled_body_hash": entry.pulled_body_hash,
             "last_synced_at": entry.last_synced_at,
             "runtime_status": entry.runtime_status,
             "pr_number": entry.pr_number,
