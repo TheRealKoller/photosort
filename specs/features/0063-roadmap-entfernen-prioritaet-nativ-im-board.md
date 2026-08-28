@@ -1,6 +1,6 @@
 # 0063 - roadmap.md entfernen, Priorität nativ im GitHub-Project-Board pflegen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #239](https://github.com/TheRealKoller/photosort/pull/239))
 **Erstellt:** 2026-08-28
 **Bezug:** GitHub-Issue [#224](https://github.com/TheRealKoller/photosort/issues/224) (Story, Status `Ready`), ADR [`0039`](../decisions/0039-prioritaet-nativ-im-board-roadmap-entfaellt.md)
 
