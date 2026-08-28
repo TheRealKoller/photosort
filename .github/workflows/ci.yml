@@ -167,6 +167,34 @@ jobs:
           echo "backend command: $backend_command"
           echo "$backend_command" | grep -q "alembic upgrade head"
           echo "$backend_command" | grep -q "uvicorn"
+      - name: Static check - LANDMARK_PROVIDER and MISTRAL_API_KEY passthrough (spec 0057)
+        run: |
+          set -euo pipefail
+          # Keine real gesetzten Secrets hier - nur ein harmloser Testwert fuer
+          # MISTRAL_API_KEY, siehe Sicherheitshinweis in der Spec (kein Secret-Leck
+          # ueber die interpolierte Ausgabe von "docker compose config").
+          unset LANDMARK_PROVIDER MISTRAL_API_KEY || true
+
+          echo "--- default (no LANDMARK_PROVIDER/MISTRAL_API_KEY set) ---"
+          for service in backend worker; do
+            provider=$(docker compose config --format json | jq -r ".services.$service.environment.LANDMARK_PROVIDER")
+            key=$(docker compose config --format json | jq -r ".services.$service.environment.MISTRAL_API_KEY")
+            echo "$service: LANDMARK_PROVIDER=$provider MISTRAL_API_KEY=$key"
+            test "$provider" = "anthropic"
+            test "$key" = ""
+          done
+
+          echo "--- override (LANDMARK_PROVIDER=mistral, MISTRAL_API_KEY set) ---"
+          export LANDMARK_PROVIDER=mistral
+          export MISTRAL_API_KEY=ci-static-check-value
+          for service in backend worker; do
+            provider=$(docker compose config --format json | jq -r ".services.$service.environment.LANDMARK_PROVIDER")
+            key=$(docker compose config --format json | jq -r ".services.$service.environment.MISTRAL_API_KEY")
+            echo "$service: LANDMARK_PROVIDER=$provider MISTRAL_API_KEY=$key"
+            test "$provider" = "mistral"
+            test "$key" = "ci-static-check-value"
+          done
+          unset LANDMARK_PROVIDER MISTRAL_API_KEY
       - name: Functional check - single-service migration ownership against a fresh DB (spec 0013)
         run: |
           set -euo pipefail
