@@ -1,6 +1,6 @@
 ---
 name: spec-writer
-description: Setzt eine bereits fachlich geschärfte Story (Status `Ready` auf dem GitHub-Issue, siehe `refinement`) technisch um — legt den architektonischen Ansatz fest, prüft UI/UX-Bezug, klärt Teststrategie und Security-Aspekt, und legt danach eine neue, direkt akzeptierte Feature-Spec an (adoptiert dabei das bestehende Issue, legt kein neues an). Nutze diesen Skill IMMER, wenn der Nutzer eine bereits als Story markierte Idee jetzt technisch umgesetzt haben will — z.B. "setz Story #NNN um", "mach aus Issue #NNN eine Spec", "lass uns Story #NNN technisch planen". NICHT nutzen für eine neue, noch nicht fachlich geschärfte Idee (dafür `refinement`) oder für eine bereits akzeptierte Spec, die tatsächlich implementiert werden soll (dafür der `developer`-Agent).
+description: Setzt eine bereits fachlich geschärfte Story (Status `Ready` auf dem GitHub-Issue, siehe `refinement`) technisch um — legt den architektonischen Ansatz fest, prüft UI/UX-Bezug, klärt Teststrategie und Security-Aspekt, und legt danach eine neue, direkt akzeptierte Feature-Spec an (unter der Nummer des bestehenden Issues, es wird kein neues Issue angelegt). Nutze diesen Skill IMMER, wenn der Nutzer eine bereits als Story markierte Idee jetzt technisch umgesetzt haben will — z.B. "setz Story #NNN um", "mach aus Issue #NNN eine Spec", "lass uns Story #NNN technisch planen". NICHT nutzen für eine neue, noch nicht fachlich geschärfte Idee (dafür `refinement`) oder für eine bereits akzeptierte Spec, die tatsächlich implementiert werden soll (dafür der `developer`-Agent).
 ---
 
 # Spec Writer — von der geschärften Story zur akzeptierten technischen Spec
@@ -9,15 +9,15 @@ description: Setzt eine bereits fachlich geschärfte Story (Status `Ready` auf d
 
 ## Schritt 0: Vorbedingung prüfen — ist das Issue wirklich eine Story?
 
-Bevor irgendetwas passiert, den aktuellen Status des referenzierten Issues per `scripts/github-project-sync` lesen:
+Bevor irgendetwas passiert, den aktuellen Status des referenzierten Issues per `scripts/gh-board.py` lesen (siehe Skill `github-board`):
 
 ```bash
-PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only issue:<NNN> --show-status
+python3 scripts/gh-board.py show-status --issue <NNN>
 ```
 
-Ein `{"error": "..."}` (z.B. unbekannte Issue-Nummer, fehlender `project`-Scope) unverändert an Daniel weitergeben statt eines eigenen Lösungsversuchs, analog zum `github-project-sync`-Skill.
+Ein `{"error": "..."}` (z.B. unbekannte Issue-Nummer, fehlender `project`-Scope) unverändert an Daniel weitergeben statt eines eigenen Lösungsversuchs, analog zum `github-board`-Skill.
 
-Ist `status` **nicht** `"Ready"` (z.B. noch `Unrefined`, oder bereits `Todo`/`In Progress`/`Review`/`Done`, weil die Story schon einmal adoptiert wurde): **abbrechen** und Daniel klar mitteilen, dass das Issue erst über `refinement` fachlich geschärft werden muss (bzw., bei bereits vorhandenem Spec-Bezug, dass es keine gültige Story mehr ist). Kein eigenmächtiges Weiterarbeiten mit einem unerwarteten Status.
+Ist `status` **nicht** `"Ready"` (z.B. noch `Unrefined`, oder bereits `Todo`/`In Progress`/`Review`/`Done`, weil die Story schon einmal zu einer Spec geworden ist): **abbrechen** und Daniel klar mitteilen, dass das Issue erst über `refinement` fachlich geschärft werden muss (bzw., bei bereits vorhandenem Spec-Bezug, dass es keine gültige Story mehr ist). Kein eigenmächtiges Weiterarbeiten mit einem unerwarteten Status.
 
 Lies danach den vollständigen Issue-Inhalt:
 
@@ -52,14 +52,22 @@ Andernfalls ruf den `ux-ui-designer`-Agenten (Agent-Tool, `subagent_type: ux-ui-
 
 Übernimm, sofern gelaufen, die geschärften Akzeptanzkriterien und eine kurze "Teststrategie"-Notiz von `test-engineer`. Trag im `## Security`-Abschnitt entweder die Einschätzung von `security-engineer` ein oder, falls nicht sicherheitsrelevant, kurz "nicht relevant".
 
-## Schritt 4: Feature-Spec anlegen und das Story-Issue adoptieren
+## Schritt 4: Feature-Spec anlegen und die Board-Spalte setzen
 
-Lege eine neue Datei mit der nächsten freien Nummer in `specs/features/` nach `specs/TEMPLATE.md` an. **Status: Accepted** setzen — das Story-Refinement-Gespräch plus diese technische Konsultation *sind* die Stakeholder-Freigabe, ein separater Freigabeschritt danach wäre doppelte Arbeit.
+Lege eine neue Datei in `specs/features/` nach `specs/TEMPLATE.md` an. **Die Spec-Nummer ist die Nummer des Story-Issues aus Schritt 0, auf vier Stellen aufgefüllt** — die Spec zu Issue #262 heißt also `specs/features/0262-kurzer-titel.md` und trägt die H1-Überschrift `# 0262 - Titel`. Es wird **keine** nächste freie Nummer gesucht; der Sprung gegenüber der zuletzt angelegten Datei ist normal und beabsichtigt. **Status: Accepted** setzen — das Story-Refinement-Gespräch plus diese technische Konsultation *sind* die Stakeholder-Freigabe, ein separater Freigabeschritt danach wäre doppelte Arbeit.
 
 Ziel, User Story und Akzeptanzkriterien aus dem Issue-Body übernehmen (ggf. durch `test-engineer` geschärft). Halte einen Abschnitt "Entscheidungen" mit den in diesem Gespräch geklärten Punkten aktuell, inkl. jeder Skip-Entscheidung aus Schritt 1–3 als eigener Punkt (kein Sammel-Vermerk).
 
 Falls die Story die Architektur oder das Datenmodell spürbar verändert: `docs/architecture.md` entsprechend ergänzen.
 
-**Issue adoptieren statt neues anzulegen:** ruf abschließend den Skill `github-project-sync` mit `--only <NNNN> --adopt-issue <NNN>` auf (`NNNN` = neue Spec-Nummer, `NNN` = die Story-Issue-Nummer aus Schritt 0). Das überführt den bestehenden State-Eintrag in den Feature-Namensraum (kein neues Issue, keine Historie-/Label-Verluste), schreibt erstmals den Marker-Kommentar `<!-- photosort-spec: NNNN -->` plus den vollen Spec-Inhalt in den Issue-Body, und setzt den Spec-Datei-Status auf `Accepted` — das native Board-Feld zeigt dafür seit ADR 0037 die Baseline `Todo` (keine 1:1-Kopie des Datei-Status mehr). Erwartetes Ergebnis ist ein `adopted`-Feld mit `spec_number`/`issue_number` sowie `classification: "pushed"` im zugehörigen `specs`-Eintrag; jedes `{"error": "..."}` unverändert an Daniel weitergeben statt es stillschweigend zu ignorieren.
+**Bestehendes Issue weiterverwenden, kein neues anlegen:** Das Story-Issue aus Schritt 0 *ist* durch die identische Nummer bereits das Issue der Spec — es gibt nichts zu adoptieren und nichts zuzuordnen. Der Issue-Body bleibt unangetastet: Er trägt die Story (Ziel/User Story/Akzeptanzkriterien), der technische Teil der Spec lebt ausschließlich in der Spec-Datei und wird **nicht** in den Issue gespiegelt.
+
+Setz abschließend nur die Board-Spalte auf `Todo` (siehe Skill `github-board`):
+
+```bash
+python3 scripts/gh-board.py set-status --issue <NNN> --status Todo
+```
+
+Erwartetes Ergebnis: `{"issue_number": NNN, "status": "Todo"}`. Ein `{"error": "..."}` unverändert an Daniel weitergeben statt es stillschweigend zu ignorieren.
 
 Fasse am Ende kurz zusammen, was angelegt/geändert wurde, mit Datei-Pfaden.

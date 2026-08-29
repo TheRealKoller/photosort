@@ -64,7 +64,7 @@ wo sie ausgeführt wird:
 
 | Rolle | Agent oder Skill | Ausführungsort | Begründung |
 |---|---|---|---|
-| `spec-writer` | Skill | Hauptsession | koordiniert Konsultationen + legt die Spec-Datei an; Orchestrierung mit GitHub-Zugriff (Issue adoptieren), kein isolierter, langlaufender Arbeitsauftrag. |
+| `spec-writer` | Skill | Hauptsession | koordiniert Konsultationen + legt die Spec-Datei an (unter der Nummer des zugehörigen Issues); Orchestrierung mit GitHub-Zugriff (Board-Status), kein isolierter, langlaufender Arbeitsauftrag. |
 | `architect` / `test-engineer` / `security-engineer` / `ux-ui-designer` / `requirements-engineer` — **Konsultation** in `spec-writer` | Agent | Subagent | echtes fachliches Vorab-Urteil auf einem großen Konzept-Dokument, Kontext-Isolation sinnvoll. |
 | `developer` | Agent | **Subagent** | lange, sehr kontextintensive TDD-Umsetzung (dutzende Dateien, viele Testläufe, viele Rot-Grün-Refactor-Runden) — würde den Hauptkontext sprengen; nie modell-herabgestuft. |
 | Review — Koordination | Skill `review` (Orchestrator) | **Hauptsession** | dünn: Trigger erkennen, Branch/Diff verifizieren, Trigger-Tabelle auswerten, Perspektiven-Skills nacheinander aufrufen, Findings konsolidieren. Eigenständig (auch ad hoc) aufrufbar, hält `ship-feature` schlank. |

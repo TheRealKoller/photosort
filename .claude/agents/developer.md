@@ -26,8 +26,10 @@ Jeder Schritt hier existiert, weil er einen konkreten Fehler verhindert, der bei
 **Hinweis an den Aufrufer (nicht an diesen Agenten selbst):** Dieser Agent hat laut eigener Definition keinen GitHub-Schreibzugriff. Wer ihn per Agent-Tool startet, sollte unmittelbar davor das Board-Statusfeld der Spec auf `In Progress` setzen (ADR [`decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md`](../../specs/decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md), Abschnitt 3):
 
 ```bash
-PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --runtime-status "In Progress"
+python3 scripts/gh-board.py set-status --issue <Issue-Nummer> --status "In Progress"
 ```
+
+Die Issue-Nummer ist bei neuen Specs identisch mit der Spec-Nummer (`specs/features/0262-*.md` gehört zu Issue #262); bei Altspecs `0001`–`0065` steht sie in der `**Bezug:**`-Zeile der Spec-Datei.
 
 Schlägt dieser Aufruf fehl (`{"error": ...}`), ist das **nicht blockierend** — der Agent startet trotzdem, der Fehler wird im späteren Abschlussbericht an Daniel vermerkt.
 

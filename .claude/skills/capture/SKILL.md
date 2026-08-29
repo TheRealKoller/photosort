@@ -27,14 +27,14 @@ Der Rohtext ist bewusst ungefiltert — das spätere Schärfen arbeitet mit dies
 
 ## Schritt 3: Issue anlegen
 
-Rohtext in eine temporäre Datei schreiben (z.B. unter dem Scratchpad-Verzeichnis) und das Python-Package `scripts/github-project-sync` im `--create-issue`-Modus aufrufen:
+Rohtext in eine temporäre Datei schreiben (z.B. unter dem Scratchpad-Verzeichnis) und das Script `scripts/gh-board.py` im `create-issue`-Modus aufrufen (siehe Skill `github-board`):
 
 ```bash
-PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync \
-  --create-issue --type idee|bug --title "<Klartitel>" --body-file <pfad-zur-rohtext-datei>
+python3 scripts/gh-board.py create-issue \
+  --type idee|bug --title "<Klartitel>" --body-file <pfad-zur-rohtext-datei>
 ```
 
-Das legt ein neues GitHub-Issue an (Status `Unrefined`, passendes `idee`/`bug`-Label, dem Project hinzugefügt) und gibt `{"issue_number": NNN}` auf stdout zurück. Enthält die Ausgabe stattdessen `{"error": "..."}`, die Meldung unverändert an Daniel weitergeben (kein eigener Lösungsversuch, analog zum `github-project-sync`-Skill).
+Das legt ein neues GitHub-Issue an (Status `Unrefined`, passendes `idee`/`bug`-Label, dem Project hinzugefügt) und gibt `{"issue_number": NNN}` auf stdout zurück. Enthält die Ausgabe stattdessen `{"error": "..."}`, die Meldung unverändert an Daniel weitergeben (kein eigener Lösungsversuch, analog zum `github-board`-Skill).
 
 ## Schritt 4: Kurz bestätigen
 

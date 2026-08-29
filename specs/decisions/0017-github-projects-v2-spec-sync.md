@@ -1,6 +1,6 @@
 # 0017 - Zwei-Wege-Sync Feature-Specs ↔ GitHub Project (V2)
 
-**Status:** Accepted
+**Status:** Superseded — abgelöst durch ADR [`0043`](./0043-spec-nummer-gleich-issue-nummer-sync-tool-entfaellt.md) (Spec-Nummer = Issue-Nummer, das Sync-Tool entfällt). Die Härtungsregeln aus Abschnitt 5 (kein `shell=True`, Argumente in Listenform, Bodies über temporäre Dateien, validierte Spec-Nummern) gelten unverändert weiter und sind in ADR 0043, Abschnitt 4, übernommen.
 **Datum:** 2026-08-09
 **Bezug:** `idea-sharpener`-Konsultation für die künftige Feature-Spec zu `specs/inbox/0011-zweiwege-sync-specs-github-projekt.md` (Spec-Nummer zum Zeitpunkt dieser ADR noch nicht vergeben).
 

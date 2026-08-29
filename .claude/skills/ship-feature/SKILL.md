@@ -68,8 +68,10 @@ Nach Bestätigung geht es weiter zu Schritt 6 (PR-Erstellung) bzw., falls die Fi
 4. Setz direkt danach das Board-Statusfeld der Spec auf `Review` (ADR [`decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md`](../../../specs/decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md), Abschnitt 4):
 
    ```bash
-   PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --runtime-status "Review" --pr-number <PR-Nummer>
+   python3 scripts/gh-board.py set-status --issue <Issue-Nummer> --status Review
    ```
+
+   Die Issue-Nummer ist bei neuen Specs identisch mit der Spec-Nummer (`specs/features/0262-*.md` gehört zu Issue #262); bei Altspecs `0001`–`0065` steht sie in der `**Bezug:**`-Zeile der Spec-Datei.
 
    Ein früherer, verfrühter `Implemented`-Bump des Spec-Status direkt nach der PR-Erstellung entfällt ersatzlos (ADR 0037, Abschnitt 4) — die eigentliche Finalisierung (Spec-Datei-Status auf `Implemented`) passiert erst in Schritt 8, nach Review und Copilot-Auswertung, aber noch **vor** dem Merge im selben PR.
 
@@ -93,20 +95,20 @@ Regelweg: Der Spec-Status wird **im Feature-PR selbst** auf `Implemented` gesetz
 1. Finalisieren (`NNNN` = Spec-Nummer, `<PR-Nummer>` = der PR aus Schritt 6):
 
    ```bash
-   PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --finalize --pr-number <PR-Nummer>
+   python3 scripts/gh-board.py finalize --spec NNNN --pr-number <PR-Nummer>
    ```
 
-   Erwartete Ausgabe: `{"spec_number": ..., "pr_number": ..., "status_line": "Implemented ([PR #NNN](...))", "issue_number": ..., "classification": ...}`. Der Aufruf schreibt die `**Status:**`-Zeile der Spec-Datei um, aktualisiert `specs/.github-sync-state.json` und pusht den Endzustand (Board `Done`, Issue geschlossen).
+   Erwartete Ausgabe: `{"spec_number": ..., "issue_number": ..., "pr_number": ..., "status_line": "Implemented ([PR #NNN](...))", "status": "Done"}`. Der Aufruf schreibt die `**Status:**`-Zeile der Spec-Datei um und setzt danach den Endzustand auf dem Board (Spalte `Done`, Issue geschlossen). Bei einer Altspec `0001`–`0065` zusätzlich `--issue <Issue-Nummer>` angeben.
 
 2. Ein `{"error": "..."}` **nicht** ignorieren und **nicht** umgehen (z.B. durch manuelles Editieren der Status-Zeile): Meldung unverändert an Daniel weitergeben, mit `git status` prüfen, ob die Spec-Datei bereits umgeschrieben wurde, und in dem Fall die Änderung verwerfen (`git checkout -- specs/features/NNNN-*.md`), bevor der PR weiterläuft. Der Aufruf ist wiederholbar, solange der Datei-Status noch `Accepted` ist. Bricht er mit "Zustand 'closed'" ab, ist der PR ohne Merge geschlossen worden — dann wird gar nicht finalisiert.
 
-3. Die beiden geänderten Dateien (`specs/features/NNNN-*.md`, `specs/.github-sync-state.json`) committen, Konvention: `chore(specs): Spec NNNN finalisieren (PR #<PR-Nummer>)`, und zusammen mit ggf. noch offenen Fix-Commits pushen.
+3. Die geänderte Spec-Datei (`specs/features/NNNN-*.md`) committen, Konvention: `chore(specs): Spec NNNN finalisieren (PR #<PR-Nummer>)`, und zusammen mit ggf. noch offenen Fix-Commits pushen.
 
 4. Danach übernimmt Daniel: Freigabe und Merge. **Kein** automatisches Mergen durch dich.
 
-**Wird der PR wider Erwarten nicht gemergt** (Branch verworfen): Board-Spalte und Issue-Zustand stehen dann kurzzeitig auf `Done`/geschlossen, obwohl `main` die Spec weiter als `Accepted` führt. Das ist kein Datenverlust — ein voller `github-project-sync`-Lauf (oder `--only NNNN`) berechnet beides aus der Datei auf `main` neu und stellt es wieder her. Diesen Lauf in dem Fall gezielt anstoßen und Daniel darauf hinweisen.
+**Wird der PR wider Erwarten nicht gemergt** (Branch verworfen): Board-Spalte und Issue-Zustand stehen dann auf `Done`/geschlossen, obwohl `main` die Spec weiter als `Accepted` führt. Es gibt keinen Lauf mehr, der das automatisch aus der Datei zurückrechnet — den Board-Wert in dem Fall gezielt zurücksetzen (`set-status --issue <NNN> --status Todo`), das Issue auf GitHub wieder öffnen und Daniel darauf hinweisen.
 
-**Ausnahmefall (nicht Regelweg):** Wurde ein PR ohne diesen Schritt gemergt (Merge außerhalb des üblichen Ablaufs, abgebrochene Session), greift weiterhin die automatische PR-Merge-Erkennung beim nächsten regulären Sync-Lauf (`finalized_from_pr`, siehe `.claude/skills/github-project-sync/SKILL.md`) — die dabei entstehende lokale Änderung braucht dann doch ein kleines Folge-PR. Genau das soll dieser Schritt vermeiden.
+**Ausnahmefall (nicht Regelweg):** Wurde ein PR ohne diesen Schritt gemergt (Merge außerhalb des üblichen Ablaufs, abgebrochene Session), finalisiert derselbe Aufruf **ohne** `--pr-number` nachträglich — er sucht dann den gemergten, das Issue schließenden PR selbst (siehe `.claude/skills/github-board/SKILL.md`). Die dabei entstehende lokale Änderung braucht dann doch ein kleines Folge-PR. Genau das soll dieser Schritt vermeiden.
 
 ## Recovery: `SendMessage` schlägt fehl
 
