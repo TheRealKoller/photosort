@@ -8,11 +8,13 @@ import pytest
 from github_project_sync.gh_adapter import GhAuthScopeError, ProjectFields
 from github_project_sync.hashing import push_state_hash, text_hash
 from github_project_sync.issue_body import build_issue_body
+from github_project_sync.spec_parser import SpecParseError
 from github_project_sync.state import load_state
 from github_project_sync.sync import (
     OrphanCleanup,
     SyncError,
     create_story_issue,
+    finalize_feature_spec,
     run_sync,
     set_feature_runtime_status,
     show_story_status,
@@ -1372,3 +1374,211 @@ def test_set_feature_runtime_status_in_progress_rejects_pr_number(tmp_path: Path
 
     state = load_state(repo_root / "specs" / ".github-sync-state.json")
     assert state.features["0031"].runtime_status is None
+
+
+# -- Pre-Merge-Finalisierung (Spec 0066 / ADR 0042) --------------------------------------------
+
+
+def _finalize_repo(tmp_path: Path, *, file_status: str = "Accepted", pr_number: int | None = 101):
+    """Repo + Fake mit einer getrackten Spec 0031 im typischen Zustand kurz vor dem Merge."""
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status=file_status, content_zone=content_zone)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash)
+    if pr_number is not None:
+        entry["runtime_status"] = "Review"
+        entry["pr_number"] = pr_number
+
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", file_status, ziel="Text.")},
+        state={"0031": entry},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+    gh.items["ITEM_1"] = {}
+    return repo_root, gh
+
+
+def test_finalize_writes_implemented_status_line_and_pushes_done_while_pr_is_open(
+    tmp_path: Path,
+) -> None:
+    # Regelweg (ADR 0042, Abschnitt 1/3): finalisiert wird VOR dem Merge, der PR ist also noch
+    # offen - die Statuszeile landet dadurch im Feature-PR selbst statt in einem Nachzieh-PR.
+    repo_root, gh = _finalize_repo(tmp_path)
+    gh.seed_pull_request(
+        101, state="open", url="https://github.com/TheRealKoller/photosort/pull/101"
+    )
+
+    result = finalize_feature_spec(
+        repo_root=repo_root, gh=gh, spec_number="0031", pr_number=101, now=lambda: _FIXED_NOW
+    )
+
+    expected_status_line = (
+        "Implemented ([PR #101](https://github.com/TheRealKoller/photosort/pull/101))"
+    )
+    assert result["spec_number"] == "0031"
+    assert result["pr_number"] == 101
+    assert result["status_line"] == expected_status_line
+    assert result["issue_number"] == 42
+    assert result["classification"] == "pushed"
+
+    spec_text = (repo_root / "specs" / "features" / "0031-x.md").read_text(encoding="utf-8")
+    assert f"**Status:** {expected_status_line}" in spec_text
+    assert "## Ziel" in spec_text  # Inhalts-Zone unangetastet
+
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Done"
+    assert gh.issue(42).state == "closed"
+
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.features["0031"].runtime_status is None
+    assert state.features["0031"].pr_number is None
+    assert state.features["0031"].pushed_state_hash == push_state_hash(
+        status="Implemented", content_zone="## Ziel\n\nText.\n"
+    )
+
+
+def test_finalize_leaves_no_local_change_for_the_next_sync_run(tmp_path: Path) -> None:
+    # Akzeptanzkriterium 5 der Spec 0066: nach dem Merge darf ein regulaerer Folgelauf keine
+    # erneut zu committende Aenderung mehr erzeugen - sonst waere das Nachzieh-PR nur verschoben.
+    repo_root, gh = _finalize_repo(tmp_path)
+    gh.seed_pull_request(101, state="open")
+
+    finalize_feature_spec(
+        repo_root=repo_root, gh=gh, spec_number="0031", pr_number=101, now=lambda: _FIXED_NOW
+    )
+    spec_path = repo_root / "specs" / "features" / "0031-x.md"
+    spec_text_after_finalize = spec_path.read_text(encoding="utf-8")
+
+    gh.seed_pull_request(101, state="merged")
+    follow_up = run_sync(repo_root=repo_root, gh=gh, only="0031", now=lambda: _FIXED_NOW)
+
+    assert follow_up.specs[0].classification == "unchanged"
+    assert follow_up.specs[0].finalized_from_pr is None
+    assert spec_path.read_text(encoding="utf-8") == spec_text_after_finalize
+
+
+def test_finalize_accepts_an_already_merged_pr(tmp_path: Path) -> None:
+    # Ausnahme-/Wiederholungsfall: der Merge ist bereits passiert (z.B. Session abgebrochen),
+    # die Finalisierung wird nachgezogen - identisches Ergebnis wie im Regelweg.
+    repo_root, gh = _finalize_repo(tmp_path)
+    gh.seed_pull_request(101, state="merged")
+
+    result = finalize_feature_spec(
+        repo_root=repo_root, gh=gh, spec_number="0031", pr_number=101, now=lambda: _FIXED_NOW
+    )
+
+    assert result["pr_number"] == 101
+    spec_text = (repo_root / "specs" / "features" / "0031-x.md").read_text(encoding="utf-8")
+    assert "**Status:** Implemented ([PR #101]" in spec_text
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Done"
+
+
+def test_finalize_refuses_a_closed_unmerged_pr(tmp_path: Path) -> None:
+    # Akzeptanzkriterium 4 der Spec 0066: ein ohne Merge geschlossener PR darf nie zu
+    # "Implemented" fuehren.
+    repo_root, gh = _finalize_repo(tmp_path)
+    gh.seed_pull_request(101, state="closed")
+
+    with pytest.raises(SyncError, match="closed"):
+        finalize_feature_spec(repo_root=repo_root, gh=gh, spec_number="0031", pr_number=101)
+
+    spec_text = (repo_root / "specs" / "features" / "0031-x.md").read_text(encoding="utf-8")
+    assert "**Status:** Accepted" in spec_text
+    state = load_state(repo_root / "specs" / ".github-sync-state.json")
+    assert state.features["0031"].runtime_status == "Review"
+
+
+def test_finalize_refuses_when_file_status_is_not_accepted(tmp_path: Path) -> None:
+    repo_root, gh = _finalize_repo(tmp_path, file_status="Implemented", pr_number=None)
+    gh.seed_pull_request(101, state="open")
+
+    with pytest.raises(SyncError, match="Implemented"):
+        finalize_feature_spec(repo_root=repo_root, gh=gh, spec_number="0031", pr_number=101)
+
+
+def test_finalize_refuses_when_stored_pr_number_differs(tmp_path: Path) -> None:
+    # Verwechslungsschutz (ADR 0042, Abschnitt 2, Punkt 3): der State kennt einen anderen PR.
+    repo_root, gh = _finalize_repo(tmp_path, pr_number=99)
+    gh.seed_pull_request(101, state="open")
+
+    with pytest.raises(SyncError, match="99"):
+        finalize_feature_spec(repo_root=repo_root, gh=gh, spec_number="0031", pr_number=101)
+
+    spec_text = (repo_root / "specs" / "features" / "0031-x.md").read_text(encoding="utf-8")
+    assert "**Status:** Accepted" in spec_text
+
+
+def test_finalize_works_without_a_stored_pr_number(tmp_path: Path) -> None:
+    # Kein vorheriger "--runtime-status Review"-Lauf (z.B. weil er fehlgeschlagen ist, ADR 0037
+    # Abschnitt 3: nicht blockierend) - die Finalisierung selbst muss trotzdem funktionieren.
+    repo_root, gh = _finalize_repo(tmp_path, pr_number=None)
+    gh.seed_pull_request(101, state="open")
+
+    result = finalize_feature_spec(
+        repo_root=repo_root, gh=gh, spec_number="0031", pr_number=101, now=lambda: _FIXED_NOW
+    )
+
+    assert result["pr_number"] == 101
+    assert gh.items["ITEM_1"]["F_STATUS"] == "S_Done"
+
+
+def test_finalize_raises_when_no_state_entry_exists(tmp_path: Path) -> None:
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0031", "Sync-Feature", "Accepted", ziel="Text.")},
+        state={},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_pull_request(101, state="open")
+
+    with pytest.raises(SyncError, match="State-Eintrag"):
+        finalize_feature_spec(repo_root=repo_root, gh=gh, spec_number="0031", pr_number=101)
+
+
+def test_finalize_raises_for_unknown_spec_number(tmp_path: Path) -> None:
+    repo_root, gh = _finalize_repo(tmp_path)
+
+    with pytest.raises(SyncError, match="0099"):
+        finalize_feature_spec(repo_root=repo_root, gh=gh, spec_number="0099", pr_number=101)
+
+
+def test_finalize_rejects_an_invalid_spec_number(tmp_path: Path) -> None:
+    repo_root, gh = _finalize_repo(tmp_path)
+
+    with pytest.raises(ValueError, match="Spec-Nummer"):
+        finalize_feature_spec(repo_root=repo_root, gh=gh, spec_number="../etc", pr_number=101)
+
+
+def test_finalize_never_writes_priority(tmp_path: Path) -> None:
+    repo_root, gh = _finalize_repo(tmp_path)
+    gh.items["ITEM_1"] = {"F_PRIO": "P_Hoch"}
+    gh.seed_pull_request(101, state="open")
+
+    finalize_feature_spec(
+        repo_root=repo_root, gh=gh, spec_number="0031", pr_number=101, now=lambda: _FIXED_NOW
+    )
+
+    assert gh.items["ITEM_1"]["F_PRIO"] == "P_Hoch"
+    _assert_priority_field_untouched(gh)
+
+
+def test_finalize_refuses_when_filename_number_and_heading_disagree(tmp_path: Path) -> None:
+    # _find_spec_path() geht ueber den Dateinamen, run_sync() ueber die H1-Nummer - weichen sie
+    # ab, darf keine Datei umgeschrieben werden (parse_spec_file() faengt das bereits ab).
+    content_zone = "## Ziel\n\nText.\n"
+    push_hash = push_state_hash(status="Accepted", content_zone=content_zone)
+    entry = _existing_state_entry(issue_number=42, push_hash=push_hash)
+    repo_root = _make_repo(
+        tmp_path,
+        specs={"0031": _spec_text("0032", "Falsche Nummer", "Accepted", ziel="Text.")},
+        state={"0031": entry},
+    )
+    gh = FakeGhAdapter()
+    gh.seed_issue(42, body=build_issue_body("0031", content_zone))
+    gh.seed_pull_request(101, state="open")
+
+    with pytest.raises(SpecParseError, match="0032"):
+        finalize_feature_spec(repo_root=repo_root, gh=gh, spec_number="0031", pr_number=101)
+
+    spec_text = (repo_root / "specs" / "features" / "0031-x.md").read_text(encoding="utf-8")
+    assert "**Status:** Accepted" in spec_text

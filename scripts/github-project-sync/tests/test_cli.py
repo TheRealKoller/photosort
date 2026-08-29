@@ -490,3 +490,184 @@ def test_main_run_sync_output_includes_finalized_from_pr_key(
     assert exit_code == 0
     output = json.loads(capsys.readouterr().out)
     assert output["specs"][0]["finalized_from_pr"] is None
+
+
+# -- --finalize (Spec 0066 / ADR 0042) ---------------------------------------------------------
+
+
+def test_main_finalize_writes_implemented_status_and_prints_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+    _sync_once(repo_root, fake)
+    fake.seed_pull_request(
+        101, state="open", url="https://github.com/TheRealKoller/photosort/pull/101"
+    )
+    capsys.readouterr()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--only", "0031", "--finalize", "--pr-number", "101"],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["spec_number"] == "0031"
+    assert output["pr_number"] == 101
+    assert output["status_line"] == (
+        "Implemented ([PR #101](https://github.com/TheRealKoller/photosort/pull/101))"
+    )
+    spec_text = (repo_root / "specs" / "features" / "0031-x.md").read_text(encoding="utf-8")
+    assert "**Status:** Implemented ([PR #101]" in spec_text
+
+
+def test_main_finalize_requires_pr_number(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--only", "0031", "--finalize"],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    assert "error" in json.loads(capsys.readouterr().out)
+
+
+def test_main_finalize_requires_bare_feature_scope(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root, fake = _make_repo_with_story(tmp_path)
+    capsys.readouterr()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--only", "issue:1", "--finalize", "--pr-number", "101"],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    assert "error" in json.loads(capsys.readouterr().out)
+
+
+def test_main_finalize_requires_only_flag(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--finalize", "--pr-number", "101"],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    assert "error" in json.loads(capsys.readouterr().out)
+
+
+def test_main_finalize_conflicts_with_runtime_status(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(repo_root),
+            "--only",
+            "0031",
+            "--finalize",
+            "--pr-number",
+            "101",
+            "--runtime-status",
+            "Review",
+        ],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    assert "error" in json.loads(capsys.readouterr().out)
+
+
+def test_main_finalize_conflicts_with_adopt_issue(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(repo_root),
+            "--only",
+            "0031",
+            "--finalize",
+            "--pr-number",
+            "101",
+            "--adopt-issue",
+            "7",
+        ],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    assert "error" in json.loads(capsys.readouterr().out)
+
+
+def test_main_finalize_reports_closed_pr_as_json_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+    _sync_once(repo_root, fake)
+    fake.seed_pull_request(101, state="closed")
+    capsys.readouterr()
+
+    exit_code = main(
+        ["--repo-root", str(repo_root), "--only", "0031", "--finalize", "--pr-number", "101"],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    assert "error" in json.loads(capsys.readouterr().out)
+    spec_text = (repo_root / "specs" / "features" / "0031-x.md").read_text(encoding="utf-8")
+    assert "**Status:** Accepted" in spec_text
+
+
+def test_main_finalize_conflicts_with_create_issue(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # --create-issue wird sonst zuerst ausgewertet - die Kombination muss praezise abgewiesen
+    # werden, statt still den anderen Modus auszufuehren.
+    repo_root = _make_repo(tmp_path)
+    fake = FakeGhAdapter()
+    body_file = tmp_path / "body.md"
+    body_file.write_text("Rohtext.\n", encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(repo_root),
+            "--only",
+            "0031",
+            "--finalize",
+            "--pr-number",
+            "101",
+            "--create-issue",
+            "--type",
+            "idee",
+            "--title",
+            "T",
+            "--body-file",
+            str(body_file),
+        ],
+        gh_factory=lambda owner: fake,
+    )
+
+    assert exit_code != 0
+    assert "error" in json.loads(capsys.readouterr().out)
+    with pytest.raises(KeyError):  # kein Story-Issue angelegt
+        fake.issue(1)

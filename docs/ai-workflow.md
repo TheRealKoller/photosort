@@ -17,7 +17,8 @@ Agenten-/Skill-Definition) im Repository nachlesbar.
 Keine fachliche oder architekturrelevante Änderung entsteht direkt im Code. Stattdessen wird
 zuerst eine Spezifikation unter [`specs/features/`](../specs/features) angelegt, die einen
 Lifecycle durchläuft: `Proposed` (Erstentwurf) → `Accepted` (von Daniel freigegeben) →
-`Implemented` (umgesetzt, mit Verweis auf den Pull Request). Architekturrelevante
+`Implemented` (umgesetzt, mit Verweis auf den Pull Request — gesetzt im Feature-PR selbst,
+kurz vor dem Merge, siehe Schritt 7b). Architekturrelevante
 Entscheidungen (neue Technologie, Datenmodell-Grundstruktur, externe Abhängigkeiten) werden
 zusätzlich als Architecture Decision Record (ADR) unter [`specs/decisions/`](../specs/decisions)
 festgehalten, bevor sie umgesetzt werden.
@@ -42,7 +43,8 @@ kontext-getrennter Lauf, gestartet über das `Agent`-Tool) oder läuft in der Ha
 | 5b | Findings beheben | Review-Findings vorhanden | Agent `developer` (Folgeauftrag per `SendMessage`) | **Subagent** (derselbe, offen gehaltene Lauf) | Standard | nur wenn Muss-Fix-Findings vorliegen |
 | 6 | PR erstellen + Board-Status `Review` | Review abgeschlossen / Findings behoben | Skill `ship-feature` | Hauptsession (GitHub-Zugriff) | — | immer |
 | 7 | Copilot-Review | direkt nach `gh pr create` | Skill `ship-feature` | Hauptsession | — | nur wenn der Diff mindestens eine Code-Datei enthält |
-| 8 | Freigabe + Merge | Copilot ausgewertet, CI grün | Daniel gibt frei, Hauptsession merged | Hauptsession | — | Daniels Freigabe ist Pflicht-Gate |
+| 7b | Spec finalisieren (im selben PR) | Review + Copilot ausgewertet, Findings behoben | Skill `ship-feature` (Schritt 8: `--finalize --pr-number`) | Hauptsession (GitHub-Zugriff) | — | immer; gebündelt mit dem letzten Push, damit kein Nachzieh-PR entsteht |
+| 8 | Freigabe + Merge | Copilot ausgewertet, Spec finalisiert, CI grün | Daniel gibt frei, Hauptsession merged | Hauptsession | — | Daniels Freigabe ist Pflicht-Gate |
 
 Zwischenschritt „Architektur-Konsultation nötig" (`developer` kommt mit dem Spec-Abschnitt
 „Architektur / Umsetzung" nicht aus): seltener Sonderpfad — `developer` beendet den Turn mit
