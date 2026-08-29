@@ -23,7 +23,11 @@ Proposed → Accepted → Implemented → (ggf.) Superseded
 
 ## Namenskonvention
 
-Fortlaufend nummeriert pro Verzeichnis: `NNNN-kurzer-titel.md` (z.B. `0001-opencloud-project-connection.md`).
+`NNNN-kurzer-titel.md` (z.B. `0262-github-project-sync-tool-entfernen.md`), wobei `NNNN` je nach Verzeichnis unterschiedlich vergeben wird:
+
+- **`features/`**: Die Nummer einer neuen Feature-Spec ist die Nummer ihres GitHub-Issues, auf vier Stellen aufgefüllt (die Spec zu Issue #262 heißt `0262-...`). Dadurch braucht es keine Zuordnung zwischen Spec- und Issue-Nummer — beide sind identisch (ADR [`decisions/0043-spec-nummer-gleich-issue-nummer-sync-tool-entfaellt.md`](./decisions/0043-spec-nummer-gleich-issue-nummer-sync-tool-entfaellt.md)). Die Dateiliste ist damit bewusst nicht mehr lückenlos fortlaufend; die Reihenfolge der Arbeit lebt im GitHub-Project-Board, nicht in der Nummer.
+- **Bestandsschutz:** Die Specs `0001`–`0065` stammen aus der früheren, eigenständig fortlaufenden Nummerierung und behalten ihre Nummer. Bei ihnen weicht die Issue-Nummer ab; sie steht in der `**Bezug:**`-Zeile der jeweiligen Datei.
+- **`decisions/` und `architecture/`**: unverändert fortlaufend nummeriert pro Verzeichnis (sie haben kein zugehöriges Issue).
 
 ## Regeln für die KI
 

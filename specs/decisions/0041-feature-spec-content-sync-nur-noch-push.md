@@ -1,6 +1,6 @@
 # 0041 - Bidirektionaler Content-Sync für Feature-Specs entfällt, Issue-Body bleibt reiner Push-Spiegel
 
-**Status:** Accepted
+**Status:** Superseded — abgelöst durch ADR [`0043`](./0043-spec-nummer-gleich-issue-nummer-sync-tool-entfaellt.md): Der Content-Push in den Issue-Body entfällt ebenfalls, der Issue-Body trägt nur noch die Story.
 **Datum:** 2026-08-28
 **Bezug:** GitHub-Issue [`#240`](https://github.com/TheRealKoller/photosort/issues/240) (führt die separat erfasste Idee [`#219`](https://github.com/TheRealKoller/photosort/issues/219)/`specs/inbox/0042-adr-0017-content-sync-vereinfachen.md` zusammen — `#219` wurde als Duplikat geschlossen, die Inbox-Datei wird mit Umsetzung dieser ADR gelöscht), `architect`-Konsultation im `spec-writer`-Ablauf für die daraus hervorgehende Feature-Spec. Löst ADR [`decisions/0017-github-projects-v2-spec-sync.md`](./0017-github-projects-v2-spec-sync.md) Abschnitt 4 (Pull-Teil) und Abschnitt 6 (Hash-Konfliktmechanismus) ab — siehe Abschnitt "Abgelöste Vorentscheidungen". Ergänzt die bereits laufende iterative Vereinfachung aus ADR [`0036`](./0036-github-issue-natives-story-refinement-inbox-entfaellt.md)/[`0037`](./0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md)/[`0039`](./0039-prioritaet-nativ-im-board-roadmap-entfaellt.md).
 
