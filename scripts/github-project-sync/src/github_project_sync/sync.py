@@ -728,12 +728,13 @@ def finalize_feature_spec(
         )
 
     status_line = f"Implemented ([PR #{pr_number}]({pull_request.url}))"
-    # Bewusste Reihenfolge: erst die Datei umschreiben, dann regulaer pushen. Scheitert der Push
-    # danach (gh-Fehler, Board-Feld kaputt), bleibt die umgeschriebene Datei als sichtbare
-    # Arbeitskopie-Aenderung stehen - der Aufrufer sieht den Fehler im Ergebnis-JSON und
-    # entscheidet, ob er sie verwirft oder den Lauf wiederholt (der Aufruf ist idempotent, solange
-    # der Datei-Status noch "Accepted" ist; danach meldet er genau das). Umgekehrt (erst pushen,
-    # dann schreiben) waere der Board-Zustand nicht mehr reproduzierbar aus der Datei ableitbar.
+    # Bewusste Reihenfolge: erst die Datei umschreiben, dann regulaer pushen. Umgekehrt (erst
+    # pushen, dann schreiben) waere der Board-Zustand nicht mehr reproduzierbar aus der Datei
+    # ableitbar. Scheitert der Push danach (gh-Fehler, Board-Feld kaputt), bleibt die
+    # umgeschriebene Datei als sichtbare Arbeitskopie-Aenderung stehen - der Aufruf ist dann NICHT
+    # ohne Weiteres wiederholbar: die Statuspruefung oben verlangt "Accepted", die Datei steht aber
+    # bereits auf "Implemented". Ein erneuter Versuch braucht deshalb zwingend erst den Revert der
+    # Datei (git checkout -- specs/features/NNNN-*.md), siehe .claude/skills/ship-feature/SKILL.md.
     spec_path.write_text(set_status_line(parsed.full_text, status_line), encoding="utf-8")
 
     run_result = run_sync(repo_root=repo_root, gh=gh, only=spec_number, now=now)
