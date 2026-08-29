@@ -78,10 +78,20 @@ def validate_spec_number(value: str) -> str:
 
 
 def find_spec_path(repo_root: Path, spec_number: str) -> Path:
+    """Genau ein Treffer, sonst Abbruch. Bei mehreren Dateien mit derselben Nummer stillschweigend
+    die erste zu waehlen wuerde beim Finalisieren die falsche Spec-Datei umschreiben, ohne dass der
+    Fehler sichtbar wird (Copilot-Review-Finding auf PR #267)."""
     features_dir = repo_root / "specs" / "features"
-    for candidate in sorted(features_dir.glob(f"{validate_spec_number(spec_number)}-*.md")):
-        return candidate
-    raise BoardError(f"Spec {spec_number} nicht unter {features_dir} gefunden.")
+    candidates = sorted(features_dir.glob(f"{validate_spec_number(spec_number)}-*.md"))
+    if not candidates:
+        raise BoardError(f"Spec {spec_number} nicht unter {features_dir} gefunden.")
+    if len(candidates) > 1:
+        raise BoardError(
+            f"Spec-Nummer {spec_number} ist mehrdeutig - {len(candidates)} Dateien unter "
+            f"{features_dir}: {', '.join(path.name for path in candidates)}. Die doppelte "
+            "Nummer erst aufloesen, bevor eine dieser Dateien geschrieben wird."
+        )
+    return candidates[0]
 
 
 def _split_header(text: str) -> tuple[str, str]:

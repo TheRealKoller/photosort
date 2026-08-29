@@ -668,6 +668,33 @@ def test_finalize_ohne_verknuepften_pr_ist_ein_klarer_fehler(
     assert "262" in str(excinfo.value)
 
 
+def test_mehrdeutige_spec_nummer_bricht_ab_statt_still_die_erste_datei_zu_waehlen(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Zwei Dateien mit derselben Nummer duerfen nie stillschweigend aufgeloest werden -
+    `finalize` wuerde sonst die falsche Spec-Datei umschreiben (Copilot-Review-Finding auf
+    PR #267)."""
+    first = _write_spec(tmp_path, "0262")
+    second = tmp_path / "specs" / "features" / "0262-zweite-datei.md"
+    second.write_text(first.read_text(encoding="utf-8"), encoding="utf-8")
+    fake = FakeGh(pull_requests={281: {"state": "OPEN", "url": _pr_url(281)}})
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        gh_board.cmd_finalize(
+            _board(gh_board, fake),
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    message = str(excinfo.value)
+    assert "0262-beispiel.md" in message
+    assert "0262-zweite-datei.md" in message
+    assert "**Status:** Accepted" in first.read_text(encoding="utf-8")
+    assert "**Status:** Accepted" in second.read_text(encoding="utf-8")
+
+
 def test_finalize_findet_die_spec_ueber_die_nummer_nicht_ueber_den_titel(
     gh_board: ModuleType, tmp_path: Path
 ) -> None:
