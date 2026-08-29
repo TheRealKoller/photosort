@@ -1,6 +1,6 @@
 # 0066 - Pre-Merge-Finalisierung: Spec-Status im Feature-PR statt im Nachzieh-PR
 
-**Status:** Accepted
+**Status:** Implemented ([PR #265](https://github.com/TheRealKoller/photosort/pull/265))
 **Erstellt:** 2026-08-29
 **Bezug:** [GitHub-Issue #248](https://github.com/TheRealKoller/photosort/issues/248), [`decisions/0042-pre-merge-finalisierung-statt-nachzieh-pr.md`](../decisions/0042-pre-merge-finalisierung-statt-nachzieh-pr.md) (neue ADR dieser Spec), [`decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md`](../decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md) (Abschnitt 5 — die dort eingeführte PR-Merge-Erkennung bleibt bestehen, wird aber vom Regel- zum Ausnahmepfad)
 
