@@ -23,6 +23,7 @@ from github_project_sync.sync import (
     SyncError,
     SyncRunResult,
     create_story_issue,
+    finalize_feature_spec,
     run_sync,
     set_feature_runtime_status,
     show_story_status,
@@ -167,7 +168,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         metavar="NNN",
-        help="Pull-Request-Nummer, nur zusammen mit --runtime-status 'Review'.",
+        help="Pull-Request-Nummer, nur zusammen mit --runtime-status 'Review' oder --finalize.",
+    )
+    parser.add_argument(
+        "--finalize",
+        action="store_true",
+        help=(
+            "Pre-Merge-Finalisierung (Spec 0066 / ADR 0042): setzt den Datei-Status der Spec auf "
+            "'Implemented ([PR #NNN](url))' und pusht den Endzustand (Board 'Done', Issue zu). "
+            "Erfordert --only NNNN (bare Feature-Scope) und --pr-number."
+        ),
     )
     parser.add_argument(
         "--owner",
@@ -243,6 +253,35 @@ def main(argv: Sequence[str] | None = None, *, gh_factory: GhFactory = _default_
         repo_root = args.repo_root or _discover_repo_root(Path.cwd())
         gh = gh_factory(args.owner)
 
+        # Vor jedem anderen Modus, damit eine Kombination wie "--create-issue --finalize" hier
+        # praezise abgewiesen wird, statt still in den anderen Zweig zu laufen.
+        if args.finalize:
+            if args.runtime_status is not None:
+                raise SyncError(
+                    "--finalize und --runtime-status schliessen sich aus: die Finalisierung "
+                    "setzt den Datei-Status auf 'Implemented' und leert den Laufzeit-Override."
+                )
+            if args.adopt_issue is not None or args.create_issue or args.show_status:
+                raise SyncError(
+                    "--finalize vertraegt sich nicht mit --adopt-issue/--create-issue/"
+                    "--show-status."
+                )
+            if args.only is None or args.only.startswith(_ISSUE_ONLY_PREFIX):
+                raise SyncError(
+                    "--finalize erfordert --only NNNN (bare Feature-Scope, kein "
+                    "issue:NNN-Story-Scope)."
+                )
+            if args.pr_number is None:
+                raise SyncError("--finalize erfordert zusaetzlich --pr-number.")
+            finalize_result = finalize_feature_spec(
+                repo_root=repo_root,
+                gh=gh,
+                spec_number=args.only,
+                pr_number=args.pr_number,
+            )
+            print(json.dumps(finalize_result, ensure_ascii=False))
+            return 0
+
         if args.create_issue:
             if not args.type or not args.title or not args.body_file:
                 raise SyncError("--create-issue erfordert --type, --title und --body-file.")
@@ -273,7 +312,7 @@ def main(argv: Sequence[str] | None = None, *, gh_factory: GhFactory = _default_
             return 0
 
         if args.pr_number is not None:
-            raise SyncError("--pr-number erfordert --runtime-status 'Review'.")
+            raise SyncError("--pr-number erfordert --runtime-status 'Review' oder --finalize.")
 
         if args.only is not None and args.only.startswith(_ISSUE_ONLY_PREFIX):
             issue_number = _parse_issue_only(args.only)

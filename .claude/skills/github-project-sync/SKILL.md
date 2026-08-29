@@ -34,6 +34,16 @@ PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only
 
 `--runtime-status` erfordert `--only NNNN` (bare Feature-Scope, kein `issue:NNN`); `Review` erfordert zusätzlich `--pr-number`. Gibt `{"spec_number": NNNN, "runtime_status": ..., "pr_number": ...}` zurück (kein voller Content-Abgleich, nur das Status-Feld). Ein `{"error": "..."}` unverändert weitergeben.
 
+### Pre-Merge-Finalisierung — `--finalize`
+
+```bash
+PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --finalize --pr-number <PR-Nummer>
+```
+
+Setzt den Datei-Status der Spec auf `Implemented ([PR #NNN](url))` und pusht anschließend den regulären Endzustand (Board `Done`, Issue geschlossen, State-Eintrag aktualisiert, Laufzeit-Override geleert). Gibt `{"spec_number", "pr_number", "status_line", "issue_number", "classification"}` zurück.
+
+Aufgerufen wird das **nicht** von Daniel direkt, sondern von `ship-feature` (Schritt 8) am Ende des Feature-PRs, bevor gemergt wird — dadurch ist die Statuszeile Teil des Feature-PRs statt eines separaten Nachzieh-PRs. Bedingungen: Datei-Status muss `Accepted` sein, es muss einen Feature-State-Eintrag geben, der PR muss `open` (Regelfall) oder `merged` (Nachzug) sein — ein ohne Merge geschlossener PR wird abgelehnt. Ein `{"error": "..."}` unverändert weitergeben und die ggf. bereits umgeschriebene Spec-Datei verwerfen, statt sie von Hand nachzuziehen (siehe `.claude/skills/ship-feature/SKILL.md`, Schritt 8).
+
 ### Fehler zuerst behandeln
 
 Enthält die Ausgabe `"error"`:
@@ -50,9 +60,11 @@ Für jeden Eintrag in `specs` (Feld `classification`):
 
 Einträge in `orphaned` (Spec-Datei gelöscht, zugehöriges Issue automatisch geschlossen): für die Zusammenfassung vormerken, keine weitere Aktion nötig. Ist `adopted` nicht `null`, ebenfalls erwähnen (welches Story-Issue wurde zu welcher Spec adoptiert).
 
-### `finalized_from_pr` — automatische PR-Merge-Erkennung (Spec 0060 / ADR 0037, Abschnitt 5)
+### `finalized_from_pr` — automatische PR-Merge-Erkennung (Ausnahmepfad)
 
-Ist `finalized_from_pr` für einen Spec-Eintrag nicht `null` (die referenzierte PR wurde gemerged, `sync.py` hat die Spec-Datei bereits selbst auf `Implemented ([PR #NNN](url))` umgeschrieben und `Done` gepusht): keine weitere Aktion nötig — nur für die Zusammenfassung vormerken, welche Spec(s) auf diesem Weg finalisiert wurden.
+Ist `finalized_from_pr` für einen Spec-Eintrag nicht `null` (die referenzierte PR wurde gemerged, `sync.py` hat die Spec-Datei bereits selbst auf `Implemented ([PR #NNN](url))` umgeschrieben und `Done` gepusht): für die Zusammenfassung vormerken, welche Spec(s) auf diesem Weg finalisiert wurden — und Daniel darauf hinweisen, dass die dabei entstandene lokale Änderung (Spec-Datei + `specs/.github-sync-state.json`) noch committet werden muss.
+
+Das ist der **Ausnahmepfad**, nicht der Regelweg: regulär finalisiert `ship-feature` (Schritt 8) die Spec über `--finalize` bereits im Feature-PR, bevor gemergt wird. Greift diese Erkennung trotzdem, wurde also außerhalb des üblichen Ablaufs gemergt (abgebrochene Session, manueller Merge) — kein Fehler, aber der Grund, warum ausnahmsweise doch ein kleines Folge-PR nötig wird.
 
 ## Dateiloser Story-Pfad
 

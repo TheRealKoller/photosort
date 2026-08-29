@@ -71,7 +71,7 @@ Nach Bestätigung geht es weiter zu Schritt 6 (PR-Erstellung) bzw., falls die Fi
    PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --runtime-status "Review" --pr-number <PR-Nummer>
    ```
 
-   Ein früherer, verfrühter `Implemented`-Bump des Spec-Status direkt nach der PR-Erstellung entfällt ersatzlos (ADR 0037, Abschnitt 4) — die eigentliche Finalisierung (Spec-Datei-Status auf `Implemented`) übernimmt seit ADR 0037 die automatische PR-Merge-Erkennung beim nächsten regulären `github-project-sync`-Lauf, siehe `.claude/skills/github-project-sync/SKILL.md` (Fall `finalized_from_pr`).
+   Ein früherer, verfrühter `Implemented`-Bump des Spec-Status direkt nach der PR-Erstellung entfällt ersatzlos (ADR 0037, Abschnitt 4) — die eigentliche Finalisierung (Spec-Datei-Status auf `Implemented`) passiert erst in Schritt 8, nach Review und Copilot-Auswertung, aber noch **vor** dem Merge im selben PR.
 
 ## Schritt 7: Copilot-Review anfordern und auswerten
 
@@ -84,6 +84,30 @@ Jeder PR mit mindestens einer Code-Datei im Diff (mind. eine Datei unter `backen
 5. **Nach Fixes:** erneuter Push (kein neuer PR nötig, derselbe Branch).
 6. **Antworten:** Auf jeden Copilot-Kommentar per `gh api repos/<owner>/<repo>/pulls/<PR-Nummer>/comments/<comment-id>/replies -f body="..."` kurz antworten — was gefixt wurde (mit Commit-Referenz) oder warum bewusst nicht.
 
+## Schritt 8: Finalisierung im selben PR (vor dem Merge)
+
+Regelweg: Der Spec-Status wird **im Feature-PR selbst** auf `Implemented` gesetzt, nicht in einem Nachzieh-PR nach dem Merge. Ohne diesen Schritt entsteht genau das separate Zwei-Zeilen-PR, das eine komplette CI-Pipeline für eine reine Metadaten-Änderung kostet.
+
+**Wann:** sobald die Review-Runde (Schritt 3–5) und das Copilot-Review (Schritt 7) ausgewertet und alle Muss-Fix-Findings behoben sind — und zwar **gebündelt mit dem Push dieser letzten Fixes** (erst finalisieren, dann beide Commits in einem `git push`), damit kein zusätzlicher CI-Lauf entsteht. Gab es keine Fixes mehr, ist es ein eigener, letzter Commit auf dem Feature-Branch. Nie früher: ein noch nicht reviewter Stand darf nie als umgesetzt geführt werden.
+
+1. Finalisieren (`NNNN` = Spec-Nummer, `<PR-Nummer>` = der PR aus Schritt 6):
+
+   ```bash
+   PYTHONPATH=scripts/github-project-sync/src python3 -m github_project_sync --only NNNN --finalize --pr-number <PR-Nummer>
+   ```
+
+   Erwartete Ausgabe: `{"spec_number": ..., "pr_number": ..., "status_line": "Implemented ([PR #NNN](...))", "issue_number": ..., "classification": ...}`. Der Aufruf schreibt die `**Status:**`-Zeile der Spec-Datei um, aktualisiert `specs/.github-sync-state.json` und pusht den Endzustand (Board `Done`, Issue geschlossen).
+
+2. Ein `{"error": "..."}` **nicht** ignorieren und **nicht** umgehen (z.B. durch manuelles Editieren der Status-Zeile): Meldung unverändert an Daniel weitergeben, mit `git status` prüfen, ob die Spec-Datei bereits umgeschrieben wurde, und in dem Fall die Änderung verwerfen (`git checkout -- specs/features/NNNN-*.md`), bevor der PR weiterläuft. Der Aufruf ist wiederholbar, solange der Datei-Status noch `Accepted` ist. Bricht er mit "Zustand 'closed'" ab, ist der PR ohne Merge geschlossen worden — dann wird gar nicht finalisiert.
+
+3. Die beiden geänderten Dateien (`specs/features/NNNN-*.md`, `specs/.github-sync-state.json`) committen, Konvention: `chore(specs): Spec NNNN finalisieren (PR #<PR-Nummer>)`, und zusammen mit ggf. noch offenen Fix-Commits pushen.
+
+4. Danach übernimmt Daniel: Freigabe und Merge. **Kein** automatisches Mergen durch dich.
+
+**Wird der PR wider Erwarten nicht gemergt** (Branch verworfen): Board-Spalte und Issue-Zustand stehen dann kurzzeitig auf `Done`/geschlossen, obwohl `main` die Spec weiter als `Accepted` führt. Das ist kein Datenverlust — ein voller `github-project-sync`-Lauf (oder `--only NNNN`) berechnet beides aus der Datei auf `main` neu und stellt es wieder her. Diesen Lauf in dem Fall gezielt anstoßen und Daniel darauf hinweisen.
+
+**Ausnahmefall (nicht Regelweg):** Wurde ein PR ohne diesen Schritt gemergt (Merge außerhalb des üblichen Ablaufs, abgebrochene Session), greift weiterhin die automatische PR-Merge-Erkennung beim nächsten regulären Sync-Lauf (`finalized_from_pr`, siehe `.claude/skills/github-project-sync/SKILL.md`) — die dabei entstehende lokale Änderung braucht dann doch ein kleines Folge-PR. Genau das soll dieser Schritt vermeiden.
+
 ## Recovery: `SendMessage` schlägt fehl
 
 Ist das Subagenten-Fenster des `developer`-Laufs bereits geschlossen (z.B. Timeout, Sitzung beendet) und `SendMessage` liefert keine Antwort/schlägt sichtbar fehl — insbesondere relevant bei der ggf. längeren Wartezeit bis zum Copilot-Review in Schritt 7 —, nicht stillschweigend scheitern lassen und nicht die gesammelten Findings verwerfen:
@@ -95,4 +119,4 @@ Ist das Subagenten-Fenster des `developer`-Laufs bereits geschlossen (z.B. Timeo
 
 ## Abschlussbericht an den Nutzer
 
-Nach Abschluss (PR eröffnet, Copilot-Review ausgewertet oder aus genanntem Grund übersprungen) fasse für den Nutzer zusammen: PR-Link, das vom `review`-Skill gelieferte Protokoll (alle fünf Perspektiven, gelaufen ja/nein mit Begründung, Findings-Kurzfassung inkl. behobener/bewusst nicht behobener), Copilot-Ergebnis (falls gelaufen), sowie jede Stelle, an der du selbst eine technische Detailentscheidung getroffen hast (z.B. bei einem nicht-exakten Anker-Match oder einem SendMessage-Recovery-Fall).
+Nach Abschluss (PR eröffnet, Copilot-Review ausgewertet oder aus genanntem Grund übersprungen, Spec im PR finalisiert) fasse für den Nutzer zusammen: PR-Link, Ergebnis der Finalisierung aus Schritt 8 (Statuszeile bzw. Fehlermeldung), das vom `review`-Skill gelieferte Protokoll (alle fünf Perspektiven, gelaufen ja/nein mit Begründung, Findings-Kurzfassung inkl. behobener/bewusst nicht behobener), Copilot-Ergebnis (falls gelaufen), sowie jede Stelle, an der du selbst eine technische Detailentscheidung getroffen hast (z.B. bei einem nicht-exakten Anker-Match oder einem SendMessage-Recovery-Fall).

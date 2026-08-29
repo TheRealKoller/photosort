@@ -662,6 +662,96 @@ def set_feature_runtime_status(
     return {"spec_number": spec_number, "runtime_status": runtime_status, "pr_number": pr_number}
 
 
+def finalize_feature_spec(
+    *,
+    repo_root: Path,
+    gh: GhAdapter,
+    spec_number: str,
+    pr_number: int,
+    now: Callable[[], str] = _utcnow_iso,
+) -> dict[str, object]:
+    """`--only NNNN --finalize --pr-number NNN` (Spec 0066 / ADR 0042): Pre-Merge-Finalisierung.
+
+    Schreibt die Status-Zeile der Spec-Datei auf "Implemented ([PR #NNN](url))", solange der
+    Feature-PR noch offen ist - dadurch ist die Finalisierung Teil des Feature-PRs selbst statt
+    eines separaten Nachzieh-PRs nach dem Merge (Issue #248). Der eigentliche Push laeuft danach
+    ueber den regulaeren run_sync(only=...)-Pfad: die Spec ist ab dem Umschreiben eine ganz
+    normale "Implemented"-Spec (Baseline "Done", Issue geschlossen, Override geleert, neuer
+    pushed_state_hash), es gibt keinen Sonderpfad.
+
+    Die automatische PR-Merge-Erkennung in _sync_one() (ADR 0037, Abschnitt 5) bleibt davon
+    unberuehrt und deckt weiterhin den Ausnahmefall ab, dass ein PR ohne vorherige Finalisierung
+    gemergt wurde.
+    """
+    validate_spec_number(spec_number)
+
+    features_dir = repo_root / "specs" / "features"
+    state_file = repo_root / "specs" / ".github-sync-state.json"
+
+    gh.check_auth_scope()
+
+    stored_entry = load_state(state_file).features.get(spec_number)
+    if stored_entry is None:
+        raise SyncError(
+            f"Spec {spec_number} hat noch keinen Feature-State-Eintrag - erst ueber einen "
+            "regulaeren Sync-Lauf (--only NNNN oder voller Lauf) anlegen."
+        )
+    # Verwechslungsschutz (ADR 0042, Abschnitt 2): kennt der State bereits einen anderen PR
+    # (gesetzt durch --runtime-status "Review"), ist einer der beiden Werte falsch - lieber hart
+    # abbrechen als eine Spec mit einer fremden PR-Referenz als umgesetzt zu markieren.
+    if stored_entry.pr_number is not None and stored_entry.pr_number != pr_number:
+        raise SyncError(
+            f"Spec {spec_number} ist im Sync-State mit PR #{stored_entry.pr_number} verknuepft, "
+            f"finalisiert werden soll aber PR #{pr_number}. Erst den Laufzeit-Status korrigieren "
+            "(--only NNNN --runtime-status 'Review' --pr-number <richtige Nummer>)."
+        )
+
+    spec_path = _find_spec_path(features_dir, spec_number)
+    # parse_spec_file() prueft dabei bereits, dass Dateiname und H1-Nummer uebereinstimmen -
+    # ein Auseinanderlaufen wuerde hier die falsche Datei umschreiben und faellt deshalb vor
+    # jedem Schreibzugriff als SpecParseError auf.
+    parsed = parse_spec_file(spec_path)
+    if parsed.status != "Accepted":
+        raise SyncError(
+            f"Spec {spec_number} hat Datei-Status {parsed.status!r} - finalisiert wird nur eine "
+            "Spec im Status 'Accepted'."
+        )
+
+    pull_request = gh.get_pull_request(pr_number)
+    # "open" ist der Regelfall (Finalisierung kurz vor dem Merge), "merged" der nachgezogene
+    # Ausnahmefall. "closed" heisst geschlossen OHNE Merge - daraus darf nie "Implemented"
+    # werden (Akzeptanzkriterium "Nachvollziehbarkeit", Spec 0066).
+    if pull_request.state not in {"open", "merged"}:
+        raise SyncError(
+            f"PR #{pr_number} hat den Zustand {pull_request.state!r} (erwartet 'open' oder "
+            "'merged') - ein ohne Merge geschlossener PR darf nicht zu 'Implemented' fuehren."
+        )
+
+    status_line = f"Implemented ([PR #{pr_number}]({pull_request.url}))"
+    # Bewusste Reihenfolge: erst die Datei umschreiben, dann regulaer pushen. Scheitert der Push
+    # danach (gh-Fehler, Board-Feld kaputt), bleibt die umgeschriebene Datei als sichtbare
+    # Arbeitskopie-Aenderung stehen - der Aufrufer sieht den Fehler im Ergebnis-JSON und
+    # entscheidet, ob er sie verwirft oder den Lauf wiederholt (der Aufruf ist idempotent, solange
+    # der Datei-Status noch "Accepted" ist; danach meldet er genau das). Umgekehrt (erst pushen,
+    # dann schreiben) waere der Board-Zustand nicht mehr reproduzierbar aus der Datei ableitbar.
+    spec_path.write_text(set_status_line(parsed.full_text, status_line), encoding="utf-8")
+
+    run_result = run_sync(repo_root=repo_root, gh=gh, only=spec_number, now=now)
+    spec_result = run_result.specs[0]
+    if spec_result.aborted_reason is not None:
+        raise SyncError(
+            f"Finalisierung von Spec {spec_number} abgebrochen: {spec_result.aborted_reason}"
+        )
+
+    return {
+        "spec_number": spec_number,
+        "pr_number": pr_number,
+        "status_line": status_line,
+        "issue_number": spec_result.issue_number,
+        "classification": spec_result.classification,
+    }
+
+
 # -- Dateiloser Story-Pfad (Spec 0059 / ADR 0036, Abschnitt 5) ---------------------------------
 
 
