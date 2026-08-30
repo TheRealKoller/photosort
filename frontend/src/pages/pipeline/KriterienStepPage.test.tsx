@@ -86,6 +86,14 @@ function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
 describe('KriterienStepPage', () => {
   beforeEach(() => {
     vi.mocked(projectsApi.triggerScoreCriteria).mockReset()
+    vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockReset()
+    vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue({
+      candidate_count: 0,
+      provider: 'anthropic',
+      price_per_image_usd: 0.0045,
+      estimated_cost_usd: 0,
+    })
+    vi.mocked(projectsApi.triggerClassifyCategoriesRemote).mockReset()
   })
 
   it('shows the explanation line and an enabled trigger once reachable', () => {
@@ -196,5 +204,55 @@ describe('KriterienStepPage', () => {
     await user.click(screen.getByRole('button', { name: /erneut versuchen/i }))
 
     expect(projectsApi.triggerScoreCriteria).toHaveBeenCalledWith(1, 42)
+  })
+
+  it('shows the remote category classification section after the criteria scoring section', () => {
+    renderPage(project())
+
+    const headings = screen.getAllByRole('heading', { level: 2 })
+    const headingTexts = headings.map((heading) => heading.textContent)
+    expect(headingTexts).toEqual(['Kriterien-Bewertung', 'Remote-Kategorisierung'])
+  })
+
+  it(
+    'estimates, opens the confirmation dialog and triggers the remote classification on confirm',
+    async () => {
+      vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue({
+        candidate_count: 5,
+        provider: 'anthropic',
+        price_per_image_usd: 0.0045,
+        estimated_cost_usd: 0.0225,
+      })
+      vi.mocked(projectsApi.triggerClassifyCategoriesRemote).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+      renderPage(project({ cloud_vision_detection_enabled: true }))
+
+      await screen.findByTestId('classify-categories-remote-estimate')
+      await user.click(screen.getByRole('button', { name: /remote-kategorisierung starten/i }))
+      await user.click(screen.getByRole('button', { name: /^starten$/i }))
+
+      expect(projectsApi.triggerClassifyCategoriesRemote).toHaveBeenCalledWith(1)
+    }
+  )
+
+  it('does not affect the criteria scoring section when the remote classification is triggered', async () => {
+    vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue({
+      candidate_count: 5,
+      provider: 'anthropic',
+      price_per_image_usd: 0.0045,
+      estimated_cost_usd: 0.0225,
+    })
+    vi.mocked(projectsApi.triggerClassifyCategoriesRemote).mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    renderPage(
+      project({ cloud_vision_detection_enabled: true, last_criterion_scoring_run: null })
+    )
+
+    await screen.findByTestId('classify-categories-remote-estimate')
+    await user.click(screen.getByRole('button', { name: /remote-kategorisierung starten/i }))
+    await user.click(screen.getByRole('button', { name: /^starten$/i }))
+
+    expect(screen.getByRole('button', { name: 'Kriterien-Bewertung starten' })).toBeEnabled()
+    expect(projectsApi.triggerScoreCriteria).not.toHaveBeenCalled()
   })
 })

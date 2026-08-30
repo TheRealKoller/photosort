@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link, useOutletContext } from 'react-router'
 
-import { RemoteCategoryClassificationSection } from '../../components/RemoteCategoryClassificationSection'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
@@ -12,11 +11,12 @@ import type { PipelineOutletContext } from './ProjectPipelineLayout'
  * in ProjectPipelineLayout rendert diese Route nur, wenn die Kriterien-Bewertung bereits
  * erfolgreich war (isReachable('kuratierung')).
  *
- * "Remote-Kategorisierung"-Section (specs/features/0055-remote-kategorie-klassifizierung-mit-
- * kostenschaetzung.md, UI/UX-Abschnitt) VOR dem bestehenden "Kuratierung öffnen"-Link eingefuegt.
+ * "Remote-Kategorisierung"-Section ist seit specs/features/0218-remote-kategorisierung-kriterien-
+ * bewertungsseite.md nicht mehr hier eingebunden, sondern auf KriterienStepPage.tsx (fachlich
+ * naeher an ihrer Wirkung: Ergebnisse fliessen erst durch einen Kriterien-Bewertungs-Lauf ein).
  */
 export function KuratierungStepPage() {
-  const { project, refetchProject } = useOutletContext<PipelineOutletContext>()
+  const { project } = useOutletContext<PipelineOutletContext>()
 
   // Default 3 (UI/UX-Abschnitt der Spec 0024) - min=1/max=10 sind nur clientseitige Hinweise, die
   // eigentliche Grenze wird serverseitig durchgesetzt. `''` ist ein bewusst erlaubter
@@ -26,8 +26,6 @@ export function KuratierungStepPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <RemoteCategoryClassificationSection project={project} refetchProject={refetchProject} />
-
       <section className="flex flex-col items-start gap-3">
         <h2 className="text-lg font-semibold text-text-h">Kategorie-Kuratierung</h2>
         <p className="text-sm text-text">

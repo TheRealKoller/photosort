@@ -1,6 +1,7 @@
 import { useOutletContext } from 'react-router'
 
 import { ApiError } from '../../api/client'
+import { RemoteCategoryClassificationSection } from '../../components/RemoteCategoryClassificationSection'
 import { StatusDot } from '../../components/StatusDot'
 import { Alert } from '../../components/ui/alert'
 import { Button } from '../../components/ui/button'
@@ -16,6 +17,11 @@ import type { PipelineOutletContext } from './ProjectPipelineLayout'
  * category_selection_enabled UND ein bestaetigtes Gate vorliegen (isReachable('kriterien')) - die
  * alten Erklaertexte leben als Blockiert-Gruende im Stepper-Popover weiter
  * (utils/pipelineSteps.ts::getBlockedReason).
+ *
+ * "Remote-Kategorisierung"-Section (specs/features/0218-remote-kategorisierung-kriterien-
+ * bewertungsseite.md) NACH der Kriterien-Bewertungs-Section eingefuegt - spiegelt den
+ * fachlichen Ablauf (erst lokal bewerten, optional remote anreichern, danach ggf. erneut lokal
+ * bewerten, um die Anreicherung einzuarbeiten). War zuvor auf KuratierungStepPage.tsx.
  */
 export function KriterienStepPage() {
   const { project, refetchProject } = useOutletContext<PipelineOutletContext>()
@@ -59,54 +65,58 @@ export function KriterienStepPage() {
   const criteriaAnnouncedDecile = Math.floor(criteriaPercent / 10) * 10
 
   return (
-    <section className="flex flex-col items-start gap-3">
-      <h2 className="text-lg font-semibold text-text-h">Kriterien-Bewertung</h2>
-      <p className="text-sm text-text">
-        Bewertet jedes verbleibende Foto nach mehreren Kriterien (Schärfe, Belichtung,
-        Bildinhalt) und bildet daraus eine Rangfolge je Foto-Moment und Kategorie — läuft
-        vollständig lokal auf diesem Server.
-      </p>
+    <div className="flex flex-col gap-8">
+      <section className="flex flex-col items-start gap-3">
+        <h2 className="text-lg font-semibold text-text-h">Kriterien-Bewertung</h2>
+        <p className="text-sm text-text">
+          Bewertet jedes verbleibende Foto nach mehreren Kriterien (Schärfe, Belichtung,
+          Bildinhalt) und bildet daraus eine Rangfolge je Foto-Moment und Kategorie — läuft
+          vollständig lokal auf diesem Server.
+        </p>
 
-      <Button
-        type="button"
-        onClick={handleTriggerScoreCriteria}
-        disabled={isCriteriaBusy}
-        busy={isCriteriaBusy}
-      >
-        {isCriteriaBusy ? 'Wird bewertet…' : 'Kriterien-Bewertung starten'}
-      </Button>
+        <Button
+          type="button"
+          onClick={handleTriggerScoreCriteria}
+          disabled={isCriteriaBusy}
+          busy={isCriteriaBusy}
+        >
+          {isCriteriaBusy ? 'Wird bewertet…' : 'Kriterien-Bewertung starten'}
+        </Button>
 
-      {scoreCriteriaTriggerErrorDetail && <Alert>{scoreCriteriaTriggerErrorDetail}</Alert>}
+        {scoreCriteriaTriggerErrorDetail && <Alert>{scoreCriteriaTriggerErrorDetail}</Alert>}
 
-      <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
-        <StatusDot status={criterionScoringStatus} />
-        {criterionScoringRun === null && 'Noch nicht bewertet'}
-        {criterionScoringStatus === 'running' && 'Wird verarbeitet…'}
-        {criterionScoringStatus === 'success' && 'Erfolgreich bewertet'}
-        {criterionScoringStatus === 'failed' && 'Fehlgeschlagen'}
-      </p>
+        <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
+          <StatusDot status={criterionScoringStatus} />
+          {criterionScoringRun === null && 'Noch nicht bewertet'}
+          {criterionScoringStatus === 'running' && 'Wird verarbeitet…'}
+          {criterionScoringStatus === 'success' && 'Erfolgreich bewertet'}
+          {criterionScoringStatus === 'failed' && 'Fehlgeschlagen'}
+        </p>
 
-      {criterionScoringStatus === 'running' && (
-        <div className="flex w-full max-w-sm flex-col gap-1.5">
-          <p className="text-sm text-text">
-            {criteriaPhotosProcessed} von {criteriaPhotosTotal} Fotos verarbeitet
-          </p>
-          {criteriaPhotosTotal > 0 ? (
-            <Progress value={criteriaPhotosProcessed} max={criteriaPhotosTotal}>
-              {criteriaPhotosProcessed}/{criteriaPhotosTotal}
-            </Progress>
-          ) : (
-            <Progress />
-          )}
-          <p aria-live="polite" className="text-sm text-text">
-            {criteriaAnnouncedDecile}% verarbeitet
-          </p>
-        </div>
-      )}
+        {criterionScoringStatus === 'running' && (
+          <div className="flex w-full max-w-sm flex-col gap-1.5">
+            <p className="text-sm text-text">
+              {criteriaPhotosProcessed} von {criteriaPhotosTotal} Fotos verarbeitet
+            </p>
+            {criteriaPhotosTotal > 0 ? (
+              <Progress value={criteriaPhotosProcessed} max={criteriaPhotosTotal}>
+                {criteriaPhotosProcessed}/{criteriaPhotosTotal}
+              </Progress>
+            ) : (
+              <Progress />
+            )}
+            <p aria-live="polite" className="text-sm text-text">
+              {criteriaAnnouncedDecile}% verarbeitet
+            </p>
+          </div>
+        )}
 
-      {criterionScoringStatus === 'failed' && (
-        <Alert onRetry={handleTriggerScoreCriteria}>{criterionScoringRun?.error_message}</Alert>
-      )}
-    </section>
+        {criterionScoringStatus === 'failed' && (
+          <Alert onRetry={handleTriggerScoreCriteria}>{criterionScoringRun?.error_message}</Alert>
+        )}
+      </section>
+
+      <RemoteCategoryClassificationSection project={project} refetchProject={refetchProject} />
+    </div>
   )
 }
