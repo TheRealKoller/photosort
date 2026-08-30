@@ -18,6 +18,11 @@ const CATEGORY_DISPLAY_NAME_OVERRIDES: Readonly<Record<string, string>> = {
   // (Umlaut) wie "gebaeude" oben - der generische Fallback koennte "Sehenswürdigkeit" nicht aus
   // dem rohen category_key "landmark" ableiten.
   landmark: 'Sehenswürdigkeit',
+  // specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md: der Auffang-Key des
+  // Backends (criteria.py::CATEGORY_UNRECOGNIZED) benennt ein FEHLENDES Erkennungsergebnis, keine
+  // Inhaltsaussage - der generische Fallback lieferte nur "Unerkannt". Kein Eintrag fuer
+  // "landschaft" noetig, dort passt der Fallback bereits.
+  unerkannt: 'Nicht erkannt',
 }
 
 export function formatCategoryKey(categoryKey: string): string {

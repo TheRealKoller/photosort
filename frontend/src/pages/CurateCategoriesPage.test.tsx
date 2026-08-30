@@ -10,7 +10,12 @@ import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import type { CriterionScoreOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
 import { setToken } from '../auth/token'
-import { countPhotosInDay, CurateCategoriesPage, toggleDayCollapse } from './CurateCategoriesPage'
+import {
+  countPhotosInDay,
+  CurateCategoriesPage,
+  sortCategoryKeys,
+  toggleDayCollapse,
+} from './CurateCategoriesPage'
 
 vi.mock('../api/photos')
 vi.mock('../api/ratings')
@@ -93,6 +98,47 @@ describe('countPhotosInDay', () => {
     }
 
     expect(countPhotosInDay(clustersForDay)).toBe(1)
+  })
+})
+
+describe('sortCategoryKeys (specs/features/0217)', () => {
+  it('sorts normal categories alphabetically', () => {
+    expect(sortCategoryKeys(['tier', 'gebaeude', 'people'])).toEqual([
+      'gebaeude',
+      'people',
+      'tier',
+    ])
+  })
+
+  it('always puts the catch-all "unerkannt" last, even though it is not alphabetically last', () => {
+    expect(sortCategoryKeys(['unerkannt', 'tier', 'gebaeude'])).toEqual([
+      'gebaeude',
+      'tier',
+      'unerkannt',
+    ])
+  })
+
+  it('keeps "unerkannt" last even when every other key sorts after it alphabetically', () => {
+    expect(sortCategoryKeys(['unerkannt', 'urlaub', 'zoo'])).toEqual([
+      'urlaub',
+      'zoo',
+      'unerkannt',
+    ])
+  })
+
+  it('handles a single category and an empty list', () => {
+    expect(sortCategoryKeys(['unerkannt'])).toEqual(['unerkannt'])
+    expect(sortCategoryKeys(['tier'])).toEqual(['tier'])
+    expect(sortCategoryKeys([])).toEqual([])
+  })
+
+  it('returns a new array instead of mutating the argument', () => {
+    const original = ['unerkannt', 'gebaeude']
+
+    const result = sortCategoryKeys(original)
+
+    expect(result).not.toBe(original)
+    expect(original).toEqual(['unerkannt', 'gebaeude'])
   })
 })
 
@@ -854,6 +900,63 @@ describe('CurateCategoriesPage', () => {
   })
 
   // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt.
+  describe('catch-all section "Nicht erkannt" (specs/features/0217)', () => {
+    const EXPLANATION = 'Diese Fotos konnten nicht automatisch kategorisiert werden.'
+
+    it('renders the catch-all section with its neutral explanation when every photo is unrecognized', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, ranking: ranking({ category_key: 'unerkannt' }) })],
+        total: 1,
+      })
+
+      renderPage()
+
+      expect(await screen.findByText('Nicht erkannt')).toBeInTheDocument()
+      const explanation = screen.getByText(EXPLANATION)
+      expect(explanation).toBeInTheDocument()
+      // Kein Fehler, sondern ein fehlendes Erkennungsergebnis - keine Fehler-Semantik.
+      expect(explanation).not.toHaveAttribute('role', 'alert')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('places the catch-all section after the regular categories of the same cluster', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            ranking: ranking({ cluster_key: 'cluster-0', category_key: 'unerkannt' }),
+          }),
+          photo({
+            id: 2,
+            ranking: ranking({ cluster_key: 'cluster-0', category_key: 'tier' }),
+          }),
+        ],
+        total: 2,
+      })
+
+      renderPage()
+
+      const catchAll = await screen.findByText('Nicht erkannt')
+      const regular = screen.getByText('Tier')
+      // "unerkannt" waere alphabetisch VOR "tier" - der Auffang-Abschnitt steht trotzdem hinten.
+      expect(regular.compareDocumentPosition(catchAll)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+      expect(screen.getByText(EXPLANATION)).toBeInTheDocument()
+    })
+
+    it('shows no explanation at all when no photo is unrecognized', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, ranking: ranking({ category_key: 'tier' }) })],
+        total: 1,
+      })
+
+      renderPage()
+
+      expect(await screen.findByText('Tier')).toBeInTheDocument()
+      expect(screen.queryByText('Nicht erkannt')).not.toBeInTheDocument()
+      expect(screen.queryByText(EXPLANATION)).not.toBeInTheDocument()
+    })
+  })
+
   describe('category override', () => {
     it('shows the override marker for a photo with an active override', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({

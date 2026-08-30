@@ -8,7 +8,7 @@ from typing import Protocol
 from PIL import Image
 
 from photosort.classification import (
-    LANDSCAPE_UNIFORM_FRACTION_THRESHOLD,
+    SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
     AnimalDetection,
     FaceBoundingBox,
     FaceDetectorLike,
@@ -28,6 +28,17 @@ from photosort.models import CriterionSource
 # Aufwand fuer ein kuenftiges neues Kriterium, keine Migration.
 
 
+# Spezifitaets-Stufen der Kategorie-Vergabe (specs/features/0217, ADR decisions/0047 Punkt 2) -
+# ersetzen "hoechster Score gewinnt" als PRIMAERE Regel in derive_category_key und steuern die
+# Aktivierungsschwelle in derive_active_categories. Bewusst genau zwei Stufen: die einzige
+# Unterscheidung, die die Story traegt, ist "benannter Inhalt vs. grobe Inhaltsklasse" - eine
+# Feinsortierung innerhalb der lokalen Kriterien waere wieder die gepflegte Prioritaetsliste, die
+# ADR 0023 vermieden hat. Zahlenwerte mit Abstand (10/20), damit eine kuenftige Zwischenstufe
+# keine Neuvergabe braucht; verglichen wird ausschliesslich relativ.
+CATEGORY_SPECIFICITY_CONTENT = 10  # lokale Inhaltserkennung: Gesicht/Tier/Gebaeude/Landschaft
+CATEGORY_SPECIFICITY_NAMED = 20  # benannter, konkreter Inhalt: Sehenswuerdigkeit, Remote-Label
+
+
 @dataclass(frozen=True)
 class CriterionDefinition:
     key: str
@@ -41,6 +52,12 @@ class CriterionDefinition:
     # den Default False/None und koennen nie eine Kategorie bilden.
     category_eligible: bool = False
     category_presence_threshold: float | None = None
+    # specs/features/0217, ADR 0047 Punkt 2: Spezifitaet ist - wie die Kategorie-Faehigkeit selbst
+    # - ein reines Registry-ATTRIBUT, keine im Ableitungscode gepflegte Prioritaetsliste. Nur bei
+    # category_eligible=True von Bedeutung (ein nicht kategorie-faehiges Kriterium bildet nie eine
+    # Kategorie); nicht kategorie-faehige Eintraege behalten deshalb den Default, erzwungen durch
+    # einen eigenen Registry-Invariantentest.
+    category_specificity: int = CATEGORY_SPECIFICITY_CONTENT
 
 
 # Schwelle, ab der content_people als "Gesicht erkannt" gilt (compute_content_people liefert nur
@@ -56,12 +73,18 @@ _CONTENT_PEOPLE_DETECTED_THRESHOLD = 0.5
 _TIER_CATEGORY_PRESENCE_THRESHOLD = 0.01
 _GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD = 0.01
 
+# specs/features/0217, ADR 0047 Punkt 1: dieselbe Konstanten-Klasse wie oben - compute_landschaft_
+# score liefert entweder exakt 0.0 (kein Allow-Listen-Treffer ueber LANDSCHAFT_LABEL_MIN_
+# CONFIDENCE) oder einen Wert oberhalb dieser Konfidenzschwelle; 0.01 trennt nur "nichts erkannt"
+# von "irgendetwas erkannt", keine zweite inhaltliche Kalibrierung.
+_LANDSCHAFT_CATEGORY_PRESENCE_THRESHOLD = 0.01
+
 # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR decisions/0025-cloud-
 # landmark-erkennung.md Punkt 2: Confidence-Schwelle des Vision-LLM, ab der ein Foto als
 # "Sehenswuerdigkeit erkannt" gilt - zugleich Vorfilterungs-Schwelle fuer content_landscape/
 # gebaeude in worker.py::run_criterion_scoring (Wiederverwendung derselben Registry-Werte).
 # Dokumentiert-unkalibriert (gleiche Klasse wie SHARPNESS_NORMALIZATION_CEILING/
-# LANDSCAPE_UNIFORM_FRACTION_THRESHOLD, kein Fotokorpus im Repo zur Kalibrierung) - ADR 0025
+# UNIFORM_TILE_VARIANCE_THRESHOLD, kein Fotokorpus im Repo zur Kalibrierung) - ADR 0025
 # benennt zusaetzlich ein bekanntes, beobachtetes Ueberidentifikations-Risiko (siehe ADR Punkt 1),
 # gegen das diese Schwelle die strukturelle, aber ggf. nicht ausreichende Gegenmassnahme ist.
 _LANDMARK_CATEGORY_PRESENCE_THRESHOLD = 0.5
@@ -76,12 +99,14 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         category_eligible=True,
         category_presence_threshold=_CONTENT_PEOPLE_DETECTED_THRESHOLD,
     ),
+    # specs/features/0217, ADR 0047 Punkt 1: reines Ranking-Signal, NICHT kategorie-faehig -
+    # compute_uniform_area_fraction misst Texturarmut ("Flaechigkeit"), keine Landschaft. Der
+    # frueher hier verwendete LANDSCAPE_UNIFORM_FRACTION_THRESHOLD ist ersatzlos entfallen.
+    # Die echte, inhaltsbasierte Landschafts-Erkennung liegt im Kriterium "landschaft" unten.
     "content_landscape": CriterionDefinition(
         "content_landscape",
-        "Landschaft/Flächig",
+        "Flächigkeit",
         CriterionSource.LOCAL_HEURISTIC,
-        category_eligible=True,
-        category_presence_threshold=LANDSCAPE_UNIFORM_FRACTION_THRESHOLD,
     ),
     # specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md ab hier:
     "tier": CriterionDefinition(
@@ -102,6 +127,16 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         category_presence_threshold=_GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD,
     ),
     "aesthetics": CriterionDefinition("aesthetics", "Ästhetik", CriterionSource.LOCAL_ML),
+    # specs/features/0217, ADR 0047 Punkt 1: echte, inhaltsbasierte Landschafts-Erkennung aus
+    # DERSELBEN Szenen-Klassifikation wie gebaeude (keine zusaetzliche Inferenz, kein neues
+    # Modell-Asset, siehe compute_landschaft_score).
+    "landschaft": CriterionDefinition(
+        "landschaft",
+        "Landschaft erkannt",
+        CriterionSource.LOCAL_ML,
+        category_eligible=True,
+        category_presence_threshold=_LANDSCHAFT_CATEGORY_PRESENCE_THRESHOLD,
+    ),
     # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ab hier: drei
     # weitere, davon unabhaengige Kompositions-Ranking-Signale (analog goldener_schnitt/
     # aesthetics) - alle drei category_eligible=False (reine Ranking-Signale, keine neuen
@@ -123,6 +158,11 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         CriterionSource.CLOUD,
         category_eligible=True,
         category_presence_threshold=_LANDMARK_CATEGORY_PRESENCE_THRESHOLD,
+        # specs/features/0217, ADR 0047 Punkt 2: ein benannter, konkreter Inhalt ("Kölner Dom")
+        # setzt sich gegen jede grobe lokale Einordnung durch - einziges registriertes Kriterium
+        # der NAMED-Stufe (remote:-Pseudo-Keys haben keine CriterionDefinition und gelten immer
+        # als NAMED, siehe _specificity_of).
+        category_specificity=CATEGORY_SPECIFICITY_NAMED,
     ),
 }
 
@@ -315,6 +355,16 @@ def compute_tier_score(animals: Sequence[AnimalDetection]) -> float:
 # classify_scene selbst passiert. Dokumentierte, bewusst akzeptierte Luecke (AK-Pflicht der Spec,
 # ADR 0022 Punkt 2): ImageNet hat kaum Innenraum-Klassen, `living_room`/`kitchen`/`office` werden
 # strukturell nicht erkannt - nur Aussenarchitektur wird zuverlaessig erfasst.
+#
+# BEFUND (developer, 2026-08-30, bei der fuer LANDSCAPE_SCENE_CATEGORIES unten verpflichtenden
+# Verifikation gegen die Label-Datei des gebuendelten Modells aufgefallen, siehe dort): die
+# Label-Datei schreibt mehrteilige Klassennamen mit LEERZEICHEN, nicht mit Unterstrich - die vier
+# Eintraege "bell_cote"/"suspension_bridge"/"triumphal_arch" (Label-Datei: "bell cote",
+# "suspension bridge", "triumphal arch") und "lighthouse" (Label-Datei: "beacon") koennen deshalb
+# nie matchen. Bewusst in dieser Spec NICHT korrigiert: specs/features/0217 AK2 verlangt
+# ausdruecklich, dass sich das gebaeude-Verhalten durch diese Aenderung NICHT verschiebt - eine
+# Korrektur waere eine eigenstaendige Verhaltensaenderung ausserhalb des Story-Scopes und gehoert
+# in ein eigenes Ticket.
 ARCHITECTURE_CATEGORIES = frozenset(
     {
         "church",
@@ -341,9 +391,85 @@ def compute_gebaeude_score(labels: Sequence[SceneLabel]) -> float:
     """`gebaeude`-Kriterium (ADR 0022 Punkt 2): Score = Konfidenz des besten Treffers INNERHALB
     der ARCHITECTURE_CATEGORIES-Allow-Liste, 0.0 falls keiner der uebergebenen `labels` in der
     Allow-Liste enthalten ist - auch bei hoher Modell-Konfidenz einer nicht-architekturbezogenen
-    Kategorie (Akzeptanzkriterium der Spec: "Nachweis, dass tatsaechlich die Allow-Liste filtert
-    und nicht nur die rohe Modell-Konfidenz durchgereicht wird")."""
-    allowed = [label for label in labels if label.category in ARCHITECTURE_CATEGORIES]
+    Kategorie (Akzeptanzkriterium der Spec 0038: "Nachweis, dass tatsaechlich die Allow-Liste
+    filtert und nicht nur die rohe Modell-Konfidenz durchgereicht wird").
+
+    specs/features/0217, ADR 0047 Punkt 1 (verpflichtend, sonst stille Verhaltensaenderung):
+    zusaetzlich zur Allow-Liste wird die inhaltliche Konfidenzschwelle
+    SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD (0.5) HIER explizit durchgesetzt. classify_scene
+    liefert seit dieser Spec bereits ab der niedrigeren SCENE_LABEL_MIN_CONFIDENCE (0.2), damit
+    compute_landschaft_score den fuer natuerliche Szenen noetigen Spielraum bekommt - ohne diesen
+    Filter wuerde das gebaeude-Kriterium diese Absenkung stillschweigend mit uebernehmen."""
+    allowed = [
+        label
+        for label in labels
+        if label.category in ARCHITECTURE_CATEGORIES
+        and label.confidence >= SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD
+    ]
+    if not allowed:
+        return 0.0
+    return max(label.confidence for label in allowed)
+
+
+# Kuratierte Allow-Liste natuerlicher ImageNet-1k-Szenenklassen (specs/features/0217, ADR 0047
+# Punkt 1) - dasselbe Muster wie ARCHITECTURE_CATEGORIES oben, ebenfalls ohne modell-ladenden
+# Test.
+#
+# VERIFIZIERT (developer, 2026-08-30, einmalige Pflicht laut ADR 0047 Punkt 1): die exakte
+# Schreibweise stammt aus der im gebuendelten Modell-Asset selbst mitgelieferten Label-Datei
+# `labels_without_background.txt` in backend/src/photosort/assets/efficientnet_lite0.tflite (die
+# .tflite-Datei enthaelt ihre Metadaten als angehaengtes ZIP-Archiv). Die zehn hier gelisteten
+# Klassen sind die Indizes 970 und 972-980 der ImageNet-1k-Label-Liste, also GENAU die
+# natuerlichen Szenenklassen des Vokabulars. Schreibweise mit LEERZEICHEN, nicht mit Unterstrich
+# ("coral reef", nicht "coral_reef") - so steht es in der Label-Datei, und genau diesen String
+# liefert mediapipe als `category_name`.
+#
+# Dokumentierte, bewusst akzeptierte Luecke (ADR 0047 Punkt 1, AK-Pflicht): ImageNet-1k kennt
+# KEINE Klassen fuer Wald, Wiese oder Feld - solche Landschaften werden strukturell nicht als
+# `landschaft` erkannt und landen im "nicht erkannt"-Zustand. Eine Nachkalibrierung bleibt eine
+# reine Listen-/Konstanten-Aenderung ohne Architektur-Eingriff.
+LANDSCAPE_SCENE_CATEGORIES = frozenset(
+    {
+        "alp",
+        "cliff",
+        "coral reef",
+        "geyser",
+        "lakeside",
+        "promontory",
+        "sandbar",
+        "seashore",
+        "valley",
+        "volcano",
+    }
+)
+
+# Inhaltliche Konfidenzschwelle des landschaft-Kriteriums (ADR 0047 Punkt 1) - bewusst deutlich
+# niedriger als SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD (0.5, gebaeude): ein Landschaftsfoto
+# verteilt seine Modellkonfidenz typischerweise ueber mehrere benachbarte Szenenklassen ("alp"/
+# "valley"/"promontory" am selben Bergpanorama), eine Architektur-Klasse dagegen konzentriert sie.
+# Dokumentierte, nicht gegen einen Fotokorpus kalibrierte Setzung (gleiche Klasse wie
+# CATEGORY_ACTIVE_THRESHOLD_FRACTION), austauschbar ohne Architektur-Aenderung.
+LANDSCHAFT_LABEL_MIN_CONFIDENCE = 0.25
+
+
+def compute_landschaft_score(labels: Sequence[SceneLabel]) -> float:
+    """`landschaft`-Kriterium (specs/features/0217, ADR 0047 Punkt 1): Score = Konfidenz des
+    besten Labels, das SOWOHL in LANDSCAPE_SCENE_CATEGORIES liegt ALS AUCH
+    >= LANDSCHAFT_LABEL_MIN_CONFIDENCE ist, sonst 0.0.
+
+    Reine Funktion ohne eigenen classify_scene-Aufruf (Trennung analog compute_gebaeude_score/
+    compute_tier_score): worker.py::_compute_content_criteria ruft classify_scene GENAU EINMAL
+    pro Foto auf und reicht dieselbe Label-Liste an compute_gebaeude_score UND diese Funktion
+    weiter - dasselbe Wiederverwendungsmuster wie detect_person -> content_people +
+    goldener_schnitt (Spec 0038). Der Ein-Aufruf-Nachweis (Akzeptanzkriterium AK8 der Spec 0217:
+    keine zusaetzlichen Kosten pro Foto) liegt deshalb auf Worker-Integrationsebene, siehe
+    test_worker_criterion_scoring.py."""
+    allowed = [
+        label
+        for label in labels
+        if label.category in LANDSCAPE_SCENE_CATEGORIES
+        and label.confidence >= LANDSCHAFT_LABEL_MIN_CONFIDENCE
+    ]
     if not allowed:
         return 0.0
     return max(label.confidence for label in allowed)
@@ -354,18 +480,27 @@ def is_landmark_candidate(values: dict[str, float]) -> bool:
     vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-fehler-persistierung.md
     Punkt 4) - extrahiert aus worker.py::_select_landmark_candidates (dort bleibt nur noch das
     Skip-bereits-gescorter-Fotos-Verhalten, worker-spezifisch). Ein Foto ist Kandidat, wenn
-    content_landscape ODER gebaeude die jeweils registrierte category_presence_threshold erreicht
+    landschaft ODER gebaeude die jeweils registrierte category_presence_threshold erreicht
     (`>=`, inklusiv, dieselben Registry-Werte wie derive_active_categories/derive_category_key).
     Fehlende Werte gelten als 0.0 (kein Sonderfall, analog derive_active_categories). Von
     _select_landmark_candidates (Live-Lauf) UND api/photos.py::_cloud_vision_status_out
     (Read-Time-Ableitung) gemeinsam genutzt - verhindert ein Auseinanderlaufen beider Stellen bei
-    einer kuenftigen Schwellenwert-Aenderung."""
-    landscape_threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
+    einer kuenftigen Schwellenwert-Aenderung.
+
+    specs/features/0217, ADR 0047 Punkt 5: geprueft wird seit dieser Spec `landschaft` statt
+    `content_landscape` - inhaltlich das, was der Filter immer ausdruecken sollte ("auf dem Foto
+    ist eine Landschaft oder ein Gebaeude zu sehen"), und zugleich die einzige Stelle dieser Spec
+    an einer Vertrauensgrenze: sie entscheidet, welche Fotos den Homeserver in Richtung des
+    externen Vision-Anbieters verlassen duerfen (Security-Abschnitt der Spec, Punkt 1). Die neue
+    Kandidatenmenge steht zur alten in KEINEM Teilmengen-Verhaeltnis (texturarme Fotos ohne
+    Landschaftsmotiv fallen heraus, texturreiche echte Landschaften kommen hinzu) - der Vorfilter
+    bleibt unveraendert rein lokal und VOR jedem Cloud-Aufruf."""
+    landschaft_threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
     gebaeude_threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
-    assert landscape_threshold is not None
+    assert landschaft_threshold is not None
     assert gebaeude_threshold is not None
     return (
-        values.get("content_landscape", 0.0) >= landscape_threshold
+        values.get("landschaft", 0.0) >= landschaft_threshold
         or values.get("gebaeude", 0.0) >= gebaeude_threshold
     )
 
@@ -387,7 +522,7 @@ def compute_landmark_score(detection: LandmarkDetection) -> float:
 # Deadzone um einen frontalen Blick (Yaw nahe 0) - kein klares Richtungssignal, ein nahezu
 # frontaler Blick sagt nichts darueber aus, ob rechts oder links mehr Freiraum "in Blickrichtung"
 # noetig waere. Unkalibriert dokumentiert (gleiche Klasse wie SHARPNESS_NORMALIZATION_CEILING/
-# LANDSCAPE_UNIFORM_FRACTION_THRESHOLD, kein Fotokorpus im Repo zur Kalibrierung).
+# UNIFORM_TILE_VARIANCE_THRESHOLD, kein Fotokorpus im Repo zur Kalibrierung).
 FREIRAUM_YAW_DEADZONE_DEGREES = 10.0
 
 
@@ -432,14 +567,33 @@ def compute_freiraum_score(orientation: FaceOrientation | None) -> float:
     return max(0.0, min(1.0, looking_space / total_space))
 
 
-CATEGORY_DETAIL = "detail"
+# Catch-all-Key fuer Fotos, die kein aktives Kriterium erfuellen (specs/features/0217, ADR 0047
+# Punkt 4) - ersetzt den frueheren CATEGORY_DETAIL ("detail"). "detail" war nie eine Erkennung,
+# sondern der Auffangkorb, wurde in der Kuratierungsansicht aber wie eine Inhaltsaussage
+# dargestellt; der neue Key benennt den Zustand als das, was er ist. Anzeigename "Nicht erkannt"
+# ueber CATEGORY_DISPLAY_NAME_OVERRIDES (frontend/src/utils/categoryLabels.ts). "detail" bleibt
+# ausschliesslich als Remote-Schlagwort oder manuell gesetzter category_override moeglich, wird
+# aber von keinem Codepfad mehr automatisch vergeben.
+CATEGORY_UNRECOGNIZED = "unerkannt"
+
+# Suffix zur eindeutigen Absetzung eines Remote-Keys, der auf den reservierten Catch-all-Key
+# kollidieren wuerde (Security-Abschnitt der Spec 0217, Punkt 2): `canonical_key`-Slugs aus frei
+# formulierten LLM-Ausgaben leben im selben Namensraum wie CATEGORY_UNRECOGNIZED - ein
+# Remote-Label "Unerkannt" wuerde sonst echte Erkennungen ununterscheidbar in den Auffang-
+# Abschnitt mischen und dessen Aussage entwerten (durch den Spezifitaets-Vorrang jetzt sogar
+# bevorzugt). Slug-sicher ([a-z0-9_]), deterministisch, kein zusaetzlicher Zustand.
+# Bewusst akzeptierte Restkollision (Review-Fund): ein Remote-Label "Unerkannt Remote"
+# slugifiziert selbst auf den abgesetzten Wert. Kein weiterer Ausweichschritt (Schleife/Hash) -
+# die Auswirkung waere dieselbe rein kosmetische Vermischung wie ohne Absetzung, und der Fall
+# setzt ein LLM-Label voraus, das exakt den internen Ersatznamen trifft.
+_RESERVED_CATEGORY_KEY_SUFFIX = "_remote"
 
 # Anteil der Kandidaten-Fotos eines Laufs, ab dem ein category_eligible-Kriterium als "aktiv" gilt
 # (ADR 0023, Punkt 2) - 15%, hoch genug um reines Rauschen (2-3 Zufallstreffer) in einem
 # mittelgrossen Projekt zu vermeiden, niedrig genug um einen thematisch relevanten, aber nicht
 # dominanten Anteil zuverlaessig eine eigene Kategorie ausloesen zu lassen. Dokumentierte, nicht
 # gegen einen echten Fotokorpus kalibrierte Setzung (gleiche Klasse wie SHARPNESS_NORMALIZATION_
-# CEILING/LANDSCAPE_UNIFORM_FRACTION_THRESHOLD), austauschbar ohne Architektur-Aenderung.
+# CEILING/UNIFORM_TILE_VARIANCE_THRESHOLD), austauschbar ohne Architektur-Aenderung.
 CATEGORY_ACTIVE_THRESHOLD_FRACTION = 0.15
 
 
@@ -450,11 +604,35 @@ CATEGORY_ACTIVE_THRESHOLD_FRACTION = 0.15
 # von "fehlender Eintrag" (candidate_values.get(key, 0.0)), keine zweite Konfidenzkalibrierung.
 DYNAMIC_LABEL_PRESENCE_THRESHOLD = 0.01
 
+# Absolute Mindest-Trefferzahl, ab der ein Kriterium der NAMED-Stufe eine eigene Kategorie bildet -
+# alternativ zur Anteilsregel (specs/features/0217, ADR 0047 Punkt 3). Eine absolute Zahl statt
+# eines Anteils, weil genau die Anteils-Mechanik das Problem verursacht: ein praezise erkanntes
+# Motiv soll nicht daran scheitern, dass das Projekt gross ist. Stakeholder-Entscheidung vom
+# 2026-08-30: bewusst 3 statt 1 (Zersplitterung der Kuratierungsansicht in Ein-Foto-Abschnitte)
+# und statt 5 (seltene korrekte Erkennungen fielen wieder in "Nicht erkannt"). Dokumentierte,
+# nicht kalibrierte Setzung wie CATEGORY_ACTIVE_THRESHOLD_FRACTION.
+CATEGORY_SPECIFIC_MIN_PHOTOS = 3
+
+
+def _specificity_of(criterion_key: str, dynamic_keys: frozenset[str]) -> int:
+    """Spezifitaets-Stufe eines Kategorie-Keys (specs/features/0217, ADR 0047 Punkt 2) - geteilt
+    von derive_active_categories (Aktivierungsschwelle) und derive_category_key (Auswahlregel),
+    damit beide dieselbe Regel benutzen statt zweier gepflegter Kopien. `remote:`-Pseudo-Keys
+    (ADR 0032 Punkt 1) haben keine CriterionDefinition und gelten IMMER als NAMED; ein
+    registriertes Kriterium liefert sein Registry-Attribut, ein unbekannter Key den Default."""
+    if criterion_key in dynamic_keys:
+        return CATEGORY_SPECIFICITY_NAMED
+    definition = CRITERIA_REGISTRY.get(criterion_key)
+    if definition is None:
+        return CATEGORY_SPECIFICITY_CONTENT
+    return definition.category_specificity
+
 
 def derive_active_categories(
     candidate_values: dict[int, dict[str, float]],
     threshold_fraction: float = CATEGORY_ACTIVE_THRESHOLD_FRACTION,
     dynamic_keys: frozenset[str] = frozenset(),
+    specific_min_photos: int = CATEGORY_SPECIFIC_MIN_PHOTOS,
 ) -> frozenset[str]:
     """Reine Aggregationsfunktion (Akzeptanzkriterium der Spec 0045): ermittelt EINMAL pro Lauf,
     projektweit ueber ALLE Kandidaten-Fotos (nicht pro cluster_key, ADR 0023 Punkt 2), welche
@@ -469,10 +647,24 @@ def derive_active_categories(
     Pseudo-Keys (`f"remote:{canonical_key}"`) - werden an derselben Haeufigkeitsschwelle gemessen
     wie die registrierten lokalen Kriterien, aber gegen DYNAMIC_LABEL_PRESENCE_THRESHOLD statt
     einer registrierten category_presence_threshold (es gibt keine CriterionDefinition fuer sie).
-    Default `frozenset()` - bestehende Aufrufer/Tests ohne dynamic_keys bleiben unveraendert."""
+    Default `frozenset()` - bestehende Aufrufer/Tests ohne dynamic_keys bleiben unveraendert.
+
+    specs/features/0217, ADR 0047 Punkt 3: die Aktivierungsbedingung ist seit dieser Spec
+    spezifitaetsabhaengig - CATEGORY_SPECIFICITY_CONTENT behaelt die reine Anteilsregel,
+    CATEGORY_SPECIFICITY_NAMED (landmark + alle `remote:`-Pseudo-Keys) ist zusaetzlich aktiv, wenn
+    die absolute Trefferzahl `specific_min_photos` erreicht. Die ODER-Verknuepfung ist noetig,
+    damit sehr kleine Projekte (< 20 Kandidaten) nicht schlechter gestellt werden als bisher."""
     total = len(candidate_values)
     if total == 0:
         return frozenset()
+
+    def _is_active(criterion_key: str, present_count: int) -> bool:
+        if (present_count / total) >= threshold_fraction:
+            return True
+        return (
+            _specificity_of(criterion_key, dynamic_keys) == CATEGORY_SPECIFICITY_NAMED
+            and present_count >= specific_min_photos
+        )
 
     active: set[str] = set()
     for criterion_key, definition in CRITERIA_REGISTRY.items():
@@ -484,7 +676,7 @@ def derive_active_categories(
             for values in candidate_values.values()
             if values.get(criterion_key, 0.0) >= threshold
         )
-        if (present_count / total) >= threshold_fraction:
+        if _is_active(criterion_key, present_count):
             active.add(criterion_key)
 
     for key in dynamic_keys:
@@ -493,7 +685,7 @@ def derive_active_categories(
             for values in candidate_values.values()
             if values.get(key, 0.0) >= DYNAMIC_LABEL_PRESENCE_THRESHOLD
         )
-        if (present_count / total) >= threshold_fraction:
+        if _is_active(key, present_count):
             active.add(key)
 
     return frozenset(active)
@@ -510,16 +702,20 @@ def derive_category_key(
     Kriterien gleichzeitig (Wert >= der jeweiligen category_presence_threshold), gewinnt der
     hoechste normierte Score; bei exakt gleichem Score entscheidet die alphabetische Reihenfolge
     des VOLLEN (inkl. "remote:"-Praefix) criterion_key (deterministisch, testbar). Kein erfuelltes
-    aktives Kriterium -> Catch-all CATEGORY_DETAIL. category_key wird generisch aus dem
+    aktives Kriterium -> Catch-all CATEGORY_UNRECOGNIZED. category_key wird generisch aus dem
     gewinnenden criterion_key gebildet (`removeprefix("content_")`, bzw. symmetrisch
     `removeprefix("remote:")` fuer dynamische Keys, ADR 0032 Punkt 1) - liefert fuer
-    Bestandskriterien identische Werte wie bisher ("people"/"landscape"), fuer tier/gebaeude/
+    Bestandskriterien identische Werte wie bisher ("people"), fuer tier/gebaeude/landschaft/
     Remote-Label automatisch die richtigen Keys, ohne manuelles Mapping (ADR 0023 Punkt 4).
 
     `dynamic_keys` (specs/features/0055, ADR 0032 Punkt 1): Pseudo-Keys aus `active_criteria`, die
     NICHT in CRITERIA_REGISTRY stehen - werden gegen DYNAMIC_LABEL_PRESENCE_THRESHOLD statt einer
     registrierten category_presence_threshold geprueft. Default `frozenset()` - bestehende
-    Aufrufer/Tests ohne dynamic_keys bleiben unveraendert."""
+    Aufrufer/Tests ohne dynamic_keys bleiben unveraendert.
+
+    specs/features/0217, ADR 0047 Punkte 2/4: die Auswahl folgt seit dieser Spec dem Schluessel
+    `(-specificity, -score, key)`, und der Catch-all-Key ist ein reservierter Wert (siehe
+    _RESERVED_CATEGORY_KEY_SUFFIX)."""
     qualifying: list[str] = []
     for criterion_key in active_criteria:
         if criterion_key in dynamic_keys:
@@ -534,9 +730,27 @@ def derive_category_key(
             qualifying.append(criterion_key)
 
     if not qualifying:
-        return CATEGORY_DETAIL
+        return CATEGORY_UNRECOGNIZED
 
-    winner = min(qualifying, key=lambda key: (-criterion_values.get(key, 0.0), key))
+    # specs/features/0217, ADR 0047 Punkt 2: hoechste Spezifitaet zuerst, erst INNERHALB derselben
+    # Stufe der hoechste normierte Score, dann alphabetisch nach dem vollen criterion_key. Vorher
+    # verglich diese Zeile Werte unterschiedlicher Skalen direkt miteinander (Uniform-Flaechen-
+    # Anteil gegen LLM-Konfidenz) - die unspezifischere Zahl gewann dabei regelmaessig.
+    winner = min(
+        qualifying,
+        key=lambda key: (
+            -_specificity_of(key, dynamic_keys),
+            -criterion_values.get(key, 0.0),
+            key,
+        ),
+    )
     if winner.startswith("remote:"):
-        return winner.removeprefix("remote:")
+        category_key = winner.removeprefix("remote:")
+        # Security-Abschnitt der Spec 0217, Punkt 2: ein Remote-Label, dessen canonical_key auf
+        # den reservierten Catch-all-Key faellt, wird eindeutig abgesetzt statt mit ihm
+        # zusammenzufallen - sonst mischten sich echte Erkennungen ununterscheidbar in den
+        # "Nicht erkannt"-Abschnitt.
+        if category_key == CATEGORY_UNRECOGNIZED:
+            return f"{category_key}{_RESERVED_CATEGORY_KEY_SUFFIX}"
+        return category_key
     return winner.removeprefix("content_")

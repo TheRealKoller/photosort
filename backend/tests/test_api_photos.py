@@ -777,6 +777,38 @@ class TestCriterionScores:
             },
         ]
 
+    async def test_content_landscape_is_exposed_as_a_non_category_quality_criterion(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # specs/features/0217, ADR 0047 Punkt 1: content_landscape heisst in den
+        # Bewertungsdetails "Flächigkeit" und ist nicht mehr kategorie-faehig - dadurch wandert es
+        # im Frontend automatisch vom Block "Kategorien" in den Block "Qualität" (Spec 0209
+        # partitioniert allein nach diesem Flag, kein Frontend-Sonderfall).
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="content_landscape",
+                value=0.8,
+                source=CriterionSource.LOCAL_HEURISTIC,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["criterion_scores"] == [
+            {
+                "criterion_key": "content_landscape",
+                "display_name": "Flächigkeit",
+                "value": 0.8,
+                "source": "local_heuristic",
+                "category_eligible": False,
+            }
+        ]
+
     async def test_criterion_scores_is_empty_list_when_none_exist(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
@@ -1141,6 +1173,63 @@ class TestCloudVisionStatus:
             if e["phase"] == "landmark"
         )
         assert entry["status"] == "not_candidate"
+
+    async def test_landmark_not_candidate_for_an_old_run_with_only_a_content_landscape_row(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # specs/features/0217, ADR 0047 Punkt 5: die Read-Time-Ableitung folgt derselben
+        # umgestellten Vorfilterung wie der Lauf - eine Zeile aus einem ALTEN Lauf (nur
+        # content_landscape, hoher Wert) macht ein Foto nicht mehr zum Kandidaten.
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="content_landscape",
+                value=1.0,
+                source=CriterionSource.LOCAL_HEURISTIC,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "landmark"
+        )
+        assert entry["status"] == "not_candidate"
+
+    async def test_landmark_not_run_when_the_landschaft_criterion_reaches_the_threshold(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
+        assert threshold is not None
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="landschaft",
+                value=threshold,
+                source=CriterionSource.LOCAL_ML,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "landmark"
+        )
+        assert entry["status"] == "not_run"
 
     async def test_landmark_not_run_when_a_local_criterion_reaches_the_threshold(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession

@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import worker
-from photosort.criteria import CATEGORY_DETAIL
+from photosort.criteria import CATEGORY_UNRECOGNIZED
 from photosort.landmark import LandmarkApiError, LandmarkDetection
 from photosort.models import (
     CategoryLabel,
@@ -1231,10 +1231,12 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
         .all()
     )
     # Voller Pool (nicht nur Top-N) - alle 3 Fotos landen ausserdem in derselben Partition
-    # (gleicher cluster_key, alle als LANDSCAPE klassifiziert -> content_people=0, uniform hoch).
+    # (gleicher cluster_key, keines erfuellt ein aktives Kriterium -> Catch-all). Seit
+    # specs/features/0217 ist das "unerkannt" statt der frueheren Kategorie "landscape": ein
+    # flaechiges Bild ohne Landschaftslabel ist keine Landschaft (AK1).
     assert len(rankings) == 3
     by_photo = {r.photo_id: r for r in rankings}
-    assert {by_photo[p.id].category_key for p in photos} == {"landscape"}
+    assert {by_photo[p.id].category_key for p in photos} == {CATEGORY_UNRECOGNIZED}
     assert {by_photo[p.id].cluster_key for p in photos} == {"cluster-0"}
     positions = sorted(r.rank_position for r in rankings)
     assert positions == [1, 2, 3]
@@ -1666,15 +1668,16 @@ async def test_identical_per_photo_tier_score_lands_in_different_categories_depe
     }
     # Dasselbe Marker-Foto (identischer tier-Score) landet diesmal NICHT in "tier", weil die
     # Haeufigkeitsschwelle in DIESEM Lauf nicht erreicht wird - Catch-all "detail".
-    assert diluted_rankings[diluted_photos[0].id] == CATEGORY_DETAIL
+    assert diluted_rankings[diluted_photos[0].id] == CATEGORY_UNRECOGNIZED
 
 
 async def test_existing_behavior_is_unchanged_when_frequency_threshold_is_still_met(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    # Bestandsverhalten-Regression (Akzeptanzkriterium der Spec): ein Projekt, in dem
-    # content_landscape weiterhin die 15%-Schwelle erreicht (hier: alle Fotos), liefert denselben
-    # category_key wie bisher.
+    # Bestandsverhalten-Regression (Akzeptanzkriterium der Spec 0045), seit specs/features/0217
+    # auf das echte Inhalts-Kriterium umgestellt: ein Projekt, in dem `landschaft` die
+    # 15%-Schwelle erreicht (hier: alle Fotos tragen ein Allow-Listen-Landschaftslabel), liefert
+    # unveraendert einen einheitlichen, aus dem Kriterium abgeleiteten category_key.
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photos = []
@@ -1693,7 +1696,7 @@ async def test_existing_behavior_is_unchanged_when_frequency_threshold_is_still_
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
     )
@@ -1708,7 +1711,7 @@ async def test_existing_behavior_is_unchanged_when_frequency_threshold_is_still_
         .scalars()
         .all()
     )
-    assert {r.category_key for r in rankings} == {"landscape"}
+    assert {r.category_key for r in rankings} == {"landschaft"}
 
 
 async def test_empty_candidate_pool_does_not_crash_category_derivation(
@@ -1862,26 +1865,31 @@ class TestSelectLandmarkCandidates:
     Grenzfall exakt auf der Schwelle, ohne einen echten Kandidatenlauf aufzusetzen."""
 
     def test_below_both_thresholds_is_not_a_candidate(self) -> None:
-        candidate_values = {1: {"content_landscape": 0.4, "gebaeude": 0.0}}
+        candidate_values = {1: {"landschaft": 0.0, "gebaeude": 0.0}}
         assert _select_landmark_candidates(candidate_values, set()) == []
 
-    def test_content_landscape_at_exactly_the_threshold_is_a_candidate_inclusive(self) -> None:
-        candidate_values = {1: {"content_landscape": 0.5, "gebaeude": 0.0}}
+    def test_landschaft_at_exactly_the_threshold_is_a_candidate_inclusive(self) -> None:
+        # specs/features/0217, ADR 0047 Punkt 5: Vorfilterung auf `landschaft` statt
+        # `content_landscape` UMGESTELLT (nicht ergaenzt).
+        candidate_values = {1: {"landschaft": 0.01, "gebaeude": 0.0}}
         assert _select_landmark_candidates(candidate_values, set()) == [1]
 
     def test_gebaeude_at_exactly_the_threshold_is_a_candidate_inclusive(self) -> None:
-        candidate_values = {1: {"content_landscape": 0.0, "gebaeude": 0.01}}
+        candidate_values = {1: {"landschaft": 0.0, "gebaeude": 0.01}}
         assert _select_landmark_candidates(candidate_values, set()) == [1]
 
-    def test_just_below_content_landscape_threshold_is_not_a_candidate(self) -> None:
-        candidate_values = {1: {"content_landscape": 0.499999, "gebaeude": 0.0}}
+    def test_just_below_landschaft_threshold_is_not_a_candidate(self) -> None:
+        candidate_values = {1: {"landschaft": 0.009, "gebaeude": 0.0}}
         assert _select_landmark_candidates(candidate_values, set()) == []
+
+    def test_a_high_content_landscape_value_alone_is_no_longer_a_candidate(self) -> None:
+        assert _select_landmark_candidates({1: {"content_landscape": 1.0}}, set()) == []
 
     def test_missing_values_count_as_not_present(self) -> None:
         assert _select_landmark_candidates({1: {}}, set()) == []
 
     def test_already_scored_photo_is_excluded_even_if_it_would_pass_the_threshold(self) -> None:
-        candidate_values = {1: {"content_landscape": 0.9}}
+        candidate_values = {1: {"landschaft": 0.9}}
         assert _select_landmark_candidates(candidate_values, {1}) == []
 
 
@@ -1945,7 +1953,7 @@ async def test_consent_enabled_sends_a_landscape_photo_to_the_landmark_client(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
@@ -2016,7 +2024,7 @@ async def test_landmark_detection_row_persists_the_configured_provider(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
@@ -2054,7 +2062,7 @@ async def test_provider_switch_between_runs_does_not_overwrite_the_stored_provid
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: first_client,
@@ -2076,7 +2084,7 @@ async def test_provider_switch_between_runs_does_not_overwrite_the_stored_provid
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: second_client,
@@ -2117,7 +2125,7 @@ async def test_photo_without_an_identified_landmark_name_gets_zero_score_and_no_
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
@@ -2288,7 +2296,7 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
             cache_dir=tmp_path,
             build_detector=_no_face_detector,
             build_animal_detector=_no_animal_detector,
-            build_classifier=_no_scene_classifier,
+            build_classifier=_landscape_scene_classifier,
             build_aesthetics=_no_aesthetics_model,
             build_landmarker=_no_face_landmarker,
             build_landmark_client=lambda: failing_client,
@@ -2329,7 +2337,7 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: succeeding_client,
@@ -2369,7 +2377,7 @@ async def test_failed_landmark_call_persists_a_cloud_vision_error_row(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: failing_client,
@@ -2405,7 +2413,7 @@ async def test_successful_landmark_call_after_a_previous_failure_clears_the_erro
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: RecordingLandmarkClient(raise_error=True),
@@ -2423,7 +2431,7 @@ async def test_successful_landmark_call_after_a_previous_failure_clears_the_erro
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: RecordingLandmarkClient(),
@@ -2462,7 +2470,7 @@ async def test_successful_landmark_call_without_a_name_still_clears_the_error_ro
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: RecordingLandmarkClient(raise_error=True),
@@ -2480,7 +2488,7 @@ async def test_successful_landmark_call_without_a_name_still_clears_the_error_ro
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: RecordingLandmarkClient(
@@ -2534,7 +2542,7 @@ async def test_repeated_landmark_failures_upsert_the_same_error_row(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: _RaisingClient("erster Fehlschlag"),
@@ -2546,7 +2554,7 @@ async def test_repeated_landmark_failures_upsert_the_same_error_row(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: _RaisingClient("zweiter Fehlschlag"),
@@ -2587,7 +2595,7 @@ async def test_landmark_error_message_is_capped_at_500_characters(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: _RaisingClient(),
@@ -2626,7 +2634,7 @@ async def test_landmark_calls_are_limited_by_landmark_api_concurrency(
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
@@ -2683,7 +2691,7 @@ async def test_multiple_simultaneously_failing_landmark_calls_each_log_their_own
             cache_dir=tmp_path,
             build_detector=_no_face_detector,
             build_animal_detector=_no_animal_detector,
-            build_classifier=_no_scene_classifier,
+            build_classifier=_landscape_scene_classifier,
             build_aesthetics=_no_aesthetics_model,
             build_landmarker=_no_face_landmarker,
             build_landmark_client=lambda: client,
@@ -2725,7 +2733,7 @@ async def test_cancelled_error_from_a_parallel_landmark_call_propagates_and_fail
                 cache_dir=tmp_path,
                 build_detector=_no_face_detector,
                 build_animal_detector=_no_animal_detector,
-                build_classifier=_no_scene_classifier,
+                build_classifier=_landscape_scene_classifier,
                 build_aesthetics=_no_aesthetics_model,
                 build_landmarker=_no_face_landmarker,
                 build_landmark_client=lambda: CancellingLandmarkClient(),
@@ -2846,7 +2854,7 @@ async def test_no_remote_labels_behaves_like_before_the_merge_was_introduced(
             select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
         )
     ).scalar_one()
-    assert ranking.category_key == CATEGORY_DETAIL
+    assert ranking.category_key == CATEGORY_UNRECOGNIZED
 
 
 async def test_category_override_wins_over_the_automatically_derived_category_key(
@@ -2884,3 +2892,437 @@ async def test_category_override_wins_over_the_automatically_derived_category_ke
         )
     ).scalar_one()
     assert ranking.category_key == "urlaub"
+
+
+# --- specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md, ADR decisions/0047 ---
+
+
+class CountingSceneClassifier:
+    """Zaehlt classify()-Aufrufe UND liefert dabei konfigurierbare Labels - Ein-Aufruf-Nachweis
+    fuer AK8 der Spec 0217 ("keine zusaetzlichen Kosten pro Foto"): aus DERSELBEN Modellausgabe
+    entstehen gebaeude UND landschaft. Anders als CountingDetector (Spec 0038) ist dieser
+    Aufrufzaehler der Testnachweis eines Akzeptanzkriteriums und darf nicht als redundant
+    gestrichen werden (Testkonzept, Regel 2 zu ADR 0047)."""
+
+    def __init__(self, categories: list[tuple[str, float]] | None = None) -> None:
+        self.call_count = 0
+        self._categories = categories if categories is not None else [("valley", 0.7)]
+
+    def classify(self, image: object) -> object:
+        self.call_count += 1
+        return SimpleNamespace(
+            classifications=[
+                SimpleNamespace(
+                    categories=[
+                        SimpleNamespace(category_name=name, score=score)
+                        for name, score in self._categories
+                    ]
+                )
+            ]
+        )
+
+
+def _landscape_scene_classifier() -> SceneClassifierStub:
+    """Szenen-Klassifikator-Stub mit einem Allow-Listen-Landschaftslabel (exakte Schreibweise wie
+    in der Label-Datei des gebuendelten Modells, siehe criteria.py::LANDSCAPE_SCENE_CATEGORIES)."""
+    return SceneClassifierStub(category="valley", score=0.8)
+
+
+class SingleFaceDetector:
+    """Faket den mediapipe FaceDetector so, dass GENAU EIN Gesicht gefunden wird - noetig fuer den
+    End-to-End-Nachweis, dass ein Remote-Schlagwort gegen content_people=1.0 gewinnt (AK3)."""
+
+    def detect(self, image: object) -> object:
+        return SimpleNamespace(
+            detections=[
+                SimpleNamespace(
+                    categories=[SimpleNamespace(score=0.9)],
+                    bounding_box=SimpleNamespace(origin_x=10, origin_y=10, width=40, height=40),
+                )
+            ]
+        )
+
+
+def _single_face_detector() -> SingleFaceDetector:
+    return SingleFaceDetector()
+
+
+async def _criteria_of(session: AsyncSession, photo: Photo) -> dict[str, float]:
+    return {
+        c.criterion_key: c.value
+        for c in (
+            await session.execute(
+                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+            )
+        ).scalars()
+    }
+
+
+async def test_classify_scene_is_called_exactly_once_per_photo_for_both_criteria(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # AK8 (Pflichttest, Spy): GENAU EIN classify()-Aufruf pro Foto, aus dem BEIDE Kriterien
+    # entstehen - das Kostenkriterium der Story.
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "alps.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+    classifier = CountingSceneClassifier([("valley", 0.7), ("church", 0.9)])
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=lambda: classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    assert classifier.call_count == 1
+    criteria = await _criteria_of(db_session, photo)
+    assert criteria["landschaft"] == pytest.approx(0.7)
+    assert criteria["gebaeude"] == pytest.approx(0.9)
+
+
+def test_landschaft_is_part_of_the_image_analysis_criterion_keys() -> None:
+    assert "landschaft" in worker._IMAGE_ANALYSIS_CRITERION_KEYS
+    assert worker._IMAGE_ANALYSIS_CRITERION_SOURCES["landschaft"] == CriterionSource.LOCAL_ML
+
+
+async def test_a_failing_landschaft_score_leaves_gebaeude_untouched(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Best-effort in BEIDE Richtungen (Testkonzept, Regel 3 zu ADR 0047): scheitert die
+    # Score-Berechnung des einen Kriteriums, muss das andere aus derselben Modellausgabe trotzdem
+    # geschrieben werden - die try/except-Granularitaet ist damit testbestimmt.
+    def _boom(labels: object) -> float:
+        raise RuntimeError("Landschafts-Score kaputt")
+
+    monkeypatch.setattr(worker, "compute_landschaft_score", _boom)
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "church.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_scene_classifier_stub,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = await _criteria_of(db_session, photo)
+    assert "landschaft" not in criteria
+    assert criteria["gebaeude"] == pytest.approx(0.8)
+
+
+async def test_a_failing_gebaeude_score_leaves_landschaft_untouched(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom(labels: object) -> float:
+        raise RuntimeError("Gebaeude-Score kaputt")
+
+    monkeypatch.setattr(worker, "compute_gebaeude_score", _boom)
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "valley.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = await _criteria_of(db_session, photo)
+    assert "gebaeude" not in criteria
+    assert criteria["landschaft"] == pytest.approx(0.8)
+
+
+async def test_a_failing_scene_classification_leaves_both_criteria_unwritten(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    class BrokenSceneClassifier:
+        def classify(self, image: object) -> object:
+            raise RuntimeError("Modell-Ladefehler")
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=BrokenSceneClassifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    criteria = await _criteria_of(db_session, photo)
+    assert "gebaeude" not in criteria
+    assert "landschaft" not in criteria
+    # Ein Kriterium ohne Abhaengigkeit zur Szenen-Klassifikation bleibt unberuehrt.
+    assert "content_landscape" in criteria
+
+
+async def test_a_flat_photo_without_a_landscape_label_ends_up_unrecognized(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # AK1/AK5: hoher content_landscape-Wert, aber kein Allow-Listen-Label -> "unerkannt" statt
+    # der frueheren Kategorie "landscape".
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "wall.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    ranking = (
+        await db_session.execute(
+            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        )
+    ).scalar_one()
+    assert ranking.category_key == CATEGORY_UNRECOGNIZED
+    criteria = await _criteria_of(db_session, photo)
+    assert criteria["content_landscape"] > 0.5
+    assert criteria["landschaft"] == 0.0
+
+
+async def test_recognised_landscape_photos_form_the_landschaft_category(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # AK2 (der bisher gut funktionierende Fall verschlechtert sich nicht): ueberwiegend
+    # Allow-Listen-Landschaftslabels aktivieren die Kategorie, die Fotos landen dort.
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    for index in range(4):
+        photo = await _add_photo(
+            db_session, project, f"p{index}.jpg", f"etag-{index}", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    rankings = (
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rankings) == 4
+    assert {r.category_key for r in rankings} == {"landschaft"}
+
+
+async def test_a_remote_label_beats_content_people_end_to_end(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # AK3 ueber den gesamten Lauf (inkl. _merge_remote_category_labels): ein Foto mit erkannten
+    # Gesichtern (content_people = 1.0) und einem Remote-Schlagwort landet unter dem Schlagwort.
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    label = await _add_category_label(db_session)
+    for index in range(3):
+        photo = await _add_photo(
+            db_session, project, f"p{index}.jpg", f"etag-{index}", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
+        await _add_category_detection(db_session, photo, label, confidence=0.3)
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_single_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    rankings = (
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {r.category_key for r in rankings} == {"hund"}
+
+
+@pytest.mark.parametrize("override", ["detail", "landscape"])
+async def test_a_manual_override_on_a_no_longer_derivable_key_survives_a_full_run(
+    db_session: AsyncSession, tmp_path: Path, override: str
+) -> None:
+    # AK9: ein Override auf einen Wert, den die neue Ableitung nie mehr erzeugt, bleibt bitgenau
+    # erhalten - er wird VOR jeder Ableitung angewendet.
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    score = await _add_score(db_session, photo)
+    score.category_override = override
+    await db_session.commit()
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+    )
+
+    ranking = (
+        await db_session.execute(
+            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        )
+    ).scalar_one()
+    assert ranking.category_key == override
+    await db_session.refresh(score)
+    assert score.category_override == override
+
+
+async def test_a_flat_photo_without_a_landscape_label_triggers_no_cloud_call_anymore(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Kostensenkung als eigener Testfall (Testkonzept, Regel 2 zu ADR 0047): ein Foto, das NUR die
+    # weggefallene content_landscape-Bedingung erfuellte, verlaesst den Homeserver nicht mehr.
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    project.cloud_vision_consent_at = datetime.now(UTC)
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "wall.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+    client = RecordingLandmarkClient()
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: client,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert client.calls == []
+
+
+async def test_a_recognised_landscape_photo_is_still_sent_to_the_landmark_client(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    project.cloud_vision_consent_at = datetime.now(UTC)
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "valley.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+    client = RecordingLandmarkClient()
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: client,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert len(client.calls) == 1

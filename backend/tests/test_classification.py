@@ -20,6 +20,8 @@ from photosort.classification import (
     OBJECT_DETECTOR_MODEL_SHA256,
     SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
     SCENE_CLASSIFIER_MODEL_SHA256,
+    SCENE_LABEL_MAX_RESULTS,
+    SCENE_LABEL_MIN_CONFIDENCE,
     AnimalDetection,
     FaceBoundingBox,
     FaceOrientation,
@@ -379,9 +381,52 @@ class TestClassifyScene:
         labels = classify_scene(_solid(), FakeSceneClassifier([("church", 0.9)]))
         assert labels == [SceneLabel(category="church", confidence=0.9)]
 
-    def test_ignores_a_label_below_the_confidence_threshold(self) -> None:
+    def test_ignores_a_label_below_the_model_lower_bound(self) -> None:
+        # specs/features/0217, ADR 0047 Punkt 1: die Untergrenze von classify_scene ist seit
+        # dieser Spec SCENE_LABEL_MIN_CONFIDENCE (0.2) statt SCENE_CLASSIFICATION_CONFIDENCE_
+        # THRESHOLD (0.5) - die inhaltliche Konfidenzentscheidung liegt jetzt in den jeweiligen
+        # Kriterien-Funktionen (compute_gebaeude_score/compute_landschaft_score).
+        assert SCENE_LABEL_MIN_CONFIDENCE == 0.2
         assert SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD == 0.5
         assert classify_scene(_solid(), FakeSceneClassifier([("church", 0.1)])) == []
+
+    def test_label_just_below_the_lower_bound_is_ignored(self) -> None:
+        assert classify_scene(_solid(), FakeSceneClassifier([("valley", 0.19)])) == []
+
+    def test_label_exactly_at_the_lower_bound_is_kept_inclusive(self) -> None:
+        labels = classify_scene(_solid(), FakeSceneClassifier([("valley", 0.2)]))
+        assert labels == [SceneLabel(category="valley", confidence=0.2)]
+
+    def test_label_at_the_old_gebaeude_threshold_is_still_kept(self) -> None:
+        # Nicht-Regression: die alte Schwelle (0.5) liegt weiterhin ueber der neuen Untergrenze,
+        # ein bisher geliefertes Label darf nicht verschwinden.
+        labels = classify_scene(_solid(), FakeSceneClassifier([("church", 0.5)]))
+        assert labels == [SceneLabel(category="church", confidence=0.5)]
+
+    def test_result_list_is_capped_at_the_configured_maximum(self) -> None:
+        # ADR 0047 Punkt 1: max_results=5 haelt die Label-Liste pro Foto beschraenkt - hier
+        # zusaetzlich in classify_scene selbst durchgesetzt (analog der eigenen, expliziten
+        # Konfidenzschwelle), damit das Verhalten unabhaengig von der Detector-Konfiguration
+        # testbar bleibt.
+        assert SCENE_LABEL_MAX_RESULTS == 5
+        labels = classify_scene(
+            _solid(),
+            FakeSceneClassifier([(f"label_{index}", 0.3) for index in range(8)]),
+        )
+        assert len(labels) == SCENE_LABEL_MAX_RESULTS
+
+    def test_cap_keeps_the_strongest_labels_and_does_not_displace_a_stronger_hit(self) -> None:
+        # Nicht-Regressions-Pflicht (Testkonzept, Regel 1 zu ADR 0047): die Begrenzung darf den
+        # bisherigen Treffer eines Bestands-Konsumenten (gebaeude) nicht verdraengen, auch wenn
+        # das starke Label als LETZTES aus dem Modell kommt.
+        labels = classify_scene(
+            _solid(),
+            FakeSceneClassifier(
+                [(f"label_{index}", 0.3) for index in range(8)] + [("church", 0.95)]
+            ),
+        )
+        assert len(labels) == SCENE_LABEL_MAX_RESULTS
+        assert SceneLabel(category="church", confidence=0.95) in labels
 
     def test_does_not_filter_by_architecture_allow_list_itself(self) -> None:
         # WICHTIG (Modul-Kommentar in classification.py): classify_scene liefert die ROHE

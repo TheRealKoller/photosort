@@ -25,6 +25,7 @@ from photosort.classification import (
     FaceLandmarkerLike,
     ObjectDetectorLike,
     SceneClassifierLike,
+    SceneLabel,
     build_face_detector,
     build_face_landmarker,
     build_object_detector,
@@ -42,6 +43,7 @@ from photosort.criteria import (
     compute_gebaeude_score,
     compute_golden_ratio_score,
     compute_landmark_score,
+    compute_landschaft_score,
     compute_symmetrie_score,
     compute_tier_score,
     content_people_from_faces,
@@ -816,6 +818,9 @@ _IMAGE_ANALYSIS_CRITERION_KEYS: tuple[str, ...] = (
     "tier",
     "goldener_schnitt",
     "gebaeude",
+    # specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md ab hier (zweites Kriterium
+    # aus derselben Szenen-Klassifikation, siehe _compute_content_criteria).
+    "landschaft",
     "aesthetics",
     # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ab hier.
     "symmetrie",
@@ -1112,11 +1117,28 @@ def _compute_content_criteria(
     except Exception:
         pass
 
+    # specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md, ADR 0047 Punkt 1:
+    # classify_scene wird GENAU EINMAL pro Foto aufgerufen, dieselbe Label-Liste speist gebaeude
+    # UND landschaft (Wiederverwendungsmuster wie detect_person -> content_people +
+    # goldener_schnitt; Akzeptanzkriterium AK8: keine zusaetzlichen Kosten pro Foto). Die
+    # Label-Ermittlung und jede der beiden Score-Berechnungen haben ein EIGENES try/except - ein
+    # Fehler in einer Score-Funktion darf das jeweils andere Kriterium nicht mitreissen (bis zu
+    # dieser Spec stand beides in einer Anweisung).
     if scene_classifier is not None:
+        scene_labels: list[SceneLabel] | None = None
         try:
-            values["gebaeude"] = compute_gebaeude_score(classify_scene(image, scene_classifier))
+            scene_labels = classify_scene(image, scene_classifier)
         except Exception:
-            pass
+            scene_labels = None
+        if scene_labels is not None:
+            try:
+                values["gebaeude"] = compute_gebaeude_score(scene_labels)
+            except Exception:
+                pass
+            try:
+                values["landschaft"] = compute_landschaft_score(scene_labels)
+            except Exception:
+                pass
 
     if aesthetics_model is not None:
         try:
