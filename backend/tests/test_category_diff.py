@@ -273,6 +273,13 @@ class TestResolveRunIds:
         with pytest.raises(CategoryDiffError):
             await resolve_run_ids(db_session, project.id, own_run.id, foreign_run.id)
 
+    async def test_two_identical_run_ids_are_rejected(self, db_session: AsyncSession) -> None:
+        project = await _make_project(db_session)
+        run = await _make_run(db_session, project)
+
+        with pytest.raises(CategoryDiffError):
+            await resolve_run_ids(db_session, project.id, run.id, run.id)
+
     async def test_only_one_explicit_run_id_is_rejected(self, db_session: AsyncSession) -> None:
         project = await _make_project(db_session)
         run = await _make_run(db_session, project)
@@ -364,11 +371,13 @@ class TestMain:
         exit_code = main(["--project-id", "999"], database_url=url)
 
         assert exit_code != 0
-        output = capsys.readouterr().out
-        assert "Fehler:" in output
+        captured = capsys.readouterr()
+        # Fehlertexte auf stderr, damit ein umgeleiteter Report (stdout) frei davon bleibt.
+        assert "Fehler:" in captured.err
+        assert captured.out == ""
         # Kein durchgereichter Traceback/keine DATABASE_URL in der Meldung.
-        assert "Traceback" not in output
-        assert "sqlite" not in output
+        assert "Traceback" not in captured.err
+        assert "sqlite" not in captured.err
 
     def test_project_with_too_few_runs_exits_non_zero(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -392,7 +401,7 @@ class TestMain:
         exit_code = main(["--project-id", str(project_id)], database_url=url)
 
         assert exit_code != 0
-        assert "Fehler:" in capsys.readouterr().out
+        assert "Fehler:" in capsys.readouterr().err
 
     def test_a_run_id_of_another_project_exits_non_zero(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -413,7 +422,31 @@ class TestMain:
         )
 
         assert exit_code != 0
-        assert "Fehler:" in capsys.readouterr().out
+        assert "Fehler:" in capsys.readouterr().err
+
+    def test_identical_run_ids_are_rejected(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # Review-Fund: zwei identische Run-IDs ergaeben einen Report, in dem definitionsgemaess
+        # alles unveraendert aussieht - irrefuehrend bei einem Werkzeug, das eine Veraenderung
+        # nachweisen soll.
+        url = _sqlite_url(tmp_path)
+        ids = _seed_database(url)
+
+        exit_code = main(
+            [
+                "--project-id",
+                str(ids["project"]),
+                "--before-run-id",
+                str(ids["before"]),
+                "--after-run-id",
+                str(ids["before"]),
+            ],
+            database_url=url,
+        )
+
+        assert exit_code != 0
+        assert "Fehler:" in capsys.readouterr().err
 
     def test_a_database_error_yields_a_short_message_without_credentials(
         self, capsys: pytest.CaptureFixture[str]
@@ -425,10 +458,11 @@ class TestMain:
         exit_code = main(["--project-id", "1"], database_url=unreachable)
 
         assert exit_code != 0
-        output = capsys.readouterr().out
-        assert "Fehler: Datenbankzugriff fehlgeschlagen" in output
-        assert "Traceback" not in output
-        assert "geheim" not in output
+        captured = capsys.readouterr()
+        assert "Fehler: Datenbankzugriff fehlgeschlagen" in captured.err
+        assert captured.out == ""
+        assert "Traceback" not in captured.err
+        assert "geheim" not in captured.err
 
     def test_project_id_must_be_an_integer(self, tmp_path: Path) -> None:
         # argparse type=int (Security-Abschnitt der Spec 0217, Punkt 3): ein freier String wird

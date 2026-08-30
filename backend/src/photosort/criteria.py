@@ -582,6 +582,10 @@ CATEGORY_UNRECOGNIZED = "unerkannt"
 # Remote-Label "Unerkannt" wuerde sonst echte Erkennungen ununterscheidbar in den Auffang-
 # Abschnitt mischen und dessen Aussage entwerten (durch den Spezifitaets-Vorrang jetzt sogar
 # bevorzugt). Slug-sicher ([a-z0-9_]), deterministisch, kein zusaetzlicher Zustand.
+# Bewusst akzeptierte Restkollision (Review-Fund): ein Remote-Label "Unerkannt Remote"
+# slugifiziert selbst auf den abgesetzten Wert. Kein weiterer Ausweichschritt (Schleife/Hash) -
+# die Auswirkung waere dieselbe rein kosmetische Vermischung wie ohne Absetzung, und der Fall
+# setzt ein LLM-Label voraus, das exakt den internen Ersatznamen trifft.
 _RESERVED_CATEGORY_KEY_SUFFIX = "_remote"
 
 # Anteil der Kandidaten-Fotos eines Laufs, ab dem ein category_eligible-Kriterium als "aktiv" gilt

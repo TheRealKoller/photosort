@@ -125,11 +125,11 @@ Als Nutzer, der ein Projekt kuratiert, möchte ich mich darauf verlassen können
 
 **Befund:** Die neue Kandidatenmenge (`landschaft` ODER `gebaeude`) steht zur alten (`content_landscape` ODER `gebaeude`) **in keinem Teilmengen-Verhältnis**. Die ADR-Formulierung "kleiner und präziser" gilt für den Kostenaspekt im Mittel, nicht als Datenschutz-Garantie: texturarme Fotos ohne Landschaftsmotiv fallen heraus, aber texturreiche tatsächliche Landschaftsaufnahmen — die den Uniform-Flächen-Schwellwert nie erreicht haben — kommen neu hinzu.
 
-**Stakeholder-Entscheidung vom 2026-08-30:** Das bestehende projektweite Opt-in (`Project.cloud_landmark_detection_enabled`) gilt unverändert weiter, der Consent-Zeitstempel wird **nicht** zurückgesetzt. Begründung: Empfänger, Zweck, Datenumfang pro Foto und Consent-Mechanik ändern sich nicht — ausschließlich die Auswahl der Fotos innerhalb derselben, bereits eingewilligten Verarbeitung. Kein zusätzlicher Code für einen erneuten Zustimmungsschritt.
+**Stakeholder-Entscheidung vom 2026-08-30:** Das bestehende projektweite Opt-in (`Project.cloud_vision_detection_enabled`) gilt unverändert weiter, der Consent-Zeitstempel wird **nicht** zurückgesetzt. Begründung: Empfänger, Zweck, Datenumfang pro Foto und Consent-Mechanik ändern sich nicht — ausschließlich die Auswahl der Fotos innerhalb derselben, bereits eingewilligten Verarbeitung. Kein zusätzlicher Code für einen erneuten Zustimmungsschritt.
 
 **Muss-Kriterien für die Umsetzung:**
 - Der Vorfilter bleibt **vor** jedem Cloud-Aufruf und rein lokal; die übrigen Grenzen gelten unverändert und dürfen nicht angefasst werden: ausschließlich die `display`-Cache-Variante (2048×2048), nie das Original, kein GPS-/EXIF-Zugriff, kein erneutes Senden bereits gescorter Fotos.
-- `run_criterion_scoring` baut den Landmark-Client weiterhin nachweislich nur bei gesetztem `Project.cloud_landmark_detection_enabled` (kein Client-Aufbau "auf Verdacht") — die Filter-Umstellung darf diese Reihenfolge nicht verändern.
+- `run_criterion_scoring` baut den Landmark-Client weiterhin nachweislich nur bei gesetztem `Project.cloud_vision_detection_enabled` (kein Client-Aufbau "auf Verdacht") — die Filter-Umstellung darf diese Reihenfolge nicht verändern.
 - Beide Nutzer der Funktion (`worker.py::_select_landmark_candidates`, `api/photos.py::_cloud_vision_status_out`) bleiben an derselben gemeinsamen Funktion, damit die angezeigte Cloud-Vision-Status-Ableitung nicht von der real gesendeten Menge abweicht.
 - Testpflichtig: ein Foto mit hohem `content_landscape`, aber ohne `landschaft`/`gebaeude`, ist **kein** Kandidat mehr; ein Foto mit `landschaft` über der Presence-Schwelle und niedrigem `content_landscape` ist neu Kandidat.
 

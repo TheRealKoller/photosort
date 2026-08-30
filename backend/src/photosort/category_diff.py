@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
@@ -187,6 +188,12 @@ async def resolve_run_ids(
             raise CategoryDiffError(
                 "--before-run-id und --after-run-id muessen gemeinsam angegeben werden."
             )
+        if before_run_id == after_run_id:
+            # Sonst entsteht ein Report, in dem definitionsgemaess alles unveraendert aussieht -
+            # irrefuehrend genau bei dem Werkzeug, das eine Veraenderung nachweisen soll.
+            raise CategoryDiffError(
+                "--before-run-id und --after-run-id sind identisch - kein Vergleich moeglich."
+            )
         for run_id in (before_run_id, after_run_id):
             run = await session.get(CriterionScoringRun, run_id)
             if run is None or run.project_id != project_id:
@@ -288,12 +295,17 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
             )
         )
     except CategoryDiffError as exc:
-        print(f"Fehler: {exc}")
+        # Fehlertexte gehen bewusst nach stderr, der REPORT dagegen nach stdout (Review-Fund,
+        # bewusst getroffene Entscheidung): die Ausgabe-Hygiene-Vorgabe "ausschliesslich stdout"
+        # aus dem Security-Abschnitt der Spec 0217 zielt auf den Report mit den `relative_path`-
+        # Werten privater Fotos - Fehlermeldungen enthalten keine Fotopfade, und die uebliche
+        # CLI-Trennung haelt ein `... | less`/`> datei` des Reports frei von Fehlertexten.
+        print(f"Fehler: {exc}", file=sys.stderr)
         return 1
     except SQLAlchemyError as exc:
         # Nur der Fehlertyp, NIE str(exc)/Traceback - die SQLAlchemy-Meldung kann die
         # DATABASE_URL inklusive Zugangsdaten enthalten.
-        print(f"Fehler: Datenbankzugriff fehlgeschlagen ({type(exc).__name__}).")
+        print(f"Fehler: Datenbankzugriff fehlgeschlagen ({type(exc).__name__}).", file=sys.stderr)
         return 1
     print(report)
     return 0

@@ -661,12 +661,14 @@ class TestDeriveCategoryKey:
         active = frozenset({"content_landscape", "landschaft"})
         assert derive_category_key(values, active) == CATEGORY_UNRECOGNIZED
 
-    def test_missing_criteria_falls_back_to_detail_without_crashing(self) -> None:
+    def test_missing_criteria_falls_back_to_the_unrecognized_catch_all_without_crashing(
+        self,
+    ) -> None:
         # Best-effort-Fall: beide Inhalts-Kriterien fuer dieses Foto konnten nicht berechnet
         # werden (z.B. fehlende display-Cache-Datei) - die Kette darf nicht crashen.
         assert derive_category_key({}, frozenset({"content_people"})) == CATEGORY_UNRECOGNIZED
 
-    def test_no_active_categories_at_all_falls_back_to_detail(self) -> None:
+    def test_no_active_categories_at_all_falls_back_to_the_unrecognized_catch_all(self) -> None:
         # Kein Kriterium im Lauf erreichte die 15%-Haeufigkeitsschwelle - jedes Foto landet im
         # Catch-all, unabhaengig von den einzelnen Kriterien-Werten.
         values = {"content_people": 1.0, "landschaft": 1.0}
