@@ -1,6 +1,6 @@
 # 0217 - Inhaltsbasierte Landschafts-Erkennung, Spezifitäts-Vorrang bei der Kategorie-Vergabe und expliziter "nicht erkannt"-Zustand
 
-**Status:** Accepted
+**Status:** Implemented ([PR #282](https://github.com/TheRealKoller/photosort/pull/282))
 **Erstellt:** 2026-08-30
 **Bezug:** [GitHub-Issue #217](https://github.com/TheRealKoller/photosort/issues/217), ADR [`decisions/0047-inhaltsbasierte-landschaft-spezifitaets-vorrang-nicht-erkannt.md`](../decisions/0047-inhaltsbasierte-landschaft-spezifitaets-vorrang-nicht-erkannt.md)
 
