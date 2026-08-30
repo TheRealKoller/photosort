@@ -1134,7 +1134,15 @@ def test_finalize_lehnt_eine_nicht_akzeptierte_spec_ab(
             pr_number=281,
         )
 
-    assert "Accepted" in str(excinfo.value)
+    meldung = str(excinfo.value)
+    # Die Meldung muss beide zulaessigen Faelle nennen: eine unvollstaendige Aufzaehlung
+    # widerspraeche der Regel, nach der eine bereits geschriebene identische Zielzeile
+    # durchlaeuft - und dieses Werkzeug soll gerade ohne Handbeurteilung auswertbar sein.
+    assert "'Proposed'" in meldung
+    assert (
+        "Status 'Accepted' oder eine, die bereits exakt die Zielzeile dieses Aufrufs traegt"
+        in meldung
+    )
     assert "**Status:** Proposed" in path.read_text(encoding="utf-8")
     assert fake.calls == []
 

@@ -589,7 +589,7 @@ def cmd_finalize(
     if status not in {"Accepted", "Implemented"}:
         raise BoardError(
             f"Spec {spec_number} hat Datei-Status {status!r} - finalisiert wird nur eine Spec im "
-            "Status 'Accepted'."
+            "Status 'Accepted' oder eine, die bereits exakt die Zielzeile dieses Aufrufs traegt."
         )
 
     resolved_pr, pull_request = _resolve_pull_request(board, issue_number, pr_number)
