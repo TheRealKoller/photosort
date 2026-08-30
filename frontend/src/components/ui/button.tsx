@@ -5,20 +5,27 @@ import type { ButtonHTMLAttributes } from 'react'
 
 import { cn } from '../../lib/utils'
 
-// Formsprache/Touch-Ziele (specs/architecture/0004-design-system.md): rounded-md (8px), mind.
+// Formsprache/Touch-Ziele (specs/architecture/0004-design-system.md): Buttons sind vollstaendige
+// Pillen (`rounded-full`, Regel des Organic-Design-Systems fuer kleine Bedienelemente), mind.
 // 44x44px Tap-Ziel (h-11 = 44px bei der Standardgroesse), fokus-sichtbarer Ring in --accent.
+// Beschriftung in der Display-Schrift (`font-heading`, Caprasimo) - die Vorlage setzt fuer `.btn`
+// ausdruecklich `font-family: var(--font-heading)`.
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ' +
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-heading text-sm ' +
     'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
     'focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
+        // `text-accent-fg` ist die gegen die gefuellte Akzentflaeche gerechnete dunkle Tinte
+        // (4.60:1 hell, 8.03:1 dunkel) - siehe die Begruendung bei --accent-fg in index.css.
         default: 'bg-accent text-accent-fg shadow-warm hover:opacity-90',
         secondary: 'bg-border/60 text-text-h hover:bg-border',
         outline: 'border border-border bg-transparent text-text-h hover:bg-border/40',
         ghost: 'bg-transparent text-text-h hover:bg-border/40',
-        link: 'bg-transparent text-accent underline-offset-4 hover:underline p-0 h-auto min-h-0 min-w-0',
+        // Link ist Text in Fliesstextgroesse auf dem Seitengrund - daher `--accent-strong`
+        // (5.72:1) statt `--accent` (3.03:1, nur fuer Chrome kalibriert).
+        link: 'bg-transparent text-accent-strong underline-offset-4 hover:underline p-0 h-auto min-h-0 min-w-0',
       },
       size: {
         default: 'h-11 min-w-11 px-4 py-2',

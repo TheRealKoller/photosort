@@ -60,7 +60,7 @@ export function AusschussStepPage() {
 
   return (
     <section className="flex flex-col items-start gap-3">
-      <h2 className="text-lg font-semibold text-text-h">Ausschuss-Erkennung</h2>
+      <h2 className="text-lg">Ausschuss-Erkennung</h2>
       <p className="text-sm text-text">
         Erkennt automatisch unscharfe, überbelichtete oder doppelte Fotos als
         Ausschuss-Vorschläge — läuft vollständig lokal auf diesem Server.

@@ -84,7 +84,7 @@ function BlockedReasonPopover({ stepLabel, reason }: { stepLabel: string; reason
           type="button"
           aria-label={`Grund für Sperrung von ${stepLabel} anzeigen`}
           onPointerEnter={handlePointerEnter}
-          className="flex size-11 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-text hover:bg-border/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-text hover:bg-border/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           i
         </button>
@@ -94,7 +94,7 @@ function BlockedReasonPopover({ stepLabel, reason }: { stepLabel: string; reason
           <p className="text-sm font-semibold text-text-h">{stepLabel}</p>
           <PopoverClose
             aria-label="Schließen"
-            className="flex size-8 shrink-0 items-center justify-center rounded-md text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <span aria-hidden="true">×</span>
           </PopoverClose>
@@ -123,7 +123,7 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
           zum Fokus (Standard-sr-only/focus:not-sr-only-Muster). */}
       <a
         href="#pipeline-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-20 focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-accent-fg"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-20 focus:rounded-full focus:bg-accent focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-accent-fg"
       >
         Zum Seiteninhalt springen
       </a>
@@ -147,11 +147,21 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
             const stepLabel = `Schritt ${index + 1} von 5: ${definition.label}`
             const ariaLabel = `${stepLabel}, ${statusLabel}`
 
+            /*
+             * Die vier Schrittzustaende der Vorlage (Artboard 4, "Step states"). Reihenfolge der
+             * Faelle ist bedeutungstragend: "aktuell" gewinnt gegen "erledigt", weil ein bereits
+             * erledigter Schritt beim erneuten Aufrufen wieder der aktuelle ist - wo man gerade
+             * steht, ist dann die wichtigere Information. Dass er erledigt ist, sagt weiterhin das
+             * Hakensymbol im Kreis, die Zustandsbenennung steckt ohnehin im aria-label.
+             */
             const circleClasses = cn(
               CIRCLE_BASE_CLASSES,
-              isDone ? 'border-transparent bg-status-success text-chip-fg' : 'border-border bg-bg text-text',
-              isCurrent && 'ring-2 ring-accent ring-offset-2 ring-offset-bg',
-              isBlocked && 'opacity-50'
+              isCurrent && 'border-accent bg-accent text-accent-fg',
+              !isCurrent && isDone && 'border-accent-2-300 bg-accent-2-200 text-accent-2-800',
+              !isCurrent && !isDone && !isBlocked && 'border-border bg-transparent text-text',
+              // Blockiert: schwaecherer Rahmen und gedaempfte Beschriftung statt eines pauschalen
+              // opacity-50 auf dem ganzen Kreis - so bleibt das Schloss-Symbol selbst lesbar.
+              !isCurrent && !isDone && isBlocked && 'border-border/50 bg-transparent text-neutral-500'
             )
 
             return (
@@ -164,7 +174,7 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
                       aria-label={ariaLabel}
                       className={circleClasses}
                     >
-                      <LockIcon />
+                      {isDone ? <CheckIcon /> : <LockIcon />}
                     </span>
                   ) : (
                     <Link
@@ -173,7 +183,10 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
                       aria-current={isCurrent ? 'step' : undefined}
                       className={circleClasses}
                     >
-                      {isDone ? <CheckIcon /> : null}
+                      {/* Erledigt zeigt den Haken, sonst die Schrittnummer (Vorlage) - der leere
+                          Kreis von zuvor liess offen, welcher Schritt gemeint ist. Rein visuell,
+                          die zugaengliche Benennung steht vollstaendig im aria-label. */}
+                      {isDone ? <CheckIcon /> : <span aria-hidden="true">{index + 1}</span>}
                     </Link>
                   )}
                   {isBlocked && (
@@ -186,7 +199,11 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
                     aria-hidden="true"
                     className={cn(
                       'hidden text-xs text-text sm:block',
-                      isCurrent && 'font-semibold text-text-h'
+                      isCurrent && 'font-semibold text-text-h',
+                      // Blockierte Schritte treten auch in der Beschriftung zurueck (Vorlage) -
+                      // rein dekorativ (aria-hidden), die Zustandsangabe steht im aria-label des
+                      // Kreises, hier geht also keine Information verloren.
+                      isBlocked && 'opacity-40'
                     )}
                   >
                     {definition.label}

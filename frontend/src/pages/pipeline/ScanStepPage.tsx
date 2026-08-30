@@ -58,7 +58,7 @@ export function ScanStepPage() {
 
   return (
     <section className="flex flex-col items-start gap-3">
-      <h2 className="text-lg font-semibold text-text-h">Scan</h2>
+      <h2 className="text-lg">Scan</h2>
       <p className="text-sm text-text">
         Durchsucht den verknüpften OpenCloud-Ordner nach neuen, geänderten oder entfernten Fotos.
       </p>

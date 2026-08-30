@@ -9,12 +9,13 @@ const OPTIONS: { status: RatingStatus; label: string }[] = [
 
 // Bewertungsfarben (specs/architecture/0004-design-system.md) - nur auf dem aktiv gedrueckten
 // Button als volle Chip-Flaeche, nicht auf allen dreien, damit "auf einen Blick" erkennbar bleibt,
-// welche Stufe tatsaechlich gesetzt ist. `--chip-fg` als Symbol-/Textfarbe (dieselbe Kalibrierung
-// wie bei Badge/ProjectListPage-Statuspunkt).
+// welche Stufe tatsaechlich gesetzt ist. Als Beschriftungsfarbe die tonspezifische
+// `--rating-<ton>-fg` (dieselbe Kalibrierung wie bei Badge) - keine gemeinsame Vordergrundfarbe,
+// weil keine einzige gegen alle drei Bewertungstoene WCAG-AA haelt (siehe Kommentar in index.css).
 const ACTIVE_TONE_CLASSES: Record<RatingStatus, string> = {
-  favorite: 'bg-rating-favorite text-chip-fg hover:opacity-90',
-  album_worthy: 'bg-rating-album-worthy text-chip-fg hover:opacity-90',
-  rejected: 'bg-rating-rejected text-chip-fg hover:opacity-90',
+  favorite: 'bg-rating-favorite text-rating-favorite-fg hover:opacity-90',
+  album_worthy: 'bg-rating-album-worthy text-rating-album-worthy-fg hover:opacity-90',
+  rejected: 'bg-rating-rejected text-rating-rejected-fg hover:opacity-90',
 }
 
 interface RatingButtonsProps {

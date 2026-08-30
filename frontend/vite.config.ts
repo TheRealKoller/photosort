@@ -12,13 +12,29 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
+      workbox: {
+        /*
+         * Die Standard-globPatterns von vite-plugin-pwa decken Schriftdateien NICHT ab
+         * (js/css/html/ico/png/svg). Ohne diesen Eintrag laegen Caprasimo und Figtree zwar im
+         * Bundle, wuerden offline aber nicht ausgeliefert - die App fiele auf die System-Schrift
+         * zurueck. Genau das war der Grund, die Schriften ueberhaupt self-zu-hosten statt sie von
+         * der Google-Fonts-CDN zu laden (specs/features/0285-organic-design-import.md).
+         *
+         * Bewusst nur woff2, nicht auch woff: @fontsource liefert beide Formate, die generierte
+         * CSS nennt woff2 zuerst: jeder Browser, der diese PWA installieren kann, unterstuetzt es.
+         * Beide Formate zu precachen wuerde den Offline-Cache ohne Gegenwert etwa verdoppeln.
+         */
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+      },
       manifest: {
         name: 'PhotoSort',
         short_name: 'PhotoSort',
         description: 'Urlaubsfotos sortieren, kategorisieren und die besten auswählen.',
-        // Warme Markenfarben statt Vite-Template-Platzhalter (specs/features/0012-visual-redesign.md).
-        theme_color: '#bb4e2a',
-        background_color: '#faf7f2',
+        // Markenfarben aus dem Organic-Design-System (specs/features/0285-organic-design-import.md)
+        // - muessen dem tatsaechlichen Akzent/Grund entsprechen, sonst blitzt beim Start der PWA
+        // die alte Palette auf.
+        theme_color: '#c67139',
+        background_color: '#f5ead8',
         display: 'standalone',
         start_url: '/',
         icons: [

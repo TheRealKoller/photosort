@@ -10,8 +10,8 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
    * Vorschlags-Badge-Muster (specs/architecture/0004-design-system.md): volle Fuellung = von
    * einem Menschen entschieden, gedaempfte Flaeche + Umrandung = maschineller Vorschlag, noch
    * offen. Die Symbolfarbe unterscheidet sich bewusst zwischen beiden Faellen (Copilot-Review-Fund,
-   * PR "Tailwind-Fundament" - siehe Kommentar bei `TONE_CLASSES`): vollflaechig nutzt `--chip-fg`,
-   * gedaempft/umrandet nutzt `--text-h`.
+   * PR "Tailwind-Fundament" - siehe Kommentar bei `TONE_CLASSES`): vollflaechig nutzt die
+   * tonspezifische `--rating-<ton>-fg`, gedaempft/umrandet nutzt `--text-h`.
    */
   suggested?: boolean
 }
@@ -21,30 +21,30 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 // Quellcode; dynamisch zusammengesetzte Klassennamen wie `bg-${color}` wuerden vom Production-
 // Build-Scan uebersehen und faellen im gebauten CSS ganz weg.
 //
-// Symbolfarbe, vollflaechig (`solid`): `--chip-fg` (nahezu schwarz, in beiden Farbschemata
-// identisch) ist NUR fuer vollflaechig gefuellte Chips kalibriert, wo der Hintergrund die
-// kraeftige, modusunabhaengige Bewertungsfarbe selbst ist. `tone="accent"` nutzt im vollflaechigen
-// Zustand `--accent-fg` statt `--chip-fg`, da `--chip-fg` gegen `--accent` (hell) nur 3.84:1
-// erreicht, verfehlt WCAG-AA (siehe `Button`s `default`-Variante fuer denselben Grund).
+// Symbolfarbe, vollflaechig (`solid`): jeder Bewertungston bringt seine EIGENE, gegen genau
+// diese Fuellung gerechnete Vordergrundfarbe mit (`--rating-<ton>-fg`). Der frueher hier
+// verwendete gemeinsame `--chip-fg` ist mit dem Organic-Design-Import entfallen: dessen drei
+// Toene tragen keine gemeinsame Vordergrundfarbe mit WCAG-AA (schwarz haelt auf Ocker 7.88:1 und
+// Salbei 4.99:1, faellt auf Ziegel auf 3.53:1; Creme haelt auf Ziegel 5.00:1, faellt auf Ocker
+// auf 2.24:1). `tone="accent"` nutzt weiterhin `--accent-fg`, die gegen den Akzent kalibrierte
+// Farbe (siehe `Button`s `default`-Variante fuer denselben Grund).
 //
 // Symbolfarbe, gedaempft (`suggested`): Copilot-Review-Fund (PR "Tailwind-Fundament") - der
 // Hintergrund ist hier nur eine 10%-Deckkraft-Tinte AUF `--bg`, nicht die volle Bewertungsfarbe.
-// `--bg` unterscheidet sich stark zwischen hell (nahezu weiss) und dunkel (nahezu schwarz);
-// `--chip-fg` ist aber in beiden Modi gleich (#000000) - im Dunkelmodus waere das praktisch
-// schwarzer Text auf praktisch schwarzem Hintergrund. `--text-h` ist stattdessen genau fuer
-// diesen Zweck (Text auf `--bg`, in beiden Modi separat kalibriert) vorgesehen und wird hier
-// verwendet statt `--chip-fg`.
+// Eine gegen die volle Fuellung kalibrierte Vordergrundfarbe waere hier also falsch. `--text-h`
+// ist stattdessen genau fuer diesen Zweck (Text auf `--bg`, in beiden Modi separat kalibriert)
+// vorgesehen und wird hier verwendet.
 const TONE_CLASSES: Record<Exclude<BadgeTone, 'neutral'>, { solid: string; suggested: string }> = {
   favorite: {
-    solid: 'bg-rating-favorite text-chip-fg border border-transparent',
+    solid: 'bg-rating-favorite text-rating-favorite-fg border border-transparent',
     suggested: 'border-[1.5px] border-rating-favorite bg-rating-favorite/10 text-text-h',
   },
   'album-worthy': {
-    solid: 'bg-rating-album-worthy text-chip-fg border border-transparent',
+    solid: 'bg-rating-album-worthy text-rating-album-worthy-fg border border-transparent',
     suggested: 'border-[1.5px] border-rating-album-worthy bg-rating-album-worthy/10 text-text-h',
   },
   rejected: {
-    solid: 'bg-rating-rejected text-chip-fg border border-transparent',
+    solid: 'bg-rating-rejected text-rating-rejected-fg border border-transparent',
     suggested: 'border-[1.5px] border-rating-rejected bg-rating-rejected/10 text-text-h',
   },
   accent: {
@@ -61,7 +61,7 @@ export function Badge({ tone = 'neutral', suggested = false, className, ...props
       <span
         data-badge-tone={tone}
         className={cn(
-          'inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border px-1.5 text-xs text-text',
+          'inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-border px-2 text-xs text-text',
           className
         )}
         {...props}
@@ -74,7 +74,7 @@ export function Badge({ tone = 'neutral', suggested = false, className, ...props
       data-badge-tone={tone}
       data-badge-variant={variant}
       className={cn(
-        'inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 text-xs font-medium',
+        'inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-medium',
         TONE_CLASSES[tone][variant],
         className
       )}

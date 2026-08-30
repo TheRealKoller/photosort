@@ -106,9 +106,12 @@ export function ProjectPipelineLayout() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-text-h">{project.name}</h1>
-        <p className="text-sm text-text">{project.opencloud_path}</p>
+      {/* Projektkennung wie in Artboard 4: Name in der Display-Schrift, darunter der Cloud-Pfad in
+          Festbreitenschrift und einzeilig gekuerzt - der Pfad ist eine technische Kennung, kein
+          Fliesstext, und darf die Zeile nicht sprengen. */}
+      <header className="min-w-0">
+        <h1 className="truncate text-2xl">{project.name}</h1>
+        <p className="truncate font-mono text-[10px] text-text">{project.opencloud_path}</p>
       </header>
 
       <Stepper projectId={project.id} project={project} states={states} activeStepId={step} />

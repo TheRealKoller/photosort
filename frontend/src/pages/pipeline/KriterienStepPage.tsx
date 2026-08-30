@@ -67,7 +67,7 @@ export function KriterienStepPage() {
   return (
     <div className="flex flex-col gap-8">
       <section className="flex flex-col items-start gap-3">
-        <h2 className="text-lg font-semibold text-text-h">Kriterien-Bewertung</h2>
+        <h2 className="text-lg">Kriterien-Bewertung</h2>
         <p className="text-sm text-text">
           Bewertet jedes verbleibende Foto nach mehreren Kriterien (Schärfe, Belichtung,
           Bildinhalt) und bildet daraus eine Rangfolge je Foto-Moment und Kategorie — läuft

@@ -27,7 +27,7 @@ export function KuratierungStepPage() {
   return (
     <div className="flex flex-col gap-8">
       <section className="flex flex-col items-start gap-3">
-        <h2 className="text-lg font-semibold text-text-h">Kategorie-Kuratierung</h2>
+        <h2 className="text-lg">Kategorie-Kuratierung</h2>
         <p className="text-sm text-text">
           Zeigt pro Foto-Moment und Kategorie die besten N Fotos — sortierst du eines aus, rückt
           automatisch das nächstbeste derselben Kategorie nach.
