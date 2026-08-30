@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="PhotoSort">
-  <rect width="48" height="48" rx="11" fill="#faf7f2" />
-  <circle cx="17" cy="16" r="5" fill="#d9a441" />
-  <path d="M4 37 L18 21 L26 29 L34 17 L45 37 Z" fill="#bb4e2a" />
+  <rect width="48" height="48" rx="16" fill="#f5ead8" />
+  <circle cx="17" cy="16" r="5" fill="#c9962c" />
+  <path d="M4 37 L18 21 L26 29 L34 17 L45 37 Z" fill="#c67139" />
 </svg>
