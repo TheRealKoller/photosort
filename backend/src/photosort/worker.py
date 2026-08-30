@@ -4,7 +4,7 @@ import asyncio
 import enum
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -18,12 +18,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
+from photosort.categories import CATEGORY_NOT_RECOGNIZED, LOCAL_CATEGORY_SIGNALS, resolve_category
 from photosort.classification import (
-    AnimalDetection,
     FaceBoundingBox,
     FaceDetectorLike,
     FaceLandmarkerLike,
     ObjectDetectorLike,
+    ObjectDetection,
     SceneClassifierLike,
     SceneLabel,
     build_face_detector,
@@ -31,14 +32,17 @@ from photosort.classification import (
     build_object_detector,
     build_scene_classifier,
     classify_scene,
-    detect_animals,
     detect_face_orientation,
+    detect_objects,
     detect_person,
 )
 from photosort.config import settings
 from photosort.criteria import (
     CRITERIA_REGISTRY,
+    animal_detections,
     compute_content_landscape,
+    compute_essen_trinken_score,
+    compute_fahrzeug_score,
     compute_freiraum_score,
     compute_gebaeude_score,
     compute_golden_ratio_score,
@@ -47,8 +51,6 @@ from photosort.criteria import (
     compute_symmetrie_score,
     compute_tier_score,
     content_people_from_faces,
-    derive_active_categories,
-    derive_category_key,
     is_landmark_candidate,
     normalize_exposure,
     normalize_sharpness,
@@ -63,14 +65,15 @@ from photosort.landmark import (
 )
 from photosort.logging_config import configure_logging
 from photosort.models import (
-    CategoryLabel,
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    FineLabel,
     Photo,
-    PhotoCategoryDetection,
+    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoFineLabel,
     PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
@@ -87,8 +90,8 @@ from photosort.opencloud.webdav_xml import DavEntry
 from photosort.ranking import rank_photos
 from photosort.remote_classification import (
     CategoryDetectionClientLike,
-    CategoryLabelDetection,
-    CategoryLabelSnapshotEntry,
+    FineLabelSnapshotEntry,
+    RemoteClassification,
     build_category_classification_client,
     resolve_canonical_label,
 )
@@ -822,6 +825,10 @@ _IMAGE_ANALYSIS_CRITERION_KEYS: tuple[str, ...] = (
     # aus derselben Szenen-Klassifikation, siehe _compute_content_criteria).
     "landschaft",
     "aesthetics",
+    # specs/features/0289-feste-kategorien.md ab hier: zwei weitere Kriterien aus DERSELBEN
+    # COCO-Detektorausgabe wie `tier` (siehe _compute_content_criteria).
+    "fahrzeug",
+    "essen_trinken",
     # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ab hier.
     "symmetrie",
     "horizont",
@@ -1002,40 +1009,61 @@ async def _upsert_landmark_detection(
     existing.provider = provider
 
 
-async def _merge_remote_category_labels(
-    session: AsyncSession, candidate_values: dict[int, dict[str, float]]
-) -> frozenset[str]:
-    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
-    Punkt 1/7: liest bereits vorhandene `photo_category_detections`-Zeilen (aus einem frueheren,
-    separaten `classify-categories-remote`-Lauf - KEIN Cloud-Aufruf hier) fuer die photo_ids in
-    `candidate_values` und merged sie als zusaetzliche `f"remote:{canonical_key}"`-Pseudo-
-    Kriterien-Eintraege IN-PLACE in dieselbe Struktur, die ohnehin fuer alle lokalen Kriterien
-    gefuehrt wird. Jedes Foto hat wegen `UniqueConstraint(photo_id, category_label_id)` hoechstens
-    eine Zeile je `canonical_key` - kein Max-Aggregat noetig, reine 1:1-Uebernahme der
-    `confidence`. Gemeinsam genutzt von `run_criterion_scoring` (vor dem `derive_active_
-    categories`/`derive_category_key`-Aufruf) UND der Override-Rekonstruktion in `api/photos.py`
-    (DRY, ADR 0032 Punkt 6.4). Gibt die Menge der tatsaechlich vorkommenden Pseudo-Keys zurueck."""
-    if not candidate_values:
-        return frozenset()
+async def _remote_category_candidates(
+    session: AsyncSession, photo_ids: Collection[int]
+) -> dict[int, list[str]]:
+    """specs/features/0289-feste-kategorien.md, Umsetzungsschritt 5: liest die bereits vorhandenen
+    `photo_category_classifications`-Zeilen (aus einem frueheren, separaten
+    `classify-categories-remote`-Lauf - KEIN Cloud-Aufruf hier) und liefert je Foto die
+    VALIDIERTE Remote-Kandidatenliste.
+
+    Ersetzt das abgeloeste `_merge_remote_category_labels`: dort wurden Remote-Ergebnisse als
+    `remote:<canonical_key>`-PSEUDO-KRITERIEN in dieselbe Struktur gemischt, die auch die
+    Kriterien-Werte fuehrte (ADR 0032 Punkt 1) - genau die Vermischung von Mess-Signal und
+    Taxonomie, die ADR 0049 aufloest. Kandidaten gehen jetzt als reine Kategorie-Keys in
+    `resolve_category` ein, gleichberechtigt neben den lokalen Signalen.
+
+    Gemeinsam genutzt von `run_criterion_scoring` UND der Override-Rekonstruktion in
+    `api/photos.py` (DRY) - beide leiten die Kategorie damit ueber denselben Codepfad ab."""
+    if not photo_ids:
+        return {}
 
     rows = (
         await session.execute(
             select(
-                PhotoCategoryDetection.photo_id,
-                CategoryLabel.canonical_key,
-                PhotoCategoryDetection.confidence,
-            )
-            .join(CategoryLabel, CategoryLabel.id == PhotoCategoryDetection.category_label_id)
-            .where(PhotoCategoryDetection.photo_id.in_(candidate_values.keys()))
+                PhotoCategoryClassification.photo_id,
+                PhotoCategoryClassification.detected_categories,
+            ).where(PhotoCategoryClassification.photo_id.in_(photo_ids))
         )
     ).all()
+    return {photo_id: list(detected) for photo_id, detected in rows}
 
-    dynamic_keys: set[str] = set()
-    for photo_id, canonical_key, confidence in rows:
-        pseudo_key = f"remote:{canonical_key}"
-        dynamic_keys.add(pseudo_key)
-        candidate_values[photo_id][pseudo_key] = confidence
-    return frozenset(dynamic_keys)
+
+def derive_photo_category(
+    criterion_values: dict[str, float], remote_candidates: Sequence[str]
+) -> str:
+    """Die EINE Kategorie eines Fotos (specs/features/0289-feste-kategorien.md, ADR 0049).
+
+    Lokale Signale und Remote-Kategorien sind zwei Zulieferer EINER Kandidatenmenge; welche
+    gewinnt, entscheidet ausschliesslich die feste Vorrangreihenfolge in
+    `categories.py::resolve_category`. Die HERKUNFT eines Kandidaten beeinflusst das Ergebnis
+    nicht (Akzeptanzkriterium) - dieselbe Kandidatenmenge liefert dieselbe Kategorie, egal ob sie
+    lokal oder remote entstanden ist.
+
+    Ein lokales Signal gilt als Kandidat, wenn IRGENDEINES der in `LOCAL_CATEGORY_SIGNALS`
+    hinterlegten Kriterien seine registrierte `category_presence_threshold` erreicht (`>=`,
+    inklusiv). Ohne jeden Kandidaten ist das Ergebnis `nicht_erkannt` (kein Sonderfallcode - das
+    faellt bereits aus `resolve_category` heraus)."""
+    candidates: set[str] = set(remote_candidates)
+    for category_key, criterion_keys in LOCAL_CATEGORY_SIGNALS.items():
+        for criterion_key in criterion_keys:
+            definition = CRITERIA_REGISTRY.get(criterion_key)
+            if definition is None or definition.category_presence_threshold is None:
+                continue
+            if criterion_values.get(criterion_key, 0.0) >= definition.category_presence_threshold:
+                candidates.add(category_key)
+                break
+    return resolve_category(candidates)
 
 
 def _compute_content_criteria(
@@ -1060,10 +1088,10 @@ def _compute_content_criteria(
     abhaengigen) hier einfach uebersprungen, statt mit einem ungueltigen Objekt eine Exception zu
     provozieren, die erst durch das try/except unten "zufaellig" richtig behandelt wuerde.
 
-    detect_person/detect_animals werden je HOECHSTENS einmal aufgerufen und fuer mehrere davon
-    abhaengige Kriterien wiederverwendet (content_people+goldener_schnitt bzw.
-    tier+goldener_schnitt, Akzeptanzkriterium der Spec: Wiederverwendungsnachweis statt
-    Reimplementierung) - vermeidet einen zweiten, teuren detect()-Aufruf pro Foto und
+    detect_person/detect_objects werden je HOECHSTENS einmal aufgerufen und fuer mehrere davon
+    abhaengige Kriterien wiederverwendet (content_people+goldener_schnitt bzw. tier+fahrzeug+
+    essen_trinken+goldener_schnitt seit specs/features/0289-feste-kategorien.md,
+    Akzeptanzkriterium der Spec: Wiederverwendungsnachweis statt Reimplementierung) - vermeidet einen zweiten, teuren detect()-Aufruf pro Foto und
     Detektortyp (ADR 0022, Performance-Ueberlegung). goldener_schnitt wird nur dann berechnet,
     wenn BEIDE zugrunde liegenden Detektionen (auch mit leerem Ergebnis) erfolgreich waren - ein
     fehlgeschlagener Detektor darf nicht stillschweigend als "kein Subjekt gefunden" interpretiert
@@ -1090,13 +1118,30 @@ def _compute_content_criteria(
         except Exception:
             faces = None
 
-    animals: list[AnimalDetection] | None = None
+    # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: EIN detect_objects-Aufruf
+    # speist jetzt drei Kriterien plus goldener_schnitt. Die Objekt-Erkennung und JEDE der drei
+    # Score-Berechnungen haben ein EIGENES try/except - ein Fehler in einer Score-Funktion darf
+    # die beiden anderen nicht mitreissen (dieselbe Verschaerfung wie bei gebaeude/landschaft
+    # unten, ADR 0047 Punkt 3).
+    objects: list[ObjectDetection] | None = None
     if animal_detector is not None:
         try:
-            animals = detect_animals(image, animal_detector)
-            values["tier"] = compute_tier_score(animals)
+            objects = detect_objects(image, animal_detector)
         except Exception:
-            animals = None
+            objects = None
+        if objects is not None:
+            try:
+                values["tier"] = compute_tier_score(objects)
+            except Exception:
+                pass
+            try:
+                values["fahrzeug"] = compute_fahrzeug_score(objects)
+            except Exception:
+                pass
+            try:
+                values["essen_trinken"] = compute_essen_trinken_score(objects)
+            except Exception:
+                pass
 
     try:
         values["content_landscape"] = compute_content_landscape(image)
@@ -1146,9 +1191,13 @@ def _compute_content_criteria(
         except Exception:
             pass
 
-    if faces is not None and animals is not None:
+    if faces is not None and objects is not None:
         try:
-            values["goldener_schnitt"] = compute_golden_ratio_score(faces, animals)
+            # Verhaltenserhalt (specs/features/0289-feste-kategorien.md, testpflichtig): nur die
+            # TIER-Erkennungen sind Kompositions-Subjekt-Kandidaten - kein Auto, kein Teller.
+            values["goldener_schnitt"] = compute_golden_ratio_score(
+                faces, animal_detections(objects)
+            )
         except Exception:
             pass
 
@@ -1338,7 +1387,7 @@ async def run_criterion_scoring(
         # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR
         # decisions/0025-cloud-landmark-erkennung.md ab hier: erste tatsaechlich produktive
         # Cloud-Phase im Kriterien-Scoring-Pfad, laeuft NACH der obigen (rein lokalen/synchronen)
-        # Foto-Schleife, VOR derive_active_categories/rank_photos (Punkt 3), damit landmark-Werte
+        # Foto-Schleife, VOR der Kategorieableitung/rank_photos (Punkt 3), damit landmark-Werte
         # noch in die Kategorie-/Rangfolgenbildung einfliessen koennen. `project.
         # cloud_vision_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread waehrend
         # des Laufs, dokumentierte Vereinfachung) - ist der Schalter aus (Default), wird
@@ -1428,28 +1477,25 @@ async def run_criterion_scoring(
                     if aclose is not None:
                         await aclose()
 
-        # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
-        # Punkt 1: merged bereits vorhandene Remote-Label-Ergebnisse (aus einem frueheren,
-        # separaten classify-categories-remote-Lauf - KEIN neuer Cloud-Aufruf hier) als zusaetzliche
-        # Pseudo-Kriterien-Eintraege in candidate_values, VOR dem folgenden derive_active_
-        # categories/derive_category_key-Aufruf (Reihenfolge ist Akzeptanzkriterium der Spec).
-        dynamic_keys = await _merge_remote_category_labels(session, candidate_values)
-
-        # specs/features/0045-kategorien-aus-statistiken-ableiten.md, ADR 0023: GENAU EINMAL pro
-        # Lauf, projektweit ueber ALLE Kandidaten-Fotos (nicht pro cluster_key), NACH der
-        # Foto-Schleife - candidate_values enthaelt an dieser Stelle bereits die vollstaendigen,
-        # in diesem Lauf erfolgreich berechneten Kriterien-Werte aller Kandidaten (lokal + Remote-
-        # Pseudo-Keys).
-        active_categories = derive_active_categories(candidate_values, dynamic_keys=dynamic_keys)
+        # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 5: laedt die bereits
+        # vorhandenen Klassifikations-Zeilen (aus einem frueheren, separaten
+        # classify-categories-remote-Lauf - KEIN neuer Cloud-Aufruf hier). Sie liefern die
+        # REMOTE-Haelfte der Kandidatenmenge; die lokale Haelfte steckt in candidate_values.
+        remote_candidates = await _remote_category_candidates(session, candidate_values.keys())
 
         scores_by_photo_id = {photo.id: score for photo, score in rows}
 
         partitions: dict[tuple[str, str], dict[int, dict[str, float]]] = {}
         for photo_id, values in candidate_values.items():
+            # Die Kategorie ist seit ADR 0049 eine reine PRO-FOTO-Funktion ueber einem
+            # geschlossenen Set - keine laufweite Haeufigkeitsaggregation mehr (das abgeloeste
+            # derive_active_categories/derive_category_key-Paar aus ADR 0023). Die Zuordnung ist
+            # damit unabhaengig davon, welche anderen Fotos im Projekt liegen.
+            #
             # specs/features/0055, ADR 0032 Punkt 2 Migration b: ein manueller Override ueberlebt
             # damit automatisch jeden kuenftigen vollen Re-Scoring-Lauf, ohne Sonderfallcode.
-            category_key = scores_by_photo_id[photo_id].category_override or derive_category_key(
-                values, active_categories, dynamic_keys=dynamic_keys
+            category_key = scores_by_photo_id[photo_id].category_override or derive_photo_category(
+                values, remote_candidates.get(photo_id, [])
             )
             partition_key = (cluster_by_photo[photo_id], category_key)
             partitions.setdefault(partition_key, {})[photo_id] = values
@@ -1497,22 +1543,26 @@ async def score_criteria(ctx: dict[str, Any], project_id: int, scoring_run_id: i
 
 async def _classify_photo_for_remote_category(
     client: CategoryDetectionClientLike, cache_dir: Path, photo: Photo
-) -> list[CategoryLabelDetection]:
+) -> RemoteClassification:
     """Der reine I/O-/Netzwerk-Teil eines einzelnen Remote-Kategorie-Kandidaten (analog
     _detect_landmark_for_photo) - bewusst OHNE Session-Zugriff, damit mehrere Aufrufe sicher
-    parallel per asyncio.gather laufen koennen. Nutzt ausschliesslich die bereits vorhandene
-    display-Cache-Variante (ADR 0032 Punkt 5), nie das Original."""
+    parallel per asyncio.gather laufen koennen. Nutzt ausschliesslich die bereits vorhandene,
+    auf 2048 px begrenzte display-Cache-Variante (ADR 0032 Punkt 5) - nie das OpenCloud-Original,
+    kein EXIF/GPS, kein Dateiname und kein Pfad im Request (Security-Muss-Kriterium, unveraendert
+    seit Spec 0055)."""
     path = variant_path(cache_dir, photo.id, photo.etag, "display")
     image_bytes = path.read_bytes()
-    return await client.classify(image_bytes, _CLOUD_VISION_IMAGE_MIME_TYPE)
+    return await client.classify(image_bytes, _CLOUD_VISION_IMAGE_MIME_TYPE, photo.id)
 
 
 async def select_remote_category_candidates(session: AsyncSession, project_id: int) -> list[Photo]:
     """Kandidatenmenge fuer die Remote-Kategorie-Klassifizierung (specs/features/0055-remote-
     kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 5): der KOMPLETTE Ausschuss-
     Ueberlebender-Bestand (PhotoScore.suggested_status IS NULL) OHNE Vorfilter (anders als
-    landmark, ADR 0021), abzueglich bereits klassifizierter Fotos (mindestens eine
-    `photo_category_detections`-Zeile). Von `run_remote_category_classification` UND
+    landmark, ADR 0021), abzueglich bereits klassifizierter Fotos (vorhandene
+    `photo_category_classifications`-Zeile - seit specs/features/0289-feste-kategorien.md ist die
+    1:1-Klassifikations-Zeile das Skip-Kriterium, nicht mehr eine Feinlabel-Zeile: ein Foto mit
+    Kategorie, aber ohne Feinlabel, gilt als erledigt). Von `run_remote_category_classification` UND
     `GET .../classify-categories-remote/estimate` (api/projects.py) genutzt - "ermittelt ueber
     dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf" (Akzeptanzkriterium der Spec)."""
     rows = (
@@ -1529,8 +1579,8 @@ async def select_remote_category_candidates(session: AsyncSession, project_id: i
     already_classified_ids = set(
         (
             await session.execute(
-                select(PhotoCategoryDetection.photo_id).where(
-                    PhotoCategoryDetection.photo_id.in_([photo.id for photo in rows])
+                select(PhotoCategoryClassification.photo_id).where(
+                    PhotoCategoryClassification.photo_id.in_([photo.id for photo in rows])
                 )
             )
         ).scalars()
@@ -1584,9 +1634,9 @@ async def run_remote_category_classification(
             return run
 
         try:
-            snapshot_rows = (await session.execute(select(CategoryLabel))).scalars().all()
+            snapshot_rows = (await session.execute(select(FineLabel))).scalars().all()
             snapshot = [
-                CategoryLabelSnapshotEntry(
+                FineLabelSnapshotEntry(
                     canonical_key=row.canonical_key,
                     display_name=row.display_name,
                     embedding=list(row.embedding),
@@ -1642,24 +1692,39 @@ async def run_remote_category_classification(
                             now,
                         )
                         continue
-                    detections = result
+                    classification = result
 
-                    # Jedes der 1-3 Roh-Labels auf einen kanonischen Eintrag aufloesen; werden
-                    # zwei Labels auf denselben canonical_key aufgeloest, gewinnt die hoehere
-                    # confidence (ADR 0032 Punkt 5) - kein IntegrityError durch
-                    # UniqueConstraint(photo_id, category_label_id).
-                    best_by_canonical: dict[
-                        str, tuple[CategoryLabelSnapshotEntry, CategoryLabelDetection]
-                    ] = {}
-                    for detection in detections:
-                        entry = resolve_canonical_label(detection.label, snapshot, embedder)
-                        existing = best_by_canonical.get(entry.canonical_key)
-                        if existing is None or detection.confidence > existing[1].confidence:
-                            best_by_canonical[entry.canonical_key] = (entry, detection)
+                    # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 5: pro Foto genau
+                    # EINE Klassifikations-Zeile. `category_key` ist bereits ueber die feste
+                    # Vorrangreihenfolge aufgeloest, `detected_categories` haelt die VALIDIERTE
+                    # Kandidatenliste - nie die Rohliste des Modells (Security-Muss-Kriterium:
+                    # sonst wanderte unvalidierter Fremdtext ueber einen zweiten Kanal in
+                    # API-Antwort und UI).
+                    session.add(
+                        PhotoCategoryClassification(
+                            photo_id=photo.id,
+                            category_key=resolve_category(classification.categories),
+                            detected_categories=list(classification.categories),
+                            provider=settings.landmark_provider,
+                            computed_at=now,
+                        )
+                    )
 
-                    for entry, detection in best_by_canonical.values():
+                    # Feinlabels sind reine Zusatzinformation und werden AUCH DANN geschrieben,
+                    # wenn die Kategorie `nicht_erkannt` lautet (Akzeptanzkriterium). Loesen beide
+                    # Labels auf denselben canonical_key auf, entsteht nur eine Zeile - kein
+                    # IntegrityError durch UniqueConstraint(photo_id, fine_label_id). Ein
+                    # Konfidenz-Vergleich ist dafuer nicht mehr noetig (Konfidenzen sind mit
+                    # ADR 0049 Entwurfsentscheidung 7 ersatzlos entfallen), es gewinnt die
+                    # Erstnennung.
+                    entries_by_canonical: dict[str, tuple[FineLabelSnapshotEntry, str]] = {}
+                    for raw_label in classification.fine_labels:
+                        entry = resolve_canonical_label(raw_label, snapshot, embedder)
+                        entries_by_canonical.setdefault(entry.canonical_key, (entry, raw_label))
+
+                    for entry, raw_label in entries_by_canonical.values():
                         if entry.id is None:
-                            label_row = CategoryLabel(
+                            label_row = FineLabel(
                                 canonical_key=entry.canonical_key,
                                 display_name=entry.display_name,
                                 embedding=entry.embedding,
@@ -1668,11 +1733,10 @@ async def run_remote_category_classification(
                             await session.flush()
                             entry.id = label_row.id
                         session.add(
-                            PhotoCategoryDetection(
+                            PhotoFineLabel(
                                 photo_id=photo.id,
-                                category_label_id=entry.id,
-                                raw_label=detection.label,
-                                confidence=detection.confidence,
+                                fine_label_id=entry.id,
+                                raw_label=raw_label,
                                 provider=settings.landmark_provider,
                                 computed_at=now,
                             )
@@ -1730,8 +1794,9 @@ async def reassign_photo_category(
     desselben Laufs und ruft `ranking.py::rank_photos` NUR fuer diese zwei Partitionen erneut auf
     (kein neuer Ranking-Algorithmus, kein voller Re-Scoring-Lauf). No-op (0 rank_photos-Aufrufe),
     wenn `new_category_key` bereits der aktuelle Wert ist. Nutzt ausschliesslich bereits
-    persistierte `PhotoCriterionScore`-Werte (inkl. der zur-Laufzeit gemergten Remote-Pseudo-
-    Kriterien, `_merge_remote_category_labels`) - KEINE Neuberechnung."""
+    persistierte `PhotoCriterionScore`-Werte fuer die Neusortierung - KEINE Neuberechnung, kein
+    Cloud-Aufruf. Die KATEGORIE selbst wird hier nicht abgeleitet, sondern vom Aufrufer
+    uebergeben (Override-Wert bzw. rekonstruierter Wert aus `derive_photo_category`)."""
     ranking = (
         await session.execute(
             select(PhotoRanking).where(
@@ -1771,8 +1836,6 @@ async def reassign_photo_category(
         values_by_photo_id.setdefault(row.photo_id, {})[row.criterion_key] = row.value
     for photo_id_in_partition in photo_ids:
         values_by_photo_id.setdefault(photo_id_in_partition, {})
-
-    await _merge_remote_category_labels(session, values_by_photo_id)
 
     rankings_by_photo_id = {ranking_row.photo_id: ranking_row for ranking_row in partition_rankings}
     for category_key in {ranking_row.category_key for ranking_row in partition_rankings}:

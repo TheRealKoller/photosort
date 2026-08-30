@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -9,6 +10,12 @@ from typing import Any, Literal, Protocol
 
 import httpx
 
+from photosort.categories import (
+    MAX_FINE_LABELS_PER_PHOTO,
+    MAX_REMOTE_CATEGORIES_PER_PHOTO,
+    build_classification_prompt,
+    is_known_category,
+)
 from photosort.cloud_vision import (
     ANTHROPIC_API_VERSION,
     ANTHROPIC_MESSAGES_URL,
@@ -25,32 +32,35 @@ from photosort.label_embedding import LabelEmbedderLike
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
 # decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 3/4: strukturell
-# analog landmark.py, aber offenes 1-3-Label-Antwortschema statt eines festen Enums
-# (REMOTE_CATEGORY_LABELS-Allow-Liste entfaellt ersatzlos). Nutzt dieselben, jetzt providerneutral
-# gefuehrten Vision-Modelle wie landmark.py (cloud_vision.py) - kein neues Provider-Setting.
+# analog landmark.py. Seit specs/features/0289-feste-kategorien.md/ADR 0049 ist das
+# Antwortschema wieder GESCHLOSSEN, aber anders als vor ADR 0032: das Modell nennt bis zu drei
+# KANDIDATEN aus dem festen Set (categories.py), die endgueltige Auswahl trifft der Code
+# (resolve_category). Frei formulierte Feinlabels bleiben als reine Zusatzinformation erhalten.
+
+logger = logging.getLogger(__name__)
 
 ANTHROPIC_CATEGORY_MODEL = ANTHROPIC_VISION_MODEL
 MISTRAL_CATEGORY_MODEL = MISTRAL_VISION_MODEL
 
-# Kurze, reine Klassifikationsantwort (bis zu drei kleine JSON-Objekte) - 256 bleibt ausreichend
-# (ADR 0032 Punkt 3).
+# Kurze, reine Klassifikationsantwort - 256 bleibt ausreichend (ADR 0032 Punkt 3): drei
+# Set-Schluessel (je hoechstens ~8 Tokens) plus zwei kurze deutsche Feinlabels und das
+# JSON-Geruest liegen zusammen deutlich unter 100 Ausgabe-Tokens; der mit Spec 0289 deutlich
+# groessere Prompt waechst ausschliesslich auf der EINGABEseite.
 _MAX_RESPONSE_TOKENS = 256
 
-MIN_REMOTE_LABELS_PER_PHOTO = 1
-MAX_REMOTE_LABELS_PER_PHOTO = 3
 # Defensive Obergrenze gegen eine entartete Modellantwort (ADR 0032 Punkt 3) - verhindert einen
-# uebermaessig langen canonical_key/display_name, bevor resolve_canonical_label/_slugify aufgerufen
-# wird (Security-Abschnitt der Spec, Punkt 3).
-MAX_REMOTE_LABEL_LENGTH = 60
+# uebermaessig langen canonical_key/display_name, BEVOR resolve_canonical_label/_slugify aufgerufen
+# wird (Security-Abschnitt der Spec 0289, Punkt 3). Ein zu langes Label wird VERWORFEN, nicht
+# gekuerzt: ein auf 60 Zeichen abgeschnittenes Label erzeugte sonst dauerhaft einen unbrauchbaren
+# canonical_key in der projektuebergreifenden Registry, und zwei verschiedene Labels koennten auf
+# denselben Slug fallen. Storage-/Degenerationsgrenze, KEINE Sanitisierungsmassnahme (dieselbe
+# Einordnung wie die 500-Zeichen-Kappung aus Spec 0058).
+MAX_FINE_LABEL_LENGTH = 60
 
-_PROMPT = (
-    "Analysiere dieses Foto. Nenne 1 bis 3 kurze, praegnante deutsche Schlagworte, die den "
-    "wesentlichen Inhalt beschreiben (z.B. Ereignis, Ort, Motiv, Tier - kein geschlossenes "
-    "Vokabular, waehle frei passende Begriffe). Antworte AUSSCHLIESSLICH mit einem einzigen "
-    "validen JSON-Objekt, ohne Markdown-Codeblock, ohne weiteren Text, exakt in dieser Form: "
-    '{"labels": [{"label": "<Schlagwort>", "confidence": <Zahl zwischen 0 und 1>}, ...]} '
-    "mit mindestens einem und hoechstens drei Eintraegen."
-)
+# Laengenbegrenzung fuer den in der WARNING-Zeile mitgeloggten Rohwert (Security-Abschnitt der
+# Spec 0289, Punkt 4) - zusammen mit dem %r-Format (repr escaped Zeilenumbrueche/Steuerzeichen
+# sichtbar) die Absicherung gegen Log-Injection durch eine entartete Modellantwort.
+_MAX_LOGGED_RAW_VALUE_LENGTH = 60
 
 
 class RemoteCategoryClassificationApiError(Exception):
@@ -60,69 +70,163 @@ class RemoteCategoryClassificationApiError(Exception):
 
 
 @dataclass(frozen=True)
-class CategoryLabelDetection:
-    """Ein einzelnes, vom Vision-LLM geliefertes Roh-Label + Konfidenz (ADR 0032 Punkt 3) - ersetzt
-    das fruehere CategoryDetection (einzelner Kategorie-Wert aus einem festen Enum)."""
+class RemoteClassification:
+    """Die validierte Antwort des Vision-LLM fuer EIN Foto (specs/features/0289-feste-
+    kategorien.md, Umsetzungsschritt 4) - ersetzt die fruehere `list[CategoryLabelDetection]`.
 
-    label: str
-    confidence: float
+    `categories` enthaelt ausschliesslich bekannte Set-Keys (categories.py::CATEGORY_REGISTRY) in
+    Erstnennungs-Reihenfolge, hoechstens MAX_REMOTE_CATEGORIES_PER_PHOTO - unbekannte Rohwerte
+    sind bereits verworfen. Ein leeres Tupel ist ein GUELTIGES Ergebnis (das Modell hat nichts
+    Bekanntes genannt) und wird ueber `resolve_category` zu `nicht_erkannt`, kein Fehler.
+
+    `fine_labels` enthaelt die zeichensanierten, freien Feinlabels, hoechstens
+    MAX_FINE_LABELS_PER_PHOTO. Konfidenzen entfallen ersatzlos (ADR 0049 Entwurfsentscheidung 7:
+    sie dienten nur der entfallenen Score-Auswahl)."""
+
+    categories: tuple[str, ...]
+    fine_labels: tuple[str, ...]
 
 
 class CategoryDetectionClientLike(Protocol):
-    """Schmale, injizierbare Schnittstelle (analog LandmarkClientLike) - Rueckgabe ist jetzt eine
-    Liste (1-3 Eintraege) statt eines einzelnen Werts."""
+    """Schmale, injizierbare Schnittstelle (analog LandmarkClientLike).
+
+    `photo_id` ist eine technische Detailentscheidung dieser Umsetzung (Spec 0289,
+    Security-Abschnitt Punkt 4 verlangt "der einzelne verworfene Wert PLUS photo_id" in der
+    WARNING-Zeile): der Parser sitzt innerhalb von `classify`, kennt das Foto sonst aber nicht.
+    Der Wert wird ausschliesslich fuer diese Logzeile benutzt, nie an die API gesendet."""
 
     async def classify(
-        self, image_bytes: bytes, mime_type: str
-    ) -> list[CategoryLabelDetection]: ...
+        self, image_bytes: bytes, mime_type: str, photo_id: int
+    ) -> RemoteClassification: ...
 
 
-def _category_labels_from_json(parsed: Any) -> list[CategoryLabelDetection]:
-    """Providerneutrale, rein STRUKTURELLE Validierung der Roh-Antwort (ADR 0032 Punkt 3) - anders
-    als beim frueheren REMOTE_CATEGORY_LABELS-Enum gibt es keine inhaltliche Allow-Liste mehr:
-    (a) `labels` ist eine Liste mit MIN_REMOTE_LABELS_PER_PHOTO <= len <= MAX_REMOTE_LABELS_PER_
-    PHOTO, (b) jedes Element hat ein nicht-leeres, getrimmtes `label` mit hoechstens
-    MAX_REMOTE_LABEL_LENGTH Zeichen, (c) `confidence` ist zu float konvertierbar und wird auf
-    [0, 1] geklemmt (identisches Muster zu landmark.py::_landmark_detection_from_json). Jede
-    Verletzung -> RemoteCategoryClassificationApiError."""
-    try:
-        raw_labels = parsed["labels"]
-    except (KeyError, TypeError) as exc:
-        raise RemoteCategoryClassificationApiError(
-            "Unerwartete Antwortstruktur der Vision-API-Antwort (fehlendes 'labels'-Feld)."
-        ) from exc
+def _log_discarded_category(photo_id: int, raw: object) -> None:
+    """Ein verworfener, unbekannter Kategoriewert (ADR-0034-Muster: eine Zeile, WARNING, kein
+    exc_info/Traceback - der Lauf bleibt erfolgreich, das ist erwartetes Best-effort-Verhalten).
 
-    if not isinstance(raw_labels, list):
-        raise RemoteCategoryClassificationApiError(
-            "Unerwartete Antwortstruktur der Vision-API-Antwort ('labels' ist keine Liste)."
-        )
-    if not (MIN_REMOTE_LABELS_PER_PHOTO <= len(raw_labels) <= MAX_REMOTE_LABELS_PER_PHOTO):
-        raise RemoteCategoryClassificationApiError(
-            f"Unerwartete Anzahl Labels ({len(raw_labels)}), erwartet "
-            f"{MIN_REMOTE_LABELS_PER_PHOTO}-{MAX_REMOTE_LABELS_PER_PHOTO}."
-        )
+    Security-Muss-Kriterien (Spec 0289, Abschnitt 4): geloggt wird AUSSCHLIESSLICH der einzelne
+    verworfene Wert plus photo_id - nie die vollstaendige API-Antwort, nie der Request-Body, nie
+    Base64-Bilddaten, nie der API-Key. Der Rohwert geht laengenbegrenzt und ueber %r (repr) ins
+    Log, nie roh ueber %s: ein mehrzeiliger Modellwert koennte sonst gefaelschte Logzeilen
+    erzeugen. Kein Log-Flooding moeglich - pro Foto koennen hoechstens so viele Werte verworfen
+    werden, wie die Antwortliste Eintraege hat."""
+    text = raw if isinstance(raw, str) else repr(raw)
+    if len(text) > _MAX_LOGGED_RAW_VALUE_LENGTH:
+        text = text[:_MAX_LOGGED_RAW_VALUE_LENGTH] + "..."
+    logger.warning(
+        "remote_category: unbekannter Kategoriewert verworfen photo_id=%s wert=%r", photo_id, text
+    )
 
-    detections: list[CategoryLabelDetection] = []
+
+def _sanitize_label_text(raw: str) -> str:
+    """Zeichensanitisierung eines frei formulierten Feinlabels (Security-Abschnitt der Spec 0289,
+    Punkt 3) - laeuft VOR der Laengenpruefung und vor resolve_canonical_label/_slugify.
+
+    Entfernt alle Unicode-Steuer- und Formatzeichen (Kategorien `Cc`/`Cf`: `\x00`,
+    Zero-Width-Zeichen wie U+200B, Bidi-Overrides wie U+202E) und zieht Whitespace-Folgen zu einem
+    einzelnen Leerzeichen zusammen. Steuerzeichen, die selbst Whitespace SIND (Zeilenumbruch,
+    Tabulator, Wagenruecklauf), werden dabei durch ein Leerzeichen ersetzt statt ersatzlos
+    entfernt - sonst verschmoelzen zwei Woerter ueber einen Zeilenumbruch hinweg zu einem (`str.split()` behandelt auch NBSP
+    und andere Unicode-Leerzeichen als Whitespace); fuehrende/abschliessende Leerzeichen
+    entfallen dabei mit.
+
+    Bewusst eine BLACKLIST (Steuerzeichen), keine Zeichen-Whitelist (Entscheidung 1 der Spec):
+    Feinlabels sind freier deutscher Text, eine Whitelist aus Buchstaben/Ziffern/Leerzeichen/
+    Bindestrich wuerde legitime Labels beschaedigen. Escapetes Rendering im Frontend schuetzt
+    gegen XSS, aber weder gegen optische Verfaelschung der Oberflaeche durch Bidi-/Zero-Width-
+    Zeichen noch gegen mehrzeilige Logeintraege - genau diese Luecke schliesst diese Funktion.
+    Nachruestbar an genau dieser einen Stelle, falls sich die Blacklist als zu schwach erweist."""
+    without_controls = "".join(
+        (" " if char.isspace() else "")
+        if unicodedata.category(char) in ("Cc", "Cf")
+        else char
+        for char in raw
+    )
+    return " ".join(without_controls.split())
+
+
+def _categories_from_json(raw_categories: list[Any], photo_id: int) -> tuple[str, ...]:
+    """Verbindliche Verarbeitungsreihenfolge (Spec 0289, Teststrategie 5): trimmen -> leere Werte
+    verwerfen -> unbekannte Werte verwerfen (+ genau ein WARNING je Wert) -> deduplizieren unter
+    Erhalt der Erstnennungs-Reihenfolge -> ZULETZT kuerzen. Zuerst zu kuerzen wuerde gueltige
+    Werte hinter ungueltigen verlieren."""
+    accepted: list[str] = []
+    for raw in raw_categories:
+        if not isinstance(raw, str):
+            _log_discarded_category(photo_id, raw)
+            continue
+        trimmed = raw.strip()
+        if not trimmed or not is_known_category(trimmed):
+            _log_discarded_category(photo_id, raw)
+            continue
+        if trimmed in accepted:
+            continue
+        accepted.append(trimmed)
+    return tuple(accepted[:MAX_REMOTE_CATEGORIES_PER_PHOTO])
+
+
+def _fine_labels_from_json(raw_labels: list[Any]) -> tuple[str, ...]:
+    """Dieselbe Reihenfolge wie `_categories_from_json`, aber mit Zeichensanitisierung statt einer
+    Set-Whitelist: sanitisieren -> leere/zu lange Werte verwerfen -> deduplizieren (Erstnennung
+    gewinnt) -> ZULETZT kuerzen. Verworfene Feinlabels werden NICHT geloggt: anders als bei einem
+    unbekannten Kategoriewert (der auf ein Prompt-/Set-Problem hindeutet) ist ein leeres oder
+    entartetes Feinlabel ohne Diagnosewert, und der Wert selbst waere genau der Fremdtext, den
+    Punkt 4 des Security-Abschnitts aus dem Log heraushalten will."""
+    accepted: list[str] = []
     for raw in raw_labels:
-        try:
-            label = raw.get("label")
-            confidence = float(raw.get("confidence", 0.0))
-        except (AttributeError, TypeError, ValueError) as exc:
-            raise RemoteCategoryClassificationApiError(
-                "Unerwartete Antwortstruktur eines Label-Eintrags."
-            ) from exc
-        if not isinstance(label, str):
-            raise RemoteCategoryClassificationApiError(
-                "Unerwartete Antwortstruktur eines Label-Eintrags (label ist kein String)."
-            )
-        trimmed = label.strip()
-        if not trimmed or len(trimmed) > MAX_REMOTE_LABEL_LENGTH:
-            raise RemoteCategoryClassificationApiError(
-                f"Label ist leer oder laenger als {MAX_REMOTE_LABEL_LENGTH} Zeichen."
-            )
-        clamped_confidence = max(0.0, min(1.0, confidence))
-        detections.append(CategoryLabelDetection(label=trimmed, confidence=clamped_confidence))
-    return detections
+        if not isinstance(raw, str):
+            continue
+        sanitized = _sanitize_label_text(raw)
+        if not sanitized or len(sanitized) > MAX_FINE_LABEL_LENGTH:
+            continue
+        if sanitized in accepted:
+            continue
+        accepted.append(sanitized)
+    return tuple(accepted[:MAX_FINE_LABELS_PER_PHOTO])
+
+
+def _classification_from_json(parsed: Any, photo_id: int) -> RemoteClassification:
+    """Providerneutrale Validierung der Roh-Antwort (specs/features/0289-feste-kategorien.md,
+    Umsetzungsschritt 4) - **strukturell hart, inhaltlich tolerant**:
+
+    STRUKTURELL HART (jeweils RemoteCategoryClassificationApiError, das Foto wird auf Worker-Ebene
+    best-effort uebersprungen): die Antwort ist kein JSON-Objekt, `categories` fehlt, `categories`
+    ist keine Liste, oder `fine_labels` ist vorhanden aber keine Liste. Eine durch
+    _MAX_RESPONSE_TOKENS abgeschnittene Antwort landet ueber denselben Pfad hier - nie bei einem
+    teilweise geparsten Datensatz.
+
+    INHALTLICH TOLERANT (ADR-0034-Muster): unbekannte Kategoriewerte und entartete Feinlabels
+    werden VERWORFEN statt abgelehnt. Der wichtigste Grenzfall: sind ALLE Kategoriewerte
+    unbekannt, ist das KEIN Fehler - das Ergebnis ist ein leeres Kategorien-Tupel, das ueber
+    `resolve_category` zu `nicht_erkannt` wird, und die Feinlabels desselben Fotos bleiben
+    erhalten. `fine_labels` ist optional (fehlender Schluessel -> leeres Tupel), `categories`
+    nicht."""
+    if not isinstance(parsed, dict):
+        raise RemoteCategoryClassificationApiError(
+            "Unerwartete Antwortstruktur der Vision-API-Antwort (kein JSON-Objekt)."
+        )
+
+    try:
+        raw_categories = parsed["categories"]
+    except KeyError as exc:
+        raise RemoteCategoryClassificationApiError(
+            "Unerwartete Antwortstruktur der Vision-API-Antwort (fehlendes 'categories'-Feld)."
+        ) from exc
+    if not isinstance(raw_categories, list):
+        raise RemoteCategoryClassificationApiError(
+            "Unerwartete Antwortstruktur der Vision-API-Antwort ('categories' ist keine Liste)."
+        )
+
+    raw_fine_labels = parsed.get("fine_labels", [])
+    if not isinstance(raw_fine_labels, list):
+        raise RemoteCategoryClassificationApiError(
+            "Unerwartete Antwortstruktur der Vision-API-Antwort ('fine_labels' ist keine Liste)."
+        )
+
+    return RemoteClassification(
+        categories=_categories_from_json(raw_categories, photo_id),
+        fine_labels=_fine_labels_from_json(raw_fine_labels),
+    )
 
 
 class AnthropicCategoryClient:
@@ -150,7 +254,9 @@ class AnthropicCategoryClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def classify(self, image_bytes: bytes, mime_type: str) -> list[CategoryLabelDetection]:
+    async def classify(
+        self, image_bytes: bytes, mime_type: str, photo_id: int
+    ) -> RemoteClassification:
         body = {
             "model": ANTHROPIC_CATEGORY_MODEL,
             "max_tokens": _MAX_RESPONSE_TOKENS,
@@ -166,7 +272,7 @@ class AnthropicCategoryClient:
                                 "data": base64.b64encode(image_bytes).decode(),
                             },
                         },
-                        {"type": "text", "text": _PROMPT},
+                        {"type": "text", "text": build_classification_prompt()},
                     ],
                 }
             ],
@@ -182,7 +288,7 @@ class AnthropicCategoryClient:
             response, "Anthropic", RemoteCategoryClassificationApiError
         )
         parsed = anthropic_response_to_json(response.json(), RemoteCategoryClassificationApiError)
-        return _category_labels_from_json(parsed)
+        return _classification_from_json(parsed, photo_id)
 
 
 class MistralCategoryClient:
@@ -207,7 +313,9 @@ class MistralCategoryClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def classify(self, image_bytes: bytes, mime_type: str) -> list[CategoryLabelDetection]:
+    async def classify(
+        self, image_bytes: bytes, mime_type: str, photo_id: int
+    ) -> RemoteClassification:
         body = {
             "model": MISTRAL_CATEGORY_MODEL,
             "max_tokens": _MAX_RESPONSE_TOKENS,
@@ -223,7 +331,7 @@ class MistralCategoryClient:
                                 f"{base64.b64encode(image_bytes).decode()}"
                             ),
                         },
-                        {"type": "text", "text": _PROMPT},
+                        {"type": "text", "text": build_classification_prompt()},
                     ],
                 }
             ],
@@ -237,7 +345,7 @@ class MistralCategoryClient:
 
         raise_for_vision_api_status(response, "Mistral", RemoteCategoryClassificationApiError)
         parsed = mistral_response_to_json(response.json(), RemoteCategoryClassificationApiError)
-        return _category_labels_from_json(parsed)
+        return _classification_from_json(parsed, photo_id)
 
 
 def build_category_classification_client() -> CategoryDetectionClientLike:
@@ -293,8 +401,27 @@ def build_category_classification_client() -> CategoryDetectionClientLike:
 # (anders als Anthropic) - Schaetzung bleibt dokumentiert-unkalibriert basierend auf vergleichbarem
 # Pixtral-Familien-Tiling-Verhalten (grobe Bandbreite 1000-4000 Bild-Tokens je nach Aufloesung/
 # Kachelung) -> $0.0001-0.0004 Input, Output vernachlaessigbar (~$0.00001). Mittelwert $0.0003/Bild.
+#
+# NEUVERIFIKATION (developer, 2026-08-30, Pflicht aus dem Security-Abschnitt der Spec 0289 Punkt 8
+# / ADR 0032 Punkt 8): der aus CATEGORY_REGISTRY erzeugte Prompt (categories.py::
+# build_classification_prompt) ersetzt das frühere ~120-Token-Literal durch 13 Kategorie-Bloecke
+# mit Definition und Negativabgrenzung - gemessen an der erzeugten Zeichenzahl (~3400 Zeichen)
+# und der ueblichen Faustregel ~4 Zeichen/Token fuer deutschen Text liegt der Prompt bei grob
+# 850-900 Tokens, also rund +700 Input-Tokens gegenueber dem alten Wortlaut. Das deckt sich mit
+# der in der Spec genannten Bandbreite (+500-700 Tokens).
+#
+# Anthropic: +700 Input-Tokens * $1.00/MTok = +$0.0007/Bild -> 0.0045 + 0.0007 = $0.0052,
+# gerundet 0.0052. Preise unveraendert gegenueber der Verifikation vom 2026-08-23
+# (claude-haiku-4-5: $1.00/MTok Input, $5.00/MTok Output); der Ausgabe-Anteil sinkt sogar leicht
+# (Set-Schluessel statt frei formulierter Schlagworte mit Konfidenzzahlen), das wird hier bewusst
+# NICHT eingerechnet - die Schaetzung soll die Kosten eher ueber- als unterschaetzen, weil sie die
+# Grundlage einer bewussten Freigabe durch Daniel ist.
+#
+# Mistral: +700 Input-Tokens * $0.10/MTok = +$0.00007/Bild - unterhalb der vierten
+# Nachkommastelle, in der diese Konstante gefuehrt wird. Der Wert bleibt deshalb bei 0.0003; die
+# Groessenordnung (Bild-Tokens dominieren) ist unveraendert.
 COST_PER_IMAGE_USD: dict[Literal["anthropic", "mistral"], float] = {
-    "anthropic": 0.0045,
+    "anthropic": 0.0052,
     "mistral": 0.0003,
 }
 
@@ -309,12 +436,13 @@ CATEGORY_LABEL_SIMILARITY_THRESHOLD = 0.78
 
 
 @dataclass
-class CategoryLabelSnapshotEntry:
-    """Ein Eintrag des In-Memory-Snapshots der `category_labels`-Tabelle (ADR 0032 Punkt 4/5) -
+class FineLabelSnapshotEntry:
+    """Ein Eintrag des In-Memory-Snapshots der `fine_labels`-Tabelle (ADR 0032 Punkt 4/5, in
+    specs/features/0289-feste-kategorien.md mit der Tabelle umbenannt) -
     worker.py::run_remote_category_classification laedt diesen Snapshot einmal zu Laufbeginn und
     reicht ihn (mutierbar) an resolve_canonical_label weiter; neu angelegte Eintraege werden sofort
     lokal ergaenzt (kein erneutes SELECT, keine Nebenlaeufigkeits-Race). Bewusst NICHT frozen
-    (anders als CategoryLabelDetection) - worker.py setzt nach dem DB-Insert die echte `id` auf
+    (anders als RemoteClassification) - worker.py setzt nach dem DB-Insert die echte `id` auf
     genau dieser Instanz nach."""
 
     canonical_key: str
@@ -344,7 +472,7 @@ def _slugify(text: str) -> str:
     a-z/0-9 als gueltig - ein rein nicht-lateinisches Rohlabel (z.B. japanisch/chinesisch, ein vom
     offenen Remote-Vokabular (ADR 0032) explizit nicht ausgeschlossener Fall) wuerde sonst zu
     einem leeren String slugifien. Zwei verschiedene solche Label wuerden dann denselben (leeren)
-    canonical_key produzieren und an UniqueConstraint(category_labels.canonical_key) scheitern -
+    canonical_key produzieren und an UniqueConstraint(fine_labels.canonical_key) scheitern -
     ein Verfuegbarkeitsrisiko, das den ganzen Batch-Lauf abbricht statt nur das eine betroffene
     Foto zu ueberspringen (ADR 0032 Punkt 5: best-effort ohne Retry gilt pro Foto, nicht fuer eine
     IntegrityError beim Label-Anlegen). Deterministischer SHA256-Praefix statt Zufallswert -
@@ -365,9 +493,9 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 
 def resolve_canonical_label(
     raw_label: str,
-    existing_labels: list[CategoryLabelSnapshotEntry],
+    existing_labels: list[FineLabelSnapshotEntry],
     embedder: LabelEmbedderLike,
-) -> CategoryLabelSnapshotEntry:
+) -> FineLabelSnapshotEntry:
     """Reine, DB-freie Funktion (ADR 0032 Punkt 4) - loest ein einzelnes Roh-Label auf einen
     kanonischen Eintrag auf: (1) exakter Normalisierungs-Fast-Path (KEIN embed()-Aufruf), (2)
     Kosinus-Aehnlichkeits-Fallback gegen ALLE `existing_labels` (`>=` CATEGORY_LABEL_SIMILARITY_
@@ -382,7 +510,7 @@ def resolve_canonical_label(
 
     vector = embedder.embed(normalized)
 
-    best_entry: CategoryLabelSnapshotEntry | None = None
+    best_entry: FineLabelSnapshotEntry | None = None
     best_similarity = -1.0
     for entry in existing_labels:
         similarity = _cosine_similarity(vector, entry.embedding)
@@ -393,7 +521,7 @@ def resolve_canonical_label(
     if best_entry is not None and best_similarity >= CATEGORY_LABEL_SIMILARITY_THRESHOLD:
         return best_entry
 
-    new_entry = CategoryLabelSnapshotEntry(
+    new_entry = FineLabelSnapshotEntry(
         canonical_key=_slugify(normalized),
         display_name=raw_label,
         embedding=vector,

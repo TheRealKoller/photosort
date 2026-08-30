@@ -8,11 +8,12 @@ from typing import Protocol
 from PIL import Image
 
 from photosort.classification import (
+    ANIMAL_CATEGORIES,
     SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
-    AnimalDetection,
     FaceBoundingBox,
     FaceDetectorLike,
     FaceOrientation,
+    ObjectDetection,
     SceneLabel,
     compute_symmetry_score,
     compute_uniform_area_fraction,
@@ -28,17 +29,6 @@ from photosort.models import CriterionSource
 # Aufwand fuer ein kuenftiges neues Kriterium, keine Migration.
 
 
-# Spezifitaets-Stufen der Kategorie-Vergabe (specs/features/0217, ADR decisions/0047 Punkt 2) -
-# ersetzen "hoechster Score gewinnt" als PRIMAERE Regel in derive_category_key und steuern die
-# Aktivierungsschwelle in derive_active_categories. Bewusst genau zwei Stufen: die einzige
-# Unterscheidung, die die Story traegt, ist "benannter Inhalt vs. grobe Inhaltsklasse" - eine
-# Feinsortierung innerhalb der lokalen Kriterien waere wieder die gepflegte Prioritaetsliste, die
-# ADR 0023 vermieden hat. Zahlenwerte mit Abstand (10/20), damit eine kuenftige Zwischenstufe
-# keine Neuvergabe braucht; verglichen wird ausschliesslich relativ.
-CATEGORY_SPECIFICITY_CONTENT = 10  # lokale Inhaltserkennung: Gesicht/Tier/Gebaeude/Landschaft
-CATEGORY_SPECIFICITY_NAMED = 20  # benannter, konkreter Inhalt: Sehenswuerdigkeit, Remote-Label
-
-
 @dataclass(frozen=True)
 class CriterionDefinition:
     key: str
@@ -52,12 +42,11 @@ class CriterionDefinition:
     # den Default False/None und koennen nie eine Kategorie bilden.
     category_eligible: bool = False
     category_presence_threshold: float | None = None
-    # specs/features/0217, ADR 0047 Punkt 2: Spezifitaet ist - wie die Kategorie-Faehigkeit selbst
-    # - ein reines Registry-ATTRIBUT, keine im Ableitungscode gepflegte Prioritaetsliste. Nur bei
-    # category_eligible=True von Bedeutung (ein nicht kategorie-faehiges Kriterium bildet nie eine
-    # Kategorie); nicht kategorie-faehige Eintraege behalten deshalb den Default, erzwungen durch
-    # einen eigenen Registry-Invariantentest.
-    category_specificity: int = CATEGORY_SPECIFICITY_CONTENT
+    # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: das frueher hier gefuehrte
+    # `category_specificity` (Spec 0217/ADR 0047 Punkt 2) ist RESTLOS entfallen. Welche Kategorie
+    # bei mehreren Kandidaten gewinnt, entscheidet seit ADR 0049 ausschliesslich die feste
+    # Vorrangreihenfolge in categories.py::CATEGORY_REGISTRY - ein zweites Prioritaetsattribut an
+    # den Kriterien waere eine konkurrierende, driftende Quelle derselben Aussage.
 
 
 # Schwelle, ab der content_people als "Gesicht erkannt" gilt (compute_content_people liefert nur
@@ -72,6 +61,13 @@ _CONTENT_PEOPLE_DETECTED_THRESHOLD = 0.5
 # erkannt", keine zweite inhaltliche Kalibrierung.
 _TIER_CATEGORY_PRESENCE_THRESHOLD = 0.01
 _GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD = 0.01
+
+# specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: dieselbe Konstanten-Klasse wie
+# oben - compute_fahrzeug_score/compute_essen_trinken_score liefern entweder exakt 0.0 (kein
+# Allow-Listen-Treffer) oder einen Wert oberhalb von OBJECT_DETECTION_CONFIDENCE_THRESHOLD; 0.01
+# trennt nur "nichts erkannt" von "irgendetwas erkannt", keine zweite inhaltliche Kalibrierung.
+_FAHRZEUG_CATEGORY_PRESENCE_THRESHOLD = 0.01
+_ESSEN_TRINKEN_CATEGORY_PRESENCE_THRESHOLD = 0.01
 
 # specs/features/0217, ADR 0047 Punkt 1: dieselbe Konstanten-Klasse wie oben - compute_landschaft_
 # score liefert entweder exakt 0.0 (kein Allow-Listen-Treffer ueber LANDSCHAFT_LABEL_MIN_
@@ -158,11 +154,24 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         CriterionSource.CLOUD,
         category_eligible=True,
         category_presence_threshold=_LANDMARK_CATEGORY_PRESENCE_THRESHOLD,
-        # specs/features/0217, ADR 0047 Punkt 2: ein benannter, konkreter Inhalt ("Kölner Dom")
-        # setzt sich gegen jede grobe lokale Einordnung durch - einziges registriertes Kriterium
-        # der NAMED-Stufe (remote:-Pseudo-Keys haben keine CriterionDefinition und gelten immer
-        # als NAMED, siehe _specificity_of).
-        category_specificity=CATEGORY_SPECIFICITY_NAMED,
+    ),
+    # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: zwei weitere lokale
+    # Inhalts-Kriterien aus DERSELBEN COCO-Detektorausgabe wie `tier` (keine zusaetzliche Inferenz,
+    # kein neues Modell-Asset) - sie heben die lokal bestimmbare Teilmenge des festen Sets von vier
+    # auf sechs Kategorien.
+    "fahrzeug": CriterionDefinition(
+        "fahrzeug",
+        "Fahrzeug erkannt",
+        CriterionSource.LOCAL_ML,
+        category_eligible=True,
+        category_presence_threshold=_FAHRZEUG_CATEGORY_PRESENCE_THRESHOLD,
+    ),
+    "essen_trinken": CriterionDefinition(
+        "essen_trinken",
+        "Essen erkannt",
+        CriterionSource.LOCAL_ML,
+        category_eligible=True,
+        category_presence_threshold=_ESSEN_TRINKEN_CATEGORY_PRESENCE_THRESHOLD,
     ),
 }
 
@@ -230,10 +239,9 @@ def compute_symmetrie_score(image: Image.Image) -> float:
 
 class SubjectBoxLike(Protocol):
     """Schmale strukturelle Schnittstelle, die compute_golden_ratio_score fuer ein Kompositions-
-    Subjekt braucht - sowohl FaceBoundingBox (classification.py) als auch die kuenftige
-    AnimalDetection (Spec 0038, Tier-Kriterium) erfuellen sie, ohne dass criteria.py eine harte
-    Abhaengigkeit auf den Tier-Erkennungscode braucht (Reihenfolge der Spec: Goldener Schnitt vor
-    Tier implementiert). Als Nur-Lese-Properties (statt einfacher Attribut-Annotationen)
+    Subjekt braucht - sowohl FaceBoundingBox (classification.py) als auch ObjectDetection
+    erfuellen sie, ohne dass criteria.py eine harte Abhaengigkeit auf den Erkennungscode braucht
+    (Reihenfolge der Spec 0038: Goldener Schnitt vor Tier implementiert). Als Nur-Lese-Properties (statt einfacher Attribut-Annotationen)
     deklariert, damit auch @dataclass(frozen=True)-Implementierungen (FaceBoundingBox) den
     Vertrag strukturell erfuellen - mypy --strict wertet einfache Attribut-Annotationen in einem
     Protocol als lese-/schreibbar, was ein unveraenderliches Dataclass-Feld nicht erfuellen kann."""
@@ -308,16 +316,21 @@ def compute_golden_ratio_score(
     umgesetzt (Out-of-Scope der Spec: "keine neuen Bildverarbeitungsschritte fuer die
     Kompositions-Analyse").
 
-    Bewusst eine reine Funktion OHNE eigenen detect_person/detect_animals-Aufruf (anders als ein
+    Bewusst eine reine Funktion OHNE eigenen detect_person/detect_objects-Aufruf (anders als ein
     frueherer Entwurf mit einer zusaetzlichen `compute_golden_ratio(image, ...)`-Wrapper-Funktion,
     Review-Fund: totes Produktionscode-Fragment, siehe Commit-Historie) - worker.py::
-    _compute_content_criteria ruft detect_person/detect_animals bereits fuer content_people/tier
+    _compute_content_criteria ruft detect_person/detect_objects bereits fuer content_people/tier
     auf und reicht die Ergebnislisten hier direkt durch (ein zusaetzlicher detect()-Aufruf pro
     Foto waere angesichts des in ADR 0022 dokumentierten Compute-Overhead-Risikos unnoetig). Der
     Wiederverwendungsnachweis (Akzeptanzkriterium der Spec: "Spy/Aufrufzaehler statt
     Reimplementierung") liegt deshalb konsequent auf Worker-Integrationsebene, siehe
     test_worker_criterion_scoring.py::
-    test_detect_person_and_detect_animals_are_each_called_at_most_once_per_photo."""
+    test_detect_person_and_detect_objects_are_each_called_at_most_once_per_photo.
+
+    specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2 (testpflichtiger
+    Verhaltenserhalt): `animals` bekommt weiterhin AUSSCHLIESSLICH Tier-Erkennungen - der Aufrufer
+    filtert die geweitete detect_objects-Ausgabe ueber `animal_detections()`, damit kein Auto und
+    kein Teller zum Kompositions-Subjekt wird."""
     subject = _select_primary_subject(faces, animals)
     if subject is None:
         # Dokumentierter, niedriger (nicht neutraler) Fallback-Wert (Akzeptanzkriterium der Spec)
@@ -333,18 +346,101 @@ def compute_golden_ratio_score(
     return max(0.0, min(1.0, 1.0 - distance / _GOLDEN_RATIO_MAX_DISTANCE))
 
 
-def compute_tier_score(animals: Sequence[AnimalDetection]) -> float:
+def animal_detections(objects: Sequence[ObjectDetection]) -> list[ObjectDetection]:
+    """Filtert eine ungefilterte `detect_objects`-Ausgabe auf ANIMAL_CATEGORIES, reihenfolgetreu
+    (specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2).
+
+    Bewusst eine EIGENE, benannte Funktion statt eines Inline-Comprehensions an zwei Stellen: der
+    Allow-Listen-Filter ist seit dieser Spec nicht mehr Teil von `detect_objects` (Gegenrichtung zu
+    ADR 0047 Punkt 1), und der Verhaltenserhalt fuer `compute_golden_ratio_score` ("kein Auto/
+    Teller als Kompositions-Subjekt") haengt genau daran - er ist damit an einer benannten Funktion
+    testbar, nicht nur am Ergebnis eines Konsumenten."""
+    return [detection for detection in objects if detection.category in ANIMAL_CATEGORIES]
+
+
+def compute_tier_score(objects: Sequence[ObjectDetection]) -> float:
     """`tier`-Kriterium (ADR 0022 Punkt 1): Score = Konfidenz des PROMINENTESTEN erkannten Tieres
-    (bereits in [0, 1], da detect_animals nur oberhalb von ANIMAL_DETECTION_CONFIDENCE_THRESHOLD
+    (bereits in [0, 1], da detect_objects nur oberhalb von OBJECT_DETECTION_CONFIDENCE_THRESHOLD
     liefert). Aggregationsregel bei mehreren erkannten Tieren (Akzeptanzkriterium der Spec: "muss
     dokumentiert UND getestet sein, keine stillschweigende Auswahl") - die groesste Bounding-Box-
     Flaeche gewinnt, NICHT die hoechste Konfidenz: ein kleines, aber sehr sicher erkanntes Tier am
     Bildrand soll nicht automatisch ueber ein grossflaechig im Bild praesentes Tier mit etwas
     niedrigerer Konfidenz gewinnen (konsistent mit der Subjekt-Auswahl in
-    _select_primary_subject/compute_golden_ratio_score)."""
+    _select_primary_subject/compute_golden_ratio_score).
+
+    specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: die Funktion bekommt seit dieser
+    Spec die UNGEFILTERTE Objektliste und setzt den ANIMAL_CATEGORIES-Filter SELBST durch (ueber
+    `animal_detections`) - ohne diesen Schritt wuerde die Konfidenz eines Autos zum Tier-Score
+    (eigener Regressionstest)."""
+    animals = animal_detections(objects)
     if not animals:
         return 0.0
     return _largest_by_area(animals).confidence
+
+
+# Kuratierte Allow-Listen der COCO-80-Klassen fuer die beiden neuen Objekt-Kriterien
+# (specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2) - dasselbe Muster wie
+# ARCHITECTURE_CATEGORIES/LANDSCAPE_SCENE_CATEGORIES, ebenfalls ohne modell-ladenden Test.
+#
+# VERIFIZIERT (developer, 2026-08-30, Pflicht wie bei LANDSCAPE_SCENE_CATEGORIES): die exakte
+# Schreibweise stammt aus der im gebuendelten Modell-Asset selbst mitgelieferten Label-Datei
+# `labelmap.txt` in backend/src/photosort/assets/efficientdet_lite0.tflite (die .tflite-Datei
+# enthaelt ihre Metadaten als angehaengtes ZIP-Archiv). Mehrteilige COCO-Klassennamen stehen dort
+# mit LEERZEICHEN ("hot dog", "wine glass"), nicht mit Unterstrich - genau diesen String liefert
+# mediapipe als `category_name`.
+VEHICLE_CATEGORIES = frozenset(
+    {"bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat"}
+)
+
+# Bewusst OHNE `cup`/`bottle`/`bowl` und ohne Besteck (`fork`/`knife`/`spoon`): diese Klassen
+# kommen zu haeufig beilaeufig in Raum- und Personenszenen vor und wuerden `essen_trinken` sonst
+# massenhaft falsch ausloesen (eigener parametrisierter Testfall haelt die Auswahl fest).
+# `wine glass` bleibt drin - ein Weinglas ist im Gegensatz zur generischen Tasse ein
+# hinreichend eindeutiges Getraenke-Signal.
+FOOD_CATEGORIES = frozenset(
+    {
+        "banana",
+        "apple",
+        "sandwich",
+        "orange",
+        "broccoli",
+        "carrot",
+        "hot dog",
+        "pizza",
+        "donut",
+        "cake",
+        "wine glass",
+    }
+)
+
+
+def _allow_listed_confidence_maximum(
+    objects: Sequence[ObjectDetection], allowed: frozenset[str]
+) -> float:
+    """Geteilte Aggregationsregel von compute_fahrzeug_score/compute_essen_trinken_score
+    (specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2): Konfidenz-Maximum INNERHALB der
+    jeweiligen Allow-Liste, 0.0 ohne Treffer - identisches Muster zu compute_gebaeude_score/
+    compute_landschaft_score, hier als eine Funktion statt zweier Kopien (die Allow-Liste ist der
+    einzige Unterschied). Keine zweite Konfidenzschwelle: detect_objects liefert bereits nur
+    Erkennungen oberhalb von OBJECT_DETECTION_CONFIDENCE_THRESHOLD."""
+    hits = [detection.confidence for detection in objects if detection.category in allowed]
+    if not hits:
+        return 0.0
+    return max(hits)
+
+
+def compute_fahrzeug_score(objects: Sequence[ObjectDetection]) -> float:
+    """`fahrzeug`-Kriterium (specs/features/0289-feste-kategorien.md): Allow-Listen-gefiltertes
+    Konfidenz-Maximum ueber VEHICLE_CATEGORIES. Reine Funktion ohne eigenen detect()-Aufruf -
+    worker.py::_compute_content_criteria ruft `detect_objects` GENAU EINMAL pro Foto auf und reicht
+    dieselbe Objektliste an `tier`, `fahrzeug`, `essen_trinken` UND `goldener_schnitt` weiter."""
+    return _allow_listed_confidence_maximum(objects, VEHICLE_CATEGORIES)
+
+
+def compute_essen_trinken_score(objects: Sequence[ObjectDetection]) -> float:
+    """`essen_trinken`-Kriterium (specs/features/0289-feste-kategorien.md): Allow-Listen-
+    gefiltertes Konfidenz-Maximum ueber FOOD_CATEGORIES - Muster wie compute_fahrzeug_score."""
+    return _allow_listed_confidence_maximum(objects, FOOD_CATEGORIES)
 
 
 # Kuratierte Allow-Liste architekturbezogener ImageNet-1k-Klassen (ADR 0022 Punkt 2) - die acht
@@ -481,8 +577,8 @@ def is_landmark_candidate(values: dict[str, float]) -> bool:
     Punkt 4) - extrahiert aus worker.py::_select_landmark_candidates (dort bleibt nur noch das
     Skip-bereits-gescorter-Fotos-Verhalten, worker-spezifisch). Ein Foto ist Kandidat, wenn
     landschaft ODER gebaeude die jeweils registrierte category_presence_threshold erreicht
-    (`>=`, inklusiv, dieselben Registry-Werte wie derive_active_categories/derive_category_key).
-    Fehlende Werte gelten als 0.0 (kein Sonderfall, analog derive_active_categories). Von
+    (`>=`, inklusiv, dieselben Registry-Werte wie die uebrige Presence-Auswertung).
+    Fehlende Werte gelten als 0.0 (kein Sonderfall). Von
     _select_landmark_candidates (Live-Lauf) UND api/photos.py::_cloud_vision_status_out
     (Read-Time-Ableitung) gemeinsam genutzt - verhindert ein Auseinanderlaufen beider Stellen bei
     einer kuenftigen Schwellenwert-Aenderung.
@@ -565,192 +661,3 @@ def compute_freiraum_score(orientation: FaceOrientation | None) -> float:
     if total_space <= 0:
         return 0.5
     return max(0.0, min(1.0, looking_space / total_space))
-
-
-# Catch-all-Key fuer Fotos, die kein aktives Kriterium erfuellen (specs/features/0217, ADR 0047
-# Punkt 4) - ersetzt den frueheren CATEGORY_DETAIL ("detail"). "detail" war nie eine Erkennung,
-# sondern der Auffangkorb, wurde in der Kuratierungsansicht aber wie eine Inhaltsaussage
-# dargestellt; der neue Key benennt den Zustand als das, was er ist. Anzeigename "Nicht erkannt"
-# ueber CATEGORY_DISPLAY_NAME_OVERRIDES (frontend/src/utils/categoryLabels.ts). "detail" bleibt
-# ausschliesslich als Remote-Schlagwort oder manuell gesetzter category_override moeglich, wird
-# aber von keinem Codepfad mehr automatisch vergeben.
-CATEGORY_UNRECOGNIZED = "unerkannt"
-
-# Suffix zur eindeutigen Absetzung eines Remote-Keys, der auf den reservierten Catch-all-Key
-# kollidieren wuerde (Security-Abschnitt der Spec 0217, Punkt 2): `canonical_key`-Slugs aus frei
-# formulierten LLM-Ausgaben leben im selben Namensraum wie CATEGORY_UNRECOGNIZED - ein
-# Remote-Label "Unerkannt" wuerde sonst echte Erkennungen ununterscheidbar in den Auffang-
-# Abschnitt mischen und dessen Aussage entwerten (durch den Spezifitaets-Vorrang jetzt sogar
-# bevorzugt). Slug-sicher ([a-z0-9_]), deterministisch, kein zusaetzlicher Zustand.
-# Bewusst akzeptierte Restkollision (Review-Fund): ein Remote-Label "Unerkannt Remote"
-# slugifiziert selbst auf den abgesetzten Wert. Kein weiterer Ausweichschritt (Schleife/Hash) -
-# die Auswirkung waere dieselbe rein kosmetische Vermischung wie ohne Absetzung, und der Fall
-# setzt ein LLM-Label voraus, das exakt den internen Ersatznamen trifft.
-_RESERVED_CATEGORY_KEY_SUFFIX = "_remote"
-
-# Anteil der Kandidaten-Fotos eines Laufs, ab dem ein category_eligible-Kriterium als "aktiv" gilt
-# (ADR 0023, Punkt 2) - 15%, hoch genug um reines Rauschen (2-3 Zufallstreffer) in einem
-# mittelgrossen Projekt zu vermeiden, niedrig genug um einen thematisch relevanten, aber nicht
-# dominanten Anteil zuverlaessig eine eigene Kategorie ausloesen zu lassen. Dokumentierte, nicht
-# gegen einen echten Fotokorpus kalibrierte Setzung (gleiche Klasse wie SHARPNESS_NORMALIZATION_
-# CEILING/UNIFORM_TILE_VARIANCE_THRESHOLD), austauschbar ohne Architektur-Aenderung.
-CATEGORY_ACTIVE_THRESHOLD_FRACTION = 0.15
-
-
-# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, decisions/0032-
-# remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 1: gleiche Konstanten-Klasse wie
-# _TIER_CATEGORY_PRESENCE_THRESHOLD/_GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD - ein vom Vision-LLM
-# gelieferter Wert ist bereits eine "erkannt"-Aussage, dieser Schwellwert trennt nur "vorhanden"
-# von "fehlender Eintrag" (candidate_values.get(key, 0.0)), keine zweite Konfidenzkalibrierung.
-DYNAMIC_LABEL_PRESENCE_THRESHOLD = 0.01
-
-# Absolute Mindest-Trefferzahl, ab der ein Kriterium der NAMED-Stufe eine eigene Kategorie bildet -
-# alternativ zur Anteilsregel (specs/features/0217, ADR 0047 Punkt 3). Eine absolute Zahl statt
-# eines Anteils, weil genau die Anteils-Mechanik das Problem verursacht: ein praezise erkanntes
-# Motiv soll nicht daran scheitern, dass das Projekt gross ist. Stakeholder-Entscheidung vom
-# 2026-08-30: bewusst 3 statt 1 (Zersplitterung der Kuratierungsansicht in Ein-Foto-Abschnitte)
-# und statt 5 (seltene korrekte Erkennungen fielen wieder in "Nicht erkannt"). Dokumentierte,
-# nicht kalibrierte Setzung wie CATEGORY_ACTIVE_THRESHOLD_FRACTION.
-CATEGORY_SPECIFIC_MIN_PHOTOS = 3
-
-
-def _specificity_of(criterion_key: str, dynamic_keys: frozenset[str]) -> int:
-    """Spezifitaets-Stufe eines Kategorie-Keys (specs/features/0217, ADR 0047 Punkt 2) - geteilt
-    von derive_active_categories (Aktivierungsschwelle) und derive_category_key (Auswahlregel),
-    damit beide dieselbe Regel benutzen statt zweier gepflegter Kopien. `remote:`-Pseudo-Keys
-    (ADR 0032 Punkt 1) haben keine CriterionDefinition und gelten IMMER als NAMED; ein
-    registriertes Kriterium liefert sein Registry-Attribut, ein unbekannter Key den Default."""
-    if criterion_key in dynamic_keys:
-        return CATEGORY_SPECIFICITY_NAMED
-    definition = CRITERIA_REGISTRY.get(criterion_key)
-    if definition is None:
-        return CATEGORY_SPECIFICITY_CONTENT
-    return definition.category_specificity
-
-
-def derive_active_categories(
-    candidate_values: dict[int, dict[str, float]],
-    threshold_fraction: float = CATEGORY_ACTIVE_THRESHOLD_FRACTION,
-    dynamic_keys: frozenset[str] = frozenset(),
-    specific_min_photos: int = CATEGORY_SPECIFIC_MIN_PHOTOS,
-) -> frozenset[str]:
-    """Reine Aggregationsfunktion (Akzeptanzkriterium der Spec 0045): ermittelt EINMAL pro Lauf,
-    projektweit ueber ALLE Kandidaten-Fotos (nicht pro cluster_key, ADR 0023 Punkt 2), welche
-    category_eligible-Kriterien im jeweiligen Lauf ueberhaupt eine eigene Kategorie bilden duerfen.
-    Ein Kriterium gilt als aktiv, wenn der Anteil der Kandidaten-Fotos, deren Wert die jeweilige
-    category_presence_threshold erreicht/ueberschreitet (inklusiver Vergleich in beide
-    Richtungen), >= threshold_fraction ist. Fehlende Werte fuer einzelne Fotos (best-effort-
-    Kriterium fuer dieses Foto nicht berechenbar) zaehlen als "nicht vorhanden", kein Sonderfall.
-    Kein DB-/IO-Zugriff, keine Exception bei einem leeren Kandidatenpool.
-
-    `dynamic_keys` (specs/features/0055, ADR 0032 Punkt 1): zur Laufzeit entdeckte Remote-Label-
-    Pseudo-Keys (`f"remote:{canonical_key}"`) - werden an derselben Haeufigkeitsschwelle gemessen
-    wie die registrierten lokalen Kriterien, aber gegen DYNAMIC_LABEL_PRESENCE_THRESHOLD statt
-    einer registrierten category_presence_threshold (es gibt keine CriterionDefinition fuer sie).
-    Default `frozenset()` - bestehende Aufrufer/Tests ohne dynamic_keys bleiben unveraendert.
-
-    specs/features/0217, ADR 0047 Punkt 3: die Aktivierungsbedingung ist seit dieser Spec
-    spezifitaetsabhaengig - CATEGORY_SPECIFICITY_CONTENT behaelt die reine Anteilsregel,
-    CATEGORY_SPECIFICITY_NAMED (landmark + alle `remote:`-Pseudo-Keys) ist zusaetzlich aktiv, wenn
-    die absolute Trefferzahl `specific_min_photos` erreicht. Die ODER-Verknuepfung ist noetig,
-    damit sehr kleine Projekte (< 20 Kandidaten) nicht schlechter gestellt werden als bisher."""
-    total = len(candidate_values)
-    if total == 0:
-        return frozenset()
-
-    def _is_active(criterion_key: str, present_count: int) -> bool:
-        if (present_count / total) >= threshold_fraction:
-            return True
-        return (
-            _specificity_of(criterion_key, dynamic_keys) == CATEGORY_SPECIFICITY_NAMED
-            and present_count >= specific_min_photos
-        )
-
-    active: set[str] = set()
-    for criterion_key, definition in CRITERIA_REGISTRY.items():
-        if not definition.category_eligible or definition.category_presence_threshold is None:
-            continue
-        threshold = definition.category_presence_threshold
-        present_count = sum(
-            1
-            for values in candidate_values.values()
-            if values.get(criterion_key, 0.0) >= threshold
-        )
-        if _is_active(criterion_key, present_count):
-            active.add(criterion_key)
-
-    for key in dynamic_keys:
-        present_count = sum(
-            1
-            for values in candidate_values.values()
-            if values.get(key, 0.0) >= DYNAMIC_LABEL_PRESENCE_THRESHOLD
-        )
-        if _is_active(key, present_count):
-            active.add(key)
-
-    return frozenset(active)
-
-
-def derive_category_key(
-    criterion_values: dict[str, float],
-    active_criteria: frozenset[str],
-    dynamic_keys: frozenset[str] = frozenset(),
-) -> str:
-    """Weist EIN Foto einer Kategorie zu (Akzeptanzkriterium der Spec 0045, ADR 0023 Punkt 3):
-    prueft nur noch gegen die fuer den Lauf ermittelte aktive Menge (derive_active_categories),
-    nicht mehr gegen eine fest codierte Prioritaetskette. Erfuellt ein Foto mehrere aktive
-    Kriterien gleichzeitig (Wert >= der jeweiligen category_presence_threshold), gewinnt der
-    hoechste normierte Score; bei exakt gleichem Score entscheidet die alphabetische Reihenfolge
-    des VOLLEN (inkl. "remote:"-Praefix) criterion_key (deterministisch, testbar). Kein erfuelltes
-    aktives Kriterium -> Catch-all CATEGORY_UNRECOGNIZED. category_key wird generisch aus dem
-    gewinnenden criterion_key gebildet (`removeprefix("content_")`, bzw. symmetrisch
-    `removeprefix("remote:")` fuer dynamische Keys, ADR 0032 Punkt 1) - liefert fuer
-    Bestandskriterien identische Werte wie bisher ("people"), fuer tier/gebaeude/landschaft/
-    Remote-Label automatisch die richtigen Keys, ohne manuelles Mapping (ADR 0023 Punkt 4).
-
-    `dynamic_keys` (specs/features/0055, ADR 0032 Punkt 1): Pseudo-Keys aus `active_criteria`, die
-    NICHT in CRITERIA_REGISTRY stehen - werden gegen DYNAMIC_LABEL_PRESENCE_THRESHOLD statt einer
-    registrierten category_presence_threshold geprueft. Default `frozenset()` - bestehende
-    Aufrufer/Tests ohne dynamic_keys bleiben unveraendert.
-
-    specs/features/0217, ADR 0047 Punkte 2/4: die Auswahl folgt seit dieser Spec dem Schluessel
-    `(-specificity, -score, key)`, und der Catch-all-Key ist ein reservierter Wert (siehe
-    _RESERVED_CATEGORY_KEY_SUFFIX)."""
-    qualifying: list[str] = []
-    for criterion_key in active_criteria:
-        if criterion_key in dynamic_keys:
-            threshold = DYNAMIC_LABEL_PRESENCE_THRESHOLD
-        else:
-            definition = CRITERIA_REGISTRY.get(criterion_key)
-            if definition is None or definition.category_presence_threshold is None:
-                continue
-            threshold = definition.category_presence_threshold
-        value = criterion_values.get(criterion_key, 0.0)
-        if value >= threshold:
-            qualifying.append(criterion_key)
-
-    if not qualifying:
-        return CATEGORY_UNRECOGNIZED
-
-    # specs/features/0217, ADR 0047 Punkt 2: hoechste Spezifitaet zuerst, erst INNERHALB derselben
-    # Stufe der hoechste normierte Score, dann alphabetisch nach dem vollen criterion_key. Vorher
-    # verglich diese Zeile Werte unterschiedlicher Skalen direkt miteinander (Uniform-Flaechen-
-    # Anteil gegen LLM-Konfidenz) - die unspezifischere Zahl gewann dabei regelmaessig.
-    winner = min(
-        qualifying,
-        key=lambda key: (
-            -_specificity_of(key, dynamic_keys),
-            -criterion_values.get(key, 0.0),
-            key,
-        ),
-    )
-    if winner.startswith("remote:"):
-        category_key = winner.removeprefix("remote:")
-        # Security-Abschnitt der Spec 0217, Punkt 2: ein Remote-Label, dessen canonical_key auf
-        # den reservierten Catch-all-Key faellt, wird eindeutig abgesetzt statt mit ihm
-        # zusammenzufallen - sonst mischten sich echte Erkennungen ununterscheidbar in den
-        # "Nicht erkannt"-Abschnitt.
-        if category_key == CATEGORY_UNRECOGNIZED:
-            return f"{category_key}{_RESERVED_CATEGORY_KEY_SUFFIX}"
-        return category_key
-    return winner.removeprefix("content_")
