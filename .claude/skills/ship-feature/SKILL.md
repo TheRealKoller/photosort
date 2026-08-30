@@ -63,7 +63,7 @@ Nach Bestätigung geht es weiter zu Schritt 6 (PR-Erstellung) bzw., falls die Fi
 ## Schritt 6: Commit, Push, Pull Request
 
 1. Falls seit dem letzten Zwischencommit noch uncommittete Änderungen bestehen: committen, mit der im Projekt üblichen Commit-Konvention (siehe `CLAUDE.md`, Conventional Commits).
-2. Push den Feature-Branch (`git push -u origin <branch>`), nicht `main`.
+2. Push den Feature-Branch (`git push -u origin <branch>`), nicht `main`. Unverändert, unabhängig davon, ob der Branch von `developer` selbst oder bereits vorher von `spec-writer` mitsamt Spec-Commit angelegt wurde (ADR [`decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md`](../../../specs/decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md)) — in beiden Fällen liegt zu diesem Zeitpunkt ein lokal vollständiger, committeter Branch vor, der als Ganzes gepusht wird; der Spec-Commit landet dadurch im selben PR wie die Implementierung, nicht in einem separaten.
 3. Eröffne einen PR mit `gh pr create`. Halte dich an eine vorhandene `.github/pull_request_template.md`, sonst mindestens: Bezug zur Spec/zum Issue, kurze Zusammenfassung (Was und Warum), Testplan/was geprüft wurde.
 4. Setz direkt danach das Board-Statusfeld der Spec auf `Review` (ADR [`decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md`](../../../specs/decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md), Abschnitt 4):
 

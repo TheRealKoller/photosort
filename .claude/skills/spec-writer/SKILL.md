@@ -52,15 +52,25 @@ Andernfalls ruf den `ux-ui-designer`-Agenten (Agent-Tool, `subagent_type: ux-ui-
 
 Übernimm, sofern gelaufen, die geschärften Akzeptanzkriterien und eine kurze "Teststrategie"-Notiz von `test-engineer`. Trag im `## Security`-Abschnitt entweder die Einschätzung von `security-engineer` ein oder, falls nicht sicherheitsrelevant, kurz "nicht relevant".
 
-## Schritt 4: Feature-Spec anlegen und die Board-Spalte setzen
+## Schritt 4: Feature-Branch anlegen, Feature-Spec committen, Board-Spalte setzen
 
-Lege eine neue Datei in `specs/features/` nach `specs/TEMPLATE.md` an. **Die Spec-Nummer ist die Nummer des Story-Issues aus Schritt 0, auf vier Stellen aufgefüllt** — die Spec zu Issue #262 heißt also `specs/features/0262-kurzer-titel.md` und trägt die H1-Überschrift `# 0262 - Titel`. Es wird **keine** nächste freie Nummer gesucht; der Sprung gegenüber der zuletzt angelegten Datei ist normal und beabsichtigt. **Status: Accepted** setzen — das Story-Refinement-Gespräch plus diese technische Konsultation *sind* die Stakeholder-Freigabe, ein separater Freigabeschritt danach wäre doppelte Arbeit.
+**Vorbedingung — Feature-Branch anlegen (ADR [`decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md`](../../../specs/decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md)):** Bevor die Spec-Datei geschrieben wird, `git status` prüfen — bei uncommitteten Änderungen analog zu `.claude/agents/developer.md` Schritt 0 Punkt 3 klären (stash/commit, was zusammengehört), nicht stillschweigend überschreiben oder ignorieren. Danach sicherstellen, von einem aktuellen `main` abzuzweigen (`git fetch origin && git checkout main && git pull`, oder äquivalent), und einen neuen Feature-Branch anlegen:
+
+```bash
+git checkout -b feature/<NNNN>-<kurzer-slug>
+```
+
+`NNNN` ist die vierstellige Spec-/Issue-Nummer aus Schritt 0, `<kurzer-slug>` derselbe Slug, den die Spec-Datei gleich bekommt (siehe unten) — ein einziges Namensschema, das auch der Fallback in `developer.md` verwendet. Der gesamte Rest dieses Ablaufs **und die spätere Implementierung durch `developer`** passieren auf diesem einen Branch — kein separater Spec-only-Branch, kein separater Spec-PR.
+
+Lege danach eine neue Datei in `specs/features/` nach `specs/TEMPLATE.md` an. **Die Spec-Nummer ist die Nummer des Story-Issues aus Schritt 0, auf vier Stellen aufgefüllt** — die Spec zu Issue #262 heißt also `specs/features/0262-kurzer-titel.md` und trägt die H1-Überschrift `# 0262 - Titel`. Es wird **keine** nächste freie Nummer gesucht; der Sprung gegenüber der zuletzt angelegten Datei ist normal und beabsichtigt. **Status: Accepted** setzen — das Story-Refinement-Gespräch plus diese technische Konsultation *sind* die Stakeholder-Freigabe, ein separater Freigabeschritt danach wäre doppelte Arbeit.
 
 Ziel, User Story und Akzeptanzkriterien aus dem Issue-Body übernehmen (ggf. durch `test-engineer` geschärft). Halte einen Abschnitt "Entscheidungen" mit den in diesem Gespräch geklärten Punkten aktuell, inkl. jeder Skip-Entscheidung aus Schritt 1–3 als eigener Punkt (kein Sammel-Vermerk).
 
 Falls die Story die Architektur oder das Datenmodell spürbar verändert: `docs/architecture.md` entsprechend ergänzen.
 
 **Bestehendes Issue weiterverwenden, kein neues anlegen:** Das Story-Issue aus Schritt 0 *ist* durch die identische Nummer bereits das Issue der Spec — es gibt nichts zu adoptieren und nichts zuzuordnen. Der Issue-Body bleibt unangetastet: Er trägt die Story (Ziel/User Story/Akzeptanzkriterien), der technische Teil der Spec lebt ausschließlich in der Spec-Datei und wird **nicht** in den Issue gespiegelt.
+
+**Spec-Datei lokal committen, kein Push:** Committe die neue Spec-Datei (und ggf. eine `docs/architecture.md`-Ergänzung) direkt auf dem in der Vorbedingung angelegten Branch, mit der üblichen Commit-Konvention (`CLAUDE.md`, Conventional Commits), z.B. `docs(specs): Spec NNNN anlegen (Issue #NNN)`. Push und PR-Eröffnung passieren an dieser Stelle **nicht** — das übernimmt weiterhin ausschließlich `ship-feature`, ganz am Ende des gesamten Ablaufs (Spec-Commit und alle folgenden Implementierungs-Commits landen zusammen in genau einem PR).
 
 Setz abschließend nur die Board-Spalte auf `Todo` (siehe Skill `github-board`):
 
@@ -70,4 +80,6 @@ python3 scripts/gh-board.py set-status --issue <NNN> --status Todo
 
 Erwartetes Ergebnis: `{"issue_number": NNN, "status": "Todo"}`. Ein `{"error": "..."}` unverändert an Daniel weitergeben statt es stillschweigend zu ignorieren.
 
-Fasse am Ende kurz zusammen, was angelegt/geändert wurde, mit Datei-Pfaden.
+**Übergabe an den späteren `developer`-Aufruf:** Da dieser Skill in derselben Session läuft, die anschließend `developer` per Agent-Tool startet, braucht es keinen eigenen Übergabemechanismus — nenne den angelegten Branch-Namen im Abschlusssatz explizit (`**Feature-Branch:** feature/<NNNN>-<kurzer-slug>, bereits angelegt, Spec-Commit liegt bereits darauf`) und gib ihn wortgleich in den Start-Prompt des späteren `developer`-Aufrufs mit, damit er ihn übernimmt statt neu von `main` zu branchen (`.claude/agents/developer.md`, Schritt 0).
+
+Fasse am Ende kurz zusammen, was angelegt/geändert wurde, mit Datei-Pfaden und dem Feature-Branch-Namen.
