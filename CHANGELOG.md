@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/TheRealKoller/photosort/compare/v0.22.0...v0.23.0) (2026-08-30)
+
+
+### Features
+
+* **scripts:** refinement setzt Prioritaet first-write-wins im Board (Spec 0257) ([#273](https://github.com/TheRealKoller/photosort/issues/273)) ([1df8cfe](https://github.com/TheRealKoller/photosort/commit/1df8cfecf0961f0f89ff7afcb77044d26db1095d))
+
 ## [0.22.0](https://github.com/TheRealKoller/photosort/compare/v0.21.0...v0.22.0) (2026-08-30)
 
 
