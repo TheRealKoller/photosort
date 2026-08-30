@@ -1,6 +1,6 @@
 # 0251 - Pull Request referenziert sein Issue
 
-**Status:** Accepted
+**Status:** Implemented ([PR #280](https://github.com/TheRealKoller/photosort/pull/280))
 **Erstellt:** 2026-08-30
 **Bezug:** GitHub-Issue [`#251`](https://github.com/TheRealKoller/photosort/issues/251) ("pr sollte issue referenzieren"), ADR [`0046`](../decisions/0046-pr-issue-verknuepfung-closing-keyword.md)
 
