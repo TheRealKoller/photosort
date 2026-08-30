@@ -1,6 +1,6 @@
 # 0269 - `spec-writer` legt den Feature-Branch an — ein PR pro Story statt getrenntem Spec-PR
 
-**Status:** Accepted
+**Status:** Implemented ([PR #275](https://github.com/TheRealKoller/photosort/pull/275))
 **Erstellt:** 2026-08-30
 **Bezug:** [GitHub-Issue #269](https://github.com/TheRealKoller/photosort/issues/269) (Refinement bereits vor dieser Spec-Erstellung abgeschlossen), [`decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md`](../decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md) (neue ADR dieser Spec)
 
