@@ -402,16 +402,37 @@ def build_object_detector() -> ObjectDetectorLike:
 # Paar derselben bereits vorhandenen mediapipe-Abhaengigkeit, keine neue Abhaengigkeit.
 #
 # WICHTIG, anders als bei Tier: classify_scene filtert NICHT auf die Architektur-Allow-Liste -
-# sie liefert alle Klassifikations-Ergebnisse oberhalb von SCENE_CLASSIFICATION_CONFIDENCE_
-# THRESHOLD unveraendert zurueck (rohe Modell-Ausgabe). Die Allow-Liste-Filterung passiert bewusst
-# erst in criteria.py::compute_gebaeude_score - Akzeptanzkriterium der Spec 0038 verlangt einen
-# Testnachweis, "dass tatsaechlich die Allow-Liste filtert und nicht nur die rohe Modell-Konfidenz
-# durchgereicht wird"; dieser Nachweis waere hier auf classify_scene-Ebene sinnlos, wenn schon
-# hier gefiltert wuerde.
+# sie liefert alle Klassifikations-Ergebnisse oberhalb der gemeinsamen Modell-Untergrenze
+# SCENE_LABEL_MIN_CONFIDENCE unveraendert zurueck (rohe Modell-Ausgabe). Die Allow-Listen- und
+# Konfidenz-Filterung passiert bewusst erst in criteria.py::compute_gebaeude_score bzw.
+# compute_landschaft_score - Akzeptanzkriterium der Spec 0038 verlangt einen Testnachweis, "dass
+# tatsaechlich die Allow-Liste filtert und nicht nur die rohe Modell-Konfidenz durchgereicht
+# wird"; dieser Nachweis waere hier auf classify_scene-Ebene sinnlos, wenn schon hier gefiltert
+# wuerde.
 
-# Mindest-Konfidenz, ab der eine Szenen-Klassifikation ueberhaupt in Betracht gezogen wird -
-# analog FACE_DETECTION_CONFIDENCE_THRESHOLD/ANIMAL_DETECTION_CONFIDENCE_THRESHOLD.
+# Inhaltliche Konfidenzschwelle des gebaeude-Kriteriums - bis specs/features/0217 zugleich die
+# Untergrenze von classify_scene selbst. Seit ADR decisions/0046-inhaltsbasierte-landschaft-
+# spezifitaets-vorrang-nicht-erkannt.md Punkt 1 wandert die inhaltliche Entscheidung in die
+# jeweilige Kriterien-Funktion (criteria.py::compute_gebaeude_score filtert explizit hier gegen,
+# criteria.py::compute_landschaft_score gegen den niedrigeren LANDSCHAFT_LABEL_MIN_CONFIDENCE) -
+# der Wert selbst bleibt unveraendert, damit das gebaeude-Verhalten bitgenau erhalten bleibt.
 SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.5
+
+# Gemeinsame, bewusst NIEDRIGE Modell-Untergrenze der Szenen-Klassifikation (ADR 0046 Punkt 1):
+# natuerliche Szenen verteilen ihre Modellkonfidenz typischerweise ueber mehrere benachbarte
+# ImageNet-Klassen, eine harte 0.5-Grenze schon an der Modellausgabe wuerde eine echte
+# Landschafts-Erkennung strukturell verhindern. Analog FACE_DETECTION_CONFIDENCE_THRESHOLD/
+# ANIMAL_DETECTION_CONFIDENCE_THRESHOLD eine eigene, explizite Schwelle statt sich blind auf die
+# Detector-Konfiguration zu verlassen (siehe FakeSceneClassifier in test_classification.py).
+SCENE_LABEL_MIN_CONFIDENCE = 0.2
+
+# Obergrenze der pro Foto zurueckgegebenen Labels (ADR 0046 Punkt 1) - haelt die Label-Liste trotz
+# der abgesenkten Untergrenze beschraenkt. Wird sowohl dem echten Klassifikator als Options-Wert
+# mitgegeben (build_scene_classifier) ALS AUCH in classify_scene selbst durchgesetzt (gleiche
+# Begruendung wie bei der Konfidenzschwelle: unabhaengig von der Detector-Konfiguration testbar).
+# Die Begrenzung greift immer auf die STAERKSTEN Labels, verdraengt also nie einen Treffer eines
+# Bestands-Konsumenten zugunsten eines schwaecheren Labels.
+SCENE_LABEL_MAX_RESULTS = 5
 
 # Gepinnte, im Repository eingecheckte .tflite-Modelldatei (Security-Abschnitt der Spec 0038,
 # kein Laufzeit-Download). Quelle: offizielles mediapipe-Modell-Repository
@@ -440,7 +461,7 @@ class SceneClassifierLike(Protocol):
 
 @dataclass(frozen=True)
 class SceneLabel:
-    """Eine einzelne, oberhalb von SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD klassifizierte
+    """Eine einzelne, oberhalb von SCENE_LABEL_MIN_CONFIDENCE klassifizierte
     ImageNet-1k-Szenen-/Objekt-Kategorie (ADR 0022 Punkt 2) - UNGEFILTERT, siehe Modul-Kommentar
     oben. Kein Bounding-Box-Feld (anders als AnimalDetection/FaceBoundingBox): ein Image
     Classifier bewertet das GESAMTE Bild, keine einzelne Bildregion."""
@@ -451,20 +472,28 @@ class SceneLabel:
 
 def classify_scene(image: Image.Image, classifier: SceneClassifierLike) -> list[SceneLabel]:
     """mediapipe Image Classifier Task-API (ADR 0022 Punkt 2) auf der bereits gecachten
-    display-Variante - liefert ALLE Klassifikationen oberhalb von
-    SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD, unabhaengig davon, ob sie architekturbezogen sind
-    (siehe Modul-Kommentar). `classifier` ist injizierbar (siehe SceneClassifierLike) - die reale
-    Modellkonstruktion (build_scene_classifier) laeuft in keinem automatisierten Test."""
+    display-Variante - liefert die (hoechstens SCENE_LABEL_MAX_RESULTS) staerksten
+    Klassifikationen ab SCENE_LABEL_MIN_CONFIDENCE, unabhaengig davon, ob sie architekturbezogen
+    sind (siehe Modul-Kommentar). `classifier` ist injizierbar (siehe SceneClassifierLike) - die
+    reale Modellkonstruktion (build_scene_classifier) laeuft in keinem automatisierten Test.
+
+    specs/features/0217, ADR 0046 Punkt 1: die Untergrenze ist bewusst niedriger als die
+    inhaltlichen Kriterien-Schwellen - die Ausgabe bleibt roh (keine Allow-Listen-Filterung, kein
+    kriterienspezifischer Konfidenz-Schnitt), beides passiert in criteria.py::
+    compute_gebaeude_score bzw. compute_landschaft_score. Die Begrenzung auf die staerksten
+    Labels ist stabil sortiert (Konfidenz absteigend), damit sie nie einen starken Treffer
+    zugunsten eines schwaecheren Labels verdraengt."""
     result = classifier.classify(_to_mp_image(image))
     labels: list[SceneLabel] = []
     for classifications in result.classifications:
         for category in classifications.categories:
             name = getattr(category, "category_name", None)
             score = getattr(category, "score", 0.0)
-            if name is None or score < SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD:
+            if name is None or score < SCENE_LABEL_MIN_CONFIDENCE:
                 continue
             labels.append(SceneLabel(category=name, confidence=score))
-    return labels
+    labels.sort(key=lambda label: label.confidence, reverse=True)
+    return labels[:SCENE_LABEL_MAX_RESULTS]
 
 
 def build_scene_classifier() -> SceneClassifierLike:
@@ -477,7 +506,8 @@ def build_scene_classifier() -> SceneClassifierLike:
 
     options = vision.ImageClassifierOptions(
         base_options=BaseOptions(model_asset_path=str(_SCENE_CLASSIFIER_MODEL_PATH)),
-        score_threshold=SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
+        score_threshold=SCENE_LABEL_MIN_CONFIDENCE,
+        max_results=SCENE_LABEL_MAX_RESULTS,
     )
     classifier: SceneClassifierLike = vision.ImageClassifier.create_from_options(options)
     return classifier
