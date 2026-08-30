@@ -2,8 +2,41 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { CategoryCandidateOut, CriterionScoreOut, RankingOut, SuggestionOut } from '../api/types'
+import type {
+  CategoryCandidateOut,
+  CategoryOut,
+  CriterionScoreOut,
+  FineLabelOut,
+  RankingOut,
+  SuggestionOut,
+} from '../api/types'
 import { CriterionDetailsList } from './CriterionDetailsList'
+
+/** Verkuerztes Set (nur `key`/`display_name` werden ausgewertet) in Registry-Anzeigereihenfolge -
+ * specs/features/0289-feste-kategorien.md. */
+const CATEGORIES: CategoryOut[] = [
+  { key: 'menschen', display_name: 'Menschen', definition: 'd', locally_available: true },
+  { key: 'tier', display_name: 'Tier', definition: 'd', locally_available: true },
+  { key: 'landschaft', display_name: 'Landschaft', definition: 'd', locally_available: true },
+  { key: 'gegenstand', display_name: 'Gegenstand', definition: 'd', locally_available: false },
+  {
+    key: 'sport_aktivitaet',
+    display_name: 'Sport & Aktivität',
+    definition: 'd',
+    locally_available: false,
+  },
+  { key: 'nicht_erkannt', display_name: 'Nicht erkannt', definition: 'd', locally_available: false },
+]
+
+function fineLabel(overrides: Partial<FineLabelOut> = {}): FineLabelOut {
+  return {
+    canonical_key: 'urlaub',
+    display_name: 'Urlaub',
+    raw_label: 'Urlaub',
+    provider: 'anthropic',
+    ...overrides,
+  }
+}
 
 function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionScoreOut {
   return {
@@ -31,9 +64,8 @@ function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
 
 function candidate(overrides: Partial<CategoryCandidateOut> = {}): CategoryCandidateOut {
   return {
-    category_key: 'hund',
+    category_key: 'tier',
     origin: 'remote',
-    score: 0.9,
     provider: 'anthropic',
     ...overrides,
   }
@@ -391,7 +423,7 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         showSuggestion={true}
         categoryCandidates={[
           candidate({ category_key: 'hund' }),
-          candidate({ category_key: 'people', score: 0.1 }),
+          candidate({ category_key: 'people' }),
         ]}
         categoryOverride={null}
         onOverrideCategory={onOverrideCategory}
@@ -573,8 +605,8 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
         suggestion={null}
         showSuggestion={true}
         categoryCandidates={[
-          candidate({ category_key: 'hund', origin: 'remote', score: 0.9, provider: 'anthropic' }),
-          candidate({ category_key: 'people', origin: 'local', score: 0.6, provider: null }),
+          candidate({ category_key: 'hund', origin: 'remote', provider: 'anthropic' }),
+          candidate({ category_key: 'people', origin: 'local', provider: null }),
         ]}
       />
     )
@@ -587,50 +619,50 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
     expect(screen.getByText(/rang 2 von 5/i)).toBeInTheDocument()
   })
 
-  it('sorts candidates by score descending', () => {
+  it('keeps the server-given order of the candidates', () => {
+    // specs/features/0289-feste-kategorien.md: die Reihenfolge kommt seit dieser Spec bereits vom
+    // Server (Registry-Anzeigereihenfolge) - die Komponente sortiert bewusst NICHT mehr um. Das
+    // frueher hier getestete Score-Kriterium ist mit dem `score`-Feld entfallen: die Auswahl
+    // entscheidet die feste Vorrangreihenfolge im Backend, ein Zahlenvergleich in der Oberflaeche
+    // haette dort keine Entsprechung mehr.
     render(
       <CriterionDetailsList
         criterionScores={[]}
         ranking={ranking()}
         suggestion={null}
         showSuggestion={true}
+        categories={CATEGORIES}
         categoryCandidates={[
-          candidate({ category_key: 'people', score: 0.4 }),
-          candidate({ category_key: 'hund', score: 0.9 }),
+          candidate({ category_key: 'menschen' }),
+          candidate({ category_key: 'tier' }),
         ]}
       />
     )
 
     const rows = screen.getAllByRole('listitem')
     expect(rows.map((row) => row.textContent)).toEqual([
-      expect.stringContaining('Hund'),
-      expect.stringContaining('People'),
+      expect.stringContaining('Menschen'),
+      expect.stringContaining('Tier'),
     ])
   })
 
-  it('breaks a score tie alphabetically by category_key, independent of input order', () => {
-    // Review-Fund (test-engineer): buildCategoryCandidateRows verliess sich bei Score-Gleichstand
-    // bisher implizit auf die (zwar per ECMAScript garantierte, aber nicht explizit im Code
-    // sichtbare) Sortier-Stabilitaet statt eines expliziten Sekundaer-Schluessels - Eingabe hier
-    // bewusst NICHT bereits alphabetisch sortiert, um das nachzuweisen.
+  it('does not show a confidence percentage next to a candidate anymore', () => {
     render(
       <CriterionDetailsList
         criterionScores={[]}
         ranking={ranking()}
         suggestion={null}
         showSuggestion={true}
+        categories={CATEGORIES}
         categoryCandidates={[
-          candidate({ category_key: 'strand', score: 0.5 }),
-          candidate({ category_key: 'hund', score: 0.5 }),
+          candidate({ category_key: 'tier' }),
+          candidate({ category_key: 'menschen' }),
         ]}
       />
     )
 
-    const rows = screen.getAllByRole('listitem')
-    expect(rows.map((row) => row.textContent)).toEqual([
-      expect.stringContaining('Hund'),
-      expect.stringContaining('Strand'),
-    ])
+    const row = screen.getByTestId('category-candidate-row-tier')
+    expect(row.textContent).not.toMatch(/\d+%/)
   })
 
   it('shows the provider name for a remote candidate and "Lokal erkannt" for a local one', () => {
@@ -660,7 +692,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
         showSuggestion={true}
         categoryCandidates={[
           candidate({ category_key: 'hund' }),
-          candidate({ category_key: 'people', score: 0.1 }),
+          candidate({ category_key: 'people' }),
         ]}
         categoryOverride={null}
       />
@@ -680,7 +712,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
         showSuggestion={true}
         categoryCandidates={[
           candidate({ category_key: 'hund' }),
-          candidate({ category_key: 'people', score: 0.1 }),
+          candidate({ category_key: 'people' }),
         ]}
         categoryOverride="hund"
       />
@@ -702,7 +734,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
         showSuggestion={true}
         categoryCandidates={[
           candidate({ category_key: 'hund' }),
-          candidate({ category_key: 'people', score: 0.1 }),
+          candidate({ category_key: 'people' }),
         ]}
         categoryOverride={null}
         onOverrideCategory={onOverrideCategory}
@@ -747,8 +779,8 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
         suggestion={null}
         showSuggestion={true}
         categoryCandidates={[
-          candidate({ category_key: 'people', origin: 'local', score: 0.6 }),
-          candidate({ category_key: 'hund', origin: 'remote', score: 0.2 }),
+          candidate({ category_key: 'people', origin: 'local' }),
+          candidate({ category_key: 'hund', origin: 'remote' }),
         ]}
         categoryOverride="urlaub"
       />
@@ -769,8 +801,8 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
         showSuggestion={true}
         categoryCandidates={[
           candidate({ category_key: 'hund' }),
-          candidate({ category_key: 'people', score: 0.1 }),
-          candidate({ category_key: 'strand', score: 0.05 }),
+          candidate({ category_key: 'people' }),
+          candidate({ category_key: 'strand' }),
         ]}
         categoryOverride={null}
         pendingOverrideKey="people"
@@ -781,5 +813,208 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
     const otherRow = screen.getByTestId('category-candidate-row-strand')
     expect(within(pendingRow).getByRole('button', { name: /übernehmen/i })).toBeDisabled()
     expect(within(otherRow).getByRole('button', { name: /übernehmen/i })).toBeEnabled()
+  })
+})
+
+// specs/features/0289-feste-kategorien.md, Teststrategie Abschnitt 9 ab hier: die
+// "Alle Kategorien"-Auswahl (alle 13 Eintraege, unabhaengig von der Erkennung) und die
+// Feinlabel-Chips. Alle Selektoren ueber getByRole/getByLabelText, nie ueber Klassennamen.
+
+describe('CriterionDetailsList: Alle-Kategorien-Auswahl', () => {
+  function renderWithSelect(props: Record<string, unknown> = {}) {
+    return render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: 'tier' })}
+        suggestion={null}
+        showSuggestion={true}
+        categories={CATEGORIES}
+        categoryCandidates={[candidate({ category_key: 'tier' })]}
+        onOverrideCategory={() => {}}
+        {...props}
+      />
+    )
+  }
+
+  it('offers every entry of the set, not just the candidates', () => {
+    renderWithSelect()
+
+    const select = screen.getByLabelText('Alle Kategorien')
+    const optionLabels = within(select)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    for (const entry of CATEGORIES) {
+      expect(optionLabels).toContain(entry.display_name)
+    }
+  })
+
+  it('lists the options in registry display order with the catch-all last', () => {
+    renderWithSelect()
+
+    const select = screen.getByLabelText('Alle Kategorien')
+    const values = within(select)
+      .getAllByRole('option')
+      .map((option) => (option as HTMLOptionElement).value)
+      .filter((value) => value !== '')
+    expect(values[0]).toBe('menschen')
+    expect(values.at(-1)).toBe('nicht_erkannt')
+  })
+
+  it('keeps the candidate list visible next to the select as an explanation', () => {
+    renderWithSelect()
+
+    expect(screen.getByLabelText('Alle Kategorien')).toBeInTheDocument()
+    expect(screen.getByTestId('category-candidate-row-tier')).toBeInTheDocument()
+  })
+
+  it('calls the mutation callback with the chosen key', async () => {
+    const user = userEvent.setup()
+    const onOverrideCategory = vi.fn()
+    renderWithSelect({ onOverrideCategory })
+
+    await user.selectOptions(screen.getByLabelText('Alle Kategorien'), 'sport_aktivitaet')
+
+    expect(onOverrideCategory).toHaveBeenCalledWith('sport_aktivitaet')
+  })
+
+  it('offers the catch-all as a regular, selectable option with an explanation', async () => {
+    const user = userEvent.setup()
+    const onOverrideCategory = vi.fn()
+    renderWithSelect({ onOverrideCategory })
+
+    await user.selectOptions(screen.getByLabelText('Alle Kategorien'), 'nicht_erkannt')
+
+    expect(onOverrideCategory).toHaveBeenCalledWith('nicht_erkannt')
+    expect(screen.getByText(/kein bildmotiv sicher bestimmbar/i)).toBeInTheDocument()
+  })
+
+  it('disables the select while the category set is still loading', () => {
+    renderWithSelect({ categories: [], categoriesLoading: true })
+
+    expect(screen.getByLabelText('Alle Kategorien')).toBeDisabled()
+  })
+
+  it('disables the select while an override request is running', () => {
+    renderWithSelect({ pendingOverrideKey: 'menschen' })
+
+    expect(screen.getByLabelText('Alle Kategorien')).toBeDisabled()
+  })
+
+  it('shows an inline alert with a retry button when the set could not be loaded', async () => {
+    const user = userEvent.setup()
+    const onRetryCategories = vi.fn()
+    renderWithSelect({ categories: [], categoriesError: true, onRetryCategories })
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/kategorien konnten nicht geladen werden/i)
+    expect(screen.queryByLabelText('Alle Kategorien')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /erneut versuchen/i }))
+    expect(onRetryCategories).toHaveBeenCalled()
+  })
+
+  it('renders no select at all when the caller does not allow overriding', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={true}
+        categories={CATEGORIES}
+      />
+    )
+
+    expect(screen.queryByLabelText('Alle Kategorien')).not.toBeInTheDocument()
+  })
+})
+
+describe('CriterionDetailsList: Feinlabel-Chips', () => {
+  it('renders the fine labels of a photo', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={true}
+        categories={CATEGORIES}
+        fineLabels={[fineLabel(), fineLabel({ canonical_key: 'bluete', display_name: 'Blüte' })]}
+      />
+    )
+
+    const list = screen.getByRole('list', { name: 'Feinlabels' })
+    expect(within(list).getByText('Urlaub')).toBeInTheDocument()
+    expect(within(list).getByText('Blüte')).toBeInTheDocument()
+  })
+
+  it('renders the fine labels even when the category is the catch-all', () => {
+    // Direktes Akzeptanzkriterium: erkennbar bleiben soll, was das System auch bei unbekannter
+    // Hauptkategorie vermutete.
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: 'nicht_erkannt' })}
+        suggestion={null}
+        showSuggestion={true}
+        categories={CATEGORIES}
+        fineLabels={[fineLabel()]}
+      />
+    )
+
+    expect(within(screen.getByRole('list', { name: 'Feinlabels' })).getByText('Urlaub')).toBeInTheDocument()
+  })
+
+  it('renders no placeholder at all without fine labels', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={true}
+        categories={CATEGORIES}
+        fineLabels={[]}
+      />
+    )
+
+    expect(screen.queryByRole('list', { name: 'Feinlabels' })).toBeNull()
+    expect(screen.queryByText('Feinlabels')).toBeNull()
+  })
+
+  it('renders the fine label with a different badge tone than the category badge', () => {
+    // Sie sind Zusatzinformation, keine kategoriale Einordnung - geprueft ueber das semantische
+    // `data-badge-tone`-Attribut, nicht ueber Klassennamen.
+    const { container } = render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={true}
+        categories={CATEGORIES}
+        fineLabels={[fineLabel()]}
+      />
+    )
+
+    const chip = container.querySelector('[data-badge-tone="accent"][data-badge-variant="suggested"]')
+    expect(chip).toHaveTextContent('Urlaub')
+  })
+
+  it('never renders a fine label via dangerouslySetInnerHTML', () => {
+    // Security-Muss-Kriterium (specs/features/0289-feste-kategorien.md, Abschnitt 3): Feinlabels
+    // sind die erste Stelle, an der freier LLM-Text tatsaechlich in der Oberflaeche landet - sie
+    // duerfen ausschliesslich als regulaerer React-Textknoten gerendert werden. Analog
+    // CloudVisionStatusList.test.tsx.
+    const { container } = render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={true}
+        categories={CATEGORIES}
+        fineLabels={[
+          fineLabel({ display_name: '<img src=x onerror="alert(1)">', canonical_key: 'xss' }),
+        ]}
+      />
+    )
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText('<img src=x onerror="alert(1)">')).toBeInTheDocument()
   })
 })

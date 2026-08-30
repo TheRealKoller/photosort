@@ -10,12 +10,7 @@ import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import type { CriterionScoreOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
 import { setToken } from '../auth/token'
-import {
-  countPhotosInDay,
-  CurateCategoriesPage,
-  sortCategoryKeys,
-  toggleDayCollapse,
-} from './CurateCategoriesPage'
+import { countPhotosInDay, CurateCategoriesPage, toggleDayCollapse } from './CurateCategoriesPage'
 
 vi.mock('../api/photos')
 vi.mock('../api/ratings')
@@ -62,7 +57,8 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     suggestion: null,
     ranking: ranking(),
     criterion_scores: [],
-    remote_category_labels: [],
+    fine_labels: [],
+    remote_category: null,
     category_override: null,
     category_candidates: [],
     cloud_vision_status: [],
@@ -101,46 +97,9 @@ describe('countPhotosInDay', () => {
   })
 })
 
-describe('sortCategoryKeys (specs/features/0217)', () => {
-  it('sorts normal categories alphabetically', () => {
-    expect(sortCategoryKeys(['tier', 'gebaeude', 'people'])).toEqual([
-      'gebaeude',
-      'people',
-      'tier',
-    ])
-  })
-
-  it('always puts the catch-all "unerkannt" last, even though it is not alphabetically last', () => {
-    expect(sortCategoryKeys(['unerkannt', 'tier', 'gebaeude'])).toEqual([
-      'gebaeude',
-      'tier',
-      'unerkannt',
-    ])
-  })
-
-  it('keeps "unerkannt" last even when every other key sorts after it alphabetically', () => {
-    expect(sortCategoryKeys(['unerkannt', 'urlaub', 'zoo'])).toEqual([
-      'urlaub',
-      'zoo',
-      'unerkannt',
-    ])
-  })
-
-  it('handles a single category and an empty list', () => {
-    expect(sortCategoryKeys(['unerkannt'])).toEqual(['unerkannt'])
-    expect(sortCategoryKeys(['tier'])).toEqual(['tier'])
-    expect(sortCategoryKeys([])).toEqual([])
-  })
-
-  it('returns a new array instead of mutating the argument', () => {
-    const original = ['unerkannt', 'gebaeude']
-
-    const result = sortCategoryKeys(original)
-
-    expect(result).not.toBe(original)
-    expect(original).toEqual(['unerkannt', 'gebaeude'])
-  })
-})
+// specs/features/0289-feste-kategorien.md: `sortCategoryKeys` ist nach `utils/categoryLabels.ts`
+// gewandert (sie wird jetzt auch von der "Alle Kategorien"-Override-Auswahl gebraucht, nicht mehr
+// nur von dieser Seite) - ihre Unit-Tests stehen entsprechend in `utils/categoryLabels.test.ts`.
 
 describe('toggleDayCollapse', () => {
   it('adds a dayKey that is not yet in the set (collapses it)', () => {
@@ -977,8 +936,8 @@ describe('CurateCategoriesPage', () => {
             criterion_scores: [criterionScore()],
             ranking: ranking({ category_key: 'people' }),
             category_candidates: [
-              { category_key: 'hund', origin: 'remote', score: 0.9, provider: 'anthropic' },
-              { category_key: 'people', origin: 'local', score: 0.4, provider: null },
+              { category_key: 'tier', origin: 'remote', provider: 'anthropic' },
+              { category_key: 'menschen', origin: 'local', provider: null },
             ],
           }),
         ],

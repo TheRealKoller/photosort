@@ -1,7 +1,15 @@
 import { useRef, useState } from 'react'
 
-import type { CategoryCandidateOut, CategoryKey, CriterionScoreOut, RankingOut, SuggestionOut } from '../api/types'
+import type {
+  CategoryCandidateOut,
+  CategoryKey,
+  CriterionScoreOut,
+  FineLabelOut,
+  RankingOut,
+  SuggestionOut,
+} from '../api/types'
 import { cn } from '../lib/utils'
+import type { CategorySet } from '../utils/categoryLabels'
 import { CriterionDetailsList } from './CriterionDetailsList'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from './ui/popover'
 
@@ -14,6 +22,11 @@ interface CriterionDetailsPopoverProps {
   // Durchreichung an CriterionDetailsList.tsx (siehe dortige Props-Dokumentation) - dieselben
   // neutralen Defaults, kein eigenes Verhalten hier.
   categoryCandidates?: CategoryCandidateOut[]
+  fineLabels?: FineLabelOut[]
+  categories?: CategorySet
+  categoriesLoading?: boolean
+  categoriesError?: boolean
+  onRetryCategories?: () => void
   categoryOverride?: CategoryKey | null
   onOverrideCategory?: (categoryKey: CategoryKey) => void
   onResetOverride?: () => void
@@ -77,6 +90,11 @@ export function CriterionDetailsPopover({
   suggestion,
   className,
   categoryCandidates,
+  fineLabels,
+  categories,
+  categoriesLoading,
+  categoriesError,
+  onRetryCategories,
   categoryOverride,
   onOverrideCategory,
   onResetOverride,
@@ -172,6 +190,11 @@ export function CriterionDetailsPopover({
           suggestion={suggestion}
           showSuggestion={true}
           categoryCandidates={categoryCandidates}
+          fineLabels={fineLabels}
+          categories={categories}
+          categoriesLoading={categoriesLoading}
+          categoriesError={categoriesError}
+          onRetryCategories={onRetryCategories}
           categoryOverride={categoryOverride}
           onOverrideCategory={onOverrideCategory}
           onResetOverride={onResetOverride}

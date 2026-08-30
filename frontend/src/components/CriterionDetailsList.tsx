@@ -1,9 +1,17 @@
 import { useId } from 'react'
 
-import type { CategoryCandidateOut, CategoryKey, CriterionScoreOut, RankingOut, SuggestionOut } from '../api/types'
+import type {
+  CategoryCandidateOut,
+  CategoryKey,
+  CriterionScoreOut,
+  FineLabelOut,
+  RankingOut,
+  SuggestionOut,
+} from '../api/types'
 import { cn } from '../lib/utils'
-import { formatCategoryKey, formatProviderLabel } from '../utils/categoryLabels'
+import { formatCategoryKey, formatProviderLabel, type CategorySet } from '../utils/categoryLabels'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
+import { CategorySelect } from './CategorySelect'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 
@@ -24,6 +32,22 @@ interface CriterionDetailsListProps {
   // Gruppe immer ausgeblendet (0 <= 1 Kandidat), die bisherige einzeilige "Kategorie"-Anzeige
   // bleibt unveraendert sichtbar.
   categoryCandidates?: CategoryCandidateOut[]
+  /** Bis zu zwei frei formulierte Feinlabels (specs/features/0289-feste-kategorien.md) - reine
+   * Zusatzinformation am Foto, keine Kategorie. Ohne Feinlabels wird KEIN Platzhalter gerendert.
+   *
+   * SICHERHEITSHINWEIS: freier, extern erzeugter LLM-Text - ausschliesslich als regulaerer
+   * React-Textknoten rendern (nie dangerouslySetInnerHTML, nie als HTML-String-Prop, nie in
+   * href/src/style). Das ist keine blosse Konvention, sondern die tragende Voraussetzung der
+   * localStorage-Token-Entscheidung (ADR 0005). */
+  fineLabels?: FineLabelOut[]
+  /** Das ueber `GET /categories` geladene feste Set - Grundlage von Anzeigenamen, Reihenfolge und
+   * der "Alle Kategorien"-Auswahl. Leer, solange es laedt (generischer Fallback greift). */
+  categories?: CategorySet
+  /** Ladezustand des Sets - deaktiviert die Auswahl statt sie leer anzubieten (kein Bypass). */
+  categoriesLoading?: boolean
+  /** Fehlerzustand des Sets - Inline-Alert mit "Erneut versuchen" statt einer leeren Auswahl. */
+  categoriesError?: boolean
+  onRetryCategories?: () => void
   categoryOverride?: CategoryKey | null
   onOverrideCategory?: (categoryKey: CategoryKey) => void
   onResetOverride?: () => void
@@ -83,16 +107,16 @@ function buildCategoryCandidateRows(
   categoryCandidates: CategoryCandidateOut[],
   categoryOverride: CategoryKey | null
 ): CategoryCandidateRow[] {
-  // Review-Fund (test-engineer): expliziter Sekundaer-Schluessel statt eines impliziten Verlasses
-  // auf Sortier-Stabilitaet - Score/Konfidenz absteigend, bei Gleichstand alphabetisch nach
-  // category_key (dieselbe Tie-Break-Regel wie backend api/photos.py::_category_candidates_out).
-  const rows: CategoryCandidateRow[] = [...categoryCandidates].sort(
-    (a, b) => b.score - a.score || a.category_key.localeCompare(b.category_key)
-  )
+  // specs/features/0289-feste-kategorien.md: die Reihenfolge kommt seit dieser Spec bereits vom
+  // Server (Registry-Anzeigereihenfolge) - hier wird bewusst NICHT mehr umsortiert. Das frueher
+  // hier verwendete Score-Sortierkriterium ist mit dem `score`-Feld entfallen: die Auswahl
+  // entscheidet die feste Vorrangreihenfolge im Backend, ein Zahlenvergleich in der Oberflaeche
+  // haette keine Entsprechung mehr in der Logik.
+  const rows: CategoryCandidateRow[] = [...categoryCandidates]
   const overrideIsOrphan =
     categoryOverride !== null && !categoryCandidates.some((c) => c.category_key === categoryOverride)
   if (overrideIsOrphan) {
-    rows.push({ category_key: categoryOverride, origin: 'local', score: 0, provider: null, isOrphan: true })
+    rows.push({ category_key: categoryOverride, origin: 'local', provider: null, isOrphan: true })
   }
   return rows
 }
@@ -122,6 +146,11 @@ export function CriterionDetailsList({
   suggestion,
   showSuggestion,
   categoryCandidates = [],
+  fineLabels = [],
+  categories = [],
+  categoriesLoading = false,
+  categoriesError = false,
+  onRetryCategories,
   categoryOverride = null,
   onOverrideCategory,
   onResetOverride,
@@ -198,19 +227,14 @@ export function CriterionDetailsList({
                             >
                               <div className="flex flex-wrap items-baseline gap-2">
                                 <span className="font-medium text-text-h">
-                                  {formatCategoryKey(row.category_key)}
+                                  {formatCategoryKey(row.category_key, categories)}
                                 </span>
                                 {!row.isOrphan && (
-                                  <>
-                                    <Badge tone="neutral">
-                                      {row.origin === 'remote' && row.provider
-                                        ? formatProviderLabel(row.provider)
-                                        : 'Lokal erkannt'}
-                                    </Badge>
-                                    <span className="text-sm text-text">
-                                      {formatCriterionPercent(row.score)}
-                                    </span>
-                                  </>
+                                  <Badge tone="neutral">
+                                    {row.origin === 'remote' && row.provider
+                                      ? formatProviderLabel(row.provider)
+                                      : 'Lokal erkannt'}
+                                  </Badge>
                                 )}
                               </div>
                               {isOverrideTarget ? (
@@ -250,7 +274,9 @@ export function CriterionDetailsList({
                 ) : (
                   <div className="flex items-baseline justify-between gap-3">
                     <dt className="text-text">Kategorie</dt>
-                    <dd className="font-medium text-text-h">{formatCategoryKey(ranking.category_key)}</dd>
+                    <dd className="font-medium text-text-h">
+                      {formatCategoryKey(ranking.category_key, categories)}
+                    </dd>
                   </div>
                 )}
                 <div className="flex items-baseline justify-between gap-3">
@@ -259,9 +285,48 @@ export function CriterionDetailsList({
                     Rang {ranking.rank_position} von {ranking.partition_size}
                   </dd>
                 </div>
+                {/* specs/features/0289-feste-kategorien.md, UI/UX-Abschnitt: die
+                    "Alle Kategorien"-Auswahl ERGAENZT die Kandidatenliste, sie ersetzt sie nicht -
+                    der Nutzer sieht weiterhin, was das System erkannt hat, bevor er es
+                    uebersteuert. Nur eingebunden, wenn ein Uebersteuern ueberhaupt vorgesehen ist
+                    (Aufrufer reicht `onOverrideCategory` durch). */}
+                {onOverrideCategory && (
+                  <div className="mt-1.5">
+                    <CategorySelect
+                      categories={categories}
+                      value={categoryOverride ?? ranking.category_key}
+                      onSelect={onOverrideCategory}
+                      pending={pendingOverrideKey !== null}
+                      isLoading={categoriesLoading}
+                      isError={categoriesError}
+                      onRetry={onRetryCategories}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </dl>
+          {/* Feinlabel-Chips (specs/features/0289-feste-kategorien.md, UI/UX-Abschnitt): raeumlich
+              deutlich von der Kategorie getrennt, kompakter und in einem anderen Ton
+              (`suggested`-Variante des Akzent-Chips) - sie sind Zusatzinformation, keine
+              kategoriale Einordnung. Bewusst OHNE Icon/Symbol, damit sie nicht mit den
+              Bewertungs-Chips verwechselt werden. Ohne Feinlabels wird KEIN Platzhalter
+              gerendert - der Bereich entfaellt ersatzlos. Sichtbar auch bei "Nicht erkannt". */}
+          {fineLabels.length > 0 && (
+            <div className="mt-1.5 flex flex-col gap-1.5">
+              <h4 className="text-xs text-text">Feinlabels</h4>
+              <ul aria-label="Feinlabels" className="flex flex-wrap gap-1.5">
+                {fineLabels.map((label) => (
+                  <li key={label.canonical_key}>
+                    {/* Reiner React-Textknoten - freier LLM-Text, nie als HTML. */}
+                    <Badge tone="accent" suggested className="max-w-full truncate">
+                      {label.display_name}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
       {/* Dritter, eigener Bereich ausserhalb beider Bloecke und bewusst OHNE eigene Ueberschrift

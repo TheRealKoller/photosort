@@ -12,6 +12,7 @@ import { RatingBadge } from '../components/RatingBadge'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
+import { useCategoriesQuery } from '../hooks/useCategories'
 import { useCategoryOverrideControls } from '../hooks/useCategoryOverrideControls'
 import { useConfirmAusschussGateMutation } from '../hooks/useProjects'
 import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
@@ -50,6 +51,10 @@ export function PhotoGridPage() {
   const setRatingMutation = useSetRatingMutation(id)
   const gateMutation = useConfirmAusschussGateMutation(id)
   const categoryOverrideControls = useCategoryOverrideControls(id)
+  // specs/features/0289-feste-kategorien.md: das feste Set kommt vom Server (langlebiger Cache) -
+  // Grundlage der Anzeigenamen und der "Alle Kategorien"-Override-Auswahl.
+  const categoriesQuery = useCategoriesQuery()
+  const categorySet = categoriesQuery.data ?? []
   const photos = query.data?.pages.flatMap((page) => page.items) ?? []
   const totalSuggested = query.data?.pages[0]?.total ?? 0
 
@@ -239,6 +244,13 @@ export function PhotoGridPage() {
                       suggestion={photo.suggestion}
                       className="pointer-events-auto"
                       categoryCandidates={photo.category_candidates}
+                      fineLabels={photo.fine_labels}
+                      categories={categorySet}
+                      categoriesLoading={categoriesQuery.isLoading}
+                      categoriesError={categoriesQuery.isError}
+                      onRetryCategories={() => {
+                        void categoriesQuery.refetch()
+                      }}
                       categoryOverride={photo.category_override}
                       onOverrideCategory={(categoryKey) =>
                         categoryOverrideControls.overrideCategory(photo.id, categoryKey)
