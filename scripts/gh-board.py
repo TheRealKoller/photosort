@@ -65,6 +65,10 @@ LABEL_PROVISIONING = {
 _SPEC_NUMBER_RE = re.compile(r"^\d{4}$")
 _STATUS_LINE_RE = re.compile(r"^\*\*Status:\*\*.*$", re.MULTILINE)
 _STATUS_KEYWORD_RE = re.compile(r"^\*\*Status:\*\*\s*([A-Za-z]+)", re.MULTILINE)
+# So meldet `gh` ein `--json`-Feld, das die installierte Version nicht kennt. Nur dieser
+# Fall bekommt den Versionshinweis - der Feldname selbst taugt nicht als Merkmal, er steht
+# als Teil der Argumentliste ohnehin in jeder gescheiterten Meldung.
+_UNKNOWN_JSON_FIELD_RE = re.compile(r"unknown\s+JSON\s+field", re.IGNORECASE)
 _CONTENT_ZONE_START_RE = re.compile(r"^## ", re.MULTILINE)
 # "gh issue create" hat kein --json-Flag und gibt bei Erfolg nur die Issue-URL auf stdout aus.
 _ISSUE_URL_NUMBER_RE = re.compile(r"/issues/(\d+)/?\s*$")
@@ -442,6 +446,11 @@ class GhBoard:
                 ]
             )
         except BoardError as exc:
+            # Nur der Fall, den der Hinweis erklaert, bekommt ihn auch: ein abgelaufenes Token,
+            # ein Netzwerkfehler oder ein nicht gefundener PR wuerde sonst in Richtung eines
+            # Werkzeug-Updates gelenkt, das gar nichts behebt.
+            if not _UNKNOWN_JSON_FIELD_RE.search(str(exc)):
+                raise
             raise BoardError(
                 f"{exc} (Hinweis: 'closingIssuesReferences' kennt `gh pr view --json` erst ab "
                 f"gh {MIN_GH_VERSION} - ein unbekanntes JSON-Feld ist kein Beleg dafuer, dass "

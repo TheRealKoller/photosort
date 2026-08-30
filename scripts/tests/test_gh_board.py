@@ -63,6 +63,7 @@ class FakeGh:
         pull_requests: dict[int, dict] | None = None,
         closing_prs: dict[int, list[dict]] | None = None,
         failing: set[tuple[str, ...]] | None = None,
+        failure_stderr: dict[tuple[str, ...], str] | None = None,
     ) -> None:
         self.auth_scopes = auth_scopes
         self.auth_returncode = auth_returncode
@@ -111,13 +112,18 @@ class FakeGh:
         self.pull_requests = pull_requests or {}
         self.closing_prs = closing_prs or {}
         self.failing = failing or set()
+        # Je Aufruf-Praefix die stderr-Ausgabe, mit der er scheitern soll - die reale
+        # Fehlermeldung entscheidet, wie `gh-board.py` sie einordnet.
+        self.failure_stderr = failure_stderr or {}
         self.calls: list[list[str]] = []
 
     def __call__(self, args: list[str]) -> subprocess.CompletedProcess[str]:
         self.calls.append(list(args))
         for prefix in self.failing:
             if tuple(args[: len(prefix)]) == prefix:
-                return _completed(returncode=1, stderr="fake gh failure")
+                return _completed(
+                    returncode=1, stderr=self.failure_stderr.get(prefix, "fake gh failure")
+                )
         return self._dispatch(args)
 
     def _dispatch(self, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -174,11 +180,29 @@ class FakeGh:
 
 
 def _issue_url(number: int) -> str:
-    return f"https://github.com/{OWNER}/photosort/issues/{number}"
+    return f"https://github.com/{OWNER}/{REPO}/issues/{number}"
 
 
 def _pr_url(number: int) -> str:
-    return f"https://github.com/{OWNER}/photosort/pull/{number}"
+    return f"https://github.com/{OWNER}/{REPO}/pull/{number}"
+
+
+# So meldet `gh` ein `--json`-Feld, das die installierte Version nicht kennt - der Fall
+# `closingIssuesReferences` mit gh < 2.72.0. Wortgetreue Form, Feldliste gekuerzt.
+UNKNOWN_JSON_FIELD_STDERR = (
+    'unknown JSON field: "closingIssuesReferences"\n'
+    "Available fields:\n"
+    "  additions\n"
+    "  assignees\n"
+    "  author\n"
+    "  baseRefName\n"
+    "  body\n"
+    "  state\n"
+    "  url"
+)
+
+# Ein Fehlschlag, der mit der `gh`-Version nichts zu tun hat.
+ABGELAUFENES_TOKEN_STDERR = "gh: Bad credentials (HTTP 401)\nTry authenticating with: gh auth login"
 
 
 def _closing_ref(number: int, *, owner: str = OWNER, repo: str = REPO) -> dict:
@@ -1048,11 +1072,15 @@ def test_finalize_lehnt_einen_pr_ohne_wirksame_verknuepfung_ab(
 def test_ein_gh_ohne_das_verknuepfungsfeld_wird_als_versionsproblem_gemeldet(
     gh_board: ModuleType, tmp_path: Path
 ) -> None:
-    """Ein `gh` < 2.72.0 kennt `closingIssuesReferences` nicht und laesst den Aufruf scheitern.
-    Die Meldung muss die Mindestversion nennen, sonst wird ein Werkzeugproblem als fehlende
-    Verknuepfung fehlgedeutet - und jemand traegt eine Zeile nach, die laengst da ist."""
+    """Ein `gh` < 2.72.0 kennt `closingIssuesReferences` nicht und laesst den Aufruf mit
+    'unknown JSON field' scheitern. Die Meldung muss die Mindestversion nennen, sonst wird ein
+    Werkzeugproblem als fehlende Verknuepfung fehlgedeutet - und jemand traegt eine Zeile nach,
+    die laengst da ist."""
     path = _write_spec(tmp_path, "0262")
-    fake = FakeGh(failing={("gh", "pr", "view")})
+    fake = FakeGh(
+        failing={("gh", "pr", "view")},
+        failure_stderr={("gh", "pr", "view"): UNKNOWN_JSON_FIELD_STDERR},
+    )
 
     with pytest.raises(gh_board.BoardError) as excinfo:
         gh_board.cmd_finalize(
@@ -1063,7 +1091,37 @@ def test_ein_gh_ohne_das_verknuepfungsfeld_wird_als_versionsproblem_gemeldet(
             pr_number=281,
         )
 
-    assert "2.72.0" in str(excinfo.value)
+    message = str(excinfo.value)
+    assert "2.72.0" in message
+    assert "unknown JSON field" in message
+    assert "**Status:** Accepted" in path.read_text(encoding="utf-8")
+
+
+def test_ein_unverwandter_gh_fehler_wird_nicht_zum_versionsproblem_umgedeutet(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Gegenstueck zum Versionsfall: Ein abgelaufenes Token, ein Netzwerkfehler oder ein nicht
+    gefundener PR haben mit der `gh`-Version nichts zu tun. Wuerde der Hinweis unbedingt
+    angehaengt, verschlechterte ausgerechnet diese Aenderung die Diagnostik - jemand
+    aktualisiert `gh`, waehrend in Wahrheit die Anmeldung abgelaufen ist."""
+    path = _write_spec(tmp_path, "0262")
+    fake = FakeGh(
+        failing={("gh", "pr", "view")},
+        failure_stderr={("gh", "pr", "view"): ABGELAUFENES_TOKEN_STDERR},
+    )
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        gh_board.cmd_finalize(
+            _board(gh_board, fake),
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    message = str(excinfo.value)
+    assert "2.72.0" not in message
+    assert "Bad credentials (HTTP 401)" in message
     assert "**Status:** Accepted" in path.read_text(encoding="utf-8")
 
 
