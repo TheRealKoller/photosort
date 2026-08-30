@@ -834,6 +834,16 @@ def test_get_pull_request_holt_die_verknuepfungsfelder_und_niemals_den_body(
 # -- Zielzustands-Idempotenz beim Schliessen (Spec 0278 / ADR 0048) ---------------------------
 
 
+def _zustandsabfragen(fake: FakeGh) -> list[list[str]]:
+    """Nur die Zustands-Nachpruefungen aus dem Aufruflog - `gh issue view` gibt es auch mit
+    anderen `--json`-Feldern (`closedByPullRequestsReferences`)."""
+    return [
+        call
+        for call in fake.calls_starting_with("gh", "issue", "view")
+        if call[call.index("--json") + 1] == "state"
+    ]
+
+
 def test_issue_state_fragt_genau_das_state_feld_ab_und_normalisiert(gh_board: ModuleType) -> None:
     """`gh` liefert den GraphQL-Enum gross (CLOSED); ohne Normalisierung griffe die Ausnahme nie.
     Abgefragt wird ausschliesslich `state` - nie Titel, Body, Labels oder Kommentare."""
@@ -922,7 +932,50 @@ def test_close_issue_prueft_den_zustand_im_erfolgsfall_nicht_nach(gh_board: Modu
 
     _board(gh_board, fake).close_issue(262)
 
-    assert fake.calls_starting_with("gh", "issue", "view") == []
+    assert _zustandsabfragen(fake) == []
+
+
+def test_set_status_done_auf_bereits_geschlossenem_issue_meldet_erfolg(
+    gh_board: ModuleType,
+) -> None:
+    """AK 2/4: regulaerer Payload, und der Zielzustand wird trotzdem vollstaendig hergestellt -
+    die Board-Spalte wird gesetzt, das Schliessen versucht."""
+    fake = FakeGh(issue_states={262: "closed"})
+
+    result = gh_board.cmd_set_status(_board(gh_board, fake), issue_number=262, status="Done")
+
+    assert result == {"issue_number": 262, "status": "Done"}
+    item_edit = fake.single_call("gh", "project", "item-edit")
+    assert item_edit[item_edit.index("--single-select-option-id") + 1] == "OPT_Done"
+    assert fake.single_call("gh", "issue", "close") == ["gh", "issue", "close", "262"]
+
+
+def test_set_status_done_ueberlebt_die_auto_close_automation_des_boards(
+    gh_board: ModuleType,
+) -> None:
+    """Reproduktion des gemeldeten Falls im Zusammenhang: das `Done` schliesst das Issue ueber
+    den Board-Workflow, das eigene `close` trifft es danach bereits geschlossen an."""
+    fake = FakeGh(done_schliesst_das_issue=True)
+
+    result = gh_board.cmd_set_status(_board(gh_board, fake), issue_number=262, status="Done")
+
+    assert result == {"issue_number": 262, "status": "Done"}
+    assert fake.issue_state(262) == "closed"
+
+
+def test_set_status_done_ist_ununterscheidbar_vom_selbst_geschlossenen_fall(
+    gh_board: ModuleType,
+) -> None:
+    """AK 3 als Gleichheit zweier real erzeugter Ergebnisse - nicht als Feldliste: nur diese Form
+    faengt ein spaeter nachgeruestetes Feld ('war schon geschlossen') ab."""
+    ergebnis_bereits_geschlossen = gh_board.cmd_set_status(
+        _board(gh_board, FakeGh(issue_states={262: "closed"})), issue_number=262, status="Done"
+    )
+    ergebnis_frisch_geschlossen = gh_board.cmd_set_status(
+        _board(gh_board, FakeGh()), issue_number=262, status="Done"
+    )
+
+    assert ergebnis_bereits_geschlossen == ergebnis_frisch_geschlossen
 
 
 # -- finalize ---------------------------------------------------------------------------------
@@ -956,6 +1009,79 @@ def test_finalize_schreibt_statuszeile_setzt_done_und_schliesst_das_issue(
     item_edit = fake.single_call("gh", "project", "item-edit")
     assert item_edit[item_edit.index("--single-select-option-id") + 1] == "OPT_Done"
     assert fake.single_call("gh", "issue", "close") == ["gh", "issue", "close", "262"]
+
+
+def test_finalize_ueberlebt_die_auto_close_automation_des_boards(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """AK 1/4 als Reproduktion des gemeldeten Falls (Finalisierung von Spec 0209, PR #277): das
+    `Done` schliesst das Issue ueber den Board-Workflow, das eigene `close` trifft es danach
+    bereits geschlossen an - der Zielzustand entsteht trotzdem vollstaendig."""
+    path = _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281)}, done_schliesst_das_issue=True)
+
+    result = gh_board.cmd_finalize(
+        _board(gh_board, fake),
+        repo_root=tmp_path,
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+
+    assert result["status"] == "Done"
+    assert f"**Status:** Implemented ([PR #281]({_pr_url(281)}))\n" in path.read_text(
+        encoding="utf-8"
+    )
+    item_edit = fake.single_call("gh", "project", "item-edit")
+    assert item_edit[item_edit.index("--single-select-option-id") + 1] == "OPT_Done"
+    assert fake.single_call("gh", "issue", "close") == ["gh", "issue", "close", "262"]
+
+
+def test_finalize_ist_ununterscheidbar_vom_selbst_geschlossenen_fall(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """AK 3 als Gleichheit zweier real erzeugter Ergebnisse: der aufrufende Ablauf soll den
+    Unterschied 'war schon geschlossen' gar nicht sehen koennen."""
+    _write_spec(tmp_path / "bereits", "0262")
+    _write_spec(tmp_path / "frisch", "0262")
+
+    ergebnis_bereits_geschlossen = gh_board.cmd_finalize(
+        _board(
+            gh_board,
+            FakeGh(pull_requests={281: _pull_request(281)}, issue_states={262: "closed"}),
+        ),
+        repo_root=tmp_path / "bereits",
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+    ergebnis_frisch_geschlossen = gh_board.cmd_finalize(
+        _board(gh_board, FakeGh(pull_requests={281: _pull_request(281)})),
+        repo_root=tmp_path / "frisch",
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+
+    assert ergebnis_bereits_geschlossen == ergebnis_frisch_geschlossen
+
+
+def test_finalize_prueft_den_zustand_im_erfolgsfall_nicht_nach(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """AK 8: der ungestoerte Regelfall setzt weiterhin genau die bisherigen `gh`-Aufrufe ab."""
+    _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
+
+    gh_board.cmd_finalize(
+        _board(gh_board, fake),
+        repo_root=tmp_path,
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+
+    assert _zustandsabfragen(fake) == []
 
 
 def test_finalize_akzeptiert_einen_bereits_gemergten_pr(
