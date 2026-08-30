@@ -7,22 +7,28 @@ import pytest
 from PIL import Image, ImageDraw
 
 from photosort.classification import (
+    SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
+    SCENE_LABEL_MIN_CONFIDENCE,
     AnimalDetection,
     FaceBoundingBox,
     FaceOrientation,
     SceneLabel,
 )
 from photosort.criteria import (
+    ARCHITECTURE_CATEGORIES,
     CATEGORY_DETAIL,
     CRITERIA_REGISTRY,
     DYNAMIC_LABEL_PRESENCE_THRESHOLD,
     FREIRAUM_YAW_DEADZONE_DEGREES,
+    LANDSCAPE_SCENE_CATEGORIES,
+    LANDSCHAFT_LABEL_MIN_CONFIDENCE,
     compute_content_landscape,
     compute_content_people,
     compute_freiraum_score,
     compute_gebaeude_score,
     compute_golden_ratio_score,
     compute_landmark_score,
+    compute_landschaft_score,
     compute_symmetrie_score,
     compute_tier_score,
     derive_active_categories,
@@ -348,6 +354,78 @@ class TestComputeGebaeudeScore:
             SceneLabel(category="church", confidence=0.8),
         ]
         assert compute_gebaeude_score(labels) == 0.8
+
+    def test_allow_listed_label_between_the_old_and_new_lower_bound_still_scores_zero(
+        self,
+    ) -> None:
+        # Nicht-Regressions-Pflicht (specs/features/0217 AK2, Testkonzept-Regel 1 zu ADR 0046):
+        # classify_scene liefert seit dieser Spec bereits ab SCENE_LABEL_MIN_CONFIDENCE (0.2) -
+        # compute_gebaeude_score muss die alte, inhaltliche Schwelle (0.5) deshalb SELBST
+        # durchsetzen, sonst verschiebt eine reine Konstanten-Aenderung stillschweigend das
+        # Verhalten dieses unbeteiligten Kriteriums.
+        assert SCENE_LABEL_MIN_CONFIDENCE < 0.3 < SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD
+        assert compute_gebaeude_score([SceneLabel(category="church", confidence=0.3)]) == 0.0
+
+    def test_allow_listed_label_exactly_at_the_old_threshold_still_hits(self) -> None:
+        # Grenzfall exakt AUF der alten Schwelle bleibt inklusiv (`>=`), wie bisher.
+        assert compute_gebaeude_score(
+            [SceneLabel(category="church", confidence=0.5)]
+        ) == 0.5
+
+    def test_a_weak_allow_listed_label_does_not_mask_a_strong_one(self) -> None:
+        labels = [
+            SceneLabel(category="church", confidence=0.3),  # unter der Gebaeude-Schwelle
+            SceneLabel(category="castle", confidence=0.7),
+        ]
+        assert compute_gebaeude_score(labels) == 0.7
+
+
+class TestComputeLandschaftScore:
+    """specs/features/0217, ADR decisions/0046 Punkt 1: echte, inhaltsbasierte Landschafts-
+    Erkennung aus derselben (bereits berechneten) Szenen-Klassifikation wie gebaeude - exakt das
+    Muster von compute_gebaeude_score/ARCHITECTURE_CATEGORIES, nur mit eigener Allow-Liste und
+    eigener, niedrigerer Konfidenzschwelle."""
+
+    def test_allow_listed_label_scores_its_confidence(self) -> None:
+        assert compute_landschaft_score([SceneLabel(category="valley", confidence=0.8)]) == 0.8
+
+    def test_non_allow_listed_label_scores_zero_despite_high_confidence(self) -> None:
+        # Kernaussage der Story: ein texturarmes/unspezifisches Foto ohne Landschaftsmotiv bekommt
+        # keinen Landschafts-Score, egal wie sicher das Modell bei etwas anderem ist.
+        assert compute_landschaft_score([SceneLabel(category="dog", confidence=0.99)]) == 0.0
+
+    def test_no_labels_at_all_scores_zero(self) -> None:
+        assert compute_landschaft_score([]) == 0.0
+
+    def test_picks_the_highest_confidence_allow_listed_label_among_several(self) -> None:
+        labels = [
+            SceneLabel(category="dog", confidence=0.99),  # nicht in der Allow-Liste
+            SceneLabel(category="valley", confidence=0.4),
+            SceneLabel(category="seashore", confidence=0.7),
+        ]
+        assert compute_landschaft_score(labels) == 0.7
+
+    def test_label_just_below_the_landschaft_threshold_scores_zero(self) -> None:
+        assert LANDSCHAFT_LABEL_MIN_CONFIDENCE == 0.25
+        assert compute_landschaft_score([SceneLabel(category="alp", confidence=0.24)]) == 0.0
+
+    def test_label_exactly_at_the_landschaft_threshold_hits_inclusive(self) -> None:
+        assert compute_landschaft_score([SceneLabel(category="alp", confidence=0.25)]) == 0.25
+
+    def test_label_just_above_the_landschaft_threshold_hits(self) -> None:
+        assert compute_landschaft_score([SceneLabel(category="alp", confidence=0.26)]) == 0.26
+
+    def test_a_weak_allow_listed_label_does_not_mask_a_strong_one(self) -> None:
+        labels = [
+            SceneLabel(category="alp", confidence=0.1),  # unter der Landschafts-Schwelle
+            SceneLabel(category="volcano", confidence=0.6),
+        ]
+        assert compute_landschaft_score(labels) == 0.6
+
+    def test_allow_list_and_architecture_allow_list_do_not_overlap(self) -> None:
+        # Ein Label darf nie gleichzeitig gebaeude UND landschaft ausloesen - die beiden
+        # Allow-Listen sind disjunkt (natuerliche Szenen vs. Bauwerke).
+        assert LANDSCAPE_SCENE_CATEGORIES.isdisjoint(ARCHITECTURE_CATEGORIES)
 
 
 class TestComputeLandmarkScore:

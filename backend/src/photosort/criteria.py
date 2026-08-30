@@ -9,6 +9,7 @@ from PIL import Image
 
 from photosort.classification import (
     LANDSCAPE_UNIFORM_FRACTION_THRESHOLD,
+    SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
     AnimalDetection,
     FaceBoundingBox,
     FaceDetectorLike,
@@ -315,6 +316,16 @@ def compute_tier_score(animals: Sequence[AnimalDetection]) -> float:
 # classify_scene selbst passiert. Dokumentierte, bewusst akzeptierte Luecke (AK-Pflicht der Spec,
 # ADR 0022 Punkt 2): ImageNet hat kaum Innenraum-Klassen, `living_room`/`kitchen`/`office` werden
 # strukturell nicht erkannt - nur Aussenarchitektur wird zuverlaessig erfasst.
+#
+# BEFUND (developer, 2026-08-30, bei der fuer LANDSCAPE_SCENE_CATEGORIES unten verpflichtenden
+# Verifikation gegen die Label-Datei des gebuendelten Modells aufgefallen, siehe dort): die
+# Label-Datei schreibt mehrteilige Klassennamen mit LEERZEICHEN, nicht mit Unterstrich - die vier
+# Eintraege "bell_cote"/"suspension_bridge"/"triumphal_arch" (Label-Datei: "bell cote",
+# "suspension bridge", "triumphal arch") und "lighthouse" (Label-Datei: "beacon") koennen deshalb
+# nie matchen. Bewusst in dieser Spec NICHT korrigiert: specs/features/0217 AK2 verlangt
+# ausdruecklich, dass sich das gebaeude-Verhalten durch diese Aenderung NICHT verschiebt - eine
+# Korrektur waere eine eigenstaendige Verhaltensaenderung ausserhalb des Story-Scopes und gehoert
+# in ein eigenes Ticket.
 ARCHITECTURE_CATEGORIES = frozenset(
     {
         "church",
@@ -341,9 +352,85 @@ def compute_gebaeude_score(labels: Sequence[SceneLabel]) -> float:
     """`gebaeude`-Kriterium (ADR 0022 Punkt 2): Score = Konfidenz des besten Treffers INNERHALB
     der ARCHITECTURE_CATEGORIES-Allow-Liste, 0.0 falls keiner der uebergebenen `labels` in der
     Allow-Liste enthalten ist - auch bei hoher Modell-Konfidenz einer nicht-architekturbezogenen
-    Kategorie (Akzeptanzkriterium der Spec: "Nachweis, dass tatsaechlich die Allow-Liste filtert
-    und nicht nur die rohe Modell-Konfidenz durchgereicht wird")."""
-    allowed = [label for label in labels if label.category in ARCHITECTURE_CATEGORIES]
+    Kategorie (Akzeptanzkriterium der Spec 0038: "Nachweis, dass tatsaechlich die Allow-Liste
+    filtert und nicht nur die rohe Modell-Konfidenz durchgereicht wird").
+
+    specs/features/0217, ADR 0046 Punkt 1 (verpflichtend, sonst stille Verhaltensaenderung):
+    zusaetzlich zur Allow-Liste wird die inhaltliche Konfidenzschwelle
+    SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD (0.5) HIER explizit durchgesetzt. classify_scene
+    liefert seit dieser Spec bereits ab der niedrigeren SCENE_LABEL_MIN_CONFIDENCE (0.2), damit
+    compute_landschaft_score den fuer natuerliche Szenen noetigen Spielraum bekommt - ohne diesen
+    Filter wuerde das gebaeude-Kriterium diese Absenkung stillschweigend mit uebernehmen."""
+    allowed = [
+        label
+        for label in labels
+        if label.category in ARCHITECTURE_CATEGORIES
+        and label.confidence >= SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD
+    ]
+    if not allowed:
+        return 0.0
+    return max(label.confidence for label in allowed)
+
+
+# Kuratierte Allow-Liste natuerlicher ImageNet-1k-Szenenklassen (specs/features/0217, ADR 0046
+# Punkt 1) - dasselbe Muster wie ARCHITECTURE_CATEGORIES oben, ebenfalls ohne modell-ladenden
+# Test.
+#
+# VERIFIZIERT (developer, 2026-08-30, einmalige Pflicht laut ADR 0046 Punkt 1): die exakte
+# Schreibweise stammt aus der im gebuendelten Modell-Asset selbst mitgelieferten Label-Datei
+# `labels_without_background.txt` in backend/src/photosort/assets/efficientnet_lite0.tflite (die
+# .tflite-Datei enthaelt ihre Metadaten als angehaengtes ZIP-Archiv). Die zehn hier gelisteten
+# Klassen sind die Indizes 970 und 972-980 der ImageNet-1k-Label-Liste, also GENAU die
+# natuerlichen Szenenklassen des Vokabulars. Schreibweise mit LEERZEICHEN, nicht mit Unterstrich
+# ("coral reef", nicht "coral_reef") - so steht es in der Label-Datei, und genau diesen String
+# liefert mediapipe als `category_name`.
+#
+# Dokumentierte, bewusst akzeptierte Luecke (ADR 0046 Punkt 1, AK-Pflicht): ImageNet-1k kennt
+# KEINE Klassen fuer Wald, Wiese oder Feld - solche Landschaften werden strukturell nicht als
+# `landschaft` erkannt und landen im "nicht erkannt"-Zustand. Eine Nachkalibrierung bleibt eine
+# reine Listen-/Konstanten-Aenderung ohne Architektur-Eingriff.
+LANDSCAPE_SCENE_CATEGORIES = frozenset(
+    {
+        "alp",
+        "cliff",
+        "coral reef",
+        "geyser",
+        "lakeside",
+        "promontory",
+        "sandbar",
+        "seashore",
+        "valley",
+        "volcano",
+    }
+)
+
+# Inhaltliche Konfidenzschwelle des landschaft-Kriteriums (ADR 0046 Punkt 1) - bewusst deutlich
+# niedriger als SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD (0.5, gebaeude): ein Landschaftsfoto
+# verteilt seine Modellkonfidenz typischerweise ueber mehrere benachbarte Szenenklassen ("alp"/
+# "valley"/"promontory" am selben Bergpanorama), eine Architektur-Klasse dagegen konzentriert sie.
+# Dokumentierte, nicht gegen einen Fotokorpus kalibrierte Setzung (gleiche Klasse wie
+# CATEGORY_ACTIVE_THRESHOLD_FRACTION), austauschbar ohne Architektur-Aenderung.
+LANDSCHAFT_LABEL_MIN_CONFIDENCE = 0.25
+
+
+def compute_landschaft_score(labels: Sequence[SceneLabel]) -> float:
+    """`landschaft`-Kriterium (specs/features/0217, ADR 0046 Punkt 1): Score = Konfidenz des
+    besten Labels, das SOWOHL in LANDSCAPE_SCENE_CATEGORIES liegt ALS AUCH
+    >= LANDSCHAFT_LABEL_MIN_CONFIDENCE ist, sonst 0.0.
+
+    Reine Funktion ohne eigenen classify_scene-Aufruf (Trennung analog compute_gebaeude_score/
+    compute_tier_score): worker.py::_compute_content_criteria ruft classify_scene GENAU EINMAL
+    pro Foto auf und reicht dieselbe Label-Liste an compute_gebaeude_score UND diese Funktion
+    weiter - dasselbe Wiederverwendungsmuster wie detect_person -> content_people +
+    goldener_schnitt (Spec 0038). Der Ein-Aufruf-Nachweis (Akzeptanzkriterium AK8 der Spec 0217:
+    keine zusaetzlichen Kosten pro Foto) liegt deshalb auf Worker-Integrationsebene, siehe
+    test_worker_criterion_scoring.py."""
+    allowed = [
+        label
+        for label in labels
+        if label.category in LANDSCAPE_SCENE_CATEGORIES
+        and label.confidence >= LANDSCHAFT_LABEL_MIN_CONFIDENCE
+    ]
     if not allowed:
         return 0.0
     return max(label.confidence for label in allowed)
