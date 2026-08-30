@@ -21,6 +21,7 @@ import pytest
 _SCRIPT_PATH = Path(__file__).parent.parent / "gh-board.py"
 
 OWNER = "TheRealKoller"
+REPO = "photosort"
 PROJECT_TITLE = "PhotoSort Roadmap"
 
 
@@ -62,6 +63,7 @@ class FakeGh:
         pull_requests: dict[int, dict] | None = None,
         closing_prs: dict[int, list[dict]] | None = None,
         failing: set[tuple[str, ...]] | None = None,
+        failure_stderr: dict[tuple[str, ...], str] | None = None,
     ) -> None:
         self.auth_scopes = auth_scopes
         self.auth_returncode = auth_returncode
@@ -110,13 +112,18 @@ class FakeGh:
         self.pull_requests = pull_requests or {}
         self.closing_prs = closing_prs or {}
         self.failing = failing or set()
+        # Je Aufruf-Praefix die stderr-Ausgabe, mit der er scheitern soll - die reale
+        # Fehlermeldung entscheidet, wie `gh-board.py` sie einordnet.
+        self.failure_stderr = failure_stderr or {}
         self.calls: list[list[str]] = []
 
     def __call__(self, args: list[str]) -> subprocess.CompletedProcess[str]:
         self.calls.append(list(args))
         for prefix in self.failing:
             if tuple(args[: len(prefix)]) == prefix:
-                return _completed(returncode=1, stderr="fake gh failure")
+                return _completed(
+                    returncode=1, stderr=self.failure_stderr.get(prefix, "fake gh failure")
+                )
         return self._dispatch(args)
 
     def _dispatch(self, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -173,11 +180,66 @@ class FakeGh:
 
 
 def _issue_url(number: int) -> str:
-    return f"https://github.com/{OWNER}/photosort/issues/{number}"
+    return f"https://github.com/{OWNER}/{REPO}/issues/{number}"
 
 
 def _pr_url(number: int) -> str:
-    return f"https://github.com/{OWNER}/photosort/pull/{number}"
+    return f"https://github.com/{OWNER}/{REPO}/pull/{number}"
+
+
+# So meldet `gh` ein `--json`-Feld, das die installierte Version nicht kennt - der Fall
+# `closingIssuesReferences` mit gh < 2.72.0. Wortgetreue Form, Feldliste gekuerzt.
+UNKNOWN_JSON_FIELD_STDERR = (
+    'unknown JSON field: "closingIssuesReferences"\n'
+    "Available fields:\n"
+    "  additions\n"
+    "  assignees\n"
+    "  author\n"
+    "  baseRefName\n"
+    "  body\n"
+    "  state\n"
+    "  url"
+)
+
+# Ein Fehlschlag, der mit der `gh`-Version nichts zu tun hat.
+ABGELAUFENES_TOKEN_STDERR = "gh: Bad credentials (HTTP 401)\nTry authenticating with: gh auth login"
+
+
+def _closing_ref(number: int, *, owner: str = OWNER, repo: str = REPO) -> dict:
+    """Ein Eintrag aus `closingIssuesReferences`, in der Feldform der echten `gh`-Antwort.
+
+    Die Eintraege sind repo-qualifiziert - genau deshalb vergleicht `gh-board.py` das Tripel
+    Owner/Repo/Nummer und nicht bloss die Nummer (ADR 0046, Abschnitt 3).
+    """
+    return {
+        "number": number,
+        "url": f"https://github.com/{owner}/{repo}/issues/{number}",
+        "repository": {"name": repo, "owner": {"login": owner}},
+    }
+
+
+def _pull_request(
+    number: int,
+    *,
+    state: str = "OPEN",
+    base_ref_name: str = "main",
+    closing_issues: list[dict] | None = None,
+) -> dict:
+    """PR-Antwort fuer den FakeGh - mit standardmaessig erfuellter Verknuepfungs-Vorbedingung.
+
+    Die Default-Werte (`baseRefName` = Default-Branch, Referenz auf Issue 262) halten die
+    Tests gruen, deren Pruefgegenstand ein ganz anderer ist; sonst faerbte eine vergessene
+    Vorbedingung ein Dutzend Tests mit einer irrefuehrenden Meldung rot (Testkonzept,
+    Abschnitt zu Spec 0251).
+    """
+    return {
+        "state": state,
+        "url": _pr_url(number),
+        "baseRefName": base_ref_name,
+        "closingIssuesReferences": (
+            [_closing_ref(262)] if closing_issues is None else closing_issues
+        ),
+    }
 
 
 def _board(gh_board: ModuleType, fake: FakeGh):
@@ -694,6 +756,36 @@ def test_unparsbare_ausgabe_von_issue_create_bricht_ab(gh_board: ModuleType) -> 
         gh_board.cmd_create_issue(_board(gh_board, fake), typ="idee", title="T", body="B")
 
 
+# -- get_pull_request ------------------------------------------------------------------------
+
+
+def test_get_pull_request_holt_die_verknuepfungsfelder_und_niemals_den_body(
+    gh_board: ModuleType,
+) -> None:
+    """Die Verknuepfungspruefung faehrt im ohnehin abgesetzten `gh pr view` mit (ADR 0046,
+    Abschnitt 3). Dass **kein** `body` angefragt wird, ist keine Nebenwirkung, sondern eine
+    zugesicherte Eigenschaft: von aussen befuellbarer Fremdtext wird gar nicht erst eingelesen.
+    """
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
+
+    data = _board(gh_board, fake).get_pull_request(281)
+
+    call = fake.single_call("gh", "pr", "view")
+    assert call == [
+        "gh",
+        "pr",
+        "view",
+        "281",
+        "--json",
+        "state,url,baseRefName,closingIssuesReferences",
+    ]
+    assert not any("body" in arg for arg in call)
+    assert data["state"] == "open"
+    assert data["url"] == _pr_url(281)
+    assert data["baseRefName"] == "main"
+    assert data["closingIssuesReferences"] == [_closing_ref(262)]
+
+
 # -- finalize ---------------------------------------------------------------------------------
 
 
@@ -701,7 +793,7 @@ def test_finalize_schreibt_statuszeile_setzt_done_und_schliesst_das_issue(
     gh_board: ModuleType, tmp_path: Path
 ) -> None:
     path = _write_spec(tmp_path, "0262")
-    fake = FakeGh(pull_requests={281: {"state": "OPEN", "url": _pr_url(281)}})
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
 
     result = gh_board.cmd_finalize(
         _board(gh_board, fake),
@@ -731,7 +823,7 @@ def test_finalize_akzeptiert_einen_bereits_gemergten_pr(
     gh_board: ModuleType, tmp_path: Path
 ) -> None:
     _write_spec(tmp_path, "0262")
-    fake = FakeGh(pull_requests={281: {"state": "MERGED", "url": _pr_url(281)}})
+    fake = FakeGh(pull_requests={281: _pull_request(281, state="MERGED")})
 
     result = gh_board.cmd_finalize(
         _board(gh_board, fake),
@@ -748,7 +840,7 @@ def test_finalize_lehnt_einen_ohne_merge_geschlossenen_pr_ab(
     gh_board: ModuleType, tmp_path: Path
 ) -> None:
     path = _write_spec(tmp_path, "0262")
-    fake = FakeGh(pull_requests={281: {"state": "CLOSED", "url": _pr_url(281)}})
+    fake = FakeGh(pull_requests={281: _pull_request(281, state="CLOSED")})
 
     with pytest.raises(gh_board.BoardError) as excinfo:
         gh_board.cmd_finalize(
@@ -767,7 +859,7 @@ def test_finalize_lehnt_eine_nicht_akzeptierte_spec_ab(
     gh_board: ModuleType, tmp_path: Path
 ) -> None:
     path = _write_spec(tmp_path, "0262", status="Implemented ([PR #1](x))")
-    fake = FakeGh(pull_requests={281: {"state": "OPEN", "url": _pr_url(281)}})
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
 
     with pytest.raises(gh_board.BoardError) as excinfo:
         gh_board.cmd_finalize(
@@ -784,7 +876,7 @@ def test_finalize_lehnt_eine_nicht_akzeptierte_spec_ab(
 
 def test_finalize_meldet_eine_fehlende_spec_datei(gh_board: ModuleType, tmp_path: Path) -> None:
     (tmp_path / "specs" / "features").mkdir(parents=True)
-    fake = FakeGh(pull_requests={281: {"state": "OPEN", "url": _pr_url(281)}})
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
 
     with pytest.raises(gh_board.BoardError) as excinfo:
         gh_board.cmd_finalize(
@@ -820,7 +912,7 @@ def test_finalize_ohne_pr_nummer_loest_den_schliessenden_gemergten_pr_auf(
     _write_spec(tmp_path, "0262")
     fake = FakeGh(
         closing_prs={262: [{"number": 281, "url": _pr_url(281)}]},
-        pull_requests={281: {"state": "MERGED", "url": _pr_url(281)}},
+        pull_requests={281: _pull_request(281, state="MERGED")},
     )
 
     result = gh_board.cmd_finalize(
@@ -841,7 +933,7 @@ def test_finalize_ohne_gemergten_pr_ist_ein_fehler_statt_einer_stillen_aenderung
     path = _write_spec(tmp_path, "0262")
     fake = FakeGh(
         closing_prs={262: [{"number": 281, "url": _pr_url(281)}]},
-        pull_requests={281: {"state": "OPEN", "url": _pr_url(281)}},
+        pull_requests={281: _pull_request(281)},
     )
 
     with pytest.raises(gh_board.BoardError):
@@ -874,6 +966,236 @@ def test_finalize_ohne_verknuepften_pr_ist_ein_klarer_fehler(
     assert "262" in str(excinfo.value)
 
 
+# -- finalize: PR<->Issue-Verknuepfung (Spec 0251 / ADR 0046) ---------------------------------
+
+
+def test_finalize_akzeptiert_einen_pr_mit_passender_closing_referenz(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    path = _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281, closing_issues=[_closing_ref(262)])})
+
+    result = gh_board.cmd_finalize(
+        _board(gh_board, fake),
+        repo_root=tmp_path,
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+
+    assert result["pr_number"] == 281
+    assert "**Status:** Implemented" in path.read_text(encoding="utf-8")
+
+
+def test_finalize_akzeptiert_ein_manuell_verknuepftes_issue_ohne_keyword(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Regressionsschutz fuer eine bewusste Entscheidung, kein zweiter Positivfall (ADR 0046,
+    Abschnitt 3a): Vorgeschrieben ist die Zeile `Closes #NNN` im PR-Body, geprueft wird aber
+    nur ihre **Wirkung** - die von GitHub gepflegte Verknuepfung. Weil `gh pr view --json` die
+    Argumente `excludeUserLinked`/`userLinkedOnly` nicht uebergeben kann (beide Schema-Default
+    `false`), enthaelt `closingIssuesReferences` auch per Development-Seitenleiste manuell
+    verknuepfte Issues; die werden beim Merge genauso geschlossen.
+
+    Aus Sicht des Test-Doubles ist dieser Fall vom Keyword-Fall **nicht unterscheidbar** - die
+    Herkunft der Referenz taucht im Feld gar nicht auf. Genau das ist die Aussage: Der Test
+    haelt fest, dass eine spaetere Verengung (Umstieg auf `gh api graphql` mit
+    `excludeUserLinked: true`, Zusatzpruefung auf die Textzeile) auffallen soll, statt
+    stillschweigend durchzugehen. Ohne diese Begruendung saehe er wie ein Duplikat des
+    vorherigen Falls aus und waere der erste Kandidat beim Aufraeumen.
+    """
+    _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281, closing_issues=[_closing_ref(262)])})
+
+    result = gh_board.cmd_finalize(
+        _board(gh_board, fake),
+        repo_root=tmp_path,
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+
+    assert result["pr_number"] == 281
+
+
+@pytest.mark.parametrize(
+    ("pull_request", "erwartete_textbausteine"),
+    [
+        pytest.param(_pull_request(281, closing_issues=[]), ["2.72.0"], id="leere-liste"),
+        pytest.param(
+            _pull_request(281, closing_issues=[_closing_ref(999)]),
+            ["2.72.0"],
+            id="nur-fremdes-issue",
+        ),
+        pytest.param(
+            _pull_request(281, closing_issues=[_closing_ref(262, owner="fremd", repo="anderes")]),
+            ["2.72.0", "fremd/anderes"],
+            id="gleiche-nummer-fremdes-repository",
+        ),
+        pytest.param(
+            _pull_request(281, base_ref_name="release/0.24"),
+            ["release/0.24", "main"],
+            id="nicht-der-default-branch",
+        ),
+    ],
+)
+def test_finalize_lehnt_einen_pr_ohne_wirksame_verknuepfung_ab(
+    gh_board: ModuleType,
+    tmp_path: Path,
+    pull_request: dict,
+    erwartete_textbausteine: list[str],
+) -> None:
+    """Abbruch vor dem Umschreiben der Spec-Datei und vor **jedem** Board-Zugriff, auch dem
+    lesenden - deshalb wird zusaetzlich das vollstaendige Aufruflog geprueft. Das beweist mehr
+    als eine Aufzaehlung verbotener Aufrufe und altert nicht mit neuen Schreibbefehlen.
+    """
+    path = _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: pull_request})
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        gh_board.cmd_finalize(
+            _board(gh_board, fake),
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    message = str(excinfo.value)
+    assert "262" in message
+    for baustein in erwartete_textbausteine:
+        assert baustein in message
+    assert "**Status:** Accepted" in path.read_text(encoding="utf-8")
+    assert {tuple(call[:3]) for call in fake.calls} == {("gh", "pr", "view")}
+
+
+def test_ein_gh_ohne_das_verknuepfungsfeld_wird_als_versionsproblem_gemeldet(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Ein `gh` < 2.72.0 kennt `closingIssuesReferences` nicht und laesst den Aufruf mit
+    'unknown JSON field' scheitern. Die Meldung muss die Mindestversion nennen, sonst wird ein
+    Werkzeugproblem als fehlende Verknuepfung fehlgedeutet - und jemand traegt eine Zeile nach,
+    die laengst da ist."""
+    path = _write_spec(tmp_path, "0262")
+    fake = FakeGh(
+        failing={("gh", "pr", "view")},
+        failure_stderr={("gh", "pr", "view"): UNKNOWN_JSON_FIELD_STDERR},
+    )
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        gh_board.cmd_finalize(
+            _board(gh_board, fake),
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    message = str(excinfo.value)
+    assert "2.72.0" in message
+    assert "unknown JSON field" in message
+    assert "**Status:** Accepted" in path.read_text(encoding="utf-8")
+
+
+def test_ein_unverwandter_gh_fehler_wird_nicht_zum_versionsproblem_umgedeutet(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Gegenstueck zum Versionsfall: Ein abgelaufenes Token, ein Netzwerkfehler oder ein nicht
+    gefundener PR haben mit der `gh`-Version nichts zu tun. Wuerde der Hinweis unbedingt
+    angehaengt, verschlechterte ausgerechnet diese Aenderung die Diagnostik - jemand
+    aktualisiert `gh`, waehrend in Wahrheit die Anmeldung abgelaufen ist."""
+    path = _write_spec(tmp_path, "0262")
+    fake = FakeGh(
+        failing={("gh", "pr", "view")},
+        failure_stderr={("gh", "pr", "view"): ABGELAUFENES_TOKEN_STDERR},
+    )
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        gh_board.cmd_finalize(
+            _board(gh_board, fake),
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    message = str(excinfo.value)
+    assert "2.72.0" not in message
+    assert "Bad credentials (HTTP 401)" in message
+    assert "**Status:** Accepted" in path.read_text(encoding="utf-8")
+
+
+def test_finalize_ist_nach_dem_nachtragen_der_verknuepfung_wiederholbar(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Der Abbruch ist folgenlos: Nach dem Nachtragen der Verknuepfung am offenen PR laeuft
+    derselbe Aufruf durch, ohne dass vorher etwas zurueckgenommen werden muesste."""
+    path = _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281, closing_issues=[])})
+    board = _board(gh_board, fake)
+
+    with pytest.raises(gh_board.BoardError):
+        gh_board.cmd_finalize(
+            board, repo_root=tmp_path, spec_number="0262", issue_number=262, pr_number=281
+        )
+
+    fake.pull_requests[281] = _pull_request(281, closing_issues=[_closing_ref(262)])
+
+    result = gh_board.cmd_finalize(
+        board, repo_root=tmp_path, spec_number="0262", issue_number=262, pr_number=281
+    )
+
+    assert result["pr_number"] == 281
+    assert "**Status:** Implemented" in path.read_text(encoding="utf-8")
+
+
+def test_cli_meldet_die_fehlende_verknuepfung_als_json_fehler(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281, closing_issues=[])})
+
+    exit_code = gh_board.main(
+        ["finalize", "--spec", "0262", "--pr-number", "281"],
+        run=fake,
+        repo_root=tmp_path,
+        owner=OWNER,
+    )
+
+    assert exit_code == 1
+    assert "2.72.0" in json.loads(capsys.readouterr().out)["error"]
+
+
+def test_finalize_ohne_pr_nummer_prueft_die_verknuepfung_bewusst_nicht_selbst(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Charakterisierungstest (ADR 0046, Abschnitt 3b): Der Ausnahmepfad findet den PR ueber
+    `closedByPullRequestsReferences` am Issue - dieselbe von GitHub gepflegte Verknuepfung aus
+    der Gegenrichtung, die ohne sie leer bliebe. Eine eigene Pruefung waere dort sinnlos.
+
+    Festgehalten, damit niemand die Pruefung "sauberkeitshalber" nach `get_pull_request()`
+    verschiebt und damit den Ausnahmepfad bricht: Dieser gemergte PR traegt weder eine
+    passende Closing-Referenz noch den Default-Branch - und wird trotzdem akzeptiert.
+    """
+    _write_spec(tmp_path, "0262")
+    fake = FakeGh(
+        closing_prs={262: [{"number": 281, "url": _pr_url(281)}]},
+        pull_requests={
+            281: _pull_request(281, state="MERGED", base_ref_name="release/0.24", closing_issues=[])
+        },
+    )
+
+    result = gh_board.cmd_finalize(
+        _board(gh_board, fake),
+        repo_root=tmp_path,
+        spec_number="0262",
+        issue_number=262,
+        pr_number=None,
+    )
+
+    assert result["pr_number"] == 281
+
+
 def test_mehrdeutige_spec_nummer_bricht_ab_statt_still_die_erste_datei_zu_waehlen(
     gh_board: ModuleType, tmp_path: Path
 ) -> None:
@@ -883,7 +1205,7 @@ def test_mehrdeutige_spec_nummer_bricht_ab_statt_still_die_erste_datei_zu_waehle
     first = _write_spec(tmp_path, "0262")
     second = tmp_path / "specs" / "features" / "0262-zweite-datei.md"
     second.write_text(first.read_text(encoding="utf-8"), encoding="utf-8")
-    fake = FakeGh(pull_requests={281: {"state": "OPEN", "url": _pr_url(281)}})
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
 
     with pytest.raises(gh_board.BoardError) as excinfo:
         gh_board.cmd_finalize(
@@ -906,7 +1228,7 @@ def test_finalize_findet_die_spec_ueber_die_nummer_nicht_ueber_den_titel(
 ) -> None:
     _write_spec(tmp_path, "0262")
     _write_spec(tmp_path, "0065")
-    fake = FakeGh(pull_requests={281: {"state": "OPEN", "url": _pr_url(281)}})
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
 
     result = gh_board.cmd_finalize(
         _board(gh_board, fake),
@@ -1014,7 +1336,7 @@ def test_cli_finalize_nimmt_die_spec_nummer_als_issue_nummer(
     gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write_spec(tmp_path, "0262")
-    fake = FakeGh(pull_requests={281: {"state": "OPEN", "url": _pr_url(281)}})
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
 
     exit_code = gh_board.main(
         ["finalize", "--spec", "0262", "--pr-number", "281"],
@@ -1039,7 +1361,9 @@ def test_cli_finalize_erlaubt_eine_abweichende_issue_nummer_fuer_altspecs(
                 "status": "Todo",
             }
         ],
-        pull_requests={261: {"state": "MERGED", "url": _pr_url(261)}},
+        # Altspec: Issue-Nummer weicht von der Spec-Nummer ab, die Verknuepfung muss auf
+        # genau dieses Issue zeigen (der Default der Hilfsfunktion referenziert 262).
+        pull_requests={261: _pull_request(261, state="MERGED", closing_issues=[_closing_ref(240)])},
     )
 
     exit_code = gh_board.main(
@@ -1074,7 +1398,7 @@ def test_cli_kennt_alle_in_den_skills_dokumentierten_befehle(
 def test_kein_gh_aufruf_verwendet_eine_shell(gh_board: ModuleType, tmp_path: Path) -> None:
     """Alle Aufrufe gehen als Argumentliste raus (ADR 0017, Abschnitt 5 - unveraendert gueltig)."""
     _write_spec(tmp_path, "0262")
-    fake = FakeGh(pull_requests={281: {"state": "OPEN", "url": _pr_url(281)}})
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
 
     gh_board.main(
         ["finalize", "--spec", "0262", "--pr-number", "281"],

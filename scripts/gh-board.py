@@ -32,7 +32,14 @@ from typing import Any
 RunFunc = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
 
 DEFAULT_OWNER = "TheRealKoller"
+DEFAULT_REPO = "photosort"
 DEFAULT_PROJECT_TITLE = "PhotoSort Roadmap"
+
+# Der Branch, aus dem heraus GitHub ein per Closing-Keyword verknuepftes Issue beim Merge
+# schliesst - ein PR gegen einen Nebenbranch tut das nicht (ADR 0046, Abschnitt 3).
+DEFAULT_BRANCH = "main"
+# `gh pr view --json` kennt `closingIssuesReferences` erst ab dieser Version (30.04.2025).
+MIN_GH_VERSION = "2.72.0"
 
 STATUS_FIELD_NAME = "Status"
 # Die sechs Board-Werte aus ADR 0037, Abschnitt 1 - unveraendert. Anders als frueher gibt es
@@ -58,6 +65,10 @@ LABEL_PROVISIONING = {
 _SPEC_NUMBER_RE = re.compile(r"^\d{4}$")
 _STATUS_LINE_RE = re.compile(r"^\*\*Status:\*\*.*$", re.MULTILINE)
 _STATUS_KEYWORD_RE = re.compile(r"^\*\*Status:\*\*\s*([A-Za-z]+)", re.MULTILINE)
+# So meldet `gh` ein `--json`-Feld, das die installierte Version nicht kennt. Nur dieser
+# Fall bekommt den Versionshinweis - der Feldname selbst taugt nicht als Merkmal, er steht
+# als Teil der Argumentliste ohnehin in jeder gescheiterten Meldung.
+_UNKNOWN_JSON_FIELD_RE = re.compile(r"unknown\s+JSON\s+field", re.IGNORECASE)
 _CONTENT_ZONE_START_RE = re.compile(r"^## ", re.MULTILINE)
 # "gh issue create" hat kein --json-Flag und gibt bei Erfolg nur die Issue-URL auf stdout aus.
 _ISSUE_URL_NUMBER_RE = re.compile(r"/issues/(\d+)/?\s*$")
@@ -419,9 +430,38 @@ class GhBoard:
         self._items = None  # Cache invalidieren: das neue Item fehlt in einer bereits geholten
         return str(data["id"])  # Liste.
 
-    def get_pull_request(self, pr_number: int) -> dict[str, str]:
-        data = self._run_json(["gh", "pr", "view", str(pr_number), "--json", "state,url"])
-        return {"state": str(data["state"]).lower(), "url": str(data.get("url", ""))}
+    def get_pull_request(self, pr_number: int) -> dict[str, Any]:
+        """Der PR-**Body** wird bewusst nicht angefragt (ADR 0046, Abschnitt 3): Geprueft wird
+        GitHubs eigenes Parse-Ergebnis der Closing-Keywords, nicht ein von aussen befuellbarer
+        Freitext. `closingIssuesReferences` setzt `gh` >= 2.72.0 voraus."""
+        try:
+            data = self._run_json(
+                [
+                    "gh",
+                    "pr",
+                    "view",
+                    str(pr_number),
+                    "--json",
+                    "state,url,baseRefName,closingIssuesReferences",
+                ]
+            )
+        except BoardError as exc:
+            # Nur der Fall, den der Hinweis erklaert, bekommt ihn auch: ein abgelaufenes Token,
+            # ein Netzwerkfehler oder ein nicht gefundener PR wuerde sonst in Richtung eines
+            # Werkzeug-Updates gelenkt, das gar nichts behebt.
+            if not _UNKNOWN_JSON_FIELD_RE.search(str(exc)):
+                raise
+            raise BoardError(
+                f"{exc} (Hinweis: 'closingIssuesReferences' kennt `gh pr view --json` erst ab "
+                f"gh {MIN_GH_VERSION} - ein unbekanntes JSON-Feld ist kein Beleg dafuer, dass "
+                "die Verknuepfung zum Issue fehlt.)"
+            ) from exc
+        return {
+            "state": str(data["state"]).lower(),
+            "url": str(data.get("url", "")),
+            "baseRefName": str(data.get("baseRefName", "")),
+            "closingIssuesReferences": list(data.get("closingIssuesReferences") or []),
+        }
 
     def closing_pull_requests(self, issue_number: int) -> list[int]:
         data = self._run_json(
@@ -528,9 +568,64 @@ def cmd_finalize(
     }
 
 
+def _closing_issue_matches(reference: dict[str, Any], issue_number: int) -> bool:
+    """Repo-qualifizierter Vergleich (ADR 0046, Abschnitt 3): GitHub kennt repo-uebergreifende
+    Closing-Referenzen, `number` allein ist also nicht eindeutig. Verglichen wird das Tripel
+    Owner/Repo/Nummer."""
+    repository = reference.get("repository") or {}
+    owner = (repository.get("owner") or {}).get("login")
+    return (
+        reference.get("number") == issue_number
+        and repository.get("name") == DEFAULT_REPO
+        and owner == DEFAULT_OWNER
+    )
+
+
+def _describe_closing_references(references: list[dict[str, Any]]) -> str:
+    if not references:
+        return "keine"
+    parts = []
+    for reference in references:
+        repository = reference.get("repository") or {}
+        owner = (repository.get("owner") or {}).get("login", "?")
+        parts.append(f"{owner}/{repository.get('name', '?')}#{reference.get('number', '?')}")
+    return ", ".join(parts)
+
+
+def _require_linked_issue(
+    pull_request: dict[str, Any], *, pr_number: int, issue_number: int
+) -> None:
+    """Prueft GitHubs eigenes Parse-Ergebnis der Closing-Keywords, nicht den PR-Body (ADR 0046,
+    Abschnitt 3). Zugesichert werden soll genau eine Eigenschaft: 'GitHub schliesst dieses Issue
+    beim Merge'. Ein manuell ueber die Development-Seitenleiste verknuepftes Issue erfuellt sie
+    ebenso und wird bewusst mit akzeptiert (Abschnitt 3a).
+
+    Laeuft vor dem Umschreiben der Spec-Datei und vor jedem Board-Zugriff: Der Aufruf ist nach
+    einem `gh pr edit --body-file` folgenlos wiederholbar.
+    """
+    references = list(pull_request.get("closingIssuesReferences") or [])
+    if not any(_closing_issue_matches(reference, issue_number) for reference in references):
+        raise BoardError(
+            f"PR #{pr_number} ist mit Issue #{issue_number} nicht so verknuepft, dass GitHub es "
+            f"beim Merge schliesst: 'closingIssuesReferences' enthaelt keinen Eintrag "
+            f"{DEFAULT_OWNER}/{DEFAULT_REPO}#{issue_number} (gefunden: "
+            f"{_describe_closing_references(references)}). Die Zeile 'Closes #{issue_number}' im "
+            "PR-Body nachtragen (gh pr edit --body-file) und den Aufruf wiederholen. Hinweis: "
+            f"das Feld setzt gh {MIN_GH_VERSION} oder neuer voraus."
+        )
+
+    base_ref_name = str(pull_request.get("baseRefName", ""))
+    if base_ref_name != DEFAULT_BRANCH:
+        raise BoardError(
+            f"PR #{pr_number} zielt auf Branch {base_ref_name!r} statt auf den Default-Branch "
+            f"{DEFAULT_BRANCH!r} - GitHub schliesst Issue #{issue_number} beim Merge nur aus dem "
+            "Default-Branch heraus."
+        )
+
+
 def _resolve_pull_request(
     board: GhBoard, issue_number: int, pr_number: int | None
-) -> tuple[int, dict[str, str]]:
+) -> tuple[int, dict[str, Any]]:
     if pr_number is not None:
         pull_request = board.get_pull_request(pr_number)
         # "open" ist der Regelfall (kurz vor dem Merge), "merged" der nachgezogene Ausnahmefall.
@@ -541,6 +636,7 @@ def _resolve_pull_request(
                 "oder 'merged') - ein ohne Merge geschlossener PR darf nicht zu 'Implemented' "
                 "fuehren."
             )
+        _require_linked_issue(pull_request, pr_number=pr_number, issue_number=issue_number)
         return pr_number, pull_request
 
     # Ohne --pr-number: den gemergten, das Issue schliessenden PR auflaesen (Ersatz fuer die
