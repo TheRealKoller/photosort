@@ -737,10 +737,13 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
   })
 
   it('shows an orphaned override as an extra row instead of letting it disappear', () => {
+    // specs/features/0217: "detail" wird nicht mehr automatisch vergeben, der Auffang-Key heisst
+    // jetzt "unerkannt" - reine Fixture-Aktualisierung, die Assertion unten prueft unveraendert
+    // die verwaiste Override-Zeile.
     render(
       <CriterionDetailsList
         criterionScores={[]}
-        ranking={ranking({ category_key: 'detail' })}
+        ranking={ranking({ category_key: 'unerkannt' })}
         suggestion={null}
         showSuggestion={true}
         categoryCandidates={[

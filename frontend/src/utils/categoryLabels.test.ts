@@ -11,6 +11,16 @@ describe('formatCategoryKey', () => {
     expect(formatCategoryKey('landmark')).toBe('Sehenswürdigkeit')
   })
 
+  it('maps the catch-all key "unerkannt" to "Nicht erkannt" (specs/features/0217)', () => {
+    // Der Auffangzustand wird als das benannt, was er ist - ein fehlendes Erkennungsergebnis,
+    // keine Inhaltsaussage. Der generische Fallback lieferte nur "Unerkannt".
+    expect(formatCategoryKey('unerkannt')).toBe('Nicht erkannt')
+  })
+
+  it('needs no mapping entry for "landschaft" - the generic fallback already fits', () => {
+    expect(formatCategoryKey('landschaft')).toBe('Landschaft')
+  })
+
   it('falls back to generic capitalization for unmapped keys like "tier"', () => {
     // "tier" hat keinen Sonderzeichen-Bedarf - der generische Fallback reicht (Spec 0045: kein
     // Mapping-Eintrag fuer jedes kuenftige Kriterium noetig).
@@ -40,5 +50,6 @@ describe('formatCategoryKey', () => {
 describe('categoryAbbreviation', () => {
   it('is unaffected by the display-name mapping - stays derived from the raw key', () => {
     expect(categoryAbbreviation('gebaeude')).toBe('GEB')
+    expect(categoryAbbreviation('unerkannt')).toBe('UNE')
   })
 })

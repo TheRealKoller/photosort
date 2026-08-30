@@ -140,7 +140,8 @@ export interface SuggestionOut {
 
 // Freier Kategorie-Schluessel (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
 // backfill.md) - kein festes L/D/M-Kuerzelschema mehr (ersetzt den frueheren PhotoCategory-Enum
-// aus Spec 0024). Server-seitig aktuell "landscape"/"detail"/"people", aber bewusst als `string`
+// aus Spec 0024). Server-seitig aktuell z.B. "people"/"landschaft"/"tier"/"gebaeude" und der
+// Auffang-Key "unerkannt" (specs/features/0217), aber bewusst als `string`
 // typisiert - das Frontend darf keine feste, geschlossene Liste annehmen (Registry-Erweiterung
 // ist rein serverseitig, siehe backend criteria.py::CRITERIA_REGISTRY).
 export type CategoryKey = string

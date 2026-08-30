@@ -137,6 +137,35 @@ export function toggleDayCollapse(collapsedDayKeys: Set<string>, dayKey: string)
   return next
 }
 
+/**
+ * Auffang-Kategorie des Backends (`criteria.py::CATEGORY_UNRECOGNIZED`) - Fotos, fuer die kein
+ * aktives Kriterium erfuellt war (specs/features/0217-landschaft-erkennung-spezifitaets-
+ * vorrang.md). Kein verwaister Key, sondern ein regulaer erzeugter Zustand.
+ */
+const CATCH_ALL_CATEGORY_KEY = 'unerkannt'
+
+/**
+ * Neutraler Erklaertext des Auffang-Abschnitts (UI/UX-Abschnitt der Spec 0217) - struktureller
+ * Text, KEINE Fehler-Semantik (kein `role="alert"`, keine Fehlerfarbe): das Fehlen einer
+ * Erkennung ist kein Fehler.
+ */
+const CATCH_ALL_EXPLANATION = 'Diese Fotos konnten nicht automatisch kategorisiert werden.'
+
+/**
+ * Reihenfolge der Kategorie-Abschnitte innerhalb eines Clusters (specs/features/0217): normale
+ * Kategorien alphabetisch nach `category_key`, der Auffang-Abschnitt "Nicht erkannt" IMMER
+ * zuletzt - das macht visuell deutlich, dass er ein Auffangzustand und keine gleichberechtigte
+ * Inhaltskategorie ist. Liefert ein neues Array statt das uebergebene zu sortieren.
+ */
+export function sortCategoryKeys(categoryKeys: string[]): string[] {
+  return [...categoryKeys].sort((a, b) => {
+    if (a === b) return 0
+    if (a === CATCH_ALL_CATEGORY_KEY) return 1
+    if (b === CATCH_ALL_CATEGORY_KEY) return -1
+    return a < b ? -1 : 1
+  })
+}
+
 const SKELETON_TILE_COUNT = 6
 
 export function CurateCategoriesPage() {
@@ -344,7 +373,7 @@ export function CurateCategoriesPage() {
                 {!dayIsEmpty &&
                   clusterKeysForDay.map((clusterKey) => {
                     const categories = clustersForDay[clusterKey]
-                    const categoryKeys = Object.keys(categories).sort()
+                    const categoryKeys = sortCategoryKeys(Object.keys(categories))
                     const clusterIsEmpty = !categoriesHavePhotos(categories)
                     const heading = clusterMetaRef.current.get(clusterKey)?.heading ?? clusterKey
                     return (
@@ -362,6 +391,13 @@ export function CurateCategoriesPage() {
                                   <CategoryBadge categoryKey={categoryKey} />
                                   {formatCategoryKey(categoryKey)}
                                 </h4>
+                                {/* Auffangkorb-Kategorie mit erklärend dezentem Signal
+                                    (specs/architecture/0004-design-system.md, Spec 0217):
+                                    kurzer struktureller Hinweistext direkt unter der
+                                    Überschrift, kein Icon/Badge, keine Fehler-Optik. */}
+                                {categoryKey === CATCH_ALL_CATEGORY_KEY && (
+                                  <p className="text-sm text-text">{CATCH_ALL_EXPLANATION}</p>
+                                )}
                                 <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                                   {photos.map((photo) => {
                                     const isRejecting = rejectingPhotoId === photo.id
