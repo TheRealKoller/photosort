@@ -1,6 +1,6 @@
 # 0209 - Bewertungsdetails: Blöcke Qualität und Kategorien
 
-**Status:** Accepted
+**Status:** Implemented ([PR #277](https://github.com/TheRealKoller/photosort/pull/277))
 **Erstellt:** 2026-08-30
 **Bezug:** [GitHub-Issue #209](https://github.com/TheRealKoller/photosort/issues/209) (Refinement bereits vor dieser Spec-Erstellung abgeschlossen)
 
