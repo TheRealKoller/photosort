@@ -1,6 +1,6 @@
 # 0257 - Refinement setzt die Prioritäts-Empfehlung automatisch im Board
 
-**Status:** Accepted
+**Status:** Implemented ([PR #273](https://github.com/TheRealKoller/photosort/pull/273))
 **Erstellt:** 2026-08-30
 **Bezug:** [GitHub-Issue #257](https://github.com/TheRealKoller/photosort/issues/257) (Refinement bereits vor dieser Spec-Erstellung abgeschlossen), [`decisions/0044-prioritaet-startwert-automatisch-im-board-setzen.md`](../decisions/0044-prioritaet-startwert-automatisch-im-board-setzen.md) (neue ADR dieser Spec, löst [`decisions/0039-prioritaet-nativ-im-board-roadmap-entfaellt.md`](../decisions/0039-prioritaet-nativ-im-board-roadmap-entfaellt.md) Abschnitt 2 ab)
 

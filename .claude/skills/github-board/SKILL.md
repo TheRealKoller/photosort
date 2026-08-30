@@ -26,7 +26,8 @@ python3 scripts/gh-board.py <befehl> [optionen]
 |---|---|
 | `create-issue --type idee\|bug --title TITEL --body-file PFAD` | Legt ein neues Story-Issue an (Label `idee`/`bug`, ins Board aufgenommen, Status `Unrefined`). Gibt `{"issue_number": NNN}` zurück. |
 | `set-body --issue NNN --body-file PFAD` | Überschreibt den Issue-Body. Gibt `{"issue_number": NNN}` zurück. |
-| `set-status --issue NNN --status WERT` | Setzt die Board-Spalte. Gibt `{"issue_number": NNN, "status": WERT}` zurück. |
+| `set-status --issue NNN --status WERT` | Setzt die Board-Spalte **unbedingt** (überschreibt einen vorhandenen Wert immer). Gibt `{"issue_number": NNN, "status": WERT}` zurück. |
+| `set-priority --issue NNN --priority Hoch\|Mittel\|Niedrig` | Setzt die Board-Priorität **first-write-wins** — nur wenn das Feld aktuell leer ist, anders als bei `set-status`. Ist es bereits gesetzt (früherer Lauf oder manuelle Board-Änderung Daniels), erfolgt kein Schreibzugriff. Gibt `{"issue_number": NNN, "priority": WERT, "changed": true\|false}` zurück — bei `changed: false` ist `WERT` der vorhandene, nicht der angefragte Wert. |
 | `show-status --issue NNN` | Rein lesend. Gibt `{"issue_number": NNN, "status": WERT\|null}` zurück. |
 | `finalize --spec NNNN [--issue NNN] [--pr-number MMM]` | Schreibt die `**Status:**`-Zeile der Spec-Datei auf `Implemented ([PR #MMM](url))`, setzt die Board-Spalte auf `Done` und schließt das Issue. Gibt `{"spec_number", "issue_number", "pr_number", "status_line", "status"}` zurück. |
 
