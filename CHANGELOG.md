@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/TheRealKoller/photosort/compare/v0.23.0...v0.24.0) (2026-08-30)
+
+
+### Features
+
+* **skills:** spec-writer legt Feature-Branch an - ein PR pro Story (Spec 0269) ([#275](https://github.com/TheRealKoller/photosort/issues/275)) ([a7f37cd](https://github.com/TheRealKoller/photosort/commit/a7f37cddc0ed1b016d3419aed5b4fa8efbc8c676))
+
 ## [0.23.0](https://github.com/TheRealKoller/photosort/compare/v0.22.0...v0.23.0) (2026-08-30)
 
 
