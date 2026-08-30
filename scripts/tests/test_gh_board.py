@@ -270,6 +270,40 @@ def test_projekt_und_feld_werden_nur_einmal_aufgeloest(gh_board: ModuleType) -> 
     assert len(fake.calls_starting_with("gh", "project", "field-list")) == 1
 
 
+# -- Prioritaetsfeld-Aufloesung ----------------------------------------------------------------
+
+
+def test_prioritaetsfeld_wird_aufgeloest(gh_board: ModuleType) -> None:
+    fake = FakeGh()
+    board = _board(gh_board, fake)
+
+    field = board.priority_field()
+
+    assert field["id"] == "FIELD_prio"
+    assert field["name"] == "Priorität"
+
+
+def test_fehlendes_prioritaetsfeld_wird_nicht_angelegt_sondern_gemeldet(
+    gh_board: ModuleType,
+) -> None:
+    fake = FakeGh(
+        fields=[
+            {
+                "id": "FIELD_status",
+                "name": "Status",
+                "options": [{"id": "OPT_Ready", "name": "Ready"}],
+            }
+        ]
+    )
+    board = _board(gh_board, fake)
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        board.priority_field()
+
+    assert "Priorität" in str(excinfo.value)
+    assert fake.calls_starting_with("gh", "project", "field-create") == []
+
+
 # -- Item-Aufloesung ueber die Issue-Nummer ---------------------------------------------------
 
 
@@ -373,6 +407,124 @@ def test_fehlende_options_id_im_board_bricht_ab(gh_board: ModuleType) -> None:
         gh_board.cmd_set_status(_board(gh_board, fake), issue_number=262, status="Review")
 
     assert "Review" in str(excinfo.value)
+
+
+# -- Prioritaet (get_priority/set_priority/set_priority_if_unset) -----------------------------
+
+
+_PRIORITY_FIELD_WITH_OPTIONS = {
+    "id": "FIELD_prio",
+    "name": "Priorität",
+    "options": [{"id": f"OPT_prio_{name}", "name": name} for name in ("Hoch", "Mittel", "Niedrig")],
+}
+
+
+def _fields_mit_prioritaets_optionen() -> list[dict]:
+    return [
+        {
+            "id": "FIELD_status",
+            "name": "Status",
+            "options": [
+                {"id": f"OPT_{name}", "name": name}
+                for name in ["Unrefined", "Ready", "Todo", "In Progress", "Review", "Done"]
+            ],
+        },
+        _PRIORITY_FIELD_WITH_OPTIONS,
+    ]
+
+
+def test_get_priority_liest_den_klartextwert(gh_board: ModuleType) -> None:
+    fake = FakeGh(
+        items=[
+            {
+                "id": "PVTI_262",
+                "content": {"type": "Issue", "number": 262, "url": _issue_url(262)},
+                "priorität": "Hoch",
+            }
+        ]
+    )
+
+    assert _board(gh_board, fake).get_priority(262) == "Hoch"
+
+
+def test_get_priority_liefert_none_bei_leerem_feld(gh_board: ModuleType) -> None:
+    fake = FakeGh(
+        items=[
+            {
+                "id": "PVTI_262",
+                "content": {"type": "Issue", "number": 262, "url": _issue_url(262)},
+                "priorität": "",
+            }
+        ]
+    )
+
+    assert _board(gh_board, fake).get_priority(262) is None
+
+
+def test_get_priority_liefert_none_wenn_feld_ganz_fehlt(gh_board: ModuleType) -> None:
+    fake = FakeGh()  # Standard-Item hat gar kein "priorität"-Feld.
+
+    assert _board(gh_board, fake).get_priority(262) is None
+
+
+def test_set_priority_setzt_die_passende_options_id(gh_board: ModuleType) -> None:
+    fake = FakeGh(fields=_fields_mit_prioritaets_optionen())
+
+    _board(gh_board, fake).set_priority(262, "Mittel")
+
+    assert fake.single_call("gh", "project", "item-edit") == [
+        "gh",
+        "project",
+        "item-edit",
+        "--id",
+        "PVTI_262",
+        "--project-id",
+        "PVT_project",
+        "--field-id",
+        "FIELD_prio",
+        "--single-select-option-id",
+        "OPT_prio_Mittel",
+    ]
+
+
+def test_set_priority_fehlende_options_id_bricht_ab(gh_board: ModuleType) -> None:
+    fake = FakeGh()  # Standard-Prioritaetsfeld hat keine Optionen.
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        _board(gh_board, fake).set_priority(262, "Hoch")
+
+    assert "Hoch" in str(excinfo.value)
+    assert fake.calls_starting_with("gh", "project", "item-edit") == []
+
+
+def test_set_priority_if_unset_schreibt_bei_leerem_feld(gh_board: ModuleType) -> None:
+    fake = FakeGh(fields=_fields_mit_prioritaets_optionen())
+
+    changed, priority = _board(gh_board, fake).set_priority_if_unset(262, "Hoch")
+
+    assert (changed, priority) == (True, "Hoch")
+    assert fake.single_call("gh", "project", "item-edit")
+
+
+def test_set_priority_if_unset_ist_ein_no_op_bei_bereits_gesetztem_feld(
+    gh_board: ModuleType,
+) -> None:
+    fake = FakeGh(
+        fields=_fields_mit_prioritaets_optionen(),
+        items=[
+            {
+                "id": "PVTI_262",
+                "content": {"type": "Issue", "number": 262, "url": _issue_url(262)},
+                "priorität": "Niedrig",
+            }
+        ],
+    )
+
+    changed, priority = _board(gh_board, fake).set_priority_if_unset(262, "Hoch")
+
+    # Rueckgabe ist der VORHANDENE Wert (Niedrig), nicht der angefragte (Hoch).
+    assert (changed, priority) == (False, "Niedrig")
+    assert fake.calls_starting_with("gh", "project", "item-edit") == []
 
 
 # -- show-status ------------------------------------------------------------------------------
