@@ -1,6 +1,6 @@
 # 0218 - Remote-Kategorisierung auf die Kriterien-Bewertungsseite verschieben
 
-**Status:** Accepted
+**Status:** Implemented ([PR #270](https://github.com/TheRealKoller/photosort/pull/270))
 **Erstellt:** 2026-08-30
 **Bezug:** [GitHub-Issue #218](https://github.com/TheRealKoller/photosort/issues/218) (Refinement bereits vor dieser Spec-Erstellung abgeschlossen)
 
