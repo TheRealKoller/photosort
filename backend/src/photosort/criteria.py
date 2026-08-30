@@ -585,11 +585,35 @@ CATEGORY_ACTIVE_THRESHOLD_FRACTION = 0.15
 # von "fehlender Eintrag" (candidate_values.get(key, 0.0)), keine zweite Konfidenzkalibrierung.
 DYNAMIC_LABEL_PRESENCE_THRESHOLD = 0.01
 
+# Absolute Mindest-Trefferzahl, ab der ein Kriterium der NAMED-Stufe eine eigene Kategorie bildet -
+# alternativ zur Anteilsregel (specs/features/0217, ADR 0046 Punkt 3). Eine absolute Zahl statt
+# eines Anteils, weil genau die Anteils-Mechanik das Problem verursacht: ein praezise erkanntes
+# Motiv soll nicht daran scheitern, dass das Projekt gross ist. Stakeholder-Entscheidung vom
+# 2026-08-30: bewusst 3 statt 1 (Zersplitterung der Kuratierungsansicht in Ein-Foto-Abschnitte)
+# und statt 5 (seltene korrekte Erkennungen fielen wieder in "Nicht erkannt"). Dokumentierte,
+# nicht kalibrierte Setzung wie CATEGORY_ACTIVE_THRESHOLD_FRACTION.
+CATEGORY_SPECIFIC_MIN_PHOTOS = 3
+
+
+def _specificity_of(criterion_key: str, dynamic_keys: frozenset[str]) -> int:
+    """Spezifitaets-Stufe eines Kategorie-Keys (specs/features/0217, ADR 0046 Punkt 2) - geteilt
+    von derive_active_categories (Aktivierungsschwelle) und derive_category_key (Auswahlregel),
+    damit beide dieselbe Regel benutzen statt zweier gepflegter Kopien. `remote:`-Pseudo-Keys
+    (ADR 0032 Punkt 1) haben keine CriterionDefinition und gelten IMMER als NAMED; ein
+    registriertes Kriterium liefert sein Registry-Attribut, ein unbekannter Key den Default."""
+    if criterion_key in dynamic_keys:
+        return CATEGORY_SPECIFICITY_NAMED
+    definition = CRITERIA_REGISTRY.get(criterion_key)
+    if definition is None:
+        return CATEGORY_SPECIFICITY_CONTENT
+    return definition.category_specificity
+
 
 def derive_active_categories(
     candidate_values: dict[int, dict[str, float]],
     threshold_fraction: float = CATEGORY_ACTIVE_THRESHOLD_FRACTION,
     dynamic_keys: frozenset[str] = frozenset(),
+    specific_min_photos: int = CATEGORY_SPECIFIC_MIN_PHOTOS,
 ) -> frozenset[str]:
     """Reine Aggregationsfunktion (Akzeptanzkriterium der Spec 0045): ermittelt EINMAL pro Lauf,
     projektweit ueber ALLE Kandidaten-Fotos (nicht pro cluster_key, ADR 0023 Punkt 2), welche
@@ -604,10 +628,24 @@ def derive_active_categories(
     Pseudo-Keys (`f"remote:{canonical_key}"`) - werden an derselben Haeufigkeitsschwelle gemessen
     wie die registrierten lokalen Kriterien, aber gegen DYNAMIC_LABEL_PRESENCE_THRESHOLD statt
     einer registrierten category_presence_threshold (es gibt keine CriterionDefinition fuer sie).
-    Default `frozenset()` - bestehende Aufrufer/Tests ohne dynamic_keys bleiben unveraendert."""
+    Default `frozenset()` - bestehende Aufrufer/Tests ohne dynamic_keys bleiben unveraendert.
+
+    specs/features/0217, ADR 0046 Punkt 3: die Aktivierungsbedingung ist seit dieser Spec
+    spezifitaetsabhaengig - CATEGORY_SPECIFICITY_CONTENT behaelt die reine Anteilsregel,
+    CATEGORY_SPECIFICITY_NAMED (landmark + alle `remote:`-Pseudo-Keys) ist zusaetzlich aktiv, wenn
+    die absolute Trefferzahl `specific_min_photos` erreicht. Die ODER-Verknuepfung ist noetig,
+    damit sehr kleine Projekte (< 20 Kandidaten) nicht schlechter gestellt werden als bisher."""
     total = len(candidate_values)
     if total == 0:
         return frozenset()
+
+    def _is_active(criterion_key: str, present_count: int) -> bool:
+        if (present_count / total) >= threshold_fraction:
+            return True
+        return (
+            _specificity_of(criterion_key, dynamic_keys) == CATEGORY_SPECIFICITY_NAMED
+            and present_count >= specific_min_photos
+        )
 
     active: set[str] = set()
     for criterion_key, definition in CRITERIA_REGISTRY.items():
@@ -619,7 +657,7 @@ def derive_active_categories(
             for values in candidate_values.values()
             if values.get(criterion_key, 0.0) >= threshold
         )
-        if (present_count / total) >= threshold_fraction:
+        if _is_active(criterion_key, present_count):
             active.add(criterion_key)
 
     for key in dynamic_keys:
@@ -628,7 +666,7 @@ def derive_active_categories(
             for values in candidate_values.values()
             if values.get(key, 0.0) >= DYNAMIC_LABEL_PRESENCE_THRESHOLD
         )
-        if (present_count / total) >= threshold_fraction:
+        if _is_active(key, present_count):
             active.add(key)
 
     return frozenset(active)
@@ -671,7 +709,18 @@ def derive_category_key(
     if not qualifying:
         return CATEGORY_DETAIL
 
-    winner = min(qualifying, key=lambda key: (-criterion_values.get(key, 0.0), key))
+    # specs/features/0217, ADR 0046 Punkt 2: hoechste Spezifitaet zuerst, erst INNERHALB derselben
+    # Stufe der hoechste normierte Score, dann alphabetisch nach dem vollen criterion_key. Vorher
+    # verglich diese Zeile Werte unterschiedlicher Skalen direkt miteinander (Uniform-Flaechen-
+    # Anteil gegen LLM-Konfidenz) - die unspezifischere Zahl gewann dabei regelmaessig.
+    winner = min(
+        qualifying,
+        key=lambda key: (
+            -_specificity_of(key, dynamic_keys),
+            -criterion_values.get(key, 0.0),
+            key,
+        ),
+    )
     if winner.startswith("remote:"):
         return winner.removeprefix("remote:")
     return winner.removeprefix("content_")

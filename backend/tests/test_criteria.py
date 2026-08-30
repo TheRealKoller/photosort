@@ -17,6 +17,7 @@ from photosort.classification import (
 from photosort.criteria import (
     ARCHITECTURE_CATEGORIES,
     CATEGORY_DETAIL,
+    CATEGORY_SPECIFIC_MIN_PHOTOS,
     CATEGORY_SPECIFICITY_CONTENT,
     CATEGORY_SPECIFICITY_NAMED,
     CRITERIA_REGISTRY,
@@ -713,12 +714,18 @@ class TestDeriveActiveCategoriesDynamicKeys:
         )
         assert "remote:hund" in active
 
-    def test_dynamic_key_below_the_threshold_stays_inactive(self) -> None:
+    def test_dynamic_key_below_the_share_threshold_is_active_via_the_absolute_minimum(
+        self,
+    ) -> None:
+        # Auf die neue Regel UMGESTELLTER Bestandstest (specs/features/0217, ADR 0046 Punkt 3):
+        # 14 von 100 (< 15%) blieben bis Spec 0055 inaktiv - ein Remote-Key ist als NAMED-Stufe
+        # jetzt bereits ueber die absolute Mindest-Trefferzahl aktiv. Der Fall "wirklich zu
+        # selten" (2 Treffer) steht in TestDeriveActiveCategoriesSpecificity.
         candidate_values = {i: {"remote:hund": 0.9 if i < 14 else 0.0} for i in range(100)}
         active = derive_active_categories(
             candidate_values, dynamic_keys=frozenset({"remote:hund"})
         )
-        assert "remote:hund" not in active
+        assert "remote:hund" in active
 
     def test_dynamic_presence_threshold_is_exactly_inclusive(self) -> None:
         # Ein Wert exakt an DYNAMIC_LABEL_PRESENCE_THRESHOLD zaehlt als "vorhanden" (inklusiv,
@@ -764,12 +771,16 @@ class TestDeriveCategoryKeyDynamicKeys:
             == "hund"
         )
 
-    def test_local_key_wins_over_a_lower_scoring_dynamic_key(self) -> None:
+    def test_dynamic_key_wins_over_a_higher_scoring_local_key(self) -> None:
+        # Auf die neue Regel UMGESTELLTER Bestandstest (specs/features/0217, ADR 0046 Punkt 2):
+        # bis Spec 0055 gewann hier der hoehere Score (tier 0.6), seit dem Spezifitaets-Vorrang
+        # gewinnt der benannte, konkrete Inhalt - unabhaengig vom Zahlenwert (die beiden Zahlen
+        # stammen aus unvergleichbaren Skalen).
         values = {"tier": 0.6, "remote:hund": 0.4}
         active = frozenset({"tier", "remote:hund"})
         assert (
             derive_category_key(values, active, dynamic_keys=frozenset({"remote:hund"}))
-            == "tier"
+            == "hund"
         )
 
     def test_dynamic_key_below_its_own_presence_threshold_does_not_win(self) -> None:
@@ -779,15 +790,114 @@ class TestDeriveCategoryKeyDynamicKeys:
         assert result == CATEGORY_DETAIL
 
     def test_tie_break_is_alphabetical_on_the_full_prefixed_key(self) -> None:
-        # "remote:hund" < "tier" alphabetisch (volle, praefixierte Keys, nicht die entpraefixierten
-        # Anzeigenamen) - ADR 0032 Punkt 1.
-        values = {"tier": 0.5, "remote:hund": 0.5}
-        active = frozenset({"tier", "remote:hund"})
-        result = derive_category_key(values, active, dynamic_keys=frozenset({"remote:hund"}))
-        assert result == "hund"
+        # Tie-Break innerhalb DERSELBEN Spezifitaets-Stufe (zwei Remote-Keys, beide NAMED) bei
+        # identischem Score: alphabetisch nach dem VOLLEN, praefixierten Key ("remote:aal" <
+        # "remote:hund"), nicht nach dem entpraefixierten Anzeigenamen - ADR 0032 Punkt 1,
+        # unveraendert deterministisch.
+        values = {"remote:hund": 0.5, "remote:aal": 0.5}
+        active = frozenset({"remote:hund", "remote:aal"})
+        result = derive_category_key(
+            values, active, dynamic_keys=frozenset({"remote:hund", "remote:aal"})
+        )
+        assert result == "aal"
 
     def test_remote_prefix_is_stripped_symmetrically_to_the_content_prefix(self) -> None:
         values = {"remote:strand": 0.9}
         active = frozenset({"remote:strand"})
         result = derive_category_key(values, active, dynamic_keys=frozenset({"remote:strand"}))
         assert result == "strand"
+
+
+class TestDeriveActiveCategoriesSpecificity:
+    """specs/features/0217, ADR decisions/0046 Punkt 3: die Aktivierungsschwelle wird
+    spezifitaetsabhaengig - CONTENT behaelt die reine 15%-Regel, NAMED ist zusaetzlich ab
+    CATEGORY_SPECIFIC_MIN_PHOTOS absoluten Treffern aktiv (ODER-Verknuepfung, damit sehr kleine
+    Projekte nicht schlechter gestellt werden als bisher)."""
+
+    def test_named_key_is_active_at_exactly_the_minimum_photo_count(self) -> None:
+        # 3 von 100 = 3% Anteil, weit unter 15% - trotzdem aktiv (AK4).
+        assert CATEGORY_SPECIFIC_MIN_PHOTOS == 3
+        candidate_values = {i: {"remote:elefant": 0.9 if i < 3 else 0.0} for i in range(100)}
+        active = derive_active_categories(
+            candidate_values, dynamic_keys=frozenset({"remote:elefant"})
+        )
+        assert "remote:elefant" in active
+
+    def test_named_key_with_two_hits_and_a_low_share_stays_inactive(self) -> None:
+        candidate_values = {i: {"remote:elefant": 0.9 if i < 2 else 0.0} for i in range(100)}
+        active = derive_active_categories(
+            candidate_values, dynamic_keys=frozenset({"remote:elefant"})
+        )
+        assert "remote:elefant" not in active
+
+    def test_named_key_with_two_hits_is_active_when_the_share_reaches_fifteen_percent(
+        self,
+    ) -> None:
+        # Kleines Projekt (10 Kandidaten): 2 Treffer = 20% - die ODER-Verknuepfung darf niemanden
+        # schlechter stellen als die bisherige reine Anteilsregel.
+        candidate_values = {i: {"remote:elefant": 0.9 if i < 2 else 0.0} for i in range(10)}
+        active = derive_active_categories(
+            candidate_values, dynamic_keys=frozenset({"remote:elefant"})
+        )
+        assert "remote:elefant" in active
+
+    def test_registered_named_criterion_landmark_follows_the_same_rule(self) -> None:
+        candidate_values = {i: {"landmark": 0.9 if i < 3 else 0.0} for i in range(100)}
+        assert "landmark" in derive_active_categories(candidate_values)
+
+    def test_content_criterion_keeps_the_pure_fifteen_percent_rule(self) -> None:
+        # 3 von 100 reichen fuer ein CONTENT-Kriterium ausdruecklich NICHT.
+        candidate_values = {i: {"tier": 0.9 if i < 3 else 0.0} for i in range(100)}
+        assert "tier" not in derive_active_categories(candidate_values)
+
+    def test_specific_min_photos_is_overridable(self) -> None:
+        candidate_values = {i: {"landmark": 0.9 if i < 3 else 0.0} for i in range(100)}
+        assert "landmark" not in derive_active_categories(
+            candidate_values, specific_min_photos=4
+        )
+        assert "landmark" in derive_active_categories(candidate_values, specific_min_photos=3)
+
+    def test_empty_candidate_pool_stays_safe_with_the_new_rule(self) -> None:
+        assert derive_active_categories({}, dynamic_keys=frozenset({"remote:x"})) == frozenset()
+
+
+class TestDeriveCategoryKeySpecificity:
+    """specs/features/0217, ADR decisions/0046 Punkt 2: Spezifitaets-Vorrang ersetzt "hoechster
+    Score gewinnt" als PRIMAERE Regel - Auswahlschluessel `(-specificity, -score, key)`. Innerhalb
+    einer Stufe bleibt die vertraute Regel unveraendert (siehe TestDeriveCategoryKey oben)."""
+
+    def test_named_criterion_wins_against_a_higher_scoring_content_criterion(self) -> None:
+        values = {"landmark": 0.6, "tier": 0.95}
+        active = frozenset({"landmark", "tier"})
+        assert derive_category_key(values, active) == "landmark"
+
+    def test_remote_label_wins_against_content_people_with_a_perfect_score(self) -> None:
+        # AK3 der Spec 0217 (Stakeholder-Entscheidung vom 2026-08-30): ein Foto mit erkannten
+        # Gesichtern UND einem Remote-Schlagwort ("Hochzeit") landet unter dem Schlagwort.
+        values = {"content_people": 1.0, "remote:hochzeit": 0.3}
+        active = frozenset({"content_people", "remote:hochzeit"})
+        assert (
+            derive_category_key(values, active, dynamic_keys=frozenset({"remote:hochzeit"}))
+            == "hochzeit"
+        )
+
+    def test_highest_score_still_decides_within_the_same_specificity_level(self) -> None:
+        values = {"landschaft": 0.4, "gebaeude": 0.8}
+        active = frozenset({"landschaft", "gebaeude"})
+        assert derive_category_key(values, active) == "gebaeude"
+
+    def test_tie_break_between_two_named_keys_is_alphabetical_on_the_full_key(self) -> None:
+        # "landmark" < "remote:hund" - beide NAMED, identischer Score.
+        values = {"landmark": 0.7, "remote:hund": 0.7}
+        active = frozenset({"landmark", "remote:hund"})
+        assert (
+            derive_category_key(values, active, dynamic_keys=frozenset({"remote:hund"}))
+            == "landmark"
+        )
+
+    def test_a_named_key_below_its_own_presence_threshold_does_not_win(self) -> None:
+        # Spezifitaet hebt die Presence-Pruefung des Fotos NICHT auf: landmark liegt unter seiner
+        # Registry-Schwelle (0.5), das Foto qualifiziert sich dafuer gar nicht erst.
+        values = {"landmark": 0.4, "tier": 0.9}
+        active = frozenset({"landmark", "tier"})
+        assert derive_category_key(values, active) == "tier"
