@@ -1,6 +1,6 @@
 # 0278 - Board-Operationen melden einen bereits erreichten Zielzustand nicht mehr als Fehler
 
-**Status:** Accepted
+**Status:** Implemented ([PR #290](https://github.com/TheRealKoller/photosort/pull/290))
 **Erstellt:** 2026-08-30
 **Bezug:** [Issue #278](https://github.com/TheRealKoller/photosort/issues/278)
 
