@@ -338,6 +338,33 @@ class TestDeleteCategoryOverride:
         # content_people ist bei EINEM Kandidaten automatisch aktiv (100% Praesenz) -> "people".
         assert ranking.category_key == "people"
 
+    async def test_reset_without_any_recognised_content_falls_back_to_unrecognized(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # specs/features/0217 AK5/AK9: ein verwaister Override auf einen Wert, den die Ableitung
+        # nie mehr erzeugt ("detail"), bleibt bis zur Ruecknahme bestehen - danach landet das Foto
+        # im expliziten "nicht erkannt"-Zustand statt in einer erfundenen Kategorie.
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo, category_override="detail")
+        await _add_ranking(db_session, run, photo, category_key="detail")
+
+        before = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
+        )
+        assert {item["ranking"]["category_key"] for item in before.json()["items"]} == {"detail"}
+
+        response = await authenticated_api_client.delete(f"/photos/{photo.id}/category-override")
+
+        assert response.status_code == 204
+        ranking = (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
+            )
+        ).scalar_one()
+        assert ranking.category_key == CATEGORY_UNRECOGNIZED
+
     async def test_is_idempotent_when_called_twice(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
