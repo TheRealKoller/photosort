@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/TheRealKoller/photosort/compare/v0.24.0...v0.25.0) (2026-08-30)
+
+
+### Features
+
+* **frontend:** Bewertungsdetails in Bloecke Qualitaet und Kategorien gliedern (Spec 0209) ([#277](https://github.com/TheRealKoller/photosort/issues/277)) ([c673173](https://github.com/TheRealKoller/photosort/commit/c6731739ce5290ba263565a9a0ddc265def50a44))
+
 ## [0.24.0](https://github.com/TheRealKoller/photosort/compare/v0.23.0...v0.24.0) (2026-08-30)
 
 
