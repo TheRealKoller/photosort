@@ -8,7 +8,6 @@ from typing import Protocol
 from PIL import Image
 
 from photosort.classification import (
-    LANDSCAPE_UNIFORM_FRACTION_THRESHOLD,
     SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
     AnimalDetection,
     FaceBoundingBox,
@@ -29,6 +28,17 @@ from photosort.models import CriterionSource
 # Aufwand fuer ein kuenftiges neues Kriterium, keine Migration.
 
 
+# Spezifitaets-Stufen der Kategorie-Vergabe (specs/features/0217, ADR decisions/0046 Punkt 2) -
+# ersetzen "hoechster Score gewinnt" als PRIMAERE Regel in derive_category_key und steuern die
+# Aktivierungsschwelle in derive_active_categories. Bewusst genau zwei Stufen: die einzige
+# Unterscheidung, die die Story traegt, ist "benannter Inhalt vs. grobe Inhaltsklasse" - eine
+# Feinsortierung innerhalb der lokalen Kriterien waere wieder die gepflegte Prioritaetsliste, die
+# ADR 0023 vermieden hat. Zahlenwerte mit Abstand (10/20), damit eine kuenftige Zwischenstufe
+# keine Neuvergabe braucht; verglichen wird ausschliesslich relativ.
+CATEGORY_SPECIFICITY_CONTENT = 10  # lokale Inhaltserkennung: Gesicht/Tier/Gebaeude/Landschaft
+CATEGORY_SPECIFICITY_NAMED = 20  # benannter, konkreter Inhalt: Sehenswuerdigkeit, Remote-Label
+
+
 @dataclass(frozen=True)
 class CriterionDefinition:
     key: str
@@ -42,6 +52,12 @@ class CriterionDefinition:
     # den Default False/None und koennen nie eine Kategorie bilden.
     category_eligible: bool = False
     category_presence_threshold: float | None = None
+    # specs/features/0217, ADR 0046 Punkt 2: Spezifitaet ist - wie die Kategorie-Faehigkeit selbst
+    # - ein reines Registry-ATTRIBUT, keine im Ableitungscode gepflegte Prioritaetsliste. Nur bei
+    # category_eligible=True von Bedeutung (ein nicht kategorie-faehiges Kriterium bildet nie eine
+    # Kategorie); nicht kategorie-faehige Eintraege behalten deshalb den Default, erzwungen durch
+    # einen eigenen Registry-Invariantentest.
+    category_specificity: int = CATEGORY_SPECIFICITY_CONTENT
 
 
 # Schwelle, ab der content_people als "Gesicht erkannt" gilt (compute_content_people liefert nur
@@ -57,12 +73,18 @@ _CONTENT_PEOPLE_DETECTED_THRESHOLD = 0.5
 _TIER_CATEGORY_PRESENCE_THRESHOLD = 0.01
 _GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD = 0.01
 
+# specs/features/0217, ADR 0046 Punkt 1: dieselbe Konstanten-Klasse wie oben - compute_landschaft_
+# score liefert entweder exakt 0.0 (kein Allow-Listen-Treffer ueber LANDSCHAFT_LABEL_MIN_
+# CONFIDENCE) oder einen Wert oberhalb dieser Konfidenzschwelle; 0.01 trennt nur "nichts erkannt"
+# von "irgendetwas erkannt", keine zweite inhaltliche Kalibrierung.
+_LANDSCHAFT_CATEGORY_PRESENCE_THRESHOLD = 0.01
+
 # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR decisions/0025-cloud-
 # landmark-erkennung.md Punkt 2: Confidence-Schwelle des Vision-LLM, ab der ein Foto als
 # "Sehenswuerdigkeit erkannt" gilt - zugleich Vorfilterungs-Schwelle fuer content_landscape/
 # gebaeude in worker.py::run_criterion_scoring (Wiederverwendung derselben Registry-Werte).
 # Dokumentiert-unkalibriert (gleiche Klasse wie SHARPNESS_NORMALIZATION_CEILING/
-# LANDSCAPE_UNIFORM_FRACTION_THRESHOLD, kein Fotokorpus im Repo zur Kalibrierung) - ADR 0025
+# UNIFORM_TILE_VARIANCE_THRESHOLD, kein Fotokorpus im Repo zur Kalibrierung) - ADR 0025
 # benennt zusaetzlich ein bekanntes, beobachtetes Ueberidentifikations-Risiko (siehe ADR Punkt 1),
 # gegen das diese Schwelle die strukturelle, aber ggf. nicht ausreichende Gegenmassnahme ist.
 _LANDMARK_CATEGORY_PRESENCE_THRESHOLD = 0.5
@@ -77,12 +99,14 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         category_eligible=True,
         category_presence_threshold=_CONTENT_PEOPLE_DETECTED_THRESHOLD,
     ),
+    # specs/features/0217, ADR 0046 Punkt 1: reines Ranking-Signal, NICHT kategorie-faehig -
+    # compute_uniform_area_fraction misst Texturarmut ("Flaechigkeit"), keine Landschaft. Der
+    # frueher hier verwendete LANDSCAPE_UNIFORM_FRACTION_THRESHOLD ist ersatzlos entfallen.
+    # Die echte, inhaltsbasierte Landschafts-Erkennung liegt im Kriterium "landschaft" unten.
     "content_landscape": CriterionDefinition(
         "content_landscape",
-        "Landschaft/Flächig",
+        "Flächigkeit",
         CriterionSource.LOCAL_HEURISTIC,
-        category_eligible=True,
-        category_presence_threshold=LANDSCAPE_UNIFORM_FRACTION_THRESHOLD,
     ),
     # specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md ab hier:
     "tier": CriterionDefinition(
@@ -103,6 +127,16 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         category_presence_threshold=_GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD,
     ),
     "aesthetics": CriterionDefinition("aesthetics", "Ästhetik", CriterionSource.LOCAL_ML),
+    # specs/features/0217, ADR 0046 Punkt 1: echte, inhaltsbasierte Landschafts-Erkennung aus
+    # DERSELBEN Szenen-Klassifikation wie gebaeude (keine zusaetzliche Inferenz, kein neues
+    # Modell-Asset, siehe compute_landschaft_score).
+    "landschaft": CriterionDefinition(
+        "landschaft",
+        "Landschaft erkannt",
+        CriterionSource.LOCAL_ML,
+        category_eligible=True,
+        category_presence_threshold=_LANDSCHAFT_CATEGORY_PRESENCE_THRESHOLD,
+    ),
     # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ab hier: drei
     # weitere, davon unabhaengige Kompositions-Ranking-Signale (analog goldener_schnitt/
     # aesthetics) - alle drei category_eligible=False (reine Ranking-Signale, keine neuen
@@ -124,6 +158,11 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         CriterionSource.CLOUD,
         category_eligible=True,
         category_presence_threshold=_LANDMARK_CATEGORY_PRESENCE_THRESHOLD,
+        # specs/features/0217, ADR 0046 Punkt 2: ein benannter, konkreter Inhalt ("Kölner Dom")
+        # setzt sich gegen jede grobe lokale Einordnung durch - einziges registriertes Kriterium
+        # der NAMED-Stufe (remote:-Pseudo-Keys haben keine CriterionDefinition und gelten immer
+        # als NAMED, siehe _specificity_of).
+        category_specificity=CATEGORY_SPECIFICITY_NAMED,
     ),
 }
 
@@ -441,18 +480,27 @@ def is_landmark_candidate(values: dict[str, float]) -> bool:
     vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-fehler-persistierung.md
     Punkt 4) - extrahiert aus worker.py::_select_landmark_candidates (dort bleibt nur noch das
     Skip-bereits-gescorter-Fotos-Verhalten, worker-spezifisch). Ein Foto ist Kandidat, wenn
-    content_landscape ODER gebaeude die jeweils registrierte category_presence_threshold erreicht
+    landschaft ODER gebaeude die jeweils registrierte category_presence_threshold erreicht
     (`>=`, inklusiv, dieselben Registry-Werte wie derive_active_categories/derive_category_key).
     Fehlende Werte gelten als 0.0 (kein Sonderfall, analog derive_active_categories). Von
     _select_landmark_candidates (Live-Lauf) UND api/photos.py::_cloud_vision_status_out
     (Read-Time-Ableitung) gemeinsam genutzt - verhindert ein Auseinanderlaufen beider Stellen bei
-    einer kuenftigen Schwellenwert-Aenderung."""
-    landscape_threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
+    einer kuenftigen Schwellenwert-Aenderung.
+
+    specs/features/0217, ADR 0046 Punkt 5: geprueft wird seit dieser Spec `landschaft` statt
+    `content_landscape` - inhaltlich das, was der Filter immer ausdruecken sollte ("auf dem Foto
+    ist eine Landschaft oder ein Gebaeude zu sehen"), und zugleich die einzige Stelle dieser Spec
+    an einer Vertrauensgrenze: sie entscheidet, welche Fotos den Homeserver in Richtung des
+    externen Vision-Anbieters verlassen duerfen (Security-Abschnitt der Spec, Punkt 1). Die neue
+    Kandidatenmenge steht zur alten in KEINEM Teilmengen-Verhaeltnis (texturarme Fotos ohne
+    Landschaftsmotiv fallen heraus, texturreiche echte Landschaften kommen hinzu) - der Vorfilter
+    bleibt unveraendert rein lokal und VOR jedem Cloud-Aufruf."""
+    landschaft_threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
     gebaeude_threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
-    assert landscape_threshold is not None
+    assert landschaft_threshold is not None
     assert gebaeude_threshold is not None
     return (
-        values.get("content_landscape", 0.0) >= landscape_threshold
+        values.get("landschaft", 0.0) >= landschaft_threshold
         or values.get("gebaeude", 0.0) >= gebaeude_threshold
     )
 
@@ -474,7 +522,7 @@ def compute_landmark_score(detection: LandmarkDetection) -> float:
 # Deadzone um einen frontalen Blick (Yaw nahe 0) - kein klares Richtungssignal, ein nahezu
 # frontaler Blick sagt nichts darueber aus, ob rechts oder links mehr Freiraum "in Blickrichtung"
 # noetig waere. Unkalibriert dokumentiert (gleiche Klasse wie SHARPNESS_NORMALIZATION_CEILING/
-# LANDSCAPE_UNIFORM_FRACTION_THRESHOLD, kein Fotokorpus im Repo zur Kalibrierung).
+# UNIFORM_TILE_VARIANCE_THRESHOLD, kein Fotokorpus im Repo zur Kalibrierung).
 FREIRAUM_YAW_DEADZONE_DEGREES = 10.0
 
 
@@ -526,7 +574,7 @@ CATEGORY_DETAIL = "detail"
 # mittelgrossen Projekt zu vermeiden, niedrig genug um einen thematisch relevanten, aber nicht
 # dominanten Anteil zuverlaessig eine eigene Kategorie ausloesen zu lassen. Dokumentierte, nicht
 # gegen einen echten Fotokorpus kalibrierte Setzung (gleiche Klasse wie SHARPNESS_NORMALIZATION_
-# CEILING/LANDSCAPE_UNIFORM_FRACTION_THRESHOLD), austauschbar ohne Architektur-Aenderung.
+# CEILING/UNIFORM_TILE_VARIANCE_THRESHOLD), austauschbar ohne Architektur-Aenderung.
 CATEGORY_ACTIVE_THRESHOLD_FRACTION = 0.15
 
 

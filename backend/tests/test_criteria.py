@@ -17,6 +17,8 @@ from photosort.classification import (
 from photosort.criteria import (
     ARCHITECTURE_CATEGORIES,
     CATEGORY_DETAIL,
+    CATEGORY_SPECIFICITY_CONTENT,
+    CATEGORY_SPECIFICITY_NAMED,
     CRITERIA_REGISTRY,
     DYNAMIC_LABEL_PRESENCE_THRESHOLD,
     FREIRAUM_YAW_DEADZONE_DEGREES,
@@ -121,17 +123,70 @@ class TestCriteriaRegistry:
 
     def test_exactly_five_content_criteria_are_category_eligible(self) -> None:
         # Akzeptanzkriterium der Spec 0045, erweitert um landmark (specs/features/0047-
-        # sehenswuerdigkeit-erkennung-cloud-vision-api.md): genau content_people/
-        # content_landscape/tier/gebaeude/landmark sind category_eligible=True - reine
-        # Qualitaetskriterien nie.
+        # sehenswuerdigkeit-erkennung-cloud-vision-api.md) und seit specs/features/0217/ADR 0046
+        # Punkt 1 mit `landschaft` STATT `content_landscape` (Flaechigkeit ist ein reines
+        # Ranking-Signal, keine Inhaltsaussage): genau content_people/landschaft/tier/gebaeude/
+        # landmark sind category_eligible=True - reine Qualitaetskriterien nie. Bewusst weiterhin
+        # eine MENGEN-Assertion (nicht auf einen Anzahl-Vergleich abgeschwaecht).
         eligible = {key for key, d in CRITERIA_REGISTRY.items() if d.category_eligible}
         assert eligible == {
             "content_people",
-            "content_landscape",
+            "landschaft",
             "tier",
             "gebaeude",
             "landmark",
         }
+
+    def test_registry_contains_landschaft_with_the_correct_source_and_threshold(self) -> None:
+        # specs/features/0217, ADR 0046 Punkt 1: neues, echtes Inhalts-Kriterium aus derselben
+        # Szenen-Klassifikation wie gebaeude - Presence-Schwelle 0.01 ist wie bei tier/gebaeude
+        # eine reine "nichts erkannt vs. irgendetwas erkannt"-Trennung, keine zweite
+        # Konfidenzkalibrierung.
+        definition = CRITERIA_REGISTRY["landschaft"]
+        assert definition.display_name == "Landschaft erkannt"
+        assert definition.source == CriterionSource.LOCAL_ML
+        assert definition.category_eligible is True
+        assert definition.category_presence_threshold == 0.01
+
+    def test_content_landscape_is_a_pure_ranking_signal_without_category_eligibility(
+        self,
+    ) -> None:
+        # ADR 0046 Punkt 1: compute_uniform_area_fraction misst Texturarmut, keine Landschaft -
+        # das Kriterium bleibt als Ranking-Signal erhalten, darf aber keine Kategorie mehr bilden.
+        # Der Anzeigename behauptet entsprechend keine Inhaltsaussage mehr.
+        definition = CRITERIA_REGISTRY["content_landscape"]
+        assert definition.display_name == "Flächigkeit"
+        assert definition.category_eligible is False
+        assert definition.category_presence_threshold is None
+
+    def test_category_specificity_is_one_of_the_two_defined_levels(self) -> None:
+        # Registry-Invariante (specs/features/0217, ADR 0046 Punkt 2): Spezifitaet ist ein
+        # Registry-ATTRIBUT mit genau zwei Stufen, keine im Ableitungscode gepflegte
+        # Prioritaetsliste.
+        for key, definition in CRITERIA_REGISTRY.items():
+            assert definition.category_specificity in {
+                CATEGORY_SPECIFICITY_CONTENT,
+                CATEGORY_SPECIFICITY_NAMED,
+            }, f"{key}: unbekannte Spezifitaets-Stufe"
+
+    def test_named_specificity_is_set_exactly_for_landmark(self) -> None:
+        named = {
+            key
+            for key, d in CRITERIA_REGISTRY.items()
+            if d.category_specificity == CATEGORY_SPECIFICITY_NAMED
+        }
+        assert named == {"landmark"}
+
+    def test_specificity_only_carries_meaning_for_category_eligible_criteria(self) -> None:
+        # Invariante aus dem Architektur-Abschnitt der Spec 0217: ein nicht kategorie-faehiges
+        # Kriterium kann nie eine Kategorie bilden, seine Spezifitaet ist bedeutungslos und muss
+        # deshalb auf dem Default stehen bleiben (sonst suggeriert die Registry eine Rangordnung,
+        # die nirgends ausgewertet wird).
+        for key, definition in CRITERIA_REGISTRY.items():
+            if not definition.category_eligible:
+                assert definition.category_specificity == CATEGORY_SPECIFICITY_CONTENT, (
+                    f"{key}: Spezifitaet gesetzt, obwohl nicht kategorie-faehig"
+                )
 
     def test_registry_contains_landmark_with_the_correct_source_and_threshold(self) -> None:
         # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR
@@ -461,35 +516,40 @@ class TestIsLandmarkCandidate:
     """specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-
     attempt-fehler-persistierung.md Punkt 4: extrahiert aus worker.py::_select_landmark_candidates
     - reine Schwellenwert-Pruefung (kein Skip-bereits-gescort, das bleibt worker-spezifisch), von
-    Live-Lauf UND API-Ableitung (api/photos.py::_cloud_vision_status_out) gemeinsam genutzt."""
+    Live-Lauf UND API-Ableitung (api/photos.py::_cloud_vision_status_out) gemeinsam genutzt.
+
+    specs/features/0217, ADR 0046 Punkt 5: die Vorfilterung prueft seit dieser Spec `landschaft`
+    ODER `gebaeude` statt `content_landscape` ODER `gebaeude` - inhaltlich das, was der Filter
+    immer ausdruecken sollte ("auf dem Foto ist eine Landschaft oder ein Gebaeude zu sehen").
+    Die Bestandsfaelle sind dabei UMGESTELLT, nicht ergaenzt worden."""
 
     def test_empty_dict_is_not_a_candidate(self) -> None:
         assert is_landmark_candidate({}) is False
 
-    def test_content_landscape_below_threshold_and_gebaeude_absent_is_not_a_candidate(
+    def test_landschaft_below_threshold_and_gebaeude_absent_is_not_a_candidate(
         self,
     ) -> None:
-        threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
+        threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
         assert threshold is not None
-        assert is_landmark_candidate({"content_landscape": threshold - 0.01}) is False
+        assert is_landmark_candidate({"landschaft": threshold - 0.001}) is False
 
-    def test_content_landscape_at_threshold_is_a_candidate(self) -> None:
+    def test_landschaft_at_threshold_is_a_candidate(self) -> None:
         # Inklusiver Vergleich (`>=`), analog derive_active_categories/derive_category_key.
-        threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
+        threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
         assert threshold is not None
-        assert is_landmark_candidate({"content_landscape": threshold}) is True
+        assert is_landmark_candidate({"landschaft": threshold}) is True
 
-    def test_content_landscape_above_threshold_is_a_candidate(self) -> None:
-        threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
+    def test_landschaft_above_threshold_is_a_candidate(self) -> None:
+        threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
         assert threshold is not None
-        assert is_landmark_candidate({"content_landscape": threshold + 0.1}) is True
+        assert is_landmark_candidate({"landschaft": threshold + 0.1}) is True
 
     def test_gebaeude_at_threshold_is_a_candidate(self) -> None:
         threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
         assert threshold is not None
         assert is_landmark_candidate({"gebaeude": threshold}) is True
 
-    def test_gebaeude_below_threshold_and_content_landscape_absent_is_not_a_candidate(
+    def test_gebaeude_below_threshold_and_landschaft_absent_is_not_a_candidate(
         self,
     ) -> None:
         threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
@@ -497,17 +557,26 @@ class TestIsLandmarkCandidate:
         assert is_landmark_candidate({"gebaeude": threshold - 0.001}) is False
 
     def test_either_criterion_reaching_its_threshold_is_sufficient(self) -> None:
-        landscape_threshold = CRITERIA_REGISTRY["content_landscape"].category_presence_threshold
-        assert landscape_threshold is not None
+        landschaft_threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
+        assert landschaft_threshold is not None
+        assert is_landmark_candidate({"landschaft": 0.0, "gebaeude": 0.0}) is False
         assert (
-            is_landmark_candidate({"content_landscape": 0.0, "gebaeude": 0.0}) is False
+            is_landmark_candidate({"landschaft": landschaft_threshold, "gebaeude": 0.0}) is True
         )
-        assert (
-            is_landmark_candidate(
-                {"content_landscape": landscape_threshold, "gebaeude": 0.0}
-            )
-            is True
-        )
+
+    def test_a_photo_with_only_a_high_content_landscape_value_is_no_longer_a_candidate(
+        self,
+    ) -> None:
+        # Kostensenkung, testpflichtig (Security-Abschnitt der Spec 0217 Punkt 1, Testkonzept-
+        # Regel 2 zu ADR 0046): ein texturarmes/unscharfes Foto ohne Landschaftsmotiv verlaesst
+        # den Homeserver nicht mehr in Richtung des externen Vision-Anbieters.
+        assert is_landmark_candidate({"content_landscape": 1.0}) is False
+
+    def test_a_textured_real_landscape_is_newly_a_candidate(self) -> None:
+        # Gegenrichtung derselben Verschiebung (die neue Kandidatenmenge ist KEINE Teilmenge der
+        # alten, Security-Abschnitt Punkt 1): eine texturreiche echte Landschaftsaufnahme, die den
+        # Uniform-Flaechen-Schwellwert nie erreicht haette, ist jetzt Kandidat.
+        assert is_landmark_candidate({"landschaft": 0.8, "content_landscape": 0.05}) is True
 
 
 # Wiederverwendungsnachweis fuer detect_person/detect_animals im Goldener-Schnitt-Kontext
@@ -525,12 +594,12 @@ class TestDeriveActiveCategories:
 
     def test_criterion_with_zero_hits_stays_inactive(self) -> None:
         candidate_values = {
-            1: {"content_people": 0.0, "content_landscape": 0.9},
-            2: {"content_people": 0.0, "content_landscape": 0.9},
+            1: {"content_people": 0.0, "landschaft": 0.9},
+            2: {"content_people": 0.0, "landschaft": 0.9},
         }
         active = derive_active_categories(candidate_values)
         assert "content_people" not in active
-        assert "content_landscape" in active
+        assert "landschaft" in active
 
     def test_exactly_at_the_fifteen_percent_threshold_is_active_inclusive(self) -> None:
         # 15 von 100 Kandidaten erfuellen die Presence-Schwelle -> genau 15% -> aktiv (inklusiv).
@@ -549,16 +618,16 @@ class TestDeriveActiveCategories:
         assert "tier" in active
 
     def test_missing_values_for_some_photos_count_as_not_present(self) -> None:
-        # Best-effort: fuer photo 2/3 wurde content_landscape gar nicht erst berechnet (fehlender
-        # Key statt 0.0) - zaehlt trotzdem als "nicht vorhanden", kein KeyError. Nur 1 von 3 (33%)
+        # Best-effort: fuer photo 2/3 wurde landschaft gar nicht erst berechnet (fehlender Key
+        # statt 0.0) - zaehlt trotzdem als "nicht vorhanden", kein KeyError. Nur 1 von 3 (33%)
         # erfuellt die Presence-Schwelle, unter der 50%-Testschwelle.
         candidate_values = {
-            1: {"content_landscape": 0.9},
+            1: {"landschaft": 0.9},
             2: {},
             3: {},
         }
         active = derive_active_categories(candidate_values, threshold_fraction=0.5)
-        assert "content_landscape" not in active
+        assert "landschaft" not in active
 
     def test_custom_threshold_fraction_is_respected(self) -> None:
         candidate_values = {i: {"tier": 0.9 if i < 5 else 0.0} for i in range(10)}
@@ -568,18 +637,27 @@ class TestDeriveActiveCategories:
 
 class TestDeriveCategoryKey:
     def test_people_wins_when_only_people_is_active(self) -> None:
-        values = {"content_people": 1.0, "content_landscape": 1.0}
+        values = {"content_people": 1.0, "landschaft": 1.0}
         active = frozenset({"content_people"})
         assert derive_category_key(values, active) == "people"
 
-    def test_uniform_without_people_active_is_landscape(self) -> None:
-        values = {"content_people": 0.0, "content_landscape": 0.9}
-        active = frozenset({"content_people", "content_landscape"})
-        assert derive_category_key(values, active) == "landscape"
+    def test_recognised_landscape_without_people_is_landschaft(self) -> None:
+        # specs/features/0217 AK1: der Kategorie-Key kommt jetzt aus dem echten Inhalts-Kriterium
+        # `landschaft` (Allow-Listen-Treffer), nicht mehr aus der Flaechigkeits-Heuristik.
+        values = {"content_people": 0.0, "landschaft": 0.9}
+        active = frozenset({"content_people", "landschaft"})
+        assert derive_category_key(values, active) == "landschaft"
 
-    def test_textured_without_people_falls_back_to_detail(self) -> None:
-        values = {"content_people": 0.0, "content_landscape": 0.1}
-        active = frozenset({"content_people", "content_landscape"})
+    def test_no_landscape_label_without_people_falls_back_to_the_catch_all(self) -> None:
+        values = {"content_people": 0.0, "landschaft": 0.0}
+        active = frozenset({"content_people", "landschaft"})
+        assert derive_category_key(values, active) == CATEGORY_DETAIL
+
+    def test_a_high_content_landscape_value_alone_never_forms_a_category(self) -> None:
+        # AK1 der Spec 0217: content_landscape ist strukturell nicht mehr kategorie-faehig - ein
+        # texturarmes Bild ohne Landschaftsmotiv landet im Catch-all, nie in "landscape".
+        values = {"content_landscape": 0.95}
+        active = frozenset({"content_landscape", "landschaft"})
         assert derive_category_key(values, active) == CATEGORY_DETAIL
 
     def test_missing_criteria_falls_back_to_detail_without_crashing(self) -> None:
@@ -590,7 +668,7 @@ class TestDeriveCategoryKey:
     def test_no_active_categories_at_all_falls_back_to_detail(self) -> None:
         # Kein Kriterium im Lauf erreichte die 15%-Haeufigkeitsschwelle - jedes Foto landet im
         # Catch-all, unabhaengig von den einzelnen Kriterien-Werten.
-        values = {"content_people": 1.0, "content_landscape": 1.0}
+        values = {"content_people": 1.0, "landschaft": 1.0}
         assert derive_category_key(values, frozenset()) == CATEGORY_DETAIL
 
     def test_highest_score_wins_among_several_active_criteria(self) -> None:
@@ -601,11 +679,11 @@ class TestDeriveCategoryKey:
         assert derive_category_key(values, active) == "tier"
 
     def test_tie_break_is_alphabetical_by_criterion_key(self) -> None:
-        # content_landscape und tier erreichen exakt denselben Score -> alphabetisch fruehester
-        # criterion_key gewinnt ("content_landscape" < "tier").
-        values = {"content_landscape": 0.6, "tier": 0.6}
-        active = frozenset({"content_landscape", "tier"})
-        assert derive_category_key(values, active) == "landscape"
+        # landschaft und tier erreichen exakt denselben Score (dieselbe Spezifitaets-Stufe) ->
+        # alphabetisch fruehester criterion_key gewinnt ("landschaft" < "tier").
+        values = {"landschaft": 0.6, "tier": 0.6}
+        active = frozenset({"landschaft", "tier"})
+        assert derive_category_key(values, active) == "landschaft"
 
     def test_gebaeude_and_tier_derive_category_keys_without_manual_mapping(self) -> None:
         assert derive_category_key({"tier": 0.5}, frozenset({"tier"})) == "tier"

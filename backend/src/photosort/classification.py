@@ -28,12 +28,11 @@ UNIFORM_TILE_VARIANCE_THRESHOLD = 15.0
 # Kachelraster fuer compute_uniform_area_fraction (Architektur-Abschnitt der Spec: "8x8").
 _UNIFORM_TILE_GRID = 8
 
-# Anteil "flaechiger" Kacheln, ab dem ein Foto ohne erkanntes Gesicht als LANDSCAPE statt DETAIL
-# gilt (Prioritaetskette der Spec). Technische Detailentscheidung der Umsetzung, nicht gegen einen
-# echten Fotokorpus kalibriert (siehe Teststrategie-Abschnitt) - ein typisches Landschaftsfoto
-# (Himmel/Wasser/gleichmaessige Flaechen) sollte mindestens die Haelfte des Kachelrasters als
-# uniform ausweisen.
-LANDSCAPE_UNIFORM_FRACTION_THRESHOLD = 0.5
+# specs/features/0217, ADR 0046 Punkt 1: LANDSCAPE_UNIFORM_FRACTION_THRESHOLD (Anteil
+# "flaechiger" Kacheln, ab dem ein Foto frueher als "Landschaft" galt) ist hier ersatzlos
+# entfallen - der Uniform-Flaechen-Anteil ist ein Texturmass, keine Landschafts-Aussage, und
+# `content_landscape` hat seine Kategorie-Faehigkeit (und damit seine Presence-Schwelle)
+# verloren. compute_uniform_area_fraction selbst bleibt als Ranking-Signal unveraendert.
 
 # Mindest-Konfidenz einer mediapipe-Gesichtserkennung, ab der detect_person ein Gesicht als
 # tatsaechlich erkannt wertet - eigene, explizite Schwelle statt sich blind auf den Detector selbst
