@@ -195,6 +195,9 @@ describe('RemoteCategoryClassificationSection', () => {
     const progress = screen.getByRole('progressbar') as HTMLProgressElement
     expect(progress.max).toBe(10)
     expect(progress.value).toBe(4)
+    expect(
+      screen.queryByText(/fließen erst durch einen.*kriterien-bewertungs-lauf/i)
+    ).not.toBeInTheDocument()
   })
 
   it('shows a failed status with a retry alert', () => {
@@ -209,5 +212,33 @@ describe('RemoteCategoryClassificationSection', () => {
 
     expect(screen.getByText('Fehlgeschlagen')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Cloud-API nicht erreichbar.')
+    expect(
+      screen.queryByText(/fließen erst durch einen.*kriterien-bewertungs-lauf/i)
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows no hint text when there is no run yet', () => {
+    renderSection(project({ last_remote_category_classification_run: null }))
+
+    expect(
+      screen.queryByText(/fließen erst durch einen.*kriterien-bewertungs-lauf/i)
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows a hint that results only flow into category suggestions via a criteria scoring run once the run succeeded', () => {
+    renderSection(
+      project({
+        last_remote_category_classification_run: runningRun({
+          status: 'success',
+          finished_at: '2026-08-23T10:05:00Z',
+          photos_processed: 10,
+        }),
+      })
+    )
+
+    expect(screen.getByText('Erfolgreich klassifiziert')).toBeInTheDocument()
+    expect(
+      screen.getByText(/fließen erst durch einen.*kriterien-bewertungs-lauf/i)
+    ).toBeInTheDocument()
   })
 })

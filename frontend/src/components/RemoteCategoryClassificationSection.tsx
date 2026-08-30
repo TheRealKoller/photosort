@@ -149,6 +149,13 @@ export function RemoteCategoryClassificationSection({
         </p>
       )}
 
+      {runStatus === 'success' && (
+        <p className="text-sm text-text">
+          Diese Ergebnisse fließen erst durch einen (ggf. erneuten)
+          Kriterien-Bewertungs-Lauf in die Kategorie-Vorschläge ein.
+        </p>
+      )}
+
       {runStatus === 'running' && (
         <div className="flex w-full max-w-sm flex-col gap-1.5">
           <p className="text-sm text-text">
