@@ -523,7 +523,8 @@ class RemoteCategoryClassificationRun(Base):
     klassifizierung-mit-kostenschaetzung.md, decisions/0032, Punkt 2 Migration d) - Run-Tracking
     analog CriterionScoringRun/ScoringRun/ScanRun, aber bewusst OHNE scoring_run_id-FK: dieser Job
     schreibt ausschliesslich in photo_category_classifications/photo_fine_labels/fine_labels,
-    beruehrt weder cluster_key noch PhotoRanking direkt - kein 409-Staleness-Guard, kein Ausschuss-Gate-
+    beruehrt weder cluster_key noch PhotoRanking direkt - kein 409-Staleness-Guard, kein
+    Ausschuss-Gate-
     Erfordernis (anders als run_criterion_scoring)."""
 
     __tablename__ = "remote_category_classification_runs"

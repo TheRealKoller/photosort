@@ -241,7 +241,8 @@ class SubjectBoxLike(Protocol):
     """Schmale strukturelle Schnittstelle, die compute_golden_ratio_score fuer ein Kompositions-
     Subjekt braucht - sowohl FaceBoundingBox (classification.py) als auch ObjectDetection
     erfuellen sie, ohne dass criteria.py eine harte Abhaengigkeit auf den Erkennungscode braucht
-    (Reihenfolge der Spec 0038: Goldener Schnitt vor Tier implementiert). Als Nur-Lese-Properties (statt einfacher Attribut-Annotationen)
+    (Reihenfolge der Spec 0038: Goldener Schnitt vor Tier implementiert). Als Nur-Lese-
+    Properties (statt einfacher Attribut-Annotationen)
     deklariert, damit auch @dataclass(frozen=True)-Implementierungen (FaceBoundingBox) den
     Vertrag strukturell erfuellen - mypy --strict wertet einfache Attribut-Annotationen in einem
     Protocol als lese-/schreibbar, was ein unveraenderliches Dataclass-Feld nicht erfuellen kann."""

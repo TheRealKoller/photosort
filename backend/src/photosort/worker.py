@@ -18,13 +18,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
-from photosort.categories import CATEGORY_NOT_RECOGNIZED, LOCAL_CATEGORY_SIGNALS, resolve_category
+from photosort.categories import LOCAL_CATEGORY_SIGNALS, resolve_category
 from photosort.classification import (
     FaceBoundingBox,
     FaceDetectorLike,
     FaceLandmarkerLike,
-    ObjectDetectorLike,
     ObjectDetection,
+    ObjectDetectorLike,
     SceneClassifierLike,
     SceneLabel,
     build_face_detector,
@@ -1091,7 +1091,8 @@ def _compute_content_criteria(
     detect_person/detect_objects werden je HOECHSTENS einmal aufgerufen und fuer mehrere davon
     abhaengige Kriterien wiederverwendet (content_people+goldener_schnitt bzw. tier+fahrzeug+
     essen_trinken+goldener_schnitt seit specs/features/0289-feste-kategorien.md,
-    Akzeptanzkriterium der Spec: Wiederverwendungsnachweis statt Reimplementierung) - vermeidet einen zweiten, teuren detect()-Aufruf pro Foto und
+    Akzeptanzkriterium der Spec: Wiederverwendungsnachweis statt Reimplementierung) - vermeidet
+    einen zweiten, teuren detect()-Aufruf pro Foto und
     Detektortyp (ADR 0022, Performance-Ueberlegung). goldener_schnitt wird nur dann berechnet,
     wenn BEIDE zugrunde liegenden Detektionen (auch mit leerem Ergebnis) erfolgreich waren - ein
     fehlgeschlagener Detektor darf nicht stillschweigend als "kein Subjekt gefunden" interpretiert

@@ -108,7 +108,10 @@ class TestSchema:
                 _create_pre_migration_schema(connection)
                 _apply_upgrade(connection)
             inspector = inspect(engine)
-            columns = {col["name"] for col in inspector.get_columns("photo_category_classifications")}
+            columns = {
+                col["name"]
+                for col in inspector.get_columns("photo_category_classifications")
+            }
             pk = inspector.get_pk_constraint("photo_category_classifications")
         finally:
             engine.dispose()

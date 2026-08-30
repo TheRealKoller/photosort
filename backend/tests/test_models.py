@@ -8,10 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from photosort.models import (
-    FineLabel,
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    FineLabel,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,

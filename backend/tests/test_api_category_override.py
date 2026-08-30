@@ -3,16 +3,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import httpx
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.criteria import CATEGORY_UNRECOGNIZED
+from photosort.categories import CATEGORY_NOT_RECOGNIZED, CATEGORY_REGISTRY
 from photosort.models import (
-    CategoryLabel,
     CriterionScoringRun,
     CriterionSource,
     Photo,
-    PhotoCategoryDetection,
+    PhotoCategoryClassification,
     PhotoCriterionScore,
     PhotoRanking,
     PhotoScore,
@@ -22,7 +22,13 @@ from photosort.models import (
 )
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, Akzeptanzkriterium
-# "Manuelle Übernahme (Override) mit sofortiger Wirkung".
+# "Manuelle Übernahme (Override) mit sofortiger Wirkung" - mit specs/features/0289-feste-
+# kategorien.md ausdrueckliche VERHALTENSUMKEHR: die frueher hier getesteten 409-Faelle
+# ("category_key ist kein Kandidat dieses Fotos", "canonical_key eines ANDEREN Fotos") sind zu
+# POSITIVEN Faellen umgeschrieben, nicht geloescht - sonst bliebe die Aufhebung der
+# Kandidaten-Bindung untestiert, und eine Implementierung, die die alte Pruefung stehen laesst,
+# fiele nicht auf. An ihre Stelle tritt die STAERKERE Whitelist gegen das geschlossene 13er-Set
+# (422 statt 409).
 
 
 async def _make_project(session: AsyncSession) -> Project:
@@ -86,7 +92,7 @@ async def _add_ranking(
     photo: Photo,
     *,
     cluster_key: str = "cluster-0",
-    category_key: str = "landscape",
+    category_key: str = CATEGORY_NOT_RECOGNIZED,
     rank_score: float = 0.5,
     rank_position: int = 1,
 ) -> PhotoRanking:
@@ -104,28 +110,26 @@ async def _add_ranking(
     return ranking
 
 
-async def _add_category_label(
-    session: AsyncSession, *, canonical_key: str = "hund", display_name: str = "Hund"
-) -> CategoryLabel:
-    label = CategoryLabel(
-        canonical_key=canonical_key, display_name=display_name, embedding=[1.0, 0.0]
-    )
-    session.add(label)
-    await session.commit()
-    await session.refresh(label)
-    return label
-
-
-async def _add_category_detection(
-    session: AsyncSession, photo: Photo, label: CategoryLabel, *, confidence: float = 0.9
-) -> None:
+async def _add_classification(session: AsyncSession, photo: Photo, *categories: str) -> None:
     session.add(
-        PhotoCategoryDetection(
+        PhotoCategoryClassification(
             photo_id=photo.id,
-            category_label_id=label.id,
-            raw_label=label.display_name,
-            confidence=confidence,
+            category_key=categories[0] if categories else CATEGORY_NOT_RECOGNIZED,
+            detected_categories=list(categories),
             provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await session.commit()
+
+
+async def _add_content_people(session: AsyncSession, photo: Photo, value: float = 1.0) -> None:
+    session.add(
+        PhotoCriterionScore(
+            photo_id=photo.id,
+            criterion_key="content_people",
+            value=value,
+            source=CriterionSource.LOCAL_ML,
             computed_at=datetime.now(UTC),
         )
     )
@@ -141,7 +145,7 @@ class TestPutCategoryOverride:
         self, authenticated_api_client: httpx.AsyncClient
     ) -> None:
         response = await authenticated_api_client.put(
-            "/photos/999/category-override", json={"category_key": "hund"}
+            "/photos/999/category-override", json={"category_key": "tier"}
         )
         assert response.status_code == 404
 
@@ -153,14 +157,33 @@ class TestPutCategoryOverride:
         await _add_score(db_session, photo)
 
         response = await authenticated_api_client.put(
-            f"/photos/{photo.id}/category-override", json={"category_key": "hund"}
+            f"/photos/{photo.id}/category-override", json={"category_key": "tier"}
         )
 
         assert response.status_code == 409
 
-    async def test_returns_409_for_a_category_key_that_is_not_a_candidate_for_this_photo(
+    async def test_a_photo_with_a_classification_but_no_ranking_row_still_returns_409(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
+        # Edge Case 11 der Spec 0289: die Klassifikations-Zeile ersetzt die Rangfolgen-Zeile nicht.
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo)
+        await _add_classification(db_session, photo, "tier")
+
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": "tier"}
+        )
+
+        assert response.status_code == 409
+
+    async def test_accepts_a_set_key_that_is_not_a_candidate_for_this_photo(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """VERHALTENSUMKEHR (specs/features/0289-feste-kategorien.md): frueher `409`, jetzt `200` -
+        die manuelle Uebersteuerung bietet alle 13 Eintraege an, UNABHAENGIG davon, was fuer dieses
+        Foto erkannt wurde. Vorgaenger dieses Tests:
+        test_returns_409_for_a_category_key_that_is_not_a_candidate_for_this_photo."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         photo = await _make_photo(db_session, project, "a.jpg")
@@ -168,115 +191,182 @@ class TestPutCategoryOverride:
         await _add_ranking(db_session, run, photo)
 
         response = await authenticated_api_client.put(
-            f"/photos/{photo.id}/category-override", json={"category_key": "unbekannt"}
-        )
-
-        assert response.status_code == 409
-
-    async def test_returns_409_for_a_canonical_key_detected_on_a_different_photo(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Security-Muss-Kriterium (Spec-Abschnitt Security, Punkt 3): Cross-Photo-Isolation - ein
-        canonical_key, der real existiert (fuer ein ANDERES Foto erkannt), aber fuer DIESES Foto
-        keine photo_category_detections-Zeile hat, wird trotzdem abgelehnt."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        label = await _add_category_label(db_session)
-        other_photo = await _make_photo(db_session, project, "other.jpg")
-        await _add_score(db_session, other_photo)
-        await _add_category_detection(db_session, other_photo, label)
-
-        photo = await _make_photo(db_session, project, "a.jpg")
-        await _add_score(db_session, photo)
-        await _add_ranking(db_session, run, photo)
-
-        response = await authenticated_api_client.put(
-            f"/photos/{photo.id}/category-override", json={"category_key": "hund"}
-        )
-
-        assert response.status_code == 409
-
-    async def test_accepts_a_remote_canonical_key_detected_on_this_photo(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        label = await _add_category_label(db_session)
-        photo = await _make_photo(db_session, project, "a.jpg")
-        await _add_score(db_session, photo)
-        await _add_category_detection(db_session, photo, label)
-        await _add_ranking(db_session, run, photo, category_key=CATEGORY_UNRECOGNIZED)
-
-        response = await authenticated_api_client.put(
-            f"/photos/{photo.id}/category-override", json={"category_key": "hund"}
+            f"/photos/{photo.id}/category-override", json={"category_key": "kunst_kreatives"}
         )
 
         assert response.status_code == 200
-        assert response.json() == {"photo_id": photo.id, "category_key": "hund"}
-
+        assert response.json() == {"photo_id": photo.id, "category_key": "kunst_kreatives"}
         ranking = (
             await db_session.execute(
                 select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
             )
         ).scalar_one()
-        assert ranking.category_key == "hund"
+        assert ranking.category_key == "kunst_kreatives"
 
-        score = await db_session.get(PhotoScore, photo.id)
-        assert score is not None
-        assert score.category_override == "hund"
+    async def test_accepts_a_set_key_that_was_only_detected_on_a_different_photo(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Vorgaenger: test_returns_409_for_a_canonical_key_detected_on_a_different_photo. Die
+        frueher hier abgesicherte Cross-Photo-Isolation ist mit dem geschlossenen Set
+        gegenstandslos geworden - ein Set-Key ist kein fremder Fotobezug, und die Whitelist ist
+        strikt staerker als die abgeloeste foto-skopierte Existenzpruefung."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        other_photo = await _make_photo(db_session, project, "other.jpg")
+        await _add_score(db_session, other_photo)
+        await _add_classification(db_session, other_photo, "tier")
 
-    async def test_accepts_a_locally_qualifying_criterion_key(
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo)
+        await _add_ranking(db_session, run, photo)
+
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": "tier"}
+        )
+
+        assert response.status_code == 200
+
+    async def test_returns_422_for_a_key_outside_the_set(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         photo = await _make_photo(db_session, project, "a.jpg")
         await _add_score(db_session, photo)
-        db_session.add(
-            PhotoCriterionScore(
-                photo_id=photo.id,
-                criterion_key="content_people",
-                value=1.0,
-                source=CriterionSource.LOCAL_ML,
-                computed_at=datetime.now(UTC),
-            )
-        )
-        await db_session.commit()
-        await _add_ranking(db_session, run, photo, category_key=CATEGORY_UNRECOGNIZED)
+        await _add_ranking(db_session, run, photo)
 
         response = await authenticated_api_client.put(
-            f"/photos/{photo.id}/category-override", json={"category_key": "people"}
+            f"/photos/{photo.id}/category-override", json={"category_key": "einhorn"}
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize("legacy_key", ["unerkannt", "detail", "landscape", "people"])
+    async def test_returns_422_for_a_legacy_key_from_the_run_history(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        legacy_key: str,
+    ) -> None:
+        # Benannter Fall der Spec (Edge Case 10): ein Altwert aus der Laufhistorie wird NICHT
+        # stillschweigend akzeptiert.
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo)
+        await _add_ranking(db_session, run, photo)
+
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": legacy_key}
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize("key", ["  tier", "tier  ", "TIER", "Tier"])
+    async def test_does_not_normalize_the_incoming_key(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession, key: str
+    ) -> None:
+        # Security-Muss-Kriterium (Spec 0289, Punkt 2): reine Mitgliedschaftspruefung, KEINE
+        # Normalisierung (kein strip()/casefold()) - der Client schickt den Key exakt so zurueck,
+        # wie GET /categories ihn geliefert hat.
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo)
+        await _add_ranking(db_session, run, photo)
+
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": key}
+        )
+
+        assert response.status_code == 422
+
+    async def test_a_rejected_key_leaves_no_trace_in_the_database(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Die Pruefung greift VOR jeder Schreibaktion (Security-Abschnitt Punkt 2), nicht erst
+        # beim Bauen der Antwort.
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo)
+        await _add_ranking(db_session, run, photo, category_key="tier")
+
+        await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": "einhorn"}
+        )
+
+        score = await db_session.get(PhotoScore, photo.id)
+        assert score is not None
+        assert score.category_override is None
+        ranking = (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
+            )
+        ).scalar_one()
+        assert ranking.category_key == "tier"
+
+    async def test_not_recognized_is_a_valid_override_value(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Akzeptanzkriterium: "Nicht erkannt" ist in der manuellen Override-Auswahl waehlbar.
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo)
+        await _add_ranking(db_session, run, photo, category_key="tier")
+
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override",
+            json={"category_key": CATEGORY_NOT_RECOGNIZED},
         )
 
         assert response.status_code == 200
-        assert response.json()["category_key"] == "people"
+        score = await db_session.get(PhotoScore, photo.id)
+        assert score is not None
+        assert score.category_override == CATEGORY_NOT_RECOGNIZED
+
+    @pytest.mark.parametrize("key", list(CATEGORY_REGISTRY))
+    async def test_every_one_of_the_thirteen_set_entries_is_accepted(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession, key: str
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo)
+        await _add_ranking(db_session, run, photo, category_key="gegenstand")
+
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": key}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["category_key"] == key
 
     async def test_takes_effect_immediately_without_a_new_scoring_run(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
-        label = await _add_category_label(db_session)
         photo = await _make_photo(db_session, project, "a.jpg")
         await _add_score(db_session, photo)
-        await _add_category_detection(db_session, photo, label)
-        await _add_ranking(db_session, run, photo, category_key=CATEGORY_UNRECOGNIZED)
+        await _add_ranking(db_session, run, photo, category_key=CATEGORY_NOT_RECOGNIZED)
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
         )
         assert {item["ranking"]["category_key"] for item in response.json()["items"]} == {
-            CATEGORY_UNRECOGNIZED
+            CATEGORY_NOT_RECOGNIZED
         }
 
         await authenticated_api_client.put(
-            f"/photos/{photo.id}/category-override", json={"category_key": "hund"}
+            f"/photos/{photo.id}/category-override", json={"category_key": "tier"}
         )
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
         )
-        assert response.json()["items"][0]["ranking"]["category_key"] == "hund"
+        assert response.json()["items"][0]["ranking"]["category_key"] == "tier"
 
 
 class TestDeleteCategoryOverride:
@@ -301,49 +391,59 @@ class TestDeleteCategoryOverride:
 
         assert response.status_code == 204
 
-    async def test_clears_the_override_and_restores_the_automatically_derived_category(
+    async def test_clears_the_override_and_restores_the_derived_local_category(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
+        # Bestandstest, auf Set-Keys umgestellt: die Rekonstruktion nutzt DIESELBE Ableitung wie
+        # der Lauf (worker.py::derive_photo_category) - `content_people` bildet `menschen`.
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         photo = await _make_photo(db_session, project, "a.jpg")
-        await _add_score(db_session, photo, category_override="hund")
-        db_session.add(
-            PhotoCriterionScore(
-                photo_id=photo.id,
-                criterion_key="content_people",
-                value=1.0,
-                source=CriterionSource.LOCAL_ML,
-                computed_at=datetime.now(UTC),
-            )
-        )
-        await db_session.commit()
-        # Override wurde bereits auf "hund" gesetzt - die zugehoerige PhotoRanking-Zeile
-        # widerspiegelt das (wie nach einem echten PUT-Aufruf).
-        await _add_ranking(db_session, run, photo, category_key="hund")
+        await _add_score(db_session, photo, category_override="kunst_kreatives")
+        await _add_content_people(db_session, photo)
+        await _add_ranking(db_session, run, photo, category_key="kunst_kreatives")
 
         response = await authenticated_api_client.delete(f"/photos/{photo.id}/category-override")
 
         assert response.status_code == 204
-
         score = await db_session.get(PhotoScore, photo.id)
         assert score is not None
         assert score.category_override is None
+        ranking = (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
+            )
+        ).scalar_one()
+        assert ranking.category_key == "menschen"
+
+    async def test_the_reconstruction_also_takes_the_remote_candidates_into_account(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Lokal `menschen`, remote `sport_aktivitaet` - die Rekonstruktion muss BEIDE Zulieferer
+        # beruecksichtigen und ueber die Vorrangreihenfolge entscheiden (sport_aktivitaet gewinnt).
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo, category_override="gegenstand")
+        await _add_content_people(db_session, photo)
+        await _add_classification(db_session, photo, "sport_aktivitaet")
+        await _add_ranking(db_session, run, photo, category_key="gegenstand")
+
+        await authenticated_api_client.delete(f"/photos/{photo.id}/category-override")
 
         ranking = (
             await db_session.execute(
                 select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
             )
         ).scalar_one()
-        # content_people ist bei EINEM Kandidaten automatisch aktiv (100% Praesenz) -> "people".
-        assert ranking.category_key == "people"
+        assert ranking.category_key == "sport_aktivitaet"
 
-    async def test_reset_without_any_recognised_content_falls_back_to_unrecognized(
+    async def test_reset_without_any_recognised_content_falls_back_to_not_recognized(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        # specs/features/0217 AK5/AK9: ein verwaister Override auf einen Wert, den die Ableitung
-        # nie mehr erzeugt ("detail"), bleibt bis zur Ruecknahme bestehen - danach landet das Foto
-        # im expliziten "nicht erkannt"-Zustand statt in einer erfundenen Kategorie.
+        # Ein verwaister Override auf einen Altwert, den die Ableitung nie mehr erzeugt
+        # ("detail"), bleibt bis zur Ruecknahme bestehen - danach landet das Foto im expliziten
+        # "nicht erkannt"-Zustand statt in einer erfundenen Kategorie.
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         photo = await _make_photo(db_session, project, "a.jpg")
@@ -363,7 +463,7 @@ class TestDeleteCategoryOverride:
                 select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
             )
         ).scalar_one()
-        assert ranking.category_key == CATEGORY_UNRECOGNIZED
+        assert ranking.category_key == CATEGORY_NOT_RECOGNIZED
 
     async def test_is_idempotent_when_called_twice(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -371,8 +471,8 @@ class TestDeleteCategoryOverride:
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         photo = await _make_photo(db_session, project, "a.jpg")
-        await _add_score(db_session, photo, category_override="hund")
-        await _add_ranking(db_session, run, photo, category_key="hund")
+        await _add_score(db_session, photo, category_override="tier")
+        await _add_ranking(db_session, run, photo, category_key="tier")
 
         first = await authenticated_api_client.delete(f"/photos/{photo.id}/category-override")
         second = await authenticated_api_client.delete(f"/photos/{photo.id}/category-override")

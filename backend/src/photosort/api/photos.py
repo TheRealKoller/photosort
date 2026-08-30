@@ -25,7 +25,6 @@ from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,

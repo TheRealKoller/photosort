@@ -14,18 +14,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort import worker
 from photosort.label_embedding import LabelEmbedderLike
 from photosort.models import (
-    CategoryLabel,
     CloudVisionPhase,
+    FineLabel,
     Photo,
-    PhotoCategoryDetection,
+    PhotoCategoryClassification,
     PhotoCloudVisionError,
+    PhotoFineLabel,
     PhotoScore,
     Project,
     RatingStatus,
     RemoteCategoryClassificationRun,
     ScanStatus,
 )
-from photosort.remote_classification import CategoryLabelDetection
+from photosort.remote_classification import (
+    RemoteCategoryClassificationApiError,
+    RemoteClassification,
+)
 from photosort.thumbnails import display_path
 from photosort.worker import run_remote_category_classification, select_remote_category_candidates
 
@@ -110,40 +114,45 @@ def _failing_embedder_builder() -> NoReturn:
     raise RuntimeError("simulierter Modell-Ladefehler")
 
 
+_DEFAULT_CLASSIFICATION = RemoteClassification(categories=("tier",), fine_labels=("Hund",))
+
+
 class RecordingCategoryClient:
     def __init__(
         self,
-        detections: list[CategoryLabelDetection] | None = None,
+        classification: RemoteClassification | None = None,
         raise_error: bool = False,
     ) -> None:
-        self._detections = (
-            detections
-            if detections is not None
-            else [CategoryLabelDetection(label="Hund", confidence=0.9)]
+        self._classification = (
+            classification if classification is not None else _DEFAULT_CLASSIFICATION
         )
         self._raise_error = raise_error
-        self.calls: list[tuple[bytes, str]] = []
+        self.calls: list[tuple[bytes, str, int]] = []
         self.aclose_calls = 0
 
-    async def classify(self, image_bytes: bytes, mime_type: str) -> list[CategoryLabelDetection]:
-        self.calls.append((image_bytes, mime_type))
+    async def classify(
+        self, image_bytes: bytes, mime_type: str, photo_id: int
+    ) -> RemoteClassification:
+        self.calls.append((image_bytes, mime_type, photo_id))
         if self._raise_error:
             raise RuntimeError("simulierter Cloud-Fehler")
-        return self._detections
+        return self._classification
 
     async def aclose(self) -> None:
         self.aclose_calls += 1
 
 
 class PerPhotoCategoryClient:
-    """Liefert unterschiedliche Detections/Fehler je Aufrufindex - fuer Best-effort-
+    """Liefert unterschiedliche Ergebnisse/Fehler je Aufrufindex - fuer Best-effort-
     Isolationstests."""
 
-    def __init__(self, results: list[list[CategoryLabelDetection] | Exception]) -> None:
+    def __init__(self, results: list[RemoteClassification | Exception]) -> None:
         self._results = results
         self.calls = 0
 
-    async def classify(self, image_bytes: bytes, mime_type: str) -> list[CategoryLabelDetection]:
+    async def classify(
+        self, image_bytes: bytes, mime_type: str, photo_id: int
+    ) -> RemoteClassification:
         result = self._results[self.calls]
         self.calls += 1
         if isinstance(result, Exception):
@@ -157,19 +166,23 @@ class ConcurrencyTrackingCategoryClient:
         self.max_concurrent = 0
         self.call_count = 0
 
-    async def classify(self, image_bytes: bytes, mime_type: str) -> list[CategoryLabelDetection]:
+    async def classify(
+        self, image_bytes: bytes, mime_type: str, photo_id: int
+    ) -> RemoteClassification:
         self.call_count += 1
         self._active += 1
         self.max_concurrent = max(self.max_concurrent, self._active)
         try:
             await asyncio.sleep(0.01)
-            return [CategoryLabelDetection(label="Hund", confidence=0.9)]
+            return _DEFAULT_CLASSIFICATION
         finally:
             self._active -= 1
 
 
 class CancellingCategoryClient:
-    async def classify(self, image_bytes: bytes, mime_type: str) -> list[CategoryLabelDetection]:
+    async def classify(
+        self, image_bytes: bytes, mime_type: str, photo_id: int
+    ) -> RemoteClassification:
         raise asyncio.CancelledError("simulierter Abbruch")
 
 
@@ -194,7 +207,7 @@ async def test_consent_disabled_by_default_never_calls_the_client_builder(
     )
 
     assert run.status == ScanStatus.SUCCESS
-    detections = (await db_session.execute(select(PhotoCategoryDetection))).scalars().all()
+    detections = (await db_session.execute(select(PhotoFineLabel))).scalars().all()
     assert detections == []
 
 
@@ -284,15 +297,14 @@ async def test_already_classified_photos_are_skipped_on_a_repeat_run(
     already_classified = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, already_classified)
     _write_display_variant(tmp_path, already_classified)
-    label = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
-    db_session.add(label)
-    await db_session.flush()
+    # specs/features/0289-feste-kategorien.md: das Skip-Kriterium ist seit dieser Spec die
+    # 1:1-Klassifikations-Zeile, nicht mehr eine Feinlabel-Zeile - ein Foto mit Kategorie, aber
+    # ohne Feinlabel, gilt als erledigt.
     db_session.add(
-        PhotoCategoryDetection(
+        PhotoCategoryClassification(
             photo_id=already_classified.id,
-            category_label_id=label.id,
-            raw_label="Hund",
-            confidence=0.9,
+            category_key="tier",
+            detected_categories=["tier"],
             provider="anthropic",
             computed_at=datetime.now(UTC),
         )
@@ -317,9 +329,11 @@ async def test_already_classified_photos_are_skipped_on_a_repeat_run(
     assert len(client.calls) == 1
 
 
-async def test_a_successful_call_writes_one_to_three_detection_rows_unconditionally(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def _run_for_one_photo(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    classification: RemoteClassification,
+) -> tuple[Photo, RemoteCategoryClassificationRun]:
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
     await db_session.commit()
@@ -327,68 +341,134 @@ async def test_a_successful_call_writes_one_to_three_detection_rows_unconditiona
     await _add_score(db_session, photo)
     _write_display_variant(tmp_path, photo)
 
-    client = RecordingCategoryClient(
-        detections=[
-            CategoryLabelDetection(label="Hund", confidence=0.9),
-            CategoryLabelDetection(label="Strand", confidence=0.5),
-        ]
-    )
-
     run = await run_remote_category_classification(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: client,
+        build_client=lambda: RecordingCategoryClient(classification),
         build_embedder=_fake_embedder,
+    )
+    return photo, run
+
+
+async def test_a_successful_call_writes_exactly_one_classification_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    photo, run = await _run_for_one_photo(
+        db_session,
+        tmp_path,
+        RemoteClassification(categories=("landschaft", "menschen"), fine_labels=("Hund",)),
     )
 
     assert run.status == ScanStatus.SUCCESS
-    detections = (
-        await db_session.execute(
-            select(PhotoCategoryDetection).where(PhotoCategoryDetection.photo_id == photo.id)
-        )
-    ).scalars().all()
-    assert len(detections) == 2
     assert run.photos_processed == 1
+    rows = (
+        await db_session.execute(
+            select(PhotoCategoryClassification).where(
+                PhotoCategoryClassification.photo_id == photo.id
+            )
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+    # `menschen` gewinnt gegen `landschaft` (kleinere precedence) - die Zeile haelt das bereits
+    # AUFGELOESTE Ergebnis, nicht die Rohantwort.
+    assert rows[0].category_key == "menschen"
+    # `detected_categories` haelt die VALIDIERTE Kandidatenliste (Security-Muss-Kriterium: nie die
+    # Rohliste des Modells).
+    assert rows[0].detected_categories == ["landschaft", "menschen"]
 
 
-async def test_two_raw_labels_with_the_same_canonical_key_keep_the_higher_confidence(
+async def test_a_successful_call_writes_up_to_two_fine_label_rows(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    project = await _make_project(db_session)
-    project.cloud_vision_detection_enabled = True
-    await db_session.commit()
-    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
-    await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
-
-    # FakeLabelEmbedder liefert fuer JEDEN Text denselben Vektor -> "Hund" und "hund" (exakter
-    # Fast-Path) UND ein drittes, andersartiges Label wuerden alle auf denselben kanonischen
-    # Eintrag aufloesen, wenn sie normalisiert identisch sind. Hier bewusst zwei Roh-Label, die
-    # bereits ueber den exakten NFKC+casefold-Fast-Path zusammenfallen ("Hund"/"hund").
-    client = RecordingCategoryClient(
-        detections=[
-            CategoryLabelDetection(label="Hund", confidence=0.4),
-            CategoryLabelDetection(label="hund", confidence=0.9),
-        ]
-    )
-
-    run = await run_remote_category_classification(
+    photo, run = await _run_for_one_photo(
         db_session,
-        project,
-        cache_dir=tmp_path,
-        build_client=lambda: client,
-        build_embedder=_fake_embedder,
+        tmp_path,
+        RemoteClassification(categories=("tier",), fine_labels=("Hund", "Strand")),
     )
 
     assert run.status == ScanStatus.SUCCESS
-    detections = (
+    rows = (
         await db_session.execute(
-            select(PhotoCategoryDetection).where(PhotoCategoryDetection.photo_id == photo.id)
+            select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
         )
     ).scalars().all()
-    assert len(detections) == 1
-    assert detections[0].confidence == 0.9
+    assert {row.raw_label for row in rows} == {"Hund", "Strand"}
+
+
+async def test_fine_labels_are_written_even_when_the_category_is_not_recognized(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Direktes Akzeptanzkriterium der Spec 0289: Feinlabels werden AUCH DANN festgehalten, wenn
+    die Kategorie "Nicht erkannt" lautet - sie sind eigenstaendige Zusatzinformation, keine
+    Beigabe zu einer erfolgreichen Kategorisierung."""
+    photo, run = await _run_for_one_photo(
+        db_session,
+        tmp_path,
+        RemoteClassification(categories=(), fine_labels=("Fabelwesen",)),
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    classification = (
+        await db_session.execute(
+            select(PhotoCategoryClassification).where(
+                PhotoCategoryClassification.photo_id == photo.id
+            )
+        )
+    ).scalars().one()
+    assert classification.category_key == "nicht_erkannt"
+    assert classification.detected_categories == []
+
+    fine_labels = (
+        await db_session.execute(
+            select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+        )
+    ).scalars().all()
+    assert [row.raw_label for row in fine_labels] == ["Fabelwesen"]
+
+
+async def test_a_photo_without_fine_labels_gets_a_classification_row_anyway(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    photo, _ = await _run_for_one_photo(
+        db_session, tmp_path, RemoteClassification(categories=("tier",), fine_labels=())
+    )
+
+    assert (
+        await db_session.execute(
+            select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+        )
+    ).scalars().all() == []
+    assert (
+        await db_session.execute(
+            select(PhotoCategoryClassification).where(
+                PhotoCategoryClassification.photo_id == photo.id
+            )
+        )
+    ).scalars().one().category_key == "tier"
+
+
+async def test_two_fine_labels_with_the_same_canonical_key_write_only_one_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Zwei Roh-Label, die bereits ueber den exakten NFKC+casefold-Fast-Path zusammenfallen
+    # ("Hund"/"hund") - der UniqueConstraint(photo_id, fine_label_id) darf dabei nicht brechen.
+    photo, run = await _run_for_one_photo(
+        db_session,
+        tmp_path,
+        RemoteClassification(categories=("tier",), fine_labels=("Hund", "hund")),
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    rows = (
+        await db_session.execute(
+            select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+    # Erstnennung gewinnt (ein Konfidenz-Vergleich ist mit dem Wegfall der Konfidenzen
+    # gegenstandslos geworden).
+    assert rows[0].raw_label == "Hund"
 
 
 async def test_best_effort_error_isolation_does_not_abort_the_run(
@@ -405,7 +485,7 @@ async def test_best_effort_error_isolation_does_not_abort_the_run(
     _write_display_variant(tmp_path, succeeding_photo)
 
     client = PerPhotoCategoryClient(
-        [RuntimeError("boom"), [CategoryLabelDetection(label="Hund", confidence=0.9)]]
+        [RuntimeError("boom"), RemoteClassification(categories=("tier",), fine_labels=("Hund",))]
     )
 
     # Spec 0056/ADR 0034: genau ein WARNING-Record fuer das fehlgeschlagene Foto, keiner fuer das
@@ -420,7 +500,7 @@ async def test_best_effort_error_isolation_does_not_abort_the_run(
         )
 
     assert run.status == ScanStatus.SUCCESS
-    detections = (await db_session.execute(select(PhotoCategoryDetection))).scalars().all()
+    detections = (await db_session.execute(select(PhotoFineLabel))).scalars().all()
     assert len(detections) == 1
 
     assert len(caplog.records) == 1
@@ -522,8 +602,8 @@ async def test_repeated_remote_category_failures_upsert_the_same_error_row(
             self._message = message
 
         async def classify(
-            self, image_bytes: bytes, mime_type: str
-        ) -> list[CategoryLabelDetection]:
+            self, image_bytes: bytes, mime_type: str, photo_id: int
+        ) -> RemoteClassification:
             raise RuntimeError(self._message)
 
     await run_remote_category_classification(
@@ -564,8 +644,8 @@ async def test_remote_category_error_message_is_capped_at_500_characters(
 
     class _RaisingClient:
         async def classify(
-            self, image_bytes: bytes, mime_type: str
-        ) -> list[CategoryLabelDetection]:
+            self, image_bytes: bytes, mime_type: str, photo_id: int
+        ) -> RemoteClassification:
             raise RuntimeError(overlong_message)
 
     await run_remote_category_classification(
@@ -694,7 +774,7 @@ async def test_embedder_build_failure_leaves_the_run_successful_with_nothing_pro
 
     assert run.status == ScanStatus.SUCCESS
     assert client.calls == []
-    detections = (await db_session.execute(select(PhotoCategoryDetection))).scalars().all()
+    detections = (await db_session.execute(select(PhotoFineLabel))).scalars().all()
     assert detections == []
 
 
@@ -725,17 +805,17 @@ async def test_a_new_canonical_label_is_reused_across_two_projects(
         db_session,
         project_b,
         cache_dir=tmp_path,
-        # Gleicher normalisierter Text ("Hund") -> exakter Fast-Path, dieselbe category_labels-
+        # Gleicher normalisierter Text ("Hund") -> exakter Fast-Path, dieselbe fine_labels-
         # Zeile wird wiederverwendet statt einer zweiten Registry-Zeile (ADR 0032 Punkt 2).
         build_client=lambda: RecordingCategoryClient(),
         build_embedder=_fake_embedder,
     )
 
-    labels = (await db_session.execute(select(CategoryLabel))).scalars().all()
+    labels = (await db_session.execute(select(FineLabel))).scalars().all()
     assert len(labels) == 1
 
-    detections = (await db_session.execute(select(PhotoCategoryDetection))).scalars().all()
-    assert {d.photo_id for d in detections} == {photo_a.id, photo_b.id}
+    rows = (await db_session.execute(select(PhotoFineLabel))).scalars().all()
+    assert {row.photo_id for row in rows} == {photo_a.id, photo_b.id}
 
 
 async def test_select_remote_category_candidates_excludes_rejected_and_already_classified(
@@ -751,15 +831,11 @@ async def test_select_remote_category_candidates_excludes_rejected_and_already_c
     await _add_score(db_session, rejected, suggested_status=RatingStatus.REJECTED)
     already_classified = await _add_photo(db_session, project, "c.jpg", "etag-3")
     await _add_score(db_session, already_classified)
-    label = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
-    db_session.add(label)
-    await db_session.flush()
     db_session.add(
-        PhotoCategoryDetection(
+        PhotoCategoryClassification(
             photo_id=already_classified.id,
-            category_label_id=label.id,
-            raw_label="Hund",
-            confidence=0.9,
+            category_key="tier",
+            detected_categories=["tier"],
             provider="anthropic",
             computed_at=datetime.now(UTC),
         )
@@ -776,3 +852,65 @@ async def test_select_remote_category_candidates_returns_empty_list_for_no_photo
 ) -> None:
     project = await _make_project(db_session)
     assert await select_remote_category_candidates(db_session, project.id) == []
+
+
+async def test_a_structurally_invalid_response_skips_only_that_photo(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """specs/features/0289-feste-kategorien.md, Teststrategie 7: eine strukturell ungueltige
+    Antwort (fehlendes/nicht-listenfoermiges `categories`, kein JSON-Objekt, abgeschnittene
+    Antwort) laeuft ueber den bestehenden RemoteCategoryClassificationApiError-Pfad - das Foto
+    wird best-effort uebersprungen, die uebrigen Fotos werden weiterverarbeitet, der Lauf endet
+    regulaer."""
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    broken = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, broken)
+    _write_display_variant(tmp_path, broken)
+    intact = await _add_photo(db_session, project, "b.jpg", "etag-2")
+    await _add_score(db_session, intact)
+    _write_display_variant(tmp_path, intact)
+
+    client = PerPhotoCategoryClient(
+        [
+            RemoteCategoryClassificationApiError("fehlendes 'categories'-Feld"),
+            RemoteClassification(categories=("tier",), fine_labels=()),
+        ]
+    )
+
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda: client,
+        build_embedder=_fake_embedder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    rows = (await db_session.execute(select(PhotoCategoryClassification))).scalars().all()
+    assert [row.photo_id for row in rows] == [intact.id]
+
+
+async def test_a_second_run_does_not_create_a_second_classification_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo)
+
+    for _ in range(2):
+        run = await run_remote_category_classification(
+            db_session,
+            project,
+            cache_dir=tmp_path,
+            build_client=lambda: RecordingCategoryClient(),
+            build_embedder=_fake_embedder,
+        )
+        assert run.status == ScanStatus.SUCCESS
+
+    rows = (await db_session.execute(select(PhotoCategoryClassification))).scalars().all()
+    assert len(rows) == 1

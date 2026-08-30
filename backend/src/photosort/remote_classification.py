@@ -126,7 +126,8 @@ def _sanitize_label_text(raw: str) -> str:
     Zero-Width-Zeichen wie U+200B, Bidi-Overrides wie U+202E) und zieht Whitespace-Folgen zu einem
     einzelnen Leerzeichen zusammen. Steuerzeichen, die selbst Whitespace SIND (Zeilenumbruch,
     Tabulator, Wagenruecklauf), werden dabei durch ein Leerzeichen ersetzt statt ersatzlos
-    entfernt - sonst verschmoelzen zwei Woerter ueber einen Zeilenumbruch hinweg zu einem (`str.split()` behandelt auch NBSP
+    entfernt - sonst verschmoelzen zwei Woerter ueber einen Zeilenumbruch hinweg zu einem
+    (`str.split()` behandelt auch NBSP
     und andere Unicode-Leerzeichen als Whitespace); fuehrende/abschliessende Leerzeichen
     entfallen dabei mit.
 
