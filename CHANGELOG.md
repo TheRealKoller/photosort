@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/TheRealKoller/photosort/compare/v0.27.0...v0.27.1) (2026-08-30)
+
+
+### Bug Fixes
+
+* **scripts:** Board-Operationen melden einen bereits erreichten Zielzustand nicht mehr als Fehler (Spec 0278) ([#290](https://github.com/TheRealKoller/photosort/issues/290)) ([6f99315](https://github.com/TheRealKoller/photosort/commit/6f993156571207ada8512c36c68ebe89fa30582f))
+
 ## [0.27.0](https://github.com/TheRealKoller/photosort/compare/v0.26.1...v0.27.0) (2026-08-30)
 
 
