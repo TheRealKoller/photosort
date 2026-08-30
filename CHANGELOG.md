@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/TheRealKoller/photosort/compare/v0.26.1...v0.27.0) (2026-08-30)
+
+
+### Features
+
+* **frontend:** Design-System "Organic" aus dem Claude-Design-Mockup importieren (Spec 0285) ([#285](https://github.com/TheRealKoller/photosort/issues/285)) ([32aed69](https://github.com/TheRealKoller/photosort/commit/32aed693e25db389ee7d9995681693bdba8e5740))
+
 ## [0.26.1](https://github.com/TheRealKoller/photosort/compare/v0.26.0...v0.26.1) (2026-08-30)
 
 
