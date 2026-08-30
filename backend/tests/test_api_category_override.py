@@ -6,7 +6,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.criteria import CATEGORY_DETAIL
+from photosort.criteria import CATEGORY_UNRECOGNIZED
 from photosort.models import (
     CategoryLabel,
     CriterionScoringRun,
@@ -205,7 +205,7 @@ class TestPutCategoryOverride:
         photo = await _make_photo(db_session, project, "a.jpg")
         await _add_score(db_session, photo)
         await _add_category_detection(db_session, photo, label)
-        await _add_ranking(db_session, run, photo, category_key=CATEGORY_DETAIL)
+        await _add_ranking(db_session, run, photo, category_key=CATEGORY_UNRECOGNIZED)
 
         response = await authenticated_api_client.put(
             f"/photos/{photo.id}/category-override", json={"category_key": "hund"}
@@ -242,7 +242,7 @@ class TestPutCategoryOverride:
             )
         )
         await db_session.commit()
-        await _add_ranking(db_session, run, photo, category_key=CATEGORY_DETAIL)
+        await _add_ranking(db_session, run, photo, category_key=CATEGORY_UNRECOGNIZED)
 
         response = await authenticated_api_client.put(
             f"/photos/{photo.id}/category-override", json={"category_key": "people"}
@@ -260,13 +260,13 @@ class TestPutCategoryOverride:
         photo = await _make_photo(db_session, project, "a.jpg")
         await _add_score(db_session, photo)
         await _add_category_detection(db_session, photo, label)
-        await _add_ranking(db_session, run, photo, category_key=CATEGORY_DETAIL)
+        await _add_ranking(db_session, run, photo, category_key=CATEGORY_UNRECOGNIZED)
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
         )
         assert {item["ranking"]["category_key"] for item in response.json()["items"]} == {
-            CATEGORY_DETAIL
+            CATEGORY_UNRECOGNIZED
         }
 
         await authenticated_api_client.put(

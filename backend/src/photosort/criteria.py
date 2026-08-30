@@ -567,7 +567,22 @@ def compute_freiraum_score(orientation: FaceOrientation | None) -> float:
     return max(0.0, min(1.0, looking_space / total_space))
 
 
-CATEGORY_DETAIL = "detail"
+# Catch-all-Key fuer Fotos, die kein aktives Kriterium erfuellen (specs/features/0217, ADR 0046
+# Punkt 4) - ersetzt den frueheren CATEGORY_DETAIL ("detail"). "detail" war nie eine Erkennung,
+# sondern der Auffangkorb, wurde in der Kuratierungsansicht aber wie eine Inhaltsaussage
+# dargestellt; der neue Key benennt den Zustand als das, was er ist. Anzeigename "Nicht erkannt"
+# ueber CATEGORY_DISPLAY_NAME_OVERRIDES (frontend/src/utils/categoryLabels.ts). "detail" bleibt
+# ausschliesslich als Remote-Schlagwort oder manuell gesetzter category_override moeglich, wird
+# aber von keinem Codepfad mehr automatisch vergeben.
+CATEGORY_UNRECOGNIZED = "unerkannt"
+
+# Suffix zur eindeutigen Absetzung eines Remote-Keys, der auf den reservierten Catch-all-Key
+# kollidieren wuerde (Security-Abschnitt der Spec 0217, Punkt 2): `canonical_key`-Slugs aus frei
+# formulierten LLM-Ausgaben leben im selben Namensraum wie CATEGORY_UNRECOGNIZED - ein
+# Remote-Label "Unerkannt" wuerde sonst echte Erkennungen ununterscheidbar in den Auffang-
+# Abschnitt mischen und dessen Aussage entwerten (durch den Spezifitaets-Vorrang jetzt sogar
+# bevorzugt). Slug-sicher ([a-z0-9_]), deterministisch, kein zusaetzlicher Zustand.
+_RESERVED_CATEGORY_KEY_SUFFIX = "_remote"
 
 # Anteil der Kandidaten-Fotos eines Laufs, ab dem ein category_eligible-Kriterium als "aktiv" gilt
 # (ADR 0023, Punkt 2) - 15%, hoch genug um reines Rauschen (2-3 Zufallstreffer) in einem
@@ -683,16 +698,20 @@ def derive_category_key(
     Kriterien gleichzeitig (Wert >= der jeweiligen category_presence_threshold), gewinnt der
     hoechste normierte Score; bei exakt gleichem Score entscheidet die alphabetische Reihenfolge
     des VOLLEN (inkl. "remote:"-Praefix) criterion_key (deterministisch, testbar). Kein erfuelltes
-    aktives Kriterium -> Catch-all CATEGORY_DETAIL. category_key wird generisch aus dem
+    aktives Kriterium -> Catch-all CATEGORY_UNRECOGNIZED. category_key wird generisch aus dem
     gewinnenden criterion_key gebildet (`removeprefix("content_")`, bzw. symmetrisch
     `removeprefix("remote:")` fuer dynamische Keys, ADR 0032 Punkt 1) - liefert fuer
-    Bestandskriterien identische Werte wie bisher ("people"/"landscape"), fuer tier/gebaeude/
+    Bestandskriterien identische Werte wie bisher ("people"), fuer tier/gebaeude/landschaft/
     Remote-Label automatisch die richtigen Keys, ohne manuelles Mapping (ADR 0023 Punkt 4).
 
     `dynamic_keys` (specs/features/0055, ADR 0032 Punkt 1): Pseudo-Keys aus `active_criteria`, die
     NICHT in CRITERIA_REGISTRY stehen - werden gegen DYNAMIC_LABEL_PRESENCE_THRESHOLD statt einer
     registrierten category_presence_threshold geprueft. Default `frozenset()` - bestehende
-    Aufrufer/Tests ohne dynamic_keys bleiben unveraendert."""
+    Aufrufer/Tests ohne dynamic_keys bleiben unveraendert.
+
+    specs/features/0217, ADR 0046 Punkte 2/4: die Auswahl folgt seit dieser Spec dem Schluessel
+    `(-specificity, -score, key)`, und der Catch-all-Key ist ein reservierter Wert (siehe
+    _RESERVED_CATEGORY_KEY_SUFFIX)."""
     qualifying: list[str] = []
     for criterion_key in active_criteria:
         if criterion_key in dynamic_keys:
@@ -707,7 +726,7 @@ def derive_category_key(
             qualifying.append(criterion_key)
 
     if not qualifying:
-        return CATEGORY_DETAIL
+        return CATEGORY_UNRECOGNIZED
 
     # specs/features/0217, ADR 0046 Punkt 2: hoechste Spezifitaet zuerst, erst INNERHALB derselben
     # Stufe der hoechste normierte Score, dann alphabetisch nach dem vollen criterion_key. Vorher
@@ -722,5 +741,12 @@ def derive_category_key(
         ),
     )
     if winner.startswith("remote:"):
-        return winner.removeprefix("remote:")
+        category_key = winner.removeprefix("remote:")
+        # Security-Abschnitt der Spec 0217, Punkt 2: ein Remote-Label, dessen canonical_key auf
+        # den reservierten Catch-all-Key faellt, wird eindeutig abgesetzt statt mit ihm
+        # zusammenzufallen - sonst mischten sich echte Erkennungen ununterscheidbar in den
+        # "Nicht erkannt"-Abschnitt.
+        if category_key == CATEGORY_UNRECOGNIZED:
+            return f"{category_key}{_RESERVED_CATEGORY_KEY_SUFFIX}"
+        return category_key
     return winner.removeprefix("content_")

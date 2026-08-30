@@ -16,10 +16,10 @@ from photosort.classification import (
 )
 from photosort.criteria import (
     ARCHITECTURE_CATEGORIES,
-    CATEGORY_DETAIL,
     CATEGORY_SPECIFIC_MIN_PHOTOS,
     CATEGORY_SPECIFICITY_CONTENT,
     CATEGORY_SPECIFICITY_NAMED,
+    CATEGORY_UNRECOGNIZED,
     CRITERIA_REGISTRY,
     DYNAMIC_LABEL_PRESENCE_THRESHOLD,
     FREIRAUM_YAW_DEADZONE_DEGREES,
@@ -652,25 +652,25 @@ class TestDeriveCategoryKey:
     def test_no_landscape_label_without_people_falls_back_to_the_catch_all(self) -> None:
         values = {"content_people": 0.0, "landschaft": 0.0}
         active = frozenset({"content_people", "landschaft"})
-        assert derive_category_key(values, active) == CATEGORY_DETAIL
+        assert derive_category_key(values, active) == CATEGORY_UNRECOGNIZED
 
     def test_a_high_content_landscape_value_alone_never_forms_a_category(self) -> None:
         # AK1 der Spec 0217: content_landscape ist strukturell nicht mehr kategorie-faehig - ein
         # texturarmes Bild ohne Landschaftsmotiv landet im Catch-all, nie in "landscape".
         values = {"content_landscape": 0.95}
         active = frozenset({"content_landscape", "landschaft"})
-        assert derive_category_key(values, active) == CATEGORY_DETAIL
+        assert derive_category_key(values, active) == CATEGORY_UNRECOGNIZED
 
     def test_missing_criteria_falls_back_to_detail_without_crashing(self) -> None:
         # Best-effort-Fall: beide Inhalts-Kriterien fuer dieses Foto konnten nicht berechnet
         # werden (z.B. fehlende display-Cache-Datei) - die Kette darf nicht crashen.
-        assert derive_category_key({}, frozenset({"content_people"})) == CATEGORY_DETAIL
+        assert derive_category_key({}, frozenset({"content_people"})) == CATEGORY_UNRECOGNIZED
 
     def test_no_active_categories_at_all_falls_back_to_detail(self) -> None:
         # Kein Kriterium im Lauf erreichte die 15%-Haeufigkeitsschwelle - jedes Foto landet im
         # Catch-all, unabhaengig von den einzelnen Kriterien-Werten.
         values = {"content_people": 1.0, "landschaft": 1.0}
-        assert derive_category_key(values, frozenset()) == CATEGORY_DETAIL
+        assert derive_category_key(values, frozenset()) == CATEGORY_UNRECOGNIZED
 
     def test_highest_score_wins_among_several_active_criteria(self) -> None:
         # tier (0.4) schlaegt gebaeude (0.2), obwohl content_people nicht erfuellt ist -
@@ -696,7 +696,7 @@ class TestDeriveCategoryKey:
         # nur weil es das aktivste unter den Werten waere.
         values = {"tier": 0.001, "content_people": 0.0}
         active = frozenset({"tier", "content_people"})
-        assert derive_category_key(values, active) == CATEGORY_DETAIL
+        assert derive_category_key(values, active) == CATEGORY_UNRECOGNIZED
 
 
 class TestDeriveActiveCategoriesDynamicKeys:
@@ -787,7 +787,7 @@ class TestDeriveCategoryKeyDynamicKeys:
         values = {"remote:hund": 0.001}
         active = frozenset({"remote:hund"})
         result = derive_category_key(values, active, dynamic_keys=frozenset({"remote:hund"}))
-        assert result == CATEGORY_DETAIL
+        assert result == CATEGORY_UNRECOGNIZED
 
     def test_tie_break_is_alphabetical_on_the_full_prefixed_key(self) -> None:
         # Tie-Break innerhalb DERSELBEN Spezifitaets-Stufe (zwei Remote-Keys, beide NAMED) bei
@@ -894,6 +894,28 @@ class TestDeriveCategoryKeySpecificity:
             derive_category_key(values, active, dynamic_keys=frozenset({"remote:hund"}))
             == "landmark"
         )
+
+    def test_photo_without_any_fulfilled_criterion_lands_in_the_unrecognized_catch_all(
+        self,
+    ) -> None:
+        # AK5/AK6 der Spec 0217: der Catch-all heisst "unerkannt", "detail" wird nicht mehr
+        # automatisch vergeben.
+        assert CATEGORY_UNRECOGNIZED == "unerkannt"
+        assert derive_category_key({}, frozenset({"tier"})) == "unerkannt"
+
+    def test_a_remote_label_slugified_to_the_catch_all_key_does_not_collide_with_it(
+        self,
+    ) -> None:
+        # Security-Abschnitt der Spec 0217, Punkt 2: ein Remote-Label "Unerkannt" ergaebe
+        # canonical_key "unerkannt" - es wird eindeutig abgesetzt, statt echte Erkennungen in den
+        # Auffang-Abschnitt zu mischen.
+        values = {"remote:unerkannt": 0.9}
+        active = frozenset({"remote:unerkannt"})
+        result = derive_category_key(
+            values, active, dynamic_keys=frozenset({"remote:unerkannt"})
+        )
+        assert result != CATEGORY_UNRECOGNIZED
+        assert result.startswith(CATEGORY_UNRECOGNIZED)
 
     def test_a_named_key_below_its_own_presence_threshold_does_not_win(self) -> None:
         # Spezifitaet hebt die Presence-Pruefung des Fotos NICHT auf: landmark liegt unter seiner

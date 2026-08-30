@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import worker
-from photosort.criteria import CATEGORY_DETAIL
+from photosort.criteria import CATEGORY_UNRECOGNIZED
 from photosort.landmark import LandmarkApiError, LandmarkDetection
 from photosort.models import (
     CategoryLabel,
@@ -1666,7 +1666,7 @@ async def test_identical_per_photo_tier_score_lands_in_different_categories_depe
     }
     # Dasselbe Marker-Foto (identischer tier-Score) landet diesmal NICHT in "tier", weil die
     # Haeufigkeitsschwelle in DIESEM Lauf nicht erreicht wird - Catch-all "detail".
-    assert diluted_rankings[diluted_photos[0].id] == CATEGORY_DETAIL
+    assert diluted_rankings[diluted_photos[0].id] == CATEGORY_UNRECOGNIZED
 
 
 async def test_existing_behavior_is_unchanged_when_frequency_threshold_is_still_met(
@@ -2846,7 +2846,7 @@ async def test_no_remote_labels_behaves_like_before_the_merge_was_introduced(
             select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
         )
     ).scalar_one()
-    assert ranking.category_key == CATEGORY_DETAIL
+    assert ranking.category_key == CATEGORY_UNRECOGNIZED
 
 
 async def test_category_override_wins_over_the_automatically_derived_category_key(
