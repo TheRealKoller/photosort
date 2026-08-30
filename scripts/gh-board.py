@@ -41,6 +41,11 @@ STATUS_FIELD_NAME = "Status"
 # Abschnitt 4).
 STATUS_VALUES = ("Unrefined", "Ready", "Todo", "In Progress", "Review", "Done")
 
+PRIORITY_FIELD_NAME = "Priorität"
+# First-write-wins-Feld (ADR 0044): Startwert einer Empfehlung, danach ausschliesslich manuell
+# von Daniel im Board gepflegt - kein Wert wird von hier aus je wieder ueberschrieben.
+PRIORITY_VALUES = ("Hoch", "Mittel", "Niedrig")
+
 STORY_TYPE_LABELS = {"idee": "idee", "bug": "bug"}
 LABEL_PROVISIONING = {
     "idee": {
@@ -139,6 +144,7 @@ class GhBoard:
         self._run = run
         self._project: dict[str, Any] | None = None
         self._status_field: dict[str, Any] | None = None
+        self._priority_field: dict[str, Any] | None = None
         self._items: list[dict[str, Any]] | None = None
 
     # -- Primitive ------------------------------------------------------------------------
@@ -204,39 +210,47 @@ class GhBoard:
                 )
         return self._project
 
+    def _resolve_field(self, field_name: str) -> dict[str, Any]:
+        """Loest ein Board-Feld samt Options-IDs ueber `gh project field-list` auf. Legt es
+        bewusst NICHT an - eine geaenderte Optionsliste ist seit ADR 0030, Abschnitt 3, ein
+        einmaliger manueller Schritt (fuer die Prioritaet ebenso, ADR 0044 Abschnitt 3)."""
+        project = self.project()
+        data = self._run_json(
+            [
+                "gh",
+                "project",
+                "field-list",
+                str(project["number"]),
+                "--owner",
+                self._owner,
+                "--format",
+                "json",
+            ]
+        )
+        for field in data.get("fields", []):
+            if field.get("name") == field_name:
+                return field
+        raise BoardError(f"Das Board {self._project_title!r} hat kein Feld {field_name!r}.")
+
     def status_field(self) -> dict[str, Any]:
-        """Loest das Statusfeld samt Options-IDs auf. Legt es bewusst NICHT an - eine geaenderte
-        Optionsliste ist seit ADR 0030, Abschnitt 3, ein einmaliger manueller Schritt."""
         if self._status_field is None:
-            project = self.project()
-            data = self._run_json(
-                [
-                    "gh",
-                    "project",
-                    "field-list",
-                    str(project["number"]),
-                    "--owner",
-                    self._owner,
-                    "--format",
-                    "json",
-                ]
-            )
-            for field in data.get("fields", []):
-                if field.get("name") == STATUS_FIELD_NAME:
-                    self._status_field = field
-                    break
-            else:
-                raise BoardError(
-                    f"Das Board {self._project_title!r} hat kein Feld {STATUS_FIELD_NAME!r}."
-                )
+            self._status_field = self._resolve_field(STATUS_FIELD_NAME)
         return self._status_field
 
+    def priority_field(self) -> dict[str, Any]:
+        if self._priority_field is None:
+            self._priority_field = self._resolve_field(PRIORITY_FIELD_NAME)
+        return self._priority_field
+
     def _option_id(self, status: str) -> str:
-        options = {o["name"]: o["id"] for o in self.status_field().get("options", [])}
-        option_id = options.get(status)
+        return self._option_id_for(self.status_field(), STATUS_FIELD_NAME, status)
+
+    def _option_id_for(self, field: dict[str, Any], field_name: str, value: str) -> str:
+        options = {o["name"]: o["id"] for o in field.get("options", [])}
+        option_id = options.get(value)
         if option_id is None:
             raise BoardError(
-                f"Das Board-Feld {STATUS_FIELD_NAME!r} hat keine Option fuer {status!r} "
+                f"Das Board-Feld {field_name!r} hat keine Option fuer {value!r} "
                 f"(vorhanden: {sorted(options)}). Die Feld-Optionen wurden vermutlich manuell "
                 "veraendert."
             )
@@ -301,6 +315,40 @@ class GhBoard:
         # geschriebenen Feldnamen (z.B. {"status": "Ready"}), nicht unter der Options-Id.
         value = self.find_item(issue_number).get(STATUS_FIELD_NAME.lower())
         return str(value) if value not in (None, "") else None
+
+    def set_priority(self, issue_number: int, priority: str) -> None:
+        """Unbedingtes Schreiben, analog `set_status`. Der first-write-wins-Vertrag lebt in
+        `set_priority_if_unset`, nicht hier - diese Methode schreibt immer."""
+        item = self.find_item(issue_number)
+        self._run_text(
+            [
+                "gh",
+                "project",
+                "item-edit",
+                "--id",
+                str(item["id"]),
+                "--project-id",
+                str(self.project()["id"]),
+                "--field-id",
+                str(self.priority_field()["id"]),
+                "--single-select-option-id",
+                self._option_id_for(self.priority_field(), PRIORITY_FIELD_NAME, priority),
+            ]
+        )
+
+    def get_priority(self, issue_number: int) -> str | None:
+        value = self.find_item(issue_number).get(PRIORITY_FIELD_NAME.lower())
+        return str(value) if value not in (None, "") else None
+
+    def set_priority_if_unset(self, issue_number: int, priority: str) -> tuple[bool, str]:
+        """First-write-wins-Kern (ADR 0044, Abschnitt 2): ist das Feld bereits gesetzt - gleich ob
+        durch einen frueheren `refinement`-Lauf oder eine manuelle Board-Aenderung Daniels - wird
+        NICHT geschrieben, und der VORHANDENE (nicht der angefragte) Wert wird zurueckgegeben."""
+        existing = self.get_priority(issue_number)
+        if existing is not None:
+            return False, existing
+        self.set_priority(issue_number, priority)
+        return True, priority
 
     def close_issue(self, issue_number: int) -> None:
         self._run_text(["gh", "issue", "close", str(issue_number)])
@@ -424,6 +472,17 @@ def cmd_set_status(board: GhBoard, *, issue_number: int, status: str) -> dict[st
     return {"issue_number": issue_number, "status": status}
 
 
+def cmd_set_priority(board: GhBoard, *, issue_number: int, priority: str) -> dict[str, Any]:
+    """First-write-wins (ADR 0044) - Gegenstueck zu `cmd_set_status`, das unbedingt ueberschreibt.
+    Die Validierung laeuft bewusst vor jedem Board-Zugriff (auch vor dem lesenden)."""
+    if priority not in PRIORITY_VALUES:
+        raise BoardError(
+            f"Unbekannte Prioritaet {priority!r} (erwartet einen von {list(PRIORITY_VALUES)})."
+        )
+    changed, resolved_priority = board.set_priority_if_unset(issue_number, priority)
+    return {"issue_number": issue_number, "priority": resolved_priority, "changed": changed}
+
+
 def cmd_show_status(board: GhBoard, *, issue_number: int) -> dict[str, Any]:
     return {"issue_number": issue_number, "status": board.get_status(issue_number)}
 
@@ -525,6 +584,12 @@ def build_parser() -> argparse.ArgumentParser:
     set_status.add_argument("--issue", type=int, required=True)
     set_status.add_argument("--status", required=True)
 
+    set_priority = subparsers.add_parser(
+        "set-priority", help="Board-Prioritaet first-write-wins setzen."
+    )
+    set_priority.add_argument("--issue", type=int, required=True)
+    set_priority.add_argument("--priority", required=True)
+
     show_status = subparsers.add_parser("show-status", help="Board-Status lesen (rein lesend).")
     show_status.add_argument("--issue", type=int, required=True)
 
@@ -566,6 +631,8 @@ def _dispatch(args: argparse.Namespace, board: GhBoard, repo_root: Path) -> dict
         return cmd_set_body(board, issue_number=args.issue, body=_read_body_file(args.body_file))
     if args.command == "set-status":
         return cmd_set_status(board, issue_number=args.issue, status=args.status)
+    if args.command == "set-priority":
+        return cmd_set_priority(board, issue_number=args.issue, priority=args.priority)
     if args.command == "show-status":
         return cmd_show_status(board, issue_number=args.issue)
     if args.command == "finalize":

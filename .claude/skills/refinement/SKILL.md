@@ -100,15 +100,16 @@ Als <Rolle> möchte ich <Fähigkeit>, damit <Nutzen>.
 ...
 ```
 
-Lege an dieser Stelle verpflichtend eine finale Prioritäts-**Empfehlung** (Hoch/Mittel/Niedrig) fest — ausgehend von der vorläufigen Empfehlung aus Schritt 2, jetzt mit deutlich mehr Kontext (Code-/Spec-Recherche, Devil's Advocate). Diese Empfehlung nennst du Daniel; die Priorität pflegt er selbst direkt im GitHub-Project-Board (es gibt keine dateibasierte Roadmap mehr, und kein Werkzeug schreibt das Prioritäts-Feld).
+Lege an dieser Stelle verpflichtend eine finale Prioritäts-**Empfehlung** (Hoch/Mittel/Niedrig) fest — ausgehend von der vorläufigen Empfehlung aus Schritt 2, jetzt mit deutlich mehr Kontext (Code-/Spec-Recherche, Devil's Advocate). Diese Empfehlung wird direkt als Board-Startwert gesetzt (first-write-wins, siehe unten) — nicht mehr nur als Chat-Hinweis an Daniel.
 
-Schreib den Issue-Body und den Status per `scripts/gh-board.py` (siehe Skill `github-board`) — Body und Status sind zwei getrennte Aufrufe:
+Schreib Issue-Body, Priorität und Status per `scripts/gh-board.py` (siehe Skill `github-board`) — drei getrennte Aufrufe in dieser Reihenfolge:
 
 ```bash
 python3 scripts/gh-board.py set-body --issue <NNN> --body-file <pfad-zum-neuen-body>
+python3 scripts/gh-board.py set-priority --issue <NNN> --priority <Hoch|Mittel|Niedrig>
 python3 scripts/gh-board.py set-status --issue <NNN> --status Ready
 ```
 
-Erwartete Ergebnisse: `{"issue_number": NNN}` bzw. `{"issue_number": NNN, "status": "Ready"}`. Ein `{"error": "..."}` unverändert an Daniel weitergeben und den zweiten Aufruf dann nicht ausführen.
+Erwartete Ergebnisse: `{"issue_number": NNN}` bzw. `{"issue_number": NNN, "priority": WERT, "changed": true|false}` bzw. `{"issue_number": NNN, "status": "Ready"}`. `set-priority` ist first-write-wins: War das Board-Feld "Priorität" bereits gesetzt (z.B. durch eine frühere Nachschärfung oder eine manuelle Board-Änderung Daniels), bleibt der vorhandene Wert unverändert (`changed: false`) — deine Empfehlung wird dann nicht überschrieben. Ein `{"error": "..."}` bei einem der drei Aufrufe unverändert an Daniel weitergeben und den/die nachfolgenden Aufrufe dann nicht ausführen — der Status-Übergang auf `Ready` bleibt bewusst der letzte Schritt, damit ein gescheitertes `set-priority` sichtbar "noch nicht fertig geschärft" bedeutet, statt fälschlich als `Ready` zu erscheinen.
 
-Fasse am Ende kurz zusammen: Issue-Nummer, Titel, deine Prioritäts-Empfehlung (mit dem Hinweis, dass Daniel sie im Board setzt), und dass Daniel bei Bedarf `spec-writer` mit "setz Story #NNN um" aufrufen kann, sobald die technische Umsetzung ansteht.
+Fasse am Ende kurz zusammen: Issue-Nummer, Titel, deine Prioritäts-Empfehlung samt Angabe, ob sie neu gesetzt wurde oder wegen eines bereits vorhandenen Werts unverändert blieb (`changed`-Feld), und dass Daniel bei Bedarf `spec-writer` mit "setz Story #NNN um" aufrufen kann, sobald die technische Umsetzung ansteht.
