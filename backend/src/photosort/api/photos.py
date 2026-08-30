@@ -121,12 +121,17 @@ class CriterionScoreOut(BaseModel):
     (specs/features/0040-bewertungsdetails-info-popover.md) - exponiert die seit Spec 0037
     bereits vorhandene, aber bisher nicht ueber die API sichtbare `PhotoCriterionScore`-Tabelle.
     `display_name` kommt aus criteria.py::CRITERIA_REGISTRY (Fallback auf `criterion_key`, falls
-    ein DB-Wert nicht im Register steht - defensiv gegen Registry-/Daten-Drift)."""
+    ein DB-Wert nicht im Register steht - defensiv gegen Registry-/Daten-Drift). `category_eligible`
+    spiegelt dasselbe Registry-Attribut (Fallback False) und ist die alleinige Grundlage der
+    Frontend-Gliederung in die Bloecke "Qualitaet"/"Kategorien"
+    (specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md,
+    Architektur-Entscheidung 1) - bewusst kein zweites, redundantes Anzeige-Attribut."""
 
     criterion_key: str
     display_name: str
     value: float
     source: CriterionSource
+    category_eligible: bool
 
 
 class RemoteCategoryLabelOut(BaseModel):
@@ -312,7 +317,8 @@ def _criterion_scores_out(photo: Photo) -> list[CriterionScoreOut]:
     """Sortiert die vorhandenen PhotoCriterionScore-Zeilen des Fotos nach CRITERIA_REGISTRY-
     Reihenfolge (Akzeptanzkriterium 7 der Spec); Zeilen, deren criterion_key nicht in der
     Registry steht (Registry-/Daten-Drift), landen ans Ende, sortiert nach ihrem eigenen Key fuer
-    ein deterministisches Ergebnis, und bekommen den rohen Key als display_name-Fallback. Fehlt
+    ein deterministisches Ergebnis, und bekommen den rohen Key als display_name-Fallback sowie
+    `category_eligible=False` (identisch zum Registry-Default des Attributs). Fehlt
     umgekehrt ein Registry-Kriterium in der DB, taucht es einfach nicht auf (kein Platzhalter,
     Akzeptanzkriterium 8)."""
     registry_order = {key: index for index, key in enumerate(CRITERIA_REGISTRY)}
@@ -330,6 +336,11 @@ def _criterion_scores_out(photo: Photo) -> list[CriterionScoreOut]:
             ),
             value=s.value,
             source=s.source,
+            category_eligible=(
+                CRITERIA_REGISTRY[s.criterion_key].category_eligible
+                if s.criterion_key in CRITERIA_REGISTRY
+                else False
+            ),
         )
         for s in sorted_scores
     ]
