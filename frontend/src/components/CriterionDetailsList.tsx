@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 import type { CategoryCandidateOut, CategoryKey, CriterionScoreOut, RankingOut, SuggestionOut } from '../api/types'
 import { formatCategoryKey, formatProviderLabel } from '../utils/categoryLabels'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
@@ -41,6 +43,32 @@ function formatCriterionPercent(value: number): string {
   return `${Math.round(value * 100)}%`
 }
 
+// specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md,
+// Architektur-Entscheidung 1: die Block-Zuordnung folgt AUSSCHLIESSLICH dem Registry-Flag
+// `category_eligible` aus der API-Antwort - hier wird bewusst KEINE Key-Liste gepflegt, sonst
+// liefen Backend-Registry und Frontend beim naechsten neuen Kriterium auseinander. Bewusst
+// ordnungserhaltend (zweimal `filter`, kein Sortieren): die Reihenfolge innerhalb eines Blocks
+// bleibt die vom Backend gelieferte Registry-Reihenfolge (Akzeptanzkriterium 5). Nicht
+// exportiert - die Aufteilung ist ein Implementierungsdetail dieser Komponente.
+function partitionByCategoryEligibility(criterionScores: CriterionScoreOut[]): {
+  quality: CriterionScoreOut[]
+  categories: CriterionScoreOut[]
+} {
+  return {
+    quality: criterionScores.filter((score) => !score.category_eligible),
+    categories: criterionScores.filter((score) => score.category_eligible),
+  }
+}
+
+function CriterionRow({ score }: { score: CriterionScoreOut }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-text">{score.display_name}</dt>
+      <dd className="font-medium text-text-h">{formatCriterionPercent(score.value)}</dd>
+    </div>
+  )
+}
+
 interface CategoryCandidateRow extends CategoryCandidateOut {
   /** Ein aktiver Override, dessen Ziel-Kandidat in der aktuellen Kandidatenliste nicht (mehr)
    * auftaucht (z.B. nach einem neuen Scoring-Lauf mit geaenderten lokalen Werten) - wird als
@@ -74,13 +102,18 @@ function buildCategoryCandidateRows(
  * (specs/features/0041-bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md,
  * Architektur-Abschnitt), damit sowohl das Popover (Grid/Kuratierung) als auch die permanente
  * Sektion in PhotoDetailPage.tsx dieselbe Darstellung/Formatierungslogik teilen (DRY,
- * Akzeptanzkriterium 5/13). Prueft selbst NICHT, ob `criterionScores` leer ist, und rendert in
- * diesem Fall unveraendert ein leeres `<dl>` - die Entscheidung, den Bereich bei leerer Liste gar
- * nicht erst einzubinden, bleibt bewusst bei den jeweiligen Aufrufern (Popover-Sichtbarkeit vs.
- * permanente Sektion), da beide Stellen die gleiche Bedingung ohnehin schon selbst pruefen muessen
- * (Popover fuer den Trigger, PhotoDetailPage.tsx fuer den Abschnitts-Rahmen). Copilot-Review-Fund
- * auf PR #103: eine fruehere Fassung dieses Kommentars behauptete faelschlich, die Komponente
- * selbst rendere bei leerer Liste nichts.
+ * Akzeptanzkriterium 5/13). Prueft selbst NICHT, ob `criterionScores` leer ist - die Entscheidung,
+ * den Bereich bei leerer Liste gar nicht erst einzubinden, bleibt bewusst bei den jeweiligen
+ * Aufrufern (Popover-Sichtbarkeit vs. permanente Sektion), da beide Stellen die gleiche Bedingung
+ * ohnehin schon selbst pruefen muessen (Popover fuer den Trigger, PhotoDetailPage.tsx fuer den
+ * Abschnitts-Rahmen).
+ *
+ * Gliedert die Kriterien in zwei beschriftete Bloecke "Qualitaet"/"Kategorien"
+ * (specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md): ein Block ohne Inhalt
+ * wird komplett weggelassen (keine Ueberschrift, kein leeres `<dl>`), bei komplett leerer Eingabe
+ * rendert die Komponente nur noch den aeusseren Container ohne jedes `dt`/`dd` - der bis Spec 0209
+ * hier dokumentierte Sonderfall "leeres `<dl>`" gilt nicht mehr. Der Ausschuss-Vorschlag bleibt
+ * ein dritter, eigener Bereich ausserhalb beider Bloecke und ohne eigene Ueberschrift.
  */
 export function CriterionDetailsList({
   criterionScores,
@@ -96,101 +129,139 @@ export function CriterionDetailsList({
 }: CriterionDetailsListProps) {
   const candidateRows = buildCategoryCandidateRows(categoryCandidates, categoryOverride)
   const showCandidateGroup = candidateRows.length > 1
+  const { quality: qualityScores, categories: categoryScores } =
+    partitionByCategoryEligibility(criterionScores)
+  // Die Kandidatenliste bzw. die einzeilige "Kategorie"-Anzeige und "Rang" gehoeren fachlich in
+  // den Kategorien-Block - er erscheint deshalb auch ohne kategoriefaehiges Kriterium, sobald ein
+  // Ranking vorliegt.
+  const showCategoriesBlock = categoryScores.length > 0 || ranking !== null
+  // Ein einzelnes useId() mit Suffixen statt zweier Aufrufe (React-Doku-Muster fuer mehrere
+  // zusammengehoerige Ids) - noetig, weil zwei Instanzen gleichzeitig im DOM stehen koennen
+  // (Popover ueber der permanenten Sektion) und feste Ids dann kollidieren wuerden.
+  const blockId = useId()
+  const qualityHeadingId = `${blockId}-quality`
+  const categoriesHeadingId = `${blockId}-categories`
 
   return (
-    <dl className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1.5">
-        {criterionScores.map((score) => (
-          <div key={score.criterion_key} className="flex items-baseline justify-between gap-3">
-            <dt className="text-text">{score.display_name}</dt>
-            <dd className="font-medium text-text-h">{formatCriterionPercent(score.value)}</dd>
-          </div>
-        ))}
-      </div>
-      {ranking !== null && (
-        <div className="flex flex-col gap-1.5">
-          {showCandidateGroup ? (
-            <div className="flex flex-col gap-2">
-              <dt className="text-text">Kategorie-Kandidaten</dt>
-              <dd>
-                <ul className="flex flex-col gap-2">
-                  {candidateRows.map((row) => {
-                    const isEffective = !row.isOrphan && ranking.category_key === row.category_key
-                    const isOverrideTarget = categoryOverride === row.category_key
-                    const isPending = pendingOverrideKey === row.category_key
-                    return (
-                      <li
-                        key={row.category_key}
-                        data-testid={`category-candidate-row-${row.category_key}`}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2"
-                      >
-                        <div className="flex flex-wrap items-baseline gap-2">
-                          <span className="font-medium text-text-h">
-                            {formatCategoryKey(row.category_key)}
-                          </span>
-                          {!row.isOrphan && (
-                            <>
-                              <Badge tone="neutral">
-                                {row.origin === 'remote' && row.provider
-                                  ? formatProviderLabel(row.provider)
-                                  : 'Lokal erkannt'}
-                              </Badge>
-                              <span className="text-sm text-text">
-                                {formatCriterionPercent(row.score)}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                        {isOverrideTarget ? (
-                          <div className="flex items-center gap-2">
-                            <Badge tone="neutral">Manuell übernommen</Badge>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              busy={resetPending}
-                              disabled={resetPending}
-                              onClick={() => onResetOverride?.()}
-                            >
-                              Zurücksetzen
-                            </Button>
-                          </div>
-                        ) : isEffective ? (
-                          <Badge tone="neutral">Aktuell</Badge>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            busy={isPending}
-                            disabled={isPending}
-                            onClick={() => onOverrideCategory?.(row.category_key)}
-                          >
-                            Übernehmen
-                          </Button>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              </dd>
-            </div>
-          ) : (
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="text-text">Kategorie</dt>
-              <dd className="font-medium text-text-h">{formatCategoryKey(ranking.category_key)}</dd>
-            </div>
-          )}
-          <div className="flex items-baseline justify-between gap-3">
-            <dt className="text-text">Rang</dt>
-            <dd className="font-medium text-text-h">
-              Rang {ranking.rank_position} von {ranking.partition_size}
-            </dd>
-          </div>
+    <div className="flex flex-col gap-4">
+      {qualityScores.length > 0 && (
+        // role="group" + aria-labelledby am Wrapper, NICHT am <dl>: ein <dl> hat in dieser
+        // Toolchain keine namensfaehige Rolle, die Beschriftung kaeme dort weder im
+        // Accessibility-Tree noch in einer Rollenabfrage an (Spec 0209,
+        // Architektur-Entscheidung 3).
+        <div role="group" aria-labelledby={qualityHeadingId} className="flex flex-col gap-1.5">
+          <h3 id={qualityHeadingId} className="text-xs font-medium text-text-h">
+            Qualität
+          </h3>
+          <dl className="flex flex-col gap-1.5">
+            {qualityScores.map((score) => (
+              <CriterionRow key={score.criterion_key} score={score} />
+            ))}
+          </dl>
         </div>
       )}
+      {showCategoriesBlock && (
+        <div role="group" aria-labelledby={categoriesHeadingId} className="flex flex-col gap-1.5">
+          <h3 id={categoriesHeadingId} className="text-xs font-medium text-text-h">
+            Kategorien
+          </h3>
+          <dl className="flex flex-col gap-3">
+            {categoryScores.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                {categoryScores.map((score) => (
+                  <CriterionRow key={score.criterion_key} score={score} />
+                ))}
+              </div>
+            )}
+            {ranking !== null && (
+              <div className="flex flex-col gap-1.5">
+                {showCandidateGroup ? (
+                  <div className="flex flex-col gap-2">
+                    <dt className="text-text">Kategorie-Kandidaten</dt>
+                    <dd>
+                      <ul className="flex flex-col gap-2">
+                        {candidateRows.map((row) => {
+                          const isEffective = !row.isOrphan && ranking.category_key === row.category_key
+                          const isOverrideTarget = categoryOverride === row.category_key
+                          const isPending = pendingOverrideKey === row.category_key
+                          return (
+                            <li
+                              key={row.category_key}
+                              data-testid={`category-candidate-row-${row.category_key}`}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2"
+                            >
+                              <div className="flex flex-wrap items-baseline gap-2">
+                                <span className="font-medium text-text-h">
+                                  {formatCategoryKey(row.category_key)}
+                                </span>
+                                {!row.isOrphan && (
+                                  <>
+                                    <Badge tone="neutral">
+                                      {row.origin === 'remote' && row.provider
+                                        ? formatProviderLabel(row.provider)
+                                        : 'Lokal erkannt'}
+                                    </Badge>
+                                    <span className="text-sm text-text">
+                                      {formatCriterionPercent(row.score)}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                              {isOverrideTarget ? (
+                                <div className="flex items-center gap-2">
+                                  <Badge tone="neutral">Manuell übernommen</Badge>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    busy={resetPending}
+                                    disabled={resetPending}
+                                    onClick={() => onResetOverride?.()}
+                                  >
+                                    Zurücksetzen
+                                  </Button>
+                                </div>
+                              ) : isEffective ? (
+                                <Badge tone="neutral">Aktuell</Badge>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  busy={isPending}
+                                  disabled={isPending}
+                                  onClick={() => onOverrideCategory?.(row.category_key)}
+                                >
+                                  Übernehmen
+                                </Button>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </dd>
+                  </div>
+                ) : (
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt className="text-text">Kategorie</dt>
+                    <dd className="font-medium text-text-h">{formatCategoryKey(ranking.category_key)}</dd>
+                  </div>
+                )}
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-text">Rang</dt>
+                  <dd className="font-medium text-text-h">
+                    Rang {ranking.rank_position} von {ranking.partition_size}
+                  </dd>
+                </div>
+              </div>
+            )}
+          </dl>
+        </div>
+      )}
+      {/* Dritter, eigener Bereich ausserhalb beider Bloecke und bewusst OHNE eigene Ueberschrift
+          (Spec 0209, Akzeptanzkriterium 8) - erscheint auch dann, wenn beide Bloecke leer sind. */}
       {showSuggestion && suggestion !== null && (
-        <div className="flex flex-col gap-1.5">
+        <dl className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between gap-3">
             <dt className="text-text">Ausschuss-Vorschlag</dt>
             <dd className="font-medium text-text-h">{formatSuggestionStatusLabel(suggestion)}</dd>
@@ -199,8 +270,8 @@ export function CriterionDetailsList({
             <dt className="text-text">Grund</dt>
             <dd className="font-medium text-text-h">{formatSuggestionReason(suggestion)}</dd>
           </div>
-        </div>
+        </dl>
       )}
-    </dl>
+    </div>
   )
 }
