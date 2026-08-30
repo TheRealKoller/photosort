@@ -472,6 +472,17 @@ def cmd_set_status(board: GhBoard, *, issue_number: int, status: str) -> dict[st
     return {"issue_number": issue_number, "status": status}
 
 
+def cmd_set_priority(board: GhBoard, *, issue_number: int, priority: str) -> dict[str, Any]:
+    """First-write-wins (ADR 0044) - Gegenstueck zu `cmd_set_status`, das unbedingt ueberschreibt.
+    Die Validierung laeuft bewusst vor jedem Board-Zugriff (auch vor dem lesenden)."""
+    if priority not in PRIORITY_VALUES:
+        raise BoardError(
+            f"Unbekannte Prioritaet {priority!r} (erwartet einen von {list(PRIORITY_VALUES)})."
+        )
+    changed, resolved_priority = board.set_priority_if_unset(issue_number, priority)
+    return {"issue_number": issue_number, "priority": resolved_priority, "changed": changed}
+
+
 def cmd_show_status(board: GhBoard, *, issue_number: int) -> dict[str, Any]:
     return {"issue_number": issue_number, "status": board.get_status(issue_number)}
 
@@ -573,6 +584,12 @@ def build_parser() -> argparse.ArgumentParser:
     set_status.add_argument("--issue", type=int, required=True)
     set_status.add_argument("--status", required=True)
 
+    set_priority = subparsers.add_parser(
+        "set-priority", help="Board-Prioritaet first-write-wins setzen."
+    )
+    set_priority.add_argument("--issue", type=int, required=True)
+    set_priority.add_argument("--priority", required=True)
+
     show_status = subparsers.add_parser("show-status", help="Board-Status lesen (rein lesend).")
     show_status.add_argument("--issue", type=int, required=True)
 
@@ -614,6 +631,8 @@ def _dispatch(args: argparse.Namespace, board: GhBoard, repo_root: Path) -> dict
         return cmd_set_body(board, issue_number=args.issue, body=_read_body_file(args.body_file))
     if args.command == "set-status":
         return cmd_set_status(board, issue_number=args.issue, status=args.status)
+    if args.command == "set-priority":
+        return cmd_set_priority(board, issue_number=args.issue, priority=args.priority)
     if args.command == "show-status":
         return cmd_show_status(board, issue_number=args.issue)
     if args.command == "finalize":

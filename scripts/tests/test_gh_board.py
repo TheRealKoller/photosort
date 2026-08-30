@@ -527,6 +527,60 @@ def test_set_priority_if_unset_ist_ein_no_op_bei_bereits_gesetztem_feld(
     assert fake.calls_starting_with("gh", "project", "item-edit") == []
 
 
+# -- set-priority -----------------------------------------------------------------------------
+
+
+def test_cmd_set_priority_schreibt_bei_leerem_feld(gh_board: ModuleType) -> None:
+    fake = FakeGh(fields=_fields_mit_prioritaets_optionen())
+
+    result = gh_board.cmd_set_priority(_board(gh_board, fake), issue_number=262, priority="Hoch")
+
+    assert result == {"issue_number": 262, "priority": "Hoch", "changed": True}
+    assert fake.single_call("gh", "project", "item-edit")
+
+
+def test_cmd_set_priority_ist_no_op_bei_bereits_gesetztem_feld(gh_board: ModuleType) -> None:
+    fake = FakeGh(
+        fields=_fields_mit_prioritaets_optionen(),
+        items=[
+            {
+                "id": "PVTI_262",
+                "content": {"type": "Issue", "number": 262, "url": _issue_url(262)},
+                "priorität": "Niedrig",
+            }
+        ],
+    )
+
+    result = gh_board.cmd_set_priority(_board(gh_board, fake), issue_number=262, priority="Hoch")
+
+    # Rueckgabe ist der vorhandene Wert (Niedrig), nicht der angefragte (Hoch).
+    assert result == {"issue_number": 262, "priority": "Niedrig", "changed": False}
+    assert fake.calls_starting_with("gh", "project", "item-edit") == []
+
+
+def test_cmd_set_priority_unbekannter_wert_wird_vor_jedem_gh_aufruf_abgelehnt(
+    gh_board: ModuleType,
+) -> None:
+    fake = FakeGh()
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        gh_board.cmd_set_priority(_board(gh_board, fake), issue_number=262, priority="Kritisch")
+
+    assert "Kritisch" in str(excinfo.value)
+    assert fake.calls == []
+
+
+def test_cmd_set_priority_fehlende_options_id_fuer_gueltigen_wert_bricht_ab(
+    gh_board: ModuleType,
+) -> None:
+    fake = FakeGh()  # Standard-Prioritaetsfeld ist vorhanden, hat aber keine Optionen.
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        gh_board.cmd_set_priority(_board(gh_board, fake), issue_number=262, priority="Hoch")
+
+    assert "Hoch" in str(excinfo.value)
+
+
 # -- show-status ------------------------------------------------------------------------------
 
 
@@ -905,6 +959,44 @@ def test_cli_meldet_fehler_als_json_mit_exit_code_1(
     assert set(payload) == {"error"}
 
 
+def test_cli_set_priority_gibt_das_erwartete_json_zurueck(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = FakeGh(fields=_fields_mit_prioritaets_optionen())
+
+    exit_code = gh_board.main(
+        ["set-priority", "--issue", "262", "--priority", "Hoch"],
+        run=fake,
+        repo_root=tmp_path,
+        owner=OWNER,
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "issue_number": 262,
+        "priority": "Hoch",
+        "changed": True,
+    }
+
+
+def test_cli_set_priority_lehnt_unbekannten_wert_mit_exit_code_1_ab(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = FakeGh()
+
+    exit_code = gh_board.main(
+        ["set-priority", "--issue", "262", "--priority", "Kritisch"],
+        run=fake,
+        repo_root=tmp_path,
+        owner=OWNER,
+    )
+
+    assert exit_code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert "Kritisch" in payload["error"]
+    assert set(payload) == {"error"}
+
+
 def test_cli_meldet_einen_fehlgeschlagenen_gh_aufruf_als_json(
     gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -967,6 +1059,7 @@ def test_cli_finalize_erlaubt_eine_abweichende_issue_nummer_fuer_altspecs(
         ["create-issue", "--type", "idee", "--title", "T", "--body-file", "B"],
         ["set-body", "--issue", "262", "--body-file", "B"],
         ["set-status", "--issue", "262", "--status", "Todo"],
+        ["set-priority", "--issue", "262", "--priority", "Hoch"],
         ["show-status", "--issue", "262"],
         ["finalize", "--spec", "0262"],
     ],
