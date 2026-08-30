@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/TheRealKoller/photosort/compare/v0.21.0...v0.22.0) (2026-08-30)
+
+
+### Features
+
+* **frontend:** Remote-Kategorisierung auf Kriterien-Bewertungsseite (Spec 0218) ([#270](https://github.com/TheRealKoller/photosort/issues/270)) ([9c4fb43](https://github.com/TheRealKoller/photosort/commit/9c4fb43af5ed92984a3028ab4f6a2785217a0114))
+
 ## [0.21.0](https://github.com/TheRealKoller/photosort/compare/v0.20.0...v0.21.0) (2026-08-30)
 
 
