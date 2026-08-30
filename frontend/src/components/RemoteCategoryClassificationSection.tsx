@@ -105,7 +105,7 @@ export function RemoteCategoryClassificationSection({
 
   return (
     <section className="flex flex-col items-start gap-3">
-      <h2 className="text-lg font-semibold text-text-h">Remote-Kategorisierung</h2>
+      <h2 className="text-lg">Remote-Kategorisierung</h2>
       <p className="text-sm text-text">
         Sendet die verbleibenden Fotos an ein Cloud-Vision-Modell, um zusätzliche, offene
         Kategorie-Schlagworte zu erkennen (z. B. Ereignis, Ort, Motiv) — ergänzt die lokale

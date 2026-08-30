@@ -64,11 +64,11 @@ export function ProjectSettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-2xl font-semibold text-text-h">Projekteinstellungen</h1>
+        <h1 className="text-2xl">Projekteinstellungen</h1>
         <p className="text-sm text-text">{project.name}</p>
       </header>
 
-      <div className="flex flex-col gap-4 rounded-md border border-border p-4">
+      <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-4">
         {/* flex-wrap + min-w-0 auf der Label-Gruppe (Review-Fund, ship-feature-Runde): auf sehr
             engen Viewports (<400px) soll das lange, zusammengesetzte Label auf eine eigene Zeile
             umbrechen koennen, statt den Switch aus der Zeile zu draengen/zu ueberlappen. */}
@@ -82,7 +82,7 @@ export function ProjectSettingsPage() {
                 <button
                   type="button"
                   aria-label="Erkläre Cloud-Bilderkennung"
-                  className="flex size-11 shrink-0 items-center justify-center rounded-md border border-border text-xs font-semibold text-text transition-colors hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                  className="flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-xs font-semibold text-text transition-colors hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
                 >
                   i
                 </button>
@@ -92,7 +92,7 @@ export function ProjectSettingsPage() {
                   <p className="text-sm font-semibold text-text-h">Cloud-Bilderkennung</p>
                   <PopoverClose
                     aria-label="Schließen"
-                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   >
                     <span aria-hidden="true">×</span>
                   </PopoverClose>

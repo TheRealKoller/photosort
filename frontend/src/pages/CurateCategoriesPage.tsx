@@ -257,7 +257,7 @@ export function CurateCategoriesPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-2xl font-semibold text-text-h">Kategorie-Kuratierung</h1>
+        <h1 className="text-2xl">Kategorie-Kuratierung</h1>
         {/* Personenbezug (UI/UX-Abschnitt der Spec): Rating ist personenbezogen, die gezeigte
             Top-N-Auswahl deshalb je Nutzer individuell. */}
         <p className="text-sm text-text">Deine Auswahl</p>
@@ -336,7 +336,7 @@ export function CurateCategoriesPage() {
           // stattdessen gap-4 (16px) zwischen den Clustern (Review-Fund ux-ui-designer: gap-6
           // hier haette faelschlich auch zwischen Clustern 24px statt 16px erzeugt).
           <section key={dayKey} className="flex flex-col gap-4">
-            <h2 className="text-xl font-semibold text-text-h">
+            <h2 className="text-xl">
               {/* Gesamte Kopfzeile als Trigger (Akzeptanzkriterium 1) - kein separates Icon als
                   alleiniger interaktiver Traeger, `w-full`+`text-left` macht die ganze Zeile
                   klickbar, `min-h-11` sichert ein Touch-Ziel von mindestens 44px. */}
@@ -378,7 +378,7 @@ export function CurateCategoriesPage() {
                     const heading = clusterMetaRef.current.get(clusterKey)?.heading ?? clusterKey
                     return (
                       <section key={clusterKey} className="flex flex-col gap-4">
-                        <h3 className="text-lg font-semibold text-text-h">{heading}</h3>
+                        <h3 className="text-lg">{heading}</h3>
                         {clusterIsEmpty && (
                           <p className="text-sm text-text">Keine Fotos in dieser Tageszeit</p>
                         )}
@@ -387,7 +387,7 @@ export function CurateCategoriesPage() {
                             const photos = categories[categoryKey]
                             return (
                               <div key={categoryKey} className="flex flex-col gap-2">
-                                <h4 className="flex items-center gap-2 text-sm font-semibold text-text-h">
+                                <h4 className="flex items-center gap-2 text-sm">
                                   <CategoryBadge categoryKey={categoryKey} />
                                   {formatCategoryKey(categoryKey)}
                                 </h4>

@@ -146,7 +146,7 @@ export function CriterionDetailsPopover({
           onPointerEnter={handlePointerEnter}
           onMouseLeave={handlePossibleHoverClose}
           className={cn(
-            'flex size-11 shrink-0 items-center justify-center rounded-md border border-border ' +
+            'flex size-11 shrink-0 items-center justify-center rounded-full border border-border ' +
               'bg-bg/85 text-xs font-semibold text-text backdrop-blur-sm transition-colors ' +
               'hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 ' +
               'focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
@@ -161,7 +161,7 @@ export function CriterionDetailsPopover({
           <p className="text-sm font-semibold text-text-h">Bewertungsdetails</p>
           <PopoverClose
             aria-label="Schließen"
-            className="flex size-8 shrink-0 items-center justify-center rounded-md text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <span aria-hidden="true">×</span>
           </PopoverClose>

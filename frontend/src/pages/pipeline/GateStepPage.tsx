@@ -26,7 +26,7 @@ export function GateStepPage() {
 
   return (
     <section className="flex flex-col items-start gap-3">
-      <h2 className="text-lg font-semibold text-text-h">Ausschuss-Gate</h2>
+      <h2 className="text-lg">Ausschuss-Gate</h2>
       <p className="text-sm text-text">
         Bestätige einmalig, dass du die Ausschuss-Vorschläge gesichtet hast, bevor es mit der
         Kriterien-Bewertung weitergeht.
