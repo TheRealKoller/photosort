@@ -28,7 +28,7 @@ UNIFORM_TILE_VARIANCE_THRESHOLD = 15.0
 # Kachelraster fuer compute_uniform_area_fraction (Architektur-Abschnitt der Spec: "8x8").
 _UNIFORM_TILE_GRID = 8
 
-# specs/features/0217, ADR 0046 Punkt 1: LANDSCAPE_UNIFORM_FRACTION_THRESHOLD (Anteil
+# specs/features/0217, ADR 0047 Punkt 1: LANDSCAPE_UNIFORM_FRACTION_THRESHOLD (Anteil
 # "flaechiger" Kacheln, ab dem ein Foto frueher als "Landschaft" galt) ist hier ersatzlos
 # entfallen - der Uniform-Flaechen-Anteil ist ein Texturmass, keine Landschafts-Aussage, und
 # `content_landscape` hat seine Kategorie-Faehigkeit (und damit seine Presence-Schwelle)
@@ -410,14 +410,14 @@ def build_object_detector() -> ObjectDetectorLike:
 # wuerde.
 
 # Inhaltliche Konfidenzschwelle des gebaeude-Kriteriums - bis specs/features/0217 zugleich die
-# Untergrenze von classify_scene selbst. Seit ADR decisions/0046-inhaltsbasierte-landschaft-
+# Untergrenze von classify_scene selbst. Seit ADR decisions/0047-inhaltsbasierte-landschaft-
 # spezifitaets-vorrang-nicht-erkannt.md Punkt 1 wandert die inhaltliche Entscheidung in die
 # jeweilige Kriterien-Funktion (criteria.py::compute_gebaeude_score filtert explizit hier gegen,
 # criteria.py::compute_landschaft_score gegen den niedrigeren LANDSCHAFT_LABEL_MIN_CONFIDENCE) -
 # der Wert selbst bleibt unveraendert, damit das gebaeude-Verhalten bitgenau erhalten bleibt.
 SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.5
 
-# Gemeinsame, bewusst NIEDRIGE Modell-Untergrenze der Szenen-Klassifikation (ADR 0046 Punkt 1):
+# Gemeinsame, bewusst NIEDRIGE Modell-Untergrenze der Szenen-Klassifikation (ADR 0047 Punkt 1):
 # natuerliche Szenen verteilen ihre Modellkonfidenz typischerweise ueber mehrere benachbarte
 # ImageNet-Klassen, eine harte 0.5-Grenze schon an der Modellausgabe wuerde eine echte
 # Landschafts-Erkennung strukturell verhindern. Analog FACE_DETECTION_CONFIDENCE_THRESHOLD/
@@ -425,7 +425,7 @@ SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.5
 # Detector-Konfiguration zu verlassen (siehe FakeSceneClassifier in test_classification.py).
 SCENE_LABEL_MIN_CONFIDENCE = 0.2
 
-# Obergrenze der pro Foto zurueckgegebenen Labels (ADR 0046 Punkt 1) - haelt die Label-Liste trotz
+# Obergrenze der pro Foto zurueckgegebenen Labels (ADR 0047 Punkt 1) - haelt die Label-Liste trotz
 # der abgesenkten Untergrenze beschraenkt. Wird sowohl dem echten Klassifikator als Options-Wert
 # mitgegeben (build_scene_classifier) ALS AUCH in classify_scene selbst durchgesetzt (gleiche
 # Begruendung wie bei der Konfidenzschwelle: unabhaengig von der Detector-Konfiguration testbar).
@@ -476,7 +476,7 @@ def classify_scene(image: Image.Image, classifier: SceneClassifierLike) -> list[
     sind (siehe Modul-Kommentar). `classifier` ist injizierbar (siehe SceneClassifierLike) - die
     reale Modellkonstruktion (build_scene_classifier) laeuft in keinem automatisierten Test.
 
-    specs/features/0217, ADR 0046 Punkt 1: die Untergrenze ist bewusst niedriger als die
+    specs/features/0217, ADR 0047 Punkt 1: die Untergrenze ist bewusst niedriger als die
     inhaltlichen Kriterien-Schwellen - die Ausgabe bleibt roh (keine Allow-Listen-Filterung, kein
     kriterienspezifischer Konfidenz-Schnitt), beides passiert in criteria.py::
     compute_gebaeude_score bzw. compute_landschaft_score. Die Begrenzung auf die staerksten

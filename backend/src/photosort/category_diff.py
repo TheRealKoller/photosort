@@ -1,6 +1,6 @@
 """Read-only CLI: vergleicht die Kategorie-Zuordnung zweier Kriterien-Laeufe eines Projekts.
 
-specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md (AK7), ADR decisions/0046-
+specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md (AK7), ADR decisions/0047-
 inhaltsbasierte-landschaft-spezifitaets-vorrang-nicht-erkannt.md Punkt 7: `PhotoRanking`-Zeilen
 werden pro `criterion_scoring_run_id` geschrieben und nie geloescht - der Stand VOR einer
 Umstellung liegt also bereits in der Datenbank und braucht weder Migration noch API-Erweiterung.
@@ -9,7 +9,7 @@ Aufruf::
 
     docker compose exec backend python -m photosort.category_diff --project-id 1
 
-Bewusst ein CLI-Werkzeug und kein Endpunkt/keine UI (ADR 0046 Punkt 7): eine einmalige
+Bewusst ein CLI-Werkzeug und kein Endpunkt/keine UI (ADR 0047 Punkt 7): eine einmalige
 Verifikations-/Kalibrierungshilfe fuer zwei bekannte Betreiber, keine dauerhaft zu pflegende
 Produktoberflaeche.
 
@@ -87,7 +87,7 @@ class CategoryDiff:
 def diff_category_assignments(
     before: Mapping[int, str], after: Mapping[int, str]
 ) -> CategoryDiff:
-    """Reine, DB-freie Vergleichsfunktion (ADR 0046 Punkt 7: Logik rein, I/O aussen). Fotos, die
+    """Reine, DB-freie Vergleichsfunktion (ADR 0047 Punkt 7: Logik rein, I/O aussen). Fotos, die
     nur in einem der beiden Laeufe eine Zuordnung haben, erscheinen mit MISSING_CATEGORY auf der
     fehlenden Seite - sie fallen nicht stillschweigend aus dem Vergleich. Sortierung nach
     photo_id (deterministisch, unabhaengig von der Dict-Reihenfolge der Aufrufer)."""

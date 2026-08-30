@@ -124,7 +124,7 @@ class TestCriteriaRegistry:
 
     def test_exactly_five_content_criteria_are_category_eligible(self) -> None:
         # Akzeptanzkriterium der Spec 0045, erweitert um landmark (specs/features/0047-
-        # sehenswuerdigkeit-erkennung-cloud-vision-api.md) und seit specs/features/0217/ADR 0046
+        # sehenswuerdigkeit-erkennung-cloud-vision-api.md) und seit specs/features/0217/ADR 0047
         # Punkt 1 mit `landschaft` STATT `content_landscape` (Flaechigkeit ist ein reines
         # Ranking-Signal, keine Inhaltsaussage): genau content_people/landschaft/tier/gebaeude/
         # landmark sind category_eligible=True - reine Qualitaetskriterien nie. Bewusst weiterhin
@@ -139,7 +139,7 @@ class TestCriteriaRegistry:
         }
 
     def test_registry_contains_landschaft_with_the_correct_source_and_threshold(self) -> None:
-        # specs/features/0217, ADR 0046 Punkt 1: neues, echtes Inhalts-Kriterium aus derselben
+        # specs/features/0217, ADR 0047 Punkt 1: neues, echtes Inhalts-Kriterium aus derselben
         # Szenen-Klassifikation wie gebaeude - Presence-Schwelle 0.01 ist wie bei tier/gebaeude
         # eine reine "nichts erkannt vs. irgendetwas erkannt"-Trennung, keine zweite
         # Konfidenzkalibrierung.
@@ -152,7 +152,7 @@ class TestCriteriaRegistry:
     def test_content_landscape_is_a_pure_ranking_signal_without_category_eligibility(
         self,
     ) -> None:
-        # ADR 0046 Punkt 1: compute_uniform_area_fraction misst Texturarmut, keine Landschaft -
+        # ADR 0047 Punkt 1: compute_uniform_area_fraction misst Texturarmut, keine Landschaft -
         # das Kriterium bleibt als Ranking-Signal erhalten, darf aber keine Kategorie mehr bilden.
         # Der Anzeigename behauptet entsprechend keine Inhaltsaussage mehr.
         definition = CRITERIA_REGISTRY["content_landscape"]
@@ -161,7 +161,7 @@ class TestCriteriaRegistry:
         assert definition.category_presence_threshold is None
 
     def test_category_specificity_is_one_of_the_two_defined_levels(self) -> None:
-        # Registry-Invariante (specs/features/0217, ADR 0046 Punkt 2): Spezifitaet ist ein
+        # Registry-Invariante (specs/features/0217, ADR 0047 Punkt 2): Spezifitaet ist ein
         # Registry-ATTRIBUT mit genau zwei Stufen, keine im Ableitungscode gepflegte
         # Prioritaetsliste.
         for key, definition in CRITERIA_REGISTRY.items():
@@ -414,7 +414,7 @@ class TestComputeGebaeudeScore:
     def test_allow_listed_label_between_the_old_and_new_lower_bound_still_scores_zero(
         self,
     ) -> None:
-        # Nicht-Regressions-Pflicht (specs/features/0217 AK2, Testkonzept-Regel 1 zu ADR 0046):
+        # Nicht-Regressions-Pflicht (specs/features/0217 AK2, Testkonzept-Regel 1 zu ADR 0047):
         # classify_scene liefert seit dieser Spec bereits ab SCENE_LABEL_MIN_CONFIDENCE (0.2) -
         # compute_gebaeude_score muss die alte, inhaltliche Schwelle (0.5) deshalb SELBST
         # durchsetzen, sonst verschiebt eine reine Konstanten-Aenderung stillschweigend das
@@ -437,7 +437,7 @@ class TestComputeGebaeudeScore:
 
 
 class TestComputeLandschaftScore:
-    """specs/features/0217, ADR decisions/0046 Punkt 1: echte, inhaltsbasierte Landschafts-
+    """specs/features/0217, ADR decisions/0047 Punkt 1: echte, inhaltsbasierte Landschafts-
     Erkennung aus derselben (bereits berechneten) Szenen-Klassifikation wie gebaeude - exakt das
     Muster von compute_gebaeude_score/ARCHITECTURE_CATEGORIES, nur mit eigener Allow-Liste und
     eigener, niedrigerer Konfidenzschwelle."""
@@ -519,7 +519,7 @@ class TestIsLandmarkCandidate:
     - reine Schwellenwert-Pruefung (kein Skip-bereits-gescort, das bleibt worker-spezifisch), von
     Live-Lauf UND API-Ableitung (api/photos.py::_cloud_vision_status_out) gemeinsam genutzt.
 
-    specs/features/0217, ADR 0046 Punkt 5: die Vorfilterung prueft seit dieser Spec `landschaft`
+    specs/features/0217, ADR 0047 Punkt 5: die Vorfilterung prueft seit dieser Spec `landschaft`
     ODER `gebaeude` statt `content_landscape` ODER `gebaeude` - inhaltlich das, was der Filter
     immer ausdruecken sollte ("auf dem Foto ist eine Landschaft oder ein Gebaeude zu sehen").
     Die Bestandsfaelle sind dabei UMGESTELLT, nicht ergaenzt worden."""
@@ -569,7 +569,7 @@ class TestIsLandmarkCandidate:
         self,
     ) -> None:
         # Kostensenkung, testpflichtig (Security-Abschnitt der Spec 0217 Punkt 1, Testkonzept-
-        # Regel 2 zu ADR 0046): ein texturarmes/unscharfes Foto ohne Landschaftsmotiv verlaesst
+        # Regel 2 zu ADR 0047): ein texturarmes/unscharfes Foto ohne Landschaftsmotiv verlaesst
         # den Homeserver nicht mehr in Richtung des externen Vision-Anbieters.
         assert is_landmark_candidate({"content_landscape": 1.0}) is False
 
@@ -719,7 +719,7 @@ class TestDeriveActiveCategoriesDynamicKeys:
     def test_dynamic_key_below_the_share_threshold_is_active_via_the_absolute_minimum(
         self,
     ) -> None:
-        # Auf die neue Regel UMGESTELLTER Bestandstest (specs/features/0217, ADR 0046 Punkt 3):
+        # Auf die neue Regel UMGESTELLTER Bestandstest (specs/features/0217, ADR 0047 Punkt 3):
         # 14 von 100 (< 15%) blieben bis Spec 0055 inaktiv - ein Remote-Key ist als NAMED-Stufe
         # jetzt bereits ueber die absolute Mindest-Trefferzahl aktiv. Der Fall "wirklich zu
         # selten" (2 Treffer) steht in TestDeriveActiveCategoriesSpecificity.
@@ -774,7 +774,7 @@ class TestDeriveCategoryKeyDynamicKeys:
         )
 
     def test_dynamic_key_wins_over_a_higher_scoring_local_key(self) -> None:
-        # Auf die neue Regel UMGESTELLTER Bestandstest (specs/features/0217, ADR 0046 Punkt 2):
+        # Auf die neue Regel UMGESTELLTER Bestandstest (specs/features/0217, ADR 0047 Punkt 2):
         # bis Spec 0055 gewann hier der hoehere Score (tier 0.6), seit dem Spezifitaets-Vorrang
         # gewinnt der benannte, konkrete Inhalt - unabhaengig vom Zahlenwert (die beiden Zahlen
         # stammen aus unvergleichbaren Skalen).
@@ -811,7 +811,7 @@ class TestDeriveCategoryKeyDynamicKeys:
 
 
 class TestDeriveActiveCategoriesSpecificity:
-    """specs/features/0217, ADR decisions/0046 Punkt 3: die Aktivierungsschwelle wird
+    """specs/features/0217, ADR decisions/0047 Punkt 3: die Aktivierungsschwelle wird
     spezifitaetsabhaengig - CONTENT behaelt die reine 15%-Regel, NAMED ist zusaetzlich ab
     CATEGORY_SPECIFIC_MIN_PHOTOS absoluten Treffern aktiv (ODER-Verknuepfung, damit sehr kleine
     Projekte nicht schlechter gestellt werden als bisher)."""
@@ -864,7 +864,7 @@ class TestDeriveActiveCategoriesSpecificity:
 
 
 class TestDeriveCategoryKeySpecificity:
-    """specs/features/0217, ADR decisions/0046 Punkt 2: Spezifitaets-Vorrang ersetzt "hoechster
+    """specs/features/0217, ADR decisions/0047 Punkt 2: Spezifitaets-Vorrang ersetzt "hoechster
     Score gewinnt" als PRIMAERE Regel - Auswahlschluessel `(-specificity, -score, key)`. Innerhalb
     einer Stufe bleibt die vertraute Regel unveraendert (siehe TestDeriveCategoryKey oben)."""
 

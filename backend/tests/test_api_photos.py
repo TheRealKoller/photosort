@@ -780,7 +780,7 @@ class TestCriterionScores:
     async def test_content_landscape_is_exposed_as_a_non_category_quality_criterion(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        # specs/features/0217, ADR 0046 Punkt 1: content_landscape heisst in den
+        # specs/features/0217, ADR 0047 Punkt 1: content_landscape heisst in den
         # Bewertungsdetails "Flächigkeit" und ist nicht mehr kategorie-faehig - dadurch wandert es
         # im Frontend automatisch vom Block "Kategorien" in den Block "Qualität" (Spec 0209
         # partitioniert allein nach diesem Flag, kein Frontend-Sonderfall).
@@ -1177,7 +1177,7 @@ class TestCloudVisionStatus:
     async def test_landmark_not_candidate_for_an_old_run_with_only_a_content_landscape_row(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        # specs/features/0217, ADR 0046 Punkt 5: die Read-Time-Ableitung folgt derselben
+        # specs/features/0217, ADR 0047 Punkt 5: die Read-Time-Ableitung folgt derselben
         # umgestellten Vorfilterung wie der Lauf - eine Zeile aus einem ALTEN Lauf (nur
         # content_landscape, hoher Wert) macht ein Foto nicht mehr zum Kandidaten.
         project = await _make_project(db_session)

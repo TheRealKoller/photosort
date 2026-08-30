@@ -29,7 +29,7 @@ from photosort.models import (
 
 
 class TestDiffCategoryAssignments:
-    """Reine, DB-freie Vergleichsfunktion (ADR 0046 Punkt 7: Logik rein, I/O aussen)."""
+    """Reine, DB-freie Vergleichsfunktion (ADR 0047 Punkt 7: Logik rein, I/O aussen)."""
 
     def test_unchanged_assignment_is_reported_as_unchanged(self) -> None:
         diff = diff_category_assignments({1: "people"}, {1: "people"})

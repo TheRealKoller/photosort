@@ -1869,7 +1869,7 @@ class TestSelectLandmarkCandidates:
         assert _select_landmark_candidates(candidate_values, set()) == []
 
     def test_landschaft_at_exactly_the_threshold_is_a_candidate_inclusive(self) -> None:
-        # specs/features/0217, ADR 0046 Punkt 5: Vorfilterung auf `landschaft` statt
+        # specs/features/0217, ADR 0047 Punkt 5: Vorfilterung auf `landschaft` statt
         # `content_landscape` UMGESTELLT (nicht ergaenzt).
         candidate_values = {1: {"landschaft": 0.01, "gebaeude": 0.0}}
         assert _select_landmark_candidates(candidate_values, set()) == [1]
@@ -2894,7 +2894,7 @@ async def test_category_override_wins_over_the_automatically_derived_category_ke
     assert ranking.category_key == "urlaub"
 
 
-# --- specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md, ADR decisions/0046 ---
+# --- specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md, ADR decisions/0047 ---
 
 
 class CountingSceneClassifier:
@@ -2902,7 +2902,7 @@ class CountingSceneClassifier:
     fuer AK8 der Spec 0217 ("keine zusaetzlichen Kosten pro Foto"): aus DERSELBEN Modellausgabe
     entstehen gebaeude UND landschaft. Anders als CountingDetector (Spec 0038) ist dieser
     Aufrufzaehler der Testnachweis eines Akzeptanzkriteriums und darf nicht als redundant
-    gestrichen werden (Testkonzept, Regel 2 zu ADR 0046)."""
+    gestrichen werden (Testkonzept, Regel 2 zu ADR 0047)."""
 
     def __init__(self, categories: list[tuple[str, float]] | None = None) -> None:
         self.call_count = 0
@@ -2999,7 +2999,7 @@ def test_landschaft_is_part_of_the_image_analysis_criterion_keys() -> None:
 async def test_a_failing_landschaft_score_leaves_gebaeude_untouched(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Best-effort in BEIDE Richtungen (Testkonzept, Regel 3 zu ADR 0046): scheitert die
+    # Best-effort in BEIDE Richtungen (Testkonzept, Regel 3 zu ADR 0047): scheitert die
     # Score-Berechnung des einen Kriteriums, muss das andere aus derselben Modellausgabe trotzdem
     # geschrieben werden - die try/except-Granularitaet ist damit testbestimmt.
     def _boom(labels: object) -> float:
@@ -3265,7 +3265,7 @@ async def test_a_manual_override_on_a_no_longer_derivable_key_survives_a_full_ru
 async def test_a_flat_photo_without_a_landscape_label_triggers_no_cloud_call_anymore(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    # Kostensenkung als eigener Testfall (Testkonzept, Regel 2 zu ADR 0046): ein Foto, das NUR die
+    # Kostensenkung als eigener Testfall (Testkonzept, Regel 2 zu ADR 0047): ein Foto, das NUR die
     # weggefallene content_landscape-Bedingung erfuellte, verlaesst den Homeserver nicht mehr.
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True

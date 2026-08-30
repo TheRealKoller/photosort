@@ -1,4 +1,4 @@
-# 0046 - Inhaltsbasierte Landschafts-Erkennung, Spezifitäts-Vorrang bei der Kategorie-Vergabe und expliziter "nicht erkannt"-Zustand
+# 0047 - Inhaltsbasierte Landschafts-Erkennung, Spezifitäts-Vorrang bei der Kategorie-Vergabe und expliziter "nicht erkannt"-Zustand
 
 **Status:** Accepted
 **Datum:** 2026-08-30

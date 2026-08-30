@@ -382,7 +382,7 @@ class TestClassifyScene:
         assert labels == [SceneLabel(category="church", confidence=0.9)]
 
     def test_ignores_a_label_below_the_model_lower_bound(self) -> None:
-        # specs/features/0217, ADR 0046 Punkt 1: die Untergrenze von classify_scene ist seit
+        # specs/features/0217, ADR 0047 Punkt 1: die Untergrenze von classify_scene ist seit
         # dieser Spec SCENE_LABEL_MIN_CONFIDENCE (0.2) statt SCENE_CLASSIFICATION_CONFIDENCE_
         # THRESHOLD (0.5) - die inhaltliche Konfidenzentscheidung liegt jetzt in den jeweiligen
         # Kriterien-Funktionen (compute_gebaeude_score/compute_landschaft_score).
@@ -404,7 +404,7 @@ class TestClassifyScene:
         assert labels == [SceneLabel(category="church", confidence=0.5)]
 
     def test_result_list_is_capped_at_the_configured_maximum(self) -> None:
-        # ADR 0046 Punkt 1: max_results=5 haelt die Label-Liste pro Foto beschraenkt - hier
+        # ADR 0047 Punkt 1: max_results=5 haelt die Label-Liste pro Foto beschraenkt - hier
         # zusaetzlich in classify_scene selbst durchgesetzt (analog der eigenen, expliziten
         # Konfidenzschwelle), damit das Verhalten unabhaengig von der Detector-Konfiguration
         # testbar bleibt.
@@ -416,7 +416,7 @@ class TestClassifyScene:
         assert len(labels) == SCENE_LABEL_MAX_RESULTS
 
     def test_cap_keeps_the_strongest_labels_and_does_not_displace_a_stronger_hit(self) -> None:
-        # Nicht-Regressions-Pflicht (Testkonzept, Regel 1 zu ADR 0046): die Begrenzung darf den
+        # Nicht-Regressions-Pflicht (Testkonzept, Regel 1 zu ADR 0047): die Begrenzung darf den
         # bisherigen Treffer eines Bestands-Konsumenten (gebaeude) nicht verdraengen, auch wenn
         # das starke Label als LETZTES aus dem Modell kommt.
         labels = classify_scene(

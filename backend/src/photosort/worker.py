@@ -1117,7 +1117,7 @@ def _compute_content_criteria(
     except Exception:
         pass
 
-    # specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md, ADR 0046 Punkt 1:
+    # specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md, ADR 0047 Punkt 1:
     # classify_scene wird GENAU EINMAL pro Foto aufgerufen, dieselbe Label-Liste speist gebaeude
     # UND landschaft (Wiederverwendungsmuster wie detect_person -> content_people +
     # goldener_schnitt; Akzeptanzkriterium AK8: keine zusaetzlichen Kosten pro Foto). Die
