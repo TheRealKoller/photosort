@@ -46,20 +46,20 @@ describe('Badge', () => {
   })
 
   // Review-Fund: `tone="accent"` braucht im vollflaechigen Zustand die dafuer kalibrierte
-  // `--accent-fg`-Vordergrundfarbe, NICHT `--chip-fg` (das ist nur fuer die Bewertungsfarben
-  // kalibriert und verfehlt gegen die kraeftige Akzentfarbe WCAG-AA) - siehe index.css.
-  it('uses the accent-fg foreground token (not chip-fg) for the solid accent tone', () => {
+  // `--accent-fg`-Vordergrundfarbe, NICHT eine der Bewertungs-Vordergrundfarben (die sind gegen
+  // die jeweilige Bewertungsfarbe kalibriert, nicht gegen den Akzent) - siehe index.css.
+  it('uses the accent-fg foreground token for the solid accent tone', () => {
     render(<Badge tone="accent">i</Badge>)
 
     expect(screen.getByText('i').className).toContain('text-accent-fg')
-    expect(screen.getByText('i').className).not.toContain('text-chip-fg')
+    expect(screen.getByText('i').className).not.toContain('text-rating-')
   })
 
   // Copilot-Review-Fund (PR "Tailwind-Fundament"): der gedaempfte Vorschlags-Hintergrund ist nur
-  // eine 10%-Tinte auf `--bg`, nicht die volle Bewertungsfarbe - `--chip-fg` ist in beiden
-  // Farbschemata identisch (#000000) und waere im Dunkelmodus praktisch unsichtbar auf dem dann
-  // ebenfalls sehr dunklen `--bg`-Tint. `--text-h` ist stattdessen pro Modus kalibriert.
-  it('uses the mode-aware text-h token (not chip-fg) for the dampened suggested tone', () => {
+  // eine 10%-Tinte auf `--bg`, nicht die volle Bewertungsfarbe. Eine gegen die volle Fuellung
+  // kalibrierte Vordergrundfarbe waere hier falsch (im Dunkelmodus praktisch unsichtbar auf dem
+  // dann ebenfalls sehr dunklen Tint); `--text-h` ist stattdessen pro Modus kalibriert.
+  it('uses the mode-aware text-h token for the dampened suggested tone', () => {
     render(
       <Badge tone="rejected" suggested>
         ⚙✕
@@ -67,6 +67,27 @@ describe('Badge', () => {
     )
 
     expect(screen.getByText('⚙✕').className).toContain('text-text-h')
-    expect(screen.getByText('⚙✕').className).not.toContain('text-chip-fg')
+    expect(screen.getByText('⚙✕').className).not.toContain('text-rating-rejected-fg')
+  })
+
+  /*
+   * Organic-Design-Import (specs/features/0285-organic-design-import.md): die drei Bewertungstoene
+   * der Vorlage tragen KEINE gemeinsame Vordergrundfarbe mit WCAG-AA. Gemessen gegen die hellen
+   * Toene: schwarz haelt auf Ocker (7.88:1) und Salbei (4.99:1), faellt auf Ziegel aber auf
+   * 3.53:1 durch; Creme haelt auf Ziegel (5.00:1), faellt auf Ocker aber auf 2.24:1. Deshalb hat
+   * jeder Ton eine eigene, gegen genau diesen Ton gerechnete Vordergrundfarbe. Der Test haelt die
+   * Kopplung fest: Fuellung und Vordergrund muessen zum selben Ton gehoeren - ein spaeteres
+   * Vereinheitlichen auf einen gemeinsamen Vordergrund wuerde AA brechen und faellt hier auf.
+   */
+  it.each([
+    ['favorite', '★'],
+    ['album-worthy', '✓'],
+    ['rejected', '✕'],
+  ] as const)('pairs the solid %s tone with its own calibrated foreground token', (tone, symbol) => {
+    render(<Badge tone={tone}>{symbol}</Badge>)
+
+    const className = screen.getByText(symbol).className
+    expect(className).toContain(`bg-rating-${tone}`)
+    expect(className).toContain(`text-rating-${tone}-fg`)
   })
 })

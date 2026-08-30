@@ -149,7 +149,7 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
 
             const circleClasses = cn(
               CIRCLE_BASE_CLASSES,
-              isDone ? 'border-transparent bg-status-success text-chip-fg' : 'border-border bg-bg text-text',
+              isDone ? 'border-transparent bg-status-success text-status-success-fg' : 'border-border bg-bg text-text',
               isCurrent && 'ring-2 ring-accent ring-offset-2 ring-offset-bg',
               isBlocked && 'opacity-50'
             )

@@ -1,82 +1,171 @@
 @import 'tailwindcss';
 
+/* Self-gehostete Schriften des Organic-Design-Systems (Caprasimo als Display-/Ueberschriften-
+   Stimme ueber Figtree fuer Fliesstext). Bewusst ueber @fontsource statt ueber die Google-Fonts-
+   CDN eingebunden, die das Design-System-Readme vorschlaegt: PhotoSort ist eine PWA und muss
+   offline vollstaendig funktionieren - ein CDN-Link waere im Offline-Betrieb ein Fehlschlag und
+   zusaetzlich ein Abfluss von Nutzungsdaten an einen Dritten. */
+@import '@fontsource/caprasimo/400.css';
+@import '@fontsource/figtree/400.css';
+@import '@fontsource/figtree/600.css';
+@import '@fontsource/figtree/700.css';
+
 /*
- * Design-Tokens (specs/architecture/0004-design-system.md, specs/features/0012-visual-redesign.md).
- * Rohwerte liegen in :root/prefers-color-scheme (wie zuvor), die Zuordnung zu Tailwind-Utilities
+ * Design-Tokens (specs/architecture/0004-design-system.md, specs/features/0285-organic-design-
+ * import.md). Rohwerte liegen in :root/prefers-color-scheme, die Zuordnung zu Tailwind-Utilities
  * passiert unten im @theme-Block - so bleibt die Hell/Dunkel-Umschaltung eine reine CSS-Variablen-
  * Aufloesung ohne zusaetzliche JS-Logik oder `dark:`-Klassen.
+ *
+ * Die Werte stammen aus dem Design-System "Organic" des Claude-Design-Projekts "PhotoSort UI
+ * Mockups" (_ds/organic-.../styles.css). Uebernommen sind Farbrollen, Tonleitern (100-900, in
+ * OKLCH auf einer gemeinsamen Helligkeitsskala erzeugt), Schrift, Abstands- und Radienskala.
+ * Abweichungen gegenueber der Vorlage sind unten jeweils an Ort und Stelle begruendet - das
+ * Design-System-Dokument fuehrt sie gesammelt unter "Bekannte Luecken".
  */
 :root {
-  --bg: #faf7f2;
-  --border: #e8e0d5;
-  --text: #6b6358;
-  --text-h: #241f1a;
+  --bg: #f5ead8;
+  --surface: #ebddc5;
+  --border: color-mix(in srgb, #201e1d 16%, transparent);
+  --text-h: #201e1d;
 
   /*
-   * Terracotta-Akzentfarbe: Design-System/ADR 0011 nennen #d97757 (hell) als Zielwert. Bei der
-   * Umsetzung erreicht dieser Ton als Text-/Link-Farbe gegen den neuen warmen Hintergrund nur
-   * 2.92:1 (< WCAG-AA 4.5:1 fuer Text) - siehe architecture/0004-design-system.md, "Bekannte
-   * Lücken" fuer die vollstaendige Kontrastpruefung. Deshalb hier eine dunklere Variante
-   * derselben Terracotta-Farbfamilie (gleicher Farbton/Saettigung, geringere Helligkeit), die
-   * 4.64:1 erreicht - eine bei der Umsetzung noetige Kontrastanpassung, wie in der Spec
-   * ausdruecklich vorgesehen ("Abweichungen ... werden im Design-System-Dokument nachgetragen,
-   * nicht stillschweigend im Code entschieden").
+   * Fliesstext: die Vorlage setzt durchgehend --color-text (#201e1d) und daempft Sekundaertext
+   * ueber `opacity`. Deckkraft auf beliebigem Untergrund ist aber nicht kontrastpruefbar, deshalb
+   * hier ein eigener, ausgerechneter Ton aus derselben neutralen Tonleiter (neutral-700):
+   * 5.53:1 auf --bg und 4.92:1 auf --surface, beide >= WCAG-AA 4.5:1.
    */
-  --accent: #bb4e2a;
-  --accent-fg: #fdfbf8;
-  --accent-bg: rgba(187, 78, 42, 0.1);
-  --accent-border: rgba(187, 78, 42, 0.45);
+  --text: #645c50;
 
-  /* Bewertungsfarben (specs/features/0002-manual-categorization.md) - Hex-Werte unveraendert. */
-  --rating-favorite: #d9a441;
-  --rating-album-worthy: #3f9142;
-  --rating-rejected: #c94f4f;
+  /* Neutrale Tonleiter (unveraendert aus der Vorlage). */
+  --neutral-100: #f9f4ed;
+  --neutral-200: #eee7db;
+  --neutral-300: #dcd3c4;
+  --neutral-400: #c0b6a5;
+  --neutral-500: #a19786;
+  --neutral-600: #82796a;
+  --neutral-700: #645c50;
+  --neutral-800: #474238;
+  --neutral-900: #2e2b25;
 
   /*
-   * Symbol-/Beschriftungsfarbe auf vollflaechig gefuellten Bewertungs-/Status-Chips: weder Weiss
-   * noch die bisherige dunkle Textfarbe (--text-h) erreichen gegen ALLE vier Ton-Werte (hell UND
-   * dunkel) zuverlaessig 4.5:1. Reines Schwarz erreicht das gerade noch (min. 4.71:1 bei
-   * "rejected" hell - Review-Fund auf Branch feature/0012-visual-redesign-foundation: ein
-   * vorheriger, fast-aber-nicht-ganz-schwarzer Wert (#140f0c) erreichte dort nur 4.27:1, siehe
-   * Kontrastpruefung in architecture/0004-design-system.md). Die Marge bleibt bei "rejected" hell
-   * knapp (4.71:1) - bei einer kuenftigen Anpassung von --rating-rejected erneut nachrechnen.
+   * Terrakotta-Akzent. Der Basiston der Vorlage (#c67139) erreicht gegen --bg nur 3.03:1 - das
+   * Readme des Design-Systems sagt das selbst ("tuned to at least 3:1 - enough for icons, large
+   * text and interface chrome, not for body copy") und verweist fuer Text in Akzentfarbe auf die
+   * Stufe 700. Genau so ist es hier aufgeteilt:
+   *   --accent        Flaechen, Rahmen, Icons, grosse Schrift, Dekor  (Chrome, >= 3:1 genuegt)
+   *   --accent-strong Text in Fliesstextgroesse, Links, gefuellte Bedienelemente mit Label
+   * --accent-strong ist accent-700 und erreicht 5.72:1 auf --bg bzw. 5.09:1 auf --surface.
+   * Dieselbe Aufteilung (gleiche Farbfamilie, dunklere Stufe fuer Text) hatte das Projekt schon
+   * vor diesem Import gewaehlt, damals #d97757 -> #bb4e2a.
    */
-  --chip-fg: #000000;
+  --accent: #c67139;
+  --accent-strong: #8c491a;
+  --accent-fg: #f5ead8;
+  --accent-bg: color-mix(in srgb, #c67139 12%, transparent);
+  --accent-border: color-mix(in srgb, #c67139 45%, transparent);
 
-  /* Allgemeine Prozess-Status-Farben (specs/architecture/0004-design-system.md) - wiederverwenden
-     statt neu erfinden. */
+  --accent-100: #fff2eb;
+  --accent-200: #ffe1d0;
+  --accent-300: #ffc6a5;
+  --accent-400: #f6a06b;
+  --accent-500: #d67f48;
+  --accent-600: #b2622d;
+  --accent-700: #8c491a;
+  --accent-800: #643312;
+  --accent-900: #402310;
+
+  /* Salbei als zweite, gleichberechtigte Stimme (Readme: "a genuine second voice, not just a
+     highlight"). --accent-2-strong ist wieder die textfaehige Stufe (5.43:1 auf --bg). */
+  --accent-2: #7a8a5e;
+  --accent-2-strong: #56633f;
+
+  --accent-2-100: #f0fae1;
+  --accent-2-200: #e1eecc;
+  --accent-2-300: #ccdbb2;
+  --accent-2-400: #aebf92;
+  --accent-2-500: #8fa073;
+  --accent-2-600: #728157;
+  --accent-2-700: #56633f;
+  --accent-2-800: #3d472b;
+  --accent-2-900: #272e1b;
+
+  /*
+   * Bewertungsfarben - die drei Toene der Legende des Mockups, unveraendert uebernommen
+   * (Ocker/Salbei/Ziegel statt der frueheren Gelb/Gruen/Rot-Trias).
+   *
+   * Die Symbolfarbe ist bewusst PRO TON gesetzt statt wie bisher ueber ein einziges --chip-fg:
+   * die Badges tragen Textsymbole (Stern/Haken/Kreuz, beim Vorschlag mit Zahnrad-Praefix), also
+   * gilt WCAG-AA 4.5:1 - und keine einzelne Vordergrundfarbe haelt das gegen alle drei Toene.
+   * Gemessen: schwarz auf Ocker 7.88:1 und auf Salbei 4.99:1, aber auf Ziegel nur 3.53:1;
+   * umgekehrt Creme auf Ziegel 5.00:1, auf Ocker aber nur 2.24:1. Ein Vordergrund pro Ton loest
+   * das, ohne einen einzigen Farbwert der Vorlage anzufassen.
+   */
+  --rating-favorite: #c9962c;
+  --rating-favorite-fg: #000000;
+  --rating-album-worthy: #728157;
+  --rating-album-worthy-fg: #000000;
+  --rating-rejected: #a8442c;
+  --rating-rejected-fg: #f5ead8;
+
+  /* Allgemeine Prozess-Status-Farben - wiederverwenden statt neu erfinden. --status-success-fg ist
+     die Beschriftungsfarbe AUF der gefuellten Erfolgsflaeche (erledigter Stepper-Schritt):
+     schwarz auf --accent-2-600 erreicht 4.99:1. */
   --status-running: var(--accent);
-  --status-success: var(--rating-album-worthy);
+  --status-success: var(--accent-2-600);
+  --status-success-fg: #000000;
   --status-failed: var(--rating-rejected);
 
-  --shadow: 0 1px 2px rgba(36, 31, 26, 0.06), 0 4px 10px rgba(36, 31, 26, 0.06);
+  /* Elevation aus der Vorlage - weiche, tintengetoente Schatten auf dem warmen Grund. */
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2e2b25 14%, transparent);
+  --shadow: 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --sans: 'Figtree', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: 'Caprasimo', Georgia, serif;
   --mono: ui-monospace, Consolas, monospace;
 }
 
+/*
+ * Dunkelmodus. Das Design-System "Organic" definiert nur einen hellen Grund - diese Palette ist
+ * daher hier abgeleitet, nicht uebernommen: Grund und Flaeche aus den dunklen Stufen der
+ * neutralen Tonleiter, Text und Akzente aus den hellen Stufen derselben Leitern, damit die
+ * Farbfamilien identisch bleiben. Der Dunkelmodus war vor diesem Import vorhanden und wird
+ * bewusst nicht aufgegeben.
+ */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1f1b18;
-    --border: #35302b;
-    --text: #b3a89c;
-    --text-h: #f5f0ea;
+    --bg: #201e1d;
+    --surface: #2e2b25;
+    --border: color-mix(in srgb, #f5ead8 18%, transparent);
+    --text-h: #f5ead8;
+    --text: #c0b6a5; /* neutral-400: 8.28:1 auf --bg, 7.04:1 auf --surface */
 
-    /* Dunkelmodus-Terracotta (#e8916d, ADR 0011) erreicht als Text gegen den dunklen Hintergrund
-       bereits 7.09:1 - keine Anpassung noetig. */
-    --accent: #e8916d;
-    --accent-fg: #140f0c;
-    --accent-bg: rgba(232, 145, 109, 0.15);
-    --accent-border: rgba(232, 145, 109, 0.5);
+    /* Auf dunklem Grund traegt der helle Akzent selbst genug Kontrast (accent-400: 8.03:1),
+       eine getrennte Textstufe ist hier nicht noetig - beide zeigen deshalb auf denselben Wert. */
+    --accent: #f6a06b;
+    --accent-strong: #f6a06b;
+    --accent-fg: #201e1d;
+    --accent-bg: color-mix(in srgb, #f6a06b 15%, transparent);
+    --accent-border: color-mix(in srgb, #f6a06b 50%, transparent);
 
-    --rating-favorite: #f0c674;
-    --rating-album-worthy: #7fce82;
-    --rating-rejected: #e08080;
+    --accent-2: #aebf92;
+    --accent-2-strong: #ccdbb2;
 
-    --chip-fg: #000000;
+    /* Aufgehellte Entsprechungen derselben drei Bewertungstoene; alle tragen dunkle Tinte
+       (Ocker 8.56:1, Salbei 8.43:1, Ziegel 6.35:1). */
+    --rating-favorite: #e0b455;
+    --rating-favorite-fg: #201e1d;
+    --rating-album-worthy: #aebf92;
+    --rating-album-worthy-fg: #201e1d;
+    --rating-rejected: #e08a6f;
+    --rating-rejected-fg: #201e1d;
 
+    --status-success: var(--accent-2);
+    --status-success-fg: #201e1d; /* dunkle Tinte auf dem aufgehellten Salbei: 8.43:1 */
+
+    --shadow-sm: none;
     --shadow: none;
+    --shadow-lg: none;
   }
 }
 
@@ -85,34 +174,65 @@
    .claude/skills/design-system/SKILL.md fuer die Kurzreferenz). */
 @theme {
   --color-bg: var(--bg);
+  --color-surface: var(--surface);
   --color-border: var(--border);
   --color-text: var(--text);
   --color-text-h: var(--text-h);
 
   --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
   --color-accent-fg: var(--accent-fg);
   --color-accent-bg: var(--accent-bg);
   --color-accent-border: var(--accent-border);
 
+  --color-accent-2: var(--accent-2);
+  --color-accent-2-strong: var(--accent-2-strong);
+
+  --color-neutral-100: var(--neutral-100);
+  --color-neutral-200: var(--neutral-200);
+  --color-neutral-300: var(--neutral-300);
+  --color-neutral-400: var(--neutral-400);
+  --color-neutral-500: var(--neutral-500);
+  --color-neutral-600: var(--neutral-600);
+  --color-neutral-700: var(--neutral-700);
+  --color-neutral-800: var(--neutral-800);
+  --color-neutral-900: var(--neutral-900);
+
   --color-rating-favorite: var(--rating-favorite);
+  --color-rating-favorite-fg: var(--rating-favorite-fg);
   --color-rating-album-worthy: var(--rating-album-worthy);
+  --color-rating-album-worthy-fg: var(--rating-album-worthy-fg);
   --color-rating-rejected: var(--rating-rejected);
-  --color-chip-fg: var(--chip-fg);
+  --color-rating-rejected-fg: var(--rating-rejected-fg);
 
   --color-status-running: var(--status-running);
   --color-status-success: var(--status-success);
+  --color-status-success-fg: var(--status-success-fg);
   --color-status-failed: var(--status-failed);
 
   --shadow-warm: var(--shadow);
+  --shadow-warm-sm: var(--shadow-sm);
+  --shadow-warm-lg: var(--shadow-lg);
 
   --font-sans: var(--sans);
   --font-heading: var(--heading);
   --font-mono: var(--mono);
 
-  /* Formsprache (specs/architecture/0004-design-system.md): gemaessigt gerundet statt Pill-Design -
-     8px Standard (Buttons/Formularfelder/Kacheln), 12px fuer Karten/Dialoge/Panels. */
-  --radius-md: 8px;
-  --radius-xl: 12px;
+  /* Formsprache: das Organic-System rundet deutlich staerker als die bisherige, bewusst
+     gemaessigte Rundung (8px/12px). Uebernommen sind die Radienskala der Vorlage
+     (16px / 28px, Karten und Dialoge 32px) sowie ihre Regel, dass kleine Bedienelemente
+     - Buttons, Eingabefelder, Chips, Segmentschalter - vollstaendig zur Pille werden. */
+  --radius-md: 16px;
+  --radius-lg: 28px;
+  --radius-xl: 32px;
+
+  /* Abstandsskala der Vorlage (Dichte 1.10x). */
+  --spacing-o1: 4.4px;
+  --spacing-o2: 8.8px;
+  --spacing-o3: 13.2px;
+  --spacing-o4: 17.6px;
+  --spacing-o6: 26.4px;
+  --spacing-o8: 35.2px;
 }
 
 @layer base {
@@ -135,11 +255,46 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /*
+   * Caprasimo ist ein einzelner, fetter Display-Schnitt (nur Gewicht 400). Ein eigenes
+   * font-weight wuerde der Browser synthetisch faelschen - deshalb bleibt es bei 400, die
+   * optische Schwere bringt die Schrift selbst mit. Enges Zeilenmass und leicht negative
+   * Laufweite wie in der Vorlage.
+   */
   h1,
   h2,
-  h3 {
+  h3,
+  h4 {
     font-family: var(--heading);
-    font-weight: 500;
+    font-weight: 400;
+    line-height: 1.12;
+    letter-spacing: -0.015em;
     color: var(--text-h);
+  }
+
+  /* Themengebundene Fokus-Sichtbarkeit statt des blauen Browser-Rings (Readme, "Interaction
+     states"). */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+}
+
+@layer utilities {
+  /*
+   * Bildbehandlung der Vorlage: Fotos werden entsaettigt und aufgehellt, damit sie in die warme
+   * Flaeche zuruecktreten statt darauf zu liegen.
+   *
+   * ACHTUNG - bewusst NICHT auf die Fotos der Bewertungs-/Vergleichsansichten anwenden: dort ist
+   * die Bildwirkung selbst der Gegenstand der Entscheidung (Schaerfe, Belichtung, Farbe), eine
+   * kosmetische Waesche wuerde genau das verfaelschen, worueber der Nutzer urteilt. Gilt nur fuer
+   * dekorative und begleitende Bilder.
+   */
+  .washed {
+    filter: saturate(0.6) contrast(0.85) brightness(1.1) opacity(0.94);
   }
 }
