@@ -116,7 +116,7 @@ export function RemoteCategoryClassificationSection({
         <p className="text-sm text-text">
           Cloud-Bilderkennung ist für dieses Projekt nicht aktiviert.{' '}
           <Link
-            className="text-accent underline-offset-4 hover:underline"
+            className="text-accent-strong underline-offset-4 hover:underline"
             to={`/projects/${project.id}/settings`}
           >
             In den Projekteinstellungen aktivieren

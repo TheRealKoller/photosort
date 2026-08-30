@@ -17,7 +17,7 @@ export function Progress({
   return (
     <progress
       className={cn(
-        'h-2 w-full appearance-none overflow-hidden rounded-md bg-border',
+        'h-2 w-full appearance-none overflow-hidden rounded-full bg-border',
         '[&::-webkit-progress-bar]:bg-border [&::-webkit-progress-value]:bg-accent',
         '[&::-moz-progress-bar]:bg-accent',
         className

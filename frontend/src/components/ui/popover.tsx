@@ -15,8 +15,9 @@ export const Popover = PopoverPrimitive.Root
 export const PopoverTrigger = PopoverPrimitive.Trigger
 export const PopoverClose = PopoverPrimitive.Close
 
-// Styling konsistent mit ui/card.tsx (Formsprache: rounded-md/shadow-warm - hier bewusst 8px
-// [rounded-md] statt der 12px-Karten-Variante, siehe UI/UX-Abschnitt der Spec) und ui/alert.tsx
+// Styling konsistent mit ui/card.tsx (Formsprache: shadow-warm auf gerundeter Flaeche - hier
+// bewusst eine Stufe knapper gerundet als die Karte [rounded-lg statt rounded-xl], damit das
+// Panel als aufgesetzte Ebene und nicht als weitere Karte liest) und ui/alert.tsx
 // (Bannermuster). `shadow-warm` loest sich ueber index.css automatisch je Farbschema auf
 // (`--shadow: none` im Dunkelmodus) - dieselbe "Schatten durch Rahmen ersetzt"-Regel wie bei Card,
 // ohne eine eigene `dark:`-Klasse noetig zu haben.
@@ -40,7 +41,7 @@ export function PopoverContent({
         ref={ref}
         sideOffset={sideOffset}
         className={cn(
-          'z-50 max-h-[60vh] w-72 overflow-y-auto rounded-md border border-border bg-bg p-3 text-sm text-text shadow-warm outline-none',
+          'z-50 max-h-[60vh] w-72 overflow-y-auto rounded-lg border border-border bg-surface p-4 text-sm text-text shadow-warm outline-none',
           className
         )}
         {...props}

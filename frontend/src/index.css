@@ -60,7 +60,17 @@
    */
   --accent: #c67139;
   --accent-strong: #8c491a;
-  --accent-fg: #f5ead8;
+
+  /*
+   * Beschriftung AUF der gefuellten Akzentflaeche (Primaerbutton, Akzent-Chip). Die Vorlage setzt
+   * hier Creme (`.btn-primary { color: var(--color-bg) }`) - das erreicht gegen #c67139 nur
+   * 3.03:1 und verfehlt WCAG-AA fuer die 14px-Beschriftung. Dunkle Tinte auf demselben Terrakotta
+   * erreicht 4.60:1. Bewusst diese Richtung statt einer dunkleren Fuellung: so bleibt der
+   * Terrakotta-Ton der Vorlage an jeder Flaeche exakt erhalten - er traegt das Farbbild der
+   * Oberflaeche - und nur die Schriftfarbe weicht ab. Im Dunkelmodus ist dieselbe dunkle Tinte
+   * auf dem aufgehellten Akzent ohnehin richtig (8.03:1), der Wert gilt also in beiden Modi.
+   */
+  --accent-fg: #201e1d;
   --accent-bg: color-mix(in srgb, #c67139 12%, transparent);
   --accent-border: color-mix(in srgb, #c67139 45%, transparent);
 
@@ -144,7 +154,7 @@
        eine getrennte Textstufe ist hier nicht noetig - beide zeigen deshalb auf denselben Wert. */
     --accent: #f6a06b;
     --accent-strong: #f6a06b;
-    --accent-fg: #201e1d;
+    --accent-fg: #201e1d; /* dieselbe dunkle Tinte wie im Hellmodus: 8.03:1 auf accent-400 */
     --accent-bg: color-mix(in srgb, #f6a06b 15%, transparent);
     --accent-border: color-mix(in srgb, #f6a06b 50%, transparent);
 
