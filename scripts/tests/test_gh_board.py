@@ -179,11 +179,8 @@ class FakeGh:
             if fields == "state":
                 return _completed(json.dumps({"state": self.issue_state(number).upper()}))
             if fields == "closedByPullRequestsReferences":
-                return _completed(
-                    json.dumps(
-                        {"closedByPullRequestsReferences": self.closing_prs.get(number, [])}
-                    )
-                )
+                referenzen = self.closing_prs.get(number, [])
+                return _completed(json.dumps({"closedByPullRequestsReferences": referenzen}))
             raise AssertionError(f"unerwartete --json-Felder fuer 'gh issue view': {fields!r}")
         if head == ("gh", "pr", "view"):
             number = int(args[3])
