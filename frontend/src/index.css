@@ -125,6 +125,22 @@
   --status-success-fg: #000000;
   --status-failed: var(--rating-rejected);
 
+  /*
+   * Status-Pille (Vorlage, Artboard 2): getoente Flaeche mit farbiger Beschriftung statt eines
+   * farbigen Punktes neben neutralem Text. Jeweils ein Paar aus heller Tinte (`-tint`, die
+   * Flaeche) und dunkler Beschriftung (`-strong`) aus derselben Farbfamilie; alle vier Paare
+   * erreichen >= 7:1. Anders als `--status-running`/`--status-success` sind das ausdruecklich
+   * Text-taugliche Werte - deshalb eigene Tokens statt einer Wiederverwendung der Flaechenfarben.
+   */
+  --status-running-tint: var(--accent-200);
+  --status-running-strong: var(--accent-800);
+  --status-success-tint: var(--accent-2-200);
+  --status-success-strong: var(--accent-2-800);
+  --status-failed-tint: #f6ddd4;
+  --status-failed-strong: #7d2f1c;
+  --status-idle-tint: var(--neutral-100);
+  --status-idle-strong: var(--neutral-800);
+
   /* Elevation aus der Vorlage - weiche, tintengetoente Schatten auf dem warmen Grund. */
   --shadow-sm: 0 1px 2px color-mix(in srgb, #2e2b25 14%, transparent);
   --shadow: 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
@@ -173,6 +189,17 @@
     --status-success: var(--accent-2);
     --status-success-fg: #201e1d; /* dunkle Tinte auf dem aufgehellten Salbei: 8.43:1 */
 
+    /* Dieselben vier Paare umgedreht: die Flaeche ist eine 22%-Tinte der Statusfarbe auf dem
+       dunklen Grund, die Beschriftung eine helle Stufe derselben Leiter (alle >= 6.4:1). */
+    --status-running-tint: color-mix(in srgb, var(--accent) 22%, var(--bg));
+    --status-running-strong: var(--accent-300);
+    --status-success-tint: color-mix(in srgb, var(--accent-2) 22%, var(--bg));
+    --status-success-strong: var(--accent-2-300);
+    --status-failed-tint: color-mix(in srgb, var(--rating-rejected) 22%, var(--bg));
+    --status-failed-strong: #f3b5a0;
+    --status-idle-tint: color-mix(in srgb, var(--neutral-400) 22%, var(--bg));
+    --status-idle-strong: var(--neutral-300);
+
     --shadow-sm: none;
     --shadow: none;
     --shadow-lg: none;
@@ -218,6 +245,35 @@
   --color-status-running: var(--status-running);
   --color-status-success: var(--status-success);
   --color-status-success-fg: var(--status-success-fg);
+
+  --color-status-running-tint: var(--status-running-tint);
+  --color-status-running-strong: var(--status-running-strong);
+  --color-status-success-tint: var(--status-success-tint);
+  --color-status-success-strong: var(--status-success-strong);
+  --color-status-failed-tint: var(--status-failed-tint);
+  --color-status-failed-strong: var(--status-failed-strong);
+  --color-status-idle-tint: var(--status-idle-tint);
+  --color-status-idle-strong: var(--status-idle-strong);
+
+  --color-accent-100: var(--accent-100);
+  --color-accent-200: var(--accent-200);
+  --color-accent-300: var(--accent-300);
+  --color-accent-400: var(--accent-400);
+  --color-accent-500: var(--accent-500);
+  --color-accent-600: var(--accent-600);
+  --color-accent-700: var(--accent-700);
+  --color-accent-800: var(--accent-800);
+  --color-accent-900: var(--accent-900);
+
+  --color-accent-2-100: var(--accent-2-100);
+  --color-accent-2-200: var(--accent-2-200);
+  --color-accent-2-300: var(--accent-2-300);
+  --color-accent-2-400: var(--accent-2-400);
+  --color-accent-2-500: var(--accent-2-500);
+  --color-accent-2-600: var(--accent-2-600);
+  --color-accent-2-700: var(--accent-2-700);
+  --color-accent-2-800: var(--accent-2-800);
+  --color-accent-2-900: var(--accent-2-900);
   --color-status-failed: var(--status-failed);
 
   --shadow-warm: var(--shadow);

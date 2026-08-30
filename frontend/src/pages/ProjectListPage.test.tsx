@@ -58,7 +58,7 @@ describe('ProjectListPage', () => {
     renderPage()
 
     expect(screen.getByRole('status')).toBeInTheDocument()
-    expect(screen.queryByText(/noch keine projekte/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/noch nichts sortiert/i)).not.toBeInTheDocument()
   })
 
   it('shows an error banner with a retry option distinct from the empty state on failure', async () => {
@@ -68,7 +68,7 @@ describe('ProjectListPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Serverfehler')
     expect(screen.getByRole('button', { name: /erneut versuchen/i })).toBeInTheDocument()
-    expect(screen.queryByText(/noch keine projekte/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/noch nichts sortiert/i)).not.toBeInTheDocument()
   })
 
   it('retries the fetch when "Erneut versuchen" is clicked', async () => {
@@ -90,7 +90,7 @@ describe('ProjectListPage', () => {
 
     renderPage()
 
-    expect(await screen.findByText(/noch keine projekte/i)).toBeInTheDocument()
+    expect(await screen.findByText(/noch nichts sortiert/i)).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: /neues projekt/i }).length).toBeGreaterThan(0)
   })
 
