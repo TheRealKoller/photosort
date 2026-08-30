@@ -46,7 +46,7 @@ Bodies werden **immer** über `--body-file` übergeben, nie als Kommandozeilenar
 | `Review` | `ship-feature` | direkt nach `gh pr create` |
 | `Done` | `ship-feature` (über `finalize`) bzw. `refinement` | Spec finalisiert bzw. Story verworfen |
 
-`Done` schließt das Issue zusätzlich nativ — sowohl für eine umgesetzte als auch für eine ohne Umsetzung verworfene Story (kein eigener Statuswert für den Unterschied). Alle anderen Werte fassen den Issue-Zustand nicht an; ein Wiedereröffnen passiert nativ auf GitHub.
+`Done` schließt das Issue zusätzlich nativ — sowohl für eine umgesetzte als auch für eine ohne Umsetzung verworfene Story (kein eigener Statuswert für den Unterschied). Ist das Issue zu diesem Zeitpunkt bereits geschlossen (Board-Automation, Closing-Keyword beim Merge, von Hand), ist das kein Fehler, sondern der erreichte Zielzustand: Die Ausgabe ist dieselbe, als hätte dieser Aufruf es selbst geschlossen. Alle anderen Werte fassen den Issue-Zustand nicht an; ein Wiedereröffnen passiert nativ auf GitHub.
 
 ### `finalize` — Regelweg und Ausnahmepfad
 
@@ -54,7 +54,7 @@ Bodies werden **immer** über `--body-file` übergeben, nie als Kommandozeilenar
 
 **Ausnahmepfad**: ohne `--pr-number`. Das Script sucht dann den gemergten, das Issue schließenden Pull Request selbst. Das deckt den Fall ab, dass ein PR ohne vorherige Finalisierung gemergt wurde (Merge außerhalb des üblichen Ablaufs, abgebrochene Session) — die dabei entstehende lokale Änderung braucht dann ein kleines Folge-PR.
 
-Bedingungen in beiden Fällen: Der Datei-Status der Spec muss `Accepted` sein, und der PR muss `open` (Regelfall) oder `merged` (Nachzug) sein — ein ohne Merge geschlossener PR wird abgelehnt.
+Bedingungen in beiden Fällen: Der Datei-Status der Spec muss `Accepted` sein — oder bereits exakt die Zeile tragen, die dieser Aufruf schreiben würde (`Implemented ([PR #MMM](url))` mit demselben PR), dann läuft er als Wiederholung durch. Jeder andere Status bricht ab, insbesondere ein `Implemented` mit einem anderen PR. Der PR muss `open` (Regelfall) oder `merged` (Nachzug) sein — ein ohne Merge geschlossener PR wird abgelehnt.
 
 **Zusätzliche Vorbedingung im Regelweg (`--pr-number`):** Der PR muss mit dem Issue so verknüpft sein, dass GitHub es beim Merge schließt, und er muss auf den Default-Branch `main` zielen. Geprüft wird GitHubs eigene Auskunft (`closingIssuesReferences` aus dem ohnehin abgesetzten `gh pr view`), nicht der PR-Body: Akzeptiert wird nur ein repo-qualifiziert passender Eintrag (`TheRealKoller`/`photosort` plus Issue-Nummer), damit eine gleichlautende Nummer aus einem fremden Repository nicht durchrutscht. Hergestellt wird die Verknüpfung über die Zeile `Closes #<Issue-Nummer>` im PR-**Body** (`ship-feature` Schritt 6.3); eine ohne Keyword über die Development-Seitenleiste gesetzte Verknüpfung wird bewusst mit akzeptiert, weil sie dieselbe Wirkung hat. Der Abbruch erfolgt vor dem Umschreiben der Spec-Datei und vor **jedem** Board-Zugriff, auch dem lesenden — nach einem `gh pr edit --body-file` ist derselbe Aufruf unverändert wiederholbar. Voraussetzung an die Arbeitsumgebung: `gh` 2.72.0 oder neuer, erst ab dort kennt `gh pr view --json` das Feld; ein daran gescheiterter Aufruf ist ein Werkzeugproblem und keine fehlende Verknüpfung (die Meldung sagt das).
 
@@ -68,7 +68,7 @@ Die Ausgabe ist immer **ein** JSON-Objekt auf stdout. Enthält es den Schlüssel
 
 - Verweist die Meldung auf `gh auth refresh -s project` (fehlender `project`-Scope der lokalen `gh`-Session): das **nicht** selbst zu beheben versuchen (erfordert i.d.R. interaktive Browser-Bestätigung) — Daniel den Befehl klar mitteilen und abbrechen.
 - Jeder andere Fehler: die Meldung **unverändert** an Daniel weitergeben, keinen eigenen Lösungsversuch unternehmen, der über das Offensichtliche hinausgeht. Insbesondere nicht umgehen, indem eine Spec-Datei oder ein Board-Wert von Hand nachgezogen wird.
-- **Nur bei `finalize`:** Das Script schreibt zuerst die Spec-Datei um und setzt danach das Board. Scheitert der Board-Zugriff, bleibt die umgeschriebene Datei als Arbeitskopie-Änderung stehen. Mit `git status` prüfen und die Änderung in dem Fall verwerfen (`git checkout -- specs/features/NNNN-*.md`), bevor es weitergeht — der Aufruf ist wiederholbar, solange der Datei-Status noch `Accepted` ist.
+- **Nur bei `finalize`:** Das Script schreibt zuerst die Spec-Datei um und setzt danach das Board. Scheitert der Board-Zugriff, bleibt die umgeschriebene Datei als Arbeitskopie-Änderung stehen — sie muss **nicht** zurückgenommen werden, der Aufruf ist unverändert wiederholbar: Steht in der Datei bereits exakt die Zeile, die er erneut schreiben würde (derselbe aufgelöste PR, dieselbe URL), gilt das als bereits erreichter Zustand. Nur eine **abweichende** `Implemented`-Zeile bricht ab — das ist dann ein Hinweis auf die falsche Spec- oder PR-Nummer und kein Fall für einen Rückbau von Hand.
 
 Meldet das Script, dass Projekt oder Statusfeld nicht gefunden wurde, legt es bewusst nichts an: Dann wurden Board-Titel oder Feld-Optionen manuell verändert, und das ist ein einmaliger manueller Reparaturschritt von Daniel, kein automatischer Dauerbetrieb-Pfad.
 

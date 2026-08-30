@@ -361,8 +361,45 @@ class GhBoard:
         self.set_priority(issue_number, priority)
         return True, priority
 
+    def issue_state(self, issue_number: int) -> str:
+        """Rein lesend, ausschliesslich `--json state`: nie Titel, Body, Labels oder Kommentare
+        (ADR 0046, Abschnitt 3 - verarbeitet werden nur strukturierte, von GitHub selbst erzeugte
+        Metadaten, kein von Dritten befuellbarer Freitext). `gh` liefert den GraphQL-Enum in
+        Grossschreibung; normalisiert wird wie in `get_pull_request()`."""
+        data = self._run_json(["gh", "issue", "view", str(issue_number), "--json", "state"])
+        state = data.get("state") if isinstance(data, dict) else None
+        if not isinstance(state, str) or not state.strip():
+            raise BoardError(
+                f"'gh issue view {issue_number} --json state' hat keinen brauchbaren Zustand "
+                f"geliefert: {data!r}."
+            )
+        return state.strip().lower()
+
     def close_issue(self, issue_number: int) -> None:
-        self._run_text(["gh", "issue", "close", str(issue_number)])
+        """Zielzustand ist 'Issue geschlossen', nicht 'dieser Aufruf hat es geschlossen': Der
+        Board-Workflow 'Auto-close issue' schliesst das Issue schon beim Setzen der Spalte auf
+        'Done' (ADR 0046, Abschnitt 5) und ist dabei schneller als dieser Aufruf; ebenso ein
+        Closing-Keyword beim Merge oder ein Schliessen von Hand. Ein Fehlschlag wird deshalb
+        gegen den tatsaechlichen Zustand geprueft statt gegen den Fehlertext von `gh` - der ist
+        undokumentiert, aenderbar und nicht trennscharf (ADR 0048, Abschnitt 2).
+
+        Erfolg gilt nur bei positiver Gleichheit auf 'closed': jeder andere Wert - 'open', ein
+        kuenftiger Enum-Wert, ein unbrauchbares Feld - fuehrt auf den Fehlerpfad. Die Pruefung
+        laeuft bewusst NACH dem Fehlschlag: eine Vorabpruefung kostete in jedem 'Done'-Pfad
+        einen zusaetzlichen Aufruf und beseitigte das Rennen mit der asynchronen
+        Board-Automation trotzdem nicht."""
+        try:
+            self._run_text(["gh", "issue", "close", str(issue_number)])
+        except BoardError as close_error:
+            try:
+                already_closed = self.issue_state(issue_number) == "closed"
+            except BoardError as probe_error:
+                # Ist die Pruefung selbst nicht moeglich (Issue existiert nicht, fehlende
+                # Berechtigung, Dienst nicht erreichbar), bleibt der urspruengliche Fehlschlag
+                # die gemeldete Ursache - er ist der aussagekraeftigere.
+                raise close_error from probe_error
+            if not already_closed:
+                raise
 
     def set_issue_body(self, issue_number: int, body: str) -> None:
         self._with_body_file(
@@ -540,20 +577,25 @@ def cmd_finalize(
 
     Bewusste Reihenfolge: erst die Spec-Datei umschreiben, dann das Board setzen. Scheitert der
     Board-Zugriff danach, bleibt die umgeschriebene Datei als sichtbare Arbeitskopie-Aenderung
-    stehen; ein erneuter Versuch braucht dann erst deren Revert (die Statuspruefung unten
-    verlangt 'Accepted').
+    stehen; ein erneuter Versuch laeuft trotzdem durch, weil die bereits geschriebene Zielzeile
+    als erreichter Zustand gilt (ADR 0048, Abschnitt 3) - zurueckgenommen werden muss nichts.
     """
     spec_path = find_spec_path(repo_root, spec_number)
     text = spec_path.read_text(encoding="utf-8")
     status = read_spec_status(text)
-    if status != "Accepted":
+    # 'Implemented' darf die Entscheidung bis nach der PR-Aufloesung verschieben (ohne
+    # aufgeloesten PR ist die Zielzeile nicht bildbar); jeder andere Status bricht weiterhin ab,
+    # BEVOR ein GitHub-Zugriff stattfindet.
+    if status not in {"Accepted", "Implemented"}:
         raise BoardError(
             f"Spec {spec_number} hat Datei-Status {status!r} - finalisiert wird nur eine Spec im "
-            "Status 'Accepted'."
+            "Status 'Accepted' oder eine, die bereits exakt die Zielzeile dieses Aufrufs traegt."
         )
 
     resolved_pr, pull_request = _resolve_pull_request(board, issue_number, pr_number)
     status_line = f"Implemented ([PR #{resolved_pr}]({pull_request['url']}))"
+    if status == "Implemented":
+        _require_identical_status_line(text, status_line, spec_number=spec_number)
     spec_path.write_text(set_status_line(text, status_line), encoding="utf-8")
 
     board.set_status(issue_number, "Done")
@@ -566,6 +608,31 @@ def cmd_finalize(
         "status_line": status_line,
         "status": "Done",
     }
+
+
+def _require_identical_status_line(text: str, status_line: str, *, spec_number: str) -> None:
+    """Eng gefasste Zielzustands-Regel fuer das Datei-Status-Gate (ADR 0048, Abschnitt 3): Nur
+    exakt die Zeile, die dieser Lauf schreiben wuerde - gleiche PR-Nummer UND gleiche URL -, gilt
+    als bereits erreichter Zustand. Ein 'Implemented' mit einem anderen PR ist kein erreichter
+    Zustand, sondern ein Hinweis auf die falsche Spec- oder PR-Nummer.
+
+    Verglichen wird ausschliesslich in der Header-Zone (dieselbe Trennung wie beim Schreiben in
+    `set_status_line()`): ein in der Inhalts-Zone zitiertes '**Status:**' darf die Gleichheit
+    nicht erfuellen, waehrend der Header auf etwas anderem steht.
+    """
+    header, _ = _split_header(text)
+    match = _STATUS_LINE_RE.search(header)
+    if match is None:
+        raise BoardError("Spec-Datei hat kein '**Status:**'-Metadaten-Feld im Header.")
+    vorhanden = match.group(0)
+    ziel = f"**Status:** {status_line}"
+    if vorhanden != ziel:
+        raise BoardError(
+            f"Spec {spec_number} steht bereits auf {vorhanden!r}, dieser Aufruf wuerde {ziel!r} "
+            "schreiben - finalisiert wird nur eine Spec im Status 'Accepted' oder eine, die "
+            "bereits exakt diese Zielzeile traegt. Eine abweichende 'Implemented'-Zeile deutet "
+            "auf die falsche Spec- oder PR-Nummer hin."
+        )
 
 
 def _closing_issue_matches(reference: dict[str, Any], issue_number: int) -> bool:

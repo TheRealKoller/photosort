@@ -62,6 +62,8 @@ class FakeGh:
         issue_create_stdout: str | None = None,
         pull_requests: dict[int, dict] | None = None,
         closing_prs: dict[int, list[dict]] | None = None,
+        issue_states: dict[int, str] | None = None,
+        done_schliesst_das_issue: bool = False,
         failing: set[tuple[str, ...]] | None = None,
         failure_stderr: dict[tuple[str, ...], str] | None = None,
     ) -> None:
@@ -111,6 +113,15 @@ class FakeGh:
         )
         self.pull_requests = pull_requests or {}
         self.closing_prs = closing_prs or {}
+        # Zustandsbehaftet statt Antwort-Tabelle: `gh issue close` und `gh issue view --json
+        # state` schauen auf denselben Zustand - genau darin besteht der Fall aus ADR 0048
+        # (Testkonzept, Sektion "Erweiterung fuer ADR 0048"). Default: alle Issues offen.
+        self.issue_states = dict(issue_states or {})
+        # Opt-in-Modell des Board-Workflows `Auto-close issue` (ADR 0046, Abschnitt 5): ein
+        # `item-edit` auf die `Done`-Options-Id schliesst das Issue. Bewusst KEIN Default -
+        # sonst bekaemen alle unbeteiligten Tests ein Verhalten aufgepraegt, das ihr
+        # Pruefgegenstand nicht ist.
+        self.done_schliesst_das_issue = done_schliesst_das_issue
         self.failing = failing or set()
         # Je Aufruf-Praefix die stderr-Ausgabe, mit der er scheitern soll - die reale
         # Fehlermeldung entscheidet, wie `gh-board.py` sie einordnet.
@@ -137,6 +148,8 @@ class FakeGh:
         if head == ("gh", "project", "item-list"):
             return _completed(json.dumps({"items": self.items, "totalCount": len(self.items)}))
         if head == ("gh", "project", "item-edit"):
+            if self.done_schliesst_das_issue and "OPT_Done" in args:
+                self.issue_states[self._issue_of_item(args[args.index("--id") + 1])] = "closed"
             return _completed("")
         if head == ("gh", "project", "item-add"):
             url = args[args.index("--url") + 1]
@@ -149,13 +162,26 @@ class FakeGh:
             return _completed(json.dumps({"id": item["id"]}))
         if head == ("gh", "issue", "create"):
             return _completed(self.issue_create_stdout)
-        if head[:2] == ("gh", "issue") and head[2] in {"edit", "close", "reopen"}:
+        if head == ("gh", "issue", "close"):
+            number = int(args[3])
+            if self.issue_state(number) == "closed":
+                # Real beobachtete Meldung (Spec 0278). Sie ist Kulisse, nie Pruefgegenstand:
+                # keine Assertion darf auf ihr aufsetzen, sonst waere die in ADR 0048
+                # verworfene Fehlertext-Heuristik durch die Hintertuer zurueck.
+                return _completed(returncode=1, stderr=BEREITS_GESCHLOSSEN_STDERR)
+            self.issue_states[number] = "closed"
+            return _completed("")
+        if head[:2] == ("gh", "issue") and head[2] in {"edit", "reopen"}:
             return _completed("")
         if head == ("gh", "issue", "view"):
             number = int(args[3])
-            return _completed(
-                json.dumps({"closedByPullRequestsReferences": self.closing_prs.get(number, [])})
-            )
+            fields = args[args.index("--json") + 1]
+            if fields == "state":
+                return _completed(json.dumps({"state": self.issue_state(number).upper()}))
+            if fields == "closedByPullRequestsReferences":
+                referenzen = self.closing_prs.get(number, [])
+                return _completed(json.dumps({"closedByPullRequestsReferences": referenzen}))
+            raise AssertionError(f"unerwartete --json-Felder fuer 'gh issue view': {fields!r}")
         if head == ("gh", "pr", "view"):
             number = int(args[3])
             if number not in self.pull_requests:
@@ -167,6 +193,17 @@ class FakeGh:
             self.labels.append(args[3])
             return _completed("")
         raise AssertionError(f"unerwarteter gh-Aufruf im Test: {args}")
+
+    # -- Zustand -----------------------------------------------------------------------------
+
+    def issue_state(self, number: int) -> str:
+        return self.issue_states.get(number, "open")
+
+    def _issue_of_item(self, item_id: str) -> int:
+        for item in self.items:
+            if item["id"] == item_id:
+                return int((item.get("content") or {})["number"])
+        raise AssertionError(f"unbekanntes Board-Item im Test: {item_id!r}")
 
     # -- Auswertungshilfen -------------------------------------------------------------------
 
@@ -200,6 +237,11 @@ UNKNOWN_JSON_FIELD_STDERR = (
     "  state\n"
     "  url"
 )
+
+# So scheitert `gh issue close` real auf einem bereits geschlossenen Issue (beobachtet bei der
+# Finalisierung von Spec 0209, PR #277). Der Text ist Kulisse fuer den FakeGh - das
+# Produktivverhalten haengt bewusst nicht an ihm (ADR 0048, Abschnitt 2).
+BEREITS_GESCHLOSSEN_STDERR = "GraphQL: Could not close the issue. (closeIssue)"
 
 # Ein Fehlschlag, der mit der `gh`-Version nichts zu tun hat.
 ABGELAUFENES_TOKEN_STDERR = "gh: Bad credentials (HTTP 401)\nTry authenticating with: gh auth login"
@@ -786,6 +828,153 @@ def test_get_pull_request_holt_die_verknuepfungsfelder_und_niemals_den_body(
     assert data["closingIssuesReferences"] == [_closing_ref(262)]
 
 
+# -- Zielzustands-Idempotenz beim Schliessen (Spec 0278 / ADR 0048) ---------------------------
+
+
+def _zustandsabfragen(fake: FakeGh) -> list[list[str]]:
+    """Nur die Zustands-Nachpruefungen aus dem Aufruflog - `gh issue view` gibt es auch mit
+    anderen `--json`-Feldern (`closedByPullRequestsReferences`)."""
+    return [
+        call
+        for call in fake.calls_starting_with("gh", "issue", "view")
+        if call[call.index("--json") + 1] == "state"
+    ]
+
+
+def test_issue_state_fragt_genau_das_state_feld_ab_und_normalisiert(gh_board: ModuleType) -> None:
+    """`gh` liefert den GraphQL-Enum gross (CLOSED); ohne Normalisierung griffe die Ausnahme nie.
+    Abgefragt wird ausschliesslich `state` - nie Titel, Body, Labels oder Kommentare."""
+    fake = FakeGh(issue_states={262: "closed"})
+
+    assert _board(gh_board, fake).issue_state(262) == "closed"
+    assert fake.single_call("gh", "issue", "view") == [
+        "gh",
+        "issue",
+        "view",
+        "262",
+        "--json",
+        "state",
+    ]
+
+
+@pytest.mark.parametrize("payload", ['{"state": null}', "{}", '{"state": ""}', "[]"])
+def test_issue_state_meldet_ein_unbrauchbares_state_feld_als_boarderror(
+    gh_board: ModuleType, payload: str
+) -> None:
+    """Ein KeyError/AttributeError wuerde die Ausgabekonvention des Werkzeugs
+    ({"error": ...} plus Exit-Code 1) mit einem Traceback brechen."""
+
+    def run(args: list[str]) -> subprocess.CompletedProcess[str]:
+        if tuple(args[:3]) == ("gh", "issue", "view"):
+            return _completed(payload)
+        return FakeGh()(args)
+
+    with pytest.raises(gh_board.BoardError):
+        gh_board.GhBoard(owner=OWNER, project_title=PROJECT_TITLE, run=run).issue_state(262)
+
+
+def test_close_issue_ist_still_wenn_das_issue_bereits_geschlossen_ist(
+    gh_board: ModuleType,
+) -> None:
+    """Kern von AK 1/2: Zielzustand ist 'Issue geschlossen', nicht 'dieser Aufruf hat es
+    geschlossen'."""
+    fake = FakeGh(issue_states={262: "closed"})
+
+    _board(gh_board, fake).close_issue(262)
+
+    assert fake.single_call("gh", "issue", "close") == ["gh", "issue", "close", "262"]
+
+
+def test_close_issue_meldet_den_urspruenglichen_fehler_wenn_das_issue_offen_ist(
+    gh_board: ModuleType,
+) -> None:
+    """AK 5: ein echter Fehlschlag (z.B. abgelaufenes Token) bleibt ein Fehler - und zwar mit dem
+    Originaltext von `gh issue close`, nicht mit dem der Nachpruefung."""
+    fake = FakeGh(
+        failing={("gh", "issue", "close")},
+        failure_stderr={("gh", "issue", "close"): ABGELAUFENES_TOKEN_STDERR},
+    )
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        _board(gh_board, fake).close_issue(262)
+
+    assert "Bad credentials" in str(excinfo.value)
+
+
+def test_close_issue_meldet_den_close_fehler_wenn_die_nachpruefung_selbst_scheitert(
+    gh_board: ModuleType,
+) -> None:
+    """AK 5: nicht existierendes Issue / fehlende Berechtigung / Dienst nicht erreichbar - der
+    aussagekraeftigere `close`-Fehler wird gemeldet, der Lesefehler haengt als Ursache daran."""
+    fake = FakeGh(
+        failing={("gh", "issue", "close"), ("gh", "issue", "view")},
+        failure_stderr={
+            ("gh", "issue", "close"): ABGELAUFENES_TOKEN_STDERR,
+            ("gh", "issue", "view"): "gh: Not Found (HTTP 404)",
+        },
+    )
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        _board(gh_board, fake).close_issue(262)
+
+    assert "Bad credentials" in str(excinfo.value)
+    assert "Not Found" in str(excinfo.value.__cause__)
+
+
+def test_close_issue_prueft_den_zustand_im_erfolgsfall_nicht_nach(gh_board: ModuleType) -> None:
+    """AK 8 / Regressionsschutz: die Pruefung ist eine Nachpruefung, keine Vorabpruefung - sonst
+    kostet sie in jedem `Done`-Pfad einen zusaetzlichen `gh`-Aufruf, ohne das Rennen mit der
+    asynchronen Board-Automation zu beseitigen."""
+    fake = FakeGh()
+
+    _board(gh_board, fake).close_issue(262)
+
+    assert _zustandsabfragen(fake) == []
+
+
+def test_set_status_done_auf_bereits_geschlossenem_issue_meldet_erfolg(
+    gh_board: ModuleType,
+) -> None:
+    """AK 2/4: regulaerer Payload, und der Zielzustand wird trotzdem vollstaendig hergestellt -
+    die Board-Spalte wird gesetzt, das Schliessen versucht."""
+    fake = FakeGh(issue_states={262: "closed"})
+
+    result = gh_board.cmd_set_status(_board(gh_board, fake), issue_number=262, status="Done")
+
+    assert result == {"issue_number": 262, "status": "Done"}
+    item_edit = fake.single_call("gh", "project", "item-edit")
+    assert item_edit[item_edit.index("--single-select-option-id") + 1] == "OPT_Done"
+    assert fake.single_call("gh", "issue", "close") == ["gh", "issue", "close", "262"]
+
+
+def test_set_status_done_ueberlebt_die_auto_close_automation_des_boards(
+    gh_board: ModuleType,
+) -> None:
+    """Reproduktion des gemeldeten Falls im Zusammenhang: das `Done` schliesst das Issue ueber
+    den Board-Workflow, das eigene `close` trifft es danach bereits geschlossen an."""
+    fake = FakeGh(done_schliesst_das_issue=True)
+
+    result = gh_board.cmd_set_status(_board(gh_board, fake), issue_number=262, status="Done")
+
+    assert result == {"issue_number": 262, "status": "Done"}
+    assert fake.issue_state(262) == "closed"
+
+
+def test_set_status_done_ist_ununterscheidbar_vom_selbst_geschlossenen_fall(
+    gh_board: ModuleType,
+) -> None:
+    """AK 3 als Gleichheit zweier real erzeugter Ergebnisse - nicht als Feldliste: nur diese Form
+    faengt ein spaeter nachgeruestetes Feld ('war schon geschlossen') ab."""
+    ergebnis_bereits_geschlossen = gh_board.cmd_set_status(
+        _board(gh_board, FakeGh(issue_states={262: "closed"})), issue_number=262, status="Done"
+    )
+    ergebnis_frisch_geschlossen = gh_board.cmd_set_status(
+        _board(gh_board, FakeGh()), issue_number=262, status="Done"
+    )
+
+    assert ergebnis_bereits_geschlossen == ergebnis_frisch_geschlossen
+
+
 # -- finalize ---------------------------------------------------------------------------------
 
 
@@ -817,6 +1006,79 @@ def test_finalize_schreibt_statuszeile_setzt_done_und_schliesst_das_issue(
     item_edit = fake.single_call("gh", "project", "item-edit")
     assert item_edit[item_edit.index("--single-select-option-id") + 1] == "OPT_Done"
     assert fake.single_call("gh", "issue", "close") == ["gh", "issue", "close", "262"]
+
+
+def test_finalize_ueberlebt_die_auto_close_automation_des_boards(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """AK 1/4 als Reproduktion des gemeldeten Falls (Finalisierung von Spec 0209, PR #277): das
+    `Done` schliesst das Issue ueber den Board-Workflow, das eigene `close` trifft es danach
+    bereits geschlossen an - der Zielzustand entsteht trotzdem vollstaendig."""
+    path = _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281)}, done_schliesst_das_issue=True)
+
+    result = gh_board.cmd_finalize(
+        _board(gh_board, fake),
+        repo_root=tmp_path,
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+
+    assert result["status"] == "Done"
+    assert f"**Status:** Implemented ([PR #281]({_pr_url(281)}))\n" in path.read_text(
+        encoding="utf-8"
+    )
+    item_edit = fake.single_call("gh", "project", "item-edit")
+    assert item_edit[item_edit.index("--single-select-option-id") + 1] == "OPT_Done"
+    assert fake.single_call("gh", "issue", "close") == ["gh", "issue", "close", "262"]
+
+
+def test_finalize_ist_ununterscheidbar_vom_selbst_geschlossenen_fall(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """AK 3 als Gleichheit zweier real erzeugter Ergebnisse: der aufrufende Ablauf soll den
+    Unterschied 'war schon geschlossen' gar nicht sehen koennen."""
+    _write_spec(tmp_path / "bereits", "0262")
+    _write_spec(tmp_path / "frisch", "0262")
+
+    ergebnis_bereits_geschlossen = gh_board.cmd_finalize(
+        _board(
+            gh_board,
+            FakeGh(pull_requests={281: _pull_request(281)}, issue_states={262: "closed"}),
+        ),
+        repo_root=tmp_path / "bereits",
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+    ergebnis_frisch_geschlossen = gh_board.cmd_finalize(
+        _board(gh_board, FakeGh(pull_requests={281: _pull_request(281)})),
+        repo_root=tmp_path / "frisch",
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+
+    assert ergebnis_bereits_geschlossen == ergebnis_frisch_geschlossen
+
+
+def test_finalize_prueft_den_zustand_im_erfolgsfall_nicht_nach(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """AK 8: der ungestoerte Regelfall setzt weiterhin genau die bisherigen `gh`-Aufrufe ab."""
+    _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
+
+    gh_board.cmd_finalize(
+        _board(gh_board, fake),
+        repo_root=tmp_path,
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+
+    assert _zustandsabfragen(fake) == []
 
 
 def test_finalize_akzeptiert_einen_bereits_gemergten_pr(
@@ -858,7 +1120,9 @@ def test_finalize_lehnt_einen_ohne_merge_geschlossenen_pr_ab(
 def test_finalize_lehnt_eine_nicht_akzeptierte_spec_ab(
     gh_board: ModuleType, tmp_path: Path
 ) -> None:
-    path = _write_spec(tmp_path, "0262", status="Implemented ([PR #1](x))")
+    """Statusgate (c): jeder Status ausser `Accepted`/`Implemented` bricht unveraendert ab, und
+    zwar vor jedem GitHub-Zugriff."""
+    path = _write_spec(tmp_path, "0262", status="Proposed")
     fake = FakeGh(pull_requests={281: _pull_request(281)})
 
     with pytest.raises(gh_board.BoardError) as excinfo:
@@ -870,8 +1134,144 @@ def test_finalize_lehnt_eine_nicht_akzeptierte_spec_ab(
             pr_number=281,
         )
 
-    assert "Accepted" in str(excinfo.value)
-    assert "**Status:** Implemented ([PR #1](x))" in path.read_text(encoding="utf-8")
+    meldung = str(excinfo.value)
+    # Die Meldung muss beide zulaessigen Faelle nennen: eine unvollstaendige Aufzaehlung
+    # widerspraeche der Regel, nach der eine bereits geschriebene identische Zielzeile
+    # durchlaeuft - und dieses Werkzeug soll gerade ohne Handbeurteilung auswertbar sein.
+    assert "'Proposed'" in meldung
+    assert (
+        "Status 'Accepted' oder eine, die bereits exakt die Zielzeile dieses Aufrufs traegt"
+        in meldung
+    )
+    assert "**Status:** Proposed" in path.read_text(encoding="utf-8")
+    assert fake.calls == []
+
+
+def test_finalize_laeuft_bei_bereits_geschriebener_identischer_zielzeile_durch(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Statusgate (a) / AK 9 positiv: `Implemented` mit genau der Zeile, die dieser Lauf schreiben
+    wuerde, ist ein bereits erreichter Zielzustand - kein Fehler. Geschrieben wird dabei exakt
+    der Inhalt, der ohnehin schon in der Datei steht."""
+    path = _write_spec(tmp_path, "0262", status=f"Implemented ([PR #281]({_pr_url(281)}))")
+    vorher = path.read_text(encoding="utf-8")
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
+
+    result = gh_board.cmd_finalize(
+        _board(gh_board, fake),
+        repo_root=tmp_path,
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+
+    assert result == {
+        "spec_number": "0262",
+        "issue_number": 262,
+        "pr_number": 281,
+        "status_line": f"Implemented ([PR #281]({_pr_url(281)}))",
+        "status": "Done",
+    }
+    assert path.read_text(encoding="utf-8") == vorher
+    item_edit = fake.single_call("gh", "project", "item-edit")
+    assert item_edit[item_edit.index("--single-select-option-id") + 1] == "OPT_Done"
+
+
+def test_finalize_lehnt_ein_implemented_mit_anderem_pr_ab(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Statusgate (b) / AK 9 negativ: das ist kein erreichter Zielzustand, sondern ein Hinweis auf
+    die falsche Spec- oder PR-Nummer - Abbruch ohne Board-Schreibzugriff und ohne Dateiaenderung.
+    """
+    path = _write_spec(tmp_path, "0262", status=f"Implemented ([PR #1]({_pr_url(1)}))")
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
+
+    with pytest.raises(gh_board.BoardError):
+        gh_board.cmd_finalize(
+            _board(gh_board, fake),
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    assert f"**Status:** Implemented ([PR #1]({_pr_url(1)}))" in path.read_text(encoding="utf-8")
+    assert fake.calls_starting_with("gh", "project", "item-edit") == []
+    assert fake.calls_starting_with("gh", "issue", "close") == []
+
+
+def test_finalize_lehnt_eine_zielzeile_mit_abweichendem_freitext_ab(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Statusgate (d): verglichen wird die vollstaendige Zeile, nicht das fuehrende Schluesselwort
+    aus `read_spec_status()` - gleiche PR-Nummer bei abweichender URL gilt nicht als gleich."""
+    path = _write_spec(
+        tmp_path, "0262", status="Implemented ([PR #281](https://example.invalid/pull/281))"
+    )
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
+
+    with pytest.raises(gh_board.BoardError):
+        gh_board.cmd_finalize(
+            _board(gh_board, fake),
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    assert "https://example.invalid/pull/281" in path.read_text(encoding="utf-8")
+    assert fake.calls_starting_with("gh", "project", "item-edit") == []
+
+
+def test_finalize_vergleicht_die_zielzeile_nur_in_der_header_zone(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Ein in der Inhalts-Zone zitiertes `**Status:**` darf die Gleichheit nicht erfuellen, waehrend
+    der Header auf etwas anderem steht - dieselbe `_split_header`-Trennung wie beim Schreiben."""
+    path = _write_spec(tmp_path, "0262", status=f"Implemented ([PR #999]({_pr_url(999)}))")
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + f"\n**Status:** Implemented ([PR #281]({_pr_url(281)}))\n",
+        encoding="utf-8",
+    )
+    vorher = path.read_text(encoding="utf-8")
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
+
+    with pytest.raises(gh_board.BoardError):
+        gh_board.cmd_finalize(
+            _board(gh_board, fake),
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    assert path.read_text(encoding="utf-8") == vorher
+    assert fake.calls_starting_with("gh", "project", "item-edit") == []
+
+
+def test_finalize_ist_ohne_ruecknahme_wiederholbar(gh_board: ModuleType, tmp_path: Path) -> None:
+    """AK 6, als ganzer Aufruf statt als Summe der Einzelschritte: zweimal derselbe Aufruf auf
+    demselben zustandsbehafteten FakeGh, ohne dazwischen irgendetwas zurueckzunehmen."""
+    path = _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281)}, done_schliesst_das_issue=True)
+    board = _board(gh_board, fake)
+
+    def lauf() -> dict:
+        return gh_board.cmd_finalize(
+            board,
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    erster_lauf = lauf()
+    datei_nach_lauf_1 = path.read_text(encoding="utf-8")
+    zweiter_lauf = lauf()
+
+    assert zweiter_lauf == erster_lauf
+    assert path.read_text(encoding="utf-8") == datei_nach_lauf_1
 
 
 def test_finalize_meldet_eine_fehlende_spec_datei(gh_board: ModuleType, tmp_path: Path) -> None:
@@ -1347,6 +1747,24 @@ def test_cli_finalize_nimmt_die_spec_nummer_als_issue_nummer(
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["issue_number"] == 262
+
+
+def test_cli_finalize_ist_wiederholbar_und_meldet_zweimal_dasselbe(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AK 6/7 auf der Ebene, die `ship-feature` tatsaechlich auswertet: zweimal Exit-Code 0 und
+    identisches JSON auf stdout - kein `{"error": ...}`, keine Handbeurteilung."""
+    _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281)}, done_schliesst_das_issue=True)
+    argv = ["finalize", "--spec", "0262", "--pr-number", "281"]
+
+    erster_code = gh_board.main(argv, run=fake, repo_root=tmp_path, owner=OWNER)
+    erste_ausgabe = capsys.readouterr().out
+    zweiter_code = gh_board.main(argv, run=fake, repo_root=tmp_path, owner=OWNER)
+    zweite_ausgabe = capsys.readouterr().out
+
+    assert (erster_code, zweiter_code) == (0, 0)
+    assert json.loads(zweite_ausgabe) == json.loads(erste_ausgabe)
 
 
 def test_cli_finalize_erlaubt_eine_abweichende_issue_nummer_fuer_altspecs(
