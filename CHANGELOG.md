@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/TheRealKoller/photosort/compare/v0.20.0...v0.21.0) (2026-08-30)
+
+
+### Features
+
+* **github-project-sync:** Spec-Finalisierung im Feature-PR statt Nachzieh-PR (Spec 0066) ([#265](https://github.com/TheRealKoller/photosort/issues/265)) ([652d1cb](https://github.com/TheRealKoller/photosort/commit/652d1cbc16aaf26b39f07f71b748ab1274fc9a59))
+
 ## [0.20.0](https://github.com/TheRealKoller/photosort/compare/v0.19.0...v0.20.0) (2026-08-28)
 
 
