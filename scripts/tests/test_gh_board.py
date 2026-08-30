@@ -1123,7 +1123,9 @@ def test_finalize_lehnt_einen_ohne_merge_geschlossenen_pr_ab(
 def test_finalize_lehnt_eine_nicht_akzeptierte_spec_ab(
     gh_board: ModuleType, tmp_path: Path
 ) -> None:
-    path = _write_spec(tmp_path, "0262", status="Implemented ([PR #1](x))")
+    """Statusgate (c): jeder Status ausser `Accepted`/`Implemented` bricht unveraendert ab, und
+    zwar vor jedem GitHub-Zugriff."""
+    path = _write_spec(tmp_path, "0262", status="Proposed")
     fake = FakeGh(pull_requests={281: _pull_request(281)})
 
     with pytest.raises(gh_board.BoardError) as excinfo:
@@ -1136,7 +1138,135 @@ def test_finalize_lehnt_eine_nicht_akzeptierte_spec_ab(
         )
 
     assert "Accepted" in str(excinfo.value)
-    assert "**Status:** Implemented ([PR #1](x))" in path.read_text(encoding="utf-8")
+    assert "**Status:** Proposed" in path.read_text(encoding="utf-8")
+    assert fake.calls == []
+
+
+def test_finalize_laeuft_bei_bereits_geschriebener_identischer_zielzeile_durch(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Statusgate (a) / AK 9 positiv: `Implemented` mit genau der Zeile, die dieser Lauf schreiben
+    wuerde, ist ein bereits erreichter Zielzustand - kein Fehler. Geschrieben wird dabei exakt
+    der Inhalt, der ohnehin schon in der Datei steht."""
+    path = _write_spec(tmp_path, "0262", status=f"Implemented ([PR #281]({_pr_url(281)}))")
+    vorher = path.read_text(encoding="utf-8")
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
+
+    result = gh_board.cmd_finalize(
+        _board(gh_board, fake),
+        repo_root=tmp_path,
+        spec_number="0262",
+        issue_number=262,
+        pr_number=281,
+    )
+
+    assert result == {
+        "spec_number": "0262",
+        "issue_number": 262,
+        "pr_number": 281,
+        "status_line": f"Implemented ([PR #281]({_pr_url(281)}))",
+        "status": "Done",
+    }
+    assert path.read_text(encoding="utf-8") == vorher
+    item_edit = fake.single_call("gh", "project", "item-edit")
+    assert item_edit[item_edit.index("--single-select-option-id") + 1] == "OPT_Done"
+
+
+def test_finalize_lehnt_ein_implemented_mit_anderem_pr_ab(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Statusgate (b) / AK 9 negativ: das ist kein erreichter Zielzustand, sondern ein Hinweis auf
+    die falsche Spec- oder PR-Nummer - Abbruch ohne Board-Schreibzugriff und ohne Dateiaenderung.
+    """
+    path = _write_spec(tmp_path, "0262", status=f"Implemented ([PR #1]({_pr_url(1)}))")
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
+
+    with pytest.raises(gh_board.BoardError):
+        gh_board.cmd_finalize(
+            _board(gh_board, fake),
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    assert f"**Status:** Implemented ([PR #1]({_pr_url(1)}))" in path.read_text(encoding="utf-8")
+    assert fake.calls_starting_with("gh", "project", "item-edit") == []
+    assert fake.calls_starting_with("gh", "issue", "close") == []
+
+
+def test_finalize_lehnt_eine_zielzeile_mit_abweichendem_freitext_ab(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Statusgate (d): verglichen wird die vollstaendige Zeile, nicht das fuehrende Schluesselwort
+    aus `read_spec_status()` - gleiche PR-Nummer bei abweichender URL gilt nicht als gleich."""
+    path = _write_spec(
+        tmp_path, "0262", status="Implemented ([PR #281](https://example.invalid/pull/281))"
+    )
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
+
+    with pytest.raises(gh_board.BoardError):
+        gh_board.cmd_finalize(
+            _board(gh_board, fake),
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    assert "https://example.invalid/pull/281" in path.read_text(encoding="utf-8")
+    assert fake.calls_starting_with("gh", "project", "item-edit") == []
+
+
+def test_finalize_vergleicht_die_zielzeile_nur_in_der_header_zone(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Ein in der Inhalts-Zone zitiertes `**Status:**` darf die Gleichheit nicht erfuellen, waehrend
+    der Header auf etwas anderem steht - dieselbe `_split_header`-Trennung wie beim Schreiben."""
+    path = _write_spec(tmp_path, "0262", status=f"Implemented ([PR #999]({_pr_url(999)}))")
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + f"\n**Status:** Implemented ([PR #281]({_pr_url(281)}))\n",
+        encoding="utf-8",
+    )
+    vorher = path.read_text(encoding="utf-8")
+    fake = FakeGh(pull_requests={281: _pull_request(281)})
+
+    with pytest.raises(gh_board.BoardError):
+        gh_board.cmd_finalize(
+            _board(gh_board, fake),
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    assert path.read_text(encoding="utf-8") == vorher
+    assert fake.calls_starting_with("gh", "project", "item-edit") == []
+
+
+def test_finalize_ist_ohne_ruecknahme_wiederholbar(gh_board: ModuleType, tmp_path: Path) -> None:
+    """AK 6, als ganzer Aufruf statt als Summe der Einzelschritte: zweimal derselbe Aufruf auf
+    demselben zustandsbehafteten FakeGh, ohne dazwischen irgendetwas zurueckzunehmen."""
+    path = _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281)}, done_schliesst_das_issue=True)
+    board = _board(gh_board, fake)
+
+    def lauf() -> dict:
+        return gh_board.cmd_finalize(
+            board,
+            repo_root=tmp_path,
+            spec_number="0262",
+            issue_number=262,
+            pr_number=281,
+        )
+
+    erster_lauf = lauf()
+    datei_nach_lauf_1 = path.read_text(encoding="utf-8")
+    zweiter_lauf = lauf()
+
+    assert zweiter_lauf == erster_lauf
+    assert path.read_text(encoding="utf-8") == datei_nach_lauf_1
 
 
 def test_finalize_meldet_eine_fehlende_spec_datei(gh_board: ModuleType, tmp_path: Path) -> None:
@@ -1612,6 +1742,24 @@ def test_cli_finalize_nimmt_die_spec_nummer_als_issue_nummer(
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["issue_number"] == 262
+
+
+def test_cli_finalize_ist_wiederholbar_und_meldet_zweimal_dasselbe(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AK 6/7 auf der Ebene, die `ship-feature` tatsaechlich auswertet: zweimal Exit-Code 0 und
+    identisches JSON auf stdout - kein `{"error": ...}`, keine Handbeurteilung."""
+    _write_spec(tmp_path, "0262")
+    fake = FakeGh(pull_requests={281: _pull_request(281)}, done_schliesst_das_issue=True)
+    argv = ["finalize", "--spec", "0262", "--pr-number", "281"]
+
+    erster_code = gh_board.main(argv, run=fake, repo_root=tmp_path, owner=OWNER)
+    erste_ausgabe = capsys.readouterr().out
+    zweiter_code = gh_board.main(argv, run=fake, repo_root=tmp_path, owner=OWNER)
+    zweite_ausgabe = capsys.readouterr().out
+
+    assert (erster_code, zweiter_code) == (0, 0)
+    assert json.loads(zweite_ausgabe) == json.loads(erste_ausgabe)
 
 
 def test_cli_finalize_erlaubt_eine_abweichende_issue_nummer_fuer_altspecs(

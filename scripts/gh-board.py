@@ -577,13 +577,16 @@ def cmd_finalize(
 
     Bewusste Reihenfolge: erst die Spec-Datei umschreiben, dann das Board setzen. Scheitert der
     Board-Zugriff danach, bleibt die umgeschriebene Datei als sichtbare Arbeitskopie-Aenderung
-    stehen; ein erneuter Versuch braucht dann erst deren Revert (die Statuspruefung unten
-    verlangt 'Accepted').
+    stehen; ein erneuter Versuch laeuft trotzdem durch, weil die bereits geschriebene Zielzeile
+    als erreichter Zustand gilt (ADR 0048, Abschnitt 3) - zurueckgenommen werden muss nichts.
     """
     spec_path = find_spec_path(repo_root, spec_number)
     text = spec_path.read_text(encoding="utf-8")
     status = read_spec_status(text)
-    if status != "Accepted":
+    # 'Implemented' darf die Entscheidung bis nach der PR-Aufloesung verschieben (ohne
+    # aufgeloesten PR ist die Zielzeile nicht bildbar); jeder andere Status bricht weiterhin ab,
+    # BEVOR ein GitHub-Zugriff stattfindet.
+    if status not in {"Accepted", "Implemented"}:
         raise BoardError(
             f"Spec {spec_number} hat Datei-Status {status!r} - finalisiert wird nur eine Spec im "
             "Status 'Accepted'."
@@ -591,6 +594,8 @@ def cmd_finalize(
 
     resolved_pr, pull_request = _resolve_pull_request(board, issue_number, pr_number)
     status_line = f"Implemented ([PR #{resolved_pr}]({pull_request['url']}))"
+    if status == "Implemented":
+        _require_identical_status_line(text, status_line, spec_number=spec_number)
     spec_path.write_text(set_status_line(text, status_line), encoding="utf-8")
 
     board.set_status(issue_number, "Done")
@@ -603,6 +608,31 @@ def cmd_finalize(
         "status_line": status_line,
         "status": "Done",
     }
+
+
+def _require_identical_status_line(text: str, status_line: str, *, spec_number: str) -> None:
+    """Eng gefasste Zielzustands-Regel fuer das Datei-Status-Gate (ADR 0048, Abschnitt 3): Nur
+    exakt die Zeile, die dieser Lauf schreiben wuerde - gleiche PR-Nummer UND gleiche URL -, gilt
+    als bereits erreichter Zustand. Ein 'Implemented' mit einem anderen PR ist kein erreichter
+    Zustand, sondern ein Hinweis auf die falsche Spec- oder PR-Nummer.
+
+    Verglichen wird ausschliesslich in der Header-Zone (dieselbe Trennung wie beim Schreiben in
+    `set_status_line()`): ein in der Inhalts-Zone zitiertes '**Status:**' darf die Gleichheit
+    nicht erfuellen, waehrend der Header auf etwas anderem steht.
+    """
+    header, _ = _split_header(text)
+    match = _STATUS_LINE_RE.search(header)
+    if match is None:
+        raise BoardError("Spec-Datei hat kein '**Status:**'-Metadaten-Feld im Header.")
+    vorhanden = match.group(0)
+    ziel = f"**Status:** {status_line}"
+    if vorhanden != ziel:
+        raise BoardError(
+            f"Spec {spec_number} steht bereits auf {vorhanden!r}, dieser Aufruf wuerde {ziel!r} "
+            "schreiben - finalisiert wird nur eine Spec im Status 'Accepted' oder eine, die "
+            "bereits exakt diese Zielzeile traegt. Eine abweichende 'Implemented'-Zeile deutet "
+            "auf die falsche Spec- oder PR-Nummer hin."
+        )
 
 
 def _closing_issue_matches(reference: dict[str, Any], issue_number: int) -> bool:
