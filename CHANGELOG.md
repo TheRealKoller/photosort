@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.1](https://github.com/TheRealKoller/photosort/compare/v0.26.0...v0.26.1) (2026-08-30)
+
+
+### Bug Fixes
+
+* **backend:** Landschaft inhaltsbasiert erkennen, Spezifitaets-Vorrang und Nicht-erkannt-Zustand (Spec 0217) ([#282](https://github.com/TheRealKoller/photosort/issues/282)) ([f33b93d](https://github.com/TheRealKoller/photosort/commit/f33b93def03ece6db62e638166dbef6de1f64af2))
+
 ## [0.26.0](https://github.com/TheRealKoller/photosort/compare/v0.25.0...v0.26.0) (2026-08-30)
 
 
