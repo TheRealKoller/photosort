@@ -361,8 +361,45 @@ class GhBoard:
         self.set_priority(issue_number, priority)
         return True, priority
 
+    def issue_state(self, issue_number: int) -> str:
+        """Rein lesend, ausschliesslich `--json state`: nie Titel, Body, Labels oder Kommentare
+        (ADR 0046, Abschnitt 3 - verarbeitet werden nur strukturierte, von GitHub selbst erzeugte
+        Metadaten, kein von Dritten befuellbarer Freitext). `gh` liefert den GraphQL-Enum in
+        Grossschreibung; normalisiert wird wie in `get_pull_request()`."""
+        data = self._run_json(["gh", "issue", "view", str(issue_number), "--json", "state"])
+        state = data.get("state") if isinstance(data, dict) else None
+        if not isinstance(state, str) or not state.strip():
+            raise BoardError(
+                f"'gh issue view {issue_number} --json state' hat keinen brauchbaren Zustand "
+                f"geliefert: {data!r}."
+            )
+        return state.strip().lower()
+
     def close_issue(self, issue_number: int) -> None:
-        self._run_text(["gh", "issue", "close", str(issue_number)])
+        """Zielzustand ist 'Issue geschlossen', nicht 'dieser Aufruf hat es geschlossen': Der
+        Board-Workflow 'Auto-close issue' schliesst das Issue schon beim Setzen der Spalte auf
+        'Done' (ADR 0046, Abschnitt 5) und ist dabei schneller als dieser Aufruf; ebenso ein
+        Closing-Keyword beim Merge oder ein Schliessen von Hand. Ein Fehlschlag wird deshalb
+        gegen den tatsaechlichen Zustand geprueft statt gegen den Fehlertext von `gh` - der ist
+        undokumentiert, aenderbar und nicht trennscharf (ADR 0048, Abschnitt 2).
+
+        Erfolg gilt nur bei positiver Gleichheit auf 'closed': jeder andere Wert - 'open', ein
+        kuenftiger Enum-Wert, ein unbrauchbares Feld - fuehrt auf den Fehlerpfad. Die Pruefung
+        laeuft bewusst NACH dem Fehlschlag: eine Vorabpruefung kostete in jedem 'Done'-Pfad
+        einen zusaetzlichen Aufruf und beseitigte das Rennen mit der asynchronen
+        Board-Automation trotzdem nicht."""
+        try:
+            self._run_text(["gh", "issue", "close", str(issue_number)])
+        except BoardError as close_error:
+            try:
+                already_closed = self.issue_state(issue_number) == "closed"
+            except BoardError as probe_error:
+                # Ist die Pruefung selbst nicht moeglich (Issue existiert nicht, fehlende
+                # Berechtigung, Dienst nicht erreichbar), bleibt der urspruengliche Fehlschlag
+                # die gemeldete Ursache - er ist der aussagekraeftigere.
+                raise close_error from probe_error
+            if not already_closed:
+                raise
 
     def set_issue_body(self, issue_number: int, body: str) -> None:
         self._with_body_file(
