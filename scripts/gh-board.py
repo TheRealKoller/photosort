@@ -419,9 +419,26 @@ class GhBoard:
         self._items = None  # Cache invalidieren: das neue Item fehlt in einer bereits geholten
         return str(data["id"])  # Liste.
 
-    def get_pull_request(self, pr_number: int) -> dict[str, str]:
-        data = self._run_json(["gh", "pr", "view", str(pr_number), "--json", "state,url"])
-        return {"state": str(data["state"]).lower(), "url": str(data.get("url", ""))}
+    def get_pull_request(self, pr_number: int) -> dict[str, Any]:
+        """Der PR-**Body** wird bewusst nicht angefragt (ADR 0046, Abschnitt 3): Geprueft wird
+        GitHubs eigenes Parse-Ergebnis der Closing-Keywords, nicht ein von aussen befuellbarer
+        Freitext. `closingIssuesReferences` setzt `gh` >= 2.72.0 voraus."""
+        data = self._run_json(
+            [
+                "gh",
+                "pr",
+                "view",
+                str(pr_number),
+                "--json",
+                "state,url,baseRefName,closingIssuesReferences",
+            ]
+        )
+        return {
+            "state": str(data["state"]).lower(),
+            "url": str(data.get("url", "")),
+            "baseRefName": str(data.get("baseRefName", "")),
+            "closingIssuesReferences": list(data.get("closingIssuesReferences") or []),
+        }
 
     def closing_pull_requests(self, issue_number: int) -> list[int]:
         data = self._run_json(
@@ -530,7 +547,7 @@ def cmd_finalize(
 
 def _resolve_pull_request(
     board: GhBoard, issue_number: int, pr_number: int | None
-) -> tuple[int, dict[str, str]]:
+) -> tuple[int, dict[str, Any]]:
     if pr_number is not None:
         pull_request = board.get_pull_request(pr_number)
         # "open" ist der Regelfall (kurz vor dem Merge), "merged" der nachgezogene Ausnahmefall.
