@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/TheRealKoller/photosort/compare/v0.25.0...v0.26.0) (2026-08-30)
+
+
+### Features
+
+* **scripts:** PR verknuepft sein Issue per Closing-Zeile, finalize verifiziert das (Spec 0251) ([#280](https://github.com/TheRealKoller/photosort/issues/280)) ([004ad48](https://github.com/TheRealKoller/photosort/commit/004ad48e6a6818aecbd29bd318232b2a966ed97f))
+
 ## [0.25.0](https://github.com/TheRealKoller/photosort/compare/v0.24.0...v0.25.0) (2026-08-30)
 
 
