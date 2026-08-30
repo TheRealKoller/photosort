@@ -1,6 +1,7 @@
 import { useId } from 'react'
 
 import type { CategoryCandidateOut, CategoryKey, CriterionScoreOut, RankingOut, SuggestionOut } from '../api/types'
+import { cn } from '../lib/utils'
 import { formatCategoryKey, formatProviderLabel } from '../utils/categoryLabels'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 import { Badge } from './ui/badge'
@@ -165,16 +166,21 @@ export function CriterionDetailsList({
           <h3 id={categoriesHeadingId} className="text-xs font-medium text-text-h">
             Kategorien
           </h3>
-          <dl className="flex flex-col gap-3">
-            {categoryScores.length > 0 && (
-              <div className="flex flex-col gap-1.5">
-                {categoryScores.map((score) => (
-                  <CriterionRow key={score.criterion_key} score={score} />
-                ))}
-              </div>
-            )}
+          <dl className="flex flex-col gap-1.5">
+            {categoryScores.map((score) => (
+              <CriterionRow key={score.criterion_key} score={score} />
+            ))}
             {ranking !== null && (
-              <div className="flex flex-col gap-1.5">
+              // Der groessere Abstand vor der Kandidaten-/Rang-Gruppe sitzt als Margin an der
+              // Gruppe selbst statt als `gap-3` am <dl>: so haengen die Kriterienzeilen in beiden
+              // Bloecken auf derselben Ebene (<dl> > Zeilen-<div> > dt/dd) statt im
+              // Kategorien-Block eine Wrapper-<div>-Ebene tiefer (Copilot-Review-Fund auf PR
+              // #277). `mt-1.5` (0.375rem) addiert sich zum `gap-1.5` des <dl> auf exakt die
+              // 0.75rem des vorherigen `gap-3` - und entfaellt, wenn keine Kriterienzeile
+              // vorausgeht, weil dann auch vorher kein Abstand gerendert wurde. Die Darstellung
+              // bleibt damit in jedem Fall pixelgleich (Akzeptanzkriterium 6: reine
+              // Umgruppierung, keine visuelle Aenderung).
+              <div className={cn('flex flex-col gap-1.5', categoryScores.length > 0 && 'mt-1.5')}>
                 {showCandidateGroup ? (
                   <div className="flex flex-col gap-2">
                     <dt className="text-text">Kategorie-Kandidaten</dt>

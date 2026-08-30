@@ -463,6 +463,30 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
     expect(screen.getByText('Ausschuss-Vorschlag')).toBeInTheDocument()
   })
 
+  // Copilot-Review-Fund auf PR #277 (unabhaengig auch von review-tests vermerkt): der
+  // Kategorien-Block hatte eine zusaetzliche Wrapper-<div>-Ebene um seine Kriterienzeilen,
+  // wodurch dt/dd dort eine Ebene tiefer hingen als im Qualitaets-Block - eine erst durch den
+  // Umbau entstandene Asymmetrie zwischen zwei ansonsten gleichartigen Bloecken. Bewusst mit
+  // gesetztem Ranking, damit die Kandidaten-/Rang-Gruppe im selben <dl> steht und der Test
+  // nicht nur den trivialen Fall abdeckt.
+  it('nests the criterion rows at the same depth in both blocks', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[
+          qualityScore('sharpness', 'Schärfe'),
+          categoryScore('content_people', 'Menschen erkannt'),
+        ]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={true}
+      />
+    )
+
+    // dt -> Zeilen-<div> -> <dl>: in beiden Bloecken identisch, keine Zwischenebene.
+    expect(screen.getByText('Schärfe').parentElement?.parentElement?.tagName).toBe('DL')
+    expect(screen.getByText('Menschen erkannt').parentElement?.parentElement?.tagName).toBe('DL')
+  })
+
   // Testkonzept-Punkt 2: generierte IDs nie als Wert asserten, sondern aufloesen.
   it('links each block to its own heading via a resolvable aria-labelledby', () => {
     render(
