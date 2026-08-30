@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -50,6 +50,9 @@ function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionSc
     display_name: 'Schärfe',
     value: 0.8,
     source: 'local_heuristic',
+    // Default-Key ist `sharpness` (nicht kategoriefaehig) - der Default muss dazu passen,
+    // damit kein Bestandstest unbemerkt in den Kategorien-Block rutscht (Spec 0209).
+    category_eligible: false,
     ...overrides,
   }
 }
@@ -405,6 +408,39 @@ describe('PhotoDetailPage', () => {
       expect(screen.getByText('73%')).toBeInTheDocument()
       expect(screen.getByText('Landscape')).toBeInTheDocument()
       expect(screen.getByText('Rang 2 von 5')).toBeInTheDocument()
+    })
+
+    // specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md, Akzeptanzkriterium 1:
+    // genau EIN Oberflaechennachweis, dass die beiden beschrifteten Bloecke auch in der
+    // permanenten Sektion ankommen - die Blockbildungs-Logik selbst liegt vollstaendig in
+    // CriterionDetailsList.test.tsx (specs/architecture/0002-testkonzept.md, useId-Sektion
+    // Punkt 5: keine Doppelabdeckung derselben Logik auf zwei Ebenen).
+    it('shows both block headings in the permanent section', async () => {
+      const list: PhotoListOut = {
+        items: [
+          photo({
+            id: 1,
+            criterion_scores: [
+              criterionScore({ criterion_key: 'sharpness', display_name: 'Schärfe' }),
+              criterionScore({
+                criterion_key: 'content_people',
+                display_name: 'Menschen erkannt',
+                category_eligible: true,
+              }),
+            ],
+          }),
+        ],
+        total: 1,
+      }
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+      renderPage('/projects/1/photos/1')
+
+      const section = await screen.findByTestId('criterion-details-section')
+      expect(within(section).getByRole('heading', { name: 'Qualität', level: 3 })).toBeInTheDocument()
+      expect(
+        within(section).getByRole('heading', { name: 'Kategorien', level: 3 })
+      ).toBeInTheDocument()
     })
 
     // Akzeptanzkriterium 2: kein leerer Bereich, wenn criterion_scores leer ist (gleiche Regel wie

@@ -46,6 +46,9 @@ function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionSc
     display_name: 'Schärfe',
     value: 0.8,
     source: 'local_heuristic',
+    // Default-Key ist `sharpness` (nicht kategoriefaehig) - der Default muss dazu passen,
+    // damit kein Bestandstest unbemerkt in den Kategorien-Block rutscht (Spec 0209).
+    category_eligible: false,
     ...overrides,
   }
 }

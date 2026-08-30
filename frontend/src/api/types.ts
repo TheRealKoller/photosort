@@ -172,6 +172,13 @@ export interface CriterionScoreOut {
   display_name: string
   value: number
   source: CriterionSource
+  // specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md,
+  // Architektur-Entscheidung 1/2: spiegelt `CriterionDefinition.category_eligible` der
+  // Backend-Registry und ist die ALLEINIGE Grundlage der Gliederung in die Bloecke
+  // "Qualitaet" (false) / "Kategorien" (true) - im Frontend wird dazu bewusst keine
+  // Merkmalsliste gepflegt. Pflichtfeld statt optional, damit `tsc` alle Test-Fixtures
+  // erzwingt, statt stillschweigend `undefined` in die Blockbildung durchzureichen.
+  category_eligible: boolean
 }
 
 // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 6:

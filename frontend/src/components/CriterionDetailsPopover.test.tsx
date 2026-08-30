@@ -28,6 +28,9 @@ function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionSc
     display_name: 'Schärfe',
     value: 0.734,
     source: 'local_heuristic',
+    // Default-Key ist `sharpness` (nicht kategoriefaehig) - der Default muss dazu passen,
+    // damit kein Bestandstest unbemerkt in den Kategorien-Block rutscht (Spec 0209).
+    category_eligible: false,
     ...overrides,
   }
 }
@@ -138,6 +141,36 @@ describe('CriterionDetailsPopover', () => {
     await user.click(within(dialog).getByRole('button', { name: /übernehmen/i }))
 
     expect(onOverrideCategory).toHaveBeenCalledWith('people')
+  })
+
+  // specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md, Akzeptanzkriterium 1:
+  // genau EIN Oberflaechennachweis, dass die beiden beschrifteten Bloecke auch im Popover
+  // ankommen - die Blockbildungs-Logik selbst liegt vollstaendig in CriterionDetailsList.test.tsx
+  // (specs/architecture/0002-testkonzept.md, useId-Sektion Punkt 5: keine Doppelabdeckung).
+  it('shows both block headings inside the opened popover', async () => {
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsPopover
+        criterionScores={[
+          criterionScore({ criterion_key: 'sharpness', display_name: 'Schärfe' }),
+          criterionScore({
+            criterion_key: 'content_people',
+            display_name: 'Menschen erkannt',
+            category_eligible: true,
+          }),
+        ]}
+        ranking={null}
+        suggestion={null}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Qualität', level: 3 })).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole('heading', { name: 'Kategorien', level: 3 })
+    ).toBeInTheDocument()
   })
 
   it('closes the popover on a second click of the trigger', async () => {

@@ -766,12 +766,14 @@ class TestCriterionScores:
                 "display_name": "Schärfe",
                 "value": 0.734,
                 "source": "local_heuristic",
+                "category_eligible": False,
             },
             {
                 "criterion_key": "content_people",
                 "display_name": "Menschen erkannt",
                 "value": 1.0,
                 "source": "local_ml",
+                "category_eligible": True,
             },
         ]
 
@@ -813,7 +815,10 @@ class TestCriterionScores:
     ) -> None:
         # Defensiv gegen Registry-/Daten-Drift (Architektur-Abschnitt der Spec): ein
         # criterion_key, der (nicht mehr) in CRITERIA_REGISTRY steht, wird trotzdem angezeigt,
-        # mit dem rohen Key als display_name.
+        # mit dem rohen Key als display_name. `category_eligible` faellt dabei auf False zurueck
+        # (Registry-Default) - im Frontend landet die Zeile damit im Qualitaets-Block
+        # (specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md,
+        # Akzeptanzkriterium 9).
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         db_session.add(
@@ -836,8 +841,41 @@ class TestCriterionScores:
                 "display_name": "future_criterion",
                 "value": 0.3,
                 "source": "cloud",
+                "category_eligible": False,
             }
         ]
+
+    async def test_category_eligible_matches_registry_for_every_criterion(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md,
+        # Architektur-Entscheidung 1: das ausgelieferte Flag ist keine zweite Wahrheit, sondern
+        # exakt `CriterionDefinition.category_eligible`. Ein einziger Registry-weiter Test statt
+        # einer Parametrisierung pro Key - welche Kriterien kategoriefaehig SIND, nagelt bereits
+        # test_criteria.py::test_exactly_five_content_criteria_are_category_eligible fest.
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        computed_at = datetime(2023, 1, 1, tzinfo=UTC)
+        db_session.add_all(
+            [
+                PhotoCriterionScore(
+                    photo_id=photo.id,
+                    criterion_key=key,
+                    value=0.5,
+                    source=CriterionSource.LOCAL_HEURISTIC,
+                    computed_at=computed_at,
+                )
+                for key in CRITERIA_REGISTRY
+            ]
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        criterion_scores = response.json()["items"][0]["criterion_scores"]
+        assert {c["criterion_key"]: c["category_eligible"] for c in criterion_scores} == {
+            key: definition.category_eligible for key, definition in CRITERIA_REGISTRY.items()
+        }
 
 
 class TestCloudVisionStatus:

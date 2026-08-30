@@ -11,6 +11,9 @@ function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionSc
     display_name: 'Schärfe',
     value: 0.734,
     source: 'local_heuristic',
+    // Default-Key ist `sharpness` (nicht kategoriefaehig) - der Default muss dazu passen,
+    // damit kein Bestandstest unbemerkt in den Kategorien-Block rutscht (Spec 0209).
+    category_eligible: false,
     ...overrides,
   }
 }
@@ -189,6 +192,356 @@ describe('CriterionDetailsList', () => {
     expect(container.querySelector('dl')).not.toBeNull()
     expect(container.querySelector('dt')).not.toBeNull()
     expect(container.querySelector('dd')).not.toBeNull()
+  })
+})
+
+// specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md: die Bewertungsdetails
+// sind in zwei beschriftete Bloecke gegliedert, die Zuordnung folgt AUSSCHLIESSLICH dem
+// `category_eligible`-Flag der API-Antwort (Architektur-Entscheidung 1 - keine Merkmalsliste im
+// Frontend). Die Blockbildung wird vollstaendig hier auf Komponentenebene abgedeckt
+// (specs/architecture/0002-testkonzept.md, Punkt 5 der useId-Sektion).
+describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
+  function qualityScore(key: string, displayName: string, value = 0.5): CriterionScoreOut {
+    return criterionScore({
+      criterion_key: key,
+      display_name: displayName,
+      value,
+      category_eligible: false,
+    })
+  }
+
+  function categoryScore(key: string, displayName: string, value = 0.5): CriterionScoreOut {
+    return criterionScore({
+      criterion_key: key,
+      display_name: displayName,
+      value,
+      category_eligible: true,
+    })
+  }
+
+  // Akzeptanzkriterium 1 + Testkonzept-Punkt 3: Zugehoerigkeit positiv UND negativ pruefen.
+  it('puts every criterion in exactly one labeled block according to category_eligible', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[
+          qualityScore('sharpness', 'Schärfe'),
+          categoryScore('content_people', 'Menschen erkannt'),
+          qualityScore('exposure', 'Belichtung'),
+          categoryScore('tier', 'Tier erkannt'),
+        ]}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={true}
+      />
+    )
+
+    const quality = screen.getByRole('group', { name: 'Qualität' })
+    const categories = screen.getByRole('group', { name: 'Kategorien' })
+
+    expect(within(quality).getByText('Schärfe')).toBeInTheDocument()
+    expect(within(quality).getByText('Belichtung')).toBeInTheDocument()
+    expect(within(quality).queryByText('Menschen erkannt')).not.toBeInTheDocument()
+    expect(within(quality).queryByText('Tier erkannt')).not.toBeInTheDocument()
+
+    expect(within(categories).getByText('Menschen erkannt')).toBeInTheDocument()
+    expect(within(categories).getByText('Tier erkannt')).toBeInTheDocument()
+    expect(within(categories).queryByText('Schärfe')).not.toBeInTheDocument()
+    expect(within(categories).queryByText('Belichtung')).not.toBeInTheDocument()
+  })
+
+  // Akzeptanzkriterium 5 (Partitions-Assertion): die Vereinigung beider Bloecke ist exakt die
+  // Eingabeliste - nichts geht verloren, nichts erscheint doppelt.
+  it('partitions the input list without losing or duplicating an entry', () => {
+    const scores = [
+      qualityScore('sharpness', 'Schärfe'),
+      categoryScore('content_people', 'Menschen erkannt'),
+      qualityScore('exposure', 'Belichtung'),
+      categoryScore('tier', 'Tier erkannt'),
+    ]
+    render(
+      <CriterionDetailsList
+        criterionScores={scores}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={true}
+      />
+    )
+
+    const terms = (block: HTMLElement) =>
+      within(block).getAllByRole('term').map((el) => el.textContent)
+    const union = [
+      ...terms(screen.getByRole('group', { name: 'Qualität' })),
+      ...terms(screen.getByRole('group', { name: 'Kategorien' })),
+    ]
+
+    expect(union).toHaveLength(scores.length)
+    expect([...union].sort()).toEqual([...scores.map((s) => s.display_name)].sort())
+  })
+
+  // Akzeptanzkriterium 5 + Testkonzept-Punkt 4: verschraenkte Eingabe, damit ein versehentlich
+  // neu sortierender Filter widerlegt werden kann.
+  it('keeps the given order within each block for an interleaved input', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[
+          qualityScore('sharpness', 'Schärfe'),
+          categoryScore('content_people', 'Menschen erkannt'),
+          qualityScore('exposure', 'Belichtung'),
+          categoryScore('tier', 'Tier erkannt'),
+        ]}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={true}
+      />
+    )
+
+    const quality = screen.getByRole('group', { name: 'Qualität' })
+    const categories = screen.getByRole('group', { name: 'Kategorien' })
+    expect(within(quality).getAllByRole('term').map((el) => el.textContent)).toEqual([
+      'Schärfe',
+      'Belichtung',
+    ])
+    expect(within(categories).getAllByRole('term').map((el) => el.textContent)).toEqual([
+      'Menschen erkannt',
+      'Tier erkannt',
+    ])
+  })
+
+  // Akzeptanzkriterium 9: unbekannter criterion_key (Backend-Fallback category_eligible=false)
+  // bleibt sichtbar und landet im Qualitaets-Block.
+  it('shows a criterion with the category_eligible fallback false in the quality block', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[
+          qualityScore('future_criterion', 'future_criterion'),
+          categoryScore('content_people', 'Menschen erkannt'),
+        ]}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={true}
+      />
+    )
+
+    expect(
+      within(screen.getByRole('group', { name: 'Qualität' })).getByText('future_criterion')
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('group', { name: 'Kategorien' })).queryByText('future_criterion')
+    ).not.toBeInTheDocument()
+  })
+
+  // Akzeptanzkriterium 7 (kein leerer Block): nur kategoriefaehige Kriterien -> keine
+  // "Qualität"-Ueberschrift.
+  it('omits the quality block entirely when no criterion is quality-related', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[categoryScore('content_people', 'Menschen erkannt')]}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={true}
+      />
+    )
+
+    expect(screen.queryByRole('heading', { name: 'Qualität', level: 3 })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Kategorien', level: 3 })).toBeInTheDocument()
+  })
+
+  // Akzeptanzkriterium 7: nur Qualitaetskriterien ohne Ranking -> kein Kategorien-Block.
+  it('omits the categories block entirely when there is neither an eligible criterion nor a ranking', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[qualityScore('sharpness', 'Schärfe')]}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={true}
+      />
+    )
+
+    expect(screen.getByRole('heading', { name: 'Qualität', level: 3 })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Kategorien', level: 3 })).not.toBeInTheDocument()
+  })
+
+  // Sichtbarkeitsregel: der Kategorien-Block erscheint auch ohne kategoriefaehiges Kriterium,
+  // sobald ein Ranking vorliegt (Kandidaten/"Rang" gehoeren in diesen Block). Ueber die realen
+  // Aufrufer nicht erreichbar - bewusst dokumentierte Luecke, siehe testkonzept useId-Punkt 6.
+  it('shows the categories block for a ranking alone, without any eligible criterion', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[qualityScore('sharpness', 'Schärfe')]}
+        ranking={ranking({ category_key: 'landscape', rank_position: 2, partition_size: 5 })}
+        suggestion={null}
+        showSuggestion={true}
+      />
+    )
+
+    const categories = screen.getByRole('group', { name: 'Kategorien' })
+    expect(within(categories).getByText('Rang 2 von 5')).toBeInTheDocument()
+  })
+
+  // Akzeptanzkriterium 6: Kandidatenliste, "Rang" und die Uebernehmen-Interaktion liegen INNERHALB
+  // des Kategorien-Blocks und funktionieren von dort unveraendert.
+  it('nests the candidate group and rank inside the categories block, override still works', async () => {
+    const onOverrideCategory = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsList
+        criterionScores={[qualityScore('sharpness', 'Schärfe')]}
+        ranking={ranking({ category_key: 'hund' })}
+        suggestion={null}
+        showSuggestion={true}
+        categoryCandidates={[
+          candidate({ category_key: 'hund' }),
+          candidate({ category_key: 'people', score: 0.1 }),
+        ]}
+        categoryOverride={null}
+        onOverrideCategory={onOverrideCategory}
+      />
+    )
+
+    const categories = screen.getByRole('group', { name: 'Kategorien' })
+    expect(within(categories).getByText('Kategorie-Kandidaten')).toBeInTheDocument()
+    expect(within(categories).getByText('Rang 2 von 5')).toBeInTheDocument()
+    const otherRow = within(categories).getByTestId('category-candidate-row-people')
+    await user.click(within(otherRow).getByRole('button', { name: /übernehmen/i }))
+
+    expect(onOverrideCategory).toHaveBeenCalledWith('people')
+  })
+
+  // Akzeptanzkriterium 7 (zweiter Satz): komplett leere Eingabe -> keine Ueberschrift, kein
+  // dt/dd, kein leeres <dl>.
+  it('renders no heading and no dt/dd at all for completely empty input', () => {
+    const { container } = render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={true}
+      />
+    )
+
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+    expect(container.querySelector('dt')).toBeNull()
+    expect(container.querySelector('dd')).toBeNull()
+    expect(container.querySelector('dl')).toBeNull()
+  })
+
+  // Akzeptanzkriterium 8: der Ausschuss-Vorschlag bleibt ein eigener, dritter Bereich OHNE eigene
+  // Ueberschrift - und erscheint auch dann, wenn beide neuen Bloecke leer sind.
+  it('still shows the suggestion area without a heading when both blocks are empty', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={null}
+        suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
+        showSuggestion={true}
+      />
+    )
+
+    expect(screen.getByText('Duplikat von Foto #42')).toBeInTheDocument()
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+  })
+
+  it('keeps the suggestion area outside both blocks', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[
+          qualityScore('sharpness', 'Schärfe'),
+          categoryScore('content_people', 'Menschen erkannt'),
+        ]}
+        ranking={null}
+        suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
+        showSuggestion={true}
+      />
+    )
+
+    expect(
+      within(screen.getByRole('group', { name: 'Qualität' })).queryByText('Ausschuss-Vorschlag')
+    ).not.toBeInTheDocument()
+    expect(
+      within(screen.getByRole('group', { name: 'Kategorien' })).queryByText('Ausschuss-Vorschlag')
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('Ausschuss-Vorschlag')).toBeInTheDocument()
+  })
+
+  // Copilot-Review-Fund auf PR #277 (unabhaengig auch von review-tests vermerkt): der
+  // Kategorien-Block hatte eine zusaetzliche Wrapper-<div>-Ebene um seine Kriterienzeilen,
+  // wodurch dt/dd dort eine Ebene tiefer hingen als im Qualitaets-Block - eine erst durch den
+  // Umbau entstandene Asymmetrie zwischen zwei ansonsten gleichartigen Bloecken. Bewusst mit
+  // gesetztem Ranking, damit die Kandidaten-/Rang-Gruppe im selben <dl> steht und der Test
+  // nicht nur den trivialen Fall abdeckt.
+  it('nests the criterion rows at the same depth in both blocks', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[
+          qualityScore('sharpness', 'Schärfe'),
+          categoryScore('content_people', 'Menschen erkannt'),
+        ]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={true}
+      />
+    )
+
+    // dt -> Zeilen-<div> -> <dl>: in beiden Bloecken identisch, keine Zwischenebene.
+    expect(screen.getByText('Schärfe').parentElement?.parentElement?.tagName).toBe('DL')
+    expect(screen.getByText('Menschen erkannt').parentElement?.parentElement?.tagName).toBe('DL')
+  })
+
+  // Testkonzept-Punkt 2: generierte IDs nie als Wert asserten, sondern aufloesen.
+  it('links each block to its own heading via a resolvable aria-labelledby', () => {
+    render(
+      <CriterionDetailsList
+        criterionScores={[
+          qualityScore('sharpness', 'Schärfe'),
+          categoryScore('content_people', 'Menschen erkannt'),
+        ]}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={true}
+      />
+    )
+
+    for (const label of ['Qualität', 'Kategorien']) {
+      const block = screen.getByRole('group', { name: label })
+      const labelledBy = block.getAttribute('aria-labelledby')
+      expect(labelledBy).toBeTruthy()
+      const heading = document.getElementById(labelledBy as string)
+      expect(heading?.tagName).toBe('H3')
+      expect(heading?.textContent).toBe(label)
+    }
+  })
+
+  // Testkonzept-Punkt 2: genau deshalb useId() statt Konstanten - zwei Instanzen im selben Render
+  // duerfen sich die IDs nicht teilen.
+  it('generates collision-free ids for two instances in the same render', () => {
+    render(
+      <>
+        <CriterionDetailsList
+          criterionScores={[
+            qualityScore('sharpness', 'Schärfe'),
+            categoryScore('content_people', 'Menschen erkannt'),
+          ]}
+          ranking={null}
+          suggestion={null}
+          showSuggestion={true}
+        />
+        <CriterionDetailsList
+          criterionScores={[
+            qualityScore('sharpness', 'Schärfe'),
+            categoryScore('content_people', 'Menschen erkannt'),
+          ]}
+          ranking={null}
+          suggestion={null}
+          showSuggestion={true}
+        />
+      </>
+    )
+
+    const ids = screen
+      .getAllByRole('group')
+      .map((block) => block.getAttribute('aria-labelledby'))
+    expect(ids).toHaveLength(4)
+    expect(new Set(ids).size).toBe(4)
   })
 })
 
