@@ -7,6 +7,8 @@
  * directions/*.css und genau die hier registrierten Ids uebereinstimmen: eine Datei ohne
  * Registry-Eintrag waere im Labor unsichtbar, ein Registry-Eintrag ohne Datei ein Ladefehler.
  */
+import './organic.css'
+
 export type DirectionId = 'organic' | 'klar' | 'verspielt' | 'minimal' | 'kreativ'
 
 export interface Direction {
