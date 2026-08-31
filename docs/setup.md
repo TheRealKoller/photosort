@@ -23,6 +23,32 @@ cd backend && pytest
 cd frontend && npm test
 ```
 
+### Design-Labor (temporär, Spec 0287)
+
+Zum Vergleich der fünf Gestaltungsrichtungen gibt es einen **dev-only Zweiteinstieg** neben der
+eigentlichen Anwendung. Er ist ein Wegwerf-Artefakt und wird nach der Entscheidung wieder
+entfernt (siehe [`specs/features/0287-design-richtungen-vergleich.md`](../specs/features/0287-design-richtungen-vergleich.md)).
+
+```bash
+cd frontend && npm run dev
+# danach im Browser: http://localhost:5173/design-lab/
+```
+
+Das Labor läuft ausschließlich im Vite-Dev-Server: `npm run build` erzeugt kein Labor-Artefakt in
+`dist/`, es ist also weder im nginx-Image noch im PWA-Precache enthalten. Es braucht kein Backend,
+ruft keine API auf und speichert nichts.
+
+Optional lassen sich echte Fotos statt der generierten Motive anzeigen: beliebige JPG/PNG in
+`frontend/design-lab/photos-local/` ablegen (per `.gitignore` ausgeschlossen, zusätzlich durch
+einen Guard-Test abgesichert — Familienfotos gehören nie ins Repository). Die Labor-Kopfzeile zeigt
+an, ob und wie viele lokale Fotos gefunden wurden.
+
+**Achtung beim Ansehen auf dem Handy:** Der Vite-Dev-Server bindet standardmäßig nur an
+`localhost`. Wer ihn mit `npm run dev -- --host` im Netz freigibt (naheliegend, weil die
+Vergleichsrahmen bewusst Mobilbreite haben), macht damit **auch `photos-local/` für jedes Gerät im
+selben Netz abrufbar**. Das ist eine bewusste Entscheidung im Moment des Aufrufs, keine
+Voreinstellung.
+
 ## Cloud-Bilderkennung (optional)
 
 Zwei Kriterien/Funktionen verlassen den Homeserver — beide über denselben, projektweiten

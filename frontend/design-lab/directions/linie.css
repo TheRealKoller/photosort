@@ -1,0 +1,648 @@
+/*
+ * TEMPORAER (specs/features/0287-design-richtungen-vergleich.md): Richtung "Linie".
+ *
+ * These: Ordnung ohne Enge. Die Erkennbarkeit kommt aus hohem Textkontrast und sichtbaren
+ * Linien, die Ruhe aus Weissraum statt aus Kaesten. Zwischen "Klar" (alles gerahmt, dicht) und
+ * "Minimal" (nichts gerahmt, locker) - aber mit eigener Handschrift: die Trennlinien laufen
+ * RANDLOS ueber die volle Breite, statt Flaechen einzufassen. Nichts ist ein Kasten, alles ist
+ * eine Zeile.
+ *
+ * Signatur: durchgezogene, ueber das Textmass hinauslaufende Trennlinien plus rechtsbuendig
+ * tabellarische Werte. Ein einziger Signalton (Teal) auf Tinte - Farbe bedeutet "hier passiert
+ * gerade etwas", nie Dekoration.
+ */
+
+[data-direction='linie'][data-mode='light'] {
+  color-scheme: light;
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --border: #7d8894;
+  --text: #4b5560;
+  --text-h: #14181d;
+  --accent: #1c2530;
+  --accent-strong: #0f151d;
+  --accent-fg: #ffffff;
+  --accent-bg: color-mix(in srgb, #1c2530 7%, transparent);
+  --accent-border: color-mix(in srgb, #1c2530 34%, transparent);
+  --accent-2: #0f6b63;
+  --accent-2-strong: #0a5049;
+  --rating-favorite: #8a6a10;
+  --rating-favorite-fg: #ffffff;
+  --rating-album-worthy: #2f6b46;
+  --rating-album-worthy-fg: #ffffff;
+  --rating-rejected: #8f3b2f;
+  --rating-rejected-fg: #ffffff;
+  --status-running: #0f6b63;
+  --status-success: #2f6b46;
+  --status-success-fg: #ffffff;
+  --status-failed: #8f3b2f;
+  --status-running-tint: #e2eeec;
+  --status-running-strong: #0a5049;
+  --status-success-tint: #e5eee8;
+  --status-success-strong: #245436;
+  --status-failed-tint: #f4e9e7;
+  --status-failed-strong: #7a3226;
+  --status-idle-tint: #eceef0;
+  --status-idle-strong: #444d57;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: none;
+  --sans: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  /* Eigene Zusatztokens: Abstandsskala zwischen Klar (dicht) und Minimal (weit). */
+  --l-1: 6px;
+  --l-2: 12px;
+  --l-3: 20px;
+  --l-4: 32px;
+  --l-6: 48px;
+  --l-gap: 14px;
+  --l-rule: #c3cad1;
+  --l-radius: 3px;
+}
+
+[data-direction='linie'][data-mode='dark'] {
+  color-scheme: dark;
+  --bg: #0f1317;
+  --surface: #171c21;
+  --border: #6b7681;
+  --text: #a8b2bc;
+  --text-h: #f0f4f7;
+  --accent: #dce4eb;
+  --accent-strong: #f0f4f7;
+  --accent-fg: #0f1317;
+  --accent-bg: color-mix(in srgb, #dce4eb 12%, transparent);
+  --accent-border: color-mix(in srgb, #dce4eb 40%, transparent);
+  --accent-2: #4fbfb0;
+  --accent-2-strong: #7ad4c7;
+  --rating-favorite: #d8b155;
+  --rating-favorite-fg: #0f1317;
+  --rating-album-worthy: #74b98d;
+  --rating-album-worthy-fg: #0f1317;
+  --rating-rejected: #dd8b7d;
+  --rating-rejected-fg: #0f1317;
+  --status-running: #4fbfb0;
+  --status-success: #74b98d;
+  --status-success-fg: #0f1317;
+  --status-failed: #dd8b7d;
+  --status-running-tint: color-mix(in srgb, #4fbfb0 20%, #0f1317);
+  --status-running-strong: #9adcd2;
+  --status-success-tint: color-mix(in srgb, #74b98d 20%, #0f1317);
+  --status-success-strong: #a9d8ba;
+  --status-failed-tint: color-mix(in srgb, #dd8b7d 20%, #0f1317);
+  --status-failed-strong: #eeb6ab;
+  --status-idle-tint: color-mix(in srgb, #8794a0 20%, #0f1317);
+  --status-idle-strong: #ccd4dc;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: none;
+  --sans: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  --l-1: 6px;
+  --l-2: 12px;
+  --l-3: 20px;
+  --l-4: 32px;
+  --l-6: 48px;
+  --l-gap: 14px;
+  --l-rule: #333d47;
+  --l-radius: 3px;
+}
+
+/* --- Grundlayout und Typografie --------------------------------------------------------- */
+
+[data-direction='linie'] .dl-view {
+  gap: var(--l-4);
+  padding: var(--l-3);
+  font-size: 14px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-direction='linie'] .dl-title,
+[data-direction='linie'] .dl-day,
+[data-direction='linie'] .dl-cluster,
+[data-direction='linie'] .dl-group__title,
+[data-direction='linie'] .dl-category__title,
+[data-direction='linie'] .dl-finelabels__title {
+  font-family: var(--heading);
+  color: var(--text-h);
+}
+
+/*
+ * Kern der Handschrift: die Ueberschrift traegt eine Linie, die RANDLOS ueber das Textmass
+ * hinauslaeuft. Kein Kasten, aber eine klare Kante - genau das Mittelding zwischen einem
+ * gerahmten Block und blossem Weissraum.
+ */
+[data-direction='linie'] .dl-title {
+  padding-bottom: var(--l-2);
+  border-bottom: 2px solid var(--accent);
+  margin: 0 calc(var(--l-3) * -1);
+  padding-left: var(--l-3);
+  padding-right: var(--l-3);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+
+[data-direction='linie'] .dl-day {
+  padding-bottom: var(--l-1);
+  border-bottom: 1px solid var(--l-rule);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+[data-direction='linie'] .dl-cluster {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+[data-direction='linie'] .dl-group__title,
+[data-direction='linie'] .dl-category__title,
+[data-direction='linie'] .dl-finelabels__title {
+  gap: var(--l-1);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+[data-direction='linie'] .dl-subtitle,
+[data-direction='linie'] .dl-shortcuts,
+[data-direction='linie'] .dl-position,
+[data-direction='linie'] .dl-category__hint {
+  font-size: 12px;
+  color: var(--text);
+}
+
+[data-direction='linie'] .dl-position__current {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+/* --- Bedienelemente: leichte Kante, 3 px Radius ----------------------------------------- */
+
+[data-direction='linie'] .dl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--l-1);
+  padding: var(--l-1) var(--l-2);
+  border: 1px solid var(--border);
+  border-radius: var(--l-radius);
+  background: transparent;
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 110ms ease, color 110ms ease, border-color 110ms ease;
+}
+
+[data-direction='linie'] .dl-btn--ghost {
+  border-color: transparent;
+  color: var(--text);
+}
+
+/*
+ * Filter: keine gefuellten Pillen (Klar) und keine blosse Textzeile (Minimal), sondern eine
+ * durchgehende Grundlinie, auf der der aktive Eintrag mit einer 2-px-Marke sitzt.
+ */
+[data-direction='linie'] .dl-filters {
+  gap: var(--l-3);
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--l-rule);
+  margin: 0 calc(var(--l-3) * -1);
+  padding-left: var(--l-3);
+  padding-right: var(--l-3);
+}
+
+[data-direction='linie'] .dl-filter {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--l-1) 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  transition: color 110ms ease, border-color 110ms ease;
+}
+
+[data-direction='linie'] .dl-filter[aria-pressed='true'] {
+  border-bottom-color: var(--accent-2);
+  color: var(--text-h);
+}
+
+[data-direction='linie'] .dl-ratings {
+  gap: var(--l-1);
+}
+
+[data-direction='linie'] .dl-rating-btn[aria-pressed='true'][data-rating='favorite'] {
+  border-color: var(--rating-favorite);
+  background: var(--rating-favorite);
+  color: var(--rating-favorite-fg);
+}
+
+[data-direction='linie'] .dl-rating-btn[aria-pressed='true'][data-rating='album_worthy'] {
+  border-color: var(--rating-album-worthy);
+  background: var(--rating-album-worthy);
+  color: var(--rating-album-worthy-fg);
+}
+
+[data-direction='linie'] .dl-rating-btn[aria-pressed='true'][data-rating='rejected'] {
+  border-color: var(--rating-rejected);
+  background: var(--rating-rejected);
+  color: var(--rating-rejected-fg);
+}
+
+[data-direction='linie'] .dl-rating-btn__symbol {
+  margin-right: var(--l-1);
+}
+
+[data-direction='linie'] .dl-nav {
+  gap: var(--l-1);
+}
+
+[data-direction='linie'] .dl-input {
+  width: 80px;
+  padding: var(--l-1) var(--l-2);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-h);
+  font-weight: 600;
+  text-align: right;
+}
+
+[data-direction='linie'] .dl-field {
+  gap: var(--l-1);
+}
+
+[data-direction='linie'] .dl-field__label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+/* --- Kacheln: leichter Rahmen, Badge bleibt auf dem Foto -------------------------------- */
+
+[data-direction='linie'] .dl-grid {
+  gap: var(--l-gap);
+}
+
+[data-direction='linie'] .dl-tile {
+  gap: var(--l-1);
+}
+
+[data-direction='linie'] .dl-tile__frame {
+  border: 1px solid var(--l-rule);
+  border-radius: var(--l-radius);
+}
+
+[data-direction='linie'] .dl-tile__decor {
+  display: none;
+}
+
+[data-direction='linie'] .dl-tile__overlay {
+  padding: var(--l-1);
+}
+
+[data-direction='linie'] .dl-tile__corner {
+  gap: var(--l-1);
+}
+
+/*
+ * Flaches Rechteck statt Pille oder Kreis: gerade so viel Flaeche, dass es ueber jedem Bildinhalt
+ * lesbar bleibt - der Punkt, an dem "Klar" recht hat.
+ */
+[data-direction='linie'] .dl-tile__override,
+[data-direction='linie'] .dl-info,
+[data-direction='linie'] .dl-badge {
+  border: 1px solid var(--accent-border);
+  border-radius: var(--l-radius);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  color: var(--text-h);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+[data-direction='linie'] .dl-badge[data-rating='favorite'] > span {
+  color: var(--rating-favorite);
+}
+
+[data-direction='linie'] .dl-badge[data-rating='album_worthy'] > span {
+  color: var(--rating-album-worthy);
+}
+
+[data-direction='linie'] .dl-badge[data-rating='rejected'] > span {
+  color: var(--rating-rejected);
+}
+
+[data-direction='linie'] .dl-badge[data-suggested='true'] > span {
+  color: var(--text);
+}
+
+[data-direction='linie'] .dl-tile--placeholder {
+  padding: var(--l-2);
+  border: 1px dashed var(--l-rule);
+  border-radius: var(--l-radius);
+  font-size: 12px;
+  color: var(--text);
+}
+
+[data-direction='linie'] .dl-quality {
+  font-size: 12px;
+  color: var(--text);
+}
+
+[data-direction='linie'] .dl-quality__dots {
+  color: var(--text-h);
+}
+
+/* --- Detailansicht: Zeilen mit Linien, keine Kaesten ------------------------------------ */
+
+[data-direction='linie'] .dl-photo {
+  border: 1px solid var(--l-rule);
+  border-radius: var(--l-radius);
+}
+
+/* Blocktrenner laufen randlos durch - die Signatur der Richtung. */
+[data-direction='linie'] .dl-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--l-3);
+  padding-top: var(--l-3);
+  border-top: 1px solid var(--l-rule);
+  margin: 0 calc(var(--l-3) * -1);
+  padding-left: var(--l-3);
+  padding-right: var(--l-3);
+}
+
+[data-direction='linie'] .dl-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--l-2);
+}
+
+[data-direction='linie'] .dl-list {
+  gap: 0;
+}
+
+/* Zeilenlinien wie bei "Klar", aber ohne umschliessenden Rahmen. */
+[data-direction='linie'] .dl-row {
+  gap: var(--l-2);
+  padding: var(--l-1) 0;
+  border-bottom: 1px solid var(--l-rule);
+}
+
+[data-direction='linie'] .dl-row__label {
+  color: var(--text);
+}
+
+[data-direction='linie'] .dl-row__value {
+  gap: var(--l-2);
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+[data-direction='linie'] .dl-row__num {
+  min-width: 48px;
+  text-align: right;
+}
+
+/*
+ * Der Wertbalken traegt die Signalfarbe, damit er sich von der grauen Zeilenlinie darunter
+ * unterscheidet - in einer Richtung, die von Erkennbarkeit lebt, darf er nicht mit der
+ * Trennlinie verschmelzen.
+ */
+[data-direction='linie'] .dl-meter {
+  width: 64px;
+  height: 3px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--accent-2) 22%, transparent);
+}
+
+[data-direction='linie'] .dl-meter__fill {
+  background: var(--accent-2);
+}
+
+[data-direction='linie'] .dl-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--l-2);
+  padding-top: var(--l-2);
+}
+
+[data-direction='linie'] .dl-candidates__list {
+  gap: 0;
+}
+
+[data-direction='linie'] .dl-candidate {
+  gap: var(--l-2);
+  padding: var(--l-1) 0;
+  border-bottom: 1px solid var(--l-rule);
+}
+
+[data-direction='linie'] .dl-candidate__name {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+[data-direction='linie'] .dl-chip {
+  padding: 2px var(--l-1);
+  border: 1px solid var(--l-rule);
+  border-radius: var(--l-radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+[data-direction='linie'] .dl-chip--fine {
+  border-style: dashed;
+  color: var(--text-h);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+[data-direction='linie'] .dl-finelabels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--l-1);
+  margin-top: var(--l-2);
+}
+
+[data-direction='linie'] .dl-finelabels__list {
+  gap: var(--l-1);
+}
+
+[data-direction='linie'] .dl-statusicon {
+  margin-right: var(--l-1);
+}
+
+[data-direction='linie'] .dl-statusicon[data-tone='success'] {
+  color: var(--status-success);
+}
+
+[data-direction='linie'] .dl-statusicon[data-tone='failed'] {
+  color: var(--status-failed);
+}
+
+[data-direction='linie'] .dl-statusicon[data-tone='idle'] {
+  color: var(--text);
+}
+
+/* Der Vorschlagskasten ist auch hier kein Kasten, sondern eine Zeile mit Kante links. */
+[data-direction='linie'] .dl-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--l-2);
+  padding: var(--l-2) 0 var(--l-2) var(--l-2);
+  border-left: 2px solid var(--accent-2);
+}
+
+[data-direction='linie'] .dl-suggestion__title {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+/* --- Stepper: Quadrate auf durchgezogener Linie, Labels sichtbar ------------------------ */
+
+[data-direction='linie'] .dl-stepper {
+  padding: var(--l-2) var(--l-3);
+  border-bottom: 1px solid var(--l-rule);
+  background: var(--bg);
+}
+
+[data-direction='linie'] .dl-steps {
+  gap: 0;
+}
+
+[data-direction='linie'] .dl-step__marker {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+[data-direction='linie'] .dl-step__marker::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 1px solid var(--border);
+  border-radius: var(--l-radius);
+  background: var(--bg);
+}
+
+[data-direction='linie'] .dl-step[data-state='done'] .dl-step__marker::before {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+[data-direction='linie'] .dl-step[data-state='current'] .dl-step__marker::before {
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border: 2px solid var(--accent-2);
+  background: var(--accent-2);
+}
+
+[data-direction='linie'] .dl-step__symbol {
+  position: relative;
+  top: -15px;
+  font-size: 11px;
+  color: var(--text-h);
+}
+
+[data-direction='linie'] .dl-step__line {
+  height: 1px;
+  background: var(--l-rule);
+}
+
+/*
+ * Erkennbarkeit vor Reduktion - aber fuenf Beschriftungen nebeneinander sprengen den
+ * Mobilrahmen. Deshalb traegt nur der aktuelle Schritt sein Label ausgeschrieben ("du bist
+ * hier"), die uebrigen bleiben Marke. Das ist der Mittelweg zwischen Klar/Minimal (Label ganz
+ * aus) und einer unlesbar gequetschten Zeile.
+ */
+[data-direction='linie'] .dl-step__label {
+  display: none;
+}
+
+[data-direction='linie'] .dl-step[data-state='current'] .dl-step__label {
+  display: inline;
+  padding-left: var(--l-1);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-h);
+}
+
+[data-direction='linie'] .dl-step__info {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* --- Kuratierung ------------------------------------------------------------------------ */
+
+[data-direction='linie'] .dl-curate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--l-4);
+  padding: 0 var(--l-3) var(--l-4);
+}
+
+[data-direction='linie'] .dl-curate__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--l-1);
+}
+
+[data-direction='linie'] .dl-category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--l-2);
+}
+
+[data-direction='linie'] .dl-view--pipeline {
+  padding: 0;
+  gap: var(--l-4);
+}
+
+[data-direction='linie'] .dl-skiplink:focus {
+  margin: var(--l-1);
+  padding: var(--l-1) var(--l-2);
+  border-radius: var(--l-radius);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+[data-direction='linie'] :focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}

@@ -1,0 +1,606 @@
+/*
+ * TEMPORAER (specs/features/0287-design-richtungen-vergleich.md): Richtung "Organic".
+ *
+ * These: Urlaubsfotos gehoeren ins Wohnzimmer, nicht ins Werkzeug. Warmer Papiergrund, auf dem
+ * Fotos wie aufgelegte Abzuege liegen; Terrakotta und Salbei auf Creme, grosszuegige Radien,
+ * weiche Tiefe.
+ *
+ * Diese Datei ist der PORT der heute ausgelieferten Oberflaeche: die Werte stammen 1:1 aus
+ * frontend/src/index.css und werden bewusst NICHT "verbessert" - Organic tritt als das an, was
+ * heute existiert, sonst verglichen wir eine Version, die es nicht gibt. Das schliesst die
+ * dokumentierte Rahmenluecke ein (--border erreicht nur 1.37:1 hell / 1.69:1 dunkel).
+ *
+ * ACHTUNG: index.css definiert mehrere Vertragstokens ueber die Tonleitern
+ * (--status-success: var(--accent-2-600) usw.). Das Labor laedt index.css NICHT - alle diese
+ * Verweise sind hier auf ihren Hexwert AUFGELOEST, sonst waeren die Tokens still leer
+ * (Schutzgelaender G3e). Im Dunkelmodus sind die Verweise gegen die DUNKLEN Werte aufgeloest,
+ * weil `var()` zur Nutzungszeit aufloest (z.B. --status-running: var(--accent) -> #f6a06b).
+ */
+
+[data-direction='organic'][data-mode='light'] {
+  color-scheme: light;
+  --bg: #f5ead8;
+  --surface: #ebddc5;
+  --border: color-mix(in srgb, #201e1d 16%, transparent);
+  --text: #645c50;
+  --text-h: #201e1d;
+  --accent: #c67139;
+  --accent-strong: #8c491a;
+  --accent-fg: #201e1d;
+  --accent-bg: color-mix(in srgb, #c67139 12%, transparent);
+  --accent-border: color-mix(in srgb, #c67139 45%, transparent);
+  --accent-2: #7a8a5e;
+  --accent-2-strong: #56633f;
+  --rating-favorite: #c9962c;
+  --rating-favorite-fg: #000000;
+  --rating-album-worthy: #728157;
+  --rating-album-worthy-fg: #000000;
+  --rating-rejected: #a8442c;
+  --rating-rejected-fg: #f5ead8;
+  --status-running: #c67139; /* index.css: var(--accent) */
+  --status-success: #728157; /* index.css: var(--accent-2-600) */
+  --status-success-fg: #000000;
+  --status-failed: #a8442c; /* index.css: var(--rating-rejected) */
+  --status-running-tint: #ffe1d0; /* index.css: var(--accent-200) */
+  --status-running-strong: #643312; /* index.css: var(--accent-800) */
+  --status-success-tint: #e1eecc; /* index.css: var(--accent-2-200) */
+  --status-success-strong: #3d472b; /* index.css: var(--accent-2-800) */
+  --status-failed-tint: #f6ddd4;
+  --status-failed-strong: #7d2f1c;
+  --status-idle-tint: #f9f4ed; /* index.css: var(--neutral-100) */
+  --status-idle-strong: #474238; /* index.css: var(--neutral-800) */
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2e2b25 14%, transparent);
+  --shadow: 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
+  --sans: 'Figtree', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: 'Caprasimo', Georgia, serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  /* Eigene Zusatztokens dieser Richtung (Abstands- und Radienskala der Vorlage). */
+  --o-radius: 16px;
+  --o-radius-lg: 28px;
+  --o-radius-xl: 32px;
+  --o-1: 4.4px;
+  --o-2: 8.8px;
+  --o-3: 13.2px;
+  --o-4: 17.6px;
+  --o-6: 26.4px;
+  --o-8: 35.2px;
+}
+
+[data-direction='organic'][data-mode='dark'] {
+  color-scheme: dark;
+  --bg: #201e1d;
+  --surface: #2e2b25;
+  --border: color-mix(in srgb, #f5ead8 18%, transparent);
+  --text: #c0b6a5;
+  --text-h: #f5ead8;
+  --accent: #f6a06b;
+  --accent-strong: #f6a06b;
+  --accent-fg: #201e1d;
+  --accent-bg: color-mix(in srgb, #f6a06b 15%, transparent);
+  --accent-border: color-mix(in srgb, #f6a06b 50%, transparent);
+  --accent-2: #aebf92;
+  --accent-2-strong: #ccdbb2;
+  --rating-favorite: #e0b455;
+  --rating-favorite-fg: #201e1d;
+  --rating-album-worthy: #aebf92;
+  --rating-album-worthy-fg: #201e1d;
+  --rating-rejected: #e08a6f;
+  --rating-rejected-fg: #201e1d;
+  --status-running: #f6a06b; /* index.css: var(--accent), hier der dunkle Akzent */
+  --status-success: #aebf92; /* index.css: var(--accent-2) */
+  --status-success-fg: #201e1d;
+  --status-failed: #e08a6f; /* index.css: var(--rating-rejected) */
+  --status-running-tint: color-mix(in srgb, #f6a06b 22%, #201e1d);
+  --status-running-strong: #ffc6a5; /* index.css: var(--accent-300) */
+  --status-success-tint: color-mix(in srgb, #aebf92 22%, #201e1d);
+  --status-success-strong: #ccdbb2; /* index.css: var(--accent-2-300) */
+  --status-failed-tint: color-mix(in srgb, #e08a6f 22%, #201e1d);
+  --status-failed-strong: #f3b5a0;
+  --status-idle-tint: color-mix(in srgb, #c0b6a5 22%, #201e1d);
+  --status-idle-strong: #dcd3c4; /* index.css: var(--neutral-300) */
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: none;
+  --sans: 'Figtree', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: 'Caprasimo', Georgia, serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  --o-radius: 16px;
+  --o-radius-lg: 28px;
+  --o-radius-xl: 32px;
+  --o-1: 4.4px;
+  --o-2: 8.8px;
+  --o-3: 13.2px;
+  --o-4: 17.6px;
+  --o-6: 26.4px;
+  --o-8: 35.2px;
+}
+
+/* --- Grundlayout und Typografie ------------------------------------------------------- */
+
+[data-direction='organic'] .dl-view {
+  gap: var(--o-6);
+  padding: var(--o-4);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* Caprasimo hat nur einen Schnitt - jedes andere Gewicht waere ein synthetischer Fettschnitt. */
+[data-direction='organic'] .dl-title,
+[data-direction='organic'] .dl-day,
+[data-direction='organic'] .dl-cluster,
+[data-direction='organic'] .dl-group__title,
+[data-direction='organic'] .dl-category__title,
+[data-direction='organic'] .dl-finelabels__title {
+  font-family: var(--heading);
+  font-weight: 400;
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  color: var(--text-h);
+}
+
+[data-direction='organic'] .dl-title {
+  font-size: 30px;
+}
+
+[data-direction='organic'] .dl-day {
+  font-size: 22px;
+}
+
+[data-direction='organic'] .dl-cluster,
+[data-direction='organic'] .dl-group__title {
+  font-size: 18px;
+}
+
+[data-direction='organic'] .dl-category__title,
+[data-direction='organic'] .dl-finelabels__title {
+  font-size: 15px;
+  gap: var(--o-2);
+}
+
+[data-direction='organic'] .dl-subtitle,
+[data-direction='organic'] .dl-shortcuts,
+[data-direction='organic'] .dl-position,
+[data-direction='organic'] .dl-category__hint {
+  font-size: 14px;
+  color: var(--text);
+}
+
+[data-direction='organic'] .dl-position__current {
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+/* --- Bedienelemente: durchgehend volle Pillen ------------------------------------------ */
+
+[data-direction='organic'] .dl-btn,
+[data-direction='organic'] .dl-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--o-1);
+  padding: var(--o-2) var(--o-4);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 600;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+[data-direction='organic'] .dl-filter[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+[data-direction='organic'] .dl-btn--ghost {
+  border-color: transparent;
+  color: var(--accent-strong);
+}
+
+[data-direction='organic'] .dl-filters {
+  gap: var(--o-2);
+}
+
+[data-direction='organic'] .dl-rating-btn[aria-pressed='true'][data-rating='favorite'] {
+  border-color: var(--rating-favorite);
+  background: var(--rating-favorite);
+  color: var(--rating-favorite-fg);
+}
+
+[data-direction='organic'] .dl-rating-btn[aria-pressed='true'][data-rating='album_worthy'] {
+  border-color: var(--rating-album-worthy);
+  background: var(--rating-album-worthy);
+  color: var(--rating-album-worthy-fg);
+}
+
+[data-direction='organic'] .dl-rating-btn[aria-pressed='true'][data-rating='rejected'] {
+  border-color: var(--rating-rejected);
+  background: var(--rating-rejected);
+  color: var(--rating-rejected-fg);
+}
+
+[data-direction='organic'] .dl-ratings {
+  gap: var(--o-2);
+}
+
+[data-direction='organic'] .dl-rating-btn__symbol {
+  margin-right: var(--o-1);
+}
+
+[data-direction='organic'] .dl-nav {
+  gap: var(--o-2);
+}
+
+[data-direction='organic'] .dl-input {
+  padding: var(--o-2) var(--o-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-h);
+  width: 96px;
+}
+
+[data-direction='organic'] .dl-field {
+  gap: var(--o-1);
+  font-size: 14px;
+}
+
+/* --- Kacheln: abgerundete Karten mit weicher Tiefe -------------------------------------- */
+
+[data-direction='organic'] .dl-grid {
+  gap: var(--o-3);
+}
+
+[data-direction='organic'] .dl-tile {
+  gap: var(--o-1);
+}
+
+[data-direction='organic'] .dl-tile__frame {
+  overflow: hidden;
+  border-radius: var(--o-radius);
+  box-shadow: var(--shadow);
+}
+
+[data-direction='organic'] .dl-tile__decor {
+  display: none;
+}
+
+[data-direction='organic'] .dl-tile__overlay {
+  padding: var(--o-1);
+}
+
+[data-direction='organic'] .dl-tile__corner {
+  gap: var(--o-1);
+}
+
+/*
+ * Halbtransparenter --bg-Kreis mit Backdrop-Blur hinter Badge/Trigger/Override-Marker: garantiert
+ * Lesbarkeit ueber beliebigem Bildinhalt.
+ */
+[data-direction='organic'] .dl-tile__override,
+[data-direction='organic'] .dl-info {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(4px);
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+[data-direction='organic'] .dl-badge {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--o-2);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(4px);
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+[data-direction='organic'] .dl-badge[data-rating='favorite'] {
+  background: var(--rating-favorite);
+  color: var(--rating-favorite-fg);
+}
+
+[data-direction='organic'] .dl-badge[data-rating='album_worthy'] {
+  background: var(--rating-album-worthy);
+  color: var(--rating-album-worthy-fg);
+}
+
+[data-direction='organic'] .dl-badge[data-rating='rejected'] {
+  background: var(--rating-rejected);
+  color: var(--rating-rejected-fg);
+}
+
+/*
+ * Unbestaetigter Vorschlag: umrandet + gedaempfte Tinte statt Vollfuellung, Symbol in --text-h.
+ * "Voll gefuellt = von einem Menschen entschieden" bleibt dadurch auf einen Blick erkennbar.
+ */
+[data-direction='organic'] .dl-badge[data-suggested='true'] {
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  color: var(--text-h);
+}
+
+[data-direction='organic'] .dl-badge[data-suggested='true'][data-rating='favorite'] {
+  border-color: var(--rating-favorite);
+}
+
+[data-direction='organic'] .dl-badge[data-suggested='true'][data-rating='album_worthy'] {
+  border-color: var(--rating-album-worthy);
+}
+
+[data-direction='organic'] .dl-badge[data-suggested='true'][data-rating='rejected'] {
+  border-color: var(--rating-rejected);
+}
+
+[data-direction='organic'] .dl-tile--placeholder {
+  border: 1px dashed var(--border);
+  border-radius: var(--o-radius);
+  padding: var(--o-2);
+  font-size: 12px;
+  color: var(--text);
+}
+
+[data-direction='organic'] .dl-quality {
+  font-size: 12px;
+  color: var(--text);
+}
+
+[data-direction='organic'] .dl-quality__dots {
+  color: var(--text-h);
+}
+
+/* --- Detailansicht ---------------------------------------------------------------------- */
+
+[data-direction='organic'] .dl-photo {
+  overflow: hidden;
+  border-radius: var(--o-radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+[data-direction='organic'] .dl-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--o-4);
+  font-size: 14px;
+}
+
+[data-direction='organic'] .dl-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--o-2);
+}
+
+[data-direction='organic'] .dl-list {
+  gap: var(--o-2);
+}
+
+[data-direction='organic'] .dl-row {
+  gap: var(--o-3);
+}
+
+[data-direction='organic'] .dl-row__label {
+  color: var(--text);
+}
+
+[data-direction='organic'] .dl-row__value {
+  gap: var(--o-2);
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+[data-direction='organic'] .dl-meter {
+  width: 56px;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+[data-direction='organic'] .dl-meter__fill {
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+[data-direction='organic'] .dl-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--o-2);
+  margin-top: var(--o-1);
+}
+
+[data-direction='organic'] .dl-candidates__list {
+  gap: var(--o-2);
+}
+
+[data-direction='organic'] .dl-candidate {
+  gap: var(--o-2);
+  padding: var(--o-2);
+  border: 1px solid var(--border);
+  border-radius: var(--o-radius);
+}
+
+[data-direction='organic'] .dl-candidate__name {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+[data-direction='organic'] .dl-chip {
+  padding: 2px var(--o-2);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--status-idle-tint);
+  color: var(--status-idle-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Feinlabels: anderer Ton, umrandet statt gefuellt, kleiner - klar von der Kategorie getrennt. */
+[data-direction='organic'] .dl-chip--fine {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+[data-direction='organic'] .dl-finelabels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--o-1);
+  margin-top: var(--o-2);
+}
+
+[data-direction='organic'] .dl-finelabels__list {
+  gap: var(--o-1);
+}
+
+[data-direction='organic'] .dl-statusicon {
+  margin-right: var(--o-1);
+}
+
+[data-direction='organic'] .dl-statusicon[data-tone='success'] {
+  color: var(--status-success);
+}
+
+[data-direction='organic'] .dl-statusicon[data-tone='failed'] {
+  color: var(--status-failed);
+}
+
+[data-direction='organic'] .dl-statusicon[data-tone='idle'] {
+  color: var(--text);
+}
+
+/* Grosse getoente Akzentflaeche mit 28 px Radius - der Vorschlagskasten der Vorlage. */
+[data-direction='organic'] .dl-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--o-2);
+  padding: var(--o-4);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--o-radius-lg);
+  background: var(--accent-bg);
+  font-size: 14px;
+}
+
+[data-direction='organic'] .dl-suggestion__title {
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+/* --- Stepper: 44-px-Kreise, Verbindungslinie 2 px --------------------------------------- */
+
+[data-direction='organic'] .dl-stepper {
+  padding: var(--o-3) var(--o-4);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 95%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+[data-direction='organic'] .dl-steps {
+  gap: var(--o-1);
+}
+
+[data-direction='organic'] .dl-step {
+  gap: var(--o-1);
+}
+
+[data-direction='organic'] .dl-step__marker {
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+[data-direction='organic'] .dl-step[data-state='done'] .dl-step__marker {
+  border-color: var(--status-success-tint);
+  background: var(--status-success-tint);
+  color: var(--status-success-strong);
+}
+
+[data-direction='organic'] .dl-step[data-state='current'] .dl-step__marker {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+[data-direction='organic'] .dl-step[data-state='blocked'] .dl-step__marker {
+  border-color: color-mix(in srgb, var(--border) 50%, transparent);
+  color: var(--text);
+}
+
+[data-direction='organic'] .dl-step__line {
+  height: 2px;
+  background: var(--border);
+}
+
+[data-direction='organic'] .dl-step__label {
+  display: none;
+}
+
+[data-direction='organic'] .dl-step__info {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* --- Kuratierung ------------------------------------------------------------------------ */
+
+[data-direction='organic'] .dl-curate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--o-4);
+  padding: 0 var(--o-4) var(--o-4);
+}
+
+[data-direction='organic'] .dl-curate__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--o-1);
+}
+
+[data-direction='organic'] .dl-category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--o-2);
+}
+
+[data-direction='organic'] .dl-view--pipeline {
+  padding: 0;
+  gap: var(--o-4);
+}
+
+[data-direction='organic'] .dl-skiplink:focus {
+  margin: var(--o-2);
+  padding: var(--o-2) var(--o-3);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+[data-direction='organic'] :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

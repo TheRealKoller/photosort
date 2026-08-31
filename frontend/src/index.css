@@ -1,5 +1,10 @@
 @import 'tailwindcss';
 
+/* TEMPORAER (specs/features/0287-design-richtungen-vergleich.md): haelt das Design-Labor
+   (frontend/design-lab/) aus Tailwinds automatischer Quellsuche heraus, damit das Wegwerf-Artefakt
+   die generierte Produktiv-CSS nicht anfassen kann. Mit dem Labor wieder zu entfernen. */
+@source not "../design-lab";
+
 /* Self-gehostete Schriften des Organic-Design-Systems (Caprasimo als Display-/Ueberschriften-
    Stimme ueber Figtree fuer Fliesstext). Bewusst ueber @fontsource statt ueber die Google-Fonts-
    CDN eingebunden, die das Design-System-Readme vorschlaegt: PhotoSort ist eine PWA und muss

@@ -1,0 +1,641 @@
+/*
+ * TEMPORAER (specs/features/0287-design-richtungen-vergleich.md): Richtung "Klar".
+ *
+ * These: Zwei Menschen sortieren tausende Fotos, oft ueber Wochen verteilt. Diese Richtung
+ * optimiert auf Wiedererkennbarkeit und Uebersicht - alles hat einen Rahmen, eine Zeile, eine
+ * Spalte. Die Serifen-Ueberschrift gibt den Ton eines gedruckten Registers statt eines Dashboards.
+ *
+ * Signatur: der zusammenhaengende Segmentschalter der Filterzeile und die tabellarischen,
+ * rechtsbuendigen Werte mit Zeilenlinien. Radien 2/4/6 - keine Pillen, keine Kreise. Rahmen statt
+ * Tiefe.
+ */
+
+[data-direction='klar'][data-mode='light'] {
+  color-scheme: light;
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --border: #7c8896;
+  --text: #4a5b6e;
+  --text-h: #0f1b2a;
+  --accent: #1f5c8b;
+  --accent-strong: #14496f;
+  --accent-fg: #ffffff;
+  --accent-bg: color-mix(in srgb, #1f5c8b 10%, transparent);
+  --accent-border: color-mix(in srgb, #1f5c8b 45%, transparent);
+  --accent-2: #17636b;
+  --accent-2-strong: #0f4d54;
+  --rating-favorite: #a06a00;
+  --rating-favorite-fg: #ffffff;
+  --rating-album-worthy: #2f7a45;
+  --rating-album-worthy-fg: #ffffff;
+  --rating-rejected: #b3261e;
+  --rating-rejected-fg: #ffffff;
+  --status-running: #1f5c8b;
+  --status-success: #2f7a45;
+  --status-success-fg: #ffffff;
+  --status-failed: #b3261e;
+  --status-running-tint: #dce8f2;
+  --status-running-strong: #14496f;
+  --status-success-tint: #dcefe2;
+  --status-success-strong: #1f5a32;
+  --status-failed-tint: #f7dedc;
+  --status-failed-strong: #8c1d16;
+  --status-idle-tint: #e6eaef;
+  --status-idle-strong: #43546a;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: 0 10px 28px color-mix(in srgb, #0f1b2a 16%, transparent);
+  --sans: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  --heading: Georgia, 'Times New Roman', ui-serif, serif;
+  --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  /* Eigene Zusatztokens: enge Abstandsskala, kleine Radien. */
+  --k-radius-sm: 2px;
+  --k-radius: 4px;
+  --k-radius-lg: 6px;
+  --k-1: 4px;
+  --k-2: 8px;
+  --k-3: 12px;
+  --k-4: 16px;
+  --k-6: 24px;
+  --k-8: 32px;
+}
+
+[data-direction='klar'][data-mode='dark'] {
+  color-scheme: dark;
+  --bg: #12181f;
+  --surface: #1b232c;
+  --border: #697787;
+  --text: #b3c1cf;
+  --text-h: #f0f5fa;
+  --accent: #7fb4e0;
+  --accent-strong: #9cc7ec;
+  --accent-fg: #0d1620;
+  --accent-bg: color-mix(in srgb, #7fb4e0 16%, transparent);
+  --accent-border: color-mix(in srgb, #7fb4e0 50%, transparent);
+  --accent-2: #6fc3cd;
+  --accent-2-strong: #93d6de;
+  --rating-favorite: #e0b04a;
+  --rating-favorite-fg: #12181f;
+  --rating-album-worthy: #6fc08a;
+  --rating-album-worthy-fg: #12181f;
+  --rating-rejected: #f08b80;
+  --rating-rejected-fg: #12181f;
+  --status-running: #7fb4e0;
+  --status-success: #6fc08a;
+  --status-success-fg: #12181f;
+  --status-failed: #f08b80;
+  --status-running-tint: color-mix(in srgb, #7fb4e0 22%, #12181f);
+  --status-running-strong: #b9d8f2;
+  --status-success-tint: color-mix(in srgb, #6fc08a 22%, #12181f);
+  --status-success-strong: #a8dcbc;
+  --status-failed-tint: color-mix(in srgb, #f08b80 22%, #12181f);
+  --status-failed-strong: #f7bdb4;
+  --status-idle-tint: color-mix(in srgb, #8b98a6 22%, #12181f);
+  --status-idle-strong: #c8d2dc;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: none;
+  --sans: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  --heading: Georgia, 'Times New Roman', ui-serif, serif;
+  --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  --k-radius-sm: 2px;
+  --k-radius: 4px;
+  --k-radius-lg: 6px;
+  --k-1: 4px;
+  --k-2: 8px;
+  --k-3: 12px;
+  --k-4: 16px;
+  --k-6: 24px;
+  --k-8: 32px;
+}
+
+/* --- Grundlayout und Typografie --------------------------------------------------------- */
+
+[data-direction='klar'] .dl-view {
+  gap: var(--k-4);
+  padding: var(--k-4);
+  font-size: 15px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-direction='klar'] .dl-title,
+[data-direction='klar'] .dl-day,
+[data-direction='klar'] .dl-cluster,
+[data-direction='klar'] .dl-group__title,
+[data-direction='klar'] .dl-category__title,
+[data-direction='klar'] .dl-finelabels__title {
+  font-family: var(--heading);
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+[data-direction='klar'] .dl-title {
+  font-size: 26px;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+}
+
+[data-direction='klar'] .dl-day {
+  font-size: 20px;
+}
+
+[data-direction='klar'] .dl-cluster {
+  font-size: 17px;
+}
+
+/* Blockueberschriften "Qualität"/"Kategorien" mit voller Trennlinie. */
+[data-direction='klar'] .dl-group__title {
+  font-size: 17px;
+  padding-bottom: var(--k-1);
+  border-bottom: 1px solid var(--border);
+}
+
+[data-direction='klar'] .dl-category__title,
+[data-direction='klar'] .dl-finelabels__title {
+  font-size: 14px;
+  gap: var(--k-2);
+}
+
+[data-direction='klar'] .dl-subtitle,
+[data-direction='klar'] .dl-shortcuts,
+[data-direction='klar'] .dl-position,
+[data-direction='klar'] .dl-category__hint {
+  font-size: 13px;
+  color: var(--text);
+}
+
+[data-direction='klar'] .dl-position__current {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+/* --- Bedienelemente: rechteckig, gerahmt ------------------------------------------------ */
+
+[data-direction='klar'] .dl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--k-1);
+  padding: var(--k-2) var(--k-3);
+  border: 1px solid var(--border);
+  border-radius: var(--k-radius);
+  background: var(--surface);
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 600;
+  transition: background-color 120ms, color 120ms, border-color 120ms;
+}
+
+[data-direction='klar'] .dl-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent-strong);
+}
+
+/*
+ * Signatur 1: die sechs Filter sind EIN zusammenhaengender Segmentschalter - ein 4-px-gerundeter
+ * Block mit 1-px-Trennlinien zwischen den Segmenten statt sechs einzelner Pillen.
+ */
+[data-direction='klar'] .dl-filters {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--k-radius);
+  background: var(--surface);
+}
+
+[data-direction='klar'] .dl-filter {
+  flex: 1 1 33.33%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--k-2);
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 120ms, color 120ms;
+}
+
+[data-direction='klar'] .dl-filter[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+[data-direction='klar'] .dl-rating-btn[aria-pressed='true'][data-rating='favorite'] {
+  border-color: var(--rating-favorite);
+  background: var(--rating-favorite);
+  color: var(--rating-favorite-fg);
+}
+
+[data-direction='klar'] .dl-rating-btn[aria-pressed='true'][data-rating='album_worthy'] {
+  border-color: var(--rating-album-worthy);
+  background: var(--rating-album-worthy);
+  color: var(--rating-album-worthy-fg);
+}
+
+[data-direction='klar'] .dl-rating-btn[aria-pressed='true'][data-rating='rejected'] {
+  border-color: var(--rating-rejected);
+  background: var(--rating-rejected);
+  color: var(--rating-rejected-fg);
+}
+
+[data-direction='klar'] .dl-ratings {
+  gap: var(--k-2);
+}
+
+[data-direction='klar'] .dl-rating-btn__symbol {
+  margin-right: var(--k-1);
+}
+
+[data-direction='klar'] .dl-nav {
+  gap: var(--k-2);
+}
+
+[data-direction='klar'] .dl-input {
+  width: 88px;
+  padding: var(--k-2);
+  border: 1px solid var(--border);
+  border-radius: var(--k-radius);
+  background: var(--surface);
+  color: var(--text-h);
+}
+
+[data-direction='klar'] .dl-field {
+  gap: var(--k-1);
+}
+
+[data-direction='klar'] .dl-field__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+/* --- Kacheln: 1 px Rahmen, rechteckige Badge -------------------------------------------- */
+
+[data-direction='klar'] .dl-grid {
+  gap: var(--k-2);
+}
+
+[data-direction='klar'] .dl-tile {
+  gap: var(--k-1);
+}
+
+[data-direction='klar'] .dl-tile__frame {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--k-radius);
+}
+
+[data-direction='klar'] .dl-tile__decor {
+  display: none;
+}
+
+[data-direction='klar'] .dl-tile__overlay {
+  padding: var(--k-1);
+}
+
+[data-direction='klar'] .dl-tile__corner {
+  gap: var(--k-1);
+}
+
+[data-direction='klar'] .dl-tile__override,
+[data-direction='klar'] .dl-info {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--k-radius-sm);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+[data-direction='klar'] .dl-badge {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 var(--k-1);
+  border: 1px solid var(--border);
+  border-radius: var(--k-radius-sm);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+[data-direction='klar'] .dl-badge[data-rating='favorite'] {
+  border-color: var(--rating-favorite);
+  background: var(--rating-favorite);
+  color: var(--rating-favorite-fg);
+}
+
+[data-direction='klar'] .dl-badge[data-rating='album_worthy'] {
+  border-color: var(--rating-album-worthy);
+  background: var(--rating-album-worthy);
+  color: var(--rating-album-worthy-fg);
+}
+
+[data-direction='klar'] .dl-badge[data-rating='rejected'] {
+  border-color: var(--rating-rejected);
+  background: var(--rating-rejected);
+  color: var(--rating-rejected-fg);
+}
+
+[data-direction='klar'] .dl-badge[data-suggested='true'] {
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--text-h);
+}
+
+[data-direction='klar'] .dl-tile--placeholder {
+  padding: var(--k-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--k-radius);
+  font-size: 12px;
+  color: var(--text);
+}
+
+[data-direction='klar'] .dl-quality {
+  font-size: 12px;
+  color: var(--text);
+}
+
+[data-direction='klar'] .dl-quality__dots {
+  color: var(--text-h);
+}
+
+/* --- Detailansicht: der Bewertungsdetail-Block ist eine echte Tabelle -------------------- */
+
+[data-direction='klar'] .dl-photo {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--k-radius-lg);
+  background: var(--surface);
+}
+
+[data-direction='klar'] .dl-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-4);
+  padding: var(--k-3);
+  border: 1px solid var(--border);
+  border-radius: var(--k-radius-lg);
+  background: var(--surface);
+  font-size: 14px;
+}
+
+[data-direction='klar'] .dl-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-2);
+}
+
+[data-direction='klar'] .dl-list {
+  gap: 0;
+  line-height: 1.4;
+}
+
+/*
+ * Signatur 2: Zeilenlinien zwischen den Kriterien, linksbuendige Versal-Labels, rechtsbuendige
+ * tabellarische Werte - und der Wertbalken als 3 px hoher, eckiger Petrol-Balken UNTER der Zeile
+ * (per absoluter Position, das DOM bleibt unveraendert).
+ */
+[data-direction='klar'] .dl-row {
+  position: relative;
+  gap: var(--k-3);
+  padding: var(--k-2) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+[data-direction='klar'] .dl-row__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+[data-direction='klar'] .dl-row__value {
+  gap: var(--k-2);
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+[data-direction='klar'] .dl-row__num {
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-direction='klar'] .dl-meter {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+[data-direction='klar'] .dl-meter__fill {
+  background: var(--accent);
+}
+
+[data-direction='klar'] .dl-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-2);
+  padding: var(--k-2) 0;
+}
+
+[data-direction='klar'] .dl-candidates__list {
+  gap: var(--k-1);
+}
+
+[data-direction='klar'] .dl-candidate {
+  gap: var(--k-2);
+  padding: var(--k-2);
+  border: 1px solid var(--border);
+  border-radius: var(--k-radius);
+}
+
+[data-direction='klar'] .dl-candidate__name {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+[data-direction='klar'] .dl-chip {
+  padding: 1px var(--k-2);
+  border: 1px solid transparent;
+  border-radius: var(--k-radius-sm);
+  background: var(--status-idle-tint);
+  color: var(--status-idle-strong);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+[data-direction='klar'] .dl-chip--fine {
+  border-color: var(--accent-border);
+  background: transparent;
+  color: var(--accent-strong);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+[data-direction='klar'] .dl-finelabels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-1);
+  margin-top: var(--k-2);
+}
+
+[data-direction='klar'] .dl-finelabels__list {
+  gap: var(--k-1);
+}
+
+[data-direction='klar'] .dl-statusicon {
+  margin-right: var(--k-1);
+}
+
+[data-direction='klar'] .dl-statusicon[data-tone='success'] {
+  color: var(--status-success);
+}
+
+[data-direction='klar'] .dl-statusicon[data-tone='failed'] {
+  color: var(--status-failed);
+}
+
+[data-direction='klar'] .dl-statusicon[data-tone='idle'] {
+  color: var(--text);
+}
+
+[data-direction='klar'] .dl-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--k-2);
+  padding: var(--k-3);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--k-radius-lg);
+  background: var(--accent-bg);
+  font-size: 14px;
+}
+
+[data-direction='klar'] .dl-suggestion__title {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+/* --- Stepper: Quadrate mit Nummer auf einer durchgezogenen Linie ------------------------ */
+
+[data-direction='klar'] .dl-stepper {
+  padding: var(--k-3) var(--k-4);
+  border-bottom: 3px solid var(--accent);
+  background: var(--surface);
+}
+
+[data-direction='klar'] .dl-steps {
+  gap: var(--k-1);
+}
+
+[data-direction='klar'] .dl-step {
+  gap: var(--k-1);
+}
+
+[data-direction='klar'] .dl-step__marker {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--k-radius);
+  background: var(--surface);
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 120ms, color 120ms, border-color 120ms;
+}
+
+[data-direction='klar'] .dl-step[data-state='done'] .dl-step__marker {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+[data-direction='klar'] .dl-step[data-state='current'] .dl-step__marker {
+  border: 2px solid var(--accent);
+  background: var(--surface);
+  color: var(--accent-strong);
+}
+
+[data-direction='klar'] .dl-step[data-state='blocked'] .dl-step__marker {
+  border-color: color-mix(in srgb, var(--border) 55%, transparent);
+  color: var(--text);
+}
+
+[data-direction='klar'] .dl-step__line {
+  height: 1px;
+  background: var(--border);
+}
+
+[data-direction='klar'] .dl-step__label {
+  display: none;
+}
+
+[data-direction='klar'] .dl-step__info {
+  width: 44px;
+  height: 44px;
+  border: 1px solid transparent;
+  border-radius: var(--k-radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* --- Kuratierung ------------------------------------------------------------------------ */
+
+[data-direction='klar'] .dl-curate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-3);
+  padding: 0 var(--k-4) var(--k-4);
+}
+
+[data-direction='klar'] .dl-curate__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-1);
+}
+
+[data-direction='klar'] .dl-category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-2);
+}
+
+[data-direction='klar'] .dl-view--pipeline {
+  padding: 0;
+  gap: var(--k-3);
+}
+
+[data-direction='klar'] .dl-skiplink:focus {
+  margin: var(--k-2);
+  padding: var(--k-2) var(--k-3);
+  border-radius: var(--k-radius);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+[data-direction='klar'] :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

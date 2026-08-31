@@ -19,5 +19,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts"]
+  /* TEMPORAER (specs/features/0287-design-richtungen-vergleich.md): das Schutzgelaender des
+     Design-Labors liest Dateien per `node:fs` und braucht deshalb dieses Projekt mit
+     "types": ["node"]. Mit dem Labor wieder zu entfernen. */
+  "include": ["vite.config.ts", "design-lab/guards.test.ts"]
 }
