@@ -147,6 +147,13 @@ Werden mit Spec 0006 (Login-Formular, App-Shell) erstmals konkret gebraucht und 
   - **Kachel-Ebene unverändert:** Foto-Grid, Bewertungs-/Override-Marker und "Verwerfen"-Button identisch zu jeder normalen Kategorie — die Sonderbehandlung endet auf Abschnittsebene.
   - Gilt als Vorlage für jede künftige Kategorie/Gruppe, die einen Auffang- oder Restzustand statt einer positiven Aussage darstellt.
 
+- **Feinlabel-Chips als visuelle Zusatzkennzeichnung, unterschieden von Kategorie-Badges** (neu mit Spec [`0289`](../features/0289-feste-kategorien.md) "Feste Kategorien statt offenem Vokabular", noch nicht durch Implementierung geprüft): Zusätzlich zur Pflicht-Kategorie werden bis zu zwei frei formulierte Feinlabels am Foto angezeigt (z.B. "Urlaub", "Blüte"). Sie sind Zusatzinformation, nicht gleichberechtigte kategoriale Einordnung, und müssen sich deshalb visuell von der Kategorie-Kennzeichnung unterscheiden, um keine Verwechslung als "zweite Kategorie" zu entstehen:
+  - **Visuelles Design:** Feinlabel-Chips verwenden einen unterschiedlichen `tone` (z.B. `tone="secondary"` oder explizit gestylte Klasse) vs. der Kategorie-Badge (`tone="neutral"`), oder ein anderes Styling-Signal (z.B. umrandete Variante statt vollflächig gefüllt, kleinere Größe, subtilere Farbe). Sie sind visuell dezenter/kompakter als die Kategorie, nicht prominent.
+  - **Platzierung:** Feinlabel-Chips werden räumlich deutlich getrennt von der Kategorie-Badge dargestellt (separate Zeile, unter/neben statt direkt nebeneinander), damit keine Verwechslung als "Kategorie + Unterkategorie"-Paar entstehen kann.
+  - **Text:** Vollständiger Label-Text oder gekürzt je nach Platzangebot; kein Icon/Symbol (um sie nicht mit den Foto-bewertungsspezifischen Farben/Symbolen zu verwechseln — siehe "Semantische Bewertungsfarben" oben).
+  - **Auch bei „Nicht erkannt":** Feinlabels bleiben sichtbar, damit erkennbar bleibt, was das System auch bei unsicherer Kategorie-Erkennung noch (mit geringerer Konfidenz) vermutete — wichtig für die Häufigkeitsauswertung zum Erkennen fehlender Kategorien im festen Set.
+  - Diese Konvention verhindert die häufigsten Missverständnisse (zwei Kategorien statt eine + Zusatzinfo) und hält die Oberfläche trotz neuer Dateninhalte schlank.
+
 ## Barrierefreiheit
 
 Angemessenes Maß für ein privates Zwei-Nutzer-Projekt, kein Enterprise-Anspruch:

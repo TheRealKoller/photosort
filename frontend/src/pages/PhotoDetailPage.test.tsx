@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
+import * as categoriesApi from '../api/categories'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import type {
@@ -16,8 +17,13 @@ import type {
   SuggestionOut,
 } from '../api/types'
 import { setToken } from '../auth/token'
+import { CATEGORY_SET } from '../test/categorySetFixture'
 import { PhotoDetailPage } from './PhotoDetailPage'
 
+// specs/features/0289-feste-kategorien.md: die Seite laedt das Kategorien-Set zur Laufzeit
+// (`useCategoriesQuery`) - ohne Mock liefe diese Query in einen echten Request und die Seite
+// stuende dauerhaft im Fallback-Zustand, statt in einem bewusst gewaehlten.
+vi.mock('../api/categories')
 vi.mock('../api/photos')
 vi.mock('../api/ratings')
 
@@ -36,7 +42,8 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     suggestion: null,
     ranking: null,
     criterion_scores: [],
-    remote_category_labels: [],
+    fine_labels: [],
+    remote_category: null,
     category_override: null,
     category_candidates: [],
     cloud_vision_status: [],
@@ -109,6 +116,8 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
     vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
     vi.mocked(ratingsApi.deleteRating).mockReset()
     setToken(makeToken({ sub: '1', username: 'testuser' }))
   })
@@ -572,8 +581,8 @@ describe('PhotoDetailPage', () => {
               partition_size: 1,
             },
             category_candidates: [
-              { category_key: 'hund', origin: 'remote', score: 0.9, provider: 'anthropic' },
-              { category_key: 'people', origin: 'local', score: 0.4, provider: null },
+              { category_key: 'tier', origin: 'remote', provider: 'anthropic' },
+              { category_key: 'menschen', origin: 'local', provider: null },
             ],
           }),
         ],
@@ -582,16 +591,19 @@ describe('PhotoDetailPage', () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
       vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
         photo_id: 1,
-        category_key: 'hund',
+        category_key: 'tier',
       })
       const user = userEvent.setup()
 
       renderPage('/projects/1/photos/1')
 
       await screen.findByText('Kategorie-Kandidaten')
-      await user.click(screen.getByRole('button', { name: /^übernehmen$/i }))
+      // Gezielt die Zeile des Kandidaten "tier" - beide Kandidatenzeilen tragen eine
+      // "Uebernehmen"-Schaltflaeche, eine rollenweite Suche waere mehrdeutig.
+      const tierRow = screen.getByTestId('category-candidate-row-tier')
+      await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
 
-      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'hund'))
+      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'tier'))
     })
   })
 })

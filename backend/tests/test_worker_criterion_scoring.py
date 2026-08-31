@@ -15,17 +15,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import worker
-from photosort.criteria import CATEGORY_UNRECOGNIZED
+from photosort.categories import CATEGORY_NOT_RECOGNIZED, is_known_category
 from photosort.landmark import LandmarkApiError, LandmarkDetection
 from photosort.models import (
-    CategoryLabel,
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    FineLabel,
     Photo,
-    PhotoCategoryDetection,
+    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoFineLabel,
     PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
@@ -578,7 +579,7 @@ def _scene_classifier_stub() -> SceneClassifierStub:
 
 class CountingDetector:
     """Zaehlt Aufrufe von detect() - Wiederverwendungsnachweis (Akzeptanzkriterium der Spec 0038:
-    detect_person/detect_animals werden je Foto hoechstens einmal aufgerufen und fuer mehrere
+    detect_person/detect_objects werden je Foto hoechstens einmal aufgerufen und fuer mehrere
     davon abhaengige Kriterien wiederverwendet, statt fuer jedes Kriterium erneut zu
     detektieren)."""
 
@@ -717,14 +718,17 @@ async def test_tier_criterion_best_effort_failure_does_not_fail_the_run_or_other
             )
         ).scalars()
     }
-    # tier UND goldener_schnitt haengen beide von detect_animals ab, bleiben also beide
-    # ungeschrieben - content_people/content_landscape (haengen nicht von detect_animals ab)
-    # werden trotzdem geschrieben.
+    # tier, fahrzeug, essen_trinken UND goldener_schnitt haengen alle von detect_objects ab,
+    # bleiben also alle ungeschrieben - content_people/content_landscape/gebaeude (haengen nicht
+    # von detect_objects ab) werden trotzdem geschrieben, der Lauf endet regulaer
+    # (specs/features/0289-feste-kategorien.md, Teststrategie 7).
     assert "tier" not in criteria
+    assert "fahrzeug" not in criteria
+    assert "essen_trinken" not in criteria
     assert "goldener_schnitt" not in criteria
     assert "content_people" in criteria
     assert "content_landscape" in criteria
-    assert "gebaeude" in criteria  # haengt nicht von detect_animals ab
+    assert "gebaeude" in criteria
 
 
 async def test_gebaeude_criterion_is_written_when_an_architecture_label_is_detected(
@@ -799,7 +803,7 @@ async def test_gebaeude_criterion_best_effort_failure_does_not_fail_the_run_or_o
             )
         ).scalars()
     }
-    # gebaeude haengt NICHT von detect_person/detect_animals ab - ein Fehler dort darf weder
+    # gebaeude haengt NICHT von detect_person/detect_objects ab - ein Fehler dort darf weder
     # goldener_schnitt (unbetroffen) noch tier/content_people mit sich reissen.
     assert "gebaeude" not in criteria
     assert "goldener_schnitt" in criteria
@@ -970,7 +974,7 @@ async def test_freiraum_criterion_best_effort_failure_does_not_fail_the_run_or_o
             )
         ).scalars()
     }
-    # freiraum haengt NICHT von detect_person/detect_animals/build_aesthetics/build_classifier ab
+    # freiraum haengt NICHT von detect_person/detect_objects/build_aesthetics/build_classifier ab
     # - ein Fehler des eigenstaendigen face_landmarker darf keines der uebrigen Kriterien
     # mitreissen (ADR 0026 Punkt 3: eigenstaendiger, zusaetzlicher Modellaufruf).
     assert "freiraum" not in criteria
@@ -1161,13 +1165,15 @@ async def test_goldener_schnitt_is_written_when_both_detections_succeed_even_wit
     assert criteria["goldener_schnitt"] == 0.0
 
 
-async def test_detect_person_and_detect_animals_are_each_called_at_most_once_per_photo(
+async def test_detect_person_and_detect_objects_are_each_called_at_most_once_per_photo(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    # Wiederverwendungsnachweis via Spy/Aufrufzaehler (Akzeptanzkriterium der Spec 0038):
-    # content_people UND goldener_schnitt teilen sich EINEN detect_person-Aufruf, tier UND
-    # goldener_schnitt teilen sich EINEN detect_animals-Aufruf - kein Kriterium detektiert
-    # eigenstaendig ein zweites Mal.
+    # Wiederverwendungsnachweis via Spy/Aufrufzaehler (Akzeptanzkriterium der Spec 0038, weiterhin
+    # VERBINDLICH nach specs/features/0289-feste-kategorien.md): content_people UND
+    # goldener_schnitt teilen sich EINEN detect_person-Aufruf; tier, fahrzeug, essen_trinken UND
+    # goldener_schnitt teilen sich EINEN detect_objects-Aufruf - obwohl seit Spec 0289 DREI
+    # Kriterien plus goldener_schnitt an der Objekt-Ausgabe haengen, laeuft der COCO-Detektor
+    # weiterhin genau einmal pro Foto.
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
@@ -1232,11 +1238,13 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
     )
     # Voller Pool (nicht nur Top-N) - alle 3 Fotos landen ausserdem in derselben Partition
     # (gleicher cluster_key, keines erfuellt ein aktives Kriterium -> Catch-all). Seit
-    # specs/features/0217 ist das "unerkannt" statt der frueheren Kategorie "landscape": ein
+    # specs/features/0217 ist das der Auffangkorb statt der frueheren Kategorie "landscape" (seit
+    # specs/features/0289-feste-kategorien.md heisst er `nicht_erkannt`, nicht mehr "unerkannt"):
+    # ein
     # flaechiges Bild ohne Landschaftslabel ist keine Landschaft (AK1).
     assert len(rankings) == 3
     by_photo = {r.photo_id: r for r in rankings}
-    assert {by_photo[p.id].category_key for p in photos} == {CATEGORY_UNRECOGNIZED}
+    assert {by_photo[p.id].category_key for p in photos} == {CATEGORY_NOT_RECOGNIZED}
     assert {by_photo[p.id].cluster_key for p in photos} == {"cluster-0"}
     positions = sorted(r.rank_position for r in rankings)
     assert positions == [1, 2, 3]
@@ -1479,10 +1487,12 @@ async def test_end_to_end_with_run_project_scoring(
     assert len(rankings) == 1
 
 
-# specs/features/0045-kategorien-aus-statistiken-ableiten.md, decisions/0023-dynamische-
-# kategorie-ableitung-aus-kriterien-haeufigkeit.md ab hier: derive_active_categories wird EINMAL
-# pro Lauf, projektweit, nach der Foto-Schleife aufgerufen; derive_category_key bekommt die
-# aktive Menge durchgereicht statt einer fest codierten Prioritaetskette.
+# specs/features/0289-feste-kategorien.md, ADR 0049 ab hier: die Kategorie eines Fotos ist eine
+# reine PRO-FOTO-Funktion ueber einem geschlossenen Set. Die frueher hier getesteten
+# haeufigkeitsabhaengigen Faelle (derive_active_categories-Ein-Aufruf-Spy, "identischer tier-Score
+# landet je nach Lauf in einer anderen Kategorie") sind mit der abgeloesten Aggregation
+# ersatzlos entfallen - ihr fachlicher Kern ("welches Foto bekommt welche Kategorie") wird jetzt
+# durch die Vereinigungs-/Herkunftsneutralitaets-Tests weiter unten abgedeckt.
 
 # Beliebige, von der Standard-Testbildgroesse (160) abweichende Bildgroesse - dient als
 # deterministischer Marker fuer "dieses Foto soll ein Tier enthalten", unabhaengig von der
@@ -1493,9 +1503,7 @@ _ANIMAL_MARKER_SIZE = 168
 
 def _animal_marked_image() -> Image.Image:
     # Textur statt einer flachen Farbe (Abgrenzung zu _flat_image): ein Marker-Foto soll NICHT
-    # gleichzeitig auch als content_landscape-Kandidat gelten - sonst wuerde der (hoehere)
-    # content_landscape-Score in derive_category_key immer gewinnen und das Tier-Szenario waere
-    # nicht beobachtbar.
+    # gleichzeitig ein anderes Signal ausloesen.
     from PIL import ImageDraw
 
     image = Image.new("RGB", (_ANIMAL_MARKER_SIZE, _ANIMAL_MARKER_SIZE), color=(30, 60, 120))
@@ -1511,8 +1519,8 @@ def _animal_marked_image() -> Image.Image:
 
 class SizeGatedAnimalDetector:
     """Faket den mediapipe ObjectDetector so, dass NUR Bilder mit der Marker-Groesse
-    (_ANIMAL_MARKER_SIZE) ein Tier liefern - ermoeglicht ein deterministisches
-    Haeufigkeits-Szenario (einige Fotos mit, einige ohne Tier) im selben Lauf."""
+    (_ANIMAL_MARKER_SIZE) ein Tier liefern - ermoeglicht ein deterministisches Szenario (einige
+    Fotos mit, einige ohne Tier) im selben Lauf."""
 
     def detect(self, image: object) -> object:
         if getattr(image, "width", None) == _ANIMAL_MARKER_SIZE:
@@ -1546,34 +1554,19 @@ async def _add_photos_with_optional_animal_marker(
     return photos
 
 
-async def test_derive_active_categories_is_called_exactly_once_per_run_projectwide(
-    db_session: AsyncSession, tmp_path: Path, monkeypatch: object
+async def test_a_single_animal_photo_gets_the_tier_category_regardless_of_frequency(
+    db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    import photosort.worker as worker_module
-    from photosort.criteria import derive_active_categories as real_derive_active_categories
-
-    calls: list[dict[int, dict[str, float]]] = []
-
-    def _spy(
-        candidate_values: dict[int, dict[str, float]], *args: object, **kwargs: object
-    ) -> frozenset[str]:
-        calls.append(candidate_values)
-        return real_derive_active_categories(candidate_values, *args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(worker_module, "derive_active_categories", _spy)  # type: ignore[attr-defined]
-
+    """Kernverhaltensaenderung gegenueber Spec 0045/ADR 0023 (bewusst, nicht versehentlich): EIN
+    einziges Tier-Foto unter 30 bekommt jetzt `tier` - frueher waere es an der
+    15%-Haeufigkeitsschwelle gescheitert und im Auffangkorb gelandet. Die Zuordnung ist damit
+    unabhaengig davon, welche anderen Fotos im Projekt liegen (Akzeptanzkriterium "vorhersehbar,
+    projektuebergreifend gleich")."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
-    photo_a = await _add_photo(
-        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
+    photos = await _add_photos_with_optional_animal_marker(
+        db_session, project, tmp_path, total=30, marked=1
     )
-    await _add_score(db_session, photo_a, cluster_key="cluster-a")
-    _write_display_variant(tmp_path, photo_a, _flat_image())
-    photo_b = await _add_photo(
-        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 2, tzinfo=UTC)
-    )
-    await _add_score(db_session, photo_b, cluster_key="cluster-b")
-    _write_display_variant(tmp_path, photo_b, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -1581,94 +1574,98 @@ async def test_derive_active_categories_is_called_exactly_once_per_run_projectwi
         scoring_run.id,
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
-        build_animal_detector=_no_animal_detector,
+        build_animal_detector=_size_gated_animal_detector,
         build_classifier=_no_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
     )
 
     assert run.status == ScanStatus.SUCCESS
-    # Genau EIN Aufruf fuer den gesamten Lauf, projektweit ueber BEIDE cluster hinweg - nicht
-    # zweimal, einmal pro cluster_key.
-    assert len(calls) == 1
-    assert set(calls[0]) == {photo_a.id, photo_b.id}
+    rankings = {
+        r.photo_id: r.category_key
+        for r in (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
+        ).scalars()
+    }
+    assert rankings[photos[0].id] == "tier"
+    assert rankings[photos[1].id] == CATEGORY_NOT_RECOGNIZED
 
 
-async def test_identical_per_photo_tier_score_lands_in_different_categories_depending_on_frequency(
+async def test_every_written_category_key_belongs_to_the_fixed_set(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Kernverhaltensaenderung der Spec (Regressionstest, kein Bug): ein und dasselbe Einzelfoto
-    mit identischem tier-Score landet je nach Lauf in einer anderen Kategorie, abhaengig davon, ob
-    die 15%-Haeufigkeitsschwelle IM JEWEILIGEN LAUF erreicht wird."""
-    concentrated_project = await _make_project(db_session, name="Concentrated")
-    concentrated_run = await _add_successful_scoring_run(db_session, concentrated_project)
-    # 3 von 10 Fotos (30%) markiert -> ueber der 15%-Schwelle -> tier wird aktiv.
-    concentrated_photos = await _add_photos_with_optional_animal_marker(
-        db_session, concentrated_project, tmp_path, total=10, marked=3
+    """Kompakteste Absicherung des Kern-Akzeptanzkriteriums (Teststrategie 7): ein lauf-weiter
+    Test ueber ALLE geschriebenen category_key-Werte, nicht ueber ein einzelnes Foto."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_photos_with_optional_animal_marker(
+        db_session, project, tmp_path, total=6, marked=3
     )
 
-    concentrated = await run_criterion_scoring(
+    run = await run_criterion_scoring(
         db_session,
-        concentrated_project,
-        concentrated_run.id,
+        project,
+        scoring_run.id,
         cache_dir=tmp_path,
         build_detector=_no_face_detector,
         build_animal_detector=_size_gated_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
     )
-    assert concentrated.status == ScanStatus.SUCCESS
-    concentrated_rankings = {
-        r.photo_id: r.category_key
-        for r in (
-            (
-                await db_session.execute(
-                    select(PhotoRanking).where(
-                        PhotoRanking.criterion_scoring_run_id == concentrated.id
-                    )
-                )
-            )
-            .scalars()
-            .all()
+
+    rankings = (
+        await db_session.execute(
+            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
         )
-    }
-    assert concentrated_rankings[concentrated_photos[0].id] == "tier"
+    ).scalars().all()
+    assert rankings
+    assert all(is_known_category(r.category_key) for r in rankings)
 
-    diluted_project = await _make_project(db_session, name="Diluted")
-    diluted_run = await _add_successful_scoring_run(db_session, diluted_project)
-    # 3 von 30 Fotos (10%) markiert -> unter der 15%-Schwelle -> tier bleibt inaktiv.
-    diluted_photos = await _add_photos_with_optional_animal_marker(
-        db_session, diluted_project, tmp_path, total=30, marked=3
+
+async def test_a_run_without_remote_classification_only_uses_the_local_six_or_the_catch_all(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium: ohne aktivierte Remote-Kategorisierung wird nur die lokal bestimmbare
+    Teilmenge vergeben - keine der uebrigen sechs Kategorien darf auftauchen. Assertion ueber ALLE
+    geschriebenen Werte eines Laufs, nicht ueber ein einzelnes Foto."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_photos_with_optional_animal_marker(
+        db_session, project, tmp_path, total=6, marked=3
     )
 
-    diluted = await run_criterion_scoring(
+    run = await run_criterion_scoring(
         db_session,
-        diluted_project,
-        diluted_run.id,
+        project,
+        scoring_run.id,
         cache_dir=tmp_path,
-        build_detector=_no_face_detector,
+        build_detector=_single_face_detector,
         build_animal_detector=_size_gated_animal_detector,
-        build_classifier=_no_scene_classifier,
+        build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
     )
-    assert diluted.status == ScanStatus.SUCCESS
-    diluted_rankings = {
-        r.photo_id: r.category_key
-        for r in (
-            (
-                await db_session.execute(
-                    select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == diluted.id)
-                )
-            )
-            .scalars()
-            .all()
+
+    rankings = (
+        await db_session.execute(
+            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
         )
+    ).scalars().all()
+    locally_reachable = {
+        "menschen",
+        "tier",
+        "essen_trinken",
+        "fahrzeug",
+        "gebaeude_bauwerk",
+        "landschaft",
+        CATEGORY_NOT_RECOGNIZED,
     }
-    # Dasselbe Marker-Foto (identischer tier-Score) landet diesmal NICHT in "tier", weil die
-    # Haeufigkeitsschwelle in DIESEM Lauf nicht erreicht wird - Catch-all "detail".
-    assert diluted_rankings[diluted_photos[0].id] == CATEGORY_UNRECOGNIZED
+    assert {r.category_key for r in rankings} <= locally_reachable
 
 
 async def test_existing_behavior_is_unchanged_when_frequency_threshold_is_still_met(
@@ -2749,31 +2746,21 @@ async def test_cancelled_error_from_a_parallel_landmark_call_propagates_and_fail
     assert run_row.status == ScanStatus.FAILED
 
 
-# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 1
-# ab hier: Remote-Label-Merge VOR derive_active_categories/derive_category_key + category_override.
+# specs/features/0289-feste-kategorien.md, Umsetzungsschritt 5 ab hier: lokale Signale und
+# Remote-Kategorien sind zwei Zulieferer EINER Kandidatenmenge - die abgeloesten
+# _merge_remote_category_labels-Tests (Remote-Label als Pseudo-Kriterium, Spezifitaets-Vorrang)
+# sind hier durch Vereinigungs- und Herkunftsneutralitaets-Tests ersetzt, nicht ersatzlos
+# entfallen.
 
 
-async def _add_category_label(
-    session: AsyncSession, *, canonical_key: str = "hund", display_name: str = "Hund"
-) -> CategoryLabel:
-    label = CategoryLabel(
-        canonical_key=canonical_key, display_name=display_name, embedding=[0.0] * 384
-    )
-    session.add(label)
-    await session.commit()
-    await session.refresh(label)
-    return label
-
-
-async def _add_category_detection(
-    session: AsyncSession, photo: Photo, label: CategoryLabel, *, confidence: float = 0.9
+async def _add_classification(
+    session: AsyncSession, photo: Photo, *categories: str
 ) -> None:
     session.add(
-        PhotoCategoryDetection(
+        PhotoCategoryClassification(
             photo_id=photo.id,
-            category_label_id=label.id,
-            raw_label=label.display_name,
-            confidence=confidence,
+            category_key=categories[0] if categories else CATEGORY_NOT_RECOGNIZED,
+            detected_categories=list(categories),
             provider="anthropic",
             computed_at=datetime.now(UTC),
         )
@@ -2781,50 +2768,194 @@ async def _add_category_detection(
     await session.commit()
 
 
-async def test_remote_labels_are_merged_before_deriving_categories(
+async def _run_and_collect_categories(
+    db_session: AsyncSession,
+    project: Project,
+    scoring_run_id: int,
+    tmp_path: Path,
+    **builders: object,
+) -> dict[int, str]:
+    kwargs: dict[str, object] = {
+        "build_detector": _no_face_detector,
+        "build_animal_detector": _no_animal_detector,
+        "build_classifier": _no_scene_classifier,
+        "build_aesthetics": _no_aesthetics_model,
+        "build_landmarker": _no_face_landmarker,
+        "build_landmark_client": _failing_landmark_client_builder,
+    }
+    kwargs.update(builders)
+    run = await run_criterion_scoring(
+        db_session, project, scoring_run_id, cache_dir=tmp_path, **kwargs  # type: ignore[arg-type]
+    )
+    assert run.status == ScanStatus.SUCCESS
+    return {
+        r.photo_id: r.category_key
+        for r in (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
+        ).scalars()
+    }
+
+
+async def test_local_and_remote_candidates_go_into_one_set(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    # Kann NUR gruen sein, wenn _merge_remote_category_labels tatsaechlich VOR dem
-    # derive_active_categories/derive_category_key-Aufruf lief (Reihenfolge-Beweis): 15 von 15
-    # Fotos (100%) haben eine vorhandene "hund"-Remote-Erkennung, aber KEIN lokal qualifizierendes
-    # Kriterium - ohne den Merge bliebe jedes Foto im Catch-all "detail".
-    project = await _make_project(db_session)
+    """Nachweis fuer "ein gemeinsames Set, keine zwei Kategoriewelten": ein Foto mit dem LOKALEN
+    Signal `tier` und der REMOTE-Kategorie `menschen` bekommt `menschen` (kleinere precedence) -
+    dasselbe Foto ohne Klassifikations-Zeile bekommt `tier`."""
+    project = await _make_project(db_session, name="Mit Remote")
     scoring_run = await _add_successful_scoring_run(db_session, project)
-    label = await _add_category_label(db_session)
-    photos = []
-    for index in range(15):
-        photo = await _add_photo(
-            db_session, project, f"p{index}.jpg", f"etag-{index}", datetime(2023, 1, 1, tzinfo=UTC)
-        )
-        await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
-        await _add_category_detection(db_session, photo, label)
-        photos.append(photo)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _animal_marked_image())
+    await _add_classification(db_session, photo, "menschen")
 
-    run = await run_criterion_scoring(
+    with_remote = await _run_and_collect_categories(
         db_session,
         project,
         scoring_run.id,
-        cache_dir=tmp_path,
-        build_detector=_no_face_detector,
-        build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
-        build_aesthetics=_no_aesthetics_model,
-        build_landmarker=_no_face_landmarker,
-        build_landmark_client=_failing_landmark_client_builder,
+        tmp_path,
+        build_animal_detector=_size_gated_animal_detector,
+    )
+    assert with_remote[photo.id] == "menschen"
+
+    other = await _make_project(db_session, name="Ohne Remote")
+    other_run = await _add_successful_scoring_run(db_session, other)
+    other_photo = await _add_photo(
+        db_session, other, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, other_photo)
+    _write_display_variant(tmp_path, other_photo, _animal_marked_image())
+
+    without_remote = await _run_and_collect_categories(
+        db_session,
+        other,
+        other_run.id,
+        tmp_path,
+        build_animal_detector=_size_gated_animal_detector,
+    )
+    assert without_remote[other_photo.id] == "tier"
+
+
+async def _add_fine_labels(session: AsyncSession, photo: Photo, *raw_labels: str) -> None:
+    """Legt Feinlabel-Zeilen am Foto an (Vokabular-Eintrag + Zuordnung), so wie sie
+    worker.py::run_remote_category_classification schreibt."""
+    for raw_label in raw_labels:
+        fine_label = FineLabel(
+            canonical_key=raw_label.lower(), display_name=raw_label, embedding=[0.0] * 384
+        )
+        session.add(fine_label)
+        await session.flush()
+        session.add(
+            PhotoFineLabel(
+                photo_id=photo.id,
+                fine_label_id=fine_label.id,
+                raw_label=raw_label,
+                provider="anthropic",
+                computed_at=datetime.now(UTC),
+            )
+        )
+    await session.commit()
+
+
+async def test_fine_labels_do_not_change_the_derived_category_or_add_groups(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium: "Feinlabels gehen nicht in `resolve_category` ein; ein Lauf mit
+    Feinlabels erzeugt in der Kuratierung keine zusaetzlichen Gruppen gegenueber demselben Lauf
+    ohne Feinlabels."
+
+    Der Nachweis muss hier auf Integrationsebene stehen und nicht nur strukturell aus
+    `derive_photo_category` folgen: die Ableitung liest die `photo_fine_labels`-Tabelle heute
+    schlicht nicht, und genau diese Nicht-Verdrahtung ist es, die ein spaeterer Umbau ("nehmen wir
+    die Feinlabels doch als Kandidaten dazu") still aufheben wuerde. Die Feinlabels sind bewusst
+    so gewaehlt, dass sie als Kandidaten das Ergebnis TATSAECHLICH kippen wuerden: der
+    canonical_key "menschen" hat eine KLEINERE `precedence` als das lokal erkannte `tier` und
+    gewaenne die Vorrangaufloesung. Ein Feinlabel mit groesserer precedence (etwa "fahrzeug")
+    machte den Test tautologisch - er bliebe auch dann gruen, wenn Feinlabels eingespeist wuerden.
+    """
+    project = await _make_project(db_session, name="Mit Feinlabels")
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _animal_marked_image())
+    await _add_fine_labels(db_session, photo, "Menschen", "Urlaub")
+
+    with_fine_labels = await _run_and_collect_categories(
+        db_session,
+        project,
+        scoring_run.id,
+        tmp_path,
+        build_animal_detector=_size_gated_animal_detector,
     )
 
-    assert run.status == ScanStatus.SUCCESS
-    rankings = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
-        )
-    ).scalars().all()
-    assert len(rankings) == len(photos)
-    assert {r.category_key for r in rankings} == {"hund"}
+    other = await _make_project(db_session, name="Ohne Feinlabels")
+    other_run = await _add_successful_scoring_run(db_session, other)
+    other_photo = await _add_photo(
+        db_session, other, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, other_photo)
+    _write_display_variant(tmp_path, other_photo, _animal_marked_image())
+
+    without_fine_labels = await _run_and_collect_categories(
+        db_session,
+        other,
+        other_run.id,
+        tmp_path,
+        build_animal_detector=_size_gated_animal_detector,
+    )
+
+    # Gleiche Kategorie trotz der Feinlabels - und vor allem: dieselbe MENGE an Kategorien, also
+    # keine zusaetzliche Gruppe in der Kuratierung.
+    assert with_fine_labels[photo.id] == "tier"
+    assert set(with_fine_labels.values()) == set(without_fine_labels.values())
 
 
-async def test_no_remote_labels_behaves_like_before_the_merge_was_introduced(
+async def test_the_origin_of_a_candidate_does_not_change_the_result(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium "Herkunftsneutralitaet": dieselbe Kandidatenmenge (`tier`), einmal rein
+    lokal und einmal rein remote erzeugt, fuehrt zur selben Kategorie."""
+    local_project = await _make_project(db_session, name="Lokal")
+    local_run = await _add_successful_scoring_run(db_session, local_project)
+    local_photo = await _add_photo(
+        db_session, local_project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, local_photo)
+    _write_display_variant(tmp_path, local_photo, _animal_marked_image())
+
+    local_result = await _run_and_collect_categories(
+        db_session,
+        local_project,
+        local_run.id,
+        tmp_path,
+        build_animal_detector=_size_gated_animal_detector,
+    )
+
+    remote_project = await _make_project(db_session, name="Remote")
+    remote_run = await _add_successful_scoring_run(db_session, remote_project)
+    remote_photo = await _add_photo(
+        db_session, remote_project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, remote_photo)
+    _write_display_variant(
+        tmp_path, remote_photo, _textured_image_below_landscape_threshold()
+    )
+    await _add_classification(db_session, remote_photo, "tier")
+
+    remote_result = await _run_and_collect_categories(
+        db_session, remote_project, remote_run.id, tmp_path
+    )
+
+    assert local_result[local_photo.id] == remote_result[remote_photo.id] == "tier"
+
+
+async def test_a_photo_without_any_candidate_lands_in_the_catch_all(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     project = await _make_project(db_session)
@@ -2835,63 +2966,60 @@ async def test_no_remote_labels_behaves_like_before_the_merge_was_introduced(
     await _add_score(db_session, photo)
     _write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
 
-    run = await run_criterion_scoring(
+    result = await _run_and_collect_categories(db_session, project, scoring_run.id, tmp_path)
+
+    assert result[photo.id] == CATEGORY_NOT_RECOGNIZED
+
+
+async def test_a_remote_classification_of_not_recognized_loses_against_a_local_signal(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # Edge Case der Spec: `nicht_erkannt` steht ausserhalb der Vorrangreihenfolge und verliert
+    # gegen jede echte Kategorie - auch wenn es der einzige REMOTE-Kandidat ist.
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _animal_marked_image())
+    await _add_classification(db_session, photo, CATEGORY_NOT_RECOGNIZED)
+
+    result = await _run_and_collect_categories(
         db_session,
         project,
         scoring_run.id,
-        cache_dir=tmp_path,
-        build_detector=_no_face_detector,
-        build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
-        build_aesthetics=_no_aesthetics_model,
-        build_landmarker=_no_face_landmarker,
-        build_landmark_client=_failing_landmark_client_builder,
+        tmp_path,
+        build_animal_detector=_size_gated_animal_detector,
     )
 
-    assert run.status == ScanStatus.SUCCESS
-    ranking = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
-        )
-    ).scalar_one()
-    assert ranking.category_key == CATEGORY_UNRECOGNIZED
+    assert result[photo.id] == "tier"
 
 
 async def test_category_override_wins_over_the_automatically_derived_category_key(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    # Positivtest (Teststrategie-Abschnitt der Spec, Edge Case 6): eine Zielpartition unterhalb
-    # der 15%-Kategorie-Haeufigkeitsschwelle ist beim Override ausdruecklich erlaubt.
+    # Bestandstest (Werte auf das feste Set umgestellt): der Override wird VOR jeder Ableitung
+    # angewendet und ueberlebt einen vollen Lauf.
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     score = await _add_score(db_session, photo)
-    score.category_override = "urlaub"
+    score.category_override = "kunst_kreatives"
     await db_session.commit()
-    _write_display_variant(tmp_path, photo, _flat_image())
+    _write_display_variant(tmp_path, photo, _animal_marked_image())
 
-    run = await run_criterion_scoring(
+    result = await _run_and_collect_categories(
         db_session,
         project,
         scoring_run.id,
-        cache_dir=tmp_path,
-        build_detector=_no_face_detector,
-        build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
-        build_aesthetics=_no_aesthetics_model,
-        build_landmarker=_no_face_landmarker,
-        build_landmark_client=_failing_landmark_client_builder,
+        tmp_path,
+        build_animal_detector=_size_gated_animal_detector,
     )
 
-    assert run.status == ScanStatus.SUCCESS
-    ranking = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
-        )
-    ).scalar_one()
-    assert ranking.category_key == "urlaub"
+    assert result[photo.id] == "kunst_kreatives"
 
 
 # --- specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md, ADR decisions/0047 ---
@@ -3108,8 +3236,8 @@ async def test_a_failing_scene_classification_leaves_both_criteria_unwritten(
 async def test_a_flat_photo_without_a_landscape_label_ends_up_unrecognized(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    # AK1/AK5: hoher content_landscape-Wert, aber kein Allow-Listen-Label -> "unerkannt" statt
-    # der frueheren Kategorie "landscape".
+    # AK1/AK5: hoher content_landscape-Wert, aber kein Allow-Listen-Label -> der Auffangkorb
+    # (`nicht_erkannt`) statt der frueheren Kategorie "landscape".
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
@@ -3136,7 +3264,7 @@ async def test_a_flat_photo_without_a_landscape_label_ends_up_unrecognized(
             select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
         )
     ).scalar_one()
-    assert ranking.category_key == CATEGORY_UNRECOGNIZED
+    assert ranking.category_key == CATEGORY_NOT_RECOGNIZED
     criteria = await _criteria_of(db_session, photo)
     assert criteria["content_landscape"] > 0.5
     assert criteria["landschaft"] == 0.0
@@ -3182,53 +3310,41 @@ async def test_recognised_landscape_photos_form_the_landschaft_category(
     assert {r.category_key for r in rankings} == {"landschaft"}
 
 
-async def test_a_remote_label_beats_content_people_end_to_end(
+async def test_a_remote_category_wins_against_content_people_by_precedence(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    # AK3 ueber den gesamten Lauf (inkl. _merge_remote_category_labels): ein Foto mit erkannten
-    # Gesichtern (content_people = 1.0) und einem Remote-Schlagwort landet unter dem Schlagwort.
+    # Nachfolger des Spezifitaets-Vorrang-Tests aus Spec 0217/ADR 0047 Punkt 2: die Entscheidung
+    # faellt jetzt ueber die feste Vorrangreihenfolge, nicht ueber eine Spezifitaets-Stufe.
+    # `dokument_screenshot` (precedence 1) schlaegt `menschen` (precedence 3), obwohl das Foto ein
+    # erkanntes Gesicht traegt (content_people = 1.0).
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
-    label = await _add_category_label(db_session)
-    for index in range(3):
-        photo = await _add_photo(
-            db_session, project, f"p{index}.jpg", f"etag-{index}", datetime(2023, 1, 1, tzinfo=UTC)
-        )
-        await _add_score(db_session, photo)
-        _write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
-        await _add_category_detection(db_session, photo, label, confidence=0.3)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _textured_image_below_landscape_threshold())
+    await _add_classification(db_session, photo, "dokument_screenshot")
 
-    run = await run_criterion_scoring(
+    result = await _run_and_collect_categories(
         db_session,
         project,
         scoring_run.id,
-        cache_dir=tmp_path,
+        tmp_path,
         build_detector=_single_face_detector,
-        build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
-        build_aesthetics=_no_aesthetics_model,
-        build_landmarker=_no_face_landmarker,
-        build_landmark_client=_failing_landmark_client_builder,
     )
 
-    rankings = (
-        (
-            await db_session.execute(
-                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert {r.category_key for r in rankings} == {"hund"}
+    assert result[photo.id] == "dokument_screenshot"
 
 
-@pytest.mark.parametrize("override", ["detail", "landscape"])
+@pytest.mark.parametrize("override", ["unerkannt", "landscape", "gegenstand"])
 async def test_a_manual_override_on_a_no_longer_derivable_key_survives_a_full_run(
     db_session: AsyncSession, tmp_path: Path, override: str
 ) -> None:
-    # AK9: ein Override auf einen Wert, den die neue Ableitung nie mehr erzeugt, bleibt bitgenau
-    # erhalten - er wird VOR jeder Ableitung angewendet.
+    # AK9 der Spec 0217, weiterhin gueltig: ein Override bleibt bitgenau erhalten und wird VOR
+    # jeder Ableitung angewendet - auch bei einem ALTWERT aus der Laufhistorie ("unerkannt",
+    # "landscape"), den weder die Ableitung noch der Override-Endpunkt heute noch erzeugen wuerde
+    # (Lesepfad-Toleranz, Security-Abschnitt der Spec 0289 Punkt 2).
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(

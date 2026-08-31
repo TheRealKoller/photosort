@@ -1,6 +1,6 @@
 # 0023 - Dynamische Kategorie-Ableitung aus Kriterien-Häufigkeit
 
-**Status:** Accepted
+**Status:** Superseded — abgelöst durch ADR [`0049`](./0049-festes-kategorien-set-mit-vorrangreihenfolge-und-freien-feinlabels.md). Die Kernaussage dieser ADR ("Kategorien ergeben sich projektweit aus der Häufigkeit eines Kriteriums im Lauf") entfällt vollständig: `derive_active_categories`, `CATEGORY_ACTIVE_THRESHOLD_FRACTION` und die generische Ableitung des `category_key` aus dem `criterion_key` sind ersatzlos gelöscht, das Kategorien-Set ist seither fest und global. Erhalten bleibt allein das Registry-Attribut `CriterionDefinition.category_eligible`/`.category_presence_threshold` (Punkt 1), in ADR 0049 Punkt 4 neu begründet; `category_specificity` (ADR 0047) entfällt ebenfalls.
 **Datum:** 2026-08-16
 **Bezug:** Revidiert [`decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md`](./0021-kriterien-datenmodell-kuratierungs-pipeline.md) (nur Punkt 2, "Kategorie-Ableitung" — der Rest von ADR 0021 bleibt unverändert gültig: `PhotoCriterionScore`, `PhotoRanking`, `CriterionScoringRun`, das Gate). Revidiert außerdem explizit die in [`features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md`](../features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md) (UI/UX-Abschnitt) getroffene bewusste Entscheidung, `tier`/`gebaeude` NICHT in die Kategorie-Ableitung aufzunehmen. Architektur-Konsultation zur Idee `specs/inbox/0025-kategorien-aus-bildstatistiken-ableiten.md` (wird als Spec 0045 verfeinert).
 

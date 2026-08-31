@@ -94,6 +94,11 @@ describe('KriterienStepPage', () => {
       estimated_cost_usd: 0,
     })
     vi.mocked(projectsApi.triggerClassifyCategoriesRemote).mockReset()
+    // Die Remote-Kategorisierungs-Section laedt seit specs/features/0289-feste-kategorien.md
+    // zusaetzlich die Feinlabel-Haeufigkeiten - ohne Mock liefe die Query in einen Fehler und
+    // legte einen zweiten Alert auf die Seite.
+    vi.mocked(projectsApi.listFineLabels).mockReset()
+    vi.mocked(projectsApi.listFineLabels).mockResolvedValue([])
   })
 
   it('shows the explanation line and an enabled trigger once reachable', () => {

@@ -58,10 +58,10 @@ class Project(Base):
         back_populates="project", cascade="all, delete-orphan"
     )
     # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
-    # 2 Migration d - kein Cascade-Ziel fuer category_labels selbst (projektuebergreifend, siehe
-    # CategoryLabel-Docstring): DELETE /projects/{id} loescht ueber die photos-Kaskade oben die
-    # projekteigenen photo_category_detections-Zeilen, laesst einen weiterhin von einem ANDEREN
-    # Projekt referenzierten category_labels-Eintrag unangetastet.
+    # 2 Migration d - kein Cascade-Ziel fuer fine_labels selbst (projektuebergreifend, siehe
+    # FineLabel-Docstring): DELETE /projects/{id} loescht ueber die photos-Kaskade oben die
+    # projekteigenen photo_fine_labels-Zeilen, laesst einen weiterhin von einem ANDEREN
+    # Projekt referenzierten fine_labels-Eintrag unangetastet.
     remote_category_classification_runs: Mapped[list[RemoteCategoryClassificationRun]] = (
         relationship(back_populates="project", cascade="all, delete-orphan")
     )
@@ -118,10 +118,18 @@ class Photo(Base):
     landmark_detection: Mapped[PhotoLandmarkDetection | None] = relationship(
         back_populates="photo", uselist=False, cascade="all, delete-orphan"
     )
-    # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
-    # 2 Migration c2: 1:N statt 1:1 (bis zu drei Zeilen pro Foto, ein Roh-Label je Zeile).
-    category_label_detections: Mapped[list[PhotoCategoryDetection]] = relationship(
+    # specs/features/0055, ADR 0032 Punkt 2 Migration c2, umbenannt in
+    # specs/features/0289-feste-kategorien.md: 1:N (0-2 Zeilen pro Foto, ein freies Feinlabel je
+    # Zeile). Feinlabels sind seit Spec 0289 reine ZUSATZINFORMATION am Foto - sie bilden keine
+    # Kategorie mehr (siehe category_classification unten).
+    fine_labels: Mapped[list[PhotoFineLabel]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
+    )
+    # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 3a: 1:1 wie score/
+    # landmark_detection, optional (nur angelegt, wenn ein Remote-Klassifizierungslauf dieses Foto
+    # tatsaechlich verarbeitet hat).
+    category_classification: Mapped[PhotoCategoryClassification | None] = relationship(
+        back_populates="photo", uselist=False, cascade="all, delete-orphan"
     )
     # specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
     # fehler-persistierung.md Punkt 2: hoechstens zwei Zeilen pro Foto (eine je CloudVisionPhase),
@@ -271,12 +279,17 @@ class PhotoScore(Base):
     # durch PhotoCriterionScore+PhotoRanking (Kriterien-/Rangfolgen-Schicht) uebernommen wird statt
     # in eigenen PhotoScore-Spalten.
     #
-    # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
-    # 2 Migration b: additiv, dauerhafte manuelle Uebersteuerung des sonst automatisch abgeleiteten
-    # category_key (worker.py::run_criterion_scoring verwendet `score.category_override or
-    # derive_category_key(...)`) - ueberlebt damit auch kuenftige volle Re-Scoring-Laeufe. Ein
-    # beliebiger `canonical_key` aus `category_labels` statt eines von drei festen Werten (freier
-    # String, keine FK - die Existenzpruefung lebt am Override-Endpunkt selbst, nicht hier).
+    # specs/features/0055, ADR 0032 Punkt 2 Migration b: additiv, dauerhafte manuelle
+    # Uebersteuerung des sonst automatisch abgeleiteten category_key
+    # (worker.py::run_criterion_scoring verwendet `score.category_override or
+    # resolve_category(...)`) - ueberlebt damit auch kuenftige volle Re-Scoring-Laeufe.
+    #
+    # specs/features/0289-feste-kategorien.md: der zulaessige Wertebereich ist seit dieser Spec das
+    # geschlossene 13er-Set (categories.py::CATEGORY_REGISTRY), nicht mehr ein beliebiger
+    # `canonical_key`. Weiterhin freier String ohne FK - die Whitelist-Pruefung
+    # (`is_known_category`) lebt am Override-Endpunkt selbst, nicht hier; der LESEPFAD bleibt
+    # bewusst tolerant gegenueber einem Altwert ausserhalb des Sets (Defense in Depth gegen einen
+    # unvollstaendig gelaufenen Migrationsschritt, Security-Abschnitt der Spec Punkt 2).
     category_override: Mapped[str | None] = mapped_column(default=None)
 
     photo: Mapped[Photo] = relationship(back_populates="score", foreign_keys=[photo_id])
@@ -404,17 +417,24 @@ class PhotoLandmarkDetection(Base):
     photo: Mapped[Photo] = relationship(back_populates="landmark_detection")
 
 
-class CategoryLabel(Base):
-    """Kanonische Label-Registry fuer die offene Remote-Kategorie-Klassifizierung
-    (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
-    decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 2 Migration c1).
+class FineLabel(Base):
+    """Kanonische Registry der frei formulierten Feinlabels (specs/features/0055, ADR 0032 Punkt 2
+    Migration c1; in specs/features/0289-feste-kategorien.md von `CategoryLabel` umbenannt).
+
+    Der ZWECK hat sich mit Spec 0289 verschoben, die Struktur nicht: die Eintraege bilden keine
+    Kategorien mehr (das tut das feste Set in categories.py), sondern dienen der
+    Feinlabel-Haeufigkeitsauswertung (`GET /projects/{id}/fine-labels`) - dort macht die
+    Kanonisierung ueber Embeddings sie erst belastbar ("Hund"/"Hunde"/"dog" als ein Eintrag).
 
     Bewusst PROJEKTUEBERGREIFEND (kein project_id-Bezug, ADR 0032 Begruendung): reine
     Vokabular-Eintraege ("hund" ist kein personenbezogenes/projektspezifisches Datum), keine
     Fotoinhalte. Eine projektgebundene Registry wuerde bei mehreren Projekten identische Label
     wiederholt neu anlegen und die Cluster-Qualitaet unnoetig verschlechtern (weniger Beispiele
     pro Cluster) - fuer dieses Zwei-Personen-Familienprojekt (keine Mandantentrennung zwischen
-    Projekten noetig) eine bewusste, dokumentierte Vereinfachung.
+    Projekten noetig) eine bewusste, dokumentierte Vereinfachung. Die HAEUFIGKEITSABFRAGE ist
+    deshalb zwingend ueber `photo_fine_labels -> photos.project_id` zu skopieren (Security-
+    Abschnitt der Spec 0289, Punkt 1) - ein globales SELECT auf diese Tabelle wuerde
+    Label-Haeufigkeiten anderer Projekte ausliefern.
 
     `canonical_key` ist ein URL-/Key-sicherer Slug (remote_classification.py::_slugify),
     `display_name` der zuerst gesehene Roh-Label-Text in Originalschreibweise (reine Anzeige-
@@ -423,7 +443,7 @@ class CategoryLabel(Base):
     (ADR 0032: kleine, langsam wachsende Menge, ein voller Scan pro Aufloesung ist unproblematisch).
     """
 
-    __tablename__ = "category_labels"
+    __tablename__ = "fine_labels"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     canonical_key: Mapped[str] = mapped_column(unique=True)
@@ -431,50 +451,80 @@ class CategoryLabel(Base):
     embedding: Mapped[list[float]] = mapped_column(SQLJSON)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
-    photo_detections: Mapped[list[PhotoCategoryDetection]] = relationship(
-        back_populates="category_label"
-    )
+    photo_fine_labels: Mapped[list[PhotoFineLabel]] = relationship(back_populates="fine_label")
 
 
-class PhotoCategoryDetection(Base):
-    """Ein vom Vision-LLM geliefertes, auf einen kanonischen Eintrag aufgeloestes Roh-Label
-    (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, decisions/0032,
-    Punkt 2 Migration c2) - 1:N zu Photo (bis zu drei Zeilen pro erfolgreich klassifiziertem Foto,
-    nie 0 - der Prompt erzwingt mindestens ein Label, kein "nichts erkannt"-Fall, anders als
-    `landmark`). `raw_label` ist der ungekuerzte, vom Vision-LLM gelieferte Text (Audit-/Debug-
-    Spur, welche konkrete Formulierung auf welchen canonical_key gemappt wurde) - `confidence`/
-    `provider`/`computed_at` analog PhotoLandmarkDetection.
+class PhotoFineLabel(Base):
+    """Ein vom Vision-LLM frei formuliertes, auf einen kanonischen Eintrag aufgeloestes Feinlabel
+    (specs/features/0055, decisions/0032 Punkt 2 Migration c2; in
+    specs/features/0289-feste-kategorien.md von `PhotoCategoryDetection` umbenannt) - 1:N zu Photo,
+    0 bis MAX_FINE_LABELS_PER_PHOTO Zeilen pro Foto. Anders als bis Spec 0289 ist die Zeilenzahl
+    ausdruecklich auch 0 zulaessig: der Prompt erzwingt kein Feinlabel mehr, die Pflichtaussage je
+    Foto ist die Kategorie (PhotoCategoryClassification), nicht das Label.
 
-    UniqueConstraint(photo_id, category_label_id): verhindert zwei Zeilen fuer dasselbe
-    Foto x kanonisches-Label-Paar (relevant, falls zwei der bis zu drei Roh-Labels eines Fotos auf
-    denselben canonical_key clustern - dann wird die Zeile mit der hoeheren confidence behalten,
-    kein Duplikat geschrieben, siehe worker.py::run_remote_category_classification)."""
+    `raw_label` ist der - bereits zeichensanierte (remote_classification.py::_sanitize_label_text)
+    - vom Vision-LLM gelieferte Text (Audit-/Debug-Spur, welche konkrete Formulierung auf welchen
+    canonical_key gemappt wurde). `confidence` ist mit Spec 0289 ERSATZLOS entfallen (ADR 0049
+    Entwurfsentscheidung 7: die Zahl diente ausschliesslich der abgeloesten Score-Auswahl, eine
+    persistierte Zahl ohne Codepfad waere irrefuehrender Ballast).
 
-    __tablename__ = "photo_category_detections"
+    UniqueConstraint(photo_id, fine_label_id): verhindert zwei Zeilen fuer dasselbe
+    Foto x kanonisches-Label-Paar (relevant, falls beide Feinlabels eines Fotos auf denselben
+    canonical_key clustern - dann wird nur eine Zeile geschrieben, siehe
+    worker.py::run_remote_category_classification)."""
+
+    __tablename__ = "photo_fine_labels"
     __table_args__ = (
-        UniqueConstraint(
-            "photo_id", "category_label_id", name="uq_category_detection_photo_label"
-        ),
+        UniqueConstraint("photo_id", "fine_label_id", name="uq_fine_label_photo_label"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
-    category_label_id: Mapped[int] = mapped_column(ForeignKey("category_labels.id"))
+    fine_label_id: Mapped[int] = mapped_column(ForeignKey("fine_labels.id"))
     raw_label: Mapped[str]
-    confidence: Mapped[float]
     provider: Mapped[str]
     computed_at: Mapped[datetime]
 
-    photo: Mapped[Photo] = relationship(back_populates="category_label_detections")
-    category_label: Mapped[CategoryLabel] = relationship(back_populates="photo_detections")
+    photo: Mapped[Photo] = relationship(back_populates="fine_labels")
+    fine_label: Mapped[FineLabel] = relationship(back_populates="photo_fine_labels")
+
+
+class PhotoCategoryClassification(Base):
+    """Das Ergebnis der Remote-Kategorie-Klassifizierung eines Fotos (specs/features/0289-feste-
+    kategorien.md, Umsetzungsschritt 3a) - 1:1 zu Photo, `photo_id` ist Primary Key (strukturell
+    nie mehrere Zeilen pro Foto, gleiche Begruendung wie bei PhotoScore/PhotoLandmarkDetection).
+
+    `category_key` ist das bereits ueber `categories.py::resolve_category` aufgeloeste Ergebnis der
+    remote genannten Kandidaten - also immer ein Wert aus dem festen Set, nie ein Rohwert des
+    Modells. `detected_categories` haelt die VALIDIERTE Kandidatenliste (ausschliesslich bekannte
+    Set-Keys, unbekannte Rohwerte sind bereits verworfen) als JSON-Liste; sie wird ueber
+    `PhotoOut.category_candidates` ausgeliefert. Security-Muss-Kriterium (Spec 0289, Abschnitt 5):
+    hier landet NIE die Rohliste des Modells - sonst wanderte unvalidierter Fremdtext ueber einen
+    zweiten Kanal in API-Antwort und UI.
+
+    Die PRAESENZ dieser Zeile ist zugleich das Erfolgssignal der Remote-Phase (Skip-Kriterium in
+    worker.py::select_remote_category_candidates und Statusableitung in
+    api/photos.py::_cloud_vision_status_out) - sie entsteht auch dann, wenn `category_key`
+    `nicht_erkannt` lautet (kein "nichts gefunden"-Sonderfall)."""
+
+    __tablename__ = "photo_category_classifications"
+
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), primary_key=True)
+    category_key: Mapped[str]
+    detected_categories: Mapped[list[str]] = mapped_column(SQLJSON)
+    provider: Mapped[str]
+    computed_at: Mapped[datetime]
+
+    photo: Mapped[Photo] = relationship(back_populates="category_classification")
 
 
 class RemoteCategoryClassificationRun(Base):
     """Ein Lauf des Remote-Kategorie-Klassifizierungs-Jobs (specs/features/0055-remote-kategorie-
     klassifizierung-mit-kostenschaetzung.md, decisions/0032, Punkt 2 Migration d) - Run-Tracking
     analog CriterionScoringRun/ScoringRun/ScanRun, aber bewusst OHNE scoring_run_id-FK: dieser Job
-    schreibt ausschliesslich in photo_category_detections/category_labels, beruehrt weder
-    cluster_key noch PhotoRanking direkt - kein 409-Staleness-Guard, kein Ausschuss-Gate-
+    schreibt ausschliesslich in photo_category_classifications/photo_fine_labels/fine_labels,
+    beruehrt weder cluster_key noch PhotoRanking direkt - kein 409-Staleness-Guard, kein
+    Ausschuss-Gate-
     Erfordernis (anders als run_criterion_scoring)."""
 
     __tablename__ = "remote_category_classification_runs"

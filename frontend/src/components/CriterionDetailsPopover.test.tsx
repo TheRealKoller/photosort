@@ -127,8 +127,8 @@ describe('CriterionDetailsPopover', () => {
         ranking={ranking({ category_key: 'hund' })}
         suggestion={null}
         categoryCandidates={[
-          { category_key: 'hund', origin: 'remote', score: 0.9, provider: 'anthropic' },
-          { category_key: 'people', origin: 'local', score: 0.4, provider: null },
+          { category_key: 'tier', origin: 'remote', provider: 'anthropic' },
+          { category_key: 'menschen', origin: 'local', provider: null },
         ]}
         categoryOverride={null}
         onOverrideCategory={onOverrideCategory}
@@ -138,9 +138,10 @@ describe('CriterionDetailsPopover', () => {
     await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('Kategorie-Kandidaten')).toBeInTheDocument()
-    await user.click(within(dialog).getByRole('button', { name: /übernehmen/i }))
+    const tierRow = within(dialog).getByTestId('category-candidate-row-tier')
+    await user.click(within(tierRow).getByRole('button', { name: /übernehmen/i }))
 
-    expect(onOverrideCategory).toHaveBeenCalledWith('people')
+    expect(onOverrideCategory).toHaveBeenCalledWith('tier')
   })
 
   // specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md, Akzeptanzkriterium 1:

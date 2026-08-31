@@ -1,54 +1,111 @@
-// Formatiert einen freien category_key (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
-// backfill.md) fuer die Anzeige - kein festes Uebersetzungs-Woerterbuch mehr wie zu Spec-0024-
-// Zeiten (PhotoCategory war ein geschlossenes 3-Wert-Enum). category_key ist jetzt ein freier,
-// server-seitig erweiterbarer String (backend criteria.py::derive_category_key) - eine feste
-// Uebersetzungsliste im Frontend wuerde bei jedem neuen Kriterium/jeder neuen Kategorie eine
-// Frontend-Aenderung erzwingen und genau die Erweiterbarkeit wieder zunichtemachen, die das
-// Datenmodell bewusst gewinnt (UI/UX-Abschnitt der Spec: "kein festes Kuerzel-Schema mehr
-// moeglich"). Grossschreibung des ersten Buchstabens ist eine rein kosmetische Formatierung, kein
-// Uebersetzungsschritt - der Rohwert selbst dient laut Spec als ausgeschriebener Name.
+import type { CategoryKey, CategoryOut } from '../api/types'
 
-// specs/features/0045-kategorien-aus-statistiken-ableiten.md: explizites Mapping NUR fuer
-// category_keys mit Sonderzeichen-Bedarf (Umlaute lassen sich nicht generisch aus dem
-// Roh-Key ableiten) - kein Eintrag fuer jedes kuenftige, kategorie-faehige Kriterium noetig, der
-// generische Fallback unten deckt alle unbekannten/kuenftigen Keys weiterhin ab.
-const CATEGORY_DISPLAY_NAME_OVERRIDES: Readonly<Record<string, string>> = {
-  gebaeude: 'Gebäude',
-  // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: Sonderzeichen-Bedarf
-  // (Umlaut) wie "gebaeude" oben - der generische Fallback koennte "Sehenswürdigkeit" nicht aus
-  // dem rohen category_key "landmark" ableiten.
-  landmark: 'Sehenswürdigkeit',
-  // specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md: der Auffang-Key des
-  // Backends (criteria.py::CATEGORY_UNRECOGNIZED) benennt ein FEHLENDES Erkennungsergebnis, keine
-  // Inhaltsaussage - der generische Fallback lieferte nur "Unerkannt". Kein Eintrag fuer
-  // "landschaft" noetig, dort passt der Fallback bereits.
-  unerkannt: 'Nicht erkannt',
-}
+// specs/features/0289-feste-kategorien.md, Umsetzungsschritt 7: die Anzeigetabelle kommt zur
+// LAUFZEIT vom Server (`GET /categories`, ADR 0049 Entwurfsentscheidung 5) - das frueher hier
+// gepflegte `CATEGORY_DISPLAY_NAME_OVERRIDES`-Woerterbuch ist ersatzlos entfallen.
+//
+// Die drei Helfer sind bewusst REINE FUNKTIONEN mit dem geladenen Set als EXPLIZITEM Parameter
+// (Testvorgabe der Spec, nicht Stilfrage): eine modul-globale, vom Query-Cache befuellte Variable
+// haette sie nur noch mit `QueryClientProvider` testbar gemacht und ihre Tests von Query-Zustand
+// abhaengig.
+//
+// `categories` darf jederzeit leer sein (Set noch nicht geladen) - dann greift ueberall der
+// generische Fallback, kein Absturz und kein leeres Badge.
 
-export function formatCategoryKey(categoryKey: string): string {
-  // Own-Property-Check statt reinem `!== undefined` (Copilot-Review-Fund, PR #106): category_key
-  // ist laut Spec ein freier, server-seitig erweiterbarer String, keine geschlossene Aufzaehlung
-  // - ein reiner Plain-Object-Zugriff wuerde fuer Werte wie "toString"/"constructor" das geerbte
-  // Object.prototype-Property statt undefined liefern und faelschlich als Treffer gewertet.
-  if (Object.hasOwn(CATEGORY_DISPLAY_NAME_OVERRIDES, categoryKey)) {
-    return CATEGORY_DISPLAY_NAME_OVERRIDES[categoryKey]
-  }
+export type CategorySet = readonly CategoryOut[]
+
+/**
+ * Auffangkorb-Key des Backends (`categories.py::CATEGORY_NOT_RECOGNIZED`) - Fotos, fuer die kein
+ * Bildmotiv sicher bestimmbar war. Kein verwaister Key, sondern eine regulaer waehlbare Kategorie
+ * des Sets.
+ */
+export const CATCH_ALL_CATEGORY_KEY = 'nicht_erkannt'
+
+/**
+ * Generischer Fallback fuer einen Key, der NICHT im geladenen Set steht - praktisch nur noch fuer
+ * Altwerte aus der Laufhistorie (`"unerkannt"`, `"landscape"`, `"people"`; die Laufhistorie wird
+ * bewusst nicht migriert) und fuer die kurze Phase, in der das Set noch laedt. Reine Kosmetik
+ * (erster Buchstabe gross), kein Uebersetzungsschritt.
+ */
+function genericFallback(categoryKey: string): string {
   if (categoryKey.length === 0) {
     return categoryKey
   }
   return categoryKey.charAt(0).toUpperCase() + categoryKey.slice(1)
 }
 
-// Grid-Kachel-Chip (UI/UX-Abschnitt der Spec): erste drei Zeichen von category_key in
-// Grossbuchstaben - seltene Praefix-Kollisionen (z.B. zwei kuenftige Kategorien mit identischem
-// Praefix) sind fuer zwei bekannte Nutzer ein akzeptables Restrisiko, siehe Spec.
-export function categoryAbbreviation(categoryKey: string): string {
-  return categoryKey.slice(0, 3).toUpperCase()
+function findDisplayName(categoryKey: string, categories: CategorySet): string | null {
+  for (const entry of categories) {
+    if (entry.key === categoryKey) {
+      return entry.display_name
+    }
+  }
+  return null
+}
+
+/**
+ * Anzeigename eines `category_key`: der `display_name` aus dem geladenen Set, sonst der generische
+ * Fallback. Bewusst eine lineare Suche ueber genau 13 Eintraege statt eines aus dem Set gebauten
+ * Objekt-Lookups - damit gibt es auch keinen `Object.prototype`-Durchgriff mehr, gegen den der
+ * fruehere `Object.hasOwn`-Check (Copilot-Review-Fund, PR #106) schuetzen musste. Ein Key wie
+ * `"toString"` trifft hier strukturell keinen Eintrag und faellt korrekt auf den Fallback.
+ */
+export function formatCategoryKey(categoryKey: CategoryKey, categories: CategorySet): string {
+  return findDisplayName(categoryKey, categories) ?? genericFallback(categoryKey)
+}
+
+/**
+ * Kuerzel fuer die Grid-Kachel (UI/UX-Abschnitt der Spec 0289): erste drei Zeichen des
+ * ANZEIGENAMENS in Grossbuchstaben - nicht mehr des rohen Keys. Ueber das feste 13er-Set ist das
+ * kollisionsfrei ("MEN"/"TIE"/"PFL"/"LAN"/"GEB"/"INN"/"ESS"/"FAH"/"GEG"/"DOK"/"KUN"/"SPO"/"NIC"),
+ * abgesichert durch einen parametrisierten Test ueber alle 13 Anzeigenamen. Fuer einen Altwert
+ * ohne Set-Eintrag greift derselbe generische Fallback wie oben.
+ */
+export function categoryAbbreviation(categoryKey: CategoryKey, categories: CategorySet): string {
+  return formatCategoryKey(categoryKey, categories).slice(0, 3).toUpperCase()
+}
+
+/**
+ * Reihenfolge kategorialer Listen (Abschnitts-Ueberschriften, Override-Auswahl): die
+ * ANZEIGEREIHENFOLGE der Server-Registry, nicht alphabetisch - so ist die Reihenfolge ueberall im
+ * Produkt identisch. Danach folgen unbekannte Altwerte aus der Laufhistorie (untereinander
+ * alphabetisch als expliziter, deterministischer Tie-Break - sonst haenge die Anzeige an der
+ * `Object.keys`-Reihenfolge), und ganz zuletzt immer der Auffangkorb "Nicht erkannt"
+ * (Design-System-Muster "Auffangkorb-Kategorie mit erklaerend dezentem Signal").
+ *
+ * Liefert ein neues Array statt das uebergebene zu sortieren.
+ */
+export function sortCategoryKeys(
+  categoryKeys: readonly CategoryKey[],
+  categories: CategorySet
+): CategoryKey[] {
+  const registryOrder = new Map<string, number>()
+  categories.forEach((entry, index) => registryOrder.set(entry.key, index))
+
+  // Drei Raenge: 0 = bekannter Set-Eintrag (Registry-Reihenfolge entscheidet), 1 = unbekannter
+  // Altwert, 2 = Auffangkorb. Der Auffangkorb steht damit auch dann zuletzt, wenn er in der
+  // Registry (Anzeigereihenfolge) an derselben Stelle steht.
+  function rank(key: CategoryKey): number {
+    if (key === CATCH_ALL_CATEGORY_KEY) {
+      return 2
+    }
+    return registryOrder.has(key) ? 0 : 1
+  }
+
+  return [...categoryKeys].sort((a, b) => {
+    if (a === b) return 0
+    const rankDiff = rank(a) - rank(b)
+    if (rankDiff !== 0) return rankDiff
+    if (rank(a) === 0) {
+      return (registryOrder.get(a) ?? 0) - (registryOrder.get(b) ?? 0)
+    }
+    return a < b ? -1 : 1
+  })
 }
 
 // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: Anzeigename eines
 // Cloud-Vision-Providers (backend `provider`-Feld, aktuell "anthropic"/"mistral") - geteilt
-// zwischen RemoteCategoryClassificationSection.tsx (Bestaetigungsdialog) und der neuen
+// zwischen RemoteCategoryClassificationSection.tsx (Bestaetigungsdialog) und der
 // "Kategorie-Kandidaten"-Gruppe in CriterionDetailsList.tsx ("Herkunft"-Chip). Fallback auf den
 // rohen Wert fuer einen kuenftigen, hier noch nicht gepflegten Provider - kein Absturz.
 const PROVIDER_DISPLAY_NAMES: Readonly<Record<string, string>> = {

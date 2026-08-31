@@ -101,8 +101,8 @@ export function ProjectSettingsPage() {
                   Fotos, die als Landschaft oder Gebäude erkannt wurden, werden zur Analyse an die
                   Anthropic-Cloud-API versendet, um Sehenswürdigkeiten zu erkennen. Derselbe
                   Schalter gibt zusätzlich die optionale Remote-Kategorisierung frei (Kuratierungs-
-                  Schritt): dort ausgewählte Fotos werden an dieselbe Cloud-API gesendet, um offene
-                  Kategorie-Schlagworte (z. B. Ereignis, Ort, Motiv) zu erkennen.
+                  Schritt): dort ausgewählte Fotos werden an dieselbe Cloud-API gesendet, um ihre
+                  Kategorie aus dem festen Set und bis zu zwei freie Feinlabels zu bestimmen.
                 </p>
               </PopoverContent>
             </Popover>

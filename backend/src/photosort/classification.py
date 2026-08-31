@@ -13,9 +13,11 @@ from PIL import Image, ImageFilter, ImageStat
 # laeuft fuer JEDES gescannte Foto) einsickert - classification.py wird nur von criteria.py (und
 # darueber vom neuen run_criterion_scoring-Job, specs/features/0037-gatefuehrte-bewertungs-
 # pipeline-mit-backfill.md) importiert. `classify_category`/`CategoryCandidate`/
-# `select_top_n_with_category_mix` sind mit Spec 0037 entfallen - die Kategorie-Ableitung lebt jetzt
-# in criteria.py::derive_category_key (datengetrieben aus Kriterien-Werten statt eines hart
-# codierten Einzelaufrufs), die Rangfolge in ranking.py::rank_photos (ersetzt das Quotenverfahren).
+# `select_top_n_with_category_mix` sind mit Spec 0037 entfallen - die Kategorie-Ableitung lebt seit
+# specs/features/0289-feste-kategorien.md in categories.py::resolve_category (reine
+# Vorrangaufloesung ueber dem festen Set; die zwischenzeitliche, haeufigkeitsbasierte
+# criteria.py::derive_category_key ist mit derselben Spec entfallen), die Rangfolge in
+# ranking.py::rank_photos (ersetzt das Quotenverfahren).
 
 # Laplace-Kernel-Varianz-Schwellwert je 8x8-Kachel, unterhalb dessen eine Kachel als "flaechig/
 # uniform" gilt - dieselbe Kennzahl wie scoring.py::compute_sharpness (Laplace-Kernel-Varianz),
@@ -286,14 +288,26 @@ def build_face_detector() -> FaceDetectorLike:
 # akzeptierte Luecke (AK-Pflicht der Spec): COCO enthaelt KEINE Insekten- oder Fisch-Klasse, diese
 # werden mit diesem Modell strukturell nicht erkannt (waere eine eigenstaendige, spaetere
 # Ergaenzung mit einem anderen Modell, nicht Teil dieser Spec).
+#
+# specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: diese Allow-Liste FILTERT SEIT
+# DIESER SPEC NICHT MEHR IN detect_objects, sondern in den Konsumenten
+# (criteria.py::animal_detections/compute_tier_score) - Gegenrichtung zu ADR 0047 Punkt 1. Die
+# Liste selbst und ihre Schreibweise bleiben unveraendert (Verhaltenserhalt fuer `tier` und
+# `goldener_schnitt` ist testpflichtig).
 ANIMAL_CATEGORIES = frozenset(
     {"bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"}
 )
 
-# Mindest-Konfidenz, ab der eine Tier-Erkennung gewertet wird - analog
+# Mindest-Konfidenz, ab der eine Objekt-Erkennung gewertet wird - analog
 # FACE_DETECTION_CONFIDENCE_THRESHOLD, eigene explizite Schwelle statt sich auf den vom Detector
 # intern konfigurierten score_threshold zu verlassen (gleiche Testbarkeits-Begruendung wie dort).
-ANIMAL_DETECTION_CONFIDENCE_THRESHOLD = 0.5
+#
+# specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: umbenannt von
+# ANIMAL_DETECTION_CONFIDENCE_THRESHOLD - die Schwelle gilt seit der Verallgemeinerung
+# detect_animals -> detect_objects fuer ALLE COCO-Klassen, nicht mehr nur fuer Tiere. Der
+# Zahlenwert ist unveraendert (bewusst keine Neukalibrierung: die Spec verlangt Verhaltenserhalt
+# fuer die Tier-Konsumenten).
+OBJECT_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 
 # Gepinnte, im Repository eingecheckte .tflite-Modelldatei (Security-Abschnitt der Spec 0038,
 # kein Laufzeit-Download) - analog zum FaceDetector-Muster oben. Quelle: offizielles
@@ -311,7 +325,7 @@ OBJECT_DETECTOR_MODEL_SHA256 = (
 
 class DetectionCategoryLike(Protocol):
     """Die schmale Teilmenge von mediapipe.tasks.python.components.containers.Category, die
-    detect_animals braucht."""
+    detect_objects braucht."""
 
     category_name: str | None
     score: float
@@ -331,12 +345,14 @@ class ObjectDetectorLike(Protocol):
 
 
 @dataclass(frozen=True)
-class AnimalDetection:
-    """Eine einzelne, oberhalb von ANIMAL_DETECTION_CONFIDENCE_THRESHOLD erkannte Tier-Instanz
-    (ADR 0022 Punkt 1) - Bounding-Box-Felder normiert wie FaceBoundingBox (auf die Bildgroesse
-    bezogen, [0, 1], Ursprung oben links), damit beide Typen strukturell denselben
-    Kompositions-Subjekt-Vertrag (criteria.py::SubjectBoxLike) erfuellen und die Goldener-Schnitt-
-    Heuristik sie ohne Sonderfall gleich behandeln kann."""
+class ObjectDetection:
+    """Eine einzelne, oberhalb von OBJECT_DETECTION_CONFIDENCE_THRESHOLD erkannte Objekt-Instanz
+    (ADR 0022 Punkt 1, seit specs/features/0289-feste-kategorien.md von `AnimalDetection`
+    verallgemeinert - identische Felder, aber nicht mehr auf ANIMAL_CATEGORIES beschraenkt) -
+    Bounding-Box-Felder normiert wie FaceBoundingBox (auf die Bildgroesse bezogen, [0, 1], Ursprung
+    oben links), damit beide Typen strukturell denselben Kompositions-Subjekt-Vertrag
+    (criteria.py::SubjectBoxLike) erfuellen und die Goldener-Schnitt-Heuristik sie ohne Sonderfall
+    gleich behandeln kann."""
 
     category: str
     confidence: float
@@ -346,17 +362,24 @@ class AnimalDetection:
     height: float
 
 
-def detect_animals(image: Image.Image, detector: ObjectDetectorLike) -> list[AnimalDetection]:
+def detect_objects(image: Image.Image, detector: ObjectDetectorLike) -> list[ObjectDetection]:
     """mediapipe Object Detector Task-API (ADR 0022 Punkt 1) auf der bereits gecachten
-    display-Variante, gefiltert auf ANIMAL_CATEGORIES. `detector` ist injizierbar (siehe
-    ObjectDetectorLike) - die reale Modellkonstruktion (build_object_detector) laeuft in keinem
-    automatisierten Test. Nur die JEWEILS hoechstbewertete Kategorie pro Erkennung wird betrachtet
-    (das Modell liefert typischerweise bereits eine nach Score sortierte Kandidatenliste je
-    erkanntem Objekt) - keine zweitplatzierte Tier-Kategorie "rettet" eine primaer als etwas
-    anderes klassifizierte Erkennung."""
+    display-Variante. `detector` ist injizierbar (siehe ObjectDetectorLike) - die reale
+    Modellkonstruktion (build_object_detector) laeuft in keinem automatisierten Test. Nur die
+    JEWEILS hoechstbewertete Kategorie pro Erkennung wird betrachtet (das Modell liefert
+    typischerweise bereits eine nach Score sortierte Kandidatenliste je erkanntem Objekt) - keine
+    zweitplatzierte Kategorie "rettet" eine primaer anders klassifizierte Erkennung.
+
+    specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: KEIN Allow-Listen-Filter mehr
+    (frueher `detect_animals` mit ANIMAL_CATEGORIES). Die Funktion liefert jetzt jede erkannte
+    COCO-Klasse oberhalb der Konfidenzschwelle; die inhaltliche Filterung liegt bei den
+    Konsumenten (criteria.py::compute_tier_score/compute_fahrzeug_score/
+    compute_essen_trinken_score/animal_detections), die sie jeweils SELBST durchsetzen. Der
+    Detektorlauf selbst bleibt genau EINER pro Foto (worker.py::_compute_content_criteria) - die
+    Verallgemeinerung kostet keine zusaetzliche Inferenz."""
     width, height = image.size
     result = detector.detect(_to_mp_image(image))
-    detections: list[AnimalDetection] = []
+    detections: list[ObjectDetection] = []
     for detection in result.detections:
         categories = getattr(detection, "categories", [])
         if not categories:
@@ -364,11 +387,11 @@ def detect_animals(image: Image.Image, detector: ObjectDetectorLike) -> list[Ani
         top = categories[0]
         name = getattr(top, "category_name", None)
         score = getattr(top, "score", 0.0)
-        if name not in ANIMAL_CATEGORIES or score < ANIMAL_DETECTION_CONFIDENCE_THRESHOLD:
+        if name is None or score < OBJECT_DETECTION_CONFIDENCE_THRESHOLD:
             continue
         box = detection.bounding_box
         detections.append(
-            AnimalDetection(
+            ObjectDetection(
                 category=name,
                 confidence=score,
                 x_center=(box.origin_x + box.width / 2) / width,
@@ -389,7 +412,7 @@ def build_object_detector() -> ObjectDetectorLike:
 
     options = vision.ObjectDetectorOptions(
         base_options=BaseOptions(model_asset_path=str(_OBJECT_DETECTOR_MODEL_PATH)),
-        score_threshold=ANIMAL_DETECTION_CONFIDENCE_THRESHOLD,
+        score_threshold=OBJECT_DETECTION_CONFIDENCE_THRESHOLD,
     )
     detector: ObjectDetectorLike = vision.ObjectDetector.create_from_options(options)
     return detector
@@ -421,7 +444,7 @@ SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.5
 # natuerliche Szenen verteilen ihre Modellkonfidenz typischerweise ueber mehrere benachbarte
 # ImageNet-Klassen, eine harte 0.5-Grenze schon an der Modellausgabe wuerde eine echte
 # Landschafts-Erkennung strukturell verhindern. Analog FACE_DETECTION_CONFIDENCE_THRESHOLD/
-# ANIMAL_DETECTION_CONFIDENCE_THRESHOLD eine eigene, explizite Schwelle statt sich blind auf die
+# OBJECT_DETECTION_CONFIDENCE_THRESHOLD eine eigene, explizite Schwelle statt sich blind auf die
 # Detector-Konfiguration zu verlassen (siehe FakeSceneClassifier in test_classification.py).
 SCENE_LABEL_MIN_CONFIDENCE = 0.2
 
@@ -462,7 +485,7 @@ class SceneClassifierLike(Protocol):
 class SceneLabel:
     """Eine einzelne, oberhalb von SCENE_LABEL_MIN_CONFIDENCE klassifizierte
     ImageNet-1k-Szenen-/Objekt-Kategorie (ADR 0022 Punkt 2) - UNGEFILTERT, siehe Modul-Kommentar
-    oben. Kein Bounding-Box-Feld (anders als AnimalDetection/FaceBoundingBox): ein Image
+    oben. Kein Bounding-Box-Feld (anders als ObjectDetection/FaceBoundingBox): ein Image
     Classifier bewertet das GESAMTE Bild, keine einzelne Bildregion."""
 
     category: str
@@ -535,7 +558,7 @@ FACE_LANDMARKER_MODEL_SHA256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0b
 # Deadzone um einen frontalen Blick (ADR 0026 Punkt 3) - lebt in criteria.py::
 # compute_freiraum_score (FREIRAUM_YAW_DEADZONE_DEGREES), nicht hier: detect_face_orientation
 # liefert nur die Rohdaten (Yaw + Bounding-Box), die Fallback-/Score-Logik ist criteria.py
-# vorbehalten (Trennung analog detect_animals/compute_tier_score).
+# vorbehalten (Trennung analog detect_objects/compute_tier_score).
 
 
 class LandmarkLike(Protocol):
@@ -602,7 +625,7 @@ def detect_face_orientation(
     Modellkonstruktion (build_face_landmarker) laeuft in keinem automatisierten Test.
 
     Kein Gesicht erkannt -> None (Fallback-Entscheidung liegt bei criteria.py::
-    compute_freiraum_score, analog detect_animals/compute_tier_score). `num_faces=1` ist
+    compute_freiraum_score, analog detect_objects/compute_tier_score). `num_faces=1` ist
     modellseitig konfiguriert (build_face_landmarker) - trotzdem defensiv nur das ERSTE Gesicht
     verwendet, falls das Modell wider Erwarten mehrere liefert (Teststrategie-Abschnitt der Spec
     0048)."""

@@ -11,6 +11,7 @@ import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
+import { useCategoriesQuery } from '../hooks/useCategories'
 import { useCategoryOverrideControls } from '../hooks/useCategoryOverrideControls'
 import {
   useDeleteRatingMutation,
@@ -56,6 +57,10 @@ export function PhotoDetailPage() {
   const setMutation = useSetRatingMutation(id)
   const deleteMutation = useDeleteRatingMutation(id)
   const categoryOverrideControls = useCategoryOverrideControls(id)
+  // specs/features/0289-feste-kategorien.md: das feste Set kommt vom Server (langlebiger Cache) -
+  // Grundlage der Anzeigenamen und der "Alle Kategorien"-Override-Auswahl.
+  const categoriesQuery = useCategoriesQuery()
+  const categorySet = categoriesQuery.data ?? []
 
   const [completed, setCompleted] = useState(false)
 
@@ -306,6 +311,13 @@ export function PhotoDetailPage() {
             suggestion={null}
             showSuggestion={false}
             categoryCandidates={currentPhoto.category_candidates}
+            fineLabels={currentPhoto.fine_labels}
+            categories={categorySet}
+            categoriesLoading={categoriesQuery.isLoading}
+            categoriesError={categoriesQuery.isError}
+            onRetryCategories={() => {
+              void categoriesQuery.refetch()
+            }}
             categoryOverride={currentPhoto.category_override}
             onOverrideCategory={(categoryKey) =>
               categoryOverrideControls.overrideCategory(currentPhoto.id, categoryKey)

@@ -11,9 +11,14 @@ import { QualityMeter } from '../components/QualityMeter'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
+import { useCategoriesQuery } from '../hooks/useCategories'
 import { useCategoryOverrideControls } from '../hooks/useCategoryOverrideControls'
 import { useCurationQuery, useSetRatingMutation } from '../hooks/usePhotos'
-import { formatCategoryKey } from '../utils/categoryLabels'
+import {
+  CATCH_ALL_CATEGORY_KEY,
+  formatCategoryKey,
+  sortCategoryKeys,
+} from '../utils/categoryLabels'
 import { qualityLevel } from '../utils/qualityLevel'
 import { formatClusterHeading, formatDayHeading } from '../utils/timeOfDay'
 
@@ -138,33 +143,12 @@ export function toggleDayCollapse(collapsedDayKeys: Set<string>, dayKey: string)
 }
 
 /**
- * Auffang-Kategorie des Backends (`criteria.py::CATEGORY_UNRECOGNIZED`) - Fotos, fuer die kein
- * aktives Kriterium erfuellt war (specs/features/0217-landschaft-erkennung-spezifitaets-
- * vorrang.md). Kein verwaister Key, sondern ein regulaer erzeugter Zustand.
+ * Neutraler Erklaertext des Auffang-Abschnitts (UI/UX-Abschnitt der Spec 0217, unveraendert
+ * gueltig fuer den Set-Eintrag "Nicht erkannt" aus specs/features/0289-feste-kategorien.md) -
+ * struktureller Text, KEINE Fehler-Semantik (kein `role="alert"`, keine Fehlerfarbe): das Fehlen
+ * einer Erkennung ist kein Fehler.
  */
-const CATCH_ALL_CATEGORY_KEY = 'unerkannt'
-
-/**
- * Neutraler Erklaertext des Auffang-Abschnitts (UI/UX-Abschnitt der Spec 0217) - struktureller
- * Text, KEINE Fehler-Semantik (kein `role="alert"`, keine Fehlerfarbe): das Fehlen einer
- * Erkennung ist kein Fehler.
- */
-const CATCH_ALL_EXPLANATION = 'Diese Fotos konnten nicht automatisch kategorisiert werden.'
-
-/**
- * Reihenfolge der Kategorie-Abschnitte innerhalb eines Clusters (specs/features/0217): normale
- * Kategorien alphabetisch nach `category_key`, der Auffang-Abschnitt "Nicht erkannt" IMMER
- * zuletzt - das macht visuell deutlich, dass er ein Auffangzustand und keine gleichberechtigte
- * Inhaltskategorie ist. Liefert ein neues Array statt das uebergebene zu sortieren.
- */
-export function sortCategoryKeys(categoryKeys: string[]): string[] {
-  return [...categoryKeys].sort((a, b) => {
-    if (a === b) return 0
-    if (a === CATCH_ALL_CATEGORY_KEY) return 1
-    if (b === CATCH_ALL_CATEGORY_KEY) return -1
-    return a < b ? -1 : 1
-  })
-}
+const CATCH_ALL_EXPLANATION = 'Für diese Fotos war kein Bildmotiv sicher bestimmbar.'
 
 const SKELETON_TILE_COUNT = 6
 
@@ -173,6 +157,10 @@ export function CurateCategoriesPage() {
   const id = Number(projectId)
   const [searchParams] = useSearchParams()
   const topN = parseTopN(searchParams.get('topN'))
+  // specs/features/0289-feste-kategorien.md: das feste Set kommt vom Server und wird langlebig
+  // gecacht - es speist Anzeigenamen, Abschnitts-Reihenfolge und die "Alle Kategorien"-Auswahl.
+  const categoriesQuery = useCategoriesQuery()
+  const categorySet = categoriesQuery.data ?? []
 
   const query = useCurationQuery(id, topN)
   const setRatingMutation = useSetRatingMutation(id)
@@ -372,9 +360,12 @@ export function CurateCategoriesPage() {
                 {dayIsEmpty && <p className="text-sm text-text">Keine Fotos für diesen Tag</p>}
                 {!dayIsEmpty &&
                   clusterKeysForDay.map((clusterKey) => {
-                    const categories = clustersForDay[clusterKey]
-                    const categoryKeys = sortCategoryKeys(Object.keys(categories))
-                    const clusterIsEmpty = !categoriesHavePhotos(categories)
+                    const photosByCategory = clustersForDay[clusterKey]
+                    const categoryKeys = sortCategoryKeys(
+                      Object.keys(photosByCategory),
+                      categorySet
+                    )
+                    const clusterIsEmpty = !categoriesHavePhotos(photosByCategory)
                     const heading = clusterMetaRef.current.get(clusterKey)?.heading ?? clusterKey
                     return (
                       <section key={clusterKey} className="flex flex-col gap-4">
@@ -384,12 +375,15 @@ export function CurateCategoriesPage() {
                         )}
                         {!clusterIsEmpty &&
                           categoryKeys.map((categoryKey) => {
-                            const photos = categories[categoryKey]
+                            const photos = photosByCategory[categoryKey]
                             return (
                               <div key={categoryKey} className="flex flex-col gap-2">
                                 <h4 className="flex items-center gap-2 text-sm">
-                                  <CategoryBadge categoryKey={categoryKey} />
-                                  {formatCategoryKey(categoryKey)}
+                                  <CategoryBadge
+                                    categoryKey={categoryKey}
+                                    categories={categorySet}
+                                  />
+                                  {formatCategoryKey(categoryKey, categorySet)}
                                 </h4>
                                 {/* Auffangkorb-Kategorie mit erklärend dezentem Signal
                                     (specs/architecture/0004-design-system.md, Spec 0217):
@@ -426,6 +420,13 @@ export function CurateCategoriesPage() {
                                                 suggestion={photo.suggestion}
                                                 className="absolute right-1.5 top-1.5"
                                                 categoryCandidates={photo.category_candidates}
+                                                fineLabels={photo.fine_labels}
+                                                categories={categorySet}
+                                                categoriesLoading={categoriesQuery.isLoading}
+                                                categoriesError={categoriesQuery.isError}
+                                                onRetryCategories={() => {
+                                                  void categoriesQuery.refetch()
+                                                }}
                                                 categoryOverride={photo.category_override}
                                                 onOverrideCategory={(categoryKey) =>
                                                   categoryOverrideControls.overrideCategory(

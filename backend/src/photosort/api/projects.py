@@ -18,8 +18,10 @@ from photosort.api.deps import (
 from photosort.config import settings
 from photosort.models import (
     CriterionScoringRun,
+    FineLabel,
     Photo,
-    PhotoCategoryDetection,
+    PhotoCategoryClassification,
+    PhotoFineLabel,
     PhotoScore,
     Project,
     RemoteCategoryClassificationRun,
@@ -228,7 +230,7 @@ async def _count_remote_category_candidates(session: AsyncSession, project_id: i
     unnoetig viel Speicher/IO, gerade weil die Kostenschaetzung eager beim Laden der
     Kuratierungs-Seite ausgefuehrt wird. Jetzt ein einzelnes `COUNT` mit `NOT EXISTS`, komplett
     serverseitig ausgewertet - keine Zeile verlaesst die Datenbank."""
-    already_classified = exists().where(PhotoCategoryDetection.photo_id == Photo.id)
+    already_classified = exists().where(PhotoCategoryClassification.photo_id == Photo.id)
     result = await session.execute(
         select(func.count())
         .select_from(Photo)
@@ -509,3 +511,62 @@ async def trigger_classify_categories_remote(
 
     await enqueuer.enqueue_job("classify_categories_remote", project_id)
     return {"status": "queued"}
+
+
+class FineLabelCountOut(BaseModel):
+    """Ein Feinlabel samt seiner Haeufigkeit IN DIESEM PROJEKT (specs/features/0289-feste-
+    kategorien.md, Umsetzungsschritt 6). `display_name` ist freier, extern erzeugter LLM-Text
+    (zeichensaniert beim Uebernehmen der Modellantwort) - im Frontend ausschliesslich als
+    regulaerer Textknoten zu rendern."""
+
+    canonical_key: str
+    display_name: str
+    photo_count: int
+
+
+@router.get("/{project_id}/fine-labels", response_model=list[FineLabelCountOut])
+async def list_fine_labels(
+    project_id: int, session: AsyncSession = Depends(get_session)
+) -> list[FineLabelCountOut]:
+    """Haeufigste Feinlabels dieses Projekts, absteigend nach `photo_count`, Tie-Break
+    `canonical_key` aufsteigend (specs/features/0289-feste-kategorien.md).
+
+    Zweck: sichtbar machen, welche Kategorie im festen Set gegebenenfalls fehlt - das Set ist per
+    Produktentscheidung geschlossen, aber nicht fuer immer festgelegt, und diese Liste ist der
+    Aenderungspfad.
+
+    SECURITY-MUSS-KRITERIUM (Spec 0289, Abschnitt 1): `fine_labels` ist bewusst eine
+    PROJEKTUEBERGREIFENDE Vokabular-Registry (siehe models.py::FineLabel) - die Zaehlung MUSS
+    deshalb ueber `photo_fine_labels -> photos.project_id` joinen. Ein globales
+    `SELECT ... FROM fine_labels` wuerde Label-Haeufigkeiten ANDERER Projekte ausliefern.
+    Vokabular-Eintraege ohne Foto im angefragten Projekt erscheinen durch den Join implizit nicht
+    (photo_count > 0). Ein leeres Projekt liefert `200` mit leerer Liste; eine unbekannte
+    project_id laeuft ueber `_get_project_or_404` in ein `404` (keine Objekt-ID-Enumeration ueber
+    ein leeres 200). Ein Eigentuemer-Vergleich ist bewusst NICHT implementiert - das Auth-Modell
+    (decisions/0003-auth-model.md) kennt kein Rollen-/Eigentuemermodell, beide Nutzer sehen
+    dieselben Projekte; ein hier neu erfundener Ownership-Check waere eine stillschweigende
+    Aenderung des Auth-Modells."""
+    await _get_project_or_404(project_id, session)
+
+    rows = (
+        await session.execute(
+            select(
+                FineLabel.canonical_key,
+                FineLabel.display_name,
+                func.count(func.distinct(PhotoFineLabel.photo_id)).label("photo_count"),
+            )
+            .join(PhotoFineLabel, PhotoFineLabel.fine_label_id == FineLabel.id)
+            .join(Photo, Photo.id == PhotoFineLabel.photo_id)
+            .where(Photo.project_id == project_id)
+            .group_by(FineLabel.id, FineLabel.canonical_key, FineLabel.display_name)
+            .order_by(func.count(func.distinct(PhotoFineLabel.photo_id)).desc(),
+                      FineLabel.canonical_key.asc())
+        )
+    ).all()
+
+    return [
+        FineLabelCountOut(
+            canonical_key=canonical_key, display_name=display_name, photo_count=photo_count
+        )
+        for canonical_key, display_name, photo_count in rows
+    ]

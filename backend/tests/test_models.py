@@ -8,14 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from photosort.models import (
-    CategoryLabel,
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    FineLabel,
     Photo,
-    PhotoCategoryDetection,
+    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoFineLabel,
     PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
@@ -661,37 +662,35 @@ async def test_photo_landmark_detection_has_a_provider_column(db_session: AsyncS
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
 # specs/architecture/0002-testkonzept.md ab hier: Cascade-Tests fuer die drei neuen Tabellen
-# (category_labels, photo_category_detections, remote_category_classification_runs) - Review-Fund
+# (fine_labels, photo_fine_labels, remote_category_classification_runs) - Review-Fund
 # (test-engineer): fehlten trotz explizitem Testkonzept-Verweis. Realer Codepfad, der das
 # betrifft: worker.py::run_project_scan loescht Photo-Zeilen bei Rescan fuer entfernte Dateien -
-# ein bereits remote-klassifiziertes Foto mit photo_category_detections-Zeilen durchlaeuft diesen
+# ein bereits remote-klassifiziertes Foto mit photo_fine_labels-Zeilen durchlaeuft diesen
 # Pfad tatsaechlich.
 
 
-async def test_deleting_photo_cascades_to_category_detections_but_keeps_category_label(
+async def test_deleting_photo_cascades_to_fine_label_rows_but_keeps_the_fine_label(
     db_session: AsyncSession,
 ) -> None:
     photo = await _make_photo(db_session)
-    hund = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[0.1, 0.2])
-    strand = CategoryLabel(canonical_key="strand", display_name="Strand", embedding=[0.3, 0.4])
+    hund = FineLabel(canonical_key="hund", display_name="Hund", embedding=[0.1, 0.2])
+    strand = FineLabel(canonical_key="strand", display_name="Strand", embedding=[0.3, 0.4])
     db_session.add_all([hund, strand])
     await db_session.flush()
     now = datetime.now(UTC)
     db_session.add_all(
         [
-            PhotoCategoryDetection(
+            PhotoFineLabel(
                 photo_id=photo.id,
-                category_label_id=hund.id,
+                fine_label_id=hund.id,
                 raw_label="Hund",
-                confidence=0.9,
                 provider="anthropic",
                 computed_at=now,
             ),
-            PhotoCategoryDetection(
+            PhotoFineLabel(
                 photo_id=photo.id,
-                category_label_id=strand.id,
+                fine_label_id=strand.id,
                 raw_label="Strand",
-                confidence=0.6,
                 provider="anthropic",
                 computed_at=now,
             ),
@@ -702,12 +701,12 @@ async def test_deleting_photo_cascades_to_category_detections_but_keeps_category
     await db_session.delete(photo)
     await db_session.commit()
 
-    detections = (await db_session.execute(select(PhotoCategoryDetection))).scalars().all()
+    detections = (await db_session.execute(select(PhotoFineLabel))).scalars().all()
     assert detections == []
-    # category_labels ist bewusst KEIN Cascade-Ziel (ADR 0032: projektuebergreifende Registry,
+    # fine_labels ist bewusst KEIN Cascade-Ziel (ADR 0032: projektuebergreifende Registry,
     # keine Fotoinhalte) - beide Eintraege bleiben nach dem Loeschen des einzigen referenzierenden
     # Fotos bestehen.
-    remaining_labels = (await db_session.execute(select(CategoryLabel))).scalars().all()
+    remaining_labels = (await db_session.execute(select(FineLabel))).scalars().all()
     assert {label.canonical_key for label in remaining_labels} == {"hund", "strand"}
 
 
@@ -729,10 +728,10 @@ async def test_deleting_project_cascades_to_remote_category_classification_runs(
     assert result.scalars().all() == []
 
 
-async def test_deleting_project_leaves_shared_category_label_and_other_project_untouched(
+async def test_deleting_project_leaves_shared_fine_label_and_other_project_untouched(
     db_session: AsyncSession,
 ) -> None:
-    # Zwei Projekte referenzieren denselben (projektuebergreifenden) category_labels-Eintrag -
+    # Zwei Projekte referenzieren denselben (projektuebergreifenden) fine_labels-Eintrag -
     # das Loeschen eines Projekts darf weder den geteilten Label-Eintrag noch den Foto-/Detection-
     # Bestand des ANDEREN Projekts beruehren (ADR 0032, Isolationsgarantie trotz geteilter
     # Registry).
@@ -743,25 +742,23 @@ async def test_deleting_project_leaves_shared_category_label_and_other_project_u
     photo_a = await _make_photo(db_session, project_a)
     photo_b = await _make_photo(db_session, project_b)
 
-    shared_label = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[0.1, 0.2])
+    shared_label = FineLabel(canonical_key="hund", display_name="Hund", embedding=[0.1, 0.2])
     db_session.add(shared_label)
     await db_session.flush()
     now = datetime.now(UTC)
     db_session.add_all(
         [
-            PhotoCategoryDetection(
+            PhotoFineLabel(
                 photo_id=photo_a.id,
-                category_label_id=shared_label.id,
+                fine_label_id=shared_label.id,
                 raw_label="Hund",
-                confidence=0.9,
                 provider="anthropic",
                 computed_at=now,
             ),
-            PhotoCategoryDetection(
+            PhotoFineLabel(
                 photo_id=photo_b.id,
-                category_label_id=shared_label.id,
+                fine_label_id=shared_label.id,
                 raw_label="hund",
-                confidence=0.8,
                 provider="mistral",
                 computed_at=now,
             ),
@@ -772,14 +769,14 @@ async def test_deleting_project_leaves_shared_category_label_and_other_project_u
     await db_session.delete(project_a)
     await db_session.commit()
 
-    remaining_labels = (await db_session.execute(select(CategoryLabel))).scalars().all()
+    remaining_labels = (await db_session.execute(select(FineLabel))).scalars().all()
     assert [label.canonical_key for label in remaining_labels] == ["hund"]
 
     remaining_photos = (await db_session.execute(select(Photo))).scalars().all()
     assert [p.id for p in remaining_photos] == [photo_b.id]
 
     remaining_detections = (
-        (await db_session.execute(select(PhotoCategoryDetection))).scalars().all()
+        (await db_session.execute(select(PhotoFineLabel))).scalars().all()
     )
     assert [d.photo_id for d in remaining_detections] == [photo_b.id]
 
@@ -920,3 +917,89 @@ async def test_photo_cloud_vision_error_has_the_expected_columns(
 
     columns = await db_session.run_sync(_get_columns)
     assert columns == {"photo_id", "phase", "error_type", "error_message", "attempted_at"}
+
+
+# specs/features/0289-feste-kategorien.md, Umsetzungsschritt 3a ab hier: die neue 1:1-Tabelle
+# photo_category_classifications - haelt die remote ermittelte Kategorie samt VALIDIERTER
+# Kandidatenliste und ist zugleich das Erfolgssignal der Remote-Phase.
+
+
+async def test_photo_category_classification_is_one_to_one_and_round_trips(
+    db_session: AsyncSession,
+) -> None:
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoCategoryClassification(
+            photo_id=photo.id,
+            category_key="menschen",
+            detected_categories=["menschen", "landschaft"],
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+    db_session.expunge_all()
+
+    stored = (
+        await db_session.execute(select(PhotoCategoryClassification))
+    ).scalars().one()
+    assert stored.photo_id == photo.id
+    assert stored.category_key == "menschen"
+    assert stored.detected_categories == ["menschen", "landschaft"]
+    assert stored.provider == "anthropic"
+
+
+async def test_a_second_classification_row_for_the_same_photo_is_rejected(
+    db_session: AsyncSession,
+) -> None:
+    # photo_id ist Primary Key (kein separates id+Unique-Paar) - ein zweiter Lauf ueber dasselbe
+    # Foto darf strukturell keine zweite Zeile erzeugen.
+    photo = await _make_photo(db_session)
+    now = datetime.now(UTC)
+    db_session.add(
+        PhotoCategoryClassification(
+            photo_id=photo.id,
+            category_key="tier",
+            detected_categories=["tier"],
+            provider="anthropic",
+            computed_at=now,
+        )
+    )
+    await db_session.commit()
+
+    db_session.add(
+        PhotoCategoryClassification(
+            photo_id=photo.id,
+            category_key="menschen",
+            detected_categories=["menschen"],
+            provider="anthropic",
+            computed_at=now,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()
+
+
+async def test_deleting_photo_cascades_to_its_category_classification(
+    db_session: AsyncSession,
+) -> None:
+    # Realer Codepfad: worker.py::run_project_scan loescht Photo-Zeilen bei Rescan fuer entfernte
+    # Dateien - ein bereits remote-klassifiziertes Foto durchlaeuft diesen Pfad tatsaechlich.
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoCategoryClassification(
+            photo_id=photo.id,
+            category_key="nicht_erkannt",
+            detected_categories=[],
+            provider="mistral",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    remaining = (await db_session.execute(select(PhotoCategoryClassification))).scalars().all()
+    assert remaining == []

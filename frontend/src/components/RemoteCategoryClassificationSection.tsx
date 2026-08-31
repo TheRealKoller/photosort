@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import type { ProjectOut } from '../api/types'
 import {
   useClassifyCategoriesRemoteEstimateQuery,
+  useFineLabelsQuery,
   useTriggerClassifyCategoriesRemoteMutation,
 } from '../hooks/useProjects'
 import { useTriggerConfirmation } from '../hooks/useTriggerConfirmation'
@@ -24,6 +25,14 @@ function formatUsd(value: number): string {
 }
 
 /**
+ * Obergrenze der angezeigten Feinlabels (specs/features/0289-feste-kategorien.md, UI/UX-Abschnitt:
+ * "maximal die haeufigsten 10-15 Eintraege"). Die Kuerzung sitzt bewusst HIER und nicht im
+ * Backend: der Endpunkt ist eine vollstaendige Auswertung, die Begrenzung eine reine
+ * Darstellungsentscheidung gegen Ueberinformation.
+ */
+const MAX_FINE_LABELS_SHOWN = 15
+
+/**
  * "Remote-Kategorisierung"-Section auf KuratierungStepPage.tsx (specs/features/0055-remote-
  * kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt) - Eager-Schaetzung (beim
  * Seitenaufruf geladen, nicht erst beim Oeffnen des Dialogs), proaktive Deaktivierung bei
@@ -40,6 +49,7 @@ export function RemoteCategoryClassificationSection({
   refetchProject,
 }: RemoteCategoryClassificationSectionProps) {
   const estimateQuery = useClassifyCategoriesRemoteEstimateQuery(project.id)
+  const fineLabelsQuery = useFineLabelsQuery(project.id)
   const triggerMutation = useTriggerClassifyCategoriesRemoteMutation(project.id)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -102,14 +112,17 @@ export function RemoteCategoryClassificationSection({
   const announcedDecile = Math.floor(percent / 10) * 10
 
   const providerLabel = estimate ? formatProviderLabel(estimate.provider) : ''
+  // Die Serverreihenfolge (photo_count absteigend, Tie-Break canonical_key) wird uebernommen und
+  // nur am Ende gekuerzt - die seltensten Eintraege fallen weg, nicht die haeufigsten.
+  const shownFineLabels = (fineLabelsQuery.data ?? []).slice(0, MAX_FINE_LABELS_SHOWN)
 
   return (
     <section className="flex flex-col items-start gap-3">
       <h2 className="text-lg">Remote-Kategorisierung</h2>
       <p className="text-sm text-text">
-        Sendet die verbleibenden Fotos an ein Cloud-Vision-Modell, um zusätzliche, offene
-        Kategorie-Schlagworte zu erkennen (z. B. Ereignis, Ort, Motiv) — ergänzt die lokale
-        Kategorisierung, ersetzt sie nicht automatisch.
+        Sendet die verbleibenden Fotos an ein Cloud-Vision-Modell, das je Foto Kategorien aus dem
+        festen Set vorschlägt und bis zu zwei frei formulierte Feinlabels vergibt (z. B. Ereignis,
+        Ort) — ergänzt die lokale Erkennung, ersetzt sie nicht automatisch.
       </p>
 
       {!consentEnabled && (
@@ -175,6 +188,45 @@ export function RemoteCategoryClassificationSection({
       )}
 
       {runStatus === 'failed' && <Alert onRetry={handleOpenDialog}>{run?.error_message}</Alert>}
+
+      {/* Feinlabel-Haeufigkeitsliste (specs/features/0289-feste-kategorien.md, UI/UX-Abschnitt):
+          das Kategorien-Set ist geschlossen, aber nicht fuer immer festgelegt - haeufige
+          Feinlabels sind der Hinweis darauf, dass im Set eine Kategorie fehlt, und damit der
+          Aenderungspfad. */}
+      <div className="flex w-full max-w-sm flex-col gap-1.5">
+        <h3 className="text-sm font-medium text-text-h">Häufigste Feinlabels</h3>
+        {/* Der Kontexttext behauptet, Feinlabels seien haeufig aufgetreten - er erscheint deshalb
+            nur, wenn tatsaechlich welche vorliegen. Ueber dem Leerzustand ("Keine zusaetzlichen
+            Label ermittelt") waere er ein Widerspruch. */}
+        {shownFineLabels.length > 0 && (
+          <p className="text-xs text-text">
+            Diese Feinlabels traten häufig auf — möglicherweise fehlt eine Kategorie im Set.
+          </p>
+        )}
+        {fineLabelsQuery.isPending && <p className="text-sm text-text">Feinlabels werden geladen…</p>}
+        {fineLabelsQuery.isError && (
+          <Alert onRetry={() => void fineLabelsQuery.refetch()}>
+            Feinlabels konnten nicht geladen werden.
+          </Alert>
+        )}
+        {fineLabelsQuery.isSuccess &&
+          (shownFineLabels.length === 0 ? (
+            <p className="text-sm text-text">Keine zusätzlichen Label ermittelt.</p>
+          ) : (
+            <ul aria-label="Häufigste Feinlabels" className="flex flex-col gap-1">
+              {shownFineLabels.map((label) => (
+                <li
+                  key={label.canonical_key}
+                  className="flex items-baseline justify-between gap-3 text-sm"
+                >
+                  {/* Reiner React-Textknoten - freier LLM-Text, nie als HTML. */}
+                  <span className="truncate text-text-h">{label.display_name}</span>
+                  <span className="shrink-0 text-text">{label.photo_count} Mal</span>
+                </li>
+              ))}
+            </ul>
+          ))}
+      </div>
 
       <dialog
         ref={dialogRef}

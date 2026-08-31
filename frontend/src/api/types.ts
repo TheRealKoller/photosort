@@ -138,13 +138,24 @@ export interface SuggestionOut {
   computed_at: string
 }
 
-// Freier Kategorie-Schluessel (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
-// backfill.md) - kein festes L/D/M-Kuerzelschema mehr (ersetzt den frueheren PhotoCategory-Enum
-// aus Spec 0024). Server-seitig aktuell z.B. "people"/"landschaft"/"tier"/"gebaeude" und der
-// Auffang-Key "unerkannt" (specs/features/0217), aber bewusst als `string`
-// typisiert - das Frontend darf keine feste, geschlossene Liste annehmen (Registry-Erweiterung
-// ist rein serverseitig, siehe backend criteria.py::CRITERIA_REGISTRY).
+// Kategorie-Schluessel. Seit specs/features/0289-feste-kategorien.md ist die Menge fachlich
+// GESCHLOSSEN (13 Eintraege, backend categories.py::CATEGORY_REGISTRY) - der TypeScript-Typ bleibt
+// aber bewusst `string`: das Set kommt zur Laufzeit ueber `GET /categories` vom Server (ADR 0049,
+// Entwurfsentscheidung 5), eine hier gespiegelte Union waere eine dauerhaft driftende zweite
+// Liste. Zusaetzlich koennen aus der LAUFHISTORIE (`PhotoRanking.category_key` frueherer Laeufe)
+// weiterhin Altwerte ausserhalb des Sets auftauchen ("unerkannt", "landscape", "people") - das
+// Frontend muss sie ueber den generischen Fallback darstellen koennen, ohne Absturz.
 export type CategoryKey = string
+
+// specs/features/0289-feste-kategorien.md: ein Eintrag des festen Sets, wie ihn GET /categories
+// liefert - in ANZEIGEREIHENFOLGE der Server-Registry (nicht alphabetisch). `locally_available`
+// markiert die sechs ohne Remote-Lauf erreichbaren Kategorien.
+export interface CategoryOut {
+  key: CategoryKey
+  display_name: string
+  definition: string
+  locally_available: boolean
+}
 
 // Kuratierungs-Kontext eines Fotos aus der Kriterien-/Rangfolgen-Pipeline
 // (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md). Seit
@@ -182,27 +193,41 @@ export interface CriterionScoreOut {
   category_eligible: boolean
 }
 
-// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 6:
-// ein vom Vision-LLM geliefertes, auf einen kanonischen Eintrag aufgeloestes Roh-Label - immer
-// eine Liste (0-3 Eintraege), nie null, analog `ratings`/`criterion_scores`.
-export interface RemoteCategoryLabelOut {
+// specs/features/0289-feste-kategorien.md: ein frei formuliertes, auf einen kanonischen Eintrag
+// aufgeloestes Feinlabel - immer eine Liste (0-2 Eintraege), nie null. Reine ZUSATZINFORMATION am
+// Foto, keine Kategoriequelle; `confidence` ist mit dieser Spec ersatzlos entfallen.
+//
+// SICHERHEITSHINWEIS: `display_name`/`raw_label` sind freier, extern erzeugter LLM-Text (backend
+// zeichensaniert). Sie duerfen ausschliesslich als regulaerer React-Textknoten gerendert werden -
+// nie ueber dangerouslySetInnerHTML, nie als HTML-String-Prop, nie in href/src/style.
+export interface FineLabelOut {
   canonical_key: string
   display_name: string
   raw_label: string
-  confidence: number
   provider: string
+}
+
+// specs/features/0289-feste-kategorien.md: Haeufigkeit eines Feinlabels IN EINEM PROJEKT
+// (GET /projects/{id}/fine-labels), absteigend sortiert - macht sichtbar, welche Kategorie im
+// festen Set gegebenenfalls fehlt.
+export interface FineLabelCountOut {
+  canonical_key: string
+  display_name: string
+  photo_count: number
 }
 
 // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt
 // "Datenbedarf": die fuer DIESES Foto tatsaechlich gueltige Kategorie-Kandidatenmenge (lokal
 // qualifizierende Kriterien + Remote-Erkennungen zusammen) - verhindert, dass das Frontend die
 // Praesenz-Schwellenlogik (backend criteria.py::CRITERIA_REGISTRY) selbst nachbilden muss.
-// `category_key` ist bereits im generischen Format (wie `RankingOut.category_key`). `provider`
-// ist nur bei `origin === 'remote'` gesetzt.
+// `category_key` ist seit specs/features/0289-feste-kategorien.md IMMER ein Key des festen Sets;
+// das frueher mitgelieferte `score`-Feld ist ersatzlos entfallen (die Auswahl entscheidet die
+// feste Vorrangreihenfolge im Backend, nicht ein Zahlenvergleich). `provider` ist nur bei
+// `origin === 'remote'` gesetzt. Die Liste ist reine ERKLAERUNG ("das hat das System erkannt") -
+// sie beschraenkt NICHT mehr, was manuell uebersteuert werden darf.
 export interface CategoryCandidateOut {
   category_key: CategoryKey
   origin: 'local' | 'remote'
-  score: number
   provider: string | null
 }
 
@@ -242,13 +267,15 @@ export interface PhotoOut {
   suggestion: SuggestionOut | null
   ranking: RankingOut | null
   criterion_scores: CriterionScoreOut[]
-  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: immer eine
-  // Liste (0-3 Eintraege), nie null.
-  remote_category_labels: RemoteCategoryLabelOut[]
+  // specs/features/0289-feste-kategorien.md: immer eine Liste (0-2 Eintraege), nie null.
+  fine_labels: FineLabelOut[]
+  // Die remote ermittelte Kategorie dieses Fotos, null ohne Remote-Klassifizierung. Bewusst
+  // getrennt von `ranking.category_key` (dort steht die im Lauf tatsaechlich vergebene Kategorie).
+  remote_category: CategoryKey | null
   // Dauerhafte manuelle Uebersteuerung (PhotoScore.category_override), null ohne aktiven
   // Override.
   category_override: CategoryKey | null
-  // Sortiert nach Score/Konfidenz absteigend (UI/UX-Abschnitt der Spec).
+  // Sortiert in Registry-Anzeigereihenfolge (dieselbe Reihenfolge wie GET /categories).
   category_candidates: CategoryCandidateOut[]
   // specs/features/0058-cloud-vision-status-transparenz.md: immer genau 2 Eintraege, feste
   // Reihenfolge [landmark, remote_category].

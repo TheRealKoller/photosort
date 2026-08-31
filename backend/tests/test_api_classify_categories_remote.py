@@ -10,9 +10,8 @@ from photosort.api.deps import get_job_enqueuer, get_opencloud_client
 from photosort.config import settings
 from photosort.main import app
 from photosort.models import (
-    CategoryLabel,
     Photo,
-    PhotoCategoryDetection,
+    PhotoCategoryClassification,
     PhotoScore,
     RatingStatus,
     ScanStatus,
@@ -156,16 +155,13 @@ class TestEstimateEndpoint:
         candidate = await _add_photo_candidate(db_session, project_id, "a.jpg")
         already_classified = await _add_photo_candidate(db_session, project_id, "b.jpg")
 
-        label = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[0.1, 0.2])
-        db_session.add(label)
-        await db_session.commit()
-        await db_session.refresh(label)
+        # specs/features/0289-feste-kategorien.md: "bereits klassifiziert" haengt seit dieser
+        # Spec an der 1:1-Klassifikations-Zeile, nicht mehr an einer Feinlabel-Zeile.
         db_session.add(
-            PhotoCategoryDetection(
+            PhotoCategoryClassification(
                 photo_id=already_classified.id,
-                category_label_id=label.id,
-                raw_label="Hund",
-                confidence=0.9,
+                category_key="tier",
+                detected_categories=["tier"],
                 provider="anthropic",
                 computed_at=datetime(2023, 1, 1, tzinfo=UTC),
             )

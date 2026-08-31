@@ -11,8 +11,11 @@ from photosort.criteria import CRITERIA_REGISTRY
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
+    FineLabel,
     Photo,
+    PhotoCategoryClassification,
     PhotoCriterionScore,
+    PhotoFineLabel,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -1259,38 +1262,23 @@ class TestCloudVisionStatus:
         )
         assert entry["status"] == "not_run"
 
-    async def test_remote_category_result_uses_the_latest_computed_at_of_several_detections(
+    async def test_remote_category_result_comes_from_the_classification_row(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        # Edge Case der Teststrategie: mehrere PhotoCategoryDetection-Zeilen desselben Fotos mit
-        # potenziell unterschiedlichem computed_at (defensiv max()).
-        from photosort.models import CategoryLabel, PhotoCategoryDetection
-
+        # specs/features/0289-feste-kategorien.md: das Erfolgssignal der Remote-Phase ist seit
+        # dieser Spec die PRAESENZ der 1:1-Klassifikations-Zeile (vorher: mindestens eine
+        # Feinlabel-Zeile, deren computed_at defensiv per max() gewaehlt wurde) - `attempted_at`
+        # ist damit eindeutig, ohne Aggregation ueber mehrere Zeilen.
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        label_a = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
-        label_b = CategoryLabel(canonical_key="strand", display_name="Strand", embedding=[0.0, 1.0])
-        db_session.add_all([label_a, label_b])
-        await db_session.flush()
-        db_session.add_all(
-            [
-                PhotoCategoryDetection(
-                    photo_id=photo.id,
-                    category_label_id=label_a.id,
-                    raw_label="Hund",
-                    confidence=0.9,
-                    provider="anthropic",
-                    computed_at=datetime(2023, 1, 1, tzinfo=UTC),
-                ),
-                PhotoCategoryDetection(
-                    photo_id=photo.id,
-                    category_label_id=label_b.id,
-                    raw_label="Strand",
-                    confidence=0.8,
-                    provider="anthropic",
-                    computed_at=datetime(2023, 6, 1, tzinfo=UTC),
-                ),
-            ]
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="tier",
+                detected_categories=["tier"],
+                provider="anthropic",
+                computed_at=datetime(2023, 6, 1, tzinfo=UTC),
+            )
         )
         await db_session.commit()
 
@@ -1304,6 +1292,33 @@ class TestCloudVisionStatus:
         assert entry["status"] == "result"
         assert entry["attempted_at"].startswith("2023-06-01")
 
+    async def test_remote_category_result_also_for_a_photo_without_any_fine_label(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # Ein Foto, fuer das das Modell nichts Bekanntes nennen konnte, ist trotzdem erfolgreich
+        # verarbeitet - es darf nicht weiterhin als "noch nicht gelaufen" erscheinen.
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="nicht_erkannt",
+                detected_categories=[],
+                provider="anthropic",
+                computed_at=datetime(2023, 6, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "remote_category"
+        )
+        assert entry["status"] == "result"
+
     async def test_remote_category_result_persists_even_after_consent_is_disabled_again(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
@@ -1311,20 +1326,14 @@ class TestCloudVisionStatus:
         # 0035): "Erfolgssignal vorhanden UND Consent nachtraeglich deaktiviert -> weiterhin
         # result/no_result (Rang 1 vor Rang 3)" - Remote-Kategorie-Pendant zu
         # test_landmark_result_persists_even_after_consent_is_disabled_again oben.
-        from photosort.models import CategoryLabel, PhotoCategoryDetection
-
         project = await _make_project(db_session)
         assert project.cloud_vision_detection_enabled is False
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        label = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
-        db_session.add(label)
-        await db_session.flush()
         db_session.add(
-            PhotoCategoryDetection(
+            PhotoCategoryClassification(
                 photo_id=photo.id,
-                category_label_id=label.id,
-                raw_label="Hund",
-                confidence=0.9,
+                category_key="tier",
+                detected_categories=["tier"],
                 provider="anthropic",
                 computed_at=datetime(2023, 1, 1, tzinfo=UTC),
             )
@@ -1422,10 +1431,11 @@ class TestCloudVisionStatus:
 
 
 class TestRemoteCategoryFields:
-    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md:
-    `PhotoOut.remote_category_labels`/`category_override`/`category_candidates`."""
+    """specs/features/0055, auf das feste Set umgestellt in specs/features/0289-feste-
+    kategorien.md: `PhotoOut.fine_labels`/`remote_category`/`category_override`/
+    `category_candidates`."""
 
-    async def test_remote_category_labels_is_empty_list_when_none_exist(
+    async def test_fine_labels_is_an_empty_list_when_none_exist(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project = await _make_project(db_session)
@@ -1434,26 +1444,64 @@ class TestRemoteCategoryFields:
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
         item = response.json()["items"][0]
-        assert item["remote_category_labels"] == []
+        # Leere Liste, nicht null (analog `ratings`/`criterion_scores`).
+        assert item["fine_labels"] == []
+        assert item["remote_category"] is None
         assert item["category_override"] is None
         assert item["category_candidates"] == []
 
-    async def test_remote_category_labels_and_candidates_reflect_persisted_detections(
+    async def test_the_old_remote_category_labels_field_is_gone(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        from photosort.models import CategoryLabel, PhotoCategoryDetection
+        # Feld-UMBENENNUNG, nicht Ergaenzung: ein Client, der noch das alte Feld liest, soll das
+        # sofort merken statt still eine leere Liste zu bekommen.
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
 
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert "remote_category_labels" not in response.json()["items"][0]
+
+    async def test_fine_labels_reflect_the_persisted_rows_without_a_confidence_field(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        label = CategoryLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
+        label = FineLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
         db_session.add(label)
         await db_session.flush()
         db_session.add(
-            PhotoCategoryDetection(
+            PhotoFineLabel(
                 photo_id=photo.id,
-                category_label_id=label.id,
+                fine_label_id=label.id,
                 raw_label="Hund",
-                confidence=0.9,
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["fine_labels"] == [
+            {
+                "canonical_key": "hund",
+                "display_name": "Hund",
+                "raw_label": "Hund",
+                "provider": "anthropic",
+            }
+        ]
+
+    async def test_remote_category_and_candidates_come_from_the_classification_row(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="tier",
+                detected_categories=["tier", "landschaft"],
                 provider="anthropic",
                 computed_at=datetime(2023, 1, 1, tzinfo=UTC),
             )
@@ -1463,22 +1511,41 @@ class TestRemoteCategoryFields:
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
         item = response.json()["items"][0]
-        assert item["remote_category_labels"] == [
-            {
-                "canonical_key": "hund",
-                "display_name": "Hund",
-                "raw_label": "Hund",
-                "confidence": 0.9,
-                "provider": "anthropic",
-            }
-        ]
+        assert item["remote_category"] == "tier"
         assert item["category_candidates"] == [
-            {"category_key": "hund", "origin": "remote", "score": 0.9, "provider": "anthropic"}
+            {"category_key": "tier", "origin": "remote", "provider": "anthropic"},
+            {"category_key": "landschaft", "origin": "remote", "provider": "anthropic"},
         ]
 
-    async def test_local_qualifying_criterion_becomes_a_category_candidate(
+    async def test_candidates_no_longer_carry_a_score_field(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
+        # Negative Assertion auf die SCHLUESSELMENGE (nicht nur auf die Werte): die Auswahl
+        # entscheidet seit Spec 0289 die feste Vorrangreihenfolge, ein angezeigter Zahlenwert ohne
+        # Wirkung waere irrefuehrend.
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="tier",
+                detected_categories=["tier"],
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        candidate = response.json()["items"][0]["category_candidates"][0]
+        assert set(candidate) == {"category_key", "origin", "provider"}
+
+    async def test_local_qualifying_criterion_becomes_a_set_category_candidate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # `content_people` bildet ueber LOCAL_CATEGORY_SIGNALS den Set-Key `menschen` - nicht mehr
+        # den frueheren, generisch aus dem Kriterien-Key abgeleiteten Wert "people".
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         db_session.add(
@@ -1494,9 +1561,8 @@ class TestRemoteCategoryFields:
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
-        candidates = response.json()["items"][0]["category_candidates"]
-        assert candidates == [
-            {"category_key": "people", "origin": "local", "score": 1.0, "provider": None}
+        assert response.json()["items"][0]["category_candidates"] == [
+            {"category_key": "menschen", "origin": "local", "provider": None}
         ]
 
     async def test_non_qualifying_local_criterion_is_not_a_candidate(
@@ -1529,7 +1595,7 @@ class TestRemoteCategoryFields:
                 photo_id=photo.id,
                 sharpness=1.0,
                 exposure=0.0,
-                category_override="urlaub",
+                category_override="sport_aktivitaet",
                 computed_at=datetime(2023, 1, 1, tzinfo=UTC),
             )
         )
@@ -1537,33 +1603,54 @@ class TestRemoteCategoryFields:
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
-        assert response.json()["items"][0]["category_override"] == "urlaub"
+        assert response.json()["items"][0]["category_override"] == "sport_aktivitaet"
 
-    async def test_candidates_are_sorted_by_score_descending(
+    async def test_the_read_path_tolerates_a_legacy_override_outside_the_set(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        from photosort.models import CategoryLabel, PhotoCategoryDetection
+        """Defense in Depth (Security-Abschnitt der Spec 0289, Punkt 2): der SCHREIBpfad ist ab
+        dieser Spec geschlossen, der Datenbestand erst nach Migrationsschritt (d) - ein Altwert
+        ausserhalb des Sets darf im Lesepfad keinen 500er erzeugen, sondern wird unveraendert
+        durchgereicht (das Frontend stellt ihn ueber seinen generischen Fallback dar)."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoScore(
+                photo_id=photo.id,
+                sharpness=1.0,
+                exposure=0.0,
+                category_override="unerkannt",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
 
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.status_code == 200
+        assert response.json()["items"][0]["category_override"] == "unerkannt"
+
+    async def test_candidates_are_sorted_in_registry_display_order(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        # `menschen` steht in der Anzeigereihenfolge der Registry vor `landschaft` - unabhaengig
+        # von der Reihenfolge, in der die Kandidaten entstanden sind.
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         db_session.add(
             PhotoCriterionScore(
                 photo_id=photo.id,
                 criterion_key="content_people",
-                value=0.6,
+                value=1.0,
                 source=CriterionSource.LOCAL_ML,
                 computed_at=datetime(2023, 1, 1, tzinfo=UTC),
             )
         )
-        label = CategoryLabel(canonical_key="strand", display_name="Strand", embedding=[1.0, 0.0])
-        db_session.add(label)
-        await db_session.flush()
         db_session.add(
-            PhotoCategoryDetection(
+            PhotoCategoryClassification(
                 photo_id=photo.id,
-                category_label_id=label.id,
-                raw_label="Strand",
-                confidence=0.9,
+                category_key="landschaft",
+                detected_categories=["landschaft"],
                 provider="anthropic",
                 computed_at=datetime(2023, 1, 1, tzinfo=UTC),
             )
@@ -1573,7 +1660,38 @@ class TestRemoteCategoryFields:
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
         candidates = response.json()["items"][0]["category_candidates"]
-        assert [c["category_key"] for c in candidates] == ["strand", "people"]
+        assert [c["category_key"] for c in candidates] == ["menschen", "landschaft"]
+
+    async def test_a_key_that_is_both_local_and_remote_appears_once_as_local(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="content_people",
+                value=1.0,
+                source=CriterionSource.LOCAL_ML,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="menschen",
+                detected_categories=["menschen"],
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["category_candidates"] == [
+            {"category_key": "menschen", "origin": "local", "provider": None}
+        ]
 
 
 class TestDefaultListingRanking:
