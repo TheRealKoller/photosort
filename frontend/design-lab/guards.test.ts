@@ -830,6 +830,7 @@ describe('G4 - Kontrast-Untergrenze', () => {
        * Jeder andere Uebersprung ist ein Fehler und wird hier mit den Rohwerten sichtbar.
        */
       const unexplainedSkips = skipped.filter((entry) => !entry.includes('transparent'))
+      expect(offenders).toEqual([])
       expect(unexplainedSkips).toEqual([])
       expect(checked).toBeGreaterThan(0)
     }
