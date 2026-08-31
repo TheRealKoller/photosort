@@ -121,6 +121,7 @@ body {
   flex-direction: column;
   gap: 6px;
   width: 390px;
+  margin: 0;
 }
 
 .lab-frame__caption {
