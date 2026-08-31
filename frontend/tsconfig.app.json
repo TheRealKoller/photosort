@@ -22,5 +22,13 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  /* TEMPORAER (specs/features/0287-design-richtungen-vergleich.md): "design-lab" haelt das
+     Wegwerf-Artefakt unter denselben Qualitaetstoren wie den Produktivcode (tsc -b laeuft im
+     CI-Schritt "Type check" darueber). `noEmit: true` gilt unveraendert - was gebuendelt wird,
+     entscheidet allein der Rollup-Input, nicht dieses `include`. guards.test.ts ist ausgenommen,
+     weil es `node:fs` importiert und deshalb im tsconfig.node.json-Projekt liegt (dort ist
+     "types": ["node"] bereits gesetzt); "node" hier aufzunehmen wuerde Node-Globals in den
+     gesamten src-Baum schieben. Beide Zeilen sind mit dem Labor wieder zu entfernen. */
+  "include": ["src", "design-lab"],
+  "exclude": ["design-lab/guards.test.ts"]
 }

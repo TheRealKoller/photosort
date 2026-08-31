@@ -1,0 +1,22 @@
+<!doctype html>
+<!--
+  TEMPORAER (specs/features/0287-design-richtungen-vergleich.md): dev-only Zweiteinstieg des
+  Design-Labors. Vite serviert jede HTML-Datei unterhalb des Roots im Dev-Modus, baut aber nur die
+  in build.rollupOptions.input konfigurierten Einstiege - Default ist ausschliesslich
+  frontend/index.html. Diese Datei landet deshalb NIE in dist/, nie im nginx-Image und nie im
+  PWA-Precache. Erreichbar unter http://localhost:5173/design-lab/ nach `npm run dev`.
+
+  Wird mit dem Folge-Issue (Uebernahme der gewaehlten Richtung) samt dem gesamten Ordner
+  frontend/design-lab/ wieder entfernt.
+-->
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PhotoSort · Design-Labor (temporär)</title>
+  </head>
+  <body>
+    <div id="lab-root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

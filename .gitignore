@@ -32,6 +32,13 @@ photo-cache/
 # label_embedder_tokenizer.json) bleiben unveraendert committet, kein pauschaler assets/-Ausschluss.
 backend/src/photosort/assets/label_embedder.onnx
 
+# Optionale echte Urlaubsfotos fuer das temporaere Design-Labor
+# (specs/features/0287-design-richtungen-vergleich.md). Familienfotos gehoeren NIE ins Repository
+# (CLAUDE.md); zusaetzlich zu diesem Eintrag prueft frontend/design-lab/guards.test.ts den
+# tatsaechlichen Git-Index, weil .gitignore gegen `git add -f`, bereits getrackte Pfade und eine
+# danebenliegende Datei wirkungslos ist. Mit dem Labor wieder zu entfernen.
+frontend/design-lab/photos-local/
+
 # Editors / OS
 .vscode/
 .idea/

@@ -1,0 +1,21 @@
+/*
+ * TEMPORAER (specs/features/0287-design-richtungen-vergleich.md): richtungsinvariante Struktur des
+ * Design-Labors.
+ *
+ * Hier steht ausschliesslich, was in ALLEN fuenf Richtungen identisch bleiben muss - Rasterspalten
+ * 2/3/4, Bildseitenverhaeltnisse, Sticky-Verhalten, Reset, Trefferflaechen. Alles Gestalterische
+ * (Farbe, Radius, Tiefe, Schrift, Abstandsskala) gehoert in die jeweilige Richtungsdatei unter
+ * directions/.
+ *
+ * Diese Datei traegt bewusst UNGESCOPTE `.dl-*`-Selektoren und ist deshalb vom Schutzgelaender G2
+ * (Richtungs-Isolation) ausgenommen - ohne sie muesste jede der fuenf Richtungen die Struktur
+ * wiederholen, mit Driftrisiko genau bei den Eigenschaften, die identisch bleiben muessen.
+ *
+ * Wird VOR den Richtungsdateien geladen (siehe main.tsx).
+ */
+
+.dl-placeholder {
+  padding: 24px;
+  color: var(--text);
+  font-family: var(--sans);
+}
