@@ -1,6 +1,6 @@
 # 0289 - Feste Kategorien statt offenem Vokabular
 
-**Status:** Accepted
+**Status:** Implemented ([PR #293](https://github.com/TheRealKoller/photosort/pull/293))
 **Erstellt:** 2026-08-30
 **Bezug:** [Issue #289](https://github.com/TheRealKoller/photosort/issues/289)
 
