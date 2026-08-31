@@ -53,6 +53,11 @@ PRIORITY_FIELD_NAME = "Priorität"
 # von Daniel im Board gepflegt - kein Wert wird von hier aus je wieder ueberschrieben.
 PRIORITY_VALUES = ("Hoch", "Mittel", "Niedrig")
 
+# Startlimit fuer `gh project item-list`. Bewusst kein Deckel, sondern nur der erste Versuch:
+# meldet `gh` mehr Items als es geliefert hat, wird mit der gemeldeten Anzahl nachgefordert
+# (siehe Board._item_list). Der Wert haelt den Normalfall bei genau einem Aufruf.
+ITEM_LIST_START_LIMIT = 200
+
 STORY_TYPE_LABELS = {"idee": "idee", "bug": "bug"}
 LABEL_PROVISIONING = {
     "idee": {
@@ -267,26 +272,47 @@ class GhBoard:
             )
         return option_id
 
+    def _fetch_items(self, limit: int) -> tuple[list[dict[str, Any]], int]:
+        """Holt bis zu `limit` Board-Items und gibt sie zusammen mit der von `gh` gemeldeten
+        Gesamtzahl zurueck. `totalCount` zaehlt immer das ganze Board, unabhaengig davon, wie
+        viele Items `--limit` durchgelassen hat - daran erkennen wir ein Abschneiden."""
+        project = self.project()
+        data = self._run_json(
+            [
+                "gh",
+                "project",
+                "item-list",
+                str(project["number"]),
+                "--owner",
+                self._owner,
+                "--format",
+                "json",
+                "--limit",
+                str(limit),
+            ]
+        )
+        items = list(data.get("items", []))
+        total = data.get("totalCount")
+        return items, total if isinstance(total, int) else len(items)
+
     def _item_list(self) -> list[dict[str, Any]]:
-        # "--limit 100" ist nicht paginiert (aktuell ~70 Items) - dieselbe bereits in ADR 0017
-        # dokumentierte und akzeptierte Grenze wie beim abgeloesten Tool.
+        """Laedt die Board-Items vollstaendig - erst mit einem Startlimit, und falls `gh`
+        daraufhin mehr Items meldet als es geliefert hat, ein zweites Mal mit genau dieser
+        gemeldeten Anzahl. Ein festes Limit hatte hier zuvor still abgeschnitten: sobald das
+        Board ueber die Grenze wuchs, waren die zuletzt angelegten Issues fuer jede
+        Schreiboperation unsichtbar und wurden als "kein Item des Boards" gemeldet."""
         if self._items is None:
-            project = self.project()
-            data = self._run_json(
-                [
-                    "gh",
-                    "project",
-                    "item-list",
-                    str(project["number"]),
-                    "--owner",
-                    self._owner,
-                    "--format",
-                    "json",
-                    "--limit",
-                    "100",
-                ]
-            )
-            self._items = list(data.get("items", []))
+            items, total = self._fetch_items(ITEM_LIST_START_LIMIT)
+            if total > len(items):
+                items, total = self._fetch_items(total)
+            if total > len(items):
+                raise BoardError(
+                    f"Das Board {self._project_title!r} meldet {total} Items, "
+                    f"'gh project item-list' liefert aber nur {len(items)}. Die Item-Liste ist "
+                    "unvollstaendig - eine Suche darin wuerde vorhandene Issues faelschlich als "
+                    "nicht im Board melden."
+                )
+            self._items = items
         return self._items
 
     def find_item(self, issue_number: int) -> dict[str, Any]:
@@ -297,8 +323,7 @@ class GhBoard:
             if content.get("type") == "Issue" and content.get("number") == issue_number:
                 return item
         raise BoardError(
-            f"Issue #{issue_number} ist kein Item des Boards {self._project_title!r} "
-            "(oder liegt jenseits der ersten 100 Items)."
+            f"Issue #{issue_number} ist kein Item des Boards {self._project_title!r}."
         )
 
     # -- Operationen ----------------------------------------------------------------------

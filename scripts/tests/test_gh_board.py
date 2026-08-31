@@ -127,6 +127,9 @@ class FakeGh:
         # Fehlermeldung entscheidet, wie `gh-board.py` sie einordnet.
         self.failure_stderr = failure_stderr or {}
         self.calls: list[list[str]] = []
+        # Obergrenze, die `gh` selbst dann nicht ueberschreitet, wenn ein hoeheres `--limit`
+        # angefordert wird. Default None = `gh` liefert die angeforderte Menge vollstaendig.
+        self.item_list_hard_limit: int | None = None
 
     def __call__(self, args: list[str]) -> subprocess.CompletedProcess[str]:
         self.calls.append(list(args))
@@ -146,7 +149,15 @@ class FakeGh:
         if head == ("gh", "project", "field-list"):
             return _completed(json.dumps({"fields": self.fields}))
         if head == ("gh", "project", "item-list"):
-            return _completed(json.dumps({"items": self.items, "totalCount": len(self.items)}))
+            # Das echte `gh project item-list` schneidet bei `--limit` ab, meldet in
+            # `totalCount` aber die volle Anzahl. Genau diese Diskrepanz ist der
+            # Pruefgegenstand der Pagination-Tests - der Fake muss sie abbilden.
+            limit = int(args[args.index("--limit") + 1])
+            if self.item_list_hard_limit is not None:
+                limit = min(limit, self.item_list_hard_limit)
+            return _completed(
+                json.dumps({"items": self.items[:limit], "totalCount": len(self.items)})
+            )
         if head == ("gh", "project", "item-edit"):
             if self.done_schliesst_das_issue and "OPT_Done" in args:
                 self.issue_states[self._issue_of_item(args[args.index("--id") + 1])] = "closed"
@@ -426,6 +437,67 @@ def test_unbekanntes_issue_im_board_ist_ein_klarer_fehler(gh_board: ModuleType) 
         board.find_item(999)
 
     assert "999" in str(excinfo.value)
+
+
+def _viele_items(anzahl: int) -> list[dict]:
+    """`anzahl` Board-Items mit aufsteigenden Issue-Nummern ab 200."""
+    return [
+        {
+            "id": f"PVTI_{200 + i}",
+            "content": {"type": "Issue", "number": 200 + i, "url": _issue_url(200 + i)},
+            "status": "Unrefined",
+        }
+        for i in range(anzahl)
+    ]
+
+
+def test_item_jenseits_der_ersten_seite_wird_gefunden(gh_board: ModuleType) -> None:
+    """Regression: bei 106 Board-Items lag #296 auf Position 101 und war damit fuer jede
+    Schreiboperation unsichtbar - `set-priority`/`set-status` meldeten "kein Item des Boards"."""
+    fake = FakeGh(items=_viele_items(106))
+    board = _board(gh_board, fake)
+
+    assert board.find_item(300)["id"] == "PVTI_300"
+    assert board.find_item(305)["id"] == "PVTI_305"
+
+
+def test_vollstaendig_gelieferte_erste_seite_wird_nicht_erneut_geholt(
+    gh_board: ModuleType,
+) -> None:
+    fake = FakeGh(items=_viele_items(42))
+    board = _board(gh_board, fake)
+
+    assert board.find_item(241)["id"] == "PVTI_241"
+    assert len(fake.calls_starting_with("gh", "project", "item-list")) == 1
+
+
+def test_abgeschnittene_liste_wird_genau_einmal_nachgeholt(gh_board: ModuleType) -> None:
+    fake = FakeGh(items=_viele_items(250))
+    board = _board(gh_board, fake)
+
+    assert board.find_item(449)["id"] == "PVTI_449"
+    aufrufe = fake.calls_starting_with("gh", "project", "item-list")
+    assert len(aufrufe) == 2
+    # Der zweite Aufruf fordert die per totalCount gemeldete volle Anzahl an, statt ein
+    # weiteres Mal zu raten.
+    assert aufrufe[1][aufrufe[1].index("--limit") + 1] == "250"
+
+
+def test_unvollstaendige_liste_trotz_nachforderung_ist_ein_klarer_fehler(
+    gh_board: ModuleType,
+) -> None:
+    """Kein stilles Abschneiden: meldet `gh` nach der Nachforderung weiterhin mehr Items als es
+    liefert, ist "Issue nicht im Board" eine Luege - dann muss der Fehler das benennen."""
+    fake = FakeGh(items=_viele_items(120))
+    fake.item_list_hard_limit = 100
+    board = _board(gh_board, fake)
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        board.find_item(300)
+
+    meldung = str(excinfo.value)
+    assert "120" in meldung
+    assert "100" in meldung
 
 
 def test_gleichnamige_pr_nummer_wird_nicht_mit_einem_issue_verwechselt(
