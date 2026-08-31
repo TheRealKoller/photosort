@@ -1236,7 +1236,9 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
     )
     # Voller Pool (nicht nur Top-N) - alle 3 Fotos landen ausserdem in derselben Partition
     # (gleicher cluster_key, keines erfuellt ein aktives Kriterium -> Catch-all). Seit
-    # specs/features/0217 ist das "unerkannt" statt der frueheren Kategorie "landscape": ein
+    # specs/features/0217 ist das der Auffangkorb statt der frueheren Kategorie "landscape" (seit
+    # specs/features/0289-feste-kategorien.md heisst er `nicht_erkannt`, nicht mehr "unerkannt"):
+    # ein
     # flaechiges Bild ohne Landschaftslabel ist keine Landschaft (AK1).
     assert len(rankings) == 3
     by_photo = {r.photo_id: r for r in rankings}
@@ -3156,8 +3158,8 @@ async def test_a_failing_scene_classification_leaves_both_criteria_unwritten(
 async def test_a_flat_photo_without_a_landscape_label_ends_up_unrecognized(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    # AK1/AK5: hoher content_landscape-Wert, aber kein Allow-Listen-Label -> "unerkannt" statt
-    # der frueheren Kategorie "landscape".
+    # AK1/AK5: hoher content_landscape-Wert, aber kein Allow-Listen-Label -> der Auffangkorb
+    # (`nicht_erkannt`) statt der frueheren Kategorie "landscape".
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(

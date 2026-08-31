@@ -9,6 +9,7 @@ import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
 import type {
   ClassifyCategoriesRemoteEstimateOut,
+  FineLabelCountOut,
   ProjectOut,
   RemoteCategoryClassificationRunSummary,
 } from '../api/types'
@@ -79,6 +80,8 @@ describe('RemoteCategoryClassificationSection', () => {
   beforeEach(() => {
     vi.mocked(projectsApi.triggerClassifyCategoriesRemote).mockReset()
     vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockReset()
+    vi.mocked(projectsApi.listFineLabels).mockReset()
+    vi.mocked(projectsApi.listFineLabels).mockResolvedValue([])
   })
 
   it('eagerly loads the estimate and shows candidate count + cost next to the trigger', async () => {
@@ -240,5 +243,107 @@ describe('RemoteCategoryClassificationSection', () => {
     expect(
       screen.getByText(/fließen erst durch einen.*kriterien-bewertungs-lauf/i)
     ).toBeInTheDocument()
+  })
+
+  // specs/features/0289-feste-kategorien.md, Teststrategie Abschnitt 9 und UI/UX-Abschnitt
+  // "Feinlabel-Haeufigkeitsliste": macht sichtbar, welche Kategorie im festen Set gegebenenfalls
+  // fehlt - das Set ist geschlossen, aber nicht fuer immer festgelegt, und diese Liste ist der
+  // Aenderungspfad.
+  describe('Feinlabel-Häufigkeitsliste', () => {
+    function fineLabel(overrides: Partial<FineLabelCountOut> = {}): FineLabelCountOut {
+      return { canonical_key: 'bluete', display_name: 'Blüte', photo_count: 17, ...overrides }
+    }
+
+    it('shows the fine labels in the order the server delivered them, with their counts', async () => {
+      vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue(estimate())
+      vi.mocked(projectsApi.listFineLabels).mockResolvedValue([
+        fineLabel(),
+        fineLabel({ canonical_key: 'urlaub', display_name: 'Urlaub', photo_count: 9 }),
+        fineLabel({ canonical_key: 'geburtstag', display_name: 'Geburtstag', photo_count: 9 }),
+      ])
+
+      renderSection(project())
+
+      await waitFor(() => expect(projectsApi.listFineLabels).toHaveBeenCalledWith(1))
+      const list = await screen.findByRole('list', { name: 'Häufigste Feinlabels' })
+      // Serverreihenfolge (photo_count absteigend, Tie-Break canonical_key) wird UNVERAENDERT
+      // uebernommen - das Frontend sortiert bewusst nicht nach.
+      expect(within(list).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+        'Blüte17 Mal',
+        'Urlaub9 Mal',
+        'Geburtstag9 Mal',
+      ])
+    })
+
+    it('limits the list to the most frequent entries', async () => {
+      vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue(estimate())
+      vi.mocked(projectsApi.listFineLabels).mockResolvedValue(
+        Array.from({ length: 25 }, (_, index) =>
+          fineLabel({
+            canonical_key: `label-${index}`,
+            display_name: `Label ${index}`,
+            photo_count: 100 - index,
+          })
+        )
+      )
+
+      renderSection(project())
+
+      const list = await screen.findByRole('list', { name: 'Häufigste Feinlabels' })
+      expect(within(list).getAllByRole('listitem')).toHaveLength(15)
+      // Gekuerzt wird am ENDE (die seltensten Eintraege fallen weg), nicht am Anfang.
+      expect(within(list).getByText('Label 0')).toBeInTheDocument()
+      expect(within(list).queryByText('Label 15')).toBeNull()
+    })
+
+    it('renders a fine label as plain text, never as markup', async () => {
+      // Security-Muss-Kriterium (specs/features/0289-feste-kategorien.md, Abschnitt 3):
+      // `display_name` ist freier, extern erzeugter LLM-Text.
+      vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue(estimate())
+      vi.mocked(projectsApi.listFineLabels).mockResolvedValue([
+        fineLabel({ canonical_key: 'x', display_name: '<img src=x onerror=alert(1)>' }),
+      ])
+
+      renderSection(project())
+
+      const list = await screen.findByRole('list', { name: 'Häufigste Feinlabels' })
+      expect(within(list).getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument()
+      expect(list.querySelector('img')).toBeNull()
+    })
+
+    it('states the empty case instead of rendering an empty list', async () => {
+      vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue(estimate())
+      vi.mocked(projectsApi.listFineLabels).mockResolvedValue([])
+
+      renderSection(project())
+
+      expect(await screen.findByText('Keine zusätzlichen Label ermittelt.')).toBeInTheDocument()
+      expect(screen.queryByRole('list', { name: 'Häufigste Feinlabels' })).toBeNull()
+    })
+
+    it('announces the loading state', async () => {
+      vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue(estimate())
+      vi.mocked(projectsApi.listFineLabels).mockReturnValue(new Promise(() => {}))
+
+      renderSection(project())
+
+      expect(await screen.findByText('Feinlabels werden geladen…')).toBeInTheDocument()
+    })
+
+    it('shows an inline alert with a retry that triggers a new request', async () => {
+      const user = userEvent.setup()
+      vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue(estimate())
+      vi.mocked(projectsApi.listFineLabels).mockRejectedValue(new ApiError(500, 'kaputt'))
+
+      renderSection(project())
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(/feinlabels konnten nicht geladen werden/i)
+
+      vi.mocked(projectsApi.listFineLabels).mockResolvedValue([fineLabel()])
+      await user.click(within(alert).getByRole('button', { name: /erneut versuchen/i }))
+
+      expect(await screen.findByRole('list', { name: 'Häufigste Feinlabels' })).toBeInTheDocument()
+    })
   })
 })

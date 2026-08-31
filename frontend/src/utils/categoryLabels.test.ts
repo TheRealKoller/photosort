@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { CategoryOut } from '../api/types'
+import { CATEGORY_SET } from '../test/categorySetFixture'
 import {
   CATCH_ALL_CATEGORY_KEY,
   categoryAbbreviation,
@@ -10,50 +10,8 @@ import {
 
 // specs/features/0289-feste-kategorien.md, Teststrategie Abschnitt 9: die Anzeigetabelle kommt zur
 // Laufzeit vom Server. Die drei Helfer bleiben deshalb reine Funktionen mit dem geladenen Set als
-// EXPLIZITEM Parameter - kein QueryClientProvider, keine Abhaengigkeit von Query-Zustand.
-
-/** Das feste 13er-Set in Anzeigereihenfolge, wie es `GET /categories` liefert (die Definitionen
- * sind hier bewusst gekuerzt - die Helfer werten nur `key`/`display_name` aus). */
-const CATEGORY_SET: CategoryOut[] = [
-  { key: 'menschen', display_name: 'Menschen', definition: 'd', locally_available: true },
-  { key: 'tier', display_name: 'Tier', definition: 'd', locally_available: true },
-  { key: 'pflanze', display_name: 'Pflanze', definition: 'd', locally_available: false },
-  { key: 'landschaft', display_name: 'Landschaft', definition: 'd', locally_available: true },
-  {
-    key: 'gebaeude_bauwerk',
-    display_name: 'Gebäude & Bauwerk',
-    definition: 'd',
-    locally_available: true,
-  },
-  { key: 'innenraum', display_name: 'Innenraum', definition: 'd', locally_available: false },
-  {
-    key: 'essen_trinken',
-    display_name: 'Essen & Trinken',
-    definition: 'd',
-    locally_available: true,
-  },
-  { key: 'fahrzeug', display_name: 'Fahrzeug', definition: 'd', locally_available: true },
-  { key: 'gegenstand', display_name: 'Gegenstand', definition: 'd', locally_available: false },
-  {
-    key: 'dokument_screenshot',
-    display_name: 'Dokument & Screenshot',
-    definition: 'd',
-    locally_available: false,
-  },
-  {
-    key: 'kunst_kreatives',
-    display_name: 'Kunst & Kreatives',
-    definition: 'd',
-    locally_available: false,
-  },
-  {
-    key: 'sport_aktivitaet',
-    display_name: 'Sport & Aktivität',
-    definition: 'd',
-    locally_available: false,
-  },
-  { key: 'nicht_erkannt', display_name: 'Nicht erkannt', definition: 'd', locally_available: false },
-]
+// EXPLIZITEM Parameter - kein QueryClientProvider, keine Abhaengigkeit von Query-Zustand. Das Set
+// selbst liegt als geteilte Fixture in `src/test/categorySetFixture.ts`.
 
 describe('formatCategoryKey', () => {
   it('returns the display name from the loaded set', () => {

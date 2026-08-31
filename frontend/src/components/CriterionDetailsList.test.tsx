@@ -861,10 +861,20 @@ describe('CriterionDetailsList: Alle-Kategorien-Auswahl', () => {
   })
 
   it('keeps the candidate list visible next to the select as an explanation', () => {
-    renderWithSelect()
+    // Zwei Kandidaten, weil die "Kategorie-Kandidaten"-Gruppe erst ab zwei Eintraegen erscheint
+    // (Bestandsverhalten aus Spec 0055, von dieser Spec unveraendert) - bei genau einem Kandidaten
+    // steht stattdessen die kompakte "Kategorie"-Zeile. Geprueft wird hier, dass die neue
+    // "Alle Kategorien"-Auswahl die Kandidatenliste ERGAENZT statt sie zu ersetzen.
+    renderWithSelect({
+      categoryCandidates: [
+        candidate({ category_key: 'tier' }),
+        candidate({ category_key: 'menschen', origin: 'local', provider: null }),
+      ],
+    })
 
     expect(screen.getByLabelText('Alle Kategorien')).toBeInTheDocument()
     expect(screen.getByTestId('category-candidate-row-tier')).toBeInTheDocument()
+    expect(screen.getByTestId('category-candidate-row-menschen')).toBeInTheDocument()
   })
 
   it('calls the mutation callback with the chosen key', async () => {

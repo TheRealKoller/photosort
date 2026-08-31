@@ -5,6 +5,7 @@ import {
   createProject,
   getClassifyCategoriesRemoteEstimate,
   getProject,
+  listFineLabels,
   listProjects,
   setCloudVisionConsent,
   triggerClassifyCategoriesRemote,
@@ -120,6 +121,23 @@ export function useClassifyCategoriesRemoteEstimateQuery(id: number) {
   })
 }
 
+function fineLabelsQueryKey(id: number) {
+  return ['fine-labels', id] as const
+}
+
+/**
+ * Haeufigste Feinlabels des Projekts (specs/features/0289-feste-kategorien.md, UI/UX-Abschnitt) -
+ * bewusst eine eigene Query statt eines Feldes an `ProjectOut`: die Liste haengt am Ergebnis des
+ * Remote-Laufs, nicht am Projektstammsatz, und wuerde sonst bei jedem `useProjectQuery`-Poll
+ * (POLL_INTERVAL_MS) mitgeladen.
+ */
+export function useFineLabelsQuery(id: number) {
+  return useQuery({
+    queryKey: fineLabelsQueryKey(id),
+    queryFn: () => listFineLabels(id),
+  })
+}
+
 export function useTriggerClassifyCategoriesRemoteMutation(id: number) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -132,6 +150,9 @@ export function useTriggerClassifyCategoriesRemoteMutation(id: number) {
       // zeigen - Invalidierung hier ist die einfachste Variante, ohne einen eigenen Polling-Pfad
       // fuer die Schaetzung selbst einzufuehren.
       void queryClient.invalidateQueries({ queryKey: classifyCategoriesRemoteEstimateQueryKey(id) })
+      // Ein Remote-Lauf ist die EINZIGE Quelle neuer Feinlabels - die Haeufigkeitsliste muss
+      // danach neu geladen werden, sonst zeigt sie dauerhaft den Stand vor dem Lauf.
+      void queryClient.invalidateQueries({ queryKey: fineLabelsQueryKey(id) })
     },
   })
 }

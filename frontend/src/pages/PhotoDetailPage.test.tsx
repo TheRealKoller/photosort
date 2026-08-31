@@ -583,16 +583,19 @@ describe('PhotoDetailPage', () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
       vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
         photo_id: 1,
-        category_key: 'hund',
+        category_key: 'tier',
       })
       const user = userEvent.setup()
 
       renderPage('/projects/1/photos/1')
 
       await screen.findByText('Kategorie-Kandidaten')
-      await user.click(screen.getByRole('button', { name: /^übernehmen$/i }))
+      // Gezielt die Zeile des Kandidaten "tier" - beide Kandidatenzeilen tragen eine
+      // "Uebernehmen"-Schaltflaeche, eine rollenweite Suche waere mehrdeutig.
+      const tierRow = screen.getByTestId('category-candidate-row-tier')
+      await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
 
-      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'hund'))
+      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'tier'))
     })
   })
 })

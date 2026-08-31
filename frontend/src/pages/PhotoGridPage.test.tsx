@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -569,17 +569,20 @@ describe('PhotoGridPage', () => {
       })
       vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
         photo_id: 1,
-        category_key: 'hund',
+        category_key: 'tier',
       })
       const user = userEvent.setup()
 
       renderPage()
       await screen.findAllByRole('img')
       await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
-      await user.click(screen.getByRole('button', { name: /^übernehmen$/i }))
+      // Gezielt die Zeile des Kandidaten "tier" - beide Kandidatenzeilen tragen eine
+      // "Uebernehmen"-Schaltflaeche, eine rollenweite Suche waere mehrdeutig.
+      const tierRow = screen.getByTestId('category-candidate-row-tier')
+      await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
 
       await waitFor(() =>
-        expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'hund')
+        expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'tier')
       )
     })
   })

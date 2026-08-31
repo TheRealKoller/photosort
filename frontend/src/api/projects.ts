@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { ClassifyCategoriesRemoteEstimateOut, ProjectOut } from './types'
+import type { ClassifyCategoriesRemoteEstimateOut, FineLabelCountOut, ProjectOut } from './types'
 
 export interface CloudVisionConsentOut {
   cloud_vision_detection_enabled: boolean
@@ -82,4 +82,16 @@ export function triggerClassifyCategoriesRemote(id: number): Promise<TriggerScan
   return apiFetch<TriggerScanResponse>(`/projects/${id}/classify-categories-remote`, {
     method: 'POST',
   })
+}
+
+/**
+ * Haeufigste Feinlabels dieses Projekts (specs/features/0289-feste-kategorien.md) - absteigend
+ * nach `photo_count`, Tie-Break `canonical_key` aufsteigend, bereits vom Server sortiert. Die
+ * Reihenfolge wird im Frontend uebernommen, nicht neu sortiert.
+ *
+ * Die Zaehlung ist projekt-skopiert (das Vokabular selbst ist projektuebergreifend) - ein leeres
+ * Projekt liefert eine leere Liste mit `200`.
+ */
+export function listFineLabels(id: number): Promise<FineLabelCountOut[]> {
+  return apiFetch<FineLabelCountOut[]>(`/projects/${id}/fine-labels`)
 }

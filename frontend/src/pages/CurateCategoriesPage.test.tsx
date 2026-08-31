@@ -1,19 +1,25 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import * as categoriesApi from '../api/categories'
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import type { CriterionScoreOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
 import { setToken } from '../auth/token'
+import { CATEGORY_SET } from '../test/categorySetFixture'
 import { countPhotosInDay, CurateCategoriesPage, toggleDayCollapse } from './CurateCategoriesPage'
 
 vi.mock('../api/photos')
 vi.mock('../api/ratings')
+// specs/features/0289-feste-kategorien.md: die Anzeigenamen kommen zur Laufzeit ueber
+// `GET /categories` - ohne Mock liefe die Seite im generischen Fallback und die deutschen
+// Anzeigenamen des Sets waeren hier gar nicht pruefbar.
+vi.mock('../api/categories')
 
 function makeToken(payload: unknown): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -170,6 +176,8 @@ describe('CurateCategoriesPage', () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
     vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
     setToken(makeToken({ sub: '1', username: 'testuser' }))
   })
 
@@ -859,12 +867,15 @@ describe('CurateCategoriesPage', () => {
   })
 
   // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt.
+  // Der Auffangkorb ist seit specs/features/0289-feste-kategorien.md ein regulaerer Eintrag des
+  // festen Sets (`nicht_erkannt`) und kein Sonderwert mehr - der Altwert `"unerkannt"` aus der
+  // Laufhistorie faellt hier bewusst NICHT mehr darunter (die Historie wird nicht migriert).
   describe('catch-all section "Nicht erkannt" (specs/features/0217)', () => {
-    const EXPLANATION = 'Diese Fotos konnten nicht automatisch kategorisiert werden.'
+    const EXPLANATION = 'Für diese Fotos war kein Bildmotiv sicher bestimmbar.'
 
     it('renders the catch-all section with its neutral explanation when every photo is unrecognized', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1, ranking: ranking({ category_key: 'unerkannt' }) })],
+        items: [photo({ id: 1, ranking: ranking({ category_key: 'nicht_erkannt' }) })],
         total: 1,
       })
 
@@ -883,7 +894,7 @@ describe('CurateCategoriesPage', () => {
         items: [
           photo({
             id: 1,
-            ranking: ranking({ cluster_key: 'cluster-0', category_key: 'unerkannt' }),
+            ranking: ranking({ cluster_key: 'cluster-0', category_key: 'nicht_erkannt' }),
           }),
           photo({
             id: 2,
@@ -897,7 +908,8 @@ describe('CurateCategoriesPage', () => {
 
       const catchAll = await screen.findByText('Nicht erkannt')
       const regular = screen.getByText('Tier')
-      // "unerkannt" waere alphabetisch VOR "tier" - der Auffang-Abschnitt steht trotzdem hinten.
+      // "Nicht erkannt" waere alphabetisch VOR "Tier" - der Auffang-Abschnitt steht trotzdem
+      // hinten, weil `sortCategoryKeys` ihn immer zuletzt einsortiert.
       expect(regular.compareDocumentPosition(catchAll)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
       expect(screen.getByText(EXPLANATION)).toBeInTheDocument()
     })
@@ -945,16 +957,19 @@ describe('CurateCategoriesPage', () => {
       })
       vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
         photo_id: 1,
-        category_key: 'hund',
+        category_key: 'tier',
       })
       const user = userEvent.setup()
 
       renderPage()
       await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
       await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
-      await user.click(screen.getByRole('button', { name: /^übernehmen$/i }))
+      // Gezielt die Zeile des Kandidaten "tier" - beide Kandidatenzeilen tragen eine
+      // "Uebernehmen"-Schaltflaeche, eine rollenweite Suche waere mehrdeutig.
+      const tierRow = screen.getByTestId('category-candidate-row-tier')
+      await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
 
-      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'hund'))
+      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'tier'))
     })
   })
 })
