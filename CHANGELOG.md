@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.28.0](https://github.com/TheRealKoller/photosort/compare/v0.27.1...v0.28.0) (2026-08-31)
+
+
+### Features
+
+* **spec-0289:** festes Kategorien-Set statt offenem Vokabular ([#293](https://github.com/TheRealKoller/photosort/issues/293)) ([17b4fe9](https://github.com/TheRealKoller/photosort/commit/17b4fe9a28337169b07643ba11dff61614ade14c))
+
+
+### Bug Fixes
+
+* **scripts:** gh-board.py laedt die Board-Item-Liste vollstaendig (Spec 0302) ([#303](https://github.com/TheRealKoller/photosort/issues/303)) ([5a2f789](https://github.com/TheRealKoller/photosort/commit/5a2f7894a9eb47d448ccfd1dea4fa18facf1c531)), closes [#302](https://github.com/TheRealKoller/photosort/issues/302)
+
 ## [0.27.1](https://github.com/TheRealKoller/photosort/compare/v0.27.0...v0.27.1) (2026-08-30)
 
 
