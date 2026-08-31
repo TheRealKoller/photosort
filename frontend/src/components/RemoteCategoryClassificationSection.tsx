@@ -195,9 +195,14 @@ export function RemoteCategoryClassificationSection({
           Aenderungspfad. */}
       <div className="flex w-full max-w-sm flex-col gap-1.5">
         <h3 className="text-sm font-medium text-text-h">Häufigste Feinlabels</h3>
-        <p className="text-xs text-text">
-          Diese Feinlabels traten häufig auf — möglicherweise fehlt eine Kategorie im Set.
-        </p>
+        {/* Der Kontexttext behauptet, Feinlabels seien haeufig aufgetreten - er erscheint deshalb
+            nur, wenn tatsaechlich welche vorliegen. Ueber dem Leerzustand ("Keine zusaetzlichen
+            Label ermittelt") waere er ein Widerspruch. */}
+        {shownFineLabels.length > 0 && (
+          <p className="text-xs text-text">
+            Diese Feinlabels traten häufig auf — möglicherweise fehlt eine Kategorie im Set.
+          </p>
+        )}
         {fineLabelsQuery.isPending && <p className="text-sm text-text">Feinlabels werden geladen…</p>}
         {fineLabelsQuery.isError && (
           <Alert onRetry={() => void fineLabelsQuery.refetch()}>

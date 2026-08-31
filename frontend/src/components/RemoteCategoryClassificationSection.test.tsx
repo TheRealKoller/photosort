@@ -319,6 +319,20 @@ describe('RemoteCategoryClassificationSection', () => {
 
       expect(await screen.findByText('Keine zusätzlichen Label ermittelt.')).toBeInTheDocument()
       expect(screen.queryByRole('list', { name: 'Häufigste Feinlabels' })).toBeNull()
+      // Der Kontexttext behauptet, Feinlabels seien haeufig aufgetreten - neben dem Leerzustand
+      // waere das ein Widerspruch auf dem Bildschirm (UX-Review).
+      expect(screen.queryByText(/möglicherweise fehlt eine Kategorie im Set/i)).toBeNull()
+    })
+
+    it('explains the context only when there actually are fine labels', async () => {
+      vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue(estimate())
+      vi.mocked(projectsApi.listFineLabels).mockResolvedValue([fineLabel()])
+
+      renderSection(project())
+
+      expect(
+        await screen.findByText(/möglicherweise fehlt eine Kategorie im Set/i)
+      ).toBeInTheDocument()
     })
 
     it('announces the loading state', async () => {

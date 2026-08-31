@@ -21,10 +21,12 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    FineLabel,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoFineLabel,
     PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
@@ -2836,6 +2838,82 @@ async def test_local_and_remote_candidates_go_into_one_set(
         build_animal_detector=_size_gated_animal_detector,
     )
     assert without_remote[other_photo.id] == "tier"
+
+
+async def _add_fine_labels(session: AsyncSession, photo: Photo, *raw_labels: str) -> None:
+    """Legt Feinlabel-Zeilen am Foto an (Vokabular-Eintrag + Zuordnung), so wie sie
+    worker.py::run_remote_category_classification schreibt."""
+    for raw_label in raw_labels:
+        fine_label = FineLabel(
+            canonical_key=raw_label.lower(), display_name=raw_label, embedding=[0.0] * 384
+        )
+        session.add(fine_label)
+        await session.flush()
+        session.add(
+            PhotoFineLabel(
+                photo_id=photo.id,
+                fine_label_id=fine_label.id,
+                raw_label=raw_label,
+                provider="anthropic",
+                computed_at=datetime.now(UTC),
+            )
+        )
+    await session.commit()
+
+
+async def test_fine_labels_do_not_change_the_derived_category_or_add_groups(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium: "Feinlabels gehen nicht in `resolve_category` ein; ein Lauf mit
+    Feinlabels erzeugt in der Kuratierung keine zusaetzlichen Gruppen gegenueber demselben Lauf
+    ohne Feinlabels."
+
+    Der Nachweis muss hier auf Integrationsebene stehen und nicht nur strukturell aus
+    `derive_photo_category` folgen: die Ableitung liest die `photo_fine_labels`-Tabelle heute
+    schlicht nicht, und genau diese Nicht-Verdrahtung ist es, die ein spaeterer Umbau ("nehmen wir
+    die Feinlabels doch als Kandidaten dazu") still aufheben wuerde. Die Feinlabels sind bewusst
+    so gewaehlt, dass sie als Kandidaten das Ergebnis TATSAECHLICH kippen wuerden: der
+    canonical_key "menschen" hat eine KLEINERE `precedence` als das lokal erkannte `tier` und
+    gewaenne die Vorrangaufloesung. Ein Feinlabel mit groesserer precedence (etwa "fahrzeug")
+    machte den Test tautologisch - er bliebe auch dann gruen, wenn Feinlabels eingespeist wuerden.
+    """
+    project = await _make_project(db_session, name="Mit Feinlabels")
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _animal_marked_image())
+    await _add_fine_labels(db_session, photo, "Menschen", "Urlaub")
+
+    with_fine_labels = await _run_and_collect_categories(
+        db_session,
+        project,
+        scoring_run.id,
+        tmp_path,
+        build_animal_detector=_size_gated_animal_detector,
+    )
+
+    other = await _make_project(db_session, name="Ohne Feinlabels")
+    other_run = await _add_successful_scoring_run(db_session, other)
+    other_photo = await _add_photo(
+        db_session, other, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, other_photo)
+    _write_display_variant(tmp_path, other_photo, _animal_marked_image())
+
+    without_fine_labels = await _run_and_collect_categories(
+        db_session,
+        other,
+        other_run.id,
+        tmp_path,
+        build_animal_detector=_size_gated_animal_detector,
+    )
+
+    # Gleiche Kategorie trotz der Feinlabels - und vor allem: dieselbe MENGE an Kategorien, also
+    # keine zusaetzliche Gruppe in der Kuratierung.
+    assert with_fine_labels[photo.id] == "tier"
+    assert set(with_fine_labels.values()) == set(without_fine_labels.values())
 
 
 async def test_the_origin_of_a_candidate_does_not_change_the_result(

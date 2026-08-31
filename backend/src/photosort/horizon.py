@@ -32,8 +32,9 @@ _HOUGH_MAX_LINE_GAP = 10
 # Maximale Abweichung von der Horizontalen, ab der eine Hough-Linie ueberhaupt als Horizont-
 # Kandidat gilt (ADR 0026 Punkt 2) - schliesst nahezu vertikale Strukturen (Gebaeudekanten,
 # Tuerrahmen) aus, die keine Horizont-Kandidaten sind. Grenze selbst zaehlt noch als Kandidat
-# (inklusiver Vergleich, `>` statt `>=` beim Ausschluss - konsistent mit der bereits etablierten
-# `>=`-Einschluss-Konvention in criteria.py::derive_active_categories, durch Testfall gepinnt).
+# (inklusiver Vergleich, `>` statt `>=` beim Ausschluss - konsistent mit der projektweiten
+# `>=`-Einschluss-Konvention bei Schwellwertvergleichen, heute in worker.py::derive_photo_category,
+# durch Testfall gepinnt).
 HORIZON_MAX_CANDIDATE_ANGLE = 45.0
 
 # Maximale Winkelabweichung, ab der der Score auf 0.0 geklemmt wird (ADR 0026 Punkt 2) - eine

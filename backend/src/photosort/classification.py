@@ -13,9 +13,11 @@ from PIL import Image, ImageFilter, ImageStat
 # laeuft fuer JEDES gescannte Foto) einsickert - classification.py wird nur von criteria.py (und
 # darueber vom neuen run_criterion_scoring-Job, specs/features/0037-gatefuehrte-bewertungs-
 # pipeline-mit-backfill.md) importiert. `classify_category`/`CategoryCandidate`/
-# `select_top_n_with_category_mix` sind mit Spec 0037 entfallen - die Kategorie-Ableitung lebt jetzt
-# in criteria.py::derive_category_key (datengetrieben aus Kriterien-Werten statt eines hart
-# codierten Einzelaufrufs), die Rangfolge in ranking.py::rank_photos (ersetzt das Quotenverfahren).
+# `select_top_n_with_category_mix` sind mit Spec 0037 entfallen - die Kategorie-Ableitung lebt seit
+# specs/features/0289-feste-kategorien.md in categories.py::resolve_category (reine
+# Vorrangaufloesung ueber dem festen Set; die zwischenzeitliche, haeufigkeitsbasierte
+# criteria.py::derive_category_key ist mit derselben Spec entfallen), die Rangfolge in
+# ranking.py::rank_photos (ersetzt das Quotenverfahren).
 
 # Laplace-Kernel-Varianz-Schwellwert je 8x8-Kachel, unterhalb dessen eine Kachel als "flaechig/
 # uniform" gilt - dieselbe Kennzahl wie scoring.py::compute_sharpness (Laplace-Kernel-Varianz),

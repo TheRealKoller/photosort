@@ -6,13 +6,19 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
+import * as categoriesApi from '../api/categories'
 import * as photosApi from '../api/photos'
 import * as projectsApi from '../api/projects'
 import * as ratingsApi from '../api/ratings'
 import type { CriterionScoreOut, PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
 import { setToken } from '../auth/token'
+import { CATEGORY_SET } from '../test/categorySetFixture'
 import { PhotoGridPage } from './PhotoGridPage'
 
+// specs/features/0289-feste-kategorien.md: die Seite laedt das Kategorien-Set zur Laufzeit
+// (`useCategoriesQuery`) - ohne Mock liefe diese Query in einen echten Request und die Seite
+// stuende dauerhaft im Fallback-Zustand, statt in einem bewusst gewaehlten.
+vi.mock('../api/categories')
 vi.mock('../api/photos')
 vi.mock('../api/projects')
 vi.mock('../api/ratings')
@@ -105,6 +111,8 @@ describe('PhotoGridPage', () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
     vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
     vi.mocked(projectsApi.confirmAusschussGate).mockReset()
     vi.mocked(projectsApi.confirmAusschussGate).mockResolvedValue({ status: 'confirmed' })
     setToken(makeToken({ sub: '1', username: 'testuser' }))
