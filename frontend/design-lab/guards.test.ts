@@ -397,7 +397,7 @@ function scanCss(source: string): CssScan {
  * woertliche Wiedergabe von Akzeptanzkriterium 2 und zugleich der Motor der Rot-Gruen-Zyklen:
  * solange eine Richtungsdatei fehlt oder unvollstaendig ist, ist die Suite rot.
  */
-const DIRECTION_IDS = ['organic', 'klar', 'verspielt', 'minimal', 'kreativ'] as const
+const DIRECTION_IDS = ['organic', 'klar', 'dunkelkammer', 'minimal', 'linie'] as const
 
 const MODES = ['light', 'dark'] as const
 

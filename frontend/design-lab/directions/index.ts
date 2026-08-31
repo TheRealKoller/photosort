@@ -9,11 +9,11 @@
  */
 import './organic.css'
 import './klar.css'
-import './verspielt.css'
+import './dunkelkammer.css'
 import './minimal.css'
-import './kreativ.css'
+import './linie.css'
 
-export type DirectionId = 'organic' | 'klar' | 'verspielt' | 'minimal' | 'kreativ'
+export type DirectionId = 'organic' | 'klar' | 'dunkelkammer' | 'minimal' | 'linie'
 
 export interface Direction {
   id: DirectionId
@@ -34,9 +34,9 @@ export const DIRECTIONS: readonly Direction[] = [
     character: 'Sachlich, gerahmt, dicht — eine Oberfläche, die sich wie ein sauber geführtes Archiv liest.',
   },
   {
-    id: 'verspielt',
-    label: 'Verspielt',
-    character: 'Kräftige Farben, dicke Konturen, gestempelte Sticker — Fotosortieren als Bastelbogen.',
+    id: 'dunkelkammer',
+    label: 'Dunkelkammer',
+    character: 'Kontaktbogen und Rotlicht — Chinagraph-Markierungen auf Filmkadern, dunkel als Heimat.',
   },
   {
     id: 'minimal',
@@ -44,8 +44,8 @@ export const DIRECTIONS: readonly Direction[] = [
     character: 'Weißraum statt Rahmen, Grautöne statt Farbe — Farbe bedeutet hier ausschließlich Zustand.',
   },
   {
-    id: 'kreativ',
-    label: 'Plakat',
-    character: 'Beton, Ink-Konturen, Signalfarben und eine Times-Schlagzeile — die Oberfläche als Plakat.',
+    id: 'linie',
+    label: 'Linie',
+    character: 'Hoher Kontrast und durchlaufende Linien bei viel Luft — Ordnung ohne Enge.',
   },
 ]

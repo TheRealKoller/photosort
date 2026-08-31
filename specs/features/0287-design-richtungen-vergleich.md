@@ -17,7 +17,7 @@ Als Daniel möchte ich mehrere eigenständige Design-Richtungen an den wichtigst
 ## Akzeptanzkriterien
 
 - [ ] Es liegen Design-Entwürfe für genau diese drei Ansichten vor: **Fotogrid** (Kernansicht), **Foto-Detailseite** und **Pipeline-Stepper/Kuratierung**. Projektliste und Projekt-Anlage sind ausdrücklich nicht Teil des Vergleichs.
-- [ ] Es treten **fünf Richtungen** gegeneinander an: vier neu entworfene — *konservativ/klar*, *verspielt*, *minimalistisch*, *ganz kreativ* — sowie **„Organic" als fünfter, gleichwertiger Kandidat** in derselben Machart. Organic wird nicht vorab verworfen.
+- [ ] Es treten **fünf Richtungen** gegeneinander an: vier neu entworfene — *Klar* (konservativ/klar), *Minimal* (minimalistisch), *Dunkelkammer* (ganz kreativ) und *Linie* — sowie **„Organic" als fünfter, gleichwertiger Kandidat** in derselben Machart. Organic wird nicht vorab verworfen. (Erste Runde trat mit *Verspielt* und *Plakat* statt *Dunkelkammer* und *Linie* an; siehe „Entscheidungen", Iteration nach dem ersten Durchsehen.)
 - [ ] Jede Richtung zeigt jede der drei Ansichten in **hellem und dunklem Modus**.
 - [ ] Jede Richtung hat eine erkennbar eigene Handschrift: eigene Farbwelt, eigene Schriftwahl, eigene Formsprache (Rundungen, Abstände, Tiefe). Zwei Richtungen dürfen nicht als Variationen derselben Idee durchgehen; nachweisbar entlang der Achsentabelle im Abschnitt „UI/UX": je zwei Richtungen unterscheiden sich in mindestens vier der dort genannten Achsen deutlich.
 - [ ] **Alle Richtungen zeigen identische Beispielinhalte** (dieselben Fotos, Bewertungen, Kategorien, Fortschrittszustände), damit der Vergleich die Gestaltung trifft und nicht den Inhalt.
@@ -100,7 +100,7 @@ Die drei Ansichten bilden den heutigen realen Inhalt ab: **Fotogrid** (`PhotoGri
 - `frontend/design-lab/views/GridView.tsx`, `DetailView.tsx`, `PipelineView.tsx` — gemeinsames DOM für alle Richtungen
 - `frontend/design-lab/views/PhotoTile.tsx` — die von Fotogrid und Kuratierung geteilte Kachel. Es bleibt bei drei *Ansichten*; ohne diese vierte Datei hätten Grid und Kuratierung zwei Kopien desselben Kachel-Markups, mit genau dem Driftrisiko, das der Markup-Vertrag ausschließen soll
 - `frontend/design-lab/directions/index.ts` — Registry (Id, Anzeigename, Ein-Satz-Charakter, CSS-Import)
-- `frontend/design-lab/directions/{organic,klar,verspielt,minimal,kreativ}.css` — die fünf Handschriften
+- `frontend/design-lab/directions/{organic,klar,dunkelkammer,minimal,linie}.css` — die fünf Handschriften
 - `frontend/design-lab/guards.test.ts` — Schutzgeländer (siehe unten)
 
 **Geändert (jeweils minimal und mit dem Labor wieder zu entfernen):**
@@ -119,7 +119,7 @@ Die drei Ansichten bilden den heutigen realen Inhalt ab: **Fotogrid** (`PhotoGri
 3. **Markup-Vertrag:** die drei Ansichtskomponenten plus `base.css`, ungestylt, aber vollständig — Klassennamen und `data-*`-Zustände sind ab hier eingefroren.
 4. **Schutzgeländer G2/G3/G4** (`guards.test.ts`) — **vor** der ersten Richtungsdatei und damit **rot**: fünf Richtungen werden erwartet, null existieren. Diese parametrisierte Suite ist der fehlschlagende Test, der die Schritte 5 und 6 treibt; ohne diese Reihenfolge wäre das Geländer Nachdokumentation statt TDD.
 5. **Richtung „Organic" zuerst:** portiert die heutigen Tokens aus `index.css` in `organic.css`. Sie ist gleichzeitig der fünfte Kandidat und der Beweis, dass der Markup-Vertrag trägt und der Tokensatz vollständig ist. Achtung: `var()`-Verweise auf die Tonleitern **müssen** auf ihren Hexwert aufgelöst werden — das Labor lädt `index.css` nicht (G3e).
-6. **Die vier neuen Richtungen**, je eine Datei nacheinander (`klar`, `minimal`, `verspielt`, `kreativ`) — jede für sich fertig inkl. beider Modi, bevor die nächste beginnt; jede nimmt einen weiteren Teil der Geländer-Suite auf Grün.
+6. **Die vier neuen Richtungen**, je eine Datei nacheinander (`klar`, `minimal`, `dunkelkammer`, `linie`) — jede für sich fertig inkl. beider Modi, bevor die nächste beginnt; jede nimmt einen weiteren Teil der Geländer-Suite auf Grün.
 7. **Vergleichsmodi** (Nebeneinander, Beide Modi) + URL-Zustand mit Positivlisten-Validierung (Security-Auflage D3).
 8. **Dokumentation:** `docs/setup.md`, die Ergänzung von `specs/architecture/0002-testkonzept.md` und `specs/architecture/0003-securitykonzept.md`.
 
@@ -156,7 +156,7 @@ Der Vergleich soll die **Gestaltung** treffen, nicht den Inhalt. Deshalb ist all
 - **Dargestellte Zustände** (aus `fixtures.ts`): dieselben 12 Fotos in derselben Reihenfolge, dieselben Bewertungen/Vorschläge, derselbe Override, dieselben Kriterien-Prozentwerte, dieselbe Schrittzustands-Mischung.
 - **Spaltenzahl des Rasters**: 2 Spalten bis 640 px, 3 ab 640 px, 4 ab 768 px — in **jeder** Richtung gleich (wie heute), gemessen jedoch **am Vergleichsrahmen statt am Browserfenster** (Container-Query in `base.css`, nicht Viewport-Media-Query). Grund: die Rahmen im Modus „Nebeneinander" sind bewusst ~390 px breit, das Fenster nicht — mit Viewport-Breakpoints hätte ein Mobilrahmen auf dem Desktop vier Spalten gezeigt und der Vergleich hätte Informationsmenge statt Gestaltung getroffen. Dichte drückt sich über Abstände, Rahmen, Radien und Schriftgrad aus, nicht über die Menge sichtbarer Fotos; sonst verglichen wir Informationsmenge statt Gestaltung.
 - **Symbole der Bewertungsstufen**: ★ Favorit, ✓ album-würdig, ✕ aussortiert, ⚙-Präfix für einen unbestätigten Vorschlag, ✎ für den Kategorie-Override, ●●○ für die Qualitätsstufe, ♦ Haken/Schloss im Stepper. Keine Richtung darf ein Symbol durch reine Farbcodierung ersetzen.
-- **Keine Bildbehandlung**: `.washed`-artige Filter (Entsättigung/Aufhellung) sind auf den Fotos aller drei Ansichten **verboten** — dort ist die Bildwirkung selbst der Gegenstand der Entscheidung (Design-System, „Bildbehandlung"). Auch die „kreative" Richtung darf keinen Duotone-/Graustufen-Effekt über die Fotos legen.
+- **Keine Bildbehandlung**: `.washed`-artige Filter (Entsättigung/Aufhellung) sind auf den Fotos aller drei Ansichten **verboten** — dort ist die Bildwirkung selbst der Gegenstand der Entscheidung (Design-System, „Bildbehandlung"). Auch die am weitesten außen liegende Richtung darf keinen Duotone-/Graustufen-Effekt über die Fotos legen — `dunkelkammer` inszeniert ihr Rotlicht deshalb ausschließlich auf der Oberfläche, nie auf dem Bild.
 - **Touch-Ziel ≥ 44 × 44 px** für jedes interaktive Element in jeder Richtung — auch dort, wo die sichtbare Fläche kleiner wirkt (dann über Innenabstand, nicht über eine kleinere Trefferfläche).
 - **`prefers-reduced-motion: reduce`** schaltet in jeder Richtung Transform-/Skalierungs-Animationen ab; Farbübergänge dürfen bleiben.
 
@@ -164,7 +164,7 @@ Der Vergleich soll die **Gestaltung** treffen, nicht den Inhalt. Deshalb ist all
 
 **Zwei zusätzliche Haken im gemeinsamen Markup** (ergänzt den Markup-Vertrag des Architektur-Abschnitts):
 
-- `dl-tile__decor` — leeres `aria-hidden`-Element in jeder Kachel. Nur „verspielt" (Farbkreis hinter der Badge) und „kreativ" (Lime-Randbalken) machen es sichtbar; die übrigen drei setzen `display: none`.
+- `dl-tile__decor` — leeres `aria-hidden`-Element in jeder Kachel. Nur `dunkelkammer` macht es sichtbar (Filmperforation an der linken Kante); die übrigen vier setzen `display: none`.
 - `dl-meter` — schmaler Wertbalken in jeder Kriterienzeile, **redundant** zum bereits daneben stehenden Prozentwert. Weil er keine eigene Information trägt, darf eine Richtung ihn ausblenden (minimal tut das); der Prozentwert und die Kriterien-Beschriftung dürfen nie entfallen.
 
 ---
@@ -243,246 +243,184 @@ Der Vergleich soll die **Gestaltung** treffen, nicht den Inhalt. Deshalb ist all
 
 **Schrift:** Fließtext 15 px/1.50, Gewichte 400/600. Überschriften in Georgia 700: h1 26 px/1.2 (`letter-spacing: -0.005em`), h2 20 px, h3 17 px, h4 14 px. Mikro-Labels (Feldbeschriftungen im Datenblock, Kategorie-Kürzel): 11 px, system-ui 600, **Versalien**, `letter-spacing: 0.06em`, in `--text`. Alle Zahlen `font-variant-numeric: tabular-nums`. Zeilenhöhe in Datenlisten 1.4 (kompakt).
 
-**Formsprache:** Radien 2 px (Badges), 4 px (Buttons, Eingabefeld, Kacheln), 6 px (Karten/Panels) — **keine Pillen, keine Kreise**, das ist der bewusste Gegenpol zu organic/verspielt. Abstandsskala 4 / 8 / 12 / 16 / 24 / 32 px, im Raster 8 px Lücke. Rahmen statt Tiefe: jede Gruppe hat einen 1 px `--border`; Ebenen entstehen durch den Flächenwechsel `--surface` auf `--bg`, nicht durch Schatten (`--shadow-sm`/`--shadow` sind `none`; `--shadow-lg` existiert nur für das Popover, im Dunkelmodus auch das nicht). Bewegung: 120 ms, nur Farbe, keine Transforms. Fokus: `2px solid var(--accent)`, Offset 1 px, rechteckig. Dichte: hoch.
+**Formsprache:** Radien 2 px (Badges), 4 px (Buttons, Eingabefeld, Kacheln), 6 px (Karten/Panels) — **keine Pillen, keine Kreise**, das ist der bewusste Gegenpol zu organic. Abstandsskala 4 / 8 / 12 / 16 / 24 / 32 px, im Raster 8 px Lücke. Rahmen statt Tiefe: jede Gruppe hat einen 1 px `--border`; Ebenen entstehen durch den Flächenwechsel `--surface` auf `--bg`, nicht durch Schatten (`--shadow-sm`/`--shadow` sind `none`; `--shadow-lg` existiert nur für das Popover, im Dunkelmodus auch das nicht). Bewegung: 120 ms, nur Farbe, keine Transforms. Fokus: `2px solid var(--accent)`, Offset 1 px, rechteckig. Dichte: hoch.
 
 **Die drei Ansichten:** **Grid** — die sechs Filter sind **ein zusammenhängender Segmentschalter**: ein 4-px-gerundeter Block mit 1 px Trennlinien zwischen den Segmenten, aktives Segment in Petrol gefüllt mit weißer Schrift; Kacheln mit 1 px Rahmen, Badge als kleines Rechteck oben rechts auf halbtransparentem `--surface`-Feld. **Detail** — der Bewertungsdetail-Block ist eine **echte Tabelle**: linksbündige Versal-Labels, rechtsbündige tabellarische Prozentwerte, 1 px Zeilenlinien zwischen den Kriterien, `dl-meter` als 3 px hoher, eckiger Petrol-Balken unter der Zeile; Blocküberschriften „Qualität"/„Kategorien" mit voller Trennlinie. **Pipeline** — Schritte als **Quadrate (4 px Radius) mit Nummer** auf einer durchgezogenen 1 px-Linie; erledigt = gefüllte Petrol-Fläche mit Haken, aktuell = weiße Fläche mit 2 px Petrol-Rahmen **plus** 3 px Petrol-Unterkante der gesamten klebenden Leiste, blockiert = schwacher Rahmen mit Schloss. **Sofort erkennbar:** der zusammenhängende Segmentschalter und die tabellarischen, rechtsbündigen Werte mit Zeilenlinien.
 
 ---
 
-### Richtung 3 — `verspielt` · „Verspielt"
+### Richtung 3 — `dunkelkammer` · „Dunkelkammer"
 
-**Charakterisierung:** „Kräftige Farben, dicke Konturen, gestempelte Sticker — Fotosortieren als Bastelbogen."
+**Charakterisierung:** „Kontaktbogen und Rotlicht — Chinagraph-Markierungen auf Filmkadern, dunkel als Heimat."
 
-**Gestalterische These:** Fotos durchsehen soll sich leicht anfühlen. Diese Richtung nimmt die Bewertung als Spiel ernst: große, greifbare Ziele, satte Farben, ein Knopf, der sich beim Drücken sichtbar bewegt. Sie ist die einzige Richtung mit einer **taktilen** Metapher (Sticker/Aufkleber, harter Versatzschatten) statt einer Papier- oder Bildschirmmetapher.
+**Gestalterische These:** Das Aussortieren von Fotos hat eine eigene, ältere Bildsprache — den **Kontaktbogen**. Wer Negative sichtet, legt den Bogen auf den Leuchttisch und markiert mit Chinagraph-Stift: Kringel für „das ist es", Haken für „kommt in Frage", Kreuz für „raus". Genau das tut PhotoSort. Diese Richtung nimmt die Metapher wörtlich, statt eine Bildschirm-Oberfläche zu bauen, die zufällig Fotos zeigt.
+
+Der **Dunkelmodus ist hier nicht die invertierte Zweitfassung, sondern die Heimat**: die Dunkelkammer unter Rotlicht, in der die Bilder die einzigen hellen Flächen sind. Der Hellmodus ist der Leuchttisch — warmes Papier, Kader in dünnen Rahmen, Beschriftung im Mono-Kleinsatz wie am Bogenrand. Damit ist sie die einzige Richtung, deren beide Modi zwei verschiedene *Orte* darstellen statt zweier Helligkeiten.
 
 **Farbwelt (Tokens vollständig):**
 
 ```css
-[data-direction='verspielt'][data-mode='light'] {
+[data-direction='dunkelkammer'][data-mode='light'] {
   color-scheme: light;
-  --bg: #f6f2ff;            --surface: #ffffff;
-  --border: #6a4bb0;        --text: #57468a;        --text-h: #2b1055;
-  --accent: #7c3aed;        --accent-strong: #6425cf; --accent-fg: #ffffff;
-  --accent-bg: color-mix(in srgb, #7c3aed 12%, transparent);
-  --accent-border: color-mix(in srgb, #7c3aed 55%, transparent);
-  --accent-2: #0e9aa7;      --accent-2-strong: #0a6f78;
-  --rating-favorite: #f5a524;      --rating-favorite-fg: #2b1055;
-  --rating-album-worthy: #22b455;  --rating-album-worthy-fg: #0a2a14;
-  --rating-rejected: #e11d48;      --rating-rejected-fg: #ffffff;
-  --status-running: #7c3aed; --status-success: #22b455; --status-success-fg: #0a2a14;
-  --status-failed: #e11d48;
-  --status-running-tint: #e6dcfb; --status-running-strong: #4c1d95;
-  --status-success-tint: #d4f1f4; --status-success-strong: #065c68;
-  --status-failed-tint:  #fbdde4; --status-failed-strong:  #8f0f2e;
-  --status-idle-tint:    #e9e6f2; --status-idle-strong:    #4b4266;
-  --shadow-sm: 2px 2px 0 #6a4bb0; --shadow: 4px 4px 0 #6a4bb0; --shadow-lg: 8px 8px 0 #6a4bb0;
-  --sans: ui-rounded, 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
-  --heading: ui-rounded, 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --bg: #f0eee9;            --surface: #faf8f5;
+  --border: #8a8073;        --text: #565045;        --text-h: #1a1613;
+  --accent: #9c4410;        --accent-strong: #7d340a; --accent-fg: #ffffff;
+  --accent-bg: color-mix(in srgb, #9c4410 10%, transparent);
+  --accent-border: color-mix(in srgb, #9c4410 45%, transparent);
+  --accent-2: #8a2f2b;      --accent-2-strong: #6d2320;
+  --rating-favorite: #8a6410;      --rating-favorite-fg: #ffffff;
+  --rating-album-worthy: #2f6440;  --rating-album-worthy-fg: #ffffff;
+  --rating-rejected: #8a2f2b;      --rating-rejected-fg: #ffffff;
+  --status-running: #9c4410; --status-success: #2f6440; --status-success-fg: #ffffff;
+  --status-failed: #8a2f2b;
+  --status-running-tint: #f2e3d8; --status-running-strong: #7d340a;
+  --status-success-tint: #e4ece6; --status-success-strong: #245036;
+  --status-failed-tint:  #f3e2e0; --status-failed-strong:  #6d2320;
+  --status-idle-tint:    #eae7e1; --status-idle-strong:    #4c463d;
+  --shadow-sm: none; --shadow: none; --shadow-lg: none;
+  --sans: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  --heading: 'Arial Narrow', 'Liberation Sans Narrow', 'Helvetica Neue Condensed', system-ui, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
+  /* Zusatz: --d-frame #b8ada0, --d-perf #d8d2c8, --d-glow none, --d-radius 2px */
 }
-[data-direction='verspielt'][data-mode='dark'] {
+[data-direction='dunkelkammer'][data-mode='dark'] {
   color-scheme: dark;
-  --bg: #1c1136;            --surface: #2a1c4d;
-  --border: #7a5fd0;        --text: #cbbde9;        --text-h: #fbf6ff;
-  --accent: #c084fc;        --accent-strong: #d2a6ff; --accent-fg: #1c1136;
-  --accent-bg: color-mix(in srgb, #c084fc 20%, transparent);
-  --accent-border: color-mix(in srgb, #c084fc 60%, transparent);
-  --accent-2: #2dd4e0;      --accent-2-strong: #6fe6ee;
-  --rating-favorite: #f7c14a;      --rating-favorite-fg: #1c1136;
-  --rating-album-worthy: #4ade80;  --rating-album-worthy-fg: #1c1136;
-  --rating-rejected: #ff7a9c;      --rating-rejected-fg: #1c1136;
-  --status-running: #c084fc; --status-success: #4ade80; --status-success-fg: #1c1136;
-  --status-failed: #ff7a9c;
-  --status-running-tint: color-mix(in srgb, #c084fc 24%, #1c1136); --status-running-strong: #dcc0ff;
-  --status-success-tint: color-mix(in srgb, #2dd4e0 24%, #1c1136); --status-success-strong: #9beef4;
-  --status-failed-tint:  color-mix(in srgb, #ff7a9c 24%, #1c1136); --status-failed-strong:  #ffb8c8;
-  --status-idle-tint:    color-mix(in srgb, #9c8fc4 24%, #1c1136); --status-idle-strong:    #d5cce9;
-  --shadow-sm: 2px 2px 0 #c084fc; --shadow: 4px 4px 0 #c084fc; --shadow-lg: 8px 8px 0 #c084fc;
-  --sans: ui-rounded, 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
-  --heading: ui-rounded, 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --bg: #12100e;            --surface: #1c1916;
+  --border: #6f665c;        --text: #b3a99c;        --text-h: #f5efe6;
+  --accent: #f0954a;        --accent-strong: #f7b276; --accent-fg: #12100e;
+  --accent-bg: color-mix(in srgb, #f0954a 16%, transparent);
+  --accent-border: color-mix(in srgb, #f0954a 50%, transparent);
+  --accent-2: #f0605c;      --accent-2-strong: #f5908c;
+  --rating-favorite: #e8b45a;      --rating-favorite-fg: #12100e;
+  --rating-album-worthy: #6fbf8e;  --rating-album-worthy-fg: #12100e;
+  --rating-rejected: #f0605c;      --rating-rejected-fg: #12100e;
+  --status-running: #f0954a; --status-success: #6fbf8e; --status-success-fg: #12100e;
+  --status-failed: #f0605c;
+  --status-running-tint: color-mix(in srgb, #f0954a 22%, #12100e); --status-running-strong: #f7bf92;
+  --status-success-tint: color-mix(in srgb, #6fbf8e 22%, #12100e); --status-success-strong: #a5dcbc;
+  --status-failed-tint:  color-mix(in srgb, #f0605c 22%, #12100e); --status-failed-strong:  #f7a9a6;
+  --status-idle-tint:    color-mix(in srgb, #9c9184 22%, #12100e); --status-idle-strong:    #d5cbbe;
+  --shadow-sm: none; --shadow: none; --shadow-lg: none;
+  /* Schriften wie hell; Zusatz: --d-frame #3d3730, --d-perf #2a2622, --d-radius 2px,
+     --d-glow: 0 0 18px color-mix(in srgb, #f0954a 30%, transparent) */
 }
 ```
 
-**Schrift:** eine einzige, gerundete Familie für alles. Fließtext 16 px/1.60, Gewicht 500; Überschriften 800: h1 32 px (`letter-spacing: -0.01em`), h2 24 px, h3 19 px, h4 16 px. Button-Beschriftungen 16 px/700. Mikro-Text 12 px/700, `letter-spacing: 0.02em`, **keine Versalien** (Versalien wirken streng — das ist hier der falsche Ton). Zahlen proportional (nicht tabellarisch) — der Zahlenblock soll nicht wie eine Tabelle wirken.
+**Schrift:** Drei klar getrennte Stimmen. Überschriften in einer **schmalen Grotesk** (`'Arial Narrow', 'Liberation Sans Narrow', …`), durchgehend Versalien, weit gesperrt (`letter-spacing` 0.10–0.16em) — wie ein Laborschild; h1 26 px/700, h2 18 px/700. **Sämtliche Metadaten stehen im Mono-Kleinsatz** (11 px): Positionszähler, Shortcut-Zeile, Kategorie-Hinweise, Feldbeschriftungen, Bedienelemente, Werte — die Randbeschriftung eines Kontaktbogens. Fließtext 14 px/1.55 in `system-ui`. Die Hierarchie trägt der Kontrast schmal-Versal gegen Mono-Klein, nicht die Schriftgröße allein. Keine neue Abhängigkeit: schmale Grotesk und Monospace kommen aus dem System-Stack, mit Fallback auf `system-ui`.
 
-**Formsprache:** Radien 18 px (Kacheln), 26 px (Karten), 34 px (Dialoge/Panels), volle Pillen für Bedienelemente, Bewertungs-Badges als **volle Kreise, 32 px**. Abstandsskala 6 / 12 / 18 / 24 / 36 / 48 px (großzügig). Rahmen **und** Fläche: jede Karte, Kachel und jeder Button trägt eine 2 px `--border`-Kontur zusätzlich zur Füllung. Tiefe: **harter Versatzschatten ohne Weichzeichnung** — das ist die Signatur dieser Richtung und in beiden Modi vorhanden (hell in `--border`, dunkel in `--accent`). Bewegung: 180 ms `cubic-bezier(.34,1.56,.64,1)` (leichter Überschwinger); der gedrückte Zustand verschiebt das Element um `translate(2px, 2px)` und halbiert den Versatzschatten („Knopf gedrückt"). Fokus: `3px solid var(--accent)`, Offset 3 px. Dichte: niedrig (große Elemente, viel Luft).
+**Formsprache:** Radius 2 px durchgehend (Filmmaske), **eine Ausnahme**: die Bewertungs-Markierung ist ein 28-px-Kreis mit 2 px Kontur. Abstandsskala 5 / 10 / 16 / 26 / 40 px. Rahmen statt Fläche: jeder Kader trägt eine 1 px `--d-frame`-Kontur. Tiefe: keine Schatten — **stattdessen der Rotlichtschein** (`--d-glow`), ein weicher Bernstein-Halo, der im Dunkelmodus am Foto, am laufenden Schritt und am Vorschlagskasten sitzt und im Hellmodus ersatzlos `none` ist. Bewegung: 130 ms `ease`, nur Farbe. Fokus: `2px solid var(--accent)`, Offset 2 px.
 
-**Die drei Ansichten:** **Grid** — jede Kachel mit 2 px Kontur und 4 px Versatzschatten; der Bewertungs-Sticker ist ein **32-px-Kreis mit 3 px hellem Ring, der über die Kachelecke hinausragt** (`dl-tile__decor` liefert den Farbkreis darunter); der Override-Marker ist ein zweiter, kleinerer Kreis in der Gegenecke. Filter als große Pillen mit Kontur, aktive Pille gefüllt und um 2 px versetzt („eingedrückt"). **Detail** — das Foto sitzt in einer **Polaroid-Rahmung**: 12 px heller Rand ringsum, 28 px unten, 26 px Radius, harter Versatzschatten; die drei Bewertungsknöpfe sind gleich große Pillen mit Symbol vor dem Wort. **Pipeline** — 52 px-Kreise mit 2 px Kontur und Versatzschatten, aktueller Schritt auf 1.12 skaliert, Verbindung als **dicke gestrichelte Linie**; blockierter Schritt mit Schloss und gestrichelter statt durchgezogener Kontur. **Sofort erkennbar:** der überstehende Sticker-Kreis auf der Kachelecke plus der harte Versatzschatten überall.
+**Die drei Ansichten:** **Grid** — jede Kachel trägt an der linken Kante eine **Filmperforation** (`dl-tile__decor`, wiederholter Farbverlauf, reines Formdekor ohne Text); die Bewertung ist eine **Chinagraph-Markierung**: ein 28-px-Kreis mit 2 px Kontur in der Stufenfarbe, das Symbol trägt die Bedeutung. Ein offener Vorschlag ist **gestrichelt** umrandet statt durchgezogen — „noch nicht angezeichnet". Der aktive Filter ist „belichtet": Bernstein-Fläche mit dunkler Schrift. **Detail** — das Bild liegt als Kader mit Kontur und Rotlichtschein; der Bewertungsdetail-Block ist ein umrandeter Bogenabschnitt auf `--surface`; `dl-meter` ist eine **Belichtungsskala** (60 × 6 px, Kontur, Bernstein-Füllung). **Pipeline** — keine Kreise: fünf **Kader** (44 × 36 px, 2 px Radius) mit Mono-Ziffern; erledigt = Bernstein-Tönung mit Haken, aktuell = Bernstein-Vollton **mit Rotlichtschein**, blockiert = gestrichelte Kontur mit Schloss. Nur der laufende Kader ist beschriftet — am Kontaktbogen ist auch nur der Ausschnitt beschriftet, an dem man gerade arbeitet. **Sofort erkennbar:** Perforation an der Kachelkante plus der Bernstein-Halo am laufenden Schritt.
 
 ---
 
-### Richtung 4 — `minimal` · „Minimal"
+### Richtung 5 — `linie` · „Linie"
 
-**Charakterisierung:** „Weißraum statt Rahmen, Grautöne statt Farbe — Farbe bedeutet hier ausschließlich Zustand."
+**Charakterisierung:** „Hoher Kontrast und durchlaufende Linien bei viel Luft — Ordnung ohne Enge."
 
-**Gestalterische These:** Alles, was nicht Foto ist, tritt zurück. Es gibt keine Kartenflächen, keine Schatten, keine Rundungen und keine dekorative Farbe — die einzige Farbe im Bild ist Bewertungs- oder Prozessfarbe, deshalb ist sie sofort auffindbar. Nichts liegt auf einem Foto. Hierarchie entsteht aus Abstand und Laufweite, nicht aus Größe.
+**Gestalterische These:** Ordnung ohne Enge. Die Erkennbarkeit kommt aus hohem Textkontrast und sichtbaren Linien, die Ruhe aus Weißraum statt aus Kästen. Diese Richtung sitzt bewusst **zwischen `klar` und `minimal`** — sie nimmt von `klar` die Struktur (Zeilenlinien, tabellarische Werte, sichtbare Kanten) und von `minimal` die Großzügigkeit (keine Kartenflächen, keine Tiefe, viel Abstand). Ihre eigene Handschrift ist die Antwort auf die Frage, wie man beides zugleich haben kann: **die Trennlinien laufen randlos über die volle Breite, statt Flächen einzufassen.** Nichts ist ein Kasten, alles ist eine Zeile.
 
 **Farbwelt (Tokens vollständig):**
 
 ```css
-[data-direction='minimal'][data-mode='light'] {
+[data-direction='linie'][data-mode='light'] {
   color-scheme: light;
-  --bg: #fbfbfa;            --surface: #ffffff;
-  --border: #8b8b84;        --text: #5b5b57;        --text-h: #111111;
-  --accent: #1a1a1a;        --accent-strong: #1a1a1a; --accent-fg: #ffffff;
-  --accent-bg: color-mix(in srgb, #1a1a1a 6%, transparent);
-  --accent-border: color-mix(in srgb, #1a1a1a 32%, transparent);
-  --accent-2: #5c6b7d;      --accent-2-strong: #4a5766;
-  --rating-favorite: #7d6414;      --rating-favorite-fg: #ffffff;
-  --rating-album-worthy: #3d6b4c;  --rating-album-worthy-fg: #ffffff;
+  --bg: #f6f7f8;            --surface: #ffffff;
+  --border: #7d8894;        --text: #4b5560;        --text-h: #14181d;
+  --accent: #1c2530;        --accent-strong: #0f151d; --accent-fg: #ffffff;
+  --accent-bg: color-mix(in srgb, #1c2530 7%, transparent);
+  --accent-border: color-mix(in srgb, #1c2530 34%, transparent);
+  --accent-2: #0f6b63;      --accent-2-strong: #0a5049;
+  --rating-favorite: #8a6a10;      --rating-favorite-fg: #ffffff;
+  --rating-album-worthy: #2f6b46;  --rating-album-worthy-fg: #ffffff;
   --rating-rejected: #8f3b2f;      --rating-rejected-fg: #ffffff;
-  --status-running: #4a5b6e; --status-success: #3d6b4c; --status-success-fg: #ffffff;
+  --status-running: #0f6b63; --status-success: #2f6b46; --status-success-fg: #ffffff;
   --status-failed: #8f3b2f;
-  --status-running-tint: #eceef1; --status-running-strong: #3a4756;
-  --status-success-tint: #e8efe9; --status-success-strong: #2f5a3d;
+  --status-running-tint: #e2eeec; --status-running-strong: #0a5049;
+  --status-success-tint: #e5eee8; --status-success-strong: #245436;
   --status-failed-tint:  #f4e9e7; --status-failed-strong:  #7a3226;
-  --status-idle-tint:    #f0f0ee; --status-idle-strong:    #4a4a45;
+  --status-idle-tint:    #eceef0; --status-idle-strong:    #444d57;
   --shadow-sm: none; --shadow: none; --shadow-lg: none;
-  --sans: system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  --heading: system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  --mono: ui-monospace, 'SF Mono', Consolas, monospace;
+  --sans: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  /* Zusatz: --l-rule #c3cad1 (Linienfarbe), --l-radius 3px, --l-gap 14px */
 }
-[data-direction='minimal'][data-mode='dark'] {
+[data-direction='linie'][data-mode='dark'] {
   color-scheme: dark;
-  --bg: #0e0e0e;            --surface: #171717;
-  --border: #6d6d6d;        --text: #a5a5a5;        --text-h: #f5f5f5;
-  --accent: #f0f0f0;        --accent-strong: #f0f0f0; --accent-fg: #0e0e0e;
-  --accent-bg: color-mix(in srgb, #f0f0f0 10%, transparent);
-  --accent-border: color-mix(in srgb, #f0f0f0 38%, transparent);
-  --accent-2: #93a3b5;      --accent-2-strong: #b3c0ce;
-  --rating-favorite: #cba94a;      --rating-favorite-fg: #0e0e0e;
-  --rating-album-worthy: #7fae8c;  --rating-album-worthy-fg: #0e0e0e;
-  --rating-rejected: #d08a7c;      --rating-rejected-fg: #0e0e0e;
-  --status-running: #8fa3b8; --status-success: #7fae8c; --status-success-fg: #0e0e0e;
-  --status-failed: #d08a7c;
-  --status-running-tint: color-mix(in srgb, #8fa3b8 20%, #0e0e0e); --status-running-strong: #c3d1df;
-  --status-success-tint: color-mix(in srgb, #7fae8c 20%, #0e0e0e); --status-success-strong: #b6d5bf;
-  --status-failed-tint:  color-mix(in srgb, #d08a7c 20%, #0e0e0e); --status-failed-strong:  #e8b6ac;
-  --status-idle-tint:    color-mix(in srgb, #8a8a85 20%, #0e0e0e); --status-idle-strong:    #ccccc6;
+  --bg: #0f1317;            --surface: #171c21;
+  --border: #6b7681;        --text: #a8b2bc;        --text-h: #f0f4f7;
+  --accent: #dce4eb;        --accent-strong: #f0f4f7; --accent-fg: #0f1317;
+  --accent-bg: color-mix(in srgb, #dce4eb 12%, transparent);
+  --accent-border: color-mix(in srgb, #dce4eb 40%, transparent);
+  --accent-2: #4fbfb0;      --accent-2-strong: #7ad4c7;
+  --rating-favorite: #d8b155;      --rating-favorite-fg: #0f1317;
+  --rating-album-worthy: #74b98d;  --rating-album-worthy-fg: #0f1317;
+  --rating-rejected: #dd8b7d;      --rating-rejected-fg: #0f1317;
+  --status-running: #4fbfb0; --status-success: #74b98d; --status-success-fg: #0f1317;
+  --status-failed: #dd8b7d;
+  --status-running-tint: color-mix(in srgb, #4fbfb0 20%, #0f1317); --status-running-strong: #9adcd2;
+  --status-success-tint: color-mix(in srgb, #74b98d 20%, #0f1317); --status-success-strong: #a9d8ba;
+  --status-failed-tint:  color-mix(in srgb, #dd8b7d 20%, #0f1317); --status-failed-strong:  #eeb6ab;
+  --status-idle-tint:    color-mix(in srgb, #8794a0 20%, #0f1317); --status-idle-strong:    #ccd4dc;
   --shadow-sm: none; --shadow: none; --shadow-lg: none;
-  --sans: system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  --heading: system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  --mono: ui-monospace, 'SF Mono', Consolas, monospace;
+  /* Schriften wie hell; Zusatz: --l-rule #333d47, --l-radius 3px, --l-gap 14px */
 }
 ```
 
-**Schrift:** eine Familie, nur die Gewichte 400 und 500 — **nie fett**. Fließtext 13 px/1.70. h1 20 px/400 (`letter-spacing: -0.02em`) — bewusst **kleiner als in jeder anderen Richtung**, h2 16 px/400, h3 13 px/500, h4 11 px/500 Versalien `letter-spacing: 0.16em`. Mikro-Labels 10 px/500, Versalien, `letter-spacing: 0.18em`, in `--text`. Alle Zahlen `font-variant-numeric: tabular-nums`, rechtsbündig.
+**Schrift:** Eine Familie (`system-ui`), Fließtext 14 px/1.6 — zwischen `klar` (15/1.5) und `minimal` (13/1.7). h1 22 px/600 ohne Serife, h2 17 px/600, Abschnittstitel 12 px/600 in Versalien mit 0.08em Sperrung. Alle Zahlen `font-variant-numeric: tabular-nums`. Gewichte 400/600 — kräftiger als `minimal` (nie fett), zurückhaltender als `klar` (700er Serifen-Überschrift). Die Farbtemperatur des Grundes ist kühl, `--text-h` sehr dunkel: der hohe Textkontrast ist Absicht, nicht Nebenwirkung.
 
-**Formsprache:** **Radius 0 ausnahmslos** — auch Badges, Buttons, Eingabefeld, Fokusring und Bildkanten. Abstandsskala 4 / 8 / 16 / 24 / 40 / 64 px (weite Sprünge; das Raster nutzt 24 px Lücke). Weder Fläche noch Rahmen als Gruppierungsmittel: Gruppen entstehen durch Weißraum, Trenner sind 1 px `color-mix(in srgb, var(--border) 45%, transparent)` und ausdrücklich dekorativ. Der volle `--border`-Wert ist Bedienelementen vorbehalten (Buttons, Eingabefeld, Segmentgrenzen) — dort 1 px, sichtbar. Tiefe: **keine, in beiden Modi**. Bewegung: 90 ms linear, nur `opacity`/Farbe. Fokus: `1px solid var(--accent)`, Offset 2 px. Dichte: kleine Elemente bei viel Luft (der Gegenpol zu „verspielt", das großzügig **und** groß ist).
+**Formsprache:** Radius **3 px** — die Mitte zwischen `klar` (2/4/6) und `minimal` (0). Abstandsskala 6 / 12 / 20 / 32 / 48 px, Raster-Lücke 14 px (`klar` 8, `minimal` 24). **Weder Kartenflächen noch Rahmenkästen:** Gruppen entstehen durch eine 1 px `--l-rule`-Linie, die per negativem Außenabstand über das Textmaß hinausläuft. Tiefe: keine, in beiden Modi. Bewegung: 110 ms `ease`, nur Farbe. Fokus: `2px solid var(--accent-2)`, Offset 2 px. Farbe ist streng funktional: Tinte trägt die Struktur, **Teal markiert ausschließlich, was gerade aktiv oder in Arbeit ist**.
 
-**Die drei Ansichten:** **Grid** — Fotos randlos und rahmenlos, 24 px Lücke; **auf dem Foto liegt nichts**: Bewertungs-Badge, Info-Trigger und Override-Marker sitzen als statische, quadratische 18-px-Elemente in einer Fußzeile **unter** dem Bild (sichtbar 18 px, Zeilenhöhe jedoch 44 px: der Info-Trigger darin ist interaktiv, und die projektweite Regel „Touch-Ziel ≥ 44 × 44 px" geht der ursprünglich genannten 20-px-Fußzeile vor — die Untergrenze steht zentral in `base.css`, damit keine Richtung sie unterschreiten kann) (identisches DOM, nur `position: static` statt `absolute`); Filter als Textzeile mit 1 px Unterstrich am aktiven Eintrag statt gefüllter Pillen. **Detail** — das Bild läuft über die volle Breite ohne Rahmen; alle Blöcke sind nur durch Haarlinien und 40 px Luft getrennt; Kriterienzeilen als Label links / Prozentwert rechtsbündig tabellarisch, **`dl-meter` ist ausgeblendet** (die Zahl genügt) — minimal ist die einzige Richtung ohne Wertbalken. **Pipeline** — kein Kreis, keine Fläche: eine 1 px durchgehende Linie mit **8-px-Punkten**; erledigt = ausgefüllter Punkt mit kleinem Haken darüber, aktuell = 12-px-Punkt in `--accent` mit darunterstehendem Label, ausstehend = hohler Punkt, blockiert = hohler Punkt mit 10 px Schloss daneben. Trefferflächen bleiben 44 px (transparenter Innenabstand um den Punkt). **Sofort erkennbar:** die Punktlinie statt der Schrittkreise und die leere, unangetastete Fotofläche.
-
----
-
-### Richtung 5 — `kreativ` · „Plakat"
-
-**Charakterisierung:** „Beton, Ink-Konturen, Signalfarben und eine Times-Schlagzeile — die Oberfläche als Plakat."
-
-**Gestalterische These:** Ein Urlaub ist ein Ereignis, kein Datensatz. Diese Richtung inszeniert die Sortierung wie ein Plakat: gewaltige Serifen-Schlagzeile, Fließtext in Monospace als Gegenstimme, harte Ink-Konturen ohne jede Rundung, zwei Signalfarben (Vermillon, Säure-Lime), die nur dort auftauchen, wo etwas passiert. Bewertung ist ein **Stempel** — und die stärkste Umdeutung: „aussortiert" ist nicht rot, sondern schwarz durchgestempelt.
-
-**Farbwelt (Tokens vollständig):**
-
-```css
-[data-direction='kreativ'][data-mode='light'] {
-  color-scheme: light;
-  --bg: #e9e7e0;            --surface: #f7f6f2;
-  --border: #14120f;        --text: #2f2c26;        --text-h: #14120f;
-  --accent: #d63410;        --accent-strong: #b8290a; --accent-fg: #ffffff;
-  --accent-bg: color-mix(in srgb, #d63410 14%, transparent);
-  --accent-border: #14120f;
-  --accent-2: #d7f205;      --accent-2-strong: #4f5c00;
-  --rating-favorite: #f2b705;      --rating-favorite-fg: #14120f;
-  --rating-album-worthy: #1f7a5a;  --rating-album-worthy-fg: #ffffff;
-  --rating-rejected: #14120f;      --rating-rejected-fg: #f7f6f2;
-  --status-running: #a9bf00; --status-success: #1f7a5a; --status-success-fg: #ffffff;
-  --status-failed: #b8290a;
-  --status-running-tint: #eef5c2; --status-running-strong: #4a5600;
-  --status-success-tint: #d8ebe3; --status-success-strong: #175c43;
-  --status-failed-tint:  #f6ddd6; --status-failed-strong:  #96230a;
-  --status-idle-tint:    #dedcd4; --status-idle-strong:    #3a3730;
-  --shadow-sm: none; --shadow: none; --shadow-lg: 0 0 0 2px #14120f;
-  --sans: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-  --heading: 'Times New Roman', Times, ui-serif, Georgia, serif;
-  --mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-}
-[data-direction='kreativ'][data-mode='dark'] {
-  color-scheme: dark;
-  --bg: #0d0d0b;            --surface: #171712;
-  --border: #f2efe6;        --text: #cfcbbd;        --text-h: #ffffff;
-  --accent: #ff5a33;        --accent-strong: #ff7a5c; --accent-fg: #0d0d0b;
-  --accent-bg: color-mix(in srgb, #ff5a33 18%, transparent);
-  --accent-border: #f2efe6;
-  --accent-2: #d7f205;      --accent-2-strong: #d7f205;
-  --rating-favorite: #f2c14e;      --rating-favorite-fg: #0d0d0b;
-  --rating-album-worthy: #4fbf95;  --rating-album-worthy-fg: #0d0d0b;
-  --rating-rejected: #f2efe6;      --rating-rejected-fg: #0d0d0b;
-  --status-running: #d7f205; --status-success: #4fbf95; --status-success-fg: #0d0d0b;
-  --status-failed: #ff7a5c;
-  --status-running-tint: color-mix(in srgb, #d7f205 20%, #0d0d0b); --status-running-strong: #d7f205;
-  --status-success-tint: color-mix(in srgb, #4fbf95 20%, #0d0d0b); --status-success-strong: #8fe0c2;
-  --status-failed-tint:  color-mix(in srgb, #f2efe6 20%, #0d0d0b); --status-failed-strong:  #f2efe6;
-  --status-idle-tint:    color-mix(in srgb, #b8b3a5 20%, #0d0d0b); --status-idle-strong:    #d8d4c8;
-  --shadow-sm: none; --shadow: none; --shadow-lg: 0 0 0 2px #f2efe6;
-  --sans: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-  --heading: 'Times New Roman', Times, ui-serif, Georgia, serif;
-  --mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-}
-```
-
-**Schrift:** `--sans` ist hier bewusst mit einer **Monospace-Familie** belegt — die UI-Stimme ist Mono, das ist die Handschrift, nicht ein Versehen. Fließtext/Bedienelemente 13 px/1.60. Überschriften in Times 700: h1 40 px/0.95 (`letter-spacing: -0.03em`), h2 28 px/1.0, h3 20 px **kursiv**, h4 13 px Mono Versalien `letter-spacing: 0.12em`. Werte/Zahlen 13 px Mono 700. Sekundärtext bleibt 13 px (kein Kleinsatz) — die Hierarchie kommt aus dem Kontrast Times/Mono, nicht aus abgestuften Größen.
-
-**Formsprache:** **Radius 0 für alle Flächen** — mit genau **einer** Ausnahme: der Bewertungs-Stempel ist ein voller Kreis (36 px). Er ist der einzige runde Punkt im ganzen System und dadurch unübersehbar. Abstandsskala 4 / 8 / 12 / 20 / 32 / 56 px (asymmetrisch, große Sprünge zwischen Blöcken, enge Zeilen innerhalb). Rahmen statt Fläche: 2 px solide `--border` (Ink hell, Papier dunkel) an Kacheln, Buttons, Kategorieblöcken und Stempeln; Überschriften mit 3 px `--accent`-Unterstreichung. Tiefe: **keine Schatten**; `--shadow-lg` ist ein 2-px-Kontur-Ring statt einer Weichzeichnung. Bewegung: **keine Übergänge** (`transition: none`) — Zustandswechsel sind hart; einzige Bewegung ist ein 2 px Versatz beim gedrückten Zustand. Fokus: `3px solid var(--accent)`, Offset 2 px (Vermillon, **nicht** Lime — Lime trägt allein zu wenig Kontrast). Dichte: mittel-hoch im Text, sehr großzügig um die Überschriften.
-
-**Pflichtregel Lime:** `--accent-2` (`#d7f205`) erreicht auf hellem Grund nur 1.02:1 und darf deshalb **niemals allein eine Fläche begrenzen**. Jede Lime-Fläche trägt zwingend eine 2 px Ink-Kontur (15.11:1) — die Abgrenzung leistet die Kontur, nicht die Farbe. Für Lime **als Text** ist `--accent-2-strong` (`#4f5c00`, 5.93:1) zu verwenden. Im Dunkelmodus entfällt die Einschränkung (Lime auf Schwarz: 15.37:1).
-
-**Die drei Ansichten:** **Grid** — h1 „Fotos" 40 px Times mit 3 px Vermillon-Unterstreichung; die Filterzeile ist Mono in Versalien, aktiver Filter als Ink-Vollton-Block mit Papierschrift, inaktive nur unterstrichen; jede Kachel mit 2 px Ink-Kontur und einem 6 px breiten **Lime-Randbalken an der linken Kante** (`dl-tile__decor`); Bewertungs-Stempel als Kreis mit 2 px Ink-Kontur in der Ecke, „aussortiert" als schwarzer Stempel mit Papier-✕. **Detail** — der Positionszähler wird zur Schlagzeile: „3" in 48 px Times neben einem kleinen Mono-„/12"; das Bild bricht mit negativem Außenabstand über das Textmaß hinaus auf die volle Rahmenbreite und trägt eine 2 px Ink-Kontur; `dl-meter` ist ein 6 px hoher Lime-Balken **mit** Ink-Kontur hinter dem Prozentwert. **Pipeline** — keine Kreise: fünf **rechteckige Blöcke** mit Mono-Nummern, erledigt = Ink-Vollton mit Papier-Haken, aktuell = Lime-Vollton mit Ink-Kontur und Ink-Ziffer, ausstehend = nur Kontur, blockiert = **diagonal schraffierte Fläche** (`repeating-linear-gradient`, 4 px) mit Schloss. **Sofort erkennbar:** Times-Schlagzeile über Mono-Text, plus die schraffierte Sperrfläche im Stepper.
+**Die drei Ansichten:** **Grid** — die Überschrift „Fotos" trägt eine 2 px starke, randlos durchlaufende Tinte-Linie; die Filterzeile sitzt auf einer durchgehenden Grundlinie, der aktive Filter ist mit einer 2 px Teal-Marke unterstrichen (keine gefüllte Pille, keine bloße Textzeile). Kacheln mit 1 px Rahmen und 3 px Radius; Badge und Info-Trigger bleiben **auf dem Foto**, als flaches Rechteck mit halbtransparentem Grund — gerade so viel Fläche, dass sie über jedem Bildinhalt lesbar sind. **Detail** — Blocktrenner laufen randlos durch; jede Kriterienzeile hat eine eigene Unterlinie, Label links, Prozentwert rechtsbündig tabellarisch; `dl-meter` ist ein 64 × 3 px Balken **in Teal**, damit er sich von der grauen Zeilenlinie unterscheidet; der Vorschlagskasten ist kein Kasten, sondern eine Zeile mit 2 px Teal-Kante links. **Pipeline** — abgerundete **Quadrate (14 px, 3 px Radius)** auf einer durchgezogenen 1 px-Linie; erledigt = Tinte gefüllt, aktuell = 18 px in Teal, ausstehend = hohl. Nur der aktuelle Schritt trägt sein Label ausgeschrieben („du bist hier") — fünf Beschriftungen nebeneinander sprengen den Mobilrahmen. **Sofort erkennbar:** die randlos durchlaufenden Linien und die Teal-Marke unter dem aktiven Filter.
 
 ---
 
 ### Unterscheidbarkeits-Nachweis
 
-| Achse | organic | klar | verspielt | minimal | kreativ |
+| Achse | organic | klar | dunkelkammer | minimal | linie |
 |---|---|---|---|---|---|
-| **Farbtemperatur Grund** | warm (Creme `#f5ead8`) | kühl (Blaugrau `#eef1f5`) | kühl-bunt (Flieder `#f6f2ff`) | neutral (`#fbfbfa`) | warm-stumpf (Beton `#e9e7e0`) |
-| **Sättigung/Farbstrategie** | mittel, gedämpfte Erdtöne | niedrig, ein Petrol-Akzent | **hoch**, mehrere Vollfarben | **minimal** — Farbe nur als Zustand | **extrem** (Signalfarben) auf achromatischem Grund |
-| **Akzentfamilie** | Terrakotta + Salbei | Petrol + Teal | Violett + Cyan | Ink + Graublau | Vermillon + Säure-Lime |
-| **Grundfläche vs. Rahmen** | Fläche (getönt), Rahmen schwach | Rahmen 1 px **und** Flächenwechsel | Rahmen 2 px **und** Vollfläche | **weder noch** — Weißraum | Rahmen 2 px Ink, Fläche nur als Signal |
-| **Radius** | 16/28/32 + Pillen | **2/4/6, keine Pillen** | 18/26/34 + Pillen + Kreise | **0, ausnahmslos** | **0** + genau ein Kreis (Stempel) |
-| **Tiefe** | weicher Schlagschatten (hell) | **keine** (nur Popover) | **harter Versatzschatten** | **keine, beide Modi** | keine — stattdessen Kontur-Ring |
-| **Dichte** | mittel | **hoch** (8 px Raster, 1.4 Zeilen) | **niedrig**, Elemente groß | **niedrig**, Elemente klein | mittel-hoch im Text, sehr luftig um Überschriften |
-| **Schriftcharakter** | Display-Serife (Caprasimo) + geometrische Sans | Serifen-Überschrift (Georgia) + System-Sans, tabellarisch | gerundete Sans durchgehend, 800er Gewicht | System-Sans durchgehend, 400/500, **klein** | **Times-Schlagzeile + Monospace-Fließtext** |
-| **h1-Größe/Gewicht** | 30 px/400 | 26 px/700 Serife | 32 px/800 | **20 px/400** | **40 px/700 Times** |
-| **Bewegung** | 150 ms Farbe | 120 ms Farbe | 180 ms mit Überschwinger + Versatz | 90 ms, nur Deckkraft | **keine Übergänge** |
-| **Signatur-Element** | Pillen auf Creme | Segmentschalter + Zeilenlinien | überstehender Sticker-Kreis | Punktlinie statt Schrittkreise | Ink-Konturen + Schraffur |
+| **Farbtemperatur Grund** | warm (Creme `#f5ead8`) | kühl (Blaugrau `#eef1f5`) | warm (Papier `#f0eee9`) bzw. Warmschwarz `#12100e` | neutral (`#fbfbfa`) | kühl-neutral (`#f6f7f8`) |
+| **Sättigung/Farbstrategie** | mittel, gedämpfte Erdtöne | niedrig, ein Petrol-Akzent | **ein einziger Farbklang** (Bernstein/Rot), sonst achromatisch | **minimal** — Farbe nur als Zustand | niedrig; Tinte trägt Struktur, Teal markiert nur Aktives |
+| **Akzentfamilie** | Terrakotta + Salbei | Petrol + Teal | Bernstein + Chinagraph-Rot | Ink + Graublau | Tinte + Teal |
+| **Grundfläche vs. Rahmen** | Fläche (getönt), Rahmen schwach | Rahmen 1 px **und** Flächenwechsel | Kader-Kontur um jedes Bild, Blöcke auf `--surface` | **weder noch** — Weißraum | **randlos durchlaufende Linien**, nie ein Kasten |
+| **Radius** | 16/28/32 + Pillen | **2/4/6, keine Pillen** | **2 durchgehend** + genau ein Kreis (Markierung) | **0, ausnahmslos** | **3 durchgehend** |
+| **Tiefe** | weicher Schlagschatten (hell) | **keine** (nur Popover) | keine Schatten — **Rotlicht-Halo** statt Tiefe (nur dunkel) | **keine, beide Modi** | **keine, beide Modi** |
+| **Dichte** | mittel | **hoch** (8 px Raster, 1.4 Zeilen) | mittel (16 px Raster, Mono-Kleinsatz) | **niedrig**, Elemente klein | mittel-locker (14 px Raster, 20/32 px Blöcke) |
+| **Schriftcharakter** | Display-Serife (Caprasimo) + geometrische Sans | Serifen-Überschrift (Georgia) + System-Sans, tabellarisch | **schmale Versal-Grotesk + durchgehender Mono-Kleinsatz** | System-Sans durchgehend, 400/500, **klein** | System-Sans, 400/600, tabellarisch |
+| **h1-Größe/Gewicht** | 30 px/400 | 26 px/700 Serife | 26 px/700 Versalien, 0.14em gesperrt | **20 px/400** | 22 px/600 |
+| **Bewegung** | 150 ms Farbe | 120 ms Farbe | 130 ms Farbe | 90 ms, nur Deckkraft | 110 ms Farbe |
+| **Signatur-Element** | Pillen auf Creme | Segmentschalter + Zeilenlinien | **Filmperforation + Rotlicht-Halo** | Punktlinie statt Schrittkreise | **randlos durchlaufende Linien + Teal-Marke** |
 
-**Nächstes Paar und wie es getrennt wurde:** `organic` und `verspielt` liegen auf der Achse *Radius* nah beieinander (beide stark gerundet, beide mit Pillen). Sie sind deshalb auf fünf weiteren Achsen bewusst auseinandergezogen: Farbtemperatur (warm-gedämpft vs. kühl-bunt), Sättigung (mittel vs. hoch), Tiefe (weich verlaufend vs. hart versetzt), Rahmen (nahezu rahmenlos vs. 2 px Kontur überall) und Schrift (Display-Serife vs. gerundete Fett-Sans). Zweitnächstes Paar ist `minimal`/`kreativ` auf der Achse *Radius/Tiefe* (beide 0, beide flach) — getrennt durch Farbstrategie (achromatisch vs. Signalfarben), Rahmenstärke (Haarlinie vs. 2 px Ink), Schriftgrad (h1 20 px vs. 40 px) und Schriftcharakter (System-Sans vs. Times+Mono). Als Nachschärfung gegenüber dem ersten Entwurf wurden `minimal` bewusst **kleine** Elemente bei viel Luft und `kreativ` die Monospace-Fließtextstimme zugewiesen — ohne diese beiden Eingriffe wären die Paare zu nah gewesen.
+**Nächstes Paar und wie es getrennt wurde:** Nach der zweiten Runde (siehe „Entscheidungen", Iteration nach dem ersten Durchsehen) ist das engste Feld `klar` / `linie` / `minimal` — und zwar **absichtlich**: `linie` ist als bewusstes Mittelding zwischen den beiden Favoriten entworfen, das ursprüngliche Kriterium „zwei Richtungen dürfen nicht als Variationen derselben Idee durchgehen" ist an dieser Stelle nachrangig geworden, weil der Vergleich seinen ersten Zweck (Grundrichtung finden) bereits erfüllt hat. Die drei bleiben trotzdem auf je vier Achsen klar unterscheidbar: **`klar` vs. `linie`** — Kästen mit Rahmen gegen randlos durchlaufende Linien, Serifen-h1 26 px/700 gegen serifenlose 22 px/600, Dichte hoch gegen locker, Segmentschalter gegen unterstrichene Filterzeile. **`linie` vs. `minimal`** — Radius 3 gegen 0, sichtbare Zeilenlinien gegen bloßen Weißraum, Badge auf dem Foto gegen Fußzeile darunter, Teal-Signalfarbe gegen rein achromatische Chrome, Wertbalken vorhanden gegen ausgeblendet.
+
+Das eigentlich weiteste Paar ist `dunkelkammer` gegen alle übrigen: Sie ist die einzige Richtung mit einer gegenständlichen Metapher (Kontaktbogen), der einzigen durchgehenden Mono-Stimme, dem einzigen Formdekor an der Kachelkante (Perforation), dem einzigen Leuchteffekt statt Schatten — und die einzige, deren beide Modi zwei verschiedene *Orte* darstellen (Leuchttisch / Dunkelkammer) statt zweier Helligkeitsstufen derselben Oberfläche.
 
 ---
 
 ### Barrierefreiheit
 
-**Schwelle (gilt für alle fünf, auch für „kreativ"):** Text/Symbole ≥ 4.5:1 gegen ihren tatsächlichen Untergrund; Fokusring, Umrisse umrandeter Bedienelemente, Stepper-Konturen und Eingabefeld-Rahmen ≥ 3:1 gegen den angrenzenden Grund. Nicht unter diese Regel fallen **gefüllte Statusflächen** (Bewertungs-Chip, gefüllter Stepper-Kreis): dort trägt der Inhalt den Kontrast (Symbol gegen Füllung ≥ 4.5:1), die Füllung selbst muss sich nicht zusätzlich vom Seitengrund abheben.
+**Schwelle (gilt für alle fünf, auch für die am weitesten außen liegende Richtung):** Text/Symbole ≥ 4.5:1 gegen ihren tatsächlichen Untergrund; Fokusring, Umrisse umrandeter Bedienelemente, Stepper-Konturen und Eingabefeld-Rahmen ≥ 3:1 gegen den angrenzenden Grund. Nicht unter diese Regel fallen **gefüllte Statusflächen** (Bewertungs-Chip, gefüllter Stepper-Kreis): dort trägt der Inhalt den Kontrast (Symbol gegen Füllung ≥ 4.5:1), die Füllung selbst muss sich nicht zusätzlich vom Seitengrund abheben.
 
 **Gerechnete Werte der kritischen Paarungen** (sRGB-Kontrastverhältnis, nachgerechnet, nicht geschätzt):
 
-| Paarung | organic | klar | verspielt | minimal | kreativ |
+| Paarung | organic | klar | dunkelkammer | minimal | linie |
 |---|---|---|---|---|---|
-| `--text` auf `--bg` (hell/dunkel) | 5.53 / 8.28 | 6.15 / 9.73 | 7.20 / 10.14 | 6.59 / 7.84 | 11.25 / 11.98 |
-| `--text` auf `--surface` (hell) | 4.92 | 6.97 | 7.93 | 6.82 | 12.87 |
-| `--accent-strong` auf `--bg` (hell) | 5.72 | 8.38 | 7.04 | 16.81 | 5.05 |
-| `--accent` auf `--bg` (hell/dunkel, Fokus/Chrome ≥ 3) | 3.03 / 8.03 | 6.26 / 8.08 | 5.17 / 6.72 | 16.81 / 16.94 | 3.89 / 6.26 |
-| `--accent-fg` auf `--accent` (hell/dunkel) | 4.60 / 8.03 | 7.09 / 8.25 | 5.70 / 6.72 | 17.40 / 16.94 | 4.82 / 6.26 |
-| `--text` auf `--accent-bg`-Tinte (hell/dunkel) | 4.90 / 6.14 | 5.32 / 7.24 | 6.06 / 7.21 | 5.87 / 6.22 | 9.26 / 9.65 |
-| Favorit-Symbol auf Favorit-Füllung (hell/dunkel) | 7.88 / 8.56 | 4.61 / 8.91 | 7.87 / 10.72 | 5.67 / 8.56 | 10.28 / 11.59 |
-| Album-Symbol auf Album-Füllung (hell/dunkel) | 4.99 / 8.43 | 5.26 / 8.15 | 5.71 / 10.19 | 6.17 / 7.66 | 5.26 / 8.54 |
-| Aussortiert-Symbol auf Füllung (hell/dunkel) | 5.00 / 6.35 | 6.54 / 7.41 | 4.70 / 7.20 | 7.41 / 6.99 | 17.29 / 16.92 |
-| Status-Pillen (`-strong` auf `-tint`), Minimum über alle vier | 7.06 | 6.40 | 6.46 | 6.77 | 6.39 |
-| `--border` gegen `--bg` (hell/dunkel) | **1.37 / 1.69** | 3.19 / 3.90 | 5.87 / 3.70 | 3.31 / 3.73 | 15.11 / 16.92 |
+| `--text` auf `--bg` (hell/dunkel) | 5.53 / 8.28 | 6.15 / 9.73 | 6.89 / 8.20 | 6.59 / 7.84 | 7.07 / 8.67 |
+| `--text` auf `--surface` (hell) | 4.92 | 6.97 | 7.54 | 6.82 | 7.59 |
+| `--accent-strong` auf `--bg` (hell) | 5.72 | 8.38 | 7.65 | 16.81 | 17.09 |
+| `--accent` auf `--bg` (hell/dunkel, Fokus/Chrome ≥ 3) | 3.03 / 8.03 | 6.26 / 8.08 | 5.58 / 8.23 | 16.81 / 16.94 | 14.43 / 14.51 |
+| `--accent-fg` auf `--accent` (hell/dunkel) | 4.60 / 8.03 | 7.09 / 8.25 | 6.47 / 8.23 | 17.40 / 16.94 | 15.48 / 14.51 |
+| `--text` auf `--accent-bg`-Tinte (hell/dunkel) | 4.90 / 6.14 | 5.32 / 7.24 | 5.98 / 6.32 | 5.87 / 6.22 | 6.19 / 6.54 |
+| Favorit-Symbol auf Favorit-Füllung (hell/dunkel) | 7.88 / 8.56 | 4.61 / 8.91 | 5.37 / 10.04 | 5.67 / 8.56 | 5.06 / 9.18 |
+| Album-Symbol auf Album-Füllung (hell/dunkel) | 4.99 / 8.43 | 5.26 / 8.15 | 6.96 / 8.61 | 6.17 / 7.66 | 6.34 / 8.05 |
+| Aussortiert-Symbol auf Füllung (hell/dunkel) | 5.00 / 6.35 | 6.54 / 7.41 | 8.33 / 5.91 | 7.41 / 6.99 | 7.41 / 7.16 |
+| Status-Pillen (`-strong` auf `-tint`), Minimum über alle vier | 7.06 | 6.40 | 7.08 | 6.77 | 7.38 |
+| `--border` gegen `--bg` (hell/dunkel) | **1.37 / 1.69** | 3.19 / 3.90 | 3.34 / 3.37 | 3.31 / 3.73 | 3.36 / 4.03 |
 
 **Bekannte Lücke der Richtung `organic`:** ihr `--border` erreicht nur 1.37:1 (hell) bzw. 1.69:1 (dunkel) — und dieser Token begrenzt in der laufenden App die umrandeten Bedienelemente (`Button variant="outline"`, `border-border`). Damit verfehlt der einzige bereits produktive Kandidat die oben gesetzte 3:1-Schwelle für Umrisse. Der Port wird **trotzdem 1:1 übernommen** und nicht stillschweigend repariert: Organic tritt als das an, was heute ausgeliefert ist, sonst verglichen wir eine Version, die es nicht gibt. Die Lücke ist hier festgehalten, weil sie entscheidungsrelevant ist — gewinnt Organic, gehört ihre Behebung in das Folge-Issue; gewinnt eine andere Richtung, erledigt sich der Punkt mit der Portierung. Die vier neuen Richtungen erfüllen die Schwelle ohne Ausnahme.
 
-**Bewertungszustände nie allein über Farbe:** in **jeder** Richtung tragen die drei Stufen zusätzlich zur Farbe ihr Symbol (★ / ✓ / ✕), ihr vollständiges `aria-label` und die Unterscheidung *voll gefüllt = entschieden* vs. *umrandet + gedämpfte Tinte + ⚙-Präfix = unbestätigter Vorschlag*. Darüber hinaus differenziert jede Richtung die Stufen zusätzlich über die Form ihres Chips (organic: Pille · klar: Rechteck 2 px Radius · verspielt: Kreis mit hellem Ring · minimal: Quadrat ohne Radius, unter dem Bild · kreativ: Kreisstempel mit Ink-Kontur). Keine Richtung darf das Symbol weglassen oder die Voll/Umrandet-Unterscheidung durch eine reine Farbnuance ersetzen. Der Prozess-Status im Stepper ist ebenfalls doppelt codiert (Haken / Ziffer / Schloss / Schraffur zusätzlich zur Farbe).
+**Bewertungszustände nie allein über Farbe:** in **jeder** Richtung tragen die drei Stufen zusätzlich zur Farbe ihr Symbol (★ / ✓ / ✕), ihr vollständiges `aria-label` und die Unterscheidung *voll gefüllt = entschieden* vs. *umrandet + gedämpfte Tinte + ⚙-Präfix = unbestätigter Vorschlag*. Darüber hinaus differenziert jede Richtung die Stufen zusätzlich über die Form ihres Chips (organic: Pille · klar: Rechteck 2 px Radius · dunkelkammer: Chinagraph-Kringel, bei offenem Vorschlag gestrichelt · minimal: Quadrat ohne Radius, unter dem Bild · linie: flaches Rechteck mit 3 px Radius auf dem Foto). Keine Richtung darf das Symbol weglassen oder die Voll/Umrandet-Unterscheidung durch eine reine Farbnuance ersetzen. Der Prozess-Status im Stepper ist ebenfalls doppelt codiert (Haken / Ziffer / Schloss / Schraffur zusätzlich zur Farbe).
 
 Ergänzend in allen fünf: `color-scheme` pro Modus gesetzt (nativer Scrollbalken und Zahlenfeld ziehen mit), sichtbarer Fokusring in einer Richtungsfarbe statt des Browser-Blaus, Trefferflächen ≥ 44 px, `prefers-reduced-motion` respektiert.
 
@@ -492,7 +430,7 @@ Ergänzend in allen fünf: `color-scheme` pro Modus gesetzt (nativer Scrollbalke
 
 `specs/architecture/0004-design-system.md` wird in dieser Spec **nicht** geändert — die Aktualisierung gehört zum Folge-Issue nach der Entscheidung (Out of Scope). Damit der Vergleich aber realistisch ist und nicht an einer geschönten Oberfläche stattfindet, müssen die Prototypen diese bereits dokumentierten wiederkehrenden Muster in **jeder** Richtung abbilden:
 
-- **Auffangkorb-Kategorie mit erklärend dezentem Signal** — der Abschnitt „Nicht erkannt" steht innerhalb seines Clusters **immer zuletzt**, trägt den Erklärtext „Für diese Fotos war kein Bildmotiv sicher bestimmbar." direkt unter der Überschrift und hat **keine Fehler-Optik**: kein Alert-Rahmen, keine `--status-failed`-Farbe, kein Warnicon. Auf Kachelebene ist er identisch zu jeder anderen Kategorie. Das gilt auch für „kreativ" — die Versuchung, hier die Schraffur oder Vermillon einzusetzen, ist genau der Fehler, den das Muster verbietet.
+- **Auffangkorb-Kategorie mit erklärend dezentem Signal** — der Abschnitt „Nicht erkannt" steht innerhalb seines Clusters **immer zuletzt**, trägt den Erklärtext „Für diese Fotos war kein Bildmotiv sicher bestimmbar." direkt unter der Überschrift und hat **keine Fehler-Optik**: kein Alert-Rahmen, keine `--status-failed`-Farbe, kein Warnicon. Auf Kachelebene ist er identisch zu jeder anderen Kategorie. Das gilt auch für `dunkelkammer` — die Versuchung, hier das Chinagraph-Rot oder eine gestrichelte Sperr-Optik einzusetzen, ist genau der Fehler, den das Muster verbietet.
 - **Bewertungs-/Vorschlags-Badge** — volle Füllung = von einem Menschen entschieden (Symbol in der tonspezifischen `--rating-*-fg`); Umrandung + 10–12 % Tinte + ⚙-Präfix = offener maschineller Vorschlag (Symbol dann in `--text-h`, nicht in der gegen die Vollfüllung kalibrierten Farbe). Der unbewertete Zustand ist ein neutrales „–" ohne Farbe.
 - **Kategorie-Kennzeichnung getrennt von der Bewertung** — Kategorie-Badge in einem neutralen Ton (nie in einer Bewertungsfarbe), 3-Zeichen-Kürzel auf der Kachel, ausgeschriebener Name als Abschnittsüberschrift in der Kuratierung.
 - **Feinlabel-Chips visuell klar von der Kategorie unterschieden** — anderer Ton bzw. umrandet statt gefüllt, kleiner, räumlich getrennt (eigene Zeile), **kein** Symbol darauf.
@@ -590,7 +528,7 @@ Was der `architect` als drei Prüfungen vorgeschlagen hat, wird dabei um **eine 
 
 ### Die vier Schutzgeländer
 
-Alles in **einer** Datei `frontend/design-lab/guards.test.ts` (~250 Zeilen, davon ~80 der gemeinsame CSS-Scanner), ohne neue Abhängigkeit, ohne Fixture-Dateien. Fünf Richtungs-Ids sind im Test **hart hinterlegt** (`organic`, `klar`, `verspielt`, `minimal`, `kreativ`) — das ist keine Doppelpflege, sondern die wörtliche Wiedergabe von Akzeptanzkriterium 2 und zugleich der Motor der Rot-Grün-Zyklen (siehe „Reihenfolge").
+Alles in **einer** Datei `frontend/design-lab/guards.test.ts` (~250 Zeilen, davon ~80 der gemeinsame CSS-Scanner), ohne neue Abhängigkeit, ohne Fixture-Dateien. Fünf Richtungs-Ids sind im Test **hart hinterlegt** (`organic`, `klar`, `dunkelkammer`, `minimal`, `linie`) — das ist keine Doppelpflege, sondern die wörtliche Wiedergabe von Akzeptanzkriterium 2 und zugleich der Motor der Rot-Grün-Zyklen (siehe „Reihenfolge").
 
 #### G1 — Trennung von der laufenden Anwendung
 
@@ -622,7 +560,7 @@ Alles in **einer** Datei `frontend/design-lab/guards.test.ts` (~250 Zeilen, davo
 | **Ableitung des Pflicht-Tokensatzes (keine Doppelpflege)** | Aus `index.css` werden **beide** `:root`-Blöcke geholt (Hellmodus und der Block im `@media (prefers-color-scheme: dark)` — der Dunkelblock ist ein Delta und deklariert z.B. `--sans`/`--status-running` gar nicht, deshalb ist die **Vereinigung** die richtige Quelle). Aus der Vereinigung werden die Tonleiter-Sprossen entfernt: alles, was auf eine dreistellige Hunderterstufe endet (`/^--.*-[1-9]00$/`, also `--neutral-100…900`, `--accent-100…900`, `--accent-2-100…900`). **Verifiziert:** übrig bleiben exakt **36** Tokens, und zwar genau die im Architektur-Abschnitt aufgezählten (`--bg`, `--surface`, `--border`, `--text`, `--text-h`, die sieben `--accent*`, die sechs `--rating-*`, die zwölf `--status-*`, `--shadow`/`-sm`/`-lg`, `--sans`, `--heading`, `--mono`). Der Test gibt die Zahl aus und behauptet sie nicht — ändert sich `index.css`, ändert sich der Sollwert automatisch mit. |
 | **Sichert zu** | (a) Die Basisnamen der `directions/*.css` sind exakt die fünf erwarteten Ids. (b) `directions/index.ts` registriert exakt dieselben fünf Ids — eine Datei ohne Registry-Eintrag wäre im Labor unsichtbar, ein Registry-Eintrag ohne Datei ein Ladefehler. (c) Jede Richtungsdatei enthält einen Block `[data-direction='<id>'][data-mode='light']` **und** einen `…[data-mode='dark']`, und **jeder** der beiden deklariert **alle 36** Tokens. Zusatztokens sind erlaubt, Weglassen nicht. Ein gemeinsamer `[data-direction='<id>']`-Basisblock darf existieren, erfüllt die Pflicht aber nicht — die Ansicht „Beide Modi" zeigt beide Blöcke gleichzeitig, ein vergessener Dunkelwert muss harter Fehler sein statt stiller Vererbung. (d) Jeder Block setzt `color-scheme` passend zum Modus. (e) **`var()`-Selbstgenügsamkeit:** jeder in einer Richtungsdatei per `var(--x)` referenzierte Name ist in derselben Datei auch deklariert. |
 | **Warum (e) — der wichtigste Einzelpunkt** | `index.css` definiert Vertragstokens teilweise *über* die Tonleitern: `--status-success: var(--accent-2-600)`, `--status-running-tint: var(--accent-200)`, `--status-idle-strong: var(--neutral-800)`. Die Spec erlaubt beim Portieren von „Organic" ausdrücklich, `var()`-Verweise „mitzukopieren oder auf ihren Hexwert aufzulösen" — **„mitkopieren" ist im Labor aber kaputt**, weil das Labor `index.css` nicht lädt und die Tonleitern dort schlicht nicht existieren. Die betroffenen Tokens wären leer, `organic` — der Referenzkandidat und der Beweis, dass der Markup-Vertrag trägt — hätte still fehlende Statusfarben, und der Vergleich wäre gegen genau die Richtung verzerrt, die als Titelverteidiger antritt. G3(e) macht daraus einen Testfehler. |
-| **Fehlermeldung** | `` `directions/verspielt.css: Block [data-direction='verspielt'][data-mode='dark'] definiert 34 von 36 Pflicht-Tokens. Fehlen: --status-idle-tint, --shadow-lg. Der Pflichtsatz stammt aus frontend/src/index.css (Vereinigung beider :root-Bloecke, ohne Tonleitern) - eine Richtung, die ihn nicht vollstaendig fuellt, ist nicht ohne Zusatzarbeit in die App uebernehmbar (AK "Umsetzbarkeits-Vorbehalt").` `` bzw. `` `directions/organic.css:31 – var(--accent-2-600) verweist auf ein Token, das in dieser Datei nicht definiert ist. Das Labor laedt frontend/src/index.css nicht; die Tonleitern existieren dort nicht. Wert auf seinen Hexwert aufloesen.` `` |
+| **Fehlermeldung** | `` `directions/dunkelkammer.css: Block [data-direction='dunkelkammer'][data-mode='dark'] definiert 34 von 36 Pflicht-Tokens. Fehlen: --status-idle-tint, --shadow-lg. Der Pflichtsatz stammt aus frontend/src/index.css (Vereinigung beider :root-Bloecke, ohne Tonleitern) - eine Richtung, die ihn nicht vollstaendig fuellt, ist nicht ohne Zusatzarbeit in die App uebernehmbar (AK "Umsetzbarkeits-Vorbehalt").` `` bzw. `` `directions/organic.css:31 – var(--accent-2-600) verweist auf ein Token, das in dieser Datei nicht definiert ist. Das Labor laedt frontend/src/index.css nicht; die Tonleitern existieren dort nicht. Wert auf seinen Hexwert aufloesen.` `` |
 
 #### G4 — Kontrast-Untergrenze
 
@@ -631,9 +569,9 @@ Alles in **einer** Datei `frontend/design-lab/guards.test.ts` (~250 Zeilen, davo
 | **Liest** | dieselben Richtungsdateien, dieselbe bereits vorhandene Token-Tabelle aus G3 |
 | **Sichert zu** | Für jede Richtung und jeden Modus erreichen die Text-/Symbolpaarungen ≥ 4.5:1: `--text` und `--text-h` je auf `--bg` und `--surface`, `--accent-fg` auf `--accent`, die drei `--rating-*-fg` auf ihrem `--rating-*`, `--status-success-fg` auf `--status-success`, die vier `--status-*-strong` auf ihrem `--status-*-tint`. Die Paare werden **aus der Namenskonvention abgeleitet** (`X-fg` gehört zu `X`, `-strong` zu `-tint`), nicht aus der Kontrasttabelle des UI/UX-Abschnitts abgeschrieben. |
 | **Rechenweg** | sRGB-Relativluminanz nach WCAG, ~25 Zeilen, keine Abhängigkeit. Unterstützt werden `#rgb`/`#rrggbb` und die Form `color-mix(in srgb, <hex> <p>%, <hex>)` (deckt die Dunkelmodus-Tints der Spec ab). **Übersprungen** wird jedes Paar, bei dem ein Operand `transparent`, ein anderer Farbraum oder eine nicht auflösbare Funktion ist — ein Wert über halbtransparentem Grund hat kein statisch bestimmbares Kontrastverhältnis. Der Test zählt die übersprungenen Paare und gibt sie aus, damit „grün" nicht „nichts geprüft" bedeuten kann. |
-| **Warum überhaupt, entgegen „reine UI-Kosmetik wird nicht getestet"** | Weil hier nicht Kosmetik geprüft wird, sondern eine im UI/UX-Abschnitt **verbindlich gesetzte Schwelle** („gilt für alle fünf, auch für kreativ"), deren Zahlenwerte dort bereits von Hand ausgerechnet vorliegen — und weil ~350 handgetippte Hexwerte über 10 Blöcke die klassische Übertragungsfehler-Fläche sind. Ein Zahlendreher macht keine Richtung sichtbar hässlich, aber unbenutzbar; wenn eine solche Richtung gewinnt, erbt die echte App den Fehler. Die Kosten sind gering, weil G3 die Token-Tabelle ohnehin schon geparst hat. |
+| **Warum überhaupt, entgegen „reine UI-Kosmetik wird nicht getestet"** | Weil hier nicht Kosmetik geprüft wird, sondern eine im UI/UX-Abschnitt **verbindlich gesetzte Schwelle** („gilt für alle fünf, ohne Ausnahme"), deren Zahlenwerte dort bereits von Hand ausgerechnet vorliegen — und weil ~350 handgetippte Hexwerte über 10 Blöcke die klassische Übertragungsfehler-Fläche sind. Ein Zahlendreher macht keine Richtung sichtbar hässlich, aber unbenutzbar; wenn eine solche Richtung gewinnt, erbt die echte App den Fehler. Die Kosten sind gering, weil G3 die Token-Tabelle ohnehin schon geparst hat. |
 | **Bewusst ausgenommen** | `--border` gegen `--bg` und `--accent` als Chrome (Schwelle 3:1 statt 4.5:1). Der UI/UX-Abschnitt weist für `organic` ausdrücklich **1.37 / 1.69** aus — die bekannte „Organic-Rahmenlücke". `organic.css` übernimmt die heutigen Werte 1:1 und darf sie nicht „verbessern"; eine Assertion darauf würde die Richtung zwingen, unehrlich anzutreten. Diese Lücke bleibt eine dokumentierte Eigenschaft, kein Testfall. |
-| **Fehlermeldung** | `` `directions/kreativ.css [data-mode='light']: --rating-album-worthy-fg (#8a8a80) auf --rating-album-worthy (#a3c93a) erreicht 2.31:1, gefordert sind 4.5:1 (Symbol auf gefuellter Flaeche, UI/UX-Abschnitt "Barrierefreiheit"). 3 von 26 Paaren uebersprungen (nicht statisch aufloesbar): …` `` |
+| **Fehlermeldung** | `` `directions/linie.css [data-mode='light']: --accent-fg (#8899aa) auf --accent (#1f5c8b) erreicht 2.43:1, gefordert sind 4.5:1 (Symbol auf gefuellter Flaeche, UI/UX-Abschnitt "Barrierefreiheit"). 3 von 26 Paaren uebersprungen (nicht statisch aufloesbar): …` `` |
 
 ### Mechanik: läuft das im bestehenden vitest-Setup? (geprüft)
 
@@ -725,7 +663,7 @@ Kein E2E-Setup im Projekt (Testkonzept, „Was bewusst nicht getestet wird") —
 - **Wegwerf-Artefakt als dev-only Vite-Zweiteinstieg** statt eigener App oder zweitem Rollup-Input: erfüllt die geforderte Trennung von der laufenden Anwendung ohne zweites `node_modules` und ohne Deploy-Leck.
 - **Gescopte reine CSS-Skins statt Tailwind im Labor:** fünf Token-Sätze müssen gleichzeitig im selben Dokument existieren; Tailwinds `@theme` ist pro Build global und genau einmal vorhanden.
 - **Umsetzbarkeits-Vorbehalt als Token-Vertrag operationalisiert:** jede Richtung muss den vollständigen `:root`-Tokensatz aus `frontend/src/index.css` in beiden Modi definieren — dadurch wird „baubar" maschinell prüfbar statt eine Einschätzung.
-- **Schriftwahl strikt ohne neue Abhängigkeit** (nur vorhandene Familien + System-/Web-Safe-Stacks): Das Akzeptanzkriterium „ohne dass dafür eine neue externe Abhängigkeit nötig wird" wird wörtlich gelesen. Erkannter Zielkonflikt zum Kriterium „eigene Schriftwahl je Richtung" — „verspielt" und „ganz kreativ" verlieren ohne eigenen Display-Schnitt an Ausdruck. Nachträglich billig änderbar (nur der Schriften-Absatz je Richtungsdatei); eine Lockerung wäre eine bewusste, ADR-pflichtige Erweiterung im Folge-Issue.
+- **Schriftwahl strikt ohne neue Abhängigkeit** (nur vorhandene Familien + System-/Web-Safe-Stacks): Das Akzeptanzkriterium „ohne dass dafür eine neue externe Abhängigkeit nötig wird" wird wörtlich gelesen. Erkannter Zielkonflikt zum Kriterium „eigene Schriftwahl je Richtung" — die ausdrucksstärkeren Richtungen verlieren ohne eigenen Display-Schnitt an Wirkung. `dunkelkammer` löst das über eine schmale System-Grotesk in Versalien gegen durchgehenden Mono-Kleinsatz, also über Schnitt, Laufweite und Stimmenkontrast statt über eine zugekaufte Schrift. Nachträglich billig änderbar (nur der Schriften-Absatz je Richtungsdatei); eine Lockerung wäre eine bewusste, ADR-pflichtige Erweiterung im Folge-Issue.
 - **Keine ADR zur Umsetzung, ADR zum Ergebnis:** `specs/decisions/0050-visuelle-gestaltungsrichtung.md` entsteht nach Daniels Entscheidung und trägt die Begründung.
 - **`docs/architecture.md` bleibt unangetastet:** das Labor ist kein Bestandteil des laufenden Systems.
 - **Schutzgeländer statt Testabdeckung, bewusst gegen den TDD-Grundsatz aus `CLAUDE.md`:** vier dateilesende Strukturtests statt Komponententests. Zulässig nur, weil alle vier Bedingungen gleichzeitig gelten (kein Produktionsverhalten · Fehlverhalten für den einzigen Nutzer im Moment der Nutzung sichtbar · Lebensdauer endet mit einer benannten Entscheidung · Entfernung als Checkliste festgehalten). Die Geländer entstehen **vor** den Richtungsdateien, sonst wäre es Nachdokumentation statt TDD.
@@ -733,6 +671,8 @@ Kein E2E-Setup im Projekt (Testkonzept, „Was bewusst nicht getestet wird") —
 - **`var()`-Selbstgenügsamkeit je Richtungsdatei erzwungen:** `frontend/src/index.css` definiert fünf Vertragstokens über Tonleitern (`--status-success: var(--accent-2-600)` u.a.). Das Labor lädt `index.css` nicht — mitkopierte `var()`-Verweise ergäben dort still leere Tokens, ausgerechnet beim Referenzkandidaten `organic`.
 - **`base.css` als richtungsneutrale Strukturdatei:** ohne sie müssten alle fünf Richtungen die Struktur wiederholen, mit Driftrisiko genau bei den Eigenschaften, die laut UI/UX-Abschnitt in allen fünf identisch bleiben müssen.
 - **`.gitignore` allein sichert `photos-local/` nicht** (empirisch nachgestellt: eine Bilddatei *neben* dem Ordner wird von `git add -A` kommentarlos gestaged; `git add -f` und bereits getrackte Pfade umgehen ihn ohnehin). Deshalb zusätzlich ein zustandsprüfender Guard über `git ls-files`. Der Guard darf ohne lokale Fotos **nicht** rot sein — sonst erzeugt er selbst den Anreiz, Beispielbilder einzuchecken.
+- **Iteration nach dem ersten Durchsehen (Daniel, nach der ersten Runde):** Zwei der vier neu entworfenen Richtungen wurden verworfen und ersetzt — *Verspielt* und *Plakat* überzeugten nicht. An ihre Stelle traten **`linie`** („Linie", ein bewusstes Mittelding aus den beiden Favoriten `klar` und `minimal`: dessen Kontrast und Linienführung, dessen Lockerheit) und **`dunkelkammer`** („Dunkelkammer", ein bewusst weiter außen liegender Gegenentwurf auf Basis der Kontaktbogen-Metapher). Die Verworfenen sind nicht archiviert, sondern gelöscht: Das Labor ist ein Wegwerf-Artefakt, sein Zweck ist der aktuelle Vergleich, nicht die Entwurfshistorie — die liegt in der Git-Historie dieses Branches.
+  **Bewusst in Kauf genommen:** `linie` rückt näher an `klar`/`minimal` heran, als das ursprüngliche Kriterium „zwei Richtungen dürfen nicht als Variationen derselben Idee durchgehen" erlaubt. Das ist an dieser Stelle richtig — der Vergleich hat seinen ersten Zweck (Grundrichtung finden) erfüllt, ab hier geht es um Verfeinerung. Der Unterscheidbarkeits-Nachweis führt die vier Achsen, auf denen sich die drei trotzdem trennen.
 - **Drei Akzeptanzkriterien sprachlich geschärft** (AK 4, 8, 9 — Formulierung, keine inhaltliche Änderung), damit die Review-Phase Belegbares einfordert: AK 4 verweist auf die Achsentabelle, AK 8 ersetzt das unprüfbare „wird gar nicht erst vorgelegt" durch den Tokenvertrag, AK 9 hält fest, dass die Entscheidung selbst nicht Bestandteil dieser PR ist.
 
 ## Offene Fragen

@@ -13,7 +13,7 @@
  *   - Zustaende `data-rating="favorite|album_worthy|rejected|none"` und `data-suggested="true"`
  *
  * `dl-tile__decor` ist ein leeres, aria-hidden Element, das die meisten Richtungen ausblenden -
- * nur "verspielt" (Farbkreis hinter der Badge) und "kreativ" (Lime-Randbalken) machen es sichtbar.
+ * nur "dunkelkammer" (Filmperforation an der linken Kante) macht es sichtbar.
  */
 import type { ReactNode } from 'react'
 

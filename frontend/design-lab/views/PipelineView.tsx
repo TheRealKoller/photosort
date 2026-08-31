@@ -8,7 +8,7 @@
  *
  * Der Auffangkorb-Abschnitt traegt bewusst KEINE Fehler-Optik (kein Alert-Rahmen, keine
  * Fehlerfarbe, kein Warnicon) - ein fehlendes Erkennungsergebnis ist kein Fehler. Das gilt in
- * jeder Richtung, auch in "kreativ".
+ * jeder Richtung, auch in "dunkelkammer".
  */
 import {
   CATCH_ALL_CATEGORY_KEY,
@@ -38,7 +38,7 @@ const STEP_STATE_LABELS: Record<string, string> = {
 
 /*
  * Schloss als Inline-SVG statt als Zeichen: das Unicode-Schloss (U+1F512) hat Emoji-Praesentation
- * und wuerde in "minimal"/"kreativ" als einziges buntes Element im Bild stehen. Ein JSX-SVG-
+ * und wuerde in "minimal"/"linie" als einziges buntes Element im Bild stehen. Ein JSX-SVG-
  * Element ist kein aus einer Zeichenkette zusammengesetztes SVG (Auflage D1 bleibt gewahrt) und
  * erbt ueber `currentColor` die Farbe der jeweiligen Richtung.
  */
