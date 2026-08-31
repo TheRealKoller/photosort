@@ -1,6 +1,6 @@
 # 0287 - Fünf Design-Richtungen an drei Kernansichten vergleichen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #306](https://github.com/TheRealKoller/photosort/pull/306))
 **Erstellt:** 2026-08-31
 **Bezug:** [Issue #287](https://github.com/TheRealKoller/photosort/issues/287)
 
