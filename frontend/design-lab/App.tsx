@@ -11,6 +11,9 @@ import { useState } from 'react'
 
 import { DIRECTIONS, type DirectionId } from './directions'
 import { localPhotoCount } from './photoSvg'
+import { DetailView } from './views/DetailView'
+import { GridView } from './views/GridView'
+import { PipelineView } from './views/PipelineView'
 
 type ViewId = 'grid' | 'detail' | 'pipeline'
 type ModeId = 'light' | 'dark'
@@ -74,10 +77,9 @@ function DirectionFrame({
 }) {
   return (
     <div className="lab-frame__viewport" data-direction={direction} data-mode={mode}>
-      {/* Die drei Ansichtskomponenten entstehen in Schritt 3 der Umsetzungsreihenfolge. */}
-      <p className="dl-placeholder">
-        {view} · {direction} · {mode}
-      </p>
+      {view === 'grid' && <GridView />}
+      {view === 'detail' && <DetailView />}
+      {view === 'pipeline' && <PipelineView />}
     </div>
   )
 }

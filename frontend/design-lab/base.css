@@ -3,9 +3,9 @@
  * Design-Labors.
  *
  * Hier steht ausschliesslich, was in ALLEN fuenf Richtungen identisch bleiben muss - Rasterspalten
- * 2/3/4, Bildseitenverhaeltnisse, Sticky-Verhalten, Reset, Trefferflaechen. Alles Gestalterische
- * (Farbe, Radius, Tiefe, Schrift, Abstandsskala) gehoert in die jeweilige Richtungsdatei unter
- * directions/.
+ * 2/3/4, Bildseitenverhaeltnisse, Sticky-Verhalten, Reset, Trefferflaechen >= 44 px. Alles
+ * Gestalterische (Farbe, Radius, Tiefe, Schrift, Abstandsskala) gehoert in die jeweilige
+ * Richtungsdatei unter directions/.
  *
  * Diese Datei traegt bewusst UNGESCOPTE `.dl-*`-Selektoren und ist deshalb vom Schutzgelaender G2
  * (Richtungs-Isolation) ausgenommen - ohne sie muesste jede der fuenf Richtungen die Struktur
@@ -14,8 +14,318 @@
  * Wird VOR den Richtungsdateien geladen (siehe main.tsx).
  */
 
-.dl-placeholder {
-  padding: 24px;
+.dl-view {
+  box-sizing: border-box;
+  min-height: 100%;
+  background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
+  /*
+   * Container-Query-Kontext statt Viewport-Media-Queries: die Vergleichsrahmen sind ~390 px breit,
+   * das Browserfenster ist es nicht. Mit `@media (min-width: 768px)` zeigte ein 390-px-Rahmen auf
+   * einem Desktop vier Spalten - verglichen wuerde dann Informationsmenge statt Gestaltung.
+   */
+  container-type: inline-size;
+}
+
+.dl-view *,
+.dl-view *::before,
+.dl-view *::after {
+  box-sizing: border-box;
+}
+
+.dl-view h1,
+.dl-view h2,
+.dl-view h3,
+.dl-view h4,
+.dl-view p,
+.dl-view dl,
+.dl-view dd,
+.dl-view dt,
+.dl-view ul,
+.dl-view ol {
+  margin: 0;
+}
+
+.dl-view ul,
+.dl-view ol {
+  padding: 0;
+  list-style: none;
+}
+
+.dl-view button,
+.dl-view input {
+  font: inherit;
+  color: inherit;
+  margin: 0;
+}
+
+.dl-view button {
+  cursor: pointer;
+}
+
+.dl-view img {
+  display: block;
+  max-width: 100%;
+}
+
+/*
+ * Trefferflaechen: >= 44 x 44 px fuer jedes interaktive Element, in JEDER Richtung - auch dort, wo
+ * die sichtbare Flaeche kleiner wirkt (dann ueber transparenten Innenabstand, nicht ueber eine
+ * kleinere Trefferflaeche). Bewusst hier statt fuenfmal in den Richtungsdateien: eine Richtung
+ * soll diese Regel gar nicht erst unterschreiten koennen.
+ */
+.dl-btn,
+.dl-filter,
+.dl-info,
+.dl-step__marker,
+.dl-step__info,
+.dl-input {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* --- Fotoraster: 2 Spalten bis 640 px, 3 ab 640 px, 4 ab 768 px - in jeder Richtung gleich. --- */
+
+.dl-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (min-width: 640px) {
+  .dl-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 768px) {
+  .dl-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.dl-view {
+  display: flex;
+  flex-direction: column;
+}
+
+.dl-tile {
+  display: flex;
+  flex-direction: column;
+}
+
+.dl-tile__frame {
+  position: relative;
+}
+
+.dl-tile__img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+}
+
+/*
+ * Die Overlay-Zeile traegt Override-Marker (links) und Info-Trigger/Badge (rechts). Standardmaessig
+ * liegt sie absolut ueber dem Bild; "minimal" schaltet sie auf `position: static` und macht daraus
+ * eine Fusszeile UNTER dem Bild - identisches DOM, andere Platzierung.
+ */
+.dl-tile__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+.dl-tile__corner {
+  display: flex;
+  align-items: flex-start;
+  margin-left: auto;
+}
+
+.dl-tile__override,
+.dl-info,
+.dl-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.dl-tile--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  aspect-ratio: 1 / 1;
+}
+
+.dl-filters {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.dl-badge,
+.dl-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+/* --- Detailansicht --- */
+
+.dl-photo__img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+}
+
+.dl-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.dl-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.dl-row__value {
+  display: flex;
+  align-items: center;
+}
+
+/*
+ * Wertbalken: redundant zum daneben stehenden Prozentwert, deshalb darf eine Richtung ihn
+ * ausblenden ("minimal" tut das). Groesse und Farbe kommen aus der Richtung.
+ */
+.dl-meter {
+  position: relative;
+  overflow: hidden;
+  flex: none;
+}
+
+.dl-meter__fill {
+  display: block;
+  height: 100%;
+}
+
+.dl-candidates__list,
+.dl-finelabels__list {
+  display: flex;
+}
+
+.dl-finelabels__list {
+  flex-wrap: wrap;
+}
+
+.dl-candidates__list {
+  flex-direction: column;
+}
+
+.dl-candidate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dl-nav {
+  display: flex;
+  justify-content: space-between;
+}
+
+.dl-ratings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.dl-rating-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Stepper --- */
+
+.dl-stepper {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.dl-steps {
+  display: flex;
+  align-items: center;
+}
+
+.dl-step {
+  display: flex;
+  flex: 1;
+  align-items: center;
+}
+
+.dl-step:last-child {
+  flex: initial;
+}
+
+.dl-step__marker,
+.dl-step__info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.dl-step__line {
+  flex: 1;
+}
+
+.dl-step__lock {
+  width: 1em;
+  height: 1em;
+}
+
+/* Visuell verborgen bis zum Fokus - Standardmuster fuer Skip-Links. */
+.dl-skiplink {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dl-skiplink:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  clip-path: none;
+}
+
+.dl-category__title {
+  display: flex;
+  align-items: center;
+}
+
+.dl-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/*
+ * `prefers-reduced-motion: reduce` schaltet in JEDER Richtung Transform-/Skalierungs-Animationen
+ * ab; Farbuebergaenge duerfen ausdruecklich bleiben und werden hier deshalb nicht angefasst.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .dl-view *,
+  .dl-view *::before,
+  .dl-view *::after {
+    transform: none !important;
+    animation: none !important;
+  }
 }
