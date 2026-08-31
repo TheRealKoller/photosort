@@ -1,0 +1,692 @@
+/*
+ * TEMPORAER (specs/features/0287-design-richtungen-vergleich.md): Richtung "Plakat" (Id kreativ).
+ *
+ * These: Ein Urlaub ist ein Ereignis, kein Datensatz. Die Sortierung wird wie ein Plakat
+ * inszeniert - gewaltige Serifen-Schlagzeile, Fliesstext in Monospace als Gegenstimme, harte
+ * Ink-Konturen ohne jede Rundung, zwei Signalfarben (Vermillon, Saeure-Lime), die nur dort
+ * auftauchen, wo etwas passiert. Bewertung ist ein STEMPEL - "aussortiert" ist nicht rot, sondern
+ * schwarz durchgestempelt (siehe --rating-rejected).
+ *
+ * `--sans` ist hier bewusst mit einer Monospace-Familie belegt: die UI-Stimme IST Mono, das ist
+ * die Handschrift, kein Versehen.
+ *
+ * PFLICHTREGEL LIME: --accent-2 (#d7f205) erreicht auf hellem Grund nur 1.02:1 und darf niemals
+ * allein eine Flaeche begrenzen. Jede Lime-Flaeche traegt zwingend eine 2-px-Ink-Kontur - die
+ * Abgrenzung leistet die Kontur, nicht die Farbe. Fuer Lime ALS TEXT gilt --accent-2-strong.
+ *
+ * Signatur: Times-Schlagzeile ueber Mono-Text plus die schraffierte Sperrflaeche im Stepper.
+ */
+
+[data-direction='kreativ'][data-mode='light'] {
+  color-scheme: light;
+  --bg: #e9e7e0;
+  --surface: #f7f6f2;
+  --border: #14120f;
+  --text: #2f2c26;
+  --text-h: #14120f;
+  --accent: #d63410;
+  --accent-strong: #b8290a;
+  --accent-fg: #ffffff;
+  --accent-bg: color-mix(in srgb, #d63410 14%, transparent);
+  --accent-border: #14120f;
+  --accent-2: #d7f205;
+  --accent-2-strong: #4f5c00;
+  --rating-favorite: #f2b705;
+  --rating-favorite-fg: #14120f;
+  --rating-album-worthy: #1f7a5a;
+  --rating-album-worthy-fg: #ffffff;
+  --rating-rejected: #14120f;
+  --rating-rejected-fg: #f7f6f2;
+  --status-running: #a9bf00;
+  --status-success: #1f7a5a;
+  --status-success-fg: #ffffff;
+  --status-failed: #b8290a;
+  --status-running-tint: #eef5c2;
+  --status-running-strong: #4a5600;
+  --status-success-tint: #d8ebe3;
+  --status-success-strong: #175c43;
+  --status-failed-tint: #f6ddd6;
+  --status-failed-strong: #96230a;
+  --status-idle-tint: #dedcd4;
+  --status-idle-strong: #3a3730;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: 0 0 0 2px #14120f;
+  --sans: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --heading: 'Times New Roman', Times, ui-serif, Georgia, serif;
+  --mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
+  /* Eigene Zusatztokens: asymmetrische Abstandsskala, Ink-Konturstaerke. */
+  --p-1: 4px;
+  --p-2: 8px;
+  --p-3: 12px;
+  --p-4: 20px;
+  --p-6: 32px;
+  --p-8: 56px;
+  --p-ink: 2px;
+}
+
+[data-direction='kreativ'][data-mode='dark'] {
+  color-scheme: dark;
+  --bg: #0d0d0b;
+  --surface: #171712;
+  --border: #f2efe6;
+  --text: #cfcbbd;
+  --text-h: #ffffff;
+  --accent: #ff5a33;
+  --accent-strong: #ff7a5c;
+  --accent-fg: #0d0d0b;
+  --accent-bg: color-mix(in srgb, #ff5a33 18%, transparent);
+  --accent-border: #f2efe6;
+  --accent-2: #d7f205;
+  --accent-2-strong: #d7f205;
+  --rating-favorite: #f2c14e;
+  --rating-favorite-fg: #0d0d0b;
+  --rating-album-worthy: #4fbf95;
+  --rating-album-worthy-fg: #0d0d0b;
+  --rating-rejected: #f2efe6;
+  --rating-rejected-fg: #0d0d0b;
+  --status-running: #d7f205;
+  --status-success: #4fbf95;
+  --status-success-fg: #0d0d0b;
+  --status-failed: #ff7a5c;
+  --status-running-tint: color-mix(in srgb, #d7f205 20%, #0d0d0b);
+  --status-running-strong: #d7f205;
+  --status-success-tint: color-mix(in srgb, #4fbf95 20%, #0d0d0b);
+  --status-success-strong: #8fe0c2;
+  --status-failed-tint: color-mix(in srgb, #f2efe6 20%, #0d0d0b);
+  --status-failed-strong: #f2efe6;
+  --status-idle-tint: color-mix(in srgb, #b8b3a5 20%, #0d0d0b);
+  --status-idle-strong: #d8d4c8;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: 0 0 0 2px #f2efe6;
+  --sans: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --heading: 'Times New Roman', Times, ui-serif, Georgia, serif;
+  --mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
+  --p-1: 4px;
+  --p-2: 8px;
+  --p-3: 12px;
+  --p-4: 20px;
+  --p-6: 32px;
+  --p-8: 56px;
+  --p-ink: 2px;
+}
+
+/* --- Grundlayout und Typografie: Times-Schlagzeile ueber Mono-Fliesstext ----------------- */
+
+[data-direction='kreativ'] .dl-view {
+  gap: var(--p-6);
+  padding: var(--p-4);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Keine Uebergaenge - Zustandswechsel sind hart. */
+[data-direction='kreativ'] .dl-btn,
+[data-direction='kreativ'] .dl-filter,
+[data-direction='kreativ'] .dl-step__marker,
+[data-direction='kreativ'] .dl-badge {
+  transition: none;
+}
+
+[data-direction='kreativ'] .dl-title,
+[data-direction='kreativ'] .dl-day,
+[data-direction='kreativ'] .dl-cluster {
+  font-family: var(--heading);
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+/* Schlagzeile mit 3-px-Vermillon-Unterstreichung. */
+[data-direction='kreativ'] .dl-title {
+  align-self: flex-start;
+  padding-bottom: var(--p-1);
+  border-bottom: 3px solid var(--accent);
+  font-size: 40px;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+}
+
+[data-direction='kreativ'] .dl-day {
+  font-size: 28px;
+  line-height: 1;
+}
+
+[data-direction='kreativ'] .dl-cluster {
+  font-size: 20px;
+  font-style: italic;
+}
+
+[data-direction='kreativ'] .dl-group__title,
+[data-direction='kreativ'] .dl-category__title,
+[data-direction='kreativ'] .dl-finelabels__title {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-h);
+  gap: var(--p-2);
+}
+
+/* Sekundaertext bleibt 13 px - die Hierarchie kommt aus dem Kontrast Times/Mono. */
+[data-direction='kreativ'] .dl-subtitle,
+[data-direction='kreativ'] .dl-shortcuts,
+[data-direction='kreativ'] .dl-category__hint {
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* Der Positionszaehler wird zur Schlagzeile: grosse Times-Ziffer neben kleinem Mono-"/12". */
+[data-direction='kreativ'] .dl-position {
+  display: flex;
+  align-items: baseline;
+  gap: var(--p-1);
+}
+
+[data-direction='kreativ'] .dl-position__current {
+  font-family: var(--heading);
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-h);
+}
+
+[data-direction='kreativ'] .dl-position__total {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* --- Bedienelemente: 2-px-Ink-Kontur, Radius 0 ------------------------------------------ */
+
+[data-direction='kreativ'] .dl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--p-1);
+  padding: var(--p-2) var(--p-3);
+  border: var(--p-ink) solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+[data-direction='kreativ'] .dl-btn:active {
+  transform: translate(2px, 2px);
+}
+
+[data-direction='kreativ'] .dl-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent-strong);
+}
+
+/* Filterzeile in Mono-Versalien: aktiv als Ink-Vollton-Block, inaktiv nur unterstrichen. */
+[data-direction='kreativ'] .dl-filters {
+  gap: var(--p-3);
+}
+
+[data-direction='kreativ'] .dl-filter {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--p-2) var(--p-1);
+  border: 0;
+  border-bottom: var(--p-ink) solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[data-direction='kreativ'] .dl-filter[aria-pressed='true'] {
+  padding: var(--p-2);
+  border-bottom-color: transparent;
+  background: var(--border);
+  color: var(--surface);
+}
+
+[data-direction='kreativ'] .dl-rating-btn[aria-pressed='true'][data-rating='favorite'] {
+  background: var(--rating-favorite);
+  color: var(--rating-favorite-fg);
+}
+
+[data-direction='kreativ'] .dl-rating-btn[aria-pressed='true'][data-rating='album_worthy'] {
+  background: var(--rating-album-worthy);
+  color: var(--rating-album-worthy-fg);
+}
+
+[data-direction='kreativ'] .dl-rating-btn[aria-pressed='true'][data-rating='rejected'] {
+  background: var(--rating-rejected);
+  color: var(--rating-rejected-fg);
+}
+
+[data-direction='kreativ'] .dl-ratings {
+  gap: var(--p-2);
+}
+
+[data-direction='kreativ'] .dl-rating-btn__symbol {
+  margin-right: var(--p-1);
+}
+
+[data-direction='kreativ'] .dl-nav {
+  gap: var(--p-2);
+}
+
+[data-direction='kreativ'] .dl-input {
+  width: 88px;
+  padding: var(--p-2);
+  border: var(--p-ink) solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+[data-direction='kreativ'] .dl-field {
+  gap: var(--p-2);
+}
+
+[data-direction='kreativ'] .dl-field__label {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-h);
+}
+
+/* --- Kacheln: Ink-Kontur mit Lime-Randbalken und Kreisstempel --------------------------- */
+
+[data-direction='kreativ'] .dl-grid {
+  gap: var(--p-3);
+}
+
+[data-direction='kreativ'] .dl-tile {
+  gap: var(--p-2);
+}
+
+[data-direction='kreativ'] .dl-tile__frame {
+  border: var(--p-ink) solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+}
+
+/*
+ * Der 6-px-Lime-Randbalken an der linken Kante - die einzige weitere Verwendung von
+ * dl-tile__decor. Die Ink-Kontur der Kachel begrenzt ihn (Pflichtregel Lime).
+ */
+[data-direction='kreativ'] .dl-tile__decor {
+  display: block;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  background: var(--accent-2);
+  border-right: var(--p-ink) solid var(--border);
+  z-index: 1;
+}
+
+[data-direction='kreativ'] .dl-tile__overlay {
+  padding: var(--p-1);
+  z-index: 2;
+}
+
+[data-direction='kreativ'] .dl-tile__corner {
+  align-items: center;
+  gap: var(--p-1);
+}
+
+[data-direction='kreativ'] .dl-info,
+[data-direction='kreativ'] .dl-tile__override {
+  width: 44px;
+  height: 44px;
+  border: var(--p-ink) solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/*
+ * Der Bewertungs-Stempel ist der EINZIGE runde Punkt im ganzen System und dadurch unuebersehbar -
+ * die eine bewusste Ausnahme von "Radius 0 fuer alle Flaechen".
+ */
+[data-direction='kreativ'] .dl-badge {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border: var(--p-ink) solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+[data-direction='kreativ'] .dl-badge[data-rating='favorite'] {
+  background: var(--rating-favorite);
+  color: var(--rating-favorite-fg);
+}
+
+[data-direction='kreativ'] .dl-badge[data-rating='album_worthy'] {
+  background: var(--rating-album-worthy);
+  color: var(--rating-album-worthy-fg);
+}
+
+/* "Aussortiert" ist hier schwarz durchgestempelt statt rot - die staerkste Umdeutung. */
+[data-direction='kreativ'] .dl-badge[data-rating='rejected'] {
+  background: var(--rating-rejected);
+  color: var(--rating-rejected-fg);
+}
+
+[data-direction='kreativ'] .dl-badge[data-suggested='true'] {
+  width: auto;
+  min-width: 44px;
+  padding: 0 var(--p-2);
+  border-style: dashed;
+  background: var(--surface);
+  color: var(--text-h);
+}
+
+[data-direction='kreativ'] .dl-tile--placeholder {
+  padding: var(--p-2);
+  border: var(--p-ink) dashed var(--border);
+  border-radius: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+[data-direction='kreativ'] .dl-quality {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+[data-direction='kreativ'] .dl-quality__dots {
+  color: var(--accent-2-strong);
+}
+
+/* --- Detailansicht ---------------------------------------------------------------------- */
+
+/* Das Bild bricht mit negativem Aussenabstand ueber das Textmass hinaus auf die volle Breite. */
+[data-direction='kreativ'] .dl-photo {
+  margin: 0 calc(var(--p-4) * -1);
+  border-top: var(--p-ink) solid var(--border);
+  border-bottom: var(--p-ink) solid var(--border);
+  background: var(--surface);
+}
+
+[data-direction='kreativ'] .dl-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--p-6);
+  font-size: 13px;
+}
+
+[data-direction='kreativ'] .dl-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--p-3);
+}
+
+[data-direction='kreativ'] .dl-list {
+  gap: var(--p-2);
+}
+
+[data-direction='kreativ'] .dl-row {
+  gap: var(--p-3);
+}
+
+[data-direction='kreativ'] .dl-row__label {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+[data-direction='kreativ'] .dl-row__value {
+  gap: var(--p-2);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+/* Lime-Balken MIT Ink-Kontur (Pflichtregel Lime), hinter dem Prozentwert. */
+[data-direction='kreativ'] .dl-meter {
+  width: 60px;
+  height: 6px;
+  border: var(--p-ink) solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+}
+
+[data-direction='kreativ'] .dl-meter__fill {
+  background: var(--accent-2);
+}
+
+[data-direction='kreativ'] .dl-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--p-2);
+  margin-top: var(--p-2);
+}
+
+[data-direction='kreativ'] .dl-candidates__list {
+  gap: var(--p-2);
+}
+
+[data-direction='kreativ'] .dl-candidate {
+  gap: var(--p-2);
+  padding: var(--p-2);
+  border: var(--p-ink) solid var(--border);
+  background: var(--surface);
+}
+
+[data-direction='kreativ'] .dl-candidate__name {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+[data-direction='kreativ'] .dl-chip {
+  padding: 1px var(--p-2);
+  border: var(--p-ink) solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[data-direction='kreativ'] .dl-chip--fine {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+[data-direction='kreativ'] .dl-finelabels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--p-2);
+  margin-top: var(--p-3);
+}
+
+[data-direction='kreativ'] .dl-finelabels__list {
+  gap: var(--p-2);
+}
+
+[data-direction='kreativ'] .dl-statusicon {
+  margin-right: var(--p-1);
+}
+
+[data-direction='kreativ'] .dl-statusicon[data-tone='success'] {
+  color: var(--status-success-strong);
+}
+
+[data-direction='kreativ'] .dl-statusicon[data-tone='failed'] {
+  color: var(--status-failed-strong);
+}
+
+[data-direction='kreativ'] .dl-statusicon[data-tone='idle'] {
+  color: var(--text);
+}
+
+[data-direction='kreativ'] .dl-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--p-2);
+  padding: var(--p-3);
+  border: var(--p-ink) solid var(--border);
+  background: var(--accent-bg);
+}
+
+[data-direction='kreativ'] .dl-suggestion__title {
+  font-family: var(--mono);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-h);
+}
+
+/* --- Stepper: rechteckige Bloecke, blockiert als Schraffur ------------------------------- */
+
+[data-direction='kreativ'] .dl-stepper {
+  padding: var(--p-3) var(--p-4);
+  border-bottom: var(--p-ink) solid var(--border);
+  background: var(--bg);
+}
+
+[data-direction='kreativ'] .dl-steps {
+  gap: var(--p-1);
+}
+
+[data-direction='kreativ'] .dl-step {
+  gap: var(--p-1);
+}
+
+[data-direction='kreativ'] .dl-step__marker {
+  width: 44px;
+  height: 44px;
+  border: var(--p-ink) solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+[data-direction='kreativ'] .dl-step[data-state='done'] .dl-step__marker {
+  background: var(--border);
+  color: var(--surface);
+}
+
+/* Lime-Vollton MIT Ink-Kontur und Ink-Ziffer (Pflichtregel Lime). */
+[data-direction='kreativ'] .dl-step[data-state='current'] .dl-step__marker {
+  background: var(--accent-2);
+  color: #14120f;
+}
+
+/* Diagonal schraffierte Sperrflaeche - die zweite Signatur dieser Richtung. */
+[data-direction='kreativ'] .dl-step[data-state='blocked'] .dl-step__marker {
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--border) 35%, transparent) 0,
+    color-mix(in srgb, var(--border) 35%, transparent) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  color: var(--text-h);
+}
+
+[data-direction='kreativ'] .dl-step__line {
+  height: var(--p-ink);
+  background: var(--border);
+}
+
+[data-direction='kreativ'] .dl-step__label {
+  display: none;
+}
+
+[data-direction='kreativ'] .dl-step__info {
+  width: 44px;
+  height: 44px;
+  border: var(--p-ink) solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* --- Kuratierung ------------------------------------------------------------------------ */
+
+[data-direction='kreativ'] .dl-curate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--p-6);
+  padding: 0 var(--p-4) var(--p-6);
+}
+
+[data-direction='kreativ'] .dl-curate__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--p-2);
+}
+
+/*
+ * Kategorieblock mit Ink-Kontur. Der Auffangkorb "Nicht erkannt" bekommt hier bewusst KEINE
+ * Sonderbehandlung - keine Schraffur, kein Vermillon: ein fehlendes Erkennungsergebnis ist kein
+ * Fehler, und genau diese Versuchung verbietet das Design-System-Muster.
+ */
+[data-direction='kreativ'] .dl-category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--p-3);
+  padding: var(--p-3);
+  border: var(--p-ink) solid var(--border);
+}
+
+[data-direction='kreativ'] .dl-view--pipeline {
+  padding: 0;
+  gap: var(--p-4);
+}
+
+[data-direction='kreativ'] .dl-skiplink:focus {
+  margin: var(--p-2);
+  padding: var(--p-2) var(--p-3);
+  border: var(--p-ink) solid var(--border);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+/* Fokusring in Vermillon, NICHT in Lime - Lime traegt allein zu wenig Kontrast. */
+[data-direction='kreativ'] :focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}

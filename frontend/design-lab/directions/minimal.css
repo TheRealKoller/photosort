@@ -1,0 +1,629 @@
+/*
+ * TEMPORAER (specs/features/0287-design-richtungen-vergleich.md): Richtung "Minimal".
+ *
+ * These: Alles, was nicht Foto ist, tritt zurueck. Keine Kartenflaechen, keine Schatten, keine
+ * Rundungen, keine dekorative Farbe - die einzige Farbe im Bild ist Bewertungs- oder
+ * Prozessfarbe und dadurch sofort auffindbar. Nichts liegt auf einem Foto. Hierarchie entsteht aus
+ * Abstand und Laufweite, nicht aus Groesse.
+ *
+ * Signatur: die Punktlinie statt der Schrittkreise und die leere, unangetastete Fotoflaeche.
+ * Radius 0 ausnahmslos. Einzige Richtung ohne Wertbalken (der Prozentwert genuegt).
+ *
+ * ABWEICHUNG mit Begruendung: der UI/UX-Abschnitt nennt fuer die Kachel-Fusszeile "20 px hoch" und
+ * zugleich projektweit "Touch-Ziel >= 44 x 44 px fuer jedes interaktive Element in jeder
+ * Richtung". Der Info-Trigger in der Fusszeile ist interaktiv, deshalb gewinnt hier die
+ * 44-px-Regel: die Fusszeile ist 44 px hoch, die SICHTBAREN Elemente bleiben die vorgesehenen
+ * 18-px-Quadrate (transparenter Innenabstand statt kleinerer Trefferflaeche).
+ */
+
+[data-direction='minimal'][data-mode='light'] {
+  color-scheme: light;
+  --bg: #fbfbfa;
+  --surface: #ffffff;
+  --border: #8b8b84;
+  --text: #5b5b57;
+  --text-h: #111111;
+  --accent: #1a1a1a;
+  --accent-strong: #1a1a1a;
+  --accent-fg: #ffffff;
+  --accent-bg: color-mix(in srgb, #1a1a1a 6%, transparent);
+  --accent-border: color-mix(in srgb, #1a1a1a 32%, transparent);
+  --accent-2: #5c6b7d;
+  --accent-2-strong: #4a5766;
+  --rating-favorite: #7d6414;
+  --rating-favorite-fg: #ffffff;
+  --rating-album-worthy: #3d6b4c;
+  --rating-album-worthy-fg: #ffffff;
+  --rating-rejected: #8f3b2f;
+  --rating-rejected-fg: #ffffff;
+  --status-running: #4a5b6e;
+  --status-success: #3d6b4c;
+  --status-success-fg: #ffffff;
+  --status-failed: #8f3b2f;
+  --status-running-tint: #eceef1;
+  --status-running-strong: #3a4756;
+  --status-success-tint: #e8efe9;
+  --status-success-strong: #2f5a3d;
+  --status-failed-tint: #f4e9e7;
+  --status-failed-strong: #7a3226;
+  --status-idle-tint: #f0f0ee;
+  --status-idle-strong: #4a4a45;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: none;
+  --sans: system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --heading: system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Consolas, monospace;
+
+  /* Eigene Zusatztokens: weite Sprunge in der Abstandsskala, Haarlinie als Trenner. */
+  --m-1: 4px;
+  --m-2: 8px;
+  --m-3: 16px;
+  --m-4: 24px;
+  --m-6: 40px;
+  --m-8: 64px;
+  --m-hairline: color-mix(in srgb, #8b8b84 45%, transparent);
+}
+
+[data-direction='minimal'][data-mode='dark'] {
+  color-scheme: dark;
+  --bg: #0e0e0e;
+  --surface: #171717;
+  --border: #6d6d6d;
+  --text: #a5a5a5;
+  --text-h: #f5f5f5;
+  --accent: #f0f0f0;
+  --accent-strong: #f0f0f0;
+  --accent-fg: #0e0e0e;
+  --accent-bg: color-mix(in srgb, #f0f0f0 10%, transparent);
+  --accent-border: color-mix(in srgb, #f0f0f0 38%, transparent);
+  --accent-2: #93a3b5;
+  --accent-2-strong: #b3c0ce;
+  --rating-favorite: #cba94a;
+  --rating-favorite-fg: #0e0e0e;
+  --rating-album-worthy: #7fae8c;
+  --rating-album-worthy-fg: #0e0e0e;
+  --rating-rejected: #d08a7c;
+  --rating-rejected-fg: #0e0e0e;
+  --status-running: #8fa3b8;
+  --status-success: #7fae8c;
+  --status-success-fg: #0e0e0e;
+  --status-failed: #d08a7c;
+  --status-running-tint: color-mix(in srgb, #8fa3b8 20%, #0e0e0e);
+  --status-running-strong: #c3d1df;
+  --status-success-tint: color-mix(in srgb, #7fae8c 20%, #0e0e0e);
+  --status-success-strong: #b6d5bf;
+  --status-failed-tint: color-mix(in srgb, #d08a7c 20%, #0e0e0e);
+  --status-failed-strong: #e8b6ac;
+  --status-idle-tint: color-mix(in srgb, #8a8a85 20%, #0e0e0e);
+  --status-idle-strong: #ccccc6;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: none;
+  --sans: system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --heading: system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Consolas, monospace;
+
+  --m-1: 4px;
+  --m-2: 8px;
+  --m-3: 16px;
+  --m-4: 24px;
+  --m-6: 40px;
+  --m-8: 64px;
+  --m-hairline: color-mix(in srgb, #6d6d6d 45%, transparent);
+}
+
+/* --- Grundlayout und Typografie --------------------------------------------------------- */
+
+[data-direction='minimal'] .dl-view {
+  gap: var(--m-6);
+  padding: var(--m-4);
+  font-size: 13px;
+  line-height: 1.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Nie fett - nur die Gewichte 400 und 500. */
+[data-direction='minimal'] .dl-title,
+[data-direction='minimal'] .dl-day,
+[data-direction='minimal'] .dl-cluster,
+[data-direction='minimal'] .dl-group__title,
+[data-direction='minimal'] .dl-category__title,
+[data-direction='minimal'] .dl-finelabels__title {
+  font-family: var(--heading);
+  color: var(--text-h);
+}
+
+[data-direction='minimal'] .dl-title {
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+[data-direction='minimal'] .dl-day {
+  font-size: 16px;
+  font-weight: 400;
+}
+
+[data-direction='minimal'] .dl-cluster {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+[data-direction='minimal'] .dl-group__title,
+[data-direction='minimal'] .dl-category__title,
+[data-direction='minimal'] .dl-finelabels__title {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  gap: var(--m-2);
+}
+
+[data-direction='minimal'] .dl-subtitle,
+[data-direction='minimal'] .dl-shortcuts,
+[data-direction='minimal'] .dl-position,
+[data-direction='minimal'] .dl-category__hint {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+[data-direction='minimal'] .dl-position__current {
+  color: var(--text-h);
+}
+
+/* --- Bedienelemente: Radius 0, sichtbarer 1-px-Rahmen nur hier -------------------------- */
+
+[data-direction='minimal'] .dl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--m-1);
+  padding: var(--m-2) var(--m-3);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-h);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: opacity 90ms linear, color 90ms linear, background-color 90ms linear;
+}
+
+[data-direction='minimal'] .dl-btn--ghost {
+  border-color: transparent;
+  color: var(--text);
+}
+
+/* Filter als Textzeile mit 1-px-Unterstrich am aktiven Eintrag statt gefuellter Pillen. */
+[data-direction='minimal'] .dl-filters {
+  gap: var(--m-3);
+}
+
+[data-direction='minimal'] .dl-filter {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--m-2) 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  transition: color 90ms linear, border-color 90ms linear;
+}
+
+[data-direction='minimal'] .dl-filter[aria-pressed='true'] {
+  border-bottom-color: var(--accent);
+  color: var(--text-h);
+}
+
+[data-direction='minimal'] .dl-rating-btn[aria-pressed='true'][data-rating='favorite'] {
+  border-color: var(--rating-favorite);
+  background: var(--rating-favorite);
+  color: var(--rating-favorite-fg);
+}
+
+[data-direction='minimal'] .dl-rating-btn[aria-pressed='true'][data-rating='album_worthy'] {
+  border-color: var(--rating-album-worthy);
+  background: var(--rating-album-worthy);
+  color: var(--rating-album-worthy-fg);
+}
+
+[data-direction='minimal'] .dl-rating-btn[aria-pressed='true'][data-rating='rejected'] {
+  border-color: var(--rating-rejected);
+  background: var(--rating-rejected);
+  color: var(--rating-rejected-fg);
+}
+
+[data-direction='minimal'] .dl-ratings {
+  gap: var(--m-2);
+}
+
+[data-direction='minimal'] .dl-rating-btn__symbol {
+  margin-right: var(--m-1);
+}
+
+[data-direction='minimal'] .dl-nav {
+  gap: var(--m-2);
+}
+
+[data-direction='minimal'] .dl-input {
+  width: 72px;
+  padding: var(--m-2);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-h);
+  text-align: right;
+}
+
+[data-direction='minimal'] .dl-field {
+  gap: var(--m-2);
+}
+
+[data-direction='minimal'] .dl-field__label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+/* --- Kacheln: auf dem Foto liegt nichts ------------------------------------------------- */
+
+[data-direction='minimal'] .dl-grid {
+  gap: var(--m-4);
+}
+
+[data-direction='minimal'] .dl-tile {
+  gap: var(--m-2);
+}
+
+[data-direction='minimal'] .dl-tile__frame {
+  border-radius: 0;
+}
+
+[data-direction='minimal'] .dl-tile__decor {
+  display: none;
+}
+
+/*
+ * Kern der Handschrift: die Overlay-Zeile wird statisch und damit zur Fusszeile UNTER dem Bild.
+ * Identisches DOM, nur `position: static` statt `absolute`.
+ */
+[data-direction='minimal'] .dl-tile__overlay {
+  position: static;
+  align-items: center;
+  height: 44px;
+  padding: 0;
+}
+
+[data-direction='minimal'] .dl-tile__corner {
+  align-items: center;
+  gap: var(--m-2);
+}
+
+[data-direction='minimal'] .dl-tile__override,
+[data-direction='minimal'] .dl-info,
+[data-direction='minimal'] .dl-badge {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-h);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Die sichtbaren 18-px-Quadrate sitzen INNEN, die Trefferflaeche bleibt 44 px. */
+[data-direction='minimal'] .dl-tile__override > span,
+[data-direction='minimal'] .dl-info > span,
+[data-direction='minimal'] .dl-badge > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+
+[data-direction='minimal'] .dl-badge[data-rating='favorite'] > span {
+  border-color: var(--rating-favorite);
+  background: var(--rating-favorite);
+  color: var(--rating-favorite-fg);
+}
+
+[data-direction='minimal'] .dl-badge[data-rating='album_worthy'] > span {
+  border-color: var(--rating-album-worthy);
+  background: var(--rating-album-worthy);
+  color: var(--rating-album-worthy-fg);
+}
+
+[data-direction='minimal'] .dl-badge[data-rating='rejected'] > span {
+  border-color: var(--rating-rejected);
+  background: var(--rating-rejected);
+  color: var(--rating-rejected-fg);
+}
+
+[data-direction='minimal'] .dl-badge[data-suggested='true'] > span {
+  background: transparent;
+  color: var(--text-h);
+}
+
+[data-direction='minimal'] .dl-tile--placeholder {
+  padding: var(--m-2);
+  border: 1px dashed var(--m-hairline);
+  border-radius: 0;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+[data-direction='minimal'] .dl-quality {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+[data-direction='minimal'] .dl-quality__dots {
+  color: var(--text-h);
+  letter-spacing: 0;
+}
+
+/* --- Detailansicht: Haarlinien und Weissraum statt Flaechen ----------------------------- */
+
+[data-direction='minimal'] .dl-photo {
+  border-radius: 0;
+}
+
+[data-direction='minimal'] .dl-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-6);
+  padding-top: var(--m-4);
+  border-top: 1px solid var(--m-hairline);
+}
+
+[data-direction='minimal'] .dl-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-3);
+}
+
+[data-direction='minimal'] .dl-list {
+  gap: var(--m-2);
+}
+
+[data-direction='minimal'] .dl-row {
+  gap: var(--m-3);
+}
+
+[data-direction='minimal'] .dl-row__label {
+  color: var(--text);
+}
+
+[data-direction='minimal'] .dl-row__value {
+  gap: var(--m-2);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+[data-direction='minimal'] .dl-row__num {
+  min-width: 44px;
+  text-align: right;
+}
+
+/*
+ * Einzige Richtung ohne Wertbalken: er ist redundant zum daneben stehenden Prozentwert, und die
+ * Zahl genuegt. Beschriftung und Prozentwert bleiben unangetastet.
+ */
+[data-direction='minimal'] .dl-meter {
+  display: none;
+}
+
+[data-direction='minimal'] .dl-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-2);
+  padding-top: var(--m-2);
+}
+
+[data-direction='minimal'] .dl-candidates__list {
+  gap: var(--m-2);
+}
+
+[data-direction='minimal'] .dl-candidate {
+  gap: var(--m-2);
+  padding-bottom: var(--m-2);
+  border-bottom: 1px solid var(--m-hairline);
+}
+
+[data-direction='minimal'] .dl-candidate__name {
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+[data-direction='minimal'] .dl-chip {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+[data-direction='minimal'] .dl-chip--fine {
+  padding: 2px var(--m-2);
+  border: 1px solid var(--m-hairline);
+  color: var(--text-h);
+  letter-spacing: 0.08em;
+  text-transform: none;
+}
+
+[data-direction='minimal'] .dl-finelabels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-2);
+  margin-top: var(--m-3);
+}
+
+[data-direction='minimal'] .dl-finelabels__list {
+  gap: var(--m-2);
+}
+
+[data-direction='minimal'] .dl-statusicon {
+  margin-right: var(--m-1);
+}
+
+[data-direction='minimal'] .dl-statusicon[data-tone='success'] {
+  color: var(--status-success);
+}
+
+[data-direction='minimal'] .dl-statusicon[data-tone='failed'] {
+  color: var(--status-failed);
+}
+
+[data-direction='minimal'] .dl-statusicon[data-tone='idle'] {
+  color: var(--text);
+}
+
+[data-direction='minimal'] .dl-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--m-3);
+  padding-top: var(--m-3);
+  border-top: 1px solid var(--m-hairline);
+}
+
+[data-direction='minimal'] .dl-suggestion__title {
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+/* --- Stepper: Punktlinie statt Schrittkreise -------------------------------------------- */
+
+[data-direction='minimal'] .dl-stepper {
+  padding: var(--m-3) var(--m-4);
+  border-bottom: 1px solid var(--m-hairline);
+  background: var(--bg);
+}
+
+[data-direction='minimal'] .dl-steps {
+  gap: 0;
+}
+
+[data-direction='minimal'] .dl-step__marker {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+[data-direction='minimal'] .dl-step__marker::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border: 1px solid var(--border);
+  background: transparent;
+}
+
+[data-direction='minimal'] .dl-step[data-state='done'] .dl-step__marker::before {
+  border-color: var(--text-h);
+  background: var(--text-h);
+}
+
+[data-direction='minimal'] .dl-step[data-state='current'] .dl-step__marker::before {
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* Das Symbol steht als kleine Marke UEBER dem Punkt, der Punkt selbst traegt den Zustand. */
+[data-direction='minimal'] .dl-step__symbol {
+  position: relative;
+  top: -13px;
+  color: var(--text-h);
+}
+
+[data-direction='minimal'] .dl-step__line {
+  height: 1px;
+  background: var(--m-hairline);
+}
+
+[data-direction='minimal'] .dl-step__label {
+  display: none;
+}
+
+[data-direction='minimal'] .dl-step__info {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+/* --- Kuratierung ------------------------------------------------------------------------ */
+
+[data-direction='minimal'] .dl-curate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-6);
+  padding: 0 var(--m-4) var(--m-6);
+}
+
+[data-direction='minimal'] .dl-curate__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-2);
+}
+
+[data-direction='minimal'] .dl-category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-3);
+}
+
+[data-direction='minimal'] .dl-view--pipeline {
+  padding: 0;
+  gap: var(--m-6);
+}
+
+[data-direction='minimal'] .dl-skiplink:focus {
+  margin: var(--m-2);
+  padding: var(--m-2) var(--m-3);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+[data-direction='minimal'] :focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}

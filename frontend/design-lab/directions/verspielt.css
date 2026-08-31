@@ -1,0 +1,648 @@
+/*
+ * TEMPORAER (specs/features/0287-design-richtungen-vergleich.md): Richtung "Verspielt".
+ *
+ * These: Fotos durchsehen soll sich leicht anfuehlen. Diese Richtung nimmt die Bewertung als Spiel
+ * ernst - grosse, greifbare Ziele, satte Farben, ein Knopf, der sich beim Druecken sichtbar
+ * bewegt. Einzige Richtung mit einer TAKTILEN Metapher (Sticker/Aufkleber, harter Versatzschatten)
+ * statt einer Papier- oder Bildschirmmetapher.
+ *
+ * Signatur: der ueberstehende Sticker-Kreis auf der Kachelecke plus der harte Versatzschatten
+ * ueberall.
+ */
+
+[data-direction='verspielt'][data-mode='light'] {
+  color-scheme: light;
+  --bg: #f6f2ff;
+  --surface: #ffffff;
+  --border: #6a4bb0;
+  --text: #57468a;
+  --text-h: #2b1055;
+  --accent: #7c3aed;
+  --accent-strong: #6425cf;
+  --accent-fg: #ffffff;
+  --accent-bg: color-mix(in srgb, #7c3aed 12%, transparent);
+  --accent-border: color-mix(in srgb, #7c3aed 55%, transparent);
+  --accent-2: #0e9aa7;
+  --accent-2-strong: #0a6f78;
+  --rating-favorite: #f5a524;
+  --rating-favorite-fg: #2b1055;
+  --rating-album-worthy: #22b455;
+  --rating-album-worthy-fg: #0a2a14;
+  --rating-rejected: #e11d48;
+  --rating-rejected-fg: #ffffff;
+  --status-running: #7c3aed;
+  --status-success: #22b455;
+  --status-success-fg: #0a2a14;
+  --status-failed: #e11d48;
+  --status-running-tint: #e6dcfb;
+  --status-running-strong: #4c1d95;
+  --status-success-tint: #d4f1f4;
+  --status-success-strong: #065c68;
+  --status-failed-tint: #fbdde4;
+  --status-failed-strong: #8f0f2e;
+  --status-idle-tint: #e9e6f2;
+  --status-idle-strong: #4b4266;
+  --shadow-sm: 2px 2px 0 #6a4bb0;
+  --shadow: 4px 4px 0 #6a4bb0;
+  --shadow-lg: 8px 8px 0 #6a4bb0;
+  --sans: ui-rounded, 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  --heading: ui-rounded, 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  /* Eigene Zusatztokens: grosszuegige Abstaende, kraeftige Radien, Ueberschwinger-Kurve. */
+  --v-radius: 18px;
+  --v-radius-lg: 26px;
+  --v-radius-xl: 34px;
+  --v-1: 6px;
+  --v-2: 12px;
+  --v-3: 18px;
+  --v-4: 24px;
+  --v-6: 36px;
+  --v-8: 48px;
+  --v-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --v-ring: #ffffff;
+}
+
+[data-direction='verspielt'][data-mode='dark'] {
+  color-scheme: dark;
+  --bg: #1c1136;
+  --surface: #2a1c4d;
+  --border: #7a5fd0;
+  --text: #cbbde9;
+  --text-h: #fbf6ff;
+  --accent: #c084fc;
+  --accent-strong: #d2a6ff;
+  --accent-fg: #1c1136;
+  --accent-bg: color-mix(in srgb, #c084fc 20%, transparent);
+  --accent-border: color-mix(in srgb, #c084fc 60%, transparent);
+  --accent-2: #2dd4e0;
+  --accent-2-strong: #6fe6ee;
+  --rating-favorite: #f7c14a;
+  --rating-favorite-fg: #1c1136;
+  --rating-album-worthy: #4ade80;
+  --rating-album-worthy-fg: #1c1136;
+  --rating-rejected: #ff7a9c;
+  --rating-rejected-fg: #1c1136;
+  --status-running: #c084fc;
+  --status-success: #4ade80;
+  --status-success-fg: #1c1136;
+  --status-failed: #ff7a9c;
+  --status-running-tint: color-mix(in srgb, #c084fc 24%, #1c1136);
+  --status-running-strong: #dcc0ff;
+  --status-success-tint: color-mix(in srgb, #2dd4e0 24%, #1c1136);
+  --status-success-strong: #9beef4;
+  --status-failed-tint: color-mix(in srgb, #ff7a9c 24%, #1c1136);
+  --status-failed-strong: #ffb8c8;
+  --status-idle-tint: color-mix(in srgb, #9c8fc4 24%, #1c1136);
+  --status-idle-strong: #d5cce9;
+  --shadow-sm: 2px 2px 0 #c084fc;
+  --shadow: 4px 4px 0 #c084fc;
+  --shadow-lg: 8px 8px 0 #c084fc;
+  --sans: ui-rounded, 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  --heading: ui-rounded, 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  --v-radius: 18px;
+  --v-radius-lg: 26px;
+  --v-radius-xl: 34px;
+  --v-1: 6px;
+  --v-2: 12px;
+  --v-3: 18px;
+  --v-4: 24px;
+  --v-6: 36px;
+  --v-8: 48px;
+  --v-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --v-ring: #2a1c4d;
+}
+
+/* --- Grundlayout und Typografie --------------------------------------------------------- */
+
+[data-direction='verspielt'] .dl-view {
+  gap: var(--v-6);
+  padding: var(--v-4);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+[data-direction='verspielt'] .dl-title,
+[data-direction='verspielt'] .dl-day,
+[data-direction='verspielt'] .dl-cluster,
+[data-direction='verspielt'] .dl-group__title,
+[data-direction='verspielt'] .dl-category__title,
+[data-direction='verspielt'] .dl-finelabels__title {
+  font-family: var(--heading);
+  font-weight: 800;
+  color: var(--text-h);
+}
+
+[data-direction='verspielt'] .dl-title {
+  font-size: 32px;
+  letter-spacing: -0.01em;
+}
+
+[data-direction='verspielt'] .dl-day {
+  font-size: 24px;
+}
+
+[data-direction='verspielt'] .dl-cluster,
+[data-direction='verspielt'] .dl-group__title {
+  font-size: 19px;
+}
+
+[data-direction='verspielt'] .dl-category__title,
+[data-direction='verspielt'] .dl-finelabels__title {
+  font-size: 16px;
+  gap: var(--v-1);
+}
+
+/* Mikro-Text bewusst OHNE Versalien - Versalien wirken streng, das ist hier der falsche Ton. */
+[data-direction='verspielt'] .dl-subtitle,
+[data-direction='verspielt'] .dl-shortcuts,
+[data-direction='verspielt'] .dl-position,
+[data-direction='verspielt'] .dl-category__hint {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+[data-direction='verspielt'] .dl-position__current {
+  color: var(--text-h);
+}
+
+/* --- Bedienelemente: Pillen mit 2-px-Kontur und hartem Versatzschatten ------------------- */
+
+[data-direction='verspielt'] .dl-btn,
+[data-direction='verspielt'] .dl-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--v-1);
+  padding: var(--v-1) var(--v-3);
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-h);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+  transition: transform 180ms var(--v-ease), box-shadow 180ms var(--v-ease),
+    background-color 180ms var(--v-ease), color 180ms var(--v-ease);
+}
+
+/* "Eingedrueckt": Element um 2 px versetzt, Versatzschatten halbiert. */
+[data-direction='verspielt'] .dl-filter[aria-pressed='true'],
+[data-direction='verspielt'] .dl-rating-btn[aria-pressed='true'] {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--border);
+}
+
+[data-direction='verspielt'] .dl-filter[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+[data-direction='verspielt'] .dl-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent-strong);
+}
+
+[data-direction='verspielt'] .dl-filters {
+  gap: var(--v-2);
+}
+
+[data-direction='verspielt'] .dl-rating-btn {
+  flex: 1 1 auto;
+}
+
+[data-direction='verspielt'] .dl-rating-btn[aria-pressed='true'][data-rating='favorite'] {
+  background: var(--rating-favorite);
+  color: var(--rating-favorite-fg);
+}
+
+[data-direction='verspielt'] .dl-rating-btn[aria-pressed='true'][data-rating='album_worthy'] {
+  background: var(--rating-album-worthy);
+  color: var(--rating-album-worthy-fg);
+}
+
+[data-direction='verspielt'] .dl-rating-btn[aria-pressed='true'][data-rating='rejected'] {
+  background: var(--rating-rejected);
+  color: var(--rating-rejected-fg);
+}
+
+[data-direction='verspielt'] .dl-ratings {
+  gap: var(--v-2);
+}
+
+[data-direction='verspielt'] .dl-rating-btn__symbol {
+  margin-right: var(--v-1);
+}
+
+[data-direction='verspielt'] .dl-nav {
+  gap: var(--v-2);
+}
+
+[data-direction='verspielt'] .dl-input {
+  width: 104px;
+  padding: var(--v-1) var(--v-2);
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-h);
+  box-shadow: var(--shadow-sm);
+}
+
+[data-direction='verspielt'] .dl-field {
+  gap: var(--v-1);
+}
+
+[data-direction='verspielt'] .dl-field__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* --- Kacheln: Sticker-Kreis ueber der Ecke ----------------------------------------------- */
+
+[data-direction='verspielt'] .dl-grid {
+  gap: var(--v-3);
+}
+
+[data-direction='verspielt'] .dl-tile {
+  gap: var(--v-2);
+}
+
+[data-direction='verspielt'] .dl-tile__frame {
+  border: 2px solid var(--border);
+  border-radius: var(--v-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+[data-direction='verspielt'] .dl-tile__img {
+  border-radius: calc(var(--v-radius) - 4px);
+}
+
+/* Der Farbkreis, der unter dem Sticker hervorschaut - nur diese Richtung nutzt dl-tile__decor. */
+[data-direction='verspielt'] .dl-tile__decor {
+  display: block;
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--accent-2);
+}
+
+[data-direction='verspielt'] .dl-tile__overlay {
+  padding: 0;
+}
+
+[data-direction='verspielt'] .dl-tile__corner {
+  align-items: center;
+  gap: var(--v-1);
+  margin: -10px -10px 0 auto;
+}
+
+[data-direction='verspielt'] .dl-info {
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-h);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Der Override-Marker ist ein zweiter, kleinerer Kreis in der Gegenecke. */
+[data-direction='verspielt'] .dl-tile__override {
+  width: 44px;
+  height: 44px;
+  margin: -8px 0 0 -8px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Der Bewertungs-Sticker: 32-px-Kreis mit 3 px hellem Ring. */
+[data-direction='verspielt'] .dl-badge {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border: 3px solid var(--v-ring);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+[data-direction='verspielt'] .dl-badge[data-rating='favorite'] {
+  background: var(--rating-favorite);
+  color: var(--rating-favorite-fg);
+}
+
+[data-direction='verspielt'] .dl-badge[data-rating='album_worthy'] {
+  background: var(--rating-album-worthy);
+  color: var(--rating-album-worthy-fg);
+}
+
+[data-direction='verspielt'] .dl-badge[data-rating='rejected'] {
+  background: var(--rating-rejected);
+  color: var(--rating-rejected-fg);
+}
+
+[data-direction='verspielt'] .dl-badge[data-suggested='true'] {
+  width: auto;
+  min-width: 40px;
+  padding: 0 var(--v-1);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-h);
+  box-shadow: none;
+  outline: 2px dashed var(--border);
+}
+
+[data-direction='verspielt'] .dl-tile--placeholder {
+  padding: var(--v-2);
+  border: 2px dashed var(--border);
+  border-radius: var(--v-radius);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+[data-direction='verspielt'] .dl-quality {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+[data-direction='verspielt'] .dl-quality__dots {
+  color: var(--accent-2-strong);
+}
+
+/* --- Detailansicht: Polaroid-Rahmung ---------------------------------------------------- */
+
+[data-direction='verspielt'] .dl-photo {
+  padding: 12px 12px 28px;
+  border: 2px solid var(--border);
+  border-radius: var(--v-radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+[data-direction='verspielt'] .dl-photo__img {
+  border-radius: calc(var(--v-radius-lg) - 10px);
+}
+
+[data-direction='verspielt'] .dl-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-4);
+  padding: var(--v-3);
+  border: 2px solid var(--border);
+  border-radius: var(--v-radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 15px;
+}
+
+[data-direction='verspielt'] .dl-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-2);
+}
+
+[data-direction='verspielt'] .dl-list {
+  gap: var(--v-2);
+}
+
+[data-direction='verspielt'] .dl-row {
+  gap: var(--v-2);
+}
+
+[data-direction='verspielt'] .dl-row__label {
+  color: var(--text);
+}
+
+[data-direction='verspielt'] .dl-row__value {
+  gap: var(--v-1);
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+[data-direction='verspielt'] .dl-meter {
+  width: 64px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+}
+
+[data-direction='verspielt'] .dl-meter__fill {
+  border-radius: 999px;
+  background: var(--accent-2);
+}
+
+[data-direction='verspielt'] .dl-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-2);
+  margin-top: var(--v-1);
+}
+
+[data-direction='verspielt'] .dl-candidates__list {
+  gap: var(--v-2);
+}
+
+[data-direction='verspielt'] .dl-candidate {
+  gap: var(--v-2);
+  padding: var(--v-2);
+  border: 2px solid var(--border);
+  border-radius: var(--v-radius);
+  background: var(--bg);
+}
+
+[data-direction='verspielt'] .dl-candidate__name {
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+[data-direction='verspielt'] .dl-chip {
+  padding: 2px var(--v-2);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--status-idle-tint);
+  color: var(--status-idle-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+[data-direction='verspielt'] .dl-chip--fine {
+  border-color: var(--accent-border);
+  background: transparent;
+  color: var(--text-h);
+  font-size: 12px;
+}
+
+[data-direction='verspielt'] .dl-finelabels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-1);
+  margin-top: var(--v-2);
+}
+
+[data-direction='verspielt'] .dl-finelabels__list {
+  gap: var(--v-1);
+}
+
+[data-direction='verspielt'] .dl-statusicon {
+  margin-right: var(--v-1);
+}
+
+[data-direction='verspielt'] .dl-statusicon[data-tone='success'] {
+  color: var(--status-success);
+}
+
+[data-direction='verspielt'] .dl-statusicon[data-tone='failed'] {
+  color: var(--status-failed);
+}
+
+[data-direction='verspielt'] .dl-statusicon[data-tone='idle'] {
+  color: var(--text);
+}
+
+[data-direction='verspielt'] .dl-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--v-2);
+  padding: var(--v-3);
+  border: 2px solid var(--border);
+  border-radius: var(--v-radius-xl);
+  background: var(--accent-bg);
+  box-shadow: var(--shadow);
+  font-size: 15px;
+}
+
+[data-direction='verspielt'] .dl-suggestion__title {
+  font-weight: 800;
+  color: var(--text-h);
+}
+
+/* --- Stepper: 52-px-Kreise, dicke gestrichelte Verbindung -------------------------------- */
+
+[data-direction='verspielt'] .dl-stepper {
+  padding: var(--v-2) var(--v-3);
+  border-bottom: 2px solid var(--border);
+  background: var(--bg);
+}
+
+[data-direction='verspielt'] .dl-steps {
+  gap: var(--v-1);
+}
+
+[data-direction='verspielt'] .dl-step {
+  gap: var(--v-1);
+}
+
+[data-direction='verspielt'] .dl-step__marker {
+  width: 52px;
+  height: 52px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-h);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+  transition: transform 180ms var(--v-ease), background-color 180ms var(--v-ease),
+    color 180ms var(--v-ease);
+}
+
+[data-direction='verspielt'] .dl-step[data-state='done'] .dl-step__marker {
+  background: var(--status-success);
+  color: var(--status-success-fg);
+}
+
+[data-direction='verspielt'] .dl-step[data-state='current'] .dl-step__marker {
+  transform: scale(1.12);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+[data-direction='verspielt'] .dl-step[data-state='blocked'] .dl-step__marker {
+  border-style: dashed;
+  background: var(--bg);
+  box-shadow: none;
+  color: var(--text);
+}
+
+[data-direction='verspielt'] .dl-step__line {
+  height: 0;
+  border-top: 4px dashed var(--border);
+}
+
+[data-direction='verspielt'] .dl-step__label {
+  display: none;
+}
+
+[data-direction='verspielt'] .dl-step__info {
+  width: 44px;
+  height: 44px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* --- Kuratierung ------------------------------------------------------------------------ */
+
+[data-direction='verspielt'] .dl-curate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-4);
+  padding: 0 var(--v-4) var(--v-6);
+}
+
+[data-direction='verspielt'] .dl-curate__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-1);
+}
+
+[data-direction='verspielt'] .dl-category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-2);
+}
+
+[data-direction='verspielt'] .dl-view--pipeline {
+  padding: 0;
+  gap: var(--v-4);
+}
+
+[data-direction='verspielt'] .dl-skiplink:focus {
+  margin: var(--v-2);
+  padding: var(--v-1) var(--v-3);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+[data-direction='verspielt'] :focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}

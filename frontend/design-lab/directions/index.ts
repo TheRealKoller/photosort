@@ -8,6 +8,10 @@
  * Registry-Eintrag waere im Labor unsichtbar, ein Registry-Eintrag ohne Datei ein Ladefehler.
  */
 import './organic.css'
+import './klar.css'
+import './verspielt.css'
+import './minimal.css'
+import './kreativ.css'
 
 export type DirectionId = 'organic' | 'klar' | 'verspielt' | 'minimal' | 'kreativ'
 
