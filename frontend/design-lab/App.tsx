@@ -10,6 +10,7 @@
 import { useState } from 'react'
 
 import { DIRECTIONS, type DirectionId } from './directions'
+import { localPhotoCount } from './photoSvg'
 
 type ViewId = 'grid' | 'detail' | 'pipeline'
 type ModeId = 'light' | 'dark'
@@ -93,6 +94,14 @@ export function App() {
         <p className="lab-header__note">
           Temporäres Wegwerf-Artefakt (Spec 0287). Nur im Vite-Dev-Server erreichbar, nicht Teil
           der ausgelieferten Anwendung.
+        </p>
+        {/* Selbstdiagnose statt eines Tests: der photos-local/-Glob ist der einzige Mechanismus
+            im Labor, dessen Fehlschlag STILL waere - man saehe generierte Motive und wuesste
+            nicht, ob die eigenen Dateien am falschen Ort liegen oder der Import nicht greift. */}
+        <p className="lab-diagnostics">
+          {localPhotoCount > 0
+            ? `${localPhotoCount} lokale Fotos aktiv`
+            : 'keine lokalen Fotos gefunden (frontend/design-lab/photos-local/) — es werden generierte Motive gezeigt'}
         </p>
       </header>
 
