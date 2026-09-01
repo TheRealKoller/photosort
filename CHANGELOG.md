@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/TheRealKoller/photosort/compare/v0.28.0...v0.29.0) (2026-09-01)
+
+
+### Features
+
+* **spec-0296:** Klassifizierung mit einem Auslöser und laufbezogener Cloud-Checkbox ([#307](https://github.com/TheRealKoller/photosort/issues/307)) ([9b2fa5c](https://github.com/TheRealKoller/photosort/commit/9b2fa5c5f0fae452edce09f50cd90f5f1d732609))
+
 ## [0.28.0](https://github.com/TheRealKoller/photosort/compare/v0.27.1...v0.28.0) (2026-08-31)
 
 
