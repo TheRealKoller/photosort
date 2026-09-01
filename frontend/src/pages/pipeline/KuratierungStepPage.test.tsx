@@ -36,6 +36,9 @@ function criterionScoringRun(
     photos_total: 10,
     photos_processed: 10,
     error_message: null,
+    phase: null,
+    cloud_requested: false,
+    cloud_error_message: null,
     ...overrides,
   }
 }

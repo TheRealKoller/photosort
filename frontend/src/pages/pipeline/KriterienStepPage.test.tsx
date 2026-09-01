@@ -1,15 +1,19 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError } from '../../api/client'
 import * as projectsApi from '../../api/projects'
-import type { CriterionScoringRunSummary, ProjectOut, ScoringRunSummary } from '../../api/types'
+import type { ProjectOut, ScoringRunSummary } from '../../api/types'
 import { KriterienStepPage } from './KriterienStepPage'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
+
+// specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md: die Seite ist seit dieser
+// Spec eine reine Verdrahtung von Outlet-Kontext zu ClassificationSection - die vollstaendige
+// Verhaltensmatrix (Checkbox, Schaetzung, Teilschritte, Fehlerverhalten) liegt in
+// components/ClassificationSection.test.tsx. Hier bleibt nur, was tatsaechlich Seiten-Ebene ist:
+// dass genau EINE Sektion gerendert wird und der Outlet-Kontext korrekt durchgereicht wird.
 
 vi.mock('../../api/projects')
 
@@ -46,22 +50,10 @@ function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSumma
   }
 }
 
-function criterionScoringRun(
-  overrides: Partial<CriterionScoringRunSummary> = {}
-): CriterionScoringRunSummary {
-  return {
-    status: 'running',
-    started_at: '2026-07-20T10:06:00Z',
-    finished_at: null,
-    photos_total: 0,
-    photos_processed: 0,
-    error_message: null,
-    ...overrides,
-  }
-}
-
 function OutletHost({ project: contextProject, refetchProject }: PipelineOutletContext) {
-  return <Outlet context={{ project: contextProject, refetchProject } satisfies PipelineOutletContext} />
+  return (
+    <Outlet context={{ project: contextProject, refetchProject } satisfies PipelineOutletContext} />
+  )
 }
 
 function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
@@ -85,179 +77,37 @@ function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
 
 describe('KriterienStepPage', () => {
   beforeEach(() => {
-    vi.mocked(projectsApi.triggerScoreCriteria).mockReset()
-    vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockReset()
-    vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue({
+    vi.mocked(projectsApi.triggerClassification).mockReset()
+    vi.mocked(projectsApi.getClassificationEstimate).mockReset()
+    vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
       candidate_count: 0,
+      remote_category_candidate_count: 0,
+      landmark_candidate_count: 0,
       provider: 'anthropic',
-      price_per_image_usd: 0.0045,
+      price_per_image_usd: 0.0052,
       estimated_cost_usd: 0,
     })
-    vi.mocked(projectsApi.triggerClassifyCategoriesRemote).mockReset()
-    // Die Remote-Kategorisierungs-Section laedt seit specs/features/0289-feste-kategorien.md
-    // zusaetzlich die Feinlabel-Haeufigkeiten - ohne Mock liefe die Query in einen Fehler und
-    // legte einen zweiten Alert auf die Seite.
     vi.mocked(projectsApi.listFineLabels).mockReset()
     vi.mocked(projectsApi.listFineLabels).mockResolvedValue([])
   })
 
-  it('shows the explanation line and an enabled trigger once reachable', () => {
-    renderPage(project({ last_criterion_scoring_run: null }))
-
-    expect(
-      screen.getByText(/bewertet jedes verbleibende foto nach mehreren kriterien/i)
-    ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Kriterien-Bewertung starten' })).toBeEnabled()
-  })
-
-  it('sends the scoring_run_id of last_scoring_run when triggered', async () => {
-    vi.mocked(projectsApi.triggerScoreCriteria).mockReturnValue(new Promise(() => {}))
-    const user = userEvent.setup()
-    renderPage(project({ last_criterion_scoring_run: null }))
-
-    await user.click(screen.getByRole('button', { name: 'Kriterien-Bewertung starten' }))
-
-    expect(projectsApi.triggerScoreCriteria).toHaveBeenCalledWith(1, 42)
-  })
-
-  it('disables the button synchronously on click and sends exactly one request on a double click', async () => {
-    vi.mocked(projectsApi.triggerScoreCriteria).mockReturnValue(new Promise(() => {}))
-    const user = userEvent.setup()
-    renderPage(project({ last_criterion_scoring_run: null }))
-
-    const button = screen.getByRole('button', { name: 'Kriterien-Bewertung starten' })
-    await user.click(button)
-    await user.click(button)
-
-    expect(button).toBeDisabled()
-    expect(projectsApi.triggerScoreCriteria).toHaveBeenCalledTimes(1)
-  })
-
-  it('re-enables the button and shows an error when the trigger request itself fails', async () => {
-    vi.mocked(projectsApi.triggerScoreCriteria).mockRejectedValue(new ApiError(500, 'Serverfehler'))
-    const user = userEvent.setup()
-    renderPage(project({ last_criterion_scoring_run: null }))
-
-    await user.click(screen.getByRole('button', { name: 'Kriterien-Bewertung starten' }))
-
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Kriterien-Bewertung starten' })).toBeEnabled()
-    )
-    expect(await screen.findByRole('alert')).toHaveTextContent('Serverfehler')
-  })
-
-  it('shows granular "X von Y" progress with a native progress element while running', () => {
-    renderPage(
-      project({
-        last_criterion_scoring_run: criterionScoringRun({ photos_total: 10, photos_processed: 4 }),
-        last_remote_category_classification_run: null,
-      })
-    )
-
-    expect(screen.getByText(/4 von 10 fotos verarbeitet/i)).toBeInTheDocument()
-    const progress = screen.getByRole('progressbar') as HTMLProgressElement
-    expect(progress.max).toBe(10)
-    expect(progress.value).toBe(4)
-  })
-
-  it(
-    'shows an indeterminate progress bar instead of an invalid max=0 during the brief ' +
-      'photos_total=0 window right after the trigger',
-    () => {
-      renderPage(
-        project({
-          last_criterion_scoring_run: criterionScoringRun({ photos_total: 0, photos_processed: 0 }),
-          last_remote_category_classification_run: null,
-        })
-      )
-
-      const progress = screen.getByRole('progressbar') as HTMLProgressElement
-      expect(progress.hasAttribute('value')).toBe(false)
-      expect(progress.hasAttribute('max')).toBe(false)
-    }
-  )
-
-  it('shows a success status once the run succeeded', () => {
-    renderPage(
-      project({
-        last_criterion_scoring_run: criterionScoringRun({
-          status: 'success',
-          finished_at: '2026-07-20T10:07:00Z',
-          photos_total: 10,
-          photos_processed: 10,
-        }),
-      })
-    )
-
-    expect(screen.getByText('Erfolgreich bewertet')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Kriterien-Bewertung starten' })).toBeEnabled()
-  })
-
-  it('shows an inline error banner with a retry button on a failed run', async () => {
-    vi.mocked(projectsApi.triggerScoreCriteria).mockResolvedValue({ status: 'queued' })
-    const user = userEvent.setup()
-    renderPage(
-      project({
-        last_criterion_scoring_run: criterionScoringRun({
-          status: 'failed',
-          error_message: 'Unerwarteter Fehler',
-        }),
-      })
-    )
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('Unerwarteter Fehler')
-    await user.click(screen.getByRole('button', { name: /erneut versuchen/i }))
-
-    expect(projectsApi.triggerScoreCriteria).toHaveBeenCalledWith(1, 42)
-  })
-
-  it('shows the remote category classification section after the criteria scoring section', () => {
+  it('renders exactly one section, the classification one', () => {
     renderPage(project())
 
     const headings = screen.getAllByRole('heading', { level: 2 })
-    const headingTexts = headings.map((heading) => heading.textContent)
-    expect(headingTexts).toEqual(['Kriterien-Bewertung', 'Remote-Kategorisierung'])
+    expect(headings.map((heading) => heading.textContent)).toEqual(['Klassifizierung'])
   })
 
-  it(
-    'estimates, opens the confirmation dialog and triggers the remote classification on confirm',
-    async () => {
-      vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue({
-        candidate_count: 5,
-        provider: 'anthropic',
-        price_per_image_usd: 0.0045,
-        estimated_cost_usd: 0.0225,
-      })
-      vi.mocked(projectsApi.triggerClassifyCategoriesRemote).mockReturnValue(new Promise(() => {}))
-      const user = userEvent.setup()
-      renderPage(project({ cloud_vision_detection_enabled: true }))
+  it('wires the outlet project through, so the trigger knows the current scoring run', () => {
+    renderPage(project({ last_scoring_run: scoringRun({ id: 99 }) }))
 
-      await screen.findByTestId('classify-categories-remote-estimate')
-      await user.click(screen.getByRole('button', { name: /remote-kategorisierung starten/i }))
-      await user.click(screen.getByRole('button', { name: /^starten$/i }))
+    // Der Auslöser ist nur bedienbar, wenn ein ScoringRun aus dem Outlet-Kontext ankam.
+    expect(screen.getByRole('button', { name: 'Klassifizierung starten' })).toBeEnabled()
+  })
 
-      expect(projectsApi.triggerClassifyCategoriesRemote).toHaveBeenCalledWith(1)
-    }
-  )
+  it('disables the trigger when no scoring run reached the page', () => {
+    renderPage(project({ last_scoring_run: null }))
 
-  it('does not affect the criteria scoring section when the remote classification is triggered', async () => {
-    vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue({
-      candidate_count: 5,
-      provider: 'anthropic',
-      price_per_image_usd: 0.0045,
-      estimated_cost_usd: 0.0225,
-    })
-    vi.mocked(projectsApi.triggerClassifyCategoriesRemote).mockReturnValue(new Promise(() => {}))
-    const user = userEvent.setup()
-    renderPage(
-      project({ cloud_vision_detection_enabled: true, last_criterion_scoring_run: null })
-    )
-
-    await screen.findByTestId('classify-categories-remote-estimate')
-    await user.click(screen.getByRole('button', { name: /remote-kategorisierung starten/i }))
-    await user.click(screen.getByRole('button', { name: /^starten$/i }))
-
-    expect(screen.getByRole('button', { name: 'Kriterien-Bewertung starten' })).toBeEnabled()
-    expect(projectsApi.triggerScoreCriteria).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Klassifizierung starten' })).toBeDisabled()
   })
 })

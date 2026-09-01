@@ -105,8 +105,10 @@ export function sortCategoryKeys(
 
 // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: Anzeigename eines
 // Cloud-Vision-Providers (backend `provider`-Feld, aktuell "anthropic"/"mistral") - geteilt
-// zwischen RemoteCategoryClassificationSection.tsx (Bestaetigungsdialog) und der
-// "Kategorie-Kandidaten"-Gruppe in CriterionDetailsList.tsx ("Herkunft"-Chip). Fallback auf den
+// zwischen ClassificationSection.tsx (Erklaertext bei angewaehlter Cloud-Nutzung; bis
+// specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md der Bestaetigungsdialog in
+// RemoteCategoryClassificationSection.tsx) und der "Kategorie-Kandidaten"-Gruppe in
+// CriterionDetailsList.tsx ("Herkunft"-Chip). Fallback auf den
 // rohen Wert fuer einen kuenftigen, hier noch nicht gepflegten Provider - kein Absturz.
 const PROVIDER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   anthropic: 'Anthropic',

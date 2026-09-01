@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import photosort.worker as worker_module
 from photosort.db import make_session_factory
 from photosort.models import (
+    ClassificationPhase,
     CriterionScoringRun,
     Project,
     RemoteCategoryClassificationRun,
@@ -173,6 +174,37 @@ async def test_reaps_stalled_criterion_scoring_run(db_session: AsyncSession) -> 
     assert reaped == 1
     await db_session.refresh(stalled)
     assert stalled.status == ScanStatus.FAILED
+
+
+async def test_reaping_a_stalled_classification_clears_its_phase(
+    db_session: AsyncSession,
+) -> None:
+    """specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 3:
+    `phase = NULL` heisst "laeuft nicht mehr". Der Watchdog raeumt einen haengenden Lauf ab, ohne
+    dass die Job-Coroutine je zurueckkehrt - ohne diese Zusicherung bliebe ein abgeraeumter Lauf
+    dauerhaft mit einem Teilschritt markiert, der nachweislich nicht mehr laeuft."""
+    project = await _make_project(db_session)
+    scoring_run = await _make_scoring_run(db_session, project)
+    stalled = CriterionScoringRun(
+        project_id=project.id,
+        scoring_run_id=scoring_run.id,
+        status=ScanStatus.RUNNING,
+        phase=ClassificationPhase.REMOTE_CATEGORIES,
+        cloud_requested=True,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    db_session.add(stalled)
+    await db_session.commit()
+
+    session_factory = make_session_factory(db_session.bind)
+    await reap_stalled_runs({}, session_factory=session_factory)
+
+    await db_session.refresh(stalled)
+    assert stalled.status == ScanStatus.FAILED
+    assert stalled.phase is None
+    # `cloud_requested` bleibt erhalten - es beschreibt die Absicht des Laufs, nicht seinen
+    # Fortschritt, und ist auch fuer einen abgebrochenen Lauf noch die richtige Auskunft.
+    assert stalled.cloud_requested is True
 
 
 async def test_reaps_stalled_remote_category_classification_run(

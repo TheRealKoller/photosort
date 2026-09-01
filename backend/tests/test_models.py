@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from photosort.models import (
+    ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
@@ -393,6 +394,45 @@ async def test_criterion_scoring_run_defaults(db_session: AsyncSession) -> None:
     assert stored.photos_processed == 0
     assert stored.error_message is None
     assert stored.last_progress_at is not None
+    # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md: fail-closed Defaults -
+    # ein Lauf, dem niemand ausdruecklich Cloud-Nutzung mitgibt, hat keine angefordert.
+    assert stored.phase is None
+    assert stored.cloud_requested is False
+    assert stored.cloud_error_message is None
+
+
+async def test_criterion_scoring_run_stores_phase_and_cloud_fields(
+    db_session: AsyncSession,
+) -> None:
+    """specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, Datenmodell-Bezug:
+    `phase` wird als StrEnum-Wert gespeichert und typisiert zurueckgelesen."""
+    project = Project(name="Island", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(scoring_run)
+    await db_session.flush()
+
+    db_session.add(
+        CriterionScoringRun(
+            project_id=project.id,
+            scoring_run_id=scoring_run.id,
+            status=ScanStatus.RUNNING,
+            phase=ClassificationPhase.REMOTE_CATEGORIES,
+            cloud_requested=True,
+            cloud_error_message="Remote-Kategorisierung fehlgeschlagen: boom",
+        )
+    )
+    await db_session.commit()
+
+    stored = (
+        await db_session.execute(
+            select(CriterionScoringRun).where(CriterionScoringRun.project_id == project.id)
+        )
+    ).scalar_one()
+    assert stored.phase is ClassificationPhase.REMOTE_CATEGORIES
+    assert stored.cloud_requested is True
+    assert stored.cloud_error_message == "Remote-Kategorisierung fehlgeschlagen: boom"
 
 
 async def test_deleting_project_cascades_to_criterion_scoring_runs(

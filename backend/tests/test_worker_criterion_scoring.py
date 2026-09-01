@@ -1615,6 +1615,7 @@ async def test_every_written_category_key_belongs_to_the_fixed_set(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=_failing_landmark_client_builder,
+        use_cloud=True,
     )
 
     rankings = (
@@ -1649,6 +1650,7 @@ async def test_a_run_without_remote_classification_only_uses_the_local_six_or_th
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=_failing_landmark_client_builder,
+        use_cloud=True,
     )
 
     rankings = (
@@ -1912,6 +1914,7 @@ async def test_consent_disabled_by_default_never_calls_landmark_client_builder(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=_failing_landmark_client_builder,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -1954,6 +1957,7 @@ async def test_consent_enabled_sends_a_landscape_photo_to_the_landmark_client(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -2025,6 +2029,7 @@ async def test_landmark_detection_row_persists_the_configured_provider(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -2063,6 +2068,7 @@ async def test_provider_switch_between_runs_does_not_overwrite_the_stored_provid
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: first_client,
+        use_cloud=True,
     )
     assert first_run.status == ScanStatus.SUCCESS
     assert len(first_client.calls) == 1
@@ -2085,6 +2091,7 @@ async def test_provider_switch_between_runs_does_not_overwrite_the_stored_provid
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: second_client,
+        use_cloud=True,
     )
 
     assert second_run.status == ScanStatus.SUCCESS
@@ -2126,6 +2133,7 @@ async def test_photo_without_an_identified_landmark_name_gets_zero_score_and_no_
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -2169,6 +2177,7 @@ async def test_vorfilterung_sends_photo_that_only_meets_the_gebaeude_threshold(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -2204,6 +2213,7 @@ async def test_vorfilterung_does_not_send_photo_below_both_thresholds_empty_cand
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -2249,6 +2259,7 @@ async def test_skip_already_scored_photo_but_local_criteria_are_recomputed(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -2297,6 +2308,7 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
             build_aesthetics=_no_aesthetics_model,
             build_landmarker=_no_face_landmarker,
             build_landmark_client=lambda: failing_client,
+            use_cloud=True,
         )
 
     assert run.status == ScanStatus.SUCCESS  # best-effort, kein Laufabbruch
@@ -2338,6 +2350,7 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: succeeding_client,
+        use_cloud=True,
     )
 
     assert run2.status == ScanStatus.SUCCESS
@@ -2378,6 +2391,7 @@ async def test_failed_landmark_call_persists_a_cloud_vision_error_row(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: failing_client,
+        use_cloud=True,
     )
 
     result = await db_session.execute(
@@ -2414,6 +2428,7 @@ async def test_successful_landmark_call_after_a_previous_failure_clears_the_erro
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: RecordingLandmarkClient(raise_error=True),
+        use_cloud=True,
     )
     assert (
         await db_session.execute(
@@ -2432,6 +2447,7 @@ async def test_successful_landmark_call_after_a_previous_failure_clears_the_erro
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: RecordingLandmarkClient(),
+        use_cloud=True,
     )
 
     result = await db_session.execute(
@@ -2471,6 +2487,7 @@ async def test_successful_landmark_call_without_a_name_still_clears_the_error_ro
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: RecordingLandmarkClient(raise_error=True),
+        use_cloud=True,
     )
     assert (
         await db_session.execute(
@@ -2491,6 +2508,7 @@ async def test_successful_landmark_call_without_a_name_still_clears_the_error_ro
         build_landmark_client=lambda: RecordingLandmarkClient(
             detection=LandmarkDetection(name=None, confidence=0.0)
         ),
+        use_cloud=True,
     )
 
     error_result = await db_session.execute(
@@ -2543,6 +2561,7 @@ async def test_repeated_landmark_failures_upsert_the_same_error_row(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: _RaisingClient("erster Fehlschlag"),
+        use_cloud=True,
     )
     await run_criterion_scoring(
         db_session,
@@ -2555,6 +2574,7 @@ async def test_repeated_landmark_failures_upsert_the_same_error_row(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: _RaisingClient("zweiter Fehlschlag"),
+        use_cloud=True,
     )
 
     result = await db_session.execute(
@@ -2596,6 +2616,7 @@ async def test_landmark_error_message_is_capped_at_500_characters(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: _RaisingClient(),
+        use_cloud=True,
     )
 
     result = await db_session.execute(
@@ -2635,6 +2656,7 @@ async def test_landmark_calls_are_limited_by_landmark_api_concurrency(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -2692,6 +2714,7 @@ async def test_multiple_simultaneously_failing_landmark_calls_each_log_their_own
             build_aesthetics=_no_aesthetics_model,
             build_landmarker=_no_face_landmarker,
             build_landmark_client=lambda: client,
+            use_cloud=True,
         )
 
     assert run.status == ScanStatus.SUCCESS
@@ -2734,6 +2757,7 @@ async def test_cancelled_error_from_a_parallel_landmark_call_propagates_and_fail
                 build_aesthetics=_no_aesthetics_model,
                 build_landmarker=_no_face_landmarker,
                 build_landmark_client=lambda: CancellingLandmarkClient(),
+                use_cloud=True,
             )
 
     assert len(caplog.records) == 0
@@ -3111,6 +3135,7 @@ async def test_classify_scene_is_called_exactly_once_per_photo_for_both_criteria
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=_failing_landmark_client_builder,
+        use_cloud=True,
     )
 
     assert classifier.call_count == 1
@@ -3154,6 +3179,7 @@ async def test_a_failing_landschaft_score_leaves_gebaeude_untouched(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=_failing_landmark_client_builder,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -3189,6 +3215,7 @@ async def test_a_failing_gebaeude_score_leaves_landschaft_untouched(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=_failing_landmark_client_builder,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -3223,6 +3250,7 @@ async def test_a_failing_scene_classification_leaves_both_criteria_unwritten(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=_failing_landmark_client_builder,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -3257,6 +3285,7 @@ async def test_a_flat_photo_without_a_landscape_label_ends_up_unrecognized(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=_failing_landmark_client_builder,
+        use_cloud=True,
     )
 
     ranking = (
@@ -3295,6 +3324,7 @@ async def test_recognised_landscape_photos_form_the_landschaft_category(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=_failing_landmark_client_builder,
+        use_cloud=True,
     )
 
     rankings = (
@@ -3366,6 +3396,7 @@ async def test_a_manual_override_on_a_no_longer_derivable_key_survives_a_full_ru
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=_failing_landmark_client_builder,
+        use_cloud=True,
     )
 
     ranking = (
@@ -3406,6 +3437,7 @@ async def test_a_flat_photo_without_a_landscape_label_triggers_no_cloud_call_any
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -3438,6 +3470,7 @@ async def test_a_recognised_landscape_photo_is_still_sent_to_the_landmark_client
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda: client,
+        use_cloud=True,
     )
 
     assert run.status == ScanStatus.SUCCESS

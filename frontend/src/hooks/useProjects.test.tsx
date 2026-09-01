@@ -6,15 +6,14 @@ import { describe, expect, it, vi } from 'vitest'
 import * as projectsApi from '../api/projects'
 import type { ProjectOut } from '../api/types'
 import {
-  useClassifyCategoriesRemoteEstimateQuery,
+  useClassificationEstimateQuery,
   useConfirmAusschussGateMutation,
   useCreateProjectMutation,
   useProjectQuery,
   useProjectsQuery,
   useSetCloudVisionConsentMutation,
-  useTriggerClassifyCategoriesRemoteMutation,
   useTriggerScanMutation,
-  useTriggerScoreCriteriaMutation,
+  useTriggerClassificationMutation,
   useTriggerScoreMutation,
 } from './useProjects'
 
@@ -230,18 +229,33 @@ describe('useConfirmAusschussGateMutation', () => {
   })
 })
 
-describe('useTriggerScoreCriteriaMutation', () => {
-  it('invalidates the project detail query after a successful trigger, forwarding scoring_run_id', async () => {
-    vi.mocked(projectsApi.triggerScoreCriteria).mockResolvedValue({ status: 'queued' })
+describe('useTriggerClassificationMutation', () => {
+  it('forwards scoring_run_id and use_cloud, and invalidates project, estimate and fine labels', async () => {
+    vi.mocked(projectsApi.triggerClassification).mockResolvedValue({ status: 'queued' })
     const { wrapper, queryClient } = makeWrapper()
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
-    const { result } = renderHook(() => useTriggerScoreCriteriaMutation(1), { wrapper })
-    result.current.mutate(5)
+    const { result } = renderHook(() => useTriggerClassificationMutation(1), { wrapper })
+    result.current.mutate({ scoringRunId: 5, useCloud: true })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(projectsApi.triggerScoreCriteria).toHaveBeenCalledWith(1, 5)
+    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 5, true)
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
+    // Beide haengen am Ergebnis der Remote-Phase, die dieser eine Lauf mit ausfuehren kann
+    // (specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md).
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['classification-estimate', 1] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['fine-labels', 1] })
+  })
+
+  it('forwards use_cloud false unchanged', async () => {
+    vi.mocked(projectsApi.triggerClassification).mockResolvedValue({ status: 'queued' })
+    const { wrapper } = makeWrapper()
+
+    const { result } = renderHook(() => useTriggerClassificationMutation(1), { wrapper })
+    result.current.mutate({ scoringRunId: 5, useCloud: false })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 5, false)
   })
 })
 
@@ -263,43 +277,27 @@ describe('useSetCloudVisionConsentMutation', () => {
   })
 })
 
-describe('useClassifyCategoriesRemoteEstimateQuery', () => {
-  it('fetches the estimate for a project', async () => {
-    vi.mocked(projectsApi.getClassifyCategoriesRemoteEstimate).mockResolvedValue({
+describe('useClassificationEstimateQuery', () => {
+  it('fetches the estimate for a project, covering both cloud shares', async () => {
+    vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
       candidate_count: 42,
+      remote_category_candidate_count: 40,
+      landmark_candidate_count: 2,
       provider: 'anthropic',
-      price_per_image_usd: 0.0045,
-      estimated_cost_usd: 0.189,
+      price_per_image_usd: 0.0052,
+      estimated_cost_usd: 0.2184,
     })
     const { wrapper } = makeWrapper()
 
-    const { result } = renderHook(() => useClassifyCategoriesRemoteEstimateQuery(1), { wrapper })
+    const { result } = renderHook(() => useClassificationEstimateQuery(1), { wrapper })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(projectsApi.getClassifyCategoriesRemoteEstimate).toHaveBeenCalledWith(1)
+    expect(projectsApi.getClassificationEstimate).toHaveBeenCalledWith(1)
     expect(result.current.data?.candidate_count).toBe(42)
+    expect(result.current.data?.landmark_candidate_count).toBe(2)
   })
 })
 
-describe('useTriggerClassifyCategoriesRemoteMutation', () => {
-  it('invalidates the project detail AND estimate query after a successful trigger', async () => {
-    vi.mocked(projectsApi.triggerClassifyCategoriesRemote).mockResolvedValue({ status: 'queued' })
-    const { wrapper, queryClient } = makeWrapper()
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
-
-    const { result } = renderHook(() => useTriggerClassifyCategoriesRemoteMutation(1), {
-      wrapper,
-    })
-    result.current.mutate()
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(projectsApi.triggerClassifyCategoriesRemote).toHaveBeenCalledWith(1)
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ['classify-categories-remote-estimate', 1],
-    })
-  })
-})
 
 function runningScan(): ProjectOut['last_scan'] {
   return {
@@ -338,6 +336,9 @@ function runningCriterionScoringRun(): ProjectOut['last_criterion_scoring_run'] 
     photos_total: 10,
     photos_processed: 3,
     error_message: null,
+    phase: 'criteria',
+    cloud_requested: false,
+    cloud_error_message: null,
   }
 }
 

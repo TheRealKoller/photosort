@@ -572,6 +572,15 @@ def compute_landschaft_score(labels: Sequence[SceneLabel]) -> float:
     return max(label.confidence for label in allowed)
 
 
+# specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-
+# klassifizierungslauf-mit-laufbezogener-cloud-freigabe.md Punkt 5: genau die Kriterien, die
+# is_landmark_candidate unten auswertet - exportiert, damit die API-seitige Kostenschaetzung
+# (api/projects.py::_count_landmark_candidates) nur diese Zeilen laden muss, ohne die Schluessel
+# ein zweites Mal zu kennen. Wer hier etwas ergaenzt, muss es auch in is_landmark_candidate tun;
+# der gemeinsame Test in test_criteria.py haelt beide Stellen zusammen.
+LANDMARK_CANDIDATE_CRITERION_KEYS: tuple[str, ...] = ("landschaft", "gebaeude")
+
+
 def is_landmark_candidate(values: dict[str, float]) -> bool:
     """Reine Schwellenwert-Pruefung fuer die landmark-Vorfilterung (specs/features/0058-cloud-
     vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-fehler-persistierung.md

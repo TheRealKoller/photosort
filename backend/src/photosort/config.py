@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     # Feature-Flag fuer die lokale Kriterien-Bewertung + Kategorie-Kuratierung
     # (urspruenglich specs/features/0024-top-photo-selection-category-mix.md, seit
     # specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md bewusst unter demselben
-    # Namen weiterverwendet fuer POST /score-criteria - keine funktionale Aenderung des Flags
+    # Namen weiterverwendet fuer POST /classify - keine funktionale Aenderung des Flags
     # selbst, nur ein neuer Endpunkt dahinter). Default AN (anders als ein Cloud-Feature): rein
     # lokale/kostenlose Verarbeitung, kein Grund fuer einen restriktiven Default.
     category_selection_enabled: bool = True

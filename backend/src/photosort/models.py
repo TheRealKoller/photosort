@@ -322,6 +322,19 @@ class PhotoCriterionScore(Base):
     photo: Mapped[Photo] = relationship(back_populates="criterion_scores")
 
 
+class ClassificationPhase(enum.StrEnum):
+    """Die beiden Teilschritte eines verketteten Klassifizierungslaufs (specs/features/0296-
+    klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-klassifizierungs-
+    lauf-mit-laufbezogener-cloud-freigabe.md Punkt 1) - in genau dieser Reihenfolge, damit die
+    Remote-Ergebnisse noch im selben Lauf in die Kategorieableitung einfliessen.
+
+    REMOTE_CATEGORIES laeuft nur bei angeforderter UND eingewilligter Cloud-Nutzung; CRITERIA
+    laeuft immer. Getragen von CriterionScoringRun.phase, dort NULL sobald der Lauf beendet ist."""
+
+    REMOTE_CATEGORIES = "remote_categories"
+    CRITERIA = "criteria"
+
+
 class CriterionScoringRun(Base):
     """Ein Lauf des Kriterien-/Rangfolgen-Jobs (specs/features/0037-gatefuehrte-bewertungs-
     pipeline-mit-backfill.md, decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md, Punkt
@@ -352,6 +365,31 @@ class CriterionScoringRun(Base):
     # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md), analog
     # ScanRun.last_progress_at oben.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-
+    # verketteter-klassifizierungslauf-mit-laufbezogener-cloud-freigabe.md Punkt 3: diese Zeile
+    # ist seit Spec 0296 der Run-Datensatz des GESAMTEN Klassifizierungslaufs, nicht mehr nur
+    # seiner Kriterien-Phase - sie wird deshalb von worker.py::run_classification angelegt, bevor
+    # die erste Phase startet, und nicht mehr von run_criterion_scoring selbst. Ohne diesen
+    # frueheren Anlagezeitpunkt zeigte `last_criterion_scoring_run` waehrend der Remote-Phase noch
+    # auf den Lauf DAVOR, und die Oberflaeche haette keinen Anker fuer den laufenden Vorgang.
+    #
+    # `phase`: der gerade laufende Teilschritt; NULL heisst "laeuft nicht mehr" (beendet - oder
+    # Altzeile aus der Zeit der getrennten Ausloesung). Bewusst KEIN eigener Enum-Wert "done":
+    # der Abschluss steht bereits in `status`, ein zweiter Ort dafuer koennte auseinanderlaufen.
+    phase: Mapped[ClassificationPhase | None] = mapped_column(
+        SQLEnum(ClassificationPhase, native_enum=False, length=20), default=None
+    )
+    # War die Cloud-Nutzung fuer DIESEN Lauf angefordert (Checkbox am Ausloeser)? Macht
+    # nachtraeglich erkennbar, ob das Ergebnis ueberhaupt Cloud-Anreicherung enthalten kann.
+    # Sagt NICHT, ob tatsaechlich Cloud-Aufrufe stattgefunden haben - das Gate ist die Konjunktion
+    # mit Project.cloud_vision_detection_enabled (ADR 0050 Punkt 2).
+    cloud_requested: Mapped[bool] = mapped_column(default=False)
+    # Menschenlesbare Zusammenfassung der Cloud-Probleme dieses Laufs (ADR 0050 Punkt 4), NULL =
+    # keine. Laufebene, nicht Foto-Ebene: die Einzelfehler bleiben pro Foto in
+    # photo_cloud_vision_errors abrufbar (ADR 0035). Gesetzt zu werden heisst NICHT, dass der Lauf
+    # fehlgeschlagen ist - der lokale Bewertungsanteil laeuft trotzdem vollstaendig durch, der
+    # Lauf endet mit SUCCESS, das Ergebnis ist nur nicht (vollstaendig) angereichert.
+    cloud_error_message: Mapped[str | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="criterion_scoring_runs")
 

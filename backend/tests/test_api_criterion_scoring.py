@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.api.deps import get_job_enqueuer, get_opencloud_client
 from photosort.config import settings
 from photosort.main import app
-from photosort.models import CriterionScoringRun, ScanStatus, ScoringRun
+from photosort.models import (
+    ClassificationPhase,
+    CriterionScoringRun,
+    ScanStatus,
+    ScoringRun,
+)
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
 
@@ -121,10 +126,10 @@ class TestConfirmAusschussGate:
         assert second_detail.json()["last_scoring_run"]["gate_confirmed_at"] == first_timestamp
 
 
-class TestScoreCriteria:
+class TestClassify:
     async def test_requires_auth(self, api_client: httpx.AsyncClient) -> None:
         response = await api_client.post(
-            "/projects/1/score-criteria", json={"scoring_run_id": 1}
+            "/projects/1/classify", json={"scoring_run_id": 1, "use_cloud": False}
         )
         assert response.status_code == 401
 
@@ -134,7 +139,7 @@ class TestScoreCriteria:
         app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
 
         response = await authenticated_api_client.post(
-            "/projects/999/score-criteria", json={"scoring_run_id": 1}
+            "/projects/999/classify", json={"scoring_run_id": 1, "use_cloud": False}
         )
 
         assert response.status_code == 404
@@ -151,7 +156,7 @@ class TestScoreCriteria:
         app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
 
         response = await authenticated_api_client.post(
-            f"/projects/{project_id}/score-criteria", json={"scoring_run_id": run.id}
+            f"/projects/{project_id}/classify", json={"scoring_run_id": run.id, "use_cloud": False}
         )
 
         assert response.status_code == 403
@@ -163,7 +168,7 @@ class TestScoreCriteria:
         app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
 
         response = await authenticated_api_client.post(
-            f"/projects/{project_id}/score-criteria", json={"scoring_run_id": 1}
+            f"/projects/{project_id}/classify", json={"scoring_run_id": 1, "use_cloud": False}
         )
 
         assert response.status_code == 409
@@ -176,7 +181,7 @@ class TestScoreCriteria:
         app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
 
         response = await authenticated_api_client.post(
-            f"/projects/{project_id}/score-criteria", json={"scoring_run_id": run.id}
+            f"/projects/{project_id}/classify", json={"scoring_run_id": run.id, "use_cloud": False}
         )
 
         assert response.status_code == 409
@@ -202,7 +207,8 @@ class TestScoreCriteria:
         app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
 
         response = await authenticated_api_client.post(
-            f"/projects/{project_id}/score-criteria", json={"scoring_run_id": stale_run.id}
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": stale_run.id, "use_cloud": False},
         )
 
         assert response.status_code == 409
@@ -217,17 +223,17 @@ class TestScoreCriteria:
         app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
 
         response = await authenticated_api_client.post(
-            f"/projects/{project_id}/score-criteria", json={"scoring_run_id": run.id}
+            f"/projects/{project_id}/classify", json={"scoring_run_id": run.id, "use_cloud": False}
         )
 
         assert response.status_code == 202
-        assert fake_enqueuer.calls == [("score_criteria", (project_id, run.id))]
+        assert fake_enqueuer.calls == [("classify", (project_id, run.id, False))]
 
     async def test_auto_confirmed_gate_allows_the_request(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         # Leerer Ausschuss (suggestions_found=0) -> Gate laut Worker automatisch bestaetigt, kein
-        # expliziter confirm-ausschuss-gate-Aufruf noetig, um score-criteria zu starten.
+        # expliziter confirm-ausschuss-gate-Aufruf noetig, um die Klassifizierung zu starten.
         project_id = await _create_project(authenticated_api_client)
         scoring_run = ScoringRun(
             project_id=project_id,
@@ -243,14 +249,114 @@ class TestScoreCriteria:
         app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
 
         response = await authenticated_api_client.post(
-            f"/projects/{project_id}/score-criteria", json={"scoring_run_id": scoring_run.id}
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": scoring_run.id, "use_cloud": False},
         )
 
         assert response.status_code == 202
 
+    async def test_enqueues_the_job_with_use_cloud_true(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md: die laufbezogene
+        Checkbox wird unveraendert an den Job durchgereicht - sie ist eine Laufeigenschaft, kein
+        Projektzustand."""
+        project_id = await _create_project(authenticated_api_client)
+        run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
+        await authenticated_api_client.post(f"/projects/{project_id}/confirm-ausschuss-gate")
+        await authenticated_api_client.put(
+            f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
+        )
+        fake_enqueuer = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": run.id, "use_cloud": True},
+        )
+
+        assert response.status_code == 202
+        assert fake_enqueuer.calls == [("classify", (project_id, run.id, True))]
+
+    async def test_returns_403_when_cloud_is_requested_without_consent(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SICHERHEITS-MUSS-KRITERIUM (Spec 0296, Security-Abschnitt Bedrohung 1): die Checkbox
+        erteilt selbst KEINE Freigabe - ohne projektweite Einwilligung wird ein Cloud-Lauf
+        abgewiesen, statt still auf "lokal" herunterzufallen."""
+        project_id = await _create_project(authenticated_api_client)
+        run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
+        await authenticated_api_client.post(f"/projects/{project_id}/confirm-ausschuss-gate")
+        fake_enqueuer = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": run.id, "use_cloud": True},
+        )
+
+        assert response.status_code == 403
+        assert fake_enqueuer.calls == []
+
+    async def test_local_run_is_allowed_without_consent(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
+        await authenticated_api_client.post(f"/projects/{project_id}/confirm-ausschuss-gate")
+        fake_enqueuer = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": run.id, "use_cloud": False},
+        )
+
+        assert response.status_code == 202
+
+    async def test_use_cloud_is_required(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Kein Default fuer `use_cloud` (api/projects.py::ClassifyRequest): der Client soll sich
+        sichtbar entscheiden muessen, statt in eine Voreinstellung zu laufen, die Kosten
+        verursacht."""
+        project_id = await _create_project(authenticated_api_client)
+        run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
+        await authenticated_api_client.post(f"/projects/{project_id}/confirm-ausschuss-gate")
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify", json={"scoring_run_id": run.id}
+        )
+
+        assert response.status_code == 422
+
+    async def test_the_replaced_endpoints_are_gone(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AC "Ein Ausloeser": die bisherige getrennte Ausloesung entfaellt ersatzlos - es gibt
+        keinen zweiten Weg mehr, einen Teil der Klassifizierung zu starten."""
+        project_id = await _create_project(authenticated_api_client)
+        run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        score_criteria = await authenticated_api_client.post(
+            f"/projects/{project_id}/score-criteria", json={"scoring_run_id": run.id}
+        )
+        classify_remote = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify-categories-remote"
+        )
+        old_estimate = await authenticated_api_client.get(
+            f"/projects/{project_id}/classify-categories-remote/estimate"
+        )
+
+        assert score_criteria.status_code == 404
+        assert classify_remote.status_code == 404
+        assert old_estimate.status_code == 404
+
 
 class TestProjectOutCriterionScoringRun:
-    async def test_has_no_last_criterion_scoring_run_before_any_score_criteria_call(
+    async def test_has_no_last_criterion_scoring_run_before_any_classify_call(
         self, authenticated_api_client: httpx.AsyncClient
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
@@ -280,3 +386,31 @@ class TestProjectOutCriterionScoringRun:
         assert last_run["status"] == "running"
         assert last_run["photos_total"] == 10
         assert last_run["photos_processed"] == 4
+        # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md: die drei neuen
+        # Felder sind Teil derselben Zusammenfassung - das Frontend braucht sie fuer die
+        # Teilschritt-Anzeige und den "ohne Cloud-Anreicherung"-Hinweis.
+        assert last_run["phase"] is None
+        assert last_run["cloud_requested"] is False
+        assert last_run["cloud_error_message"] is None
+
+    async def test_reports_phase_and_cloud_fields_of_a_running_classification(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        scoring_run = await _add_successful_scoring_run(db_session, project_id)
+        db_session.add(
+            CriterionScoringRun(
+                project_id=project_id,
+                scoring_run_id=scoring_run.id,
+                status=ScanStatus.RUNNING,
+                phase=ClassificationPhase.REMOTE_CATEGORIES,
+                cloud_requested=True,
+            )
+        )
+        await db_session.commit()
+
+        detail = await authenticated_api_client.get(f"/projects/{project_id}")
+
+        last_run = detail.json()["last_criterion_scoring_run"]
+        assert last_run["phase"] == "remote_categories"
+        assert last_run["cloud_requested"] is True

@@ -4,14 +4,13 @@ import { apiFetch } from './client'
 import {
   confirmAusschussGate,
   createProject,
-  getClassifyCategoriesRemoteEstimate,
+  getClassificationEstimate,
   getProject,
   listProjects,
   setCloudVisionConsent,
-  triggerClassifyCategoriesRemote,
+  triggerClassification,
   triggerScan,
   triggerScore,
-  triggerScoreCriteria,
 } from './projects'
 import type { ProjectOut } from './types'
 
@@ -94,16 +93,27 @@ describe('api/projects', () => {
     expect(result).toEqual({ status: 'confirmed' })
   })
 
-  it('triggers criterion scoring via POST /projects/{id}/score-criteria with scoring_run_id', async () => {
+  it('triggers the classification via POST /projects/{id}/classify with scoring_run_id and use_cloud', async () => {
     vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
 
-    const result = await triggerScoreCriteria(1, 5)
+    const result = await triggerClassification(1, 5, true)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/score-criteria', {
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify', {
       method: 'POST',
-      body: { scoring_run_id: 5 },
+      body: { scoring_run_id: 5, use_cloud: true },
     })
     expect(result).toEqual({ status: 'queued' })
+  })
+
+  it('sends use_cloud false unchanged', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
+
+    await triggerClassification(1, 5, false)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify', {
+      method: 'POST',
+      body: { scoring_run_id: 5, use_cloud: false },
+    })
   })
 
   it('sets the cloud landmark consent via PUT /projects/{id}/cloud-vision-consent', async () => {
@@ -122,29 +132,20 @@ describe('api/projects', () => {
     expect(result).toEqual(response)
   })
 
-  it('fetches the estimate via GET /projects/{id}/classify-categories-remote/estimate', async () => {
+  it('fetches the estimate via GET /projects/{id}/classify/estimate', async () => {
     const response = {
       candidate_count: 42,
+      remote_category_candidate_count: 40,
+      landmark_candidate_count: 2,
       provider: 'anthropic',
-      price_per_image_usd: 0.0045,
-      estimated_cost_usd: 0.189,
+      price_per_image_usd: 0.0052,
+      estimated_cost_usd: 0.2184,
     }
     vi.mocked(apiFetch).mockResolvedValue(response)
 
-    const result = await getClassifyCategoriesRemoteEstimate(1)
+    const result = await getClassificationEstimate(1)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify-categories-remote/estimate')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify/estimate')
     expect(result).toEqual(response)
-  })
-
-  it('triggers the remote classification via POST /projects/{id}/classify-categories-remote', async () => {
-    vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
-
-    const result = await triggerClassifyCategoriesRemote(1)
-
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify-categories-remote', {
-      method: 'POST',
-    })
-    expect(result).toEqual({ status: 'queued' })
   })
 })

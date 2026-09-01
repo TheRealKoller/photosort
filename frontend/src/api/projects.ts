@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { ClassifyCategoriesRemoteEstimateOut, FineLabelCountOut, ProjectOut } from './types'
+import type { ClassificationEstimateOut, FineLabelCountOut, ProjectOut } from './types'
 
 export interface CloudVisionConsentOut {
   cloud_vision_detection_enabled: boolean
@@ -43,16 +43,24 @@ export function confirmAusschussGate(id: number): Promise<TriggerScanResponse> {
   })
 }
 
-// Ersetzt triggerSelectTop (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md)
-// - kein top_n_per_cluster-Parameter mehr, stattdessen scoring_run_id (Staleness-Guard bei einem
-// zwischenzeitlichen Re-Scan/Re-Scoring, siehe ScoringRunSummary.id).
-export function triggerScoreCriteria(
+/**
+ * Der EINE Ausloeser der Klassifizierung (specs/features/0296-klassifizierung-ein-ausloeser-cloud-
+ * checkbox.md) - ersetzt triggerScoreCriteria UND triggerClassifyCategoriesRemote. Der Server
+ * verkettet beide Phasen; die frueher noetige Reihenfolge-Kenntnis entfaellt.
+ *
+ * `scoringRunId`: Staleness-Guard bei einem zwischenzeitlichen Re-Scan/Re-Scoring (siehe
+ * ScoringRunSummary.id). `useCloud`: laufbezogene Cloud-Freigabe - erteilt KEINE Einwilligung
+ * (die bleibt die Projekteinstellung), sondern entscheidet nur ueber die Nutzung der bereits
+ * erteilten fuer genau diesen Lauf. Ohne Einwilligung antwortet der Server mit 403.
+ */
+export function triggerClassification(
   id: number,
-  scoringRunId: number
+  scoringRunId: number,
+  useCloud: boolean
 ): Promise<TriggerScanResponse> {
-  return apiFetch<TriggerScanResponse>(`/projects/${id}/score-criteria`, {
+  return apiFetch<TriggerScanResponse>(`/projects/${id}/classify`, {
     method: 'POST',
-    body: { scoring_run_id: scoringRunId },
+    body: { scoring_run_id: scoringRunId, use_cloud: useCloud },
   })
 }
 
@@ -69,19 +77,11 @@ export function setCloudVisionConsent(
 }
 
 // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
-// 6.1: funktioniert unabhaengig vom Consent-Schalter (auch bei deaktiviertem Consent 200).
-export function getClassifyCategoriesRemoteEstimate(
-  id: number
-): Promise<ClassifyCategoriesRemoteEstimateOut> {
-  return apiFetch<ClassifyCategoriesRemoteEstimateOut>(
-    `/projects/${id}/classify-categories-remote/estimate`
-  )
-}
-
-export function triggerClassifyCategoriesRemote(id: number): Promise<TriggerScanResponse> {
-  return apiFetch<TriggerScanResponse>(`/projects/${id}/classify-categories-remote`, {
-    method: 'POST',
-  })
+// 6.1, fortgeschrieben von specs/features/0296: die Schaetzung deckt jetzt beide Cloud-Anteile ab.
+// Funktioniert weiterhin unabhaengig vom Consent-Schalter (auch bei deaktiviertem Consent 200) -
+// die Kosten sollen vor einer Consent-Entscheidung sichtbar sein.
+export function getClassificationEstimate(id: number): Promise<ClassificationEstimateOut> {
+  return apiFetch<ClassificationEstimateOut>(`/projects/${id}/classify/estimate`)
 }
 
 /**

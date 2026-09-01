@@ -65,6 +65,7 @@ from photosort.landmark import (
 )
 from photosort.logging_config import configure_logging
 from photosort.models import (
+    ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
@@ -299,10 +300,21 @@ async def _fail_run(
     run.status = ScanStatus.FAILED
     run.error_message = error_message
     run.finished_at = _now_utc()
+    if isinstance(run, CriterionScoringRun):
+        # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 3:
+        # `phase = NULL` heisst "laeuft nicht mehr" - das gilt fuer einen fehlgeschlagenen Lauf
+        # genauso wie fuer einen erfolgreichen. HIER statt in run_classification/
+        # run_criterion_scoring, weil _fail_run der einzige gemeinsame "auf FAILED setzen"-Pfad
+        # ist: er wird auch vom Fortschritts-Watchdog (reap_stalled_runs -> _fail_if_stalled)
+        # benutzt, der einen haengenden Lauf abraeumt, ohne dass die Job-Coroutine je zurueckkehrt.
+        # `phase` existiert nur auf CriterionScoringRun, deshalb die isinstance-Pruefung statt
+        # eines gemeinsamen Basisklassen-Feldes (die vier Run-Modelle haben bewusst keine, ADR
+        # 0019).
+        run.phase = None
     await session.commit()
     # Copilot-Review-Fund (PR #67): das vorangehende rollback() expired ORM-Objekte der Session -
     # ohne dieses refresh() koennte ein direkter Attributzugriff auf `run` NACH der Rueckkehr aus
-    # _fail_run (z.B. `run.id` in scan_project/score_project/score_criteria, die den
+    # _fail_run (z.B. `run.id` in scan_project/score_project/classify, die den
     # Rueckgabewert von run_project_scan/run_project_scoring/run_top_selection unmittelbar
     # weiterverwenden) einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
     # ausloesen (sqlalchemy.exc.MissingGreenlet) - siehe test_worker_fail_run.py.
@@ -1013,9 +1025,10 @@ async def _remote_category_candidates(
     session: AsyncSession, photo_ids: Collection[int]
 ) -> dict[int, list[str]]:
     """specs/features/0289-feste-kategorien.md, Umsetzungsschritt 5: liest die bereits vorhandenen
-    `photo_category_classifications`-Zeilen (aus einem frueheren, separaten
-    `classify-categories-remote`-Lauf - KEIN Cloud-Aufruf hier) und liefert je Foto die
-    VALIDIERTE Remote-Kandidatenliste.
+    `photo_category_classifications`-Zeilen (seit specs/features/0296-klassifizierung-ein-
+    ausloeser-cloud-checkbox.md im Regelfall aus Phase 1 DESSELBEN Laufs, davor aus einem
+    frueheren, separat ausgeloesten Lauf - in beiden Faellen KEIN Cloud-Aufruf hier) und liefert
+    je Foto die VALIDIERTE Remote-Kandidatenliste.
 
     Ersetzt das abgeloeste `_merge_remote_category_labels`: dort wurden Remote-Ergebnisse als
     `remote:<canonical_key>`-PSEUDO-KRITERIEN in dieselbe Struktur gemischt, die auch die
@@ -1216,6 +1229,27 @@ def _compute_content_criteria(
     return values
 
 
+# specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-
+# klassifizierungslauf-mit-laufbezogener-cloud-freigabe.md Punkt 4: defensive Obergrenze fuer die
+# zusammengesetzte laufweite Cloud-Fehlermeldung - analog
+# _MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH. Die eigentliche Absicherung bleibt, dass jeder
+# Baustein entweder fest codiert ist oder aus einer bereits an der Exception-Konstruktionsstelle
+# sanitierten Meldung stammt (ADR 0025/0031/0032/0034); diese Kappung ist nur eine Storage-/
+# Degenerationsgrenze fuer den Fall mehrerer langer Teilmeldungen.
+_MAX_RUN_CLOUD_ERROR_MESSAGE_LENGTH = 1000
+
+
+def _append_cloud_error(run: CriterionScoringRun, message: str) -> None:
+    """Haengt einen Baustein an die laufweite Cloud-Fehlermeldung an, statt sie zu ueberschreiben
+    (ADR 0050 Punkt 4): ein Lauf kann mehrere unabhaengige Cloud-Probleme haben (Phase 1
+    fehlgeschlagen UND Landmark-Client nicht konstruierbar UND einzelne Landmark-Aufrufe
+    fehlgeschlagen), und keines davon darf ein anderes verdecken. Kein eigener Commit - der
+    Aufrufer committet ohnehin an seinen bestehenden Punkten."""
+    existing = run.cloud_error_message
+    combined = message if existing is None else f"{existing} {message}"
+    run.cloud_error_message = combined[:_MAX_RUN_CLOUD_ERROR_MESSAGE_LENGTH]
+
+
 async def run_criterion_scoring(
     session: AsyncSession,
     project: Project,
@@ -1227,6 +1261,9 @@ async def run_criterion_scoring(
     build_aesthetics: Callable[[], AestheticsModelLike] = build_aesthetics_model,
     build_landmarker: Callable[[], FaceLandmarkerLike] = build_face_landmarker,
     build_landmark_client: Callable[[], LandmarkClientLike] = build_landmark_client,
+    *,
+    run: CriterionScoringRun | None = None,
+    use_cloud: bool = False,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
     abgeleitete Rangfolge je Partition (cluster_key x category_key) - ersetzt run_top_selection/
@@ -1243,13 +1280,33 @@ async def run_criterion_scoring(
     build_object_detector/build_scene_classifier/build_aesthetics_model duerfen wie
     build_face_detector NIE in einem automatisierten Test aufgerufen werden - gilt seit
     specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ebenso fuer
-    build_face_landmarker)."""
-    run = CriterionScoringRun(
-        project_id=project.id, scoring_run_id=scoring_run_id, status=ScanStatus.RUNNING
-    )
-    session.add(run)
+    build_face_landmarker).
+
+    specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050: seit Spec 0296
+    ist dies die ZWEITE Phase eines verketteten Klassifizierungslaufs, nicht mehr ein eigenstaendig
+    ausgeloester Lauf. Zwei neue keyword-only Parameter:
+
+    - `run`: der bereits von run_classification angelegte Lauf-Datensatz. Wird keiner uebergeben,
+      legt diese Funktion ihn wie bisher selbst an (Direktaufruf, z.B. in Tests).
+    - `use_cloud`: laufbezogene Cloud-Freigabe (die Checkbox am Ausloeser). Das Gate fuer die
+      Landmark-Phase ist ab hier die KONJUNKTION `use_cloud and
+      project.cloud_vision_detection_enabled` - `use_cloud` kann eine fehlende Einwilligung nie
+      ersetzen, nur eine vorhandene fuer diesen einen Lauf ungenutzt lassen (ADR 0050 Punkt 2).
+      Default `False` und damit FAIL-CLOSED: ein Aufrufer, der den Parameter vergisst, verliert
+      die Cloud-Anreicherung, statt ungewollte Kosten und einen ungewollten Datenabfluss
+      auszuloesen."""
+    if run is None:
+        run = CriterionScoringRun(
+            project_id=project.id,
+            scoring_run_id=scoring_run_id,
+            status=ScanStatus.RUNNING,
+            cloud_requested=use_cloud,
+        )
+        session.add(run)
+        await session.commit()
+        await session.refresh(run)
+    run.phase = ClassificationPhase.CRITERIA
     await session.commit()
-    await session.refresh(run)
 
     try:
         latest_scoring_run = (
@@ -1394,9 +1451,24 @@ async def run_criterion_scoring(
         # des Laufs, dokumentierte Vereinfachung) - ist der Schalter aus (Default), wird
         # build_landmark_client GAR NICHT ERST aufgerufen: keine Netzwerkverbindung, kein API-Key
         # noetig, kein Byte verlaesst den Server (Security-Muss-Kriterium der Spec).
-        if project.cloud_vision_detection_enabled and rows:
+        # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 2:
+        # `use_cloud` ist ab hier die zweite, laufbezogene Haelfte des Gates - bei abgewaehlter
+        # Cloud-Checkbox wird build_landmark_client GAR NICHT ERST aufgerufen, selbst wenn die
+        # projektweite Einwilligung vorliegt (Security-Muss-Kriterium der Spec: "kein einziger
+        # Cloud-Aufruf im gesamten Durchlauf").
+        if use_cloud and project.cloud_vision_detection_enabled and rows:
             landmark_client = _try_build(build_landmark_client)
+            if landmark_client is None:
+                # ADR 0050 Punkt 4: dieser Fall war bisher vollstaendig stumm - ein nicht
+                # konstruierbarer Client liess die Sehenswuerdigkeits-Erkennung wortlos aus.
+                # Jetzt Teil der laufweiten Cloud-Fehlermeldung.
+                _append_cloud_error(
+                    run, "Sehenswuerdigkeits-Erkennung nicht verfuegbar (Initialisierung "
+                    "fehlgeschlagen)."
+                )
             if landmark_client is not None:
+                landmark_failures = 0
+                landmark_attempts = 0
                 try:
                     already_scored_photo_ids = {
                         photo_id
@@ -1408,6 +1480,7 @@ async def run_criterion_scoring(
                     )
                     photos_by_id = {photo.id: photo for photo, _score in rows}
                     landmark_concurrency = settings.landmark_api_concurrency
+                    landmark_attempts = len(landmark_candidate_ids)
                     for start in range(0, len(landmark_candidate_ids), landmark_concurrency):
                         block_ids = landmark_candidate_ids[start : start + landmark_concurrency]
                         results = await asyncio.gather(
@@ -1437,6 +1510,7 @@ async def run_criterion_scoring(
                                 # ADR 0035 Punkt 3/Copilot-Review-Fund PR #255: type(exc).__name__/
                                 # str(exc) GENAU EINMAL berechnet, an beide Senken (Logger, DB)
                                 # weitergereicht - keine zweite Auswertung.
+                                landmark_failures += 1
                                 exc_type_name = type(result).__name__
                                 exc_message = str(result)
                                 _log_cloud_vision_failure(
@@ -1477,10 +1551,19 @@ async def run_criterion_scoring(
                     aclose = getattr(landmark_client, "aclose", None)
                     if aclose is not None:
                         await aclose()
+                # ADR 0050 Punkt 4: Zaehl-Zusammenfassung statt N Einzelmeldungen - die
+                # Einzelfehler bleiben pro Foto ueber photo_cloud_vision_errors abrufbar
+                # (ADR 0035), das hier ist die Laufebene.
+                if landmark_failures > 0:
+                    _append_cloud_error(
+                        run,
+                        f"Sehenswuerdigkeits-Erkennung: {landmark_failures} von "
+                        f"{landmark_attempts} Fotos fehlgeschlagen.",
+                    )
 
         # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 5: laedt die bereits
-        # vorhandenen Klassifikations-Zeilen (aus einem frueheren, separaten
-        # classify-categories-remote-Lauf - KEIN neuer Cloud-Aufruf hier). Sie liefern die
+        # vorhandenen Klassifikations-Zeilen (seit Spec 0296 im Regelfall aus Phase 1 DESSELBEN
+        # Laufs, siehe run_classification - KEIN neuer Cloud-Aufruf hier). Sie liefern die
         # REMOTE-Haelfte der Kandidatenmenge; die lokale Haelfte steckt in candidate_values.
         remote_candidates = await _remote_category_candidates(session, candidate_values.keys())
 
@@ -1515,6 +1598,7 @@ async def run_criterion_scoring(
                 )
 
         run.status = ScanStatus.SUCCESS
+        run.phase = None
         run.finished_at = _now_utc()
         await session.commit()
         return run
@@ -1530,14 +1614,139 @@ async def run_criterion_scoring(
         return run
 
 
-async def score_criteria(ctx: dict[str, Any], project_id: int, scoring_run_id: int) -> int:
+async def run_classification(
+    session: AsyncSession,
+    project: Project,
+    scoring_run_id: int,
+    cache_dir: Path,
+    *,
+    use_cloud: bool,
+    build_detector: Callable[[], FaceDetectorLike] = build_face_detector,
+    build_animal_detector: Callable[[], ObjectDetectorLike] = build_object_detector,
+    build_classifier: Callable[[], SceneClassifierLike] = build_scene_classifier,
+    build_aesthetics: Callable[[], AestheticsModelLike] = build_aesthetics_model,
+    build_landmarker: Callable[[], FaceLandmarkerLike] = build_face_landmarker,
+    build_landmark_client: Callable[[], LandmarkClientLike] = build_landmark_client,
+    build_category_client: Callable[
+        [], CategoryDetectionClientLike
+    ] = build_category_classification_client,
+    build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
+) -> CriterionScoringRun:
+    """Der EINE Klassifizierungslauf (specs/features/0296-klassifizierung-ein-ausloeser-cloud-
+    checkbox.md, decisions/0050-verketteter-klassifizierungslauf-mit-laufbezogener-cloud-
+    freigabe.md Punkt 1) - loest die beiden bisher getrennt ausgeloesten Laeufe ab:
+
+        Phase "remote_categories" (nur bei aktiver Cloud-Nutzung)
+            -> run_remote_category_classification
+        Phase "criteria" (immer)
+            -> run_criterion_scoring (inkl. Landmark-Teilphase, ebenfalls nur bei aktiver
+               Cloud-Nutzung)
+
+    Die Reihenfolge ist der eigentliche Zweck dieser Funktion: `run_criterion_scoring` liest die
+    Remote-Ergebnisse ueber `_remote_category_candidates` aus der Datenbank und kann sie nur dann
+    in die Kategorieableitung einrechnen, wenn sie bereits geschrieben sind. Bisher war das eine
+    Bedienanweisung ("erst remote, dann bewerten"), die man kennen musste - jetzt ist es eine
+    Codezeile.
+
+    "Aktive Cloud-Nutzung" ist die Konjunktion `use_cloud and
+    project.cloud_vision_detection_enabled` (ADR 0050 Punkt 2): die laufbezogene Checkbox kann eine
+    fehlende projektweite Einwilligung nie ersetzen, nur eine vorhandene fuer diesen einen Lauf
+    ungenutzt lassen. Ist sie falsch, wird run_remote_category_classification GAR NICHT ERST
+    aufgerufen - es entsteht dann auch kein RemoteCategoryClassificationRun.
+
+    Der Lauf-Datensatz (`CriterionScoringRun`) wird HIER angelegt, vor der ersten Phase, und an
+    run_criterion_scoring durchgereicht (ADR 0050 Punkt 3): sonst zeigte
+    `last_criterion_scoring_run` waehrend der Remote-Phase noch auf den Lauf davor und die
+    Oberflaeche haette keinen Anker fuer den laufenden Vorgang.
+
+    Ein Fehlschlag der Cloud-Phase bricht den Lauf NICHT ab (ADR 0050 Punkt 4): der lokale
+    Bewertungsanteil ist der Kern des Laufs und laeuft vollstaendig durch, die Fehlermeldung
+    wandert in `cloud_error_message`."""
+    cloud_active = use_cloud and project.cloud_vision_detection_enabled
+
+    run = CriterionScoringRun(
+        project_id=project.id,
+        scoring_run_id=scoring_run_id,
+        status=ScanStatus.RUNNING,
+        cloud_requested=use_cloud,
+        phase=(
+            ClassificationPhase.REMOTE_CATEGORIES if cloud_active else ClassificationPhase.CRITERIA
+        ),
+    )
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+
+    if cloud_active:
+        try:
+            remote_run = await run_remote_category_classification(
+                session,
+                project,
+                cache_dir,
+                build_client=build_category_client,
+                build_embedder=build_embedder,
+            )
+        except asyncio.CancelledError:
+            # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+            # watchdog.md, ADR 0019): run_remote_category_classification faellt seine EIGENE Zeile
+            # bereits ab und wirft weiter - ohne diesen Zweig bliebe der uebergeordnete
+            # CriterionScoringRun, den run_classification vor Phase 1 anlegt, bis zum naechsten
+            # Cron-Tick auf RUNNING stehen. Vor Spec 0296 gab es zu diesem Zeitpunkt noch gar
+            # keine solche Zeile, deshalb ist das ein mit der Verkettung neu entstandener Fall.
+            await _fail_run(
+                session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
+            )
+            raise
+        if remote_run.status == ScanStatus.FAILED:
+            # _fail_run hat die Session zurueckgerollt und damit JEDES Objekt darin expired -
+            # anders als ein commit() (die Session laeuft mit expire_on_commit=False, siehe
+            # db.py). Ohne diese beiden refresh()-Aufrufe loeste der naechste Attributzugriff
+            # einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts aus
+            # (MissingGreenlet, derselbe Mechanismus wie im Copilot-Review-Fund PR #67):
+            # `run.cloud_error_message` unmittelbar hier, `project.cloud_vision_detection_enabled`/
+            # `project.id` gleich darauf in run_criterion_scoring. Bis Spec 0296 fiel das nicht
+            # auf, weil der fehlgeschlagene Remote-Lauf das Ende des Jobs war - jetzt laeuft die
+            # Kriterien-Phase auf derselben Session weiter.
+            await session.refresh(run)
+            await session.refresh(project)
+            _append_cloud_error(
+                run, f"Remote-Kategorisierung fehlgeschlagen: {remote_run.error_message}"
+            )
+            await session.commit()
+
+    return await run_criterion_scoring(
+        session,
+        project,
+        scoring_run_id,
+        cache_dir,
+        build_detector,
+        build_animal_detector,
+        build_classifier,
+        build_aesthetics,
+        build_landmarker,
+        build_landmark_client,
+        run=run,
+        use_cloud=use_cloud,
+    )
+
+
+async def classify(
+    ctx: dict[str, Any], project_id: int, scoring_run_id: int, use_cloud: bool
+) -> int:
+    """Der einzige Klassifizierungs-Job (specs/features/0296-klassifizierung-ein-ausloeser-cloud-
+    checkbox.md) - ersetzt die frueheren, getrennt ausgeloesten Jobs `score_criteria` und
+    `classify_categories_remote` vollstaendig."""
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
             raise ValueError(f"Project {project_id} not found")
 
-        run = await run_criterion_scoring(
-            session, project, scoring_run_id, cache_dir=Path(settings.photo_cache_dir)
+        run = await run_classification(
+            session,
+            project,
+            scoring_run_id,
+            cache_dir=Path(settings.photo_cache_dir),
+            use_cloud=use_cloud,
         )
         return run.id
 
@@ -1564,7 +1773,7 @@ async def select_remote_category_candidates(session: AsyncSession, project_id: i
     `photo_category_classifications`-Zeile - seit specs/features/0289-feste-kategorien.md ist die
     1:1-Klassifikations-Zeile das Skip-Kriterium, nicht mehr eine Feinlabel-Zeile: ein Foto mit
     Kategorie, aber ohne Feinlabel, gilt als erledigt). Von `run_remote_category_classification` UND
-    `GET .../classify-categories-remote/estimate` (api/projects.py) genutzt - "ermittelt ueber
+    `GET .../classify/estimate` (api/projects.py) genutzt - "ermittelt ueber
     dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf" (Akzeptanzkriterium der Spec)."""
     rows = (
         await session.execute(
@@ -1769,18 +1978,6 @@ async def run_remote_category_classification(
     except Exception as exc:
         await _fail_run(session, run, str(exc))
         return run
-
-
-async def classify_categories_remote(ctx: dict[str, Any], project_id: int) -> int:
-    async with async_session_factory() as session:
-        project = await session.get(Project, project_id)
-        if project is None:
-            raise ValueError(f"Project {project_id} not found")
-
-        run = await run_remote_category_classification(
-            session, project, cache_dir=Path(settings.photo_cache_dir)
-        )
-        return run.id
 
 
 async def reassign_photo_category(
@@ -2013,10 +2210,11 @@ class WorkerSettings:
     functions = (
         arq_func(scan_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
         arq_func(score_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
-        arq_func(score_criteria, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
-        # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
-        # Punkt 5: eigenstaendiger Job, kein Teil von score_criteria.
-        arq_func(classify_categories_remote, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
+        # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 1:
+        # EIN verketteter Job (Remote-Kategorisierung -> Kriterien-Bewertung) statt der frueheren
+        # zwei (score_criteria/classify_categories_remote) - die Reihenfolge, die man bis dahin
+        # kennen musste, steckt jetzt in run_classification.
+        arq_func(classify, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
     )
     # Schicht 2 des Fortschritts-Watchdogs (ADR 0019), erste Nutzung von arqs Cron-Mechanismus im
     # Projekt: run_at_startup=True sorgt dafuer, dass ein Worker-Neustart sofort eine erste

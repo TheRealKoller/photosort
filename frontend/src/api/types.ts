@@ -20,8 +20,9 @@ export interface ScanSummary {
 // Semantik fuer einen asynchron laufenden Worker-Job, siehe backend models.py::ScoringRun.
 export interface ScoringRunSummary {
   // Additiv (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md): wird als
-  // scoring_run_id an POST /score-criteria weitergereicht (Staleness-Guard bei einem
-  // zwischenzeitlichen Re-Scan/Re-Scoring).
+  // scoring_run_id an POST /classify weitergereicht (Staleness-Guard bei einem zwischenzeitlichen
+  // Re-Scan/Re-Scoring; bis specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md an
+  // POST /score-criteria).
   id: number
   status: ScanStatus
   started_at: string
@@ -34,6 +35,10 @@ export interface ScoringRunSummary {
   gate_confirmed_at: string | null
 }
 
+// specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md: die beiden Teilschritte
+// eines verketteten Klassifizierungslaufs, in genau dieser Reihenfolge.
+export type ClassificationPhase = 'remote_categories' | 'criteria'
+
 // Ersetzt TopSelectionRunSummary (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
 // backfill.md) - kein top_n_per_cluster/candidates_total/suggestions_found mehr: N wird erst
 // beim Lesen angewendet (GET /photos?top_n_per_category=N), der Job berechnet immer den vollen
@@ -45,6 +50,21 @@ export interface CriterionScoringRunSummary {
   photos_total: number
   photos_processed: number
   error_message: string | null
+  // specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md: diese Zusammenfassung
+  // beschreibt seit Spec 0296 den GESAMTEN Klassifizierungslauf, nicht mehr nur seine
+  // Kriterien-Phase.
+  //
+  // `phase`: der gerade laufende Teilschritt; null = laeuft nicht mehr (beendet, oder Altlauf aus
+  // der Zeit der getrennten Ausloesung). Waehrend 'remote_categories' stehen die Fortschritts-
+  // zahlen in last_remote_category_classification_run, waehrend 'criteria' hier.
+  phase: ClassificationPhase | null
+  // War die Cloud-Nutzung fuer DIESEN Lauf angefordert? false heisst "das Ergebnis kann keine
+  // Cloud-Anreicherung enthalten" - Grundlage des entsprechenden Hinweises in der Oberflaeche.
+  cloud_requested: boolean
+  // Laufweite Zusammenfassung der Cloud-Probleme, null = keine. Ein gesetzter Wert heisst NICHT,
+  // dass der Lauf fehlgeschlagen ist: der lokale Bewertungsanteil laeuft trotzdem vollstaendig
+  // durch, das Ergebnis ist nur nicht (vollstaendig) angereichert.
+  cloud_error_message: string | null
 }
 
 // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 6:
@@ -70,7 +90,7 @@ export interface ProjectOut {
   // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md
   last_remote_category_classification_run: RemoteCategoryClassificationRunSummary | null
   // Globales Feature-Flag (specs/features/0024-top-photo-selection-category-mix.md, weiterhin
-  // verwendet fuer POST /score-criteria seit Spec 0037), auf ProjectOut statt einem eigenen
+  // verwendet fuer POST /classify seit Spec 0296), auf ProjectOut statt einem eigenen
   // Endpunkt exponiert - siehe backend api/projects.py-Kommentar.
   category_selection_enabled: boolean
   // Projektweiter Einwilligungs-Schalter fuer produktive Cloud-Vision-Datenfluesse (urspruenglich
@@ -83,9 +103,14 @@ export interface ProjectOut {
 }
 
 // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
-// 6.1: Kostenschaetzung vor dem Remote-Kategorisierungs-Lauf.
-export interface ClassifyCategoriesRemoteEstimateOut {
+// 6.1, fortgeschrieben von specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md
+// (ADR 0050 Punkt 5): Kostenschaetzung vor dem Lauf, jetzt ueber ALLE Cloud-Anteile, die die
+// Checkbox am Ausloeser freigibt. `candidate_count` ist die Summe der beiden Einzelanteile und
+// bleibt die eine anzuzeigende Zahl.
+export interface ClassificationEstimateOut {
   candidate_count: number
+  remote_category_candidate_count: number
+  landmark_candidate_count: number
   provider: string
   price_per_image_usd: number
   estimated_cost_usd: number
