@@ -20,8 +20,9 @@ export interface ScanSummary {
 // Semantik fuer einen asynchron laufenden Worker-Job, siehe backend models.py::ScoringRun.
 export interface ScoringRunSummary {
   // Additiv (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md): wird als
-  // scoring_run_id an POST /score-criteria weitergereicht (Staleness-Guard bei einem
-  // zwischenzeitlichen Re-Scan/Re-Scoring).
+  // scoring_run_id an POST /classify weitergereicht (Staleness-Guard bei einem zwischenzeitlichen
+  // Re-Scan/Re-Scoring; bis specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md an
+  // POST /score-criteria).
   id: number
   status: ScanStatus
   started_at: string
