@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import math
 from datetime import UTC, datetime
@@ -8,6 +9,7 @@ from types import SimpleNamespace
 from typing import NoReturn
 
 import numpy as np
+import pytest
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -641,3 +643,35 @@ async def test_remote_classification_rows_are_written_before_the_criteria_phase(
         )
     ).scalar_one()
     assert classification.category_key == "tier"
+
+
+async def test_a_cancelled_remote_phase_fails_the_whole_run_immediately(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Schicht 1 des Fortschritts-Watchdogs (ADR 0019) fuer den mit der Verkettung neu entstandenen
+    Fall: bricht der Job waehrend Phase 1 ab (Job-Timeout/Worker-Shutdown), darf der bereits
+    angelegte uebergeordnete Lauf nicht bis zum naechsten Cron-Tick auf RUNNING stehen bleiben."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    class CancellingCategoryClient:
+        async def classify(
+            self, image_bytes: bytes, mime_type: str, photo_id: int
+        ) -> RemoteClassification:
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await _run(
+            db_session,
+            project,
+            scoring_run,
+            tmp_path,
+            use_cloud=True,
+            build_category_client=lambda: CancellingCategoryClient(),
+        )
+
+    run = (await db_session.execute(select(CriterionScoringRun))).scalar_one()
+    assert run.status == ScanStatus.FAILED
+    assert run.phase is None
+    assert run.error_message == "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."

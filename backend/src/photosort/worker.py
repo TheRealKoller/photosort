@@ -300,6 +300,17 @@ async def _fail_run(
     run.status = ScanStatus.FAILED
     run.error_message = error_message
     run.finished_at = _now_utc()
+    if isinstance(run, CriterionScoringRun):
+        # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 3:
+        # `phase = NULL` heisst "laeuft nicht mehr" - das gilt fuer einen fehlgeschlagenen Lauf
+        # genauso wie fuer einen erfolgreichen. HIER statt in run_classification/
+        # run_criterion_scoring, weil _fail_run der einzige gemeinsame "auf FAILED setzen"-Pfad
+        # ist: er wird auch vom Fortschritts-Watchdog (reap_stalled_runs -> _fail_if_stalled)
+        # benutzt, der einen haengenden Lauf abraeumt, ohne dass die Job-Coroutine je zurueckkehrt.
+        # `phase` existiert nur auf CriterionScoringRun, deshalb die isinstance-Pruefung statt
+        # eines gemeinsamen Basisklassen-Feldes (die vier Run-Modelle haben bewusst keine, ADR
+        # 0019).
+        run.phase = None
     await session.commit()
     # Copilot-Review-Fund (PR #67): das vorangehende rollback() expired ORM-Objekte der Session -
     # ohne dieses refresh() koennte ein direkter Attributzugriff auf `run` NACH der Rueckkehr aus
@@ -1239,16 +1250,6 @@ def _append_cloud_error(run: CriterionScoringRun, message: str) -> None:
     run.cloud_error_message = combined[:_MAX_RUN_CLOUD_ERROR_MESSAGE_LENGTH]
 
 
-async def _clear_phase(session: AsyncSession, run: CriterionScoringRun) -> None:
-    """`phase = NULL` heisst "laeuft nicht mehr" (models.py::CriterionScoringRun.phase) - das gilt
-    fuer einen fehlgeschlagenen Lauf genauso wie fuer einen erfolgreichen. Eigene Funktion, weil
-    _fail_run von allen vier run_*-Funktionen geteilt wird und `phase` nur auf
-    CriterionScoringRun existiert; _fail_run committet und refresht bereits, dieser Aufruf setzt
-    danach auf dem frischen Objekt nach."""
-    run.phase = None
-    await session.commit()
-
-
 async def run_criterion_scoring(
     session: AsyncSession,
     project: Project,
@@ -1605,13 +1606,11 @@ async def run_criterion_scoring(
         # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
         # watchdog.md, ADR 0019) - analog run_project_scan/run_project_scoring oben.
         await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
-        await _clear_phase(session, run)
         raise
     except Exception as exc:
         # Kein Rollback bereits committeter Fortschritts-/Kriterien-Zwischenstaende
         # (Akzeptanzkriterium der Spec, identisches Muster wie run_project_scoring oben).
         await _fail_run(session, run, str(exc))
-        await _clear_phase(session, run)
         return run
 
 
@@ -1679,13 +1678,25 @@ async def run_classification(
     await session.refresh(run)
 
     if cloud_active:
-        remote_run = await run_remote_category_classification(
-            session,
-            project,
-            cache_dir,
-            build_client=build_category_client,
-            build_embedder=build_embedder,
-        )
+        try:
+            remote_run = await run_remote_category_classification(
+                session,
+                project,
+                cache_dir,
+                build_client=build_category_client,
+                build_embedder=build_embedder,
+            )
+        except asyncio.CancelledError:
+            # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
+            # watchdog.md, ADR 0019): run_remote_category_classification faellt seine EIGENE Zeile
+            # bereits ab und wirft weiter - ohne diesen Zweig bliebe der uebergeordnete
+            # CriterionScoringRun, den run_classification vor Phase 1 anlegt, bis zum naechsten
+            # Cron-Tick auf RUNNING stehen. Vor Spec 0296 gab es zu diesem Zeitpunkt noch gar
+            # keine solche Zeile, deshalb ist das ein mit der Verkettung neu entstandener Fall.
+            await _fail_run(
+                session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
+            )
+            raise
         if remote_run.status == ScanStatus.FAILED:
             # _fail_run hat die Session zurueckgerollt und damit JEDES Objekt darin expired -
             # anders als ein commit() (die Session laeuft mit expire_on_commit=False, siehe
