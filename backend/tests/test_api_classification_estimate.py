@@ -1,28 +1,32 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.api.deps import get_job_enqueuer, get_opencloud_client
+from photosort.api.deps import get_opencloud_client
 from photosort.config import settings
 from photosort.main import app
 from photosort.models import (
+    CriterionSource,
     Photo,
     PhotoCategoryClassification,
+    PhotoCriterionScore,
     PhotoScore,
     RatingStatus,
     ScanStatus,
-    ScoringRun,
 )
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.remote_classification import COST_PER_IMAGE_USD
 
-# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, Akzeptanzkriterien
-# "Kostenschätzung"/"Remote-Klassifizierungs-Lauf".
+# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, Akzeptanzkriterium
+# "Kostenschätzung", fortgeschrieben von specs/features/0296-klassifizierung-ein-ausloeser-cloud-
+# checkbox.md (ADR 0050 Punkt 5): die Schätzung deckt seither BEIDE Cloud-Anteile ab, die die
+# Checkbox am Auslöser freigibt — Kategorie-Klassifizierung UND Sehenswürdigkeits-Erkennung.
+# Die Auslöse-Tests leben seit derselben Spec in test_api_criterion_scoring.py::TestClassify —
+# es gibt nur noch einen Auslöser.
 
 
 class FakeOpenCloudClient:
@@ -40,14 +44,6 @@ class FakeOpenCloudClient:
         if self._fail:
             raise self._fail
         return []
-
-
-class FakeEnqueuer:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[Any, ...]]] = []
-
-    async def enqueue_job(self, function: str, *args: Any) -> None:
-        self.calls.append((function, args))
 
 
 async def _create_project(client: httpx.AsyncClient) -> int:
@@ -86,16 +82,31 @@ async def _add_photo_candidate(
     return photo
 
 
+async def _add_criterion_score(
+    session: AsyncSession, photo: Photo, criterion_key: str, value: float
+) -> None:
+    session.add(
+        PhotoCriterionScore(
+            photo_id=photo.id,
+            criterion_key=criterion_key,
+            value=value,
+            source=CriterionSource.LOCAL_HEURISTIC,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await session.commit()
+
+
 class TestEstimateEndpoint:
     async def test_requires_auth(self, api_client: httpx.AsyncClient) -> None:
-        response = await api_client.get("/projects/1/classify-categories-remote/estimate")
+        response = await api_client.get("/projects/1/classify/estimate")
         assert response.status_code == 401
 
     async def test_returns_404_for_unknown_project(
         self, authenticated_api_client: httpx.AsyncClient
     ) -> None:
         response = await authenticated_api_client.get(
-            "/projects/999/classify-categories-remote/estimate"
+            "/projects/999/classify/estimate"
         )
         assert response.status_code == 404
 
@@ -105,7 +116,7 @@ class TestEstimateEndpoint:
         project_id = await _create_project(authenticated_api_client)
 
         response = await authenticated_api_client.get(
-            f"/projects/{project_id}/classify-categories-remote/estimate"
+            f"/projects/{project_id}/classify/estimate"
         )
 
         assert response.status_code == 200
@@ -120,7 +131,7 @@ class TestEstimateEndpoint:
         project_id = await _create_project(authenticated_api_client)
 
         response = await authenticated_api_client.get(
-            f"/projects/{project_id}/classify-categories-remote/estimate"
+            f"/projects/{project_id}/classify/estimate"
         )
 
         assert response.status_code == 200
@@ -134,12 +145,16 @@ class TestEstimateEndpoint:
         await _add_photo_candidate(db_session, project_id, "c.jpg", rejected=True)
 
         response = await authenticated_api_client.get(
-            f"/projects/{project_id}/classify-categories-remote/estimate"
+            f"/projects/{project_id}/classify/estimate"
         )
 
         assert response.status_code == 200
         body = response.json()
         assert body["candidate_count"] == 2
+        assert body["remote_category_candidate_count"] == 2
+        # Ohne bereits gespeicherte Kriterien-Werte gibt es keine Landmark-Kandidaten - die
+        # Schaetzung ist strukturell eine Schaetzung, kein Vorausberechnen (ADR 0050 Punkt 5).
+        assert body["landmark_candidate_count"] == 0
         assert body["provider"] == settings.landmark_provider
         price = COST_PER_IMAGE_USD[settings.landmark_provider]
         assert body["price_per_image_usd"] == price
@@ -169,7 +184,7 @@ class TestEstimateEndpoint:
         await db_session.commit()
 
         response = await authenticated_api_client.get(
-            f"/projects/{project_id}/classify-categories-remote/estimate"
+            f"/projects/{project_id}/classify/estimate"
         )
 
         assert response.status_code == 200
@@ -179,71 +194,92 @@ class TestEstimateEndpoint:
         assert candidate.id != already_classified.id
 
 
-class TestTriggerEndpoint:
-    async def test_requires_auth(self, api_client: httpx.AsyncClient) -> None:
-        response = await api_client.post("/projects/1/classify-categories-remote")
-        assert response.status_code == 401
+class TestLandmarkShareOfTheEstimate:
+    """specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, Akzeptanzkriterium
+    "Die Schätzung umfasst alle Cloud-Anteile, die die Checkbox freigibt — nicht nur die
+    Kategorie-Klassifizierung"."""
 
-    async def test_returns_404_for_unknown_project(
-        self, authenticated_api_client: httpx.AsyncClient
-    ) -> None:
-        fake_enqueuer = FakeEnqueuer()
-        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
-
-        response = await authenticated_api_client.post("/projects/999/classify-categories-remote")
-
-        assert response.status_code == 404
-        assert fake_enqueuer.calls == []
-
-    async def test_returns_403_without_consent(
-        self, authenticated_api_client: httpx.AsyncClient
-    ) -> None:
-        project_id = await _create_project(authenticated_api_client)
-        fake_enqueuer = FakeEnqueuer()
-        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
-
-        response = await authenticated_api_client.post(
-            f"/projects/{project_id}/classify-categories-remote"
-        )
-
-        assert response.status_code == 403
-        assert fake_enqueuer.calls == []
-
-    async def test_returns_409_without_a_successful_scoring_run(
-        self, authenticated_api_client: httpx.AsyncClient
-    ) -> None:
-        project_id = await _create_project(authenticated_api_client)
-        await authenticated_api_client.put(
-            f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
-        )
-        fake_enqueuer = FakeEnqueuer()
-        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
-
-        response = await authenticated_api_client.post(
-            f"/projects/{project_id}/classify-categories-remote"
-        )
-
-        assert response.status_code == 409
-        assert fake_enqueuer.calls == []
-
-    async def test_enqueues_the_job_when_consent_and_a_successful_scoring_run_exist(
+    async def test_counts_photos_over_the_landmark_threshold(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
-        await authenticated_api_client.put(
-            f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
-        )
-        db_session.add(ScoringRun(project_id=project_id, status=ScanStatus.SUCCESS))
-        await db_session.commit()
-        fake_enqueuer = FakeEnqueuer()
-        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+        landmark_candidate = await _add_photo_candidate(db_session, project_id, "a.jpg")
+        await _add_criterion_score(db_session, landmark_candidate, "landschaft", 1.0)
+        below_threshold = await _add_photo_candidate(db_session, project_id, "b.jpg")
+        await _add_criterion_score(db_session, below_threshold, "landschaft", 0.0)
 
-        response = await authenticated_api_client.post(
-            f"/projects/{project_id}/classify-categories-remote"
-        )
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
 
-        assert response.status_code == 202
-        assert fake_enqueuer.calls == [("classify_categories_remote", (project_id,))]
+        assert body["landmark_candidate_count"] == 1
+        assert body["remote_category_candidate_count"] == 2
+        assert body["candidate_count"] == 3
+        price = COST_PER_IMAGE_USD[settings.landmark_provider]
+        assert body["estimated_cost_usd"] == 3 * price
+
+    async def test_a_building_photo_is_a_landmark_candidate_too(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
+        await _add_criterion_score(db_session, photo, "gebaeude", 1.0)
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["landmark_candidate_count"] == 1
+
+    async def test_excludes_photos_that_already_have_a_landmark_score(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Dieselbe Skip-Regel wie im Live-Lauf (worker.py::_select_landmark_candidates): ein
+        bereits gescortes Foto wird kein zweites Mal an die Cloud geschickt und darf die
+        Schaetzung deshalb auch nicht erhoehen."""
+        project_id = await _create_project(authenticated_api_client)
+        photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
+        await _add_criterion_score(db_session, photo, "landschaft", 1.0)
+        await _add_criterion_score(db_session, photo, "landmark", 0.8)
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["landmark_candidate_count"] == 0
+
+    async def test_excludes_rejected_photos(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        rejected = await _add_photo_candidate(db_session, project_id, "a.jpg", rejected=True)
+        await _add_criterion_score(db_session, rejected, "landschaft", 1.0)
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["landmark_candidate_count"] == 0
+
+    async def test_counts_a_photo_of_another_project_separately(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
+        other_id = (
+            await authenticated_api_client.post(
+                "/projects", json={"name": "Island", "opencloud_path": "B"}
+            )
+        ).json()["id"]
+        other_photo = await _add_photo_candidate(db_session, other_id, "a.jpg")
+        await _add_criterion_score(db_session, other_photo, "landschaft", 1.0)
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["landmark_candidate_count"] == 0
+        assert body["candidate_count"] == 0
 
 
 async def test_project_out_exposes_last_remote_category_classification_run(

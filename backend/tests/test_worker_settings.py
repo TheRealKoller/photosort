@@ -7,9 +7,9 @@ from arq.worker import Function
 from photosort import worker
 from photosort.worker import (
     WorkerSettings,
+    classify,
     reap_stalled_runs,
     scan_project,
-    score_criteria,
     score_project,
 )
 
@@ -41,11 +41,21 @@ def test_score_project_registered_with_generous_timeout_and_no_background_retry(
     assert by_coroutine[score_project].max_tries == _EXPECTED_MAX_TRIES
 
 
-def test_score_criteria_registered_with_generous_timeout_and_no_background_retry() -> None:
+def test_classify_registered_with_generous_timeout_and_no_background_retry() -> None:
     by_coroutine = _registered_by_coroutine()
 
-    assert by_coroutine[score_criteria].timeout_s == _EXPECTED_TIMEOUT_S
-    assert by_coroutine[score_criteria].max_tries == _EXPECTED_MAX_TRIES
+    assert by_coroutine[classify].timeout_s == _EXPECTED_TIMEOUT_S
+    assert by_coroutine[classify].max_tries == _EXPECTED_MAX_TRIES
+
+
+def test_exactly_three_jobs_are_registered() -> None:
+    """specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, AC "Ein Ausloeser":
+    die frueheren Jobs `score_criteria` und `classify_categories_remote` sind durch den einen
+    verketteten `classify`-Job ersetzt - es darf kein zweiter Weg zurueckbleiben, einen Teil der
+    Klassifizierung anzustossen."""
+    by_coroutine = _registered_by_coroutine()
+
+    assert {f.__name__ for f in by_coroutine} == {"scan_project", "score_project", "classify"}
 
 
 def test_reap_stalled_runs_registered_as_cron_job_every_five_minutes_at_startup() -> None:

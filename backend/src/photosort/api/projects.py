@@ -16,11 +16,14 @@ from photosort.api.deps import (
     get_session,
 )
 from photosort.config import settings
+from photosort.criteria import LANDMARK_CANDIDATE_CRITERION_KEYS, is_landmark_candidate
 from photosort.models import (
+    ClassificationPhase,
     CriterionScoringRun,
     FineLabel,
     Photo,
     PhotoCategoryClassification,
+    PhotoCriterionScore,
     PhotoFineLabel,
     PhotoScore,
     Project,
@@ -62,9 +65,9 @@ class ScoringRunSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     # Additiv (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md): der Client
-    # (POST /score-criteria) muss die id des ScoringRun kennen, dessen Stand er zu scoren
+    # (POST /classify) muss die id des ScoringRun kennen, dessen Stand er zu scoren
     # beabsichtigt, damit der Server einen zwischenzeitlichen Re-Scan/Re-Scoring erkennen kann
-    # (409-Staleness-Guard, siehe trigger_score_criteria unten).
+    # (409-Staleness-Guard, siehe trigger_classify unten).
     id: int
     status: ScanStatus
     started_at: datetime
@@ -91,6 +94,14 @@ class CriterionScoringRunSummary(BaseModel):
     photos_total: int
     photos_processed: int
     error_message: str | None
+    # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 3: diese
+    # Zusammenfassung beschreibt seit Spec 0296 den GESAMTEN Klassifizierungslauf, nicht mehr nur
+    # seine Kriterien-Phase - `phase` benennt den gerade laufenden Teilschritt (NULL = laeuft nicht
+    # mehr), `cloud_requested`/`cloud_error_message` machen die Cloud-Beteiligung nachtraeglich
+    # erkennbar (Akzeptanzkriterien "Fehlerverhalten").
+    phase: ClassificationPhase | None
+    cloud_requested: bool
+    cloud_error_message: str | None
 
 
 class RemoteCategoryClassificationRunSummary(BaseModel):
@@ -108,12 +119,20 @@ class RemoteCategoryClassificationRunSummary(BaseModel):
     error_message: str | None
 
 
-class ClassifyCategoriesRemoteEstimateOut(BaseModel):
-    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
-    Punkt 6.1: Kostenschaetzung vor dem Lauf - funktioniert unabhaengig vom Consent-Schalter (auch
-    bei deaktiviertem Consent 200, kein 403)."""
+class ClassificationEstimateOut(BaseModel):
+    """specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 5 -
+    Nachfolger von ClassifyCategoriesRemoteEstimateOut: die Schaetzung deckt jetzt ALLE
+    Cloud-Anteile ab, die die Checkbox freigibt, nicht nur die Kategorie-Klassifizierung.
+    Funktioniert weiterhin unabhaengig vom Consent-Schalter (auch bei deaktiviertem Consent 200,
+    kein 403) - die Kosten sollen VOR einer Consent-Entscheidung sichtbar sein.
+
+    `candidate_count` ist die Summe der beiden Einzelanteile und bleibt damit die eine Zahl, die
+    das Frontend anzeigt; die beiden Einzelfelder machen nachvollziehbar, woraus sie sich
+    zusammensetzt."""
 
     candidate_count: int
+    remote_category_candidate_count: int
+    landmark_candidate_count: int
     provider: str
     price_per_image_usd: float
     estimated_cost_usd: float
@@ -128,14 +147,22 @@ class CloudVisionConsentOut(BaseModel):
     cloud_vision_consent_at: datetime | None
 
 
-class ScoreCriteriaRequest(BaseModel):
+class ClassifyRequest(BaseModel):
     """specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md: kein
-    top_n_per_cluster-Parameter mehr (ersetzt durch `scoring_run_id` - der Client uebergibt die
+    top_n_per_cluster-Parameter (ersetzt durch `scoring_run_id` - der Client uebergibt die
     id des ScoringRun, dessen Stand er beim Anzeigen von last_scoring_run gesehen hat, damit der
     Server einen zwischenzeitlichen Re-Scan/Re-Scoring als 409 ablehnen kann, statt auf einem
-    veralteten cluster_key-Stand weiterzuarbeiten - siehe Edge Cases der Spec)."""
+    veralteten cluster_key-Stand weiterzuarbeiten - siehe Edge Cases der Spec).
+
+    specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 2:
+    `use_cloud` ist die laufbezogene Cloud-Freigabe (die Checkbox am Ausloeser). Sie erteilt
+    KEINE Einwilligung - die bleibt ausschliesslich `PUT .../cloud-vision-consent` - sondern
+    entscheidet nur, ob die vorhandene Einwilligung fuer genau diesen Lauf genutzt wird. Kein
+    Default: der Client soll sich sichtbar entscheiden muessen, statt in eine Voreinstellung zu
+    laufen, die Kosten verursacht."""
 
     scoring_run_id: int
+    use_cloud: bool
 
 
 class ProjectOut(BaseModel):
@@ -151,7 +178,7 @@ class ProjectOut(BaseModel):
     # Punkt 6: analog last_criterion_scoring_run.
     last_remote_category_classification_run: RemoteCategoryClassificationRunSummary | None = None
     # Globales Feature-Flag, nicht projektspezifisch (specs/features/0024-top-photo-selection-
-    # category-mix.md, weiterhin verwendet fuer POST /score-criteria seit Spec 0037) - hier statt
+    # category-mix.md, weiterhin verwendet fuer POST /classify seit Spec 0296) - hier statt
     # in einem neuen Endpunkt exponiert: technische Detailentscheidung der Umsetzung, damit das
     # Frontend-Verfuegbarkeitsgate proaktiv aus den ohnehin bereits geladenen Projektdaten dieser
     # Seite ableiten kann (UI/UX-Abschnitt der Spec), statt erst nach einem fehlgeschlagenen 403.
@@ -242,6 +269,54 @@ async def _count_remote_category_candidates(session: AsyncSession, project_id: i
         )
     )
     return result.scalar_one()
+
+
+async def _count_landmark_candidates(session: AsyncSession, project_id: int) -> int:
+    """Der Landmark-Anteil der Kostenschaetzung (specs/features/0296-klassifizierung-ein-ausloeser-
+    cloud-checkbox.md, decisions/0050-verketteter-klassifizierungslauf-mit-laufbezogener-cloud-
+    freigabe.md Punkt 5).
+
+    Zaehlt Ausschuss-Ueberlebende, deren BEREITS GESPEICHERTE Kriterien-Werte
+    `criteria.py::is_landmark_candidate` erfuellen und die noch keine `landmark`-Zeile haben -
+    dieselbe reine Schwellenwert-Funktion, die auch der Live-Lauf ueber
+    worker.py::_select_landmark_candidates nutzt (kein zweiter, auseinanderlaufender Grenzwert).
+
+    STRUKTURELL EINE SCHAETZUNG, keine Vorausberechnung (ADR 0050 Punkt 5): die Landmark-
+    Kandidaten des kommenden Laufs ergeben sich aus Kriterien-Werten, die genau dieser Lauf erst
+    neu berechnet. Vor dem allerersten Lauf eines Projekts liegen gar keine Vorwerte vor und die
+    Zahl ist 0. Das ist bewusst so - die Zahl ist in der Oberflaeche als Schaetzung ausgewiesen,
+    und ein Foto, das schon einmal Landmark-Kandidat war, bleibt es in aller Regel. Die Alternative
+    (den Landmark-Anteil gar nicht schaetzen) haette die Schaetzung erneut nur einen Teil der
+    freigegebenen Kosten abdecken lassen - genau der Mangel, den Spec 0296 behebt.
+
+    Die Schwellenwert-Pruefung laeuft bewusst in Python statt als SQL-Ausdruck: `is_landmark_
+    candidate` ist die geteilte Quelle der Wahrheit, und eine SQL-Nachbildung der Schwellenwerte
+    waere genau die zweite, auseinanderlaufende Stelle, die criteria.py vermeiden soll. Geladen
+    werden dafuer nur die beiden relevanten Kriterien-Zeilen je Foto, nicht die vollen Fotos."""
+    already_scored = (
+        select(PhotoCriterionScore.photo_id)
+        .join(Photo, Photo.id == PhotoCriterionScore.photo_id)
+        .where(Photo.project_id == project_id, PhotoCriterionScore.criterion_key == "landmark")
+    )
+    rows = (
+        await session.execute(
+            select(PhotoCriterionScore.photo_id, PhotoCriterionScore.criterion_key,
+                   PhotoCriterionScore.value)
+            .join(Photo, Photo.id == PhotoCriterionScore.photo_id)
+            .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+            .where(
+                Photo.project_id == project_id,
+                PhotoScore.suggested_status.is_(None),
+                PhotoCriterionScore.criterion_key.in_(LANDMARK_CANDIDATE_CRITERION_KEYS),
+                PhotoCriterionScore.photo_id.not_in(already_scored),
+            )
+        )
+    ).all()
+
+    values_by_photo: dict[int, dict[str, float]] = {}
+    for photo_id, criterion_key, value in rows:
+        values_by_photo.setdefault(photo_id, {})[criterion_key] = value
+    return sum(1 for values in values_by_photo.values() if is_landmark_candidate(values))
 
 
 async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut:
@@ -379,27 +454,38 @@ async def confirm_ausschuss_gate(
     return {"status": "confirmed"}
 
 
-@router.post("/{project_id}/score-criteria", status_code=status.HTTP_202_ACCEPTED)
-async def trigger_score_criteria(
+@router.post("/{project_id}/classify", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_classify(
     project_id: int,
-    payload: ScoreCriteriaRequest,
+    payload: ClassifyRequest,
     session: AsyncSession = Depends(get_session),
     enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
 ) -> dict[str, str]:
-    """specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md (ersetzt /select-top):
-    `403` wenn das Feature-Flag aus ist, `409` ohne erfolgreichen `ScoringRun`, `409` ohne
+    """Der EINE Ausloeser der Klassifizierung (specs/features/0296-klassifizierung-ein-ausloeser-
+    cloud-checkbox.md, decisions/0050-verketteter-klassifizierungslauf-mit-laufbezogener-cloud-
+    freigabe.md Punkt 5) - ersetzt `POST .../score-criteria` UND
+    `POST .../classify-categories-remote` ersatzlos. Der ausgeloeste Job verkettet beide Phasen
+    (worker.py::run_classification), die frueher bekannte Reihenfolge-Regel entfaellt damit.
+
+    Vorbedingungen unveraendert von score-criteria uebernommen: `403` wenn das Feature-Flag aus
+    ist, `404` bei unbekanntem Projekt, `409` ohne erfolgreichen `ScoringRun`, `409` ohne
     bestaetigtes Gate, `409` bei veraltetem `scoring_run_id`-Bezug (Re-Scan/Re-Scoring waehrend
-    der Kuratierung) - kein `top_n_per_cluster`-Parameter mehr (N wird erst beim Lesen
-    angewendet). Legt selbst KEINE CriterionScoringRun-Zeile an - das erledigt der Job beim
-    tatsaechlichen Start (run_criterion_scoring in worker.py), identisches Muster wie
-    trigger_scan/trigger_score oben."""
+    der Kuratierung). NEU: `403`, wenn `use_cloud=true` ohne projektweite Einwilligung angefragt
+    wird - ein Client, der Cloud-Verarbeitung ohne Einwilligung anfordert, soll das erfahren,
+    statt still auf "lokal" herunterzufallen. Diese Pruefung ist die sprechende Frueh-
+    rueckmeldung, NICHT das Sicherheitsnetz: das eigentliche Gate ist die Konjunktion
+    `use_cloud and project.cloud_vision_detection_enabled`, ausgewertet im Worker unmittelbar vor
+    der Client-Konstruktion (ADR 0050 Punkt 2).
+
+    Legt selbst KEINE CriterionScoringRun-Zeile an - das erledigt der Job beim tatsaechlichen
+    Start (run_classification in worker.py), identisches Muster wie trigger_scan/trigger_score."""
     if not settings.category_selection_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Diese Funktion ist derzeit nicht aktiviert.",
         )
 
-    await _get_project_or_404(project_id, session)
+    project = await _get_project_or_404(project_id, session)
 
     latest_scoring_run = await _latest_scoring_run(session, project_id)
     if latest_scoring_run is None or latest_scoring_run.status != ScanStatus.SUCCESS:
@@ -416,10 +502,17 @@ async def trigger_score_criteria(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Der Ausschuss wurde zwischenzeitlich neu ermittelt (Re-Scan/Re-Scoring) - "
-            "lade das Projekt neu und starte die Kriterien-Bewertung erneut.",
+            "lade das Projekt neu und starte die Klassifizierung erneut.",
+        )
+    if payload.use_cloud and not project.cloud_vision_detection_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cloud-Bilderkennung ist fuer dieses Projekt nicht aktiviert.",
         )
 
-    await enqueuer.enqueue_job("score_criteria", project_id, payload.scoring_run_id)
+    await enqueuer.enqueue_job(
+        "classify", project_id, payload.scoring_run_id, payload.use_cloud
+    )
     return {"status": "queued"}
 
 
@@ -457,60 +550,32 @@ async def set_cloud_vision_consent(
     )
 
 
-@router.get(
-    "/{project_id}/classify-categories-remote/estimate",
-    response_model=ClassifyCategoriesRemoteEstimateOut,
-)
-async def estimate_classify_categories_remote(
+@router.get("/{project_id}/classify/estimate", response_model=ClassificationEstimateOut)
+async def estimate_classification(
     project_id: int, session: AsyncSession = Depends(get_session)
-) -> ClassifyCategoriesRemoteEstimateOut:
-    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
-    Akzeptanzkriterium "Kostenschätzung": funktioniert UNABHAENGIG vom Consent-Schalter (auch bei
-    deaktiviertem Consent 200, kein 403) - der Nutzer soll die Kosten VOR einer Consent-
-    Entscheidung sehen koennen. `candidate_count=0` liefert weiterhin 200 mit
-    estimated_cost_usd=0.0 (kein Sonderfall)."""
+) -> ClassificationEstimateOut:
+    """specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 5 -
+    Nachfolger von `GET .../classify-categories-remote/estimate`: die Schaetzung deckt jetzt BEIDE
+    Cloud-Anteile ab, weil die Checkbox am Ausloeser beide freigibt.
+
+    Funktioniert weiterhin UNABHAENGIG vom Consent-Schalter (auch bei deaktiviertem Consent 200,
+    kein 403) - der Nutzer soll die Kosten VOR einer Consent-Entscheidung sehen koennen.
+    `candidate_count=0` liefert weiterhin 200 mit estimated_cost_usd=0.0 (kein Sonderfall)."""
     await _get_project_or_404(project_id, session)
 
-    candidate_count = await _count_remote_category_candidates(session, project_id)
+    remote_category_candidate_count = await _count_remote_category_candidates(session, project_id)
+    landmark_candidate_count = await _count_landmark_candidates(session, project_id)
+    candidate_count = remote_category_candidate_count + landmark_candidate_count
     provider = settings.landmark_provider
     price_per_image_usd = COST_PER_IMAGE_USD[provider]
-    return ClassifyCategoriesRemoteEstimateOut(
+    return ClassificationEstimateOut(
         candidate_count=candidate_count,
+        remote_category_candidate_count=remote_category_candidate_count,
+        landmark_candidate_count=landmark_candidate_count,
         provider=provider,
         price_per_image_usd=price_per_image_usd,
         estimated_cost_usd=candidate_count * price_per_image_usd,
     )
-
-
-@router.post("/{project_id}/classify-categories-remote", status_code=status.HTTP_202_ACCEPTED)
-async def trigger_classify_categories_remote(
-    project_id: int,
-    session: AsyncSession = Depends(get_session),
-    enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
-) -> dict[str, str]:
-    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
-    Akzeptanzkriterium "Remote-Klassifizierungs-Lauf": `403` ohne Consent, `409` ohne aktuellen
-    erfolgreichen `ScoringRun` (dieselbe Vorbedingung wie score-criteria - der Kandidatenpool
-    basiert auf `PhotoScore.suggested_status`, das braucht einen erfolgreichen Scan+Scoring-
-    Durchlauf), sonst `202`. Legt selbst KEINE RemoteCategoryClassificationRun-Zeile an - das
-    erledigt der Job beim tatsaechlichen Start (identisches Muster wie trigger_score_criteria)."""
-    project = await _get_project_or_404(project_id, session)
-
-    if not project.cloud_vision_detection_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cloud-Bilderkennung ist fuer dieses Projekt nicht aktiviert.",
-        )
-
-    latest_scoring_run = await _latest_scoring_run(session, project_id)
-    if latest_scoring_run is None or latest_scoring_run.status != ScanStatus.SUCCESS:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Fuehre zuerst die Ausschuss-Erkennung erfolgreich aus.",
-        )
-
-    await enqueuer.enqueue_job("classify_categories_remote", project_id)
-    return {"status": "queued"}
 
 
 class FineLabelCountOut(BaseModel):
