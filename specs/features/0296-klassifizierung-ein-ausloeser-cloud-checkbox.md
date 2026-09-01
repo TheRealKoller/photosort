@@ -1,6 +1,6 @@
 # 0296 - Klassifizierung mit einem Auslöser und laufbezogener Cloud-Checkbox
 
-**Status:** Accepted
+**Status:** Implemented ([PR #307](https://github.com/TheRealKoller/photosort/pull/307))
 **Erstellt:** 2026-09-01
 **Bezug:** [GitHub-Issue #296](https://github.com/TheRealKoller/photosort/issues/296) (Refinement vor dieser Spec-Erstellung abgeschlossen, Story-Inhalt unverändert übernommen)
 
