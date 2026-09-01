@@ -12,7 +12,11 @@ import { cn } from '../../lib/utils'
 // ProjectSettingsPage): die unterschiedliche Optik haelt die beiden Bedeutungen auseinander -
 // Einmal-Entscheidung fuer diesen Durchlauf vs. grundsaetzliche Einwilligung.
 export interface CheckboxProps
-  extends Omit<ComponentProps<'input'>, 'type' | 'checked' | 'onChange'> {
+  // `defaultChecked` ist bewusst mit ausgeschlossen (Copilot-Review-Fund, PR #307): die Komponente
+  // ist ueber `checked`/`onCheckedChange` durchgaengig kontrolliert. Setzt ein Aufrufer zusaetzlich
+  // `defaultChecked`, warnt React ueber die Vermischung von controlled und uncontrolled input -
+  // ein Fehler, der zur Laufzeit nur als Konsolenwarnung auffaellt. Der Typ verhindert ihn.
+  extends Omit<ComponentProps<'input'>, 'type' | 'checked' | 'defaultChecked' | 'onChange'> {
   checked: boolean
   onCheckedChange: (checked: boolean) => void
   /** Beschriftung; klickbar, weil das umschliessende <label> das Eingabefeld traegt. */

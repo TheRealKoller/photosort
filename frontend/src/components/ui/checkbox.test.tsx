@@ -49,6 +49,24 @@ describe('Checkbox', () => {
     expect(onCheckedChange).not.toHaveBeenCalled()
   })
 
+  it('does not accept defaultChecked alongside the controlled checked prop', () => {
+    // Copilot-Review-Fund (PR #307): beides gleichzeitig loest in React die Warnung
+    // "contains an input of type checkbox with both checked and defaultChecked props" aus.
+    // Die Zusicherung ist rein statisch - @ts-expect-error schlaegt fehl, sobald der Typ
+    // `defaultChecked` wieder durchlaesst.
+    render(
+      <Checkbox
+        checked
+        onCheckedChange={vi.fn()}
+        label="Cloud nutzen"
+        // @ts-expect-error - defaultChecked ist aus CheckboxProps ausgeschlossen
+        defaultChecked
+      />
+    )
+
+    expect(screen.getByRole('checkbox', { name: 'Cloud nutzen' })).toBeChecked()
+  })
+
   it('keeps the controlled semantics even when a caller passes conflicting props', () => {
     // Analog switch.test.tsx: {...props} wird VOR den invarianten Attributen gespreadet.
     render(
