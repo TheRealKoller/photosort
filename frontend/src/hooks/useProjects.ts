@@ -3,15 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   confirmAusschussGate,
   createProject,
-  getClassifyCategoriesRemoteEstimate,
+  getClassificationEstimate,
   getProject,
   listFineLabels,
   listProjects,
   setCloudVisionConsent,
-  triggerClassifyCategoriesRemote,
+  triggerClassification,
   triggerScan,
   triggerScore,
-  triggerScoreCriteria,
   type CreateProjectPayload,
 } from '../api/projects'
 import type { ProjectOut } from '../api/types'
@@ -86,12 +85,30 @@ export function useConfirmAusschussGateMutation(id: number) {
   })
 }
 
-export function useTriggerScoreCriteriaMutation(id: number) {
+/**
+ * Der EINE Ausloeser der Klassifizierung (specs/features/0296-klassifizierung-ein-ausloeser-cloud-
+ * checkbox.md) - ersetzt useTriggerScoreCriteriaMutation UND
+ * useTriggerClassifyCategoriesRemoteMutation.
+ *
+ * Invalidiert neben dem Projekt auch Schaetzung und Feinlabel-Liste: beide haengen am Ergebnis der
+ * Remote-Phase, die dieser Lauf mit ausfuehren kann.
+ */
+export function useTriggerClassificationMutation(id: number) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (scoringRunId: number) => triggerScoreCriteria(id, scoringRunId),
+    mutationFn: ({ scoringRunId, useCloud }: { scoringRunId: number; useCloud: boolean }) =>
+      triggerClassification(id, scoringRunId, useCloud),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      // Die Schaetzung aendert sich durch das Ausloesen nicht sofort (der Job laeuft erst im
+      // Hintergrund), aber ein erneuter Abruf nach Abschluss soll wieder den aktuellen
+      // Kandidatenstand zeigen - Invalidierung hier ist die einfachste Variante, ohne einen
+      // eigenen Polling-Pfad fuer die Schaetzung selbst einzufuehren.
+      void queryClient.invalidateQueries({ queryKey: classificationEstimateQueryKey(id) })
+      // Ein Lauf mit Cloud-Nutzung ist die EINZIGE Quelle neuer Feinlabels - die
+      // Haeufigkeitsliste muss danach neu geladen werden, sonst zeigt sie dauerhaft den Stand
+      // vor dem Lauf.
+      void queryClient.invalidateQueries({ queryKey: fineLabelsQueryKey(id) })
     },
   })
 }
@@ -107,17 +124,20 @@ export function useSetCloudVisionConsentMutation(id: number) {
   })
 }
 
-function classifyCategoriesRemoteEstimateQueryKey(id: number) {
-  return ['classify-categories-remote-estimate', id] as const
+function classificationEstimateQueryKey(id: number) {
+  return ['classification-estimate', id] as const
 }
 
 // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt:
-// "Eager-Schätzung" - beim Seitenaufruf geladen (nicht erst beim Oeffnen des Bestaetigungsdialogs),
-// analog dem bestehenden Eager-Zaehler-Muster. Funktioniert unabhaengig vom Consent-Schalter.
-export function useClassifyCategoriesRemoteEstimateQuery(id: number) {
+// "Eager-Schätzung" - beim Seitenaufruf geladen, analog dem bestehenden Eager-Zaehler-Muster.
+// Funktioniert unabhaengig vom Consent-Schalter. Seit specs/features/0296-klassifizierung-ein-
+// ausloeser-cloud-checkbox.md steht sie nicht mehr in einem Bestaetigungsdialog, sondern dauerhaft
+// an der Cloud-Checkbox - das Eager-Laden ist damit nicht mehr nur eine Optimierung, sondern
+// Voraussetzung dafuer, dass die Kosten VOR dem Start sichtbar sind.
+export function useClassificationEstimateQuery(id: number) {
   return useQuery({
-    queryKey: classifyCategoriesRemoteEstimateQueryKey(id),
-    queryFn: () => getClassifyCategoriesRemoteEstimate(id),
+    queryKey: classificationEstimateQueryKey(id),
+    queryFn: () => getClassificationEstimate(id),
   })
 }
 
@@ -138,21 +158,3 @@ export function useFineLabelsQuery(id: number) {
   })
 }
 
-export function useTriggerClassifyCategoriesRemoteMutation(id: number) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: () => triggerClassifyCategoriesRemote(id),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['project', id] })
-      // Die Schaetzung selbst aendert sich durch das Ausloesen nicht sofort (der Job laeuft erst
-      // im Hintergrund), aber ein erneuter Abruf nach Abschluss (ueber das Polling von
-      // useProjectQuery ausgeloeste Neu-Rendering) soll wieder den aktuellen Kandidatenstand
-      // zeigen - Invalidierung hier ist die einfachste Variante, ohne einen eigenen Polling-Pfad
-      // fuer die Schaetzung selbst einzufuehren.
-      void queryClient.invalidateQueries({ queryKey: classifyCategoriesRemoteEstimateQueryKey(id) })
-      // Ein Remote-Lauf ist die EINZIGE Quelle neuer Feinlabels - die Haeufigkeitsliste muss
-      // danach neu geladen werden, sonst zeigt sie dauerhaft den Stand vor dem Lauf.
-      void queryClient.invalidateQueries({ queryKey: fineLabelsQueryKey(id) })
-    },
-  })
-}
