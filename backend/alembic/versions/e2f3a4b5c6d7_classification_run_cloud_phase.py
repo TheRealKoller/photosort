@@ -16,10 +16,20 @@ statt nur seiner Kriterien-Phase.
   Anreicherung durchgefuehrt", nicht etwa eine Anreicherung, die es ggf. nie gab).
 - `cloud_error_message` (nullable): laufweite Zusammenfassung der Cloud-Probleme, NULL = keine.
 
-`server_default="0"` auf `cloud_requested` ist fuer den Bestand noetig (NOT NULL ohne Default
+Der Server-Default auf `cloud_requested` ist fuer den Bestand noetig (NOT NULL ohne Default
 scheitert an vorhandenen Zeilen) und bleibt danach bewusst stehen: SQLite kann eine Spalten-
 Default-Definition nicht ohne Tabellen-Neuaufbau entfernen, und der Wert deckt sich mit dem
 Modell-Default (models.py::CriterionScoringRun.cloud_requested).
+
+`sa.false()` statt `sa.text("0")`: der Default muss DIALEKTABHAENGIG gerendert werden. `sa.text("0")`
+erzeugt woertlich `DEFAULT 0` - das akzeptiert SQLite (kein echter Boolean-Typ), Postgres bricht
+dagegen mit `DatatypeMismatch: column "cloud_requested" is of type boolean but default expression
+is of type integer` ab. Da die Migration im Container vor dem Serverstart laeuft
+(docker-compose.yml: `alembic upgrade head && uvicorn ...`), haette das den Backend-Start gegen
+eine echte Datenbank verhindert. `sa.false()` rendert `DEFAULT false` auf Postgres und `DEFAULT 0`
+auf SQLite. Die Migrationstests laufen gegen SQLite (Testkonzept) und koennen diesen Unterschied
+deshalb nicht sehen - test_postgres_ddl_compatibility.py prueft ihn stattdessen am kompilierten
+DDL gegen den Postgres-Dialekt.
 
 `downgrade()` ist verlustbehaftet (die drei Spaltenwerte gehen verloren), aber schema-vollstaendig
 umkehrbar - kein Datenbestand ausserhalb dieser drei Spalten wird beruehrt.
@@ -50,7 +60,7 @@ def upgrade() -> None:
                 "cloud_requested",
                 sa.Boolean(),
                 nullable=False,
-                server_default=sa.text("0"),
+                server_default=sa.false(),
             )
         )
         batch_op.add_column(sa.Column("cloud_error_message", sa.Text(), nullable=True))
