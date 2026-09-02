@@ -1,6 +1,6 @@
 # 0207 - Projekt-Statistikseite
 
-**Status:** Accepted
+**Status:** Implemented ([PR #311](https://github.com/TheRealKoller/photosort/pull/311))
 **Erstellt:** 2026-09-02
 **Bezug:** [GitHub-Issue #207](https://github.com/TheRealKoller/photosort/issues/207) (Refinement vor dieser Spec-Erstellung abgeschlossen, Story-Inhalt unverändert übernommen)
 
