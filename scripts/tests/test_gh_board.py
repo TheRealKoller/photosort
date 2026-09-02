@@ -2402,6 +2402,8 @@ def test_die_scope_auskunft_unterscheidet_vier_zustaende(
 
     assert bericht["auth"]["scopes"] == erwartet
     assert _pruefung(bericht, "scope_hint")["lifecycle_steps"] == []
+    # Auskunft eingeholt - unabhaengig davon, was sie sagt.
+    assert _pruefung(bericht, "scope_hint")["ok"] is True
     assert bericht["verdict"] == "ok"
 
 
@@ -2807,3 +2809,40 @@ def test_ein_regulaerer_befehl_meldet_eine_unerwartete_antwortform_als_fehler(
 
     assert exit_code == 1
     assert "error" in json.loads(capsys.readouterr().out)
+
+
+@pytest.mark.parametrize(
+    "fake_kwargs",
+    [
+        pytest.param({"auth_returncode": 1}, id="nicht-angemeldet"),
+        pytest.param({"missing_binary": True}, id="kein-gh-binary"),
+    ],
+)
+def test_scope_hint_meldet_eine_nicht_feststellbare_auskunft_als_solche(
+    gh_board: ModuleType, fake_kwargs: dict
+) -> None:
+    """Im Remote-Lauf zu Spec 0309 (`gh` dort gar nicht installiert) behauptete diese Pruefung
+    eine Diagnose ("typisch bei Token-Authentifizierung"), wo in Wahrheit ueberhaupt keine
+    Auskunft vorlag: `scopes is None` trug zwei Bedeutungen - "angemeldet, aber ohne
+    Scope-Zeile" und "konnte gar nicht gefragt werden". Aus einem fehlenden Wert auf eine
+    Ursache zu schliessen, die man nicht kennt, ist genau der Defekt, den diese Spec behebt.
+    """
+    pruefung = _pruefung(_doctor(gh_board, _gesunder_fake(**fake_kwargs)), "scope_hint")
+
+    assert "Token-Authentifizierung" not in pruefung["detail"]
+    assert "nicht feststellbar" in pruefung["detail"]
+    assert pruefung["ok"] is False
+    assert pruefung["lifecycle_steps"] == []
+
+
+def test_scope_hint_behaelt_seinen_text_fuer_den_echten_token_auth_fall(
+    gh_board: ModuleType,
+) -> None:
+    """Gegenprobe: angemeldet, aber ohne Scope-Zeile - fuer diesen Fall war der Text
+    geschrieben, und dort bleibt er unveraendert."""
+    pruefung = _pruefung(
+        _doctor(gh_board, _gesunder_fake(auth_scopes=None, auth_source="GH_TOKEN")), "scope_hint"
+    )
+
+    assert "typisch bei Token-Authentifizierung" in pruefung["detail"]
+    assert pruefung["ok"] is True

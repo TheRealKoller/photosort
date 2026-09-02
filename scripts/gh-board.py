@@ -1177,8 +1177,29 @@ def cmd_doctor(board: GhBoard) -> dict[str, Any]:
     )
 
     # 4) Scope-Auskunft - reine Information, ausdruecklich ohne Urteil ueber den Zugriff.
+    #
+    #    `scopes is None` allein taugt hier nicht als Verzweigung: Der Wert traegt zwei
+    #    Bedeutungen - "angemeldet, aber ohne Scope-Zeile" (Token-Auth) und "konnte gar nicht
+    #    gefragt werden" (Anmeldung fehlgeschlagen, `gh` nicht installiert). Aus dem fehlenden
+    #    Wert auf die erste Ursache zu schliessen, waere genau der Defekt, den diese Spec
+    #    behebt - und im Remote-Lauf zu Spec 0309 ist er eingetreten: `gh` fehlte dort
+    #    vollstaendig, gemeldet wurde "typisch bei Token-Authentifizierung".
+    #
+    #    `ok` heisst bei DIESER Pruefung "die Auskunft liegt vor", nicht "der Zugriff besteht"
+    #    (sie blockiert bewusst keinen Lebenszyklus-Schritt, kann also kein `verdict`
+    #    verfaelschen). Deshalb `False`, wenn nichts festgestellt werden konnte: Ein gruener
+    #    Haken neben der Aussage "nicht feststellbar" liest sich als Entwarnung, die niemand
+    #    gegeben hat.
     scopes = auth["scopes"]
-    if scopes is None:
+    scope_ok = True
+    if not auth["authenticated"]:
+        scope_ok = False
+        scope_detail = (
+            "Die Scope-Auskunft war nicht feststellbar - es konnte keine Anmeldung abgefragt "
+            "werden (siehe die Pruefungen 'gh_binary' und 'auth'). Das ist keine Aussage "
+            "darueber, welche Scopes ein Token traegt."
+        )
+    elif scopes is None:
         scope_detail = (
             "Die Auskunft des aktiven Kontos enthaelt keine Scope-Zeile (typisch bei "
             "Token-Authentifizierung). Daraus folgt kein Urteil ueber den Zugriff."
@@ -1195,7 +1216,7 @@ def cmd_doctor(board: GhBoard) -> dict[str, Any]:
             "Die Scope-Zeile des aktiven Kontos nennt 'project' nicht. Gemessen wird der "
             "Zugriff trotzdem von der Pruefung 'project_visible'."
         )
-    probes.append(_probe_result("scope_hint", True, scope_detail))
+    probes.append(_probe_result("scope_hint", scope_ok, scope_detail))
 
     # 5) Repository-Berechtigung - Indiz, kein Beweis fuer Schreibzugriff.
     repository = f"{board.owner}/{DEFAULT_REPO}"
