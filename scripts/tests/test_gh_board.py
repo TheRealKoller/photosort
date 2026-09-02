@@ -2621,6 +2621,9 @@ def test_doctor_redigiert_den_vollstaendigen_bericht(gh_board: ModuleType) -> No
     fake = _gesunder_fake(
         failing=gescheitert,
         failure_stderr={prefix: f"boom mit {token} dabei" for prefix in gescheitert},
+        # Auch die Ausgabe der gescheiterten `auth`-Pruefung geht (redigiert) in den Bericht.
+        auth_returncode=1,
+        auth_output=f"X Failed to log in to github.com using token {token} (GH_TOKEN)",
     )
 
     serialisiert = json.dumps(_doctor(gh_board, fake), ensure_ascii=False)
@@ -2682,3 +2685,39 @@ def test_ein_fehlendes_gh_binary_wird_zu_einer_fehlermeldung_statt_eines_traceba
 
     assert exit_code == 1
     assert "error" in json.loads(capsys.readouterr().out)
+
+
+@pytest.mark.parametrize("auth_stream", ["stdout", "stderr"])
+def test_der_bericht_nennt_die_ausgabe_einer_gescheiterten_auth_pruefung(
+    gh_board: ModuleType, auth_stream: str
+) -> None:
+    """Genau der Fall, fuer den `doctor` gebaut wurde: Remote-Session mit ungueltigem oder
+    abgelaufenem Umgebungstoken. Die `auth`-Pruefung blockiert dann ALLE Lebenszyklus-Schritte -
+    dann muss der Bericht auch sagen, woran es lag und welche Token-Quelle betroffen war, sonst
+    ist ausgerechnet der wichtigste Bericht der unbrauchbarste. Auf welchem Stream `gh` den
+    Fehlschlag meldet, haengt an seiner Version und darf keinen Unterschied machen.
+    """
+    fake = _gesunder_fake(
+        auth_returncode=1,
+        auth_stream=auth_stream,
+        auth_output="X Failed to log in to github.com using token (GH_TOKEN)",
+    )
+
+    bericht = _doctor(gh_board, fake)
+
+    pruefung = _pruefung(bericht, "auth")
+    assert pruefung["ok"] is False
+    assert "GH_TOKEN" in pruefung["stderr"]
+    assert sorted(bericht["blocked_lifecycle_steps"]) == sorted(gh_board.LIFECYCLE_STEPS)
+
+
+def test_im_erfolgsfall_wird_die_auth_ausgabe_nicht_uebernommen(gh_board: ModuleType) -> None:
+    """Gegenstueck: Im Erfolgsfall ist die Ausgabe von `gh auth status` ein vollstaendiger
+    Status-Dump - dort tragen ausschliesslich die vier Whitelist-Felder die Auskunft, und nichts
+    wird verbatim durchgereicht (Securitykonzept, Muss-Kriterium 4). Blockiert ist in diesem
+    Fall ohnehin nichts, es gibt also auch nichts zu erklaeren."""
+    bericht = _doctor(gh_board, _gesunder_fake())
+
+    assert _pruefung(bericht, "auth")["ok"] is True
+    assert _pruefung(bericht, "auth")["stderr"] is None
+    assert "Git operations protocol" not in json.dumps(bericht, ensure_ascii=False)

@@ -402,16 +402,31 @@ class GhBoard:
 
     def auth_info(self) -> dict[str, Any]:
         """Die vier Whitelist-Felder aus `gh auth status` (ADR 0051): `authenticated`,
-        `account`, `source`, `scopes` - nie die Ausgabe selbst.
+        `account`, `source`, `scopes` - im Erfolgsfall nie die Ausgabe selbst.
 
         Wird ausschliesslich im Fehlerfall (zur Deutung) und von `doctor` aufgerufen, nie vor
         einem Zugriff: Ein Urteil vor dem Versuch ist genau das, was ADR 0051 abschafft.
+
+        `error_output` traegt AUSSCHLIESSLICH die Ausgabe eines FEHLGESCHLAGENEN Aufrufs und ist
+        sonst leer. Der Unterschied ist der Kern von Muss-Kriterium 4 des Securitykonzepts: Im
+        Erfolgsfall ist die Ausgabe ein vollstaendiger Status-Dump, den die Whitelist ersetzt und
+        der nie verbatim weitergereicht wird. Im Fehlerfall gibt es keine parsebaren Felder, und
+        der Text ist eine Fehlermeldung - ohne ihn naennte ein Bericht, der daraufhin JEDEN
+        Lebenszyklus-Schritt blockiert, keinerlei Ursache. Er laeuft beim Einbau in den Bericht
+        durch dieselbe Redaktion wie jede andere uebernommene Zeichenkette.
         """
         ok, stdout, stderr = self.probe(["gh", "auth", "status"])
+        # Je nach `gh`-Version steht die Ausgabe (Status wie Fehlschlag) auf stdout oder stderr.
+        output = f"{stdout}\n{stderr}".strip()
         if not ok:
-            return {"authenticated": False, "account": None, "source": None, "scopes": None}
-        # Je nach `gh`-Version steht die Statusausgabe auf stdout oder auf stderr.
-        return {"authenticated": True, **parse_auth_status(f"{stdout}\n{stderr}")}
+            return {
+                "authenticated": False,
+                "account": None,
+                "source": None,
+                "scopes": None,
+                "error_output": output,
+            }
+        return {"authenticated": True, "error_output": "", **parse_auth_status(output)}
 
     def _explain_project_failure(self, error: BoardError) -> BoardError:
         """Deutet einen BEREITS gescheiterten Zugriff (ADR 0051, Abschnitt 3). Die Textauswertung
@@ -1094,7 +1109,9 @@ def cmd_doctor(board: GhBoard) -> dict[str, Any]:
         auth_detail = f"Angemeldet als {auth['account']}, Token-Quelle {auth['source']}."
     else:
         auth_detail = "Angemeldet, aber ohne auswertbaren Kontoblock in 'gh auth status'."
-    probes.append(_probe_result("auth", auth["authenticated"], auth_detail))
+    probes.append(
+        _probe_result("auth", auth["authenticated"], auth_detail, auth["error_output"])
+    )
 
     # 4) Scope-Auskunft - reine Information, ausdruecklich ohne Urteil ueber den Zugriff.
     scopes = auth["scopes"]
