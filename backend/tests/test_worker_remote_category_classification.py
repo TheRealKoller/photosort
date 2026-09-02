@@ -11,7 +11,8 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort import worker
+from photosort import pricing, worker
+from photosort.cloud_vision import VISION_MODEL_BY_PROVIDER, TokenUsage
 from photosort.label_embedding import LabelEmbedderLike
 from photosort.models import (
     CloudVisionPhase,
@@ -26,6 +27,7 @@ from photosort.models import (
     RemoteCategoryClassificationRun,
     ScanStatus,
 )
+from photosort.pricing import compute_cost_usd
 from photosort.remote_classification import (
     RemoteCategoryClassificationApiError,
     RemoteClassification,
@@ -914,3 +916,224 @@ async def test_a_second_run_does_not_create_a_second_classification_row(
 
     rows = (await db_session.execute(select(PhotoCategoryClassification))).scalars().all()
     assert len(rows) == 1
+
+
+# specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
+# laeufe.md ab hier: dieselbe Ist-Kostenerfassung wie in der Landmark-Phase, hier ohne Praefix -
+# dieser Lauf hat genau einen Zweck.
+
+
+def _classification_with_usage(input_tokens: int, output_tokens: int) -> RemoteClassification:
+    return RemoteClassification(
+        categories=("tier",),
+        fine_labels=("Hund",),
+        usage=TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+    )
+
+
+def _expected_cost(input_tokens: int, output_tokens: int, provider: str = "anthropic") -> float:
+    cost = compute_cost_usd(
+        VISION_MODEL_BY_PROVIDER[provider],
+        TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+    )
+    assert cost is not None
+    return cost
+
+
+async def _cost_setup(
+    db_session: AsyncSession, tmp_path: Path, *, photo_count: int
+) -> Project:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    for index in range(photo_count):
+        photo = await _add_photo(db_session, project, f"{index}.jpg", f"etag-{index}")
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo)
+    return project
+
+
+async def test_costs_are_summed_over_all_successful_classifications(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _cost_setup(db_session, tmp_path, photo_count=3)
+    client = PerPhotoCategoryClient(
+        [
+            _classification_with_usage(1_000, 10),
+            _classification_with_usage(2_000, 20),
+            _classification_with_usage(3_000, 30),
+        ]
+    )
+
+    run = await run_remote_category_classification(
+        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.api_calls == 3
+    assert run.input_tokens == 6_000
+    assert run.output_tokens == 60
+    assert run.cost_usd == pytest.approx(_expected_cost(6_000, 60))
+
+
+async def test_a_partially_failing_run_only_counts_the_successful_calls(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _cost_setup(db_session, tmp_path, photo_count=3)
+    client = PerPhotoCategoryClient(
+        [
+            RemoteCategoryClassificationApiError("Fehler 1"),
+            _classification_with_usage(2_000, 20),
+            RemoteCategoryClassificationApiError("Fehler 2"),
+        ]
+    )
+
+    run = await run_remote_category_classification(
+        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.api_calls == 1
+    assert run.input_tokens == 2_000
+    assert run.output_tokens == 20
+    assert run.cost_usd == pytest.approx(_expected_cost(2_000, 20))
+
+
+async def test_a_classification_without_usage_still_counts_as_an_api_call(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _cost_setup(db_session, tmp_path, photo_count=2)
+    client = PerPhotoCategoryClient(
+        [
+            RemoteClassification(categories=("tier",), fine_labels=()),  # ohne usage
+            _classification_with_usage(1_000, 10),
+        ]
+    )
+
+    run = await run_remote_category_classification(
+        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+    )
+
+    assert run.api_calls == 2
+    assert run.input_tokens == 1_000
+    assert run.output_tokens == 10
+
+
+async def test_an_unpriced_model_records_tokens_but_no_amount(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pricing, "MODEL_PRICING", {})
+    project = await _cost_setup(db_session, tmp_path, photo_count=1)
+    client = PerPhotoCategoryClient([_classification_with_usage(1_000, 10)])
+
+    run = await run_remote_category_classification(
+        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+    )
+
+    assert run.api_calls == 1
+    assert run.input_tokens == 1_000
+    assert run.cost_usd is None
+
+
+async def test_an_early_return_without_cloud_consent_records_zero_not_null(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Frueher Erfolgs-Rueckweg (Cloud aus): "erfasst, keine Kosten angefallen", nicht "nicht
+    erfasst"."""
+    project = await _make_project(db_session)
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo)
+
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=_failing_client_builder,
+        build_embedder=_fake_embedder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.api_calls == 0
+    assert run.input_tokens == 0
+    assert run.output_tokens == 0
+    assert run.cost_usd == 0
+
+
+async def test_an_early_return_without_candidates_records_zero_not_null(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=_failing_client_builder,
+        build_embedder=_fake_embedder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.api_calls == 0
+    assert run.cost_usd == 0
+
+
+async def test_a_second_run_without_new_candidates_carries_no_costs(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Prueft zugleich, dass die Projektsumme spaeter ueber die Laeufe SUMMIERT werden muss und
+    nicht der letzte Lauf gelesen werden darf - der zweite Lauf hier kostet nichts."""
+    project = await _cost_setup(db_session, tmp_path, photo_count=1)
+    first = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda: PerPhotoCategoryClient([_classification_with_usage(1_000, 10)]),
+        build_embedder=_fake_embedder,
+    )
+    assert first.api_calls == 1
+
+    second = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda: PerPhotoCategoryClient([]),
+        build_embedder=_fake_embedder,
+    )
+
+    assert second.id != first.id
+    assert second.api_calls == 0
+    assert second.cost_usd == 0
+    assert first.api_calls == 1
+    assert first.cost_usd == pytest.approx(_expected_cost(1_000, 10))
+
+
+async def test_the_category_client_is_still_closed_exactly_once_when_costs_are_written(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _cost_setup(db_session, tmp_path, photo_count=1)
+    client = RecordingCategoryClient(classification=_classification_with_usage(1_000, 10))
+
+    run = await run_remote_category_classification(
+        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+    )
+
+    assert run.api_calls == 1
+    assert client.aclose_calls == 1
+
+
+async def test_costs_use_the_configured_provider_model(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(worker.settings, "landmark_provider", "mistral")
+    project = await _cost_setup(db_session, tmp_path, photo_count=1)
+    client = PerPhotoCategoryClient([_classification_with_usage(1_000_000, 0)])
+
+    run = await run_remote_category_classification(
+        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+    )
+
+    assert run.cost_usd == pytest.approx(_expected_cost(1_000_000, 0, provider="mistral"))
+    assert run.cost_usd != pytest.approx(_expected_cost(1_000_000, 0))

@@ -34,6 +34,28 @@ ANTHROPIC_VISION_MODEL = "claude-haiku-4-5"
 # offizielle Modelldokumentation (developer-Agent, 2026-08-23), siehe landmark.py-Historie.
 MISTRAL_VISION_MODEL = "ministral-3b-2512"
 
+# specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 2: die Zuordnung des
+# Provider-Schalters (`settings.landmark_provider`, ADR 0031 Punkt 3/ADR 0032 Punkt 3 - EIN
+# Schalter fuer beide Cloud-Zwecke) auf die tatsaechlich verwendete Modell-ID. worker.py braucht
+# sie, um den Ist-Betrag eines Laufs ueber `pricing.py::compute_cost_usd` zu bestimmen; die
+# Preistabelle ist ueber die MODELL-ID geschluesselt, nicht ueber den Provider (der Preis haengt
+# am Modell). Hier statt in landmark.py/remote_classification.py, weil beide Zwecke dieselbe
+# Zuordnung brauchen und die Modell-IDs ohnehin hier leben.
+VISION_MODEL_BY_PROVIDER: dict[str, str] = {
+    "anthropic": ANTHROPIC_VISION_MODEL,
+    "mistral": MISTRAL_VISION_MODEL,
+}
+
+
+def vision_model_for_provider(provider: str) -> str:
+    """Modell-ID zu einem Provider-Schluessel. Ein hier unbekannter Provider faellt bewusst auf
+    seinen eigenen Namen zurueck statt zu werfen: das Ergebnis ist dann eine Modell-ID, die
+    `pricing.py::MODEL_PRICING` nicht kennt, und der Lauf wird als "nicht erfasst" ausgewiesen
+    (ADR 0051 Punkt 2) - ein neuer Provider ohne Preispflege faellt damit auf, statt einen
+    laufenden Cloud-Job mit einem KeyError abzubrechen."""
+    return VISION_MODEL_BY_PROVIDER.get(provider, provider)
+
+
 # Modul-Konstante statt Settings-Feld (ADR 0025 Punkt 3: "reiner technischer Wert, kein
 # Betriebsparameter") - grosszuegiger als der OpenCloud-Client-Default (30s), da Vision-LLM-
 # Antwortzeiten tendenziell hoeher sind und beide Aufrufer Hintergrund-Jobs ohne wartenden Nutzer
