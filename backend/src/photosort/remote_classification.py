@@ -365,6 +365,14 @@ def build_category_classification_client() -> CategoryDetectionClientLike:
     return anthropic_client
 
 
+# ACHTUNG, ZWEI PREISKONSTANTEN (specs/features/0207-projekt-statistikseite.md, decisions/0051-
+# ist-kostenerfassung-remote-laeufe.md Punkt 2, bewusst): DIESE Konstante ist die VORAB-Schaetzung
+# (Preis pro BILD, inkl. angenommener Token-Zahlen) und bleibt unveraendert die Grundlage von
+# `GET /projects/{id}/classify/estimate` (ADR 0050 Punkt 5). Daneben steht seit Spec 0207
+# `pricing.py::MODEL_PRICING` - die IST-Rechnung nach dem Lauf (Preis pro TOKEN, je Modell-ID).
+# Ein Modell-/Preiswechsel betrifft BEIDE; sie werden bewusst nicht auseinander abgeleitet
+# (Begruendung: ADR 0051 Punkt 2), muessen aber gemeinsam gepflegt werden.
+#
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, Akzeptanzkriterium
 # "Kostenschätzung", ADR 0032 Punkt 8: dokumentiert-unkalibrierte Konstante je Provider - developer
 # hat die Werte gegen die tatsaechliche Preisliste verifiziert (2026-08-23), statt der reinen
