@@ -411,7 +411,7 @@ class GhBoard:
         sonst leer. Der Unterschied ist der Kern von Muss-Kriterium 4 des Securitykonzepts: Im
         Erfolgsfall ist die Ausgabe ein vollstaendiger Status-Dump, den die Whitelist ersetzt und
         der nie verbatim weitergereicht wird. Im Fehlerfall gibt es keine parsebaren Felder, und
-        der Text ist eine Fehlermeldung - ohne ihn naennte ein Bericht, der daraufhin JEDEN
+        der Text ist eine Fehlermeldung - ohne ihn nennte ein Bericht, der daraufhin JEDEN
         Lebenszyklus-Schritt blockiert, keinerlei Ursache. Er laeuft beim Einbau in den Bericht
         durch dieselbe Redaktion wie jede andere uebernommene Zeichenkette.
         """
