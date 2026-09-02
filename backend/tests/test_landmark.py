@@ -6,6 +6,7 @@ import json
 import httpx
 import pytest
 
+from photosort.cloud_vision import TokenUsage
 from photosort.landmark import (
     ANTHROPIC_LANDMARK_MODEL,
     MISTRAL_LANDMARK_MODEL,
@@ -479,3 +480,100 @@ def test_mistral_error_message_never_embeds_the_api_key_or_base64_image_data() -
     error = LandmarkApiError("Mistral-Anfrage fehlgeschlagen: 401 Unauthorized")
     assert MISTRAL_API_KEY not in str(error)
     assert encoded_image not in str(error)
+
+
+# specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
+# laeufe.md Punkt 1: `LandmarkDetection.usage` traegt den realen Token-Verbrauch des Aufrufs bis
+# zum Worker. Das Feld hat einen Default (`None`) - alle bestehenden Test-Doubles und die
+# Protocol-Signatur bleiben dadurch unveraendert (Bestandsschutz, siehe Test unten).
+
+
+class TestLandmarkDetectionUsage:
+    def test_can_be_constructed_without_usage(self) -> None:
+        """Bestandsschutz: jede bestehende Konstruktion ohne `usage` bleibt gueltig."""
+        detection = LandmarkDetection(name="Eiffelturm", confidence=0.9)
+
+        assert detection.usage is None
+
+    def test_carries_the_usage_when_given(self) -> None:
+        detection = LandmarkDetection(
+            name=None, confidence=0.0, usage=TokenUsage(input_tokens=1590, output_tokens=12)
+        )
+
+        assert detection.usage == TokenUsage(input_tokens=1590, output_tokens=12)
+
+
+class TestAnthropicClientFillsUsage:
+    async def test_detect_reports_the_token_usage_of_the_response(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "content": [
+                        {"type": "text", "text": json.dumps({"name": "Dom", "confidence": 0.8})}
+                    ],
+                    "usage": {"input_tokens": 1590, "output_tokens": 12},
+                },
+            )
+
+        detection = await _client(httpx.MockTransport(handler)).detect(IMAGE_BYTES, "image/jpeg")
+
+        assert detection.name == "Dom"
+        assert detection.usage == TokenUsage(input_tokens=1590, output_tokens=12)
+
+    async def test_a_response_without_usage_still_yields_a_successful_detection(self) -> None:
+        """ADR 0051 Punkt 1: eine fehlende Abrechnungsangabe darf die Erkennung nie scheitern
+        lassen - das Ergebnis bleibt gueltig, nur `usage` ist `None`."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return _success_response("Dom", 0.8)
+
+        detection = await _client(httpx.MockTransport(handler)).detect(IMAGE_BYTES, "image/jpeg")
+
+        assert detection.name == "Dom"
+        assert detection.usage is None
+
+
+class TestMistralClientFillsUsage:
+    async def test_detect_reports_the_token_usage_of_the_response(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps({"name": "Dom", "confidence": 0.8})
+                            }
+                        }
+                    ],
+                    # Mistral benennt die Felder anders als Anthropic - genau das ist die Stelle,
+                    # an der eine Verwechslung still 0 Tokens erzeugen wuerde.
+                    "usage": {"prompt_tokens": 1200, "completion_tokens": 9},
+                },
+            )
+
+        client = _mistral_client(httpx.MockTransport(handler))
+        detection = await client.detect(IMAGE_BYTES, "image/jpeg")
+
+        assert detection.usage == TokenUsage(input_tokens=1200, output_tokens=9)
+
+    async def test_a_response_without_usage_still_yields_a_successful_detection(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps({"name": None, "confidence": 0.0})
+                            }
+                        }
+                    ]
+                },
+            )
+
+        client = _mistral_client(httpx.MockTransport(handler))
+        detection = await client.detect(IMAGE_BYTES, "image/jpeg")
+
+        assert detection.name is None
+        assert detection.usage is None

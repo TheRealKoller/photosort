@@ -13,8 +13,11 @@ from photosort.cloud_vision import (
     MISTRAL_CHAT_COMPLETIONS_URL,
     MISTRAL_VISION_MODEL,
     VISION_REQUEST_TIMEOUT_SECONDS,
+    TokenUsage,
     anthropic_response_to_json,
+    anthropic_usage_from_response,
     mistral_response_to_json,
+    mistral_usage_from_response,
     raise_for_vision_api_status,
 )
 from photosort.config import settings
@@ -64,6 +67,13 @@ class LandmarkDetection:
 
     name: str | None
     confidence: float
+    # specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 1: der reale Token-Verbrauch
+    # DIESES Aufrufs, den worker.py ueber alle erfolgreichen Aufrufe der Phase summiert. MIT
+    # Default - dadurch bleiben alle bestehenden Test-Doubles und die LandmarkClientLike-Signatur
+    # unveraendert. `None` heisst "nicht ermittelbar" (fehlender/kaputter usage-Block, ADR 0051
+    # Punkt 1): der Aufruf traegt dann nichts zur Tokensumme bei, wird aber trotzdem als
+    # stattgefundener Aufruf gezaehlt.
+    usage: TokenUsage | None = None
 
 
 class LandmarkClientLike(Protocol):
@@ -74,7 +84,9 @@ class LandmarkClientLike(Protocol):
     async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection: ...
 
 
-def _landmark_detection_from_json(parsed: Any) -> LandmarkDetection:
+def _landmark_detection_from_json(
+    parsed: Any, usage: TokenUsage | None = None
+) -> LandmarkDetection:
     """Providerneutrale Extraktion von name/confidence aus dem bereits geparsten JSON-Objekt
     (specs/decisions/0031-mistral-provider-option-cloud-landmark.md Punkt 2, Refactoring des
     frueheren _parse_detection) - wird von beiden Clients nach ihrer jeweils providerspezifischen
@@ -96,7 +108,7 @@ def _landmark_detection_from_json(parsed: Any) -> LandmarkDetection:
     # atomar aus derselben API-Antwort stammen sollen. compute_landmark_score klemmt zusaetzlich
     # weiterhin defensiv (bewusste Redundanz, kein Widerspruch).
     clamped_confidence = max(0.0, min(1.0, confidence))
-    return LandmarkDetection(name=name, confidence=clamped_confidence)
+    return LandmarkDetection(name=name, confidence=clamped_confidence, usage=usage)
 
 
 class AnthropicLandmarkClient:
@@ -154,8 +166,11 @@ class AnthropicLandmarkClient:
             raise LandmarkApiError(f"Anthropic Vision API nicht erreichbar: {exc}") from exc
 
         raise_for_vision_api_status(response, "Anthropic", LandmarkApiError)
-        parsed = anthropic_response_to_json(response.json(), LandmarkApiError)
-        return _landmark_detection_from_json(parsed)
+        payload = response.json()
+        parsed = anthropic_response_to_json(payload, LandmarkApiError)
+        return _landmark_detection_from_json(
+            parsed, anthropic_usage_from_response(payload, ANTHROPIC_LANDMARK_MODEL)
+        )
 
 
 class MistralLandmarkClient:
@@ -220,8 +235,11 @@ class MistralLandmarkClient:
             raise LandmarkApiError(f"Mistral Chat Completions API nicht erreichbar: {exc}") from exc
 
         raise_for_vision_api_status(response, "Mistral", LandmarkApiError)
-        parsed = mistral_response_to_json(response.json(), LandmarkApiError)
-        return _landmark_detection_from_json(parsed)
+        payload = response.json()
+        parsed = mistral_response_to_json(payload, LandmarkApiError)
+        return _landmark_detection_from_json(
+            parsed, mistral_usage_from_response(payload, MISTRAL_LANDMARK_MODEL)
+        )
 
 
 def build_landmark_client() -> LandmarkClientLike:

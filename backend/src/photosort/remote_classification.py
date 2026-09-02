@@ -23,8 +23,11 @@ from photosort.cloud_vision import (
     MISTRAL_CHAT_COMPLETIONS_URL,
     MISTRAL_VISION_MODEL,
     VISION_REQUEST_TIMEOUT_SECONDS,
+    TokenUsage,
     anthropic_response_to_json,
+    anthropic_usage_from_response,
     mistral_response_to_json,
+    mistral_usage_from_response,
     raise_for_vision_api_status,
 )
 from photosort.config import settings
@@ -85,6 +88,11 @@ class RemoteClassification:
 
     categories: tuple[str, ...]
     fine_labels: tuple[str, ...]
+    # specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 1: der reale Token-Verbrauch
+    # DIESES Aufrufs (analog LandmarkDetection.usage). MIT Default - bestehende Test-Doubles und
+    # die CategoryDetectionClientLike-Signatur bleiben unveraendert. `None` heisst "nicht
+    # ermittelbar", nicht "keine Kosten".
+    usage: TokenUsage | None = None
 
 
 class CategoryDetectionClientLike(Protocol):
@@ -186,7 +194,9 @@ def _fine_labels_from_json(raw_labels: list[Any]) -> tuple[str, ...]:
     return tuple(accepted[:MAX_FINE_LABELS_PER_PHOTO])
 
 
-def _classification_from_json(parsed: Any, photo_id: int) -> RemoteClassification:
+def _classification_from_json(
+    parsed: Any, photo_id: int, usage: TokenUsage | None = None
+) -> RemoteClassification:
     """Providerneutrale Validierung der Roh-Antwort (specs/features/0289-feste-kategorien.md,
     Umsetzungsschritt 4) - **strukturell hart, inhaltlich tolerant**:
 
@@ -227,6 +237,7 @@ def _classification_from_json(parsed: Any, photo_id: int) -> RemoteClassificatio
     return RemoteClassification(
         categories=_categories_from_json(raw_categories, photo_id),
         fine_labels=_fine_labels_from_json(raw_fine_labels),
+        usage=usage,
     )
 
 
@@ -288,8 +299,11 @@ class AnthropicCategoryClient:
         raise_for_vision_api_status(
             response, "Anthropic", RemoteCategoryClassificationApiError
         )
-        parsed = anthropic_response_to_json(response.json(), RemoteCategoryClassificationApiError)
-        return _classification_from_json(parsed, photo_id)
+        payload = response.json()
+        parsed = anthropic_response_to_json(payload, RemoteCategoryClassificationApiError)
+        return _classification_from_json(
+            parsed, photo_id, anthropic_usage_from_response(payload, ANTHROPIC_CATEGORY_MODEL)
+        )
 
 
 class MistralCategoryClient:
@@ -345,8 +359,11 @@ class MistralCategoryClient:
             ) from exc
 
         raise_for_vision_api_status(response, "Mistral", RemoteCategoryClassificationApiError)
-        parsed = mistral_response_to_json(response.json(), RemoteCategoryClassificationApiError)
-        return _classification_from_json(parsed, photo_id)
+        payload = response.json()
+        parsed = mistral_response_to_json(payload, RemoteCategoryClassificationApiError)
+        return _classification_from_json(
+            parsed, photo_id, mistral_usage_from_response(payload, MISTRAL_CATEGORY_MODEL)
+        )
 
 
 def build_category_classification_client() -> CategoryDetectionClientLike:
