@@ -94,11 +94,13 @@ Die Textauswertung ist damit nicht abgeschafft, sondern entmachtet: Sie kann kei
 | `scope_hint` | (kein eigener Aufruf) Auskunft der Scope-Zeile, **ohne Urteil** | — (reine Information) |
 | `repo_access` | `gh repo view <owner>/<repo> --json viewerPermission` | `idee-erfassen`, `issue-body-schreiben`, `pr-eroeffnen` |
 | `issue_read` | `gh issue list --limit 1 --json number` | `issue-body-schreiben`, `abschluss-finalisieren` |
-| `project_visible` | `gh project list --owner … --format json` + Titel-Treffer | `status-setzen`, `prioritaet-setzen`, `status-lesen`, `abschluss-finalisieren` |
+| `project_visible` | `gh project list --owner … --format json` + Titel-Treffer | `status-ready`, `status-in-progress`, `status-review`, `abschluss-finalisieren` |
 | `fields` | `gh project field-list` gegen `STATUS_VALUES`/`PRIORITY_VALUES` | dieselben |
 | `items` | `board._item_list()` | dieselben |
 
 `scope_hint` meldet nur, was die Scope-Zeile sagt — den Zugriff misst `project_visible` tatsächlich. Diese Trennung ist der Grund, warum der Bericht die beiden Ursachen unterscheiden kann.
+
+Kanonisch für die Schrittnamen ist die Liste aus den Akzeptanzkriterien (`idee-erfassen`, `issue-body-schreiben`, `status-ready`, `spec-anlegen`, `status-in-progress`, `pr-eroeffnen`, `status-review`, `abschluss-finalisieren`), nicht eine daneben geführte Aufzählung von Board-Operationen: Der Bericht muss für *jeden* Lebenszyklus-Schritt ein Urteil tragen. `spec-anlegen` ist ein rein lokaler Schritt und wird nur von `gh_binary`/`auth` blockiert, von keiner Board-Prüfung. Die Zuordnungstabelle ist damit total — ein Test prüft das gegen die kanonische Liste.
 
 **Verbindliche Entwurfsentscheidungen:**
 
