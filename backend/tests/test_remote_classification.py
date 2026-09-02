@@ -10,6 +10,7 @@ from photosort.categories import (
     MAX_REMOTE_CATEGORIES_PER_PHOTO,
     build_classification_prompt,
 )
+from photosort.cloud_vision import TokenUsage
 from photosort.remote_classification import (
     ANTHROPIC_CATEGORY_MODEL,
     CATEGORY_LABEL_SIMILARITY_THRESHOLD,
@@ -506,3 +507,89 @@ class TestLimitConstants:
         assert MAX_REMOTE_CATEGORIES_PER_PHOTO == 3
         assert MAX_FINE_LABELS_PER_PHOTO == 2
         assert MAX_FINE_LABEL_LENGTH == 60
+
+
+# specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
+# laeufe.md Punkt 1: `RemoteClassification.usage` traegt den realen Token-Verbrauch bis zum
+# Worker. Default `None` - bestehende Test-Doubles und die Protocol-Signatur bleiben unveraendert.
+
+ANTHROPIC_API_KEY = "sk-ant-test-key-not-a-real-secret"
+MISTRAL_API_KEY = "mistral-test-key-not-a-real-secret"
+
+_VALID_BODY: dict[str, object] = {"categories": ["landschaft"], "fine_labels": ["Duene"]}
+
+
+class TestRemoteClassificationUsage:
+    def test_can_be_constructed_without_usage(self) -> None:
+        classification = RemoteClassification(categories=("landschaft",), fine_labels=())
+
+        assert classification.usage is None
+
+    def test_carries_the_usage_when_given(self) -> None:
+        classification = RemoteClassification(
+            categories=(), fine_labels=(), usage=TokenUsage(input_tokens=5, output_tokens=6)
+        )
+
+        assert classification.usage == TokenUsage(input_tokens=5, output_tokens=6)
+
+
+class TestAnthropicCategoryClientFillsUsage:
+    async def test_classify_reports_the_token_usage_of_the_response(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "content": [{"type": "text", "text": json.dumps(_VALID_BODY)}],
+                    "usage": {"input_tokens": 1700, "output_tokens": 20},
+                },
+            )
+
+        client = AnthropicCategoryClient(
+            api_key=ANTHROPIC_API_KEY, transport=httpx.MockTransport(handler)
+        )
+        classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
+
+        assert classification.categories == ("landschaft",)
+        assert classification.usage == TokenUsage(input_tokens=1700, output_tokens=20)
+
+    async def test_a_response_without_usage_still_yields_a_valid_classification(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return _anthropic_success_response(_VALID_BODY)
+
+        client = AnthropicCategoryClient(
+            api_key=ANTHROPIC_API_KEY, transport=httpx.MockTransport(handler)
+        )
+        classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
+
+        assert classification.categories == ("landschaft",)
+        assert classification.usage is None
+
+
+class TestMistralCategoryClientFillsUsage:
+    async def test_classify_reports_the_token_usage_of_the_response(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": json.dumps(_VALID_BODY)}}],
+                    "usage": {"prompt_tokens": 1300, "completion_tokens": 14},
+                },
+            )
+
+        client = MistralCategoryClient(
+            api_key=MISTRAL_API_KEY, transport=httpx.MockTransport(handler)
+        )
+        classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
+
+        assert classification.usage == TokenUsage(input_tokens=1300, output_tokens=14)
+
+    async def test_a_response_without_usage_still_yields_a_valid_classification(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return _mistral_success_response(_VALID_BODY)
+
+        client = MistralCategoryClient(
+            api_key=MISTRAL_API_KEY, transport=httpx.MockTransport(handler)
+        )
+        classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
+
+        assert classification.usage is None

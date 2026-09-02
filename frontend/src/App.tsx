@@ -16,6 +16,7 @@ import { ProjectPipelineLayout } from './pages/pipeline/ProjectPipelineLayout'
 import { ProjectCreatePage } from './pages/ProjectCreatePage'
 import { ProjectListPage } from './pages/ProjectListPage'
 import { ProjectSettingsPage } from './pages/ProjectSettingsPage'
+import { ProjectStatsPage } from './pages/ProjectStatsPage'
 
 /**
  * Reiner Redirect (specs/features/0042-automatisierter-flow-stepper-detailseiten.md,
@@ -62,6 +63,10 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   // Projekteinstellungs-Route - hier statt separat ergaenzt, damit sie automatisch denselben
   // Sticky-Header-"Projekt"-Link bekommt (siehe Kommentar oben).
   { path: '/projects/:projectId/settings', element: <ProjectSettingsPage /> },
+  // specs/features/0207-projekt-statistikseite.md: Querschnittsansicht wie die Einstellungsseite,
+  // bewusst ausserhalb der Pipeline-Schritt-Routen (sie ist kein Schritt des Ablaufs). Hier
+  // ergaenzt, damit sie automatisch denselben Sticky-Header-"Projekt"-Link bekommt.
+  { path: '/projects/:projectId/stats', element: <ProjectStatsPage /> },
 ]
 
 const PIPELINE_BASE_ROUTE_PATH = '/projects/:projectId/pipeline'

@@ -1,16 +1,21 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import * as projectsApi from '../api/projects'
-import type { ProjectOut } from '../api/types'
+import type { ProjectOut, ProjectStatsOut } from '../api/types'
+import { setToken } from '../auth/token'
 import {
   useClassificationEstimateQuery,
   useConfirmAusschussGateMutation,
   useCreateProjectMutation,
+  PROJECT_STATS_STALE_TIME_MS,
+  projectStatsQueryKey,
+  projectStatsQueryOptions,
   useProjectQuery,
   useProjectsQuery,
+  useProjectStatsQuery,
   useSetCloudVisionConsentMutation,
   useTriggerScanMutation,
   useTriggerClassificationMutation,
@@ -352,3 +357,107 @@ function runningRemoteCategoryRun(): ProjectOut['last_remote_category_classifica
     error_message: null,
   }
 }
+
+// specs/features/0207-projekt-statistikseite.md: Momentaufnahme statt Live-Ansicht - kein
+// Polling, und der Query-Key traegt die angemeldete Identitaet.
+
+function stats(): ProjectStatsOut {
+  return {
+    photo_count: 0,
+    storage: { opencloud_bytes: 0, local_cache_bytes: 0, local_database_bytes_estimate: null },
+    taken_at_earliest: null,
+    taken_at_latest: null,
+    categories: { classified_photo_count: 0, unclassified_photo_count: 0, entries: [] },
+    manual_category_override_count: 0,
+    cost: { currency: 'USD', total_usd: 0, by_purpose: [] },
+    progress: {
+      scanned: 0,
+      thumbnails_ready: 0,
+      ausschuss_scored: 0,
+      ranked: 0,
+      remote_classified: 0,
+    },
+    ratings: { favorite: 0, album_worthy: 0, rejected: 0, unrated: 0 },
+    last_successful_runs: {
+      scan: null,
+      scoring: null,
+      classification: null,
+      remote_category_classification: null,
+    },
+    diagnostics: {
+      last_scan_files_skipped: null,
+      duplicate_photo_count: 0,
+      remote_failures: [],
+    },
+  }
+}
+
+/** Ein syntaktisch gueltiges JWT mit dem gegebenen `username`-Claim - `decodeUsername` liest den
+ * Payload rein clientseitig, ohne Signaturpruefung. */
+function tokenFor(username: string): string {
+  const payload = btoa(JSON.stringify({ sub: '1', username }))
+  return `header.${payload}.signature`
+}
+
+describe('useProjectStatsQuery', () => {
+  afterEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('fetches the stats of the given project', async () => {
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(stats())
+    const { wrapper } = makeWrapper()
+
+    const { result } = renderHook(() => useProjectStatsQuery(7), { wrapper })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(projectsApi.getProjectStats).toHaveBeenCalledWith(7)
+  })
+
+  it('keeps the project id and the signed-in identity in the query key', () => {
+    setToken(tokenFor('daniel'))
+
+    const key = projectStatsQueryKey(7)
+
+    expect(key).toContain(7)
+    expect(key).toContain('daniel')
+  })
+
+  it('gives a second identity its own cache entry', () => {
+    // Sicherheits-Muss der Spec: die Anmeldung ist eine reine SPA-Navigation ohne Full Reload,
+    // der QueryClient wird beim Nutzerwechsel nicht geleert - ohne Identitaet im Key zeigte der
+    // zweite Nutzer auf einem gemeinsam genutzten Familiengeraet kurzzeitig den
+    // zwischengespeicherten Bewertungsstand des ersten.
+    setToken(tokenFor('daniel'))
+    const first = projectStatsQueryKey(7)
+    setToken(tokenFor('ehefrau'))
+    const second = projectStatsQueryKey(7)
+
+    expect(second).not.toEqual(first)
+  })
+
+  it('does not poll - several minutes produce exactly one request', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(stats())
+    const { wrapper } = makeWrapper()
+
+    const { result } = renderHook(() => useProjectStatsQuery(7), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    const callsAfterFirstFetch = vi.mocked(projectsApi.getProjectStats).mock.calls.length
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
+
+    expect(vi.mocked(projectsApi.getProjectStats).mock.calls.length).toBe(callsAfterFirstFetch)
+    vi.useRealTimers()
+  })
+
+  it('does not refetch on window focus and keeps the result fresh for a while', () => {
+    // Zweite Haelfte der Selbst-DoS-Gegenmassnahme (Security-Abschnitt der Spec, Punkt 3): der
+    // Endpunkt misst zwei os.stat je Foto - ohne diese beiden Optionen liefe der QueryClient auf
+    // seinen Defaults und stiesse bei jedem Tab-Wechsel eine vollstaendige neue Messung an.
+    expect(PROJECT_STATS_STALE_TIME_MS).toBeGreaterThan(0)
+    expect(projectStatsQueryOptions(7).refetchOnWindowFocus).toBe(false)
+    expect(projectStatsQueryOptions(7).staleTime).toBe(PROJECT_STATS_STALE_TIME_MS)
+    expect('refetchInterval' in projectStatsQueryOptions(7)).toBe(false)
+  })
+})

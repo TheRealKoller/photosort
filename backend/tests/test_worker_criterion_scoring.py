@@ -14,8 +14,9 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort import worker
+from photosort import pricing, worker
 from photosort.categories import CATEGORY_NOT_RECOGNIZED, is_known_category
+from photosort.cloud_vision import VISION_MODEL_BY_PROVIDER, TokenUsage
 from photosort.landmark import LandmarkApiError, LandmarkDetection
 from photosort.models import (
     CloudVisionPhase,
@@ -35,6 +36,7 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
+from photosort.pricing import compute_cost_usd
 from photosort.thumbnails import display_path
 from photosort.worker import _select_landmark_candidates, run_criterion_scoring, run_project_scoring
 
@@ -3475,3 +3477,291 @@ async def test_a_recognised_landscape_photo_is_still_sent_to_the_landmark_client
 
     assert run.status == ScanStatus.SUCCESS
     assert len(client.calls) == 1
+
+
+# specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
+# laeufe.md ab hier: die IST-Kostenerfassung der Landmark-Phase. Der Worker summiert Aufrufe und
+# Tokens ueber die ERFOLGREICHEN Ergebnisse und schreibt sie zusammen mit dem einmal berechneten
+# Betrag an die Lauf-Zeile - im `finally`-Block der Cloud-Phase, nicht erst vor `status=success`.
+
+
+async def _landmark_cost_setup(
+    db_session: AsyncSession, tmp_path: Path, *, photo_count: int, name: str = "Costa Rica"
+) -> tuple[Project, ScoringRun, list[Photo]]:
+    project = await _make_project(db_session, name=name)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photos = []
+    for index in range(photo_count):
+        photo = await _add_photo(
+            db_session,
+            project,
+            f"{name}-{index}.jpg",
+            f"etag-{name}-{index}",
+            datetime(2023, 1, 1, tzinfo=UTC),
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+        photos.append(photo)
+    return project, scoring_run, photos
+
+
+async def _run_with_landmark_client(
+    db_session: AsyncSession,
+    project: Project,
+    scoring_run: ScoringRun,
+    tmp_path: Path,
+    client: object,
+    *,
+    use_cloud: bool = True,
+) -> CriterionScoringRun:
+    return await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda: client,
+        use_cloud=use_cloud,
+    )
+
+
+def _detection_with_usage(input_tokens: int, output_tokens: int) -> LandmarkDetection:
+    return LandmarkDetection(
+        name="Eiffelturm",
+        confidence=0.9,
+        usage=TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+    )
+
+
+def _expected_cost(input_tokens: int, output_tokens: int) -> float:
+    cost = compute_cost_usd(
+        VISION_MODEL_BY_PROVIDER["anthropic"],
+        TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+    )
+    assert cost is not None
+    return cost
+
+
+async def test_landmark_costs_are_summed_over_all_successful_calls(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project, scoring_run, _photos = await _landmark_cost_setup(
+        db_session, tmp_path, photo_count=3
+    )
+    client = PerPhotoLandmarkClient(
+        [
+            _detection_with_usage(1_000, 10),
+            _detection_with_usage(2_000, 20),
+            _detection_with_usage(3_000, 30),
+        ]
+    )
+
+    run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.landmark_api_calls == 3
+    assert run.landmark_input_tokens == 6_000
+    assert run.landmark_output_tokens == 60
+    assert run.landmark_cost_usd == pytest.approx(_expected_cost(6_000, 60))
+
+
+async def test_a_partially_failing_landmark_phase_only_counts_the_successful_calls(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """ADR 0051 Punkt 6: ein fehlgeschlagener Aufruf liefert keinen auswertbaren `usage`-Block und
+    traegt deshalb weder Tokens noch einen Aufruf bei - die dokumentierte, bewusst getragene
+    Untererfassung. Die Fehler-Zeilen entstehen unabhaengig davon weiter (ADR 0035)."""
+    project, scoring_run, photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=3)
+    client = PerPhotoLandmarkClient(
+        [
+            LandmarkApiError("Fehler fuer a"),
+            _detection_with_usage(2_000, 20),
+            LandmarkApiError("Fehler fuer c"),
+        ]
+    )
+
+    run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.landmark_api_calls == 1
+    assert run.landmark_input_tokens == 2_000
+    assert run.landmark_output_tokens == 20
+    assert run.landmark_cost_usd == pytest.approx(_expected_cost(2_000, 20))
+
+    errors = (
+        await db_session.execute(
+            select(PhotoCloudVisionError).where(
+                PhotoCloudVisionError.phase == CloudVisionPhase.LANDMARK
+            )
+        )
+    ).scalars().all()
+    assert {error.photo_id for error in errors} == {photos[0].id, photos[2].id}
+
+
+async def test_a_result_without_usage_still_counts_as_an_api_call(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Verbindliche Festlegung der Spec: `api_calls` zaehlt jeden stattgefundenen Aufruf, auch
+    ohne `usage`-Block (Tokenbeitrag dann 0). Sonst entstuende die stille Kombination
+    "api_calls == 0 bei real erfolgten Aufrufen" - und `api_calls > 0` ist zugleich der Ausloeser
+    fuer Befund (b) des Unvollstaendigkeits-Hinweises."""
+    project, scoring_run, _photos = await _landmark_cost_setup(
+        db_session, tmp_path, photo_count=2
+    )
+    client = PerPhotoLandmarkClient(
+        [
+            LandmarkDetection(name="Eiffelturm", confidence=0.9),  # ohne usage
+            _detection_with_usage(1_000, 10),
+        ]
+    )
+
+    run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.landmark_api_calls == 2
+    assert run.landmark_input_tokens == 1_000
+    assert run.landmark_output_tokens == 10
+
+
+async def test_an_unpriced_model_records_tokens_but_no_amount(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0051 Punkt 2: ein nicht bepreistes Modell liefert `None` statt eines stillen `0.0` -
+    der Lauf faellt dadurch als Erfassungsluecke auf, statt sich als kostenlos zu tarnen. Der
+    gemessene Verbrauch bleibt trotzdem erhalten und ist spaeter nachrechenbar."""
+    monkeypatch.setattr(pricing, "MODEL_PRICING", {})
+    project, scoring_run, _photos = await _landmark_cost_setup(
+        db_session, tmp_path, photo_count=1
+    )
+    client = PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)])
+
+    run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.landmark_api_calls == 1
+    assert run.landmark_input_tokens == 1_000
+    assert run.landmark_output_tokens == 10
+    assert run.landmark_cost_usd is None
+
+
+async def test_a_run_without_any_cloud_usage_records_zero_not_null(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """"Erfasst, keine Kosten angefallen" - das ist etwas anderes als "nicht erfasst" (`NULL`),
+    und nur diese Unterscheidung haelt den Unvollstaendigkeits-Hinweis fehlalarmfrei."""
+    project, scoring_run, _photos = await _landmark_cost_setup(
+        db_session, tmp_path, photo_count=1
+    )
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=_failing_landmark_client_builder,
+        use_cloud=False,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.landmark_api_calls == 0
+    assert run.landmark_input_tokens == 0
+    assert run.landmark_output_tokens == 0
+    assert run.landmark_cost_usd == 0
+
+
+async def test_costs_survive_a_run_that_fails_after_the_landmark_block(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DER Grund fuer das Schreiben im `finally`-Block: ein Lauf, der nach der Cloud-Phase
+    scheitert, hat das Geld bereits ausgegeben. Wuerden die Summen erst vor `status=success`
+    geschrieben, waere der Betrag `0` - und wegen `0` statt `NULL` nicht einmal als Luecke
+    erkennbar."""
+    project, scoring_run, _photos = await _landmark_cost_setup(
+        db_session, tmp_path, photo_count=1
+    )
+    client = PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)])
+
+    def _explode(*args: object, **kwargs: object) -> NoReturn:
+        raise RuntimeError("simulierter Fehlschlag nach der Cloud-Phase")
+
+    monkeypatch.setattr(worker, "rank_photos", _explode)
+
+    run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+    assert run.status == ScanStatus.FAILED
+    assert run.landmark_api_calls == 1
+    assert run.landmark_input_tokens == 1_000
+    assert run.landmark_output_tokens == 10
+    assert run.landmark_cost_usd == pytest.approx(_expected_cost(1_000, 10))
+
+
+async def test_a_second_run_only_carries_its_own_costs(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die Kosten haengen am LAUF, nicht am Projekt - die Projektsumme entsteht erst beim Lesen
+    durch Aufsummieren der Laeufe (ADR 0051 Punkt 3/4)."""
+    project, scoring_run, photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
+    first = await _run_with_landmark_client(
+        db_session, project, scoring_run, tmp_path, PerPhotoLandmarkClient(
+            [_detection_with_usage(1_000, 10)]
+        )
+    )
+    assert first.landmark_api_calls == 1
+
+    # Zweiter Lauf: das Foto hat bereits einen landmark-Kriterienwert und ist damit kein Kandidat
+    # mehr - kein neuer Aufruf, keine neuen Kosten, aber ausdruecklich `0` statt `NULL`.
+    second = await _run_with_landmark_client(
+        db_session, project, scoring_run, tmp_path, PerPhotoLandmarkClient([])
+    )
+
+    assert second.id != first.id
+    assert second.landmark_api_calls == 0
+    assert second.landmark_input_tokens == 0
+    assert second.landmark_output_tokens == 0
+    assert second.landmark_cost_usd == 0
+    assert first.landmark_api_calls == 1
+    assert first.landmark_cost_usd == pytest.approx(_expected_cost(1_000, 10))
+
+
+async def test_the_landmark_client_is_still_closed_exactly_once_when_costs_are_written(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project, scoring_run, _photos = await _landmark_cost_setup(
+        db_session, tmp_path, photo_count=1
+    )
+    client = RecordingLandmarkClient(detection=_detection_with_usage(1_000, 10))
+
+    run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+    assert run.landmark_api_calls == 1
+    assert client.aclose_calls == 1
+
+
+async def test_landmark_costs_use_the_configured_provider_model(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Der Betrag haengt am tatsaechlich genutzten Modell - bei Mistral ist derselbe Verbrauch
+    deutlich guenstiger als bei Anthropic."""
+    monkeypatch.setattr(worker.settings, "landmark_provider", "mistral")
+    project, scoring_run, _photos = await _landmark_cost_setup(
+        db_session, tmp_path, photo_count=1
+    )
+    client = PerPhotoLandmarkClient([_detection_with_usage(1_000_000, 0)])
+
+    run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+    expected = compute_cost_usd(VISION_MODEL_BY_PROVIDER["mistral"], TokenUsage(1_000_000, 0))
+    assert expected is not None
+    assert run.landmark_cost_usd == pytest.approx(expected)
+    assert run.landmark_cost_usd != pytest.approx(_expected_cost(1_000_000, 0))

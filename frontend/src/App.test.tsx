@@ -9,7 +9,7 @@ import App from './App'
 import { apiFetch } from './api/client'
 import * as photosApi from './api/photos'
 import * as projectsApi from './api/projects'
-import type { ProjectOut } from './api/types'
+import type { ProjectOut, ProjectStatsOut } from './api/types'
 import { getToken, setToken } from './auth/token'
 
 vi.mock('./api/projects')
@@ -30,6 +30,39 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
     ...overrides,
+  }
+}
+
+/** Minimale, aber vollstaendige Statistik-Antwort (specs/features/0207-projekt-
+ * statistikseite.md) - hier interessiert nur, dass die Route rendert. */
+function emptyStats(): ProjectStatsOut {
+  return {
+    photo_count: 0,
+    storage: { opencloud_bytes: 0, local_cache_bytes: 0, local_database_bytes_estimate: null },
+    taken_at_earliest: null,
+    taken_at_latest: null,
+    categories: { classified_photo_count: 0, unclassified_photo_count: 0, entries: [] },
+    manual_category_override_count: 0,
+    cost: { currency: 'USD', total_usd: 0, by_purpose: [] },
+    progress: {
+      scanned: 0,
+      thumbnails_ready: 0,
+      ausschuss_scored: 0,
+      ranked: 0,
+      remote_classified: 0,
+    },
+    ratings: { favorite: 0, album_worthy: 0, rejected: 0, unrated: 0 },
+    last_successful_runs: {
+      scan: null,
+      scoring: null,
+      classification: null,
+      remote_category_classification: null,
+    },
+    diagnostics: {
+      last_scan_files_skipped: null,
+      duplicate_photo_count: 0,
+      remote_failures: [],
+    },
   }
 }
 
@@ -143,6 +176,18 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Vergleich' })).toBeInTheDocument()
   })
 
+  it('routes /projects/:id/stats to the project stats page within the app shell', async () => {
+    // specs/features/0207-projekt-statistikseite.md: eigene Querschnittsansicht neben den
+    // Einstellungen, bewusst ausserhalb der Pipeline-Schritt-Routen.
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(emptyStats())
+    setToken(makeToken({ sub: '1', username: 'daniel' }))
+
+    renderApp(['/projects/1/stats'])
+
+    expect(screen.getByText('PhotoSort')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Statistik' })).toBeInTheDocument()
+  })
+
   it('routes /projects/:id/settings to the project settings page within the app shell', async () => {
     // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: erste dedizierte
     // Projekteinstellungs-Route.
@@ -170,6 +215,8 @@ describe('App - Header-Link "Projekt"', () => {
     vi.mocked(projectsApi.getProject).mockResolvedValue(project())
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
+    vi.mocked(projectsApi.getProjectStats).mockReset()
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(emptyStats())
     setToken(makeToken({ sub: '1', username: 'daniel' }))
   })
 
@@ -184,6 +231,10 @@ describe('App - Header-Link "Projekt"', () => {
     '/projects/1/photos/42',
     '/projects/1/compare',
     '/projects/1/settings',
+    // specs/features/0207-projekt-statistikseite.md: ohne diesen Eintrag in PROJECT_ROUTES fehlte
+    // der Sticky-Header-Projektlink auf der Statistikseite stillschweigend (Alt-Bug aus Spec
+    // 0042/PR #101).
+    '/projects/1/stats',
   ]
 
   it.each(PROJECT_ROUTES)(

@@ -117,3 +117,79 @@ def test_the_downgrade_renders_for_postgres_too() -> None:
     assert "cloud_error_message" in rendered
     assert "cloud_requested" in rendered
     assert "phase" in rendered
+
+
+# specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
+# laeufe.md Punkt 3: acht additive Kostenspalten. Auch hier kann SQLite die entscheidende Aussage
+# strukturell nicht pruefen - es kennt keinen Unterschied zwischen INTEGER und DOUBLE PRECISION
+# und wuerde einen unbeabsichtigten Server-Default klaglos akzeptieren.
+
+_REMOTE_COST_REVISION = "f4a5b6c7d8e9_remote_cost_tracking.py"
+
+_EXPECTED_INTEGER_COLUMNS = (
+    "landmark_api_calls",
+    "landmark_input_tokens",
+    "landmark_output_tokens",
+    "api_calls",
+    "input_tokens",
+    "output_tokens",
+)
+_EXPECTED_FLOAT_COLUMNS = ("landmark_cost_usd", "cost_usd")
+
+
+@pytest.fixture(scope="module")
+def remote_cost_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_REMOTE_COST_REVISION)
+
+
+def _add_column_statement(ddl: list[str], column: str) -> str:
+    matches = [
+        statement
+        for statement in ddl
+        if "ADD COLUMN" in statement.upper() and f" {column} " in statement
+    ]
+    assert matches, f"kein ADD COLUMN fuer {column} im gerenderten DDL gefunden"
+    assert len(matches) == 1, f"mehrdeutiges ADD COLUMN fuer {column}: {matches}"
+    return matches[0]
+
+
+def test_all_eight_cost_columns_are_added_for_postgres(
+    remote_cost_upgrade_ddl: list[str],
+) -> None:
+    for column in _EXPECTED_INTEGER_COLUMNS + _EXPECTED_FLOAT_COLUMNS:
+        _add_column_statement(remote_cost_upgrade_ddl, column)
+
+
+def test_counter_columns_render_as_integer(remote_cost_upgrade_ddl: list[str]) -> None:
+    for column in _EXPECTED_INTEGER_COLUMNS:
+        assert "INTEGER" in _add_column_statement(remote_cost_upgrade_ddl, column).upper(), column
+
+
+def test_amount_columns_render_as_double_precision(remote_cost_upgrade_ddl: list[str]) -> None:
+    """`sa.Float()` rendert auf Postgres als `FLOAT` ohne Praezisionsangabe - laut PostgreSQL-
+    Dokumentation gleichbedeutend mit DOUBLE PRECISION. Bewusst `sa.Float()` und nicht
+    `sa.Double()`: es ist derselbe Typ, den alle uebrigen `Mapped[float]`-Spalten des Datenmodells
+    erzeugen (rank_score, sharpness, confidence, ...), also kein Sondertyp fuer die Betraege.
+    Entscheidend ist, dass es KEIN ganzzahliger Typ ist - ein Cent-Betrag wuerde sonst still auf
+    0 gerundet, und SQLite koennte den Unterschied nicht sichtbar machen."""
+    for column in _EXPECTED_FLOAT_COLUMNS:
+        statement = _add_column_statement(remote_cost_upgrade_ddl, column).upper()
+        assert "DOUBLE PRECISION" in statement or "FLOAT" in statement, column
+        assert "INTEGER" not in statement, column
+
+
+def test_no_cost_column_gets_a_server_default(remote_cost_upgrade_ddl: list[str]) -> None:
+    """DIE eigentliche Aussage dieser Datei fuer diese Revision: der Python-seitige Modell-Default
+    `0` darf NICHT zum Server-Default werden. Sonst bekaemen die Bestandszeilen `0` statt `NULL`,
+    und "nicht erfasst" waere dauerhaft nicht mehr von "kostenlos" unterscheidbar (ADR 0051
+    Punkt 3/5) - ein Fehler, den SQLite nicht sichtbar machen wuerde."""
+    for column in _EXPECTED_INTEGER_COLUMNS + _EXPECTED_FLOAT_COLUMNS:
+        statement = _add_column_statement(remote_cost_upgrade_ddl, column)
+        assert "DEFAULT" not in statement.upper(), column
+
+
+def test_the_remote_cost_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_REMOTE_COST_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements).upper()
+    assert rendered.count("DROP COLUMN") == 8

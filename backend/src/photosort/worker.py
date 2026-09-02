@@ -15,6 +15,7 @@ from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
@@ -36,6 +37,7 @@ from photosort.classification import (
     detect_objects,
     detect_person,
 )
+from photosort.cloud_vision import TokenUsage, vision_model_for_provider
 from photosort.config import settings
 from photosort.criteria import (
     CRITERIA_REGISTRY,
@@ -88,6 +90,7 @@ from photosort.models import (
 from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
 from photosort.opencloud.exif import extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
+from photosort.pricing import compute_cost_usd
 from photosort.ranking import rank_photos
 from photosort.remote_classification import (
     CategoryDetectionClientLike,
@@ -946,6 +949,49 @@ def _log_cloud_vision_failure(
 _MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH = 500
 
 
+async def _commit_phase_costs(session: AsyncSession) -> None:
+    """Committet die im `finally`-Block der Cloud-Phase gesetzten Ist-Kostenspalten
+    (specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 4) - und wirft dabei NIE.
+
+    Der Aufruf sitzt in einem `finally`, laeuft also auch waehrend eine Exception nach oben
+    laeuft. Scheitert genau dieses Commit, wuerde seine eigene Exception die urspruengliche
+    ERSETZEN und der eigentliche Fehlergrund waere weder im Log noch in `run.error_message`
+    erkennbar - genau in dem Moment, in dem man eine brauchbare Diagnose braucht. Das ist real
+    erreichbar: nach einem fehlgeschlagenen `flush()` (z.B. IntegrityError im Klassifizierungs-
+    Block) wirft `commit()` einen PendingRollbackError.
+
+    Im Fehlerfall gehen die Kostenwerte dieses Laufs verloren (das Rollback verwirft sie) - das
+    ist der bewusst gewaehlte kleinere Schaden: eine fehlende Kostenangabe faellt ueber den
+    Unvollstaendigkeits-Hinweis der Statistikseite auf, eine verschluckte Fehlerursache nicht.
+    Das anschliessende `rollback()` hinterlaesst eine benutzbare Session, damit `_fail_run` den
+    Lauf noch auf FAILED setzen kann.
+
+    Copilot-Review-Fund (PR #311): auch dieses `rollback()` ist abgesichert. Es laeuft in genau
+    der Lage, in der schon das Commit gescheitert ist (Verbindungsabbruch, DBAPI-Problem) - eine
+    Exception von dort verliesse den Helfer und ersetzte die urspruengliche eine Ebene tiefer,
+    also genau die Maskierung, gegen die er gebaut ist. Scheitert auch das Aufraeumen, bleibt der
+    Session nichts mehr zu retten; _fail_run scheitert dann ebenfalls, aber mit SEINEM eigenen
+    Fehler statt mit einem hier ausgeloesten. Sichtbar bleibt beides ueber die zwei Logzeilen.
+
+    Bewusst OHNE `run.id` in der Logzeile: nach einem gescheiterten Commit sind die
+    ORM-Attribute expired, ein lesender Zugriff loeste ausserhalb des greenlet-Kontexts einen
+    Lazy-Load aus (MissingGreenlet) - dieselbe Falle, die _fail_run mit seinem refresh() abraeumt.
+    Der Lauf ist ueber die von _fail_run geschriebene `error_message` identifizierbar."""
+    try:
+        await session.commit()
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "Ist-Kosten des Laufs konnten nicht gespeichert werden: %s", type(exc).__name__
+        )
+        try:
+            await session.rollback()
+        except SQLAlchemyError as rollback_exc:
+            logger.warning(
+                "Session nach dem gescheiterten Kosten-Commit nicht aufraeumbar: %s",
+                type(rollback_exc).__name__,
+            )
+
+
 async def _record_cloud_vision_error(
     session: AsyncSession,
     photo_id: int,
@@ -1469,6 +1515,13 @@ async def run_criterion_scoring(
             if landmark_client is not None:
                 landmark_failures = 0
                 landmark_attempts = 0
+                # specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 1: Ist-Kosten-
+                # Buchfuehrung dieser Phase. Summiert wird ueber die ERFOLGREICHEN Ergebnisse -
+                # ein fehlgeschlagener Aufruf liefert keinen auswertbaren Verbrauch (ADR 0051
+                # Punkt 6, dokumentierte Untererfassung).
+                landmark_api_calls = 0
+                landmark_input_tokens = 0
+                landmark_output_tokens = 0
                 try:
                     already_scored_photo_ids = {
                         photo_id
@@ -1533,6 +1586,15 @@ async def run_criterion_scoring(
                                 )
                                 continue
                             detection = result
+                            # Verbindlich (Spec 0207): jeder STATTGEFUNDENE Aufruf wird gezaehlt,
+                            # auch wenn sein `usage`-Block fehlte - der Tokenbeitrag ist dann 0.
+                            # Sonst entstuende die stille Kombination "api_calls == 0 bei real
+                            # erfolgten Aufrufen", und `api_calls > 0` ist zugleich der Ausloeser
+                            # fuer Befund (b) des Unvollstaendigkeits-Hinweises (ADR 0051 Punkt 5).
+                            landmark_api_calls += 1
+                            if detection.usage is not None:
+                                landmark_input_tokens += detection.usage.input_tokens
+                                landmark_output_tokens += detection.usage.output_tokens
                             landmark_value = compute_landmark_score(detection)
                             _upsert_criterion(
                                 photo_id, "landmark", landmark_value, CriterionSource.CLOUD
@@ -1551,6 +1613,25 @@ async def run_criterion_scoring(
                     aclose = getattr(landmark_client, "aclose", None)
                     if aclose is not None:
                         await aclose()
+                    # VERBINDLICH im finally, nicht erst vor `status = SUCCESS` (Spec 0207/ADR
+                    # 0051 Punkt 4): ein Lauf, der nach der Cloud-Phase in der Kriterien-Phase
+                    # scheitert, hat das Geld bereits ausgegeben. Ohne das Schreiben hier verloere
+                    # er den real angefallenen Betrag - und waere wegen `0` statt `NULL` nicht
+                    # einmal als Luecke erkennbar. Das Commit ist ebenfalls noetig: der
+                    # Fehlerpfad laeuft ueber _fail_run, das mit einem rollback() beginnt.
+                    run.landmark_api_calls = landmark_api_calls
+                    run.landmark_input_tokens = landmark_input_tokens
+                    run.landmark_output_tokens = landmark_output_tokens
+                    # Der Betrag wird EINMAL am Phasenende berechnet und eingefroren (ADR 0051
+                    # Punkt 4) - eine spaetere Preisaenderung schreibt die Vergangenheit nicht um.
+                    run.landmark_cost_usd = compute_cost_usd(
+                        vision_model_for_provider(settings.landmark_provider),
+                        TokenUsage(
+                            input_tokens=landmark_input_tokens,
+                            output_tokens=landmark_output_tokens,
+                        ),
+                    )
+                    await _commit_phase_costs(session)
                 # ADR 0050 Punkt 4: Zaehl-Zusammenfassung statt N Einzelmeldungen - die
                 # Einzelfehler bleiben pro Foto ueber photo_cloud_vision_errors abrufbar
                 # (ADR 0035), das hier ist die Laufebene.
@@ -1843,6 +1924,19 @@ async def run_remote_category_classification(
             await session.commit()
             return run
 
+        # specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 1: Ist-Kosten-
+        # Buchfuehrung dieses Laufs, identisch zur Landmark-Phase in run_criterion_scoring -
+        # summiert ueber die ERFOLGREICHEN Ergebnisse, geschrieben im `finally` unten.
+        #
+        # VOR dem `try` gebunden (Review-Fund der ship-feature-Runde, analog zur Landmark-Phase):
+        # der `finally`-Block liest diese drei Namen. Wuerde eine Anweisung INNERHALB des `try`
+        # vor ihrer Initialisierung werfen - realistisch ein DB-Fehler beim Laden des
+        # Feinlabel-Snapshots -, ersetzte ein UnboundLocalError die urspruengliche Exception, und
+        # der eigentliche Fehlergrund waere weder im Log noch in `run.error_message` erkennbar.
+        api_calls = 0
+        input_tokens = 0
+        output_tokens = 0
+
         try:
             snapshot_rows = (await session.execute(select(FineLabel))).scalars().all()
             snapshot = [
@@ -1903,6 +1997,13 @@ async def run_remote_category_classification(
                         )
                         continue
                     classification = result
+                    # Verbindlich (Spec 0207): jeder stattgefundene Aufruf zaehlt, auch ohne
+                    # `usage`-Block (Tokenbeitrag dann 0) - `api_calls > 0` bei Betrag 0/NULL ist
+                    # der Ausloeser fuer Befund (b) des Unvollstaendigkeits-Hinweises.
+                    api_calls += 1
+                    if classification.usage is not None:
+                        input_tokens += classification.usage.input_tokens
+                        output_tokens += classification.usage.output_tokens
 
                     # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 5: pro Foto genau
                     # EINE Klassifikations-Zeile. `category_key` ist bereits ueber die feste
@@ -1965,6 +2066,18 @@ async def run_remote_category_classification(
             aclose = getattr(client, "aclose", None)
             if aclose is not None:
                 await aclose()
+            # Wie in der Landmark-Phase VERBINDLICH im finally und mit eigenem Commit (Spec 0207/
+            # ADR 0051 Punkt 4): ein nach begonnener Cloud-Nutzung scheiternder Lauf hat das Geld
+            # bereits ausgegeben, und der Fehlerpfad laeuft ueber _fail_run, das mit einem
+            # rollback() beginnt. Der Betrag wird einmal berechnet und eingefroren.
+            run.api_calls = api_calls
+            run.input_tokens = input_tokens
+            run.output_tokens = output_tokens
+            run.cost_usd = compute_cost_usd(
+                vision_model_for_provider(settings.landmark_provider),
+                TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+            )
+            await _commit_phase_costs(session)
 
         run.status = ScanStatus.SUCCESS
         run.finished_at = _now_utc()
