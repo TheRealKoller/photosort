@@ -391,6 +391,38 @@ class CriterionScoringRun(Base):
     # Lauf endet mit SUCCESS, das Ergebnis ist nur nicht (vollstaendig) angereichert.
     cloud_error_message: Mapped[str | None] = mapped_column(default=None)
 
+    # specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-
+    # remote-laeufe.md Punkt 3: die IST-Kosten-Buchfuehrung des Landmark-Anteils dieses
+    # Laufs.
+    # Praefix `landmark_`, weil diese Tabelle seit ADR 0050 den GESAMTEN
+    # Klassifizierungslauf traegt und die Kriterien-Phase selbst nichts kostet.
+    #
+    # Alle vier Spalten sind NULLABLE mit Python-seitigem Default `0` - exakt das
+    # `ScanRun.total_files`-Idiom: `NULL` heisst "nicht erfasst" (Zeile aus der Zeit vor
+    # der zugehoerigen Migration), `0` heisst "erfasst, es sind keine Kosten angefallen".
+    # Ohne diese Unterscheidung waere ein Altlauf nicht von einem kostenlosen Lauf zu
+    # trennen; auf genau ihr beruht Befund (a) des Unvollstaendigkeits-Hinweises der
+    # Statistikseite (ADR 0051 Punkt 5). Ueberall mit `is None` statt truthy zu pruefen.
+    #
+    # `landmark_api_calls` zaehlt jeden STATTGEFUNDENEN Aufruf, auch wenn dessen `usage`-Block
+    # fehlte (der Tokenbeitrag ist dann 0). Das ist zugleich der Ausloeser fuer Befund (b):
+    # ein Betrag von exakt 0 bei nachweislich abgesetzten Aufrufen ist bei Token-Preisen
+    # groesser null strukturell unmoeglich und damit ein zuverlaessiger Indikator fuer eine
+    # Erfassungsluecke.
+    #
+    # `landmark_cost_usd` ist der beim Laufende EINGEFRORENE Betrag (ADR 0051 Punkt 4) - eine
+    # spaetere Preisaenderung veraendert keinen historischen Betrag. `None` trotz erfasster
+    # Tokens heisst: das Modell war in `pricing.py::MODEL_PRICING` nicht hinterlegt.
+    # `float` statt `Numeric` (ADR 0051 Punkt 3): Cent-Betraege, keine Buchhaltung,
+    # gerundet wird erst bei der Ausgabe. Tokens und Aufrufzahl werden bewusst OHNE
+    # eigenen Anzeigepfad mitgespeichert (eng begrenzte Ausnahme, ADR 0051 Punkt 3): ohne
+    # sie ist ein historischer Betrag nach einer erkannten Preiskorrektur nicht mehr
+    # nachrechenbar, und der Verbrauch existiert nur im Moment der API-Antwort.
+    landmark_api_calls: Mapped[int | None] = mapped_column(default=0)
+    landmark_input_tokens: Mapped[int | None] = mapped_column(default=0)
+    landmark_output_tokens: Mapped[int | None] = mapped_column(default=0)
+    landmark_cost_usd: Mapped[float | None] = mapped_column(default=0)
+
     project: Mapped[Project] = relationship(back_populates="criterion_scoring_runs")
 
 
@@ -578,6 +610,37 @@ class RemoteCategoryClassificationRun(Base):
     # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md), analog
     # ScanRun.last_progress_at/ScoringRun.last_progress_at/CriterionScoringRun.last_progress_at.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    # specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-
+    # remote-laeufe.md Punkt 3: die IST-Kosten-Buchfuehrung des Remote-Kategorie-Anteils dieses
+    # Laufs.
+    # Kein Praefix - dieser Lauf hat genau einen Zweck.
+    #
+    # Alle vier Spalten sind NULLABLE mit Python-seitigem Default `0` - exakt das
+    # `ScanRun.total_files`-Idiom: `NULL` heisst "nicht erfasst" (Zeile aus der Zeit vor
+    # der zugehoerigen Migration), `0` heisst "erfasst, es sind keine Kosten angefallen".
+    # Ohne diese Unterscheidung waere ein Altlauf nicht von einem kostenlosen Lauf zu
+    # trennen; auf genau ihr beruht Befund (a) des Unvollstaendigkeits-Hinweises der
+    # Statistikseite (ADR 0051 Punkt 5). Ueberall mit `is None` statt truthy zu pruefen.
+    #
+    # `api_calls` zaehlt jeden STATTGEFUNDENEN Aufruf, auch wenn dessen `usage`-Block
+    # fehlte (der Tokenbeitrag ist dann 0). Das ist zugleich der Ausloeser fuer Befund (b):
+    # ein Betrag von exakt 0 bei nachweislich abgesetzten Aufrufen ist bei Token-Preisen
+    # groesser null strukturell unmoeglich und damit ein zuverlaessiger Indikator fuer eine
+    # Erfassungsluecke.
+    #
+    # `cost_usd` ist der beim Laufende EINGEFRORENE Betrag (ADR 0051 Punkt 4) - eine
+    # spaetere Preisaenderung veraendert keinen historischen Betrag. `None` trotz erfasster
+    # Tokens heisst: das Modell war in `pricing.py::MODEL_PRICING` nicht hinterlegt.
+    # `float` statt `Numeric` (ADR 0051 Punkt 3): Cent-Betraege, keine Buchhaltung,
+    # gerundet wird erst bei der Ausgabe. Tokens und Aufrufzahl werden bewusst OHNE
+    # eigenen Anzeigepfad mitgespeichert (eng begrenzte Ausnahme, ADR 0051 Punkt 3): ohne
+    # sie ist ein historischer Betrag nach einer erkannten Preiskorrektur nicht mehr
+    # nachrechenbar, und der Verbrauch existiert nur im Moment der API-Antwort.
+    api_calls: Mapped[int | None] = mapped_column(default=0)
+    input_tokens: Mapped[int | None] = mapped_column(default=0)
+    output_tokens: Mapped[int | None] = mapped_column(default=0)
+    cost_usd: Mapped[float | None] = mapped_column(default=0)
 
     project: Mapped[Project] = relationship(back_populates="remote_category_classification_runs")
 
