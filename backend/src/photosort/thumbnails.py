@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import io
+from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
+from stat import S_ISREG
 from typing import Literal
 
 from PIL import Image, ImageOps
@@ -88,3 +91,60 @@ def generate_variants(cache_dir: Path, photo_id: int, etag: str, image_bytes: by
         # opencloud/exif.py::extract_taken_at.
         return False
     return True
+
+
+# specs/features/0207-projekt-statistikseite.md, Abschnitt 4 "Speicherbedarf" ab hier.
+
+
+@dataclass(frozen=True)
+class CacheUsage:
+    """Ergebnis EINER Messung des lokalen Thumbnail-Caches fuer eine Fotomenge.
+
+    `complete_photo_count` faellt als Nebenprodukt derselben Messung an (Fotos mit BEIDEN
+    Varianten) und ist zugleich die Kennzahl "Thumbnails erzeugt" der Statistikseite - kein
+    zweiter Durchlauf ueber dieselben Dateien."""
+
+    total_bytes: int
+    complete_photo_count: int
+
+
+def measure_cache_usage(
+    cache_dir: Path, photos: Iterable[tuple[int, str]]
+) -> CacheUsage:
+    """Misst den vom lokalen Cache belegten Platz fuer die uebergebenen (photo_id, etag)-Paare.
+
+    Bewusst gezielt ueber die Pfade DIESER Fotos statt ueber das ganze Verzeichnis: der Cache ist
+    flach und projektuebergreifend, eine Verzeichnissumme waere keine Projektkennzahl. Ein
+    Nebeneffekt davon ist, dass Dateien unter einem VERALTETEN `etag`-Schluessel weder Bytes noch
+    `complete_photo_count` beitragen - sie gehoeren zu einer inzwischen ersetzten Version des
+    Fotos (siehe `cache_key`).
+
+    Rein synchron und ohne DB-Bezug (deshalb `(photo_id, etag)`-Tupel statt ORM-Objekten): der
+    Aufrufer fuehrt sie ueber `asyncio.to_thread` aus, damit die Event-Loop bei zwei `stat`-
+    Aufrufen je Foto nicht blockiert.
+
+    Best-effort je Datei (Security-Muss-Kriterium der Spec): ein `OSError` - fehlende Datei,
+    fehlende Rechte, Verzeichnis an Dateistelle - zaehlt als 0 Bytes und wird NIE nach oben
+    gereicht. Seine Meldung enthaelt den absoluten Cache-Pfad, also interne Deployment-Struktur,
+    und duerfte deshalb weder in einer HTTPException noch in einem Antwortfeld landen."""
+    total_bytes = 0
+    complete_photo_count = 0
+    for photo_id, etag in photos:
+        variant_bytes = 0
+        present = 0
+        for path in (
+            thumbnail_path(cache_dir, photo_id, etag),
+            display_path(cache_dir, photo_id, etag),
+        ):
+            try:
+                stat_result = path.stat()
+            except OSError:
+                continue
+            if not S_ISREG(stat_result.st_mode):
+                continue
+            variant_bytes += stat_result.st_size
+            present += 1
+        total_bytes += variant_bytes
+        if present == 2:
+            complete_photo_count += 1
+    return CacheUsage(total_bytes=total_bytes, complete_photo_count=complete_photo_count)

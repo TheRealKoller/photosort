@@ -1,4 +1,4 @@
-# 0051 - Remote-Lebenszyklus: Diagnose-Kommando plus ein Preflight, der den Zugriff probiert statt ihn aus Text zu raten
+# 0052 - Remote-Lebenszyklus: Diagnose-Kommando plus ein Preflight, der den Zugriff probiert statt ihn aus Text zu raten
 
 **Status:** Accepted
 **Datum:** 2026-09-02

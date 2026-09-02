@@ -5,6 +5,7 @@ import {
   createProject,
   getClassificationEstimate,
   getProject,
+  getProjectStats,
   listFineLabels,
   listProjects,
   setCloudVisionConsent,
@@ -14,6 +15,8 @@ import {
   type CreateProjectPayload,
 } from '../api/projects'
 import type { ProjectOut } from '../api/types'
+import { decodeUsername } from '../auth/jwt'
+import { getToken } from '../auth/token'
 
 export const POLL_INTERVAL_MS = 2000
 
@@ -158,3 +161,46 @@ export function useFineLabelsQuery(id: number) {
   })
 }
 
+
+/**
+ * Wie lange das Ergebnis der Statistikseite als frisch gilt (specs/features/0207-projekt-
+ * statistikseite.md, Security-Abschnitt Punkt 3). Zusammen mit `refetchOnWindowFocus: false` die
+ * Frontend-Haelfte der Selbst-DoS-Gegenmassnahme: der Endpunkt misst zwei `os.stat` je Foto -
+ * auf den QueryClient-Defaults stiesse jeder Tab-Wechsel eine vollstaendige neue Messung an.
+ */
+export const PROJECT_STATS_STALE_TIME_MS = 60_000
+
+/**
+ * Query-Key der Statistik EINSCHLIESSLICH der angemeldeten Identitaet (Sicherheits-Muss der
+ * Spec): die Anmeldung ist eine reine SPA-Navigation ohne Full Reload, und der QueryClient wird
+ * beim Nutzerwechsel nicht geleert. Ohne die Identitaet im Key saehe der zweite Nutzer auf einem
+ * gemeinsam genutzten Familiengeraet kurzzeitig den zwischengespeicherten Bewertungsstand des
+ * ersten - der Bewertungsstand ist die erste rein personenbezogene Aggregatzahl der Anwendung.
+ *
+ * `decodeUsername` ist eine reine Anzeige-/Cache-Unterscheidung ohne Signaturpruefung; die
+ * eigentliche Zugriffsentscheidung trifft ausschliesslich der Server anhand des JWT.
+ */
+export function projectStatsQueryKey(id: number) {
+  const token = getToken()
+  return ['project-stats', id, token ? decodeUsername(token) : null] as const
+}
+
+/**
+ * Bewusst als eigene, exportierte Options-Funktion: die Abwesenheit von Polling und die beiden
+ * Cache-Optionen sind hier Akzeptanzkriterien (Momentaufnahme, kein Selbst-DoS), keine
+ * Feinabstimmung - sie sollen direkt pruefbar sein, statt nur indirekt ueber Zeitreisen im Test.
+ */
+export function projectStatsQueryOptions(id: number) {
+  return {
+    queryKey: projectStatsQueryKey(id),
+    queryFn: () => getProjectStats(id),
+    // KEIN refetchInterval: die Seite ist eine Momentaufnahme des aktuellen Stands und
+    // aktualisiert sich ausdruecklich nicht selbsttaetig (Akzeptanzkriterium A3).
+    refetchOnWindowFocus: false,
+    staleTime: PROJECT_STATS_STALE_TIME_MS,
+  }
+}
+
+export function useProjectStatsQuery(id: number) {
+  return useQuery(projectStatsQueryOptions(id))
+}

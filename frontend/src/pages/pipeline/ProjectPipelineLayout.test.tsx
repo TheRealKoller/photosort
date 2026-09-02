@@ -209,6 +209,12 @@ describe('ProjectPipelineLayout', () => {
       'href',
       '/projects/1/compare'
     )
+    // specs/features/0207-projekt-statistikseite.md: einziger Einstiegspunkt in die
+    // Statistikseite, als Sekundaer-Button neben "Einstellungen".
+    expect(screen.getByRole('link', { name: /statistik/i })).toHaveAttribute(
+      'href',
+      '/projects/1/stats'
+    )
     // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: einzige aktuelle
     // Navigations-Einstiegsstelle in die neue Projekteinstellungs-Route.
     expect(screen.getByRole('link', { name: /einstellungen/i })).toHaveAttribute(

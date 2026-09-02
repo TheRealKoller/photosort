@@ -1,5 +1,10 @@
 import { apiFetch } from './client'
-import type { ClassificationEstimateOut, FineLabelCountOut, ProjectOut } from './types'
+import type {
+  ClassificationEstimateOut,
+  FineLabelCountOut,
+  ProjectOut,
+  ProjectStatsOut,
+} from './types'
 
 export interface CloudVisionConsentOut {
   cloud_vision_detection_enabled: boolean
@@ -94,4 +99,16 @@ export function getClassificationEstimate(id: number): Promise<ClassificationEst
  */
 export function listFineLabels(id: number): Promise<FineLabelCountOut[]> {
   return apiFetch<FineLabelCountOut[]>(`/projects/${id}/fine-labels`)
+}
+
+/**
+ * Momentaufnahme des Projektzustands (specs/features/0207-projekt-statistikseite.md) - Umfang,
+ * Speicher, Kategorien, Ist-Kosten, Bearbeitungs-/Bewertungsstand, Diagnose.
+ *
+ * Als Projekt-Unterressource hier gefuehrt (konsistent mit `listFineLabels`/
+ * `getClassificationEstimate`), obwohl sie backend-seitig aus einem eigenen Router kommt: der
+ * Schnitt der Frontend-API-Module folgt der Ressource, nicht dem Server-Modul.
+ */
+export function getProjectStats(id: number): Promise<ProjectStatsOut> {
+  return apiFetch<ProjectStatsOut>(`/projects/${id}/stats`)
 }

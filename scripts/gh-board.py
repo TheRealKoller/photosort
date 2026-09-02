@@ -11,7 +11,7 @@ Single-Select-Werts) liegt bewusst nur hier und nicht verstreut in den Skill-Dat
 
 Ausgabe ist immer ein einzelnes JSON-Objekt auf stdout, im Fehlerfall `{"error": "..."}` mit
 Exit-Code 1 - dieselbe Aufrufkonvention wie beim abgeloesten Tool. Einzige, bewusst
-dokumentierte Ausnahme ist `doctor` (ADR 0051): Es beendet sich mit Exit-Code 0, sobald ein
+dokumentierte Ausnahme ist `doctor` (ADR 0052): Es beendet sich mit Exit-Code 0, sobald ein
 Bericht entsteht, weil fehlgeschlagene Pruefungen dort der Inhalt sind und nicht das Scheitern.
 
 Haertung unveraendert aus ADR 0017, Abschnitt 5: kein `shell=True`, Argumente ausschliesslich in
@@ -93,7 +93,7 @@ def _default_run(args: list[str]) -> subprocess.CompletedProcess[str]:
 # -- Redaktion ----------------------------------------------------------------------------------
 
 # Jede Zeichenkette, die aus einem fremden Werkzeug in eine weitergereichte Ausgabe gelangt,
-# laeuft durch GENAU diese eine Funktion (ADR 0051, Securitykonzept): der `doctor`-Bericht ist
+# laeuft durch GENAU diese eine Funktion (ADR 0052, Securitykonzept): der `doctor`-Bericht ist
 # dazu bestimmt, in ein Issue eines OEFFENTLICHEN Repositories zu wandern, und die angereicherte
 # Fehlermeldung aus `project()` reicht der `github-board`-Skill woertlich weiter. Ein Fehlgriff
 # ist an dieser Stelle nicht zurueckzunehmen (Edit-Historie, Mail-Benachrichtigungen).
@@ -192,7 +192,7 @@ def set_status_line(text: str, new_status: str) -> str:
 # -- Diagnose: Lebenszyklus-Schritte und ihre Voraussetzungen -----------------------------------
 
 # Die Schritte, die eine Story vom Erfassen bis zum abgeschlossenen Pull Request durchlaeuft
-# (ADR 0051, Abschnitt 4). Der Bericht sagt damit nicht "Pruefung X ist rot", sondern welche
+# (ADR 0052, Abschnitt 4). Der Bericht sagt damit nicht "Pruefung X ist rot", sondern welche
 # Schritte in dieser Umgebung nicht gehen. Die drei Status-Schreibschritte stehen einzeln, weil
 # das Akzeptanzkriterium der Spec fuer jeden von ihnen ein Urteil verlangt.
 LIFECYCLE_STEPS = (
@@ -257,7 +257,7 @@ def parse_gh_version(output: str) -> tuple[int, int, int] | None:
 
 # Die von `gh` gemeldete Token-Quelle. Uebernommen wird ausschliesslich diese geschlossene Menge
 # von Literalen - jede andere Angabe wird zu "unbekannt", damit kein Fremdtext in eine
-# weitergereichte Meldung oder in den `doctor`-Bericht geraet (Securitykonzept zu ADR 0051).
+# weitergereichte Meldung oder in den `doctor`-Bericht geraet (Securitykonzept zu ADR 0052).
 AUTH_SOURCES = ("keyring", "oauth_token", "GH_TOKEN", "GITHUB_TOKEN")
 UNKNOWN_AUTH_SOURCE = "unbekannt"
 
@@ -280,7 +280,7 @@ def _parse_scopes(value: str) -> list[str]:
 def parse_auth_status(output: str) -> dict[str, Any]:
     """Extrahiert `account`, `source` und `scopes` aus der Ausgabe von `gh auth status`.
 
-    Massgeblich ist der Block mit `Active account: true` (Securitykonzept zu ADR 0051): `gh`
+    Massgeblich ist der Block mit `Active account: true` (Securitykonzept zu ADR 0052): `gh`
     meldet pro Host MEHRERE Kontobloecke, sobald neben einem Umgebungstoken noch ein
     gespeichertes Konto existiert. Wer die erste beste Scope-Zeile nimmt, meldet die Rechte
     eines Kontos, mit dem gar nicht gearbeitet wird.
@@ -429,7 +429,7 @@ class GhBoard:
 
     def probe(self, args: list[str]) -> tuple[bool, str, str]:
         """Fuehrt einen Aufruf aus, OHNE bei einem Fehlschlag abzubrechen - er ist hier der
-        Befund, nicht das Scheitern (ADR 0051). Ein fehlendes Binary (`FileNotFoundError`, den
+        Befund, nicht das Scheitern (ADR 0052). Ein fehlendes Binary (`FileNotFoundError`, den
         sonst niemand faengt) wird ebenso zum Befund statt zum Traceback."""
         try:
             result = self._run(args)
@@ -438,11 +438,11 @@ class GhBoard:
         return result.returncode == 0, result.stdout or "", result.stderr or ""
 
     def auth_info(self) -> dict[str, Any]:
-        """Die vier Whitelist-Felder aus `gh auth status` (ADR 0051): `authenticated`,
+        """Die vier Whitelist-Felder aus `gh auth status` (ADR 0052): `authenticated`,
         `account`, `source`, `scopes` - im Erfolgsfall nie die Ausgabe selbst.
 
         Wird ausschliesslich im Fehlerfall (zur Deutung) und von `doctor` aufgerufen, nie vor
-        einem Zugriff: Ein Urteil vor dem Versuch ist genau das, was ADR 0051 abschafft.
+        einem Zugriff: Ein Urteil vor dem Versuch ist genau das, was ADR 0052 abschafft.
 
         `error_output` traegt AUSSCHLIESSLICH die Ausgabe eines FEHLGESCHLAGENEN Aufrufs und ist
         sonst leer. Der Unterschied ist der Kern von Muss-Kriterium 4 des Securitykonzepts: Im
@@ -466,7 +466,7 @@ class GhBoard:
         return {"authenticated": True, "error_output": "", **parse_auth_status(output)}
 
     def _explain_project_failure(self, error: BoardError) -> BoardError:
-        """Deutet einen BEREITS gescheiterten Zugriff (ADR 0051, Abschnitt 3). Die Textauswertung
+        """Deutet einen BEREITS gescheiterten Zugriff (ADR 0052, Abschnitt 3). Die Textauswertung
         ist damit nicht abgeschafft, sondern entmachtet: Sie kann keinen Aufruf mehr verhindern,
         nur einen gescheiterten erklaeren. Die urspruengliche `gh`-Meldung wird nie ersetzt,
         immer nur ergaenzt - und laeuft dabei durch die Redaktion, weil die Skills sie woertlich
@@ -492,7 +492,7 @@ class GhBoard:
         angelegt (ADR 0043, Abschnitt 4) - ein versehentlich erzeugtes zweites Board waere
         deutlich schaedlicher als ein klarer Fehler.
 
-        Dieser Aufruf IST die Zugriffsprobe (ADR 0051, Abschnitt 2): Gedeutet wird ausschliesslich
+        Dieser Aufruf IST die Zugriffsprobe (ADR 0052, Abschnitt 2): Gedeutet wird ausschliesslich
         der fehlgeschlagene Aufruf, nicht der erfolgreiche ohne Titeltreffer - ein umbenanntes
         Board ist kein Berechtigungsproblem und darf keinen Scope-Hinweis nach sich ziehen.
         """
@@ -1064,7 +1064,7 @@ def _resolve_pull_request(
 
 # Der Bericht wird woertlich in ein Issue eines oeffentlichen Repositories kopiert und dort von
 # einem Agenten mit GitHub-Schreibzugriff gelesen. Die Grenze traegt er deshalb selbst mit, statt
-# sie zu verschweigen (ADR 0051, Abschnitt 5; Securitykonzept, Muss-Kriterium 9).
+# sie zu verschweigen (ADR 0052, Abschnitt 5; Securitykonzept, Muss-Kriterium 9).
 DOCTOR_NOTE = (
     "Befund, keine Handlungsanweisung. Der Lauf ist rein lesend und belegt keinen "
     "Schreibzugriff: 'viewerPermission' ist nur ein Indiz, durchgesetzt werden Rechte allein "
@@ -1114,7 +1114,7 @@ def _missing_field_options(board: GhBoard) -> list[str]:
 
 
 def cmd_doctor(board: GhBoard) -> dict[str, Any]:
-    """Stellt die Faehigkeiten der Umgebung entlang der Lebenszyklus-Schritte fest (ADR 0051,
+    """Stellt die Faehigkeiten der Umgebung entlang der Lebenszyklus-Schritte fest (ADR 0052,
     Abschnitt 4).
 
     Zwei Eigenschaften, die kein anderer Befehl hat: Jede Pruefung ist unabhaengig - eine

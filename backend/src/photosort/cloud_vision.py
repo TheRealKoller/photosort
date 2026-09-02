@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -14,6 +16,8 @@ import httpx
 
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_API_VERSION = "2023-06-01"
+
+logger = logging.getLogger(__name__)
 
 # specs/decisions/0031-mistral-provider-option-cloud-landmark.md Punkt 2: derselbe Endpunkt wie
 # fuer reine Text-Completions, kein separater Vision-Pfad bei Mistral.
@@ -29,6 +33,28 @@ ANTHROPIC_VISION_MODEL = "claude-haiku-4-5"
 # Kleinstes/guenstigstes Modell der Ministral-3-Familie (ADR 0031 Punkt 2) - verifiziert gegen die
 # offizielle Modelldokumentation (developer-Agent, 2026-08-23), siehe landmark.py-Historie.
 MISTRAL_VISION_MODEL = "ministral-3b-2512"
+
+# specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 2: die Zuordnung des
+# Provider-Schalters (`settings.landmark_provider`, ADR 0031 Punkt 3/ADR 0032 Punkt 3 - EIN
+# Schalter fuer beide Cloud-Zwecke) auf die tatsaechlich verwendete Modell-ID. worker.py braucht
+# sie, um den Ist-Betrag eines Laufs ueber `pricing.py::compute_cost_usd` zu bestimmen; die
+# Preistabelle ist ueber die MODELL-ID geschluesselt, nicht ueber den Provider (der Preis haengt
+# am Modell). Hier statt in landmark.py/remote_classification.py, weil beide Zwecke dieselbe
+# Zuordnung brauchen und die Modell-IDs ohnehin hier leben.
+VISION_MODEL_BY_PROVIDER: dict[str, str] = {
+    "anthropic": ANTHROPIC_VISION_MODEL,
+    "mistral": MISTRAL_VISION_MODEL,
+}
+
+
+def vision_model_for_provider(provider: str) -> str:
+    """Modell-ID zu einem Provider-Schluessel. Ein hier unbekannter Provider faellt bewusst auf
+    seinen eigenen Namen zurueck statt zu werfen: das Ergebnis ist dann eine Modell-ID, die
+    `pricing.py::MODEL_PRICING` nicht kennt, und der Lauf wird als "nicht erfasst" ausgewiesen
+    (ADR 0051 Punkt 2) - ein neuer Provider ohne Preispflege faellt damit auf, statt einen
+    laufenden Cloud-Job mit einem KeyError abzubrechen."""
+    return VISION_MODEL_BY_PROVIDER.get(provider, provider)
+
 
 # Modul-Konstante statt Settings-Feld (ADR 0025 Punkt 3: "reiner technischer Wert, kein
 # Betriebsparameter") - grosszuegiger als der OpenCloud-Client-Default (30s), da Vision-LLM-
@@ -81,3 +107,83 @@ def mistral_response_to_json(payload: Any, error_class: type[Exception]) -> Any:
         raise error_class(
             "Unerwartete Antwortstruktur der Mistral Chat Completions API."
         ) from exc
+
+
+# specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
+# laeufe.md Punkt 1 ab hier: der REALE Token-Verbrauch, den beide Provider in jeder Antwort
+# mitliefern - bis zu dieser Spec gelesen und verworfen. Er existiert genau einmal, im Moment der
+# Antwort, und ist danach unwiederbringlich; deshalb sitzt der Messpunkt hier, unmittelbar an der
+# Antwort, und nicht irgendwo weiter oben im Aufrufpfad.
+
+
+@dataclass(frozen=True)
+class TokenUsage:
+    """Providerneutraler Token-Verbrauch EINES Cloud-Vision-Aufrufs (ADR 0051 Punkt 1) - das
+    gemeinsame Ziel der beiden providerspezifischen Extraktoren unten. Frozen wie
+    LandmarkDetection/RemoteClassification: ein Messwert, kein veraenderlicher Zustand.
+
+    Die Feldnamen folgen bewusst der Anthropic-Benennung (input/output), nicht der Mistral-
+    Benennung (prompt/completion) - "Eingabe/Ausgabe" ist die providerneutrale Begrifflichkeit,
+    in der auch die Preistabelle (pricing.py::ModelPricing) gefuehrt wird."""
+
+    input_tokens: int
+    output_tokens: int
+
+
+def _usage_from_response(
+    payload: Any, model: str, input_key: str, output_key: str
+) -> TokenUsage | None:
+    """Gemeinsame, defensive Extraktion fuer beide Provider - unterscheidet sich zwischen ihnen
+    ausschliesslich in den beiden Feldnamen.
+
+    Liefert `None` statt zu werfen (ADR 0051 Punkt 1): ein fehlender oder strukturell unerwarteter
+    `usage`-Block ist KEIN Fehler - eine erfolgreiche Klassifizierung darf niemals daran
+    scheitern, dass die Abrechnungsangabe fehlt. Der Aufruf traegt dann nichts zur Kostensumme
+    bei; sichtbar wird die Luecke ueber die WARNING-Zeile hier UND (nutzerseitig) ueber Befund (b)
+    des Unvollstaendigkeits-Hinweises (ADR 0051 Punkt 5), da worker.py die Aufrufzahl unabhaengig
+    vom Tokenbeitrag hochzaehlt.
+
+    Sicherheits-Muss-Kriterium (Spec 0207, Security Punkt 4, Muster ADR 0034 Punkt 5): die
+    Logzeile enthaelt ausschliesslich eine feste Meldung, `type(exc).__name__` und die Modell-ID.
+    Verboten sind `payload`/`repr(payload)`/`response.text`/`response.json()`/`response.headers`
+    und `exc_info=True` - die Provider-Antwort traegt die Modellaussage ueber den BILDINHALT eines
+    Familienfotos und im Fehlerfall potenziell ein Echo des Requests (Base64-Bilddaten) sowie
+    Header (API-Key)."""
+    try:
+        usage = payload["usage"]
+        input_tokens = usage[input_key]
+        output_tokens = usage[output_key]
+        # Bewusst strikt auf int/bool-freie Ganzzahlen geprueft statt int(...) zu erzwingen: ein
+        # Gleitkomma-/String-Wert an dieser Stelle waere ein struktureller Bruch der
+        # Provider-Zusage, kein zu rettender Sonderfall - und ein still gerundeter Wert waere als
+        # Abrechnungsbeleg wertlos.
+        if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
+            raise TypeError("Token-Zaehler ist keine Ganzzahl")
+        if isinstance(input_tokens, bool) or isinstance(output_tokens, bool):
+            raise TypeError("Token-Zaehler ist ein Boolean")
+        if input_tokens < 0 or output_tokens < 0:
+            raise ValueError("Token-Zaehler ist negativ")
+        return TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens)
+    except (KeyError, TypeError, ValueError, IndexError) as exc:
+        logger.warning(
+            "Verbrauchsangabe der Vision-Antwort nicht auswertbar (model=%s): %s",
+            model,
+            type(exc).__name__,
+        )
+        return None
+
+
+def anthropic_usage_from_response(payload: Any, model: str) -> TokenUsage | None:
+    """Liest `usage.input_tokens`/`usage.output_tokens` aus der Anthropic-Antworthuelle.
+
+    Zusaetzliche Felder (Cache-Zaehler) werden bewusst ignoriert: die Ist-Rechnung dieser ADR
+    kennt nur Basis-Input/-Output-Preise (pricing.py), kein Cache-Tarifmodell - das Projekt setzt
+    kein Prompt-Caching ein."""
+    return _usage_from_response(payload, model, "input_tokens", "output_tokens")
+
+
+def mistral_usage_from_response(payload: Any, model: str) -> TokenUsage | None:
+    """Liest `usage.prompt_tokens`/`usage.completion_tokens` aus der Mistral-Antworthuelle - die
+    providerspezifisch ABWEICHENDEN Feldnamen sind der einzige Unterschied zum Anthropic-Gegenpart
+    oben (OpenAI-kompatibles Chat-Completion-Schema)."""
+    return _usage_from_response(payload, model, "prompt_tokens", "completion_tokens")

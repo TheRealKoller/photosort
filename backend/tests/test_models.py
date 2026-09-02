@@ -1043,3 +1043,129 @@ async def test_deleting_photo_cascades_to_its_category_classification(
 
     remaining = (await db_session.execute(select(PhotoCategoryClassification))).scalars().all()
     assert remaining == []
+
+
+# specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
+# laeufe.md Punkt 3: je vier additive Kostenspalten an den beiden Run-Tabellen. Alle acht sind
+# NULLABLE mit Python-seitigem Default `0` - exakt das `ScanRun.total_files`-Idiom: `NULL` heisst
+# "nicht erfasst" (Zeile aus der Zeit vor der Migration), `0` heisst "erfasst, es sind keine
+# Kosten angefallen". Ohne diese Unterscheidung waere ein Altlauf nicht mehr von einem
+# kostenlosen Lauf zu trennen - und genau darauf beruht der Unvollstaendigkeits-Hinweis der
+# Statistikseite (ADR 0051 Punkt 5).
+
+_LANDMARK_COST_COLUMNS = (
+    "landmark_api_calls",
+    "landmark_input_tokens",
+    "landmark_output_tokens",
+    "landmark_cost_usd",
+)
+_REMOTE_CATEGORY_COST_COLUMNS = (
+    "api_calls",
+    "input_tokens",
+    "output_tokens",
+    "cost_usd",
+)
+
+
+async def _criterion_scoring_run(db_session: AsyncSession, **kwargs: object) -> CriterionScoringRun:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(scoring_run)
+    await db_session.flush()
+    run = CriterionScoringRun(
+        project_id=project.id,
+        scoring_run_id=scoring_run.id,
+        status=ScanStatus.RUNNING,
+        **kwargs,  # type: ignore[arg-type]
+    )
+    db_session.add(run)
+    await db_session.commit()
+    await db_session.refresh(run)
+    return run
+
+
+async def test_new_criterion_scoring_run_starts_with_zero_landmark_cost_columns(
+    db_session: AsyncSession,
+) -> None:
+    run = await _criterion_scoring_run(db_session)
+
+    for column in _LANDMARK_COST_COLUMNS:
+        assert getattr(run, column) == 0, column
+
+
+async def test_criterion_scoring_run_landmark_cost_columns_stay_nullable(
+    db_session: AsyncSession,
+) -> None:
+    """`NULL` muss fuer alle vier Spalten darstellbar bleiben - genau so sehen die Altlaeufe aus,
+    die die Migration zuruecklaesst. Waere die Spalte NOT NULL, waere "nicht erfasst" nicht mehr
+    von "kostenlos" unterscheidbar (ADR 0051 Punkt 3/5).
+
+    Der Python-Default `0` greift beim INSERT, deshalb wird der Altzustand hier per UPDATE
+    hergestellt - dasselbe Ergebnis wie eine Bestandszeile nach `alembic upgrade`."""
+    table = CriterionScoringRun.__table__
+    for column in _LANDMARK_COST_COLUMNS:
+        assert table.columns[column].nullable, column
+
+    run = await _criterion_scoring_run(db_session)
+    for column in _LANDMARK_COST_COLUMNS:
+        setattr(run, column, None)
+    await db_session.commit()
+    await db_session.refresh(run)
+
+    for column in _LANDMARK_COST_COLUMNS:
+        assert getattr(run, column) is None, column
+
+
+async def test_criterion_scoring_run_stores_real_landmark_cost_values(
+    db_session: AsyncSession,
+) -> None:
+    run = await _criterion_scoring_run(
+        db_session,
+        landmark_api_calls=7,
+        landmark_input_tokens=11_130,
+        landmark_output_tokens=84,
+        landmark_cost_usd=0.01155,
+    )
+
+    assert run.landmark_api_calls == 7
+    assert run.landmark_input_tokens == 11_130
+    assert run.landmark_output_tokens == 84
+    assert run.landmark_cost_usd == pytest.approx(0.01155)
+
+
+async def test_new_remote_category_classification_run_starts_with_zero_cost_columns(
+    db_session: AsyncSession,
+) -> None:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.RUNNING)
+    db_session.add(run)
+    await db_session.commit()
+    await db_session.refresh(run)
+
+    for column in _REMOTE_CATEGORY_COST_COLUMNS:
+        assert getattr(run, column) == 0, column
+
+
+async def test_remote_category_classification_run_cost_columns_stay_nullable(
+    db_session: AsyncSession,
+) -> None:
+    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(run)
+    await db_session.commit()
+
+    table = RemoteCategoryClassificationRun.__table__
+    for column in _REMOTE_CATEGORY_COST_COLUMNS:
+        assert table.columns[column].nullable, column
+        setattr(run, column, None)
+    await db_session.commit()
+    await db_session.refresh(run)
+
+    for column in _REMOTE_CATEGORY_COST_COLUMNS:
+        assert getattr(run, column) is None, column

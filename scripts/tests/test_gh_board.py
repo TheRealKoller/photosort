@@ -112,7 +112,7 @@ class FakeGh:
         # sich nicht aus Konto/Quelle/Scope-Zeile zusammensetzen lassen (mehrere Kontoblocks).
         self.auth_output = auth_output
         self.auth_stream = auth_stream
-        # Opt-in, nie Default (Testkonzept zu ADR 0051): ein fehlendes `gh`-Binary laesst das
+        # Opt-in, nie Default (Testkonzept zu ADR 0052): ein fehlendes `gh`-Binary laesst das
         # `run`-Callable mit FileNotFoundError scheitern statt mit Returncode != 0.
         self.missing_binary = missing_binary
         self.gh_version_stdout = gh_version_stdout
@@ -411,7 +411,7 @@ def _write_spec(
     return path
 
 
-# -- Redaktion (ADR 0051) -----------------------------------------------------------------------
+# -- Redaktion (ADR 0052) -----------------------------------------------------------------------
 
 # Realistische Formen echter GitHub-Token. Keiner davon ist ein gueltiges Geheimnis - die
 # Zeichenfolgen sind hier frei erfunden, aber formgleich zu dem, was ein gespraechiges `gh`
@@ -428,7 +428,7 @@ TOKEN_BEISPIELE = [
 
 @pytest.mark.parametrize("token", TOKEN_BEISPIELE)
 def test_tokenfoermige_zeichenketten_werden_geschwaerzt(gh_board: ModuleType, token: str) -> None:
-    """Zweite Verteidigungslinie hinter der Whitelist (Securitykonzept zu ADR 0051): Der Bericht
+    """Zweite Verteidigungslinie hinter der Whitelist (Securitykonzept zu ADR 0052): Der Bericht
     ist dazu bestimmt, in ein Issue eines OEFFENTLICHEN Repositories zu wandern."""
     redigiert = gh_board.redact_for_report(f"failed to authenticate with {token} - aborting")
 
@@ -487,7 +487,7 @@ def test_credentials_in_url_form_werden_geschwaerzt(gh_board: ModuleType) -> Non
     assert "proxy.example:8080" in redigiert
 
 
-# -- Board-Zugriff: probieren statt raten (ADR 0051) --------------------------------------------
+# -- Board-Zugriff: probieren statt raten (ADR 0052) --------------------------------------------
 
 
 # Je Board-Befehl der erste `gh`-Aufruf, der seine eigentliche Wirkung entfaltet. Frueher kam
@@ -529,7 +529,7 @@ def _argv_fuer(befehl: str, tmp_path: Path) -> list[str]:
 def test_eine_nichtssagende_scope_auskunft_blockiert_keinen_board_befehl(
     gh_board: ModuleType, tmp_path: Path, befehl: str, auth_scopes: str | None
 ) -> None:
-    """Regressionsschutz fuer die Token-Authentifizierung (ADR 0051): `gh` meldet dort je nach
+    """Regressionsschutz fuer die Token-Authentifizierung (ADR 0052): `gh` meldet dort je nach
     Token-Art `Token scopes: none` oder gar keine Scope-Zeile - beides sagt nichts ueber den
     tatsaechlichen Zugriff aus. Nachgewiesen wird am protokollierten Aufruflog, nicht am
     Rueckgabewert: der Befehl muss seinen wirksamen `gh`-Aufruf ueberhaupt erreichen.
@@ -696,7 +696,7 @@ def test_die_angereicherte_meldung_ist_redigiert(gh_board: ModuleType) -> None:
 
 def test_unbekanntes_projekt_wird_nicht_angelegt_sondern_gemeldet(gh_board: ModuleType) -> None:
     """Ein erfolgreiches `gh project list` ohne Titeltreffer (umbenanntes Board) ist kein
-    Berechtigungsproblem: Die Deutung aus ADR 0051 haengt am gescheiterten Aufruf, nicht an
+    Berechtigungsproblem: Die Deutung aus ADR 0052 haengt am gescheiterten Aufruf, nicht an
     jedem Fehler dieser Funktion - sonst waere der ganze Rumpf in ein `try` gefasst und die
     Meldung fuehrte in die Irre."""
     fake = FakeGh(projects=[{"number": 1, "id": "PVT_other", "title": "Anderes Board"}])
@@ -2302,7 +2302,7 @@ def test_die_zuordnungstabelle_deckt_jeden_lebenszyklus_schritt_ab(gh_board: Mod
 
 # Alles, was Zustand hinterlaesst. `doctor` soll in einer noch nicht beurteilten Umgebung
 # beliebig oft laufen koennen - deshalb ist das ein Sicherheits-Regressionstest ueber die
-# protokollierten Argumentlisten, keine blosse Absichtserklaerung (ADR 0051, Abschnitt 5).
+# protokollierten Argumentlisten, keine blosse Absichtserklaerung (ADR 0052, Abschnitt 5).
 SCHREIBENDE_GH_AUFRUFE = [
     ("gh", "project", "item-edit"),
     ("gh", "project", "item-add"),
@@ -2334,7 +2334,7 @@ def _pruefung(bericht: dict, probe_id: str) -> dict:
 
 def test_doctor_berichtsstruktur_ist_festgelegt(gh_board: ModuleType) -> None:
     """Weil hier weder ein Coverage-Gate noch `mypy` mitzaehlt, gehoert die Form des Berichts
-    als Assertion in die Tests statt in eine Typannotation (Testkonzept zu ADR 0051)."""
+    als Assertion in die Tests statt in eine Typannotation (Testkonzept zu ADR 0052)."""
     bericht = _doctor(gh_board, _gesunder_fake())
 
     assert set(bericht) == {
@@ -2665,7 +2665,7 @@ def test_die_cli_kennt_genau_die_in_der_skill_tabelle_dokumentierten_befehle(
     gh_board: ModuleType,
 ) -> None:
     """'Befehl ergaenzt, Doku vergessen' ist damit ein roter Test statt einer stillen
-    Abweichung (Testkonzept zu ADR 0051)."""
+    Abweichung (Testkonzept zu ADR 0052)."""
     skill_datei = Path(__file__).parents[2] / ".claude" / "skills" / "github-board" / "SKILL.md"
     dokumentiert = set(
         re.findall(r"^\|\s*`([a-z][a-z-]*)", skill_datei.read_text(encoding="utf-8"), re.MULTILINE)

@@ -127,6 +127,12 @@ export function ProjectPipelineLayout() {
         <Button asChild variant="secondary">
           <Link to={`/projects/${project.id}/compare`}>Bewertungen vergleichen</Link>
         </Button>
+        {/* specs/features/0207-projekt-statistikseite.md: einziger Einstiegspunkt in die
+            Statistikseite - eine Querschnittsansicht wie die Einstellungen, kein Pipeline-
+            Schritt. */}
+        <Button asChild variant="secondary">
+          <Link to={`/projects/${project.id}/stats`}>Statistik</Link>
+        </Button>
         {/* specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: einzige
             Navigations-Einstiegsstelle in die neue Projekteinstellungs-Route. */}
         <Button asChild variant="secondary">
