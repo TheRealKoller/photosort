@@ -1137,3 +1137,43 @@ async def test_costs_use_the_configured_provider_model(
 
     assert run.cost_usd == pytest.approx(_expected_cost(1_000_000, 0, provider="mistral"))
     assert run.cost_usd != pytest.approx(_expected_cost(1_000_000, 0))
+
+
+# Review-Fund (ship-feature-Runde zu Spec 0207): der `finally`-Block der Cloud-Phase darf die
+# URSPRUENGLICHE Exception unter keinen Umstaenden ersetzen - genau dann braucht man eine
+# brauchbare Diagnose. Zwei Wege dorthin sind moeglich und beide hier festgeschrieben: ein noch
+# nicht gebundener Zaehler (UnboundLocalError) und ein fehlschlagendes Commit der Kostenspalten.
+
+
+async def test_a_failure_before_the_counters_keeps_the_original_error_message(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wirft eine Anweisung zwischen `try:` und der Zaehlerinitialisierung - realistisch ein
+    DB-Fehler beim Laden des Feinlabel-Snapshots -, laeuft der `finally`-Block trotzdem los. Sind
+    die Zaehler dort noch ungebunden, ersetzt ein `UnboundLocalError` die Originalmeldung."""
+    project = await _cost_setup(db_session, tmp_path, photo_count=1)
+    db_session.add(
+        FineLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
+    )
+    await db_session.commit()
+
+    def _explode(**kwargs: object) -> NoReturn:
+        raise RuntimeError("simulierter Fehler beim Laden des Feinlabel-Snapshots")
+
+    monkeypatch.setattr(worker, "FineLabelSnapshotEntry", _explode)
+
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda: PerPhotoCategoryClient([]),
+        build_embedder=_fake_embedder,
+    )
+
+    assert run.status == ScanStatus.FAILED
+    assert run.error_message == "simulierter Fehler beim Laden des Feinlabel-Snapshots"
+    assert "UnboundLocalError" not in (run.error_message or "")
+    # Die Kostenspalten stehen auf 0 ("erfasst, keine Kosten"), nicht auf NULL: es hat
+    # nachweislich kein Cloud-Aufruf stattgefunden.
+    assert run.api_calls == 0
+    assert run.cost_usd == 0

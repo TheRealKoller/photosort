@@ -15,6 +15,7 @@ from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
@@ -948,6 +949,36 @@ def _log_cloud_vision_failure(
 _MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH = 500
 
 
+async def _commit_phase_costs(session: AsyncSession) -> None:
+    """Committet die im `finally`-Block der Cloud-Phase gesetzten Ist-Kostenspalten
+    (specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 4) - und wirft dabei NIE.
+
+    Der Aufruf sitzt in einem `finally`, laeuft also auch waehrend eine Exception nach oben
+    laeuft. Scheitert genau dieses Commit, wuerde seine eigene Exception die urspruengliche
+    ERSETZEN und der eigentliche Fehlergrund waere weder im Log noch in `run.error_message`
+    erkennbar - genau in dem Moment, in dem man eine brauchbare Diagnose braucht. Das ist real
+    erreichbar: nach einem fehlgeschlagenen `flush()` (z.B. IntegrityError im Klassifizierungs-
+    Block) wirft `commit()` einen PendingRollbackError.
+
+    Im Fehlerfall gehen die Kostenwerte dieses Laufs verloren (das Rollback verwirft sie) - das
+    ist der bewusst gewaehlte kleinere Schaden: eine fehlende Kostenangabe faellt ueber den
+    Unvollstaendigkeits-Hinweis der Statistikseite auf, eine verschluckte Fehlerursache nicht.
+    Das anschliessende `rollback()` hinterlaesst eine benutzbare Session, damit `_fail_run` den
+    Lauf noch auf FAILED setzen kann.
+
+    Bewusst OHNE `run.id` in der Logzeile: nach einem gescheiterten Commit sind die
+    ORM-Attribute expired, ein lesender Zugriff loeste ausserhalb des greenlet-Kontexts einen
+    Lazy-Load aus (MissingGreenlet) - dieselbe Falle, die _fail_run mit seinem refresh() abraeumt.
+    Der Lauf ist ueber die von _fail_run geschriebene `error_message` identifizierbar."""
+    try:
+        await session.commit()
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "Ist-Kosten des Laufs konnten nicht gespeichert werden: %s", type(exc).__name__
+        )
+        await session.rollback()
+
+
 async def _record_cloud_vision_error(
     session: AsyncSession,
     photo_id: int,
@@ -1587,7 +1618,7 @@ async def run_criterion_scoring(
                             output_tokens=landmark_output_tokens,
                         ),
                     )
-                    await session.commit()
+                    await _commit_phase_costs(session)
                 # ADR 0050 Punkt 4: Zaehl-Zusammenfassung statt N Einzelmeldungen - die
                 # Einzelfehler bleiben pro Foto ueber photo_cloud_vision_errors abrufbar
                 # (ADR 0035), das hier ist die Laufebene.
@@ -1880,6 +1911,19 @@ async def run_remote_category_classification(
             await session.commit()
             return run
 
+        # specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 1: Ist-Kosten-
+        # Buchfuehrung dieses Laufs, identisch zur Landmark-Phase in run_criterion_scoring -
+        # summiert ueber die ERFOLGREICHEN Ergebnisse, geschrieben im `finally` unten.
+        #
+        # VOR dem `try` gebunden (Review-Fund der ship-feature-Runde, analog zur Landmark-Phase):
+        # der `finally`-Block liest diese drei Namen. Wuerde eine Anweisung INNERHALB des `try`
+        # vor ihrer Initialisierung werfen - realistisch ein DB-Fehler beim Laden des
+        # Feinlabel-Snapshots -, ersetzte ein UnboundLocalError die urspruengliche Exception, und
+        # der eigentliche Fehlergrund waere weder im Log noch in `run.error_message` erkennbar.
+        api_calls = 0
+        input_tokens = 0
+        output_tokens = 0
+
         try:
             snapshot_rows = (await session.execute(select(FineLabel))).scalars().all()
             snapshot = [
@@ -1895,12 +1939,6 @@ async def run_remote_category_classification(
             now = _now_utc()
             concurrency = settings.remote_category_classification_concurrency
             processed = 0
-            # specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 1: Ist-Kosten-
-            # Buchfuehrung dieses Laufs, identisch zur Landmark-Phase in run_criterion_scoring -
-            # summiert ueber die ERFOLGREICHEN Ergebnisse, geschrieben im `finally` unten.
-            api_calls = 0
-            input_tokens = 0
-            output_tokens = 0
             for start in range(0, len(candidates), concurrency):
                 block = candidates[start : start + concurrency]
                 results = await asyncio.gather(
@@ -2026,7 +2064,7 @@ async def run_remote_category_classification(
                 vision_model_for_provider(settings.landmark_provider),
                 TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
             )
-            await session.commit()
+            await _commit_phase_costs(session)
 
         run.status = ScanStatus.SUCCESS
         run.finished_at = _now_utc()

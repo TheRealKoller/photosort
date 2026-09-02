@@ -152,7 +152,7 @@ Response-Skizze (verschachtelte Pydantic-Modelle, gespiegelt zu den Abschnitten 
     ]
   },
   "progress": { "scanned": 12043, "thumbnails_ready": 12040, "ausschuss_scored": 12043,
-                "criteria_scored": 9800, "remote_classified": 9800, "ranked": 9800 },
+                "ranked": 9800, "remote_classified": 9800 },   // genau die fünf Stufen aus F1
   "ratings": { "favorite": 210, "album_worthy": 430, "rejected": 1200, "unrated": 10203 },
   "last_successful_runs": { "scan": "...", "scoring": "...", "classification": "...",
                             "remote_category_classification": null },
@@ -168,6 +168,7 @@ Response-Skizze (verschachtelte Pydantic-Modelle, gespiegelt zu den Abschnitten 
 Festlegungen:
 
 - **`purpose` nutzt den bestehenden `CloudVisionPhase`-Enum** (`landmark`/`remote_category`) statt eines neuen — er beschreibt bereits exakt diese beiden Zwecke und wird schon im Foto-Status verwendet. `by_purpose` und `remote_failures` enthalten immer beide Zwecke in Enum-Reihenfolge, auch mit 0.
+- **`progress` führt genau die fünf Verarbeitungsstufen aus Akzeptanzkriterium F1** — maßgeblich ist F1, nicht diese Skizze: das Akzeptanzkriterium unter „Darstellung und Abgrenzung" schließt Kennzahlen über den dortigen Katalog hinaus ausdrücklich aus. Eine sechste Kennzahl „Kriterien berechnet" (`photo_criterion_scores`) entfällt deshalb; sie wäre für den Leser zudem redundant zu `ranked` (beide entstehen im selben Lauf). Die Zeile „Bearbeitungsstand" in der Datenherkunfts-Tabelle oben nennt `photo_criterion_scores` nur als eine der möglichen Quellen, nicht als eigene Kennzahl.
 - **Kategorien immer vollständig**, auch mit `photo_count: 0`, in Registry-Anzeigereihenfolge inkl. `nicht_erkannt`; `display_name` kommt vom Server (ADR 0049: keine TypeScript-Spiegelung des Sets).
 - **Bezugsgröße der Anteile** ist `classified_photo_count`; `unclassified_photo_count` macht die Differenz explizit. Es gilt `classified + unclassified == photo_count`.
 - **`total_usd` wird serverseitig ungerundet ausgeliefert** und erst im Frontend formatiert, damit die Summe exakt der Summe der Einzelposten entspricht.

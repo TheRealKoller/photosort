@@ -5,6 +5,7 @@ import pytest
 import photosort.cloud_vision as cloud_vision
 from photosort.cloud_vision import ANTHROPIC_VISION_MODEL, MISTRAL_VISION_MODEL, TokenUsage
 from photosort.pricing import MODEL_PRICING, ModelPricing, compute_cost_usd
+from photosort.remote_classification import ANTHROPIC_CATEGORY_MODEL, MISTRAL_CATEGORY_MODEL
 
 # specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
 # laeufe.md Punkt 2: `compute_cost_usd` ist eine reine Funktion ueber einer Code-Konstante -
@@ -97,3 +98,21 @@ class TestModelPricingRegistry:
         except AttributeError:
             return
         raise AssertionError("ModelPricing sollte frozen sein")
+
+    def test_the_category_phase_models_are_still_aliases_of_the_vision_models(self) -> None:
+        """Review-Fund (ship-feature-Runde, Architekturperspektive): `worker.py::
+        run_remote_category_classification` bestimmt die Modell-ID fuer die Ist-Kostenrechnung
+        ueber `vision_model_for_provider`, also ueber die `*_VISION_MODEL`-Konstanten. Die
+        Kategorie-Klassifizierung hat mit `ANTHROPIC_CATEGORY_MODEL`/`MISTRAL_CATEGORY_MODEL` aber
+        EIGENE Konstanten - heute reine Aliase, deshalb ist das Ergebnis aktuell korrekt.
+
+        Die Aliase existieren genau dafuer, spaeter entkoppelt werden zu koennen. Geschieht das,
+        berechnete der Worker still den Preis des Landmark-Modells fuer die Kategorie-Phase, und
+        die Registry-Invariante oben schlaege nicht an (sie prueft nur die `*_VISION_MODEL`-IDs).
+
+        Wer diesen Test brechen sieht, muss deshalb DREI Stellen anfassen: `MODEL_PRICING` um die
+        neue Modell-ID ergaenzen, die Modellwahl in `run_remote_category_classification` von
+        `vision_model_for_provider` auf die Kategorie-Konstanten umstellen, und erst dann diesen
+        Test anpassen."""
+        assert ANTHROPIC_CATEGORY_MODEL == ANTHROPIC_VISION_MODEL
+        assert MISTRAL_CATEGORY_MODEL == MISTRAL_VISION_MODEL

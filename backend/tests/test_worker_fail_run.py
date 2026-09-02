@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import logging
+from datetime import datetime
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import worker
-from photosort.models import Project, ScanRun, ScanStatus
+from photosort.models import Photo, Project, ScanRun, ScanStatus
 
 
 async def _make_project(session: AsyncSession) -> Project:
@@ -40,3 +46,83 @@ async def test_fail_run_result_is_immediately_readable_without_a_fresh_query(
     assert scan_run.id is not None
     assert scan_run.status == ScanStatus.FAILED
     assert scan_run.error_message == "boom"
+
+
+# Review-Fund (ship-feature-Runde zu Spec 0207): derselbe Gedanke wie bei _fail_run oben, eine
+# Ebene frueher. Die Ist-Kosten beider Cloud-Phasen werden in einem `finally`-Block committet,
+# also auch waehrend eine Exception nach oben laeuft. Scheitert genau dieses Commit, wuerde seine
+# eigene Exception die urspruengliche ERSETZEN - und der eigentliche Fehlergrund waere weder im
+# Log noch in `run.error_message` erkennbar. Das ist real erreichbar: nach einem fehlgeschlagenen
+# `flush()` (z.B. IntegrityError im Klassifizierungs-Block) wirft `commit()` einen
+# PendingRollbackError.
+
+
+async def _put_session_into_failed_transaction_state(session: AsyncSession) -> None:
+    """Erzeugt genau den Zustand, in dem `commit()` mit PendingRollbackError scheitert: ein
+    fehlgeschlagener `flush()` durch eine verletzte Unique-Bedingung."""
+    project = await _make_project(session)
+    now = datetime(2023, 1, 1)
+    for _ in range(2):
+        session.add(
+            Photo(
+                project_id=project.id,
+                relative_path="a.jpg",
+                etag="etag-1",
+                content_length=1,
+                taken_at=now,
+                last_modified=now,
+            )
+        )
+    with pytest.raises(IntegrityError):
+        await session.flush()
+
+
+async def test_commit_phase_costs_never_replaces_the_original_exception(
+    db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    await _put_session_into_failed_transaction_state(db_session)
+
+    with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+        await worker._commit_phase_costs(db_session)
+
+    assert len(caplog.records) == 1
+    assert "PendingRollbackError" in caplog.records[0].getMessage()
+
+
+async def test_commit_phase_costs_leaves_the_session_usable(db_session: AsyncSession) -> None:
+    """Nach dem gescheiterten Commit muss `_fail_run` noch arbeiten koennen - es setzt den Lauf
+    auf FAILED und committet erneut."""
+    await _put_session_into_failed_transaction_state(db_session)
+
+    await worker._commit_phase_costs(db_session)
+
+    # Frisch gelesen statt ueber das (durch das Rollback expirte) Objekt von oben - ein lesender
+    # Attributzugriff darauf loeste sonst einen Lazy-Load ausserhalb des greenlet-Kontexts aus.
+    project = (await db_session.execute(select(Project))).scalars().one()
+    run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
+    db_session.add(run)
+    # Wie im Produktivpfad: die Lauf-Zeile ist laengst committet, bevor die Cloud-Phase startet -
+    # _fail_run beginnt mit einem rollback() und braucht eine persistente Zeile.
+    await db_session.commit()
+
+    await worker._fail_run(db_session, run, "urspruenglicher Fehler")
+
+    assert run.status == ScanStatus.FAILED
+    assert run.error_message == "urspruenglicher Fehler"
+
+
+async def test_commit_phase_costs_commits_normally_when_nothing_is_wrong(
+    db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    project = await _make_project(db_session)
+    run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING, files_skipped=7)
+    db_session.add(run)
+
+    with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+        await worker._commit_phase_costs(db_session)
+
+    assert caplog.records == []
+    stored = (
+        await db_session.execute(select(ScanRun).where(ScanRun.project_id == project.id))
+    ).scalar_one()
+    assert stored.files_skipped == 7
