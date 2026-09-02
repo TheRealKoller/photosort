@@ -10,7 +10,9 @@ Die fehleranfaellige Projects-V2-Logik (Projekt-/Feld-/Options-/Item-ID-Aufloesu
 Single-Select-Werts) liegt bewusst nur hier und nicht verstreut in den Skill-Dateien.
 
 Ausgabe ist immer ein einzelnes JSON-Objekt auf stdout, im Fehlerfall `{"error": "..."}` mit
-Exit-Code 1 - dieselbe Aufrufkonvention wie beim abgeloesten Tool.
+Exit-Code 1 - dieselbe Aufrufkonvention wie beim abgeloesten Tool. Einzige, bewusst
+dokumentierte Ausnahme ist `doctor` (ADR 0052): Es beendet sich mit Exit-Code 0, sobald ein
+Bericht entsteht, weil fehlgeschlagene Pruefungen dort der Inhalt sind und nicht das Scheitern.
 
 Haertung unveraendert aus ADR 0017, Abschnitt 5: kein `shell=True`, Argumente ausschliesslich in
 Listenform, Bodies ueber temporaere Dateien statt ueber die Kommandozeile, Spec-Nummern vor jeder
@@ -25,6 +27,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -87,6 +90,50 @@ def _default_run(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, capture_output=True, text=True, check=False)  # noqa: S603
 
 
+# -- Redaktion ----------------------------------------------------------------------------------
+
+# Jede Zeichenkette, die aus einem fremden Werkzeug in eine weitergereichte Ausgabe gelangt,
+# laeuft durch GENAU diese eine Funktion (ADR 0052, Securitykonzept): der `doctor`-Bericht ist
+# dazu bestimmt, in ein Issue eines OEFFENTLICHEN Repositories zu wandern, und die angereicherte
+# Fehlermeldung aus `project()` reicht der `github-board`-Skill woertlich weiter. Ein Fehlgriff
+# ist an dieser Stelle nicht zurueckzunehmen (Edit-Historie, Mail-Benachrichtigungen).
+#
+# Tragende Schicht ist die Whitelist (nur benannte Felder werden uebernommen, nie eine ganze
+# `gh`-Ausgabe); diese Funktion ist die zweite Reihe plus die Sanitisierung/Kuerzung.
+REPORT_TEXT_LIMIT = 500
+REDACTED = "[redigiert]"
+TRUNCATION_MARKER = " [... gekuerzt]"
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-Z\\-_]")
+# Die heute von GitHub ausgegebenen Tokenformen. Bewusst KEIN 40-Hex-Muster (Alt-PATs): es
+# traefe jede Commit-SHA und machte den Bericht unbrauchbar - deshalb traegt die Whitelist die
+# Last, nicht dieser Filter.
+_TOKEN_RE = re.compile(r"gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}")
+_URL_CREDENTIALS_RE = re.compile(r"(?<=://)[^/\s:@]+:[^/\s@]+(?=@)")
+
+
+def redact_for_report(text: str, *, limit: int = REPORT_TEXT_LIMIT) -> str:
+    """Sanitisiert, redigiert und kuerzt einen Text, bevor er weitergereicht wird.
+
+    Reihenfolge: erst ANSI-/Steuer-/Format-/Bidi-/Zero-Width-Zeichen entfernen (sonst koennte
+    Fremdtext seine eigene Darstellung in Terminal, Markdown oder Agenten-Kontext manipulieren),
+    dann tokenfoermige Zeichenketten schwaerzen, zuletzt kuerzen - so kann kein Geheimnis durch
+    das Kuerzen "aufgeteilt" der Schwaerzung entgehen.
+    """
+    cleaned = _ANSI_ESCAPE_RE.sub("", text)
+    cleaned = "".join(
+        char
+        for char in cleaned
+        if char == "\n" or unicodedata.category(char) not in {"Cc", "Cf"}
+    )
+    cleaned = _TOKEN_RE.sub(REDACTED, cleaned)
+    cleaned = _URL_CREDENTIALS_RE.sub(REDACTED, cleaned)
+    cleaned = cleaned.strip()
+    if len(cleaned) > limit:
+        cleaned = cleaned[:limit] + TRUNCATION_MARKER
+    return cleaned
+
+
 # -- Spec-Datei ---------------------------------------------------------------------------------
 
 
@@ -142,7 +189,177 @@ def set_status_line(text: str, new_status: str) -> str:
     return new_header + rest
 
 
+# -- Diagnose: Lebenszyklus-Schritte und ihre Voraussetzungen -----------------------------------
+
+# Die Schritte, die eine Story vom Erfassen bis zum abgeschlossenen Pull Request durchlaeuft
+# (ADR 0052, Abschnitt 4). Der Bericht sagt damit nicht "Pruefung X ist rot", sondern welche
+# Schritte in dieser Umgebung nicht gehen. Die drei Status-Schreibschritte stehen einzeln, weil
+# das Akzeptanzkriterium der Spec fuer jeden von ihnen ein Urteil verlangt.
+LIFECYCLE_STEPS = (
+    "idee-erfassen",
+    "issue-body-schreiben",
+    "status-ready",
+    "spec-anlegen",
+    "status-in-progress",
+    "pr-eroeffnen",
+    "status-review",
+    "abschluss-finalisieren",
+)
+
+# Die Schritte, die ueber das Board laufen (Status schreiben bzw. lesen). Bewusst OHNE
+# `idee-erfassen`: `cmd_create_issue` legt das Issue an, bevor es das Projekt aufloest - bei
+# unsichtbarem Board scheitert es erst an der Board-Aufnahme, das Issue entsteht trotzdem.
+BOARD_LIFECYCLE_STEPS = (
+    "status-ready",
+    "status-in-progress",
+    "status-review",
+    "abschluss-finalisieren",
+)
+
+# Statische Zuordnung Pruefung -> blockierte Lebenszyklus-Schritte. Reiner Datenbestand; ein
+# Test prueft ihre Vollstaendigkeit gegen LIFECYCLE_STEPS.
+PROBE_LIFECYCLE_STEPS: dict[str, tuple[str, ...]] = {
+    "gh_binary": LIFECYCLE_STEPS,
+    "gh_version": ("abschluss-finalisieren",),
+    "auth": LIFECYCLE_STEPS,
+    # Reine Information ohne Urteil: Die Scope-Zeile sagt, was sie sagt - den Zugriff misst
+    # `project_visible` tatsaechlich.
+    "scope_hint": (),
+    "repo_access": ("idee-erfassen", "issue-body-schreiben", "pr-eroeffnen"),
+    "issue_read": ("issue-body-schreiben", "abschluss-finalisieren"),
+    "project_visible": BOARD_LIFECYCLE_STEPS,
+    "fields": BOARD_LIFECYCLE_STEPS,
+    "items": BOARD_LIFECYCLE_STEPS,
+}
+
+# Nur diese drei Werte bedeuten Schreibrecht am Repository. `TRIAGE` sieht danach aus und ist
+# keins (Issues verwalten, aber kein Push, kein Issue-Body schreiben).
+REPO_WRITE_PERMISSIONS = ("ADMIN", "MAINTAIN", "WRITE")
+
+_VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+
+
+def parse_gh_version(output: str) -> tuple[int, int, int] | None:
+    """Liest die Version aus der ersten nicht-leeren Zeile von `gh --version`.
+
+    Numerisch, nicht lexikografisch: `2.9.0` ist aelter als `2.72.0`, ein String-Vergleich sagt
+    das Gegenteil. Ein Distributions-Suffix (`2.72.0-1ubuntu0.1`) stoert nicht, eine gar nicht
+    auswertbare Ausgabe ergibt `None` - ein Befund, kein Absturz.
+    """
+    line = next((line for line in output.splitlines() if line.strip()), "")
+    match = _VERSION_RE.search(line)
+    if match is None:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+# -- Auth-Auskunft (Whitelist) ------------------------------------------------------------------
+
+# Die von `gh` gemeldete Token-Quelle. Uebernommen wird ausschliesslich diese geschlossene Menge
+# von Literalen - jede andere Angabe wird zu "unbekannt", damit kein Fremdtext in eine
+# weitergereichte Meldung oder in den `doctor`-Bericht geraet (Securitykonzept zu ADR 0052).
+AUTH_SOURCES = ("keyring", "oauth_token", "GH_TOKEN", "GITHUB_TOKEN")
+UNKNOWN_AUTH_SOURCE = "unbekannt"
+
+_AUTH_ACCOUNT_RE = re.compile(r"account\s+(\S+)\s+\(([^)]+)\)")
+_AUTH_ACTIVE_RE = re.compile(r"Active account:\s*true", re.IGNORECASE)
+_AUTH_SCOPES_RE = re.compile(r"Token scopes:\s*(.*)$")
+_QUOTED_SCOPE_RE = re.compile(r"'([^']*)'")
+
+
+def _parse_scopes(value: str) -> list[str]:
+    text = value.strip()
+    if not text or text.lower() == "none":
+        return []
+    quoted = _QUOTED_SCOPE_RE.findall(text)
+    if quoted:
+        return quoted
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def parse_auth_status(output: str) -> dict[str, Any]:
+    """Extrahiert `account`, `source` und `scopes` aus der Ausgabe von `gh auth status`.
+
+    Massgeblich ist der Block mit `Active account: true` (Securitykonzept zu ADR 0052): `gh`
+    meldet pro Host MEHRERE Kontobloecke, sobald neben einem Umgebungstoken noch ein
+    gespeichertes Konto existiert. Wer die erste beste Scope-Zeile nimmt, meldet die Rechte
+    eines Kontos, mit dem gar nicht gearbeitet wird.
+
+    `scopes` unterscheidet vier Zustaende: Liste mit `project`, Liste ohne `project`, leere
+    Liste (`Token scopes: none`) und `None` (gar keine Scope-Zeile, typisch fuer
+    Token-Authentifizierung). Nur die zweite Form rechtfertigt einen Refresh-Hinweis.
+    """
+    blocks: list[dict[str, Any]] = []
+    for line in output.splitlines():
+        account_match = _AUTH_ACCOUNT_RE.search(line)
+        if account_match is not None:
+            source = account_match.group(2)
+            blocks.append(
+                {
+                    "account": account_match.group(1),
+                    "source": source if source in AUTH_SOURCES else UNKNOWN_AUTH_SOURCE,
+                    "active": False,
+                    "scopes": None,
+                }
+            )
+            continue
+        if not blocks:
+            continue
+        block = blocks[-1]
+        if _AUTH_ACTIVE_RE.search(line):
+            block["active"] = True
+        scopes_match = _AUTH_SCOPES_RE.search(line)
+        if scopes_match is not None:
+            block["scopes"] = _parse_scopes(scopes_match.group(1))
+
+    active = next((block for block in blocks if block["active"]), None)
+    if active is None and len(blocks) == 1:
+        # Aeltere `gh`-Versionen melden keine 'Active account'-Zeile. Bei genau einem Block gibt
+        # es nichts zu unterscheiden; bei mehreren wird bewusst nicht geraten.
+        active = blocks[0]
+    if active is None:
+        return {"account": None, "source": None, "scopes": None}
+    return {"account": active["account"], "source": active["source"], "scopes": active["scopes"]}
+
+
 # -- gh-Zugriff ---------------------------------------------------------------------------------
+
+
+def _unexpected_shape(call: str, erwartung: str) -> BoardError:
+    return BoardError(
+        f"Die Antwort von '{call}' hatte eine unerwartete Form ({erwartung}). Sie war gueltiges "
+        "JSON, aber nicht die erwartete Struktur - vermutlich hat sich das Ausgabeformat von "
+        "`gh` geaendert."
+    )
+
+
+def _json_objects(data: Any, *, key: str | None, call: str) -> list[dict[str, Any]]:
+    """Die EINE Stelle, an der die Strukturerwartung an eine `--json`/`--format json`-Antwort von
+    `gh` steht: entweder direkt eine Liste von Objekten (`key=None`) oder ein Objekt, unter dessen
+    Schluessel eine Liste von Objekten liegt.
+
+    Alles andere endet hier als sprechender `BoardError` statt weiter unten als `AttributeError`,
+    `TypeError` oder `KeyError`. `gh` ist ein fremdes Werkzeug mit eigenem Ausgabeformat; aus
+    gueltigem JSON auf die erwartete Struktur zu schliessen, ist dieselbe Fehlerklasse wie aus
+    Fremdtext auf einen Zustand zu schliessen (ADR 0048). Der heimtueckischste Fall ist ein
+    String, wo eine Liste erwartet wird: Eine Schleife darueber laeuft klaglos - ueber die
+    einzelnen Zeichen.
+
+    Gebuendelt statt je Aufloesung wiederholt, damit die naechste hinzukommende sie nicht erneut
+    vergisst (Copilot-Finding auf dem Umsetzungs-PR zu Spec 0309: `project()` war defensiv,
+    `_resolve_field()`/`_fetch_items()` waren es nicht).
+    """
+    entries: Any = data
+    if key is not None:
+        if not isinstance(data, dict):
+            raise _unexpected_shape(call, f"erwartet wurde ein JSON-Objekt mit {key!r}")
+        entries = data.get(key, [])
+    if not isinstance(entries, list):
+        erwartung = "erwartet wurde eine Liste"
+        raise _unexpected_shape(call, erwartung if key is None else f"{erwartung} unter {key!r}")
+    if any(not isinstance(entry, dict) for entry in entries):
+        raise _unexpected_shape(call, "die Liste enthaelt Eintraege, die keine JSON-Objekte sind")
+    return entries
 
 
 class GhBoard:
@@ -163,10 +380,24 @@ class GhBoard:
         self._priority_field: dict[str, Any] | None = None
         self._items: list[dict[str, Any]] | None = None
 
+    @property
+    def owner(self) -> str:
+        return self._owner
+
+    @property
+    def project_title(self) -> str:
+        return self._project_title
+
     # -- Primitive ------------------------------------------------------------------------
 
     def _run_text(self, args: list[str]) -> str:
-        result = self._run(args)
+        try:
+            result = self._run(args)
+        except FileNotFoundError as exc:
+            # Ein fehlendes Binary laesst `subprocess.run` mit FileNotFoundError scheitern, nicht
+            # mit Returncode != 0 - ungefangen faellt daraus ein Traceback statt der ueblichen
+            # `{"error": ...}`-Ausgabe heraus.
+            raise BoardError(f"gh-Aufruf nicht moeglich ({' '.join(args)}): {exc}") from exc
         if result.returncode != 0:
             raise BoardError(
                 f"gh-Aufruf fehlgeschlagen ({' '.join(args)}): {(result.stderr or '').strip()}"
@@ -196,26 +427,82 @@ class GhBoard:
 
     # -- Projekt/Feld/Item ----------------------------------------------------------------
 
-    def check_auth_scope(self) -> None:
-        result = self._run(["gh", "auth", "status"])
-        output = (result.stdout or "") + (result.stderr or "")
-        if result.returncode != 0:
-            raise BoardError(f"'gh auth status' fehlgeschlagen: {output.strip()}")
-        if "project" not in output:
-            raise BoardError(
-                "Der lokalen gh-Session fehlt der Scope 'project' fuer GitHub Projects (V2). "
-                "Bitte einmalig 'gh auth refresh -s project' ausfuehren."
+    def probe(self, args: list[str]) -> tuple[bool, str, str]:
+        """Fuehrt einen Aufruf aus, OHNE bei einem Fehlschlag abzubrechen - er ist hier der
+        Befund, nicht das Scheitern (ADR 0052). Ein fehlendes Binary (`FileNotFoundError`, den
+        sonst niemand faengt) wird ebenso zum Befund statt zum Traceback."""
+        try:
+            result = self._run(args)
+        except FileNotFoundError as exc:
+            return False, "", str(exc)
+        return result.returncode == 0, result.stdout or "", result.stderr or ""
+
+    def auth_info(self) -> dict[str, Any]:
+        """Die vier Whitelist-Felder aus `gh auth status` (ADR 0052): `authenticated`,
+        `account`, `source`, `scopes` - im Erfolgsfall nie die Ausgabe selbst.
+
+        Wird ausschliesslich im Fehlerfall (zur Deutung) und von `doctor` aufgerufen, nie vor
+        einem Zugriff: Ein Urteil vor dem Versuch ist genau das, was ADR 0052 abschafft.
+
+        `error_output` traegt AUSSCHLIESSLICH die Ausgabe eines FEHLGESCHLAGENEN Aufrufs und ist
+        sonst leer. Der Unterschied ist der Kern von Muss-Kriterium 4 des Securitykonzepts: Im
+        Erfolgsfall ist die Ausgabe ein vollstaendiger Status-Dump, den die Whitelist ersetzt und
+        der nie verbatim weitergereicht wird. Im Fehlerfall gibt es keine parsebaren Felder, und
+        der Text ist eine Fehlermeldung - ohne ihn nennte ein Bericht, der daraufhin JEDEN
+        Lebenszyklus-Schritt blockiert, keinerlei Ursache. Er laeuft beim Einbau in den Bericht
+        durch dieselbe Redaktion wie jede andere uebernommene Zeichenkette.
+        """
+        ok, stdout, stderr = self.probe(["gh", "auth", "status"])
+        # Je nach `gh`-Version steht die Ausgabe (Status wie Fehlschlag) auf stdout oder stderr.
+        output = f"{stdout}\n{stderr}".strip()
+        if not ok:
+            return {
+                "authenticated": False,
+                "account": None,
+                "source": None,
+                "scopes": None,
+                "error_output": output,
+            }
+        return {"authenticated": True, "error_output": "", **parse_auth_status(output)}
+
+    def _explain_project_failure(self, error: BoardError) -> BoardError:
+        """Deutet einen BEREITS gescheiterten Zugriff (ADR 0052, Abschnitt 3). Die Textauswertung
+        ist damit nicht abgeschafft, sondern entmachtet: Sie kann keinen Aufruf mehr verhindern,
+        nur einen gescheiterten erklaeren. Die urspruengliche `gh`-Meldung wird nie ersetzt,
+        immer nur ergaenzt - und laeuft dabei durch die Redaktion, weil die Skills sie woertlich
+        weiterreichen (Securitykonzept, Muss-Kriterium 2).
+        """
+        message = redact_for_report(str(error))
+        auth = self.auth_info()
+        if not auth["authenticated"]:
+            # Scheitert die Deutung selbst, bleibt es bei dem, was `gh` gesagt hat.
+            return BoardError(message)
+        quelle = auth["source"] or UNKNOWN_AUTH_SOURCE
+        scopes = auth["scopes"]
+        if scopes is not None and "project" not in scopes:
+            return BoardError(
+                f"{message} Hinweis: Der aktiven gh-Anmeldung ({quelle}) fehlt der Scope "
+                "'project' fuer GitHub Projects (V2) - einmalig 'gh auth refresh -s project' "
+                "ausfuehren."
             )
+        return BoardError(f"{message} (Auth-Quelle der aktiven gh-Anmeldung: {quelle}.)")
 
     def project(self) -> dict[str, Any]:
         """Loest das bestehende Board ueber seinen Titel auf. Es wird bewusst KEIN Projekt
         angelegt (ADR 0043, Abschnitt 4) - ein versehentlich erzeugtes zweites Board waere
-        deutlich schaedlicher als ein klarer Fehler."""
+        deutlich schaedlicher als ein klarer Fehler.
+
+        Dieser Aufruf IST die Zugriffsprobe (ADR 0052, Abschnitt 2): Gedeutet wird ausschliesslich
+        der fehlgeschlagene Aufruf, nicht der erfolgreiche ohne Titeltreffer - ein umbenanntes
+        Board ist kein Berechtigungsproblem und darf keinen Scope-Hinweis nach sich ziehen.
+        """
         if self._project is None:
-            data = self._run_json(
-                ["gh", "project", "list", "--owner", self._owner, "--format", "json"]
-            )
-            for project in data.get("projects", []):
+            args = ["gh", "project", "list", "--owner", self._owner, "--format", "json"]
+            try:
+                data = self._run_json(args)
+            except BoardError as exc:
+                raise self._explain_project_failure(exc) from exc
+            for project in _json_objects(data, key="projects", call=" ".join(args)):
                 if project.get("title") == self._project_title:
                     self._project = project
                     break
@@ -226,24 +513,34 @@ class GhBoard:
                 )
         return self._project
 
+    def _project_value(self, key: str) -> str:
+        """Ein Pflichtfeld des aufgeloesten Projekts, das in eine Folge-Argumentliste
+        interpoliert wird. Fehlt es, ist das ein `BoardError` statt eines `KeyError`."""
+        value = self.project().get(key)
+        if value is None or value == "":
+            raise BoardError(
+                f"Die Antwort von 'gh project list' fuer das Board {self._project_title!r} "
+                f"traegt kein Feld {key!r} - die Ausgabeform von `gh` hat sich vermutlich "
+                "geaendert."
+            )
+        return str(value)
+
     def _resolve_field(self, field_name: str) -> dict[str, Any]:
         """Loest ein Board-Feld samt Options-IDs ueber `gh project field-list` auf. Legt es
         bewusst NICHT an - eine geaenderte Optionsliste ist seit ADR 0030, Abschnitt 3, ein
         einmaliger manueller Schritt (fuer die Prioritaet ebenso, ADR 0044 Abschnitt 3)."""
-        project = self.project()
-        data = self._run_json(
-            [
-                "gh",
-                "project",
-                "field-list",
-                str(project["number"]),
-                "--owner",
-                self._owner,
-                "--format",
-                "json",
-            ]
-        )
-        for field in data.get("fields", []):
+        args = [
+            "gh",
+            "project",
+            "field-list",
+            self._project_value("number"),
+            "--owner",
+            self._owner,
+            "--format",
+            "json",
+        ]
+        data = self._run_json(args)
+        for field in _json_objects(data, key="fields", call=" ".join(args)):
             if field.get("name") == field_name:
                 return field
         raise BoardError(f"Das Board {self._project_title!r} hat kein Feld {field_name!r}.")
@@ -262,7 +559,12 @@ class GhBoard:
         return self._option_id_for(self.status_field(), STATUS_FIELD_NAME, status)
 
     def _option_id_for(self, field: dict[str, Any], field_name: str, value: str) -> str:
-        options = {o["name"]: o["id"] for o in field.get("options", [])}
+        raw_options = field.get("options")
+        options = {
+            option["name"]: option["id"]
+            for option in (raw_options if isinstance(raw_options, list) else [])
+            if isinstance(option, dict) and "name" in option and "id" in option
+        }
         option_id = options.get(value)
         if option_id is None:
             raise BoardError(
@@ -276,24 +578,23 @@ class GhBoard:
         """Holt bis zu `limit` Board-Items und gibt sie zusammen mit der von `gh` gemeldeten
         Gesamtzahl zurueck. `totalCount` zaehlt immer das ganze Board, unabhaengig davon, wie
         viele Items `--limit` durchgelassen hat - daran erkennen wir ein Abschneiden."""
-        project = self.project()
-        data = self._run_json(
-            [
-                "gh",
-                "project",
-                "item-list",
-                str(project["number"]),
-                "--owner",
-                self._owner,
-                "--format",
-                "json",
-                "--limit",
-                str(limit),
-            ]
-        )
-        items = list(data.get("items", []))
+        args = [
+            "gh",
+            "project",
+            "item-list",
+            self._project_value("number"),
+            "--owner",
+            self._owner,
+            "--format",
+            "json",
+            "--limit",
+            str(limit),
+        ]
+        data = self._run_json(args)
+        items = _json_objects(data, key="items", call=" ".join(args))
+        # `data` ist nach `_json_objects` nachweislich ein Objekt.
         total = data.get("totalCount")
-        return items, total if isinstance(total, int) else len(items)
+        return list(items), total if isinstance(total, int) else len(items)
 
     def _item_list(self) -> list[dict[str, Any]]:
         """Laedt die Board-Items vollstaendig - erst mit einem Startlimit, und falls `gh`
@@ -319,7 +620,9 @@ class GhBoard:
         """Loest das Board-Item ueber die Issue-Nummer auf - der Ersatz fuer die frueher in
         specs/.github-sync-state.json zwischengespeicherte item_id (ADR 0043, Abschnitt 2)."""
         for item in self._item_list():
-            content = item.get("content") or {}
+            content = item.get("content")
+            if not isinstance(content, dict):
+                continue
             if content.get("type") == "Issue" and content.get("number") == issue_number:
                 return item
         raise BoardError(
@@ -338,7 +641,7 @@ class GhBoard:
                 "--id",
                 str(item["id"]),
                 "--project-id",
-                str(self.project()["id"]),
+                self._project_value("id"),
                 "--field-id",
                 str(self.status_field()["id"]),
                 "--single-select-option-id",
@@ -364,7 +667,7 @@ class GhBoard:
                 "--id",
                 str(item["id"]),
                 "--project-id",
-                str(self.project()["id"]),
+                self._project_value("id"),
                 "--field-id",
                 str(self.priority_field()["id"]),
                 "--single-select-option-id",
@@ -433,8 +736,13 @@ class GhBoard:
         )
 
     def ensure_label(self, name: str) -> None:
-        data = self._run_json(["gh", "label", "list", "--json", "name", "--limit", "100"])
-        if name in {item["name"] for item in data}:
+        args = ["gh", "label", "list", "--json", "name", "--limit", "100"]
+        data = self._run_json(args)
+        vorhanden = {
+            label["name"] for label in _json_objects(data, key=None, call=" ".join(args))
+            if "name" in label
+        }
+        if name in vorhanden:
             return
         meta = LABEL_PROVISIONING[name]
         self._run_text(
@@ -480,7 +788,7 @@ class GhBoard:
                 "gh",
                 "project",
                 "item-add",
-                str(self.project()["number"]),
+                self._project_value("number"),
                 "--owner",
                 self._owner,
                 "--url",
@@ -489,8 +797,15 @@ class GhBoard:
                 "json",
             ]
         )
-        self._items = None  # Cache invalidieren: das neue Item fehlt in einer bereits geholten
-        return str(data["id"])  # Liste.
+        # Cache invalidieren: das neue Item fehlt in einer bereits geholten Liste.
+        self._items = None
+        item_id = data.get("id") if isinstance(data, dict) else None
+        if not item_id:
+            raise BoardError(
+                "Die Antwort von 'gh project item-add' traegt keine Item-Id: "
+                f"{str(data)[:200]!r}."
+            )
+        return str(item_id)
 
     def get_pull_request(self, pr_number: int) -> dict[str, Any]:
         """Der PR-**Body** wird bewusst nicht angefragt (ADR 0046, Abschnitt 3): Geprueft wird
@@ -745,6 +1060,280 @@ def _resolve_pull_request(
     )
 
 
+# -- Diagnose-Befehl ----------------------------------------------------------------------------
+
+# Der Bericht wird woertlich in ein Issue eines oeffentlichen Repositories kopiert und dort von
+# einem Agenten mit GitHub-Schreibzugriff gelesen. Die Grenze traegt er deshalb selbst mit, statt
+# sie zu verschweigen (ADR 0052, Abschnitt 5; Securitykonzept, Muss-Kriterium 9).
+DOCTOR_NOTE = (
+    "Befund, keine Handlungsanweisung. Der Lauf ist rein lesend und belegt keinen "
+    "Schreibzugriff: 'viewerPermission' ist nur ein Indiz, durchgesetzt werden Rechte allein "
+    "serverseitig von GitHub. Ein blockierter Schritt heisst, dass eine Voraussetzung nachweislich "
+    "fehlt; ein nicht blockierter heisst nicht, dass er garantiert durchlaeuft."
+)
+
+
+def _loads(text: str) -> Any:
+    """JSON lesen, ohne bei Muell abzubrechen - in der Diagnose ist auch eine unerwartete
+    Antwortform ein Befund."""
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+
+def _probe_result(
+    probe_id: str, ok: bool, detail: str, stderr: str = ""
+) -> dict[str, Any]:
+    """Eine einzelne Pruefung als Berichtseintrag. Jede Zeichenkette laeuft hier durch die eine
+    Redaktionsfunktion - eine Redaktion, die an einem einzigen Feld vorbeigeht, ist keine."""
+    return {
+        "id": probe_id,
+        "ok": bool(ok),
+        "lifecycle_steps": list(PROBE_LIFECYCLE_STEPS[probe_id]),
+        "detail": redact_for_report(detail),
+        "stderr": redact_for_report(stderr) if stderr.strip() else None,
+    }
+
+
+def _missing_field_options(board: GhBoard) -> list[str]:
+    """Fehlende Optionen der beiden Board-Felder - nur die eigenen, in diesem Modul definierten
+    Werte, nie fremd befuellbarer Text."""
+    luecken: list[str] = []
+    for field_name, expected, field in (
+        (STATUS_FIELD_NAME, STATUS_VALUES, board.status_field()),
+        (PRIORITY_FIELD_NAME, PRIORITY_VALUES, board.priority_field()),
+    ):
+        vorhanden = {
+            option.get("name") for option in field.get("options", []) if isinstance(option, dict)
+        }
+        fehlend = [value for value in expected if value not in vorhanden]
+        if fehlend:
+            luecken.append(f"{field_name} ohne {', '.join(fehlend)}")
+    return luecken
+
+
+def cmd_doctor(board: GhBoard) -> dict[str, Any]:
+    """Stellt die Faehigkeiten der Umgebung entlang der Lebenszyklus-Schritte fest (ADR 0052,
+    Abschnitt 4).
+
+    Zwei Eigenschaften, die kein anderer Befehl hat: Jede Pruefung ist unabhaengig - eine
+    fehlgeschlagene beendet den Lauf nicht -, und jeder Befund ist ueber eine statische Tabelle
+    einem Lebenszyklus-Schritt zugeordnet. Der Bericht sagt damit nicht "Pruefung X ist rot",
+    sondern welche Schritte in dieser Umgebung nicht gehen.
+
+    Rein lesend (Abschnitt 5) und mit Exit-Code 0, sobald ein Bericht entsteht - eine bewusste,
+    dokumentierte Ausnahme von der `{"error": ...}`/Exit-1-Konvention der uebrigen Befehle:
+    Fehlgeschlagene Pruefungen sind der Inhalt, nicht das Scheitern.
+    """
+    probes: list[dict[str, Any]] = []
+
+    # 1) Binary. Faellt es aus, faellt alles aus.
+    binary_ok, version_stdout, version_stderr = board.probe(["gh", "--version"])
+    probes.append(
+        _probe_result(
+            "gh_binary",
+            binary_ok,
+            "Das gh-Binary ist ausfuehrbar."
+            if binary_ok
+            else "Das gh-Binary ist nicht ausfuehrbar.",
+            version_stderr,
+        )
+    )
+
+    # 2) Version - numerisch verglichen, aus derselben Ausgabe.
+    version = parse_gh_version(version_stdout) if binary_ok else None
+    version_text = ".".join(str(part) for part in version) if version is not None else None
+    if version is None:
+        probes.append(
+            _probe_result(
+                "gh_version",
+                False,
+                "Keine auswertbare Versionsangabe aus 'gh --version' (erwartet mindestens "
+                f"gh {MIN_GH_VERSION}).",
+            )
+        )
+    else:
+        minimum = parse_gh_version(MIN_GH_VERSION) or (0, 0, 0)
+        probes.append(
+            _probe_result(
+                "gh_version",
+                version >= minimum,
+                f"gh {version_text}, Mindestversion {MIN_GH_VERSION} (erst ab dort kennt "
+                "'gh pr view --json' das Feld 'closingIssuesReferences').",
+            )
+        )
+
+    # 3) Anmeldung - nur die vier Whitelist-Felder, nie die Ausgabe selbst.
+    auth = board.auth_info()
+    if not auth["authenticated"]:
+        auth_detail = "'gh auth status' meldet keine nutzbare Anmeldung."
+    elif auth["account"]:
+        auth_detail = f"Angemeldet als {auth['account']}, Token-Quelle {auth['source']}."
+    else:
+        auth_detail = "Angemeldet, aber ohne auswertbaren Kontoblock in 'gh auth status'."
+    probes.append(
+        _probe_result("auth", auth["authenticated"], auth_detail, auth["error_output"])
+    )
+
+    # 4) Scope-Auskunft - reine Information, ausdruecklich ohne Urteil ueber den Zugriff.
+    #
+    #    `scopes is None` allein taugt hier nicht als Verzweigung: Der Wert traegt zwei
+    #    Bedeutungen - "angemeldet, aber ohne Scope-Zeile" (Token-Auth) und "konnte gar nicht
+    #    gefragt werden" (Anmeldung fehlgeschlagen, `gh` nicht installiert). Aus dem fehlenden
+    #    Wert auf die erste Ursache zu schliessen, waere genau der Defekt, den diese Spec
+    #    behebt - und im Remote-Lauf zu Spec 0309 ist er eingetreten: `gh` fehlte dort
+    #    vollstaendig, gemeldet wurde "typisch bei Token-Authentifizierung".
+    #
+    #    `ok` heisst bei DIESER Pruefung "die Auskunft liegt vor", nicht "der Zugriff besteht"
+    #    (sie blockiert bewusst keinen Lebenszyklus-Schritt, kann also kein `verdict`
+    #    verfaelschen). Deshalb `False`, wenn nichts festgestellt werden konnte: Ein gruener
+    #    Haken neben der Aussage "nicht feststellbar" liest sich als Entwarnung, die niemand
+    #    gegeben hat.
+    scopes = auth["scopes"]
+    scope_ok = True
+    if not auth["authenticated"]:
+        scope_ok = False
+        scope_detail = (
+            "Die Scope-Auskunft war nicht feststellbar - es konnte keine Anmeldung abgefragt "
+            "werden (siehe die Pruefungen 'gh_binary' und 'auth'). Das ist keine Aussage "
+            "darueber, welche Scopes ein Token traegt."
+        )
+    elif scopes is None:
+        scope_detail = (
+            "Die Auskunft des aktiven Kontos enthaelt keine Scope-Zeile (typisch bei "
+            "Token-Authentifizierung). Daraus folgt kein Urteil ueber den Zugriff."
+        )
+    elif not scopes:
+        scope_detail = (
+            "Die Scope-Zeile des aktiven Kontos meldet 'none'. Daraus folgt kein Urteil ueber "
+            "den Zugriff."
+        )
+    elif "project" in scopes:
+        scope_detail = "Die Scope-Zeile des aktiven Kontos nennt 'project'."
+    else:
+        scope_detail = (
+            "Die Scope-Zeile des aktiven Kontos nennt 'project' nicht. Gemessen wird der "
+            "Zugriff trotzdem von der Pruefung 'project_visible'."
+        )
+    probes.append(_probe_result("scope_hint", scope_ok, scope_detail))
+
+    # 5) Repository-Berechtigung - Indiz, kein Beweis fuer Schreibzugriff.
+    repository = f"{board.owner}/{DEFAULT_REPO}"
+    repo_ok, repo_stdout, repo_stderr = board.probe(
+        ["gh", "repo", "view", repository, "--json", "viewerPermission"]
+    )
+    repo_data = _loads(repo_stdout) if repo_ok else None
+    permission = None
+    if isinstance(repo_data, dict) and isinstance(repo_data.get("viewerPermission"), str):
+        permission = repo_data["viewerPermission"]
+    probes.append(
+        _probe_result(
+            "repo_access",
+            permission in REPO_WRITE_PERMISSIONS,
+            f"viewerPermission fuer {repository}: {permission or 'nicht ermittelbar'} "
+            f"(als Schreibrecht gelten {', '.join(REPO_WRITE_PERMISSIONS)}; TRIAGE gehoert "
+            "ausdruecklich nicht dazu).",
+            repo_stderr,
+        )
+    )
+
+    # 6) Issues lesbar - ausschliesslich '--json number', nie Titel/Body/Labels (das Repository
+    #    ist oeffentlich, jeder kann ein Issue mit beliebigem Titel anlegen).
+    issue_ok, issue_stdout, issue_stderr = board.probe(
+        ["gh", "issue", "list", "--limit", "1", "--json", "number"]
+    )
+    issue_data = _loads(issue_stdout) if issue_ok else None
+    issues_lesbar = issue_ok and isinstance(issue_data, list)
+    probes.append(
+        _probe_result(
+            "issue_read",
+            issues_lesbar,
+            f"{len(issue_data) if isinstance(issue_data, list) else 0} Issue(s) gelesen (eine "
+            "leere Liste ist ein gueltiges Ergebnis)."
+            if issues_lesbar
+            else "Die Issue-Liste war nicht lesbar oder hatte eine unerwartete Form.",
+            issue_stderr,
+        )
+    )
+
+    # 7) Board sichtbar - der Aufruf, der bei jedem schreibenden Board-Pfad ohnehin stattfindet.
+    project_ok, project_stdout, project_stderr = board.probe(
+        ["gh", "project", "list", "--owner", board.owner, "--format", "json"]
+    )
+    project_data = _loads(project_stdout) if project_ok else None
+    projekte = project_data.get("projects") if isinstance(project_data, dict) else None
+    if not project_ok:
+        board_sichtbar = False
+        project_detail = "Die Projektliste konnte nicht abgerufen werden."
+    elif not isinstance(projekte, list):
+        board_sichtbar = False
+        project_detail = "Die Antwort auf 'gh project list' hatte eine unerwartete Form."
+    else:
+        board_sichtbar = any(
+            isinstance(eintrag, dict) and eintrag.get("title") == board.project_title
+            for eintrag in projekte
+        )
+        project_detail = (
+            f"Das Board {board.project_title!r} ist sichtbar ({len(projekte)} Projekte "
+            "insgesamt)."
+            if board_sichtbar
+            else f"Das Board {board.project_title!r} ist unter {len(projekte)} sichtbaren "
+            "Projekten nicht dabei (umbenannt oder nicht sichtbar)."
+        )
+    probes.append(_probe_result("project_visible", board_sichtbar, project_detail, project_stderr))
+
+    # 8) Board-Felder samt Optionen - bewusst ueber dieselben Methoden, die jeder Schreibpfad
+    #    benutzt: Die Pruefung soll den echten Aufloesungsweg gehen, nicht einen nachgebauten.
+    #    Preis ist ein zweiter (rein lesender) 'gh project list'-Aufruf, weil der Cache nach der
+    #    Roh-Probe oben leer ist - in einer Diagnose ist Unabhaengigkeit der Pruefungen mehr wert
+    #    als ein gesparter Aufruf.
+    try:
+        luecken = _missing_field_options(board)
+    except BoardError as exc:
+        probes.append(_probe_result("fields", False, str(exc)))
+    else:
+        probes.append(
+            _probe_result(
+                "fields",
+                not luecken,
+                f"Die Board-Felder {STATUS_FIELD_NAME!r} und {PRIORITY_FIELD_NAME!r} tragen alle "
+                "erwarteten Optionen."
+                if not luecken
+                else f"Unvollstaendige Board-Felder: {'; '.join(luecken)}.",
+            )
+        )
+
+    # 9) Board-Items - nur die Anzahl, kein Inhalt.
+    try:
+        items = board._item_list()
+    except BoardError as exc:
+        probes.append(_probe_result("items", False, str(exc)))
+    else:
+        probes.append(_probe_result("items", True, f"{len(items)} Board-Item(s) sichtbar."))
+
+    blockiert = [
+        schritt
+        for schritt in LIFECYCLE_STEPS
+        if any(schritt in probe["lifecycle_steps"] for probe in probes if not probe["ok"])
+    ]
+    return {
+        "verdict": "blocked" if blockiert else "ok",
+        "gh_version": version_text,
+        "auth": {
+            "authenticated": auth["authenticated"],
+            "account": redact_for_report(auth["account"]) if auth["account"] else None,
+            "source": auth["source"],
+            "scopes": (
+                [redact_for_report(scope) for scope in scopes] if scopes is not None else None
+            ),
+        },
+        "probes": probes,
+        "blocked_lifecycle_steps": blockiert,
+        "note": redact_for_report(DOCTOR_NOTE),
+    }
+
+
 # -- CLI ----------------------------------------------------------------------------------------
 
 
@@ -793,6 +1382,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     finalize.add_argument("--pr-number", type=int, default=None)
 
+    # Bewusst ohne jedes Argument: keine Eingabeflaeche, keine Interpolation fremder Werte in
+    # eine Argumentliste (ADR 0017, Abschnitt 5).
+    subparsers.add_parser(
+        "doctor",
+        help=(
+            "Umgebungsdiagnose entlang der Lebenszyklus-Schritte. Rein lesend; Exit-Code 0, "
+            "sobald ein Bericht entsteht."
+        ),
+    )
+
     return parser
 
 
@@ -823,6 +1422,8 @@ def _dispatch(args: argparse.Namespace, board: GhBoard, repo_root: Path) -> dict
         return cmd_set_priority(board, issue_number=args.issue, priority=args.priority)
     if args.command == "show-status":
         return cmd_show_status(board, issue_number=args.issue)
+    if args.command == "doctor":
+        return cmd_doctor(board)
     if args.command == "finalize":
         spec_number = validate_spec_number(args.spec)
         return cmd_finalize(
@@ -846,7 +1447,6 @@ def main(
     try:
         root = repo_root if repo_root is not None else _discover_repo_root(Path.cwd())
         board = GhBoard(owner=owner, run=run)
-        board.check_auth_scope()
         payload = _dispatch(args, board, root)
     except BoardError as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))
