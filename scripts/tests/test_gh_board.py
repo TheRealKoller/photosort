@@ -89,6 +89,8 @@ class FakeGh:
         gh_version_stdout: str = GH_VERSION_STDOUT,
         viewer_permission: str | None = "ADMIN",
         project_list_stdout: str | None = None,
+        field_list_stdout: str | None = None,
+        item_list_stdout: str | None = None,
         issue_list: list[dict] | None = None,
         projects: list[dict] | None = None,
         fields: list[dict] | None = None,
@@ -115,9 +117,11 @@ class FakeGh:
         self.missing_binary = missing_binary
         self.gh_version_stdout = gh_version_stdout
         self.viewer_permission = viewer_permission
-        # Roh-Ueberschreibung der stdout von `gh project list` - fuer Antworten, die kein
-        # oder strukturell unerwartetes JSON sind.
+        # Roh-Ueberschreibung der stdout der drei `gh project`-Leseaufrufe - fuer Antworten,
+        # die kein oder strukturell unerwartetes JSON sind.
         self.project_list_stdout = project_list_stdout
+        self.field_list_stdout = field_list_stdout
+        self.item_list_stdout = item_list_stdout
         self.issue_list = issue_list if issue_list is not None else [{"number": 262}]
         self.projects = (
             projects
@@ -210,8 +214,12 @@ class FakeGh:
                 return _completed(self.project_list_stdout)
             return _completed(json.dumps({"projects": self.projects}))
         if head == ("gh", "project", "field-list"):
+            if self.field_list_stdout is not None:
+                return _completed(self.field_list_stdout)
             return _completed(json.dumps({"fields": self.fields}))
         if head == ("gh", "project", "item-list"):
+            if self.item_list_stdout is not None:
+                return _completed(self.item_list_stdout)
             # Das echte `gh project item-list` schneidet bei `--limit` ab, meldet in
             # `totalCount` aber die volle Anzahl. Genau diese Diskrepanz ist der
             # Pruefgegenstand der Pagination-Tests - der Fake muss sie abbilden.
@@ -2721,3 +2729,81 @@ def test_im_erfolgsfall_wird_die_auth_ausgabe_nicht_uebernommen(gh_board: Module
     assert _pruefung(bericht, "auth")["ok"] is True
     assert _pruefung(bericht, "auth")["stderr"] is None
     assert "Git operations protocol" not in json.dumps(bericht, ensure_ascii=False)
+
+
+# Gueltiges JSON, aber nicht die erwartete Struktur - je Antwortform der `gh project`-Leseaufrufe.
+# `gh` ist ein fremdes Werkzeug mit eigenem Ausgabeformat; aus gueltigem JSON auf die erwartete
+# Struktur zu schliessen, ist dieselbe Fehlerklasse wie aus Fremdtext auf einen Zustand zu
+# schliessen (ADR 0048). Ein String als Liste ist dabei der heimtueckischste Fall: Eine Schleife
+# darueber laeuft klaglos - ueber die einzelnen Zeichen.
+UNERWARTETE_STRUKTUREN = [
+    pytest.param('["Status"]', id="liste-statt-objekt"),
+    pytest.param('{"fields": "Status", "items": "PVTI"}', id="string-statt-liste"),
+    pytest.param('{"fields": [1, 2], "items": [1, 2]}', id="liste-ohne-objekte"),
+    pytest.param('{"fields": null, "items": null}', id="null-statt-liste"),
+]
+
+
+@pytest.mark.parametrize("stdout", UNERWARTETE_STRUKTUREN)
+def test_doctor_ueberlebt_eine_unerwartete_feld_antwort(gh_board: ModuleType, stdout: str) -> None:
+    """Der Aufloesungsweg ueber `gh project field-list` war bisher nicht so defensiv wie der
+    ueber `gh project list` - und ein Diagnosewerkzeug, das ausgerechnet in einer kaputten
+    Umgebung mit einem Traceback endet, verfehlt seinen Zweck."""
+    bericht = _doctor(gh_board, _gesunder_fake(field_list_stdout=stdout))
+
+    pruefung = _pruefung(bericht, "fields")
+    assert pruefung["ok"] is False
+    assert "unerwartete Form" in pruefung["detail"]
+    assert bericht["verdict"] == "blocked"
+
+
+@pytest.mark.parametrize("stdout", UNERWARTETE_STRUKTUREN)
+def test_doctor_ueberlebt_eine_unerwartete_item_antwort(gh_board: ModuleType, stdout: str) -> None:
+    bericht = _doctor(gh_board, _gesunder_fake(item_list_stdout=stdout))
+
+    pruefung = _pruefung(bericht, "items")
+    assert pruefung["ok"] is False
+    assert "unerwartete Form" in pruefung["detail"]
+    assert bericht["verdict"] == "blocked"
+
+
+def test_doctor_ueberlebt_ein_projekt_ohne_nummer(gh_board: ModuleType) -> None:
+    """Das aufgeloeste Projekt-Dict wird in jede Folge-Argumentliste interpoliert - fehlt der
+    Schluessel, war das bisher ein KeyError statt eines Befunds."""
+    fake = _gesunder_fake(projects=[{"id": "PVT_project", "title": PROJECT_TITLE}])
+
+    bericht = _doctor(gh_board, fake)
+
+    assert _pruefung(bericht, "project_visible")["ok"] is True
+    assert _pruefung(bericht, "fields")["ok"] is False
+    assert _pruefung(bericht, "items")["ok"] is False
+    assert bericht["verdict"] == "blocked"
+
+
+@pytest.mark.parametrize(
+    "fake_kwargs",
+    [
+        pytest.param({"field_list_stdout": '{"fields": "Status"}'}, id="feld-antwort"),
+        pytest.param({"item_list_stdout": '["PVTI_262"]'}, id="item-antwort"),
+        pytest.param(
+            {"projects": [{"id": "PVT_project", "title": PROJECT_TITLE}]},
+            id="projekt-ohne-nummer",
+        ),
+    ],
+)
+def test_ein_regulaerer_befehl_meldet_eine_unerwartete_antwortform_als_fehler(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str], fake_kwargs: dict
+) -> None:
+    """Dieselben Aufloesungswege gehen die regulaeren Befehle - dort ist die Ausgabekonvention
+    unveraendert `{"error": ...}` mit Exit-Code 1, nie ein Traceback."""
+    fake = _gesunder_fake(**fake_kwargs)
+
+    exit_code = gh_board.main(
+        ["set-status", "--issue", "262", "--status", "Todo"],
+        run=fake,
+        repo_root=tmp_path,
+        owner=OWNER,
+    )
+
+    assert exit_code == 1
+    assert "error" in json.loads(capsys.readouterr().out)

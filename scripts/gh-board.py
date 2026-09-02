@@ -325,6 +325,43 @@ def parse_auth_status(output: str) -> dict[str, Any]:
 # -- gh-Zugriff ---------------------------------------------------------------------------------
 
 
+def _unexpected_shape(call: str, erwartung: str) -> BoardError:
+    return BoardError(
+        f"Die Antwort von '{call}' hatte eine unerwartete Form ({erwartung}). Sie war gueltiges "
+        "JSON, aber nicht die erwartete Struktur - vermutlich hat sich das Ausgabeformat von "
+        "`gh` geaendert."
+    )
+
+
+def _json_objects(data: Any, *, key: str | None, call: str) -> list[dict[str, Any]]:
+    """Die EINE Stelle, an der die Strukturerwartung an eine `--json`/`--format json`-Antwort von
+    `gh` steht: entweder direkt eine Liste von Objekten (`key=None`) oder ein Objekt, unter dessen
+    Schluessel eine Liste von Objekten liegt.
+
+    Alles andere endet hier als sprechender `BoardError` statt weiter unten als `AttributeError`,
+    `TypeError` oder `KeyError`. `gh` ist ein fremdes Werkzeug mit eigenem Ausgabeformat; aus
+    gueltigem JSON auf die erwartete Struktur zu schliessen, ist dieselbe Fehlerklasse wie aus
+    Fremdtext auf einen Zustand zu schliessen (ADR 0048). Der heimtueckischste Fall ist ein
+    String, wo eine Liste erwartet wird: Eine Schleife darueber laeuft klaglos - ueber die
+    einzelnen Zeichen.
+
+    Gebuendelt statt je Aufloesung wiederholt, damit die naechste hinzukommende sie nicht erneut
+    vergisst (Copilot-Finding auf dem Umsetzungs-PR zu Spec 0309: `project()` war defensiv,
+    `_resolve_field()`/`_fetch_items()` waren es nicht).
+    """
+    entries: Any = data
+    if key is not None:
+        if not isinstance(data, dict):
+            raise _unexpected_shape(call, f"erwartet wurde ein JSON-Objekt mit {key!r}")
+        entries = data.get(key, [])
+    if not isinstance(entries, list):
+        erwartung = "erwartet wurde eine Liste"
+        raise _unexpected_shape(call, erwartung if key is None else f"{erwartung} unter {key!r}")
+    if any(not isinstance(entry, dict) for entry in entries):
+        raise _unexpected_shape(call, "die Liste enthaelt Eintraege, die keine JSON-Objekte sind")
+    return entries
+
+
 class GhBoard:
     """Alle `gh`-Aufrufe des Workflows an einer Stelle. `run` ist injizierbar (Tests)."""
 
@@ -460,15 +497,13 @@ class GhBoard:
         Board ist kein Berechtigungsproblem und darf keinen Scope-Hinweis nach sich ziehen.
         """
         if self._project is None:
+            args = ["gh", "project", "list", "--owner", self._owner, "--format", "json"]
             try:
-                data = self._run_json(
-                    ["gh", "project", "list", "--owner", self._owner, "--format", "json"]
-                )
+                data = self._run_json(args)
             except BoardError as exc:
                 raise self._explain_project_failure(exc) from exc
-            projects = data.get("projects") if isinstance(data, dict) else None
-            for project in projects if isinstance(projects, list) else []:
-                if isinstance(project, dict) and project.get("title") == self._project_title:
+            for project in _json_objects(data, key="projects", call=" ".join(args)):
+                if project.get("title") == self._project_title:
                     self._project = project
                     break
             else:
@@ -478,24 +513,34 @@ class GhBoard:
                 )
         return self._project
 
+    def _project_value(self, key: str) -> str:
+        """Ein Pflichtfeld des aufgeloesten Projekts, das in eine Folge-Argumentliste
+        interpoliert wird. Fehlt es, ist das ein `BoardError` statt eines `KeyError`."""
+        value = self.project().get(key)
+        if value is None or value == "":
+            raise BoardError(
+                f"Die Antwort von 'gh project list' fuer das Board {self._project_title!r} "
+                f"traegt kein Feld {key!r} - die Ausgabeform von `gh` hat sich vermutlich "
+                "geaendert."
+            )
+        return str(value)
+
     def _resolve_field(self, field_name: str) -> dict[str, Any]:
         """Loest ein Board-Feld samt Options-IDs ueber `gh project field-list` auf. Legt es
         bewusst NICHT an - eine geaenderte Optionsliste ist seit ADR 0030, Abschnitt 3, ein
         einmaliger manueller Schritt (fuer die Prioritaet ebenso, ADR 0044 Abschnitt 3)."""
-        project = self.project()
-        data = self._run_json(
-            [
-                "gh",
-                "project",
-                "field-list",
-                str(project["number"]),
-                "--owner",
-                self._owner,
-                "--format",
-                "json",
-            ]
-        )
-        for field in data.get("fields", []):
+        args = [
+            "gh",
+            "project",
+            "field-list",
+            self._project_value("number"),
+            "--owner",
+            self._owner,
+            "--format",
+            "json",
+        ]
+        data = self._run_json(args)
+        for field in _json_objects(data, key="fields", call=" ".join(args)):
             if field.get("name") == field_name:
                 return field
         raise BoardError(f"Das Board {self._project_title!r} hat kein Feld {field_name!r}.")
@@ -514,7 +559,12 @@ class GhBoard:
         return self._option_id_for(self.status_field(), STATUS_FIELD_NAME, status)
 
     def _option_id_for(self, field: dict[str, Any], field_name: str, value: str) -> str:
-        options = {o["name"]: o["id"] for o in field.get("options", [])}
+        raw_options = field.get("options")
+        options = {
+            option["name"]: option["id"]
+            for option in (raw_options if isinstance(raw_options, list) else [])
+            if isinstance(option, dict) and "name" in option and "id" in option
+        }
         option_id = options.get(value)
         if option_id is None:
             raise BoardError(
@@ -528,24 +578,23 @@ class GhBoard:
         """Holt bis zu `limit` Board-Items und gibt sie zusammen mit der von `gh` gemeldeten
         Gesamtzahl zurueck. `totalCount` zaehlt immer das ganze Board, unabhaengig davon, wie
         viele Items `--limit` durchgelassen hat - daran erkennen wir ein Abschneiden."""
-        project = self.project()
-        data = self._run_json(
-            [
-                "gh",
-                "project",
-                "item-list",
-                str(project["number"]),
-                "--owner",
-                self._owner,
-                "--format",
-                "json",
-                "--limit",
-                str(limit),
-            ]
-        )
-        items = list(data.get("items", []))
+        args = [
+            "gh",
+            "project",
+            "item-list",
+            self._project_value("number"),
+            "--owner",
+            self._owner,
+            "--format",
+            "json",
+            "--limit",
+            str(limit),
+        ]
+        data = self._run_json(args)
+        items = _json_objects(data, key="items", call=" ".join(args))
+        # `data` ist nach `_json_objects` nachweislich ein Objekt.
         total = data.get("totalCount")
-        return items, total if isinstance(total, int) else len(items)
+        return list(items), total if isinstance(total, int) else len(items)
 
     def _item_list(self) -> list[dict[str, Any]]:
         """Laedt die Board-Items vollstaendig - erst mit einem Startlimit, und falls `gh`
@@ -571,7 +620,9 @@ class GhBoard:
         """Loest das Board-Item ueber die Issue-Nummer auf - der Ersatz fuer die frueher in
         specs/.github-sync-state.json zwischengespeicherte item_id (ADR 0043, Abschnitt 2)."""
         for item in self._item_list():
-            content = item.get("content") or {}
+            content = item.get("content")
+            if not isinstance(content, dict):
+                continue
             if content.get("type") == "Issue" and content.get("number") == issue_number:
                 return item
         raise BoardError(
@@ -590,7 +641,7 @@ class GhBoard:
                 "--id",
                 str(item["id"]),
                 "--project-id",
-                str(self.project()["id"]),
+                self._project_value("id"),
                 "--field-id",
                 str(self.status_field()["id"]),
                 "--single-select-option-id",
@@ -616,7 +667,7 @@ class GhBoard:
                 "--id",
                 str(item["id"]),
                 "--project-id",
-                str(self.project()["id"]),
+                self._project_value("id"),
                 "--field-id",
                 str(self.priority_field()["id"]),
                 "--single-select-option-id",
@@ -685,8 +736,13 @@ class GhBoard:
         )
 
     def ensure_label(self, name: str) -> None:
-        data = self._run_json(["gh", "label", "list", "--json", "name", "--limit", "100"])
-        if name in {item["name"] for item in data}:
+        args = ["gh", "label", "list", "--json", "name", "--limit", "100"]
+        data = self._run_json(args)
+        vorhanden = {
+            label["name"] for label in _json_objects(data, key=None, call=" ".join(args))
+            if "name" in label
+        }
+        if name in vorhanden:
             return
         meta = LABEL_PROVISIONING[name]
         self._run_text(
@@ -732,7 +788,7 @@ class GhBoard:
                 "gh",
                 "project",
                 "item-add",
-                str(self.project()["number"]),
+                self._project_value("number"),
                 "--owner",
                 self._owner,
                 "--url",
@@ -741,8 +797,15 @@ class GhBoard:
                 "json",
             ]
         )
-        self._items = None  # Cache invalidieren: das neue Item fehlt in einer bereits geholten
-        return str(data["id"])  # Liste.
+        # Cache invalidieren: das neue Item fehlt in einer bereits geholten Liste.
+        self._items = None
+        item_id = data.get("id") if isinstance(data, dict) else None
+        if not item_id:
+            raise BoardError(
+                "Die Antwort von 'gh project item-add' traegt keine Item-Id: "
+                f"{str(data)[:200]!r}."
+            )
+        return str(item_id)
 
     def get_pull_request(self, pr_number: int) -> dict[str, Any]:
         """Der PR-**Body** wird bewusst nicht angefragt (ADR 0046, Abschnitt 3): Geprueft wird
