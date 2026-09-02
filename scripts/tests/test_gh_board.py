@@ -7,8 +7,10 @@ konstruierten Argumentlisten (dieselbe Technik wie im abgeloesten test_gh_adapte
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -54,6 +56,20 @@ GH_VERSION_STDOUT = (
 # So meldet `gh auth status`, wenn ueberhaupt keine Anmeldung vorliegt (Returncode 1).
 NICHT_ANGEMELDET_AUSGABE = (
     "You are not logged into any GitHub hosts. To log in, run: gh auth login"
+)
+
+# `gh auth status` meldet pro Host MEHRERE Kontobloecke, sobald neben einem Umgebungstoken noch
+# ein gespeichertes Konto existiert (lokal so beobachtet mit gh 2.98.0). Hier traegt das
+# INAKTIVE Konto den `project`-Scope, das aktive nicht - wer die erste beste Scope-Zeile nimmt,
+# meldet die Rechte eines Kontos, mit dem gar nicht gearbeitet wird.
+ZWEI_KONTEN_AUSGABE = (
+    "github.com\n"
+    "  X Failed to log in to github.com account zweitkonto (keyring)\n"
+    "  - Active account: false\n"
+    "  - Token scopes: 'gist', 'project', 'read:org', 'repo'\n"
+    "  \u2713 Logged in to github.com account TheRealKoller (GH_TOKEN)\n"
+    "  - Active account: true\n"
+    "  - Token scopes: 'repo'\n"
 )
 
 
@@ -607,15 +623,7 @@ def test_die_deutung_bezieht_sich_auf_das_aktive_konto(gh_board: ModuleType) -> 
     Scope-Zeile nimmt, meldet die Rechte eines Kontos, mit dem gar nicht gearbeitet wird -
     hier: das inaktive Keyring-Konto hat `project`, das aktive Umgebungstoken-Konto nicht."""
     fake = FakeGh(
-        auth_output=(
-            "github.com\n"
-            "  X Failed to log in to github.com account zweitkonto (keyring)\n"
-            "  - Active account: false\n"
-            "  - Token scopes: 'gist', 'project', 'read:org', 'repo'\n"
-            "  ✓ Logged in to github.com account TheRealKoller (GH_TOKEN)\n"
-            "  - Active account: true\n"
-            "  - Token scopes: 'repo'\n"
-        ),
+        auth_output=ZWEI_KONTEN_AUSGABE,
         failing={("gh", "project", "list")},
         failure_stderr={("gh", "project", "list"): "GraphQL: Resource not accessible"},
     )
@@ -2235,3 +2243,442 @@ def test_kein_gh_aufruf_verwendet_eine_shell(gh_board: ModuleType, tmp_path: Pat
         assert isinstance(call, list)
         assert call[0] == "gh"
         assert all(isinstance(arg, str) for arg in call)
+
+
+# -- doctor: Versionsvergleich und Zuordnungstabelle -------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("ausgabe", "erwartet"),
+    [
+        pytest.param(GH_VERSION_STDOUT, (2, 72, 0), id="mehrzeilig-release-url-in-zeile-2"),
+        pytest.param("gh version 2.72.0-1ubuntu0.1\n", (2, 72, 0), id="distributions-suffix"),
+        pytest.param("gh version 2.9.0 (2023-01-01)\n", (2, 9, 0), id="aeltere-version"),
+        pytest.param("", None, id="leere-ausgabe"),
+        pytest.param("irgendetwas ohne Versionsangabe\n", None, id="nicht-auswertbar"),
+    ],
+)
+def test_gh_version_wird_aus_der_ersten_zeile_gelesen(
+    gh_board: ModuleType, ausgabe: str, erwartet: tuple[int, int, int] | None
+) -> None:
+    """`gh --version` ist mehrzeilig (die Release-URL steht in Zeile 2) und traegt in
+    Distributionspaketen ein Suffix. Eine gar nicht auswertbare Zeichenkette ist ein Befund,
+    kein Absturz."""
+    assert gh_board.parse_gh_version(ausgabe) == erwartet
+
+
+def test_der_versionsvergleich_ist_numerisch_nicht_lexikografisch(gh_board: ModuleType) -> None:
+    """Ein lexikografischer Vergleich haelt `2.9.0` fuer neuer als die Mindestversion `2.72.0`
+    und meldete ein echtes Werkzeugproblem als gruen."""
+    assert "2.9.0" > "2.72.0"  # der Beleg, dass die naheliegende Form falsch waere
+    assert gh_board.parse_gh_version("gh version 2.9.0") < gh_board.parse_gh_version(
+        f"gh version {gh_board.MIN_GH_VERSION}"
+    )
+
+
+def test_die_zuordnungstabelle_deckt_jeden_lebenszyklus_schritt_ab(gh_board: ModuleType) -> None:
+    """Eine statische Tabelle wird auf Totalitaet geprueft, nicht auf Beispiele: Ihr typischer
+    Defekt ist kein falsches Verhalten, sondern ein Tippfehler, der still nie wieder auftaucht."""
+    zugeordnet = {
+        schritt
+        for schritte in gh_board.PROBE_LIFECYCLE_STEPS.values()
+        for schritt in schritte
+    }
+
+    assert zugeordnet == set(gh_board.LIFECYCLE_STEPS)
+    assert len(gh_board.LIFECYCLE_STEPS) == len(set(gh_board.LIFECYCLE_STEPS))
+
+
+# -- doctor: Bericht ---------------------------------------------------------------------------
+
+
+# Alles, was Zustand hinterlaesst. `doctor` soll in einer noch nicht beurteilten Umgebung
+# beliebig oft laufen koennen - deshalb ist das ein Sicherheits-Regressionstest ueber die
+# protokollierten Argumentlisten, keine blosse Absichtserklaerung (ADR 0051, Abschnitt 5).
+SCHREIBENDE_GH_AUFRUFE = [
+    ("gh", "project", "item-edit"),
+    ("gh", "project", "item-add"),
+    ("gh", "project", "create"),
+    ("gh", "issue", "create"),
+    ("gh", "issue", "close"),
+    ("gh", "issue", "edit"),
+    ("gh", "pr", "edit"),
+    ("gh", "label", "create"),
+]
+
+
+def _gesunder_fake(**kwargs) -> FakeGh:
+    """Eine Umgebung, in der jede Pruefung durchgeht - inklusive der Board-Felder samt
+    vollstaendiger Optionslisten (der FakeGh-Default laesst die Prioritaets-Optionen leer)."""
+    kwargs.setdefault("fields", _fields_mit_prioritaets_optionen())
+    return FakeGh(**kwargs)
+
+
+def _doctor(gh_board: ModuleType, fake: FakeGh) -> dict:
+    return gh_board.cmd_doctor(_board(gh_board, fake))
+
+
+def _pruefung(bericht: dict, probe_id: str) -> dict:
+    treffer = [probe for probe in bericht["probes"] if probe["id"] == probe_id]
+    assert len(treffer) == 1, f"erwartet genau eine Pruefung {probe_id!r}, gefunden: {treffer}"
+    return treffer[0]
+
+
+def test_doctor_berichtsstruktur_ist_festgelegt(gh_board: ModuleType) -> None:
+    """Weil hier weder ein Coverage-Gate noch `mypy` mitzaehlt, gehoert die Form des Berichts
+    als Assertion in die Tests statt in eine Typannotation (Testkonzept zu ADR 0051)."""
+    bericht = _doctor(gh_board, _gesunder_fake())
+
+    assert set(bericht) == {
+        "verdict",
+        "gh_version",
+        "auth",
+        "probes",
+        "blocked_lifecycle_steps",
+        "note",
+    }
+    assert set(bericht["auth"]) == {"authenticated", "account", "source", "scopes"}
+    assert [probe["id"] for probe in bericht["probes"]] == list(gh_board.PROBE_LIFECYCLE_STEPS)
+    for probe in bericht["probes"]:
+        assert set(probe) == {"id", "ok", "lifecycle_steps", "detail", "stderr"}
+        assert probe["lifecycle_steps"] == list(gh_board.PROBE_LIFECYCLE_STEPS[probe["id"]])
+        assert isinstance(probe["ok"], bool)
+        assert probe["detail"]
+
+
+def test_doctor_meldet_eine_intakte_umgebung_als_ok(gh_board: ModuleType) -> None:
+    bericht = _doctor(gh_board, _gesunder_fake())
+
+    assert bericht["verdict"] == "ok"
+    assert bericht["blocked_lifecycle_steps"] == []
+    assert bericht["gh_version"] == "2.72.0"
+    assert bericht["auth"] == {
+        "authenticated": True,
+        "account": "TheRealKoller",
+        "source": "keyring",
+        "scopes": ["gist", "project", "read:org", "repo"],
+    }
+    assert all(probe["ok"] for probe in bericht["probes"])
+
+
+def test_der_bericht_benennt_woran_er_nichts_belegt(gh_board: ModuleType) -> None:
+    """Der Preis des rein lesenden Ansatzes wird mitgefuehrt statt verschwiegen: Schreibzugriff
+    wird nicht bewiesen, `viewerPermission` ist nur ein Indiz - und der Bericht ist Daten, keine
+    Handlungsanweisung (Securitykonzept, Muss-Kriterium 9)."""
+    note = _doctor(gh_board, _gesunder_fake())["note"]
+
+    assert "viewerPermission" in note
+    assert "Schreibzugriff" in note
+    assert "Befund" in note
+
+
+@pytest.mark.parametrize(
+    ("auth_scopes", "erwartet"),
+    [
+        pytest.param(
+            "- Token scopes: 'gist', 'project', 'read:org', 'repo'",
+            ["gist", "project", "read:org", "repo"],
+            id="liste-mit-project",
+        ),
+        pytest.param("- Token scopes: 'gist', 'repo'", ["gist", "repo"], id="liste-ohne-project"),
+        pytest.param("- Token scopes: none", [], id="ausdruecklich-none"),
+        pytest.param(None, None, id="gar-keine-scope-zeile"),
+    ],
+)
+def test_die_scope_auskunft_unterscheidet_vier_zustaende(
+    gh_board: ModuleType, auth_scopes: str | None, erwartet: list[str] | None
+) -> None:
+    """`scope_hint` meldet nur, was die Scope-Zeile sagt - ein Urteil ueber den Zugriff faellt
+    es nie (es blockiert keinen einzigen Lebenszyklus-Schritt)."""
+    bericht = _doctor(gh_board, _gesunder_fake(auth_scopes=auth_scopes))
+
+    assert bericht["auth"]["scopes"] == erwartet
+    assert _pruefung(bericht, "scope_hint")["lifecycle_steps"] == []
+    assert bericht["verdict"] == "ok"
+
+
+def test_der_bericht_beschreibt_das_aktive_konto(gh_board: ModuleType) -> None:
+    bericht = _doctor(gh_board, _gesunder_fake(auth_output=ZWEI_KONTEN_AUSGABE))
+
+    assert bericht["auth"]["account"] == "TheRealKoller"
+    assert bericht["auth"]["source"] == "GH_TOKEN"
+    assert bericht["auth"]["scopes"] == ["repo"]
+
+
+def test_doctor_laeuft_bei_gescheiterter_auth_vollstaendig_durch(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Die Umkehrung der Erfolgs-Konvention ist ein eigener Pruefgegenstand: Exit-Code 0, genau
+    ein JSON-Objekt auf stdout, und die nachgelagerten Pruefungen sind nachweislich gelaufen -
+    genau dafuer existiert das Kommando."""
+    fake = FakeGh(auth_returncode=1, failing={("gh", "project", "list")})
+
+    exit_code = gh_board.main(["doctor"], run=fake, repo_root=tmp_path, owner=OWNER)
+
+    ausgabe = capsys.readouterr()
+    bericht = json.loads(ausgabe.out)
+    assert exit_code == 0
+    assert ausgabe.out.strip().count("\n") == 0
+    assert bericht["verdict"] == "blocked"
+    assert bericht["auth"] == {
+        "authenticated": False,
+        "account": None,
+        "source": None,
+        "scopes": None,
+    }
+    assert sorted(bericht["blocked_lifecycle_steps"]) == sorted(gh_board.LIFECYCLE_STEPS)
+    assert [probe["id"] for probe in bericht["probes"]] == list(gh_board.PROBE_LIFECYCLE_STEPS)
+    assert fake.calls_starting_with("gh", "repo", "view")
+    assert fake.calls_starting_with("gh", "issue", "list")
+    assert fake.calls_starting_with("gh", "project", "list")
+
+
+def test_doctor_ohne_gh_binary_meldet_einen_befund_statt_eines_tracebacks(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ein fehlendes Binary laesst `subprocess.run` mit `FileNotFoundError` scheitern, nicht mit
+    Returncode != 0 - und ein Kommando, das nur in einer kaputten Umgebung gebraucht wird,
+    verliert seinen Wert vollstaendig, wenn es dort abstuerzt."""
+    fake = FakeGh(missing_binary=True)
+
+    exit_code = gh_board.main(["doctor"], run=fake, repo_root=tmp_path, owner=OWNER)
+
+    bericht = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert bericht["verdict"] == "blocked"
+    assert bericht["gh_version"] is None
+    assert _pruefung(bericht, "gh_binary")["ok"] is False
+    assert sorted(bericht["blocked_lifecycle_steps"]) == sorted(gh_board.LIFECYCLE_STEPS)
+    assert [probe["id"] for probe in bericht["probes"]] == list(gh_board.PROBE_LIFECYCLE_STEPS)
+
+
+def test_ein_unsichtbares_board_blockiert_genau_die_vier_board_schritte(
+    gh_board: ModuleType,
+) -> None:
+    """Nicht `idee-erfassen`: Das Issue entsteht dort, bevor das Projekt aufgeloest wird."""
+    fake = _gesunder_fake(
+        failing={("gh", "project", "list")},
+        failure_stderr={("gh", "project", "list"): "GraphQL: Resource not accessible"},
+    )
+
+    bericht = _doctor(gh_board, fake)
+
+    assert bericht["blocked_lifecycle_steps"] == list(gh_board.BOARD_LIFECYCLE_STEPS)
+    assert "idee-erfassen" not in bericht["blocked_lifecycle_steps"]
+    projekt_pruefung = _pruefung(bericht, "project_visible")
+    assert projekt_pruefung["ok"] is False
+    assert "Resource not accessible" in projekt_pruefung["stderr"]
+
+
+def test_ein_umbenanntes_board_ist_ein_befund_ohne_scope_deutung(gh_board: ModuleType) -> None:
+    """Erfolgreicher Aufruf ohne Titeltreffer: kein Berechtigungsproblem, also auch kein
+    Scope-Hinweis - und kein fremder Projekttitel im Bericht (das Repo ist oeffentlich)."""
+    fake = _gesunder_fake(projects=[{"number": 1, "id": "PVT_other", "title": "Fremdes Board"}])
+
+    bericht = _doctor(gh_board, fake)
+
+    projekt_pruefung = _pruefung(bericht, "project_visible")
+    assert projekt_pruefung["ok"] is False
+    assert projekt_pruefung["stderr"] is None
+    assert "Fremdes Board" not in json.dumps(bericht, ensure_ascii=False)
+    assert "gh auth refresh" not in projekt_pruefung["detail"]
+
+
+@pytest.mark.parametrize(
+    "project_list_stdout",
+    [
+        pytest.param('{"projects": "nope"}', id="gueltiges-json-falsche-struktur"),
+        pytest.param("kein JSON", id="kein-json"),
+        pytest.param("", id="leere-ausgabe-bei-returncode-0"),
+    ],
+)
+def test_doctor_ueberlebt_eine_unerwartete_antwortform(
+    gh_board: ModuleType, project_list_stdout: str
+) -> None:
+    bericht = _doctor(gh_board, _gesunder_fake(project_list_stdout=project_list_stdout))
+
+    assert _pruefung(bericht, "project_visible")["ok"] is False
+    assert bericht["verdict"] == "blocked"
+
+
+@pytest.mark.parametrize(
+    ("permission", "erwartet_ok"),
+    [
+        pytest.param("ADMIN", True, id="admin"),
+        pytest.param("WRITE", True, id="write"),
+        pytest.param("MAINTAIN", True, id="maintain"),
+        pytest.param("TRIAGE", False, id="triage-sieht-nach-schreibrecht-aus-und-ist-keins"),
+        pytest.param("READ", False, id="read"),
+        pytest.param("NONE", False, id="none"),
+        pytest.param(None, False, id="kein-wert"),
+    ],
+)
+def test_nur_echtes_schreibrecht_gilt_als_repo_zugriff(
+    gh_board: ModuleType, permission: str | None, erwartet_ok: bool
+) -> None:
+    bericht = _doctor(gh_board, _gesunder_fake(viewer_permission=permission))
+
+    assert _pruefung(bericht, "repo_access")["ok"] is erwartet_ok
+    blockiert = set(bericht["blocked_lifecycle_steps"])
+    assert ("idee-erfassen" in blockiert) is not erwartet_ok
+    assert ("pr-eroeffnen" in blockiert) is not erwartet_ok
+
+
+def test_eine_leere_issue_liste_ist_ein_erfolg(gh_board: ModuleType) -> None:
+    """Wer `[]` als fehlgeschlagene Pruefung wertet, meldet in genau der Umgebung Alarm, die
+    einwandfrei funktioniert."""
+    bericht = _doctor(gh_board, _gesunder_fake(issue_list=[]))
+
+    assert _pruefung(bericht, "issue_read")["ok"] is True
+    assert bericht["verdict"] == "ok"
+
+
+def test_doctor_fragt_von_den_issues_nur_die_nummer_ab(gh_board: ModuleType) -> None:
+    """Kein von Dritten befuellbarer Inhalt im Bericht (Securitykonzept, Muss-Kriterium 6): Das
+    Repository ist oeffentlich, jeder kann ein Issue mit beliebigem Titel anlegen."""
+    fake = _gesunder_fake()
+
+    _doctor(gh_board, fake)
+
+    assert fake.single_call("gh", "issue", "list") == [
+        "gh",
+        "issue",
+        "list",
+        "--limit",
+        "1",
+        "--json",
+        "number",
+    ]
+
+
+def test_ein_zu_altes_gh_blockiert_nur_die_finalisierung(gh_board: ModuleType) -> None:
+    bericht = _doctor(gh_board, _gesunder_fake(gh_version_stdout="gh version 2.9.0 (2023-01-01)"))
+
+    assert bericht["gh_version"] == "2.9.0"
+    assert _pruefung(bericht, "gh_version")["ok"] is False
+    assert bericht["blocked_lifecycle_steps"] == ["abschluss-finalisieren"]
+
+
+def test_ein_fehlendes_board_feld_ist_ein_board_befund(gh_board: ModuleType) -> None:
+    bericht = _doctor(
+        gh_board,
+        FakeGh(fields=[{"id": "FIELD_status", "name": "Status", "options": []}]),
+    )
+
+    assert _pruefung(bericht, "fields")["ok"] is False
+    assert bericht["blocked_lifecycle_steps"] == list(gh_board.BOARD_LIFECYCLE_STEPS)
+
+
+def test_fehlende_feld_optionen_sind_ein_board_befund(gh_board: ModuleType) -> None:
+    """Der FakeGh-Default fuehrt das Prioritaetsfeld ohne Optionen - genau der Zustand, den ein
+    manuell veraendertes Board erzeugt."""
+    bericht = _doctor(gh_board, FakeGh())
+
+    assert _pruefung(bericht, "fields")["ok"] is False
+    assert "Priorität" in _pruefung(bericht, "fields")["detail"]
+
+
+def test_die_item_pruefung_meldet_die_sichtbaren_board_items(gh_board: ModuleType) -> None:
+    bericht = _doctor(gh_board, _gesunder_fake())
+
+    assert _pruefung(bericht, "items")["ok"] is True
+    assert "1" in _pruefung(bericht, "items")["detail"]
+
+
+@pytest.mark.parametrize("kaputt", [False, True])
+def test_verdict_ist_genau_dann_ok_wenn_kein_schritt_blockiert_ist(
+    gh_board: ModuleType, kaputt: bool
+) -> None:
+    """`verdict` wird aus den blockierten Schritten abgeleitet, nicht separat gefuehrt."""
+    fake = _gesunder_fake(failing={("gh", "project", "list")} if kaputt else set())
+
+    bericht = _doctor(gh_board, fake)
+
+    assert (bericht["verdict"] == "ok") is (bericht["blocked_lifecycle_steps"] == [])
+    assert bericht["verdict"] == ("blocked" if kaputt else "ok")
+
+
+@pytest.mark.parametrize("kaputt", [False, True])
+def test_doctor_setzt_keinen_einzigen_schreibenden_gh_aufruf_ab(
+    gh_board: ModuleType, tmp_path: Path, kaputt: bool
+) -> None:
+    fake = _gesunder_fake(
+        failing={("gh", "project", "list"), ("gh", "repo", "view")} if kaputt else set()
+    )
+
+    gh_board.main(["doctor"], run=fake, repo_root=tmp_path, owner=OWNER)
+
+    assert fake.calls
+    for verboten in SCHREIBENDE_GH_AUFRUFE:
+        assert fake.calls_starting_with(*verboten) == []
+
+
+def test_doctor_redigiert_den_vollstaendigen_bericht(gh_board: ModuleType) -> None:
+    """Geprueft ueber den vollstaendigen serialisierten Bericht, nicht ueber das Feld, an das
+    man beim Schreiben gedacht hat - nur so ist ein spaeter ergaenztes Feld mitgedeckt."""
+    token = TOKEN_BEISPIELE[0]
+    gescheitert = {("gh", "project", "list"), ("gh", "repo", "view"), ("gh", "issue", "list")}
+    fake = _gesunder_fake(
+        failing=gescheitert,
+        failure_stderr={prefix: f"boom mit {token} dabei" for prefix in gescheitert},
+    )
+
+    serialisiert = json.dumps(_doctor(gh_board, fake), ensure_ascii=False)
+
+    assert token not in serialisiert
+    assert "boom mit" in serialisiert
+
+
+def test_doctor_kuerzt_ein_gespraechiges_stderr(gh_board: ModuleType) -> None:
+    fake = _gesunder_fake(
+        failing={("gh", "project", "list")},
+        failure_stderr={("gh", "project", "list"): "A" * 5000},
+    )
+
+    stderr = _pruefung(_doctor(gh_board, fake), "project_visible")["stderr"]
+
+    assert len(stderr) < 600
+
+
+# -- doctor: CLI -------------------------------------------------------------------------------
+
+
+def test_doctor_nimmt_keine_argumente_entgegen(gh_board: ModuleType) -> None:
+    """Kein Argument heisst keine Eingabeflaeche (Securitykonzept, Muss-Kriterium 8)."""
+    assert gh_board.build_parser().parse_args(["doctor"]).command == "doctor"
+    with pytest.raises(SystemExit):
+        gh_board.build_parser().parse_args(["doctor", "--issue", "262"])
+
+
+def test_die_cli_kennt_genau_die_in_der_skill_tabelle_dokumentierten_befehle(
+    gh_board: ModuleType,
+) -> None:
+    """'Befehl ergaenzt, Doku vergessen' ist damit ein roter Test statt einer stillen
+    Abweichung (Testkonzept zu ADR 0051)."""
+    skill_datei = Path(__file__).parents[2] / ".claude" / "skills" / "github-board" / "SKILL.md"
+    dokumentiert = set(
+        re.findall(r"^\|\s*`([a-z][a-z-]*)", skill_datei.read_text(encoding="utf-8"), re.MULTILINE)
+    )
+    subparser = next(
+        aktion
+        for aktion in gh_board.build_parser()._actions
+        if isinstance(aktion, argparse._SubParsersAction)
+    )
+
+    assert set(subparser.choices) == dokumentiert
+
+
+def test_ein_fehlendes_gh_binary_wird_zu_einer_fehlermeldung_statt_eines_tracebacks(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`subprocess.run` wirft bei fehlendem Binary `FileNotFoundError` statt Returncode != 0 -
+    ungefangen faellt daraus ein Traceback heraus statt der ueblichen `{"error": ...}`-Ausgabe
+    (dieselbe Lehre wie ADR 0048: BoardError, kein Durchgriff einer fremden Ausnahme)."""
+    fake = FakeGh(missing_binary=True)
+
+    exit_code = gh_board.main(
+        ["show-status", "--issue", "262"], run=fake, repo_root=tmp_path, owner=OWNER
+    )
+
+    assert exit_code == 1
+    assert "error" in json.loads(capsys.readouterr().out)

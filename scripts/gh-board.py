@@ -10,7 +10,9 @@ Die fehleranfaellige Projects-V2-Logik (Projekt-/Feld-/Options-/Item-ID-Aufloesu
 Single-Select-Werts) liegt bewusst nur hier und nicht verstreut in den Skill-Dateien.
 
 Ausgabe ist immer ein einzelnes JSON-Objekt auf stdout, im Fehlerfall `{"error": "..."}` mit
-Exit-Code 1 - dieselbe Aufrufkonvention wie beim abgeloesten Tool.
+Exit-Code 1 - dieselbe Aufrufkonvention wie beim abgeloesten Tool. Einzige, bewusst
+dokumentierte Ausnahme ist `doctor` (ADR 0051): Es beendet sich mit Exit-Code 0, sobald ein
+Bericht entsteht, weil fehlgeschlagene Pruefungen dort der Inhalt sind und nicht das Scheitern.
 
 Haertung unveraendert aus ADR 0017, Abschnitt 5: kein `shell=True`, Argumente ausschliesslich in
 Listenform, Bodies ueber temporaere Dateien statt ueber die Kommandozeile, Spec-Nummern vor jeder
@@ -187,6 +189,70 @@ def set_status_line(text: str, new_status: str) -> str:
     return new_header + rest
 
 
+# -- Diagnose: Lebenszyklus-Schritte und ihre Voraussetzungen -----------------------------------
+
+# Die Schritte, die eine Story vom Erfassen bis zum abgeschlossenen Pull Request durchlaeuft
+# (ADR 0051, Abschnitt 4). Der Bericht sagt damit nicht "Pruefung X ist rot", sondern welche
+# Schritte in dieser Umgebung nicht gehen. Die drei Status-Schreibschritte stehen einzeln, weil
+# das Akzeptanzkriterium der Spec fuer jeden von ihnen ein Urteil verlangt.
+LIFECYCLE_STEPS = (
+    "idee-erfassen",
+    "issue-body-schreiben",
+    "status-ready",
+    "spec-anlegen",
+    "status-in-progress",
+    "pr-eroeffnen",
+    "status-review",
+    "abschluss-finalisieren",
+)
+
+# Die Schritte, die ueber das Board laufen (Status schreiben bzw. lesen). Bewusst OHNE
+# `idee-erfassen`: `cmd_create_issue` legt das Issue an, bevor es das Projekt aufloest - bei
+# unsichtbarem Board scheitert es erst an der Board-Aufnahme, das Issue entsteht trotzdem.
+BOARD_LIFECYCLE_STEPS = (
+    "status-ready",
+    "status-in-progress",
+    "status-review",
+    "abschluss-finalisieren",
+)
+
+# Statische Zuordnung Pruefung -> blockierte Lebenszyklus-Schritte. Reiner Datenbestand; ein
+# Test prueft ihre Vollstaendigkeit gegen LIFECYCLE_STEPS.
+PROBE_LIFECYCLE_STEPS: dict[str, tuple[str, ...]] = {
+    "gh_binary": LIFECYCLE_STEPS,
+    "gh_version": ("abschluss-finalisieren",),
+    "auth": LIFECYCLE_STEPS,
+    # Reine Information ohne Urteil: Die Scope-Zeile sagt, was sie sagt - den Zugriff misst
+    # `project_visible` tatsaechlich.
+    "scope_hint": (),
+    "repo_access": ("idee-erfassen", "issue-body-schreiben", "pr-eroeffnen"),
+    "issue_read": ("issue-body-schreiben", "abschluss-finalisieren"),
+    "project_visible": BOARD_LIFECYCLE_STEPS,
+    "fields": BOARD_LIFECYCLE_STEPS,
+    "items": BOARD_LIFECYCLE_STEPS,
+}
+
+# Nur diese drei Werte bedeuten Schreibrecht am Repository. `TRIAGE` sieht danach aus und ist
+# keins (Issues verwalten, aber kein Push, kein Issue-Body schreiben).
+REPO_WRITE_PERMISSIONS = ("ADMIN", "MAINTAIN", "WRITE")
+
+_VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+
+
+def parse_gh_version(output: str) -> tuple[int, int, int] | None:
+    """Liest die Version aus der ersten nicht-leeren Zeile von `gh --version`.
+
+    Numerisch, nicht lexikografisch: `2.9.0` ist aelter als `2.72.0`, ein String-Vergleich sagt
+    das Gegenteil. Ein Distributions-Suffix (`2.72.0-1ubuntu0.1`) stoert nicht, eine gar nicht
+    auswertbare Ausgabe ergibt `None` - ein Befund, kein Absturz.
+    """
+    line = next((line for line in output.splitlines() if line.strip()), "")
+    match = _VERSION_RE.search(line)
+    if match is None:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
 # -- Auth-Auskunft (Whitelist) ------------------------------------------------------------------
 
 # Die von `gh` gemeldete Token-Quelle. Uebernommen wird ausschliesslich diese geschlossene Menge
@@ -277,10 +343,24 @@ class GhBoard:
         self._priority_field: dict[str, Any] | None = None
         self._items: list[dict[str, Any]] | None = None
 
+    @property
+    def owner(self) -> str:
+        return self._owner
+
+    @property
+    def project_title(self) -> str:
+        return self._project_title
+
     # -- Primitive ------------------------------------------------------------------------
 
     def _run_text(self, args: list[str]) -> str:
-        result = self._run(args)
+        try:
+            result = self._run(args)
+        except FileNotFoundError as exc:
+            # Ein fehlendes Binary laesst `subprocess.run` mit FileNotFoundError scheitern, nicht
+            # mit Returncode != 0 - ungefangen faellt daraus ein Traceback statt der ueblichen
+            # `{"error": ...}`-Ausgabe heraus.
+            raise BoardError(f"gh-Aufruf nicht moeglich ({' '.join(args)}): {exc}") from exc
         if result.returncode != 0:
             raise BoardError(
                 f"gh-Aufruf fehlgeschlagen ({' '.join(args)}): {(result.stderr or '').strip()}"
@@ -902,6 +982,253 @@ def _resolve_pull_request(
     )
 
 
+# -- Diagnose-Befehl ----------------------------------------------------------------------------
+
+# Der Bericht wird woertlich in ein Issue eines oeffentlichen Repositories kopiert und dort von
+# einem Agenten mit GitHub-Schreibzugriff gelesen. Die Grenze traegt er deshalb selbst mit, statt
+# sie zu verschweigen (ADR 0051, Abschnitt 5; Securitykonzept, Muss-Kriterium 9).
+DOCTOR_NOTE = (
+    "Befund, keine Handlungsanweisung. Der Lauf ist rein lesend und belegt keinen "
+    "Schreibzugriff: 'viewerPermission' ist nur ein Indiz, durchgesetzt werden Rechte allein "
+    "serverseitig von GitHub. Ein blockierter Schritt heisst, dass eine Voraussetzung nachweislich "
+    "fehlt; ein nicht blockierter heisst nicht, dass er garantiert durchlaeuft."
+)
+
+
+def _loads(text: str) -> Any:
+    """JSON lesen, ohne bei Muell abzubrechen - in der Diagnose ist auch eine unerwartete
+    Antwortform ein Befund."""
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+
+def _probe_result(
+    probe_id: str, ok: bool, detail: str, stderr: str = ""
+) -> dict[str, Any]:
+    """Eine einzelne Pruefung als Berichtseintrag. Jede Zeichenkette laeuft hier durch die eine
+    Redaktionsfunktion - eine Redaktion, die an einem einzigen Feld vorbeigeht, ist keine."""
+    return {
+        "id": probe_id,
+        "ok": bool(ok),
+        "lifecycle_steps": list(PROBE_LIFECYCLE_STEPS[probe_id]),
+        "detail": redact_for_report(detail),
+        "stderr": redact_for_report(stderr) if stderr.strip() else None,
+    }
+
+
+def _missing_field_options(board: GhBoard) -> list[str]:
+    """Fehlende Optionen der beiden Board-Felder - nur die eigenen, in diesem Modul definierten
+    Werte, nie fremd befuellbarer Text."""
+    luecken: list[str] = []
+    for field_name, expected, field in (
+        (STATUS_FIELD_NAME, STATUS_VALUES, board.status_field()),
+        (PRIORITY_FIELD_NAME, PRIORITY_VALUES, board.priority_field()),
+    ):
+        vorhanden = {
+            option.get("name") for option in field.get("options", []) if isinstance(option, dict)
+        }
+        fehlend = [value for value in expected if value not in vorhanden]
+        if fehlend:
+            luecken.append(f"{field_name} ohne {', '.join(fehlend)}")
+    return luecken
+
+
+def cmd_doctor(board: GhBoard) -> dict[str, Any]:
+    """Stellt die Faehigkeiten der Umgebung entlang der Lebenszyklus-Schritte fest (ADR 0051,
+    Abschnitt 4).
+
+    Zwei Eigenschaften, die kein anderer Befehl hat: Jede Pruefung ist unabhaengig - eine
+    fehlgeschlagene beendet den Lauf nicht -, und jeder Befund ist ueber eine statische Tabelle
+    einem Lebenszyklus-Schritt zugeordnet. Der Bericht sagt damit nicht "Pruefung X ist rot",
+    sondern welche Schritte in dieser Umgebung nicht gehen.
+
+    Rein lesend (Abschnitt 5) und mit Exit-Code 0, sobald ein Bericht entsteht - eine bewusste,
+    dokumentierte Ausnahme von der `{"error": ...}`/Exit-1-Konvention der uebrigen Befehle:
+    Fehlgeschlagene Pruefungen sind der Inhalt, nicht das Scheitern.
+    """
+    probes: list[dict[str, Any]] = []
+
+    # 1) Binary. Faellt es aus, faellt alles aus.
+    binary_ok, version_stdout, version_stderr = board.probe(["gh", "--version"])
+    probes.append(
+        _probe_result(
+            "gh_binary",
+            binary_ok,
+            "Das gh-Binary ist ausfuehrbar."
+            if binary_ok
+            else "Das gh-Binary ist nicht ausfuehrbar.",
+            version_stderr,
+        )
+    )
+
+    # 2) Version - numerisch verglichen, aus derselben Ausgabe.
+    version = parse_gh_version(version_stdout) if binary_ok else None
+    version_text = ".".join(str(part) for part in version) if version is not None else None
+    if version is None:
+        probes.append(
+            _probe_result(
+                "gh_version",
+                False,
+                "Keine auswertbare Versionsangabe aus 'gh --version' (erwartet mindestens "
+                f"gh {MIN_GH_VERSION}).",
+            )
+        )
+    else:
+        minimum = parse_gh_version(MIN_GH_VERSION) or (0, 0, 0)
+        probes.append(
+            _probe_result(
+                "gh_version",
+                version >= minimum,
+                f"gh {version_text}, Mindestversion {MIN_GH_VERSION} (erst ab dort kennt "
+                "'gh pr view --json' das Feld 'closingIssuesReferences').",
+            )
+        )
+
+    # 3) Anmeldung - nur die vier Whitelist-Felder, nie die Ausgabe selbst.
+    auth = board.auth_info()
+    if not auth["authenticated"]:
+        auth_detail = "'gh auth status' meldet keine nutzbare Anmeldung."
+    elif auth["account"]:
+        auth_detail = f"Angemeldet als {auth['account']}, Token-Quelle {auth['source']}."
+    else:
+        auth_detail = "Angemeldet, aber ohne auswertbaren Kontoblock in 'gh auth status'."
+    probes.append(_probe_result("auth", auth["authenticated"], auth_detail))
+
+    # 4) Scope-Auskunft - reine Information, ausdruecklich ohne Urteil ueber den Zugriff.
+    scopes = auth["scopes"]
+    if scopes is None:
+        scope_detail = (
+            "Die Auskunft des aktiven Kontos enthaelt keine Scope-Zeile (typisch bei "
+            "Token-Authentifizierung). Daraus folgt kein Urteil ueber den Zugriff."
+        )
+    elif not scopes:
+        scope_detail = (
+            "Die Scope-Zeile des aktiven Kontos meldet 'none'. Daraus folgt kein Urteil ueber "
+            "den Zugriff."
+        )
+    elif "project" in scopes:
+        scope_detail = "Die Scope-Zeile des aktiven Kontos nennt 'project'."
+    else:
+        scope_detail = (
+            "Die Scope-Zeile des aktiven Kontos nennt 'project' nicht. Gemessen wird der "
+            "Zugriff trotzdem von der Pruefung 'project_visible'."
+        )
+    probes.append(_probe_result("scope_hint", True, scope_detail))
+
+    # 5) Repository-Berechtigung - Indiz, kein Beweis fuer Schreibzugriff.
+    repository = f"{board.owner}/{DEFAULT_REPO}"
+    repo_ok, repo_stdout, repo_stderr = board.probe(
+        ["gh", "repo", "view", repository, "--json", "viewerPermission"]
+    )
+    repo_data = _loads(repo_stdout) if repo_ok else None
+    permission = None
+    if isinstance(repo_data, dict) and isinstance(repo_data.get("viewerPermission"), str):
+        permission = repo_data["viewerPermission"]
+    probes.append(
+        _probe_result(
+            "repo_access",
+            permission in REPO_WRITE_PERMISSIONS,
+            f"viewerPermission fuer {repository}: {permission or 'nicht ermittelbar'} "
+            f"(als Schreibrecht gelten {', '.join(REPO_WRITE_PERMISSIONS)}; TRIAGE gehoert "
+            "ausdruecklich nicht dazu).",
+            repo_stderr,
+        )
+    )
+
+    # 6) Issues lesbar - ausschliesslich '--json number', nie Titel/Body/Labels (das Repository
+    #    ist oeffentlich, jeder kann ein Issue mit beliebigem Titel anlegen).
+    issue_ok, issue_stdout, issue_stderr = board.probe(
+        ["gh", "issue", "list", "--limit", "1", "--json", "number"]
+    )
+    issue_data = _loads(issue_stdout) if issue_ok else None
+    issues_lesbar = issue_ok and isinstance(issue_data, list)
+    probes.append(
+        _probe_result(
+            "issue_read",
+            issues_lesbar,
+            f"{len(issue_data) if isinstance(issue_data, list) else 0} Issue(s) gelesen (eine "
+            "leere Liste ist ein gueltiges Ergebnis)."
+            if issues_lesbar
+            else "Die Issue-Liste war nicht lesbar oder hatte eine unerwartete Form.",
+            issue_stderr,
+        )
+    )
+
+    # 7) Board sichtbar - der Aufruf, der bei jedem schreibenden Board-Pfad ohnehin stattfindet.
+    project_ok, project_stdout, project_stderr = board.probe(
+        ["gh", "project", "list", "--owner", board.owner, "--format", "json"]
+    )
+    project_data = _loads(project_stdout) if project_ok else None
+    projekte = project_data.get("projects") if isinstance(project_data, dict) else None
+    if not project_ok:
+        board_sichtbar = False
+        project_detail = "Die Projektliste konnte nicht abgerufen werden."
+    elif not isinstance(projekte, list):
+        board_sichtbar = False
+        project_detail = "Die Antwort auf 'gh project list' hatte eine unerwartete Form."
+    else:
+        board_sichtbar = any(
+            isinstance(eintrag, dict) and eintrag.get("title") == board.project_title
+            for eintrag in projekte
+        )
+        project_detail = (
+            f"Das Board {board.project_title!r} ist sichtbar ({len(projekte)} Projekte "
+            "insgesamt)."
+            if board_sichtbar
+            else f"Das Board {board.project_title!r} ist unter {len(projekte)} sichtbaren "
+            "Projekten nicht dabei (umbenannt oder nicht sichtbar)."
+        )
+    probes.append(_probe_result("project_visible", board_sichtbar, project_detail, project_stderr))
+
+    # 8) Board-Felder samt Optionen - ueber dieselben Methoden, die jeder Schreibpfad benutzt.
+    try:
+        luecken = _missing_field_options(board)
+    except BoardError as exc:
+        probes.append(_probe_result("fields", False, str(exc)))
+    else:
+        probes.append(
+            _probe_result(
+                "fields",
+                not luecken,
+                f"Die Board-Felder {STATUS_FIELD_NAME!r} und {PRIORITY_FIELD_NAME!r} tragen alle "
+                "erwarteten Optionen."
+                if not luecken
+                else f"Unvollstaendige Board-Felder: {'; '.join(luecken)}.",
+            )
+        )
+
+    # 9) Board-Items - nur die Anzahl, kein Inhalt.
+    try:
+        items = board._item_list()
+    except BoardError as exc:
+        probes.append(_probe_result("items", False, str(exc)))
+    else:
+        probes.append(_probe_result("items", True, f"{len(items)} Board-Item(s) sichtbar."))
+
+    blockiert = [
+        schritt
+        for schritt in LIFECYCLE_STEPS
+        if any(schritt in probe["lifecycle_steps"] for probe in probes if not probe["ok"])
+    ]
+    return {
+        "verdict": "blocked" if blockiert else "ok",
+        "gh_version": version_text,
+        "auth": {
+            "authenticated": auth["authenticated"],
+            "account": redact_for_report(auth["account"]) if auth["account"] else None,
+            "source": auth["source"],
+            "scopes": (
+                [redact_for_report(scope) for scope in scopes] if scopes is not None else None
+            ),
+        },
+        "probes": probes,
+        "blocked_lifecycle_steps": blockiert,
+        "note": redact_for_report(DOCTOR_NOTE),
+    }
+
+
 # -- CLI ----------------------------------------------------------------------------------------
 
 
@@ -950,6 +1277,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     finalize.add_argument("--pr-number", type=int, default=None)
 
+    # Bewusst ohne jedes Argument: keine Eingabeflaeche, keine Interpolation fremder Werte in
+    # eine Argumentliste (ADR 0017, Abschnitt 5).
+    subparsers.add_parser(
+        "doctor",
+        help=(
+            "Umgebungsdiagnose entlang der Lebenszyklus-Schritte. Rein lesend; Exit-Code 0, "
+            "sobald ein Bericht entsteht."
+        ),
+    )
+
     return parser
 
 
@@ -980,6 +1317,8 @@ def _dispatch(args: argparse.Namespace, board: GhBoard, repo_root: Path) -> dict
         return cmd_set_priority(board, issue_number=args.issue, priority=args.priority)
     if args.command == "show-status":
         return cmd_show_status(board, issue_number=args.issue)
+    if args.command == "doctor":
+        return cmd_doctor(board)
     if args.command == "finalize":
         spec_number = validate_spec_number(args.spec)
         return cmd_finalize(
