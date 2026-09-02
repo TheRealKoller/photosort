@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.30.0](https://github.com/TheRealKoller/photosort/compare/v0.29.0...v0.30.0) (2026-09-02)
+
+
+### Features
+
+* **scripts:** Board-Zugriff probieren statt raten, plus Diagnose-Kommando `doctor` (Spec 0309) ([#313](https://github.com/TheRealKoller/photosort/issues/313)) ([06cf923](https://github.com/TheRealKoller/photosort/commit/06cf923683b81312c4a5c906b92b040c7e4e5165))
+* **spec-0207:** Projekt-Statistikseite mit Ist-Kostenerfassung der Remote-Laeufe ([#311](https://github.com/TheRealKoller/photosort/issues/311)) ([8b5cb3f](https://github.com/TheRealKoller/photosort/commit/8b5cb3fa66ccf787b70f5fc534dc8459bf7df9b2))
+
 ## [0.29.0](https://github.com/TheRealKoller/photosort/compare/v0.28.0...v0.29.0) (2026-09-01)
 
 
