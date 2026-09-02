@@ -47,14 +47,33 @@ def _completed(
     )
 
 
+GH_VERSION_STDOUT = (
+    "gh version 2.72.0 (2025-04-30)\nhttps://github.com/cli/cli/releases/tag/v2.72.0\n"
+)
+
+# So meldet `gh auth status`, wenn ueberhaupt keine Anmeldung vorliegt (Returncode 1).
+NICHT_ANGEMELDET_AUSGABE = (
+    "You are not logged into any GitHub hosts. To log in, run: gh auth login"
+)
+
+
 class FakeGh:
     """Minimaler, zustandsbehafteter Ersatz fuer echte `gh`-Aufrufe."""
 
     def __init__(
         self,
         *,
-        auth_scopes: str = "- Token scopes: 'gist', 'project', 'read:org', 'repo'",
+        auth_scopes: str | None = "- Token scopes: 'gist', 'project', 'read:org', 'repo'",
         auth_returncode: int = 0,
+        auth_account: str = "TheRealKoller",
+        auth_source: str = "keyring",
+        auth_output: str | None = None,
+        auth_stream: str = "stdout",
+        missing_binary: bool = False,
+        gh_version_stdout: str = GH_VERSION_STDOUT,
+        viewer_permission: str | None = "ADMIN",
+        project_list_stdout: str | None = None,
+        issue_list: list[dict] | None = None,
         projects: list[dict] | None = None,
         fields: list[dict] | None = None,
         items: list[dict] | None = None,
@@ -69,6 +88,21 @@ class FakeGh:
     ) -> None:
         self.auth_scopes = auth_scopes
         self.auth_returncode = auth_returncode
+        self.auth_account = auth_account
+        self.auth_source = auth_source
+        # Roh-Ueberschreibung der gesamten `gh auth status`-Ausgabe - nur fuer die Faelle, die
+        # sich nicht aus Konto/Quelle/Scope-Zeile zusammensetzen lassen (mehrere Kontoblocks).
+        self.auth_output = auth_output
+        self.auth_stream = auth_stream
+        # Opt-in, nie Default (Testkonzept zu ADR 0051): ein fehlendes `gh`-Binary laesst das
+        # `run`-Callable mit FileNotFoundError scheitern statt mit Returncode != 0.
+        self.missing_binary = missing_binary
+        self.gh_version_stdout = gh_version_stdout
+        self.viewer_permission = viewer_permission
+        # Roh-Ueberschreibung der stdout von `gh project list` - fuer Antworten, die kein
+        # oder strukturell unerwartetes JSON sind.
+        self.project_list_stdout = project_list_stdout
+        self.issue_list = issue_list if issue_list is not None else [{"number": 262}]
         self.projects = (
             projects
             if projects is not None
@@ -133,6 +167,8 @@ class FakeGh:
 
     def __call__(self, args: list[str]) -> subprocess.CompletedProcess[str]:
         self.calls.append(list(args))
+        if self.missing_binary:
+            raise FileNotFoundError(2, "No such file or directory", args[0])
         for prefix in self.failing:
             if tuple(args[: len(prefix)]) == prefix:
                 return _completed(
@@ -142,9 +178,20 @@ class FakeGh:
 
     def _dispatch(self, args: list[str]) -> subprocess.CompletedProcess[str]:
         head = tuple(args[:3])
+        if tuple(args[:2]) == ("gh", "--version"):
+            return _completed(self.gh_version_stdout)
         if head == ("gh", "auth", "status"):
-            return _completed(self.auth_scopes, returncode=self.auth_returncode)
+            ausgabe = self.auth_status_ausgabe()
+            if self.auth_stream == "stderr":
+                return _completed(returncode=self.auth_returncode, stderr=ausgabe)
+            return _completed(ausgabe, returncode=self.auth_returncode)
+        if head == ("gh", "repo", "view"):
+            return _completed(json.dumps({"viewerPermission": self.viewer_permission}))
+        if head == ("gh", "issue", "list"):
+            return _completed(json.dumps(self.issue_list))
         if head == ("gh", "project", "list"):
+            if self.project_list_stdout is not None:
+                return _completed(self.project_list_stdout)
             return _completed(json.dumps({"projects": self.projects}))
         if head == ("gh", "project", "field-list"):
             return _completed(json.dumps({"fields": self.fields}))
@@ -206,6 +253,25 @@ class FakeGh:
         raise AssertionError(f"unerwarteter gh-Aufruf im Test: {args}")
 
     # -- Zustand -----------------------------------------------------------------------------
+
+    def auth_status_ausgabe(self) -> str:
+        """Baut die Ausgabe von `gh auth status` in der realen Form nach: ein Kontoblock je
+        Anmeldung, die Scope-Zeile optional (bei Token-Authentifizierung fehlt sie bzw. steht
+        dort `none`)."""
+        if self.auth_output is not None:
+            return self.auth_output
+        if self.auth_returncode != 0:
+            return NICHT_ANGEMELDET_AUSGABE
+        zeilen = [
+            "github.com",
+            f"  ✓ Logged in to github.com account {self.auth_account} ({self.auth_source})",
+            "  - Active account: true",
+            "  - Git operations protocol: https",
+            "  - Token: gho_************************************",
+        ]
+        if self.auth_scopes is not None:
+            zeilen.append(f"  {self.auth_scopes}")
+        return "\n".join(zeilen) + "\n"
 
     def issue_state(self, number: int) -> str:
         return self.issue_states.get(number, "open")
@@ -321,46 +387,313 @@ def _write_spec(
     return path
 
 
-# -- Auth-Scope -------------------------------------------------------------------------------
+# -- Redaktion (ADR 0051) -----------------------------------------------------------------------
+
+# Realistische Formen echter GitHub-Token. Keiner davon ist ein gueltiges Geheimnis - die
+# Zeichenfolgen sind hier frei erfunden, aber formgleich zu dem, was ein gespraechiges `gh`
+# ausgeben koennte.
+TOKEN_BEISPIELE = [
+    "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8",
+    "gho_" + "Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2",
+    "ghu_" + "abcdefghijklmnopqrstuvwxyz0123456789",
+    "ghs_" + "0123456789abcdefghijklmnopqrstuvwxyz",
+    "ghr_" + "QWERTZUIOPasdfghjklyxcvbnm0123456789",
+    "github_pat_" + "11ABCDEFG0abcdefghijklmn_" + "0123456789abcdefghijklmnopqrstuvwxyzAB",
+]
 
 
-def test_fehlender_project_scope_wird_als_eigener_fehler_gemeldet(gh_board: ModuleType) -> None:
-    fake = FakeGh(auth_scopes="- Token scopes: 'gist', 'read:org', 'repo'")
-    board = _board(gh_board, fake)
+@pytest.mark.parametrize("token", TOKEN_BEISPIELE)
+def test_tokenfoermige_zeichenketten_werden_geschwaerzt(gh_board: ModuleType, token: str) -> None:
+    """Zweite Verteidigungslinie hinter der Whitelist (Securitykonzept zu ADR 0051): Der Bericht
+    ist dazu bestimmt, in ein Issue eines OEFFENTLICHEN Repositories zu wandern."""
+    redigiert = gh_board.redact_for_report(f"failed to authenticate with {token} - aborting")
+
+    assert token not in redigiert
+    assert "failed to authenticate with" in redigiert
+
+
+@pytest.mark.parametrize(
+    "harmlos",
+    [
+        "github_pattern konnte nicht geladen werden",
+        "ghost-Eintrag im Board",
+        "gh project list --owner TheRealKoller --format json",
+        "Token scopes: 'gist', 'project', 'read:org', 'repo'",
+        "ghp_kurz",
+    ],
+)
+def test_harmloser_text_bleibt_unveraendert(gh_board: ModuleType, harmlos: str) -> None:
+    """Gegenrichtung: Ein Filter, der zu viel frisst, macht den Bericht unbrauchbar - und das
+    faellt ohne Test niemandem auf, weil der Bericht dann ja "sauber" aussieht."""
+    assert gh_board.redact_for_report(harmlos) == harmlos
+
+
+def test_ansi_und_steuerzeichen_werden_entfernt(gh_board: ModuleType) -> None:
+    """Fremdtext, der in ein Terminal, in Markdown und in einen Agenten-Kontext gerendert wird,
+    darf keine Darstellung manipulieren koennen (Securitykonzept, Muss-Kriterium 5)."""
+    roh = "\x1b[31mFehler\x1b[0m:\u202e thgilhgih \u200b\x07 zweite Zeile\nnaechste Zeile"
+
+    redigiert = gh_board.redact_for_report(roh)
+
+    assert "\x1b" not in redigiert
+    assert "\u202e" not in redigiert
+    assert "\u200b" not in redigiert
+    assert "\x07" not in redigiert
+    assert "Fehler" in redigiert
+    # Zeilenumbrueche bleiben - sie tragen die Lesbarkeit einer mehrzeiligen gh-Meldung.
+    assert "\nnaechste Zeile" in redigiert
+
+
+def test_uebernommener_text_wird_sichtbar_gekuerzt(gh_board: ModuleType) -> None:
+    """Ein unerwartet gespraechiges `gh` (GH_DEBUG=api, Stacktrace) darf nicht den halben
+    Umgebungszustand in ein oeffentliches Issue schreiben."""
+    redigiert = gh_board.redact_for_report("x" * 2000)
+
+    assert len(redigiert) < 600
+    assert redigiert.startswith("x" * 500)
+    assert redigiert != "x" * 500
+
+
+def test_credentials_in_url_form_werden_geschwaerzt(gh_board: ModuleType) -> None:
+    """Der Tokenmuster-Filter kennt nur Tokenformen; eine Proxy-Konfiguration in URL-Form ist
+    die naheliegendste Luecke daneben und kostet eine Zeile."""
+    redigiert = gh_board.redact_for_report("proxy https://daniel:geheim@proxy.example:8080 refused")
+
+    assert "geheim" not in redigiert
+    assert "proxy.example:8080" in redigiert
+
+
+# -- Board-Zugriff: probieren statt raten (ADR 0051) --------------------------------------------
+
+
+# Je Board-Befehl der erste `gh`-Aufruf, der seine eigentliche Wirkung entfaltet. Frueher kam
+# keiner von ihnen zustande, sobald das Wort "project" nicht in der `gh auth status`-Ausgabe
+# stand - unabhaengig davon, ob der Zugriff tatsaechlich bestand.
+WIRKSAMER_GH_AUFRUF_JE_BEFEHL = {
+    "create-issue": ("gh", "issue", "create"),
+    "set-body": ("gh", "issue", "edit"),
+    "set-status": ("gh", "project", "item-edit"),
+    "set-priority": ("gh", "project", "item-edit"),
+    "show-status": ("gh", "project", "item-list"),
+    "finalize": ("gh", "pr", "view"),
+}
+
+
+def _argv_fuer(befehl: str, tmp_path: Path) -> list[str]:
+    body = tmp_path / "body.md"
+    body.write_text("Beliebiger Text", encoding="utf-8")
+    return {
+        "create-issue": [
+            "create-issue", "--type", "idee", "--title", "T", "--body-file", str(body)
+        ],
+        "set-body": ["set-body", "--issue", "262", "--body-file", str(body)],
+        "set-status": ["set-status", "--issue", "262", "--status", "Todo"],
+        "set-priority": ["set-priority", "--issue", "262", "--priority", "Hoch"],
+        "show-status": ["show-status", "--issue", "262"],
+        "finalize": ["finalize", "--spec", "0262", "--pr-number", "281"],
+    }[befehl]
+
+
+@pytest.mark.parametrize("befehl", sorted(WIRKSAMER_GH_AUFRUF_JE_BEFEHL))
+@pytest.mark.parametrize(
+    "auth_scopes",
+    [
+        pytest.param("- Token scopes: none", id="token-scopes-none"),
+        pytest.param(None, id="gar-keine-scope-zeile"),
+    ],
+)
+def test_eine_nichtssagende_scope_auskunft_blockiert_keinen_board_befehl(
+    gh_board: ModuleType, tmp_path: Path, befehl: str, auth_scopes: str | None
+) -> None:
+    """Regressionsschutz fuer die Token-Authentifizierung (ADR 0051): `gh` meldet dort je nach
+    Token-Art `Token scopes: none` oder gar keine Scope-Zeile - beides sagt nichts ueber den
+    tatsaechlichen Zugriff aus. Nachgewiesen wird am protokollierten Aufruflog, nicht am
+    Rueckgabewert: der Befehl muss seinen wirksamen `gh`-Aufruf ueberhaupt erreichen.
+    """
+    _write_spec(tmp_path, "0262")
+    fake = FakeGh(
+        auth_scopes=auth_scopes,
+        auth_source="GH_TOKEN",
+        fields=_fields_mit_prioritaets_optionen(),
+        pull_requests={281: _pull_request(281)},
+    )
+
+    exit_code = gh_board.main(
+        _argv_fuer(befehl, tmp_path), run=fake, repo_root=tmp_path, owner=OWNER
+    )
+
+    assert fake.calls_starting_with(*WIRKSAMER_GH_AUFRUF_JE_BEFEHL[befehl])
+    assert exit_code == 0
+
+
+def test_auf_dem_erfolgspfad_wird_gh_auth_status_nicht_mehr_aufgerufen(
+    gh_board: ModuleType, tmp_path: Path
+) -> None:
+    """Nachfolger von `test_vorhandener_project_scope_ist_still` (invertiert): Der Erfolgsfall
+    kostet ab jetzt keinen Diagnoseaufruf mehr - die tokennaechste Ausgabe des Werkzeugs
+    entsteht nur noch im Fehlerfall."""
+    fake = FakeGh()
+
+    exit_code = gh_board.main(
+        ["set-status", "--issue", "262", "--status", "Todo"],
+        run=fake,
+        repo_root=tmp_path,
+        owner=OWNER,
+    )
+
+    assert exit_code == 0
+    assert fake.calls_starting_with("gh", "auth", "status") == []
+
+
+def test_echter_scope_mangel_bleibt_am_gescheiterten_aufruf_deutbar(gh_board: ModuleType) -> None:
+    """Nachfolger von `test_fehlender_project_scope_wird_als_eigener_fehler_gemeldet`: Die
+    Zusicherung "ein fehlender `project`-Scope fuehrt zu einem Hinweis auf `gh auth refresh -s
+    project`" bleibt bestehen - nur wird sie jetzt an einem tatsaechlich gescheiterten Zugriff
+    gefaellt statt vor dem Versuch, und die urspruengliche `gh`-Meldung bleibt erhalten."""
+    fake = FakeGh(
+        auth_scopes="- Token scopes: 'gist', 'read:org', 'repo'",
+        failing={("gh", "project", "list")},
+        failure_stderr={("gh", "project", "list"): "your token has not been granted 'project'"},
+    )
 
     with pytest.raises(gh_board.BoardError) as excinfo:
-        board.check_auth_scope()
+        _board(gh_board, fake).project()
+
+    message = str(excinfo.value)
+    assert "gh auth refresh -s project" in message
+    assert "your token has not been granted 'project'" in message
+
+
+def test_scheitert_die_deutung_selbst_ueberlebt_die_urspruengliche_meldung(
+    gh_board: ModuleType,
+) -> None:
+    """Nachfolger von `test_auth_status_fehlschlag_wird_gemeldet`: Ein fehlgeschlagenes
+    `gh auth status` ist ab jetzt kein eigener Abbruchgrund mehr, darf aber auch nicht die
+    Meldung verschlucken, um die es eigentlich geht."""
+    fake = FakeGh(
+        auth_returncode=1,
+        failing={("gh", "project", "list")},
+        failure_stderr={("gh", "project", "list"): ABGELAUFENES_TOKEN_STDERR},
+    )
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        _board(gh_board, fake).project()
+
+    message = str(excinfo.value)
+    assert "Bad credentials" in message
+    assert "gh auth refresh" not in message
+
+
+def test_ein_vorhandener_project_scope_erzeugt_keinen_refresh_hinweis(
+    gh_board: ModuleType,
+) -> None:
+    """Keine Uebererkennung: Enthaelt die Scope-Zeile `project` und scheitert der Aufruf
+    trotzdem, schickt ein Refresh-Hinweis jede spaetere Fehlersuche auf die falsche Faehrte."""
+    fake = FakeGh(
+        failing={("gh", "project", "list")},
+        failure_stderr={("gh", "project", "list"): ABGELAUFENES_TOKEN_STDERR},
+    )
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        _board(gh_board, fake).project()
+
+    message = str(excinfo.value)
+    assert "gh auth refresh" not in message
+    assert "Bad credentials" in message
+
+
+def test_die_deutung_bezieht_sich_auf_das_aktive_konto(gh_board: ModuleType) -> None:
+    """`gh auth status` meldet pro Host mehrere Bloecke. Eine Auswertung, die die erste beste
+    Scope-Zeile nimmt, meldet die Rechte eines Kontos, mit dem gar nicht gearbeitet wird -
+    hier: das inaktive Keyring-Konto hat `project`, das aktive Umgebungstoken-Konto nicht."""
+    fake = FakeGh(
+        auth_output=(
+            "github.com\n"
+            "  X Failed to log in to github.com account zweitkonto (keyring)\n"
+            "  - Active account: false\n"
+            "  - Token scopes: 'gist', 'project', 'read:org', 'repo'\n"
+            "  ✓ Logged in to github.com account TheRealKoller (GH_TOKEN)\n"
+            "  - Active account: true\n"
+            "  - Token scopes: 'repo'\n"
+        ),
+        failing={("gh", "project", "list")},
+        failure_stderr={("gh", "project", "list"): "GraphQL: Resource not accessible"},
+    )
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        _board(gh_board, fake).project()
+
+    message = str(excinfo.value)
+    assert "gh auth refresh -s project" in message
+    assert "GH_TOKEN" in message
+
+
+def test_die_deutung_liest_die_auskunft_auch_von_stderr(gh_board: ModuleType) -> None:
+    """Aeltere `gh`-Versionen schreiben die Statusausgabe auf stderr statt auf stdout."""
+    fake = FakeGh(
+        auth_stream="stderr",
+        auth_scopes="- Token scopes: 'gist', 'read:org', 'repo'",
+        failing={("gh", "project", "list")},
+        failure_stderr={("gh", "project", "list"): "GraphQL: Resource not accessible"},
+    )
+
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        _board(gh_board, fake).project()
 
     assert "gh auth refresh -s project" in str(excinfo.value)
 
 
-def test_auth_status_fehlschlag_wird_gemeldet(gh_board: ModuleType) -> None:
-    fake = FakeGh(auth_returncode=1)
-    board = _board(gh_board, fake)
+def test_eine_unlesbare_projektliste_bekommt_nur_die_auth_quelle_als_kontext(
+    gh_board: ModuleType,
+) -> None:
+    """Returncode 0, aber kein gueltiges JSON: ohne auswertbare Scope-Zeile bleibt es bei der
+    urspruenglichen Meldung plus der Auth-Quelle als Kontext - kein geratener Scope-Hinweis."""
+    fake = FakeGh(
+        auth_scopes=None, auth_source="GITHUB_TOKEN", project_list_stdout="kein JSON, sondern Text"
+    )
 
-    with pytest.raises(gh_board.BoardError):
-        board.check_auth_scope()
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        _board(gh_board, fake).project()
+
+    message = str(excinfo.value)
+    assert "GITHUB_TOKEN" in message
+    assert "gh auth refresh" not in message
 
 
-def test_vorhandener_project_scope_ist_still(gh_board: ModuleType) -> None:
-    fake = FakeGh()
-    _board(gh_board, fake).check_auth_scope()
+def test_die_angereicherte_meldung_ist_redigiert(gh_board: ModuleType) -> None:
+    """Die Meldung geht ueber `{"error": ...}` an die Skills, die sie woertlich weiterreichen -
+    und damit potenziell in ein oeffentliches Issue (Securitykonzept, Muss-Kriterium 2)."""
+    token = TOKEN_BEISPIELE[0]
+    fake = FakeGh(
+        failing={("gh", "project", "list")},
+        failure_stderr={("gh", "project", "list"): f"failed with token {token}"},
+    )
 
-    assert fake.single_call("gh", "auth", "status") == ["gh", "auth", "status"]
+    with pytest.raises(gh_board.BoardError) as excinfo:
+        _board(gh_board, fake).project()
+
+    assert token not in str(excinfo.value)
 
 
 # -- Projekt-/Feld-Aufloesung -----------------------------------------------------------------
 
 
 def test_unbekanntes_projekt_wird_nicht_angelegt_sondern_gemeldet(gh_board: ModuleType) -> None:
+    """Ein erfolgreiches `gh project list` ohne Titeltreffer (umbenanntes Board) ist kein
+    Berechtigungsproblem: Die Deutung aus ADR 0051 haengt am gescheiterten Aufruf, nicht an
+    jedem Fehler dieser Funktion - sonst waere der ganze Rumpf in ein `try` gefasst und die
+    Meldung fuehrte in die Irre."""
     fake = FakeGh(projects=[{"number": 1, "id": "PVT_other", "title": "Anderes Board"}])
     board = _board(gh_board, fake)
 
     with pytest.raises(gh_board.BoardError) as excinfo:
         board.project()
 
-    assert PROJECT_TITLE in str(excinfo.value)
+    message = str(excinfo.value)
+    assert PROJECT_TITLE in message
+    assert "gh auth refresh" not in message
     assert fake.calls_starting_with("gh", "project", "create") == []
+    assert fake.calls_starting_with("gh", "auth", "status") == []
 
 
 def test_fehlendes_statusfeld_wird_nicht_angelegt_sondern_gemeldet(gh_board: ModuleType) -> None:

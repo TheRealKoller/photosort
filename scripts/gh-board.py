@@ -25,6 +25,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -87,6 +88,50 @@ def _default_run(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, capture_output=True, text=True, check=False)  # noqa: S603
 
 
+# -- Redaktion ----------------------------------------------------------------------------------
+
+# Jede Zeichenkette, die aus einem fremden Werkzeug in eine weitergereichte Ausgabe gelangt,
+# laeuft durch GENAU diese eine Funktion (ADR 0051, Securitykonzept): der `doctor`-Bericht ist
+# dazu bestimmt, in ein Issue eines OEFFENTLICHEN Repositories zu wandern, und die angereicherte
+# Fehlermeldung aus `project()` reicht der `github-board`-Skill woertlich weiter. Ein Fehlgriff
+# ist an dieser Stelle nicht zurueckzunehmen (Edit-Historie, Mail-Benachrichtigungen).
+#
+# Tragende Schicht ist die Whitelist (nur benannte Felder werden uebernommen, nie eine ganze
+# `gh`-Ausgabe); diese Funktion ist die zweite Reihe plus die Sanitisierung/Kuerzung.
+REPORT_TEXT_LIMIT = 500
+REDACTED = "[redigiert]"
+TRUNCATION_MARKER = " [... gekuerzt]"
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-Z\\-_]")
+# Die heute von GitHub ausgegebenen Tokenformen. Bewusst KEIN 40-Hex-Muster (Alt-PATs): es
+# traefe jede Commit-SHA und machte den Bericht unbrauchbar - deshalb traegt die Whitelist die
+# Last, nicht dieser Filter.
+_TOKEN_RE = re.compile(r"gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}")
+_URL_CREDENTIALS_RE = re.compile(r"(?<=://)[^/\s:@]+:[^/\s@]+(?=@)")
+
+
+def redact_for_report(text: str, *, limit: int = REPORT_TEXT_LIMIT) -> str:
+    """Sanitisiert, redigiert und kuerzt einen Text, bevor er weitergereicht wird.
+
+    Reihenfolge: erst ANSI-/Steuer-/Format-/Bidi-/Zero-Width-Zeichen entfernen (sonst koennte
+    Fremdtext seine eigene Darstellung in Terminal, Markdown oder Agenten-Kontext manipulieren),
+    dann tokenfoermige Zeichenketten schwaerzen, zuletzt kuerzen - so kann kein Geheimnis durch
+    das Kuerzen "aufgeteilt" der Schwaerzung entgehen.
+    """
+    cleaned = _ANSI_ESCAPE_RE.sub("", text)
+    cleaned = "".join(
+        char
+        for char in cleaned
+        if char == "\n" or unicodedata.category(char) not in {"Cc", "Cf"}
+    )
+    cleaned = _TOKEN_RE.sub(REDACTED, cleaned)
+    cleaned = _URL_CREDENTIALS_RE.sub(REDACTED, cleaned)
+    cleaned = cleaned.strip()
+    if len(cleaned) > limit:
+        cleaned = cleaned[:limit] + TRUNCATION_MARKER
+    return cleaned
+
+
 # -- Spec-Datei ---------------------------------------------------------------------------------
 
 
@@ -140,6 +185,75 @@ def set_status_line(text: str, new_status: str) -> str:
         raise BoardError("Spec-Datei hat kein '**Status:**'-Metadaten-Feld im Header.")
     new_header = _STATUS_LINE_RE.sub(lambda _m: f"**Status:** {new_status}", header, count=1)
     return new_header + rest
+
+
+# -- Auth-Auskunft (Whitelist) ------------------------------------------------------------------
+
+# Die von `gh` gemeldete Token-Quelle. Uebernommen wird ausschliesslich diese geschlossene Menge
+# von Literalen - jede andere Angabe wird zu "unbekannt", damit kein Fremdtext in eine
+# weitergereichte Meldung oder in den `doctor`-Bericht geraet (Securitykonzept zu ADR 0051).
+AUTH_SOURCES = ("keyring", "oauth_token", "GH_TOKEN", "GITHUB_TOKEN")
+UNKNOWN_AUTH_SOURCE = "unbekannt"
+
+_AUTH_ACCOUNT_RE = re.compile(r"account\s+(\S+)\s+\(([^)]+)\)")
+_AUTH_ACTIVE_RE = re.compile(r"Active account:\s*true", re.IGNORECASE)
+_AUTH_SCOPES_RE = re.compile(r"Token scopes:\s*(.*)$")
+_QUOTED_SCOPE_RE = re.compile(r"'([^']*)'")
+
+
+def _parse_scopes(value: str) -> list[str]:
+    text = value.strip()
+    if not text or text.lower() == "none":
+        return []
+    quoted = _QUOTED_SCOPE_RE.findall(text)
+    if quoted:
+        return quoted
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def parse_auth_status(output: str) -> dict[str, Any]:
+    """Extrahiert `account`, `source` und `scopes` aus der Ausgabe von `gh auth status`.
+
+    Massgeblich ist der Block mit `Active account: true` (Securitykonzept zu ADR 0051): `gh`
+    meldet pro Host MEHRERE Kontobloecke, sobald neben einem Umgebungstoken noch ein
+    gespeichertes Konto existiert. Wer die erste beste Scope-Zeile nimmt, meldet die Rechte
+    eines Kontos, mit dem gar nicht gearbeitet wird.
+
+    `scopes` unterscheidet vier Zustaende: Liste mit `project`, Liste ohne `project`, leere
+    Liste (`Token scopes: none`) und `None` (gar keine Scope-Zeile, typisch fuer
+    Token-Authentifizierung). Nur die zweite Form rechtfertigt einen Refresh-Hinweis.
+    """
+    blocks: list[dict[str, Any]] = []
+    for line in output.splitlines():
+        account_match = _AUTH_ACCOUNT_RE.search(line)
+        if account_match is not None:
+            source = account_match.group(2)
+            blocks.append(
+                {
+                    "account": account_match.group(1),
+                    "source": source if source in AUTH_SOURCES else UNKNOWN_AUTH_SOURCE,
+                    "active": False,
+                    "scopes": None,
+                }
+            )
+            continue
+        if not blocks:
+            continue
+        block = blocks[-1]
+        if _AUTH_ACTIVE_RE.search(line):
+            block["active"] = True
+        scopes_match = _AUTH_SCOPES_RE.search(line)
+        if scopes_match is not None:
+            block["scopes"] = _parse_scopes(scopes_match.group(1))
+
+    active = next((block for block in blocks if block["active"]), None)
+    if active is None and len(blocks) == 1:
+        # Aeltere `gh`-Versionen melden keine 'Active account'-Zeile. Bei genau einem Block gibt
+        # es nichts zu unterscheiden; bei mehreren wird bewusst nicht geraten.
+        active = blocks[0]
+    if active is None:
+        return {"account": None, "source": None, "scopes": None}
+    return {"account": active["account"], "source": active["source"], "scopes": active["scopes"]}
 
 
 # -- gh-Zugriff ---------------------------------------------------------------------------------
@@ -196,27 +310,70 @@ class GhBoard:
 
     # -- Projekt/Feld/Item ----------------------------------------------------------------
 
-    def check_auth_scope(self) -> None:
-        result = self._run(["gh", "auth", "status"])
-        output = (result.stdout or "") + (result.stderr or "")
-        if result.returncode != 0:
-            raise BoardError(f"'gh auth status' fehlgeschlagen: {output.strip()}")
-        if "project" not in output:
-            raise BoardError(
-                "Der lokalen gh-Session fehlt der Scope 'project' fuer GitHub Projects (V2). "
-                "Bitte einmalig 'gh auth refresh -s project' ausfuehren."
+    def probe(self, args: list[str]) -> tuple[bool, str, str]:
+        """Fuehrt einen Aufruf aus, OHNE bei einem Fehlschlag abzubrechen - er ist hier der
+        Befund, nicht das Scheitern (ADR 0051). Ein fehlendes Binary (`FileNotFoundError`, den
+        sonst niemand faengt) wird ebenso zum Befund statt zum Traceback."""
+        try:
+            result = self._run(args)
+        except FileNotFoundError as exc:
+            return False, "", str(exc)
+        return result.returncode == 0, result.stdout or "", result.stderr or ""
+
+    def auth_info(self) -> dict[str, Any]:
+        """Die vier Whitelist-Felder aus `gh auth status` (ADR 0051): `authenticated`,
+        `account`, `source`, `scopes` - nie die Ausgabe selbst.
+
+        Wird ausschliesslich im Fehlerfall (zur Deutung) und von `doctor` aufgerufen, nie vor
+        einem Zugriff: Ein Urteil vor dem Versuch ist genau das, was ADR 0051 abschafft.
+        """
+        ok, stdout, stderr = self.probe(["gh", "auth", "status"])
+        if not ok:
+            return {"authenticated": False, "account": None, "source": None, "scopes": None}
+        # Je nach `gh`-Version steht die Statusausgabe auf stdout oder auf stderr.
+        return {"authenticated": True, **parse_auth_status(f"{stdout}\n{stderr}")}
+
+    def _explain_project_failure(self, error: BoardError) -> BoardError:
+        """Deutet einen BEREITS gescheiterten Zugriff (ADR 0051, Abschnitt 3). Die Textauswertung
+        ist damit nicht abgeschafft, sondern entmachtet: Sie kann keinen Aufruf mehr verhindern,
+        nur einen gescheiterten erklaeren. Die urspruengliche `gh`-Meldung wird nie ersetzt,
+        immer nur ergaenzt - und laeuft dabei durch die Redaktion, weil die Skills sie woertlich
+        weiterreichen (Securitykonzept, Muss-Kriterium 2).
+        """
+        message = redact_for_report(str(error))
+        auth = self.auth_info()
+        if not auth["authenticated"]:
+            # Scheitert die Deutung selbst, bleibt es bei dem, was `gh` gesagt hat.
+            return BoardError(message)
+        quelle = auth["source"] or UNKNOWN_AUTH_SOURCE
+        scopes = auth["scopes"]
+        if scopes is not None and "project" not in scopes:
+            return BoardError(
+                f"{message} Hinweis: Der aktiven gh-Anmeldung ({quelle}) fehlt der Scope "
+                "'project' fuer GitHub Projects (V2) - einmalig 'gh auth refresh -s project' "
+                "ausfuehren."
             )
+        return BoardError(f"{message} (Auth-Quelle der aktiven gh-Anmeldung: {quelle}.)")
 
     def project(self) -> dict[str, Any]:
         """Loest das bestehende Board ueber seinen Titel auf. Es wird bewusst KEIN Projekt
         angelegt (ADR 0043, Abschnitt 4) - ein versehentlich erzeugtes zweites Board waere
-        deutlich schaedlicher als ein klarer Fehler."""
+        deutlich schaedlicher als ein klarer Fehler.
+
+        Dieser Aufruf IST die Zugriffsprobe (ADR 0051, Abschnitt 2): Gedeutet wird ausschliesslich
+        der fehlgeschlagene Aufruf, nicht der erfolgreiche ohne Titeltreffer - ein umbenanntes
+        Board ist kein Berechtigungsproblem und darf keinen Scope-Hinweis nach sich ziehen.
+        """
         if self._project is None:
-            data = self._run_json(
-                ["gh", "project", "list", "--owner", self._owner, "--format", "json"]
-            )
-            for project in data.get("projects", []):
-                if project.get("title") == self._project_title:
+            try:
+                data = self._run_json(
+                    ["gh", "project", "list", "--owner", self._owner, "--format", "json"]
+                )
+            except BoardError as exc:
+                raise self._explain_project_failure(exc) from exc
+            projects = data.get("projects") if isinstance(data, dict) else None
+            for project in projects if isinstance(projects, list) else []:
+                if isinstance(project, dict) and project.get("title") == self._project_title:
                     self._project = project
                     break
             else:
@@ -846,7 +1003,6 @@ def main(
     try:
         root = repo_root if repo_root is not None else _discover_repo_root(Path.cwd())
         board = GhBoard(owner=owner, run=run)
-        board.check_auth_scope()
         payload = _dispatch(args, board, root)
     except BoardError as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))
