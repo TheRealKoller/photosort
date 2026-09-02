@@ -80,3 +80,26 @@ export function formatPercent(share: number): string {
 export function formatCount(value: number): string {
   return INTEGER.format(value)
 }
+
+const DATE = new Intl.DateTimeFormat('de-DE', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+})
+const DATE_TIME = new Intl.DateTimeFormat('de-DE', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+/** Reines Datum (fuer den Aufnahmezeitraum - die Uhrzeit eines Fotos ist hier ohne Aussage). */
+export function formatDate(isoDate: string): string {
+  return DATE.format(new Date(isoDate))
+}
+
+/** Datum mit Uhrzeit (fuer Lauf-Zeitpunkte - dort ist die Uhrzeit die eigentliche Information). */
+export function formatDateTime(isoDate: string): string {
+  return DATE_TIME.format(new Date(isoDate))
+}

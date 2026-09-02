@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatBytes, formatCount, formatPercent, formatUsd } from './formatStats'
+import {
+  formatBytes,
+  formatCount,
+  formatDate,
+  formatDateTime,
+  formatPercent,
+  formatUsd,
+} from './formatStats'
 
 // specs/features/0207-projekt-statistikseite.md, Akzeptanzkriterien S1/K1/K4: reine
 // Formatierungsfunktionen mit deutschem Zahlenformat. Sie tragen die Aussagen, an denen die
@@ -90,5 +97,15 @@ describe('formatCount', () => {
   it('setzt den deutschen Tausenderpunkt', () => {
     expect(formatCount(12043)).toBe('12.043')
     expect(formatCount(0)).toBe('0')
+  })
+})
+
+describe('formatDate / formatDateTime', () => {
+  it('stellt ein Datum zweistellig im deutschen Format dar', () => {
+    expect(formatDate('2019-04-02T10:12:00')).toBe('02.04.2019')
+  })
+
+  it('ergaenzt beim Lauf-Zeitpunkt die Uhrzeit', () => {
+    expect(formatDateTime('2026-08-01T09:05:00')).toMatch(/^01\.08\.2026, 09:05$/)
   })
 })
