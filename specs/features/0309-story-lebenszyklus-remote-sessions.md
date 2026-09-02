@@ -1,6 +1,6 @@
 # 0309 - Story-Lebenszyklus in Remote-Sessions: Board-Zugriff probieren statt raten, plus Diagnose-Kommando `doctor`
 
-**Status:** Accepted
+**Status:** Implemented ([PR #313](https://github.com/TheRealKoller/photosort/pull/313))
 **Erstellt:** 2026-09-02
 **Bezug:** GitHub-Issue [`#309`](https://github.com/TheRealKoller/photosort/issues/309), ADR [`0052`](../decisions/0052-remote-lebenszyklus-diagnose-kommando-und-echter-board-preflight.md), `scripts/gh-board.py`, `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`
 
