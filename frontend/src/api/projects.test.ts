@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { apiFetch } from './client'
+import { ApiError, apiFetch } from './client'
 import {
   confirmAusschussGate,
   createProject,
   getClassificationEstimate,
   getProject,
+  getProjectStats,
   listProjects,
   setCloudVisionConsent,
   triggerClassification,
@@ -14,7 +15,8 @@ import {
 } from './projects'
 import type { ProjectOut } from './types'
 
-vi.mock('./client', () => ({
+vi.mock('./client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./client')>()),
   apiFetch: vi.fn(),
 }))
 
@@ -130,6 +132,25 @@ describe('api/projects', () => {
       body: { enabled: true },
     })
     expect(result).toEqual(response)
+  })
+
+  // specs/features/0207-projekt-statistikseite.md: als Projekt-Unterressource hier gefuehrt,
+  // konsistent mit listFineLabels/getClassificationEstimate.
+  it('fetches the stats via GET /projects/{id}/stats', async () => {
+    const response = { photo_count: 0 }
+    vi.mocked(apiFetch).mockResolvedValue(response)
+
+    const result = await getProjectStats(7)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/7/stats')
+    expect(result).toEqual(response)
+  })
+
+  it('propagates an ApiError from GET /projects/{id}/stats unchanged', async () => {
+    const error = new ApiError(404, 'Projekt nicht gefunden.')
+    vi.mocked(apiFetch).mockRejectedValue(error)
+
+    await expect(getProjectStats(7)).rejects.toBe(error)
   })
 
   it('fetches the estimate via GET /projects/{id}/classify/estimate', async () => {

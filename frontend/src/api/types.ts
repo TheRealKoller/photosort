@@ -319,3 +319,104 @@ export interface CategoryOverrideOut {
   photo_id: number
   category_key: CategoryKey
 }
+
+// specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
+// laeufe.md ab hier: die Momentaufnahme eines Projekts (GET /projects/{id}/stats). Reine
+// Anzeigedaten - die Seite loest nichts aus und schreibt nichts.
+
+export interface ProjectStatsStorage {
+  opencloud_bytes: number
+  // null = nicht ermittelbar (keine PostgreSQL-Datenbank). Immer explizit `=== null` pruefen,
+  // nie truthy: 0 ist ein gueltiger, informativer Wert und heisst etwas anderes.
+  local_cache_bytes: number
+  local_database_bytes_estimate: number | null
+}
+
+export interface ProjectStatsCategoryEntry {
+  category_key: string
+  // Der Anzeigename kommt vom Server (ADR 0049) - es gibt bewusst KEINE Uebersetzungstabelle fuer
+  // Set-Keys im Frontend, sonst liefen beide Listen auseinander.
+  display_name: string
+  photo_count: number
+  /** Bruchteil zwischen 0 und 1, bezogen auf die KLASSIFIZIERTEN Fotos. */
+  share: number
+}
+
+export interface ProjectStatsCategories {
+  classified_photo_count: number
+  unclassified_photo_count: number
+  /** Immer alle Kategorien des festen Sets inkl. `nicht_erkannt`, in Anzeigereihenfolge. */
+  entries: ProjectStatsCategoryEntry[]
+}
+
+/** Die beiden Cloud-Zwecke (backend models.py::CloudVisionPhase) - immer beide, auch mit 0. */
+export type CloudVisionPurpose = 'landmark' | 'remote_category'
+
+export interface ProjectStatsCostByPurpose {
+  purpose: CloudVisionPurpose
+  cost_usd: number
+  /** true = fuer mindestens einen Lauf dieses Zwecks fehlen Verbrauchsdaten (ADR 0051 Punkt 5).
+   * Es wird bewusst nichts geschaetzt - der Betrag bleibt die Summe des tatsaechlich Erfassten. */
+  has_unrecorded_runs: boolean
+}
+
+export interface ProjectStatsCost {
+  currency: string
+  /** Serverseitig UNGERUNDET - erst die Anzeige rundet, damit die Summe exakt der Summe der
+   * angezeigten Einzelposten entspricht. */
+  total_usd: number
+  by_purpose: ProjectStatsCostByPurpose[]
+}
+
+export interface ProjectStatsProgress {
+  scanned: number
+  thumbnails_ready: number
+  ausschuss_scored: number
+  ranked: number
+  remote_classified: number
+}
+
+/** Ausschliesslich die Bewertungen des ANGEMELDETEN Nutzers; die vier Werte summieren sich exakt
+ * zur Fotoanzahl. */
+export interface ProjectStatsRatings {
+  favorite: number
+  album_worthy: number
+  rejected: number
+  unrated: number
+}
+
+/** Jeweils der Abschlusszeitpunkt des zuletzt ERFOLGREICHEN Laufs; null = noch nie gelaufen. */
+export interface ProjectStatsLastSuccessfulRuns {
+  scan: string | null
+  scoring: string | null
+  classification: string | null
+  remote_category_classification: string | null
+}
+
+export interface ProjectStatsRemoteFailure {
+  purpose: CloudVisionPurpose
+  photo_count: number
+}
+
+export interface ProjectStatsDiagnostics {
+  /** null = noch nie gescannt (ausdruecklich nicht 0). */
+  last_scan_files_skipped: number | null
+  duplicate_photo_count: number
+  /** Ist-Zustand, keine Historie: ein erfolgreicher Retry senkt den Wert wieder. */
+  remote_failures: ProjectStatsRemoteFailure[]
+}
+
+export interface ProjectStatsOut {
+  photo_count: number
+  storage: ProjectStatsStorage
+  /** null bei leerem Projekt; bei genau einem Foto ist Anfang gleich Ende. */
+  taken_at_earliest: string | null
+  taken_at_latest: string | null
+  categories: ProjectStatsCategories
+  manual_category_override_count: number
+  cost: ProjectStatsCost
+  progress: ProjectStatsProgress
+  ratings: ProjectStatsRatings
+  last_successful_runs: ProjectStatsLastSuccessfulRuns
+  diagnostics: ProjectStatsDiagnostics
+}
