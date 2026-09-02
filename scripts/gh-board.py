@@ -1182,7 +1182,11 @@ def cmd_doctor(board: GhBoard) -> dict[str, Any]:
         )
     probes.append(_probe_result("project_visible", board_sichtbar, project_detail, project_stderr))
 
-    # 8) Board-Felder samt Optionen - ueber dieselben Methoden, die jeder Schreibpfad benutzt.
+    # 8) Board-Felder samt Optionen - bewusst ueber dieselben Methoden, die jeder Schreibpfad
+    #    benutzt: Die Pruefung soll den echten Aufloesungsweg gehen, nicht einen nachgebauten.
+    #    Preis ist ein zweiter (rein lesender) 'gh project list'-Aufruf, weil der Cache nach der
+    #    Roh-Probe oben leer ist - in einer Diagnose ist Unabhaengigkeit der Pruefungen mehr wert
+    #    als ein gesparter Aufruf.
     try:
         luecken = _missing_field_options(board)
     except BoardError as exc:
