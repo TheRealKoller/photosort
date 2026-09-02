@@ -966,6 +966,13 @@ async def _commit_phase_costs(session: AsyncSession) -> None:
     Das anschliessende `rollback()` hinterlaesst eine benutzbare Session, damit `_fail_run` den
     Lauf noch auf FAILED setzen kann.
 
+    Copilot-Review-Fund (PR #311): auch dieses `rollback()` ist abgesichert. Es laeuft in genau
+    der Lage, in der schon das Commit gescheitert ist (Verbindungsabbruch, DBAPI-Problem) - eine
+    Exception von dort verliesse den Helfer und ersetzte die urspruengliche eine Ebene tiefer,
+    also genau die Maskierung, gegen die er gebaut ist. Scheitert auch das Aufraeumen, bleibt der
+    Session nichts mehr zu retten; _fail_run scheitert dann ebenfalls, aber mit SEINEM eigenen
+    Fehler statt mit einem hier ausgeloesten. Sichtbar bleibt beides ueber die zwei Logzeilen.
+
     Bewusst OHNE `run.id` in der Logzeile: nach einem gescheiterten Commit sind die
     ORM-Attribute expired, ein lesender Zugriff loeste ausserhalb des greenlet-Kontexts einen
     Lazy-Load aus (MissingGreenlet) - dieselbe Falle, die _fail_run mit seinem refresh() abraeumt.
@@ -976,7 +983,13 @@ async def _commit_phase_costs(session: AsyncSession) -> None:
         logger.warning(
             "Ist-Kosten des Laufs konnten nicht gespeichert werden: %s", type(exc).__name__
         )
-        await session.rollback()
+        try:
+            await session.rollback()
+        except SQLAlchemyError as rollback_exc:
+            logger.warning(
+                "Session nach dem gescheiterten Kosten-Commit nicht aufraeumbar: %s",
+                type(rollback_exc).__name__,
+            )
 
 
 async def _record_cloud_vision_error(

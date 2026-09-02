@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import worker
@@ -126,3 +126,61 @@ async def test_commit_phase_costs_commits_normally_when_nothing_is_wrong(
         await db_session.execute(select(ScanRun).where(ScanRun.project_id == project.id))
     ).scalar_one()
     assert stored.files_skipped == 7
+
+
+# Copilot-Review-Fund (PR #311): auch das `rollback()` im except-Zweig war ungeschuetzt. Wirft es
+# selbst - Verbindungsabbruch, InterfaceError, also genau die Lage, in der schon das commit()
+# gescheitert ist -, verliesse diese Exception den Helfer und ersetzte die urspruengliche im
+# umgebenden `finally`. Damit waere exakt die Maskierung zurueck, gegen die der Helfer gebaut
+# wurde, nur eine Ebene tiefer.
+
+
+class _SessionWithBrokenConnection:
+    """Minimaler Stub statt einer echten Session: der Zustand "auch das Rollback scheitert" ist
+    mit einer echten SQLite-Session nicht herstellbar (er entsteht erst bei einer abgerissenen
+    Verbindung zu einem echten Server)."""
+
+    def __init__(self, *, rollback_fails: bool = True) -> None:
+        self.commit_calls = 0
+        self.rollback_calls = 0
+        self._rollback_fails = rollback_fails
+
+    async def commit(self) -> None:
+        self.commit_calls += 1
+        raise OperationalError("COMMIT", {}, Exception("Verbindung abgerissen"))
+
+    async def rollback(self) -> None:
+        self.rollback_calls += 1
+        if self._rollback_fails:
+            raise InterfaceError("ROLLBACK", {}, Exception("Verbindung abgerissen"))
+
+
+async def test_commit_phase_costs_swallows_a_failing_rollback_too(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session = _SessionWithBrokenConnection()
+
+    with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+        await worker._commit_phase_costs(session)  # type: ignore[arg-type]
+
+    assert session.commit_calls == 1
+    assert session.rollback_calls == 1
+    # Zwei Zeilen: der gescheiterte Commit und das ebenfalls gescheiterte Aufraeumen - beides
+    # bleibt sichtbar, nur eben im Log statt als Exception.
+    messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 2
+    assert any("OperationalError" in message for message in messages)
+    assert any("InterfaceError" in message for message in messages)
+
+
+async def test_an_original_exception_survives_a_completely_broken_session() -> None:
+    """Die eigentliche Zusage des Helfers, im echten Aufrufkontext geprueft: er steht in einem
+    `finally`, waehrend eine Exception nach oben laeuft - und darf sie unter keinen Umstaenden
+    ersetzen."""
+    session = _SessionWithBrokenConnection()
+
+    with pytest.raises(RuntimeError, match="urspruenglicher Fehler"):
+        try:
+            raise RuntimeError("urspruenglicher Fehler")
+        finally:
+            await worker._commit_phase_costs(session)  # type: ignore[arg-type]

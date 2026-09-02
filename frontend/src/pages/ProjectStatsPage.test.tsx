@@ -14,6 +14,13 @@ vi.mock('../api/projects')
 // Bedienelemente. Die Negativ-Assertions am Ende sind so wichtig wie die positiven - die Spec
 // grenzt die Seite ausdruecklich gegen Filter, Sortierung, Export und Ausloeser ab.
 
+/** Wörtlicher Textbaustein aus dem UI/UX-Abschnitt der Spec (Tabelle "Textbausteine für fehlende
+ * und unvollständige Werte") - er spricht von "diesem Zweck" und gehört deshalb an den Betrag
+ * eines Zwecks, nicht an die zweckübergreifende Summe. */
+const INCOMPLETE_EXPLANATION =
+  'Für mindestens einen Lauf dieses Zwecks liegen keine Verbrauchsdaten vor. Es wird bewusst ' +
+  'nichts geschätzt — der angezeigte Betrag ist die Summe des tatsächlich Erfassten.'
+
 const CATEGORY_KEYS = [
   'menschen',
   'tier',
@@ -240,6 +247,8 @@ describe('ProjectStatsPage', () => {
       const scope = await screen.findByRole('region', { name: 'Kosten für Remote-Berechnungen' })
       expect(within(scope).getAllByText('0,00 USD').length).toBeGreaterThan(0)
       expect(within(scope).queryByText('Summe unvollständig erfasst')).not.toBeInTheDocument()
+      // Ohne Vorbehalt darf die Seite auch nicht zu dessen Erklärung einladen.
+      expect(within(scope).queryByText(INCOMPLETE_EXPLANATION)).not.toBeInTheDocument()
     })
   })
 
@@ -326,12 +335,39 @@ describe('ProjectStatsPage', () => {
       expect(within(scope).getByText('30,03 USD')).toBeInTheDocument()
     })
 
-    it('zeigt den Unvollstaendigkeits-Hinweis genau bei dem betroffenen Zweck', async () => {
+    it('zeigt Hinweis UND Erläuterung genau bei dem betroffenen Zweck', async () => {
+      // Copilot-Review-Fund (PR #311): die Erläuterung hing zuvor am zweckübergreifenden
+      // Gesamtbetrag, obwohl ihr Wortlaut von "diesem Zweck" spricht - Text und Ort waren
+      // gegeneinander vertauscht. Akzeptanzkriterium A2 verlangt die Erläuterung unmittelbar bei
+      // der Zahl, der UI/UX-Abschnitt ausdrücklich "je Zweck unmittelbar bei dessen Betrag".
+      const { container } = renderPage()
+
+      const scope = await screen.findByRole('region', { name: 'Kosten für Remote-Berechnungen' })
+      expect(within(scope).getAllByText('Summe unvollständig erfasst')).toHaveLength(1)
+      expect(within(scope).getAllByText(INCOMPLETE_EXPLANATION)).toHaveLength(1)
+
+      const affected = container.querySelector('[data-purpose="landmark"]')
+      const unaffected = container.querySelector('[data-purpose="remote_category"]')
+      expect(affected).not.toBeNull()
+      expect(unaffected).not.toBeNull()
+      expect(within(affected as HTMLElement).getByText('Summe unvollständig erfasst')).toBeInTheDocument()
+      expect(within(affected as HTMLElement).getByText(INCOMPLETE_EXPLANATION)).toBeInTheDocument()
+      expect(
+        within(unaffected as HTMLElement).queryByText('Summe unvollständig erfasst')
+      ).not.toBeInTheDocument()
+      expect(
+        within(unaffected as HTMLElement).queryByText(INCOMPLETE_EXPLANATION)
+      ).not.toBeInTheDocument()
+    })
+
+    it('erklärt den Vorbehalt nicht am zweckübergreifenden Gesamtbetrag', async () => {
       renderPage()
 
       const scope = await screen.findByRole('region', { name: 'Kosten für Remote-Berechnungen' })
-      const hints = within(scope).getAllByText('Summe unvollständig erfasst')
-      expect(hints).toHaveLength(1)
+      // Am Gesamtwert gibt es keinen "diesen Zweck" - dort stünde die Erläuterung sachlich falsch.
+      for (const button of within(scope).queryAllByRole('button')) {
+        expect(button).not.toHaveAccessibleName(/Summe unvollständig erfasst/)
+      }
     })
 
     it('zeigt den Bearbeitungsstand als "x von y Fotos"', async () => {
@@ -365,6 +401,29 @@ describe('ProjectStatsPage', () => {
       const scope = await screen.findByRole('region', { name: 'Vertrauen und Fehlersuche' })
       expect(within(scope).getByText('341')).toBeInTheDocument()
       expect(within(scope).getByText('12')).toBeInTheDocument()
+    })
+  })
+
+  describe('vollständig erfasste Kosten', () => {
+    it('zeigt weder Hinweis noch Erläuterung, wenn beide Zwecke vollständig erfasst sind', async () => {
+      vi.mocked(projectsApi.getProjectStats).mockResolvedValue({
+        ...fullStats(),
+        cost: {
+          currency: 'USD',
+          total_usd: 42.13,
+          by_purpose: [
+            { purpose: 'landmark', cost_usd: 12.1, has_unrecorded_runs: false },
+            { purpose: 'remote_category', cost_usd: 30.03, has_unrecorded_runs: false },
+          ],
+        },
+      })
+
+      renderPage()
+
+      const scope = await screen.findByRole('region', { name: 'Kosten für Remote-Berechnungen' })
+      expect(within(scope).getByText('42,13 USD')).toBeInTheDocument()
+      expect(within(scope).queryByText('Summe unvollständig erfasst')).not.toBeInTheDocument()
+      expect(within(scope).queryByText(INCOMPLETE_EXPLANATION)).not.toBeInTheDocument()
     })
   })
 
