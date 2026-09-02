@@ -6,7 +6,7 @@ import jwt
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.api import opencloud, projects
+from photosort.api import opencloud, projects, stats
 from photosort.config import settings
 from photosort.models import User
 from photosort.security import ALGORITHM, create_access_token, hash_password
@@ -129,7 +129,11 @@ def _protected_router_operations() -> list[tuple[str, str]]:
     # Direkt ueber die APIRouter-Objekte statt ueber app.routes iteriert - robuster gegenueber
     # FastAPI-internen Repraesentationen von eingebundenen Routern (_IncludedRouter u.ae.).
     operations: list[tuple[str, str]] = []
-    for router in (projects.router, opencloud.router):
+    # specs/features/0207-projekt-statistikseite.md: `stats.router` ist hier ergaenzt, sonst
+    # gaelte die 401-Vollstaendigkeitsgarantie fuer den neuen Router nicht - und die Absicherung
+    # eines kuenftigen zweiten Stats-Endpunkts haenge allein daran, dass niemand die Dependency
+    # vergisst.
+    for router in (projects.router, opencloud.router, stats.router):
         for route in router.routes:
             path = getattr(route, "path", "")
             # Platzhalter durch einen harmlosen konkreten Wert ersetzen, damit die Anfrage
@@ -144,7 +148,7 @@ def _protected_router_operations() -> list[tuple[str, str]]:
 
 
 @pytest.mark.parametrize("method,path", _protected_router_operations())
-async def test_all_project_and_opencloud_routes_require_token(
+async def test_all_project_opencloud_and_stats_routes_require_token(
     api_client: httpx.AsyncClient, method: str, path: str
 ) -> None:
     response = await api_client.request(method, path)
