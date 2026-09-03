@@ -86,7 +86,9 @@ In `docs/setup.md`, jeweils **korrigiert statt ergänzt** (eine widerlegte Aussa
 
 Die bestehenden Zusicherungen gelten unverändert für den neuen Block und dürfen nicht aufgeweicht werden: Bindung von `GH_VERSION` an `MIN_GH_VERSION`, Zeichenvorrat der Kopiervorlage, die Extraktions-Fehlerfälle.
 
-Neu hinzu kommt genau eine Zusicherung — dass der dokumentierte Block **keine** der beiden kaputten Kapselungsformen enthält. Das ist die einzige Eigenschaft dieser Story, die am Repository-Stand mechanisch prüfbar ist; alles andere ist Textprüfung im Review. Der Test ist bewusst eng: Er prüft die Abwesenheit der zwei konkret benannten Formen, nicht die Anwesenheit einer „richtigen" Form — letzteres wäre eine Formulierungspolizei, die bei jeder harmlosen Umformatierung rot wird.
+Neu hinzu kommt genau eine Zusicherung — dass der dokumentierte Block **keine** der drei kaputten Formen enthält: Subshell als `if`-Bedingung, Subshell links einer `||`/`&&`-Liste, und `set -e` auf oberster Ebene (die Rückkehr zum Sessionstart-Blocker, den diese Story behebt). Das ist die einzige Eigenschaft dieser Story, die am Repository-Stand mechanisch prüfbar ist; alles andere ist Textprüfung im Review. Der Test ist bewusst eng: Er prüft die Abwesenheit dieser drei konkret benannten Formen, nicht die Anwesenheit einer „richtigen" Form — letzteres wäre eine Formulierungspolizei, die bei jeder harmlosen Umformatierung rot wird.
+
+Zwei bestehende Zusicherungen sind mitzuziehen, ohne sie aufzuweichen: `test_der_ausgeschnittene_block_ist_der_setup_script_block` verankert die Identität des Blocks bisher an `startswith("set -euo pipefail")` — genau der Zeile, die diese Story ändert. Sie wird auf inhaltliche Merkmale umgestellt (`install -m 0755`, `/usr/local/bin`, `releases/download`), weil eine Zusicherung, die bei jeder Umformatierung bricht, nichts über die Identität des Blocks aussagt. Die Zeichenvorrats- und Versionsbindungs-Prüfungen gelten unverändert für den neuen Block.
 
 Zum Gegenbeweis gehört, dass der Test bei einer absichtlich eingebauten kaputten Form tatsächlich rot wird.
 

@@ -190,11 +190,18 @@ def test_der_dokumentierte_block_enthaelt_ausschliesslich_druckbares_ascii() -> 
 
 
 def test_der_ausgeschnittene_block_ist_der_setup_script_block() -> None:
-    """docs/setup.md fuehrt mehrere ```bash-Bloecke - geprueft wird genau dieser eine."""
+    """docs/setup.md fuehrt mehrere ```bash-Bloecke - geprueft wird genau dieser eine.
+
+    Verankert an inhaltlichen Merkmalen der Kopiervorlage statt an ihrer ersten Zeile: Woran
+    der Block beginnt, hat sich mit ADR 0054 bereits einmal geaendert (Kommentar statt
+    "set -euo pipefail"), und eine Zusicherung, die bei jeder Umformatierung bricht, sagt
+    nichts ueber die Identitaet des Blocks aus.
+    """
     block = setup_script_block_aus_doku()
 
-    assert block.startswith("set -euo pipefail\n")
     assert "install -m 0755" in block
+    assert "/usr/local/bin" in block
+    assert "releases/download" in block
 
 
 @pytest.mark.parametrize(
@@ -245,3 +252,92 @@ def test_die_meldung_der_block_extraktion_nennt_die_gelesene_datei(tmp_path: Pat
 
     with pytest.raises(ValueError, match=re.escape(str(leere_doku))):
         setup_script_block_aus_doku(leere_doku)
+
+
+# -- Kapselungsform: der Fehlschlag darf die Session nicht blockieren (ADR 0054 Abschnitt 2)
+
+# Drei konkret benannte, kaputte Schreibweisen - keine Formulierungspolizei, sondern die
+# Formen, deren Schaden gemessen ist:
+#
+# 1./2. "if ! ( set -e; ... )" und "( set -e; ... ) || warnen": bash unterdrueckt das set -e
+#       im Rumpf einer Subshell, die Teil einer if-Bedingung bzw. einer ||/&&-Liste ist. Am
+#       Block hiesse das, dass nach fehlgeschlagener Pruefsummenpruefung trotzdem entpackt und
+#       nach /usr/local/bin installiert wird - die Absicherung waere nicht wirkungslos,
+#       sondern schaedlich.
+# 3.    "set -e..." auf oberster Ebene (nicht eingerueckt): die Rueckkehr zum Zustand, den
+#       ADR 0054 behebt - ein Fehlschlag beendet dann das ganze Script, und die Session
+#       startet nicht mehr.
+#
+# Die korrekte Form (Subshell allein, Auswertung danach ueber $?) wird bewusst NICHT positiv
+# erzwungen: Das wuerde bei jeder harmlosen Umformatierung rot.
+_SUBSHELL_IN_BEDINGUNG = re.compile(r"^[ \t]*(?:if|while|until)[ \t]+!?[ \t]*\(", re.MULTILINE)
+_SUBSHELL_VOR_LISTE = re.compile(r"^[ \t]*\)[ \t]*(?:\|\||&&)", re.MULTILINE)
+_ERRexit_AUF_OBERSTER_EBENE = re.compile(r"^set[ \t]+-[a-z]*e", re.MULTILINE)
+
+
+def kapselungs_verstoesse(block: str) -> list[str]:
+    """Meldet die kaputten Kapselungsformen, die den Abbruch im Innern aushebeln wuerden."""
+    befunde = []
+    if _SUBSHELL_IN_BEDINGUNG.search(block):
+        befunde.append(
+            "Subshell als if-/while-/until-Bedingung: bash unterdrueckt darin das 'set -e', "
+            "der Installationsteil liefe nach einem Fehlschlag weiter"
+        )
+    if _SUBSHELL_VOR_LISTE.search(block):
+        befunde.append(
+            "Subshell links einer '||'-/'&&'-Liste: bash unterdrueckt darin das 'set -e', "
+            "der Installationsteil liefe nach einem Fehlschlag weiter"
+        )
+    if _ERRexit_AUF_OBERSTER_EBENE.search(block):
+        befunde.append(
+            "'set -e' auf oberster Ebene: ein Fehlschlag beendet das ganze Setup-Script, "
+            "womit die Cloud-Session nicht mehr startet"
+        )
+    return befunde
+
+
+def test_der_block_haelt_die_vorgeschriebene_kapselungsform_ein() -> None:
+    """Innen hart abbrechen, aussen mit 0 enden - beides zugleich, oder der Block ist kaputt."""
+    verstoesse = kapselungs_verstoesse(setup_script_block_aus_doku())
+
+    assert not verstoesse, (
+        f"Der Setup-Script-Block in {SETUP_DOKU_PFAD} verletzt die in ADR 0054 Abschnitt 2 "
+        f"vorgeschriebene Kapselung: {'; '.join(verstoesse)}. Vorgeschrieben ist die Subshell "
+        "als eigenstaendiges Kommando mit anschliessender Auswertung ueber $?."
+    )
+
+
+@pytest.mark.parametrize(
+    ("kaputt", "erwartet"),
+    [
+        ("if ! (\n  set -e\n  install\n); then\n  warnen\nfi\n", "if-"),
+        ("  while (\n  set -e\n); do\n  :\ndone\n", "if-"),
+        ("(\n  set -e\n  install\n) || warnen\n", "'||'-"),
+        ("(\n  set -e\n) && weiter\n", "'||'-"),
+        ("set -euo pipefail\ninstall\n", "oberster Ebene"),
+        ("set -e\ninstall\n", "oberster Ebene"),
+    ],
+)
+def test_jede_kaputte_kapselungsform_wird_erkannt(kaputt: str, erwartet: str) -> None:
+    befunde = kapselungs_verstoesse(kaputt)
+
+    assert befunde, f"nicht erkannt: {kaputt!r}"
+    assert any(erwartet in befund for befund in befunde), befunde
+
+
+def test_die_korrekte_form_gilt_nicht_als_verstoss() -> None:
+    """Gegenprobe: eingeruecktes 'set -e' in einer allein stehenden Subshell ist der Zielzustand."""
+    korrekt = (
+        "set -uo pipefail\n"
+        'if [ -n "$have" ] && [ 1 -eq 1 ]; then\n'
+        "  echo ok\n"
+        "fi\n"
+        "(\n"
+        "  set -eo pipefail\n"
+        "  ( cd \"$tmp\" && awk '$2 == a' checksums.txt | sha256sum -c - )\n"
+        ")\n"
+        "status=$?\n"
+        "command -v gh >/dev/null 2>&1 && gh --version || echo fehlt\n"
+    )
+
+    assert kapselungs_verstoesse(korrekt) == []
