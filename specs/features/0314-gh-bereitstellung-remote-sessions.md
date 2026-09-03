@@ -1,6 +1,6 @@
 # 0314 - `gh`-Bereitstellung für Remote-Sessions: Setup-Script der Umgebung, im Repository nur die dokumentierte und CI-geprüfte Fassung
 
-**Status:** Accepted
+**Status:** Implemented ([PR #315](https://github.com/TheRealKoller/photosort/pull/315))
 **Erstellt:** 2026-09-03
 **Bezug:** GitHub-Issue [`#314`](https://github.com/TheRealKoller/photosort/issues/314), ADR [`0053`](../decisions/0053-gh-bereitstellung-per-umgebungs-setup-script.md), Vorgänger-Spec [`0309`](./0309-story-lebenszyklus-remote-sessions.md), ADR [`0052`](../decisions/0052-remote-lebenszyklus-diagnose-kommando-und-echter-board-preflight.md), ADR [`0046`](../decisions/0046-pr-issue-verknuepfung-closing-keyword.md), `scripts/gh-board.py` (`MIN_GH_VERSION`), `docs/setup.md`, `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`
 
