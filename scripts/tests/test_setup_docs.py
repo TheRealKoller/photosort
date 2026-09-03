@@ -272,7 +272,7 @@ def test_die_meldung_der_block_extraktion_nennt_die_gelesene_datei(tmp_path: Pat
 # erzwungen: Das wuerde bei jeder harmlosen Umformatierung rot.
 _SUBSHELL_IN_BEDINGUNG = re.compile(r"^[ \t]*(?:if|while|until)[ \t]+!?[ \t]*\(", re.MULTILINE)
 _SUBSHELL_VOR_LISTE = re.compile(r"^[ \t]*\)[ \t]*(?:\|\||&&)", re.MULTILINE)
-_ERRexit_AUF_OBERSTER_EBENE = re.compile(r"^set[ \t]+-[a-z]*e", re.MULTILINE)
+_ERREXIT_AUF_OBERSTER_EBENE = re.compile(r"^set[ \t]+-[a-z]*e", re.MULTILINE)
 
 
 def kapselungs_verstoesse(block: str) -> list[str]:
@@ -288,7 +288,7 @@ def kapselungs_verstoesse(block: str) -> list[str]:
             "Subshell links einer '||'-/'&&'-Liste: bash unterdrueckt darin das 'set -e', "
             "der Installationsteil liefe nach einem Fehlschlag weiter"
         )
-    if _ERRexit_AUF_OBERSTER_EBENE.search(block):
+    if _ERREXIT_AUF_OBERSTER_EBENE.search(block):
         befunde.append(
             "'set -e' auf oberster Ebene: ein Fehlschlag beendet das ganze Setup-Script, "
             "womit die Cloud-Session nicht mehr startet"

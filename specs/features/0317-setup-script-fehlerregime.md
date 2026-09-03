@@ -1,6 +1,6 @@
 # 0317 - Setup-Script der Cloud-Umgebung: Fehlschlag kostet das Werkzeug, nicht die Session
 
-**Status:** Accepted
+**Status:** Implemented ([PR #319](https://github.com/TheRealKoller/photosort/pull/319))
 **Erstellt:** 2026-09-03
 **Bezug:** GitHub-Issue [`#317`](https://github.com/TheRealKoller/photosort/issues/317), ADR [`0054`](../decisions/0054-setup-script-fehlerregime-und-korrigierte-umgebungsannahmen.md), Vorgänger-Spec [`0314`](./0314-gh-bereitstellung-remote-sessions.md) ([PR #315](https://github.com/TheRealKoller/photosort/pull/315), gemergt), ADR [`0053`](../decisions/0053-gh-bereitstellung-per-umgebungs-setup-script.md), Folge-Issue [`#318`](https://github.com/TheRealKoller/photosort/issues/318), `docs/setup.md`, `scripts/tests/test_setup_docs.py`, `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`
 
