@@ -8,37 +8,17 @@ konstruierten Argumentlisten (dieselbe Technik wie im abgeloesten test_gh_adapte
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 
-# Bindestrich im Dateinamen (analog zu seed-opencloud-demo.py, siehe conftest.py) - kein
-# gueltiger Python-Modulname, daher per Pfad statt per "import" geladen.
-_SCRIPT_PATH = Path(__file__).parent.parent / "gh-board.py"
-
 OWNER = "TheRealKoller"
 REPO = "photosort"
 PROJECT_TITLE = "PhotoSort Roadmap"
-
-
-def _load_module() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("gh_board", _SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-@pytest.fixture(scope="session")
-def gh_board() -> ModuleType:
-    return _load_module()
 
 
 def _completed(
