@@ -63,6 +63,58 @@ def gh_version_aus_doku(pfad: Path = SETUP_DOKU_PFAD) -> str:
         raise ValueError(f"{pfad}: {fehler}") from fehler
 
 
+# Fuer die Zeichenvorrats-Pruefung wird der Block ausgeschnitten statt die Datei gescannt:
+# docs/setup.md ist deutsche Prosa und fuehrt reichlich Nicht-ASCII (Umlaute, Gedankenstriche).
+# Geprueft wird ausschliesslich die Kopiervorlage, die von Hand in ein Webformular wandert und
+# dort als Root laeuft. Der Filter auf "GH_VERSION=" trennt sie von den uebrigen Codebloecken
+# der Datei; eine allgemeine Block-Erkennung entsteht dadurch ausdruecklich nicht.
+_BASH_BLOCK = re.compile(r"```bash\n(.*?)```", re.DOTALL)
+
+# Zeilenumbruch und Tabulator sind der einzige erlaubte Steuerzeichen-Vorrat eines Shell-Blocks.
+_ERLAUBTER_LEERRAUM = ("\n", "\t")
+
+
+def setup_script_block_aus_text(text: str) -> str:
+    """Schneidet den einen ```bash-Block aus, der GH_VERSION zuweist."""
+    treffer = [block for block in _BASH_BLOCK.findall(text) if "GH_VERSION=" in block]
+
+    if not treffer:
+        raise ValueError(
+            "0 Treffer: kein ```bash-Block enthaelt eine GH_VERSION-Zuweisung. Damit ist der "
+            "Zeichenvorrat der Kopiervorlage ungeprueft - entweder fehlt der Block, oder die "
+            "Fence-/Sprachauszeichnung hat sich geaendert."
+        )
+    if len(treffer) > 1:
+        raise ValueError(
+            f"{len(treffer)} Treffer: mehrere ```bash-Bloecke weisen GH_VERSION zu. Es darf "
+            "genau eine Kopiervorlage geben - bei mehreren ist nicht mehr entscheidbar, welche "
+            "in die Weboberflaeche der Cloud-Umgebung gehoert."
+        )
+    return treffer[0]
+
+
+def setup_script_block_aus_doku(pfad: Path = SETUP_DOKU_PFAD) -> str:
+    try:
+        return setup_script_block_aus_text(pfad.read_text(encoding="utf-8"))
+    except ValueError as fehler:
+        raise ValueError(f"{pfad}: {fehler}") from fehler
+
+
+def nicht_ascii_verstoesse(block: str) -> list[str]:
+    """Meldet je Verstoss Position, Zeile, Zeichen und Codepoint.
+
+    Eine rote Zeile ohne Codepoint ist bei unsichtbaren Zeichen wertlos - man sieht im
+    Fehlerbericht sonst genau das, was man auch in der Datei nicht sieht.
+    """
+    verstoesse = []
+    for position, zeichen in enumerate(block):
+        if zeichen in _ERLAUBTER_LEERRAUM or 0x20 <= ord(zeichen) <= 0x7E:
+            continue
+        zeile = block.count("\n", 0, position) + 1
+        verstoesse.append(f"Position {position} (Zeile {zeile}): {zeichen!r} U+{ord(zeichen):04X}")
+    return verstoesse
+
+
 def test_die_dokumentierte_gh_version_entspricht_min_gh_version(gh_board: ModuleType) -> None:
     dokumentiert = gh_version_aus_doku()
 
@@ -122,3 +174,74 @@ def test_gleichwertige_schreibweisen_werden_toleriert(zeile: str) -> None:
 def test_ein_unvollstaendiges_versionsformat_ist_ein_lauter_fehlschlag(zeile: str) -> None:
     with pytest.raises(ValueError, match=r"0 Treffer"):
         gh_version_aus_text(f"{zeile}\n")
+
+
+def test_der_dokumentierte_block_enthaelt_ausschliesslich_druckbares_ascii() -> None:
+    """Der Block ist ein Kopiervorlagen-Angriffsziel: gerendert gelesen, als Root ausgefuehrt."""
+    verstoesse = nicht_ascii_verstoesse(setup_script_block_aus_doku())
+
+    assert not verstoesse, (
+        f"Der Setup-Script-Block in {SETUP_DOKU_PFAD} enthaelt Zeichen ausserhalb des "
+        f"druckbaren ASCII: {'; '.join(verstoesse)}. Unsichtbare Steuer-, Bidi- oder "
+        "Nullbreiten-Zeichen ueberstehen Kopieren und Einfuegen und koennen im gerenderten "
+        "Text verborgene Anweisungen tragen - der Block wird von Hand in ein Webformular "
+        "uebertragen und laeuft dort als Root."
+    )
+
+
+def test_der_ausgeschnittene_block_ist_der_setup_script_block() -> None:
+    """docs/setup.md fuehrt mehrere ```bash-Bloecke - geprueft wird genau dieser eine."""
+    block = setup_script_block_aus_doku()
+
+    assert block.startswith("set -euo pipefail\n")
+    assert "install -m 0755" in block
+
+
+@pytest.mark.parametrize(
+    ("zeichen", "codepoint"),
+    [
+        ("\u200b", "U+200B"),  # Zero-Width Space
+        ("\u202e", "U+202E"),  # Right-to-Left Override
+        ("\u00a0", "U+00A0"),  # Non-Breaking Space
+        ("\x1b", "U+001B"),  # ESC, Beginn jeder ANSI-Sequenz
+        ("\u2014", "U+2014"),  # Gedankenstrich, harmlos gemeint und trotzdem ein Verstoss
+    ],
+)
+def test_ein_unsichtbares_zeichen_wird_mit_position_und_codepoint_gemeldet(
+    zeichen: str, codepoint: str
+) -> None:
+    verstoesse = nicht_ascii_verstoesse(f'GH_VERSION="2.72.0"{zeichen}\ngh --version\n')
+
+    assert len(verstoesse) == 1
+    assert codepoint in verstoesse[0]
+    assert "Position 19" in verstoesse[0]
+    assert "Zeile 1" in verstoesse[0]
+
+
+def test_zeilenumbruch_und_tabulator_gelten_nicht_als_verstoss() -> None:
+    assert nicht_ascii_verstoesse("set -euo pipefail\n\tgh --version\n") == []
+
+
+def test_ein_fehlender_bash_block_scheitert_laut_statt_still() -> None:
+    with pytest.raises(ValueError, match=r"0 Treffer"):
+        setup_script_block_aus_text("Nur Prosa, kein Codeblock.\n")
+
+
+def test_ein_bash_block_ohne_gh_version_zaehlt_nicht_als_kopiervorlage() -> None:
+    with pytest.raises(ValueError, match=r"0 Treffer"):
+        setup_script_block_aus_text("```bash\ndocker compose up --build\n```\n")
+
+
+def test_ein_zweiter_kopiervorlagen_block_scheitert_laut() -> None:
+    text = '```bash\nGH_VERSION="2.72.0"\n```\ntext\n```bash\nGH_VERSION="2.80.0"\n```\n'
+
+    with pytest.raises(ValueError, match=r"2 Treffer"):
+        setup_script_block_aus_text(text)
+
+
+def test_die_meldung_der_block_extraktion_nennt_die_gelesene_datei(tmp_path: Path) -> None:
+    leere_doku = tmp_path / "setup.md"
+    leere_doku.write_text("kein Block\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=re.escape(str(leere_doku))):
+        setup_script_block_aus_doku(leere_doku)
