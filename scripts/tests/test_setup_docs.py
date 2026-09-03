@@ -34,7 +34,7 @@ def test_der_setup_block_weist_gh_version_genau_einmal_zu() -> None:
     treffer = _gh_versionen(SETUP_DOKU_PFAD.read_text(encoding="utf-8"))
 
     assert treffer, (
-        "In docs/setup.md steht keine Zeile, die mit GH_VERSION=\"...\" beginnt. Entweder "
+        'In docs/setup.md steht keine Zeile, die mit GH_VERSION="..." beginnt. Entweder '
         "fehlt der dokumentierte Setup-Script-Block, oder die Variable wurde umbenannt - "
         "dann ist dieser Test mitzuziehen, sonst ist die Bindung an MIN_GH_VERSION lautlos weg."
     )
