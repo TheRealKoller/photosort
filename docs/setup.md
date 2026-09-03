@@ -23,6 +23,109 @@ cd backend && pytest
 cd frontend && npm test
 ```
 
+## GitHub-CLI (`gh`)
+
+Der gesamte Story-Lebenszyklus des Projekts — Story-Issue anlegen, Issue-Body schreiben,
+Board-Status setzen, eine Feature-Spec finalisieren — läuft über
+[`scripts/gh-board.py`](../scripts/gh-board.py) und damit über die GitHub-CLI `gh`. Ohne sie ist
+keiner dieser Schritte ausführbar: `python3 scripts/gh-board.py doctor` meldet dann `gh_binary`
+als fehlgeschlagen und führt die davon blockierten Lebenszyklus-Schritte einzeln auf. `gh` ist
+also nicht optionales Komfortwerkzeug, sondern Voraussetzung des Entwicklungsablaufs (siehe
+[`ai-workflow.md`](./ai-workflow.md)).
+
+**Mindestversion:** gepflegt als Konstante `MIN_GH_VERSION` in `scripts/gh-board.py`. Das ist der
+autoritative Wert — hier steht bewusst keine zweite Zahl im Text, die davon abweichen könnte.
+
+**Warum die Distributions-Paketquelle nicht genügt:** Ubuntu liefert `gh` 2.45.x. Das Feld
+`closingIssuesReferences` in `gh pr view --json` — die Vorbedingung, an der `finalize` laut
+[ADR 0046](../specs/decisions/0046-pr-issue-verknuepfung-closing-keyword.md) die
+PR-Issue-Verknüpfung prüft — kennt `gh` erst ab der in `MIN_GH_VERSION` festgehaltenen Version.
+`apt install gh` verdeckt das Problem deshalb, statt es zu lösen: `gh` ist vorhanden, `finalize`
+bricht trotzdem ab. Zu beziehen ist `gh` daher immer als Release-Artefakt des Herausgebers, nicht
+aus der Paketquelle der Distribution.
+
+**Lokale Installation:** über die offizielle Bezugsquelle des Herausgebers —
+[Installationswege](https://github.com/cli/cli#installation) bzw. direkt die
+[Releases](https://github.com/cli/cli/releases). Danach einmalig `gh auth login`; `gh --version`
+zeigt die installierte Version, `python3 scripts/gh-board.py doctor` prüft sie gegen
+`MIN_GH_VERSION` mit.
+
+**Remote-/Cloud-Umgebungen:** dort brachte eine frisch gestartete Session `gh` bisher nicht mit
+(`command not found`, alle `doctor`-Prüfungen scheitern an dieser einen Ursache). Die
+Bereitstellung liegt bewusst **nicht** im Repository, sondern im **Setup-Script der
+Cloud-Umgebung**: gepflegt in deren Weboberfläche, einmalig beim Einrichten der Umgebung
+ausgeführt, Ergebnis als Filesystem-Snapshot gecacht (Begründung und Abwägung in
+[ADR 0053](../specs/decisions/0053-gh-bereitstellung-per-umgebungs-setup-script.md)). Der Block
+unten ist der Wortlaut, der dort einzutragen ist; **danach die Umgebung neu aufbauen**, damit der
+Snapshot den Zustand aufnimmt. An lokalen Arbeitsplätzen ändert sich dadurch nichts — es gibt
+keine eingecheckte Datei, die Sessionverhalten steuert, und keinen Eingriff in eine vorhandene
+Installation.
+
+> **Referenztext — wird nicht ausgeführt.** Dieser Block ist die dokumentierte Fassung eines
+> Artefakts, das ausschließlich in der Weboberfläche der Cloud-Umgebung lebt. Er wird von
+> niemandem aus dem Repository heraus ausgeführt: nicht von einem Skript, nicht von der Umgebung
+> beim Provisionieren und auch nicht von einem Agenten, der diese Datei liest. Er ist hier
+> festgehalten, damit eine neu angelegte Umgebung ohne Rekonstruktion aus dem Gedächtnis wieder
+> einzurichten ist.
+
+```bash
+set -euo pipefail
+
+# Muss zu MIN_GH_VERSION in scripts/gh-board.py passen (siehe docs/setup.md).
+GH_VERSION="2.72.0"
+
+SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+
+need_install=1
+if command -v gh >/dev/null 2>&1; then
+  have="$(gh --version | head -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+  # sort -V vergleicht numerisch: 2.9.0 ist aelter als 2.72.0, ein String-Vergleich sagt das Gegenteil.
+  if [ -n "$have" ] && [ "$(printf '%s\n%s\n' "$GH_VERSION" "$have" | sort -V | head -n1)" = "$GH_VERSION" ]; then
+    need_install=0
+    echo "gh $have liegt bereits vor (>= $GH_VERSION), keine Installation."
+  fi
+fi
+
+if [ "$need_install" -eq 1 ]; then
+  case "$(uname -m)" in
+    x86_64) arch=amd64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    *) echo "Nicht unterstuetzte Architektur: $(uname -m)" >&2; exit 1 ;;
+  esac
+
+  asset="gh_${GH_VERSION}_linux_${arch}.tar.gz"
+  base="https://github.com/cli/cli/releases/download/v${GH_VERSION}"
+  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --max-time 180 -o "$tmp/$asset" "$base/$asset"
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --max-time 60 -o "$tmp/checksums.txt" \
+    "$base/gh_${GH_VERSION}_checksums.txt"
+  ( cd "$tmp" && awk -v a="$asset" '$2 == a' checksums.txt | sha256sum -c - )
+
+  tar -xzf "$tmp/$asset" -C "$tmp" "gh_${GH_VERSION}_linux_${arch}/bin/gh"
+  $SUDO install -m 0755 "$tmp/gh_${GH_VERSION}_linux_${arch}/bin/gh" /usr/local/bin/gh
+fi
+
+gh --version
+```
+
+**Pflichtschritt bei jeder Anhebung von `MIN_GH_VERSION`:** den Block hier **und** das
+Setup-Script in der Weboberfläche nachziehen. Die Zielversion existiert zwangsläufig an zwei
+Orten — als Konstante im Code und als `GH_VERSION` in der Umgebungs-Konfiguration —, weil das
+Setup-Script in sich abgeschlossen ist und `scripts/gh-board.py` nicht lesen kann.
+**Maßgeblich ist `MIN_GH_VERSION`.** Den Übergang Code → Doku sichert ein Test in CI
+(`scripts/tests/test_setup_docs.py`): Er liest `GH_VERSION` aus dem Block oben und stellt ihn
+gegen die Konstante, der Lauf wird bei Abweichung sofort rot. Ungesichert bleibt allein der letzte
+Schritt, die Übertragung Doku → Weboberfläche.
+
+**Woran ein Auseinanderlaufen auffällt,** wenn dieser letzte Schritt einmal vergessen wird:
+`python3 scripts/gh-board.py doctor` meldet die Prüfung `gh_version` als fehlgeschlagen und nennt
+beide Zahlen (gefundene Version und `MIN_GH_VERSION`), `abschluss-finalisieren` erscheint unter
+`blocked_lifecycle_steps`, und `finalize` selbst bricht mit einer Meldung ab, die die
+Mindestversion ausdrücklich nennt — und zwar **vor** jedem Schreibzugriff auf Spec-Datei und
+Board, es ist also nichts zurückzunehmen. Die Board-Werkzeuge installieren dabei nichts nach: sie
+melden den Zustand und reparieren ihn nicht.
+
 ## Cloud-Bilderkennung (optional)
 
 Zwei Kriterien/Funktionen verlassen den Homeserver — beide über denselben, projektweiten
