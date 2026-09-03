@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.31.0](https://github.com/TheRealKoller/photosort/compare/v0.30.0...v0.31.0) (2026-09-03)
+
+
+### Features
+
+* **setup:** gh-Bereitstellung für Remote-Sessions dokumentieren und an MIN_GH_VERSION binden ([#315](https://github.com/TheRealKoller/photosort/issues/315)) ([4b3040a](https://github.com/TheRealKoller/photosort/commit/4b3040a6144ccc92059c32f4b6145acaafbe6c51))
+
+
+### Bug Fixes
+
+* **setup:** Fehlschlag der gh-Bereitstellung darf die Cloud-Session nicht blockieren ([#319](https://github.com/TheRealKoller/photosort/issues/319)) ([04f341c](https://github.com/TheRealKoller/photosort/commit/04f341c85ae004328f5f859a772c1e045da0565f))
+
 ## [0.30.0](https://github.com/TheRealKoller/photosort/compare/v0.29.0...v0.30.0) (2026-09-02)
 
 
