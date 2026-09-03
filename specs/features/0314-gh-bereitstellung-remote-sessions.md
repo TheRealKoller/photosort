@@ -147,6 +147,21 @@ Keine, die die Umsetzung blockiert. Zwei Punkte gehen an Daniel und sind ohne An
 1. **Zusätzlicher SHA256-Pin je Architektur im dokumentierten Block?** Empfehlung: nein, Restrisiko akzeptieren (siehe Security).
 2. **Gehört die Regel „dokumentierte Shell-Blöcke in `docs/` sind Referenztexte, die kein Agent ausführt" allgemein in `CLAUDE.md`?** Bisher nur am Block selbst verankert. Eine `CLAUDE.md`-Änderung ist Projektverfassung und war nicht Teil dieser Story.
 
+## Nachtrag vom 2026-09-03 — was nach dem Merge über die Umgebung bekannt wurde
+
+Diese Spec bleibt `Implemented` und wird bewusst **nicht** rückwirkend umgeschrieben; der Erkenntnisstand wird sichtbar fortgeschrieben statt nachträglich geglättet. Eine Nachrecherche in der Anbieter-Dokumentation — angestoßen durch Daniels Frage, wo das Setup-Script überhaupt einzutragen ist — hat nach dem Merge von PR #315 drei Aussagen zutage gefördert, die Annahmen dieser Spec und von ADR 0053 widerlegen. Alle drei sind in ADR [`0054`](../decisions/0054-setup-script-fehlerregime-und-korrigierte-umgebungsannahmen.md) wörtlich belegt.
+
+1. **Der dokumentierte Block, so wie diese Spec ihn hinterlassen hat, konnte den Sessionstart blockieren.** Ein Setup-Script, das mit einem Fehler endet, verhindert den Start der Session — nicht nur den Aufbau der Umgebung, wie ADR 0053 Abschnitt 1 ausdrücklich annahm. Zusammen mit dem Neuaufbau alle rund sieben Tage war das ein wiederkehrendes Risiko. Behoben durch Spec [`0317`](./0317-setup-script-fehlerregime.md).
+2. **Das Script läuft nicht einmalig beim Einrichten**, sondern immer, wenn kein zwischengespeicherter Zustand vorliegt — nach jeder Änderung am Script oder an den erlaubten Netzwerkzielen und nach etwa sieben Tagen Ablauf. Die Snapshot-Form des Zwischenspeichers stimmt, die Häufigkeit stimmte nicht.
+3. **`gh` gilt laut Anbieter-Dokumentation als vorinstalliert**, im Widerspruch zu den zwei Messungen, auf denen diese Spec und Spec 0309 beruhen. Der Widerspruch ist ungelöst; er ändert nichts an der Notwendigkeit der Versionsbindung, weil die Dokumentation keine Version nennt.
+
+**Die beiden hier offen gelassenen Fragen sind inzwischen beantwortet — eine davon negativ:**
+
+- *„Keine Klärung, ob das Board über den Session-Proxy erreichbar ist"*: Es ist **nicht** erreichbar. Der Vermittler lässt auf der GraphQL-Schnittstelle nur einen festen Satz von Operationen rund um Pull Requests zu und nennt Projects v2 ausdrücklich als nicht erreichbar — unabhängig von den hinterlegten Zugangsdaten. Damit sind sämtliche Board-Operationen von `scripts/gh-board.py` aus einer Cloud-Session gesperrt, auch mit vorhandener und ausreichend neuer CLI. Die Issue- und PR-Schritte bleiben nutzbar. Was daraus folgt, ist als Issue [`#318`](https://github.com/TheRealKoller/photosort/issues/318) erfasst und braucht eine eigene ADR.
+- *„Keine Klärung, ob eine neu angelegte Cloud-Umgebung die CLI von sich aus mitbringt"*: weiterhin offen, siehe Punkt 3 — Dokumentation und Messung widersprechen sich, und nur eine Beobachtung in einer frisch angelegten Umgebung kann das entscheiden.
+
+Der Nutzen dieser Spec bleibt davon unberührt: Die Dokumentationslücke ist geschlossen, die Zielversion ist an `MIN_GH_VERSION` gebunden, und die CLI trägt die Issue- und PR-Schritte. Sie ist zudem Vorbedingung jeder Antwort auf #318, die das Board doch noch erreichbar macht.
+
 ## Out of Scope
 
 - **Keine Vorkehrung im Repository.** Keine Datei, die bei jedem Sessionstart ausgeführt wird, keine Installationslogik im Projekt. Der Preis — nicht versioniert, nicht reviewbar, bei einer neu angelegten Umgebung erneut zu setzen — ist bekannt und in Kauf genommen. Der Rückweg bleibt offen.

@@ -50,16 +50,44 @@ aus der Paketquelle der Distribution.
 zeigt die installierte Version, `python3 scripts/gh-board.py doctor` prüft sie gegen
 `MIN_GH_VERSION` mit.
 
-**Remote-/Cloud-Umgebungen:** dort brachte eine frisch gestartete Session `gh` bisher nicht mit
-(`command not found`, alle `doctor`-Prüfungen scheitern an dieser einen Ursache). Die
-Bereitstellung liegt bewusst **nicht** im Repository, sondern im **Setup-Script der
-Cloud-Umgebung**: gepflegt in deren Weboberfläche, einmalig beim Einrichten der Umgebung
-ausgeführt, Ergebnis als Filesystem-Snapshot gecacht (Begründung und Abwägung in
-[ADR 0053](../specs/decisions/0053-gh-bereitstellung-per-umgebungs-setup-script.md)). Der Block
-unten ist der Wortlaut, der dort einzutragen ist; **danach die Umgebung neu aufbauen**, damit der
-Snapshot den Zustand aufnimmt. An lokalen Arbeitsplätzen ändert sich dadurch nichts — es gibt
-keine eingecheckte Datei, die Sessionverhalten steuert, und keinen Eingriff in eine vorhandene
-Installation.
+**Remote-/Cloud-Umgebungen:** die Bereitstellung liegt bewusst **nicht** im Repository, sondern
+im **Setup-Script der Cloud-Umgebung**. Einzutragen ist es auf
+[claude.ai/code](https://claude.ai/code): über dem Nachrichtenfeld sitzt der Cloud-Button mit dem
+Namen der aktiven Umgebung (etwa `Default`); im geöffneten Menü über die Umgebung fahren und das
+Zahnrad-Symbol rechts wählen. Der Dialog enthält neben Name, Netzwerkzugriff und
+Umgebungsvariablen das Feld **Setup script**. Der Block unten ist der Wortlaut, der dort
+hineingehört; **danach die Umgebung neu aufbauen**, damit der zwischengespeicherte Zustand ihn
+aufnimmt. Begründung und Abwägung in
+[ADR 0053](../specs/decisions/0053-gh-bereitstellung-per-umgebungs-setup-script.md), die
+Korrekturen an dieser Beschreibung in
+[ADR 0054](../specs/decisions/0054-setup-script-fehlerregime-und-korrigierte-umgebungsannahmen.md).
+
+**Wann das Script läuft:** nicht nur einmalig beim Einrichten. Es läuft immer dann, wenn kein
+zwischengespeicherter Zustand vorliegt — also nach jeder Änderung am Script selbst oder an den
+erlaubten Netzwerkzielen, und automatisch nach etwa sieben Tagen, wenn der Zwischenspeicher
+abläuft. Das Wiederaufnehmen einer bestehenden Session löst nie einen Neulauf aus. Der
+zwischengespeicherte Zustand ist ein Filesystem-Snapshot: Was das Script auf die Platte schreibt,
+bleibt erhalten; was es nur gestartet hat, nicht.
+
+**Warum der Block so umständlich aussieht:** Endet ein Setup-Script mit einem Fehler, **startet
+die Session nicht**. Ein Fehlschlag der Installation würde also nicht bloß `gh` kosten, sondern
+den Zugang zur Arbeitsumgebung — wiederkehrend, weil das Script regelmäßig neu läuft. Deshalb
+bricht der Installationsteil in einer eigenen Subshell hart ab, während das Script als Ganzes
+immer mit `exit 0` endet und den Fehlschlag nur meldet. Die Form der Subshell ist dabei nicht
+frei wählbar: In `if ! ( … )` und in `( … ) || …` unterdrückt `bash` das `set -e` ihres Rumpfes,
+sodass nach einer fehlgeschlagenen Prüfsummenprüfung **trotzdem entpackt und installiert würde**.
+Die Subshell steht deshalb allein, und ihr Ergebnis wird danach über `$?` ausgewertet. Wer den
+Block überarbeitet, darf diese Form nicht „vereinfachen" — ein Test in CI hält sie fest.
+
+**Zur Vorinstallation:** Die Dokumentation der Cloud-Umgebungen führt `gh` unter den
+mitgelieferten Werkzeugen. Zwei eigene Messungen in Remote-Sessions zeigten dagegen
+`command not found` (Exit-Code 127), womit sämtliche `doctor`-Prüfungen an dieser einen Ursache
+scheiterten. Welche Angabe für eine frisch **angelegte** Umgebung zutrifft, ist offen — bei der
+Messung war nur der Container frisch, nicht die Umgebungs-Konfiguration. Der Block trägt beide
+Fälle: Liegt bereits eine ausreichende Version vor, lädt er nichts und sagt das.
+
+An lokalen Arbeitsplätzen ändert sich durch all das nichts — es gibt keine eingecheckte Datei,
+die Sessionverhalten steuert, und keinen Eingriff in eine vorhandene Installation.
 
 > **Referenztext — wird nicht ausgeführt.** Dieser Block ist die dokumentierte Fassung eines
 > Artefakts, das ausschließlich in der Weboberfläche der Cloud-Umgebung lebt. Er wird von
@@ -69,7 +97,10 @@ Installation.
 > einzurichten ist.
 
 ```bash
-set -euo pipefail
+# Bewusst KEIN "set -e" auf oberster Ebene: Endet ein Setup-Script mit einem Fehler,
+# startet die Session nicht. Der Installationsteil laeuft deshalb in einer eigenen
+# Subshell, die fuer sich hart abbricht, ohne das Script zu beenden.
+set -uo pipefail
 
 # Muss zu MIN_GH_VERSION in scripts/gh-board.py passen (siehe docs/setup.md).
 GH_VERSION="2.72.0"
@@ -87,26 +118,46 @@ if command -v gh >/dev/null 2>&1; then
 fi
 
 if [ "$need_install" -eq 1 ]; then
-  case "$(uname -m)" in
-    x86_64) arch=amd64 ;;
-    aarch64|arm64) arch=arm64 ;;
-    *) echo "Nicht unterstuetzte Architektur: $(uname -m)" >&2; exit 1 ;;
-  esac
+  # Die Subshell steht bewusst allein und NICHT in "if ! (...)" oder "(...) || ...":
+  # In beiden Formen unterdrueckt bash das "set -e" ihres Rumpfes, und ein
+  # fehlgeschlagener Pruefsummenvergleich liefe weiter bis zur Installation.
+  (
+    set -eo pipefail
 
-  asset="gh_${GH_VERSION}_linux_${arch}.tar.gz"
-  base="https://github.com/cli/cli/releases/download/v${GH_VERSION}"
-  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+    case "$(uname -m)" in
+      x86_64) arch=amd64 ;;
+      aarch64|arm64) arch=arm64 ;;
+      *) echo "Nicht unterstuetzte Architektur: $(uname -m)" >&2; exit 1 ;;
+    esac
 
-  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --max-time 180 -o "$tmp/$asset" "$base/$asset"
-  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --max-time 60 -o "$tmp/checksums.txt" \
-    "$base/gh_${GH_VERSION}_checksums.txt"
-  ( cd "$tmp" && awk -v a="$asset" '$2 == a' checksums.txt | sha256sum -c - )
+    asset="gh_${GH_VERSION}_linux_${arch}.tar.gz"
+    base="https://github.com/cli/cli/releases/download/v${GH_VERSION}"
+    tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 
-  tar -xzf "$tmp/$asset" -C "$tmp" "gh_${GH_VERSION}_linux_${arch}/bin/gh"
-  $SUDO install -m 0755 "$tmp/gh_${GH_VERSION}_linux_${arch}/bin/gh" /usr/local/bin/gh
+    curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --max-time 180 -o "$tmp/$asset" "$base/$asset"
+    curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --max-time 60 -o "$tmp/checksums.txt" \
+      "$base/gh_${GH_VERSION}_checksums.txt"
+    ( cd "$tmp" && awk -v a="$asset" '$2 == a' checksums.txt | sha256sum -c - )
+
+    tar -xzf "$tmp/$asset" -C "$tmp" "gh_${GH_VERSION}_linux_${arch}/bin/gh"
+    $SUDO install -m 0755 "$tmp/gh_${GH_VERSION}_linux_${arch}/bin/gh" /usr/local/bin/gh
+  )
+  status=$?
+
+  # Nur Version und Status-Code, nie die Fremdmeldung verbatim: das Provisionierungs-
+  # Protokoll ist einsehbar.
+  if [ "$status" -ne 0 ]; then
+    echo "WARNUNG: gh $GH_VERSION konnte nicht bereitgestellt werden (Status $status)." >&2
+    echo "Die Session startet trotzdem. Board-Befehle ueber scripts/gh-board.py sind bis" >&2
+    echo "zur naechsten erfolgreichen Bereitstellung nicht ausfuehrbar." >&2
+  fi
 fi
 
-gh --version
+# Darf selbst nicht scheitern: fehlt gh, waere der Exit-Code 127 und die Session
+# startete nicht.
+command -v gh >/dev/null 2>&1 && gh --version || echo "gh ist nicht verfuegbar."
+
+exit 0
 ```
 
 **Pflichtschritt bei jeder Anhebung von `MIN_GH_VERSION`:** den Block hier **und** das
