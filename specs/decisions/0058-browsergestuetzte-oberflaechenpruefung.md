@@ -1,4 +1,4 @@
-# 0057 - Browsergestützte Oberflächenprüfung: Playwright, seedbare Demo-Zustände, E2E in CI
+# 0058 - Browsergestützte Oberflächenprüfung: Playwright, seedbare Demo-Zustände, E2E in CI
 
 **Status:** Accepted — die drei Daniel vorgelegten Punkte (1, 4, 5) sind am 2026-09-05 im Chat wie empfohlen bestätigt worden, siehe „Zur Bestätigung vorgelegt" unten.
 **Datum:** 2026-09-05

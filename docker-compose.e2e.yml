@@ -1,6 +1,6 @@
 # Overlay fuer den PRUEFSTACK: der Stack, gegen den die browsergestuetzten Pruefungen laufen -
 # lokal wie in CI derselbe (specs/features/0174-browser-zugang-fuer-claude.md,
-# specs/decisions/0057-browsergestuetzte-oberflaechenpruefung.md, Punkt 6).
+# specs/decisions/0058-browsergestuetzte-oberflaechenpruefung.md, Punkt 6).
 #
 #   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up --build -d
 #   docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T \

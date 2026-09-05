@@ -9,18 +9,27 @@ description: Setzt eine bereits fachlich geschärfte Story (Status `Ready` auf d
 
 ## Schritt 0: Vorbedingung prüfen — ist das Issue wirklich eine Story?
 
-Bevor irgendetwas passiert, einmal die Board-Fähigkeit messen und danach den aktuellen Status des referenzierten Issues per `scripts/gh-board.py` lesen (siehe Skill `github-board`):
+Bevor irgendetwas passiert, den aktuellen Board-Status des referenzierten Issues lesen. Der Befehl steht im Wortlaut in `.claude/skills/github-board/SKILL.md` und liefert Status und Priorität in einem Aufruf:
 
 ```bash
-python3 scripts/gh-board.py capabilities
-python3 scripts/gh-board.py show-status --issue <NNN>
+gh api graphql -F number=<NNN> -f query='…'   # vollständiger Wortlaut im Skill `github-board`
 ```
 
-Auswertung und Verhalten des ersten Aufrufs stehen vollständig in `.claude/skills/github-board/SKILL.md`, Abschnitt „Board nicht erreichbar" — hier nicht wiederholen. Für diesen Skill heißt ein wohlgeformtes `board_reachable: false` konkret: Sowohl `show-status` als auch das `set-status Todo` aus Schritt 4 laufen durch dieselbe Board-Auflösung und scheitern damit sicher. Beide werden dann **nicht versucht**; stattdessen wird die Story-Vorbedingung („ist das Issue wirklich `Ready`?") einmal bei Daniel rückgefragt, statt sie zu raten, und der Ablauf läuft danach normal weiter. Jedes andere Ergebnis — auch ein fehlgeschlagener oder unlesbarer Aufruf — heißt „nicht gemessen" und ändert nichts: Dann wird `show-status` wie bisher abgesetzt.
+Ausgewertet wird der Knoten mit `project.number == 8`, **nie** schlicht `nodes[0]` — sonst entscheidet eine fremde Projektzugehörigkeit über dieses Gate. Die Query bleibt ein Literal in einfachen Anführungszeichen, die Nummer geht ausschließlich als typisierte Variable `-F number=<NNN>` hinein.
 
-Ein `{"error": "..."}` (z.B. unbekannte Issue-Nummer, fehlender `project`-Scope) unverändert an Daniel weitergeben statt eines eigenen Lösungsversuchs, analog zum `github-board`-Skill.
+**Das Gate ist fail-closed.** Ist `status` **nicht** `"Ready"`, wird **abgebrochen** und Daniel klar mitgeteilt, was vorliegt — nie automatisch „repariert", nie umgangen. Läuft der Lesebefehl gar nicht durch (Exit-Code ≠ 0), wird die Vorbedingung ebenfalls nicht geraten, sondern einmal bei Daniel rückgefragt. Der Abbruchtext nennt die möglichen Ursachen ausdrücklich:
 
-Ist `status` **nicht** `"Ready"` (z.B. noch `Unrefined`, oder bereits `Todo`/`In Progress`/`Review`/`Done`, weil die Story schon einmal zu einer Spec geworden ist): **abbrechen** und Daniel klar mitteilen, dass das Issue erst über `refinement` fachlich geschärft werden muss (bzw., bei bereits vorhandenem Spec-Bezug, dass es keine gültige Story mehr ist). Kein eigenmächtiges Weiterarbeiten mit einem unerwarteten Status.
+- **`Unrefined`:** Die Story ist noch nicht fachlich geschärft und muss zuerst durch `refinement`.
+- **`In Progress` oder `Done`:** Die Story ist schon einmal zu einer Spec geworden bzw. abgeschlossen.
+- **`Review`, obwohl niemand daran gearbeitet hat:** Das Repository ist öffentlich, und der native Workflow `Pull request linked to issue` feuert auch auf einen **fremden** Pull Request, der `Closes #NNN` im Body trägt. Ein `Review` ohne eigenen Branch und ohne eigenen Pull Request ist deshalb ein Hinweis auf genau diesen Fall und **kein** Beleg, dass die Story erledigt wäre. Ohne diese Ursache im Text würde eine gültige Story fälschlich abgewiesen; geklärt wird sie mit Daniel, nicht durch eigenmächtiges Zurücksetzen des Board-Werts.
+
+**Danach — und noch vor Branch und Spec-Datei — die Story auf `In Progress` setzen:**
+
+```bash
+gh project item-edit 8 --owner TheRealKoller --url https://github.com/TheRealKoller/photosort/issues/<NNN> --field "Status" --value "In Progress"
+```
+
+Das Schreiben der Spec **ist** Umsetzung, und das Board sagt das ab hier auch. Der Schreibzugriff steht bewusst **vor** der Arbeit, die er ankündigt: Scheitert er, bleibt die Story auf dem früheren, konservativeren Wert stehen, statt fälschlich fortgeschritten zu erscheinen. Ein Fehlschlag bricht den Ablauf **nicht** ab — er wird nach dem Muster aus `github-board` im Abschlussbericht unter `## Lokal nachzuholen` aufgeführt (siehe Schritt 4). Die Issue-URL wird aus der validierten Nummer **gebildet**, nie aus einer `gh`-Ausgabe übernommen.
 
 Lies danach den vollständigen Issue-Inhalt:
 
@@ -55,7 +64,7 @@ Andernfalls ruf den `ux-ui-designer`-Agenten (Agent-Tool, `subagent_type: ux-ui-
 
 Übernimm, sofern gelaufen, die geschärften Akzeptanzkriterien und eine kurze "Teststrategie"-Notiz von `test-engineer`. Trag im `## Security`-Abschnitt entweder die Einschätzung von `security-engineer` ein oder, falls nicht sicherheitsrelevant, kurz "nicht relevant".
 
-## Schritt 4: Feature-Branch anlegen, Feature-Spec committen, Board-Spalte setzen
+## Schritt 4: Feature-Branch anlegen, Feature-Spec committen
 
 **Vorbedingung — Feature-Branch anlegen (ADR [`decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md`](../../../specs/decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md)):** Bevor die Spec-Datei geschrieben wird, `git status` prüfen — bei uncommitteten Änderungen analog zu `.claude/agents/developer.md` Schritt 0 Punkt 3 klären (stash/commit, was zusammengehört), nicht stillschweigend überschreiben oder ignorieren. Danach sicherstellen, von einem aktuellen `main` abzuzweigen (`git fetch origin && git checkout main && git pull`, oder äquivalent), und einen neuen Feature-Branch anlegen:
 
@@ -65,7 +74,9 @@ git checkout -b feature/<NNNN>-<kurzer-slug>
 
 `NNNN` ist die vierstellige Spec-/Issue-Nummer aus Schritt 0, `<kurzer-slug>` derselbe Slug, den die Spec-Datei gleich bekommt (siehe unten) — ein einziges Namensschema, das auch der Fallback in `developer.md` verwendet. Der gesamte Rest dieses Ablaufs **und die spätere Implementierung durch `developer`** passieren auf diesem einen Branch — kein separater Spec-only-Branch, kein separater Spec-PR.
 
-Lege danach eine neue Datei in `specs/features/` nach `specs/TEMPLATE.md` an. **Die Spec-Nummer ist die Nummer des Story-Issues aus Schritt 0, auf vier Stellen aufgefüllt** — die Spec zu Issue #262 heißt also `specs/features/0262-kurzer-titel.md` und trägt die H1-Überschrift `# 0262 - Titel`. Es wird **keine** nächste freie Nummer gesucht; der Sprung gegenüber der zuletzt angelegten Datei ist normal und beabsichtigt. **Status: Accepted** setzen — das Story-Refinement-Gespräch plus diese technische Konsultation *sind* die Stakeholder-Freigabe, ein separater Freigabeschritt danach wäre doppelte Arbeit.
+**Existiert bereits eine Spec-Datei zu dieser Issue-Nummer** (`specs/features/<NNNN>-*.md`), wird sie **weiterverwendet und ergänzt** statt eine zweite anzulegen — Vorarbeit aus einem früheren Anlauf ist kein Grund für eine Dublette (betrifft die Story-Issues #162, #167 und #169). Ihr Status bleibt bzw. wird `Accepted`; die Nummer ist ohnehin dieselbe.
+
+Andernfalls lege eine neue Datei in `specs/features/` nach `specs/TEMPLATE.md` an. **Die Spec-Nummer ist die Nummer des Story-Issues aus Schritt 0, auf vier Stellen aufgefüllt** — die Spec zu Issue #262 heißt also `specs/features/0262-kurzer-titel.md` und trägt die H1-Überschrift `# 0262 - Titel`. Es wird **keine** nächste freie Nummer gesucht; der Sprung gegenüber der zuletzt angelegten Datei ist normal und beabsichtigt. **Status: Accepted** setzen — das Story-Refinement-Gespräch plus diese technische Konsultation *sind* die Stakeholder-Freigabe, ein separater Freigabeschritt danach wäre doppelte Arbeit.
 
 Ziel, User Story und Akzeptanzkriterien aus dem Issue-Body übernehmen (ggf. durch `test-engineer` geschärft). Halte einen Abschnitt "Entscheidungen" mit den in diesem Gespräch geklärten Punkten aktuell, inkl. jeder Skip-Entscheidung aus Schritt 1–3 als eigener Punkt (kein Sammel-Vermerk).
 
@@ -75,26 +86,19 @@ Falls die Story die Architektur oder das Datenmodell spürbar verändert: `docs/
 
 **Spec-Datei lokal committen, kein Push:** Committe die neue Spec-Datei (und ggf. eine `docs/architecture.md`-Ergänzung) direkt auf dem in der Vorbedingung angelegten Branch, mit der üblichen Commit-Konvention (`CLAUDE.md`, Conventional Commits), z.B. `docs(specs): Spec NNNN anlegen (Issue #NNN)`. Push und PR-Eröffnung passieren an dieser Stelle **nicht** — das übernimmt weiterhin ausschließlich `ship-feature`, ganz am Ende des gesamten Ablaufs (Spec-Commit und alle folgenden Implementierungs-Commits landen zusammen in genau einem PR).
 
-Setz abschließend nur die Board-Spalte auf `Todo` (siehe Skill `github-board`):
-
-```bash
-python3 scripts/gh-board.py set-status --issue <NNN> --status Todo
-```
-
-Erwartetes Ergebnis: `{"issue_number": NNN, "status": "Todo"}`. Ein `{"error": "..."}` unverändert an Daniel weitergeben statt es stillschweigend zu ignorieren.
+Ein abschließender Board-Zugriff findet hier **nicht** statt: Der Statuswechsel dieses Ablaufs ist bereits in Schritt 0 passiert, bevor Branch und Spec-Datei entstanden sind. Der frühere Zwischenwert zwischen „Spec fertig" und „Umsetzung läuft" existiert nicht mehr.
 
 **Übergabe an den späteren `developer`-Aufruf:** Da dieser Skill in derselben Session läuft, die anschließend `developer` per Agent-Tool startet, braucht es keinen eigenen Übergabemechanismus — nenne den angelegten Branch-Namen im Abschlusssatz explizit (`**Feature-Branch:** feature/<NNNN>-<kurzer-slug>, bereits angelegt, Spec-Commit liegt bereits darauf`) und gib ihn wortgleich in den Start-Prompt des späteren `developer`-Aufrufs mit, damit er ihn übernimmt statt neu von `main` zu branchen (`.claude/agents/developer.md`, Schritt 0).
 
 Fasse am Ende kurz zusammen, was angelegt/geändert wurde, mit Datei-Pfaden und dem Feature-Branch-Namen.
 
-**Bei `board_reachable: false` aus Schritt 0:** Branch, Spec-Datei und Spec-Commit entstehen unverändert — nur `set-status Todo` wird ausgelassen, und der Ablauf bricht **nicht** ab. Die Zusammenfassung trägt zusätzlich diesen Abschnitt (Chat; dieser Skill schreibt selbst kein GitHub-Artefakt, in das er ihn legen könnte):
+**Ist der Board-Zugriff aus Schritt 0 fehlgeschlagen** (typischer Fall: eine Remote-Session, in der jeder Board-Zugriff mit `HTTP 403` endet): Branch, Spec-Datei und Spec-Commit entstehen unverändert, der Ablauf bricht **nicht** ab. Die Zusammenfassung trägt zusätzlich diesen Abschnitt (Chat; dieser Skill schreibt selbst kein GitHub-Artefakt, in das er ihn legen könnte):
 
 ```markdown
 ## Lokal nachzuholen
 
-Dieser Schritt wurde ausgelassen, weil sich das Projekt-Board in dieser Umgebung nicht auflösen
-ließ (gemessen mit `python3 scripts/gh-board.py capabilities`). Die Befehle sind unverändert
+Dieser Schritt ist fehlgeschlagen und wurde nicht nachgeholt. Die Befehle sind unverändert
 wiederholbar und lokal nachzuholen.
 
-- Board-Spalte: `python3 scripts/gh-board.py set-status --issue NNN --status Todo`
+- `status-in-progress`: `gh project item-edit 8 --owner TheRealKoller --url https://github.com/TheRealKoller/photosort/issues/NNN --field "Status" --value "In Progress"`
 ```

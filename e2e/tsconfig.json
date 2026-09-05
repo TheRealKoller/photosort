@@ -1,5 +1,5 @@
 {
-  // Eigene tsconfig-Welt, bewusst getrennt von frontend/ (ADR 0057 Punkt 2): dieser Code laeuft
+  // Eigene tsconfig-Welt, bewusst getrennt von frontend/ (ADR 0058 Punkt 2): dieser Code laeuft
   // in Node gegen eine laufende Anwendung, nicht im DOM-Kontext des Frontends.
   //
   // "erasableSyntaxOnly" ist hier kein Stil, sondern Voraussetzung: die Ad-hoc-Werkzeuge unter

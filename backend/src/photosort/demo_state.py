@@ -11,7 +11,7 @@ Vier Projekte mit dem festen Namenspraefix ``Demo — `` decken die vier prueflo
 (leer, grosse Sammlung, bewertet, Fehlerzustand). Die Bilddateien entstehen synthetisch mit Pillow
 und werden ueber die ECHTE ``thumbnails.py``-Logik in den lokalen Cache geschrieben - kein zweites
 Abbild von Datenmodell oder Cache-Schluessel, das bei einer Modelaenderung still abdriften koennte
-(ADR 0057 Punkt 4).
+(ADR 0058 Punkt 4).
 
 WARUM DIESES MODUL IM PRODUKTIV-PAKET LIEGT UND TROTZDEM UNGEFAEHRLICH IST: Es braucht die echten
 SQLAlchemy-Modelle und die echte Cache-Schluessel-Bildung, liegt damit im Produktiv-Image - und ist

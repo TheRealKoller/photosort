@@ -77,8 +77,9 @@ jobs:
       - name: Build
         run: npm run build
 
-  # Deckt alles unter scripts/ ab - seit Spec 0262 auch gh-board.py, das den frueheren eigenen
-  # CI-Job "github-project-sync" samt Package abloest (ADR 0043, Abschnitt 4). Kein numerisches
+  # Deckt alles unter scripts/ ab - neben den Demo-Skripten auch die Repo-Konsistenztests, die
+  # seit ADR 0057 an die Stelle des geloeschten Board-Werkzeugs getreten sind (Board-Zugriff sind
+  # jetzt einzelne gh-Befehle in den Skill-Dateien, geprueft wird deren Text). Kein numerisches
   # Coverage-Gate (anders als backend), der Abdeckungsanspruch steht in der Teststrategie der
   # jeweiligen Spec. Kein echtes gh/Netzwerk hier.
   demo-scripts:
@@ -333,7 +334,7 @@ jobs:
 
   # Browsergestuetzte Oberflaechenpruefung gegen den REAL laufenden Pruefstack
   # (specs/features/0174-browser-zugang-fuer-claude.md, ADR
-  # specs/decisions/0057-browsergestuetzte-oberflaechenpruefung.md).
+  # specs/decisions/0058-browsergestuetzte-oberflaechenpruefung.md).
   #
   # BLOCKIEREND und bewusst ohne Pfadfilter: ein Backend-Change kann die Oberflaeche genauso
   # brechen wie ein Frontend-Change. Kein "continue-on-error", keine Wiederholungen (retries: 0

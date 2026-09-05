@@ -4,7 +4,7 @@
  * >= 400 beantwortete Netzwerkaufrufe.
  *
  * Das ist bewusst eine Eigenschaft des WERKZEUGS und keine Disziplinanforderung an den Aufrufer
- * (ADR 0057 Punkt 3): Das Akzeptanzkriterium "Laufzeitfehler werden wahrgenommen" darf nicht davon
+ * (ADR 0058 Punkt 3): Das Akzeptanzkriterium "Laufzeitfehler werden wahrgenommen" darf nicht davon
  * abhaengen, dass bei jedem Ad-hoc-Skript jemand daran denkt, `page.on('console')` zu verdrahten.
  * Deshalb haengen die Zuhoerer am BrowserContext und nicht an einer einzelnen Page - auch eine
  * spaeter geoeffnete Seite ist damit automatisch instrumentiert.

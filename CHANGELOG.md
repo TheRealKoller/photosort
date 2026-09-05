@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.0](https://github.com/TheRealKoller/photosort/compare/v0.32.0...v0.33.0) (2026-09-05)
+
+
+### Features
+
+* **scripts:** Remote-Grenze des Story-Lebenszyklus messen statt raten ([#323](https://github.com/TheRealKoller/photosort/issues/323)) ([a674fd6](https://github.com/TheRealKoller/photosort/commit/a674fd6ffdd0b2fcb078f39e878e4dcca77de032))
+
 ## [0.32.0](https://github.com/TheRealKoller/photosort/compare/v0.31.0...v0.32.0) (2026-09-05)
 
 

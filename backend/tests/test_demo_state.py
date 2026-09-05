@@ -1,5 +1,5 @@
 """Tests fuer den Demo-Zustands-Seeder (specs/features/0174-browser-zugang-fuer-claude.md,
-decisions/0057-browsergestuetzte-oberflaechenpruefung.md).
+decisions/0058-browsergestuetzte-oberflaechenpruefung.md).
 
 Aufbau nach architecture/0002-testkonzept.md, Sektion "Ein schreibender Demo-Zustands-Seeder im
 Produktivpaket": reine Erzeuger ohne DB, duenne DB-Schreibschicht gegen die `db_session`-Fixture,

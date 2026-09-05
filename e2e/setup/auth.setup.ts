@@ -1,6 +1,6 @@
 /**
  * Vorgelagertes Setup-Projekt: einmal anmelden, Sitzungszustand speichern, alle uebrigen Specs
- * starten angemeldet (ADR 0057 Punkt 7 - kein wiederholtes Anmelden pro Test).
+ * starten angemeldet (ADR 0058 Punkt 7 - kein wiederholtes Anmelden pro Test).
  *
  * Der Token liegt im localStorage (`photosort_token`), `storageState` traegt ihn mit. Genau EIN
  * Spec (`tests/login.spec.ts`) prueft das Anmeldeformular selbst - der einzige Pfad, den dieses

@@ -19,6 +19,8 @@ Ein Vorbehalt bleibt: Der Lauf meldet zusätzlich `The token in GH_TOKEN is inva
 
 Diese Spec **stellt fest** und **macht den Ablauf ehrlich**. Sie wählt keine Richtung und baut keine Konsequenz.
 
+> **Nachtrag nach dem Messschritt (2026-09-05, nach dem Merge von PR #323):** Die beiden oben als Vermutung formulierten Punkte sind inzwischen gemessen. Der REST-Weg trägt die Issue-Schritte **nicht** — auch er antwortet mit 403, mit einer anderslautenden Meldung. Die Aussage „hier ist es sehr wohl Transport" ist damit ebenfalls überholt: Die Grenze verläuft am **Client**. Dieselbe Session liest und schreibt Issues über die GitHub-MCP-Werkzeuge, nur `gh` ist auf beiden Transporten zu. Der Vorbehalt zur Anmeldung ist aufgelöst (Artefakt der Sperre). Wortlaut und Ausgaben: [Messbericht an Issue #318](https://github.com/TheRealKoller/photosort/issues/318#issuecomment-5550813926).
+
 ## User Story
 
 Als Daniel möchte ich vor und während einer Remote-Session wissen, welche Teile meines Entwicklungsablaufs dort tatsächlich tragen und welche nicht, damit ich nicht mitten in einer Story auf eine Wand laufe und die begonnene Arbeit in einem halb fortgeschriebenen Zustand zurücklassen muss.
@@ -29,11 +31,13 @@ Fachlich wortgleich zum Issue-Body von [`#318`](https://github.com/TheRealKoller
 
 ### Feststellen (manuell, außerhalb des `developer`-Auftrags)
 
-- [ ] Die gemeldete ungültige Anmeldung ist geklärt: entweder behoben, oder es ist festgehalten, dass sie sich nicht beheben lässt und dass sie ein Artefakt der Endpunkt-Sperre sein kann.
-- [ ] Es ist geprüft und wörtlich am Issue dokumentiert, ob die Issue-Schritte über REST (`gh api repos/{owner}/{repo}/…`) erreichbar sind — mit der tatsächlichen Ausgabe, **Lesen und Schreiben getrennt gemessen**, nicht aus einer anderen Ausgabe abgeleitet.
-- [ ] Für jeden der acht Lebenszyklus-Schritte (`idee-erfassen`, `issue-body-schreiben`, `status-ready`, `spec-anlegen`, `status-in-progress`, `pr-eroeffnen`, `status-review`, `abschluss-finalisieren`) steht fest, ob er remote trägt, und falls nicht, ob eine echte Sperre oder nur der gewählte Zugangsweg schuld ist.
-- [ ] Am Issue ist festgehalten, dass die `doctor`-Zuordnungstabelle in dieser Umgebung **zu weit greift**: `repo_access`/`issue_read` sprechen GraphQL und blockieren dadurch auch `pr-eroeffnen` — ausgerechnet das, was die Zwischenschicht laut eigener Auskunft bedient. Befund, keine Reparatur in dieser Spec.
-- [ ] Der korrigierte Befund ersetzt die ursprüngliche Annahme des Issues, die Issue- und PR-Schritte blieben unbeeinträchtigt.
+- [x] Die gemeldete ungültige Anmeldung ist geklärt: entweder behoben, oder es ist festgehalten, dass sie sich nicht beheben lässt und dass sie ein Artefakt der Endpunkt-Sperre sein kann.
+- [x] Es ist geprüft und wörtlich am Issue dokumentiert, ob die Issue-Schritte über REST (`gh api repos/{owner}/{repo}/…`) erreichbar sind — mit der tatsächlichen Ausgabe, **Lesen und Schreiben getrennt gemessen**, nicht aus einer anderen Ausgabe abgeleitet.
+- [x] Für jeden der acht Lebenszyklus-Schritte (`idee-erfassen`, `issue-body-schreiben`, `status-ready`, `spec-anlegen`, `status-in-progress`, `pr-eroeffnen`, `status-review`, `abschluss-finalisieren`) steht fest, ob er remote trägt, und falls nicht, ob eine echte Sperre oder nur der gewählte Zugangsweg schuld ist.
+- [x] Am Issue ist festgehalten, dass die `doctor`-Zuordnungstabelle in dieser Umgebung **zu weit greift**: `repo_access`/`issue_read` sprechen GraphQL und blockieren dadurch auch `pr-eroeffnen` — ausgerechnet das, was die Zwischenschicht laut eigener Auskunft bedient. Befund, keine Reparatur in dieser Spec.
+- [x] Der korrigierte Befund ersetzt die ursprüngliche Annahme des Issues, die Issue- und PR-Schritte blieben unbeeinträchtigt.
+
+> **Gemessen am 2026-09-05** in einer echten Remote-Session (Umsetzungsschritt 6, nachgeholt nach dem Merge von PR #323). Befehle und wörtliche Ausgaben stehen im [Messbericht an Issue #318](https://github.com/TheRealKoller/photosort/issues/318#issuecomment-5550813926). Kernbefund: Der REST-Weg trägt die Issue-Schritte **nicht** — `gh` ist auf beiden Transporten gesperrt. Die Grenze verläuft am **Client**, nicht am Transport: Dieselbe Session liest und schreibt Issues über die GitHub-MCP-Werkzeuge. Die vier Board-Schritte bleiben auf jedem verfügbaren Weg verloren.
 
 ### Ablauf ehrlich machen (Code)
 

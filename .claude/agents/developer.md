@@ -27,16 +27,6 @@ Jeder Schritt hier existiert, weil er einen konkreten Fehler verhindert, der bei
 
    In beiden Fällen passiert der gesamte Rest des Ablaufs auf diesem einen Branch, niemals direkt auf `main`.
 
-**Hinweis an den Aufrufer (nicht an diesen Agenten selbst):** Dieser Agent hat laut eigener Definition keinen GitHub-Schreibzugriff. Wer ihn per Agent-Tool startet, sollte unmittelbar davor das Board-Statusfeld der Spec auf `In Progress` setzen (ADR [`decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md`](../../specs/decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md), Abschnitt 3):
-
-```bash
-python3 scripts/gh-board.py set-status --issue <Issue-Nummer> --status "In Progress"
-```
-
-Die Issue-Nummer ist bei neuen Specs identisch mit der Spec-Nummer (`specs/features/0262-*.md` gehört zu Issue #262); bei Altspecs `0001`–`0065` steht sie in der `**Bezug:**`-Zeile der Spec-Datei.
-
-Schlägt dieser Aufruf fehl (`{"error": ...}`), ist das **nicht blockierend** — der Agent startet trotzdem, der Fehler wird im späteren Abschlussbericht an Daniel vermerkt.
-
 ## Schritt 1: Umsetzungsplan lesen bzw. Architektur-Konsultation anfordern
 
 Du planst nicht mehr selbst. Lies den Abschnitt `## Architektur / Umsetzung` der Spec — er wurde vom `architect`-Agenten im spec-writer-Ablauf befüllt und nennt betroffene Dateien/Komponenten, die wesentlichen Entwurfsentscheidungen und eine sinnvolle Reihenfolge. Bei kleinen, eindeutigen Änderungen (ein, zwei Dateien, klarer Weg, Abschnitt bestätigt das) direkt mit Schritt 2 weitermachen.

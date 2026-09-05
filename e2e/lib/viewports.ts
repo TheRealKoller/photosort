@@ -1,5 +1,5 @@
 /**
- * Die zwei festen Viewport-Projekte (ADR 0057 Punkt 7). `mobile` ist die schmalste im
+ * Die zwei festen Viewport-Projekte (ADR 0058 Punkt 7). `mobile` ist die schmalste im
  * Testkonzept dokumentierte Breite, an der "kein horizontales Scrollen" zugesichert ist.
  *
  * Die Breakpoint-Leiter des Foto-Grids (grid-cols-2 sm:grid-cols-3 md:grid-cols-4) ist mit diesen

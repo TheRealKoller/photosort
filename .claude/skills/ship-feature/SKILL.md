@@ -33,13 +33,6 @@ Format (alle Feldnamen) ausschließlich in `.claude/agents/developer.md` definie
 1. `git branch --show-current` gegen den im Bericht genannten `**Feature-Branch:**` abgleichen. Bei Abweichung `git checkout <gemeldeter-branch>`.
 2. `git status` muss sauber sein. Ist das nicht der Fall, obwohl der Bericht "sauber, alles committet" behauptet, das nicht stillschweigend ignorieren — im Bericht vermerken und den `developer`-Subagenten per SendMessage auf die Diskrepanz hinweisen, bevor es weitergeht.
 3. `git diff --name-only main...HEAD` **selbst erneut ausführen** — das ist die verbindliche Quelle für die folgende Review-Runde, nicht die im Bericht unter "Betroffene Dateien" gelistete Liste. Weicht die selbst ermittelte Liste sichtbar von der gemeldeten ab, das im späteren Findings-Bericht vermerken statt kommentarlos zu verwerfen.
-4. Board-Fähigkeit einmal messen — hier und nicht erst in Schritt 6, weil der PR-Body aus Schritt 6.3 den Abschnitt `## Lokal nachzuholen` mitbringen muss, falls etwas ausgelassen wird:
-
-   ```bash
-   python3 scripts/gh-board.py capabilities
-   ```
-
-   Auswertung und Verhalten stehen vollständig in `.claude/skills/github-board/SKILL.md`, Abschnitt „Board nicht erreichbar" — hier nicht wiederholen. Betroffen sind in diesem Skill `set-status Review` (Schritt 6.4), `finalize` (Schritt 8) und ein etwaiges `set-status In Progress` vor dem `developer`-Start. Push, PR-Eröffnung, Copilot-Runde und Review laufen davon unberührt weiter.
 
 ## Schritt 3: `review`-Orchestrator aufrufen
 
@@ -78,17 +71,15 @@ Nach Bestätigung geht es weiter zu Schritt 6 (PR-Erstellung) bzw., falls die Fi
    Das Keyword gehört ausschließlich in den Body — **nie** in eine Commit-Nachricht und **nie** in den PR-Titel: Das Repo squasht mit `COMMIT_MESSAGES` und `COMMIT_OR_PR_TITLE`, beide Texte wandern in Merge-Commit, Changelog und den Body des release-please-PRs, wo das Keyword beim nächsten Release-Merge erneut ausgewertet würde.
 
    Direkt nach dem Eröffnen prüfbar, ohne auf den Merge zu warten: `gh pr view <PR-Nummer> --json closingIssuesReferences` muss einen Eintrag mit der Issue-Nummer und dem Repository `TheRealKoller`/`photosort` zeigen.
-4. Setz direkt danach das Board-Statusfeld der Spec auf `Review` (ADR [`decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md`](../../../specs/decisions/0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md), Abschnitt 4):
+4. **Lies den Board-Wert einmal zurück — setz ihn nicht.** `Review` schreibt GitHub selbst, ausgelöst durch die `Closes #NNN`-Zeile aus 6.3 (Workflow `Pull request linked to issue`). Der Lesebefehl steht in [`.claude/skills/github-board/SKILL.md`](../github-board/SKILL.md), Abschnitt „Die Befehle"; ausgewertet wird der Knoten mit `project.number == 8`, nie schlicht `nodes[0]`.
 
-   ```bash
-   python3 scripts/gh-board.py set-status --issue <Issue-Nummer> --status Review
-   ```
+   Dieser Schritt existiert, weil sich mit dem Übergang auf native Workflows die Richtung des Fehlers umdreht: Ein versehentlich deaktivierter Workflow schreibt **gar nichts**, und eine Karte, die auf `In Progress` liegen bleibt, ist von einer Karte, an der gerade gearbeitet wird, nicht zu unterscheiden. Der Zustand der Workflows ist per API nicht überwachbar — das Zurücklesen ist der einzige Nachweis, dass der Übergang stattgefunden hat.
 
-   Die Issue-Nummer ist bei neuen Specs identisch mit der Spec-Nummer (`specs/features/0262-*.md` gehört zu Issue #262); bei Altspecs `0001`–`0065` steht sie in der `**Bezug:**`-Zeile der Spec-Datei.
+   - **Steht `Review`:** nichts zu tun, im Abschlussbericht einzeilig vermerken.
+   - **Steht etwas anderes:** GitHub verarbeitet die Verknüpfung asynchron, unmittelbar nach `gh pr create` kann der alte Wert noch stehen. Deshalb **einmal** kurz warten (wenige Sekunden) und ein zweites Mal lesen, bevor daraus ein Befund wird — sonst meldet jeder Lauf einen Fehlschlag, den es nicht gibt.
+   - **Steht auch dann nicht `Review`** (oder scheitert der Lesebefehl selbst): Der Übergang ist ausgeblieben, in aller Regel, weil der Workflow im Projekt deaktiviert wurde. Den Wert **nicht** stillschweigend selbst nachsetzen — das verdeckte genau die Ursache, die dieser Schritt sichtbar machen soll. Stattdessen als `status-review` in den Abschnitt `## Lokal nachzuholen` (PR-Body und Chat-Bericht), mit dem nachholenden `item-edit`-Befehl. Regeln zu Form und Inhalt dieses Abschnitts vollständig in `.claude/skills/github-board/SKILL.md` — hier nicht wiederholen. Ist der PR-Body zu diesem Zeitpunkt bereits geschrieben, wird er einmal per `gh pr edit <PR-Nummer> --body-file <datei>` nachgezogen (nie über die Kommandozeile).
 
-   **Meldet die Messung aus Schritt 2.4 `status-review` als blockiert**, wird dieser Aufruf **nicht** abgesetzt und der Ablauf läuft trotzdem weiter (der PR existiert, das ist der wichtigere Teil). Der PR-Body aus 6.3 trägt dann zusätzlich den Abschnitt `## Lokal nachzuholen` — mit Schrittname, Nachhol-Befehl und dem festen Begründungssatz aus `.claude/skills/github-board/SKILL.md`, **ohne** `detail`, `note` oder irgendeine `gh`-Meldung. Dasselbe gilt für `abschluss-finalisieren` aus Schritt 8; beide Einträge stehen dann in einem gemeinsamen Abschnitt. Ist der PR-Body zu diesem Zeitpunkt bereits geschrieben, wird er einmal per `gh pr edit <PR-Nummer> --body-file <datei>` nachgezogen (nie über die Kommandozeile). Trägt auch dieser Kanal in dieser Umgebung nicht, bleibt es beim Chat-Bericht — und der sagt ausdrücklich, dass er der einzige Träger ist.
-
-   Ein früherer, verfrühter `Implemented`-Bump des Spec-Status direkt nach der PR-Erstellung entfällt ersatzlos (ADR 0037, Abschnitt 4) — die eigentliche Finalisierung (Spec-Datei-Status auf `Implemented`) passiert erst in Schritt 8, nach Review und Copilot-Auswertung, aber noch **vor** dem Merge im selben PR.
+   Ein früherer, verfrühter `Implemented`-Bump des Spec-Status direkt nach der PR-Erstellung entfällt ersatzlos — die Finalisierung passiert erst in Schritt 8, nach Review und Copilot-Auswertung, aber noch **vor** dem Merge im selben PR.
 
 ## Schritt 7: Copilot-Review anfordern und auswerten
 
@@ -107,27 +98,41 @@ Regelweg: Der Spec-Status wird **im Feature-PR selbst** auf `Implemented` gesetz
 
 **Wann:** sobald die Review-Runde (Schritt 3–5) und das Copilot-Review (Schritt 7) ausgewertet und alle Muss-Fix-Findings behoben sind — und zwar **gebündelt mit dem Push dieser letzten Fixes** (erst finalisieren, dann beide Commits in einem `git push`), damit kein zusätzlicher CI-Lauf entsteht. Gab es keine Fixes mehr, ist es ein eigener, letzter Commit auf dem Feature-Branch. Nie früher: ein noch nicht reviewter Stand darf nie als umgesetzt geführt werden.
 
-1. Finalisieren (`NNNN` = Spec-Nummer, `<PR-Nummer>` = der PR aus Schritt 6):
+**Was hier ausdrücklich *nicht* passiert:** kein Schließen des Issues, kein Setzen von `Done`. Beides erledigt GitHub beim Merge — das Keyword `Closes #NNN` schließt das Issue, der Workflow `Item closed` zieht die Karte auf `Done`. Ein vorgezogenes `Done` würde eine Story als erledigt führen, die noch nicht in `main` ist.
+
+1. **Verknüpfung prüfen** (`<MMM>` = die PR-Nummer aus Schritt 6):
 
    ```bash
-   python3 scripts/gh-board.py finalize --spec NNNN --pr-number <PR-Nummer>
+   gh pr view <MMM> --repo TheRealKoller/photosort --json closingIssuesReferences,baseRefName
    ```
 
-   Erwartete Ausgabe: `{"spec_number": ..., "issue_number": ..., "pr_number": ..., "status_line": "Implemented ([PR #NNN](...))", "status": "Done"}`. Der Aufruf schreibt die `**Status:**`-Zeile der Spec-Datei um und setzt danach den Endzustand auf dem Board (Spalte `Done`, Issue geschlossen). Bei einer Altspec `0001`–`0065` zusätzlich `--issue <Issue-Nummer>` angeben.
+   Erwartet: `closingIssuesReferences` enthält einen Eintrag mit der Issue-Nummer dieser Story, und `baseRefName` ist `main`. Erst wenn beides zutrifft, wird finalisiert — die Statuszeile `Implemented` ist eine Aussage über einen PR, der das Issue tatsächlich schließen wird.
 
-2. Ein `{"error": "..."}` **nicht** ignorieren und **nicht** umgehen (z.B. durch manuelles Editieren der Status-Zeile): Meldung unverändert an Daniel weitergeben. Eine bereits umgeschriebene Spec-Datei muss dafür **nicht** zurückgenommen werden — derselbe Aufruf ist unverändert wiederholbar, solange die bereits geschriebene Statuszeile exakt die ist, die er erneut schreiben würde (gleiche Spec, gleicher PR). Ein bereits geschlossenes Issue ist ebenfalls kein Fehler mehr. Bricht der Aufruf mit "Zustand 'closed'" ab, ist der PR ohne Merge geschlossen worden — dann wird gar nicht finalisiert.
+   **Fehlerfall „nicht verknüpft":** Es fehlt die Closing-Zeile aus Schritt 6.3 im PR-Body (oder sie nennt die falsche Nummer). Dann den Body nachziehen — Body in eine temporäre Datei schreiben, Zeile ergänzen, `gh pr edit <MMM> --body-file <datei>` (nie über die Kommandozeile) — und die Prüfung wiederholen. Es ist nichts zurückzunehmen: Die Prüfung steht **vor** jedem Schreibzugriff. Danach lohnt ein erneutes Zurücklesen des Board-Werts aus 6.4, denn erst mit der Verknüpfung kann der Workflow greifen.
 
-   **Fehlerfall "nicht verknüpft":** Meldet der Aufruf, dass `closingIssuesReferences` keinen passenden Eintrag enthält, fehlt die Closing-Zeile aus Schritt 6.3 im PR-Body (oder sie nennt die falsche Nummer). Dann den Body nachziehen — Body in eine temporäre Datei schreiben, Zeile ergänzen, `gh pr edit <PR-Nummer> --body-file <datei>` (nie über die Kommandozeile) — und `finalize` unverändert wiederholen. Der Abbruch passiert vor jedem Schreibzugriff: Spec-Datei und Board sind unangetastet, es ist nichts zurückzunehmen. Meldet er stattdessen, der PR ziele nicht auf den Default-Branch, ist der PR gegen den falschen Basis-Branch eröffnet worden — das ist ein Fall für Daniel, nicht für eine Korrektur nebenbei. Nennt die Meldung ein zu altes `gh` (Feld unbekannt; die verlangte Mindestversion nennt die Meldung selbst, gepflegt als Konstante `MIN_GH_VERSION` in `scripts/gh-board.py`), ist es ein Werkzeugproblem und **kein** Beleg für eine fehlende Verknüpfung — dann `gh` aktualisieren statt eine Zeile nachzutragen, die längst da ist.
+   **Fehlerfall „falscher Basis-Branch":** Ist `baseRefName` nicht `main`, ist der PR gegen den falschen Branch eröffnet worden. Das ist ein Fall für Daniel, nicht für eine Korrektur nebenbei — nicht finalisieren, melden.
 
-   **Meldet die Messung aus Schritt 2.4 `abschluss-finalisieren` als blockiert**, ist davon nur der **Board-Anteil** betroffen. Der `finalize`-Aufruf wird trotzdem abgesetzt: Er schreibt die `**Status:**`-Zeile der Spec-Datei, **bevor** er das Board berührt, und scheitert erst danach — die Statuszeile landet damit noch im Feature-PR. Der erwartete Fehlschlag am Board-Anteil ist dann **keine** Meldung an Daniel im üblichen Sinn, sondern ein als ausgelassen gemeldeter Schritt: `Done` und der daran hängende Issue-Abschluss kommen mit demselben, unverändert wiederholbaren Befehl in den Abschnitt `## Lokal nachzuholen` (PR-Body und Chat-Bericht). Weiter geht es mit Punkt 3.
+2. **Die `**Status:**`-Zeile der Spec-Datei** (`specs/features/NNNN-*.md`) lokal auf die finale Form setzen:
 
-3. Die geänderte Spec-Datei (`specs/features/NNNN-*.md`) committen, Konvention: `chore(specs): Spec NNNN finalisieren (PR #<PR-Nummer>)`, und zusammen mit ggf. noch offenen Fix-Commits pushen.
+   ```
+   **Status:** Implemented ([PR #<MMM>](https://github.com/TheRealKoller/photosort/pull/<MMM>))
+   ```
+
+   Eine rein lokale Textänderung mit dem Editier-Werkzeug — kein Board-Zugriff, kein Netzwerk, nichts, was fehlschlagen könnte.
+
+3. Die geänderte Spec-Datei committen, Konvention: `chore(specs): Spec NNNN finalisieren (PR #<MMM>)`, und zusammen mit ggf. noch offenen Fix-Commits pushen.
 
 4. Danach übernimmt Daniel: Freigabe und Merge. **Kein** automatisches Mergen durch dich.
 
-**Wird der PR wider Erwarten nicht gemergt** (Branch verworfen): Board-Spalte und Issue-Zustand stehen dann auf `Done`/geschlossen, obwohl `main` die Spec weiter als `Accepted` führt. Es gibt keinen Lauf mehr, der das automatisch aus der Datei zurückrechnet — den Board-Wert in dem Fall gezielt zurücksetzen (`set-status --issue <NNN> --status Todo`), das Issue auf GitHub wieder öffnen und Daniel darauf hinweisen.
+**Wird der PR ohne Merge geschlossen** (Branch verworfen): Das Issue bleibt offen — es hing am Keyword, das nur beim Merge greift —, aber die Karte steht seit der PR-Verknüpfung auf `Review` und behauptet dort eine Prüfung, die es nicht mehr gibt. Diesen einen Übergang setzt die Session selbst zurück, weil GitHub für ein geschlossenes, nicht gemergtes PR keinen Workflow kennt:
 
-**Ausnahmefall (nicht Regelweg):** Wurde ein PR ohne diesen Schritt gemergt (Merge außerhalb des üblichen Ablaufs, abgebrochene Session), finalisiert derselbe Aufruf **ohne** `--pr-number` nachträglich — er sucht dann den gemergten, das Issue schließenden PR selbst (siehe `.claude/skills/github-board/SKILL.md`). Die dabei entstehende lokale Änderung braucht dann doch ein kleines Folge-PR. Genau das soll dieser Schritt vermeiden.
+```bash
+gh project item-edit 8 --owner TheRealKoller --url https://github.com/TheRealKoller/photosort/issues/<NNN> --field "Status" --value "In Progress"
+```
+
+`In Progress` und nicht `Ready`: Die Spec existiert, der Branch existiert, die Arbeit ist begonnen. Führt die Spec-Datei auf dem Branch bereits `Implemented`, gehört das ebenfalls zurückgenommen — dieser Stand ist nicht ausgeliefert. Daniel darauf hinweisen.
+
+**Ausnahmefall (nicht Regelweg):** Wurde ein PR ohne Schritt 8 gemergt (Merge außerhalb des üblichen Ablaufs, abgebrochene Session), ist am Board nichts zu tun — Issue und Karte haben ihren Endzustand über das Keyword und den `Item closed`-Workflow bereits erreicht. Offen bleibt allein die `**Status:**`-Zeile der Spec-Datei in `main`; sie braucht dann doch ein kleines Folge-PR. Genau das soll dieser Schritt vermeiden.
 
 ## Recovery: `SendMessage` schlägt fehl
 
@@ -142,17 +147,15 @@ Ist das Subagenten-Fenster des `developer`-Laufs bereits geschlossen (z.B. Timeo
 
 Nach Abschluss (PR eröffnet, Copilot-Review ausgewertet oder aus genanntem Grund übersprungen, Spec im PR finalisiert) fasse für den Nutzer zusammen: PR-Link, Ergebnis der Finalisierung aus Schritt 8 (Statuszeile bzw. Fehlermeldung), das vom `review`-Skill gelieferte Protokoll (alle fünf Perspektiven, gelaufen ja/nein mit Begründung, Findings-Kurzfassung inkl. behobener/bewusst nicht behobener), Copilot-Ergebnis (falls gelaufen), sowie jede Stelle, an der du selbst eine technische Detailentscheidung getroffen hast (z.B. bei einem nicht-exakten Anker-Match oder einem SendMessage-Recovery-Fall).
 
-Wurde wegen `board_reachable: false` ein Board-Schritt ausgelassen, trägt der Bericht zusätzlich denselben Abschnitt, der auch im PR-Body steht:
+Blieb ein nativer Übergang aus oder schlug ein Board-Befehl fehl, trägt der Bericht zusätzlich denselben Abschnitt, der auch im PR-Body steht:
 
 ```markdown
 ## Lokal nachzuholen
 
-Dieser Schritt wurde ausgelassen, weil sich das Projekt-Board in dieser Umgebung nicht auflösen
-ließ (gemessen mit `python3 scripts/gh-board.py capabilities`). Die Befehle sind unverändert
+Dieser Schritt ist fehlgeschlagen und wurde nicht nachgeholt. Die Befehle sind unverändert
 wiederholbar und lokal nachzuholen.
 
-- `status-review`: `python3 scripts/gh-board.py set-status --issue NNN --status Review`
-- `abschluss-finalisieren`: `python3 scripts/gh-board.py finalize --spec NNNN --pr-number MMM`
+- `status-review`: `gh project item-edit 8 --owner TheRealKoller --url https://github.com/TheRealKoller/photosort/issues/NNN --field "Status" --value "Review"`
 ```
 
-Im Chat — und **nur** dort — kommt das Feld `detail` der Messung dazu, damit Daniel die Ursache sieht. In den PR-Body gelangt es nicht.
+Im Chat — und **nur** dort — kommt die wörtliche `gh`-Fehlermeldung bzw. der tatsächlich vorgefundene Board-Wert dazu, damit Daniel die Ursache sieht. In den PR-Body gelangt beides nicht; dort steht ausschließlich selbst erzeugter Inhalt (`.claude/skills/github-board/SKILL.md`).

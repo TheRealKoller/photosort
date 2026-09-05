@@ -1,5 +1,5 @@
 /**
- * Verlaesslichkeitsregime als Konfiguration (ADR 0057 Punkt 7, Akzeptanzkriterium "ein Fehlschlag
+ * Verlaesslichkeitsregime als Konfiguration (ADR 0058 Punkt 7, Akzeptanzkriterium "ein Fehlschlag
  * ist ein verlaessliches Signal"). Die drei entscheidenden Werte - `retries: 0`, `forbidOnly:
  * true`, `workers: 1` - sind zusaetzlich per Assertion in `tests/toolchain.spec.ts` gebunden,
  * damit ein spaeteres "die Flakes wegkonfigurieren" laut scheitert statt still zu gelingen.
