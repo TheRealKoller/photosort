@@ -12,6 +12,14 @@ import { cn } from '../../lib/utils'
  * - Fokussiert: 1,5px `--accent` am Feld, Textmarke in `--accent`, Text auf Primaerstufe. Die
  *   FOKUSDARSTELLUNG selbst ist davon unabhaengig die eine globale, abgesetzte Kontur aus
  *   index.css - deshalb `focus:` (Zustand des Feldes) und keine eigene Ring-Utility hier.
+ *   HIER STAND EINMAL EINE OUTLINE-UNTERDRUECKENDE UTILITY, und das war ein echter Fehler,
+ *   kein Schoenheitsmakel:
+ *   die globale Regel steht in `@layer base`, jede Utility in `@layer utilities`, und bei Cascade
+ *   Layers gewinnt die SPAETERE Ebene unabhaengig von der Spezifitaet. Diese eine Klasse hat der
+ *   gesamten Anwendung an jedem Textfeld die Fokuskontur genommen - und damit ausgerechnet die
+ *   Konstruktion gebrochen, die die Doppelbelegung des Akzents aufloest (Auswahl/Aktiv = Kante AM
+ *   Element, Fokus = abgesetzte Kontur): ein fokussiertes Feld sah aus wie ein ausgewaehltes.
+ *   Der Design-Vertragstest verbietet sie deshalb jetzt in jeder Variante.
  * - Fehlerhaft: 1px `--danger` am Feld. Beschriftung und Meldung tragen `--danger-text` (nicht
  *   `--danger` - als Fliesstext haelt der Board-Ton auf erhoehten Flaechen kein AA); das ist
  *   Sache des Formulars, nicht dieser Komponente.
@@ -35,7 +43,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
       className={cn(
         'h-11 w-full rounded-sm border border-border-control bg-surface px-3 text-sm text-text-h',
         'caret-accent placeholder:text-text-muted',
-        'focus:border-[1.5px] focus:border-accent focus:outline-none',
+        'focus:border-[1.5px] focus:border-accent',
         'aria-invalid:border aria-invalid:border-danger',
         'disabled:pointer-events-none disabled:border-border disabled:text-text-disabled',
         className

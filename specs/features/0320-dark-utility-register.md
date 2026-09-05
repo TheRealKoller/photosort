@@ -188,8 +188,14 @@ echtem Umfang:
   Aufrufstellen; `text-4xl` und größer entfallen). Abstände: Tailwinds Default-`--spacing` liefert
   die 8-Punkt-Skala 4/8/12/16/24/32/48/64 bereits über `p-1…p-16` — kein eigenes Token, nur
   dokumentiert. 12-Spalten-Raster mit 12px Gutter = `grid-cols-12 gap-3`, ebenfalls nur dokumentiert.
-- `@layer utilities`: `.washed` entfällt; **neu** eine einzige Trefferflächen-Utility, die ein
-  transparentes Pseudo-Element auf mindestens 44×44px aufspannt (ADR 0055 Punkt 8).
+- `@layer utilities`: `.washed` entfällt; **neu zwei** Trefferflächen-Utilities, die ein
+  transparentes Pseudo-Element auf mindestens 44×44px aufspannen (ADR 0055 Punkt 8).
+  **Korrigiert bei der Umsetzung:** Hier stand „eine einzige Utility“. Es sind zwei geworden,
+  weil die erste der vier Aufspannungsregeln des UI/UX-Abschnitts („nur auf der kurzen Achse
+  aufspannen“) mit einer einzigen Utility nicht umsetzbar ist: `tap-target` spannt nur vertikal
+  auf (beschriftete Bedienelemente sind breit genug), `tap-target-square` beidachsig (Symbol-
+  Schaltflächen, Kontrollkästchen). Eine beidachsige Aufspannung an einer breiten Schaltfläche
+  erzeugte genau die breiten unsichtbaren Flächen, die dieselbe Regel verbietet.
 
 **3. Kein heller Rest außerhalb der CSS.** `frontend/index.html`: `<meta name="theme-color">`
 (heute `#111111`) → `#0B0C10`, zusätzlich `<meta name="color-scheme" content="dark">` (verhindert
@@ -246,8 +252,14 @@ Board-Referenz, Abschnitt 6):
 - `StatusTag.tsx` — Umstellung auf die Toast-Konstruktion des Boards: Fläche `--elevated`, farbiger
   Rand, farbige Beschriftung. Die acht `--status-*-tint`/`-strong`-Tokens werden darauf umdefiniert
   statt gestrichen, ihre Aufrufstellen bleiben unverändert (ADR 0055 Punkt 5).
-- `RatingBadge.tsx` — `★`/`✓`/`✕` → `star`/`check`/`x-circle`; Vorschlags-Präfix `⚙` → `cog`.
-  Das `–` für unbewertet bleibt Text (das Board zeigt für „Neu" gar kein Badge).
+- `RatingBadge.tsx` — `★`/`✓`/`✕` → `star`/**`book`**/`x-circle`; Vorschlags-Präfix `⚙` → `cog`.
+  **Korrigiert bei der Umsetzung:** Diese Zeile nannte ursprünglich `check` für „Album-würdig“ und
+  übersetzte damit die bisherigen Zeichen eins zu eins. Maßgeblich ist `book`, wie es die
+  Board-Referenz (Abschnitt 6, „Album: Badge ALBUM … + `book`-Symbol 14px“) und ADR 0055 Punkt 6c
+  („eigenes Symbol `star` / `book` / `x-circle`“) übereinstimmend festlegen. Grund über die
+  Board-Treue hinaus: `check` ist im Produkt bereits das Symbol der Erfolgsmeldung (`alert.tsx`);
+  eine Doppelbelegung bräche „Bewertungsstufen auf einen Blick unterscheidbar“.
+  Das `–` für unbewertet bleibt Text (das Board zeigt für „Neu“ gar kein Badge).
 - `CloudVisionStatusList.tsx` — `⚠` → `x-circle`, `✓` → `check`; die drei `○`-Zustände bekommen den
   vorhandenen `StatusDot` (kein leerer Kreis im Zwölfer-Satz).
 - `CategoryBadge.tsx` — Board-Chipform (Radius 16px, Polsterung 12/6px, Inter Semi-Bold 12px) und
@@ -933,8 +945,8 @@ entschieden und im Abschnitt „Entscheidungen" festgehalten.
 
 | | vorher (Organic) | nachher (Dark Utility Register) | Delta |
 |---|---|---|---|
-| `dist/assets/index-*.js` | 452,26 kB (gzip 138,73 kB) | 457,23 kB (gzip 141,14 kB) | **+4,97 kB / +2,41 kB gzip** |
-| `dist/assets/index-*.css` | 44,12 kB (gzip 13,67 kB) | 57,28 kB (gzip 16,88 kB) | +13,16 kB / +3,21 kB gzip |
+| `dist/assets/index-*.js` | 452,26 kB (gzip 138,73 kB) | 457,15 kB (gzip 141,12 kB) | **+4,89 kB / +2,39 kB gzip** |
+| `dist/assets/index-*.css` | 44,12 kB (gzip 13,67 kB) | 57,15 kB (gzip 16,85 kB) | +13,03 kB / +3,18 kB gzip |
 
 Der JS-Zuwachs liegt im erwarteten **niedrigen kB-Bereich, nicht im MB-Bereich** — das Tree-Shaking greift, es landen zwölf Pfad-Definitionen im Bundle statt des gesamten Lucide-Satzes (entpackt ~32 MB). Der CSS-Zuwachs stammt überwiegend aus den 26 Kategorie-Chip-Tokens und den zusätzlichen `@theme`-Einträgen und ist unabhängig von der Symbolfrage.
 

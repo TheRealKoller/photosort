@@ -170,7 +170,7 @@ export function CriterionDetailsPopover({
             'tap-target-square flex size-8 shrink-0 items-center justify-center rounded-full ' +
               'border border-border-control bg-bg/85 text-xs font-semibold text-text ' +
               'backdrop-blur-sm transition-colors hover:bg-overlay hover:text-text-h ' +
-              'active:bg-border active:text-text-muted',
+              'active:bg-border active:text-text',
             className
           )}
         >
@@ -182,7 +182,7 @@ export function CriterionDetailsPopover({
           <p className="text-sm font-semibold text-text-h">Bewertungsdetails</p>
           <PopoverClose
             aria-label="Schließen"
-            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text-muted"
+            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
           >
             <span aria-hidden="true">×</span>
           </PopoverClose>

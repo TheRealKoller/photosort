@@ -221,6 +221,22 @@ const statusPillRows: ContrastRow[] = ['running', 'success', 'failed', 'idle'].m
   threshold: TEXT_THRESHOLD,
 }))
 
+/**
+ * ZUSTANDSFLAECHEN. `--border` ist nicht nur Dekorlinie, sondern auch die Flaeche, die eine
+ * unaufdringliche oder sekundaere Schaltflaeche im GEDRUECKTEN Zustand annimmt (`active:bg-border`).
+ * Sie steht damit real unter Text und gehoert in die Matrix - ohne diese Zeilen bleibt die
+ * Kombination, die beim Tippen tatsaechlich auf dem Schirm steht, dauerhaft ungeprueft.
+ *
+ * Zulaessig sind dort nur `--text` (5.49) und `--text-h` (13.49). NICHT zulaessig und deshalb
+ * bewusst nicht als Zeile aufgenommen: `--text-muted` (4.36) und `--danger-text` (4.33) - beide
+ * verfehlen die Schwelle knapp. Die Regel weiter unten haelt das zusaetzlich statisch fest, damit
+ * eine fehlende Matrixzeile nicht als Erlaubnis missverstanden wird.
+ */
+const stateSurfaceRows: ContrastRow[] = [
+  { foreground: '--text', background: '--border', threshold: TEXT_THRESHOLD },
+  { foreground: '--text-h', background: '--border', threshold: TEXT_THRESHOLD },
+]
+
 const inkRows: ContrastRow[] = [
   { foreground: '--accent-fg', background: '--accent', threshold: TEXT_THRESHOLD },
   { foreground: '--status-success-fg', background: '--status-success', threshold: TEXT_THRESHOLD },
@@ -249,6 +265,7 @@ const contrastRows: ContrastRow[] = [
   ...graphicRows('--status-success'),
   ...graphicRows('--status-failed'),
   ...inkRows,
+  ...stateSurfaceRows,
   ...ratingRows,
   ...statusPillRows,
   ...chipRows,
@@ -487,6 +504,17 @@ describe('Design-Vertrag: Fokusdarstellung', () => {
 
 const TAP_TARGET_UTILITY = 'tap-target'
 
+/**
+ * Utilities, die die eine globale Fokusdarstellung aushebeln. Der Name der outline-Utility ist
+ * bewusst ZUSAMMENGESETZT statt als Literal geschrieben: Tailwind scannt auch diese Datei, und
+ * ein Vorkommen hier allein wuerde die verbotene Regel in die gebaute CSS aufnehmen - ein
+ * Artefakt, das beim Nachmessen am gebauten Stylesheet genau den Verdacht erzeugt, den dieser
+ * Test ausraeumen soll.
+ */
+const FOCUS_SUPPRESSING_UTILITY = new RegExp(
+  `ring-offset|focus-visible:|(^|[\\s'"\`([])(?:[a-z-]+:)*outline-${'none'}\\b`
+)
+
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 }
@@ -542,6 +570,29 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     expect(offenders).toEqual([])
   })
 
+  it('setzt auf die gedrueckte Flaeche --border nur die dort gerechneten Vordergruende', () => {
+    // `--text-muted` misst auf `--border` 4.36:1 und `--danger-text` 4.33:1 - beide verfehlen AA.
+    // Der gedrueckte Zustand ist am Telefon der EINZIGE Zustand, den es gibt (Tailwind bindet
+    // `hover:` an `@media (hover: hover)`); eine dort unlesbare Beschriftung ist deshalb kein
+    // Randfall. Zulaessig sind `--text` (5.49) und `--text-h` (13.49).
+    const forbiddenOnBorder = ['text-text-muted', 'text-danger-text']
+    const offenders: string[] = []
+    for (const file of tsxFiles()) {
+      for (const literal of stringLiterals(file.content)) {
+        const classes = literal.split(/\s+/)
+        const usesBorderSurface = classes.some((cls) => /(^|:)bg-border$/.test(cls))
+        if (!usesBorderSurface) continue
+        const bad = classes.filter((cls) =>
+          forbiddenOnBorder.some((name) => cls.endsWith(name))
+        )
+        if (bad.length > 0) {
+          offenders.push(`${file.label}: ${bad.join(' ')} auf bg-border`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
   it('umreisst Bedienelement-Primitive nie mit dem rein dekorativen --border', () => {
     // --border liegt bei 1.04-1.45:1 - als einziger Umriss eines Bedienelements auf dunklem Grund
     // ist der Button schlicht unsichtbar. Dafuer gibt es --border-control (>= 3:1 auf allen vier
@@ -588,12 +639,25 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     }
   )
 
-  it('setzt Fokus nirgends mehr per ring-offset/focus-visible: in einer .tsx', () => {
-    // Die eine globale :focus-visible-Regel ist die alleinige Fokusdarstellung (s.o.).
+  it('hebelt die globale Fokusdarstellung nirgends in einer .tsx aus', () => {
+    /*
+     * Die eine globale :focus-visible-Regel ist die alleinige Fokusdarstellung (s.o.). Neben den
+     * offensichtlichen Schreibweisen (`ring-offset`, `focus-visible:`) MUSS auch die
+     * outline-unterdrueckende Utility verboten sein - und zwar in jeder Variante, mit und ohne
+     * `focus:`-Praefix (der Name steht bewusst nirgends als Literal in dieser Datei, siehe
+     * FOCUS_SUPPRESSING_UTILITY).
+     *
+     * Der Grund ist an der gebauten CSS gemessen, nicht hergeleitet: die globale Regel steht in
+     * `@layer base`, die Utility in `@layer utilities`. Bei Cascade Layers gewinnt die SPAETERE
+     * Ebene unabhaengig von der Spezifitaet - eine einzige solche Klasse an einem
+     * Primitive nimmt der ganzen App an dieser Stelle die Fokuskontur, ohne dass irgendetwas
+     * fehlschlaegt. Genau das ist hier passiert, waehrend diese Regel nur `ring-offset` und
+     * `focus-visible:` kannte: der Test war gruen, die Zusage hielt nicht.
+     */
     const offenders: string[] = []
     for (const file of tsxFiles()) {
       for (const line of stripComments(file.content).split('\n')) {
-        if (/ring-offset|focus-visible:/.test(line)) {
+        if (FOCUS_SUPPRESSING_UTILITY.test(line)) {
           offenders.push(`${file.label}: ${line.trim()}`)
         }
       }

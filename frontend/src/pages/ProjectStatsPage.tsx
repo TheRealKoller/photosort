@@ -110,7 +110,7 @@ function InfoPopover({ label, children }: { label: string; children: ReactNode }
         <button
           type="button"
           aria-label={`Erkläre ${label}`}
-          className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md border border-border-control text-xs font-semibold text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text-muted"
+          className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md border border-border-control text-xs font-semibold text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
         >
           i
         </button>
@@ -120,7 +120,7 @@ function InfoPopover({ label, children }: { label: string; children: ReactNode }
           <p className="text-sm font-semibold text-text-h">{label}</p>
           <PopoverClose
             aria-label="Schließen"
-            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text-muted"
+            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
           >
             <span aria-hidden="true">×</span>
           </PopoverClose>

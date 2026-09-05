@@ -44,6 +44,8 @@ Aktueller Stand aus `architecture/0004-design-system.md` — bei Änderungen dor
 - **`--text-disabled` ausschließlich auf tatsächlich deaktivierten Elementen** — nie auf Inhaltstext. Nur als `disabled:` / `has-[:disabled]:` / `group-disabled:`-Variante (statisch geprüft). Es liegt bewusst unter 3:1; WCAG nimmt inaktive Bedienelemente aus.
 - **Textstufe 2 und 3 sind nur schwach unterscheidbar.** Hierarchie darf nicht über `--text` gegen `--text-muted` allein aufgebaut werden — Abstand, Schnitt und Reihenfolge müssen sie tragen. Ein Leerzustandstext ist die Hauptaussage der Seite und steht in `--text`, nicht in `--text-muted`.
 
+- **Zwei nicht-textliche Rollen, die leicht übersehen werden:** `--text-disabled` ist zusätzlich die **Fläche des Skeleton-Platzhalters** (`--elevated` misst dort nur 1,23:1 gegen den Seitengrund — der Ladezustand wäre unsichtbar). Und `--border` ist zusätzlich die **gedrückte Fläche** unaufdringlicher/sekundärer Schaltflächen (`active:bg-border`); darauf gehören nur `--text` (5,49:1) oder `--text-h`, **nie** `--text-muted` (4,36:1) oder `--danger-text` (4,33:1) — statisch geprüft.
+
 **Rahmen in zwei Rollen — hier wird am häufigsten falsch gegriffen:**
 
 - `--border` (`#2A2E3D`, `border-border`) ist **rein dekorativ**: Panelkante, Tabellenlinie, Karten- und Dialogumriss. 1,04–1,45:1 — als **einziger Umriss eines Bedienelements ist es ein unsichtbarer Button**.
@@ -107,7 +109,7 @@ Die frühere Regel „mindestens 44×44px für jedes interaktive Element" war ei
 ## Zustände: „gedrückt" ist Pflicht, Fokus ist global
 
 - **Jede `hover:`-Variante in `components/ui/` braucht eine `active:`-Variante daneben** (statisch geprüft). Tailwind bindet `hover:` an `@media (hover: hover)` — am Telefon fällt der Zustand ersatzlos weg, ein Fingertipp erzeugte sonst gar keine sichtbare Rückmeldung.
-- **Fokus: genau eine globale Regel** in `index.css` (`:focus-visible`, 2px `--accent`, 2px Versatz, transparent). In `.tsx` sind `focus-visible:`- und `ring-offset`-Utilities **verboten** (statisch geprüft) — eine hartkodierte Ring-Versatzfarbe ist auf den Seitengrund verdrahtet und erzeugt auf `--elevated` und `--overlay` einen falsch getönten Kranz.
+- **Fokus: genau eine globale Regel** in `index.css` (`:focus-visible`, 2px `--accent`, 2px Versatz, transparent). In `.tsx` sind `focus-visible:`-, `ring-offset`- und **`outline-none`**-Utilities **verboten** (statisch geprüft). Eine hartkodierte Ring-Versatzfarbe ist auf den Seitengrund verdrahtet und erzeugt auf `--elevated`/`--overlay` einen falsch getönten Kranz — und `outline-none` hebelt die globale Regel **vollständig** aus: sie steht in `@layer base`, jede Utility in `@layer utilities`, und bei Cascade Layers gewinnt die spätere Ebene unabhängig von der Spezifität.
 - **Auswahl anliegend, Fokus abgesetzt.** Der Akzent bedeutet gleichzeitig ausgewählt/aktiv/fokussiert/Favorit. Auswahl und Aktiv sind immer eine durchgezogene Kante **am Element** (ohne Abstand), Fokus immer eine **abgesetzte** Kontur mit 2px Luft — der Fokus trägt damit zusätzlich zur Farbe eine Formaussage.
 - **Bewegung:** nur Farb- und Deckkraftübergänge bis 150ms, nie Bewegung von Layout oder Position. `motion-reduce:animate-none` an jeder Animation.
 - **Kontrollkästchen und Schalter** haben abgeleitete Werte (das Board liefert sie nicht): Kästchen 18px, Radius 4px, `--border-control`, gesetzt in `--accent`; Schalter 48×24px mit 20px-Knauf, Zustand zusätzlich über die **Knaufposition**, nicht nur über die Farbe.
@@ -176,7 +178,8 @@ Datei-/Ordnernamen aus OpenCloud sind außerhalb der Anwendung entstandener Text
 - einem Text-/Symbol-/Umrisswert, der gegen seine tatsächliche Fläche unter der Schwelle liegt (vollständige Matrix, selbst gerechnet);
 - einem gestrichenen Token oder einer gestrichenen Utility irgendwo in `frontend/src/**`, `index.html` oder `vite.config.ts` (beide Schreibweisen: CSS-Variable **und** Utility);
 - `text-danger`, `border-border` in einem Bedienelement-Primitive, `text-text-disabled` ohne Disabled-Variante;
-- `focus-visible:`/`ring-offset` in einer `.tsx`, mehr als einer `:focus-visible`-Regel in `index.css`;
+- `focus-visible:`/`ring-offset`/`outline-none` in einer `.tsx`, mehr als einer `:focus-visible`-Regel in `index.css`;
+- `text-text-muted`/`text-danger-text` auf der gedrückten Fläche `bg-border`;
 - `rounded-full` außerhalb der abschließenden Liste;
 - einem `lucide-react`-Import außerhalb von `ui/icon.tsx`, einem Namespace-Import oder einem berechneten Zugriff auf das Paket-Objekt;
 - einem zusammengebauten Klassennamen in `badge.tsx`/`icon.tsx`/`CategoryBadge.tsx`;

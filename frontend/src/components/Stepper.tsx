@@ -85,7 +85,7 @@ function BlockedReasonPopover({ stepLabel, reason }: { stepLabel: string; reason
           type="button"
           aria-label={`Grund für Sperrung von ${stepLabel} anzeigen`}
           onPointerEnter={handlePointerEnter}
-          className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text-muted"
+          className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
         >
           i
         </button>
@@ -95,7 +95,7 @@ function BlockedReasonPopover({ stepLabel, reason }: { stepLabel: string; reason
           <p className="text-sm font-semibold text-text-h">{stepLabel}</p>
           <PopoverClose
             aria-label="Schließen"
-            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text-muted"
+            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
           >
             <span aria-hidden="true">×</span>
           </PopoverClose>

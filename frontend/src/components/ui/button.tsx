@@ -49,8 +49,12 @@ const buttonVariants = cva(
         outline:
           'border border-border-control bg-overlay text-text-h hover:opacity-80 active:bg-border active:text-text',
         // Unaufdringlich: nur Beschriftung; erst beim Ueberfahren/Druecken entsteht eine Flaeche.
+        // Die gedrueckte Flaeche ist `--border`; die Beschriftung bleibt darauf `--text` (5.49:1).
+        // `--text-muted` waere hier 4.36:1 und damit knapp unter AA - und "gedrueckt" ist am
+        // Telefon der EINZIGE Zustand, den es gibt, also kein Randfall. Statisch festgehalten in
+        // src/designSystem.contract.test.ts.
         ghost:
-          'bg-transparent text-text hover:bg-overlay hover:text-text-h active:bg-border active:text-text-muted',
+          'bg-transparent text-text hover:bg-overlay hover:text-text-h active:bg-border active:text-text',
         // Link ist Text im Fliesstext, keine Schaltflaeche - eigene Groesse und kein Board-Mass.
         link: 'bg-transparent text-sm font-normal text-accent-strong underline-offset-4 hover:underline active:underline p-0 h-auto min-h-0 min-w-0',
       },
