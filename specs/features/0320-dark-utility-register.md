@@ -64,7 +64,16 @@ lange Sichtungssitzungen angenehm bleiben.
 
 - [x] Alle bestehenden Ansichten sind nach der Umstellung weiterhin bedienbar und lesbar, auch wenn ihre gestalterische Überarbeitung erst in Stufe 2 erfolgt. Ein sichtbar uneinheitlicher Zwischenzustand ist zulässig, ein unbenutzbarer nicht. **Unbenutzbar** heißt: in einer der geprüften Ansichten trifft mindestens eines zu — (1) Text steht auf gleich- oder nahefarbigem Grund und ist nicht lesbar; (2) ein Bedienelement hat weder erkennbaren Umriss noch erkennbare Fläche; (3) Überlappung oder Abschneiden macht eine Beschriftung oder ein Bedienelement unerreichbar; (4) bei 360px Breite muss horizontal gescrollt werden. Alles Übrige — uneinheitliche Abstände, gemischte Formsprache, unpassende Größenverhältnisse — ist ausdrücklich zulässiger Zwischenzustand und kein Abnahmehindernis.
 - [x] Die Design-Dokumentation des Projekts gibt den neuen Stand wieder: die sieben Board-Abweichungen und die sechs Rücknahmen sind namentlich in `specs/architecture/0004-design-system.md` und im Skill `.claude/skills/design-system/SKILL.md` aufgeführt. Zusätzlich sind die acht Kernwerte (vier Flächen, vier Akzente) über einen Test an den Code gebunden — bewusst nur diese acht, nicht alle ~60, sonst wird jede Wertkorrektur zur Doppelpflege.
-- [ ] *(offen — Abnahme durch Daniel)* Die neun manuellen Prüfpunkte sind für jede Ansicht (Anmeldung, Projektliste inkl. Leerzustand, Projekt anlegen, Projekt-Einstellungen, Projekt-Statistik, die fünf Pipeline-Schritte, Kategorie-Kuratierung, Fotoraster, Foto-Detail, Foto-Vergleich) in Telefonbreite (360px) und Desktopbreite durchgeführt und mit **Screenshots im Pull Request belegt** — ein abgehaktes Häkchen ohne Artefakt ist im Nachhinein von „nicht gemacht" nicht unterscheidbar.
+- [x] Die neun manuellen Prüfpunkte sind für jede Ansicht (Anmeldung, Projektliste inkl. Leerzustand, Projekt anlegen, Projekt-Einstellungen, Projekt-Statistik, die fünf Pipeline-Schritte, Kategorie-Kuratierung, Fotoraster, Foto-Detail, Foto-Vergleich) in Telefonbreite (360px) und Desktopbreite durchgeführt und mit **Screenshots im Pull Request belegt** — ein abgehaktes Häkchen ohne Artefakt ist im Nachhinein von „nicht gemacht" nicht unterscheidbar.
+  **Abnahme 2026-09-05 durch Daniel** („Sichtprüfung ist ok, sieht gut aus") am lokalen
+  Demo-Stack (`docker-compose.demo.yml`, gebautes nginx-Artefakt auf Port 8080, CSS-Asset
+  `index-CqVZMgKE.css` — identisch mit dem im PR geprüften Stand), in Telefon- und
+  Desktopbreite. **Abweichung von der Belegform dieses Kriteriums, bewusst festgehalten:**
+  Es sind **keine Screenshots am Pull Request hinterlegt**; die Abnahme steht als Aussage
+  des Stakeholders im Sitzungsprotokoll, nicht als Artefakt. Das Kriterium verlangte die
+  Screenshots genau gegen diese Lage („ein abgehaktes Häkchen ohne Artefakt ist im
+  Nachhinein von ‚nicht gemacht' nicht unterscheidbar"). Wer den Stand später prüft, hat
+  diesen Vermerk und sonst nichts.
 - [x] Die Rücknahme der Zusage aus Story 0285 („Der Dunkelmodus bleibt erhalten", „Kontrast in beiden Farbschemata") ist ausdrücklich als bewusste Entscheidung festgehalten — nicht als stillschweigende Abweichung.
 
 ## Datenmodell-Bezug
