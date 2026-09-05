@@ -26,29 +26,35 @@ cd frontend && npm test
 ## GitHub-CLI (`gh`)
 
 Der gesamte Story-Lebenszyklus des Projekts — Story-Issue anlegen, Issue-Body schreiben,
-Board-Status setzen, eine Feature-Spec finalisieren — läuft über
-[`scripts/gh-board.py`](../scripts/gh-board.py) und damit über die GitHub-CLI `gh`. Ohne sie ist
-keiner dieser Schritte ausführbar: `python3 scripts/gh-board.py doctor` meldet dann `gh_binary`
-als fehlgeschlagen und führt die davon blockierten Lebenszyklus-Schritte einzeln auf. `gh` ist
-also nicht optionales Komfortwerkzeug, sondern Voraussetzung des Entwicklungsablaufs (siehe
-[`ai-workflow.md`](./ai-workflow.md)).
+Board-Status setzen und lesen, eine Feature-Spec abschließen — läuft über die GitHub-CLI `gh`.
+Seit [ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) gibt es dafür
+kein eigenes Werkzeug mehr: Jeder Board-Zugriff ist ein einzelner `gh`-Aufruf, die verbindliche
+Befehlssammlung steht in `.claude/skills/github-board/SKILL.md`. Ohne `gh` ist keiner dieser
+Schritte ausführbar — es ist also nicht optionales Komfortwerkzeug, sondern Voraussetzung des
+Entwicklungsablaufs (siehe [`ai-workflow.md`](./ai-workflow.md)).
 
-**Mindestversion:** gepflegt als Konstante `MIN_GH_VERSION` in `scripts/gh-board.py`. Das ist der
-autoritative Wert — hier steht bewusst keine zweite Zahl im Text, die davon abweichen könnte.
+**Mindestversion:** gh 2.97.0
 
-**Warum die Distributions-Paketquelle nicht genügt:** Ubuntu liefert `gh` 2.45.x. Das Feld
-`closingIssuesReferences` in `gh pr view --json` — die Vorbedingung, an der `finalize` laut
-[ADR 0046](../specs/decisions/0046-pr-issue-verknuepfung-closing-keyword.md) die
-PR-Issue-Verknüpfung prüft — kennt `gh` erst ab der in `MIN_GH_VERSION` festgehaltenen Version.
-`apt install gh` verdeckt das Problem deshalb, statt es zu lösen: `gh` ist vorhanden, `finalize`
-bricht trotzdem ab. Zu beziehen ist `gh` daher immer als Release-Artefakt des Herausgebers, nicht
-aus der Paketquelle der Distribution.
+Das ist die autoritative Angabe des Projekts; ein Test in CI hält den weiter unten
+dokumentierten Setup-Script-Block daran fest. Erst ab dieser Version kennt
+`gh project item-edit` die namensbasierte Form (`--field "Status" --value "In Progress"` statt
+vier Knoten-IDs), an der seit ADR 0057 jeder schreibende Board-Zugriff hängt — eingeführt mit
+`cli/cli#13807`, veröffentlicht Ende Juli 2026. Die ältere Untergrenze aus
+[ADR 0046](../specs/decisions/0046-pr-issue-verknuepfung-closing-keyword.md)
+(`closingIssuesReferences` in `gh pr view --json`, für die Prüfung der PR↔Issue-Verknüpfung) ist
+darin enthalten.
+
+**Warum die Distributions-Paketquelle nicht genügt:** Ubuntu liefert `gh` 2.45.x — weit unterhalb
+der Mindestversion. `apt install gh` verdeckt das Problem deshalb, statt es zu lösen: `gh` ist
+vorhanden, der Board-Aufruf scheitert trotzdem, und zwar an einem unbekannten Flag statt an einer
+sprechenden Meldung. Zu beziehen ist `gh` daher immer als Release-Artefakt des Herausgebers,
+nicht aus der Paketquelle der Distribution.
 
 **Lokale Installation:** über die offizielle Bezugsquelle des Herausgebers —
 [Installationswege](https://github.com/cli/cli#installation) bzw. direkt die
 [Releases](https://github.com/cli/cli/releases). Danach einmalig `gh auth login`; `gh --version`
-zeigt die installierte Version, `python3 scripts/gh-board.py doctor` prüft sie gegen
-`MIN_GH_VERSION` mit.
+zeigt die installierte Version. Nötig sind die Scopes `repo` (Issues, Pull Requests) und
+`project` (Projects V2) — beide trägt das übliche `gh auth login`-Profil dieses Projekts bereits.
 
 **Remote-/Cloud-Umgebungen:** die Bereitstellung liegt bewusst **nicht** im Repository, sondern
 im **Setup-Script der Cloud-Umgebung**. Einzutragen ist es auf
@@ -81,10 +87,10 @@ Block überarbeitet, darf diese Form nicht „vereinfachen" — ein Test in CI h
 
 **Zur Vorinstallation:** Die Dokumentation der Cloud-Umgebungen führt `gh` unter den
 mitgelieferten Werkzeugen. Zwei eigene Messungen in Remote-Sessions zeigten dagegen
-`command not found` (Exit-Code 127), womit sämtliche `doctor`-Prüfungen an dieser einen Ursache
-scheiterten. Welche Angabe für eine frisch **angelegte** Umgebung zutrifft, ist offen — bei der
-Messung war nur der Container frisch, nicht die Umgebungs-Konfiguration. Der Block trägt beide
-Fälle: Liegt bereits eine ausreichende Version vor, lädt er nichts und sagt das.
+`command not found` (Exit-Code 127). Welche Angabe für eine frisch **angelegte** Umgebung
+zutrifft, ist offen — bei der Messung war nur der Container frisch, nicht die
+Umgebungs-Konfiguration. Der Block trägt beide Fälle: Liegt bereits eine ausreichende Version
+vor, lädt er nichts und sagt das.
 
 An lokalen Arbeitsplätzen ändert sich durch all das nichts — es gibt keine eingecheckte Datei,
 die Sessionverhalten steuert, und keinen Eingriff in eine vorhandene Installation.
@@ -102,15 +108,15 @@ die Sessionverhalten steuert, und keinen Eingriff in eine vorhandene Installatio
 # Subshell, die fuer sich hart abbricht, ohne das Script zu beenden.
 set -uo pipefail
 
-# Muss zu MIN_GH_VERSION in scripts/gh-board.py passen (siehe docs/setup.md).
-GH_VERSION="2.72.0"
+# Muss zur dokumentierten Mindestversion in docs/setup.md passen.
+GH_VERSION="2.97.0"
 
 SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO="sudo"
 
 need_install=1
 if command -v gh >/dev/null 2>&1; then
   have="$(gh --version | head -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
-  # sort -V vergleicht numerisch: 2.9.0 ist aelter als 2.72.0, ein String-Vergleich sagt das Gegenteil.
+  # sort -V vergleicht numerisch: 2.9.0 ist aelter als 2.97.0, ein String-Vergleich sagt das Gegenteil.
   if [ -n "$have" ] && [ "$(printf '%s\n%s\n' "$GH_VERSION" "$have" | sort -V | head -n1)" = "$GH_VERSION" ]; then
     need_install=0
     echo "gh $have liegt bereits vor (>= $GH_VERSION), keine Installation."
@@ -148,8 +154,9 @@ if [ "$need_install" -eq 1 ]; then
   # Protokoll ist einsehbar.
   if [ "$status" -ne 0 ]; then
     echo "WARNUNG: gh $GH_VERSION konnte nicht bereitgestellt werden (Status $status)." >&2
-    echo "Die Session startet trotzdem. Board-Befehle ueber scripts/gh-board.py sind bis" >&2
-    echo "zur naechsten erfolgreichen Bereitstellung nicht ausfuehrbar." >&2
+    echo "Die Session startet trotzdem. Die Board- und Issue-Befehle des Story-" >&2
+    echo "Lebenszyklus sind bis zur naechsten erfolgreichen Bereitstellung nicht" >&2
+    echo "ausfuehrbar." >&2
   fi
 fi
 
@@ -160,37 +167,47 @@ command -v gh >/dev/null 2>&1 && gh --version || echo "gh ist nicht verfuegbar."
 exit 0
 ```
 
-**Pflichtschritt bei jeder Anhebung von `MIN_GH_VERSION`:** den Block hier **und** das
-Setup-Script in der Weboberfläche nachziehen. Die Zielversion existiert zwangsläufig an zwei
-Orten — als Konstante im Code und als `GH_VERSION` in der Umgebungs-Konfiguration —, weil das
-Setup-Script in sich abgeschlossen ist und `scripts/gh-board.py` nicht lesen kann.
-**Maßgeblich ist `MIN_GH_VERSION`.** Den Übergang Code → Doku sichert ein Test in CI
-(`scripts/tests/test_setup_docs.py`): Er liest `GH_VERSION` aus dem Block oben und stellt ihn
-gegen die Konstante, der Lauf wird bei Abweichung sofort rot. Ungesichert bleibt allein der letzte
+**Pflichtschritt bei jeder Anhebung der Mindestversion:** die Angabe oben, den Block hier **und**
+das Setup-Script in der Weboberfläche nachziehen. Die Zielversion existiert zwangsläufig an zwei
+Orten — als dokumentierte Angabe im Repository und als `GH_VERSION` in der
+Umgebungs-Konfiguration —, weil das Setup-Script in sich abgeschlossen ist und keine Datei dieses
+Repositories lesen kann. **Maßgeblich ist die Angabe unter „Mindestversion".** Den Übergang
+Angabe → Block sichert ein Test in CI (`scripts/tests/test_setup_docs.py`): Er liest beide Werte
+aus dieser Datei, stellt sie gegeneinander und prüft zusätzlich, dass die Angabe nicht unter
+2.97.0 fällt; der Lauf wird bei Abweichung sofort rot. Ungesichert bleibt allein der letzte
 Schritt, die Übertragung Doku → Weboberfläche.
 
-**Woran ein Auseinanderlaufen auffällt,** wenn dieser letzte Schritt einmal vergessen wird:
-`python3 scripts/gh-board.py doctor` meldet die Prüfung `gh_version` als fehlgeschlagen und nennt
-beide Zahlen (gefundene Version und `MIN_GH_VERSION`), `abschluss-finalisieren` erscheint unter
-`blocked_lifecycle_steps`, und `finalize` selbst bricht mit einer Meldung ab, die die
-Mindestversion ausdrücklich nennt — und zwar **vor** jedem Schreibzugriff auf Spec-Datei und
-Board, es ist also nichts zurückzunehmen. Die Board-Werkzeuge installieren dabei nichts nach: sie
-melden den Zustand und reparieren ihn nicht.
+**Woran ein Auseinanderlaufen auffällt,** wenn dieser letzte Schritt einmal vergessen wird: Ein
+zu altes `gh` kennt die namensbasierte `item-edit`-Form nicht und beendet sich mit einer Meldung
+über ein unbekanntes Flag. Der Ablauf bricht deswegen nicht ab, führt den Schritt aber im
+Abschnitt `## Lokal nachzuholen` seines Berichts auf (ADR 0057, Abschnitt 6). Weil beide
+verbliebenen Session-Schreibzugriffe **vor** der Arbeit stehen, die sie ankündigen, bleibt die
+Story dabei auf ihrem früheren Wert stehen — es ist nichts zurückzunehmen. Eine Vorab-Diagnose
+gibt es seit ADR 0057 bewusst nicht mehr: Für zwei Einzeiler wäre sie größer als ihr Gegenstand.
 
 ### Was der Story-Lebenszyklus remote trägt — und was nicht
 
 Gemessen in einer echten Remote-Session am 2026-09-05, ausführlich in
 [ADR 0056](../specs/decisions/0056-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md)
-und Spec [`0318`](../specs/features/0318-remote-lebenszyklus-grenze.md); die Messungen mit
-Befehl und wörtlicher Ausgabe stehen im
+(Befund weiterhin gültig, Konsequenz seit
+[ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md), Abschnitt 7 neu
+gefasst) und Spec [`0318`](../specs/features/0318-remote-lebenszyklus-grenze.md); die Messungen
+mit Befehl und wörtlicher Ausgabe stehen im
 [Messbericht an Issue #318](https://github.com/TheRealKoller/photosort/issues/318#issuecomment-5550813926).
 `gh` liegt dort seit ADR 0053/0054 vor — die Grenze liegt woanders:
 
-- **Die vier Board-Schritte** (`status-ready`, `status-in-progress`, `status-review`,
-  `abschluss-finalisieren`) tragen dort **nicht**. Die Zwischenschicht der Session bedient
-  GraphQL nur für einen fest verdrahteten Satz von Pull-Request-Operationen und antwortet auf
-  alles andere mit `HTTP 403`. GitHub Projects (V2) spricht ausschließlich GraphQL, eine
-  REST-Entsprechung existiert nicht — für diese Schritte hilft kein Wechsel des Zugangswegs.
+- **Board-Schreibzugriffe aus der Session tragen dort nicht.** Die Zwischenschicht der Session
+  bedient GraphQL nur für einen fest verdrahteten Satz von Pull-Request-Operationen und
+  antwortet auf alles andere mit `HTTP 403`. GitHub Projects (V2) spricht ausschließlich
+  GraphQL, eine REST-Entsprechung existiert nicht — hier hilft kein Wechsel des Zugangswegs.
+- **Betroffen sind seit ADR 0057 nur noch zwei Übergänge plus die Board-Aufnahme:** `Ready`
+  (`refinement`), `In Progress` (`spec-writer`) und `gh project item-add` beim Anlegen eines
+  neuen Issues — letzteres zieht `Unrefined` mit, weil ohne Item auch kein „Item added" feuert.
+- **Die drei GitHub-seitigen Übergänge sind von der Sperre gar nicht berührt**, weil sie auf
+  GitHubs Servern laufen: `Unrefined` (Item ins Projekt aufgenommen), `Review` (Pull Request
+  verweist per Closing-Keyword auf das Issue) und `Done` (Merge schließt das Issue). Eine remote
+  begonnene Story landet damit von selbst korrekt auf `Review` und `Done` — genau die beiden
+  Schritte, deren Ausfall bisher am teuersten war, weil sie am Ende einer langen Arbeit standen.
 - **Die Issue-Schritte sind anders gelagert — und der REST-Weg rettet sie nicht.** Die GraphQL-
   Meldung benennt REST (`gh api repos/{owner}/{repo}/…`) ausdrücklich als gangbaren Weg. Die
   Messung zeigt: Auch REST ist für `gh` gesperrt, mit einer **anderslautenden** 403 (`GitHub
@@ -198,41 +215,31 @@ Befehl und wörtlicher Ausgabe stehen im
   scheitern. Der REST-Verweis der GraphQL-Meldung ist in dieser Umgebung irreführend.
 - **Die Grenze verläuft am Client, nicht am Transport.** Dieselbe Session liest und schreibt
   Issues problemlos — über die GitHub-MCP-Werkzeuge, angemeldet als Repository-Eigentümer. Für
-  `gh` ist beides zu, und `scripts/gh-board.py` ist ausschließlich auf `gh` gebaut. Die
+  `gh` ist beides zu, und der gesamte Board-Zugriff steht ausschließlich auf `gh`. Die
   Issue-Schritte scheitern deshalb am **Zugangsweg**, nicht an fehlenden Rechten. Für die
   Board-Schritte ändert das nichts: Der MCP-Weg bietet für Projects V2 keine Operation an.
 - **Die Anmeldung ist in Ordnung.** Der Lauf meldet `The token in GH_TOKEN is invalid`; das ist
   ein Artefakt der Sperre, denn `gh auth status` prüft über denselben gesperrten Endpunkt.
   Beheben lässt es sich nicht, als Diagnose über den Token ist die Meldung wertlos.
-- **Der `doctor`-Bericht greift in dieser Umgebung zu weit:** `repo_access` und `issue_read`
-  fallen in denselben 403 und blockieren über die statische Zuordnungstabelle auch
-  `pr-eroeffnen` — ausgerechnet das, was die Zwischenschicht laut eigener Auskunft bedient.
-  Dazu kommt die Zuordnung `auth` → alle acht Schritte: Weil `gh auth status` über den
-  gesperrten Endpunkt prüft, zieht sie auch `spec-anlegen` mit, das rein lokal arbeitet und
-  nachweislich trägt. Beides ist als Befund festgehalten und bewusst **nicht** repariert;
-  `capabilities` ist davon nicht betroffen und meldet weiterhin genau die vier Board-Schritte.
 
-**Was der Ablauf daraus macht:** Die vier Ablauf-Skills (`capture`, `refinement`, `spec-writer`,
-`ship-feature`) messen vor ihrem ersten Board-Aufruf einmal
-`python3 scripts/gh-board.py capabilities` (rein lesend, ein bis zwei `gh`-Aufrufe). Meldet der
-Aufruf `board_reachable: false`, wird der betroffene Schritt **nicht versucht**, alles Übrige
-läuft weiter, und der Abschlussbericht trägt einen Abschnitt `## Lokal nachzuholen` mit dem
-wörtlich kopierbaren Nachhol-Befehl. Es entsteht keine Zustandsdatei — Board-Operationen sind
-zielzustands-idempotent, der Befehl ist unverändert wiederholbar. Läuft die Messung selbst nicht
-(fehlendes Binary, unlesbare Ausgabe), gilt das als „nicht gemessen": Der Ablauf verhält sich
-dann wie bisher und versucht den Schritt.
+**Was der Ablauf daraus macht:** Es wird nicht mehr vorab gemessen (ADR 0057, Abschnitt 6,
+Punkt 1: kein Urteil vor dem Versuch). Der Befehl wird abgesetzt; scheitert er, bricht der Ablauf
+**nicht** ab, sondern führt den Schritt im Abschlussbericht unter `## Lokal nachzuholen` mit dem
+unverändert wiederholbaren Befehl auf. Es entsteht keine Zustandsdatei: `gh project item-edit`
+setzt einen Zustand und führt keinen Übergang aus, der Aufruf ist deshalb beliebig oft
+wiederholbar.
 
-**Woran auffällt, dass dieser Abschnitt überholt ist** (fällt die Sperre, verschwinden die
-Warnungen von selbst, weil sie an der Messung hängen und nicht an einem eingetragenen Satz):
-`python3 scripts/gh-board.py doctor` meldet die Prüfung `project_visible` als **erfolgreich** und
-führt die vier Board-Schritte **nicht mehr** unter `blocked_lifecycle_steps` auf, und
-`python3 scripts/gh-board.py capabilities` meldet `board_reachable: true`. Trifft das zu, ist
-allein noch dieser Absatz nachzuziehen.
+**Woran auffällt, dass dieser Abschnitt überholt ist:** Ein
+`gh project item-edit 8 --owner TheRealKoller --url <issue-url> --field "Status" --value "Ready"`
+läuft in einer Remote-Session durch, statt mit `HTTP 403` zu scheitern. Trifft das zu, ist allein
+noch dieser Abschnitt nachzuziehen.
 
-**Bewusst hingenommen:** In derselben kaputten Umgebung nennt `doctor` acht blockierte Schritte
-und `capabilities` vier. Beide sind richtig — `doctor` beurteilt neun Prüfungen, `capabilities`
-misst einseitig nur die Board-Auflösung. Ein erreichbares Board ist dabei **kein** Beleg für
-Schreibzugriff.
+**Die Gegenrichtung, seit ADR 0057 die wichtigere:** Drei Übergänge hängen an nativen
+Projects-Workflows, deren Aktivierungszustand per API nicht überwachbar ist. Ein versehentlich
+deaktivierter Workflow schreibt **gar nichts** — und eine Karte, die auf `In Progress` liegen
+bleibt, sieht aus wie eine, an der gerade gearbeitet wird. Deshalb liest `ship-feature` nach dem
+Eröffnen eines Pull Requests den Board-Wert einmal zurück und meldet ein ausgebliebenes `Review`
+unter `## Lokal nachzuholen`.
 
 ## Cloud-Bilderkennung (optional)
 

@@ -1,10 +1,17 @@
-"""Bindet den in docs/setup.md dokumentierten Setup-Script-Block an MIN_GH_VERSION.
+"""Bindet den in docs/setup.md dokumentierten Setup-Script-Block an die Mindestversion.
 
-Die Zielversion der `gh`-Installation existiert zwangslaeufig an zwei Orten: als `MIN_GH_VERSION`
-in scripts/gh-board.py (autoritativ) und als `GH_VERSION` im Setup-Script der Cloud-Umgebung, das
-ausserhalb des Repositories in einer Weboberflaeche gepflegt wird. Die dokumentierte Fassung
-dieses Scripts liegt in docs/setup.md - dieser Test haelt sie an der Konstante fest, damit eine
-Anhebung von MIN_GH_VERSION ohne Nachziehen des Blocks sofort rot wird statt still zu veralten.
+Die Zielversion der `gh`-Installation existiert zwangslaeufig an zwei Orten: als autoritative
+Prosa-Angabe in docs/setup.md (Label `**Mindestversion:**`) und als `GH_VERSION` im Setup-Script
+der Cloud-Umgebung, das ausserhalb des Repositories in einer Weboberflaeche gepflegt wird. Die
+dokumentierte Fassung dieses Scripts liegt in derselben Datei - dieser Test haelt beide Angaben
+gegeneinander, damit eine Anhebung der Mindestversion ohne Nachziehen des Blocks sofort rot wird
+statt still zu veralten. Seit ADR 0057 gibt es keine Konstante im Code mehr, an der die Angabe
+haengen koennte; geprueft werden deshalb zwei Angaben innerhalb derselben Datei.
+
+Weil zwei Angaben in derselben Datei einander auch eintraechtig auf einen zu niedrigen Wert
+folgen koennten, kommt eine Untergrenze dazu: Erst gh 2.97.0 kennt die namensbasierte
+`gh project item-edit --field/--value`-Form, an der der gesamte Board-Ablauf haengt. Ein Anheben
+der dokumentierten Version beruehrt die Untergrenze nicht, nur ein Absenken darunter wird rot.
 
 **Was diese Tests ausdruecklich NICHT zusichern:** dass der gepruefte Block je in die
 Weboberflaeche der Cloud-Umgebung uebertragen wurde, und erst recht nicht, dass in irgendeiner
@@ -17,11 +24,15 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
 SETUP_DOKU_PFAD = Path(__file__).parents[2] / "docs" / "setup.md"
+
+# Untergrenze der Untergrenze: erst diese gh-Version kennt die namensbasierte
+# `gh project item-edit --field/--value`-Form (cli/cli#13807, Release v2.97.0). Bewusst keine
+# dritte zu pflegende Kopie der Zielversion - nur ein Absinken DARUNTER wird rot.
+NAMENSBASIERTE_ITEM_EDIT_FORM_AB = (2, 97, 0)
 
 # Zeilenanfangs-Anker (re.MULTILINE): nur eine echte Zuweisung zaehlt, keine Erwaehnung von
 # GH_VERSION im Fliesstext ringsum (den es zwangslaeufig gibt, weil der Block erklaert wird) und
@@ -43,8 +54,8 @@ def gh_version_aus_text(text: str) -> str:
         raise ValueError(
             "0 Treffer: keine Zeile beginnt mit GH_VERSION=<x.y.z>. Entweder fehlt der "
             "dokumentierte Setup-Script-Block, oder die Variable/das Versionsformat hat sich "
-            "geaendert - dann ist dieser Test mitzuziehen, sonst ist die Bindung an "
-            "MIN_GH_VERSION lautlos weg."
+            "geaendert - dann ist dieser Test mitzuziehen, sonst ist die Bindung an die "
+            "dokumentierte Mindestversion lautlos weg."
         )
     if len(treffer) > 1:
         raise ValueError(
@@ -115,15 +126,127 @@ def nicht_ascii_verstoesse(block: str) -> list[str]:
     return verstoesse
 
 
-def test_die_dokumentierte_gh_version_entspricht_min_gh_version(gh_board: ModuleType) -> None:
-    dokumentiert = gh_version_aus_doku()
+# Zeilenanfangs-Anker (re.MULTILINE): Die Prosa-Angabe ist ein Vertrag, keine Formulierung -
+# ein benanntes Label am Zeilenanfang mit genau einer dreiteiligen Version darin. Der Rest der
+# Datei bleibt frei formulierbar; gelesen wird ausschliesslich diese eine Zeile. Damit ergibt
+# "**Mindestversion:** gh 2.97" null Treffer und einen lauten Fehlschlag statt eines stillen
+# Ungleich-Vergleichs.
+_MINDESTVERSION_ZEILE = re.compile(r"^\*\*Mindestversion:\*\*.*$", re.MULTILINE)
+_DREITEILIGE_VERSION = re.compile(r"\d+\.\d+\.\d+")
 
-    assert dokumentiert == gh_board.MIN_GH_VERSION, (
-        f"Der Setup-Script-Block in {SETUP_DOKU_PFAD} installiert gh {dokumentiert}, "
-        f"MIN_GH_VERSION in scripts/gh-board.py verlangt aber {gh_board.MIN_GH_VERSION}. "
-        "Massgeblich ist die Konstante: den Block in docs/setup.md nachziehen und den neuen "
-        "Wortlaut zusaetzlich in das Setup-Script der Cloud-Umgebung uebertragen."
+
+def mindestversion_aus_text(text: str) -> str:
+    """Liest genau eine Label-Zeile mit genau einer Version; alles andere ist ein Fehlerfall."""
+    zeilen = _MINDESTVERSION_ZEILE.findall(text)
+
+    if not zeilen:
+        raise ValueError(
+            "0 Treffer: keine Zeile beginnt mit '**Mindestversion:**'. Entweder fehlt die "
+            "autoritative Prosa-Angabe, oder ihr Label hat sich geaendert - dann ist dieser "
+            "Test mitzuziehen, sonst ist die Bindung an den Setup-Script-Block lautlos weg."
+        )
+    if len(zeilen) > 1:
+        raise ValueError(
+            f"{len(zeilen)} Treffer: das Label '**Mindestversion:**' steht mehrfach in der "
+            "Datei. Es darf genau eine autoritative Angabe geben - bei mehreren ist nicht mehr "
+            "entscheidbar, welche gilt."
+        )
+
+    versionen = _DREITEILIGE_VERSION.findall(zeilen[0])
+
+    if not versionen:
+        raise ValueError(
+            f"0 Treffer: die Zeile {zeilen[0]!r} nennt keine dreiteilige Version <x.y.z>. Eine "
+            "zweiteilige Angabe wie '2.97' zaehlt bewusst nicht - sie waere sonst still "
+            "ungleich dem dreiteiligen GH_VERSION-Wert."
+        )
+    if len(versionen) > 1:
+        raise ValueError(
+            f"{len(versionen)} Treffer ({', '.join(versionen)}): die Label-Zeile nennt mehrere "
+            "Versionsangaben. Welche die Mindestversion ist, waere dann Auslegung - die erste "
+            "zu nehmen ist geraten, nicht geprueft."
+        )
+    return versionen[0]
+
+
+def mindestversion_aus_doku(pfad: Path = SETUP_DOKU_PFAD) -> str:
+    try:
+        return mindestversion_aus_text(pfad.read_text(encoding="utf-8"))
+    except ValueError as fehler:
+        raise ValueError(f"{pfad}: {fehler}") from fehler
+
+
+def versions_tupel(version: str) -> tuple[int, ...]:
+    return tuple(int(teil) for teil in version.split("."))
+
+
+def test_der_dokumentierte_block_entspricht_der_dokumentierten_mindestversion() -> None:
+    block_version = gh_version_aus_doku()
+    mindestversion = mindestversion_aus_doku()
+
+    assert block_version == mindestversion, (
+        f"Der Setup-Script-Block in {SETUP_DOKU_PFAD} installiert gh {block_version}, die "
+        f"Prosa-Angabe derselben Datei verlangt aber {mindestversion}. Massgeblich ist die "
+        "Prosa-Angabe: den Block nachziehen und den neuen Wortlaut zusaetzlich in das "
+        "Setup-Script der Cloud-Umgebung uebertragen."
     )
+
+
+def test_die_dokumentierte_mindestversion_faellt_nicht_unter_die_untergrenze() -> None:
+    """Zwei Angaben in derselben Datei koennen einander auch nach unten folgen."""
+    mindestversion = mindestversion_aus_doku()
+
+    assert versions_tupel(mindestversion) >= NAMENSBASIERTE_ITEM_EDIT_FORM_AB, (
+        f"{SETUP_DOKU_PFAD} nennt gh {mindestversion} als Mindestversion. Erst "
+        f"{'.'.join(str(teil) for teil in NAMENSBASIERTE_ITEM_EDIT_FORM_AB)} kennt die "
+        "namensbasierte 'gh project item-edit --field/--value'-Form, an der seit ADR 0057 der "
+        "gesamte Board-Ablauf haengt."
+    )
+
+
+def test_eine_fehlende_mindestversion_scheitert_laut_statt_still() -> None:
+    with pytest.raises(ValueError, match=r"0 Treffer"):
+        mindestversion_aus_text("Hier steht Prosa, aber kein Label.\n")
+
+
+def test_ein_zweites_mindestversions_label_scheitert_laut() -> None:
+    text = "**Mindestversion:** gh 2.97.0\ntext\n**Mindestversion:** gh 3.0.0\n"
+
+    with pytest.raises(ValueError, match=r"2 Treffer"):
+        mindestversion_aus_text(text)
+
+
+def test_zwei_versionsangaben_in_der_label_zeile_scheitern_laut() -> None:
+    text = "**Mindestversion:** gh 2.97.0, vorher 2.72.0\n"
+
+    with pytest.raises(ValueError, match=r"2 Treffer \(2\.97\.0, 2\.72\.0\)"):
+        mindestversion_aus_text(text)
+
+
+@pytest.mark.parametrize("zeile", ["**Mindestversion:** gh 2.97", "**Mindestversion:** gh"])
+def test_ein_unvollstaendiges_versionsformat_in_der_label_zeile_scheitert_laut(
+    zeile: str,
+) -> None:
+    with pytest.raises(ValueError, match=r"0 Treffer"):
+        mindestversion_aus_text(f"{zeile}\n")
+
+
+def test_eine_erwaehnung_der_mindestversion_im_fliesstext_gilt_nicht_als_label() -> None:
+    """Ohne Zeilenanfangs-Anker wuerde jede Prosa-Erwaehnung als zweiter Treffer zaehlen."""
+    text = (
+        "Die **Mindestversion:** 9.9.9 aus dem Fliesstext zaehlt nicht.\n"
+        "**Mindestversion:** gh 2.97.0\n"
+    )
+
+    assert mindestversion_aus_text(text) == "2.97.0"
+
+
+def test_die_meldung_der_mindestversion_nennt_die_gelesene_datei(tmp_path: Path) -> None:
+    leere_doku = tmp_path / "setup.md"
+    leere_doku.write_text("kein Label\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=re.escape(str(leere_doku))):
+        mindestversion_aus_doku(leere_doku)
 
 
 def test_ein_verschwundener_block_scheitert_laut_statt_still() -> None:

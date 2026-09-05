@@ -89,12 +89,40 @@ mit einem kurzen Verweis darauf in der jeweiligen Agenten-Datei.
 | `review-ux` | Design-System-Konsistenz, Usability, Zustände (leer/ladend/Fehler), Barrierefreiheit, Responsivität | `specs/architecture/0004-design-system.md` |
 
 Eine Idee durchläuft vor Schritt 2 zwei getrennte, unveränderte Skills: `capture` hält sie
-sofort ungefiltert als GitHub-Issue fest (Status `Unrefined`), `refinement` übernimmt danach die
+sofort ungefiltert als GitHub-Issue fest und nimmt es ins Board auf — den Status `Unrefined`
+setzt daraufhin GitHub selbst —, `refinement` übernimmt danach die
 rein fachliche Schärfung (Verständnis, Prioritäts-/Reihenfolge-Einordnung über
 `requirements-engineer`, Code-/Spec-Konfliktprüfung, Devil's-Advocate-Lohnenswert-Gate) und
 schreibt Ziel/User Story/Akzeptanzkriterien direkt in den Issue-Body (Status `Ready`) — ohne
 technische Details und ohne lokale Zwischendatei. Dieser Schritt 1 ist von dieser Konsolidierung
 nicht berührt.
+
+## Der Lebenszyklus einer Story auf dem Board
+
+```
+Unrefined → Ready → In Progress → Review → Done
+```
+
+Leitsatz: **Was GitHub selbst erkennen kann, löst GitHub aus. Was nur eine Session weiß, schreibt
+die Session.** Drei der fünf Übergänge hängen deshalb an eingebauten Projects-Workflows und
+laufen auf GitHubs Servern — sie funktionieren damit auch in Umgebungen, in denen ein
+Board-Zugriff aus der Session heraus scheitert.
+
+| Übergang | Ausgelöst durch | Geschrieben von |
+|---|---|---|
+| → `Unrefined` | Das Issue wird ins Projekt aufgenommen | GitHub, Workflow `Item added to project` |
+| → `Ready` | `refinement` hat die Story fachlich geschärft | Session (`refinement`) |
+| → `In Progress` | `spec-writer` beginnt — vor Branch und Spec-Datei | Session (`spec-writer`) |
+| → `Review` | Ein Pull Request verweist per `Closes #NNN` auf das Issue | GitHub, Workflow `Pull request linked to issue` |
+| → `Done` | Das Issue wird geschlossen (Regelweg: Merge über das Keyword) | GitHub, Workflow `Item closed` |
+| → `In Progress` (zurück) | Ein Pull Request wird ohne Merge geschlossen | Session (`ship-feature`) |
+
+Die Arbeit gilt als begonnen, sobald sie begonnen wird — **das Schreiben der Spec zählt bereits
+dazu**. `Done` heißt „vom Board", nicht „ausgeliefert": Auch eine ohne Umsetzung verworfene Story
+landet dort, den Unterschied trägt GitHubs Close-Grund (`not planned` gegenüber `completed`).
+
+Der lokale Spec-Datei-Lebenszyklus (`Proposed → Accepted → Implemented → Superseded`,
+`specs/README.md`) ist davon unberührt.
 
 ## Testgetrieben, mit hartem Gate
 
@@ -113,13 +141,14 @@ unterschreitet ein Pull Request diese Schwelle, kann er nicht gemergt werden.
   als Issue-Kommentar zurückgemeldet statt geraten. Diese Automatisierung ist zum
   Zeitpunkt dieser Beschreibung noch nicht eingerichtet.
 
-**Remote-/Cloud-Sessions:** Der Ablauf misst an seinem Anfang einmal, ob das Projekt-Board in der
-laufenden Umgebung überhaupt erreichbar ist (`python3 scripts/gh-board.py capabilities`). Ist es
-das nicht, werden die betroffenen Board-Schritte ausgelassen statt versucht, der Ablauf läuft
-weiter, und der Abschlussbericht nennt sie unter `## Lokal nachzuholen` mit kopierbarem Befehl.
-Welche Schritte das sind, warum Board- und Issue-Schritte verschieden gelagert sind und woran
-auffällt, dass die Einschränkung nicht mehr gilt, steht in
-[`docs/setup.md`](./setup.md), Abschnitt „GitHub-CLI (`gh`)".
+**Remote-/Cloud-Sessions:** Es wird **nicht** vorab gemessen, ob das Board erreichbar ist — der
+Befehl wird abgesetzt, denn ihn zu versuchen kostet nicht mehr, als ihn zu messen. Scheitert er,
+bricht der Ablauf nicht ab, sondern führt den Schritt im Abschlussbericht unter
+`## Lokal nachzuholen` mit dem unverändert wiederholbaren Befehl auf. Betroffen sind nur noch die
+beiden von einer Session geschriebenen Übergänge (`Ready`, `In Progress`) und die Board-Aufnahme
+eines neuen Issues; `Review` und `Done` laufen auf GitHubs Servern und sind von der
+Einschränkung nicht berührt. Details in [`docs/setup.md`](./setup.md), Abschnitt
+„GitHub-CLI (`gh`)".
 
 ## Kosteneffiziente Agenten-Nutzung
 
