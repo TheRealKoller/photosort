@@ -113,6 +113,14 @@ unterschreitet ein Pull Request diese Schwelle, kann er nicht gemergt werden.
   als Issue-Kommentar zurückgemeldet statt geraten. Diese Automatisierung ist zum
   Zeitpunkt dieser Beschreibung noch nicht eingerichtet.
 
+**Remote-/Cloud-Sessions:** Der Ablauf misst an seinem Anfang einmal, ob das Projekt-Board in der
+laufenden Umgebung überhaupt erreichbar ist (`python3 scripts/gh-board.py capabilities`). Ist es
+das nicht, werden die betroffenen Board-Schritte ausgelassen statt versucht, der Ablauf läuft
+weiter, und der Abschlussbericht nennt sie unter `## Lokal nachzuholen` mit kopierbarem Befehl.
+Welche Schritte das sind, warum Board- und Issue-Schritte verschieden gelagert sind und woran
+auffällt, dass die Einschränkung nicht mehr gilt, steht in
+[`docs/setup.md`](./setup.md), Abschnitt „GitHub-CLI (`gh`)".
+
 ## Kosteneffiziente Agenten-Nutzung
 
 Da Claude-Code-Subagenten-Aufrufe ein spürbarer Verbrauchsposten auf Daniels Nutzungskontingent
