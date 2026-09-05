@@ -3084,6 +3084,25 @@ def test_capabilities_nimmt_keine_argumente_entgegen(gh_board: ModuleType) -> No
         gh_board.build_parser().parse_args(["capabilities", "--issue", "262"])
 
 
+# -- capabilities: Kopplung an die Ablauf-Skills ------------------------------------------------
+
+
+# Die vier Ablauf-Skills mit Board-Schritten. Ihr Laufzeitverhalten ist LLM-interpretiert und
+# nicht testbar; verankert wird deshalb genau das, was statisch pruefbar ist: dass sie die
+# Messung ueberhaupt kennen und den Berichtsabschnitt woertlich fuehren.
+ABLAUF_SKILLS = ("capture", "refinement", "spec-writer", "ship-feature")
+
+
+@pytest.mark.parametrize("skill", ABLAUF_SKILLS)
+def test_die_ablauf_skills_kennen_messung_und_berichtsabschnitt(skill: str) -> None:
+    text = (
+        Path(__file__).parents[2] / ".claude" / "skills" / skill / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert "gh-board.py capabilities" in text
+    assert "## Lokal nachzuholen" in text
+
+
 # -- capabilities: Redaktion und unerwartete Antwortformen --------------------------------------
 
 

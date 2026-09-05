@@ -25,7 +25,19 @@ Leite aus dem Gesagten einen knappen Klartitel ab (keine Nummer davor — die Gi
 
 Der Rohtext ist bewusst ungefiltert — das spätere Schärfen arbeitet mit dieser Rohfassung als Ausgangspunkt, nicht mit einer bereits interpretierten Version.
 
-## Schritt 3: Issue anlegen
+## Schritt 3: Board-Fähigkeit messen
+
+Einmal vor dem ersten Board-Aufruf, rein lesend und in unter zwei Sekunden:
+
+```bash
+python3 scripts/gh-board.py capabilities
+```
+
+Auswertung und Verhalten stehen vollständig in `.claude/skills/github-board/SKILL.md`, Abschnitt „Board nicht erreichbar" — hier nicht wiederholen. Kurz: nur ein wohlgeformtes `board_reachable: false` lässt etwas aus, alles andere (auch ein fehlgeschlagener Aufruf) heißt „nicht gemessen" und ändert nichts am Ablauf.
+
+**Für diesen Skill gilt die Besonderheit von `idee-erfassen`:** Der Schritt taucht **nie** in `blocked_lifecycle_steps` auf, weil das Issue entsteht, bevor das Board angefasst wird. Schritt 4 wird deshalb in jedem Fall ausgeführt.
+
+## Schritt 4: Issue anlegen
 
 Rohtext in eine temporäre Datei schreiben (z.B. unter dem Scratchpad-Verzeichnis) und das Script `scripts/gh-board.py` im `create-issue`-Modus aufrufen (siehe Skill `github-board`):
 
@@ -36,9 +48,23 @@ python3 scripts/gh-board.py create-issue \
 
 Das legt ein neues GitHub-Issue an (Status `Unrefined`, passendes `idee`/`bug`-Label, dem Project hinzugefügt) und gibt `{"issue_number": NNN}` auf stdout zurück. Enthält die Ausgabe stattdessen `{"error": "..."}`, die Meldung unverändert an Daniel weitergeben (kein eigener Lösungsversuch, analog zum `github-board`-Skill).
 
-## Schritt 4: Kurz bestätigen
+## Schritt 5: Kurz bestätigen
 
 Eine knappe Bestätigung im Chat, kein längerer Kommentar: z.B. "Als GitHub-Issue #NNN festgehalten (Typ: Bug)." Keine Einschätzung, keine Rückfrage, keine Vorschläge zur Priorisierung — das ist explizit nicht Teil dieses Schritts.
+
+**Bei `board_reachable: false`** hat Schritt 4 das Issue angelegt und ist danach an der Board-Aufnahme gescheitert. Das ist kein Abbruch: Die Issue-Nummer steht in der Meldung bzw. auf GitHub. Die Bestätigung nennt sie und trägt zusätzlich diesen Abschnitt:
+
+```markdown
+## Lokal nachzuholen
+
+Dieser Schritt wurde ausgelassen, weil sich das Projekt-Board in dieser Umgebung nicht auflösen
+ließ (gemessen mit `python3 scripts/gh-board.py capabilities`). Die Befehle sind unverändert
+wiederholbar und lokal nachzuholen.
+
+- Issue #NNN ins Board aufnehmen (Board-Aufnahme, danach) `python3 scripts/gh-board.py set-status --issue NNN --status Unrefined`
+```
+
+`create-issue` wird dafür **nicht** wiederholt — das legte ein zweites Issue an. Der Abschnitt bleibt im Chat; dieser Skill schreibt ihn in kein GitHub-Artefakt.
 
 ## Was dieser Skill NICHT tut
 
