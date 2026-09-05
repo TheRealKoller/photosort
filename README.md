@@ -10,7 +10,7 @@ PhotoSort wird vollständig von KI (Claude Code) entwickelt. Die Rolle des Mensc
 
 ## Loslegen
 
-Anleitung zum lokalen Entwickeln und Ausprobieren (inkl. Demo-Stack ohne echten OpenCloud-Server) steht unter [`docs/setup.md`](./docs/setup.md). Für die optionale Cloud-Sehenswürdigkeit-Erkennung wird zusätzlich ein API-Key für den gewählten Cloud-Provider benötigt (`ANTHROPIC_API_KEY`, Default, oder wahlweise `MISTRAL_API_KEY` über `LANDMARK_PROVIDER=mistral`), sobald die Einwilligung dafür in einem Projekt aktiviert wird (Details ebenfalls in `docs/setup.md`).
+Anleitung zum lokalen Entwickeln und Ausprobieren (inkl. Demo-Stack ohne echten OpenCloud-Server und dem Prüfstack für die browsergestützte Oberflächenprüfung) steht unter [`docs/setup.md`](./docs/setup.md). Für die optionale Cloud-Sehenswürdigkeit-Erkennung wird zusätzlich ein API-Key für den gewählten Cloud-Provider benötigt (`ANTHROPIC_API_KEY`, Default, oder wahlweise `MISTRAL_API_KEY` über `LANDMARK_PROVIDER=mistral`), sobald die Einwilligung dafür in einem Projekt aktiviert wird (Details ebenfalls in `docs/setup.md`).
 
 ## Projektstruktur
 
@@ -21,6 +21,7 @@ Anleitung zum lokalen Entwickeln und Ausprobieren (inkl. Demo-Stack ohne echten 
 | `backend/` | FastAPI-Backend + Worker (Foto-Verarbeitung, KI-Scoring) |
 | `frontend/` | React/Vite PWA |
 | `scripts/` | Eigenständiges Dev-/Demo-Tooling (z.B. `seed-opencloud-demo.py`), außerhalb der Produktiv-Codebasis |
+| `e2e/` | Browsergestützte Oberflächenprüfung (Playwright/Chromium) gegen den lokal laufenden Prüfstack — eigenständiges Paket, außerhalb der Produktiv-Codebasis |
 | `.github/` | Issue-/PR-Templates, CI |
 
 ## Status
