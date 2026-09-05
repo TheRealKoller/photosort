@@ -433,23 +433,46 @@ jobs:
           set -euo pipefail
           # Compose liest .env immer automatisch aus dem Arbeitsverzeichnis, unabhaengig von -f.
           # Bliebe im Overlay auch nur EINE Variable des Produktivstacks interpolierbar, zoege der
-          # Pruefstack deren Wert - im Ernstfall den echten OpenCloud-App-Token. Dieser Schritt
-          # wirkt automatisch auch fuer kuenftig hinzukommende Variablen.
+          # Pruefstack deren Wert - im Ernstfall den echten OpenCloud-App-Token.
           sentinel=photosort-sentinel-must-not-appear
           trap 'rm -f .env' EXIT
           : > .env
-          for key in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB SECRET_KEY ANTHROPIC_API_KEY \
-                     LANDMARK_PROVIDER MISTRAL_API_KEY OPENCLOUD_BASE_URL OPENCLOUD_USERNAME \
-                     OPENCLOUD_APP_TOKEN OPENCLOUD_DRIVE_NAME AUTH_SEED_USER1_USERNAME \
-                     AUTH_SEED_USER1_PASSWORD AUTH_SEED_USER2_USERNAME AUTH_SEED_USER2_PASSWORD \
-                     CORS_ALLOWED_ORIGINS CATEGORY_SELECTION_ENABLED VITE_API_BASE_URL; do
-            echo "$key=$sentinel" >> .env
+
+          # DIE NAMEN WERDEN ABGELEITET, NICHT GEPFLEGT. Eine hier aufgezaehlte Liste deckte immer
+          # nur den Stand ihres Schreibtags ab: erweitert eine kuenftige Spec docker-compose.yml um
+          # eine Variable, ohne sie im e2e-Overlay zu setzen, bliebe dieser Schritt gruen - waehrend
+          # der Pruefstack den Wert genau dieser Variable aus einer echten .env zoege. Genau der
+          # Pfad, den dieser Nachweis versperren soll.
+          keys=$(grep -oE '\$\{[A-Z_][A-Z0-9_]*' docker-compose.yml | sed 's/^\${//' | sort -u)
+          key_count=$(printf '%s\n' "$keys" | grep -c . || true)
+          echo "interpolierbare Variablen der Basisdatei ($key_count):"
+          printf '%s\n' "$keys" | tr '\n' ' '
+          echo
+
+          # Eine leere Liste bestuende trivial - der Schritt legte dann eine leere .env an und
+          # faende erwartungsgemaess keinen Sentinel. Zwei Zusicherungen dagegen: es wurde
+          # ueberhaupt etwas gefunden, und die gefaehrlichste Variable ist darunter. Der zweite
+          # Name ist bewusst KEINE gepflegte Liste, sondern ein einzelner Kanarienvogel: bricht die
+          # Ableitung (geaendertes Dateiformat, falscher Pfad, kaputter Ausdruck), faellt das hier
+          # auf statt still.
+          test "$key_count" -gt 0
+          printf '%s\n' "$keys" | grep -qx OPENCLOUD_APP_TOKEN
+
+          # Port-Variablen brauchen einen numerischen Koeder - ein Wort waere schon beim Parsen der
+          # Basisdatei ungueltig und der Schritt scheiterte aus dem falschen Grund. Fuer sie prueft
+          # weiter unten stattdessen die gerenderte Portliste, dass das Overlay geschlagen hat.
+          port_decoy=59000
+          for key in $keys; do
+            case "$key" in
+              *_PORT)
+                port_decoy=$((port_decoy + 1))
+                echo "$key=$port_decoy" >> .env
+                ;;
+              *)
+                echo "$key=$sentinel" >> .env
+                ;;
+            esac
           done
-          # Die beiden Port-Variablen brauchen einen numerischen Koeder - ein Wort waere schon
-          # beim Parsen der Basisdatei ungueltig und der Schritt scheiterte aus dem falschen
-          # Grund. Geprueft wird stattdessen, dass die gerenderten Ports die des Overlays sind.
-          echo "BACKEND_PORT=59000" >> .env
-          echo "FRONTEND_PORT=59080" >> .env
 
           # Das Worker-Profil wird mitgerendert: der Dienst laeuft im Pruefstack nicht, seine
           # Umgebung ist aber Teil derselben Zusage und ohne aktiviertes Profil gar nicht in der
@@ -487,6 +510,13 @@ jobs:
       - name: Lieferkette - Registry-Signaturen pruefen
         working-directory: e2e
         run: npm audit signatures
+      - name: Type check (tsc)
+        working-directory: e2e
+        # Ohne diesen Schritt wuerde die Typpruefung dieses Pakets NIE laufen: die Werkzeuge und
+        # Specs laufen per Node-Type-Stripping, das Typen entfernt statt sie zu pruefen. Ein
+        # Typfehler faellt dann bestenfalls zur Laufzeit auf, schlimmstenfalls gar nicht.
+        # Bewusst vor den teuren Schritten (Browser, Images, Stack) - er kostet Sekunden.
+        run: npm run typecheck
       - name: Chromium installieren
         working-directory: e2e
         # --with-deps ausschliesslich hier im CI-Job: es installiert als root per apt-get eine aus
