@@ -1,6 +1,6 @@
 # 0288 - Refinement schärft den Issue-Titel mit
 
-**Status:** Accepted
+**Status:** Implemented ([PR #334](https://github.com/TheRealKoller/photosort/pull/334))
 **Erstellt:** 2026-09-05
 **Bezug:** [GitHub-Issue #288](https://github.com/TheRealKoller/photosort/issues/288) (fachliches Refinement vor dieser Spec abgeschlossen), [`decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md`](../decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) (tragende Entscheidung, wird angewendet statt ergänzt — keine neue ADR)
 
