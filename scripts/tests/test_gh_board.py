@@ -2211,10 +2211,34 @@ def test_cli_finalize_erlaubt_eine_abweichende_issue_nummer_fuer_altspecs(
 def test_cli_kennt_alle_in_den_skills_dokumentierten_befehle(
     gh_board: ModuleType, tmp_path: Path, befehl: str
 ) -> None:
-    """Die Aufrufformen aus .claude/skills/github-board/SKILL.md muessen parsebar bleiben."""
+    """Die Aufrufformen aus .claude/skills/github-board/SKILL.md muessen parsebar bleiben.
+
+    `CLI_AUFRUFFORMEN` traegt je Befehl GENAU EINE Form, weil `_argv_fuer` daraus ein einzelnes
+    argv baut und dieselbe Konstante den Totalitaetstest der Exit-Code-Konvention speist. Eine
+    zweite dokumentierte Form desselben Befehls gehoert deshalb in einen eigenen Test daneben -
+    siehe `test_cli_kennt_den_dokumentierten_finalize_ausnahmepfad_ohne_pr_nummer`.
+    """
     argv = _argv_fuer(befehl, tmp_path)
 
     assert gh_board.build_parser().parse_args(argv).command == befehl
+
+
+def test_cli_kennt_den_dokumentierten_finalize_ausnahmepfad_ohne_pr_nummer(
+    gh_board: ModuleType,
+) -> None:
+    """Zweite dokumentierte Aufrufform von `finalize`: ohne `--pr-number` (und ohne `--issue`).
+
+    `.claude/skills/github-board/SKILL.md` fuehrt sie an zwei Stellen als produktiven Pfad
+    (Befehlstabelle mit eckigen Klammern, Abschnitt "Ausnahmepfad"), `ship-feature` Schritt 8
+    ebenso. Wird `--pr-number` kuenftig `required=True` oder bricht das Parsen dieses Pfads
+    anderweitig, faellt das hier auf - sonst waere der Nachzug-Pfad kaputt und CI gruen.
+    """
+    args = gh_board.build_parser().parse_args(["finalize", "--spec", "0262"])
+
+    assert args.command == "finalize"
+    assert args.spec == "0262"
+    assert args.pr_number is None
+    assert args.issue is None
 
 
 def test_kein_gh_aufruf_verwendet_eine_shell(gh_board: ModuleType, tmp_path: Path) -> None:
@@ -2980,12 +3004,21 @@ def test_die_note_benennt_in_beiden_faellen_die_grenze_der_messung(
     gh_board: ModuleType, fake_factory
 ) -> None:
     """Gerade im Erfolgsfall gebraucht: Dort sagt die Messung nichts, und genau das muss
-    dabeistehen."""
-    note = _capabilities(gh_board, fake_factory())["note"]
+    dabeistehen.
 
-    assert note == gh_board.redact_for_report(gh_board.CAPABILITIES_NOTE)
-    assert "kein Beleg" in note
-    assert "doctor" in note
+    Verglichen wird gegen die **rohe** Konstante, nicht gegen ihr redigiertes Abbild: Beide
+    Texte stehen als Literal im Code und sind kein Fremdtext, die Redaktion laeuft dort nur als
+    Verteidigung in der Tiefe mit. Waechst einer von beiden ueber `REPORT_TEXT_LIMIT`, wuerde
+    er stillschweigend gekuerzt - und bei `note` traefe das die tragende Sicherheitsaussage.
+    Dieser Vergleich macht daraus einen roten Test.
+    """
+    bericht = _capabilities(gh_board, fake_factory())
+
+    assert bericht["note"] == gh_board.CAPABILITIES_NOTE
+    assert "kein Beleg" in bericht["note"]
+    assert "doctor" in bericht["note"]
+    if bericht["board_reachable"]:
+        assert bericht["detail"] == gh_board.CAPABILITIES_ERREICHBAR_DETAIL
 
 
 @pytest.mark.parametrize(

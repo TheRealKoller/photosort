@@ -1348,6 +1348,12 @@ CAPABILITIES_NOTE = (
     "'doctor' prueft mehr und kann deshalb mehr Schritte nennen."
 )
 
+# Beide Texte laufen beim Einbau durch `redact_for_report` - nicht weil sie Fremdtext waeren
+# (sie stehen hier als Literal), sondern damit die Redaktion an KEINEM uebernommenen Feld
+# vorbeigeht, genau wie bei DOCTOR_NOTE. Der Nebeneffekt ist die 500-Zeichen-Kuerzung: Waechst
+# einer von beiden darueber, wuerde er stillschweigend abgeschnitten. Ein Test vergleicht die
+# Ausgabe deshalb gegen die ROHEN Konstanten und wird in dem Fall rot.
+#
 # Fester, selbst geschriebener Text: Im Erfolgsfall gelangt NICHTS aus der `gh`-Antwort in die
 # Ausgabe (Securitykonzept, Muss-Kriterium 4) - `gh project list` liefert alle Projekte des
 # Owners samt Titeln, IDs und Nummern, und keines davon ist hier eine Auskunft wert.
