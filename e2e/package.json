@@ -1,0 +1,21 @@
+{
+  "name": "photosort-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Browsergestuetzte Oberflaechenpruefung gegen den lokal laufenden Pruefstack (specs/features/0174-browser-zugang-fuer-claude.md)",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "shot": "node bin/shot.ts",
+    "drive": "node bin/drive.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.1",
+    "typescript": "6.0.3"
+  }
+}

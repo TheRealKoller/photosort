@@ -21,6 +21,18 @@ dist/
 !.env.example
 !.env.demo.example
 
+# Browsergestuetzte Oberflaechenpruefung (specs/features/0174-browser-zugang-fuer-claude.md,
+# specs/decisions/0057-browsergestuetzte-oberflaechenpruefung.md): Laufzeit-Ausgaben und
+# Wegwerf-Skripte des e2e-Pakets. artifacts/ enthaelt Screenshots (erstmals schreibt ein Werkzeug
+# Bilddateien in den Arbeitsbaum - die Projektregel "nie Bilddaten im Repo" wird zusaetzlich per
+# CI-Schritt abgesichert) sowie Traces mit Netzwerkinhalten; .auth/ enthaelt den gespeicherten
+# Anmeldezustand samt 30 Tage gueltigem, nicht widerrufbarem JWT und wird nie hochgeladen.
+e2e/artifacts/
+e2e/scratch/
+e2e/.auth/
+e2e/test-results/
+e2e/playwright-report/
+
 # Docker / data volumes
 photo-cache/
 
