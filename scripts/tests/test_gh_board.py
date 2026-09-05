@@ -483,19 +483,30 @@ WIRKSAMER_GH_AUFRUF_JE_BEFEHL = {
 }
 
 
+# Je Befehl eine gueltige Aufrufform. Eine Quelle fuer beide Kopplungstests: dass die CLI die in
+# den Skills dokumentierten Befehle kennt, und dass die Exit-Code-Konvention als Totalitaet
+# geprueft wird statt jede Ausnahme einzeln zu bezeugen (Testkonzept, Erweiterung fuer ADR 0055).
+CLI_AUFRUFFORMEN = {
+    "create-issue": ["create-issue", "--type", "idee", "--title", "T", "--body-file", "{body}"],
+    "set-body": ["set-body", "--issue", "262", "--body-file", "{body}"],
+    "set-status": ["set-status", "--issue", "262", "--status", "Todo"],
+    "set-priority": ["set-priority", "--issue", "262", "--priority", "Hoch"],
+    "show-status": ["show-status", "--issue", "262"],
+    "finalize": ["finalize", "--spec", "0262", "--pr-number", "281"],
+    "doctor": ["doctor"],
+    "capabilities": ["capabilities"],
+}
+
+# Die beiden Befehle, die sich auch in einer kaputten Umgebung mit Exit-Code 0 beenden: Dort ist
+# der fehlgeschlagene Zugriff der Inhalt, nicht das Scheitern (ADR 0052 fuer `doctor`, ADR 0055
+# fuer `capabilities`).
+EXIT_0_AUCH_IN_KAPUTTER_UMGEBUNG = {"doctor", "capabilities"}
+
+
 def _argv_fuer(befehl: str, tmp_path: Path) -> list[str]:
     body = tmp_path / "body.md"
     body.write_text("Beliebiger Text", encoding="utf-8")
-    return {
-        "create-issue": [
-            "create-issue", "--type", "idee", "--title", "T", "--body-file", str(body)
-        ],
-        "set-body": ["set-body", "--issue", "262", "--body-file", str(body)],
-        "set-status": ["set-status", "--issue", "262", "--status", "Todo"],
-        "set-priority": ["set-priority", "--issue", "262", "--priority", "Hoch"],
-        "show-status": ["show-status", "--issue", "262"],
-        "finalize": ["finalize", "--spec", "0262", "--pr-number", "281"],
-    }[befehl]
+    return [teil.format(body=body) for teil in CLI_AUFRUFFORMEN[befehl]]
 
 
 @pytest.mark.parametrize("befehl", sorted(WIRKSAMER_GH_AUFRUF_JE_BEFEHL))
@@ -2196,22 +2207,14 @@ def test_cli_finalize_erlaubt_eine_abweichende_issue_nummer_fuer_altspecs(
     assert json.loads(capsys.readouterr().out)["issue_number"] == 240
 
 
-@pytest.mark.parametrize(
-    ("argv"),
-    [
-        ["create-issue", "--type", "idee", "--title", "T", "--body-file", "B"],
-        ["set-body", "--issue", "262", "--body-file", "B"],
-        ["set-status", "--issue", "262", "--status", "Todo"],
-        ["set-priority", "--issue", "262", "--priority", "Hoch"],
-        ["show-status", "--issue", "262"],
-        ["finalize", "--spec", "0262"],
-    ],
-)
+@pytest.mark.parametrize("befehl", sorted(CLI_AUFRUFFORMEN))
 def test_cli_kennt_alle_in_den_skills_dokumentierten_befehle(
-    gh_board: ModuleType, argv: list[str]
+    gh_board: ModuleType, tmp_path: Path, befehl: str
 ) -> None:
     """Die Aufrufformen aus .claude/skills/github-board/SKILL.md muessen parsebar bleiben."""
-    assert gh_board.build_parser().parse_args(argv).command == argv[0]
+    argv = _argv_fuer(befehl, tmp_path)
+
+    assert gh_board.build_parser().parse_args(argv).command == befehl
 
 
 def test_kein_gh_aufruf_verwendet_eine_shell(gh_board: ModuleType, tmp_path: Path) -> None:
@@ -3021,3 +3024,86 @@ def test_capabilities_setzt_keinen_einzigen_schreibenden_gh_aufruf_ab(
     assert fake.calls
     for verboten in SCHREIBENDE_GH_AUFRUFE:
         assert fake.calls_starting_with(*verboten) == []
+
+
+# -- capabilities: CLI und Exit-Code-Konvention -------------------------------------------------
+
+
+def test_cli_capabilities_meldet_ein_unerreichbares_board_mit_exit_code_0(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ein Kommando, das genau dann abbraeche, wenn seine Auskunft gebraucht wird, waere
+    nutzlos - deshalb Exit 0, sobald ein Ergebnis entsteht."""
+    exit_code = gh_board.main(
+        ["capabilities"], run=_unerreichbares_board(), repo_root=tmp_path, owner=OWNER
+    )
+
+    ausgabe = capsys.readouterr().out
+    assert exit_code == 0
+    assert len(ausgabe.strip().splitlines()) == 1
+    bericht = json.loads(ausgabe)
+    assert bericht["board_reachable"] is False
+    assert bericht["blocked_lifecycle_steps"] == list(gh_board.BOARD_LIFECYCLE_STEPS)
+
+
+def test_capabilities_ohne_gh_binary_meldet_einen_befund_statt_eines_tracebacks(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ein fehlendes Binary laesst `subprocess.run` mit FileNotFoundError scheitern statt mit
+    Returncode != 0 - und ist hier ein Messergebnis, kein Absturz."""
+    exit_code = gh_board.main(
+        ["capabilities"], run=FakeGh(missing_binary=True), repo_root=tmp_path, owner=OWNER
+    )
+
+    bericht = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert bericht["board_reachable"] is False
+    assert bericht["detail"]
+
+
+def test_capabilities_faengt_nur_boarderror_und_nicht_jeden_programmierfehler(
+    gh_board: ModuleType,
+) -> None:
+    """Ein Fehler im eigenen Code darf nicht als 'Board nicht erreichbar' erscheinen - sonst
+    liesse ein Ablauf Board-Schritte aus, weil hier etwas kaputt ist."""
+
+    def kaputtes_run(args: list[str]) -> subprocess.CompletedProcess[str]:
+        raise RuntimeError("Programmierfehler im Aufrufpfad")
+
+    with pytest.raises(RuntimeError) as fehler:
+        gh_board.cmd_capabilities(gh_board.GhBoard(owner=OWNER, run=kaputtes_run))
+
+    assert not isinstance(fehler.value, gh_board.BoardError)
+    assert "Programmierfehler im Aufrufpfad" in str(fehler.value)
+
+
+def test_capabilities_nimmt_keine_argumente_entgegen(gh_board: ModuleType) -> None:
+    """Kein Argument heisst keine Eingabeflaeche (Securitykonzept, Muss-Kriterium 8)."""
+    assert gh_board.build_parser().parse_args(["capabilities"]).command == "capabilities"
+    with pytest.raises(SystemExit):
+        gh_board.build_parser().parse_args(["capabilities", "--issue", "262"])
+
+
+@pytest.mark.parametrize("befehl", sorted(CLI_AUFRUFFORMEN))
+def test_die_exit_code_konvention_gilt_als_totalitaet(
+    gh_board: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str], befehl: str
+) -> None:
+    """Der belastbare Ersatz fuer einen Docstring-Grep: In einer kaputten Umgebung beenden sich
+    GENAU `doctor` und `capabilities` mit Exit 0, jeder andere Befehl mit `{"error": ...}` und
+    Exit 1. Eine dritte, unbemerkt hinzugekommene Ausnahme faellt damit auf."""
+    _write_spec(tmp_path, "0262")
+
+    exit_code = gh_board.main(
+        _argv_fuer(befehl, tmp_path),
+        run=FakeGh(missing_binary=True),
+        repo_root=tmp_path,
+        owner=OWNER,
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    if befehl in EXIT_0_AUCH_IN_KAPUTTER_UMGEBUNG:
+        assert exit_code == 0
+        assert "error" not in payload
+    else:
+        assert exit_code == 1
+        assert set(payload) == {"error"}

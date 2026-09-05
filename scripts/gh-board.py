@@ -10,9 +10,11 @@ Die fehleranfaellige Projects-V2-Logik (Projekt-/Feld-/Options-/Item-ID-Aufloesu
 Single-Select-Werts) liegt bewusst nur hier und nicht verstreut in den Skill-Dateien.
 
 Ausgabe ist immer ein einzelnes JSON-Objekt auf stdout, im Fehlerfall `{"error": "..."}` mit
-Exit-Code 1 - dieselbe Aufrufkonvention wie beim abgeloesten Tool. Einzige, bewusst
-dokumentierte Ausnahme ist `doctor` (ADR 0052): Es beendet sich mit Exit-Code 0, sobald ein
-Bericht entsteht, weil fehlgeschlagene Pruefungen dort der Inhalt sind und nicht das Scheitern.
+Exit-Code 1 - dieselbe Aufrufkonvention wie beim abgeloesten Tool. Davon gibt es genau ZWEI
+bewusst dokumentierte Ausnahmen, die sich beide mit Exit-Code 0 beenden, sobald ein Ergebnis
+entsteht, weil der fehlgeschlagene Zugriff dort der Inhalt ist und nicht das Scheitern:
+`doctor` (ADR 0052) und `capabilities` (ADR 0055). Ein Test prueft diese Konvention als
+Totalitaet ueber alle Befehle, damit keine dritte Ausnahme unbemerkt hinzukommt.
 
 Haertung unveraendert aus ADR 0017, Abschnitt 5: kein `shell=True`, Argumente ausschliesslich in
 Listenform, Bodies ueber temporaere Dateien statt ueber die Kommandozeile, Spec-Nummern vor jeder
@@ -1448,6 +1450,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    # Ebenfalls ohne jedes Argument, aus demselben Grund wie `doctor`.
+    subparsers.add_parser(
+        "capabilities",
+        help=(
+            "Misst einseitig, ob sich das Board aufloesen laesst, und nennt im Fehlerfall die "
+            "sicher blockierten Lebenszyklus-Schritte. Rein lesend; Exit-Code 0, sobald ein "
+            "Ergebnis entsteht. Weniger Aufrufe und weniger Aussage als 'doctor': In derselben "
+            "kaputten Umgebung nennt 'doctor' mehr Schritte, weil er mehr prueft."
+        ),
+    )
+
     return parser
 
 
@@ -1480,6 +1493,8 @@ def _dispatch(args: argparse.Namespace, board: GhBoard, repo_root: Path) -> dict
         return cmd_show_status(board, issue_number=args.issue)
     if args.command == "doctor":
         return cmd_doctor(board)
+    if args.command == "capabilities":
+        return cmd_capabilities(board)
     if args.command == "finalize":
         spec_number = validate_spec_number(args.spec)
         return cmd_finalize(
