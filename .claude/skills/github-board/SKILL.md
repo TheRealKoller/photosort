@@ -1,6 +1,6 @@
 ---
 name: github-board
-description: Verbindliche Sammlung der `gh`-Einzeiler für das gemeinsame GitHub Project (V2) — Story-Issue anlegen und ins Board aufnehmen, Issue-Body schreiben, Board-Status/Priorität setzen und lesen, PR↔Issue-Verknüpfung prüfen, eine Story verwerfen — plus die Regeln für Fehlschläge und den Berichtsabschnitt `## Lokal nachzuholen`. Nutze diesen Skill, wenn `capture`/`refinement`/`spec-writer`/`ship-feature` an ihren jeweiligen Stellen einen Board-Zugriff brauchen, oder wenn Daniel direkt danach fragt ("setz Issue #NNN auf Ready", "welchen Status hat #NNN").
+description: Verbindliche Sammlung der `gh`-Einzeiler für das gemeinsame GitHub Project (V2) — Story-Issue anlegen und ins Board aufnehmen, Issue-Body und -Titel schreiben, Board-Status/Priorität setzen und lesen, PR↔Issue-Verknüpfung prüfen, eine Story verwerfen — plus die Regeln für Fehlschläge und den Berichtsabschnitt `## Lokal nachzuholen`. Nutze diesen Skill, wenn `capture`/`refinement`/`spec-writer`/`ship-feature` an ihren jeweiligen Stellen einen Board-Zugriff brauchen, oder wenn Daniel direkt danach fragt ("setz Issue #NNN auf Ready", "welchen Status hat #NNN").
 ---
 
 # GitHub Board — die Befehlssammlung
@@ -100,6 +100,9 @@ gh project item-add 8 --owner TheRealKoller --url <issue-url> --format json --jq
 # Issue-Body ueberschreiben
 gh issue edit <NNN> --repo TheRealKoller/photosort --body-file <pfad>
 
+# Issue-Titel ueberschreiben
+gh issue edit <NNN> --repo TheRealKoller/photosort --title "$(cat <titel-datei>)"
+
 # PR<->Issue-Verknuepfung pruefen
 gh pr view <MMM> --repo TheRealKoller/photosort --json closingIssuesReferences,baseRefName
 
@@ -109,6 +112,14 @@ gh issue close <NNN> --repo TheRealKoller/photosort --reason "not planned"
 
 **Zwei Befehle beim Anlegen, nicht `gh issue create --project`:** Das Issue muss überleben, wenn
 der Board-Teil scheitert. Ein kombinierter Aufruf hätte diese Eigenschaft nicht.
+
+**Body und Titel bleiben zwei getrennte Aufrufe.** `gh issue edit` könnte `--body-file` und
+`--title` in einem Befehl tragen — bewusst nicht: Der Body wird immer geschrieben, der Titel nur
+bedingt. Ein kombinierter Aufruf existierte in zwei Formen, machte die Bedingung zu einem
+Flag-Detail statt zu einem eigenen Ablaufschritt, risse den Body mit, wenn nur die Titel-Datei
+fehlerhaft ist, und ein Fehlschlag bliebe nicht eindeutig zuordenbar. Bleibt der Titel
+unverändert, entfällt der Titel-Aufruf ersatzlos — es gibt keinen Pfad „unverändert
+zurückschreiben".
 
 **`gh pr view` bleibt bei genau dieser Feldmenge** (`closingIssuesReferences,baseRefName`):
 `title`, `body`, `author`, `headRefName` und `comments` werden **nicht** ergänzt, und ein blankes
@@ -130,7 +141,23 @@ wieder möglich. Deshalb gilt, ohne Ausnahme:
 
 - **Freitext gelangt nie in eine Kommandozeile.** Bodies **immer** über `--body-file`, Titel über
   `--title "$(cat <pfad>)"`. Beide Dateien werden mit dem Schreib-Werkzeug angelegt (nicht per
-  Shell-Umleitung mit interpoliertem Inhalt); die Titel-Datei ist genau eine Zeile lang.
+  Shell-Umleitung mit interpoliertem Inhalt); die Titel-Datei ist genau eine Zeile lang. Die
+  doppelten Anführungszeichen um `$(cat …)` sind tragend: Ohne sie zerlegte die Shell den
+  Dateiinhalt an Leerzeichen und expandierte Globs. Mit ihnen geht der Inhalt byteweise als
+  **genau ein Argument** durch — Backticks, `$HOME`, Anführungszeichen oder `; rm -rf /` kommen
+  unverändert als Titel an, es gibt keinen Weg von einem Dateiinhalt zu einem ausgeführten
+  Befehl.
+- **Jede Titel-Datei ist wohlgeformt** — geprüft, indem sie unmittelbar vor dem Aufruf im selben
+  Schritt geschrieben und ihr Inhalt vor dem Absetzen gelesen wird. Wohlgeformt heißt: genau eine
+  nicht leere Zeile, kein führendes oder nachgestelltes Leerzeichen, keine Steuerzeichen, keine
+  Bidi-Overrides (U+202A–U+202E, U+2066–U+2069), keine Zero-Width-Zeichen (U+200B–U+200D,
+  U+FEFF), kein U+0085/U+2028/U+2029. Die Regel gilt für **jede** Titel-Datei, in jedem Ablauf,
+  der eine schreibt. Grund: `$(cat …)` schützt vor Injektion, nicht vor Unsinn. Mehrzeiliger
+  Inhalt wird zu *einem* Argument mit eingebetteten Zeilenumbrüchen, und ein fehlender oder
+  falsch geschriebener Pfad liefert eine **leere** Substitution — der Exit-Code ist dann der von
+  `gh`, nicht der von `cat`, aus einem Tippfehler wird also `--title ""` statt eines lauten
+  Fehlschlags. Ein Titel ist öffentlich, erscheint in Benachrichtigungen und in der Suche und
+  wird überflogen, nicht gelesen.
 - **Nur geschlossene Werte werden eingesetzt.** Issue-/PR-Nummern gegen `^[0-9]+$`, Spec-Nummern
   gegen `^\d{4}$`, jeweils ausschließlich aus dem laufenden Ablauf. Die Issue-URL wird aus der
   Nummer **gebildet**, nie aus einer `gh`-Ausgabe übernommen. Status- und Prioritätswerte stehen
