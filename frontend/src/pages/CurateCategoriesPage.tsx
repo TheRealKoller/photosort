@@ -245,7 +245,7 @@ export function CurateCategoriesPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-2xl">Kategorie-Kuratierung</h1>
+        <h1 className="text-xl sm:text-2xl">Kategorie-Kuratierung</h1>
         {/* Personenbezug (UI/UX-Abschnitt der Spec): Rating ist personenbezogen, die gezeigte
             Top-N-Auswahl deshalb je Nutzer individuell. */}
         <p className="text-sm text-text">Deine Auswahl</p>
@@ -333,7 +333,7 @@ export function CurateCategoriesPage() {
                 aria-expanded={!isCollapsed}
                 aria-controls={panelId}
                 onClick={() => toggleDay(dayKey)}
-                className="flex min-h-11 w-full items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                className="flex min-h-11 w-full items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-overlay active:bg-border"
               >
                 <span aria-hidden="true">{isCollapsed ? '▶' : '▼'}</span>
                 <span>{formatDayHeading(dayKey)}</span>

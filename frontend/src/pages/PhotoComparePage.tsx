@@ -29,7 +29,7 @@ export function PhotoComparePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl">Vergleich</h1>
+      <h1 className="text-xl sm:text-2xl">Vergleich</h1>
 
       {query.isLoading && (
         <p role="status" className="text-sm text-text">
@@ -61,7 +61,7 @@ export function PhotoComparePage() {
               <li key={photo.id} className="flex flex-col gap-2 rounded-xl border border-border p-2">
                 <Link
                   to={`/projects/${id}/photos/${photo.id}`}
-                  className="block aspect-square overflow-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                  className="block aspect-square overflow-hidden rounded-md"
                 >
                   {/* Spec 0002 (Bild-Auflösungen): "Einzelbild-/Vergleichsansicht
                       Display-Auflösung" - bewusst dieselbe Auflösung wie PhotoDetailPage,

@@ -485,7 +485,7 @@ WIRKSAMER_GH_AUFRUF_JE_BEFEHL = {
 
 # Je Befehl eine gueltige Aufrufform. Eine Quelle fuer beide Kopplungstests: dass die CLI die in
 # den Skills dokumentierten Befehle kennt, und dass die Exit-Code-Konvention als Totalitaet
-# geprueft wird statt jede Ausnahme einzeln zu bezeugen (Testkonzept, Erweiterung fuer ADR 0055).
+# geprueft wird statt jede Ausnahme einzeln zu bezeugen (Testkonzept, Erweiterung fuer ADR 0056).
 CLI_AUFRUFFORMEN = {
     "create-issue": ["create-issue", "--type", "idee", "--title", "T", "--body-file", "{body}"],
     "set-body": ["set-body", "--issue", "262", "--body-file", "{body}"],
@@ -498,7 +498,7 @@ CLI_AUFRUFFORMEN = {
 }
 
 # Die beiden Befehle, die sich auch in einer kaputten Umgebung mit Exit-Code 0 beenden: Dort ist
-# der fehlgeschlagene Zugriff der Inhalt, nicht das Scheitern (ADR 0052 fuer `doctor`, ADR 0055
+# der fehlgeschlagene Zugriff der Inhalt, nicht das Scheitern (ADR 0052 fuer `doctor`, ADR 0056
 # fuer `capabilities`).
 EXIT_0_AUCH_IN_KAPUTTER_UMGEBUNG = {"doctor", "capabilities"}
 
@@ -2855,7 +2855,7 @@ def test_scope_hint_behaelt_seinen_text_fuer_den_echten_token_auth_fall(
     assert pruefung["ok"] is True
 
 
-# -- capabilities: Bericht (ADR 0055) ----------------------------------------------------------
+# -- capabilities: Bericht (ADR 0056) ----------------------------------------------------------
 
 
 # Der eine Aufruf, der die Messung ist - in genau der Form, die `GhBoard.project()` konstruiert.
@@ -2931,7 +2931,7 @@ def test_ein_unerreichbares_board_meldet_genau_die_vier_board_schritte(
 def test_die_blockierten_schritte_stammen_aus_der_quellkonstante(
     gh_board: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verhaltensnachweis statt Buchhaltung (Testkonzept, Erweiterung fuer ADR 0055): Zwei
+    """Verhaltensnachweis statt Buchhaltung (Testkonzept, Erweiterung fuer ADR 0056): Zwei
     Konstanten zu vergleichen zeigt nur, dass jemand beide gleich abgeschrieben hat. Wird die
     Quelle ausgetauscht, muss die Ausgabe mitwandern - sonst ist sie danebengeschrieben."""
     monkeypatch.setattr(gh_board, "BOARD_LIFECYCLE_STEPS", ("sentinel-schritt",))
@@ -2945,7 +2945,7 @@ def test_capabilities_nennt_dieselben_schritte_wie_die_doctor_zuordnung(
     gh_board: ModuleType,
 ) -> None:
     """Zwei Kommandos, die dieselbe Frage verschieden beantworten, waeren schlimmer als kein
-    zweites Kommando (ADR 0055, Eigenschaft 4)."""
+    zweites Kommando (ADR 0056, Eigenschaft 4)."""
     bericht = _capabilities(gh_board, _unerreichbares_board())
 
     assert bericht["blocked_lifecycle_steps"] == list(
@@ -3035,7 +3035,7 @@ def test_die_note_benennt_in_beiden_faellen_die_grenze_der_messung(
 def test_die_aufrufliste_ist_exakt_festgelegt(
     gh_board: ModuleType, fake_factory, erwartete_aufrufe: list[list[str]]
 ) -> None:
-    """Als exakte Liste, nicht als Obergrenze (ADR 0055, Eigenschaft 1): `capabilities` laeuft
+    """Als exakte Liste, nicht als Obergrenze (ADR 0056, Eigenschaft 1): `capabilities` laeuft
     vor JEDEM Ablauf, ein stillschweigend hinzugekommener Aufruf waere dort teuer."""
     fake = fake_factory()
 

@@ -1,4 +1,4 @@
-# 0055 - Remote-Grenze des Story-Lebenszyklus: gemessene Board-Fähigkeit statt Session-Erkennung, plus korrigierter Befund zu ADR 0052 Abschnitt 6
+# 0056 - Remote-Grenze des Story-Lebenszyklus: gemessene Board-Fähigkeit statt Session-Erkennung, plus korrigierter Befund zu ADR 0052 Abschnitt 6
 
 **Status:** Accepted
 **Datum:** 2026-09-05

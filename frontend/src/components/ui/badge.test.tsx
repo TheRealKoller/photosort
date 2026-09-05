@@ -55,19 +55,27 @@ describe('Badge', () => {
     expect(screen.getByText('i').className).not.toContain('text-rating-')
   })
 
-  // Copilot-Review-Fund (PR "Tailwind-Fundament"): der gedaempfte Vorschlags-Hintergrund ist nur
-  // eine 10%-Tinte auf `--bg`, nicht die volle Bewertungsfarbe. Eine gegen die volle Fuellung
-  // kalibrierte Vordergrundfarbe waere hier falsch (im Dunkelmodus praktisch unsichtbar auf dem
-  // dann ebenfalls sehr dunklen Tint); `--text-h` ist stattdessen pro Modus kalibriert.
-  it('uses the mode-aware text-h token for the dampened suggested tone', () => {
+  /*
+   * Umgestellt auf die Toast-Konstruktion des Boards (specs/features/0320-dark-utility-register.md,
+   * decisions/0055 Punkt 5): Flaeche `--elevated`, farbiger Rand, FARBIGE Beschriftung. Die
+   * vorherige Konstruktion (10%-Deckkraft-Tinte + `--text-h`) war eine PhotoSort-eigene Erfindung
+   * ausserhalb jeder Kontrastmatrix - ueber einer Deckkraft-Tinte ist Kontrast statisch nicht
+   * rechenbar. Der Test zieht bewusst mit um, statt auf dem alten Erwartungswert stehen zu
+   * bleiben.
+   */
+  it('uses the board toast construction for the suggested variant', () => {
     render(
       <Badge tone="rejected" suggested>
         ⚙✕
       </Badge>
     )
 
-    expect(screen.getByText('⚙✕').className).toContain('text-text-h')
-    expect(screen.getByText('⚙✕').className).not.toContain('text-rating-rejected-fg')
+    const className = screen.getByText('⚙✕').className
+    expect(className).toContain('bg-elevated')
+    expect(className).toContain('border-rating-rejected')
+    // Aussortiert als Fliesstextfarbe erreicht auf --elevated nur 4.46:1 - die Beschriftung traegt
+    // deshalb --danger-text (5.08:1), nicht --rating-rejected.
+    expect(className).toContain('text-danger-text')
   })
 
   /*

@@ -13,7 +13,7 @@ Ausgabe ist immer ein einzelnes JSON-Objekt auf stdout, im Fehlerfall `{"error":
 Exit-Code 1 - dieselbe Aufrufkonvention wie beim abgeloesten Tool. Davon gibt es genau ZWEI
 bewusst dokumentierte Ausnahmen, die sich beide mit Exit-Code 0 beenden, sobald ein Ergebnis
 entsteht, weil der fehlgeschlagene Zugriff dort der Inhalt ist und nicht das Scheitern:
-`doctor` (ADR 0052) und `capabilities` (ADR 0055). Ein Test prueft diese Konvention als
+`doctor` (ADR 0052) und `capabilities` (ADR 0056). Ein Test prueft diese Konvention als
 Totalitaet ueber alle Befehle, damit keine dritte Ausnahme unbemerkt hinzukommt.
 
 Haertung unveraendert aus ADR 0017, Abschnitt 5: kein `shell=True`, Argumente ausschliesslich in
@@ -1339,7 +1339,7 @@ def cmd_doctor(board: GhBoard) -> dict[str, Any]:
 # -- Betriebssignal: capabilities ---------------------------------------------------------------
 
 # Steht in JEDEM Bericht, auch im Erfolgsfall - gerade dort, weil die Messung dann nichts sagt
-# (ADR 0055, Entscheidung 1). Der zweite Satz haelt die bewusst hingenommene Ungenauigkeit fest:
+# (ADR 0056, Entscheidung 1). Der zweite Satz haelt die bewusst hingenommene Ungenauigkeit fest:
 # In derselben kaputten Umgebung meldet `doctor` acht Schritte und `capabilities` vier. Beide
 # sind richtig - sie beantworten verschiedene Fragen.
 CAPABILITIES_NOTE = (
@@ -1365,7 +1365,7 @@ CAPABILITIES_ERREICHBAR_DETAIL = (
 def cmd_capabilities(board: GhBoard) -> dict[str, Any]:
     """Misst die eine zwingend auswertbare Tatsache: Laesst sich das Board aufloesen?
 
-    Ausgewertet wird nur die Richtung, in der der Schluss zwingend ist (ADR 0055, Entscheidung
+    Ausgewertet wird nur die Richtung, in der der Schluss zwingend ist (ADR 0056, Entscheidung
     1): Scheitert die Aufloesung, scheitert jeder Board-Schreibvorgang sicher - er muss durch
     dieselbe Aufloesung. Gelingt sie, ist ueber den Schreibvorgang nichts bewiesen, und die
     Ausgabe nennt keinen Schritt. Die Messung kann damit nur blockiert-melden, nie freigeben.

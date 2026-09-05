@@ -81,7 +81,69 @@ describe('Button', () => {
 
     const button = screen.getByRole('button', { name: 'Zurück zum Grid' })
     expect(button.className).toContain('h-auto')
-    expect(button.className).not.toMatch(/(^|\s)h-11(\s|$)/)
+    // Auf das neue Board-Mass umgezogen (specs/features/0320-dark-utility-register.md): die
+    // Standardhoehe ist 32px (h-8) statt 44px (h-11). Die alte Assertion waere nach der
+    // Umstellung *vacuously true* gewesen - ein Test, der gruen bleibt und nichts mehr prueft,
+    // ist schlimmer als ein gebrochener.
+    expect(button.className).not.toMatch(/(^|\s)h-8(\s|$)/)
+    // Die Trefferflaechen-Aufspannung gilt ausdruecklich NICHT fuer den Inline-Link: eine
+    // unsichtbare 44px-Flaeche um Fliesstext herum wuerde Nachbarklicks schlucken.
+    expect(button.className).not.toMatch(/(^|\s)tap-target(-square)?(\s|$)/)
+  })
+
+  /*
+   * Board-Grundelement "Schaltflaechen": vier Auspraegungen (primaer, sekundaer, unaufdringlich,
+   * deaktiviert) x drei Zustaende (normal, ueberfahren, gedrueckt), specs/features/0320-dark-
+   * utility-register.md. Ueberfahren/gedrueckt sind in jsdom nicht feststellbar - nachgewiesen
+   * wird deshalb die EXISTENZ der jeweiligen Variante am Primitive, mehr geht hier ehrlich nicht.
+   */
+  it.each([
+    ['default', 'bg-accent'],
+    ['secondary', 'border-border-control'],
+    ['outline', 'border-border-control'],
+    ['ghost', 'bg-transparent'],
+  ] as const)('renders the %s variant with its board surface', (variant, marker) => {
+    render(<Button variant={variant}>Aktion</Button>)
+
+    expect(screen.getByRole('button', { name: 'Aktion' }).className).toContain(marker)
+  })
+
+  it.each(['default', 'secondary', 'outline', 'ghost'] as const)(
+    'gives the %s variant both a hover and an active state (touch has no hover)',
+    (variant) => {
+      render(<Button variant={variant}>Aktion</Button>)
+
+      const className = screen.getByRole('button', { name: 'Aktion' }).className
+      expect(className).toMatch(/hover:/)
+      expect(className).toMatch(/active:/)
+    }
+  )
+
+  it('carries the board disabled state', () => {
+    render(<Button disabled>Aktion</Button>)
+
+    const className = screen.getByRole('button', { name: 'Aktion' }).className
+    expect(className).toContain('disabled:text-text-disabled')
+    expect(className).toContain('disabled:bg-surface')
+  })
+
+  // Akzeptanzkriterium "sichtbar 32px bei einer Trefferflaeche von mindestens 44x44 CSS-Pixeln".
+  // Whitebox-Nachweis ueber die Klassen: jsdom hat keine Layout-Engine, getBoundingClientRect()
+  // liefert 0 - ein Test, der ein Mass zu messen vorgaebe, pruefte in Wahrheit einen Klassennamen.
+  it('is 32px tall and spans its tap target to at least 44px', () => {
+    render(<Button>Speichern</Button>)
+
+    const className = screen.getByRole('button', { name: 'Speichern' }).className
+    expect(className).toMatch(/(^|\s)h-8(\s|$)/)
+    expect(className).toMatch(/(^|\s)tap-target(\s|$)/)
+  })
+
+  it('spans the icon variant on both axes, not just the short one', () => {
+    render(<Button size="icon" aria-label="Schließen" />)
+
+    expect(screen.getByRole('button', { name: 'Schließen' }).className).toMatch(
+      /(^|\s)tap-target-square(\s|$)/
+    )
   })
 
   it('renders as the child element when asChild is set, preserving its own semantics', () => {

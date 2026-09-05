@@ -345,7 +345,7 @@ export function PhotoDetailPage() {
       </div>
 
       {suggestion && (
-        <div className="flex flex-col items-start gap-1.5 rounded-xl border border-accent-border bg-accent-bg p-3 text-sm">
+        <div className="flex flex-col items-start gap-1.5 rounded-md border border-accent bg-elevated p-3 text-sm">
           <p className="text-text-h">Automatischer Vorschlag: {formatSuggestionStatusLabel(suggestion)}</p>
           {/* Formatierung aus utils/suggestionLabels.ts (specs/features/0040-bewertungsdetails-
               info-popover.md, Architektur-Abschnitt) - dasselbe Muster wird jetzt auch vom neuen

@@ -110,7 +110,7 @@ export function ProjectPipelineLayout() {
           Festbreitenschrift und einzeilig gekuerzt - der Pfad ist eine technische Kennung, kein
           Fliesstext, und darf die Zeile nicht sprengen. */}
       <header className="min-w-0">
-        <h1 className="truncate text-2xl">{project.name}</h1>
+        <h1 className="truncate text-xl sm:text-2xl">{project.name}</h1>
         <p className="truncate font-mono text-[10px] text-text">{project.opencloud_path}</p>
       </header>
 

@@ -137,4 +137,55 @@ describe('CloudVisionStatusList', () => {
     const hiddenIcons = container.querySelectorAll('[aria-hidden="true"]')
     expect(hiddenIcons.length).toBeGreaterThanOrEqual(2)
   })
+
+  /*
+   * specs/features/0320-dark-utility-register.md, Teststrategie: Bis zur Symbolumstellung pruefte
+   * KEIN Test die Glyphen hier - ihr Austausch braeche nichts, genau der stille Fall. Geprueft
+   * wird deshalb, was tatsaechlich traegt: je Status ein sichtbarer, paarweise verschiedener TEXT.
+   * Das Symbol darf ausdruecklich gleich sein - die drei "nicht gelaufen"-Zustaende teilen sich
+   * den StatusDot, weil der Zwoelfer-Satz des Boards keinen leeren Kreis enthaelt.
+   */
+  it('gives every status a pairwise distinct visible text', () => {
+    const statuses = [
+      'not_run',
+      'not_candidate',
+      'consent_disabled',
+      'error',
+      'no_result',
+      'result',
+    ] as const
+
+    const texts = statuses.map((status) => {
+      const { container, unmount } = render(
+        <CloudVisionStatusList cloudVisionStatus={[statusEntry({ phase: 'landmark', status })]} />
+      )
+      const text = container.querySelector('dd')!.textContent
+      unmount()
+      return text
+    })
+
+    expect(new Set(texts).size).toBe(statuses.length)
+  })
+
+  it('shares one neutral dot across the three "not run" states instead of inventing a symbol', () => {
+    for (const status of ['not_run', 'not_candidate', 'consent_disabled'] as const) {
+      const { container, unmount } = render(
+        <CloudVisionStatusList cloudVisionStatus={[statusEntry({ phase: 'landmark', status })]} />
+      )
+      expect(container.querySelector('dd [data-icon]')).toBeNull()
+      unmount()
+    }
+  })
+
+  it.each([
+    ['error', 'x-circle'],
+    ['no_result', 'check'],
+    ['result', 'check'],
+  ] as const)('uses the board symbol %s -> %s', (status, icon) => {
+    const { container } = render(
+      <CloudVisionStatusList cloudVisionStatus={[statusEntry({ phase: 'landmark', status })]} />
+    )
+
+    expect(container.querySelector(`dd [data-icon="${icon}"]`)).not.toBeNull()
+  })
 })

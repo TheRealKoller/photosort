@@ -2,14 +2,19 @@ import type { HTMLAttributes } from 'react'
 
 import { cn } from '../../lib/utils'
 
-// Formsprache (specs/architecture/0004-design-system.md): 12px Radius fuer Karten/Panels, dezenter
-// Schatten im Hellmodus ("wie ein aufgelegtes Foto"), im Dunkelmodus stattdessen ein Rahmen statt
-// Schatten (heller Schatten auf dunklem Grund waere unsichtbar) - beides ueber --shadow-warm/
-// --border geloest, die pro Farbschema bereits in index.css unterschiedlich definiert sind.
+/**
+ * Karte/Panel nach dem Board (specs/architecture/0005-board-dark-utility-register.md Abschnitt 6):
+ * Radius 12px, Flaeche `--elevated`, 1px `--border`, FLACH.
+ *
+ * Der Schatten entfaellt ersatzlos: das Board arbeitet durchgehend flach, Tiefe entsteht ueber die
+ * vier Flaechenstufen (`--bg` < `--surface` < `--elevated` < `--overlay`) statt ueber Weichzeichnung.
+ * Das ist zugleich ein Dichtegewinn - flache Flaechen mit schwacher Rundung lassen sich enger
+ * stapeln, ohne unruhig zu wirken.
+ */
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('rounded-xl border border-border bg-surface shadow-warm', className)}
+      className={cn('rounded-lg border border-border bg-elevated', className)}
       {...props}
     />
   )

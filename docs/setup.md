@@ -180,7 +180,7 @@ melden den Zustand und reparieren ihn nicht.
 ### Was der Story-Lebenszyklus remote trägt — und was nicht
 
 Gemessen in einer echten Remote-Session am 2026-09-05, ausführlich in
-[ADR 0055](../specs/decisions/0055-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md)
+[ADR 0056](../specs/decisions/0056-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md)
 und Spec [`0318`](../specs/features/0318-remote-lebenszyklus-grenze.md). `gh` liegt dort seit
 ADR 0053/0054 vor — die Grenze liegt woanders:
 
