@@ -222,6 +222,17 @@ Im `spec-writer`-Ablauf am 2026-09-05 geklärt:
 - **`Review` wird nativ ausgelöst, das Fremdschreib-Restrisiko wird akzeptiert** (Daniel, gegen „`Review` weiter in `ship-feature` setzen"): Der Übergang funktioniert damit auch aus Remote-Sessions — bisher der teuerste Ausfall.
 - **`ship-feature` liest den Board-Wert nach dem Eröffnen des Pull Requests einmal zurück** (Daniel, gegen „als bekannte Lücke akzeptieren"): schließt die Lücke, dass ein versehentlich deaktivierter nativer Workflow *gar nichts* schreibt und damit unbemerkt bliebe.
 
+### In der Review-Phase nachgezogen (2026-09-05)
+
+Zwei Abweichungen von der ursprünglichen Fassung, hier benannt statt stillschweigend übernommen:
+
+- **Der Board-Befehlsparser liest eine Befehlszeile nur am Zeilenanfang.** Die erste Fassung erkannte jedes Vorkommen von `gh project item-edit` im Text und meldete deshalb eine reine Prosa-Erwähnung („… erst ab dort kennt `gh project item-edit` die namensbasierte Form") als Aufruf ohne `--field`. Zugelassen sind am Zeilenanfang außerdem ein Listenpunkt und ein Inline-Code-Etikett (`- `status-review`: `gh project item-edit …``) — in dieser Form stehen die Nachhol-Befehle in den Berichtsvorlagen, die dem Parser sonst entgingen. Beide Richtungen sind als Testfälle belegt.
+- **`ship-feature` liest bei Abweichung ein zweites Mal.** ADR 0057, Abschnitt 6, Punkt 4 sah einen einzigen Lesevorgang vor. GitHub verarbeitet die PR↔Issue-Verknüpfung asynchron; unmittelbar nach `gh pr create` steht deshalb regelmäßig noch der alte Wert. Ohne den zweiten Versuch meldete **jeder** Lauf einen Fehlschlag, den es nicht gibt. Die ADR ist entsprechend nachgezogen.
+
+Ebenfalls in der Review-Phase korrigiert: ADR 0057, Abschnitt 6, Punkt 4 behauptete, der Zustand der Projects-Workflows sei „per API weder les- noch überwachbar" — Abschnitt 1 derselben ADR sagt das Gegenteil (über GraphQL lesbar, nur nicht schreibbar), und er wurde in der Review-Session gelesen. Die Begründung des Zurücklesens steht jetzt auf dem tragfähigen Grund: Zurückgelesen wird nicht der Workflow, sondern sein Ergebnis, und das trifft auch einen Workflow, der zwar läuft, aber auf einen falschen Zielwert konfiguriert ist.
+
+**Bewusst nicht gebaut:** ein statischer Anker, der das Zurücklesen in `ship-feature` in CI festhält. Jeder brauchbare Anker müsste entweder den Lesebefehl in die Skill-Datei duplizieren (die Datei verweist bewusst auf die Sammlung in `github-board`, statt ihn zu wiederholen) oder auf eine Formulierung prüfen. Als benannte Beobachtungspflicht geführt, nicht als Test.
+
 ## Offene Fragen
 
 Keine. Die vier Produktentscheidungen und die zwei Risiko-Abwägungen sind im Abschnitt „Entscheidungen" festgehalten.
