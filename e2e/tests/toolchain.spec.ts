@@ -19,6 +19,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { DEFAULT_BASE_URL, resolveBaseUrl } from '../lib/baseUrl.ts'
 import { DEMO_PROJECTS } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 import { PACKAGE_ROOT } from '../lib/paths.ts'
@@ -110,4 +111,65 @@ test('die Demo-Projektnamen des Pruefsatzes stammen aus dem Seeder', () => {
       `f"{DEMO_PROJECT_PREFIX}${suffix}"`
     )
   }
+})
+
+/**
+ * Die Zielabsicherung der Ad-hoc-Werkzeuge (`lib/baseUrl.ts`). Sie ist die einzige strukturelle
+ * Sperre, die verhindert, dass `shot`/`drive` gegen etwas anderes als einen lokalen Pruefstack
+ * laufen - und sie besteht aus DREI unabhaengigen Bedingungen: Protokoll `http:`, Host aus einer
+ * Allowlist, Port ausdruecklich angegeben. Jede ist einzeln abgesichert, so wie auf der
+ * Backend-Seite jeder Bestandteil der Seeder-Sperre seinen eigenen Abbruch-Testfall hat.
+ *
+ * Die Port-Pflicht ist dabei kein theoretischer Fall: im Python-Pendant `validate_demo_base_url`
+ * war genau sie ein echter Review-Fund - "http://localhost" mit implizitem Port 80 kann einen
+ * voellig anderen lokalen Dienst treffen.
+ *
+ * Rot-Nachweis bei Einfuehrung (2026-09-05), ausgefuehrt und im PR belegt: mit gestrichener
+ * Port-Pflicht in `resolveBaseUrl` faellt genau ein Fall dieses Tests, und zwar mit der Meldung
+ * `verletzte Bedingung "Port nicht angegeben" (http://localhost)` - die uebrigen drei bleiben
+ * gruen. Damit ist belegt, was die Anti-Vakuitaets-Regel verlangt: die Faelle sind einzeln
+ * empfindlich, der Test besteht nicht global weiter, wenn eine der drei Bedingungen wegfaellt.
+ *
+ * Fuer die Host-Allowlist ist derselbe Nachweis NICHT gesondert ausgefuehrt worden: die
+ * Arbeitsumgebung verweigert das Ausfuehren des Pruefsatzes, solange eine Host-Allowlist im
+ * Arbeitsbaum entfernt ist. Der Fall ist strukturbaugleich zum belegten (dieselbe Schleife,
+ * dieselbe Fall-eigene Meldung, dasselbe `||`-Glied), aber das ist eine Begruendung und keine
+ * Messung - hier bewusst als solche gekennzeichnet statt als Nachweis ausgegeben.
+ */
+
+test('die Ziel-Allowlist der Werkzeuge laesst genau die lokalen Adressen durch', () => {
+  // Positivfaelle zuerst - ohne sie waere auch eine Sperre "gruen", die schlicht ALLES ablehnt.
+  expect(resolveBaseUrl(undefined), 'Variable nicht gesetzt').toBe(DEFAULT_BASE_URL)
+  expect(resolveBaseUrl(''), 'leerer Wert').toBe(DEFAULT_BASE_URL)
+  expect(resolveBaseUrl('   '), 'nur Leerzeichen').toBe(DEFAULT_BASE_URL)
+  // Der praktische Fall: ein bereits laufender Stack belegt 8080.
+  expect(resolveBaseUrl('http://localhost:8180'), 'abweichender Port').toBe('http://localhost:8180')
+  expect(resolveBaseUrl('http://127.0.0.1:8180'), 'zweiter erlaubter Host').toBe(
+    'http://127.0.0.1:8180'
+  )
+  // Auf die Origin reduziert - ein mitgegebener Pfad darf nicht Teil der Basis-URL werden.
+  expect(resolveBaseUrl('http://localhost:8180/projects/2'), 'Pfadanteil').toBe(
+    'http://localhost:8180'
+  )
+})
+
+test('die Ziel-Allowlist der Werkzeuge weist jede der drei Bedingungen einzeln ab', () => {
+  // Je Fall ist genau EINE Bedingung verletzt, die uebrigen sind erfuellt - faellt eine der drei
+  // bei einer spaeteren Umgestaltung weg, wird genau ihre Zeile rot statt gar keine.
+  const rejected: [string, string][] = [
+    ['Protokoll', 'https://localhost:8080'],
+    ['Host ausserhalb der Allowlist', 'http://beispiel.invalid:8080'],
+    ['Port nicht angegeben', 'http://localhost'],
+    ['ueberhaupt keine URL', 'nicht-eine-url'],
+  ]
+
+  for (const [bedingung, wert] of rejected) {
+    expect(
+      () => resolveBaseUrl(wert),
+      `verletzte Bedingung "${bedingung}" (${wert}) muss zum Abbruch fuehren`
+    ).toThrow()
+  }
+
+  // Kardinalitaet: ohne sie bestuende der Test auch mit einer leergelaufenen Fallliste.
+  expect(rejected.length, 'Anzahl geprueter Abweisungsgruende').toBe(4)
 })
