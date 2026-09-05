@@ -31,6 +31,12 @@ Vor der Prüfung `specs/architecture/0004-design-system.md` gezielt konsultieren
 - **Barrierefreiheit:** grundlegende Punkte (Kontrast, Tastaturbedienbarkeit, sinnvolle Labels) nicht übersehen.
 - **Responsivität/PWA-Tauglichkeit:** funktioniert die Ansicht auch auf einem kleineren Bildschirm, da PhotoSort als PWA installierbar sein soll.
 
+## Optional: einen Blick in den Browser werfen
+
+Für Fragen, die man am gerenderten Bild schneller beantwortet als am Diff (wirkt die Dichte auf einem 360-px-Schirm gedrängt? sind Auswahl und Fokus auseinanderzuhalten? sitzt ein Popover sinnvoll?), **darf** dieser Skill die Anwendung lokal starten und ansehen — über den Skill `browse-app`. Er **muss** es nicht: Dieser Prüfkatalog ist vollständig am Diff und an den Konzept-Dokumenten abzuarbeiten, und kein Punkt oben setzt eine laufende Instanz voraus. Ein Review ohne Blick in den Browser ist vollwertig; ein nicht startender Stack ist kein Grund, das Review zu verschieben oder ein Finding wegzulassen.
+
+Was der Blick **nicht** ersetzt: die messbaren Layout-Zusagen (Grid-Spaltenzahl, sticky Kopfzeile, Popover-Kollision, Trefferflächen, kein horizontales Scrollen, sichtbare Leer-/Fehlerzustände) prüft der blockierende CI-Job `e2e` automatisiert. Sie hier von Hand nachzusehen ist verlorene Zeit; der Blick lohnt für das gestalterische Urteil, das kein Messwert abbildet.
+
 ## Ausgabeformat
 
 Melde Findings priorisiert (kritisch zuerst) mit Datei/Zeile bzw. konkretem Bildschirm/Ablauf und Begründung, warum es für die Nutzung ein Problem ist — nicht als reine Geschmacksfrage. Trenne klar **Muss-Fix** (blockiert den Merge) von **Diskussion / spätere Iteration**. Gibt es nichts zu beanstanden, sag das explizit ("keine Findings").
