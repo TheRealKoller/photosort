@@ -51,7 +51,9 @@ MINDESTZAHL_VERWALTETER_DATEIEN = 100
 # Gegenprobe fuer dasselbe Muster: Diese ADR erwaehnt das Werkzeug zwangslaeufig und liegt
 # unter der Ausnahme `specs/`. Trifft das Muster hier nicht, ist die Nullmeldung oben kein
 # Befund, sondern ein Defekt.
-GEGENPROBE_PFAD = REPO_WURZEL / "specs" / "decisions" / "0057-board-lebenszyklus-nativ-statt-eigenbau.md"
+GEGENPROBE_PFAD = (
+    REPO_WURZEL / "specs" / "decisions" / "0057-board-lebenszyklus-nativ-statt-eigenbau.md"
+)
 
 GELOESCHTE_PFADE = ("scripts/gh-board.py", "scripts/tests/test_gh_board.py")
 

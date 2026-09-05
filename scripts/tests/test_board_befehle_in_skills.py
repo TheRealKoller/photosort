@@ -49,7 +49,18 @@ ABLAUF_SKILLS = ("capture", "refinement", "spec-writer", "ship-feature")
 
 BERICHTSABSCHNITT = "## Lokal nachzuholen"
 
-_AUFRUF = re.compile(r"gh project item-edit\b[^\n]*")
+# Ein Befehl steht am Zeilenanfang; eine blosse *Erwaehnung* steht mitten im Fliesstext
+# ("... kennt `gh project item-edit` die namensbasierte Form"). Ohne diese Verankerung meldete
+# der Parser jede Prosa-Zeile, die das Kommando nennt, als Aufruf ohne --field.
+#
+# Vor dem Kommando zugelassen sind ausschliesslich Formen, die es weiterhin als Befehl lesbar
+# lassen: Einrueckung, ein Listenpunkt, ein Inline-Code-Etikett wie `status-review`: (so stehen
+# die Nachhol-Befehle in den Berichtsvorlagen), ein Shell-Prompt, ein oeffnender Backtick. Ohne
+# den Listen-Zweig entgingen dem Test genau die Vorlagen unter `## Lokal nachzuholen`.
+_AUFRUF = re.compile(
+    r"^[ \t]*(?:[-*+][ \t]+)?(?:`[^`\n]*`:[ \t]*)?[`$]?[ \t]*gh project item-edit\b[^\n]*",
+    re.MULTILINE,
+)
 _PROJEKT = re.compile(r"gh project item-edit\s+(\S+)")
 _OWNER = re.compile(r"--owner\s+(\S+)")
 # Werte kommen doppelt, einfach oder gar nicht in Anfuehrungszeichen vor. Die unquotierte Form
@@ -282,6 +293,32 @@ def test_zwei_aufrufe_in_einer_datei_werden_einzeln_gelesen() -> None:
     aufrufe = aufrufe_aus_text(text, "skill.md")
 
     assert [aufruf.zeile for aufruf in aufrufe] == [1, 2]
+    assert verstoesse(aufrufe) == []
+
+
+def test_eine_erwaehnung_im_fliesstext_gilt_nicht_als_aufruf() -> None:
+    """Prosa nennt das Kommando, ruft es aber nicht - sonst meldet der Parser Falschbefunde."""
+    text = "erst ab dort kennt `gh project item-edit` die namensbasierte Form.\n"
+
+    assert aufrufe_aus_text(text, "skill.md") == []
+
+
+@pytest.mark.parametrize(
+    "zeile",
+    [
+        'gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"',
+        '  gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"',
+        '$ gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"',
+        '`gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"`',
+        '- gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"',
+        '- `status-review`: `gh project item-edit 8 --owner TheRealKoller '
+        '--field "Status" --value "Ready"`',
+    ],
+)
+def test_ein_aufruf_am_zeilenanfang_wird_in_jeder_schreibform_gelesen(zeile: str) -> None:
+    aufrufe = aufrufe_aus_text(zeile + "\n", "skill.md")
+
+    assert len(aufrufe) == 1
     assert verstoesse(aufrufe) == []
 
 
