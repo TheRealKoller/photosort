@@ -1,0 +1,29 @@
+{
+  // Eigene tsconfig-Welt, bewusst getrennt von frontend/ (ADR 0058 Punkt 2): dieser Code laeuft
+  // in Node gegen eine laufende Anwendung, nicht im DOM-Kontext des Frontends.
+  //
+  // "erasableSyntaxOnly" ist hier kein Stil, sondern Voraussetzung: die Ad-hoc-Werkzeuge unter
+  // bin/ werden von Node direkt ausgefuehrt (Type-Stripping ab Node 22.18), ohne Build-Schritt
+  // und ohne einen zusaetzlichen Transpiler als weitere Abhaengigkeit. Enums, Namespaces und
+  // Parameter-Properties waeren dort zur Laufzeit nicht erasable und wuerden erst im Betrieb
+  // auffallen - so faellt es bereits im Typecheck auf.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noEmit": true,
+    "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "artifacts", "scratch"]
+}

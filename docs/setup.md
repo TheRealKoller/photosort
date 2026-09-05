@@ -322,3 +322,65 @@ docker compose -f docker-compose.yml -f docker-compose.demo.yml --profile seed r
 - Danach: Frontend unter http://localhost:8080 öffnen, mit den `AUTH_SEED_USER1_*`-Werten aus
   `.env.demo.example` einloggen (Standard: `demo`/`demo-password-1`), ein Projekt gegen den
   Demo-Space anlegen und Scan/Bewertung ausprobieren — ohne Codeänderung, nur die andere `.env`.
+
+## Prüfstack und browsergestützte Oberflächenprüfung (`e2e/`)
+
+Ein zweites, kleineres Overlay startet den **Prüfstack**: `postgres`, `redis`, `backend`,
+`frontend` — bewusst **ohne** OpenCloud und **ohne** Worker. Alle Zustände kommen aus einem
+deterministischen Seeder, der Datenbank und Thumbnail-Cache direkt füllt; die Fotos sind
+synthetisch erzeugt. Gegen diesen Stack laufen die Playwright-Prüfungen aus `e2e/` — lokal
+dieselben wie im blockierenden CI-Job `e2e`. Fachliche Grundlage:
+[`specs/features/0174-browser-zugang-fuer-claude.md`](../specs/features/0174-browser-zugang-fuer-claude.md)
+und [`specs/decisions/0058-browsergestuetzte-oberflaechenpruefung.md`](../specs/decisions/0058-browsergestuetzte-oberflaechenpruefung.md).
+
+**Nur lokal starten:** Die Zugangsdaten in `docker-compose.e2e.yml` stehen im Klartext in einem
+öffentlichen Repository. Genau deshalb ist jede veröffentlichte Portbindung dieses Overlays auf
+`127.0.0.1` gebunden — ein CI-Schritt prüft das bei jedem Lauf nach.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml up --build -d
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T \
+  -e PHOTOSORT_DEMO_STATE_CONFIRM=yes-wipe-and-seed-demo-data \
+  backend python -m photosort.demo_state
+```
+
+Der Seeder legt vier Projekte mit dem Präfix `Demo — ` an (leer / große Sammlung / bewertet /
+Fehlerzustand) und ist zielzustands-idempotent: er löscht seine eigenen Projekte und legt sie neu
+an. Er **bricht ab**, wenn die Freigabe-Variable fehlt, die Datenbank irgendein Projekt ohne
+diesen Präfix enthält oder eine echte OpenCloud-Adresse konfiguriert ist — die drei Bedingungen
+werden vollständig vor dem ersten Schreibzugriff ausgewertet. Anmelden danach mit
+`e2e-daniel` / `e2e-only-password-1` (aus dem Overlay, kein Geheimnis).
+
+Prüfungen und Ad-hoc-Blick:
+
+```bash
+cd e2e
+npm ci                             # nur beim ersten Mal
+npx playwright install chromium    # nur beim ersten Mal, siehe Hinweis unten
+npm test                           # der vollständige Prüfsatz
+npm run shot -- /projects/2/photos # eine beliebige Route abfotografieren (beide Viewports)
+npm run drive -- scratch/mein-skript.ts   # eine freie Interaktionsfolge
+```
+
+Ausgaben (PNG plus Protokoll mit Konsolenmeldungen, Seitenfehlern und Netzwerkaufrufen ab Status
+400) landen unter `e2e/artifacts/`, Wegwerf-Skripte unter `e2e/scratch/`, der gespeicherte
+Anmeldezustand unter `e2e/.auth/` — alle drei sind gitignoriert. Unter `e2e/` darf nie eine
+Bilddatei versioniert werden; auch das prüft CI.
+
+- **`npx playwright install --with-deps` ist für den lokalen Rechner nicht vorgesehen** (nur im
+  CI-Container): Es installiert als root per `apt-get` eine aus dem npm-Paket stammende
+  Paketliste und greift auf Fedora ohnehin nicht. Fehlt eine Systembibliothek, wird sie einzeln
+  nachinstalliert.
+- **Node ≥ 22.18** ist Voraussetzung: die Werkzeuge unter `e2e/bin/` laufen ohne Build-Schritt
+  direkt in Node (TypeScript-Type-Stripping).
+- Läuft bereits ein anderer PhotoSort-Stack auf 8000/8080, braucht der Prüfstack ein eigenes
+  Port-Overlay; die Werkzeuge nehmen den abweichenden Ort dann über
+  `PHOTOSORT_E2E_BASE_URL=http://localhost:<port>` entgegen (nur `localhost`/`127.0.0.1` sind
+  zulässig). `CORS_ALLOWED_ORIGINS` und `VITE_API_BASE_URL` müssen dabei mitgezogen werden.
+
+Aufräumen:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v
+rm -rf e2e/.auth
+```

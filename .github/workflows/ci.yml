@@ -331,3 +331,248 @@ jobs:
           fetch "$base_url/assets/definitiv-nicht-vorhanden.js"
           echo "status: $FETCH_STATUS"
           test "$FETCH_STATUS" = "404"
+
+  # Browsergestuetzte Oberflaechenpruefung gegen den REAL laufenden Pruefstack
+  # (specs/features/0174-browser-zugang-fuer-claude.md, ADR
+  # specs/decisions/0058-browsergestuetzte-oberflaechenpruefung.md).
+  #
+  # BLOCKIEREND und bewusst ohne Pfadfilter: ein Backend-Change kann die Oberflaeche genauso
+  # brechen wie ein Frontend-Change. Kein "continue-on-error", keine Wiederholungen (retries: 0
+  # steht in e2e/playwright.config.ts und ist dort per Assertion gebunden, siehe
+  # e2e/tests/toolchain.spec.ts) - ein roter Lauf ist ein Befund, kein Rauschen.
+  #
+  # Der Job referenziert KEIN secrets.* und erweitert die Workflow-permissions nicht. Der Stack
+  # enthaelt weder OpenCloud noch den Worker; alle Zustaende kommen aus dem deterministischen
+  # Seeder.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Die vier Nachweis-Schritte laufen VOR dem teuren Image-Bau: eine verletzte
+      # --- Sicherheitszusage soll in Sekunden auffallen, nicht erst nach dem Stackstart.
+
+      - name: Nachweis - keine Bilddatei unter e2e/ im Git-Index
+        run: |
+          set -euo pipefail
+          pattern='\.(png|jpe?g|gif|webp|bmp|tiff?|avif|heic|ico)$'
+          tracked=$(git ls-files -- e2e | grep -Ei "$pattern" || true)
+          if [ -n "$tracked" ]; then
+            echo "Bilddateien unter e2e/ im Git-Index gefunden:" >&2
+            echo "$tracked" >&2
+            echo "Die wichtigste Projektregel lautet: nie Bilddaten im Repository." >&2
+            exit 1
+          fi
+          # Gegenprobe: der Ausdruck erkennt eine Bilddatei tatsaechlich. Ohne sie bestuende
+          # dieser Schritt auch mit einem kaputten Muster - er faende dann eben nie etwas.
+          echo 'e2e/artifacts/beispiel.png' | grep -Eiq "$pattern"
+          echo "OK: keine Bilddatei unter e2e/ versioniert (Muster durch Gegenprobe belegt)."
+
+      - name: Nachweis - eigener Compose-Projektname
+        run: |
+          set -euo pipefail
+          name=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml config --format json | jq -r '.name')
+          echo "Compose-Projektname: $name"
+          # Ohne eigenen Namen benutzte der Pruefstack die Volumes eines lokal laufenden
+          # Produktiv-/Demo-Stacks mit - der Seeder liefe dann gegen dessen Datenbank und Cache.
+          test "$name" = "photosort-e2e"
+
+      - name: Nachweis - jede veroeffentlichte Portbindung liegt auf 127.0.0.1
+        run: |
+          set -euo pipefail
+          # Erwartete Zahl veroeffentlichter Bindungen: backend und frontend. postgres/redis
+          # veroeffentlichen nichts. Die ANZAHL ist Teil der Zusicherung: ohne sie bestuende der
+          # Schritt auch dann, wenn er - Tippfehler, geaenderte Ausgabestruktur, falsches -f -
+          # gar keine Bindung faende. Und weil Compose ports-Listen beim Ueberlagern ERGAENZT
+          # statt ersetzt, faende eine naive Ueberlagerung hier drei Bindungen statt zwei, davon
+          # eine weiterhin offene.
+          expected_bindings=2
+
+          check_bindings() {
+            local config_json="$1" rows count offending
+            rows=$(printf '%s' "$config_json" | jq -r '.services | to_entries[] | .key as $svc | (.value.ports // [])[] | "\($svc) \(.host_ip) \(.published)"')
+            count=$(printf '%s\n' "$rows" | grep -c . || true)
+            echo "gefundene Bindungen ($count):"
+            printf '%s\n' "$rows"
+            if [ "$count" != "$expected_bindings" ]; then
+              echo "Erwartet waren $expected_bindings veroeffentlichte Bindungen." >&2
+              return 1
+            fi
+            offending=$(printf '%s\n' "$rows" | awk '$2 != "127.0.0.1"' || true)
+            if [ -n "$offending" ]; then
+              echo "Nicht auf 127.0.0.1 gebundene Veroeffentlichung(en):" >&2
+              printf '%s\n' "$offending" >&2
+              return 1
+            fi
+            return 0
+          }
+
+          config=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml config --format json)
+          check_bindings "$config"
+
+          # Zwei Gegenproben im selben Schritt, je eine pro Fehlerklasse - ohne sie waere "alles
+          # gruen" nicht von "die Pruefung findet gar nichts mehr" zu unterscheiden.
+          #
+          # (a) eine ungebundene Veroeffentlichung: faellt ueber die host_ip-Bedingung.
+          printf 'services:\n  frontend:\n    ports: !override\n      - "8099:80"\n' > /tmp/e2e-probe-unbound.yml
+          # (b) eine NAIV ueberlagerte ports-Liste ohne "!override": Compose ERGAENZT sie, es
+          #     entstehen drei Bindungen - alle drei auf 127.0.0.1. Diesen Fall findet
+          #     ausschliesslich die Anzahl-Assertion, und er ist genau der reale Fallstrick.
+          printf 'services:\n  frontend:\n    ports:\n      - "127.0.0.1:8099:80"\n' > /tmp/e2e-probe-appended.yml
+
+          for probe in /tmp/e2e-probe-unbound.yml /tmp/e2e-probe-appended.yml; do
+            broken=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f "$probe" config --format json)
+            if check_bindings "$broken" > /dev/null 2>&1; then
+              echo "Gegenprobe fehlgeschlagen: $probe wurde NICHT als Fehler gemeldet." >&2
+              exit 1
+            fi
+          done
+          echo "OK: alle Bindungen lokal, und beide Fehlerklassen werden nachweislich gemeldet."
+
+      - name: Nachweis - Koeder-.env wird vom Overlay vollstaendig geschlagen
+        run: |
+          set -euo pipefail
+          # Compose liest .env immer automatisch aus dem Arbeitsverzeichnis, unabhaengig von -f.
+          # Bliebe im Overlay auch nur EINE Variable des Produktivstacks interpolierbar, zoege der
+          # Pruefstack deren Wert - im Ernstfall den echten OpenCloud-App-Token.
+          sentinel=photosort-sentinel-must-not-appear
+          trap 'rm -f .env' EXIT
+          : > .env
+
+          # DIE NAMEN WERDEN ABGELEITET, NICHT GEPFLEGT. Eine hier aufgezaehlte Liste deckte immer
+          # nur den Stand ihres Schreibtags ab: erweitert eine kuenftige Spec docker-compose.yml um
+          # eine Variable, ohne sie im e2e-Overlay zu setzen, bliebe dieser Schritt gruen - waehrend
+          # der Pruefstack den Wert genau dieser Variable aus einer echten .env zoege. Genau der
+          # Pfad, den dieser Nachweis versperren soll.
+          keys=$(grep -oE '\$\{[A-Z_][A-Z0-9_]*' docker-compose.yml | sed 's/^\${//' | sort -u)
+          key_count=$(printf '%s\n' "$keys" | grep -c . || true)
+          echo "interpolierbare Variablen der Basisdatei ($key_count):"
+          printf '%s\n' "$keys" | tr '\n' ' '
+          echo
+
+          # Eine leere Liste bestuende trivial - der Schritt legte dann eine leere .env an und
+          # faende erwartungsgemaess keinen Sentinel. Zwei Zusicherungen dagegen: es wurde
+          # ueberhaupt etwas gefunden, und die gefaehrlichste Variable ist darunter. Der zweite
+          # Name ist bewusst KEINE gepflegte Liste, sondern ein einzelner Kanarienvogel: bricht die
+          # Ableitung (geaendertes Dateiformat, falscher Pfad, kaputter Ausdruck), faellt das hier
+          # auf statt still.
+          test "$key_count" -gt 0
+          printf '%s\n' "$keys" | grep -qx OPENCLOUD_APP_TOKEN
+
+          # Port-Variablen brauchen einen numerischen Koeder - ein Wort waere schon beim Parsen der
+          # Basisdatei ungueltig und der Schritt scheiterte aus dem falschen Grund. Fuer sie prueft
+          # weiter unten stattdessen die gerenderte Portliste, dass das Overlay geschlagen hat.
+          port_decoy=59000
+          for key in $keys; do
+            case "$key" in
+              *_PORT)
+                port_decoy=$((port_decoy + 1))
+                echo "$key=$port_decoy" >> .env
+                ;;
+              *)
+                echo "$key=$sentinel" >> .env
+                ;;
+            esac
+          done
+
+          # Das Worker-Profil wird mitgerendert: der Dienst laeuft im Pruefstack nicht, seine
+          # Umgebung ist aber Teil derselben Zusage und ohne aktiviertes Profil gar nicht in der
+          # Ausgabe enthalten.
+          rendered=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml --profile nicht-im-pruefstack config)
+          if printf '%s' "$rendered" | grep -q "$sentinel"; then
+            echo "Werte aus der Koeder-.env sind in die Pruefstack-Konfiguration durchgeschlagen:" >&2
+            printf '%s' "$rendered" | grep -n "$sentinel" >&2
+            exit 1
+          fi
+          ports=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml config --format json | jq -r '[.services | to_entries[] | (.value.ports // [])[] | .published] | sort | join(",")')
+          echo "veroeffentlichte Ports: $ports"
+          test "$ports" = "8000,8080"
+
+          # Gegenprobe: der Sentinel-Vergleich schlaegt bei einer tatsaechlich interpolierbaren
+          # Variablen an. Geprueft am Basisstack OHNE Overlay - dort ist genau das der Fall.
+          if ! docker compose -f docker-compose.yml config | grep -q "$sentinel"; then
+            echo "Gegenprobe fehlgeschlagen: der Sentinel-Vergleich schlaegt nicht einmal ohne Overlay an." >&2
+            exit 1
+          fi
+          echo "OK: keine Variable des Produktivstacks bleibt im Pruefstack interpolierbar."
+
+      # --- Ab hier der eigentliche Lauf -------------------------------------------------------
+
+      - uses: actions/setup-node@v4
+        with:
+          # Die Werkzeuge unter e2e/bin laufen ohne Build-Schritt direkt in Node
+          # (Type-Stripping ab 22.18) - siehe "engines" in e2e/package.json.
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: e2e/package-lock.json
+      - name: Abhaengigkeiten installieren (npm ci, nie npm install)
+        working-directory: e2e
+        run: npm ci
+      - name: Lieferkette - Registry-Signaturen pruefen
+        working-directory: e2e
+        run: npm audit signatures
+      - name: Type check (tsc)
+        working-directory: e2e
+        # Ohne diesen Schritt wuerde die Typpruefung dieses Pakets NIE laufen: die Werkzeuge und
+        # Specs laufen per Node-Type-Stripping, das Typen entfernt statt sie zu pruefen. Ein
+        # Typfehler faellt dann bestenfalls zur Laufzeit auf, schlimmstenfalls gar nicht.
+        # Bewusst vor den teuren Schritten (Browser, Images, Stack) - er kostet Sekunden.
+        run: npm run typecheck
+      - name: Chromium installieren
+        working-directory: e2e
+        # --with-deps ausschliesslich hier im CI-Job: es installiert als root per apt-get eine aus
+        # dem npm-Paket stammende Paketliste. Fuer Daniels Rechner ist das ausdruecklich nicht
+        # vorgesehen (docs/setup.md, .claude/skills/browse-app/SKILL.md).
+        run: npx playwright install --with-deps chromium
+
+      - name: Pruefstack starten
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+          echo "Warte auf das Backend..."
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/health
+          echo "Warte auf das Frontend..."
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://127.0.0.1:8080/; then break; fi
+            sleep 2
+          done
+          curl -fsS -o /dev/null http://127.0.0.1:8080/
+
+      - name: Demo-Datenbestand seeden
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T \
+            -e PHOTOSORT_DEMO_STATE_CONFIRM=yes-wipe-and-seed-demo-data \
+            backend python -m photosort.demo_state
+
+      - name: Pruefungen im Browser
+        working-directory: e2e
+        run: npm test
+
+      - name: Diagnose bei Fehlschlag - Container-Logs
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml logs --tail 200
+
+      # Nur bei Fehlschlag, feste Aufbewahrungsfrist, und ausschliesslich e2e/artifacts: der
+      # gespeicherte Anmeldezustand liegt bewusst in e2e/.auth und kann hier strukturell nicht
+      # mit hochgeladen werden (er enthaelt ein 30 Tage gueltiges, nicht widerrufbares JWT). Ein
+      # roter Lauf ohne Bild waere fuer einen Entwickler ohne Augen genauso blind wie der Zustand
+      # vor dieser Ebene - die Artefakte sind Teil der Zusage, nicht Komfort.
+      - name: Artefakte hochladen (nur bei Fehlschlag)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: e2e/artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Aufraeumen
+        if: always()
+        run: |
+          rm -rf e2e/.auth
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v --remove-orphans || true
