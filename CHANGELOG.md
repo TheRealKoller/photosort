@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/TheRealKoller/photosort/compare/v0.33.0...v0.34.0) (2026-09-05)
+
+
+### Features
+
+* **e2e:** browsergestützte Oberflächenprüfung für Claude (Spec 0174) ([#329](https://github.com/TheRealKoller/photosort/issues/329)) ([45e699c](https://github.com/TheRealKoller/photosort/commit/45e699cb9a1321f3a9ff19a972e5f4d0ec8c0130))
+
 ## [0.33.0](https://github.com/TheRealKoller/photosort/compare/v0.32.0...v0.33.0) (2026-09-05)
 
 
