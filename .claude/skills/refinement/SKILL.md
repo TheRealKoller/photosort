@@ -136,6 +136,8 @@ gh issue edit <NNN> --repo TheRealKoller/photosort --title "$(cat <titel-datei>)
 
 Das ist ein **Issue**-Befehl, kein Board-Schreibzugriff: Scheitert er (Exit-Code ≠ 0), gib die Meldung unverändert an Daniel weiter und führe **alle** nachfolgenden Aufrufe nicht mehr aus — Priorität lesen, Priorität schreiben, Status `Ready`. Das Issue erreicht `Ready` dann nicht, und das ist richtig so: Die Story ist damit sichtbar „noch nicht fertig geschärft", und der Abschluss wird als Ganzes wiederholt. Ein fehlgeschlagener Titel-Aufruf erscheint deshalb **nicht** unter `## Lokal nachzuholen` — dort steht nur, was sich nachholen lässt, ohne den Abschluss zu wiederholen.
 
+### Priorität, Status und Zusammenfassung
+
 Danach die **Priorität lesen, bevor sie geschrieben wird**. First-write-wins ist ab jetzt genau diese Reihenfolge und kein Werkzeugverhalten mehr; der Lesebefehl (`gh api graphql -F number=<NNN> -f query='…'`) steht im Wortlaut in `.claude/skills/github-board/SKILL.md` und liefert Status und Priorität in einem Aufruf. Ausgewertet wird der Knoten mit `project.number == 8`, nie `nodes[0]`. Nur wenn die Priorität dort leer (`null`) ist, wird die Empfehlung geschrieben:
 
 ```bash

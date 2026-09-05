@@ -93,7 +93,8 @@ sofort ungefiltert als GitHub-Issue fest und nimmt es ins Board auf — den Stat
 setzt daraufhin GitHub selbst —, `refinement` übernimmt danach die
 rein fachliche Schärfung (Verständnis, Prioritäts-/Reihenfolge-Einordnung über
 `requirements-engineer`, Code-/Spec-Konfliktprüfung, Devil's-Advocate-Lohnenswert-Gate) und
-schreibt Ziel/User Story/Akzeptanzkriterien direkt in den Issue-Body (Status `Ready`) — ohne
+schreibt Ziel/User Story/Akzeptanzkriterien direkt in den Issue-Body (Status `Ready`) und
+schärft dabei den Issue-Titel nach, wenn er das geschärfte Ergebnis nicht mehr trifft — ohne
 technische Details und ohne lokale Zwischendatei. Dieser Schritt 1 ist von dieser Konsolidierung
 nicht berührt.
 
