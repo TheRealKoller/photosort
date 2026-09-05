@@ -1,0 +1,112 @@
+# Overlay fuer den PRUEFSTACK: der Stack, gegen den die browsergestuetzten Pruefungen laufen -
+# lokal wie in CI derselbe (specs/features/0174-browser-zugang-fuer-claude.md,
+# specs/decisions/0057-browsergestuetzte-oberflaechenpruefung.md, Punkt 6).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up --build -d
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T \
+#       -e PHOTOSORT_DEMO_STATE_CONFIRM=yes-wipe-and-seed-demo-data backend \
+#       python -m photosort.demo_state
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v
+#
+# Rein additiv wie docker-compose.demo.yml - docker-compose.yml bleibt unangetastet. Der Stack
+# enthaelt bewusst KEINE OpenCloud-Instanz (das ungepinnte Rolling-Image waere die wahrscheinlichste
+# Ursache sprunghaft fehlschlagender Laeufe) und keinen Worker (kein Pruefschritt loest einen
+# Hintergrundjob aus). Der Ordner-Browser wird in diesem Stack deshalb ausschliesslich in seinem
+# FEHLERzustand geprueft; sein Normalfall bleibt dem lokal zuschaltbaren Demo-Overlay aus
+# Spec 0009 vorbehalten.
+#
+# NUR LOKAL STARTEN: die Zugangsdaten unten stehen im Klartext in einem oeffentlichen Repository.
+# Genau deshalb ist jede veroeffentlichte Portbindung unten auf 127.0.0.1 gebunden - ohne diese
+# Bindung waeren es weltweit bekannte Zugangsdaten eines erreichbaren Dienstes.
+
+# Eigener Compose-Projektname (Security-Muss-Kriterium M5 der Spec): ohne ihn benutzte der
+# Pruefstack die Volumes "postgres_data"/"photo_cache" eines lokal laufenden Produktiv- oder
+# Demo-Stacks mit - der Demo-Seeder liefe dann gegen dessen Datenbank und dessen Thumbnail-Cache.
+name: photosort-e2e
+
+# WARUM HIER JEDE VARIABLE DES PRODUKTIVSTACKS EXPLIZIT STEHT (M4): Ein expliziter Wert im Overlay
+# schlaegt die .env-Interpolation der Basisdatei - aber ausschliesslich fuer Variablen, die das
+# Overlay auch tatsaechlich setzt. Bliebe eine uebrig, zoege der Pruefstack aus einer im
+# Arbeitsverzeichnis liegenden echten .env deren Wert, im schlimmsten Fall den echten
+# OpenCloud-App-Token. Compose liest .env immer automatisch, unabhaengig von -f. Abgesichert wird
+# das nicht durch Sorgfalt beim Pflegen dieser Liste, sondern durch einen CI-Schritt, der eine
+# Koeder-.env mit Sentinel-Werten anlegt und danach prueft, dass kein Sentinel in
+# "docker compose config" vorkommt - der wirkt auch fuer kuenftig hinzukommende Variablen.
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: photosort
+      POSTGRES_PASSWORD: e2e-only-postgres-password
+      POSTGRES_DB: photosort
+    # Der Healthcheck der Basisdatei interpoliert POSTGRES_USER aus der .env - deshalb steht er
+    # hier noch einmal mit festem Wert, sonst bliebe genau diese eine Stelle interpolierbar.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U photosort"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    environment:
+      DATABASE_URL: postgresql+psycopg://photosort:e2e-only-postgres-password@postgres:5432/photosort
+      REDIS_URL: redis://redis:6379/0
+      # Mindestens 32 Zeichen und nicht der Platzhalter - sonst verweigert main.py den Start
+      # (Startup-Guard aus specs/features/0006-auth.md). Reiner Wegwerf-Wert dieses Pruefstacks.
+      SECRET_KEY: e2e-only-secret-key-not-for-production-0174
+      # Cloud-Schluessel bewusst leer: im Pruefstack wird nie ein Cloud-Aufruf ausgeloest.
+      ANTHROPIC_API_KEY: ""
+      LANDMARK_PROVIDER: anthropic
+      MISTRAL_API_KEY: ""
+      # OpenCloud-Schluessel bewusst leer: kein OpenCloud im Pruefstack - und zugleich die
+      # Bedingung, unter der der Demo-Seeder ueberhaupt laufen darf (Sperre M1c).
+      OPENCLOUD_BASE_URL: ""
+      OPENCLOUD_USERNAME: ""
+      OPENCLOUD_APP_TOKEN: ""
+      OPENCLOUD_DRIVE_NAME: ""
+      # Zugangsdaten der beiden Demo-Konten. Die Anmeldung im Pruefsatz benutzt genau diese - ein
+      # fehlschlagender Login ist damit selbst die Anzeige "falsches Ziel" (M7).
+      AUTH_SEED_USER1_USERNAME: e2e-daniel
+      AUTH_SEED_USER1_PASSWORD: e2e-only-password-1
+      AUTH_SEED_USER2_USERNAME: e2e-zweiter-nutzer
+      AUTH_SEED_USER2_PASSWORD: e2e-only-password-2
+      # Die Pruefungen sprechen http://localhost:8080 an - bewusst "localhost", nicht
+      # "127.0.0.1": die beiden Schreibweisen sind CORS-seitig verschiedene Origins.
+      CORS_ALLOWED_ORIGINS: http://localhost:8080
+      CATEGORY_SELECTION_ENABLED: "true"
+    # "!override" ist Pflicht, kein Stil: Compose ERGAENZT ports-Listen beim Ueberlagern, statt sie
+    # zu ersetzen. Eine naive Ueberlagerung ergaebe zwei Bindungen, davon weiterhin eine offene
+    # (der Hauptstack bindet bewusst ungebunden, PhotoSort soll produktiv erreichbar sein).
+    ports: !override
+      - "127.0.0.1:8000:8000"
+
+  # Der Worker laeuft im Pruefstack nicht mit (kein Pruefschritt loest einen Hintergrundjob aus).
+  # Das eigene Profil sorgt dafuer, dass ein schlichtes "up" ihn gar nicht erst startet; seine
+  # Umgebungsvariablen stehen trotzdem vollstaendig hier, weil "docker compose config" den Dienst
+  # weiterhin rendert und M4 sonst genau dort eine interpolierbare Luecke haette.
+  worker:
+    profiles: ["nicht-im-pruefstack"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://photosort:e2e-only-postgres-password@postgres:5432/photosort
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: e2e-only-secret-key-not-for-production-0174
+      ANTHROPIC_API_KEY: ""
+      LANDMARK_PROVIDER: anthropic
+      MISTRAL_API_KEY: ""
+      OPENCLOUD_BASE_URL: ""
+      OPENCLOUD_USERNAME: ""
+      OPENCLOUD_APP_TOKEN: ""
+      OPENCLOUD_DRIVE_NAME: ""
+      AUTH_SEED_USER1_USERNAME: e2e-daniel
+      AUTH_SEED_USER1_PASSWORD: e2e-only-password-1
+      AUTH_SEED_USER2_USERNAME: e2e-zweiter-nutzer
+      AUTH_SEED_USER2_PASSWORD: e2e-only-password-2
+
+  frontend:
+    build:
+      args:
+        # Wird zur BAUZEIT ins Bundle eingebacken. Wird ADR 0027/Spec 0049 spaeter umgesetzt
+        # (/api-Proxy im Frontend-nginx), wird daraus "/api" und die Backend-Bindung oben
+        # entfaellt - eine Zeile, sonst nichts.
+        VITE_API_BASE_URL: http://localhost:8000
+    ports: !override
+      - "127.0.0.1:8080:80"
