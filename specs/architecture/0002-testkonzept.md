@@ -578,6 +578,21 @@ Der Hauptfehlermodus dieser Ebene ist nicht der falsch-rote, sondern der **immer
 
 **Trefferflächen werden getroffen, nicht gemessen.** Seit dem Dark-Utility-Register sind Bedienelemente sichtbar 32 px hoch und werden über ein transparentes `::after`-Pseudo-Element (`tap-target`/`tap-target-square` in `index.css`) auf ≥ 44 × 44 px aufgespannt. Ein Pseudo-Element taucht in **keiner** `boundingBox()` auf — eine Messung des Elementkastens würde also dauerhaft 32 px melden und wäre entweder falsch-rot oder auf 32 px „kalibriert" und damit wertlos. Geprüft wird deshalb per Treffertest: `document.elementFromPoint()` an den vier Ecken des beabsichtigten 44 × 44-Bereichs muss das Bedienelement selbst oder einen Nachfahren davon liefern. Dasselbe Verfahren deckt zwei weitere, bislang als unprüfbar geführte Fehlerklassen mit ab: das **Klippen durch einen Vorfahren mit `overflow: hidden`** (dann liefert der Treffertest den Vorfahren) und **überlappende aufgespannte Trefferflächen benachbarter Bedienelemente** (dann liefert er das *Nachbar*element — genau der Fehler, den die Aufspannungsregeln des Design-Systems verhindern sollen).
 
+### „Blockierend" ist zur Hälfte eine Einstellung außerhalb des Repositoriums
+
+Der Job `e2e` trägt kein `continue-on-error` und keinen Pfadfilter — das steht in
+`.github/workflows/ci.yml` und ist damit nachlesbar. Ein roter Job allein verhindert aber
+**keinen Merge**: das tut erst der Branch-Schutz von `main`, dessen Liste erforderlicher Checks
+nirgends im Repository steht. `e2e` ist dort am 2026-09-05 aufgenommen worden, neben `backend`,
+`frontend` und `docker-compose-check`.
+
+Das ist hier festgehalten, weil es sonst unauffindbar wäre: Wer künftig prüft, ob das
+Akzeptanzkriterium „der CI-Job ist blockierend" noch gilt, findet im Code nur die Hälfte der
+Antwort. Die andere Hälfte liest man mit
+`gh api repos/TheRealKoller/photosort/branches/main/protection --jq '.required_status_checks.contexts'`.
+Verschwindet `e2e` dort — etwa beim Umbenennen des Jobs, denn der Schutz bindet an den
+**Namen** —, laufen die Prüfungen weiter und melden weiter, nur hält sie niemand mehr auf.
+
 ### Verlässlichkeitsregime (verbindlich, nicht als Absichtserklärung)
 
 - **`retries: 0`, auch in CI** (Playwrights Vorlage setzt dort 2 — ausdrücklich abgewählt: Wiederholen macht aus einem sprunghaften Test einen *unsichtbar* sprunghaften Test). `forbidOnly: true`, `workers: 1`, `fullyParallel: false` — alle Specs teilen sich einen geseedeten Datenbestand.
