@@ -1,6 +1,6 @@
 # 0318 - Remote-Lebenszyklus: Grenze messen statt raten, und den Ablauf ehrlich machen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #323](https://github.com/TheRealKoller/photosort/pull/323))
 **Erstellt:** 2026-09-05
 **Bezug:** GitHub-Issue [`#318`](https://github.com/TheRealKoller/photosort/issues/318), ADR [`0055`](../decisions/0055-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md), Vorgänger-Specs [`0309`](./0309-story-lebenszyklus-remote-sessions.md) / [`0314`](./0314-gh-bereitstellung-remote-sessions.md) / [`0317`](./0317-setup-script-fehlerregime.md), ADR [`0052`](../decisions/0052-remote-lebenszyklus-diagnose-kommando-und-echter-board-preflight.md) (Abschnitt 6 Punkt 1 abgelöst), ADR [`0043`](../decisions/0043-spec-nummer-gleich-issue-nummer-sync-tool-entfaellt.md), ADR [`0048`](../decisions/0048-board-operationen-zielzustands-idempotent.md), `scripts/gh-board.py`, `docs/setup.md`, `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`
 
