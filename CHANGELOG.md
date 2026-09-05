@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/TheRealKoller/photosort/compare/v0.34.0...v0.35.0) (2026-09-05)
+
+
+### Features
+
+* **skills:** refinement schärft den Issue-Titel mit (Spec 0288) ([#334](https://github.com/TheRealKoller/photosort/issues/334)) ([ec0ecf3](https://github.com/TheRealKoller/photosort/commit/ec0ecf3ae25112164c38580d08583d200efc14ec))
+
 ## [0.34.0](https://github.com/TheRealKoller/photosort/compare/v0.33.0...v0.34.0) (2026-09-05)
 
 
