@@ -19,6 +19,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { authStateCoversOrigin, TOKEN_STORAGE_KEY } from '../lib/authState.ts'
 import { DEFAULT_BASE_URL, resolveBaseUrl } from '../lib/baseUrl.ts'
 import { DEMO_PROJECTS } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
@@ -172,4 +173,64 @@ test('die Ziel-Allowlist der Werkzeuge weist jede der drei Bedingungen einzeln a
 
   // Kardinalitaet: ohne sie bestuende der Test auch mit einer leergelaufenen Fallliste.
   expect(rejected.length, 'Anzahl geprueter Abweisungsgruende').toBe(4)
+})
+
+/**
+ * Der gespeicherte Anmeldezustand und die Origin, gegen die er gilt (Copilot-Fund, PR #329).
+ *
+ * Das Frontend legt sein Token in `localStorage` ab - und `localStorage` ist origin-gebunden.
+ * Wechselt der Pruefstack den Port (auf Daniels Rechner der Normalfall, weil ein laufender
+ * PhotoSort-Stack 8080 belegt), gehoert eine VORHANDENE Zustandsdatei zur alten Origin. Ein
+ * blosser Existenz-Test liesse die Ad-hoc-Werkzeuge dann still abgemeldet laufen und ein Bild
+ * der Anmeldeseite als vermeintlichen Anwendungszustand liefern.
+ *
+ * Rot-Nachweis bei Einfuehrung (2026-09-05), ausgefuehrt: mit einer `authStateCoversOrigin`,
+ * die unbesehen `true` liefert, fallen die drei Ablehnungsfaelle unten; mit der umgesetzten
+ * Fassung sind alle vier gruen.
+ */
+
+function storageStateFuer(origin: string, schluessel: string): string {
+  return JSON.stringify({
+    cookies: [],
+    origins: [{ origin, localStorage: [{ name: schluessel, value: 'ein-token' }] }],
+  })
+}
+
+test('ein Anmeldezustand gilt nur fuer die Origin, unter der er entstanden ist', () => {
+  const jetzt = 'http://localhost:8180'
+
+  // Positivfall zuerst - ohne ihn bestuende auch eine Pruefung, die schlicht ALLES verwirft und
+  // damit bei jedem Aufruf eine neue Anmeldung erzwaenge.
+  expect(
+    authStateCoversOrigin(storageStateFuer(jetzt, TOKEN_STORAGE_KEY), jetzt),
+    'passende Origin mit Token'
+  ).toBe(true)
+
+  // Je Fall ist genau ein Grund verletzt.
+  const abgelehnt: [string, string][] = [
+    // Der eigentliche Anlass: Datei vorhanden, aber vom Lauf auf dem anderen Port.
+    ['andere Origin', storageStateFuer('http://localhost:8080', TOKEN_STORAGE_KEY)],
+    // Eintrag da, aber ohne das Token - z.B. nach einem Abmelden im selben Kontext.
+    ['richtige Origin ohne Token', storageStateFuer(jetzt, 'irgendein-anderer-schluessel')],
+    // Unlesbar: im Zweifel neu anmelden. Ein `true` waere hier der stille Abgemeldet-Lauf.
+    ['unlesbarer Inhalt', '{kein gueltiges JSON'],
+  ]
+
+  for (const [grund, inhalt] of abgelehnt) {
+    expect(authStateCoversOrigin(inhalt, jetzt), `Ablehnungsgrund "${grund}"`).toBe(false)
+  }
+
+  // Kardinalitaet: ohne sie bestuende der Test auch mit einer leergelaufenen Fallliste.
+  expect(abgelehnt.length, 'Anzahl geprueter Ablehnungsgruende').toBe(3)
+})
+
+test('der Token-Schluessel der Werkzeuge stammt aus dem Frontend', () => {
+  const token = repoFile('frontend/src/auth/token.ts')
+
+  const match = /^const TOKEN_STORAGE_KEY = '([^']+)'$/m.exec(token)
+  expect(match, 'TOKEN_STORAGE_KEY in frontend/src/auth/token.ts').not.toBeNull()
+
+  // Doku-an-Code-Bindung wie oben beim Seeder: wird der Schluessel im Frontend umbenannt, faellt
+  // es hier auf - statt jeden Ad-hoc-Lauf still abgemeldet zu machen.
+  expect(TOKEN_STORAGE_KEY, 'Token-Schluessel des e2e-Pakets').toBe(match![1])
 })

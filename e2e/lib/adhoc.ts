@@ -11,11 +11,12 @@
  * Seitenfehlern und fehlgeschlagenen Netzwerkaufrufen passiert ohne Zutun des Aufrufers.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { chromium, type Browser, type BrowserContext, type Page } from '@playwright/test'
 
+import { authStateCoversOrigin } from './authState.ts'
 import { logIn } from './auth.ts'
 import { BASE_URL } from './baseUrl.ts'
 import { ARTIFACTS_DIR, AUTH_DIR, AUTH_STATE_FILE } from './paths.ts'
@@ -29,11 +30,19 @@ export interface AdhocSession {
 }
 
 /**
- * Meldet einmalig an und legt den Sitzungszustand ab, falls er fehlt. Schlaegt der Login fehl,
- * bricht `logIn` hart ab - kein Fallback auf einen anonymen Lauf (M7).
+ * Meldet an und legt den Sitzungszustand ab, falls kein fuer das AKTUELLE Ziel brauchbarer
+ * vorliegt. Schlaegt der Login fehl, bricht `logIn` hart ab - kein Fallback auf einen anonymen
+ * Lauf (M7).
+ *
+ * Geprueft wird nicht die Existenz der Datei, sondern ihre Passung zur aktuellen Origin: das
+ * Token liegt origin-gebunden in `localStorage`, und ein Portwechsel des Pruefstacks liesse eine
+ * vorhandene Datei sonst still ins Leere greifen (siehe `authState.ts`).
  */
 export async function ensureAuthState(browser: Browser): Promise<void> {
-  if (existsSync(AUTH_STATE_FILE)) {
+  const brauchbar =
+    existsSync(AUTH_STATE_FILE) &&
+    authStateCoversOrigin(readFileSync(AUTH_STATE_FILE, 'utf8'), BASE_URL)
+  if (brauchbar) {
     return
   }
   const context = await browser.newContext({ viewport: VIEWPORTS.desktop, baseURL: BASE_URL })

@@ -11,12 +11,16 @@ import { mkdirSync } from 'node:fs'
 import { test as setup, expect } from '@playwright/test'
 
 import { logIn } from '../lib/auth.ts'
+import { TOKEN_STORAGE_KEY } from '../lib/authState.ts'
 import { AUTH_DIR, AUTH_STATE_FILE } from '../lib/paths.ts'
 
 setup('anmelden und Sitzungszustand speichern', async ({ page }) => {
   await logIn(page)
 
-  const token = await page.evaluate(() => window.localStorage.getItem('photosort_token'))
+  const token = await page.evaluate(
+    (schluessel) => window.localStorage.getItem(schluessel),
+    TOKEN_STORAGE_KEY
+  )
   // Ohne diese Zusicherung koennte ein leerer storageState gespeichert werden und jeder
   // Folge-Spec liefe still abgemeldet gegen die Login-Weiterleitung.
   expect(token, 'Anmelde-Token im localStorage').not.toBeNull()
