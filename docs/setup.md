@@ -177,6 +177,55 @@ Mindestversion ausdrücklich nennt — und zwar **vor** jedem Schreibzugriff auf
 Board, es ist also nichts zurückzunehmen. Die Board-Werkzeuge installieren dabei nichts nach: sie
 melden den Zustand und reparieren ihn nicht.
 
+### Was der Story-Lebenszyklus remote trägt — und was nicht
+
+Gemessen in einer echten Remote-Session am 2026-09-05, ausführlich in
+[ADR 0056](../specs/decisions/0056-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md)
+und Spec [`0318`](../specs/features/0318-remote-lebenszyklus-grenze.md). `gh` liegt dort seit
+ADR 0053/0054 vor — die Grenze liegt woanders:
+
+- **Die vier Board-Schritte** (`status-ready`, `status-in-progress`, `status-review`,
+  `abschluss-finalisieren`) tragen dort **nicht**. Die Zwischenschicht der Session bedient
+  GraphQL nur für einen fest verdrahteten Satz von Pull-Request-Operationen und antwortet auf
+  alles andere mit `HTTP 403`. GitHub Projects (V2) spricht ausschließlich GraphQL, eine
+  REST-Entsprechung existiert nicht — für diese Schritte hilft kein Wechsel des Zugangswegs.
+- **Die Issue-Schritte sind anders gelagert.** Sie scheitern an derselben Sperre, aber
+  erkennbar deshalb, weil die benutzten `gh`-Subcommands (`gh issue list --json`,
+  `gh repo view --json`) ebenfalls GraphQL sprechen. Dieselbe Meldung benennt REST
+  (`gh api repos/{owner}/{repo}/…`) ausdrücklich als gangbaren Weg. **Ob er für die
+  Issue-Schritte trägt, ist offen** — die Messung steht noch aus, und bis sie vorliegt, wird
+  hier nichts behauptet.
+- **Vorbehalt zur Anmeldung:** Der Lauf meldet zusätzlich `The token in GH_TOKEN is invalid`.
+  Weil `gh auth status` seine Prüfung über dieselbe gesperrte API führt, kann das ein Artefakt
+  der Sperre sein — der Token muss nicht kaputt sein. Der 403 ist davon unabhängig belastbar,
+  die übrigen Prüfungen sind es nicht.
+- **Der `doctor`-Bericht greift in dieser Umgebung zu weit:** `repo_access` und `issue_read`
+  fallen in denselben 403 und blockieren über die statische Zuordnungstabelle auch
+  `pr-eroeffnen` — ausgerechnet das, was die Zwischenschicht laut eigener Auskunft bedient. Das
+  ist als Befund festgehalten und bewusst **nicht** repariert.
+
+**Was der Ablauf daraus macht:** Die vier Ablauf-Skills (`capture`, `refinement`, `spec-writer`,
+`ship-feature`) messen vor ihrem ersten Board-Aufruf einmal
+`python3 scripts/gh-board.py capabilities` (rein lesend, ein bis zwei `gh`-Aufrufe). Meldet der
+Aufruf `board_reachable: false`, wird der betroffene Schritt **nicht versucht**, alles Übrige
+läuft weiter, und der Abschlussbericht trägt einen Abschnitt `## Lokal nachzuholen` mit dem
+wörtlich kopierbaren Nachhol-Befehl. Es entsteht keine Zustandsdatei — Board-Operationen sind
+zielzustands-idempotent, der Befehl ist unverändert wiederholbar. Läuft die Messung selbst nicht
+(fehlendes Binary, unlesbare Ausgabe), gilt das als „nicht gemessen": Der Ablauf verhält sich
+dann wie bisher und versucht den Schritt.
+
+**Woran auffällt, dass dieser Abschnitt überholt ist** (fällt die Sperre, verschwinden die
+Warnungen von selbst, weil sie an der Messung hängen und nicht an einem eingetragenen Satz):
+`python3 scripts/gh-board.py doctor` meldet die Prüfung `project_visible` als **erfolgreich** und
+führt die vier Board-Schritte **nicht mehr** unter `blocked_lifecycle_steps` auf, und
+`python3 scripts/gh-board.py capabilities` meldet `board_reachable: true`. Trifft das zu, ist
+allein noch dieser Absatz nachzuziehen.
+
+**Bewusst hingenommen:** In derselben kaputten Umgebung nennt `doctor` acht blockierte Schritte
+und `capabilities` vier. Beide sind richtig — `doctor` beurteilt neun Prüfungen, `capabilities`
+misst einseitig nur die Board-Auflösung. Ein erreichbares Board ist dabei **kein** Beleg für
+Schreibzugriff.
+
 ## Cloud-Bilderkennung (optional)
 
 Zwei Kriterien/Funktionen verlassen den Homeserver — beide über denselben, projektweiten

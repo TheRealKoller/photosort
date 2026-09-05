@@ -9,11 +9,14 @@ description: Setzt eine bereits fachlich geschärfte Story (Status `Ready` auf d
 
 ## Schritt 0: Vorbedingung prüfen — ist das Issue wirklich eine Story?
 
-Bevor irgendetwas passiert, den aktuellen Status des referenzierten Issues per `scripts/gh-board.py` lesen (siehe Skill `github-board`):
+Bevor irgendetwas passiert, einmal die Board-Fähigkeit messen und danach den aktuellen Status des referenzierten Issues per `scripts/gh-board.py` lesen (siehe Skill `github-board`):
 
 ```bash
+python3 scripts/gh-board.py capabilities
 python3 scripts/gh-board.py show-status --issue <NNN>
 ```
+
+Auswertung und Verhalten des ersten Aufrufs stehen vollständig in `.claude/skills/github-board/SKILL.md`, Abschnitt „Board nicht erreichbar" — hier nicht wiederholen. Für diesen Skill heißt ein wohlgeformtes `board_reachable: false` konkret: Sowohl `show-status` als auch das `set-status Todo` aus Schritt 4 laufen durch dieselbe Board-Auflösung und scheitern damit sicher. Beide werden dann **nicht versucht**; stattdessen wird die Story-Vorbedingung („ist das Issue wirklich `Ready`?") einmal bei Daniel rückgefragt, statt sie zu raten, und der Ablauf läuft danach normal weiter. Jedes andere Ergebnis — auch ein fehlgeschlagener oder unlesbarer Aufruf — heißt „nicht gemessen" und ändert nichts: Dann wird `show-status` wie bisher abgesetzt.
 
 Ein `{"error": "..."}` (z.B. unbekannte Issue-Nummer, fehlender `project`-Scope) unverändert an Daniel weitergeben statt eines eigenen Lösungsversuchs, analog zum `github-board`-Skill.
 
@@ -83,3 +86,15 @@ Erwartetes Ergebnis: `{"issue_number": NNN, "status": "Todo"}`. Ein `{"error": "
 **Übergabe an den späteren `developer`-Aufruf:** Da dieser Skill in derselben Session läuft, die anschließend `developer` per Agent-Tool startet, braucht es keinen eigenen Übergabemechanismus — nenne den angelegten Branch-Namen im Abschlusssatz explizit (`**Feature-Branch:** feature/<NNNN>-<kurzer-slug>, bereits angelegt, Spec-Commit liegt bereits darauf`) und gib ihn wortgleich in den Start-Prompt des späteren `developer`-Aufrufs mit, damit er ihn übernimmt statt neu von `main` zu branchen (`.claude/agents/developer.md`, Schritt 0).
 
 Fasse am Ende kurz zusammen, was angelegt/geändert wurde, mit Datei-Pfaden und dem Feature-Branch-Namen.
+
+**Bei `board_reachable: false` aus Schritt 0:** Branch, Spec-Datei und Spec-Commit entstehen unverändert — nur `set-status Todo` wird ausgelassen, und der Ablauf bricht **nicht** ab. Die Zusammenfassung trägt zusätzlich diesen Abschnitt (Chat; dieser Skill schreibt selbst kein GitHub-Artefakt, in das er ihn legen könnte):
+
+```markdown
+## Lokal nachzuholen
+
+Dieser Schritt wurde ausgelassen, weil sich das Projekt-Board in dieser Umgebung nicht auflösen
+ließ (gemessen mit `python3 scripts/gh-board.py capabilities`). Die Befehle sind unverändert
+wiederholbar und lokal nachzuholen.
+
+- Board-Spalte: `python3 scripts/gh-board.py set-status --issue NNN --status Todo`
+```

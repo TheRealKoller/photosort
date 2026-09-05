@@ -10,9 +10,11 @@ Die fehleranfaellige Projects-V2-Logik (Projekt-/Feld-/Options-/Item-ID-Aufloesu
 Single-Select-Werts) liegt bewusst nur hier und nicht verstreut in den Skill-Dateien.
 
 Ausgabe ist immer ein einzelnes JSON-Objekt auf stdout, im Fehlerfall `{"error": "..."}` mit
-Exit-Code 1 - dieselbe Aufrufkonvention wie beim abgeloesten Tool. Einzige, bewusst
-dokumentierte Ausnahme ist `doctor` (ADR 0052): Es beendet sich mit Exit-Code 0, sobald ein
-Bericht entsteht, weil fehlgeschlagene Pruefungen dort der Inhalt sind und nicht das Scheitern.
+Exit-Code 1 - dieselbe Aufrufkonvention wie beim abgeloesten Tool. Davon gibt es genau ZWEI
+bewusst dokumentierte Ausnahmen, die sich beide mit Exit-Code 0 beenden, sobald ein Ergebnis
+entsteht, weil der fehlgeschlagene Zugriff dort der Inhalt ist und nicht das Scheitern:
+`doctor` (ADR 0052) und `capabilities` (ADR 0056). Ein Test prueft diese Konvention als
+Totalitaet ueber alle Befehle, damit keine dritte Ausnahme unbemerkt hinzukommt.
 
 Haertung unveraendert aus ADR 0017, Abschnitt 5: kein `shell=True`, Argumente ausschliesslich in
 Listenform, Bodies ueber temporaere Dateien statt ueber die Kommandozeile, Spec-Nummern vor jeder
@@ -1334,6 +1336,68 @@ def cmd_doctor(board: GhBoard) -> dict[str, Any]:
     }
 
 
+# -- Betriebssignal: capabilities ---------------------------------------------------------------
+
+# Steht in JEDEM Bericht, auch im Erfolgsfall - gerade dort, weil die Messung dann nichts sagt
+# (ADR 0056, Entscheidung 1). Der zweite Satz haelt die bewusst hingenommene Ungenauigkeit fest:
+# In derselben kaputten Umgebung meldet `doctor` acht Schritte und `capabilities` vier. Beide
+# sind richtig - sie beantworten verschiedene Fragen.
+CAPABILITIES_NOTE = (
+    "Ein erreichbares Board ist kein Beleg fuer Schreibzugriff. Nicht genannte Schritte sind "
+    "damit nicht als tragfaehig erwiesen. Gemessen wird ausschliesslich die Board-Aufloesung - "
+    "'doctor' prueft mehr und kann deshalb mehr Schritte nennen."
+)
+
+# Beide Texte laufen beim Einbau durch `redact_for_report` - nicht weil sie Fremdtext waeren
+# (sie stehen hier als Literal), sondern damit die Redaktion an KEINEM uebernommenen Feld
+# vorbeigeht, genau wie bei DOCTOR_NOTE. Der Nebeneffekt ist die 500-Zeichen-Kuerzung: Waechst
+# einer von beiden darueber, wuerde er stillschweigend abgeschnitten. Ein Test vergleicht die
+# Ausgabe deshalb gegen die ROHEN Konstanten und wird in dem Fall rot.
+#
+# Fester, selbst geschriebener Text: Im Erfolgsfall gelangt NICHTS aus der `gh`-Antwort in die
+# Ausgabe (Securitykonzept, Muss-Kriterium 4) - `gh project list` liefert alle Projekte des
+# Owners samt Titeln, IDs und Nummern, und keines davon ist hier eine Auskunft wert.
+CAPABILITIES_ERREICHBAR_DETAIL = (
+    "Die Board-Aufloesung ist durchgelaufen. Der Aufruf war rein lesend."
+)
+
+
+def cmd_capabilities(board: GhBoard) -> dict[str, Any]:
+    """Misst die eine zwingend auswertbare Tatsache: Laesst sich das Board aufloesen?
+
+    Ausgewertet wird nur die Richtung, in der der Schluss zwingend ist (ADR 0056, Entscheidung
+    1): Scheitert die Aufloesung, scheitert jeder Board-Schreibvorgang sicher - er muss durch
+    dieselbe Aufloesung. Gelingt sie, ist ueber den Schreibvorgang nichts bewiesen, und die
+    Ausgabe nennt keinen Schritt. Die Messung kann damit nur blockiert-melden, nie freigeben.
+
+    Kein Torwaechter: Kein Board-Befehl ruft diese Funktion, keiner wird durch sie verhindert.
+    Sie ist eine Auskunft, die ein Skill vor seinem ersten Board-Aufruf einholt.
+
+    Exit-Code 0, sobald ein Ergebnis entsteht - die zweite dokumentierte Ausnahme von der
+    `{"error": ...}`/Exit-1-Konvention (Modul-Docstring), aus demselben Grund wie bei `doctor`:
+    Ein gescheiterter Zugriff ist hier der Inhalt, nicht das Scheitern.
+    """
+    try:
+        board.project()
+    except BoardError as exc:
+        # `_explain_project_failure` redigiert `str(error)` und haengt den Deutungstext DANACH
+        # an - ohne diese zweite Anwendung auf den zusammengesetzten Text griffe die
+        # Laengenbegrenzung aus `redact_for_report` fuer `detail` faktisch nicht.
+        detail = redact_for_report(str(exc))
+        blockiert = list(BOARD_LIFECYCLE_STEPS)
+        erreichbar = False
+    else:
+        detail = redact_for_report(CAPABILITIES_ERREICHBAR_DETAIL)
+        blockiert = []
+        erreichbar = True
+    return {
+        "board_reachable": erreichbar,
+        "blocked_lifecycle_steps": blockiert,
+        "detail": detail,
+        "note": redact_for_report(CAPABILITIES_NOTE),
+    }
+
+
 # -- CLI ----------------------------------------------------------------------------------------
 
 
@@ -1392,6 +1456,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    # Ebenfalls ohne jedes Argument, aus demselben Grund wie `doctor`.
+    subparsers.add_parser(
+        "capabilities",
+        help=(
+            "Misst einseitig, ob sich das Board aufloesen laesst, und nennt im Fehlerfall die "
+            "sicher blockierten Lebenszyklus-Schritte. Rein lesend; Exit-Code 0, sobald ein "
+            "Ergebnis entsteht. Weniger Aufrufe und weniger Aussage als 'doctor': In derselben "
+            "kaputten Umgebung nennt 'doctor' mehr Schritte, weil er mehr prueft."
+        ),
+    )
+
     return parser
 
 
@@ -1424,6 +1499,8 @@ def _dispatch(args: argparse.Namespace, board: GhBoard, repo_root: Path) -> dict
         return cmd_show_status(board, issue_number=args.issue)
     if args.command == "doctor":
         return cmd_doctor(board)
+    if args.command == "capabilities":
+        return cmd_capabilities(board)
     if args.command == "finalize":
         spec_number = validate_spec_number(args.spec)
         return cmd_finalize(

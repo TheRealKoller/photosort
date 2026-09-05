@@ -33,6 +33,13 @@ Format (alle Feldnamen) ausschließlich in `.claude/agents/developer.md` definie
 1. `git branch --show-current` gegen den im Bericht genannten `**Feature-Branch:**` abgleichen. Bei Abweichung `git checkout <gemeldeter-branch>`.
 2. `git status` muss sauber sein. Ist das nicht der Fall, obwohl der Bericht "sauber, alles committet" behauptet, das nicht stillschweigend ignorieren — im Bericht vermerken und den `developer`-Subagenten per SendMessage auf die Diskrepanz hinweisen, bevor es weitergeht.
 3. `git diff --name-only main...HEAD` **selbst erneut ausführen** — das ist die verbindliche Quelle für die folgende Review-Runde, nicht die im Bericht unter "Betroffene Dateien" gelistete Liste. Weicht die selbst ermittelte Liste sichtbar von der gemeldeten ab, das im späteren Findings-Bericht vermerken statt kommentarlos zu verwerfen.
+4. Board-Fähigkeit einmal messen — hier und nicht erst in Schritt 6, weil der PR-Body aus Schritt 6.3 den Abschnitt `## Lokal nachzuholen` mitbringen muss, falls etwas ausgelassen wird:
+
+   ```bash
+   python3 scripts/gh-board.py capabilities
+   ```
+
+   Auswertung und Verhalten stehen vollständig in `.claude/skills/github-board/SKILL.md`, Abschnitt „Board nicht erreichbar" — hier nicht wiederholen. Betroffen sind in diesem Skill `set-status Review` (Schritt 6.4), `finalize` (Schritt 8) und ein etwaiges `set-status In Progress` vor dem `developer`-Start. Push, PR-Eröffnung, Copilot-Runde und Review laufen davon unberührt weiter.
 
 ## Schritt 3: `review`-Orchestrator aufrufen
 
@@ -79,6 +86,8 @@ Nach Bestätigung geht es weiter zu Schritt 6 (PR-Erstellung) bzw., falls die Fi
 
    Die Issue-Nummer ist bei neuen Specs identisch mit der Spec-Nummer (`specs/features/0262-*.md` gehört zu Issue #262); bei Altspecs `0001`–`0065` steht sie in der `**Bezug:**`-Zeile der Spec-Datei.
 
+   **Meldet die Messung aus Schritt 2.4 `status-review` als blockiert**, wird dieser Aufruf **nicht** abgesetzt und der Ablauf läuft trotzdem weiter (der PR existiert, das ist der wichtigere Teil). Der PR-Body aus 6.3 trägt dann zusätzlich den Abschnitt `## Lokal nachzuholen` — mit Schrittname, Nachhol-Befehl und dem festen Begründungssatz aus `.claude/skills/github-board/SKILL.md`, **ohne** `detail`, `note` oder irgendeine `gh`-Meldung. Dasselbe gilt für `abschluss-finalisieren` aus Schritt 8; beide Einträge stehen dann in einem gemeinsamen Abschnitt. Ist der PR-Body zu diesem Zeitpunkt bereits geschrieben, wird er einmal per `gh pr edit <PR-Nummer> --body-file <datei>` nachgezogen (nie über die Kommandozeile). Trägt auch dieser Kanal in dieser Umgebung nicht, bleibt es beim Chat-Bericht — und der sagt ausdrücklich, dass er der einzige Träger ist.
+
    Ein früherer, verfrühter `Implemented`-Bump des Spec-Status direkt nach der PR-Erstellung entfällt ersatzlos (ADR 0037, Abschnitt 4) — die eigentliche Finalisierung (Spec-Datei-Status auf `Implemented`) passiert erst in Schritt 8, nach Review und Copilot-Auswertung, aber noch **vor** dem Merge im selben PR.
 
 ## Schritt 7: Copilot-Review anfordern und auswerten
@@ -110,6 +119,8 @@ Regelweg: Der Spec-Status wird **im Feature-PR selbst** auf `Implemented` gesetz
 
    **Fehlerfall "nicht verknüpft":** Meldet der Aufruf, dass `closingIssuesReferences` keinen passenden Eintrag enthält, fehlt die Closing-Zeile aus Schritt 6.3 im PR-Body (oder sie nennt die falsche Nummer). Dann den Body nachziehen — Body in eine temporäre Datei schreiben, Zeile ergänzen, `gh pr edit <PR-Nummer> --body-file <datei>` (nie über die Kommandozeile) — und `finalize` unverändert wiederholen. Der Abbruch passiert vor jedem Schreibzugriff: Spec-Datei und Board sind unangetastet, es ist nichts zurückzunehmen. Meldet er stattdessen, der PR ziele nicht auf den Default-Branch, ist der PR gegen den falschen Basis-Branch eröffnet worden — das ist ein Fall für Daniel, nicht für eine Korrektur nebenbei. Nennt die Meldung ein zu altes `gh` (Feld unbekannt; die verlangte Mindestversion nennt die Meldung selbst, gepflegt als Konstante `MIN_GH_VERSION` in `scripts/gh-board.py`), ist es ein Werkzeugproblem und **kein** Beleg für eine fehlende Verknüpfung — dann `gh` aktualisieren statt eine Zeile nachzutragen, die längst da ist.
 
+   **Meldet die Messung aus Schritt 2.4 `abschluss-finalisieren` als blockiert**, ist davon nur der **Board-Anteil** betroffen. Der `finalize`-Aufruf wird trotzdem abgesetzt: Er schreibt die `**Status:**`-Zeile der Spec-Datei, **bevor** er das Board berührt, und scheitert erst danach — die Statuszeile landet damit noch im Feature-PR. Der erwartete Fehlschlag am Board-Anteil ist dann **keine** Meldung an Daniel im üblichen Sinn, sondern ein als ausgelassen gemeldeter Schritt: `Done` und der daran hängende Issue-Abschluss kommen mit demselben, unverändert wiederholbaren Befehl in den Abschnitt `## Lokal nachzuholen` (PR-Body und Chat-Bericht). Weiter geht es mit Punkt 3.
+
 3. Die geänderte Spec-Datei (`specs/features/NNNN-*.md`) committen, Konvention: `chore(specs): Spec NNNN finalisieren (PR #<PR-Nummer>)`, und zusammen mit ggf. noch offenen Fix-Commits pushen.
 
 4. Danach übernimmt Daniel: Freigabe und Merge. **Kein** automatisches Mergen durch dich.
@@ -130,3 +141,18 @@ Ist das Subagenten-Fenster des `developer`-Laufs bereits geschlossen (z.B. Timeo
 ## Abschlussbericht an den Nutzer
 
 Nach Abschluss (PR eröffnet, Copilot-Review ausgewertet oder aus genanntem Grund übersprungen, Spec im PR finalisiert) fasse für den Nutzer zusammen: PR-Link, Ergebnis der Finalisierung aus Schritt 8 (Statuszeile bzw. Fehlermeldung), das vom `review`-Skill gelieferte Protokoll (alle fünf Perspektiven, gelaufen ja/nein mit Begründung, Findings-Kurzfassung inkl. behobener/bewusst nicht behobener), Copilot-Ergebnis (falls gelaufen), sowie jede Stelle, an der du selbst eine technische Detailentscheidung getroffen hast (z.B. bei einem nicht-exakten Anker-Match oder einem SendMessage-Recovery-Fall).
+
+Wurde wegen `board_reachable: false` ein Board-Schritt ausgelassen, trägt der Bericht zusätzlich denselben Abschnitt, der auch im PR-Body steht:
+
+```markdown
+## Lokal nachzuholen
+
+Dieser Schritt wurde ausgelassen, weil sich das Projekt-Board in dieser Umgebung nicht auflösen
+ließ (gemessen mit `python3 scripts/gh-board.py capabilities`). Die Befehle sind unverändert
+wiederholbar und lokal nachzuholen.
+
+- `status-review`: `python3 scripts/gh-board.py set-status --issue NNN --status Review`
+- `abschluss-finalisieren`: `python3 scripts/gh-board.py finalize --spec NNNN --pr-number MMM`
+```
+
+Im Chat — und **nur** dort — kommt das Feld `detail` der Messung dazu, damit Daniel die Ursache sieht. In den PR-Body gelangt es nicht.
