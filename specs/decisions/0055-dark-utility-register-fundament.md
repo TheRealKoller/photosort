@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Datum:** 2026-09-04
-**Bezug:** [GitHub-Issue #320](https://github.com/TheRealKoller/photosort/issues/320), `specs/features/0320-dark-utility-register.md` (in Arbeit), Figma-Board „Photosort Dark" (`photosort-design-system` V1.2)
+**Bezug:** [GitHub-Issue #320](https://github.com/TheRealKoller/photosort/issues/320), `specs/features/0320-dark-utility-register.md`, Figma-Board „Photosort Dark" (`photosort-design-system` V1.2)
 
 **Nimmt ausdrücklich zurück (jeweils Akzeptanzkriterien bzw. Entwurfsentscheidungen früherer Feature-Specs, keine ADRs):**
 - [`features/0285-organic-design-import.md`](../features/0285-organic-design-import.md) AK 6 „Der Dunkelmodus bleibt erhalten" und AK 7 „Kontrast … in **beiden** Farbschemata", sowie die dortige Abweichung 6 („Dunkelmodus abgeleitet, nicht übernommen … wird nicht aufgegeben"). Beide setzen zwei Farbschemata voraus; ab dieser ADR gibt es nur noch eines. Punkt 1 begründet das.
