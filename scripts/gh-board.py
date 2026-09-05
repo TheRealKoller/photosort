@@ -1334,6 +1334,62 @@ def cmd_doctor(board: GhBoard) -> dict[str, Any]:
     }
 
 
+# -- Betriebssignal: capabilities ---------------------------------------------------------------
+
+# Steht in JEDEM Bericht, auch im Erfolgsfall - gerade dort, weil die Messung dann nichts sagt
+# (ADR 0055, Entscheidung 1). Der zweite Satz haelt die bewusst hingenommene Ungenauigkeit fest:
+# In derselben kaputten Umgebung meldet `doctor` acht Schritte und `capabilities` vier. Beide
+# sind richtig - sie beantworten verschiedene Fragen.
+CAPABILITIES_NOTE = (
+    "Ein erreichbares Board ist kein Beleg fuer Schreibzugriff. Nicht genannte Schritte sind "
+    "damit nicht als tragfaehig erwiesen. Gemessen wird ausschliesslich die Board-Aufloesung - "
+    "'doctor' prueft mehr und kann deshalb mehr Schritte nennen."
+)
+
+# Fester, selbst geschriebener Text: Im Erfolgsfall gelangt NICHTS aus der `gh`-Antwort in die
+# Ausgabe (Securitykonzept, Muss-Kriterium 4) - `gh project list` liefert alle Projekte des
+# Owners samt Titeln, IDs und Nummern, und keines davon ist hier eine Auskunft wert.
+CAPABILITIES_ERREICHBAR_DETAIL = (
+    "Die Board-Aufloesung ist durchgelaufen. Der Aufruf war rein lesend."
+)
+
+
+def cmd_capabilities(board: GhBoard) -> dict[str, Any]:
+    """Misst die eine zwingend auswertbare Tatsache: Laesst sich das Board aufloesen?
+
+    Ausgewertet wird nur die Richtung, in der der Schluss zwingend ist (ADR 0055, Entscheidung
+    1): Scheitert die Aufloesung, scheitert jeder Board-Schreibvorgang sicher - er muss durch
+    dieselbe Aufloesung. Gelingt sie, ist ueber den Schreibvorgang nichts bewiesen, und die
+    Ausgabe nennt keinen Schritt. Die Messung kann damit nur blockiert-melden, nie freigeben.
+
+    Kein Torwaechter: Kein Board-Befehl ruft diese Funktion, keiner wird durch sie verhindert.
+    Sie ist eine Auskunft, die ein Skill vor seinem ersten Board-Aufruf einholt.
+
+    Exit-Code 0, sobald ein Ergebnis entsteht - die zweite dokumentierte Ausnahme von der
+    `{"error": ...}`/Exit-1-Konvention (Modul-Docstring), aus demselben Grund wie bei `doctor`:
+    Ein gescheiterter Zugriff ist hier der Inhalt, nicht das Scheitern.
+    """
+    try:
+        board.project()
+    except BoardError as exc:
+        # `_explain_project_failure` redigiert `str(error)` und haengt den Deutungstext DANACH
+        # an - ohne diese zweite Anwendung auf den zusammengesetzten Text griffe die
+        # Laengenbegrenzung aus `redact_for_report` fuer `detail` faktisch nicht.
+        detail = redact_for_report(str(exc))
+        blockiert = list(BOARD_LIFECYCLE_STEPS)
+        erreichbar = False
+    else:
+        detail = redact_for_report(CAPABILITIES_ERREICHBAR_DETAIL)
+        blockiert = []
+        erreichbar = True
+    return {
+        "board_reachable": erreichbar,
+        "blocked_lifecycle_steps": blockiert,
+        "detail": detail,
+        "note": redact_for_report(CAPABILITIES_NOTE),
+    }
+
+
 # -- CLI ----------------------------------------------------------------------------------------
 
 

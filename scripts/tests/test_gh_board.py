@@ -2826,3 +2826,198 @@ def test_scope_hint_behaelt_seinen_text_fuer_den_echten_token_auth_fall(
 
     assert "typisch bei Token-Authentifizierung" in pruefung["detail"]
     assert pruefung["ok"] is True
+
+
+# -- capabilities: Bericht (ADR 0055) ----------------------------------------------------------
+
+
+# Der eine Aufruf, der die Messung ist - in genau der Form, die `GhBoard.project()` konstruiert.
+BOARD_AUFLOESUNG = ["gh", "project", "list", "--owner", OWNER, "--format", "json"]
+AUTH_DEUTUNG = ["gh", "auth", "status"]
+
+# Die Lebenszyklus-Schritte, die NICHT ueber das Board laufen. Bewusst ausgeschrieben, damit die
+# Parametrisierung zur Sammelzeit feststeht; die erste Assertion jedes Falls haelt sie gegen die
+# Quellkonstanten und wird rot, sobald dort etwas driftet.
+NICHT_BOARD_SCHRITTE = (
+    "idee-erfassen",
+    "issue-body-schreiben",
+    "spec-anlegen",
+    "pr-eroeffnen",
+)
+
+
+def _capabilities(gh_board: ModuleType, fake: FakeGh) -> dict:
+    return gh_board.cmd_capabilities(_board(gh_board, fake))
+
+
+def _unerreichbares_board(**kwargs) -> FakeGh:
+    """Die Board-Aufloesung scheitert am Aufruf selbst - der Fall, den `capabilities` messen
+    soll (remote: die GraphQL-Sperre der Zwischenschicht)."""
+    kwargs.setdefault("failing", {("gh", "project", "list")})
+    kwargs.setdefault(
+        "failure_stderr",
+        {("gh", "project", "list"): "HTTP 403: This GraphQL query is not enabled"},
+    )
+    return _gesunder_fake(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("fake_factory", "erreichbar"),
+    [
+        pytest.param(_gesunder_fake, True, id="board-erreichbar"),
+        pytest.param(_unerreichbares_board, False, id="board-unerreichbar"),
+    ],
+)
+def test_capabilities_berichtsstruktur_ist_in_beiden_faellen_festgelegt(
+    gh_board: ModuleType, fake_factory, erreichbar: bool
+) -> None:
+    """Ein Skill, der wie ueberall sonst auf `"error" in payload` prueft, darf hier nie
+    anschlagen: Ein unerreichbares Board ist der Inhalt dieses Berichts, nicht sein Scheitern."""
+    bericht = _capabilities(gh_board, fake_factory())
+
+    assert set(bericht) == {"board_reachable", "blocked_lifecycle_steps", "detail", "note"}
+    assert bericht["board_reachable"] is erreichbar
+    assert isinstance(bericht["blocked_lifecycle_steps"], list)
+    assert all(isinstance(schritt, str) for schritt in bericht["blocked_lifecycle_steps"])
+    assert isinstance(bericht["detail"], str) and bericht["detail"]
+    assert "error" not in bericht
+
+
+def test_ein_erreichbares_board_meldet_eine_leere_schrittliste(gh_board: ModuleType) -> None:
+    """Leere Liste, nicht `null`: Der Ablauf iteriert darueber, ohne auf einen Sonderwert zu
+    pruefen."""
+    bericht = _capabilities(gh_board, _gesunder_fake())
+
+    assert bericht["board_reachable"] is True
+    assert bericht["blocked_lifecycle_steps"] == []
+
+
+def test_ein_unerreichbares_board_meldet_genau_die_vier_board_schritte(
+    gh_board: ModuleType,
+) -> None:
+    bericht = _capabilities(gh_board, _unerreichbares_board())
+
+    assert bericht["board_reachable"] is False
+    assert bericht["blocked_lifecycle_steps"] == list(gh_board.BOARD_LIFECYCLE_STEPS)
+
+
+def test_die_blockierten_schritte_stammen_aus_der_quellkonstante(
+    gh_board: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verhaltensnachweis statt Buchhaltung (Testkonzept, Erweiterung fuer ADR 0055): Zwei
+    Konstanten zu vergleichen zeigt nur, dass jemand beide gleich abgeschrieben hat. Wird die
+    Quelle ausgetauscht, muss die Ausgabe mitwandern - sonst ist sie danebengeschrieben."""
+    monkeypatch.setattr(gh_board, "BOARD_LIFECYCLE_STEPS", ("sentinel-schritt",))
+
+    bericht = _capabilities(gh_board, _unerreichbares_board())
+
+    assert bericht["blocked_lifecycle_steps"] == ["sentinel-schritt"]
+
+
+def test_capabilities_nennt_dieselben_schritte_wie_die_doctor_zuordnung(
+    gh_board: ModuleType,
+) -> None:
+    """Zwei Kommandos, die dieselbe Frage verschieden beantworten, waeren schlimmer als kein
+    zweites Kommando (ADR 0055, Eigenschaft 4)."""
+    bericht = _capabilities(gh_board, _unerreichbares_board())
+
+    assert bericht["blocked_lifecycle_steps"] == list(
+        gh_board.PROBE_LIFECYCLE_STEPS["project_visible"]
+    )
+
+
+def test_capabilities_meldet_nie_mehr_als_doctor_und_nie_weniger_als_die_board_zeile(
+    gh_board: ModuleType,
+) -> None:
+    """Dieselbe kaputte Umgebung durch beide Kommandos: `doctor` darf mehr Schritte nennen (er
+    prueft mehr), aber nie weniger als die Board-Zeile seiner eigenen Tabelle."""
+    doctor_bericht = _doctor(gh_board, _unerreichbares_board())
+    capabilities_bericht = _capabilities(gh_board, _unerreichbares_board())
+
+    gemeldet = set(capabilities_bericht["blocked_lifecycle_steps"])
+    assert gemeldet <= set(doctor_bericht["blocked_lifecycle_steps"])
+    assert set(gh_board.PROBE_LIFECYCLE_STEPS["project_visible"]) <= gemeldet
+
+
+@pytest.mark.parametrize("schritt", NICHT_BOARD_SCHRITTE)
+def test_ein_schritt_ausserhalb_des_boards_wird_nie_als_blockiert_gemeldet(
+    gh_board: ModuleType, schritt: str
+) -> None:
+    """Insbesondere `idee-erfassen`: Waere es dabei, liesse `capture` genau den Schritt aus, der
+    auch bei unsichtbarem Board nachweislich durchlaeuft (das Issue entsteht vor der
+    Board-Aufnahme)."""
+    assert set(NICHT_BOARD_SCHRITTE) == set(gh_board.LIFECYCLE_STEPS) - set(
+        gh_board.BOARD_LIFECYCLE_STEPS
+    )
+
+    bericht = _capabilities(gh_board, _unerreichbares_board())
+
+    assert schritt not in bericht["blocked_lifecycle_steps"]
+
+
+def test_ein_erreichbares_board_belegt_keinen_schreibzugriff(gh_board: ModuleType) -> None:
+    """Die Messung ist einseitig: Sie kann Schritte als sicher blockiert ausweisen, nie einen
+    freigeben. Der ausfuehrbare Waechter dagegen, dass das Kommando spaeter zum Orakel wird."""
+    fake = _gesunder_fake(failing={("gh", "project", "item-edit"), ("gh", "issue", "edit")})
+
+    bericht = _capabilities(gh_board, fake)
+
+    assert bericht["board_reachable"] is True
+    assert bericht["blocked_lifecycle_steps"] == []
+
+
+@pytest.mark.parametrize(
+    "fake_factory",
+    [
+        pytest.param(_gesunder_fake, id="board-erreichbar"),
+        pytest.param(_unerreichbares_board, id="board-unerreichbar"),
+    ],
+)
+def test_die_note_benennt_in_beiden_faellen_die_grenze_der_messung(
+    gh_board: ModuleType, fake_factory
+) -> None:
+    """Gerade im Erfolgsfall gebraucht: Dort sagt die Messung nichts, und genau das muss
+    dabeistehen."""
+    note = _capabilities(gh_board, fake_factory())["note"]
+
+    assert note == gh_board.redact_for_report(gh_board.CAPABILITIES_NOTE)
+    assert "kein Beleg" in note
+    assert "doctor" in note
+
+
+@pytest.mark.parametrize(
+    ("fake_factory", "erwartete_aufrufe"),
+    [
+        pytest.param(_gesunder_fake, [BOARD_AUFLOESUNG], id="erfolgsfall-ein-aufruf"),
+        pytest.param(
+            _unerreichbares_board,
+            [BOARD_AUFLOESUNG, AUTH_DEUTUNG],
+            id="fehlerfall-plus-deutung",
+        ),
+    ],
+)
+def test_die_aufrufliste_ist_exakt_festgelegt(
+    gh_board: ModuleType, fake_factory, erwartete_aufrufe: list[list[str]]
+) -> None:
+    """Als exakte Liste, nicht als Obergrenze (ADR 0055, Eigenschaft 1): `capabilities` laeuft
+    vor JEDEM Ablauf, ein stillschweigend hinzugekommener Aufruf waere dort teuer."""
+    fake = fake_factory()
+
+    _capabilities(gh_board, fake)
+
+    assert fake.calls == erwartete_aufrufe
+
+
+@pytest.mark.parametrize("kaputt", [False, True])
+def test_capabilities_setzt_keinen_einzigen_schreibenden_gh_aufruf_ab(
+    gh_board: ModuleType, kaputt: bool
+) -> None:
+    """Gewichtiger als bei `doctor`: Der Lauf steht vor jedem Ablauf und in Umgebungen, die
+    noch nicht beurteilt sind (Securitykonzept, Muss-Kriterium 7)."""
+    fake = _unerreichbares_board() if kaputt else _gesunder_fake()
+
+    _capabilities(gh_board, fake)
+
+    assert fake.calls
+    for verboten in SCHREIBENDE_GH_AUFRUFE:
+        assert fake.calls_starting_with(*verboten) == []
