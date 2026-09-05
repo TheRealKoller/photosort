@@ -1,6 +1,6 @@
 # 0320 - Design-System "Dark Utility Register" (Fundament)
 
-**Status:** Implemented
+**Status:** Implemented ([PR #322](https://github.com/TheRealKoller/photosort/pull/322))
 **Erstellt:** 2026-09-04
 **Bezug:** [GitHub-Issue #320](https://github.com/TheRealKoller/photosort/issues/320), ADR [`0055-dark-utility-register-fundament.md`](../decisions/0055-dark-utility-register-fundament.md), Board-Referenz [`architecture/0005-board-dark-utility-register.md`](../architecture/0005-board-dark-utility-register.md) (Figma „Photosort Dark", `photosort-design-system` V1.2)
 
