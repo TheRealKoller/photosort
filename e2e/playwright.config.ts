@@ -12,7 +12,14 @@ import { ARTIFACTS_DIR, AUTH_STATE_FILE } from './lib/paths.ts'
 import { VIEWPORTS } from './lib/viewports.ts'
 
 // Nur bei 360px sinnvoll bzw. nur einmal noetig - siehe Kommentare an den jeweiligen Specs.
-const MOBILE_ONLY = [/tap-targets\.spec\.ts/, /no-horizontal-scroll\.spec\.ts/]
+const MOBILE_ONLY = [
+  /tap-targets\.spec\.ts/,
+  /no-horizontal-scroll\.spec\.ts/,
+  // Kollisionsvermeidung ist erst im schmalen Viewport eine echte Frage: bei 1280 px liegt der
+  // auf max-w-5xl begrenzte Inhaltsbereich so weit von den Fensterraendern entfernt, dass kein
+  // Panel anstiesse - der Spec liefe dort gruen, ohne die Eigenschaft herauszufordern.
+  /popover-position\.spec\.ts/,
+]
 const DESKTOP_ONLY = [/grid-columns\.spec\.ts/, /login\.spec\.ts/, /toolchain\.spec\.ts/]
 
 export default defineConfig({
