@@ -82,7 +82,7 @@ export function ProjectSettingsPage() {
                 <button
                   type="button"
                   aria-label="Erkläre Cloud-Bilderkennung"
-                  className="flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-xs font-semibold text-text transition-colors hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                  className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md border border-border-control text-xs font-semibold text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text-muted"
                 >
                   i
                 </button>
@@ -92,7 +92,7 @@ export function ProjectSettingsPage() {
                   <p className="text-sm font-semibold text-text-h">Cloud-Bilderkennung</p>
                   <PopoverClose
                     aria-label="Schließen"
-                    className="flex size-8 shrink-0 items-center justify-center rounded-full text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text-muted"
                   >
                     <span aria-hidden="true">×</span>
                   </PopoverClose>

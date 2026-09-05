@@ -60,7 +60,7 @@ export function LoginPage() {
     <main className="flex min-h-screen flex-col justify-center bg-bg px-8 py-10 sm:px-10">
       <div className="mx-auto w-full max-w-sm">
         <BrandMark className="mb-7" />
-        <h1 className="mb-1 text-4xl">PhotoSort</h1>
+        <h1 className="mb-1 text-3xl">PhotoSort</h1>
         <p className="mb-7 text-sm text-text">Melde dich an, um deine Ordner zu sortieren.</p>
 
         {state.reason === 'expired' && !errorDetail && (

@@ -8,15 +8,32 @@ const OPTIONS: { status: RatingStatus; label: string }[] = [
 ]
 
 // Bewertungsfarben (specs/architecture/0004-design-system.md) - nur auf dem aktiv gedrueckten
-// Button als volle Chip-Flaeche, nicht auf allen dreien, damit "auf einen Blick" erkennbar bleibt,
+// Button als volle Flaeche, nicht auf allen dreien, damit "auf einen Blick" erkennbar bleibt,
 // welche Stufe tatsaechlich gesetzt ist. Als Beschriftungsfarbe die tonspezifische
-// `--rating-<ton>-fg` (dieselbe Kalibrierung wie bei Badge) - keine gemeinsame Vordergrundfarbe,
-// weil keine einzige gegen alle drei Bewertungstoene WCAG-AA haelt (siehe Kommentar in index.css).
+// `--rating-<ton>-fg` (dieselbe Kalibrierung wie bei Badge) - die tonspezifische Kopplung bleibt
+// bestehen, auch wenn alle drei Toene seit ADR 0055 Punkt 4e denselben Wert tragen.
+//
+// `active:` ist Pflicht: Tailwind bindet `hover:` an `@media (hover: hover)`, am Telefon faellt
+// der Zustand also ersatzlos weg - und das Bewerten ist genau die Handlung, die dort stattfindet.
 const ACTIVE_TONE_CLASSES: Record<RatingStatus, string> = {
-  favorite: 'bg-rating-favorite text-rating-favorite-fg hover:opacity-90',
-  album_worthy: 'bg-rating-album-worthy text-rating-album-worthy-fg hover:opacity-90',
-  rejected: 'bg-rating-rejected text-rating-rejected-fg hover:opacity-90',
+  favorite: 'bg-rating-favorite text-rating-favorite-fg hover:opacity-85 active:opacity-70',
+  album_worthy: 'bg-rating-album-worthy text-rating-album-worthy-fg hover:opacity-85 active:opacity-70',
+  rejected: 'bg-rating-rejected text-rating-rejected-fg hover:opacity-85 active:opacity-70',
 }
+
+/*
+ * HEISSER PFAD (specs/features/0320-dark-utility-register.md, UI/UX-Abschnitt 3, Stakeholder-
+ * Entscheidung): Bewertungsschaltflaechen werden waehrend des Sichtens wiederholt und schnell
+ * getroffen, und ein Fehlgriff schreibt hier einen falschen DATENWERT, kein blosses Aergernis.
+ * Deshalb am Telefon SICHTBAR mindestens 44px hoch, am Desktop das Board-Mass 32px - man zielt auf
+ * das, was man sieht.
+ *
+ * Der Abstand ist aus demselben Grund 12px (`gap-3`) statt der frueheren 8px: die
+ * Trefferflaechen-Aufspannung ragt bis zu 6px je Seite ueber das Sichtbare hinaus, bei 8px
+ * ueberlappen die Trefferflaechen benachbarter Schaltflaechen - und in der Ueberlappung gewinnt
+ * das obenliegende Element.
+ */
+const HOT_PATH_HEIGHT = 'h-11 sm:h-8'
 
 interface RatingButtonsProps {
   currentStatus: RatingStatus | null
@@ -53,18 +70,20 @@ export function RatingButtons({
   const isDisabled = disabled || busy
 
   return (
-    <div role="group" aria-label="Bewertung" className="flex flex-wrap items-center gap-2">
+    <div role="group" aria-label="Bewertung" className="flex flex-wrap items-center gap-3">
       {OPTIONS.map((option) => {
         const isActive = currentStatus === option.status
         return (
           <Button
             key={option.status}
             type="button"
-            variant={isActive ? 'default' : 'outline'}
+            variant={isActive ? 'default' : 'secondary'}
             aria-label={option.label}
             aria-pressed={isActive}
             disabled={isDisabled}
-            className={isActive ? ACTIVE_TONE_CLASSES[option.status] : undefined}
+            className={
+              isActive ? `${HOT_PATH_HEIGHT} ${ACTIVE_TONE_CLASSES[option.status]}` : HOT_PATH_HEIGHT
+            }
             onClick={() => onToggle(option.status)}
           >
             {option.label}

@@ -80,7 +80,7 @@ export function CategorySelect({
       <select
         id={selectId}
         aria-describedby={hintId}
-        className="h-11 rounded-full border border-border bg-surface px-4 text-sm text-text-h disabled:opacity-60"
+        className="h-11 rounded-sm border border-border-control bg-surface px-3 text-sm text-text-h disabled:border-border disabled:text-text-disabled"
         value={selectedValue}
         disabled={isLoading || pending || orderedKeys.length === 0}
         onChange={(event) => {

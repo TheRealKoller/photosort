@@ -94,7 +94,7 @@ export function PhotoGridPage() {
       <h1 className="text-2xl">Fotos</h1>
 
       {isGateMode && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-accent-border bg-accent-bg p-4 text-sm">
+        <div className="flex flex-col items-start gap-3 rounded-md border border-accent bg-elevated p-4 text-sm">
           <p className="text-text-h">
             Sichte den erkannten Ausschuss ({totalSuggested}{' '}
             {totalSuggested === 1 ? 'Kandidat' : 'Kandidaten'}), bevor du fortfährst. Einzelne
@@ -202,7 +202,7 @@ export function PhotoGridPage() {
                 <div className="relative">
                   <Link
                     to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
-                    className="group block aspect-square overflow-hidden rounded-md border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                    className="group block aspect-square overflow-hidden rounded-md border border-border"
                   >
                     <PhotoImage
                       photoId={photo.id}

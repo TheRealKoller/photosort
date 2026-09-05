@@ -640,6 +640,93 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
   })
 })
 
+describe('Design-Vertrag: Formsprache und Skalen', () => {
+  /*
+   * Das Board kennt keine vollrunden Pillen mehr - ausser den Kategorie-Chips, und die tragen
+   * Radius 16px (`rounded-xl`), nicht `rounded-full`. Diese Liste ist abschliessend: jede weitere
+   * Fundstelle ist ein Fehler.
+   */
+  const ROUNDED_FULL_ALLOWLIST: Record<string, string> = {
+    'src/components/ui/switch.tsx': 'Schalter-Spur und -Knauf (Board-Geometrie, vollrund)',
+    'src/components/ui/button.tsx': 'Lade-Spinner im Button',
+    'src/components/StatusTag.tsx': 'Lade-Spinner in der Status-Pille',
+    'src/components/FolderBrowser.tsx': 'Lade-Spinner im Ordner-Browser',
+    'src/components/StatusDot.tsx': 'Prozess-Status-Punkt',
+    'src/components/CriterionDetailsPopover.tsx': 'runder Backdrop des Popover-Triggers ueber der Fotokachel',
+    'src/components/CategoryOverrideMarker.tsx': 'runder Backdrop des Uebersteuerungs-Markers ueber der Fotokachel',
+  }
+
+  it('verwendet rounded-full nur noch an der abschliessenden Liste', () => {
+    const offenders = tsxFiles()
+      .filter((file) => stripComments(file.content).includes('rounded-full'))
+      .map((file) => file.label)
+      .filter((label) => !Object.hasOwn(ROUNDED_FULL_ALLOWLIST, label))
+    expect(offenders).toEqual([])
+  })
+
+  it('haelt die Radienskala auf den fuenf Board-Werten', () => {
+    for (const [utility, value] of [
+      ['xs', '4px'],
+      ['sm', '6px'],
+      ['md', '8px'],
+      ['lg', '12px'],
+      ['xl', '16px'],
+    ]) {
+      expect(indexCss).toMatch(new RegExp(`--radius-${utility}:\\s*${value};`))
+    }
+  })
+
+  it('verwendet das 12-Spalten-Raster mit 12px Zwischenraum an mindestens einer Stelle', () => {
+    // Sonst waere es totes Inventar und nicht abnehmbar.
+    const users = tsxFiles().filter((file) => {
+      const source = stripComments(file.content)
+      return source.includes('grid-cols-12') && /gap(-x)?-3\b/.test(source)
+    })
+    expect(users.length).toBeGreaterThan(0)
+  })
+})
+
+describe('Design-Vertrag: Typoskala', () => {
+  it('legt die Board-Groessen auf die bestehenden Tailwind-Stufen', () => {
+    for (const [utility, value] of [
+      ['xs', '12px'],
+      ['sm', '14px'],
+      ['base', '16px'],
+      ['lg', '20px'],
+      ['xl', '24px'],
+      ['2xl', '40px'],
+      ['3xl', '64px'],
+    ]) {
+      expect(indexCss).toMatch(new RegExp(`--text-${utility}:\\s*${value};`))
+    }
+  })
+
+  it('erzeugt fuer text-4xl und groesser keine Regel mehr', async () => {
+    const compiled = await compile(indexCss, { base: SRC_DIR, onDependency: () => {} })
+    const baseline = compiled.build([])
+    for (const utility of ['text-4xl', 'text-5xl', 'text-6xl', 'text-7xl', 'text-8xl', 'text-9xl']) {
+      expect(compiled.build([utility]), utility).toBe(baseline)
+    }
+    // Gegenprobe: die verbliebenen Stufen erzeugen sehr wohl eine Regel - sonst bestuende der
+    // Test auch bei einer voellig kaputten Skala.
+    for (const utility of ['text-xs', 'text-3xl']) {
+      expect(compiled.build([utility]), utility).not.toBe(baseline)
+    }
+  }, 30_000)
+
+  it('erzeugt fuer die Organic-Abstandsskala keine Regel mehr, wohl aber fuer das 8-Punkt-Raster', async () => {
+    const compiled = await compile(indexCss, { base: SRC_DIR, onDependency: () => {} })
+    const baseline = compiled.build([])
+    for (const utility of ['p-o1', 'p-o4', 'p-o8']) {
+      expect(compiled.build([utility]), utility).toBe(baseline)
+    }
+    // Die acht Stufen 4/8/12/16/24/32/48/64 kommen aus Tailwinds Default- --spacing.
+    for (const utility of ['p-1', 'p-2', 'p-3', 'p-4', 'p-6', 'p-8', 'p-12', 'p-16']) {
+      expect(compiled.build([utility]), utility).not.toBe(baseline)
+    }
+  }, 30_000)
+})
+
 // ---------------------------------------------------------------------------------------------
 // Kompilier-Pruefung
 // ---------------------------------------------------------------------------------------------

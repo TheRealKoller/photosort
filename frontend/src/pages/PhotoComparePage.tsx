@@ -61,7 +61,7 @@ export function PhotoComparePage() {
               <li key={photo.id} className="flex flex-col gap-2 rounded-xl border border-border p-2">
                 <Link
                   to={`/projects/${id}/photos/${photo.id}`}
-                  className="block aspect-square overflow-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                  className="block aspect-square overflow-hidden rounded-md"
                 >
                   {/* Spec 0002 (Bild-Auflösungen): "Einzelbild-/Vergleichsansicht
                       Display-Auflösung" - bewusst dieselbe Auflösung wie PhotoDetailPage,

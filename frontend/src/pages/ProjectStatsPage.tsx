@@ -40,7 +40,7 @@ import {
  */
 
 /** Wiederkehrendes Muster "Grosszahl + Label" (Design-System/UI-Abschnitt der Spec): der Wert in
- * `text-2xl`, darunter das Label klein. Rein typografisch, kein eigener Hintergrund, kein
+ * `text-xl`, darunter das Label klein. Rein typografisch, kein eigener Hintergrund, kein
  * Rahmen. */
 function Metric({
   value,
@@ -54,8 +54,8 @@ function Metric({
   children?: ReactNode
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <span className="text-2xl font-medium text-text-h">{value}</span>
+    <div className="col-span-12 flex min-w-0 flex-col gap-1 sm:col-span-6 lg:col-span-3">
+      <span className="text-xl font-semibold text-text-h">{value}</span>
       <span className="flex items-center gap-1 text-sm text-text">
         {label}
         {info}
@@ -65,9 +65,18 @@ function Metric({
   )
 }
 
-/** Kennzahlen stehen auf breiten Schirmen nebeneinander und auf dem Smartphone gestapelt. */
+/**
+ * Kennzahlen stehen auf breiten Schirmen nebeneinander und auf dem Smartphone gestapelt.
+ *
+ * Die erste Verwendung des 12-Spalten-Rasters des Boards (Spaltenbreite fluessig, Zwischenraum
+ * 12px = `gap-x-3`, specs/architecture/0005-board-dark-utility-register.md Abschnitt 4). Bewusst
+ * hier und nicht als Seitengeruest: eine Kennzahlenreihe ist genau der Fall, fuer den ein festes
+ * Spaltenraster gegenueber `flex-wrap` etwas bringt - die Werte stehen untereinander auf einer
+ * Achse statt inhaltsabhaengig zu springen. Die Neuordnung der Seitenlayouts selbst ist Stufe 2
+ * (Issue #321).
+ */
 function MetricRow({ children }: { children: ReactNode }) {
-  return <div className="flex flex-wrap gap-x-10 gap-y-6">{children}</div>
+  return <div className="grid grid-cols-12 gap-x-3 gap-y-6">{children}</div>
 }
 
 function Section({
@@ -101,7 +110,7 @@ function InfoPopover({ label, children }: { label: string; children: ReactNode }
         <button
           type="button"
           aria-label={`Erkläre ${label}`}
-          className="flex size-11 shrink-0 items-center justify-center rounded-full border border-border text-xs font-semibold text-text transition-colors hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+          className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md border border-border-control text-xs font-semibold text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text-muted"
         >
           i
         </button>
@@ -111,7 +120,7 @@ function InfoPopover({ label, children }: { label: string; children: ReactNode }
           <p className="text-sm font-semibold text-text-h">{label}</p>
           <PopoverClose
             aria-label="Schließen"
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text-muted"
           >
             <span aria-hidden="true">×</span>
           </PopoverClose>
