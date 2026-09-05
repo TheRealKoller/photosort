@@ -1,6 +1,6 @@
 # 0327 - Board-Lebenszyklus nativ: `Todo` entfällt, `gh-board.py` wird gelöscht
 
-**Status:** Accepted
+**Status:** Implemented ([PR #328](https://github.com/TheRealKoller/photosort/pull/328))
 **Erstellt:** 2026-09-05
 **Bezug:** GitHub-Issue [`#327`](https://github.com/TheRealKoller/photosort/issues/327) („Flow für tickets neu denken"), löst [`#305`](https://github.com/TheRealKoller/photosort/issues/305) mit ab. Architekturentscheidung: ADR [`0057`](../decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md).
 

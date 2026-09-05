@@ -181,10 +181,9 @@ def claude_dateien(wurzel: Path = REPO_WURZEL) -> dict[str, str]:
 def test_alle_board_aufrufe_nennen_gueltige_felder_und_werte() -> None:
     aufrufe = aufrufe_im_abbild(claude_dateien())
 
-    assert not verstoesse(aufrufe), (
-        "Ungueltige Board-Befehlszeile(n) unter .claude/: "
-        + "; ".join(verstoesse(aufrufe))
-    )
+    befunde = verstoesse(aufrufe)
+
+    assert not befunde, "Ungueltige Board-Befehlszeile(n) unter .claude/: " + "; ".join(befunde)
 
 
 def test_der_suchraum_enthaelt_die_befehlssammlung() -> None:

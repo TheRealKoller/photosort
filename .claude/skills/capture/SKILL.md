@@ -33,7 +33,7 @@ Der Rohtext ist bewusst ungefiltert — das spätere Schärfen arbeitet mit dies
 gh issue create --repo TheRealKoller/photosort --title "$(cat <titel-datei>)" --body-file <body-datei> --label <idee|bug>
 ```
 
-Der Aufruf gibt die URL des neuen Issues aus; daraus stammt die Issue-Nummer `NNN` für Schritt 4.
+Der Aufruf gibt die URL des neuen Issues aus. Daraus wird die Issue-Nummer `NNN` für Schritt 4 gewonnen — und das ist die **einzige** Stelle im gesamten Ablauf, an der eine Zahl aus einer `gh`-Ausgabe stammt (siehe die Ausnahme in [`github-board`](../github-board/SKILL.md), Abschnitt „Verbindliche Regeln beim Einsetzen von Werten"). Sie wird deshalb **geparst und gegen `^[0-9]+$` validiert**, bevor sie irgendwo weiterverwendet wird; weiterverwendet wird ausschließlich die geprüfte Zahl, nie die ausgegebene Zeichenkette. Passt sie nicht auf das Muster, wird abgebrochen und Daniel die Ausgabe unverändert gemeldet.
 
 Scheitert er (Exit-Code ≠ 0), ist **nichts** entstanden: Meldung unverändert an Daniel weitergeben, kein eigener Lösungsversuch, Schritt 4 entfällt.
 
