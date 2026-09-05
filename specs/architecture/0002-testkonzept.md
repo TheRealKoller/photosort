@@ -591,7 +591,7 @@ Der Hauptfehlermodus dieser Ebene ist nicht der falsch-rote, sondern der **immer
 
 ### Umfang: welche Specs es gibt und woran jeder scheitert
 
-Der Satz bleibt klein und deckt genau die zuvor als „manueller **visueller** Smoke-Test vor Merge" geführten Punkte ab. Je Spec ist festgehalten, welche Vorbedingung den trivialen Grün-Fall ausschließt:
+Der Satz bleibt klein und deckt mit seinen ersten sieben Specs genau die zuvor als „manueller **visueller** Smoke-Test vor Merge" geführten Punkte ab. Der achte, `toolchain`, prüft nicht die Anwendung, sondern die Zusagen dieser Prüfebene selbst — er steht bewusst im selben blockierenden Lauf, weil eine Zusage, die nur in einer Konfigurationsdatei steht, sich still wegkonfigurieren lässt. Je Spec ist festgehalten, welche Vorbedingung den trivialen Grün-Fall ausschließt:
 
 | Spec | Prüft | Was ihn bei kaputtem Layout rot macht |
 |---|---|---|
@@ -602,6 +602,7 @@ Der Satz bleibt klein und deckt genau die zuvor als „manueller **visueller** S
 | `no-horizontal-scroll` | `scrollWidth ≤ clientWidth` bei 360 px über die Hauptrouten | Vorbedingung je Route: eine bekannte Überschrift ist sichtbar und die Seite hat vertikalen Inhalt — sonst bestünde eine leere Seite |
 | `empty-and-error-states` | `Demo — Leeres Projekt` und `Demo — Fehlerzustand` rendern sichtbaren Text statt weißer Fläche; der Ordner-Browser zeigt ohne OpenCloud eine erkennbare Fehlermeldung statt Dauer-Ladezustand | sichtbarer Text über Rolle/Text lokalisiert **und** Container-Höhe > 0; für den Ordner-Browser zusätzlich: Ladeanzeige ist danach nicht mehr vorhanden |
 | `login` | Anmeldeformular selbst: falsche Zugangsdaten → sichtbare Fehlermeldung, richtige → Weiterleitung | einziger Spec ohne gespeicherten Sitzungszustand; funktional statt geometrisch, weil das Setup-Projekt diesen Pfad sonst verdeckt |
+| `toolchain` | **Nicht die Anwendung, sondern die Zusagen dieser Ebene selbst:** das Verlässlichkeitsregime (`retries: 0`, `forbidOnly`, `workers: 1`), die zwei festen Viewport-Projekte, die Ziel-Allowlist der Ad-hoc-Werkzeuge (`resolveBaseUrl`), und die Bindung dreier Doku-Aussagen an den Code (Unverbindlichkeit von `review-ux`, Freigabe-Zeichenkette und Demo-Projektnamen aus `demo_state.py`) | geprüft wird der **wirksame** Konfigurationswert, nicht der Dateiinhalt — eine Textsuche ließe sich mit `--retries=2` umgehen; die Projektliste hat eine exakte Kardinalitäts-Assertion; `resolveBaseUrl` hat je Bedingung (Protokoll, Host, ausdrücklicher Port) einen eigenen Abweisungsfall plus Positivfälle, sonst bestünde auch eine Sperre, die schlicht alles ablehnt |
 
 **Bewusst nicht aufgenommen**, obwohl inhaltlich naheliegend: (a) **Skelett-/Ladezustände** — sie deterministisch sichtbar zu machen verlangte künstliche Verzögerungen, also genau die festen Wartezeiten, die das Regime ausschließt; (b) **visuelle Unterscheidbarkeit der Bewertungs-Badge-Farben** — das ist eine nachrechenbare Zusage und liegt bereits im Kontrast-Block des Design-Vertrags (`designSystem.contract.test.ts`), ein E2E-Spec brächte dort nichts hinzu und dupliziert eine bestehende Zusicherung; (c) **pixelbasierter Referenzbildvergleich** (`toHaveScreenshot`) — eigene, spätere Frage mit einem eigenen Sprunghaftigkeitsproblem.
 
