@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/TheRealKoller/photosort/compare/v0.31.0...v0.32.0) (2026-09-05)
+
+
+### Features
+
+* **frontend:** Design-System "Dark Utility Register" — Fundament (Spec 0320) ([#322](https://github.com/TheRealKoller/photosort/issues/322)) ([99b87fa](https://github.com/TheRealKoller/photosort/commit/99b87faf66ce45883484756d28b5cf37c2687160))
+
 ## [0.31.0](https://github.com/TheRealKoller/photosort/compare/v0.30.0...v0.31.0) (2026-09-03)
 
 
