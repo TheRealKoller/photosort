@@ -19,7 +19,7 @@ export function ProjectListPage() {
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl">Projekte</h1>
+          <h1 className="text-xl sm:text-2xl">Projekte</h1>
           {query.isSuccess && query.data.length > 0 && (
             <p className="text-xs text-text">{query.data.length} Ordner</p>
           )}

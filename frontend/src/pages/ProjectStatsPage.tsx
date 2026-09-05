@@ -425,7 +425,7 @@ export function ProjectStatsPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-2xl">Statistik</h1>
+        <h1 className="text-xl sm:text-2xl">Statistik</h1>
         <p className="text-sm text-text">Momentaufnahme des aktuellen Stands</p>
       </header>
       <StatsContent stats={query.data} />

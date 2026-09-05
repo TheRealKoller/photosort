@@ -64,7 +64,7 @@ export function ProjectSettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-2xl">Projekteinstellungen</h1>
+        <h1 className="text-xl sm:text-2xl">Projekteinstellungen</h1>
         <p className="text-sm text-text">{project.name}</p>
       </header>
 

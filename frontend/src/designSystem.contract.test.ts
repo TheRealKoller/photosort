@@ -714,6 +714,18 @@ describe('Design-Vertrag: Typoskala', () => {
     }
   }, 30_000)
 
+  it('laesst den Fehlerumriss am Eingabefeld auch im fokussierten Zustand stehen', async () => {
+    // Fokussiert UND fehlerhaft duerfen sich nicht gegenseitig ausloeschen: der Fehlerumriss bleibt
+    // AM Feld, die Fokusdarstellung liegt als abgesetzte Kontur aussen herum. Das haengt an der
+    // Reihenfolge, in der Tailwind die beiden Varianten ausgibt - eine kuenftige Umsortierung im
+    // Framework wuerde die Zusage still brechen, deshalb hier festgehalten statt angenommen.
+    const compiled = await compile(indexCss, { base: SRC_DIR, onDependency: () => {} })
+    const output = compiled.build(['focus:border-accent', 'aria-invalid:border-danger'])
+    expect(output.indexOf('aria-invalid\\:border-danger')).toBeGreaterThan(
+      output.indexOf('focus\\:border-accent')
+    )
+  }, 30_000)
+
   it('erzeugt fuer die Organic-Abstandsskala keine Regel mehr, wohl aber fuer das 8-Punkt-Raster', async () => {
     const compiled = await compile(indexCss, { base: SRC_DIR, onDependency: () => {} })
     const baseline = compiled.build([])

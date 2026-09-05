@@ -245,7 +245,7 @@ export function CurateCategoriesPage() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-2xl">Kategorie-Kuratierung</h1>
+        <h1 className="text-xl sm:text-2xl">Kategorie-Kuratierung</h1>
         {/* Personenbezug (UI/UX-Abschnitt der Spec): Rating ist personenbezogen, die gezeigte
             Top-N-Auswahl deshalb je Nutzer individuell. */}
         <p className="text-sm text-text">Deine Auswahl</p>

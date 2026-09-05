@@ -933,8 +933,8 @@ entschieden und im Abschnitt „Entscheidungen" festgehalten.
 
 | | vorher (Organic) | nachher (Dark Utility Register) | Delta |
 |---|---|---|---|
-| `dist/assets/index-*.js` | 452,26 kB (gzip 138,73 kB) | 457,13 kB (gzip 141,13 kB) | **+4,87 kB / +2,40 kB gzip** |
-| `dist/assets/index-*.css` | 44,12 kB (gzip 13,67 kB) | 56,89 kB (gzip 16,87 kB) | +12,77 kB / +3,20 kB gzip |
+| `dist/assets/index-*.js` | 452,26 kB (gzip 138,73 kB) | 457,23 kB (gzip 141,14 kB) | **+4,97 kB / +2,41 kB gzip** |
+| `dist/assets/index-*.css` | 44,12 kB (gzip 13,67 kB) | 57,28 kB (gzip 16,88 kB) | +13,16 kB / +3,21 kB gzip |
 
 Der JS-Zuwachs liegt im erwarteten **niedrigen kB-Bereich, nicht im MB-Bereich** — das Tree-Shaking greift, es landen zwölf Pfad-Definitionen im Bundle statt des gesamten Lucide-Satzes (entpackt ~32 MB). Der CSS-Zuwachs stammt überwiegend aus den 26 Kategorie-Chip-Tokens und den zusätzlichen `@theme`-Einträgen und ist unabhängig von der Symbolfrage.
 

@@ -91,7 +91,7 @@ export function PhotoGridPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl">Fotos</h1>
+      <h1 className="text-xl sm:text-2xl">Fotos</h1>
 
       {isGateMode && (
         <div className="flex flex-col items-start gap-3 rounded-md border border-accent bg-elevated p-4 text-sm">

@@ -100,7 +100,7 @@ Die Board-Größenstufen liegen auf Tailwinds bestehender Skala, damit die vorha
 | `text-2xl` | 40px | Überschrift 2 (Semi-Bold) |
 | `text-3xl` | 64px | Überschrift 1 (Bold, −2 % Laufweite) |
 
-`text-4xl` und größer **erzeugen keine Regel mehr**. Die Board-Rolle „Beschriftung" (Semi-Bold, Versalien) ist bewusst **keine** Eigenschaft von `text-xs` — im Bestand trägt `text-xs` auch Metadaten. Sie entsteht an der Aufrufstelle über `text-xs font-semibold uppercase tracking-wide`.
+`text-4xl` und größer **erzeugen keine Regel mehr**. **Seitenüberschriften tragen die Board-Stufe erst ab `sm:`** (`text-xl sm:text-2xl`, die Anmeldung `text-2xl sm:text-3xl`): bei 360px Breite laufen 40px und 64px bei einem umbruchlosen deutschen Wort wie „Projekteinstellungen“ über den Rand, und horizontales Scrollen der Seite ist ein Abnahme-Ausschlusskriterium. Die Board-Stufe gilt unverändert am Desktop. Die Board-Rolle „Beschriftung" (Semi-Bold, Versalien) ist bewusst **keine** Eigenschaft von `text-xs` — im Bestand trägt `text-xs` auch Metadaten. Sie entsteht an der Aufrufstelle über `text-xs font-semibold uppercase tracking-wide`.
 
 #### Raster und Form
 
