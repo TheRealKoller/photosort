@@ -191,7 +191,10 @@ Gemessen in einer echten Remote-Session am 2026-09-05, ausführlich in
 [ADR 0056](../specs/decisions/0056-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md)
 (Befund weiterhin gültig, Konsequenz seit
 [ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md), Abschnitt 7 neu
-gefasst). `gh` liegt dort seit ADR 0053/0054 vor — die Grenze liegt woanders:
+gefasst) und Spec [`0318`](../specs/features/0318-remote-lebenszyklus-grenze.md); die Messungen
+mit Befehl und wörtlicher Ausgabe stehen im
+[Messbericht an Issue #318](https://github.com/TheRealKoller/photosort/issues/318#issuecomment-5550813926).
+`gh` liegt dort seit ADR 0053/0054 vor — die Grenze liegt woanders:
 
 - **Board-Schreibzugriffe aus der Session tragen dort nicht.** Die Zwischenschicht der Session
   bedient GraphQL nur für einen fest verdrahteten Satz von Pull-Request-Operationen und
@@ -205,16 +208,19 @@ gefasst). `gh` liegt dort seit ADR 0053/0054 vor — die Grenze liegt woanders:
   verweist per Closing-Keyword auf das Issue) und `Done` (Merge schließt das Issue). Eine remote
   begonnene Story landet damit von selbst korrekt auf `Review` und `Done` — genau die beiden
   Schritte, deren Ausfall bisher am teuersten war, weil sie am Ende einer langen Arbeit standen.
-- **Die Issue-Schritte sind anders gelagert.** Sie scheitern an derselben Sperre, aber
-  erkennbar deshalb, weil die benutzten `gh`-Subcommands (`gh issue list --json`,
-  `gh repo view --json`) ebenfalls GraphQL sprechen. Dieselbe Meldung benennt REST
-  (`gh api repos/{owner}/{repo}/…`) ausdrücklich als gangbaren Weg. **Ob er für die
-  Issue-Schritte trägt, ist offen** — die Messung steht noch aus, und bis sie vorliegt, wird
-  hier nichts behauptet.
-- **Vorbehalt zur Anmeldung:** Der Lauf meldet zusätzlich `The token in GH_TOKEN is invalid`.
-  Weil `gh auth status` seine Prüfung über dieselbe gesperrte API führt, kann das ein Artefakt
-  der Sperre sein — der Token muss nicht kaputt sein. Der 403 ist davon unabhängig belastbar,
-  die übrigen Prüfungen sind es nicht.
+- **Die Issue-Schritte sind anders gelagert — und der REST-Weg rettet sie nicht.** Die GraphQL-
+  Meldung benennt REST (`gh api repos/{owner}/{repo}/…`) ausdrücklich als gangbaren Weg. Die
+  Messung zeigt: Auch REST ist für `gh` gesperrt, mit einer **anderslautenden** 403 (`GitHub
+  access is not enabled for this session`). Lesen und Schreiben wurden getrennt gemessen, beide
+  scheitern. Der REST-Verweis der GraphQL-Meldung ist in dieser Umgebung irreführend.
+- **Die Grenze verläuft am Client, nicht am Transport.** Dieselbe Session liest und schreibt
+  Issues problemlos — über die GitHub-MCP-Werkzeuge, angemeldet als Repository-Eigentümer. Für
+  `gh` ist beides zu, und der gesamte Board-Zugriff steht ausschließlich auf `gh`. Die
+  Issue-Schritte scheitern deshalb am **Zugangsweg**, nicht an fehlenden Rechten. Für die
+  Board-Schritte ändert das nichts: Der MCP-Weg bietet für Projects V2 keine Operation an.
+- **Die Anmeldung ist in Ordnung.** Der Lauf meldet `The token in GH_TOKEN is invalid`; das ist
+  ein Artefakt der Sperre, denn `gh auth status` prüft über denselben gesperrten Endpunkt.
+  Beheben lässt es sich nicht, als Diagnose über den Token ist die Meldung wertlos.
 
 **Was der Ablauf daraus macht:** Es wird nicht mehr vorab gemessen (ADR 0057, Abschnitt 6,
 Punkt 1: kein Urteil vor dem Versuch). Der Befehl wird abgesetzt; scheitert er, bricht der Ablauf
