@@ -15,10 +15,11 @@ export default defineConfig({
       workbox: {
         /*
          * Die Standard-globPatterns von vite-plugin-pwa decken Schriftdateien NICHT ab
-         * (js/css/html/ico/png/svg). Ohne diesen Eintrag laegen Caprasimo und Figtree zwar im
+         * (js/css/html/ico/png/svg). Ohne diesen Eintrag laegen Inter und JetBrains Mono zwar im
          * Bundle, wuerden offline aber nicht ausgeliefert - die App fiele auf die System-Schrift
          * zurueck. Genau das war der Grund, die Schriften ueberhaupt self-zu-hosten statt sie von
-         * der Google-Fonts-CDN zu laden (specs/features/0285-organic-design-import.md).
+         * der Google-Fonts-CDN zu laden (specs/features/0320-dark-utility-register.md, Security-
+         * Abschnitt "Bedrohung 3").
          *
          * Bewusst nur woff2, nicht auch woff: @fontsource liefert beide Formate, die generierte
          * CSS nennt woff2 zuerst: jeder Browser, der diese PWA installieren kann, unterstuetzt es.
@@ -30,11 +31,11 @@ export default defineConfig({
         name: 'PhotoSort',
         short_name: 'PhotoSort',
         description: 'Urlaubsfotos sortieren, kategorisieren und die besten auswählen.',
-        // Markenfarben aus dem Organic-Design-System (specs/features/0285-organic-design-import.md)
-        // - muessen dem tatsaechlichen Akzent/Grund entsprechen, sonst blitzt beim Start der PWA
-        // die alte Palette auf.
-        theme_color: '#c67139',
-        background_color: '#f5ead8',
+        // Markenfarben des Design-Systems "Dark Utility Register" (specs/features/0320-dark-
+        // utility-register.md) - muessen dem tatsaechlichen Akzent/Grund entsprechen, sonst blitzt
+        // beim Start der PWA die alte Palette auf.
+        theme_color: '#FFB000',
+        background_color: '#0B0C10',
         display: 'standalone',
         start_url: '/',
         icons: [

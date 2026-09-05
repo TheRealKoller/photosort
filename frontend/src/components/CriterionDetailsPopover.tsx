@@ -164,10 +164,13 @@ export function CriterionDetailsPopover({
           onPointerEnter={handlePointerEnter}
           onMouseLeave={handlePossibleHoverClose}
           className={cn(
-            'flex size-11 shrink-0 items-center justify-center rounded-full border border-border ' +
-              'bg-bg/85 text-xs font-semibold text-text backdrop-blur-sm transition-colors ' +
-              'hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 ' +
-              'focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+            // Runder Backdrop ueber der Fotokachel - eine der wenigen verbleibenden Rundformen
+            // (specs/features/0320-dark-utility-register.md): der Trigger liegt auf dem Bild, ein
+            // Kreis grenzt sich dort von jeder rechteckigen Bildstruktur ab.
+            'tap-target-square flex size-8 shrink-0 items-center justify-center rounded-full ' +
+              'border border-border-control bg-bg/85 text-xs font-semibold text-text ' +
+              'backdrop-blur-sm transition-colors hover:bg-overlay hover:text-text-h ' +
+              'active:bg-border active:text-text',
             className
           )}
         >
@@ -179,7 +182,7 @@ export function CriterionDetailsPopover({
           <p className="text-sm font-semibold text-text-h">Bewertungsdetails</p>
           <PopoverClose
             aria-label="Schließen"
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
           >
             <span aria-hidden="true">×</span>
           </PopoverClose>

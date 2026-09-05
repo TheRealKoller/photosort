@@ -190,12 +190,54 @@ describe('Stepper', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps every step circle at the shared 44x44px touch target size (size-11), reachable or not', () => {
+  /*
+   * Ersetzt die fruehere `size-11`-Assertion (specs/features/0320-dark-utility-register.md,
+   * Teststrategie): Die 44px-GROESSENregel ist zu einer TREFFERFLAECHENregel geworden - sichtbar
+   * gilt das kompakte Board-Mass 32px, die 44px kommen ueber die beidachsige Aufspannung. Beide
+   * Schritt-Marker, klickbar oder nicht, tragen weiterhin dasselbe Mass ("Konsistenz wichtiger
+   * als Platzersparnis", Akzeptanzkriterium 15 der Spec 0042).
+   */
+  it('keeps every step marker at the shared board size with a spanned 44px tap target', () => {
     renderStepper()
 
-    const scanCircle = screen.getByRole('link', { name: /schritt 1 von 5: scan/i })
-    expect(scanCircle).toHaveClass('size-11')
-    const blockedCircle = screen.getByLabelText('Schritt 3 von 5: Ausschuss-Gate, blockiert')
-    expect(blockedCircle).toHaveClass('size-11')
+    for (const marker of [
+      screen.getByRole('link', { name: /schritt 1 von 5: scan/i }),
+      screen.getByLabelText('Schritt 3 von 5: Ausschuss-Gate, blockiert'),
+    ]) {
+      expect(marker).toHaveClass('size-8')
+      expect(marker).toHaveClass('tap-target-square')
+    }
+  })
+
+  /*
+   * Die vier Schrittzustaende bleiben ohne Farbwahrnehmung unterscheidbar: `aria-current` bzw.
+   * `data-step-state` plus das Symbol im Marker tragen die Aussage, nicht die Farbe.
+   */
+  it('keeps the step states distinguishable without colour', () => {
+    renderStepper(
+      [
+        { id: 'scan', isDone: true, isReachable: true },
+        { id: 'ausschuss', isDone: false, isReachable: true },
+        { id: 'gate', isDone: false, isReachable: false },
+        { id: 'kriterien', isDone: false, isReachable: false },
+        { id: 'kuratierung', isDone: false, isReachable: false },
+      ],
+      'ausschuss'
+    )
+
+    const current = screen.getByRole('link', { name: /schritt 2 von 5: ausschuss-erkennung/i })
+    expect(current).toHaveAttribute('aria-current', 'step')
+    expect(current).toHaveAttribute('data-step-state', 'aktuell')
+
+    const done = screen.getByRole('link', { name: /schritt 1 von 5: scan/i })
+    expect(done).toHaveAttribute('data-step-state', 'erledigt')
+    expect(done).not.toHaveAttribute('aria-current')
+
+    const blocked = screen.getByLabelText('Schritt 3 von 5: Ausschuss-Gate, blockiert')
+    expect(blocked).toHaveAttribute('data-step-state', 'blockiert')
+    expect(blocked).toHaveAttribute('aria-disabled', 'true')
+
+    const states = [current, done, blocked].map((node) => node.getAttribute('data-step-state'))
+    expect(new Set(states).size).toBe(3)
   })
 })

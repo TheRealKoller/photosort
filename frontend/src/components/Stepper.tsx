@@ -13,13 +13,14 @@ interface StepperProps {
   activeStepId: StepId
 }
 
-// Gemeinsame Kreis-Groesse fuer JEDEN Schritt-Eintrag, auch die nicht-klickbaren (Akzeptanzkriterium
-// 15, UI/UX-Abschnitt der Spec 0042: "Konsistenz wichtiger als Platzersparnis"). Identisch zur
-// bestehenden Button-Konvention (h-11/min-w-11 = 44px, siehe ui/button.tsx).
-const CIRCLE_BASE_CLASSES =
-  'flex size-11 shrink-0 items-center justify-center rounded-full border-2 text-xs font-semibold ' +
-  'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
-  'focus-visible:ring-offset-2 focus-visible:ring-offset-bg'
+// Gemeinsames Mass fuer JEDEN Schritt-Eintrag, auch die nicht-klickbaren (Akzeptanzkriterium 15,
+// UI/UX-Abschnitt der Spec 0042: "Konsistenz wichtiger als Platzersparnis"). Board-Mass 32px mit
+// aufgespannter Trefferflaeche auf beiden Achsen (`tap-target-square`) statt der frueheren 44px
+// Sichtgroesse; Radius 8px wie das Navigationselement des Boards statt der frueheren Vollrundung.
+// Keine eigene Fokusdarstellung mehr - die eine globale, abgesetzte Kontur in index.css traegt sie.
+const STEP_MARKER_BASE_CLASSES =
+  'tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md border-2 text-xs ' +
+  'font-semibold transition-colors'
 
 function CheckIcon() {
   return (
@@ -84,7 +85,7 @@ function BlockedReasonPopover({ stepLabel, reason }: { stepLabel: string; reason
           type="button"
           aria-label={`Grund für Sperrung von ${stepLabel} anzeigen`}
           onPointerEnter={handlePointerEnter}
-          className="flex size-11 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-text hover:bg-border/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+          className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
         >
           i
         </button>
@@ -94,7 +95,7 @@ function BlockedReasonPopover({ stepLabel, reason }: { stepLabel: string; reason
           <p className="text-sm font-semibold text-text-h">{stepLabel}</p>
           <PopoverClose
             aria-label="Schließen"
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-text hover:bg-border/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
           >
             <span aria-hidden="true">×</span>
           </PopoverClose>
@@ -123,7 +124,7 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
           zum Fokus (Standard-sr-only/focus:not-sr-only-Muster). */}
       <a
         href="#pipeline-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-20 focus:rounded-full focus:bg-accent focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-accent-fg"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-20 focus:rounded-sm focus:bg-accent focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-accent-fg"
       >
         Zum Seiteninhalt springen
       </a>
@@ -136,7 +137,7 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
         <p className="mb-2 text-sm text-text sm:hidden" aria-hidden="true">
           {activeIndex >= 0 && `Schritt ${activeIndex + 1} von 5: ${activeLabel}`}
         </p>
-        <ol className="flex items-center gap-1 sm:gap-2">
+        <ol className="flex items-center gap-3">
           {PIPELINE_STEPS.map((definition, index) => {
             const state = stateById.get(definition.id)
             const isDone = state?.isDone ?? false
@@ -154,25 +155,29 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
              * steht, ist dann die wichtigere Information. Dass er erledigt ist, sagt weiterhin das
              * Hakensymbol im Kreis, die Zustandsbenennung steckt ohnehin im aria-label.
              */
-            const circleClasses = cn(
-              CIRCLE_BASE_CLASSES,
-              isCurrent && 'border-accent bg-accent text-accent-fg',
-              !isCurrent && isDone && 'border-accent-2-300 bg-accent-2-200 text-accent-2-800',
-              !isCurrent && !isDone && !isBlocked && 'border-border bg-transparent text-text',
+            const markerClasses = cn(
+              STEP_MARKER_BASE_CLASSES,
+              // Prozessstufen nach Board (Abschnitt 6): die AKTUELLE Stufe traegt Akzent UND
+              // fetten Schnitt - ueber Schnitt und Farbe, nie ueber Farbe allein. Erledigt/kommend
+              // in Sekundaertext, noch nicht begonnen (blockiert) in `--text-muted`.
+              isCurrent && 'border-accent bg-accent font-bold text-accent-fg',
+              !isCurrent && isDone && 'border-accent-2 bg-transparent text-accent-2',
+              !isCurrent && !isDone && !isBlocked && 'border-border-control bg-transparent text-text',
               // Blockiert: schwaecherer Rahmen und gedaempfte Beschriftung statt eines pauschalen
-              // opacity-50 auf dem ganzen Kreis - so bleibt das Schloss-Symbol selbst lesbar.
-              !isCurrent && !isDone && isBlocked && 'border-border/50 bg-transparent text-neutral-500'
+              // opacity-50 auf dem ganzen Marker - so bleibt das Schloss-Symbol selbst lesbar.
+              !isCurrent && !isDone && isBlocked && 'border-border bg-transparent text-text-muted'
             )
 
             return (
-              <li key={definition.id} className="flex flex-1 items-center gap-1 sm:gap-2 last:flex-initial">
-                <div className="flex flex-col items-center gap-2 sm:flex-row">
+              <li key={definition.id} className="flex flex-1 items-center gap-3 last:flex-initial">
+                <div className="flex flex-col items-center gap-3 sm:flex-row">
                   {isBlocked ? (
                     <span
                       aria-disabled="true"
                       tabIndex={-1}
                       aria-label={ariaLabel}
-                      className={circleClasses}
+                      data-step-state={statusLabel}
+                      className={markerClasses}
                     >
                       {isDone ? <CheckIcon /> : <LockIcon />}
                     </span>
@@ -181,7 +186,8 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
                       to={`/projects/${projectId}/pipeline/${definition.id}`}
                       aria-label={ariaLabel}
                       aria-current={isCurrent ? 'step' : undefined}
-                      className={circleClasses}
+                      data-step-state={statusLabel}
+                      className={markerClasses}
                     >
                       {/* Erledigt zeigt den Haken, sonst die Schrittnummer (Vorlage) - der leere
                           Kreis von zuvor liess offen, welcher Schritt gemeint ist. Rein visuell,

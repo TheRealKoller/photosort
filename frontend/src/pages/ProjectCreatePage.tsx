@@ -41,7 +41,7 @@ export function ProjectCreatePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl">Neues Projekt anlegen</h1>
+      <h1 className="text-xl sm:text-2xl">Neues Projekt anlegen</h1>
       {errorDetail && <Alert>{errorDetail}</Alert>}
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">

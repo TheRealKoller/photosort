@@ -1,239 +1,201 @@
 @import 'tailwindcss';
 
-/* Self-gehostete Schriften des Organic-Design-Systems (Caprasimo als Display-/Ueberschriften-
-   Stimme ueber Figtree fuer Fliesstext). Bewusst ueber @fontsource statt ueber die Google-Fonts-
-   CDN eingebunden, die das Design-System-Readme vorschlaegt: PhotoSort ist eine PWA und muss
-   offline vollstaendig funktionieren - ein CDN-Link waere im Offline-Betrieb ein Fehlschlag und
-   zusaetzlich ein Abfluss von Nutzungsdaten an einen Dritten. */
-@import '@fontsource/caprasimo/400.css';
-@import '@fontsource/figtree/400.css';
-@import '@fontsource/figtree/600.css';
-@import '@fontsource/figtree/700.css';
+/* Self-gehostete Schriften des Design-Systems "Dark Utility Register" (Inter fuer alle Texte,
+   JetBrains Mono fuer Datenausgaben). Bewusst ueber @fontsource statt ueber die Google-Fonts-CDN:
+   PhotoSort ist eine PWA und muss offline vollstaendig funktionieren - ein CDN-Link waere im
+   Offline-Betrieb ein Fehlschlag und zusaetzlich ein Abfluss von Nutzungsdaten (IP, Referrer) an
+   einen Dritten. Unveraendert gueltige Begruendung aus specs/features/0285-organic-design-import.md;
+   die woff2-Ergaenzung in vite.config.ts's globPatterns bleibt dadurch noetig. */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
 
 /*
- * Design-Tokens (specs/architecture/0004-design-system.md, specs/features/0285-organic-design-
- * import.md). Rohwerte liegen in :root/prefers-color-scheme, die Zuordnung zu Tailwind-Utilities
- * passiert unten im @theme-Block - so bleibt die Hell/Dunkel-Umschaltung eine reine CSS-Variablen-
- * Aufloesung ohne zusaetzliche JS-Logik oder `dark:`-Klassen.
+ * Design-Tokens (specs/architecture/0004-design-system.md, specs/features/0320-dark-utility-
+ * register.md, decisions/0055-dark-utility-register-fundament.md; Board-Werteliste in
+ * specs/architecture/0005-board-dark-utility-register.md).
  *
- * Die Werte stammen aus dem Design-System "Organic" des Claude-Design-Projekts "PhotoSort UI
- * Mockups" (_ds/organic-.../styles.css). Uebernommen sind Farbrollen, Tonleitern (100-900, in
- * OKLCH auf einer gemeinsamen Helligkeitsskala erzeugt), Schrift, Abstands- und Radienskala.
- * Abweichungen gegenueber der Vorlage sind unten jeweils an Ort und Stelle begruendet - das
- * Design-System-Dokument fuehrt sie gesammelt unter "Bekannte Luecken".
+ * Die Token-Zweiteilung des Vorgaengersystems bleibt unveraendert und ist zugleich der
+ * Migrationsmechanismus: Rohwerte in :root, Zuordnung zu Tailwind-Utilities im @theme-Block
+ * (Tailwind v4, CSS-first, kein tailwind.config.js). Wo ein Board-Token dieselbe semantische Rolle
+ * hat wie ein bestehendes, BEHAELT das bestehende Token seinen Namen und bekommt nur einen neuen
+ * Wert - dadurch tragen rund 175 der etwa 190 Farb-Aufrufstellen in den 91 .tsx-Dateien die
+ * Umstellung, ohne angefasst zu werden.
+ *
+ * DUNKEL IST DAS EINZIGE FARBSCHEMA (ADR 0055 Punkt 1). Es gibt keinen hellen Grund und keinen
+ * Umschalter mehr; das nimmt specs/features/0285-organic-design-import.md AK 6 und AK 7
+ * ausdruecklich zurueck. Grund: Die Oberflaeche steht unmittelbar neben dem Foto und beeinflusst
+ * dessen Farbwahrnehmung - ein farbneutrales, dunkles Umfeld ist fuer die Kernaufgabe die sachlich
+ * bessere Wahl, nicht eine gleichwertige Alternative.
+ *
+ * JEDES Token traegt hier einen ausgeschriebenen 6-stelligen Hexwert, nie var() oder color-mix().
+ * Das ist keine Stilfrage: src/designSystem.contract.test.ts rechnet die vollstaendige
+ * Kontrastmatrix aus genau diesen Werten nach. Ein indirekter oder deckkraftbasierter Wert waere
+ * statisch nicht rechenbar und damit dauerhaft ungeprueft.
  */
 :root {
-  --bg: #f5ead8;
-  --surface: #ebddc5;
-  --border: color-mix(in srgb, #201e1d 16%, transparent);
-  --text-h: #201e1d;
+  /* --- Die vier Flaechenstufen des Boards. Sie ersetzen Schatten als Tiefenmittel. --- */
+  --bg: #0b0c10;
+  --surface: #14161f;
+  --elevated: #1e2230;
+  --overlay: #262b3d;
 
-  /*
-   * Fliesstext: die Vorlage setzt durchgehend --color-text (#201e1d) und daempft Sekundaertext
-   * ueber `opacity`. Deckkraft auf beliebigem Untergrund ist aber nicht kontrastpruefbar, deshalb
-   * hier ein eigener, ausgerechneter Ton aus derselben neutralen Tonleiter (neutral-700):
-   * 5.53:1 auf --bg und 4.92:1 auf --surface, beide >= WCAG-AA 4.5:1.
-   */
-  --text: #645c50;
+  /* --- Die vier Textstufen. ---
+     --text-muted weicht bewusst vom Board-Wert #62677A ab (ADR 0055 Punkt 4a): der verfehlt
+     4.5:1 auf ALLEN vier Flaechen (3.48/3.21/2.82/2.50), traegt im Board aber echten Fliesstext.
+     #8D92A4 ist der dunkelste Wert derselben Farbfamilie, der AA ueberall haelt (6.31/5.82/5.11/
+     4.53). Bekannte Einschraenkung: der Abstand zu --text ist dadurch klein - die Textstufen 2
+     und 3 tragen ihre Unterscheidung ueber die VERWENDUNG (Fliesstext vs. Metadaten), nicht ueber
+     die Wahrnehmung. Hierarchie darf nicht auf diesen beiden Stufen allein aufgebaut werden.
 
-  /* Neutrale Tonleiter (unveraendert aus der Vorlage). */
-  --neutral-100: #f9f4ed;
-  --neutral-200: #eee7db;
-  --neutral-300: #dcd3c4;
-  --neutral-400: #c0b6a5;
-  --neutral-500: #a19786;
-  --neutral-600: #82796a;
-  --neutral-700: #645c50;
-  --neutral-800: #474238;
-  --neutral-900: #2e2b25;
+     --text-disabled behaelt den Board-Wert und liegt bewusst unter 3:1 (1.96/1.81/1.59/1.41).
+     WCAG 1.4.3/1.4.11 nehmen inaktive Bedienelemente ausdruecklich aus. Die Ausnahme haengt an
+     einer harten Regel, die der Vertragstest erzwingt: ausschliesslich als disabled:-Variante,
+     nie auf Inhaltstext. Deshalb traegt der durchgestrichene Dateiname der aussortierten Karte
+     --text-muted und nicht --text-disabled - er ist Inhalt. */
+  --text-h: #ffffff;
+  --text: #a0a5b5;
+  --text-muted: #8d92a4;
+  --text-disabled: #3e4252;
 
-  /*
-   * Terrakotta-Akzent. Der Basiston der Vorlage (#c67139) erreicht gegen --bg nur 3.03:1 - das
-   * Readme des Design-Systems sagt das selbst ("tuned to at least 3:1 - enough for icons, large
-   * text and interface chrome, not for body copy") und verweist fuer Text in Akzentfarbe auf die
-   * Stufe 700. Genau so ist es hier aufgeteilt:
-   *   --accent        Flaechen, Rahmen, Icons, grosse Schrift, Dekor  (Chrome, >= 3:1 genuegt)
-   *   --accent-strong Text in Fliesstextgroesse, Links, gefuellte Bedienelemente mit Label
-   * --accent-strong ist accent-700 und erreicht 5.72:1 auf --bg bzw. 5.09:1 auf --surface.
-   * Dieselbe Aufteilung (gleiche Farbfamilie, dunklere Stufe fuer Text) hatte das Projekt schon
-   * vor diesem Import gewaehlt, damals #d97757 -> #bb4e2a.
-   */
-  --accent: #c67139;
-  --accent-strong: #8c491a;
+  /* --- Rahmen in zwei Rollen (ADR 0055 Punkt 4c). ---
+     --border ist der Board-Wert und liegt bei 1.04-1.45:1: rein dekorative Trenn-/Panellinie
+     (Panelkante, Tabellenlinie, Karten- und Modalumriss). Fuer Dekoration gilt keine Schwelle.
+     --border-control ist der SICHTBARE UMRISS eines Bedienelements und auf die hellste Flaeche
+     kalibriert, auf der ein Bedienelement stehen kann (>= 3:1 auf allen vier). Beim
+     Sekundaer-Button ist der Umriss das einzige Identifikationsmerkmal: seine Flaeche (--overlay)
+     hebt sich von --surface nur mit 1.28:1 ab und in einem Dialog ueberhaupt nicht. */
+  --border: #2a2e3d;
+  --border-control: #727891;
 
-  /*
-   * Beschriftung AUF der gefuellten Akzentflaeche (Primaerbutton, Akzent-Chip). Die Vorlage setzt
-   * hier Creme (`.btn-primary { color: var(--color-bg) }`) - das erreicht gegen #c67139 nur
-   * 3.03:1 und verfehlt WCAG-AA fuer die 14px-Beschriftung. Dunkle Tinte auf demselben Terrakotta
-   * erreicht 4.60:1. Bewusst diese Richtung statt einer dunkleren Fuellung: so bleibt der
-   * Terrakotta-Ton der Vorlage an jeder Flaeche exakt erhalten - er traegt das Farbbild der
-   * Oberflaeche - und nur die Schriftfarbe weicht ab. Im Dunkelmodus ist dieselbe dunkle Tinte
-   * auf dem aufgehellten Akzent ohnehin richtig (8.03:1), der Wert gilt also in beiden Modi.
-   */
-  --accent-fg: #201e1d;
-  --accent-bg: color-mix(in srgb, #c67139 12%, transparent);
-  --accent-border: color-mix(in srgb, #c67139 45%, transparent);
+  /* --- Die vier Akzente des Boards. ---
+     --accent und --accent-strong zeigen auf denselben Wert: auf dunklem Grund traegt der Akzent
+     selbst genug Kontrast (7.67-10.67:1), eine getrennte Textstufe ist nicht noetig. Die Namen
+     bleiben trotzdem getrennt, damit die Aufrufstellen unveraendert bleiben und eine spaetere
+     Wiederauftrennung moeglich ist, ohne sie anzufassen. Dasselbe fuer --accent-2. */
+  --accent: #ffb000;
+  --accent-strong: #ffb000;
+  --accent-fg: #0b0c10;
+  --accent-2: #00e676;
+  --accent-2-strong: #00e676;
+  --info: #00e5ff;
 
-  --accent-100: #fff2eb;
-  --accent-200: #ffe1d0;
-  --accent-300: #ffc6a5;
-  --accent-400: #f6a06b;
-  --accent-500: #d67f48;
-  --accent-600: #b2622d;
-  --accent-700: #8c491a;
-  --accent-800: #643312;
-  --accent-900: #402310;
+  /* --danger/--danger-text nach demselben Muster aufgeteilt (ADR 0055 Punkt 4d): der Board-Wert
+     erreicht auf --elevated/--overlay nur 4.46/3.96 - grafisch (3:1) ausreichend, als Fliesstext
+     zu wenig. --danger-text (6.28/5.79/5.08/4.51) traegt Text in Aussortiert-Farbe. Kein einziger
+     Board-Flaechenwert aendert sich dadurch. */
+  --danger: #ff3d00;
+  --danger-text: #ff5a26;
 
-  /* Salbei als zweite, gleichberechtigte Stimme (Readme: "a genuine second voice, not just a
-     highlight"). --accent-2-strong ist wieder die textfaehige Stufe (5.43:1 auf --bg). */
-  --accent-2: #7a8a5e;
-  --accent-2-strong: #56633f;
+  /* --- Bewertungsfarben. ---
+     --accent und --rating-favorite tragen denselben Wert, aber nicht denselben Namen (ADR 0055
+     Punkt 5): das Board benennt #FFB000 gleichzeitig als "Auswahl & Favoriten", die semantische
+     Unterscheidung ueberlebt dadurch im Code und ist spaeter wieder auftrennbar.
 
-  --accent-2-100: #f0fae1;
-  --accent-2-200: #e1eecc;
-  --accent-2-300: #ccdbb2;
-  --accent-2-400: #aebf92;
-  --accent-2-500: #8fa073;
-  --accent-2-600: #728157;
-  --accent-2-700: #56633f;
-  --accent-2-800: #3d472b;
-  --accent-2-900: #272e1b;
+     Alle drei Vordergruende tragen jetzt dieselbe dunkle Tinte (ADR 0055 Punkt 4e - Weiss auf
+     #FF3D00 erreicht nur 3.55). Sie bleiben trotzdem DREI Tokens: dass eine gemeinsame Tinte auf
+     allen drei Toenen haelt, ist eine Eigenschaft dieser konkreten Palette, keine Regel - beim
+     Vorgaengersystem war sie nachweislich nicht gegeben. Ein Ton-Wechsel wuerde die Kopplung sonst
+     still brechen. */
+  --rating-favorite: #ffb000;
+  --rating-favorite-fg: #0b0c10;
+  --rating-album-worthy: #00e676;
+  --rating-album-worthy-fg: #0b0c10;
+  --rating-rejected: #ff3d00;
+  --rating-rejected-fg: #0b0c10;
 
-  /*
-   * Bewertungsfarben - die drei Toene der Legende des Mockups, unveraendert uebernommen
-   * (Ocker/Salbei/Ziegel statt der frueheren Gelb/Gruen/Rot-Trias).
-   *
-   * Die Symbolfarbe ist bewusst PRO TON gesetzt statt wie bisher ueber ein einziges --chip-fg:
-   * die Badges tragen Textsymbole (Stern/Haken/Kreuz, beim Vorschlag mit Zahnrad-Praefix), also
-   * gilt WCAG-AA 4.5:1 - und keine einzelne Vordergrundfarbe haelt das gegen alle drei Toene.
-   * Gemessen: schwarz auf Ocker 7.88:1 und auf Salbei 4.99:1, aber auf Ziegel nur 3.53:1;
-   * umgekehrt Creme auf Ziegel 5.00:1, auf Ocker aber nur 2.24:1. Ein Vordergrund pro Ton loest
-   * das, ohne einen einzigen Farbwert der Vorlage anzufassen.
-   */
-  --rating-favorite: #c9962c;
-  --rating-favorite-fg: #000000;
-  --rating-album-worthy: #728157;
-  --rating-album-worthy-fg: #000000;
-  --rating-rejected: #a8442c;
-  --rating-rejected-fg: #f5ead8;
+  /* --- Prozess-Status. Flaechenfarben (Punkt, Balkenfuellung), nie Textfarbe. --- */
+  --status-running: #ffb000;
+  --status-success: #00e676;
+  --status-success-fg: #0b0c10;
+  --status-failed: #ff3d00;
 
-  /* Allgemeine Prozess-Status-Farben - wiederverwenden statt neu erfinden. --status-success-fg ist
-     die Beschriftungsfarbe AUF der gefuellten Erfolgsflaeche (erledigter Stepper-Schritt):
-     schwarz auf --accent-2-600 erreicht 4.99:1. */
-  --status-running: var(--accent);
-  --status-success: var(--accent-2-600);
-  --status-success-fg: #000000;
-  --status-failed: var(--rating-rejected);
+  /* Status-Pille auf der Toast-Konstruktion des Boards (ADR 0055 Punkt 5): Flaeche --elevated,
+     farbiger Rand, farbige Beschriftung - statt eigener Tint-/Strong-Paare, die das Board nicht
+     kennt. Die acht Tokens werden darauf UMDEFINIERT statt gestrichen, ihre Aufrufstellen bleiben
+     unveraendert. Alle vier Beschriftungen halten AA auf #1E2230 (8.64/9.48/5.08/6.44). */
+  --status-running-tint: #1e2230;
+  --status-running-strong: #ffb000;
+  --status-success-tint: #1e2230;
+  --status-success-strong: #00e676;
+  --status-failed-tint: #1e2230;
+  --status-failed-strong: #ff5a26;
+  --status-idle-tint: #1e2230;
+  --status-idle-strong: #a0a5b5;
 
-  /*
-   * Status-Pille (Vorlage, Artboard 2): getoente Flaeche mit farbiger Beschriftung statt eines
-   * farbigen Punktes neben neutralem Text. Jeweils ein Paar aus heller Tinte (`-tint`, die
-   * Flaeche) und dunkler Beschriftung (`-strong`) aus derselben Farbfamilie; alle vier Paare
-   * erreichen >= 7:1. Anders als `--status-running`/`--status-success` sind das ausdruecklich
-   * Text-taugliche Werte - deshalb eigene Tokens statt einer Wiederverwendung der Flaechenfarben.
-   */
-  --status-running-tint: var(--accent-200);
-  --status-running-strong: var(--accent-800);
-  --status-success-tint: var(--accent-2-200);
-  --status-success-strong: var(--accent-2-800);
-  --status-failed-tint: #f6ddd4;
-  --status-failed-strong: #7d2f1c;
-  --status-idle-tint: var(--neutral-100);
-  --status-idle-strong: var(--neutral-800);
+  /* --- Die dreizehn Kategorie-Chip-Farbpaare (ADR 0055 Punkt 6a). ---
+     Fuenf stammen aus dem Board, acht sind nach dessen eigener Regel abgeleitet (Flaeche = Ton
+     bei S 46% / L 18%, Schrift = Ton bei S 100%, Helligkeit angehoben bis >= 4.75:1), "Nicht
+     erkannt" bleibt bewusst neutral - die Kategorie drueckt kein Erkennungsergebnis aus, sondern
+     dessen Fehlen. Alle dreizehn erreichen nachgerechnet >= 4.5:1.
 
-  /* Elevation aus der Vorlage - weiche, tintengetoente Schatten auf dem warmen Grund. */
-  --shadow-sm: 0 1px 2px color-mix(in srgb, #2e2b25 14%, transparent);
-  --shadow: 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
-  --shadow-lg: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
+     Die Tokennamen tragen Bindestriche statt der Unterstriche des `category_key`, damit die daraus
+     erzeugten Tailwind-Utilities regulaere Utility-Namen bleiben.
 
-  --sans: 'Figtree', system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: 'Caprasimo', Georgia, serif;
-  --mono: ui-monospace, Consolas, monospace;
-}
+     Kategorie-Chips sind bewusst GETOENTE Flaechen mit heller, bunter Schrift; Bewertungs-Badges
+     sind VOLL GEFUELLTE Flaechen mit dunkler Tinte. Dieser strukturelle Gegensatz - zusammen mit
+     Radius 16px vs. 6px und der Gegenecken-Platzierung auf der Kachel - faengt auf, dass
+     "Menschen" (#FFC107) farblich praktisch auf dem Favorit-Amber liegt und "Landschaft"
+     (#00B4D8) 2 Grad vom Info-Cyan. Die drei Regeln sind Bedienmerkmale, keine Kosmetik. */
+  --chip-menschen-bg: #4d3814;
+  --chip-menschen-fg: #ffc107;
+  --chip-tier-bg: #163e3c;
+  --chip-tier-fg: #00f5d4;
+  --chip-pflanze-bg: #194321;
+  --chip-pflanze-fg: #00d627;
+  --chip-landschaft-bg: #1f2b49;
+  --chip-landschaft-fg: #00b4d8;
+  /* Board-Schrift #FF007F erreicht auf dieser Flaeche nur 3.80 - korrigiert (ADR 0055 Punkt 4f). */
+  --chip-gebaeude-bauwerk-bg: #3b1f43;
+  --chip-gebaeude-bauwerk-fg: #ff44a1;
+  --chip-innenraum-bg: #1e1943;
+  --chip-innenraum-fg: #8c7aff;
+  --chip-essen-trinken-bg: #143c22;
+  --chip-essen-trinken-fg: #70e000;
+  --chip-fahrzeug-bg: #192743;
+  --chip-fahrzeug-fg: #578fff;
+  --chip-gegenstand-bg: #43191c;
+  --chip-gegenstand-fg: #ff5260;
+  --chip-dokument-screenshot-bg: #424319;
+  --chip-dokument-screenshot-fg: #cfd600;
+  --chip-kunst-kreatives-bg: #431940;
+  --chip-kunst-kreatives-fg: #ff2ef1;
+  --chip-sport-aktivitaet-bg: #321943;
+  --chip-sport-aktivitaet-fg: #c266ff;
+  --chip-nicht-erkannt-bg: #262b3d;
+  --chip-nicht-erkannt-fg: #a0a5b5;
 
-/*
- * Dunkelmodus. Das Design-System "Organic" definiert nur einen hellen Grund - diese Palette ist
- * daher hier abgeleitet, nicht uebernommen: Grund und Flaeche aus den dunklen Stufen der
- * neutralen Tonleiter, Text und Akzente aus den hellen Stufen derselben Leitern, damit die
- * Farbfamilien identisch bleiben. Der Dunkelmodus war vor diesem Import vorhanden und wird
- * bewusst nicht aufgegeben.
- */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #201e1d;
-    --surface: #2e2b25;
-    --border: color-mix(in srgb, #f5ead8 18%, transparent);
-    --text-h: #f5ead8;
-    --text: #c0b6a5; /* neutral-400: 8.28:1 auf --bg, 7.04:1 auf --surface */
-
-    /* Auf dunklem Grund traegt der helle Akzent selbst genug Kontrast (accent-400: 8.03:1),
-       eine getrennte Textstufe ist hier nicht noetig - beide zeigen deshalb auf denselben Wert. */
-    --accent: #f6a06b;
-    --accent-strong: #f6a06b;
-    --accent-fg: #201e1d; /* dieselbe dunkle Tinte wie im Hellmodus: 8.03:1 auf accent-400 */
-    --accent-bg: color-mix(in srgb, #f6a06b 15%, transparent);
-    --accent-border: color-mix(in srgb, #f6a06b 50%, transparent);
-
-    --accent-2: #aebf92;
-    --accent-2-strong: #ccdbb2;
-
-    /* Aufgehellte Entsprechungen derselben drei Bewertungstoene; alle tragen dunkle Tinte
-       (Ocker 8.56:1, Salbei 8.43:1, Ziegel 6.35:1). */
-    --rating-favorite: #e0b455;
-    --rating-favorite-fg: #201e1d;
-    --rating-album-worthy: #aebf92;
-    --rating-album-worthy-fg: #201e1d;
-    --rating-rejected: #e08a6f;
-    --rating-rejected-fg: #201e1d;
-
-    --status-success: var(--accent-2);
-    --status-success-fg: #201e1d; /* dunkle Tinte auf dem aufgehellten Salbei: 8.43:1 */
-
-    /* Dieselben vier Paare umgedreht: die Flaeche ist eine 22%-Tinte der Statusfarbe auf dem
-       dunklen Grund, die Beschriftung eine helle Stufe derselben Leiter (alle >= 6.4:1). */
-    --status-running-tint: color-mix(in srgb, var(--accent) 22%, var(--bg));
-    --status-running-strong: var(--accent-300);
-    --status-success-tint: color-mix(in srgb, var(--accent-2) 22%, var(--bg));
-    --status-success-strong: var(--accent-2-300);
-    --status-failed-tint: color-mix(in srgb, var(--rating-rejected) 22%, var(--bg));
-    --status-failed-strong: #f3b5a0;
-    --status-idle-tint: color-mix(in srgb, var(--neutral-400) 22%, var(--bg));
-    --status-idle-strong: var(--neutral-300);
-
-    --shadow-sm: none;
-    --shadow: none;
-    --shadow-lg: none;
-  }
+  --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
 }
 
 /* Tailwind-Theme: ordnet die obigen Roh-Tokens den generierten Utility-Klassen zu
-   (bg-bg/text-text/border-border/bg-accent/text-accent-fg/... siehe
+   (bg-bg/bg-elevated/text-text/border-border-control/text-chip-menschen-fg/... - siehe
    .claude/skills/design-system/SKILL.md fuer die Kurzreferenz). */
 @theme {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
-  --color-border: var(--border);
+  --color-elevated: var(--elevated);
+  --color-overlay: var(--overlay);
+
   --color-text: var(--text);
   --color-text-h: var(--text-h);
+  --color-text-muted: var(--text-muted);
+  --color-text-disabled: var(--text-disabled);
+
+  --color-border: var(--border);
+  --color-border-control: var(--border-control);
 
   --color-accent: var(--accent);
   --color-accent-strong: var(--accent-strong);
   --color-accent-fg: var(--accent-fg);
-  --color-accent-bg: var(--accent-bg);
-  --color-accent-border: var(--accent-border);
-
   --color-accent-2: var(--accent-2);
   --color-accent-2-strong: var(--accent-2-strong);
-
-  --color-neutral-100: var(--neutral-100);
-  --color-neutral-200: var(--neutral-200);
-  --color-neutral-300: var(--neutral-300);
-  --color-neutral-400: var(--neutral-400);
-  --color-neutral-500: var(--neutral-500);
-  --color-neutral-600: var(--neutral-600);
-  --color-neutral-700: var(--neutral-700);
-  --color-neutral-800: var(--neutral-800);
-  --color-neutral-900: var(--neutral-900);
+  --color-info: var(--info);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
 
   --color-rating-favorite: var(--rating-favorite);
   --color-rating-favorite-fg: var(--rating-favorite-fg);
@@ -245,6 +207,7 @@
   --color-status-running: var(--status-running);
   --color-status-success: var(--status-success);
   --color-status-success-fg: var(--status-success-fg);
+  --color-status-failed: var(--status-failed);
 
   --color-status-running-tint: var(--status-running-tint);
   --color-status-running-strong: var(--status-running-strong);
@@ -255,50 +218,109 @@
   --color-status-idle-tint: var(--status-idle-tint);
   --color-status-idle-strong: var(--status-idle-strong);
 
-  --color-accent-100: var(--accent-100);
-  --color-accent-200: var(--accent-200);
-  --color-accent-300: var(--accent-300);
-  --color-accent-400: var(--accent-400);
-  --color-accent-500: var(--accent-500);
-  --color-accent-600: var(--accent-600);
-  --color-accent-700: var(--accent-700);
-  --color-accent-800: var(--accent-800);
-  --color-accent-900: var(--accent-900);
-
-  --color-accent-2-100: var(--accent-2-100);
-  --color-accent-2-200: var(--accent-2-200);
-  --color-accent-2-300: var(--accent-2-300);
-  --color-accent-2-400: var(--accent-2-400);
-  --color-accent-2-500: var(--accent-2-500);
-  --color-accent-2-600: var(--accent-2-600);
-  --color-accent-2-700: var(--accent-2-700);
-  --color-accent-2-800: var(--accent-2-800);
-  --color-accent-2-900: var(--accent-2-900);
-  --color-status-failed: var(--status-failed);
-
-  --shadow-warm: var(--shadow);
-  --shadow-warm-sm: var(--shadow-sm);
-  --shadow-warm-lg: var(--shadow-lg);
+  --color-chip-menschen: var(--chip-menschen-bg);
+  --color-chip-menschen-fg: var(--chip-menschen-fg);
+  --color-chip-tier: var(--chip-tier-bg);
+  --color-chip-tier-fg: var(--chip-tier-fg);
+  --color-chip-pflanze: var(--chip-pflanze-bg);
+  --color-chip-pflanze-fg: var(--chip-pflanze-fg);
+  --color-chip-landschaft: var(--chip-landschaft-bg);
+  --color-chip-landschaft-fg: var(--chip-landschaft-fg);
+  --color-chip-gebaeude-bauwerk: var(--chip-gebaeude-bauwerk-bg);
+  --color-chip-gebaeude-bauwerk-fg: var(--chip-gebaeude-bauwerk-fg);
+  --color-chip-innenraum: var(--chip-innenraum-bg);
+  --color-chip-innenraum-fg: var(--chip-innenraum-fg);
+  --color-chip-essen-trinken: var(--chip-essen-trinken-bg);
+  --color-chip-essen-trinken-fg: var(--chip-essen-trinken-fg);
+  --color-chip-fahrzeug: var(--chip-fahrzeug-bg);
+  --color-chip-fahrzeug-fg: var(--chip-fahrzeug-fg);
+  --color-chip-gegenstand: var(--chip-gegenstand-bg);
+  --color-chip-gegenstand-fg: var(--chip-gegenstand-fg);
+  --color-chip-dokument-screenshot: var(--chip-dokument-screenshot-bg);
+  --color-chip-dokument-screenshot-fg: var(--chip-dokument-screenshot-fg);
+  --color-chip-kunst-kreatives: var(--chip-kunst-kreatives-bg);
+  --color-chip-kunst-kreatives-fg: var(--chip-kunst-kreatives-fg);
+  --color-chip-sport-aktivitaet: var(--chip-sport-aktivitaet-bg);
+  --color-chip-sport-aktivitaet-fg: var(--chip-sport-aktivitaet-fg);
+  --color-chip-nicht-erkannt: var(--chip-nicht-erkannt-bg);
+  --color-chip-nicht-erkannt-fg: var(--chip-nicht-erkannt-fg);
 
   --font-sans: var(--sans);
-  --font-heading: var(--heading);
   --font-mono: var(--mono);
 
-  /* Formsprache: das Organic-System rundet deutlich staerker als die bisherige, bewusst
-     gemaessigte Rundung (8px/12px). Uebernommen sind die Radienskala der Vorlage
-     (16px / 28px, Karten und Dialoge 32px) sowie ihre Regel, dass kleine Bedienelemente
-     - Buttons, Eingabefelder, Chips, Segmentschalter - vollstaendig zur Pille werden. */
-  --radius-md: 16px;
-  --radius-lg: 28px;
-  --radius-xl: 32px;
+  /*
+   * Radienskala des Boards. Die bestehenden rounded-md- und rounded-xl-Aufrufstellen werden durch
+   * den Wertetausch automatisch board-konform, ohne angefasst zu werden.
+   *   xs 4px  Hotkey-Kaestchen, Fortschrittsbalken, Auswahlpunkt
+   *   sm 6px  Buttons, Eingabefelder, Bewertungs-Pillen, Karten-Badge
+   *   md 8px  Toast, Popover, Icon-Kachel, Bildflaeche in der Karte
+   *   lg 12px Panels, Foto-Karten
+   *   xl 16px Modal-Dialog, Kategorie-Chips (die einzige verbleibende Pillenform)
+   */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 
-  /* Abstandsskala der Vorlage (Dichte 1.10x). */
-  --spacing-o1: 4.4px;
-  --spacing-o2: 8.8px;
-  --spacing-o3: 13.2px;
-  --spacing-o4: 17.6px;
-  --spacing-o6: 26.4px;
-  --spacing-o8: 35.2px;
+  /*
+   * Typoskala des Boards, auf Tailwinds bestehende Stufen gelegt statt als zweite, parallele Skala
+   * danebengestellt - sonst laegen die 121 vorhandenen text-xs/text-sm/text-base-Aufrufstellen
+   * dauerhaft ausserhalb des Systems.
+   *
+   * Der Schnitt einer Stufe steht als --font-weight mit dabei (Board: Ueberschrift 1 Bold,
+   * Ueberschrift 2 Semi-Bold, Ueberschrift 3 Regular, Fliesstext Medium). Tailwind v4 setzt ihn
+   * ueber --tw-font-weight, eine explizite font-*-Utility an der Aufrufstelle gewinnt also
+   * weiterhin - die Skala legt den Standardschnitt fest, sie erzwingt ihn nicht.
+   *
+   * BEWUSSTE EINSCHRAENKUNG bei text-xs: die Board-Stufe "Beschriftung" ist Semi-Bold und
+   * Versalien. Das ist eine ROLLE (Panel-/Tabellenkopf), nicht jede 12px-Textstelle - im Bestand
+   * traegt text-xs auch Metadaten und Fliesstext-Kleinstufen. Die Skala setzt deshalb nur Groesse
+   * und Zeilenhoehe; die Beschriftungsrolle entsteht an der Aufrufstelle ueber
+   * `text-xs font-semibold uppercase tracking-wide` (so im Design-System-Dokument festgehalten).
+   */
+  --text-xs: 12px;
+  --text-xs--line-height: 1.4;
+  --text-sm: 14px;
+  --text-sm--line-height: 1.5;
+  --text-base: 16px;
+  --text-base--line-height: 1.5;
+  --text-base--font-weight: 400;
+  --text-lg: 20px;
+  --text-lg--line-height: 1.5;
+  --text-lg--font-weight: 500;
+  --text-xl: 24px;
+  --text-xl--line-height: 1.5;
+  --text-xl--font-weight: 400;
+  --text-2xl: 40px;
+  --text-2xl--line-height: 1.1;
+  --text-2xl--font-weight: 600;
+  --text-3xl: 64px;
+  --text-3xl--line-height: 1.05;
+  --text-3xl--letter-spacing: -0.02em;
+  --text-3xl--font-weight: 700;
+
+  /* Das Board hat keine Stufen oberhalb von 64px - die Tailwind-Defaults werden entfernt, damit
+     eine versehentliche Verwendung als tote Utility auffaellt (Vertragstest, Kompilier-Pruefung)
+     statt still eine nicht vorgesehene Groesse zu erzeugen. */
+  --text-4xl: initial;
+  --text-5xl: initial;
+  --text-6xl: initial;
+  --text-7xl: initial;
+  --text-8xl: initial;
+  --text-9xl: initial;
+
+  /*
+   * Abstand und Raster brauchen KEIN eigenes Token: Tailwinds Default- --spacing (0.25rem)
+   * liefert das 8-Punkt-Raster des Boards bereits ueber p-1/2/3/4/6/8/12/16
+   * = 4/8/12/16/24/32/48/64px. Das 12-Spalten-Raster mit 12px Zwischenraum ist
+   * `grid-cols-12 gap-3`. Beides ist hier nur dokumentiert, nicht redeklariert.
+   *
+   * Harte Untergrenze aus dem UI/UX-Abschnitt der Spec 0320: zwischen FOKUSSIERBAREN Elementen
+   * mindestens 8px (sonst laeuft die abgesetzte Fokuskontur ins Nachbarelement) und zwischen
+   * aufgespannten Trefferflaechen mindestens 12px (sonst ueberlappen sie sich). Die 4er-Stufe ist
+   * eine Stufe fuer Innenabstaende, nicht fuer Abstaende zwischen Bedienelementen.
+   */
 }
 
 @layer base {
@@ -306,8 +328,11 @@
     border-color: var(--border);
   }
 
+  /* Grundflaeche zusaetzlich auf html, nicht nur auf body - sonst bleibt der Ueberroll-Bereich
+     (Bounce beim Ueberscrollen) in der Browser-Grundfarbe stehen. */
   html {
-    color-scheme: light dark;
+    color-scheme: dark;
+    background: var(--bg);
   }
 
   body {
@@ -321,46 +346,98 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /*
-   * Caprasimo ist ein einzelner, fetter Display-Schnitt (nur Gewicht 400). Ein eigenes
-   * font-weight wuerde der Browser synthetisch faelschen - deshalb bleibt es bei 400, die
-   * optische Schwere bringt die Schrift selbst mit. Enges Zeilenmass und leicht negative
-   * Laufweite wie in der Vorlage.
-   */
+  /* Das Board hat keine Display-Schrift - Ueberschriften sind Inter in unterschiedlichen
+     Schnitten. Groesse und Schnitt kommen aus der Typoskala (text-xl/2xl/3xl); hier steht nur,
+     was fuer jede Ueberschrift gilt. */
   h1,
   h2,
   h3,
   h4 {
-    font-family: var(--heading);
-    font-weight: 400;
-    line-height: 1.12;
-    letter-spacing: -0.015em;
+    font-family: var(--sans);
+    font-weight: 600;
+    line-height: 1.2;
     color: var(--text-h);
   }
 
-  /* Themengebundene Fokus-Sichtbarkeit statt des blauen Browser-Rings (Readme, "Interaction
-     states"). */
+  /*
+   * Die EINZIGE Fokusdarstellung im Projekt (UI/UX-Abschnitt der Spec 0320, Abschnitt 2).
+   *
+   * Der Akzent ist jetzt gleichzeitig Auswahl-, Favorit- und Aktiv-Farbe. Damit ein fokussiertes
+   * Element von einem ausgewaehlten unterscheidbar bleibt, traegt der Fokus zusaetzlich zur Farbe
+   * eine FORMAUSSAGE: Auswahl/Aktiv ist immer eine durchgezogene Kante AM Element (ohne Abstand),
+   * Fokus immer eine ABGESETZTE Kontur mit 2px Luft. Wo beides gleichzeitig gilt, liest man zwei
+   * Linien mit dunklem Spalt dazwischen.
+   *
+   * Der Versatz ist transparent und laesst den TATSAECHLICHEN Untergrund durchscheinen. Genau das
+   * konnten die frueheren, pro Primitive hartkodierten Ring-Versatzfarben nicht: sie waren auf den
+   * Seitengrund verdrahtet und erzeugten auf --elevated (Karte) und --overlay (Dialog) einen
+   * falsch getoenten Kranz. Der Vertragstest zaehlt diese Regel und verbietet jede Fokus-Utility
+   * in den .tsx-Dateien.
+   */
   :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    background: var(--accent);
+    color: var(--accent-fg);
   }
 }
 
 @layer utilities {
   /*
-   * Bildbehandlung der Vorlage: Fotos werden entsaettigt und aufgehellt, damit sie in die warme
-   * Flaeche zuruecktreten statt darauf zu liegen.
+   * Trefferflaechen-Aufspannung (ADR 0055 Punkt 8). Die bisherige 44x44px-Regel des
+   * Design-Systems war eine GROESSEN-Regel und der Grund, warum ueberall h-11 stand - die
+   * Oberflaeche war dadurch gerade nicht dicht. Sie wird zu einer TREFFERFLAECHEN-Regel:
+   * Bedienelemente tragen die kompakten Board-Masse (Standard-Schaltflaeche 32px hoch), und ein
+   * transparentes Pseudo-Element spannt die Trefferflaeche ueber die Mitte auf mindestens 44px
+   * auf. Beides wird erfuellt, statt eines gegen das andere auszuspielen.
    *
-   * ACHTUNG - bewusst NICHT auf die Fotos der Bewertungs-/Vergleichsansichten anwenden: dort ist
-   * die Bildwirkung selbst der Gegenstand der Entscheidung (Schaerfe, Belichtung, Farbe), eine
-   * kosmetische Waesche wuerde genau das verfaelschen, worueber der Nutzer urteilt. Gilt nur fuer
-   * dekorative und begleitende Bilder.
+   * Vier Regeln, ohne die die Aufspannung neue, schlechter auffindbare Fehler erzeugt als die,
+   * die sie behebt (UI/UX-Abschnitt der Spec 0320, Abschnitt 3):
+   *  1. Nur auf der KURZEN Achse aufspannen - eine beschriftete Schaltflaeche ist breit genug,
+   *     dort spannt `tap-target` nur vertikal auf. Beidachsig (`tap-target-square`) nur, was
+   *     tatsaechlich in beiden Achsen zu klein ist (Symbol-Schaltflaechen, Kontrollkaestchen).
+   *  2. Mindestens 12px Abstand zwischen aufgespannten Bedienelementen - die Aufspannung ragt bis
+   *     zu 6px je Seite ueber das Sichtbare hinaus. In einer Ueberlappung gewinnt das
+   *     obenliegende Element, und bei Bewertungsschaltflaechen ist das ein falsch gesetzter
+   *     Datenwert, kein Schoenheitsfehler.
+   *  3. Zeilenweise Listen werden NICHT aufgespannt - dort ist die Zeile selbst die Trefferflaeche
+   *     und bleibt mindestens 44px hoch.
+   *  4. Niemals innerhalb eines beschneidenden Containers (`overflow: hidden`) - das
+   *     Pseudo-Element wird dort still abgeschnitten, ohne dass etwas sichtbar kaputt waere. Der
+   *     Vertragstest prueft das fuer denselben Knoten; ein beschneidender VORFAHRE bleibt Sache
+   *     der Sichtpruefung.
    */
-  .washed {
-    filter: saturate(0.6) contrast(0.85) brightness(1.1) opacity(0.94);
+  .tap-target {
+    position: relative;
+  }
+
+  .tap-target::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    min-height: 44px;
+    transform: translate(-50%, -50%);
+  }
+
+  .tap-target-square {
+    position: relative;
+  }
+
+  .tap-target-square::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    min-width: 44px;
+    min-height: 44px;
+    transform: translate(-50%, -50%);
   }
 }

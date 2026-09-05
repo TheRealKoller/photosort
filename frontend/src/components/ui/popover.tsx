@@ -15,12 +15,15 @@ export const Popover = PopoverPrimitive.Root
 export const PopoverTrigger = PopoverPrimitive.Trigger
 export const PopoverClose = PopoverPrimitive.Close
 
-// Styling konsistent mit ui/card.tsx (Formsprache: shadow-warm auf gerundeter Flaeche - hier
-// bewusst eine Stufe knapper gerundet als die Karte [rounded-lg statt rounded-xl], damit das
-// Panel als aufgesetzte Ebene und nicht als weitere Karte liest) und ui/alert.tsx
-// (Bannermuster). `shadow-warm` loest sich ueber index.css automatisch je Farbschema auf
-// (`--shadow: none` im Dunkelmodus) - dieselbe "Schatten durch Rahmen ersetzt"-Regel wie bei Card,
-// ohne eine eigene `dark:`-Klasse noetig zu haben.
+// Bewusst KEINE outline-unterdrueckende Utility auf dem Panel: Radix setzt beim Oeffnen den Fokus auf den
+// Content-Knoten (`tabindex="-1"`). Ohne Kontur bekaeme ein Tastaturnutzer dort gar keine
+// Rueckmeldung, wohin der Fokus gesprungen ist - und eine outline-unterdrueckende Utility liegt
+// in einer spaeteren Cascade Layer als die globale Fokusregel, wuerde sie also gewinnen.
+//
+// Board-Werte (specs/architecture/0005-board-dark-utility-register.md Abschnitt 5/6): Radius 8px,
+// Flaeche `--elevated`, flach. Das Popover rueckt damit von `--surface` auf `--elevated` - es
+// liest so als aufgesetzte Ebene und nicht als weitere Karte. Der frueher hier gesetzte Schatten
+// entfaellt ersatzlos: Tiefe tragen die vier Flaechenstufen.
 //
 // `ref` als normale Prop (React 19, kein `forwardRef` noetig, specs/features/0041-
 // bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md, Architektur-Abschnitt) - laesst
@@ -41,7 +44,7 @@ export function PopoverContent({
         ref={ref}
         sideOffset={sideOffset}
         className={cn(
-          'z-50 max-h-[60vh] w-72 overflow-y-auto rounded-lg border border-border bg-surface p-4 text-sm text-text shadow-warm outline-none',
+          'z-50 max-h-[60vh] w-72 overflow-y-auto rounded-md border border-border bg-elevated p-4 text-sm text-text',
           className
         )}
         {...props}

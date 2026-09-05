@@ -1,14 +1,18 @@
 import { cn } from '../lib/utils'
+import { Icon } from './ui/icon'
 
 interface BrandMarkProps {
   className?: string
 }
 
 /**
- * Bildmarke aus drei ueberlappenden weichen Kreisen (Terrakotta, Salbei, Grundton) - so im
- * importierten Mockup auf dem Anmeldebildschirm angelegt. Bewusst aus den Formen des
- * Design-Systems gebaut statt als eigenes Logo: "soft circular accents" sind dort die
- * Grundformensprache, damit braucht die Marke keine eigene Schriftzug-Gestaltung.
+ * Bildmarke: schwach gerundete Akzentflaeche (Radius 8px) mit dem `camera`-Symbol des Boards in
+ * `--accent-fg`.
+ *
+ * Die frueheren drei ueberlappenden Kreise waren die Formsprache des Vorgaengersystems ("soft
+ * circular accents") und haben auf dem neuen, dunklen Grund zusaetzlich nicht mehr funktioniert:
+ * der kleinste Kreis war ein `bg-bg`-Ausstanz, der auf einer Creme-Flaeche als heller Ausschnitt
+ * las und auf `#0B0C10` als schwarzes Loch.
  *
  * Rein dekorativ und daher `aria-hidden` - die Wortmarke "PhotoSort" steht als Ueberschrift
  * direkt daneben und traegt die zugaengliche Benennung, eine zweite Nennung waere fuer
@@ -16,10 +20,14 @@ interface BrandMarkProps {
  */
 export function BrandMark({ className }: BrandMarkProps) {
   return (
-    <span aria-hidden="true" className={cn('relative block size-[74px]', className)}>
-      <span className="absolute left-0 top-[6px] size-14 rounded-full bg-accent" />
-      <span className="absolute left-[30px] top-0 size-10 rounded-full bg-accent-2/90" />
-      <span className="absolute left-[22px] top-[34px] size-[26px] rounded-full bg-bg" />
+    <span
+      aria-hidden="true"
+      className={cn(
+        'flex size-14 items-center justify-center rounded-md bg-accent text-accent-fg',
+        className
+      )}
+    >
+      <Icon name="camera" size={24} />
     </span>
   )
 }
