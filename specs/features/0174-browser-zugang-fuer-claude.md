@@ -1,6 +1,6 @@
 # 0174 - KI soll die Anwendung lokal im Browser ansehen können
 
-**Status:** Accepted
+**Status:** Implemented ([PR #329](https://github.com/TheRealKoller/photosort/pull/329))
 **Erstellt:** 2026-09-05
 **Akzeptiert:** 2026-09-05
 **Bezug:** [GitHub-Issue #174](https://github.com/TheRealKoller/photosort/issues/174) (Story-Refinement über den `refinement`-Ablauf), technische Konsultation über den `spec-writer`-Ablauf am 2026-09-05
