@@ -389,6 +389,17 @@ const STRUCK_TOKENS: { needle: string; why: string }[] = [
   { needle: '@fontsource/figtree', why: 'Fliesstextschrift des Organic-Systems' },
 ]
 
+/**
+ * Maskiert Regex-Metazeichen in einem Suchbegriff. Die Hexwerte unten enthalten heute keine - die
+ * Absicht war trotzdem Maskierung, und sie stand vorher als `hex.replace('#', '#')` da: ein
+ * No-Op, der aussah, als taete er etwas (CodeQL-Alert im PR #322). Entweder richtig maskieren
+ * oder gar nicht - hier richtig, damit ein spaeter ergaenzter Suchbegriff mit Sonderzeichen nicht
+ * still zu einem anderen Muster wird.
+ */
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /** Die Farbwelt des Organic-Systems, vollstaendig. Findet sich einer dieser Werte noch irgendwo in
  * `frontend/`, ist die Umstellung nicht vollstaendig. */
 const ORGANIC_HEX_VALUES = [
@@ -408,8 +419,7 @@ describe('Design-Vertrag: Streichliste', () => {
   })
 
   it.each(ORGANIC_HEX_VALUES)('der Organic-Hexwert %s kommt in frontend/ nicht mehr vor', (hex) => {
-    const pattern = new RegExp(hex.replace('#', '#'), 'i')
-    expect(findOccurrences(pattern)).toEqual([])
+    expect(findOccurrences(new RegExp(escapeForRegExp(hex), 'i'))).toEqual([])
   })
 })
 

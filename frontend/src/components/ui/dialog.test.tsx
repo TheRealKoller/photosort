@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -102,6 +102,74 @@ describe('Dialog', () => {
     await user.tab({ shift: true })
 
     expect(confirm).toHaveFocus()
+  })
+
+  /*
+   * Copilot-Review-Fund (PR #322): Der Ausreisserfall "Fokus liegt ausserhalb des Dialogs" war nur
+   * fuer Shift+Tab behandelt - vorwaerts traf kein Zweig zu und der Fokus wanderte aus dem Modal
+   * heraus. Die beiden Zweige sind jetzt symmetrisch.
+   *
+   * Das wiegt hier schwerer als bei einer Bibliothekskomponente: die Falle ist gerade DESHALB von
+   * Hand gebaut, weil jsdom keine native Einsperrung mitbringt - es gibt also nichts, was den
+   * Fehler auffinge. Die beiden Richtungstests darueber decken den Regelfall ab, dieser den
+   * Ausreisser; deshalb wird der Fokus hier bewusst aus dem Dialog GENOMMEN (blur), bevor die
+   * Taste am Dialog ankommt.
+   */
+  it.each([
+    [false, 'Abbrechen'],
+    [true, 'Kostenpflichtig starten'],
+  ])('pulls stray focus back into the dialog (shift=%s)', (shift, expectedLabel) => {
+    render(<TestDialog />)
+
+    const dialog = screen.getByRole('dialog')
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(dialog.contains(document.activeElement)).toBe(false)
+
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: shift })
+
+    expect(screen.getByRole('button', { name: expectedLabel })).toHaveFocus()
+  })
+
+  /*
+   * Copilot-Review-Fund (PR #322), Haertung: Die Schliessanfrage des Browsers ist NICHT als
+   * Standardaktion des `keydown` definiert und laesst sich dort nicht zuverlaessig per
+   * `preventDefault()` unterdruecken - der dafuer vorgesehene Haken ist `cancel`. Beide Pfade sind
+   * jetzt angeschlossen; dieser Test haelt fest, dass sie zusammen trotzdem GENAU EINMAL
+   * schliessen. In jsdom feuert `cancel` nie von selbst, der Doppelaufruf waere also im Browser
+   * aufgetreten und hier unsichtbar geblieben - deshalb wird er hier von Hand ausgeloest.
+   */
+  it('closes exactly once when Escape and the native cancel event both arrive', () => {
+    const onClose = vi.fn()
+    render(<TestDialog onClose={onClose} />)
+
+    const dialog = screen.getByRole('dialog')
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    fireEvent(dialog, new Event('cancel', { bubbles: false, cancelable: true }))
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes on the native cancel event alone', () => {
+    const onClose = vi.fn()
+    render(<TestDialog onClose={onClose} />)
+
+    fireEvent(screen.getByRole('dialog'), new Event('cancel', { bubbles: false, cancelable: true }))
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('still closes on a second Escape when the caller ignored the first', () => {
+    // Gegenprobe zur Richtung der Esc/cancel-Absprache: Esc traegt immer, auch wenn ein Aufrufer
+    // das erste bewusst ignoriert (z.B. um vor dem Verwerfen von Eingaben nachzufragen). Ein
+    // dauerhafter Riegel haette das zweite Esc verschluckt.
+    const onClose = vi.fn()
+    render(<TestDialog onClose={onClose} />)
+
+    const dialog = screen.getByRole('dialog')
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+
+    expect(onClose).toHaveBeenCalledTimes(2)
   })
 
   it('returns the focus to the triggering element after closing', async () => {

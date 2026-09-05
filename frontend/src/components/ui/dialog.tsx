@@ -64,6 +64,18 @@ export function Dialog({
   const dialogRef = useRef<HTMLDialogElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
   const previouslyFocusedRef = useRef<HTMLElement | null>(null)
+  /* Esc und das native `cancel` treffen im Browser in DERSELBEN Interaktion ein - vor dem
+   * naechsten Rendern, `open` ist dann noch `true`. Ohne Absprache liefe `onClose` doppelt; bei
+   * einem Aufrufer, an dem daran mehr haengt als ein `setOpen(false)`, waere das ein echter
+   * Fehler. In jsdom feuert `cancel` nie von selbst - der Doppelaufruf traete also nur im Browser
+   * auf und bliebe hier unsichtbar.
+   *
+   * Die Richtung der Absprache ist bewusst gewaehlt: Esc SETZT die Markierung und schliesst immer,
+   * `cancel` VERBRAUCHT sie und schliesst nur, wenn keine gesetzt war. Andersherum (ein Riegel,
+   * der nach dem ersten Schliessen dauerhaft haelt) wuerde ein zweites Esc verschlucken, sobald
+   * ein Aufrufer das erste bewusst ignoriert - z.B. um vor dem Verwerfen von Eingaben
+   * nachzufragen. Esc ist der Weg, den Nutzer tatsaechlich nehmen; er muss immer tragen. */
+  const escapeHandledRef = useRef(false)
   const titleId = useId()
   const descriptionId = useId()
 
@@ -76,6 +88,7 @@ export function Dialog({
       return
     }
 
+    escapeHandledRef.current = false
     previouslyFocusedRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     dialog.showModal()
@@ -86,7 +99,13 @@ export function Dialog({
 
     return () => {
       document.body.style.overflow = previousOverflow
-      dialog.close()
+      // `close()` auf einem nicht offenen <dialog> kehrt laut Standard still zurueck (nur
+      // `showModal()` wirft) - der Riegel steht hier also NICHT gegen eine Ausnahme, sondern
+      // schreibt die Invariante hin: seit das native `cancel` angeschlossen ist, gibt es einen
+      // Schliesspfad, der das Element bereits geschlossen haben kann, bevor dieser Cleanup laeuft.
+      if (dialog.open) {
+        dialog.close()
+      }
       previouslyFocusedRef.current?.focus()
     }
   }, [open])
@@ -97,9 +116,19 @@ export function Dialog({
 
   function handleKeyDown(event: KeyboardEvent<HTMLDialogElement>): void {
     if (event.key === 'Escape') {
-      // preventDefault, damit das native `cancel`-Ereignis den Dialog nicht zusaetzlich und an
-      // unserem Zustand vorbei schliesst.
+      /*
+       * `preventDefault()` unterdrueckt hier NICHT zuverlaessig, dass der Browser seine
+       * Schliessanfrage stellt: die ist nicht als Standardaktion des `keydown` definiert. Der
+       * dafuer vorgesehene Haken ist `cancel`, und der haengt unten am Element. Was
+       * `preventDefault()` hier tatsaechlich leistet, ist bescheidener und trotzdem richtig: es
+       * haelt Esc davon ab, gleichzeitig etwas ausserhalb des Dialogs auszuloesen.
+       *
+       * Der Grund, Esc ueberhaupt selbst zu behandeln statt es allein `cancel` zu ueberlassen,
+       * bleibt unveraendert: jsdom implementiert weder `showModal()` noch die Esc-Behandlung des
+       * <dialog>-Elements - eine Zusage, die nur auf dem nativen Pfad beruhte, waere untestbar.
+       */
       event.preventDefault()
+      escapeHandledRef.current = true
       onClose()
       return
     }
@@ -119,11 +148,15 @@ export function Dialog({
     const first = focusable[0]
     const last = focusable[focusable.length - 1]
     const active = document.activeElement
+    // Copilot-Review-Fund (PR #322): Der Ausreisserfall wurde zuvor NUR fuer Shift+Tab behandelt -
+    // vorwaerts traf kein Zweig zu und der Fokus wanderte aus dem Modal heraus. Beide Richtungen
+    // fangen ihn jetzt gleich ab: rueckwaerts auf das letzte, vorwaerts auf das erste Element.
+    const hasStrayFocus = !dialog.contains(active)
 
-    if (event.shiftKey && (active === first || !dialog.contains(active))) {
+    if (event.shiftKey && (hasStrayFocus || active === first)) {
       event.preventDefault()
       last.focus()
-    } else if (!event.shiftKey && active === last) {
+    } else if (!event.shiftKey && (hasStrayFocus || active === last)) {
       event.preventDefault()
       first.focus()
     }
@@ -136,6 +169,19 @@ export function Dialog({
       aria-labelledby={titleId}
       aria-describedby={description === undefined ? undefined : descriptionId}
       onKeyDown={handleKeyDown}
+      // Der vom Standard vorgesehene Haken fuer die Schliessanfrage des Browsers (Esc, aber auch
+      // z.B. eine Geste des Betriebssystems). `preventDefault()` haelt das Element davon ab, sich
+      // an unserem Zustand vorbei selbst zu schliessen; geschlossen wird ueber `open`.
+      onCancel={(event) => {
+        event.preventDefault()
+        if (escapeHandledRef.current) {
+          // Folgeereignis zu dem Esc, das wir gerade selbst behandelt haben - Markierung
+          // verbrauchen, nicht ein zweites Mal schliessen.
+          escapeHandledRef.current = false
+          return
+        }
+        onClose()
+      }}
       // Bewusst KEIN Hintergrundklick-Handler: der Klick auf den ::backdrop trifft das
       // <dialog>-Element selbst - ein `onClick`, das darauf schliesst, ist genau das versehentliche
       // Verwerfen, das hier ausgeschlossen ist.
