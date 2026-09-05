@@ -1,0 +1,171 @@
+import { useEffect, useId, useRef } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
+
+import { Button } from './button'
+import { Icon } from './icon'
+import type { IconName } from './icon'
+import { cn } from '../../lib/utils'
+
+export interface DialogProps {
+  open: boolean
+  /** Wird von Esc und von der Abbrechen-Schaltflaeche ausgeloest - NICHT vom Hintergrundklick. */
+  onClose: () => void
+  title: string
+  /** Erklaerender Text, ueber `aria-describedby` mit dem Dialog verknuepft. */
+  description?: string
+  icon?: IconName
+  children?: ReactNode
+  /** Bestaetigende/eingreifende Aktionen. Sie stehen im DOM NACH der Abbrechen-Schaltflaeche,
+   * damit der Erstfokus nie auf ihnen landet. */
+  actions?: ReactNode
+  cancelLabel?: string
+}
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * Ueberlagerung/Modal nach dem Board (specs/architecture/0005-board-dark-utility-register.md
+ * Abschnitt 6): Flaeche `--overlay`, Rand `--border`, Radius 16px, Polsterung 24px, Titelzeile mit
+ * Symbol, Schaltflaechenzeile rechtsbuendig, verdunkelter Hintergrund ueber `::backdrop`.
+ *
+ * Natives <dialog> statt eines neuen @radix-ui/react-dialog-Pakets - dieselbe Linie wie
+ * switch.tsx und checkbox.tsx ("Radix-Primitives nur dort einsetzen, wo natives HTML nicht
+ * reicht"). Die Grundelemente-Liste des Boards verlangt Ueberlagerungen als Teil des Fundaments;
+ * ein Primitiv vor seinem ersten Konsumenten ist genau das, was ein Grundelemente-Satz ist.
+ *
+ * FOKUSFALLE UND ESC SIND IN EIGENEM JS IMPLEMENTIERT, nicht dem nativen Element ueberlassen.
+ * Grund ist keine Geschmacksfrage: jsdom implementiert weder `showModal()` noch die Fokusfalle
+ * noch die Esc-Behandlung - eine Zusage, die allein auf dem nativen Verhalten beruhte, waere
+ * untestbar, und der Projekt-Polyfill in setupTests.ts wuerde in einem Test nur sich selbst
+ * bestaetigen.
+ *
+ * Verbindlich (UI/UX-Abschnitt der Spec 0320):
+ *  - Erstfokus auf der am wenigsten eingreifenden Schaltflaeche (Abbrechen), nie auf einer
+ *    bestaetigenden oder loeschenden Aktion.
+ *  - Esc schliesst; ein Klick auf den verdunkelten Hintergrund schliesst NICHT (der erste
+ *    Konsument ist ein Dialog vor einer kostenpflichtigen Aktion - versehentliches Verwerfen
+ *    waere hier teuer).
+ *  - Der Fokus kehrt beim Schliessen zum ausloesenden Element zurueck.
+ *  - Der Hintergrund scrollt nicht mit.
+ *  - Keine Oeffnungs-/Schliessanimation - es gibt keine im Board, und fuer eine Anwendung, in der
+ *    Dialoge waehrend schneller Arbeit auftauchen, ist Sofortigkeit das bessere Verhalten.
+ */
+export function Dialog({
+  open,
+  onClose,
+  title,
+  description,
+  icon,
+  children,
+  actions,
+  cancelLabel = 'Abbrechen',
+}: DialogProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null)
+  const titleId = useId()
+  const descriptionId = useId()
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (dialog === null) {
+      return
+    }
+    if (!open) {
+      return
+    }
+
+    previouslyFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    dialog.showModal()
+    cancelRef.current?.focus()
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      dialog.close()
+      previouslyFocusedRef.current?.focus()
+    }
+  }, [open])
+
+  if (!open) {
+    return null
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDialogElement>): void {
+    if (event.key === 'Escape') {
+      // preventDefault, damit das native `cancel`-Ereignis den Dialog nicht zusaetzlich und an
+      // unserem Zustand vorbei schliesst.
+      event.preventDefault()
+      onClose()
+      return
+    }
+
+    if (event.key !== 'Tab') {
+      return
+    }
+
+    const dialog = dialogRef.current
+    if (dialog === null) {
+      return
+    }
+    const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)]
+    if (focusable.length === 0) {
+      return
+    }
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const active = document.activeElement
+
+    if (event.shiftKey && (active === first || !dialog.contains(active))) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={description === undefined ? undefined : descriptionId}
+      onKeyDown={handleKeyDown}
+      // Bewusst KEIN Hintergrundklick-Handler: der Klick auf den ::backdrop trifft das
+      // <dialog>-Element selbst - ein `onClick`, das darauf schliesst, ist genau das versehentliche
+      // Verwerfen, das hier ausgeschlossen ist.
+      className={cn(
+        'm-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-border bg-overlay p-6 text-text',
+        'backdrop:bg-black/60'
+      )}
+    >
+      <div className="flex flex-col gap-5">
+        <div className="flex items-center gap-3">
+          {icon !== undefined && <Icon name={icon} size={24} className="shrink-0 text-accent" />}
+          <h2 id={titleId} className="text-lg font-bold text-text-h">
+            {title}
+          </h2>
+        </div>
+        {description !== undefined && (
+          <p id={descriptionId} className="text-sm text-text">
+            {description}
+          </p>
+        )}
+        {children}
+        <div className="flex flex-wrap justify-end gap-3">
+          {/* Die harmloseste Aktion steht ZUERST im DOM - so kann der Erstfokus strukturell nicht
+              auf einer bestaetigenden oder loeschenden Aktion landen. */}
+          <Button ref={cancelRef} type="button" variant="secondary" onClick={onClose}>
+            {cancelLabel}
+          </Button>
+          {actions}
+        </div>
+      </div>
+    </dialog>
+  )
+}

@@ -5,40 +5,67 @@ import type { ButtonHTMLAttributes } from 'react'
 
 import { cn } from '../../lib/utils'
 
-// Formsprache/Touch-Ziele (specs/architecture/0004-design-system.md): Buttons sind vollstaendige
-// Pillen (`rounded-full`, Regel des Organic-Design-Systems fuer kleine Bedienelemente), mind.
-// 44x44px Tap-Ziel (h-11 = 44px bei der Standardgroesse), fokus-sichtbarer Ring in --accent.
-// Beschriftung in der Display-Schrift (`font-heading`, Caprasimo) - die Vorlage setzt fuer `.btn`
-// ausdruecklich `font-family: var(--font-heading)`.
+/*
+ * Schaltflaeche nach dem Board "Dark Utility Register" (specs/architecture/0005-board-dark-utility-
+ * register.md Abschnitt 6, specs/features/0320-dark-utility-register.md).
+ *
+ * FORM: Radius 6px (`rounded-sm`) statt der vollen Pille des Vorgaengersystems, Polsterung 16/8px,
+ * Inter Semi-Bold 12px, sichtbare Hoehe 32px statt 44px.
+ *
+ * TREFFERFLAECHE: Die frueher hier verankerte 44px-GROESSENregel ist zu einer
+ * TREFFERFLAECHENregel geworden (ADR 0055 Punkt 8) - `tap-target` spannt ein transparentes
+ * Pseudo-Element auf mindestens 44px auf, ohne die sichtbare Dichte zu kosten. Nur auf der kurzen
+ * Achse: eine beschriftete Schaltflaeche ist breit genug, die Symbol-Variante bekommt
+ * `tap-target-square`. Der `link`-Variante wird NICHT aufgespannt - sie ist Inline-Text im
+ * Textfluss, eine 44px-Flaeche darum wuerde Nachbarklicks schlucken.
+ *
+ * ZUSTAND "GEDRUECKT" IST PFLICHT: Tailwind bindet `hover:` an `@media (hover: hover)` - am
+ * Telefon faellt der Ueberfahren-Zustand ersatzlos weg. Vor dieser Umstellung gab es im gesamten
+ * Code 27 `hover:`- und null `active:`-Stellen, ein Fingertipp erzeugte also gar keine sichtbare
+ * Rueckmeldung. Jede Ausprägung traegt deshalb den Board-Zustand "Gedrueckt" als `active:`.
+ *
+ * FOKUS: keine eigene Fokusdarstellung mehr. Die eine globale, abgesetzte Kontur in index.css ist
+ * die alleinige Fokusdarstellung; die frueher hier hartkodierte Ring-Versatzfarbe war auf den
+ * Seitengrund verdrahtet und erzeugte auf Karten und in Dialogen einen falsch getoenten Kranz.
+ */
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-heading text-sm ' +
-    'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
-    'focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-sm text-xs font-semibold ' +
+    'transition-colors disabled:pointer-events-none disabled:border disabled:border-border ' +
+    'disabled:bg-surface disabled:text-text-disabled disabled:opacity-40',
   {
     variants: {
       variant: {
-        // `text-accent-fg` ist die gegen die gefuellte Akzentflaeche gerechnete dunkle Tinte
-        // (4.60:1 hell, 8.03:1 dunkel) - siehe die Begruendung bei --accent-fg in index.css.
-        default: 'bg-accent text-accent-fg shadow-warm hover:opacity-90',
-        secondary: 'bg-border/60 text-text-h hover:bg-border',
-        outline: 'border border-border bg-transparent text-text-h hover:bg-border/40',
-        ghost: 'bg-transparent text-text-h hover:bg-border/40',
-        // Link ist Text in Fliesstextgroesse auf dem Seitengrund - daher `--accent-strong`
-        // (5.72:1) statt `--accent` (3.03:1, nur fuer Chrome kalibriert).
-        link: 'bg-transparent text-accent-strong underline-offset-4 hover:underline p-0 h-auto min-h-0 min-w-0',
+        // Primaer: gefuellte Akzentflaeche mit dunkler Tinte (10.67:1) - sofort als die eine
+        // Hauptaktion lesbar. Ueberfahren/gedrueckt nur ueber Deckkraft, die Flaeche bleibt.
+        default: 'bg-accent text-accent-fg hover:opacity-85 active:opacity-70',
+        // Sekundaer: der UMRISS ist hier das Identifikationsmerkmal, nicht die Flaeche - in einem
+        // Dialog ist die Flaeche identisch zum Grund. Deshalb --border-control (>= 3:1) und nicht
+        // der dekorative --border (1.04-1.45:1), der den Button dort unsichtbar machen wuerde.
+        secondary:
+          'border border-border-control bg-overlay text-text-h hover:opacity-80 active:bg-border active:text-text',
+        // `outline` ist auf Sekundaer vereinheitlicht: das Board kennt keine vierte gefuellte
+        // Auspraegung. Bewusst als eigener Variantenname erhalten, damit die bestehenden
+        // Aufrufstellen unveraendert bleiben.
+        outline:
+          'border border-border-control bg-overlay text-text-h hover:opacity-80 active:bg-border active:text-text',
+        // Unaufdringlich: nur Beschriftung; erst beim Ueberfahren/Druecken entsteht eine Flaeche.
+        ghost:
+          'bg-transparent text-text hover:bg-overlay hover:text-text-h active:bg-border active:text-text-muted',
+        // Link ist Text im Fliesstext, keine Schaltflaeche - eigene Groesse und kein Board-Mass.
+        link: 'bg-transparent text-sm font-normal text-accent-strong underline-offset-4 hover:underline active:underline p-0 h-auto min-h-0 min-w-0',
       },
       size: {
-        default: 'h-11 min-w-11 px-4 py-2',
-        sm: 'h-11 min-w-11 px-3 text-xs',
-        icon: 'h-11 w-11',
+        default: 'h-8 min-w-8 px-4 py-2',
+        sm: 'h-8 min-w-8 px-3',
+        icon: 'size-8',
       },
     },
     // Review-Fund (Branch feature/0012-visual-redesign-foundation): cva reiht die `size`-Klassen
     // NACH den `variant`-Klassen ein, tailwind-merge loest Konflikte zugunsten der zuletzt
-    // vorkommenden Klasse auf - ohne diesen compoundVariant wuerden `size`s h-11/min-w-11/px-4 py-2
-    // die bewusst kompakten link-Klassen (h-auto/min-w-0/p-0) immer ueberschreiben, unabhaengig von
-    // der gewaehlten Groesse. Das Fehlen von `size` als Bedingung heisst laut cva "passt auf jede
-    // Groesse" - reicht deshalb als ein einziger Eintrag fuer alle drei Groessen.
+    // vorkommenden Klasse auf - ohne diesen compoundVariant wuerden `size`s Hoehen-/Polsterungs-
+    // Klassen die bewusst kompakten link-Klassen (h-auto/min-w-0/p-0) immer ueberschreiben,
+    // unabhaengig von der gewaehlten Groesse. Das Fehlen von `size` als Bedingung heisst laut cva
+    // "passt auf jede Groesse" - reicht deshalb als ein einziger Eintrag fuer alle drei Groessen.
     compoundVariants: [
       {
         variant: 'link',
@@ -86,6 +113,13 @@ export function Button({
   const isDisabled = disabled || busy
   const isDisabledSlot = asChild && isDisabled
 
+  // Die Trefferflaechen-Aufspannung steht bewusst hier und nicht in der `size`-Variante: sie haengt
+  // an BEIDEN Achsen der gewaehlten Groesse UND daran, dass es sich nicht um die link-Variante
+  // handelt. tailwind-merge kennt `tap-target` nicht und koennte es aus einer Variante heraus
+  // nicht wieder entfernen.
+  const tapTargetClass =
+    variant === 'link' ? undefined : size === 'icon' ? 'tap-target-square' : 'tap-target'
+
   // Radix Slot verlangt genau EIN valides Element als Kind (klont Props direkt auf das Kind statt
   // ein eigenes DOM-Element zu rendern) - der Spinner wird deshalb nur im nativen <button>-Fall
   // zusaetzlich eingefuegt. `asChild` wird in dieser App ausschliesslich fuer navigierende Links
@@ -109,7 +143,8 @@ export function Button({
       type={asChild ? undefined : type}
       className={cn(
         buttonVariants({ variant, size, className }),
-        isDisabledSlot && 'pointer-events-none opacity-50'
+        tapTargetClass,
+        isDisabledSlot && 'pointer-events-none opacity-40'
       )}
       disabled={asChild ? undefined : isDisabled}
       aria-disabled={isDisabledSlot ? true : undefined}

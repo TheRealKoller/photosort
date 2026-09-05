@@ -73,12 +73,32 @@ describe('Switch', () => {
     expect(toggle).toHaveAttribute('aria-checked', 'true')
   })
 
-  it('is at least 44px tall to satisfy the touch-target minimum', () => {
+  it('carries the board geometry and spans its tap target to at least 44px', () => {
     render(<Switch checked={false} onCheckedChange={vi.fn()} aria-label="Testschalter" />)
 
-    // Whitebox-Nachweis ueber die Tailwind-Hoehenklasse (h-11 = 44px) statt eines jsdom-
-    // Layout-Messwerts (jsdom rendert kein echtes Boxmodell) - konsistent mit der bereits
-    // etablierten Vorgehensweise fuer aehnliche Touch-Ziel-Nachweise im Projekt.
-    expect(screen.getByRole('switch', { name: 'Testschalter' }).className).toContain('h-11')
+    // Auf das neue Board-Mass umgezogen (specs/features/0320-dark-utility-register.md): sichtbar
+    // 48 x 24px, die 44px-Trefferflaeche kommt ueber die Aufspannung (`tap-target`) statt ueber
+    // die sichtbare Hoehe. Nur die kurze Achse wird aufgespannt - 48px Breite liegen bereits
+    // ueber dem Minimum. Whitebox-Nachweis ueber die Klassen statt eines jsdom-Layout-Messwerts:
+    // jsdom hat keine Layout-Engine, getBoundingClientRect() liefert 0.
+    const className = screen.getByRole('switch', { name: 'Testschalter' }).className
+    expect(className).toMatch(/(^|\s)h-6(\s|$)/)
+    expect(className).toMatch(/(^|\s)w-12(\s|$)/)
+    expect(className).toMatch(/(^|\s)tap-target(\s|$)/)
+  })
+
+  // Der Zustand wird zusaetzlich ueber die KNAUFPOSITION getragen, nicht nur ueber die Farbe -
+  // sonst waere "ein"/"aus" ohne Farbwahrnehmung nicht unterscheidbar.
+  it('carries the state through the knob position, not through colour alone', () => {
+    const { rerender } = render(
+      <Switch checked={false} onCheckedChange={vi.fn()} aria-label="Testschalter" />
+    )
+    const knob = () => screen.getByRole('switch', { name: 'Testschalter' }).querySelector('span')!
+    const off = knob().className
+
+    rerender(<Switch checked onCheckedChange={vi.fn()} aria-label="Testschalter" />)
+
+    expect(knob().className).not.toBe(off)
+    expect(knob().className).toMatch(/translate-x-6/)
   })
 })
