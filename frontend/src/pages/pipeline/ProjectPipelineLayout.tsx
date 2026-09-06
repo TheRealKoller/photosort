@@ -120,25 +120,19 @@ export function ProjectPipelineLayout() {
         <Outlet context={outletContext} />
       </div>
 
-      <nav aria-label="Fotos" className="flex flex-wrap gap-3">
-        <Button asChild variant="secondary">
-          <Link to={`/projects/${project.id}/photos`}>Fotos ansehen</Link>
-        </Button>
-        <Button asChild variant="secondary">
-          <Link to={`/projects/${project.id}/compare`}>Bewertungen vergleichen</Link>
-        </Button>
-        {/* specs/features/0207-projekt-statistikseite.md: einziger Einstiegspunkt in die
-            Statistikseite - eine Querschnittsansicht wie die Einstellungen, kein Pipeline-
-            Schritt. */}
+      {/* specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK9): "Fotos ansehen",
+          "Bewertungen vergleichen" und "Einstellungen" sind in die Kopfzeilengruppe gewandert und
+          hier ersatzlos entfallen. Der umschliessende <nav aria-label="Fotos"> entfiel mit (AK9c):
+          ein Landmark mit einem einzigen Eintrag und nun falschem Namen ist schlechter als kein
+          Landmark - der Statistik-Button bleibt an derselben Stelle in einem schlichten Container.
+          "Statistik" ist bewusst KEIN Ziel der Kopfzeilengruppe und bliebe sonst unerreichbar
+          (AK9b): eine Querschnittsansicht wie die Einstellungen, kein Pipeline-Schritt
+          (specs/features/0207-projekt-statistikseite.md). */}
+      <div className="flex flex-wrap gap-3">
         <Button asChild variant="secondary">
           <Link to={`/projects/${project.id}/stats`}>Statistik</Link>
         </Button>
-        {/* specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: einzige
-            Navigations-Einstiegsstelle in die neue Projekteinstellungs-Route. */}
-        <Button asChild variant="secondary">
-          <Link to={`/projects/${project.id}/settings`}>Einstellungen</Link>
-        </Button>
-      </nav>
+      </div>
     </div>
   )
 }

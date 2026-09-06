@@ -1,10 +1,11 @@
 import type { ReactElement } from 'react'
-import { Link, Navigate, Outlet, Route, Routes, matchPath, useLocation, useNavigate, useParams } from 'react-router'
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router'
 
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { decodeUsername } from './auth/jwt'
 import { clearToken, getToken } from './auth/token'
 import { useUnauthorizedRedirect } from './auth/useUnauthorizedRedirect'
+import { ProjectNav } from './components/ProjectNav'
 import { Button } from './components/ui/button'
 import { CurateCategoriesPage } from './pages/CurateCategoriesPage'
 import { LoginPage } from './pages/LoginPage'
@@ -17,6 +18,7 @@ import { ProjectCreatePage } from './pages/ProjectCreatePage'
 import { ProjectListPage } from './pages/ProjectListPage'
 import { ProjectSettingsPage } from './pages/ProjectSettingsPage'
 import { ProjectStatsPage } from './pages/ProjectStatsPage'
+import { matchProjectId, PROJECT_ROUTE_PATHS } from './utils/projectRoutes'
 
 /**
  * Reiner Redirect (specs/features/0042-automatisierter-flow-stepper-detailseiten.md,
@@ -30,74 +32,33 @@ function ProjectDetailRedirect() {
   return <Navigate to={`/projects/${projectId}/pipeline`} replace />
 }
 
-// Einzige Quelle der Wahrheit fuer die flachen Routen mit Projektkontext (specs/features/
-// 0033-sticky-titelleiste-projekt-link.md): speist sowohl die <Route>-Erzeugung unten als auch
-// den matchPath-Aufruf in useProjectIdFromRoute - verhindert, dass eine kuenftige
-// :projectId-Route nur in <Routes> ergaenzt wird, aber stillschweigend keinen Header-Link
-// bekommt. Explizite Aufzaehlung statt eines Wildcards wie "/projects/:projectId/*", da ein
-// Wildcard "/projects/new" faelschlich als Projektkontext mit projectId="new" matchen wuerde
-// (AK3). /projects/:projectId/curate ist bewusst NICHT enthalten (Spec-Entscheidung, nur die
-// hier bzw. in PIPELINE_BASE_ROUTE_PATH/PIPELINE_STEP_ROUTE_PATH genannten Routen). `element` ist als `ReactElement`
-// typisiert statt des woertlich in der Spec genannten globalen `JSX.Element` - unter diesem
-// tsconfig (moduleDetection: "force", kein globaler JSX-Namespace importiert) loest `JSX.Element`
-// TS2503 ("Cannot find namespace 'JSX'") aus; `ReactElement` aus `react` ist das Modul-basierte
-// Aequivalent und typprueft sauber.
+// Zuordnung Pfad -> Element fuer die flachen Routen mit Projektkontext. Die PFADE kommen seit
+// specs/features/0298-projektnavigation-in-der-kopfzeile.md aus utils/projectRoutes.ts - dort
+// liegt die einzige Quelle der Wahrheit dafuer, welche Routen Projektkontext haben; hier steht
+// nur noch, welches Element eine davon rendert. Damit kann eine neue :projectId-Route nicht mehr
+// still ohne Kopfzeilen-Navigation bleiben (Alt-Bug aus Spec 0042/PR #101, erneut bei Spec 0207).
+// `element` ist als `ReactElement` typisiert statt des global nicht verfuegbaren `JSX.Element`
+// (moduleDetection: "force", TS2503).
 //
-// Die neue, verschachtelte Pipeline-Route (specs/features/0042, erste Verwendung von
-// React-Router-Nested-Routes im Projekt) kann NICHT ueber dieses flache PROJECT_ROUTES.map()
-// erzeugt werden (Layout + eigene Kind-Route noetig fuer den Outlet-Context) - ihr Pfad wird
-// deshalb separat als PIPELINE_BASE_ROUTE_PATH/PIPELINE_STEP_ROUTE_PATH gefuehrt, aber ausdruecklich
-// an DERSELBEN Stelle wie PROJECT_ROUTES fuer matchPath ergaenzt (siehe useProjectIdFromRoute unten),
-// damit sie nicht denselben stillschweigenden Header-Link-Bug reproduziert, den der obige Kommentar
-// verhindern soll. Beide Pfade sind noetig: die Basis-Route ohne :step ist ein real erreichbarer
-// Zwischenzustand (ProjectDetailRedirect sowie PhotoGridPage navigieren gezielt dorthin, bevor der
-// Redirect-Guard in ProjectPipelineLayout auf einen konkreten Schritt weiterspringt) - Copilot-Review-
-// Fund auf PR #101 (Spec 0042): ohne PIPELINE_BASE_ROUTE_PATH fehlte der Projekt-Kontext-Link im
-// Sticky-Header genau waehrend dieses kurzen Zwischenzustands.
+// Die verschachtelte Pipeline-Route (Layout + eigene Kind-Route fuer den Outlet-Context) kann
+// NICHT ueber dieses flache PROJECT_ROUTES.map() erzeugt werden und steht deshalb unten separat -
+// ihre Pfade stehen aber ebenfalls in PROJECT_ROUTE_PATHS. Die Kind-Route bleibt relativ
+// (path=":step"), ihr absolutes Muster wird nur zum Matchen gebraucht.
 const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
-  { path: '/projects/:projectId', element: <ProjectDetailRedirect /> },
-  { path: '/projects/:projectId/photos', element: <PhotoGridPage /> },
-  { path: '/projects/:projectId/photos/:photoId', element: <PhotoDetailPage /> },
-  { path: '/projects/:projectId/compare', element: <PhotoComparePage /> },
+  { path: PROJECT_ROUTE_PATHS.detail, element: <ProjectDetailRedirect /> },
+  { path: PROJECT_ROUTE_PATHS.photos, element: <PhotoGridPage /> },
+  { path: PROJECT_ROUTE_PATHS.photoDetail, element: <PhotoDetailPage /> },
+  { path: PROJECT_ROUTE_PATHS.compare, element: <PhotoComparePage /> },
   // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: erste dedizierte
-  // Projekteinstellungs-Route - hier statt separat ergaenzt, damit sie automatisch denselben
-  // Sticky-Header-"Projekt"-Link bekommt (siehe Kommentar oben).
-  { path: '/projects/:projectId/settings', element: <ProjectSettingsPage /> },
+  // Projekteinstellungs-Route.
+  { path: PROJECT_ROUTE_PATHS.settings, element: <ProjectSettingsPage /> },
   // specs/features/0207-projekt-statistikseite.md: Querschnittsansicht wie die Einstellungsseite,
-  // bewusst ausserhalb der Pipeline-Schritt-Routen (sie ist kein Schritt des Ablaufs). Hier
-  // ergaenzt, damit sie automatisch denselben Sticky-Header-"Projekt"-Link bekommt.
-  { path: '/projects/:projectId/stats', element: <ProjectStatsPage /> },
+  // bewusst ausserhalb der Pipeline-Schritt-Routen (sie ist kein Schritt des Ablaufs).
+  { path: PROJECT_ROUTE_PATHS.stats, element: <ProjectStatsPage /> },
 ]
 
-const PIPELINE_BASE_ROUTE_PATH = '/projects/:projectId/pipeline'
-const PIPELINE_STEP_ROUTE_PATH = '/projects/:projectId/pipeline/:step'
-
-// Technische Korrektur gegenueber dem woertlichen Codebeispiel der Spec (Architektur-Abschnitt):
-// matchPath('/projects/:projectId', ...) kennt die als Geschwister-Route registrierte, literale
-// "/projects/new" nicht - anders als React Routers eigentliches Routing (das statische Segmente
-// vor dynamischen bevorzugt) matcht ein isolierter matchPath-Aufruf "/projects/new" trotzdem mit
-// projectId="new", was AK3 direkt verletzen wuerde. "new" ist der einzige aktuell reservierte
-// literale Sibling-Segment-Name unter /projects/ - wird ausgeschlossen, waehrend echte (auch
-// nicht-numerische, z.B. "abc") projectId-Werte weiterhin funktionieren.
-// ACHTUNG: anders als PROJECT_ROUTES ist dies KEINE automatisch aus den Routen abgeleitete Liste -
-// eine kuenftige neue literale Sibling-Route unter /projects/ (z.B. "/projects/import") muss hier
-// manuell ergaenzt werden, sonst matcht sie faelschlich als Projektkontext.
-const RESERVED_PROJECT_ID_SEGMENTS = new Set(['new'])
-
 function useProjectIdFromRoute(): string | null {
-  const location = useLocation()
-  for (const path of [
-    ...PROJECT_ROUTES.map((route) => route.path),
-    PIPELINE_BASE_ROUTE_PATH,
-    PIPELINE_STEP_ROUTE_PATH,
-  ]) {
-    const match = matchPath(path, location.pathname)
-    const projectId = match?.params.projectId
-    if (projectId && !RESERVED_PROJECT_ID_SEGMENTS.has(projectId)) {
-      return projectId
-    }
-  }
-  return null
+  return matchProjectId(useLocation().pathname)
 }
 
 function AppShell() {
@@ -143,23 +104,12 @@ function AppShell() {
           >
             <Link to="/">PhotoSort</Link>
           </Button>
-          {/* Projekt-Kontext-Link (specs/features/0033-sticky-titelleiste-projekt-link.md, AK2-AK4,
-              AK8): rendert nur mit Projektkontext, zeigt immer auf die Projekt-Detailseite selbst -
-              auch auf der Projekt-Detailseite selbst (Self-Link, bewusst keine Ausblendung/
-              Deaktivierung, AK8). Gleiches Button-asChild+Link-Muster wie die Wortmarke (AK5).
-              Chevron rein dekorativ/aria-hidden (AK6) - der zugaengliche Name ist ausschliesslich
-              der Text "Projekt". */}
-          {projectId !== null && (
-            <Button
-              asChild
-              variant="ghost"
-              className="px-2 text-text-h hover:bg-transparent"
-            >
-              <Link to={`/projects/${projectId}`}>
-                <span aria-hidden="true">‹</span> Projekt
-              </Link>
-            </Button>
-          )}
+          {/* Projekt-Navigationsgruppe (specs/features/0298-projektnavigation-in-der-kopfzeile.md,
+              AK1-AK4): loest den bisherigen einzelnen "‹ Projekt"-Link aus Spec 0033 ab. Rendert
+              ausschliesslich mit Projektkontext und haengt allein am pathname, nicht an einem
+              API-Aufruf - sie erscheint deshalb auch, waehrend die darunterliegende Seite noch
+              laedt oder fehlgeschlagen ist. Genau dann ist ein Weg heraus am wertvollsten. */}
+          {projectId !== null && <ProjectNav projectId={projectId} />}
         </div>
         <div className="flex items-center gap-3">
           {username && <span className="text-sm text-text">Angemeldet als {username}</span>}
@@ -188,10 +138,10 @@ function App() {
           {PROJECT_ROUTES.map(({ path, element }) => (
             <Route key={path} path={path} element={element} />
           ))}
-          <Route path="/projects/:projectId/pipeline" element={<ProjectPipelineLayout />}>
+          <Route path={PROJECT_ROUTE_PATHS.pipelineBase} element={<ProjectPipelineLayout />}>
             <Route path=":step" element={<PipelineStepView />} />
           </Route>
-          <Route path="/projects/:projectId/curate" element={<CurateCategoriesPage />} />
+          <Route path={PROJECT_ROUTE_PATHS.curate} element={<CurateCategoriesPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

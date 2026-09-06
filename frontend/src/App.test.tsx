@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router'
@@ -203,10 +203,19 @@ describe('App', () => {
   })
 })
 
-// specs/features/0033-sticky-titelleiste-projekt-link.md (AK2-AK4, AK8): der Header rendert auf
-// den vier Projekt-Routen genau einen zusaetzlichen Link mit zugaenglichem Namen "Projekt", der
-// immer auf /projects/{projectId} zeigt - unabhaengig von Subpfad/Query-Parametern.
-describe('App - Header-Link "Projekt"', () => {
+
+/*
+ * specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK1-AK4, AK8): Die Kopfzeile traegt
+ * auf jeder Projektseite die Navigationsgruppe statt des bisherigen einzelnen "‹ Projekt"-Links.
+ * Diese Gruppe ist NICHT geloescht, sondern aus der Spec-0033-Testgruppe hervorgegangen - der
+ * zugaengliche Name "Projekt" bleibt, nur sein Sprungziel wechselt auf /pipeline.
+ *
+ * Hier steht ausschliesslich, was die VERDRAHTUNG von Kopfzeile und Routing betrifft. Die
+ * Fallunterscheidungen des Routenwissens liegen in utils/projectRoutes.test.ts (dorthin sind mit
+ * dieser Spec auch die Sonderfaelle Query-Parameter, nicht-numerische projectId und
+ * verschachtelte :photoId-Route gewandert), das Verhalten der Komponente in ProjectNav.test.tsx.
+ */
+describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
   beforeEach(() => {
     window.localStorage.clear()
     vi.mocked(projectsApi.listProjects).mockReset()
@@ -225,124 +234,225 @@ describe('App - Header-Link "Projekt"', () => {
     vi.restoreAllMocks()
   })
 
-  const PROJECT_ROUTES = [
+  /**
+   * Die neun Muster aus PROJECT_ROUTE_PATHS mit eingesetzten Parametern. Diese Liste ist zugleich
+   * der SYNCHRONITAETS-WAECHTER der expliziten Routen-Aufzaehlung (specs/architecture/
+   * 0002-testkonzept.md): jedes Muster muss real geroutet sein UND die Gruppe zeigen - der
+   * bekannte Fehlermodus ist, dass eine neue Route nur in <Routes> landet und still ohne
+   * Kopfzeilen-Navigation bleibt (Alt-Bug aus Spec 0042/PR #101, erneut bei Spec 0207).
+   */
+  const PROJECT_CONTEXT_PATHS = [
     '/projects/1',
+    '/projects/1/pipeline',
+    '/projects/1/pipeline/scan',
     '/projects/1/photos',
     '/projects/1/photos/42',
     '/projects/1/compare',
     '/projects/1/settings',
-    // specs/features/0207-projekt-statistikseite.md: ohne diesen Eintrag in PROJECT_ROUTES fehlte
-    // der Sticky-Header-Projektlink auf der Statistikseite stillschweigend (Alt-Bug aus Spec
-    // 0042/PR #101).
     '/projects/1/stats',
+    // specs/features/0298 (AK2): zum ersten Mal ueberhaupt Projektkontext in der Kopfzeile -
+    // Umkehrung der ausdruecklichen Gegenfestlegung aus Spec 0033.
+    '/projects/1/curate',
   ]
 
-  it.each(PROJECT_ROUTES)(
-    'renders a "Projekt" link targeting /projects/1 on %s (AK2/AK4)',
+  const EXPECTED_TARGETS = [
+    { label: 'Projekt', href: '/projects/1/pipeline' },
+    { label: 'Fotos', href: '/projects/1/photos' },
+    { label: 'Vergleich', href: '/projects/1/compare' },
+    { label: 'Einstellungen', href: '/projects/1/settings' },
+  ]
+
+  /** Der eine Landmark der Gruppe; das Panel liegt per Portal ausserhalb davon. */
+  function group(): HTMLElement {
+    return screen.getByRole('navigation', { name: 'Projektbereiche' })
+  }
+
+  it.each(PROJECT_CONTEXT_PATHS)(
+    'zeigt die Gruppe mit allen vier Zielen auf %s (AK1/AK2)',
     async (path) => {
       renderApp([path])
 
-      expect(screen.getByText('PhotoSort')).toBeInTheDocument()
+      const links = within(await screen.findByRole('navigation', { name: 'Projektbereiche' }))
+        .getAllByRole('link')
+      expect(links.map((link) => link.textContent)).toEqual(
+        EXPECTED_TARGETS.map((target) => target.label)
+      )
+      links.forEach((link, index) => {
+        expect(link).toHaveAttribute('href', EXPECTED_TARGETS[index].href)
+      })
 
-      const link = await screen.findByRole('link', { name: 'Projekt' })
-      expect(link).toHaveAttribute('href', '/projects/1')
+      // Zweite Haelfte des Synchronitaets-Waechters: die Route ist real geroutet und nicht ueber
+      // den Catch-all auf der Projektliste gelandet.
+      expect(screen.queryByRole('heading', { name: 'Projekte' })).not.toBeInTheDocument()
     }
   )
 
-  it('shows exactly one "Projekt" link on a project route (AK2)', async () => {
+  /*
+   * QUERY-STRING AUF DER ROUTE (AK2/AK8a, edge case): Auf `main` gab es diesen Fall als
+   * "targets /projects/{projectId} unaffected by query parameters" - er ist beim Umbau der Gruppe
+   * abhandengekommen und hier in der Form zurueck, die zur neuen Verdrahtung passt (Copilot-Fund
+   * auf PR #340). Er gehoert auf DIESE Ebene und nicht in den Unit-Test: geprueft wird, dass die
+   * App den `pathname` sauber vom `search` trennt, bevor sie ihn an `matchProjectId` reicht - eine
+   * Verdrahtungsfrage, keine Frage des reinen Moduls (das lehnt einen mitgegebenen Query-String
+   * ausdruecklich ab, siehe utils/projectRoutes.test.ts).
+   *
+   * Nicht konstruiert: `/photos` traegt in der Praxis den Filter des Fotorasters, den
+   * "Zurück zum Grid" auf der Detailansicht ausdruecklich bewahrt. Ginge die Trennung verloren,
+   * verschwaende die Kopfzeilen-Navigation auf jeder gefilterten Fotoliste.
+   */
+  it('zeigt Gruppe und Markierung unveraendert bei gesetztem Query-Parameter (AK2/AK8a, edge case)', async () => {
+    renderApp(['/projects/1/photos?filter=favorite'])
+
+    await screen.findByRole('navigation', { name: 'Projektbereiche' })
+    const links = within(group()).getAllByRole('link')
+    expect(links.map((link) => link.textContent)).toEqual(
+      EXPECTED_TARGETS.map((target) => target.label)
+    )
+    links.forEach((link, index) => {
+      expect(link).toHaveAttribute('href', EXPECTED_TARGETS[index].href)
+    })
+
+    // Beide Haelften in einem Fall: Der Projektkontext ueberlebt den Query-String UND der Marker
+    // steht auf dem richtigen Ziel. Die Sprungziele oben belegen zugleich, dass der Query-String
+    // nicht in die projectId geraten ist - er wuerde sonst in jedem der vier `href` auftauchen.
+    const marked = links.filter((link) => link.getAttribute('aria-current') === 'page')
+    expect(marked).toHaveLength(1)
+    expect(marked[0]).toHaveAccessibleName('Fotos')
+  })
+
+  it('fuehrt den Namen "Projekt" in der Kopfzeile genau einmal, mit dem Ziel /pipeline (AK3a)', async () => {
     renderApp(['/projects/1/photos'])
 
     const links = await screen.findAllByRole('link', { name: 'Projekt' })
     expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAttribute('href', '/projects/1/pipeline')
+    // Der bisherige eigenstaendige Eintrag zeigte auf /projects/1 - dieses Ziel darf in der
+    // Kopfzeile nicht mehr vorkommen.
+    expect(screen.queryByRole('link', { name: 'Projekt' })).not.toHaveAttribute(
+      'href',
+      '/projects/1'
+    )
   })
 
-  it('does not render a "Projekt" link on / (AK3)', async () => {
+  it.each([
+    ['/projects/1', 'Projekt'],
+    ['/projects/1/pipeline', 'Projekt'],
+    ['/projects/1/pipeline/scan', 'Projekt'],
+    ['/projects/1/photos', 'Fotos'],
+    ['/projects/1/photos/42', 'Fotos'],
+    ['/projects/1/compare', 'Vergleich'],
+    ['/projects/1/settings', 'Einstellungen'],
+  ])('markiert auf %s genau "%s" als aktuelle Seite (AK8a)', async (path, expectedLabel) => {
+    renderApp([path])
+
+    await screen.findByRole('navigation', { name: 'Projektbereiche' })
+    // Eingegrenzt auf die Leiste, nie dokumentweit (specs/architecture/0002-testkonzept.md):
+    // bei geoeffnetem Panel laege die Markierung zwangslaeufig doppelt vor.
+    const marked = within(group())
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('aria-current') === 'page')
+    expect(marked).toHaveLength(1)
+    expect(marked[0]).toHaveAccessibleName(expectedLabel)
+  })
+
+  it.each(['/projects/1/stats', '/projects/1/curate'])(
+    'zeigt die Gruppe auf %s vollstaendig, aber ohne Markierung (AK8b)',
+    async (path) => {
+      renderApp([path])
+
+      await screen.findByRole('navigation', { name: 'Projektbereiche' })
+      const links = within(group()).getAllByRole('link')
+      expect(links).toHaveLength(EXPECTED_TARGETS.length)
+      expect(links.filter((link) => link.hasAttribute('aria-current'))).toEqual([])
+    }
+  )
+
+  it('bleibt bei geoeffnetem Panel genau EIN navigation-Landmark "Projektbereiche" (AK3b)', async () => {
+    const user = userEvent.setup()
+    renderApp(['/projects/1/photos'])
+
+    await user.click(await screen.findByRole('button', { name: 'Projektbereiche' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    expect(screen.getAllByRole('navigation', { name: 'Projektbereiche' })).toHaveLength(1)
+  })
+
+  /** Kein Ziel, kein Ausloeser, kein Landmark - alle drei Haelften von AK4 einzeln. */
+  function expectNoGroup(): void {
+    expect(
+      screen.queryByRole('navigation', { name: 'Projektbereiche' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Projektbereiche' })).not.toBeInTheDocument()
+    for (const target of EXPECTED_TARGETS) {
+      expect(screen.queryByRole('link', { name: target.label })).not.toBeInTheDocument()
+    }
+  }
+
+  it('zeigt auf / kein Element der Gruppe (AK4)', async () => {
     renderApp(['/'])
 
     expect(screen.getByText('PhotoSort')).toBeInTheDocument()
     // Wartet auf ein garantiert vorhandenes Element der Zielseite, bevor die
-    // Abwesenheits-Assertion greift - sonst koennte der Link nur deshalb fehlen, weil die Seite
+    // Abwesenheits-Assertion greift - sonst koennte die Gruppe nur deshalb fehlen, weil die Seite
     // noch nicht fertig gerendert ist.
     await waitFor(() => expect(projectsApi.listProjects).toHaveBeenCalled())
-    expect(screen.queryByRole('link', { name: 'Projekt' })).not.toBeInTheDocument()
+    expectNoGroup()
   })
 
-  it('does not render a "Projekt" link on /projects/new (AK3)', async () => {
+  // Der Umzug von RESERVED_PROJECT_ID_SEGMENTS in ein neues Modul ist genau die Gelegenheit, bei
+  // der die Zeile still verlorengeht - deshalb hier als Rendering-Fall UND als Abweisungsfall im
+  // Unit-Test von utils/projectRoutes.
+  it('zeigt auf /projects/new kein Element der Gruppe (AK4, edge case)', async () => {
     renderApp(['/projects/new'])
 
     expect(await screen.findByRole('heading', { name: /neues projekt/i })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Projekt' })).not.toBeInTheDocument()
+    expectNoGroup()
   })
 
-  it('does not render a "Projekt" link on /login (AK3)', () => {
+  it('zeigt auf /login kein Element der Gruppe (AK4)', () => {
     window.localStorage.clear()
     renderApp(['/login'])
 
     expect(screen.getByLabelText(/benutzername/i)).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Projekt' })).not.toBeInTheDocument()
+    expectNoGroup()
   })
 
-  it('targets /projects/{projectId} unaffected by query parameters (AK4, edge case)', async () => {
-    renderApp(['/projects/1/photos?filter=favorite'])
-
-    const link = await screen.findByRole('link', { name: 'Projekt' })
-    expect(link).toHaveAttribute('href', '/projects/1')
-  })
-
-  it('accepts a non-numeric projectId without client-side validation (AK4, edge case)', async () => {
-    renderApp(['/projects/abc/photos'])
-
-    const link = await screen.findByRole('link', { name: 'Projekt' })
-    expect(link).toHaveAttribute('href', '/projects/abc')
-  })
-
-  it('targets /projects/1 from the nested photo detail route (AK4, edge case)', async () => {
-    renderApp(['/projects/1/photos/42'])
-
-    const link = await screen.findByRole('link', { name: 'Projekt' })
-    expect(link).toHaveAttribute('href', '/projects/1')
-  })
-
-  it('self-links on the project detail page itself, without hiding/disabling it (AK8)', async () => {
-    renderApp(['/projects/1'])
-
-    const link = await screen.findByRole('link', { name: 'Projekt' })
-    expect(link).toHaveAttribute('href', '/projects/1')
-    expect(link).not.toHaveAttribute('aria-disabled')
-  })
-
-  it('redirects an unknown path to / without ever mounting the app shell with stale project context (edge case)', async () => {
+  it('zeigt nach der Catch-all-Weiterleitung eines unbekannten Pfads kein Element der Gruppe (AK4)', async () => {
     renderApp(['/some/unknown/path'])
 
     expect(await screen.findByText('PhotoSort')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Projekt' })).not.toBeInTheDocument()
+    await waitFor(() => expect(projectsApi.listProjects).toHaveBeenCalled())
+    expectNoGroup()
   })
 
-  it('has an accessible native link, keyboard-focusable without extra effort (AK6)', async () => {
+  it('bietet die Ziele als tastaturbedienbare native Links an (AK11a)', async () => {
     renderApp(['/projects/1/photos'])
 
-    const link = await screen.findByRole('link', { name: 'Projekt' })
+    await screen.findByRole('navigation', { name: 'Projektbereiche' })
+    const link = within(group()).getByRole('link', { name: 'Vergleich' })
     expect(link.tagName).toBe('A')
     link.focus()
     expect(link).toHaveFocus()
   })
 
-  // Copilot-Review-Fund auf PR #101 (Spec 0042): die Pipeline-Basis-Route ohne :step
-  // (/projects/:id/pipeline) ist ein real erreichbarer Zwischenzustand - ProjectDetailRedirect und
-  // PhotoGridPage navigieren gezielt dorthin, bevor ProjectPipelineLayouts eigener Redirect-Guard
-  // (erst NACH Abschluss der useProjectQuery) auf einen konkreten Schritt weiterspringt. Waehrend
-  // dieses Ladezustands blieb der URL-basierte Header-Link zuvor faelschlich unsichtbar, da
-  // useProjectIdFromRoute nur PIPELINE_STEP_ROUTE_PATH (mit :step), nicht aber die Basis-Route
-  // kannte. getProject bleibt hier bewusst unresolved (kein mockResolvedValue), damit der Test die
-  // Layout-Ladeanzeige ("Projekt wird geladen…") faengt, bevor irgendein Redirect feuern kann.
-  it('renders a "Projekt" link already on the pipeline base route while the project is still loading (edge case)', async () => {
+  // Copilot-Review-Fund auf PR #101 (Spec 0042): die Pipeline-Basis-Route ohne :step ist ein real
+  // erreichbarer Zwischenzustand - ProjectDetailRedirect und PhotoGridPage navigieren gezielt
+  // dorthin, bevor ProjectPipelineLayouts eigener Redirect-Guard auf einen konkreten Schritt
+  // weiterspringt. getProject bleibt hier bewusst unresolved, damit der Test die
+  // Layout-Ladeanzeige faengt, bevor irgendein Redirect feuern kann. Die Gruppe haengt
+  // ausschliesslich am pathname und erscheint deshalb auch waehrend des Ladens - genau dann ist
+  // ein Weg heraus am wertvollsten.
+  it('zeigt die Gruppe schon auf der Pipeline-Basis-Route, waehrend das Projekt noch laedt (edge case)', async () => {
     vi.mocked(projectsApi.getProject).mockReset()
     vi.mocked(projectsApi.getProject).mockReturnValue(new Promise(() => {}))
 
     renderApp(['/projects/1/pipeline'])
 
     expect(await screen.findByRole('status')).toHaveTextContent('Projekt wird geladen')
-    const link = await screen.findByRole('link', { name: 'Projekt' })
-    expect(link).toHaveAttribute('href', '/projects/1')
+    const marked = within(group())
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('aria-current') === 'page')
+    expect(marked).toHaveLength(1)
+    expect(marked[0]).toHaveAccessibleName('Projekt')
   })
 })

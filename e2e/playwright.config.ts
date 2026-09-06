@@ -20,7 +20,15 @@ const MOBILE_ONLY = [
   // Panel anstiesse - der Spec liefe dort gruen, ohne die Eigenschaft herauszufordern.
   /popover-position\.spec\.ts/,
 ]
-const DESKTOP_ONLY = [/grid-columns\.spec\.ts/, /login\.spec\.ts/, /toolchain\.spec\.ts/]
+const DESKTOP_ONLY = [
+  /grid-columns\.spec\.ts/,
+  /login\.spec\.ts/,
+  /toolchain\.spec\.ts/,
+  // Setzt seine Breiten selbst (1024/1023 an der Breakpoint-Grenze, 360 fuer Kopfzeilenhoehe und
+  // Panel-Ueberlagerung) - ohne die Bindung an EIN Projekt liefe der Spec zweimal mit identischem
+  // Ergebnis, weil die Projekt-Viewports gar nicht zum Tragen kommen.
+  /project-nav\.spec\.ts/,
+]
 
 export default defineConfig({
   testDir: './tests',

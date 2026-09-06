@@ -45,7 +45,13 @@ test('geoeffnete Popover bleiben vollstaendig im Sichtbereich', async ({ page })
 
     // Radix setzt aria-haspopup auf den Trigger - lokalisiert wird ueber dieses aria-Attribut,
     // nicht ueber Klassennamen (Selektor-Konvention des Testkonzepts).
-    const triggers = page.locator('button[aria-haspopup="dialog"]')
+    //
+    // AUF `main` EINGEGRENZT (specs/features/0298-projektnavigation-in-der-kopfzeile.md): seit der
+    // Projekt-Navigationsgruppe traegt auch die KOPFZEILE einen Popover-Trigger, und bei 360 px
+    // steht er als erster im Dokument. Dokumentweit lokalisiert bliebe dieser Spec still gruen und
+    // pruefte dreimal dasselbe Kopfzeilen-Panel statt der drei Panels der drei Seiten - der
+    // gefaehrlichere der beiden Faelle, weil nichts rot wird.
+    const triggers = page.getByRole('main').locator('button[aria-haspopup="dialog"]')
     await expect(triggers.first(), `Popover-Trigger auf "${route.label}"`).toBeAttached()
 
     // Der randnaechste Trigger der Seite - genau der, an dem sich Kollisionsvermeidung

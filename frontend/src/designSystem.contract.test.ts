@@ -1468,12 +1468,61 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       snippet: "className=\"mt-2 h-11 w-full text-base\"",
       reason: 'Absende-Schaltflaeche der Anmeldung: einzige Aktion des Bildschirms, einhaendig bedient',
     },
+    {
+      file: 'src/components/ProjectNav.tsx',
+      snippet: "layout === 'bar' ? 'tap-target' : 'min-h-11 w-full'",
+      reason:
+        'Panelzeile der Projekt-Navigation: Zeilenhoehe einer zeilenweisen Liste - die Zeile ' +
+        'selbst ist die Trefferflaeche, deshalb bewusst NICHT zusaetzlich aufgespannt',
+    },
   ]
 
   it('verwendet die sichtbaren 44px nur an den drei begruendeten Kategorien', () => {
     expect(
       allowlistedOccurrences(/\bmin-h-11\b|\bh-11\b/, TALL_CONTROL_ALLOWLIST, productionTsxFiles())
     ).toEqual([])
+  })
+})
+
+describe('Design-Vertrag: Board-Navigationselement', () => {
+  /*
+   * specs/features/0298-projektnavigation-in-der-kopfzeile.md, AK8c: Die Aktiv-Markierung der
+   * Projekt-Navigationsgruppe ist ZEICHENGLEICH zum Schrittmarker in Stepper.tsx. Die beiden
+   * Rezepte bleiben bewusst dateilokal (etablierte "erst ab dem dritten Konsumenten auslagern"-
+   * Praxis) - dann braucht die Zusage aber einen Waechter, sonst driften sie still auseinander.
+   *
+   * Diese Ebene ist die einzig moegliche: Komponententests bekommen in diesem Projekt keine
+   * CSS-Assertions, sie saehen die Abweichung also nie.
+   */
+  const RECIPES = {
+    aktiv: 'border-accent bg-overlay font-bold text-accent',
+    ruhend:
+      'border-border-control bg-surface text-text hover:bg-overlay hover:text-text-h ' +
+      'active:bg-border active:text-text',
+  }
+
+  function literalsOf(label: string): string[] {
+    const file = sourceFiles.find((candidate) => candidate.label === label)
+    expect(file, `${label} nicht gefunden`).toBeDefined()
+    return stringLiterals(file!.content)
+  }
+
+  it.each(Object.entries(RECIPES))(
+    'fuehrt das %s-Rezept in Stepper und ProjectNav zeichengleich',
+    (_name, recipe) => {
+      for (const label of ['src/components/Stepper.tsx', 'src/components/ProjectNav.tsx']) {
+        expect(literalsOf(label), `${label} ohne das Rezept`).toContain(recipe)
+      }
+    }
+  )
+
+  it('bindet nicht gegen ein Rezept, das in keiner der beiden Dateien steht', () => {
+    // Positiv-Gegenprobe: ohne sie bestuende die Bindung oben auch dann, wenn `stringLiterals`
+    // nichts mehr faende und beide Seiten leer waeren.
+    for (const label of ['src/components/Stepper.tsx', 'src/components/ProjectNav.tsx']) {
+      expect(literalsOf(label).length).toBeGreaterThan(0)
+      expect(literalsOf(label)).not.toContain('border-accent bg-overlay font-black text-accent')
+    }
   })
 })
 

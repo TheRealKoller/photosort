@@ -4,6 +4,13 @@
 **Erstellt:** 2026-08-09
 **Bezug:** [`inbox/0009-sticky-titelleiste-zurueck-link.md`](../inbox/0009-sticky-titelleiste-zurueck-link.md), [`features/0006-auth.md`](./0006-auth.md), Idea-Sharpening-Gespräch mit Daniel am 2026-08-09
 
+**Nachtrag (2026-09-06, `architect`-Konsultation zu Spec [`0298`](./0298-projektnavigation-in-der-kopfzeile.md)):** Diese Spec bleibt bewusst `Implemented` und wird **nicht** auf `Superseded` gesetzt — Spec 0298 löst nur einen Teil von ihr ab (gleiches Vorgehen wie Spec [`0045`](./0045-kategorien-aus-statistiken-ableiten.md) gegenüber Spec 0038; eine vollständige Supersession würde falsch darstellen, was weiterhin gilt). Die Akzeptanzkriterien unten bleiben unverändert stehen, sie beschreiben korrekt den damals gebauten und akzeptierten Zustand. Abgelöst durch Spec 0298 sind:
+
+- **AK2/AK4/AK8** — der einzelne Kopfzeilen-Link mit dem zugänglichen Namen "Projekt" und dem Ziel `/projects/{projectId}` geht in einer Navigationsgruppe mit vier gleichrangigen Zielen auf (Projektübersicht/Fotos/Vergleich/Einstellungen) und existiert danach nicht mehr als eigenständiges, andersartiges Element.
+- **Die ausdrückliche Festlegung, dass `/projects/:projectId/curate` keinen Kopfzeilen-Link trägt** (in `App.tsx` als Kommentar an `PROJECT_ROUTES` festgehalten, hier durch die abschließende Aufzählung der Projekt-Routen in AK2 impliziert). Spec 0298 kehrt sie ausdrücklich um: die Kategorie-Kuratierung zählt seither als Route mit Projektkontext und zeigt die Navigationsgruppe. Der Grund für die Umkehr ist derselbe, der 2026-08-09 für die übrigen Seiten galt — von dort führte gar kein direkter Weg zu den Projektzielen.
+
+Unverändert gültig bleiben **AK1** (sticky Kopfzeile), **AK3** (kein Projektkontext auf `/`, `/projects/new`, `/login` — insbesondere matcht `/projects/new` weiterhin nicht als `projectId`), **AK5**, **AK6** und **AK7** (die dort entfernten Duplikate bleiben entfernt; die dort ausdrücklich geschützten Links "Zurück zum Grid" und "Zur Vergleichsansicht" auf der Foto-Detailansicht bleiben auch unter Spec 0298 erhalten).
+
 ## Ziel
 
 Der bestehende App-Header (`AppShell` in `frontend/src/App.tsx`) bleibt beim Scrollen nicht am oberen
