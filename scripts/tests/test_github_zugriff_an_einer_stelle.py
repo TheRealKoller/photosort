@@ -148,6 +148,10 @@ ZIEL_LITERAL = "`owner` = `TheRealKoller`, `repo` = `photosort`"
 AUSWERTUNGSGRENZE = "**Auswertungsgrenze:**"
 
 _EINTRAG_KOPF = re.compile(r"^### `(?P<id>[^`\n]+)`", re.MULTILINE)
+# Ein Eintragsblock endet an der naechsten Operation **oder** am naechsten `##`-Abschnitt. Ohne
+# die zweite Grenze zoege der letzte Eintrag den gesamten Resttext der Datei in seinen Block und
+# bestuende jede Block-Zusicherung (Ziel-Literal, Auswertungsgrenze, Nachhol-Zeile) zufaellig.
+_ABSCHNITT = re.compile(r"^## ", re.MULTILINE)
 _WEGE_ZEILE = re.compile(r"^\*\*Wege:\*\*(?P<rest>[^\n]*)$", re.MULTILINE)
 _WEG_TOKEN = re.compile(r"`([a-z]+)`")
 _KEBAB = re.compile(r"^[a-z]+(?:-[a-z]+)+$")
@@ -329,8 +333,13 @@ def katalog_aus_text(text: str) -> list[Katalogeintrag]:
 
     eintraege: list[Katalogeintrag] = []
     for nummer, kopf in enumerate(koepfe):
-        ende = koepfe[nummer + 1].start() if nummer + 1 < len(koepfe) else len(text)
-        block = text[kopf.start() : ende]
+        grenzen = [len(text)]
+        if nummer + 1 < len(koepfe):
+            grenzen.append(koepfe[nummer + 1].start())
+        naechster_abschnitt = _ABSCHNITT.search(text, kopf.end())
+        if naechster_abschnitt:
+            grenzen.append(naechster_abschnitt.start())
+        block = text[kopf.start() : min(grenzen)]
         wege_zeile = _WEGE_ZEILE.search(block)
         wege = (
             tuple(_WEG_TOKEN.findall(wege_zeile.group("rest"))) if wege_zeile else ()
@@ -909,3 +918,19 @@ def test_der_leser_findet_beide_zweige_des_suchraums() -> None:
 
     assert any(pfad.startswith(".claude/") for pfad in dateien)
     assert "CLAUDE.md" in dateien
+
+
+def test_ein_eintragsblock_endet_am_naechsten_abschnitt() -> None:
+    """Sonst zoege der letzte Eintrag den Resttext der Datei in seinen Block."""
+    text = (
+        _BLOCK.format(id="board-status-setzen", wege="`gh`")
+        + f"{REMOTE_MARKIERUNG}\n\n## Die vier Haertungsregeln\n\n"
+        + AUSWERTUNGSGRENZE
+        + " comments\n"
+    )
+
+    eintraege = katalog_aus_text(text)
+
+    assert len(eintraege) == 1
+    assert "Haertungsregeln" not in eintraege[0].block
+    assert form_verstoesse(eintraege) == []
