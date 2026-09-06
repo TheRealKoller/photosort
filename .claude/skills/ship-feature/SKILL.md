@@ -6,7 +6,11 @@ description: Koordiniert auf oberster Ebene (Orchestrator/Hauptsession) die Nach
 
 # Ship Feature — Review, PR und Copilot-Review vom Orchestrator
 
+**GitHub-Erlaubnisstufe:** lesend und schreibend
+
 Übernimmt genau die Verantwortung, die ein per Agent-Tool gestarteter `developer`-Subagent strukturell nicht selbst wahrnehmen kann: eine weitere Verschachtelungsebene an Subagenten (`architect` bei einer Planungslücke) und GitHub-Schreibzugriff (Push, PR-Erstellung, Copilot-Review). Die eigentliche Review-Prüfung übernimmt der Skill `review` (`.claude/skills/review/SKILL.md`) — dieser Skill hier ruft ihn nur auf und kümmert sich um alles davor und danach. `developer` bleibt für die Dauer dieses gesamten Ablaufs als offener Subagent ansprechbar (SendMessage), es wird für Folgeaufträge kein neuer Lauf gestartet, solange der Subagent noch erreichbar ist.
+
+**Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`.** Lade ihn einmal über das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (das ist Schritt 6), und arbeite danach für den Rest des Laufs mit dem geladenen Katalog. Dieser Skill hier nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum — wann eine Operation läuft, unter welcher Bedingung, wie ihr Ergebnis ausgewertet wird. Rein lokales `git` (`git status`, `git log`, `git diff`, `git push`) ist davon unberührt und steht weiterhin hier.
 
 ## Schritt 0: Trigger erkennen
 
@@ -64,20 +68,20 @@ Nach Bestätigung geht es weiter zu Schritt 6 (PR-Erstellung) bzw., falls die Fi
 
 1. Falls seit dem letzten Zwischencommit noch uncommittete Änderungen bestehen: committen, mit der im Projekt üblichen Commit-Konvention (siehe `CLAUDE.md`, Conventional Commits).
 2. Push den Feature-Branch (`git push -u origin <branch>`), nicht `main`. Unverändert, unabhängig davon, ob der Branch von `developer` selbst oder bereits vorher von `spec-writer` mitsamt Spec-Commit angelegt wurde (ADR [`decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md`](../../../specs/decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md)) — in beiden Fällen liegt zu diesem Zeitpunkt ein lokal vollständiger, committeter Branch vor, der als Ganzes gepusht wird; der Spec-Commit landet dadurch im selben PR wie die Implementierung, nicht in einem separaten.
-3. Eröffne einen PR mit `gh pr create`. Halte dich an eine vorhandene `.github/pull_request_template.md`, sonst mindestens: Bezug zur Spec/zum Issue, kurze Zusammenfassung (Was und Warum), Testplan/was geprüft wurde.
+3. Eröffne einen PR: Operation `pr-erstellen`. Halte dich an eine vorhandene `.github/pull_request_template.md`, sonst mindestens: Bezug zur Spec/zum Issue, kurze Zusammenfassung (Was und Warum), Testplan/was geprüft wurde.
 
    **Pflicht, kein Platzhalter zum Stehenlassen:** Der PR-**Body** enthält die ausgefüllte Zeile `Closes #<Issue-Nummer>` (die Vorlage bringt sie mit `#NNN` mit). Die Issue-Nummer ist bei neuen Specs identisch mit der Spec-Nummer; bei Altspecs `0001`–`0065` steht sie in der `**Bezug:**`-Zeile der Spec-Datei. Nur diese Zeile erzeugt die strukturierte Verknüpfung zwischen PR und Issue (beidseitig sichtbar als "Linked issues"/"Linked pull requests") und lässt GitHub das Issue beim Merge nach `main` selbst schließen; ein bloßer Fließtext-Verweis erzeugt nur einen Timeline-Eintrag. Fehlt sie, bricht die Finalisierung in Schritt 8 ab.
 
    Das Keyword gehört ausschließlich in den Body — **nie** in eine Commit-Nachricht und **nie** in den PR-Titel: Das Repo squasht mit `COMMIT_MESSAGES` und `COMMIT_OR_PR_TITLE`, beide Texte wandern in Merge-Commit, Changelog und den Body des release-please-PRs, wo das Keyword beim nächsten Release-Merge erneut ausgewertet würde.
 
-   Direkt nach dem Eröffnen prüfbar, ohne auf den Merge zu warten: `gh pr view <PR-Nummer> --json closingIssuesReferences` muss einen Eintrag mit der Issue-Nummer und dem Repository `TheRealKoller`/`photosort` zeigen.
-4. **Lies den Board-Wert einmal zurück — setz ihn nicht.** `Review` schreibt GitHub selbst, ausgelöst durch die `Closes #NNN`-Zeile aus 6.3 (Workflow `Pull request linked to issue`). Der Lesebefehl steht in [`.claude/skills/github-access/SKILL.md`](../github-access/SKILL.md), Abschnitt „Die Befehle"; ausgewertet wird der Knoten mit `project.number == 8`, nie schlicht `nodes[0]`.
+   Direkt nach dem Eröffnen prüfbar, ohne auf den Merge zu warten: `pr-verknuepfung-lesen` muss einen Eintrag mit der Issue-Nummer und dem Repository dieser Story zeigen.
+4. **Lies den Board-Wert einmal zurück — setz ihn nicht.** `Review` schreibt GitHub selbst, ausgelöst durch die `Closes #NNN`-Zeile aus 6.3 (Workflow `Pull request linked to issue`). Lies ihn mit `board-status-und-prioritaet-lesen`; ausgewertet wird der Knoten mit `project.number == 8`, nie schlicht `nodes[0]`.
 
    Dieser Schritt existiert, weil sich mit dem Übergang auf native Workflows die Richtung des Fehlers umdreht: Ein versehentlich deaktivierter Workflow schreibt **gar nichts**, und eine Karte, die auf `In Progress` liegen bleibt, ist von einer Karte, an der gerade gearbeitet wird, nicht zu unterscheiden. Der Zustand der Workflows ist per API nicht überwachbar — das Zurücklesen ist der einzige Nachweis, dass der Übergang stattgefunden hat.
 
    - **Steht `Review`:** nichts zu tun, im Abschlussbericht einzeilig vermerken.
-   - **Steht etwas anderes:** GitHub verarbeitet die Verknüpfung asynchron, unmittelbar nach `gh pr create` kann der alte Wert noch stehen. Deshalb **einmal** kurz warten (wenige Sekunden) und ein zweites Mal lesen, bevor daraus ein Befund wird — sonst meldet jeder Lauf einen Fehlschlag, den es nicht gibt.
-   - **Steht auch dann nicht `Review`** (oder scheitert der Lesebefehl selbst): Der Übergang ist ausgeblieben, in aller Regel, weil der Workflow im Projekt deaktiviert wurde. Den Wert **nicht** stillschweigend selbst nachsetzen — das verdeckte genau die Ursache, die dieser Schritt sichtbar machen soll. Stattdessen als `status-review` in den Abschnitt `## Lokal nachzuholen` (PR-Body und Chat-Bericht), mit dem nachholenden `item-edit`-Befehl. Regeln zu Form und Inhalt dieses Abschnitts vollständig in `.claude/skills/github-access/SKILL.md` — hier nicht wiederholen. Ist der PR-Body zu diesem Zeitpunkt bereits geschrieben, wird er einmal per `gh pr edit <PR-Nummer> --body-file <datei>` nachgezogen (nie über die Kommandozeile).
+   - **Steht etwas anderes:** GitHub verarbeitet die Verknüpfung asynchron, unmittelbar nach `pr-erstellen` kann der alte Wert noch stehen. Deshalb **einmal** kurz warten (wenige Sekunden) und ein zweites Mal lesen, bevor daraus ein Befund wird — sonst meldet jeder Lauf einen Fehlschlag, den es nicht gibt.
+   - **Steht auch dann nicht `Review`** (oder scheitert der Lesebefehl selbst): Der Übergang ist ausgeblieben, in aller Regel, weil der Workflow im Projekt deaktiviert wurde. Den Wert **nicht** stillschweigend selbst nachsetzen — das verdeckte genau die Ursache, die dieser Schritt sichtbar machen soll. Stattdessen `board-status-setzen` mit Wert `Review` in den Abschnitt `## Lokal nachzuholen` (PR-Body und Chat-Bericht), mit der Nachhol-Zeile aus dem Katalogeintrag. Regeln zu Form und Inhalt dieses Abschnitts vollständig im Skill `github-access` — hier nicht wiederholen. Ist der PR-Body zu diesem Zeitpunkt bereits geschrieben, wird er einmal per `pr-body-schreiben` nachgezogen.
 
    Ein früherer, verfrühter `Implemented`-Bump des Spec-Status direkt nach der PR-Erstellung entfällt ersatzlos — die Finalisierung passiert erst in Schritt 8, nach Review und Copilot-Auswertung, aber noch **vor** dem Merge im selben PR.
 
@@ -85,12 +89,12 @@ Nach Bestätigung geht es weiter zu Schritt 6 (PR-Erstellung) bzw., falls die Fi
 
 Jeder PR mit mindestens einer Code-Datei im Diff (mind. eine Datei unter `backend/src`, `backend/tests`, `frontend/src`, `frontend/tests` oder Äquivalent) bekommt zusätzlich zur Review-Runde aus Schritt 3 ein automatisiertes Copilot-Review — feste Projektkonvention (`CLAUDE.md`), kein optionaler Schritt. **Ausnahme:** Ändert der PR ausschließlich Doku-/Spec-Dateien (`specs/`, `docs/`, `*.md`, reine Config-Kommentare) ohne jede Code-Datei, entfällt dieser gesamte Schritt (kein Anfordern, kein Warten, kein Auswerten) — im Abschlussbericht an den Nutzer kurz vermerken, dass Schritt 7 aus diesem Grund übersprungen wurde. Diese Nicht-Code-Definition ist **wortgleich identisch** mit dem Skip-Trigger von `review-tests` (siehe `.claude/skills/review-tests/SKILL.md`, Abschnitt "Wann dieser Skill übersprungen wird") — beide Stellen bei künftigen Änderungen synchron halten.
 
-1. **Anfordern:** `gh pr edit <PR-Nummer> --add-reviewer "@copilot"` direkt nach dem Eröffnen des PR in Schritt 6 (nur falls die obige Bedingung zutrifft).
-2. **Warten:** Copilot braucht üblicherweise ein bis wenige Minuten. Poll in angemessenen Abständen (z.B. alle 20-30s, mit vernünftigem Timeout statt endlos) `gh pr view <PR-Nummer> --json reviewRequests,reviews` — fertig ist es, sobald `reviewRequests` keinen Copilot-Eintrag mehr enthält bzw. `reviews` einen Eintrag mit `author.login == "copilot-pull-request-reviewer"` zeigt. Nicht selbst raten/simulieren, was das Review ergibt.
-3. **Kommentare holen:** `gh api repos/<owner>/<repo>/pulls/<PR-Nummer>/comments --paginate` liefert die Inline-Findings (Autor `Copilot`).
+1. **Anfordern:** `copilot-review-anfordern` direkt nach dem Eröffnen des PR in Schritt 6 (nur falls die obige Bedingung zutrifft).
+2. **Warten:** Copilot braucht üblicherweise ein bis wenige Minuten. Poll in angemessenen Abständen (z.B. alle 20-30s, mit vernünftigem Timeout statt endlos) `pr-reviewstand-lesen` — fertig ist es, sobald der Copilot-Eintrag aus `reviewRequests` verschwunden bzw. in `reviews` aufgetaucht ist (maßgeblicher Anmeldename und Auswertungsgrenze stehen im Katalogeintrag). Nicht selbst raten/simulieren, was das Review ergibt.
+3. **Kommentare holen:** `pr-reviewkommentare-lesen` liefert die Inline-Findings am eigenen PR.
 4. **Bewerten wie jeden anderen Review-Fund:** Jeden Kommentar am tatsächlichen Code prüfen (lesen, nicht nur den Kommentartext glauben) — echtes Problem oder Fehlalarm/bereits abgedeckt? Bei echten Findings: per `SendMessage` an denselben, weiterhin offenen `developer`-Subagenten zur Behebung geben (Test zuerst, falls eine Testlücke der Grund war, dann Fix, dann Commit — gleicher Maßstab wie Schritt 4/5), warten auf den Folgebericht. Bei Fehlalarmen: kurz im Abschlussbericht an den Nutzer begründen, warum kein Fix nötig war, statt kommentarlos zu ignorieren.
 5. **Nach Fixes:** erneuter Push (kein neuer PR nötig, derselbe Branch).
-6. **Antworten:** Auf jeden Copilot-Kommentar per `gh api repos/<owner>/<repo>/pulls/<PR-Nummer>/comments/<comment-id>/replies -f body="..."` kurz antworten — was gefixt wurde (mit Commit-Referenz) oder warum bewusst nicht.
+6. **Antworten:** Auf jeden Copilot-Kommentar mit `pr-reviewkommentar-beantworten` kurz antworten — was gefixt wurde (mit Commit-Referenz) oder warum bewusst nicht.
 
 ## Schritt 8: Finalisierung im selben PR (vor dem Merge)
 
@@ -100,15 +104,11 @@ Regelweg: Der Spec-Status wird **im Feature-PR selbst** auf `Implemented` gesetz
 
 **Was hier ausdrücklich *nicht* passiert:** kein Schließen des Issues, kein Setzen von `Done`. Beides erledigt GitHub beim Merge — das Keyword `Closes #NNN` schließt das Issue, der Workflow `Item closed` zieht die Karte auf `Done`. Ein vorgezogenes `Done` würde eine Story als erledigt führen, die noch nicht in `main` ist.
 
-1. **Verknüpfung prüfen** (`<MMM>` = die PR-Nummer aus Schritt 6):
-
-   ```bash
-   gh pr view <MMM> --repo TheRealKoller/photosort --json closingIssuesReferences,baseRefName
-   ```
+1. **Verknüpfung prüfen** mit `pr-verknuepfung-lesen`, für die PR-Nummer aus Schritt 6:
 
    Erwartet: `closingIssuesReferences` enthält einen Eintrag mit der Issue-Nummer dieser Story, und `baseRefName` ist `main`. Erst wenn beides zutrifft, wird finalisiert — die Statuszeile `Implemented` ist eine Aussage über einen PR, der das Issue tatsächlich schließen wird.
 
-   **Fehlerfall „nicht verknüpft":** Es fehlt die Closing-Zeile aus Schritt 6.3 im PR-Body (oder sie nennt die falsche Nummer). Dann den Body nachziehen — Body in eine temporäre Datei schreiben, Zeile ergänzen, `gh pr edit <MMM> --body-file <datei>` (nie über die Kommandozeile) — und die Prüfung wiederholen. Es ist nichts zurückzunehmen: Die Prüfung steht **vor** jedem Schreibzugriff. Danach lohnt ein erneutes Zurücklesen des Board-Werts aus 6.4, denn erst mit der Verknüpfung kann der Workflow greifen.
+   **Fehlerfall „nicht verknüpft":** Es fehlt die Closing-Zeile aus Schritt 6.3 im PR-Body (oder sie nennt die falsche Nummer). Dann den Body nachziehen — Body in eine temporäre Datei schreiben, Zeile ergänzen, `pr-body-schreiben` — und die Prüfung wiederholen. Es ist nichts zurückzunehmen: Die Prüfung steht **vor** jedem Schreibzugriff. Danach lohnt ein erneutes Zurücklesen des Board-Werts aus 6.4, denn erst mit der Verknüpfung kann der Workflow greifen.
 
    **Fehlerfall „falscher Basis-Branch":** Ist `baseRefName` nicht `main`, ist der PR gegen den falschen Branch eröffnet worden. Das ist ein Fall für Daniel, nicht für eine Korrektur nebenbei — nicht finalisieren, melden.
 
@@ -124,11 +124,7 @@ Regelweg: Der Spec-Status wird **im Feature-PR selbst** auf `Implemented` gesetz
 
 4. Danach übernimmt Daniel: Freigabe und Merge. **Kein** automatisches Mergen durch dich.
 
-**Wird der PR ohne Merge geschlossen** (Branch verworfen): Das Issue bleibt offen — es hing am Keyword, das nur beim Merge greift —, aber die Karte steht seit der PR-Verknüpfung auf `Review` und behauptet dort eine Prüfung, die es nicht mehr gibt. Diesen einen Übergang setzt die Session selbst zurück, weil GitHub für ein geschlossenes, nicht gemergtes PR keinen Workflow kennt:
-
-```bash
-gh project item-edit 8 --owner TheRealKoller --url https://github.com/TheRealKoller/photosort/issues/<NNN> --field "Status" --value "In Progress"
-```
+**Wird der PR ohne Merge geschlossen** (Branch verworfen): Das Issue bleibt offen — es hing am Keyword, das nur beim Merge greift —, aber die Karte steht seit der PR-Verknüpfung auf `Review` und behauptet dort eine Prüfung, die es nicht mehr gibt. Diesen einen Übergang setzt die Session selbst zurück, weil GitHub für ein geschlossenes, nicht gemergtes PR keinen Workflow kennt: `board-status-setzen` mit Wert `In Progress`.
 
 `In Progress` und nicht `Ready`: Die Spec existiert, der Branch existiert, die Arbeit ist begonnen. Führt die Spec-Datei auf dem Branch bereits `Implemented`, gehört das ebenfalls zurückgenommen — dieser Stand ist nicht ausgeliefert. Daniel darauf hinweisen.
 
@@ -147,7 +143,7 @@ Ist das Subagenten-Fenster des `developer`-Laufs bereits geschlossen (z.B. Timeo
 
 Nach Abschluss (PR eröffnet, Copilot-Review ausgewertet oder aus genanntem Grund übersprungen, Spec im PR finalisiert) fasse für den Nutzer zusammen: PR-Link, Ergebnis der Finalisierung aus Schritt 8 (Statuszeile bzw. Fehlermeldung), das vom `review`-Skill gelieferte Protokoll (alle fünf Perspektiven, gelaufen ja/nein mit Begründung, Findings-Kurzfassung inkl. behobener/bewusst nicht behobener), Copilot-Ergebnis (falls gelaufen), sowie jede Stelle, an der du selbst eine technische Detailentscheidung getroffen hast (z.B. bei einem nicht-exakten Anker-Match oder einem SendMessage-Recovery-Fall).
 
-Blieb ein nativer Übergang aus oder schlug ein Board-Befehl fehl, trägt der Bericht zusätzlich denselben Abschnitt, der auch im PR-Body steht:
+Blieb ein nativer Übergang aus oder schlug eine Board-Operation fehl, trägt der Bericht zusätzlich denselben Abschnitt, der auch im PR-Body steht — je Zeile die Operations-ID und die Nachhol-Zeile aus ihrem Katalogeintrag:
 
 ```markdown
 ## Lokal nachzuholen
@@ -155,7 +151,7 @@ Blieb ein nativer Übergang aus oder schlug ein Board-Befehl fehl, trägt der Be
 Dieser Schritt ist fehlgeschlagen und wurde nicht nachgeholt. Die Befehle sind unverändert
 wiederholbar und lokal nachzuholen.
 
-- `status-review`: `gh project item-edit 8 --owner TheRealKoller --url https://github.com/TheRealKoller/photosort/issues/NNN --field "Status" --value "Review"`
+- <Operations-ID>: <Nachhol-Zeile aus dem Katalogeintrag, mit den Nummern dieses Laufs>
 ```
 
-Im Chat — und **nur** dort — kommt die wörtliche `gh`-Fehlermeldung bzw. der tatsächlich vorgefundene Board-Wert dazu, damit Daniel die Ursache sieht. In den PR-Body gelangt beides nicht; dort steht ausschließlich selbst erzeugter Inhalt (`.claude/skills/github-access/SKILL.md`).
+Im Chat — und **nur** dort — kommt die wörtliche Fehlermeldung des **zuletzt** versuchten Wegs bzw. der tatsächlich vorgefundene Board-Wert dazu, damit Daniel die Ursache sieht. In den PR-Body gelangt beides nicht; dort steht ausschließlich selbst erzeugter Inhalt (Skill `github-access`, Regel 4.3).
