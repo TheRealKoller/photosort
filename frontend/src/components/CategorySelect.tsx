@@ -73,7 +73,7 @@ export function CategorySelect({
   const selectedValue = value !== null && orderedKeys.includes(value) ? value : ''
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <label htmlFor={selectId} className="text-xs font-medium text-text-h">
         Alle Kategorien
       </label>

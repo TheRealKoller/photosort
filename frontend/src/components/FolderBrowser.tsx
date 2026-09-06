@@ -123,7 +123,7 @@ export function FolderBrowser({ value, onChange, onErrorChange }: FolderBrowserP
         : null
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-border p-3">
+    <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
       <nav aria-label="Ordnerpfad" className="flex flex-wrap items-center gap-1 text-sm text-text">
         {breadcrumbsFor(value).map((crumb, index, all) => (
           <span key={crumb.path} className="flex items-center gap-1">

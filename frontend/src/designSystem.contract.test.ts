@@ -1457,6 +1457,11 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Aufklapp-Zeile der Kuratierung: Zeilenhoehe einer zeilenweisen Liste',
     },
     {
+      file: 'src/pages/ProjectListPage.tsx',
+      snippet: 'flex min-h-11 flex-col justify-center',
+      reason: 'Projektzeile: die ganze Zeile ist EINE Trefferflaeche (Zeilenhoehe einer Liste)',
+    },
+    {
       file: 'src/pages/LoginPage.tsx',
       snippet: "className=\"mt-2 h-11 w-full text-base\"",
       reason: 'Absende-Schaltflaeche der Anmeldung: einzige Aktion des Bildschirms, einhaendig bedient',

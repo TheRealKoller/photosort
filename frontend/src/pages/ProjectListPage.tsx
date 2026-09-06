@@ -21,7 +21,7 @@ export function ProjectListPage() {
         <div>
           <h1 className="text-xl sm:text-2xl">Projekte</h1>
           {query.isSuccess && query.data.length > 0 && (
-            <p className="text-xs text-text">{query.data.length} Ordner</p>
+            <p className="text-xs text-text-muted">{query.data.length} Ordner</p>
           )}
         </div>
         <Button asChild>
@@ -33,7 +33,7 @@ export function ProjectListPage() {
         <ul role="status" aria-label="Projekte werden geladen…" className="flex flex-col gap-3">
           {Array.from({ length: SKELETON_CARD_COUNT }, (_, index) => (
             <li key={index} aria-hidden="true">
-              <Skeleton className="h-20 w-full rounded-xl" />
+              <Skeleton className="h-20 w-full rounded-lg" />
             </li>
           ))}
         </ul>
@@ -53,22 +53,25 @@ export function ProjectListPage() {
         Metadatenzeile (specs/features/0320-dark-utility-register.md, UI/UX-Abschnitt).
       */}
       {query.isSuccess && query.data.length === 0 && (
-        <div className="flex flex-col items-center px-6 py-10 text-center">
+        // Ein einziger `flex-col gap-4` statt einer Kette einzelner `mb-*`/`mt-*` - der Abstand
+        // steht damit an EINER Stelle und kann nicht mehr zwischen den Kindern auseinanderlaufen.
+        // Die Schaltflaeche traegt das Board-Standardmass: der Leerzustand ist kein heisser Pfad.
+        <div className="flex flex-col items-center gap-4 px-4 py-8 text-center">
           <span
             aria-hidden="true"
-            className="mb-6 grid size-20 place-items-center rounded-lg bg-elevated text-accent"
+            className="grid size-16 place-items-center rounded-md bg-elevated text-accent"
           >
             <Icon name="image" size={40} />
           </span>
-          <h2 className="mb-2 text-xl">Noch nichts sortiert</h2>
-          <p className="mb-6 max-w-xs text-sm text-text">
+          <h2 className="text-lg">Noch nichts sortiert</h2>
+          <p className="max-w-xs text-sm text-text">
             Zeig PhotoSort einen Ordner auf dem Cloud-Speicher — den ersten Durchgang übernimmt es
             für dich.
           </p>
-          <Button asChild className="h-11 px-6 text-sm">
+          <Button asChild>
             <Link to="/projects/new">Ordner auswählen</Link>
           </Button>
-          <p className="mt-5 text-xs text-text">
+          <p className="text-xs text-text-muted">
             Fotos werden nie kopiert oder verschoben — nur gelesen.
           </p>
         </div>
@@ -81,12 +84,18 @@ export function ProjectListPage() {
             return (
               <li key={project.id}>
                 <Card className="p-0">
-                  <Link to={`/projects/${project.id}`} className="flex flex-col gap-2.5 px-4 py-3.5 sm:px-5">
+                  {/* Die ganze Zeile ist EINE Trefferflaeche - `min-h-11` als Zeilenhoehe
+                      einer zeilenweisen Liste (Trefferflaechen-Regel 3), nicht als
+                      Schaltflaechenmass. */}
+                  <Link
+                    to={`/projects/${project.id}`}
+                    className="flex min-h-11 flex-col justify-center gap-2 px-4 py-3"
+                  >
                     <span className="flex min-w-0 flex-col">
                       <span className="text-lg font-semibold leading-tight text-text-h">{project.name}</span>
                       {/* Pfad in Festbreitenschrift und einzeilig gekuerzt (Vorlage): ein
                           Cloud-Pfad ist eine technische Kennung, kein Fliesstext. */}
-                      <span className="truncate font-mono text-[10.5px] text-text">
+                      <span className="truncate font-mono text-xs text-text">
                         {project.opencloud_path}
                       </span>
                     </span>

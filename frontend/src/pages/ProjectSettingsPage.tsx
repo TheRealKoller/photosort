@@ -69,7 +69,7 @@ export function ProjectSettingsPage() {
         <p className="text-sm text-text">{project.name}</p>
       </header>
 
-      <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-4">
+      <div className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4">
         {/* flex-wrap + min-w-0 auf der Label-Gruppe (Review-Fund, ship-feature-Runde): auf sehr
             engen Viewports (<400px) soll das lange, zusammengesetzte Label auf eine eigene Zeile
             umbrechen koennen, statt den Switch aus der Zeile zu draengen/zu ueberlappen. */}

@@ -56,7 +56,9 @@ function Metric({
 }) {
   return (
     <div className="col-span-12 flex min-w-0 flex-col gap-1 sm:col-span-6 lg:col-span-3">
-      <span className="text-xl font-semibold text-text-h">{value}</span>
+      {/* Kennzahlen in Festbreitenschrift (Board): eine Zahl ist eine Datenausgabe, kein
+          Fliesstext - und untereinander stehende Kennzahlen fluchten dadurch. */}
+      <span className="font-mono text-xl font-semibold text-text-h">{value}</span>
       <span className="flex items-center gap-1 text-sm text-text">
         {label}
         {info}
@@ -90,7 +92,9 @@ function Section({
   children: ReactNode
 }) {
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-4 border-t border-border pt-6">
+    // Abschnittstrenner auf --separator: als freistehende Linie auf dem Grund erreichte --border
+    // 1.45:1 und war praktisch keine Linie.
+    <section aria-labelledby={id} className="flex flex-col gap-4 border-t border-separator pt-6">
       <h2 id={id} className="text-lg text-text-h">
         {title}
       </h2>
@@ -135,7 +139,7 @@ function InfoPopover({ label, children }: { label: string; children: ReactNode }
 /** Eine Zeile "Bezeichnung … x von y Fotos" bzw. "Bezeichnung … Wert". */
 function DetailRow({ term, children }: { term: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 py-2 last:border-b-0">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-separator py-2 last:border-b-0">
       <dt className="flex items-center gap-1 text-sm text-text">{term}</dt>
       <dd className="text-sm font-medium text-text-h">{children}</dd>
     </div>
@@ -178,7 +182,7 @@ function CostEntry({ entry }: { entry: ProjectStatsCostByPurpose }) {
   return (
     <div
       data-purpose={entry.purpose}
-      className="flex flex-wrap items-start justify-between gap-2 border-b border-border/60 py-2 last:border-b-0"
+      className="flex flex-wrap items-start justify-between gap-2 border-b border-separator py-2 last:border-b-0"
     >
       <dt className="text-sm text-text">{PURPOSE_LABELS[entry.purpose]}</dt>
       <dd className="flex max-w-md flex-col items-end gap-1 text-right">
@@ -286,28 +290,29 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
       <Section id="stats-categories" title="Kategorienverteilung">
         <table className="w-full table-fixed text-sm">
           <thead>
-            <tr className="border-b border-border text-left text-text">
-              <th scope="col" className="py-2 font-normal">
+            {/* Tabellenkopf in der Board-Rolle "Beschriftung". */}
+            <tr className="border-b border-separator text-left text-xs font-semibold uppercase tracking-wide text-text">
+              <th scope="col" className="py-2">
                 Kategorie
               </th>
-              <th scope="col" className="py-2 text-right font-normal">
+              <th scope="col" className="py-2 text-right">
                 Anzahl
               </th>
-              <th scope="col" className="py-2 text-right font-normal">
+              <th scope="col" className="py-2 text-right">
                 Anteil
               </th>
             </tr>
           </thead>
           <tbody>
             {categories.entries.map((entry) => (
-              <tr key={entry.category_key} className="border-b border-border/60">
+              <tr key={entry.category_key} className="border-b border-separator">
                 {/* Anzeigename AUSSCHLIESSLICH vom Server (ADR 0049) - es gibt bewusst keine
                     Uebersetzungstabelle fuer Set-Keys im Frontend. */}
                 <th scope="row" className="break-words py-2 text-left font-normal text-text-h">
                   {entry.display_name}
                 </th>
-                <td className="py-2 text-right text-text-h">{formatCount(entry.photo_count)}</td>
-                <td className="py-2 text-right text-text">{formatPercent(entry.share)}</td>
+                <td className="py-2 text-right font-mono text-text-h">{formatCount(entry.photo_count)}</td>
+                <td className="py-2 text-right font-mono text-text">{formatPercent(entry.share)}</td>
               </tr>
             ))}
           </tbody>
