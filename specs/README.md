@@ -5,7 +5,7 @@ Dieses Verzeichnis ist die "Single Source of Truth" für Anforderungen und Archi
 ## Struktur
 
 - `architecture/` — das Testkonzept (`0002-testkonzept.md`, gepflegt vom `test-engineer`-Agenten), das Sicherheitskonzept (`0003-securitykonzept.md`, gepflegt vom `security-engineer`-Agenten), sowie das Design-System (`0004-design-system.md`, gepflegt vom `ux-ui-designer`-Agenten) — agenteninterne Arbeitsdokumente, die beim Review/bei der Umsetzungsplanung konsultiert werden. Wird laufend aktualisiert, wenn sich Teststrategie, Sicherheitslage oder Design ändern (kein Lifecycle wie bei Features, sondern lebende Dokumente). Die Systemarchitektur/Komponentenübersicht selbst lebt seit Spec 0019 unter [`docs/architecture.md`](../docs/architecture.md) (siehe Abgrenzung unten). Der `research-engineer`-Agent (Spec [`0028`](./features/0028-research-engineer-agent.md)/ADR [`0016`](./decisions/0016-research-engineer-agent.md)) hat bewusst **kein** eigenes Dokument hier — externe Recherche hat keinen projektinternen Dauerzustand, der als lebendes Dokument gepflegt werden müsste; jede Recherche ist für sich abgeschlossen, ihr Ergebnis lebt im jeweiligen Spec-Abschnitt/der jeweiligen ADR statt in einem eigenen Konzept-Dokument.
-- `decisions/` — Architecture Decision Records (ADRs), verfasst vom `architect`-Agenten. Unveränderlich nach Annahme; eine spätere Änderung der Entscheidung erzeugt eine neue ADR, die die alte als "Superseded" markiert.
+- `decisions/` — Architecture Decision Records (ADRs), verfasst vom `architect`-Agenten. Unveränderlich nach Annahme; eine spätere Änderung der Entscheidung erzeugt eine neue ADR, die die alte als "Superseded" markiert — bzw., wenn nur ein benannter Teil fällt, als "teilweise abgelöst" (siehe Abschnitt "ADR-Status" unten).
 - `features/` — Feature-Spezifikationen. Durchlaufen den unten beschriebenen Lifecycle.
 
 Priorität und Status offener Arbeit werden nativ im GitHub-Project-Board gepflegt (dort setzt Daniel die Priorität direkt), nicht in einer eingecheckten Datei. Der `requirements-engineer`-Agent berät dazu (Empfehlung), pflegt aber keine Übersichtsdatei.
@@ -20,6 +20,18 @@ Proposed → Accepted → Implemented → (ggf.) Superseded
 - **Accepted**: Stakeholder (Daniel) hat die Spec freigegeben, offene Fragen sind geklärt. Erst ab hier wird implementiert.
 - **Implemented**: Umgesetzt und über Tests abgesichert. Verweist auf den/die PR(s).
 - **Superseded**: Durch eine neuere Spec abgelöst; Verweis auf die Nachfolge-Spec.
+
+## ADR-Status: `Accepted`, `Superseded` — und der Teil-Vermerk
+
+ADRs durchlaufen **nicht** den Feature-Lifecycle oben. Sie kennen zwei Statuswerte und einen Zusatzvermerk:
+
+- **`Accepted`** — die Entscheidung gilt.
+- **`Superseded`** — die Entscheidung als solche ist abgelöst. Die Statuszeile nennt die ablösende ADR und schlüsselt auf, was aus der alten weitergilt (Beispiele: ADR [`0017`](./decisions/0017-github-projects-v2-spec-sync.md), [`0052`](./decisions/0052-remote-lebenszyklus-diagnose-kommando-und-echter-board-preflight.md), [`0056`](./decisions/0056-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md)).
+- **Teilweise abgelöst** — der Status bleibt `Accepted`, und eine eigene Kopfzeile `**Teilweise abgelöst:**` benennt die betroffenen Abschnitte und die ablösende ADR. Zulässig **nur**, wenn der abgelöste Teil nicht der Kern der Entscheidung ist und die überwiegende Mehrheit ihrer Abschnitte unverändert weitergilt — sonst gilt `Superseded`. Erstmals angewendet bei ADR [`0057`](./decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) (zwei von neun Abschnitten abgelöst durch ADR [`0061`](./decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md), Abschnitt 7).
+
+**Warum es diese dritte Form gibt:** Ein `Superseded` auf eine ADR, deren Kernentscheidung unverändert gilt, ist eine falsche Auskunft an den nächsten Leser — es schickt ihn auf die Suche nach einer Nachfolgeentscheidung, die es für den gesuchten Punkt nicht gibt. Die Gegenmaßnahme (die ablösende ADR wiederholt die weitergeltenden Abschnitte wortgetreu, damit `Superseded` ehrlich wird) erzeugt ein zweites Abbild derselben Entscheidung, und zwei Abbilder driften.
+
+**Was der Teil-Vermerk nicht aufweicht:** Der Entscheidungstext einer angenommenen ADR bleibt unverändert. Angefasst wird ausschließlich der Kopf — dieselbe Stelle, die auch bei einem vollen `Superseded` angefasst wird, und der dafür vorgesehene Mechanismus. Wer einen Teil einer ADR ändern will, schreibt weiterhin eine neue ADR; er darf die alte nur nicht mehr falsch etikettieren müssen.
 
 ## Namenskonvention
 

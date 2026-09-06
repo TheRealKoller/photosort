@@ -5,6 +5,10 @@ description: Hält eine neue Idee oder einen (vermeintlichen) Bug schnell und un
 
 # Capture — Idee oder Bug schnell als GitHub-Issue festhalten
 
+**GitHub-Erlaubnisstufe:** lesend und schreibend
+
+Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`; lade ihn einmal über das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (Schritt 3). Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum.
+
 Der Sinn dieses Skills ist Geschwindigkeit: eine Idee oder ein (vermeintlicher) Bug wird roh festgehalten, ohne sie im selben Moment zu bewerten, zu hinterfragen oder auszuarbeiten — das übernimmt später `refinement`. Stell deshalb **keine** inhaltlichen Rückfragen zur Sache selbst (kein "warum", kein "für wen", keine Recherche im Code oder in `specs/`) — nur die technischen Minimal-Angaben unten, falls sie nicht eindeutig aus dem Gesagten hervorgehen.
 
 Seit Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) entsteht dabei **keine** lokale Datei mehr unter `specs/inbox/` — der Rohtext lebt ausschließlich als neues GitHub-Issue, das `refinement` später direkt liest und verfeinert.
@@ -25,33 +29,29 @@ Leite aus dem Gesagten einen knappen Klartitel ab (keine Nummer davor — die Gi
 
 Der Rohtext ist bewusst ungefiltert — das spätere Schärfen arbeitet mit dieser Rohfassung als Ausgangspunkt, nicht mit einer bereits interpretierten Version.
 
-**Beides in je eine Datei schreiben** (z.B. unter dem Scratchpad-Verzeichnis), mit dem Schreib-Werkzeug, nicht per Shell-Umleitung: den Rohtext in eine Body-Datei, den Titel in eine genau einzeilige Titel-Datei. Freitext gelangt nie in eine Kommandozeile (siehe `.claude/skills/github-board/SKILL.md`, „Verbindliche Regeln beim Einsetzen von Werten") — Titel wie Bodies tragen in diesem Projekt regelmäßig Backticks und Dollarzeichen.
+**Beides in je eine Datei schreiben** (z.B. unter dem Scratchpad-Verzeichnis), mit dem Schreib-Werkzeug, nicht per Shell-Umleitung: den Rohtext in eine Body-Datei, den Titel in eine genau einzeilige Titel-Datei. Freitext ist immer ein abgegrenzter Wert, nie Teil der Aufrufstruktur (Skill `github-access`, Härtungsregel 4.1) — Titel wie Bodies tragen in diesem Projekt regelmäßig Backticks und Dollarzeichen. Die Titel-Datei wird außerdem auf Wohlgeformtheit geprüft (Regel 4.4), auf jedem Weg.
 
 ## Schritt 3: Issue anlegen
 
-```bash
-gh issue create --repo TheRealKoller/photosort --title "$(cat <titel-datei>)" --body-file <body-datei> --label <idee|bug>
-```
+- `issue-anlegen`
 
-Der Aufruf gibt die URL des neuen Issues aus. Daraus wird die Issue-Nummer `NNN` für Schritt 4 gewonnen — und das ist die **einzige** Stelle im gesamten Ablauf, an der eine Zahl aus einer `gh`-Ausgabe stammt (siehe die Ausnahme in [`github-board`](../github-board/SKILL.md), Abschnitt „Verbindliche Regeln beim Einsetzen von Werten"). Sie wird deshalb **geparst und gegen `^[0-9]+$` validiert**, bevor sie irgendwo weiterverwendet wird; weiterverwendet wird ausschließlich die geprüfte Zahl, nie die ausgegebene Zeichenkette. Passt sie nicht auf das Muster, wird abgebrochen und Daniel die Ausgabe unverändert gemeldet.
+Die Antwort trägt die Nummer des neuen Issues. Daraus wird `NNN` für Schritt 4 gewonnen — und das ist die **einzige** Stelle im gesamten Ablauf, an der eine Zahl aus einer Antwort stammt (die eng gefasste Ausnahme von Härtungsregel 4.2 im Skill `github-access`). Sie wird deshalb gegen `^[0-9]+$` **validiert**, bevor sie irgendwo weiterverwendet wird; weiterverwendet wird ausschließlich die geprüfte Zahl, nie die ausgegebene Zeichenkette, und die Issue-URL wird aus ihr gebildet. Passt sie nicht auf das Muster, wird abgebrochen und Daniel die Ausgabe unverändert gemeldet.
 
-Scheitert er (Exit-Code ≠ 0), ist **nichts** entstanden: Meldung unverändert an Daniel weitergeben, kein eigener Lösungsversuch, Schritt 4 entfällt.
+Scheitert die Operation **eindeutig** auf allen Wegen, ist **nichts** entstanden: Meldung des zuletzt versuchten Wegs unverändert an Daniel weitergeben, kein eigener Lösungsversuch, Schritt 4 entfällt. Bei einem **mehrdeutigen** Fehlschlag gilt die Regel aus der Wegleiter: erst lesend verifizieren, ob das Issue doch entstanden ist, nie blind ein zweites anlegen.
 
 ## Schritt 4: Issue ins Board aufnehmen
 
-Bewusst ein **zweiter** Befehl statt `gh issue create --project`: Das Issue soll überleben, auch wenn dieser Teil scheitert.
+Bewusst eine **zweite** Operation statt eines kombinierten Anlegens: Das Issue soll überleben, auch wenn dieser Teil scheitert.
 
-```bash
-gh project item-add 8 --owner TheRealKoller --url https://github.com/TheRealKoller/photosort/issues/<NNN> --format json --jq '.id'
-```
+- `board-aufnahme`
 
-Die URL wird aus der Nummer **gebildet**, nicht aus der `gh`-Ausgabe übernommen. Der Statuswert `Unrefined` wird hier **nicht** gesetzt — er entsteht durch den nativen Workflow `Item added to project`, sobald das Item im Projekt liegt.
+Die URL wird aus der validierten Nummer **gebildet**, nicht aus einer Ausgabe übernommen. Der Statuswert `Unrefined` wird hier **nicht** gesetzt — er entsteht durch den nativen Workflow `Item added to project`, sobald das Item im Projekt liegt.
 
 ## Schritt 5: Kurz bestätigen
 
 Eine knappe Bestätigung im Chat, kein längerer Kommentar: z.B. "Als GitHub-Issue #NNN festgehalten (Typ: Bug)." Keine Einschätzung, keine Rückfrage, keine Vorschläge zur Priorisierung — das ist explizit nicht Teil dieses Schritts.
 
-**Ist Schritt 4 fehlgeschlagen** (typischer Fall: eine Remote-Session, in der jeder Board-Zugriff mit `HTTP 403` endet), ist das **kein Abbruch**: Das Issue aus Schritt 3 existiert, seine Nummer steht in der Ausgabe. Die Bestätigung nennt sie und trägt zusätzlich diesen Abschnitt:
+**Ist Schritt 4 fehlgeschlagen** — der Normalfall in einer Cloud-Session, weil `board-aufnahme` dort auf keinem Weg erreichbar ist —, ist das **kein Abbruch**: Das Issue aus Schritt 3 existiert, seine Nummer ist bekannt. Die Bestätigung nennt sie und trägt zusätzlich diesen Abschnitt, mit der Nachhol-Zeile aus dem Katalogeintrag:
 
 ```markdown
 ## Lokal nachzuholen
@@ -59,10 +59,10 @@ Eine knappe Bestätigung im Chat, kein längerer Kommentar: z.B. "Als GitHub-Iss
 Dieser Schritt ist fehlgeschlagen und wurde nicht nachgeholt. Die Befehle sind unverändert
 wiederholbar und lokal nachzuholen.
 
-- `board-aufnahme`: `gh project item-add 8 --owner TheRealKoller --url https://github.com/TheRealKoller/photosort/issues/NNN --format json --jq '.id'`
+- <Operations-ID>: <Nachhol-Zeile aus dem Katalogeintrag, mit den Nummern dieses Laufs>
 ```
 
-`gh issue create` wird dafür **nicht** wiederholt — das legte ein zweites Issue an. Ohne Item auf dem Board bleibt auch `Unrefined` aus; beides holt derselbe Befehl nach. Der Abschnitt bleibt im Chat; dieser Skill schreibt ihn in kein GitHub-Artefakt.
+Ein zweites `issue-anlegen` findet dafür **nicht** statt — das legte ein zweites Issue an. Ohne Item auf dem Board bleibt auch `Unrefined` aus; beides holt dieselbe Nachhol-Zeile nach. Der Abschnitt bleibt im Chat; dieser Skill schreibt ihn in kein GitHub-Artefakt.
 
 ## Was dieser Skill NICHT tut
 

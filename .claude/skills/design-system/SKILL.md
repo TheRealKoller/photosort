@@ -5,6 +5,8 @@ description: Kapselt PhotoSorts Design-System (Farben, Formsprache, wiederkehren
 
 # PhotoSort Design-System
 
+**GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
+
 Schnellreferenz für konsistente UI-Arbeit in diesem Repo. Die eigentliche Quelle der Wahrheit sind [`specs/architecture/0004-design-system.md`](../../../specs/architecture/0004-design-system.md) (lebendes Dokument, gepflegt vom `ux-ui-designer`-Agenten) und [`specs/decisions/0011-ui-component-library.md`](../../../specs/decisions/0011-ui-component-library.md) — bei Unsicherheit oder Widerspruch dort nachschlagen statt zu raten, dieser Skill ist nur die griffige Zusammenfassung für den täglichen Gebrauch.
 
 ## Warum dieser Skill existiert

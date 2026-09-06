@@ -1,8 +1,17 @@
-"""Haelt fest, dass das geloeschte Board-Werkzeug in keiner verwalteten Datei mehr vorkommt.
+"""Haelt fest, dass geloeschte bzw. umbenannte Namen in keiner verwalteten Datei mehr vorkommen.
 
-Seit ADR 0057 gibt es kein eigenes Board-Werkzeug mehr: Der Board-Zugriff sind einzelne
-`gh`-Befehle in den Skill-Dateien. Eine zurueckgebliebene Erwaehnung waere keine Kleinigkeit,
-sondern eine Anweisung an einen Agenten, ein Programm aufzurufen, das es nicht mehr gibt.
+Zwei Faelle derselben Bauart:
+
+* Seit ADR 0057 gibt es kein eigenes Board-Werkzeug mehr (`gh-board`). Eine zurueckgebliebene
+  Erwaehnung waere keine Kleinigkeit, sondern eine Anweisung an einen Agenten, ein Programm
+  aufzurufen, das es nicht mehr gibt.
+* Seit ADR 0061 heisst der Skill `github-access` statt `github-board`. Ein zurueckgebliebener
+  Verweis zeigte auf ein Verzeichnis, das es nicht mehr gibt - und der Skill ist ab jetzt die
+  *einzige* Stelle mit einem GitHub-Zugriff, ein toter Verweis darauf trifft also jeden Ablauf.
+
+Die beiden Muster kollidieren nicht: `github-board` enthaelt `gh-board` **nicht** als Teilstring
+(zwischen "gh" und "-board" steht "ub"), und umgekehrt ebenso wenig. Es gibt daher keine
+Fundstelle, die faelschlich der jeweils anderen Regel zugeschlagen wuerde.
 
 Der Suchraum ist deshalb **alles, was Git verwaltet** (`git ls-files`) und nicht eine gepflegte
 Liste von Verzeichnissen: Ein spaeter umbenannter oder neu angelegter Skill fiele aus einer
@@ -27,8 +36,9 @@ import pytest
 
 REPO_WURZEL = Path(__file__).parents[2]
 
-# Beide Schreibweisen: "gh-board" aus dem Dateinamen, "gh_board" aus Fixture-/Modulnamen.
-MUSTER = (b"gh-board", b"gh_board")
+# Beide Schreibweisen des Werkzeugs ("gh-board" aus dem Dateinamen, "gh_board" aus
+# Fixture-/Modulnamen) plus der alte Skill-Name.
+MUSTER = (b"gh-board", b"gh_board", b"github-board")
 
 # Genau drei Ausnahmen, per Pfadpraefix und je begruendet:
 #   CHANGELOG.md - von release-please aus historischen Commit-Botschaften erzeugt, nicht von
@@ -48,14 +58,30 @@ AUSNAHMEN = (
 # jedem geloeschten Dutzend Dateien rot werden.
 MINDESTZAHL_VERWALTETER_DATEIEN = 100
 
-# Gegenprobe fuer dasselbe Muster: Diese ADR erwaehnt das Werkzeug zwangslaeufig und liegt
-# unter der Ausnahme `specs/`. Trifft das Muster hier nicht, ist die Nullmeldung oben kein
-# Befund, sondern ein Defekt.
-GEGENPROBE_PFAD = (
-    REPO_WURZEL / "specs" / "decisions" / "0057-board-lebenszyklus-nativ-statt-eigenbau.md"
-)
+# Gegenprobe **je Musterfamilie**: Jede der beiden ADRs erwaehnt den von ihr abgeschafften Namen
+# zwangslaeufig und liegt unter der Ausnahme `specs/`. Trifft ein Muster in seiner eigenen ADR
+# nicht, ist die Nullmeldung oben kein Befund, sondern ein Defekt. Eine Gegenprobe, die nur
+# `gh-board` belegt, sagt ueber `github-board` nichts.
+GEGENPROBEN: dict[bytes, Path] = {
+    b"gh-board": (
+        REPO_WURZEL / "specs" / "decisions" / "0057-board-lebenszyklus-nativ-statt-eigenbau.md"
+    ),
+    b"github-board": (
+        REPO_WURZEL
+        / "specs"
+        / "decisions"
+        / "0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md"
+    ),
+}
 
-GELOESCHTE_PFADE = ("scripts/gh-board.py", "scripts/tests/test_gh_board.py")
+# Das Suchmuster oben liest Datei-*Inhalte*. Ein wieder angelegtes Verzeichnis, dessen
+# Dateien den alten Namen nirgends im Text nennen, entginge ihm deshalb vollstaendig - der
+# Pfad selbst muss eigens geprueft werden.
+GELOESCHTE_PFADE = (
+    "scripts/gh-board.py",
+    "scripts/tests/test_gh_board.py",
+    ".claude/skills/github-board",
+)
 
 
 def fundstellen_im_abbild(abbild: Mapping[str, bytes]) -> list[str]:
@@ -98,7 +124,7 @@ def abbild_des_repos(wurzel: Path = REPO_WURZEL) -> dict[str, bytes]:
     return {pfad: (wurzel / pfad).read_bytes() for pfad in pfade if (wurzel / pfad).is_file()}
 
 
-def test_keine_verwaltete_datei_erwaehnt_das_board_werkzeug_noch() -> None:
+def test_keine_verwaltete_datei_erwaehnt_die_alten_namen_noch() -> None:
     abbild = abbild_des_repos()
 
     # Selbstschutz (a): plausible Groessenordnung statt eines leeren Suchraums.
@@ -108,37 +134,63 @@ def test_keine_verwaltete_datei_erwaehnt_das_board_werkzeug_noch() -> None:
         "Tests waere dann bedeutungslos."
     )
 
-    # Selbstschutz (b): Gegenprobe - dasselbe Muster trifft in der ausgenommenen ADR sehr wohl.
-    assert fundstellen_im_abbild({"gegenprobe.md": GEGENPROBE_PFAD.read_bytes()}), (
-        f"Das Suchmuster {MUSTER} findet nicht einmal in {GEGENPROBE_PFAD} etwas. Dann ist die "
-        "Nullmeldung dieses Tests kein Befund, sondern ein defektes Muster."
-    )
+    # Selbstschutz (b): Gegenprobe je Musterfamilie - jedes Muster trifft in seiner eigenen,
+    # ausgenommenen ADR sehr wohl.
+    for muster, pfad in GEGENPROBEN.items():
+        assert muster in pfad.read_bytes(), (
+            f"Das Suchmuster {muster!r} findet nicht einmal in {pfad} etwas. Dann ist die "
+            "Nullmeldung dieses Tests fuer dieses Muster kein Befund, sondern ein Defekt."
+        )
 
     befunde = fundstellen_im_abbild(abbild)
 
     assert not befunde, (
-        "Das seit ADR 0057 geloeschte Board-Werkzeug wird noch erwaehnt: "
-        f"{', '.join(befunde)}. Ausgenommen sind ausschliesslich {AUSNAHMEN} - jede andere "
-        "Fundstelle weist einen Ablauf auf ein Programm, das es nicht mehr gibt."
+        f"Ein abgeschaffter Name ({MUSTER}) wird noch erwaehnt: {', '.join(befunde)}. "
+        f"Ausgenommen sind ausschliesslich {AUSNAHMEN} - jede andere Fundstelle weist einen "
+        "Ablauf auf ein Programm bzw. ein Verzeichnis, das es nicht mehr gibt."
     )
 
 
-def test_das_werkzeug_und_seine_testdatei_existieren_nicht_mehr() -> None:
-    """Faengt eine Wiederkehr, die dem Textmuster entginge, weil sie sich anders benennt."""
+def test_die_verschwundenen_pfade_existieren_nicht_mehr() -> None:
+    """Faengt eine Wiederkehr, die dem Textmuster entginge, weil sie nur im Pfad steht."""
     vorhanden = [pfad for pfad in GELOESCHTE_PFADE if (REPO_WURZEL / pfad).exists()]
 
     assert not vorhanden, (
-        f"Diese Pfade sollten mit ADR 0057 verschwunden sein, existieren aber noch: {vorhanden}."
+        f"Diese Pfade sollten mit ADR 0057 bzw. ADR 0061 verschwunden sein, existieren aber "
+        f"noch: {vorhanden}."
     )
 
 
-def test_beide_schreibweisen_werden_gefunden() -> None:
+def test_der_neue_skill_pfad_existiert() -> None:
+    """Gegenprobe: Ohne ihn waere der Test oben leer wahr - alles verschwunden, nichts ersetzt."""
+    assert (REPO_WURZEL / ".claude" / "skills" / "github-access" / "SKILL.md").is_file()
+
+
+def test_alle_schreibweisen_werden_gefunden() -> None:
     abbild = {
         "docs/a.md": b"ruf python3 scripts/gh-board.py auf\n",
+        "docs/c.md": b"siehe .claude/skills/github-board/SKILL.md\n",
         "scripts/tests/b.py": b"def test(gh_board):\n    pass\n",
     }
 
-    assert fundstellen_im_abbild(abbild) == ["docs/a.md:1", "scripts/tests/b.py:1"]
+    assert fundstellen_im_abbild(abbild) == [
+        "docs/a.md:1",
+        "docs/c.md:1",
+        "scripts/tests/b.py:1",
+    ]
+
+
+def test_der_neue_skill_name_gilt_nicht_als_fundstelle() -> None:
+    """Regex-Falle derselben Klasse wie `--body`/`--body-file`: `github-access` ist der Zielname."""
+    abbild = {"docs/a.md": b"siehe .claude/skills/github-access/SKILL.md\n"}
+
+    assert fundstellen_im_abbild(abbild) == []
+
+
+def test_die_beiden_muster_kollidieren_nicht() -> None:
+    """`github-board` enthaelt `gh-board` nicht als Teilstring - zwischen beiden steht "ub"."""
+    assert b"gh-board" not in b"github-board"
+    assert b"github-board" not in b"gh-board"
 
 
 def test_die_meldung_nennt_pfad_und_zeilennummer() -> None:

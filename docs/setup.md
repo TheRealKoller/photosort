@@ -25,20 +25,30 @@ cd frontend && npm test
 
 ## GitHub-CLI (`gh`)
 
-Der gesamte Story-Lebenszyklus des Projekts — Story-Issue anlegen, Issue-Body schreiben,
-Board-Status setzen und lesen, eine Feature-Spec abschließen — läuft über die GitHub-CLI `gh`.
-Seit [ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) gibt es dafür
-kein eigenes Werkzeug mehr: Jeder Board-Zugriff ist ein einzelner `gh`-Aufruf, die verbindliche
-Befehlssammlung steht in `.claude/skills/github-board/SKILL.md`. Ohne `gh` ist keiner dieser
-Schritte ausführbar — es ist also nicht optionales Komfortwerkzeug, sondern Voraussetzung des
-Entwicklungsablaufs (siehe [`ai-workflow.md`](./ai-workflow.md)).
+Der Story-Lebenszyklus des Projekts — Story-Issue anlegen, Issue-Body schreiben, Board-Status
+setzen und lesen, Pull Request eröffnen und verknüpfen, eine Feature-Spec abschließen — greift an
+vielen Stellen auf GitHub zu. Seit
+[ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) gibt es dafür kein
+eigenes Werkzeug mehr, und seit
+[ADR 0061](../specs/decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)
+steht jeder dieser Zugriffe an **genau einer Stelle**: dem Operationskatalog
+`.claude/skills/github-access/SKILL.md`. Jede Operation dort nennt ihre **Zugangswege in fester
+Reihenfolge**, und es gibt zwei davon — die GitHub-MCP-Werkzeuge einer Session (`mcp`) und die
+CLI `gh`.
+
+Für `gh` heißt das zweierlei: Für die vier **Board**-Operationen ist es der einzige Weg und damit
+unverzichtbar; für die Issue- und Pull-Request-Operationen ist es der zweite Weg, der greift,
+wenn kein MCP-Werkzeug vorliegt. Lokal, wo keine MCP-Anbindung eingerichtet sein muss, ist `gh`
+damit weiterhin die praktische Voraussetzung des gesamten Entwicklungsablaufs (siehe
+[`ai-workflow.md`](./ai-workflow.md)) — die MCP-Anbindung setzt das Repository ausdrücklich
+**nicht** voraus.
 
 **Mindestversion:** gh 2.97.0
 
 Das ist die autoritative Angabe des Projekts; ein Test in CI hält den weiter unten
 dokumentierten Setup-Script-Block daran fest. Erst ab dieser Version kennt
 `gh project item-edit` die namensbasierte Form (`--field "Status" --value "In Progress"` statt
-vier Knoten-IDs), an der seit ADR 0057 jeder schreibende Board-Zugriff hängt — eingeführt mit
+vier Knoten-IDs), an der seit ADR 0057 jede schreibende Board-Operation hängt — eingeführt mit
 `cli/cli#13807`, veröffentlicht Ende Juli 2026. Die ältere Untergrenze aus
 [ADR 0046](../specs/decisions/0046-pr-issue-verknuepfung-closing-keyword.md)
 (`closingIssuesReferences` in `gh pr view --json`, für die Prüfung der PR↔Issue-Verknüpfung) ist
@@ -191,41 +201,52 @@ Gemessen in einer echten Remote-Session am 2026-09-05, ausführlich in
 [ADR 0056](../specs/decisions/0056-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md)
 (Befund weiterhin gültig, Konsequenz seit
 [ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md), Abschnitt 7 neu
-gefasst) und Spec [`0318`](../specs/features/0318-remote-lebenszyklus-grenze.md); die Messungen
-mit Befehl und wörtlicher Ausgabe stehen im
+gefasst) und Spec [`0318`](../specs/features/0318-remote-lebenszyklus-grenze.md), Konsequenz für
+den Zugangsweg seit
+[ADR 0061](../specs/decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md);
+die Messungen mit Befehl und wörtlicher Ausgabe stehen im
 [Messbericht an Issue #318](https://github.com/TheRealKoller/photosort/issues/318#issuecomment-5550813926).
 `gh` liegt dort seit ADR 0053/0054 vor — die Grenze liegt woanders:
 
-- **Board-Schreibzugriffe aus der Session tragen dort nicht.** Die Zwischenschicht der Session
-  bedient GraphQL nur für einen fest verdrahteten Satz von Pull-Request-Operationen und
+- **Board-Zugriffe aus einer Session tragen dort auf keinem Weg.** Die Zwischenschicht der
+  Session bedient GraphQL nur für einen fest verdrahteten Satz von Pull-Request-Operationen und
   antwortet auf alles andere mit `HTTP 403`. GitHub Projects (V2) spricht ausschließlich
-  GraphQL, eine REST-Entsprechung existiert nicht — hier hilft kein Wechsel des Zugangswegs.
-- **Betroffen sind seit ADR 0057 nur noch zwei Übergänge plus die Board-Aufnahme:** `Ready`
-  (`refinement`), `In Progress` (`spec-writer`) und `gh project item-add` beim Anlegen eines
-  neuen Issues — letzteres zieht `Unrefined` mit, weil ohne Item auch kein „Item added" feuert.
+  GraphQL, eine REST-Entsprechung existiert nicht, und die MCP-Werkzeuge bieten für Projects V2
+  keine Operation an. Vier gemessene Sackgassen — hier hilft kein Wechsel des Zugangswegs.
+- **Betroffen sind genau die vier Board-Operationen:** `board-status-setzen` (`Ready` aus
+  `refinement`, `In Progress` aus `spec-writer`), `board-prioritaet-setzen`,
+  `board-status-und-prioritaet-lesen` und `board-aufnahme` beim Anlegen eines neuen Issues —
+  letzteres zieht `Unrefined` mit, weil ohne Item auch kein „Item added" feuert.
 - **Die drei GitHub-seitigen Übergänge sind von der Sperre gar nicht berührt**, weil sie auf
   GitHubs Servern laufen: `Unrefined` (Item ins Projekt aufgenommen), `Review` (Pull Request
   verweist per Closing-Keyword auf das Issue) und `Done` (Merge schließt das Issue). Eine remote
   begonnene Story landet damit von selbst korrekt auf `Review` und `Done` — genau die beiden
   Schritte, deren Ausfall bisher am teuersten war, weil sie am Ende einer langen Arbeit standen.
-- **Die Issue-Schritte sind anders gelagert — und der REST-Weg rettet sie nicht.** Die GraphQL-
-  Meldung benennt REST (`gh api repos/{owner}/{repo}/…`) ausdrücklich als gangbaren Weg. Die
-  Messung zeigt: Auch REST ist für `gh` gesperrt, mit einer **anderslautenden** 403 (`GitHub
-  access is not enabled for this session`). Lesen und Schreiben wurden getrennt gemessen, beide
-  scheitern. Der REST-Verweis der GraphQL-Meldung ist in dieser Umgebung irreführend.
-- **Die Grenze verläuft am Client, nicht am Transport.** Dieselbe Session liest und schreibt
-  Issues problemlos — über die GitHub-MCP-Werkzeuge, angemeldet als Repository-Eigentümer. Für
-  `gh` ist beides zu, und der gesamte Board-Zugriff steht ausschließlich auf `gh`. Die
-  Issue-Schritte scheitern deshalb am **Zugangsweg**, nicht an fehlenden Rechten. Für die
-  Board-Schritte ändert das nichts: Der MCP-Weg bietet für Projects V2 keine Operation an.
-- **Die Anmeldung ist in Ordnung.** Der Lauf meldet `The token in GH_TOKEN is invalid`; das ist
-  ein Artefakt der Sperre, denn `gh auth status` prüft über denselben gesperrten Endpunkt.
-  Beheben lässt es sich nicht, als Diagnose über den Token ist die Meldung wertlos.
+- **Für `gh` ist auch der REST-Weg zu.** Die GraphQL-Meldung benennt REST
+  (`gh api repos/{owner}/{repo}/…`) ausdrücklich als gangbaren Weg. Die Messung zeigt: Auch REST
+  ist für `gh` gesperrt, mit einer **anderslautenden** 403 (`GitHub access is not enabled for
+  this session`). Lesen und Schreiben wurden getrennt gemessen, beide scheitern. Der
+  REST-Verweis der GraphQL-Meldung ist in dieser Umgebung irreführend.
+- **Die Grenze verläuft am Client, nicht am Transport — und genau daraus ist die Wegleiter
+  entstanden.** Dieselbe Session liest und schreibt Issues und Pull Requests problemlos: über die
+  GitHub-MCP-Werkzeuge, angemeldet als Repository-Eigentümer. Seit ADR 0061 kennt deshalb jede
+  Operation beide Wege und probiert sie der Reihe nach (`mcp` vor `gh`). **Alle Issue- und alle
+  Pull-Request-Operationen tragen remote damit.** Eine Story kommt in einer Cloud-Session von der
+  Erfassung bis zum eröffneten, verknüpften, von Copilot reviewten Pull Request. Nachzuholen
+  bleiben zwei Etiketten und eine Board-Aufnahme.
+- **Die Anmeldung ist in Ordnung.** Der Lauf meldet einen ungültigen Token; das ist ein Artefakt
+  der Sperre, denn die Anmelde-Diagnose von `gh` läuft über denselben gesperrten Endpunkt.
+  Beheben lässt es sich nicht, als Aussage über den Token ist die Meldung wertlos.
 
-**Was der Ablauf daraus macht:** Es wird nicht mehr vorab gemessen (ADR 0057, Abschnitt 6,
-Punkt 1: kein Urteil vor dem Versuch). Der Befehl wird abgesetzt; scheitert er, bricht der Ablauf
-**nicht** ab, sondern führt den Schritt im Abschlussbericht unter `## Lokal nachzuholen` mit dem
-unverändert wiederholbaren Befehl auf. Es entsteht keine Zustandsdatei: `gh project item-edit`
+**Was der Ablauf daraus macht:** Es wird nicht vorab gemessen (kein Urteil vor dem Versuch), und
+es wird aus keinem Umgebungsmerkmal auf eine „Session-Art" geschlossen. Jede Operation beginnt
+oben an ihrer Wegleiter; ein Weg, dessen Werkzeug in dieser Session gar nicht existiert, wird
+übersprungen, ohne dass daraus etwas gefolgert wird. Erst wenn **alle** Wege gescheitert sind,
+gilt die Operation als fehlgeschlagen — und dann bricht der Ablauf **nicht** ab, sondern führt
+den Schritt im Abschlussbericht unter `## Lokal nachzuholen` mit dem unverändert wiederholbaren
+Befehl aus dem Katalogeintrag auf. Der Abschnitt ist dort der **Normalfall** einer Cloud-Session,
+nicht ihre Ausnahme: Er beschreibt, was in dieser Umgebung über keinen Weg zu erreichen ist, kein
+Versäumnis, für das eine Behebung zu suchen wäre. Es entsteht keine Zustandsdatei: `gh project item-edit`
 setzt einen Zustand und führt keinen Übergang aus, der Aufruf ist deshalb beliebig oft
 wiederholbar.
 

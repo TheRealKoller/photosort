@@ -42,7 +42,7 @@ kontext-getrennter Lauf, gestartet über das `Agent`-Tool) oder läuft in der Ha
 | 5 | Review | `developer`-Abschluss (`## Abschlussbericht`) | Orchestrator-Skill `review` → ruft die zutreffenden Perspektiven-Skills `review-tests` / `review-requirements` / `review-security` / `review-architecture` / `review-ux` nacheinander auf | **Hauptsession** | Hauptsession-Modell (Standard) | Perspektiven je nach Diff, siehe Trigger-Tabelle in `.claude/skills/review/SKILL.md` |
 | 5b | Findings beheben | Review-Findings vorhanden | Agent `developer` (Folgeauftrag per `SendMessage`) | **Subagent** (derselbe, offen gehaltene Lauf) | Standard | nur wenn Muss-Fix-Findings vorliegen |
 | 6 | PR erstellen (Body verknüpft das Issue per `Closes #NNN`) + Board-Status `Review` | Review abgeschlossen / Findings behoben | Skill `ship-feature` | Hauptsession (GitHub-Zugriff) | — | immer; die Closing-Zeile entfällt nur bei einem PR ohne Issue-Bezug |
-| 7 | Copilot-Review | direkt nach `gh pr create` | Skill `ship-feature` | Hauptsession | — | nur wenn der Diff mindestens eine Code-Datei enthält |
+| 7 | Copilot-Review | direkt nach der Operation `pr-erstellen` | Skill `ship-feature` | Hauptsession | — | nur wenn der Diff mindestens eine Code-Datei enthält |
 | 7b | Spec finalisieren (im selben PR) | Review + Copilot ausgewertet, Findings behoben | Skill `ship-feature` (Schritt 8: `--finalize --pr-number`) | Hauptsession (GitHub-Zugriff) | — | immer; gebündelt mit dem letzten Push, damit kein Nachzieh-PR entsteht |
 | 8 | Freigabe + Merge | Copilot ausgewertet, Spec finalisiert, CI grün | Daniel gibt frei, Hauptsession merged | Hauptsession | — | Daniels Freigabe ist Pflicht-Gate |
 
@@ -142,14 +142,24 @@ unterschreitet ein Pull Request diese Schwelle, kann er nicht gemergt werden.
   als Issue-Kommentar zurückgemeldet statt geraten. Diese Automatisierung ist zum
   Zeitpunkt dieser Beschreibung noch nicht eingerichtet.
 
-**Remote-/Cloud-Sessions:** Es wird **nicht** vorab gemessen, ob das Board erreichbar ist — der
-Befehl wird abgesetzt, denn ihn zu versuchen kostet nicht mehr, als ihn zu messen. Scheitert er,
-bricht der Ablauf nicht ab, sondern führt den Schritt im Abschlussbericht unter
-`## Lokal nachzuholen` mit dem unverändert wiederholbaren Befehl auf. Betroffen sind nur noch die
-beiden von einer Session geschriebenen Übergänge (`Ready`, `In Progress`) und die Board-Aufnahme
-eines neuen Issues; `Review` und `Done` laufen auf GitHubs Servern und sind von der
-Einschränkung nicht berührt. Details in [`docs/setup.md`](./setup.md), Abschnitt
-„GitHub-CLI (`gh`)".
+**Remote-/Cloud-Sessions sind ein vollwertiger Arbeitsmodus.** Jeder GitHub-Zugriff läuft über
+eine Operation des Skills `github-access`, und jede Operation kennt ihre Zugangswege in fester
+Reihenfolge (siehe
+[ADR 0061](../specs/decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)).
+Es wird **nicht** vorab gemessen, ob ein Weg trägt, und aus keinem Umgebungsmerkmal auf eine
+Session-Art geschlossen — die Operation wird ausgeführt, denn sie zu versuchen kostet nicht mehr,
+als sie zu messen. Scheitert ein Weg, wird der nächste versucht; ein Wegwechsel ist kein Befund
+und wird nicht berichtet.
+
+Damit tragen in einer Cloud-Session **alle Issue- und alle Pull-Request-Schritte**: Eine Story
+kommt dort von der Erfassung bis zum eröffneten, verknüpften, von Copilot reviewten Pull Request,
+und danach von selbst auf `Review` und `Done`, weil diese beiden Übergänge auf GitHubs Servern
+entstehen. Was dort über **keinen** Weg trägt, sind die vier Board-Operationen — Projects (V2)
+spricht ausschließlich GraphQL, und das ist in solchen Sessions gesperrt. Übrig bleiben zwei
+Etiketten (`Ready`, `In Progress`) und die Board-Aufnahme eines neuen Issues. Sie erscheinen im
+Abschlussbericht unter `## Lokal nachzuholen`, mit dem unverändert wiederholbaren Befehl aus dem
+Katalogeintrag — als Normalfall dieser Umgebung, nicht als Fehler, für den eine Behebung zu
+suchen wäre. Details in [`docs/setup.md`](./setup.md), Abschnitt „GitHub-CLI (`gh`)".
 
 ## Kosteneffiziente Agenten-Nutzung
 

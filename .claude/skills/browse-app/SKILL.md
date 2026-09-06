@@ -5,6 +5,8 @@ description: Startet die PhotoSort-Anwendung lokal mit synthetischen Demo-Daten,
 
 # browse-app — die laufende Anwendung ansehen und bedienen
 
+**GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
+
 Ad hoc auf Zuruf, nie automatisch Teil eines anderen Ablaufs. Vier Schritte: **Stack starten → seeden → ansehen/bedienen → aufräumen.**
 
 ## Was dieser Stack ist — und was er nicht ist

@@ -36,8 +36,13 @@ PhotoSort wird in zwei Modi weiterentwickelt:
 
 ## Konventionen
 
+- **GitHub-Zugriff:** Jeder Zugriff auf Issues, Board und Pull Requests läuft über eine
+  Operation des Skills `github-access` — das ist die einzige Stelle im Repository, an der ein
+  solcher Zugriff steht. Andere Dateien nennen ausschließlich die Operations-ID. Jede Skill-
+  und Agenten-Datei spricht ihre GitHub-Erlaubnisstufe aus (lesend und schreibend / nur
+  lesend / kein GitHub-Zugriff). Rein lokales `git` ist davon unberührt.
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
-- **PRs:** klein und fokussiert, referenzieren die zugehörige Spec/das Issue (siehe `.github/pull_request_template.md`). Vor der PR-Erstellung durchläuft der Feature-Branch die Review-Phase über die `review-*`-Skills (Hauptsession, koordiniert vom `review`-Skill statt fünf parallelen Review-Subagenten). Nach dem Eröffnen wird ein Copilot-Review angefordert (`gh pr edit <PR> --add-reviewer "@copilot"`), außer der PR ändert ausschließlich Doku-/Spec-Dateien (`specs/`, `docs/`, `*.md`, reine Config-Kommentare) ohne jede Code-Datei — dann entfällt der Schritt vollständig; sobald ein angefordertes Review vorliegt, werden die Findings bewertet und notwendige Fixes umgesetzt (siehe Skill `ship-feature`/Orchestrator, nicht mehr der `developer`-Agent selbst).
+- **PRs:** klein und fokussiert, referenzieren die zugehörige Spec/das Issue (siehe `.github/pull_request_template.md`). Vor der PR-Erstellung durchläuft der Feature-Branch die Review-Phase über die `review-*`-Skills (Hauptsession, koordiniert vom `review`-Skill statt fünf parallelen Review-Subagenten). Nach dem Eröffnen wird ein Copilot-Review angefordert (Operation `copilot-review-anfordern`), außer der PR ändert ausschließlich Doku-/Spec-Dateien (`specs/`, `docs/`, `*.md`, reine Config-Kommentare) ohne jede Code-Datei — dann entfällt der Schritt vollständig; sobald ein angefordertes Review vorliegt, werden die Findings bewertet und notwendige Fixes umgesetzt (siehe Skill `ship-feature`/Orchestrator, nicht mehr der `developer`-Agent selbst).
 - **Backend:** Python 3.12, FastAPI, `ruff` (Lint), `mypy --strict` (Typprüfung), `pytest` (Test).
 - **Frontend:** React + TypeScript + Vite, `oxlint` (Lint), `tsc` (Typprüfung), `vitest` (Test).
 - Keine Bilddaten der Familie werden je ins Repository committet — Fotos bleiben ausschließlich auf OpenCloud, lokal nur als Cache (siehe `.gitignore`).
