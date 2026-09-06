@@ -1,6 +1,6 @@
 # 0339 - Ein Ort für jeden GitHub-Zugriff: `github-access` mit Zugangswegen in fester Reihenfolge
 
-**Status:** Accepted
+**Status:** Implemented ([PR #344](https://github.com/TheRealKoller/photosort/pull/344))
 **Erstellt:** 2026-09-06
 **Bezug:** GitHub-Issue [`#339`](https://github.com/TheRealKoller/photosort/issues/339), Architekturentscheidung ADR [`0060`](../decisions/0060-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md), ADR [`0057`](../decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) (Abschnitt 4 erster Satz und Abschnitt 7 teilweise abgelöst), ADR [`0017`](../decisions/0017-github-projects-v2-spec-sync.md) (Abschnitt 1 ergänzt, nicht abgelöst), ADR [`0048`](../decisions/0048-board-operationen-zielzustands-idempotent.md), ADR [`0052`](../decisions/0052-remote-lebenszyklus-diagnose-kommando-und-echter-board-preflight.md) / ADR [`0056`](../decisions/0056-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md) (Befund Remote-Grenze), Vorgänger-Specs [`0318`](./0318-remote-lebenszyklus-grenze.md) / [`0327`](./0327-board-lebenszyklus-nativ.md), Folge-Story [`#342`](https://github.com/TheRealKoller/photosort/issues/342), `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`, `specs/README.md`
 
