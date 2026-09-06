@@ -261,7 +261,13 @@ def fehlende_pflichtzeilen(text: str) -> list[str]:
 
 
 def trigger_ist_push_main(text: str) -> bool:
-    """Zusicherung 4a: unveraendert `on: push: branches: [main]`, nichts sonst davor."""
+    """Zusicherung 4a: der Trigger-Block lautet unveraendert `on: push: branches: [main]`.
+
+    Gesucht wird der Block irgendwo im kommentarfreien Text, nicht am Dateianfang: Vor `on:`
+    steht in release-please.yml die `name:`-Zeile, und weitere Schluesselwortzeilen davor waeren
+    ebenso zulaessig. Zugesichert ist damit die Form des Trigger-Blocks selbst - nicht, dass er
+    als Erstes in der Datei steht.
+    """
     _pruefe_nicht_leer(text, RELEASE_WORKFLOW_NAME)
 
     return _TRIGGER_PUSH_MAIN.search(wirksamer_text(text)) is not None
