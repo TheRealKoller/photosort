@@ -31,20 +31,20 @@ Bewusst gegen die Empfehlung entschieden, je Ansicht einen eigenen PR zu schneid
 - [ ] Der aussortierte Zustand ist ohne Farbwahrnehmung erkennbar: abgesenkte Deckkraft der Karte **und** durchgestrichener Dateiname.
 - [ ] Die Bewertungsleiste folgt dem Board, mit sichtbarer Beschriftung je Eintrag und einem Kästchen, das die zugehörige Taste zeigt.
 - [ ] Die Schrittnavigation trägt die drei Zustände des Board-Navigationselements (ruhend, überfahren, aktiv).
-- [ ] Dekorative Trennlinien und Statuspunkte sind wieder als solche erkennbar — heute verschwinden mehrere davon praktisch auf dem Grund.
-- [ ] Der unbestimmte Ladezustand der Fortschrittsanzeige folgt dem Board statt der Browser-Voreinstellung.
+- [ ] Dekorative Trennlinien und Statuspunkte sind wieder als solche erkennbar — heute verschwinden mehrere davon praktisch auf dem Grund. **Nachweis:** An den im UI/UX-Abschnitt aufgezählten Stellen steht `--separator` (≥ 2,0:1 gegen `--bg` und `--surface`, in der Kontrastmatrix des Vertragstests nachgerechnet), und es verbleibt dort kein `--border` und kein Deckkraft-Modifikator auf einer Farb-Utility.
+- [ ] Der unbestimmte Ladezustand der Fortschrittsanzeige folgt dem Board statt der Browser-Voreinstellung. **Nachweis zweistufig:** Der Vertragstest belegt über den tatsächlichen Tailwind-Lauf, dass die Zustandsbehandlung eine Regel erzeugt (eine unbekannte Variante ist in Tailwind kein Buildfehler und bliebe still wirkungslos); die Darstellung selbst ist Sichtprüfung im Browser.
 
 ### Keine funktionalen Verluste
 
-- [ ] Jede Ansicht bleibt funktional identisch: gleiche Inhalte, gleiche Anzahl Elemente, gleiche Interaktionen. Es wird nichts entfernt und nichts hinzugefügt — mit der einen benannten Ausnahme (Dateiname auf der Fotokachel).
-- [ ] Die bestehenden Tastenkürzel bleiben unverändert belegt; sie werden lediglich sichtbar gemacht.
-- [ ] Alle Ansichten bleiben in Telefon- (360px) und Desktopbreite vollständig bedienbar: kein horizontales Scrollen, nichts überlappt, nichts abgeschnitten.
-- [ ] Die Trefferflächen bleiben eingehalten, auf dem heißen Pfad am Telefon weiterhin sichtbar mindestens 44px.
+- [ ] Jede Ansicht bleibt funktional identisch: gleiche Inhalte, gleiche Anzahl Elemente, gleiche Interaktionen. Es wird nichts entfernt und nichts hinzugefügt — mit der einen benannten Ausnahme (Dateiname auf der Fotokachel). **Nachweis:** Der bestehende `vitest`-Satz läuft am Ende jedes Etappen-Teilschritts vollständig grün, **ohne dass eine bestehende Testdatei geändert wurde**. Jede dennoch geänderte Testdatei ist in der PR-Beschreibung mit Grund aufgeführt.
+- [ ] Die bestehenden Tastenkürzel bleiben unverändert belegt; sie werden lediglich sichtbar gemacht. Das sichtbare Kästchen eines Eintrags zeigt genau die Taste, die diese Bewertung tatsächlich auslöst (in `PhotoDetailPage.test.tsx` über alle drei Tasten geprüft); der zugängliche Name der Schaltfläche bleibt exakt `Favorit` / `Album-würdig` / `Verwerfen`.
+- [ ] Alle Ansichten bleiben in Telefonbreite (360px) und Desktopbreite (1280px) vollständig bedienbar: kein horizontales Scrollen, nichts überlappt, nichts abgeschnitten. Für "kein horizontales Scrollen" ist `e2e/tests/no-horizontal-scroll.spec.ts` maßgeblich; Foto-Detail und Foto-Vergleich werden dort ergänzt. "Nichts überlappt, nichts abgeschnitten" bleibt Sichtprüfung.
+- [ ] Die Trefferflächen bleiben eingehalten, auf dem heißen Pfad am Telefon weiterhin sichtbar mindestens 44px. **Nachweis:** `e2e/tests/tap-targets.spec.ts` bleibt unverändert grün, `EXPECTED_CONTROL_COUNT` bleibt 6.
 
 ### Abnahme
 
-- [ ] Alle Ansichten sind in Telefon- und Desktopbreite sichtgeprüft und **mit Screenshots im Pull Request belegt**.
-- [ ] Die drei Bewertungszustände sind im Graustufentest an Karte und Kennzeichen unterscheidbar.
+- [ ] Alle vierzehn Ansichten sind in 360px und 1280px sichtgeprüft und **mit Screenshots im Pull Request belegt** — zwei Screenshots je Ansicht, als Liste geführt; eine Auswahl reicht nicht. Sie entstehen ausschließlich gegen den synthetischen Demo-Stand (siehe "Security").
+- [ ] Die drei Bewertungszustände sind im Graustufentest an Karte und Kennzeichen unterscheidbar. **Abnahmekriterium wie im UI/UX-Abschnitt festgelegt:** Wort und Symbolsilhouette sind im Graustufen-Screenshot ablesbar, ohne die Farbfläche heranzuziehen; abgeschnittene Kennzeichentexte sind ein Fehlschlag, kein Randfall.
 - [ ] Die Design-Dokumentation des Projekts gibt den neuen Stand wieder.
 
 ### Mitgenommene Aufräumpunkte aus Stufe 1
@@ -62,7 +62,7 @@ Keiner. Diese Spec ändert ausschließlich die Darstellung im Frontend — keine
 
 Die Formsprache wird **zentral** nachgezogen, nicht pro Ansicht. Stufe 1 hat die Token-Ebene bereits vollständig getauscht (`frontend/src/index.css`: vier Flächen, vier Akzente, vier Textstufen, Radienskala 4/6/8/12/16, Typoskala, 8-Punkt-Raster über Tailwinds Default-`--spacing`) — was in den Ansichten fehlt, ist nicht *ein weiterer Wertetausch*, sondern die **Verlagerung wiederholter Einzelentscheidungen in gemeinsame Bausteine plus ein statisches Netz, das ihre Rückkehr verhindert.** Drei Ebenen, in dieser Reihenfolge:
 
-1. **Ein Token und drei statische Prüfungen** (`index.css`, `designSystem.contract.test.ts`) — sie machen aus "einheitlich" eine prüfbare Eigenschaft statt einer Sichtprüfung, die beim nächsten Feature wieder auseinanderläuft.
+1. **Ein Token und vier statische Prüfungen** (`index.css`, `designSystem.contract.test.ts`) — sie machen aus "einheitlich" eine prüfbare Eigenschaft statt einer Sichtprüfung, die beim nächsten Feature wieder auseinanderläuft.
 2. **Neue/erweiterte Bausteine**, die eine Board-Form genau einmal tragen: `PhotoCard`, `RatingBar`, das Board-Navigationselement im `Stepper`, das Textkennzeichen im `RatingBadge`, der unbestimmte `Progress`, der Icon-Button als `Button`-Aufruf statt neunmal handgerollt.
 3. **Die Ansichten** greifen nur noch auf diese Bausteine zu und tragen selbst nur noch Layout (Raster, Abstände, Überschriftenstufen).
 
@@ -96,17 +96,19 @@ Das ist bewusst **kein Architekturumbau**: keine neue Abhängigkeit, kein neues 
 - Drei Fehlerklassen statt einer: (a) Fundstelle ohne passenden Eintrag, (b) Eintrag ohne Fundstelle (verwaiste Freigabe — der Grund, warum solche Listen verrotten), (c) `snippet`, das nur aus dem Suchbegriff selbst besteht (verhindert den stillen Rückfall auf Datei-Granularität).
 - `stripComments` muss dafür **zeilentreu** werden (Kommentarinhalt durch Leerzeichen ersetzen, Zeilenumbrüche erhalten), sonst stimmen die gemeldeten Zeilennummern nicht.
 
-Derselbe Helfer trägt die drei neuen Prüfungen dieser Stufe (siehe "Netz" unten) — er ist der eigentliche Gewinn, `rounded-full` nur sein erster Nutzer. Rot-Nachweis: eine zusätzliche `rounded-full`-Zeile in einer bereits gelisteten Datei muss den Test rot machen; genau das tut er heute nicht.
+Derselbe Helfer trägt die vier neuen Prüfungen dieser Stufe (siehe "Netz" unten) — er ist der eigentliche Gewinn, `rounded-full` nur sein erster Nutzer. Rot-Nachweis: eine zusätzliche `rounded-full`-Zeile in einer bereits gelisteten Datei muss den Test rot machen; genau das tut er heute nicht.
 
 **Scroll-Sperre bei mehreren Überlagerungen.** `ui/dialog.tsx` merkt sich in seinem Effekt `document.body.style.overflow` und stellt ihn beim Aufräumen wieder her. Bei zwei gleichzeitig offenen Dialogen liest der zweite bereits `'hidden'` als "vorherigen" Wert; schließt danach der **erste** zuerst, schreibt er sein leeres `''` zurück und der Hintergrund scrollt, obwohl noch ein Dialog offen ist. Neu: `frontend/src/lib/scrollLock.ts` mit modulweitem Zähler — `lockBodyScroll(): () => void` sichert den Ausgangswert nur beim Übergang 0 → 1 und stellt ihn nur beim Übergang 1 → 0 wieder her; die zurückgegebene Freigabe ist über ein eigenes Flag **idempotent** (React ruft Effekt-Aufräumungen im StrictMode doppelt auf). `dialog.tsx` ruft nur noch `lockBodyScroll()` auf. Ein `resetBodyScrollLock()` wird in `setupTests.ts` per `afterEach` aufgerufen — Testhygiene für modulweiten Zustand, keine Produktions-API. Tests: zwei Dialoge, in beiden Schließreihenfolgen, plus ein bereits gesetztes `overflow` als Ausgangswert.
 
-### Das Netz — drei neue statische Prüfungen
+### Das Netz — vier neue statische Prüfungen
 
 Alle in `designSystem.contract.test.ts` (die einzige Ebene mit CSS-Assertions; Komponententests bekommen weiterhin **keine**), alle über den fundstellengenauen Helfer, alle mit Begründung je Eintrag:
 
 1. **Abstandsskala.** `p|px|py|pt|pr|pb|pl|m|mx|my|mt|mr|mb|ml|gap|gap-x|gap-y|space-x|space-y` dürfen nur die acht Stufen `0/1/2/3/4/6/8/12/16` tragen. Heutige Verstöße u.a. `gap-1.5` (~14×), `gap-2.5`, `gap-3.5`, `py-3.5`, `px-5`, `mt-5`, `py-10`, `px-8/px-10`, `p-0.5`, `mb-7`. **Höhen/Breiten sind nicht betroffen** (`h-11`, `size-8`, `h-0.5` bleiben zulässig) — die Regel ist eine Abstands-, keine Größenregel.
 2. **Keine willkürlichen Werte** (`text-[…]`, `h-[…]`, `w-[…]`, `p*-[…]`, `gap-[…]`) außerhalb der Liste. Freigegeben bleiben `ui/popover.tsx` (`max-h-[60vh]`), `ui/checkbox.tsx` (`size-[18px]`, abgeleitetes Board-Maß) und `ui/dialog.tsx` (`w-[min(32rem,…)]`). Zu entfernen: `ProjectListPage.tsx` `text-[10.5px]`, `ProjectPipelineLayout.tsx` `text-[10px]`, `LoginPage.tsx` `h-[50px]`.
 3. **Keine Deckkraft-Modifikatoren auf Farb-Utilities** außerhalb der Liste (freigegeben: die drei Hintergrund-Abdunklungen `bg-black/60` im Dialog-Backdrop, `bg-bg/95` in den beiden sticky Kopfzeilen, `bg-bg/85` hinter dem Kennzeichen über einer Kachel). Trifft `border-border/60` (0,87:1) und `bg-border/60` — genau den Befund "Trennlinien verschwinden auf dem Grund", und zugleich die Fehlerklasse "Kontrast statisch nicht nachrechenbar".
+
+4. **`opacity-*` fundstellengenau** — vom `test-engineer` in Schritt 3 ergänzt, nicht Teil der ursprünglichen Architektur-Planung. Sie sichert Entscheidung 4 dauerhaft ab, deren einziger sonstiger Nachweis ein einmaliger Ad-hoc-Lauf wäre. Freigabeliste und Begründung stehen im Abschnitt "Teststrategie".
 
 Zusätzlich wandert **`h-11`/`min-h-11` auf die Liste**: zulässig nur auf dem heißen Pfad (Bewertungsleiste, Weiter/Zurück) und als Zeilenhöhe zeilenweiser Listen (Regel 3 der Trefferflächen). Heutige Verstöße: `App.tsx` (Wortmarke, Projekt-Link), `ProjectListPage.tsx` (Leerzustands-Schaltfläche), `CategorySelect.tsx`.
 
@@ -120,14 +122,14 @@ Die Etappen sind so geschnitten, dass **jede für sich grün endet** (`npm run l
 
 **Etappe 3 — die drei zusammengesetzten Bausteine.** `components/PhotoCard.tsx` (neu) + Test: vier Zustände über `data`-Merkmale (`data-rating-status`, `data-struck`), Dateiname, Slots. Kein `data-selected` (Entscheidung 5). `components/RatingButtons.tsx` → Board-Bewertungsleiste inkl. Tasten-Kästchen (`aria-hidden`, sonst zerbricht der zugängliche Name "Favorit"), Datei-/Exportname bleibt, damit die Aufrufstelle unverändert bleibt. `components/Stepper.tsx` → Board-Navigationselement mit den drei Zuständen; das Schloss-Symbol bleibt Inline-SVG (der Zwölfer-Satz hat kein Schloss — dokumentierte Lücke, wird nicht stillschweigend mit einem beliebigen Lucide-Symbol gefüllt), der Haken wird `<Icon name="check">`.
 
-**Etappe 4 — die Ansichten**, getrieben von den drei neuen Prüfungen (rot) plus Sichtprüfung, in vier grün endenden Teilschritten:
+**Etappe 4 — die Ansichten**, getrieben von den vier neuen Prüfungen (rot) plus Sichtprüfung, in vier grün endenden Teilschritten:
 
 - **4a Hülle und Anmeldung:** `App.tsx`, `pages/LoginPage.tsx`, `components/BrandMark.tsx`.
 - **4b Projektebene:** `ProjectListPage.tsx` (inkl. Leerzustand), `ProjectCreatePage.tsx`, `ProjectSettingsPage.tsx`, `ProjectStatsPage.tsx` (12-Spalten-Raster bleibt), `FolderBrowser.tsx`, `CategorySelect.tsx`.
 - **4c Pipeline:** `pages/pipeline/ProjectPipelineLayout.tsx`, `ScanStepPage.tsx`, `AusschussStepPage.tsx`, `GateStepPage.tsx`, `KriterienStepPage.tsx`, `KuratierungStepPage.tsx`, `PipelineStepView.tsx`, `components/ClassificationSection.tsx`, `CloudVisionStatusList.tsx`, `StatusTag.tsx`.
 - **4d Foto-Ansichten:** `PhotoGridPage.tsx`, `CurateCategoriesPage.tsx`, `PhotoComparePage.tsx` (alle drei auf `PhotoCard`), `PhotoDetailPage.tsx`, `CriterionDetailsList.tsx`, `CriterionDetailsPopover.tsx`, `CategoryBadge.tsx`, `QualityMeter.tsx`.
 
-**Etappe 5 — Abnahme und Doku.** `e2e`-Prüfsatz lokal grün (`no-horizontal-scroll`, `tap-targets`, `grid-columns`, `sticky-header`, `popover-position`, `empty-and-error-states`); Screenshots aller Ansichten in 360px und 1280px über den `browse-app`-Skill für die PR-Beschreibung; Graustufen-Abnahme als eigener Ad-hoc-Lauf mit eingespeistem `html { filter: grayscale(1) }` an Raster und Bewertungsleiste; `specs/architecture/0004-design-system.md` und `.claude/skills/design-system/SKILL.md` auf den neuen Stand (neues Token, die drei neuen statischen Regeln, die achte Board-Abweichung aus Entscheidung 4, die neuen Bausteine).
+**Etappe 5 — Abnahme und Doku.** `e2e`-Prüfsatz lokal grün (`no-horizontal-scroll`, `tap-targets`, `grid-columns`, `sticky-header`, `popover-position`, `empty-and-error-states`); Screenshots aller Ansichten in 360px und 1280px über den `browse-app`-Skill für die PR-Beschreibung; Graustufen-Abnahme als eigener Ad-hoc-Lauf mit eingespeistem `html { filter: grayscale(1) }` an Raster und Bewertungsleiste; `specs/architecture/0004-design-system.md` und `.claude/skills/design-system/SKILL.md` auf den neuen Stand (neues Token, die vier neuen statischen Regeln, die achte Board-Abweichung aus Entscheidung 4, die neuen Bausteine).
 
 ### Fallstricke
 
@@ -412,15 +414,216 @@ Erlaubte Abstandsstufen durchgängig `0/1/2/3/4/6/8/12/16`; die heutigen `gap-1.
 
 ### Design-System-Nachtrag (Etappe 5)
 
-In `specs/architecture/0004-design-system.md` und im Skill `.claude/skills/design-system/SKILL.md` nachzutragen — **nicht vorab, sondern in Etappe 5**: das Token `--separator` samt Dreiteilung `--border` / `--separator` / `--border-control`; die Überschriftenleiter aus Abschnitt 7; die drei neuen statischen Regeln; die achte Board-Abweichung aus Entscheidung 4; die dritte `h-11`-Kategorie; die neuen Bausteine `PhotoCard`, Bewertungsleiste, Board-Navigationselement, unbestimmter Fortschritt; und unter "Bekannte Lücken" der nachgerechnete Befund, dass Favorit und Album-würdig in Graustufen bei 1,08:1 liegen und ihre Unterscheidung ausschließlich über Wort und Symbolsilhouette tragen, sowie dass der Board-Kartenzustand "ausgewählt" bewusst noch nicht umgesetzt ist.
+In `specs/architecture/0004-design-system.md` und im Skill `.claude/skills/design-system/SKILL.md` nachzutragen — **nicht vorab, sondern in Etappe 5**: das Token `--separator` samt Dreiteilung `--border` / `--separator` / `--border-control`; die Überschriftenleiter aus Abschnitt 7; die vier neuen statischen Regeln; die achte Board-Abweichung aus Entscheidung 4; die dritte `h-11`-Kategorie; die neuen Bausteine `PhotoCard`, Bewertungsleiste, Board-Navigationselement, unbestimmter Fortschritt; und unter "Bekannte Lücken" der nachgerechnete Befund, dass Favorit und Album-würdig in Graustufen bei 1,08:1 liegen und ihre Unterscheidung ausschließlich über Wort und Symbolsilhouette tragen, sowie dass der Board-Kartenzustand "ausgewählt" bewusst noch nicht umgesetzt ist.
 
 ## Teststrategie
 
-_(wird im spec-writer-Ablauf vom `test-engineer` gefüllt)_
+Diese Spec ändert Darstellung, nicht Verhalten — und genau daraus folgt ihr Testrisiko: Die vorhandene Frontend-Suite selektiert konventionsgemäß über Rollen, `aria-*` und semantische `data-*` und ist gegenüber einer reinen Umgestaltung **blind**. Das ist gewollt und bleibt so; es heißt aber, dass ein funktionaler Verlust hier nicht von selbst rot wird. Die Strategie besteht deshalb aus drei Teilen: **neue Logik wird testgetrieben gebaut** (Etappen 1–3), **die Formsprache wird statisch geprüft statt besichtigt** (das Netz), und **die bestehende Suite wird als Regressionsnetz bewusst unangetastet gelassen** (Etappe 4).
+
+### Arbeitsteilung der Ebenen
+
+| Ebene | Trägt in dieser Spec | Trägt hier ausdrücklich **nicht** |
+|---|---|---|
+| `vitest` + Testing Library (jsdom) | DOM-Struktur, Rollen, zugängliche Namen, Elementanzahl, `data-*`-Zustände, Interaktion, Modul-Logik (`scrollLock`) | alles Gerechnete, alles Responsive, jede Farb-/Maßaussage |
+| `designSystem.contract.test.ts` (vitest, Umgebung `node`) | Kontrastzeile `--separator`, Abstandsskala, willkürliche Werte, Deckkraft-Modifikatoren, `rounded-full`, `opacity-*`, `h-11`, Behandlung des unbestimmten Fortschritts | Wirkung im Browser |
+| Playwright (`e2e/`) | echte Geometrie bei 360px: kein waagerechtes Scrollen, Treffbarkeit 44px, Spaltenleiter, Sticky-Verhalten, Popover-Lage | Aussehen, Farbwerte, Graustufen |
+| Sicht-/Ad-hoc-Prüfung | Board-Treue, Graustufen-Abnahme, unbestimmter Fortschritt | nichts, was auf einer der drei Ebenen prüfbar wäre |
+
+**Harte Regel für diese Spec:** `sm:`-Verhalten (`flex-col sm:flex-row`, `p-2 sm:p-3`, `text-xl sm:text-2xl`) wird in jsdom **nie** geprüft — auch nicht ersatzweise über `toHaveClass('sm:flex-row')`. Eine solche Zusicherung prüft die Schreibweise, nicht die Wirkung, und wäre zugleich die verbotene CSS-Assertion im Komponententest. Zuständig ist Playwright bei 360px; wo Playwright es nicht misst, ist es Sichtprüfung und wird als solche benannt.
+
+**Folgerung für die Schrittnavigation und die Bewertungsleiste:** Beide Umbrüche entstehen über Utilities auf **einem** DOM-Baum, nicht über zwei parallele Teilbäume (`hidden sm:flex` neben `flex sm:hidden`). Doppelte Markup-Zweige würden Rollen, Namen und Elementanzahl verdoppeln und damit sowohl `Stepper.test.tsx` als auch `EXPECTED_CONTROL_COUNT = 6` und `toHaveCount(3)` in den e2e-Specs brechen. Abgesichert wird das durch exakte Kardinalitäts-Assertionen (5 Schritte, 3 Bewertungseinträge), die bereits bestehen und unverändert grün bleiben müssen.
+
+### Etappe 1a — `lib/scrollLock.ts` (echte Logik, volle Abdeckung)
+
+Neu: `frontend/src/lib/scrollLock.test.ts`, jsdom, Unit-Ebene ohne React. Pflichtfälle, vollständig — das Modul ist klein, hat Reihenfolge- und Doppelaufruf-Semantik und ist der einzige Ort, an dem der heutige Fehler reproduzierbar ist:
+
+1. **0 → 1:** Ausgangswert (leer) wird gesichert, `document.body.style.overflow` steht auf `hidden`.
+2. **Zwei Sperren, Freigabe in Anlegereihenfolge (A, dann B):** nach der ersten Freigabe steht weiterhin `hidden`; erst die zweite stellt wieder her.
+3. **Zwei Sperren, Freigabe in umgekehrter Reihenfolge (B, dann A):** identisches Ergebnis. Das ist der heute brechende Fall und der Grund des ganzen Umbaus.
+4. **Vorbelegter Ausgangswert:** steht vor der ersten Sperre `overflow: scroll`, ist nach der letzten Freigabe wieder genau `scroll` gesetzt — nicht der leere String.
+5. **Idempotenz der Freigabe:** dieselbe Freigabefunktion zweimal aufgerufen zählt nur einmal herunter. Nachweis in zwei Richtungen, sonst belegt er nichts: (a) A zweimal freigeben, während B noch offen ist → weiterhin `hidden`; (b) danach B freigeben → wiederhergestellt. Ohne (a) bestünde der Test auch bei einem nackten `count--`. React ruft Effekt-Aufräumungen im StrictMode doppelt auf (`main.tsx` rendert unter `StrictMode`); im Test greift das nicht, der Doppelaufruf wird deshalb hier direkt provoziert.
+6. **`resetBodyScrollLock()`** setzt Zähler *und* gesicherten Wert zurück *und* räumt `body.style.overflow` ab; eine danach angelegte Sperre sichert wieder frisch. Ohne die dritte Zusage leckt `hidden` in die nächste Testdatei.
+
+Auf Integrationsebene (`frontend/src/components/ui/dialog.test.tsx`, bestehende Datei): **zwei gleichzeitig offene Dialoge, beide Schließreihenfolgen**, über tatsächlich gerendertes React statt über die Modul-API — nur so ist belegt, dass `dialog.tsx` den Zähler wirklich benutzt. Der bestehende Test "keeps the background from scrolling while open" bleibt wortgleich. Der `afterEach`-Aufruf in `frontend/src/setupTests.ts` ist Testhygiene und keine Produktions-API; das gehört als Kommentar an die Aufrufstelle.
+
+### Etappe 1b — `allowlistedOccurrences(needle, entries)`
+
+Der Helfer ist kein Beiwerk: Er trägt am Ende vier statische Regeln, und im grünen Zustand liefern alle drei Fehlerklassen die leere Menge — die Produktivnutzung belegt also **nichts** über seine Fehlererkennung. Er bekommt deshalb eigene Selbsttests, aber eng begrenzte.
+
+**Entwurfsvorgabe, ohne die es nicht geht:** Der Helfer nimmt die zu durchsuchenden Dateien als Parameter (`allowlistedOccurrences(needle, entries, files = sourceFiles)`). Getestet wird ausschließlich gegen **synthetische, im Test literal geschriebene** `files`-Listen — kein Dateisystem, keine Fixture-Dateien, keine temporären Verzeichnisse.
+
+**Ort:** derselbe `frontend/src/designSystem.contract.test.ts`, eigener `describe`-Block. Nicht in eine eigene Datei auslagern — jede Datei unter `src/**` außer `SELF_FILE` wird vom Vertragstest selbst gescannt, und ein Helfer, der die Suchmuster (`text-[`, `rounded-full`, `/60`) als Literale trägt, würde die Regeln auslösen, die er implementiert.
+
+Pflichtfälle (acht, mehr nicht):
+
+1. Fundstelle ohne passenden Eintrag → gemeldet, mit Dateilabel und Zeilennummer im Text.
+2. Fundstelle mit passendem Eintrag (Ausschnitt ist Teilzeichenkette der Zeile) → nicht gemeldet.
+3. **Zweite Fundstelle in einer bereits gelisteten Datei**, deren Zeile nicht zum Ausschnitt passt → gemeldet. Das ist der eigentliche Zweck des Umbaus und zugleich sein permanenter Rot-Nachweis: Die heutige dateiweise Prüfung wäre hier grün. Ein separater, einmaliger Rot-Nachweis durch Anfassen einer echten Quelldatei entfällt damit.
+4. Eintrag ohne jede Fundstelle (verwaiste Freigabe) → gemeldet.
+5. Ausschnitt, der nur aus dem Suchbegriff selbst besteht → gemeldet, **auch wenn** es zu ihm passende Fundstellen gibt (sonst ließe sich Datei-Granularität still wiederherstellen).
+6. Fundstelle nur in einem Zeilenkommentar → nicht gemeldet.
+7. **Zeilentreue:** Eine Fundstelle **nach** einem mehrzeiligen Blockkommentar wird mit ihrer tatsächlichen Zeilennummer gemeldet. Direkt daneben eine Zusicherung auf `stripComments` selbst: Zeilenanzahl der Ausgabe = Zeilenanzahl der Eingabe.
+8. Leere Eingabemenge → keine Meldung, aber auch kein stilles Bestehen einer Regel mit leerer Kandidatenmenge (siehe nächster Abschnitt).
+
+**Nicht getestet** werden: das Einsammeln der Dateien (`walk`), die Inhalte der Freigabelisten selbst, und die Formatierung der Meldungstexte über die zwei geforderten Bestandteile hinaus.
+
+### Das Netz — wie statische Prüfungen selbst abgesichert werden
+
+Eine statische Prüfung hat genau einen ernsten Fehlermodus: Sie findet nichts und besteht deswegen. Jede der neuen Regeln bekommt deshalb zwei Dinge:
+
+- **Eine Positiv-Gegenprobe im Produktivlauf**: Die Menge der überhaupt betrachteten Kandidaten ist nachweislich nicht leer (die Abstandsregel findet reichlich zulässige `gap-3`/`p-4`, die Deckkraftregel findet die drei freigegebenen Abdunklungen). Ein kaputter regulärer Ausdruck fällt damit auf, statt alles durchzuwinken. Dieselbe Vorkehrung tragen die bestehenden Blöcke bereits, sie wird hier nur fortgeschrieben.
+- **Einen tabellengetriebenen Mikrotest des Erkenners gegen synthetische Zeilen.** Dafür wird der je Regel matchende Teil als reine Funktion herausgezogen (z.B. `spacingUtilities(line)`), statt den regulären Ausdruck inline in der Assertion zu vergraben.
+
+Verbindliche Fälle je Regel:
+
+**1. Abstandsskala.** Erkannt werden müssen `gap-1.5`, `gap-2.5`, `gap-3.5`, `py-3.5`, `px-5`, `mt-5`, `py-10`, `px-8`, `p-0.5`, `mb-7`, ebenso mit Variantenpräfix (`sm:gap-1.5`, `hover:py-3.5`) und als negativer Rand (`-mt-5`). **Nicht** erkannt werden dürfen: die acht zulässigen Stufen, sowie `h-11`, `size-8`, `h-0.5`, `min-w-6`, `w-full`, `max-w-5xl` — die Regel ist eine Abstands-, keine Größenregel, und ein Fehlalarm hier zwingt die Umsetzung dazu, sie wieder aufzuweichen.
+
+**2. Keine willkürlichen Werte.** Erkannt: `text-[10px]`, `text-[10.5px]`, `h-[50px]`, `w-[240px]`, `gap-[3px]`, `p-[7px]`. **Nicht** erkannt: die arbiträren *Varianten* in `ui/progress.tsx` (`[&::-webkit-progress-bar]:bg-accent`) und `data-[state=open]:`-Selektoren — sie tragen ebenfalls eckige Klammern, sind aber keine willkürlichen Werte. Die drei Freigaben (`ui/popover.tsx`, `ui/checkbox.tsx`, `ui/dialog.tsx`) laufen über den Fundstellen-Helfer und tragen je eine Begründung.
+
+**3. Keine Deckkraft-Modifikatoren auf Farb-Utilities.** Erkannt: `border-border/60`, `bg-border/60`, `text-text/70`. **Nicht** erkannt: Brüche, die keine Deckkraft sind — `w-1/2`, `h-1/3`, `basis-1/2`. Der Erkenner ist deshalb an die Farb-Namensräume zu binden (`bg-`/`text-`/`border-`/`fill-`/`stroke-` + Token-Name), nicht an das Vorkommen eines Schrägstrichs. Freigegeben bleiben genau die drei benannten Abdunklungen.
+
+**4. `opacity-*` fundstellengenau — die vierte Prüfung, über die drei des Architektur-Abschnitts hinaus.** Begründung: Entscheidung 4 ("die Karte tritt zurück, die Bedeutungsträger nicht") setzt ADR 0055 Abweichung 7 um und ist die riskanteste Einzelentscheidung dieser Spec — ein späteres `opacity-40` am Kartenkörper statt am `<a>` drückt Kennzeichen und Dateinamen wieder unter die Kontrastschwelle, ohne dass irgendetwas rot wird. Der Graustufen-Lauf ist ein einmaliger Ad-hoc-Lauf und trägt das nicht. Die Regel ist billig, weil der Helfer bereits existiert: `opacity-` nur an gelisteten Fundstellen — heute `ui/button.tsx` (`disabled:opacity-40`, `hover:opacity-85`/`active:opacity-70`), `components/Stepper.tsx` (blockierte Beschriftung), `components/RatingButtons.tsx` (aktiver Eintrag), neu die eine Zeile in `PhotoCard.tsx`, deren Ausschnitt das `href`-tragende Element zeigt.
+
+**Der unbestimmte Fortschritt** wird nicht per Zeichenkettensuche "behandelt der Zustand?" geprüft — das wäre eine Zusicherung über die Schreibweise. Genutzt wird stattdessen der bereits vorhandene stärkste Mechanismus des Vertragstests: der **tatsächliche Tailwind-Lauf** (`build([kandidat]) !== build([])`) belegt, dass `indeterminate:bg-accent` und `motion-reduce:animate-none` überhaupt eine Regel erzeugen — eine unbekannte Variante ist in Tailwind kein Buildfehler und bliebe sonst still wirkungslos. Dazu eine Fundstellenprüfung, dass `ui/progress.tsx` die Spur nicht mehr auf `bg-border` legt. Die *Darstellung* bleibt Sichtprüfung; `:indeterminate` und die Browser-Pseudo-Elemente existieren in jsdom nicht.
+
+**Die Kontrastzeile `--separator`** folgt dem bestehenden Muster: Der Erwartungswert wird im Test gerechnet, nie abgeschrieben; die vier Zahlen aus dem UI/UX-Abschnitt sind Beleg, nicht Eingabe. Zugesichert wird der Korridor gegen `--bg` und `--surface` (≥ 2,0), die beiden übrigen Spalten sind nachrichtlich und tragen keine Schwelle.
+
+### Etappe 3 — die drei zusammengesetzten Bausteine
+
+**`frontend/src/components/PhotoCard.test.tsx` (neu).** Keine CSS-Assertion; geprüft wird über `data-rating-status`, `data-struck`, Rollen und sichtbaren Text. Pflicht:
+
+- **Tabellengetrieben über die vier Zustände** (neu, Favorit, Album-würdig, aussortiert), nach der im Projekt etablierten Form der *paarweisen Verschiedenheit*: `data-rating-status`, sichtbarer Kennzeichentext und `data-icon` sind über die Zustände paarweise verschieden. Vier abgeschriebene Einzelfälle wären dieselbe Aussage mit mehr Zeilen und weniger Schärfe.
+- **`data-struck`** ausschließlich im aussortierten Zustand.
+- **Zustand "neu"** trägt den Text `Neu`, **kein** Badge und **kein** Element mit dem zugänglichen Namen `Unbewertet` — das ist der Prüfsatz zu Entscheidung 3 und verhindert, dass das "–"-Badge hier zurückkehrt.
+- **e2e-Vertragsfläche**: Die Karte rendert als `listitem`, das ein `a[href*="/photos/"]` enthält.
+- **Der Ecken-Slot ist Geschwister, nicht Kind des `<a>`** — `link.contains(trigger) === false`, `item.contains(trigger) === true`. Das ist die aus `PhotoGridPage.test.tsx` bekannte Zusicherung, die mit dem Baustein eine Ebene nach unten wandert; sie deckt zugleich den Fallstrick "`tap-target` nie in einen beschneidenden Container" auf Strukturebene ab.
+- **Dateiname**: nur der Basisname (Eingabe `2024/07/IMG_0042.jpg` → sichtbar `IMG_0042.jpg`, der Ordnerteil kommt nicht vor), steht **außerhalb** des `<a>`, ist nicht `aria-hidden` und verändert den zugänglichen Namen des Kachel-Links nicht (der bleibt der `alt`-Text). Dazu der im Abschnitt "Security" geforderte Textknoten-Test — beide Zusagen liegen in derselben Datei und dürfen nicht gegeneinander wegoptimiert werden.
+- **Fußzeilen-Slot**: übergebene Kinder werden gerendert und liegen nicht im `<a>`.
+- **Kein `selected`, kein `data-selected`** — der fünfte Board-Zustand wird weder gebaut noch getestet (Entscheidung 5).
+
+Testdaten nach bestehender Konvention: kleine literale Objekte in der Testdatei, keine geteilte Fixture-Datei.
+
+**`RatingButtons.test.tsx` (bestehend, erweitert).** Die bestehenden sieben Fälle bleiben unverändert — sie sind der Nachweis "keine funktionalen Verluste" für diesen Baustein. Neu:
+
+- `getByRole('button', { name: 'Favorit', exact: true })` (und die zwei anderen) findet weiterhin genau ein Element. Das ist die Zusicherung, dass das Tasten-Kästchen wirklich `aria-hidden` ist — ohne sie hieße der Name "Favorit 1" und der e2e-Vertrag bräche erst in CI.
+- Genau **drei** Schaltflächen in der Gruppe; das Kästchen ist kein Bedienelement.
+- Jeder Eintrag zeigt sichtbar seine Beschriftung.
+
+**Neue Fehlerklasse, die diese Spec erst erzeugt: ein Kästchen, das lügt.** Die Ziffer steht in `RatingButtons`, die Belegung in `PhotoDetailPage` — sie können auseinanderlaufen, ohne dass irgendein bestehender Test etwas merkt. Pflicht daher in `frontend/src/pages/PhotoDetailPage.test.tsx`: der heutige Einzelfall "sets a rating via keyboard shortcut '1'" wird zur **Tabelle über alle drei Tasten**, und je Zeile wird zusätzlich zugesichert, dass die Schaltfläche des ausgelösten Status genau diese Ziffer sichtbar trägt. Ein Test, der nur die Anwesenheit der Ziffern prüft, erfüllt das nicht.
+
+**`Stepper.test.tsx` (bestehend, erweitert).** Die beiden Zustandstests bleiben tragend (`data-step-state`, `aria-current`, `aria-disabled`, paarweise Verschiedenheit). Neu: die sichtbare Schrittbeschriftung zieht ins Nav-Element und bleibt `aria-hidden` — zugesichert wird, dass der zugängliche Name unverändert vollständig aus dem `aria-label` kommt (`Schritt N von 5: <Label>, <Status>`, wörtlich) und dass es weiterhin **genau fünf** Listeneinträge gibt. Der bestehende Test auf `size-8`/`tap-target-square` bleibt die einzige Klassen-Assertion dieser Datei — er sichert die Trefferfläche unterhalb `sm:`, die laut Entscheidung 6 unverändert bleibt, und wird nicht um weitere Klassennamen erweitert.
+
+### Etappe 4 — Regressionsabsicherung: der Testdiff ist der Nachweis
+
+"Jede Ansicht bleibt funktional identisch" ist das riskanteste Kriterium der Story und lässt sich nicht durch *neue* Tests absichern — es wird durch die **bestehenden** abgesichert, und zwar nur dann, wenn sie unangetastet bleiben. Verbindlich:
+
+1. **Am Ende jedes Teilschritts (4a–4d) läuft `npx vitest run` vollständig grün, ohne dass eine bestehende Testdatei angefasst wurde.** Wo das nicht gelingt, ist die Ursache ein Befund, keine Testpflege.
+2. **Jede Änderung an einer bestehenden `*.test.tsx` gilt bis zum Beleg des Gegenteils als funktionaler Verlust.** Sie braucht eine einzeilige Begründung in der Commit-Nachricht, und die PR-Beschreibung listet die angefassten Testdateien mit Grund auf. Das ist der Prüfsatz, den ein Reviewer tatsächlich lesen kann — der Produktivdiff dieser Spec ist dafür zu groß.
+3. **Genau ein Wegfall ist vorab bekannt und genehmigt:** `PhotoGridPage.test.tsx`, "keeps the decorative rating-badge overlay pointer-events-none so clicks fall through to the tile link". Der abgesicherte Mechanismus hört auf zu existieren (das Kennzeichen verlässt die Bildecke). Der Test wird **ersetzt, nicht gelöscht**: An seine Stelle tritt die Zusicherung, dass Kennzeichen und Dateiname nicht innerhalb des `<a>` liegen und der Ecken-Trigger weiterhin dessen Geschwister ist. Ein ersatzloses Streichen wäre der Verlust der Zusage, nicht ihre Erfüllung.
+4. **Die drei Foto-Ansichten behalten ihre eigenen Integrationstests.** Die vier Kartenzustände werden nicht in `PhotoGridPage.test.tsx`, `CurateCategoriesPage.test.tsx` und `PhotoComparePage.test.tsx` wiederholt — dafür gibt es `PhotoCard.test.tsx`. Die Seitentests prüfen weiterhin ihre eigene Sache: Kachelanzahl, Filter, "Übernehmen"/"Verwerfen", Popover-Trigger, die beiden Bewertungszeilen des Vergleichs.
+5. **Etappe 4 hat keinen eigenen Rot-Schritt aus Komponententests** — ihr roter Ausgangspunkt sind die vier statischen Prüfungen aus dem Netz, die nach Etappe 2 rot stehen und Ansicht für Ansicht grün werden. Das ist der TDD-Zyklus dieser Etappe, und er ist in der Commit-Reihenfolge sichtbar zu machen.
+
+### Etappe 5 — Browser-Ebene
+
+**Der bestehende e2e-Satz bleibt unverändert und muss grün sein** — er ist hier kein Beiwerk, sondern trägt vier Akzeptanzkriterien allein: `no-horizontal-scroll` (360px), `tap-targets` (44px auf dem heißen Pfad, `EXPECTED_CONTROL_COUNT = 6` bleibt 6), `grid-columns` (2/3/4 Spalten, gleich breite Kacheln je Zeile — die `PhotoCard` darf die Leiter nicht verschieben), `sticky-header`, `popover-position`, `empty-and-error-states`.
+
+**Eine Ergänzung ist Pflicht, ein neuer Spec nicht.** Der Routensatz von `e2e/tests/no-horizontal-scroll.spec.ts` enthält heute weder `/projects/:id/photos/:photoId` noch `/projects/:id/compare` — also ausgerechnet die Detailseite, auf der die neue Bewertungsleiste laut eigener Rechnung 400px bräuchte und deshalb umbricht, und die Vergleichsansicht, die auf `PhotoCard` umgestellt wird. Beide Routen werden der bestehenden Tabelle hinzugefügt; das Aufnahmekriterium ist erfüllt (echte Geometrie, in jsdom prinzipiell unprüfbar), und es entsteht kein zweiter Wahrheitsstand.
+
+- Vergleich: Vorbedingung wie gehabt über die Überschrift `Vergleich`.
+- Detailseite: Sie hat bewusst **kein** `h1` (siehe UI/UX-Abschnitt), die Überschriften-Vorbedingung greift dort also nicht. Ersatz: `getByRole('group', { name: 'Bewertung' })` ist sichtbar, plus die vorhandene Mindesthöhe des Inhaltsbereichs. Eine Route ohne wirksame Vorbedingung wäre genau der immer-grüne Spec, den das Testkonzept ausschließt.
+- **Rot-Nachweis für die beiden neuen Zeilen** nach der Regel des Testkonzepts: einmal lokal ein 500px breites Element auf der Detailseite einfügen, den roten Lauf samt genannter Fundstelle in der PR-Beschreibung belegen.
+
+**Graustufen-Abnahme** bleibt ein Ad-hoc-Lauf (`html { filter: grayscale(1) }` an Foto-Raster und Bewertungsleiste) und wird **nicht** zum Dauertest: Die nachrechenbare Hälfte der Zusage liegt bereits im Kontrast-Block des Vertragstests, und ein Referenzbildvergleich ist eine eigene, hier nicht geführte Diskussion. Abnahmekriterium ist das im UI/UX-Abschnitt festgelegte: Wort und Symbolsilhouette müssen sich ohne Farbfläche ablesen lassen; abgeschnittene Kennzeichentexte sind ein Fehlschlag, kein Randfall.
+
+**Screenshots** aller vierzehn Ansichten in 360px und 1280px über den `browse-app`-Skill sind Abnahmebeleg, kein Testnachweis — sie stehen in der PR-Beschreibung, nicht im Repository, und entstehen ausschließlich gegen den synthetischen Demo-Stand (siehe "Security").
+
+### Was bewusst nicht getestet wird
+
+- **Aussehen einzelner Komponenten** (Farbwert, Radius, Polsterung, Deckkraftwirkung): Der Vertragstest prüft die Regeln, die Sichtprüfung das Ergebnis. Komponententests bekommen weiterhin keine CSS-Assertionen — die Ausnahme `tap-target`/`size-8` im `Stepper` bleibt die einzige und wird nicht ausgeweitet.
+- **Responsives Umschalten** in jsdom (siehe oben).
+- **Die Darstellung des unbestimmten Fortschritts** — statisch geprüft, dass die Zustandsbehandlung eine Regel erzeugt; die Wirkung ist Sichtprüfung.
+- **Der nicht gebaute Kartenzustand "ausgewählt"** — keine Prop, kein Test, keine Vorbereitung.
+- **Die `truncate`-Wirkung auf den Dateinamen** (Auslassungspunkte, sichtbar bleibende Durchstreichung): Die Folge — kein waagerechtes Scrollen bei 360px — ist e2e-geprüft, die Ursache nicht.
+- **Pixelbasierter Referenzbildvergleich** — unverändert außerhalb dieser Spec.
+- **Die Anmeldeseite in `no-horizontal-scroll`**: Der Spec-Satz läuft mit gespeichertem Anmeldezustand und würde von `/login` weggeleitet. Bleibt eine bewusste Lücke, gedeckt durch Sichtprüfung bei 360px (die Seite ändert `h-[50px]` → `h-11` und ihre Polsterung).
+
+### Testkonzept-Nachtrag (Etappe 5)
+
+Vier Punkte gehen über diesen Branch hinaus und sind in `specs/architecture/0002-testkonzept.md` nachzutragen — nicht vorab, sondern in Etappe 5:
+
+1. **Frontend-Sektion, neuer Eintrag:** Muster "fundstellengenaue Freigabeliste" — drei Fehlerklassen, Dateiliste als Parameter, Selbsttests gegen synthetische Eingaben, und die Regel, dass ein solcher Helfer im vom Scan ausgenommenen `SELF_FILE` wohnt.
+2. **Frontend-Sektion, neue Konvention:** modulweiter Zustand im Frontend (erstmals mit `lib/scrollLock.ts`) braucht eine `reset*()`-Funktion, die `setupTests.ts` per `afterEach` ruft, und diese Funktion räumt Zähler, gesicherten Wert und den beeinflussten DOM-Zustand ab. Dazu die Notiz, dass StrictMode-Doppel-Aufräumungen im Test nicht greifen und Idempotenz deshalb direkt provoziert werden muss.
+3. **E2E-Sektion, Tabelle "Umfang":** `no-horizontal-scroll` erhält zwei Routen; die Detailseite nutzt eine Nicht-Überschriften-Vorbedingung (`group`-Rolle "Bewertung"), was als zulässige zweite Form der Vorbedingungs-Assertion festzuhalten ist.
+4. **"Bekannte Lücken":** Anmeldeseite ist von `no-horizontal-scroll` nicht erfasst (gespeicherter Anmeldezustand leitet weg); Graustufen-Unterscheidbarkeit bleibt manuell; die Darstellung des unbestimmten Fortschritts ist nur statisch belegt.
+
+Nicht nachzutragen: alles Übrige dieser Spec wendet bestehende Strategie an (Rollen-/`data-*`-Selektoren, keine CSS-Assertionen im Komponententest, Vertragstest als einzige CSS-Ebene, Fixture-Konvention, e2e-Aufnahmekriterium).
 
 ## Security
 
-_(wird im spec-writer-Ablauf vom `security-engineer` gefüllt)_
+**Einstufung: sicherheitsrelevant, mit engem Zuschnitt.** Die Story ist reines Frontend-Styling ohne Backend-, Auth- oder Schnittstellenänderung. Sicherheitsrelevant ist genau ein Punkt: Mit dem Dateinamen auf der Fotokachel wird extern entstandener Text an einer Stelle sichtbar, an der er bisher nicht stand. Der Fall ist im Sicherheitskonzept (`specs/architecture/0003-securitykonzept.md`, Angriffsfläche "Frontend") bereits benannt und die Gegenmaßnahme dort bereits festgelegt — diese Spec führt sie fort, sie erfindet nichts Neues.
+
+### 1. Der Dateiname als Eingabe von außen
+
+**Herkunft:** `PhotoOut.relative_path` wird im Backend aus dem WebDAV-Walk der OpenCloud befüllt (`worker.py`), stammt also aus keiner kontrollierten Aufzählung. Die Vertrauensgrenze dazu steht im Sicherheitskonzept: OpenCloud ist Daniels eigene Instanz und wird als *potenziell fehlerhaft antwortend*, nicht als *aktiv böswillig* behandelt.
+
+**Kein Erstkontakt:** Derselbe Wert wird heute bereits in allen drei Foto-Ansichten gerendert — als `alt` (`PhotoGridPage`, `CurateCategoriesPage`, `PhotoComparePage`, `PhotoDetailPage`) und in `aria-label`-Vorlagen (`Vorschlag übernehmen: …`, `Verwerfen: …`). Neu ist allein die **Sichtbarkeit als Fließtext**, nicht die Eingabe.
+
+**Warum der Punkt trotzdem nicht abgewinkt wird:** Seit ADR 0005 liegt das Session-Token in `localStorage`. Das Verbot von `dangerouslySetInnerHTML` für Datei-/Ordnernamen ist deshalb keine Stilkonvention, sondern die tragende Voraussetzung dieser Auth-Entscheidung — jedes eingeschleuste Skript liest das 30 Tage gültige, nicht widerrufbare JWT unmittelbar aus.
+
+**Muss-Kriterien für die Umsetzung** (bestehendes Projektmuster, siehe Sicherheitshinweis zu `display_name`/`raw_label` in `frontend/src/api/types.ts`):
+
+- Der Dateiname wird **ausschließlich als regulärer React-Textknoten** gerendert. Kein `dangerouslySetInnerHTML`, keine HTML-String-Prop, kein Markdown-/Rich-Text-Rendering.
+- Er fließt **nie in `href`, `src`, `style` oder einen `url()`-Kontext**. Geprüft und derzeit erfüllt: Die Bildabrufe sind id-basiert (`/photos/{id}/image?variant=…` über `apiFetchBlob` + Object-URL), der Dateiname geht in keine URL ein. Diese Eigenschaft darf der `PhotoCard`-Umbau nicht aufweichen.
+- **Zu bauen (klein, in Etappe 3):** ein Test in `PhotoCard.test.tsx` nach dem Vorbild von `CloudVisionStatusList.test.tsx` und `CriterionDetailsList.test.tsx` — "der Dateiname wird als Textknoten gerendert, nie über `dangerouslySetInnerHTML`" — plus ein einzeiliger Sicherheitskommentar an der Renderstelle. Das existiert im Bestand bereits dreimal und ist der billigste Weg, eine tragende Voraussetzung prüfbar statt erinnerbar zu halten.
+- **Kein `title`-Attribut nötig, und wenn doch, ist es kein Sicherheitsthema:** React setzt `title` als Attribut ohne HTML-Parsing (Präzedenz `CategoryBadge.tsx`). Ob der abgeschnittene Name einen Tooltip bekommt, ist eine Barrierefreiheits-/Vertragsfrage (zugänglicher Name bzw. Beschreibung, siehe UI/UX-Abschnitt 8), keine Sicherheitsfrage.
+
+**Ausdrücklich kein Handlungsbedarf:** keine Zeichensanierung, keine Whitelist, kein Escaping von Hand auf dem Dateinamen. Er ist Inhalt; ihn zu verstümmeln verletzt die Zusage "gleiche Inhalte" und schützt gegen nichts, was React nicht bereits abfängt.
+
+**Bewusst getragenes Restrisiko:** Ein Dateiname mit Richtungssteuerzeichen (z.B. U+202E) oder exotischer Unicode-Formatierung kann die Statuszeile visuell verdrehen oder den Namen spoofen. Wirkung ausschließlich kosmetisch: Keine Aktion der Karte hängt am angezeigten Namen — Bild-Link, "Übernehmen" und "Verwerfen" arbeiten mit `photo.id` —, es gibt keinen Download- und keinen Ausführungspfad, und wer solche Namen in den Familienordner legen kann, hat ohnehin bereits Zugriff auf die Fotos selbst. Kein Gegenmittel vorgesehen; das passt zur bestehenden Vertrauensgrenze und begründet keinen neuen Eintrag im Sicherheitskonzept.
+
+**Übermäßig langer oder umbruchloser Name** ist als Layout-Störung durch `min-w-0 truncate` + `min-w-6` (UI/UX-Abschnitt 2) bereits abgedeckt — erwähnt, damit die beiden Utilities nicht als reine Kosmetik wegoptimiert werden.
+
+### 2. Der Dateiname als schützenswerter Inhalt — Screenshot-Hygiene
+
+Dateinamen und Ordnerstruktur privater Familienfotos gelten im Projekt bereits als sensibles Datum, nicht nur als Metadatum (siehe die verbindliche Ausgabe-Hygiene in `backend/src/photosort/category_diff.py`, aus Spec 0217). Diese Story macht sie erstmals **im Foto-Raster sichtbar** und verlangt im selben Zug **Screenshots aller Ansichten im Pull Request** (Etappe 5, Akzeptanzkriterium "Abnahme"). Das Repository ist öffentlich, PR-Anhänge liegen öffentlich auf GitHub, und der CI-Schritt gegen Bilddateien greift nur im Arbeitsbaum, nicht an PR-Anhängen.
+
+Muss-Kriterien:
+
+- Screenshots und der Graustufen-Ad-hoc-Lauf entstehen **ausschließlich gegen den synthetischen Demo-Stand** (`browse-app` / `demo_state.py`, Pfade der Form `Demo/<slug>/foto-0001.jpg`), nie gegen Daniels Instanz oder echte Fotos. Das steht bereits im `browse-app`-Skill — ab dieser Story betrifft es zusätzlich zum Bildinhalt auch Dateinamen und Ordnerstruktur.
+- In Spec, PR-Beschreibung und Commit-Messages steht **kein echter Dateiname und kein Pfad aus dem Familienbestand**; Beispiele werden selbst erzeugt.
+- `e2e/artifacts/` bleibt gitignored; es wird kein Screenshot in den Arbeitsbaum eingecheckt.
+
+### 3. Anmeldeansicht
+
+Der Umbau ist rein maßlich (`h-12` → `h-11`, `h-[50px]` → `h-11 w-full`, Abstände, Überschriftenstufe). Autofill und Passwortmanager hängen an Attributen, nicht an Farben, Radien oder Höhen — solange die folgenden Punkte unverändert bleiben, ändert die Umgestaltung nichts daran. Prüfzusage, keine neue Maßnahme:
+
+- `type="password"` am Passwortfeld, `autoComplete="username"` / `autoComplete="current-password"`, die `name`-Attribute und die `<label for>`-Verknüpfung bleiben wortgleich erhalten.
+- Das Zurücksetzen des Passwortfelds im Fehlerfall (`onError: () => setPassword('')`) bleibt bestehen.
+- Es entsteht **keine** Sichtbarkeitsumschaltung für das Passwort und kein Kopier-Affordance — das wäre ohnehin die durch die Akzeptanzkriterien verbotene Funktionserweiterung.
+- Der Feldwert landet in keinem `title`, `data-*` oder sonstigen Attribut.
+- Die dritte `h-11`-Kategorie ("Eingabefelder und Kontrollkästchen", UI/UX-Abschnitt 8) muss stehen, damit die neue Abstands-/Maßprüfung die Anmeldefelder nicht unter 44px drückt.
+
+### 4. Fehlermeldungen quer durch die Ansichten
+
+Der Umbau ändert die **Form**, nicht den Text. Muss-Kriterien:
+
+- Kein Fehlertext wird ergänzt, verlängert oder um technische Details angereichert — kein HTTP-Statuscode, kein Endpunktpfad, kein Exception-Typ, kein Stacktrace, kein Fotopfad. Angezeigt bleibt genau das, was heute angezeigt wird (auf der Anmeldung `ApiError.detail`). Ein Restyling ist nicht der Ort, an dem Fehlermeldungen "hilfreicher" werden.
+- Die bestehenden Sicherheitskommentare und Tests an den Stellen mit extern erzeugtem Text bleiben erhalten und grün: `CloudVisionStatusList` (`error_message`, Textknoten-Test), `CriterionDetailsList` (Feinlabels), `ui/alert.tsx`. Der Umbau der Alert-Konstruktionen (Gate-Hinweis im Foto-Raster, Vorschlagskasten der Detailseite) darf keine HTML-String-Prop einführen.
+
+### 5. `frontend/src/lib/scrollLock.ts` — Qualität, nicht Sicherheit
+
+Eine falsche Zählersemantik hinterlässt die Seite mit gesperrtem `body`-Scroll. Das ist ein Bedienbarkeitsfehler, keine Sicherheitslücke: kein Vertrauensübergang, keine Daten, keine Auth-Durchsetzung berührt; der Zähler ist modulweit und nur aus dem eigenen Anwendungscode erreichbar, es gibt keinen Angreifer, der ihn ansteuern könnte, und ein Neuladen behebt den Zustand. Der Punkt gehört vollständig in die Teststrategie. Kein Eintrag im Sicherheitskonzept.
+
+### 6. Abhängigkeiten
+
+Am Abschnitt "Architektur / Umsetzung" geprüft, nicht angenommen: Er sagt zweimal ausdrücklich "keine neue Abhängigkeit"; alle genannten Bausteine sind projekteigene Dateien (`PhotoCard.tsx`, `RatingButtons.tsx`, `Stepper.tsx`, `scrollLock.ts`) oder bereits vorhandene Tailwind-/Radix-Mittel, `lucide-react` bleibt einzige Symbolquelle und weiterhin nur über `ui/icon.tsx` importiert. `frontend/package.json` und `package-lock.json` kommen in keiner der fünf Etappen vor. Die Lieferkettenfläche aus dem Abschnitt "npm-Lieferkette des ausgelieferten Frontend-Bundles" wird damit nicht berührt. **Sollte in der Umsetzung doch ein Paket hinzukommen, ist diese Einschätzung hinfällig** — dann gilt ADR-Pflicht und eine erneute Security-Konsultation.
+
+### Sicherheitskonzept-Nachtrag (Etappe 5)
+
+Keine neue Angriffsfläche, kein neues Restrisiko, keine neue Lücke — in `specs/architecture/0003-securitykonzept.md` sind zwei Präzisierungen nachzutragen, zusammen mit dem Design-System-Nachtrag:
+
+1. **Abschnitt "Frontend":** Mit dieser Spec wird der OpenCloud-Dateiname erstmals als *sichtbarer Text* gerendert (bisher nur `alt`/`aria-label`). Geprüft und **kein** Wegfall der ADR-0005-Voraussetzung — Textknoten-Rendering unverändert, kein neuer URL-/CSS-Kontext, abgesichert durch den Textknoten-Test in `PhotoCard.test.tsx`. Dazu das getragene Restrisiko der Unicode-Richtungssteuerzeichen in einem Halbsatz.
+2. **Screenshot-Hygiene** (an "Browsergestützte Oberflächenprüfung" oder ans Ende von "Frontend"): Screenshots der Foto-Ansichten tragen ab dieser Story Dateiname und Ordnerstruktur, nicht mehr nur Bildinhalt. Die bestehende Regel "nur synthetische Demo-Daten" bekommt damit einen zweiten, unabhängigen Grund — festhalten, damit sie nicht später als reine Bilddaten-Regel gelesen und für "nur ein Screenshot der Rasteransicht" gelockert wird.
 
 ## Entscheidungen
 
@@ -435,6 +638,10 @@ Im `spec-writer`-Ablauf getroffen:
 - **Drei Design-Detailentscheidungen des `ux-ui-designer`**, sichtbar und deshalb hier festgehalten: Die Bewertungsleiste steht unterhalb `sm:` untereinander statt nebeneinander (arithmetisch belegt: ≈ 400px nötig, 288px verfügbar; Kürzen der Beschriftung verbietet ein Akzeptanzkriterium, horizontales Scrollen die Abnahme) · die Kartenpolsterung ist am Telefon 8px statt der 12px des Boards, weil die Bildfläche sonst um 16 % schrumpft · der Kennzeichentext heißt "Verworfen" statt "AUSGESONDERT" und steht nicht in Versalien, weil das Produkt dieses Wort bereits führt.
 - **Die Shortcut-Zeile auf der Detailseite bleibt unverändert stehen.** Sie wird durch die neuen Tasten-Kästchen teilweise redundant, aber "es wird nichts entfernt" ist ein Akzeptanzkriterium, und der Pfeiltasten-Teil bekommt kein sichtbares Gegenstück. Sie wird lediglich als Metadatenzeile gesetzt (`text-xs text-text-muted`). Falls sie auf "←/→ navigieren" eingedampft werden soll, wäre das eine bewusste Streichung sichtbarer Information und damit Daniels Entscheidung.
 - **Zwei Befunde am Bestand**, die die Story nicht benennt und die in der Umsetzung mitlaufen: Die `rounded-full`-Freigabeliste ist nicht nur dateiweise, sondern lässt auch verwaiste Einträge unbemerkt — der neue Helfer prüft beide Richtungen. Und `border-border/60` auf der Statistikseite liegt bei 0,87:1 und ist damit der eigentliche Kern des Akzeptanzkriteriums "Trennlinien verschwinden auf dem Grund".
+- **`test-engineer` konsultiert (Schritt 3).** Ergebnis ist der Abschnitt "Teststrategie". Acht Akzeptanzkriterien wurden auf Testbarkeit geschärft und oben in dieser Fassung übernommen — im Kern durch die Angabe, welcher Prüfsatz das jeweilige Kriterium tatsächlich trägt. Der Nachtrag am Testkonzept `specs/architecture/0002-testkonzept.md` steht in Etappe 5.
+- **Vierte statische Prüfung ergänzt (`opacity-*` fundstellengenau).** Der Architektur-Abschnitt sah drei vor; der `test-engineer` hat eine vierte vorgeschlagen und die Entscheidung an den `spec-writer` zurückgegeben. Übernommen: Entscheidung 4 operationalisiert die bindende ADR 0055 Abweichung 7 und wäre sonst nur durch einen einmaligen Ad-hoc-Graustufen-Lauf gedeckt, also danach dauerhaft ungeschützt; der Helfer existiert nach Etappe 1 ohnehin, die Freigabeliste hat vier bis fünf Einträge. Das ist eine technische Detailentscheidung innerhalb einer akzeptierten Spec und lag damit beim `spec-writer`, nicht bei Daniel.
+- **Drei Befunde des `test-engineer`**, die die Story nicht benennt: (a) `e2e/tests/no-horizontal-scroll.spec.ts` erfasst heute weder die Foto-Detailseite noch den Foto-Vergleich — ausgerechnet die Detailseite trägt die umbrechende Bewertungsleiste; beide Routen kommen in die bestehende Tabelle, die Detailseite mit einer Nicht-Überschriften-Vorbedingung, weil sie bewusst kein `h1` hat. (b) Die sichtbare Tastenziffer lebt in `RatingButtons.tsx`, die Belegung in `PhotoDetailPage.tsx` — sie können stumm auseinanderlaufen, deshalb die Tabelle über alle drei Tasten. (c) Genau ein bestehender Test fällt planmäßig weg (`pointer-events-none` am Bewertungs-Overlay) und wird ersetzt, nicht gelöscht.
+- **`security-engineer` konsultiert (Schritt 3).** Ergebnis: sicherheitsrelevant mit engem Zuschnitt, keine neue Bedrohungsklasse. Der Dateiname ist kein Erstkontakt (er steht heute schon in `alt` und `aria-label`), neu ist nur die Sichtbarkeit als Fließtext; das Verbot von `dangerouslySetInnerHTML` bleibt tragende Voraussetzung von ADR 0005, abgesichert durch einen Textknoten-Test. Der eigentliche Zugewinn ist die **Screenshot-Hygiene**: Die Story macht Dateinamen und Ordnerstruktur erstmals im Foto-Raster sichtbar und verlangt im selben Zug Screenshots im öffentlichen Pull Request — der CI-Schritt gegen Bilddateien greift nur im Arbeitsbaum, nicht an PR-Anhängen. Der Nachtrag am Sicherheitskonzept `specs/architecture/0003-securitykonzept.md` steht in Etappe 5.
 
 ## Offene Fragen
 
