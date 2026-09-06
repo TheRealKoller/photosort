@@ -14,7 +14,11 @@ schlicht kein zulaessiger Wert mehr.
 
 Zweiter Prueffall in derselben Datei: Jeder Ablauf-Skill mit Board-Schreibzugriff fuehrt den
 Berichtsabschnitt `## Lokal nachzuholen` woertlich (Nachfolger der entsprechenden Zusicherung
-aus ADR 0056, deren zweite Haelfte mit der Vorabmessung entfallen ist).
+aus ADR 0056, deren zweite Haelfte mit der Vorabmessung entfallen ist) - **und den festen Satz
+darin**. Seit ADR 0059 ist die Befehlszeile aus diesem Abschnitt in den Operationskatalog
+gezogen; die Ueberschrift allein wuerde danach auch von einer leeren Huelle bestanden. Wandert
+der Inhalt einer geprueften Textstelle woanders hin, wandert die Zusicherung mit - sonst bleibt
+am alten Ort ein gruener Rest stehen.
 
 Kein echtes `gh`, kein Netzwerk - gelesen werden ausschliesslich Dateien dieses Repositories.
 """
@@ -34,8 +38,8 @@ REPO_WURZEL = Path(__file__).parents[2]
 PROJEKT_NUMMER = "8"
 PROJEKT_OWNER = "TheRealKoller"
 
-# Die Optionsmengen des Felds am echten Board, plus die Platzhalterformen, die in der
-# Befehlssammlung (`.claude/skills/github-access/SKILL.md`) als Vorlage stehen. `Todo` ist seit
+# Die Optionsmengen des Felds am echten Board, plus die Platzhalterformen, die im
+# Operationskatalog (`.claude/skills/github-access/SKILL.md`) als Vorlage stehen. `Todo` ist seit
 # ADR 0057 keine Option des Felds `Status` mehr und deshalb hier nicht aufgefuehrt.
 ERLAUBTE_WERTE: dict[str, frozenset[str]] = {
     "Status": frozenset(
@@ -49,14 +53,22 @@ ABLAUF_SKILLS = ("capture", "refinement", "spec-writer", "ship-feature")
 
 BERICHTSABSCHNITT = "## Lokal nachzuholen"
 
+# Der feste Satz unter der Ueberschrift. Er steht in den Skill-Dateien umbrochen; verglichen
+# wird deshalb ueber normalisierten Leerraum - der Zeilenumbruch ist Satzlayout, nicht Inhalt,
+# und eine byteweise Pruefung machte jede Neuformatierung zu einem Fehlalarm.
+FESTER_SATZ = (
+    "Dieser Schritt ist fehlgeschlagen und wurde nicht nachgeholt. Die Befehle sind "
+    "unver\u00e4ndert wiederholbar und lokal nachzuholen."
+)
+
 # Ein Befehl steht am Zeilenanfang; eine blosse *Erwaehnung* steht mitten im Fliesstext
 # ("... kennt `gh project item-edit` die namensbasierte Form"). Ohne diese Verankerung meldete
 # der Parser jede Prosa-Zeile, die das Kommando nennt, als Aufruf ohne --field.
 #
 # Vor dem Kommando zugelassen sind ausschliesslich Formen, die es weiterhin als Befehl lesbar
-# lassen: Einrueckung, ein Listenpunkt, ein Inline-Code-Etikett wie `status-review`: (so stehen
-# die Nachhol-Befehle in den Berichtsvorlagen), ein Shell-Prompt, ein oeffnender Backtick. Ohne
-# den Listen-Zweig entgingen dem Test genau die Vorlagen unter `## Lokal nachzuholen`.
+# lassen: Einrueckung, ein Listenpunkt, ein Inline-Code-Etikett wie `board-status-setzen`: (so
+# stehen die Nachhol-Zeilen im Operationskatalog), ein Shell-Prompt, ein oeffnender Backtick.
+# Ohne den Listen-Zweig entgingen dem Test genau diese Nachhol-Zeilen.
 _AUFRUF = re.compile(
     r"^[ \t]*(?:[-*+][ \t]+)?(?:`[^`\n]*`:[ \t]*)?[`$]?[ \t]*gh project item-edit\b[^\n]*",
     re.MULTILINE,
@@ -326,6 +338,11 @@ def test_ein_suchraum_ohne_board_aufruf_scheitert_laut_statt_still() -> None:
         aufrufe_im_abbild({"skills/x/SKILL.md": "Nur Prosa, kein Board-Aufruf.\n"})
 
 
+def normalisiert(text: str) -> str:
+    """Reine Funktion: Leerraumfolgen zu je einem Leerzeichen, fuer den Satzvergleich."""
+    return " ".join(text.split())
+
+
 @pytest.mark.parametrize("skill", ABLAUF_SKILLS)
 def test_jeder_ablauf_skill_fuehrt_den_berichtsabschnitt_woertlich(skill: str) -> None:
     pfad = REPO_WURZEL / ".claude" / "skills" / skill / "SKILL.md"
@@ -336,3 +353,26 @@ def test_jeder_ablauf_skill_fuehrt_den_berichtsabschnitt_woertlich(skill: str) -
         "verschwindet ein fehlgeschlagener Board-Zugriff lautlos, statt als nachholbarer "
         "Schritt im Bericht zu stehen."
     )
+    assert normalisiert(FESTER_SATZ) in normalisiert(inhalt), (
+        f"{pfad} fuehrt den festen Satz {FESTER_SATZ!r} nicht mehr woertlich. Seit die "
+        "Befehlszeile in den Operationskatalog gezogen ist, pruefte die Ueberschrift allein nur "
+        "noch eine Huelle - und eine Ueberschrift ohne Inhalt besteht sie."
+    )
+
+
+def test_ein_abschnitt_ohne_den_festen_satz_wuerde_auffallen() -> None:
+    """Gegenprobe: die leere Huelle, gegen die der zweite Teil der Zusicherung gerichtet ist."""
+    huelle = f"{BERICHTSABSCHNITT}\n\n- `board-status-setzen`: siehe Katalog\n"
+
+    assert BERICHTSABSCHNITT in huelle
+    assert normalisiert(FESTER_SATZ) not in normalisiert(huelle)
+
+
+def test_der_umbruch_des_festen_satzes_gilt_nicht_als_abweichung() -> None:
+    """Der Satz steht in den Skill-Dateien umbrochen - Satzlayout, kein Inhaltsunterschied."""
+    umbrochen = (
+        "Dieser Schritt ist fehlgeschlagen und wurde nicht nachgeholt. Die Befehle sind "
+        "unverändert\nwiederholbar und lokal nachzuholen."
+    )
+
+    assert normalisiert(FESTER_SATZ) in normalisiert(umbrochen)

@@ -9,8 +9,26 @@ mitten in einer Session, gegen ein oeffentliches Issue:
   zerlegte die Shell den Dateiinhalt an Leerzeichen und expandierte Globs. Ein Body geht
   ausschliesslich ueber `--body-file`, und die schreibenden Verben tragen `--repo`.
 * Die **Reihenfolge** in `refinement/SKILL.md`: Der Titel wird hinter dem Body und vor dem
-  Statuswechsel auf `Ready` geschrieben. Rutschte der Titel-Aufruf hinter die `Ready`-Zeile,
+  Statuswechsel auf `Ready` geschrieben. Rutschte die Titel-Stelle hinter die `Ready`-Stelle,
   erreichte das Issue den Status auch dann, wenn das Schreiben des Titels scheitert.
+
+Die Reihenfolge-Pruefung ist seit ADR 0059 **ueber die Operations-IDs verankert**, nicht mehr
+ueber Befehlszeilen: Die Befehle sind in den Katalog gezogen, die Reihenfolge ist aber eine
+Eigenschaft des *Ablaufs* und gehoert ohnehin dorthin, wo der Ablauf steht. Sie ueberlebt den
+Umbau damit als Aussage statt als Zeilennummer-Zufall. Bedingung (a) aus der Spec-0288-Sektion des
+Testkonzepts ("ueber geparste Aufrufe, nie ueber `text.index`") bekommt dabei nur einen neuen
+Gegenstand: An die Stelle des geparsten Aufrufs tritt die **Ausfuehrungsstelle**. Eine ID ist ein
+Wort und steht auch in Prosa ("scheitert `issue-titel-schreiben`, entfaellt
+`board-status-setzen`") - ohne eine maschinell erkennbare Form fiele die Aussage auf genau die
+Textstellen-Suche zurueck, die (a) verbietet. Verbindliche Form deshalb: **Eine Ausfuehrungsstelle
+nennt ihre ID zeilenanfangs-verankert in Backticks**, nach optionaler Einrueckung, einem
+Listenpunkt oder einer Schrittnummer. Erwaehnungen im Fliesstext bleiben frei formulierbar und
+zaehlen nicht.
+
+Der frueher hier gefuehrte Fall "Titel und Body in *einem* Befehl" hat mit dem Umzug in den
+Katalog einen staerkeren Gegenstand bekommen und steht deshalb nicht mehr in dieser Datei: Eine
+kombinierte Operation braeuchte eine eigene ID, und die Menge der Katalog-IDs ist geschlossen
+(`test_github_zugriff_an_einer_stelle.py`). Sie faellt dort auf, nicht erst an der Reihenfolge.
 
 Bewusst **kein** Wortscan auf die inhaltlichen Zusagen des Ablaufs (passt der Titel noch, ist die
 neue Fassung gut, nennt die Zusammenfassung beide Fassungen): Diese Zusagen haben im Repository
@@ -42,6 +60,12 @@ LESENDE_VERBEN = frozenset({"view"})
 BEFEHLSSAMMLUNG = ".claude/skills/github-access/SKILL.md"
 REFINEMENT = ".claude/skills/refinement/SKILL.md"
 
+# Die drei Operationen, deren Reihenfolge das Ablauf-Gate aus Spec 0288 traegt.
+BODY_OPERATION = "issue-body-schreiben"
+TITEL_OPERATION = "issue-titel-schreiben"
+STATUS_OPERATION = "board-status-setzen"
+READY = "`Ready`"
+
 # Ein Befehl steht am Zeilenanfang; eine blosse *Erwaehnung* steht mitten im Fliesstext. Vor dem
 # Kommando zugelassen sind ausschliesslich Formen, die es weiterhin als Befehl lesbar lassen:
 # Einrueckung, ein Listenpunkt, ein Inline-Code-Etikett wie `titel-edit`:, ein Shell-Prompt, ein
@@ -59,9 +83,14 @@ _TITEL = re.compile(r"--title(?![-\w])")
 _TITEL_WOHLGEFORMT = re.compile(r'--title\s+"\$\(cat\s+[^"\s)]+\)"')
 _INLINE_BODY = re.compile(r"--body(?![-\w])")
 _BODY_DATEI = re.compile(r"--body-file(?![-\w])")
-# Der Statuswechsel, den der Titel-Aufruf in `refinement` vorausgehen muss. Er ist ein
-# Board-Befehl und damit kein `gh issue`-Aufruf - hier zaehlt nur seine Zeilennummer.
-_READY = re.compile(r"""--field\s+"?Status"?\s+--value\s+"?Ready"?""")
+# Eine Ausfuehrungsstelle: die Operations-ID in Backticks, am Zeilenanfang nach optionaler
+# Einrueckung, einem Listenpunkt oder einer Schrittnummer. Der Rest der Zeile wird mitgefuehrt,
+# weil der geschriebene *Wert* dort steht ("`board-status-setzen` mit Wert `Ready`") - ohne ihn
+# liesse sich ein `Ready`-Statuswechsel nicht von einem `In Progress`-Statuswechsel trennen.
+_AUSFUEHRUNGSSTELLE = re.compile(
+    r"^[ \t]*(?:[-*+][ \t]+|\d+\.[ \t]+)?`(?P<id>[a-z][a-z-]*)`(?P<rest>[^\n]*)",
+    re.MULTILINE,
+)
 
 
 @dataclass(frozen=True)
@@ -142,33 +171,65 @@ def form_verstoesse(aufrufe: list[Aufruf]) -> list[str]:
     return befunde
 
 
-def ready_zeilen(text: str) -> list[int]:
-    """Reine Funktion: die Zeilennummern, in denen der Status auf `Ready` geschrieben wird."""
-    return [text.count("\n", 0, treffer.start()) + 1 for treffer in _READY.finditer(text)]
+@dataclass(frozen=True)
+class Ausfuehrungsstelle:
+    """Eine Stelle, an der ein Ablauf eine Operation ausfuehrt - ID plus Rest der Zeile."""
+
+    datei: str
+    zeile: int
+    id: str
+    rest: str
+
+    @property
+    def fundstelle(self) -> str:
+        return f"{self.datei}:{self.zeile}"
+
+
+def ausfuehrungsstellen(text: str, datei: str = "<text>") -> list[Ausfuehrungsstelle]:
+    """Reine Funktion: sammelt die Ausfuehrungsstellen eines Textes samt Fundstelle.
+
+    Eine Erwaehnung im Fliesstext ("scheitert `issue-titel-schreiben`, entfaellt …") wird nicht
+    mitgezaehlt: Sie steht nicht am Zeilenanfang. Die Trennung ist dieselbe wie bei den
+    Befehlszeilen, nur auf IDs statt auf Kommandos.
+    """
+    return [
+        Ausfuehrungsstelle(
+            datei=datei,
+            zeile=text.count("\n", 0, treffer.start()) + 1,
+            id=treffer.group("id"),
+            rest=treffer.group("rest"),
+        )
+        for treffer in _AUSFUEHRUNGSSTELLE.finditer(text)
+    ]
 
 
 def reihenfolge_verstoesse(text: str, datei: str = "<text>") -> list[str]:
-    """Reine Funktion: prueft die Kette Body -> Titel -> `Ready` ueber die geparsten Aufrufe.
+    """Reine Funktion: prueft die Kette Body -> Titel -> `Ready` ueber Ausfuehrungsstellen.
 
-    Ausdruecklich **nicht** ueber Textstellen (`text.index("--title")`): Der Skill-Text nennt
-    `--title` und `--body-file` weit vorne in Prosa, eine Suche nach der Zeichenkette kehrte die
-    Aussage um. Geschnitten wird zusaetzlich auf das Verb `edit`, damit ein kuenftiger
-    `create`-Aufruf (Titel und Body in einem Befehl) die Aussage nicht mehrdeutig macht.
+    Ausdruecklich **nicht** ueber Textstellen (`text.index("issue-titel-schreiben")`): Der
+    Skill-Text nennt beide IDs auch in Prosa, eine Suche nach der Zeichenkette kehrte die Aussage
+    um. Beide Existenz-Zusicherungen haben eine eigene Meldung - ohne sie waere die
+    Reihenfolge-Aussage leer wahr, sobald eine der beiden Stellen verschwindet.
     """
-    aufrufe = aufrufe_aus_text(text, datei)
-    titel = [a for a in aufrufe if a.verb == "edit" and a.schreibt_titel]
-    body = [a for a in aufrufe if a.verb == "edit" and a.schreibt_body]
-    ready = ready_zeilen(text)
+    stellen = ausfuehrungsstellen(text, datei)
+    body = [stelle for stelle in stellen if stelle.id == BODY_OPERATION]
+    titel = [stelle for stelle in stellen if stelle.id == TITEL_OPERATION]
+    ready = [
+        stelle
+        for stelle in stellen
+        if stelle.id == STATUS_OPERATION and READY in stelle.rest
+    ]
 
     befunde: list[str] = []
     if not titel:
         befunde.append(
-            f"{datei}: kein `gh issue edit --title`-Aufruf gefunden. Ohne ihn ist die "
-            "Reihenfolge-Aussage leer wahr - der Ablauf schaerft den Issue-Titel nicht mehr."
+            f"{datei}: keine Ausfuehrungsstelle von `{TITEL_OPERATION}` gefunden. Ohne sie ist "
+            "die Reihenfolge-Aussage leer wahr - der Ablauf schaerft den Issue-Titel nicht mehr. "
+            "Eine Ausfuehrungsstelle nennt ihre ID zeilenanfangs-verankert in Backticks."
         )
     if not body:
         befunde.append(
-            f"{datei}: kein `gh issue edit --body-file`-Aufruf gefunden. Der Body ist die "
+            f"{datei}: keine Ausfuehrungsstelle von `{BODY_OPERATION}` gefunden. Der Body ist die "
             "fachliche Arbeit des Ablaufs; ohne ihn ist die Reihenfolge gegenstandslos."
         )
     if not titel or not body:
@@ -176,16 +237,16 @@ def reihenfolge_verstoesse(text: str, datei: str = "<text>") -> list[str]:
 
     if not body[0].zeile < titel[0].zeile:
         befunde.append(
-            f"{titel[0].fundstelle}: der Titel-Aufruf steht nicht hinter dem Body-Aufruf "
+            f"{titel[0].fundstelle}: `{TITEL_OPERATION}` steht nicht hinter `{BODY_OPERATION}` "
             f"({body[0].fundstelle}). Scheitert der Titel, soll der geschaerfte Body bereits am "
-            "Issue stehen; ein kombinierter Aufruf haette diese Teilbarkeit nicht."
+            "Issue stehen."
         )
-    zu_frueh = [zeile for zeile in ready if zeile <= titel[0].zeile]
+    zu_frueh = [stelle.zeile for stelle in ready if stelle.zeile <= titel[0].zeile]
     if zu_frueh:
         befunde.append(
-            f"{titel[0].fundstelle}: der Titel-Aufruf steht nicht vor jedem Statuswechsel auf "
-            f"`Ready` (Zeile(n) {zu_frueh}). Scheitert er, darf das Issue `Ready` nicht mehr "
-            "erreichen."
+            f"{titel[0].fundstelle}: `{TITEL_OPERATION}` steht nicht vor jeder "
+            f"Ausfuehrungsstelle von `{STATUS_OPERATION}` mit Wert {READY} (Zeile(n) "
+            f"{zu_frueh}). Scheitert der Titel, darf das Issue `Ready` nicht mehr erreichen."
         )
     return befunde
 
@@ -381,41 +442,41 @@ def test_ein_suchraum_ohne_issue_aufruf_scheitert_laut_statt_still() -> None:
         aufrufe_im_abbild({"skills/x/SKILL.md": "Nur Prosa, kein Issue-Aufruf.\n"})
 
 
-_BODY_ZEILE = f"gh issue edit <NNN> --repo {REPO} --body-file <pfad>"
-_TITEL_ZEILE = f'gh issue edit <NNN> --repo {REPO} --title "$(cat <titel-datei>)"'
-_READY_ZEILE = (
-    'gh project item-edit 8 --owner TheRealKoller --url <url> --field "Status" --value "Ready"'
-)
+_BODY_STELLE = f"- `{BODY_OPERATION}`"
+_TITEL_STELLE = f"- `{TITEL_OPERATION}`"
+_READY_STELLE = f"- `{STATUS_OPERATION}` mit Wert {READY}"
+_IN_PROGRESS_STELLE = f"- `{STATUS_OPERATION}` mit Wert `In Progress`"
 
 
 def test_die_erwartete_kette_gilt_nicht_als_verstoss() -> None:
-    text = "\n".join([_BODY_ZEILE, _TITEL_ZEILE, _READY_ZEILE]) + "\n"
+    text = "\n".join([_BODY_STELLE, _TITEL_STELLE, _READY_STELLE]) + "\n"
 
     assert reihenfolge_verstoesse(text, "refinement.md") == []
 
 
-def test_prosa_vor_dem_body_befehl_kehrt_die_reihenfolge_nicht_um() -> None:
-    """Im Skill-Text stehen `--title` und `--body-file` weit vor den eigentlichen Befehlen."""
+def test_prosa_ueber_die_operationen_kehrt_die_reihenfolge_nicht_um() -> None:
+    """Im Skill-Text stehen beide IDs auch in Fliesstext, weit vor den Ausfuehrungsstellen."""
     text = (
-        "Lege selbst ein Issue an (`gh issue create` mit `--title` und `--body-file`).\n"
-        + "\n".join([_BODY_ZEILE, _TITEL_ZEILE, _READY_ZEILE])
+        f"Scheitert `{TITEL_OPERATION}`, entfaellt `{STATUS_OPERATION}` mit Wert {READY}.\n"
+        f"Der Body (`{BODY_OPERATION}`) steht bewusst vorn.\n"
+        + "\n".join([_BODY_STELLE, _TITEL_STELLE, _READY_STELLE])
         + "\n"
     )
 
     assert reihenfolge_verstoesse(text, "refinement.md") == []
 
 
-def test_ein_titel_aufruf_vor_dem_body_aufruf_wird_gemeldet() -> None:
-    text = "\n".join([_TITEL_ZEILE, _BODY_ZEILE, _READY_ZEILE]) + "\n"
+def test_eine_titel_stelle_vor_der_body_stelle_wird_gemeldet() -> None:
+    text = "\n".join([_TITEL_STELLE, _BODY_STELLE, _READY_STELLE]) + "\n"
 
     befunde = reihenfolge_verstoesse(text, "refinement.md")
 
     assert len(befunde) == 1
-    assert "nicht hinter dem Body-Aufruf" in befunde[0]
+    assert "nicht hinter" in befunde[0]
 
 
-def test_ein_titel_aufruf_hinter_der_ready_zeile_wird_gemeldet() -> None:
-    text = "\n".join([_BODY_ZEILE, _READY_ZEILE, _TITEL_ZEILE]) + "\n"
+def test_eine_titel_stelle_hinter_der_ready_stelle_wird_gemeldet() -> None:
+    text = "\n".join([_BODY_STELLE, _READY_STELLE, _TITEL_STELLE]) + "\n"
 
     befunde = reihenfolge_verstoesse(text, "refinement.md")
 
@@ -423,33 +484,49 @@ def test_ein_titel_aufruf_hinter_der_ready_zeile_wird_gemeldet() -> None:
     assert "`Ready`" in befunde[0]
 
 
-def test_ein_geloeschter_titel_aufruf_wird_gemeldet() -> None:
+def test_eine_geloeschte_titel_stelle_wird_gemeldet() -> None:
     """Ohne diese Zusicherung waere die Reihenfolge-Aussage leer wahr."""
-    text = "\n".join([_BODY_ZEILE, _READY_ZEILE]) + "\n"
+    text = "\n".join([_BODY_STELLE, _READY_STELLE]) + "\n"
 
     befunde = reihenfolge_verstoesse(text, "refinement.md")
 
     assert len(befunde) == 1
-    assert "kein `gh issue edit --title`-Aufruf" in befunde[0]
+    assert TITEL_OPERATION in befunde[0]
 
 
-def test_ein_geloeschter_body_aufruf_wird_gemeldet() -> None:
-    text = "\n".join([_TITEL_ZEILE, _READY_ZEILE]) + "\n"
-
-    befunde = reihenfolge_verstoesse(text, "refinement.md")
-
-    assert len(befunde) == 1
-    assert "kein `gh issue edit --body-file`-Aufruf" in befunde[0]
-
-
-def test_ein_kombinierter_aufruf_wird_gemeldet() -> None:
-    """Titel und Body in einem Befehl: der Fehlschlag waere nicht mehr teilbar."""
-    text = (
-        f'gh issue edit <NNN> --repo {REPO} --body-file <pfad> --title "$(cat <titel-datei>)"\n'
-        f"{_READY_ZEILE}\n"
-    )
+def test_eine_geloeschte_body_stelle_wird_gemeldet() -> None:
+    text = "\n".join([_TITEL_STELLE, _READY_STELLE]) + "\n"
 
     befunde = reihenfolge_verstoesse(text, "refinement.md")
 
     assert len(befunde) == 1
-    assert "nicht hinter dem Body-Aufruf" in befunde[0]
+    assert BODY_OPERATION in befunde[0]
+
+
+def test_ein_anderer_statuswert_gilt_nicht_als_ready_gate() -> None:
+    """`In Progress` ist derselbe Operationsname - nur der Wert trennt die beiden Stellen."""
+    text = "\n".join([_BODY_STELLE, _IN_PROGRESS_STELLE, _TITEL_STELLE, _READY_STELLE]) + "\n"
+
+    assert reihenfolge_verstoesse(text, "refinement.md") == []
+
+
+@pytest.mark.parametrize(
+    "zeile",
+    [
+        f"`{BODY_OPERATION}`",
+        f"  `{BODY_OPERATION}`",
+        f"- `{BODY_OPERATION}`",
+        f"* `{BODY_OPERATION}`",
+        f"3. `{BODY_OPERATION}`",
+    ],
+)
+def test_eine_ausfuehrungsstelle_wird_in_jeder_schreibform_gelesen(zeile: str) -> None:
+    stellen = ausfuehrungsstellen(zeile + "\n", "skill.md")
+
+    assert [stelle.id for stelle in stellen] == [BODY_OPERATION]
+
+
+def test_eine_erwaehnung_im_fliesstext_ist_keine_ausfuehrungsstelle() -> None:
+    text = f"Scheitert `{TITEL_OPERATION}`, gib die Meldung unveraendert weiter.\n"
+
+    assert ausfuehrungsstellen(text, "skill.md") == []

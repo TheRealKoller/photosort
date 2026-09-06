@@ -37,6 +37,13 @@ verbotene Vorabmessung und entginge einer Alternation aus `issue|pr|project|api`
 `gh project`. Eine Alternation ohne Wortgrenze etikettierte jeden Board-Befehl als PR-Befehl -
 die Aussage "ist ein GitHub-Aufruf" bliebe richtig, die Fundstellen-Meldung wuerde falsch.
 
+**Mutationsnachweis, je Musterfamilie gefuehrt.** Der triviale Rot-Lauf auf dem Bestand vor dem
+Umbau belegt nichts: Er faerbt rot, weil noch 88 Fundstellen dastehen, nicht weil das Muster
+taugt. Der tragende Nachweis kam deshalb **nach** Gruen, am 2026-09-06: je eine `gh pr view`-Zeile
+und ein `mcp__github__…`-Token probeweise in `review-security/SKILL.md` eingesetzt - **beide**
+faerbten `test_kein_github_zugriff_ausserhalb_des_katalogs` rot, danach zurueckgenommen. Wer das
+Muster aendert, wiederholt diese Probe, statt sie zu glauben.
+
 Kein echtes `gh`, kein Netzwerk, keine MCP-Werkzeuge - gelesen werden ausschliesslich Dateien
 dieses Repositories.
 """

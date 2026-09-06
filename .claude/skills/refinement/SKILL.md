@@ -159,6 +159,6 @@ wiederholbar und lokal nachzuholen.
 - <Operations-ID>: <Nachhol-Zeile aus dem Katalogeintrag, mit den Nummern dieses Laufs>
 ```
 
-`board-prioritaet-setzen` kommt nur dann zusätzlich in die Liste, wenn das Feld beim Lesen leer war — sonst gab es dort nichts nachzuholen. `issue-titel-schreiben` kommt dort **nie** vor (siehe „Titel prüfen"). Dasselbe Muster gilt sinngemäß für den Verwerfen-Pfad aus Schritt 5, falls `issue-verwerfen` scheitert.
+Der Prioritäts-Eintrag (`board-prioritaet-setzen`) kommt nur dann zusätzlich in die Liste, wenn das Feld beim Lesen leer war — sonst gab es dort nichts nachzuholen. Der Titel-Eintrag (`issue-titel-schreiben`) kommt dort **nie** vor (siehe „Titel prüfen"). Dasselbe Muster gilt sinngemäß für den Verwerfen-Pfad aus Schritt 5, falls `issue-verwerfen` scheitert.
 
 In den Issue-Kommentar gelangen ausschließlich die Operations-ID, der aus den eigenen Nummern gebildete Befehl und der feste Satz oben — **keine** Fehlermeldung, kein sonstiger Fremdtext (Härtungsregel 4.3).
