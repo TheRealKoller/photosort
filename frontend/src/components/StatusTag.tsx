@@ -40,7 +40,7 @@ export function StatusTag({ status, className }: StatusTagProps) {
       // Radius 6px statt der frueheren vollen Pille - die einzige verbleibende Pillenform ist der
       // Kategorie-Chip.
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-xs font-semibold',
+        'inline-flex items-center gap-1 rounded-sm border px-2 py-1 text-xs font-semibold',
         TONE_CLASSES[status],
         className
       )}

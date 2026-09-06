@@ -111,7 +111,7 @@ export function ProjectPipelineLayout() {
           Fliesstext, und darf die Zeile nicht sprengen. */}
       <header className="min-w-0">
         <h1 className="truncate text-xl sm:text-2xl">{project.name}</h1>
-        <p className="truncate font-mono text-[10px] text-text">{project.opencloud_path}</p>
+        <p className="truncate font-mono text-xs text-text-muted">{project.opencloud_path}</p>
       </header>
 
       <Stepper projectId={project.id} project={project} states={states} activeStepId={step} />
