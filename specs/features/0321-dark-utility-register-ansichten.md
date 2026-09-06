@@ -1,6 +1,6 @@
 # 0321 - Design-System "Dark Utility Register": Ansichten nachziehen (Stufe 2)
 
-**Status:** Accepted
+**Status:** Implemented ([PR #337](https://github.com/TheRealKoller/photosort/pull/337))
 **Erstellt:** 2026-09-05
 **Bezug:** [Issue #321](https://github.com/TheRealKoller/photosort/issues/321)
 
@@ -43,7 +43,7 @@ Bewusst gegen die Empfehlung entschieden, je Ansicht einen eigenen PR zu schneid
 
 ### Abnahme
 
-- [ ] Alle vierzehn Ansichten sind in 360px und 1280px sichtgeprüft und **mit Screenshots im Pull Request belegt** — zwei Screenshots je Ansicht, als Liste geführt; eine Auswahl reicht nicht. Sie entstehen ausschließlich gegen den synthetischen Demo-Stand (siehe "Security").
+- [x] Alle vierzehn Ansichten sind in 360px und 1280px **sichtgeprüft**, ausschließlich gegen den synthetischen Demo-Stand (siehe "Security"), und die Prüfung ist in der PR-Beschreibung benannt. **Der ursprünglich geforderte Screenshot-Beleg im Pull Request entfällt** (Entscheidung Daniels vom 2026-09-06): Die Kommandozeile kann keine Bilder an einen Pull Request hängen — das Kriterium wäre nur über die Weboberfläche erfüllbar gewesen und damit bei jeder künftigen Umsetzung offen geblieben. Die Sichtprüfung selbst bleibt unverändert Pflicht.
 - [ ] Die drei Bewertungszustände sind im Graustufentest an Karte und Kennzeichen unterscheidbar. **Abnahmekriterium wie im UI/UX-Abschnitt festgelegt:** Wort und Symbolsilhouette sind im Graustufen-Screenshot ablesbar, ohne die Farbfläche heranzuziehen; abgeschnittene Kennzeichentexte sind ein Fehlschlag, kein Randfall.
 - [ ] Die Design-Dokumentation des Projekts gibt den neuen Stand wieder.
 
@@ -642,6 +642,8 @@ Im `spec-writer`-Ablauf getroffen:
 - **Vierte statische Prüfung ergänzt (`opacity-*` fundstellengenau).** Der Architektur-Abschnitt sah drei vor; der `test-engineer` hat eine vierte vorgeschlagen und die Entscheidung an den `spec-writer` zurückgegeben. Übernommen: Entscheidung 4 operationalisiert die bindende ADR 0055 Abweichung 7 und wäre sonst nur durch einen einmaligen Ad-hoc-Graustufen-Lauf gedeckt, also danach dauerhaft ungeschützt; der Helfer existiert nach Etappe 1 ohnehin, die Freigabeliste hat vier bis fünf Einträge. Das ist eine technische Detailentscheidung innerhalb einer akzeptierten Spec und lag damit beim `spec-writer`, nicht bei Daniel.
 - **Drei Befunde des `test-engineer`**, die die Story nicht benennt: (a) `e2e/tests/no-horizontal-scroll.spec.ts` erfasst heute weder die Foto-Detailseite noch den Foto-Vergleich — ausgerechnet die Detailseite trägt die umbrechende Bewertungsleiste; beide Routen kommen in die bestehende Tabelle, die Detailseite mit einer Nicht-Überschriften-Vorbedingung, weil sie bewusst kein `h1` hat. (b) Die sichtbare Tastenziffer lebt in `RatingButtons.tsx`, die Belegung in `PhotoDetailPage.tsx` — sie können stumm auseinanderlaufen, deshalb die Tabelle über alle drei Tasten. (c) Genau ein bestehender Test fällt planmäßig weg (`pointer-events-none` am Bewertungs-Overlay) und wird ersetzt, nicht gelöscht.
 - **`security-engineer` konsultiert (Schritt 3).** Ergebnis: sicherheitsrelevant mit engem Zuschnitt, keine neue Bedrohungsklasse. Der Dateiname ist kein Erstkontakt (er steht heute schon in `alt` und `aria-label`), neu ist nur die Sichtbarkeit als Fließtext; das Verbot von `dangerouslySetInnerHTML` bleibt tragende Voraussetzung von ADR 0005, abgesichert durch einen Textknoten-Test. Der eigentliche Zugewinn ist die **Screenshot-Hygiene**: Die Story macht Dateinamen und Ordnerstruktur erstmals im Foto-Raster sichtbar und verlangt im selben Zug Screenshots im öffentlichen Pull Request — der CI-Schritt gegen Bilddateien greift nur im Arbeitsbaum, nicht an PR-Anhängen. Der Nachtrag am Sicherheitskonzept `specs/architecture/0003-securitykonzept.md` steht in Etappe 5.
+
+- **Screenshot-Beleg im Pull Request — Rückfrage an Daniel, beantwortet am 2026-09-06:** entfällt. Das Abnahmekriterium ist auf die Sichtprüfung reduziert. Anlass war ein handfestes Werkzeugproblem: `gh` kann keine Bilder an einen Pull Request hängen, das geht ausschließlich über die Weboberfläche — ein Kriterium, das die Umsetzung selbst nie erfüllen kann, wäre bei jeder künftigen Story offen geblieben und hätte die Abnahme entwertet. Die Sichtprüfung aller vierzehn Ansichten in beiden Breiten und der Graustufen-Lauf sind unverändert Pflicht und haben stattgefunden. Derselbe Satz war im Design-System-Dokument als „mit Screenshot-Belegen im Pull Request" festgehalten und wurde mitgezogen — gefunden vom Copilot-Review, das die Aussage dort gegen den PR-Stand geprüft hat.
 
 ## Offene Fragen
 
