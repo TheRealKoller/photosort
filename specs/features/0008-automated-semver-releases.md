@@ -1,6 +1,6 @@
 # 0008 - Automatisierte SemVer-Releases bei Merge nach `main`
 
-**Status:** Implemented
+**Status:** Implemented — der Self-Merge-Teil ist seit Spec [`0178`](./0178-release-workflow-ohne-selbstmerge.md) / ADR [`0060`](../decisions/0060-release-pr-merge-von-hand-auto-merge-entfaellt.md) (2026-09-06) **überholt**: Der Release-PR wird von Daniel von Hand gemergt, der Auto-Merge-Step ist ersatzlos entfallen. Alles Übrige dieser Spec gilt unverändert.
 **Erstellt:** 2026-07-29
 **Bezug:** `idea-sharpener`-Gespräch mit Daniel, 2026-07-29. ADR: [`decisions/0008-automated-semver-releases.md`](../decisions/0008-automated-semver-releases.md). Umgesetzt in [PR #46](https://github.com/TheRealKoller/photosort/pull/46), Feature-Branch `feature/0008-automated-semver-releases`. Bewusst noch offene, nicht automatisierbare Post-Merge-Schritte (siehe Akzeptanzkriterien/Umsetzungsreihenfolge): PAT-Erstellung (`RELEASE_PLEASE_TOKEN`), Bootstrap-Tag `v0.1.0` + GitHub-Release, Tag-Protection-Ruleset für `v*`.
 
@@ -23,7 +23,7 @@ Als Daniel (alleiniger Entwickler und Betreiber von PhotoSort) möchte ich, dass
 - [x] `frontend/package.json` (aktuell `0.0.0`) und `frontend/package-lock.json` werden einmalig auf `0.1.0` gebracht — synchron zu `backend/pyproject.toml` (bereits `0.1.0`).
 - [x] `release-please-config.json` (Repo-Root) und `.release-please-manifest.json` (Repo-Root, Bootstrap-Inhalt `{".": "0.1.0"}`) werden gemäß ADR 0008 angelegt (`release-type: "simple"`, `extra-files` für `backend/pyproject.toml` und `frontend/package.json`/`package-lock.json`, `bump-minor-pre-major: false`, `bump-patch-for-minor-pre-major: false`, `include-component-in-tag: false`).
 - [x] Neuer Workflow `.github/workflows/release-please.yml` (Trigger `push: branches: [main]`, `permissions: contents: write, issues: write, pull-requests: write`) läuft additiv zu `ci.yml` — `ci.yml` selbst bleibt unverändert. (`issues: write` bei der Copilot-Review-Runde ergänzt — Copilot bemängelte zu Recht, dass der ursprüngliche `permissions:`-Block ohne `issues: write` unvollständig/missverständlich war, siehe `## Security`.)
-- [x] Repo-Setting `allow_auto_merge` wird von `false` auf `true` gesetzt.
+- [x] Repo-Setting `allow_auto_merge` wird von `false` auf `true` gesetzt. (Bleibt seit Spec 0178 unverändert `true`, wird aber von keiner Automatisierung mehr genutzt — es ist eine Fähigkeit, die pro PR von einem Menschen aktiviert werden muss, kein Pfad. Siehe ADR 0060 Punkt 4.)
 - [ ] Fine-grained PAT (`RELEASE_PLEASE_TOKEN`) wird erstellt (Scope: nur `TheRealKoller/photosort`, Permissions `Contents: Read & write`, `Pull requests: Read & write`, `Issues: Read & write`, `Metadata: Read`, mit Ablaufdatum) und als Repo-Secret hinterlegt. (`Issues: Read & write` bei der Umsetzung ergänzt — `release-please` verwaltet seine Zustands-Labels am Release-PR über den Issues-Label-Endpunkt, siehe ADR 0008, Abschnitt "Token/Berechtigungen".) **Offen — erfordert manuelle Aktion von Daniel im GitHub-UI, kein Agent kann fine-grained PATs automatisiert erstellen.**
 - [ ] Nach Merge dieser Umsetzung: Tag `v0.1.0` + GitHub-Release "v0.1.0" wird manuell auf den Merge-Commit gesetzt (Bootstrap-Anker, damit `release-please` nicht die gesamte bisherige Commit-Historie auswertet). Bestätigt mit Daniel: `v0.1.0` ist der Anker, der nächste automatisch erzeugte Release baut darauf auf (z.B. `v0.1.1`/`v0.2.0`), ist nicht selbst nochmal `v0.1.0`. **Offen — nach Merge dieses PRs auszuführen.**
 - [x] `googleapis/release-please-action` wird auf einen konkreten Commit-SHA gepinnt (Kommentar mit der entsprechenden `v4.x.x`-Version), nicht auf den beweglichen Tag `v4`. (`5c625bfb5d1ff62eadeeb3772007f7f66fdcf071` = Tag `v4.4.1`, verifiziert per `gh api`.)
@@ -32,7 +32,7 @@ Als Daniel (alleiniger Entwickler und Betreiber von PhotoSort) möchte ich, dass
 
 - [ ] Ein PR-Merge nach `main` mit mind. einem `feat:`/`fix:`/`BREAKING CHANGE`-Commit seit dem letzten Release führt dazu, dass `release-please` einen offenen Release-PR anlegt bzw. aktualisiert (korrekter SemVer-Bump, korrekt gruppierter Changelog-Eintrag). **Nicht vorab prüfbar — Workflow triggert ausschließlich auf `push: branches: [main]`, siehe Teststrategie; Nachweis erfolgt am ersten echten `feat:`/`fix:`-Merge nach diesem PR.**
 - [x] Ein PR-Merge nach `main`, der ausschließlich `docs:`/`chore:`/`test:`-Commits enthält, löst **keinen** neuen/aktualisierten Release-PR aus. (Konfigurativ durch `release-please`-Standardverhalten sichergestellt; PR-Titel dieses Umsetzungs-PRs bewusst `chore:` gewählt, damit dessen eigener Merge zugleich als Negativ-Probe dient.)
-- [ ] Der offene Release-PR wird automatisch gemerged (GitHubs natives Auto-Merge), sobald `required_status_checks` (backend/frontend/docker-compose-check) grün sind und `required_conversation_resolution` erfüllt ist (keine offenen Konversationen) — ohne Klick von Daniel. **Nicht vorab prüfbar, siehe oben.**
+- [ ] ~~Der offene Release-PR wird automatisch gemerged (GitHubs natives Auto-Merge), sobald `required_status_checks` (backend/frontend/docker-compose-check) grün sind und `required_conversation_resolution` erfüllt ist (keine offenen Konversationen) — ohne Klick von Daniel.~~ **Entfallen mit Spec [`0178`](./0178-release-workflow-ohne-selbstmerge.md) / ADR [`0060`](../decisions/0060-release-pr-merge-von-hand-auto-merge-entfaellt.md) (2026-09-06):** Dieses Kriterium wurde nie erfüllt — der Step riss durch einen `env:`-Ausdruck, den GitHub auch bei `if: false` auswertet, jeden Lauf ins Rot. Ersatzlos gestrichen statt repariert; Daniel mergt den Release-PR von Hand.
 - [ ] Merge des Release-PRs erzeugt automatisch Git-Tag + GitHub-Release mit generiertem Changelog. **Nicht vorab prüfbar, siehe oben.**
 - [x] Für Release-PRs wird bewusst **kein** Copilot-Review angefordert (dokumentierte Ausnahme von der sonstigen CLAUDE.md-Konvention, siehe ADR 0008/Security-Abschnitt). (Workflow fordert kein Copilot-Review an; dieser Umsetzungs-PR selbst ist kein Release-PR und bekommt regulär eines.)
 
@@ -57,7 +57,7 @@ Keines — reine GitHub-Workflow-/Repo-Konfiguration, keine Berührung mit der P
 
 ### Neue/geänderte Dateien
 
-- **Neu:** `.github/workflows/release-please.yml` — additiv zu `ci.yml` (unverändert). Zwei Schritte: (1) `release-please-action` pflegt den Release-PR bzw. erzeugt bei dessen Merge Tag + GitHub-Release; (2) `gh pr merge --auto --squash` aktiviert Auto-Merge auf dem Release-PR.
+- **Neu:** `.github/workflows/release-please.yml` — additiv zu `ci.yml` (unverändert). Zwei Schritte: (1) `release-please-action` pflegt den Release-PR bzw. erzeugt bei dessen Merge Tag + GitHub-Release; ~~(2) `gh pr merge --auto --squash` aktiviert Auto-Merge auf dem Release-PR.~~ **Schritt (2) entfallen mit Spec 0178 / ADR 0060 (2026-09-06)** — der Workflow besteht seitdem aus genau einem Step.
 - **Neu:** `release-please-config.json`, `.release-please-manifest.json` (Repo-Root) — siehe ADR 0008 für vollständigen Inhalt.
 - **Neu (ab erstem automatischem Release):** `CHANGELOG.md` (Repo-Root), vom Tool generiert.
 - **Geändert (einmalig, Bootstrap):** `frontend/package.json`/`package-lock.json` auf `0.1.0`. Danach werden beide Dateien **nicht mehr manuell** gepflegt.
@@ -136,15 +136,15 @@ Anders als bei Spec 0007 lässt sich das Kernverhalten nicht an einem Wegwerf-Br
 
 - **Negativ-Probe:** Der Merge der Umsetzungs-PR selbst (Commit-Typ `chore:`/`ci:`) löst keinen Release-PR aus.
 - **Positiv-Probe:** Der nächste ohnehin anfallende reguläre `feat:`/`fix:`-Merge — Release-PR entsteht, SemVer-Bump und Changelog sind korrekt.
-- **Self-Merge vs. Branch Protection:** am selben ersten echten Release-PR beobachtet — bleibt er blockiert bei rotem CI/offener Konversation, mergt er sich nach Grün-/Auflösen selbst? `mergeable_state` per `gh api` vor/nach vergleichen (GitHubs eigene Einschätzung statt Selbstbericht).
+- ~~**Self-Merge vs. Branch Protection:** am selben ersten echten Release-PR beobachtet — bleibt er blockiert bei rotem CI/offener Konversation, mergt er sich nach Grün-/Auflösen selbst? `mergeable_state` per `gh api` vor/nach vergleichen (GitHubs eigene Einschätzung statt Selbstbericht).~~ **Entfallen mit Spec 0178 / ADR 0060 (2026-09-06)** — es gibt keinen Self-Merge mehr, der die Branch Protection respektieren müsste.
 
 **3. Bootstrap-Verifikation:** Tag `v0.1.0` + GitHub-Release nach Merge gesetzt; Versions-Sync in `pyproject.toml`/`package.json`/`package-lock.json` geprüft; der erste automatisch erzeugte Release baut auf `v0.1.0` auf (nicht erneut `v0.1.0`, nicht aus der gesamten Repo-Historie hochgerechnet).
 
 **4. Dokumentations-Review:** ADR 0008, diese Spec, Testkonzept-/Securitykonzept-Ergänzungen vollständig und konsistent.
 
-**5. Rollback-/Fehlerfall:** Kein automatisierter Alarm für falschen Versions-Bump oder hängenden Auto-Merge — bewusste, dokumentierte Lücke für ein Solo-Projekt ohne Release-SLA; Erkennung bleibt manueller Blick ins Repo (Daniel erhält ohnehin GitHub-Notifications für neue PRs). Ad-hoc-Korrektur (Tag löschen/neu setzen, Release-Notes editieren) statt eigenes Rollback-Tooling.
+**5. Rollback-/Fehlerfall:** Kein automatisierter Alarm für falschen Versions-Bump oder ~~hängenden Auto-Merge~~ (der Auto-Merge-Anteil ist seit Spec 0178 / ADR 0060 gegenstandslos — es gibt keinen Auto-Merge mehr, der hängen könnte; der Release-PR wartet per Entwurf auf Daniels Merge) — bewusste, dokumentierte Lücke für ein Solo-Projekt ohne Release-SLA; Erkennung bleibt manueller Blick ins Repo (Daniel erhält ohnehin GitHub-Notifications für neue PRs). Ad-hoc-Korrektur (Tag löschen/neu setzen, Release-Notes editieren) statt eigenes Rollback-Tooling.
 
-`specs/architecture/0002-testkonzept.md` wurde um einen Absatz ergänzt: das 3-Stufen-Muster aus Spec 0007 gilt nicht uneingeschränkt, sobald der zu prüfende Workflow selbst nur auf `push: branches: [main]` triggert (kein Wegwerf-Branch möglich) — Ersatzmuster: realer erster Lauf als Negativ-/Positiv-Probe plus verschärfte Vorab-Config-Validierung. Ergänzt außerdem unter "Bekannte Lücken": fehlendes Monitoring für hängende Release-Auto-Merges/fehlerhafte Versions-Bumps.
+`specs/architecture/0002-testkonzept.md` wurde um einen Absatz ergänzt: das 3-Stufen-Muster aus Spec 0007 gilt nicht uneingeschränkt, sobald der zu prüfende Workflow selbst nur auf `push: branches: [main]` triggert (kein Wegwerf-Branch möglich) — Ersatzmuster: realer erster Lauf als Negativ-/Positiv-Probe plus verschärfte Vorab-Config-Validierung. Ergänzt außerdem unter "Bekannte Lücken": fehlendes Monitoring für hängende Release-Auto-Merges/fehlerhafte Versions-Bumps. (Beide Ergänzungen sind mit Spec 0178 nachgezogen worden — das Ersatzmuster hat eine zweite Anwendung bekommen, der Auto-Merge-Anteil der Lücke ist gegenstandslos.)
 
 ## Offene Fragen
 
@@ -162,5 +162,5 @@ Die Interpretation "Startversion v0.1.0 = Bootstrap-Anker, ab dem automatisch we
 - Getrennte Versionierung von Backend und Frontend.
 - Migration von PAT zu einer GitHub App (erst zu revisitieren, falls ein zweiter menschlicher Collaborator hinzukommt).
 - Isoliertes Test-Repo/Fork-Setup zur Vorab-Erprobung (siehe Teststrategie — bewusst nicht gewählt).
-- Automatisierter Alarm/Monitoring für hängende Auto-Merges oder fehlerhafte Versions-Bumps.
+- Automatisierter Alarm/Monitoring für ~~hängende Auto-Merges oder~~ fehlerhafte Versions-Bumps. (Der Auto-Merge-Anteil ist mit Spec 0178 / ADR 0060 gegenstandslos; der Versions-Bump-Anteil bleibt bewusst offen.)
 - Rückwirkende Release-Erstellung für die bisherige Commit-Historie (Specs 0001–0007) — Versionierung beginnt bei `v0.1.0` als Bootstrap-Anker.
