@@ -226,6 +226,35 @@ MESSBEGRIFFE = (
 )
 
 
+# --- Zitierte Abschnitte des Katalogs ---------------------------------------------------
+
+# Ein Verweis der Form "Skill `github-access`, Abschnitt „X“" ist nur dann einer, dem jemand
+# folgen kann, wenn X tatsaechlich eine Ueberschrift des Katalogs ist. Ein veralteter
+# Abschnittstitel ist in jeder Zeitform falsch - anders als ein veralteter Pfad in einer
+# historischen Momentaufnahme gibt es hier keine "war damals richtig"-Lesart. Genau diese Klasse
+# ist beim Umbau zweimal aufgetreten (einmal schon vor diesem Branch).
+#
+# Suchraum ist der **lebende** Anweisungsraum: `.claude/**`, `CLAUDE.md`, `docs/**`. Bewusst
+# **nicht** `specs/`: Dort stehen eingefrorene Momentaufnahmen, deren Abschnittsnamen zu ihrer
+# Zeit richtig waren; ein Textscan koennte lebende und historische Erwaehnung dort nicht trennen
+# und wuerde zum Umschreiben von Geschichte zwingen.
+ZITAT_SUCHRAUM = (".claude", "CLAUDE.md", "docs")
+_ABSCHNITTS_ZITAT = re.compile(r"(?:Abschnitt|unter)\s+[„\"]([^„\"“”]+)[“\"]")
+_UEBERSCHRIFT = re.compile(r"^#{2,3}\s+(?P<titel>.+?)\s*$", re.MULTILINE)
+
+# --- Der Stichproben-Audit des Perspektiven-Sets -----------------------------------------
+
+# Die Pflicht, das Perspektiven-Protokoll des vorigen Features gegen dessen realen Diff zu
+# halten. Sie stand bis Spec 0339 in `review-tests` - einer Datei, die mit dieser Story die
+# Stufe "kein GitHub-Zugriff" bekommen hat. Der Fehler war nicht die Stufe, sondern dass eine
+# Pflicht in einer Datei lag, die sie nicht mehr erfuellen darf; gefunden wurde er erst, als der
+# Audit im Review dieser Story selbst ausfiel.
+#
+# Geprueft wird deshalb die Platzierung: **genau eine** Datei traegt die Pflicht, und sie ist
+# nicht auf "kein GitHub-Zugriff" eingestuft. Ein Verweis darauf ("liegt beim Orchestrator")
+# nennt den Marker nicht und zaehlt nicht mit.
+AUDIT_MARKER = "Skip-/Perspektiven-Set des vorigen Features"
+
 @dataclass(frozen=True)
 class Fund:
     """Ein einzelnes Vorkommen eines GitHub-Zugriffs, so wie es in einer Datei steht."""
@@ -453,6 +482,43 @@ def eingestufte_dateien(abbild: Mapping[str, str]) -> list[str]:
         for datei in abbild
         if datei.endswith("/SKILL.md") or datei.startswith(".claude/agents/")
     )
+
+
+def zitat_suchraum(wurzel: Path = REPO_WURZEL) -> dict[str, str]:
+    """Duenner Leser: der lebende Anweisungsraum - `.claude/**`, `CLAUDE.md`, `docs/**`."""
+    ergebnis = subprocess.run(
+        ["git", "ls-files", "-z", "--", *ZITAT_SUCHRAUM],
+        cwd=wurzel,
+        capture_output=True,
+        check=True,
+    )
+    pfade = [pfad.decode("utf-8") for pfad in ergebnis.stdout.split(b"\0") if pfad]
+    return {
+        pfad: (wurzel / pfad).read_text(encoding="utf-8")
+        for pfad in pfade
+        if pfad.endswith(".md")
+    }
+
+
+def katalog_ueberschriften(text: str) -> set[str]:
+    """Reine Funktion: die `##`/`###`-Ueberschriften des Katalogs, ohne Auszeichnung."""
+    return {treffer.group("titel").strip() for treffer in _UEBERSCHRIFT.finditer(text)}
+
+
+def zitierte_abschnitte(abbild: Mapping[str, str]) -> list[tuple[str, str]]:
+    """Reine Funktion: je Zitat eines Katalog-Abschnitts die Fundstelle und der genannte Titel.
+
+    Gezaehlt wird nur, was auf einer Zeile steht, die den Katalog ueberhaupt nennt - sonst
+    faenge der Scan jedes beliebige Abschnittszitat einer anderen Datei mit ein.
+    """
+    zitate: list[tuple[str, str]] = []
+    for datei in sorted(abbild):
+        for nummer, zeile in enumerate(abbild[datei].split("\n"), start=1):
+            if "github-access" not in zeile:
+                continue
+            for treffer in _ABSCHNITTS_ZITAT.finditer(zeile):
+                zitate.append((f"{datei}:{nummer}", treffer.group(1).strip()))
+    return zitate
 
 
 def suchraum(wurzel: Path = REPO_WURZEL) -> dict[str, str]:
@@ -941,3 +1007,82 @@ def test_ein_eintragsblock_endet_am_naechsten_abschnitt() -> None:
     assert len(eintraege) == 1
     assert "Haertungsregeln" not in eintraege[0].block
     assert form_verstoesse(eintraege) == []
+
+
+def test_jeder_zitierte_katalog_abschnitt_existiert() -> None:
+    zitate = zitierte_abschnitte(zitat_suchraum())
+    ueberschriften = katalog_ueberschriften(katalogtext())
+
+    assert zitate, (
+        "Kein einziges Abschnittszitat des Katalogs im lebenden Anweisungsraum gefunden. "
+        "Entweder verweist niemand mehr auf einen Abschnitt, oder das Zitatmuster ist kaputt - "
+        "dann prueft dieser Test lautlos nichts mehr."
+    )
+
+    # Praefix-Vergleich statt Gleichheit: Mehrere Ueberschriften des Katalogs tragen hinter
+    # einem Gedankenstrich einen erlaeuternden Zusatz ("Ein Fehlschlag bleibt sichtbar - das
+    # Muster (einmal vollstaendig, hier)"), den ein Zitat nicht mitschleppen muss. Ein wirklich
+    # veralteter Titel bleibt trotzdem rot: "Die Befehle", "Fehler zuerst behandeln" und
+    # "Verbindliche Regeln beim Einsetzen von Werten" sind Praefix keiner Ueberschrift.
+    tot = [
+        f"{fundstelle}: „{titel}“"
+        for fundstelle, titel in zitate
+        if not any(kopf.startswith(titel) for kopf in ueberschriften)
+    ]
+    assert not tot, (
+        f"Zitierter Abschnitt existiert im Katalog nicht: {'; '.join(tot)}. Vorhanden sind "
+        f"{sorted(ueberschriften)}. Ein Verweis 'Datei X, Abschnitt Y' traegt nur, solange Y "
+        "eine Ueberschrift von X ist."
+    )
+
+
+def test_ein_veralteter_abschnittstitel_wird_gemeldet() -> None:
+    abbild = {"a.md": "Regeln vollstaendig im Skill `github-access`, Abschnitt „Die Befehle“.\n"}
+
+    zitate = zitierte_abschnitte(abbild)
+
+    assert zitate == [("a.md:1", "Die Befehle")]
+    assert not any(k.startswith("Die Befehle") for k in katalog_ueberschriften(katalogtext()))
+
+
+def test_ein_abschnittszitat_ohne_katalogbezug_zaehlt_nicht() -> None:
+    """Sonst faenge der Scan jedes beliebige Abschnittszitat einer anderen Datei mit ein."""
+    abbild = {"a.md": "Siehe `specs/README.md`, Abschnitt „Lebenszyklus“.\n"}
+
+    assert zitierte_abschnitte(abbild) == []
+
+
+def test_der_stichproben_audit_steht_an_genau_einer_stelle() -> None:
+    """Die Pflicht darf nicht in einer Datei liegen, die sie nach ihrer Stufe nicht erfuellen darf.
+
+    Genau der Fehler, den diese Story eingefuehrt hatte: `review-tests` trug den Audit weiter,
+    verlor aber mit der Erlaubnisstufe das Recht, das er braucht.
+    """
+    abbild = suchraum()
+    traeger = sorted(datei for datei, text in abbild.items() if AUDIT_MARKER in text)
+
+    assert len(traeger) == 1, (
+        f"Der Stichproben-Audit ({AUDIT_MARKER!r}) steht in {len(traeger)} Dateien ({traeger}), "
+        "erwartet genau eine. Zwei Fundstellen sind zwei Zustaendigkeiten, null ist eine "
+        "verschwundene Pflicht."
+    )
+    stufe = [s for s in STUFEN if f"{STUFE_MARKER} {s}" in abbild[traeger[0]]]
+    assert stufe and stufe[0] != STUFE_KEINE, (
+        f"{traeger[0]} traegt den Stichproben-Audit, ist aber auf {stufe} eingestuft. Der Audit "
+        "braucht Zugriff auf das Protokoll des vorigen Features; eine Datei ohne jedes "
+        "Leserecht kann ihn strukturell nicht erfuellen."
+    )
+
+
+@pytest.mark.parametrize(
+    "titel", ["Die Befehle", "Fehler zuerst behandeln", "Verbindliche Regeln beim Einsetzen"]
+)
+def test_ein_abgeschaffter_abschnittstitel_ist_praefix_keiner_ueberschrift(titel: str) -> None:
+    """Gegenprobe zum Praefix-Vergleich: Er darf die drei realen Altfaelle nicht durchlassen."""
+    assert not any(kopf.startswith(titel) for kopf in katalog_ueberschriften(katalogtext()))
+
+
+def test_ein_zitat_ohne_den_erlaeuternden_zusatz_gilt_als_treffer() -> None:
+    ueberschriften = katalog_ueberschriften(katalogtext())
+
+    assert any(kopf.startswith("Ein Fehlschlag bleibt sichtbar") for kopf in ueberschriften)

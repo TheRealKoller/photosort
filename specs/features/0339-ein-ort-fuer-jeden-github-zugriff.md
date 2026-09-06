@@ -54,7 +54,18 @@ Prüfgegenstände sind dieselben.
       und damit nicht prüfbar. „Kein Vorkommen des Musters" ist strenger, maschinell
       entscheidbar und deckt sich mit ADR 0059: Erlaubt bleibt außerhalb des Katalogs
       ausschließlich der **Name** einer Operation.
-- [ ] Keine von Git verwaltete Datei verweist noch auf `github-board`.
+- [ ] **(Ausnahmen ergänzt)** Keine von Git verwaltete Datei verweist noch auf `github-board`
+      — dieselben drei Pfadpräfix-Ausnahmen wie beim `gh-board`-Muster (`CHANGELOG.md`,
+      `specs/`, die Testdatei selbst). *Warum ergänzt:* Der Zusatz stand in der Vorgabe des
+      `test-engineer` und ist beim Übertragen in diese Spec verlorengegangen; ohne ihn ist
+      das Kriterium absolut formuliert und von keiner Umsetzung erfüllbar, weil `specs/`
+      historisch korrekte Erwähnungen trägt. Die `specs/`-Ausnahme bleibt **unverengt**,
+      auch für die beiden lebenden Konzeptdokumente: Dort stehen zehn Vorkommen des alten
+      Pfades, von denen fünf echte Präsens-Verweise sind (nachgezogen) und fünf in Absätzen
+      stehen, deren Gegenstand selbst weggefallen ist — eine mechanische Regel könnte beide
+      Gruppen nicht trennen und erzwänge bei der Hälfte ihrer Funde die falsche Reparatur.
+      Stattdessen tragen beide Dokumente einen benannten Vermerk, welche Erwähnungen
+      historisch zu lesen sind.
 - [ ] **(geteilt aus „keine Operation geht verloren")** Der Katalog führt genau die 17
       Operations-IDs der ADR-Tabelle, jede genau einmal, jede in kebab-case. Die sechs bisher in
       `ship-feature` beheimateten PR-Operationen sind darunter.
@@ -114,6 +125,14 @@ Prüfgegenstände sind dieselben.
       ein künftig neu angelegter Skill der Einstufung nicht dadurch entziehen, dass niemand an
       die Liste denkt. „Genau eine" statt „mindestens eine", weil zwei Stufen in einer Datei ein
       Widerspruch sind.
+- [ ] **(nachgetragen)** Eine Pflicht, die einen GitHub-Zugriff braucht, steht in keiner
+      Datei der Stufe „kein GitHub-Zugriff". Konkret: Der Stichproben-Audit des
+      Perspektiven-Sets zieht aus `review-tests` in den `review`-Orchestrator um.
+      *Warum nachgetragen:* Beim Vergeben der Stufen wurde geprüft, ob eine der fünf
+      Dateien heute einen Zugriff *ausführt* (nein) — nicht, ob eine von ihnen eine
+      *Pflicht* trägt, die einen braucht. Der Audit nennt keinen Befehl und ist deshalb
+      durchgerutscht; aufgefallen ist es daran, dass er im Review dieser Story selbst
+      ausfiel.
 - [ ] Die fünf Perspektiven-Skills (`review-architecture`, `review-requirements`,
       `review-security`, `review-tests`, `review-ux`) tragen die Stufe **„kein GitHub-Zugriff"**;
       der `review`-Orchestrator trägt „nur lesend". Alle sechs tragen die wegunabhängige
@@ -188,7 +207,10 @@ Entwicklungsablauf des Projekts — dieselbe Einordnung wie ADR 0037/0043/0046/0
 >
 > **Betroffene Dateien:** `.claude/skills/github-access/SKILL.md` (umbenannt, neu gefasst);
 > `.claude/skills/{ship-feature,capture,refinement,spec-writer}/SKILL.md`; die sechs
-> Review-Skills; `CLAUDE.md`; die Dateien unter `.claude/agents/`;
+> Review-Skills; `.claude/skills/{browse-app,design-system,skiller}/SKILL.md` (nur die
+> Erlaubnisstufe — sie folgen zwingend daraus, dass die Stufe über den *entdeckten* Bestand
+> geprüft wird, nicht über eine gepflegte Liste); `CLAUDE.md`; die Dateien unter
+> `.claude/agents/`;
 > `scripts/tests/{test_issue_befehle_in_skills,test_board_befehle_in_skills,test_board_referenzfreiheit}.py`
 > plus ein neuer Test; `docs/setup.md`, `docs/ai-workflow.md`; der erläuternde Kommentar am
 > `demo-scripts`-Job in `.github/workflows/ci.yml`.
