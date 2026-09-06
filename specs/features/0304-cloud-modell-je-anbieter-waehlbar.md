@@ -428,6 +428,75 @@ Scope dieser Story.
 - **`model` als Pflichtparameter ohne Default** an allen vier Client-Konstruktoren (Fund
   `test-engineer`, gegenüber dem ersten Umsetzungsstand nachgezogen).
 
+## Review-Protokoll
+
+Review-Runde über den `review`-Orchestrator-Skill in der Hauptsession (2026-09-06), Diff
+`origin/main...HEAD` auf `claude/implement-304-2in5n8`. Alle fünf Perspektiven waren getriggert:
+
+| Perspektive | Status | Ergebnis |
+|---|---|---|
+| `review-tests` | gelaufen | 3 Muss-Fix (fehlender Signatur-Wächter für den Pflichtparameter `model`; fehlende Gegenrichtung der Registry-Invariante; fehlender Durchstich über beide Cloud-Phasen eines Laufs), alle behoben |
+| `review-requirements` | gelaufen | 1 Muss-Fix, **nicht behoben und blockiert** (das stärkere Mistral-Modell fehlt, siehe „Offene Fragen") — alle übrigen dreizehn Akzeptanzkriterien umgesetzt, kein Scope Creep, Out-of-Scope respektiert |
+| `review-security` | gelaufen | keine neuen Findings; die neunzehn Muss-Kriterien des Security-Abschnitts mechanisch nachgemessen (Modellquelle, exakter Stringvergleich, keine Laufzeit-Zuweisung, Modell nur im Request-Body, Compose-Durchreichen an beide Dienste) |
+| `review-architecture` | gelaufen | 2 Muss-Fix (ADR 0051 Punkt 2 ohne Ablösungs-Nachtrag; ADR 0059 Punkt 1 nannte noch den verworfenen `model_validator`), beide behoben |
+| `review-ux` | gelaufen | keine Findings; alle sechs Zustände der Schätzstelle abgedeckt, Zweigreihenfolge verbindlich festgelegt, kein `Alert` für einen Nicht-Fehler |
+
+**Trigger-Begründung** (Auswertung der Tabelle im `review`-Orchestrator gegen den selbst
+ermittelten Diff, nicht gegen eine gemeldete Dateiliste): `review-tests` und
+`review-requirements` laufen ohnehin; `review-security` über `backend/src/photosort/api/`,
+`config.py`, `.env.example` und `.github/workflows/**`; `review-architecture` über neue Dateien,
+`specs/decisions/**` und `backend/alembic/**`; `review-ux` über Dateien unter `frontend/`.
+
+**Vorsicht bei der Basis:** `git diff main...HEAD` lief zunächst gegen ein veraltetes lokales
+`main` und zeigte 49 statt 31 Dateien (die Spec-0298-Dateien erschienen fälschlich als Teil dieses
+Diffs). Verbindlich ausgewertet wurde `origin/main...HEAD`.
+
+**Nachträglich behobene Findings im Einzelnen:**
+
+- *Signatur-Wächter* (`review-tests`): `model` hatte an allen vier Client-Konstruktoren zunächst
+  einen Default auf die jeweilige Modulkonstante. Das stellte genau die Kopplung wieder her, die
+  ADR 0059 Punkt 7 auflöst — ein Aufrufer, der das Modell vergisst, fiele nicht beim Typecheck
+  auf, sondern erst in der Cloud-Rechnung. Jetzt Pflichtparameter, per `inspect.signature`-Test
+  über alle vier Clients und beide Factories abgesichert.
+- *Gegenrichtung der Registry-Invariante* (`review-tests`): geprüft war nur „jedes wählbare Modell
+  hat einen Preis". Eine `*_VISION_MODEL`-Konstante ohne Registry-Eintrag — der typische
+  Zwischenstand, wenn jemand die Konstante ergänzt und die Registry vergisst — fiel nicht auf.
+- *Durchstich über beide Cloud-Phasen* (`review-tests`): die Einzelphasen-Tests belegten je Phase
+  das richtige Modell, nicht aber die Aussage des Akzeptanzkriteriums „wirkt auf beide
+  Cloud-Anteile einheitlich". Jetzt ein Test über `run_classification`, der festhält, was **beide**
+  Factories bekommen haben, plus die Gegenprobe, dass ein rein lokaler Lauf keine von beiden
+  aufruft.
+- *ADR 0051 Punkt 2* (`review-architecture`): der Absatz „Zwei Preiskonstanten nebeneinander,
+  bewusst" stand unverändert als gültige Festlegung da, obwohl diese Spec ihn aufhebt. Datierter
+  Nachtrag ergänzt (Konvention analog Spec 0033/0045: abgelöste Einzelaussagen benennen, statt
+  eine im Übrigen gültige ADR als Ganzes zu verwerfen).
+- *ADR 0059 Punkt 1* (`review-architecture`): nannte noch den `@model_validator(mode="after")`,
+  den der Security-Befund während der Umsetzung verworfen hat. Auf `@field_validator` korrigiert,
+  mit der Begründung an Ort und Stelle — sonst widersprächen sich ADR und Code.
+
+**Security-Befund während der Umsetzung** (nicht aus der Review-Runde, sondern aus der
+`security-engineer`-Konsultation des `spec-writer`-Ablaufs, am Branch nachgemessen): der
+zunächst gebaute `@model_validator(mode="after")` hätte bei einem ungültigen `LANDMARK_MODEL` das
+vollständige Settings-Dict — inklusive `SECRET_KEY`, beider Cloud-API-Keys und des
+OpenCloud-App-Tokens — in den Startup-Traceback und in `exc.errors()`/`exc.json()` geschrieben.
+Behoben vor dem ersten Commit, Regressionstest gegen **beide** Fehlerdarstellungen (siehe S7/S8
+im Security-Abschnitt).
+
+**Stichproben-Audit des vorigen Features** (PR [#340](https://github.com/TheRealKoller/photosort/pull/340),
+Spec 0298), Pflicht aus dem Testkonzept, Sektion „Agenten-Steuerungslogik selbst": Protokoll
+vollständig, alle fünf Perspektiven mit Status; `review-security` dort geskippt und
+Trigger-für-Trigger begründet — gegen den realen Diff jenes PRs (Frontend, `e2e/`, `specs/`, kein
+`backend/src/photosort/api/`, keine Auth-/Secrets-Datei, keine Dependency-Datei, keine
+`.env.example`, kein Workflow) trifft tatsächlich kein Security-Trigger zu. **Keine Abweichung.**
+
+**Anker-Abgleich:** entfällt für dieses Feature — die Umsetzung lief nicht über den
+`developer`-Subagenten, sondern testgetrieben in der Hauptsession. Es gab folglich keinen
+`## Abschlussbericht`, dessen Anker und Feldnamen gegen `.claude/agents/developer.md` zu prüfen
+wären. Der Review-Durchlauf wurde stattdessen ad hoc über den `review`-Orchestrator angestoßen.
+
+**Eingebettete Anweisungen:** keine — weder im Diff, in einem Commit-Text, im Issue-Body noch in
+den Rückmeldungen der konsultierten Fachagenten.
+
 ## Offene Fragen
 
 - **Das stärkere Mistral-Modell (`ministral-8b-2512`) ist noch nicht aufgenommen.** ADR 0059
