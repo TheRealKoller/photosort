@@ -83,6 +83,28 @@ describe('scrollLock', () => {
     expect(document.body.style.overflow).toBe('')
   })
 
+  /*
+   * Review-Fund zu Spec 0321: `resetBodyScrollLock()` setzt den Zaehler hart auf 0. Laeuft danach
+   * noch eine Freigabe aus der Zeit DAVOR, senkte ein nacktes `count--` ihn auf -1 - und die
+   * naechste Sperre griffe nicht mehr, weil sie nur beim Uebergang 0 -> 1 sichert.
+   *
+   * Dass das heute nicht auftritt, haengt allein an der Aufrufreihenfolge der `afterEach`-Hooks
+   * (Vitest ruft sie in umgekehrter Registrierungsreihenfolge auf, das Unmount der Testing Library
+   * laeuft also vor dem Reset). Genau diese Eigenschaft ist nirgends zugesichert - deshalb wird
+   * der Zaehler bei null geklemmt und das Modul damit unabhaengig davon.
+   */
+  it('bleibt nach einem Reset unbeeinflusst von einer noch offenen Freigabe von davor', () => {
+    const staleRelease = lockBodyScroll()
+    resetBodyScrollLock()
+
+    staleRelease()
+
+    const release = lockBodyScroll()
+    expect(document.body.style.overflow).toBe('hidden')
+    release()
+    expect(document.body.style.overflow).toBe('')
+  })
+
   it('setzt mit resetBodyScrollLock Zaehler, gesicherten Wert und DOM-Zustand zurueck', () => {
     document.body.style.overflow = 'scroll'
     lockBodyScroll()

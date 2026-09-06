@@ -35,7 +35,12 @@ export function lockBodyScroll(): () => void {
       return
     }
     released = true
-    lockCount -= 1
+    // BEI NULL GEKLEMMT, nicht nackt heruntergezaehlt: `resetBodyScrollLock()` setzt den Zaehler
+    // hart auf 0, eine danach noch laufende Freigabe aus der Zeit davor druecke ihn sonst auf -1 -
+    // und die naechste Sperre griffe nicht mehr, weil sie nur beim Uebergang 0 -> 1 sichert. Dass
+    // das heute nicht auftritt, haengt allein an der Aufrufreihenfolge der `afterEach`-Hooks in
+    // Vitest, die nirgends zugesichert ist.
+    lockCount = Math.max(0, lockCount - 1)
     if (lockCount === 0) {
       document.body.style.overflow = savedOverflow
       savedOverflow = ''

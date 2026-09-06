@@ -63,7 +63,7 @@ Alle Rohwerte stehen als ausgeschriebene Hexwerte in `frontend/src/index.css` (`
 - **`--border` ist außer Dekorlinie auch eine Zustandsfläche:** die Fläche, die eine unaufdringliche oder sekundäre Schaltfläche im **gedrückten** Zustand annimmt (`active:bg-border`). Darauf sind nur `--text` (5,49:1) und `--text-h` (13,49:1) zulässig. **Nicht** zulässig sind `--text-muted` (4,36:1) und `--danger-text` (4,33:1) — beide verfehlen AA knapp, und „gedrückt“ ist am Telefon der einzige Zustand, den es gibt, also kein Randfall. Beides steht als Zeile bzw. als statische Regel im Vertragstest.
 - **Prozess-Status und Status-Pille** stehen auf der **Toast-Konstruktion** des Boards: Fläche `--elevated`, farbiger 1px-Rand, farbige Beschriftung. Die acht `--status-*-tint`/`-strong`-Tokens sind darauf umdefiniert, nicht gestrichen.
 
-**Acht dokumentierte Board-Abweichungen** (damit sie bei der nächsten Board-Aktualisierung nicht stillschweigend „zurückrepariert" werden — vollständige Begründung in ADR 0055 Punkt 4):
+**Acht dokumentierte Board-Abweichungen** (damit sie bei der nächsten Board-Aktualisierung nicht stillschweigend „zurückrepariert" werden — vollständige Begründung der Abweichungen 1–7 in ADR 0055 Punkt 4; **Nr. 8 ist erst mit Spec [`0321`](../features/0321-dark-utility-register-ansichten.md) hinzugekommen und ausschließlich hier begründet**, in der ADR steht sie nicht):
 
 | # | Board | Projekt | Grund |
 |---|---|---|---|
