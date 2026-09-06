@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.0](https://github.com/TheRealKoller/photosort/compare/v0.35.0...v0.36.0) (2026-09-06)
+
+
+### Features
+
+* Ein Ort für jeden GitHub-Zugriff über den Skill github-access (Spec 0339) ([#344](https://github.com/TheRealKoller/photosort/issues/344)) ([d3cb67c](https://github.com/TheRealKoller/photosort/commit/d3cb67c05ae52c06fac416cd969aeafb9c9a8757))
+
 ## [0.35.0](https://github.com/TheRealKoller/photosort/compare/v0.34.0...v0.35.0) (2026-09-05)
 
 
