@@ -18,7 +18,7 @@ _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent
     / "alembic"
     / "versions"
-    / "a7b8c9d0e1f2_run_vision_model.py"
+    / "5ab22032843c_run_vision_model.py"
 )
 
 

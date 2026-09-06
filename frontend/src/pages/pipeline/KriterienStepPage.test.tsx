@@ -84,6 +84,7 @@ describe('KriterienStepPage', () => {
       remote_category_candidate_count: 0,
       landmark_candidate_count: 0,
       provider: 'anthropic',
+      model: 'claude-haiku-4-5',
       price_per_image_usd: 0.0052,
       estimated_cost_usd: 0,
     })

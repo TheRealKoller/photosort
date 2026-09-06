@@ -75,7 +75,7 @@ ohne dabei die Absicherung gegen ungewollte Cloud-Kosten zu verlieren.
 
 ## Datenmodell-Bezug
 
-Zwei additive, nullable Spalten (Migration `a7b8c9d0e1f2`), siehe
+Zwei additive, nullable Spalten (Migration `5ab22032843c`), siehe
 [`docs/architecture.md`](../../docs/architecture.md):
 
 | Tabelle | Spalte | Bedeutung |
@@ -150,7 +150,7 @@ Preistabelle abgeleitet, die schon die Ist-Kosten trägt.
 | `worker.py` | je Cloud-Phase eine lokale `model`-Variable; injizierte Factory-Parameter werden `Callable[[str], ...]`, `_try_build(lambda: build_...(model))`; im bestehenden `finally` zusätzlich `run.landmark_model = model` bzw. `run.model = model`. |
 | `models.py` | `CriterionScoringRun.landmark_model`, `RemoteCategoryClassificationRun.model`, beide nullable, Default `None`. |
 | `api/projects.py` | `estimate_classification` löst das Modell auf und ruft `estimate_usd_per_image`; `ClassificationEstimateOut`: `price_per_image_usd: float \| None`, `estimated_cost_usd: float \| None`, neues Feld `model: str` (**nicht** `model_id` — pydantic v2 schützt den Namensraum `model_`). |
-| `alembic/versions/a7b8c9d0e1f2_run_vision_model.py` | eine Revision auf Head `f4a5b6c7d8e9`, zwei additive nullable Spalten. |
+| `alembic/versions/5ab22032843c_run_vision_model.py` | eine Revision auf Head `f4a5b6c7d8e9`, zwei additive nullable Spalten. |
 
 **Frontend (`frontend/src/`)**
 
@@ -530,6 +530,50 @@ weiterhin auf diesem Merge, das Audit der ersten Runde gilt fort. **Keine Abweic
 
 **Eingebettete Anweisungen:** keine — auch nicht in `06450bc` oder der abgerufenen
 Anbieterdokumentation.
+
+### CI-Befunde am PR #341 (2026-09-06) — drei rote Jobs, alle aus dem ersten Umsetzungsstand
+
+Der Branch war vor PR #341 nie durch die CI gelaufen (die Remote-Sitzung eröffnete keinen PR).
+Der erste Durchlauf brachte drei Fehlschläge zutage, die `pytest`/`vitest` strukturell nicht
+sehen konnten. Alle drei stammen aus dem ersten Umsetzungsstand, keiner aus dem Modell-Nachtrag.
+
+**1. `docker-compose-check`: der Backend-Container wurde nie healthy — der schwerwiegendste Fund.**
+Die neue Migration bekam die Revisions-ID `a7b8c9d0e1f2`, die es bereits gab
+(`a7b8c9d0e1f2_add_scan_run_total_files.py`). Alembic meldet daraufhin „Revision a7b8c9d0e1f2 is
+present more than once" und einen Zyklus über neun Revisionen; `alembic upgrade head` — der
+Startbefehl des Backend-Containers — bricht ab, der Dienst startet nicht. **Die Anwendung war in
+diesem Zustand nicht lauffähig, während die gesamte Testsuite grün war.**
+
+Der blinde Fleck ist strukturell und lag nicht an dieser Story: Jede `test_migration_*.py` lädt
+ihre Revision isoliert über `importlib` und prüft sie an einem nachgebauten Schema-Stand — bewusst
+so, damit kein Test an der vollen Historie hängt. Die *Kette* prüfte damit niemand. Eine Datei mit
+einer schon vergebenen ID lädt für sich genommen sauber.
+
+Behoben in zwei Schritten, Rot vor Grün: zuerst `backend/tests/test_migration_chain.py` (vier
+Fälle — die Kette löst überhaupt auf, jede Revisions-ID ist eindeutig, es gibt genau einen Head,
+jede Datei ist von `base` aus erreichbar), vier Fehlschläge; dann die Revision auf die
+kollisionsfrei erzeugte ID `5ab22032843c` umgestellt, samt aller Verweise in Spec, Test und
+`docs/architecture.md`. Die Eindeutigkeit wird bewusst über die **Dateien** gezählt, nicht über
+Alembics aufgelöstes Mapping — dort überschriebe die zweite Datei die erste stillschweigend.
+
+Nachgewiesen über die reale Kette gegen Postgres (Wegwerf-Container, wie im CI-Job): vollständiger
+`upgrade head` bis `5ab22032843c`, danach `downgrade -1` und erneutes `upgrade head`.
+
+**2. `frontend`: `tsc -b` scheiterte an zwei Testdateien** (`useProjects.test.tsx`,
+`KriterienStepPage.test.tsx`), die `ClassificationEstimateOut`-Objekte ohne das neue Pflichtfeld
+`model` bauen. Beide sind Bestandsdateien, die die Story nicht angefasst hat — genau der Fall, für
+den das Feld `model` als *Pflicht*-Feld gedacht war. Der lokale Vorab-Check hatte `npx tsc
+--noEmit` benutzt statt `npm run typecheck` (`tsc -b --noEmit`); nur die zweite Form löst die
+Projektreferenzen auf und erfasst die Testdateien. **Lehre für künftige Läufe: lokal die Skripte
+aus `package.json` aufrufen, die auch die CI aufruft, nie ein selbst zusammengesetztes Äquivalent.**
+
+**3. `e2e`: der Nachweis „keine Variable des Produktivstacks bleibt im Prüfstack interpolierbar"
+schlug an.** `LANDMARK_MODEL` war in `docker-compose.yml` ergänzt, aber nicht in
+`docker-compose.e2e.yml` — die Köder-`.env` schlug damit bis in die Prüfstack-Konfiguration durch.
+Genau der Fall, für den dieser Schritt gebaut wurde (er leitet die Variablennamen ab, statt eine
+Liste zu pflegen), und ein Beleg, dass er wirkt. Behoben durch `LANDMARK_MODEL: ""` an beiden
+Diensten des Overlays, mit Begründung an Ort und Stelle. Lokal gegen dieselbe Köder-Mechanik
+reproduziert, inklusive Portlisten-Assertion und Gegenprobe am Basisstack ohne Overlay.
 
 ### Copilot-Review (PR #341)
 
