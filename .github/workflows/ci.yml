@@ -78,10 +78,15 @@ jobs:
         run: npm run build
 
   # Deckt alles unter scripts/ ab - neben den Demo-Skripten auch die Repo-Konsistenztests, die
-  # seit ADR 0057 an die Stelle des geloeschten Board-Werkzeugs getreten sind (Board-Zugriff sind
-  # jetzt einzelne gh-Befehle in den Skill-Dateien, geprueft wird deren Text). Kein numerisches
-  # Coverage-Gate (anders als backend), der Abdeckungsanspruch steht in der Teststrategie der
-  # jeweiligen Spec. Kein echtes gh/Netzwerk hier.
+  # seit ADR 0057 an die Stelle des geloeschten Board-Werkzeugs getreten sind. Seit ADR 0059
+  # steht jeder GitHub-Zugriff des Ablaufs an genau einer Stelle
+  # (.claude/skills/github-access/SKILL.md); die Tests hier pruefen deren Text: die Form der
+  # gh-Befehle, die Katalogform (17 Operationen, Wege in fester Reihenfolge), die
+  # referentielle Integritaet der Operations-IDs, die Erlaubnisstufen je Skill-/Agenten-Datei -
+  # und vor allem eine Abwesenheit, naemlich dass ausserhalb dieser einen Stelle kein
+  # GitHub-Zugriff steht. Kein numerisches Coverage-Gate (anders als backend), der
+  # Abdeckungsanspruch steht in der Teststrategie der jeweiligen Spec. Kein echtes gh, keine
+  # MCP-Werkzeuge, kein Netzwerk hier - gelesen werden ausschliesslich Dateien des Repositories.
   demo-scripts:
     runs-on: ubuntu-latest
     defaults:
