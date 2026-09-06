@@ -44,6 +44,13 @@ ANTHROPIC_VISION_MODEL_SONNET = "claude-sonnet-5"
 # Ebenfalls seit Spec 0304 die Voreinstellung des Anbieters, nicht mehr sein einziges Modell.
 MISTRAL_VISION_MODEL = "ministral-3b-2512"
 
+# Staerkeres, ebenfalls vision-faehiges Modell desselben Anbieters (Spec 0304) - der Anlass der
+# Story, waehlbar, aber NICHT Voreinstellung (dieselbe Begruendung wie bei
+# ANTHROPIC_VISION_MODEL_SONNET oben). Modell-ID und Vision-Faehigkeit verifiziert gegen die
+# offizielle Modelldokumentation (https://docs.mistral.ai/models/ministral-3-8b-25-12, abgerufen
+# 2026-09-06: "best-in-class text and vision capabilities"), Preis siehe pricing.py.
+MISTRAL_VISION_MODEL_8B = "ministral-8b-2512"
+
 # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-anbieter-
 # und-modellgebundene-kostenschaetzung.md Punkt 2: die KURATIERTE AUSWAHL der waehlbaren Modelle je
 # Anbieter - Nachfolger der frueheren 1:1-Zuordnung `VISION_MODEL_BY_PROVIDER` (Spec 0207/ADR 0051
@@ -69,7 +76,7 @@ MISTRAL_VISION_MODEL = "ministral-3b-2512"
 # `pricing.py::MODEL_PRICING` ist per Invariantentest erzwungen (tests/test_pricing.py).
 VISION_MODELS_BY_PROVIDER: dict[str, tuple[str, ...]] = {
     "anthropic": (ANTHROPIC_VISION_MODEL, ANTHROPIC_VISION_MODEL_SONNET),
-    "mistral": (MISTRAL_VISION_MODEL,),
+    "mistral": (MISTRAL_VISION_MODEL, MISTRAL_VISION_MODEL_8B),
 }
 
 

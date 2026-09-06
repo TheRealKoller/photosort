@@ -306,9 +306,13 @@ def test_the_rejection_leaks_no_other_settings_value() -> None:
 
 
 def test_landmark_model_rejects_a_mistral_model_under_the_anthropic_provider() -> None:
-    """Gegenrichtung zum Test darueber - beide Richtungen sind Pflicht (Fund `test-engineer`):
-    die Registry ist asymmetrisch (anthropic mehrere Modelle, mistral eines), eine Implementierung
-    mit Sonderbehandlung des Ein-Modell-Anbieters bestuende nur eine der beiden."""
+    """Gegenrichtung zum Test darueber - beide Richtungen sind Pflicht (Fund `test-engineer`).
+
+    Urspruengliche Begruendung: die Registry war asymmetrisch (anthropic mehrere Modelle, mistral
+    eines), eine Implementierung mit Sonderbehandlung des Ein-Modell-Anbieters haette nur eine der
+    beiden Richtungen bestanden. Seit dem Nachtrag vom 2026-09-06 bietet auch mistral zwei
+    Modelle; der Fall bleibt, weil er weiterhin eine anbieterblinde Pruefung faengt - eine, die
+    gegen die Gesamtmenge aller Modell-IDs statt gegen die des eingestellten Anbieters prueft."""
     with pytest.raises(ValidationError):
         Settings(_env_file=None, landmark_provider="anthropic", landmark_model=MISTRAL_VISION_MODEL)
 

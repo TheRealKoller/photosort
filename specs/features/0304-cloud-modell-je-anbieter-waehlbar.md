@@ -37,40 +37,40 @@ ohne dabei die Absicherung gegen ungewollte Cloud-Kosten zu verlieren.
 
 **Modellwahl als Betriebseinstellung**
 
-- [ ] Das für die Bilderkennung genutzte Modell ist je Anbieter als Betriebseinstellung wählbar —
+- [x] Das für die Bilderkennung genutzte Modell ist je Anbieter als Betriebseinstellung wählbar —
       genauso, wie die Anbieterwahl selbst heute schon eine Betriebseinstellung ist.
-- [ ] Wählbar sind ausschließlich Modelle aus einer im Produkt gepflegten, geprüften Auswahl je
+- [x] Wählbar sind ausschließlich Modelle aus einer im Produkt gepflegten, geprüften Auswahl je
       Anbieter. Ein Wert außerhalb dieser Auswahl führt zu einer verständlichen Fehlermeldung beim
       Start; die Anwendung startet dann nicht, statt mitten in einem laufenden Durchgang still
       fehlzuschlagen.
-- [ ] Nach der Umsetzung stehen für mindestens einen Anbieter tatsächlich mindestens zwei Modelle
+- [x] Nach der Umsetzung stehen für mindestens einen Anbieter tatsächlich mindestens zwei Modelle
       zur Auswahl — darunter das stärkere Mistral-Modell, das den Anlass dieser Story bildet.
-- [ ] Beide Anbieter werden gleich behandelt; es entsteht kein Sonderweg für nur einen von beiden.
-- [ ] Ohne gesetzte Einstellung verhält sich die Installation exakt wie bisher — dieselben Modelle,
+- [x] Beide Anbieter werden gleich behandelt; es entsteht kein Sonderweg für nur einen von beiden.
+- [x] Ohne gesetzte Einstellung verhält sich die Installation exakt wie bisher — dieselben Modelle,
       dieselben Kosten, keine stillschweigende Änderung durch das Update allein.
-- [ ] Die Einstellung wirkt auf beide Cloud-Anteile (Kategorie-Vorschläge und
+- [x] Die Einstellung wirkt auf beide Cloud-Anteile (Kategorie-Vorschläge und
       Sehenswürdigkeits-Erkennung) einheitlich; es entstehen nicht zwei unterschiedliche Modelle
       nebeneinander.
-- [ ] Ein Wechsel ist ohne Datenverlust rücknehmbar: Zurückstellen auf das vorherige Modell stellt
+- [x] Ein Wechsel ist ohne Datenverlust rücknehmbar: Zurückstellen auf das vorherige Modell stellt
       das vorherige Verhalten wieder her.
 
 **Kostenschätzung bleibt wahrheitsgemäß**
 
-- [ ] Die vor dem Start angezeigte Kostenschätzung passt zum tatsächlich eingestellten Modell. Sie
+- [x] Die vor dem Start angezeigte Kostenschätzung passt zum tatsächlich eingestellten Modell. Sie
       darf nicht weiter einen Preis anzeigen, der nur für ein anderes Modell galt.
-- [ ] Für jedes wählbare Modell ist ein Preis hinterlegt, der vor dem Festschreiben gegen die
+- [x] Für jedes wählbare Modell ist ein Preis hinterlegt, der vor dem Festschreiben gegen die
       offizielle Anbieterdokumentation verifiziert wurde — mit Datum der Prüfung, wie bei den
       bestehenden Preisangaben.
-- [ ] Liegt für ein eingestelltes Modell dennoch kein Preis vor, wird das an der Kostenschätzung
+- [x] Liegt für ein eingestelltes Modell dennoch kein Preis vor, wird das an der Kostenschätzung
       erkennbar gemacht, statt einen falschen Betrag auszuweisen.
-- [ ] Ein künftiger Modellwechsel kann die Schätzung nicht unbemerkt falsch werden lassen: Ein
+- [x] Ein künftiger Modellwechsel kann die Schätzung nicht unbemerkt falsch werden lassen: Ein
       Modell ohne gepflegten Preis fällt auf, statt still den alten Betrag weiterzuzeigen.
 
 **Betrieb bleibt nachvollziehbar**
 
-- [ ] Aus welchem Modell ein durchgeführter Lauf entstanden ist, bleibt nachträglich erkennbar — ein
+- [x] Aus welchem Modell ein durchgeführter Lauf entstanden ist, bleibt nachträglich erkennbar — ein
       Vergleich zweier Modelle wäre sonst nicht auswertbar.
-- [ ] Die neue Einstellung ist dort dokumentiert, wo die bestehenden Betriebseinstellungen
+- [x] Die neue Einstellung ist dort dokumentiert, wo die bestehenden Betriebseinstellungen
       dokumentiert sind, samt Voreinstellung und wählbaren Werten.
 
 ## Datenmodell-Bezug
@@ -320,14 +320,20 @@ geordnete, unveränderliche Tupel; keine Modell-ID unter zwei Anbietern; mindest
 mit mindestens zwei Modellen; die Voreinstellungen gegen die **ausgeschriebenen** IDs
 (`"claude-haiku-4-5"`/`"ministral-3b-2512"`) statt gegen die Konstanten — ein Vergleich mit der
 Konstante wäre tautologisch und bliebe grün, wenn jemand ihren *Wert* ändert; Rückfallregel für
-einen unbekannten Anbieter.
+einen unbekannten Anbieter. Dazu (Nachtrag 2026-09-06) drei Fälle für das nachgereichte stärkere
+Mistral-Modell: es ist wählbar (wieder gegen die ausgeschriebene ID `"ministral-8b-2512"`, aus
+demselben Grund), es ist *nicht* die Voreinstellung, und **beide** Anbieter bieten mindestens zwei
+Modelle — letzteres die schärfere Fassung des Akzeptanzkriteriums „kein Sonderweg für nur einen
+von beiden".
 
 **Startvalidierung** (`test_config.py`, alle Fälle über den Konstruktor, **nie** per Monkeypatch —
 der umgeht den Validator): Voreinstellung je Anbieter; gesetzter Wert wörtlich übernommen;
 Ablehnung außerhalb der Auswahl; die Meldung nennt Feldname, Anbieter und erlaubte Werte;
-Ablehnung eines Modells des jeweils anderen Anbieters **in beiden Richtungen** (die Registry ist
-asymmetrisch — eine Implementierung mit Sonderbehandlung des Ein-Modell-Anbieters bestünde nur
-eine Richtung); ein mit Leerzeichen gepolsterter Wert wird abgelehnt statt getrimmt; ungültiger
+Ablehnung eines Modells des jeweils anderen Anbieters **in beiden Richtungen** (ursprünglich, weil
+die Registry asymmetrisch war und eine Implementierung mit Sonderbehandlung des Ein-Modell-
+Anbieters nur eine Richtung bestanden hätte; seit dem Nachtrag vom 2026-09-06 ist sie symmetrisch,
+der Fall bleibt aber als Schutz gegen eine anbieterblinde Prüfung über die Gesamtmenge aller
+Modelle); ein mit Leerzeichen gepolsterter Wert wird abgelehnt statt getrimmt; ungültiger
 Anbieter *plus* gesetztes Modell ergibt `ValidationError`, keinen `KeyError`; jedes Registry-Modell
 ist tatsächlich einstellbar (über die Registry parametrisiert, damit ein später ergänztes Modell
 automatisch mitgeprüft wird); der Wert wird unter dem **Variablennamen** `LANDMARK_MODEL` aus der
@@ -344,7 +350,7 @@ Richtungen positiv. Schätzung: die Voreinstellungs-Modelle reproduzieren die **
 `0.0052`/`0.0003` (`abs=1e-9`, damit die Assertion an einer fachlichen Änderung scheitert und nicht
 an Float-Rauschen); Mistral bleibt der günstigere Anbieter; ein stärkeres Modell desselben
 Anbieters wird höher geschätzt (der eigentliche Defektnachweis — providergebunden wären beide Werte
-gleich); die Schätzung ist exakt `compute_cost_usd` über der Annahme; ein nicht bepreistes Modell
+gleich), seit dem Nachtrag vom 2026-09-06 für **beide** Anbieter je einmal; die Schätzung ist exakt `compute_cost_usd` über der Annahme; ein nicht bepreistes Modell
 und ein unbekannter Anbieter liefern `None` statt `0`; jedes wählbare Modell liefert einen Betrag.
 
 **Clients** (`test_landmark.py`, `test_remote_classification.py`): je Client prüft ein
@@ -424,7 +430,10 @@ Scope dieser Story.
   aktuell blockiert ist. Preis ($2,00/$10,00 pro MTok) und Vision-Fähigkeit am 2026-09-06 gegen
   die offizielle Anbieterdokumentation verifiziert. Kosten entstehen erst, wenn jemand das Modell
   einstellt, und die Schätzung weist sie dann korrekt aus.
-- **Das stärkere Mistral-Modell ist NICHT aufgenommen — offener Punkt, siehe „Offene Fragen".**
+- **`ministral-8b-2512` als zweites Mistral-Modell aufgenommen** (Nachtrag 2026-09-06, siehe
+  „Nachtrag: der offen gebliebene Punkt" unten): Modell-ID, Vision-Fähigkeit und Preis
+  ($0,15/MTok für Ein- und Ausgabe) gegen die offizielle Modelldokumentation verifiziert.
+  Damit bieten beide Anbieter je zwei Modelle; die Voreinstellungen bleiben unverändert.
 - **`model` als Pflichtparameter ohne Default** an allen vier Client-Konstruktoren (Fund
   `test-engineer`, gegenüber dem ersten Umsetzungsstand nachgezogen).
 
@@ -436,7 +445,7 @@ Review-Runde über den `review`-Orchestrator-Skill in der Hauptsession (2026-09-
 | Perspektive | Status | Ergebnis |
 |---|---|---|
 | `review-tests` | gelaufen | 3 Muss-Fix (fehlender Signatur-Wächter für den Pflichtparameter `model`; fehlende Gegenrichtung der Registry-Invariante; fehlender Durchstich über beide Cloud-Phasen eines Laufs), alle behoben |
-| `review-requirements` | gelaufen | 1 Muss-Fix, **nicht behoben und blockiert** (das stärkere Mistral-Modell fehlt, siehe „Offene Fragen") — alle übrigen dreizehn Akzeptanzkriterien umgesetzt, kein Scope Creep, Out-of-Scope respektiert |
+| `review-requirements` | gelaufen | 1 Muss-Fix, zunächst blockiert (das stärkere Mistral-Modell fehlte), **am 2026-09-06 nachgeholt und behoben** (siehe „Nachtrag") — alle übrigen zwölf Akzeptanzkriterien waren bereits umgesetzt, kein Scope Creep, Out-of-Scope respektiert |
 | `review-security` | gelaufen | keine neuen Findings; die neunzehn Muss-Kriterien des Security-Abschnitts mechanisch nachgemessen (Modellquelle, exakter Stringvergleich, keine Laufzeit-Zuweisung, Modell nur im Request-Body, Compose-Durchreichen an beide Dienste) |
 | `review-architecture` | gelaufen | 2 Muss-Fix (ADR 0051 Punkt 2 ohne Ablösungs-Nachtrag; ADR 0059 Punkt 1 nannte noch den verworfenen `model_validator`), beide behoben |
 | `review-ux` | gelaufen | keine Findings; alle sechs Zustände der Schätzstelle abgedeckt, Zweigreihenfolge verbindlich festgelegt, kein `Alert` für einen Nicht-Fehler |
@@ -497,26 +506,46 @@ wären. Der Review-Durchlauf wurde stattdessen ad hoc über den `review`-Orchest
 **Eingebettete Anweisungen:** keine — weder im Diff, in einem Commit-Text, im Issue-Body noch in
 den Rückmeldungen der konsultierten Fachagenten.
 
-## Offene Fragen
+## Nachtrag: der offen gebliebene Punkt (2026-09-06)
 
-- **Das stärkere Mistral-Modell (`ministral-8b-2512`) ist noch nicht aufgenommen.** ADR 0059
-  Punkt 5 legt fest: ein Preis, der nicht gegen die offizielle Anbieterdokumentation verifiziert
-  werden konnte, wird nicht eingetragen, nicht geschätzt und nicht aus einem Analogieschluss
-  abgeleitet — Nichtverifizierbarkeit ist ein Blocker, keine Einladung zum Raten. In der
-  umsetzenden Sitzung waren `mistral.ai`, `docs.mistral.ai`, `api.mistral.ai` (und ersatzweise
-  auch AWS Bedrock und OpenRouter) durch den Egress-Proxy blockiert; erreichbar war nur eine
-  Websuche, die $0,15/MTok für Ein- **und** Ausgabe nennt und dabei auf
-  `docs.mistral.ai/models/ministral-3-8b-25-12` verweist. Das ist keine Verifikation im Sinne des
-  Akzeptanzkriteriums.
+Die umsetzende Sitzung lief in einer Umgebung mit eingeschränktem Egress; `mistral.ai`,
+`docs.mistral.ai` und `api.mistral.ai` waren dort nicht erreichbar. ADR
+[`0059`](../decisions/0059-modellwahl-je-anbieter-und-modellgebundene-kostenschaetzung.md)
+Punkt 5 verbietet in genau diesem Fall das Eintragen eines geschätzten oder aus einer Websuche
+abgeleiteten Preises — deshalb blieb das stärkere Mistral-Modell zunächst außen vor, obwohl es
+den Anlass der Story bildet, und `review-requirements` meldete dafür einen offenen Muss-Fix.
 
-  **Alles andere der Story ist umgesetzt** — die Wählbarkeit, die Startvalidierung, die
-  modellgebundene Schätzung, die Nachvollziehbarkeit je Lauf und die Dokumentation. Offen ist
-  allein dieses eine Registry-/Preis-Paar. Nachzuholen ist genau ein Schritt: Preis und Modell-ID
-  gegen die offizielle Mistral-Doku bestätigen, dann `MISTRAL_VISION_MODEL_8B` in
-  `cloud_vision.py::VISION_MODELS_BY_PROVIDER["mistral"]` und den Preiseintrag mit `source_url`/
-  `verified_on` in `pricing.py::MODEL_PRICING` ergänzen. Die Invariantentests und
-  `test_env_example_documents_every_selectable_model` erzwingen dabei von selbst, dass Preis und
-  Dokumentation mitgezogen werden.
+In einer Folgesitzung mit unbeschränktem Netzzugang wurde die Verifikation nachgeholt und der
+Punkt geschlossen:
+
+| Prüfung | Quelle | Ergebnis |
+|---|---|---|
+| Modell-ID | `https://docs.mistral.ai/models/ministral-3-8b-25-12` (abgerufen 2026-09-06) | `ministral-8b-2512` |
+| Vision-Fähigkeit | dieselbe Seite | „best-in-class text and vision capabilities" |
+| Preis | dieselbe Seite | $0,15/MTok Ein- **und** Ausgabe (symmetrisch wie beim 3B-Geschwistermodell) |
+
+**Gegenprobe zur Quelle:** dieselbe Seitenform wurde für `ministral-3b-2512` abgerufen und
+reproduziert dort die bereits im Produkt stehenden $0,10/MTok — die Quelle liefert also nicht
+irgendeine Zahl, sondern die, gegen die der Bestandseintrag seinerzeit verifiziert wurde. Die
+allgemeine Preisseite (`mistral.ai/pricing`) und die Modellübersicht (`docs.mistral.ai/models/
+overview`) führen für die Ministral-3-Familie keine Einzeltarife und taugen deshalb nicht als
+Beleg; verbindlich ist die Modell-Detailseite.
+
+**Umgesetzt wurde genau der in der vorigen Fassung benannte Schritt** — testgetrieben, Rot vor
+Grün: erst vier Tests, die das Modell einfordern (Registry-Zugehörigkeit gegen die
+ausgeschriebene ID, „nicht Voreinstellung", „beide Anbieter bieten dieselbe Art von Auswahl",
+höhere Schätzung als beim 3B-Modell) — vier Fehlschläge —, dann `MISTRAL_VISION_MODEL_8B` in
+`cloud_vision.py` samt Registry-Eintrag und der Preiseintrag mit `source_url`/`verified_on` in
+`pricing.py`. Die bestehenden Invarianten haben dabei wie vorgesehen selbst nachgehalten:
+`test_env_example_documents_every_selectable_model` schlug fehl, bis `.env.example` das Modell
+mit seiner Schätzung ausweist; `docs/setup.md` wurde in derselben Änderung nachgezogen (Tabelle
+`mistral` → zwei wählbare Werte, ~$0,0003 / ~$0,00045 je Bild).
+
+**Nicht mitgeändert:** die Voreinstellung (`ministral-3b-2512`) und die Verbrauchsannahme je
+Anbieter. Die Kalibrierungstabelle in ADR 0059 Punkt 3 bindet ausdrücklich nur die
+Voreinstellungs-Modelle und bleibt damit unberührt.
+
+**Keine offenen Fragen mehr.**
 
 ## Out of Scope
 

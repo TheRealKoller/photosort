@@ -234,6 +234,18 @@ class TestEstimateUsdPerImage:
         assert anthropic is not None and mistral is not None
         assert 0 < mistral < anthropic
 
+    def test_the_stronger_mistral_model_is_estimated_higher_than_its_default(self) -> None:
+        """Dieselbe Aussage wie fuer Anthropic, jetzt fuer den zweiten Anbieter (Akzeptanz-
+        kriterium "beide Anbieter werden gleich behandelt"): die Schaetzung folgt auch hier dem
+        Modell. Bei einer providergebundenen Schaetzung waeren beide Werte gleich."""
+        stronger = VISION_MODELS_BY_PROVIDER["mistral"][1]
+
+        default_estimate = estimate_usd_per_image(MISTRAL_VISION_MODEL, "mistral")
+        stronger_estimate = estimate_usd_per_image(stronger, "mistral")
+
+        assert default_estimate is not None and stronger_estimate is not None
+        assert stronger_estimate > default_estimate
+
     def test_a_different_model_of_the_same_provider_yields_a_different_estimate(self) -> None:
         """Der Kern der Story: die Schaetzung folgt dem MODELL, nicht dem Anbieter. Waere sie
         weiterhin providergebunden, kaeme hier zweimal derselbe Betrag heraus."""

@@ -7,6 +7,7 @@ from photosort.cloud_vision import (
     ANTHROPIC_VISION_MODEL,
     ANTHROPIC_VISION_MODEL_SONNET,
     MISTRAL_VISION_MODEL,
+    MISTRAL_VISION_MODEL_8B,
     TokenUsage,
 )
 
@@ -81,6 +82,12 @@ _TOKENS_PER_MTOK = 1_000_000
 #   $10.00/MTok Output (https://platform.claude.com/docs/en/about-claude/pricing, abgerufen
 #   2026-09-06; Vision-Faehigkeit gegen die Modelluebersicht derselben Doku bestaetigt). Cache-
 #   Tarife aus demselben Grund wie oben nicht abgebildet.
+# - ministral-8b-2512 (Spec 0304, das zweite waehlbare Mistral-Modell und der Anlass der Story):
+#   $0.15/MTok Input UND Output (https://docs.mistral.ai/models/ministral-3-8b-25-12, abgerufen
+#   2026-09-06 - symmetrisch wie beim 3B-Geschwistermodell; Vision-Faehigkeit auf derselben Seite
+#   bestaetigt). Nachgetragen, nachdem die Verifikation in der umsetzenden Sitzung an einem
+#   blockierten Netzzugang zu docs.mistral.ai gescheitert war und ADR 0059 Punkt 5 einen
+#   geschaetzten oder aus einer Websuche abgeleiteten Preis ausschliesst.
 MODEL_PRICING: dict[str, ModelPricing] = {
     ANTHROPIC_VISION_MODEL: ModelPricing(
         input_usd_per_mtok=1.00,
@@ -99,6 +106,12 @@ MODEL_PRICING: dict[str, ModelPricing] = {
         output_usd_per_mtok=0.10,
         source_url="https://docs.mistral.ai/models/ministral-3-3b-25-12",
         verified_on=date(2026, 8, 23),
+    ),
+    MISTRAL_VISION_MODEL_8B: ModelPricing(
+        input_usd_per_mtok=0.15,
+        output_usd_per_mtok=0.15,
+        source_url="https://docs.mistral.ai/models/ministral-3-8b-25-12",
+        verified_on=date(2026, 9, 6),
     ),
 }
 

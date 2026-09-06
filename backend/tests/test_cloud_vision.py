@@ -298,6 +298,29 @@ class TestVisionModelsByProvider:
         Story nicht."""
         assert any(len(models) >= 2 for models in VISION_MODELS_BY_PROVIDER.values())
 
+    def test_the_stronger_mistral_model_is_selectable(self) -> None:
+        """Akzeptanzkriterium woertlich: "darunter das staerkere Mistral-Modell, das den Anlass
+        dieser Story bildet". Bewusst gegen die AUSGESCHRIEBENE Modell-ID statt gegen
+        `MISTRAL_VISION_MODEL_8B` - ein Vergleich mit der Konstante bliebe gruen, wenn jemand
+        ihren Wert aendert.
+
+        Der Punkt blieb in der umsetzenden Sitzung offen, weil die Mistral-Dokumentation dort
+        nicht erreichbar war und ADR 0059 Punkt 5 einen ungeprueften Preis verbietet."""
+        assert "ministral-8b-2512" in VISION_MODELS_BY_PROVIDER["mistral"]
+
+    def test_the_stronger_mistral_model_is_not_the_default(self) -> None:
+        """Gegenprobe zum Akzeptanzkriterium "ohne gesetzte Einstellung exakt wie bisher": das
+        staerkere Modell ist waehlbar, aendert aber nichts an der Voreinstellung (ADR 0025/ADR
+        0031 Punkt 2 bleiben unangetastet)."""
+        assert VISION_MODELS_BY_PROVIDER["mistral"].index("ministral-8b-2512") > 0
+
+    def test_both_providers_offer_the_same_kind_of_choice(self) -> None:
+        """Akzeptanzkriterium "beide Anbieter werden gleich behandelt; es entsteht kein Sonderweg
+        fuer nur einen von beiden" - die Wahlmoeglichkeit selbst darf nicht bei einem Anbieter
+        haengenbleiben."""
+        for provider, models in VISION_MODELS_BY_PROVIDER.items():
+            assert len(models) >= 2, provider
+
 
 class TestDefaultVisionModelForProvider:
     def test_it_returns_the_first_registry_entry(self) -> None:
