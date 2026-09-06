@@ -287,6 +287,39 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     }
   )
 
+  /*
+   * QUERY-STRING AUF DER ROUTE (AK2/AK8a, edge case): Auf `main` gab es diesen Fall als
+   * "targets /projects/{projectId} unaffected by query parameters" - er ist beim Umbau der Gruppe
+   * abhandengekommen und hier in der Form zurueck, die zur neuen Verdrahtung passt (Copilot-Fund
+   * auf PR #340). Er gehoert auf DIESE Ebene und nicht in den Unit-Test: geprueft wird, dass die
+   * App den `pathname` sauber vom `search` trennt, bevor sie ihn an `matchProjectId` reicht - eine
+   * Verdrahtungsfrage, keine Frage des reinen Moduls (das lehnt einen mitgegebenen Query-String
+   * ausdruecklich ab, siehe utils/projectRoutes.test.ts).
+   *
+   * Nicht konstruiert: `/photos` traegt in der Praxis den Filter des Fotorasters, den
+   * "Zurück zum Grid" auf der Detailansicht ausdruecklich bewahrt. Ginge die Trennung verloren,
+   * verschwaende die Kopfzeilen-Navigation auf jeder gefilterten Fotoliste.
+   */
+  it('zeigt Gruppe und Markierung unveraendert bei gesetztem Query-Parameter (AK2/AK8a, edge case)', async () => {
+    renderApp(['/projects/1/photos?filter=favorite'])
+
+    await screen.findByRole('navigation', { name: 'Projektbereiche' })
+    const links = within(group()).getAllByRole('link')
+    expect(links.map((link) => link.textContent)).toEqual(
+      EXPECTED_TARGETS.map((target) => target.label)
+    )
+    links.forEach((link, index) => {
+      expect(link).toHaveAttribute('href', EXPECTED_TARGETS[index].href)
+    })
+
+    // Beide Haelften in einem Fall: Der Projektkontext ueberlebt den Query-String UND der Marker
+    // steht auf dem richtigen Ziel. Die Sprungziele oben belegen zugleich, dass der Query-String
+    // nicht in die projectId geraten ist - er wuerde sonst in jedem der vier `href` auftauchen.
+    const marked = links.filter((link) => link.getAttribute('aria-current') === 'page')
+    expect(marked).toHaveLength(1)
+    expect(marked[0]).toHaveAccessibleName('Fotos')
+  })
+
   it('fuehrt den Namen "Projekt" in der Kopfzeile genau einmal, mit dem Ziel /pipeline (AK3a)', async () => {
     renderApp(['/projects/1/photos'])
 

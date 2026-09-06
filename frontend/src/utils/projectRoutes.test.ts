@@ -74,8 +74,28 @@ describe('projectRoutes - matchProjectId', () => {
     expect(matchProjectId('/projects/abc/photos')).toBe('abc')
   })
 
-  it('liest den Pfad ohne Query-Parameter (matchPath bekommt nur den pathname)', () => {
-    expect(matchProjectId('/projects/1/photos')).toBe('1')
+  /*
+   * AUFRUFKONVENTION, KEIN KOMFORT: `matchProjectId` erwartet einen REINEN `pathname`. Wer ihm
+   * `location.pathname + location.search` oder `window.location.href` reicht, bekommt kein
+   * "funktioniert trotzdem" - und die beiden Fehlerbilder sind unterschiedlich schlimm:
+   *
+   *  - Auf einer Unterroute faellt der Projektkontext ersatzlos weg (`null`): die Kopfzeile
+   *    verloere ihre Navigationsgruppe auf JEDER gefilterten Fotoliste - und genau dort tragen die
+   *    Pfade in der Praxis einen Query-String (der Filter des Fotorasters, den "Zurück zum Grid"
+   *    ausdruecklich bewahrt).
+   *  - Auf der Basisroute ist es stiller und schlimmer: der Platzhalter `:projectId` frisst den
+   *    Query-String mit, `buildPath` baute ihn danach in jedes der vier Sprungziele ein.
+   *
+   * Deshalb hier als ausdrueckliche Zusicherung festgehalten statt als Kommentar. Der frueher an
+   * dieser Stelle stehende Fall pruefte `/projects/1/photos` OHNE Query-String und behauptete im
+   * Namen eine Absicherung, die sein Koerper nicht leistete (Copilot-Fund auf PR #340).
+   */
+  it('matcht nicht mehr, sobald ein Query-String mitgegeben wird (Aufrufkonvention)', () => {
+    expect(matchProjectId('/projects/1/photos?filter=favorite')).toBeNull()
+  })
+
+  it('frisst einen Query-String auf der Basisroute in die projectId (Aufrufkonvention)', () => {
+    expect(matchProjectId('/projects/1?filter=favorite')).toBe('1?filter=favorite')
   })
 
   it('liest die projectId auch aus der verschachtelten Foto-Detailroute', () => {
