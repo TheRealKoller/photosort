@@ -5,6 +5,8 @@ description: Erstellt schnell einen neuen, schlanken Claude-Skill aus einer kurz
 
 # Skiller — schneller Skill-Ersteller
 
+**GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
+
 Baut einen neuen Claude-Skill in wenigen Schritten: kurz nachfragen, Entwurf schreiben, einmal testen, fertig. Kein Eval-Set, kein Benchmark, kein Viewer — das übernimmt bei Bedarf der ausführlichere eingebaute `skill-creator`. Skiller ist für den Fall gedacht, dass jemand schnell einen brauchbaren Skill will und lieber durch Benutzung nachbessert als durch aufwändige Vorab-Tests.
 
 ## Warum dieser Ablauf
