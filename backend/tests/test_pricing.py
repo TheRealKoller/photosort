@@ -162,10 +162,20 @@ class TestModelPricingRegistry:
         Pflichtfeld, kein Kommentar - ein Preis ohne Beleg soll nicht stillschweigend durchrutschen
         koennen. Akzeptanzkriterium: "Fuer jedes waehlbare Modell ist ein Preis hinterlegt, der vor
         dem Festschreiben gegen die offizielle Anbieterdokumentation verifiziert wurde - mit Datum
-        der Pruefung"."""
+        der Pruefung".
+
+        Der eine Tag Spielraum ist KEIN zugelassenes Zukunftsdatum, sondern eine
+        Zeitzonentoleranz (Copilot-Fund, PR #341): `verified_on` ist ein reines `date`, das der
+        Eintragende nach seiner LOKALEN Uhr setzt, waehrend die CI in UTC laeuft. Ein am spaeten
+        Abend in UTC+2 eingetragenes heutiges Datum liegt in UTC noch im Vortag - ohne Toleranz
+        waere der Test in diesem taeglichen Zeitfenster rot, ohne dass etwas falsch waere.
+        Gefangen wird damit weiterhin der Fall, um den es geht: ein Datum, das erkennbar nicht von
+        einer stattgefundenen Pruefung stammen kann."""
+        timezone_slack = timedelta(days=1)
+
         for model, pricing in MODEL_PRICING.items():
             assert pricing.source_url.startswith("https://"), model
-            assert pricing.verified_on <= date.today() + timedelta(days=1), model
+            assert pricing.verified_on <= date.today() + timezone_slack, model
 
     def test_the_registry_and_the_assumptions_cover_exactly_the_configurable_providers(
         self,

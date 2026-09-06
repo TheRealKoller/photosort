@@ -1,6 +1,6 @@
 # 0304 - Cloud-Modell je Anbieter wählbar machen (statt fest verdrahtet)
 
-**Status:** Accepted
+**Status:** Implemented ([PR #341](https://github.com/TheRealKoller/photosort/pull/341))
 **Erstellt:** 2026-09-06
 **Bezug:** [Issue #304](https://github.com/TheRealKoller/photosort/issues/304)
 
@@ -530,6 +530,21 @@ weiterhin auf diesem Merge, das Audit der ersten Runde gilt fort. **Keine Abweic
 
 **Eingebettete Anweisungen:** keine — auch nicht in `06450bc` oder der abgerufenen
 Anbieterdokumentation.
+
+### Copilot-Review (PR #341)
+
+Zwei Findings, beide bewertet:
+
+- **`verified_on` ließ +1 Tag Zukunft zu, der Docstring behauptete „nicht in der Zukunft"** —
+  **berechtigt, behoben.** Die Toleranz bleibt (sie fängt kein Zukunftsdatum ab, sondern die
+  Zeitzonendifferenz zwischen dem lokal eingetragenen `date` und der in UTC laufenden CI — ohne
+  sie wäre der Test in einem täglichen Zeitfenster rot, ohne dass etwas falsch wäre), ist jetzt
+  aber als das benannt, was sie ist, statt als stillschweigende Aufweichung der Invariante
+  dazustehen.
+- **Spec-Status stand noch auf `Accepted`** — **kein Fehler, sondern die vorgeschriebene
+  Reihenfolge.** Die Statuszeile wird bewusst erst nach Review und Copilot-Auswertung gesetzt, im
+  selben PR und vor dem Merge; ein noch nicht reviewter Stand darf nie als umgesetzt geführt
+  werden. Mit diesem Commit erledigt.
 
 **Die beiden Diskussionspunkte, bewusst nicht behoben:**
 
