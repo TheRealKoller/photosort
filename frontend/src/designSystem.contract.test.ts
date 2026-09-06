@@ -1300,8 +1300,10 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
   const ARBITRARY_VALUE_ALLOWLIST: AllowlistEntry[] = [
     {
       file: 'src/components/ui/popover.tsx',
-      snippet: "'z-50 max-h-[60vh] w-72",
-      reason: 'Hoehendeckel des Popover-Panels relativ zum Sichtfenster - keine Rasterstufe moeglich',
+      snippet: "'z-50 max-h-[min(60vh,var(--radix-popover-content-available-height))] w-72",
+      reason:
+        'Hoehendeckel des Popover-Panels: Minimum aus der Board-Schranke 60vh und dem von Radix ' +
+        'gemessenen verfuegbaren Platz - keine Rasterstufe moeglich',
     },
     {
       file: 'src/components/ui/checkbox.tsx',
