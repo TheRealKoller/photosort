@@ -205,8 +205,7 @@ async def test_aclose_closes_the_underlying_http_client() -> None:
     client = AnthropicLandmarkClient(
         api_key=API_KEY,
         model=ANTHROPIC_VISION_MODEL,
-        transport=httpx.MockTransport(lambda r: _success_response("x",
-        0.1)),
+        transport=httpx.MockTransport(lambda r: _success_response("x", 0.1)),
     )
     await client.aclose()
     assert client._client.is_closed  # Whitebox-Konfigurationsnachweis
@@ -237,8 +236,7 @@ async def test_timeout_is_applied_to_the_underlying_http_client() -> None:
     client = AnthropicLandmarkClient(
         api_key=API_KEY,
         model=ANTHROPIC_VISION_MODEL,
-        transport=httpx.MockTransport(lambda r: _success_response("x",
-        0.1)),
+        transport=httpx.MockTransport(lambda r: _success_response("x", 0.1)),
     )
     assert client._client.timeout.read == 60.0  # Whitebox-Konfigurationsnachweis
 

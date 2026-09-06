@@ -386,6 +386,31 @@ class TestTheEstimateFollowsTheConfiguredModel:
         # Die Kandidatenzahl bleibt korrekt - sie ist bekannt, nur der Preis ist es nicht.
         assert body["candidate_count"] == 1
 
+    async def test_zero_candidates_yield_zero_even_without_a_known_price(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Die KOMBINATION der beiden Sonderfaelle darueber (Copilot-Fund, PR #341): kein
+        hinterlegter Preis UND null Kandidaten.
+
+        `null` heisst "wir wissen nicht, was das kostet" - bei null Kandidaten wissen wir es aber
+        sehr wohl: es faellt nichts an, weil nichts verarbeitet wird. Der Preis JE BILD bleibt
+        deshalb `null` (er ist tatsaechlich unbekannt), die Summe ist `0.0`. Die Zusage
+        "candidate_count=0 liefert estimated_cost_usd=0.0, kein Sonderfall" aus dem Docstring des
+        Endpunkts gilt ohne Ausnahme - sonst haengt sie unausgesprochen daran, dass ein Preis
+        gepflegt ist."""
+        monkeypatch.setattr(settings, "landmark_model", "ein-nie-bepreistes-modell")
+        project_id = await _create_project(authenticated_api_client)
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["candidate_count"] == 0
+        assert body["price_per_image_usd"] is None
+        assert body["estimated_cost_usd"] == 0.0
+
     async def test_zero_candidates_still_yield_zero_not_null(
         self, authenticated_api_client: httpx.AsyncClient
     ) -> None:

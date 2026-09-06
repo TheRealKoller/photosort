@@ -590,6 +590,26 @@ Zwei Findings, beide bewertet:
   selben PR und vor dem Merge; ein noch nicht reviewter Stand darf nie als umgesetzt geführt
   werden. Mit diesem Commit erledigt.
 
+### Zweite Copilot-Runde (PR #341, nach den CI-Fixes)
+
+Erneut angefordert, weil die CI-Fixes echten Code betrafen (umbenannte Migration, neue
+Testdatei). Drei Findings, alle berechtigt, alle behoben:
+
+- **`estimated_cost_usd` wurde bei null Kandidaten `null`, sobald kein Preis hinterlegt war** —
+  der einzige inhaltliche der drei. Die beiden Sonderfälle waren je für sich getestet
+  (`test_zero_candidates_still_yield_zero_not_null` mit Preis, `test_an_unpriced_model_yields_
+  null_amounts_instead_of_zero` mit Kandidaten), ihre Kombination nicht. `null` heißt „unbekannt";
+  bei null Kandidaten ist der Betrag aber bekannt, es fällt nichts an, weil nichts verarbeitet
+  wird. Die Zusage des Endpunkt-Docstrings („candidate_count=0 liefert 0.0, kein Sonderfall")
+  hing damit unausgesprochen daran, dass ein Preis gepflegt ist. Rot vor Grün behoben; der Preis
+  **je Bild** bleibt daneben korrekt `null`.
+- **Vier redundante lokale `import asyncio`** in `test_remote_classification.py` (das Modul
+  importiert `asyncio` bereits in Zeile 3) — entfernt.
+- **Zwei ungünstige Zeilenumbrüche** in `test_landmark.py` (`MockTransport(lambda …)` über zwei
+  Zeilen mit falscher Einrückung) und eine Client-Erzeugung mit schließender Klammer am
+  Zeilenende — begradigt. `ruff check` erzwingt das nicht (das Projekt fährt kein
+  `ruff format --check`), lesbar ist es trotzdem nicht.
+
 **Die beiden Diskussionspunkte, bewusst nicht behoben:**
 
 - *Redundanz zweier Registry-Tests* (`review-tests`): `test_at_least_one_provider_offers_a_real_choice`

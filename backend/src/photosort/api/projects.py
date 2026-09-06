@@ -593,8 +593,15 @@ async def estimate_classification(
         provider=provider,
         model=model,
         price_per_image_usd=price_per_image_usd,
+        # Reihenfolge der Zweige ist die Aussage (Copilot-Fund, PR #341): null Kandidaten
+        # zuerst. `null` heisst "unbekannt" - bei null Kandidaten ist der Betrag aber bekannt,
+        # es faellt nichts an, weil nichts verarbeitet wird. Der Preis JE BILD bleibt daneben
+        # korrekt `null`. Andersherum haengt die Zusage des Docstrings ("candidate_count=0
+        # liefert 0.0, kein Sonderfall") unausgesprochen daran, dass ein Preis gepflegt ist.
         estimated_cost_usd=(
-            None if price_per_image_usd is None else candidate_count * price_per_image_usd
+            0.0
+            if candidate_count == 0
+            else (None if price_per_image_usd is None else candidate_count * price_per_image_usd)
         ),
     )
 

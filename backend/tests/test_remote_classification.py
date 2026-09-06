@@ -284,9 +284,10 @@ class TestAnthropicCategoryClient:
             )
 
         client = AnthropicCategoryClient(
-            api_key="sk-test", model=ANTHROPIC_VISION_MODEL, transport=httpx.MockTransport(handler))
-
-        import asyncio
+            api_key="sk-test",
+            model=ANTHROPIC_VISION_MODEL,
+            transport=httpx.MockTransport(handler),
+        )
 
         classification = asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
 
@@ -306,9 +307,10 @@ class TestAnthropicCategoryClient:
             return httpx.Response(401, text="Unauthorized")
 
         client = AnthropicCategoryClient(
-            api_key="sk-test", model=ANTHROPIC_VISION_MODEL, transport=httpx.MockTransport(handler))
-
-        import asyncio
+            api_key="sk-test",
+            model=ANTHROPIC_VISION_MODEL,
+            transport=httpx.MockTransport(handler),
+        )
 
         with pytest.raises(RemoteCategoryClassificationApiError):
             asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
@@ -335,8 +337,6 @@ class TestMistralCategoryClient:
             transport=httpx.MockTransport(handler),
         )
 
-        import asyncio
-
         classification = asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
 
         assert classification == RemoteClassification(
@@ -355,8 +355,6 @@ class TestMistralCategoryClient:
             model=MISTRAL_VISION_MODEL,
             transport=httpx.MockTransport(handler),
         )
-
-        import asyncio
 
         with pytest.raises(RemoteCategoryClassificationApiError):
             asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
