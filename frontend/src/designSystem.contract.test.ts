@@ -594,10 +594,20 @@ interface Occurrence {
 }
 
 /**
- * Alle Fundstellen eines Suchbegriffs, zeilengenau und ohne Kommentare. Bei einem regulaeren
- * Ausdruck traegt jede Fundstelle zusaetzlich den tatsaechlich getroffenen Text.
+ * Suchbegriff einer fundstellengenauen Regel. Drei Formen, in aufsteigender Ausdrucksstaerke:
+ * feste Zeichenkette, regulaerer Ausdruck, oder ein ERKENNER - eine reine Funktion, die die
+ * Treffer einer Zeile liefert. Die dritte Form gibt es, weil sich "Abstandsstufe ausserhalb der
+ * Skala" nicht sinnvoll als ein einziger regulaerer Ausdruck schreiben laesst; als eigene Funktion
+ * ist der Erkenner ausserdem tabellengetrieben gegen synthetische Zeilen pruefbar, statt inline in
+ * einer Assertion vergraben zu sein.
  */
-function findMatches(needle: string | RegExp, files: ScannedFile[]): Occurrence[] {
+type Needle = string | RegExp | ((line: string) => string[])
+
+/**
+ * Alle Fundstellen eines Suchbegriffs, zeilengenau und ohne Kommentare. Bei einem regulaeren
+ * Ausdruck bzw. einem Erkenner traegt jede Fundstelle zusaetzlich den tatsaechlich getroffenen Text.
+ */
+function findMatches(needle: Needle, files: ScannedFile[]): Occurrence[] {
   const found: Occurrence[] = []
   for (const file of files) {
     stripComments(file.content)
@@ -606,6 +616,12 @@ function findMatches(needle: string | RegExp, files: ScannedFile[]): Occurrence[
         const base = { label: file.label, line: index + 1, text: line.trim() }
         if (typeof needle === 'string') {
           if (line.includes(needle)) found.push({ ...base, match: needle })
+          return
+        }
+        if (typeof needle === 'function') {
+          for (const match of new Set(needle(line))) {
+            found.push({ ...base, match })
+          }
           return
         }
         const pattern = new RegExp(needle.source, needle.flags.includes('g') ? needle.flags : `${needle.flags}g`)
@@ -628,11 +644,14 @@ function findMatches(needle: string | RegExp, files: ScannedFile[]): Occurrence[
   return found
 }
 
-/** Trifft der regulaere Ausdruck den ganzen Ausschnitt, ist der Ausschnitt nur der Suchbegriff. */
-function isBareNeedle(snippet: string, needle: string | RegExp): boolean {
+/** Deckt der Suchbegriff den ganzen Ausschnitt ab, ist der Ausschnitt nur der Suchbegriff. */
+function isBareNeedle(snippet: string, needle: Needle): boolean {
   const trimmed = snippet.trim()
   if (typeof needle === 'string') {
     return trimmed === needle
+  }
+  if (typeof needle === 'function') {
+    return needle(trimmed).includes(trimmed)
   }
   const match = new RegExp(needle.source, needle.flags.replace('g', '')).exec(trimmed)
   return match !== null && match[0] === trimmed
@@ -652,7 +671,7 @@ function isBareNeedle(snippet: string, needle: string | RegExp): boolean {
  * testbar ist, ohne das Dateisystem anzufassen.
  */
 function allowlistedOccurrences(
-  needle: string | RegExp,
+  needle: Needle,
   entries: AllowlistEntry[],
   files: ScannedFile[] = tsxFiles()
 ): string[] {
@@ -806,6 +825,16 @@ describe('Design-Vertrag: Selbsttest des Fundstellen-Helfers', () => {
 
 function tsxFiles(): typeof sourceFiles {
   return sourceFiles.filter((file) => file.label.endsWith('.tsx'))
+}
+
+/**
+ * Nur die Produktivdateien. Die Skalenregeln unten gelten fuer das MARKUP des Produkts, nicht fuer
+ * Testdateien: dort stehen Klassennamen als Zeichenketten in Assertionen (z.B. `input.test.tsx`
+ * haelt `focus:border-[1.5px]` fest), und eine Regel, die dort anschlaegt, zwingt dazu, genau die
+ * Zusicherung zu loeschen, die sie absichern soll.
+ */
+function productionTsxFiles(): typeof sourceFiles {
+  return tsxFiles().filter((file) => !file.label.endsWith('.test.tsx'))
 }
 
 describe('Design-Vertrag: statische Verwendungsregeln', () => {
@@ -1050,6 +1079,389 @@ describe('Design-Vertrag: Formsprache und Skalen', () => {
       return source.includes('grid-cols-12') && /gap(-x)?-3\b/.test(source)
     })
     expect(users.length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Abstands- und Wertskalen (specs/features/0321-dark-utility-register-ansichten.md, "Das Netz")
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Zerlegt eine Quellzeile in Utility-Kandidaten. Bewusst tokenweise statt ueber einen einzigen
+ * grossen regulaeren Ausdruck: Klassenlisten stehen in Zeichenketten, Template-Teilen und
+ * `cn()`-Argumenten, und ein Ausdruck mit Wortgrenzen faengt dort zuverlaessig Fehlalarme
+ * (`max-w-5xl` als `w-5`) statt Treffer.
+ */
+function classTokens(line: string): string[] {
+  // Bewusst NICHT an Klammern, Kommas oder Schraegstrichen getrennt: `w-[min(32rem,calc(100vw-
+  // 2rem))]`, `aspect-[4/3]` und `bg-bg/95` sind je EIN Token. Getrennt wird an dem, was eine
+  // Klassenliste im Quelltext tatsaechlich begrenzt.
+  return line.split(/[\s'"`{}=;<>]+/).filter((token) => token.length > 0)
+}
+
+/**
+ * Entfernt die Variantenpraefixe eines Utility-Tokens und liefert die reine Utility. Arbiträre
+ * VARIANTEN (`[&::-webkit-progress-bar]:`, `data-[state=open]:`, `has-[:disabled]:`) tragen
+ * ebenfalls eckige Klammern, sind aber KEINE willkuerlichen Werte - ohne dieses Abstreifen waeren
+ * sie dauerhafte Fehlalarme der Regel "keine willkuerlichen Werte".
+ */
+function utilityBase(token: string): string {
+  let rest = token
+  for (;;) {
+    const match = /^(?:\[[^\]]*\]|[a-z0-9-]+(?:\[[^\]]*\])?):([\s\S]*)$/.exec(rest)
+    if (match === null) {
+      return rest
+    }
+    rest = match[1]
+  }
+}
+
+/*
+ * REGEL 1 - ABSTANDSSKALA. Die acht Stufen des 8-Punkt-Rasters plus die Null. `auto` bleibt
+ * zulaessig: es ist ein Schluesselwort (`m-auto` zentriert den Dialog), keine Abstandsstufe.
+ *
+ * DIES IST EINE ABSTANDS-, KEINE GROESSENREGEL. `h-11`, `size-8`, `h-0.5`, `min-w-6`, `w-full` und
+ * `max-w-5xl` sind ausdruecklich nicht betroffen - ein Fehlalarm dort zwingt die Umsetzung dazu,
+ * die Regel wieder aufzuweichen.
+ */
+const SPACING_UTILITIES = [
+  'gap-x',
+  'gap-y',
+  'space-x',
+  'space-y',
+  'gap',
+  'px',
+  'py',
+  'pt',
+  'pr',
+  'pb',
+  'pl',
+  'p',
+  'mx',
+  'my',
+  'mt',
+  'mr',
+  'mb',
+  'ml',
+  'm',
+]
+const SPACING_SCALE = new Set(['0', '1', '2', '3', '4', '6', '8', '12', '16', 'auto'])
+const SPACING_PATTERN = new RegExp(`^-?(${SPACING_UTILITIES.join('|')})-(.+)$`)
+
+/** Alle Abstands-Utilities einer Zeile - Grundlage der Positiv-Gegenprobe. */
+function spacingUtilities(line: string): string[] {
+  return classTokens(line)
+    .map((token) => utilityBase(token))
+    .filter((base) => SPACING_PATTERN.test(base))
+}
+
+/** Abstands-Utilities einer Zeile, die NICHT auf der Skala liegen. */
+function offendingSpacingUtilities(line: string): string[] {
+  return spacingUtilities(line).filter((base) => {
+    const value = SPACING_PATTERN.exec(base)?.[2] ?? ''
+    return !SPACING_SCALE.has(value)
+  })
+}
+
+/*
+ * REGEL 2 - KEINE WILLKUERLICHEN WERTE. Ein willkuerlicher Wert umgeht jede Skala des
+ * Design-Systems, ohne dass irgendetwas rot wird. Arbiträre VARIANTEN bleiben zulaessig (siehe
+ * `utilityBase`).
+ */
+function arbitraryValues(line: string): string[] {
+  return classTokens(line)
+    .map((token) => utilityBase(token))
+    .filter((base) => /^-?[a-z0-9-]+-\[[^\]]*\]$/.test(base))
+}
+
+/*
+ * REGEL 3 - KEINE DECKKRAFT-MODIFIKATOREN AUF FARB-UTILITIES. Zwei Fehlerklassen in einer: Der
+ * Kontrast einer abgedunkelten Farbe ist statisch nicht nachrechenbar, und genau so verschwinden
+ * die Trennlinien auf dem Grund (`border-border/60` liegt bei 0.87:1).
+ *
+ * Der Erkenner ist an die FARB-NAMENSRAEUME gebunden, nicht an das Vorkommen eines Schraegstrichs -
+ * `w-1/2`, `h-1/3` und `basis-1/2` sind Brueche, keine Deckkraft.
+ */
+const COLOR_UTILITY_ROOTS = [
+  'bg',
+  'text',
+  'border',
+  'fill',
+  'stroke',
+  'ring',
+  'outline',
+  'divide',
+  'decoration',
+  'placeholder',
+  'caret',
+  'shadow',
+]
+const COLOR_OPACITY_PATTERN = new RegExp(`^(${COLOR_UTILITY_ROOTS.join('|')})-[a-z0-9-]+/\\d+$`)
+
+function colorOpacityModifiers(line: string): string[] {
+  return classTokens(line)
+    .map((token) => utilityBase(token))
+    .filter((base) => COLOR_OPACITY_PATTERN.test(base))
+}
+
+describe('Design-Vertrag: Abstands- und Wertskalen', () => {
+  /*
+   * Jeder der vier Erkenner wird TABELLENGETRIEBEN gegen synthetische Zeilen geprueft, bevor er
+   * produktiv laeuft. Eine statische Pruefung hat genau einen ernsten Fehlermodus: Sie findet
+   * nichts und besteht deswegen. Ein kaputter regulaerer Ausdruck faellt hier auf, statt still
+   * alles durchzuwinken.
+   */
+  it.each([
+    'gap-1.5',
+    'gap-2.5',
+    'gap-3.5',
+    'py-3.5',
+    'px-5',
+    'mt-5',
+    'py-10',
+    'px-10',
+    'p-0.5',
+    'mb-7',
+    'sm:gap-1.5',
+    'hover:py-3.5',
+    '-mt-5',
+  ])('erkennt %s als Abstand ausserhalb der Skala', (utility) => {
+    expect(offendingSpacingUtilities(`className="${utility} flex"`)).not.toEqual([])
+  })
+
+  it.each([
+    'p-0',
+    'gap-1',
+    'p-2',
+    'gap-3',
+    'p-4',
+    'py-6',
+    'px-8 py-8',
+    'mb-12',
+    'mt-16',
+    'm-auto',
+    'h-11',
+    'size-8',
+    'h-0.5',
+    'min-w-6',
+    'w-full',
+    'max-w-5xl',
+    'size-2.5',
+    'translate-x-0.5',
+    'text-2xl',
+    'w-1/2',
+  ])('erkennt %s NICHT als Abstandsverstoss', (utility) => {
+    expect(offendingSpacingUtilities(`className="${utility} flex"`)).toEqual([])
+  })
+
+  it.each(['text-[10px]', 'text-[10.5px]', 'h-[50px]', 'w-[240px]', 'gap-[3px]', 'p-[7px]'])(
+    'erkennt %s als willkuerlichen Wert',
+    (utility) => {
+      expect(arbitraryValues(`className="${utility}"`)).toEqual([utility])
+    }
+  )
+
+  it.each([
+    '[&::-webkit-progress-bar]:bg-accent',
+    'indeterminate:[&::-moz-progress-bar]:bg-transparent',
+    'data-[state=open]:flex',
+    'has-[:disabled]:text-text-disabled',
+    'text-xs',
+    'aspect-square',
+  ])('erkennt %s NICHT als willkuerlichen Wert', (utility) => {
+    expect(arbitraryValues(`className="${utility}"`)).toEqual([])
+  })
+
+  it.each(['border-border/60', 'bg-border/60', 'text-text/70', 'bg-black/60', 'hover:bg-bg/95'])(
+    'erkennt %s als Deckkraft-Modifikator auf einer Farb-Utility',
+    (utility) => {
+      expect(colorOpacityModifiers(`className="${utility}"`)).not.toEqual([])
+    }
+  )
+
+  it.each(['w-1/2', 'h-1/3', 'basis-1/2', 'bg-border', 'aspect-[4/3]'])(
+    'erkennt %s NICHT als Deckkraft-Modifikator',
+    (utility) => {
+      expect(colorOpacityModifiers(`className="${utility}"`)).toEqual([])
+    }
+  )
+
+  // -----------------------------------------------------------------------------------------
+  // Die Regeln selbst
+  // -----------------------------------------------------------------------------------------
+
+  it('haelt jede Abstands-Utility auf den acht Stufen des 8-Punkt-Rasters', () => {
+    expect(allowlistedOccurrences(offendingSpacingUtilities, [], productionTsxFiles())).toEqual([])
+    // Positiv-Gegenprobe: Die Kandidatenmenge ist nachweislich gross - die Regel laeuft nicht
+    // gegen eine leere Menge und bestuende deshalb auch bei kaputtem Erkenner.
+    expect(findMatches(spacingUtilities, productionTsxFiles()).length).toBeGreaterThan(100)
+  })
+
+  const ARBITRARY_VALUE_ALLOWLIST: AllowlistEntry[] = [
+    {
+      file: 'src/components/ui/popover.tsx',
+      snippet: "'z-50 max-h-[60vh] w-72",
+      reason: 'Hoehendeckel des Popover-Panels relativ zum Sichtfenster - keine Rasterstufe moeglich',
+    },
+    {
+      file: 'src/components/ui/checkbox.tsx',
+      snippet: "'size-[18px] shrink-0",
+      reason: 'abgeleitetes Board-Mass des Kontrollkaestchens (zwischen size-4 und size-5)',
+    },
+    {
+      file: 'src/components/ui/dialog.tsx',
+      snippet: "'m-auto w-[min(32rem,calc(100vw-2rem))]",
+      reason: 'Dialogbreite: Board-Mass, aber nie breiter als das Sichtfenster abzueglich Rand',
+    },
+    {
+      file: 'src/components/ui/input.tsx',
+      snippet: "'focus:border-[1.5px] focus:border-accent'",
+      reason: 'Fokusstaerkung des Feldrands - 1.5px liegt auf keiner Tailwind-Randstufe',
+    },
+    {
+      file: 'src/pages/PhotoDetailPage.tsx',
+      snippet: "className=\"aspect-[4/3] w-full",
+      reason: 'Seitenverhaeltnis der Detailbildflaeche - Tailwind kennt nur square und video',
+    },
+  ]
+
+  it('verwendet willkuerliche Werte nur an der begruendeten Liste', () => {
+    expect(allowlistedOccurrences(arbitraryValues, ARBITRARY_VALUE_ALLOWLIST, productionTsxFiles())).toEqual([])
+    // Positiv-Gegenprobe: Die Regel laeuft nicht gegen eine leere Kandidatenmenge.
+    expect(findMatches(arbitraryValues, productionTsxFiles()).length).toBeGreaterThan(0)
+  })
+
+  const COLOR_OPACITY_ALLOWLIST: AllowlistEntry[] = [
+    {
+      file: 'src/components/ui/dialog.tsx',
+      snippet: "'backdrop:bg-black/60'",
+      reason: 'Abdunklung des Hintergrunds hinter dem Modal - kein Vorder-/Hintergrundpaar',
+    },
+    {
+      file: 'src/components/Stepper.tsx',
+      snippet: 'border-b border-separator bg-bg/95',
+      reason: 'durchscheinende sticky Kopfzeile der Schrittnavigation',
+    },
+    {
+      file: 'src/components/CategoryOverrideMarker.tsx',
+      snippet: 'rounded-full bg-bg/85',
+      reason: 'Backdrop des Uebersteuerungs-Markers ueber einer Fotokachel',
+    },
+    {
+      file: 'src/components/CriterionDetailsPopover.tsx',
+      snippet: 'border-border-control bg-bg/85',
+      reason: 'Backdrop des Info-Triggers ueber einer Fotokachel',
+    },
+  ]
+
+  it('verwendet Deckkraft-Modifikatoren auf Farb-Utilities nur an der begruendeten Liste', () => {
+    expect(
+      allowlistedOccurrences(colorOpacityModifiers, COLOR_OPACITY_ALLOWLIST, productionTsxFiles())
+    ).toEqual([])
+    // Positiv-Gegenprobe: Die drei freigegebenen Abdunklungen werden tatsaechlich gefunden.
+    expect(findMatches(colorOpacityModifiers, productionTsxFiles()).length).toBeGreaterThan(0)
+  })
+
+  /*
+   * REGEL 4 - `opacity-*` FUNDSTELLENGENAU. Sie sichert die riskanteste Einzelentscheidung dieser
+   * Stufe dauerhaft ab: Auf der aussortierten Karte wird ausschliesslich die BILDFLAECHE gedaempft,
+   * nie der Kartenkoerper (ADR 0055 Abweichung 7). Ein spaeteres `opacity-40` am Koerper druecke
+   * Kennzeichen und Dateinamen wieder unter die Kontrastschwelle, ohne dass sonst irgendetwas rot
+   * wuerde - der Graustufen-Lauf ist ein einmaliger Ad-hoc-Lauf und traegt das nicht.
+   */
+  const OPACITY_ALLOWLIST: AllowlistEntry[] = [
+    {
+      file: 'src/components/ui/button.tsx',
+      snippet: 'disabled:text-text-disabled disabled:opacity-40',
+      reason: 'deaktivierte Schaltflaeche - WCAG nimmt inaktive Bedienelemente ausdruecklich aus',
+    },
+    {
+      file: 'src/components/ui/button.tsx',
+      snippet: 'bg-accent text-accent-fg hover:opacity-85 active:opacity-70',
+      reason: 'Ueberfahren/Gedrueckt der primaeren Schaltflaeche - Flaeche bleibt, nur Deckkraft',
+    },
+    {
+      file: 'src/components/ui/button.tsx',
+      snippet: "'border border-border-control bg-overlay text-text-h hover:opacity-80",
+      reason: 'Ueberfahren der sekundaeren Schaltflaeche (zwei Auspraegungen, gleiche Zeile)',
+    },
+    {
+      file: 'src/components/ui/button.tsx',
+      snippet: "isDisabledSlot && 'pointer-events-none opacity-40'",
+      reason: 'deaktivierter asChild-Link - traegt kein natives disabled-Attribut',
+    },
+    {
+      file: 'src/components/Stepper.tsx',
+      snippet: "isBlocked && 'opacity-40'",
+      reason: 'Beschriftung eines blockierten Schritts - das Schloss-Symbol bleibt voll deckend',
+    },
+    {
+      file: 'src/components/RatingButtons.tsx',
+      snippet: 'text-rating-favorite-fg hover:opacity-85 active:opacity-70',
+      reason: 'aktiver Eintrag der Bewertungsleiste (Favorit)',
+    },
+    {
+      file: 'src/components/RatingButtons.tsx',
+      snippet: 'text-rating-album-worthy-fg hover:opacity-85 active:opacity-70',
+      reason: 'aktiver Eintrag der Bewertungsleiste (Album-wuerdig)',
+    },
+    {
+      file: 'src/components/RatingButtons.tsx',
+      snippet: 'text-rating-rejected-fg hover:opacity-85 active:opacity-70',
+      reason: 'aktiver Eintrag der Bewertungsleiste (Verwerfen)',
+    },
+    {
+      file: 'src/components/PhotoCard.tsx',
+      snippet: "aspect-square overflow-hidden rounded-md', isRejected && 'opacity-40'",
+      reason:
+        'gedaempfte BILDFLAECHE der aussortierten Karte - der Ausschnitt zeigt bewusst das Element, ' +
+        'das den Kachel-Link traegt; am Kartenkoerper waere dieselbe Utility ein Kontrastverlust',
+    },
+  ]
+
+  it('verwendet opacity-* nur an der begruendeten Liste, fundstellengenau', () => {
+    expect(allowlistedOccurrences('opacity-', OPACITY_ALLOWLIST, productionTsxFiles())).toEqual([])
+  })
+
+  /*
+   * `h-11`/`min-h-11` ist seit ADR 0055 Punkt 8 die AUSNAHME, nicht die Regel: Bedienelemente sind
+   * sichtbar 32px hoch und beziehen ihre 44px aus der Aufspannung. Sichtbare 44px sind nur in drei
+   * Faellen richtig - heisser Pfad, Zeilenhoehe zeilenweiser Listen, und Eingabefelder/
+   * Kontrollkaestchen (ein ersetztes Element traegt keine Pseudo-Elemente und loest seine
+   * Trefferflaeche ausschliesslich ueber die sichtbare Zeilenhoehe).
+   */
+  const TALL_CONTROL_ALLOWLIST: AllowlistEntry[] = [
+    {
+      file: 'src/components/RatingButtons.tsx',
+      snippet: "const HOT_PATH_HEIGHT = 'h-11 sm:h-8'",
+      reason: 'heisser Pfad: ein Fehlgriff schreibt hier einen falschen Datenwert',
+    },
+    {
+      file: 'src/components/ui/input.tsx',
+      snippet: "'h-11 w-full rounded-sm",
+      reason: 'Eingabefeld: ersetztes Element ohne Pseudo-Element, Trefferflaeche = Zeilenhoehe',
+    },
+    {
+      file: 'src/components/ui/checkbox.tsx',
+      snippet: 'inline-flex min-h-11 cursor-pointer',
+      reason: 'Kontrollkaestchen samt Beschriftung: dieselbe Begruendung wie beim Eingabefeld',
+    },
+    {
+      file: 'src/components/CategorySelect.tsx',
+      snippet: "className=\"h-11 rounded-sm border",
+      reason: 'Auswahlfeld: ersetztes Element, zugleich heisser Pfad der Kategorie-Zuordnung',
+    },
+    {
+      file: 'src/pages/CurateCategoriesPage.tsx',
+      snippet: 'h-auto min-h-11 w-full justify-start',
+      reason: 'Aufklapp-Zeile der Kuratierung: Zeilenhoehe einer zeilenweisen Liste',
+    },
+  ]
+
+  it('verwendet die sichtbaren 44px nur an den drei begruendeten Kategorien', () => {
+    expect(
+      allowlistedOccurrences(/\bmin-h-11\b|\bh-11\b/, TALL_CONTROL_ALLOWLIST, productionTsxFiles())
+    ).toEqual([])
   })
 })
 
