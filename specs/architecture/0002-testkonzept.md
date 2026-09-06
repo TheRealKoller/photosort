@@ -367,7 +367,7 @@ Gilt als Vorlage für jede künftige Änderung, die (a) eine geschlossene Taxono
 Gilt als Vorlage für jede künftige Änderung, die (a) einen Geldbetrag aus einer Preistabelle berechnet und einfriert, (b) viele Kennzahlen aus einer Datenlage in einem Nur-Lese-Endpunkt aggregiert, (c) eine nur unter einem bestimmten DB-Dialekt verfügbare Funktion nutzt, oder (d) das Dateisystem zur Request-Zeit vermisst.
 
 
-### Eine *wählbare* Betriebseinstellung aus einer kuratierten Registry: Startvalidierung, Belegpflicht am Preiseintrag und die Dreifach-Identität eines durchgereichten Werts (`config.py`/`cloud_vision.py`/`pricing.py`/`worker.py`) — neu für ADR [`0060`](../decisions/0059-modellwahl-je-anbieter-und-modellgebundene-kostenschaetzung.md)
+### Eine *wählbare* Betriebseinstellung aus einer kuratierten Registry: Startvalidierung, Belegpflicht am Preiseintrag und die Dreifach-Identität eines durchgereichten Werts (`config.py`/`cloud_vision.py`/`pricing.py`/`worker.py`) — neu für ADR [`0059`](../decisions/0059-modellwahl-je-anbieter-und-modellgebundene-kostenschaetzung.md)
 
 **Teststrategie-Konsultation zur Spec [`0304`](../features/0304-cloud-modell-je-anbieter-waehlbar.md)** (Cloud-Modell je Anbieter wählbar). Bisher waren Betriebseinstellungen entweder frei (`str`) oder aus einer im Typ selbst stehenden Menge (`Literal`); neu ist eine Einstellung, deren erlaubte Werte in einer **Datenstruktur** liegen und **von einem zweiten Feld abhängen**. Ab hier projektweit geltend:
 
