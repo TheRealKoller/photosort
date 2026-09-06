@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from datetime import date, timedelta
 from typing import get_args
 from urllib.parse import urlparse
@@ -13,12 +14,22 @@ from photosort.cloud_vision import (
     TokenUsage,
 )
 from photosort.config import Settings
+from photosort.landmark import (
+    AnthropicLandmarkClient,
+    MistralLandmarkClient,
+    build_landmark_client,
+)
 from photosort.pricing import (
     ASSUMED_USAGE_BY_PROVIDER,
     MODEL_PRICING,
     ModelPricing,
     compute_cost_usd,
     estimate_usd_per_image,
+)
+from photosort.remote_classification import (
+    AnthropicCategoryClient,
+    MistralCategoryClient,
+    build_category_classification_client,
 )
 
 # specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
@@ -251,3 +262,27 @@ class TestEstimateUsdPerImage:
                 estimate = estimate_usd_per_image(model, provider)
 
                 assert estimate is not None and estimate > 0, (provider, model)
+
+
+class TestTheModelIsAlwaysPassedIn:
+    """Review-Fund (`review-tests`, Spec 0304): die Entkopplung aus ADR 0059 Punkt 7 haelt nur,
+    solange das Modell wirklich hereingereicht werden MUSS. Ein Default auf die Modulkonstante
+    stellte die aufgeloeste Kopplung wieder her - und ein Aufrufer, der das Modell vergisst, fiele
+    dann nicht beim Typecheck auf, sondern erst in der Cloud-Rechnung."""
+
+    def test_no_client_constructor_defaults_the_model(self) -> None:
+        for client in (
+            AnthropicLandmarkClient,
+            MistralLandmarkClient,
+            AnthropicCategoryClient,
+            MistralCategoryClient,
+        ):
+            parameter = inspect.signature(client.__init__).parameters["model"]
+
+            assert parameter.default is inspect.Parameter.empty, client.__name__
+
+    def test_both_factories_require_the_model(self) -> None:
+        for factory in (build_landmark_client, build_category_classification_client):
+            parameter = inspect.signature(factory).parameters["model"]
+
+            assert parameter.default is inspect.Parameter.empty, factory.__name__

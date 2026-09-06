@@ -6,6 +6,7 @@ import logging
 import httpx
 import pytest
 
+import photosort.cloud_vision as cloud_vision
 from photosort.cloud_vision import (
     ANTHROPIC_API_VERSION,
     ANTHROPIC_MESSAGES_URL,
@@ -309,3 +310,19 @@ class TestDefaultVisionModelForProvider:
         und der Lauf wird als "nicht erfasst" ausgewiesen - statt einen laufenden Cloud-Job mit
         einem KeyError abzubrechen."""
         assert default_vision_model_for_provider("openai") == "openai"
+
+    def test_every_vision_model_constant_is_offered_in_the_registry(self) -> None:
+        """Gegenrichtung zur Preis-Invariante in test_pricing.py (Review-Fund `review-tests`):
+        dort wird geprueft, dass jedes WAEHLBARE Modell einen Preis hat. Hier die andere Richtung -
+        eine `*_VISION_MODEL`-Konstante, die in keiner Registry steht, waere ein Modell, das im
+        Code existiert, aber niemand einstellen kann; typischer Zwischenstand, wenn jemand die
+        Konstante ergaenzt und die Registry vergisst."""
+        constants = {
+            value
+            for name, value in vars(cloud_vision).items()
+            if "VISION_MODEL" in name and isinstance(value, str)
+        }
+        selectable = {model for models in VISION_MODELS_BY_PROVIDER.values() for model in models}
+
+        assert constants, "keine *VISION_MODEL*-Konstante in cloud_vision.py gefunden"
+        assert constants <= selectable

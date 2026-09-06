@@ -14,6 +14,8 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import photosort.worker as worker
+from photosort.cloud_vision import VISION_MODELS_BY_PROVIDER
 from photosort.label_embedding import LabelEmbedderLike
 from photosort.landmark import LandmarkApiError, LandmarkDetection
 from photosort.models import (
@@ -675,3 +677,66 @@ async def test_a_cancelled_remote_phase_fails_the_whole_run_immediately(
     assert run.status == ScanStatus.FAILED
     assert run.phase is None
     assert run.error_message == "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
+
+
+# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, Akzeptanzkriterium "Die Einstellung
+# wirkt auf beide Cloud-Anteile einheitlich; es entstehen nicht zwei unterschiedliche Modelle
+# nebeneinander" (Review-Fund `review-tests`: die Einzelphasen-Tests belegen je Phase das richtige
+# Modell, aber nicht, dass BEIDE Phasen desselben Laufs dasselbe bekommen - genau die Aussage des
+# Kriteriums).
+
+
+async def test_both_cloud_phases_of_one_run_get_the_same_configured_model(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stronger = VISION_MODELS_BY_PROVIDER["anthropic"][1]
+    monkeypatch.setattr(worker.settings, "landmark_model", stronger)
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+    seen: dict[str, str] = {}
+
+    def build_category(model: str) -> object:
+        seen["category"] = model
+        return RecordingCategoryClient()
+
+    def build_landmark(model: str) -> object:
+        seen["landmark"] = model
+        return RecordingLandmarkClient()
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=build_category,
+        build_landmark_client=build_landmark,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert seen == {"category": stronger, "landmark": stronger}
+
+
+async def test_a_purely_local_run_resolves_no_model_at_all(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Gegenprobe zum Security-Muss-Kriterium "kein einziger Cloud-Aufruf im gesamten Durchlauf":
+    ohne Cloud-Nutzung wird keine der beiden Factories aufgerufen, also auch kein Modell an einen
+    Anbieter gereicht - und die Modellspalte des Laufs bleibt NULL."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=False,
+        build_category_client=_exploding_category_client_builder,
+        build_landmark_client=_exploding_landmark_client_builder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.landmark_model is None
