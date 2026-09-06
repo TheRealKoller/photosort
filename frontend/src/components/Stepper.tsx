@@ -5,6 +5,7 @@ import type { ProjectOut } from '../api/types'
 import { cn } from '../lib/utils'
 import { getBlockedReason, PIPELINE_STEPS, type PipelineStepState, type StepId } from '../utils/pipelineSteps'
 import { Button } from './ui/button'
+import { Icon } from './ui/icon'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from './ui/popover'
 
 interface StepperProps {
@@ -14,26 +15,51 @@ interface StepperProps {
   activeStepId: StepId
 }
 
-// Gemeinsames Mass fuer JEDEN Schritt-Eintrag, auch die nicht-klickbaren (Akzeptanzkriterium 15,
-// UI/UX-Abschnitt der Spec 0042: "Konsistenz wichtiger als Platzersparnis"). Board-Mass 32px mit
-// aufgespannter Trefferflaeche auf beiden Achsen (`tap-target-square`) statt der frueheren 44px
-// Sichtgroesse; Radius 8px wie das Navigationselement des Boards statt der frueheren Vollrundung.
-// Keine eigene Fokusdarstellung mehr - die eine globale, abgesetzte Kontur in index.css traegt sie.
+/*
+ * Gemeinsames Mass fuer JEDEN Schritt-Eintrag, auch die nicht-klickbaren (Akzeptanzkriterium 15,
+ * UI/UX-Abschnitt der Spec 0042: "Konsistenz wichtiger als Platzersparnis"). Board-Mass 32px mit
+ * aufgespannter Trefferflaeche auf beiden Achsen (`tap-target-square`) statt der frueheren 44px
+ * Sichtgroesse; Radius 8px wie das Navigationselement des Boards. Keine eigene Fokusdarstellung -
+ * die eine globale, abgesetzte Kontur in index.css traegt sie.
+ *
+ * AB `sm:` WIRD AUS DEM MARKER DAS BOARD-NAVIGATIONSELEMENT (specs/features/0321-dark-utility-
+ * register-ansichten.md, UI/UX-Abschnitt 5): Glyphe UND ausgeschriebene Beschriftung in EINEM
+ * Element, Polsterung 12/8px statt der 16/8px des Boards, damit die fuenf Beschriftungen ohne
+ * Kuerzung in eine Reihe passen. UNTERHALB `sm:` bleibt alles wie zuvor: reine Marker-Darstellung
+ * plus die Orientierungszeile "Schritt 3 von 5" - fuenf beschriftete Nav-Elemente passen bei 360px
+ * nicht nebeneinander, und waagerechtes Scrollen ist Ausschlusskriterium.
+ *
+ * EIN DOM-BAUM, kein zweiter Teilbaum fuer die schmale Breite: doppelte Zweige wuerden Rollen,
+ * Namen und Elementanzahl verdoppeln.
+ *
+ * `border` statt der 1.5px des Boards: 1.5px liegt auf keiner Tailwind-Stufe, und willkuerliche
+ * Werte sind seit dieser Stufe statisch verboten. Den aktiven Zustand tragen ohnehin drei Merkmale
+ * zugleich - Akzentrand, Akzentschrift und fetter Schnitt.
+ */
 const STEP_MARKER_BASE_CLASSES =
-  'tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md border-2 text-xs ' +
-  'font-semibold transition-colors'
+  'tap-target-square flex size-8 shrink-0 items-center justify-center gap-1 rounded-md border text-xs ' +
+  'font-semibold transition-colors sm:size-auto sm:min-h-8 sm:flex-1 sm:justify-start sm:px-3 sm:py-2'
 
-function CheckIcon() {
+/**
+ * Die ausgeschriebene Schrittbeschriftung IM Nav-Element (Spec 0321): unterhalb `sm:` verborgen,
+ * ab `sm:` sichtbar. Bleibt `aria-hidden` - der zugaengliche Name kommt weiterhin vollstaendig aus
+ * dem `aria-label` des Elements und enthaelt dasselbe Wort. UMBRECHEND, NIE GEKUERZT
+ * (`whitespace-normal`, kein `truncate`): bei knapper Breite entstehen zweizeilige Beschriftungen
+ * statt abgeschnittener - waagerechtes Scrollen ist Ausschlusskriterium, Kuerzen ebenso.
+ */
+function StepLabel({ label, isBlocked }: { label: string; isBlocked: boolean }) {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4" fill="none">
-      <path
-        d="M3 8.5 6.5 12 13 4.5"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <span
+      aria-hidden="true"
+      className={cn(
+        'hidden min-w-0 whitespace-normal text-left sm:block',
+        // Blockierte Schritte treten auch in der Beschriftung zurueck (Vorlage) - rein dekorativ,
+        // die Zustandsangabe steht im aria-label des Elements, es geht keine Information verloren.
+        isBlocked && 'opacity-40'
+      )}
+    >
+      {label}
+    </span>
   )
 }
 
@@ -131,11 +157,11 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
       </a>
       <nav
         aria-label="Fortschritt der Pipeline"
-        className="sticky top-0 z-10 border-b border-border bg-bg/95 px-4 py-3 backdrop-blur-sm sm:px-6"
+        className="sticky top-0 z-10 border-b border-separator bg-bg/95 px-4 py-3 backdrop-blur-sm sm:px-6"
       >
         {/* Schmale Orientierungszeile unterhalb sm: (UI/UX-Abschnitt) - ersetzt die ab sm:
             sichtbaren Labels unter den Kreisen, verhindert Umbruch/Horizontal-Scroll der Leiste. */}
-        <p className="mb-2 text-sm text-text sm:hidden" aria-hidden="true">
+        <p className="mb-2 text-xs text-text-muted sm:hidden" aria-hidden="true">
           {activeIndex >= 0 && `Schritt ${activeIndex + 1} von 5: ${activeLabel}`}
         </p>
         <ol className="flex items-center gap-3">
@@ -156,22 +182,34 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
              * steht, ist dann die wichtigere Information. Dass er erledigt ist, sagt weiterhin das
              * Hakensymbol im Kreis, die Zustandsbenennung steckt ohnehin im aria-label.
              */
+            /*
+             * Die DREI Board-Zustaende des Navigationselements (ruhend / ueberfahren / aktiv),
+             * darauf abgebildet die VIER vorhandenen Schrittbedeutungen. `--border-control` statt
+             * des Board-Rahmens: das Element ist ein Bedienelement (Board-Abweichung 2, kein neuer
+             * Fall). Jede `hover:`-Variante bekommt eine `active:`-Variante daneben - am Telefon
+             * ist "gedrueckt" der einzige Zustand, den es ueberhaupt gibt.
+             *
+             * Vollstaendig ausgeschriebene Klassennamen, kein Template-String: Tailwind erkennt
+             * Utility-Klassen nur als statische, vollstaendige Strings.
+             */
             const markerClasses = cn(
               STEP_MARKER_BASE_CLASSES,
-              // Prozessstufen nach Board (Abschnitt 6): die AKTUELLE Stufe traegt Akzent UND
-              // fetten Schnitt - ueber Schnitt und Farbe, nie ueber Farbe allein. Erledigt/kommend
-              // in Sekundaertext, noch nicht begonnen (blockiert) in `--text-muted`.
-              isCurrent && 'border-accent bg-accent font-bold text-accent-fg',
-              !isCurrent && isDone && 'border-accent-2 bg-transparent text-accent-2',
-              !isCurrent && !isDone && !isBlocked && 'border-border-control bg-transparent text-text',
-              // Blockiert: schwaecherer Rahmen und gedaempfte Beschriftung statt eines pauschalen
-              // opacity-50 auf dem ganzen Marker - so bleibt das Schloss-Symbol selbst lesbar.
-              !isCurrent && !isDone && isBlocked && 'border-border bg-transparent text-text-muted'
+              // aktiv: Flaeche `--overlay`, anliegender Akzentrand, Akzentschrift, fetter Schnitt.
+              // Nie ueber Farbe allein - `aria-current="step"` und der Schnitt tragen mit.
+              isCurrent && 'border-accent bg-overlay font-bold text-accent',
+              // ruhend (erledigt UND ausstehend): Flaeche `--surface`, Umriss `--border-control`.
+              // Unterschieden werden die beiden durch die Glyphe - Haken gegen Schrittnummer.
+              !isCurrent &&
+                !isBlocked &&
+                'border-border-control bg-surface text-text hover:bg-overlay hover:text-text-h active:bg-border active:text-text',
+              // blockiert: ruhend mit gedaempfter Beschriftung und Schloss-Symbol. Kein pauschales
+              // opacity auf dem ganzen Element - so bleibt das Schloss selbst lesbar.
+              !isCurrent && isBlocked && 'border-border bg-surface text-text-muted'
             )
 
             return (
               <li key={definition.id} className="flex flex-1 items-center gap-3 last:flex-initial">
-                <div className="flex flex-col items-center gap-3 sm:flex-row">
+                <div className="flex flex-col items-center gap-3 sm:min-w-0 sm:flex-1 sm:flex-row">
                   {isBlocked ? (
                     <span
                       aria-disabled="true"
@@ -180,7 +218,8 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
                       data-step-state={statusLabel}
                       className={markerClasses}
                     >
-                      {isDone ? <CheckIcon /> : <LockIcon />}
+                      {isDone ? <Icon name="check" size={16} /> : <LockIcon />}
+                      <StepLabel label={definition.label} isBlocked={isBlocked} />
                     </span>
                   ) : (
                     <Link
@@ -193,7 +232,12 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
                       {/* Erledigt zeigt den Haken, sonst die Schrittnummer (Vorlage) - der leere
                           Kreis von zuvor liess offen, welcher Schritt gemeint ist. Rein visuell,
                           die zugaengliche Benennung steht vollstaendig im aria-label. */}
-                      {isDone ? <CheckIcon /> : <span aria-hidden="true">{index + 1}</span>}
+                      {isDone ? (
+                        <Icon name="check" size={16} />
+                      ) : (
+                        <span aria-hidden="true">{index + 1}</span>
+                      )}
+                      <StepLabel label={definition.label} isBlocked={isBlocked} />
                     </Link>
                   )}
                   {isBlocked && (
@@ -202,22 +246,12 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
                       reason={getBlockedReason(definition.id, project)}
                     />
                   )}
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'hidden text-xs text-text sm:block',
-                      isCurrent && 'font-semibold text-text-h',
-                      // Blockierte Schritte treten auch in der Beschriftung zurueck (Vorlage) -
-                      // rein dekorativ (aria-hidden), die Zustandsangabe steht im aria-label des
-                      // Kreises, hier geht also keine Information verloren.
-                      isBlocked && 'opacity-40'
-                    )}
-                  >
-                    {definition.label}
-                  </span>
                 </div>
+                {/* Verbindungslinie auf --separator: als freistehende Linie auf dem Grund
+                    erreichte --border nur 1.45:1 und war praktisch unsichtbar. `h-0.5` ist eine
+                    Hoehe, keine Abstandsstufe. */}
                 {index < PIPELINE_STEPS.length - 1 && (
-                  <span aria-hidden="true" className="h-0.5 flex-1 bg-border" />
+                  <span aria-hidden="true" className="h-0.5 flex-1 bg-separator" />
                 )}
               </li>
             )

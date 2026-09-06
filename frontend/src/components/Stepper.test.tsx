@@ -210,6 +210,33 @@ describe('Stepper', () => {
   })
 
   /*
+   * specs/features/0321-dark-utility-register-ansichten.md, Etappe 3: Die sichtbare
+   * Schrittbeschriftung zieht IN das Nav-Element hinein und bleibt `aria-hidden`. Zugesichert
+   * wird, dass der zugaengliche Name dadurch unveraendert vollstaendig aus dem `aria-label` kommt -
+   * die e2e-Selektoren und die Tests oben haengen wortgleich daran.
+   */
+  it('keeps the accessible name coming entirely from the aria-label, label moved inside', () => {
+    renderStepper()
+
+    const step = screen.getByRole('link', { name: 'Schritt 1 von 5: Scan, aktuell' })
+    expect(step).toHaveAccessibleName('Schritt 1 von 5: Scan, aktuell')
+    // Die Beschriftung sitzt jetzt IM Nav-Element und ist dort vor Screenreadern verborgen.
+    const label = within(step).getByText('Scan')
+    expect(label).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('keeps exactly five list items - the responsive break uses utilities, not a second subtree', () => {
+    // Zwei parallele Markup-Zweige (`hidden sm:flex` neben `flex sm:hidden`) wuerden Rollen, Namen
+    // und Elementanzahl verdoppeln. Diese Kardinalitaet ist die Absicherung dagegen.
+    renderStepper()
+
+    const nav = screen.getByRole('navigation', { name: 'Fortschritt der Pipeline' })
+    const items = within(nav).getAllByRole('listitem')
+    expect(items).toHaveLength(5)
+    expect(within(items[0]).getAllByText('Scan')).toHaveLength(1)
+  })
+
+  /*
    * Die vier Schrittzustaende bleiben ohne Farbwahrnehmung unterscheidbar: `aria-current` bzw.
    * `data-step-state` plus das Symbol im Marker tragen die Aussage, nicht die Farbe.
    */

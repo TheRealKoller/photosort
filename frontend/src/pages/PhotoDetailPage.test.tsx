@@ -223,22 +223,37 @@ describe('PhotoDetailPage', () => {
     await screen.findByText('2/3')
   })
 
-  it('sets a rating via keyboard shortcut "1"', async () => {
+  /*
+   * specs/features/0321-dark-utility-register-ansichten.md, Etappe 3: NEUE FEHLERKLASSE, die diese
+   * Spec erst erzeugt - EIN KAESTCHEN, DAS LUEGT. Die sichtbare Ziffer steht seit dem Umbau in
+   * `RatingButtons`, die Tastenbelegung hier in `PhotoDetailPage`; beide koennen auseinanderlaufen,
+   * ohne dass irgendein anderer Test etwas merkt.
+   *
+   * Deshalb Tabelle ueber ALLE DREI Tasten, und je Zeile die zusaetzliche Zusicherung, dass die
+   * Schaltflaeche des ausgeloesten Status genau diese Ziffer sichtbar traegt. Ein Test, der nur die
+   * Anwesenheit der Ziffern prueft, erfuellt das nicht.
+   */
+  it.each([
+    ['1', 'favorite', 'Favorit'],
+    ['2', 'album_worthy', 'Album-würdig'],
+    ['3', 'rejected', 'Verwerfen'],
+  ] as const)('sets the rating of key "%s" and shows that very key on its button', async (key, status, label) => {
     const list: PhotoListOut = { items: [photo({ id: 1 }), photo({ id: 2 })], total: 2 }
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       user_id: 1,
       username: 'testuser',
-      status: 'favorite',
+      status,
     })
     const user = userEvent.setup()
 
     renderPage('/projects/1/photos/1')
     await screen.findByText('1/2')
 
-    await user.keyboard('1')
+    await user.keyboard(key)
 
-    expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'favorite')
+    expect(ratingsApi.setRating).toHaveBeenCalledWith(1, status)
+    expect(screen.getByRole('button', { name: label })).toHaveTextContent(key)
   })
 
   it('toggles an existing rating back to unrated when the same button is clicked again', async () => {
