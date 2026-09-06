@@ -12,10 +12,12 @@ from photosort.cloud_vision import (
     ANTHROPIC_VISION_MODEL,
     MISTRAL_CHAT_COMPLETIONS_URL,
     MISTRAL_VISION_MODEL,
+    VISION_MODELS_BY_PROVIDER,
     VISION_REQUEST_TIMEOUT_SECONDS,
     TokenUsage,
     anthropic_response_to_json,
     anthropic_usage_from_response,
+    default_vision_model_for_provider,
     mistral_response_to_json,
     mistral_usage_from_response,
     raise_for_vision_api_status,
@@ -250,3 +252,60 @@ class TestUsageWarningLeaksNothing:
         assert self._BASE64_ECHO not in logged
         assert "Strand von Sylt" not in logged
         assert MISTRAL_VISION_MODEL in logged
+
+
+# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-anbieter-
+# und-modellgebundene-kostenschaetzung.md Punkt 2 ab hier: die kuratierte Registry der waehlbaren
+# Modelle je Anbieter loest die fruehere 1:1-Zuordnung `VISION_MODEL_BY_PROVIDER` ab.
+
+
+class TestVisionModelsByProvider:
+    def test_every_configurable_provider_has_at_least_one_model(self) -> None:
+        assert set(VISION_MODELS_BY_PROVIDER) == {"anthropic", "mistral"}
+        for models in VISION_MODELS_BY_PROVIDER.values():
+            assert models
+
+    def test_the_registry_entries_are_ordered_immutable_tuples(self) -> None:
+        """Geordnetes Tupel statt Menge (ADR 0059 Punkt 2): die Reihenfolge traegt die Aussage
+        "erstes Element = Voreinstellung des Anbieters"."""
+        for models in VISION_MODELS_BY_PROVIDER.values():
+            assert isinstance(models, tuple)
+
+    def test_no_model_id_is_offered_under_two_providers(self) -> None:
+        """Ein doppelt gefuehrtes Modell machte die anbieterbezogene Startvalidierung sinnlos und
+        die Verbrauchsannahme je Anbieter mehrdeutig."""
+        all_models = [model for models in VISION_MODELS_BY_PROVIDER.values() for model in models]
+
+        assert len(all_models) == len(set(all_models))
+
+    def test_the_first_entry_is_the_unchanged_default_of_each_provider(self) -> None:
+        """Akzeptanzkriterium "ohne gesetzte Einstellung exakt wie bisher": die Voreinstellung
+        bleibt das bisher fest verdrahtete Modell.
+
+        Bewusst gegen die AUSGESCHRIEBENEN Modell-IDs statt gegen `ANTHROPIC_VISION_MODEL`/
+        `MISTRAL_VISION_MODEL` (Fund `test-engineer`): ein Vergleich mit der Konstante waere
+        tautologisch und bliebe gruen, wenn jemand ihren WERT aendert - genau die stille
+        Verschiebung, die dieses Akzeptanzkriterium ausschliessen soll."""
+        assert VISION_MODELS_BY_PROVIDER["anthropic"][0] == "claude-haiku-4-5"
+        assert VISION_MODELS_BY_PROVIDER["mistral"][0] == "ministral-3b-2512"
+        # Gegenprobe, dass die Konstanten dieselbe Aussage tragen.
+        assert VISION_MODELS_BY_PROVIDER["anthropic"][0] == ANTHROPIC_VISION_MODEL
+        assert VISION_MODELS_BY_PROVIDER["mistral"][0] == MISTRAL_VISION_MODEL
+
+    def test_at_least_one_provider_offers_a_real_choice(self) -> None:
+        """Akzeptanzkriterium: eine Auswahl mit nur einer Moeglichkeit je Anbieter erfuellt die
+        Story nicht."""
+        assert any(len(models) >= 2 for models in VISION_MODELS_BY_PROVIDER.values())
+
+
+class TestDefaultVisionModelForProvider:
+    def test_it_returns_the_first_registry_entry(self) -> None:
+        assert default_vision_model_for_provider("anthropic") == ANTHROPIC_VISION_MODEL
+        assert default_vision_model_for_provider("mistral") == MISTRAL_VISION_MODEL
+
+    def test_an_unknown_provider_falls_back_to_its_own_name(self) -> None:
+        """Wortgleich uebernommene Rueckfallregel der abgeloesten `vision_model_for_provider`
+        (ADR 0059 Punkt 2): das Ergebnis ist dann eine Modell-ID, die `MODEL_PRICING` nicht kennt,
+        und der Lauf wird als "nicht erfasst" ausgewiesen - statt einen laufenden Cloud-Job mit
+        einem KeyError abzubrechen."""
+        assert default_vision_model_for_provider("openai") == "openai"

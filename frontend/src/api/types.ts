@@ -112,8 +112,15 @@ export interface ClassificationEstimateOut {
   remote_category_candidate_count: number
   landmark_candidate_count: number
   provider: string
-  price_per_image_usd: number
-  estimated_cost_usd: number
+  // specs/features/0304-cloud-modell-je-anbieter-waehlbar.md: das Modell, auf das sich die
+  // Schaetzung bezieht - seit die Modellwahl eine Betriebseinstellung ist, benennt `provider`
+  // allein die Preisgrundlage nicht mehr eindeutig.
+  model: string
+  // `| null` heisst "fuer das eingestellte Modell ist kein Preis hinterlegt", NIE 0. Ein
+  // `?? 0` an dieser Stelle behauptete Kostenfreiheit und fuehrte den mit Spec 0304 behobenen
+  // Defekt auf dem Rueckweg wieder ein - `tsc` erzwingt die Behandlung an der Anzeigestelle.
+  price_per_image_usd: number | null
+  estimated_cost_usd: number | null
 }
 
 export interface BrowseEntry {

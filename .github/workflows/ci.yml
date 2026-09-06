@@ -149,34 +149,43 @@ jobs:
           echo "backend command: $backend_command"
           echo "$backend_command" | grep -q "alembic upgrade head"
           echo "$backend_command" | grep -q "uvicorn"
-      - name: Static check - LANDMARK_PROVIDER and MISTRAL_API_KEY passthrough (spec 0057)
+      - name: Static check - LANDMARK_PROVIDER/LANDMARK_MODEL/MISTRAL_API_KEY passthrough (spec 0057, 0304)
         run: |
           set -euo pipefail
           # Keine real gesetzten Secrets hier - nur ein harmloser Testwert fuer
           # MISTRAL_API_KEY, siehe Sicherheitshinweis in der Spec (kein Secret-Leck
           # ueber die interpolierte Ausgabe von "docker compose config").
-          unset LANDMARK_PROVIDER MISTRAL_API_KEY || true
+          unset LANDMARK_PROVIDER LANDMARK_MODEL MISTRAL_API_KEY || true
 
-          echo "--- default (no LANDMARK_PROVIDER/MISTRAL_API_KEY set) ---"
+          # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md: LANDMARK_MODEL muss an
+          # BEIDE Dienste durchgereicht werden. Nur der worker ruft an, nur das backend
+          # schaetzt - sieht einer der beiden die Variable nicht, zeigt die Oberflaeche einen
+          # anderen Preis als den, der bezahlt wird, ohne dass irgendetwas fehlschlaegt.
+          echo "--- default (no LANDMARK_PROVIDER/LANDMARK_MODEL/MISTRAL_API_KEY set) ---"
           for service in backend worker; do
             provider=$(docker compose config --format json | jq -r ".services.$service.environment.LANDMARK_PROVIDER")
+            model=$(docker compose config --format json | jq -r ".services.$service.environment.LANDMARK_MODEL")
             key=$(docker compose config --format json | jq -r ".services.$service.environment.MISTRAL_API_KEY")
-            echo "$service: LANDMARK_PROVIDER=$provider MISTRAL_API_KEY=$key"
+            echo "$service: LANDMARK_PROVIDER=$provider LANDMARK_MODEL=$model MISTRAL_API_KEY=$key"
             test "$provider" = "anthropic"
+            test "$model" = ""
             test "$key" = ""
           done
 
-          echo "--- override (LANDMARK_PROVIDER=mistral, MISTRAL_API_KEY set) ---"
+          echo "--- override (LANDMARK_PROVIDER=mistral, LANDMARK_MODEL/MISTRAL_API_KEY set) ---"
           export LANDMARK_PROVIDER=mistral
+          export LANDMARK_MODEL=ministral-3b-2512
           export MISTRAL_API_KEY=ci-static-check-value
           for service in backend worker; do
             provider=$(docker compose config --format json | jq -r ".services.$service.environment.LANDMARK_PROVIDER")
+            model=$(docker compose config --format json | jq -r ".services.$service.environment.LANDMARK_MODEL")
             key=$(docker compose config --format json | jq -r ".services.$service.environment.MISTRAL_API_KEY")
-            echo "$service: LANDMARK_PROVIDER=$provider MISTRAL_API_KEY=$key"
+            echo "$service: LANDMARK_PROVIDER=$provider LANDMARK_MODEL=$model MISTRAL_API_KEY=$key"
             test "$provider" = "mistral"
+            test "$model" = "ministral-3b-2512"
             test "$key" = "ci-static-check-value"
           done
-          unset LANDMARK_PROVIDER MISTRAL_API_KEY
+          unset LANDMARK_PROVIDER LANDMARK_MODEL MISTRAL_API_KEY
       - name: Functional check - single-service migration ownership against a fresh DB (spec 0013)
         run: |
           set -euo pipefail

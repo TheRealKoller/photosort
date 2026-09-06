@@ -25,35 +25,67 @@ MISTRAL_CHAT_COMPLETIONS_URL = "https://api.mistral.ai/v1/chat/completions"
 
 # Guenstigstes vision-faehiges Modell der Claude-Haiku-Reihe (ADR 0025: "kein Grund fuer ein
 # teureres Modell bei dieser eng umrissenen Klassifikationsaufgabe") - providerneutral hier
-# gefuehrt, weil sowohl landmark.py als auch remote_classification.py (ADR 0032) dasselbe,
-# jeweils guenstigste vision-faehige Modell je Provider wiederverwenden, keine feature-spezifische
-# Modellwahl.
+# gefuehrt, weil sowohl landmark.py als auch remote_classification.py (ADR 0032) dasselbe
+# vision-faehige Modell je Provider wiederverwenden, keine feature-spezifische Modellwahl.
+# Seit specs/features/0304-cloud-modell-je-anbieter-waehlbar.md die VOREINSTELLUNG des Anbieters,
+# nicht mehr sein einziges Modell (siehe VISION_MODELS_BY_PROVIDER unten).
 ANTHROPIC_VISION_MODEL = "claude-haiku-4-5"
+
+# Staerkeres, ebenfalls vision-faehiges Modell desselben Anbieters (Spec 0304) - waehlbar, aber
+# NICHT Voreinstellung: ADR 0025/ADR 0031 Punkt 2 ("jeweils guenstigstes vision-faehiges Modell je
+# Anbieter") bleibt als Voreinstellung unangetastet, die Story aendert ausdruecklich nur die
+# Waehlbarkeit. Modell-ID und Vision-Faehigkeit verifiziert gegen die offizielle Modelluebersicht
+# (https://platform.claude.com/docs/en/about-claude/models/overview, abgerufen 2026-09-06:
+# "All current models support text and image input"), Preis siehe pricing.py.
+ANTHROPIC_VISION_MODEL_SONNET = "claude-sonnet-5"
 
 # Kleinstes/guenstigstes Modell der Ministral-3-Familie (ADR 0031 Punkt 2) - verifiziert gegen die
 # offizielle Modelldokumentation (developer-Agent, 2026-08-23), siehe landmark.py-Historie.
+# Ebenfalls seit Spec 0304 die Voreinstellung des Anbieters, nicht mehr sein einziges Modell.
 MISTRAL_VISION_MODEL = "ministral-3b-2512"
 
-# specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 2: die Zuordnung des
-# Provider-Schalters (`settings.landmark_provider`, ADR 0031 Punkt 3/ADR 0032 Punkt 3 - EIN
-# Schalter fuer beide Cloud-Zwecke) auf die tatsaechlich verwendete Modell-ID. worker.py braucht
-# sie, um den Ist-Betrag eines Laufs ueber `pricing.py::compute_cost_usd` zu bestimmen; die
-# Preistabelle ist ueber die MODELL-ID geschluesselt, nicht ueber den Provider (der Preis haengt
-# am Modell). Hier statt in landmark.py/remote_classification.py, weil beide Zwecke dieselbe
-# Zuordnung brauchen und die Modell-IDs ohnehin hier leben.
-VISION_MODEL_BY_PROVIDER: dict[str, str] = {
-    "anthropic": ANTHROPIC_VISION_MODEL,
-    "mistral": MISTRAL_VISION_MODEL,
+# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-anbieter-
+# und-modellgebundene-kostenschaetzung.md Punkt 2: die KURATIERTE AUSWAHL der waehlbaren Modelle je
+# Anbieter - Nachfolger der frueheren 1:1-Zuordnung `VISION_MODEL_BY_PROVIDER` (Spec 0207/ADR 0051
+# Punkt 2), die genau ein fest verdrahtetes Modell je Anbieter kannte.
+#
+# Geordnetes Tupel statt Menge (ADR 0059 Punkt 2): die Reihenfolge traegt eine Aussage - das ERSTE
+# Element ist die Voreinstellung des Anbieters, also der Wert, der ohne gesetztes `LANDMARK_MODEL`
+# gilt. Dieselbe Bauform wie die uebrigen Registries des Projekts (CATEGORY_REGISTRY,
+# CRITERION_REGISTRY).
+#
+# Diese Registry ist die EINZIGE Quelle dafuer, was waehlbar ist: `config.py` validiert
+# `LANDMARK_MODEL` beim Prozessstart dagegen, es gibt keinen Pfad, ueber den eine beliebige
+# Modellbezeichnung an einen Anbieter geschickt wuerde (Akzeptanzkriterium "keine freie Eingabe").
+#
+# ACHTUNG - IMPORTRICHTUNG (ADR 0059 Punkt 2): `config.py` importiert dieses Modul (der Validator
+# braucht die Registry). Dieses Modul darf `photosort.config` deshalb NIEMALS importieren, sonst
+# entsteht ein Importzyklus. Ein Bedarf danach ist der Anlass, die Registry in ein eigenes,
+# abhaengigkeitsfreies Modul zu ziehen - nicht den Zyklus zu bauen.
+#
+# Ein Modell, dessen Preis nicht gegen die offizielle Anbieterdokumentation verifiziert werden
+# konnte, gehoert NICHT hierher (ADR 0059 Punkt 5): ein waehlbares Modell ohne gepflegten Preis
+# waere ein waehlbarer Zustand ohne Kostenabsicherung. Die Vollstaendigkeit gegenueber
+# `pricing.py::MODEL_PRICING` ist per Invariantentest erzwungen (tests/test_pricing.py).
+VISION_MODELS_BY_PROVIDER: dict[str, tuple[str, ...]] = {
+    "anthropic": (ANTHROPIC_VISION_MODEL, ANTHROPIC_VISION_MODEL_SONNET),
+    "mistral": (MISTRAL_VISION_MODEL,),
 }
 
 
-def vision_model_for_provider(provider: str) -> str:
-    """Modell-ID zu einem Provider-Schluessel. Ein hier unbekannter Provider faellt bewusst auf
-    seinen eigenen Namen zurueck statt zu werfen: das Ergebnis ist dann eine Modell-ID, die
-    `pricing.py::MODEL_PRICING` nicht kennt, und der Lauf wird als "nicht erfasst" ausgewiesen
-    (ADR 0051 Punkt 2) - ein neuer Provider ohne Preispflege faellt damit auf, statt einen
-    laufenden Cloud-Job mit einem KeyError abzubrechen."""
-    return VISION_MODEL_BY_PROVIDER.get(provider, provider)
+def default_vision_model_for_provider(provider: str) -> str:
+    """Voreinstellungs-Modell eines Provider-Schluessels (erstes Registry-Element). Ein hier
+    unbekannter Provider faellt bewusst auf seinen eigenen Namen zurueck statt zu werfen: das
+    Ergebnis ist dann eine Modell-ID, die `pricing.py::MODEL_PRICING` nicht kennt, und der Lauf
+    wird als "nicht erfasst" ausgewiesen (ADR 0051 Punkt 2) - ein neuer Provider ohne Preispflege
+    faellt damit auf, statt einen laufenden Cloud-Job mit einem KeyError abzubrechen.
+
+    Durch das `Literal` auf `Settings.landmark_provider` ist dieser Rueckfall heute unerreichbar -
+    genau deshalb kostet er nichts und bleibt wortgleich erhalten (ADR 0059 Punkt 2)."""
+    models = VISION_MODELS_BY_PROVIDER.get(provider)
+    if not models:
+        return provider
+    return models[0]
 
 
 # Modul-Konstante statt Settings-Feld (ADR 0025 Punkt 3: "reiner technischer Wert, kein

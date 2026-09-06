@@ -423,6 +423,25 @@ class CriterionScoringRun(Base):
     landmark_output_tokens: Mapped[int | None] = mapped_column(default=0)
     landmark_cost_usd: Mapped[float | None] = mapped_column(default=0)
 
+    # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-
+    # anbieter-und-modellgebundene-kostenschaetzung.md Punkt 6: die Modell-ID der Landmark-Phase
+    # dieses Laufs - die PREISGRUNDLAGE des eingefrorenen `landmark_cost_usd` daneben. Seit die
+    # Modellwahl eine Betriebseinstellung ist, sagt der Provider allein nicht mehr, womit ein Lauf
+    # gerechnet hat; ohne diese Spalte waere ein historischer Betrag nach einer Preiskorrektur
+    # nicht mehr nachrechenbar und ein Modellvergleich nicht auswertbar.
+    #
+    # Nullable mit Python-seitigem Default `None` - `NULL` heisst "nicht erfasst" (Zeile aus der
+    # Zeit vor der zugehoerigen Migration), NICHT "kein Modell"; dasselbe `ScanRun.total_files`-
+    # Idiom wie bei den vier Kostenspalten oben. Geschrieben wird sie an derselben Stelle und mit
+    # demselben Commit wie der eingefrorene Betrag, aus demselben lokalen Wert (ADR 0059 Punkt 7).
+    #
+    # An der LAUF-Zeile und nicht an den `provider`-Spalten der Foto-Zeilen: eine Foto-Zeile
+    # entsteht nur bei einem Treffer (_upsert_landmark_detection laeuft nur bei erkanntem Namen) -
+    # ein Lauf, der Aufrufe bezahlt und nichts erkennt, hinterliesse dort keine Spur des Modells.
+    # Bewusst ohne Lesepfad in der Oberflaeche (dieselbe eng begrenzte Ausnahme wie Tokens/
+    # Aufrufzahl, ADR 0051 Punkt 3): Adressat ist der Betreiber, nicht der Anwender.
+    landmark_model: Mapped[str | None] = mapped_column(default=None)
+
     project: Mapped[Project] = relationship(back_populates="criterion_scoring_runs")
 
 
@@ -641,6 +660,12 @@ class RemoteCategoryClassificationRun(Base):
     input_tokens: Mapped[int | None] = mapped_column(default=0)
     output_tokens: Mapped[int | None] = mapped_column(default=0)
     cost_usd: Mapped[float | None] = mapped_column(default=0)
+
+    # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 6: die Modell-ID
+    # dieses Laufs, Gegenstueck zu `CriterionScoringRun.landmark_model` - Begruendung, Nullable-
+    # Semantik ("NULL = nicht erfasst") und Schreibzeitpunkt wortgleich dort. Kein Praefix wie bei
+    # den Kostenspalten dieser Tabelle: ein Lauf, ein Zweck.
+    model: Mapped[str | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="remote_category_classification_runs")
 

@@ -107,6 +107,7 @@ beforeEach(() => {
     remote_category_candidate_count: 4,
     landmark_candidate_count: 1,
     provider: 'anthropic',
+    model: 'claude-haiku-4-5',
     price_per_image_usd: 0.0052,
     estimated_cost_usd: 0.026,
   })
@@ -277,6 +278,7 @@ describe('Kosten sichtbar vor dem Start', () => {
       remote_category_candidate_count: 0,
       landmark_candidate_count: 0,
       provider: 'anthropic',
+      model: 'claude-haiku-4-5',
       price_per_image_usd: 0.0052,
       estimated_cost_usd: 0,
     })
@@ -489,6 +491,61 @@ describe('Feinlabel-Häufigkeiten', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       /feinlabels konnten nicht geladen werden/i
+    )
+  })
+})
+
+// specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 4: fuer das
+// eingestellte Modell ist kein Preis hinterlegt - die Schaetzung weist das aus, statt einen
+// falschen (oder gar keinen) Betrag zu zeigen.
+describe('Kostenschätzung ohne hinterlegten Preis', () => {
+  const withoutPrice = {
+    candidate_count: 5,
+    remote_category_candidate_count: 4,
+    landmark_candidate_count: 1,
+    provider: 'anthropic',
+    model: 'ein-nie-bepreistes-modell',
+    price_per_image_usd: null,
+    estimated_cost_usd: null,
+  }
+
+  it('shows a hint instead of an amount, but keeps the photo count visible', async () => {
+    vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue(withoutPrice)
+    renderSection(project({ cloud_vision_detection_enabled: true }))
+
+    const estimate = await screen.findByTestId('classification-estimate')
+
+    expect(estimate).toHaveTextContent(/keine kostenangabe verfügbar/i)
+    expect(estimate).toHaveTextContent(/kosten erzeugen/i)
+    expect(estimate).toHaveTextContent('~5 Fotos')
+    // Ein stilles "0,00 USD" waere die gefaehrlichste aller Anzeigen - es behauptete
+    // Kostenfreiheit (Security-Muss-Kriterium der Spec).
+    expect(estimate.textContent).not.toMatch(/\$|USD|NaN|undefined|null/)
+  })
+
+  it('keeps the start button usable when no price is known', async () => {
+    vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue(withoutPrice)
+    renderSection(project({ cloud_vision_detection_enabled: true }))
+
+    await screen.findByTestId('classification-estimate')
+
+    // Regressionsschutz: die Sperre haengt an der fehlenden SCHAETZUNG (Ladefehler), nicht am
+    // fehlenden Betrag - ein Guard auf `estimated_cost_usd === null` machte das Produkt bei
+    // einem reinen Preispflege-Versaeumnis unbenutzbar.
+    expect(screen.getByRole('button', TRIGGER)).toBeEnabled()
+  })
+
+  it('prefers the "everything already classified" message over the missing-price hint', async () => {
+    vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
+      ...withoutPrice,
+      candidate_count: 0,
+      remote_category_candidate_count: 0,
+      landmark_candidate_count: 0,
+    })
+    renderSection(project({ cloud_vision_detection_enabled: true }))
+
+    expect(await screen.findByTestId('classification-estimate')).toHaveTextContent(
+      /alle fotos bereits klassifiziert/i
     )
   })
 })

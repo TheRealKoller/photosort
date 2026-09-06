@@ -191,17 +191,17 @@ class ExplodingClient:
         )
 
 
-def _exploding_category_client_builder() -> NoReturn:
+def _exploding_category_client_builder(model: str) -> NoReturn:
     ExplodingClient("Der Remote-Kategorie-Client")
     raise AssertionError("unreachable")
 
 
-def _exploding_landmark_client_builder() -> NoReturn:
+def _exploding_landmark_client_builder(model: str) -> NoReturn:
     ExplodingClient("Der Landmark-Client")
     raise AssertionError("unreachable")
 
 
-def _failing_landmark_client_builder() -> NoReturn:
+def _failing_landmark_client_builder(model: str) -> NoReturn:
     raise RuntimeError("simulierter Modell-Ladefehler")
 
 
@@ -264,7 +264,7 @@ async def test_remote_results_reach_the_category_of_the_same_run(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -290,7 +290,7 @@ async def test_a_single_trigger_produces_both_run_records(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
     )
 
     remote_runs = (
@@ -326,7 +326,7 @@ async def test_the_run_record_reports_phase_and_cloud_request(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: PhaseObservingClient(),
+        build_category_client=lambda _model: PhaseObservingClient(),
     )
 
     assert observed_phases == [ClassificationPhase.REMOTE_CATEGORIES]
@@ -466,10 +466,10 @@ async def test_the_landmark_phase_runs_when_the_checkbox_is_checked(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(
+        build_category_client=lambda _model: RecordingCategoryClient(
             RemoteClassification(categories=("landschaft",), fine_labels=())
         ),
-        build_landmark_client=lambda: landmark_client,
+        build_landmark_client=lambda _model: landmark_client,
         build_classifier=_LandscapeSceneLabels,
     )
 
@@ -522,7 +522,7 @@ async def test_a_failing_remote_phase_does_not_stop_the_local_scoring(
         build_classifier=_NoSceneLabels,
         build_aesthetics=_NeutralAesthetics,
         build_landmarker=_NoDetections,
-        build_category_client=lambda: RecordingCategoryClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
         build_landmark_client=_failing_landmark_client_builder,
         build_embedder=lambda: ExplodingSnapshotEmbedder(),
     )
@@ -555,7 +555,7 @@ async def test_an_unbuildable_landmark_client_is_reported(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
         build_landmark_client=_failing_landmark_client_builder,
     )
 
@@ -579,10 +579,10 @@ async def test_failing_landmark_calls_are_summarised_not_listed(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(
+        build_category_client=lambda _model: RecordingCategoryClient(
             RemoteClassification(categories=("landschaft",), fine_labels=())
         ),
-        build_landmark_client=lambda: RecordingLandmarkClient(raise_error=True),
+        build_landmark_client=lambda _model: RecordingLandmarkClient(raise_error=True),
         build_classifier=_LandscapeSceneLabels,
     )
 
@@ -610,8 +610,8 @@ async def test_a_clean_cloud_run_reports_no_cloud_error(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(),
-        build_landmark_client=lambda: RecordingLandmarkClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
+        build_landmark_client=lambda _model: RecordingLandmarkClient(),
     )
 
     assert run.cloud_error_message is None
@@ -632,7 +632,7 @@ async def test_remote_classification_rows_are_written_before_the_criteria_phase(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
     )
 
     classification = (
@@ -668,7 +668,7 @@ async def test_a_cancelled_remote_phase_fails_the_whole_run_immediately(
             scoring_run,
             tmp_path,
             use_cloud=True,
-            build_category_client=lambda: CancellingCategoryClient(),
+            build_category_client=lambda _model: CancellingCategoryClient(),
         )
 
     run = (await db_session.execute(select(CriterionScoringRun))).scalar_one()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -10,13 +11,10 @@ from photosort.categories import (
     MAX_REMOTE_CATEGORIES_PER_PHOTO,
     build_classification_prompt,
 )
-from photosort.cloud_vision import TokenUsage
+from photosort.cloud_vision import ANTHROPIC_VISION_MODEL, MISTRAL_VISION_MODEL, TokenUsage
 from photosort.remote_classification import (
-    ANTHROPIC_CATEGORY_MODEL,
     CATEGORY_LABEL_SIMILARITY_THRESHOLD,
-    COST_PER_IMAGE_USD,
     MAX_FINE_LABEL_LENGTH,
-    MISTRAL_CATEGORY_MODEL,
     AnthropicCategoryClient,
     CategoryDetectionClientLike,
     FineLabelSnapshotEntry,
@@ -285,7 +283,8 @@ class TestAnthropicCategoryClient:
                 {"categories": ["tier"], "fine_labels": ["Hund"]}
             )
 
-        client = AnthropicCategoryClient(api_key="sk-test", transport=httpx.MockTransport(handler))
+        client = AnthropicCategoryClient(
+            api_key="sk-test", model=ANTHROPIC_VISION_MODEL, transport=httpx.MockTransport(handler))
 
         import asyncio
 
@@ -296,7 +295,7 @@ class TestAnthropicCategoryClient:
         )
         body = captured["body"]
         assert isinstance(body, dict)
-        assert body["model"] == ANTHROPIC_CATEGORY_MODEL
+        assert body["model"] == ANTHROPIC_VISION_MODEL
         # Der gesendete Prompt stammt aus der Registry, nicht aus einem Literal in diesem Modul
         # (specs/features/0289-feste-kategorien.md, Entwurfsentscheidung 3).
         content = body["messages"][0]["content"]
@@ -306,7 +305,8 @@ class TestAnthropicCategoryClient:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(401, text="Unauthorized")
 
-        client = AnthropicCategoryClient(api_key="sk-test", transport=httpx.MockTransport(handler))
+        client = AnthropicCategoryClient(
+            api_key="sk-test", model=ANTHROPIC_VISION_MODEL, transport=httpx.MockTransport(handler))
 
         import asyncio
 
@@ -330,7 +330,9 @@ class TestMistralCategoryClient:
             )
 
         client = MistralCategoryClient(
-            api_key="mistral-test", transport=httpx.MockTransport(handler)
+            api_key="mistral-test",
+            model=MISTRAL_VISION_MODEL,
+            transport=httpx.MockTransport(handler),
         )
 
         import asyncio
@@ -342,29 +344,22 @@ class TestMistralCategoryClient:
         )
         body = captured["body"]
         assert isinstance(body, dict)
-        assert body["model"] == MISTRAL_CATEGORY_MODEL
+        assert body["model"] == MISTRAL_VISION_MODEL
 
     def test_error_response_raises_remote_category_classification_api_error(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(500, text="Internal Server Error")
 
         client = MistralCategoryClient(
-            api_key="mistral-test", transport=httpx.MockTransport(handler)
+            api_key="mistral-test",
+            model=MISTRAL_VISION_MODEL,
+            transport=httpx.MockTransport(handler),
         )
 
         import asyncio
 
         with pytest.raises(RemoteCategoryClassificationApiError):
             asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
-
-
-class TestCostPerImageUsd:
-    def test_has_a_documented_positive_price_for_both_providers(self) -> None:
-        assert COST_PER_IMAGE_USD["anthropic"] > 0
-        assert COST_PER_IMAGE_USD["mistral"] > 0
-        # Mistral ist der guenstigere Provider (ADR 0032 Punkt 8) - Regressionsschutz gegen ein
-        # versehentlich vertauschtes Zahlenpaar.
-        assert COST_PER_IMAGE_USD["mistral"] < COST_PER_IMAGE_USD["anthropic"]
 
 
 class TestSlugify:
@@ -545,7 +540,9 @@ class TestAnthropicCategoryClientFillsUsage:
             )
 
         client = AnthropicCategoryClient(
-            api_key=ANTHROPIC_API_KEY, transport=httpx.MockTransport(handler)
+            api_key=ANTHROPIC_API_KEY,
+            model=ANTHROPIC_VISION_MODEL,
+            transport=httpx.MockTransport(handler),
         )
         classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
 
@@ -557,7 +554,9 @@ class TestAnthropicCategoryClientFillsUsage:
             return _anthropic_success_response(_VALID_BODY)
 
         client = AnthropicCategoryClient(
-            api_key=ANTHROPIC_API_KEY, transport=httpx.MockTransport(handler)
+            api_key=ANTHROPIC_API_KEY,
+            model=ANTHROPIC_VISION_MODEL,
+            transport=httpx.MockTransport(handler),
         )
         classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
 
@@ -577,7 +576,9 @@ class TestMistralCategoryClientFillsUsage:
             )
 
         client = MistralCategoryClient(
-            api_key=MISTRAL_API_KEY, transport=httpx.MockTransport(handler)
+            api_key=MISTRAL_API_KEY,
+            model=MISTRAL_VISION_MODEL,
+            transport=httpx.MockTransport(handler),
         )
         classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
 
@@ -588,8 +589,61 @@ class TestMistralCategoryClientFillsUsage:
             return _mistral_success_response(_VALID_BODY)
 
         client = MistralCategoryClient(
-            api_key=MISTRAL_API_KEY, transport=httpx.MockTransport(handler)
+            api_key=MISTRAL_API_KEY,
+            model=MISTRAL_VISION_MODEL,
+            transport=httpx.MockTransport(handler),
         )
         classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
 
         assert classification.usage is None
+
+
+class TestConfiguredModelReachesTheRequest:
+    """specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 7: das Modell ist
+    ein durchgereichter Konstruktor-Parameter statt einer im Client gelesenen Modulkonstante -
+    und es ist DASSELBE Modell wie in der Landmark-Phase (Akzeptanzkriterium: "nicht zwei
+    unterschiedliche Modelle nebeneinander")."""
+
+    def test_the_anthropic_client_sends_the_model_it_was_built_with(self) -> None:
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.update(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={
+                    "content": [
+                        {"type": "text", "text": '{"categories": [], "fine_labels": []}'}
+                    ],
+                },
+            )
+
+        client = AnthropicCategoryClient(
+            api_key="test", model="ein-anderes-modell", transport=httpx.MockTransport(handler)
+        )
+
+        asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
+
+        assert captured["model"] == "ein-anderes-modell"
+
+    def test_the_mistral_client_sends_the_model_it_was_built_with(self) -> None:
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.update(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"content": '{"categories": [], "fine_labels": []}'}}
+                    ],
+                },
+            )
+
+        client = MistralCategoryClient(
+            api_key="test", model="ein-anderes-modell", transport=httpx.MockTransport(handler)
+        )
+
+        asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
+
+        assert captured["model"] == "ein-anderes-modell"

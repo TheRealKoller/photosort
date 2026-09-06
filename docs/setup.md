@@ -277,6 +277,26 @@ Um beide Funktionen tatsächlich zu nutzen, in `.env`:
   `mistral` (EU-hosted Alternative, Sitz Frankreich; DPA-/Zero-Data-Retention-Lage für
   Privatkonten laut Recherche unklar, bewusst akzeptiertes Restrisiko siehe ADR 0031). Eine reine
   Betreiber-/Deployment-Entscheidung, kein Feld pro Projekt.
+- `LANDMARK_MODEL` wählt das **Modell** des eingestellten Providers (Spec
+  [`0304`](../specs/features/0304-cloud-modell-je-anbieter-waehlbar.md), ADR
+  [`0059`](../specs/decisions/0059-modellwahl-je-anbieter-und-modellgebundene-kostenschaetzung.md))
+  — wie `LANDMARK_PROVIDER` für beide Cloud-Funktionen gemeinsam und ebenfalls eine reine
+  Betreiber-Entscheidung ohne UI-Feld. **Leer lassen = Voreinstellung des Providers**, also
+  unverändertes Verhalten:
+
+  | `LANDMARK_PROVIDER` | wählbare `LANDMARK_MODEL`-Werte | Voreinstellung (leer) | Schätzung je Bild |
+  |---|---|---|---|
+  | `anthropic` | `claude-haiku-4-5`, `claude-sonnet-5` | `claude-haiku-4-5` | ~$0,0052 / ~$0,0104 |
+  | `mistral` | `ministral-3b-2512` | `ministral-3b-2512` | ~$0,0003 |
+
+  Ein Wert außerhalb dieser Auswahl — auch ein für den *anderen* Provider gültiges Modell —
+  lässt den Prozess beim Start mit einem Validierungsfehler abbrechen, kein stiller Fallback.
+  Die Kostenschätzung am Auslöser rechnet mit dem eingestellten Modell; ein stärkeres Modell
+  hebt die Kosten je Bild, und die Fotozahl eines Laufs ist nicht gedeckelt. Ein Wechsel wirkt
+  nur auf künftige Läufe und ist durch Zurücksetzen jederzeit ohne Datenverlust rücknehmbar.
+  Ein Modell, das noch nicht in der Auswahl steht, wird über eine Code-Änderung aufgenommen
+  (`cloud_vision.py::VISION_MODELS_BY_PROVIDER` samt verifiziertem Preis in `pricing.py`), nicht
+  über diese Variable.
 - Je nach gewähltem Provider `ANTHROPIC_API_KEY` bzw. `MISTRAL_API_KEY` auf einen echten API-Key
   setzen (leer = beide Funktionen bleiben für alle Projekte unbenutzbar, auch bei aktivierter
   Einwilligung schlägt der Aufruf dann fehl).

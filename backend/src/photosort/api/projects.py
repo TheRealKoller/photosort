@@ -33,7 +33,7 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
-from photosort.remote_classification import COST_PER_IMAGE_USD
+from photosort.pricing import estimate_usd_per_image
 
 router = APIRouter(prefix="/projects", tags=["projects"], dependencies=[Depends(get_current_user)])
 
@@ -134,8 +134,23 @@ class ClassificationEstimateOut(BaseModel):
     remote_category_candidate_count: int
     landmark_candidate_count: int
     provider: str
-    price_per_image_usd: float
-    estimated_cost_usd: float
+    # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-
+    # anbieter-und-modellgebundene-kostenschaetzung.md Punkt 4: die Antwort sagt selbst, WORAUF
+    # sich die Schaetzung bezieht. Seit die Modellwahl eine Betriebseinstellung ist, benennt
+    # `provider` allein die Preisgrundlage nicht mehr eindeutig - genau die Verwechslung, die
+    # diese Spec behebt. Feldname `model` und nicht `model_id`: pydantic v2 schuetzt den
+    # Namensraum `model_` und wuerde bei `model_id` warnen.
+    model: str
+    # `| None` heisst "fuer das eingestellte Modell ist kein Preis hinterlegt", nie ein stilles
+    # `0.0` (ADR 0059 Punkt 4, dieselbe Semantik wie `pricing.py::compute_cost_usd`). Die
+    # Oberflaeche weist diesen Fall an der Schaetzung als fehlende Kostenangabe aus, statt einen
+    # falschen Betrag zu zeigen - die Schaetzung ist seit Spec 0296 die einzige verbliebene
+    # Absicherung vor der kostenpflichtigen Aktion, ein falscher Betrag waere schlimmer als
+    # keiner. Der Normalfall bleibt ein Betrag: dass jedes waehlbare Modell einen Preis hat, ist
+    # per Invariantentest erzwungen (tests/test_pricing.py) - dieser Pfad ist die zweite
+    # Verteidigungslinie, nicht der Regelfall.
+    price_per_image_usd: float | None
+    estimated_cost_usd: float | None
 
 
 class CloudVisionConsentUpdate(BaseModel):
@@ -567,14 +582,20 @@ async def estimate_classification(
     landmark_candidate_count = await _count_landmark_candidates(session, project_id)
     candidate_count = remote_category_candidate_count + landmark_candidate_count
     provider = settings.landmark_provider
-    price_per_image_usd = COST_PER_IMAGE_USD[provider]
+    # Spec 0304: die Schaetzung haengt am tatsaechlich EINGESTELLTEN Modell, nicht mehr am
+    # Anbieter - ein Modellwechsel kann sie damit nicht mehr unbemerkt falsch machen.
+    model = settings.resolved_landmark_model()
+    price_per_image_usd = estimate_usd_per_image(model, provider)
     return ClassificationEstimateOut(
         candidate_count=candidate_count,
         remote_category_candidate_count=remote_category_candidate_count,
         landmark_candidate_count=landmark_candidate_count,
         provider=provider,
+        model=model,
         price_per_image_usd=price_per_image_usd,
-        estimated_cost_usd=candidate_count * price_per_image_usd,
+        estimated_cost_usd=(
+            None if price_per_image_usd is None else candidate_count * price_per_image_usd
+        ),
     )
 
 

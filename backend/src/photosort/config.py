@@ -1,7 +1,12 @@
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from photosort.cloud_vision import (
+    VISION_MODELS_BY_PROVIDER,
+    default_vision_model_for_provider,
+)
 
 
 class Settings(BaseSettings):
@@ -103,6 +108,76 @@ class Settings(BaseSettings):
     # analog scan_download_concurrency-Field(ge=1) oben): pydantic validiert einen nicht
     # unterstuetzten .env-Wert bereits beim Prozessstart (ValidationError), kein stiller Fallback.
     landmark_provider: Literal["anthropic", "mistral"] = "anthropic"
+
+    # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-
+    # anbieter-und-modellgebundene-kostenschaetzung.md Punkt 1: die zweite Betriebseinstellung
+    # neben der Anbieterwahl - WELCHES Modell des eingestellten Anbieters benutzt wird. Leer
+    # heisst "Voreinstellung des eingestellten Anbieters" (erstes Element seiner Registry), NICHT
+    # "kein Modell": ohne gesetzten Wert verhaelt sich die Installation exakt wie vor dieser Spec.
+    #
+    # Der Name erbt bewusst die Ungenauigkeit von `landmark_provider` daneben (beide gelten fuer
+    # BEIDE Cloud-Anteile - Sehenswuerdigkeits-Erkennung UND Kategorie-Vorschlaege, nicht nur fuer
+    # landmark): die Zusammengehoerigkeit des Schalterpaars `LANDMARK_PROVIDER`/`LANDMARK_MODEL`
+    # wiegt schwerer als die Wortgenauigkeit, und ein Umbenennen von `LANDMARK_PROVIDER` waere
+    # eine fuer diese Story sachfremde, fuer den Betrieb breaking Aenderung (ADR 0059 Punkt 1).
+    #
+    # `str` + Validator statt `Literal`, anders als bei landmark_provider: die zulaessigen Werte
+    # haengen vom eingestellten Anbieter ab, das laesst sich in einem Feld-`Literal` nicht
+    # ausdruecken. Die Startvalidierung unten liefert dafuer dieselbe Zusicherung.
+    landmark_model: str = ""
+
+    def resolved_landmark_model(self) -> str:
+        """Das tatsaechlich zu verwendende Modell (Muster `resolved_rate_limit_storage_uri()`).
+
+        EINMAL je Cloud-Phase aufzurufen und der Wert dann durchzureichen (ADR 0059 Punkt 7) -
+        Client-Bau, Kostenrechnung und Modellspalte des Laufs muessen strukturell denselben Wert
+        benutzen, nicht drei zufaellig uebereinstimmende Lesevorgaenge derselben globalen
+        `settings`."""
+        return self.landmark_model or default_vision_model_for_provider(self.landmark_provider)
+
+    @field_validator("landmark_model")
+    @classmethod
+    def _check_landmark_model_is_offered_by_the_provider(
+        cls, value: str, info: ValidationInfo
+    ) -> str:
+        """Akzeptanzkriterium: ein Wert ausserhalb der gepflegten Auswahl fuehrt zu einer
+        verstaendlichen Fehlermeldung BEIM START; die Anwendung startet dann nicht, statt mitten
+        in einem laufenden - kostenpflichtigen - Durchgang still fehlzuschlagen. Wegen
+        `settings = Settings()` auf Modulebene ist das der Prozessstart, dasselbe Verhalten, das
+        `landmark_provider` ueber sein `Literal` schon hat ("kein stiller Fallback").
+
+        Geprueft wird gegen die Registry DES EINGESTELLTEN ANBIETERS: ein fuer Anthropic gueltiges
+        Modell unter `mistral` ist ebenfalls ein Startfehler - sonst waere es ein Aufruf, den der
+        Anbieter erst zur Laufzeit ablehnt, mitten im kostenpflichtigen Durchgang.
+
+        FELD-VALIDATOR, NICHT `model_validator(mode="after")` (Security-Muss-Kriterium der Spec
+        0304, Befund `security-engineer` 2026-09-06, am Branch nachgemessen): pydantic haengt an
+        eine `ValidationError` die Eingabe an, an der die Pruefung scheiterte. Bei einem
+        Modell-Validator ist das das VOLLSTAENDIGE Settings-Dict - und damit landen `SECRET_KEY`,
+        `ANTHROPIC_API_KEY`, `MISTRAL_API_KEY` und `OPENCLOUD_APP_TOKEN` im Startup-Traceback
+        (`docker compose logs`) und in `exc.errors()`/`exc.json()`. Beim Feld-Validator ist die
+        Eingabe nur der beanstandete Modellwert selbst. Das verletzte sonst direkt den
+        CLAUDE.md-Grundsatz "keine Secrets in Logs oder Fehlermeldungen".
+
+        `landmark_model` ist hinter `landmark_provider` deklariert, deshalb steht der Anbieter in
+        `info.data`. Fehlt er dort, ist er selbst ungueltig - dann bricht der Start ohnehin an
+        seinem eigenen Feldfehler ab, und eine zweite Meldung hier hilft niemandem."""
+        if not value:
+            return value
+        provider = info.data.get("landmark_provider")
+        if provider is None:
+            return value
+        allowed = VISION_MODELS_BY_PROVIDER.get(provider, ())
+        if value not in allowed:
+            # Bewusst enthalten: der beanstandete Wert, der eingestellte Anbieter und die
+            # zulaessigen Werte - Modell-IDs sind keine Geheimnisse (die Registry liegt im
+            # oeffentlichen Repository), und der Betreiber soll handlungsfaehig sein.
+            raise ValueError(
+                f"LANDMARK_MODEL={value!r} ist fuer LANDMARK_PROVIDER={provider!r} nicht "
+                f"waehlbar. Erlaubt sind: {', '.join(allowed)} (oder leer lassen fuer die "
+                f"Voreinstellung {default_vision_model_for_provider(provider)})."
+            )
+        return value
 
     # Exakt das anthropic_api_key-Muster (Secret nur ueber Env-Variable, nie eingecheckt, kein
     # Format-Check) - der Wert wird wie jedes andere Settings-Feld beim Prozessstart eingelesen,
