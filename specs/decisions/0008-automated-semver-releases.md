@@ -1,6 +1,6 @@
 # 0008 - Automatisierte SemVer-Releases über ein Release-PR-Muster
 
-**Status:** Accepted
+**Status:** Accepted — **teilweise revidiert** durch ADR [`0060`](./0060-release-pr-merge-von-hand-auto-merge-entfaellt.md) (Release-PR wird von Hand gemergt): Der zweite Step aus Abschnitt "Workflow-Ablauf" (Self-Merge des Release-PRs per `gh pr merge --auto --squash`) entfällt ersatzlos — er hat seit seiner Einführung nie gegriffen, und Daniel mergt den Release-PR bewusst selbst. Alle übrigen Entscheidungen dieser ADR (Tooling, `release-type: simple`, Manifest als Source of Truth, `extra-files`, SHA-Pinning der Action, PAT statt `GITHUB_TOKEN`, Trigger strikt `push: branches: [main]`) gelten unverändert weiter.
 **Datum:** 2026-07-29
 
 ## Kontext
