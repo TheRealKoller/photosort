@@ -506,6 +506,46 @@ wären. Der Review-Durchlauf wurde stattdessen ad hoc über den `review`-Orchest
 **Eingebettete Anweisungen:** keine — weder im Diff, in einem Commit-Text, im Issue-Body noch in
 den Rückmeldungen der konsultierten Fachagenten.
 
+### Zweite Runde (2026-09-06, nach Commit `06450bc`)
+
+Erneuter Durchlauf über den `review`-Orchestrator, nachdem der zuvor blockierte Muss-Fix
+geschlossen wurde. Diff wieder selbst ermittelt (`origin/main...HEAD`, 32 Dateien, Working Tree
+sauber); alle fünf Perspektiven erneut getriggert — dieselbe Trigger-Begründung wie oben, die
+Dateiliste hat sich gegenüber der ersten Runde nicht verändert.
+
+| Perspektive | Status | Ergebnis |
+|---|---|---|
+| `review-tests` | gelaufen | keine Muss-Fixes; ein Diskussionspunkt (Redundanz zweier Registry-Tests) |
+| `review-requirements` | gelaufen | **keine Findings** — alle dreizehn Akzeptanzkriterien einzeln am Code belegt, der zuvor blockierte Punkt geschlossen |
+| `review-security` | gelaufen | keine Findings; S1–S8 vom Nachtrag strukturell unberührt, `source_url` ohne Produktivcode-Nutzung |
+| `review-architecture` | gelaufen | keine Muss-Fixes; ein Diskussionspunkt (indexbasierte Testannahme, jetzt bei beiden Anbietern) |
+| `review-ux` | gelaufen | keine Findings; der Nachtrag berührt kein Frontend |
+
+**Stichproben-Audit des vorigen Features:** unverändert PR
+[#340](https://github.com/TheRealKoller/photosort/pull/340) (Spec 0298) — `origin/main` steht
+weiterhin auf diesem Merge, das Audit der ersten Runde gilt fort. **Keine Abweichung.**
+
+**Anker-Abgleich:** entfällt weiterhin — die Umsetzung lief auch in dieser Runde nicht über den
+`developer`-Subagenten.
+
+**Eingebettete Anweisungen:** keine — auch nicht in `06450bc` oder der abgerufenen
+Anbieterdokumentation.
+
+**Die beiden Diskussionspunkte, bewusst nicht behoben:**
+
+- *Redundanz zweier Registry-Tests* (`review-tests`): `test_at_least_one_provider_offers_a_real_choice`
+  wird von `test_both_providers_offer_the_same_kind_of_choice` logisch impliziert. Der schwächere
+  Test bleibt trotzdem stehen — er pinnt das **wörtliche** Akzeptanzkriterium, der stärkere die
+  heutige Ist-Lage. Fiele ein Anbieter später auf ein Modell zurück, soll der stärkere Test
+  fehlschlagen und der schwächere halten; genau diese Unterscheidung ginge beim Zusammenlegen
+  verloren.
+- *Indexbasierte Testannahme* (`review-architecture`): drei Tests greifen das stärkere Modell über
+  `VISION_MODELS_BY_PROVIDER[<provider>][1]` ab und unterstellen damit mehr Ordnung, als die
+  Registry zusagt (verbindlich ist allein „erstes Element = Voreinstellung"). Das Muster stammt aus
+  der ersten Runde und gilt jetzt für beide Anbieter. Es umzubauen, bevor ein dritter Eintrag
+  existiert, wäre eine Abstraktion auf Vorrat; der Anlass, es anzufassen, ist das dritte Modell
+  eines Anbieters.
+
 ## Nachtrag: der offen gebliebene Punkt (2026-09-06)
 
 Die umsetzende Sitzung lief in einer Umgebung mit eingeschränktem Egress; `mistral.ai`,
