@@ -193,7 +193,7 @@ describe('ProjectPipelineLayout', () => {
     expect(screen.getByRole('navigation', { name: 'Fortschritt der Pipeline' })).toBeInTheDocument()
   })
 
-  it('shows the project name/path header and secondary navigation links', async () => {
+  it('shows the project name/path header', async () => {
     vi.mocked(projectsApi.getProject).mockResolvedValue(project())
 
     renderLayout('/projects/1/pipeline/scan')
@@ -201,25 +201,34 @@ describe('ProjectPipelineLayout', () => {
     await screen.findByText(/schritt-inhalt: scan/i)
     expect(screen.getByText('Costa Rica')).toBeInTheDocument()
     expect(screen.getByText('CostaRica')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /fotos ansehen/i })).toHaveAttribute(
-      'href',
-      '/projects/1/photos'
-    )
-    expect(screen.getByRole('link', { name: /vergleichen/i })).toHaveAttribute(
-      'href',
-      '/projects/1/compare'
-    )
-    // specs/features/0207-projekt-statistikseite.md: einziger Einstiegspunkt in die
-    // Statistikseite, als Sekundaer-Button neben "Einstellungen".
+  })
+
+  /*
+   * specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK9): Die drei Ziele sind in die
+   * Kopfzeilengruppe gewandert und entfallen hier ersatzlos; der umschliessende Landmark "Fotos"
+   * entfaellt mit (ein Landmark mit einem einzigen Eintrag und nun falschem Namen ist schlechter
+   * als kein Landmark).
+   *
+   * ANWESENHEIT UND ABWESENHEIT IN EINEM TEST: eine reine Abwesenheitspruefung bestuende auch
+   * dann, wenn versehentlich ALLE VIER Schaltflaechen entfernt wuerden - "Statistik" ist aber
+   * kein Ziel der Kopfzeilengruppe und waere dann unerreichbar (AK9b).
+   */
+  it('no longer renders the three navigation buttons or the "Fotos" landmark, but keeps "Statistik" (AK9)', async () => {
+    vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+
+    renderLayout('/projects/1/pipeline/scan')
+
+    await screen.findByText(/schritt-inhalt: scan/i)
+    expect(screen.queryByRole('link', { name: /fotos ansehen/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /vergleichen/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /einstellungen/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Fotos' })).not.toBeInTheDocument()
+
+    // specs/features/0207-projekt-statistikseite.md: weiterhin der einzige Einstiegspunkt in die
+    // Statistikseite - AK9b nennt sie ausdruecklich als bleibend.
     expect(screen.getByRole('link', { name: /statistik/i })).toHaveAttribute(
       'href',
       '/projects/1/stats'
-    )
-    // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: einzige aktuelle
-    // Navigations-Einstiegsstelle in die neue Projekteinstellungs-Route.
-    expect(screen.getByRole('link', { name: /einstellungen/i })).toHaveAttribute(
-      'href',
-      '/projects/1/settings'
     )
   })
 

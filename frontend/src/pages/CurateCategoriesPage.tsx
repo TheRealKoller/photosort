@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { PhotoOut } from '../api/types'
@@ -502,9 +502,9 @@ export function CurateCategoriesPage() {
         )
       })}
 
-      <Button asChild variant="ghost" className="self-start">
-        <Link to={`/projects/${id}`}>Zurück zum Projekt</Link>
-      </Button>
+      {/* specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK10): "Zurück zum Projekt"
+          entfaellt hier ersatzlos - die Kopfzeile traegt die Projektnavigation jetzt auf jeder
+          Projektseite, /curate eingeschlossen (AK2). */}
     </div>
   )
 }

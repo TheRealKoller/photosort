@@ -301,6 +301,44 @@ describe('PhotoDetailPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(/keine weiteren unbewerteten fotos/i)
   })
 
+  /*
+   * specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK14, Bestandsschutz): Beide Links
+   * bleiben trotz der neuen Kopfzeilengruppe ausdruecklich erhalten - "Zur Vergleichsansicht" ist
+   * hier eine Handlungsaufforderung fuer den naechsten Arbeitsschritt (nur im Abschlusszustand),
+   * "Zurück zum Grid" fuehrt zu einem ANDEREN Ziel als die Kopfzeile, weil es den aktiven Filter
+   * der Fotoliste bewahrt. Eine Anwesenheits-, keine Abwesenheitspruefung: die Kopfzeilengruppe
+   * darf sie nicht mitreissen.
+   */
+  it('keeps "Zurück zum Grid" and "Zur Vergleichsansicht" in the completion state (AK14)', async () => {
+    const list: PhotoListOut = { items: [photo({ id: 1 })], total: 1 }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+    vi.mocked(ratingsApi.setRating).mockResolvedValue({
+      user_id: 1,
+      username: 'testuser',
+      status: 'favorite',
+    })
+    const user = userEvent.setup()
+
+    renderPage('/projects/1/photos/1?filter=unrated')
+    await screen.findByText('1/1')
+
+    await user.click(screen.getByRole('button', { name: /favorit/i }))
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      /keine weiteren unbewerteten fotos/i
+    )
+
+    // Der Grid-Link bewahrt den aktiven Filter - genau das unterscheidet ihn vom Kopfzeilenziel
+    // "Fotos", das immer auf die ungefilterte Liste zeigt.
+    expect(screen.getByRole('link', { name: 'Zurück zum Grid' })).toHaveAttribute(
+      'href',
+      '/projects/1/photos?filter=unrated'
+    )
+    expect(screen.getByRole('link', { name: 'Zur Vergleichsansicht' })).toHaveAttribute(
+      'href',
+      '/projects/1/compare'
+    )
+  })
+
   it('shows an inline error banner with a retry option on failure', async () => {
     vi.mocked(photosApi.listPhotos).mockRejectedValue(new ApiError(500, 'Serverfehler'))
     const user = userEvent.setup()

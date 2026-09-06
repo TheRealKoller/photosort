@@ -544,6 +544,27 @@ describe('CurateCategoriesPage', () => {
   })
 
   // Spec 0040 (Bewertungsdetails-Info-Popover), Akzeptanzkriterien 1, 2.
+  /*
+   * specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK10): "Zurück zum Projekt" am
+   * Seitenende entfaellt ersatzlos - die Kopfzeile traegt die Projektnavigation jetzt auf jeder
+   * Projektseite, und /curate hat damit zum ersten Mal ueberhaupt Projektkontext (AK2). Nach dem
+   * etablierten Muster der gleichlautenden Regressionstests in PhotoGridPage/PhotoComparePage.
+   */
+  it('no longer renders its own "Zurück zum Projekt" link (AK10)', async () => {
+    const list: PhotoListOut = {
+      items: [photo({ id: 1, ranking: ranking({ category_key: 'landscape' }) })],
+      total: 1,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage()
+
+    // Auf gerenderten Seiteninhalt warten, bevor die Abwesenheits-Assertion greift - sonst
+    // bestuende der Test allein deshalb, weil die Seite noch laedt.
+    expect(await screen.findByText('Montag 20.07.2026')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /zurück zum projekt/i })).not.toBeInTheDocument()
+  })
+
   describe('info popover trigger', () => {
     it('shows the trigger when the photo has criterion_scores', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
@@ -571,15 +592,6 @@ describe('CurateCategoriesPage', () => {
         screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' })
       ).not.toBeInTheDocument()
     })
-  })
-
-  it('links back to the project detail page', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
-
-    renderPage()
-
-    const link = await screen.findByRole('link', { name: /zurück zum projekt/i })
-    expect(link).toHaveAttribute('href', '/projects/1')
   })
 
   // Spec 0043 (Kuratierung: Tage auf-/zuklappbar).
