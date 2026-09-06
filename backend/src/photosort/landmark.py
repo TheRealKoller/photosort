@@ -9,9 +9,7 @@ import httpx
 from photosort.cloud_vision import (
     ANTHROPIC_API_VERSION,
     ANTHROPIC_MESSAGES_URL,
-    ANTHROPIC_VISION_MODEL,
     MISTRAL_CHAT_COMPLETIONS_URL,
-    MISTRAL_VISION_MODEL,
     VISION_REQUEST_TIMEOUT_SECONDS,
     TokenUsage,
     anthropic_response_to_json,
@@ -35,8 +33,12 @@ from photosort.config import settings
 # extrahiert (providerneutral, jetzt von landmark.py UND remote_classification.py genutzt) - die
 # bisherigen Namen bleiben hier als re-exportierte Aliase bestehen (Regressionspflicht der Spec:
 # "Bestehende test_landmark.py-Faelle bleiben ohne Assertion-Aenderung gruen").
-ANTHROPIC_LANDMARK_MODEL = ANTHROPIC_VISION_MODEL
-MISTRAL_LANDMARK_MODEL = MISTRAL_VISION_MODEL
+# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 7: die frueheren
+# Aliase ANTHROPIC_LANDMARK_MODEL/MISTRAL_LANDMARK_MODEL sind ersatzlos entfallen. Sie waren
+# Platzhalter fuer eine moegliche spaetere Entkopplung der Modellwahl je Cloud-Zweck; Spec 0304
+# entscheidet diese Frage ausdruecklich in die andere Richtung ("wirkt auf beide Cloud-Anteile
+# einheitlich; nicht zwei Modelle nebeneinander"). Das Modell kommt jetzt als Konstruktor-
+# Parameter herein und wird durchgereicht.
 LANDMARK_REQUEST_TIMEOUT_SECONDS = VISION_REQUEST_TIMEOUT_SECONDS
 
 # Kurze, reine Klassifikationsantwort - kein Grund fuer ein hohes max_tokens (nur ein kleines
@@ -120,9 +122,15 @@ class AnthropicLandmarkClient:
     def __init__(
         self,
         api_key: str,
+        model: str,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = LANDMARK_REQUEST_TIMEOUT_SECONDS,
     ) -> None:
+        # PFLICHTPARAMETER ohne Default (Spec 0304/ADR 0059 Punkt 7, Fund `test-engineer`):
+        # ein Default auf die Modulkonstante stellte genau die Kopplung wieder her, die diese
+        # Spec aufloest - ein Aufrufer, der das Modell vergisst, fiele nicht beim Typecheck auf,
+        # sondern erst in der Cloud-Rechnung.
+        self._model = model
         self._client = httpx.AsyncClient(
             headers={
                 "x-api-key": api_key,
@@ -138,7 +146,7 @@ class AnthropicLandmarkClient:
 
     async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
         body = {
-            "model": ANTHROPIC_LANDMARK_MODEL,
+            "model": self._model,
             "max_tokens": _MAX_RESPONSE_TOKENS,
             "messages": [
                 {
@@ -169,7 +177,7 @@ class AnthropicLandmarkClient:
         payload = response.json()
         parsed = anthropic_response_to_json(payload, LandmarkApiError)
         return _landmark_detection_from_json(
-            parsed, anthropic_usage_from_response(payload, ANTHROPIC_LANDMARK_MODEL)
+            parsed, anthropic_usage_from_response(payload, self._model)
         )
 
 
@@ -183,9 +191,11 @@ class MistralLandmarkClient:
     def __init__(
         self,
         api_key: str,
+        model: str,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = LANDMARK_REQUEST_TIMEOUT_SECONDS,
     ) -> None:
+        self._model = model
         self._client = httpx.AsyncClient(
             headers={
                 # Abweichend von Anthropics x-api-key+anthropic-version-Kombination (ADR 0031
@@ -202,7 +212,7 @@ class MistralLandmarkClient:
 
     async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
         body = {
-            "model": MISTRAL_LANDMARK_MODEL,
+            "model": self._model,
             "max_tokens": _MAX_RESPONSE_TOKENS,
             # Nativer JSON-Mode (ADR 0031 Punkt 2) - Mistral unterstuetzt das, Anthropic nicht
             # (dort bleibt die bestehende reine Prompt-Anweisung unveraendert).
@@ -238,22 +248,28 @@ class MistralLandmarkClient:
         payload = response.json()
         parsed = mistral_response_to_json(payload, LandmarkApiError)
         return _landmark_detection_from_json(
-            parsed, mistral_usage_from_response(payload, MISTRAL_LANDMARK_MODEL)
+            parsed, mistral_usage_from_response(payload, self._model)
         )
 
 
-def build_landmark_client() -> LandmarkClientLike:
+def build_landmark_client(model: str) -> LandmarkClientLike:
     """Dispatch-Factory zwischen AnthropicLandmarkClient (unveraendert, weiterhin Default) und
     MistralLandmarkClient je nach settings.landmark_provider (ADR 0031 Punkt 3). Analog
     build_face_detector/build_aesthetics_model: laeuft NIE in einem automatisierten Test (echtes
     Secret + echter Netzwerkversuch, Teststrategie-Abschnitt der Spec 0047/0054 - ein
-    versehentlicher Aufruf in CI muesste als harter Fehlschlag auffallen)."""
+    versehentlicher Aufruf in CI muesste als harter Fehlschlag auffallen).
+
+    `model` ist seit specs/features/0304-cloud-modell-je-anbieter-waehlbar.md (ADR 0059 Punkt 7)
+    ein Parameter statt einer hier gelesenen Modulkonstante: der Aufrufer loest das Modell EINMAL
+    je Cloud-Phase auf und benutzt denselben Wert fuer Client-Bau, Kostenrechnung und Modellspalte
+    des Laufs - "angezeigt = abgerechnet = tatsaechlich aufgerufen" wird dadurch strukturell wahr
+    statt durch drei zufaellig uebereinstimmende Lesevorgaenge derselben globalen `settings`."""
     if settings.landmark_provider == "mistral":
         mistral_client: LandmarkClientLike = MistralLandmarkClient(
-            api_key=settings.mistral_api_key
+            api_key=settings.mistral_api_key, model=model
         )
         return mistral_client
     anthropic_client: LandmarkClientLike = AnthropicLandmarkClient(
-        api_key=settings.anthropic_api_key
+        api_key=settings.anthropic_api_key, model=model
     )
     return anthropic_client

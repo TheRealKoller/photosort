@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 
 import httpx
 import pytest
 
-from photosort.cloud_vision import TokenUsage
+from photosort.cloud_vision import ANTHROPIC_VISION_MODEL, MISTRAL_VISION_MODEL, TokenUsage
 from photosort.landmark import (
-    ANTHROPIC_LANDMARK_MODEL,
-    MISTRAL_LANDMARK_MODEL,
     AnthropicLandmarkClient,
     LandmarkApiError,
     LandmarkClientLike,
@@ -37,7 +36,8 @@ def _success_response(name: str | None, confidence: float) -> httpx.Response:
 
 
 def _client(handler: httpx.MockTransport) -> AnthropicLandmarkClient:
-    return AnthropicLandmarkClient(api_key=API_KEY, transport=handler)
+    return AnthropicLandmarkClient(
+        api_key=API_KEY, model=ANTHROPIC_VISION_MODEL, transport=handler)
 
 
 class FakeLandmarkClient:
@@ -132,7 +132,7 @@ async def test_detect_sends_the_expected_request_shape() -> None:
 
     body = seen["body"]
     assert isinstance(body, dict)
-    assert body["model"] == ANTHROPIC_LANDMARK_MODEL
+    assert body["model"] == ANTHROPIC_VISION_MODEL
     content_blocks = body["messages"][0]["content"]
     image_block = next(block for block in content_blocks if block["type"] == "image")
     assert image_block["source"]["type"] == "base64"
@@ -203,7 +203,9 @@ async def test_detect_raises_landmark_api_error_when_name_is_not_a_string() -> N
 
 async def test_aclose_closes_the_underlying_http_client() -> None:
     client = AnthropicLandmarkClient(
-        api_key=API_KEY, transport=httpx.MockTransport(lambda r: _success_response("x", 0.1))
+        api_key=API_KEY,
+        model=ANTHROPIC_VISION_MODEL,
+        transport=httpx.MockTransport(lambda r: _success_response("x", 0.1)),
     )
     await client.aclose()
     assert client._client.is_closed  # Whitebox-Konfigurationsnachweis
@@ -232,7 +234,9 @@ async def test_timeout_is_applied_to_the_underlying_http_client() -> None:
     # Kein Wall-Clock-Test (Teststrategie: reiner Konfigurationsnachweis) - der konstruierte
     # httpx.AsyncClient traegt den Timeout-Wert.
     client = AnthropicLandmarkClient(
-        api_key=API_KEY, transport=httpx.MockTransport(lambda r: _success_response("x", 0.1))
+        api_key=API_KEY,
+        model=ANTHROPIC_VISION_MODEL,
+        transport=httpx.MockTransport(lambda r: _success_response("x", 0.1)),
     )
     assert client._client.timeout.read == 60.0  # Whitebox-Konfigurationsnachweis
 
@@ -301,7 +305,8 @@ def _mistral_success_response(name: str | None, confidence: float) -> httpx.Resp
 
 
 def _mistral_client(handler: httpx.MockTransport) -> MistralLandmarkClient:
-    return MistralLandmarkClient(api_key=MISTRAL_API_KEY, transport=handler)
+    return MistralLandmarkClient(
+        api_key=MISTRAL_API_KEY, model=MISTRAL_VISION_MODEL, transport=handler)
 
 
 async def test_mistral_detect_parses_a_successful_response_with_a_landmark_name() -> None:
@@ -370,7 +375,7 @@ async def test_mistral_detect_sends_the_expected_request_shape() -> None:
 
     body = seen["body"]
     assert isinstance(body, dict)
-    assert body["model"] == MISTRAL_LANDMARK_MODEL
+    assert body["model"] == MISTRAL_VISION_MODEL
     assert body["response_format"] == {"type": "json_object"}
     content_blocks = body["messages"][0]["content"]
     image_block = next(block for block in content_blocks if block["type"] == "image_url")
@@ -455,7 +460,7 @@ async def test_mistral_detect_raises_landmark_api_error_when_name_is_not_a_strin
 
 async def test_mistral_aclose_closes_the_underlying_http_client() -> None:
     client = MistralLandmarkClient(
-        api_key=MISTRAL_API_KEY,
+        api_key=MISTRAL_API_KEY, model=MISTRAL_VISION_MODEL,
         transport=httpx.MockTransport(lambda r: _mistral_success_response("x", 0.1)),
     )
     await client.aclose()
@@ -464,7 +469,7 @@ async def test_mistral_aclose_closes_the_underlying_http_client() -> None:
 
 async def test_mistral_timeout_is_applied_to_the_underlying_http_client() -> None:
     client = MistralLandmarkClient(
-        api_key=MISTRAL_API_KEY,
+        api_key=MISTRAL_API_KEY, model=MISTRAL_VISION_MODEL,
         transport=httpx.MockTransport(lambda r: _mistral_success_response("x", 0.1)),
     )
     assert client._client.timeout.read == 60.0  # Whitebox-Konfigurationsnachweis, geteilte
@@ -577,3 +582,51 @@ class TestMistralClientFillsUsage:
 
         assert detection.name is None
         assert detection.usage is None
+
+
+# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 7 ab hier: das Modell
+# ist ein durchgereichter Konstruktor-Parameter statt einer im Client gelesenen Modulkonstante.
+
+
+class TestConfiguredModelReachesTheRequest:
+    def test_the_anthropic_client_sends_the_model_it_was_built_with(self) -> None:
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.update(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={
+                    "content": [{"type": "text", "text": '{"name": null, "confidence": 0.0}'}],
+                },
+            )
+
+        client = AnthropicLandmarkClient(
+            api_key="test", model="ein-anderes-modell", transport=httpx.MockTransport(handler)
+        )
+
+        asyncio.run(client.detect(IMAGE_BYTES, "image/jpeg"))
+
+        assert captured["model"] == "ein-anderes-modell"
+
+    def test_the_mistral_client_sends_the_model_it_was_built_with(self) -> None:
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.update(json.loads(request.content))
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {"message": {"content": '{"name": null, "confidence": 0.0}'}}
+                    ],
+                },
+            )
+
+        client = MistralLandmarkClient(
+            api_key="test", model="ein-anderes-modell", transport=httpx.MockTransport(handler)
+        )
+
+        asyncio.run(client.detect(IMAGE_BYTES, "image/jpeg"))
+
+        assert captured["model"] == "ein-anderes-modell"

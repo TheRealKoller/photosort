@@ -1,6 +1,13 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
+from photosort.cloud_vision import (
+    ANTHROPIC_VISION_MODEL,
+    MISTRAL_VISION_MODEL,
+    VISION_MODELS_BY_PROVIDER,
+)
 from photosort.config import Settings
 
 
@@ -206,3 +213,152 @@ def test_remote_category_classification_concurrency_rejects_non_positive_values(
         Settings(_env_file=None, remote_category_classification_concurrency=0)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, remote_category_classification_concurrency=-1)
+
+
+# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-anbieter-
+# und-modellgebundene-kostenschaetzung.md Punkt 1 ab hier: die Modellwahl je Anbieter als zweite
+# Betriebseinstellung neben der Anbieterwahl - gepruegt beim Prozessstart, kein stiller Fallback.
+
+
+def test_landmark_model_defaults_to_empty_meaning_the_provider_default() -> None:
+    """Akzeptanzkriterium "ohne gesetzte Einstellung exakt wie bisher": leer heisst "Voreinstellung
+    des eingestellten Anbieters", nicht "kein Modell"."""
+    settings = Settings(_env_file=None)
+
+    assert settings.landmark_model == ""
+    assert settings.resolved_landmark_model() == ANTHROPIC_VISION_MODEL
+
+
+def test_an_unset_landmark_model_resolves_per_provider() -> None:
+    """Beide Anbieter werden gleich behandelt - kein Sonderweg fuer einen von beiden."""
+    settings = Settings(_env_file=None, landmark_provider="mistral")
+
+    assert settings.resolved_landmark_model() == MISTRAL_VISION_MODEL
+
+
+def test_a_configured_landmark_model_is_used_verbatim() -> None:
+    second_anthropic_model = VISION_MODELS_BY_PROVIDER["anthropic"][1]
+
+    settings = Settings(_env_file=None, landmark_model=second_anthropic_model)
+
+    assert settings.resolved_landmark_model() == second_anthropic_model
+
+
+def test_landmark_model_rejects_a_value_outside_the_curated_choice() -> None:
+    """Akzeptanzkriterium: ein Wert ausserhalb der gepflegten Auswahl laesst die Anwendung beim
+    Start scheitern, statt mitten in einem laufenden Durchgang still fehlzuschlagen."""
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, landmark_model="gpt-4o-mini")
+
+
+def test_the_rejection_message_names_the_allowed_values() -> None:
+    """"Verstaendliche Fehlermeldung" ist das Akzeptanzkriterium - eine Meldung, die nur "ungueltig"
+    sagt, laesst den Betreiber ohne den Wert zurueck, den er einsetzen soll."""
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=None, landmark_model="gpt-4o-mini")
+
+    message = str(excinfo.value)
+    assert "LANDMARK_MODEL" in message
+    for allowed in VISION_MODELS_BY_PROVIDER["anthropic"]:
+        assert allowed in message
+
+
+def test_landmark_model_rejects_a_model_that_belongs_to_the_other_provider() -> None:
+    """Der Validator prueft gegen die Registry DES EINGESTELLTEN Anbieters (ADR 0059 Punkt 1) -
+    ein fuer Anthropic gueltiges Modell unter `mistral` waere sonst ein Aufruf, den der Anbieter
+    erst zur Laufzeit ablehnt, mitten im kostenpflichtigen Durchgang."""
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, landmark_provider="mistral", landmark_model=ANTHROPIC_VISION_MODEL)
+
+
+def test_every_registry_model_of_a_provider_is_actually_configurable() -> None:
+    """Gegenprobe zum Ablehnungsfall: die kuratierte Auswahl ist vollstaendig einstellbar, nicht
+    nur teilweise."""
+    for provider, models in VISION_MODELS_BY_PROVIDER.items():
+        for model in models:
+            settings = Settings(_env_file=None, landmark_provider=provider, landmark_model=model)
+
+            assert settings.resolved_landmark_model() == model
+
+
+def test_the_rejection_leaks_no_other_settings_value() -> None:
+    """SECURITY-MUSS-KRITERIUM (Spec 0304, Abschnitt Security, Befund `security-engineer`
+    2026-09-06): pydantic haengt an eine `ValidationError` die Eingabe an, an der die Pruefung
+    scheiterte. Ein `@model_validator(mode="after")` machte das VOLLSTAENDIGE Settings-Dict zu
+    dieser Eingabe - `SECRET_KEY`, beide Cloud-API-Keys und das OpenCloud-App-Token landeten
+    damit im Startup-Traceback (`docker compose logs`) und in `exc.errors()`/`exc.json()`.
+
+    Deshalb ein Feld-Validator. Geprueft wird gegen BEIDE Darstellungen: `str(exc)` kuerzt lange
+    Eingaben und verdeckte das Problem teilweise - ein Test nur dagegen genuegt nicht."""
+    markers = {
+        "secret_key": "MARKER-SECRET-KEY-AAAA",
+        "anthropic_api_key": "MARKER-ANTHROPIC-BBBB",
+        "mistral_api_key": "MARKER-MISTRAL-CCCC",
+        "opencloud_app_token": "MARKER-OPENCLOUD-DDDD",
+    }
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=None, landmark_model="claude-opus-9", **markers)
+
+    rendered = f"{excinfo.value}\n{excinfo.value.json()}\n{excinfo.value.errors()}"
+    for marker in markers.values():
+        assert marker not in rendered
+
+
+def test_landmark_model_rejects_a_mistral_model_under_the_anthropic_provider() -> None:
+    """Gegenrichtung zum Test darueber - beide Richtungen sind Pflicht (Fund `test-engineer`).
+
+    Urspruengliche Begruendung: die Registry war asymmetrisch (anthropic mehrere Modelle, mistral
+    eines), eine Implementierung mit Sonderbehandlung des Ein-Modell-Anbieters haette nur eine der
+    beiden Richtungen bestanden. Seit dem Nachtrag vom 2026-09-06 bietet auch mistral zwei
+    Modelle; der Fall bleibt, weil er weiterhin eine anbieterblinde Pruefung faengt - eine, die
+    gegen die Gesamtmenge aller Modell-IDs statt gegen die des eingestellten Anbieters prueft."""
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, landmark_provider="anthropic", landmark_model=MISTRAL_VISION_MODEL)
+
+
+def test_a_whitespace_padded_model_is_rejected_rather_than_trimmed() -> None:
+    """SECURITY-MUSS-KRITERIUM (Spec 0304, Abschnitt Security): der Vergleich ist ein exakter
+    Stringvergleich, kein `strip()`/`lower()`. Ein toleriertes " claude-haiku-4-5 " waere ein
+    validierter Wert, der so in keiner Registry steht - und ginge byte-abweichend an den
+    Anbieter."""
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, landmark_model=f" {ANTHROPIC_VISION_MODEL} ")
+
+
+def test_landmark_model_is_read_from_the_environment_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ein Test, der nur das Konstruktor-Schluesselwort setzt, belegt den VARIABLENNAMEN nicht -
+    und der ist das, was in `.env`/`docker-compose.yml` steht."""
+    monkeypatch.setenv("LANDMARK_MODEL", VISION_MODELS_BY_PROVIDER["anthropic"][1])
+
+    settings = Settings(_env_file=None)
+
+    assert settings.resolved_landmark_model() == VISION_MODELS_BY_PROVIDER["anthropic"][1]
+
+
+def test_an_invalid_provider_with_a_set_model_still_raises_a_validation_error() -> None:
+    """Der Validator darf bei einem ungueltigen Anbieter nicht selbst mit einem `KeyError`
+    aussteigen - der Startfehler soll die Feldmeldung des Anbieters sein, nicht ein Traceback."""
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, landmark_provider="openai", landmark_model=ANTHROPIC_VISION_MODEL)
+
+
+def test_env_example_documents_every_selectable_model() -> None:
+    """specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, Akzeptanzkriterium "die neue
+    Einstellung ist dort dokumentiert, wo die bestehenden Betriebseinstellungen dokumentiert
+    sind, samt Voreinstellung und waehlbaren Werten": ohne diesen Test veraltet die dokumentierte
+    Auswahl beim ersten ergaenzten Modell, und der Betreiber erfaehrt von einer Moeglichkeit,
+    die es gibt, nichts.
+
+    Scheitert laut statt still, wenn die Datei nicht auffindbar ist."""
+    env_example = Path(__file__).resolve().parents[2] / ".env.example"
+
+    assert env_example.is_file(), f"{env_example} nicht gefunden"
+    content = env_example.read_text(encoding="utf-8")
+
+    assert "LANDMARK_MODEL=" in content
+    for models in VISION_MODELS_BY_PROVIDER.values():
+        for model in models:
+            assert model in content, model

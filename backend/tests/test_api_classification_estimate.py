@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import httpx
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import get_opencloud_client
+from photosort.cloud_vision import VISION_MODELS_BY_PROVIDER
 from photosort.config import settings
 from photosort.main import app
 from photosort.models import (
@@ -19,7 +21,7 @@ from photosort.models import (
 )
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
-from photosort.remote_classification import COST_PER_IMAGE_USD
+from photosort.pricing import estimate_usd_per_image
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, Akzeptanzkriterium
 # "Kostenschätzung", fortgeschrieben von specs/features/0296-klassifizierung-ein-ausloeser-cloud-
@@ -156,7 +158,11 @@ class TestEstimateEndpoint:
         # Schaetzung ist strukturell eine Schaetzung, kein Vorausberechnen (ADR 0050 Punkt 5).
         assert body["landmark_candidate_count"] == 0
         assert body["provider"] == settings.landmark_provider
-        price = COST_PER_IMAGE_USD[settings.landmark_provider]
+        assert body["model"] == settings.resolved_landmark_model()
+        price = estimate_usd_per_image(
+            settings.resolved_landmark_model(), settings.landmark_provider
+        )
+        assert price is not None
         assert body["price_per_image_usd"] == price
         assert body["estimated_cost_usd"] == 2 * price
 
@@ -215,7 +221,10 @@ class TestLandmarkShareOfTheEstimate:
         assert body["landmark_candidate_count"] == 1
         assert body["remote_category_candidate_count"] == 2
         assert body["candidate_count"] == 3
-        price = COST_PER_IMAGE_USD[settings.landmark_provider]
+        price = estimate_usd_per_image(
+            settings.resolved_landmark_model(), settings.landmark_provider
+        )
+        assert price is not None
         assert body["estimated_cost_usd"] == 3 * price
 
     async def test_a_building_photo_is_a_landmark_candidate_too(
@@ -306,3 +315,113 @@ async def test_project_out_exposes_last_remote_category_classification_run(
     assert last_run is not None
     assert last_run["status"] == "success"
     assert last_run["photos_total"] == 5
+
+
+class TestTheEstimateFollowsTheConfiguredModel:
+    """specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 3/4: die
+    Schaetzung haengt am eingestellten MODELL, nicht mehr am Anbieter."""
+
+    async def test_the_default_estimate_still_matches_the_previous_constant(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium "ohne gesetzte Einstellung exakt wie bisher", auf API-Ebene gegen den
+        LITERALEN Altwert der abgeloesten `COST_PER_IMAGE_USD["anthropic"]` gepinnt - ohne diesen
+        Anker prueft die API-Ebene nach dem Umbau nur noch sich selbst."""
+        project_id = await _create_project(authenticated_api_client)
+        await _add_photo_candidate(db_session, project_id, "a.jpg")
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["model"] == "claude-haiku-4-5"
+        assert body["price_per_image_usd"] == pytest.approx(0.0052, abs=1e-9)
+        assert body["estimated_cost_usd"] == pytest.approx(0.0052, abs=1e-9)
+
+    async def test_a_configured_non_default_model_changes_the_price(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        stronger = VISION_MODELS_BY_PROVIDER["anthropic"][1]
+        monkeypatch.setattr(settings, "landmark_model", stronger)
+        project_id = await _create_project(authenticated_api_client)
+        await _add_photo_candidate(db_session, project_id, "a.jpg")
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["model"] == stronger
+        assert body["price_per_image_usd"] > 0.0052
+
+    async def test_an_unpriced_model_yields_null_amounts_instead_of_zero(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SECURITY-MUSS-KRITERIUM (Spec 0304): `null` schlaegt unverfaelscht durch, kein `?? 0`.
+        Ein stilles "0,00 $" waere die gefaehrlichste aller Anzeigen - es behauptete
+        Kostenfreiheit.
+
+        Der Zustand ist per Konfiguration unerreichbar (Registry-Invariante in test_pricing.py) -
+        deshalb ausdruecklich ueber den Monkeypatch-Bypass erzeugt. Der Pfad wird trotzdem
+        gebaut und geprueft, weil eine Absicherung, die ausschliesslich aus einem Test besteht,
+        mit diesem Test verschwindet (ADR 0059 Punkt 4)."""
+        monkeypatch.setattr(settings, "landmark_model", "ein-nie-bepreistes-modell")
+        project_id = await _create_project(authenticated_api_client)
+        await _add_photo_candidate(db_session, project_id, "a.jpg")
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project_id}/classify/estimate"
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["model"] == "ein-nie-bepreistes-modell"
+        assert body["price_per_image_usd"] is None
+        assert body["estimated_cost_usd"] is None
+        # Die Kandidatenzahl bleibt korrekt - sie ist bekannt, nur der Preis ist es nicht.
+        assert body["candidate_count"] == 1
+
+    async def test_zero_candidates_yield_zero_even_without_a_known_price(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Die KOMBINATION der beiden Sonderfaelle darueber (Copilot-Fund, PR #341): kein
+        hinterlegter Preis UND null Kandidaten.
+
+        `null` heisst "wir wissen nicht, was das kostet" - bei null Kandidaten wissen wir es aber
+        sehr wohl: es faellt nichts an, weil nichts verarbeitet wird. Der Preis JE BILD bleibt
+        deshalb `null` (er ist tatsaechlich unbekannt), die Summe ist `0.0`. Die Zusage
+        "candidate_count=0 liefert estimated_cost_usd=0.0, kein Sonderfall" aus dem Docstring des
+        Endpunkts gilt ohne Ausnahme - sonst haengt sie unausgesprochen daran, dass ein Preis
+        gepflegt ist."""
+        monkeypatch.setattr(settings, "landmark_model", "ein-nie-bepreistes-modell")
+        project_id = await _create_project(authenticated_api_client)
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["candidate_count"] == 0
+        assert body["price_per_image_usd"] is None
+        assert body["estimated_cost_usd"] == 0.0
+
+    async def test_zero_candidates_still_yield_zero_not_null(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        """`0.0` heisst "nichts zu bezahlen", `null` heisst "unbekannt" - die beiden duerfen nie
+        zusammenfallen."""
+        project_id = await _create_project(authenticated_api_client)
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["candidate_count"] == 0
+        assert body["estimated_cost_usd"] == 0.0
+        assert body["estimated_cost_usd"] is not None

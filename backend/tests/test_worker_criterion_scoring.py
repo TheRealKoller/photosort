@@ -16,7 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import pricing, worker
 from photosort.categories import CATEGORY_NOT_RECOGNIZED, is_known_category
-from photosort.cloud_vision import VISION_MODEL_BY_PROVIDER, TokenUsage
+from photosort.cloud_vision import (
+    VISION_MODELS_BY_PROVIDER,
+    TokenUsage,
+    default_vision_model_for_provider,
+)
 from photosort.landmark import LandmarkApiError, LandmarkDetection
 from photosort.models import (
     CloudVisionPhase,
@@ -1857,7 +1861,7 @@ class CancellingLandmarkClient:
         )
 
 
-def _failing_landmark_client_builder() -> NoReturn:
+def _failing_landmark_client_builder(model: str) -> NoReturn:
     pytest.fail("build_landmark_client darf bei deaktivierter Einwilligung nie aufgerufen werden")
 
 
@@ -1958,7 +1962,7 @@ async def test_consent_enabled_sends_a_landscape_photo_to_the_landmark_client(
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: client,
+        build_landmark_client=lambda _model: client,
         use_cloud=True,
     )
 
@@ -2030,7 +2034,7 @@ async def test_landmark_detection_row_persists_the_configured_provider(
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: client,
+        build_landmark_client=lambda _model: client,
         use_cloud=True,
     )
 
@@ -2069,7 +2073,7 @@ async def test_provider_switch_between_runs_does_not_overwrite_the_stored_provid
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: first_client,
+        build_landmark_client=lambda _model: first_client,
         use_cloud=True,
     )
     assert first_run.status == ScanStatus.SUCCESS
@@ -2092,7 +2096,7 @@ async def test_provider_switch_between_runs_does_not_overwrite_the_stored_provid
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: second_client,
+        build_landmark_client=lambda _model: second_client,
         use_cloud=True,
     )
 
@@ -2134,7 +2138,7 @@ async def test_photo_without_an_identified_landmark_name_gets_zero_score_and_no_
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: client,
+        build_landmark_client=lambda _model: client,
         use_cloud=True,
     )
 
@@ -2178,7 +2182,7 @@ async def test_vorfilterung_sends_photo_that_only_meets_the_gebaeude_threshold(
         build_classifier=_scene_classifier_stub,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: client,
+        build_landmark_client=lambda _model: client,
         use_cloud=True,
     )
 
@@ -2214,7 +2218,7 @@ async def test_vorfilterung_does_not_send_photo_below_both_thresholds_empty_cand
         build_classifier=_no_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: client,
+        build_landmark_client=lambda _model: client,
         use_cloud=True,
     )
 
@@ -2260,7 +2264,7 @@ async def test_skip_already_scored_photo_but_local_criteria_are_recomputed(
         build_classifier=_no_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: client,
+        build_landmark_client=lambda _model: client,
         use_cloud=True,
     )
 
@@ -2309,7 +2313,7 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
             build_classifier=_landscape_scene_classifier,
             build_aesthetics=_no_aesthetics_model,
             build_landmarker=_no_face_landmarker,
-            build_landmark_client=lambda: failing_client,
+            build_landmark_client=lambda _model: failing_client,
             use_cloud=True,
         )
 
@@ -2351,7 +2355,7 @@ async def test_failed_landmark_call_leaves_no_row_and_becomes_a_candidate_again_
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: succeeding_client,
+        build_landmark_client=lambda _model: succeeding_client,
         use_cloud=True,
     )
 
@@ -2392,7 +2396,7 @@ async def test_failed_landmark_call_persists_a_cloud_vision_error_row(
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: failing_client,
+        build_landmark_client=lambda _model: failing_client,
         use_cloud=True,
     )
 
@@ -2429,7 +2433,7 @@ async def test_successful_landmark_call_after_a_previous_failure_clears_the_erro
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: RecordingLandmarkClient(raise_error=True),
+        build_landmark_client=lambda _model: RecordingLandmarkClient(raise_error=True),
         use_cloud=True,
     )
     assert (
@@ -2448,7 +2452,7 @@ async def test_successful_landmark_call_after_a_previous_failure_clears_the_erro
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: RecordingLandmarkClient(),
+        build_landmark_client=lambda _model: RecordingLandmarkClient(),
         use_cloud=True,
     )
 
@@ -2488,7 +2492,7 @@ async def test_successful_landmark_call_without_a_name_still_clears_the_error_ro
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: RecordingLandmarkClient(raise_error=True),
+        build_landmark_client=lambda _model: RecordingLandmarkClient(raise_error=True),
         use_cloud=True,
     )
     assert (
@@ -2507,7 +2511,7 @@ async def test_successful_landmark_call_without_a_name_still_clears_the_error_ro
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: RecordingLandmarkClient(
+        build_landmark_client=lambda _model: RecordingLandmarkClient(
             detection=LandmarkDetection(name=None, confidence=0.0)
         ),
         use_cloud=True,
@@ -2562,7 +2566,7 @@ async def test_repeated_landmark_failures_upsert_the_same_error_row(
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: _RaisingClient("erster Fehlschlag"),
+        build_landmark_client=lambda _model: _RaisingClient("erster Fehlschlag"),
         use_cloud=True,
     )
     await run_criterion_scoring(
@@ -2575,7 +2579,7 @@ async def test_repeated_landmark_failures_upsert_the_same_error_row(
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: _RaisingClient("zweiter Fehlschlag"),
+        build_landmark_client=lambda _model: _RaisingClient("zweiter Fehlschlag"),
         use_cloud=True,
     )
 
@@ -2617,7 +2621,7 @@ async def test_landmark_error_message_is_capped_at_500_characters(
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: _RaisingClient(),
+        build_landmark_client=lambda _model: _RaisingClient(),
         use_cloud=True,
     )
 
@@ -2657,7 +2661,7 @@ async def test_landmark_calls_are_limited_by_landmark_api_concurrency(
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: client,
+        build_landmark_client=lambda _model: client,
         use_cloud=True,
     )
 
@@ -2715,7 +2719,7 @@ async def test_multiple_simultaneously_failing_landmark_calls_each_log_their_own
             build_classifier=_landscape_scene_classifier,
             build_aesthetics=_no_aesthetics_model,
             build_landmarker=_no_face_landmarker,
-            build_landmark_client=lambda: client,
+            build_landmark_client=lambda _model: client,
             use_cloud=True,
         )
 
@@ -2758,7 +2762,7 @@ async def test_cancelled_error_from_a_parallel_landmark_call_propagates_and_fail
                 build_classifier=_landscape_scene_classifier,
                 build_aesthetics=_no_aesthetics_model,
                 build_landmarker=_no_face_landmarker,
-                build_landmark_client=lambda: CancellingLandmarkClient(),
+                build_landmark_client=lambda _model: CancellingLandmarkClient(),
                 use_cloud=True,
             )
 
@@ -3438,7 +3442,7 @@ async def test_a_flat_photo_without_a_landscape_label_triggers_no_cloud_call_any
         build_classifier=_no_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: client,
+        build_landmark_client=lambda _model: client,
         use_cloud=True,
     )
 
@@ -3471,7 +3475,7 @@ async def test_a_recognised_landscape_photo_is_still_sent_to_the_landmark_client
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: client,
+        build_landmark_client=lambda _model: client,
         use_cloud=True,
     )
 
@@ -3526,7 +3530,7 @@ async def _run_with_landmark_client(
         build_classifier=_landscape_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
-        build_landmark_client=lambda: client,
+        build_landmark_client=lambda _model: client,
         use_cloud=use_cloud,
     )
 
@@ -3541,7 +3545,7 @@ def _detection_with_usage(input_tokens: int, output_tokens: int) -> LandmarkDete
 
 def _expected_cost(input_tokens: int, output_tokens: int) -> float:
     cost = compute_cost_usd(
-        VISION_MODEL_BY_PROVIDER["anthropic"],
+        default_vision_model_for_provider("anthropic"),
         TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
     )
     assert cost is not None
@@ -3761,7 +3765,132 @@ async def test_landmark_costs_use_the_configured_provider_model(
 
     run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
 
-    expected = compute_cost_usd(VISION_MODEL_BY_PROVIDER["mistral"], TokenUsage(1_000_000, 0))
+    expected = compute_cost_usd(
+        default_vision_model_for_provider("mistral"), TokenUsage(1_000_000, 0)
+    )
     assert expected is not None
     assert run.landmark_cost_usd == pytest.approx(expected)
     assert run.landmark_cost_usd != pytest.approx(_expected_cost(1_000_000, 0))
+
+
+# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-anbieter-
+# und-modellgebundene-kostenschaetzung.md Punkt 6/7 ab hier: das eingestellte Modell wird
+# durchgereicht, abgerechnet und je Lauf persistiert. Alle Faelle benutzen bewusst ein NICHT
+# voreingestelltes Modell - bei der Voreinstellung stimmten alle drei Stellen auch dann ueberein,
+# wenn drei getrennte Lesevorgaenge stattfaenden, und der Test haette keine Trennschaerfe.
+
+_STRONGER_ANTHROPIC_MODEL = VISION_MODELS_BY_PROVIDER["anthropic"][1]
+
+
+async def test_the_landmark_phase_builds_its_client_with_the_configured_model(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(worker.settings, "landmark_model", _STRONGER_ANTHROPIC_MODEL)
+    project, scoring_run, _photos = await _landmark_cost_setup(
+        db_session, tmp_path, photo_count=1
+    )
+    client = PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)])
+    received: list[str] = []
+
+    def build(model: str) -> object:
+        received.append(model)
+        return client
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=build,
+        use_cloud=True,
+    )
+
+    assert received == [_STRONGER_ANTHROPIC_MODEL]
+
+
+async def test_the_client_the_billing_and_the_persisted_model_are_one_and_the_same_value(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Die Identitaetsaussage von ADR 0059 Punkt 7 in einem Test: der Wert, mit dem der Client
+    gebaut wurde, ist derselbe, mit dem gerechnet und den die Laufzeile festhaelt. Sie ersetzt den
+    mit den Modell-Aliasen entfallenen Waechtertest aus test_pricing.py - geprueft wird jetzt das
+    tatsaechliche Laufzeitverhalten statt der Gleichheit zweier Literale."""
+    monkeypatch.setattr(worker.settings, "landmark_model", _STRONGER_ANTHROPIC_MODEL)
+    project, scoring_run, _photos = await _landmark_cost_setup(
+        db_session, tmp_path, photo_count=1
+    )
+    client = PerPhotoLandmarkClient([_detection_with_usage(1_000_000, 0)])
+    received: list[str] = []
+
+    def build(model: str) -> object:
+        received.append(model)
+        return client
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=build,
+        use_cloud=True,
+    )
+
+    expected_cost = compute_cost_usd(_STRONGER_ANTHROPIC_MODEL, TokenUsage(1_000_000, 0))
+    assert expected_cost is not None
+    assert received == [_STRONGER_ANTHROPIC_MODEL]
+    assert run.landmark_model == _STRONGER_ANTHROPIC_MODEL
+    assert run.landmark_cost_usd == pytest.approx(expected_cost)
+    # Gegenprobe: mit dem Voreinstellungs-Modell waere der Betrag ein anderer - der Test haette
+    # sonst nicht gezeigt, dass wirklich das EINGESTELLTE Modell gerechnet wurde.
+    assert run.landmark_cost_usd != pytest.approx(_expected_cost(1_000_000, 0))
+
+
+async def test_a_run_without_a_cloud_phase_leaves_the_model_column_null(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """`NULL` heisst "nicht erfasst" - ein eingetragenes Modell behauptete Cloud-Nutzung, wo keine
+    stattfand (dieselbe Semantik wie bei `landmark_cost_usd`)."""
+    project, scoring_run, _photos = await _landmark_cost_setup(
+        db_session, tmp_path, photo_count=1
+    )
+    client = PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)])
+
+    run = await _run_with_landmark_client(
+        db_session, project, scoring_run, tmp_path, client, use_cloud=False
+    )
+
+    assert run.landmark_model is None
+
+
+async def test_the_model_column_survives_a_run_that_fails_after_the_landmark_block(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Die Spalte wird im selben `finally` und Commit geschrieben wie der eingefrorene Betrag -
+    ein Lauf, der spaeter scheitert, hat das Geld bereits ausgegeben und muss erklaerbar bleiben."""
+    monkeypatch.setattr(worker.settings, "landmark_model", _STRONGER_ANTHROPIC_MODEL)
+    project, scoring_run, _photos = await _landmark_cost_setup(
+        db_session, tmp_path, photo_count=1
+    )
+    client = PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)])
+    monkeypatch.setattr(
+        worker, "rank_photos", _raise_after_landmark_phase, raising=True
+    )
+
+    run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+    assert run.status == ScanStatus.FAILED
+    assert run.landmark_model == _STRONGER_ANTHROPIC_MODEL
+
+
+def _raise_after_landmark_phase(*args: object, **kwargs: object) -> NoReturn:
+    raise RuntimeError("Kriterien-Phase scheitert nach dem Cloud-Anteil")

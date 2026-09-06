@@ -56,6 +56,11 @@ services:
       # Cloud-Schluessel bewusst leer: im Pruefstack wird nie ein Cloud-Aufruf ausgeloest.
       ANTHROPIC_API_KEY: ""
       LANDMARK_PROVIDER: anthropic
+      # Leer = Voreinstellung des Anbieters. Muss hier trotzdem stehen: das Overlay hat den
+      # Anspruch, JEDE interpolierbare Variable des Basisstacks fest zu schlagen, damit keine
+      # `.env` des Produktivstacks in den Pruefstack durchschlaegt (Nachweisschritt im CI-Job
+      # `e2e`). Eine hier fehlende Variable bleibt interpolierbar und faellt genau dort auf.
+      LANDMARK_MODEL: ""
       MISTRAL_API_KEY: ""
       # OpenCloud-Schluessel bewusst leer: kein OpenCloud im Pruefstack - und zugleich die
       # Bedingung, unter der der Demo-Seeder ueberhaupt laufen darf (Sperre M1c).
@@ -91,6 +96,11 @@ services:
       SECRET_KEY: e2e-only-secret-key-not-for-production-0174
       ANTHROPIC_API_KEY: ""
       LANDMARK_PROVIDER: anthropic
+      # Leer = Voreinstellung des Anbieters. Muss hier trotzdem stehen: das Overlay hat den
+      # Anspruch, JEDE interpolierbare Variable des Basisstacks fest zu schlagen, damit keine
+      # `.env` des Produktivstacks in den Pruefstack durchschlaegt (Nachweisschritt im CI-Job
+      # `e2e`). Eine hier fehlende Variable bleibt interpolierbar und faellt genau dort auf.
+      LANDMARK_MODEL: ""
       MISTRAL_API_KEY: ""
       OPENCLOUD_BASE_URL: ""
       OPENCLOUD_USERNAME: ""

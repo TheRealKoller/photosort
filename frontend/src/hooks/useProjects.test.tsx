@@ -289,6 +289,7 @@ describe('useClassificationEstimateQuery', () => {
       remote_category_candidate_count: 40,
       landmark_candidate_count: 2,
       provider: 'anthropic',
+      model: 'claude-haiku-4-5',
       price_per_image_usd: 0.0052,
       estimated_cost_usd: 0.2184,
     })
