@@ -5,6 +5,14 @@ name: release-please
 # (Security-Abschnitt) nie auf "pull_request_target" erweitert werden - das
 # Repo ist public, ein solcher Trigger wuerde Fork-PRs Zugriff auf das
 # RELEASE_PLEASE_TOKEN-Secret geben.
+#
+# Der Workflow besteht bewusst aus genau einem Step und wertet in keinem
+# "${{ }}"-Ausdruck einen Step-Output aus (ADR 0060): GitHub wertet die
+# Ausdruecke eines Steps auch dann aus, wenn dessen "if:" false ergibt - ein
+# "fromJson(steps.<id>.outputs.<x>)" auf einem leeren Output reisst den
+# gesamten Job als Template-Fehler mit. Wer hier je einen zweiten Step
+# ergaenzt, muss den Leer-Output-Fall selbst tragen; "if:" tut es nicht.
+# Gehalten von scripts/tests/test_release_workflow_ohne_selbstmerge.py.
 on:
   push:
     branches: [main]
@@ -18,22 +26,10 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - id: release
-        # v4.4.1, gepinnt auf Commit-SHA statt auf den beweglichen Tag "v4"
-        # (Supply-Chain-Haertung, siehe ADR 0008/Spec 0008 Security-Abschnitt).
-        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+      # v4.4.1, gepinnt auf Commit-SHA statt auf den beweglichen Tag "v4"
+      # (Supply-Chain-Haertung, siehe ADR 0008/Spec 0008 Security-Abschnitt).
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-      - name: Auto-Merge fuer den Release-PR aktivieren
-        if: steps.release.outputs.pr
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          # Ueber eine env-Variable statt direkter "${{ }}"-Interpolation in
-          # "run:" uebergeben (Defense-in-Depth gegen die generelle GitHub
-          # Actions Script-Injection-Musterklasse, siehe security-engineer-
-          # Review zu Spec 0008; PR_NUMBER ist ein von GitHub selbst
-          # generierter Integer, kein von Dritten beeinflussbarer Freitext).
-          PR_NUMBER: ${{ fromJson(steps.release.outputs.pr).number }}
-        run: gh pr merge --auto --squash "$PR_NUMBER"
