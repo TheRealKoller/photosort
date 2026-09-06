@@ -57,6 +57,22 @@ function menuTriggerInDom(page: import('@playwright/test').Page) {
   return page.locator('button[aria-label="Projektbereiche"]')
 }
 
+/*
+ * `getByRole('banner')` UND NICHT `locator('header')`: Es gibt sechs `<header>` im Produkt. Fuenf
+ * davon sind Seiten-Header INNERHALB von `<main>` (u.a. ProjectListPage - genau die Seite, die der
+ * AK7-Test als Vergleich ohne Projektbezug ansteuert), einer ist die App-Shell-Kopfzeile
+ * ausserhalb. Ein `locator('header')` traf auf `/` beide und brach mit einer Strict-Mode-Meldung ab.
+ *
+ * Die Rolle trennt sie sauber: `<header>` traegt `banner` nur, solange es nicht in
+ * `main`/`article`/`section`/`aside`/`nav` verschachtelt ist - die fuenf Seiten-Header sind damit
+ * rollenlos, nur die App-Shell-Kopfzeile ist ein `banner`. Zugleich die Rollen- statt
+ * Klassennamen-Lokalisierung der Selektor-Konvention, und dasselbe Vorgehen wie in
+ * `sticky-header.spec.ts` und `lib/auth.ts`.
+ */
+function appHeader(page: import('@playwright/test').Page) {
+  return page.getByRole('banner')
+}
+
 /** Anteil der tatsaechlich dargestellten Elemente einer DOM-Menge. */
 async function visibleCount(locator: import('@playwright/test').Locator): Promise<number> {
   const rendered = await locator.evaluateAll((elements) =>
@@ -118,95 +134,170 @@ test('wechselt an der exakten Grenze 1024 px zwischen Leiste und Menue-Ausloeser
 })
 
 /*
- * ZWEI BREITEN, EINE MESSTECHNIK - und zwei verschiedene Zusagen:
+ * ZWEI BREITEN, ZWEI VERSCHIEDENE EIGENSCHAFTEN - bewusst als zwei eigenstaendige Tests und nicht
+ * mehr als eine Tabelle: Sie teilen sich zwar den Aufbau, messen aber Unterschiedliches, und eine
+ * gemeinsame Tabelle taeuschte eine Gleichartigkeit vor, die es nicht gibt.
  *
- *  - 360 px deckt AK7 ab ("die Kopfzeile ist auf einer Projektseite genauso hoch wie auf einer
- *    Seite ohne Projektbezug, Toleranz 1 px"). Dort ist nur der Menue-Ausloeser dargestellt.
- *  - 1024 px deckt die verbindliche Regel des Architektur-Abschnitts ab ("die Kopfzeile darf bei
- *    keiner Breite in eine zweite Zeile umbrechen"). Das ist die SCHMALSTE Breite, bei der
- *    Wortmarke, VIER Beschriftungen, "Angemeldet als …" und "Abmelden" gleichzeitig in einer Zeile
- *    stehen muessen - also die einzige, an der die Regel tatsaechlich gefaehrdet ist. Der
- *    `lg:`-Breakpoint beruht in der Spec auf einer Schaetzung ("rund 800 px"), nicht auf einer
- *    Messung; ohne diese Zusicherung bliebe sie ungeprueft.
- *
- * WARUM DIE HOEHE UND NICHT EIN UEBERLAUF: Das `<header>` traegt `flex-wrap`. Ein Umbruch laeuft
- * deshalb STILL - nichts ragt heraus, nichts scrollt waagerecht, die Kopfzeile wird lediglich
- * zweizeilig. Gegen dieselbe Kopfzeile ohne Projektbezug gemessen statt gegen eine feste Zahl: die
- * waere auf den heutigen Zustand kalibriert und ueberlebte keine legitime Aenderung der Kopfzeile.
+ *  - 360 px: HOEHENGLEICHHEIT. Dort ist AK7 woertlich eine Aussage ueber die Kopfzeilenhoehe, und
+ *    es kommt nur der `size="icon"`-Ausloeser hinzu, der wie jede andere Schaltflaeche der
+ *    Kopfzeile `h-8` = 32 px hoch ist. Gleiche Hoehe ist dort also die richtige Frage.
+ *  - 1024 px: EINZEILIGKEIT. Dort lautet die verbindliche Regel des Architektur-Abschnitts "die
+ *    Kopfzeile darf bei keiner Breite in eine zweite Zeile umbrechen" - und dafuer waere
+ *    Hoehengleichheit das falsche Instrument, siehe die Begruendung am Test selbst.
  */
-const HEADER_HEIGHT_WIDTHS = [
-  {
-    width: MOBILE_WIDTH,
-    zusage: 'AK7: keine zusaetzliche Kopfzeilenzeile durch die Gruppe',
-    /** Bei 360 px ist ausschliesslich der Ausloeser dargestellt (AK6). */
-    expectedVisibleTargets: 0,
-    expectedTriggerVisible: true,
-  },
-  {
-    width: BREAKPOINT,
-    zusage: 'verbindliche Regel: kein Umbruch der Kopfzeile in eine zweite Zeile',
-    /** Bei 1024 px stehen alle vier Beschriftungen in der Zeile (AK5) - genau das ist der Druck. */
-    expectedVisibleTargets: 4,
-    expectedTriggerVisible: false,
-  },
-] as const
 
-for (const fall of HEADER_HEIGHT_WIDTHS) {
-  test(`haelt die Kopfzeile bei ${fall.width} px einzeilig (${fall.zusage})`, async ({ page }) => {
-    await page.setViewportSize({ width: fall.width, height: VIEWPORT_HEIGHT })
-    const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
-
-    /*
-     * `getByRole('banner')` UND NICHT `locator('header')`: Es gibt sechs `<header>` im Produkt.
-     * Fuenf davon sind Seiten-Header INNERHALB von `<main>` (u.a. ProjectListPage - genau die
-     * Seite, die dieser Test als Vergleich ohne Projektbezug ansteuert), einer ist die App-Shell-
-     * Kopfzeile ausserhalb. Ein `locator('header')` traf auf `/` beide und brach mit einer
-     * Strict-Mode-Meldung ab.
-     *
-     * Die Rolle trennt sie sauber: `<header>` traegt `banner` nur, solange es nicht in
-     * `main`/`article`/`section`/`aside`/`nav` verschachtelt ist - die fuenf Seiten-Header sind
-     * damit rollenlos, nur die App-Shell-Kopfzeile ist ein `banner`. Zugleich die Rollen- statt
-     * Klassennamen-Lokalisierung der Selektor-Konvention, und dasselbe Vorgehen wie in
-     * `sticky-header.spec.ts` und `lib/auth.ts`.
-     */
-    const header = page.getByRole('banner')
-
-    await page.goto('/')
-    await expect(projectNav(page), 'Gruppe auf der Projektliste').toHaveCount(0)
-    // Eindeutigkeit ZUGESICHERT statt vorausgesetzt: Kaeme spaeter ein zweiter `banner` dazu,
-    // scheiterte die Messung sonst wieder mit einer Strict-Mode-Meldung ueber einen Lokalisierer
-    // statt mit einer verstaendlichen Zusicherung ueber die Kopfzeile.
-    await expect(header, 'Kopfzeilen-Landmark auf der Projektliste').toHaveCount(1)
-    const withoutProject = await header.boundingBox()
-    expect(withoutProject, 'Kopfzeile ohne Projektbezug').not.toBeNull()
-
-    await page.goto(`/projects/${projectId}/photos`)
-    await expect(projectNav(page), 'Gruppe auf der Projektseite').toBeAttached()
-    await expect(header, 'Kopfzeilen-Landmark auf der Projektseite').toHaveCount(1)
-
-    // Vorbedingung: bei DIESER Breite ist auch tatsaechlich die erwartete Darstellung zu sehen.
-    // Ohne sie waere der Hoehenvergleich bei 1024 px wertlos - er bestuende auch dann, wenn die
-    // vier Beschriftungen gar nicht dargestellt wuerden und deshalb nichts umbrechen koennte.
-    expect(
-      await visibleCount(navTargetsInDom(page)),
-      `sichtbare Ziele bei ${fall.width} px`
-    ).toBe(fall.expectedVisibleTargets)
-    expect(
-      (await visibleCount(menuTriggerInDom(page))) === 1,
-      `Menue-Ausloeser sichtbar bei ${fall.width} px`
-    ).toBe(fall.expectedTriggerVisible)
-
-    const withProject = await header.boundingBox()
-    expect(withProject, 'Kopfzeile mit Projektbezug').not.toBeNull()
-
-    // Groesse > 0 zuerst: zwei auf 0 kollabierte Kopfzeilen waeren sonst trivial "gleich hoch".
-    expect(withoutProject!.height, 'Hoehe der Kopfzeile ohne Projektbezug').toBeGreaterThan(0)
-    expect(
-      Math.abs(withProject!.height - withoutProject!.height),
-      `Hoehenunterschied der Kopfzeile bei ${fall.width} px`
-    ).toBeLessThanOrEqual(TOLERANCE)
-  })
+/** Ein Rechteck, wie es `getBoundingClientRect()` liefert - nur die senkrechte Achse. */
+interface VerticalExtent {
+  top: number
+  bottom: number
 }
+
+/**
+ * Liegen alle Elemente in EINEM gemeinsamen waagerechten Band? Genau dann, wenn der tiefste
+ * Oberrand noch ueber dem hoechsten Unterrand liegt - dann ueberlappen sich alle senkrecht, es
+ * gibt also keine zweite Zeile. Bricht die Kopfzeile um, rutscht mindestens ein Kind vollstaendig
+ * unter ein anderes und die Bedingung faellt.
+ *
+ * Bewusst eine reine Funktion und nicht inline in der Zusicherung vergraben: so ist sie unten
+ * gegen synthetische Rechtecke pruefbar. Der eine ernste Fehlermodus einer Layout-Messung ist,
+ * dass sie nichts findet und deswegen besteht.
+ */
+function sharesHorizontalBand(extents: VerticalExtent[]): boolean {
+  if (extents.length < 2) {
+    return true
+  }
+  const lowestTop = Math.max(...extents.map((extent) => extent.top))
+  const highestBottom = Math.min(...extents.map((extent) => extent.bottom))
+  return lowestTop < highestBottom
+}
+
+test('erkennt eine umgebrochene Zeile als solche (Selbsttest des Messverfahrens)', () => {
+  // Eine Kopfzeile, deren zwei Gruppen nebeneinander stehen - unterschiedlich hoch, wie im
+  // Produkt (34,8 px hohe Navigationsziele neben 32 px hohen Schaltflaechen).
+  expect(
+    sharesHorizontalBand([
+      { top: 12, bottom: 46.8 },
+      { top: 13.4, bottom: 45.4 },
+    ]),
+    'zwei nebeneinander stehende Gruppen'
+  ).toBe(true)
+  // Dieselben zwei Gruppen nach einem Umbruch: die zweite steht vollstaendig unter der ersten.
+  expect(
+    sharesHorizontalBand([
+      { top: 12, bottom: 46.8 },
+      { top: 58.8, bottom: 90.8 },
+    ]),
+    'zwei untereinander stehende Gruppen'
+  ).toBe(false)
+  // Randfall Beruehrung: Unterkante der einen genau auf der Oberkante der anderen ist bereits
+  // ein Umbruch, keine gemeinsame Zeile.
+  expect(
+    sharesHorizontalBand([
+      { top: 12, bottom: 46.8 },
+      { top: 46.8, bottom: 78.8 },
+    ]),
+    'buendig aneinander grenzende Gruppen'
+  ).toBe(false)
+})
+
+test(`haelt die Kopfzeile bei ${MOBILE_WIDTH} px genauso hoch wie ohne Projektbezug (AK7)`, async ({
+  page,
+}) => {
+  /*
+   * AK7 woertlich: "Bei 360 px ist die Kopfzeile auf einer Projektseite GENAUSO HOCH wie auf einer
+   * Seite ohne Projektbezug (Toleranz 1 px)" - die Gruppe erzeugt also keine zusaetzliche
+   * Kopfzeilenzeile und verschiebt den Seiteninhalt nicht nach unten.
+   *
+   * Gegen dieselbe Kopfzeile ohne Projektbezug gemessen statt gegen eine feste Zahl: die waere auf
+   * den heutigen Zustand kalibriert und ueberlebte keine legitime Aenderung der Kopfzeile.
+   */
+  await page.setViewportSize({ width: MOBILE_WIDTH, height: VIEWPORT_HEIGHT })
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+
+  const header = appHeader(page)
+
+  await page.goto('/')
+  await expect(projectNav(page), 'Gruppe auf der Projektliste').toHaveCount(0)
+  await expect(header, 'Kopfzeilen-Landmark auf der Projektliste').toHaveCount(1)
+  const withoutProject = await header.boundingBox()
+  expect(withoutProject, 'Kopfzeile ohne Projektbezug').not.toBeNull()
+
+  await page.goto(`/projects/${projectId}/photos`)
+  await expect(projectNav(page), 'Gruppe auf der Projektseite').toBeAttached()
+  await expect(header, 'Kopfzeilen-Landmark auf der Projektseite').toHaveCount(1)
+
+  // Vorbedingung: bei 360 px ist ausschliesslich der Ausloeser dargestellt (AK6) - genau die
+  // Darstellung, ueber die AK7 eine Aussage macht.
+  expect(await visibleCount(navTargetsInDom(page)), 'sichtbare Ziele bei 360 px').toBe(0)
+  expect(await visibleCount(menuTriggerInDom(page)), 'sichtbarer Ausloeser bei 360 px').toBe(1)
+
+  const withProject = await header.boundingBox()
+  expect(withProject, 'Kopfzeile mit Projektbezug').not.toBeNull()
+
+  // Groesse > 0 zuerst: zwei auf 0 kollabierte Kopfzeilen waeren sonst trivial "gleich hoch".
+  expect(withoutProject!.height, 'Hoehe der Kopfzeile ohne Projektbezug').toBeGreaterThan(0)
+  expect(
+    Math.abs(withProject!.height - withoutProject!.height),
+    `Hoehenunterschied der Kopfzeile bei ${MOBILE_WIDTH} px`
+  ).toBeLessThanOrEqual(TOLERANCE)
+})
+
+test(`haelt die Kopfzeile bei ${BREAKPOINT} px einzeilig (kein Umbruch)`, async ({ page }) => {
+  /*
+   * Die verbindliche Regel des Architektur-Abschnitts: "die Kopfzeile darf bei keiner Breite in
+   * eine zweite Zeile umbrechen". 1024 px ist die SCHMALSTE Breite, bei der Wortmarke, VIER
+   * Beschriftungen, "Angemeldet als …" und "Abmelden" gleichzeitig in eine Zeile muessen - also
+   * die einzige, an der die Regel tatsaechlich gefaehrdet ist. Der `lg:`-Breakpoint beruht in der
+   * Spec auf einer Schaetzung ("rund 800 px"), nicht auf einer Messung.
+   *
+   * WARUM HIER NICHT DIE HOEHE VERGLICHEN WIRD - bitte nicht auf Hoehengleichheit zurueckbauen:
+   * Die vier Navigationsziele sind das Board-Navigationselement und tragen `border px-3 py-2
+   * text-xs` -> 1 + 8 + (12px * 1.4 Zeilenhoehe) + 8 + 1 = 34,8 px. Die uebrigen Bedienelemente
+   * der Kopfzeile sind Schaltflaechen mit fester Hoehe `h-8` = 32 px. Die Kopfzeile waechst durch
+   * die Gruppe also PLANMAESSIG um knapp 3 px - im CI-Lauf zu Commit cc7d6e8 gemessene 2,796875 px.
+   * Das ist kein Umbruch, sondern die zeichengleiche Uebernahme des Rezepts aus Stepper.tsx, die
+   * AK8c ausdruecklich verlangt. Eine Hoehengleichheits-Zusicherung scheitert daran dauerhaft,
+   * ohne je einen Umbruch zu belegen - ein echter Umbruch ergaebe rund 46 px (eine weitere
+   * 34,8-px-Zeile plus `gap-3`).
+   *
+   * Geprueft wird deshalb direkt die Eigenschaft, die die Regel meint: liegen alle direkten Kinder
+   * der Kopfzeile in einem gemeinsamen waagerechten Band? Das ist gegen ein paar Pixel
+   * Hoehenunterschied unempfindlich und faellt bei jedem echten Umbruch.
+   *
+   * `flex-wrap` sitzt auf dem `<header>` selbst; die beiden Gruppen darin tragen es NICHT und
+   * koennen deshalb gar nicht umbrechen - ihr Fehlerbild waere waagerechter Ueberlauf, und den
+   * deckt `no-horizontal-scroll.spec.ts` ab. Die direkten Kinder sind damit die richtige Ebene.
+   */
+  await page.setViewportSize({ width: BREAKPOINT, height: VIEWPORT_HEIGHT })
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+
+  await page.goto(`/projects/${projectId}/photos`)
+  const header = appHeader(page)
+  await expect(header, 'Kopfzeilen-Landmark auf der Projektseite').toHaveCount(1)
+
+  // Vorbedingung: die vier Beschriftungen sind bei dieser Breite auch tatsaechlich dargestellt -
+  // sonst koennte gar nichts umbrechen und die Messung waere wertlos.
+  expect(await visibleCount(navTargetsInDom(page)), `sichtbare Ziele bei ${BREAKPOINT} px`).toBe(4)
+  expect(
+    await visibleCount(menuTriggerInDom(page)),
+    `sichtbarer Ausloeser bei ${BREAKPOINT} px`
+  ).toBe(0)
+
+  const extents = await header.evaluate((element) =>
+    Array.from(element.children).map((child) => {
+      const rect = child.getBoundingClientRect()
+      return { top: rect.top, bottom: rect.bottom }
+    })
+  )
+
+  // Ohne diese Zusicherung bestuende der Test auch dann, wenn die Kopfzeile nur noch ein einziges
+  // Kind haette - `sharesHorizontalBand` ist fuer weniger als zwei Elemente trivial wahr.
+  expect(extents.length, 'direkte Kinder der Kopfzeile').toBeGreaterThanOrEqual(2)
+  expect(
+    sharesHorizontalBand(extents),
+    `Kinder der Kopfzeile bei ${BREAKPOINT} px in einer Zeile (gemessen: ${JSON.stringify(extents)})`
+  ).toBe(true)
+})
 
 test('legt das geoeffnete Panel vollstaendig sichtbar ueber den Seiteninhalt', async ({ page }) => {
   // AK12: zwei Zusagen in einem Test, weil einzeln jede fuer sich wertlos waere - ein Panel weit
