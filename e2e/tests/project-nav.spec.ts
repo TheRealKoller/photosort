@@ -156,15 +156,33 @@ for (const fall of HEADER_HEIGHT_WIDTHS) {
     await page.setViewportSize({ width: fall.width, height: VIEWPORT_HEIGHT })
     const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
 
-    const header = page.locator('header')
+    /*
+     * `getByRole('banner')` UND NICHT `locator('header')`: Es gibt sechs `<header>` im Produkt.
+     * Fuenf davon sind Seiten-Header INNERHALB von `<main>` (u.a. ProjectListPage - genau die
+     * Seite, die dieser Test als Vergleich ohne Projektbezug ansteuert), einer ist die App-Shell-
+     * Kopfzeile ausserhalb. Ein `locator('header')` traf auf `/` beide und brach mit einer
+     * Strict-Mode-Meldung ab.
+     *
+     * Die Rolle trennt sie sauber: `<header>` traegt `banner` nur, solange es nicht in
+     * `main`/`article`/`section`/`aside`/`nav` verschachtelt ist - die fuenf Seiten-Header sind
+     * damit rollenlos, nur die App-Shell-Kopfzeile ist ein `banner`. Zugleich die Rollen- statt
+     * Klassennamen-Lokalisierung der Selektor-Konvention, und dasselbe Vorgehen wie in
+     * `sticky-header.spec.ts` und `lib/auth.ts`.
+     */
+    const header = page.getByRole('banner')
 
     await page.goto('/')
     await expect(projectNav(page), 'Gruppe auf der Projektliste').toHaveCount(0)
+    // Eindeutigkeit ZUGESICHERT statt vorausgesetzt: Kaeme spaeter ein zweiter `banner` dazu,
+    // scheiterte die Messung sonst wieder mit einer Strict-Mode-Meldung ueber einen Lokalisierer
+    // statt mit einer verstaendlichen Zusicherung ueber die Kopfzeile.
+    await expect(header, 'Kopfzeilen-Landmark auf der Projektliste').toHaveCount(1)
     const withoutProject = await header.boundingBox()
     expect(withoutProject, 'Kopfzeile ohne Projektbezug').not.toBeNull()
 
     await page.goto(`/projects/${projectId}/photos`)
     await expect(projectNav(page), 'Gruppe auf der Projektseite').toBeAttached()
+    await expect(header, 'Kopfzeilen-Landmark auf der Projektseite').toHaveCount(1)
 
     // Vorbedingung: bei DIESER Breite ist auch tatsaechlich die erwartete Darstellung zu sehen.
     // Ohne sie waere der Hoehenvergleich bei 1024 px wertlos - er bestuende auch dann, wenn die
