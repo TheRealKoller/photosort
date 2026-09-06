@@ -66,6 +66,18 @@ Prüfgegenstände sind dieselben.
       Gruppen nicht trennen und erzwänge bei der Hälfte ihrer Funde die falsche Reparatur.
       Stattdessen tragen beide Dokumente einen benannten Vermerk, welche Erwähnungen
       historisch zu lesen sind.
+- [ ] **(nachgetragen)** In jeder von Git verwalteten Markdown-Datei enthält bei einem
+      Verweis, dessen Ziel eine `.md`-Datei mit vierstelligem Nummernpräfix ist, die im
+      Linktext genannte Nummer die Nummer der Zieldatei. Ohne Ausnahmeliste und ohne
+      eingeschränkten Suchraum; ein Linktext ohne Nummer behauptet keine und wird
+      übersprungen. *Warum nachgetragen:* Beim Auflösen einer ADR-Nummernkollision während
+      dieses PRs (eine fremde `0059` kam mit `main` herein, unsere wurde `0060`) hat eine
+      pauschale Ersetzung in den beiden **lebenden** Konzeptdokumenten den Linktext auf
+      `0060` gezogen, während das Ziel weiter auf die fremde `0059` zeigte — zwei Stellen,
+      von denen das Copilot-Review nur eine fand. Ein Verweis, dessen sichtbare Nummer nicht
+      zu seinem Ziel passt, schickt jeden Leser an die falsche Entscheidung, und kein
+      bestehender Test hat ihn gesehen. Die Zusicherung braucht keine Ausnahme, weil eine
+      falsche Nummer — anders als ein totes Ziel — in jeder Zeitform falsch ist.
 - [ ] **(geteilt aus „keine Operation geht verloren")** Der Katalog führt genau die 17
       Operations-IDs der ADR-Tabelle, jede genau einmal, jede in kebab-case. Die sechs bisher in
       `ship-feature` beheimateten PR-Operationen sind darunter.
@@ -212,7 +224,8 @@ Entwicklungsablauf des Projekts — dieselbe Einordnung wie ADR 0037/0043/0046/0
 > geprüft wird, nicht über eine gepflegte Liste); `CLAUDE.md`; die Dateien unter
 > `.claude/agents/`;
 > `scripts/tests/{test_issue_befehle_in_skills,test_board_befehle_in_skills,test_board_referenzfreiheit}.py`
-> plus ein neuer Test; `docs/setup.md`, `docs/ai-workflow.md`; der erläuternde Kommentar am
+> plus zwei neue Tests (`test_github_zugriff_an_einer_stelle.py`,
+> `test_verweisnummern_in_markdown.py`); `docs/setup.md`, `docs/ai-workflow.md`; der erläuternde Kommentar am
 > `demo-scripts`-Job in `.github/workflows/ci.yml`.
 
 ### Umsetzungsreihenfolge
@@ -285,6 +298,7 @@ echten Repo-Zustand; 0 und >1 Treffer sind laute Fehlerfälle mit eigener Meldun
 | Katalog-Form: 17 IDs, geordnete Wege ⊆ `{mcp, gh}`, `mcp` vor `gh`, vier Board-Operationen mit genau einem Weg | „Keine Operation geht verloren", „feste Reihenfolge" |
 | Referentielle Integrität: jede verwendete ID existiert im Katalog (einseitig) | Vertippte Verweise ins Leere |
 | Erlaubnisstufen: jede Skill-/Agenten-Datei genau eine Stufe, gegen eingefrorene Tabelle | „Jede Stelle sagt, was sie darf" |
+| Verweisnummern: Linktext gegen Nummer der Zieldatei, über alle verwalteten Markdown-Dateien | Umnummerierung zieht Text und Ziel gemeinsam nach |
 | `## Lokal nachzuholen` **plus fester Satz** wörtlich in vier Skills | Fehlschlag bleibt sichtbar, auch nachdem der Befehl ausgezogen ist |
 | Bestehende Formprüfungen (`gh issue`, `gh project item-edit`), neuer Pfad | Härtungsregeln am `gh`-Weg, unverändert |
 | Reihenfolge Body → Titel → `Ready`, über Ausführungsstellen von IDs | Ablauf-Gate aus Spec 0288, neu verankert |
