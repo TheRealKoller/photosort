@@ -168,7 +168,17 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
           <p data-testid="classification-estimate" className="text-sm text-text">
             {estimate.candidate_count === 0
               ? 'Alle Fotos bereits klassifiziert — keine Cloud-Kosten zu erwarten.'
-              : `~${estimate.candidate_count} Fotos · ~${formatUsd(estimate.estimated_cost_usd)} — Schätzung, keine exakte Abrechnung.`}
+              : estimate.estimated_cost_usd === null
+                ? /* specs/features/0304-cloud-modell-je-anbieter-waehlbar.md: fuer das
+                     eingestellte Modell ist kein Preis hinterlegt. Reiner Textknoten, KEIN
+                     `Alert` - Alert ist im Projekt der Fehler-/Retry-Baustein, und hier liegt
+                     kein Ladefehler vor, sondern eine ehrliche Wissensluecke. Die Kandidatenzahl
+                     bleibt sichtbar: sie ist bekannt und fuer die Freigabeentscheidung die
+                     wichtigere Zahl. Der Startknopf bleibt bedienbar - eine Sperre bestrafte den
+                     Betreiber fuer einen Zustand, den er an der Oberflaeche nicht aufloesen kann
+                     (ADR 0059 Punkt 4). */
+                  `~${estimate.candidate_count} Fotos · Keine Kostenangabe verfügbar. Dieser Durchlauf wird mit Cloud-Erkennung Kosten erzeugen.`
+                : `~${estimate.candidate_count} Fotos · ~${formatUsd(estimate.estimated_cost_usd)} — Schätzung, keine exakte Abrechnung.`}
           </p>
         )}
         {cloudChecked && estimateQuery.isError && (

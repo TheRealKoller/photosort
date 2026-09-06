@@ -1,13 +1,13 @@
 """Haelt fest, dass jeder GitHub-Zugriff des Ablaufs an genau einer Stelle steht.
 
-Seit ADR 0059 gibt es dafuer einen einzigen Ort: `.claude/skills/github-access/SKILL.md`. Jede
+Seit ADR 0060 gibt es dafuer einen einzigen Ort: `.claude/skills/github-access/SKILL.md`. Jede
 andere Datei unter `.claude/**` und `CLAUDE.md` verweist ausschliesslich ueber die stabile
 **Operations-ID** auf einen Zugriff, nie ueber einen Befehl oder einen Werkzeugnamen.
 
 Die tragende Zusicherung dieser Datei ist damit eine **Abwesenheit** - und ein Abwesenheits-Test
 ist per Konstruktion gruen, wenn er nichts sieht, auch dann, wenn er nichts sehen *kann*. Der
 Aufwand liegt deshalb nicht im Muster, sondern im Selbstschutz (Testkonzept, Sektion
-"Erweiterung fuer ADR 0059", Regel 3):
+"Erweiterung fuer ADR 0060", Regel 3):
 
 * **(a)** plausible Groessenordnung des Suchraums,
 * **(b)** der erlaubte Ort *und* `CLAUDE.md` liegen nachweislich **im** Suchraum - `CLAUDE.md`
@@ -30,7 +30,7 @@ Formulierung (Stand 2026-09-06, vor dem Umbau): `\\bgh [a-z][a-z-]*` liefert **8
 `gh project` 15, `gh auth` 2) - und **null** Fliesstext-Fehlalarme, weil deutscher Fliesstext die
 CLI als ``gh`` mit anliegendem Backtick schreibt (``gh``-Weg, ``gh``-Aufrufe), nie als "gh " plus
 Kleinbuchstabe. Der Messwert steht hier, damit die naechste Aenderung ihn **nachrechnet** statt
-ihn zu glauben. Eine Verbliste waere zudem loechrig: `gh auth status` ist exakt die von ADR 0059
+ihn zu glauben. Eine Verbliste waere zudem loechrig: `gh auth status` ist exakt die von ADR 0060
 verbotene Vorabmessung und entginge einer Alternation aus `issue|pr|project|api`.
 
 **Regex-Falle derselben Klasse wie `--body`/`--body-file`:** `gh pr` ist ein Praefix von
@@ -81,7 +81,7 @@ BEKANNTE_UNTERBEFEHLE = frozenset({"issue", "pr", "project", "api", "auth"})
 
 # --- Der Operationskatalog ---------------------------------------------------------------
 
-# Die 17 Operations-IDs aus ADR 0059, Abschnitt 2, als geschlossene Menge. Der
+# Die 17 Operations-IDs aus ADR 0060, Abschnitt 2, als geschlossene Menge. Der
 # Buchhaltungs-Vorbehalt gegen Konstantenvergleiche gilt hier ausdruecklich nicht: Die Menge
 # selbst *ist* die Zusage ("keine heute vorhandene Operation geht verloren"), und ihr stiller
 # Verlust beim Umzug der sechs PR-Operationen aus `ship-feature` ist genau der Fehler, den die
@@ -407,7 +407,7 @@ def form_verstoesse(eintraege: list[Katalogeintrag]) -> list[str]:
             if eintrag.wege.index("mcp") > eintrag.wege.index("gh"):
                 befunde.append(
                     f"{eintrag.id}: `gh` steht vor `mcp`. Wo beide Wege existieren, steht "
-                    "`mcp` vorn (ADR 0059, Abschnitt 2)."
+                    "`mcp` vorn (ADR 0060, Abschnitt 2)."
                 )
         if eintrag.id in BOARD_OPERATIONEN and eintrag.wege != ("gh",):
             befunde.append(

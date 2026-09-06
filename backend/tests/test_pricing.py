@@ -1,11 +1,36 @@
 from __future__ import annotations
 
+import inspect
+from datetime import date, timedelta
+from typing import get_args
+from urllib.parse import urlparse
+
 import pytest
 
-import photosort.cloud_vision as cloud_vision
-from photosort.cloud_vision import ANTHROPIC_VISION_MODEL, MISTRAL_VISION_MODEL, TokenUsage
-from photosort.pricing import MODEL_PRICING, ModelPricing, compute_cost_usd
-from photosort.remote_classification import ANTHROPIC_CATEGORY_MODEL, MISTRAL_CATEGORY_MODEL
+from photosort.cloud_vision import (
+    ANTHROPIC_VISION_MODEL,
+    MISTRAL_VISION_MODEL,
+    VISION_MODELS_BY_PROVIDER,
+    TokenUsage,
+)
+from photosort.config import Settings
+from photosort.landmark import (
+    AnthropicLandmarkClient,
+    MistralLandmarkClient,
+    build_landmark_client,
+)
+from photosort.pricing import (
+    ASSUMED_USAGE_BY_PROVIDER,
+    MODEL_PRICING,
+    ModelPricing,
+    compute_cost_usd,
+    estimate_usd_per_image,
+)
+from photosort.remote_classification import (
+    AnthropicCategoryClient,
+    MistralCategoryClient,
+    build_category_classification_client,
+)
 
 # specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
 # laeufe.md Punkt 2: `compute_cost_usd` ist eine reine Funktion ueber einer Code-Konstante -
@@ -68,19 +93,19 @@ class TestComputeCostUsd:
 
 
 class TestModelPricingRegistry:
-    def test_every_vision_model_id_of_cloud_vision_has_a_price(self) -> None:
+    def test_every_selectable_model_has_a_price(self) -> None:
         """Registry-Vollstaendigkeits-Invariante (analog CATEGORY_REGISTRY/CRITERION_REGISTRY) -
-        der einzige automatisierte Schutz gegen einen Modellwechsel ohne Preispflege. Bewusst per
-        Introspektion ueber `*_VISION_MODEL`-Konstanten statt gegen eine feste Liste: ein NEU
-        hinzugefuegtes Modell soll diesen Test zum Fehlschlagen bringen."""
-        model_ids = {
-            value
-            for name, value in vars(cloud_vision).items()
-            if name.endswith("_VISION_MODEL") and isinstance(value, str)
+        der einzige automatisierte Schutz gegen einen Modellwechsel ohne Preispflege, und seit
+        specs/features/0304-cloud-modell-je-anbieter-waehlbar.md zugleich der Schutz davor, dass
+        ein WAEHLBARES Modell ohne Preis in die Auswahl geraet (ADR 0059 Punkt 4/5). Bewusst gegen
+        `VISION_MODELS_BY_PROVIDER` statt gegen eine feste Liste: ein NEU aufgenommenes Modell
+        soll diesen Test zum Fehlschlagen bringen."""
+        selectable = {
+            model for models in VISION_MODELS_BY_PROVIDER.values() for model in models
         }
 
-        assert model_ids, "keine *_VISION_MODEL-Konstante in cloud_vision.py gefunden"
-        assert model_ids <= set(MODEL_PRICING)
+        assert selectable, "keine waehlbaren Modelle in VISION_MODELS_BY_PROVIDER gefunden"
+        assert selectable <= set(MODEL_PRICING)
 
     def test_all_prices_are_positive(self) -> None:
         """Ein Preis von 0 wuerde Befund (b) des Unvollstaendigkeits-Hinweises (ADR 0051 Punkt 5)
@@ -91,7 +116,12 @@ class TestModelPricingRegistry:
             assert pricing.output_usd_per_mtok > 0
 
     def test_model_pricing_is_frozen(self) -> None:
-        pricing = ModelPricing(input_usd_per_mtok=1.0, output_usd_per_mtok=2.0)
+        pricing = ModelPricing(
+            input_usd_per_mtok=1.0,
+            output_usd_per_mtok=2.0,
+            source_url="https://example.invalid/preise",
+            verified_on=date(2026, 1, 1),
+        )
 
         try:
             pricing.input_usd_per_mtok = 9.0  # type: ignore[misc]
@@ -99,20 +129,182 @@ class TestModelPricingRegistry:
             return
         raise AssertionError("ModelPricing sollte frozen sein")
 
-    def test_the_category_phase_models_are_still_aliases_of_the_vision_models(self) -> None:
-        """Review-Fund (ship-feature-Runde, Architekturperspektive): `worker.py::
-        run_remote_category_classification` bestimmt die Modell-ID fuer die Ist-Kostenrechnung
-        ueber `vision_model_for_provider`, also ueber die `*_VISION_MODEL`-Konstanten. Die
-        Kategorie-Klassifizierung hat mit `ANTHROPIC_CATEGORY_MODEL`/`MISTRAL_CATEGORY_MODEL` aber
-        EIGENE Konstanten - heute reine Aliase, deshalb ist das Ergebnis aktuell korrekt.
+    def test_every_source_url_points_at_the_official_domain_of_its_provider(self) -> None:
+        """Der einzige automatisierbare Teil von ADR 0059 Punkt 5 ("kein aus Websuch-Aggregaten
+        oder Analogieschluss gewonnener Wert"): der Beleg muss auf die Doku des Anbieters selbst
+        zeigen, nicht auf einen Wiederverkaeufer oder Vergleichsportal. Host-Erlaubnisliste je
+        Anbieter, `https` erzwungen."""
+        allowed_hosts = {
+            "anthropic": ("claude.com", "anthropic.com"),
+            "mistral": ("mistral.ai",),
+        }
 
-        Die Aliase existieren genau dafuer, spaeter entkoppelt werden zu koennen. Geschieht das,
-        berechnete der Worker still den Preis des Landmark-Modells fuer die Kategorie-Phase, und
-        die Registry-Invariante oben schlaege nicht an (sie prueft nur die `*_VISION_MODEL`-IDs).
+        for provider, models in VISION_MODELS_BY_PROVIDER.items():
+            for model in models:
+                url = MODEL_PRICING[model].source_url
+                host = urlparse(url).hostname or ""
 
-        Wer diesen Test brechen sieht, muss deshalb DREI Stellen anfassen: `MODEL_PRICING` um die
-        neue Modell-ID ergaenzen, die Modellwahl in `run_remote_category_classification` von
-        `vision_model_for_provider` auf die Kategorie-Konstanten umstellen, und erst dann diesen
-        Test anpassen."""
-        assert ANTHROPIC_CATEGORY_MODEL == ANTHROPIC_VISION_MODEL
-        assert MISTRAL_CATEGORY_MODEL == MISTRAL_VISION_MODEL
+                assert urlparse(url).scheme == "https", model
+                assert any(
+                    host == allowed or host.endswith(f".{allowed}")
+                    for allowed in allowed_hosts[provider]
+                ), (model, host)
+
+    def test_the_assumed_usage_is_positive_in_both_directions(self) -> None:
+        """Ein `output_tokens=0` schrumpfte die Schaetzung still - und die Schaetzung ist seit
+        Spec 0296 die einzige verbliebene Absicherung vor der kostenpflichtigen Aktion."""
+        for provider, assumed in ASSUMED_USAGE_BY_PROVIDER.items():
+            assert assumed.input_tokens > 0, provider
+            assert assumed.output_tokens > 0, provider
+
+    def test_every_price_carries_a_verified_source(self) -> None:
+        """ADR 0059 Punkt 5: die Verifikation gegen die offizielle Anbieterdokumentation ist ein
+        Pflichtfeld, kein Kommentar - ein Preis ohne Beleg soll nicht stillschweigend durchrutschen
+        koennen. Akzeptanzkriterium: "Fuer jedes waehlbare Modell ist ein Preis hinterlegt, der vor
+        dem Festschreiben gegen die offizielle Anbieterdokumentation verifiziert wurde - mit Datum
+        der Pruefung".
+
+        Der eine Tag Spielraum ist KEIN zugelassenes Zukunftsdatum, sondern eine
+        Zeitzonentoleranz (Copilot-Fund, PR #341): `verified_on` ist ein reines `date`, das der
+        Eintragende nach seiner LOKALEN Uhr setzt, waehrend die CI in UTC laeuft. Ein am spaeten
+        Abend in UTC+2 eingetragenes heutiges Datum liegt in UTC noch im Vortag - ohne Toleranz
+        waere der Test in diesem taeglichen Zeitfenster rot, ohne dass etwas falsch waere.
+        Gefangen wird damit weiterhin der Fall, um den es geht: ein Datum, das erkennbar nicht von
+        einer stattgefundenen Pruefung stammen kann."""
+        timezone_slack = timedelta(days=1)
+
+        for model, pricing in MODEL_PRICING.items():
+            assert pricing.source_url.startswith("https://"), model
+            assert pricing.verified_on <= date.today() + timezone_slack, model
+
+    def test_the_registry_and_the_assumptions_cover_exactly_the_configurable_providers(
+        self,
+    ) -> None:
+        """Drei Stellen fuehren dieselbe Provider-Menge (das `Literal` von
+        `Settings.landmark_provider`, die Modell-Registry, die Verbrauchsannahme). Laufen sie
+        auseinander, faellt ein neuer Provider entweder aus der Modellwahl oder aus der
+        Kostenschaetzung - beides still. Ermittelt per `get_args`, nicht gegen eine vierte Liste."""
+        configurable = set(get_args(Settings.model_fields["landmark_provider"].annotation))
+
+        assert set(VISION_MODELS_BY_PROVIDER) == configurable
+        assert set(ASSUMED_USAGE_BY_PROVIDER) == configurable
+
+
+class TestEstimateUsdPerImage:
+    """specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 3: die Vorab-
+    Schaetzung wird aus MODEL_PRICING abgeleitet statt aus einer zweiten, handgepflegten Konstante
+    je Provider."""
+
+    def test_the_default_models_reproduce_the_previous_amounts_exactly(self) -> None:
+        """Akzeptanzkriterium "ohne gesetzte Einstellung exakt wie bisher": 0.0052/0.0003 sind die
+        LITERALEN Werte der abgeloesten `remote_classification.py::COST_PER_IMAGE_USD` - bewusst
+        ausgeschrieben und nicht aus der neuen Rechnung abgeleitet, sonst prueft dieser Test nach
+        dem Umbau nur noch sich selbst. Eine Aenderung der Verbrauchsannahme verschiebt damit die
+        Kostenanzeige des Regelbetriebs nicht unbemerkt.
+
+        `abs=1e-9` statt `==`: die Assertion soll an einer fachlichen Aenderung scheitern, nicht am
+        Float-Rauschen einer kuenftigen Annahmenpflege - ein einzelnes Token Unterschied liegt bei
+        1e-6 und wird von dieser Toleranz weiterhin rot."""
+        assert estimate_usd_per_image(ANTHROPIC_VISION_MODEL, "anthropic") == pytest.approx(
+            0.0052, abs=1e-9
+        )
+        assert estimate_usd_per_image(MISTRAL_VISION_MODEL, "mistral") == pytest.approx(
+            0.0003, abs=1e-9
+        )
+
+    def test_the_estimate_is_exactly_the_cost_of_the_assumed_usage(self) -> None:
+        """"Kein neuer Rechenweg" (ADR 0059 Punkt 3): die Schaetzung ist `compute_cost_usd` ueber
+        einer angenommenen statt einer gemessenen Tokenzahl."""
+        assumed = ASSUMED_USAGE_BY_PROVIDER["anthropic"]
+
+        expected = compute_cost_usd(
+            ANTHROPIC_VISION_MODEL,
+            TokenUsage(input_tokens=assumed.input_tokens, output_tokens=assumed.output_tokens),
+        )
+
+        assert estimate_usd_per_image(ANTHROPIC_VISION_MODEL, "anthropic") == expected
+
+    def test_a_stronger_model_is_estimated_higher_than_the_default(self) -> None:
+        """Der Defektnachweis in Zahlen: bei einer providergebundenen Schaetzung waeren beide
+        Werte gleich."""
+        stronger = VISION_MODELS_BY_PROVIDER["anthropic"][1]
+
+        default_estimate = estimate_usd_per_image(ANTHROPIC_VISION_MODEL, "anthropic")
+        stronger_estimate = estimate_usd_per_image(stronger, "anthropic")
+
+        assert default_estimate is not None and stronger_estimate is not None
+        assert stronger_estimate > default_estimate
+
+    def test_mistral_stays_the_cheaper_provider_at_its_default_model(self) -> None:
+        """Regressionsschutz gegen ein versehentlich vertauschtes Zahlenpaar (uebernommen aus dem
+        abgeloesten TestCostPerImageUsd in test_remote_classification.py)."""
+        anthropic = estimate_usd_per_image(ANTHROPIC_VISION_MODEL, "anthropic")
+        mistral = estimate_usd_per_image(MISTRAL_VISION_MODEL, "mistral")
+
+        assert anthropic is not None and mistral is not None
+        assert 0 < mistral < anthropic
+
+    def test_the_stronger_mistral_model_is_estimated_higher_than_its_default(self) -> None:
+        """Dieselbe Aussage wie fuer Anthropic, jetzt fuer den zweiten Anbieter (Akzeptanz-
+        kriterium "beide Anbieter werden gleich behandelt"): die Schaetzung folgt auch hier dem
+        Modell. Bei einer providergebundenen Schaetzung waeren beide Werte gleich."""
+        stronger = VISION_MODELS_BY_PROVIDER["mistral"][1]
+
+        default_estimate = estimate_usd_per_image(MISTRAL_VISION_MODEL, "mistral")
+        stronger_estimate = estimate_usd_per_image(stronger, "mistral")
+
+        assert default_estimate is not None and stronger_estimate is not None
+        assert stronger_estimate > default_estimate
+
+    def test_a_different_model_of_the_same_provider_yields_a_different_estimate(self) -> None:
+        """Der Kern der Story: die Schaetzung folgt dem MODELL, nicht dem Anbieter. Waere sie
+        weiterhin providergebunden, kaeme hier zweimal derselbe Betrag heraus."""
+        second_model = VISION_MODELS_BY_PROVIDER["anthropic"][1]
+
+        default_estimate = estimate_usd_per_image(ANTHROPIC_VISION_MODEL, "anthropic")
+        other_estimate = estimate_usd_per_image(second_model, "anthropic")
+
+        assert default_estimate is not None and other_estimate is not None
+        assert other_estimate != default_estimate
+
+    def test_an_unpriced_model_yields_none_instead_of_a_silent_zero(self) -> None:
+        """ADR 0059 Punkt 4: kein hinterlegter Preis heisst "kein Betrag", nicht "0" - ein
+        kuenftiger Modellwechsel ohne Preispflege soll an der Schaetzung auffallen, statt still
+        den alten Betrag weiterzuzeigen."""
+        assert estimate_usd_per_image("ein-nie-bepreistes-modell", "anthropic") is None
+
+    def test_an_unknown_provider_yields_none_instead_of_raising(self) -> None:
+        assert estimate_usd_per_image(ANTHROPIC_VISION_MODEL, "openai") is None
+
+    def test_every_selectable_model_actually_produces_an_amount(self) -> None:
+        """Gegenprobe zum None-Pfad: bei gruener Registry-Invariante ist er unerreichbar - kein
+        waehlbares Modell darf ohne Betrag dastehen."""
+        for provider, models in VISION_MODELS_BY_PROVIDER.items():
+            for model in models:
+                estimate = estimate_usd_per_image(model, provider)
+
+                assert estimate is not None and estimate > 0, (provider, model)
+
+
+class TestTheModelIsAlwaysPassedIn:
+    """Review-Fund (`review-tests`, Spec 0304): die Entkopplung aus ADR 0059 Punkt 7 haelt nur,
+    solange das Modell wirklich hereingereicht werden MUSS. Ein Default auf die Modulkonstante
+    stellte die aufgeloeste Kopplung wieder her - und ein Aufrufer, der das Modell vergisst, fiele
+    dann nicht beim Typecheck auf, sondern erst in der Cloud-Rechnung."""
+
+    def test_no_client_constructor_defaults_the_model(self) -> None:
+        for client in (
+            AnthropicLandmarkClient,
+            MistralLandmarkClient,
+            AnthropicCategoryClient,
+            MistralCategoryClient,
+        ):
+            parameter = inspect.signature(client.__init__).parameters["model"]
+
+            assert parameter.default is inspect.Parameter.empty, client.__name__
+
+    def test_both_factories_require_the_model(self) -> None:
+        for factory in (build_landmark_client, build_category_classification_client):
+            parameter = inspect.signature(factory).parameters["model"]
+
+            assert parameter.default is inspect.Parameter.empty, factory.__name__

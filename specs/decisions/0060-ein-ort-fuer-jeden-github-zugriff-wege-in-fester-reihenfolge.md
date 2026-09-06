@@ -1,4 +1,4 @@
-# 0059 - Ein Ort für jeden GitHub-Zugriff: `github-access` mit Zugangswegen in fester Reihenfolge
+# 0060 - Ein Ort für jeden GitHub-Zugriff: `github-access` mit Zugangswegen in fester Reihenfolge
 
 **Status:** Accepted — die beiden Punkte, die über eine technische Detailfrage hinausgingen (Abschnitt 2: Reihenfolge der Wege; Abschnitt 7: Ablöseform gegenüber ADR 0057), sind Daniel vor dem Umsetzen vorgelegt und am 2026-09-06 im Chat **beide wie empfohlen bestätigt** worden, jeweils mitsamt dem dort benannten Preis. Sie stehen deshalb als reguläre Entscheidung im Text; ein eigener Vorbehaltsabschnitt entfällt.
 **Datum:** 2026-09-06
@@ -194,10 +194,10 @@ Drei Festlegungen dazu:
 
 ADR 0057 ist einen Tag alt und trägt neun Abschnitte, von denen acht unverändert gültig sind — der fünfwertige Lebenszyklus, die Auslöser-Tabelle, `Done` heißt „vom Board", der Ersatz der vier Werkzeug-Prüfungen, das Fehlschlag-Muster, der PR-ohne-Merge-Rückfall. Diese ADR ändert genau zwei Dinge daran: **welche Gestalt ein Zugriff hat** (Abschnitt 4, erster Satz) und **wie weit die Remote-Grenze reicht** (Abschnitt 7).
 
-`specs/README.md` kennt bisher nur die grobe Form: „eine spätere Änderung der Entscheidung erzeugt eine neue ADR, die die alte als *Superseded* markiert". Diese ADR nimmt eine feinere: ADR 0057 behält den Status `Accepted` und bekommt in ihrem Kopf einen Vermerk „**Teilweise abgelöst:** Abschnitt 4 (erster Satz) und Abschnitt 7 durch ADR 0059". Begründung:
+`specs/README.md` kennt bisher nur die grobe Form: „eine spätere Änderung der Entscheidung erzeugt eine neue ADR, die die alte als *Superseded* markiert". Diese ADR nimmt eine feinere: ADR 0057 behält den Status `Accepted` und bekommt in ihrem Kopf einen Vermerk „**Teilweise abgelöst:** Abschnitt 4 (erster Satz) und Abschnitt 7 durch ADR 0060". Begründung:
 
 - Ein `Superseded` auf ADR 0057 wäre **sachlich falsch**. Es sagte, die Entscheidung sei abgelöst — abgelöst ist ein Nebenaspekt. Wer künftig fragt „warum schreibt GitHub drei der fünf Übergänge selbst?", würde von einem `Superseded`-Etikett auf eine falsche Fährte geschickt.
-- Die Alternative, ADR 0059 den kompletten Lebenszyklus wiederholen zu lassen, damit `Superseded` ehrlich wird, erzeugte ein zweites Abbild derselben Entscheidung. Zwei Abbilder driften.
+- Die Alternative, ADR 0060 den kompletten Lebenszyklus wiederholen zu lassen, damit `Superseded` ehrlich wird, erzeugte ein zweites Abbild derselben Entscheidung. Zwei Abbilder driften.
 - Der Präzedenzfall spricht nicht dagegen: ADR 0017 und ADR 0052 tragen bereits Statuszeilen, die pro Abschnitt aufschlüsseln, was überlebt und was fällt. Der einzige Unterschied hier ist, dass die Mehrheit überlebt statt der Minderheit — das ändert die Genauigkeit der Aussage, nicht das Verfahren.
 
 Das Bearbeiten des ADR-Kopfes ist dabei kein Bruch der Unveränderlichkeit: Die Statuszeile *ist* der dafür vorgesehene Mechanismus, sie wird bei jeder Ablösung angefasst. Der Entscheidungstext von ADR 0057 bleibt unangetastet.

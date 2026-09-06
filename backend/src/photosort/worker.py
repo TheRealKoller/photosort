@@ -37,7 +37,7 @@ from photosort.classification import (
     detect_objects,
     detect_person,
 )
-from photosort.cloud_vision import TokenUsage, vision_model_for_provider
+from photosort.cloud_vision import TokenUsage
 from photosort.config import settings
 from photosort.criteria import (
     CRITERIA_REGISTRY,
@@ -1306,7 +1306,7 @@ async def run_criterion_scoring(
     build_classifier: Callable[[], SceneClassifierLike] = build_scene_classifier,
     build_aesthetics: Callable[[], AestheticsModelLike] = build_aesthetics_model,
     build_landmarker: Callable[[], FaceLandmarkerLike] = build_face_landmarker,
-    build_landmark_client: Callable[[], LandmarkClientLike] = build_landmark_client,
+    build_landmark_client: Callable[[str], LandmarkClientLike] = build_landmark_client,
     *,
     run: CriterionScoringRun | None = None,
     use_cloud: bool = False,
@@ -1503,7 +1503,14 @@ async def run_criterion_scoring(
         # projektweite Einwilligung vorliegt (Security-Muss-Kriterium der Spec: "kein einziger
         # Cloud-Aufruf im gesamten Durchlauf").
         if use_cloud and project.cloud_vision_detection_enabled and rows:
-            landmark_client = _try_build(build_landmark_client)
+            # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 7: das
+            # Modell wird EINMAL je Cloud-Phase aufgeloest und danach durchgereicht - derselbe
+            # lokale Wert baut den Client, rechnet die Ist-Kosten und landet in der Modellspalte
+            # des Laufs. "Angezeigt = abgerechnet = tatsaechlich aufgerufen" ist damit
+            # strukturell wahr, nicht das Ergebnis dreier zufaellig gleicher Lesevorgaenge
+            # derselben globalen `settings`.
+            landmark_model = settings.resolved_landmark_model()
+            landmark_client = _try_build(lambda: build_landmark_client(landmark_model))
             if landmark_client is None:
                 # ADR 0050 Punkt 4: dieser Fall war bisher vollstaendig stumm - ein nicht
                 # konstruierbarer Client liess die Sehenswuerdigkeits-Erkennung wortlos aus.
@@ -1625,12 +1632,18 @@ async def run_criterion_scoring(
                     # Der Betrag wird EINMAL am Phasenende berechnet und eingefroren (ADR 0051
                     # Punkt 4) - eine spaetere Preisaenderung schreibt die Vergangenheit nicht um.
                     run.landmark_cost_usd = compute_cost_usd(
-                        vision_model_for_provider(settings.landmark_provider),
+                        landmark_model,
                         TokenUsage(
                             input_tokens=landmark_input_tokens,
                             output_tokens=landmark_output_tokens,
                         ),
                     )
+                    # Spec 0304/ADR 0059 Punkt 6: die Preisgrundlage des eben eingefrorenen
+                    # Betrags, an derselben Stelle und im selben Commit gespeichert - ohne sie ist
+                    # ein historischer Betrag weder erklaerbar noch nach einer erkannten
+                    # Preiskorrektur nachrechenbar, und ein Modellvergleich waere nicht
+                    # auswertbar.
+                    run.landmark_model = landmark_model
                     await _commit_phase_costs(session)
                 # ADR 0050 Punkt 4: Zaehl-Zusammenfassung statt N Einzelmeldungen - die
                 # Einzelfehler bleiben pro Foto ueber photo_cloud_vision_errors abrufbar
@@ -1707,9 +1720,9 @@ async def run_classification(
     build_classifier: Callable[[], SceneClassifierLike] = build_scene_classifier,
     build_aesthetics: Callable[[], AestheticsModelLike] = build_aesthetics_model,
     build_landmarker: Callable[[], FaceLandmarkerLike] = build_face_landmarker,
-    build_landmark_client: Callable[[], LandmarkClientLike] = build_landmark_client,
+    build_landmark_client: Callable[[str], LandmarkClientLike] = build_landmark_client,
     build_category_client: Callable[
-        [], CategoryDetectionClientLike
+        [str], CategoryDetectionClientLike
     ] = build_category_classification_client,
     build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
 ) -> CriterionScoringRun:
@@ -1883,7 +1896,9 @@ async def run_remote_category_classification(
     session: AsyncSession,
     project: Project,
     cache_dir: Path,
-    build_client: Callable[[], CategoryDetectionClientLike] = build_category_classification_client,
+    build_client: Callable[
+        [str], CategoryDetectionClientLike
+    ] = build_category_classification_client,
     build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
 ) -> RemoteCategoryClassificationRun:
     """Eigenstaendiger, expliziter Job (specs/features/0055-remote-kategorie-klassifizierung-mit-
@@ -1912,7 +1927,11 @@ async def run_remote_category_classification(
             await session.commit()
             return run
 
-        client = _try_build(build_client)
+        # Spec 0304/ADR 0059 Punkt 7: eine Aufloesung je Cloud-Phase, danach durchgereicht -
+        # dasselbe Modell wie in der Landmark-Phase, weil `LANDMARK_MODEL` wie `LANDMARK_PROVIDER`
+        # fuer beide Cloud-Anteile gilt.
+        model = settings.resolved_landmark_model()
+        client = _try_build(lambda: build_client(model))
         embedder = _try_build(build_embedder)
         if client is None or embedder is None:
             # Best-effort auf Job-Ebene (analog _try_build-Philosophie der uebrigen Modell-
@@ -2074,9 +2093,11 @@ async def run_remote_category_classification(
             run.input_tokens = input_tokens
             run.output_tokens = output_tokens
             run.cost_usd = compute_cost_usd(
-                vision_model_for_provider(settings.landmark_provider),
+                model,
                 TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
             )
+            # Spec 0304/ADR 0059 Punkt 6, Begruendung wortgleich zur Landmark-Phase oben.
+            run.model = model
             await _commit_phase_costs(session)
 
         run.status = ScanStatus.SUCCESS

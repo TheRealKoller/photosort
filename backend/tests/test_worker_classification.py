@@ -14,6 +14,8 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import photosort.worker as worker
+from photosort.cloud_vision import VISION_MODELS_BY_PROVIDER
 from photosort.label_embedding import LabelEmbedderLike
 from photosort.landmark import LandmarkApiError, LandmarkDetection
 from photosort.models import (
@@ -191,17 +193,17 @@ class ExplodingClient:
         )
 
 
-def _exploding_category_client_builder() -> NoReturn:
+def _exploding_category_client_builder(model: str) -> NoReturn:
     ExplodingClient("Der Remote-Kategorie-Client")
     raise AssertionError("unreachable")
 
 
-def _exploding_landmark_client_builder() -> NoReturn:
+def _exploding_landmark_client_builder(model: str) -> NoReturn:
     ExplodingClient("Der Landmark-Client")
     raise AssertionError("unreachable")
 
 
-def _failing_landmark_client_builder() -> NoReturn:
+def _failing_landmark_client_builder(model: str) -> NoReturn:
     raise RuntimeError("simulierter Modell-Ladefehler")
 
 
@@ -264,7 +266,7 @@ async def test_remote_results_reach_the_category_of_the_same_run(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -290,7 +292,7 @@ async def test_a_single_trigger_produces_both_run_records(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
     )
 
     remote_runs = (
@@ -326,7 +328,7 @@ async def test_the_run_record_reports_phase_and_cloud_request(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: PhaseObservingClient(),
+        build_category_client=lambda _model: PhaseObservingClient(),
     )
 
     assert observed_phases == [ClassificationPhase.REMOTE_CATEGORIES]
@@ -466,10 +468,10 @@ async def test_the_landmark_phase_runs_when_the_checkbox_is_checked(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(
+        build_category_client=lambda _model: RecordingCategoryClient(
             RemoteClassification(categories=("landschaft",), fine_labels=())
         ),
-        build_landmark_client=lambda: landmark_client,
+        build_landmark_client=lambda _model: landmark_client,
         build_classifier=_LandscapeSceneLabels,
     )
 
@@ -522,7 +524,7 @@ async def test_a_failing_remote_phase_does_not_stop_the_local_scoring(
         build_classifier=_NoSceneLabels,
         build_aesthetics=_NeutralAesthetics,
         build_landmarker=_NoDetections,
-        build_category_client=lambda: RecordingCategoryClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
         build_landmark_client=_failing_landmark_client_builder,
         build_embedder=lambda: ExplodingSnapshotEmbedder(),
     )
@@ -555,7 +557,7 @@ async def test_an_unbuildable_landmark_client_is_reported(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
         build_landmark_client=_failing_landmark_client_builder,
     )
 
@@ -579,10 +581,10 @@ async def test_failing_landmark_calls_are_summarised_not_listed(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(
+        build_category_client=lambda _model: RecordingCategoryClient(
             RemoteClassification(categories=("landschaft",), fine_labels=())
         ),
-        build_landmark_client=lambda: RecordingLandmarkClient(raise_error=True),
+        build_landmark_client=lambda _model: RecordingLandmarkClient(raise_error=True),
         build_classifier=_LandscapeSceneLabels,
     )
 
@@ -610,8 +612,8 @@ async def test_a_clean_cloud_run_reports_no_cloud_error(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(),
-        build_landmark_client=lambda: RecordingLandmarkClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
+        build_landmark_client=lambda _model: RecordingLandmarkClient(),
     )
 
     assert run.cloud_error_message is None
@@ -632,7 +634,7 @@ async def test_remote_classification_rows_are_written_before_the_criteria_phase(
         scoring_run,
         tmp_path,
         use_cloud=True,
-        build_category_client=lambda: RecordingCategoryClient(),
+        build_category_client=lambda _model: RecordingCategoryClient(),
     )
 
     classification = (
@@ -668,10 +670,73 @@ async def test_a_cancelled_remote_phase_fails_the_whole_run_immediately(
             scoring_run,
             tmp_path,
             use_cloud=True,
-            build_category_client=lambda: CancellingCategoryClient(),
+            build_category_client=lambda _model: CancellingCategoryClient(),
         )
 
     run = (await db_session.execute(select(CriterionScoringRun))).scalar_one()
     assert run.status == ScanStatus.FAILED
     assert run.phase is None
     assert run.error_message == "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
+
+
+# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, Akzeptanzkriterium "Die Einstellung
+# wirkt auf beide Cloud-Anteile einheitlich; es entstehen nicht zwei unterschiedliche Modelle
+# nebeneinander" (Review-Fund `review-tests`: die Einzelphasen-Tests belegen je Phase das richtige
+# Modell, aber nicht, dass BEIDE Phasen desselben Laufs dasselbe bekommen - genau die Aussage des
+# Kriteriums).
+
+
+async def test_both_cloud_phases_of_one_run_get_the_same_configured_model(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stronger = VISION_MODELS_BY_PROVIDER["anthropic"][1]
+    monkeypatch.setattr(worker.settings, "landmark_model", stronger)
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+    seen: dict[str, str] = {}
+
+    def build_category(model: str) -> object:
+        seen["category"] = model
+        return RecordingCategoryClient()
+
+    def build_landmark(model: str) -> object:
+        seen["landmark"] = model
+        return RecordingLandmarkClient()
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=build_category,
+        build_landmark_client=build_landmark,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert seen == {"category": stronger, "landmark": stronger}
+
+
+async def test_a_purely_local_run_resolves_no_model_at_all(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Gegenprobe zum Security-Muss-Kriterium "kein einziger Cloud-Aufruf im gesamten Durchlauf":
+    ohne Cloud-Nutzung wird keine der beiden Factories aufgerufen, also auch kein Modell an einen
+    Anbieter gereicht - und die Modellspalte des Laufs bleibt NULL."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=False,
+        build_category_client=_exploding_category_client_builder,
+        build_landmark_client=_exploding_landmark_client_builder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.landmark_model is None

@@ -5,7 +5,7 @@ Zwei Faelle derselben Bauart:
 * Seit ADR 0057 gibt es kein eigenes Board-Werkzeug mehr (`gh-board`). Eine zurueckgebliebene
   Erwaehnung waere keine Kleinigkeit, sondern eine Anweisung an einen Agenten, ein Programm
   aufzurufen, das es nicht mehr gibt.
-* Seit ADR 0059 heisst der Skill `github-access` statt `github-board`. Ein zurueckgebliebener
+* Seit ADR 0060 heisst der Skill `github-access` statt `github-board`. Ein zurueckgebliebener
   Verweis zeigte auf ein Verzeichnis, das es nicht mehr gibt - und der Skill ist ab jetzt die
   *einzige* Stelle mit einem GitHub-Zugriff, ein toter Verweis darauf trifft also jeden Ablauf.
 
@@ -70,7 +70,7 @@ GEGENPROBEN: dict[bytes, Path] = {
         REPO_WURZEL
         / "specs"
         / "decisions"
-        / "0059-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md"
+        / "0060-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md"
     ),
 }
 
@@ -156,7 +156,7 @@ def test_die_verschwundenen_pfade_existieren_nicht_mehr() -> None:
     vorhanden = [pfad for pfad in GELOESCHTE_PFADE if (REPO_WURZEL / pfad).exists()]
 
     assert not vorhanden, (
-        f"Diese Pfade sollten mit ADR 0057 bzw. ADR 0059 verschwunden sein, existieren aber "
+        f"Diese Pfade sollten mit ADR 0057 bzw. ADR 0060 verschwunden sein, existieren aber "
         f"noch: {vorhanden}."
     )
 

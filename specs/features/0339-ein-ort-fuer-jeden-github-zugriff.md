@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Erstellt:** 2026-09-06
-**Bezug:** GitHub-Issue [`#339`](https://github.com/TheRealKoller/photosort/issues/339), Architekturentscheidung ADR [`0059`](../decisions/0059-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md), ADR [`0057`](../decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) (Abschnitt 4 erster Satz und Abschnitt 7 teilweise abgelöst), ADR [`0017`](../decisions/0017-github-projects-v2-spec-sync.md) (Abschnitt 1 ergänzt, nicht abgelöst), ADR [`0048`](../decisions/0048-board-operationen-zielzustands-idempotent.md), ADR [`0052`](../decisions/0052-remote-lebenszyklus-diagnose-kommando-und-echter-board-preflight.md) / ADR [`0056`](../decisions/0056-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md) (Befund Remote-Grenze), Vorgänger-Specs [`0318`](./0318-remote-lebenszyklus-grenze.md) / [`0327`](./0327-board-lebenszyklus-nativ.md), Folge-Story [`#342`](https://github.com/TheRealKoller/photosort/issues/342), `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`, `specs/README.md`
+**Bezug:** GitHub-Issue [`#339`](https://github.com/TheRealKoller/photosort/issues/339), Architekturentscheidung ADR [`0060`](../decisions/0060-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md), ADR [`0057`](../decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) (Abschnitt 4 erster Satz und Abschnitt 7 teilweise abgelöst), ADR [`0017`](../decisions/0017-github-projects-v2-spec-sync.md) (Abschnitt 1 ergänzt, nicht abgelöst), ADR [`0048`](../decisions/0048-board-operationen-zielzustands-idempotent.md), ADR [`0052`](../decisions/0052-remote-lebenszyklus-diagnose-kommando-und-echter-board-preflight.md) / ADR [`0056`](../decisions/0056-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md) (Befund Remote-Grenze), Vorgänger-Specs [`0318`](./0318-remote-lebenszyklus-grenze.md) / [`0327`](./0327-board-lebenszyklus-nativ.md), Folge-Story [`#342`](https://github.com/TheRealKoller/photosort/issues/342), `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`, `specs/README.md`
 
 ## Ziel
 
@@ -52,7 +52,7 @@ Prüfgegenstände sind dieselben.
       `mcp__github__` — an beliebiger Stelle der Zeile, Frontmatter eingeschlossen.
       *Warum geschärft:* „Befehl" gegen „bloße Erwähnung" abzugrenzen ist eine Auslegungsfrage
       und damit nicht prüfbar. „Kein Vorkommen des Musters" ist strenger, maschinell
-      entscheidbar und deckt sich mit ADR 0059: Erlaubt bleibt außerhalb des Katalogs
+      entscheidbar und deckt sich mit ADR 0060: Erlaubt bleibt außerhalb des Katalogs
       ausschließlich der **Name** einer Operation.
 - [ ] **(Ausnahmen ergänzt)** Keine von Git verwaltete Datei verweist noch auf `github-board`
       — dieselben drei Pfadpräfix-Ausnahmen wie beim `gh-board`-Muster (`CHANGELOG.md`,
@@ -173,7 +173,7 @@ Entwicklungsablauf des Projekts — dieselbe Einordnung wie ADR 0037/0043/0046/0
 
 ## Architektur / Umsetzung
 
-> **Gewählter Ansatz** (ADR [`0059`](../decisions/0059-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)):
+> **Gewählter Ansatz** (ADR [`0060`](../decisions/0060-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)):
 > Der Skill `github-board` wird zu `github-access` und nimmt **jeden** GitHub-Zugriff des
 > Entwicklungsablaufs auf — Issue, Board, Pull Request, Copilot-Review, inklusive der sechs
 > bisher in `ship-feature` liegenden PR-Operationen. Er bleibt Text; kein Werkzeug, kein Skript.
@@ -267,7 +267,7 @@ einem geratenen Namen aufzufüllen.
 
 Vollständige Herleitung und die daraus abgeleiteten allgemeinen Regeln:
 [`specs/architecture/0002-testkonzept.md`](../architecture/0002-testkonzept.md), Abschnitt
-„Erweiterung für ADR 0059".
+„Erweiterung für ADR 0060".
 
 **Kernaussage: Die tragende Zusicherung dieser Story ist eine Abwesenheit — und ein
 Abwesenheits-Test ist per Konstruktion grün, wenn er nichts sieht, auch dann, wenn er nichts sehen
@@ -297,7 +297,7 @@ echten Repo-Zustand; 0 und >1 Treffer sind laute Fehlerfälle mit eigener Meldun
   Befehl in Backticks *beginnt*) und an der Befehlsaufzählung im Schreibverbots-Absatz der sechs
   Review-Skills.
 - **Generisch `\bgh [a-z][a-z-]*` statt der Vierer-Liste.** `gh auth status` ist exakt die von
-  ADR 0059 verbotene Vorabmessung und entginge einer Aufzählung aus `gh issue|gh pr|gh
+  ADR 0060 verbotene Vorabmessung und entginge einer Aufzählung aus `gh issue|gh pr|gh
   project|gh api`. Am Bestand gemessen: fünf Befehlsformen, 88 Fundstellen in 13 Dateien,
   **null** Fließtext-Fehlalarme (deutscher Fließtext schreibt die CLI als `` `gh` `` mit
   anliegendem Backtick). Regex-Falle derselben Klasse wie `--body`/`--body-file`: `gh pr` ist
@@ -448,23 +448,23 @@ entschieden worden:
 
 ## Entscheidungen
 
-- `architect` konsultiert (Schritt 1): ADR [`0059`](../decisions/0059-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)
+- `architect` konsultiert (Schritt 1): ADR [`0060`](../decisions/0060-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)
   angelegt. Zwei Punkte hat er Daniel vorgelegt statt sie selbst zu entscheiden (Reihenfolge der
   Wege; Ablöseform gegenüber ADR 0057); beide wurden am 2026-09-06 wie empfohlen bestätigt.
 - `ux-ui-designer` nicht konsultiert (Schritt 2): kein konkret benennbarer Bezug zu einer
   sichtbaren Oberfläche — die Story berührt ausschließlich Skill-, Anweisungs- und
   Dokumentationsdateien des Entwicklungsablaufs.
-- `test-engineer` konsultiert (Schritt 3): Testkonzept um die Sektion „Erweiterung für ADR 0059"
+- `test-engineer` konsultiert (Schritt 3): Testkonzept um die Sektion „Erweiterung für ADR 0060"
   ergänzt, zwei Testvorgaben korrigiert (Verankerung, Musterumfang), zwei bekannte Lücken
   eingetragen.
 - `security-engineer` konsultiert (Schritt 3): Sicherheitskonzept um den Angriffsflächen-Abschnitt
-  „Ein zweiter Zugangsweg zu GitHub" ergänzt. Vier Punkte, die in ADR 0059 fehlten, sind
+  „Ein zweiter Zugangsweg zu GitHub" ergänzt. Vier Punkte, die in ADR 0060 fehlten, sind
   nachgetragen; zwei Trade-off-Fragen gingen an Daniel (siehe „Bewusst getragene Restrisiken").
 - **Abweichung von ADR 0057, Abschnitt 4/7:** per Teil-Vermerk statt vollständigem `Superseded`.
   Die dafür nötige Abstufung ist in [`specs/README.md`](../README.md) als Konvention
   festgeschrieben, mit einer Zulässigkeitsschranke — Teil-Vermerk nur, wenn der abgelöste Teil
   nicht der Kern ist und die überwiegende Mehrheit der Abschnitte weitergilt.
-- **Abweichung von der Erlaubnisstufen-Tabelle in ADR 0059:** Die fünf Perspektiven-Skills tragen
+- **Abweichung von der Erlaubnisstufen-Tabelle in ADR 0060:** Die fünf Perspektiven-Skills tragen
   „kein GitHub-Zugriff" statt „nur lesend", nachdem `security-engineer` geprüft hat, dass keiner
   von ihnen heute einen GitHub-Zugriff ausführt.
 - **Branch-Abweichung:** Diese Spec entsteht auf `claude/refinement-339-mp6has` statt auf dem vom

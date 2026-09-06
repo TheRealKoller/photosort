@@ -12,7 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import pricing, worker
-from photosort.cloud_vision import VISION_MODEL_BY_PROVIDER, TokenUsage
+from photosort.cloud_vision import (
+    VISION_MODELS_BY_PROVIDER,
+    TokenUsage,
+    default_vision_model_for_provider,
+)
 from photosort.label_embedding import LabelEmbedderLike
 from photosort.models import (
     CloudVisionPhase,
@@ -188,7 +192,7 @@ class CancellingCategoryClient:
         raise asyncio.CancelledError("simulierter Abbruch")
 
 
-def _failing_client_builder() -> NoReturn:
+def _failing_client_builder(model: str) -> NoReturn:
     pytest.fail("build_category_classification_client darf ohne Consent nie aufgerufen werden")
 
 
@@ -229,7 +233,7 @@ async def test_enabling_consent_unlocks_the_remote_category_client(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: client,
+        build_client=lambda _model: client,
         build_embedder=_fake_embedder,
     )
 
@@ -255,7 +259,7 @@ async def test_full_candidate_pool_has_no_pre_filter_unlike_landmark(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: client,
+        build_client=lambda _model: client,
         build_embedder=_fake_embedder,
     )
 
@@ -281,7 +285,7 @@ async def test_rejected_photos_are_not_candidates(db_session: AsyncSession, tmp_
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: client,
+        build_client=lambda _model: client,
         build_embedder=_fake_embedder,
     )
 
@@ -322,7 +326,7 @@ async def test_already_classified_photos_are_skipped_on_a_repeat_run(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: client,
+        build_client=lambda _model: client,
         build_embedder=_fake_embedder,
     )
 
@@ -347,7 +351,7 @@ async def _run_for_one_photo(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: RecordingCategoryClient(classification),
+        build_client=lambda _model: RecordingCategoryClient(classification),
         build_embedder=_fake_embedder,
     )
     return photo, run
@@ -497,7 +501,7 @@ async def test_best_effort_error_isolation_does_not_abort_the_run(
             db_session,
             project,
             cache_dir=tmp_path,
-            build_client=lambda: client,
+            build_client=lambda _model: client,
             build_embedder=_fake_embedder,
         )
 
@@ -538,7 +542,7 @@ async def test_failed_remote_category_call_persists_a_cloud_vision_error_row(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: client,
+        build_client=lambda _model: client,
         build_embedder=_fake_embedder,
     )
 
@@ -566,7 +570,7 @@ async def test_successful_remote_category_call_after_a_previous_failure_clears_t
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: RecordingCategoryClient(raise_error=True),
+        build_client=lambda _model: RecordingCategoryClient(raise_error=True),
         build_embedder=_fake_embedder,
     )
     assert (
@@ -579,7 +583,7 @@ async def test_successful_remote_category_call_after_a_previous_failure_clears_t
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: RecordingCategoryClient(),
+        build_client=lambda _model: RecordingCategoryClient(),
         build_embedder=_fake_embedder,
     )
 
@@ -612,14 +616,14 @@ async def test_repeated_remote_category_failures_upsert_the_same_error_row(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: _RaisingClient("erster Fehlschlag"),
+        build_client=lambda _model: _RaisingClient("erster Fehlschlag"),
         build_embedder=_fake_embedder,
     )
     await run_remote_category_classification(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: _RaisingClient("zweiter Fehlschlag"),
+        build_client=lambda _model: _RaisingClient("zweiter Fehlschlag"),
         build_embedder=_fake_embedder,
     )
 
@@ -654,7 +658,7 @@ async def test_remote_category_error_message_is_capped_at_500_characters(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: _RaisingClient(),
+        build_client=lambda _model: _RaisingClient(),
         build_embedder=_fake_embedder,
     )
 
@@ -707,7 +711,7 @@ async def test_calls_are_limited_by_the_concurrency_setting(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: client,
+        build_client=lambda _model: client,
         build_embedder=_fake_embedder,
     )
 
@@ -736,7 +740,7 @@ async def test_cancelled_error_propagates_and_fails_the_run(
                 db_session,
                 project,
                 cache_dir=tmp_path,
-                build_client=lambda: CancellingCategoryClient(),
+                build_client=lambda _model: CancellingCategoryClient(),
                 build_embedder=_fake_embedder,
             )
 
@@ -770,7 +774,7 @@ async def test_embedder_build_failure_leaves_the_run_successful_with_nothing_pro
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: client,
+        build_client=lambda _model: client,
         build_embedder=_failing_embedder_builder,
     )
 
@@ -800,7 +804,7 @@ async def test_a_new_canonical_label_is_reused_across_two_projects(
         db_session,
         project_a,
         cache_dir=tmp_path,
-        build_client=lambda: RecordingCategoryClient(),
+        build_client=lambda _model: RecordingCategoryClient(),
         build_embedder=_fake_embedder,
     )
     await run_remote_category_classification(
@@ -809,7 +813,7 @@ async def test_a_new_canonical_label_is_reused_across_two_projects(
         cache_dir=tmp_path,
         # Gleicher normalisierter Text ("Hund") -> exakter Fast-Path, dieselbe fine_labels-
         # Zeile wird wiederverwendet statt einer zweiten Registry-Zeile (ADR 0032 Punkt 2).
-        build_client=lambda: RecordingCategoryClient(),
+        build_client=lambda _model: RecordingCategoryClient(),
         build_embedder=_fake_embedder,
     )
 
@@ -885,7 +889,7 @@ async def test_a_structurally_invalid_response_skips_only_that_photo(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda: client,
+        build_client=lambda _model: client,
         build_embedder=_fake_embedder,
     )
 
@@ -909,7 +913,7 @@ async def test_a_second_run_does_not_create_a_second_classification_row(
             db_session,
             project,
             cache_dir=tmp_path,
-            build_client=lambda: RecordingCategoryClient(),
+            build_client=lambda _model: RecordingCategoryClient(),
             build_embedder=_fake_embedder,
         )
         assert run.status == ScanStatus.SUCCESS
@@ -933,7 +937,7 @@ def _classification_with_usage(input_tokens: int, output_tokens: int) -> RemoteC
 
 def _expected_cost(input_tokens: int, output_tokens: int, provider: str = "anthropic") -> float:
     cost = compute_cost_usd(
-        VISION_MODEL_BY_PROVIDER[provider],
+        default_vision_model_for_provider(provider),
         TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
     )
     assert cost is not None
@@ -966,7 +970,11 @@ async def test_costs_are_summed_over_all_successful_classifications(
     )
 
     run = await run_remote_category_classification(
-        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -989,7 +997,11 @@ async def test_a_partially_failing_run_only_counts_the_successful_calls(
     )
 
     run = await run_remote_category_classification(
-        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -1011,7 +1023,11 @@ async def test_a_classification_without_usage_still_counts_as_an_api_call(
     )
 
     run = await run_remote_category_classification(
-        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
     )
 
     assert run.api_calls == 2
@@ -1027,7 +1043,11 @@ async def test_an_unpriced_model_records_tokens_but_no_amount(
     client = PerPhotoCategoryClient([_classification_with_usage(1_000, 10)])
 
     run = await run_remote_category_classification(
-        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
     )
 
     assert run.api_calls == 1
@@ -1090,7 +1110,7 @@ async def test_a_second_run_without_new_candidates_carries_no_costs(
         db_session,
         project,
         tmp_path,
-        build_client=lambda: PerPhotoCategoryClient([_classification_with_usage(1_000, 10)]),
+        build_client=lambda _model: PerPhotoCategoryClient([_classification_with_usage(1_000, 10)]),
         build_embedder=_fake_embedder,
     )
     assert first.api_calls == 1
@@ -1099,7 +1119,7 @@ async def test_a_second_run_without_new_candidates_carries_no_costs(
         db_session,
         project,
         tmp_path,
-        build_client=lambda: PerPhotoCategoryClient([]),
+        build_client=lambda _model: PerPhotoCategoryClient([]),
         build_embedder=_fake_embedder,
     )
 
@@ -1117,7 +1137,11 @@ async def test_the_category_client_is_still_closed_exactly_once_when_costs_are_w
     client = RecordingCategoryClient(classification=_classification_with_usage(1_000, 10))
 
     run = await run_remote_category_classification(
-        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
     )
 
     assert run.api_calls == 1
@@ -1132,7 +1156,11 @@ async def test_costs_use_the_configured_provider_model(
     client = PerPhotoCategoryClient([_classification_with_usage(1_000_000, 0)])
 
     run = await run_remote_category_classification(
-        db_session, project, tmp_path, build_client=lambda: client, build_embedder=_fake_embedder
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
     )
 
     assert run.cost_usd == pytest.approx(_expected_cost(1_000_000, 0, provider="mistral"))
@@ -1166,7 +1194,7 @@ async def test_a_failure_before_the_counters_keeps_the_original_error_message(
         db_session,
         project,
         tmp_path,
-        build_client=lambda: PerPhotoCategoryClient([]),
+        build_client=lambda _model: PerPhotoCategoryClient([]),
         build_embedder=_fake_embedder,
     )
 
@@ -1177,3 +1205,87 @@ async def test_a_failure_before_the_counters_keeps_the_original_error_message(
     # nachweislich kein Cloud-Aufruf stattgefunden.
     assert run.api_calls == 0
     assert run.cost_usd == 0
+
+
+# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 6/7 ab hier - Gegenpart
+# zu den gleichnamigen Faellen der Landmark-Phase in test_worker_criterion_scoring.py. Auch hier
+# bewusst mit einem NICHT voreingestellten Modell, sonst haette der Test keine Trennschaerfe.
+
+_STRONGER_ANTHROPIC_MODEL = VISION_MODELS_BY_PROVIDER["anthropic"][1]
+
+
+async def test_the_client_the_billing_and_the_persisted_model_are_one_and_the_same_value(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(worker.settings, "landmark_model", _STRONGER_ANTHROPIC_MODEL)
+    project = await _cost_setup(db_session, tmp_path, photo_count=1)
+    client = PerPhotoCategoryClient([_classification_with_usage(1_000_000, 0)])
+    received: list[str] = []
+
+    def build(model: str) -> object:
+        received.append(model)
+        return client
+
+    run = await run_remote_category_classification(
+        db_session, project, tmp_path, build_client=build, build_embedder=_fake_embedder
+    )
+
+    expected_cost = compute_cost_usd(_STRONGER_ANTHROPIC_MODEL, TokenUsage(1_000_000, 0))
+    assert expected_cost is not None
+    assert received == [_STRONGER_ANTHROPIC_MODEL]
+    assert run.model == _STRONGER_ANTHROPIC_MODEL
+    assert run.cost_usd == pytest.approx(expected_cost)
+    assert run.cost_usd != pytest.approx(_expected_cost(1_000_000, 0))
+
+
+async def test_the_default_setting_persists_the_unchanged_default_model(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium "ohne gesetzte Einstellung exakt wie bisher" auf der Persistenzebene."""
+    project = await _cost_setup(db_session, tmp_path, photo_count=1)
+    client = PerPhotoCategoryClient([_classification_with_usage(1_000, 10)])
+
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
+    )
+
+    assert run.model == default_vision_model_for_provider("anthropic")
+
+
+async def test_an_earlier_run_keeps_its_model_when_a_later_run_uses_another(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Akzeptanzkriterien "Wechsel ohne Datenverlust ruecknehmbar" und "aus welchem Modell ein
+    durchgefuehrter Lauf entstanden ist, bleibt nachtraeglich erkennbar": ein Modellwechsel wirkt
+    ausschliesslich auf kuenftige Aufrufe, er schreibt keine Vergangenheit um."""
+    project = await _cost_setup(db_session, tmp_path, photo_count=2)
+    first = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: PerPhotoCategoryClient(
+            [_classification_with_usage(1_000, 10)]
+        ),
+        build_embedder=_fake_embedder,
+    )
+    first_model = first.model
+
+    monkeypatch.setattr(worker.settings, "landmark_model", _STRONGER_ANTHROPIC_MODEL)
+    second = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: PerPhotoCategoryClient(
+            [_classification_with_usage(1_000, 10)]
+        ),
+        build_embedder=_fake_embedder,
+    )
+
+    await db_session.refresh(first)
+    assert first_model == default_vision_model_for_provider("anthropic")
+    assert first.model == first_model
+    assert second.model == _STRONGER_ANTHROPIC_MODEL

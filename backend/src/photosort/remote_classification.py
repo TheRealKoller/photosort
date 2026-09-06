@@ -6,7 +6,7 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 
 import httpx
 
@@ -19,9 +19,7 @@ from photosort.categories import (
 from photosort.cloud_vision import (
     ANTHROPIC_API_VERSION,
     ANTHROPIC_MESSAGES_URL,
-    ANTHROPIC_VISION_MODEL,
     MISTRAL_CHAT_COMPLETIONS_URL,
-    MISTRAL_VISION_MODEL,
     VISION_REQUEST_TIMEOUT_SECONDS,
     TokenUsage,
     anthropic_response_to_json,
@@ -42,8 +40,9 @@ from photosort.label_embedding import LabelEmbedderLike
 
 logger = logging.getLogger(__name__)
 
-ANTHROPIC_CATEGORY_MODEL = ANTHROPIC_VISION_MODEL
-MISTRAL_CATEGORY_MODEL = MISTRAL_VISION_MODEL
+# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 7: die frueheren
+# Aliase ANTHROPIC_CATEGORY_MODEL/MISTRAL_CATEGORY_MODEL sind ersatzlos entfallen (Begruendung
+# wortgleich zu landmark.py) - das Modell kommt als Konstruktor-Parameter herein.
 
 # Kurze, reine Klassifikationsantwort - 256 bleibt ausreichend (ADR 0032 Punkt 3): drei
 # Set-Schluessel (je hoechstens ~8 Tokens) plus zwei kurze deutsche Feinlabels und das
@@ -250,9 +249,13 @@ class AnthropicCategoryClient:
     def __init__(
         self,
         api_key: str,
+        model: str,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = VISION_REQUEST_TIMEOUT_SECONDS,
     ) -> None:
+        # PFLICHTPARAMETER ohne Default (ADR 0059 Punkt 7), Begruendung wortgleich zu
+        # landmark.py::AnthropicLandmarkClient.
+        self._model = model
         self._client = httpx.AsyncClient(
             headers={
                 "x-api-key": api_key,
@@ -270,7 +273,7 @@ class AnthropicCategoryClient:
         self, image_bytes: bytes, mime_type: str, photo_id: int
     ) -> RemoteClassification:
         body = {
-            "model": ANTHROPIC_CATEGORY_MODEL,
+            "model": self._model,
             "max_tokens": _MAX_RESPONSE_TOKENS,
             "messages": [
                 {
@@ -302,7 +305,7 @@ class AnthropicCategoryClient:
         payload = response.json()
         parsed = anthropic_response_to_json(payload, RemoteCategoryClassificationApiError)
         return _classification_from_json(
-            parsed, photo_id, anthropic_usage_from_response(payload, ANTHROPIC_CATEGORY_MODEL)
+            parsed, photo_id, anthropic_usage_from_response(payload, self._model)
         )
 
 
@@ -313,9 +316,11 @@ class MistralCategoryClient:
     def __init__(
         self,
         api_key: str,
+        model: str,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = VISION_REQUEST_TIMEOUT_SECONDS,
     ) -> None:
+        self._model = model
         self._client = httpx.AsyncClient(
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -332,7 +337,7 @@ class MistralCategoryClient:
         self, image_bytes: bytes, mime_type: str, photo_id: int
     ) -> RemoteClassification:
         body = {
-            "model": MISTRAL_CATEGORY_MODEL,
+            "model": self._model,
             "max_tokens": _MAX_RESPONSE_TOKENS,
             "response_format": {"type": "json_object"},
             "messages": [
@@ -362,94 +367,38 @@ class MistralCategoryClient:
         payload = response.json()
         parsed = mistral_response_to_json(payload, RemoteCategoryClassificationApiError)
         return _classification_from_json(
-            parsed, photo_id, mistral_usage_from_response(payload, MISTRAL_CATEGORY_MODEL)
+            parsed, photo_id, mistral_usage_from_response(payload, self._model)
         )
 
 
-def build_category_classification_client() -> CategoryDetectionClientLike:
+def build_category_classification_client(model: str) -> CategoryDetectionClientLike:
     """Dispatch-Factory zwischen AnthropicCategoryClient (Default) und MistralCategoryClient je
     nach settings.landmark_provider (ADR 0032 Punkt 3: KEIN neues Provider-Setting - derselbe
     Schalter wie fuer landmark). Laeuft NIE in einem automatisierten Test (echtes Secret + echter
-    Netzwerkversuch), analog build_landmark_client/build_face_detector."""
+    Netzwerkversuch), analog build_landmark_client/build_face_detector.
+
+    `model` ist seit Spec 0304 ein Parameter (ADR 0059 Punkt 7, Begruendung wortgleich zu
+    landmark.py::build_landmark_client) - und es ist DASSELBE Modell wie dort, weil
+    `LANDMARK_MODEL` wie `LANDMARK_PROVIDER` fuer beide Cloud-Anteile gilt (Akzeptanzkriterium:
+    "nicht zwei unterschiedliche Modelle nebeneinander")."""
     if settings.landmark_provider == "mistral":
         mistral_client: CategoryDetectionClientLike = MistralCategoryClient(
-            api_key=settings.mistral_api_key
+            api_key=settings.mistral_api_key, model=model
         )
         return mistral_client
     anthropic_client: CategoryDetectionClientLike = AnthropicCategoryClient(
-        api_key=settings.anthropic_api_key
+        api_key=settings.anthropic_api_key, model=model
     )
     return anthropic_client
 
 
-# ACHTUNG, ZWEI PREISKONSTANTEN (specs/features/0207-projekt-statistikseite.md, decisions/0051-
-# ist-kostenerfassung-remote-laeufe.md Punkt 2, bewusst): DIESE Konstante ist die VORAB-Schaetzung
-# (Preis pro BILD, inkl. angenommener Token-Zahlen) und bleibt unveraendert die Grundlage von
-# `GET /projects/{id}/classify/estimate` (ADR 0050 Punkt 5). Daneben steht seit Spec 0207
-# `pricing.py::MODEL_PRICING` - die IST-Rechnung nach dem Lauf (Preis pro TOKEN, je Modell-ID).
-# Ein Modell-/Preiswechsel betrifft BEIDE; sie werden bewusst nicht auseinander abgeleitet
-# (Begruendung: ADR 0051 Punkt 2), muessen aber gemeinsam gepflegt werden.
-#
-# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, Akzeptanzkriterium
-# "Kostenschätzung", ADR 0032 Punkt 8: dokumentiert-unkalibrierte Konstante je Provider - developer
-# hat die Werte gegen die tatsaechliche Preisliste verifiziert (2026-08-23), statt der reinen
-# ADR-Schaetzung blind zu vertrauen:
-#
-# Anthropic (claude-haiku-4-5): $1.00/MTok Input, $5.00/MTok Output (offizielle Preisliste,
-# Stand 2026-08-23 - deckt sich mit dem bereits in der ADR zitierten Preisverhaeltnis). Bild-
-# Token-Formel laut offizieller Anthropic-Dokumentation: tokens ≈ (breite_px * hoehe_px) / 750
-# (verifiziert gegen den bekannten Referenzwert 1092x1092px ≈ 1590 Tokens: 1092*1092/750 ≈ 1590
-# ✓). Die
-# `display`-Cache-Variante ist auf DISPLAY_MAX_SIZE=2048px lange Kante begrenzt (thumbnails.py,
-# Seitenverhaeltnis erhalten) - fuer ein typisches 3:2-/4:3-Landschaftsfoto an dieser Obergrenze
-# ergeben sich ca. 3700-4200 Bild-Tokens (2048x1365 bzw. 2048x1536), viele reale Quellfotos sind
-# aber kleiner als 2048px lange Kante (kein Hochskalieren) und verbrauchen entsprechend weniger.
-# Reprae­sentativer Mittelwert ~3900 Bild-Tokens -> $0.0039 Input; Output (JSON-Array mit 1-3
-# Objekten, ADR-Schaetzung 80-160 Tokens, Mittelwert 120) -> $0.0006. Summe gerundet $0.0045/Bild.
-#
-# Bewusste, begruendete Abweichung vom ADR-0032-Schaetzbereich ($0,0020-0,0028/Bild) - kein
-# stillschweigendes Abweichen (Review-Fund, requirements-engineer): der ADR-Bereich stuetzt sich
-# laut ADR-Text auf einen "unveraendert" aus der Vorfassung uebernommenen Bildtoken-Anteil von ca.
-# $0,0016 - das entspricht rechnerisch genau dem in der ADR selbst als Referenzwert zitierten
-# 1092x1092px-Beispiel (1092*1092/750 ≈ 1590 Tokens * $1/MTok ≈ $0,0016), NICHT der tatsaechlich
-# in diesem Feature versendeten Bildquelle. Real verschickt wird ausschliesslich die
-# `display`-Cache-Variante mit einer Obergrenze von 2048px langer Kante (siehe oben) - ein
-# typisches Landschaftsfoto an dieser Obergrenze braucht mit ca. 3900 Tokens gut 2,4x so viele
-# Bild-Tokens wie das 1092px-Referenzbeispiel. Die ADR-Schaetzgrundlage war damit nicht falsch
-# gerechnet, sondern basierte auf einer kleineren, nicht repraesentativen Bildaufloesung als der
-# tatsaechlich implementierten Bildquelle - der hier verwendete, hoehere Wert ist die gegen die
-# reale Bildquelle nachgerechnete Korrektur, keine Abweichung vom eigentlichen ADR-Rechenweg
-# (gleiche Preise/gleiche Formel, andere - jetzt korrekte - Eingangsaufloesung).
-#
-# Mistral (ministral-3b-2512): $0.10/MTok Input UND Output (docs.mistral.ai/models/
-# ministral-3-3b-25-12, verifiziert 2026-08-23 - symmetrische Input-/Output-Preisgestaltung, anders
-# als bei Anthropic). Mistral veroeffentlicht fuer dieses Modell KEINE offizielle Bild-Token-Formel
-# (anders als Anthropic) - Schaetzung bleibt dokumentiert-unkalibriert basierend auf vergleichbarem
-# Pixtral-Familien-Tiling-Verhalten (grobe Bandbreite 1000-4000 Bild-Tokens je nach Aufloesung/
-# Kachelung) -> $0.0001-0.0004 Input, Output vernachlaessigbar (~$0.00001). Mittelwert $0.0003/Bild.
-#
-# NEUVERIFIKATION (developer, 2026-08-30, Pflicht aus dem Security-Abschnitt der Spec 0289 Punkt 8
-# / ADR 0032 Punkt 8): der aus CATEGORY_REGISTRY erzeugte Prompt (categories.py::
-# build_classification_prompt) ersetzt das frühere ~120-Token-Literal durch 13 Kategorie-Bloecke
-# mit Definition und Negativabgrenzung - gemessen an der erzeugten Zeichenzahl (~3400 Zeichen)
-# und der ueblichen Faustregel ~4 Zeichen/Token fuer deutschen Text liegt der Prompt bei grob
-# 850-900 Tokens, also rund +700 Input-Tokens gegenueber dem alten Wortlaut. Das deckt sich mit
-# der in der Spec genannten Bandbreite (+500-700 Tokens).
-#
-# Anthropic: +700 Input-Tokens * $1.00/MTok = +$0.0007/Bild -> 0.0045 + 0.0007 = $0.0052,
-# gerundet 0.0052. Preise unveraendert gegenueber der Verifikation vom 2026-08-23
-# (claude-haiku-4-5: $1.00/MTok Input, $5.00/MTok Output); der Ausgabe-Anteil sinkt sogar leicht
-# (Set-Schluessel statt frei formulierter Schlagworte mit Konfidenzzahlen), das wird hier bewusst
-# NICHT eingerechnet - die Schaetzung soll die Kosten eher ueber- als unterschaetzen, weil sie die
-# Grundlage einer bewussten Freigabe durch Daniel ist.
-#
-# Mistral: +700 Input-Tokens * $0.10/MTok = +$0.00007/Bild - unterhalb der vierten
-# Nachkommastelle, in der diese Konstante gefuehrt wird. Der Wert bleibt deshalb bei 0.0003; die
-# Groessenordnung (Bild-Tokens dominieren) ist unveraendert.
-COST_PER_IMAGE_USD: dict[Literal["anthropic", "mistral"], float] = {
-    "anthropic": 0.0052,
-    "mistral": 0.0003,
-}
+# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 3: die frueher hier
+# stehende Konstante COST_PER_IMAGE_USD (Vorab-Schaetzung, Preis pro BILD, je PROVIDER) ist
+# ersatzlos entfallen. Sie war der Kern des von Spec 0304 behobenen Defekts: an den Anbieter
+# gebunden statt an das Modell, wurde sie bei einem Modellwechsel unbemerkt falsch. Die Schaetzung
+# lebt seitdem in `pricing.py::estimate_usd_per_image()` und wird aus derselben modell-
+# geschluesselten Preistabelle abgeleitet wie die Ist-Kosten; die dokumentierte Herleitung der
+# Token-Annahmen ist mit nach `pricing.py::ASSUMED_USAGE_BY_PROVIDER` gewandert.
 
 # Dokumentiert-unkalibrierter Startwert (developer verifiziert/kalibriert mit ein paar echten
 # Test-Label-Paaren wie "Hund"/"Hunde"/"dog" vs. "Katze"/"Hund" vor dem Festschreiben - gleiche

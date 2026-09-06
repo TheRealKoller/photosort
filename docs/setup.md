@@ -30,7 +30,7 @@ setzen und lesen, Pull Request eröffnen und verknüpfen, eine Feature-Spec absc
 vielen Stellen auf GitHub zu. Seit
 [ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) gibt es dafür kein
 eigenes Werkzeug mehr, und seit
-[ADR 0059](../specs/decisions/0059-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)
+[ADR 0060](../specs/decisions/0060-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)
 steht jeder dieser Zugriffe an **genau einer Stelle**: dem Operationskatalog
 `.claude/skills/github-access/SKILL.md`. Jede Operation dort nennt ihre **Zugangswege in fester
 Reihenfolge**, und es gibt zwei davon — die GitHub-MCP-Werkzeuge einer Session (`mcp`) und die
@@ -203,7 +203,7 @@ Gemessen in einer echten Remote-Session am 2026-09-05, ausführlich in
 [ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md), Abschnitt 7 neu
 gefasst) und Spec [`0318`](../specs/features/0318-remote-lebenszyklus-grenze.md), Konsequenz für
 den Zugangsweg seit
-[ADR 0059](../specs/decisions/0059-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md);
+[ADR 0060](../specs/decisions/0060-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md);
 die Messungen mit Befehl und wörtlicher Ausgabe stehen im
 [Messbericht an Issue #318](https://github.com/TheRealKoller/photosort/issues/318#issuecomment-5550813926).
 `gh` liegt dort seit ADR 0053/0054 vor — die Grenze liegt woanders:
@@ -229,7 +229,7 @@ die Messungen mit Befehl und wörtlicher Ausgabe stehen im
   REST-Verweis der GraphQL-Meldung ist in dieser Umgebung irreführend.
 - **Die Grenze verläuft am Client, nicht am Transport — und genau daraus ist die Wegleiter
   entstanden.** Dieselbe Session liest und schreibt Issues und Pull Requests problemlos: über die
-  GitHub-MCP-Werkzeuge, angemeldet als Repository-Eigentümer. Seit ADR 0059 kennt deshalb jede
+  GitHub-MCP-Werkzeuge, angemeldet als Repository-Eigentümer. Seit ADR 0060 kennt deshalb jede
   Operation beide Wege und probiert sie der Reihe nach (`mcp` vor `gh`). **Alle Issue- und alle
   Pull-Request-Operationen tragen remote damit.** Eine Story kommt in einer Cloud-Session von der
   Erfassung bis zum eröffneten, verknüpften, von Copilot reviewten Pull Request. Nachzuholen
@@ -298,6 +298,26 @@ Um beide Funktionen tatsächlich zu nutzen, in `.env`:
   `mistral` (EU-hosted Alternative, Sitz Frankreich; DPA-/Zero-Data-Retention-Lage für
   Privatkonten laut Recherche unklar, bewusst akzeptiertes Restrisiko siehe ADR 0031). Eine reine
   Betreiber-/Deployment-Entscheidung, kein Feld pro Projekt.
+- `LANDMARK_MODEL` wählt das **Modell** des eingestellten Providers (Spec
+  [`0304`](../specs/features/0304-cloud-modell-je-anbieter-waehlbar.md), ADR
+  [`0059`](../specs/decisions/0059-modellwahl-je-anbieter-und-modellgebundene-kostenschaetzung.md))
+  — wie `LANDMARK_PROVIDER` für beide Cloud-Funktionen gemeinsam und ebenfalls eine reine
+  Betreiber-Entscheidung ohne UI-Feld. **Leer lassen = Voreinstellung des Providers**, also
+  unverändertes Verhalten:
+
+  | `LANDMARK_PROVIDER` | wählbare `LANDMARK_MODEL`-Werte | Voreinstellung (leer) | Schätzung je Bild |
+  |---|---|---|---|
+  | `anthropic` | `claude-haiku-4-5`, `claude-sonnet-5` | `claude-haiku-4-5` | ~$0,0052 / ~$0,0104 |
+  | `mistral` | `ministral-3b-2512`, `ministral-8b-2512` | `ministral-3b-2512` | ~$0,0003 / ~$0,00045 |
+
+  Ein Wert außerhalb dieser Auswahl — auch ein für den *anderen* Provider gültiges Modell —
+  lässt den Prozess beim Start mit einem Validierungsfehler abbrechen, kein stiller Fallback.
+  Die Kostenschätzung am Auslöser rechnet mit dem eingestellten Modell; ein stärkeres Modell
+  hebt die Kosten je Bild, und die Fotozahl eines Laufs ist nicht gedeckelt. Ein Wechsel wirkt
+  nur auf künftige Läufe und ist durch Zurücksetzen jederzeit ohne Datenverlust rücknehmbar.
+  Ein Modell, das noch nicht in der Auswahl steht, wird über eine Code-Änderung aufgenommen
+  (`cloud_vision.py::VISION_MODELS_BY_PROVIDER` samt verifiziertem Preis in `pricing.py`), nicht
+  über diese Variable.
 - Je nach gewähltem Provider `ANTHROPIC_API_KEY` bzw. `MISTRAL_API_KEY` auf einen echten API-Key
   setzen (leer = beide Funktionen bleiben für alle Projekte unbenutzbar, auch bei aktivierter
   Einwilligung schlägt der Aufruf dann fehl).
