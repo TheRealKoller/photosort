@@ -30,7 +30,7 @@ setzen und lesen, Pull Request eröffnen und verknüpfen, eine Feature-Spec absc
 vielen Stellen auf GitHub zu. Seit
 [ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) gibt es dafür kein
 eigenes Werkzeug mehr, und seit
-[ADR 0060](../specs/decisions/0060-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)
+[ADR 0061](../specs/decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)
 steht jeder dieser Zugriffe an **genau einer Stelle**: dem Operationskatalog
 `.claude/skills/github-access/SKILL.md`. Jede Operation dort nennt ihre **Zugangswege in fester
 Reihenfolge**, und es gibt zwei davon — die GitHub-MCP-Werkzeuge einer Session (`mcp`) und die
@@ -203,7 +203,7 @@ Gemessen in einer echten Remote-Session am 2026-09-05, ausführlich in
 [ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md), Abschnitt 7 neu
 gefasst) und Spec [`0318`](../specs/features/0318-remote-lebenszyklus-grenze.md), Konsequenz für
 den Zugangsweg seit
-[ADR 0060](../specs/decisions/0060-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md);
+[ADR 0061](../specs/decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md);
 die Messungen mit Befehl und wörtlicher Ausgabe stehen im
 [Messbericht an Issue #318](https://github.com/TheRealKoller/photosort/issues/318#issuecomment-5550813926).
 `gh` liegt dort seit ADR 0053/0054 vor — die Grenze liegt woanders:
@@ -229,7 +229,7 @@ die Messungen mit Befehl und wörtlicher Ausgabe stehen im
   REST-Verweis der GraphQL-Meldung ist in dieser Umgebung irreführend.
 - **Die Grenze verläuft am Client, nicht am Transport — und genau daraus ist die Wegleiter
   entstanden.** Dieselbe Session liest und schreibt Issues und Pull Requests problemlos: über die
-  GitHub-MCP-Werkzeuge, angemeldet als Repository-Eigentümer. Seit ADR 0060 kennt deshalb jede
+  GitHub-MCP-Werkzeuge, angemeldet als Repository-Eigentümer. Seit ADR 0061 kennt deshalb jede
   Operation beide Wege und probiert sie der Reihe nach (`mcp` vor `gh`). **Alle Issue- und alle
   Pull-Request-Operationen tragen remote damit.** Eine Story kommt in einer Cloud-Session von der
   Erfassung bis zum eröffneten, verknüpften, von Copilot reviewten Pull Request. Nachzuholen

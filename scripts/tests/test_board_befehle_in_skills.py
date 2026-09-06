@@ -15,7 +15,7 @@ schlicht kein zulaessiger Wert mehr.
 Zweiter Prueffall in derselben Datei: Jeder Ablauf-Skill mit Board-Schreibzugriff fuehrt den
 Berichtsabschnitt `## Lokal nachzuholen` woertlich (Nachfolger der entsprechenden Zusicherung
 aus ADR 0056, deren zweite Haelfte mit der Vorabmessung entfallen ist) - **und den festen Satz
-darin**. Seit ADR 0060 ist die Befehlszeile aus diesem Abschnitt in den Operationskatalog
+darin**. Seit ADR 0061 ist die Befehlszeile aus diesem Abschnitt in den Operationskatalog
 gezogen; die Ueberschrift allein wuerde danach auch von einer leeren Huelle bestanden. Wandert
 der Inhalt einer geprueften Textstelle woanders hin, wandert die Zusicherung mit - sonst bleibt
 am alten Ort ein gruener Rest stehen.

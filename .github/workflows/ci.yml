@@ -78,7 +78,7 @@ jobs:
         run: npm run build
 
   # Deckt alles unter scripts/ ab - neben den Demo-Skripten auch die Repo-Konsistenztests, die
-  # seit ADR 0057 an die Stelle des geloeschten Board-Werkzeugs getreten sind. Seit ADR 0060
+  # seit ADR 0057 an die Stelle des geloeschten Board-Werkzeugs getreten sind. Seit ADR 0061
   # steht jeder GitHub-Zugriff des Ablaufs an genau einer Stelle
   # (.claude/skills/github-access/SKILL.md); die Tests hier pruefen deren Text: die Form der
   # gh-Befehle, die Katalogform (17 Operationen, Wege in fester Reihenfolge), die

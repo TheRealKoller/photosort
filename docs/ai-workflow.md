@@ -145,7 +145,7 @@ unterschreitet ein Pull Request diese Schwelle, kann er nicht gemergt werden.
 **Remote-/Cloud-Sessions sind ein vollwertiger Arbeitsmodus.** Jeder GitHub-Zugriff läuft über
 eine Operation des Skills `github-access`, und jede Operation kennt ihre Zugangswege in fester
 Reihenfolge (siehe
-[ADR 0060](../specs/decisions/0060-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)).
+[ADR 0061](../specs/decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md)).
 Es wird **nicht** vorab gemessen, ob ein Weg trägt, und aus keinem Umgebungsmerkmal auf eine
 Session-Art geschlossen — die Operation wird ausgeführt, denn sie zu versuchen kostet nicht mehr,
 als sie zu messen. Scheitert ein Weg, wird der nächste versucht; ein Wegwechsel ist kein Befund

@@ -1,7 +1,7 @@
 """Bindet bei einem Markdown-Verweis die genannte Nummer an die Nummer der Zieldatei.
 
 Specs und ADRs tragen ihre Identitaet in der **Nummer**, und ein Verweis auf sie nennt diese
-Nummer zweimal: einmal sichtbar im Linktext (`` [`0060`](…) ``) und einmal im Pfad
+Nummer zweimal: einmal sichtbar im Linktext (`` [`0061`](…) ``) und einmal im Pfad
 (`…/0060-slug.md`). Laufen die beiden auseinander, entsteht der teuerste Verweis, den es gibt:
 einer, der aussieht, als truege er, und der jeden Leser an die falsche Entscheidung schickt. Ein
 Klick geht woandershin als das Auge.
@@ -224,7 +224,7 @@ def test_jeder_verweis_nennt_die_nummer_seines_ziels() -> None:
 
 def test_ein_auseinandergelaufener_verweis_wird_gemeldet() -> None:
     """Der reale Fehlerfall: Eine pauschale Ersetzung zieht den Text, nicht das Ziel."""
-    text = "ADR [`0060`](../decisions/0059-modellwahl-je-anbieter.md) sagt dazu …\n"
+    text = "ADR [`0061`](../decisions/0059-modellwahl-je-anbieter.md) sagt dazu …\n"
 
     befunde = nummern_verstoesse(verweise_aus_text(text, "specs/architecture/0002-x.md"))
 
@@ -234,7 +234,7 @@ def test_ein_auseinandergelaufener_verweis_wird_gemeldet() -> None:
 
 
 def test_der_erwartete_verweis_gilt_nicht_als_verstoss() -> None:
-    text = "ADR [`0060`](../decisions/0060-ein-ort-fuer-jeden-github-zugriff.md)\n"
+    text = "ADR [`0061`](../decisions/0061-ein-ort-fuer-jeden-github-zugriff.md)\n"
 
     assert nummern_verstoesse(verweise_aus_text(text, "x.md")) == []
 

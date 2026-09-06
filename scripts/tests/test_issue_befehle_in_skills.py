@@ -12,7 +12,7 @@ mitten in einer Session, gegen ein oeffentliches Issue:
   Statuswechsel auf `Ready` geschrieben. Rutschte die Titel-Stelle hinter die `Ready`-Stelle,
   erreichte das Issue den Status auch dann, wenn das Schreiben des Titels scheitert.
 
-Die Reihenfolge-Pruefung ist seit ADR 0060 **ueber die Operations-IDs verankert**, nicht mehr
+Die Reihenfolge-Pruefung ist seit ADR 0061 **ueber die Operations-IDs verankert**, nicht mehr
 ueber Befehlszeilen: Die Befehle sind in den Katalog gezogen, die Reihenfolge ist aber eine
 Eigenschaft des *Ablaufs* und gehoert ohnehin dorthin, wo der Ablauf steht. Sie ueberlebt den
 Umbau damit als Aussage statt als Zeilennummer-Zufall. Bedingung (a) aus der Spec-0288-Sektion des
