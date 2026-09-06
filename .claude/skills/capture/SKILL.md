@@ -62,7 +62,7 @@ wiederholbar und lokal nachzuholen.
 - <Operations-ID>: <Nachhol-Zeile aus dem Katalogeintrag, mit den Nummern dieses Laufs>
 ```
 
-Ein zweites `issue-anlegen` findet dafür **nicht** statt — das legte ein zweites Issue an. Ohne Item auf dem Board bleibt auch `Unrefined` aus; beides holt derselbe Befehl nach. Der Abschnitt bleibt im Chat; dieser Skill schreibt ihn in kein GitHub-Artefakt.
+Ein zweites `issue-anlegen` findet dafür **nicht** statt — das legte ein zweites Issue an. Ohne Item auf dem Board bleibt auch `Unrefined` aus; beides holt dieselbe Nachhol-Zeile nach. Der Abschnitt bleibt im Chat; dieser Skill schreibt ihn in kein GitHub-Artefakt.
 
 ## Was dieser Skill NICHT tut
 

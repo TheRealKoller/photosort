@@ -122,7 +122,7 @@ Der Issue-Titel entstand beim Erfassen in Sekunden, das inhaltliche Verständnis
 2. Er ist erkennbar zu lang oder verschachtelt.
 3. Er benennt die Tätigkeit statt des Ergebnisses (z.B. „refinement soll auch titel ändern").
 
-Trifft **mindestens einer** zu, ist der Titel überarbeitungsbedürftig. Trifft keiner zu, bleibt er unverändert, und es wird **kein** Befehl abgesetzt — auch keiner mit identischem Titel. **Im Zweifel gilt „passt".** Der Katalog wird nicht erweitert; ohne diese Regel wäre jeder Titel begründbar überarbeitungsbedürftig, und ein von Daniel selbst angepasster Titel überlebte keine zweite Nachschärfung.
+Trifft **mindestens einer** zu, ist der Titel überarbeitungsbedürftig. Trifft keiner zu, bleibt er unverändert, und `issue-titel-schreiben` wird **nicht** ausgeführt — auch nicht mit identischem Titel. **Im Zweifel gilt „passt".** Der Katalog wird nicht erweitert; ohne diese Regel wäre jeder Titel begründbar überarbeitungsbedürftig, und ein von Daniel selbst angepasster Titel überlebte keine zweite Nachschärfung.
 
 **Die neue Fassung**, falls es eine gibt: kurz und prägnant, sie benennt das **Ergebnis** statt der Tätigkeit. Weiche Vorgabe, keine feste Zeichengrenze. Kein Präfix aus Issue- oder Spec-Nummer, kein Satzpunkt am Ende. Abgeleitet **ausschließlich** aus `## Ziel`/`## User Story` des soeben geschriebenen Bodys — nie aus technischen Umsetzungsüberlegungen (die gibt es an dieser Stelle noch nicht) und nie durch wörtliches Durchreichen des alten Titels; Komponentennamen, Dateipfade und Technologiebegriffe kommen darin nicht vor.
 
