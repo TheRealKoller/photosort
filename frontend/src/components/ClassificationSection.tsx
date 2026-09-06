@@ -197,7 +197,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       )}
 
       {runStatus === 'running' && (
-        <div className="flex w-full max-w-sm flex-col gap-1.5">
+        <div className="flex w-full max-w-sm flex-col gap-2">
           <p className="text-sm text-text">
             {photosProcessed} von {photosTotal} Fotos verarbeitet
           </p>
@@ -240,7 +240,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
           das Kategorien-Set ist geschlossen, aber nicht fuer immer festgelegt - haeufige
           Feinlabels sind der Hinweis darauf, dass im Set eine Kategorie fehlt, und damit der
           Aenderungspfad. */}
-      <div className="flex w-full max-w-sm flex-col gap-1.5">
+      <div className="flex w-full max-w-sm flex-col gap-2">
         <h3 className="text-sm font-medium text-text-h">Häufigste Feinlabels</h3>
         {/* Der Kontexttext behauptet, Feinlabels seien haeufig aufgetreten - er erscheint deshalb
             nur, wenn tatsaechlich welche vorliegen. Ueber dem Leerzustand ("Keine zusaetzlichen

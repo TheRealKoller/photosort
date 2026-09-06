@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { RatingFilter } from '../api/types'
@@ -7,8 +7,8 @@ import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CategoryOverrideMarker } from '../components/CategoryOverrideMarker'
 import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
+import { PhotoCard } from '../components/PhotoCard'
 import { PhotoImage } from '../components/PhotoImage'
-import { RatingBadge } from '../components/RatingBadge'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
@@ -94,7 +94,7 @@ export function PhotoGridPage() {
       <h1 className="text-xl sm:text-2xl">Fotos</h1>
 
       {isGateMode && (
-        <div className="flex flex-col items-start gap-3 rounded-md border border-accent bg-elevated p-4 text-sm">
+        <div className="flex flex-col items-start gap-3 rounded-md border border-accent bg-elevated p-3 text-sm">
           <p className="text-text-h">
             Sichte den erkannten Ausschuss ({totalSuggested}{' '}
             {totalSuggested === 1 ? 'Kandidat' : 'Kandidaten'}), bevor du fortfährst. Einzelne
@@ -198,96 +198,71 @@ export function PhotoGridPage() {
             }
 
             return (
-              <li key={photo.id} className="flex flex-col gap-1.5">
-                <div className="relative">
-                  <Link
-                    to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
-                    className="group block aspect-square overflow-hidden rounded-md border border-border"
-                  >
-                    <PhotoImage
-                      photoId={photo.id}
-                      variant="thumbnail"
-                      alt={photo.relative_path}
-                      className="size-full object-cover"
-                    />
-                  </Link>
-                  {/* Review-Fund (requirements-engineer/ux-ui-designer): eine fruehere Fassung
-                      wich fuer den Trigger auf "oben links" aus, weil "oben rechts" hier schon
-                      von der RatingBadge belegt war - das widersprach der Spec-Vorgabe
-                      "einheitliche Position an allen drei Stellen" (UI/UX-Abschnitt). Beide
-                      Elemente sitzen deshalb jetzt GEMEINSAM oben rechts (`gap-1`-Reihe), statt
-                      den Trigger in eine andere Ecke auszuweichen. Als Geschwisterelement NEBEN,
-                      nicht INNERHALB des <Link> (Akzeptanzkriterium 17) - `relative` wandert
-                      dafuer vom <Link> auf den umschliessenden <div> (Architektur-Abschnitt der
-                      Spec).
-                      Copilot-Review-Fund: RatingBadge zieht dafuer aus dem <Link> in dieselbe
-                      Zeile - als eigenes absolut positioniertes Geschwisterelement UEBER der
-                      Kachel wuerde ein Klick in ihrem Bereich sonst nicht mehr zur Detailseite
-                      navigieren (die Badge selbst hat keinen eigenen Klick-Handler, faengt den
-                      Klick aber trotzdem ab, bevor er den darunterliegenden <Link> erreicht).
-                      `pointer-events-none` auf dem umschliessenden div laesst Klicks im
-                      Badge-Bereich zum <Link> durch (Badge bleibt rein dekorativ), der Info-
-                      Trigger reaktiviert Pointer-Events gezielt fuer sich selbst
-                      (`pointer-events-auto`), da er einen eigenen Klick-Handler braucht (AK17). */}
-                  {/* specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
-                      UI/UX-Abschnitt: Override-Marker in der bislang unbelegten Ecke (oben links),
-                      RatingBadge/Info-Trigger bleiben oben rechts unveraendert. */}
-                  {photo.category_override !== null && (
-                    <div className="pointer-events-none absolute left-1.5 top-1.5">
-                      <CategoryOverrideMarker />
-                    </div>
-                  )}
-                  <div className="pointer-events-none absolute right-1.5 top-1.5 flex items-center gap-1">
-                    <CriterionDetailsPopover
-                      criterionScores={photo.criterion_scores}
-                      ranking={photo.ranking}
-                      suggestion={photo.suggestion}
-                      className="pointer-events-auto"
-                      categoryCandidates={photo.category_candidates}
-                      fineLabels={photo.fine_labels}
-                      categories={categorySet}
-                      categoriesLoading={categoriesQuery.isLoading}
-                      categoriesError={categoriesQuery.isError}
-                      onRetryCategories={() => {
-                        void categoriesQuery.refetch()
-                      }}
-                      categoryOverride={photo.category_override}
-                      onOverrideCategory={(categoryKey) =>
-                        categoryOverrideControls.overrideCategory(photo.id, categoryKey)
-                      }
-                      onResetOverride={() => categoryOverrideControls.resetOverride(photo.id)}
-                      pendingOverrideKey={categoryOverrideControls.pendingOverrideKeyFor(photo.id)}
-                      resetPending={categoryOverrideControls.isResetPendingFor(photo.id)}
-                    />
-                    {/* UX-Review-Fund (Branch feature/0012-visual-redesign-views): der neutrale
-                        ("unbewertet") und der gedaempfte Vorschlags-Ton der Badge haben keine bzw.
-                        nur eine 10%-Deckkraft-Flaeche - direkt ueber einem beliebigen Foto ist das
-                        Symbol/"–" ohne Backdrop je nach Bildinhalt kaum lesbar. Ein halbtransparenter
-                        `--bg`-Kreis dahinter garantiert Kontrast unabhaengig vom Fotohintergrund. */}
-                    <span className="rounded-md bg-bg/85 p-0.5 backdrop-blur-sm">
-                      <RatingBadge status={badgeStatus} suggested={isSuggested} />
-                    </span>
-                  </div>
-                </div>
-                {/* Separates Tap-Ziel ausserhalb des Link-<a> (UI/UX-Abschnitt der Spec): die
-                    Kachel selbst oeffnet weiterhin die Detailansicht, "Uebernehmen" bestaetigt
-                    den Vorschlag direkt per PUT /photos/{id}/rating, ohne zu navigieren.
-                    aria-label enthaelt den Dateinamen (UI/UX-Review-Fund): mehrere offene
-                    Vorschlaege im selben Grid sind sonst per Tastatur/Screenreader nicht
-                    auseinanderzuhalten, da jeder Button denselben sichtbaren Text traegt. */}
-                {isSuggested && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label={`Vorschlag übernehmen: ${photo.relative_path}`}
-                    busy={isConfirming}
-                    onClick={handleConfirmSuggestion}
-                  >
-                    {isConfirming ? 'Wird übernommen…' : 'Übernehmen'}
-                  </Button>
-                )}
-              </li>
+              <PhotoCard
+                key={photo.id}
+                to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
+                relativePath={photo.relative_path}
+                status={badgeStatus}
+                suggested={isSuggested}
+                image={
+                  <PhotoImage
+                    photoId={photo.id}
+                    variant="thumbnail"
+                    alt={photo.relative_path}
+                    className="size-full object-cover"
+                  />
+                }
+                /* specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md:
+                   Uebersteuerungs-Marker in der Ecke oben links, Info-Trigger oben rechts. Beide
+                   sind seit Spec 0321 Geschwister der Bildflaeche und liegen nie in ihr - die
+                   Bildflaeche beschneidet, und eine aufgespannte Trefferflaeche in einem
+                   beschneidenden Container wuerde still abgeschnitten.
+                   Der frueher noetige `pointer-events-none`-Kniff entfaellt ersatzlos: Das
+                   Zustandskennzeichen liegt nicht mehr ueber der Kachel, sondern im Kartenkoerper,
+                   und faengt deshalb keine Klicks mehr ab, die zum Kachel-Link durchsollen. */
+                topLeft={photo.category_override !== null ? <CategoryOverrideMarker /> : undefined}
+                topRight={
+                  <CriterionDetailsPopover
+                    criterionScores={photo.criterion_scores}
+                    ranking={photo.ranking}
+                    suggestion={photo.suggestion}
+                    categoryCandidates={photo.category_candidates}
+                    fineLabels={photo.fine_labels}
+                    categories={categorySet}
+                    categoriesLoading={categoriesQuery.isLoading}
+                    categoriesError={categoriesQuery.isError}
+                    onRetryCategories={() => {
+                      void categoriesQuery.refetch()
+                    }}
+                    categoryOverride={photo.category_override}
+                    onOverrideCategory={(categoryKey) =>
+                      categoryOverrideControls.overrideCategory(photo.id, categoryKey)
+                    }
+                    onResetOverride={() => categoryOverrideControls.resetOverride(photo.id)}
+                    pendingOverrideKey={categoryOverrideControls.pendingOverrideKeyFor(photo.id)}
+                    resetPending={categoryOverrideControls.isResetPendingFor(photo.id)}
+                  />
+                }
+                /* Separates Tap-Ziel ausserhalb des Kachel-Links (UI/UX-Abschnitt der Spec): die
+                   Kachel selbst oeffnet weiterhin die Detailansicht, "Uebernehmen" bestaetigt den
+                   Vorschlag direkt, ohne zu navigieren. Das `aria-label` enthaelt den Dateinamen -
+                   mehrere offene Vorschlaege im selben Raster waeren sonst per Tastatur/
+                   Screenreader nicht auseinanderzuhalten. */
+                footer={
+                  isSuggested ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label={`Vorschlag übernehmen: ${photo.relative_path}`}
+                      busy={isConfirming}
+                      onClick={handleConfirmSuggestion}
+                    >
+                      {isConfirming ? 'Wird übernommen…' : 'Übernehmen'}
+                    </Button>
+                  ) : undefined
+                }
+              />
             )
           })}
         </ul>

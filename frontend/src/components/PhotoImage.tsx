@@ -87,7 +87,10 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
     return (
       <div
         className={cn(
-          'flex items-center justify-center rounded-md border border-status-failed/40 bg-status-failed/10 px-2 text-center text-xs text-text-h',
+          // Toast-Konstruktion des Boards (Flaeche `--elevated`, farbiger 1px-Rand) statt
+          // zweier Deckkraft-Toenungen: ueber einer Deckkraft-Tinte ist der Kontrast statisch
+          // nicht nachrechenbar und bliebe damit dauerhaft ungeprueft (Spec 0321).
+          'flex items-center justify-center rounded-md border border-status-failed bg-elevated px-2 text-center text-xs text-text-h',
           className
         )}
         role="alert"
