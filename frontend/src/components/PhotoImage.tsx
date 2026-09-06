@@ -73,7 +73,10 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
   if (state.status === 'placeholder') {
     return (
       <div
-        className={cn('flex items-center justify-center rounded-md bg-border/60 text-xs text-text', className)}
+        // Platzhalterflaeche: dekorative Flaeche unmittelbar auf dem Grund. `bg-border/60` war
+        // doppelt problematisch - unsichtbar (1.45:1 vor der Abdunklung) und ueber den
+        // Deckkraft-Modifikator statisch nicht nachrechenbar (Spec 0321).
+        className={cn('flex items-center justify-center rounded-md bg-separator text-xs text-text', className)}
         role="img"
         aria-label={`${alt}: wird noch verarbeitet`}
       />

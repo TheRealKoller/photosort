@@ -19,7 +19,10 @@ export function StatusDot({ status }: { status: ProcessStatus | null | undefined
   return (
     <span
       aria-hidden="true"
-      className={`size-2.5 shrink-0 rounded-full ${status ? PROCESS_STATUS_DOT_CLASSES[status] : 'bg-border'}`}
+      // Rueckfallfarbe "kein Status" auf --separator statt --border (Spec 0321): der Punkt steht
+      // unmittelbar auf --bg/--surface und erreichte dort mit --border nur 1.45:1 - er war
+      // faktisch nicht vorhanden. Jetzt 2.38:1.
+      className={`size-2.5 shrink-0 rounded-full ${status ? PROCESS_STATUS_DOT_CLASSES[status] : 'bg-separator'}`}
     />
   )
 }

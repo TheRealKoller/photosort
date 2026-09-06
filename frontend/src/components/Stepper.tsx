@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import type { ProjectOut } from '../api/types'
 import { cn } from '../lib/utils'
 import { getBlockedReason, PIPELINE_STEPS, type PipelineStepState, type StepId } from '../utils/pipelineSteps'
+import { Button } from './ui/button'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from './ui/popover'
 
 interface StepperProps {
@@ -81,23 +82,23 @@ function BlockedReasonPopover({ stepLabel, reason }: { stepLabel: string; reason
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild onClick={handleTriggerClick}>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           aria-label={`Grund für Sperrung von ${stepLabel} anzeigen`}
           onPointerEnter={handlePointerEnter}
-          className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
+          className="shrink-0"
         >
           i
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent>
         <div className="flex items-center justify-between gap-3 pb-2">
           <p className="text-sm font-semibold text-text-h">{stepLabel}</p>
-          <PopoverClose
-            aria-label="Schließen"
-            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
-          >
-            <span aria-hidden="true">×</span>
+          <PopoverClose asChild>
+            <Button variant="ghost" size="icon" aria-label="Schließen" className="shrink-0">
+              <span aria-hidden="true">×</span>
+            </Button>
           </PopoverClose>
         </div>
         <p className="text-sm text-text">{reason}</p>

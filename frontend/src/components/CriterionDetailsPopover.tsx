@@ -10,6 +10,7 @@ import type {
 } from '../api/types'
 import { cn } from '../lib/utils'
 import type { CategorySet } from '../utils/categoryLabels'
+import { Button } from './ui/button'
 import { CriterionDetailsList } from './CriterionDetailsList'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from './ui/popover'
 
@@ -157,9 +158,10 @@ export function CriterionDetailsPopover({
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild onClick={handleTriggerClick}>
-        <button
+        <Button
           ref={triggerRef}
-          type="button"
+          variant="ghost"
+          size="icon"
           aria-label="Bewertungsdetails anzeigen"
           onPointerEnter={handlePointerEnter}
           onMouseLeave={handlePossibleHoverClose}
@@ -167,24 +169,20 @@ export function CriterionDetailsPopover({
             // Runder Backdrop ueber der Fotokachel - eine der wenigen verbleibenden Rundformen
             // (specs/features/0320-dark-utility-register.md): der Trigger liegt auf dem Bild, ein
             // Kreis grenzt sich dort von jeder rechteckigen Bildstruktur ab.
-            'tap-target-square flex size-8 shrink-0 items-center justify-center rounded-full ' +
-              'border border-border-control bg-bg/85 text-xs font-semibold text-text ' +
-              'backdrop-blur-sm transition-colors hover:bg-overlay hover:text-text-h ' +
-              'active:bg-border active:text-text',
+            'shrink-0 rounded-full border border-border-control bg-bg/85 backdrop-blur-sm',
             className
           )}
         >
           i
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent ref={contentRef} onMouseLeave={handlePossibleHoverClose}>
         <div className="flex items-center justify-between gap-3 pb-3">
           <p className="text-sm font-semibold text-text-h">Bewertungsdetails</p>
-          <PopoverClose
-            aria-label="Schließen"
-            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
-          >
-            <span aria-hidden="true">×</span>
+          <PopoverClose asChild>
+            <Button variant="ghost" size="icon" aria-label="Schließen" className="shrink-0">
+              <span aria-hidden="true">×</span>
+            </Button>
           </PopoverClose>
         </div>
         <CriterionDetailsList

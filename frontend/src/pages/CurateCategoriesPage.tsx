@@ -328,12 +328,19 @@ export function CurateCategoriesPage() {
               {/* Gesamte Kopfzeile als Trigger (Akzeptanzkriterium 1) - kein separates Icon als
                   alleiniger interaktiver Traeger, `w-full`+`text-left` macht die ganze Zeile
                   klickbar, `min-h-11` sichert ein Touch-Ziel von mindestens 44px. */}
-              <button
-                type="button"
+              {/* Spec 0321, Etappe 2: keine handgerollte Schaltflaeche mehr - Flaeche, Zustaende
+                  und Trefferflaeche kommen aus dem `Button`-Primitiv. Die ZEILENFORM bleibt und
+                  wird ausgeschrieben ueberschrieben: `min-h-11` als Zeilenhoehe einer zeilenweisen
+                  Liste (Trefferflaechen-Regel 3), `whitespace-normal` gegen das `whitespace-nowrap`
+                  des Primitivs (die Tagesueberschrift muss bei 360px umbrechen duerfen, sonst
+                  entsteht waagerechtes Scrollen) und die Schriftstufe der Ueberschrift statt der
+                  Board-Schaltflaechenschrift. */}
+              <Button
+                variant="ghost"
                 aria-expanded={!isCollapsed}
                 aria-controls={panelId}
                 onClick={() => toggleDay(dayKey)}
-                className="flex min-h-11 w-full items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-overlay active:bg-border"
+                className="h-auto min-h-11 w-full justify-start whitespace-normal px-2 py-1 text-left text-lg font-normal"
               >
                 <span aria-hidden="true">{isCollapsed ? '▶' : '▼'}</span>
                 <span>{formatDayHeading(dayKey)}</span>
@@ -350,7 +357,7 @@ export function CurateCategoriesPage() {
                     </span>
                   </>
                 )}
-              </button>
+              </Button>
             </h2>
             {!isCollapsed && (
               // Kompletter Cluster-Teilbaum wird bei Zugeklapptheit per conditional JSX gar nicht

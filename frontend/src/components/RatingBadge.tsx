@@ -88,6 +88,12 @@ export function RatingBadge({ status, suggested = false, className }: RatingBadg
     >
       {suggested && <Icon name={SUGGESTION_PREFIX} size={14} />}
       <Icon name={SYMBOLS[status]} size={14} />
+      {/* Sichtbares Produktwort neben dem Symbol (Spec 0321, Board-Kennzeichen). Es ist die
+          Haelfte der Graustufen-Zusage: Favorit und Album-wuerdig liegen achromatisch bei 1.08:1
+          zueinander, ihre Unterscheidung traegt ausschliesslich ueber Wort und Symbolsilhouette.
+          Der "Vorschlag:"-Praefix bleibt dem zugaenglichen Namen vorbehalten - sichtbar
+          unterscheidet ihn der Zahnrad-Praefix und die Vorschlags-Konstruktion. */}
+      {RATING_STATUS_LABELS[status]}
     </Badge>
   )
 }

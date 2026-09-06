@@ -8,6 +8,7 @@ import type {
   ProjectStatsOut,
 } from '../api/types'
 import { Alert } from '../components/ui/alert'
+import { Button } from '../components/ui/button'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../components/ui/popover'
 import { useProjectStatsQuery } from '../hooks/useProjects'
 import {
@@ -107,22 +108,22 @@ function InfoPopover({ label, children }: { label: string; children: ReactNode }
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           aria-label={`Erkläre ${label}`}
-          className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md border border-border-control text-xs font-semibold text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
+          className="shrink-0 border border-border-control"
         >
           i
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent>
         <div className="flex items-center justify-between gap-3 pb-3">
           <p className="text-sm font-semibold text-text-h">{label}</p>
-          <PopoverClose
-            aria-label="Schließen"
-            className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
-          >
-            <span aria-hidden="true">×</span>
+          <PopoverClose asChild>
+            <Button variant="ghost" size="icon" aria-label="Schließen" className="shrink-0">
+              <span aria-hidden="true">×</span>
+            </Button>
           </PopoverClose>
         </div>
         <p className="text-sm text-text">{children}</p>

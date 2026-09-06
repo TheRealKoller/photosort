@@ -89,6 +89,40 @@ describe('RatingBadge', () => {
     expect(icons).toEqual(['cog', 'star'])
   })
 
+  /*
+   * Spec 0321, Etappe 2: Das Kennzeichen traegt jetzt zusaetzlich zum Symbol sein PRODUKTWORT
+   * sichtbar - das ist die Haelfte der Graustufen-Zusage, die nicht ueber die Farbflaeche traegt
+   * (Favorit und Album-wuerdig liegen achromatisch bei 1.08:1 zueinander).
+   */
+  it.each([
+    ['favorite', 'Favorit'],
+    ['album_worthy', 'Album-würdig'],
+    ['rejected', 'Verworfen'],
+  ] as const)('shows the product word of %s visibly', (status, word) => {
+    const { container } = render(<RatingBadge status={status} />)
+
+    expect(container.querySelector('[data-rating-status]')).toHaveTextContent(word)
+  })
+
+  it('keeps the accessible name unchanged even though the word is now visible', () => {
+    // Der sichtbare Text darf den zugaenglichen Namen nicht verdoppeln oder verschieben - die
+    // e2e-Selektoren und tap-targets.spec.ts haengen wortgleich daran.
+    render(<RatingBadge status="album_worthy" />)
+
+    expect(screen.getByLabelText('Album-würdig')).toHaveAccessibleName('Album-würdig')
+  })
+
+  it('shows the product word for a suggestion too, without the "Vorschlag:" prefix in the text', () => {
+    // Das Praefix bleibt dem zugaenglichen Namen vorbehalten; sichtbar unterscheidet der
+    // Zahnrad-Praefix plus die Vorschlags-Konstruktion (getoente Flaeche, farbiger Rand).
+    const { container } = render(<RatingBadge status="favorite" suggested />)
+
+    const badge = container.querySelector('[data-rating-status]')!
+    expect(badge).toHaveTextContent('Favorit')
+    expect(badge.textContent).not.toContain('Vorschlag')
+    expect(badge).toHaveAccessibleName('Vorschlag: Favorit')
+  })
+
   it('keeps the unrated "–" badge including its accessible label', () => {
     // Darf beim Umkleiden nicht als Aufraeumarbeit verschwinden: sonst waere "nicht bewertet"
     // von "Badge noch nicht geladen" nicht unterscheidbar.

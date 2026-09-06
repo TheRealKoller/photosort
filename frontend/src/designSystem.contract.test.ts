@@ -237,6 +237,21 @@ const stateSurfaceRows: ContrastRow[] = [
   { foreground: '--text-h', background: '--border', threshold: TEXT_THRESHOLD },
 ]
 
+/**
+ * `--separator` ist die LINIE AUF DEM GRUND (Spec 0321): sichtbare Trennlinie oder dekorative
+ * Flaeche unmittelbar auf `--bg`/`--surface`. `--border` (1.04-1.45:1) verschwindet dort
+ * praktisch. Zugesichert wird der Korridor gegen die beiden Flaechen, auf denen das Token
+ * ueberhaupt gilt; auf `--elevated`/`--overlay` gilt es nicht, die Werte dort sind nachrichtlich
+ * und tragen keine Schwelle.
+ */
+const SEPARATOR_MIN = 2.0
+const SEPARATOR_MAX = 2.5
+
+const separatorRows: ContrastRow[] = [
+  { foreground: '--separator', background: '--bg', threshold: SEPARATOR_MIN },
+  { foreground: '--separator', background: '--surface', threshold: SEPARATOR_MIN },
+]
+
 const inkRows: ContrastRow[] = [
   { foreground: '--accent-fg', background: '--accent', threshold: TEXT_THRESHOLD },
   { foreground: '--status-success-fg', background: '--status-success', threshold: TEXT_THRESHOLD },
@@ -265,6 +280,7 @@ const contrastRows: ContrastRow[] = [
   ...graphicRows('--status-success'),
   ...graphicRows('--status-failed'),
   ...inkRows,
+  ...separatorRows,
   ...stateSurfaceRows,
   ...ratingRows,
   ...statusPillRows,
@@ -289,6 +305,7 @@ const FOREGROUND_PATTERNS: RegExp[] = [
   /^--info$/,
   /^--danger(-text)?$/,
   /^--border(-control)?$/,
+  /^--separator$/,
   /^--rating-[a-z-]+$/,
   /^--status-(running|success|failed)$/,
   /^--status-.+-(strong|fg)$/,
@@ -340,6 +357,22 @@ describe('Design-Vertrag: Kontrastmatrix', () => {
       ratio,
       `${foreground} (${hexOf(foreground)}) auf ${background} (${hexOf(background)}) = ${ratio.toFixed(2)}:1`
     ).toBeGreaterThanOrEqual(threshold)
+  })
+
+  it('haelt --separator im Zielkorridor und ueber --border, auf allen vier Flaechen', () => {
+    // Die Untergrenze steht bereits als Matrixzeile. Hier zusaetzlich die OBERgrenze (darueber
+    // waere es keine dekorative Linie mehr, sondern ein zweiter Grauton), und die eigentliche
+    // Aussage der Umstellung: --separator ist auf JEDER Flaeche sichtbarer als --border. Ohne
+    // diesen Vergleich bliebe ein Wertewechsel, der die Linie wieder verschwinden laesst,
+    // unbemerkt, solange er nur ueber 2.0 landet.
+    for (const surface of ['--bg', '--surface'] as const) {
+      expect(contrastRatio(hexOf('--separator'), hexOf(surface))).toBeLessThanOrEqual(SEPARATOR_MAX)
+    }
+    for (const surface of SURFACES) {
+      const separator = contrastRatio(hexOf('--separator'), hexOf(surface))
+      const border = contrastRatio(hexOf('--border'), hexOf(surface))
+      expect(separator, `${surface}: separator ${separator.toFixed(2)} vs border ${border.toFixed(2)}`).toBeGreaterThan(border)
+    }
   })
 
   it('deckt jedes deklarierte Vordergrund-Token mit mindestens einer Matrixzeile ab', () => {
@@ -979,7 +1012,7 @@ describe('Design-Vertrag: Formsprache und Skalen', () => {
     },
     {
       file: 'src/components/CriterionDetailsPopover.tsx',
-      snippet: 'items-center justify-center rounded-full',
+      snippet: 'rounded-full border border-border-control bg-bg/85',
       reason: 'runder Backdrop des Popover-Triggers ueber der Fotokachel',
     },
     {
@@ -1017,6 +1050,51 @@ describe('Design-Vertrag: Formsprache und Skalen', () => {
       return source.includes('grid-cols-12') && /gap(-x)?-3\b/.test(source)
     })
     expect(users.length).toBeGreaterThan(0)
+  })
+})
+
+describe('Design-Vertrag: unbestimmter Fortschritt', () => {
+  /*
+   * Spec 0321, UI/UX-Abschnitt 6: Der unbestimmte Balken folgt dem Board statt der
+   * Browser-Voreinstellung - volle Flaeche in `--accent` mit dem bereits etablierten Puls, statt
+   * eines wandernden Segments (das waere eine Positionsbewegung und ist im Design-System
+   * verboten).
+   *
+   * Bewusst KEINE Zeichenkettensuche "behandelt die Datei den Zustand?" - das waere eine Zusage
+   * ueber die Schreibweise. Genutzt wird der staerkste Mechanismus dieses Vertragstests: der
+   * tatsaechliche Tailwind-Lauf. Eine unbekannte Variante ist in Tailwind KEIN Buildfehler und
+   * bliebe sonst still wirkungslos.
+   */
+  it('erzeugt fuer die Zustandsbehandlung des Balkens tatsaechlich Regeln', async () => {
+    // `build()` arbeitet inkrementell: einmal aufgenommene Kandidaten bleiben in der Ausgabe.
+    // Jeder Kandidat bekommt deshalb einen EIGENEN Lauf, sonst faerbte der erste Treffer alle
+    // folgenden gruen.
+    async function producesRule(utility: string): Promise<boolean> {
+      const compiled = await compile(indexCss, { base: SRC_DIR, onDependency: () => {} })
+      const baseline = compiled.build([])
+      return compiled.build([utility]) !== baseline
+    }
+
+    for (const utility of [
+      'indeterminate:bg-accent',
+      'indeterminate:animate-pulse',
+      'motion-reduce:animate-none',
+      'bg-separator',
+    ]) {
+      expect(await producesRule(utility), utility).toBe(true)
+    }
+    // Gegenprobe: eine erfundene Variante erzeugt keine Regel - sonst bestuende der Test auch
+    // dann, wenn `build()` alles durchwinkte. Genau das ist der Fehlermodus, gegen den diese
+    // Pruefung ueberhaupt steht: ein Tippfehler in einer Variante ist in Tailwind kein Buildfehler.
+    expect(await producesRule('inderterminate:bg-accent')).toBe(false)
+  }, 60_000)
+
+  it('legt die Spur des Balkens nicht mehr auf das unsichtbare --border', () => {
+    const progress = sourceFiles.filter((file) => file.label === 'src/components/ui/progress.tsx')
+    expect(progress).toHaveLength(1)
+    expect(findMatches('bg-border', progress)).toEqual([])
+    // Positiv-Gegenprobe: die Datei faerbt die Spur ueberhaupt ein.
+    expect(findMatches('bg-separator', progress).length).toBeGreaterThan(0)
   })
 })
 
