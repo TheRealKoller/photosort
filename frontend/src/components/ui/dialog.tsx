@@ -193,7 +193,7 @@ export function Dialog({
         'backdrop:bg-black/60'
       )}
     >
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-6">
         <div className="flex items-center gap-3">
           {icon !== undefined && <Icon name={icon} size={24} className="shrink-0 text-accent" />}
           <h2 id={titleId} className="text-lg font-bold text-text-h">

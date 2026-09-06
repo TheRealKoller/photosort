@@ -23,7 +23,7 @@ export function BrandMark({ className }: BrandMarkProps) {
     <span
       aria-hidden="true"
       className={cn(
-        'flex size-14 items-center justify-center rounded-md bg-accent text-accent-fg',
+        'flex size-16 items-center justify-center rounded-md bg-accent text-accent-fg',
         className
       )}
     >

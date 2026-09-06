@@ -124,16 +124,22 @@ function AppShell() {
           kuenftige Seite einen abweichenden Hintergrund einfuehrt. CSS-Sticky-Verhalten ist in
           jsdom nicht automatisiert pruefbar - manueller Smoke-Test vor Merge (Scrollen durch eine
           Fotoliste, kein Layout-Overlap, Light/Dark). */}
-      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-border bg-bg px-4 py-3 sm:px-6">
+      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-separator bg-bg px-4 py-3 sm:px-6">
         {/* Requirements-Review-Fund (Branch feature/0012-visual-redesign-views): als einziges
             interaktives Element im Header nicht ueber die Button-Komponente verdrahtet, dadurch
             unter dem 44x44px-Touch-Ziel (AK "tatsaechlich messbar") - jetzt per Button asChild
             konsistent zu "Abmelden" gehalten, mit ueberschriebener Groesse/Optik fuers Wortmarke. */}
-        <div className="flex items-center gap-1">
+        {/* gap-2 statt gap-1: 8px ist der Mindestabstand zwischen zwei fokussierbaren
+            Elementen - die aufgespannten Trefferflaechen der beiden Links duerfen sich nicht
+            ueberlappen, in einer Ueberlappung gewinnt das obenliegende Element. */}
+        <div className="flex items-center gap-2">
           <Button
             asChild
             variant="ghost"
-            className="h-11 justify-start px-2 text-lg font-semibold text-text-h hover:bg-transparent"
+            // Kein `h-11` mehr: die Wortmarke ist weder heisser Pfad noch Zeile einer
+            // zeilenweisen Liste. Sichtbar gilt das Board-Mass 32px, die 44px kommen aus der
+            // Aufspannung, die das Button-Primitiv ohnehin mitbringt (Spec 0321).
+            className="justify-start px-2 text-lg font-semibold text-text-h hover:bg-transparent"
           >
             <Link to="/">PhotoSort</Link>
           </Button>
@@ -147,7 +153,7 @@ function AppShell() {
             <Button
               asChild
               variant="ghost"
-              className="h-11 px-2 text-text-h hover:bg-transparent"
+              className="px-2 text-text-h hover:bg-transparent"
             >
               <Link to={`/projects/${projectId}`}>
                 <span aria-hidden="true">‹</span> Projekt

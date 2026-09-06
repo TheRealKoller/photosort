@@ -1456,6 +1456,11 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       snippet: 'h-auto min-h-11 w-full justify-start',
       reason: 'Aufklapp-Zeile der Kuratierung: Zeilenhoehe einer zeilenweisen Liste',
     },
+    {
+      file: 'src/pages/LoginPage.tsx',
+      snippet: "className=\"mt-2 h-11 w-full text-base\"",
+      reason: 'Absende-Schaltflaeche der Anmeldung: einzige Aktion des Bildschirms, einhaendig bedient',
+    },
   ]
 
   it('verwendet die sichtbaren 44px nur an den drei begruendeten Kategorien', () => {
