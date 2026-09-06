@@ -96,8 +96,16 @@ Prüfgegenstände sind dieselben.
 
 - [ ] Jede Katalog-Operation nennt ihre Wege als **geordnete** Liste aus dem geschlossenen
       Vokabular `{mcp, gh}`. Wo beide vorkommen, steht `mcp` vor `gh`. Die vier
-      Board-Operationen nennen genau `gh`. `pr-reviewkommentar-beantworten` trägt die wörtliche
-      Markierung „`mcp` unbelegt".
+      Board-Operationen nennen genau `gh`. **(nachgezogen 2026-09-06)** Jede Operation, deren
+      Wege `mcp` **nicht** enthalten, trägt dafür eine Begründung in einer eigenen Zeile
+      `**Kein `mcp`-Weg:**`; jede Operation **mit** `mcp` trägt diese Zeile **nicht**.
+      *Warum umformuliert:* Das Kriterium nannte ursprünglich `pr-reviewkommentar-beantworten`
+      als Trägerin der Markierung „`mcp` unbelegt". Am 2026-09-06 ist für genau diese
+      Operation ein Werkzeug belegt worden, und der Weg ist eingetragen — die Aussage stimmt
+      seither nicht mehr. Die Zusicherung ist deshalb an die **Eigenschaft** gebunden statt an
+      eine namentlich genannte Operation, und sie ist eine **Form** (eine feste Zeile) statt
+      einer Textsuche: Eine Suche über den Eintragsblock kann „gilt" nicht von „galt einmal"
+      unterscheiden und bleibt grün, wenn ein erklärender Rückblick dieselben Worte führt.
 - [ ] **(neu)** Der Katalog enthält mindestens einen literalen `mcp__github__…`-Hinweis.
       *Warum als Akzeptanzkriterium:* Ohne ein einziges Vorkommen im Repository ist das
       `mcp__github__`-Muster nie ausgeübt; ein Tippfehler darin (`mcp_github_`) bliebe dauerhaft
@@ -273,8 +281,16 @@ Jeder Schritt ein eigener Commit, Test zuerst:
 Er hat als Subagent die `mcp__github__*`-Werkzeuge nicht und kann keinen Werkzeugnamen
 verifizieren. Deshalb ist der `mcp`-Weg **auf Operationsebene** normiert; exakte Werkzeugnamen
 stehen nur als „am 2026-09-06 beobachtet"-Hinweis daneben.
-`pr-reviewkommentar-beantworten` ist ausdrücklich als „`mcp` unbelegt" zu führen und **nicht** mit
-einem geratenen Namen aufzufüllen.
+Ein Weg, dessen Existenz nicht belegt ist, wird ausdrücklich als solcher geführt und **nicht**
+mit einem geratenen Namen aufgefüllt — bei der Umsetzung betraf das
+`pr-reviewkommentar-beantworten`.
+
+**Nachtrag 2026-09-06 — der Mechanismus hat getragen:** In der PR-Phase dieser Story scheiterte
+der `gh`-Weg dieser Operation mit `HTTP 403`; in derselben Session lag ein passendes
+MCP-Werkzeug vor und hat die Antwort geschrieben. Der Weg ist damit **belegt** und im Katalog
+eingetragen, mit dem beobachteten Namen als datiertem Hinweis. Genau dafür war die Markierung
+gedacht: Ein ausgewiesen fehlender Weg scheitert an der richtigen Stelle und sagt dem nächsten
+Leser, was zu tun ist — ein geratener Name wäre leise gescheitert.
 
 ## Teststrategie
 

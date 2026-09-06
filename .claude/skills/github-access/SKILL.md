@@ -129,9 +129,16 @@ Wo unten ein Werkzeugname steht, ist er ein **Hinweis mit Datum**, keine Vorschr
 dieses Katalogs nicht beobachtbar (geschrieben von einem Subagenten, der die GitHub-Werkzeuge
 nicht hat), und er wird **nicht** geraten — ein erfundener Name scheiterte leise und an der
 falschen Stelle. Wer die Operation das nächste Mal in einer Session mit MCP-Werkzeugen ausführt,
-trägt den beobachteten Namen hier nach. Davon scharf zu unterscheiden ist die Markierung
-„`mcp` unbelegt" bei `pr-reviewkommentar-beantworten`: Dort ist nicht der *Name* offen, sondern
-es ist unbelegt, dass das Werkzeug überhaupt existiert — deshalb ist `mcp` dort gar kein Weg.
+trägt den beobachteten Namen hier nach.
+
+**Davon scharf zu unterscheiden: ein Weg, dessen *Existenz* unbelegt ist.** Dort ist nicht der
+Name offen — es ist offen, ob es das Werkzeug überhaupt gibt. Ein solcher Weg wird **nicht**
+geführt, und der Eintrag sagt in einer eigenen Zeile `**Kein `mcp`-Weg:**`, warum. Diese Zeile ist
+die verbindliche Form: Sie steht genau dann da, wenn `mcp` **nicht** unter den Wegen ist, und
+verschwindet, sobald der Weg belegt ist. Erklärender Rückblick im Fließtext („war bis … als
+unbelegt geführt") ist davon unberührt — nur die Zeile trägt die Zusage. Der Grund für diese
+Trennung ist teuer bezahlt: Eine Prüfung, die eine Markierung im Fließtext *sucht*, kann „gilt"
+nicht von „galt einmal" unterscheiden und bleibt grün, wenn ein Weg belegt wird.
 
 ### `issue-anlegen` — ein Story-Issue anlegen
 
@@ -347,14 +354,12 @@ kein Ablauf aufrufen.
 
 ### `pr-reviewkommentar-beantworten` — in einem bestehenden Inline-Thread antworten
 
-**Wege:** `gh`
+**Wege:** `mcp`, `gh`
 **Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
-**`mcp` unbelegt:** Es ist nicht belegt, dass ein MCP-Werkzeug diese Operation ausführt — das
-Antworten in einem bestehenden Inline-Thread ist etwas anderes als das Erstellen eines Reviews.
-Der Weg wird deshalb **nicht** geführt und **nicht** mit einem erfundenen Werkzeugnamen
-aufgefüllt. Wer die Operation das nächste Mal in einer Session mit MCP-Werkzeugen ausführt und
-dabei ein passendes findet, ergänzt den Weg hier. Ein unbelegter Weg im Katalog wäre schlimmer
-als ein fehlender: Er scheiterte still und verschöbe die Diagnose.
+**`mcp`:** das GitHub-MCP-Werkzeug, das in einem bestehenden Inline-Thread antwortet (am
+2026-09-06 in der Hauptsession beobachteter Name:
+`mcp__github__add_reply_to_pull_request_comment` — Hinweis, keine Vorschrift). Kommentar-ID und
+Text gehen als eigene, typisierte Parameter.
 **`gh`:**
 
 ```bash
@@ -365,10 +370,22 @@ Die Kommentar-ID stammt aus `pr-reviewkommentare-lesen` und wird gegen `^[0-9]+$
 Antworttext wird zuvor mit dem Schreib-Werkzeug in eine Datei geschrieben und als solche
 übergeben — nie als Zeichenkette in der Kommandozeile.
 
+**Wie der `mcp`-Weg hierher kam — der Mechanismus, nicht eine Korrektur.** Diese Operation war
+bis zum 2026-09-06 als einzige ohne `mcp`-Weg geführt: Es war nicht belegt, dass ein Werkzeug sie
+ausführt, und der Katalog hat das ausgewiesen, statt einen Namen zu raten. Am 2026-09-06 scheiterte
+der `gh`-Weg in einer Cloud-Session mit `HTTP 403`; in derselben Session lag ein passendes Werkzeug
+vor und hat die Antwort geschrieben. Damit war der Weg **belegt** — und genau so war es
+vorgesehen: Ein ausgewiesen fehlender Weg scheitert an der richtigen Stelle und sagt dem nächsten
+Leser, was zu tun ist, während ein geratener Name leise gescheitert wäre und die Diagnose
+verschoben hätte.
+
 ### `board-aufnahme` — ein Issue ins Projekt aufnehmen
 
 **Wege:** `gh`
 **Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
+**Kein `mcp`-Weg:** Die MCP-Werkzeuge bieten für Projects (V2) keine Operation an —
+gemessen, nicht vermutet: Projects V2 spricht ausschließlich GraphQL, und im
+Werkzeugkasten liegt nichts, was diese Operation ausführen könnte.
 **Diese Operation ist remote auf keinem Weg erreichbar** — Eigenschaft der Umgebung, keine offene
 Aufgabe: Projects (V2) spricht ausschließlich GraphQL, die Zwischenschicht einer Cloud-Session
 bedient GraphQL nur für einen fest verdrahteten Satz von PR-Operationen, eine REST-Entsprechung
@@ -392,6 +409,9 @@ Nachhol-Zeile für `## Lokal nachzuholen`:
 
 **Wege:** `gh`
 **Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
+**Kein `mcp`-Weg:** Die MCP-Werkzeuge bieten für Projects (V2) keine Operation an —
+gemessen, nicht vermutet: Projects V2 spricht ausschließlich GraphQL, und im
+Werkzeugkasten liegt nichts, was diese Operation ausführen könnte.
 **Diese Operation ist remote auf keinem Weg erreichbar** — dieselbe Ursache wie bei
 `board-aufnahme`, dieselbe Einordnung: Eigenschaft der Umgebung, keine offene Aufgabe.
 **`gh`:**
@@ -414,6 +434,9 @@ Nachhol-Zeile für `## Lokal nachzuholen`:
 
 **Wege:** `gh`
 **Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
+**Kein `mcp`-Weg:** Die MCP-Werkzeuge bieten für Projects (V2) keine Operation an —
+gemessen, nicht vermutet: Projects V2 spricht ausschließlich GraphQL, und im
+Werkzeugkasten liegt nichts, was diese Operation ausführen könnte.
 **Diese Operation ist remote auf keinem Weg erreichbar** — dieselbe Ursache wie bei
 `board-aufnahme`.
 **`gh`:**
@@ -438,6 +461,9 @@ Nachhol-Zeile für `## Lokal nachzuholen`:
 **Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
 **Auswertungsgrenze:** je Projekt-Item `project.number`, das Feld `Status` und das Feld
 `Priorität` — und nichts sonst.
+**Kein `mcp`-Weg:** Die MCP-Werkzeuge bieten für Projects (V2) keine Operation an —
+gemessen, nicht vermutet: Projects V2 spricht ausschließlich GraphQL, und im
+Werkzeugkasten liegt nichts, was diese Operation ausführen könnte.
 **Diese Operation ist remote auf keinem Weg erreichbar** — dieselbe Ursache wie bei
 `board-aufnahme`.
 **`gh`:**

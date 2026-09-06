@@ -135,11 +135,24 @@ LESENDE_OPERATIONEN = frozenset(
     }
 )
 
-# Die eine Operation, fuer die kein MCP-Werkzeug belegt ist. Sie wird ausdruecklich als unbelegt
-# gefuehrt statt mit einem geratenen Namen aufgefuellt: Ein unbelegter Weg im Katalog scheiterte
-# still und verschoebe die Diagnose.
-UNBELEGT = "pr-reviewkommentar-beantworten"
-UNBELEGT_MARKIERUNG = "`mcp` unbelegt"
+# Warum eine Operation **keinen** `mcp`-Weg hat, steht als eigene, feste Zeile im Eintrag - nicht
+# als Formulierung irgendwo im Block. Der Unterschied ist am 2026-09-06 teuer bezahlt worden:
+#
+# Die Vorgaengerfassung suchte die Zeichenkette "`mcp` unbelegt" ueber den **ganzen Block** von
+# `pr-reviewkommentar-beantworten`. Als fuer diese Operation ein MCP-Werkzeug gefunden und der
+# Weg eingetragen wurde, blieb der Waechter **gruen** - weil der erklaerende Vermerk daneben
+# ("war als '`mcp` unbelegt' gefuehrt") dieselbe Zeichenkette enthielt. Gruen aus dem falschen
+# Grund, genau die Fehlerklasse, gegen die diese Datei gebaut ist.
+#
+# **Regel, allgemein:** Ein Waechter, der eine Markierung ueber einen ganzen Textblock sucht, kann
+# "gilt" nicht von "galt einmal" unterscheiden. Sobald ein Text ueber seinen eigenen frueheren
+# Zustand reden darf - und das darf er, das ist gute Dokumentation -, braucht die Pruefung eine
+# **Form**, keine Suche. Deshalb: eine eigene Zeile, an fester Stelle, mit eigenem Marker.
+KEIN_MCP_MARKER = "**Kein `mcp`-Weg:**"
+
+# Eine Begruendung, die kuerzer ist als das, taugt keine. Schwache Schranke, ausdruecklich als
+# solche gefuehrt: Sie faengt den Platzhalter, nicht die schlechte Begruendung.
+MINDESTLAENGE_BEGRUENDUNG = 20
 
 WEGE_VOKABULAR = ("mcp", "gh")
 
@@ -160,6 +173,7 @@ _EINTRAG_KOPF = re.compile(r"^### `(?P<id>[^`\n]+)`", re.MULTILINE)
 # bestuende jede Block-Zusicherung (Ziel-Literal, Auswertungsgrenze, Nachhol-Zeile) zufaellig.
 _ABSCHNITT = re.compile(r"^## ", re.MULTILINE)
 _WEGE_ZEILE = re.compile(r"^\*\*Wege:\*\*(?P<rest>[^\n]*)$", re.MULTILINE)
+_KEIN_MCP_ZEILE = re.compile(r"^\*\*Kein `mcp`-Weg:\*\*(?P<grund>[^\n]*)$", re.MULTILINE)
 _WEG_TOKEN = re.compile(r"`([a-z]+)`")
 _KEBAB = re.compile(r"^[a-z]+(?:-[a-z]+)+$")
 
@@ -345,10 +359,11 @@ def messbegriffe_im_abbild(abbild: Mapping[str, str]) -> list[str]:
 
 @dataclass(frozen=True)
 class Katalogeintrag:
-    """Eine Operation des Katalogs: ihre ID, ihre geordneten Wege und ihr Textblock."""
+    """Eine Operation des Katalogs: ID, geordnete Wege, Begruendungszeilen und Textblock."""
 
     id: str
     wege: tuple[str, ...]
+    kein_mcp_gruende: tuple[str, ...]
     block: str
 
 
@@ -380,7 +395,12 @@ def katalog_aus_text(text: str) -> list[Katalogeintrag]:
         wege = (
             tuple(_WEG_TOKEN.findall(wege_zeile.group("rest"))) if wege_zeile else ()
         )
-        eintraege.append(Katalogeintrag(id=kopf.group("id"), wege=wege, block=block))
+        gruende = tuple(
+            treffer.group("grund").strip() for treffer in _KEIN_MCP_ZEILE.finditer(block)
+        )
+        eintraege.append(
+            Katalogeintrag(id=kopf.group("id"), wege=wege, kein_mcp_gruende=gruende, block=block)
+        )
     return eintraege
 
 
@@ -419,12 +439,7 @@ def form_verstoesse(eintraege: list[Katalogeintrag]) -> list[str]:
                 f"{eintrag.id}: fuehrt die woertliche Kennzeichnung {REMOTE_MARKIERUNG!r} "
                 "nicht. Ohne sie erscheint eine Eigenschaft der Umgebung als offene Aufgabe."
             )
-        if eintrag.id == UNBELEGT and UNBELEGT_MARKIERUNG not in eintrag.block:
-            befunde.append(
-                f"{eintrag.id}: fuehrt die woertliche Markierung {UNBELEGT_MARKIERUNG!r} nicht. "
-                "Ein unbelegter Weg wird ausgewiesen, nie mit einem geratenen Werkzeugnamen "
-                "aufgefuellt."
-            )
+        befunde.extend(_mcp_begruendungs_verstoesse(eintrag))
         if ZIEL_LITERAL not in eintrag.block:
             befunde.append(
                 f"{eintrag.id}: nennt {ZIEL_LITERAL} nicht. Auf dem `mcp`-Weg sind owner/repo "
@@ -435,6 +450,46 @@ def form_verstoesse(eintraege: list[Katalogeintrag]) -> list[str]:
             befunde.append(
                 f"{eintrag.id}: nennt keine {AUSWERTUNGSGRENZE} Jede lesende Operation nennt "
                 "ihre Feldmenge als Obergrenze der Auswertung."
+            )
+    return befunde
+
+
+def _mcp_begruendungs_verstoesse(eintrag: Katalogeintrag) -> list[str]:
+    """Reine Funktion: die Begruendungszeile ist genau dann da, wenn `mcp` **kein** Weg ist.
+
+    Beide Richtungen sind Fehlerfaelle, und beide sind schon vorgekommen:
+
+    * Fehlt die Zeile bei einer Operation ohne `mcp`-Weg, steht im Katalog ein einwegiger
+      Eintrag ohne Auskunft darueber, ob der zweite Weg geprueft und verworfen oder schlicht
+      vergessen wurde. Ein unbelegter Weg wird ausgewiesen, nie mit einem geratenen
+      Werkzeugnamen aufgefuellt - aber eben auch nie stillschweigend weggelassen.
+    * Steht die Zeile bei einer Operation **mit** `mcp`-Weg, widerspricht sich der Eintrag
+      selbst. Genau das waere am 2026-09-06 aufgefallen, haette der Waechter damals eine Form
+      geprueft statt eine Zeichenkette zu suchen.
+    """
+    befunde: list[str] = []
+    hat_mcp = "mcp" in eintrag.wege
+    gruende = eintrag.kein_mcp_gruende
+
+    if hat_mcp and gruende:
+        befunde.append(
+            f"{eintrag.id}: fuehrt `mcp` als Weg **und** eine {KEIN_MCP_MARKER}-Zeile. Der "
+            "Eintrag widerspricht sich; die Begruendung gehoert entfernt, sobald der Weg belegt "
+            "ist. Ein erklaerender Rueckblick im Fliesstext ist davon unberuehrt - nur diese "
+            "Zeile ist die Zusicherung."
+        )
+    if not hat_mcp and len(gruende) != 1:
+        befunde.append(
+            f"{eintrag.id}: hat keinen `mcp`-Weg, fuehrt aber {len(gruende)} "
+            f"{KEIN_MCP_MARKER}-Zeilen statt genau einer. Warum es den Weg nicht gibt, ist eine "
+            "Auskunft, die der Katalog schuldet - sonst ist 'geprueft und verworfen' von "
+            "'vergessen' nicht zu unterscheiden."
+        )
+    for grund in gruende:
+        if len(grund) < MINDESTLAENGE_BEGRUENDUNG:
+            befunde.append(
+                f"{eintrag.id}: die {KEIN_MCP_MARKER}-Zeile traegt keine Begruendung "
+                f"({grund!r}). Erwartet werden mindestens {MINDESTLAENGE_BEGRUENDUNG} Zeichen."
             )
     return befunde
 
@@ -894,9 +949,9 @@ def test_eine_board_operation_mit_zweitem_weg_wird_gemeldet() -> None:
 
 
 def test_eine_board_operation_ohne_remote_kennzeichnung_wird_gemeldet() -> None:
-    befunde = form_verstoesse(
-        katalog_aus_text(_BLOCK.format(id="board-status-setzen", wege="`gh`"))
-    )
+    text = _BLOCK.format(id="board-status-setzen", wege="`gh`") + f"{KEIN_MCP_MARKER} {_GRUND}\n"
+
+    befunde = form_verstoesse(katalog_aus_text(text))
 
     assert len(befunde) == 1
     assert REMOTE_MARKIERUNG in befunde[0]
@@ -920,11 +975,63 @@ def test_eine_lesende_operation_ohne_auswertungsgrenze_wird_gemeldet() -> None:
     assert AUSWERTUNGSGRENZE in befunde[0]
 
 
-def test_die_unbelegte_operation_ohne_markierung_wird_gemeldet() -> None:
-    befunde = form_verstoesse(katalog_aus_text(_BLOCK.format(id=UNBELEGT, wege="`gh`")))
+_GRUND = "Ein solches Werkzeug ist fuer diese Operation nicht belegt."
+
+
+def test_eine_operation_ohne_mcp_weg_ohne_begruendung_wird_gemeldet() -> None:
+    """Erste Richtung: einwegig, aber ohne Auskunft warum."""
+    befunde = form_verstoesse(
+        katalog_aus_text(_BLOCK.format(id="pr-reviewkommentar-beantworten", wege="`gh`"))
+    )
 
     assert len(befunde) == 1
-    assert UNBELEGT_MARKIERUNG in befunde[0]
+    assert KEIN_MCP_MARKER in befunde[0]
+
+
+def test_eine_operation_mit_mcp_weg_und_begruendung_wird_gemeldet() -> None:
+    """Zweite Richtung - die, die der Vorgaengerfassung gefehlt hat.
+
+    Sie blieb gruen, als ein Weg belegt wurde, weil ein erklaerender Rueckblick daneben dieselbe
+    Zeichenkette enthielt wie die Markierung.
+    """
+    text = (
+        _BLOCK.format(id="pr-reviewkommentar-beantworten", wege="`mcp`, `gh`")
+        + f"{KEIN_MCP_MARKER} {_GRUND}\n"
+    )
+
+    befunde = form_verstoesse(katalog_aus_text(text))
+
+    assert len(befunde) == 1
+    assert "widerspricht sich" in befunde[0]
+
+
+def test_ein_rueckblick_im_fliesstext_gilt_nicht_als_markierung() -> None:
+    """Der eigentliche Fehler von 2026-09-06: Eine Suche kann 'gilt' nicht von 'galt' trennen."""
+    text = (
+        _BLOCK.format(id="pr-reviewkommentar-beantworten", wege="`mcp`, `gh`")
+        + "Diese Operation war bis 2026-09-06 als `mcp` unbelegt gefuehrt; der Weg ist seither\n"
+        + "belegt und eingetragen.\n"
+    )
+
+    assert form_verstoesse(katalog_aus_text(text)) == []
+
+
+def test_eine_operation_ohne_mcp_weg_mit_begruendung_gilt_nicht_als_verstoss() -> None:
+    text = (
+        _BLOCK.format(id="pr-reviewkommentar-beantworten", wege="`gh`")
+        + f"{KEIN_MCP_MARKER} {_GRUND}\n"
+    )
+
+    assert form_verstoesse(katalog_aus_text(text)) == []
+
+
+def test_eine_leere_begruendung_wird_gemeldet() -> None:
+    text = _BLOCK.format(id="pr-reviewkommentar-beantworten", wege="`gh`") + f"{KEIN_MCP_MARKER}\n"
+
+    befunde = form_verstoesse(katalog_aus_text(text))
+
+    assert len(befunde) == 1
+    assert "keine Begruendung" in befunde[0]
 
 
 @pytest.mark.parametrize(
@@ -997,6 +1104,7 @@ def test_ein_eintragsblock_endet_am_naechsten_abschnitt() -> None:
     """Sonst zoege der letzte Eintrag den Resttext der Datei in seinen Block."""
     text = (
         _BLOCK.format(id="board-status-setzen", wege="`gh`")
+        + f"{KEIN_MCP_MARKER} {_GRUND}\n"
         + f"{REMOTE_MARKIERUNG}\n\n## Die vier Haertungsregeln\n\n"
         + AUSWERTUNGSGRENZE
         + " comments\n"
