@@ -21,12 +21,20 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
  * (ProjectNavLink) aus PROJECT_NAV_TARGETS - Beschriftung, Sprungziel und Aktiv-Ableitung
  * existieren genau einmal.
  *
- * DER LANDMARK UMSCHLIESST BEIDE ZWEIGE, nicht nur die Leiste (AK3b: genau ein
+ * DER LANDMARK UMSCHLIESST LEISTE UND AUSLOESER, nicht nur die Leiste (AK3b: genau ein
  * `navigation`-Landmark "Projektbereiche" zu jedem Zeitpunkt UND in jeder Darstellung). Laege das
  * `aria-label` auf dem `hidden lg:flex`-Container, gaebe es unterhalb `lg:` gar keinen Landmark
- * mehr - `display: none` nimmt das Element aus dem Accessibility-Tree. Das Panel bekommt aus
- * demselben Grund KEIN zweites gleichnamiges `<nav>`: zwei gleichnamige Landmarks nebeneinander
- * sind ein Bedienbarkeitsfehler in der Landmark-Liste des Screenreaders.
+ * mehr - `display: none` nimmt das Element aus dem Accessibility-Tree. So bleibt in beiden
+ * Darstellungen genau einer uebrig: ab `lg:` umschliesst er die vier sichtbaren Ziele, darunter
+ * den sichtbaren Ausloeser.
+ *
+ * DER PANEL-INHALT LIEGT DAGEGEN AUSSERHALB DIESES `<nav>`: `PopoverContent` wickelt sich in
+ * `PopoverPrimitive.Portal` (ui/popover.tsx) und haengt damit an `document.body`, nicht im
+ * Komponentenbaum. Ein zweites, gleichnamiges `<nav>` um die Panelzeilen waere die naheliegende
+ * Reaktion darauf und ist bewusst NICHT gesetzt: zwei gleichnamige Landmarks nebeneinander sind
+ * ein Bedienbarkeitsfehler in der Landmark-Liste des Screenreaders und machten jede Rollen-Query
+ * darauf mehrdeutig. Die vier Panelzeilen bleiben echte `<a>` und damit in jeder Linkliste - was
+ * ihnen fehlt, ist ausschliesslich die Landmark-Einordnung.
  *
  * MENUE UEBER DAS VORHANDENE RADIX-POPOVER, NICHT UEBER @radix-ui/react-dropdown-menu: dessen
  * ARIA-`menu`-Muster (`role="menu"`/`menuitem`) naehme den vier Zielen ihre Link-Semantik - sie

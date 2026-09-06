@@ -14,9 +14,11 @@
  * beiden Projekt-Viewports (360, 1280) liegen beide fern der Grenze und zeigten den Wechsel gar
  * nicht; ohne die Bindung liefe der Spec ausserdem zweimal mit identischem Ergebnis.
  *
- * Rot-Nachweis bei Einfuehrung (2026-09-06): siehe PR-Beschreibung - mit einem auf `md:`
- * verschobenen Breakpoint (`hidden md:flex` / `md:hidden`) meldete der erste Test
- * "sichtbare Ziele bei 1023 px: expected 0, received 4".
+ * ROT-NACHWEIS STEHT NOCH AUS: Dieser Spec wurde in einer Remote-Session ohne Docker-Daemon und
+ * ohne installierbaren Browser geschrieben und konnte dort nicht ein einziges Mal laufen. Der von
+ * der Teststrategie geforderte Nachweis (Breakpoint testweise auf `md:` verschieben, Spec muss rot
+ * melden) ist beim ersten ausfuehrbaren Lauf zu erbringen und in der PR-Beschreibung
+ * festzuhalten - bis dahin ist die Wirksamkeit dieser drei Tests behauptet, nicht belegt.
  */
 
 import { DEMO_PROJECTS, demoProjectId } from '../lib/demo.ts'
@@ -38,6 +40,34 @@ function menuTrigger(page: import('@playwright/test').Page) {
   return page.getByRole('button', { name: 'Projektbereiche' })
 }
 
+/*
+ * DOM-LOKALISIERER STATT ROLLENLOKALISIERER, UND ZWAR ZWINGEND: `getByRole()` matcht laut eigener
+ * Dokumentation (`playwright-core/types/types.d.ts`, Option `includeHidden`) standardmaessig NUR
+ * nicht-verborgene Elemente - es sieht den Accessibility-Tree, nicht das DOM. Genau darauf beruht
+ * dieser Spec aber: unterhalb `lg:` traegt die Leiste `display: none`, ein `getByRole('link')`
+ * faende dort NULL Ziele und `toHaveCount(4)` liefe in die Zeitgrenze. Die DOM-Kardinalitaet wird
+ * deshalb ueber `locator('a')`/`locator('button[aria-label=...]')` gefuehrt, die Sichtbarkeit
+ * anschliessend GEMESSEN statt lokalisiert.
+ */
+function navTargetsInDom(page: import('@playwright/test').Page) {
+  return projectNav(page).locator('a')
+}
+
+function menuTriggerInDom(page: import('@playwright/test').Page) {
+  return page.locator('button[aria-label="Projektbereiche"]')
+}
+
+/** Anteil der tatsaechlich dargestellten Elemente einer DOM-Menge. */
+async function visibleCount(locator: import('@playwright/test').Locator): Promise<number> {
+  const rendered = await locator.evaluateAll((elements) =>
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect()
+      return rect.width > 0 && rect.height > 0
+    })
+  )
+  return rendered.filter(Boolean).length
+}
+
 test('wechselt an der exakten Grenze 1024 px zwischen Leiste und Menue-Ausloeser', async ({
   page,
 }) => {
@@ -49,22 +79,22 @@ test('wechselt an der exakten Grenze 1024 px zwischen Leiste und Menue-Ausloeser
     await page.setViewportSize({ width, height: VIEWPORT_HEIGHT })
     await page.goto(`/projects/${projectId}/photos`)
 
-    const nav = projectNav(page)
-    await expect(nav, `Navigationsgruppe bei ${width} px`).toBeAttached()
+    await expect(projectNav(page), `Navigationsgruppe bei ${width} px`).toBeAttached()
 
-    const targets = nav.getByRole('link')
     // Beide Darstellungen speisen sich aus derselben Zieltabelle - im DOM liegen immer genau vier
-    // Ziele, unabhaengig von der Breite. Gemessen wird ausschliesslich, wie viele davon
-    // TATSAECHLICH dargestellt werden.
+    // Ziele und genau ein Ausloeser, unabhaengig von der Breite. Diese beiden Zusicherungen sind
+    // die Vorbedingung der Messung: ohne sie bestuende der 1023-px-Durchlauf ("null sichtbare
+    // Ziele") auch dann, wenn die Leiste gar nicht mehr gerendert wuerde.
+    const targets = navTargetsInDom(page)
     await expect(targets, `Ziele im DOM bei ${width} px`).toHaveCount(4)
-    const visibility = await targets.evaluateAll((elements) =>
-      elements.map((element) => element.getBoundingClientRect().height > 0)
-    )
+    const trigger = menuTriggerInDom(page)
+    await expect(trigger, `Menue-Ausloeser im DOM bei ${width} px`).toHaveCount(1)
 
+    // Gemessen wird ausschliesslich, wie viele davon TATSAECHLICH dargestellt werden.
     measured.push({
       width,
-      visibleTargets: visibility.filter(Boolean).length,
-      triggerVisible: await menuTrigger(page).isVisible(),
+      visibleTargets: await visibleCount(targets),
+      triggerVisible: (await visibleCount(trigger)) === 1,
     })
   }
 
@@ -87,32 +117,78 @@ test('wechselt an der exakten Grenze 1024 px zwischen Leiste und Menue-Ausloeser
   )
 })
 
-test('erzeugt bei 360 px keine zusaetzliche Kopfzeilenzeile', async ({ page }) => {
-  // AK7: Die Gruppe darf den Seiteninhalt nicht nach unten schieben. Gemessen gegen DIESELBE
-  // Kopfzeile ohne Projektbezug - eine feste Erwartungszahl waere auf den heutigen Zustand
-  // kalibriert und ueberlebte keine legitime Aenderung der Kopfzeile.
-  await page.setViewportSize({ width: MOBILE_WIDTH, height: VIEWPORT_HEIGHT })
-  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+/*
+ * ZWEI BREITEN, EINE MESSTECHNIK - und zwei verschiedene Zusagen:
+ *
+ *  - 360 px deckt AK7 ab ("die Kopfzeile ist auf einer Projektseite genauso hoch wie auf einer
+ *    Seite ohne Projektbezug, Toleranz 1 px"). Dort ist nur der Menue-Ausloeser dargestellt.
+ *  - 1024 px deckt die verbindliche Regel des Architektur-Abschnitts ab ("die Kopfzeile darf bei
+ *    keiner Breite in eine zweite Zeile umbrechen"). Das ist die SCHMALSTE Breite, bei der
+ *    Wortmarke, VIER Beschriftungen, "Angemeldet als …" und "Abmelden" gleichzeitig in einer Zeile
+ *    stehen muessen - also die einzige, an der die Regel tatsaechlich gefaehrdet ist. Der
+ *    `lg:`-Breakpoint beruht in der Spec auf einer Schaetzung ("rund 800 px"), nicht auf einer
+ *    Messung; ohne diese Zusicherung bliebe sie ungeprueft.
+ *
+ * WARUM DIE HOEHE UND NICHT EIN UEBERLAUF: Das `<header>` traegt `flex-wrap`. Ein Umbruch laeuft
+ * deshalb STILL - nichts ragt heraus, nichts scrollt waagerecht, die Kopfzeile wird lediglich
+ * zweizeilig. Gegen dieselbe Kopfzeile ohne Projektbezug gemessen statt gegen eine feste Zahl: die
+ * waere auf den heutigen Zustand kalibriert und ueberlebte keine legitime Aenderung der Kopfzeile.
+ */
+const HEADER_HEIGHT_WIDTHS = [
+  {
+    width: MOBILE_WIDTH,
+    zusage: 'AK7: keine zusaetzliche Kopfzeilenzeile durch die Gruppe',
+    /** Bei 360 px ist ausschliesslich der Ausloeser dargestellt (AK6). */
+    expectedVisibleTargets: 0,
+    expectedTriggerVisible: true,
+  },
+  {
+    width: BREAKPOINT,
+    zusage: 'verbindliche Regel: kein Umbruch der Kopfzeile in eine zweite Zeile',
+    /** Bei 1024 px stehen alle vier Beschriftungen in der Zeile (AK5) - genau das ist der Druck. */
+    expectedVisibleTargets: 4,
+    expectedTriggerVisible: false,
+  },
+] as const
 
-  const header = page.locator('header')
+for (const fall of HEADER_HEIGHT_WIDTHS) {
+  test(`haelt die Kopfzeile bei ${fall.width} px einzeilig (${fall.zusage})`, async ({ page }) => {
+    await page.setViewportSize({ width: fall.width, height: VIEWPORT_HEIGHT })
+    const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
 
-  await page.goto('/')
-  await expect(projectNav(page), 'Gruppe auf der Projektliste').toHaveCount(0)
-  const withoutProject = await header.boundingBox()
-  expect(withoutProject, 'Kopfzeile ohne Projektbezug').not.toBeNull()
+    const header = page.locator('header')
 
-  await page.goto(`/projects/${projectId}/photos`)
-  await expect(menuTrigger(page), 'Menue-Ausloeser auf der Projektseite').toBeVisible()
-  const withProject = await header.boundingBox()
-  expect(withProject, 'Kopfzeile mit Projektbezug').not.toBeNull()
+    await page.goto('/')
+    await expect(projectNav(page), 'Gruppe auf der Projektliste').toHaveCount(0)
+    const withoutProject = await header.boundingBox()
+    expect(withoutProject, 'Kopfzeile ohne Projektbezug').not.toBeNull()
 
-  // Groesse > 0 zuerst: zwei auf 0 kollabierte Kopfzeilen waeren sonst trivial "gleich hoch".
-  expect(withoutProject!.height, 'Hoehe der Kopfzeile ohne Projektbezug').toBeGreaterThan(0)
-  expect(
-    Math.abs(withProject!.height - withoutProject!.height),
-    `Hoehenunterschied der Kopfzeile bei ${MOBILE_WIDTH} px`
-  ).toBeLessThanOrEqual(TOLERANCE)
-})
+    await page.goto(`/projects/${projectId}/photos`)
+    await expect(projectNav(page), 'Gruppe auf der Projektseite').toBeAttached()
+
+    // Vorbedingung: bei DIESER Breite ist auch tatsaechlich die erwartete Darstellung zu sehen.
+    // Ohne sie waere der Hoehenvergleich bei 1024 px wertlos - er bestuende auch dann, wenn die
+    // vier Beschriftungen gar nicht dargestellt wuerden und deshalb nichts umbrechen koennte.
+    expect(
+      await visibleCount(navTargetsInDom(page)),
+      `sichtbare Ziele bei ${fall.width} px`
+    ).toBe(fall.expectedVisibleTargets)
+    expect(
+      (await visibleCount(menuTriggerInDom(page))) === 1,
+      `Menue-Ausloeser sichtbar bei ${fall.width} px`
+    ).toBe(fall.expectedTriggerVisible)
+
+    const withProject = await header.boundingBox()
+    expect(withProject, 'Kopfzeile mit Projektbezug').not.toBeNull()
+
+    // Groesse > 0 zuerst: zwei auf 0 kollabierte Kopfzeilen waeren sonst trivial "gleich hoch".
+    expect(withoutProject!.height, 'Hoehe der Kopfzeile ohne Projektbezug').toBeGreaterThan(0)
+    expect(
+      Math.abs(withProject!.height - withoutProject!.height),
+      `Hoehenunterschied der Kopfzeile bei ${fall.width} px`
+    ).toBeLessThanOrEqual(TOLERANCE)
+  })
+}
 
 test('legt das geoeffnete Panel vollstaendig sichtbar ueber den Seiteninhalt', async ({ page }) => {
   // AK12: zwei Zusagen in einem Test, weil einzeln jede fuer sich wertlos waere - ein Panel weit
