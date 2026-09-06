@@ -1,6 +1,6 @@
 # 0298 - Projektnavigation in der Kopfzeile
 
-**Status:** Accepted
+**Status:** Implemented ([PR #340](https://github.com/TheRealKoller/photosort/pull/340))
 **Erstellt:** 2026-09-06
 **Bezug:** GitHub-Issue [`#298`](https://github.com/TheRealKoller/photosort/issues/298), Vorgänger-Spec [`0033`](./0033-sticky-titelleiste-projekt-link.md) (teilweise abgelöst, dort als Nachtrag vermerkt), Design-System [`architecture/0004-design-system.md`](../architecture/0004-design-system.md) und Board-Referenz [`architecture/0005-board-dark-utility-register.md`](../architecture/0005-board-dark-utility-register.md), Testkonzept [`architecture/0002-testkonzept.md`](../architecture/0002-testkonzept.md), [`docs/architecture.md`](../../docs/architecture.md)
 
