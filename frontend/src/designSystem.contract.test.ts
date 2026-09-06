@@ -525,8 +525,128 @@ const FOCUS_SUPPRESSING_UTILITY = new RegExp(
   `ring-offset|focus-visible:|(^|[\\s'"\`([])(?:[a-z-]+:)*outline-${'none'}\\b`
 )
 
+/**
+ * Entfernt Kommentarinhalt ZEILENTREU: Kommentartext wird durch Leerzeichen ersetzt, Zeilenumbrueche
+ * bleiben erhalten. Ohne die Zeilentreue verschoebe ein mehrzeiliger Blockkommentar alle folgenden
+ * Zeilennummern, und die Fundstellen-Meldungen des Helfers unten zeigten auf die falsche Zeile.
+ */
 function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '))
+    .replace(/^\s*\/\/.*$/gm, (comment) => ' '.repeat(comment.length))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fundstellengenaue Freigabelisten
+// ---------------------------------------------------------------------------------------------
+
+interface ScannedFile {
+  label: string
+  content: string
+}
+
+/** Eine Freigabe gilt fuer GENAU EINE Zeile einer Datei, nicht fuer die ganze Datei. */
+interface AllowlistEntry {
+  file: string
+  /** Teilzeichenkette der freigegebenen Zeile. Darf nicht nur aus dem Suchbegriff bestehen. */
+  snippet: string
+  reason: string
+}
+
+interface Occurrence {
+  label: string
+  line: number
+  text: string
+  match: string
+}
+
+/**
+ * Alle Fundstellen eines Suchbegriffs, zeilengenau und ohne Kommentare. Bei einem regulaeren
+ * Ausdruck traegt jede Fundstelle zusaetzlich den tatsaechlich getroffenen Text.
+ */
+function findMatches(needle: string | RegExp, files: ScannedFile[]): Occurrence[] {
+  const found: Occurrence[] = []
+  for (const file of files) {
+    stripComments(file.content)
+      .split('\n')
+      .forEach((line, index) => {
+        const base = { label: file.label, line: index + 1, text: line.trim() }
+        if (typeof needle === 'string') {
+          if (line.includes(needle)) found.push({ ...base, match: needle })
+          return
+        }
+        const pattern = new RegExp(needle.source, needle.flags.includes('g') ? needle.flags : `${needle.flags}g`)
+        const seen = new Set<string>()
+        let match: RegExpExecArray | null
+        while ((match = pattern.exec(line)) !== null) {
+          if (match[0].length === 0) {
+            pattern.lastIndex += 1
+            continue
+          }
+          // Mehrfachtreffer desselben Textes in einer Zeile sind EINE Fundstelle - sonst
+          // meldete `gap-1.5 sm:gap-1.5` zweimal dasselbe.
+          if (!seen.has(match[0])) {
+            seen.add(match[0])
+            found.push({ ...base, match: match[0] })
+          }
+        }
+      })
+  }
+  return found
+}
+
+/** Trifft der regulaere Ausdruck den ganzen Ausschnitt, ist der Ausschnitt nur der Suchbegriff. */
+function isBareNeedle(snippet: string, needle: string | RegExp): boolean {
+  const trimmed = snippet.trim()
+  if (typeof needle === 'string') {
+    return trimmed === needle
+  }
+  const match = new RegExp(needle.source, needle.flags.replace('g', '')).exec(trimmed)
+  return match !== null && match[0] === trimmed
+}
+
+/**
+ * Gleicht jede Fundstelle eines Suchbegriffs gegen eine fundstellengenaue Freigabeliste ab und
+ * meldet DREI Fehlerklassen statt einer:
+ *
+ *  (a) Fundstelle ohne passenden Eintrag - die eigentliche Regel.
+ *  (b) Eintrag ohne Fundstelle - verwaiste Freigabe. Genau daran verrotten solche Listen: die
+ *      Zeile verschwindet, die Freigabe bleibt und deckt spaeter still etwas anderes.
+ *  (c) Ausschnitt, der nur aus dem Suchbegriff selbst besteht - sonst liesse sich die alte,
+ *      dateiweise Granularitaet still wiederherstellen.
+ *
+ * Die zu durchsuchenden Dateien sind Parameter, damit der Helfer gegen synthetische Eingaben
+ * testbar ist, ohne das Dateisystem anzufassen.
+ */
+function allowlistedOccurrences(
+  needle: string | RegExp,
+  entries: AllowlistEntry[],
+  files: ScannedFile[] = tsxFiles()
+): string[] {
+  const problems: string[] = []
+  const matched = new Set<number>()
+
+  for (const occurrence of findMatches(needle, files)) {
+    const index = entries.findIndex(
+      (entry) => entry.file === occurrence.label && occurrence.text.includes(entry.snippet)
+    )
+    if (index === -1) {
+      problems.push(`nicht freigegeben: ${occurrence.label}:${occurrence.line}: ${occurrence.text}`)
+    } else {
+      matched.add(index)
+    }
+  }
+
+  entries.forEach((entry, index) => {
+    if (!matched.has(index)) {
+      problems.push(`verwaiste Freigabe ohne Fundstelle: ${entry.file} :: ${entry.snippet}`)
+    }
+    if (isBareNeedle(entry.snippet, needle)) {
+      problems.push(`Ausschnitt ist nur der Suchbegriff selbst: ${entry.file} :: ${entry.snippet}`)
+    }
+  })
+
+  return problems
 }
 
 /** String-Literale einer Quelldatei. Template-Literale mit `${` werden uebersprungen - sonst
@@ -544,6 +664,112 @@ function stringLiterals(source: string): string[] {
   }
   return literals
 }
+
+describe('Design-Vertrag: Selbsttest des Fundstellen-Helfers', () => {
+  /*
+   * Der Helfer traegt vier statische Regeln. Im gruenen Produktivlauf liefern alle drei
+   * Fehlerklassen die leere Menge - die Produktivnutzung belegt also NICHTS ueber seine
+   * Fehlererkennung. Deshalb diese Selbsttests, ausschliesslich gegen synthetische, hier literal
+   * geschriebene Dateilisten: kein Dateisystem, keine Fixture-Dateien, keine temporaeren
+   * Verzeichnisse.
+   */
+  const needle = 'rounded-full'
+
+  function file(label: string, ...lines: string[]): ScannedFile {
+    return { label, content: lines.join('\n') }
+  }
+
+  it('meldet eine Fundstelle ohne passenden Eintrag mit Datei und Zeilennummer', () => {
+    const problems = allowlistedOccurrences(needle, [], [file('src/a.tsx', 'const x = 1', 'className="rounded-full"')])
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('src/a.tsx')
+    expect(problems[0]).toContain(':2:')
+  })
+
+  it('meldet eine Fundstelle mit passendem Eintrag nicht', () => {
+    const problems = allowlistedOccurrences(
+      needle,
+      [{ file: 'src/a.tsx', snippet: 'size-2.5 shrink-0 rounded-full', reason: 'Statuspunkt' }],
+      [file('src/a.tsx', '<span className="size-2.5 shrink-0 rounded-full bg-accent" />')]
+    )
+
+    expect(problems).toEqual([])
+  })
+
+  /*
+   * Der eigentliche Zweck des Umbaus und zugleich sein permanenter Rot-Nachweis: Die frueher
+   * dateiweise Pruefung waere hier gruen gewesen, weil die Datei bereits gelistet ist.
+   */
+  it('meldet eine zweite Fundstelle in einer bereits gelisteten Datei', () => {
+    const problems = allowlistedOccurrences(
+      needle,
+      [{ file: 'src/a.tsx', snippet: 'Spinner rounded-full', reason: 'Lade-Spinner' }],
+      [file('src/a.tsx', '<i className="Spinner rounded-full" />', '<button className="rounded-full" />')]
+    )
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain(':2:')
+  })
+
+  it('meldet einen Eintrag ohne jede Fundstelle als verwaiste Freigabe', () => {
+    const problems = allowlistedOccurrences(
+      needle,
+      [{ file: 'src/weg.tsx', snippet: 'einst rounded-full', reason: 'laengst entfernt' }],
+      [file('src/a.tsx', 'const x = 1')]
+    )
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('verwaiste Freigabe')
+  })
+
+  it('meldet einen Ausschnitt, der nur aus dem Suchbegriff besteht, auch bei passenden Fundstellen', () => {
+    const problems = allowlistedOccurrences(
+      needle,
+      [{ file: 'src/a.tsx', snippet: 'rounded-full', reason: 'zu grob' }],
+      [file('src/a.tsx', '<i className="rounded-full" />')]
+    )
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('nur der Suchbegriff')
+  })
+
+  it('meldet eine Fundstelle nicht, die nur in einem Zeilenkommentar steht', () => {
+    const problems = allowlistedOccurrences(needle, [], [file('src/a.tsx', '// frueher rounded-full, heute nicht mehr')])
+
+    expect(problems).toEqual([])
+  })
+
+  it('meldet eine Fundstelle nach einem mehrzeiligen Blockkommentar mit ihrer tatsaechlichen Zeile', () => {
+    const problems = allowlistedOccurrences(
+      needle,
+      [],
+      [file('src/a.tsx', '/* Zeile 1', '   Zeile 2', '   Zeile 3 */', '<i className="rounded-full" />')]
+    )
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain(':4:')
+  })
+
+  it('haelt die Zeilenanzahl in stripComments unveraendert', () => {
+    const source = ['/* a', 'b', 'c */', 'code', '// d'].join('\n')
+
+    expect(stripComments(source).split('\n')).toHaveLength(source.split('\n').length)
+  })
+
+  it('meldet bei leerer Eingabemenge nichts', () => {
+    expect(allowlistedOccurrences(needle, [], [])).toEqual([])
+  })
+
+  /*
+   * Gegenprobe zur leeren Eingabemenge: Eine Regel, die gegen eine leere Kandidatenmenge laeuft,
+   * bestuende still. Jede Produktivnutzung des Helfers unten prueft deshalb zusaetzlich, dass sie
+   * ueberhaupt Kandidaten sieht - hier festgehalten, damit die Vorkehrung nicht wegoptimiert wird.
+   */
+  it('findet in einer nicht leeren Eingabemenge auch Fundstellen', () => {
+    expect(findMatches(needle, [file('src/a.tsx', '<i className="rounded-full" />')])).toHaveLength(1)
+  })
+})
 
 function tsxFiles(): typeof sourceFiles {
   return sourceFiles.filter((file) => file.label.endsWith('.tsx'))
@@ -720,22 +946,56 @@ describe('Design-Vertrag: Formsprache und Skalen', () => {
    * Radius 16px (`rounded-xl`), nicht `rounded-full`. Diese Liste ist abschliessend: jede weitere
    * Fundstelle ist ein Fehler.
    */
-  const ROUNDED_FULL_ALLOWLIST: Record<string, string> = {
-    'src/components/ui/switch.tsx': 'Schalter-Spur und -Knauf (Board-Geometrie, vollrund)',
-    'src/components/ui/button.tsx': 'Lade-Spinner im Button',
-    'src/components/StatusTag.tsx': 'Lade-Spinner in der Status-Pille',
-    'src/components/FolderBrowser.tsx': 'Lade-Spinner im Ordner-Browser',
-    'src/components/StatusDot.tsx': 'Prozess-Status-Punkt',
-    'src/components/CriterionDetailsPopover.tsx': 'runder Backdrop des Popover-Triggers ueber der Fotokachel',
-    'src/components/CategoryOverrideMarker.tsx': 'runder Backdrop des Uebersteuerungs-Markers ueber der Fotokachel',
-  }
+  const ROUNDED_FULL_ALLOWLIST: AllowlistEntry[] = [
+    {
+      file: 'src/components/ui/switch.tsx',
+      snippet: 'inline-flex h-6 w-12 shrink-0 items-center rounded-full border',
+      reason: 'Schalter-Spur (Board-Geometrie, vollrund)',
+    },
+    {
+      file: 'src/components/ui/switch.tsx',
+      snippet: 'inline-block size-5 translate-x-0.5 transform rounded-full',
+      reason: 'Schalter-Knauf (Board-Geometrie, vollrund)',
+    },
+    {
+      file: 'src/components/ui/button.tsx',
+      snippet: 'animate-spin motion-reduce:animate-none rounded-full border-2',
+      reason: 'Lade-Spinner im Button',
+    },
+    {
+      file: 'src/components/StatusTag.tsx',
+      snippet: 'inline-block size-2.5 shrink-0 rounded-full border-2',
+      reason: 'Lade-Spinner in der Status-Pille',
+    },
+    {
+      file: 'src/components/FolderBrowser.tsx',
+      snippet: 'animate-spin motion-reduce:animate-none rounded-full border-2',
+      reason: 'Lade-Spinner im Ordner-Browser',
+    },
+    {
+      file: 'src/components/StatusDot.tsx',
+      snippet: 'size-2.5 shrink-0 rounded-full',
+      reason: 'Prozess-Status-Punkt',
+    },
+    {
+      file: 'src/components/CriterionDetailsPopover.tsx',
+      snippet: 'items-center justify-center rounded-full',
+      reason: 'runder Backdrop des Popover-Triggers ueber der Fotokachel',
+    },
+    {
+      file: 'src/components/CategoryOverrideMarker.tsx',
+      snippet: 'items-center justify-center rounded-full bg-bg/85',
+      reason: 'runder Backdrop des Uebersteuerungs-Markers ueber der Fotokachel',
+    },
+  ]
 
-  it('verwendet rounded-full nur noch an der abschliessenden Liste', () => {
-    const offenders = tsxFiles()
-      .filter((file) => stripComments(file.content).includes('rounded-full'))
-      .map((file) => file.label)
-      .filter((label) => !Object.hasOwn(ROUNDED_FULL_ALLOWLIST, label))
-    expect(offenders).toEqual([])
+  it('verwendet rounded-full nur noch an der abschliessenden Liste, fundstellengenau', () => {
+    // Fundstellen- statt dateiweise Pruefung: Zuvor war jede weitere `rounded-full`-Zeile in einer
+    // bereits gelisteten Datei unsichtbar - `ui/button.tsx` ist wegen des Lade-Spinners freigegeben
+    // und haette damit unbemerkt eine vollrunde Schaltflaeche bekommen koennen.
+    expect(allowlistedOccurrences('rounded-full', ROUNDED_FULL_ALLOWLIST)).toEqual([])
+    // Positiv-Gegenprobe: Die Kandidatenmenge ist nachweislich nicht leer.
+    expect(findMatches('rounded-full', tsxFiles()).length).toBeGreaterThan(0)
   })
 
   it('haelt die Radienskala auf den fuenf Board-Werten', () => {

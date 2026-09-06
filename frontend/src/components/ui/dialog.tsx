@@ -5,6 +5,7 @@ import { Button } from './button'
 import { Icon } from './icon'
 import type { IconName } from './icon'
 import { cn } from '../../lib/utils'
+import { lockBodyScroll } from '../../lib/scrollLock'
 
 export interface DialogProps {
   open: boolean
@@ -94,11 +95,13 @@ export function Dialog({
     dialog.showModal()
     cancelRef.current?.focus()
 
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    // Zaehlende Sperre statt eigener Merkvariable: bei zwei gleichzeitig offenen Dialogen las die
+    // zweite bereits 'hidden' als "vorherigen" Wert, und ein Schliessen in Anlegereihenfolge gab
+    // den Hintergrund frei, obwohl noch ein Dialog offen war (Spec 0321, Etappe 1).
+    const releaseScrollLock = lockBodyScroll()
 
     return () => {
-      document.body.style.overflow = previousOverflow
+      releaseScrollLock()
       // `close()` auf einem nicht offenen <dialog> kehrt laut Standard still zurueck (nur
       // `showModal()` wirft) - der Riegel steht hier also NICHT gegen eine Ausnahme, sondern
       // schreibt die Invariante hin: seit das native `cancel` angeschlossen ist, gibt es einen

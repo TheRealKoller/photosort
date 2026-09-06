@@ -1,5 +1,16 @@
 import '@testing-library/jest-dom/vitest'
 
+import { afterEach } from 'vitest'
+
+import { resetBodyScrollLock } from './lib/scrollLock'
+
+// `lib/scrollLock.ts` haelt modulweiten Zustand (Zaehler + gesicherter overflow-Wert). Ohne diesen
+// Aufruf leckt eine nicht freigegebene Sperre samt `overflow: hidden` in die naechste Testdatei.
+// Testhygiene, KEINE Produktions-API (specs/features/0321-dark-utility-register-ansichten.md).
+afterEach(() => {
+  resetBodyScrollLock()
+})
+
 // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt:
 // erster echter <dialog>-Einsatz im Produkt (Bestaetigungsdialog vor kostenpflichtiger Aktion,
 // bewusst nativ statt eines neuen @radix-ui/react-dialog-Pakets). jsdom implementiert
