@@ -262,8 +262,11 @@ export function PhotoDetailPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-text">Shortcuts: 1 Favorit, 2 Album-würdig, 3 Verwerfen, ←/→ navigieren</p>
-      <p className="text-sm text-text">
+      {/* Bleibt unveraendert stehen (Spec 0321, "es wird nichts entfernt"): durch die neuen
+          Tasten-Kaestchen teilweise redundant, aber der Pfeiltasten-Teil hat kein sichtbares
+          Gegenstueck. Nur als Metadatenzeile gesetzt statt als Fliesstext. */}
+      <p className="text-xs text-text-muted">Shortcuts: 1 Favorit, 2 Album-würdig, 3 Verwerfen, ←/→ navigieren</p>
+      <p className="text-xs text-text-muted">
         {index + 1}/{total}
       </p>
 
@@ -276,7 +279,7 @@ export function PhotoDetailPage() {
           photoId={currentPhoto.id}
           variant="display"
           alt={currentPhoto.relative_path}
-          className="aspect-[4/3] w-full rounded-xl object-contain"
+          className="aspect-[4/3] w-full rounded-md object-contain"
         />
       </div>
 
@@ -345,7 +348,7 @@ export function PhotoDetailPage() {
       </div>
 
       {suggestion && (
-        <div className="flex flex-col items-start gap-1.5 rounded-md border border-accent bg-elevated p-3 text-sm">
+        <div className="flex flex-col items-start gap-2 rounded-md border border-accent bg-elevated p-3 text-sm">
           <p className="text-text-h">Automatischer Vorschlag: {formatSuggestionStatusLabel(suggestion)}</p>
           {/* Formatierung aus utils/suggestionLabels.ts (specs/features/0040-bewertungsdetails-
               info-popover.md, Architektur-Abschnitt) - dasselbe Muster wird jetzt auch vom neuen

@@ -3,6 +3,7 @@ import { useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import { Alert } from '../components/ui/alert'
+import { Button } from '../components/ui/button'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../components/ui/popover'
 import { Switch } from '../components/ui/switch'
 import { useProjectQuery, useSetCloudVisionConsentMutation } from '../hooks/useProjects'
@@ -68,7 +69,7 @@ export function ProjectSettingsPage() {
         <p className="text-sm text-text">{project.name}</p>
       </header>
 
-      <div className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-4">
+      <div className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4">
         {/* flex-wrap + min-w-0 auf der Label-Gruppe (Review-Fund, ship-feature-Runde): auf sehr
             engen Viewports (<400px) soll das lange, zusammengesetzte Label auf eine eigene Zeile
             umbrechen koennen, statt den Switch aus der Zeile zu draengen/zu ueberlappen. */}
@@ -79,22 +80,22 @@ export function ProjectSettingsPage() {
             </span>
             <Popover open={infoOpen} onOpenChange={setInfoOpen}>
               <PopoverTrigger asChild>
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon"
                   aria-label="Erkläre Cloud-Bilderkennung"
-                  className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md border border-border-control text-xs font-semibold text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
+                  className="shrink-0 border border-border-control"
                 >
                   i
-                </button>
+                </Button>
               </PopoverTrigger>
               <PopoverContent>
                 <div className="flex items-center justify-between gap-3 pb-3">
                   <p className="text-sm font-semibold text-text-h">Cloud-Bilderkennung</p>
-                  <PopoverClose
-                    aria-label="Schließen"
-                    className="tap-target-square flex size-8 shrink-0 items-center justify-center rounded-md text-text transition-colors hover:bg-overlay hover:text-text-h active:bg-border active:text-text"
-                  >
-                    <span aria-hidden="true">×</span>
+                  <PopoverClose asChild>
+                    <Button variant="ghost" size="icon" aria-label="Schließen" className="shrink-0">
+                      <span aria-hidden="true">×</span>
+                    </Button>
                   </PopoverClose>
                 </div>
                 <p className="text-sm text-text">

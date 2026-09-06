@@ -155,7 +155,10 @@ describe('PhotoGridPage', () => {
 
     expect(await screen.findAllByRole('listitem')).toHaveLength(2)
     expect(screen.getByLabelText('Favorit')).toBeInTheDocument()
-    expect(screen.getByLabelText('Unbewertet')).toBeInTheDocument()
+    // Spec 0321, Entscheidung 3: Auf der Karte steht fuer "unbewertet" das WORT "Neu" statt des
+    // neutralen "–"-Badges. Die Aussage des Falls bleibt dieselbe - "nicht bewertet" ist von
+    // "Badge noch nicht geladen" unterscheidbar -, sie haengt jetzt am Wort statt am Strich.
+    expect(screen.getByText('Neu')).toBeInTheDocument()
   })
 
   it('only shows the current user\'s own rating, not another user\'s', async () => {
@@ -172,7 +175,8 @@ describe('PhotoGridPage', () => {
 
     renderPage()
 
-    expect(await screen.findByLabelText('Unbewertet')).toBeInTheDocument()
+    // Spec 0321, Entscheidung 3: "unbewertet" heisst auf der Karte "Neu" (siehe oben).
+    expect(await screen.findByText('Neu')).toBeInTheDocument()
     expect(screen.queryByLabelText('Verworfen')).not.toBeInTheDocument()
   })
 
@@ -424,28 +428,44 @@ describe('PhotoGridPage', () => {
       ).not.toBeInTheDocument()
     })
 
-    // Copilot-Review-Fund: die RatingBadge zieht als absolut positioniertes Geschwisterelement
-    // UEBER den <Link>, damit sie mit dem Info-Trigger in derselben Ecke gruppiert werden kann -
-    // ohne Gegenmassnahme wuerde ein Klick in ihrem (rein dekorativen) Bereich den darunterliegenden
-    // <Link> nicht mehr erreichen und die Kachel dort nicht mehr navigieren. jsdom hat keine echte
-    // Layout-/Hit-Testing-Engine (vgl. specs/architecture/0002-testkonzept.md, "Popover-
-    // Positionierungsverhalten" - bleibt manueller visueller Smoke-Test), ein tatsaechlicher
-    // Ueberlappungs-Klicktest ist hier deshalb nicht moeglich - stattdessen wird die dafuer
-    // verantwortliche CSS-Absicherung strukturell verifiziert: der umschliessende Overlay-Wrapper
-    // ist `pointer-events-none` (Klicks fallen durch zum <Link>), der Info-Trigger reaktiviert
-    // Pointer-Events explizit fuer sich selbst (`pointer-events-auto`).
-    it('keeps the decorative rating-badge overlay pointer-events-none so clicks fall through to the tile link', async () => {
+    /*
+     * ERSATZ, KEINE STREICHUNG (specs/features/0321-dark-utility-register-ansichten.md, Etappe 4,
+     * Punkt 3 - der einzige vorab genehmigte Wegfall dieser Story).
+     *
+     * Der zuvor hier gepruefte Mechanismus hoert auf zu existieren: Die RatingBadge lag als
+     * absolut positioniertes Geschwisterelement UEBER dem <Link> und brauchte deshalb
+     * `pointer-events-none`, damit Klicks in ihrem rein dekorativen Bereich die Kachel noch
+     * navigieren liessen. Seit Entscheidung 2 sitzt das Kennzeichen im Kartenkoerper, nicht mehr
+     * ueber dem Bild - es kann gar keinen Klick mehr abfangen, und der Kniff entfaellt ersatzlos.
+     *
+     * An seine Stelle tritt die Zusage, die den Kniff ueberhaupt noetig gemacht hatte: Kennzeichen
+     * und Dateiname liegen NICHT im <a>, und der Ecken-Trigger bleibt dessen Geschwister (nicht
+     * sein Kind - die Bildflaeche beschneidet, eine Trefferflaeche darin waere still
+     * abgeschnitten). Ein ersatzloses Streichen waere der Verlust der Zusage, nicht ihre Erfuellung.
+     */
+    it('keeps the badge, the file name and the corner trigger outside the tile link', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
+        items: [
+          photo({
+            id: 1,
+            relative_path: 'a.jpg',
+            criterion_scores: [criterionScore()],
+            ratings: [{ user_id: 1, username: 'testuser', status: 'favorite' }],
+          }),
+        ],
         total: 1,
       })
 
       renderPage()
 
       const trigger = await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
-      const overlay = trigger.closest('div.absolute')
-      expect(overlay).toHaveClass('pointer-events-none')
-      expect(trigger).toHaveClass('pointer-events-auto')
+      const [item] = screen.getAllByRole('listitem')
+      const link = item.querySelector('a')!
+
+      expect(link.contains(trigger)).toBe(false)
+      expect(item.contains(trigger)).toBe(true)
+      expect(link.contains(screen.getByLabelText('Favorit'))).toBe(false)
+      expect(link.contains(screen.getByText('a.jpg'))).toBe(false)
     })
 
     it('clicking the trigger does not navigate to the detail view', async () => {

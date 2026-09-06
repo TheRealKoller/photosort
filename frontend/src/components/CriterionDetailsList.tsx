@@ -179,11 +179,11 @@ export function CriterionDetailsList({
         // Toolchain keine namensfaehige Rolle, die Beschriftung kaeme dort weder im
         // Accessibility-Tree noch in einer Rollenabfrage an (Spec 0209,
         // Architektur-Entscheidung 3).
-        <div role="group" aria-labelledby={qualityHeadingId} className="flex flex-col gap-1.5">
+        <div role="group" aria-labelledby={qualityHeadingId} className="flex flex-col gap-2">
           <h3 id={qualityHeadingId} className="text-xs font-medium text-text-h">
             Qualität
           </h3>
-          <dl className="flex flex-col gap-1.5">
+          <dl className="flex flex-col gap-2">
             {qualityScores.map((score) => (
               <CriterionRow key={score.criterion_key} score={score} />
             ))}
@@ -191,11 +191,11 @@ export function CriterionDetailsList({
         </div>
       )}
       {showCategoriesBlock && (
-        <div role="group" aria-labelledby={categoriesHeadingId} className="flex flex-col gap-1.5">
+        <div role="group" aria-labelledby={categoriesHeadingId} className="flex flex-col gap-2">
           <h3 id={categoriesHeadingId} className="text-xs font-medium text-text-h">
             Kategorien
           </h3>
-          <dl className="flex flex-col gap-1.5">
+          <dl className="flex flex-col gap-2">
             {categoryScores.map((score) => (
               <CriterionRow key={score.criterion_key} score={score} />
             ))}
@@ -204,12 +204,12 @@ export function CriterionDetailsList({
               // Gruppe selbst statt als `gap-3` am <dl>: so haengen die Kriterienzeilen in beiden
               // Bloecken auf derselben Ebene (<dl> > Zeilen-<div> > dt/dd) statt im
               // Kategorien-Block eine Wrapper-<div>-Ebene tiefer (Copilot-Review-Fund auf PR
-              // #277). `mt-1.5` (0.375rem) addiert sich zum `gap-1.5` des <dl> auf exakt die
+              // #277). `mt-2` (0.375rem) addiert sich zum `gap-2` des <dl> auf exakt die
               // 0.75rem des vorherigen `gap-3` - und entfaellt, wenn keine Kriterienzeile
               // vorausgeht, weil dann auch vorher kein Abstand gerendert wurde. Die Darstellung
               // bleibt damit in jedem Fall pixelgleich (Akzeptanzkriterium 6: reine
               // Umgruppierung, keine visuelle Aenderung).
-              <div className={cn('flex flex-col gap-1.5', categoryScores.length > 0 && 'mt-1.5')}>
+              <div className={cn('flex flex-col gap-2', categoryScores.length > 0 && 'mt-2')}>
                 {showCandidateGroup ? (
                   <div className="flex flex-col gap-2">
                     <dt className="text-text">Kategorie-Kandidaten</dt>
@@ -291,7 +291,7 @@ export function CriterionDetailsList({
                     uebersteuert. Nur eingebunden, wenn ein Uebersteuern ueberhaupt vorgesehen ist
                     (Aufrufer reicht `onOverrideCategory` durch). */}
                 {onOverrideCategory && (
-                  <div className="mt-1.5">
+                  <div className="mt-2">
                     <CategorySelect
                       categories={categories}
                       value={categoryOverride ?? ranking.category_key}
@@ -313,9 +313,9 @@ export function CriterionDetailsList({
               Bewertungs-Chips verwechselt werden. Ohne Feinlabels wird KEIN Platzhalter
               gerendert - der Bereich entfaellt ersatzlos. Sichtbar auch bei "Nicht erkannt". */}
           {fineLabels.length > 0 && (
-            <div className="mt-1.5 flex flex-col gap-1.5">
+            <div className="mt-2 flex flex-col gap-2">
               <h4 className="text-xs text-text">Feinlabels</h4>
-              <ul aria-label="Feinlabels" className="flex flex-wrap gap-1.5">
+              <ul aria-label="Feinlabels" className="flex flex-wrap gap-2">
                 {fineLabels.map((label) => (
                   <li key={label.canonical_key}>
                     {/* Reiner React-Textknoten - freier LLM-Text, nie als HTML. */}
@@ -332,7 +332,7 @@ export function CriterionDetailsList({
       {/* Dritter, eigener Bereich ausserhalb beider Bloecke und bewusst OHNE eigene Ueberschrift
           (Spec 0209, Akzeptanzkriterium 8) - erscheint auch dann, wenn beide Bloecke leer sind. */}
       {showSuggestion && suggestion !== null && (
-        <dl className="flex flex-col gap-1.5">
+        <dl className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between gap-3">
             <dt className="text-text">Ausschuss-Vorschlag</dt>
             <dd className="font-medium text-text-h">{formatSuggestionStatusLabel(suggestion)}</dd>

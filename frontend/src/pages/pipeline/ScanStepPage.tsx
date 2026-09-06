@@ -78,14 +78,14 @@ export function ScanStepPage() {
       </p>
 
       {isScanEnumerating && (
-        <div className="flex w-full max-w-sm flex-col gap-1.5">
+        <div className="flex w-full max-w-sm flex-col gap-2">
           <p className="text-sm text-text">Dateien werden gezählt…</p>
           <Progress />
         </div>
       )}
 
       {isScanProcessing && (
-        <div className="flex w-full max-w-sm flex-col gap-1.5">
+        <div className="flex w-full max-w-sm flex-col gap-2">
           <p className="text-sm text-text">
             {scanFilesFound} von {scanTotalFiles} Dateien verarbeitet
           </p>
@@ -106,16 +106,16 @@ export function ScanStepPage() {
         <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-text sm:grid-cols-3">
           <div className="flex gap-1">
             <dt className="text-text">Hinzugefügt</dt>
-            <dd className="text-text-h">{project.last_scan.photos_added}</dd>
+            <dd className="font-mono text-text-h">{project.last_scan.photos_added}</dd>
           </div>
           <div className="flex gap-1">
             <dt className="text-text">Aktualisiert</dt>
-            <dd className="text-text-h">{project.last_scan.photos_updated}</dd>
+            <dd className="font-mono text-text-h">{project.last_scan.photos_updated}</dd>
           </div>
           <div className="flex gap-1">
             <dt className="text-text">
               <details>
-                <summary className="cursor-pointer underline decoration-dotted decoration-text/60">
+                <summary className="cursor-pointer underline decoration-dotted decoration-text">
                   Entfernt
                 </summary>
                 <p className="mt-1 text-xs text-text">
@@ -124,12 +124,12 @@ export function ScanStepPage() {
                 </p>
               </details>
             </dt>
-            <dd className="text-text-h">{project.last_scan.photos_removed}</dd>
+            <dd className="font-mono text-text-h">{project.last_scan.photos_removed}</dd>
           </div>
           <div className="flex gap-1">
             <dt className="text-text">
               <details>
-                <summary className="cursor-pointer underline decoration-dotted decoration-text/60">
+                <summary className="cursor-pointer underline decoration-dotted decoration-text">
                   Übersprungen
                 </summary>
                 <p className="mt-1 text-xs text-text">
@@ -137,11 +137,11 @@ export function ScanStepPage() {
                 </p>
               </details>
             </dt>
-            <dd className="text-text-h">{project.last_scan.files_skipped}</dd>
+            <dd className="font-mono text-text-h">{project.last_scan.files_skipped}</dd>
           </div>
           <div className="flex gap-1">
             <dt className="text-text">Dateien gefunden</dt>
-            <dd className="text-text-h">{project.last_scan.files_found}</dd>
+            <dd className="font-mono text-text-h">{project.last_scan.files_found}</dd>
           </div>
         </dl>
       )}

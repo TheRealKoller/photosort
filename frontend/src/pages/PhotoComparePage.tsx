@@ -1,9 +1,10 @@
-import { Link, useParams } from 'react-router'
+import { useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { PhotoImage } from '../components/PhotoImage'
+import { PhotoCard } from '../components/PhotoCard'
 import { RatingBadge } from '../components/RatingBadge'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
@@ -58,36 +59,44 @@ export function PhotoComparePage() {
             const myStatus = mine?.status ?? photo.suggestion?.status ?? null
             const myStatusIsSuggested = mine === undefined && photo.suggestion !== null
             return (
-              <li key={photo.id} className="flex flex-col gap-2 rounded-xl border border-border p-2">
-                <Link
-                  to={`/projects/${id}/photos/${photo.id}`}
-                  className="block aspect-square overflow-hidden rounded-md"
-                >
-                  {/* Spec 0002 (Bild-Auflösungen): "Einzelbild-/Vergleichsansicht
-                      Display-Auflösung" - bewusst dieselbe Auflösung wie PhotoDetailPage,
-                      nicht die Grid-Thumbnail-Auflösung. */}
+              <PhotoCard
+                key={photo.id}
+                to={`/projects/${id}/photos/${photo.id}`}
+                relativePath={photo.relative_path}
+                image={
+                  /* Spec 0002 (Bild-Aufloesungen): "Einzelbild-/Vergleichsansicht
+                     Display-Aufloesung" - bewusst dieselbe Aufloesung wie PhotoDetailPage, nicht
+                     die Raster-Thumbnail-Aufloesung. */
                   <PhotoImage
                     photoId={photo.id}
                     variant="display"
                     alt={photo.relative_path}
                     className="size-full object-cover"
                   />
-                </Link>
-                <span className="flex items-center gap-1.5 text-sm text-text">
-                  Ich: <RatingBadge status={myStatus} suggested={myStatusIsSuggested} />
-                </span>
-                {others.length > 0 ? (
-                  others.map((rating) => (
-                    <span key={rating.user_id} className="flex items-center gap-1.5 text-sm text-text">
-                      {rating.username}: <RatingBadge status={rating.status} />
+                }
+                /* Die Karte selbst traegt hier bewusst KEINEN Bewertungszustand: In dieser Ansicht
+                   ist die Bewertung eine Aussage PRO PERSON und steht deshalb in den beiden Zeilen
+                   der Fusszeile. Ein zusaetzliches Kennzeichen am Kartenkoerper waere eine dritte,
+                   mehrdeutige Nennung derselben Information. */
+                footer={
+                  <div className="flex flex-col gap-2">
+                    <span className="flex items-center gap-2 text-sm text-text">
+                      Ich: <RatingBadge status={myStatus} suggested={myStatusIsSuggested} />
                     </span>
-                  ))
-                ) : (
-                  <span className="flex items-center gap-1.5 text-sm text-text">
-                    Andere: <RatingBadge status={null} />
-                  </span>
-                )}
-              </li>
+                    {others.length > 0 ? (
+                      others.map((rating) => (
+                        <span key={rating.user_id} className="flex items-center gap-2 text-sm text-text">
+                          {rating.username}: <RatingBadge status={rating.status} />
+                        </span>
+                      ))
+                    ) : (
+                      <span className="flex items-center gap-2 text-sm text-text">
+                        Andere: <RatingBadge status={null} />
+                      </span>
+                    )}
+                  </div>
+                }
+              />
             )
           })}
         </ul>

@@ -206,4 +206,31 @@ describe('Dialog', () => {
     unmount()
     expect(document.body.style.overflow).toBe('')
   })
+
+  /*
+   * specs/features/0321-dark-utility-register-ansichten.md, Etappe 1: Die Scroll-Sperre traegt
+   * jetzt auch bei mehreren gleichzeitig offenen Ueberlagerungen. Zuvor merkte sich jeder Dialog
+   * den vorgefundenen `overflow`-Wert selbst - der zweite las bereits 'hidden' als "vorherigen"
+   * Wert, und wenn der ERSTE zuerst schloss, schrieb er sein leeres '' zurueck.
+   *
+   * Bewusst ueber tatsaechlich gerendertes React statt ueber die Modul-API von `lib/scrollLock`
+   * (die dort eigene Unit-Tests hat): nur so ist belegt, dass `dialog.tsx` den Zaehler wirklich
+   * benutzt.
+   */
+  it.each([
+    ['in Anlegereihenfolge', true],
+    ['in umgekehrter Reihenfolge', false],
+  ])('keeps the background locked while a second dialog is still open (%s)', (_name, closeFirstFirst) => {
+    const first = render(<TestDialog />)
+    const second = render(<TestDialog />)
+    expect(document.body.style.overflow).toBe('hidden')
+
+    const [closedFirst, closedLast] = closeFirstFirst ? [first, second] : [second, first]
+
+    closedFirst.unmount()
+    expect(document.body.style.overflow).toBe('hidden')
+
+    closedLast.unmount()
+    expect(document.body.style.overflow).toBe('')
+  })
 })

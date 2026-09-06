@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -48,6 +48,39 @@ describe('RatingButtons', () => {
     render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  /*
+   * specs/features/0321-dark-utility-register-ansichten.md, Etappe 3: Jeder Eintrag traegt jetzt
+   * eine SICHTBARE Beschriftung und ein Tasten-Kaestchen mit seiner Ziffer.
+   *
+   * Die drei folgenden Faelle sichern zusammen die Zusage ab, dass der zugaengliche Name dadurch
+   * NICHT laenger wird. Ohne sie hiesse er "Favorit 1", und `getByRole('button', { name, exact:
+   * true })` in `e2e/tests/tap-targets.spec.ts` braeche erst in CI.
+   */
+  it.each(['Favorit', 'Album-würdig', 'Verwerfen'])(
+    'keeps the accessible name of "%s" exact, despite the visible key box',
+    (label) => {
+      // Ein String als `name` ist in Testing Library eine EXAKTE Uebereinstimmung des ganzen
+      // zugaenglichen Namens - "Favorit 1" wuerde hier nicht mehr gefunden.
+      render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
+
+      expect(screen.getAllByRole('button', { name: label })).toHaveLength(1)
+    }
+  )
+
+  it('keeps exactly three buttons in the group - the key box is not a control', () => {
+    render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
+
+    expect(within(screen.getByRole('group', { name: 'Bewertung' })).getAllByRole('button')).toHaveLength(3)
+  })
+
+  it('shows the label of every entry visibly', () => {
+    render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
+
+    for (const label of ['Favorit', 'Album-würdig', 'Verwerfen']) {
+      expect(screen.getByRole('button', { name: label })).toHaveTextContent(label)
+    }
   })
 
   // Regressionstest fuer den urspruenglich benannten Bug (Funktionaler Fix 1, specs/features/

@@ -44,8 +44,8 @@ export function ProjectCreatePage() {
       <h1 className="text-xl sm:text-2xl">Neues Projekt anlegen</h1>
       {errorDetail && <Alert>{errorDetail}</Alert>}
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="project-name" className="text-sm font-medium text-text-h">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="project-name" className="text-xs font-medium text-text-h">
             Name
           </label>
           <Input

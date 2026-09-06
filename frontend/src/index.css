@@ -70,6 +70,20 @@
   --border: #2a2e3d;
   --border-control: #727891;
 
+  /* --- Dritte Rahmenrolle: die LINIE AUF DEM GRUND (Spec 0321). ---
+     Abgeleitet aus --border, nicht frei gewaehlt: gleicher Farbton (227 Grad), praktisch gleiche
+     Saettigung (18.9 % gegen 18.4 %), nur eine Helligkeitsstufe darueber - die Trennlinie ist
+     sichtbar dasselbe Material wie die Panelkante, nicht ein zweiter Grauton. --border erreicht
+     auf --bg nur 1.45:1 und ist als freistehende Trennlinie schlicht unsichtbar; --separator
+     erreicht 2.38:1 (--bg) bzw. 2.20:1 (--surface), nachgerechnet in der Kontrastmatrix des
+     Vertragstests.
+
+     Die Dreiteilung lautet damit: --border = Kante einer Flaeche, --separator = Linie auf dem
+     Grund, --border-control = Umriss eines Bedienelements. --separator gilt AUSSCHLIESSLICH dort,
+     wo eine Linie oder dekorative Flaeche unmittelbar auf --bg/--surface steht und dort die
+     einzige Grenze ist. */
+  --separator: #474e68;
+
   /* --- Die vier Akzente des Boards. ---
      --accent und --accent-strong zeigen auf denselben Wert: auf dunklem Grund traegt der Akzent
      selbst genug Kontrast (7.67-10.67:1), eine getrennte Textstufe ist nicht noetig. Die Namen
@@ -187,6 +201,7 @@
 
   --color-border: var(--border);
   --color-border-control: var(--border-control);
+  --color-separator: var(--separator);
 
   --color-accent: var(--accent);
   --color-accent-strong: var(--accent-strong);

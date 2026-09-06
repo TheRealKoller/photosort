@@ -92,7 +92,7 @@ export function AusschussStepPage() {
       )}
 
       {scoringStatus === 'running' && (
-        <div className="flex w-full max-w-sm flex-col gap-1.5">
+        <div className="flex w-full max-w-sm flex-col gap-2">
           <p className="text-sm text-text">
             {photosProcessed} von {photosTotal} Fotos verarbeitet
           </p>

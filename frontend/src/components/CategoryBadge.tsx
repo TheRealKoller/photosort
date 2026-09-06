@@ -82,7 +82,7 @@ export function CategoryBadge({ categoryKey, categories, className }: CategoryBa
       aria-label={label}
       title={label}
       className={cn(
-        'inline-flex items-center justify-center rounded-xl px-3 py-1.5 text-xs font-semibold',
+        'inline-flex items-center justify-center rounded-xl px-3 py-1 text-xs font-semibold',
         chipClasses,
         className
       )}

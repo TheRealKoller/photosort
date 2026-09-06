@@ -6,6 +6,7 @@ import type { PhotoOut } from '../api/types'
 import { CategoryBadge } from '../components/CategoryBadge'
 import { CategoryOverrideMarker } from '../components/CategoryOverrideMarker'
 import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
+import { PhotoCard } from '../components/PhotoCard'
 import { PhotoImage } from '../components/PhotoImage'
 import { QualityMeter } from '../components/QualityMeter'
 import { Alert } from '../components/ui/alert'
@@ -324,16 +325,23 @@ export function CurateCategoriesPage() {
           // stattdessen gap-4 (16px) zwischen den Clustern (Review-Fund ux-ui-designer: gap-6
           // hier haette faelschlich auch zwischen Clustern 24px statt 16px erzeugt).
           <section key={dayKey} className="flex flex-col gap-4">
-            <h2 className="text-xl">
+            <h2 className="text-lg">
               {/* Gesamte Kopfzeile als Trigger (Akzeptanzkriterium 1) - kein separates Icon als
                   alleiniger interaktiver Traeger, `w-full`+`text-left` macht die ganze Zeile
                   klickbar, `min-h-11` sichert ein Touch-Ziel von mindestens 44px. */}
-              <button
-                type="button"
+              {/* Spec 0321, Etappe 2: keine handgerollte Schaltflaeche mehr - Flaeche, Zustaende
+                  und Trefferflaeche kommen aus dem `Button`-Primitiv. Die ZEILENFORM bleibt und
+                  wird ausgeschrieben ueberschrieben: `min-h-11` als Zeilenhoehe einer zeilenweisen
+                  Liste (Trefferflaechen-Regel 3), `whitespace-normal` gegen das `whitespace-nowrap`
+                  des Primitivs (die Tagesueberschrift muss bei 360px umbrechen duerfen, sonst
+                  entsteht waagerechtes Scrollen) und die Schriftstufe der Ueberschrift statt der
+                  Board-Schaltflaechenschrift. */}
+              <Button
+                variant="ghost"
                 aria-expanded={!isCollapsed}
                 aria-controls={panelId}
                 onClick={() => toggleDay(dayKey)}
-                className="flex min-h-11 w-full items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-overlay active:bg-border"
+                className="h-auto min-h-11 w-full justify-start whitespace-normal px-2 py-1 text-left text-lg font-normal"
               >
                 <span aria-hidden="true">{isCollapsed ? '▶' : '▼'}</span>
                 <span>{formatDayHeading(dayKey)}</span>
@@ -350,7 +358,7 @@ export function CurateCategoriesPage() {
                     </span>
                   </>
                 )}
-              </button>
+              </Button>
             </h2>
             {!isCollapsed && (
               // Kompletter Cluster-Teilbaum wird bei Zugeklapptheit per conditional JSX gar nicht
@@ -369,7 +377,7 @@ export function CurateCategoriesPage() {
                     const heading = clusterMetaRef.current.get(clusterKey)?.heading ?? clusterKey
                     return (
                       <section key={clusterKey} className="flex flex-col gap-4">
-                        <h3 className="text-lg">{heading}</h3>
+                        <h3 className="text-base">{heading}</h3>
                         {clusterIsEmpty && (
                           <p className="text-sm text-text">Keine Fotos in dieser Tageszeit</p>
                         )}
@@ -378,7 +386,7 @@ export function CurateCategoriesPage() {
                             const photos = photosByCategory[categoryKey]
                             return (
                               <div key={categoryKey} className="flex flex-col gap-2">
-                                <h4 className="flex items-center gap-2 text-sm">
+                                <h4 className="flex items-center gap-2 text-sm font-semibold">
                                   <CategoryBadge
                                     categoryKey={categoryKey}
                                     categories={categorySet}
@@ -397,83 +405,87 @@ export function CurateCategoriesPage() {
                                     const isRejecting = rejectingPhotoId === photo.id
                                     const level = qualityLevel(photo.ranking?.rank_score ?? null)
                                     return (
-                                      <li key={photo.id} className="flex flex-col gap-1.5">
-                                        <div className="relative">
-                                          {isRejecting ? (
-                                            <Skeleton className="aspect-square w-full rounded-md" />
+                                      <PhotoCard
+                                        key={photo.id}
+                                        relativePath={photo.relative_path}
+                                        image={
+                                          isRejecting ? (
+                                            <Skeleton className="size-full" />
                                           ) : (
-                                            <>
-                                              <PhotoImage
-                                                photoId={photo.id}
-                                                variant="thumbnail"
-                                                alt={photo.relative_path}
-                                                className="aspect-square w-full rounded-md object-cover"
-                                              />
-                                              {/* Einheitliche Position "oben rechts" (UI/UX-Abschnitt,
-                                                  specs/features/0040-bewertungsdetails-info-popover.md) -
-                                                  kein bereits belegtes Element in dieser Ecke. Waehrend
-                                                  isRejecting zeigt die Kachel nur den Skeleton-
-                                                  Platzhalter, kein Trigger. */}
-                                              <CriterionDetailsPopover
-                                                criterionScores={photo.criterion_scores}
-                                                ranking={photo.ranking}
-                                                suggestion={photo.suggestion}
-                                                className="absolute right-1.5 top-1.5"
-                                                categoryCandidates={photo.category_candidates}
-                                                fineLabels={photo.fine_labels}
-                                                categories={categorySet}
-                                                categoriesLoading={categoriesQuery.isLoading}
-                                                categoriesError={categoriesQuery.isError}
-                                                onRetryCategories={() => {
-                                                  void categoriesQuery.refetch()
-                                                }}
-                                                categoryOverride={photo.category_override}
-                                                onOverrideCategory={(categoryKey) =>
-                                                  categoryOverrideControls.overrideCategory(
-                                                    photo.id,
-                                                    categoryKey
-                                                  )
-                                                }
-                                                onResetOverride={() =>
-                                                  categoryOverrideControls.resetOverride(photo.id)
-                                                }
-                                                pendingOverrideKey={categoryOverrideControls.pendingOverrideKeyFor(
-                                                  photo.id
-                                                )}
-                                                resetPending={categoryOverrideControls.isResetPendingFor(
-                                                  photo.id
-                                                )}
-                                              />
-                                              {/* specs/features/0055-remote-kategorie-
-                                                  klassifizierung-mit-kostenschaetzung.md: bislang
-                                                  unbelegte Ecke (oben links). */}
-                                              {photo.category_override !== null && (
-                                                <div className="absolute left-1.5 top-1.5">
-                                                  <CategoryOverrideMarker />
-                                                </div>
+                                            <PhotoImage
+                                              photoId={photo.id}
+                                              variant="thumbnail"
+                                              alt={photo.relative_path}
+                                              className="size-full object-cover"
+                                            />
+                                          )
+                                        }
+                                        /* Waehrend `isRejecting` zeigt die Kachel nur den
+                                           Platzhalter, keine Ecken-Trigger. Die Karte traegt hier
+                                           bewusst keinen Bewertungszustand: In der Kuratierung ist
+                                           noch nichts bewertet, und ein Kennzeichen "Neu" auf jeder
+                                           Kachel waere eine Ergaenzung, keine Umgestaltung. */
+                                        topLeft={
+                                          !isRejecting && photo.category_override !== null ? (
+                                            <CategoryOverrideMarker />
+                                          ) : undefined
+                                        }
+                                        topRight={
+                                          isRejecting ? undefined : (
+                                            <CriterionDetailsPopover
+                                              criterionScores={photo.criterion_scores}
+                                              ranking={photo.ranking}
+                                              suggestion={photo.suggestion}
+                                              categoryCandidates={photo.category_candidates}
+                                              fineLabels={photo.fine_labels}
+                                              categories={categorySet}
+                                              categoriesLoading={categoriesQuery.isLoading}
+                                              categoriesError={categoriesQuery.isError}
+                                              onRetryCategories={() => {
+                                                void categoriesQuery.refetch()
+                                              }}
+                                              categoryOverride={photo.category_override}
+                                              onOverrideCategory={(categoryKey) =>
+                                                categoryOverrideControls.overrideCategory(
+                                                  photo.id,
+                                                  categoryKey
+                                                )
+                                              }
+                                              onResetOverride={() =>
+                                                categoryOverrideControls.resetOverride(photo.id)
+                                              }
+                                              pendingOverrideKey={categoryOverrideControls.pendingOverrideKeyFor(
+                                                photo.id
                                               )}
-                                            </>
-                                          )}
-                                        </div>
-                                        {level && (
-                                          <QualityMeter level={level} className="text-xs" />
-                                        )}
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="sm"
-                                          disabled={isRejecting}
-                                          busy={isRejecting}
-                                          aria-label={`Verwerfen: ${photo.relative_path}`}
-                                          onClick={() => handleReject(photo)}
-                                        >
-                                          {isRejecting ? 'Wird verworfen…' : 'Verwerfen'}
-                                        </Button>
-                                      </li>
+                                              resetPending={categoryOverrideControls.isResetPendingFor(
+                                                photo.id
+                                              )}
+                                            />
+                                          )
+                                        }
+                                        footer={
+                                          <div className="flex flex-col gap-2">
+                                            {level && (
+                                              <QualityMeter level={level} className="text-xs" />
+                                            )}
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={isRejecting}
+                                              busy={isRejecting}
+                                              aria-label={`Verwerfen: ${photo.relative_path}`}
+                                              onClick={() => handleReject(photo)}
+                                            >
+                                              {isRejecting ? 'Wird verworfen…' : 'Verwerfen'}
+                                            </Button>
+                                          </div>
+                                        }
+                                      />
                                     )
                                   })}
                                   {photos.length < topN && (
-                                    <li className="flex aspect-square w-full flex-col items-center justify-center rounded-md border border-dashed border-border p-2 text-center text-xs text-text">
+                                    <li className="flex aspect-square w-full flex-col items-center justify-center rounded-lg border border-dashed border-separator p-2 text-center text-xs text-text">
                                       Kein weiteres Foto verfügbar
                                     </li>
                                   )}

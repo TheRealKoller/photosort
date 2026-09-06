@@ -1,10 +1,32 @@
 import type { RatingStatus } from '../api/types'
+import { cn } from '../lib/utils'
 import { Button } from './ui/button'
+import { Icon } from './ui/icon'
+import type { IconName } from './ui/icon'
 
-const OPTIONS: { status: RatingStatus; label: string }[] = [
-  { status: 'favorite', label: 'Favorit' },
-  { status: 'album_worthy', label: 'Album-würdig' },
-  { status: 'rejected', label: 'Verwerfen' },
+/*
+ * Ein Eintrag der Board-Bewertungsleiste: Symbol, sichtbare Beschriftung und die Ziffer der Taste,
+ * die ihn tatsaechlich ausloest.
+ *
+ * DIE BELEGUNG BLEIBT 1 / 2 / 3 (entschieden): Uebernommen wird die FORM des Kaestchens, nicht die
+ * Board-Beschriftung F/A/X. Die Ziffern stehen hier, die Belegung in `PhotoDetailPage` - beide
+ * koennen auseinanderlaufen, deshalb prueft `PhotoDetailPage.test.tsx` sie tabellengetrieben
+ * gegeneinander.
+ *
+ * ZIFFERNFARBE IN DER ZUSTANDSFARBE (Board), aber fuer "Verwerfen" `--danger-text` statt
+ * `--rating-rejected`: der Board-Ton erreicht auf `--overlay` nur 3.96:1 und ist hier TEXT. Das ist
+ * die bereits geltende --danger/--danger-text-Regel, keine neue Festlegung.
+ */
+const OPTIONS: { status: RatingStatus; label: string; icon: IconName; key: string; keyClass: string }[] = [
+  { status: 'favorite', label: 'Favorit', icon: 'star', key: '1', keyClass: 'text-rating-favorite' },
+  {
+    status: 'album_worthy',
+    label: 'Album-würdig',
+    icon: 'book',
+    key: '2',
+    keyClass: 'text-rating-album-worthy',
+  },
+  { status: 'rejected', label: 'Verwerfen', icon: 'x-circle', key: '3', keyClass: 'text-danger-text' },
 ]
 
 // Bewertungsfarben (specs/architecture/0004-design-system.md) - nur auf dem aktiv gedrueckten
@@ -34,6 +56,24 @@ const ACTIVE_TONE_CLASSES: Record<RatingStatus, string> = {
  * das obenliegende Element.
  */
 const HOT_PATH_HEIGHT = 'h-11 sm:h-8'
+
+/*
+ * UNTERHALB `sm:` STEHEN DIE EINTRAEGE UNTEREINANDER (specs/features/0321-dark-utility-register-
+ * ansichten.md, UI/UX-Abschnitt 4). Arithmetisch belegt: 360 - 32 (`px-4`) - 16 (`p-2` des
+ * Containers) = 312px innen, minus 2x `gap-3` = 288px fuer drei Eintraege; drei Eintraege mit
+ * Symbol, sichtbarer Beschriftung und Kaestchen brauchen rund 400px. Kuerzen der Beschriftung
+ * verbietet ein Akzeptanzkriterium, waagerechtes Scrollen die Abnahme.
+ *
+ * Der Umbruch entsteht ueber Utilities auf EINEM DOM-Baum, nicht ueber zwei parallele Teilbaeume
+ * (`hidden sm:flex` neben `flex sm:hidden`) - doppelte Zweige wuerden Rollen, Namen und
+ * Elementanzahl verdoppeln und sowohl `toHaveCount(3)` als auch `EXPECTED_CONTROL_COUNT = 6`
+ * brechen.
+ *
+ * Nebeneffekt und Gewinn: Die drei Eintraege stehen dann von oben nach unten in derselben
+ * Reihenfolge wie ihre Tasten 1/2/3, statt in einer je nach Breite unterschiedlich umbrechenden
+ * Reihe.
+ */
+const ENTRY_LAYOUT = 'w-full justify-start sm:w-auto'
 
 interface RatingButtonsProps {
   currentStatus: RatingStatus | null
@@ -70,7 +110,15 @@ export function RatingButtons({
   const isDisabled = disabled || busy
 
   return (
-    <div role="group" aria-label="Bewertung" className="flex flex-wrap items-center gap-3">
+    // Board-Container der Leiste: Flaeche `--surface`, Radius 8px, Polsterung 8px. Der Abstand
+    // zwischen den Eintraegen ist 12px und hier KEIN Gestaltungsspielraum: die aufgespannte
+    // Trefferflaeche ragt bis zu 6px je Seite ueber das Sichtbare hinaus, in einer Ueberlappung
+    // gewinnt das obenliegende Element - und ein Fehlgriff schreibt hier einen falschen Datenwert.
+    <div
+      role="group"
+      aria-label="Bewertung"
+      className="flex flex-col items-stretch gap-3 rounded-md bg-surface p-2 sm:flex-row sm:flex-wrap sm:items-center"
+    >
       {OPTIONS.map((option) => {
         const isActive = currentStatus === option.status
         return (
@@ -81,12 +129,34 @@ export function RatingButtons({
             aria-label={option.label}
             aria-pressed={isActive}
             disabled={isDisabled}
-            className={
-              isActive ? `${HOT_PATH_HEIGHT} ${ACTIVE_TONE_CLASSES[option.status]}` : HOT_PATH_HEIGHT
-            }
+            className={cn(
+              HOT_PATH_HEIGHT,
+              ENTRY_LAYOUT,
+              'gap-1 px-3',
+              isActive && ACTIVE_TONE_CLASSES[option.status]
+            )}
             onClick={() => onToggle(option.status)}
           >
+            <Icon name={option.icon} size={16} />
             {option.label}
+            {/* TASTEN-KAESTCHEN: `aria-hidden`, sonst lautete der zugaengliche Name "Favorit 1" und
+                die `exact: true`-Pruefungen in den e2e-Specs braechen. Die Tastenbelegung ist fuer
+                Screenreader-Nutzer bereits ueber die Shortcut-Zeile im Text der Seite verfuegbar;
+                das Kaestchen ist eine rein visuelle Wiederholung.
+
+                `--overlay` als eigene, in JEDEM Zustand gleich bleibende Flaeche - dadurch bleibt
+                das Kaestchen auch auf dem gefuellten aktiven Eintrag eine lesbare Insel und braucht
+                keine sechs eigenen Zustandsvarianten. 12px statt der 10px des Boards: das
+                Design-System setzt 12px als harte Untergrenze. */}
+            <span
+              aria-hidden="true"
+              className={cn(
+                'ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-xs bg-overlay px-1 font-mono text-xs leading-none sm:ml-0',
+                option.keyClass
+              )}
+            >
+              {option.key}
+            </span>
           </Button>
         )
       })}

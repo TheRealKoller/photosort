@@ -74,7 +74,7 @@ export function CloudVisionStatusList({ cloudVisionStatus }: CloudVisionStatusLi
           <div key={entry.phase} className="flex flex-col gap-1">
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-text">{PHASE_LABELS[entry.phase]}</dt>
-              <dd className="flex items-center gap-1.5 font-medium text-text-h">
+              <dd className="flex items-center gap-2 font-medium text-text-h">
                 {icon === null ? (
                   <StatusDot status={null} />
                 ) : (
@@ -86,7 +86,7 @@ export function CloudVisionStatusList({ cloudVisionStatus }: CloudVisionStatusLi
               </dd>
             </div>
             {entry.status === 'error' && (
-              <div className="flex flex-col gap-0.5">
+              <div className="flex flex-col gap-1">
                 {/* Regulaerer React-Textknoten (nie dangerouslySetInnerHTML) - Sicherheits-Muss-
                     Kriterium der Spec, siehe Komponenten-Docstring. */}
                 <p className="text-xs text-text">{entry.error_message}</p>

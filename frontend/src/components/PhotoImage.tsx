@@ -73,7 +73,10 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
   if (state.status === 'placeholder') {
     return (
       <div
-        className={cn('flex items-center justify-center rounded-md bg-border/60 text-xs text-text', className)}
+        // Platzhalterflaeche: dekorative Flaeche unmittelbar auf dem Grund. `bg-border/60` war
+        // doppelt problematisch - unsichtbar (1.45:1 vor der Abdunklung) und ueber den
+        // Deckkraft-Modifikator statisch nicht nachrechenbar (Spec 0321).
+        className={cn('flex items-center justify-center rounded-md bg-separator text-xs text-text', className)}
         role="img"
         aria-label={`${alt}: wird noch verarbeitet`}
       />
@@ -84,7 +87,10 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
     return (
       <div
         className={cn(
-          'flex items-center justify-center rounded-md border border-status-failed/40 bg-status-failed/10 px-2 text-center text-xs text-text-h',
+          // Toast-Konstruktion des Boards (Flaeche `--elevated`, farbiger 1px-Rand) statt
+          // zweier Deckkraft-Toenungen: ueber einer Deckkraft-Tinte ist der Kontrast statisch
+          // nicht nachrechenbar und bliebe damit dauerhaft ungeprueft (Spec 0321).
+          'flex items-center justify-center rounded-md border border-status-failed bg-elevated px-2 text-center text-xs text-text-h',
           className
         )}
         role="alert"

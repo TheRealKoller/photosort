@@ -57,11 +57,11 @@ export function LoginPage() {
      * Vorlage begruendet die Kargheit ausdruecklich - der Bildschirm wird zweimal im Jahr
      * gesehen, danach bleibt die PWA angemeldet.
      */
-    <main className="flex min-h-screen flex-col justify-center bg-bg px-8 py-10 sm:px-10">
+    <main className="flex min-h-screen flex-col justify-center bg-bg px-4 py-8 sm:px-6">
       <div className="mx-auto w-full max-w-sm">
-        <BrandMark className="mb-7" />
+        <BrandMark className="mb-6" />
         <h1 className="mb-1 text-2xl sm:text-3xl">PhotoSort</h1>
-        <p className="mb-7 text-sm text-text">Melde dich an, um deine Ordner zu sortieren.</p>
+        <p className="mb-6 text-sm text-text">Melde dich an, um deine Ordner zu sortieren.</p>
 
         {state.reason === 'expired' && !errorDetail && (
           <p className="mb-4 text-sm text-text">Sitzung abgelaufen — bitte erneut anmelden.</p>
@@ -71,13 +71,15 @@ export function LoginPage() {
             <Alert>{errorDetail}</Alert>
           </div>
         )}
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
-          <div className="flex flex-col gap-1.5">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
             <label htmlFor="login-username" className="text-xs text-text">
               Benutzername
             </label>
-            {/* 48px hohe Felder statt der Standard-44px: die Vorlage begruendet das mit der
-                einhaendigen Bedienung am Telefon. */}
+            {/* Die Feldhoehe kommt seit Spec 0321 aus dem Input-Primitiv (`h-11`, dritte
+                `h-11`-Kategorie: ein ersetztes Element traegt keine Pseudo-Elemente und loest
+                seine Trefferflaeche ausschliesslich ueber die sichtbare Zeilenhoehe). Die
+                frueheren 48px waren eine zusaetzliche, nirgends sonst vorkommende Stufe. */}
             <Input
               id="login-username"
               name="username"
@@ -88,10 +90,9 @@ export function LoginPage() {
               disabled={mutation.isPending}
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              className="h-12"
             />
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             <label htmlFor="login-password" className="text-xs text-text">
               Passwort
             </label>
@@ -104,16 +105,18 @@ export function LoginPage() {
               disabled={mutation.isPending}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="h-12"
             />
           </div>
-          <Button type="submit" busy={mutation.isPending} className="mt-3 h-[50px] w-full text-base">
+          {/* Einzige Aktion des Bildschirms, einhaendig bedient - sichtbar 44px (dritte
+              `h-11`-Kategorie), volle Breite. `h-[50px]` war ein willkuerlicher Wert auf
+              keiner Skala. */}
+          <Button type="submit" busy={mutation.isPending} className="mt-2 h-11 w-full text-base">
             {mutation.isPending ? 'Anmelden…' : 'Anmelden'}
           </Button>
         </form>
 
         {/* Verortungszeile der Vorlage: sagt in einem Satz, wo die Daten liegen. */}
-        <p className="mt-6 text-center text-xs text-text">
+        <p className="mt-6 text-center text-xs text-text-muted">
           Läuft auf unserem eigenen Server. Nichts verlässt das Haus, solange die Erkennung nicht
           eingeschaltet ist.
         </p>

@@ -44,7 +44,15 @@ export function PopoverContent({
         ref={ref}
         sideOffset={sideOffset}
         className={cn(
-          'z-50 max-h-[60vh] w-72 overflow-y-auto rounded-md border border-border bg-elevated p-4 text-sm text-text',
+          // HOEHENSCHRANKE ZWEISTUFIG (Befund aus dem e2e-Lauf zu Spec 0321): `max-h-[60vh]`
+          // allein ist eine Schranke gegen den VIEWPORT, keine gegen den tatsaechlich
+          // verfuegbaren Platz. Sobald der Trigger so steht, dass weder ueber noch unter ihm 60vh
+          // frei sind - seit die Foto-Karte einen Kartenkoerper hat, ist das bei 360px der
+          // Regelfall -, schiebt Radix das Panel zwar auf die groessere Seite, kuerzt es aber
+          // nicht: es ragte unten aus dem Sichtbereich. `--radix-popover-content-available-height`
+          // ist genau der Wert, den Radix bei der Kollisionsvermeidung ohnehin misst; das
+          // Minimum aus beiden haelt die Board-Schranke UND den Sichtbereich ein.
+          'z-50 max-h-[min(60vh,var(--radix-popover-content-available-height))] w-72 overflow-y-auto rounded-md border border-border bg-elevated p-4 text-sm text-text',
           className
         )}
         {...props}

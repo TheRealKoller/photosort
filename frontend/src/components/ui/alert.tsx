@@ -77,13 +77,13 @@ export function Alert({
       role="alert"
       data-alert-variant={variant}
       className={cn(
-        'flex flex-wrap items-start gap-3 rounded-md border bg-elevated px-3 py-3 text-sm',
+        'flex flex-wrap items-start gap-3 rounded-md border bg-elevated p-3 text-sm',
         config.frame,
         className
       )}
     >
-      <Icon name={config.icon} size={18} className="mt-0.5 shrink-0" />
-      <div className="flex min-w-40 flex-1 flex-col gap-0.5">
+      <Icon name={config.icon} size={18} className="shrink-0" />
+      <div className="flex min-w-40 flex-1 flex-col gap-1">
         <p className="font-semibold text-text-h">{title ?? config.title}</p>
         {/* Fremdtext (`detail` des Servers) ausschliesslich als regulaerer React-Textknoten - nie
             dangerouslySetInnerHTML, kein Markdown-/Rich-Text-Rendering, keine Verlinkung. */}

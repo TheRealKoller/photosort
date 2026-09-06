@@ -237,6 +237,21 @@ const stateSurfaceRows: ContrastRow[] = [
   { foreground: '--text-h', background: '--border', threshold: TEXT_THRESHOLD },
 ]
 
+/**
+ * `--separator` ist die LINIE AUF DEM GRUND (Spec 0321): sichtbare Trennlinie oder dekorative
+ * Flaeche unmittelbar auf `--bg`/`--surface`. `--border` (1.04-1.45:1) verschwindet dort
+ * praktisch. Zugesichert wird der Korridor gegen die beiden Flaechen, auf denen das Token
+ * ueberhaupt gilt; auf `--elevated`/`--overlay` gilt es nicht, die Werte dort sind nachrichtlich
+ * und tragen keine Schwelle.
+ */
+const SEPARATOR_MIN = 2.0
+const SEPARATOR_MAX = 2.5
+
+const separatorRows: ContrastRow[] = [
+  { foreground: '--separator', background: '--bg', threshold: SEPARATOR_MIN },
+  { foreground: '--separator', background: '--surface', threshold: SEPARATOR_MIN },
+]
+
 const inkRows: ContrastRow[] = [
   { foreground: '--accent-fg', background: '--accent', threshold: TEXT_THRESHOLD },
   { foreground: '--status-success-fg', background: '--status-success', threshold: TEXT_THRESHOLD },
@@ -265,6 +280,7 @@ const contrastRows: ContrastRow[] = [
   ...graphicRows('--status-success'),
   ...graphicRows('--status-failed'),
   ...inkRows,
+  ...separatorRows,
   ...stateSurfaceRows,
   ...ratingRows,
   ...statusPillRows,
@@ -289,6 +305,7 @@ const FOREGROUND_PATTERNS: RegExp[] = [
   /^--info$/,
   /^--danger(-text)?$/,
   /^--border(-control)?$/,
+  /^--separator$/,
   /^--rating-[a-z-]+$/,
   /^--status-(running|success|failed)$/,
   /^--status-.+-(strong|fg)$/,
@@ -340,6 +357,22 @@ describe('Design-Vertrag: Kontrastmatrix', () => {
       ratio,
       `${foreground} (${hexOf(foreground)}) auf ${background} (${hexOf(background)}) = ${ratio.toFixed(2)}:1`
     ).toBeGreaterThanOrEqual(threshold)
+  })
+
+  it('haelt --separator im Zielkorridor und ueber --border, auf allen vier Flaechen', () => {
+    // Die Untergrenze steht bereits als Matrixzeile. Hier zusaetzlich die OBERgrenze (darueber
+    // waere es keine dekorative Linie mehr, sondern ein zweiter Grauton), und die eigentliche
+    // Aussage der Umstellung: --separator ist auf JEDER Flaeche sichtbarer als --border. Ohne
+    // diesen Vergleich bliebe ein Wertewechsel, der die Linie wieder verschwinden laesst,
+    // unbemerkt, solange er nur ueber 2.0 landet.
+    for (const surface of ['--bg', '--surface'] as const) {
+      expect(contrastRatio(hexOf('--separator'), hexOf(surface))).toBeLessThanOrEqual(SEPARATOR_MAX)
+    }
+    for (const surface of SURFACES) {
+      const separator = contrastRatio(hexOf('--separator'), hexOf(surface))
+      const border = contrastRatio(hexOf('--border'), hexOf(surface))
+      expect(separator, `${surface}: separator ${separator.toFixed(2)} vs border ${border.toFixed(2)}`).toBeGreaterThan(border)
+    }
   })
 
   it('deckt jedes deklarierte Vordergrund-Token mit mindestens einer Matrixzeile ab', () => {
@@ -525,8 +558,147 @@ const FOCUS_SUPPRESSING_UTILITY = new RegExp(
   `ring-offset|focus-visible:|(^|[\\s'"\`([])(?:[a-z-]+:)*outline-${'none'}\\b`
 )
 
+/**
+ * Entfernt Kommentarinhalt ZEILENTREU: Kommentartext wird durch Leerzeichen ersetzt, Zeilenumbrueche
+ * bleiben erhalten. Ohne die Zeilentreue verschoebe ein mehrzeiliger Blockkommentar alle folgenden
+ * Zeilennummern, und die Fundstellen-Meldungen des Helfers unten zeigten auf die falsche Zeile.
+ */
 function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '))
+    .replace(/^\s*\/\/.*$/gm, (comment) => ' '.repeat(comment.length))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fundstellengenaue Freigabelisten
+// ---------------------------------------------------------------------------------------------
+
+interface ScannedFile {
+  label: string
+  content: string
+}
+
+/** Eine Freigabe gilt fuer GENAU EINE Zeile einer Datei, nicht fuer die ganze Datei. */
+interface AllowlistEntry {
+  file: string
+  /** Teilzeichenkette der freigegebenen Zeile. Darf nicht nur aus dem Suchbegriff bestehen. */
+  snippet: string
+  reason: string
+}
+
+interface Occurrence {
+  label: string
+  line: number
+  text: string
+  match: string
+}
+
+/**
+ * Suchbegriff einer fundstellengenauen Regel. Drei Formen, in aufsteigender Ausdrucksstaerke:
+ * feste Zeichenkette, regulaerer Ausdruck, oder ein ERKENNER - eine reine Funktion, die die
+ * Treffer einer Zeile liefert. Die dritte Form gibt es, weil sich "Abstandsstufe ausserhalb der
+ * Skala" nicht sinnvoll als ein einziger regulaerer Ausdruck schreiben laesst; als eigene Funktion
+ * ist der Erkenner ausserdem tabellengetrieben gegen synthetische Zeilen pruefbar, statt inline in
+ * einer Assertion vergraben zu sein.
+ */
+type Needle = string | RegExp | ((line: string) => string[])
+
+/**
+ * Alle Fundstellen eines Suchbegriffs, zeilengenau und ohne Kommentare. Bei einem regulaeren
+ * Ausdruck bzw. einem Erkenner traegt jede Fundstelle zusaetzlich den tatsaechlich getroffenen Text.
+ */
+function findMatches(needle: Needle, files: ScannedFile[]): Occurrence[] {
+  const found: Occurrence[] = []
+  for (const file of files) {
+    stripComments(file.content)
+      .split('\n')
+      .forEach((line, index) => {
+        const base = { label: file.label, line: index + 1, text: line.trim() }
+        if (typeof needle === 'string') {
+          if (line.includes(needle)) found.push({ ...base, match: needle })
+          return
+        }
+        if (typeof needle === 'function') {
+          for (const match of new Set(needle(line))) {
+            found.push({ ...base, match })
+          }
+          return
+        }
+        const pattern = new RegExp(needle.source, needle.flags.includes('g') ? needle.flags : `${needle.flags}g`)
+        const seen = new Set<string>()
+        let match: RegExpExecArray | null
+        while ((match = pattern.exec(line)) !== null) {
+          if (match[0].length === 0) {
+            pattern.lastIndex += 1
+            continue
+          }
+          // Mehrfachtreffer desselben Textes in einer Zeile sind EINE Fundstelle - sonst
+          // meldete `gap-1.5 sm:gap-1.5` zweimal dasselbe.
+          if (!seen.has(match[0])) {
+            seen.add(match[0])
+            found.push({ ...base, match: match[0] })
+          }
+        }
+      })
+  }
+  return found
+}
+
+/** Deckt der Suchbegriff den ganzen Ausschnitt ab, ist der Ausschnitt nur der Suchbegriff. */
+function isBareNeedle(snippet: string, needle: Needle): boolean {
+  const trimmed = snippet.trim()
+  if (typeof needle === 'string') {
+    return trimmed === needle
+  }
+  if (typeof needle === 'function') {
+    return needle(trimmed).includes(trimmed)
+  }
+  const match = new RegExp(needle.source, needle.flags.replace('g', '')).exec(trimmed)
+  return match !== null && match[0] === trimmed
+}
+
+/**
+ * Gleicht jede Fundstelle eines Suchbegriffs gegen eine fundstellengenaue Freigabeliste ab und
+ * meldet DREI Fehlerklassen statt einer:
+ *
+ *  (a) Fundstelle ohne passenden Eintrag - die eigentliche Regel.
+ *  (b) Eintrag ohne Fundstelle - verwaiste Freigabe. Genau daran verrotten solche Listen: die
+ *      Zeile verschwindet, die Freigabe bleibt und deckt spaeter still etwas anderes.
+ *  (c) Ausschnitt, der nur aus dem Suchbegriff selbst besteht - sonst liesse sich die alte,
+ *      dateiweise Granularitaet still wiederherstellen.
+ *
+ * Die zu durchsuchenden Dateien sind Parameter, damit der Helfer gegen synthetische Eingaben
+ * testbar ist, ohne das Dateisystem anzufassen.
+ */
+function allowlistedOccurrences(
+  needle: Needle,
+  entries: AllowlistEntry[],
+  files: ScannedFile[] = tsxFiles()
+): string[] {
+  const problems: string[] = []
+  const matched = new Set<number>()
+
+  for (const occurrence of findMatches(needle, files)) {
+    const index = entries.findIndex(
+      (entry) => entry.file === occurrence.label && occurrence.text.includes(entry.snippet)
+    )
+    if (index === -1) {
+      problems.push(`nicht freigegeben: ${occurrence.label}:${occurrence.line}: ${occurrence.text}`)
+    } else {
+      matched.add(index)
+    }
+  }
+
+  entries.forEach((entry, index) => {
+    if (!matched.has(index)) {
+      problems.push(`verwaiste Freigabe ohne Fundstelle: ${entry.file} :: ${entry.snippet}`)
+    }
+    if (isBareNeedle(entry.snippet, needle)) {
+      problems.push(`Ausschnitt ist nur der Suchbegriff selbst: ${entry.file} :: ${entry.snippet}`)
+    }
+  })
+
+  return problems
 }
 
 /** String-Literale einer Quelldatei. Template-Literale mit `${` werden uebersprungen - sonst
@@ -545,8 +717,124 @@ function stringLiterals(source: string): string[] {
   return literals
 }
 
+describe('Design-Vertrag: Selbsttest des Fundstellen-Helfers', () => {
+  /*
+   * Der Helfer traegt vier statische Regeln. Im gruenen Produktivlauf liefern alle drei
+   * Fehlerklassen die leere Menge - die Produktivnutzung belegt also NICHTS ueber seine
+   * Fehlererkennung. Deshalb diese Selbsttests, ausschliesslich gegen synthetische, hier literal
+   * geschriebene Dateilisten: kein Dateisystem, keine Fixture-Dateien, keine temporaeren
+   * Verzeichnisse.
+   */
+  const needle = 'rounded-full'
+
+  function file(label: string, ...lines: string[]): ScannedFile {
+    return { label, content: lines.join('\n') }
+  }
+
+  it('meldet eine Fundstelle ohne passenden Eintrag mit Datei und Zeilennummer', () => {
+    const problems = allowlistedOccurrences(needle, [], [file('src/a.tsx', 'const x = 1', 'className="rounded-full"')])
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('src/a.tsx')
+    expect(problems[0]).toContain(':2:')
+  })
+
+  it('meldet eine Fundstelle mit passendem Eintrag nicht', () => {
+    const problems = allowlistedOccurrences(
+      needle,
+      [{ file: 'src/a.tsx', snippet: 'size-2.5 shrink-0 rounded-full', reason: 'Statuspunkt' }],
+      [file('src/a.tsx', '<span className="size-2.5 shrink-0 rounded-full bg-accent" />')]
+    )
+
+    expect(problems).toEqual([])
+  })
+
+  /*
+   * Der eigentliche Zweck des Umbaus und zugleich sein permanenter Rot-Nachweis: Die frueher
+   * dateiweise Pruefung waere hier gruen gewesen, weil die Datei bereits gelistet ist.
+   */
+  it('meldet eine zweite Fundstelle in einer bereits gelisteten Datei', () => {
+    const problems = allowlistedOccurrences(
+      needle,
+      [{ file: 'src/a.tsx', snippet: 'Spinner rounded-full', reason: 'Lade-Spinner' }],
+      [file('src/a.tsx', '<i className="Spinner rounded-full" />', '<button className="rounded-full" />')]
+    )
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain(':2:')
+  })
+
+  it('meldet einen Eintrag ohne jede Fundstelle als verwaiste Freigabe', () => {
+    const problems = allowlistedOccurrences(
+      needle,
+      [{ file: 'src/weg.tsx', snippet: 'einst rounded-full', reason: 'laengst entfernt' }],
+      [file('src/a.tsx', 'const x = 1')]
+    )
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('verwaiste Freigabe')
+  })
+
+  it('meldet einen Ausschnitt, der nur aus dem Suchbegriff besteht, auch bei passenden Fundstellen', () => {
+    const problems = allowlistedOccurrences(
+      needle,
+      [{ file: 'src/a.tsx', snippet: 'rounded-full', reason: 'zu grob' }],
+      [file('src/a.tsx', '<i className="rounded-full" />')]
+    )
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('nur der Suchbegriff')
+  })
+
+  it('meldet eine Fundstelle nicht, die nur in einem Zeilenkommentar steht', () => {
+    const problems = allowlistedOccurrences(needle, [], [file('src/a.tsx', '// frueher rounded-full, heute nicht mehr')])
+
+    expect(problems).toEqual([])
+  })
+
+  it('meldet eine Fundstelle nach einem mehrzeiligen Blockkommentar mit ihrer tatsaechlichen Zeile', () => {
+    const problems = allowlistedOccurrences(
+      needle,
+      [],
+      [file('src/a.tsx', '/* Zeile 1', '   Zeile 2', '   Zeile 3 */', '<i className="rounded-full" />')]
+    )
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain(':4:')
+  })
+
+  it('haelt die Zeilenanzahl in stripComments unveraendert', () => {
+    const source = ['/* a', 'b', 'c */', 'code', '// d'].join('\n')
+
+    expect(stripComments(source).split('\n')).toHaveLength(source.split('\n').length)
+  })
+
+  it('meldet bei leerer Eingabemenge nichts', () => {
+    expect(allowlistedOccurrences(needle, [], [])).toEqual([])
+  })
+
+  /*
+   * Gegenprobe zur leeren Eingabemenge: Eine Regel, die gegen eine leere Kandidatenmenge laeuft,
+   * bestuende still. Jede Produktivnutzung des Helfers unten prueft deshalb zusaetzlich, dass sie
+   * ueberhaupt Kandidaten sieht - hier festgehalten, damit die Vorkehrung nicht wegoptimiert wird.
+   */
+  it('findet in einer nicht leeren Eingabemenge auch Fundstellen', () => {
+    expect(findMatches(needle, [file('src/a.tsx', '<i className="rounded-full" />')])).toHaveLength(1)
+  })
+})
+
 function tsxFiles(): typeof sourceFiles {
   return sourceFiles.filter((file) => file.label.endsWith('.tsx'))
+}
+
+/**
+ * Nur die Produktivdateien. Die Skalenregeln unten gelten fuer das MARKUP des Produkts, nicht fuer
+ * Testdateien: dort stehen Klassennamen als Zeichenketten in Assertionen (z.B. `input.test.tsx`
+ * haelt `focus:border-[1.5px]` fest), und eine Regel, die dort anschlaegt, zwingt dazu, genau die
+ * Zusicherung zu loeschen, die sie absichern soll.
+ */
+function productionTsxFiles(): typeof sourceFiles {
+  return tsxFiles().filter((file) => !file.label.endsWith('.test.tsx'))
 }
 
 describe('Design-Vertrag: statische Verwendungsregeln', () => {
@@ -720,22 +1008,56 @@ describe('Design-Vertrag: Formsprache und Skalen', () => {
    * Radius 16px (`rounded-xl`), nicht `rounded-full`. Diese Liste ist abschliessend: jede weitere
    * Fundstelle ist ein Fehler.
    */
-  const ROUNDED_FULL_ALLOWLIST: Record<string, string> = {
-    'src/components/ui/switch.tsx': 'Schalter-Spur und -Knauf (Board-Geometrie, vollrund)',
-    'src/components/ui/button.tsx': 'Lade-Spinner im Button',
-    'src/components/StatusTag.tsx': 'Lade-Spinner in der Status-Pille',
-    'src/components/FolderBrowser.tsx': 'Lade-Spinner im Ordner-Browser',
-    'src/components/StatusDot.tsx': 'Prozess-Status-Punkt',
-    'src/components/CriterionDetailsPopover.tsx': 'runder Backdrop des Popover-Triggers ueber der Fotokachel',
-    'src/components/CategoryOverrideMarker.tsx': 'runder Backdrop des Uebersteuerungs-Markers ueber der Fotokachel',
-  }
+  const ROUNDED_FULL_ALLOWLIST: AllowlistEntry[] = [
+    {
+      file: 'src/components/ui/switch.tsx',
+      snippet: 'inline-flex h-6 w-12 shrink-0 items-center rounded-full border',
+      reason: 'Schalter-Spur (Board-Geometrie, vollrund)',
+    },
+    {
+      file: 'src/components/ui/switch.tsx',
+      snippet: 'inline-block size-5 translate-x-0.5 transform rounded-full',
+      reason: 'Schalter-Knauf (Board-Geometrie, vollrund)',
+    },
+    {
+      file: 'src/components/ui/button.tsx',
+      snippet: 'animate-spin motion-reduce:animate-none rounded-full border-2',
+      reason: 'Lade-Spinner im Button',
+    },
+    {
+      file: 'src/components/StatusTag.tsx',
+      snippet: 'inline-block size-2.5 shrink-0 rounded-full border-2',
+      reason: 'Lade-Spinner in der Status-Pille',
+    },
+    {
+      file: 'src/components/FolderBrowser.tsx',
+      snippet: 'animate-spin motion-reduce:animate-none rounded-full border-2',
+      reason: 'Lade-Spinner im Ordner-Browser',
+    },
+    {
+      file: 'src/components/StatusDot.tsx',
+      snippet: 'size-2.5 shrink-0 rounded-full',
+      reason: 'Prozess-Status-Punkt',
+    },
+    {
+      file: 'src/components/CriterionDetailsPopover.tsx',
+      snippet: 'rounded-full border border-border-control bg-bg/85',
+      reason: 'runder Backdrop des Popover-Triggers ueber der Fotokachel',
+    },
+    {
+      file: 'src/components/CategoryOverrideMarker.tsx',
+      snippet: 'items-center justify-center rounded-full bg-bg/85',
+      reason: 'runder Backdrop des Uebersteuerungs-Markers ueber der Fotokachel',
+    },
+  ]
 
-  it('verwendet rounded-full nur noch an der abschliessenden Liste', () => {
-    const offenders = tsxFiles()
-      .filter((file) => stripComments(file.content).includes('rounded-full'))
-      .map((file) => file.label)
-      .filter((label) => !Object.hasOwn(ROUNDED_FULL_ALLOWLIST, label))
-    expect(offenders).toEqual([])
+  it('verwendet rounded-full nur noch an der abschliessenden Liste, fundstellengenau', () => {
+    // Fundstellen- statt dateiweise Pruefung: Zuvor war jede weitere `rounded-full`-Zeile in einer
+    // bereits gelisteten Datei unsichtbar - `ui/button.tsx` ist wegen des Lade-Spinners freigegeben
+    // und haette damit unbemerkt eine vollrunde Schaltflaeche bekommen koennen.
+    expect(allowlistedOccurrences('rounded-full', ROUNDED_FULL_ALLOWLIST)).toEqual([])
+    // Positiv-Gegenprobe: Die Kandidatenmenge ist nachweislich nicht leer.
+    expect(findMatches('rounded-full', tsxFiles()).length).toBeGreaterThan(0)
   })
 
   it('haelt die Radienskala auf den fuenf Board-Werten', () => {
@@ -757,6 +1079,446 @@ describe('Design-Vertrag: Formsprache und Skalen', () => {
       return source.includes('grid-cols-12') && /gap(-x)?-3\b/.test(source)
     })
     expect(users.length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Abstands- und Wertskalen (specs/features/0321-dark-utility-register-ansichten.md, "Das Netz")
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Zerlegt eine Quellzeile in Utility-Kandidaten. Bewusst tokenweise statt ueber einen einzigen
+ * grossen regulaeren Ausdruck: Klassenlisten stehen in Zeichenketten, Template-Teilen und
+ * `cn()`-Argumenten, und ein Ausdruck mit Wortgrenzen faengt dort zuverlaessig Fehlalarme
+ * (`max-w-5xl` als `w-5`) statt Treffer.
+ */
+function classTokens(line: string): string[] {
+  // Bewusst NICHT an Klammern, Kommas oder Schraegstrichen getrennt: `w-[min(32rem,calc(100vw-
+  // 2rem))]`, `aspect-[4/3]` und `bg-bg/95` sind je EIN Token. Getrennt wird an dem, was eine
+  // Klassenliste im Quelltext tatsaechlich begrenzt.
+  return line.split(/[\s'"`{}=;<>]+/).filter((token) => token.length > 0)
+}
+
+/**
+ * Entfernt die Variantenpraefixe eines Utility-Tokens und liefert die reine Utility. Arbiträre
+ * VARIANTEN (`[&::-webkit-progress-bar]:`, `data-[state=open]:`, `has-[:disabled]:`) tragen
+ * ebenfalls eckige Klammern, sind aber KEINE willkuerlichen Werte - ohne dieses Abstreifen waeren
+ * sie dauerhafte Fehlalarme der Regel "keine willkuerlichen Werte".
+ */
+function utilityBase(token: string): string {
+  let rest = token
+  for (;;) {
+    const match = /^(?:\[[^\]]*\]|[a-z0-9-]+(?:\[[^\]]*\])?):([\s\S]*)$/.exec(rest)
+    if (match === null) {
+      return rest
+    }
+    rest = match[1]
+  }
+}
+
+/*
+ * REGEL 1 - ABSTANDSSKALA. Die acht Stufen des 8-Punkt-Rasters plus die Null. `auto` bleibt
+ * zulaessig: es ist ein Schluesselwort (`m-auto` zentriert den Dialog), keine Abstandsstufe.
+ *
+ * DIES IST EINE ABSTANDS-, KEINE GROESSENREGEL. `h-11`, `size-8`, `h-0.5`, `min-w-6`, `w-full` und
+ * `max-w-5xl` sind ausdruecklich nicht betroffen - ein Fehlalarm dort zwingt die Umsetzung dazu,
+ * die Regel wieder aufzuweichen.
+ */
+const SPACING_UTILITIES = [
+  'gap-x',
+  'gap-y',
+  'space-x',
+  'space-y',
+  'gap',
+  'px',
+  'py',
+  'pt',
+  'pr',
+  'pb',
+  'pl',
+  'p',
+  'mx',
+  'my',
+  'mt',
+  'mr',
+  'mb',
+  'ml',
+  'm',
+]
+const SPACING_SCALE = new Set(['0', '1', '2', '3', '4', '6', '8', '12', '16', 'auto'])
+const SPACING_PATTERN = new RegExp(`^-?(${SPACING_UTILITIES.join('|')})-(.+)$`)
+
+/** Alle Abstands-Utilities einer Zeile - Grundlage der Positiv-Gegenprobe. */
+function spacingUtilities(line: string): string[] {
+  return classTokens(line)
+    .map((token) => utilityBase(token))
+    .filter((base) => SPACING_PATTERN.test(base))
+}
+
+/** Abstands-Utilities einer Zeile, die NICHT auf der Skala liegen. */
+function offendingSpacingUtilities(line: string): string[] {
+  return spacingUtilities(line).filter((base) => {
+    const value = SPACING_PATTERN.exec(base)?.[2] ?? ''
+    return !SPACING_SCALE.has(value)
+  })
+}
+
+/*
+ * REGEL 2 - KEINE WILLKUERLICHEN WERTE. Ein willkuerlicher Wert umgeht jede Skala des
+ * Design-Systems, ohne dass irgendetwas rot wird. Arbiträre VARIANTEN bleiben zulaessig (siehe
+ * `utilityBase`).
+ */
+function arbitraryValues(line: string): string[] {
+  return classTokens(line)
+    .map((token) => utilityBase(token))
+    .filter((base) => /^-?[a-z0-9-]+-\[[^\]]*\]$/.test(base))
+}
+
+/*
+ * REGEL 3 - KEINE DECKKRAFT-MODIFIKATOREN AUF FARB-UTILITIES. Zwei Fehlerklassen in einer: Der
+ * Kontrast einer abgedunkelten Farbe ist statisch nicht nachrechenbar, und genau so verschwinden
+ * die Trennlinien auf dem Grund (`border-border/60` liegt bei 0.87:1).
+ *
+ * Der Erkenner ist an die FARB-NAMENSRAEUME gebunden, nicht an das Vorkommen eines Schraegstrichs -
+ * `w-1/2`, `h-1/3` und `basis-1/2` sind Brueche, keine Deckkraft.
+ */
+const COLOR_UTILITY_ROOTS = [
+  'bg',
+  'text',
+  'border',
+  'fill',
+  'stroke',
+  'ring',
+  'outline',
+  'divide',
+  'decoration',
+  'placeholder',
+  'caret',
+  'shadow',
+]
+const COLOR_OPACITY_PATTERN = new RegExp(`^(${COLOR_UTILITY_ROOTS.join('|')})-[a-z0-9-]+/\\d+$`)
+
+function colorOpacityModifiers(line: string): string[] {
+  return classTokens(line)
+    .map((token) => utilityBase(token))
+    .filter((base) => COLOR_OPACITY_PATTERN.test(base))
+}
+
+describe('Design-Vertrag: Abstands- und Wertskalen', () => {
+  /*
+   * Jeder der vier Erkenner wird TABELLENGETRIEBEN gegen synthetische Zeilen geprueft, bevor er
+   * produktiv laeuft. Eine statische Pruefung hat genau einen ernsten Fehlermodus: Sie findet
+   * nichts und besteht deswegen. Ein kaputter regulaerer Ausdruck faellt hier auf, statt still
+   * alles durchzuwinken.
+   */
+  it.each([
+    'gap-1.5',
+    'gap-2.5',
+    'gap-3.5',
+    'py-3.5',
+    'px-5',
+    'mt-5',
+    'py-10',
+    'px-10',
+    'p-0.5',
+    'mb-7',
+    'sm:gap-1.5',
+    'hover:py-3.5',
+    '-mt-5',
+  ])('erkennt %s als Abstand ausserhalb der Skala', (utility) => {
+    expect(offendingSpacingUtilities(`className="${utility} flex"`)).not.toEqual([])
+  })
+
+  it.each([
+    'p-0',
+    'gap-1',
+    'p-2',
+    'gap-3',
+    'p-4',
+    'py-6',
+    'px-8 py-8',
+    'mb-12',
+    'mt-16',
+    'm-auto',
+    'h-11',
+    'size-8',
+    'h-0.5',
+    'min-w-6',
+    'w-full',
+    'max-w-5xl',
+    'size-2.5',
+    'translate-x-0.5',
+    'text-2xl',
+    'w-1/2',
+  ])('erkennt %s NICHT als Abstandsverstoss', (utility) => {
+    expect(offendingSpacingUtilities(`className="${utility} flex"`)).toEqual([])
+  })
+
+  it.each(['text-[10px]', 'text-[10.5px]', 'h-[50px]', 'w-[240px]', 'gap-[3px]', 'p-[7px]'])(
+    'erkennt %s als willkuerlichen Wert',
+    (utility) => {
+      expect(arbitraryValues(`className="${utility}"`)).toEqual([utility])
+    }
+  )
+
+  it.each([
+    '[&::-webkit-progress-bar]:bg-accent',
+    'indeterminate:[&::-moz-progress-bar]:bg-transparent',
+    'data-[state=open]:flex',
+    'has-[:disabled]:text-text-disabled',
+    'text-xs',
+    'aspect-square',
+  ])('erkennt %s NICHT als willkuerlichen Wert', (utility) => {
+    expect(arbitraryValues(`className="${utility}"`)).toEqual([])
+  })
+
+  it.each(['border-border/60', 'bg-border/60', 'text-text/70', 'bg-black/60', 'hover:bg-bg/95'])(
+    'erkennt %s als Deckkraft-Modifikator auf einer Farb-Utility',
+    (utility) => {
+      expect(colorOpacityModifiers(`className="${utility}"`)).not.toEqual([])
+    }
+  )
+
+  it.each(['w-1/2', 'h-1/3', 'basis-1/2', 'bg-border', 'aspect-[4/3]'])(
+    'erkennt %s NICHT als Deckkraft-Modifikator',
+    (utility) => {
+      expect(colorOpacityModifiers(`className="${utility}"`)).toEqual([])
+    }
+  )
+
+  // -----------------------------------------------------------------------------------------
+  // Die Regeln selbst
+  // -----------------------------------------------------------------------------------------
+
+  it('haelt jede Abstands-Utility auf den acht Stufen des 8-Punkt-Rasters', () => {
+    expect(allowlistedOccurrences(offendingSpacingUtilities, [], productionTsxFiles())).toEqual([])
+    // Positiv-Gegenprobe: Die Kandidatenmenge ist nachweislich gross - die Regel laeuft nicht
+    // gegen eine leere Menge und bestuende deshalb auch bei kaputtem Erkenner.
+    expect(findMatches(spacingUtilities, productionTsxFiles()).length).toBeGreaterThan(100)
+  })
+
+  const ARBITRARY_VALUE_ALLOWLIST: AllowlistEntry[] = [
+    {
+      file: 'src/components/ui/popover.tsx',
+      snippet: "'z-50 max-h-[min(60vh,var(--radix-popover-content-available-height))] w-72",
+      reason:
+        'Hoehendeckel des Popover-Panels: Minimum aus der Board-Schranke 60vh und dem von Radix ' +
+        'gemessenen verfuegbaren Platz - keine Rasterstufe moeglich',
+    },
+    {
+      file: 'src/components/ui/checkbox.tsx',
+      snippet: "'size-[18px] shrink-0",
+      reason: 'abgeleitetes Board-Mass des Kontrollkaestchens (zwischen size-4 und size-5)',
+    },
+    {
+      file: 'src/components/ui/dialog.tsx',
+      snippet: "'m-auto w-[min(32rem,calc(100vw-2rem))]",
+      reason: 'Dialogbreite: Board-Mass, aber nie breiter als das Sichtfenster abzueglich Rand',
+    },
+    {
+      file: 'src/components/ui/input.tsx',
+      snippet: "'focus:border-[1.5px] focus:border-accent'",
+      reason: 'Fokusstaerkung des Feldrands - 1.5px liegt auf keiner Tailwind-Randstufe',
+    },
+    {
+      file: 'src/pages/PhotoDetailPage.tsx',
+      snippet: "className=\"aspect-[4/3] w-full",
+      reason: 'Seitenverhaeltnis der Detailbildflaeche - Tailwind kennt nur square und video',
+    },
+  ]
+
+  it('verwendet willkuerliche Werte nur an der begruendeten Liste', () => {
+    expect(allowlistedOccurrences(arbitraryValues, ARBITRARY_VALUE_ALLOWLIST, productionTsxFiles())).toEqual([])
+    // Positiv-Gegenprobe: Die Regel laeuft nicht gegen eine leere Kandidatenmenge.
+    expect(findMatches(arbitraryValues, productionTsxFiles()).length).toBeGreaterThan(0)
+  })
+
+  const COLOR_OPACITY_ALLOWLIST: AllowlistEntry[] = [
+    {
+      file: 'src/components/ui/dialog.tsx',
+      snippet: "'backdrop:bg-black/60'",
+      reason: 'Abdunklung des Hintergrunds hinter dem Modal - kein Vorder-/Hintergrundpaar',
+    },
+    {
+      file: 'src/components/Stepper.tsx',
+      snippet: 'border-b border-separator bg-bg/95',
+      reason: 'durchscheinende sticky Kopfzeile der Schrittnavigation',
+    },
+    {
+      file: 'src/components/CategoryOverrideMarker.tsx',
+      snippet: 'rounded-full bg-bg/85',
+      reason: 'Backdrop des Uebersteuerungs-Markers ueber einer Fotokachel',
+    },
+    {
+      file: 'src/components/CriterionDetailsPopover.tsx',
+      snippet: 'border-border-control bg-bg/85',
+      reason: 'Backdrop des Info-Triggers ueber einer Fotokachel',
+    },
+  ]
+
+  it('verwendet Deckkraft-Modifikatoren auf Farb-Utilities nur an der begruendeten Liste', () => {
+    expect(
+      allowlistedOccurrences(colorOpacityModifiers, COLOR_OPACITY_ALLOWLIST, productionTsxFiles())
+    ).toEqual([])
+    // Positiv-Gegenprobe: Die drei freigegebenen Abdunklungen werden tatsaechlich gefunden.
+    expect(findMatches(colorOpacityModifiers, productionTsxFiles()).length).toBeGreaterThan(0)
+  })
+
+  /*
+   * REGEL 4 - `opacity-*` FUNDSTELLENGENAU. Sie sichert die riskanteste Einzelentscheidung dieser
+   * Stufe dauerhaft ab: Auf der aussortierten Karte wird ausschliesslich die BILDFLAECHE gedaempft,
+   * nie der Kartenkoerper (ADR 0055 Abweichung 7). Ein spaeteres `opacity-40` am Koerper druecke
+   * Kennzeichen und Dateinamen wieder unter die Kontrastschwelle, ohne dass sonst irgendetwas rot
+   * wuerde - der Graustufen-Lauf ist ein einmaliger Ad-hoc-Lauf und traegt das nicht.
+   */
+  const OPACITY_ALLOWLIST: AllowlistEntry[] = [
+    {
+      file: 'src/components/ui/button.tsx',
+      snippet: 'disabled:text-text-disabled disabled:opacity-40',
+      reason: 'deaktivierte Schaltflaeche - WCAG nimmt inaktive Bedienelemente ausdruecklich aus',
+    },
+    {
+      file: 'src/components/ui/button.tsx',
+      snippet: 'bg-accent text-accent-fg hover:opacity-85 active:opacity-70',
+      reason: 'Ueberfahren/Gedrueckt der primaeren Schaltflaeche - Flaeche bleibt, nur Deckkraft',
+    },
+    {
+      file: 'src/components/ui/button.tsx',
+      snippet: "'border border-border-control bg-overlay text-text-h hover:opacity-80",
+      reason: 'Ueberfahren der sekundaeren Schaltflaeche (zwei Auspraegungen, gleiche Zeile)',
+    },
+    {
+      file: 'src/components/ui/button.tsx',
+      snippet: "isDisabledSlot && 'pointer-events-none opacity-40'",
+      reason: 'deaktivierter asChild-Link - traegt kein natives disabled-Attribut',
+    },
+    {
+      file: 'src/components/Stepper.tsx',
+      snippet: "isBlocked && 'opacity-40'",
+      reason: 'Beschriftung eines blockierten Schritts - das Schloss-Symbol bleibt voll deckend',
+    },
+    {
+      file: 'src/components/RatingButtons.tsx',
+      snippet: 'text-rating-favorite-fg hover:opacity-85 active:opacity-70',
+      reason: 'aktiver Eintrag der Bewertungsleiste (Favorit)',
+    },
+    {
+      file: 'src/components/RatingButtons.tsx',
+      snippet: 'text-rating-album-worthy-fg hover:opacity-85 active:opacity-70',
+      reason: 'aktiver Eintrag der Bewertungsleiste (Album-wuerdig)',
+    },
+    {
+      file: 'src/components/RatingButtons.tsx',
+      snippet: 'text-rating-rejected-fg hover:opacity-85 active:opacity-70',
+      reason: 'aktiver Eintrag der Bewertungsleiste (Verwerfen)',
+    },
+    {
+      file: 'src/components/PhotoCard.tsx',
+      snippet: "aspect-square overflow-hidden rounded-md', isRejected && 'opacity-40'",
+      reason:
+        'gedaempfte BILDFLAECHE der aussortierten Karte - der Ausschnitt zeigt bewusst das Element, ' +
+        'das den Kachel-Link traegt; am Kartenkoerper waere dieselbe Utility ein Kontrastverlust',
+    },
+  ]
+
+  it('verwendet opacity-* nur an der begruendeten Liste, fundstellengenau', () => {
+    expect(allowlistedOccurrences('opacity-', OPACITY_ALLOWLIST, productionTsxFiles())).toEqual([])
+  })
+
+  /*
+   * `h-11`/`min-h-11` ist seit ADR 0055 Punkt 8 die AUSNAHME, nicht die Regel: Bedienelemente sind
+   * sichtbar 32px hoch und beziehen ihre 44px aus der Aufspannung. Sichtbare 44px sind nur in drei
+   * Faellen richtig - heisser Pfad, Zeilenhoehe zeilenweiser Listen, und Eingabefelder/
+   * Kontrollkaestchen (ein ersetztes Element traegt keine Pseudo-Elemente und loest seine
+   * Trefferflaeche ausschliesslich ueber die sichtbare Zeilenhoehe).
+   */
+  const TALL_CONTROL_ALLOWLIST: AllowlistEntry[] = [
+    {
+      file: 'src/components/RatingButtons.tsx',
+      snippet: "const HOT_PATH_HEIGHT = 'h-11 sm:h-8'",
+      reason: 'heisser Pfad: ein Fehlgriff schreibt hier einen falschen Datenwert',
+    },
+    {
+      file: 'src/components/ui/input.tsx',
+      snippet: "'h-11 w-full rounded-sm",
+      reason: 'Eingabefeld: ersetztes Element ohne Pseudo-Element, Trefferflaeche = Zeilenhoehe',
+    },
+    {
+      file: 'src/components/ui/checkbox.tsx',
+      snippet: 'inline-flex min-h-11 cursor-pointer',
+      reason: 'Kontrollkaestchen samt Beschriftung: dieselbe Begruendung wie beim Eingabefeld',
+    },
+    {
+      file: 'src/components/CategorySelect.tsx',
+      snippet: "className=\"h-11 rounded-sm border",
+      reason: 'Auswahlfeld: ersetztes Element, zugleich heisser Pfad der Kategorie-Zuordnung',
+    },
+    {
+      file: 'src/pages/CurateCategoriesPage.tsx',
+      snippet: 'h-auto min-h-11 w-full justify-start',
+      reason: 'Aufklapp-Zeile der Kuratierung: Zeilenhoehe einer zeilenweisen Liste',
+    },
+    {
+      file: 'src/pages/ProjectListPage.tsx',
+      snippet: 'flex min-h-11 flex-col justify-center',
+      reason: 'Projektzeile: die ganze Zeile ist EINE Trefferflaeche (Zeilenhoehe einer Liste)',
+    },
+    {
+      file: 'src/pages/LoginPage.tsx',
+      snippet: "className=\"mt-2 h-11 w-full text-base\"",
+      reason: 'Absende-Schaltflaeche der Anmeldung: einzige Aktion des Bildschirms, einhaendig bedient',
+    },
+  ]
+
+  it('verwendet die sichtbaren 44px nur an den drei begruendeten Kategorien', () => {
+    expect(
+      allowlistedOccurrences(/\bmin-h-11\b|\bh-11\b/, TALL_CONTROL_ALLOWLIST, productionTsxFiles())
+    ).toEqual([])
+  })
+})
+
+describe('Design-Vertrag: unbestimmter Fortschritt', () => {
+  /*
+   * Spec 0321, UI/UX-Abschnitt 6: Der unbestimmte Balken folgt dem Board statt der
+   * Browser-Voreinstellung - volle Flaeche in `--accent` mit dem bereits etablierten Puls, statt
+   * eines wandernden Segments (das waere eine Positionsbewegung und ist im Design-System
+   * verboten).
+   *
+   * Bewusst KEINE Zeichenkettensuche "behandelt die Datei den Zustand?" - das waere eine Zusage
+   * ueber die Schreibweise. Genutzt wird der staerkste Mechanismus dieses Vertragstests: der
+   * tatsaechliche Tailwind-Lauf. Eine unbekannte Variante ist in Tailwind KEIN Buildfehler und
+   * bliebe sonst still wirkungslos.
+   */
+  it('erzeugt fuer die Zustandsbehandlung des Balkens tatsaechlich Regeln', async () => {
+    // `build()` arbeitet inkrementell: einmal aufgenommene Kandidaten bleiben in der Ausgabe.
+    // Jeder Kandidat bekommt deshalb einen EIGENEN Lauf, sonst faerbte der erste Treffer alle
+    // folgenden gruen.
+    async function producesRule(utility: string): Promise<boolean> {
+      const compiled = await compile(indexCss, { base: SRC_DIR, onDependency: () => {} })
+      const baseline = compiled.build([])
+      return compiled.build([utility]) !== baseline
+    }
+
+    for (const utility of [
+      'indeterminate:bg-accent',
+      'indeterminate:animate-pulse',
+      'motion-reduce:animate-none',
+      'bg-separator',
+    ]) {
+      expect(await producesRule(utility), utility).toBe(true)
+    }
+    // Gegenprobe: eine erfundene Variante erzeugt keine Regel - sonst bestuende der Test auch
+    // dann, wenn `build()` alles durchwinkte. Genau das ist der Fehlermodus, gegen den diese
+    // Pruefung ueberhaupt steht: ein Tippfehler in einer Variante ist in Tailwind kein Buildfehler.
+    expect(await producesRule('inderterminate:bg-accent')).toBe(false)
+  }, 60_000)
+
+  it('legt die Spur des Balkens nicht mehr auf das unsichtbare --border', () => {
+    const progress = sourceFiles.filter((file) => file.label === 'src/components/ui/progress.tsx')
+    expect(progress).toHaveLength(1)
+    expect(findMatches('bg-border', progress)).toEqual([])
+    // Positiv-Gegenprobe: die Datei faerbt die Spur ueberhaupt ein.
+    expect(findMatches('bg-separator', progress).length).toBeGreaterThan(0)
   })
 })
 

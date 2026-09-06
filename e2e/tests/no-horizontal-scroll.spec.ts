@@ -19,13 +19,21 @@
  * samt Fundstelle des ueberstehenden Elements.
  */
 
-import { DEMO_PROJECTS, demoProjectId } from '../lib/demo.ts'
+import { DEMO_PROJECTS, demoProjectId, photoTiles } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
 /** Mindesthoehe des Inhaltsbereichs, ab der eine Route als "traegt wirklich Inhalt" gilt. */
 const MIN_CONTENT_HEIGHT = 200
 /** Subpixel-Toleranz: Chromium meldet Bruchteile, ein Ueberstand ist immer deutlich groesser. */
 const TOLERANCE = 1
+
+/**
+ * Vorbedingung einer Route: der Beleg, dass sie ihren Inhalt WIRKLICH traegt. Regelfall ist die
+ * Seitenueberschrift. Die Foto-Detailseite hat bewusst kein `h1` (sie ist ein Bild, keine
+ * Textseite) - dort traegt stattdessen die Bewertungsgruppe die Vorbedingung. Eine Route ohne
+ * wirksame Vorbedingung waere genau der immer-gruene Spec, den das Testkonzept ausschliesst.
+ */
+type Precondition = { heading: string } | { role: 'group'; name: string }
 
 interface PageMetrics {
   scrollWidth: number
@@ -39,6 +47,15 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
   const largeId = await demoProjectId(page, DEMO_PROJECTS.large)
   const ratedId = await demoProjectId(page, DEMO_PROJECTS.rated)
   const errorId = await demoProjectId(page, DEMO_PROJECTS.error)
+
+  // Die Foto-Id kommt aus der Kachel selbst, nicht aus einer hartkodierten Zahl - der Seeder
+  // vergibt bei jedem Lauf neue Ids (siehe lib/demo.ts).
+  await page.goto(`/projects/${ratedId}/photos`)
+  const firstTile = photoTiles(page).first()
+  await expect(firstTile, 'erste Kachel des bewerteten Demo-Projekts').toBeVisible()
+  const detailHref = await firstTile.getByRole('link').first().getAttribute('href')
+  expect(detailHref, 'Ziel der ersten Kachel').toMatch(/\/photos\/\d+/)
+  const detailPath = detailHref ?? ''
 
   const routes = [
     { label: 'Projektliste', path: '/', heading: 'Projekte' },
@@ -54,7 +71,12 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
     { label: 'Statistik', path: `/projects/${ratedId}/stats`, heading: 'Statistik' },
     { label: 'Kuratierung', path: `/projects/${ratedId}/curate`, heading: 'Kategorie-Kuratierung' },
     { label: 'Einstellungen', path: `/projects/${ratedId}/settings`, heading: 'Projekteinstellungen' },
-  ]
+    { label: 'Vergleich', path: `/projects/${ratedId}/compare`, heading: 'Vergleich' },
+    // Die Detailseite traegt seit Spec 0321 die umbrechende Bewertungsleiste: drei Eintraege mit
+    // Symbol, Beschriftung und Tasten-Kaestchen brauchen nebeneinander rund 400px, bei 360px
+    // stehen 288px zur Verfuegung. Genau diese Route fehlte hier bisher.
+    { label: 'Foto-Detail', path: detailPath, role: 'group' as const, name: 'Bewertung' },
+  ] satisfies ({ label: string; path: string } & Precondition)[]
 
   const viewportWidth = page.viewportSize()?.width
   expect(viewportWidth, 'Viewport-Breite des Projekts').toBe(360)
@@ -65,10 +87,11 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
     // Vorbedingung 1: die Route traegt WIRKLICH ihren Inhalt. Eine weisse Seite oder eine
     // Fehlerweiterleitung hat garantiert kein horizontales Scrollen und bestuende sonst
     // stillschweigend.
-    await expect(
-      page.getByRole('heading', { name: route.heading }),
-      `Ueberschrift auf "${route.label}"`
-    ).toBeVisible()
+    const marker =
+      'heading' in route
+        ? page.getByRole('heading', { name: route.heading })
+        : page.getByRole(route.role, { name: route.name })
+    await expect(marker, `Vorbedingung auf "${route.label}"`).toBeVisible()
 
     const metrics: PageMetrics = await page.evaluate(() => {
       const root = document.documentElement
