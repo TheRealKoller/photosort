@@ -39,7 +39,7 @@ REPO = "TheRealKoller/photosort"
 SCHREIBENDE_VERBEN = frozenset({"create", "edit", "close", "comment"})
 LESENDE_VERBEN = frozenset({"view"})
 
-BEFEHLSSAMMLUNG = ".claude/skills/github-board/SKILL.md"
+BEFEHLSSAMMLUNG = ".claude/skills/github-access/SKILL.md"
 REFINEMENT = ".claude/skills/refinement/SKILL.md"
 
 # Ein Befehl steht am Zeilenanfang; eine blosse *Erwaehnung* steht mitten im Fliesstext. Vor dem

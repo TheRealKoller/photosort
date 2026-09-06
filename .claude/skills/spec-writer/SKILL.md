@@ -9,10 +9,10 @@ description: Setzt eine bereits fachlich geschärfte Story (Status `Ready` auf d
 
 ## Schritt 0: Vorbedingung prüfen — ist das Issue wirklich eine Story?
 
-Bevor irgendetwas passiert, den aktuellen Board-Status des referenzierten Issues lesen. Der Befehl steht im Wortlaut in `.claude/skills/github-board/SKILL.md` und liefert Status und Priorität in einem Aufruf:
+Bevor irgendetwas passiert, den aktuellen Board-Status des referenzierten Issues lesen. Der Befehl steht im Wortlaut in `.claude/skills/github-access/SKILL.md` und liefert Status und Priorität in einem Aufruf:
 
 ```bash
-gh api graphql -F number=<NNN> -f query='…'   # vollständiger Wortlaut im Skill `github-board`
+gh api graphql -F number=<NNN> -f query='…'   # vollständiger Wortlaut im Skill `github-access`
 ```
 
 Ausgewertet wird der Knoten mit `project.number == 8`, **nie** schlicht `nodes[0]` — sonst entscheidet eine fremde Projektzugehörigkeit über dieses Gate. Die Query bleibt ein Literal in einfachen Anführungszeichen, die Nummer geht ausschließlich als typisierte Variable `-F number=<NNN>` hinein.
@@ -29,7 +29,7 @@ Ausgewertet wird der Knoten mit `project.number == 8`, **nie** schlicht `nodes[0
 gh project item-edit 8 --owner TheRealKoller --url https://github.com/TheRealKoller/photosort/issues/<NNN> --field "Status" --value "In Progress"
 ```
 
-Das Schreiben der Spec **ist** Umsetzung, und das Board sagt das ab hier auch. Der Schreibzugriff steht bewusst **vor** der Arbeit, die er ankündigt: Scheitert er, bleibt die Story auf dem früheren, konservativeren Wert stehen, statt fälschlich fortgeschritten zu erscheinen. Ein Fehlschlag bricht den Ablauf **nicht** ab — er wird nach dem Muster aus `github-board` im Abschlussbericht unter `## Lokal nachzuholen` aufgeführt (siehe Schritt 4). Die Issue-URL wird aus der validierten Nummer **gebildet**, nie aus einer `gh`-Ausgabe übernommen.
+Das Schreiben der Spec **ist** Umsetzung, und das Board sagt das ab hier auch. Der Schreibzugriff steht bewusst **vor** der Arbeit, die er ankündigt: Scheitert er, bleibt die Story auf dem früheren, konservativeren Wert stehen, statt fälschlich fortgeschritten zu erscheinen. Ein Fehlschlag bricht den Ablauf **nicht** ab — er wird nach dem Muster aus `github-access` im Abschlussbericht unter `## Lokal nachzuholen` aufgeführt (siehe Schritt 4). Die Issue-URL wird aus der validierten Nummer **gebildet**, nie aus einer `gh`-Ausgabe übernommen.
 
 Lies danach den vollständigen Issue-Inhalt:
 

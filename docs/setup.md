@@ -29,7 +29,7 @@ Der gesamte Story-Lebenszyklus des Projekts — Story-Issue anlegen, Issue-Body 
 Board-Status setzen und lesen, eine Feature-Spec abschließen — läuft über die GitHub-CLI `gh`.
 Seit [ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) gibt es dafür
 kein eigenes Werkzeug mehr: Jeder Board-Zugriff ist ein einzelner `gh`-Aufruf, die verbindliche
-Befehlssammlung steht in `.claude/skills/github-board/SKILL.md`. Ohne `gh` ist keiner dieser
+Befehlssammlung steht in `.claude/skills/github-access/SKILL.md`. Ohne `gh` ist keiner dieser
 Schritte ausführbar — es ist also nicht optionales Komfortwerkzeug, sondern Voraussetzung des
 Entwicklungsablaufs (siehe [`ai-workflow.md`](./ai-workflow.md)).
 

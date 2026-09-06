@@ -35,7 +35,7 @@ PROJEKT_NUMMER = "8"
 PROJEKT_OWNER = "TheRealKoller"
 
 # Die Optionsmengen des Felds am echten Board, plus die Platzhalterformen, die in der
-# Befehlssammlung (`.claude/skills/github-board/SKILL.md`) als Vorlage stehen. `Todo` ist seit
+# Befehlssammlung (`.claude/skills/github-access/SKILL.md`) als Vorlage stehen. `Todo` ist seit
 # ADR 0057 keine Option des Felds `Status` mehr und deshalb hier nicht aufgefuehrt.
 ERLAUBTE_WERTE: dict[str, frozenset[str]] = {
     "Status": frozenset(
@@ -190,7 +190,7 @@ def test_der_suchraum_enthaelt_die_befehlssammlung() -> None:
     """Gegenprobe zum Leser: die Sammlung selbst muss im Suchraum liegen."""
     dateien = claude_dateien()
 
-    assert ".claude/skills/github-board/SKILL.md" in dateien
+    assert ".claude/skills/github-access/SKILL.md" in dateien
 
 
 @pytest.mark.parametrize("wert", ["Todo", "In progress", "done", "Erledigt"])
