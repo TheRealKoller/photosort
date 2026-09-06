@@ -235,6 +235,10 @@ describe('App - Header-Link "Projekt"', () => {
     // der Sticky-Header-Projektlink auf der Statistikseite stillschweigend (Alt-Bug aus Spec
     // 0042/PR #101).
     '/projects/1/stats',
+    // specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK2): die Kuratierungsseite
+    // bekommt zum ersten Mal ueberhaupt Projektkontext in der Kopfzeile - Umkehrung der
+    // ausdruecklichen Gegenfestlegung aus Spec 0033.
+    '/projects/1/curate',
   ]
 
   it.each(PROJECT_ROUTES)(
