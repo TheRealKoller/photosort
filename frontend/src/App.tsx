@@ -5,6 +5,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { decodeUsername } from './auth/jwt'
 import { clearToken, getToken } from './auth/token'
 import { useUnauthorizedRedirect } from './auth/useUnauthorizedRedirect'
+import { ProjectNav } from './components/ProjectNav'
 import { Button } from './components/ui/button'
 import { CurateCategoriesPage } from './pages/CurateCategoriesPage'
 import { LoginPage } from './pages/LoginPage'
@@ -103,23 +104,12 @@ function AppShell() {
           >
             <Link to="/">PhotoSort</Link>
           </Button>
-          {/* Projekt-Kontext-Link (specs/features/0033-sticky-titelleiste-projekt-link.md, AK2-AK4,
-              AK8): rendert nur mit Projektkontext, zeigt immer auf die Projekt-Detailseite selbst -
-              auch auf der Projekt-Detailseite selbst (Self-Link, bewusst keine Ausblendung/
-              Deaktivierung, AK8). Gleiches Button-asChild+Link-Muster wie die Wortmarke (AK5).
-              Chevron rein dekorativ/aria-hidden (AK6) - der zugaengliche Name ist ausschliesslich
-              der Text "Projekt". */}
-          {projectId !== null && (
-            <Button
-              asChild
-              variant="ghost"
-              className="px-2 text-text-h hover:bg-transparent"
-            >
-              <Link to={`/projects/${projectId}`}>
-                <span aria-hidden="true">‹</span> Projekt
-              </Link>
-            </Button>
-          )}
+          {/* Projekt-Navigationsgruppe (specs/features/0298-projektnavigation-in-der-kopfzeile.md,
+              AK1-AK4): loest den bisherigen einzelnen "‹ Projekt"-Link aus Spec 0033 ab. Rendert
+              ausschliesslich mit Projektkontext und haengt allein am pathname, nicht an einem
+              API-Aufruf - sie erscheint deshalb auch, waehrend die darunterliegende Seite noch
+              laedt oder fehlgeschlagen ist. Genau dann ist ein Weg heraus am wertvollsten. */}
+          {projectId !== null && <ProjectNav projectId={projectId} />}
         </div>
         <div className="flex items-center gap-3">
           {username && <span className="text-sm text-text">Angemeldet als {username}</span>}
