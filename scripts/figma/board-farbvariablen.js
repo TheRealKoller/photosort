@@ -469,11 +469,481 @@ function pruefeVorkommen(vorkommen, register) {
   };
 }
 
+/* --- Ablaufteil: alles ab hier braucht die Figma-Plugin-Laufzeit ----------------------------
+ *
+ * Ein Aufruf macht den ganzen Weg: verorten -> messen -> vorpruefen -> Wiederherstellungspunkt ->
+ * Variablen setzen -> binden -> Versionsangabe -> erneut messen -> beides zurueckgeben. Der
+ * MCP-Zugang haengt an einem harten Aufrufkontingent (am 2026-09-06 nach drei Aufrufen
+ * erschoepft), und ein Aufruf fuehrt beliebig viel JavaScript aus: gezaehlt werden Aufrufe, nicht
+ * Arbeit. Kein Aufruf dient allein dem Nachsehen.
+ *
+ * Alle Operationen sind ZIELZUSTANDS-idempotent: eine Variable wird auf ihren Sollwert gesetzt,
+ * gleich ob sie existiert; eine Bindung wird gesetzt, wo sie fehlt. Ein zweiter Lauf ist
+ * folgenlos, ein Lauf nach einem Abbruch raeumt den Rest auf.
+ */
+
+/* Ein reiner Schau-Lauf braucht keine zweite Datei und keine Aenderung an dieser hier: Die
+ * Hauptsession stellt dem Payload `globalThis.NUR_PRUEFEN = true;` voran. Der Schalter wird VOR
+ * jeder Schreiboperation ausgewertet - siehe hauptlauf(). */
+const SCHAU_LAUF = typeof globalThis.NUR_PRUEFEN !== 'undefined' && globalThis.NUR_PRUEFEN === true;
+
+/* Statt eines Namens aus dem fremden Dokument. Eine Bindung an eine Variable, die das Register
+ * nicht kennt, ist ein Abbruchgrund - ihr Name ist dafuer nicht noetig und waere Freitext aus
+ * einem fremden System. */
+const FREMDE_VARIABLE = 'Fremd/Unbekannt';
+
+/* Geschlossene Fehlercodeliste. Der Ruecklauf traegt nie den Ausnahmetext des fremden Systems. */
+const FEHLERCODES = {
+  boardNichtGefunden: 'board-nicht-gefunden',
+  falscheDatei: 'falsche-datei',
+  sammlungNichtGefunden: 'sammlung-nicht-gefunden',
+  modusNichtEindeutig: 'modus-nicht-eindeutig',
+  variablenwertUnlesbar: 'variablenwert-unlesbar',
+  beimLesen: 'fehler-beim-lesen',
+  beimSetzen: 'fehler-beim-setzen',
+  beimBinden: 'fehler-beim-binden',
+  beimVersionZiehen: 'fehler-beim-version-ziehen'
+};
+
+function jetztInUtc() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function hexAusFarbe(farbe) {
+  if (!farbe || typeof farbe.r !== 'number') {
+    return null;
+  }
+  const kanaele = [farbe.r, farbe.g, farbe.b].map(function (anteil) {
+    const stufe = Math.round(anteil * 255);
+    return (stufe < 16 ? '0' : '') + stufe.toString(16).toUpperCase();
+  });
+  return '#' + kanaele.join('');
+}
+
+function farbeAusHex(hex) {
+  return {
+    r: parseInt(hex.slice(1, 3), 16) / 255,
+    g: parseInt(hex.slice(3, 5), 16) / 255,
+    b: parseInt(hex.slice(5, 7), 16) / 255
+  };
+}
+
+/* Ein gesetzter Stil wird als Tatsache gemeldet, nie mit seiner Kennung: Eine Stil- oder
+ * Bibliothekskennung gehoert zu dem, was ausdruecklich nicht ins Inventar aufzunehmen ist. */
+function stilGesetzt(knoten, feld) {
+  const wert = knoten[feld];
+  if (wert === figma.mixed) {
+    return 'gesetzt';
+  }
+  return typeof wert === 'string' && wert.length > 0 ? 'gesetzt' : '';
+}
+
+function bindungVon(paint, namenNachId) {
+  if (!paint.boundVariables || !paint.boundVariables.color) {
+    return { variable: null, variablenId: null };
+  }
+  const id = paint.boundVariables.color.id;
+  const name = namenNachId.get(id);
+  return { variable: name === undefined ? FREMDE_VARIABLE : name, variablenId: id };
+}
+
+/* Misst eine Eigenschaft (fills/strokes) eines Knotens.
+ *
+ * Nicht-Solid-Paints (Verlauf, Bild) und figma.mixed-Fills an Textknoten werden NICHT uebergangen,
+ * sondern als eigener Eintrag gemessen - die Vorpruefung sieht sie und meldet sie. Ein
+ * uebergangenes Vorkommen waere ein blinder Fleck in einer Zusage, die "418, sonst nichts" lautet.
+ */
+function messeEigenschaft(knoten, eigenschaft, namenNachId, gemessen) {
+  const paints = knoten[eigenschaft];
+  if (paints === undefined || paints === null) {
+    return;
+  }
+  const stilId = stilGesetzt(knoten, eigenschaft === 'fills' ? 'fillStyleId' : 'strokeStyleId');
+  if (paints === figma.mixed) {
+    gemessen.push({
+      knotenId: knoten.id,
+      eigenschaft: eigenschaft,
+      index: 0,
+      art: 'MIXED',
+      hex: null,
+      deckkraft: 1,
+      mischmodus: 'NORMAL',
+      sichtbar: true,
+      stilId: stilId,
+      variable: null,
+      variablenId: null
+    });
+    return;
+  }
+  for (let index = 0; index < paints.length; index += 1) {
+    const paint = paints[index];
+    const bindung = bindungVon(paint, namenNachId);
+    gemessen.push({
+      knotenId: knoten.id,
+      eigenschaft: eigenschaft,
+      index: index,
+      art: paint.type,
+      hex: paint.type === 'SOLID' ? hexAusFarbe(paint.color) : null,
+      deckkraft: paint.opacity === undefined ? 1 : paint.opacity,
+      mischmodus: paint.blendMode === undefined ? 'NORMAL' : paint.blendMode,
+      sichtbar: paint.visible === undefined ? true : paint.visible,
+      stilId: stilId,
+      variable: bindung.variable,
+      variablenId: bindung.variablenId
+    });
+  }
+}
+
+function messeBoard(board, namenNachId, knotenNachId, fehler) {
+  const knoten = [board].concat(board.findAll(function () {
+    return true;
+  }));
+  const gemessen = [];
+  for (const einzelner of knoten) {
+    knotenNachId.set(einzelner.id, einzelner);
+    try {
+      messeEigenschaft(einzelner, 'fills', namenNachId, gemessen);
+      messeEigenschaft(einzelner, 'strokes', namenNachId, gemessen);
+    } catch (ausnahme) {
+      fehler.push({ code: FEHLERCODES.beimLesen, knotenId: einzelner.id });
+    }
+  }
+  return { knotenGesamt: knoten.length, gemessen: gemessen };
+}
+
+async function messeVariablen(sammlung, modusId, fehler) {
+  const eintraege = [];
+  for (const id of sammlung.variableIds) {
+    const variable = await figma.variables.getVariableByIdAsync(id);
+    if (!variable || variable.resolvedType !== 'COLOR') {
+      continue;
+    }
+    const hex = hexAusFarbe(variable.valuesByMode[modusId]);
+    if (hex === null) {
+      fehler.push({ code: FEHLERCODES.variablenwertUnlesbar, variablenId: variable.id });
+    }
+    eintraege.push({
+      id: variable.id,
+      name: variable.name,
+      wert: hex,
+      scopes: variable.scopes.slice(),
+      beschreibung: variable.description
+    });
+  }
+  eintraege.sort(function (links, rechts) {
+    return links.name < rechts.name ? -1 : links.name > rechts.name ? 1 : 0;
+  });
+  return eintraege;
+}
+
+/* Aus den gemessenen Rohdaten das Inventar in genau der Form, die scripts/tests/
+ * test_figma_farbregister.py als geschlossenes Schema prueft - kein Feld mehr, keines weniger.
+ * Knoten-/Ebenennamen, Textinhalte, Kommentare, Stil- und Bibliothekskennungen kommen hier
+ * ueberhaupt nicht vor: Die Injektionsflaeche ist damit nicht bewacht, sondern strukturell nicht
+ * vorhanden. Die Knoten-ID adressiert den Knoten trotzdem exakt (?node-id=). */
+function alsInventar(gemessen, variablen, knotenGesamt, boardVersion, mitBindung) {
+  const farbvorkommen = gemessen.filter(function (eintrag) {
+    return eintrag.art === 'SOLID' && !eintrag.stilId && eintrag.hex !== null;
+  });
+  farbvorkommen.sort(function (links, rechts) {
+    const linksId = links.knotenId.split(':').map(Number);
+    const rechtsId = rechts.knotenId.split(':').map(Number);
+    if (linksId[0] !== rechtsId[0]) return linksId[0] - rechtsId[0];
+    if (linksId[1] !== rechtsId[1]) return linksId[1] - rechtsId[1];
+    if (links.eigenschaft !== rechts.eigenschaft) {
+      return links.eigenschaft < rechts.eigenschaft ? -1 : 1;
+    }
+    return links.index - rechts.index;
+  });
+  const vorkommen = farbvorkommen.map(function (eintrag) {
+    const zeile = {
+      knotenId: eintrag.knotenId,
+      eigenschaft: eintrag.eigenschaft,
+      index: eintrag.index,
+      hex: eintrag.hex,
+      deckkraft: eintrag.deckkraft,
+      mischmodus: eintrag.mischmodus,
+      sichtbar: eintrag.sichtbar
+    };
+    if (mitBindung) {
+      zeile.variable = eintrag.variable;
+      zeile.variablenId = eintrag.variablenId;
+    }
+    return zeile;
+  });
+  return {
+    kopf: {
+      gemessenAm: jetztInUtc(),
+      boardKnotenId: REGISTER.boardKnotenId,
+      boardVersion: boardVersion,
+      anzahlKnoten: knotenGesamt,
+      anzahlVorkommen: vorkommen.length,
+      anzahlFills: vorkommen.filter(function (zeile) {
+        return zeile.eigenschaft === 'fills';
+      }).length,
+      anzahlStrokes: vorkommen.filter(function (zeile) {
+        return zeile.eigenschaft === 'strokes';
+      }).length,
+      anzahlVariablen: variablen.length
+    },
+    variablen: variablen,
+    vorkommen: vorkommen
+  };
+}
+
+function uebersprungeneAus(gemessen) {
+  return gemessen
+    .filter(function (eintrag) {
+      return eintrag.art !== 'SOLID' || eintrag.stilId || eintrag.hex === null;
+    })
+    .map(function (eintrag) {
+      return {
+        code: eintrag.art !== 'SOLID' ? 'nicht-solid' : 'stil-gesetzt',
+        knotenId: eintrag.knotenId,
+        eigenschaft: eintrag.eigenschaft,
+        index: eintrag.index
+      };
+    });
+}
+
+/* M5 - der Wiederherstellungspunkt ist die ERSTE Schreiboperation nach bestandener Vorpruefung.
+ * Er kostet keinen zusaetzlichen MCP-Aufruf und macht jeden Fehllauf mit einem Klick ruecknehmbar.
+ * Die eine bewusste Ausnahme von "aendert nichts vor bestandener Vorpruefung": sie liegt danach,
+ * und ein Checkpoint ist nicht destruktiv. */
+async function setzeWiederherstellungspunkt() {
+  await figma.saveVersionHistoryAsync(
+    'Vor der Farbvariablen-Umstellung (' + REGISTER.versionVorher + ' -> '
+      + REGISTER.versionNachher + ')'
+  );
+}
+
+async function setzeVariablenAufSoll(sammlung, modusId, fehler) {
+  const vorhandene = new Map();
+  for (const id of sammlung.variableIds) {
+    const variable = await figma.variables.getVariableByIdAsync(id);
+    if (variable) {
+      vorhandene.set(variable.name, variable);
+    }
+  }
+  const nachName = new Map();
+  for (const soll of REGISTER.variablen) {
+    try {
+      let variable = vorhandene.get(soll.name);
+      if (!variable) {
+        variable = figma.variables.createVariable(soll.name, sammlung, 'COLOR');
+      }
+      variable.setValueForMode(modusId, farbeAusHex(soll.wert));
+      variable.scopes = soll.scopes.slice();
+      variable.description = soll.beschreibung;
+      nachName.set(soll.name, variable);
+    } catch (ausnahme) {
+      fehler.push({ code: FEHLERCODES.beimSetzen, variablenName: soll.name });
+    }
+  }
+  return nachName;
+}
+
+/* Bindet je Knoten und Eigenschaft in EINEM Zug auf einer Kopie des Paint-Arrays. `opacity`,
+ * `blendMode` und `visible` werden dabei nicht angefasst - deshalb ist die Zusage fuer die 370
+ * unveraenderten Vorkommen eine gepruefte und keine gehoffte Aussage. Jede Knotenoperation liegt
+ * in try/catch: Ein einzelner gesperrter Knoten darf den Lauf nicht abbrechen. */
+function bindeAlle(gemessen, knotenNachId, nachHex, variablenNachName, fehler) {
+  const gruppen = new Map();
+  for (const eintrag of gemessen) {
+    const schluessel = eintrag.knotenId + '|' + eintrag.eigenschaft;
+    if (!gruppen.has(schluessel)) {
+      gruppen.set(schluessel, []);
+    }
+    gruppen.get(schluessel).push(eintrag);
+  }
+
+  let gebunden = 0;
+  for (const eintraege of gruppen.values()) {
+    const knoten = knotenNachId.get(eintraege[0].knotenId);
+    const eigenschaft = eintraege[0].eigenschaft;
+    try {
+      const paints = knoten[eigenschaft];
+      if (paints === figma.mixed) {
+        continue;
+      }
+      const kopie = paints.map(function (paint) {
+        return Object.assign({}, paint);
+      });
+      let geaendert = false;
+      for (const eintrag of eintraege) {
+        if (eintrag.variable !== null || eintrag.art !== 'SOLID' || eintrag.hex === null) {
+          continue;
+        }
+        const soll = nachHex.get(eintrag.hex);
+        const variable = variablenNachName.get(soll.name);
+        kopie[eintrag.index] = figma.variables.setBoundVariableForPaint(
+          kopie[eintrag.index], 'color', variable
+        );
+        geaendert = true;
+        gebunden += 1;
+      }
+      if (geaendert) {
+        knoten[eigenschaft] = kopie;
+      }
+    } catch (ausnahme) {
+      fehler.push({
+        code: FEHLERCODES.beimBinden,
+        knotenId: eintraege[0].knotenId,
+        eigenschaft: eigenschaft
+      });
+    }
+  }
+  return gebunden;
+}
+
+async function ladeSchriften(knoten) {
+  if (knoten.fontName === figma.mixed) {
+    for (const abschnitt of knoten.getStyledTextSegments(['fontName'])) {
+      await figma.loadFontAsync(abschnitt.fontName);
+    }
+    return;
+  }
+  await figma.loadFontAsync(knoten.fontName);
+}
+
+/* Idempotent: Steht die neue Versionsangabe schon da, findet die Suche nichts und es passiert
+ * nichts. Falle: loadFontAsync muss dem Setzen von characters vorausgehen. */
+async function zieheVersionHoch(board, fehler) {
+  const treffer = board.findAll(function (knoten) {
+    return knoten.type === 'TEXT'
+      && typeof knoten.characters === 'string'
+      && knoten.characters.indexOf(REGISTER.versionVorher) !== -1;
+  });
+  let geaendert = 0;
+  for (const knoten of treffer) {
+    try {
+      await ladeSchriften(knoten);
+      knoten.characters = knoten.characters
+        .split(REGISTER.versionVorher)
+        .join(REGISTER.versionNachher);
+      geaendert += 1;
+    } catch (ausnahme) {
+      fehler.push({ code: FEHLERCODES.beimVersionZiehen, knotenId: knoten.id });
+    }
+  }
+  return geaendert;
+}
+
+function abbruch(phase, code, zusatz) {
+  return Object.assign(
+    { ok: false, fertig: false, phase: phase, code: code, vorher: null, nachher: null,
+      uebersprungen: [], fehler: [] },
+    zusatz || {}
+  );
+}
+
+async function hauptlauf() {
+  const fehler = [];
+
+  /* 1. Selbstverortung (M1). Trifft eines nicht zu: Rueckkehr ohne einen einzigen Schreibaufruf.
+   * Gibt die Sandbox figma.fileKey nicht her, ist das kein Grund, den Rest wegzulassen - es ist
+   * nur eine Pruefung weniger. */
+  const board = await figma.getNodeByIdAsync(REGISTER.boardKnotenId);
+  if (!board || board.name !== REGISTER.boardName) {
+    return abbruch('selbstverortung', FEHLERCODES.boardNichtGefunden);
+  }
+  if (typeof figma.fileKey === 'string' && figma.fileKey !== REGISTER.fileKey) {
+    return abbruch('selbstverortung', FEHLERCODES.falscheDatei);
+  }
+  const sammlungen = await figma.variables.getLocalVariableCollectionsAsync();
+  const sammlung = sammlungen.filter(function (eine) {
+    return eine.name === REGISTER.collection;
+  })[0];
+  if (!sammlung) {
+    return abbruch('selbstverortung', FEHLERCODES.sammlungNichtGefunden);
+  }
+  if (sammlung.modes.length !== 1 || sammlung.modes[0].name !== REGISTER.modus) {
+    return abbruch('selbstverortung', FEHLERCODES.modusNichtEindeutig);
+  }
+  const modusId = sammlung.modes[0].modeId;
+
+  /* 2. Inventar messen. */
+  const variablenVorher = await messeVariablen(sammlung, modusId, fehler);
+  const namenNachId = new Map(variablenVorher.map(function (eintrag) {
+    return [eintrag.id, eintrag.name];
+  }));
+  const knotenNachId = new Map();
+  const messung = messeBoard(board, namenNachId, knotenNachId, fehler);
+  const vorher = alsInventar(
+    messung.gemessen, variablenVorher, messung.knotenGesamt, REGISTER.versionVorher, false
+  );
+  const uebersprungen = uebersprungeneAus(messung.gemessen);
+
+  /* 3. Vorpruefung, Abbruch VOR jeder Aenderung. */
+  const pruefung = pruefeVorkommen(messung.gemessen, REGISTER);
+  if (!pruefung.ok) {
+    return {
+      ok: false,
+      fertig: false,
+      phase: 'vorpruefung',
+      vorher: vorher,
+      nachher: null,
+      uebersprungen: uebersprungen,
+      abbruchgruende: pruefung.abbruchgruende,
+      fehler: fehler
+    };
+  }
+  if (SCHAU_LAUF) {
+    return {
+      ok: true,
+      fertig: false,
+      phase: 'schau-lauf',
+      vorher: vorher,
+      nachher: null,
+      uebersprungen: uebersprungen,
+      abbruchgruende: [],
+      fehler: fehler
+    };
+  }
+
+  /* 4. bis 7. Ab hier wird geschrieben. */
+  await setzeWiederherstellungspunkt();
+  const variablenNachName = await setzeVariablenAufSoll(sammlung, modusId, fehler);
+  const nachHex = variablenNachHex(REGISTER);
+  const gebunden = bindeAlle(messung.gemessen, knotenNachId, nachHex, variablenNachName, fehler);
+  const versionsknoten = await zieheVersionHoch(board, fehler);
+
+  /* 8. Erneut messen und beides zurueckgeben. Die zweite Messung ist die Grenze der Zusage: Ein
+   * Selbstbericht bleibt ein Selbstbericht, das gemessene Nach-Inventar ist der Nachweis. */
+  const variablenNachher = await messeVariablen(sammlung, modusId, fehler);
+  const namenNachIdNachher = new Map(variablenNachher.map(function (eintrag) {
+    return [eintrag.id, eintrag.name];
+  }));
+  const knotenNachIdNachher = new Map();
+  const messungNachher = messeBoard(board, namenNachIdNachher, knotenNachIdNachher, fehler);
+  const nachher = alsInventar(
+    messungNachher.gemessen,
+    variablenNachher,
+    messungNachher.knotenGesamt,
+    REGISTER.versionNachher,
+    true
+  );
+
+  return {
+    ok: true,
+    fertig: true,
+    phase: 'abgeschlossen',
+    vorher: vorher,
+    nachher: nachher,
+    uebersprungen: uebersprungen.concat(uebersprungeneAus(messungNachher.gemessen)),
+    abbruchgruende: [],
+    fehler: fehler,
+    gebunden: gebunden,
+    versionsknoten: versionsknoten
+  };
+}
+
 /* --- Einstieg ------------------------------------------------------------------------------
  *
- * In Figma ist `figma` definiert und der Hauptlauf startet. Unter node ist es das nicht; dann
- * landen die reinen Teile in globalThis.__PRUEFTEILE, damit die Pruefung sie aufrufen kann.
+ * In Figma ist `figma` definiert und der Hauptlauf startet; sein Ergebnis ist der Ruecklauf. Unter
+ * node ist `figma` undefiniert, dann landen die reinen Teile in globalThis.__PRUEFTEILE, damit
+ * die Pruefung sie aufrufen kann. Der ausgefuehrte Pfad ist davon unberuehrt.
  */
-if (typeof figma === 'undefined') {
-  globalThis.__PRUEFTEILE = { pruefeVorkommen: pruefeVorkommen, REGISTER: REGISTER };
-}
+typeof figma === 'undefined'
+  ? (globalThis.__PRUEFTEILE = { pruefeVorkommen: pruefeVorkommen, REGISTER: REGISTER })
+  : hauptlauf();
