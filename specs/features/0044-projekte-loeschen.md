@@ -1,6 +1,6 @@
 # 0044 - Projekte löschen
 
-**Status:** Implemented
+**Status:** Implemented ([PR #351](https://github.com/TheRealKoller/photosort/pull/351))
 **Erstellt:** 2026-08-16
 **Aktualisiert:** 2026-09-07 (technische Neubewertung vor Umsetzungsbeginn — siehe Abschnitt „Entscheidungen“, Eintrag *Neubewertung 2026-09-07*)
 **Bezug:** `specs/inbox/0019-projekte-loeschen.md` (Ursprungs-Idee), idea-sharpener-Gespräch mit Daniel, Issue #162
