@@ -943,7 +943,17 @@ async function hauptlauf() {
  * In Figma ist `figma` definiert und der Hauptlauf startet; sein Ergebnis ist der Ruecklauf. Unter
  * node ist `figma` undefiniert, dann landen die reinen Teile in globalThis.__PRUEFTEILE, damit
  * die Pruefung sie aufrufen kann. Der ausgefuehrte Pfad ist davon unberuehrt.
+ *
+ * WARUM `return` UND NICHT NUR DER AUFRUF: Der Rueckgabewert ist der einzige Ausgabekanal eines
+ * use_figma-Laufs - was nicht zurueckgegeben wird, existiert fuer die Hauptsession nicht, und
+ * genau daran haengen beide Inventardateien und damit der ganze Nachweis. Ein blosser Aufruf
+ * `hauptlauf();` haette einen der drei Tagesaufrufe verbrannt und nichts geliefert. Bewusst OHNE
+ * `await`: Der Wrapper von use_figma ist ein async-Kontext und loest das zurueckgegebene Promise
+ * auf, waehrend ein `await` auf oberster Ebene die Pruefung `node --check` scheitern liesse (in
+ * einem CommonJS-Modul ist top-level `return` gueltig, top-level `await` nicht).
  */
-typeof figma === 'undefined'
-  ? (globalThis.__PRUEFTEILE = { pruefeVorkommen: pruefeVorkommen, REGISTER: REGISTER })
-  : hauptlauf();
+if (typeof figma === 'undefined') {
+  globalThis.__PRUEFTEILE = { pruefeVorkommen: pruefeVorkommen, REGISTER: REGISTER };
+} else {
+  return hauptlauf();
+}
