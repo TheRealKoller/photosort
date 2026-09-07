@@ -23,12 +23,39 @@ Das Register liegt **im** Payload und nicht daneben: Zwei Dateien, von denen ein
 eine geprüft wird, sind zwei Abbilder derselben Aussage, und zwei Abbilder driften. Die Prüfung in
 `scripts/tests/test_figma_farbregister.py` liest genau den Block, der auch ausgeführt worden ist.
 
+## Stand: der Lauf steht noch aus
+
+> **2026-09-07.** Der erste `use_figma`-Lauf ist **in der Vorprüfung abgebrochen, ohne zu
+> schreiben** — die Figma-Datei ist byte-für-byte unverändert. Er hat zwei Dinge geliefert: die
+> korrigierten Zählwerte (460 Knoten / 419 Vorkommen / 319 Fills, siehe AK0 der Spec) und den
+> Nachweis, dass der Rücklauf bei 20 KB abgeschnitten wird. Beides ist eingearbeitet. **Warum die
+> Abbruchgründe trotzdem nicht hier stehen:** Sie fielen genau dieser 20-KB-Grenze zum Opfer — der
+> Lauf gab damals noch das ausgeschriebene Inventar zurück. Der zweistufige Rücklauf ist die
+> Antwort darauf; er liefert sie beim nächsten Mal in der aggregierten Diagnose.
+>
+> Der **zweite** Aufruf kam nicht mehr zustande: `You've reached the Figma MCP tool call limit on
+> the Starter plan`. Das Kontingent war nach **einem** ausgeführten Aufruf erschöpft, nicht nach
+> drei — verlass dich also nicht auf die Zahl unten, sondern darauf, dass du **einen** Versuch
+> hast. Der Lauf ist unverändert wiederholbar, sobald das Kontingent wieder greift.
+>
+> **Der wahrscheinlichste Abbruchgrund und die Entscheidung, die dann ansteht:** Das Board arbeitet
+> an dokumentierten Stellen mit Deckkraft (Primär überfahren 85 % / gedrückt 70 %, Sekundär
+> überfahren 80 %, deaktiviert 40 % — `specs/architecture/0005`, Abschnitt 6). Ob die am Paint oder
+> am Knoten hängt, steht nirgends; nur der erste Fall löst `deckkraft-abweichend` aus. Sachlich
+> wäre Dulden vertretbar (das Binden fasst `paint.opacity` nachweislich nicht an, AK6 hielte
+> auch dann), aber die Teststrategie der Spec führt `opacity < 1` ausdrücklich als Abbruchfall —
+> das ist eine Festlegung, keine technische Detailfrage, und gehört deshalb Daniel vorgelegt,
+> sobald die Diagnose sie bestätigt. Ein Duldungsschalter ist bewusst **nicht** eingebaut: ein
+> Umgehungsweg an einer Sicherheitsprüfung vorbei, bevor jemand den Befund gesehen hat, ist genau
+> das, was M1 verhindern soll.
+
 ## Aufrufbudget: ein Aufruf für den ganzen Weg
 
 Der Figma-MCP-Zugang hängt an einem Starter-Plan mit hartem Aufrufkontingent — am 2026-09-06 war
-es nach **drei** `use_figma`-Aufrufen erschöpft. Ein Aufruf führt beliebig viel JavaScript aus;
-gezählt werden Aufrufe, nicht Arbeit. Deshalb macht der Payload den ganzen Weg in einem Aufruf,
-und **kein Aufruf dient allein dem Nachsehen**:
+es nach **drei** `use_figma`-Aufrufen erschöpft, am 2026-09-07 bereits nach **einem**. Die Zahl
+ist also keine Zusage; plane mit einem einzigen Versuch. Ein Aufruf führt beliebig viel JavaScript
+aus; gezählt werden Aufrufe, nicht Arbeit. Deshalb macht der Payload den ganzen Weg in einem
+Aufruf, und **kein Aufruf dient allein dem Nachsehen**:
 
 1. **Selbstverortung** — Board `2:4` vorhanden und mit erwartetem Namen, Collection
    „PhotoSort Farben" mit dem einen Modus `Dunkel`. Gibt die Sandbox `figma.fileKey` her, wird er
