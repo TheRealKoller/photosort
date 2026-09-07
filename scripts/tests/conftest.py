@@ -15,6 +15,9 @@ _SCRIPTS_DIR = Path(__file__).parent.parent
 # weil Fixtures aus einem Testmodul modul-lokal sind und mehrere Testmodule dasselbe Skript
 # brauchen.
 _SEED_SCRIPT_PATH = _SCRIPTS_DIR / "seed-opencloud-demo.py"
+# Gleiche Lage aus gleichem Grund: "ruecklauf-zu-inventar.py" traegt einen Bindestrich im
+# Dateinamen (Aufrufwerkzeug, kein Modul) und ist deshalb per Pfad zu laden.
+_RUECKLAUF_SCRIPT_PATH = _SCRIPTS_DIR / "figma" / "ruecklauf-zu-inventar.py"
 
 
 def _load_module(module_name: str, script_path: Path) -> ModuleType:
@@ -29,3 +32,8 @@ def _load_module(module_name: str, script_path: Path) -> ModuleType:
 @pytest.fixture(scope="session")
 def seed_module() -> ModuleType:
     return _load_module("seed_opencloud_demo", _SEED_SCRIPT_PATH)
+
+
+@pytest.fixture(scope="session")
+def ruecklauf_modul() -> ModuleType:
+    return _load_module("ruecklauf_zu_inventar", _RUECKLAUF_SCRIPT_PATH)

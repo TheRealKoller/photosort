@@ -6,7 +6,7 @@ Wirkung tritt damit in einer **fremden Datei** ein, nicht im Repository - ein Pu
 das nicht zeigen, nur behaupten. Diese Pruefung ist die Gegenmassnahme. Sie liest ausschliesslich
 Dateien dieses Repositories: kein Netzwerk, kein MCP-Werkzeug, kein Aufrufkontingent.
 
-**Die fuenf Gegenstaende, in der Reihenfolge ihrer Klassen:**
+**Die sechs Gegenstaende, in der Reihenfolge ihrer Klassen:**
 
 1. `TestRegisterForm` - der Registerblock in `scripts/figma/board-farbvariablen.js` (AK4/AK5):
    Namen, Zeichenvorrat mit echten Umlauten, Gruppenvokabular, Scopes, Beschreibungen, die zwei
@@ -24,7 +24,14 @@ Dateien dieses Repositories: kein Netzwerk, kein MCP-Werkzeug, kein Aufrufkontin
    Figma-API-Teilen; unter `node` ist `figma` nicht definiert, und die reinen Teile landen in
    `globalThis.__PRUEFTEILE`. Ein Test, der nur prueft, ob die Zeichenkette `figma.mixed` im
    Payload vorkommt, prueft eine Schreibweise, keine Entscheidung.
-5. `TestNachweis` - alles, was die gemessenen Inventare braucht (AK1-AK3, AK5-AK7).
+5. `TestRuecklaufExpansion` - der Transport. Die Antwort eines use_figma-Aufrufs wird bei 20 KB
+   abgeschnitten (am 2026-09-07 gemessen); zwei ausgeschriebene Inventare mit je 419 Eintraegen
+   sind ein Vielfaches davon. Der Payload kodiert deshalb kompakt, und
+   `scripts/figma/ruecklauf-zu-inventar.py` expandiert deterministisch in das unveraenderte
+   Dateischema. Der Rundlauf kompakt -> expandiert -> Schema wird ausgefuehrt, nicht an beiden
+   Enden behauptet, und eine Groessenschranke haelt fest, dass der Ruecklauf durch die Leitung
+   passt.
+6. `TestNachweis` - alles, was die gemessenen Inventare braucht (AK1-AK3, AK5-AK7).
 
 **`TestNachweis` ist bis zum Figma-Lauf rot, und das ist der gewollte Zustand.** Kein `skipif`,
 kein `xfail`: Ein Test, der bei fehlendem Nachweis gruen wird, ist der Nachweis nicht wert - genau
@@ -44,7 +51,7 @@ gemessene Inventar ab, ist das ein Halt-und-erklaeren im Pull Request, kein stil
    vorhandenen Hexwert gesetzt -> `test_die_vereinigung_ist_exakt_die_palette_aus_index_css` rot.
 2. Einen Eintrag aus `inventar-nachher.json` entfernt ->
    `test_die_schluesselmenge_ist_in_beiden_inventaren_identisch` rot.
-3. Einen der 370 unveraenderten Hexwerte im Nach-Inventar veraendert ->
+3. Einen der unveraenderten Hexwerte im Nach-Inventar veraendert ->
    `test_genau_achtundvierzig_hexwerte_aendern_sich_in_zwei_uebergaengen` rot.
 
 Zu 2 und 3: Die gemessenen Inventare existieren zum Zeitpunkt der Probe noch nicht - der
@@ -362,8 +369,15 @@ if (!teile || typeof teile.pruefeVorkommen !== 'function' || !teile.REGISTER) {
   console.error('globalThis.__PRUEFTEILE fehlt oder ist unvollstaendig');
   process.exit(3);
 }
-const faelle = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-const ergebnisse = faelle.map((fall) => teile.pruefeVorkommen(fall, teile.REGISTER));
+const aufrufe = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const ergebnisse = aufrufe.map((aufruf) => {
+  const funktion = teile[aufruf.funktion];
+  if (typeof funktion !== 'function') {
+    throw new Error('__PRUEFTEILE kennt keine Funktion ' + aufruf.funktion);
+  }
+  const argumente = aufruf.argumente.map((wert) => (wert === '@REGISTER' ? teile.REGISTER : wert));
+  return funktion.apply(null, argumente);
+});
 process.stdout.write(JSON.stringify({ register: teile.REGISTER, ergebnisse: ergebnisse }));
 """
 
@@ -382,15 +396,17 @@ def node_binary() -> str:
     return node
 
 
-def vorpruefung_ausfuehren(faelle: list[list[dict[str, Any]]]) -> dict[str, Any]:
-    """Duenner Leser: laedt den Payload unter `node` und ruft `pruefeVorkommen` je Fall auf.
+def payload_aufrufe(aufrufe: list[dict[str, Any]]) -> dict[str, Any]:
+    """Duenner Leser: laedt den Payload unter `node` und ruft seine reinen Teile auf.
 
     Das Laden geschieht **vom Test aus**, nicht aus dem Payload heraus - die Pruefhilfe faellt
-    deshalb nicht unter die Verbotsliste M2.
+    deshalb nicht unter die Verbotsliste M2. Der Platzhalter `"@REGISTER"` in `argumente` wird
+    durch das Register des Payloads ersetzt; so prueft der Test gegen genau das Register, das auch
+    ausgefuehrt wird, statt gegen eine Kopie.
     """
     lauf = subprocess.run(
         [node_binary(), "-e", HARNESS],
-        input=json.dumps(faelle),
+        input=json.dumps(aufrufe),
         text=True,
         capture_output=True,
         env=dict(os.environ, PHOTOSORT_PAYLOAD=str(PAYLOAD)),
@@ -399,6 +415,13 @@ def vorpruefung_ausfuehren(faelle: list[list[dict[str, Any]]]) -> dict[str, Any]
         f"Der node-Lauf ist mit Code {lauf.returncode} gescheitert.\nstderr:\n{lauf.stderr}"
     )
     return json.loads(lauf.stdout)
+
+
+def vorpruefung_ausfuehren(faelle: list[list[dict[str, Any]]]) -> dict[str, Any]:
+    """Ruft `pruefeVorkommen` je Fall auf - mit dem Register des Payloads."""
+    return payload_aufrufe(
+        [{"funktion": "pruefeVorkommen", "argumente": [fall, "@REGISTER"]} for fall in faelle]
+    )
 
 
 def basis_vorkommen(**abweichung: Any) -> dict[str, Any]:
@@ -1096,6 +1119,331 @@ class TestVorpruefung:
         )
 
 
+# --- TestRuecklaufExpansion -----------------------------------------------------------------
+
+# Die Antwort eines use_figma-Aufrufs wird bei 20 KB abgeschnitten (am 2026-09-07 gemessen, die
+# Antwort endete woertlich mit "// truncated to 20kb"). Der Ruecklauf muss darunter bleiben, und
+# zwar mit Abstand: Ein abgeschnittener Ruecklauf verbrennt einen von drei Tagesaufrufen und
+# liefert nichts. Gemessener schlechtester Fall dieser Kodierung: 14776 Bytes = 72 % der Grenze,
+# und das mit 23 Variablen in BEIDEN Inventaren; der tatsaechliche Vorzustand fuehrt zwoelf. Die
+# Obergrenze hier laesst rund 1,2 KB Luft nach oben - genug fuer ein etwas groesseres Board, eng
+# genug, dass ein neues Feld im Ruecklauf auffaellt, bevor es einen Aufruf kostet.
+RUECKLAUF_GRENZE_BYTES = 20 * 1024
+RUECKLAUF_OBERGRENZE_BYTES = 16 * 1024
+
+# Verteilung der 419 Vorkommen auf die 23 Variablen: (Name, gesamt, davon strokes). Sie bildet die
+# Sollrechnung nach - 290 hexgleich im Bestand + 47 Gedämpft + 72 Trennlinie + 10 Chips = 419,
+# davon 100 Linien - und ist damit zugleich eine Gegenprobe auf die Sollwerte oben.
+SYNTHETISCHE_VERTEILUNG = (
+    ("Hintergrund/Basis", 31, 10),
+    ("Hintergrund/Oberfläche", 30, 0),
+    ("Hintergrund/Erhöht", 30, 0),
+    ("Hintergrund/Overlay", 30, 0),
+    ("Akzent/Primär", 30, 12),
+    ("Akzent/Info", 20, 6),
+    ("Akzent/Aussortiert", 20, 6),
+    ("Akzent/Album-würdig", 20, 6),
+    ("Text/Primär", 40, 10),
+    ("Text/Sekundär", 25, 8),
+    ("Text/Deaktiviert", 14, 0),
+    ("Text/Gedämpft", SOLL_GEDAEMPFT, 0),
+    ("Rahmen/Trennlinie", SOLL_TRENNLINIE, 42),
+    ("Kategorie/Menschen/Fläche", 1, 0),
+    ("Kategorie/Menschen/Schrift", 1, 0),
+    ("Kategorie/Tier/Fläche", 1, 0),
+    ("Kategorie/Tier/Schrift", 1, 0),
+    ("Kategorie/Landschaft/Fläche", 1, 0),
+    ("Kategorie/Landschaft/Schrift", 1, 0),
+    ("Kategorie/Gebäude & Bauwerk/Fläche", 1, 0),
+    ("Kategorie/Gebäude & Bauwerk/Schrift", 1, 0),
+    ("Kategorie/Essen & Trinken/Fläche", 1, 0),
+    ("Kategorie/Essen & Trinken/Schrift", 1, 0),
+)
+
+
+def synthetische_messung(mit_bindung: bool) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Reine Funktion: ein vollstaendiges Board in der Rohform, die der Payload misst.
+
+    Bewusst in Originalgroesse (419 Farbvorkommen) und nicht als Handvoll Beispiele: Die eine
+    Zusage, die diese Kodierung tragen muss, ist "sie passt durch eine 20-KB-Leitung", und die
+    laesst sich an drei Eintraegen nicht pruefen. Zwei Knoten liegen ausserhalb des Board-Praefix
+    bzw. tragen Abweichungen bei Deckkraft, Mischmodus und Sichtbarkeit - genau die Faelle, an
+    denen eine Kodierung, die den Normalfall wegkuerzt, sonst still falsch wuerde.
+    """
+    nach_namen = variablen_nach_namen(register())
+    variablen = []
+    for nummer, (name, _, _) in enumerate(SYNTHETISCHE_VERTEILUNG, start=1):
+        eintrag = nach_namen[name]
+        altwert = eintrag["altwerte"][0] if eintrag["altwerte"] else None
+        variablen.append(
+            {
+                "id": f"VariableID:1:{nummer}",
+                "name": name,
+                "wert": eintrag["wert"] if mit_bindung else (altwert or eintrag["wert"]),
+                "scopes": list(eintrag["scopes"]),
+                "beschreibung": (
+                    eintrag["beschreibung"] if mit_bindung else f"Kurzform ({eintrag['wert']})"
+                ),
+            }
+        )
+    variablen.sort(key=lambda eintrag: eintrag["name"])
+    id_nach_namen = {eintrag["name"]: eintrag["id"] for eintrag in variablen}
+
+    gemessen: list[dict[str, Any]] = []
+    knoten = 100
+    for name, gesamt, strokes in SYNTHETISCHE_VERTEILUNG:
+        eintrag = nach_namen[name]
+        altwert = eintrag["altwerte"][0] if eintrag["altwerte"] else eintrag["wert"]
+        for nummer in range(gesamt):
+            knoten += 1
+            gemessen.append(
+                {
+                    # Ein Knoten aus einer fremden Sitzung: Er traegt einen anderen Praefix und
+                    # muss die Kodierung unbeschadet ueberstehen.
+                    "knotenId": f"7:{knoten}" if nummer == 0 and name == "Text/Primär"
+                    else f"2:{knoten}",
+                    "eigenschaft": "strokes" if nummer < strokes else "fills",
+                    "index": 0,
+                    "art": "SOLID",
+                    "hex": eintrag["wert"] if mit_bindung else altwert,
+                    "deckkraft": 0.4 if (name == "Text/Deaktiviert" and nummer == 0) else 1,
+                    "mischmodus": (
+                        "MULTIPLY" if (name == "Akzent/Info" and nummer == 7) else "NORMAL"
+                    ),
+                    "sichtbar": not (name == "Hintergrund/Overlay" and nummer == 3),
+                    "stilId": "",
+                    "variable": name if mit_bindung else None,
+                    "variablenId": id_nach_namen[name] if mit_bindung else None,
+                }
+            )
+
+    # Zwei Vorkommen, die kein Farbvorkommen sind: Sie gehoeren nicht ins Inventar, aber sie
+    # duerfen auch nicht verschwinden - sie werden gezaehlt und ausgewiesen.
+    gemessen.append(
+        {
+            "knotenId": "2:900", "eigenschaft": "fills", "index": 0, "art": "GRADIENT_LINEAR",
+            "hex": None, "deckkraft": 1, "mischmodus": "NORMAL", "sichtbar": True,
+            "stilId": "", "variable": None, "variablenId": None,
+        }
+    )
+    gemessen.append(
+        {
+            "knotenId": "2:901", "eigenschaft": "strokes", "index": 0, "art": "SOLID",
+            "hex": "#2A2E3D", "deckkraft": 1, "mischmodus": "NORMAL", "sichtbar": True,
+            "stilId": "gesetzt", "variable": None, "variablenId": None,
+        }
+    )
+    return gemessen, variablen
+
+
+def kompakt_aus_payload(mit_bindung: bool) -> dict[str, Any]:
+    """Duenner Leser: laesst den Payload selbst kodieren - nicht den Test."""
+    gemessen, variablen = synthetische_messung(mit_bindung)
+    angaben = {
+        "gemessenAm": "2026-09-07T09:15:00Z",
+        "boardVersion": SOLL_VERSION_NACHHER if mit_bindung else SOLL_VERSION_VORHER,
+        "knotenGesamt": SOLL_KNOTEN,
+        "mitBindung": mit_bindung,
+    }
+    ergebnis = payload_aufrufe(
+        [{"funktion": "kompaktesInventar",
+          "argumente": [gemessen, variablen, angaben, "@REGISTER"]}]
+    )
+    return ergebnis["ergebnisse"][0]
+
+
+class TestRuecklaufExpansion:
+    """Der Transport ist kompakt, die Datei bleibt im geschlossenen Schema.
+
+    Die Antwort eines `use_figma`-Aufrufs wird bei 20 KB abgeschnitten. Zwei ausgeschriebene
+    Inventare mit je 419 Eintraegen sind ein Vielfaches davon - auch ein erfolgreicher Lauf haette
+    seinen Nachweis nie vollstaendig uebertragen. Diese Klasse bindet die Aufloesung: Der Payload
+    kodiert kompakt, `scripts/figma/ruecklauf-zu-inventar.py` expandiert deterministisch, und was
+    dabei herauskommt, erfuellt dasselbe Schema wie zuvor. Der Rundlauf wird **ausgefuehrt**, nicht
+    an beiden Enden behauptet.
+    """
+
+    def test_der_rundlauf_erfuellt_das_geschlossene_schema(self, ruecklauf_modul: Any) -> None:
+        vorher = ruecklauf_modul.expandiere(kompakt_aus_payload(False), register(), "vorher")
+        nachher = ruecklauf_modul.expandiere(kompakt_aus_payload(True), register(), "nachher")
+
+        assert schema_verstoesse(vorher, VORKOMMEN_SCHLUESSEL) == []
+        assert schema_verstoesse(nachher, VORKOMMEN_SCHLUESSEL_NACHHER) == []
+        for inventar_daten, name in ((vorher, "vorher"), (nachher, "nachher")):
+            vorkommen = inventar_daten["vorkommen"]
+            assert len(vorkommen) == SOLL_VORKOMMEN, f"{name}: {len(vorkommen)} Vorkommen."
+            assert vorkommen == sorted(vorkommen, key=sortierschluessel), (
+                f"{name}: die Expansion haelt die deterministische Sortierung nicht."
+            )
+            fills = [e for e in vorkommen if e["eigenschaft"] == "fills"]
+            assert len(fills) == SOLL_FILLS
+            assert inventar_daten["kopf"]["anzahlVorkommen"] == SOLL_VORKOMMEN
+
+    def test_die_expansion_gibt_jeden_gemessenen_wert_unveraendert_zurueck(
+        self, ruecklauf_modul: Any
+    ) -> None:
+        """Der eigentliche Rundlauf: Was gemessen wurde, steht nach der Expansion wieder da -
+        einschliesslich der Ausnahmen, die die Kodierung aus der Zeile herausgekuerzt hat."""
+        gemessen, _ = synthetische_messung(True)
+        erwartet = {
+            (e["knotenId"], e["eigenschaft"], e["index"]): e
+            for e in gemessen
+            if e["art"] == "SOLID" and not e["stilId"] and e["hex"] is not None
+        }
+
+        nachher = ruecklauf_modul.expandiere(kompakt_aus_payload(True), register(), "nachher")
+
+        for eintrag in nachher["vorkommen"]:
+            quelle = erwartet[schluessel(eintrag)]
+            for feld in ("hex", "deckkraft", "mischmodus", "sichtbar", "variable", "variablenId"):
+                assert eintrag[feld] == quelle[feld], (
+                    f"{schluessel(eintrag)}.{feld}: {eintrag[feld]!r} statt {quelle[feld]!r}."
+                )
+        assert len(nachher["vorkommen"]) == len(erwartet)
+
+    def test_die_expansion_uebersteht_einen_knoten_ausserhalb_des_board_praefix(
+        self, ruecklauf_modul: Any
+    ) -> None:
+        """Die Kodierung kuerzt den gemeinsamen Praefix weg. Ein Knoten aus einer anderen Sitzung
+        traegt einen anderen - er muss vollstaendig stehen bleiben, sonst zeigt die Knoten-ID im
+        Nachweis auf einen fremden Knoten."""
+        vorher = ruecklauf_modul.expandiere(kompakt_aus_payload(False), register(), "vorher")
+
+        ids = {eintrag["knotenId"] for eintrag in vorher["vorkommen"]}
+        assert any(kid.startswith("7:") for kid in ids), (
+            "Der Knoten mit fremdem Praefix ist bei der Kodierung verloren gegangen."
+        )
+        assert all(MUSTER_KNOTEN_ID.match(kid) for kid in ids)
+
+    def test_der_kompakte_ruecklauf_bleibt_deutlich_unter_der_20_kb_grenze(self) -> None:
+        """Die Zusage, an der die ganze Umstellung haengt."""
+        ruecklauf = {
+            "ok": True,
+            "fertig": True,
+            "phase": "abgeschlossen",
+            "vorher": kompakt_aus_payload(False),
+            "nachher": kompakt_aus_payload(True),
+            "uebersprungen": [],
+            "fehler": [],
+        }
+
+        groesse = len(json.dumps(ruecklauf, ensure_ascii=False).encode("utf-8"))
+
+        assert groesse < RUECKLAUF_OBERGRENZE_BYTES, (
+            f"Der Ruecklauf ist {groesse} Bytes gross. Die Tool-Antwort wird bei "
+            f"{RUECKLAUF_GRENZE_BYTES} Bytes abgeschnitten; unterhalb von "
+            f"{RUECKLAUF_OBERGRENZE_BYTES} bleibt Luft fuer ein wachsendes Board."
+        )
+
+    def test_die_diagnose_bleibt_klein_und_zaehlt_jeden_distinkten_hexwert(self) -> None:
+        """Der Abbruchfall. Die Diagnose ersetzt das Inventar, das hier ohnehin nicht durch die
+        Leitung passte - und ist fuer den Zweck die bessere Auskunft: Zum Korrigieren braucht man
+        die Verteilung der Hexwerte, nicht 419 Einzelzeilen."""
+        gemessen, variablen = synthetische_messung(False)
+        pruefung = vorpruefung_ausfuehren([gemessen])["ergebnisse"][0]
+        angaben = {
+            "gemessenAm": "2026-09-07T09:15:00Z",
+            "boardVersion": SOLL_VERSION_VORHER,
+            "knotenGesamt": SOLL_KNOTEN,
+            "mitBindung": False,
+        }
+
+        diagnose = payload_aufrufe(
+            [{"funktion": "diagnose",
+              "argumente": [gemessen, variablen, pruefung, angaben, "@REGISTER"]}]
+        )["ergebnisse"][0]
+
+        groesse = len(json.dumps(diagnose, ensure_ascii=False).encode("utf-8"))
+        assert groesse < RUECKLAUF_OBERGRENZE_BYTES, f"Die Diagnose ist {groesse} Bytes gross."
+        gezaehlt = {eintrag["hex"]: eintrag for eintrag in diagnose["hexwerte"]}
+        assert sum(e["anzahl"] for e in diagnose["hexwerte"]) == len(gemessen), (
+            "Die Hexuebersicht muss jedes gemessene Vorkommen zaehlen, auch die uebersprungenen."
+        )
+        assert gezaehlt["#2A2E3D"]["variable"] == "Rahmen/Trennlinie"
+        assert gezaehlt["#2A2E3D"]["strokes"] == 43, (
+            "Die Aufteilung nach Fuellung und Linie ist die Zeile, an der ein zu enger Scope "
+            "sichtbar wird."
+        )
+        assert gezaehlt["#62677A"]["variable"] == "Text/Gedämpft", (
+            "Ein Altwert muss in der Uebersicht seiner Variable zugeordnet sein - sonst sieht die "
+            "Diagnose nach einer fehlenden Farbe aus, wo eine Korrektur ansteht."
+        )
+        assert None in gezaehlt, "Der Nicht-Volltonwert fehlt in der Uebersicht."
+        assert diagnose["besonderheiten"]["anzahl"] == 3
+        assert diagnose["besonderheiten"]["vollstaendig"] is True
+        assert {e["code"] for e in diagnose["uebersprungen"]} == {"nicht-solid", "stil-gesetzt"}
+
+    def test_die_diagnose_traegt_keinen_freitext_aus_dem_fremden_system(self) -> None:
+        """M3 gilt fuer die Diagnose genauso wie fuer die Inventardateien: Codes, Knoten-IDs,
+        Hexwerte und Zahlen - keine Knoten- oder Ebenennamen, keine Textinhalte, keine
+        Beschreibungstexte."""
+        gemessen, variablen = synthetische_messung(False)
+        pruefung = vorpruefung_ausfuehren([gemessen])["ergebnisse"][0]
+        angaben = {
+            "gemessenAm": "2026-09-07T09:15:00Z",
+            "boardVersion": SOLL_VERSION_VORHER,
+            "knotenGesamt": SOLL_KNOTEN,
+            "mitBindung": False,
+        }
+
+        diagnose = payload_aufrufe(
+            [{"funktion": "diagnose",
+              "argumente": [gemessen, variablen, pruefung, angaben, "@REGISTER"]}]
+        )["ergebnisse"][0]
+
+        for eintrag in diagnose["variablen"]:
+            assert set(eintrag) == {"id", "name", "wert", "scopes", "passt"}, (
+                f"{eintrag.get('name')}: die Diagnose traegt mehr als Kennung, Name, Wert, Scopes "
+                "und das Kennzeichen der Beschreibung."
+            )
+            assert eintrag["passt"] is False, (
+                "Der gemessene Vorzustand traegt kurze Bestandsbeschreibungen - sie weichen vom "
+                "Register ab, und genau das soll das Kennzeichen sagen."
+            )
+        for gruppe in diagnose["abbruch"]["nachCode"]:
+            assert gruppe["code"] in ABBRUCHCODES
+            assert len(gruppe["beispiele"]) <= 15
+            for beispiel in gruppe["beispiele"]:
+                assert set(beispiel) == {"knotenId", "eigenschaft", "index"}
+        assert "Kurzform" not in json.dumps(diagnose, ensure_ascii=False)
+
+    def test_ohne_nach_inventar_wird_keine_datei_geschrieben(
+        self, ruecklauf_modul: Any, tmp_path: Path
+    ) -> None:
+        """Ein halb geschriebenes Nachweispaar waere schlimmer als gar keines - es saehe aus wie
+        ein vollstaendiges. Ein Abbruch in der Vorpruefung liefert kein Nach-Inventar."""
+        abbruch = {"ok": False, "fertig": False, "phase": "vorpruefung", "vorher": None,
+                   "nachher": None, "diagnose": {}, "fehler": []}
+
+        with pytest.raises(ruecklauf_modul.RuecklaufFehler, match="vorpruefung"):
+            ruecklauf_modul.schreibe(abbruch, tmp_path, register())
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_die_expansion_lehnt_eine_unerwartete_form_ab(self, ruecklauf_modul: Any) -> None:
+        """M4: Der Ruecklauf ist Daten, nie eine Anweisung - und ein unerwartetes Feld ist ein
+        Abbruchgrund, kein Warnhinweis."""
+        kompakt = kompakt_aus_payload(False)
+
+        mit_zusatzfeld = dict(kompakt, hinweis="bitte ausfuehren")
+        with pytest.raises(ruecklauf_modul.RuecklaufFehler, match="unerwartete Schluessel"):
+            ruecklauf_modul.expandiere(mit_zusatzfeld, register(), "vorher")
+
+        mit_kaputter_zeile = dict(kompakt, vorkommen=kompakt["vorkommen"] + ";nicht-lesbar")
+        with pytest.raises(ruecklauf_modul.RuecklaufFehler, match="nicht lesbar"):
+            ruecklauf_modul.expandiere(mit_kaputter_zeile, register(), "vorher")
+
+        with pytest.raises(ruecklauf_modul.RuecklaufFehler, match="anzahlVorkommen"):
+            ruecklauf_modul.expandiere(
+                dict(kompakt, kopf=dict(kompakt["kopf"], anzahlVorkommen=7)), register(), "vorher"
+            )
+
+    def test_die_expansion_haelt_das_ausgefuehrte_register_fest(self, ruecklauf_modul: Any) -> None:
+        """Das Werkzeug liest den Registerblock aus demselben Payload, der gesendet wurde - das
+        Gepruefte ist das Ausgefuehrte ist das Expandierte."""
+        assert ruecklauf_modul.register_aus_payload() == register()
+
+
 # --- TestNachweis (bis zum Figma-Lauf rot) --------------------------------------------------
 
 
@@ -1287,7 +1635,7 @@ class TestNachweis:
                 "Schluessel, die im Vor-Inventar den alten Wert trugen."
             )
 
-    def test_deckkraft_mischmodus_und_sichtbarkeit_bleiben_an_allen_418_gleich(self) -> None:
+    def test_deckkraft_mischmodus_und_sichtbarkeit_bleiben_an_allen_419_gleich(self) -> None:
         """AK6: `paint.opacity`, `blendMode` und `visible` bleiben unangetastet - deshalb ist die
         Zusage fuer die 370 unveraenderten Vorkommen eine gepruefte Aussage."""
         vorher_nach_schluessel = {

@@ -130,6 +130,7 @@ führen, und **eine** Sache passiert in Figma.
 | Datei | Inhalt |
 |---|---|
 | `scripts/figma/board-farbvariablen.js` | Der `use_figma`-Payload, wortgleich das Ausgeführte. Trägt das **Farbregister** als abgegrenzten, strikt JSON-parsbaren Block (`/* REGISTER-ANFANG */` … `/* REGISTER-ENDE */`) in sich — kein zweites Registerdokument, kein Zusammensetzen vor dem Senden, damit Ausgeführtes und Geprüftes nicht driften können. |
+| `scripts/figma/ruecklauf-zu-inventar.py` | Expandiert den kompakt kodierten Rücklauf deterministisch in die beiden Inventardateien. Nachgetragen am 2026-09-07, siehe Abschnitt Rücklaufgröße. |
 | `scripts/figma/inventar-vorher.json` | Gemessener Vorzustand, Schema unten. |
 | `scripts/figma/inventar-nachher.json` | Dasselbe nach dem Lauf, identisches Format und identische Sortierung — dadurch ist der Textdiff der beiden Dateien selbst schon der Nachweis. |
 | `scripts/figma/README.md` | Ablauf, Aufrufbudget, Wiederaufnahme, Wiederherstellung, die Sicherheitsregeln im Wortlaut. |
@@ -245,8 +246,28 @@ erneuter Lauf ist folgenlos, wenn nichts offen ist, und räumt sonst den Rest au
 Schau-Lauf braucht keine zweite Datei: Die Hauptsession stellt dem Payload
 `globalThis.NUR_PRUEFEN = true;` voran.
 
-**Rücklaufgröße:** rund 840 Vorkommen-Einträge, etwa 2 × 40 KB. Bewusst vollständig statt
-aggregiert — eine Aussage „nichts anderes hat sich geändert" braucht Knotengranularität.
+**Rücklaufgröße — am 2026-09-07 gemessen und daraufhin umgebaut.** Die Schätzung lautete hier
+zuerst „rund 840 Vorkommen-Einträge, etwa 2 × 40 KB, bewusst vollständig statt aggregiert". Die
+Vollständigkeit bleibt richtig und bleibt bestehen; die Übertragungsform war es nicht: **Die
+Antwort eines `use_figma`-Aufrufs wird bei 20 KB abgeschnitten** — die Tool-Antwort des ersten
+Laufs endete wörtlich mit `// truncated to 20kb`, und die Abbruchgründe waren damit nicht mehr zu
+sehen. Zwei ausgeschriebene Inventare hätten die Grenze um ein Vielfaches gerissen; auch ein
+erfolgreicher Lauf hätte seinen Nachweis nie vollständig übertragen. Das ist eine Grenze des
+**Transports**, nicht des Entwurfs, und sie wird dort aufgelöst:
+
+- **Abbruch in der Vorprüfung → aggregierte Diagnose** statt Inventar: je Abbruchcode Anzahl und
+  höchstens 15 Beispiele, alle distinkten Hexwerte des Boards mit Häufigkeit (getrennt nach
+  Füllung und Linie, samt erklärender Registervariable), alle Vorkommen mit abweichender
+  Deckkraft/Mischmodus/Sichtbarkeit, die übersprungenen nach Code gezählt, die Variablen ohne
+  Beschreibungstexte. Zum Korrigieren ist das die bessere Auskunft als 419 Einzelzeilen.
+- **Erfolg → beide Inventare kompakt kodiert**, expandiert von
+  `scripts/figma/ruecklauf-zu-inventar.py` in genau die Dateien, die das geschlossene Schema oben
+  beschreibt. Gemessener schlechtester Fall: 14776 Bytes, 72 % der Grenze; eine Größenschranke im
+  Test hält das fest, damit ein neues Feld im Rücklauf auffällt, bevor es einen Aufruf kostet.
+
+**Das geschlossene Feldschema der Inventardateien (M3) ist davon unberührt** — es beschreibt, was
+im Repository liegt, nicht, was durch die Leitung geht. Die Knotengranularität bleibt vollständig
+erhalten.
 
 ### Reihenfolge und Arbeitsteilung
 
@@ -397,6 +418,7 @@ folgt** und **was nur gemessen sein kann**.
 | `TestRegisterGegenIndexCss` | AK8: Disjunktheit + Vereinigungsgleichheit gegen `:root`, Mindestzahlen | grün |
 | `TestPayloadForm` | Registerblock strikt JSON-parsbar und im ausgeführten Payload eingebettet; `NUR_PRUEFEN`-Schalter; Verbotsliste M2; `node --check` | grün |
 | `TestVorpruefung` | die sechs Grenzfälle, ausgeführt | grün |
+| `TestRuecklaufExpansion` | Rundlauf kompakter Rücklauf → expandierte Datei → Schema; Größenschranke gegen die 20-KB-Grenze; die Diagnose trägt keinen Freitext | grün |
 | `TestNachweis` | AK1–AK3, AK6, AK7: alles, was die gemessenen Inventare braucht | **rot** |
 
 **Damit ist die Kollision mit dem TDD-Regime aufgelöst, ohne sie zu bemänteln:** Der Branch hat
@@ -457,11 +479,12 @@ der Beschreibungen (nur die Anwesenheit der Pflichtbestandteile); spätere Hand�
 (ADR 0062 Abschnitt 3 schließt jeden Abgleichmechanismus aus).
 
 `specs/architecture/0002-testkonzept.md` bekommt einen neuen Abschnitt zwischen „Reine
-Bash-Wrapper-Skripte" und „Repo-weite Doku-Restrukturierung" mit vier verallgemeinerbaren Regeln
+Bash-Wrapper-Skripte" und „Repo-weite Doku-Restrukturierung" mit fünf verallgemeinerbaren Regeln
 (Nachweis = gemessenes Vorher/Nachher im Repository; ein bewusst rotes Testkorpus ist zulässig,
 wenn benannt, abgegrenzt und beziffert; ein knappes externes Aufrufkontingent ist eine
 Testentwurfs-Vorgabe; die reinen Teile eines Fremdlaufzeit-Payloads werden in ihrer eigenen
-Laufzeit ausgeführt), dazu je ein Eintrag unter „Was bewusst nicht getestet wird" und „Bekannte
+Laufzeit ausgeführt; ein Transportlimit des fremden Werkzeugs gehört in den Entwurf und wird über
+einen ausgeführten Rundlauf und eine Größenschranke geprüft), dazu je ein Eintrag unter „Was bewusst nicht getestet wird" und „Bekannte
 Lücken".
 
 ## Offene Fragen

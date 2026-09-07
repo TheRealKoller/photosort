@@ -648,16 +648,92 @@ async function messeVariablen(sammlung, modusId, fehler) {
   return eintraege;
 }
 
-/* Aus den gemessenen Rohdaten das Inventar in genau der Form, die scripts/tests/
- * test_figma_farbregister.py als geschlossenes Schema prueft - kein Feld mehr, keines weniger.
- * Knoten-/Ebenennamen, Textinhalte, Kommentare, Stil- und Bibliothekskennungen kommen hier
- * ueberhaupt nicht vor: Die Injektionsflaeche ist damit nicht bewacht, sondern strukturell nicht
- * vorhanden. Die Knoten-ID adressiert den Knoten trotzdem exakt (?node-id=). */
-function alsInventar(gemessen, variablen, knotenGesamt, boardVersion, mitBindung) {
-  const farbvorkommen = gemessen.filter(function (eintrag) {
-    return eintrag.art === 'SOLID' && !eintrag.stilId && eintrag.hex !== null;
-  });
-  farbvorkommen.sort(function (links, rechts) {
+/* --- Reine Teile: der zweistufige Ruecklauf --------------------------------------------------
+ *
+ * WARUM KOMPAKT, obwohl der Nachweis ausdruecklich vollstaendig sein soll: Die Antwort eines
+ * use_figma-Aufrufs wird bei **20 KB** abgeschnitten (am 2026-09-07 gemessen, die Antwort endete
+ * woertlich mit `// truncated to 20kb`). Zwei ausgeschriebene Inventare mit je 419 Eintraegen sind
+ * ein Vielfaches davon - auch ein erfolgreicher Lauf haette seinen Nachweis nie vollstaendig
+ * uebertragen. Das ist eine Grenze des TRANSPORTS, keine des Entwurfs, und sie wird genau dort
+ * aufgeloest: Der Ruecklauf ist kompakt kodiert, `scripts/figma/ruecklauf-zu-inventar.py`
+ * expandiert ihn deterministisch in die beiden Schema-Dateien. Das geschlossene Feldschema der
+ * Dateien selbst (M3) bleibt unangetastet - es beschreibt, was im Repository liegt, nicht, was
+ * durch die Leitung geht.
+ *
+ * Zwei Stufen, weil die beiden Faelle Verschiedenes brauchen:
+ *   - Abbruch in der Vorpruefung -> eine AGGREGIERTE Diagnose. Sie muss sagen, was zum Korrigieren
+ *     noetig ist, nicht jedes Vorkommen einzeln: je Abbruchcode die Anzahl und hoechstens 15
+ *     Beispiele, dazu ALLE distinkten Hexwerte des Boards mit Haeufigkeit (daraus ist sofort
+ *     sichtbar, ob eine Farbe im Register fehlt und welche), alle Besonderheiten bei
+ *     Deckkraft/Mischmodus/Sichtbarkeit, und die uebersprungenen nach Code gezaehlt.
+ *   - Erfolg -> die beiden kompakt kodierten Inventare.
+ *
+ * Beide Stufen tragen ausschliesslich Codes aus geschlossenen Listen, Knoten-IDs, Hexwerte und
+ * Zahlen. Keine Knoten- oder Ebenennamen, keine Textinhalte, keine Stil- oder
+ * Bibliothekskennungen, kein Ausnahmetext des fremden Systems.
+ */
+
+const KOMPAKT_TRENNER = ';';
+const KEIN_VOLLTONWERT = null;
+const UNGEBUNDEN = -1;
+const REGISTERFREMD = -2;
+const MAX_BEISPIELE = 15;
+const MAX_BESONDERHEITEN = 200;
+const ID_PRAEFIX = 'VariableID:';
+
+/* Figmas vollstaendiges Farb-Scope-Vokabular als Einzelbuchstaben. Der groesste Einzelposten im
+ * Variablenblock: ausgeschrieben kosten vier Scopes 58 Bytes, kodiert 6. Ein Scope ausserhalb
+ * dieser Liste wird als '?' kodiert - die Expansion bricht darauf ab, statt still etwas
+ * Falsches zu schreiben. */
+const SCOPE_CODES = {
+  FRAME_FILL: 'F',
+  SHAPE_FILL: 'S',
+  TEXT_FILL: 'T',
+  STROKE_COLOR: 'C',
+  ALL_SCOPES: 'A',
+  ALL_FILLS: 'L',
+  EFFECT_COLOR: 'E'
+};
+
+function scopeCode(scopes) {
+  return scopes.map(function (scope) {
+    return SCOPE_CODES[scope] === undefined ? '?' : SCOPE_CODES[scope];
+  }).join('');
+}
+
+function knotenPraefixAus(register) {
+  return register.boardKnotenId.split(':')[0] + ':';
+}
+
+/* Die Knoten-ID ohne den gemeinsamen Praefix des Boards. Ein Knoten aus einer anderen Sitzung
+ * traegt einen anderen Praefix und bleibt deshalb vollstaendig stehen - erkennbar am ':'. Die
+ * Expansion dreht genau diese Regel um. */
+function knotenTeilVon(knotenId, praefix) {
+  return knotenId.indexOf(praefix) === 0 ? knotenId.slice(praefix.length) : knotenId;
+}
+
+/* Der Index bleibt weg, wenn er 0 ist - das ist er an nahezu jedem Paint, und 419-mal eine Null
+ * zu uebertragen ist genau die Art Normalfall-Wiederholung, die den Ruecklauf an die 20-KB-Grenze
+ * treibt. Die Expansion setzt ihn wieder auf 0. */
+function zeilenschluessel(eintrag, praefix) {
+  return knotenTeilVon(eintrag.knotenId, praefix)
+    + (eintrag.eigenschaft === 'fills' ? 'f' : 's')
+    + (eintrag.index === 0 ? '' : eintrag.index);
+}
+
+function istFarbvorkommen(eintrag) {
+  return eintrag.art === 'SOLID' && !eintrag.stilId && eintrag.hex !== null;
+}
+
+function istBesonderheit(eintrag) {
+  return eintrag.deckkraft !== 1 || eintrag.mischmodus !== 'NORMAL' || eintrag.sichtbar !== true;
+}
+
+/* Deterministische Sortierung: Knoten-ID numerisch, dann Eigenschaft, dann Index. Sie ist der
+ * Grund, warum der Textdiff der beiden Inventardateien selbst schon der Nachweis ist. */
+function farbvorkommenAus(gemessen) {
+  const gefiltert = gemessen.filter(istFarbvorkommen);
+  gefiltert.sort(function (links, rechts) {
     const linksId = links.knotenId.split(':').map(Number);
     const rechtsId = rechts.knotenId.split(':').map(Number);
     if (linksId[0] !== rechtsId[0]) return linksId[0] - rechtsId[0];
@@ -667,46 +743,13 @@ function alsInventar(gemessen, variablen, knotenGesamt, boardVersion, mitBindung
     }
     return links.index - rechts.index;
   });
-  const vorkommen = farbvorkommen.map(function (eintrag) {
-    const zeile = {
-      knotenId: eintrag.knotenId,
-      eigenschaft: eintrag.eigenschaft,
-      index: eintrag.index,
-      hex: eintrag.hex,
-      deckkraft: eintrag.deckkraft,
-      mischmodus: eintrag.mischmodus,
-      sichtbar: eintrag.sichtbar
-    };
-    if (mitBindung) {
-      zeile.variable = eintrag.variable;
-      zeile.variablenId = eintrag.variablenId;
-    }
-    return zeile;
-  });
-  return {
-    kopf: {
-      gemessenAm: jetztInUtc(),
-      boardKnotenId: REGISTER.boardKnotenId,
-      boardVersion: boardVersion,
-      anzahlKnoten: knotenGesamt,
-      anzahlVorkommen: vorkommen.length,
-      anzahlFills: vorkommen.filter(function (zeile) {
-        return zeile.eigenschaft === 'fills';
-      }).length,
-      anzahlStrokes: vorkommen.filter(function (zeile) {
-        return zeile.eigenschaft === 'strokes';
-      }).length,
-      anzahlVariablen: variablen.length
-    },
-    variablen: variablen,
-    vorkommen: vorkommen
-  };
+  return gefiltert;
 }
 
 function uebersprungeneAus(gemessen) {
   return gemessen
     .filter(function (eintrag) {
-      return eintrag.art !== 'SOLID' || eintrag.stilId || eintrag.hex === null;
+      return !istFarbvorkommen(eintrag);
     })
     .map(function (eintrag) {
       return {
@@ -716,6 +759,222 @@ function uebersprungeneAus(gemessen) {
         index: eintrag.index
       };
     });
+}
+
+/* Je Code die Anzahl und hoechstens MAX_BEISPIELE Beispiele. Der Code ist die Information, die
+ * Zahl ist das Ausmass, das Beispiel ist der Einstieg zum Nachsehen (?node-id=). Alles darueber
+ * hinaus kostet nur Transportbudget. */
+function aggregiereNachCode(eintraege) {
+  const nachCode = new Map();
+  for (const eintrag of eintraege) {
+    if (!nachCode.has(eintrag.code)) {
+      nachCode.set(eintrag.code, { code: eintrag.code, anzahl: 0, beispiele: [] });
+    }
+    const gruppe = nachCode.get(eintrag.code);
+    gruppe.anzahl += 1;
+    if (gruppe.beispiele.length < MAX_BEISPIELE) {
+      gruppe.beispiele.push({
+        knotenId: eintrag.knotenId,
+        eigenschaft: eintrag.eigenschaft,
+        index: eintrag.index
+      });
+    }
+  }
+  const liste = Array.from(nachCode.values());
+  liste.sort(function (links, rechts) {
+    return rechts.anzahl - links.anzahl;
+  });
+  return liste;
+}
+
+/* Alle distinkten Hexwerte mit Haeufigkeit, aufgeteilt nach Fuellung und Linie, samt der
+ * Registervariable, die sie erklaert (oder null). Das ist die entscheidende Zeile fuer jede
+ * Korrektur: Ein `null` in der Spalte `variable` sagt sofort, welche Farbe im Register fehlt, und
+ * eine Zahl in `strokes` bei einer Variable ohne STROKE_COLOR sagt, welcher Scope zu eng ist. */
+function hexUebersicht(gemessen, register) {
+  const nachHex = variablenNachHex(register);
+  const zaehler = new Map();
+  for (const eintrag of gemessen) {
+    const schluessel = eintrag.hex === null ? KEIN_VOLLTONWERT : eintrag.hex;
+    if (!zaehler.has(schluessel)) {
+      const erklaerung = schluessel === null ? undefined : nachHex.get(schluessel);
+      zaehler.set(schluessel, {
+        hex: schluessel,
+        anzahl: 0,
+        fills: 0,
+        strokes: 0,
+        variable: erklaerung === undefined ? null : erklaerung.name
+      });
+    }
+    const gruppe = zaehler.get(schluessel);
+    gruppe.anzahl += 1;
+    if (eintrag.eigenschaft === 'fills') {
+      gruppe.fills += 1;
+    } else {
+      gruppe.strokes += 1;
+    }
+  }
+  const liste = Array.from(zaehler.values());
+  liste.sort(function (links, rechts) {
+    if (links.anzahl !== rechts.anzahl) return rechts.anzahl - links.anzahl;
+    return String(links.hex) < String(rechts.hex) ? -1 : 1;
+  });
+  return liste;
+}
+
+/* Vollstaendig, solange es wenige sind - und mit ausgewiesener Obergrenze, falls nicht. Ein
+ * stillschweigend gekuerzter "vollstaendiger" Bericht waere schlimmer als ein gekuerzter, der es
+ * sagt. */
+function besonderheitenAus(gemessen) {
+  const alle = gemessen.filter(istBesonderheit).map(function (eintrag) {
+    return {
+      knotenId: eintrag.knotenId,
+      eigenschaft: eintrag.eigenschaft,
+      index: eintrag.index,
+      deckkraft: eintrag.deckkraft,
+      mischmodus: eintrag.mischmodus,
+      sichtbar: eintrag.sichtbar
+    };
+  });
+  return {
+    anzahl: alle.length,
+    vollstaendig: alle.length <= MAX_BESONDERHEITEN,
+    eintraege: alle.slice(0, MAX_BESONDERHEITEN)
+  };
+}
+
+/* Die Variablen ohne ihre Beschreibungstexte, wo das geht: Entspricht die Beschreibung dem
+ * Register, steht sie dort schon, und die Expansion holt sie von dort. Weicht sie ab - im
+ * Vorzustand ist das der Normalfall -, kommt sie mit, sonst waere der gemessene Vorzustand nicht
+ * rekonstruierbar. */
+function kompakteVariablen(variablen, register, mitText) {
+  const sollNachName = new Map(register.variablen.map(function (eintrag) {
+    return [eintrag.name, eintrag];
+  }));
+  return variablen.map(function (eintrag) {
+    const soll = sollNachName.get(eintrag.name);
+    const passt = soll !== undefined && soll.beschreibung === eintrag.beschreibung;
+    const kompakt = {
+      id: eintrag.id.indexOf(ID_PRAEFIX) === 0 ? eintrag.id.slice(ID_PRAEFIX.length) : eintrag.id,
+      name: eintrag.name,
+      wert: eintrag.wert,
+      scopes: scopeCode(eintrag.scopes),
+      passt: passt
+    };
+    if (mitText) {
+      kompakt.text = passt ? null : eintrag.beschreibung;
+    }
+    return kompakt;
+  });
+}
+
+/* Ein Inventar in Transportform. Grammatik einer Vorkommenszeile, getrennt durch ';':
+ *
+ *   <knotenTeil><f|s><index>=<hexIndex>              (ohne Bindung, Vor-Inventar)
+ *   <knotenTeil><f|s><index>=<hexIndex>=<varIndex>   (mit Bindung, Nach-Inventar)
+ *
+ * `hexIndex` zeigt in `hexwerte` (Hexwerte ohne '#'), `varIndex` in `variablen`; -1 heisst
+ * ungebunden, -2 gebunden an eine Variable ausserhalb der Collection. Deckkraft, Mischmodus und
+ * Sichtbarkeit stehen NICHT in der Zeile: Sie sind an nahezu allen Vorkommen 1/NORMAL/true, und
+ * jede Abweichung steht einzeln in `abweichungen`. Das ist der groesste Einzelposten der
+ * Ersparnis und zugleich der ehrlichste - die Ausnahme wird benannt, nicht der Normalfall
+ * wiederholt. */
+function kompaktesInventar(gemessen, variablen, angaben, register) {
+  const praefix = knotenPraefixAus(register);
+  const farbvorkommen = farbvorkommenAus(gemessen);
+
+  const hexwerte = Array.from(new Set(farbvorkommen.map(function (eintrag) {
+    return eintrag.hex;
+  }))).sort();
+  const hexIndex = new Map(hexwerte.map(function (hex, nummer) {
+    return [hex, nummer];
+  }));
+
+  const kompakt = kompakteVariablen(variablen, register, true);
+  const variablenIndex = new Map(kompakt.map(function (eintrag, nummer) {
+    return [eintrag.name, nummer];
+  }));
+
+  const zeilen = farbvorkommen.map(function (eintrag) {
+    let text = zeilenschluessel(eintrag, praefix) + '=' + hexIndex.get(eintrag.hex);
+    if (angaben.mitBindung) {
+      let nummer = UNGEBUNDEN;
+      if (eintrag.variable !== null && eintrag.variable !== undefined) {
+        nummer = variablenIndex.has(eintrag.variable)
+          ? variablenIndex.get(eintrag.variable)
+          : REGISTERFREMD;
+      }
+      text += '=' + nummer;
+    }
+    return text;
+  });
+
+  const abweichungen = farbvorkommen.filter(istBesonderheit).map(function (eintrag) {
+    return {
+      zeile: zeilenschluessel(eintrag, praefix),
+      deckkraft: eintrag.deckkraft,
+      mischmodus: eintrag.mischmodus,
+      sichtbar: eintrag.sichtbar
+    };
+  });
+
+  return {
+    kopf: {
+      gemessenAm: angaben.gemessenAm,
+      boardKnotenId: register.boardKnotenId,
+      boardVersion: angaben.boardVersion,
+      anzahlKnoten: angaben.knotenGesamt,
+      anzahlVorkommen: farbvorkommen.length,
+      anzahlFills: farbvorkommen.filter(function (eintrag) {
+        return eintrag.eigenschaft === 'fills';
+      }).length,
+      anzahlStrokes: farbvorkommen.filter(function (eintrag) {
+        return eintrag.eigenschaft === 'strokes';
+      }).length,
+      anzahlVariablen: kompakt.length
+    },
+    knotenPraefix: praefix,
+    mitBindung: angaben.mitBindung === true,
+    hexwerte: hexwerte.map(function (hex) {
+      return hex.slice(1);
+    }),
+    variablen: kompakt,
+    vorkommen: zeilen.join(KOMPAKT_TRENNER),
+    abweichungen: abweichungen
+  };
+}
+
+/* Die aggregierte Diagnose fuer den Abbruchfall. Sie ersetzt das ausgeschriebene Vor-Inventar,
+ * das hier ohnehin nicht durch die Leitung passte - und sie ist fuer den Zweck die bessere
+ * Auskunft: Zum Korrigieren braucht man die Verteilung, nicht 419 Einzelzeilen. */
+function diagnose(gemessen, variablen, pruefung, angaben, register) {
+  const farbvorkommen = farbvorkommenAus(gemessen);
+  return {
+    kopf: {
+      gemessenAm: angaben.gemessenAm,
+      boardKnotenId: register.boardKnotenId,
+      boardVersion: angaben.boardVersion,
+      anzahlKnoten: angaben.knotenGesamt,
+      anzahlVorkommen: farbvorkommen.length,
+      anzahlFills: farbvorkommen.filter(function (eintrag) {
+        return eintrag.eigenschaft === 'fills';
+      }).length,
+      anzahlStrokes: farbvorkommen.filter(function (eintrag) {
+        return eintrag.eigenschaft === 'strokes';
+      }).length,
+      anzahlVariablen: variablen.length
+    },
+    abbruch: {
+      gesamt: pruefung.gesamt,
+      erklaert: pruefung.erklaert,
+      offen: pruefung.abbruchgruende.length,
+      nachCode: aggregiereNachCode(pruefung.abbruchgruende)
+    },
+    hexwerte: hexUebersicht(gemessen, register),
+    besonderheiten: besonderheitenAus(gemessen),
+    uebersprungen: aggregiereNachCode(uebersprungeneAus(gemessen)),
+    variablen: kompakteVariablen(variablen, register, false)
+  };
 }
 
 /* M5 - der Wiederherstellungspunkt ist die ERSTE Schreiboperation nach bestandener Vorpruefung.
@@ -881,22 +1140,25 @@ async function hauptlauf() {
   }));
   const knotenNachId = new Map();
   const messung = messeBoard(board, namenNachId, knotenNachId, fehler);
-  const vorher = alsInventar(
-    messung.gemessen, variablenVorher, messung.knotenGesamt, REGISTER.versionVorher, false
-  );
-  const uebersprungen = uebersprungeneAus(messung.gemessen);
+  const angabenVorher = {
+    gemessenAm: jetztInUtc(),
+    boardVersion: REGISTER.versionVorher,
+    knotenGesamt: messung.knotenGesamt,
+    mitBindung: false
+  };
 
-  /* 3. Vorpruefung, Abbruch VOR jeder Aenderung. */
+  /* 3. Vorpruefung, Abbruch VOR jeder Aenderung. Zurueck kommt die aggregierte Diagnose, nicht
+   * das ausgeschriebene Inventar: Zum Korrigieren braucht man die Verteilung, und 419
+   * Einzelzeilen passen ohnehin nicht durch die 20-KB-Grenze des Ruecklaufs. */
   const pruefung = pruefeVorkommen(messung.gemessen, REGISTER);
   if (!pruefung.ok) {
     return {
       ok: false,
       fertig: false,
       phase: 'vorpruefung',
-      vorher: vorher,
+      diagnose: diagnose(messung.gemessen, variablenVorher, pruefung, angabenVorher, REGISTER),
+      vorher: null,
       nachher: null,
-      uebersprungen: uebersprungen,
-      abbruchgruende: pruefung.abbruchgruende,
       fehler: fehler
     };
   }
@@ -905,10 +1167,9 @@ async function hauptlauf() {
       ok: true,
       fertig: false,
       phase: 'schau-lauf',
-      vorher: vorher,
+      diagnose: diagnose(messung.gemessen, variablenVorher, pruefung, angabenVorher, REGISTER),
+      vorher: kompaktesInventar(messung.gemessen, variablenVorher, angabenVorher, REGISTER),
       nachher: null,
-      uebersprungen: uebersprungen,
-      abbruchgruende: [],
       fehler: fehler
     };
   }
@@ -921,29 +1182,35 @@ async function hauptlauf() {
   const versionsknoten = await zieheVersionHoch(board, fehler);
 
   /* 8. Erneut messen und beides zurueckgeben. Die zweite Messung ist die Grenze der Zusage: Ein
-   * Selbstbericht bleibt ein Selbstbericht, das gemessene Nach-Inventar ist der Nachweis. */
+   * Selbstbericht bleibt ein Selbstbericht, das gemessene Nach-Inventar ist der Nachweis. Beide
+   * Inventare gehen kompakt kodiert durch die Leitung und werden von
+   * scripts/figma/ruecklauf-zu-inventar.py deterministisch in die Schema-Dateien expandiert. */
   const variablenNachher = await messeVariablen(sammlung, modusId, fehler);
   const namenNachIdNachher = new Map(variablenNachher.map(function (eintrag) {
     return [eintrag.id, eintrag.name];
   }));
   const knotenNachIdNachher = new Map();
   const messungNachher = messeBoard(board, namenNachIdNachher, knotenNachIdNachher, fehler);
-  const nachher = alsInventar(
-    messungNachher.gemessen,
-    variablenNachher,
-    messungNachher.knotenGesamt,
-    REGISTER.versionNachher,
-    true
-  );
 
   return {
     ok: true,
     fertig: true,
     phase: 'abgeschlossen',
-    vorher: vorher,
-    nachher: nachher,
-    uebersprungen: uebersprungen.concat(uebersprungeneAus(messungNachher.gemessen)),
-    abbruchgruende: [],
+    vorher: kompaktesInventar(messung.gemessen, variablenVorher, angabenVorher, REGISTER),
+    nachher: kompaktesInventar(
+      messungNachher.gemessen,
+      variablenNachher,
+      {
+        gemessenAm: jetztInUtc(),
+        boardVersion: REGISTER.versionNachher,
+        knotenGesamt: messungNachher.knotenGesamt,
+        mitBindung: true
+      },
+      REGISTER
+    ),
+    uebersprungen: aggregiereNachCode(
+      uebersprungeneAus(messung.gemessen).concat(uebersprungeneAus(messungNachher.gemessen))
+    ),
     fehler: fehler,
     gebunden: gebunden,
     versionsknoten: versionsknoten
@@ -965,7 +1232,12 @@ async function hauptlauf() {
  * einem CommonJS-Modul ist top-level `return` gueltig, top-level `await` nicht).
  */
 if (typeof figma === 'undefined') {
-  globalThis.__PRUEFTEILE = { pruefeVorkommen: pruefeVorkommen, REGISTER: REGISTER };
+  globalThis.__PRUEFTEILE = {
+    pruefeVorkommen: pruefeVorkommen,
+    kompaktesInventar: kompaktesInventar,
+    diagnose: diagnose,
+    REGISTER: REGISTER
+  };
 } else {
   return hauptlauf();
 }

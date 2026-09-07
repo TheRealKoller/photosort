@@ -1027,7 +1027,7 @@ Erster Fall im Projekt, in dem ein Pull Request seine eigentliche Wirkung **nich
 passiert in einer fremden, gehosteten Datei. Ein Diff kann das nur behaupten. Die Testebene ist
 `scripts/tests/test_figma_farbregister.py` (gleiche Bauart und gleicher CI-Job `demo-scripts` wie
 die übrigen Repo-Konsistenztests, kein Netzwerk, kein Aufrufkontingent, kein numerisches
-Coverage-Gate). Vier Regeln daraus sind verallgemeinerbar und gelten ab jetzt für jede Änderung
+Coverage-Gate). Fünf Regeln daraus sind verallgemeinerbar und gelten ab jetzt für jede Änderung
 dieser Klasse:
 
 1. **Der Nachweis ist ein gemessenes Vorher und Nachher im Repository, kein Selbstbericht.** Der
@@ -1064,6 +1064,20 @@ dieser Klasse:
    in `scripts/tests/` eine Testlaufzeit; der Job `demo-scripts` bleibt unverändert, weil
    `ubuntu-latest` Node vorinstalliert mitbringt. Kein `skipif`: Fehlt `node`, scheitert die
    Klasse mit klarer Meldung, statt lautlos zu verschwinden.
+
+5. **Ein Transportlimit des fremden Werkzeugs gehört in den Entwurf, nicht in die Hoffnung.** Die
+   Antwort eines `use_figma`-Aufrufs wird bei **20 KB** abgeschnitten; das ist am 2026-09-07 nicht
+   theoretisch aufgefallen, sondern an einer Tool-Antwort, die wörtlich mit `// truncated to 20kb`
+   endete und deren Abbruchgründe damit verloren waren — ein Aufruf von dreien für nichts. Zwei
+   ausgeschriebene Messungen mit je 419 Einträgen hätten die Grenze auch im Erfolgsfall gerissen.
+   Die Auflösung trennt sauber zwischen **Transport** und **Ablage**: Der Rücklauf ist kompakt
+   kodiert und im Fehlerfall aggregiert (Anzahl je Fehlercode plus wenige Beispiele, dazu die
+   vollständige Werteverteilung — zum Korrigieren die bessere Auskunft als jede Einzelzeile), ein
+   eigenes Werkzeug expandiert ihn deterministisch, und das geschlossene Feldschema der abgelegten
+   Dateien bleibt unverändert. Zwei Dinge machen das prüfbar statt bloß behauptet: ein
+   **ausgeführter Rundlauf** (kodiert → expandiert → Schema erfüllt, Werte identisch) und eine
+   **Größenschranke als Test**, damit ein neues Feld im Rücklauf auffällt, bevor es einen Aufruf
+   kostet.
 
 Zwei Ergänzungen, die keine eigene Regel sind, aber zum Muster gehören: Das im Payload
 eingebettete Register trägt je Variable die **erwartete Vorkommenszahl** — ohne sie wäre „alle 418
