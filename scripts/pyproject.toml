@@ -30,6 +30,15 @@ py-modules = []
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# "nachweis" markiert die Tests, die die gemessenen Figma-Inventare
+# (scripts/figma/inventar-vorher.json / -nachher.json) brauchen. Solange der use_figma-Lauf
+# aussteht, ist diese Klasse rot - bewusst ohne skipif/xfail, weil ein Test, der bei fehlendem
+# Nachweis gruen wird, der Nachweis nicht wert ist. Registriert, damit
+# `pytest -m "not nachweis"` der belegbare Nachweis ist, dass der Rest gruen laeuft
+# (specs/features/0336-figma-board-farbvariablen.md, Abschnitt "Teststrategie").
+markers = [
+    "nachweis: braucht die gemessenen Inventare aus scripts/figma/ (use_figma-Lauf)",
+]
 
 [tool.ruff]
 line-length = 100
