@@ -63,6 +63,13 @@ function confirmationField() {
   return screen.getByLabelText(/Projektnamen zur Bestätigung eintippen/)
 }
 
+function currentPath(): string {
+  // Bewusst ein EXAKTER Vergleich und kein `toHaveTextContent`: '/projects' ist ein Teilstring von
+  // '/projects/1/settings', eine Teilstring-Assertion waere hier trivial erfuellt und bewiese
+  // weder die erfolgte noch die unterbliebene Navigation.
+  return screen.getByTestId('location').textContent ?? ''
+}
+
 function deleteButton() {
   return screen.getByRole('button', { name: /Projekt löschen|Wird gelöscht/ })
 }
@@ -146,7 +153,7 @@ describe('DeleteProjectDialog', () => {
     await user.type(confirmationField(), PROJECT_NAME)
     await user.click(deleteButton())
 
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/projects'))
+    await waitFor(() => expect(currentPath()).toBe('/projects'))
     expect(projectsApi.deleteProject).toHaveBeenCalledWith(1, PROJECT_NAME)
     expect(onClose).toHaveBeenCalled()
   })
@@ -171,7 +178,10 @@ describe('DeleteProjectDialog', () => {
 
     // Eigener Fall: dass Esc nicht schliesst, ist KEINE Eigenschaft des Grundelements (dort ruft
     // Esc immer `onClose`), sondern eine Zusage dieses Aufrufers.
-    await user.keyboard('{Escape}')
+    // Am Dialog selbst ausgeloest statt ueber die Tastatur: waehrend der laufenden Anfrage ist
+    // JEDES Bedienelement im Dialog deaktiviert, der Fokus liegt also auf dem <body> - ein
+    // `user.keyboard` erreichte den Handler gar nicht und die Assertion darunter waere wertlos.
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
 
@@ -224,7 +234,7 @@ describe('DeleteProjectDialog', () => {
     vi.mocked(projectsApi.deleteProject).mockRejectedValue(
       new ApiError(404, 'Projekt nicht gefunden.')
     )
-    renderDialog()
+    const { onClose } = renderDialog()
 
     await user.type(confirmationField(), PROJECT_NAME)
     await user.click(deleteButton())
@@ -233,12 +243,16 @@ describe('DeleteProjectDialog', () => {
     expect(alert).toHaveAttribute('data-alert-variant', 'warning')
     expect(alert).toHaveTextContent('Dieses Projekt existiert nicht mehr')
     // Die Zusage "keine automatische Navigation" - ein reiner Klick-Test deckt sie nicht ab.
-    expect(screen.getByTestId('location')).toHaveTextContent('/projects/1/settings')
+    expect(currentPath()).toBe('/projects/1/settings')
     expect(confirmationField()).toBeDisabled()
     expect(deleteButton()).toBeDisabled()
 
     await user.click(screen.getByRole('button', { name: 'Zur Projektliste' }))
-    expect(screen.getByTestId('location')).toHaveTextContent('/projects')
+    expect(currentPath()).toBe('/projects')
+    // Der Ausweg meldet dem Aufrufer AUCH das Schliessen, nicht nur die Navigation (Copilot-Fund,
+    // PR #351): sonst bliebe der Dialog beim Aufrufer offen, und mit ihm der Zustand isGone - ein
+    // spaeter erneut geoeffneter Dialog waere sofort gesperrt.
+    expect(onClose).toHaveBeenCalled()
   })
 
   it('takes the same way out of a 404 via Escape', async () => {
@@ -246,15 +260,16 @@ describe('DeleteProjectDialog', () => {
     vi.mocked(projectsApi.deleteProject).mockRejectedValue(
       new ApiError(404, 'Projekt nicht gefunden.')
     )
-    renderDialog()
+    const { onClose } = renderDialog()
 
     await user.type(confirmationField(), PROJECT_NAME)
     await user.click(deleteButton())
     await screen.findByRole('alert')
 
-    await user.keyboard('{Escape}')
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/projects')
+    expect(currentPath()).toBe('/projects')
+    expect(onClose).toHaveBeenCalled()
   })
 
   it('marks the field invalid after a 400 and keeps the typed text', async () => {

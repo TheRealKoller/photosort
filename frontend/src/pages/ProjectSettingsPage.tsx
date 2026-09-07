@@ -155,14 +155,24 @@ export function ProjectSettingsPage() {
         </div>
       </section>
 
-      <DeleteProjectDialog
-        open={deleteOpen}
-        onClose={() => {
-          setDeleteOpen(false)
-        }}
-        projectId={id}
-        projectName={project.name}
-      />
+      {/* Nur gerendert, solange er offen ist (Copilot-Fund, PR #351). Das Grundelement gibt bei
+          `open=false` zwar `null` zurueck, aber DeleteProjectDialog selbst blieb dabei gemountet -
+          und mit ihm seine getippte Bestaetigung: wer den Namen einmal vollstaendig tippte und
+          abbrach, fand die Loeschen-Schaltflaeche beim naechsten Oeffnen sofort freigeschaltet.
+          Das Unmount ist bewusst die gewaehlte Variante und nicht ein Reset im Dialog selbst: es
+          erfasst jeden kuenftig hinzukommende Zustand automatisch mit, statt eine Reset-Liste zu
+          fuehren, die beim naechsten `useState` still unvollstaendig wird. Die `open`-Prop bleibt
+          trotzdem, sie gehoert zur Schnittstelle des Grundelements. */}
+      {deleteOpen && (
+        <DeleteProjectDialog
+          open
+          onClose={() => {
+            setDeleteOpen(false)
+          }}
+          projectId={id}
+          projectName={project.name}
+        />
+      )}
     </div>
   )
 }

@@ -892,3 +892,34 @@ async def test_delete_project_leaves_a_foreign_cache_file_alone(
 
     assert response.status_code == 204
     assert foreign.is_file()
+
+
+async def test_delete_project_keeps_204_when_the_cache_cleanup_raises_a_non_oserror(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    """Copilot-Fund (PR #351): `delete_cached_variants` faengt nur `OSError` JE DATEI ab - alles
+    andere (und alles, was aus `to_thread` selbst kommt) schlug bis zum Client durch, als `500`,
+    obwohl die Loeschung laengst committet war. Die Zusage "Cleanup-Fehler aendern die 204 nicht"
+    galt damit nur fuer einen Teil der moeglichen Fehler."""
+    monkeypatch.setattr(settings, "photo_cache_dir", str(tmp_path))
+    graph = await build_project_graph(db_session, "Weg")
+
+    def _boom(cache_dir: Path, photos: Any) -> None:
+        raise RuntimeError("Cache-Volume abgeraucht")
+
+    monkeypatch.setattr(projects_api, "delete_cached_variants", _boom)
+
+    with caplog.at_level(logging.WARNING, logger="photosort.api.projects"):
+        response = await _delete_project(authenticated_api_client, graph.project_id, "Weg")
+
+    assert response.status_code == 204
+    assert await count_rows(db_session, "projects") == 0
+    assert await count_rows(db_session, "photos") == 0
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    # Der Fehlertext gehoert ins Log, nie in die Antwort.
+    assert response.content == b""

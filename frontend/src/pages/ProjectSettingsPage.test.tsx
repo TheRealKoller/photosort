@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -206,5 +206,33 @@ describe('ProjectSettingsPage', () => {
     const dialog = await screen.findByRole('dialog')
     expect(dialog).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Projekt löschen?' })).toBeInTheDocument()
+  })
+
+  it('forgets the typed confirmation when the dialog is closed and reopened', async () => {
+    // Copilot-Fund (PR #351): der Dialog wurde unabhaengig von seinem Offen-Zustand gerendert und
+    // blieb damit gemountet - wer den Namen einmal vollstaendig tippte und abbrach, fand die
+    // Loeschen-Schaltflaeche beim naechsten Oeffnen SOFORT freigeschaltet. Genau die Reibung, die
+    // der Zweck der Konstruktion ist, war damit weg - an der gefaehrlichsten Stelle des Produkts.
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Projekt löschen' }))
+    const firstDialog = within(await screen.findByRole('dialog'))
+    await user.type(
+      firstDialog.getByLabelText(/Projektnamen zur Bestätigung eintippen/),
+      'Costa Rica'
+    )
+    expect(firstDialog.getByRole('button', { name: 'Projekt löschen' })).toBeEnabled()
+
+    await user.click(firstDialog.getByRole('button', { name: 'Abbrechen' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Projekt löschen' }))
+
+    const reopened = within(await screen.findByRole('dialog'))
+    expect(reopened.getByLabelText(/Projektnamen zur Bestätigung eintippen/)).toHaveValue('')
+    expect(reopened.getByRole('button', { name: 'Projekt löschen' })).toBeDisabled()
+    expect(projectsApi.deleteProject).not.toHaveBeenCalled()
   })
 })

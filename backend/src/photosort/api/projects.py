@@ -513,9 +513,25 @@ async def delete_project(
     # Transaktion, ein Dateifehler darf die verlangte Datenloeschung nicht nachtraeglich
     # zunichtemachen. Ueber to_thread, weil das bei mehreren tausend Fotos ebenso viele
     # unlink-Aufrufe sind, die die Event-Loop nicht blockieren duerfen.
-    await asyncio.to_thread(
-        delete_cached_variants, Path(settings.photo_cache_dir), cache_keys
-    )
+    #
+    # Der breite `except` ist die zweite Haelfte derselben Zusage (Copilot-Fund, PR #351):
+    # `delete_cached_variants` faengt nur `OSError` JE DATEI ab. Alles darueber hinaus - ein
+    # Fehler beim Berechnen eines Pfads, eine erschoepfte Thread-Ressource, was auch immer aus
+    # `to_thread` selbst kommt - schluege sonst als `500` bis zum Client durch, obwohl die
+    # Loeschung bereits committet ist und der Client sie folglich als gescheitert laese. Der
+    # Fehlertext (er enthaelt den absoluten Cache-Pfad, also interne Deployment-Struktur) gehoert
+    # ins Log, nie in die Antwort.
+    try:
+        await asyncio.to_thread(
+            delete_cached_variants, Path(settings.photo_cache_dir), cache_keys
+        )
+    except Exception:
+        logger.warning(
+            "Cache-Cleanup nach dem Loeschen von Projekt %s fehlgeschlagen - die Datenloeschung "
+            "ist davon unberuehrt.",
+            project_id,
+            exc_info=True,
+        )
 
     # Die einzige Spur des ersten vernichtenden Vorgangs des Produkts. Bewusst OHNE Projektnamen
     # (Security-Abschnitt der Spec) und bewusst kein Audit-Log-Feature: keine Tabelle, keine

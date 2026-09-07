@@ -361,7 +361,12 @@ async def purge_demo_state(session: AsyncSession, cache_dir: Path) -> int:
     cache_keys = await collect_photo_cache_keys(session, project_ids)
     await delete_projects(session, project_ids)
     await session.flush()
-    delete_cached_variants(cache_dir, cache_keys)
+    # Ueber to_thread, wie es der Docstring von delete_cached_variants zusagt (Copilot-Fund,
+    # PR #351): die Funktion ist rein synchron und setzt bis zu zwei unlink-Aufrufe je Foto ab -
+    # ein direkter Aufruf aus dieser Koroutine heraus blockierte die Event-Loop. Der Endpunkt
+    # nebenan macht es richtig; eine Zusage, an die sich nur einer der beiden Aufrufer haelt, ist
+    # keine.
+    await asyncio.to_thread(delete_cached_variants, cache_dir, cache_keys)
     return len(project_ids)
 
 

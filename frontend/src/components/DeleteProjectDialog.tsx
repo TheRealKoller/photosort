@@ -87,18 +87,18 @@ export function DeleteProjectDialog({
    *     ohne die Anfrage abzubrechen, und den Nutzer auf einer Einstellungsseite zuruecklassen,
    *     deren Gegenstand gerade verschwindet.
    *  2. Das Projekt ist weg (404) -> derselbe Weg wie "Zur Projektliste": die Seite dahinter ist
-   *     gegenstandslos geworden.
+   *     gegenstandslos geworden. Der Aufrufer bekommt trotzdem sein `onClose` (Copilot-Fund,
+   *     PR #351) - sonst bliebe der Dialog bei ihm offen, und mit ihm der Zustand `isGone`.
    *  3. Sonst -> regulaeres Schliessen.
    */
   function handleClose(): void {
     if (isPending) {
       return
     }
+    onClose()
     if (isGone) {
       goToProjectList()
-      return
     }
-    onClose()
   }
 
   function handleDelete(): void {
