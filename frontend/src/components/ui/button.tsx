@@ -55,6 +55,21 @@ const buttonVariants = cva(
         // src/designSystem.contract.test.ts.
         ghost:
           'bg-transparent text-text hover:bg-overlay hover:text-text-h active:bg-border active:text-text',
+        // Zerstoererisch (specs/features/0044-projekte-loeschen.md): zeichengleich zur primaeren,
+        // nur andere Flaeche. Gefuellt statt umrandet, und zwar nicht aus Geschmack - eine
+        // umrandete Danger-Variante ist mit dieser Palette nicht sauber baubar: --danger-text
+        // misst auf --overlay (Dialogflaeche) 4.51 und auf der gedrueckten Zustandsflaeche
+        // --border 4.33, der am Telefon EINZIGE Zustand "gedrueckt" verfehlte also AA. Dazu
+        // stuenden "Abbrechen" (sekundaer, umrandet) und "Loeschen" als zwei gleich aussehende
+        // Umrisse nebeneinander.
+        //
+        // EINE Auspraegung, nicht zwei: Ausloeser und bestaetigende Aktion im Dialog tragen
+        // dieselbe. KOLLISIONSREGEL (verbindlich): gefuelltes --danger mit dunkler Tinte bei
+        // Radius 6px ist formgleich mit dem Kennzeichen "Aussortiert" und dem aktiven
+        // "Verwerfen"-Eintrag der Bewertungsleiste - `destructive` darf deshalb auf keiner
+        // Ansicht stehen, die Bewertungs-Kennzeichen oder die Bewertungsleiste zeigt (Raster,
+        // Kuratierung, Einzelbild, Vergleich).
+        destructive: 'bg-danger text-danger-fg hover:opacity-85 active:opacity-70',
         // Link ist Text im Fliesstext, keine Schaltflaeche - eigene Groesse und kein Board-Mass.
         link: 'bg-transparent text-sm font-normal text-accent-strong underline-offset-4 hover:underline active:underline p-0 h-auto min-h-0 min-w-0',
       },

@@ -49,7 +49,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from PIL import Image, ImageDraw, ImageFont
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,20 +65,21 @@ from photosort.models import (
     PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
-    PhotoFineLabel,
-    PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
     Project,
     Rating,
     RatingStatus,
-    RemoteCategoryClassificationRun,
     ScanRun,
     ScanStatus,
     ScoringRun,
     User,
 )
-from photosort.thumbnails import display_path, generate_variants, thumbnail_path
+from photosort.project_deletion import collect_photo_cache_keys, delete_projects
+from photosort.thumbnails import (
+    delete_cached_variants,
+    generate_variants,
+)
 
 # --- Namen, Konstanten, Sperr-Literale -------------------------------------------------------
 
@@ -339,62 +340,33 @@ async def purge_demo_state(session: AsyncSession, cache_dir: Path) -> int:
     Cache-Dateinamen sind flache Hash-Schluessel ohne Projektzuordnung, bei einem geteilten Volume
     traefe ein Glob echte Familien-Thumbnails.
 
+    Die Aufzaehlung der abhaengigen Tabellen und die Cache-Loeschung stehen seit
+    specs/features/0044-projekte-loeschen.md NICHT mehr hier, sondern in
+    `project_deletion.py`/`thumbnails.py` - dieselbe Loeschung existierte sonst ein zweites Mal
+    neben `DELETE /projects/{id}`, und zwei Aufzaehlungen driften. Die Import-Richtung ist dabei
+    verbindlich: dieses Modul importiert `project_deletion`, nie umgekehrt (M3, siehe
+    Modul-Docstring dort).
+
+    EINE bewusste Verhaltensaenderung gegenueber der frueheren Fassung: der Cache wird jetzt NACH
+    der Zeilenloeschung geraeumt statt davor (die Reihenfolge des gemeinsamen Moduls). Die
+    `(photo_id, etag)`-Paare werden weiterhin VORHER gelesen - danach gaebe es die Zeilen nicht
+    mehr, aus denen sich die Pfade berechnen liessen.
+
     Rueckgabe: Anzahl entfernter Projekte."""
     projects = await load_demo_projects(session)
     project_ids = [project.id for project in projects]
     if not project_ids:
         return 0
 
-    photo_rows = (
-        await session.execute(
-            select(Photo.id, Photo.etag).where(Photo.project_id.in_(project_ids))
-        )
-    ).all()
-    for photo_id, etag in photo_rows:
-        thumbnail_path(cache_dir, photo_id, etag).unlink(missing_ok=True)
-        display_path(cache_dir, photo_id, etag).unlink(missing_ok=True)
-
-    photo_ids = [photo_id for photo_id, _ in photo_rows]
-    if photo_ids:
-        # Bewusst einzeln ausgeschrieben statt in einer Modell-Schleife: eine Schleife ueber
-        # heterogene Modellklassen verliert unter mypy --strict die Spaltentypen, und die
-        # Reihenfolge ist hier fachlich relevant (Fremdschluessel unter echtem Postgres).
-        await session.execute(
-            delete(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id.in_(photo_ids))
-        )
-        await session.execute(
-            delete(PhotoCategoryClassification).where(
-                PhotoCategoryClassification.photo_id.in_(photo_ids)
-            )
-        )
-        await session.execute(
-            delete(PhotoFineLabel).where(PhotoFineLabel.photo_id.in_(photo_ids))
-        )
-        await session.execute(
-            delete(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id.in_(photo_ids))
-        )
-        await session.execute(
-            delete(PhotoRanking).where(PhotoRanking.photo_id.in_(photo_ids))
-        )
-        await session.execute(
-            delete(PhotoCriterionScore).where(PhotoCriterionScore.photo_id.in_(photo_ids))
-        )
-        await session.execute(delete(PhotoScore).where(PhotoScore.photo_id.in_(photo_ids)))
-        await session.execute(delete(Rating).where(Rating.photo_id.in_(photo_ids)))
-        await session.execute(delete(Photo).where(Photo.id.in_(photo_ids)))
-
-    await session.execute(
-        delete(CriterionScoringRun).where(CriterionScoringRun.project_id.in_(project_ids))
-    )
-    await session.execute(delete(ScoringRun).where(ScoringRun.project_id.in_(project_ids)))
-    await session.execute(delete(ScanRun).where(ScanRun.project_id.in_(project_ids)))
-    await session.execute(
-        delete(RemoteCategoryClassificationRun).where(
-            RemoteCategoryClassificationRun.project_id.in_(project_ids)
-        )
-    )
-    await session.execute(delete(Project).where(Project.id.in_(project_ids)))
+    cache_keys = await collect_photo_cache_keys(session, project_ids)
+    await delete_projects(session, project_ids)
     await session.flush()
+    # Ueber to_thread, wie es der Docstring von delete_cached_variants zusagt (Copilot-Fund,
+    # PR #351): die Funktion ist rein synchron und setzt bis zu zwei unlink-Aufrufe je Foto ab -
+    # ein direkter Aufruf aus dieser Koroutine heraus blockierte die Event-Loop. Der Endpunkt
+    # nebenan macht es richtig; eine Zusage, an die sich nur einer der beiden Aufrufer haelt, ist
+    # keine.
+    await asyncio.to_thread(delete_cached_variants, cache_dir, cache_keys)
     return len(project_ids)
 
 

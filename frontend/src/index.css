@@ -102,6 +102,11 @@
      Board-Flaechenwert aendert sich dadurch. */
   --danger: #ff3d00;
   --danger-text: #ff5a26;
+  /* Die Tinte AUF gefuellter --danger-Flaeche (5.51:1) - kein neuer Farbwert, dieselbe wie
+     --accent-fg, --status-success-fg und die drei --rating-*-fg. Eigener Name statt Mitbenutzung
+     von --rating-rejected-fg: dasselbe Argument, das die drei --rating-*-fg getrennt haelt - eine
+     Loeschaktion ist keine Bewertungsstufe (specs/features/0044-projekte-loeschen.md). */
+  --danger-fg: #0b0c10;
 
   /* --- Bewertungsfarben. ---
      --accent und --rating-favorite tragen denselben Wert, aber nicht denselben Namen (ADR 0055
@@ -211,6 +216,7 @@
   --color-info: var(--info);
   --color-danger: var(--danger);
   --color-danger-text: var(--danger-text);
+  --color-danger-fg: var(--danger-fg);
 
   --color-rating-favorite: var(--rating-favorite);
   --color-rating-favorite-fg: var(--rating-favorite-fg);

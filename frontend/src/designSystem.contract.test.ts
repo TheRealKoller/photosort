@@ -255,6 +255,9 @@ const separatorRows: ContrastRow[] = [
 const inkRows: ContrastRow[] = [
   { foreground: '--accent-fg', background: '--accent', threshold: TEXT_THRESHOLD },
   { foreground: '--status-success-fg', background: '--status-success', threshold: TEXT_THRESHOLD },
+  // Die Tinte der zerstoererischen Schaltflaeche (Spec 0044) - derselbe Wert wie --accent-fg und
+  // die drei --rating-*-fg, aber ein eigener Name: eine Loeschaktion ist keine Bewertungsstufe.
+  { foreground: '--danger-fg', background: '--danger', threshold: TEXT_THRESHOLD },
 ]
 
 const contrastRows: ContrastRow[] = [
@@ -303,7 +306,7 @@ const FOREGROUND_PATTERNS: RegExp[] = [
   /^--text(-.+)?$/,
   /^--accent(-strong|-fg|-2|-2-strong)?$/,
   /^--info$/,
-  /^--danger(-text)?$/,
+  /^--danger(-text|-fg)?$/,
   /^--border(-control)?$/,
   /^--separator$/,
   /^--rating-[a-z-]+$/,
@@ -856,16 +859,42 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     expect(offenders).toEqual([])
   })
 
+  // Der Erkenner steht als benannte Konstante da, damit der Mikrotest darunter GENAU DIESEN
+  // Ausdruck pruefen kann und nicht eine abgeschriebene Kopie davon.
+  //
+  // Der Lookahead nennt ZWEI Ausnahmen (Spec 0044): hinter `danger` liegt eine Wortgrenze, der
+  // Erkenner schlaegt deshalb auch auf `text-danger-fg` an - dem Vordergrund-Token AUF gefuellter
+  // --danger-Flaeche, das gerade keine Fliesstextfarbe ist. `\b` hinter jeder Ausnahme, damit ein
+  // hypothetisches `text-danger-fgx` nicht mit durchrutscht.
+  const FLOWING_TEXT_DANGER = /\btext-danger\b(?!-text\b|-fg\b)/
+
   it('verwendet --danger nie als Fliesstextfarbe (nur --danger-text haelt AA auf allen vier Flaechen)', () => {
     const offenders: string[] = []
     for (const file of sourceFiles) {
       for (const line of stripComments(file.content).split('\n')) {
-        if (/\btext-danger\b(?!-text)/.test(line)) {
+        if (FLOWING_TEXT_DANGER.test(line)) {
           offenders.push(`${file.label}: ${line.trim()}`)
         }
       }
     }
     expect(offenders).toEqual([])
+  })
+
+  // Der Erkenner oben ist eine scharfe Regel, deren Lookahead beim Hinzufuegen von --danger-fg
+  // aufgeweicht werden musste (Spec 0044). Ohne diesen Mikrotest ist nicht mehr unterscheidbar,
+  // ob die Regel noch greift oder ob der Lookahead sie stillgelegt hat.
+  it.each([
+    ['flex items-center text-danger', true],
+    ['text-danger', true],
+    ['hover:text-danger', true],
+    ['sm:text-danger md:text-lg', true],
+    ['text-danger-text', false],
+    ['text-danger-fg', false],
+    ['bg-danger text-danger-fg hover:opacity-85', false],
+    ['border-danger bg-surface', false],
+    ['text-dangerous', false],
+  ])('Erkenner "verwendet --danger als Fliesstext": %s -> %s', (line, expected) => {
+    expect(FLOWING_TEXT_DANGER.test(line)).toBe(expected)
   })
 
   it('setzt auf die gedrueckte Flaeche --border nur die dort gerechneten Vordergruende', () => {
@@ -1391,6 +1420,11 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       file: 'src/components/ui/button.tsx',
       snippet: "isDisabledSlot && 'pointer-events-none opacity-40'",
       reason: 'deaktivierter asChild-Link - traegt kein natives disabled-Attribut',
+    },
+    {
+      file: 'src/components/ui/button.tsx',
+      snippet: 'bg-danger text-danger-fg hover:opacity-85 active:opacity-70',
+      reason: 'Ueberfahren/Gedrueckt der zerstoererischen Schaltflaeche - zeichengleich zur primaeren',
     },
     {
       file: 'src/components/Stepper.tsx',

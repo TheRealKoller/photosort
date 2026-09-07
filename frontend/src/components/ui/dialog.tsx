@@ -20,6 +20,11 @@ export interface DialogProps {
    * damit der Erstfokus nie auf ihnen landet. */
   actions?: ReactNode
   cancelLabel?: string
+  /** Deaktiviert die eingebaute Abbrechen-Schaltflaeche, solange der Aufrufer eine Anfrage
+   * laufen hat (specs/features/0044-projekte-loeschen.md). Die Zusage "Esc ruft IMMER `onClose`"
+   * bleibt davon unberuehrt - ein Aufrufer, der waehrend seiner Anfrage nicht geschlossen werden
+   * will, ignoriert `onClose` selbst; das ist hier ausdruecklich vorgesehen. */
+  cancelDisabled?: boolean
 }
 
 const FOCUSABLE_SELECTOR =
@@ -61,6 +66,7 @@ export function Dialog({
   children,
   actions,
   cancelLabel = 'Abbrechen',
+  cancelDisabled = false,
 }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
@@ -209,7 +215,13 @@ export function Dialog({
         <div className="flex flex-wrap justify-end gap-3">
           {/* Die harmloseste Aktion steht ZUERST im DOM - so kann der Erstfokus strukturell nicht
               auf einer bestaetigenden oder loeschenden Aktion landen. */}
-          <Button ref={cancelRef} type="button" variant="secondary" onClick={onClose}>
+          <Button
+            ref={cancelRef}
+            type="button"
+            variant="secondary"
+            disabled={cancelDisabled}
+            onClick={onClose}
+          >
             {cancelLabel}
           </Button>
           {actions}

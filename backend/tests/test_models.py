@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import inspect, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -529,6 +529,71 @@ async def test_photo_ranking_unique_per_run_and_photo(db_session: AsyncSession) 
     )
     with pytest.raises(IntegrityError):
         await db_session.commit()
+
+
+async def _make_ranking_graph(db_session: AsyncSession) -> tuple[CriterionScoringRun, Photo]:
+    """Ein Kuratierungslauf mit genau einer PhotoRanking-Zeile - der kleinste Aufbau, an dem
+    beide Elternseiten (Run und Foto) je einmal geloescht werden koennen."""
+    project = Project(name=f"Project {uuid4()}", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(scoring_run)
+    await db_session.flush()
+    run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
+    )
+    db_session.add(run)
+    await db_session.flush()
+    photo = await _make_photo(db_session, project)
+    db_session.add(
+        PhotoRanking(
+            criterion_scoring_run_id=run.id,
+            photo_id=photo.id,
+            cluster_key="cluster-0",
+            category_key="landscape",
+            rank_score=0.9,
+            rank_position=1,
+        )
+    )
+    await db_session.commit()
+    return run, photo
+
+
+async def _count_photo_rankings(db_session: AsyncSession) -> int:
+    return (await db_session.execute(select(func.count()).select_from(PhotoRanking))).scalar_one()
+
+
+async def test_deleting_criterion_scoring_run_cascades_to_photo_rankings(
+    db_session: AsyncSession,
+) -> None:
+    """specs/features/0044-projekte-loeschen.md, AK "Voraussetzung (Cascade-Fix)", Run-Seite.
+
+    Assertion bewusst als ZEILENZAEHLUNG und nicht als "es ist keine Ausnahme geflogen": die
+    Suite laeuft gegen SQLite OHNE `PRAGMA foreign_keys=ON` (siehe conftest.py), eine fehlende
+    Kaskade erzeugt dort keinen IntegrityError, sondern verwaiste Zeilen."""
+    run, _photo = await _make_ranking_graph(db_session)
+    assert await _count_photo_rankings(db_session) == 1
+
+    await db_session.delete(run)
+    await db_session.commit()
+
+    assert await _count_photo_rankings(db_session) == 0
+
+
+async def test_deleting_photo_cascades_to_photo_rankings(db_session: AsyncSession) -> None:
+    """specs/features/0044-projekte-loeschen.md, AK "Voraussetzung (Cascade-Fix)", Foto-Seite.
+
+    Das ist der Re-Scan-Defekt aus worker.py::run_project_scan: verschwindet ein Foto auf
+    OpenCloud, loescht der Scan die Photo-Zeile - ohne diese Relationship bleibt ihre
+    photo_rankings-Zeile stehen (und scheitert unter echtem Postgres am Fremdschluessel)."""
+    _run, photo = await _make_ranking_graph(db_session)
+    assert await _count_photo_rankings(db_session) == 1
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    assert await _count_photo_rankings(db_session) == 0
 
 
 async def test_photo_score_duplicate_of_references_another_photo(db_session: AsyncSession) -> None:

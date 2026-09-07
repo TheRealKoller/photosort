@@ -10,6 +10,9 @@ import {
   useClassificationEstimateQuery,
   useConfirmAusschussGateMutation,
   useCreateProjectMutation,
+  useDeleteProjectMutation,
+  classificationEstimateQueryKey,
+  fineLabelsQueryKey,
   PROJECT_STATS_STALE_TIME_MS,
   projectStatsQueryKey,
   projectStatsQueryOptions,
@@ -186,6 +189,55 @@ describe('useCreateProjectMutation', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['projects'] })
+  })
+})
+
+describe('useDeleteProjectMutation', () => {
+  it('deletes with the typed confirmation and reloads the project list', async () => {
+    vi.mocked(projectsApi.deleteProject).mockResolvedValue(undefined)
+    const { wrapper, queryClient } = makeWrapper()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const { result } = renderHook(() => useDeleteProjectMutation(1), { wrapper })
+    result.current.mutate('Costa Rica')
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(projectsApi.deleteProject).toHaveBeenCalledWith(1, 'Costa Rica')
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['projects'] })
+  })
+
+  it('leaves no cached data behind for any of the four project-bound keys', async () => {
+    // Geprueft wird der CACHE-ZUSTAND, nicht der Aufruf von removeQueries: ein
+    // `expect(removeQueries).toHaveBeenCalled()` bewiese nur den Aufruf, nicht den Zweck - die
+    // pollende useProjectQuery erzeugte sonst nach der Navigation einen 404-Aufblitzer.
+    setToken('header.eyJzdWIiOiIxIiwidXNlcm5hbWUiOiJkYW5pZWwifQ==.signature')
+    vi.mocked(projectsApi.deleteProject).mockResolvedValue(undefined)
+    const { wrapper, queryClient } = makeWrapper()
+    queryClient.setQueryData(['project', 1], project())
+    queryClient.setQueryData(classificationEstimateQueryKey(1), { candidate_count: 3 })
+    queryClient.setQueryData(fineLabelsQueryKey(1), [])
+    queryClient.setQueryData(projectStatsQueryKey(1), { photo_count: 7 })
+
+    const { result } = renderHook(() => useDeleteProjectMutation(1), { wrapper })
+    result.current.mutate('Costa Rica')
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(queryClient.getQueryData(['project', 1])).toBeUndefined()
+    expect(queryClient.getQueryData(classificationEstimateQueryKey(1))).toBeUndefined()
+    expect(queryClient.getQueryData(fineLabelsQueryKey(1))).toBeUndefined()
+    expect(queryClient.getQueryData(projectStatsQueryKey(1))).toBeUndefined()
+  })
+
+  it('keeps the cache of another project untouched', async () => {
+    vi.mocked(projectsApi.deleteProject).mockResolvedValue(undefined)
+    const { wrapper, queryClient } = makeWrapper()
+    queryClient.setQueryData(['project', 2], project({ id: 2 }))
+
+    const { result } = renderHook(() => useDeleteProjectMutation(1), { wrapper })
+    result.current.mutate('Costa Rica')
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(queryClient.getQueryData(['project', 2])).toBeDefined()
   })
 })
 

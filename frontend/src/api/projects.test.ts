@@ -4,6 +4,7 @@ import { ApiError, apiFetch } from './client'
 import {
   confirmAusschussGate,
   createProject,
+  deleteProject,
   getClassificationEstimate,
   getProject,
   getProjectStats,
@@ -168,5 +169,24 @@ describe('api/projects', () => {
 
     expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify/estimate')
     expect(result).toEqual(response)
+  })
+
+  it('deletes a project via DELETE /projects/{id} with the typed confirmation', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(undefined)
+
+    await deleteProject(7, 'Costa Rica')
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/7', {
+      method: 'DELETE',
+      body: { confirm_name: 'Costa Rica' },
+    })
+  })
+
+  it('propagates an ApiError from DELETE /projects/{id} unchanged', async () => {
+    // Der Dialog unterscheidet 409/404/400 anhand von `status` - ein hier verschluckter oder
+    // umgeschriebener Fehler naehme ihm die Grundlage.
+    vi.mocked(apiFetch).mockRejectedValue(new ApiError(409, 'Ein Lauf ist noch aktiv.'))
+
+    await expect(deleteProject(7, 'Costa Rica')).rejects.toBeInstanceOf(ApiError)
   })
 })

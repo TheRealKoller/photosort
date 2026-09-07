@@ -137,6 +137,12 @@ class Photo(Base):
     cloud_vision_errors: Mapped[list[PhotoCloudVisionError]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
     )
+    # specs/features/0044-projekte-loeschen.md: die Foto-Seite derselben Luecke wie bei
+    # CriterionScoringRun.rankings - und der Grund, warum sie ein echter Defekt und nicht nur
+    # Kosmetik ist: worker.py::run_project_scan loescht beim Re-Scan die auf OpenCloud
+    # verschwundenen Fotos (removed_paths); steht so ein Foto in einem photo_rankings-Eintrag,
+    # scheitert der Scan unter echtem Postgres an der Fremdschluesselverletzung.
+    rankings: Mapped[list[PhotoRanking]] = relationship(cascade="all, delete-orphan")
 
 
 class ScanRun(Base):
@@ -443,6 +449,10 @@ class CriterionScoringRun(Base):
     landmark_model: Mapped[str | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="criterion_scoring_runs")
+    # specs/features/0044-projekte-loeschen.md: PhotoRanking haengt an ZWEI Elternteilen und
+    # hatte bis dahin auf keiner der beiden Seiten eine Relationship. Ohne diese Kaskade bleiben
+    # beim Loeschen eines Kuratierungslaufs verwaiste photo_rankings-Zeilen zurueck.
+    rankings: Mapped[list[PhotoRanking]] = relationship(cascade="all, delete-orphan")
 
 
 class PhotoRanking(Base):

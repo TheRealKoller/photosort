@@ -11,6 +11,7 @@ from photosort.thumbnails import (
     THUMBNAIL_MAX_SIZE,
     CacheUsage,
     cache_key,
+    delete_cached_variants,
     display_path,
     generate_variants,
     measure_cache_usage,
@@ -245,3 +246,64 @@ class TestMeasureCacheUsage:
 
         with pytest.raises(AttributeError):
             usage.total_bytes = 5  # type: ignore[misc]
+
+
+# specs/features/0044-projekte-loeschen.md, Punkt 2 "Cache-Cleanup" ab hier: eine benannte, rein
+# synchrone Mengenfunktion in der Form von measure_cache_usage - der Aufrufer fuehrt sie ueber
+# asyncio.to_thread aus, damit die Event-Loop bei mehreren tausend unlink-Aufrufen nicht blockiert.
+
+
+def test_delete_cached_variants_accepts_an_empty_set(tmp_path: Path) -> None:
+    delete_cached_variants(tmp_path, [])
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_delete_cached_variants_removes_both_variants_and_tolerates_missing_files(
+    tmp_path: Path,
+) -> None:
+    generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=_jpeg_bytes(60, 40))
+    assert thumbnail_path(tmp_path, 1, "etag-a").is_file()
+
+    # Foto 2 hat nie eine Cache-Datei bekommen - der haeufige Normalfall, kein Fehler.
+    delete_cached_variants(tmp_path, [(1, "etag-a"), (2, "etag-b")])
+
+    assert not thumbnail_path(tmp_path, 1, "etag-a").exists()
+    assert not display_path(tmp_path, 1, "etag-a").exists()
+
+
+def test_delete_cached_variants_leaves_files_of_other_photos_untouched(tmp_path: Path) -> None:
+    generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=_jpeg_bytes(60, 40))
+    generate_variants(tmp_path, photo_id=2, etag="etag-b", image_bytes=_jpeg_bytes(60, 40))
+
+    delete_cached_variants(tmp_path, [(1, "etag-a")])
+
+    assert not thumbnail_path(tmp_path, 1, "etag-a").exists()
+    assert thumbnail_path(tmp_path, 2, "etag-b").is_file()
+    assert display_path(tmp_path, 2, "etag-b").is_file()
+
+
+def test_delete_cached_variants_keeps_going_after_an_oserror_and_logs_the_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Die eigentliche Zusage ist die zweite Haelfte: ein Fehler auf EINEM Element darf den
+    Cleanup der uebrigen nicht abbrechen. Der Pfad gehoert ins Log, nie in eine Antwort."""
+    generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=_jpeg_bytes(60, 40))
+    generate_variants(tmp_path, photo_id=2, etag="etag-b", image_bytes=_jpeg_bytes(60, 40))
+    doomed = thumbnail_path(tmp_path, 1, "etag-a")
+    original_unlink = Path.unlink
+
+    def _failing_unlink(self: Path, missing_ok: bool = False) -> None:
+        if self == doomed:
+            raise OSError("Nur-Lese-Dateisystem")
+        original_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", _failing_unlink)
+
+    with caplog.at_level("WARNING"):
+        delete_cached_variants(tmp_path, [(1, "etag-a"), (2, "etag-b")])
+
+    assert doomed.is_file()
+    assert not thumbnail_path(tmp_path, 2, "etag-b").exists()
+    assert not display_path(tmp_path, 2, "etag-b").exists()
+    assert str(doomed) in caplog.text
