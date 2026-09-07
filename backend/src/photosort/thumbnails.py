@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,6 +10,8 @@ from stat import S_ISREG
 from typing import Literal
 
 from PIL import Image, ImageOps
+
+logger = logging.getLogger(__name__)
 
 # Groessen laut UI/UX-Abschnitt von specs/features/0002-manual-categorization.md: Grid nutzt
 # Thumbnail-, Einzelbild-/Vergleichsansicht Display-Auflösung.
@@ -148,3 +151,36 @@ def measure_cache_usage(
         if present == 2:
             complete_photo_count += 1
     return CacheUsage(total_bytes=total_bytes, complete_photo_count=complete_photo_count)
+
+
+# specs/features/0044-projekte-loeschen.md, Punkt 2 "Cache-Cleanup" ab hier.
+
+
+def delete_cached_variants(cache_dir: Path, photos: Iterable[tuple[int, str]]) -> None:
+    """Entfernt Thumbnail- und Display-Variante der uebergebenen `(photo_id, etag)`-Paare.
+
+    Gegenstueck zu `measure_cache_usage` und in derselben Form: Mengensignatur, rein synchron,
+    ohne DB-Bezug - der Aufrufer fuehrt sie ueber `asyncio.to_thread` aus, damit die Event-Loop
+    bei mehreren tausend `unlink`-Aufrufen nicht blockiert.
+
+    Die Pfade werden ausschliesslich aus `photo_id`/`etag` BERECHNET, nie ueber ein
+    Verzeichnismuster gesucht (ADR 0062 Punkt 5): der Cache ist flach und projektuebergreifend,
+    ein `glob` traefe fremde Dateien. Aus derselben Rechnung folgt die benannte Grenze - Varianten
+    unter einem inzwischen veralteten `etag` erreicht diese Funktion strukturell nicht (siehe
+    `cache_key`, Restrisiko 2 der Spec, Issue #349).
+
+    Best-effort je Datei: `missing_ok=True` deckt den Race-Fall "Datei bereits weg" ab, ein
+    `OSError` wird mit dem Pfad GELOGGT und bricht den Cleanup der uebrigen Dateien nicht ab. Ein
+    Dateifehler darf die bereits committete Datenloeschung nicht nachtraeglich zum Fehler machen;
+    der absolute Cache-Pfad enthaelt interne Deployment-Struktur und gehoert deshalb ins Log, nie
+    in eine HTTP-Antwort (dasselbe Muster wie bei `measure_cache_usage`).
+    """
+    for photo_id, etag in photos:
+        for path in (
+            thumbnail_path(cache_dir, photo_id, etag),
+            display_path(cache_dir, photo_id, etag),
+        ):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Cache-Datei konnte nicht entfernt werden: %s", path)
