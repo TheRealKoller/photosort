@@ -78,6 +78,45 @@ Alle Rohwerte stehen als ausgeschriebene Hexwerte in `frontend/src/index.css` (`
 
 **Bekannte Einschränkung (ADR 0055 Punkt 4a):** Der Abstand zwischen `--text` (`#A0A5B5`) und `--text-muted` (`#8D92A4`) ist klein — die Textstufen 2 und 3 sind nebeneinander nur schwach unterscheidbar und tragen ihre Unterscheidung praktisch über die **Verwendung** (Fließtext vs. Metadaten/Hotkeys), nicht über die Wahrnehmung. **Hierarchie darf nicht über diese beiden Stufen allein aufgebaut werden** — Abstand, Schnitt und Reihenfolge müssen sie tragen.
 
+#### Verwaltung der Board-Werte — Figma führt die Board-Farben, `index.css` führt die Palette
+
+Seit Spec [`0336`](../features/0336-figma-board-farbvariablen.md) (2026-09-07) trägt **kein Knoten
+des Figma-Boards mehr einen fest eingetragenen Farbwert**: Alle 418 Farbvorkommen sind an eine der
+23 Variablen der Collection „PhotoSort Farben" gebunden. Eine Farbe des Boards ist damit an einer
+einzigen Stelle änderbar statt an bis zu 72.
+
+Die Hoheit ist **geteilt, und die Teilung ist eine Richtungsaussage, keine Gleichheit** (ADR
+[`0062`](../decisions/0062-geteilte-farbhoheit-figma-board-und-code.md)):
+
+- **Jeder Wert, den eine Figma-Variable führt, muss auch als `:root`-Token in `index.css` stehen.**
+  Umgekehrt gilt das ausdrücklich **nicht** — der Code darf Werte führen, die Figma nicht kennt.
+  Von den 40 verschiedenen Hexwerten der Palette sind **23 in Figma geführt** und **17
+  code-eigen**: die 14 Werte der sieben nach ADR 0055 Punkt 6a *abgeleiteten* Chip-Paare sowie
+  `--border-control`, `--separator` und `--danger-text`. Sie nach Figma zu tragen hieße, eine
+  Ableitung als Entwurfsentscheidung auszugeben.
+- **`index.css` bleibt die auslieferungsrelevante Quelle.** Aus einer Figma-Variablen wird nichts
+  generiert, nichts gebaut und nichts importiert; die Variablen sind ein Abbild für den Entwurf,
+  keine zweite Wahrheit.
+- **Erzwungen ist das im Repository, nicht in Figma:** `scripts/figma/board-farbvariablen.js` trägt
+  das Farbregister (23 Variablen + 17 code-eigene Werte mit je eigener Begründung), und
+  `scripts/tests/test_figma_farbregister.py` rechnet nach, dass beide Mengen disjunkt sind und
+  ihre Vereinigung **exakt** der Palette aus `:root` entspricht. Wer die Palette erweitert, muss
+  sich entscheiden, auf welcher Seite der Grenze der neue Wert liegt — sonst wird der Test rot.
+
+**Die Board-Abweichungen der Tabelle oben sind in Figma Quellkorrekturen, nicht Rückstände.**
+`Text/Gedämpft` trägt dort jetzt `#8D92A4` (statt `#62677A`) und
+`Kategorie/Gebäude & Bauwerk/Schrift` `#FF44A1` (statt `#FF007F`); beide Variablen tragen die
+Begründung samt altem Wert und einem ausdrücklichen Rückschreibe-Verbot **in ihrer Beschreibung im
+Figma-Dokument selbst**. Wer dort den vermeintlich „falschen" Wert sieht, hat das Repository in dem
+Moment nicht offen — eine Begründung, die nur hier steht, erreicht ihn nicht. Bei Widerspruch gilt
+ADR 0055: Die Korrektur wandert nach Figma, nie zurück.
+
+**Es gibt keinen Abgleichmechanismus zwischen Code und Board** — weder in CI noch von Hand, weder
+periodisch noch in eine Richtung. Ändert jemand in Figma einen Wert von Hand, merkt das Repository
+das nicht; das Register bleibt als **Soll** stehen und ist beim nächsten Lauf des Skripts wieder
+maßgeblich. Der Preis ist bewusst getragen: Ein Abgleich hätte genau zwei Betriebszustände — rot,
+weil jemand in Figma gearbeitet hat, oder abgeschaltet, weil das Rot nervt.
+
 #### Kategorie-Chips — dreizehn eigene Farbpaare
 
 Die dreizehn Paare liegen als `--chip-<slug>-bg`/`-fg` in `index.css` und werden über eine nach `category_key` geschlüsselte Konstante in `components/CategoryBadge.tsx` aufgelöst (`Object.hasOwn`-Lookup, unbekannter Key → neutrales Paar). Fünf Paare stammen aus dem Board, acht sind nach dessen eigener Regel abgeleitet, „Nicht erkannt" ist bewusst neutral. Alle dreizehn erreichen ≥4,5:1.

@@ -6,6 +6,21 @@
 ([Link](https://www.figma.com/design/zFiuhI1yjTzAQVQnceBiLC/Photosort-Dark?node-id=2-4))
 **Bezug:** Spec [`0320`](../features/0320-dark-utility-register.md), ADR [`0055`](../decisions/0055-dark-utility-register-fundament.md), Stufe 2 = Issue #321
 
+> **Kopfvermerk (Spec [`0336`](../features/0336-figma-board-farbvariablen.md), 2026-09-07):** Das
+> Board steht inzwischen auf **V1.3**, und **jeder** seiner 418 Farbwerte ist an eine Variable der
+> Collection „PhotoSort Farben" gebunden — kein Knoten trägt mehr einen fest eingetragenen
+> Farbwert. Die Collection führt seither 23 Farbvariablen (die zwölf bestehenden plus
+> `Rahmen/Trennlinie` und fünf Kategorie-Chip-Paare). **Zwei Werte weichen dabei bewusst von der
+> Liste unten ab:** `Text/Gedämpft` trägt `#8D92A4` statt `#62677A` und
+> `Kategorie/Gebäude & Bauwerk/Schrift` trägt `#FF44A1` statt `#FF007F` — die Kontrastkorrekturen
+> aus ADR [`0055`](../decisions/0055-dark-utility-register-fundament.md) Punkt 4a und 4f sind mit
+> dieser Story an der Quelle nachgezogen worden und sind **nicht** ins Board zurückzuschreiben.
+> Die Werteliste unten bleibt trotzdem unangetastet: Sie ist die Momentaufnahme des Stands V1.2
+> und soll das bleiben. Was gilt, steht in ADR 0055, ADR
+> [`0062`](../decisions/0062-geteilte-farbhoheit-figma-board-und-code.md) und
+> [`0004-design-system.md`](./0004-design-system.md); der gemessene Nachweis des Laufs liegt in
+> `scripts/figma/inventar-vorher.json` und `scripts/figma/inventar-nachher.json`.
+
 Ausgelesen über den Figma-MCP (`get_metadata` + `get_design_context`). **Diese Datei ist die
 maßgebliche Werteliste im Repo** — die Figma-Asset-URLs des Exports verfallen nach 7 Tagen, und
 die Fachagenten haben keinen Figma-Zugriff. Sie hält den Stand V1.2 fest; sie wird *nicht*

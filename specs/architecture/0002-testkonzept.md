@@ -1020,6 +1020,59 @@ Umgesetzt ist das als Zeile `**Kein `mcp`-Weg:** <Begründung>`, und die Zusiche
 - **Reproduzierbarkeit einschränken:** `--sketch` streut standardmäßig einen zufälligen Hand-Zeichen-Jitter pro Lauf ein (D2s Sketch-Modus ist nicht deterministisch, sofern kein Seed fixiert wird) — "reproduzierbar ein SVG erzeugen" heißt hier *strukturell/inhaltlich gleich*, nicht zwangsläufig byte-identisch bei wiederholten Läufen. Falls diff-arme, byte-identische Re-Renders gewünscht sind (relevant, damit ein Git-Diff im SVG nur bei tatsächlicher Quelländerung auftaucht), muss die Implementierung einen D2-Sketch-Seed-Mechanismus fixieren, sofern D2 einen anbietet (in der D2-Doku zu prüfen) — sonst bewusst akzeptieren, dass ein erneuter Lauf ohne Quelländerung ein optisch leicht anderes, aber gültiges SVG erzeugt.
 - **Dokumentations-Review** (drittes Element des bei Spec 0007 etablierten Musters, hier ohne die ersten beiden Schritte, da echter — wenn auch minimaler — Code vorhanden ist): `CLAUDE.md`/`specs/README.md` müssen die neue Richtlinie konkret referenzieren (Ablageort, Generierungsskript, Verweis auf ADR 0013), nicht nur implizit voraussetzen.
 
+## Eine Änderung, deren Wirkung außerhalb des Repositories eintritt (`scripts/figma/`) — neu für Spec [`0336`](../features/0336-figma-board-farbvariablen.md) / ADR [`0062`](../decisions/0062-geteilte-farbhoheit-figma-board-und-code.md)
+
+Erster Fall im Projekt, in dem ein Pull Request seine eigentliche Wirkung **nicht zeigen** kann:
+`scripts/figma/board-farbvariablen.js` bindet 418 Farbwerte des Figma-Boards an Variablen, und das
+passiert in einer fremden, gehosteten Datei. Ein Diff kann das nur behaupten. Die Testebene ist
+`scripts/tests/test_figma_farbregister.py` (gleiche Bauart und gleicher CI-Job `demo-scripts` wie
+die übrigen Repo-Konsistenztests, kein Netzwerk, kein Aufrufkontingent, kein numerisches
+Coverage-Gate). Vier Regeln daraus sind verallgemeinerbar und gelten ab jetzt für jede Änderung
+dieser Klasse:
+
+1. **Der Nachweis ist ein gemessenes Vorher und Nachher im Repository, kein Selbstbericht.** Der
+   Lauf misst den Zustand vor und nach seiner Arbeit und gibt beides zurück; beide Messungen
+   werden im gleichen Format und in gleicher Sortierung eingecheckt, sodass ihr Textdiff selbst
+   schon der Nachweis ist. Was der Lauf *berichtet* getan zu haben, ist ausdrücklich **nicht** der
+   Prüfgegenstand — die Grenze ist das gemessene Nachher.
+2. **Ein bewusst rotes Testkorpus ist zulässig, wenn es benannt, abgegrenzt und beziffert ist.**
+   Fehlt der Nachweis, **scheitert** die Prüfung; sie überspringt sich nicht (kein `skipif`, kein
+   `xfail`). Ein Test, der bei fehlendem Nachweis grün wird, ist der Nachweis nicht wert: Genau
+   dann wäre eine unfertige Umstellung von einer fertigen nicht zu unterscheiden. Damit das ein
+   erwarteter Zwischenzustand bleibt und keine Ausrede wird, gilt dreierlei: Das Rot liegt in
+   **einer** benannten Klasse mit **einer** Ursache; die Zahl und die Namen der roten Tests stehen
+   im Übergabebericht und in der README des Verzeichnisses (läuft eine andere Zahl rot, ist das ein
+   Fehler); und ein registrierter Marker macht `pytest -m "not <marker>"` zum belegbaren Nachweis,
+   dass der Rest grün ist. Der Pull Request wird erst eröffnet, wenn auch das Korpus grün ist —
+   zwischen dem roten Zwischenstand und dem Nachtrag existiert kein PR, die CI-Pflicht bleibt
+   damit unberührt.
+3. **Ein knappes externes Aufrufkontingent ist eine Vorgabe an den Testentwurf, keine Randnotiz.**
+   Wo jeder Aufruf zählt (hier: drei pro Tag), darf kein Aufruf allein dem Nachsehen dienen. Die
+   Folge ist eine Bauform, die auch ohne das Kontingent richtig wäre: ein Aufruf für den ganzen
+   Weg, zielzustands-idempotent, selbstverortend, mit einer **fortschrittsunabhängig**
+   formulierten Vorprüfung, die vor jeder Schreiboperation abbricht und den vollen Messwert
+   zurückgibt. Prüfen lässt sich das aus dem Repository heraus nur als **Reihenfolge im
+   Quelltext** — der Test bindet, dass Schau-Schalter, Vorprüfung und Wiederherstellungspunkt
+   textlich vor der ersten Schreiboperation stehen.
+4. **Die reinen Teile eines Fremdlaufzeit-Payloads werden in ihrer eigenen Laufzeit ausgeführt,
+   nicht im Quelltext nach Schlüsselwörtern durchsucht.** Ein Test, der prüft, ob die Zeichenkette
+   `figma.mixed` im Payload vorkommt, prüft eine Schreibweise, keine Entscheidung. Der Payload
+   trennt deshalb Register und Klassifikationsfunktion von den API-Teilen und legt sie unter
+   `node` in `globalThis` ab; die Prüfung lädt dieselbe Datei und ruft die Entscheidungsfunktion
+   mit Fixtures auf — sechs Grenzfälle und **zwei Positivproben**, denn ohne die bestünde die
+   Abbruchliste auch bei einer Funktion, die immer abbricht. `node` ist damit ab dieser Spec auch
+   in `scripts/tests/` eine Testlaufzeit; der Job `demo-scripts` bleibt unverändert, weil
+   `ubuntu-latest` Node vorinstalliert mitbringt. Kein `skipif`: Fehlt `node`, scheitert die
+   Klasse mit klarer Meldung, statt lautlos zu verschwinden.
+
+Zwei Ergänzungen, die keine eigene Regel sind, aber zum Muster gehören: Das im Payload
+eingebettete Register trägt je Variable die **erwartete Vorkommenszahl** — ohne sie wäre „alle 418
+sind gebunden" mit einer *falschen* Bindung genauso grün wie mit der richtigen, die Gesamtzahl
+stimmt ja. Und das Schema der Messdateien ist **geschlossen**: Jeder unbekannte Schlüssel färbt
+rot. Das ist keine Namenskosmetik, sondern die Testseite einer Sicherheitszusage — Freitext aus
+einem fremden System ist gleichzeitig Leck- und Injektionskanal, und eine Ausschlussliste, die nur
+im Text steht, ist keine.
+
 ## Repo-weite Doku-Restrukturierung / Pfadänderungen (kein Anwendungscode)
 
 **Neu seit der Teststrategie-Konsultation zur geplanten Spec 0019** ("Doku-Restrukturierung", `specs/roadmap.md`, Sharpening 2026-08-05) — erste Verschiebung eines zentralen, viel referenzierten Dokuments (`specs/architecture/0001-overview.md` → `docs/architecture.md`) mit projektweiten Folgeänderungen (37 Fundstellen in 25 Dateien zum Zeitpunkt der Konsultation). Anders als die punktuelle Referenzergänzung bei Spec 0018 (zwei Dateien, ein neuer Verweis auf eine ADR) ist hier die schiere Menge und Heterogenität der betroffenen Stellen selbst das Testproblem — folgendes Verfahren gilt für jede künftige Datei-Umbenennung/-Verschiebung mit repo-weiten Referenzen:
@@ -1126,7 +1179,11 @@ Kein neues Testframework, kein CI-Gate — konsistent mit den übrigen reinen Pr
 - Echte OpenCloud-Instanz/echtes Redis/echter Worker-Container im automatisierten Testlauf — dafür kein Docker-Compose-Testsetup, ersetzt durch manuellen Smoke-Test vor Merge (etabliert mit Spec 0002: "Touch/Swipe-Gefühl wird als manueller Smoke-Test vor Merge geprüft", gilt analog für neue externe Integrationen).
 - ~~Automatisiertes E2E-Testing (Playwright o.ä.): explizite Entscheidung aus Spec 0002, Aufwand für Zwei-Personen-Projekt aktuell nicht gerechtfertigt.~~ **ABGELÖST am 2026-09-05 durch ADR [`0058`](../decisions/0058-browsergestuetzte-oberflaechenpruefung.md) / Spec 0174.** Der hier selbst formulierte Vorbehalt („wird neu bewertet, falls ein Feature auftaucht, dessen Risiko … das nicht mehr rechtfertigt") ist eingetreten — allerdings aus einem **anderen** Grund als dem hier vermuteten: Der vorgemerkte Fall (Regressions-Bug im Zusammenspiel Backend+Worker+Frontend) ist bis heute *nicht* eingetreten und wird von der Integrations-Ebene weiterhin abgedeckt. Eingetreten ist stattdessen eine Wahrnehmungslücke des Entwicklers: Claude entwickelt und reviewt die Oberfläche, ohne sie je zu sehen, und jsdom hat keine Layout-Engine — das Ersatzverfahren für jede Layout-Zusage war deshalb ausnahmslos „manueller visueller Smoke-Test vor Merge", also Arbeit, die per Konstruktion bei Daniel landete. Seither gibt es Playwright/Chromium in `e2e/` und einen eigenen CI-Job; **Ersatz-Eintrag siehe die Sektion „E2E gegen die real laufende Anwendung"**, insbesondere deren enges Aufnahmekriterium (nur, was jsdom prinzipiell nicht kann) und das Verlässlichkeitsregime. **Nicht** mit abgelöst und ausdrücklich weiterhin außerhalb: pixelbasierte visuelle Regression gegen gespeicherte Referenzbilder (`toHaveScreenshot`) — keine Referenzbilder im Repo, eigene spätere Frage, und sie brächte genau das Sprunghaftigkeitsproblem mit (Schriftrasterung, Renderer-Version), das das neue Regime gerade ausschließt.
 
+- **Was ein Lauf in einem fremden System *berichtet* getan zu haben** (neu mit Spec [`0336`](../features/0336-figma-board-farbvariablen.md), 2026-09-07) — geprüft wird ausschließlich das **gemessene Nach-Inventar**, nie der Selbstbericht des Laufs; ein Selbstbericht bleibt ein Selbstbericht. Ebenfalls nicht geprüft: die Figma-API-Aufrufe des Payloads (außerhalb der Plugin-Sandbox nicht ausführbar), die Wirkung der `scopes` in Figmas Oberfläche, die Bildgleichheit der 370 unveränderten Farbvorkommen (ein Screenshot-Diff findet nicht statt — die Hexwerte unterscheiden sich, die Änderung ist rechnerisch belegt), die Prosaqualität der Variablenbeschreibungen (nur die Anwesenheit der Pflichtbestandteile) und die Kontraste der Figma-Werte (kein zweiter Rechenweg: `designSystem.contract.test.ts` rechnet die Matrix bereits aus `index.css`, und jeder Figma-Wert muss dort stehen).
+
 ## Bekannte Lücken (Stand 2026-08-03)
+
+- **Neu mit Spec [`0336`](../features/0336-figma-board-farbvariablen.md) (2026-09-07): Eine spätere Handänderung in Figma bemerkt das Repository nicht.** ADR [`0062`](../decisions/0062-geteilte-farbhoheit-figma-board-und-code.md) Abschnitt 3 schließt jeden Abgleichmechanismus zwischen Figma und `index.css` bewusst aus — er hätte genau zwei Betriebszustände: rot, weil jemand in Figma gearbeitet hat, oder abgeschaltet, weil das Rot nervt. Das Farbregister bleibt als **Soll** stehen und ist beim nächsten Lauf des Skripts wieder maßgeblich; zwischen zwei Läufen kann eine Divergenz unbemerkt bestehen. Zweite Hälfte derselben Lücke: Der Nachweis stammt aus **derselben** Transaktion wie der Schreiblauf, ein „gemeldet, aber nicht persistiert" fängt er per Konstruktion nicht. Ein zweiter, unabhängiger Schau-Lauf würde genau das fangen und kostet einen der drei Tagesaufrufe — bewusst nicht getan.
 
 - **Neu mit Spec [`0298`](../features/0298-projektnavigation-in-der-kopfzeile.md) (2026-09-06), drei benannte Lücken der Kopfzeilen-Navigation:**
   - **Die Gegenrichtung der Routen-Aufzählung ist nicht automatisiert.** Geprüft wird, dass jedes Muster aus `PROJECT_CONTEXT_ROUTE_PATHS` tatsächlich geroutet ist und die Navigationsgruppe zeigt. Dass umgekehrt **jede** unter `/projects/` registrierte Route auch in der Aufzählung steht, ist zur Laufzeit nicht aufzählbar (Routen sind React-Elemente) und bleibt Review-Pflicht. Genau diese Richtung ist die, die historisch zweimal gebrochen ist (Spec 0042/PR #101, Spec 0207) — die Lücke ist also die riskantere Hälfte und steht hier, damit sie nicht als erledigt gilt, nur weil die andere Hälfte jetzt einen Test hat. Ein statischer Quelltext-Scan über `App.tsx` wäre nachrüstbar, wenn die Route-Definitionen je zu Daten statt zu JSX werden.
