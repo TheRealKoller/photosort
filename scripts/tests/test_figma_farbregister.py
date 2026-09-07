@@ -944,7 +944,10 @@ class TestPayloadForm:
         oeffentlich in specs/architecture/0005."""
         gross = payload_text().upper()
 
-        for begriff in ("TOKEN", "SECRET", "PASSWORT", "PASSWORD", "API_KEY", ".ENV"):
+        # Bewusst nicht das blosse "TOKEN": Das Register fuehrt zu jedem code-eigenen Wert sein
+        # CSS-Token, und ein Design-Token ist kein Geheimnis. Gesucht sind die Formen, in denen
+        # Zugangsmaterial auftritt.
+        for begriff in ("_TOKEN", "TOKEN=", "SECRET", "PASSWORT", "PASSWORD", "API_KEY", ".ENV"):
             assert begriff not in gross, f"Der Payload nennt {begriff!r}."
 
     def test_node_uebersetzt_den_payload(self) -> None:
