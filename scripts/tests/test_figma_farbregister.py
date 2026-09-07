@@ -76,18 +76,30 @@ INVENTAR_NACHHER = FIGMA_VERZEICHNIS / "inventar-nachher.json"
 INDEX_CSS = REPO_WURZEL / "frontend" / "src" / "index.css"
 
 # --- Sollwerte (AK0). Festgeschrieben, nicht aus den Daten abgeleitet. -----------------------
+#
+# NACHGEZOGEN AM 2026-09-07 nach dem ersten use_figma-Lauf, und zwar genau so, wie AK0 es
+# vorsieht: halten, erklaeren, dann korrigieren - nicht still nachziehen. Die Werte lauteten
+# 459 Knoten / 418 Vorkommen / 318 Fills und stammten aus der Handmessung vom 2026-09-06; der
+# Lauf hat 460 / 419 / 319 gemessen (Strokes unveraendert 100). Die Ursache ist belegt, nicht
+# vermutet: Der allererste Eintrag des gemessenen Inventars ist `2:4 fills 0 #0B0C10` - die
+# Fuellung des BOARD-KNOTENS SELBST. Der Payload misst `[board].concat(board.findAll(...))`,
+# die Handmessung hatte nur `findAll` gezaehlt. Genau ein Eintrag, und er ist hexgleich
+# (#0B0C10 -> Hintergrund/Basis). Deshalb verschieben sich nur die Zaehlwerte und die
+# hexgleichen Gruppen; die 48 geaenderten Vorkommen und die beiden Uebergaenge bleiben, wie sie
+# waren. Die Rechnung lautet neu: 337 (= 290 hexgleich + 47 geaendert) an die zwoelf
+# bestehenden + 82 (= 81 + 1) an die elf neuen = 419, davon 371 unveraendert + 48 geaendert.
 
 SOLL_VARIABLEN = 23
 SOLL_BESTEHENDE = 12
 SOLL_NEUE = 11
-SOLL_VORKOMMEN = 418
-SOLL_FILLS = 318
+SOLL_VORKOMMEN = 419
+SOLL_FILLS = 319
 SOLL_STROKES = 100
-SOLL_KNOTEN = 459
-SOLL_AN_BESTEHENDE = 336
+SOLL_KNOTEN = 460
+SOLL_AN_BESTEHENDE = 337
 SOLL_AN_NEUE = 82
-SOLL_HEXGLEICH_BESTAND = 289
-SOLL_UNVERAENDERT = 370
+SOLL_HEXGLEICH_BESTAND = 290
+SOLL_UNVERAENDERT = 371
 SOLL_GEAENDERT = 48
 SOLL_GEDAEMPFT = 47
 SOLL_GEBAEUDE_SCHRIFT = 1

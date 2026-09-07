@@ -7,7 +7,7 @@
 ## Ziel
 
 Das Figma-Board `photosort-design-system` („Photosort Dark", Board-Node `2:4`, Stand V1.2) trägt
-**418 fest eingetragene Farbwerte** (318 Solid-Fills, 100 Solid-Strokes) auf 459 Knoten — **kein
+**419 fest eingetragene Farbwerte** (319 Solid-Fills, 100 Solid-Strokes) auf 460 Knoten — **kein
 einziger** ist an eine Variable gebunden, obwohl die Collection „PhotoSort Farben" (ein Modus
 `Dunkel`) seit dem 2026-09-03 zwölf Farbvariablen führt. Das hat zwei Folgen, die konkret stören:
 Eine einzige Farbe zu ändern bedeutet, bis zu 72 Knoten von Hand anzufassen — und das Board zeigt
@@ -32,28 +32,39 @@ Zwei Zahlen des Issues sind dabei korrigiert worden; beide Korrekturen sind unte
 Stelle begründet und ändern das fachliche Ziel nicht.
 
 - [ ] **AK0 — Die Zahlen sind Sollwerte, keine Messnotizen.** Alle Zahlen dieser Story
-  (418/318/100/336/82/72/370/48/47/1/23/40/17/289/81) stammen aus der Messung vom 2026-09-06 bzw.
-  der Nachrechnung vom 2026-09-07 und stehen als **feste Sollwerte** in der Prüfung. Weicht das
-  gemessene Vor-Inventar davon ab, ist das ein Halt-und-erklären im Pull Request — kein stilles
-  Nachziehen der Testzahlen.
-- [ ] **AK1 — Keine feste Farbe mehr.** Im gemessenen Nach-Inventar trägt jeder der 418 Einträge
+  (419/319/100/337/82/72/371/48/47/1/23/40/17/290/81) stehen als **feste Sollwerte** in der
+  Prüfung. Weicht das gemessene Vor-Inventar davon ab, ist das ein Halt-und-erklären im Pull
+  Request — kein stilles Nachziehen der Testzahlen.
+  > **Genau das ist am 2026-09-07 eingetreten, und so ist es aufgelöst.** Die Zahlen lauteten
+  > zuerst 459 Knoten / 418 Vorkommen / 318 Fills aus der Handmessung vom 2026-09-06; der erste
+  > `use_figma`-Lauf hat **460 / 419 / 319** gemessen (Strokes unverändert 100) und ist in der
+  > Vorprüfung abgebrochen, ohne zu schreiben. Die Ursache ist belegt, nicht vermutet: Der
+  > allererste Eintrag des gemessenen Inventars ist `2:4 fills 0 #0B0C10` — die Füllung des
+  > **Board-Knotens selbst**. Der Payload misst `[board].concat(board.findAll(…))`, die
+  > Handmessung hatte nur `findAll` gezählt. Es ist genau ein Eintrag, und er ist hexgleich
+  > (`#0B0C10` → `Hintergrund/Basis`); deshalb verschieben sich nur die Zählwerte und die
+  > hexgleichen Gruppen (289 → 290, 336 → 337, 370 → 371), während die 48 geänderten Vorkommen
+  > und die beiden Übergänge unberührt bleiben. Das Board mitzumessen ist richtig und bleibt so:
+  > Seine Füllung ist ein Farbvorkommen wie jedes andere, und eine Zusage „419, sonst nichts"
+  > darf den größten Knoten nicht auslassen.
+- [ ] **AK1 — Keine feste Farbe mehr.** Im gemessenen Nach-Inventar trägt jeder der 419 Einträge
   eine Bindung an eine Variable der Collection „PhotoSort Farben"; die Schlüsselmenge
   (`knotenId` + `eigenschaft` + `index`) ist identisch mit der des Vor-Inventars — kein Vorkommen
-  verloren, keines hinzugekommen. Aufteilung 318 Fills / 100 Strokes in beiden Inventaren.
+  verloren, keines hinzugekommen. Aufteilung 319 Fills / 100 Strokes in beiden Inventaren.
 - [ ] **AK2 — Die zwölf bestehenden Variablen bleiben.** Sie behalten Name und Wert byte-gleich;
   einzige Ausnahme ist `Text/Gedämpft` (`#62677A` → `#8D92A4`). Nach dem Lauf sind sie an genau
-  336 Vorkommen gebunden.
+  337 Vorkommen gebunden.
   > **Korrektur der Zahl im Issue:** Der Issue-Body sagt „an die **336 hexgleichen** Vorkommen
-  > gebunden". Das ist in sich widersprüchlich — 47 dieser 336 sind gerade *nicht* hexgleich, sie
+  > gebunden". Das ist in sich widersprüchlich — 47 dieser 337 sind gerade *nicht* hexgleich, sie
   > tragen `#62677A` und bekommen `#8D92A4`. Die konsistente Aufteilung lautet:
   >
   > | Gruppe | Vorkommen | davon hexgleich | davon geändert |
   > |---|---|---|---|
-  > | an die 12 bestehenden Variablen | 336 | 289 | 47 (`#62677A` → `#8D92A4`) |
+  > | an die 12 bestehenden Variablen | 337 | 290 | 47 (`#62677A` → `#8D92A4`) |
   > | an die 11 neuen Variablen | 82 | 81 | 1 (`#FF007F` → `#FF44A1`) |
-  > | **gesamt** | **418** | **370** | **48** |
+  > | **gesamt** | **419** | **371** | **48** |
   >
-  > 289 + 47 + 81 + 1 = 418, 370 + 48 = 418. Die 72 Vorkommen von `#2A2E3D` liegen in den 82; die
+  > 290 + 47 + 81 + 1 = 419, 371 + 48 = 419. Die 72 Vorkommen von `#2A2E3D` liegen in den 82; die
   > übrigen zehn verteilen sich auf die zehn neuen Chip-Variablen (je eines). Die Aufteilung
   > innerhalb der 82 ist eine **Erwartung**, kein Messwert — sie fällt unter AK0.
 - [ ] **AK3 — Elf neue Variablen.** Nach dem Lauf führt die Collection genau 23 Variablen im Modus
@@ -74,8 +85,8 @@ Stelle begründet und ändern das fachliche Ziel nicht.
 - [ ] **AK6 — Genau 48 Änderungen, sonst nichts.** Genau 48 Schlüssel unterscheiden sich zwischen
   Vor- und Nach-Inventar im `hex`, in genau zwei Übergängen (47× `#62677A` → `#8D92A4`, 1×
   `#FF007F` → `#FF44A1`), an genau den Schlüsseln, die im Vor-Inventar den alten Wert trugen. Die
-  übrigen 370 sind im `hex` identisch; `deckkraft`, `mischmodus` und `sichtbar` sind an **allen
-  418** identisch.
+  übrigen 371 sind im `hex` identisch; `deckkraft`, `mischmodus` und `sichtbar` sind an **allen
+  419** identisch.
   > **Präzisierung gegenüber dem Issue:** „pixelgleich" ist so nicht prüfbar und wird durch
   > Wertgleichheit der gemessenen Eigenschaften ersetzt. Ein Screenshot-Diff findet nicht statt
   > und wird von dieser Story nicht gebaut.
@@ -125,7 +136,7 @@ führen, und **eine** Sache passiert in Figma.
 | `scripts/tests/test_figma_farbregister.py` | Die Prüfung. Liest ausschließlich Repository-Dateien, kein Netzwerk, keine MCP-Werkzeuge. Gleiche Bauart und gleicher CI-Job (`demo-scripts`) wie die dort vorhandenen Konsistenztests. |
 
 **In Figma** passiert genau eines: ein `use_figma`-Lauf, der elf Variablen anlegt, den Wert von
-`Text/Gedämpft` korrigiert, alle 418 Vorkommen bindet und die Versionsangabe hochzieht.
+`Text/Gedämpft` korrigiert, alle 419 Vorkommen bindet und die Versionsangabe hochzieht.
 
 **Nicht angefasst:** `frontend/` vollständig (`index.css` wird nur *gelesen*),
 `designSystem.contract.test.ts`, ADR 0055, `.github/workflows/`, `docs/`, das Root-`README.md`.
@@ -160,8 +171,8 @@ Variable die erwarteten Scopes; die Vorprüfung meldet es als Abbruchgrund, wenn
 einer Eigenschaft sitzt, die der Scope nicht deckt. Scopes verhindern eine programmatische
 Bindung nicht — die Diskrepanz bliebe sonst still.
 
-**Das Register trägt je Variable zusätzlich die erwartete Vorkommenszahl** (Summe 418). Ohne sie
-wäre „alle 418 sind gebunden" mit einer *falschen* Bindung genauso grün wie mit der richtigen; die
+**Das Register trägt je Variable zusätzlich die erwartete Vorkommenszahl** (Summe 419). Ohne sie
+wäre „alle 419 sind gebunden" mit einer *falschen* Bindung genauso grün wie mit der richtigen; die
 Gesamtzahl stimmt ja. Ergänzung des `test-engineer` gegenüber ADR 0062.
 
 **Die 17 code-eigenen Werte** stehen im selben Register namentlich und einzeln begründet: die 14
@@ -220,7 +231,7 @@ Aufrufe, nicht Arbeit. `board-farbvariablen.js` macht deshalb den ganzen Weg in 
 6. **Binden**, wo eine Bindung fehlt — `figma.variables.setBoundVariableForPaint(paint, 'color',
    variable)` auf einer Kopie des Paint-Arrays, danach `node.fills`/`node.strokes` neu zuweisen.
    `paint.opacity`, `blendMode` und `visible` bleiben unangetastet; deshalb ist die Zusage aus AK6
-   für die 370 unveränderten Vorkommen eine geprüfte Aussage. Jede Knotenoperation in
+   für die 371 unveränderten Vorkommen eine geprüfte Aussage. Jede Knotenoperation in
    `try/catch`, Fehler werden gesammelt statt geworfen — ein einzelner gesperrter Knoten darf den
    Lauf nicht abbrechen.
 7. **Versionsangabe hochziehen** V1.2 → V1.3, idempotent. Falle: `figma.loadFontAsync()` für die
@@ -316,7 +327,7 @@ Merge:** `ci.yml` führt den Payload nie aus, referenziert kein `secrets.*` und 
 
 - **M1 — Selbstverortung und Vorprüfung vor jeder Schreiboperation.** Siehe Ablaufschritte 1 und 3
   oben. Trifft eines nicht zu: Rückkehr mit dem Inventar, ohne einen einzigen Schreibaufruf.
-  *Bedrohung:* Der Aufruf trifft die falsche Datei und schreibt 418 Bindungen in ein unbeteiligtes
+  *Bedrohung:* Der Aufruf trifft die falsche Datei und schreibt 419 Bindungen in ein unbeteiligtes
   Dokument.
 - **M2 — Byteweise Verbotsliste über den Payload**, geprüft in `test_figma_farbregister.py`. Der
   Payload darf folgende Zeichenketten nirgends enthalten, auch nicht in einem Kommentar (die
@@ -433,14 +444,14 @@ Abbruchliste auch bei einer Funktion, die immer abbricht.
 **Mutationsproben** (verlangt, im Modul-Docstring mit Datum dokumentiert, Muster aus
 `test_verweisnummern_in_markdown.py`): (1) einen Registerwert auf einen in `index.css` nicht
 vorhandenen Hex setzen → Registerdeckung rot; (2) einen Eintrag aus `inventar-nachher.json`
-entfernen → Schlüsselmengen-Test rot; (3) einen der 370 unveränderten Hexwerte im Nach-Inventar
+entfernen → Schlüsselmengen-Test rot; (3) einen der 371 unveränderten Hexwerte im Nach-Inventar
 verändern → „genau 48 Übergänge" rot. Jeweils zurücknehmen.
 
 **Was ausdrücklich nicht getestet wird:** ob der Lauf in Figma getan hat, was er berichtet (die
 Grenze ist das gemessene Nach-Inventar — ein Selbstbericht bleibt ein Selbstbericht); Kontraste
 (kein zweiter Rechenweg — `designSystem.contract.test.ts` rechnet die Matrix bereits aus
 `index.css`, und da jeder Figma-Wert laut AK8 dort steht, ist er bereits kontrastgeprüft);
-Bildgleichheit der 370 unveränderten Vorkommen; die Wirkung der `scopes` in Figmas Oberfläche; die
+Bildgleichheit der 371 unveränderten Vorkommen; die Wirkung der `scopes` in Figmas Oberfläche; die
 Figma-API-Aufrufe des Payloads (außerhalb der Plugin-Sandbox nicht ausführbar); die Prosaqualität
 der Beschreibungen (nur die Anwesenheit der Pflichtbestandteile); spätere Handänderungen in Figma
 (ADR 0062 Abschnitt 3 schließt jeden Abgleichmechanismus aus).
@@ -499,7 +510,7 @@ die Empfehlung des Fachagenten als Vorgabe.
 - **`test-engineer` konsultiert (Schritt 3):** Testklassen-Aufteilung, bezifferte Rot-Liste,
   ausgeführte Grenzfälle über den `node`-Zweig, drei Mutationsproben; zwei Artefakt-Ergänzungen
   gegenüber ADR 0062 (Inventare führen `variablen`; Register trägt erwartete Vorkommenszahl).
-  Zusätzlich hat er den Rechenfehler in AK2 des Issues gefunden (336 „hexgleiche" Vorkommen).
+  Zusätzlich hat er den Rechenfehler in AK2 des Issues gefunden (337 „hexgleiche" Vorkommen).
 - **`security-engineer` konsultiert (Schritt 3):** Story als sicherheitsrelevant eingestuft, acht
   Muss-Kriterien, geschlossenes Inventarschema; `architecture/0003-securitykonzept.md` bereits
   ergänzt.
@@ -508,7 +519,7 @@ die Empfehlung des Fachagenten als Vorgabe.
   Sicherheitszusage, und ein geschlossenes Schema ist nur mit einer verbindlichen Form prüfbar.
 - **Der Figma-Lauf liegt in der Hauptsession, nicht im `developer`-Subagenten**, weil dessen
   Werkzeugsatz die MCP-Werkzeuge nachweislich nicht enthält.
-- **Zwei Zahlen des Issue-Bodys sind korrigiert** (AK2: 336 „hexgleiche" → 289 hexgleich + 47
+- **Zwei Zahlen des Issue-Bodys sind korrigiert** (AK2: 337 „hexgleiche" → 290 hexgleich + 47
   geändert; AK8: 16 → 17 code-eigene Werte). Beide Korrekturen sind nachgerechnet und an Ort und
   Stelle begründet; das fachliche Ziel der Story ändert sich dadurch nicht. Der Issue-Body bleibt
   unangetastet — er trägt die Story, die Spec trägt die Technik.

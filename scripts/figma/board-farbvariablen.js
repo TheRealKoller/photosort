@@ -19,6 +19,18 @@
  * die Entscheidungsfunktion mit Fixtures auf, statt ihren Quelltext nach Schluesselwoertern zu
  * durchsuchen.
  *
+ * ZU DEN ZAHLEN IM REGISTER (nachgezogen am 2026-09-07 nach dem ersten Lauf): Sie lauteten
+ * zunaechst 459 Knoten / 418 Vorkommen / 318 Fills und stammten aus der Handmessung vom
+ * 2026-09-06. Der erste Lauf hat 460 / 419 / 319 gemessen - die Strokes stimmen bei 100. Die
+ * Differenz ist exakt und vollstaendig EIN Eintrag: der allererste des gemessenen Inventars ist
+ * `2:4 fills 0 #0B0C10`, also die Fuellung des BOARD-KNOTENS SELBST. `messeBoard` misst
+ * `[board].concat(board.findAll(...))`; die Handmessung hatte nur `findAll` gezaehlt. Der
+ * zusaetzliche Eintrag ist hexgleich (#0B0C10 -> Hintergrund/Basis), deshalb aendern sich nur die
+ * drei Zaehlwerte und `restVorkommen.summe` (289 -> 290); die 48 geaenderten Vorkommen und die
+ * zwei Uebergaenge bleiben unberuehrt. Das Board mitzumessen ist richtig und bleibt so: Seine
+ * Fuellung ist ein Farbvorkommen wie jedes andere, und eine Zusage "419, sonst nichts" darf den
+ * groessten Knoten nicht auslassen.
+ *
  * ZU DEN SCOPES: Sie sind aus den im Repository belegten Verwendungen abgeleitet
  * (specs/architecture/0005-board-dark-utility-register.md), nicht geraten, und bleiben dort
  * getrennt, wo die Trennung belegt ist - eine Chip-Flaeche ist nie Schrift, eine Chip-Schrift nie
@@ -40,9 +52,9 @@ const REGISTER =
   "modus": "Dunkel",
   "versionVorher": "V1.2",
   "versionNachher": "V1.3",
-  "knotenGesamt": 459,
-  "vorkommenGesamt": 418,
-  "vorkommenFills": 318,
+  "knotenGesamt": 460,
+  "vorkommenGesamt": 419,
+  "vorkommenFills": 319,
   "vorkommenStrokes": 100,
   "variablen": [
     {
@@ -254,7 +266,7 @@ const REGISTER =
     }
   ],
   "restVorkommen": {
-    "summe": 289,
+    "summe": 290,
     "variablen": [
       "Hintergrund/Basis",
       "Hintergrund/Oberfläche",
