@@ -173,4 +173,38 @@ describe('ProjectSettingsPage', () => {
 
     expect(toggle).toBeDisabled()
   })
+
+  // specs/features/0044-projekte-loeschen.md: Gefahrenzone am Seitenende.
+  it('offers the delete action in a danger zone at the end of the page', async () => {
+    vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+    renderPage()
+
+    expect(
+      await screen.findByRole('heading', { name: 'Gefahrenzone', level: 2 })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Projekt löschen' })).toBeInTheDocument()
+    expect(screen.getByText(/Die Original-Fotos auf OpenCloud bleiben unverändert/)).toBeVisible()
+  })
+
+  it('shows no message at all on a plain page load', async () => {
+    // "Kein `Alert`, kein `role=\"alert\"` in der Gefahrenzone" wird sonst von nichts gehalten -
+    // eine Gefahrenzone ist ein dauerhafter Abschnitt, keine Meldung.
+    vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Gefahrenzone', level: 2 })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('opens the confirmation dialog when the delete button is clicked', async () => {
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Projekt löschen' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Projekt löschen?' })).toBeInTheDocument()
+  })
 })

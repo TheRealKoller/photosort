@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
+import { DeleteProjectDialog } from '../components/DeleteProjectDialog'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../components/ui/popover'
@@ -33,6 +34,7 @@ export function ProjectSettingsPage() {
   const query = useProjectQuery(id)
   const consentMutation = useSetCloudVisionConsentMutation(id)
   const [infoOpen, setInfoOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   if (query.isError && query.error instanceof ApiError && query.error.status === 404) {
     return (
@@ -116,6 +118,51 @@ export function ProjectSettingsPage() {
           />
         </div>
       </div>
+
+      {/* GEFAHRENZONE (specs/features/0044-projekte-loeschen.md), letztes Kind des gap-6-
+          Containers. Bewusst hier und nicht in der Projektliste: die Namenseingabe als Huerde
+          setzt voraus, dass man weiss, welches Projekt man vor sich hat - eine Liste ist eine
+          Ueberflieg-Oberflaeche und der schlechtere Ort fuer eine irreversible Aktion. Die
+          Einstellungsseite liegt als Querschnittsansicht vollstaendig ausserhalb des Arbeitspfads,
+          waehrend jede der fuenf Pipeline-Schritt-Seiten auf ihm liegt.
+
+          KEIN Alert, KEIN role="alert", KEIN Symbol: eine Gefahrenzone ist ein dauerhafter
+          Abschnitt, keine Meldung - ein role="alert" kuendigte bei jedem Seitenaufruf einen Fehler
+          an, den es nicht gibt. Farbe tragen ausschliesslich Rand und Schaltflaeche.
+
+          Die freistehende --separator-Linie auf dem Seitengrund ist genau ihre dokumentierte
+          Rolle; --border waere dort mit 1,45:1 keine Linie. */}
+      <section className="border-t border-separator pt-6">
+        <div className="flex flex-col gap-3 rounded-lg border border-danger bg-surface p-4">
+          <h2 className="text-lg text-text-h">Gefahrenzone</h2>
+          <p className="text-sm text-text">
+            Löscht dieses Projekt mit allen PhotoSort-Daten — Fotodatensätze, Bewertungen,
+            Kategorien und alle Bewertungs- und Kuratierungsläufe. Die Original-Fotos auf OpenCloud
+            bleiben unverändert.
+          </p>
+          {/* Linksbuendig und allein in der Zeile - kein Nachbar-Bedienelement, damit die
+              12px-Regel zwischen aufgespannten Trefferflaechen gar nicht erst zum Thema wird. */}
+          <div>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setDeleteOpen(true)
+              }}
+            >
+              Projekt löschen
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <DeleteProjectDialog
+        open={deleteOpen}
+        onClose={() => {
+          setDeleteOpen(false)
+        }}
+        projectId={id}
+        projectName={project.name}
+      />
     </div>
   )
 }
