@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   confirmAusschussGate,
   createProject,
+  deleteProject,
   getClassificationEstimate,
   getProject,
   getProjectStats,
@@ -54,6 +55,29 @@ export function useCreateProjectMutation() {
     mutationFn: (payload: CreateProjectPayload) => createProject(payload),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['projects'] })
+    },
+  })
+}
+
+/**
+ * Loeschung eines Projekts (specs/features/0044-projekte-loeschen.md).
+ *
+ * Raeumt bei Erfolg VIER projektgebundene Cache-Eintraege ab, nicht nur den Projektstammsatz:
+ * `useProjectQuery` pollt, und ein stehengebliebener Eintrag erzeugte nach der Navigation einen
+ * 404-Aufblitzer, bevor der naechste Abruf ihn ersetzt. `removeQueries` statt
+ * `invalidateQueries`: eine invalidierte Query wuerde neu geladen - gegen ein Projekt, das es
+ * nicht mehr gibt. Die Projektliste dagegen soll genau das (neu laden), sie existiert weiter.
+ */
+export function useDeleteProjectMutation(id: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (confirmName: string) => deleteProject(id, confirmName),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.removeQueries({ queryKey: ['project', id] })
+      queryClient.removeQueries({ queryKey: classificationEstimateQueryKey(id) })
+      queryClient.removeQueries({ queryKey: fineLabelsQueryKey(id) })
+      queryClient.removeQueries({ queryKey: projectStatsQueryKey(id) })
     },
   })
 }
@@ -127,7 +151,7 @@ export function useSetCloudVisionConsentMutation(id: number) {
   })
 }
 
-function classificationEstimateQueryKey(id: number) {
+export function classificationEstimateQueryKey(id: number) {
   return ['classification-estimate', id] as const
 }
 
@@ -144,7 +168,7 @@ export function useClassificationEstimateQuery(id: number) {
   })
 }
 
-function fineLabelsQueryKey(id: number) {
+export function fineLabelsQueryKey(id: number) {
   return ['fine-labels', id] as const
 }
 

@@ -15,7 +15,15 @@ import { Dialog } from './dialog'
  * nichts. Deshalb sind Fokusfalle und Esc in eigenem JS implementiert - genau, damit die Zusage
  * ueberhaupt pruefbar ist.
  */
-function TestDialog({ onClose = vi.fn(), open = true }: { onClose?: () => void; open?: boolean }) {
+function TestDialog({
+  onClose = vi.fn(),
+  open = true,
+  cancelDisabled = false,
+}: {
+  onClose?: () => void
+  open?: boolean
+  cancelDisabled?: boolean
+}) {
   return (
     <Dialog
       open={open}
@@ -23,6 +31,7 @@ function TestDialog({ onClose = vi.fn(), open = true }: { onClose?: () => void; 
       title="Klassifizierung starten"
       description="Diese Aktion ist kostenpflichtig."
       icon="cog"
+      cancelDisabled={cancelDisabled}
       actions={<Button type="button">Kostenpflichtig starten</Button>}
     >
       <p>Es werden 42 Fotos verarbeitet.</p>
@@ -170,6 +179,22 @@ describe('Dialog', () => {
     fireEvent.keyDown(dialog, { key: 'Escape' })
 
     expect(onClose).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves the cancel button enabled by default', () => {
+    render(<TestDialog />)
+
+    expect(screen.getByRole('button', { name: 'Abbrechen' })).toBeEnabled()
+  })
+
+  it('disables the cancel button while the caller reports a running request', () => {
+    // specs/features/0044-projekte-loeschen.md: waehrend einer laufenden Anfrage darf auch der
+    // Ausweg "Abbrechen" nicht mehr bedienbar sein - die Anfrage laesst sich nicht abbrechen.
+    // Die Zusage "Esc ruft immer onClose" bleibt davon unberuehrt; sie zu ignorieren ist Sache
+    // des Aufrufers.
+    render(<TestDialog cancelDisabled />)
+
+    expect(screen.getByRole('button', { name: 'Abbrechen' })).toBeDisabled()
   })
 
   it('returns the focus to the triggering element after closing', async () => {

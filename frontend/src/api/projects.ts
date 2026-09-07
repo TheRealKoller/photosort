@@ -32,6 +32,21 @@ export function getProject(id: number): Promise<ProjectOut> {
   return apiFetch<ProjectOut>(`/projects/${id}`)
 }
 
+/**
+ * Loescht ein Projekt und alle PhotoSort-Daten daran (specs/features/0044-projekte-loeschen.md).
+ * Die Original-Fotos auf OpenCloud bleiben unangetastet.
+ *
+ * `confirmName` ist der vom Nutzer eingetippte Projektname. Der Server prueft ihn ein zweites Mal
+ * (`400` bei Abweichung) - eine rein clientseitige Bestaetigung waere gegen direkte API-Nutzung
+ * wirkungslos. `apiFetch` traegt bei jeder Methode einen JSON-Body und behandelt `204` bereits.
+ */
+export function deleteProject(id: number, confirmName: string): Promise<void> {
+  return apiFetch<void>(`/projects/${id}`, {
+    method: 'DELETE',
+    body: { confirm_name: confirmName },
+  })
+}
+
 export function triggerScan(id: number): Promise<TriggerScanResponse> {
   return apiFetch<TriggerScanResponse>(`/projects/${id}/scan`, { method: 'POST' })
 }
