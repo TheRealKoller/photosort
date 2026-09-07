@@ -102,13 +102,16 @@ describe('Button', () => {
     ['secondary', 'border-border-control'],
     ['outline', 'border-border-control'],
     ['ghost', 'bg-transparent'],
+    // Die fuenfte Auspraegung (specs/features/0044-projekte-loeschen.md): gefuellt statt umrandet,
+    // zeichengleich zur primaeren, nur andere Flaeche.
+    ['destructive', 'bg-danger'],
   ] as const)('renders the %s variant with its board surface', (variant, marker) => {
     render(<Button variant={variant}>Aktion</Button>)
 
     expect(screen.getByRole('button', { name: 'Aktion' }).className).toContain(marker)
   })
 
-  it.each(['default', 'secondary', 'outline', 'ghost'] as const)(
+  it.each(['default', 'secondary', 'outline', 'ghost', 'destructive'] as const)(
     'gives the %s variant both a hover and an active state (touch has no hover)',
     (variant) => {
       render(<Button variant={variant}>Aktion</Button>)
@@ -118,6 +121,17 @@ describe('Button', () => {
       expect(className).toMatch(/active:/)
     }
   )
+
+  it('inks the destructive variant with --danger-fg, not with a text colour', () => {
+    // `--danger-fg` (5.51:1 auf `--danger`) ist die Tinte AUF der gefuellten Flaeche und gehoert
+    // zur `-fg`-Familie, nicht zur Textfamilie - `text-danger`/`text-danger-text` waeren hier
+    // beide falsch (specs/features/0044-projekte-loeschen.md).
+    render(<Button variant="destructive">Projekt loeschen</Button>)
+
+    const className = screen.getByRole('button', { name: 'Projekt loeschen' }).className
+    expect(className).toContain('text-danger-fg')
+    expect(className).not.toContain('text-danger-text')
+  })
 
   it('carries the board disabled state', () => {
     render(<Button disabled>Aktion</Button>)
