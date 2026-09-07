@@ -161,6 +161,11 @@ GRUPPEN_VOKABULAR = {"Hintergrund", "Akzent", "Text", "Rahmen", "Kategorie"}
 NAMENS_ZEICHENVORRAT = re.compile(r"^[A-Za-zÄÖÜäöüß /&-]+$")
 ASCII_ERSATZFORMEN = ("Gedaempft", "Gebaeude", "Flaeche")
 SCOPE_VOKABULAR = {"FRAME_FILL", "SHAPE_FILL", "TEXT_FILL", "STROKE_COLOR"}
+# Im gemessenen Inventar steht, was Figma gerade fuehrt - auch ein Vorzustand, den diese Story
+# erst auf Soll zieht. Das Schema prueft deshalb gegen Figmas vollstaendiges Farb-Scope-Vokabular
+# und nicht gegen die vier, auf die sich das Register beschraenkt: Die Einschraenkung ist eine
+# Aussage ueber das Register (AK4), keine ueber den Messwert.
+INVENTAR_SCOPE_VOKABULAR = SCOPE_VOKABULAR | {"ALL_SCOPES", "ALL_FILLS", "EFFECT_COLOR"}
 
 # M2 - byteweise Verbotsliste ueber den Payload. Sie steht hier und im Wortlaut in
 # scripts/figma/README.md, ausdruecklich **nicht** im Payload selbst: sonst faerbte der Payload
@@ -457,10 +462,13 @@ def _variablen_verstoesse(eintraege: Any) -> list[str]:
             befunde.append(f"variablen[].name {eintrag['name']!r}.")
         if not MUSTER_HEX.match(str(eintrag["wert"])):
             befunde.append(f"variablen[].wert {eintrag['wert']!r}.")
-        if not isinstance(eintrag["scopes"], list) or not set(eintrag["scopes"]) <= SCOPE_VOKABULAR:
-            befunde.append(f"variablen[].scopes {eintrag['scopes']!r}.")
-        if not isinstance(eintrag["beschreibung"], str) or not eintrag["beschreibung"].strip():
-            befunde.append(f"variablen[].beschreibung zu {eintrag['name']!r} ist leer.")
+        scopes = eintrag["scopes"]
+        if not isinstance(scopes, list) or not set(scopes) <= INVENTAR_SCOPE_VOKABULAR:
+            befunde.append(f"variablen[].scopes {scopes!r}.")
+        # Nur die Form, nicht der Inhalt: Dass die Beschreibungen nach dem Lauf den Sollwerten
+        # entsprechen, prueft test_jede_variable_traegt_nach_dem_lauf_ihre_registerangaben.
+        if not isinstance(eintrag["beschreibung"], str):
+            befunde.append(f"variablen[].beschreibung zu {eintrag['name']!r} ist kein Text.")
     return befunde
 
 
@@ -1223,6 +1231,25 @@ class TestNachweis:
             assert nachher[name]["wert"] in beschreibung
             for teil in KORREKTUR_PFLICHTTEILE:
                 assert teil in beschreibung, f"{name}: {teil!r} fehlt in der Figma-Beschreibung."
+
+    def test_jede_variable_traegt_nach_dem_lauf_ihre_registerangaben(self) -> None:
+        """AK4, gemessen statt gesetzt: Der Lauf setzt Wert, Scopes und Beschreibung jeder der 23
+        Variablen auf den Sollwert des Registers - erst das Nach-Inventar belegt, dass es auch
+        angekommen ist."""
+        nachher = {e["name"]: e for e in inventar(INVENTAR_NACHHER)["variablen"]}
+
+        for eintrag in register()["variablen"]:
+            gemessen = nachher[eintrag["name"]]
+            assert gemessen["wert"] == eintrag["wert"], (
+                f"{eintrag['name']}: Figma fuehrt {gemessen['wert']}, das Register "
+                f"{eintrag['wert']}."
+            )
+            assert sorted(gemessen["scopes"]) == sorted(eintrag["scopes"]), (
+                f"{eintrag['name']}: Scopes {gemessen['scopes']}, Sollwert {eintrag['scopes']}."
+            )
+            assert gemessen["beschreibung"] == eintrag["beschreibung"], (
+                f"{eintrag['name']}: die Beschreibung in Figma weicht vom Register ab."
+            )
 
     def test_genau_achtundvierzig_hexwerte_aendern_sich_in_zwei_uebergaengen(self) -> None:
         """AK6: genau 48 Aenderungen, sonst nichts."""
