@@ -192,3 +192,27 @@ async def count_rows(session: AsyncSession, table_name: str) -> int:
     Metadaten abgeleitete Tabellenmenge iterieren kann, ohne eine eigene Liste zu fuehren."""
     table = Base.metadata.tables[table_name]
     return (await session.execute(select(func.count()).select_from(table))).scalar_one()
+
+
+def tables_reachable_from_projects() -> set[str]:
+    """Alle Tabellen, die `projects` ueber Fremdschluesselkanten erreichen (transitiv).
+
+    Gelaufen wird von Eltern zu Kindern: eine Tabelle ist erreichbar, wenn sie selbst einen
+    Fremdschluessel auf eine bereits erreichbare Tabelle traegt. `users` und `fine_labels` sind
+    reine Fremdschluessel-ELTERN und tauchen deshalb nie auf - es braucht keine Ausnahmeliste.
+
+    Abgeleitet aus `Base.metadata`, damit weder Test noch Modul eine zweite Tabellenliste fuehrt
+    (specs/features/0044-projekte-loeschen.md, ADR 0062)."""
+    children_by_parent: dict[str, set[str]] = {}
+    for table in Base.metadata.sorted_tables:
+        for foreign_key in table.foreign_keys:
+            children_by_parent.setdefault(foreign_key.column.table.name, set()).add(table.name)
+
+    reachable: set[str] = set()
+    stack = [Project.__tablename__]
+    while stack:
+        for child in children_by_parent.get(stack.pop(), ()):
+            if child not in reachable:
+                reachable.add(child)
+                stack.append(child)
+    return reachable

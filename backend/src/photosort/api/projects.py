@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,9 +34,14 @@ from photosort.models import (
     ScanRun,
     ScanStatus,
     ScoringRun,
+    User,
 )
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
 from photosort.pricing import estimate_usd_per_image
+from photosort.project_deletion import collect_photo_cache_keys, delete_projects
+from photosort.thumbnails import delete_cached_variants
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["projects"], dependencies=[Depends(get_current_user)])
 
@@ -41,6 +49,23 @@ router = APIRouter(prefix="/projects", tags=["projects"], dependencies=[Depends(
 class ProjectCreate(BaseModel):
     name: str
     opencloud_path: str
+
+
+class ProjectDelete(BaseModel):
+    """Der Bestaetigungs-Body von `DELETE /projects/{project_id}` (specs/features/0044-projekte-
+    loeschen.md).
+
+    Die serverseitige Namenspruefung ist eine VORSATZ-, keine Autorisierungshuerde: der
+    Projektname ist fuer beide Nutzer ueber `GET /projects` sichtbar. Sie wirkt gegen ein
+    Versehen und gegen ein blind absetzendes Skript, das die Oberflaeche umgeht - eine rein
+    clientseitige Bestaetigung waere dagegen wirkungslos.
+
+    `max_length=500`: der Projektname selbst ist heute unbegrenzt (`name: str`), eine daran
+    angelehnte Grenze gibt es also nicht. 500 liegt weit ueber jedem realistischen Namen und
+    wehrt nur absurde Payloads ab. Der Wert fliesst in keinen Pfad, keine Query-Konstruktion und
+    keine Logzeile."""
+
+    confirm_name: str = Field(max_length=500)
 
 
 class ScanSummary(BaseModel):
@@ -415,6 +440,92 @@ async def get_project(
 ) -> ProjectOut:
     project = await _get_project_or_404(project_id, session)
     return await _to_project_out(session, project)
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project(
+    project_id: int,
+    payload: ProjectDelete,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Loescht ein Projekt und alle PhotoSort-eigenen Daten daran (specs/features/0044-projekte-
+    loeschen.md). Die Original-Fotos auf OpenCloud bleiben unangetastet - PhotoSort greift dort
+    ausschliesslich lesend zu.
+
+    Reihenfolge der Pruefungen (Architektur-Abschnitt Punkt 2): `404` -> `409` -> `400` ->
+    Foto-Schluessel lesen -> Mengenloeschung + genau ein `commit()` -> best-effort Cache-Cleanup
+    -> `204`. Die Foto-Schluessel muessen VOR der Zeilenloeschung gelesen werden; danach gibt es
+    die Zeilen nicht mehr, aus denen sich die Cache-Pfade berechnen liessen.
+
+    KEIN Owner-Check: jeder eingeloggte Nutzer darf jedes Projekt loeschen (bewusste
+    Produktentscheidung, konsistent mit dem projektweiten "kein Innentaeter-Modell zwischen den
+    beiden Nutzern"; Auth haengt am router-weiten `dependencies=[Depends(get_current_user)]`).
+    `user` steht hier trotzdem als Parameter, weil die Erfolgs-Logzeile die `user.id` nennt - der
+    zweite `Depends(get_current_user)` wird von FastAPI im selben Request zwischengespeichert,
+    ist also kein zweiter Aufruf.
+    """
+    project = await _get_project_or_404(project_id, session)
+
+    # Ein aktiver Lauf schreibt in genau die Zeilen, die gleich verschwinden. Alle VIER Lauftypen
+    # - der Remote-Klassifizierungslauf gehoert zwingend dazu, er schreibt nach
+    # photo_category_classifications/photo_fine_labels/fine_labels. Geprueft wird jeweils nur der
+    # NEUESTE Lauf: ein nicht mehr aktueller RUNNING-Altlauf darf nicht dauerhaft blockieren (ein
+    # haengengebliebener wird ohnehin vom Watchdog auf FAILED gesetzt).
+    latest_runs = (
+        await _latest_scan_run(session, project_id),
+        await _latest_scoring_run(session, project_id),
+        await _latest_criterion_scoring_run(session, project_id),
+        await _latest_remote_category_classification_run(session, project_id),
+    )
+    if any(run is not None and run.status == ScanStatus.RUNNING for run in latest_runs):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Fuer dieses Projekt laeuft gerade ein Vorgang. Warte, bis er fertig ist, "
+            "und versuche es dann erneut.",
+        )
+
+    # `strip()` bewusst NUR serverseitig (die Oberflaeche vergleicht exakt): ein per curl
+    # abgesetzter Name mit Zeilenumbruch soll nicht an einer unsichtbaren Kleinigkeit scheitern,
+    # waehrend die getippte Bestaetigung ihre volle Reibung behaelt. Gross-/Kleinschreibung zaehlt.
+    if payload.confirm_name.strip() != project.name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Der eingegebene Name stimmt nicht mit dem Projektnamen ueberein.",
+        )
+
+    cache_keys = await collect_photo_cache_keys(session, [project_id])
+    try:
+        deleted_rows = await delete_projects(session, [project_id])
+        await session.commit()
+    except IntegrityError as exc:
+        # Unter echtem Postgres moeglich, wenn ein Lauf nebenlaeufig in die gerade geloeschten
+        # Zeilen schreibt. Das ist kein Serverfehler, sondern derselbe "jetzt nicht"-Fall wie der
+        # 409-Waechter oben - und die Datenbankmeldung gehoert nicht in die Antwort.
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Das Projekt konnte nicht geloescht werden, weil gleichzeitig darauf "
+            "geschrieben wurde. Versuche es erneut.",
+        ) from exc
+
+    # Erst NACH dem Commit und best-effort: Dateisystem-Operationen sind nicht Teil der
+    # Transaktion, ein Dateifehler darf die verlangte Datenloeschung nicht nachtraeglich
+    # zunichtemachen. Ueber to_thread, weil das bei mehreren tausend Fotos ebenso viele
+    # unlink-Aufrufe sind, die die Event-Loop nicht blockieren duerfen.
+    await asyncio.to_thread(
+        delete_cached_variants, Path(settings.photo_cache_dir), cache_keys
+    )
+
+    # Die einzige Spur des ersten vernichtenden Vorgangs des Produkts. Bewusst OHNE Projektnamen
+    # (Security-Abschnitt der Spec) und bewusst kein Audit-Log-Feature: keine Tabelle, keine
+    # Oberflaeche, keine Abfrage.
+    logger.info(
+        "Projekt geloescht: user_id=%s project_id=%s geloeschte_zeilen=%s",
+        user.id,
+        project_id,
+        deleted_rows,
+    )
 
 
 @router.post("/{project_id}/scan", status_code=status.HTTP_202_ACCEPTED)

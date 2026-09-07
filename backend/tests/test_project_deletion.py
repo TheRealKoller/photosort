@@ -23,7 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.db import Base
 from photosort.models import Project
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
-from tests.project_graph import build_project_graph, count_rows
+from tests.project_graph import (
+    build_project_graph,
+    count_rows,
+    tables_reachable_from_projects,
+)
 
 _DELETE_TARGET = re.compile(r"\s*DELETE\s+FROM\s+\"?([a-z_]+)\"?", re.IGNORECASE)
 
@@ -56,34 +60,13 @@ def _recorded_delete_targets() -> Iterator[list[str]]:
         event.remove(Engine, "before_cursor_execute", _listener)
 
 
-def _tables_reachable_from_projects() -> set[str]:
-    """Alle Tabellen, die `projects` ueber Fremdschluesselkanten erreichen (transitiv).
-
-    Gelaufen wird von Eltern zu Kindern: eine Tabelle ist erreichbar, wenn sie selbst einen
-    Fremdschluessel auf eine bereits erreichbare Tabelle traegt. `users` und `fine_labels` sind
-    reine Eltern und tauchen deshalb nie auf."""
-    children_by_parent: dict[str, set[str]] = {}
-    for table in Base.metadata.sorted_tables:
-        for foreign_key in table.foreign_keys:
-            children_by_parent.setdefault(foreign_key.column.table.name, set()).add(table.name)
-
-    reachable: set[str] = set()
-    stack = [Project.__tablename__]
-    while stack:
-        for child in children_by_parent.get(stack.pop(), ()):
-            if child not in reachable:
-                reachable.add(child)
-                stack.append(child)
-    return reachable
-
-
 async def test_delete_projects_issues_statements_in_metadata_foreign_key_order(
     db_session: AsyncSession,
 ) -> None:
     """Loeschreihenfolge == `reversed(Base.metadata.sorted_tables)`, eingeschraenkt auf die von
     `projects` erreichbaren Tabellen plus `projects` selbst."""
     graph = await build_project_graph(db_session, "Costa Rica")
-    relevant = _tables_reachable_from_projects() | {Project.__tablename__}
+    relevant = tables_reachable_from_projects() | {Project.__tablename__}
     expected = [
         table.name for table in reversed(Base.metadata.sorted_tables) if table.name in relevant
     ]
@@ -102,7 +85,7 @@ async def test_delete_projects_covers_every_table_reachable_from_projects(
 ) -> None:
     """Vollstaendigkeit: keine ueber einen Fremdschluessel am Projekt haengende Tabelle fehlt."""
     graph = await build_project_graph(db_session, "Costa Rica")
-    expected = _tables_reachable_from_projects()
+    expected = tables_reachable_from_projects()
 
     with _recorded_delete_targets() as targets:
         await delete_projects(db_session, [graph.project_id])
@@ -129,7 +112,7 @@ async def test_delete_projects_removes_every_row_of_the_given_project(
     await delete_projects(db_session, [doomed.project_id])
     await db_session.commit()
 
-    for table_name in sorted(_tables_reachable_from_projects()):
+    for table_name in sorted(tables_reachable_from_projects()):
         assert await count_rows(db_session, table_name) == 1, (
             f"{table_name}: es sollte genau die Zeile von '{kept.project_name}' uebrig bleiben."
         )
@@ -164,7 +147,7 @@ async def test_delete_projects_returns_deleted_row_counts_per_table(
     assert deleted["projects"] == 1
     assert deleted["photos"] == 1
     assert deleted["photo_rankings"] == 1
-    assert set(deleted) == _tables_reachable_from_projects() | {"projects"}
+    assert set(deleted) == tables_reachable_from_projects() | {"projects"}
 
 
 async def test_collect_photo_cache_keys_returns_id_and_etag_of_project_photos(
