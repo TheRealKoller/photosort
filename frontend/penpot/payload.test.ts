@@ -102,22 +102,13 @@ export function streicheKommentare(text: string): string {
 
 /** Das geschlossene Gruppenvokabular der Tokennamen. Eine neue Gruppe wird dadurch bewusst
  * eingetragen, statt als Tippfehler durchzulaufen. */
-const TOKEN_GRUPPEN = [
-  'color',
-  'radius',
-  'space',
-  'font-size',
-  'line-height',
-  'font-weight',
-  'letter-spacing',
-  'font-family',
-] as const
+const TOKEN_GRUPPEN = ['color', 'radius', 'space', 'font-family', 'text'] as const
 
 const TOKENNAME_MUSTER = new RegExp(`\\b(?:${TOKEN_GRUPPEN.join('|')})\\.[a-z0-9-]+`, 'g')
 
 /**
  * Maskiert Tokennamen-Literale zeichen- und zeilentreu. OHNE DIESEN SCHRITT IST DIE REGEL EINE
- * FEHLALARM-MASCHINE: `space.3`, `space.16` und `font-size.2xl` schluegen als blanke Zahlen an,
+ * FEHLALARM-MASCHINE: `space.3`, `space.16` und `text.2xl` schluegen als blanke Zahlen an,
  * und zwar ab dem ersten Lauf und in jeder Datei der Nutzlast.
  */
 export function maskiereTokennamen(text: string): string {
@@ -234,7 +225,7 @@ describe('Vorbehandlung: Kommentarstreichung', () => {
 describe('Vorbehandlung: Maskierung der Tokennamen', () => {
   it('maskiert einen Tokennamen mit Zahl im Blatt', () => {
     expect(maskiereTokennamen('"space.3"')).not.toContain('3')
-    expect(maskiereTokennamen('"font-size.2xl"')).not.toContain('2')
+    expect(maskiereTokennamen('"text.2xl"')).not.toContain('2')
   })
 
   it('maskiert zeichentreu und damit zeilentreu', () => {
@@ -495,7 +486,7 @@ describe('Referentielle Integritaet', () => {
     const verwendet = new Set(
       alleTokennamenAus(dateiVon('components.json').roh).map((name) => name.split('.')[0])
     )
-    expect([...vorhanden].sort()).toEqual(['color', 'font-family', 'font-size', 'radius', 'space'])
+    expect([...vorhanden].sort()).toEqual(['color', 'font-family', 'radius', 'space', 'text'])
     for (const gruppe of vorhanden) {
       expect(verwendet.has(gruppe), gruppe).toBe(true)
     }

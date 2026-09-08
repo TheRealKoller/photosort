@@ -32,7 +32,7 @@
       },
       "tokens": {
         "radius": "radius.sm",
-        "typografie": "font-size.xs",
+        "typografie": "text.xs",
         "hoehe": "space.8",
         "innenabstand-quer": "space.4",
         "innenabstand-laengs": "space.2",
@@ -71,7 +71,7 @@
           },
           "link": {
             "schrift": "color.accent-strong",
-            "typografie": "font-size.sm"
+            "typografie": "text.sm"
           }
         },
         "zustand": {
@@ -105,7 +105,7 @@
         "schrift": "color.text-h",
         "platzhalter": "color.text-muted",
         "textmarke": "color.accent",
-        "typografie": "font-size.sm",
+        "typografie": "text.sm",
         "innenabstand-quer": "space.3"
       },
       "tokensProAuspraegung": {
@@ -153,7 +153,7 @@
       },
       "tokens": {
         "radius": "radius.sm",
-        "typografie": "font-size.xs",
+        "typografie": "text.xs",
         "hoehe": "space.6",
         "innenabstand-quer": "space.2",
         "abstand": "space.1"
@@ -223,7 +223,7 @@
         "abstand": "space.2",
         "dateiname-schrift": "color.text",
         "dateiname-schriftfamilie": "font-family.mono",
-        "dateiname-typografie": "font-size.xs"
+        "dateiname-typografie": "text.xs"
       },
       "tokensProAuspraegung": {
         "bewertung": {
@@ -261,7 +261,7 @@
         "flaeche": "color.elevated",
         "innenabstand": "space.3",
         "abstand": "space.3",
-        "typografie": "font-size.sm",
+        "typografie": "text.sm",
         "titel-schrift": "color.text-h"
       },
       "tokensProAuspraegung": {
@@ -329,7 +329,7 @@
         "umriss": "color.border-control",
         "marke": "color.accent",
         "schrift": "color.text-h",
-        "typografie": "font-size.sm",
+        "typografie": "text.sm",
         "abstand": "space.3"
       },
       "tokensProAuspraegung": {
@@ -425,8 +425,8 @@
         "abstand": "space.6",
         "aktionsabstand": "space.3",
         "titel-schrift": "color.text-h",
-        "titel-typografie": "font-size.lg",
-        "beitext-typografie": "font-size.sm"
+        "titel-typografie": "text.lg",
+        "beitext-typografie": "text.sm"
       }
     },
     {
@@ -454,7 +454,7 @@
       },
       "tokens": {
         "radius": "radius.xl",
-        "typografie": "font-size.xs",
+        "typografie": "text.xs",
         "innenabstand-quer": "space.3",
         "innenabstand-laengs": "space.1"
       },

@@ -21,13 +21,21 @@
 /** Penpot-Tokentyp je Namensgruppe (ADR 0065 Abschnitt 2, am 2026-09-08 an einer verbundenen
  * Instanz gemessen). Die sieben Schriftstufen sind **Verbundtokens** vom Typ `typography`: Penpot
  * kennt keinen Token-Typ fuer Zeilenhoehen, und eine Stufe wird beim Entwerfen ohnehin in einem
- * Zug angewandt. */
+ * Zug angewandt.
+ *
+ * Ihre Gruppe heisst `text` und nicht `font-size`: Das Token traegt neben der Groesse auch
+ * Zeilenhoehe, Schnitt und Laufweite - ein Gruppenname `font-size` verspraeche weniger, als
+ * darin steckt. `text.base` spiegelt ausserdem `--text-base` aus index.css unmittelbar.
+ *
+ * Die Tabelle ist zugleich das GESCHLOSSENE Gruppenvokabular und erschoepfend: genau die fuenf
+ * Gruppen, die es gibt, keine auf Vorrat. Eine erlaubte, aber unbenutzte Gruppe waere eine
+ * Zusicherung, die nichts zusichert. */
 export const TOKEN_TYPE_BY_GROUP: Readonly<Record<string, string>> = {
   color: 'color',
   radius: 'borderRadius',
   space: 'spacing',
   'font-family': 'fontFamilies',
-  'font-size': 'typography',
+  text: 'typography',
 }
 
 /**
@@ -241,8 +249,8 @@ export function buildTokens(css: string): TokenBuildResult {
         wert = leererTypografieWert()
         typoStufen.set(stufe, wert)
         tokens.push({
-          name: `font-size.${stufe}`,
-          type: TOKEN_TYPE_BY_GROUP['font-size'],
+          name: `text.${stufe}`,
+          type: TOKEN_TYPE_BY_GROUP.text,
           value: wert,
         })
       }

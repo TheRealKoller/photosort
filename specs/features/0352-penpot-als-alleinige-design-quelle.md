@@ -162,7 +162,11 @@ ausgeschlossen und dabei gezählt. Einzige bewusste Übersetzung: Schriftfamilie
 Primärfamilie (`Inter`, `JetBrains Mono`), nicht den CSS-Fallback-Stack.
 
 **Benennung in Penpot:** `<gruppe>.<blatt>`, Blatt = exakt der CSS-Tokenname ohne `--`
-(`color.text-muted`, `color.chip-menschen-bg`, `radius.sm`, `font-size.2xl`, `space.3` = `p-3`).
+(`color.text-muted`, `color.chip-menschen-bg`, `radius.sm`, `space.3` = `p-3`). Die einzige
+Ausnahme von der Blatt-Regel sind die sieben Schriftstufen: Sie tragen die Gruppe **`text`** und
+als Blatt die Stufe (`text.xs` … `text.3xl`), spiegeln damit `--text-xs` unmittelbar und
+versprechen nicht — wie ein Gruppenname `font-size` es täte — weniger, als das Verbundtoken
+tatsächlich trägt.
 Ein Token-Satz namens `photosort`, kein zweites Set und kein Theme — es gibt nur ein Farbschema.
 
 ### Was im Repo entsteht
@@ -287,8 +291,9 @@ vor dem ersten Schreibzugriff, nicht nur als Prosa im Skill. **Kein Skript lösc
   - **Laufweite muss eine blanke Zahl in px sein.** `-0.02em` wird als Tokenwert akzeptiert und
     löst zu `-0.02` auf, kommt an der Textform aber als `0` an. Der Erzeuger rechnet em gegen die
     Schriftgröße der Stufe um (`-0.02em` bei 64px → `-1.28`); als Zahl greift sie nachweislich.
-  - **Referenzen im Verbundtoken funktionieren:** `{font-family.sans}` und `{font-size.base}`
-    lösen innerhalb eines `typography`-Werts korrekt auf.
+  - **Referenzen im Verbundtoken funktionieren:** eine Referenz der Form `{font-family.sans}`
+    löst innerhalb eines `typography`-Werts korrekt auf, sowohl für die Familie als auch für die
+    Größe.
 - `design/` ist ein neues Wurzelverzeichnis. Von `scripts/tests/test_verweisnummern_in_markdown.py`
   erfasst — `design/penpot/README.md` muss die Nummernregel bei Verweisen auf ADR 0064/0065
   einhalten.
@@ -522,9 +527,11 @@ sie die Gegenprobe. `README.md` ist Prosa und bleibt außen vor.
    zwänge zum Ausdünnen eines bewusst vollständigen Satzes); stattdessen eine
    **Gruppen**-Zusicherung: jede Tokengruppe wird von mindestens einem Baustein verwendet.
 3. **Namensform:**
-   `^(color|radius|space|font-size|line-height|font-weight|letter-spacing|font-family)\.[a-z0-9-]+$`
-   — geschlossenes Gruppenvokabular, damit eine neue Gruppe bewusst eingetragen wird statt als
-   Tippfehler durchzulaufen.
+   `^(color|radius|space|font-family|text)\.[a-z0-9-]+$` — geschlossenes Gruppenvokabular,
+   damit eine neue Gruppe bewusst eingetragen wird statt als Tippfehler durchzulaufen. Das
+   Vokabular ist **erschöpfend**: Es nennt genau die fünf Gruppen, die `tokens.json` führt, und
+   keine auf Vorrat. Eine erlaubte, aber unbenutzte Gruppe wäre eine Zusicherung, die nichts
+   zusichert.
 4. **Die zehn Bausteine als geschlossene Namensmenge, nicht als Kardinalität.** „Genau zehn"
    bestünden auch zehn beliebige.
 5. **Zustandsabdeckung gegen den Produktcode, nicht gegen eine gepflegte Liste.** „Mindestens ein
@@ -561,7 +568,7 @@ Suchraums.
 **Zwei Vorbehandlungsschritte, beide mit eigenem Selbsttest:** zeilentreue Kommentarstreichung
 (ein Wert in einem Kommentar erreicht Penpot nicht; die Zeilenzahl muss erhalten bleiben, sonst
 zeigen Meldungen nach einem Blockkommentar auf die falsche Zeile) und **zeilentreue Maskierung
-der Tokennamen-Literale** — ohne sie schlagen `space.3`, `space.16`, `font-size.2xl` als blanke
+der Tokennamen-Literale** — ohne sie schlagen `space.3`, `space.16`, `text.2xl` als blanke
 Zahlen an, und das ist der Fehlalarm, der die Regel sofort unbrauchbar machte.
 
 **Vier Musterfamilien:** Hex (`3`–`8`-stellig — eine auf `{6}` verengte Suche wäre genau das
