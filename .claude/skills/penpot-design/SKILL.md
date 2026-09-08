@@ -61,6 +61,18 @@ Alles, was ausgeführt wird, liegt unter `design/penpot/` (siehe `design/penpot/
 
 **Tokens → Symbole → Bausteine → Varianten → Rücklesen.** Jeder Schritt ist ein eigener `execute_code`-Aufruf, dessen Ergebnis vor dem nächsten gelesen wird; ein Fehlschlag bleibt dadurch lokal und der Wiederanlauf beginnt nicht von vorn.
 
+### ⚠ Eine Zeitüberschreitung beim Bausteinschritt ist kein Fehlschlag
+
+`seed-components.js` baut 144 Varianten mit je rund einem Dutzend API-Aufrufen. Das dauert **länger, als `execute_code` auf eine Antwort wartet**: Der Aufruf endet mit „The operation timed out", **während die Arbeit vollständig ausgeführt wird**. Gemessen beim ersten echten Lauf — alle zehn Bausteine, alle 144 Varianten und alle Bindungen waren danach da.
+
+Das ist die gefährlichste Meldung dieses Ablaufs, weil sie wie ein Fehlschlag aussieht und keiner ist. Deshalb gilt hier eine feste Reihenfolge:
+
+1. **Nicht reagieren, sondern erst zurücklesen.** Zahl der Variantenbehälter und ihrer Ausprägungen ermitteln (`verify.js` oder eine kurze Abfrage). **Erst das Ergebnis entscheidet, ob etwas fehlt** — nicht die Meldung.
+2. Steht der Stand vollständig, ist der Schritt **erledigt**. Es wird nichts wiederholt.
+3. Fehlt tatsächlich etwas, ist die Datei **nicht mehr leer**, und ein zweiter Lauf trifft den Fail-closed-Wächter von `seed-components.js`. **Dieser Abbruch ist die richtige Antwort und wird nicht umgangen** — weder durch Umschreiben der Nutzlast noch durch einen Aufruf ohne die Prüfung. Der Weg zurück führt über eine leere oder neu aufgebaute Datei, nicht über den Wächter hinweg.
+
+Wer die Zeitüberschreitung für den eigentlichen Fehler hält und den Wächter aus dem Weg räumt, zerstört den gerade gebauten Stand — und der ist nach ADR [`0064`](../../../specs/decisions/0064-penpot-als-design-quelle-rangfolge-umgekehrt.md) das Original, keine Kopie.
+
 **Was ein erneuter Lauf überschreiben darf, ist nach Art verschieden:**
 
 - `seed-tokens.js` und `seed-icons.js` dürfen **jederzeit** erneut laufen.

@@ -77,6 +77,15 @@ Vorbedingung steht deshalb fail-closed im Skript selbst, vor dem ersten Schreibz
 **Kein Skript löscht je etwas.** Findet ein Lauf in Penpot ein Token, das der Erzeuger nicht
 kennt, bleibt es unangetastet und wird als **Befund** gemeldet — nicht als Fehler gewertet.
 
+**⚠ Eine Zeitüberschreitung dieses Schritts ist kein Fehlschlag.** 144 Varianten mit je rund einem
+Dutzend API-Aufrufen dauern länger, als `execute_code` auf eine Antwort wartet: Der Aufruf endet
+mit „The operation timed out", **während die Arbeit vollständig ausgeführt wird** (beim ersten
+echten Lauf gemessen). Vor jeder Reaktion wird der Stand **zurückgelesen** — erst das Ergebnis
+entscheidet, ob etwas fehlt, nicht die Meldung. Fehlt tatsächlich etwas, ist die Datei nicht mehr
+leer, und ein zweiter Lauf trifft den Wächter oben: Dessen Abbruch ist dann die **richtige**
+Antwort und wird nicht umgangen. Der ausführliche Ablauf steht im Skill `penpot-design`,
+Schritt 2.
+
 Was `seed-components.js` aufbaut, ist der token-gebundene Rumpf: je Variante ein Brett mit
 Beschriftung, dessen Fläche, Umriss, Radius, Innenabstände und Schriftmerkmale an Tokens gebunden
 sind, daraus je eine Bibliotheks-Komponente, und daraus je Baustein ein Varianten-Container.

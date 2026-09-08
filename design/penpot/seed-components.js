@@ -17,6 +17,20 @@
  *   const BAUSTEINE = <exakter Inhalt von components.json>;
  * gefolgt von dieser Datei, unveraendert.
  *
+ * ⚠ EINE ZEITUEBERSCHREITUNG DIESES AUFRUFS IST KEIN FEHLSCHLAG. 144 Varianten mit je rund einem
+ * Dutzend API-Aufrufen dauern laenger, als `execute_code` auf eine Antwort wartet: Der Aufruf
+ * endet mit "The operation timed out", waehrend die Arbeit vollstaendig ausgefuehrt wird - beim
+ * ersten echten Lauf gemessen, alle zehn Bausteine und alle Bindungen waren danach da. Bei 144
+ * Varianten ist das der NORMALFALL, nicht der Ausnahmefall.
+ *
+ * Vor jeder Reaktion wird der Stand ZURUECKGELESEN (Zahl der Variantenbehaelter und ihrer
+ * Auspraegungen). Erst das Ergebnis entscheidet, ob etwas fehlt - nicht die Meldung. Fehlt
+ * tatsaechlich etwas, ist die Datei nicht mehr leer, und ein zweiter Lauf trifft den
+ * fail-closed-Waechter unten: Dessen Abbruch ist dann die RICHTIGE Antwort und wird nicht
+ * umgangen. Der Weg zurueck fuehrt ueber eine leere oder neu aufgebaute Datei, nie ueber den
+ * Waechter hinweg - wer ihn fuer den eigentlichen Fehler haelt, zerstoert den gerade gebauten
+ * Stand, und der ist nach ADR 0064 das Original, keine Kopie.
+ *
  * `execute_code` FUEHRT DEN TEXT ALS FUNKTIONSRUMPF AUS und liefert nur zurueck, was ein `return`
  * zurueckgibt (gemessen) - deshalb endet diese Datei, wie alle vier, auf ein `return`.
  *
