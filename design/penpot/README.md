@@ -149,6 +149,14 @@ abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0065`, Absch
   `fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`) — die Pluralformen sind die Leseform;
   und ein Token-Satz wirkt erst nach `toggleActive()` (`seed-tokens.js` schaltet ihn ein, aber nur
   wenn er nachweislich inaktiv ist — `toggleActive` schaltet um und wäre sonst nicht wiederholbar).
+- **Im Verbundwert trägt ein Feld einen Wert oder fehlt ganz.** Eine leere Zeichenkette ist ein
+  **ungültiger** Wert und lässt den ganzen Aufruf scheitern (`Field 0.value is invalid`) — daran
+  ist der erste echte Lauf abgebrochen. `--text-xs`/`--text-sm` tragen deshalb schlicht kein
+  `fontWeight`-Feld, `--text-3xl` als einzige ein `letterSpacing`. An der Zusage dahinter ändert
+  das nichts: Es wird weiterhin kein Standardschnitt erfunden. Ein leeres Feld irgendwo im
+  Erzeugnis ist seither ein roter Test.
+- **`fontSize` trägt seine Einheit** (`"12px"`) — gemessen gültig; der letzte offene Punkt aus der
+  ersten Umsetzungsrunde ist damit erledigt.
 - **`execute_code` führt den Text als Funktionsrumpf aus** und liefert nur zurück, was ein
   `return` zurückgibt. Alle vier Dateien enden deshalb auf ein `return`; ein blanker Ausdruck ginge
   still verloren — bei `verify.js` wäre das der gesamte nachprüfbare Abschluss.

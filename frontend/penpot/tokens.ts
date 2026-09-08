@@ -43,9 +43,16 @@ export const TOKEN_TYPE_BY_GROUP: Readonly<Record<string, string>> = {
  * dokumentierten `TokenTypographyValue` sind die LESEform (`resolvedValue`) und werden als
  * Schreibwert abgelehnt (gemessen).
  *
- * Alle fuenf Felder stehen immer da. Wo der Bestand keines hat, bleibt es LEER: `--text-xs` und
- * `--text-sm` tragen kein `--font-weight`, nur `--text-3xl` traegt ein `--letter-spacing`. Einen
- * Standardwert `400` zu ergaenzen waere genau die getippte Wertekopie, die ADR 0065 verbietet.
+ * EIN FELD TRAEGT EINEN WERT ODER FEHLT GANZ. Eine leere Zeichenkette ist ein ungueltiger Wert
+ * und laesst den ganzen Aufruf scheitern ("Field 0.value is invalid") - am 2026-09-08 an der
+ * laufenden Instanz gemessen, nachdem genau daran der erste echte Lauf abgebrochen ist.
+ *
+ * Wo der Bestand kein Feld hat, FEHLT es deshalb: `--text-xs` und `--text-sm` tragen kein
+ * `--font-weight`, nur `--text-3xl` traegt ein `--letter-spacing`. An der Zusage dahinter aendert
+ * das nichts - einen Standardwert `400` zu ergaenzen waere weiterhin genau die getippte
+ * Wertekopie, die ADR 0065 verbietet; das Feld ist nur nicht mehr leer da, sondern gar nicht.
+ *
+ * `fontSize` traegt seine Einheit (`"12px"`) - ebenfalls gemessen und gueltig.
  */
 export interface TypografieWert {
   /** Verweis auf eines der beiden Familientokens statt einer Wiederholung des Namens -
@@ -53,12 +60,14 @@ export interface TypografieWert {
   fontFamily: string
   fontSize: string
   lineHeight: string
-  fontWeight: string
+  fontWeight?: string
   /** Blanke Zahl in px. Ein em-Wert wird als Tokenwert zwar akzeptiert, kommt an der Textform
    * aber als `0` an (gemessen) - deshalb gegen die Schriftgroesse der Stufe umgerechnet. */
-  letterSpacing: string
+  letterSpacing?: string
 }
 
+/** Feste Feldreihenfolge des Verbundwerts. Die ersten drei sind Pflicht, die beiden letzten
+ * stehen nur da, wenn `index.css` sie fuehrt. */
 export const TYPOGRAFIE_FELDER = [
   'fontFamily',
   'fontSize',
@@ -66,6 +75,8 @@ export const TYPOGRAFIE_FELDER = [
   'fontWeight',
   'letterSpacing',
 ] as const
+
+export const TYPOGRAFIE_PFLICHTFELDER = ['fontFamily', 'fontSize', 'lineHeight'] as const
 
 export interface PenpotToken {
   /** `<gruppe>.<blatt>`; das Blatt ist der CSS-Tokenname ohne `--` bzw. ohne das Gruppenpraefix,
@@ -174,14 +185,31 @@ export function letterSpacingToPixels(value: string, fontSize: string): string {
   return String(Number(pixels.toFixed(4)))
 }
 
-function leererTypografieWert(): TypografieWert {
-  return {
-    fontFamily: TYPO_FAMILIENVERWEIS,
-    fontSize: '',
-    lineHeight: '',
-    fontWeight: '',
-    letterSpacing: '',
+/** Die Felder einer Stufe, waehrend sie eingesammelt werden. Erst `festerTypografieWert` macht
+ * daraus den Schreibwert - mit fester Feldreihenfolge und ohne leere Felder. */
+interface TypoRohwert {
+  fontSize?: string
+  lineHeight?: string
+  fontWeight?: string
+  letterSpacing?: string
+}
+
+function festerTypografieWert(stufe: string, roh: TypoRohwert): TypografieWert {
+  // FEHLSCHLAGEN STATT UEBERSPRINGEN: Groesse und Zeilenhoehe sind Pflicht. Fehlte eine, entstuende
+  // sonst ein halbes Token, das in Penpot als gueltig durchginge.
+  if (roh.fontSize === undefined || roh.lineHeight === undefined) {
+    throw new Error(`Schriftstufe ${stufe} ohne Groesse oder Zeilenhoehe.`)
   }
+  const wert: TypografieWert = {
+    fontFamily: TYPO_FAMILIENVERWEIS,
+    fontSize: roh.fontSize,
+    lineHeight: roh.lineHeight,
+  }
+  // Ein Feld ohne Wert wird WEGGELASSEN, nie als leere Zeichenkette gesetzt - die waere ein
+  // ungueltiger Wert und liesse den ganzen Aufruf scheitern (gemessen).
+  if (roh.fontWeight !== undefined) wert.fontWeight = roh.fontWeight
+  if (roh.letterSpacing !== undefined) wert.letterSpacing = roh.letterSpacing
+  return wert
 }
 
 /** Liest den `:root`- und den `@theme`-Block und uebersetzt sie in die Penpot-Tokenliste. Die
@@ -212,7 +240,9 @@ export function buildTokens(css: string): TokenBuildResult {
   let spacingBase = DEFAULT_SPACING_BASE
   /** Je Stufe genau EIN Verbundtoken, angelegt bei ihrer ersten Deklaration und danach befuellt -
    * dadurch bleibt die Reihenfolge die Deklarationsreihenfolge. */
-  const typoStufen = new Map<string, TypografieWert>()
+  const typoStufen = new Map<string, TypoRohwert>()
+  /** Reihenfolge der Stufen, damit der feste Wert am Ende an derselben Stelle steht. */
+  const typoTokens = new Map<string, PenpotToken>()
   /** Die Laufweite braucht die Schriftgroesse derselben Stufe; sie kann im CSS davor stehen. */
   const offeneLaufweiten: [string, string][] = []
 
@@ -244,19 +274,22 @@ export function buildTokens(css: string): TokenBuildResult {
         excludedInitialTokens.push(name)
         continue
       }
-      let wert = typoStufen.get(stufe)
-      if (wert === undefined) {
-        wert = leererTypografieWert()
-        typoStufen.set(stufe, wert)
-        tokens.push({
+      let roh = typoStufen.get(stufe)
+      if (roh === undefined) {
+        roh = {}
+        typoStufen.set(stufe, roh)
+        const token: PenpotToken = {
           name: `text.${stufe}`,
           type: TOKEN_TYPE_BY_GROUP.text,
-          value: wert,
-        })
+          // Platzhalter; am Ende durch den festen Verbundwert ersetzt.
+          value: '',
+        }
+        typoTokens.set(stufe, token)
+        tokens.push(token)
       }
-      if (text[2] === undefined) wert.fontSize = value
-      else if (text[2] === '--line-height') wert.lineHeight = value
-      else if (text[2] === '--font-weight') wert.fontWeight = value
+      if (text[2] === undefined) roh.fontSize = value
+      else if (text[2] === '--line-height') roh.lineHeight = value
+      else if (text[2] === '--font-weight') roh.fontWeight = value
       else offeneLaufweiten.push([stufe, value])
       continue
     }
@@ -265,11 +298,15 @@ export function buildTokens(css: string): TokenBuildResult {
   }
 
   for (const [stufe, laufweite] of offeneLaufweiten) {
-    const wert = typoStufen.get(stufe)
-    if (wert === undefined || wert.fontSize === '') {
+    const roh = typoStufen.get(stufe)
+    if (roh === undefined || roh.fontSize === undefined) {
       throw new Error(`Laufweite an Stufe ${stufe} ohne zugehoerige Schriftgroesse.`)
     }
-    wert.letterSpacing = letterSpacingToPixels(laufweite, wert.fontSize)
+    roh.letterSpacing = letterSpacingToPixels(laufweite, roh.fontSize)
+  }
+
+  for (const [stufe, token] of typoTokens) {
+    token.value = festerTypografieWert(stufe, typoStufen.get(stufe) ?? {})
   }
 
   const basePixels = lengthToPixels(spacingBase, '--spacing')

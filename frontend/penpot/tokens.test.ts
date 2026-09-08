@@ -26,6 +26,7 @@ import {
   SPACING_STEPS,
   TOKEN_TYPE_BY_GROUP,
   TYPOGRAFIE_FELDER,
+  TYPOGRAFIE_PFLICHTFELDER,
   type PenpotToken,
   type TypografieWert,
 } from './tokens.ts'
@@ -120,10 +121,26 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
         expect(feld, token.name).not.toContain('var(')
         expect(feld, token.name).not.toBe('initial')
       }
-      if (typeof token.value === 'string') {
-        expect(token.value.length, token.name).toBeGreaterThan(0)
+    }
+  })
+
+  /*
+   * KEIN LEERES FELD IRGENDWO IM ERZEUGNIS. Das ist die Regel, die den ersten echten Lauf
+   * gerettet haette: Im `typography`-Verbundwert ist eine leere Zeichenkette ein UNGUELTIGER Wert
+   * und laesst den ganzen Aufruf scheitern ("Field 0.value is invalid") - ein Feld traegt einen
+   * Wert oder fehlt ganz. Gemessen am 2026-09-08 an der laufenden Instanz.
+   */
+  it('gibt nirgends ein leeres Feld aus', () => {
+    for (const token of tokens) {
+      const felder = typeof token.value === 'string' ? [token.value] : Object.values(token.value)
+      for (const feld of felder) {
+        expect(feld, token.name).not.toBe('')
+        expect(String(feld).trim().length, token.name).toBeGreaterThan(0)
       }
     }
+    // Gegenprobe an der Serialisierung: auch kein `null` und kein `undefined` im Erzeugnis.
+    expect(serializeTokens(tokens)).not.toContain('""')
+    expect(serializeTokens(tokens)).not.toContain('null')
   })
 
   /*
@@ -141,10 +158,32 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
       )
     })
 
-    it('traegt je Verbundtoken alle fuenf Felder in Singularform', () => {
+    /* Die Felder stehen in fester Reihenfolge und in Singularform; weggelassen wird nur, was
+       index.css nicht fuehrt. Ein Feld ausserhalb des Vokabulars faellt hier auf. */
+    it('traegt seine Felder in Singularform und fester Reihenfolge', () => {
       for (const stufe of stufen) {
-        expect(Object.keys(typografieWert(`text.${stufe}`)), stufe).toEqual([...TYPOGRAFIE_FELDER])
+        const felder = Object.keys(typografieWert(`text.${stufe}`))
+        expect(felder, stufe).toEqual(TYPOGRAFIE_FELDER.filter((feld) => felder.includes(feld)))
+        for (const feld of felder) {
+          expect(TYPOGRAFIE_FELDER, `${stufe}: ${feld}`).toContain(feld)
+        }
       }
+    })
+
+    it('traegt Familie, Groesse und Zeilenhoehe immer', () => {
+      for (const stufe of stufen) {
+        const wert: Record<string, string | undefined> = { ...typografieWert(`text.${stufe}`) }
+        for (const feld of TYPOGRAFIE_PFLICHTFELDER) {
+          expect(Object.keys(wert), `${stufe}: ${feld}`).toContain(feld)
+          expect(wert[feld], `${stufe}: ${feld}`).not.toBe('')
+        }
+      }
+    })
+
+    it('scheitert an einer Schriftstufe ohne Groesse oder Zeilenhoehe', () => {
+      expect(() =>
+        buildTokens(':root {\n  --bg: #0b0c10;\n}\n@theme {\n  --text-xs: 12px;\n}')
+      ).toThrow(/xs/)
     })
 
     it('verweist fuer die Familie auf das Familientoken, statt es zu wiederholen', () => {
@@ -155,6 +194,7 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
       expect(tokens.some((token) => token.name === 'font-family.sans')).toBe(true)
     })
 
+    /* `fontSize` traegt seine Einheit - an der laufenden Instanz als gueltig gemessen. */
     it('traegt Groesse und Zeilenhoehe jeder Stufe aus index.css', () => {
       expect([
         typografieWert('text.xs').fontSize,
@@ -165,19 +205,21 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
         typografieWert('text.3xl').lineHeight,
       ]).toEqual(['64px', '1.05'])
       for (const stufe of stufen) {
-        expect(typografieWert(`text.${stufe}`).fontSize, stufe).not.toBe('')
-        expect(typografieWert(`text.${stufe}`).lineHeight, stufe).not.toBe('')
+        expect(typografieWert(`text.${stufe}`).fontSize, stufe).toMatch(/^[0-9]+px$/)
+        expect(typografieWert(`text.${stufe}`).lineHeight, stufe).toMatch(/^[0-9.]+$/)
       }
     })
 
     /* AM BESTAND AUSGEMESSEN, nicht ueberschlagen: fuenf Stufen tragen einen Schnitt, xs und sm
        nicht. Ein ergaenzter Standardwert `400` waere genau die getippte Wertekopie, die ADR 0065
        verbietet - das Feld bleibt deshalb leer. */
-    it('laesst den Schnitt leer, wo index.css keinen fuehrt', () => {
-      expect(typografieWert('text.xs').fontWeight).toBe('')
-      expect(typografieWert('text.sm').fontWeight).toBe('')
+    /* WEGGELASSEN, NICHT LEER: `--text-xs`/`--text-sm` tragen keinen Schnitt. Ein ergaenzter
+       Standardwert `400` waere die getippte Wertekopie, ein leeres Feld ein ungueltiger Wert. */
+    it('laesst den Schnitt weg, wo index.css keinen fuehrt', () => {
+      expect(Object.keys(typografieWert('text.xs'))).not.toContain('fontWeight')
+      expect(Object.keys(typografieWert('text.sm'))).not.toContain('fontWeight')
       expect(
-        stufen.filter((stufe) => typografieWert(`text.${stufe}`).fontWeight !== '')
+        stufen.filter((stufe) => 'fontWeight' in typografieWert(`text.${stufe}`))
       ).toEqual(['base', 'lg', 'xl', '2xl', '3xl'])
       expect(typografieWert('text.3xl').fontWeight).toBe('700')
     })
@@ -187,7 +229,7 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
        an (gemessen). Umgerechnet gegen die Schriftgroesse der Stufe greift sie nachweislich. */
     it('rechnet die Laufweite von em in eine blanke px-Zahl um', () => {
       expect(
-        stufen.filter((stufe) => typografieWert(`text.${stufe}`).letterSpacing !== '')
+        stufen.filter((stufe) => 'letterSpacing' in typografieWert(`text.${stufe}`))
       ).toEqual(['3xl'])
       expect(typografieWert('text.3xl').letterSpacing).toBe('-1.28')
       expect(typografieWert('text.3xl').letterSpacing).not.toContain('em')
