@@ -1049,9 +1049,12 @@ const AUFRUFFORMEN: {
       schluesselVon(argumente[0]).join(',') === 'name,type,value',
   },
   {
+    // Das erste Argument ist eine Formen-MENGE, nie eine Einzelform (gemessen). Statisch
+    // greifbar ist hier nur die Stelligkeit - dass es tatsaechlich eine Menge ist, sichert die
+    // dateispezifische Regel weiter unten ("auf die Blattformen, nicht auf die Gruppe").
     name: 'applyToShapes',
-    erwartung: 'zwei Argumente, das erste ein Formen-Array',
-    haelt: (argumente) => argumente.length === 2 && argumente[0].type === 'ArrayExpression',
+    erwartung: 'zwei Argumente (Formenmenge und Eigenschaft)',
+    haelt: (argumente) => argumente.length === 2,
   },
   {
     name: 'createComponent',
@@ -1145,11 +1148,95 @@ describe('Die Form der Plugin-API-Aufrufe', () => {
       )
     ).toBe(true)
     expect(
-      form('applyToShapes').haelt(argumenteVon("token.applyToShapes(form, 'fill')", 'applyToShapes'))
+      form('applyToShapes').haelt(argumenteVon("token.applyToShapes(formen)", 'applyToShapes'))
     ).toBe(false)
+    expect(
+      form('applyToShapes').haelt(argumenteVon("token.applyToShapes(formen, 'fill')", 'applyToShapes'))
+    ).toBe(true)
     expect(
       form('createComponent').haelt(argumenteVon('bib.createComponent(brett)', 'createComponent'))
     ).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Der Symbolimport
+// ---------------------------------------------------------------------------------------------
+
+/** Sucht im geparsten Baum nach Knoten, fuer die das Praedikat zutrifft. */
+function knoten(quelltext: string, trifft: (eintrag: Record<string, unknown>) => boolean) {
+  const gefunden: Record<string, unknown>[] = []
+  const gehe = (wert: unknown): void => {
+    if (wert === null || typeof wert !== 'object') return
+    if (Array.isArray(wert)) {
+      for (const kind of wert) gehe(kind)
+      return
+    }
+    const eintrag = wert as Record<string, unknown>
+    if (typeof eintrag.type === 'string' && trifft(eintrag)) gefunden.push(eintrag)
+    for (const teil of Object.values(eintrag)) gehe(teil)
+  }
+  gehe(geparst(quelltext))
+  return gefunden
+}
+
+function enthaeltBezeichner(wurzel: unknown, name: string): boolean {
+  let gefunden = false
+  const gehe = (wert: unknown): void => {
+    if (gefunden || wert === null || typeof wert !== 'object') return
+    if (Array.isArray(wert)) {
+      for (const kind of wert) gehe(kind)
+      return
+    }
+    const eintrag = wert as Record<string, unknown>
+    if (eintrag.type === 'Identifier' && eintrag.name === name) {
+      gefunden = true
+      return
+    }
+    for (const teil of Object.values(eintrag)) gehe(teil)
+  }
+  gehe(wurzel)
+  return gefunden
+}
+
+describe('Der Symbolimport', () => {
+  const quelltext = dateiVon('seed-icons.js').roh
+
+  /*
+   * EINE GRUPPE TRAEGT IN PENPOT KEINEN EIGENEN STRICH. Das Strichfarben-Token auf das Ergebnis
+   * von `createShapeFromSvg` anzuwenden lief im echten Lauf ins Leere: Die Gruppe blieb ohne
+   * Bindung, der Pfad darunter kam schwarz an. Angewandt wird es deshalb auf eine daraus
+   * ABGELEITETE Blattform-Menge - und genau das ist hier festgehalten.
+   */
+  it('wendet das Token auf die Blattformen an, nicht auf die Gruppe', () => {
+    const stellen = aufrufe(quelltext).filter((aufruf) => aufruf.name === 'wendeTokenAn')
+    expect(stellen.length, 'wendeTokenAn kommt nicht vor').toBeGreaterThan(0)
+    for (const stelle of stellen) {
+      const erstes = stelle.argumente[0]
+      expect(erstes?.type, 'erstes Argument').toBe('CallExpression')
+      expect((erstes?.callee as Record<string, unknown>)?.name).toBe('blattformen')
+    }
+  })
+
+  /* Rekursiv, nicht nur eine Ebene: die heutigen Symbolgruppen sind flach, ein kuenftiges Symbol
+     mit verschachtelter Gruppe verloere sonst still seine Farbe. */
+  it('sammelt die Blattformen rekursiv ein', () => {
+    const rekursiv = aufrufe(quelltext).filter((aufruf) => aufruf.name === 'blattformen')
+    // Der Aufruf in `main` plus mindestens ein Selbstaufruf in der Funktion.
+    expect(rekursiv.length).toBeGreaterThan(1)
+  })
+
+  /*
+   * DER PRAEFIX WIRD GENAU EINMAL GESETZT. Ihn zusaetzlich ueber `komponente.name` zu setzen hing
+   * ihn ein zweites Mal vor den bereits bestehenden Pfad (gemessen: `path: "symbol / symbol"`).
+   * Geprueft ueber die geparsten Zuweisungen, nicht ueber eine Textsuche.
+   */
+  it('setzt den Pfadpraefix je Symbol genau einmal', () => {
+    const zuweisungen = knoten(
+      quelltext,
+      (eintrag) => eintrag.type === 'AssignmentExpression' && enthaeltBezeichner(eintrag.right, 'SYMBOL_PFAD')
+    )
+    expect(zuweisungen).toHaveLength(1)
   })
 })
 
@@ -1325,7 +1412,7 @@ const VERBOTENE_BEZEICHNER: { name: string; muster: RegExp; probe: string }[] = 
  * sie nicht zur Generalerlaubnis fuer `remove` in dieser Datei wird.
  */
 const BEZEICHNER_FREIGABEN: { datei: string; zeile: number; bezeichner: string; ausschnitt: string }[] = [
-  { datei: 'seed-icons.js', zeile: 88, bezeichner: 'remove', ausschnitt: 'kind.remove()' },
+  { datei: 'seed-icons.js', zeile: 103, bezeichner: 'remove', ausschnitt: 'kind.remove()' },
 ]
 
 describe('Was die Nutzlast darf, ist abschliessend', () => {

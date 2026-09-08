@@ -87,6 +87,15 @@ const ROLLE_ZU_EIGENSCHAFT = {
 /** Rollen, die auf die BESCHRIFTUNG wirken statt auf die Flaeche. */
 const TEXT_ROLLEN = ['schrift', 'schriftfamilie', 'typografie']
 
+/*
+ * DURCHGESEHEN auf die Fehlerklasse des Symbolimports ("eine Gruppe traegt keinen eigenen
+ * Strich"): Hier gehen die Tokens an ein BOARD (`brett`) und an eine TEXTFORM (`beschriftung`).
+ * Beide tragen ihre Eigenschaften selbst - ein Board hat Fuellung, Umriss, Radius und Polsterung,
+ * eine Textform Farbe und Schriftmerkmale. Es gibt an dieser Stelle keine Gruppe, die eine
+ * Bindung an ihre Kinder weiterreichen muesste. Sollte hier je eine Gruppe entstehen, gilt
+ * dieselbe Regel wie in `seed-icons.js`: auf die Blattformen, nicht auf die Gruppe.
+ */
+
 /* GETEILTE ERKENNUNG - wortgleich auch in verify.js, statisch zugesichert. */
 function bausteinSchluesselInDatei() {
   const gefunden = []

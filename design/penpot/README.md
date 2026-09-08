@@ -170,6 +170,16 @@ abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0065`, Absch
   Felder — sonst trifft die Suche nie, ein zweiter Lauf legte Dubletten an und das Rücklesen meldete
   einen leeren Stand. Kein Baustein- und kein Ausprägungsname trägt einen Schrägstrich; das ist
   statisch zugesichert.
+- **Eine Gruppe trägt keinen eigenen Strich.** Das Strichfarben-Token auf das Ergebnis von
+  `createShapeFromSvg` anzuwenden lief ins Leere (Gruppe ohne Bindung, der Pfad darunter schwarz).
+  `seed-icons.js` wendet es deshalb auf die **Blattformen** an, rekursiv eingesammelt — die
+  heutigen Symbolgruppen sind flach, ein künftiges Symbol mit verschachtelter Gruppe verlöre sonst
+  still seine Farbe. `verify.js` liest die Bindungen aus demselben Grund über den **ganzen**
+  Unterbaum statt über eine Ebene.
+- **Der Pfad-Präfix wird genau einmal gesetzt** — am Formnamen. Ihn danach noch einmal über
+  `komponente.name` zu setzen, hängt ihn ein zweites Mal vor (`path: "symbol / symbol"`). Der
+  Trenner im gelesenen `path` ist bei mehrstufigen Pfaden übrigens `" / "` mit Leerzeichen; der
+  Vergleich hier gilt dem einstufigen Fall.
 - **Penpot normalisiert einen `fontFamilies`-Wert beim Ablegen zu einem Array** (`"Inter"` →
   `["Inter"]`). Der Abgleich in `seed-tokens.js` behandelt ein einelementiges Array deshalb wie
   seinen Skalar — sonst meldete jeder Lauf beide Schriftfamilien als „nicht schreibbar".

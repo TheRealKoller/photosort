@@ -132,6 +132,17 @@ function varianteneigenschaften(komponenten) {
     .map((name) => ({ name: name, auspraegungen: werte[name].length }))
 }
 
+/** Sammelt eine Form und ihren ganzen Unterbaum ein - REKURSIV. Bindungen liegen bis zu zwei
+ * Ebenen tief (Board -> Gruppe -> Pfad); eine Sammlung ueber nur eine Ebene meldete faelschlich
+ * "keine Bindung". */
+function alleFormen(form, gesammelt) {
+  gesammelt.push(form)
+  for (const kind of form.children || []) {
+    alleFormen(kind, gesammelt)
+  }
+  return gesammelt
+}
+
 /** Je Baustein zusammengefasst: welche Eigenschaft traegt welches Token. Kein Formname, kein
  * Beschreibungstext, kein Wert - nur die Bindung selbst. */
 function tokenBindungen(komponenten) {
@@ -141,8 +152,7 @@ function tokenBindungen(komponenten) {
     if (!wurzel) {
       continue
     }
-    const formen = [wurzel].concat(wurzel.children || [])
-    for (const form of formen) {
+    for (const form of alleFormen(wurzel, [])) {
       // Gemessen: `shape.tokens` liefert die Zuordnung Eigenschaft -> Tokenname.
       const gesetzt = form.tokens || {}
       for (const eigenschaft of Object.keys(gesetzt)) {

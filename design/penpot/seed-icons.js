@@ -53,6 +53,21 @@
  * und bleibt - aber der Vergleich muss sie kennen, sonst trifft die Suche nie und ein zweiter Lauf
  * legte Dubletten an. Dafuer gibt es `symbolNameVon`, wortgleich auch in `verify.js`.
  *
+ * ⚠ DER PRAEFIX WIRD GENAU EINMAL GESETZT - am Formnamen. Ihn danach noch einmal ueber
+ * `komponente.name` zu setzen, haengt ihn ein ZWEITES Mal vor den bereits bestehenden Pfad
+ * (gemessen: `path: "symbol / symbol"`). Der Formname traegt ihn, `createComponent` leitet Pfad und
+ * Name daraus ab; die Form auf der Zeichenflaeche heisst dadurch ebenfalls sprechend.
+ *
+ * ⚠ EINE GRUPPE TRAEGT IN PENPOT KEINEN EIGENEN STRICH. Das Strichfarben-Token auf die Gruppe
+ * anzuwenden lief ins Leere (gemessen: Gruppe `tokens: {}`, `strokes: []`, der Pfad darunter
+ * schwarz). Angewandt wird es deshalb auf die BLATTFORMEN, rekursiv eingesammelt - die heutigen
+ * Symbolgruppen sind flach, aber ein kuenftiges Symbol mit verschachtelter Gruppe verloere sonst
+ * still seine Farbe.
+ *
+ * Der Trenner im GELESENEN `path` ist bei mehrstufigen Pfaden `" / "` (mit Leerzeichen), bei
+ * einstufigen schlicht `"symbol"`. Der Vergleich in `symbolNameVon` gilt dem einstufigen Fall -
+ * er ist die Stelle, an der ein kuenftig mehrstufiger Pfad still danebengriffe.
+ *
  * Die Signatur der Tokenanwendung bleibt in EINER Funktion gekapselt (`wendeTokenAn`), damit eine
  * Korrektur eine Stelle betrifft und nicht zwoelf.
  */
@@ -91,9 +106,22 @@ function formAusMarkup(markup) {
   return gruppe
 }
 
+/** Sammelt die Blattformen eines Baums ein - REKURSIV, nicht nur eine Ebene tief. */
+function blattformen(form, gesammelt) {
+  const kinder = form.children || []
+  if (kinder.length === 0) {
+    gesammelt.push(form)
+    return gesammelt
+  }
+  for (const kind of kinder) {
+    blattformen(kind, gesammelt)
+  }
+  return gesammelt
+}
+
 /** Gekapselte Tokenbindung auf eine benannte Eigenschaft. Aufrufform gemessen: `applyToShapes`
- * nimmt ein Formen-Array und die Eigenschaft als blanke Zeichenkette. */
-function wendeTokenAn(form, eigenschaft, tokenName) {
+ * nimmt eine Formenmenge und die Eigenschaft als blanke Zeichenkette. */
+function wendeTokenAn(formen, eigenschaft, tokenName) {
   const satz = penpot.library.local.tokens.sets.find((kandidat) => kandidat.name === SATZ_NAME)
   if (!satz) {
     throw new Error('Token-Satz fehlt - seed-tokens.js zuerst ausfuehren.')
@@ -102,7 +130,7 @@ function wendeTokenAn(form, eigenschaft, tokenName) {
   if (!token) {
     throw new Error('Unbekanntes Token: ' + tokenName)
   }
-  token.applyToShapes([form], eigenschaft)
+  token.applyToShapes(formen, eigenschaft)
 }
 
 function findeKomponente(kurzname) {
@@ -129,9 +157,11 @@ function main() {
     form.x = lage.x
     form.y = lage.y
     lage.x = form.x + form.width * 2
-    wendeTokenAn(form, 'strokeColor', STRICH_TOKEN)
-    const komponente = penpot.library.local.createComponent([form])
-    komponente.name = SYMBOL_PFAD + '/' + kurzname
+    // Auf die Blattformen, nicht auf die Gruppe - eine Gruppe traegt keinen eigenen Strich.
+    wendeTokenAn(blattformen(form, []), 'strokeColor', STRICH_TOKEN)
+    // Der Praefix steht bereits im Formnamen; `createComponent` leitet Pfad und Name daraus ab.
+    // Ihn hier erneut zu setzen haengt ihn ein zweites Mal vor.
+    penpot.library.local.createComponent([form])
     angelegt.push(kurzname)
   }
 
