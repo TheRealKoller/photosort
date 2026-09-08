@@ -61,27 +61,45 @@ const SATZ_NAME = 'photosort'
  * Bildet die Rollennamen aus `components.json` auf Penpot-Eigenschaften ab. Die LINKE Seite ist
  * die Design-System-Aussage und im Repository gepflegt; die RECHTE Seite ist die Plugin-API.
  *
+ * ⚠ JEDE ROLLE BILDET AUF EINE LISTE AB, auch wo es nur eine Eigenschaft ist. Zwei Gruende:
+ * Penpot kennt **keine Sammelnamen** - `border-radius` und `padding` werfen beide ("Field 1 is
+ * invalid: should be a set of strings"), es gibt nur die vier Ecken bzw. die vier Seiten
+ * einzeln (gemessen). Und eine Sonderform fuer den Einzelfall ist genau die Stelle, an der es
+ * spaeter wieder auseinanderlaeuft. `applyToShapes` nimmt die Liste direkt.
+ *
+ * Durchgaengig camelCase: Penpot akzeptiert bei Polsterung und Abstand zwar beide Schreibweisen
+ * (`padding-left` wie `paddingLeft`, gemessen), aber die vier Radius-Ecken und die vier
+ * Polster-Seiten kennen nur camelCase - zwei Schreibweisen nebeneinander koennte spaeter niemand
+ * erklaeren.
+ *
  * Rollen, die hier fehlen, gehoeren zu Unterelementen, die dieser Aufbau nicht selbst setzt
  * (Vorschlags-Kennzeichen, Statuspille, Knauf des Schalters, Dateiname der Karte, …). Sie werden
  * NICHT stillschweigend uebergangen, sondern als `nachzubinden` zurueckgegeben - die Bindung
  * entsteht dann beim Entwerfen in Penpot, wo diese Elemente ohnehin ihre Form bekommen.
  */
 const ROLLE_ZU_EIGENSCHAFT = {
-  flaeche: 'fill',
-  umriss: 'strokeColor',
-  radius: 'border-radius',
-  hoehe: 'height',
-  'innenabstand-quer': 'padding-left',
-  'innenabstand-laengs': 'padding-top',
-  innenabstand: 'padding',
-  abstand: 'row-gap',
-  schrift: 'fill',
+  flaeche: ['fill'],
+  umriss: ['strokeColor'],
+  radius: [
+    'borderRadiusTopLeft',
+    'borderRadiusTopRight',
+    'borderRadiusBottomRight',
+    'borderRadiusBottomLeft',
+  ],
+  hoehe: ['height'],
+  // Quer heisst links UND rechts, laengs oben UND unten - `px-4` setzt beide Seiten.
+  'innenabstand-quer': ['paddingLeft', 'paddingRight'],
+  'innenabstand-laengs': ['paddingTop', 'paddingBottom'],
+  innenabstand: ['paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom'],
+  // `gap-*` setzt in Tailwind beide Achsen.
+  abstand: ['rowGap', 'columnGap'],
+  schrift: ['fill'],
   // Singular, gemessen: der dokumentierte Name `fontFamilies` wirft.
-  schriftfamilie: 'fontFamily',
+  schriftfamilie: ['fontFamily'],
   // Eine Schriftstufe ist EIN Verbundtoken (Groesse, Zeilenhoehe, Schnitt, Laufweite zusammen) -
   // Penpot kennt keinen Token-Typ fuer Zeilenhoehen, und beim Entwerfen wird eine Stufe ohnehin
   // in einem Zug angewandt.
-  typografie: 'typography',
+  typografie: ['typography'],
 }
 
 /** Rollen, die auf die BESCHRIFTUNG wirken statt auf die Flaeche. */
@@ -161,20 +179,20 @@ function findeToken(tokenName) {
   return token
 }
 
-/** Aufrufform gemessen: Formen-Array plus Eigenschaft als blanke Zeichenkette. */
-function wendeTokenAn(form, eigenschaft, tokenName) {
-  findeToken(tokenName).applyToShapes([form], eigenschaft)
+/** Aufrufform gemessen: Formenmenge plus Eigenschaftsliste. */
+function wendeTokenAn(formen, eigenschaften, tokenName) {
+  findeToken(tokenName).applyToShapes(formen, eigenschaften)
 }
 
 function bindeRollen(brett, beschriftung, rollen, herkunft, nachzubinden) {
   for (const rolle of Object.keys(rollen)) {
-    const eigenschaft = ROLLE_ZU_EIGENSCHAFT[rolle]
-    if (!eigenschaft) {
+    const eigenschaften = ROLLE_ZU_EIGENSCHAFT[rolle]
+    if (!eigenschaften) {
       nachzubinden.push(herkunft + ': ' + rolle + ' -> ' + rollen[rolle])
       continue
     }
     const ziel = TEXT_ROLLEN.indexOf(rolle) !== -1 ? beschriftung : brett
-    wendeTokenAn(ziel, eigenschaft, rollen[rolle])
+    wendeTokenAn([ziel], eigenschaften, rollen[rolle])
   }
 }
 

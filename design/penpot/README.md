@@ -176,6 +176,13 @@ abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0065`, Absch
   heutigen Symbolgruppen sind flach, ein künftiges Symbol mit verschachtelter Gruppe verlöre sonst
   still seine Farbe. `verify.js` liest die Bindungen aus demselben Grund über den **ganzen**
   Unterbaum statt über eine Ebene.
+- **Penpot kennt keine Sammel-Eigenschaften.** `border-radius` und `padding` werfen beide
+  (`Field 1 is invalid: should be a set of strings`); es gibt nur die vier Radius-Ecken bzw. die
+  vier Polster-Seiten einzeln. Jede Rolle in `ROLLE_ZU_EIGENSCHAFT` bildet deshalb auf eine
+  **Liste** ab — auch dort, wo es nur eine Eigenschaft ist; eine Sonderform für den Einzelfall
+  wäre die Stelle, an der es später wieder auseinanderläuft. Dass jeder genannte Name aus einer
+  geschlossenen Liste stammt, ist statisch zugesichert: Der Eigenschaftsname war zweimal die
+  Fehlerquelle, und ein erfundener fällt seither in CI auf statt beim Lauf.
 - **Der Pfad-Präfix wird genau einmal gesetzt** — am Formnamen. Ihn danach noch einmal über
   `komponente.name` zu setzen, hängt ihn ein zweites Mal vor (`path: "symbol / symbol"`). Der
   Trenner im gelesenen `path` ist bei mehrstufigen Pfaden übrigens `" / "` mit Leerzeichen; der

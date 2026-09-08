@@ -75,6 +75,9 @@
 const SATZ_NAME = 'photosort'
 const SYMBOL_PFAD = 'symbol'
 const STRICH_TOKEN = 'color.text-h'
+/* Eine LISTE, auch fuer die eine Eigenschaft - dieselbe Form wie in seed-components.js. Eine
+   Sonderform fuer den Einzelfall ist die Stelle, an der es spaeter auseinanderlaeuft. */
+const STRICH_EIGENSCHAFTEN = ['strokeColor']
 
 /* GETEILTE ERKENNUNG - wortgleich auch in verify.js, statisch zugesichert. */
 function symbolNameVon(komponente) {
@@ -119,9 +122,9 @@ function blattformen(form, gesammelt) {
   return gesammelt
 }
 
-/** Gekapselte Tokenbindung auf eine benannte Eigenschaft. Aufrufform gemessen: `applyToShapes`
- * nimmt eine Formenmenge und die Eigenschaft als blanke Zeichenkette. */
-function wendeTokenAn(formen, eigenschaft, tokenName) {
+/** Gekapselte Tokenbindung. Aufrufform gemessen: `applyToShapes` nimmt eine Formenmenge und eine
+ * Eigenschaftsliste. */
+function wendeTokenAn(formen, eigenschaften, tokenName) {
   const satz = penpot.library.local.tokens.sets.find((kandidat) => kandidat.name === SATZ_NAME)
   if (!satz) {
     throw new Error('Token-Satz fehlt - seed-tokens.js zuerst ausfuehren.')
@@ -130,7 +133,7 @@ function wendeTokenAn(formen, eigenschaft, tokenName) {
   if (!token) {
     throw new Error('Unbekanntes Token: ' + tokenName)
   }
-  token.applyToShapes(formen, eigenschaft)
+  token.applyToShapes(formen, eigenschaften)
 }
 
 function findeKomponente(kurzname) {
@@ -158,7 +161,7 @@ function main() {
     form.y = lage.y
     lage.x = form.x + form.width * 2
     // Auf die Blattformen, nicht auf die Gruppe - eine Gruppe traegt keinen eigenen Strich.
-    wendeTokenAn(blattformen(form, []), 'strokeColor', STRICH_TOKEN)
+    wendeTokenAn(blattformen(form, []), STRICH_EIGENSCHAFTEN, STRICH_TOKEN)
     // Der Praefix steht bereits im Formnamen; `createComponent` leitet Pfad und Name daraus ab.
     // Ihn hier erneut zu setzen haengt ihn ein zweites Mal vor.
     penpot.library.local.createComponent([form])

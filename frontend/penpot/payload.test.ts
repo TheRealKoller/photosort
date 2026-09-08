@@ -1160,6 +1160,153 @@ describe('Die Form der Plugin-API-Aufrufe', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
+// Die Penpot-Eigenschaften, auf die Tokens angewandt werden
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Geschlossene Liste der Eigenschaftsnamen, die `applyToShapes` annimmt.
+ *
+ * WARUM ES SIE GIBT: Der Eigenschaftsname war zweimal die Fehlerquelle - erst `stroke` (existiert
+ * nicht, heisst `strokeColor`), dann `border-radius` und `padding` (Sammelnamen, die es nicht
+ * gibt; Penpot kennt nur die vier Ecken bzw. die vier Seiten einzeln). Beide Male fiel es erst
+ * beim Lauf an der Instanz auf. Ein ERFUNDENER Name faellt ab jetzt in CI auf.
+ *
+ * HERKUNFT: aus der API-Doku, **nicht vollstaendig gemessen**. Gemessen sind `fill`,
+ * `strokeColor`, `height`, `paddingLeft`/`paddingTop` (auch in Kebab-Schreibweise), `rowGap` und
+ * `borderRadiusTopLeft`; die uebrigen stehen hier auf Grundlage der Doku. Die Liste ist damit
+ * keine Garantie, dass ein Name funktioniert - wohl aber eine, dass keiner frei erfunden ist.
+ */
+const PENPOT_EIGENSCHAFTEN = [
+  'fill',
+  'strokeColor',
+  'strokeWidth',
+  'opacity',
+  'rotation',
+  'x',
+  'y',
+  'width',
+  'height',
+  'borderRadiusTopLeft',
+  'borderRadiusTopRight',
+  'borderRadiusBottomRight',
+  'borderRadiusBottomLeft',
+  'paddingLeft',
+  'paddingRight',
+  'paddingTop',
+  'paddingBottom',
+  'marginLeft',
+  'marginRight',
+  'marginTop',
+  'marginBottom',
+  'rowGap',
+  'columnGap',
+  'fontSize',
+  'fontFamily',
+  'fontWeight',
+  'letterSpacing',
+  'typography',
+  'textCase',
+  'textDecoration',
+] as const
+
+/**
+ * Liest eine als Objektliteral geschriebene Konstante der Nutzlast aus dem geparsten Baum.
+ *
+ * Wirft statt zu behaupten - und wird in jedem Testfall neu aufgerufen, damit ein Fehler in der
+ * Tabelle einen BENANNTEN Test rot faerbt statt die ganze Datei beim Einsammeln.
+ */
+function objektKonstante(quelltext: string, name: string): Record<string, string[]> {
+  const deklaration = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'VariableDeclarator' &&
+      (eintrag.id as Record<string, unknown>)?.name === name
+  )[0]
+  if (deklaration === undefined) {
+    throw new Error(`${name} nicht gefunden.`)
+  }
+  const literal = deklaration.init as Record<string, unknown>
+  if (literal?.type !== 'ObjectExpression') {
+    throw new Error(`${name} ist kein Objektliteral.`)
+  }
+
+  const ergebnis: Record<string, string[]> = {}
+  for (const eigenschaft of (literal.properties as Record<string, unknown>[]) ?? []) {
+    const schluessel = eigenschaft.key as Record<string, unknown>
+    const wert = eigenschaft.value as Record<string, unknown>
+    const rolle = (schluessel.name ?? schluessel.value) as string
+    if (wert.type !== 'ArrayExpression') {
+      throw new Error(`${name}.${rolle} bildet nicht auf eine Liste ab, sondern auf ${wert.type}.`)
+    }
+    ergebnis[rolle] = ((wert.elements as Record<string, unknown>[]) ?? []).map(
+      (element) => element.value as string
+    )
+  }
+  return ergebnis
+}
+
+const rollenTabelle = () => objektKonstante(dateiVon('seed-components.js').roh, 'ROLLE_ZU_EIGENSCHAFT')
+
+describe('Die Penpot-Eigenschaften', () => {
+  it('bildet jede Rolle auf eine Liste ab, auch bei nur einer Eigenschaft', () => {
+    // Das Lesen selbst wirft, sobald ein Eintrag keine Liste ist - hier bleibt die Untergrenze,
+    // damit die Zusicherung nicht ueber einer leeren Tabelle leer wahr wird.
+    const rollen = rollenTabelle()
+    expect(Object.keys(rollen).length).toBeGreaterThanOrEqual(10)
+    for (const [rolle, eigenschaften] of Object.entries(rollen)) {
+      expect(eigenschaften.length, rolle).toBeGreaterThan(0)
+    }
+  })
+
+  it('nennt ausschliesslich Eigenschaften aus der geschlossenen Liste', () => {
+    for (const [rolle, eigenschaften] of Object.entries(rollenTabelle())) {
+      for (const eigenschaft of eigenschaften) {
+        expect(PENPOT_EIGENSCHAFTEN, `${rolle}: ${eigenschaft}`).toContain(eigenschaft)
+      }
+    }
+  })
+
+  /* Die beiden Sammelnamen, an denen der Lauf abgebrochen waere - namentlich, damit sie nicht
+     unbemerkt zurueckkehren. */
+  it('benutzt keinen der nicht existierenden Sammelnamen', () => {
+    for (const verboten of ['border-radius', 'padding', 'stroke', 'margin', 'gap']) {
+      expect(PENPOT_EIGENSCHAFTEN, verboten).not.toContain(verboten)
+      for (const eigenschaften of Object.values(rollenTabelle())) {
+        expect(eigenschaften, verboten).not.toContain(verboten)
+      }
+    }
+  })
+
+  /* Ein Radius hat vier Ecken, eine Polsterung vier Seiten - eine Rolle, die nur eine davon
+     setzte, liesse den Baustein halb gerundet zurueck. */
+  it('setzt Radius und Polsterung vollstaendig', () => {
+    const rollen = rollenTabelle()
+    expect(rollen.radius.length).toBe(4)
+    expect(rollen.innenabstand.length).toBe(4)
+    expect(rollen['innenabstand-quer']).toEqual(['paddingLeft', 'paddingRight'])
+    expect(rollen['innenabstand-laengs']).toEqual(['paddingTop', 'paddingBottom'])
+  })
+
+  it('nennt auch im Symbolimport nur bekannte Eigenschaften', () => {
+    const quelltext = dateiVon('seed-icons.js').roh
+    const liste = knoten(
+      quelltext,
+      (eintrag) =>
+        eintrag.type === 'VariableDeclarator' &&
+        (eintrag.id as Record<string, unknown>)?.name === 'STRICH_EIGENSCHAFTEN'
+    )[0]
+    expect(liste, 'STRICH_EIGENSCHAFTEN nicht gefunden').toBeDefined()
+    const werte = (((liste.init as Record<string, unknown>).elements as Record<string, unknown>[]) ?? []).map(
+      (element) => element.value as string
+    )
+    expect(werte.length).toBeGreaterThan(0)
+    for (const eigenschaft of werte) {
+      expect(PENPOT_EIGENSCHAFTEN, eigenschaft).toContain(eigenschaft)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
 // Der Symbolimport
 // ---------------------------------------------------------------------------------------------
 
@@ -1412,7 +1559,7 @@ const VERBOTENE_BEZEICHNER: { name: string; muster: RegExp; probe: string }[] = 
  * sie nicht zur Generalerlaubnis fuer `remove` in dieser Datei wird.
  */
 const BEZEICHNER_FREIGABEN: { datei: string; zeile: number; bezeichner: string; ausschnitt: string }[] = [
-  { datei: 'seed-icons.js', zeile: 103, bezeichner: 'remove', ausschnitt: 'kind.remove()' },
+  { datei: 'seed-icons.js', zeile: 106, bezeichner: 'remove', ausschnitt: 'kind.remove()' },
 ]
 
 describe('Was die Nutzlast darf, ist abschliessend', () => {
