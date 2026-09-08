@@ -1,6 +1,6 @@
 # 0338 - Pull Request bleibt bis zur Freigabe mergebar: Abgleich mit `main`
 
-**Status:** Accepted
+**Status:** Implemented ([PR #353](https://github.com/TheRealKoller/photosort/pull/353))
 **Erstellt:** 2026-09-08
 **Bezug:** GitHub-Issue [`#338`](https://github.com/TheRealKoller/photosort/issues/338), Architekturentscheidung ADR [`0063`](../decisions/0063-abgleich-mit-main-als-getestetes-lokales-skript-merge-statt-rebase.md), fortgeführte Entscheidungen ADR [`0045`](../decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md) (Abzweig von aktuellem `main`) und ADR [`0042`](../decisions/0042-pre-merge-finalisierung-statt-nachzieh-pr.md) (Finalisierung gebündelt mit dem letzten Push), `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`
 
