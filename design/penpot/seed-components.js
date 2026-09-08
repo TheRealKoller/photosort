@@ -17,7 +17,18 @@
  *   const BAUSTEINE = <exakter Inhalt von components.json>;
  * gefolgt von dieser Datei, unveraendert.
  *
+ * `execute_code` FUEHRT DEN TEXT ALS FUNKTIONSRUMPF AUS und liefert nur zurueck, was ein `return`
+ * zurueckgibt (gemessen) - deshalb endet diese Datei, wie alle vier, auf ein `return`.
+ *
  * DIESES SKRIPT LOESCHT NICHTS.
+ *
+ * WORAN DIE BAUSTEINE WIEDERERKANNT WERDEN: an den Plugin-Daten `schluessel`, die jede
+ * Variantenkomponente traegt - NICHT am Namen. `createVariantContainer` benennt die
+ * Einzelkomponenten gemessen in "Component" um, und der sprechende Name lebt am Behaelter, der
+ * ein Board ist und gar nicht in `penpot.library.local.components` steht. Eine Erkennung am Namen
+ * oder am Behaelter fiele deshalb ins Leere - und mit ihr der Waechter oben. `verify.js` benutzt
+ * dieselbe Funktion WORTGLEICH; dass beide Fassungen uebereinstimmen, ist statisch zugesichert
+ * (`frontend/penpot/payload.test.ts`).
  *
  * REIHENFOLGE DER DEKLARATIONEN IST ABSICHT: `pruefeLeereDatei` und `main` stehen VOR allen
  * Funktionen, die schreibende Aufrufe enthalten. `payload.test.ts` sichert ueber die GEPARSTE
@@ -26,9 +37,10 @@
  *
  * WAS CI HIER NICHT PRUEFEN KANN (Spec 0352, verbindlicher Bestandteil):
  *  1. Diese Datei ist zum Zeitpunkt des Pull Requests UNAUSGEFUEHRTER CODE. Geprueft sind
- *     Erzeugung, Vollstaendigkeit, Benennung, referentielle Integritaet und Wertefreiheit. Ob ein
- *     Plugin-API-Aufruf funktioniert, kann kein Test hier sagen. Ein oder zwei Korrekturrunden
- *     nach dem ersten echten Lauf sind eingeplant, kein Fehlschlag.
+ *     Erzeugung, Vollstaendigkeit, Benennung, referentielle Integritaet, Wertefreiheit und die
+ *     FORM der API-Aufrufe. Ob ein Plugin-API-Aufruf zur Laufzeit das Gewuenschte bewirkt, kann
+ *     kein Test hier sagen. Ein oder zwei Korrekturrunden nach dem ersten echten Lauf sind
+ *     eingeplant, kein Fehlschlag.
  *  2. Kein Test kann Penpot lesen. Der Abgleich ist eine Handlung, keine Zusicherung.
  *  3. Die Dauerregel "entwerfen nur mit Tokens" ist LLM-interpretierter Text; statisch verankert
  *     ist nur, DASS sie im Skill steht.
@@ -38,8 +50,7 @@ const SATZ_NAME = 'photosort'
 
 /**
  * Bildet die Rollennamen aus `components.json` auf Penpot-Eigenschaften ab. Die LINKE Seite ist
- * die Design-System-Aussage und im Repository gepflegt; die RECHTE Seite ist der noch nicht
- * gemessene Teil der Plugin-API (ADR 0065 Abschnitt 7) und beim ersten echten Lauf zu bestaetigen.
+ * die Design-System-Aussage und im Repository gepflegt; die RECHTE Seite ist die Plugin-API.
  *
  * Rollen, die hier fehlen, gehoeren zu Unterelementen, die dieser Aufbau nicht selbst setzt
  * (Vorschlags-Kennzeichen, Statuspille, Knauf des Schalters, Dateiname der Karte, …). Sie werden
@@ -48,7 +59,7 @@ const SATZ_NAME = 'photosort'
  */
 const ROLLE_ZU_EIGENSCHAFT = {
   flaeche: 'fill',
-  umriss: 'stroke',
+  umriss: 'strokeColor',
   radius: 'border-radius',
   hoehe: 'height',
   'innenabstand-quer': 'padding-left',
@@ -67,15 +78,27 @@ const ROLLE_ZU_EIGENSCHAFT = {
 /** Rollen, die auf die BESCHRIFTUNG wirken statt auf die Flaeche. */
 const TEXT_ROLLEN = ['schrift', 'schriftfamilie', 'typografie']
 
+/* GETEILTE ERKENNUNG - wortgleich auch in verify.js, statisch zugesichert. */
+function bausteinSchluesselInDatei() {
+  const gefunden = []
+  for (const komponente of penpot.library.local.components) {
+    const schluessel = komponente.getPluginData('schluessel')
+    if (schluessel && gefunden.indexOf(schluessel) === -1) {
+      gefunden.push(schluessel)
+    }
+  }
+  return gefunden
+}
+
 /**
  * FAIL-CLOSED. Bricht ab, sobald die Datei bereits einen der zehn Bausteine traegt. Ein blosser
  * Hinweis genuegte hier nicht: das Ueberschreiben waere unwiederbringlich.
  */
 function pruefeLeereDatei() {
-  const vorhandene = penpot.library.local.components.map((komponente) => komponente.name)
+  const vorhandene = bausteinSchluesselInDatei()
   const kollisionen = BAUSTEINE.bausteine
-    .map((baustein) => baustein.name)
-    .filter((name) => vorhandene.includes(name))
+    .map((baustein) => baustein.schluessel)
+    .filter((schluessel) => vorhandene.indexOf(schluessel) !== -1)
   if (kollisionen.length > 0) {
     throw new Error(
       'Abbruch: die Datei traegt bereits Bausteine (' +
@@ -92,7 +115,7 @@ function main() {
   const nachzubinden = []
   for (const baustein of BAUSTEINE.bausteine) {
     const bericht = baueBaustein(baustein)
-    gebaut.push(bericht.name)
+    gebaut.push({ name: bericht.name, varianten: bericht.varianten })
     for (const offen of bericht.nachzubinden) {
       nachzubinden.push(offen)
     }
@@ -119,7 +142,7 @@ function findeToken(tokenName) {
   return token
 }
 
-/** Gekapselter, noch nicht gemessener API-Punkt: Tokenbindung auf eine benannte Eigenschaft. */
+/** Aufrufform gemessen: Formen-Array plus Eigenschaft als blanke Zeichenkette. */
 function wendeTokenAn(form, eigenschaft, tokenName) {
   findeToken(tokenName).applyToShapes([form], eigenschaft)
 }
@@ -131,58 +154,97 @@ function bindeRollen(brett, beschriftung, rollen, herkunft, nachzubinden) {
       nachzubinden.push(herkunft + ': ' + rolle + ' -> ' + rollen[rolle])
       continue
     }
-    const ziel = TEXT_ROLLEN.includes(rolle) ? beschriftung : brett
+    const ziel = TEXT_ROLLEN.indexOf(rolle) !== -1 ? beschriftung : brett
     wendeTokenAn(ziel, eigenschaft, rollen[rolle])
   }
 }
 
-function baueAuspraegung(baustein, eigenschaft, auspraegung, nachzubinden) {
+/**
+ * DAS KREUZPRODUKT ALLER ACHSEN eines Bausteins.
+ *
+ * Penpot verlangt je Variante einen Wert fuer JEDE Varianteneigenschaft: Ein Eintrag, der nur
+ * `auspraegung=ghost` traegt und zu `groesse`/`zustand` schweigt, ist keine wohldefinierte
+ * Variante. Gebaut wird deshalb das vollstaendige Kreuzprodukt der in `components.json`
+ * gefuehrten Achsen - die Achsen selbst sind eine Design-System-Aussage und werden hier NICHT
+ * reduziert. Das ergibt bei der Schaltflaeche 6 x 3 x 5 = 90 Varianten und ueber alle zehn
+ * Bausteine 160; das ist viel, aber mechanisch und ohne Urteil abgeleitet.
+ */
+function kombinationen(varianten) {
+  let ergebnis = [{}]
+  for (const achse of Object.keys(varianten)) {
+    const naechste = []
+    for (const bisher of ergebnis) {
+      for (const auspraegung of varianten[achse]) {
+        const kopie = Object.assign({}, bisher)
+        kopie[achse] = auspraegung
+        naechste.push(kopie)
+      }
+    }
+    ergebnis = naechste
+  }
+  return ergebnis
+}
+
+function kombinationsName(kombination) {
+  return Object.keys(kombination)
+    .map((achse) => achse + '=' + kombination[achse])
+    .join(', ')
+}
+
+/**
+ * Eine Variante: ein Brett mit Beschriftung, dessen Eigenschaften an Tokens gebunden sind, als
+ * Bibliotheks-Komponente. Uebergeben wird an den Behaelter die HAUPTINSTANZ der Komponente samt
+ * ihrer Achsenwerte - beides gemessene Vorgaben von `createVariantContainer`.
+ *
+ * Die Plugin-Daten `schluessel` stehen an der KOMPONENTE, nicht nur am Behaelter: Nur so bleibt
+ * der Baustein wiedererkennbar, nachdem `createVariantContainer` die Komponenten in "Component"
+ * umbenannt hat.
+ */
+function baueVariante(baustein, kombination, nachzubinden) {
   const brett = penpot.createBoard()
-  brett.name = eigenschaft + '=' + auspraegung
+  brett.name = kombinationsName(kombination)
   brett.addFlexLayout()
   brett.horizontalSizing = 'auto'
   brett.verticalSizing = 'auto'
 
-  const beschriftung = penpot.createText(auspraegung)
+  const beschriftung = penpot.createText(brett.name)
   brett.appendChild(beschriftung)
 
   const herkunft = baustein.schluessel + '/' + brett.name
   bindeRollen(brett, beschriftung, baustein.tokens, herkunft, nachzubinden)
 
   const proAuspraegung = baustein.tokensProAuspraegung || {}
-  const achse = proAuspraegung[eigenschaft] || {}
-  const besondere = achse[auspraegung]
-  if (besondere) {
-    bindeRollen(brett, beschriftung, besondere, herkunft, nachzubinden)
+  for (const achse of Object.keys(kombination)) {
+    const achsenTabelle = proAuspraegung[achse] || {}
+    const besondere = achsenTabelle[kombination[achse]]
+    if (besondere) {
+      bindeRollen(brett, beschriftung, besondere, herkunft, nachzubinden)
+    }
   }
 
-  return brett
+  const komponente = penpot.library.local.createComponent([brett])
+  komponente.setPluginData('schluessel', baustein.schluessel)
+
+  return { shape: komponente.mainInstance(), properties: kombination }
 }
 
 /**
  * Ein VARIANTEN-Behaelter je Baustein: der Zustand wird dadurch AUSWAEHLBAR, statt als zweites
- * Bild danebengestellt zu werden (Akzeptanzkriterium 4). Der maschinelle Schluessel wandert als
- * Plugin-Daten mit, der deutsche Anzeigename ist der Name des Behaelters.
- *
- * GEMESSEN: `createVariantContainer` BENENNT DIE EINZELKOMPONENTEN IN "Component" UM - der
- * sprechende Name lebt am Behaelter, nicht an den Auspraegungen. Deshalb traegt der Behaelter den
- * Anzeigenamen und die Plugin-Daten; die Brettnamen `eigenschaft=auspraegung` sind ausschliesslich
- * die Vorlage, aus der die Varianteneigenschaften entstehen, und ueberleben den Aufruf nicht.
+ * Bild danebengestellt zu werden (Akzeptanzkriterium 4). Der deutsche Anzeigename lebt am
+ * Behaelter - die Einzelkomponenten heissen danach gemessen "Component".
  */
 function baueBaustein(baustein) {
   const nachzubinden = []
-  const bretter = []
-  for (const eigenschaft of Object.keys(baustein.varianten)) {
-    for (const auspraegung of baustein.varianten[eigenschaft]) {
-      bretter.push(baueAuspraegung(baustein, eigenschaft, auspraegung, nachzubinden))
-    }
+  const eintraege = []
+  for (const kombination of kombinationen(baustein.varianten)) {
+    eintraege.push(baueVariante(baustein, kombination, nachzubinden))
   }
 
-  const behaelter = penpotUtils.createVariantContainer(bretter)
+  const behaelter = penpotUtils.createVariantContainer(eintraege)
   behaelter.name = baustein.name
   behaelter.setPluginData('schluessel', baustein.schluessel)
 
-  return { name: baustein.name, nachzubinden: nachzubinden }
+  return { name: baustein.name, varianten: eintraege.length, nachzubinden: nachzubinden }
 }
 
-JSON.stringify(main(), null, 2)
+return JSON.stringify(main(), null, 2)

@@ -8,6 +8,9 @@
  *   const ICONS = <exakter Inhalt von icons.json>;
  * gefolgt von dieser Datei, unveraendert.
  *
+ * `execute_code` FUEHRT DEN TEXT ALS FUNKTIONSRUMPF AUS und liefert nur zurueck, was ein `return`
+ * zurueckgibt (gemessen) - deshalb endet diese Datei, wie alle vier, auf ein `return`.
+ *
  * LAUFREGEL "jederzeit-wiederholbar": der Inhalt ist vollstaendig aus `ui/icon.tsx` erzeugt.
  *
  * DAS SVG-MARKUP IST EIN WERT, KEIN DOKUMENTFRAGMENT. Es geht als Zeichenkette an die Plugin-API
@@ -16,7 +19,8 @@
  * `currentColor` HAT IN PENPOT KEINE ENTSPRECHUNG - die Symbole kaemen sonst schwarz oder
  * unsichtbar an. Die Strichfarbe der freistehenden Symbolbibliothek wird deshalb ueber das Token
  * `color.text-h` gesetzt; an einer Verwendungsstelle traegt das Symbol dasselbe Token wie der Text
- * daneben. Das ist die einzige Stelle, an der die Symboluebertragung nicht wertfrei ist.
+ * daneben. Das ist die einzige Stelle, an der die Symboluebertragung nicht wertfrei ist. Die
+ * Eigenschaft heisst gemessen `strokeColor` - `stroke` wird abgelehnt ("Field 1 is invalid").
  *
  * DIESES SKRIPT LOESCHT NICHTS.
  *
@@ -62,7 +66,8 @@ function formAusMarkup(markup) {
   return gruppe
 }
 
-/** Gekapselte Tokenbindung auf eine benannte Eigenschaft. */
+/** Gekapselte Tokenbindung auf eine benannte Eigenschaft. Aufrufform gemessen: `applyToShapes`
+ * nimmt ein Formen-Array und die Eigenschaft als blanke Zeichenkette. */
 function wendeTokenAn(form, eigenschaft, tokenName) {
   const satz = penpot.library.local.tokens.sets.find((kandidat) => kandidat.name === SATZ_NAME)
   if (!satz) {
@@ -92,7 +97,7 @@ function main() {
     }
     const form = formAusMarkup(ICONS[kurzname])
     form.name = name
-    wendeTokenAn(form, 'stroke', STRICH_TOKEN)
+    wendeTokenAn(form, 'strokeColor', STRICH_TOKEN)
     const komponente = penpot.library.local.createComponent([form])
     komponente.name = name
     angelegt.push(name)
@@ -106,4 +111,4 @@ function main() {
   }
 }
 
-JSON.stringify(main(), null, 2)
+return JSON.stringify(main(), null, 2)

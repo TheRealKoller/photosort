@@ -370,10 +370,10 @@ describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast'
    * AUSSCHNITT der Zeile; verschiebt sich die Fundstelle, faellt die Freigabe.
    */
   const FREIGABEN: { datei: string; zeile: number; wert: string; ausschnitt: string }[] = [
-    { datei: 'verify.js', zeile: 40, wert: '12', ausschnitt: 'ERWARTETE_SYMBOLE = 12' },
-    { datei: 'verify.js', zeile: 41, wert: '10', ausschnitt: 'ERWARTETE_BAUSTEINE = 10' },
-    { datei: 'verify.js', zeile: 42, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
-    { datei: 'verify.js', zeile: 43, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
+    { datei: 'verify.js', zeile: 53, wert: '12', ausschnitt: 'ERWARTETE_SYMBOLE = 12' },
+    { datei: 'verify.js', zeile: 54, wert: '10', ausschnitt: 'ERWARTETE_BAUSTEINE = 10' },
+    { datei: 'verify.js', zeile: 55, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
+    { datei: 'verify.js', zeile: 56, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
   ]
 
   function freigabeFuer(fund: Fund): (typeof FREIGABEN)[number] | undefined {
@@ -765,6 +765,7 @@ describe('Idempotenz-Asymmetrie: die Laufregel als Form', () => {
 const SCHREIBAUFRUFE = [
   'addSet',
   'addToken',
+  'addFlexLayout',
   'applyToken',
   'applyToShapes',
   'createComponent',
@@ -773,7 +774,9 @@ const SCHREIBAUFRUFE = [
   'createRectangle',
   'createText',
   'createEllipse',
+  'createShapeFromSvg',
   'appendChild',
+  'setPluginData',
   'switchVariant',
   'instance',
 ]
@@ -781,6 +784,16 @@ const SCHREIBAUFRUFE = [
 interface Aufruf {
   name: string
   start: number
+  argumente: Record<string, unknown>[]
+}
+
+/**
+ * Parst eine Nutzlastdatei so, wie `execute_code` sie ausfuehrt: als FUNKTIONSRUMPF. Das ist kein
+ * Kniff, sondern die Ausfuehrungsform - die Dateien enden auf ein `return` auf oberster Ebene,
+ * das als Programm ein Syntaxfehler waere und als Funktionsrumpf genau richtig ist.
+ */
+function geparst(quelltext: string): unknown {
+  return parseAst(`function __rumpf() {\n${quelltext}\n}`)
 }
 
 function aufrufe(quelltext: string): Aufruf[] {
@@ -801,12 +814,23 @@ function aufrufe(quelltext: string): Aufruf[] {
               (callee.property as Record<string, unknown>).type === 'Identifier'
             ? ((callee.property as Record<string, unknown>).name as string)
             : ''
-      gefunden.push({ name, start: eintrag.start as number })
+      gefunden.push({
+        name,
+        start: eintrag.start as number,
+        argumente: (eintrag.arguments as Record<string, unknown>[]) ?? [],
+      })
     }
     for (const wert of Object.values(eintrag)) gehe(wert)
   }
-  gehe(parseAst(quelltext))
+  gehe(geparst(quelltext))
   return gefunden.sort((a, b) => a.start - b.start)
+}
+
+function schluesselVon(knoten: Record<string, unknown>): string[] {
+  return ((knoten.properties as Record<string, unknown>[]) ?? [])
+    .map((eigenschaft) => (eigenschaft.key as Record<string, unknown>)?.name as string)
+    .filter((name) => typeof name === 'string')
+    .sort()
 }
 
 describe('Vorbedingung von seed-components.js', () => {
@@ -837,6 +861,199 @@ describe('Vorbedingung von seed-components.js', () => {
     // Nur der Koerper der Wache selbst, nicht "irgendwo weiter unten steht auch ein throw".
     const koerper = ohneKommentare.split('function pruefeLeereDatei')[1].split('\nfunction ')[0]
     expect(koerper).toContain('throw new Error')
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Die Form der Plugin-API-Aufrufe
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * WARUM ES DIESE TABELLE GIBT: Die Nutzlast ist unausgefuehrter Code, und die Plugin-API weicht an
+ * mehreren Stellen von ihrer eigenen Doku ab. Eine Review-Runde hat genau in dieser Klasse sieben
+ * Fehler gefunden - falsche Argumentform bei `addSet`/`addToken`, ein nicht existierender
+ * Eigenschaftsname, ein fehlendes `return`, blanke Boards statt Variantenpaaren. Keine der
+ * bisherigen Regeln (Wertfreiheit, Benennung, Reihenfolge, verbotene Bezeichner) konnte davon
+ * etwas sehen. Diese Tabelle ist die Regel, die diese Fehlerklasse faengt.
+ *
+ * Geprueft wird ueber die GEPARSTE Aufrufstelle, nicht ueber eine Textsuche - eine Zeichenkette in
+ * einem Kommentar oder in einem Literal ist kein Aufruf.
+ *
+ * Sie ersetzt keinen echten Lauf: Sie sichert die FORM zu, nicht die Wirkung.
+ */
+const AUFRUFFORMEN: {
+  name: string
+  erwartung: string
+  haelt: (argumente: Record<string, unknown>[]) => boolean
+}[] = [
+  {
+    name: 'addSet',
+    erwartung: 'genau ein Objektliteral mit dem Schluessel name',
+    haelt: (argumente) =>
+      argumente.length === 1 &&
+      argumente[0].type === 'ObjectExpression' &&
+      schluesselVon(argumente[0]).join(',') === 'name',
+  },
+  {
+    name: 'addToken',
+    erwartung: 'genau ein Objektliteral mit den Schluesseln name, type, value',
+    haelt: (argumente) =>
+      argumente.length === 1 &&
+      argumente[0].type === 'ObjectExpression' &&
+      schluesselVon(argumente[0]).join(',') === 'name,type,value',
+  },
+  {
+    name: 'applyToShapes',
+    erwartung: 'zwei Argumente, das erste ein Formen-Array',
+    haelt: (argumente) => argumente.length === 2 && argumente[0].type === 'ArrayExpression',
+  },
+  {
+    name: 'createComponent',
+    erwartung: 'genau ein Formen-Array',
+    haelt: (argumente) => argumente.length === 1 && argumente[0].type === 'ArrayExpression',
+  },
+  {
+    name: 'createVariantContainer',
+    erwartung: 'genau ein Argument (die Liste der Varianteneintraege)',
+    haelt: (argumente) => argumente.length === 1,
+  },
+  {
+    name: 'createShapeFromSvg',
+    erwartung: 'genau ein Argument (das Markup)',
+    haelt: (argumente) => argumente.length === 1,
+  },
+  {
+    name: 'setPluginData',
+    erwartung: 'zwei Argumente (Schluessel und Wert)',
+    haelt: (argumente) => argumente.length === 2,
+  },
+  {
+    name: 'getPluginData',
+    erwartung: 'genau ein Argument (der Schluessel)',
+    haelt: (argumente) => argumente.length === 1,
+  },
+]
+
+const JS_NUTZLAST = ['seed-tokens.js', 'seed-icons.js', 'seed-components.js', 'verify.js'] as const
+
+describe('Die Form der Plugin-API-Aufrufe', () => {
+  const alleAufrufe = JS_NUTZLAST.flatMap((datei) =>
+    aufrufe(dateiVon(datei).roh).map((aufruf) => ({ datei, aufruf }))
+  )
+
+  for (const form of AUFRUFFORMEN) {
+    it(`ruft ${form.name} auf als: ${form.erwartung}`, () => {
+      const stellen = alleAufrufe.filter(({ aufruf }) => aufruf.name === form.name)
+      // Ohne diese Untergrenze bestuende die Zusage auch dann, wenn der Aufruf ganz verschwaende.
+      expect(stellen.length, `${form.name} kommt in der Nutzlast nicht vor`).toBeGreaterThan(0)
+      const falsch = stellen.filter(({ aufruf }) => !form.haelt(aufruf.argumente))
+      expect(falsch.map(({ datei }) => `${datei}: ${form.name}`)).toEqual([])
+    })
+  }
+
+  /* Der Varianteneintrag traegt gemessen genau `shape` und `properties`. Er entsteht dynamisch,
+     ist als Literal aber genau einmal im Quelltext sichtbar - dort wird er festgehalten. */
+  it('baut den Varianteneintrag aus shape und properties', () => {
+    const formen: string[] = []
+    const gehe = (knoten: unknown): void => {
+      if (knoten === null || typeof knoten !== 'object') return
+      if (Array.isArray(knoten)) {
+        for (const kind of knoten) gehe(kind)
+        return
+      }
+      const eintrag = knoten as Record<string, unknown>
+      if (eintrag.type === 'ObjectExpression') {
+        const schluessel = schluesselVon(eintrag).join(',')
+        if (schluessel.includes('shape')) formen.push(schluessel)
+      }
+      for (const wert of Object.values(eintrag)) gehe(wert)
+    }
+    gehe(geparst(dateiVon('seed-components.js').roh))
+    expect(formen).toEqual(['properties,shape'])
+  })
+
+  /* `execute_code` fuehrt den Text als Funktionsrumpf aus und liefert NUR zurueck, was ein
+     `return` zurueckgibt (gemessen). Ein blanker Ausdruck am Dateiende ginge still verloren - bei
+     `verify.js` waere das der gesamte nachpruefbare Abschluss der Story. */
+  it('gibt in jeder Nutzlastdatei ein Ergebnis zurueck', () => {
+    for (const datei of JS_NUTZLAST) {
+      const zeilen = streicheKommentare(dateiVon(datei).roh)
+        .split('\n')
+        .map((zeile) => zeile.trim())
+        .filter((zeile) => zeile.length > 0)
+      expect(zeilen[zeilen.length - 1], datei).toMatch(/^return /)
+    }
+  })
+
+  it('erkennt eine falsche Aufrufform an synthetischen Proben', () => {
+    const form = (name: string) => AUFRUFFORMEN.find((eintrag) => eintrag.name === name)!
+    const argumenteVon = (quelltext: string, name: string) =>
+      aufrufe(quelltext).find((aufruf) => aufruf.name === name)!.argumente
+
+    expect(form('addSet').haelt(argumenteVon("katalog.addSet('photosort')", 'addSet'))).toBe(false)
+    expect(form('addSet').haelt(argumenteVon("katalog.addSet({ name: 'x' })", 'addSet'))).toBe(true)
+    expect(form('addToken').haelt(argumenteVon('satz.addToken(a, b, c)', 'addToken'))).toBe(false)
+    expect(
+      form('addToken').haelt(
+        argumenteVon('satz.addToken({ type: t, name: n, value: v })', 'addToken')
+      )
+    ).toBe(true)
+    expect(
+      form('applyToShapes').haelt(argumenteVon("token.applyToShapes(form, 'fill')", 'applyToShapes'))
+    ).toBe(false)
+    expect(
+      form('createComponent').haelt(argumenteVon('bib.createComponent(brett)', 'createComponent'))
+    ).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Die geteilte Erkennung der Bausteine
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * `seed-components.js` (Waechter) und `verify.js` (Rueckleser) muessen die Bausteine AUF DIESELBE
+ * WEISE wiedererkennen. Genau an dieser Doppelung ist es schon einmal auseinandergelaufen: Der
+ * Waechter suchte deutsche Anzeigenamen, der Rueckleser Plugin-Daten, und weil
+ * `createVariantContainer` die Komponenten in "Component" umbenennt und der Behaelter gar nicht in
+ * `library.local.components` steht, griff beides ins Leere - der fail-closed-Waechter der
+ * normativen Design-Quelle feuerte nie.
+ *
+ * Zugesichert wird deshalb die WORTGLEICHHEIT des Blocks, nicht seine Wirkung.
+ */
+const GETEILTE_ERKENNUNG = [
+  'function bausteinSchluesselInDatei() {',
+  '  const gefunden = []',
+  '  for (const komponente of penpot.library.local.components) {',
+  "    const schluessel = komponente.getPluginData('schluessel')",
+  '    if (schluessel && gefunden.indexOf(schluessel) === -1) {',
+  '      gefunden.push(schluessel)',
+  '    }',
+  '  }',
+  '  return gefunden',
+  '}',
+].join('\n')
+
+describe('Die geteilte Erkennung der Bausteine', () => {
+  it('steht wortgleich in seed-components.js und verify.js', () => {
+    for (const datei of ['seed-components.js', 'verify.js'] as const) {
+      expect(dateiVon(datei).roh, datei).toContain(GETEILTE_ERKENNUNG)
+    }
+  })
+
+  it('wird vom Waechter und vom Rueckleser tatsaechlich benutzt', () => {
+    for (const datei of ['seed-components.js', 'verify.js'] as const) {
+      const stellen = aufrufe(dateiVon(datei).roh).filter(
+        (aufruf) => aufruf.name === 'bausteinSchluesselInDatei'
+      )
+      expect(stellen.length, datei).toBeGreaterThan(0)
+    }
+  })
+
+  /* Erkannt wird an den Plugin-Daten, nie am Anzeigenamen - der ueberlebt den Variantenbau nicht. */
+  it('haengt an den Plugin-Daten, nicht am Namen', () => {
+    expect(GETEILTE_ERKENNUNG).toContain("getPluginData('schluessel')")
+    expect(GETEILTE_ERKENNUNG).not.toContain('.name')
   })
 })
 
@@ -909,7 +1126,7 @@ const VERBOTENE_BEZEICHNER: { name: string; muster: RegExp; probe: string }[] = 
  * sie nicht zur Generalerlaubnis fuer `remove` in dieser Datei wird.
  */
 const BEZEICHNER_FREIGABEN: { datei: string; zeile: number; bezeichner: string; ausschnitt: string }[] = [
-  { datei: 'seed-icons.js', zeile: 59, bezeichner: 'remove', ausschnitt: 'kind.remove()' },
+  { datei: 'seed-icons.js', zeile: 63, bezeichner: 'remove', ausschnitt: 'kind.remove()' },
 ]
 
 describe('Was die Nutzlast darf, ist abschliessend', () => {

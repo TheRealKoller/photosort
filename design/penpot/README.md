@@ -77,12 +77,31 @@ Vorbedingung steht deshalb fail-closed im Skript selbst, vor dem ersten Schreibz
 **Kein Skript löscht je etwas.** Findet ein Lauf in Penpot ein Token, das der Erzeuger nicht
 kennt, bleibt es unangetastet und wird als **Befund** gemeldet — nicht als Fehler gewertet.
 
-Was `seed-components.js` aufbaut, ist der token-gebundene Rumpf: je Ausprägung ein Brett mit
+Was `seed-components.js` aufbaut, ist der token-gebundene Rumpf: je Variante ein Brett mit
 Beschriftung, dessen Fläche, Umriss, Radius, Innenabstände und Schriftmerkmale an Tokens gebunden
-sind. Rollen, die zu Unterelementen gehören, die dieser Aufbau nicht selbst setzt (Knauf des
-Schalters, Statuspille, Dateiname der Karte …), werden **nicht stillschweigend übergangen**,
-sondern als `nachzubinden` zurückgegeben — ihre Bindung entsteht beim Entwerfen in Penpot, wo
-diese Elemente ohnehin ihre Form bekommen.
+sind, daraus je eine Bibliotheks-Komponente, und daraus je Baustein ein Varianten-Container.
+
+**Gebaut wird das vollständige Kreuzprodukt der Achsen** eines Bausteins (Schaltfläche 6 × 3 × 5 =
+90 Varianten, über alle zehn Bausteine 160). Das ist keine Vorliebe, sondern eine Vorgabe der
+Plugin-API: Ein Varianteneintrag muss für **jede** Varianteneigenschaft einen Wert nennen — ein
+Eintrag, der nur `auspraegung=ghost` trägt und zu `groesse`/`zustand` schweigt, ist keine
+wohldefinierte Variante. Die Achsen selbst stehen in `components.json` und sind eine
+Design-System-Aussage; sie werden hier **nicht** reduziert. Dass dabei auch Kombinationen
+entstehen, die fachlich nichts bedeuten (ein Hinweis ist nicht gleichzeitig „Warnung" und
+„läuft"), ist die sichtbare Kehrseite — eine Zusammenlegung von Achsen wäre eine
+Gestaltungsentscheidung und gehört nicht in ein Aufbauskript.
+
+**Wiedererkannt werden die Bausteine an den Plugin-Daten `schluessel`**, die jede
+Variantenkomponente trägt — nie am Namen: `createVariantContainer` benennt die Einzelkomponenten
+in „Component" um, und der sprechende Name lebt am Container, der ein Board ist und gar nicht in
+`penpot.library.local.components` steht. `seed-components.js` (Wächter) und `verify.js`
+(Rückleser) benutzen dafür **wortgleich dieselbe Funktion**; die Übereinstimmung ist statisch
+zugesichert.
+
+Rollen, die zu Unterelementen gehören, die dieser Aufbau nicht selbst setzt (Knauf des Schalters,
+Statuspille, Dateiname der Karte …), werden **nicht stillschweigend übergangen**, sondern als
+`nachzubinden` zurückgegeben — ihre Bindung entsteht beim Entwerfen in Penpot, wo diese Elemente
+ohnehin ihre Form bekommen.
 
 ## Was CI hier nicht prüfen kann
 
@@ -118,6 +137,16 @@ abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0065`, Absch
   `fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`) — die Pluralformen sind die Leseform;
   und ein Token-Satz wirkt erst nach `toggleActive()` (`seed-tokens.js` schaltet ihn ein, aber nur
   wenn er nachweislich inaktiv ist — `toggleActive` schaltet um und wäre sonst nicht wiederholbar).
+- **`execute_code` führt den Text als Funktionsrumpf aus** und liefert nur zurück, was ein
+  `return` zurückgibt. Alle vier Dateien enden deshalb auf ein `return`; ein blanker Ausdruck ginge
+  still verloren — bei `verify.js` wäre das der gesamte nachprüfbare Abschluss.
+- **Argumentformen, die von der Doku abweichen:** `addSet({ name })` und
+  `addToken({ type, name, value })` nehmen je **ein Objekt**; die Strichfarbe heißt `strokeColor`
+  (nicht `stroke`); `applyToShapes` nimmt ein Formen-Array und die Eigenschaft als blanke
+  Zeichenkette; `createVariantContainer` nimmt `[{ shape, properties }]` mit der **Hauptinstanz**
+  einer Komponente, nicht das Board; `variantProps` ist ein **Objekt** je Komponente und nennt die
+  Werte dieser einen Ausprägung. Die Formen sind in `frontend/penpot/payload.test.ts` als Tabelle
+  statisch zugesichert — genau diese Fehlerklasse hat eine Review-Runde siebenmal gefunden.
 - **Laufweite als blanke px-Zahl.** `-0.02em` wird als Tokenwert akzeptiert, kommt an der Textform
   aber als `0` an; der Erzeuger rechnet gegen die Schriftgröße der Stufe um (`-0.02em` bei 64px →
   `-1.28`).

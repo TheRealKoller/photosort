@@ -9,6 +9,10 @@
  * gefolgt von dieser Datei, unveraendert. Werte werden nie im Aufruf angepasst; ist ein Wert
  * falsch, wird `frontend/src/index.css` geaendert und neu erzeugt.
  *
+ * `execute_code` FUEHRT DEN TEXT ALS FUNKTIONSRUMPF AUS und liefert nur zurueck, was ein `return`
+ * zurueckgibt (gemessen). Ein blanker Ausdruck am Dateiende ginge still verloren - deshalb endet
+ * diese Datei, wie alle vier, auf ein `return`.
+ *
  * LAUFREGEL "jederzeit-wiederholbar": Der Inhalt dieser Datei ist vollstaendig erzeugt, in ihm
  * kann keine Gestaltungsabsicht stecken, die nicht auch im Repository stuende. Ein zweiter Lauf
  * erzeugt keine Dubletten.
@@ -18,9 +22,10 @@
  *
  * WAS CI HIER NICHT PRUEFEN KANN (Spec 0352, verbindlicher Bestandteil):
  *  1. Diese Datei ist zum Zeitpunkt des Pull Requests UNAUSGEFUEHRTER CODE. Geprueft sind
- *     Erzeugung, Vollstaendigkeit, Benennung, referentielle Integritaet und Wertefreiheit. Ob ein
- *     Plugin-API-Aufruf funktioniert, kann kein Test hier sagen. Ein oder zwei Korrekturrunden
- *     nach dem ersten echten Lauf sind eingeplant, kein Fehlschlag.
+ *     Erzeugung, Vollstaendigkeit, Benennung, referentielle Integritaet, Wertefreiheit und die
+ *     FORM der API-Aufrufe. Ob ein Plugin-API-Aufruf zur Laufzeit das Gewuenschte bewirkt, kann
+ *     kein Test hier sagen. Ein oder zwei Korrekturrunden nach dem ersten echten Lauf sind
+ *     eingeplant, kein Fehlschlag.
  *  2. Kein Test kann Penpot lesen. Der Abgleich ist eine Handlung, keine Zusicherung.
  *  3. Die Dauerregel "entwerfen nur mit Tokens" ist LLM-interpretierter Text; statisch verankert
  *     ist nur, DASS sie im Skill steht.
@@ -28,13 +33,14 @@
 
 const SATZ_NAME = 'photosort'
 
+/** Aufrufform gemessen: `addSet` nimmt ein Objekt, kein blankes Argument. */
 function findeOderLegeSatzAn() {
   const katalog = penpot.library.local.tokens
   const vorhanden = katalog.sets.find((satz) => satz.name === SATZ_NAME)
   if (vorhanden) {
     return vorhanden
   }
-  return katalog.addSet(SATZ_NAME)
+  return katalog.addSet({ name: SATZ_NAME })
 }
 
 /*
@@ -58,23 +64,51 @@ function stelleSatzAktiv(satz) {
   return false
 }
 
+/**
+ * Vergleicht Tokenwerte STRUKTURELL, nicht per Identitaet. Die sieben Schriftstufen tragen einen
+ * Verbundwert (Objekt); ein `!==` waere dort immer wahr, und jeder Lauf meldete sie als
+ * "abgeglichen" und schriebe sie neu. Feste Feldreihenfolge, damit der Vergleich nicht an der
+ * Schluesselreihenfolge haengt.
+ */
+function kanonisch(wert) {
+  if (wert === null || wert === undefined) {
+    return ''
+  }
+  if (typeof wert !== 'object') {
+    return String(wert)
+  }
+  return Object.keys(wert)
+    .sort()
+    .map((schluessel) => schluessel + '=' + String(wert[schluessel]))
+    .join('|')
+}
+
 /** Zielzustands-idempotent: am Namen suchen, anlegen wenn es fehlt, sonst abgleichen. */
 function main() {
   const satz = findeOderLegeSatzAn()
   const bestehende = new Map(satz.tokens.map((token) => [token.name, token]))
   const angelegt = []
   const abgeglichen = []
+  const nichtSchreibbar = []
 
   for (const token of TOKENS) {
     const vorhanden = bestehende.get(token.name)
     if (!vorhanden) {
-      satz.addToken(token.name, token.value, token.type)
+      // Aufrufform gemessen: EIN Objekt mit `type`, `name`, `value`.
+      satz.addToken({ type: token.type, name: token.name, value: token.value })
       angelegt.push(token.name)
       continue
     }
-    if (vorhanden.value !== token.value) {
-      vorhanden.value = token.value
+    if (kanonisch(vorhanden.value) === kanonisch(token.value)) {
+      continue
+    }
+    vorhanden.value = token.value
+    // Schreibpfad abgesichert: ob `value` ueberhaupt schreibbar ist, ist nicht gemessen. Ein
+    // stiller Nicht-Schreiber waere sonst von einem erfolgreichen Abgleich nicht zu unterscheiden.
+    if (kanonisch(vorhanden.value) === kanonisch(token.value)) {
       abgeglichen.push(token.name)
+    } else {
+      nichtSchreibbar.push(token.name)
     }
   }
 
@@ -87,9 +121,10 @@ function main() {
     erwartet: TOKENS.length,
     angelegt: angelegt,
     abgeglichen: abgeglichen,
+    nichtSchreibbar: nichtSchreibbar,
     aktiviert: aktiviert,
     zusaetzlichInPenpot: zusaetzlich,
   }
 }
 
-JSON.stringify(main(), null, 2)
+return JSON.stringify(main(), null, 2)
