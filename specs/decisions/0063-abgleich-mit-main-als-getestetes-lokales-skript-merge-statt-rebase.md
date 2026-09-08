@@ -58,7 +58,7 @@ Damit bleibt die Merge-Basis nach dem Abgleich exakt der übernommene `main`-Sta
 |---|---|---|
 | `0` | `main` ist bereits enthalten | unverändert; **keine Ausgabe** |
 | `10` | `main` sauber übernommen | ein neuer Merge-Commit, Arbeitsverzeichnis sauber |
-| `20` | Konflikt | Merge steht offen (`MERGE_HEAD`), Konfliktpfade auf stdout |
+| `20` | Konflikt (**mindestens ein Pfad unmerged**, siehe Nachtrag) | Merge steht offen (`MERGE_HEAD`), Konfliktpfade auf stdout |
 | alles andere | Vorbedingung/Umgebung | unverändert |
 
 Der No-Op-Fall wird mit `git merge-base --is-ancestor main HEAD` entschieden, **bevor** ein `git merge` überhaupt abgesetzt wird — nicht an der Ausgabe „Already up to date" erkannt. Ausgabetexte von `git` sind übersetzbar und formulierungsabhängig; die Vorfahren-Frage ist eine Plumbing-Auskunft mit Exit-Code. Weil in diesem Fall gar nicht gemerged wird, kann auch unter keiner Git-Konfiguration ein leerer Commit entstehen (AK 3). Und weil das Skript dabei nichts ausgibt, hat der Ablauf nichts zu berichten — „keine Meldung" ist eine Eigenschaft des Skripts, keine Disziplin des Aufrufers.
@@ -70,7 +70,7 @@ Vorbedingungen, die zu „alles andere" führen und den Ablauf anhalten: unsaube
 `ship-feature` (Hauptsession) ruft das Skript auf — reines lokales `git`, wie `git status`/`git push` dort ohnehin. Was danach passiert, hängt am Exit-Code, und die Rollenteilung aus `ship-feature` Schritt 5 („kein eigener erneuter Testlauf durch den Orchestrator") bleibt unangetastet:
 
 - **`0`:** weiter, ohne jede Meldung.
-- **`10` und `20`:** per `SendMessage` an den weiterhin offenen `developer`-Subagenten. Bei `20` löst er den bereits offen stehenden Merge auf und schließt ihn mit `git commit --no-edit` ab — die Nachricht aus Punkt 2 liegt dafür in `MERGE_MSG` bereit, sie wird an keiner zweiten Stelle wiederholt. In **beiden** Fällen läuft danach sein Schritt 4 (abschließender Qualitätscheck) vollständig.
+- **`10` und `20`:** per `SendMessage` an den weiterhin offenen `developer`-Subagenten. Bei `20` löst er den bereits offen stehenden Merge auf und schließt ihn mit `git add <genau die Konfliktpfade>` + `git commit --no-edit --cleanup=strip` ab (siehe Nachtrag) — die Nachricht aus Punkt 2 liegt dafür in `MERGE_MSG` bereit, sie wird an keiner zweiten Stelle wiederholt. In **beiden** Fällen läuft danach sein Schritt 4 (abschließender Qualitätscheck) vollständig.
 
 **Auch der saubere Merge (`10`) löst den Qualitätscheck aus.** AK 5 verlangt ihn wörtlich nur für den Konfliktfall, AK 3 verbietet ihn wörtlich nur für den No-Op — aber ein textuell konfliktfreier Merge ist kein fachlich konfliktfreier: Eine Umbenennung auf `main` und ihr Aufrufer im Feature-Branch stehen an verschiedenen Stellen und kollidieren für `git` nie. Der Branch enthielte dann Code, gegen den nie ein Test gelaufen ist, die CI färbte sich nach dem Push rot, und AK 9 („ein vollständig durchlaufener Ablauf hinterlässt einen freigabefähigen Pull Request") wäre verfehlt — nur mit einem anderen Blocker als vorher.
 
@@ -99,3 +99,43 @@ Rebase wurde nicht abgewogen, sondern ist durch AK 4 ausgeschlossen. Der Vollst�
 - **Ein abgebrochener Lauf kann ein Repository mit offenem Merge hinterlassen** (Exit `20`, danach `SendMessage`-Fehlschlag). Der Recovery-Abschnitt von `ship-feature` nimmt dafür einen Satz auf: erst `git merge --abort`, dann den neuen `developer`-Lauf starten. Das ist der bewusste Preis dafür, dass der Konflikt dort aufgelöst wird, wo er entsteht, statt den Merge zweimal auszuführen.
 - **Die Tests brauchen eine Git-Identität im Unterprozess.** In CI ist keine konfiguriert; die Fixtures setzen `GIT_AUTHOR_*`/`GIT_COMMITTER_*` und legen ihre Repositories mit `git init -b main` an. Ohne das sind sie lokal grün und in CI rot — die klassische Falle dieser Testbauart, hier einmal benannt statt zweimal gefunden.
 - **Der Ablauf hängt ab jetzt an einer Datei außerhalb von `.claude/`.** Verschwindet `scripts/merge-main-into-branch.sh`, scheitert `ship-feature` an einer sichtbaren Stelle mit einem Kommando-nicht-gefunden — nicht still. Dass die beiden Aufrufstellen im Skill erhalten bleiben (insbesondere die zweite, tragende aus AK 2), sichert eine kleine statische Prüfung ab; sie ist der einzige Teil dieser Story, für den ein Textprüfer das richtige Werkzeug ist.
+
+## Nachtrag (2026-09-08): drei Präzisierungen aus der Konsultation von `test-engineer` und `security-engineer`
+
+Alle drei sind **am laufenden `git` gemessen**, nicht abgeleitet, und je zweimal unabhängig
+nachgestellt. Sie ändern keine Entscheidung dieser ADR, sondern schärfen drei Formulierungen, die in
+der ursprünglichen Fassung ein falsches Verhalten zugelassen hätten. Die Messprotokolle stehen in
+`specs/architecture/0002-testkonzept.md` und `specs/architecture/0003-securitykonzept.md`.
+
+**1. Der Konflikt-Abschlusscommit braucht `--cleanup=strip`** (betrifft Abschnitt 2 und 5). `git`
+hängt nach einem Konflikt eine `# Conflicts:`-Liste an `MERGE_MSG`. Ohne Editor-Durchlauf bleibt sie
+im Commit-**Body** stehen und wandert in den Body des Squash-Commits — genau das Rauschen, das
+Abschnitt 2 ausschließt („nennt bewusst keine Konfliktliste"). Gemessen an Git 2.43: `git commit
+--no-edit` erzeugt eine dreizeilige Nachricht mit der Konfliktliste, `git commit --no-edit
+--cleanup=strip` exakt die eine `chore:`-Zeile. Die Zusage aus Abschnitt 2 hängt damit am Flag, nicht
+an der Absicht.
+
+**2. Exit `20` verlangt mindestens einen Pfad im Konfliktzustand** (betrifft Abschnitt 4). „Merge-Exit
+≠ 0" ist nicht gleich „Konflikt": Mit einem `pre-merge-commit`-Hook nachgestellt endet `git merge` mit
+Exit 1, `MERGE_HEAD` **existiert**, und `git diff --name-only --diff-filter=U` liefert **null** Pfade
+(dieselbe Signatur entsteht bei `commit.gpgsign` ohne Schlüssel). Ein Skript, das darauf `20` meldete,
+schickte den `developer` Konfliktmarker suchen, die es nicht gibt, und `git commit --no-edit` schlösse
+den vom Hook abgelehnten Merge stillschweigend ab. Regel: Ohne unmerged Pfad räumt das Skript auf
+(`git merge --abort`) und endet in der Fehlerfamilie.
+
+**3. „Keine Argumente" bindet das Ziel nicht — die Umgebung muss bereinigt werden** (betrifft
+Abschnitt 1). Der Satz „kann nicht auf ein anderes Ziel gerichtet werden" trägt für die
+Kommandozeile, nicht für die Umgebung: Mit gesetztem `GIT_DIR`/`GIT_WORK_TREE` meldet `git branch
+--show-current` gemessen den Branch eines **anderen** Repositoriums, und über
+`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0=core.hooksPath` wurde während `git merge` ein `post-merge`-Hook
+aus einem beliebigen Verzeichnis ausgeführt. Das Skript setzt deshalb direkt nach `set -euo pipefail`
+ein `unset` auf `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_INDEX_FILE`,
+`GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES` und `GIT_CONFIG_COUNT`. Einordnung ohne
+Überzeichnung: Wer diese Variablen setzen kann, hat bereits Codeausführung in derselben Sitzung — es
+geht um Tiefenstaffelung und vor allem um Unfallschutz.
+
+**Zur Konsequenz „Zustand danach: unverändert" bei nicht vorspulbarem `main`:** Gemessen gilt das für
+den lokalen `main`-Ref, **nicht** für `refs/remotes/origin/main` — die Standard-Refspec aus
+`.git/config` feuert parallel und aktualisiert die Tracking-Referenz zwangsweise mit. Für die
+Review-Basis folgenlos (`main...HEAD` liest den lokalen Ref); nur nicht darauf bauen, dass der
+Abbruchpfad seiteneffektfrei ist.
