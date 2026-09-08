@@ -82,7 +82,7 @@ fi
 # lokal nicht vorspulbar). Unterschieden werden sie hier bewusst nicht: Das ginge nur ueber den
 # Meldungstext von git, und der ist uebersetzbar.
 if ! git fetch --quiet "$REMOTE" "$HAUPTZWEIG:$HAUPTZWEIG" >/dev/null 2>&1; then
-    abbruch "'git fetch $REMOTE $HAUPTZWEIG:$HAUPTZWEIG' fehlgeschlagen: Remote nicht erreichbar, '$HAUPTZWEIG' dort nicht vorhanden, oder '$HAUPTZWEIG' lokal nicht vorspulbar (umgeschrieben). Ein Fall fuer Daniel, nicht fuer eine Korrektur nebenbei."
+    abbruch "'$HAUPTZWEIG' konnte nicht von '$REMOTE' geholt werden: Remote nicht erreichbar, '$HAUPTZWEIG' dort nicht vorhanden, oder '$HAUPTZWEIG' lokal nicht vorspulbar (umgeschrieben). Ein Fall fuer Daniel, nicht fuer eine Korrektur nebenbei."
 fi
 
 # Der No-Op wird gerechnet, nicht gelesen - und ausschliesslich Rueckgabe 0 heisst "enthalten".

@@ -125,3 +125,45 @@ Der Orchestrator meldet sich nach seiner Review-Runde (oder nach einem Copilot-R
 ```
 
 Dieser Folgeauftrag kann sich mehrfach wiederholen (z.B. erst eigene Review-Findings des Orchestrators, später Copilot-Findings) — jedes Mal derselbe Ablauf: Findings beheben, Qualitätscheck wiederholen, Folgebericht.
+
+## Folgeauftrag: Abgleich mit `main` (nach `SendMessage` vom Orchestrator)
+
+Der Orchestrator gleicht den Feature-Branch nach deinem Abschlussbericht an zwei Zeitpunkten mit `main` ab — einmal vor dem Push/der PR-Eröffnung und einmal als erste Handlung vor der Finalisierung. Hat der Abgleich etwas verändert, meldet er sich per `SendMessage` an denselben, weiterhin offenen Subagenten-Kontext: kein neuer Lauf, du hast weiterhin Zugriff auf Branch, Commits und den bisherigen Kontext. Zwei Ausgangslagen:
+
+1. **Sauber übernommen.** Der Merge-Commit liegt bereits auf dem Branch, das Arbeitsverzeichnis ist sauber, nichts ist aufzulösen. Trotzdem geht es weiter mit Punkt 3 — ein textuell konfliktfreier Merge ist kein fachlich konfliktfreier: Eine Umbenennung auf `main` und ihr Aufrufer in deinem Branch stehen an verschiedenen Stellen und kollidieren für `git` nie. Ohne den Qualitätscheck enthielte der Branch Code, gegen den nie ein Test gelaufen ist, und die CI färbte sich nach dem Push rot.
+
+2. **Konflikt.** Der Merge steht **offen** (`MERGE_HEAD` existiert), die Konfliktpfade stehen in der Nachricht des Orchestrators. Löse genau diese Pfade inhaltlich auf — nicht raten, nicht pauschal eine Seite nehmen, weil sie den Test grün macht. Fang **nicht** von vorne an: Der Merge ist bereits offen, ein erneutes `git merge` gibt es nicht. Abgeschlossen wird er mit genau zwei Befehlen:
+
+   - `git add <genau die Konfliktpfade>` — pfadgenau. Ein pauschales Hinzufügen aller Änderungen nähme eine danebenliegende, nicht versionierte Datei mit (`.gitignore` deckt `.env`, `photo-cache/` und `e2e/artifacts/`, aber nicht jede lokal entstandene Datei), und der Branch geht unmittelbar danach in ein öffentliches Repositorium.
+   - `git commit --no-edit --cleanup=strip` — die Commit-Nachricht liegt bereits in `MERGE_MSG` bereit und wird an keiner zweiten Stelle wiederholt. Das `--cleanup=strip` ist nicht optional: Ohne es bleibt die von `git` angehängte `# Conflicts:`-Liste im Commit-Body stehen und wandert in den Body des Squash-Commits.
+
+3. **In beiden Fällen danach:** Schritt 4 (Abschließender Qualitätscheck) vollständig durchlaufen — nicht nur für die zuletzt geänderten Dateien. Der Orchestrator führt dafür bewusst keinen eigenen Testlauf aus; das ist deine Rolle.
+
+4. **Bericht.** Ist alles grün, beende deinen Turn mit exakt folgendem, wörtlich festem Anker:
+
+```
+## Abschlussbericht (Folgeauftrag: main-Abgleich)
+
+**Feature-Branch:** <Name, zur Bestätigung>
+**Commit-Stand:** sauber, alles committet
+
+### Aufgelöste Konflikte
+<je Konfliktpfad eine Zeile: `<pfad>` — <ein Wort, welche Seite gewonnen hat: main / Branch / beides>; oder "keine — main wurde sauber übernommen">
+
+### Tests & Codequalität
+<erneut grün>
+```
+
+Die Konfliktpfade gehören **einzeln** aufgeführt, je Pfad mit dem einen Wort dazu. Das ist kein Formalismus: Eine Konfliktauflösung ist die einzige inhaltliche Codeänderung des gesamten Ablaufs, die keine Review-Runde mehr sieht — beide Aufrufstellen liegen hinter Review und Copilot-Review. Die Liste ist alles, was Daniel davon zu sehen bekommt.
+
+Gelingt die Auflösung nicht sauber, oder bleibt der Qualitätscheck rot: **nichts halb Aufgelöstes stehen lassen**. Setz `git merge --abort` ab — der Branch steht damit wieder exakt im Stand vor dem Abgleich — und beende deinen Turn mit exakt folgendem Anker:
+
+```
+## Blockiert: main-Abgleich fehlgeschlagen
+
+**Feature-Branch:** <Name>
+**Grund:** <konkret: welche Auflösung nicht gelang bzw. welcher Teil des Qualitätschecks rot blieb>
+**Zustand:** `git merge --abort` abgesetzt, Branch im Stand vor dem Abgleich
+```
+
+Der Orchestrator hält den Ablauf daraufhin an, pusht nichts und meldet an Daniel. Auch dieser Folgeauftrag kann sich wiederholen (zwei Aufrufzeitpunkte, jeder kann einen Konflikt bringen) — jedes Mal derselbe Ablauf.
