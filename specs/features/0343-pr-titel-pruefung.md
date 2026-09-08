@@ -1,6 +1,6 @@
 # 0343 - Vollständiger Changelog durch geprüfte Pull-Request-Titel
 
-**Status:** Accepted
+**Status:** Implemented ([PR #354](https://github.com/TheRealKoller/photosort/pull/354))
 **Erstellt:** 2026-09-08
 **Bezug:** [Issue #343](https://github.com/TheRealKoller/photosort/issues/343)
 
