@@ -45,8 +45,15 @@ Verknuepfungspruefung geschoben (Reihenfolge ueber Offsets) und danach ganz gelo
 die Merge-Nachricht zusaetzlich in `developer.md` gesetzt (Einmaligkeit); `## Blockiert:
 main-Abgleich fehlgeschlagen` in einen Codeblock in `ship-feature` gesetzt (einzige
 Definitionsstelle); `"changelog-sections": [{"type": "chore", "section": "Sonstiges", "hidden":
-false}]` in `release-please-config.json` (AK 8). Wer ein Muster aendert, wiederholt diese Probe,
-statt sie zu glauben.
+false}]` in `release-please-config.json` (AK 8). **Am selben Tag nachgetragen**, nachdem das
+Copilot-Review den toten Filter `if "unset" in zeile or True` gefunden hatte: `GIT_CONFIG_COUNT`
+aus dem `unset` des Skripts entfernt und zugleich in einer *wirksamen* Zeile (keinem Kommentar)
+mit fuehrendem Leerzeichen erwaehnt - also in genau der Form, die der alte Substring-Vergleich
+`f" {name}"` als Treffer wertete. Gemessen: mit dem alten Filter blieb der Test **gruen**, mit dem
+gezielten Extraktor wird er **rot**.
+Derselbe Zustand steht seitdem als eigener Fall in
+`test_eine_variable_ausserhalb_des_unset_zaehlt_nicht_mit`. Wer ein Muster aendert, wiederholt
+diese Probe, statt sie zu glauben.
 
 Kein Netzwerk, kein `gh`, kein echtes git: gelesen werden ausschliesslich Dateien dieses
 Repositories.
@@ -159,6 +166,37 @@ def fundstellen(text: str, muster: re.Pattern[str]) -> list[str]:
         f"Zeile {text[: treffer.start()].count(chr(10)) + 1}: {treffer.group(0)!r}"
         for treffer in muster.finditer(text)
     ]
+
+
+def unset_befehl(text: str) -> str:
+    """Der `unset`-Befehl des Skripts samt seiner Fortsetzungszeilen (`\\` am Zeilenende).
+
+    Gezielt extrahiert statt gegen den ganzen Skripttext geprueft: Sonst genuegte es, dass ein
+    Variablenname *irgendwo* im wirksamen Text steht - eine aus dem `unset` entfernte Variable
+    bliebe unbemerkt, sobald sie an anderer Stelle vorkommt.
+    """
+    zeilen = wirksame_zeilen(text, "#")
+    for nummer, zeile in enumerate(zeilen):
+        if not re.match(r"^\s*unset\b", zeile):
+            continue
+        gesammelt = [zeile]
+        while gesammelt[-1].rstrip().endswith("\\") and nummer + len(gesammelt) < len(zeilen):
+            gesammelt.append(zeilen[nummer + len(gesammelt)])
+        return "\n".join(gesammelt)
+    return ""
+
+
+def fehlende_unset_variablen(text: str) -> list[str]:
+    """Bedrohung 1: die Muss-Liste, verglichen gegen die Woerter *dieses einen* Befehls."""
+    befehl = unset_befehl(text)
+    if not befehl.strip():
+        raise ValueError(
+            "kein wirksamer `unset`-Befehl im Skripttext gefunden. Entweder ist er entfallen "
+            "oder auskommentiert - in beiden Faellen ist die Umgebung unbereinigt, und ein "
+            "gruener Test waere hier bedeutungslos."
+        )
+    woerter = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", befehl))
+    return [name for name in ZU_BEREINIGENDE_VARIABLEN if name not in woerter]
 
 
 def verbotene_befehle(text: str) -> list[str]:
@@ -280,9 +318,8 @@ def test_das_skript_beginnt_mit_shebang_und_strengem_modus() -> None:
 def test_das_skript_bereinigt_die_umgebung() -> None:
     """Bedrohung 1: 'keine Argumente' bindet das Ziel nicht - `GIT_DIR` richtet es woandershin."""
     wirksam = wirksamer_skripttext(skripttext())
-    unset_text = "\n".join(zeile for zeile in wirksam.splitlines() if "unset" in zeile or True)
+    fehlend = fehlende_unset_variablen(skripttext())
 
-    fehlend = [name for name in ZU_BEREINIGENDE_VARIABLEN if f" {name}" not in unset_text]
     assert not fehlend, (
         f"Im `unset` fehlen: {fehlend}. Mit gesetztem GIT_DIR/GIT_WORK_TREE meldet git den "
         "Branch eines anderen Repositoriums, ueber GIT_CONFIG_COUNT laesst sich core.hooksPath "
@@ -292,6 +329,43 @@ def test_das_skript_bereinigt_die_umgebung() -> None:
         "GIT_AUTHOR_*/GIT_COMMITTER_* und GIT_CONFIG_GLOBAL bleiben ausdruecklich stehen - ohne "
         "sie hat der Merge-Commit im Unterprozess keine Identitaet und die Tests keine Isolation."
     )
+
+
+def test_eine_variable_ausserhalb_des_unset_zaehlt_nicht_mit() -> None:
+    """Die Gegenprobe, die der frueher tote Filter (`if "unset" in zeile or True`) schuldig blieb.
+
+    Er wertete den **ganzen** wirksamen Skripttext aus. Eine aus dem `unset` entfernte Variable
+    blieb damit unbemerkt, sobald ihr Name irgendwo sonst in einer wirksamen Zeile stand - genau
+    der Zustand, den dieser Fall nachstellt.
+    """
+    text = (
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        "unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \\\n"
+        "    GIT_ALTERNATE_OBJECT_DIRECTORIES\n"
+        'echo "die Variable GIT_CONFIG_COUNT wird hier nur erwaehnt"\n'
+    )
+
+    assert fehlende_unset_variablen(text) == ["GIT_CONFIG_COUNT"]
+
+
+def test_der_unset_befehl_wird_ueber_seine_fortsetzungszeilen_hinweg_gelesen() -> None:
+    text = (
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        "unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \\\n"
+        "    GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG_COUNT\n"
+        "git fetch\n"
+    )
+
+    assert fehlende_unset_variablen(text) == []
+    assert "GIT_CONFIG_COUNT" in unset_befehl(text)
+    assert "git fetch" not in unset_befehl(text)
+
+
+def test_ein_auskommentiertes_unset_zaehlt_nicht_als_bereinigung() -> None:
+    text = "#!/usr/bin/env bash\n# unset GIT_DIR GIT_WORK_TREE\nset -euo pipefail\n"
+
+    with pytest.raises(ValueError, match=r"kein wirksamer `unset`-Befehl"):
+        fehlende_unset_variablen(text)
 
 
 def test_das_skript_enthaelt_keinen_schreibenden_oder_umschreibenden_befehl() -> None:
