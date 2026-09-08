@@ -1,6 +1,6 @@
 """Haelt fest, dass die Adresse der selbst gehosteten Penpot-Instanz nicht ins Repository geraet.
 
-Seit ADR 0064 ist die Penpot-Datei „PhotoSort — Dark Utility Register" die Design-Quelle. Das
+Seit ADR 0065 ist die Penpot-Datei „PhotoSort — Dark Utility Register" die Design-Quelle. Das
 Repository ist **oeffentlich**, die Instanz ist **privat und selbst gehostet**: Im Repository steht
 deshalb ausschliesslich der *Dateiname* - nirgends Adresse, Hostname, Port, Instanz-ID,
 Datei-/Projekt-ID, Benutzername oder Token.
@@ -115,7 +115,7 @@ def test_keine_instanzadresse_im_penpot_suchraum() -> None:
 
     assert not befunde, (
         "Adresse im Penpot-Suchraum gefunden. Im Repository steht ausschliesslich der DATEINAME "
-        "der Penpot-Datei, nie Adresse, Hostname, Port oder ID (ADR 0064): " + "; ".join(befunde)
+        "der Penpot-Datei, nie Adresse, Hostname, Port oder ID (ADR 0065): " + "; ".join(befunde)
     )
 
 
@@ -131,7 +131,7 @@ def test_env_example_traegt_keinen_penpot_eintrag() -> None:
 
     assert "PENPOT" not in inhalt.upper(), (
         ".env.example traegt einen PENPOT-Eintrag. Der Penpot-MCP-Server ist in Daniels lokaler "
-        "Werkzeugkonfiguration eingerichtet, nicht in einer Repo-Datei (ADR 0064)."
+        "Werkzeugkonfiguration eingerichtet, nicht in einer Repo-Datei (ADR 0065)."
     )
 
 
@@ -145,7 +145,7 @@ def test_es_entsteht_keine_mcp_konfiguration_im_repository() -> None:
 
     assert ergebnis.stdout == b"", (
         "Es ist eine .mcp.json ins Repository geraten. MCP-Server werden ausserhalb des "
-        "Repositories konfiguriert (ADR 0061 fuer GitHub, ADR 0064 fuer Penpot)."
+        "Repositories konfiguriert (ADR 0061 fuer GitHub, ADR 0065 fuer Penpot)."
     )
 
 

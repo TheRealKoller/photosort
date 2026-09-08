@@ -218,7 +218,7 @@ function bindeRollen(brett, beschriftung, rollen, herkunft, nachzubinden) {
  * Variante. Gebaut wird deshalb das vollstaendige Kreuzprodukt der in `components.json`
  * gefuehrten Achsen - die Achsen selbst sind eine Design-System-Aussage und werden hier NICHT
  * reduziert. Das ergibt bei der Schaltflaeche 6 x 3 x 5 = 90 Varianten und ueber alle zehn
- * Bausteine 160; das ist viel, aber mechanisch und ohne Urteil abgeleitet.
+ * Bausteine 144; das ist viel, aber mechanisch und ohne Urteil abgeleitet.
  */
 function kombinationen(varianten) {
   let ergebnis = [{}]

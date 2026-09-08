@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Datum:** 2026-09-08
-**Bezug:** [GitHub-Issue #352](https://github.com/TheRealKoller/photosort/issues/352), [`features/0352-penpot-design-quelle.md`](../features/0352-penpot-design-quelle.md), [`decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md`](./0065-penpot-als-design-quelle-rangfolge-umgekehrt.md)
+**Bezug:** [GitHub-Issue #352](https://github.com/TheRealKoller/photosort/issues/352), [`features/0352-penpot-als-alleinige-design-quelle.md`](../features/0352-penpot-als-alleinige-design-quelle.md), [`decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md`](./0065-penpot-als-design-quelle-rangfolge-umgekehrt.md)
 
 **Berührt außerdem (keine Ablösung):**
 - [`decisions/0055-dark-utility-register-fundament.md`](./0055-dark-utility-register-fundament.md) Punkt 7a (die zwölf Symbole werden **nicht** als SVG im Repository vorgehalten, sie kommen aus `lucide-react`): unverändert gültig. Abschnitt 3 dieser ADR ist die Konsequenz daraus — auch die Penpot-Symbole werden erzeugt statt abgelegt.

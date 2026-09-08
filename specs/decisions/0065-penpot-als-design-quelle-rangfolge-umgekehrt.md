@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Datum:** 2026-09-08
-**Bezug:** [GitHub-Issue #352](https://github.com/TheRealKoller/photosort/issues/352), [`features/0352-penpot-design-quelle.md`](../features/0352-penpot-design-quelle.md)
+**Bezug:** [GitHub-Issue #352](https://github.com/TheRealKoller/photosort/issues/352), [`features/0352-penpot-als-alleinige-design-quelle.md`](../features/0352-penpot-als-alleinige-design-quelle.md)
 
 **Nimmt ausdrücklich zurück (Festlegung eines Referenzdokuments, keine ADR):**
 - [`architecture/0005-board-dark-utility-register.md`](../architecture/0005-board-dark-utility-register.md), die beiden Sätze „**Diese Datei ist die maßgebliche Werteliste im Repo**" und „bei Widerspruch gilt die ADR, nicht diese Momentaufnahme". Beide fallen: Die maßgebliche Werteliste im Repo ist ab jetzt `frontend/src/index.css` (Abschnitt 3), und die Rangfolge zwischen Repo und Design-Quelle kehrt sich um (Abschnitt 2). Der **Inhalt** der Datei bleibt wortgetreu stehen — sie ist eine Momentaufnahme, und eine nachträglich umgeschriebene Momentaufnahme wäre eine Fälschung. Angefasst wird ausschließlich ihr Kopf (Abschnitt 5).
