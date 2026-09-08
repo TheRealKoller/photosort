@@ -19,6 +19,8 @@ Eine `developer`-Antwort löst diesen Skill aus, wenn sie einen der folgenden w�
 - `## Blockiert: Architektur-Konsultation nötig` → Schritt 1.
 - `## Abschlussbericht` (Erstbericht, vor jedem Review) → Schritt 2.
 - `## Abschlussbericht (Folgeauftrag: Findings behoben)` (nach einem SendMessage-Fix-Auftrag) → Schritt 5.
+- `## Abschlussbericht (Folgeauftrag: main-Abgleich)` (nach einem SendMessage-Abgleichsauftrag) → weiter an der Stelle, an der der Abgleich angestoßen wurde: Schritt 6.2 bzw. Schritt 8.1.
+- `## Blockiert: main-Abgleich fehlgeschlagen` → Ablauf anhalten, **nichts pushen**, an Daniel melden (siehe Schritt 6.2).
 
 **Kein exakter Match, aber erkennbar gemeinter Abschluss** (z.B. Tippfehler, abweichende Formatierung, fehlendes Feld): nicht stillschweigend als "fertig, bereit für Review" werten. Lies den Bericht inhaltlich vollständig — wirkt er wie ein vollständiger Abschluss, frag beim `developer`-Subagenten per SendMessage kurz nach, ob es sich um den finalen Bericht handelt und bitte um die Korrektur des Ankers (kostet eine Nachricht, verhindert aber ein falsch interpretiertes Signal); wirkt er unvollständig oder unklar, frag stattdessen inhaltlich nach, was fehlt. Nie raten.
 
@@ -64,18 +66,26 @@ Kein eigener erneuter Testlauf durch den Orchestrator (bewusste Rollenteilung: T
 
 Nach Bestätigung geht es weiter zu Schritt 6 (PR-Erstellung) bzw., falls die Findings aus einer Copilot-Runde (Schritt 7) stammten, zurück in den Copilot-Ablauf (erneuter Push statt neuem PR).
 
-## Schritt 6: Commit, Push, Pull Request
+## Schritt 6: Commit, Abgleich mit `main`, Push, Pull Request
 
 1. Falls seit dem letzten Zwischencommit noch uncommittete Änderungen bestehen: committen, mit der im Projekt üblichen Commit-Konvention (siehe `CLAUDE.md`, Conventional Commits).
-2. Push den Feature-Branch (`git push -u origin <branch>`), nicht `main`. Unverändert, unabhängig davon, ob der Branch von `developer` selbst oder bereits vorher von `spec-writer` mitsamt Spec-Commit angelegt wurde (ADR [`decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md`](../../../specs/decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md)) — in beiden Fällen liegt zu diesem Zeitpunkt ein lokal vollständiger, committeter Branch vor, der als Ganzes gepusht wird; der Spec-Commit landet dadurch im selben PR wie die Implementierung, nicht in einem separaten.
-3. Eröffne einen PR: Operation `pr-erstellen`. Halte dich an eine vorhandene `.github/pull_request_template.md`, sonst mindestens: Bezug zur Spec/zum Issue, kurze Zusammenfassung (Was und Warum), Testplan/was geprüft wurde.
+2. **Abgleich mit `main` (erster Zeitpunkt).** Führ `scripts/merge-main-into-branch.sh` aus — argumentlos, im Repositorium des aktuellen Arbeitsverzeichnisses, auf dem Feature-Branch. Es holt den aktuellen Stand von `main` und übernimmt ihn per Merge, damit der gleich eröffnete Pull Request nicht schon beim Anlegen hinter `main` zurückliegt. Reines lokales `git`; das Skript pusht nie und checkt `main` nie aus. Es steht **nach** 6.1, weil es ein sauberes Arbeitsverzeichnis verlangt, und **vor** dem Push, damit der Merge-Commit im selben Push hinausgeht. Ausgewertet wird ausschließlich der Exit-Code:
+
+   - **`0`** — `main` ist bereits enthalten: weiter, **ohne jede Meldung**. Kein Berichtseintrag, kein Testlauf; das Skript gibt in diesem Fall auch selbst nichts aus.
+   - **`10`** (sauber übernommen) **und `20`** (Konflikt: der Merge steht offen, die Konfliktpfade stehen zeilenweise auf stdout) — per `SendMessage` an denselben, weiterhin offenen `developer`-Subagenten, Folgeauftrag „Abgleich mit `main`" (Format und Anker ausschließlich in `.claude/agents/developer.md` definiert, hier keine Kopie); bei `20` mit den ausgegebenen Konfliktpfaden. Führ **selbst keinen Testlauf** aus — die Rollenteilung aus Schritt 5 bleibt unverändert, der Subagent wiederholt seinen Schritt 4 und antwortet mit `## Abschlussbericht (Folgeauftrag: main-Abgleich)`. Erst danach geht es weiter.
+   - **Jeder andere Exit-Code** (Vorbedingung oder Umgebung, die Begründung steht auf stderr) **sowie der Anker `## Blockiert: main-Abgleich fehlgeschlagen`** — Ablauf anhalten, **nichts pushen**, an Daniel melden. Ein unbekannter Exit-Code wird **nie** wie `0` behandelt: Das hieße „`main` ist bereits enthalten" für ein Repositorium, in dem gar nicht gemessen wurde.
+
+   Kam es zu einem Konflikt, gehen dessen Pfade samt der Angabe, welche Seite je Pfad gewonnen hat, in den Chat-Bericht an Daniel — **nie** in den PR-Body (Skill `github-access`, Härtungsregel 4.3). Es ist der einzige Inhalt des Laufs, den keine Review-Runde mehr sieht.
+
+3. Push den Feature-Branch (`git push -u origin <branch>`), nicht `main`. Unverändert, unabhängig davon, ob der Branch von `developer` selbst oder bereits vorher von `spec-writer` mitsamt Spec-Commit angelegt wurde (ADR [`decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md`](../../../specs/decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md)) — in beiden Fällen liegt zu diesem Zeitpunkt ein lokal vollständiger, committeter Branch vor, der als Ganzes gepusht wird; der Spec-Commit landet dadurch im selben PR wie die Implementierung, nicht in einem separaten.
+4. Eröffne einen PR: Operation `pr-erstellen`. Halte dich an eine vorhandene `.github/pull_request_template.md`, sonst mindestens: Bezug zur Spec/zum Issue, kurze Zusammenfassung (Was und Warum), Testplan/was geprüft wurde.
 
    **Pflicht, kein Platzhalter zum Stehenlassen:** Der PR-**Body** enthält die ausgefüllte Zeile `Closes #<Issue-Nummer>` (die Vorlage bringt sie mit `#NNN` mit). Die Issue-Nummer ist bei neuen Specs identisch mit der Spec-Nummer; bei Altspecs `0001`–`0065` steht sie in der `**Bezug:**`-Zeile der Spec-Datei. Nur diese Zeile erzeugt die strukturierte Verknüpfung zwischen PR und Issue (beidseitig sichtbar als "Linked issues"/"Linked pull requests") und lässt GitHub das Issue beim Merge nach `main` selbst schließen; ein bloßer Fließtext-Verweis erzeugt nur einen Timeline-Eintrag. Fehlt sie, bricht die Finalisierung in Schritt 8 ab.
 
    Das Keyword gehört ausschließlich in den Body — **nie** in eine Commit-Nachricht und **nie** in den PR-Titel: Das Repo squasht mit `COMMIT_MESSAGES` und `COMMIT_OR_PR_TITLE`, beide Texte wandern in Merge-Commit, Changelog und den Body des release-please-PRs, wo das Keyword beim nächsten Release-Merge erneut ausgewertet würde.
 
    Direkt nach dem Eröffnen prüfbar, ohne auf den Merge zu warten: `pr-verknuepfung-lesen` muss einen Eintrag mit der Issue-Nummer und dem Repository dieser Story zeigen.
-4. **Lies den Board-Wert einmal zurück — setz ihn nicht.** `Review` schreibt GitHub selbst, ausgelöst durch die `Closes #NNN`-Zeile aus 6.3 (Workflow `Pull request linked to issue`). Lies ihn mit `board-status-und-prioritaet-lesen`; ausgewertet wird der Knoten mit `project.number == 8`, nie schlicht `nodes[0]`.
+5. **Lies den Board-Wert einmal zurück — setz ihn nicht.** `Review` schreibt GitHub selbst, ausgelöst durch die `Closes #NNN`-Zeile aus 6.4 (Workflow `Pull request linked to issue`). Lies ihn mit `board-status-und-prioritaet-lesen`; ausgewertet wird der Knoten mit `project.number == 8`, nie schlicht `nodes[0]`.
 
    Dieser Schritt existiert, weil sich mit dem Übergang auf native Workflows die Richtung des Fehlers umdreht: Ein versehentlich deaktivierter Workflow schreibt **gar nichts**, und eine Karte, die auf `In Progress` liegen bleibt, ist von einer Karte, an der gerade gearbeitet wird, nicht zu unterscheiden. Der Zustand der Workflows ist per API nicht überwachbar — das Zurücklesen ist der einzige Nachweis, dass der Übergang stattgefunden hat.
 
@@ -104,15 +114,19 @@ Regelweg: Der Spec-Status wird **im Feature-PR selbst** auf `Implemented` gesetz
 
 **Was hier ausdrücklich *nicht* passiert:** kein Schließen des Issues, kein Setzen von `Done`. Beides erledigt GitHub beim Merge — das Keyword `Closes #NNN` schließt das Issue, der Workflow `Item closed` zieht die Karte auf `Done`. Ein vorgezogenes `Done` würde eine Story als erledigt führen, die noch nicht in `main` ist.
 
-1. **Verknüpfung prüfen** mit `pr-verknuepfung-lesen`, für die PR-Nummer aus Schritt 6:
+1. **Abgleich mit `main` (zweiter, tragender Zeitpunkt).** Führ als **erste** Handlung dieses Schritts `scripts/merge-main-into-branch.sh` aus, noch vor der Verknüpfungsprüfung und noch vor dem Setzen der Spec-Statuszeile. Auswertung identisch zu Schritt 6.2: `0` → weiter ohne Meldung; `10`/`20` → `SendMessage` an den weiterhin offenen `developer`-Subagenten und auf dessen Bericht warten; jeder andere Exit-Code oder der Blockiert-Anker → anhalten, nichts pushen, an Daniel melden.
+
+   Dieser Aufruf ist der entscheidende: Zwischen der Eröffnung des Pull Requests und Daniels Freigabe vergeht die meiste Zeit des Laufs, und genau darin läuft `main` weiter. Der Merge-Commit, ein etwaiger Konflikt-Fix und der Finalisierungs-Commit aus 8.4 gehen danach gebündelt in **einem** Push hinaus, damit kein zusätzlicher CI-Lauf entsteht.
+
+2. **Verknüpfung prüfen** mit `pr-verknuepfung-lesen`, für die PR-Nummer aus Schritt 6:
 
    Erwartet: `closingIssuesReferences` enthält einen Eintrag mit der Issue-Nummer dieser Story, und `baseRefName` ist `main`. Erst wenn beides zutrifft, wird finalisiert — die Statuszeile `Implemented` ist eine Aussage über einen PR, der das Issue tatsächlich schließen wird.
 
-   **Fehlerfall „nicht verknüpft":** Es fehlt die Closing-Zeile aus Schritt 6.3 im PR-Body (oder sie nennt die falsche Nummer). Dann den Body nachziehen — Body in eine temporäre Datei schreiben, Zeile ergänzen, `pr-body-schreiben` — und die Prüfung wiederholen. Es ist nichts zurückzunehmen: Die Prüfung steht **vor** jedem Schreibzugriff. Danach lohnt ein erneutes Zurücklesen des Board-Werts aus 6.4, denn erst mit der Verknüpfung kann der Workflow greifen.
+   **Fehlerfall „nicht verknüpft":** Es fehlt die Closing-Zeile aus Schritt 6.4 im PR-Body (oder sie nennt die falsche Nummer). Dann den Body nachziehen — Body in eine temporäre Datei schreiben, Zeile ergänzen, `pr-body-schreiben` — und die Prüfung wiederholen. Es ist nichts zurückzunehmen: Die Prüfung steht **vor** jedem Schreibzugriff. Danach lohnt ein erneutes Zurücklesen des Board-Werts aus 6.5, denn erst mit der Verknüpfung kann der Workflow greifen.
 
    **Fehlerfall „falscher Basis-Branch":** Ist `baseRefName` nicht `main`, ist der PR gegen den falschen Branch eröffnet worden. Das ist ein Fall für Daniel, nicht für eine Korrektur nebenbei — nicht finalisieren, melden.
 
-2. **Die `**Status:**`-Zeile der Spec-Datei** (`specs/features/NNNN-*.md`) lokal auf die finale Form setzen:
+3. **Die `**Status:**`-Zeile der Spec-Datei** (`specs/features/NNNN-*.md`) lokal auf die finale Form setzen:
 
    ```
    **Status:** Implemented ([PR #<MMM>](https://github.com/TheRealKoller/photosort/pull/<MMM>))
@@ -120,9 +134,9 @@ Regelweg: Der Spec-Status wird **im Feature-PR selbst** auf `Implemented` gesetz
 
    Eine rein lokale Textänderung mit dem Editier-Werkzeug — kein Board-Zugriff, kein Netzwerk, nichts, was fehlschlagen könnte.
 
-3. Die geänderte Spec-Datei committen, Konvention: `chore(specs): Spec NNNN finalisieren (PR #<MMM>)`, und zusammen mit ggf. noch offenen Fix-Commits pushen.
+4. Die geänderte Spec-Datei committen, Konvention: `chore(specs): Spec NNNN finalisieren (PR #<MMM>)`, und zusammen mit ggf. noch offenen Fix-Commits pushen.
 
-4. Danach übernimmt Daniel: Freigabe und Merge. **Kein** automatisches Mergen durch dich.
+5. Danach übernimmt Daniel: Freigabe und Merge. **Kein** automatisches Mergen durch dich.
 
 **Wird der PR ohne Merge geschlossen** (Branch verworfen): Das Issue bleibt offen — es hing am Keyword, das nur beim Merge greift —, aber die Karte steht seit der PR-Verknüpfung auf `Review` und behauptet dort eine Prüfung, die es nicht mehr gibt. Diesen einen Übergang setzt die Session selbst zurück, weil GitHub für ein geschlossenes, nicht gemergtes PR keinen Workflow kennt: `board-status-setzen` mit Wert `In Progress`.
 
@@ -138,6 +152,8 @@ Ist das Subagenten-Fenster des `developer`-Laufs bereits geschlossen (z.B. Timeo
 2. Aktuellen Branch-/Commit-Stand prüfen (`git status`, `git log -1`) — der bisherige Fortschritt bleibt im Feature-Branch erhalten, unabhängig vom Subagenten-Fenster.
 3. Neuen `developer`-Lauf starten (Agent-Tool, `subagent_type: developer`, Standard-Modell), diesmal mit explizitem Kontext-Reload im Prompt: Spec-Nummer/-Pfad, exakter Feature-Branch-Name (Hinweis, dass er bereits existiert und weiterverwendet werden soll, nicht neu von `main` abgezweigt wird), sowie die vollständige Liste der in Schritt 1 dieses Recovery-Abschnitts festgehaltenen, noch offenen Findings. Der neue Lauf beginnt effektiv beim Folgeauftrag "Findings beheben" (siehe `developer.md`) mit bereits vorhandenem Branch, nicht bei dessen Schritt 0.
 4. Danach normal mit Schritt 5 dieses Skills weitermachen (Folgebericht auswerten).
+
+Schlug `SendMessage` nach einem Abgleich mit Exit `20` fehl, steht das Repositorium mit einem **offenen Merge** da. Setz in diesem Fall `git merge --abort` ab, **bevor** der neue `developer`-Lauf startet — sonst wird ihm ein Zustand übergeben, den sein Folgeauftrag nicht erwartet. Nach dem Abbruch steht der Branch wieder exakt im Stand vor dem Abgleich; der Abgleich wird danach schlicht erneut angestoßen.
 
 ## Abschlussbericht an den Nutzer
 
