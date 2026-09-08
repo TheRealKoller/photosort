@@ -25,6 +25,7 @@
     "penpot/tokens.ts",
     "penpot/tokens.test.ts",
     "penpot/icons.ts",
-    "penpot/icons.test.ts"
+    "penpot/icons.test.ts",
+    "penpot/payload.test.ts"
   ]
 }
