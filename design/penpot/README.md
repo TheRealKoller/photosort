@@ -2,7 +2,7 @@
 
 Hier liegt alles, was den Stand der Penpot-Datei **„PhotoSort — Dark Utility Register"**
 herstellt und zurückliest. Penpot ist seit ADR
-[`0064`](../../specs/decisions/0064-penpot-als-design-quelle-rangfolge-umgekehrt.md) die
+[`0065`](../../specs/decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md) die
 alleinige Design-Quelle: Welche Farbe, Form, Größe oder welchen Zustand ein Baustein haben *soll*,
 entscheidet Penpot. Was heute *gilt und ausgeliefert wird*, steht weiterhin in
 `frontend/src/index.css` — das ist keine zweite Quelle, sondern der Unterschied zwischen Absicht
@@ -30,7 +30,7 @@ Die beiden erzeugten Dateien entstehen als Vitest-Dateischnappschuss in
 gesichert: Wer `index.css` ändert und nicht neu erzeugt, bekommt einen roten Test — wer eine der
 JSON-Dateien von Hand ändert, ebenfalls. Regeneriert wird mit `npm test -- -u` im Verzeichnis
 `frontend/`. **Werte werden nie in eine Nutzlast getippt** (ADR
-[`0065`](../../specs/decisions/0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md)).
+[`0066`](../../specs/decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md)).
 
 Die statischen Regeln über die handgeschriebenen Dateien stehen in
 `frontend/penpot/payload.test.ts` — insbesondere „kein wörtlicher Farb-/Größenwert", die
@@ -140,7 +140,7 @@ jeder `seed-*.js`:
 ## Was an der Plugin-API gemessen ist
 
 Am 2026-09-08 an einer verbundenen Instanz gemessen (leere Scratch-Datei, danach rückstandsfrei
-abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0065`, Abschnitt 7):
+abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0066`, Abschnitt 7):
 
 - **Tokenbindung wirkt**, und eine Bibliotheks-Instanz **erbt** die Bindungen. `shape.tokens`
   liefert die Zuordnung Eigenschaft → Tokenname; `verify.js` liest genau das zurück.

@@ -1,7 +1,7 @@
 // LAUFREGEL: jederzeit-wiederholbar
 /*
  * Legt die zwoelf Symbole als Bibliotheks-Komponenten in der Penpot-Datei
- * "PhotoSort — Dark Utility Register" an (decisions/0065-penpot-stand-als-erzeugte-idempotente-
+ * "PhotoSort — Dark Utility Register" an (decisions/0066-penpot-stand-als-erzeugte-idempotente-
  * nutzlast.md Abschnitt 3).
  *
  * AUSFUEHRUNG: ausschliesslich ueber den Skill `penpot-design`. Genau eine Einfuegestelle:
@@ -33,7 +33,7 @@
  *  3. Die Dauerregel "entwerfen nur mit Tokens" ist LLM-interpretierter Text; statisch verankert
  *     ist nur, DASS sie im Skill steht.
  *
- * GEMESSEN AN EINER VERBUNDENEN INSTANZ (ADR 0065 Abschnitt 7):
+ * GEMESSEN AN EINER VERBUNDENEN INSTANZ (ADR 0066 Abschnitt 7):
  * `createShapeFromSvg(svgString)` existiert und liefert eine `Group` - der SVG-Weg ist bestaetigt.
  * Sie haengt dabei ein zusaetzliches Kind `base-background` (Rechteck) an, das hier entfernt wird;
  * sonst traegt jedes Symbol eine unsichtbare Flaeche. Das ist zugleich die EINZIGE Stelle, an der

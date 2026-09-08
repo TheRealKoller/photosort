@@ -1,7 +1,7 @@
 // LAUFREGEL: nur-auf-leerer-datei
 /*
  * Baut die zehn Bausteine und ihre Varianten in der Penpot-Datei
- * "PhotoSort — Dark Utility Register" auf (decisions/0065-penpot-stand-als-erzeugte-idempotente-
+ * "PhotoSort — Dark Utility Register" auf (decisions/0066-penpot-stand-als-erzeugte-idempotente-
  * nutzlast.md Abschnitt 4).
  *
  * ⚠ WARNUNG - LAUFREGEL "nur-auf-leerer-datei": Dieses Skript laeuft NUR auf einer leeren oder neu
@@ -9,7 +9,7 @@
  * dort entstehen Aenderungen, und ein Skript, das sie ueberschreibt, machte den Zweck der ganzen
  * Story zunichte. Seine dauerhafte Rolle ist die WIEDERHERSTELLUNG NACH INSTANZVERLUST, nicht die
  * laufende Pflege. Die Vorbedingung steht deshalb FAIL-CLOSED im Skript selbst (siehe
- * `pruefeLeereDatei`), vor dem ersten Schreibzugriff - nach ADR 0064 ist der Penpot-Stand die
+ * `pruefeLeereDatei`), vor dem ersten Schreibzugriff - nach ADR 0065 ist der Penpot-Stand die
  * normative Design-Quelle, ein versehentlicher zweiter Lauf vernichtet also nicht eine Kopie,
  * sondern das Original.
  *
@@ -29,7 +29,7 @@
  * fail-closed-Waechter unten: Dessen Abbruch ist dann die RICHTIGE Antwort und wird nicht
  * umgangen. Der Weg zurueck fuehrt ueber eine leere oder neu aufgebaute Datei, nie ueber den
  * Waechter hinweg - wer ihn fuer den eigentlichen Fehler haelt, zerstoert den gerade gebauten
- * Stand, und der ist nach ADR 0064 das Original, keine Kopie.
+ * Stand, und der ist nach ADR 0065 das Original, keine Kopie.
  *
  * `execute_code` FUEHRT DEN TEXT ALS FUNKTIONSRUMPF AUS und liefert nur zurueck, was ein `return`
  * zurueckgibt (gemessen) - deshalb endet diese Datei, wie alle vier, auf ein `return`.

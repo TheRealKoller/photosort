@@ -1,6 +1,6 @@
 /*
  * Erzeugt die Penpot-Tokenliste aus `frontend/src/index.css`
- * (decisions/0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md Abschnitt 2).
+ * (decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md Abschnitt 2).
  *
  * DIE RICHTUNG IST index.css -> Penpot, ERZEUGT STATT ABGESCHRIEBEN. Der Penpot-Plugin-Kontext hat
  * kein Dateisystem; die Werte muessen also in der Nutzlast stehen. Die Frage ist damit nicht, ob es
@@ -18,7 +18,7 @@
  * Tailwind-Utilities.
  */
 
-/** Penpot-Tokentyp je Namensgruppe (ADR 0065 Abschnitt 2, am 2026-09-08 an einer verbundenen
+/** Penpot-Tokentyp je Namensgruppe (ADR 0066 Abschnitt 2, am 2026-09-08 an einer verbundenen
  * Instanz gemessen). Die sieben Schriftstufen sind **Verbundtokens** vom Typ `typography`: Penpot
  * kennt keinen Token-Typ fuer Zeilenhoehen, und eine Stufe wird beim Entwerfen ohnehin in einem
  * Zug angewandt.
@@ -50,7 +50,7 @@ export const TOKEN_TYPE_BY_GROUP: Readonly<Record<string, string>> = {
  * Wo der Bestand kein Feld hat, FEHLT es deshalb: `--text-xs` und `--text-sm` tragen kein
  * `--font-weight`, nur `--text-3xl` traegt ein `--letter-spacing`. An der Zusage dahinter aendert
  * das nichts - einen Standardwert `400` zu ergaenzen waere weiterhin genau die getippte
- * Wertekopie, die ADR 0065 verbietet; das Feld ist nur nicht mehr leer da, sondern gar nicht.
+ * Wertekopie, die ADR 0066 verbietet; das Feld ist nur nicht mehr leer da, sondern gar nicht.
  *
  * `fontSize` traegt seine Einheit (`"12px"`) - ebenfalls gemessen und gueltig.
  */
@@ -149,7 +149,7 @@ function parseDeclarations(body: string): [string, string][] {
 }
 
 /**
- * EINZIGE BEWUSSTE UEBERSETZUNG DIESES ERZEUGERS (ADR 0065 Abschnitt 2): uebernommen wird die
+ * EINZIGE BEWUSSTE UEBERSETZUNG DIESES ERZEUGERS (ADR 0066 Abschnitt 2): uebernommen wird die
  * Primaerfamilie, nicht der vollstaendige CSS-Stack. Eine Ausweichkette ist eine Browser-
  * Eigenschaft und in einem Entwurfswerkzeug bedeutungslos; ein Schriftname MIT Anfuehrungszeichen
  * findet in Penpot ausserdem keine Schrift. Das ist keine Auslassung, sondern die Uebersetzung.

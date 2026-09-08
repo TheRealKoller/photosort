@@ -1,7 +1,7 @@
 // @vitest-environment node
 /*
  * Erzeugung UND Pruefung der Penpot-Tokenliste (specs/features/0352-penpot-als-alleinige-design-
- * quelle.md, decisions/0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md Abschnitt 2).
+ * quelle.md, decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md Abschnitt 2).
  *
  * DIESER TEST IST DER ERZEUGER: `toMatchFileSnapshot` schreibt `design/penpot/tokens.json`. In CI
  * legt Vitest eine FEHLENDE Schnappschussdatei nicht an, sondern schlaegt fehl - die Datei muss
@@ -211,7 +211,7 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
     })
 
     /* AM BESTAND AUSGEMESSEN, nicht ueberschlagen: fuenf Stufen tragen einen Schnitt, xs und sm
-       nicht. Ein ergaenzter Standardwert `400` waere genau die getippte Wertekopie, die ADR 0065
+       nicht. Ein ergaenzter Standardwert `400` waere genau die getippte Wertekopie, die ADR 0066
        verbietet - das Feld bleibt deshalb leer. */
     /* WEGGELASSEN, NICHT LEER: `--text-xs`/`--text-sm` tragen keinen Schnitt. Ein ergaenzter
        Standardwert `400` waere die getippte Wertekopie, ein leeres Feld ein ungueltiger Wert. */
@@ -340,7 +340,7 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
   }, 120_000)
 
   /*
-   * EINZIGE BEWUSSTE UEBERSETZUNG (ADR 0065 Abschnitt 2): nur die Primaerfamilie, nicht der
+   * EINZIGE BEWUSSTE UEBERSETZUNG (ADR 0066 Abschnitt 2): nur die Primaerfamilie, nicht der
    * CSS-Ausweichstack. Beide Haelften als eigene Testfaelle - ein naives `split(',')[0]` liefert
    * die Apostrophe mit, und ein Schriftname mit Anfuehrungszeichen findet in Penpot keine Schrift.
    */
@@ -408,7 +408,7 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
   })
 
   /* Derselbe Text bedeutet als Objektliteral im Quelltext etwas anderes als ueber `JSON.parse`
-     (ADR 0065 Abschnitt 5 Punkt 3) - der Erzeuger gibt deshalb keinen solchen Schluessel aus. */
+     (ADR 0066 Abschnitt 5 Punkt 3) - der Erzeuger gibt deshalb keinen solchen Schluessel aus. */
   it('gibt keinen Schluessel __proto__ aus', () => {
     expect(serializeTokens(tokens)).not.toContain('__proto__')
   })

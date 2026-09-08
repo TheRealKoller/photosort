@@ -1,7 +1,7 @@
 // @vitest-environment node
 /*
  * Statische Regeln ueber die HANDGESCHRIEBENE Penpot-Nutzlast (specs/features/0352-penpot-als-
- * alleinige-design-quelle.md, Teststrategie Ebene 2; decisions/0065-penpot-stand-als-erzeugte-
+ * alleinige-design-quelle.md, Teststrategie Ebene 2; decisions/0066-penpot-stand-als-erzeugte-
  * idempotente-nutzlast.md Abschnitt 5 Punkt 6).
  *
  * WARUM DIESE EBENE EXISTIERT: `execute_code` fuehrt den Text der Aufbauskripte im Plugin-Kontext
@@ -999,7 +999,7 @@ describe('Vorbedingung von seed-components.js', () => {
   })
 
   it('bricht in der Vorbedingung fail-closed ab', () => {
-    // Eine Vorbedingung, die nur meldet statt abzubrechen, ist keine. Nach ADR 0064 ist der
+    // Eine Vorbedingung, die nur meldet statt abzubrechen, ist keine. Nach ADR 0065 ist der
     // Penpot-Stand die normative Design-Quelle - ein versehentlicher zweiter Lauf vernichtet
     // nicht eine Kopie, sondern das Original.
     const ohneKommentare = streicheKommentare(quelltext)
@@ -1524,7 +1524,7 @@ describe('Verdrahtung des TS-Projekts', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
-// Was die Nutzlast darf - die abschliessende Liste aus ADR 0065 Abschnitt 5 Punkt 6
+// Was die Nutzlast darf - die abschliessende Liste aus ADR 0066 Abschnitt 5 Punkt 6
 // ---------------------------------------------------------------------------------------------
 
 /** Verbotene Bezeichner. `execute_code` laeuft in einer angemeldeten Sitzung ohne Sandbox; der
@@ -1544,7 +1544,7 @@ const VERBOTENE_BEZEICHNER: { name: string; muster: RegExp; probe: string }[] = 
   { name: 'window', muster: /\bwindow\b/, probe: 'window.location = "x"' },
   { name: 'localStorage', muster: /\blocalStorage\b/, probe: 'localStorage.getItem("x")' },
   { name: 'storage', muster: /\bstorage\b/, probe: 'storage.setItem("x", 1)' },
-  // "Kein Skript loescht je etwas" (ADR 0065 Abschnitt 4). Statisch als Abwesenheit gefuehrt,
+  // "Kein Skript loescht je etwas" (ADR 0066 Abschnitt 4). Statisch als Abwesenheit gefuehrt,
   // weil kein Aufbauskript einen Loeschgrund hat - die konservative Richtung ist jederzeit
   // verschaerfbar, die Gegenrichtung nicht.
   { name: 'remove', muster: /\.remove\s*\(/, probe: 'shape.remove()' },

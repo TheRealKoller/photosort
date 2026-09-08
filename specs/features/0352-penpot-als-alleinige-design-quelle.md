@@ -103,9 +103,9 @@ Grund nicht (siehe „Out of Scope").
 ## Architektur / Umsetzung
 
 **Zwei ADRs tragen diese Spec:**
-[`decisions/0064-penpot-als-design-quelle-rangfolge-umgekehrt.md`](../decisions/0064-penpot-als-design-quelle-rangfolge-umgekehrt.md)
+[`decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md`](../decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md)
 entscheidet, *dass* Penpot die Quelle ist und was das für die Rangfolge heißt;
-[`decisions/0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md`](../decisions/0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md)
+[`decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md`](../decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md)
 entscheidet, *wie* das System dorthin kommt und wer es ausführt. Die Trennung ist Absicht: Die
 Rangfolge soll auch dann noch gelten, wenn der Mechanismus einmal ausgetauscht wird. Der
 Kreislauf aus beidem steht als Diagramm in
@@ -296,7 +296,7 @@ vor dem ersten Schreibzugriff, nicht nur als Prosa im Skill. **Kein Skript lösc
     löst innerhalb eines `typography`-Werts korrekt auf, sowohl für die Familie als auch für die
     Größe.
 - `design/` ist ein neues Wurzelverzeichnis. Von `scripts/tests/test_verweisnummern_in_markdown.py`
-  erfasst — `design/penpot/README.md` muss die Nummernregel bei Verweisen auf ADR 0064/0065
+  erfasst — `design/penpot/README.md` muss die Nummernregel bei Verweisen auf ADR 0065/0066
   einhalten.
 
 ## UI/UX
@@ -318,7 +318,7 @@ gibt keine zweite, weitergepflegte Quelle mehr, gegen die zu schützen wäre. Si
 machte sie zur bloßen Formel.
 
 Der Quellensatz nennt danach die Penpot-Datei als alleinige Design-Quelle (Gestaltung) mit
-Verweis auf ADR 0064, hält fest, dass die maßgebliche Werteliste im Repo `frontend/src/index.css`
+Verweis auf ADR 0065, hält fest, dass die maßgebliche Werteliste im Repo `frontend/src/index.css`
 ist, und kennzeichnet den Verweis auf `0005` ausdrücklich als **Archivverweis** (Momentaufnahme
 des Figma-Stands, wird nicht mehr gepflegt, normativ abgelöst).
 
@@ -397,7 +397,7 @@ zurücknehmbar.
 `execute_code` führt den übergebenen JavaScript-Text im Plugin-Kontext von Daniels
 **angemeldeter** Sitzung aus. Der Blast-Radius ist nicht die eine Design-Datei, sondern alles, was
 diese Sitzung erreichen kann. CI kann die Skripte nicht ausführen — **das Review ist das einzige
-Gate.** Die abschließende Liste dessen, was die Nutzlast darf, steht in ADR 0065 Abschnitt 5
+Gate.** Die abschließende Liste dessen, was die Nutzlast darf, steht in ADR 0066 Abschnitt 5
 Punkt 6 (erlaubt: Plugin-API auf der einen Datei; verboten und statisch geprüft: Netzwerkzugriff,
 dynamische Codeerzeugung, DOM-Zugriff, Zugriff auf andere Dateien der Instanz, fremde
 `storage`-Schlüssel, Löschen fremder Objekte). Sie wird mit demselben Mittel geprüft, das ohnehin
@@ -444,7 +444,7 @@ beim Auftreten als eigener Punkt im Abschlussbericht ausgewiesen.
 ### 5. Integrität: fail-closed statt Prosa
 
 Die Regel „`seed-components.js` läuft nur auf leerer Datei" wird im Skript selbst geprüft, vor dem
-ersten Schreibzugriff. Nach ADR 0064 ist der Penpot-Stand die normative Design-Quelle — ein
+ersten Schreibzugriff. Nach ADR 0065 ist der Penpot-Stand die normative Design-Quelle — ein
 versehentlicher zweiter Lauf vernichtet nicht eine Kopie, sondern das Original. Es geht um
 Integrität und Verfügbarkeit, nicht um Vertraulichkeit, und um ein Versehen, nicht um einen
 Angreifer.
@@ -608,7 +608,7 @@ Regel 5, **einzeln keine von beiden**), AK 5 namentlich und geometrisch nur, wen
 Pfaddaten hergibt.
 
 Für **AK 2, 7 und 8 entsteht kein neuer Test** — das ist eine Feststellung, keine Auslassung:
-AK 2 über die fünf eingefrorenen Abweichungswerte, AK 7 über die Existenz von ADR 0064 im Status
+AK 2 über die fünf eingefrorenen Abweichungswerte, AK 7 über die Existenz von ADR 0065 im Status
 `Accepted`, AK 8 über `index.css` plus den bestehenden Vertragstest.
 
 ### Der Kontrast-Vertragstest
@@ -617,7 +617,7 @@ Der Test mit den Kontrastzusagen ist `frontend/src/designSystem.contract.test.ts
 „Design-Vertrag: Kontrastmatrix". **Diese Spec berührt seine Zusagen nicht — und das gehört
 ausdrücklich in den PR-Text**, sonst liest ein Review „Design-System-Story ohne eine Zeile im
 Vertragstest" als Lücke. Drei Berührungen ohne Codeänderung: seine Rolle wächst (er ist ab ADR
-0064 Abschnitt 4 die Stelle, an der ein zurückgewanderter Wert unter AA auffällt); seine
+0065 Abschnitt 4 die Stelle, an der ein zurückgewanderter Wert unter AA auffällt); seine
 Zusicherung „jedes `:root`-Token ist ein 6-stelliger Hexwert" trägt jetzt zwei Dinge (sie ist
 zusätzlich die Voraussetzung der Penpot-Erzeugung — `tokens.ts` muss bei einem nicht-Hex-Wert
 nach derselben Regel **scheitern statt zu überspringen**); und sein Suchraum endet bei `src/**`,
@@ -669,7 +669,7 @@ der oben benannten Grenzen, die **nicht** benannt wurde.
 - [`architecture/0003-securitykonzept.md`](../architecture/0003-securitykonzept.md): Ergänzung bei
   Vertrauensgrenzen (Penpot-MCP als dritter Werkzeugkanal, erstmals mit Ausführung von
   Repository-Code in einer angemeldeten Sitzung) und bei schützenswerten Assets (der Inhalt der
-  Penpot-Datei ist ab ADR 0064 selbst Teil des Assets), ein neuer Angriffsflächen-Unterabschnitt
+  Penpot-Datei ist ab ADR 0065 selbst Teil des Assets), ein neuer Angriffsflächen-Unterabschnitt
   im Vorausschau-Muster, sowie ein Restrisiko-Eintrag zu den unausgeführten Aufbauskripten.
 
 ## Entscheidungen
@@ -677,7 +677,7 @@ der oben benannten Grenzen, die **nicht** benannt wurde.
 - **Keine der vier Konsultationen wurde übersprungen.** `architect` (Schritt 1), `ux-ui-designer`
   (Schritt 2), `test-engineer` und `security-engineer` (Schritt 3) sind alle gelaufen; für jeden
   lag mindestens ein konkret benennbarer Anhaltspunkt vor.
-- **Zwei ADRs statt einer** (`0064` Rangfolge, `0065` Mechanismus): Die Rangfolge soll auch dann
+- **Zwei ADRs statt einer** (`0065` Rangfolge, `0066` Mechanismus): Die Rangfolge soll auch dann
   noch gelten, wenn der Mechanismus einmal ausgetauscht wird.
 - **Idempotenz asymmetrisch** — Tokens/Symbole jederzeit wiederholbar, Bausteine nur beim
   Neuaufbau. *Von Daniel entschieden (2026-09-08), gegen „alles jederzeit neu erzeugbar" (machte
@@ -696,7 +696,7 @@ der oben benannten Grenzen, die **nicht** benannt wurde.
   Daniel entschieden (2026-09-08).*
 - **Die Zahlen der Schrift-Tokens sind am Bestand ausgemessen, nicht überschlagen:** 7 Größen, 7
   Zeilenhöhen, aber nur 5 Schnitte und 1 Laufweite. Ein erfundener Standardschnitt `400` für
-  `xs`/`sm` wäre genau die getippte Wertekopie, die ADR 0065 verbietet.
+  `xs`/`sm` wäre genau die getippte Wertekopie, die ADR 0066 verbietet.
 - **Der Kartenzustand „ausgewählt" wird nicht nach Penpot übernommen** — PhotoSort kennt keine
   Foto-Auswahl; ihn vorzubauen wäre eine Vorwegnahme.
 

@@ -1,0 +1,100 @@
+# Prueft den Titel jedes Pull Requests auf ein Conventional-Commit-Praefix.
+#
+# Warum es diesen Workflow gibt: Das Repository squasht mit COMMIT_OR_PR_TITLE - der PR-Titel
+# wird zum Titel des Merge-Commits auf main, und genau diese Titel wertet release-please aus.
+# Ein Titel ohne Praefix wird still uebergangen: kein Changelog-Eintrag, kein Versions-Bump,
+# keine Fehlermeldung. Danach ist der Fehler nicht mehr korrigierbar; deshalb wird er hier vor
+# dem Merge sichtbar.
+#
+# Der Job-Schluessel "pr-titel" ist zugleich der Kontextname der Branch Protection und traegt
+# deshalb bewusst kein "name:" - ein Override liesse den geforderten Kontext dauerhaft auf
+# "Expected" stehen und blockierte jeden Pull Request, ohne irgendwo rot zu werden.
+#
+# Verhalten und Haerte sind ausfuehrend getestet: scripts/tests/test_pr_titel_pruefung.py holt
+# den run-Block aus dieser Datei und laesst ihn gegen Positiv- und Negativfaelle laufen.
+name: PR-Titel
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+# Der Job liest kein Repository und ruft keine API; das Melden des Ergebnisses macht der
+# Actions-Dienst. Selbst "contents: read" waere hier zu viel.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-titel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Titel gegen die Conventional-Commit-Form pruefen
+        # Der Titel ist auf einem public Repository frei waehlbarer Fremdtext. Er erreicht das
+        # Skript ausschliesslich ueber env: und darin ausschliesslich als "$PR_TITLE" - ein
+        # Ausdruck im run-Block waere die klassische Script-Injection, weil sein Wert woertlich
+        # in den Skripttext gesetzt wird, bevor bash die Zeile ueberhaupt sieht.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          LC_ALL: C.UTF-8
+        run: |
+          set -euo pipefail
+
+          # Wache vor jeder weiteren Verarbeitung und vor jeder Ausgabe. Zwei Gruende, beide
+          # tragend:
+          #  - grep arbeitet zeilenweise: ein mehrzeiliger Titel gaelte als gueltig, sobald
+          #    IRGENDEINE seiner Zeilen das Muster trifft.
+          #  - Der Runner liest jeden Zeilenanfang der Step-Ausgabe auf Workflow-Kommandos
+          #    (::error::, ::stop-commands::), und der Titel wird unten ausgegeben.
+          # Deshalb nennt genau diese eine Meldung den Titel bewusst NICHT.
+          if [[ "$PR_TITLE" == *[[:cntrl:]]* ]]; then
+            printf 'FEHLER: Der PR-Titel enthaelt ein Steuerzeichen (Zeilenumbruch, Tabulator\n'
+            printf 'oder aehnliches). Er wird hier bewusst nicht ausgegeben.\n'
+            printf 'Bitte in eine einzige Zeile aus druckbaren Zeichen aendern.\n'
+            printf 'Form: typ(scope)!: Beschreibung\n'
+            exit 1
+          fi
+
+          MUSTER='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|test)(\([^()]+\))?!?: [^[:space:]]'
+
+          # Gegenprobe im Runner-Environment (Locale, grep-Variante) mit festen Literalen, vor
+          # der Pruefung des echten Titels: ein bekannt guter und ein bekannt schlechter
+          # Beispieltitel. Schlaegt sie fehl, ist das Muster oder die Umgebung kaputt - dann darf
+          # dieser Job nicht gruen werden, egal wie der echte Titel lautet. Das ist die einzige
+          # Zusage, die im Runner selbst greift; der lokale Testlauf kann sie nicht geben.
+          if ! printf '%s' 'feat(scope)!: Beispiel' | grep -Eq "$MUSTER"; then
+            printf 'FEHLER: Selbstpruefung fehlgeschlagen - ein bekannt gueltiger Beispieltitel\n'
+            printf 'besteht das Muster nicht. Das Muster oder die Laufzeitumgebung ist kaputt.\n'
+            exit 1
+          fi
+          if printf '%s' 'kein Praefix' | grep -Eq "$MUSTER"; then
+            printf 'FEHLER: Selbstpruefung fehlgeschlagen - ein bekannt ungueltiger Beispieltitel\n'
+            printf 'besteht das Muster. Die Pruefung waere wirkungslos.\n'
+            exit 1
+          fi
+
+          if printf '%s' "$PR_TITLE" | grep -Eq "$MUSTER"; then
+            printf 'OK: %s\n' "$PR_TITLE"
+            exit 0
+          fi
+
+          # Die Typenliste wird aus dem Muster abgeleitet statt daneben gepflegt - so kann die
+          # Meldung nicht von dem abweichen, wogegen tatsaechlich geprueft wurde.
+          TYPEN=$(printf '%s' "$MUSTER" | sed -E 's/^\^\(([^)]*)\).*$/\1/; s/\|/, /g')
+
+          printf 'FEHLER: Der PR-Titel traegt kein zulaessiges Conventional-Commit-Praefix.\n'
+          printf 'Ohne Praefix uebergeht release-please den Merge-Commit still: kein Eintrag im\n'
+          printf 'Changelog, kein Versions-Bump, keine Fehlermeldung.\n'
+          printf '\n'
+          printf 'Zulaessige Typen: %s\n' "$TYPEN"
+          printf 'Form: typ(scope)!: Beschreibung\n'
+          printf 'Der Scope in Klammern und das "!" fuer eine unvereinbare Aenderung sind\n'
+          printf 'optional; Doppelpunkt, genau ein Leerzeichen und eine nicht-leere Beschreibung\n'
+          printf 'sind Pflicht. Kleinschreibung des Typs ist Pflicht.\n'
+          printf 'Beispiele: feat: Kurzbeschreibung - fix(backend): Kurzbeschreibung -\n'
+          printf 'feat(frontend)!: Kurzbeschreibung\n'
+          printf '\n'
+          printf 'Titel im Pull Request korrigieren; die Pruefung laeuft danach von selbst\n'
+          printf 'erneut, ohne weiteren Handgriff.\n'
+          exit 1

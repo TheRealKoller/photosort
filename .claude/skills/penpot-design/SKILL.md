@@ -17,7 +17,7 @@ Die Penpot-Instanz ist ein **dritter Werkzeugkanal** neben `gh` und den GitHub-W
 
 Gearbeitet wird ausschließlich in der Datei **„PhotoSort — Dark Utility Register"**. Ihre Adresse steht nirgends im Repository; der Zugang liegt in Daniels lokaler Werkzeugkonfiguration.
 
-Seit ADR [`0064`](../../../specs/decisions/0064-penpot-als-design-quelle-rangfolge-umgekehrt.md) gilt: **Gestaltung — Penpot gewinnt.** Was ein Baustein haben *soll*, entscheidet Penpot. **Gültiger Wert — `frontend/src/index.css` gewinnt.** Was heute *gilt und ausgeliefert wird*, steht dort; eine Penpot-Änderung wird erst wirksam, wenn sie über den normalen Weg (Story → Spec → PR) im Repository ankommt. Ein Auseinanderlaufen ist kein Streitfall, sondern eine offene Aufgabe.
+Seit ADR [`0065`](../../../specs/decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md) gilt: **Gestaltung — Penpot gewinnt.** Was ein Baustein haben *soll*, entscheidet Penpot. **Gültiger Wert — `frontend/src/index.css` gewinnt.** Was heute *gilt und ausgeliefert wird*, steht dort; eine Penpot-Änderung wird erst wirksam, wenn sie über den normalen Weg (Story → Spec → PR) im Repository ankommt. Ein Auseinanderlaufen ist kein Streitfall, sondern eine offene Aufgabe.
 
 **Einzige Ausnahme:** Ein Penpot-Wert, der WCAG-AA gegen die Fläche verfehlt, auf der er steht (4,5:1 Fließtext, 3:1 grafisch und Bedienelement-Umrisse), wird korrigiert übernommen — die Fläche bleibt, angepasst wird die Schrift- oder Linienfarbe — **und die Korrektur wird nach Penpot zurückgeschrieben**. Der Vorgang endet in Penpot, nicht im Repository.
 
@@ -71,7 +71,7 @@ Das ist die gefährlichste Meldung dieses Ablaufs, weil sie wie ein Fehlschlag a
 2. Steht der Stand vollständig, ist der Schritt **erledigt**. Es wird nichts wiederholt.
 3. Fehlt tatsächlich etwas, ist die Datei **nicht mehr leer**, und ein zweiter Lauf trifft den Fail-closed-Wächter von `seed-components.js`. **Dieser Abbruch ist die richtige Antwort und wird nicht umgangen** — weder durch Umschreiben der Nutzlast noch durch einen Aufruf ohne die Prüfung. Der Weg zurück führt über eine leere oder neu aufgebaute Datei, nicht über den Wächter hinweg.
 
-Wer die Zeitüberschreitung für den eigentlichen Fehler hält und den Wächter aus dem Weg räumt, zerstört den gerade gebauten Stand — und der ist nach ADR [`0064`](../../../specs/decisions/0064-penpot-als-design-quelle-rangfolge-umgekehrt.md) das Original, keine Kopie.
+Wer die Zeitüberschreitung für den eigentlichen Fehler hält und den Wächter aus dem Weg räumt, zerstört den gerade gebauten Stand — und der ist nach ADR [`0065`](../../../specs/decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md) das Original, keine Kopie.
 
 **Was ein erneuter Lauf überschreiben darf, ist nach Art verschieden:**
 

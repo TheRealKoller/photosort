@@ -1,4 +1,4 @@
-# 0064 - Penpot ist die Design-Quelle: Rangfolge umgekehrt, Figma-Board archiviert
+# 0065 - Penpot ist die Design-Quelle: Rangfolge umgekehrt, Figma-Board archiviert
 
 **Status:** Accepted
 **Datum:** 2026-09-08
@@ -10,7 +10,7 @@
 **Berührt außerdem (keine Ablösung):**
 - [`decisions/0055-dark-utility-register-fundament.md`](./0055-dark-utility-register-fundament.md): Alle acht Entscheidungspunkte bleiben unverändert in Kraft, insbesondere Punkt 4 (Kontrast-Untergrenze schlägt den Wert der Design-Quelle) — Abschnitt 4 dieser ADR schreibt ihn ausdrücklich fort statt ihn zu ersetzen. Abgelöst ist allein der Satz der dortigen Begründung „Board-Werte sind eine Vorlage, kein Gesetz" **in seiner vorwärtsgerichteten Wirkung**; ab hier ist die Design-Quelle für die Gestaltung normativ. ADR 0055 trägt dafür einen `**Teilweise abgelöst:**`-Vermerk im Kopf, kein `Superseded` — ihr Kern fällt nicht.
 - [`decisions/0011-ui-component-library.md`](./0011-ui-component-library.md): Tailwind v4 (CSS-first, `@theme`) + Radix + shadcn-Copy-in-Repo bleiben unverändert die Grundlage. Diese ADR ändert nichts an der Umsetzung im Produkt.
-- [`decisions/0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md`](./0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md) entscheidet, **wie** das System nach Penpot kommt und wer es ausführt. Diese ADR entscheidet nur, **dass** Penpot die Quelle ist und was das für die Rangfolge heißt. Die Trennung ist Absicht: Die Rangfolge soll auch dann noch gelten, wenn der Mechanismus einmal ausgetauscht wird.
+- [`decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md`](./0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md) entscheidet, **wie** das System nach Penpot kommt und wer es ausführt. Diese ADR entscheidet nur, **dass** Penpot die Quelle ist und was das für die Rangfolge heißt. Die Trennung ist Absicht: Die Rangfolge soll auch dann noch gelten, wenn der Mechanismus einmal ausgetauscht wird.
 
 ## Kontext
 
@@ -50,7 +50,7 @@ Akzeptanzkriterium 8 verlangt, dass die Werte im Repo nachvollziehbar bleiben, a
 - **`specs/architecture/0004-design-system.md`** bleibt der Ort für die *Regeln* (welches Token welche Rolle hat, welche Verwendung verboten ist, welche Abweichungen begründet sind). Werte ohne Regeln sind nicht benutzbar; Penpot trägt die Werte, nicht die Begründungen.
 - Ein **drittes**, von Hand gepflegtes Wertedokument entsteht nicht. Genau das wäre der zweite Wahrheitsort, den Akzeptanzkriterium 8 nicht meint und den 0005 heute darstellt.
 
-Damit ist auch der Ausfall beantwortet: Ist die Instanz weg, weiß das Repository vollständig, was gilt — und ADR 0065 sorgt dafür, dass daraus der Penpot-Stand wieder aufgebaut werden kann, statt ihn von Hand nachklicken zu müssen.
+Damit ist auch der Ausfall beantwortet: Ist die Instanz weg, weiß das Repository vollständig, was gilt — und ADR 0066 sorgt dafür, dass daraus der Penpot-Stand wieder aufgebaut werden kann, statt ihn von Hand nachklicken zu müssen.
 
 Die beiden Laufrichtungen zusammen ergeben einen Kreis, und genau der ist die Stelle, an der man diese ADR falsch lesen kann. Er ist deshalb als Diagramm festgehalten: [`../diagrams/design-quelle-penpot.svg`](../diagrams/design-quelle-penpot.svg) (Quelle: `../diagrams/design-quelle-penpot.d2`). Abwärts laufen **Werte**, erzeugt und maschinell; aufwärts läuft **Gestaltung**, über den normalen Story-Weg und durch den Vertragstest.
 
@@ -62,7 +62,7 @@ Das ist kein Vetorecht des Repositorys über die Design-Quelle, und es weicht Ab
 
 Ohne diese Klausel wäre Akzeptanzkriterium 2 nicht haltbar: Die acht Korrekturen wären ab dem nächsten Entwurf jederzeit widerrufbar, ohne dass es jemand bemerkt. Der Vertragstest ist die Stelle, an der ein solcher Wert auffällt — er rechnet nach, statt zu glauben.
 
-**Von Daniel bestätigt (2026-09-08).** Dieser Abschnitt und die Frage aus ADR 0065 Abschnitt 4 (Was darf ein erneuter Lauf überschreiben?) sind Produktentscheidungen; beide sind im `spec-writer`-Ablauf zu Spec 0352 vorgelegt und nach der Empfehlung des `architect` bestätigt worden. Eine spätere Abweichung davon ist eine neue ADR, keine stille Korrektur hier.
+**Von Daniel bestätigt (2026-09-08).** Dieser Abschnitt und die Frage aus ADR 0066 Abschnitt 4 (Was darf ein erneuter Lauf überschreiben?) sind Produktentscheidungen; beide sind im `spec-writer`-Ablauf zu Spec 0352 vorgelegt und nach der Empfehlung des `architect` bestätigt worden. Eine spätere Abweichung davon ist eine neue ADR, keine stille Korrektur hier.
 
 ### 5. Was mit den heutigen Figma-Fundstellen geschieht — und was ausdrücklich nicht
 
@@ -94,7 +94,7 @@ Die dritte ist die Trennung normativ/historisch in Abschnitt 5. Sie kostet etwas
 - **Neue externe Abhängigkeit — und ihre ehrliche Bilanz:** Eine selbst gehostete Penpot-Instanz plus MCP-Server tritt an die Stelle eines fremden SaaS-Kontingents. Betriebskosten und Wartung liegen ab jetzt bei Daniel (Hosting, Updates, Sicherung), dafür entfällt die Abhängigkeit von einem fremden Preismodell. **Kein Produktcode und kein Container von PhotoSort hängt daran**; Build, Tests, CI und Betrieb laufen unverändert ohne Penpot. Die Abhängigkeit ist eine Werkzeugabhängigkeit der Entwicklung, keine Laufzeitabhängigkeit — deshalb ändern sich weder `docs/architecture.md` noch `docs/setup.md`.
 - **Negativ / bewusst getragen:**
   - **Design-Arbeit setzt Daniels Anwesenheit voraus.** Ohne verbundene Sitzung ist die Quelle nicht erreichbar. Ein Hintergrundlauf, der „mal eben" etwas in Penpot nachzieht, existiert nicht und wird es nicht geben. Wer das übersieht, plant Arbeit ein, die nicht stattfinden kann.
-  - **Datenverlust der Instanz ist ein reales Risiko**, weil sie selbst gehostet ist und niemand sie vertraglich sichert. ADR 0065 macht den Stand deshalb wiederherstellbar; das ersetzt keine Sicherung, begrenzt aber den Schaden auf „einmal neu bespielen".
+  - **Datenverlust der Instanz ist ein reales Risiko**, weil sie selbst gehostet ist und niemand sie vertraglich sichert. ADR 0066 macht den Stand deshalb wiederherstellbar; das ersetzt keine Sicherung, begrenzt aber den Schaden auf „einmal neu bespielen".
   - **Die Umkehrung erzeugt eine neue Pflicht:** Ein Entwurf in Penpot, der nie ins Repository wandert, ist ab jetzt eine offene Aufgabe und keine Notiz. Wächst dort ein Rückstand, ist das Design-System auseinandergelaufen — sichtbar wird das nur, wenn jemand hinsieht, denn kein Test kann Penpot lesen.
   - Ein Leser findet weiterhin „Figma" im Repository (Abschnitt 5). Das ist gewollt und am jeweiligen Dateikopf erkennbar.
 - **Folgearbeit:** Issue #336 („figma variablen") wird ohne Umsetzung verworfen — sein einziger Zweck war, das nun abgelöste Figma-Board wartbar zu machen. Die beiden dort genannten Farbkorrekturen sind über ADR 0055 Punkt 4a/4f im Code bereits umgesetzt und gehen damit nicht verloren. Issue #333 bleibt unberührt; es betrifft Ansichten, nicht die Quelle.

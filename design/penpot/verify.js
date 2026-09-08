@@ -1,6 +1,6 @@
 /*
  * Liest den Stand aus der Penpot-Datei "PhotoSort — Dark Utility Register" zurueck und gibt ihn
- * als JSON aus (decisions/0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md Abschnitt 6).
+ * als JSON aus (decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md Abschnitt 6).
  *
  * KEINE LAUFREGEL: Diese Datei baut nichts auf, sie liest nur. Die Zuordnung Datei -> Laufregel
  * ist in `payload.test.ts` eingefroren, einschliesslich dieser Abwesenheit - sonst waere eine

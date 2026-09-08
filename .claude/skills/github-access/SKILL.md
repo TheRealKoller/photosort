@@ -267,6 +267,15 @@ in den Body — nie in eine Commit-Nachricht, nie in den PR-Titel. Die PR-Nummer
 wird wie bei `issue-anlegen` gegen `^[0-9]+$` validiert und ausschließlich als Zahl
 weiterverwendet.
 
+Der **Titel** trägt dieselbe Form wie eine Commit-Nachricht — `typ(scope)!: Beschreibung`, Typ
+klein geschrieben aus `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`,
+`revert`, `test`, Scope und `!` optional, nach dem Doppelpunkt genau ein Leerzeichen und eine
+nicht-leere Beschreibung. Grund: Das Repository squasht mit `COMMIT_OR_PR_TITLE`, der Titel wird
+damit zum Titel des Merge-Commits auf `main` und ist die einzige Grundlage, auf der die Änderung
+für Changelog und Version klassifiziert wird; ohne zulässiges Präfix fällt sie still heraus. Ein
+Titel, der die Form verfehlt, lässt den Check pr-titel rot werden — und, sobald pr-titel als
+Required Status Check auf `main` eingetragen ist, blockiert er zusätzlich den Merge.
+
 Mehrdeutiger Fehlschlag: erst lesend verifizieren, nie blind den nächsten Weg gehen.
 
 ### `pr-body-schreiben` — den PR-Body überschreiben

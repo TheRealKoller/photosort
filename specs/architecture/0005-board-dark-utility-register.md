@@ -2,7 +2,7 @@
 
 **Status:** Archiv — abgelöste Design-Quelle, wird nicht mehr gepflegt
 **Ausgelesen:** 2026-09-04
-**Archiviert:** 2026-09-08 durch ADR [`0064`](../decisions/0064-penpot-als-design-quelle-rangfolge-umgekehrt.md)
+**Archiviert:** 2026-09-08 durch ADR [`0065`](../decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md)
 **Quelle:** Figma-Datei „Photosort Dark", fileKey `zFiuhI1yjTzAQVQnceBiLC`, Board-Node `2:4`
 ([Link](https://www.figma.com/design/zFiuhI1yjTzAQVQnceBiLC/Photosort-Dark?node-id=2-4))
 **Bezug:** Spec [`0320`](../features/0320-dark-utility-register.md), ADR [`0055`](../decisions/0055-dark-utility-register-fundament.md), Stufe 2 = Issue #321
@@ -10,7 +10,7 @@
 Ausgelesen über den Figma-MCP (`get_metadata` + `get_design_context`). **Diese Datei ist ein
 Archiv.** Sie hält den letzten gültigen Stand V1.2 des inzwischen abgelösten Figma-Boards fest,
 damit nachvollziehbar bleibt, woher das System kam — mehr nicht. Die Design-Quelle ist seit ADR
-[`0064`](../decisions/0064-penpot-als-design-quelle-rangfolge-umgekehrt.md) die Penpot-Datei
+[`0065`](../decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md) die Penpot-Datei
 „PhotoSort — Dark Utility Register", und die maßgebliche Werteliste im Repo ist
 `frontend/src/index.css`. Beide Rollen, die diese Datei zuvor beansprucht hat („maßgebliche
 Werteliste" und „bei Widerspruch gilt die ADR, nicht diese Momentaufnahme"), sind dort

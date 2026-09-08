@@ -1,7 +1,7 @@
 // LAUFREGEL: jederzeit-wiederholbar
 /*
  * Legt den Token-Satz `photosort` in der Penpot-Datei "PhotoSort — Dark Utility Register" an bzw.
- * gleicht ihn ab (decisions/0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md).
+ * gleicht ihn ab (decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md).
  *
  * AUSFUEHRUNG: ausschliesslich ueber den Skill `penpot-design` in der Hauptsession. Die Nutzlast
  * wird mechanisch zusammengesetzt - genau eine Einfuegestelle der Form

@@ -1,7 +1,7 @@
 // @vitest-environment node
 /*
  * Erzeugung UND Pruefung der zwoelf Penpot-Symbole (specs/features/0352-penpot-als-alleinige-
- * design-quelle.md, decisions/0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md Abschnitt 3).
+ * design-quelle.md, decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md Abschnitt 3).
  *
  * Wie bei den Tokens ist der Test der ERZEUGER: `toMatchFileSnapshot` schreibt
  * `design/penpot/icons.json`; in CI schlaegt eine fehlende Schnappschussdatei fehl.
@@ -107,7 +107,7 @@ describe('Penpot-Symbole: Erzeugung aus ui/icon.tsx', () => {
     })
 
     /* `currentColor` hat in Penpot keine Entsprechung - die Strichfarbe der freistehenden
-       Symbolbibliothek wird dort ueber das Token `color.text-h` gesetzt (ADR 0065 Abschnitt 7).
+       Symbolbibliothek wird dort ueber das Token `color.text-h` gesetzt (ADR 0066 Abschnitt 7).
        Im erzeugten Markup bleibt der Wert trotzdem stehen: er ist das, was das Produkt zeichnet. */
     it('erhaelt stroke="currentColor"', () => {
       for (const [name, markup] of Object.entries(icons)) {

@@ -1,6 +1,6 @@
 /*
  * Erzeugt die zwoelf Penpot-Symbole aus `frontend/src/components/ui/icon.tsx`
- * (decisions/0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md Abschnitt 3).
+ * (decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md Abschnitt 3).
  *
  * GERENDERT WIRD UEBER DIE PROJEKTEIGENE `Icon`-KOMPONENTE, nicht ueber einen Direktzugriff auf
  * `lucide-react`. Zwei Gruende: Erstens bleibt gueltig, dass `icon.tsx` die einzige Datei im
@@ -45,7 +45,7 @@ export function normalizeIconMarkup(markup: string): string {
 
 /** Die zwoelf Symbole als `name -> SVG-Markup`, in der Reihenfolge von `ICON_NAMES`. Der Satz ist
  * auf genau zwoelf festgelegt; ihn stillschweigend zu erweitern waere eine Gestaltungsentscheidung
- * ohne Vorlage (ADR 0065 Abschnitt 3). */
+ * ohne Vorlage (ADR 0066 Abschnitt 3). */
 export function buildIcons(): Record<string, string> {
   const icons: Record<string, string> = {}
   for (const name of ICON_NAMES) {
