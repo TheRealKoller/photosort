@@ -1,0 +1,58 @@
+# Design-Quelle nach der Abloesung von Figma durch Penpot.
+# Siehe ADR specs/decisions/0064-penpot-als-design-quelle-rangfolge-umgekehrt.md
+# und specs/decisions/0065-penpot-stand-als-erzeugte-idempotente-nutzlast.md,
+# Feature-Spec specs/features/0352-penpot-design-quelle.md.
+# Rendern: scripts/render-diagrams.sh (ruft "d2 --sketch" auf).
+#
+# Zweck: Es zeigt den einen Punkt, den der Text am leichtesten missverstaendlich
+# macht - dass die Werte im Kreis laufen und trotzdem an jeder Stelle klar ist,
+# wer entscheidet. Abwaerts (Repo -> Penpot) laufen WERTE, erzeugt und maschinell.
+# Aufwaerts (Penpot -> Repo) laeuft GESTALTUNG, ueber den normalen Story-Weg und
+# durch den Vertragstest.
+#
+# Layout bewusst "direction: down": eine Rechtskette wird durch die langen
+# Dateinamen so breit, dass das SVG in keiner Doku mehr lesbar ist.
+
+direction: down
+
+repo: "Repository" {
+  css: "frontend/src/index.css\n**gueltiger Wert**"
+  regeln: "architecture/0004-design-system.md\nRegeln + Herkunft"
+  tokens: "design/penpot/tokens.json\nerzeugt (Vitest-Schnappschuss)"
+
+  css -> regeln: "beschrieben in" {
+    style.stroke-dash: 3
+  }
+  css -> tokens: "erzeugt"
+}
+
+nutzlast: "design/penpot/seed-*.js\nSkill penpot-design -> execute_code"
+
+penpot: "Penpot (selbst gehostet)\n**Gestaltung gewinnt**" {
+  shape: cylinder
+}
+
+entwurf: "Entwurf aus\nBibliotheks-Instanzen" {
+  shape: oval
+}
+
+story: "Story -> Spec -> PR"
+
+vertrag: "Vertragstest:\nWCAG-AA?" {
+  shape: diamond
+}
+
+archiv: "architecture/0005-board-…\nArchiv (Figma)" {
+  style.stroke-dash: 5
+  style.opacity: 0.6
+}
+
+repo.tokens -> nutzlast: "Daten"
+nutzlast -> penpot: "idempotent bespielen\n(Bausteine nur beim Neuaufbau)"
+penpot -> entwurf
+entwurf -> story
+story -> vertrag
+vertrag -> repo.css: "haelt AA"
+vertrag -> penpot: "verfehlt AA: Schrift-/Linienfarbe\nkorrigiert und zurueckgeschrieben" {
+  style.stroke-dash: 4
+}
