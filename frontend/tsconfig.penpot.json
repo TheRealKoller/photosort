@@ -21,5 +21,10 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["penpot/tokens.ts", "penpot/tokens.test.ts"]
+  "include": [
+    "penpot/tokens.ts",
+    "penpot/tokens.test.ts",
+    "penpot/icons.ts",
+    "penpot/icons.test.ts"
+  ]
 }
