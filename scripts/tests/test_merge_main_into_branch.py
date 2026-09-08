@@ -557,6 +557,70 @@ def test_konflikt_meldet_genau_die_konfliktpfade(spielplatz: Spielplatz, art: st
     assert origin_refs(spielplatz) == vorher.origin_refs
 
 
+def test_konfliktpfade_sind_repo_relativ_auch_aus_einem_unterverzeichnis(
+    spielplatz: Spielplatz,
+) -> None:
+    """AK 5: 'repo-relativ'. Ohne Gegenmassnahme entscheidet darueber die Konfiguration.
+
+    `diff.relative` schaltet die Ausgabe auf 'relativ zum Arbeitsverzeichnis' um. Ein so
+    konfiguriertes Repositorium meldete `datei.txt` statt `unter/tiefer/datei.txt`, und der
+    Folgeauftrag legte sein `git add` auf einen Pfad, den es vom Wurzelverzeichnis aus nicht
+    gibt.
+    """
+    unterverzeichnis = spielplatz.arbeit / "unter" / "tiefer"
+    unterverzeichnis.mkdir(parents=True)
+    auf_feature(
+        spielplatz,
+        "feat: tief liegende Datei",
+        lambda ort: schreibe(ort / "unter" / "tiefer", "datei.txt", "Ausgangsstand\n"),
+    )
+    spielplatz.git(spielplatz.arbeit, "push", "--quiet", "origin", "HEAD:main")
+    auf_main(
+        spielplatz,
+        "feat: tief liegende Datei auf main geaendert",
+        lambda ort: schreibe(ort / "unter" / "tiefer", "datei.txt", "Fassung von main\n"),
+    )
+    auf_feature(
+        spielplatz,
+        "feat: tief liegende Datei im Branch geaendert",
+        lambda ort: schreibe(ort / "unter" / "tiefer", "datei.txt", "Fassung des Branches\n"),
+    )
+    spielplatz.git(spielplatz.arbeit, "config", "diff.relative", "true")
+
+    ergebnis = _lauf(unterverzeichnis, [str(SKRIPT)], spielplatz.env)
+
+    assert ergebnis.returncode == EXIT_KONFLIKT, ergebnis.stderr
+    assert ergebnis.stdout.splitlines() == ["unter/tiefer/datei.txt"]
+
+
+def test_ein_konfliktpfad_mit_umlaut_wird_unverfremdet_ausgegeben(
+    spielplatz: Spielplatz,
+) -> None:
+    """Ohne Gegenmassnahme zitiert git den Pfad oktal (`"gem\\303\\244ss.txt"`)."""
+    name = "gemäß.txt"
+    auf_feature(
+        spielplatz,
+        "feat: Datei mit Umlaut",
+        lambda ort: schreibe(ort, name, "Ausgangsstand\n"),
+    )
+    spielplatz.git(spielplatz.arbeit, "push", "--quiet", "origin", "HEAD:main")
+    auf_main(
+        spielplatz,
+        "feat: Umlautdatei auf main geaendert",
+        lambda ort: schreibe(ort, name, "Fassung von main\n"),
+    )
+    auf_feature(
+        spielplatz,
+        "feat: Umlautdatei im Branch geaendert",
+        lambda ort: schreibe(ort, name, "Fassung des Branches\n"),
+    )
+
+    ergebnis = spielplatz.skript()
+
+    assert ergebnis.returncode == EXIT_KONFLIKT, ergebnis.stderr
+    assert ergebnis.stdout.splitlines() == [name]
+
+
 def test_bei_konflikt_liegt_die_feste_nachricht_in_merge_msg(spielplatz: Spielplatz) -> None:
     konflikt_vorbereiten(spielplatz, "modify/modify")
 
