@@ -1,4 +1,4 @@
-# 0063 - PR-Titel-Prüfung als eigener, blockierender Workflow statt externer Action
+# 0064 - PR-Titel-Prüfung als eigener, blockierender Workflow statt externer Action
 
 **Status:** Accepted
 **Datum:** 2026-09-07

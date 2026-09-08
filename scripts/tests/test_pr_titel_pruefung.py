@@ -1,6 +1,6 @@
 r"""Prueft die PR-Titel-Pruefung aus `.github/workflows/pr-titel.yml` **ausfuehrend**.
 
-Der Anlass (Spec 0343, ADR 0063): Dieses Repository squasht Pull Requests mit
+Der Anlass (Spec 0343, ADR 0064): Dieses Repository squasht Pull Requests mit
 `COMMIT_OR_PR_TITLE` - der PR-Titel wird zum Titel des Merge-Commits auf `main`, und genau
 diese Titel wertet `release-please` aus. Ein Titel ohne Conventional-Commit-Praefix wird dabei
 **still** uebergangen: kein Changelog-Eintrag, kein Versions-Bump, keine Fehlermeldung. Der
@@ -87,7 +87,7 @@ WORKFLOW_PFAD = REPO_WURZEL / ".github" / "workflows" / WORKFLOW_NAME
 CLAUDE_MD_PFAD = REPO_WURZEL / "CLAUDE.md"
 PR_VORLAGE_PFAD = REPO_WURZEL / ".github" / "pull_request_template.md"
 
-# Spec 0343 / ADR 0063: zehn zulaessige Typen. Die Namen stehen bewusst nirgends in diesem Test -
+# Spec 0343 / ADR 0064: zehn zulaessige Typen. Die Namen stehen bewusst nirgends in diesem Test -
 # sie werden aus dem Muster der Workflow-Datei abgeleitet und gegen CLAUDE.md gehalten. Fest ist
 # allein ihre Anzahl, damit ein versehentliches Streichen auffaellt.
 ERWARTETE_TYPENZAHL = 10

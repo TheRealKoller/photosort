@@ -69,7 +69,7 @@ weder CI-Workflows noch Repository-Einstellungen.
 
 ## Architektur / Umsetzung
 
-Festgelegt in ADR [`0063`](../decisions/0063-pr-titel-pruefung-eigener-blockierender-workflow.md)
+Festgelegt in ADR [`0064`](../decisions/0064-pr-titel-pruefung-eigener-blockierender-workflow.md)
 („PR-Titel-Prüfung als eigener, blockierender Workflow statt externer Action"). Kurzfassung mit den
 beiden Korrekturen aus der Security-Konsultation, die die dortige Skriptskizze ändern:
 
@@ -225,7 +225,7 @@ Workflow: kein `actions/checkout`, kein Secret, keine externe Action, `permissio
 ## Entscheidungen
 
 - **`architect` konsultiert (Schritt 1):** Der Ansatz war offen (eigener Workflow vs. Job in `ci.yml`
-  vs. externe Action) und die Wahl hat Dauerfolgen (Trigger-Kosten, externe Abhängigkeit) → ADR 0063.
+  vs. externe Action) und die Wahl hat Dauerfolgen (Trigger-Kosten, externe Abhängigkeit) → ADR 0064.
 - **`ux-ui-designer` nicht konsultiert (Schritt 2):** Das Feature erzeugt keine sichtbare Oberfläche —
   eine Workflow-Datei, ein Test, Dokumentationszeilen. Es gibt keine Komponente, keinen Zustand und
   keinen Design-System-Bezug, zu dem er etwas festlegen könnte.
@@ -243,7 +243,7 @@ Workflow: kein `actions/checkout`, kein Secret, keine externe Action, `permissio
   nicht dokumentiert, und eine unbelegte Serverseite darf nicht als Schutz eingeplant werden.
 - **AK 7 wird über eine reine Existenzprüfung testgebunden** (technische Detailentscheidung): Ohne sie
   hielte AK 7 gar nichts. Ohne Wortlautbindung, damit die Prüfung nicht bei jeder Umformulierung der
-  Vorlage rot wird — das bleibt im Rahmen von ADR 0063 („nur die Präfixliste testgebunden, die Prosa
+  Vorlage rot wird — das bleibt im Rahmen von ADR 0064 („nur die Präfixliste testgebunden, die Prosa
   nicht"), weil geprüft wird, *dass* die Regel dasteht, nicht *wie*.
 - **Kein achtzehnter Eintrag im Operationskatalog `github-access`:** Die Titelregel ist eine
   Eigenschaft des Titels, den `pr-erstellen` ohnehin schon setzt — ein Satz an der bestehenden
