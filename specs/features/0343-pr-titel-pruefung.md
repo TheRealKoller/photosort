@@ -142,10 +142,18 @@ Festgelegt in [`../architecture/0002-testkonzept.md`](../architecture/0002-testk
   mit `bash` und gesetztem `PR_TITLE` gegen eine Positiv- und eine Negativtabelle laufen. Zugesichert
   wird je Fall **Exit-Code und Ausgabe** — ein Skript, das den Fehler erkennt, ihn aber nur ausgibt
   statt mit `exit 1` zu enden, wäre sonst grün und wirkungslos.
-- **Injektions-Härte als Whitelist, nicht als Blacklist:** genau **ein** `${{`-Vorkommen in der ganzen
-  Datei, die Zeile lautet exakt `PR_TITLE: ${{ github.event.pull_request.title }}`, `github.event`
-  kommt sonst nirgends vor, `PR_TITLE` wird nur in Anführungszeichen verwendet, **keine einzige**
-  `uses:`-Zeile, kein `secrets.`-Verweis, `permissions: {}` vorhanden.
+- **Injektions-Härte als Whitelist, nicht als Blacklist:** eine **ortsgebundene Allowlist** über
+  jeden `${{ }}`-Ausdruck der Datei — jeder Ausdruck ist namentlich festgelegt und muss auf seiner
+  vorgesehenen Zeile stehen, ein weiterer fällt auf; im `run:`-Block steht überhaupt keiner,
+  `github.` kommt außerhalb der Ausdrücke nicht vor, `PR_TITLE` wird nur in Anführungszeichen
+  verwendet, **keine einzige** `uses:`-Zeile, kein `secrets.`-Verweis, `permissions: {}` vorhanden.
+  *(Die zunächst vorgesehene Fassung „genau ein `${{`-Vorkommen in der ganzen Datei" ist verworfen:
+  Sie ist mit dem ebenfalls verbindlichen `concurrency`-Schlüssel nicht gleichzeitig erfüllbar — es
+  sind drei Ausdrücke. Die Allowlist ist nicht schwächer und trägt beide Vorgaben.)*
+- **Die Locale ist testgebunden, nicht nur festgeschrieben:** `LC_ALL` muss im `env:`-Block stehen und
+  einen UTF-8-Wert tragen. `[[:cntrl:]]` ist locale-abhängig — unter `LC_ALL=C` fielen U+0085, U+2028
+  und U+2029 aus der Wache heraus (gemessen), ohne dass irgendetwas rot würde. Belegt wird das
+  Verhalten, nicht nur die Zeichenkette: je ein Negativfall mit diesen drei Zeichen.
 - **Job-Identität:** genau ein Job, Schlüssel `pr-titel`, kein `name:`.
 - **Deckungsgleichheit** der Typenmenge im extrahierten Regex mit der Liste in `CLAUDE.md`; die
   Präfixe der Fehlermeldung werden aus dem extrahierten Muster abgeleitet, nicht abgeschrieben.
