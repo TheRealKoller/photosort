@@ -68,18 +68,29 @@ function stelleSatzAktiv(satz) {
  * Vergleicht Tokenwerte STRUKTURELL, nicht per Identitaet. Die sieben Schriftstufen tragen einen
  * Verbundwert (Objekt); ein `!==` waere dort immer wahr, und jeder Lauf meldete sie als
  * "abgeglichen" und schriebe sie neu. Feste Feldreihenfolge, damit der Vergleich nicht an der
- * Schluesselreihenfolge haengt.
+ * Schluesselreihenfolge haengt, und ein einelementiges Array gilt als sein eigener Skalar - so
+ * legt Penpot eine Schriftfamilie ab.
  */
 function kanonisch(wert) {
   if (wert === null || wert === undefined) {
     return ''
+  }
+  if (Array.isArray(wert)) {
+    // Penpot normalisiert einen `fontFamilies`-Wert beim Ablegen zu einem Array ("Inter" ->
+    // ["Inter"]). Ein einelementiges Array und derselbe Skalar sind derselbe Wert - ohne diese
+    // Zeile meldete der Abgleich beide Schriftfamilien bei jedem Lauf als nicht schreibbar
+    // (gemessener Fehlalarm des ersten echten Laufs).
+    if (wert.length === 1) {
+      return kanonisch(wert[0])
+    }
+    return wert.map(kanonisch).join(',')
   }
   if (typeof wert !== 'object') {
     return String(wert)
   }
   return Object.keys(wert)
     .sort()
-    .map((schluessel) => schluessel + '=' + String(wert[schluessel]))
+    .map((schluessel) => schluessel + '=' + kanonisch(wert[schluessel]))
     .join('|')
 }
 

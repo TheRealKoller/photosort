@@ -157,6 +157,22 @@ abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0065`, Absch
   Erzeugnis ist seither ein roter Test.
 - **`fontSize` trägt seine Einheit** (`"12px"`) — gemessen gültig; der letzte offene Punkt aus der
   ersten Umsetzungsrunde ist damit erledigt.
+- **Eine neu erzeugte Form landet im zuletzt angelegten Container.** Bei `createShapeFromSvg`
+  gemessen: Ohne ausdrückliches `penpot.root.appendChild(...)` steckten im ersten echten Lauf alle
+  zwölf Symbolgruppen ineinander, weil `createComponent` aus dem ersten Symbol ein Board macht.
+  **Eine nachträglich gesetzte Position behebt das nicht** — der Elternknoten wird beim Erzeugen
+  entschieden. `seed-icons.js` verankert deshalb ausdrücklich; `seed-components.js` tut dasselbe
+  vorsorglich für seine Bretter (dort nicht gemessen, aber billig und bei 144 Ausprägungen ungleich
+  teurer zu entwirren).
+- **`/` ist ein Pfadtrenner, kein Namensbestandteil.** `symbol/star` liegt als
+  `{ name: "star", path: "symbol" }` vor; die volle Zeichenkette steht in keinem einzelnen Feld.
+  Die Gruppierung bleibt (sie ist in der Oberfläche nützlich), aber verglichen wird über **beide**
+  Felder — sonst trifft die Suche nie, ein zweiter Lauf legte Dubletten an und das Rücklesen meldete
+  einen leeren Stand. Kein Baustein- und kein Ausprägungsname trägt einen Schrägstrich; das ist
+  statisch zugesichert.
+- **Penpot normalisiert einen `fontFamilies`-Wert beim Ablegen zu einem Array** (`"Inter"` →
+  `["Inter"]`). Der Abgleich in `seed-tokens.js` behandelt ein einelementiges Array deshalb wie
+  seinen Skalar — sonst meldete jeder Lauf beide Schriftfamilien als „nicht schreibbar".
 - **`execute_code` führt den Text als Funktionsrumpf aus** und liefert nur zurück, was ein
   `return` zurückgibt. Alle vier Dateien enden deshalb auf ein `return`; ein blanker Ausdruck ginge
   still verloren — bei `verify.js` wäre das der gesamte nachprüfbare Abschluss.

@@ -33,31 +33,56 @@
  *  3. Die Dauerregel "entwerfen nur mit Tokens" ist LLM-interpretierter Text; statisch verankert
  *     ist nur, DASS sie im Skill steht.
  *
- * GEMESSEN AM 2026-09-08 an einer verbundenen Instanz (ADR 0065 Abschnitt 7):
+ * GEMESSEN AN EINER VERBUNDENEN INSTANZ (ADR 0065 Abschnitt 7):
  * `createShapeFromSvg(svgString)` existiert und liefert eine `Group` - der SVG-Weg ist bestaetigt.
  * Sie haengt dabei ein zusaetzliches Kind `base-background` (Rechteck) an, das hier entfernt wird;
  * sonst traegt jedes Symbol eine unsichtbare Flaeche. Das ist zugleich die EINZIGE Stelle, an der
  * eines dieser Skripte etwas entfernt - und sie ist von der abschliessenden Liste gedeckt: das
  * Rechteck ist im selben Lauf vom Skript selbst entstanden.
  *
+ * ⚠ `createShapeFromSvg` HAENGT DIE FORM IN DEN ZULETZT ANGELEGTEN CONTAINER. Ohne ausdrueckliches
+ * Umhaengen an die Seitenwurzel entstand im ersten echten Lauf EINE Komponente, in der alle zwoelf
+ * Symbolgruppen ineinander verschachtelt steckten - sobald `createComponent` aus dem ersten Symbol
+ * ein Board macht, landet jede weitere Gruppe als dessen Kind. Eine nachtraeglich gesetzte Position
+ * behebt das NICHT (gegengeprueft): Der Elternknoten wird beim Erzeugen entschieden, nicht anhand
+ * der Koordinaten. Die Positionierung steht deshalb aus einem anderen Grund da - damit die
+ * Bibliothek nicht als Stapel am Ursprung liegt.
+ *
+ * ⚠ `/` IST IN PENPOT EIN PFADTRENNER, KEIN NAMENSBESTANDTEIL: `symbol/star` wird beim Anlegen zu
+ * `{ name: "star", path: "symbol" }` (gemessen). Die Gruppierung ist in der Oberflaeche nuetzlich
+ * und bleibt - aber der Vergleich muss sie kennen, sonst trifft die Suche nie und ein zweiter Lauf
+ * legte Dubletten an. Dafuer gibt es `symbolNameVon`, wortgleich auch in `verify.js`.
+ *
  * Die Signatur der Tokenanwendung bleibt in EINER Funktion gekapselt (`wendeTokenAn`), damit eine
  * Korrektur eine Stelle betrifft und nicht zwoelf.
  */
 
 const SATZ_NAME = 'photosort'
-const SYMBOL_PRAEFIX = 'symbol/'
+const SYMBOL_PFAD = 'symbol'
 const STRICH_TOKEN = 'color.text-h'
+
+/* GETEILTE ERKENNUNG - wortgleich auch in verify.js, statisch zugesichert. */
+function symbolNameVon(komponente) {
+  if (komponente.path !== SYMBOL_PFAD) {
+    return ''
+  }
+  return komponente.name
+}
 
 /** Name des Kindes, das `createShapeFromSvg` von sich aus anhaengt (gemessen). */
 const HILFSFLAECHE = 'base-background'
 
 /**
- * SVG-Markup -> Penpot-Form. Die von der API selbst eingehaengte Hilfsflaeche wird direkt wieder
- * entfernt - sie ist im selben Lauf entstanden und gehoert damit zu dem, was dieses Skript
- * entfernen darf. Alles andere bleibt unangetastet.
+ * SVG-Markup -> Penpot-Form.
+ *
+ * Zwei Dinge geschehen hier zwingend direkt nach dem Erzeugen: das Umhaengen an die Seitenwurzel
+ * (sonst landet die Gruppe im zuletzt angelegten Board, siehe Dateikopf) und das Entfernen der von
+ * der API selbst eingehaengten Hilfsflaeche - sie ist im selben Lauf entstanden und gehoert damit
+ * zu dem, was dieses Skript entfernen darf. Alles andere bleibt unangetastet.
  */
 function formAusMarkup(markup) {
   const gruppe = penpot.createShapeFromSvg(markup)
+  penpot.root.appendChild(gruppe)
   for (const kind of gruppe.children || []) {
     if (kind.name === HILFSFLAECHE) {
       kind.remove()
@@ -80,31 +105,38 @@ function wendeTokenAn(form, eigenschaft, tokenName) {
   token.applyToShapes([form], eigenschaft)
 }
 
-function findeKomponente(name) {
-  return penpot.library.local.components.find((komponente) => komponente.name === name)
+function findeKomponente(kurzname) {
+  return penpot.library.local.components.find(
+    (komponente) => symbolNameVon(komponente) === kurzname
+  )
 }
 
 /** Zielzustands-idempotent: am Namen suchen, anlegen wenn es fehlt. */
 function main() {
   const angelegt = []
   const vorhanden = []
+  // Eine Reihe statt eines Stapels am Ursprung. Der Abstand ist eine Symbolbreite - so kommt die
+  // Bibliothek ohne getipptes Rastermass aus.
+  const lage = { x: penpot.viewport.center.x, y: penpot.viewport.center.y }
 
   for (const kurzname of Object.keys(ICONS)) {
-    const name = SYMBOL_PRAEFIX + kurzname
-    if (findeKomponente(name)) {
-      vorhanden.push(name)
+    if (findeKomponente(kurzname)) {
+      vorhanden.push(kurzname)
       continue
     }
     const form = formAusMarkup(ICONS[kurzname])
-    form.name = name
+    form.name = SYMBOL_PFAD + '/' + kurzname
+    form.x = lage.x
+    form.y = lage.y
+    lage.x = form.x + form.width * 2
     wendeTokenAn(form, 'strokeColor', STRICH_TOKEN)
     const komponente = penpot.library.local.createComponent([form])
-    komponente.name = name
-    angelegt.push(name)
+    komponente.name = SYMBOL_PFAD + '/' + kurzname
+    angelegt.push(kurzname)
   }
 
   return {
-    praefix: SYMBOL_PRAEFIX,
+    pfad: SYMBOL_PFAD,
     erwartet: Object.keys(ICONS).length,
     angelegt: angelegt,
     bereitsVorhanden: vorhanden,

@@ -715,6 +715,26 @@ describe('Die Achsen der Bausteine', () => {
   })
 
   /*
+   * `/` IST IN PENPOT EIN PFADTRENNER, KEIN NAMENSBESTANDTEIL: `symbol/star` wird beim Anlegen zu
+   * `{ name: "star", path: "symbol" }` (gemessen). Wer einen Baustein oder eine Auspraegung mit
+   * Schraegstrich benennt, bekommt still einen anderen Namen zurueck, als er gesetzt hat - und
+   * jeder Vergleich am Namen geht danach ins Leere.
+   */
+  it('vergibt keinen Namen mit Schraegstrich', () => {
+    for (const baustein of komponenten.bausteine) {
+      const namen = [
+        baustein.schluessel,
+        baustein.name,
+        ...Object.keys(baustein.varianten),
+        ...Object.values(baustein.varianten).flat(),
+      ]
+      for (const name of namen) {
+        expect(name, `${baustein.schluessel}: ${name}`).not.toContain('/')
+      }
+    }
+  })
+
+  /*
    * Die Zahl der Varianten, die `seed-components.js` aufbaut: das Kreuzprodukt der Achsen je
    * Baustein. Eingefroren, weil eine versehentlich hinzugefuegte Achse sie sprunghaft vervielfacht
    * und das sonst niemandem auffiele. 90 + 5 + 9 + 8 + 7 + 3 + 3 + 2 + 4 + 13.
@@ -1160,26 +1180,79 @@ const GETEILTE_ERKENNUNG = [
   '}',
 ].join('\n')
 
-describe('Die geteilte Erkennung der Bausteine', () => {
-  it('steht wortgleich in seed-components.js und verify.js', () => {
-    for (const datei of ['seed-components.js', 'verify.js'] as const) {
-      expect(dateiVon(datei).roh, datei).toContain(GETEILTE_ERKENNUNG)
-    }
-  })
+/**
+ * Zweiter geteilter Block: `/` ist in Penpot ein PFADTRENNER. `symbol/star` liegt als
+ * `{ name: "star", path: "symbol" }` vor - die volle Zeichenkette steht in keinem einzelnen Feld
+ * (gemessen). Ein Vergleich am Namen trifft deshalb nie: `seed-icons.js` legte bei jedem Lauf
+ * Dubletten an, und `verify.js` meldete null Symbole.
+ */
+const GETEILTE_SYMBOLERKENNUNG = [
+  'function symbolNameVon(komponente) {',
+  '  if (komponente.path !== SYMBOL_PFAD) {',
+  "    return ''",
+  '  }',
+  '  return komponente.name',
+  '}',
+].join('\n')
 
-  it('wird vom Waechter und vom Rueckleser tatsaechlich benutzt', () => {
-    for (const datei of ['seed-components.js', 'verify.js'] as const) {
-      const stellen = aufrufe(dateiVon(datei).roh).filter(
-        (aufruf) => aufruf.name === 'bausteinSchluesselInDatei'
-      )
-      expect(stellen.length, datei).toBeGreaterThan(0)
-    }
-  })
+const GETEILTE_BLOECKE: {
+  name: string
+  dateien: readonly string[]
+  block: string
+  aufruf: string
+}[] = [
+  {
+    name: 'Bausteinerkennung',
+    dateien: ['seed-components.js', 'verify.js'],
+    block: GETEILTE_ERKENNUNG,
+    aufruf: 'bausteinSchluesselInDatei',
+  },
+  {
+    name: 'Symbolerkennung',
+    dateien: ['seed-icons.js', 'verify.js'],
+    block: GETEILTE_SYMBOLERKENNUNG,
+    aufruf: 'symbolNameVon',
+  },
+]
+
+describe('Die geteilten Erkennungen', () => {
+  for (const geteilt of GETEILTE_BLOECKE) {
+    it(`${geteilt.name}: steht wortgleich in ${geteilt.dateien.join(' und ')}`, () => {
+      for (const datei of geteilt.dateien) {
+        expect(dateiVon(datei).roh, datei).toContain(geteilt.block)
+      }
+    })
+
+    it(`${geteilt.name}: wird in beiden Dateien tatsaechlich benutzt`, () => {
+      for (const datei of geteilt.dateien) {
+        const stellen = aufrufe(dateiVon(datei).roh).filter(
+          (aufruf) => aufruf.name === geteilt.aufruf
+        )
+        expect(stellen.length, datei).toBeGreaterThan(0)
+      }
+    })
+  }
 
   /* Erkannt wird an den Plugin-Daten, nie am Anzeigenamen - der ueberlebt den Variantenbau nicht. */
-  it('haengt an den Plugin-Daten, nicht am Namen', () => {
+  it('Bausteinerkennung haengt an den Plugin-Daten, nicht am Namen', () => {
     expect(GETEILTE_ERKENNUNG).toContain("getPluginData('schluessel')")
     expect(GETEILTE_ERKENNUNG).not.toContain('.name')
+  })
+
+  /* Der Pfad ist eine Konstante und muss in beiden Dateien dieselbe sein - der geteilte Block
+     liest sie, traegt sie aber nicht. */
+  it('Symbolerkennung liest denselben Pfad in beiden Dateien', () => {
+    for (const datei of ['seed-icons.js', 'verify.js'] as const) {
+      expect(dateiVon(datei).roh, datei).toContain("const SYMBOL_PFAD = 'symbol'")
+    }
+  })
+
+  /* Ein Vergleich, der die volle Zeichenkette `symbol/...` gegen einen Namen haelt, ist genau der
+     Fehler, an dem der erste Symbol-Lauf gescheitert ist. */
+  it('vergleicht nirgends gegen einen zusammengesetzten Pfadnamen', () => {
+    for (const datei of ['seed-icons.js', 'verify.js'] as const) {
+      expect(dateiVon(datei).inhalt, datei).not.toContain("'symbol/'")
+    }
   })
 })
 
@@ -1252,7 +1325,7 @@ const VERBOTENE_BEZEICHNER: { name: string; muster: RegExp; probe: string }[] = 
  * sie nicht zur Generalerlaubnis fuer `remove` in dieser Datei wird.
  */
 const BEZEICHNER_FREIGABEN: { datei: string; zeile: number; bezeichner: string; ausschnitt: string }[] = [
-  { datei: 'seed-icons.js', zeile: 63, bezeichner: 'remove', ausschnitt: 'kind.remove()' },
+  { datei: 'seed-icons.js', zeile: 88, bezeichner: 'remove', ausschnitt: 'kind.remove()' },
 ]
 
 describe('Was die Nutzlast darf, ist abschliessend', () => {

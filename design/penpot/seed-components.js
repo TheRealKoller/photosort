@@ -30,6 +30,15 @@
  * dieselbe Funktion WORTGLEICH; dass beide Fassungen uebereinstimmen, ist statisch zugesichert
  * (`frontend/penpot/payload.test.ts`).
  *
+ * ⚠ NEU ERZEUGTE FORMEN WERDEN AUSDRUECKLICH AN DER SEITENWURZEL VERANKERT. Bei
+ * `createShapeFromSvg` ist gemessen, dass die Form sonst im zuletzt angelegten Board landet - im
+ * ersten echten Lauf der Symbole steckten dadurch alle zwoelf Gruppen ineinander. Ob `createBoard`
+ * dieselbe Eigenschaft hat, ist NICHT gemessen; die Verankerung steht hier vorsorglich, weil sie
+ * billig und in beiden Faellen richtig ist - und weil eine Verschachtelung bei 144 Auspraegungen
+ * ungleich schwerer zu entwirren waere. Aus demselben Grund bekommt jedes Brett eine Position:
+ * je Baustein eine Reihe, die Bausteine untereinander. Die Abstaende ergeben sich aus den Massen
+ * der Bretter selbst, nicht aus einem getippten Raster.
+ *
  * REIHENFOLGE DER DEKLARATIONEN IST ABSICHT: `pruefeLeereDatei` und `main` stehen VOR allen
  * Funktionen, die schreibende Aufrufe enthalten. `payload.test.ts` sichert ueber die GEPARSTE
  * Aufrufstelle zu, dass die Vorbedingung vor dem ersten Schreibzugriff steht; eine Umsortierung
@@ -113,8 +122,9 @@ function main() {
 
   const gebaut = []
   const nachzubinden = []
+  const lage = { x: penpot.viewport.center.x, y: penpot.viewport.center.y, hoehe: 0 }
   for (const baustein of BAUSTEINE.bausteine) {
-    const bericht = baueBaustein(baustein)
+    const bericht = baueBaustein(baustein, lage)
     gebaut.push({ name: bericht.name, varianten: bericht.varianten })
     for (const offen of bericht.nachzubinden) {
       nachzubinden.push(offen)
@@ -200,12 +210,17 @@ function kombinationsName(kombination) {
  * der Baustein wiedererkennbar, nachdem `createVariantContainer` die Komponenten in "Component"
  * umbenannt hat.
  */
-function baueVariante(baustein, kombination, nachzubinden) {
+function baueVariante(baustein, kombination, lage, nachzubinden) {
   const brett = penpot.createBoard()
+  // Verankerung VOR allem anderen: ein spaeter gesetzter Ort haengt die Form nicht um (gemessen
+  // bei `createShapeFromSvg`, hier vorsorglich).
+  penpot.root.appendChild(brett)
   brett.name = kombinationsName(kombination)
   brett.addFlexLayout()
   brett.horizontalSizing = 'auto'
   brett.verticalSizing = 'auto'
+  brett.x = lage.x
+  brett.y = lage.y
 
   const beschriftung = penpot.createText(brett.name)
   brett.appendChild(beschriftung)
@@ -222,6 +237,10 @@ function baueVariante(baustein, kombination, nachzubinden) {
     }
   }
 
+  // Abstand ist eine Brettbreite; die Zeilenhoehe waechst mit dem hoechsten Brett der Reihe.
+  lage.x = brett.x + brett.width * 2
+  lage.hoehe = Math.max(lage.hoehe, brett.height)
+
   const komponente = penpot.library.local.createComponent([brett])
   komponente.setPluginData('schluessel', baustein.schluessel)
 
@@ -233,12 +252,16 @@ function baueVariante(baustein, kombination, nachzubinden) {
  * Bild danebengestellt zu werden (Akzeptanzkriterium 4). Der deutsche Anzeigename lebt am
  * Behaelter - die Einzelkomponenten heissen danach gemessen "Component".
  */
-function baueBaustein(baustein) {
+function baueBaustein(baustein, lage) {
   const nachzubinden = []
   const eintraege = []
+  const zeile = { x: lage.x, y: lage.y, hoehe: lage.hoehe }
   for (const kombination of kombinationen(baustein.varianten)) {
-    eintraege.push(baueVariante(baustein, kombination, nachzubinden))
+    eintraege.push(baueVariante(baustein, kombination, zeile, nachzubinden))
   }
+  // Naechster Baustein beginnt eine Zeile tiefer, wieder am linken Rand.
+  lage.y = zeile.y + zeile.hoehe * 2
+  lage.hoehe = 0
 
   const behaelter = penpotUtils.createVariantContainer(eintraege)
   behaelter.name = baustein.name

@@ -45,7 +45,7 @@
  */
 
 const SATZ_NAME = 'photosort'
-const SYMBOL_PRAEFIX = 'symbol/'
+const SYMBOL_PFAD = 'symbol'
 
 /* Erwartete Kardinalitaeten. Sie sind KEINE Gestaltungswerte, sondern der Schutz gegen einen
    halb gelesenen Stand: ohne sie waere ein abgeschnittenes Ergebnis von einem vollstaendigen
@@ -54,6 +54,14 @@ const ERWARTETE_SYMBOLE = 12
 const ERWARTETE_BAUSTEINE = 10
 const ERWARTETE_KATEGORIEN = 13
 const ERWARTETE_FARBEN = 64
+
+/* GETEILTE ERKENNUNG - wortgleich auch in seed-icons.js, statisch zugesichert. */
+function symbolNameVon(komponente) {
+  if (komponente.path !== SYMBOL_PFAD) {
+    return ''
+  }
+  return komponente.name
+}
 
 /* GETEILTE ERKENNUNG - wortgleich auch in seed-components.js, statisch zugesichert. */
 function bausteinSchluesselInDatei() {
@@ -81,11 +89,13 @@ function tokenListe() {
     .sort((a, b) => (a.name < b.name ? -1 : 1))
 }
 
+/* `/` ist in Penpot ein PFADTRENNER: `symbol/star` liegt als `{ name: "star", path: "symbol" }`
+   vor, die volle Zeichenkette steht in keinem einzelnen Feld (gemessen). Ein Filter auf den
+   Namen faende deshalb null Symbole und meldete faelschlich einen leeren Stand. */
 function symbolListe() {
   return penpot.library.local.components
-    .map((komponente) => komponente.name)
-    .filter((name) => name.indexOf(SYMBOL_PRAEFIX) === 0)
-    .map((name) => name.slice(SYMBOL_PRAEFIX.length))
+    .map((komponente) => symbolNameVon(komponente))
+    .filter((name) => name.length > 0)
     .sort()
 }
 
