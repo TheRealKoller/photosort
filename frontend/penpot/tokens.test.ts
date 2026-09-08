@@ -21,10 +21,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildTokens,
+  letterSpacingToPixels,
   serializeTokens,
   SPACING_STEPS,
   TOKEN_TYPE_BY_GROUP,
+  TYPOGRAFIE_FELDER,
   type PenpotToken,
+  type TypografieWert,
 } from './tokens.ts'
 
 const SRC_DIR = fileURLToPath(new URL('../src/', import.meta.url))
@@ -48,26 +51,40 @@ function valueOf(name: string): string {
   if (token === undefined) {
     throw new Error(`Token ${name} wurde nicht erzeugt.`)
   }
+  if (typeof token.value !== 'string') {
+    throw new Error(`Token ${name} traegt einen Verbundwert, keinen Einzelwert.`)
+  }
+  return token.value
+}
+
+function typografieWert(name: string): TypografieWert {
+  const token = tokens.find((candidate) => candidate.name === name)
+  if (token === undefined || typeof token.value === 'string') {
+    throw new Error(`Token ${name} ist kein Typografie-Verbundtoken.`)
+  }
   return token.value
 }
 
 describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
   /*
-   * Die acht Zahlen sind am Bestand AUSGEMESSEN, nicht ueberschlagen (Spec 0352, Abschnitt
-   * "Entscheidungen"): sieben Schriftgroessen und sieben Zeilenhoehen, aber nur FUENF Schnitte
-   * (--text-xs und --text-sm tragen keinen) und EINE Laufweite (nur --text-3xl). Ein ergaenzter
-   * Standardschnitt `400` fuer xs/sm waere genau die getippte Wertekopie, die ADR 0065 verbietet.
+   * Eingefrorene Kardinalitaeten je Gruppe. Die sieben Schriftstufen sind VERBUNDTOKENS vom Typ
+   * `typography`: Penpot kennt keinen Token-Typ fuer Zeilenhoehen (am 2026-09-08 an einer
+   * verbundenen Instanz gemessen - `lineHeight` und `lineHeights` scheitern beide hart), und eine
+   * Stufe wird beim Entwerfen ohnehin in einem Zug angewandt.
    */
   it('erzeugt genau die eingefrorenen Kardinalitaeten je Gruppe', () => {
     expect(countByGroup('color')).toBe(64)
     expect(countByGroup('radius')).toBe(5)
     expect(countByGroup('space')).toBe(8)
-    expect(countByGroup('font-size')).toBe(7)
-    expect(countByGroup('line-height')).toBe(7)
-    expect(countByGroup('font-weight')).toBe(5)
-    expect(countByGroup('letter-spacing')).toBe(1)
     expect(countByGroup('font-family')).toBe(2)
-    expect(tokens).toHaveLength(64 + 5 + 8 + 7 + 7 + 5 + 1 + 2)
+    expect(countByGroup('font-size')).toBe(7)
+    expect(tokens).toHaveLength(64 + 5 + 8 + 2 + 7)
+  })
+
+  it('legt fuer Zeilenhoehe, Schnitt und Laufweite kein eigenes Token an', () => {
+    for (const gruppe of ['line-height', 'font-weight', 'letter-spacing']) {
+      expect(countByGroup(gruppe), gruppe).toBe(0)
+    }
   })
 
   it('kennt keine Gruppe ausserhalb des geschlossenen Vokabulars', () => {
@@ -98,10 +115,90 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
      Tailwind-ZUORDNUNG, nicht der Wert, und duerfen deshalb nicht im Ergebnis landen. */
   it('traegt ausschliesslich ausgeschriebene Werte, nie var() oder initial', () => {
     for (const token of tokens) {
-      expect(token.value, token.name).not.toContain('var(')
-      expect(token.value, token.name).not.toBe('initial')
-      expect(token.value.length, token.name).toBeGreaterThan(0)
+      const felder = typeof token.value === 'string' ? [token.value] : Object.values(token.value)
+      for (const feld of felder) {
+        expect(feld, token.name).not.toContain('var(')
+        expect(feld, token.name).not.toBe('initial')
+      }
+      if (typeof token.value === 'string') {
+        expect(token.value.length, token.name).toBeGreaterThan(0)
+      }
     }
+  })
+
+  /*
+   * DIE SIEBEN TYPOGRAFIE-VERBUNDTOKENS. Der Schreibwert benutzt die SINGULAR-Schluessel; die
+   * Pluralformen der dokumentierten `TokenTypographyValue` sind die Leseform und werden als
+   * Schreibwert abgelehnt (gemessen). Die Familie steht als REFERENZ auf eines der beiden
+   * Familientokens da, damit sie nicht doppelt im System liegt.
+   */
+  describe('Typografie-Verbundtokens', () => {
+    const stufen = ['xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl']
+
+    it('traegt je Stufe genau ein Verbundtoken', () => {
+      expect(tokens.filter((token) => groupOf(token) === 'font-size').map((token) => token.name)).toEqual(
+        stufen.map((stufe) => `font-size.${stufe}`)
+      )
+    })
+
+    it('traegt je Verbundtoken alle fuenf Felder in Singularform', () => {
+      for (const stufe of stufen) {
+        expect(Object.keys(typografieWert(`font-size.${stufe}`)), stufe).toEqual([...TYPOGRAFIE_FELDER])
+      }
+    })
+
+    it('verweist fuer die Familie auf das Familientoken, statt es zu wiederholen', () => {
+      for (const stufe of stufen) {
+        expect(typografieWert(`font-size.${stufe}`).fontFamily, stufe).toBe('{font-family.sans}')
+      }
+      // Gegenprobe: der Verweis zeigt auf ein Token, das es tatsaechlich gibt.
+      expect(tokens.some((token) => token.name === 'font-family.sans')).toBe(true)
+    })
+
+    it('traegt Groesse und Zeilenhoehe jeder Stufe aus index.css', () => {
+      expect([
+        typografieWert('font-size.xs').fontSize,
+        typografieWert('font-size.xs').lineHeight,
+      ]).toEqual(['12px', '1.4'])
+      expect([
+        typografieWert('font-size.3xl').fontSize,
+        typografieWert('font-size.3xl').lineHeight,
+      ]).toEqual(['64px', '1.05'])
+      for (const stufe of stufen) {
+        expect(typografieWert(`font-size.${stufe}`).fontSize, stufe).not.toBe('')
+        expect(typografieWert(`font-size.${stufe}`).lineHeight, stufe).not.toBe('')
+      }
+    })
+
+    /* AM BESTAND AUSGEMESSEN, nicht ueberschlagen: fuenf Stufen tragen einen Schnitt, xs und sm
+       nicht. Ein ergaenzter Standardwert `400` waere genau die getippte Wertekopie, die ADR 0065
+       verbietet - das Feld bleibt deshalb leer. */
+    it('laesst den Schnitt leer, wo index.css keinen fuehrt', () => {
+      expect(typografieWert('font-size.xs').fontWeight).toBe('')
+      expect(typografieWert('font-size.sm').fontWeight).toBe('')
+      expect(
+        stufen.filter((stufe) => typografieWert(`font-size.${stufe}`).fontWeight !== '')
+      ).toEqual(['base', 'lg', 'xl', '2xl', '3xl'])
+      expect(typografieWert('font-size.3xl').fontWeight).toBe('700')
+    })
+
+    /* Nur --text-3xl traegt eine Laufweite - und sie muss eine BLANKE ZAHL IN PX sein: ein
+       em-Wert wird als Tokenwert akzeptiert und loest auch auf, kommt an der Textform aber als 0
+       an (gemessen). Umgerechnet gegen die Schriftgroesse der Stufe greift sie nachweislich. */
+    it('rechnet die Laufweite von em in eine blanke px-Zahl um', () => {
+      expect(
+        stufen.filter((stufe) => typografieWert(`font-size.${stufe}`).letterSpacing !== '')
+      ).toEqual(['3xl'])
+      expect(typografieWert('font-size.3xl').letterSpacing).toBe('-1.28')
+      expect(typografieWert('font-size.3xl').letterSpacing).not.toContain('em')
+    })
+
+    it('rechnet die Laufweite gegen die Schriftgroesse der jeweiligen Stufe', () => {
+      expect(letterSpacingToPixels('-0.02em', '64px')).toBe('-1.28')
+      expect(letterSpacingToPixels('-0.02em', '16px')).toBe('-0.32')
+      expect(letterSpacingToPixels('0.05em', '20px')).toBe('1')
+      expect(() => letterSpacingToPixels('-0.02rem', '64px')).toThrow()
+    })
   })
 
   /* Ohne die ZAEHLUNG wanderte eine kuenftig wiederbelebte Stufe still nach Penpot oder eine

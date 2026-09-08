@@ -37,6 +37,27 @@ function findeOderLegeSatzAn() {
   return katalog.addSet(SATZ_NAME)
 }
 
+/*
+ * EIN TOKEN-SATZ WIRKT ERST NACH `toggleActive()` - gemessen, nicht vermutet: vorher bleibt
+ * `resolvedValue` null und keine Bindung greift.
+ *
+ * `toggleActive` SCHALTET UM und ist damit nicht von sich aus wiederholbar - ein zweiter Lauf
+ * schaltete den Satz sonst wieder ab, und die Laufregel "jederzeit-wiederholbar" waere gebrochen.
+ * Der lesbare Zustand, an dem sich die Umschaltung festmachen laesst, ist derselbe, an dem die
+ * Wirkung gemessen wurde: solange der Satz inaktiv ist, bleibt `resolvedValue` leer.
+ */
+function stelleSatzAktiv(satz) {
+  const probe = satz.tokens[0]
+  if (!probe) {
+    return false
+  }
+  if (probe.resolvedValue === null || probe.resolvedValue === undefined) {
+    satz.toggleActive()
+    return true
+  }
+  return false
+}
+
 /** Zielzustands-idempotent: am Namen suchen, anlegen wenn es fehlt, sonst abgleichen. */
 function main() {
   const satz = findeOderLegeSatzAn()
@@ -59,12 +80,14 @@ function main() {
 
   const erzeugte = new Set(TOKENS.map((token) => token.name))
   const zusaetzlich = satz.tokens.map((token) => token.name).filter((name) => !erzeugte.has(name))
+  const aktiviert = stelleSatzAktiv(satz)
 
   return {
     satz: SATZ_NAME,
     erwartet: TOKENS.length,
     angelegt: angelegt,
     abgeglichen: abgeglichen,
+    aktiviert: aktiviert,
     zusaetzlichInPenpot: zusaetzlich,
   }
 }

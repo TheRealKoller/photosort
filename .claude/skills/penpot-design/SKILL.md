@@ -25,7 +25,15 @@ Seit ADR [`0064`](../../../specs/decisions/0064-penpot-als-design-quelle-rangfol
 
 Eine belanglose Abfrage über `execute_code` absetzen (z.B. den Namen der offenen Datei lesen). Kommt „No Penpot instance connected" oder eine gleichbedeutende Meldung, **bricht der Ablauf ab** und meldet, dass Daniel die Instanz öffnen und verbinden muss. Kein Ersatzweg, keine Teilausführung, kein Weiterarbeiten „soweit es geht".
 
-Vor dem ersten Bespielen zusätzlich über `penpot_api_info` klären: der Weg, auf dem SVG-Markup zu einer Form wird, und die Signatur der Tokenanwendung (auch für Schriftfamilie und Schnitt auf Textformen). Ist einer der Punkte nicht verfügbar, wird das **gemeldet, nicht umgangen**: Ein Zustand, der als zweites Bild danebengestellt wird statt auswählbar zu sein, erfüllt die Variantenzusage nicht, und ein von Hand gesetzter Schriftwert ist als dokumentierte Lücke zu führen, nicht als erledigt.
+**Diese Eigenheiten der Plugin-API sind gemessen und gehören zum Ablauf** (2026-09-08, verbundene Instanz; sie stehen so auch in `design/penpot/README.md` und im Kopf der jeweiligen Skriptdatei):
+
+- **Ein Token-Satz wirkt erst nach `toggleActive()`** — vorher bleibt `resolvedValue` leer und keine Bindung greift. `seed-tokens.js` schaltet ihn ein, aber nur, wenn er nachweislich inaktiv ist: `toggleActive` schaltet **um** und wäre sonst nicht wiederholbar.
+- **`createShapeFromSvg` hängt ein Kind `base-background` an**, das `seed-icons.js` entfernt. Das ist die einzige Entfernung in der gesamten Nutzlast und von der abschließenden Liste unten gedeckt, weil das Rechteck im selben Lauf vom Skript selbst entstanden ist.
+- **`createVariantContainer` benennt die Einzelkomponenten in „Component" um** — der sprechende Name lebt am Container. Deshalb erkennt `verify.js` die Bausteine am maschinellen Schlüssel aus den Plugin-Daten, nicht am Namen; ein Rücklesen nach Namen zählte die Ausprägungen als eigene Bausteine mit.
+- **Singular, wo die Doku Plural sagt:** Die Shape-Eigenschaft für die Schriftfamilie heißt `fontFamily`, und der **Schreibwert** eines `typography`-Tokens benutzt `fontFamily`/`fontSize`/`fontWeight`/`lineHeight`/`letterSpacing`. Die Pluralformen sind die **Lese**form.
+- **Es gibt keinen Token-Typ für Zeilenhöhen.** Eine Schriftstufe ist deshalb **ein** `typography`-Verbundtoken; eine Laufweite muss darin eine blanke Zahl in px sein (ein em-Wert kommt an der Textform als `0` an).
+
+Stellt sich künftig ein weiterer Punkt als nicht verfügbar heraus, wird das **gemeldet, nicht umgangen**: Ein Zustand, der als zweites Bild danebengestellt wird statt auswählbar zu sein, erfüllt die Variantenzusage nicht, und ein von Hand gesetzter Schriftwert ist als dokumentierte Lücke zu führen, nicht als erledigt.
 
 ## Schritt 1: Die Nutzlast zusammensetzen
 
@@ -88,7 +96,7 @@ Dazu eine Sichtprüfung über `export_shape` auf eine **Form**, nie ein Fenstera
 - kein DOM-Zugriff (`innerHTML`, `document.write`) — das SVG-Markup aus `icons.json` geht als **Wert** an die API und wird nie in ein Dokument eingehängt,
 - kein Zugriff auf andere Dateien, Projekte oder Bibliotheken der Instanz,
 - kein Schreiben in `storage` außer unter einem eigenen benannten Schlüssel,
-- kein Löschen von Objekten, die das Skript nicht selbst in diesem Lauf angelegt hat.
+- kein Löschen von Objekten, die das Skript nicht selbst in diesem Lauf angelegt hat (die einzige Ausnahme ist die von `createShapeFromSvg` selbst eingehängte Hilfsfläche — sie ist im selben Lauf entstanden, und die Freigabe ist im statischen Test an Datei, Zeile und Ausschnitt gebunden, nicht an die Datei als ganze).
 
 Eine Ausführung, die eine dieser Grenzen bräuchte, wird **gemeldet, nicht gebaut**.
 

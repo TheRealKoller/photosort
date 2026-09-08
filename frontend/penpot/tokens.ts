@@ -18,26 +18,53 @@
  * Tailwind-Utilities.
  */
 
-/** Penpot-Tokentyp je Namensgruppe. Die Typbezeichner stammen aus ADR 0065 Abschnitt 2; sie sind
- * an der Plugin-API noch nicht gemessen und beim ersten echten Lauf zu bestaetigen (die
- * Aufbauskripte sind zum PR-Zeitpunkt unausgefuehrter Code, siehe ADR 0065 Abschnitt 7). */
+/** Penpot-Tokentyp je Namensgruppe (ADR 0065 Abschnitt 2, am 2026-09-08 an einer verbundenen
+ * Instanz gemessen). Die sieben Schriftstufen sind **Verbundtokens** vom Typ `typography`: Penpot
+ * kennt keinen Token-Typ fuer Zeilenhoehen, und eine Stufe wird beim Entwerfen ohnehin in einem
+ * Zug angewandt. */
 export const TOKEN_TYPE_BY_GROUP: Readonly<Record<string, string>> = {
   color: 'color',
   radius: 'borderRadius',
   space: 'spacing',
-  'font-size': 'fontSizes',
-  'line-height': 'lineHeights',
-  'font-weight': 'fontWeights',
-  'letter-spacing': 'letterSpacing',
   'font-family': 'fontFamilies',
+  'font-size': 'typography',
 }
+
+/**
+ * Schreibwert eines `typography`-Tokens. **Singular-Schluessel** - die Pluralformen der
+ * dokumentierten `TokenTypographyValue` sind die LESEform (`resolvedValue`) und werden als
+ * Schreibwert abgelehnt (gemessen).
+ *
+ * Alle fuenf Felder stehen immer da. Wo der Bestand keines hat, bleibt es LEER: `--text-xs` und
+ * `--text-sm` tragen kein `--font-weight`, nur `--text-3xl` traegt ein `--letter-spacing`. Einen
+ * Standardwert `400` zu ergaenzen waere genau die getippte Wertekopie, die ADR 0065 verbietet.
+ */
+export interface TypografieWert {
+  /** Verweis auf eines der beiden Familientokens statt einer Wiederholung des Namens -
+   * Referenzen loesen im Verbundwert nachweislich auf. */
+  fontFamily: string
+  fontSize: string
+  lineHeight: string
+  fontWeight: string
+  /** Blanke Zahl in px. Ein em-Wert wird als Tokenwert zwar akzeptiert, kommt an der Textform
+   * aber als `0` an (gemessen) - deshalb gegen die Schriftgroesse der Stufe umgerechnet. */
+  letterSpacing: string
+}
+
+export const TYPOGRAFIE_FELDER = [
+  'fontFamily',
+  'fontSize',
+  'lineHeight',
+  'fontWeight',
+  'letterSpacing',
+] as const
 
 export interface PenpotToken {
   /** `<gruppe>.<blatt>`; das Blatt ist der CSS-Tokenname ohne `--` bzw. ohne das Gruppenpraefix,
    * damit ein Entwerfender denselben Namen sieht wie ein Entwickler. */
   name: string
   type: string
-  value: string
+  value: string | TypografieWert
 }
 
 export interface TokenBuildResult {
@@ -63,6 +90,10 @@ const FONT_FAMILY_TOKENS: Readonly<Record<string, string>> = {
   '--sans': 'sans',
   '--mono': 'mono',
 }
+
+/** Welche Schriftfamilie eine Typo-Stufe traegt. Es gibt nur eine: das Board hat keine
+ * Display-Schrift, `--mono` ist Datenausgaben vorbehalten und wird an der Aufrufstelle gesetzt. */
+const TYPO_FAMILIENVERWEIS = '{font-family.sans}'
 
 function extractBlock(css: string, header: string): string {
   const headerIndex = css.indexOf(header)
@@ -119,6 +150,32 @@ function lengthToPixels(value: string, context: string): number {
   return match[2] === 'rem' ? amount * 16 : amount
 }
 
+/**
+ * Rechnet eine Laufweite in `em` gegen die Schriftgroesse ihrer Stufe in eine blanke px-Zahl um
+ * (`-0.02em` bei `64px` -> `-1.28`). GEMESSEN, nicht vermutet: Ein em-Wert wird als Tokenwert
+ * akzeptiert und loest auch auf, kommt an der Textform aber als `0` an; als blanke Zahl greift die
+ * Laufweite nachweislich.
+ */
+export function letterSpacingToPixels(value: string, fontSize: string): string {
+  const em = /^(-?[0-9]*\.?[0-9]+)em$/.exec(value.trim())
+  if (em === null) {
+    throw new Error(`Unverstandene Laufweite "${value}".`)
+  }
+  const pixels = Number(em[1]) * lengthToPixels(fontSize, 'Schriftgroesse der Stufe')
+  // Gleitkomma-Reste abschneiden, ohne eine Nachkommastelle zu erfinden: -0.02 * 64 = -1.28.
+  return String(Number(pixels.toFixed(4)))
+}
+
+function leererTypografieWert(): TypografieWert {
+  return {
+    fontFamily: TYPO_FAMILIENVERWEIS,
+    fontSize: '',
+    lineHeight: '',
+    fontWeight: '',
+    letterSpacing: '',
+  }
+}
+
 /** Liest den `:root`- und den `@theme`-Block und uebersetzt sie in die Penpot-Tokenliste. Die
  * Reihenfolge des Ergebnisses ist die Deklarationsreihenfolge; die abgeleiteten Abstandsstufen
  * stehen als einzige Gruppe ohne Deklaration am Ende. */
@@ -145,6 +202,12 @@ export function buildTokens(css: string): TokenBuildResult {
   }
 
   let spacingBase = DEFAULT_SPACING_BASE
+  /** Je Stufe genau EIN Verbundtoken, angelegt bei ihrer ersten Deklaration und danach befuellt -
+   * dadurch bleibt die Reihenfolge die Deklarationsreihenfolge. */
+  const typoStufen = new Map<string, TypografieWert>()
+  /** Die Laufweite braucht die Schriftgroesse derselben Stufe; sie kann im CSS davor stehen. */
+  const offeneLaufweiten: [string, string][] = []
+
   for (const [name, value] of parseDeclarations(extractBlock(css, '@theme {'))) {
     // Der Loewenanteil des @theme-Blocks ist die Tailwind-ZUORDNUNG (`--color-bg: var(--bg)`) -
     // ein Verweis, kein eigener Wert. Er wird bewusst uebersprungen, und zwar nur in genau dieser
@@ -165,7 +228,7 @@ export function buildTokens(css: string): TokenBuildResult {
 
     const text = /^--text-([a-z0-9]+)(--line-height|--font-weight|--letter-spacing)?$/.exec(name)
     if (text !== null) {
-      const step = text[1]
+      const stufe = text[1]
       if (value === 'initial') {
         if (text[2] !== undefined) {
           throw new Error(`Unerwartetes "initial" an ${name}.`)
@@ -173,15 +236,32 @@ export function buildTokens(css: string): TokenBuildResult {
         excludedInitialTokens.push(name)
         continue
       }
-      const group =
-        text[2] === undefined
-          ? 'font-size'
-          : (text[2].slice(2) as 'line-height' | 'font-weight' | 'letter-spacing')
-      tokens.push({ name: `${group}.${step}`, type: TOKEN_TYPE_BY_GROUP[group], value })
+      let wert = typoStufen.get(stufe)
+      if (wert === undefined) {
+        wert = leererTypografieWert()
+        typoStufen.set(stufe, wert)
+        tokens.push({
+          name: `font-size.${stufe}`,
+          type: TOKEN_TYPE_BY_GROUP['font-size'],
+          value: wert,
+        })
+      }
+      if (text[2] === undefined) wert.fontSize = value
+      else if (text[2] === '--line-height') wert.lineHeight = value
+      else if (text[2] === '--font-weight') wert.fontWeight = value
+      else offeneLaufweiten.push([stufe, value])
       continue
     }
 
     throw new Error(`Unverstandene @theme-Deklaration: "${name}: ${value}".`)
+  }
+
+  for (const [stufe, laufweite] of offeneLaufweiten) {
+    const wert = typoStufen.get(stufe)
+    if (wert === undefined || wert.fontSize === '') {
+      throw new Error(`Laufweite an Stufe ${stufe} ohne zugehoerige Schriftgroesse.`)
+    }
+    wert.letterSpacing = letterSpacingToPixels(laufweite, wert.fontSize)
   }
 
   const basePixels = lengthToPixels(spacingBase, '--spacing')

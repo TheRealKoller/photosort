@@ -29,22 +29,40 @@
  *  3. Die Dauerregel "entwerfen nur mit Tokens" ist LLM-interpretierter Text; statisch verankert
  *     ist nur, DASS sie im Skill steht.
  *
- * NICHT GEMESSENE API-PUNKTE (ADR 0065 Abschnitt 7, vor dem ersten Lauf ueber `penpot_api_info`
- * zu bestaetigen): der Weg, auf dem SVG-Markup zu einer Penpot-Form wird, und die Signatur der
- * Tokenanwendung. Beides ist hier in je EINER Funktion gekapselt (`formAusMarkup`,
- * `wendeTokenAn`), damit eine Korrektur eine Stelle betrifft und nicht zwoelf.
+ * GEMESSEN AM 2026-09-08 an einer verbundenen Instanz (ADR 0065 Abschnitt 7):
+ * `createShapeFromSvg(svgString)` existiert und liefert eine `Group` - der SVG-Weg ist bestaetigt.
+ * Sie haengt dabei ein zusaetzliches Kind `base-background` (Rechteck) an, das hier entfernt wird;
+ * sonst traegt jedes Symbol eine unsichtbare Flaeche. Das ist zugleich die EINZIGE Stelle, an der
+ * eines dieser Skripte etwas entfernt - und sie ist von der abschliessenden Liste gedeckt: das
+ * Rechteck ist im selben Lauf vom Skript selbst entstanden.
+ *
+ * Die Signatur der Tokenanwendung bleibt in EINER Funktion gekapselt (`wendeTokenAn`), damit eine
+ * Korrektur eine Stelle betrifft und nicht zwoelf.
  */
 
 const SATZ_NAME = 'photosort'
 const SYMBOL_PRAEFIX = 'symbol/'
 const STRICH_TOKEN = 'color.text-h'
 
-/** Gekapselter, noch nicht gemessener API-Punkt: SVG-Markup -> Penpot-Form. */
+/** Name des Kindes, das `createShapeFromSvg` von sich aus anhaengt (gemessen). */
+const HILFSFLAECHE = 'base-background'
+
+/**
+ * SVG-Markup -> Penpot-Form. Die von der API selbst eingehaengte Hilfsflaeche wird direkt wieder
+ * entfernt - sie ist im selben Lauf entstanden und gehoert damit zu dem, was dieses Skript
+ * entfernen darf. Alles andere bleibt unangetastet.
+ */
 function formAusMarkup(markup) {
-  return penpot.createShapeFromSvg(markup)
+  const gruppe = penpot.createShapeFromSvg(markup)
+  for (const kind of gruppe.children || []) {
+    if (kind.name === HILFSFLAECHE) {
+      kind.remove()
+    }
+  }
+  return gruppe
 }
 
-/** Gekapselter, noch nicht gemessener API-Punkt: Tokenbindung auf eine benannte Eigenschaft. */
+/** Gekapselte Tokenbindung auf eine benannte Eigenschaft. */
 function wendeTokenAn(form, eigenschaft, tokenName) {
   const satz = penpot.library.local.tokens.sets.find((kandidat) => kandidat.name === SATZ_NAME)
   if (!satz) {

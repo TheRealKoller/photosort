@@ -17,7 +17,7 @@ Penpot-Datei — er genügt, um sie zu finden, und verrät nichts über die Infr
 
 | Datei | Art | Inhalt |
 |---|---|---|
-| `tokens.json` | **erzeugt** aus `frontend/src/index.css` | die 99 Tokens (Name, Typ, Wert) |
+| `tokens.json` | **erzeugt** aus `frontend/src/index.css` | die 86 Tokens (Name, Typ, Wert): 64 `color`, 5 `borderRadius`, 8 `spacing`, 2 `fontFamilies`, 7 `typography` |
 | `icons.json` | **erzeugt** aus `frontend/src/components/ui/icon.tsx` | die zwölf Symbole als SVG-Markup |
 | `components.json` | handgeschrieben | Zustands-/Variantenmatrix der zehn Bausteine, ausschließlich in Tokennamen |
 | `seed-tokens.js` | handgeschrieben | legt den Token-Satz `photosort` an bzw. gleicht ihn ab |
@@ -97,11 +97,33 @@ jeder `seed-*.js`:
 3. **Die Dauerregel „entwerfen nur mit Tokens" ist LLM-interpretierter Text.** Statisch verankert
    ist nur, *dass* sie im Skill steht.
 
-Noch nicht an der Plugin-API gemessen und beim ersten echten Lauf zu bestätigen (ADR `0065`,
-Abschnitt 7): der Weg, auf dem SVG-Markup zu einer Penpot-Form wird, die Signatur der
-Tokenanwendung auf eine benannte Eigenschaft, und ob die Tokenanwendung Schriftfamilie und
-Schnitt auf Textformen abdeckt. Beides ist in je einer Funktion gekapselt (`formAusMarkup`,
-`wendeTokenAn`), damit eine Korrektur eine Stelle betrifft und nicht zwölf. Stellt sich einer der
-Punkte als nicht verfügbar heraus, wird das **gemeldet, nicht umgangen**: Ein Zustand als
-danebengestelltes Bild erfüllt Akzeptanzkriterium 4 nicht, und ein von Hand gesetzter Schriftwert
-ist als dokumentierte Lücke zu führen.
+## Was an der Plugin-API gemessen ist
+
+Am 2026-09-08 an einer verbundenen Instanz gemessen (leere Scratch-Datei, danach rückstandsfrei
+abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0065`, Abschnitt 7):
+
+- **Tokenbindung wirkt**, und eine Bibliotheks-Instanz **erbt** die Bindungen. `shape.tokens`
+  liefert die Zuordnung Eigenschaft → Tokenname; `verify.js` liest genau das zurück.
+- **Varianten tragen** (`createVariantContainer`, `variantProps`, `switchVariant`).
+  **Nebenwirkung:** Die Einzelkomponenten werden dabei in „Component" umbenannt — der sprechende
+  Name lebt am Container, und `verify.js` erkennt die Bausteine deshalb am maschinellen Schlüssel
+  aus den Plugin-Daten, nicht am Namen.
+- **`createShapeFromSvg(svgString)` existiert** und liefert eine `Group`, hängt aber ein
+  zusätzliches Kind `base-background` an. `seed-icons.js` entfernt es — die einzige Stelle, an der
+  eines dieser Skripte etwas entfernt, und von der abschließenden Liste gedeckt, weil das Rechteck
+  im selben Lauf vom Skript selbst entstanden ist.
+- **Vier Abweichungen von der API-Doku:** kein Token-Typ `lineHeight`/`lineHeights` (deshalb die
+  Verbundtokens); die Eigenschaft für die Schriftfamilie heißt `fontFamily` (Singular); der
+  **Schreibwert** eines `typography`-Tokens benutzt die **Singular**-Schlüssel (`fontFamily`,
+  `fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`) — die Pluralformen sind die Leseform;
+  und ein Token-Satz wirkt erst nach `toggleActive()` (`seed-tokens.js` schaltet ihn ein, aber nur
+  wenn er nachweislich inaktiv ist — `toggleActive` schaltet um und wäre sonst nicht wiederholbar).
+- **Laufweite als blanke px-Zahl.** `-0.02em` wird als Tokenwert akzeptiert, kommt an der Textform
+  aber als `0` an; der Erzeuger rechnet gegen die Schriftgröße der Stufe um (`-0.02em` bei 64px →
+  `-1.28`).
+
+Die beiden gekapselten Stellen (`formAusMarkup`, `wendeTokenAn`) bleiben trotzdem gekapselt: Sie
+sind der Ort, an dem eine spätere API-Änderung eine Korrektur braucht statt zwölf. Stellt sich
+künftig ein Punkt als nicht verfügbar heraus, wird das **gemeldet, nicht umgangen** — ein Zustand
+als danebengestelltes Bild erfüllt Akzeptanzkriterium 4 nicht, und ein von Hand gesetzter
+Schriftwert ist als dokumentierte Lücke zu führen.

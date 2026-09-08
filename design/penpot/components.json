@@ -5,17 +5,34 @@
     {
       "schluessel": "button",
       "name": "Schaltfläche",
-      "quellen": ["src/components/ui/button.tsx"],
+      "quellen": [
+        "src/components/ui/button.tsx"
+      ],
       "varianten": {
-        "auspraegung": ["default", "secondary", "outline", "ghost", "destructive", "link"],
-        "groesse": ["default", "sm", "icon"],
-        "zustand": ["normal", "hover", "active", "disabled", "busy"]
+        "auspraegung": [
+          "default",
+          "secondary",
+          "outline",
+          "ghost",
+          "destructive",
+          "link"
+        ],
+        "groesse": [
+          "default",
+          "sm",
+          "icon"
+        ],
+        "zustand": [
+          "normal",
+          "hover",
+          "active",
+          "disabled",
+          "busy"
+        ]
       },
       "tokens": {
         "radius": "radius.sm",
-        "schriftfamilie": "font-family.sans",
-        "schriftgroesse": "font-size.xs",
-        "zeilenhoehe": "line-height.xs",
+        "typografie": "font-size.xs",
         "hoehe": "space.8",
         "innenabstand-quer": "space.4",
         "innenabstand-laengs": "space.2",
@@ -54,8 +71,7 @@
           },
           "link": {
             "schrift": "color.accent-strong",
-            "schriftgroesse": "font-size.sm",
-            "zeilenhoehe": "line-height.sm"
+            "typografie": "font-size.sm"
           }
         },
         "zustand": {
@@ -70,9 +86,17 @@
     {
       "schluessel": "input",
       "name": "Eingabefeld",
-      "quellen": ["src/components/ui/input.tsx"],
+      "quellen": [
+        "src/components/ui/input.tsx"
+      ],
       "varianten": {
-        "zustand": ["normal", "fokussiert", "fehlerhaft", "fokussiert-fehlerhaft", "disabled"]
+        "zustand": [
+          "normal",
+          "fokussiert",
+          "fehlerhaft",
+          "fokussiert-fehlerhaft",
+          "disabled"
+        ]
       },
       "tokens": {
         "radius": "radius.sm",
@@ -81,9 +105,7 @@
         "schrift": "color.text-h",
         "platzhalter": "color.text-muted",
         "textmarke": "color.accent",
-        "schriftfamilie": "font-family.sans",
-        "schriftgroesse": "font-size.sm",
-        "zeilenhoehe": "line-height.sm",
+        "typografie": "font-size.sm",
         "innenabstand-quer": "space.3"
       },
       "tokensProAuspraegung": {
@@ -108,17 +130,30 @@
     {
       "schluessel": "badge",
       "name": "Kennzeichen",
-      "quellen": ["src/components/ui/badge.tsx", "src/components/RatingBadge.tsx"],
+      "quellen": [
+        "src/components/ui/badge.tsx",
+        "src/components/RatingBadge.tsx"
+      ],
       "varianten": {
-        "ton": ["favorite", "album-worthy", "rejected", "accent", "neutral"],
-        "fuellung": ["solid", "suggested"],
-        "zustand": ["normal", "unbewertet"]
+        "ton": [
+          "favorite",
+          "album-worthy",
+          "rejected",
+          "accent",
+          "neutral"
+        ],
+        "fuellung": [
+          "solid",
+          "suggested"
+        ],
+        "zustand": [
+          "normal",
+          "unbewertet"
+        ]
       },
       "tokens": {
         "radius": "radius.sm",
-        "schriftfamilie": "font-family.sans",
-        "schriftgroesse": "font-size.xs",
-        "zeilenhoehe": "line-height.xs",
+        "typografie": "font-size.xs",
         "hoehe": "space.6",
         "innenabstand-quer": "space.2",
         "abstand": "space.1"
@@ -163,10 +198,21 @@
     {
       "schluessel": "card",
       "name": "Karte",
-      "quellen": ["src/components/ui/card.tsx", "src/components/PhotoCard.tsx"],
+      "quellen": [
+        "src/components/ui/card.tsx",
+        "src/components/PhotoCard.tsx"
+      ],
       "varianten": {
-        "bewertung": ["unbewertet", "favorite", "album_worthy", "rejected"],
-        "vorschlag": ["ohne", "mit"]
+        "bewertung": [
+          "unbewertet",
+          "favorite",
+          "album_worthy",
+          "rejected"
+        ],
+        "vorschlag": [
+          "ohne",
+          "mit"
+        ]
       },
       "tokens": {
         "radius": "radius.lg",
@@ -177,8 +223,7 @@
         "abstand": "space.2",
         "dateiname-schrift": "color.text",
         "dateiname-schriftfamilie": "font-family.mono",
-        "dateiname-schriftgroesse": "font-size.xs",
-        "dateiname-zeilenhoehe": "line-height.xs"
+        "dateiname-typografie": "font-size.xs"
       },
       "tokensProAuspraegung": {
         "bewertung": {
@@ -194,19 +239,29 @@
     {
       "schluessel": "alert",
       "name": "Hinweis",
-      "quellen": ["src/components/ui/alert.tsx", "src/components/StatusTag.tsx"],
+      "quellen": [
+        "src/components/ui/alert.tsx",
+        "src/components/StatusTag.tsx"
+      ],
       "varianten": {
-        "auspraegung": ["success", "warning", "error"],
-        "status": ["never", "running", "success", "failed"]
+        "auspraegung": [
+          "success",
+          "warning",
+          "error"
+        ],
+        "status": [
+          "never",
+          "running",
+          "success",
+          "failed"
+        ]
       },
       "tokens": {
         "radius": "radius.md",
         "flaeche": "color.elevated",
         "innenabstand": "space.3",
         "abstand": "space.3",
-        "schriftfamilie": "font-family.sans",
-        "schriftgroesse": "font-size.sm",
-        "zeilenhoehe": "line-height.sm",
+        "typografie": "font-size.sm",
         "titel-schrift": "color.text-h"
       },
       "tokensProAuspraegung": {
@@ -258,9 +313,15 @@
     {
       "schluessel": "checkbox",
       "name": "Auswahlkästchen",
-      "quellen": ["src/components/ui/checkbox.tsx"],
+      "quellen": [
+        "src/components/ui/checkbox.tsx"
+      ],
       "varianten": {
-        "zustand": ["unchecked", "checked", "disabled"]
+        "zustand": [
+          "unchecked",
+          "checked",
+          "disabled"
+        ]
       },
       "tokens": {
         "radius": "radius.xs",
@@ -268,9 +329,7 @@
         "umriss": "color.border-control",
         "marke": "color.accent",
         "schrift": "color.text-h",
-        "schriftfamilie": "font-family.sans",
-        "schriftgroesse": "font-size.sm",
-        "zeilenhoehe": "line-height.sm",
+        "typografie": "font-size.sm",
         "abstand": "space.3"
       },
       "tokensProAuspraegung": {
@@ -285,9 +344,15 @@
     {
       "schluessel": "switch",
       "name": "Schalter",
-      "quellen": ["src/components/ui/switch.tsx"],
+      "quellen": [
+        "src/components/ui/switch.tsx"
+      ],
       "varianten": {
-        "zustand": ["unchecked", "checked", "disabled"]
+        "zustand": [
+          "unchecked",
+          "checked",
+          "disabled"
+        ]
       },
       "tokens": {
         "spur": "color.overlay",
@@ -312,9 +377,14 @@
     {
       "schluessel": "progress",
       "name": "Fortschrittsanzeige",
-      "quellen": ["src/components/ui/progress.tsx"],
+      "quellen": [
+        "src/components/ui/progress.tsx"
+      ],
       "varianten": {
-        "zustand": ["determiniert", "indeterminate"]
+        "zustand": [
+          "determiniert",
+          "indeterminate"
+        ]
       },
       "tokens": {
         "radius": "radius.xs",
@@ -333,10 +403,18 @@
     {
       "schluessel": "dialog",
       "name": "Dialog",
-      "quellen": ["src/components/ui/dialog.tsx"],
+      "quellen": [
+        "src/components/ui/dialog.tsx"
+      ],
       "varianten": {
-        "zustand": ["geschlossen", "offen"],
-        "abbrechen": ["aktiv", "cancelDisabled"]
+        "zustand": [
+          "geschlossen",
+          "offen"
+        ],
+        "abbrechen": [
+          "aktiv",
+          "cancelDisabled"
+        ]
       },
       "tokens": {
         "radius": "radius.xl",
@@ -346,18 +424,17 @@
         "innenabstand": "space.6",
         "abstand": "space.6",
         "aktionsabstand": "space.3",
-        "schriftfamilie": "font-family.sans",
         "titel-schrift": "color.text-h",
-        "titel-schriftgroesse": "font-size.lg",
-        "titel-zeilenhoehe": "line-height.lg",
-        "beitext-schriftgroesse": "font-size.sm",
-        "beitext-zeilenhoehe": "line-height.sm"
+        "titel-typografie": "font-size.lg",
+        "beitext-typografie": "font-size.sm"
       }
     },
     {
       "schluessel": "chip",
       "name": "Kategorie-Chip",
-      "quellen": ["src/components/CategoryBadge.tsx"],
+      "quellen": [
+        "src/components/CategoryBadge.tsx"
+      ],
       "varianten": {
         "kategorie": [
           "menschen",
@@ -377,9 +454,7 @@
       },
       "tokens": {
         "radius": "radius.xl",
-        "schriftfamilie": "font-family.sans",
-        "schriftgroesse": "font-size.xs",
-        "zeilenhoehe": "line-height.xs",
+        "typografie": "font-size.xs",
         "innenabstand-quer": "space.3",
         "innenabstand-laengs": "space.1"
       },

@@ -1,17 +1,25 @@
 # 0005 - Figma-Board "Dark Utility Register" (photosort-design-system V1.2)
 
-**Status:** Referenz (Momentaufnahme, kein Living Document)
+**Status:** Archiv — abgelöste Design-Quelle, wird nicht mehr gepflegt
 **Ausgelesen:** 2026-09-04
+**Archiviert:** 2026-09-08 durch ADR [`0064`](../decisions/0064-penpot-als-design-quelle-rangfolge-umgekehrt.md)
 **Quelle:** Figma-Datei „Photosort Dark", fileKey `zFiuhI1yjTzAQVQnceBiLC`, Board-Node `2:4`
 ([Link](https://www.figma.com/design/zFiuhI1yjTzAQVQnceBiLC/Photosort-Dark?node-id=2-4))
 **Bezug:** Spec [`0320`](../features/0320-dark-utility-register.md), ADR [`0055`](../decisions/0055-dark-utility-register-fundament.md), Stufe 2 = Issue #321
 
-Ausgelesen über den Figma-MCP (`get_metadata` + `get_design_context`). **Diese Datei ist die
-maßgebliche Werteliste im Repo** — die Figma-Asset-URLs des Exports verfallen nach 7 Tagen, und
-die Fachagenten haben keinen Figma-Zugriff. Sie hält den Stand V1.2 fest; sie wird *nicht*
-laufend gepflegt. Was das Projekt daraus verbindlich übernimmt (inklusive der begründeten
-Abweichungen), steht in ADR 0055 und im Design-System-Dokument
-[`0004`](./0004-design-system.md) — bei Widerspruch gilt die ADR, nicht diese Momentaufnahme.
+Ausgelesen über den Figma-MCP (`get_metadata` + `get_design_context`). **Diese Datei ist ein
+Archiv.** Sie hält den letzten gültigen Stand V1.2 des inzwischen abgelösten Figma-Boards fest,
+damit nachvollziehbar bleibt, woher das System kam — mehr nicht. Die Design-Quelle ist seit ADR
+[`0064`](../decisions/0064-penpot-als-design-quelle-rangfolge-umgekehrt.md) die Penpot-Datei
+„PhotoSort — Dark Utility Register", und die maßgebliche Werteliste im Repo ist
+`frontend/src/index.css`. Beide Rollen, die diese Datei zuvor beansprucht hat („maßgebliche
+Werteliste" und „bei Widerspruch gilt die ADR, nicht diese Momentaufnahme"), sind dort
+ausdrücklich zurückgenommen.
+
+Der Rumpf unterhalb bleibt wortgetreu so stehen, wie er ausgelesen wurde; eine nachträglich
+umgeschriebene Momentaufnahme wäre eine Fälschung. Was das Projekt daraus verbindlich übernommen
+hat (inklusive der begründeten Abweichungen), steht in ADR 0055 und im Design-System-Dokument
+[`0004`](./0004-design-system.md).
 
 ## 1. Farbpalette (die 12 benannten Tokens des Boards)
 

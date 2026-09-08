@@ -56,13 +56,16 @@ const ROLLE_ZU_EIGENSCHAFT = {
   innenabstand: 'padding',
   abstand: 'row-gap',
   schrift: 'fill',
-  schriftfamilie: 'font-family',
-  schriftgroesse: 'font-size',
-  zeilenhoehe: 'line-height',
+  // Singular, gemessen: der dokumentierte Name `fontFamilies` wirft.
+  schriftfamilie: 'fontFamily',
+  // Eine Schriftstufe ist EIN Verbundtoken (Groesse, Zeilenhoehe, Schnitt, Laufweite zusammen) -
+  // Penpot kennt keinen Token-Typ fuer Zeilenhoehen, und beim Entwerfen wird eine Stufe ohnehin
+  // in einem Zug angewandt.
+  typografie: 'typography',
 }
 
 /** Rollen, die auf die BESCHRIFTUNG wirken statt auf die Flaeche. */
-const TEXT_ROLLEN = ['schrift', 'schriftfamilie', 'schriftgroesse', 'zeilenhoehe']
+const TEXT_ROLLEN = ['schrift', 'schriftfamilie', 'typografie']
 
 /**
  * FAIL-CLOSED. Bricht ab, sobald die Datei bereits einen der zehn Bausteine traegt. Ein blosser
@@ -135,7 +138,7 @@ function bindeRollen(brett, beschriftung, rollen, herkunft, nachzubinden) {
 
 function baueAuspraegung(baustein, eigenschaft, auspraegung, nachzubinden) {
   const brett = penpot.createBoard()
-  brett.name = baustein.schluessel + '/' + eigenschaft + '=' + auspraegung
+  brett.name = eigenschaft + '=' + auspraegung
   brett.addFlexLayout()
   brett.horizontalSizing = 'auto'
   brett.verticalSizing = 'auto'
@@ -143,7 +146,7 @@ function baueAuspraegung(baustein, eigenschaft, auspraegung, nachzubinden) {
   const beschriftung = penpot.createText(auspraegung)
   brett.appendChild(beschriftung)
 
-  const herkunft = brett.name
+  const herkunft = baustein.schluessel + '/' + brett.name
   bindeRollen(brett, beschriftung, baustein.tokens, herkunft, nachzubinden)
 
   const proAuspraegung = baustein.tokensProAuspraegung || {}
@@ -159,7 +162,12 @@ function baueAuspraegung(baustein, eigenschaft, auspraegung, nachzubinden) {
 /**
  * Ein VARIANTEN-Behaelter je Baustein: der Zustand wird dadurch AUSWAEHLBAR, statt als zweites
  * Bild danebengestellt zu werden (Akzeptanzkriterium 4). Der maschinelle Schluessel wandert als
- * Plugin-Daten mit, der deutsche Anzeigename ist der Komponentenname.
+ * Plugin-Daten mit, der deutsche Anzeigename ist der Name des Behaelters.
+ *
+ * GEMESSEN: `createVariantContainer` BENENNT DIE EINZELKOMPONENTEN IN "Component" UM - der
+ * sprechende Name lebt am Behaelter, nicht an den Auspraegungen. Deshalb traegt der Behaelter den
+ * Anzeigenamen und die Plugin-Daten; die Brettnamen `eigenschaft=auspraegung` sind ausschliesslich
+ * die Vorlage, aus der die Varianteneigenschaften entstehen, und ueberleben den Aufruf nicht.
  */
 function baueBaustein(baustein) {
   const nachzubinden = []

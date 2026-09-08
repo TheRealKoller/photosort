@@ -39,9 +39,11 @@ Abschnitt „Entscheidungen"); 7, 9 und 10 stehen unverändert, weil sie dokumen
 sind und im Diff bzw. auf GitHub direkt entscheidbar bleiben.
 
 - [ ] **1.** Farben, Typografie, Abstandsskala und Radien liegen in Penpot als benannte,
-  wiederverwendbare Tokens vor: **64 Farb-, 5 Radien-, 8 Abstands-, 7 Schriftgrößen-, 7
-  Zeilenhöhen-, 5 Schnitt-, 1 Laufweiten- und 2 Schriftfamilien-Token** in einem Satz namens
-  `photosort`, benannt nach `<gruppe>.<blatt>`. **„Zentral änderbar" heißt:** jede Eigenschaft
+  wiederverwendbare Tokens vor: **64 Farb-, 5 Radien-, 8 Abstands-, 2 Schriftfamilien- und 7
+  Typografie-Verbundtoken** in einem Satz namens `photosort`, benannt nach `<gruppe>.<blatt>`.
+  Jedes der sieben Typografie-Tokens trägt Größe, Zeilenhöhe, Schnitt und Laufweite einer
+  Schriftstufe zusammen und **verweist** für die Familie auf eines der beiden Familientokens
+  (`{font-family.sans}`), sodass die Familie nicht doppelt im System steht. **„Zentral änderbar" heißt:** jede Eigenschaft
   eines Bausteins, für die ein Token existiert, ist an dieses Token **gebunden** und nicht als
   Wert gesetzt — nachgewiesen durch das Rücklesen der Tokenbindungen je Baustein, nicht durch die
   bloße Existenz der Tokenliste.
@@ -147,8 +149,12 @@ dem `:root`- und `@theme`-Block und ist damit in CI gegen Abweichung gesichert �
 ändert und nicht neu erzeugt, bekommt einen roten Test. Das kostet keine neue Abhängigkeit und
 kein neues Kommando: Die Erzeugung *ist* ein Test, regeneriert wird mit `npm test -- -u`.
 
-Übersetzt werden: 64 Farbtokens, 5 Radien, 8 Abstandsstufen, 7 Schriftgrößen mit Zeilenhöhe,
-5 Schnitte, 1 Laufweite, 2 Schriftfamilien. Die Abstandsstufen sind die einzige Gruppe ohne
+Übersetzt werden: 64 Farbtokens, 5 Radien, 8 Abstandsstufen, 2 Schriftfamilien und 7
+Typografie-Verbundtokens. **Penpot kennt keinen Token-Typ für Zeilenhöhen** (gemessen, siehe
+unten) — die sieben Schriftstufen werden deshalb als `typography`-Verbundtokens abgebildet, die
+Größe, Zeilenhöhe, Schnitt und Laufweite gemeinsam tragen und für die Familie auf die beiden
+Familientokens verweisen. Das ist zugleich die Form, in der eine Schriftstufe beim Entwerfen in
+einem Zug angewandt wird, statt in vier Einzelwerten. Die Abstandsstufen sind die einzige Gruppe ohne
 eigene Deklaration in `index.css` (Tailwinds `--spacing`-Basis 0.25rem × Stufen
 1/2/3/4/6/8/12/16 = 4…64px); sie werden abgeleitet und zusätzlich gegen den echten Tailwind-Lauf
 geprüft. Die sechs auf `initial` gestrichenen Stufen `--text-4xl` bis `--text-9xl` werden
@@ -252,15 +258,37 @@ vor dem ersten Schreibzugriff, nicht nur als Prosa im Skill. **Kein Skript lösc
   **eigenständig wiederholt** statt vorausgesetzt.
 - **`currentColor` hat in Penpot keine Entsprechung.** Die Strichfarbe der freistehenden
   Symbolbibliothek wird über `color.text-h` gesetzt; `width`/`height` werden aus dem gerenderten
-  Markup entfernt, `viewBox` bleibt.
+  Markup entfernt, `viewBox` bleibt. Zusätzlich ist nach `createShapeFromSvg` das automatisch
+  eingehängte Kind `base-background` zu entfernen.
 - **Die `seed-*.js` sind zum PR-Zeitpunkt unausgeführter Code.** CI prüft Erzeugung,
   Vollständigkeit, Benennung und die Wertfreiheit — nicht, ob ein API-Aufruf funktioniert. Ein
   bis zwei Korrekturrunden nach dem ersten echten Lauf sind eingeplant, kein Fehlschlag.
-- **Vor dem Bau über `penpot_api_info` zu klären** (nicht gemessen): der Weg, auf dem SVG-Markup
-  zu einer Penpot-Form wird, und ob `applyToken` Schriftfamilie/Schnitt auf Textformen abdeckt.
-  Ist eines nicht verfügbar, **wird es gemeldet, nicht umgangen**: Ein Zustand als
-  danebengestelltes Bild erfüllt AK 4 nicht, ein von Hand gesetzter Schriftwert ist als
-  dokumentierte Lücke zu führen.
+- **Die Plugin-API ist am 2026-09-08 an einer verbundenen Instanz gemessen worden** (leere
+  Scratch-Datei, danach rückstandsfrei abgeräumt). Ergebnis — es wird nicht mehr vermutet:
+  - **Tokenbindung wirkt.** `applyToken`/`applyToShapes` bindet Fläche, Radius, Padding, Gap,
+    Schriftgröße, Schnitt, Laufweite und Textfarbe; `shape.tokens` liefert danach die Zuordnung
+    Eigenschaft → Tokenname, und die Werte greifen tatsächlich. Eine Bibliotheks-Instanz **erbt**
+    diese Bindungen — das ist der Mechanismus hinter AK 6.
+  - **Varianten tragen.** `penpotUtils.createVariantContainer` erzeugt einen echten
+    `VariantContainer`, `variantProps` stimmt, `switchVariant` schaltet um, kein `variantError`.
+    AK 4 ist damit erfüllbar. **Nebenwirkung:** Die Einzelkomponenten werden dabei in „Component"
+    umbenannt — der sprechende Name lebt am Container.
+  - **`createShapeFromSvg(svgString)` existiert** und liefert eine `Group`. **Sie hängt ein
+    zusätzliches Kind `base-background` (Rechteck) an**, das beim Symbolimport zu entfernen ist —
+    sonst trägt jedes Symbol eine unsichtbare Fläche.
+  - **Vier Abweichungen von der API-Doku**, alle gemessen: (1) es gibt **keinen** Token-Typ
+    `lineHeight`/`lineHeights` — der Aufruf scheitert hart; (2) die Eigenschaft für die
+    Schriftfamilie heißt **`fontFamily`** (Singular), der dokumentierte Name `fontFamilies` wirft;
+    (3) der **Schreibwert** eines `typography`-Tokens benutzt die **Singular**-Schlüssel
+    (`fontFamily`, `fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`, `textCase`,
+    `textDecoration`) — die Pluralformen aus `TokenTypographyValue` sind die **Lese**form;
+    (4) ein Token-Satz wirkt erst nach `toggleActive()`, vorher bleibt `resolvedValue` `null` und
+    nichts greift.
+  - **Laufweite muss eine blanke Zahl in px sein.** `-0.02em` wird als Tokenwert akzeptiert und
+    löst zu `-0.02` auf, kommt an der Textform aber als `0` an. Der Erzeuger rechnet em gegen die
+    Schriftgröße der Stufe um (`-0.02em` bei 64px → `-1.28`); als Zahl greift sie nachweislich.
+  - **Referenzen im Verbundtoken funktionieren:** `{font-family.sans}` und `{font-size.base}`
+    lösen innerhalb eines `typography`-Werts korrekt auf.
 - `design/` ist ein neues Wurzelverzeichnis. Von `scripts/tests/test_verweisnummern_in_markdown.py`
   erfasst — `design/penpot/README.md` muss die Nummernregel bei Verweisen auf ADR 0064/0065
   einhalten.
@@ -455,7 +483,10 @@ JSON-Dateien müssen eingecheckt sein.
 Schnappschussgleichheit sagt nur „unverändert", nicht „richtig". Daneben stehen deshalb
 Inhaltszusicherungen, die auch bei einem frisch erzeugten Schnappschuss greifen:
 
-**`tokens.test.ts`:** eingefrorene Kardinalitäten je Gruppe (64/5/8/7/7/5/1/2); **Fehlschlagen
+**`tokens.test.ts`:** eingefrorene Kardinalitäten je Gruppe (64 `color`, 5 `borderRadius`,
+8 `spacing`, 2 `fontFamilies`, 7 `typography`); je Typografie-Token die Vollständigkeit seiner
+fünf Felder (Familie als Referenz, Größe, Zeilenhöhe, Schnitt, Laufweite) und die **Umrechnung
+der Laufweite von em in eine blanke px-Zahl**, mit der Stufe als Bezugsgröße; **Fehlschlagen
 statt Überspringen** bei jeder nicht verstandenen Deklaration; `initial`-Werte ausgeschlossen und
 **gezählt** (genau sechs); parserunabhängige Gegenprobe (für jedes Farbtoken steht `--<blatt>:`
 wörtlich in `index.css`); Abstandsstufen gegen den echten Tailwind-Lauf mit **eigenem

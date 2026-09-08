@@ -65,10 +65,14 @@ function symbolListe() {
 }
 
 /** Je Baustein: Typ (es muessen BIBLIOTHEKS-KOMPONENTEN sein, nicht Formen gleichen Namens),
- * Varianteneigenschaften mit der Zahl ihrer Auspraegungen, und die Tokenbindungen je Form. */
+ * Varianteneigenschaften mit der Zahl ihrer Auspraegungen, und die Tokenbindungen je Form.
+ *
+ * ERKANNT AM MASCHINELLEN SCHLUESSEL, nicht am Namen: `createVariantContainer` benennt die
+ * Einzelkomponenten in "Component" um (gemessen). Wer hier nach Namen filterte, zaehlte diese
+ * Ausprägungen als eigene Bausteine mit. */
 function bausteinListe() {
   return penpot.library.local.components
-    .filter((komponente) => komponente.name.indexOf(SYMBOL_PRAEFIX) !== 0)
+    .filter((komponente) => Boolean(komponente.getPluginData('schluessel')))
     .map((komponente) => ({
       name: komponente.name,
       schluessel: komponente.getPluginData('schluessel'),
@@ -88,7 +92,8 @@ function tokenBindungen(komponente) {
   const formen = [wurzel].concat(wurzel.children || [])
   const bindungen = []
   for (const form of formen) {
-    const gesetzt = form.appliedTokens || {}
+    // Gemessen: `shape.tokens` liefert die Zuordnung Eigenschaft -> Tokenname.
+    const gesetzt = form.tokens || {}
     for (const eigenschaft of Object.keys(gesetzt)) {
       bindungen.push({ form: form.name, eigenschaft: eigenschaft, token: gesetzt[eigenschaft] })
     }

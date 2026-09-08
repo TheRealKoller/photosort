@@ -54,11 +54,19 @@ Was dabei übersetzt wird, ist abschließend:
 - **64 Farbtokens** — jeder `:root`-Farbwert außer `--sans`/`--mono`, 1:1 als `color`-Token.
 - **5 Radien** aus `--radius-xs…xl`, als `borderRadius`.
 - **8 Abstandsstufen** (4 · 8 · 12 · 16 · 24 · 32 · 48 · 64 px) als `spacing`. Sie sind die einzige Gruppe **ohne** eigene Deklaration in `index.css`: Tailwinds `--spacing`-Basis (0.25rem) erzeugt sie über die Stufen 1/2/3/4/6/8/12/16. Sie werden deshalb aus dieser Basis abgeleitet, nicht getippt, und zusätzlich gegen den echten Tailwind-Lauf geprüft (was erzeugt `p-1`, was `p-16`), damit eine geänderte Basis nicht still durchrutscht.
-- **7 Schriftgrößen** mit ihrer Zeilenhöhe, als `fontSizes` und `lineHeights` — dazu **5** `fontWeights`
-  und **1** `letterSpacing`. Die beiden letzten Zahlen sind am Bestand ausgemessen, nicht überschlagen:
-  `--text-xs` und `--text-sm` tragen **kein** `--font-weight`, und nur `--text-3xl` trägt ein
-  `--letter-spacing`. Für xs/sm entsteht deshalb **kein** Schnitt-Token; einen Standardwert `400`
-  zu ergänzen wäre genau die getippte Wertekopie, die Abschnitt 1 verbietet.
+- **7 Schriftstufen als `typography`-Verbundtokens.** Penpot kennt **keinen** Token-Typ für
+  Zeilenhöhen (am 2026-09-08 an einer verbundenen Instanz gemessen: `lineHeight` und `lineHeights`
+  scheitern beide hart). Eine Schriftstufe wird deshalb als **ein** Verbundtoken abgebildet, das
+  Größe, Zeilenhöhe, Schnitt und Laufweite zusammen trägt und für die Familie auf eines der beiden
+  Familientokens **verweist** (`{font-family.sans}` — Referenzen im Verbundwert funktionieren,
+  ebenfalls gemessen). Das ist zugleich die Form, in der ein Entwerfender eine Schriftstufe in
+  einem Zug anwendet.
+  Zwei Felder sind am Bestand ausgemessen, nicht überschlagen: `--text-xs` und `--text-sm` tragen
+  **kein** `--font-weight`, und nur `--text-3xl` trägt ein `--letter-spacing`. Wo das Feld fehlt,
+  bleibt es im Verbundtoken **leer**; einen Standardwert `400` zu ergänzen wäre genau die getippte
+  Wertekopie, die Abschnitt 1 verbietet.
+  Die **Laufweite wird von em in eine blanke px-Zahl umgerechnet** (`-0.02em` bei 64px → `-1.28`):
+  ein em-Wert wird als Token zwar akzeptiert, kommt an der Textform aber als `0` an.
 - **Nicht übersetzt werden die sechs gestrichenen Stufen** `--text-4xl` bis `--text-9xl`: Sie stehen
   im `@theme`-Block auf `initial`. Der Erzeuger schließt sie aus und sichert zugleich zu, dass es
   **genau sechs** sind — sonst wanderte eine künftig wiederbelebte Stufe still nach Penpot oder eine
@@ -119,7 +127,7 @@ Zwei Grenzen werden hier benannt, damit sie später niemand für einen Fehler h�
 - **CI prüft die Nutzlast nur statisch.** Getestet werden Erzeugung, Vollständigkeit, Benennung und die Regel „kein wörtlicher Farb-/Größenwert außerhalb der erzeugten Datendateien". Ob ein Aufruf der Plugin-API tatsächlich funktioniert, kann kein Test im Repository sagen. **Die Aufbauskripte sind zum Zeitpunkt des Pull Requests unausgeführter Code** — das ist keine Nachlässigkeit, sondern die Folge davon, dass die Zielumgebung an Daniels Sitzung hängt. Ein oder zwei Korrekturrunden nach dem ersten echten Lauf sind einzuplanen, nicht als Fehlschlag zu werten.
 - **Kein Test kann Penpot lesen.** Ob der Penpot-Stand und `index.css` heute übereinstimmen, weiß nur, wer nachsieht. Der Abgleich ist eine Handlung, keine Zusicherung.
 
-**Nicht bestätigte API-Punkte** (am MCP-Server nicht gemessen, aus der Doku zu bestätigen): der Weg, auf dem SVG-Markup zu einer Penpot-Form wird, und ob `applyToken` Schriftfamilie und Schnitt auf Textformen abdeckt. Dazu ein dritter, bereits am Bestand erkannter Punkt: Die zwölf Symbole tragen `stroke="currentColor"`, was in Penpot **keine Entsprechung** hat — sie kämen sonst schwarz oder unsichtbar an. Die Strichfarbe der freistehenden Symbolbibliothek wird deshalb über das Token `color.text-h` gesetzt, an einer Verwendungsstelle trägt das Symbol dasselbe Token wie der Text daneben. Ebenso werden `width`/`height` aus dem gerenderten Markup entfernt (eine feste Pixelgröße machte die Bibliotheksinstanz unskalierbar), `viewBox` bleibt. Das ist die einzige Stelle, an der die Symbolübertragung nicht wertfrei ist, und sie steht deshalb hier statt implizit im Skript. Beide sind vor dem Bau über `penpot_api_info` zu klären. Stellt sich einer als nicht verfügbar heraus, ist das **zu melden**, nicht zu umgehen: Ein Zustand, der als zweites Bild danebengestellt wird, statt auswählbar zu sein, erfüllt Akzeptanzkriterium 4 nicht, und ein von Hand gesetzter Schriftwert ist als dokumentierte Lücke zu führen, nicht als erledigt.
+**Die API-Punkte sind am 2026-09-08 an einer verbundenen Instanz gemessen** (leere Scratch-Datei, danach rückstandsfrei abgeräumt) und damit **nicht mehr offen**: `createShapeFromSvg(svgString)` existiert und liefert eine `Group` (hängt allerdings ein zu entfernendes Kind `base-background` an); `applyToken` deckt Schriftfamilie und Schnitt auf Textformen ab, wobei die Eigenschaft **`fontFamily`** heißt und nicht wie dokumentiert `fontFamilies`; `createVariantContainer`, `variantProps` und `switchVariant` tragen, und eine Bibliotheks-Instanz erbt die Tokenbindungen. Weitere gemessene Abweichungen von der Doku: kein Token-Typ für Zeilenhöhen, Singular-Schlüssel im Schreibwert eines `typography`-Tokens, und ein Token-Satz wirkt erst nach `toggleActive()`. Der frühere Vorbehalt entfällt damit; die Regel bleibt aber stehen für alles, was künftig ungemessen ist: Dazu ein dritter, bereits am Bestand erkannter Punkt: Die zwölf Symbole tragen `stroke="currentColor"`, was in Penpot **keine Entsprechung** hat — sie kämen sonst schwarz oder unsichtbar an. Die Strichfarbe der freistehenden Symbolbibliothek wird deshalb über das Token `color.text-h` gesetzt, an einer Verwendungsstelle trägt das Symbol dasselbe Token wie der Text daneben. Ebenso werden `width`/`height` aus dem gerenderten Markup entfernt (eine feste Pixelgröße machte die Bibliotheksinstanz unskalierbar), `viewBox` bleibt. Das ist die einzige Stelle, an der die Symbolübertragung nicht wertfrei ist, und sie steht deshalb hier statt implizit im Skript. Beide sind vor dem Bau über `penpot_api_info` zu klären. Stellt sich einer als nicht verfügbar heraus, ist das **zu melden**, nicht zu umgehen: Ein Zustand, der als zweites Bild danebengestellt wird, statt auswählbar zu sein, erfüllt Akzeptanzkriterium 4 nicht, und ein von Hand gesetzter Schriftwert ist als dokumentierte Lücke zu führen, nicht als erledigt.
 
 ## Begründung
 

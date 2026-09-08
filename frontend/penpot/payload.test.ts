@@ -451,7 +451,9 @@ describe('Gegenprobe: die erzeugten Datendateien schlagen an', () => {
 const tokens = JSON.parse(readFileSync(`${DESIGN_DIR}tokens.json`, 'utf8')) as {
   name: string
   type: string
-  value: string
+  /** Die sieben Schriftstufen tragen einen VERBUNDWERT (Groesse, Zeilenhoehe, Schnitt,
+   * Laufweite); alles andere einen Einzelwert. */
+  value: string | Record<string, string>
 }[]
 const tokennamen = new Set(tokens.map((token) => token.name))
 
@@ -483,27 +485,19 @@ describe('Referentielle Integritaet', () => {
 
   /*
    * DIE GEGENRICHTUNG WIRD NICHT GEPRUEFT: sie zwaenge zum Ausduennen eines bewusst vollstaendigen
-   * Tokensatzes. An ihre Stelle tritt eine GRUPPEN-Zusicherung, und zwar als EINGEFRORENE
-   * Zuordnung statt als "mindestens eine": `font-weight` und `letter-spacing` werden von keinem
-   * der zehn Bausteine getragen, und das ist kein Versehen -
-   *   - die Schnitt-Tokens sind die Standardschnitte der Typo-STUFEN (400/500/400/600/700). Die
-   *     zehn Bausteine uebersteuern den Schnitt an der Aufrufstelle (`font-semibold`,
-   *     `font-bold`); eine Bindung an `font-weight.2xl` waere zwar wertgleich, behauptete aber
-   *     eine Kopplung an die 40px-Stufe, die es nicht gibt.
-   *   - `letter-spacing.3xl` haengt an der 64px-Anzeigestufe. Keiner der zehn Bausteine ist eine
-   *     Anzeigeueberschrift.
-   * Eine eingefrorene Zuordnung macht diese beiden Luecken sichtbar, statt sie hinter einem
-   * "mindestens eine Gruppe" verschwinden zu lassen.
+   * Tokensatzes. An ihre Stelle tritt eine GRUPPEN-Zusicherung: jede Gruppe, die es in der
+   * erzeugten Tokenliste gibt, wird von mindestens einem Baustein verwendet. Die Sollmenge kommt
+   * aus `tokens.json` und ist damit erzeugt, nicht getippt - eine neue Gruppe faellt hier auf,
+   * statt unbenutzt mitzulaufen.
    */
-  it('haelt die eingefrorene Zuordnung Gruppe -> Verwendung ein', () => {
+  it('verwendet jede Tokengruppe in mindestens einem Baustein', () => {
+    const vorhanden = new Set(tokens.map((token) => token.name.split('.')[0]))
     const verwendet = new Set(
       alleTokennamenAus(dateiVon('components.json').roh).map((name) => name.split('.')[0])
     )
-    expect([...verwendet].sort()).toEqual(
-      ['color', 'font-family', 'font-size', 'line-height', 'radius', 'space'].sort()
-    )
-    for (const gruppe of ['font-weight', 'letter-spacing']) {
-      expect(verwendet.has(gruppe), gruppe).toBe(false)
+    expect([...vorhanden].sort()).toEqual(['color', 'font-family', 'font-size', 'radius', 'space'])
+    for (const gruppe of vorhanden) {
+      expect(verwendet.has(gruppe), gruppe).toBe(true)
     }
   })
 
@@ -863,14 +857,54 @@ const VERBOTENE_BEZEICHNER: { name: string; muster: RegExp; probe: string }[] = 
   { name: 'delete', muster: /\bdelete\s+/, probe: 'delete obj.x' },
 ]
 
+/**
+ * Fundstellengenaue Freigaben zur Liste oben - und zwar genau eine. `createShapeFromSvg` haengt
+ * von sich aus ein Kind `base-background` an (an einer verbundenen Instanz gemessen); es zu
+ * entfernen ist von der abschliessenden Liste GEDECKT, weil das Rechteck im selben Lauf vom
+ * Skript selbst entstanden ist. Die Freigabe ist an Datei, Zeile und Ausschnitt gebunden, damit
+ * sie nicht zur Generalerlaubnis fuer `remove` in dieser Datei wird.
+ */
+const BEZEICHNER_FREIGABEN: { datei: string; zeile: number; bezeichner: string; ausschnitt: string }[] = [
+  { datei: 'seed-icons.js', zeile: 59, bezeichner: 'remove', ausschnitt: 'kind.remove()' },
+]
+
 describe('Was die Nutzlast darf, ist abschliessend', () => {
+  function verstoesse(verboten: (typeof VERBOTENE_BEZEICHNER)[number]): Fund[] {
+    const funde = suche(nutzlast, new RegExp(verboten.muster.source, `${verboten.muster.flags}g`))
+    return funde.filter(
+      (fund) =>
+        !BEZEICHNER_FREIGABEN.some(
+          (freigabe) =>
+            freigabe.bezeichner === verboten.name &&
+            freigabe.datei === fund.datei &&
+            freigabe.zeile === fund.zeile &&
+            fund.text.includes(freigabe.ausschnitt)
+        )
+    )
+  }
+
   for (const verboten of VERBOTENE_BEZEICHNER) {
     it(`enthaelt kein ${verboten.name}`, () => {
-      for (const datei of nutzlast) {
-        expect(verboten.muster.test(datei.inhalt), `${datei.datei}: ${verboten.name}`).toBe(false)
-      }
+      expect(meldung(verstoesse(verboten))).toBe('')
     })
   }
+
+  it('fuehrt keine verwaiste Bezeichner-Freigabe', () => {
+    for (const freigabe of BEZEICHNER_FREIGABEN) {
+      const verboten = VERBOTENE_BEZEICHNER.find((kandidat) => kandidat.name === freigabe.bezeichner)
+      expect(verboten, freigabe.bezeichner).toBeDefined()
+      const alle = suche(nutzlast, new RegExp(verboten!.muster.source, `${verboten!.muster.flags}g`))
+      expect(
+        alle.some(
+          (fund) =>
+            fund.datei === freigabe.datei &&
+            fund.zeile === freigabe.zeile &&
+            fund.text.includes(freigabe.ausschnitt)
+        ),
+        `${freigabe.datei}:${freigabe.zeile}`
+      ).toBe(true)
+    }
+  })
 
   /* Selbsttest je Muster: ein Verbot, das seinen eigenen Verstoss nicht erkennt, ist eine
      Beruhigung, keine Zusicherung. */
