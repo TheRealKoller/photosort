@@ -117,9 +117,13 @@ REFERENZIERTE_DATEIEN = ("release-please-config.json", ".release-please-manifest
 # Zusicherung 4d: das Muss-Kriterium aus Spec 0008 fuer dieses public Repository.
 _PULL_REQUEST_TARGET = re.compile(r"pull_request_target", re.IGNORECASE)
 
-# Selbstschutz: Eine kaputte Dateiaufzaehlung liesse alle Verbote still gruen werden.
-MINDESTZAHL_WORKFLOWS = 2
-PFLICHT_WORKFLOWS = ("ci.yml", RELEASE_WORKFLOW_NAME)
+# Selbstschutz: Eine kaputte Dateiaufzaehlung liesse alle Verbote still gruen werden. Die Liste
+# waechst mit jedem neuen Workflow mit - sie ist keine Obergrenze, sondern die Zusicherung, dass
+# der Suchraum genau die Dateien sieht, fuer die die repo-weiten Verbote gelten. Zuletzt
+# hinzugekommen: pr-titel.yml (PR-Titel-Pruefung), der damit ab sofort mit unter das
+# pull_request_target- und das Selbst-Merge-Verbot faellt.
+MINDESTZAHL_WORKFLOWS = 3
+PFLICHT_WORKFLOWS = ("ci.yml", "pr-titel.yml", RELEASE_WORKFLOW_NAME)
 
 # Gegenprobe und zugleich der Rot-Nachweis dieses TDD-Zyklus: exakt die drei Zeilen, die mit
 # ADR 0060 aus release-please.yml verschwunden sind. Treffen die Muster oben hier nicht, ist
@@ -374,7 +378,7 @@ def test_kein_workflow_mergt_von_allein() -> None:
         "waere dann bedeutungslos."
     )
     assert set(PFLICHT_WORKFLOWS) <= set(abbild), (
-        f"Der Suchraum {sorted(abbild)} enthaelt nicht beide erwarteten Workflows "
+        f"Der Suchraum {sorted(abbild)} enthaelt nicht alle erwarteten Workflows "
         f"{PFLICHT_WORKFLOWS} - die Aufzaehlung sieht nicht, was sie sehen soll."
     )
 
@@ -445,7 +449,7 @@ def test_ein_leerer_workflow_suchraum_scheitert_laut_statt_still() -> None:
         selbst_merge_fundstellen({})
 
 
-def test_der_leser_findet_beide_workflows_dieses_repositories() -> None:
+def test_der_leser_findet_alle_workflows_dieses_repositories() -> None:
     """Gegenprobe zum Leser selbst - inklusive der Endung .yaml, die hier nur niemand nutzt."""
     assert set(PFLICHT_WORKFLOWS) <= set(workflow_abbild())
 
@@ -566,7 +570,7 @@ def test_kein_workflow_verwendet_pull_request_target() -> None:
     abbild = workflow_abbild()
 
     assert set(PFLICHT_WORKFLOWS) <= set(abbild), (
-        f"Der Suchraum {sorted(abbild)} enthaelt nicht beide erwarteten Workflows - die "
+        f"Der Suchraum {sorted(abbild)} enthaelt nicht alle erwarteten Workflows - die "
         "Aufzaehlung sieht nicht, was sie sehen soll."
     )
 
