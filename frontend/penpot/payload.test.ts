@@ -459,19 +459,59 @@ const komponenten = JSON.parse(dateiVon('components.json').roh) as {
   }[]
 }
 
-function alleTokennamenAus(text: string): string[] {
-  return [...text.matchAll(TOKENNAME_MUSTER)].map((treffer) => treffer[0])
+/**
+ * Alle Stellen in `components.json`, die per Bauart einen Tokennamen tragen: die Rollen-Tabelle
+ * je Baustein und die je Auspraegung.
+ *
+ * ERKANNT WIRD UEBER DEN PLATZ, NICHT UEBER DAS MUSTER - und das ist der Kern dieser Zusicherung.
+ * Ein Erkenner, der Tokennamen am GRUPPENVOKABULAR erkennt, kann einen Tippfehler IM
+ * Gruppennamen prinzipiell nicht finden: `line-height.xs` sieht fuer ihn wie gar kein Tokenname
+ * aus und liefe still durch. Genau deshalb liest diese Funktion die Slots und prueft erst danach,
+ * ob der Wert die Namensform haelt.
+ */
+function tokenSlots(): { pfad: string; wert: string }[] {
+  const slots: { pfad: string; wert: string }[] = []
+  for (const baustein of komponenten.bausteine) {
+    for (const [rolle, wert] of Object.entries(baustein.tokens)) {
+      slots.push({ pfad: `${baustein.schluessel}.tokens.${rolle}`, wert })
+    }
+    for (const [achse, auspraegungen] of Object.entries(baustein.tokensProAuspraegung ?? {})) {
+      for (const [auspraegung, rollen] of Object.entries(auspraegungen)) {
+        for (const [rolle, wert] of Object.entries(rollen)) {
+          slots.push({ pfad: `${baustein.schluessel}.${achse}.${auspraegung}.${rolle}`, wert })
+        }
+      }
+    }
+  }
+  return slots
+}
+
+/** Zeichenketten-Literale aus einer Skriptdatei, die wie ein punktierter Bezeichner aussehen.
+ * In `seed-components.js` traegt kein legitimes Literal einen Punkt (die Namen kommen alle aus
+ * der Datendatei) - jedes punktierte Literal dort MUSS also ein Tokenname sein. */
+function punktierteLiteraleAus(quelltext: string): string[] {
+  return [...streicheKommentare(quelltext).matchAll(/'([a-z][a-z0-9-]*\.[a-z0-9-]+)'/g)].map(
+    (treffer) => treffer[1]
+  )
 }
 
 describe('Referentielle Integritaet', () => {
   it('nennt in components.json und seed-components.js nur Tokens, die es gibt', () => {
     const genannt = [
-      ...alleTokennamenAus(dateiVon('components.json').roh),
-      ...alleTokennamenAus(streicheKommentare(dateiVon('seed-components.js').roh)),
+      ...tokenSlots().map((slot) => slot.wert),
+      ...punktierteLiteraleAus(dateiVon('seed-components.js').roh),
     ]
     expect(genannt.length).toBeGreaterThan(0)
     const unbekannt = [...new Set(genannt)].filter((name) => !tokennamen.has(name))
     expect(unbekannt).toEqual([])
+  })
+
+  /* Selbsttest des Erkenners: er findet die Slots ueberhaupt, und zwar in beiden Tabellen. */
+  it('findet die Tokenslots in beiden Tabellen', () => {
+    const pfade = tokenSlots().map((slot) => slot.pfad)
+    expect(pfade.length).toBeGreaterThanOrEqual(50)
+    expect(pfade.some((pfad) => pfad === 'button.tokens.radius')).toBe(true)
+    expect(pfade.some((pfad) => pfad === 'chip.kategorie.menschen.flaeche')).toBe(true)
   })
 
   /*
@@ -483,20 +523,33 @@ describe('Referentielle Integritaet', () => {
    */
   it('verwendet jede Tokengruppe in mindestens einem Baustein', () => {
     const vorhanden = new Set(tokens.map((token) => token.name.split('.')[0]))
-    const verwendet = new Set(
-      alleTokennamenAus(dateiVon('components.json').roh).map((name) => name.split('.')[0])
-    )
+    const verwendet = new Set(tokenSlots().map((slot) => slot.wert.split('.')[0]))
     expect([...vorhanden].sort()).toEqual(['color', 'font-family', 'radius', 'space', 'text'])
     for (const gruppe of vorhanden) {
       expect(verwendet.has(gruppe), gruppe).toBe(true)
     }
   })
 
-  it('haelt die Namensform aller genannten Tokens ein', () => {
+  /* Das Gruppenvokabular ist ERSCHOEPFEND - genau die fuenf Gruppen, die `tokens.json` fuehrt,
+     keine auf Vorrat. Eine erlaubte, aber unbenutzte Gruppe waere eine Zusicherung, die nichts
+     zusichert. Geprueft wird gegen die SLOTS (siehe oben), damit auch ein Tippfehler im
+     Gruppennamen anschlaegt und nicht bloss unsichtbar wird. */
+  it('haelt die Namensform an jedem Tokenslot ein', () => {
     const form = new RegExp(`^(?:${TOKEN_GRUPPEN.join('|')})\\.[a-z0-9-]+$`)
-    for (const name of alleTokennamenAus(dateiVon('components.json').roh)) {
+    for (const slot of tokenSlots()) {
+      expect(form.test(slot.wert), `${slot.pfad}: ${slot.wert}`).toBe(true)
+    }
+    for (const name of punktierteLiteraleAus(dateiVon('seed-components.js').roh)) {
       expect(form.test(name), name).toBe(true)
     }
+  })
+
+  it('erkennt einen Tippfehler im Gruppennamen als solchen', () => {
+    // Gegenprobe zur Bauart: der Erkenner haengt am Platz, nicht am Vokabular.
+    const form = new RegExp(`^(?:${TOKEN_GRUPPEN.join('|')})\\.[a-z0-9-]+$`)
+    expect(form.test('line-height.xs')).toBe(false)
+    expect(form.test('text.xs')).toBe(true)
+    expect(punktierteLiteraleAus("const a = 'line-height.xs'")).toEqual(['line-height.xs'])
   })
 })
 
