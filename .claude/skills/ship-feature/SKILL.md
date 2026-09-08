@@ -116,7 +116,7 @@ Regelweg: Der Spec-Status wird **im Feature-PR selbst** auf `Implemented` gesetz
 
 1. **Abgleich mit `main` (zweiter, tragender Zeitpunkt).** Führ als **erste** Handlung dieses Schritts `scripts/merge-main-into-branch.sh` aus, noch vor der Verknüpfungsprüfung und noch vor dem Setzen der Spec-Statuszeile. Auswertung identisch zu Schritt 6.2: `0` → weiter ohne Meldung; `10`/`20` → `SendMessage` an den weiterhin offenen `developer`-Subagenten und auf dessen Bericht warten; jeder andere Exit-Code oder der Blockiert-Anker → anhalten, nichts pushen, an Daniel melden.
 
-   Dieser Aufruf ist der entscheidende: Zwischen der Eröffnung des Pull Requests und Daniels Freigabe vergeht die meiste Zeit des Laufs, und genau darin läuft `main` weiter. Der Merge-Commit, ein etwaiger Konflikt-Fix und der Finalisierungs-Commit aus 8.4 gehen danach in **einem** Push hinaus — die Bündelungsregel aus ADR [`decisions/0042-pre-merge-finalisierung-statt-nachzieh-pr.md`](../../../specs/decisions/0042-pre-merge-finalisierung-statt-nachzieh-pr.md) umfasst ab jetzt auch den Abgleich, damit kein zusätzlicher CI-Lauf entsteht.
+   Dieser Aufruf ist der entscheidende: Zwischen der Eröffnung des Pull Requests und Daniels Freigabe vergeht die meiste Zeit des Laufs, und genau darin läuft `main` weiter. Der Merge-Commit, ein etwaiger Konflikt-Fix und der Finalisierungs-Commit aus 8.4 gehen danach gebündelt in **einem** Push hinaus, damit kein zusätzlicher CI-Lauf entsteht.
 
 2. **Verknüpfung prüfen** mit `pr-verknuepfung-lesen`, für die PR-Nummer aus Schritt 6:
 

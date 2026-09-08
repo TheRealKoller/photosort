@@ -102,6 +102,11 @@ Rebase wurde nicht abgewogen, sondern ist durch AK 4 ausgeschlossen. Der Vollst�
 
 ## Nachtrag (2026-09-08): drei Präzisierungen aus der Konsultation von `test-engineer` und `security-engineer`
 
+**Einordnung gegen die Unveränderlichkeitsregel aus [`specs/README.md`](../README.md):** Erstfassung und
+Nachtrag dieser ADR sind am selben Tag im selben, noch nicht gemergten Pull Request entstanden — die
+Entscheidung war zu keinem Zeitpunkt in `main` und hat damit nie den Zustand erreicht, den die Regel
+schützt. Jede spätere Änderung an dieser Entscheidung geht den regulären Weg über eine neue ADR.
+
 Alle drei sind **am laufenden `git` gemessen**, nicht abgeleitet, und je zweimal unabhängig
 nachgestellt. Sie ändern keine Entscheidung dieser ADR, sondern schärfen drei Formulierungen, die in
 der ursprünglichen Fassung ein falsches Verhalten zugelassen hätten. Die Messprotokolle stehen in

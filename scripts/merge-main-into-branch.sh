@@ -56,6 +56,14 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     abbruch "das aktuelle Arbeitsverzeichnis liegt in keinem Git-Arbeitsbaum."
 fi
 
+# Gebraucht wird es erst ganz am Ende, fuer die Frage "wurde ueberhaupt ein Merge begonnen?".
+# Hier bestimmt, weil dort jeder Pfad in einer eigenen Meldung enden soll und ein spaeter
+# scheiterndes Kommando unter `set -e` das Skript ohne Begruendung beendete.
+git_verzeichnis="$(git rev-parse --git-dir 2>/dev/null || true)"
+if [[ -z "$git_verzeichnis" ]]; then
+    abbruch "das Git-Verzeichnis dieses Arbeitsbaums liess sich nicht bestimmen."
+fi
+
 zweig="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
 if [[ -z "$zweig" ]]; then
     abbruch "losgeloester HEAD. Ein Merge hier hinterliesse einen Commit, den kein Ref haelt."
@@ -113,12 +121,33 @@ fi
 # AK 11: "Merge-Rueckgabe ungleich 0" ist nicht gleich "Konflikt". Ein pre-merge-commit-Hook
 # (oder commit.gpgsign ohne Schluessel) laesst git merge scheitern, MERGE_HEAD existieren - und
 # hinterlaesst null Pfade im Konfliktzustand.
-konfliktpfade="$(git -c core.quotePath=false -c diff.relative=false diff --name-only --diff-filter=U)"
+konflikt_rueckgabe=0
+konfliktpfade="$(git -c core.quotePath=false -c diff.relative=false diff --name-only --diff-filter=U)" ||
+    konflikt_rueckgabe=$?
+
+if [[ "$konflikt_rueckgabe" -ne 0 ]]; then
+    abbruch "die Konfliktpfade liessen sich nicht ermitteln ('git diff --diff-filter=U' meldete Rueckgabe $konflikt_rueckgabe), nachdem 'git merge' mit Rueckgabe $merge_rueckgabe geendet hat. Der Zustand des Repositoriums ist offen - bitte von Hand ansehen."
+fi
 
 if [[ -n "$konfliktpfade" ]]; then
     printf '%s\n' "$konfliktpfade"
     exit "$EXIT_KONFLIKT"
 fi
 
-git merge --abort >/dev/null 2>&1 || true
-abbruch "'git merge' scheiterte mit Rueckgabe $merge_rueckgabe, ohne einen Pfad im Konfliktzustand zu hinterlassen (Hook, Signatur oder Arbeitsbaum-Kollision). Der Merge wurde zurueckgenommen."
+# Kein Pfad im Konfliktzustand - zwei verschiedene Lagen, und die Meldung darf sie nicht
+# verwechseln (sie ist der Text, den der Ablauf unveraendert an Daniel weitergibt):
+#   (a) Der Merge hat begonnen und wurde abgelehnt (pre-merge-commit-Hook, commit.gpgsign ohne
+#       Schluessel). MERGE_HEAD existiert, `git merge --abort` nimmt ihn zurueck.
+#   (b) Der Merge hat gar nicht erst begonnen - gemessen etwa, wenn eine unversionierte Datei mit
+#       einer neu auf `main` entstandenen kollidiert (Rueckgabe 2). MERGE_HEAD existiert nie, und
+#       `git merge --abort` scheiterte hier mit "There is no merge to abort". Es gibt nichts
+#       zurueckzunehmen; genau das ist die Zusage aus AK 10, dass git selbst verweigert.
+# Unterschieden wird an der Existenz von MERGE_HEAD, nicht an einem Ausgabetext.
+if [[ -e "$git_verzeichnis/MERGE_HEAD" ]]; then
+    if ! git merge --abort >/dev/null 2>&1; then
+        abbruch "'git merge' scheiterte mit Rueckgabe $merge_rueckgabe und der begonnene Merge liess sich nicht zuruecknehmen. Das Repositorium steht mit einem offenen Merge da - bitte von Hand ansehen."
+    fi
+    abbruch "'git merge' scheiterte mit Rueckgabe $merge_rueckgabe, ohne einen Pfad im Konfliktzustand zu hinterlassen (Hook oder Signatur hat den begonnenen Merge abgelehnt). Der begonnene Merge wurde zurueckgenommen, der Zustand ist unveraendert."
+fi
+
+abbruch "'git merge' scheiterte mit Rueckgabe $merge_rueckgabe, ohne einen Merge zu beginnen (in aller Regel kollidiert eine nicht versionierte Datei im Arbeitsverzeichnis mit einer Datei aus '$HAUPTZWEIG'). Es gab nichts zurueckzunehmen, der Zustand ist unveraendert."

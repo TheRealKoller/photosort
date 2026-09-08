@@ -205,7 +205,7 @@ ausschließlich für den No-Op-Fall, AK 5 verlangt ihn ausdrücklich für den Ko
 | `scripts/tests/test_main_abgleich_verdrahtung.py` | neu | statische Prüfung der Skill-/Agenten-Verdrahtung |
 | `.claude/skills/ship-feature/SKILL.md` | geändert | Schritt 0 (zwei neue Anker), Schritt 6 (neuer 6.2), Schritt 8 (neue erste Handlung), Recovery |
 | `.claude/agents/developer.md` | geändert | neuer Folgeauftrag „Abgleich mit `main`" samt zwei Ankern |
-| `docs/ai-workflow.md` | geändert | Schritt-Tabelle nennt den Abgleich |
+| `docs/ai-workflow.md` | geändert | Schritt-Tabelle nennt den Abgleich (neue Zeile 5c, erweiterte Zeile 7b); dabei wird die veraltete Angabe in Zeile 7b mitgezogen (siehe „Entscheidungen“) |
 | `specs/architecture/0002-testkonzept.md` | geändert | neue Sektion und drei neue bekannte Lücken |
 | `specs/architecture/0003-securitykonzept.md` | geändert | neue Angriffsfläche, Restrisiken, bekannte Lücken |
 
@@ -369,6 +369,13 @@ dass der Abbruchpfad seiteneffektfrei ist.
 - **Unversionierte Dateien blockieren den Abgleich nicht** (AK 10). Ein Entwicklungslauf hat fast
   immer Streudateien, und ein Abbruch daran träfe ausgerechnet den tragenden zweiten Zeitpunkt.
   Kollidiert eine davon tatsächlich, verweigert git den Merge von sich aus.
+- **Mitgenommene Korrektur in `docs/ai-workflow.md`, nicht aus einem Akzeptanzkriterium abgeleitet:**
+  Zeile 7b der Schritt-Tabelle nannte weiterhin `Schritt 8: --finalize --pr-number` — ein Rückstand aus
+  der Zeit des mit ADR [`0057`](../decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md) gelöschten
+  `gh-board.py`, der seit dessen Wegfall auf ein nicht mehr existierendes Aufrufmuster verweist. Weil
+  dieselbe Zeile für den zweiten Abgleich-Zeitpunkt ohnehin angefasst wird, ist die Angabe mitgezogen
+  statt in einer zweiten Änderung an derselben Zeile nachgeholt worden. Kein Verhaltensbezug, keine
+  weitere Datei betroffen.
 - **Ein dritter Zeitpunkt wird nicht eingeführt.** Nach dem letzten Push endet der Lauf; einen
   Zeitpunkt danach kann der Ablauf nicht erreichen. Das ist die bewusst offene Restlücke aus AK 9.
 - **`ux-ui-designer` nicht konsultiert (Schritt 2):** Die Story hat keinen konkret benennbaren Bezug

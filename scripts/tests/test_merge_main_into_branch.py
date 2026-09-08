@@ -63,7 +63,7 @@ EXIT_UEBERNOMMEN = 10
 EXIT_KONFLIKT = 20
 BEKANNTE_AUSGAENGE = frozenset({EXIT_ENTHALTEN, EXIT_UEBERNOMMEN, EXIT_KONFLIKT})
 
-# Wortgleich mit der Zeile im Skript. Sie steht hier ein zweites Mal, weil ein Prueferden
+# Wortgleich mit der Zeile im Skript. Sie steht hier ein zweites Mal, weil ein Pruefer den
 # Wortlaut festhalten muss, um ihn pruefen zu koennen; `scripts/tests/` ist deshalb aus dem
 # Suchraum der Einmaligkeitspruefung ausgenommen (siehe test_main_abgleich_verdrahtung.py).
 MERGE_NACHRICHT = "chore: Stand von main in den Feature-Branch übernehmen"
@@ -73,6 +73,12 @@ MINDEST_GIT_VERSION = (2, 32)
 ZEITGRENZE_SEKUNDEN = 120
 
 _CHECKOUT_NACH_MAIN = re.compile(r"^checkout: moving from .* to main$")
+
+# Die beiden Lagen, in denen `git merge` ohne Konfliktpfad scheitert, sind fuer den Leser der
+# Meldung verschieden - einmal wurde ein begonnener Merge zurueckgenommen, einmal hat nie einer
+# begonnen. Geprueft wird nur dieser eine unterscheidende Halbsatz, nicht der ganze Wortlaut.
+MELDUNG_RUECKNAHME = "zurueckgenommen"
+MELDUNG_KEIN_MERGE_BEGONNEN = "ohne einen Merge zu beginnen"
 
 
 def basis_env(wurzel: Path) -> dict[str, str]:
@@ -709,11 +715,55 @@ def test_merge_scheitert_ohne_konflikt_endet_in_der_fehlerfamilie(
         "Konfliktzustand zu hinterlassen - das ist die Fehlerfamilie, nicht Ausgang 20."
     )
     assert ergebnis.stdout == ""
-    assert ergebnis.stderr.strip() != ""
+    assert MELDUNG_RUECKNAHME in ergebnis.stderr, (
+        "Hier hat ein Merge tatsaechlich begonnen und wurde zurueckgenommen - die Meldung soll "
+        f"das sagen: {ergebnis.stderr!r}"
+    )
     nachher = momentaufnahme(spielplatz)
     assert nachher.head == vorher.head
     assert nachher.status == ""
     assert not (spielplatz.arbeit / ".git" / "MERGE_HEAD").exists()
+
+
+def test_eine_kollidierende_unversionierte_datei_meldet_keine_ruecknahme(
+    spielplatz: Spielplatz,
+) -> None:
+    """Die andere Haelfte von AK 10 - und der Zweig, auf dem ihre Begruendung ruht.
+
+    "Unversionierte Dateien blockieren nicht" gilt, *weil* git bei einer echten Kollision von
+    sich aus verweigert. Am Bestand gemessen (2026-09-08): `git merge` endet mit Rueckgabe 2,
+    **ohne** einen Merge begonnen zu haben - `MERGE_HEAD` entsteht nie, und ein `git merge
+    --abort` scheitert mit "There is no merge to abort". Eine Meldung, die hier eine Ruecknahme
+    behauptet, beschreibt eine Handlung, die nicht stattgefunden hat; sie ist der Text, den
+    `ship-feature` bei AK 6 unveraendert an Daniel weitergibt.
+    """
+    auf_main(
+        spielplatz,
+        "feat: neue Datei auf main",
+        lambda ort: schreibe(ort, "kollision.txt", "Fassung von main\n"),
+    )
+    schreibe(spielplatz.arbeit, "kollision.txt", "unversionierte Streudatei\n")
+    vorher = momentaufnahme(spielplatz)
+
+    ergebnis = spielplatz.skript()
+
+    assert ergebnis.returncode not in BEKANNTE_AUSGAENGE, (
+        f"Exit {ergebnis.returncode}: git hat den Merge verweigert, ohne ihn zu beginnen - das "
+        "ist die Fehlerfamilie."
+    )
+    assert ergebnis.stdout == ""
+    assert not (spielplatz.arbeit / ".git" / "MERGE_HEAD").exists()
+    assert momentaufnahme(spielplatz) == vorher
+    assert (spielplatz.arbeit / "kollision.txt").read_text(
+        encoding="utf-8"
+    ) == "unversionierte Streudatei\n"
+    assert MELDUNG_KEIN_MERGE_BEGONNEN in ergebnis.stderr, (
+        f"Die Meldung benennt die Lage nicht: {ergebnis.stderr!r}"
+    )
+    assert MELDUNG_RUECKNAHME not in ergebnis.stderr, (
+        "Die Meldung behauptet eine Ruecknahme, die nicht stattgefunden hat: hier hat nie ein "
+        f"Merge begonnen ({ergebnis.stderr!r})."
+    )
 
 
 def git_shim(verzeichnis: Path, unterbefehl: str, rueckgabe: int) -> Path:
