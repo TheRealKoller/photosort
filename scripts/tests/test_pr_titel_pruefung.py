@@ -34,6 +34,15 @@ Extraktion laut mit `ValueError` statt still mit einem leeren Ergebnis (Muster
 Ausfuehrungs-Helfer selbst besteht eine Gegenprobe: mit einem bewusst unpassenden Muster darf ein
 Positivfall nicht mehr bestehen.
 
+**Zur festgenagelten Locale.** Der Testlauf uebernimmt die literalen `env:`-Werte aus der
+Workflow-Datei, statt unter der Umgebung des Entwicklungsrechners zu laufen - und `LC_ALL` muss
+dabei eine UTF-8-Locale sein, sonst scheitert schon die Extraktion. Das ist keine Formalie:
+`[[:cntrl:]]` ist locale-abhaengig. Unter `C.UTF-8` weist die Wache U+0085, U+2028 und U+2029 ab,
+unter `LC_ALL=C` bestehen dieselben Titel, und der Rest eines solchen Titels landet als eigene
+Zeile im Log - genau dort, wo der Runner Workflow-Kommandos liest. Ohne die Wertpruefung bliebe
+eine Aenderung auf `LC_ALL: C` gruen, waehrend das Gate still drei Zeichenklassen verloere; die
+drei Zeichen stehen deshalb zusaetzlich als eigene Negativfaelle in der Tabelle.
+
 **Zur Injektions-Haerte als Whitelist statt Blacklist.** Der Workflow reicht zum ersten Mal in
 diesem Repository von aussen frei waehlbaren Fremdtext in einen `run:`-Step - einen PR-Titel setzt
 auf einem public Repository jeder Fork-Autor. Statt gefaehrliche Formen aufzuzaehlen (was ein
@@ -116,6 +125,17 @@ _ENV_ZEILE = re.compile(r"^(?P<einzug>\s*)env:\s*$")
 _ENV_ZUWEISUNG = re.compile(r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*):\s+(?P<wert>.+?)\s*$")
 _COMMITS_ZEILE = re.compile(r"^- \*\*Commits:\*\*.*$", re.MULTILINE)
 _TYP_IM_TEXT = re.compile(r"`([a-z]+):`")
+
+# Auflage aus dem Sicherheitskonzept: Die Locale wird im env:-Block festgenagelt, damit das
+# Verhalten des Gates nicht vom Image-Standard des Runners abhaengt. Der Grund ist gemessen und
+# tragend: `[[:cntrl:]]` ist locale-abhaengig. Unter einer UTF-8-Locale weist die Wache U+0085
+# (NEL), U+2028 (LINE SEPARATOR) und U+2029 (PARAGRAPH SEPARATOR) ab; unter `LC_ALL=C` besteht
+# ein Titel mit diesen Zeichen - und mehr noch, seine Rest-Bytes landen dann als eigene Zeile im
+# Log, also genau dort, wo der Runner Workflow-Kommandos liest. Der Wert wird deshalb geprueft,
+# nicht bloss seine Anwesenheit: `LC_ALL: C` liesse sonst jede Zusicherung hier gruen, waehrend
+# das Gate still drei Zeichenklassen verloere.
+LOCALE_VARIABLE = "LC_ALL"
+_UTF8_LOCALE = re.compile(r"\.utf-?8$", re.IGNORECASE)
 
 # Bestand am 2026-09-07 (`git log origin/main --first-parent`, letzte 80 Merges): Diese Formen
 # kommen dort vor und muessen bestehen, sonst lehnt die Pruefung etablierte, korrekte Praxis ab.
@@ -261,16 +281,37 @@ def env_zuweisungen(text: str) -> dict[str, str]:
 def laufumgebung(text: str) -> dict[str, str]:
     """Die literalen `env:`-Werte des Workflows - alles ausser dem Titel-Ausdruck.
 
-    Damit laeuft der Testlauf unter derselben Umgebung wie der Runner (heute: `LC_ALL`), statt
-    unter der zufaelligen Umgebung des Entwicklungsrechners. Verschwindet der literale Wert aus
-    dem Workflow, scheitert das hier laut statt still unter anderer Locale weiterzulaufen.
+    Damit laeuft der Testlauf unter derselben Umgebung wie der Runner, statt unter der
+    zufaelligen Umgebung des Entwicklungsrechners.
+
+    Zugleich die Stelle, an der die Locale-Auflage des Sicherheitskonzepts haengt: `LC_ALL` muss
+    vorhanden **und** eine UTF-8-Locale sein. Ohne die Wertpruefung bliebe eine Aenderung auf
+    `LC_ALL: C` unbemerkt - alle Titel der Tabellen oben sind in dieser Hinsicht unauffaellig -,
+    waehrend die Steuerzeichen-Wache still drei Zeichenklassen verloere.
     """
     literale = {name: wert for name, wert in env_zuweisungen(text).items() if "${{" not in wert}
     if not literale:
         raise ValueError(
             f"{WORKFLOW_NAME}: Der 'env:'-Block enthaelt keinen literalen Wert mehr (erwartet "
-            "mindestens LC_ALL). Der Testlauf liefe dann unter einer anderen Locale als der "
-            "Runner, und das Ergebnis sagte nichts ueber den echten Lauf."
+            f"mindestens {LOCALE_VARIABLE}). Der Testlauf liefe dann unter einer anderen Locale "
+            "als der Runner, und das Ergebnis sagte nichts ueber den echten Lauf."
+        )
+
+    locale = literale.get(LOCALE_VARIABLE)
+    if locale is None:
+        raise ValueError(
+            f"{WORKFLOW_NAME}: Der 'env:'-Block setzt kein {LOCALE_VARIABLE}. Ohne festgenagelte "
+            "Locale haengt das Verhalten des Gates vom Image-Standard des Runners ab: "
+            "'[[:cntrl:]]' ist locale-abhaengig, und ohne UTF-8-Locale bestehen Titel mit "
+            "U+0085, U+2028 oder U+2029 die Wache."
+        )
+    if not _UTF8_LOCALE.search(locale):
+        raise ValueError(
+            f"{WORKFLOW_NAME}: {LOCALE_VARIABLE} ist auf {locale!r} gesetzt, erwartet wird eine "
+            "UTF-8-Locale (z.B. 'C.UTF-8'). '[[:cntrl:]]' ist locale-abhaengig: Unter einer "
+            "Nicht-UTF-8-Locale weist die Wache U+0085, U+2028 und U+2029 nicht mehr ab, und "
+            "die Rest-Bytes eines solchen Titels landen als eigene Zeile im Log - genau dort, "
+            "wo der Runner Workflow-Kommandos liest."
         )
     return literale
 
@@ -445,7 +486,13 @@ def test_die_fehlermeldung_nennt_alle_typen_und_die_form(
         "feat: erste Zeile\nzweite Zeile",
         "feat: mit\tTabulator",
         "feat: mit \x1b[31m ANSI",
+        "feat: mit\rWagenruecklauf",
         "\nfeat: fuehrender Umbruch",
+        # Die drei Zeichen, die allein die festgenagelte UTF-8-Locale faengt: unter LC_ALL=C
+        # bestuenden sie, und der Rest des Titels landete als eigene Zeile im Log.
+        "feat: NEL\u0085zweite Zeile",
+        "feat: LINE SEPARATOR\u2028zweite Zeile",
+        "feat: PARAGRAPH SEPARATOR\u2029zweite Zeile",
     ],
 )
 def test_ein_titel_mit_steuerzeichen_wird_abgewiesen(
@@ -568,6 +615,44 @@ def test_eine_commits_zeile_ohne_typ_scheitert_laut() -> None:
 def test_ein_env_block_ohne_literalen_wert_scheitert_laut() -> None:
     with pytest.raises(ValueError, match=r"keinen literalen Wert"):
         laufumgebung("        env:\n          PR_TITLE: ${{ github.event.pull_request.title }}\n")
+
+
+def test_der_workflow_nagelt_die_locale_auf_utf8_fest() -> None:
+    """Auflage des Sicherheitskonzepts, hier am echten Dateizustand.
+
+    Die Zusicherung gilt dem **Wert**, nicht der Anwesenheit: `[[:cntrl:]]` ist
+    locale-abhaengig, und `LC_ALL: C` liesse die Wache U+0085, U+2028 und U+2029 durch, ohne
+    dass irgendeine der Titel-Tabellen oben das bemerkte.
+    """
+    locale = laufumgebung(workflow_text())[LOCALE_VARIABLE]
+
+    assert _UTF8_LOCALE.search(locale), f"{LOCALE_VARIABLE} ist {locale!r}, erwartet UTF-8."
+
+
+@pytest.mark.parametrize(
+    "env_block",
+    [
+        "        env:\n          LC_ALL: C\n",
+        "        env:\n          LC_ALL: POSIX\n",
+        "        env:\n          LC_ALL: de_DE@euro\n",
+    ],
+)
+def test_eine_nicht_utf8_locale_scheitert_laut(env_block: str) -> None:
+    with pytest.raises(ValueError, match=r"erwartet wird eine UTF-8-Locale"):
+        laufumgebung(env_block)
+
+
+def test_eine_fehlende_locale_scheitert_laut() -> None:
+    """Ein anderer literaler Wert darf die fehlende Locale nicht verdecken."""
+    with pytest.raises(ValueError, match=rf"setzt kein {LOCALE_VARIABLE}"):
+        laufumgebung("        env:\n          IRGENDWAS: wert\n")
+
+
+@pytest.mark.parametrize("locale", ["C.UTF-8", "en_US.UTF-8", "de_DE.utf8"])
+def test_gleichwertige_schreibweisen_einer_utf8_locale_gelten(locale: str) -> None:
+    assert laufumgebung(f"        env:\n          LC_ALL: {locale}\n") == {
+        LOCALE_VARIABLE: locale
+    }
 
 
 # --- Statische Zusicherungen an der Workflow-Datei ---------------------------------------------
