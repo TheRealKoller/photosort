@@ -135,20 +135,16 @@
         "src/components/RatingBadge.tsx"
       ],
       "varianten": {
-        "ton": [
-          "favorite",
-          "album-worthy",
-          "rejected",
-          "accent",
+        "auspraegung": [
+          "favorite-solid",
+          "favorite-suggested",
+          "album-worthy-solid",
+          "album-worthy-suggested",
+          "rejected-solid",
+          "rejected-suggested",
+          "accent-solid",
+          "accent-suggested",
           "neutral"
-        ],
-        "fuellung": [
-          "solid",
-          "suggested"
-        ],
-        "zustand": [
-          "normal",
-          "unbewertet"
         ]
       },
       "tokens": {
@@ -159,34 +155,42 @@
         "abstand": "space.1"
       },
       "tokensProAuspraegung": {
-        "ton": {
-          "favorite": {
+        "auspraegung": {
+          "favorite-solid": {
             "flaeche": "color.rating-favorite",
-            "schrift": "color.rating-favorite-fg",
-            "vorschlag-flaeche": "color.elevated",
-            "vorschlag-umriss": "color.rating-favorite",
-            "vorschlag-schrift": "color.rating-favorite"
+            "schrift": "color.rating-favorite-fg"
           },
-          "album-worthy": {
+          "favorite-suggested": {
+            "flaeche": "color.elevated",
+            "umriss": "color.rating-favorite",
+            "schrift": "color.rating-favorite"
+          },
+          "album-worthy-solid": {
             "flaeche": "color.rating-album-worthy",
-            "schrift": "color.rating-album-worthy-fg",
-            "vorschlag-flaeche": "color.elevated",
-            "vorschlag-umriss": "color.rating-album-worthy",
-            "vorschlag-schrift": "color.rating-album-worthy"
+            "schrift": "color.rating-album-worthy-fg"
           },
-          "rejected": {
+          "album-worthy-suggested": {
+            "flaeche": "color.elevated",
+            "umriss": "color.rating-album-worthy",
+            "schrift": "color.rating-album-worthy"
+          },
+          "rejected-solid": {
             "flaeche": "color.rating-rejected",
-            "schrift": "color.rating-rejected-fg",
-            "vorschlag-flaeche": "color.elevated",
-            "vorschlag-umriss": "color.rating-rejected",
-            "vorschlag-schrift": "color.danger-text"
+            "schrift": "color.rating-rejected-fg"
           },
-          "accent": {
+          "rejected-suggested": {
+            "flaeche": "color.elevated",
+            "umriss": "color.rating-rejected",
+            "schrift": "color.danger-text"
+          },
+          "accent-solid": {
             "flaeche": "color.accent",
-            "schrift": "color.accent-fg",
-            "vorschlag-flaeche": "color.elevated",
-            "vorschlag-umriss": "color.accent",
-            "vorschlag-schrift": "color.accent"
+            "schrift": "color.accent-fg"
+          },
+          "accent-suggested": {
+            "flaeche": "color.elevated",
+            "umriss": "color.accent",
+            "schrift": "color.accent"
           },
           "neutral": {
             "umriss": "color.border",
@@ -245,15 +249,13 @@
       ],
       "varianten": {
         "auspraegung": [
-          "success",
-          "warning",
-          "error"
-        ],
-        "status": [
-          "never",
-          "running",
-          "success",
-          "failed"
+          "hinweis-success",
+          "hinweis-warning",
+          "hinweis-error",
+          "status-never",
+          "status-running",
+          "status-success",
+          "status-failed"
         ]
       },
       "tokens": {
@@ -266,42 +268,40 @@
       },
       "tokensProAuspraegung": {
         "auspraegung": {
-          "success": {
+          "hinweis-success": {
             "umriss": "color.accent-2",
             "symbol": "color.accent-2",
             "beitext": "color.text"
           },
-          "warning": {
+          "hinweis-warning": {
             "umriss": "color.accent",
             "symbol": "color.accent",
             "beitext": "color.text"
           },
-          "error": {
+          "hinweis-error": {
             "umriss": "color.danger",
             "symbol": "color.danger-text",
             "beitext": "color.danger-text"
-          }
-        },
-        "status": {
-          "never": {
+          },
+          "status-never": {
             "radius": "radius.sm",
             "flaeche": "color.status-idle-tint",
             "umriss": "color.status-idle-strong",
             "schrift": "color.status-idle-strong"
           },
-          "running": {
+          "status-running": {
             "radius": "radius.sm",
             "flaeche": "color.status-running-tint",
             "umriss": "color.status-running-strong",
             "schrift": "color.status-running-strong"
           },
-          "success": {
+          "status-success": {
             "radius": "radius.sm",
             "flaeche": "color.status-success-tint",
             "umriss": "color.status-success-strong",
             "schrift": "color.status-success-strong"
           },
-          "failed": {
+          "status-failed": {
             "radius": "radius.sm",
             "flaeche": "color.status-failed-tint",
             "umriss": "color.status-failed-strong",

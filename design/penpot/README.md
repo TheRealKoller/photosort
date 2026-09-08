@@ -82,14 +82,26 @@ Beschriftung, dessen Fläche, Umriss, Radius, Innenabstände und Schriftmerkmale
 sind, daraus je eine Bibliotheks-Komponente, und daraus je Baustein ein Varianten-Container.
 
 **Gebaut wird das vollständige Kreuzprodukt der Achsen** eines Bausteins (Schaltfläche 6 × 3 × 5 =
-90 Varianten, über alle zehn Bausteine 160). Das ist keine Vorliebe, sondern eine Vorgabe der
+90 Varianten, über alle zehn Bausteine **144**). Das ist keine Vorliebe, sondern eine Vorgabe der
 Plugin-API: Ein Varianteneintrag muss für **jede** Varianteneigenschaft einen Wert nennen — ein
 Eintrag, der nur `auspraegung=ghost` trägt und zu `groesse`/`zustand` schweigt, ist keine
-wohldefinierte Variante. Die Achsen selbst stehen in `components.json` und sind eine
-Design-System-Aussage; sie werden hier **nicht** reduziert. Dass dabei auch Kombinationen
-entstehen, die fachlich nichts bedeuten (ein Hinweis ist nicht gleichzeitig „Warnung" und
-„läuft"), ist die sichtbare Kehrseite — eine Zusammenlegung von Achsen wäre eine
-Gestaltungsentscheidung und gehört nicht in ein Aufbauskript.
+wohldefinierte Variante.
+
+Damit das Kreuzprodukt keine Kombinationen erfindet, die es im Produkt nicht gibt, gilt für die
+Achsen selbst eine Regel: **Jede Achse muss unabhängig von den übrigen wählbar sein; wo zwei Dinge
+nicht orthogonal sind, gehören sie in eine Achse.** Zwei Bausteine sind danach geschnitten:
+
+- **Hinweis** führt *eine* Achse mit sieben Werten (`hinweis-success` … `status-failed`) statt zwei
+  getrennter — in ihm fallen zwei Bauteile zusammen (`ui/alert.tsx` und `StatusTag.tsx`), und
+  „Warnung × läuft" gibt es nicht. Die Präfixe sind nötig, weil `success` in beiden Hälften
+  vorkommt und zweierlei meint.
+- **Kennzeichen** führt *eine* Achse mit neun Werten (`favorite-solid` … `neutral`): Der neutrale
+  Ton ignoriert die Füllung im Produkt vollständig, `neutral × suggested` hätte also keine
+  Entsprechung.
+
+Die Achsen sind eine Design-System-Aussage und stehen in `components.json`; ein Aufbauskript
+schneidet sie nicht selbst. Dass eine Achse überhaupt Tokens trägt, ist statisch zugesichert —
+eine tokenlose Achse multipliziert das Kreuzprodukt auf, ohne etwas zu beschreiben.
 
 **Wiedererkannt werden die Bausteine an den Plugin-Daten `schluessel`**, die jede
 Variantenkomponente trägt — nie am Namen: `createVariantContainer` benennt die Einzelkomponenten

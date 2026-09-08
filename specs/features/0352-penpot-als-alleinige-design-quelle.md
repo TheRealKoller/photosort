@@ -322,15 +322,18 @@ ist, und kennzeichnet den Verweis auf `0005` ausdrücklich als **Archivverweis**
 des Figma-Stands, wird nicht mehr gepflegt, normativ abgelöst).
 
 **2. Die Zustandsmatrix ist eine Design-System-Aussage, kein Umsetzungsdetail.** Sie ist aus den
-zehn Produktdateien abgeleitet, nicht aus dem Denkbaren:
+zehn Produktdateien abgeleitet, nicht aus dem Denkbaren. **Jede Achse eines Bausteins muss
+unabhängig von den übrigen wählbar sein** — in Penpot entsteht daraus das Kreuzprodukt, und jede
+Kombination, die das Produkt nicht kennt, wäre dort ein Angebot, das in die Irre führt. Wo zwei
+Dinge nicht orthogonal sind, gehören sie in **eine** Achse, nicht in zwei:
 
 | Baustein | Zustände / Ausprägungen in Penpot |
 |---|---|
 | `button` Schaltfläche | Ausprägungen `default`/`secondary`/`outline`/`ghost`/`destructive`/`link`, Größen `default`/`sm`/`icon`; Zustände normal, hover, active, disabled, busy |
 | `input` Eingabefeld | normal, fokussiert, fehlerhaft, **fokussiert+fehlerhaft** (tritt gleichzeitig auf, beide Merkmale bleiben sichtbar), disabled |
-| `badge` Kennzeichen | Töne `favorite`/`album-worthy`/`rejected`/`accent`/`neutral` × Ausprägungen `solid`/`suggested`; dazu der unbewertet-Zustand aus `RatingBadge` |
+| `badge` Kennzeichen | **Eine** Ton-Achse (`favorite`/`album-worthy`/`rejected`/`accent`/`neutral`, dazu `unbewertet` aus `RatingBadge`, falls es sich visuell von `neutral` unterscheidet) × Füllung `solid`/`suggested`. „Unbewertet" ist **kein** eigener Zustand neben dem Ton — die Kombination „favorite und zugleich unbewertet" gibt es im Produkt nicht. |
 | `card` Karte | über `PhotoCard`: unbewertet („Neu"), favorite, album_worthy, rejected, jeweils mit/ohne `suggested` |
-| `alert` Hinweis | `success`/`warning`/`error`; über `StatusTag` zusätzlich `never`/`running`/`success`/`failed` (running mit Spinner) |
+| `alert` Hinweis | **Eine** Achse mit sieben Werten, weil zwei verschiedene Bauteile in diesem Baustein zusammenfallen: `hinweis-success`/`hinweis-warning`/`hinweis-error` (aus `ui/alert.tsx`) und `status-never`/`status-running`/`status-success`/`status-failed` (aus `StatusTag.tsx`, `running` mit Spinner). Getrennte Achsen erzeugten Kombinationen wie „Warnung × läuft", die es nicht gibt; die Präfixe sind nötig, weil `success` sonst in beiden Hälften vorkäme. |
 | `checkbox` Auswahlkästchen | checked, unchecked, disabled |
 | `switch` Schalter | checked, unchecked, disabled (Zustand wird über Knaufposition **und** Farbe getragen, nicht über Farbe allein) |
 | `progress` Fortschrittsanzeige | determiniert (Wert 0–100), unbestimmt (Puls) |

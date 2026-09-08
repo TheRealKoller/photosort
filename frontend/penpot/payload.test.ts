@@ -605,6 +605,132 @@ describe('Die zehn Bausteine', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
+// Die Achsen der Bausteine
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Achsen, die bewusst KEINE eigenen Tokens tragen - eingefroren, je mit Grund.
+ *
+ * Die Liste ist die Ausnahme zur Regel darunter, und sie ist absichtlich unbequem: Wer eine neue
+ * tokenlose Achse einfuehrt, muss sie hier eintragen und begruenden. Die Phantom-Achse
+ * `badge.zustand` (`normal`/`unbewertet`, ohne einen einzigen Token und ohne Entsprechung im
+ * Produkt) haette genau daran auffallen muessen.
+ */
+const ACHSEN_OHNE_EIGENE_TOKENS: Record<string, string> = {
+  'button.groesse':
+    'Die drei Groessen unterscheiden sich in Hoehe und Polsterung. Die Werte stehen im Produkt ' +
+    'als Utilities (h-8, px-4, px-3, size-8) und sind hier bewusst nicht je Groesse ' +
+    'ausgeschrieben - der Baustein traegt sie als Grundmasse.',
+  'dialog.zustand':
+    'offen/geschlossen ist Verhalten, kein Wert: der geschlossene Dialog zeigt nichts, und es ' +
+    'gibt keine Eigenschaft, die sich dabei aendert.',
+  'dialog.abbrechen':
+    'cancelDisabled schaltet den deaktivierten Zustand der Abbrechen-Schaltflaeche. Den traegt ' +
+    'die Schaltflaeche (Baustein `button`, Zustand `disabled`), nicht der Dialog.',
+  'card.vorschlag':
+    'ohne/mit schaltet das Kennzeichen auf der Kachel um. Dessen Werte traegt der Baustein ' +
+    '`badge` (Auspraegungen `*-solid` gegen `*-suggested`); die Karte selbst aendert dabei ' +
+    'keine Eigenschaft.',
+}
+
+interface AchsenBaustein {
+  schluessel: string
+  varianten: Record<string, string[]>
+  tokensProAuspraegung?: Record<string, Record<string, Record<string, string>>>
+}
+
+/** Reine Funktion: Achsen, die weder eigene Tokens tragen noch als Ausnahme gefuehrt sind. */
+export function achsenOhneTokens(
+  bausteine: AchsenBaustein[],
+  ausnahmen: Record<string, string>
+): string[] {
+  const befunde: string[] = []
+  for (const baustein of bausteine) {
+    for (const achse of Object.keys(baustein.varianten)) {
+      const eintrag = baustein.tokensProAuspraegung?.[achse]
+      const traegtTokens =
+        eintrag !== undefined &&
+        Object.values(eintrag).some((rollen) => Object.keys(rollen).length > 0)
+      const pfad = `${baustein.schluessel}.${achse}`
+      if (!traegtTokens && ausnahmen[pfad] === undefined) {
+        befunde.push(pfad)
+      }
+    }
+  }
+  return befunde
+}
+
+describe('Die Achsen der Bausteine', () => {
+  /*
+   * JEDE ACHSE MUSS UNABHAENGIG VON DEN UEBRIGEN WAEHLBAR SEIN; wo zwei Dinge nicht orthogonal
+   * sind, gehoeren sie in EINE Achse. Mechanisch greifbar ist davon die untere Haelfte: Eine
+   * Achse, die gar keine Tokens traegt, beschreibt nichts Sichtbares und multipliziert das
+   * Kreuzprodukt nur auf. Genau so entstand `badge.zustand` mit `normal`/`unbewertet` - eine
+   * Kombination "favorite und zugleich unbewertet" gibt es im Produkt nicht.
+   */
+  it('fuehrt keine Achse ohne Tokens', () => {
+    expect(achsenOhneTokens(komponenten.bausteine, ACHSEN_OHNE_EIGENE_TOKENS)).toEqual([])
+  })
+
+  it('erkennt eine Phantom-Achse an einer synthetischen Probe', () => {
+    const probe = [
+      {
+        schluessel: 'probe',
+        varianten: { zustand: ['normal', 'unbewertet'], ton: ['a'] },
+        tokensProAuspraegung: { ton: { a: { flaeche: 'color.bg' } } },
+      },
+    ]
+    expect(achsenOhneTokens(probe, {})).toEqual(['probe.zustand'])
+    // Gegenprobe: die Achse mit Tokens wird nicht gemeldet, und eine gefuehrte Ausnahme schweigt.
+    expect(achsenOhneTokens(probe, { 'probe.zustand': 'begruendet' })).toEqual([])
+  })
+
+  it('fuehrt keine verwaiste Ausnahme', () => {
+    const achsen = komponenten.bausteine.flatMap((baustein) =>
+      Object.keys(baustein.varianten).map((achse) => `${baustein.schluessel}.${achse}`)
+    )
+    for (const pfad of Object.keys(ACHSEN_OHNE_EIGENE_TOKENS)) {
+      expect(achsen, pfad).toContain(pfad)
+      expect(achsenOhneTokens(komponenten.bausteine, {}), pfad).toContain(pfad)
+      expect(ACHSEN_OHNE_EIGENE_TOKENS[pfad].length, pfad).toBeGreaterThan(40)
+    }
+  })
+
+  /*
+   * Beim Zusammenlegen zweier Achsen kollidieren gleichnamige Auspraegungen STILL: `success` hiess
+   * beim Hinweis und beim Statuskennzeichen zweierlei, ein unbedachtes Verschmelzen haette den
+   * einen Tokensatz vom anderen verdeckt. Die Regel gilt deshalb JE ACHSE - genau dort, wo eine
+   * Verschmelzung landet.
+   *
+   * Bewusst NICHT ueber die Achsen eines Bausteins hinweg: Die Schaltflaeche traegt `default`
+   * legitim zweimal (Auspraegung und Groesse), und Penpot schluesselt Varianteneigenschaften
+   * ohnehin je Achse. Eine achsenuebergreifende Regel waere hier ein Fehlalarm.
+   */
+  it('vergibt je Achse jeden Auspraegungsnamen genau einmal', () => {
+    for (const baustein of komponenten.bausteine) {
+      for (const [achse, werte] of Object.entries(baustein.varianten)) {
+        expect(new Set(werte).size, `${baustein.schluessel}.${achse}`).toBe(werte.length)
+      }
+    }
+  })
+
+  /*
+   * Die Zahl der Varianten, die `seed-components.js` aufbaut: das Kreuzprodukt der Achsen je
+   * Baustein. Eingefroren, weil eine versehentlich hinzugefuegte Achse sie sprunghaft vervielfacht
+   * und das sonst niemandem auffiele. 90 + 5 + 9 + 8 + 7 + 3 + 3 + 2 + 4 + 13.
+   */
+  it('baut genau 144 Varianten auf', () => {
+    const gesamt = komponenten.bausteine.reduce(
+      (summe, baustein) =>
+        summe +
+        Object.values(baustein.varianten).reduce((produkt, werte) => produkt * werte.length, 1),
+      0
+    )
+    expect(gesamt).toBe(144)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
 // Zustandsabdeckung gegen den Produktcode
 // ---------------------------------------------------------------------------------------------
 
