@@ -1,6 +1,6 @@
 # 0352 - Penpot als alleinige Design-Quelle
 
-**Status:** Accepted
+**Status:** Implemented ([PR #355](https://github.com/TheRealKoller/photosort/pull/355))
 **Erstellt:** 2026-09-08
 **Bezug:** [GitHub-Issue #352](https://github.com/TheRealKoller/photosort/issues/352)
 
