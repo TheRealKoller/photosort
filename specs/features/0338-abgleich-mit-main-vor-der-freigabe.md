@@ -383,23 +383,24 @@ dass der Abbruchpfad seiteneffektfrei ist.
   zwei Skill-/Agenten-Dateien und Dokumentation.
 - **`architect` konsultiert (Schritt 1), `test-engineer` und `security-engineer` konsultiert
   (Schritt 3).** Keine Konsultation übersprungen außer der genannten.
+- **Kein erneuter `review-security`-Lauf nach einer Konfliktauflösung** (Daniel, 2026-09-08). Der
+  `security-engineer` hatte ihn empfohlen (Bedrohung 4: Die Konfliktauflösung an der zweiten
+  Aufrufstelle ist der einzige inhaltliche Beitrag des Ablaufs, den keine Review-Runde mehr sieht),
+  beschränkt auf eine feste Liste sicherheitstragender Pfade. Entschieden wurde dagegen: Es bleibt
+  dauerhaft bei der Meldepflicht — die Konfliktpfade gehen einzeln, je Pfad mit der Angabe, welche
+  Seite gewonnen hat, in den Chat-Bericht an Daniel und nie in den PR-Body. Sie ist unabhängig von
+  dieser Entscheidung Muss-Kriterium und in `developer.md` verankert. Damit ist die Frage
+  geschlossen, nicht vertagt: Ein späterer Sinneswandel braucht eine eigene Story.
 - **Board-Gate in Schritt 0 nicht auswertbar:** `board-status-und-prioritaet-lesen` ist in der
   Cloud-Session über keinen Weg erreichbar (dokumentierte Eigenschaft der Umgebung, `github-access`).
   Der Statuswechsel auf `In Progress` steht deshalb unter `## Lokal nachzuholen`.
 
 ## Offene Fragen
 
-- **Soll ein Konflikt an der zweiten Aufrufstelle (`ship-feature` Schritt 8) in einem
-  sicherheitstragenden Pfad einen erneuten `review-security`-Lauf auslösen?** Vorgeschlagene
-  Pfadliste: `scripts/tests/**`, `.github/workflows/**`, `.claude/skills/github-access/SKILL.md`,
-  `backend/src/photosort/{security,config,rate_limit,main,seed}.py`,
-  `backend/src/photosort/api/**`, `backend/src/photosort/opencloud/**`, `.env.example`.
-  *Gewinn:* Der einzige unreviewte Inhalt des Ablaufs bekommt genau dann eine Prüfung, wenn er die
-  Stellen trifft, an denen das Sicherheitskonzept Zusicherungen macht. *Preis:* gelegentlich ein
-  zusätzlicher Review-Lauf am Ende eines ohnehin langen Ablaufs. *Empfehlung des
-  `security-engineer`: ja*, aber ausschließlich an der zweiten Aufrufstelle und nur für diese
-  Pfadliste. **Nicht Teil dieser Spec** — bis zu einer Entscheidung bleibt es bei der Meldepflicht
-  (Konfliktpfade einzeln im Chat-Bericht), die unabhängig davon Muss-Kriterium ist.
+Keine offenen Fragen.
+
+Die eine Frage, die diese Spec offen hatte, ist am 2026-09-08 von Daniel entschieden (siehe
+„Entscheidungen", letzter Punkt).
 
 ## Out of Scope
 
@@ -409,4 +410,5 @@ dass der Abbruchpfad seiteneffektfrei ist.
 - **Rebase, Force-Push oder das Umschreiben veröffentlichter Commits** — durch AK 4 ausgeschlossen.
 - **Ein Abgleich innerhalb des `developer`-Laufs** (z.B. nach jedem TDD-Zyklus). Er brächte nichts,
   was die beiden Zeitpunkte nicht abdecken, und verteilte Merge-Commits über den ganzen Branch.
-- **Ein erneuter `review-security`-Lauf nach einer Konfliktauflösung** — siehe „Offene Fragen".
+- **Ein erneuter `review-security`-Lauf nach einer Konfliktauflösung** — von Daniel entschieden
+  verworfen, siehe „Entscheidungen".
