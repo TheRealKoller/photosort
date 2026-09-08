@@ -68,9 +68,10 @@ sind und im Diff bzw. auf GitHub direkt entscheidbar bleiben.
   Kategorien-Set.
 - [ ] **5.** Genau die zwölf Symbole aus `ICON_NAMES` sind in Penpot als Komponenten verfügbar,
   **gerendert über die projekteigene `Icon`-Komponente**, mit erhaltenem `viewBox` und
-  Strichstärke 2, ohne feste Pixelgröße. Die namentliche Übereinstimmung wird zurückgelesen; die
-  Geometrie nur, wenn die Plugin-API die Pfaddaten hergibt — andernfalls gilt sie als
-  sichtgeprüft und ist als Lücke geführt.
+  Strichstärke 2, ohne feste Pixelgröße. Die namentliche Übereinstimmung wird zurückgelesen,
+  ebenso die **Struktur** jedes Symbols: Blattformen des importierten Baums nach Anzahl und
+  Typreihenfolge gegen `icons.json`. Jede Blattform trägt die Strichbindung an
+  `color.text-h` — eine Bindung auf der Gruppe griffe nicht, die Symbole kämen schwarz an.
 - [ ] **6.** Ein neu in Penpot zusammengesetzter Entwurf trägt die richtigen Farben, Schriften
   und Abstände, ohne dass dafür Werte von Hand eingetragen werden — auch ein Entwurf, den Claude
   erstellt. **Nachgewiesen durch Vorführung (exportiertes Bild plus zurückgelesene
