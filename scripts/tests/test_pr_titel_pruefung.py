@@ -131,6 +131,12 @@ GUELTIGE_TITEL = (
     'revert: Revert "feat: Projekte loeschen"',
     "fix: a",
     "feat: Groesse der Vorschau (Umlaute, UTF-8)",
+    # Zeichen, an denen eine unachtsame Ausgabe stolpern wuerde: Formatangaben (der Titel ist
+    # Argument von printf, nie dessen Formatzeichenkette), Backslash-Folgen (%s verarbeitet
+    # keine Escapes) und Glob-Zeichen (nur die Anfuehrungszeichen verhindern die Expansion).
+    "perf: 100% schneller, 50%% davon im Cache",
+    "docs: Pfadangabe C:\\temp\\neu und \\n als Text",
+    "chore: * und ? und [a-z] im Titel",
 )
 
 # Die ersten drei sind der Bestandsdefekt selbst (Titel ohne Praefix, so stehen sie heute auf
