@@ -273,7 +273,8 @@ klein geschrieben aus `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `re
 nicht-leere Beschreibung. Grund: Das Repository squasht mit `COMMIT_OR_PR_TITLE`, der Titel wird
 damit zum Titel des Merge-Commits auf `main` und ist die einzige Grundlage, auf der die Änderung
 für Changelog und Version klassifiziert wird; ohne zulässiges Präfix fällt sie still heraus. Ein
-Titel, der die Form verfehlt, lässt den Check pr-titel rot werden und blockiert den Merge.
+Titel, der die Form verfehlt, lässt den Check pr-titel rot werden — und, sobald pr-titel als
+Required Status Check auf `main` eingetragen ist, blockiert er zusätzlich den Merge.
 
 Mehrdeutiger Fehlschlag: erst lesend verifizieren, nie blind den nächsten Weg gehen.
 
