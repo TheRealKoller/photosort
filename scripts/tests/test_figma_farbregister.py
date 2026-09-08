@@ -118,6 +118,15 @@ SOLL_BOARD_KNOTEN_ID = "2:4"
 SOLL_VERSION_VORHER = "V1.2"
 SOLL_VERSION_NACHHER = "V1.3"
 
+# Die fuenf Verlaufs- bzw. Bildfuellungen des Boards, am 2026-09-08 im zweiten use_figma-Lauf
+# gemessen. Sie sind KEINE Farbvorkommen: An eine Farbvariable ist ein Verlauf nicht bindbar, sie
+# stehen in keinem Inventar (istFarbvorkommen filtert sie), und bindeAlle fasst sie nicht an - die
+# Zusage "419, sonst nichts" ist von ihnen unberuehrt. Sie sind trotzdem ein SOLLWERT wie jede
+# andere Zahl dieser Story: genau diese fuenf, genau dort. Ein zusaetzliches, ein fehlendes oder
+# ein an anderer Stelle sitzendes Nicht-Volltonvorkommen bricht die Vorpruefung ab.
+SOLL_NICHT_SOLID_ANZAHL = 5
+SOLL_NICHT_SOLID_KNOTEN = ("2:252", "2:257", "2:264", "2:271", "2:278")
+
 # Die zwei Uebergaenge aus AK6: alter Board-Wert -> neuer Wert, samt erwarteter Anzahl.
 SOLL_UEBERGAENGE = {
     ("#62677A", "#8D92A4"): SOLL_GEDAEMPFT,
@@ -284,7 +293,8 @@ NACHWEIS_FEHLT = (
 # Abbruchgrund sonst Freitext aus einem fremden System in den Kontext der Hauptsession und von
 # dort in ein oeffentliches Repository truege (M3).
 ABBRUCHCODES = {
-    "nicht-solid",
+    "nicht-solid-unerwartet",
+    "nicht-solid-fehlt",
     "gemischte-fuellung",
     "stil-gesetzt",
     "deckkraft-abweichend",
@@ -445,6 +455,24 @@ def basis_vorkommen(**abweichung: Any) -> dict[str, Any]:
     }
     eintrag.update(abweichung)
     return eintrag
+
+
+def erwartete_nicht_solid() -> list[dict[str, Any]]:
+    """Reine Funktion: die fuenf erwarteten Nicht-Volltonfuellungen als gemessene Eintraege.
+
+    Sie gehoeren in JEDE Probe, die ein Inventar darstellt: Fehlt eine, ist das seit dem
+    2026-09-08 selbst ein Abbruchgrund. Die Knoten stehen als Sollwert oben, nicht aus dem
+    Register gelesen - sonst pruefte der Test sich selbst.
+    """
+    return [
+        basis_vorkommen(knotenId=knoten, art="GRADIENT_LINEAR", hex=None)
+        for knoten in SOLL_NICHT_SOLID_KNOTEN
+    ]
+
+
+def probeninventar(*eintraege: dict[str, Any]) -> list[dict[str, Any]]:
+    """Reine Funktion: ein Inventar aus den erwarteten Nicht-Volltonfuellungen plus den Proben."""
+    return erwartete_nicht_solid() + list(eintraege)
 
 
 def inventar(pfad: Path) -> dict[str, Any]:
@@ -1014,13 +1042,17 @@ class TestPayloadForm:
 
 
 class TestVorpruefung:
-    """Die sechs Grenzfaelle und die zwei Positivproben - ausgefuehrt, nicht behauptet.
+    """Die Grenzfaelle und die Positivproben - ausgefuehrt, nicht behauptet.
 
     Ohne die Positivproben bestuende die Abbruchliste auch bei einer Funktion, die immer abbricht.
+
+    Jede Probe traegt die fuenf erwarteten Nicht-Volltonfuellungen mit (`probeninventar`). Das ist
+    keine Formalie: Seit dem 2026-09-08 ist ihr Fehlen selbst ein Abbruchgrund, und ein Inventar
+    ohne sie waere kein Inventar dieses Boards.
     """
 
     GRENZFAELLE: tuple[tuple[str, dict[str, Any]], ...] = (
-        ("nicht-solid", {"art": "GRADIENT_LINEAR"}),
+        ("nicht-solid-unerwartet", {"art": "GRADIENT_LINEAR"}),
         ("gemischte-fuellung", {"art": "MIXED"}),
         ("stil-gesetzt", {"stilId": "S:2b6f1c4a"}),
         ("deckkraft-abweichend", {"deckkraft": 0.4}),
@@ -1029,7 +1061,9 @@ class TestVorpruefung:
     )
 
     def test_jeder_grenzfall_bricht_mit_seinem_eigenen_code_ab(self) -> None:
-        faelle = [[basis_vorkommen(**abweichung)] for _, abweichung in self.GRENZFAELLE]
+        faelle = [
+            probeninventar(basis_vorkommen(**abweichung)) for _, abweichung in self.GRENZFAELLE
+        ]
 
         ergebnisse = vorpruefung_ausfuehren(faelle)["ergebnisse"]
 
@@ -1046,10 +1080,62 @@ class TestVorpruefung:
         still. Eine Chip-Flaeche deckt keine Linienfarbe."""
         fall = basis_vorkommen(hex="#4D3814", eigenschaft="strokes")
 
-        ergebnis = vorpruefung_ausfuehren([[fall]])["ergebnisse"][0]
+        ergebnis = vorpruefung_ausfuehren([probeninventar(fall)])["ergebnisse"][0]
 
         assert ergebnis["ok"] is False
         assert [g["code"] for g in ergebnis["abbruchgruende"]] == ["scope-deckt-eigenschaft-nicht"]
+
+    def test_eine_erwartete_nicht_volltonfuellung_ist_kein_abbruchgrund(self) -> None:
+        """Der Befund vom 2026-09-08: fuenf Verlaufs-/Bildfuellungen auf dem Board. Sie sind keine
+        Farbvorkommen - an eine Farbvariable nicht bindbar, in keinem Inventar, vom Lauf nicht
+        angefasst. Sie zum Abbruchgrund zu machen schuetzt nichts und verhindert nur, dass die
+        Umstellung je fertig wird."""
+        ergebnis = vorpruefung_ausfuehren([probeninventar()])["ergebnisse"][0]
+
+        assert ergebnis["ok"] is True, f"Abbruchgruende: {ergebnis['abbruchgruende']}"
+        assert ergebnis["erklaert"] == SOLL_NICHT_SOLID_ANZAHL
+
+    def test_eine_nicht_volltonfuellung_an_unerwarteter_stelle_bricht_ab(self) -> None:
+        """Geduldet ist nicht die Art, sondern die Stelle. Sonst liesse eine kuenftige
+        Verlaufsfuellung an einer beliebigen Stelle die Pruefung stillschweigend passieren."""
+        fall = basis_vorkommen(knotenId="2:999", art="IMAGE", hex=None)
+
+        ergebnis = vorpruefung_ausfuehren([probeninventar(fall)])["ergebnisse"][0]
+
+        assert ergebnis["ok"] is False
+        gruende = ergebnis["abbruchgruende"]
+        assert [g["code"] for g in gruende] == ["nicht-solid-unerwartet"]
+        assert gruende[0]["knotenId"] == "2:999"
+
+    def test_eine_fehlende_erwartete_nicht_volltonfuellung_bricht_ab(self) -> None:
+        """Die zweite Haelfte des Sollwerts. Ist eine der fuenf nicht mehr da, hat sich das Board
+        unter dem Register veraendert - und ein Register, das den Board-Zustand nicht mehr trifft,
+        darf keinen Schreiblauf tragen. Gemeldet wird der erwartete Ort, denn ein Vorkommen, auf
+        das man zeigen koennte, gibt es gerade nicht."""
+        unvollstaendig = erwartete_nicht_solid()[1:]
+
+        ergebnis = vorpruefung_ausfuehren([unvollstaendig])["ergebnisse"][0]
+
+        assert ergebnis["ok"] is False
+        gruende = ergebnis["abbruchgruende"]
+        assert [g["code"] for g in gruende] == ["nicht-solid-fehlt"]
+        assert gruende[0]["knotenId"] == SOLL_NICHT_SOLID_KNOTEN[0]
+
+    def test_das_register_erwartet_genau_die_fuenf_gemessenen_nicht_volltonfuellungen(self) -> None:
+        """AK0-Logik: Die fuenf sind ein Sollwert, kein Sammelbecken. Der Test bindet sie an die
+        oben festgeschriebenen Knoten, statt sie aus dem Register zu lesen."""
+        erwartet = register()["erwarteteNichtSolid"]
+
+        assert erwartet["anzahl"] == SOLL_NICHT_SOLID_ANZAHL
+        assert len(erwartet["vorkommen"]) == SOLL_NICHT_SOLID_ANZAHL
+        assert tuple(e["knotenId"] for e in erwartet["vorkommen"]) == SOLL_NICHT_SOLID_KNOTEN
+        for eintrag in erwartet["vorkommen"]:
+            assert set(eintrag) == {"knotenId", "eigenschaft", "index"}
+            assert eintrag["eigenschaft"] == "fills"
+            assert eintrag["index"] == 0
+        assert len(erwartet["begruendung"].strip()) >= 40, (
+            "Eine geduldete Ausnahme ohne Begruendung im Register ist eine Behauptung."
+        )
 
     def test_ein_bereits_gebundenes_vorkommen_gilt_als_erklaert(self) -> None:
         """Positivprobe 1, zugleich der Beleg fuer die Fortschrittsunabhaengigkeit: Die Formel
@@ -1059,35 +1145,39 @@ class TestVorpruefung:
             variable="Rahmen/Trennlinie", variablenId="VariableID:1:12", hex="#2A2E3D"
         )
 
-        ergebnis = vorpruefung_ausfuehren([[fall]])["ergebnisse"][0]
+        ergebnis = vorpruefung_ausfuehren([probeninventar(fall)])["ergebnisse"][0]
 
         assert ergebnis["ok"] is True, f"Abbruchgruende: {ergebnis['abbruchgruende']}"
-        assert ergebnis["erklaert"] == 1
+        assert ergebnis["erklaert"] == SOLL_NICHT_SOLID_ANZAHL + 1
 
     def test_ein_vollstaendig_erklaertes_inventar_liefert_ok(self) -> None:
         """Positivprobe 2: je ein ungebundenes Vorkommen zu jedem Sollwert und zu jedem Altwert
         des Registers. Die 47 Knoten in #62677A und der eine in #FF007F muessen erklaert sein -
         sonst braeche der Lauf ausgerechnet an den Stellen ab, die er korrigieren soll."""
         reg = register()
-        faelle = []
+        proben = []
         for nummer, eintrag in enumerate(reg["variablen"], start=1):
             eigenschaft = "strokes" if "STROKE_COLOR" in eintrag["scopes"] else "fills"
             for wert in [eintrag["wert"], *eintrag["altwerte"]]:
-                faelle.append(
+                proben.append(
                     basis_vorkommen(knotenId=f"{nummer}:1", hex=wert, eigenschaft=eigenschaft)
                 )
+        faelle = probeninventar(*proben)
 
         ergebnis = vorpruefung_ausfuehren([faelle])["ergebnisse"][0]
 
         assert ergebnis["ok"] is True, f"Abbruchgruende: {ergebnis['abbruchgruende']}"
-        assert ergebnis["erklaert"] == len(faelle) == SOLL_VARIABLEN + len(KORREKTUR_VARIABLEN)
+        assert len(proben) == SOLL_VARIABLEN + len(KORREKTUR_VARIABLEN)
+        assert ergebnis["erklaert"] == len(faelle)
 
     def test_ein_abbruchgrund_traegt_keinen_freitext_aus_dem_fremden_system(self) -> None:
         """M3: Der Ruecklauf fliesst in den Kontext der Hauptsession und von dort in ein
         oeffentliches Repository. Ein Grund nennt deshalb einen Code aus einer geschlossenen Liste
         und die Knoten-ID, die den Knoten exakt adressiert - nie einen Namen, nie einen
         Ausnahmetext."""
-        faelle = [[basis_vorkommen(**abweichung)] for _, abweichung in self.GRENZFAELLE]
+        faelle = [
+            probeninventar(basis_vorkommen(**abweichung)) for _, abweichung in self.GRENZFAELLE
+        ]
 
         ergebnisse = vorpruefung_ausfuehren(faelle)["ergebnisse"]
 
@@ -1103,17 +1193,17 @@ class TestVorpruefung:
         """Ein Abbruch beendet die Pruefung nicht vorzeitig: Bei Abbruch kehrt der Lauf mit dem
         **vollen** Inventar zurueck; korrigiert wird dann am Register, was nichts kostet."""
         faelle = [
-            [
+            probeninventar(
                 basis_vorkommen(knotenId="7:1"),
                 basis_vorkommen(knotenId="7:2", hex="#123456"),
                 basis_vorkommen(knotenId="7:3", hex="#654321"),
-            ]
+            )
         ]
 
         ergebnis = vorpruefung_ausfuehren(faelle)["ergebnisse"][0]
 
-        assert ergebnis["gesamt"] == 3
-        assert ergebnis["erklaert"] == 1
+        assert ergebnis["gesamt"] == SOLL_NICHT_SOLID_ANZAHL + 3
+        assert ergebnis["erklaert"] == SOLL_NICHT_SOLID_ANZAHL + 1
         assert len(ergebnis["abbruchgruende"]) == 2, (
             "Beide unerklaerten Vorkommen muessen gemeldet werden, nicht nur das erste."
         )
@@ -1190,7 +1280,10 @@ def synthetische_messung(mit_bindung: bool) -> tuple[list[dict[str, Any]], list[
     id_nach_namen = {eintrag["name"]: eintrag["id"] for eintrag in variablen}
 
     gemessen: list[dict[str, Any]] = []
-    knoten = 100
+    # Bewusst oberhalb der echten Knotennummern der fuenf erwarteten Nicht-Volltonfuellungen
+    # (2:252 ... 2:278): Zwei Eintraege mit demselben Schluessel waeren kein Board, sondern ein
+    # kaputtes Inventar - und der Rundlauf wuerde es nicht bemerken, sondern verschlucken.
+    knoten = 1000
     for name, gesamt, strokes in SYNTHETISCHE_VERTEILUNG:
         eintrag = nach_namen[name]
         altwert = eintrag["altwerte"][0] if eintrag["altwerte"] else eintrag["wert"]
@@ -1217,15 +1310,11 @@ def synthetische_messung(mit_bindung: bool) -> tuple[list[dict[str, Any]], list[
                 }
             )
 
-    # Zwei Vorkommen, die kein Farbvorkommen sind: Sie gehoeren nicht ins Inventar, aber sie
-    # duerfen auch nicht verschwinden - sie werden gezaehlt und ausgewiesen.
-    gemessen.append(
-        {
-            "knotenId": "2:900", "eigenschaft": "fills", "index": 0, "art": "GRADIENT_LINEAR",
-            "hex": None, "deckkraft": 1, "mischmodus": "NORMAL", "sichtbar": True,
-            "stilId": "", "variable": None, "variablenId": None,
-        }
-    )
+    # Vorkommen, die kein Farbvorkommen sind: Sie gehoeren nicht ins Inventar, aber sie duerfen
+    # auch nicht verschwinden - sie werden gezaehlt und ausgewiesen. Die fuenf
+    # Nicht-Volltonfuellungen sind die tatsaechlich gemessenen; damit hat dieses synthetische
+    # Board dieselben 424 Eintraege wie das echte (419 Farbvorkommen + 5).
+    gemessen.extend(erwartete_nicht_solid())
     gemessen.append(
         {
             "knotenId": "2:901", "eigenschaft": "strokes", "index": 0, "art": "SOLID",
@@ -1368,7 +1457,18 @@ class TestRuecklaufExpansion:
             "Ein Altwert muss in der Uebersicht seiner Variable zugeordnet sein - sonst sieht die "
             "Diagnose nach einer fehlenden Farbe aus, wo eine Korrektur ansteht."
         )
-        assert None in gezaehlt, "Der Nicht-Volltonwert fehlt in der Uebersicht."
+        assert gezaehlt[None]["anzahl"] == SOLL_NICHT_SOLID_ANZAHL, (
+            "Die Nicht-Volltonfuellungen muessen in der Uebersicht auftauchen - sie stehen in "
+            "keinem Inventar, und die Uebersicht ist der einzige Ort, an dem sie sichtbar sind."
+        )
+        assert not [
+            grund
+            for grund in diagnose["abbruch"]["nachCode"]
+            if grund["code"].startswith("nicht-solid")
+        ], (
+            "Die fuenf erwarteten Nicht-Volltonfuellungen sind erklaert, nicht geduldet: Sie "
+            "stehen namentlich im Register und loesen deshalb keinen Abbruch aus."
+        )
         assert diagnose["besonderheiten"]["anzahl"] == 3
         assert diagnose["besonderheiten"]["vollstaendig"] is True
         assert {e["code"] for e in diagnose["uebersprungen"]} == {"nicht-solid", "stil-gesetzt"}

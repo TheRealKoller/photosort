@@ -281,6 +281,17 @@ const REGISTER =
       "Text/Deaktiviert"
     ]
   },
+  "erwarteteNichtSolid": {
+    "anzahl": 5,
+    "begruendung": "Verlaufs- bzw. Bildfüllungen auf dem Board, am 2026-09-08 gemessen. Sie sind per Definition keine Farbvorkommen: An eine Farbvariable ist ein Verlauf oder ein Bild nicht bindbar, sie stehen in keinem der beiden Inventare, und der Lauf fasst sie nicht an. Gezählt und ausgewiesen werden sie trotzdem - in `uebersprungen` unter dem Code `nicht-solid`. Diese Liste ist ein Sollwert wie jede andere Zahl der Story: Ein zusätzliches, ein fehlendes oder ein an anderer Stelle sitzendes Nicht-Volltonvorkommen bricht die Vorprüfung ab.",
+    "vorkommen": [
+      { "knotenId": "2:252", "eigenschaft": "fills", "index": 0 },
+      { "knotenId": "2:257", "eigenschaft": "fills", "index": 0 },
+      { "knotenId": "2:264", "eigenschaft": "fills", "index": 0 },
+      { "knotenId": "2:271", "eigenschaft": "fills", "index": 0 },
+      { "knotenId": "2:278", "eigenschaft": "fills", "index": 0 }
+    ]
+  },
   "codeEigeneWerte": [
     {
       "token": "--chip-pflanze-bg",
@@ -395,6 +406,28 @@ function variablenNachHex(register) {
   return abbild;
 }
 
+function vorkommenSchluessel(vorkommen) {
+  return vorkommen.knotenId + '|' + vorkommen.eigenschaft + '|' + vorkommen.index;
+}
+
+/** Die Menge der Vorkommen, an denen eine Nicht-Volltonfuellung ERWARTET wird.
+ *
+ * Am 2026-09-08 gemessen: fuenf Verlaufs- bzw. Bildfuellungen. Sie sind per Definition keine
+ * Farbvorkommen - an eine Farbvariable ist ein Verlauf nicht bindbar, sie stehen in keinem
+ * Inventar, und der Lauf fasst sie nicht an. Sie deshalb zum Abbruchgrund zu machen wuerde
+ * nichts schuetzen und nur verhindern, dass die Umstellung je fertig wird. Sie stattdessen
+ * pauschal zu dulden waere das andere Extrem und wuerde eine kuenftige Verlaufsfuellung an einer
+ * beliebigen Stelle stillschweigend durchlassen. Also: ein SOLLWERT wie jede andere Zahl der
+ * Story - genau diese fuenf, genau dort.
+ */
+function nichtSolidErwartetAus(register) {
+  const erwartet = new Set();
+  for (const eintrag of register.erwarteteNichtSolid.vorkommen) {
+    erwartet.add(vorkommenSchluessel(eintrag));
+  }
+  return erwartet;
+}
+
 /** Deckt der Scope der Variable die Eigenschaft, auf der das Vorkommen sitzt?
  *
  * Ein Fill kann auf einem Rahmen, einer Form oder einem Textknoten sitzen; die Messung
@@ -413,16 +446,19 @@ function scopeDecktEigenschaft(eintrag, eigenschaft) {
 /** Der Abbruchcode eines einzelnen Vorkommens, oder null, wenn es erklaert ist.
  *
  * "Erklaert" heisst: entweder bereits an eine Variable des Registers gebunden ODER mit einem
- * Hexwert aus dem Register, den der Scope dieser Variable auch decken kann. Diese Formulierung
- * ist fortschrittsunabhaengig - sie gilt im unberuehrten Zustand ebenso wie nach einem Teillauf
- * und blockiert die Wiederaufnahme nicht.
+ * Hexwert aus dem Register, den der Scope dieser Variable auch decken kann ODER eine der im
+ * Register namentlich erwarteten Nicht-Volltonfuellungen. Diese Formulierung ist
+ * fortschrittsunabhaengig - sie gilt im unberuehrten Zustand ebenso wie nach einem Teillauf und
+ * blockiert die Wiederaufnahme nicht.
  */
-function abbruchcodeFuer(vorkommen, registerNamen, nachHex) {
+function abbruchcodeFuer(vorkommen, registerNamen, nachHex, nichtSolidErwartet) {
   if (vorkommen.art === 'MIXED') {
     return 'gemischte-fuellung';
   }
   if (vorkommen.art !== 'SOLID') {
-    return 'nicht-solid';
+    return nichtSolidErwartet.has(vorkommenSchluessel(vorkommen))
+      ? null
+      : 'nicht-solid-unerwartet';
   }
   if (vorkommen.stilId) {
     return 'stil-gesetzt';
@@ -456,11 +492,16 @@ function pruefeVorkommen(vorkommen, register) {
     return eintrag.name;
   }));
   const nachHex = variablenNachHex(register);
+  const nichtSolidErwartet = nichtSolidErwartetAus(register);
+  const nichtSolidGesehen = new Set();
   const abbruchgruende = [];
   let erklaert = 0;
 
   for (const eintrag of vorkommen) {
-    const code = abbruchcodeFuer(eintrag, registerNamen, nachHex);
+    if (eintrag.art !== 'SOLID' && eintrag.art !== 'MIXED') {
+      nichtSolidGesehen.add(vorkommenSchluessel(eintrag));
+    }
+    const code = abbruchcodeFuer(eintrag, registerNamen, nachHex, nichtSolidErwartet);
     if (code === null) {
       erklaert += 1;
       continue;
@@ -471,6 +512,22 @@ function pruefeVorkommen(vorkommen, register) {
       eigenschaft: eintrag.eigenschaft,
       index: eintrag.index
     });
+  }
+
+  /* Die zweite Haelfte des Sollwerts: Eine erwartete Nicht-Volltonfuellung, die nicht mehr da
+   * ist, ist genauso ein Befund wie eine zusaetzliche. Sie bedeutet, dass sich das Board unter
+   * dem Register veraendert hat - und ein Register, das den Board-Zustand nicht mehr trifft, darf
+   * keinen Schreiblauf tragen. Gemeldet wird der ERWARTETE Ort, denn ein Vorkommen, auf das man
+   * zeigen koennte, gibt es hier gerade nicht. */
+  for (const eintrag of register.erwarteteNichtSolid.vorkommen) {
+    if (!nichtSolidGesehen.has(vorkommenSchluessel(eintrag))) {
+      abbruchgruende.push({
+        code: 'nicht-solid-fehlt',
+        knotenId: eintrag.knotenId,
+        eigenschaft: eintrag.eigenschaft,
+        index: eintrag.index
+      });
+    }
   }
 
   return {
