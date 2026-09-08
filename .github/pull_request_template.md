@@ -1,3 +1,12 @@
+<!--
+Der **Titel dieses PRs** trägt die Conventional-Commit-Form `typ(scope)!: Beschreibung` —
+z.B. `feat: Kurzbeschreibung`, `fix(backend): Kurzbeschreibung`, `feat(frontend)!: Kurzbeschreibung`.
+Zulässige Typen: build, chore, ci, docs, feat, fix, perf, refactor, revert, test.
+Beim Squash wird der Titel zum Merge-Commit auf `main`; ohne zulässiges Präfix übergeht
+release-please ihn still — kein Changelog-Eintrag, kein Versions-Bump, keine Fehlermeldung.
+Der Check `pr-titel` prüft das und wird rot, wenn die Form nicht stimmt.
+-->
+
 ## Bezug
 
 - Spec: `specs/features/....md` (Status vor diesem PR: Accepted)
