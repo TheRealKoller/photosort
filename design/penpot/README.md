@@ -1,0 +1,220 @@
+# Penpot-Nutzlast
+
+Hier liegt alles, was den Stand der Penpot-Datei **„PhotoSort — Dark Utility Register"**
+herstellt und zurückliest. Penpot ist seit ADR
+[`0065`](../../specs/decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md) die
+alleinige Design-Quelle: Welche Farbe, Form, Größe oder welchen Zustand ein Baustein haben *soll*,
+entscheidet Penpot. Was heute *gilt und ausgeliefert wird*, steht weiterhin in
+`frontend/src/index.css` — das ist keine zweite Quelle, sondern der Unterschied zwischen Absicht
+und Zustand.
+
+**Die Instanzadresse steht bewusst nicht im Repository.** Weder Hostname noch URL, Port,
+Projekt-/Datei-ID noch Zugangsdaten. Der MCP-Server ist in Daniels lokaler Werkzeugkonfiguration
+eingerichtet, nicht in einer Repo-Datei. Im Repository steht ausschließlich der **Dateiname** der
+Penpot-Datei — er genügt, um sie zu finden, und verrät nichts über die Infrastruktur.
+
+## Was hier liegt
+
+| Datei | Art | Inhalt |
+|---|---|---|
+| `tokens.json` | **erzeugt** aus `frontend/src/index.css` | die 86 Tokens (Name, Typ, Wert): 64 `color`, 5 `borderRadius`, 8 `spacing`, 2 `fontFamilies`, 7 `typography` |
+| `icons.json` | **erzeugt** aus `frontend/src/components/ui/icon.tsx` | die zwölf Symbole als SVG-Markup |
+| `components.json` | handgeschrieben | Zustands-/Variantenmatrix der zehn Bausteine, ausschließlich in Tokennamen |
+| `seed-tokens.js` | handgeschrieben | legt den Token-Satz `photosort` an bzw. gleicht ihn ab |
+| `seed-icons.js` | handgeschrieben | legt die zwölf Symbole als Komponenten an |
+| `seed-components.js` | handgeschrieben | baut die zehn Bausteine und ihre Varianten |
+| `verify.js` | handgeschrieben | liest den Stand zurück und gibt ihn als JSON aus |
+
+Die beiden erzeugten Dateien entstehen als Vitest-Dateischnappschuss in
+`frontend/penpot/tokens.test.ts` bzw. `icons.test.ts` und sind damit in CI gegen Abweichung
+gesichert: Wer `index.css` ändert und nicht neu erzeugt, bekommt einen roten Test — wer eine der
+JSON-Dateien von Hand ändert, ebenfalls. Regeneriert wird mit `npm test -- -u` im Verzeichnis
+`frontend/`. **Werte werden nie in eine Nutzlast getippt** (ADR
+[`0066`](../../specs/decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md)).
+
+Die statischen Regeln über die handgeschriebenen Dateien stehen in
+`frontend/penpot/payload.test.ts` — insbesondere „kein wörtlicher Farb-/Größenwert", die
+referentielle Integrität der Tokennamen und die abschließende Liste dessen, was die Nutzlast
+aufrufen darf.
+
+## Wie es ausgeführt wird
+
+**Nicht von Hand und nicht aus einem Subagenten heraus, sondern ausschließlich über den Skill
+`penpot-design` in der Hauptsession.** Gründe: Nur die Hauptsession hat MCP-Werkzeuge, und es
+braucht ohnehin eine von Daniel geöffnete, verbundene Penpot-Sitzung — ohne sie antwortet der
+MCP-Server mit „No Penpot instance connected", und der Ablauf bricht ab.
+
+Die Nutzlast wird mechanisch zusammengesetzt und **unverändert** an `execute_code` übergeben:
+genau **eine** Einfügestelle der Form
+
+```
+const <NAME> = <exakter Inhalt der Datendatei>;
+```
+
+gefolgt von der unveränderten Skriptdatei. `verify.js` bekommt keine Datendatei mitgegeben und
+wird unverändert übergeben. Ist ein Wert falsch, wird `frontend/src/index.css` geändert und neu
+erzeugt — nie der Aufruf angepasst.
+
+| Schritt | Skript | Datendatei | Einfügename |
+|---|---|---|---|
+| 1 | `seed-tokens.js` | `tokens.json` | `TOKENS` |
+| 2 | `seed-icons.js` | `icons.json` | `ICONS` |
+| 3 | `seed-components.js` | `components.json` | `BAUSTEINE` |
+| 4 | `verify.js` | — | — |
+
+## ⚠ Warnhinweis zu `seed-components.js`
+
+`seed-tokens.js` und `seed-icons.js` dürfen **jederzeit erneut laufen** — ihr Inhalt ist
+vollständig erzeugt, in ihm kann keine Gestaltungsabsicht stecken, die nicht auch im Repository
+stünde.
+
+**`seed-components.js` läuft nur auf einer leeren oder neu aufgebauten Datei.** Nach dem ersten
+Bespielen gehören die Bausteine Penpot: Dort wird entworfen, dort entstehen Änderungen, und ein
+Skript, das sie überschreibt, machte den Zweck der ganzen Umstellung zunichte. Seine dauerhafte
+Rolle ist die **Wiederherstellung nach Instanzverlust**, nicht die laufende Pflege. Die
+Vorbedingung steht deshalb fail-closed im Skript selbst, vor dem ersten Schreibzugriff.
+
+**Kein Skript löscht je etwas.** Findet ein Lauf in Penpot ein Token, das der Erzeuger nicht
+kennt, bleibt es unangetastet und wird als **Befund** gemeldet — nicht als Fehler gewertet.
+
+**⚠ Eine Zeitüberschreitung dieses Schritts ist kein Fehlschlag.** 144 Varianten mit je rund einem
+Dutzend API-Aufrufen dauern länger, als `execute_code` auf eine Antwort wartet: Der Aufruf endet
+mit „The operation timed out", **während die Arbeit vollständig ausgeführt wird** (beim ersten
+echten Lauf gemessen). Vor jeder Reaktion wird der Stand **zurückgelesen** — erst das Ergebnis
+entscheidet, ob etwas fehlt, nicht die Meldung. Fehlt tatsächlich etwas, ist die Datei nicht mehr
+leer, und ein zweiter Lauf trifft den Wächter oben: Dessen Abbruch ist dann die **richtige**
+Antwort und wird nicht umgangen. Der ausführliche Ablauf steht im Skill `penpot-design`,
+Schritt 2.
+
+Was `seed-components.js` aufbaut, ist der token-gebundene Rumpf: je Variante ein Brett mit
+Beschriftung, dessen Fläche, Umriss, Radius, Innenabstände und Schriftmerkmale an Tokens gebunden
+sind, daraus je eine Bibliotheks-Komponente, und daraus je Baustein ein Varianten-Container.
+
+**Gebaut wird das vollständige Kreuzprodukt der Achsen** eines Bausteins (Schaltfläche 6 × 3 × 5 =
+90 Varianten, über alle zehn Bausteine **144**). Das ist keine Vorliebe, sondern eine Vorgabe der
+Plugin-API: Ein Varianteneintrag muss für **jede** Varianteneigenschaft einen Wert nennen — ein
+Eintrag, der nur `auspraegung=ghost` trägt und zu `groesse`/`zustand` schweigt, ist keine
+wohldefinierte Variante.
+
+Damit das Kreuzprodukt keine Kombinationen erfindet, die es im Produkt nicht gibt, gilt für die
+Achsen selbst eine Regel: **Jede Achse muss unabhängig von den übrigen wählbar sein; wo zwei Dinge
+nicht orthogonal sind, gehören sie in eine Achse.** Zwei Bausteine sind danach geschnitten:
+
+- **Hinweis** führt *eine* Achse mit sieben Werten (`hinweis-success` … `status-failed`) statt zwei
+  getrennter — in ihm fallen zwei Bauteile zusammen (`ui/alert.tsx` und `StatusTag.tsx`), und
+  „Warnung × läuft" gibt es nicht. Die Präfixe sind nötig, weil `success` in beiden Hälften
+  vorkommt und zweierlei meint.
+- **Kennzeichen** führt *eine* Achse mit neun Werten (`favorite-solid` … `neutral`): Der neutrale
+  Ton ignoriert die Füllung im Produkt vollständig, `neutral × suggested` hätte also keine
+  Entsprechung.
+
+Die Achsen sind eine Design-System-Aussage und stehen in `components.json`; ein Aufbauskript
+schneidet sie nicht selbst. Dass eine Achse überhaupt Tokens trägt, ist statisch zugesichert —
+eine tokenlose Achse multipliziert das Kreuzprodukt auf, ohne etwas zu beschreiben.
+
+**Wiedererkannt werden die Bausteine an den Plugin-Daten `schluessel`**, die jede
+Variantenkomponente trägt — nie am Namen: `createVariantContainer` benennt die Einzelkomponenten
+in „Component" um, und der sprechende Name lebt am Container, der ein Board ist und gar nicht in
+`penpot.library.local.components` steht. `seed-components.js` (Wächter) und `verify.js`
+(Rückleser) benutzen dafür **wortgleich dieselbe Funktion**; die Übereinstimmung ist statisch
+zugesichert.
+
+Rollen, die zu Unterelementen gehören, die dieser Aufbau nicht selbst setzt (Knauf des Schalters,
+Statuspille, Dateiname der Karte …), werden **nicht stillschweigend übergangen**, sondern als
+`nachzubinden` zurückgegeben — ihre Bindung entsteht beim Entwerfen in Penpot, wo diese Elemente
+ohnehin ihre Form bekommen.
+
+## Was CI hier nicht prüfen kann
+
+Verbindlicher Bestandteil der Spec, nicht eine Entschuldigung am Rand; steht wörtlich auch im Kopf
+jeder `seed-*.js`:
+
+1. **Die `seed-*.js` und `verify.js` sind zum PR-Zeitpunkt unausgeführter Code.** Geprüft sind
+   Erzeugung, Vollständigkeit, Benennung, referentielle Integrität und Wertefreiheit. Ob ein
+   Plugin-API-Aufruf funktioniert, kann kein Test hier sagen. Ein oder zwei Korrekturrunden nach
+   dem ersten echten Lauf sind eingeplant, kein Fehlschlag.
+2. **Kein Test kann Penpot lesen.** Der Abgleich ist eine Handlung, keine Zusicherung.
+3. **Die Dauerregel „entwerfen nur mit Tokens" ist LLM-interpretierter Text.** Statisch verankert
+   ist nur, *dass* sie im Skill steht.
+
+## Was an der Plugin-API gemessen ist
+
+Am 2026-09-08 an einer verbundenen Instanz gemessen (leere Scratch-Datei, danach rückstandsfrei
+abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0066`, Abschnitt 7):
+
+- **Tokenbindung wirkt**, und eine Bibliotheks-Instanz **erbt** die Bindungen. `shape.tokens`
+  liefert die Zuordnung Eigenschaft → Tokenname; `verify.js` liest genau das zurück.
+- **Varianten tragen** (`createVariantContainer`, `variantProps`, `switchVariant`).
+  **Nebenwirkung:** Die Einzelkomponenten werden dabei in „Component" umbenannt — der sprechende
+  Name lebt am Container, und `verify.js` erkennt die Bausteine deshalb am maschinellen Schlüssel
+  aus den Plugin-Daten, nicht am Namen.
+- **`createShapeFromSvg(svgString)` existiert** und liefert eine `Group`, hängt aber ein
+  zusätzliches Kind `base-background` an. `seed-icons.js` entfernt es — die einzige Stelle, an der
+  eines dieser Skripte etwas entfernt, und von der abschließenden Liste gedeckt, weil das Rechteck
+  im selben Lauf vom Skript selbst entstanden ist.
+- **Vier Abweichungen von der API-Doku:** kein Token-Typ `lineHeight`/`lineHeights` (deshalb die
+  Verbundtokens); die Eigenschaft für die Schriftfamilie heißt `fontFamily` (Singular); der
+  **Schreibwert** eines `typography`-Tokens benutzt die **Singular**-Schlüssel (`fontFamily`,
+  `fontSize`, `fontWeight`, `lineHeight`, `letterSpacing`) — die Pluralformen sind die Leseform;
+  und ein Token-Satz wirkt erst nach `toggleActive()` (`seed-tokens.js` schaltet ihn ein, aber nur
+  wenn er nachweislich inaktiv ist — `toggleActive` schaltet um und wäre sonst nicht wiederholbar).
+- **Im Verbundwert trägt ein Feld einen Wert oder fehlt ganz.** Eine leere Zeichenkette ist ein
+  **ungültiger** Wert und lässt den ganzen Aufruf scheitern (`Field 0.value is invalid`) — daran
+  ist der erste echte Lauf abgebrochen. `--text-xs`/`--text-sm` tragen deshalb schlicht kein
+  `fontWeight`-Feld, `--text-3xl` als einzige ein `letterSpacing`. An der Zusage dahinter ändert
+  das nichts: Es wird weiterhin kein Standardschnitt erfunden. Ein leeres Feld irgendwo im
+  Erzeugnis ist seither ein roter Test.
+- **`fontSize` trägt seine Einheit** (`"12px"`) — gemessen gültig; der letzte offene Punkt aus der
+  ersten Umsetzungsrunde ist damit erledigt.
+- **Eine neu erzeugte Form landet im zuletzt angelegten Container.** Bei `createShapeFromSvg`
+  gemessen: Ohne ausdrückliches `penpot.root.appendChild(...)` steckten im ersten echten Lauf alle
+  zwölf Symbolgruppen ineinander, weil `createComponent` aus dem ersten Symbol ein Board macht.
+  **Eine nachträglich gesetzte Position behebt das nicht** — der Elternknoten wird beim Erzeugen
+  entschieden. `seed-icons.js` verankert deshalb ausdrücklich; `seed-components.js` tut dasselbe
+  vorsorglich für seine Bretter (dort nicht gemessen, aber billig und bei 144 Ausprägungen ungleich
+  teurer zu entwirren).
+- **`/` ist ein Pfadtrenner, kein Namensbestandteil.** `symbol/star` liegt als
+  `{ name: "star", path: "symbol" }` vor; die volle Zeichenkette steht in keinem einzelnen Feld.
+  Die Gruppierung bleibt (sie ist in der Oberfläche nützlich), aber verglichen wird über **beide**
+  Felder — sonst trifft die Suche nie, ein zweiter Lauf legte Dubletten an und das Rücklesen meldete
+  einen leeren Stand. Kein Baustein- und kein Ausprägungsname trägt einen Schrägstrich; das ist
+  statisch zugesichert.
+- **Eine Gruppe trägt keinen eigenen Strich.** Das Strichfarben-Token auf das Ergebnis von
+  `createShapeFromSvg` anzuwenden lief ins Leere (Gruppe ohne Bindung, der Pfad darunter schwarz).
+  `seed-icons.js` wendet es deshalb auf die **Blattformen** an, rekursiv eingesammelt — die
+  heutigen Symbolgruppen sind flach, ein künftiges Symbol mit verschachtelter Gruppe verlöre sonst
+  still seine Farbe. `verify.js` liest die Bindungen aus demselben Grund über den **ganzen**
+  Unterbaum statt über eine Ebene.
+- **Penpot kennt keine Sammel-Eigenschaften.** `border-radius` und `padding` werfen beide
+  (`Field 1 is invalid: should be a set of strings`); es gibt nur die vier Radius-Ecken bzw. die
+  vier Polster-Seiten einzeln. Jede Rolle in `ROLLE_ZU_EIGENSCHAFT` bildet deshalb auf eine
+  **Liste** ab — auch dort, wo es nur eine Eigenschaft ist; eine Sonderform für den Einzelfall
+  wäre die Stelle, an der es später wieder auseinanderläuft. Dass jeder genannte Name aus einer
+  geschlossenen Liste stammt, ist statisch zugesichert: Der Eigenschaftsname war zweimal die
+  Fehlerquelle, und ein erfundener fällt seither in CI auf statt beim Lauf.
+- **Der Pfad-Präfix wird genau einmal gesetzt** — am Formnamen. Ihn danach noch einmal über
+  `komponente.name` zu setzen, hängt ihn ein zweites Mal vor (`path: "symbol / symbol"`). Der
+  Trenner im gelesenen `path` ist bei mehrstufigen Pfaden übrigens `" / "` mit Leerzeichen; der
+  Vergleich hier gilt dem einstufigen Fall.
+- **Penpot normalisiert einen `fontFamilies`-Wert beim Ablegen zu einem Array** (`"Inter"` →
+  `["Inter"]`). Der Abgleich in `seed-tokens.js` behandelt ein einelementiges Array deshalb wie
+  seinen Skalar — sonst meldete jeder Lauf beide Schriftfamilien als „nicht schreibbar".
+- **`execute_code` führt den Text als Funktionsrumpf aus** und liefert nur zurück, was ein
+  `return` zurückgibt. Alle vier Dateien enden deshalb auf ein `return`; ein blanker Ausdruck ginge
+  still verloren — bei `verify.js` wäre das der gesamte nachprüfbare Abschluss.
+- **Argumentformen, die von der Doku abweichen:** `addSet({ name })` und
+  `addToken({ type, name, value })` nehmen je **ein Objekt**; die Strichfarbe heißt `strokeColor`
+  (nicht `stroke`); `applyToShapes` nimmt ein Formen-Array und die Eigenschaft als blanke
+  Zeichenkette; `createVariantContainer` nimmt `[{ shape, properties }]` mit der **Hauptinstanz**
+  einer Komponente, nicht das Board; `variantProps` ist ein **Objekt** je Komponente und nennt die
+  Werte dieser einen Ausprägung. Die Formen sind in `frontend/penpot/payload.test.ts` als Tabelle
+  statisch zugesichert — genau diese Fehlerklasse hat eine Review-Runde siebenmal gefunden.
+- **Laufweite als blanke px-Zahl.** `-0.02em` wird als Tokenwert akzeptiert, kommt an der Textform
+  aber als `0` an; der Erzeuger rechnet gegen die Schriftgröße der Stufe um (`-0.02em` bei 64px →
+  `-1.28`).
+
+Die beiden gekapselten Stellen (`formAusMarkup`, `wendeTokenAn`) bleiben trotzdem gekapselt: Sie
+sind der Ort, an dem eine spätere API-Änderung eine Korrektur braucht statt zwölf. Stellt sich
+künftig ein Punkt als nicht verfügbar heraus, wird das **gemeldet, nicht umgangen** — ein Zustand
+als danebengestelltes Bild erfüllt Akzeptanzkriterium 4 nicht, und ein von Hand gesetzter
+Schriftwert ist als dokumentierte Lücke zu führen.

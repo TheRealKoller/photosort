@@ -9,6 +9,8 @@ description: Kapselt PhotoSorts Design-System (Farben, Formsprache, wiederkehren
 
 Schnellreferenz für konsistente UI-Arbeit in diesem Repo. Die eigentliche Quelle der Wahrheit sind [`specs/architecture/0004-design-system.md`](../../../specs/architecture/0004-design-system.md) (lebendes Dokument, gepflegt vom `ux-ui-designer`-Agenten) und [`specs/decisions/0011-ui-component-library.md`](../../../specs/decisions/0011-ui-component-library.md) — bei Unsicherheit oder Widerspruch dort nachschlagen statt zu raten, dieser Skill ist nur die griffige Zusammenfassung für den täglichen Gebrauch.
 
+**Die Design-Quelle für die Gestaltung ist die Penpot-Datei „PhotoSort — Dark Utility Register"** (ADR [`specs/decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md`](../../../specs/decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md)); der Weg dorthin — bespielen, zurücklesen, dort entwerfen — ist der Skill [`penpot-design`](../penpot-design/SKILL.md). Was heute **gilt und ausgeliefert wird**, steht unverändert in `frontend/src/index.css`; ein Entwurf in Penpot wird erst wirksam, wenn er über den normalen Weg (Story → Spec → PR) im Repo ankommt.
+
 ## Warum dieser Skill existiert
 
 Das Design-System-Dokument ist lang und wächst mit jeder Spec weiter — beim eigentlichen Bauen einer Komponente will man nicht jedes Mal das ganze Dokument durchsuchen. Dieser Skill liefert die Werte/Muster, die in praktisch jeder Frontend-Änderung gebraucht werden, direkt griffbereit. Er dupliziert das Dokument nicht als Kopie — bei einer Design-Entscheidung, die hier nicht abgedeckt ist, ins Dokument schauen und diesen Skill danach ergänzen, statt im Code zu raten.

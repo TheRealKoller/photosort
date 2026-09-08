@@ -1,0 +1,519 @@
+{
+  "datei": "PhotoSort — Dark Utility Register",
+  "set": "photosort",
+  "bausteine": [
+    {
+      "schluessel": "button",
+      "name": "Schaltfläche",
+      "quellen": [
+        "src/components/ui/button.tsx"
+      ],
+      "varianten": {
+        "auspraegung": [
+          "default",
+          "secondary",
+          "outline",
+          "ghost",
+          "destructive",
+          "link"
+        ],
+        "groesse": [
+          "default",
+          "sm",
+          "icon"
+        ],
+        "zustand": [
+          "normal",
+          "hover",
+          "active",
+          "disabled",
+          "busy"
+        ]
+      },
+      "tokens": {
+        "radius": "radius.sm",
+        "typografie": "text.xs",
+        "hoehe": "space.8",
+        "innenabstand-quer": "space.4",
+        "innenabstand-laengs": "space.2",
+        "abstand": "space.2"
+      },
+      "tokensProAuspraegung": {
+        "auspraegung": {
+          "default": {
+            "flaeche": "color.accent",
+            "schrift": "color.accent-fg"
+          },
+          "secondary": {
+            "flaeche": "color.overlay",
+            "umriss": "color.border-control",
+            "schrift": "color.text-h",
+            "gedrueckt-flaeche": "color.border",
+            "gedrueckt-schrift": "color.text"
+          },
+          "outline": {
+            "flaeche": "color.overlay",
+            "umriss": "color.border-control",
+            "schrift": "color.text-h",
+            "gedrueckt-flaeche": "color.border",
+            "gedrueckt-schrift": "color.text"
+          },
+          "ghost": {
+            "schrift": "color.text",
+            "ueberfahren-flaeche": "color.overlay",
+            "ueberfahren-schrift": "color.text-h",
+            "gedrueckt-flaeche": "color.border",
+            "gedrueckt-schrift": "color.text"
+          },
+          "destructive": {
+            "flaeche": "color.danger",
+            "schrift": "color.danger-fg"
+          },
+          "link": {
+            "schrift": "color.accent-strong",
+            "typografie": "text.sm"
+          }
+        },
+        "zustand": {
+          "disabled": {
+            "flaeche": "color.surface",
+            "umriss": "color.border",
+            "schrift": "color.text-disabled"
+          }
+        }
+      }
+    },
+    {
+      "schluessel": "input",
+      "name": "Eingabefeld",
+      "quellen": [
+        "src/components/ui/input.tsx"
+      ],
+      "varianten": {
+        "zustand": [
+          "normal",
+          "fokussiert",
+          "fehlerhaft",
+          "fokussiert-fehlerhaft",
+          "disabled"
+        ]
+      },
+      "tokens": {
+        "radius": "radius.sm",
+        "flaeche": "color.surface",
+        "umriss": "color.border-control",
+        "schrift": "color.text-h",
+        "platzhalter": "color.text-muted",
+        "textmarke": "color.accent",
+        "typografie": "text.sm",
+        "innenabstand-quer": "space.3"
+      },
+      "tokensProAuspraegung": {
+        "zustand": {
+          "fokussiert": {
+            "umriss": "color.accent"
+          },
+          "fehlerhaft": {
+            "umriss": "color.danger"
+          },
+          "fokussiert-fehlerhaft": {
+            "umriss": "color.danger",
+            "fokuskontur": "color.accent"
+          },
+          "disabled": {
+            "umriss": "color.border",
+            "schrift": "color.text-disabled"
+          }
+        }
+      }
+    },
+    {
+      "schluessel": "badge",
+      "name": "Kennzeichen",
+      "quellen": [
+        "src/components/ui/badge.tsx",
+        "src/components/RatingBadge.tsx"
+      ],
+      "varianten": {
+        "auspraegung": [
+          "favorite-solid",
+          "favorite-suggested",
+          "album-worthy-solid",
+          "album-worthy-suggested",
+          "rejected-solid",
+          "rejected-suggested",
+          "accent-solid",
+          "accent-suggested",
+          "neutral"
+        ]
+      },
+      "tokens": {
+        "radius": "radius.sm",
+        "typografie": "text.xs",
+        "hoehe": "space.6",
+        "innenabstand-quer": "space.2",
+        "abstand": "space.1"
+      },
+      "tokensProAuspraegung": {
+        "auspraegung": {
+          "favorite-solid": {
+            "flaeche": "color.rating-favorite",
+            "schrift": "color.rating-favorite-fg"
+          },
+          "favorite-suggested": {
+            "flaeche": "color.elevated",
+            "umriss": "color.rating-favorite",
+            "schrift": "color.rating-favorite"
+          },
+          "album-worthy-solid": {
+            "flaeche": "color.rating-album-worthy",
+            "schrift": "color.rating-album-worthy-fg"
+          },
+          "album-worthy-suggested": {
+            "flaeche": "color.elevated",
+            "umriss": "color.rating-album-worthy",
+            "schrift": "color.rating-album-worthy"
+          },
+          "rejected-solid": {
+            "flaeche": "color.rating-rejected",
+            "schrift": "color.rating-rejected-fg"
+          },
+          "rejected-suggested": {
+            "flaeche": "color.elevated",
+            "umriss": "color.rating-rejected",
+            "schrift": "color.danger-text"
+          },
+          "accent-solid": {
+            "flaeche": "color.accent",
+            "schrift": "color.accent-fg"
+          },
+          "accent-suggested": {
+            "flaeche": "color.elevated",
+            "umriss": "color.accent",
+            "schrift": "color.accent"
+          },
+          "neutral": {
+            "umriss": "color.border",
+            "schrift": "color.text"
+          }
+        }
+      }
+    },
+    {
+      "schluessel": "card",
+      "name": "Karte",
+      "quellen": [
+        "src/components/ui/card.tsx",
+        "src/components/PhotoCard.tsx"
+      ],
+      "varianten": {
+        "bewertung": [
+          "unbewertet",
+          "favorite",
+          "album_worthy",
+          "rejected"
+        ],
+        "vorschlag": [
+          "ohne",
+          "mit"
+        ]
+      },
+      "tokens": {
+        "radius": "radius.lg",
+        "flaeche": "color.elevated",
+        "umriss": "color.border",
+        "bildflaeche-radius": "radius.md",
+        "innenabstand": "space.2",
+        "abstand": "space.2",
+        "dateiname-schrift": "color.text",
+        "dateiname-schriftfamilie": "font-family.mono",
+        "dateiname-typografie": "text.xs"
+      },
+      "tokensProAuspraegung": {
+        "bewertung": {
+          "unbewertet": {
+            "hinweis-schrift": "color.text-muted"
+          },
+          "rejected": {
+            "dateiname-schrift": "color.text-muted"
+          }
+        }
+      }
+    },
+    {
+      "schluessel": "alert",
+      "name": "Hinweis",
+      "quellen": [
+        "src/components/ui/alert.tsx",
+        "src/components/StatusTag.tsx"
+      ],
+      "varianten": {
+        "auspraegung": [
+          "hinweis-success",
+          "hinweis-warning",
+          "hinweis-error",
+          "status-never",
+          "status-running",
+          "status-success",
+          "status-failed"
+        ]
+      },
+      "tokens": {
+        "radius": "radius.md",
+        "flaeche": "color.elevated",
+        "innenabstand": "space.3",
+        "abstand": "space.3",
+        "typografie": "text.sm",
+        "titel-schrift": "color.text-h"
+      },
+      "tokensProAuspraegung": {
+        "auspraegung": {
+          "hinweis-success": {
+            "umriss": "color.accent-2",
+            "symbol": "color.accent-2",
+            "beitext": "color.text"
+          },
+          "hinweis-warning": {
+            "umriss": "color.accent",
+            "symbol": "color.accent",
+            "beitext": "color.text"
+          },
+          "hinweis-error": {
+            "umriss": "color.danger",
+            "symbol": "color.danger-text",
+            "beitext": "color.danger-text"
+          },
+          "status-never": {
+            "radius": "radius.sm",
+            "flaeche": "color.status-idle-tint",
+            "umriss": "color.status-idle-strong",
+            "schrift": "color.status-idle-strong"
+          },
+          "status-running": {
+            "radius": "radius.sm",
+            "flaeche": "color.status-running-tint",
+            "umriss": "color.status-running-strong",
+            "schrift": "color.status-running-strong"
+          },
+          "status-success": {
+            "radius": "radius.sm",
+            "flaeche": "color.status-success-tint",
+            "umriss": "color.status-success-strong",
+            "schrift": "color.status-success-strong"
+          },
+          "status-failed": {
+            "radius": "radius.sm",
+            "flaeche": "color.status-failed-tint",
+            "umriss": "color.status-failed-strong",
+            "schrift": "color.status-failed-strong"
+          }
+        }
+      }
+    },
+    {
+      "schluessel": "checkbox",
+      "name": "Auswahlkästchen",
+      "quellen": [
+        "src/components/ui/checkbox.tsx"
+      ],
+      "varianten": {
+        "zustand": [
+          "unchecked",
+          "checked",
+          "disabled"
+        ]
+      },
+      "tokens": {
+        "radius": "radius.xs",
+        "flaeche": "color.surface",
+        "umriss": "color.border-control",
+        "marke": "color.accent",
+        "schrift": "color.text-h",
+        "typografie": "text.sm",
+        "abstand": "space.3"
+      },
+      "tokensProAuspraegung": {
+        "zustand": {
+          "disabled": {
+            "umriss": "color.border",
+            "schrift": "color.text-disabled"
+          }
+        }
+      }
+    },
+    {
+      "schluessel": "switch",
+      "name": "Schalter",
+      "quellen": [
+        "src/components/ui/switch.tsx"
+      ],
+      "varianten": {
+        "zustand": [
+          "unchecked",
+          "checked",
+          "disabled"
+        ]
+      },
+      "tokens": {
+        "spur": "color.overlay",
+        "umriss": "color.border-control",
+        "knauf": "color.text"
+      },
+      "tokensProAuspraegung": {
+        "zustand": {
+          "checked": {
+            "spur": "color.accent",
+            "umriss": "color.accent",
+            "knauf": "color.accent-fg"
+          },
+          "disabled": {
+            "spur": "color.surface",
+            "umriss": "color.border",
+            "knauf": "color.text-disabled"
+          }
+        }
+      }
+    },
+    {
+      "schluessel": "progress",
+      "name": "Fortschrittsanzeige",
+      "quellen": [
+        "src/components/ui/progress.tsx"
+      ],
+      "varianten": {
+        "zustand": [
+          "determiniert",
+          "indeterminate"
+        ]
+      },
+      "tokens": {
+        "radius": "radius.xs",
+        "hoehe": "space.2",
+        "spur": "color.separator",
+        "fuellung": "color.accent"
+      },
+      "tokensProAuspraegung": {
+        "zustand": {
+          "indeterminate": {
+            "flaeche": "color.accent"
+          }
+        }
+      }
+    },
+    {
+      "schluessel": "dialog",
+      "name": "Dialog",
+      "quellen": [
+        "src/components/ui/dialog.tsx"
+      ],
+      "varianten": {
+        "zustand": [
+          "geschlossen",
+          "offen"
+        ],
+        "abbrechen": [
+          "aktiv",
+          "cancelDisabled"
+        ]
+      },
+      "tokens": {
+        "radius": "radius.xl",
+        "flaeche": "color.overlay",
+        "umriss": "color.border",
+        "schrift": "color.text",
+        "innenabstand": "space.6",
+        "abstand": "space.6",
+        "aktionsabstand": "space.3",
+        "titel-schrift": "color.text-h",
+        "titel-typografie": "text.lg",
+        "beitext-typografie": "text.sm"
+      }
+    },
+    {
+      "schluessel": "chip",
+      "name": "Kategorie-Chip",
+      "quellen": [
+        "src/components/CategoryBadge.tsx"
+      ],
+      "varianten": {
+        "kategorie": [
+          "menschen",
+          "tier",
+          "pflanze",
+          "landschaft",
+          "gebaeude-bauwerk",
+          "innenraum",
+          "essen-trinken",
+          "fahrzeug",
+          "gegenstand",
+          "dokument-screenshot",
+          "kunst-kreatives",
+          "sport-aktivitaet",
+          "nicht-erkannt"
+        ]
+      },
+      "tokens": {
+        "radius": "radius.xl",
+        "typografie": "text.xs",
+        "innenabstand-quer": "space.3",
+        "innenabstand-laengs": "space.1"
+      },
+      "tokensProAuspraegung": {
+        "kategorie": {
+          "menschen": {
+            "flaeche": "color.chip-menschen-bg",
+            "schrift": "color.chip-menschen-fg"
+          },
+          "tier": {
+            "flaeche": "color.chip-tier-bg",
+            "schrift": "color.chip-tier-fg"
+          },
+          "pflanze": {
+            "flaeche": "color.chip-pflanze-bg",
+            "schrift": "color.chip-pflanze-fg"
+          },
+          "landschaft": {
+            "flaeche": "color.chip-landschaft-bg",
+            "schrift": "color.chip-landschaft-fg"
+          },
+          "gebaeude-bauwerk": {
+            "flaeche": "color.chip-gebaeude-bauwerk-bg",
+            "schrift": "color.chip-gebaeude-bauwerk-fg"
+          },
+          "innenraum": {
+            "flaeche": "color.chip-innenraum-bg",
+            "schrift": "color.chip-innenraum-fg"
+          },
+          "essen-trinken": {
+            "flaeche": "color.chip-essen-trinken-bg",
+            "schrift": "color.chip-essen-trinken-fg"
+          },
+          "fahrzeug": {
+            "flaeche": "color.chip-fahrzeug-bg",
+            "schrift": "color.chip-fahrzeug-fg"
+          },
+          "gegenstand": {
+            "flaeche": "color.chip-gegenstand-bg",
+            "schrift": "color.chip-gegenstand-fg"
+          },
+          "dokument-screenshot": {
+            "flaeche": "color.chip-dokument-screenshot-bg",
+            "schrift": "color.chip-dokument-screenshot-fg"
+          },
+          "kunst-kreatives": {
+            "flaeche": "color.chip-kunst-kreatives-bg",
+            "schrift": "color.chip-kunst-kreatives-fg"
+          },
+          "sport-aktivitaet": {
+            "flaeche": "color.chip-sport-aktivitaet-bg",
+            "schrift": "color.chip-sport-aktivitaet-fg"
+          },
+          "nicht-erkannt": {
+            "flaeche": "color.chip-nicht-erkannt-bg",
+            "schrift": "color.chip-nicht-erkannt-fg"
+          }
+        }
+      }
+    }
+  ]
+}
