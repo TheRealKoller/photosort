@@ -118,7 +118,13 @@ async def build_project_graph(
     await session.flush()
 
     criterion_run = CriterionScoringRun(
-        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
+        project_id=project.id,
+        scoring_run_id=scoring_run.id,
+        status=ScanStatus.SUCCESS,
+        # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 3: der Graph bildet
+        # den Fremdschluessel zwischen den beiden Lauf-Tabellen mit ab - sonst pruefte kein Test
+        # der Suite die mit ihm entstandene Loeschreihenfolgen-Kante.
+        remote_category_classification_run_id=remote_run.id,
     )
     session.add(criterion_run)
     await session.flush()

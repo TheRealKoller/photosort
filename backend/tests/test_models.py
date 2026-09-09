@@ -1310,3 +1310,27 @@ async def test_an_empty_confidence_mapping_is_distinguishable_from_none(
     assert stored.detected_category_confidences == {}
     assert stored.detected_category_confidences is not None
     assert stored.category_confidence is None
+
+
+def test_classification_phase_lists_the_four_steps_in_execution_order() -> None:
+    """specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-
+    vier-teilschritte-und-laufeigene-cloud-bilanz.md Punkt 1: die REIHENFOLGE traegt die Aussage,
+    nicht nur die Menge - deshalb ein Tupelvergleich statt einer Mengengleichheit. Ein Umsortieren
+    (z.B. `landmark` nach `ranking`) liesse die Fortschrittsanzeige rueckwaerts laufen, ohne dass
+    eine Mengenpruefung das saehe."""
+    assert tuple(phase.value for phase in ClassificationPhase) == (
+        "remote_categories",
+        "criteria",
+        "landmark",
+        "ranking",
+    )
+
+
+def test_every_classification_phase_value_fits_the_column_length() -> None:
+    """Die Spalte ist ein `VARCHAR(20)` ohne DB-seitige Pruefeinschraenkung (ADR 0068 Punkt 1:
+    deshalb braucht ein neuer Enum-Wert KEINE Migration). Genau deshalb ist die Laengengrenze die
+    einzige verbliebene Schranke - ein laengerer Wert wuerde unter Postgres beim Schreiben
+    abbrechen, waehrend SQLite ihn stillschweigend annaehme."""
+    column_length = CriterionScoringRun.__table__.c.phase.type.length
+    assert column_length == 20
+    assert max(len(phase.value) for phase in ClassificationPhase) <= column_length
