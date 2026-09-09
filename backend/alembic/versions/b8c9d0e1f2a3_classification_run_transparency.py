@@ -38,9 +38,11 @@ Rueckwaertsweg dieser Migration waere ohne den Namen schlicht nicht ausfuehrbar.
 
 `batch_alter_table` fuer beide Tabellen (Muster 5ab22032843c/e2f3a4b5c6d7): unter SQLite entsteht
 ein nachtraeglicher Fremdschluessel ausschliesslich ueber den Tabellen-Neuaufbau, den `batch`
-durchfuehrt. Damit der Neuaufbau die Zieltabelle aufloesen kann, wird sie ueber `sa.Table` in den
-Batch-Kontext gereicht (`referent`-Aufloesung) - `remote_category_classification_runs` existiert
-zu diesem Zeitpunkt bereits seit Revision b3c4d5e6f7a8.
+durchfuehrt. Die Zieltabelle wird dabei ueber ihren NAMEN aufgeloest und muss zum Zeitpunkt des
+Neuaufbaus in der Datenbank stehen - `remote_category_classification_runs` existiert seit
+Revision b3c4d5e6f7a8, also lange vorher. Ein `copy_from`/`sa.Table` im Batch-Kontext ist dafuer
+nicht noetig und steht deshalb auch nicht da; der Round-Trip-Test faehrt `upgrade` und
+`downgrade` unter SQLite und wuerde es merken.
 
 Unter Postgres sind das sechs `ADD COLUMN` ohne Table-Rewrite; die Validierung des neuen FK laeuft
 gegen ausschliesslich NULL-Werte und ist trivial erfuellt - keine Sperrzeit von Belang.

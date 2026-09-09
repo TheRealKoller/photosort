@@ -4272,6 +4272,46 @@ class TestLandmarkPhaseLiveCounters:
         assert run.landmark_failed_calls is None
         assert_call_bookkeeping_invariant(run)
 
+    async def test_an_entered_phase_without_candidates_counts_zero_not_null(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die ANDERE Haelfte der Vierfeldertafel, und der Fall, der sich am leichtesten mit den
+        vier NULL-Faellen darueber verwechseln laesst: Fotos sind da, die Einwilligung liegt vor,
+        der Client ist gebaut - nur ist unter den bewerteten Fotos kein Landmark-Kandidat (hier:
+        kein Landschaftslabel, also greift `is_landmark_candidate` nicht).
+
+        Die Phase HAT stattgefunden. `0` ist deshalb die richtige Aussage und `NULL` waere
+        falsch: die Bilanz zeigt den Teilschritt als durchlaufen, mit null gesendeten Fotos,
+        statt ihn zu verschweigen. Ohne diesen Testfall waere die Grenze zwischen "gab es nicht"
+        und "gab es, nichts zu tun" genau an der Stelle unbelegt, an der die API entscheidet, ob
+        der Lauf ueberhaupt einen Landmark-Eintrag bekommt (`landmark_photos_total is not None`).
+        """
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=1
+        )
+        client = RecordingLandmarkClient()
+
+        run = await run_criterion_scoring(
+            db_session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
+            build_detector=_no_face_detector,
+            build_animal_detector=_no_animal_detector,
+            # Kein Landschaftslabel -> leere Kandidatenmenge, OBWOHL die Phase betreten wurde.
+            build_classifier=_no_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+            build_landmark_client=lambda _model: client,
+            use_cloud=True,
+        )
+
+        assert client.calls == []
+        assert run.landmark_photos_total == 0
+        assert run.landmark_photos_processed == 0
+        assert run.landmark_failed_calls == 0
+        assert_call_bookkeeping_invariant(run)
+
 
 class TestLandmarkCallBookkeepingInvariant:
     """ADR 0068 Punkt 2: `photos_processed == api_calls + failed_calls` - die Klammer, die den

@@ -1013,6 +1013,37 @@ async def test_cloud_phases_is_empty_for_a_run_without_any_cloud_step(
     assert await _cloud_phases(authenticated_api_client, project_id) == []
 
 
+async def test_a_landmark_phase_without_candidates_is_shown_not_hidden(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Das Gegenstueck zum Test darueber, und die Stelle, an der die Vierfeldertafel sichtbar
+    wird: `landmark_photos_total == 0` heisst "der Teilschritt lief, es war nichts zu tun" - er
+    bekommt seinen Eintrag. Nur `NULL` heisst "gab es nicht" und laesst ihn weg.
+
+    Die Unterscheidung ist keine Formsache: Ein weggelassener Teilschritt liest sich wie ein
+    uebersprungener, und die Oberflaeche zeigt ihn dann als `skipped` an, obwohl er stattgefunden
+    hat."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        cloud_requested=True,
+        landmark_photos_total=0,
+        landmark_photos_processed=0,
+        landmark_failed_calls=0,
+        landmark_api_calls=0,
+        landmark_cost_usd=0.0,
+        landmark_model="claude-haiku-4-5",
+    )
+
+    phases = await _cloud_phases(authenticated_api_client, project_id)
+
+    assert [phase["purpose"] for phase in phases] == ["landmark"]
+    assert phases[0]["photos_total"] == 0
+    assert phases[0]["photos_processed"] == 0
+    assert phases[0]["failed_calls"] == 0
+
+
 async def test_cloud_phases_lists_remote_category_before_landmark(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
