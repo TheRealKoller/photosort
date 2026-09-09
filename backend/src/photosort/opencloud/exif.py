@@ -82,9 +82,12 @@ def _normalized_ref(raw: object, allowed: tuple[str, str]) -> str | None:
     fehlt oder nicht exakt einer der beiden fuer DIESE Komponente zulaessigen Werte ist.
 
     Je Komponente gegen ihr EIGENES Wertepaar, nicht gegen die Vereinigung aller vier Buchstaben:
-    ein `E` als Breiten-Referenz ist ein kaputter Datensatz, kein Osten."""
-    if isinstance(raw, bytes):
-        raw = raw.decode("ascii", errors="replace")
+    ein `E` als Breiten-Referenz ist ein kaputter Datensatz, kein Osten.
+
+    Alles, was kein `str` ist, wird VERWORFEN statt umgedeutet - Pillow liefert den ASCII-Tag
+    verifiziert als `str` (NUL-Terminierung inklusive, deshalb das Trimmen unten). Einen Rohwert
+    anderen Typs zu dekodieren hiesse, aus einem kaputten Datensatz eine Himmelsrichtung zu raten;
+    "kein Ort" ist der ueberall sauber behandelte Zustand."""
     if not isinstance(raw, str):
         return None
     normalized = raw.strip(_REF_STRIP_CHARS).upper()
