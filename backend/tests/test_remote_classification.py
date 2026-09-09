@@ -12,7 +12,9 @@ from photosort.categories import (
     build_classification_prompt,
 )
 from photosort.cloud_vision import ANTHROPIC_VISION_MODEL, MISTRAL_VISION_MODEL, TokenUsage
+from photosort.pricing import ASSUMED_USAGE_BY_PROVIDER
 from photosort.remote_classification import (
+    _MAX_RESPONSE_TOKENS,
     CATEGORY_LABEL_SIMILARITY_THRESHOLD,
     MAX_FINE_LABEL_LENGTH,
     AnthropicCategoryClient,
@@ -925,3 +927,31 @@ class TestRemoteClassificationConfidenceField:
 
         with pytest.raises(TypeError):
             classification.category_confidences["menschen"] = 1.0  # type: ignore[index]
+
+
+class TestResponseBudgetAfterTheConfidenceSchema:
+    """specs/features/0299-kategorie-konfidenz-anzeigen.md, Security-Abschnitt Punkt 5:
+    `_MAX_RESPONSE_TOKENS` ist eine SICHERHEITSschranke, nicht nur eine Kostenschranke - sie
+    begrenzt auch die Menge an Fremdtext, die je Foto geparst und potenziell geloggt werden kann.
+
+    Das neue Antwortschema (Objekte statt nackter Schluessel) verlaengert die Antwort von rund 50
+    auf ueberschlaegig 80-100 Ausgabe-Tokens. Beide Konstanten decken das weiterhin ab; die Marge
+    von `ASSUMED_USAGE_BY_PROVIDER` schrumpft dabei aber von rund dem Zweieinhalb- auf etwa das
+    Anderthalbfache - deshalb sind beide Groessen hier festgehalten statt nur im Kommentar."""
+
+    def test_the_response_token_ceiling_is_not_raised(self) -> None:
+        """Ausdruecklich NICHT anzuheben: 256 behaelt gegenueber der vollbesetzten neuen Antwort
+        klare Reserve. Wer den Wert anhebt, soll an dieser Zeile auf die Begruendung stossen."""
+        assert _MAX_RESPONSE_TOKENS == 256
+
+    def test_the_assumed_output_tokens_still_cover_the_longer_response(self) -> None:
+        """Die Schaetzung ist seit Spec 0296 die einzige verbliebene Absicherung VOR der
+        kostenpflichtigen Aktion - sie darf die neue Antwortlaenge nicht unterschaetzen."""
+        longest_plausible_response_tokens = 100
+
+        for provider, assumed in ASSUMED_USAGE_BY_PROVIDER.items():
+            assert assumed.output_tokens >= longest_plausible_response_tokens, provider
+
+    def test_the_ceiling_keeps_clear_reserve_over_the_assumption(self) -> None:
+        for provider, assumed in ASSUMED_USAGE_BY_PROVIDER.items():
+            assert _MAX_RESPONSE_TOKENS >= 2 * assumed.output_tokens, provider

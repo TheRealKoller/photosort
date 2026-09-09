@@ -50,6 +50,14 @@ logger = logging.getLogger(__name__)
 # Set-Schluessel (je hoechstens ~8 Tokens) plus zwei kurze deutsche Feinlabels und das
 # JSON-Geruest liegen zusammen deutlich unter 100 Ausgabe-Tokens; der mit Spec 0289 deutlich
 # groessere Prompt waechst ausschliesslich auf der EINGABEseite.
+#
+# NEUHERLEITUNG mit specs/features/0299-kategorie-konfidenz-anzeigen.md (Security-Abschnitt
+# Punkt 5): der Kategorien-Eintrag ist vom nackten Schluessel zum Objekt geworden, je Kandidat
+# also rund 10 Tokens mehr ({"key": ..., "confidence": 0.92}). Die vollbesetzte Antwort liegt
+# damit ueberschlaegig bei 80-100 Ausgabe-Tokens gegenueber rund 50 bisher - 256 behaelt klare
+# Reserve und ist ausdruecklich NICHT anzuheben. Das ist hier keine reine Kostenschranke: die
+# Grenze begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und potenziell geloggt
+# werden kann. Beide Groessen sind in tests/test_remote_classification.py festgehalten.
 _MAX_RESPONSE_TOKENS = 256
 
 # Defensive Obergrenze gegen eine entartete Modellantwort (ADR 0032 Punkt 3) - verhindert einen

@@ -601,6 +601,80 @@ class TestRebuildDemoStateProducesTheFourStates:
         assert all(error.error_message.strip() != "" for error in errors)
 
 
+    # --- specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 7 -------------
+
+    async def _rated_classifications(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> list[PhotoCategoryClassification]:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        rows = []
+        for photo in await _photos_of(db_session, RATED_PROJECT_NAME):
+            classification = await db_session.get(PhotoCategoryClassification, photo.id)
+            assert classification is not None
+            rows.append(classification)
+        return rows
+
+    async def test_rated_project_has_at_least_one_photo_without_any_confidence(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Damit die LUECKENdarstellung im Browser ueberhaupt sichtbar ist - eine Demo, in der
+        jedes Foto eine Zahl traegt, zeigt genau den Fall nicht, der am leichtesten falsch
+        gebaut wird."""
+        rows = await self._rated_classifications(db_session, tmp_path)
+
+        assert any(row.category_confidence is None for row in rows)
+
+    async def test_rated_project_has_at_least_one_photo_below_the_curation_threshold(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Kuratierungsfilter greift bei echt unter 60 % - ohne ein solches Foto liefe er in
+        der Demo immer leer."""
+        rows = await self._rated_classifications(db_session, tmp_path)
+
+        assert any(
+            row.category_confidence is not None and row.category_confidence < 0.6 for row in rows
+        )
+
+    async def test_rated_project_has_at_least_one_photo_with_a_confidence(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        rows = await self._rated_classifications(db_session, tmp_path)
+
+        assert any(row.category_confidence is not None for row in rows)
+
+    async def test_the_demo_rows_satisfy_the_confidence_invariant(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Dieselbe Invariante wie im produktiven Schreibpfad (ADR 0067 Punkt 4) - die Demo-Daten
+        duerfen keinen Zustand erzeugen, den die Anwendung selbst nie schreiben wuerde."""
+        rows = await self._rated_classifications(db_session, tmp_path)
+
+        for row in rows:
+            mapping = row.detected_category_confidences
+            if mapping is None:
+                assert row.category_confidence is None
+                continue
+            assert set(mapping) <= set(row.detected_categories)
+            assert row.category_confidence == mapping.get(row.category_key)
+
+    async def test_the_confidences_are_deterministic_across_two_rebuilds(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        first = {
+            row.category_key: row.category_confidence
+            for row in await self._rated_classifications(db_session, tmp_path)
+        }
+        # Zweiter vollstaendiger Neuaufbau derselben Datenbank - `photo_id` aendert sich dabei,
+        # der Kategorieschluessel nicht, deshalb ist er hier der Vergleichsanker.
+        second = {
+            row.category_key: row.category_confidence
+            for row in await self._rated_classifications(db_session, tmp_path)
+        }
+
+        assert len(first) == len(CATEGORY_REGISTRY)
+        assert first == second
+
+
 class TestRebuildDemoStateWritesRealThumbnails:
     """Bindung an die ECHTE thumbnails.py-Logik, gegen Drift getestet statt vorausgesetzt."""
 
