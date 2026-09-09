@@ -479,3 +479,97 @@ class TestDeleteCategoryOverride:
 
         assert first.status_code == 204
         assert second.status_code == 204
+
+
+class TestOverrideLeavesTheConfidenceColumnsUntouched:
+    """Akzeptanzkriterium 11 der Spec 0299 / ADR 0067 Punkt 5: ein Override lebt in
+    `photo_scores.category_override` und beruehrt die Klassifizierungszeile nicht. Das ist eine
+    EIGENSCHAFT der bestehenden Datenmodell-Trennung - sie braucht keinen Code, nur diesen Test,
+    der sie festhaelt."""
+
+    async def _classify(self, session: AsyncSession, photo: Photo) -> None:
+        session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="tier",
+                detected_categories=["tier", "landschaft"],
+                detected_category_confidences={"tier": 0.81, "landschaft": 0.22},
+                category_confidence=0.81,
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await session.commit()
+
+    async def test_setting_an_override_changes_neither_column(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo)
+        await _add_ranking(db_session, run, photo, category_key="tier")
+        await self._classify(db_session, photo)
+
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": "landschaft"}
+        )
+
+        assert response.status_code == 200
+        db_session.expunge_all()
+        row = (
+            await db_session.execute(select(PhotoCategoryClassification))
+        ).scalars().one()
+        assert row.category_key == "tier"
+        assert row.category_confidence == 0.81
+        assert row.detected_category_confidences == {"tier": 0.81, "landschaft": 0.22}
+
+    async def test_the_number_stays_with_its_key_in_the_api_response(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die am Kandidaten angezeigte Zahl bleibt bei IHREM Schluessel - der Override verschiebt
+        sie nicht auf das Override-Ziel."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo)
+        await _add_ranking(db_session, run, photo, category_key="tier")
+        await self._classify(db_session, photo)
+
+        await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": "landschaft"}
+        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        item = response.json()["items"][0]
+        confidence_by_key = {
+            candidate["category_key"]: candidate["confidence"]
+            for candidate in item["category_candidates"]
+        }
+        assert confidence_by_key == {"tier": 0.81, "landschaft": 0.22}
+        # `category_confidence` gehoert zu `remote_category` (der MODELL-Kategorie), nicht zum
+        # Override-Ziel.
+        assert item["remote_category"] == "tier"
+        assert item["category_confidence"] == 0.81
+
+    async def test_deleting_an_override_changes_neither_column(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo, category_override="landschaft")
+        await _add_ranking(db_session, run, photo, category_key="landschaft")
+        await self._classify(db_session, photo)
+
+        response = await authenticated_api_client.delete(
+            f"/photos/{photo.id}/category-override"
+        )
+
+        assert response.status_code == 204
+        db_session.expunge_all()
+        row = (
+            await db_session.execute(select(PhotoCategoryClassification))
+        ).scalars().one()
+        assert row.category_confidence == 0.81
+        assert row.detected_category_confidences == {"tier": 0.81, "landschaft": 0.22}

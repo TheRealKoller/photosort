@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.categories import CATEGORY_NOT_RECOGNIZED
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.models import (
@@ -1513,8 +1514,18 @@ class TestRemoteCategoryFields:
         item = response.json()["items"][0]
         assert item["remote_category"] == "tier"
         assert item["category_candidates"] == [
-            {"category_key": "tier", "origin": "remote", "provider": "anthropic"},
-            {"category_key": "landschaft", "origin": "remote", "provider": "anthropic"},
+            {
+                "category_key": "tier",
+                "origin": "remote",
+                "provider": "anthropic",
+                "confidence": None,
+            },
+            {
+                "category_key": "landschaft",
+                "origin": "remote",
+                "provider": "anthropic",
+                "confidence": None,
+            },
         ]
 
     async def test_candidates_no_longer_carry_a_score_field(
@@ -1539,7 +1550,11 @@ class TestRemoteCategoryFields:
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
         candidate = response.json()["items"][0]["category_candidates"][0]
-        assert set(candidate) == {"category_key", "origin", "provider"}
+        # `confidence` ist seit specs/features/0299-kategorie-konfidenz-anzeigen.md dazugekommen -
+        # es ist ausdruecklich KEINE Wiederkehr von `score`: die Zahl beeinflusst keine Auswahl
+        # und keine Sortierung, sie ist die Selbsteinschaetzung des Modells (ADR 0067 Punkt 1).
+        assert set(candidate) == {"category_key", "origin", "provider", "confidence"}
+        assert "score" not in candidate
 
     async def test_local_qualifying_criterion_becomes_a_set_category_candidate(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1562,7 +1577,12 @@ class TestRemoteCategoryFields:
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
         assert response.json()["items"][0]["category_candidates"] == [
-            {"category_key": "menschen", "origin": "local", "provider": None}
+            {
+                "category_key": "menschen",
+                "origin": "local",
+                "provider": None,
+                "confidence": None,
+            }
         ]
 
     async def test_non_qualifying_local_criterion_is_not_a_candidate(
@@ -1690,7 +1710,12 @@ class TestRemoteCategoryFields:
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
         assert response.json()["items"][0]["category_candidates"] == [
-            {"category_key": "menschen", "origin": "local", "provider": None}
+            {
+                "category_key": "menschen",
+                "origin": "local",
+                "provider": None,
+                "confidence": None,
+            }
         ]
 
 
@@ -1872,3 +1897,228 @@ async def test_get_photo_image_requires_auth(
     response = await api_client.get(f"/photos/{photo.id}/image", params={"variant": "thumbnail"})
 
     assert response.status_code == 401
+
+
+class TestCategoryConfidenceFields:
+    """specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 4:
+    `CategoryCandidateOut.confidence` und `PhotoOut.category_confidence`."""
+
+    async def test_a_candidate_carries_the_model_confidence_for_its_key(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="tier",
+                detected_categories=["tier", "landschaft"],
+                detected_category_confidences={"tier": 0.92, "landschaft": 0.41},
+                category_confidence=0.92,
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        item = response.json()["items"][0]
+        assert item["category_candidates"] == [
+            {
+                "category_key": "tier",
+                "origin": "remote",
+                "provider": "anthropic",
+                "confidence": 0.92,
+            },
+            {
+                "category_key": "landschaft",
+                "origin": "remote",
+                "provider": "anthropic",
+                "confidence": 0.41,
+            },
+        ]
+        assert item["category_confidence"] == 0.92
+
+    async def test_a_candidate_without_a_model_number_carries_null_not_zero(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="tier",
+                detected_categories=["tier", "landschaft"],
+                detected_category_confidences={"tier": 0.5},
+                category_confidence=0.5,
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        candidates = response.json()["items"][0]["category_candidates"]
+        landschaft = next(c for c in candidates if c["category_key"] == "landschaft")
+        assert landschaft["confidence"] is None
+
+    async def test_a_purely_local_candidate_has_no_number(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 8: `null`, nie `0.0` - es gibt zu diesem Schluessel gar keine
+        Modellaussage."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="content_people",
+                value=1.0,
+                source=CriterionSource.LOCAL_ML,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        item = response.json()["items"][0]
+        assert item["category_candidates"] == [
+            {
+                "category_key": "menschen",
+                "origin": "local",
+                "provider": None,
+                "confidence": None,
+            }
+        ]
+        assert item["category_confidence"] is None
+
+    async def test_the_number_follows_the_key_not_the_origin_label(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 8, zweite Haelfte / ADR 0067 Punkt 2: ein Schluessel, den ein lokales
+        Signal UND das Modell nennen, erscheint als `origin="local"` (die spezifischere
+        Herkunftsaussage) - behaelt aber die Modellzahl, denn es GIBT eine Modellaussage zu diesem
+        Schluessel."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="content_people",
+                value=1.0,
+                source=CriterionSource.LOCAL_ML,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="menschen",
+                detected_categories=["menschen"],
+                detected_category_confidences={"menschen": 0.77},
+                category_confidence=0.77,
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["category_candidates"] == [
+            {
+                "category_key": "menschen",
+                "origin": "local",
+                "provider": None,
+                "confidence": 0.77,
+            }
+        ]
+
+    async def test_zero_is_delivered_as_zero_not_as_null(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="tier",
+                detected_categories=["tier"],
+                detected_category_confidences={"tier": 0.0},
+                category_confidence=0.0,
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        item = response.json()["items"][0]
+        assert item["category_confidence"] == 0.0
+        assert item["category_confidence"] is not None
+        assert item["category_candidates"][0]["confidence"] == 0.0
+
+    async def test_an_old_row_without_confidences_delivers_null_everywhere(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 9: eine Zeile aus der Zeit vor der Migration traegt `NULL` - der
+        Lesepfad braucht dafuer keine Sonderbehandlung."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="tier",
+                detected_categories=["tier"],
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        item = response.json()["items"][0]
+        assert item["category_confidence"] is None
+        assert item["category_candidates"][0]["confidence"] is None
+
+    async def test_category_confidence_is_the_number_of_the_remote_category(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Eigenes Feld statt clientseitiger Ableitung aus der Kandidatenliste: `remote_category`
+        kann `nicht_erkannt` sein und steht dann gar nicht in `detected_categories`."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key=CATEGORY_NOT_RECOGNIZED,
+                detected_categories=[],
+                detected_category_confidences={},
+                category_confidence=None,
+                provider="anthropic",
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        item = response.json()["items"][0]
+        assert item["remote_category"] == CATEGORY_NOT_RECOGNIZED
+        assert item["category_confidence"] is None
+        assert item["category_candidates"] == []
+
+    async def test_a_photo_without_any_classification_row_has_no_number(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["category_confidence"] is None
