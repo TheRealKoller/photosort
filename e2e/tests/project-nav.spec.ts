@@ -275,30 +275,50 @@ test(`setzt die Nebengruppe im Panel bei ${MOBILE_WIDTH} px sichtbar ab (AK5)`, 
    * lokalisiert (Selektor-Konvention): gesucht ist der naechstgelegene Vorfahre der drei
    * Hauptzeilen, der keine der beiden Nebenzeilen enthaelt und nicht das Panel selbst ist. Genau
    * dieses Element traegt die Trennlinie.
+   *
+   * DIE ZEILEN WERDEN UEBER IHRE BESCHRIFTUNG ZUGEORDNET, NICHT UEBER IHRE POSITION: ein
+   * `slice(0, 3)`/`slice(3)` haengt still an der Reihenfolge, die dieser Test gar nicht zusichert
+   * (das tut der Panelinhalts-Test weiter oben). Nach einer Umsortierung griffe der Schnitt auf
+   * den falschen Block und die Messung bliebe gruen, waehrend sie das Falsche misst - dieselbe
+   * Adressierung wie bei den Rechtecken oben.
    */
-  const separator = await panel.evaluate((element) => {
-    const rows = Array.from(element.querySelectorAll('a'))
-    const primary = rows.slice(0, 3)
-    const secondary = rows.slice(3)
-    let candidate: Element | null = primary[0]?.parentElement ?? null
-    while (candidate !== null && candidate !== element) {
-      if (
-        primary.every((row) => candidate!.contains(row)) &&
-        !secondary.some((row) => candidate!.contains(row))
-      ) {
-        const style = window.getComputedStyle(candidate)
-        return {
-          found: true,
-          width: Number.parseFloat(style.borderBottomWidth),
-          style: style.borderBottomStyle,
-          color: style.borderBottomColor,
-        }
+  const separator = await panel.evaluate(
+    (element, labels) => {
+      const rows = Array.from(element.querySelectorAll('a'))
+      const byLabel = (label: string) =>
+        rows.find((row) => row.textContent?.trim() === label) ?? null
+      const primary = labels.primary.map(byLabel)
+      const secondary = labels.secondary.map(byLabel)
+      // Ohne diese Vorbedingung liefe eine umbenannte Zeile auf eine leere Menge hinaus - und
+      // `every` ueber einer leeren Menge ist wahr, der erste Vorfahre gewaenne trivial.
+      if (primary.some((row) => row === null) || secondary.some((row) => row === null)) {
+        return { resolved: false, found: false, width: 0, style: 'none', color: 'transparent' }
       }
-      candidate = candidate.parentElement
-    }
-    return { found: false, width: 0, style: 'none', color: 'transparent' }
-  })
+      const primaryRows = primary as Element[]
+      const secondaryRows = secondary as Element[]
+      let candidate: Element | null = primaryRows[0]!.parentElement
+      while (candidate !== null && candidate !== element) {
+        if (
+          primaryRows.every((row) => candidate!.contains(row)) &&
+          !secondaryRows.some((row) => candidate!.contains(row))
+        ) {
+          const style = window.getComputedStyle(candidate)
+          return {
+            resolved: true,
+            found: true,
+            width: Number.parseFloat(style.borderBottomWidth),
+            style: style.borderBottomStyle,
+            color: style.borderBottomColor,
+          }
+        }
+        candidate = candidate.parentElement
+      }
+      return { resolved: true, found: false, width: 0, style: 'none', color: 'transparent' }
+    },
+    { primary: [...PRIMARY_LABELS], secondary: [...SECONDARY_LABELS] }
+  )
 
+  expect(separator.resolved, 'alle fuenf Panelzeilen ueber ihre Beschriftung gefunden').toBe(true)
   expect(separator.found, 'eigener Block um die drei Hauptzeilen gefunden').toBe(true)
   expect(separator.width, `border-bottom-width des Trenners (${separator.color})`).toBeGreaterThan(0)
   expect(separator.style, 'border-bottom-style des Trenners').not.toBe('none')

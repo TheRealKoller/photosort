@@ -205,9 +205,19 @@ describe('ProjectNav - Ausloeser des Nebenbereichs', () => {
       renderNav(path)
 
       expect(trigger()).toHaveAttribute('aria-current', 'true')
-      // NICHT ALLEIN FARBLICH: der ruhende Ghost-Ausloeser hat gar keinen Rand - der Rand selbst
-      // ist damit der nicht-farbliche Traeger der Aussage, nicht nur seine Farbe.
-      expect(trigger().className).toContain('border')
+      /*
+       * NICHT ALLEIN FARBLICH (AK6): der ruhende Ghost-Ausloeser hat GAR KEINEN Rand
+       * (`ui/button.tsx`, Variante `ghost`) - der Rand selbst ist damit der nicht-farbliche
+       * Traeger der Aussage, nicht nur seine Farbe.
+       *
+       * AN DER WORTGRENZE GEPRUEFT, NICHT PER TEILZEICHENKETTE: `toContain('border')` waere durch
+       * `border-accent` vollstaendig subsumiert und koennte nie rot werden - ein auf
+       * `'border-accent bg-overlay text-accent'` verkuerztes Rezept liesse den Ausloeser ohne
+       * gerenderten Rand zurueck (reine Farbaussage, WCAG 1.4.1) und beide Zeilen blieben gruen.
+       * Einen zweiten Waechter gibt es nicht: designSystem.contract.test.ts bindet dieses Literal
+       * bewusst NICHT (ein Symbol-Button ist kein Board-Navigationselement).
+       */
+      expect(trigger().className).toMatch(/(^|\s)border(\s|$)/)
       expect(trigger().className).toContain('border-accent')
     }
   )

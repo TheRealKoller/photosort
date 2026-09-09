@@ -141,9 +141,12 @@ export const PROJECT_NAV_SECONDARY_TARGETS: readonly ProjectNavTarget[] = [
 ]
 
 /**
- * Beide Gruppen in Anzeigereihenfolge - Grundlage von resolveActiveNavTargetId und des Panels
- * unterhalb `lg:`. ABGELEITET STATT AUSGESCHRIEBEN: eine dritte, von Hand gepflegte Liste waere
- * genau die Kopie, die beim naechsten neuen Ziel auseinanderlaeuft.
+ * Beide Gruppen in Anzeigereihenfolge - Grundlage von resolveActiveNavTargetId. ProjectNav
+ * konsumiert diese Liste NICHT: das Panel mappt die beiden Gruppen getrennt, weil der Block der
+ * Hauptziele einen eigenen Container mit Trenner und `lg:hidden` braucht.
+ *
+ * ABGELEITET STATT AUSGESCHRIEBEN: eine dritte, von Hand gepflegte Liste waere genau die Kopie,
+ * die beim naechsten neuen Ziel auseinanderlaeuft.
  */
 export const ALL_PROJECT_NAV_TARGETS: readonly ProjectNavTarget[] = [
   ...PROJECT_NAV_PRIMARY_TARGETS,
