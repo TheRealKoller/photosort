@@ -360,6 +360,39 @@ export interface CloudVisionStatusOut {
   attempted_at: string | null
 }
 
+/** specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072 Entscheidung 1: der Ort DIESES
+ * Fotos, in voller EXIF-Praezision (keine serverseitige Rundung).
+ *
+ * `source` ist ein SICHERHEITSMERKMAL, kein Anzeigedetail: der Trennabstand der Clusterbildung
+ * begrenzt den SCHRITT zwischen zwei aufeinanderfolgenden Fotos, nicht den DURCHMESSER eines
+ * Clusters - eine `"derived"`-Koordinate kann beliebig weit von der tatsaechlichen Aufnahmestelle
+ * entfernt liegen. Sie ist eine Schaetzung, nie eine Messung; kein kuenftiger Verbraucher
+ * (Kartenansicht, Export) darf `derived` wie `exif` behandeln. */
+export interface PhotoLocation {
+  lat: number
+  lon: number
+  source: 'exif' | 'derived'
+}
+
+/** Der bereits AUFGELOESTE Ort des CLUSTERS - auf jedem Foto desselben Clusters identisch, `null`
+ * ohne jede Ortsinformation (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072).
+ *
+ * Der Server liefert den fertigen ZUSTAND, nicht die Rohdaten fuer eine Rangfolge. Das Frontend
+ * bildet die Rangfolge (Sehenswuerdigkeit -> Koordinate -> mehrere Orte) NICHT nach, es verzweigt
+ * ueber `kind` und formatiert - denn der Cluster reicht ueber die geladenen Fotos hinaus
+ * (Top-N-Auswahl, ADR 0071), und eine Aggregation hier waere dauerhaft eine Aussage ueber die
+ * Top-N. `kind: 'multiple'` traegt strukturell keine Koordinate.
+ *
+ * `landmark_name` ist freier, extern erzeugter LLM-Text: ausschliesslich als regulaerer
+ * React-Textknoten rendern - nie `dangerouslySetInnerHTML`, nie als HTML-String-Prop, nie in
+ * `href`/`src`/`style`, nie als React-`key` (dieselbe Auflage wie bei `FineLabelOut.raw_label`). */
+export interface ClusterPlace {
+  kind: 'landmark' | 'coordinate' | 'multiple'
+  landmark_name: string | null
+  lat: number | null
+  lon: number | null
+}
+
 export interface PhotoOut {
   id: number
   relative_path: string
@@ -394,6 +427,12 @@ export interface PhotoOut {
   // specs/features/0058-cloud-vision-status-transparenz.md: immer genau 2 Eintraege, feste
   // Reihenfolge [landmark, remote_category].
   cloud_vision_status: CloudVisionStatusOut[]
+  /** specs/features/0051-gps-landmark-cluster-bildung.md: beide Felder liefert die API IMMER (auf
+   * allen Lesepfaden, `null` ohne Ortsinformation). Hier trotzdem OPTIONAL deklariert, damit die
+   * bestehenden Fixture-Literale der Testsuite unveraendert gueltig bleiben - `undefined` und
+   * `null` bedeuten an jeder Lesestelle dasselbe: kein Ort. */
+  location?: PhotoLocation | null
+  cluster_place?: ClusterPlace | null
 }
 
 export interface PhotoListOut {
