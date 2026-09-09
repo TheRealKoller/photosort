@@ -172,9 +172,20 @@ Operationskatalog `github-access` führt aus demselben Grund keine Operation daf
 Automatisierung sucht, sucht etwas, das es nicht gibt. Der Abschluss einer Ansichts-Story hängt an
 diesem Handgriff — er gehört in die Übergabe an Daniel, nicht in eine Erledigt-Meldung.
 
-**Ablageort:** `design/penpot/ansichten/` — neben der Nutzlast, auf die sich die Bilder beziehen.
-Der Pfad ist heute von `.gitignore` **nicht** gedeckt (geprüft: kein Treffer); der Eintrag entsteht
-mit dieser Story. Er wird ausdrücklich nicht auf ein bestehendes ignoriertes Verzeichnis
+**⚠ Am ersten echten Lauf korrigiert: `export_shape` legt keine Datei an.** Das Werkzeug liefert
+das Bild in die laufende Sitzung — dort ist der Entwurf **vorführbar**, und genau das verlangt
+Akzeptanzkriterium 9. Es schreibt aber nichts auf die Platte, und die Plugin-API bietet dafür keinen
+Weg: Ein Umweg über die Bilddaten als Zeichenkette scheidet aus, weil vierzehn Bretter den
+Sitzungskontext sprengen, und Netzwerkzugriff ist der Nutzlast ausdrücklich verboten. **Die Datei,
+die am Pull Request hängt, entsteht deshalb in Penpots eigenem Export** — derselbe Handgriff Daniels,
+der ohnehin nötig ist, nur einen Schritt früher. Die ursprüngliche Fassung dieses Abschnitts
+behauptete eine Ablage im Arbeitsbaum durch die Session; das war eine Annahme und ist falsch.
+
+**Ablageort für den Fall, dass Bilder doch lokal liegen** (Penpot-Export in den Arbeitsbaum):
+`design/penpot/ansichten/` — neben der Nutzlast, auf die sich die Bilder beziehen. Der Pfad ist heute
+von `.gitignore` **nicht** gedeckt (geprüft: kein Treffer); der Eintrag entsteht mit dieser Story und
+bleibt auch dann richtig, wenn die Session ihn nie selbst befüllt: Er ist die Zusage, dass ein dort
+abgelegtes Bild **nicht** versehentlich eingecheckt wird. Er wird ausdrücklich nicht auf ein bestehendes ignoriertes Verzeichnis
 umgebogen: `e2e/artifacts/` gehört der browsergestützten Oberflächenprüfung, und seine Begründung
 in `.gitignore` benennt genau diese Herkunft. Zwei Werkzeuge in einem Ausgabeverzeichnis wären ab
 dem ersten Aufräumen ein Rätsel.

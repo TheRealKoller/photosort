@@ -9,7 +9,7 @@
       "breiten": ["mobile", "desktop"],
       "zustaende": ["gefuellt", "leer", "ladend", "fehler"],
       "variantenachse": "zustand",
-      "bausteine": ["button", "badge", "alert", "skeleton"],
+      "bausteine": ["button", "alert", "skeleton"],
       "luecken": [
         {
           "schluessel": "bewegung",

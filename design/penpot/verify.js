@@ -57,6 +57,7 @@ const ERWARTETE_KATEGORIEN = 13
 const ERWARTETE_FARBEN = 64
 const ERWARTETE_ANSICHTEN = 4
 const ERWARTETE_ANSICHTSBRETTER = 14
+const ERWARTETE_ANSICHTSBEHAELTER = 2
 
 /* ⚠ NEUE KARDINALITAETEN GEHOEREN UNTER DIE BESTEHENDEN. Die Freigabeliste der blanken Zahlen in
    `frontend/penpot/payload.test.ts` ist an Datei UND Zeilennummer gebunden; jede oberhalb
@@ -116,9 +117,7 @@ function symbolListe() {
 /** Die Varianten-Behaelter der Datei. Sie sind Boards und stehen nicht in
  * `penpot.library.local.components` - deshalb ueber die Formen der Datei gesucht. */
 function variantenBehaelter() {
-  return penpotUtils.findShapes(
-    (form) => Boolean(form.isVariantContainer) && Boolean(form.isVariantContainer())
-  )
+  return penpotUtils.findShapes((form) => istVariantenBehaelter(form))
 }
 
 /**
@@ -196,8 +195,13 @@ function sindBibliothekskomponenten(komponenten) {
   return true
 }
 
+/* Nur Behaelter mit `schluessel` sind Bausteine. Seit die Ansichten Varianten fuehren, findet
+   `variantenBehaelter()` auch die Behaelter der Uebersicht - ohne diesen Filter stuenden sie mit
+   `schluessel: null` in der Bausteinliste, gegen die der Zeichenkettenvergleich laeuft (gemessen
+   am ersten echten Lauf: 13 statt 11 Eintraege). */
 function bausteinListe() {
   return variantenBehaelter()
+    .filter((behaelter) => Boolean(behaelter.getPluginData('schluessel')))
     .map((behaelter) => {
       const komponenten = behaelter.variants.variantComponents()
       return {
@@ -211,11 +215,32 @@ function bausteinListe() {
     .sort((a, b) => (a.name < b.name ? -1 : 1))
 }
 
-/** Alle Bretter der Datei, die die Plugin-Daten `ansicht` tragen - einschliesslich der Bretter
+/** Traegt die Form die Plugin-Daten einer Ansicht? Gilt fuer BEIDE Sorten - Zustandsbrett und
+ * Varianten-Behaelter; die Trennung machen die beiden Funktionen darunter. */
+function istAnsichtsform(form) {
+  return Boolean(form.getPluginData(ANSICHT_SCHLUESSEL))
+}
+
+function istVariantenBehaelter(form) {
+  return Boolean(form.isVariantContainer) && Boolean(form.isVariantContainer())
+}
+
+/** Die Ansichts-BRETTER: eine je Ansicht und Breite und Zustand, einschliesslich der Bretter
  * INNERHALB eines Varianten-Behaelters. Ohne den Unterbaum faende die Suche bei der Uebersicht
- * einen Behaelter statt vier Zustandsbretter. */
+ * einen Behaelter statt vier Zustandsbretter.
+ *
+ * DER BEHAELTER SELBST ZAEHLT HIER NICHT MIT. Er traegt `ansicht`/`breite` ebenfalls - er muss es,
+ * sonst waere die Variantenachse nirgends zurueckzulesen und Akzeptanzkriterium 8 haette keinen
+ * mechanischen Beleg. Ohne diesen Ausschluss zaehlte der erste echte Lauf 16 statt 14. */
 function ansichtsBretter() {
-  return penpotUtils.findShapes((form) => Boolean(form.getPluginData(ANSICHT_SCHLUESSEL)))
+  return penpotUtils.findShapes((form) => istAnsichtsform(form) && !istVariantenBehaelter(form))
+}
+
+/** Die Ansichts-BEHAELTER: je Ansicht und Breite einer, sofern die Ansicht mehr als einen Zustand
+ * fuehrt. Sie tragen die Variantenachse - das ist ihre ganze Aussage, und sie ist der Beleg, dass
+ * Zustaende UMSCHALTBAR hinterlegt sind statt nebeneinandergestellt. */
+function ansichtsBehaelter() {
+  return penpotUtils.findShapes((form) => istAnsichtsform(form) && istVariantenBehaelter(form))
 }
 
 /** Ist die Form eine Instanz einer BIBLIOTHEKS-Komponente? Gemessen: eine Kopie liefert ueber
@@ -233,6 +258,13 @@ function istInstanz(form) {
  * DIE ZAHL DER NICHT-INSTANZEN IST EIN HINWEIS, KEINE SCHWELLE: Texte, Rahmen und Trennlinien sind
  * legitim keine Instanzen. Sie ist der einzige mechanische Anhalt fuer "nachgezeichnet statt
  * zusammengesetzt" und wird berichtet, nicht gefahren - die Beurteilung trifft ein Mensch.
+ *
+ * ⚠ UND SIE TRAEGT DIESE AUSSAGE NUR AUSSERHALB EINER KOMPONENTE. Sobald ein Brett in eine
+ * Variantenkomponente ueberfuehrt ist, ist JEDER Nachfahre eine Komponenten-Kopie und
+ * `isComponentInstance()` ueberall wahr - die Zahl faellt dann auf 0, ohne dass sich am Aufbau
+ * etwas geaendert haette. Gemessen am ersten echten Lauf: die acht Uebersichtsbretter melden 0,
+ * die sechs uebrigen Ansichten 17 bis 25 bei gleichem Bauprinzip. Eine 0 an einem Brett innerhalb
+ * eines Behaelters ist deshalb KEIN Beleg. Eine Ersatzmetrik gibt es bewusst nicht.
  */
 function brettBefund(brett) {
   const formen = alleFormen(brett, []).filter((form) => form.id !== brett.id)
@@ -256,12 +288,20 @@ function brettBefund(brett) {
   return {
     ansicht: brett.getPluginData(ANSICHT_SCHLUESSEL),
     breite: brett.getPluginData(BREITE_SCHLUESSEL),
-    variantProps: varianteneigenschaften(
-      brett.isVariantContainer && brett.isVariantContainer() ? brett.variants.variantComponents() : []
-    ),
     instanzen: instanzen,
     keineInstanz: freieFormen,
     bindungen: bindungen.sort(),
+  }
+}
+
+/** Der Befund eines Ansichts-BEHAELTERS: allein seine Variantenachse und deren Auspraegungen.
+ * Keine Zaehlwerte - die stehen an den Brettern darin, und sie hier zu wiederholen hiesse, sie
+ * doppelt zu fuehren. */
+function behaelterBefund(behaelter) {
+  return {
+    ansicht: behaelter.getPluginData(ANSICHT_SCHLUESSEL),
+    breite: behaelter.getPluginData(BREITE_SCHLUESSEL),
+    variantProps: varianteneigenschaften(behaelter.variants.variantComponents()),
   }
 }
 
@@ -284,6 +324,9 @@ function main() {
     ? chip.variantProps.reduce((summe, eigenschaft) => summe + eigenschaft.auspraegungen, 0)
     : 0
   const ansichten = ansichtsListe()
+  const behaelter = ansichtsBehaelter()
+    .map((form) => behaelterBefund(form))
+    .sort((a, b) => (a.ansicht + '/' + a.breite < b.ansicht + '/' + b.breite ? -1 : 1))
   const ansichtsSchluessel = []
   for (const brett of ansichten) {
     if (brett.ansicht && ansichtsSchluessel.indexOf(brett.ansicht) === -1) {
@@ -297,6 +340,7 @@ function main() {
     symbole: symbole,
     bausteine: bausteine,
     ansichten: ansichten,
+    ansichtsbehaelter: behaelter,
     kardinalitaeten: {
       farben: farben.length,
       farbenErwartet: ERWARTETE_FARBEN,
@@ -310,6 +354,8 @@ function main() {
       ansichtenErwartet: ERWARTETE_ANSICHTEN,
       ansichtsbretter: ansichten.length,
       ansichtsbretterErwartet: ERWARTETE_ANSICHTSBRETTER,
+      ansichtsbehaelter: behaelter.length,
+      ansichtsbehaelterErwartet: ERWARTETE_ANSICHTSBEHAELTER,
     },
   }
 }

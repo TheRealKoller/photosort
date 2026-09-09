@@ -266,9 +266,14 @@ Die Zahl „zehn" steht an acht Stellen; sie sind in ADR 0070 Abschnitt 4 abschl
 ### Bild-Export (AK 9)
 
 Je Ansichtsbrett ein PNG, erzeugt über `export_shape` auf die **Form** (nie ein Fensterabzug — ein
-Bildschirmfoto trüge die Adresszeile), abgelegt unter `design/penpot/ansichten/` und dort **außerhalb
-der Versionskontrolle**: Der Pfad ist heute von `.gitignore` nicht gedeckt (geprüft), der Eintrag
-entsteht mit dieser Story. Nicht auf `e2e/artifacts/` umgebogen — das Verzeichnis gehört der
+Bildschirmfoto trüge die Adresszeile).
+
+**Am ersten echten Lauf korrigiert:** `export_shape` liefert das Bild in die laufende Sitzung und legt
+**keine Datei** an; die Plugin-API bietet dafür keinen Weg. Vorführbar ist der Entwurf damit — das ist
+AK 9 —, aber die Datei für den Pull Request entsteht in Penpots eigenem Export, als Handgriff Daniels.
+Der Ablageort `design/penpot/ansichten/` bleibt gültig und **außerhalb der Versionskontrolle**: Der
+Pfad ist heute von `.gitignore` nicht gedeckt (geprüft), der Eintrag entsteht mit dieser Story und ist
+die Zusage, dass ein dort abgelegtes Bild nicht versehentlich eingecheckt wird. Nicht auf `e2e/artifacts/` umgebogen — das Verzeichnis gehört der
 browsergestützten Oberflächenprüfung, und seine Begründung in `.gitignore` benennt genau diese
 Herkunft.
 

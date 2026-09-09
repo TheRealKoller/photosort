@@ -1022,7 +1022,22 @@ describe('Die Kardinalitaeten von verify.js', () => {
     const freigegeben = FREIGABEN.filter((freigabe) => freigabe.datei === 'verify.js').map(
       (freigabe) => /ERWARTETE_[A-Z_]+/.exec(freigabe.ausschnitt)?.[0] ?? freigabe.ausschnitt
     )
-    expect([...freigegeben].sort()).toEqual(Object.keys(ERWARTET).sort())
+    /*
+     * VERGLICHEN WIRD GEGEN DIE KONSTANTEN, DIE UEBERHAUPT EINE FREIGABE BRAUCHEN. Eine
+     * Kardinalitaet mit einem Wert aus `UNVERDAECHTIGE_ZAHLEN` erzeugt keinen Fund der
+     * blanke-Zahl-Regel; eine Freigabe dafuer waere zwangslaeufig VERWAIST, und der Test darueber
+     * wuerde rot. Ohne diese Unterscheidung widersprechen sich die beiden Zusicherungen fuer jeden
+     * Wert aus {0, 1, 2, -1} - aufgefallen an `ERWARTETE_ANSICHTSBEHAELTER = 2`.
+     *
+     * Der Zweck der Bidirektionalitaet bleibt vollstaendig erhalten: Genau die Konstanten, die
+     * ohne Freigabe still durchrutschen KOENNTEN, muessen eine haben. Dass auch die uebrigen nicht
+     * blosse Dekoration sind, sichert der Test darunter ("gibt jede Kardinalitaet auch zurueck") -
+     * und der gilt ausnahmslos fuer alle.
+     */
+    const brauchtFreigabe = Object.keys(ERWARTET).filter(
+      (name) => !UNVERDAECHTIGE_ZAHLEN.has(String(ERWARTET[name]))
+    )
+    expect([...freigegeben].sort()).toEqual(brauchtFreigabe.sort())
   })
 
   /* Eine Kardinalitaet, die deklariert, aber nie zurueckgegeben wird, ist Dekoration - und fiele
