@@ -1,6 +1,6 @@
 # 0300 - Nebenkategorien: ein Foto gehört mehreren Kategorien an
 
-**Status:** Accepted
+**Status:** Implemented ([PR #373](https://github.com/TheRealKoller/photosort/pull/373))
 **Erstellt:** 2026-09-09
 **Bezug:** [GitHub-Issue #300](https://github.com/TheRealKoller/photosort/issues/300) (Refinement vor dieser Spec-Erstellung abgeschlossen, Story-Inhalt unverändert übernommen und auf Testbarkeit geschärft). Setzt Spec [`0299`](./0299-kategorie-konfidenz-anzeigen.md) voraus (umgesetzt, [PR #362](https://github.com/TheRealKoller/photosort/pull/362)).
 
