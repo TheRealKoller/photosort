@@ -9,6 +9,7 @@ import pytest
 
 from photosort.cloud_vision import ANTHROPIC_VISION_MODEL, MISTRAL_VISION_MODEL, TokenUsage
 from photosort.landmark import (
+    MAX_LANDMARK_NAME_LENGTH,
     AnthropicLandmarkClient,
     LandmarkApiError,
     LandmarkClientLike,
@@ -630,3 +631,71 @@ class TestConfiguredModelReachesTheRequest:
         asyncio.run(client.detect(IMAGE_BYTES, "image/jpeg"))
 
         assert captured["model"] == "ein-anderes-modell"
+
+
+# ---------------------------------------------------------------------------------------------
+# specs/features/0051-gps-landmark-cluster-bildung.md, Security-Abschnitt 1 / Sicherheitskonzept
+# "Standortdaten": `PhotoLandmarkDetection.name` verlaesst mit dieser Spec erstmals die API und
+# wird in einer Cluster-Ueberschrift gerendert. Unter Spec 0047 ("kein UI-Verweis in v1") ging er
+# als ROHWERT aus der Modellantwort in die Datenbank - `_landmark_detection_from_json` prueft nur
+# `isinstance(name, str)`. Ab hier: Sanitisierung AN DER QUELLE mit derselben Funktion wie der
+# Feinlabel-Pfad, plus eine Laengengrenze mit VERWERFEN statt Abschneiden.
+
+
+class TestLandmarkNameSanitisation:
+    def test_control_and_format_characters_are_stripped_at_the_source(self) -> None:
+        """Escapetes Rendering im Frontend schuetzt gegen XSS, aber weder gegen optische
+        Verfaelschung durch Bidi-/Zero-Width-Zeichen noch gegen mehrzeilige Logeintraege."""
+        detection = _landmark_detection_from_json(
+            {"name": "Eiffel‮turm​", "confidence": 0.9}
+        )
+
+        assert detection.name == "Eiffelturm"
+
+    def test_whitespace_runs_are_collapsed_at_the_source(self) -> None:
+        detection = _landmark_detection_from_json(
+            {"name": "  Kathedrale\n\tvon   Santiago  ", "confidence": 0.9}
+        )
+
+        assert detection.name == "Kathedrale von Santiago"
+
+    def test_a_name_that_is_empty_after_sanitisation_becomes_none(self) -> None:
+        detection = _landmark_detection_from_json({"name": "​‮", "confidence": 0.9})
+
+        assert detection.name is None
+
+    def test_a_name_beyond_the_length_limit_is_discarded_not_truncated(self) -> None:
+        """VERWERFEN, nie Abschneiden (Muss-Kriterium): `refine_clusters_by_landmark` vergleicht
+        exakt - ein abgeschnittener Name fuehrte zwei verschiedene Sehenswuerdigkeiten in EINEM
+        Cluster zusammen (dieselbe Begruendung wie die Slug-Kollision bei den Feinlabels)."""
+        too_long = "A" * (MAX_LANDMARK_NAME_LENGTH + 1)
+
+        detection = _landmark_detection_from_json({"name": too_long, "confidence": 0.9})
+
+        assert detection.name is None
+
+    def test_a_name_exactly_at_the_length_limit_is_kept(self) -> None:
+        exactly = "A" * MAX_LANDMARK_NAME_LENGTH
+
+        detection = _landmark_detection_from_json({"name": exactly, "confidence": 0.9})
+
+        assert detection.name == exactly
+
+    def test_the_limit_is_generous_enough_for_a_real_landmark_name(self) -> None:
+        """80 statt der 60 des Feinlabel-Pfads, weil echte Sehenswuerdigkeitsnamen laenger sind."""
+        detection = _landmark_detection_from_json(
+            {"name": "Kathedrale von Santiago de Compostela", "confidence": 0.9}
+        )
+
+        assert detection.name == "Kathedrale von Santiago de Compostela"
+
+    def test_an_ordinary_name_passes_through_unchanged(self) -> None:
+        detection = _landmark_detection_from_json({"name": "Zugspitze", "confidence": 0.42})
+
+        assert detection.name == "Zugspitze"
+        assert detection.confidence == 0.42
+
+    def test_an_explicit_null_name_stays_none(self) -> None:
+        detection = _landmark_detection_from_json({"name": None, "confidence": 0.0})
+
+        assert detection.name is None

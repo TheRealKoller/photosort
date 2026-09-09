@@ -174,7 +174,7 @@ class FineLabelOut(BaseModel):
 
     `confidence` ist ersatzlos entfallen (ADR 0049 Entwurfsentscheidung 7). `display_name` und
     `raw_label` sind freier, extern erzeugter LLM-Text - sie sind beim Uebernehmen der
-    Modellantwort zeichensaniert worden (remote_classification.py::_sanitize_label_text) und
+    Modellantwort zeichensaniert worden (cloud_vision.py::_sanitize_label_text) und
     duerfen im Frontend ausschliesslich als regulaerer Textknoten gerendert werden."""
 
     canonical_key: str

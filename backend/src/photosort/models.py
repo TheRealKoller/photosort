@@ -669,7 +669,7 @@ class PhotoFineLabel(Base):
     ausdruecklich auch 0 zulaessig: der Prompt erzwingt kein Feinlabel mehr, die Pflichtaussage je
     Foto ist die Kategorie (PhotoCategoryClassification), nicht das Label.
 
-    `raw_label` ist der - bereits zeichensanierte (remote_classification.py::_sanitize_label_text)
+    `raw_label` ist der - bereits zeichensanierte (cloud_vision.py::_sanitize_label_text)
     - vom Vision-LLM gelieferte Text (Audit-/Debug-Spur, welche konkrete Formulierung auf welchen
     canonical_key gemappt wurde). `confidence` ist mit Spec 0289 ERSATZLOS entfallen (ADR 0049
     Entwurfsentscheidung 7: die Zahl diente ausschliesslich der abgeloesten Score-Auswahl, eine

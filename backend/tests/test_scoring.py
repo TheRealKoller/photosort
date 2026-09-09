@@ -19,6 +19,7 @@ from photosort.scoring import (
     compute_exposure,
     compute_sharpness,
     hamming_distance,
+    refine_clusters_by_landmark,
 )
 
 
@@ -484,3 +485,151 @@ class TestAssignClustersByLocation:
         result = assign_clusters(candidates)
 
         assert result[1] == result[2]
+
+
+# ---------------------------------------------------------------------------------------------
+# specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0029 Punkt 1 (Phase 2) + ADR 0072
+# Entscheidung 3: reine, DB-FREIE Verfeinerungsfunktion. Die Landmark-Namen kommen als einfaches
+# `dict[int, str | None]` herein - die Funktion kennt ihre Datenherkunft nicht, obwohl es sie
+# inzwischen gibt. Das haelt die Schluesselvergabe ohne Cloud-Fixture pruefbar.
+
+
+class TestRefineClustersByLandmark:
+    def test_two_names_in_one_cluster_produce_index_based_keys(self) -> None:
+        """Die Schluesselform ist TESTGEGENSTAND, nicht Nebenwirkung: `cluster-3-1`/`cluster-3-2`,
+        1-basiert, kein Name im Schluessel. Geprueft gegen ein festes Erwartungs-`dict`, nicht
+        gegen ein Regex-"sieht passend aus"."""
+        base = {1: "cluster-3", 2: "cluster-3"}
+        names = {1: "Alexanderplatz", 2: "Zugspitze"}
+
+        assert refine_clusters_by_landmark(base, names) == {
+            1: "cluster-3-1",
+            2: "cluster-3-2",
+        }
+
+    def test_the_index_follows_alphabetical_order_not_the_order_encountered(self) -> None:
+        """Ein Test, der nur "unterschiedliche Namen -> unterschiedliche Schluessel" prueft, ist
+        gegen die naheliegende Implementierung (Index in Antreffreihenfolge) blind: hier steht
+        "Zugspitze" beim fruehesten Foto, bekommt aber die `-2`."""
+        base = {1: "cluster-3", 2: "cluster-3"}
+        names = {1: "Zugspitze", 2: "Alexanderplatz"}
+
+        assert refine_clusters_by_landmark(base, names) == {
+            1: "cluster-3-2",
+            2: "cluster-3-1",
+        }
+
+    def test_the_result_is_independent_of_the_input_order(self) -> None:
+        """Ohne diesen Test haengt die Schluesselvergabe an der Zeilenreihenfolge der Datenbank,
+        und dieselbe Partition heisst zwischen zwei Laeufen anders."""
+        forward = refine_clusters_by_landmark(
+            {1: "cluster-0", 2: "cluster-0", 3: "cluster-0"},
+            {1: "Brandenburger Tor", 2: "Alexanderplatz", 3: "Zugspitze"},
+        )
+        backward = refine_clusters_by_landmark(
+            {3: "cluster-0", 2: "cluster-0", 1: "cluster-0"},
+            {3: "Zugspitze", 2: "Alexanderplatz", 1: "Brandenburger Tor"},
+        )
+
+        assert forward == backward
+
+    def test_sorting_uses_python_codepoint_order_not_a_locale_collation(self) -> None:
+        """Sortierkonvention festgeschrieben: Python-Standardsortierung (Codepunkt-Reihenfolge).
+        Eine spaeter eingefuehrte `locale`-Sortierung wuerde die Schluessel stillschweigend
+        umnummerieren - "Zugspitze" steht vor "Oelberg", weil `Z` (U+005A) vor `Ö` (U+00D6)
+        liegt."""
+        base = {1: "cluster-0", 2: "cluster-0"}
+        names = {1: "Ölberg", 2: "Zugspitze"}
+
+        assert refine_clusters_by_landmark(base, names) == {
+            1: "cluster-0-2",
+            2: "cluster-0-1",
+        }
+
+    def test_unnamed_photos_keep_the_base_key(self) -> None:
+        """Ein Cluster mit zwei Namen und zwei namenlosen Fotos ergibt GENAU DREI Schluessel -
+        geprueft als exakte Schluesselmenge, nicht als "mindestens zwei"."""
+        base = dict.fromkeys((1, 2, 3, 4), "cluster-3")
+        names = {1: "Alexanderplatz", 2: "Zugspitze", 3: None, 4: None}
+
+        result = refine_clusters_by_landmark(base, names)
+
+        assert result == {
+            1: "cluster-3-1",
+            2: "cluster-3-2",
+            3: "cluster-3",
+            4: "cluster-3",
+        }
+        assert set(result.values()) == {"cluster-3", "cluster-3-1", "cluster-3-2"}
+
+    def test_exactly_one_name_in_a_cluster_produces_no_refinement(self) -> None:
+        """Sonst entstuende fuer jeden benannten Cluster ein Schluesselwechsel ohne jeden Nutzen -
+        und `cluster-3` und `cluster-3-1` waeren beide belegt."""
+        base = {1: "cluster-3", 2: "cluster-3"}
+        names = {1: "Zugspitze", 2: None}
+
+        assert refine_clusters_by_landmark(base, names) == {
+            1: "cluster-3",
+            2: "cluster-3",
+        }
+
+    def test_the_same_name_twice_is_not_two_names(self) -> None:
+        base = {1: "cluster-3", 2: "cluster-3"}
+        names = {1: "Zugspitze", 2: "Zugspitze"}
+
+        assert refine_clusters_by_landmark(base, names) == {
+            1: "cluster-3",
+            2: "cluster-3",
+        }
+
+    def test_without_any_name_the_result_is_dict_identical_to_the_input(self) -> None:
+        """BACKWARD COMPATIBILITY: reiner Passthrough, exakter Gleichheitsvergleich."""
+        base = {1: "cluster-0", 2: "cluster-0", 3: "cluster-1"}
+
+        assert refine_clusters_by_landmark(base, dict.fromkeys((1, 2, 3), None)) == base
+
+    def test_an_empty_name_counts_as_no_name(self) -> None:
+        """Ein leerer bzw. nur aus Leerraum bestehender Name ist keine Sehenswuerdigkeit - er darf
+        weder einen Split ausloesen noch einen eigenen Schluessel bekommen."""
+        base = {1: "cluster-0", 2: "cluster-0", 3: "cluster-0"}
+        names = {1: "Zugspitze", 2: "", 3: "   "}
+
+        assert refine_clusters_by_landmark(base, names) == {
+            1: "cluster-0",
+            2: "cluster-0",
+            3: "cluster-0",
+        }
+
+    def test_the_comparison_is_exact_without_any_fuzzy_matching(self) -> None:
+        """Bewusste v1-Vereinfachung (ADR 0029 Punkt 5): zwei Schreibweisen-Varianten desselben
+        Orts SPLITTEN. Eigener Testfall, damit eine spaetere Verhaltensaenderung sichtbar wird."""
+        base = {1: "cluster-0", 2: "cluster-0"}
+        names = {1: "Eiffelturm", 2: "Eiffel-Turm"}
+
+        result = refine_clusters_by_landmark(base, names)
+
+        assert result[1] != result[2]
+
+    def test_each_base_cluster_is_refined_on_its_own(self) -> None:
+        """Die Indizes laufen JE BASIS-CLUSTER von 1 an - ein laufweiter Zaehler machte die
+        Schluessel von der Reihenfolge fremder Cluster abhaengig."""
+        base = {1: "cluster-0", 2: "cluster-0", 3: "cluster-1", 4: "cluster-1"}
+        names = {1: "Alexanderplatz", 2: "Zugspitze", 3: "Brandenburger Tor", 4: "Yachthafen"}
+
+        assert refine_clusters_by_landmark(base, names) == {
+            1: "cluster-0-1",
+            2: "cluster-0-2",
+            3: "cluster-1-1",
+            4: "cluster-1-2",
+        }
+
+    def test_a_name_for_a_photo_outside_the_base_mapping_has_no_effect(self) -> None:
+        """Eine Landmark-Zeile zu einem Foto, das im Bezugslauf gar keine Kandidatenzeile hat
+        (Ausschuss-Gate), erzeugt keinen Schluessel und keinen Split."""
+        base = {1: "cluster-0", 2: "cluster-0"}
+        names = {1: "Zugspitze", 2: None, 99: "Alexanderplatz"}
+
+        assert refine_clusters_by_landmark(base, names) == {
+            1: "cluster-0",
+            2: "cluster-0",
+        }

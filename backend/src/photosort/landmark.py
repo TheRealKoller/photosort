@@ -12,6 +12,7 @@ from photosort.cloud_vision import (
     MISTRAL_CHAT_COMPLETIONS_URL,
     VISION_REQUEST_TIMEOUT_SECONDS,
     TokenUsage,
+    _sanitize_label_text,
     anthropic_response_to_json,
     anthropic_usage_from_response,
     mistral_response_to_json,
@@ -44,6 +45,18 @@ LANDMARK_REQUEST_TIMEOUT_SECONDS = VISION_REQUEST_TIMEOUT_SECONDS
 # Kurze, reine Klassifikationsantwort - kein Grund fuer ein hohes max_tokens (nur ein kleines
 # JSON-Objekt wird erwartet).
 _MAX_RESPONSE_TOKENS = 256
+
+# specs/features/0051-gps-landmark-cluster-bildung.md, Security-Abschnitt 1 (Muss-Kriterium c):
+# Obergrenze eines verwendbaren Sehenswuerdigkeit-Namens. Wie `MAX_FINE_LABEL_LENGTH` eine
+# DEGENERATIONSGRENZE, keine Sanitisierungsmassnahme - und wie dort wird VERWORFEN statt
+# abgeschnitten: `scoring.py::refine_clusters_by_landmark` vergleicht exakt, ein abgeschnittener
+# Name fuehrte zwei verschiedene Sehenswuerdigkeiten in einem Cluster zusammen (dieselbe
+# Begruendung wie die Slug-Kollision bei den Feinlabels). Der Cluster faellt dann auf die
+# Koordinatenstufe zurueck.
+#
+# 80 statt der 60 des Feinlabel-Pfads, weil echte Sehenswuerdigkeitsnamen laenger sind
+# ("Kathedrale von Santiago de Compostela").
+MAX_LANDMARK_NAME_LENGTH = 80
 
 _PROMPT = (
     "Analysiere dieses Foto. Ist eine bekannte oder auch weniger bekannte Sehenswuerdigkeit/ein "
@@ -86,6 +99,27 @@ class LandmarkClientLike(Protocol):
     async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection: ...
 
 
+def sanitize_landmark_name(raw: object) -> str | None:
+    """Der einzige Weg, auf dem ein Sehenswuerdigkeit-Name in PhotoSort verwendbar wird
+    (specs/features/0051-gps-landmark-cluster-bildung.md, Security-Abschnitt 1).
+
+    Zeichensanitisierung mit DERSELBEN Funktion wie der Feinlabel-Pfad
+    (`cloud_vision.py::_sanitize_label_text`, nicht mit einer zweiten Fassung davon), danach die
+    Laengengrenze. `None` heisst "kein verwendbarer Name" - Nicht-String, leer nach der
+    Sanitisierung, oder laenger als `MAX_LANDMARK_NAME_LENGTH`.
+
+    Die Funktion wird an ZWEI Stellen angewandt: an der Quelle in `_landmark_detection_from_json`
+    unten UND im Lesepfad, der `PhotoOut.cluster_place.landmark_name` befuellt. Die Begruendung
+    fuer die doppelte Anwendung steht an der Lesestelle in `api/photos.py` - sie deckt den
+    unsanierten Altbestand aus Spec 0047, fuer den es keinen kostenlosen Migrationsweg gibt."""
+    if not isinstance(raw, str):
+        return None
+    sanitized = _sanitize_label_text(raw)
+    if not sanitized or len(sanitized) > MAX_LANDMARK_NAME_LENGTH:
+        return None
+    return sanitized
+
+
 def _landmark_detection_from_json(
     parsed: Any, usage: TokenUsage | None = None
 ) -> LandmarkDetection:
@@ -102,6 +136,13 @@ def _landmark_detection_from_json(
         raise LandmarkApiError("Unerwartete Antwortstruktur der Vision-API-Antwort.") from exc
     if name is not None and not isinstance(name, str):
         raise LandmarkApiError("Unerwartete Antwortstruktur der Vision-API-Antwort.")
+    # specs/features/0051-gps-landmark-cluster-bildung.md, Security-Abschnitt 1 (Muss-Kriterium
+    # a/c): Sanitisierung und Laengengrenze AN DER QUELLE. Unter Spec 0047 ("kein UI-Verweis in
+    # v1") ging der Name als Rohwert in die Datenbank - mit dem Rendern in der Cluster-Ueberschrift
+    # faellt dieser Schutz weg. Ein zu langer Name wird GANZ verworfen, nie abgeschnitten:
+    # `scoring.py::refine_clusters_by_landmark` vergleicht exakt, ein abgeschnittener Name fuehrte
+    # zwei verschiedene Sehenswuerdigkeiten in einem Cluster zusammen.
+    name = sanitize_landmark_name(name)
     # Copilot-Review-Fund (PR #181): das Vision-LLM-JSON ist nicht garantiert auf [0, 1] begrenzt -
     # geklemmt bereits HIER (an der Quelle), nicht erst in criteria.py::compute_landmark_score.
     # worker.py::_upsert_landmark_detection schreibt detection.confidence UNVERAENDERT nach
