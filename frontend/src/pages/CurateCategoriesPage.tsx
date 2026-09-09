@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { PhotoOut, RankingOut } from '../api/types'
+import { decodeUsername } from '../auth/jwt'
+import { getToken } from '../auth/token'
 import { CategoryBadge } from '../components/CategoryBadge'
 import { CurationPhotoTile } from '../components/CurationPhotoTile'
 import { Alert } from '../components/ui/alert'
@@ -18,6 +20,7 @@ import {
   sortCategoryKeys,
 } from '../utils/categoryLabels'
 import { parseTopN } from '../utils/curationTopN'
+import { ownRatingStatus } from '../utils/ownRating'
 import { curatedRankings } from '../utils/rankings'
 import { formatClusterHeading, formatDayHeading } from '../utils/timeOfDay'
 
@@ -130,6 +133,46 @@ export function countPhotosInDay(clustersForDay: {
 }
 
 /**
+ * Kandidatenzahl EINER Kategorie eines Clusters (specs/features/0357-voller-bildvorrat-
+ * kuratierung.md, Akzeptanzkriterium 5): schlicht die `partition_size` - alle Eintraege einer
+ * Partition tragen denselben Wert, weil er lauf-global je (cluster_key, category_key) berechnet
+ * wird und nicht nutzerspezifisch gefiltert ist.
+ *
+ * `0` fuer eine leergelaufene Kategorie (nur noch ueber `knownGroupKeysRef` bekannt, nach einem
+ * Kategorie-Override). Die Ueberschrift bekommt dann GAR KEINE Zahl - "0 Kandidaten" waere eine
+ * Aussage ueber einen Bestand, den die Antwort gar nicht mehr beschreibt (Akzeptanzkriterium 10).
+ */
+export function candidateCountOfCategory(entries: CurationEntry[]): number {
+  return entries[0]?.ranking.partition_size ?? 0
+}
+
+/**
+ * Kandidatenzahl eines Clusters: die SUMME der Kategorie-Zahlen darunter (ADR 0071
+ * Entscheidung 4). Ein Foto, das im selben Cluster in zwei Kategorien steht, zaehlt darin
+ * ZWEIMAL - bewusste Produktentscheidung Daniels: die Zahl beschreibt, was tatsaechlich zu sichten
+ * ist (die Kachel erscheint zweimal und ist zweimal einzeln zu beurteilen), nicht wie viele
+ * verschiedene Fotos es sind.
+ *
+ * Genau deshalb heisst sie "Kandidaten" und nicht "Fotos" - die Tages-Ueberschrift zaehlt seit
+ * Spec 0300 ausdruecklich eindeutige FOTOS (siehe `countPhotosInDay`). Verschiedene Groessen
+ * tragen verschiedene Woerter; das ist die einzige Stelle, an der diese Entscheidung fuer den
+ * Nutzer lesbar bleibt.
+ */
+export function candidateCountOfCluster(photosByCategory: {
+  [categoryKey: string]: CurationEntry[]
+}): number {
+  return Object.values(photosByCategory).reduce(
+    (sum, entries) => sum + candidateCountOfCategory(entries),
+    0
+  )
+}
+
+/** "1 Kandidat" / "N Kandidaten" (Akzeptanzkriterium 9). */
+export function formatCandidateCount(count: number): string {
+  return `${count} ${count === 1 ? 'Kandidat' : 'Kandidaten'}`
+}
+
+/**
  * Toggelt den Klapp-Zustand eines einzelnen Tages (Akzeptanzkriterium 3 der Spec 0043) - liefert
  * ein neues `Set` statt das uebergebene zu mutieren, andere `dayKey`s bleiben unveraendert.
  */
@@ -217,6 +260,12 @@ export function CurateCategoriesPage() {
   // gecacht - es speist Anzeigenamen, Abschnitts-Reihenfolge und die "Alle Kategorien"-Auswahl.
   const categoriesQuery = useCategoriesQuery()
   const categorySet = categoriesQuery.data ?? []
+  // Der EIGENE Bewertungszustand wird ausschliesslich hierueber abgeleitet (`ownRatingStatus` mit
+  // dem `username`-Claim des JWT, wie in Raster- und Detailansicht) - nie ueber `ratings[]`
+  // insgesamt, sonst stellte die Ansicht die Bewertung des jeweils anderen als eigene dar
+  // (specs/features/0357-voller-bildvorrat-kuratierung.md, Security-Muss-Kriterium 5).
+  const token = getToken()
+  const username = token ? decodeUsername(token) : null
 
   const query = useCurationQuery(id, topN)
   const setRatingMutation = useSetRatingMutation(id)
@@ -226,12 +275,11 @@ export function CurateCategoriesPage() {
   // ausloesen, obwohl sich die tatsaechlichen Daten nicht geaendert haben).
   const items = useMemo(() => query.data?.items ?? [], [query.data])
 
-  // In-place Nachruecken statt Reflow (UI/UX-Abschnitt der Spec): die Kachel des gerade
-  // abgelehnten Fotos zeigt einen Skeleton-Platzhalter, bis die per Rating-Invalidierung
-  // ausgeloeste Refetch-Antwort eintrifft (siehe hooks/usePhotos.ts::curationQueryKey) - React
-  // Query tauscht `data` erst aus, sobald die neuen Daten vorliegen (kein Zwischenzustand ohne
-  // Daten), der Rest des Grids bleibt bis dahin unveraendert stehen.
-  const [rejectingPhotoId, setRejectingPhotoId] = useState<number | null>(null)
+  // Die Fotos mit gerade LAUFENDER Verwerfen-Mutation - eine MENGE, nicht eine einzelne Id
+  // (specs/features/0357-voller-bildvorrat-kuratierung.md, Entwurfsentscheidung 11). Die fruehere
+  // seitenweite Einfach-Sperre war sinnvoll, solange die Liste danach umsprang; ohne Nachruecken
+  // springt nichts mehr, und ein zweiter Klick verpuffte still. Jede Kachel verwirft unabhaengig.
+  const [rejectingPhotoIds, setRejectingPhotoIds] = useState<Set<number>>(new Set())
 
   // Klapp-Zustand der Tages-Abschnitte (Spec 0043): leeres Set = alles aufgeklappt (Default,
   // Akzeptanzkriterium 2) - kein localStorage/sessionStorage/Query-Param, keine Persistierung
@@ -247,11 +295,10 @@ export function CurateCategoriesPage() {
     setCollapsedDayKeys((prev) => toggleDayCollapse(prev, dayKey))
   }
 
-  useEffect(() => {
-    if (rejectingPhotoId !== null && !items.some((photo) => photo.id === rejectingPhotoId)) {
-      setRejectingPhotoId(null)
-    }
-  }, [items, rejectingPhotoId])
+  // Der frueher hier stehende `useEffect`, der den Busy-Zustand zuruecksetzte, sobald das Foto aus
+  // `items` verschwand, ist mit dem Nachruecken entfallen: ohne Backfill verschwindet das Foto
+  // nie, die Schaltflaeche bliebe dauerhaft busy. Ersatz ist der `onSettled`-Callback der
+  // Mutation in `handleReject` (specs/features/0357-voller-bildvorrat-kuratierung.md, AK 17).
 
   // Erschoepfter Pool (Akzeptanzkriterium 7 der Spec): eine Partition, die inzwischen komplett
   // leer ist (letztes Foto gerade abgelehnt), wuerde sonst spurlos aus der Gruppierung
@@ -299,13 +346,19 @@ export function CurateCategoriesPage() {
   }
 
   function handleReject(photo: PhotoOut): void {
-    if (rejectingPhotoId !== null) {
-      return
-    }
-    setRejectingPhotoId(photo.id)
+    setRejectingPhotoIds((prev) => new Set(prev).add(photo.id))
     setRatingMutation.mutate(
       { photoId: photo.id, status: 'rejected' },
-      { onError: () => setRejectingPhotoId(null) }
+      {
+        // `onSettled` statt `onError`: das Foto bleibt ohne Nachruecken in der Liste, es gibt
+        // also kein "verschwindet" mehr, an dem sich das Ende der Mutation ablesen liesse.
+        onSettled: () =>
+          setRejectingPhotoIds((prev) => {
+            const next = new Set(prev)
+            next.delete(photo.id)
+            return next
+          }),
+      }
     )
   }
 
@@ -459,9 +512,28 @@ export function CurateCategoriesPage() {
                     )
                     const clusterIsEmpty = !categoriesHavePhotos(photosByCategory)
                     const heading = clusterMetaRef.current.get(clusterKey)?.heading ?? clusterKey
+                    // Die Zahlen kommen AUSSCHLIESSLICH aus der ungefilterten Gruppierung
+                    // (Akzeptanzkriterium 7): sonst verschwaenden sie genau dort, wo der
+                    // Konfidenzfilter eine Gruppe leer raeumt, obwohl der Bestand unveraendert
+                    // ist - und die Cluster-Summe verloere die weggefilterten Kategorien.
+                    const unfilteredCategories = unfiltered.groups[dayKey]?.[clusterKey] ?? {}
+                    const clusterCandidateCount = candidateCountOfCluster(unfilteredCategories)
                     return (
                       <section key={clusterKey} className="flex flex-col gap-4">
-                        <h3 className="text-base">{heading}</h3>
+                        {/* Die Zahl steht NEBEN der Ueberschrift in einem eigenen Element, nicht
+                            in ihr (Akzeptanzkriterium 4): der von `formatClusterHeading()`
+                            gelieferte Text (Tageszeit + Zeitraum) bleibt unveraendert, und die
+                            fuer einen spaeteren Ausbau vorgesehene Ortsangabe behaelt ihren
+                            Platz. Gleiche Formsprache wie die `(N Fotos)`-Kurzinfo der
+                            Tages-Kopfzeile. */}
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <h3 className="text-base">{heading}</h3>
+                          {clusterCandidateCount > 0 && (
+                            <span className="text-sm text-text">
+                              {`(${formatCandidateCount(clusterCandidateCount)})`}
+                            </span>
+                          )}
+                        </div>
                         {clusterIsEmpty && (
                           <p className="text-sm text-text">
                             {lowConfidenceOnly
@@ -472,14 +544,25 @@ export function CurateCategoriesPage() {
                         {!clusterIsEmpty &&
                           categoryKeys.map((categoryKey) => {
                             const entries = photosByCategory[categoryKey]
+                            const categoryCandidateCount = candidateCountOfCategory(
+                              unfilteredCategories[categoryKey] ?? []
+                            )
                             return (
                               <div key={categoryKey} className="flex flex-col gap-2">
-                                <h4 className="flex items-center gap-2 text-sm font-semibold">
+                                <h4 className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                                   <CategoryBadge
                                     categoryKey={categoryKey}
                                     categories={categorySet}
                                   />
                                   {formatCategoryKey(categoryKey, categorySet)}
+                                  {/* Eine leergelaufene Kategorie bekommt GAR KEINE Zahl
+                                      (Akzeptanzkriterium 10) - "0 Kandidaten" waere eine Aussage
+                                      ueber einen Bestand, den die Antwort nicht mehr beschreibt. */}
+                                  {categoryCandidateCount > 0 && (
+                                    <span className="font-normal text-text">
+                                      {`— ${formatCandidateCount(categoryCandidateCount)}`}
+                                    </span>
+                                  )}
                                 </h4>
                                 {/* Auffangkorb-Kategorie mit erklärend dezentem Signal
                                     (specs/architecture/0004-design-system.md, Spec 0217):
@@ -504,7 +587,8 @@ export function CurateCategoriesPage() {
                                         void categoriesQuery.refetch()
                                       }}
                                       categoryOverrideControls={categoryOverrideControls}
-                                      rejecting={rejectingPhotoId === photo.id}
+                                      ownStatus={ownRatingStatus(photo.ratings, username)}
+                                      rejecting={rejectingPhotoIds.has(photo.id)}
                                       onReject={() => handleReject(photo)}
                                     />
                                   ))}

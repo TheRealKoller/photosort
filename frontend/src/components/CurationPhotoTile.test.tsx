@@ -69,6 +69,7 @@ function renderTile(
         categoriesError={false}
         onRetryCategories={vi.fn()}
         categoryOverrideControls={CONTROLS}
+        ownStatus={null}
         rejecting={false}
         onReject={onReject}
         {...props}
