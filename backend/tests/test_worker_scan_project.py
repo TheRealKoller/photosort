@@ -900,3 +900,229 @@ class TestResumeIdempotency:
         # doppelten Insert-Versuch fuer img001/img002 ohnehin verhindert - diese Assertion
         # dokumentiert die Erwartung zusaetzlich explizit ueber die Zeilenanzahl.
         assert len(all_photos) == 4
+
+
+# ---------------------------------------------------------------------------------------------
+# specs/features/0051-gps-landmark-cluster-bildung.md, Sicherheitskonzept Punkt 4 ("Unbedingtes
+# Zurueckschreiben beim Scan"): `_fetch_and_thumbnail` liefert Zeitpunkt UND Koordinate,
+# `_process_scan_block` schreibt BEIDE Felder fuer jeden verarbeiteten Arbeitsposten - auch
+# zurueck auf `None`.
+
+
+def _jpeg_with_gps(lat_ref: str, lat: tuple[int, int, float], lon_ref: str,
+                   lon: tuple[int, int, float]) -> bytes:
+    import io
+
+    from PIL import Image
+    from PIL.ExifTags import IFD
+    from PIL.TiffImagePlugin import IFDRational
+
+    def dms(degrees: int, minutes: int, seconds: float) -> tuple[object, object, object]:
+        return (
+            IFDRational(degrees, 1),
+            IFDRational(minutes, 1),
+            IFDRational(round(seconds * 100), 100),
+        )
+
+    image = Image.new("RGB", (4, 4), color="red")
+    exif = image.getexif()
+    exif.get_ifd(IFD.Exif)[36867] = "2022:01:02 03:04:05"
+    exif.get_ifd(IFD.GPSInfo).update({1: lat_ref, 2: dms(*lat), 3: lon_ref, 4: dms(*lon)})
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", exif=exif)
+    return buffer.getvalue()
+
+
+# Eiffelturm, 48deg51'29.09"N 2deg17'40.90"E
+_EIFFEL_JPEG_ARGS = ("N", (48, 51, 29.09), "E", (2, 17, 40.90))
+
+
+async def test_scan_stores_the_gps_coordinate_of_a_jpeg(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        file_contents={"CostaRica/img.jpg": _jpeg_with_gps(*_EIFFEL_JPEG_ARGS)},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.gps_lat is not None and photo.gps_lon is not None
+    assert abs(photo.gps_lat - 48.858080555555556) < 1e-9
+    assert abs(photo.gps_lon - 2.2946944444444446) < 1e-9
+    # KEIN zusaetzlicher Netzwerkzugriff: GPS teilt sich das Range-Read-Fenster mit `taken_at`.
+    assert client.range_requests == ["CostaRica/img.jpg"]
+
+
+async def test_scan_leaves_both_columns_null_for_a_jpeg_without_gps(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.gps_lat is None
+    assert photo.gps_lon is None
+
+
+async def test_scan_leaves_both_columns_null_for_a_non_jpeg(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Fuer Nicht-JPEG-Posten wird gar kein EXIF gelesen - beide Felder bleiben `None`, konsistent
+    mit `taken_at`, das auf `last_modified` zurueckfaellt."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.png", _entry("img001.png", "etag-1", modified))]
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.gps_lat is None
+    assert photo.gps_lon is None
+
+
+async def test_scan_resets_a_stored_coordinate_when_the_changed_file_no_longer_carries_gps(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """DATENSCHUTZBEDINGUNG, kein Aufraeumen (Sicherheitskonzept Punkt 4): dies ist der EINZIGE
+    Pfad, ueber den das ENTFERNEN von GPS aus einer Quelldatei in PhotoSort ankommt - also genau
+    die Handlung, die eine datenschutzbewusste Person vornimmt. Ein bedingtes Schreiben
+    (`if gps is not None`) hielte die alte Koordinate unbegrenzt fest, und die Anwendung zeigte
+    weiter einen Ort an, den die Datei nachweislich nicht mehr enthaelt."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    db_session.add(
+        Photo(
+            project_id=project.id,
+            relative_path="CostaRica/img.jpg",
+            etag="old-etag",
+            content_length=10,
+            taken_at=modified.replace(tzinfo=None),
+            gps_lat=48.858080555555556,
+            gps_lon=2.2946944444444446,
+            last_modified=modified.replace(tzinfo=None),
+        )
+    )
+    await db_session.commit()
+
+    new_modified = datetime(2023, 8, 16, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img.jpg", _entry("img.jpg", "new-etag", new_modified))],
+        file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.photos_updated == 1
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.gps_lat is None
+    assert photo.gps_lon is None
+
+
+async def test_scan_replaces_a_stored_coordinate_when_the_changed_file_carries_a_new_one(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    db_session.add(
+        Photo(
+            project_id=project.id,
+            relative_path="CostaRica/img.jpg",
+            etag="old-etag",
+            content_length=10,
+            taken_at=modified.replace(tzinfo=None),
+            gps_lat=-33.8568,
+            gps_lon=151.2153,
+            last_modified=modified.replace(tzinfo=None),
+        )
+    )
+    await db_session.commit()
+
+    new_modified = datetime(2023, 8, 16, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img.jpg", _entry("img.jpg", "new-etag", new_modified))],
+        file_contents={"CostaRica/img.jpg": _jpeg_with_gps(*_EIFFEL_JPEG_ARGS)},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.gps_lat is not None
+    assert abs(photo.gps_lat - 48.858080555555556) < 1e-9
+
+
+async def test_an_unreadable_exif_window_does_not_abort_the_scan(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ein einzelnes Foto mit entartetem GPS-IFD (hier: `IFDRational` mit Nenner 0, das `nan`
+    OHNE Exception ergibt) laesst den Lauf unberuehrt und landet mit `NULL` in der Datenbank -
+    nicht mit `nan`, das die spaetere Listenantwort des Projekts auf HTTP 500 legte."""
+    import io
+
+    from PIL import Image
+    from PIL.ExifTags import IFD
+    from PIL.TiffImagePlugin import IFDRational
+
+    image = Image.new("RGB", (4, 4), color="red")
+    exif = image.getexif()
+    exif.get_ifd(IFD.GPSInfo).update(
+        {
+            1: "N",
+            2: (IFDRational(48, 1), IFDRational(51, 1), IFDRational(5, 0)),
+            3: "E",
+            4: (IFDRational(2, 1), IFDRational(17, 1), IFDRational(40, 1)),
+        }
+    )
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", exif=exif)
+
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        file_contents={"CostaRica/img.jpg": buffer.getvalue()},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.gps_lat is None
+    assert photo.gps_lon is None
+
+
+async def test_a_cancelled_error_from_a_parallel_worker_is_not_unpacked_into_the_columns(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die Typzusicherung nach `asyncio.gather` muss beim Wechsel auf einen ZUSAMMENGESETZTEN
+    Rueckgabewert weiterhin die FORM festnageln (Sicherheitskonzept Punkt 4). Sonst reichte eine
+    durchgereichte `BaseException` (mit `return_exceptions=True` faengt `gather` ein
+    `CancelledError` einer Kind-Coroutine NICHT ab) in die Felder durch, statt den Lauf als
+    abgebrochen zu markieren."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = DownloadRaisesCancelledErrorClient(
+        entries=[
+            ("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified)),
+            ("CostaRica/img002.jpg", _entry("img002.jpg", "etag-2", modified)),
+        ],
+        cancel_path="CostaRica/img002.jpg",
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)

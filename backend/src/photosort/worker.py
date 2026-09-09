@@ -88,7 +88,7 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
-from photosort.opencloud.exif import extract_taken_at
+from photosort.opencloud.exif import extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.pricing import compute_cost_usd
 from photosort.ranking import rank_photos
@@ -350,6 +350,23 @@ async def _generate_thumbnails(
     generate_variants(cache_dir, photo_id, etag, content)
 
 
+@dataclass(frozen=True)
+class ScanExifResult:
+    """Das EXIF-Ergebnis EINES Arbeitspostens (specs/features/0051-gps-landmark-cluster-
+    bildung.md): Zeitpunkt UND Koordinate aus demselben Range-Read-Fenster.
+
+    Eingefroren und zusammengesetzt statt zweier nackter Rueckgabewerte, damit die Typzusicherung
+    nach `asyncio.gather` in `_process_scan_block` weiterhin die FORM festnageln kann - eine
+    durchgereichte `BaseException` (mit `return_exceptions=True` faengt `gather` ein
+    `CancelledError` einer Kind-Coroutine NICHT ab) darf nicht in die Felder entpackt werden.
+
+    `gps` ist ein Paar oder `None` - nie eine halbe Koordinate (Paar-Invariante von
+    `extract_gps`)."""
+
+    taken_at: datetime
+    gps: tuple[float, float] | None
+
+
 async def _fetch_and_thumbnail(
     client: OpenCloudScanClient,
     webdav_url: str,
@@ -359,22 +376,29 @@ async def _fetch_and_thumbnail(
     photo_id: int,
     etag: str,
     cache_dir: Path,
-) -> datetime:
+) -> ScanExifResult:
     """Der reine I/O-/CPU-Teil eines einzelnen Arbeitspostens aus Phase 2b (specs/features/0036,
-    ADR 0020, Punkt 2): EXIF-Range-Read (nur fuer JPEG-Kandidaten) fuer `taken_at`, danach
-    best-effort Download + Thumbnail-Erzeugung - bewusst OHNE jeglichen Session-Zugriff, damit
-    mehrere Aufrufe sicher parallel per asyncio.gather laufen koennen (_process_scan_block unten).
+    ADR 0020, Punkt 2): EXIF-Range-Read (nur fuer JPEG-Kandidaten) fuer `taken_at` UND die
+    GPS-Koordinate (specs/features/0051), danach best-effort Download + Thumbnail-Erzeugung -
+    bewusst OHNE jeglichen Session-Zugriff, damit mehrere Aufrufe sicher parallel per
+    asyncio.gather laufen koennen (_process_scan_block unten).
     Ein EXIF-Lesefehler wird NICHT abgefangen (identisches Verhalten wie vor der Umstrukturierung):
-    ein einzelner OpenCloud-Fehler hier laesst den gesamten Scan fehlschlagen, siehe ADR."""
+    ein einzelner OpenCloud-Fehler hier laesst den gesamten Scan fehlschlagen, siehe ADR.
+
+    Beide EXIF-Werte stammen aus DEMSELBEN bereits geladenen Byte-Fenster - kein zusaetzlicher
+    Netzwerkzugriff fuer die Koordinate. Fuer Nicht-JPEG-Posten wird gar kein EXIF gelesen: der
+    Zeitpunkt faellt auf `fallback_taken_at` zurueck, die Koordinate bleibt `None`."""
     taken_at = fallback_taken_at
+    gps: tuple[float, float] | None = None
     if extension in _EXIF_CANDIDATE_EXTENSIONS:
         content = await client.get_range(webdav_url, relative_path, _EXIF_RANGE_BYTES)
         exif_taken_at = extract_taken_at(content)
         if exif_taken_at is not None:
             taken_at = exif_taken_at
+        gps = extract_gps(content, photo_id=photo_id)
 
     await _generate_thumbnails(client, webdav_url, relative_path, photo_id, etag, cache_dir)
-    return taken_at
+    return ScanExifResult(taken_at=taken_at, gps=gps)
 
 
 async def _process_scan_block(
@@ -460,9 +484,22 @@ async def _process_scan_block(
         if isinstance(result, BaseException):
             raise result
 
-    for photo, taken_at in zip(photos, results, strict=True):
-        assert isinstance(taken_at, datetime)  # bereits oben auf Exceptions geprueft
-        photo.taken_at = taken_at
+    for photo, exif_result in zip(photos, results, strict=True):
+        # Die Typzusicherung nagelt weiterhin die FORM fest (specs/features/0051, Sicherheits-
+        # konzept Punkt 4) - sie ist nach dem Wechsel auf einen zusammengesetzten Rueckgabewert
+        # NICHT entbehrlich geworden: ohne sie entpackte eine durchgereichte BaseException ihre
+        # Attribute in die Foto-Felder, statt oben als Fehler erkannt zu werden.
+        assert isinstance(exif_result, ScanExifResult)  # bereits oben auf Exceptions geprueft
+        photo.taken_at = exif_result.taken_at
+        # UNBEDINGT beide Felder schreiben, auch zurueck auf None (specs/features/0051-gps-
+        # landmark-cluster-bildung.md, Sicherheitskonzept Punkt 4). Das ist eine
+        # DATENSCHUTZBEDINGUNG, keine Aufraeum-Kosmetik: dies ist der einzige Pfad, ueber den das
+        # ENTFERNEN von GPS aus einer Quelldatei in PhotoSort ankommt - also genau die Handlung,
+        # die eine datenschutzbewusste Person vornimmt. Ein bedingtes Schreiben
+        # (`if gps is not None`) hielte die alte Koordinate unbegrenzt fest, und die Anwendung
+        # zeigte weiter einen Ort an, den die Datei nachweislich nicht mehr enthaelt, ohne dass
+        # das irgendwo auffiele.
+        photo.gps_lat, photo.gps_lon = exif_result.gps or (None, None)
 
     return added, updated
 
