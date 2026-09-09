@@ -29,6 +29,29 @@ DUPLICATE_HAMMING_THRESHOLD = 6
 # ohne visuelle Aehnlichkeit (technische Detailentscheidung, siehe Architektur-Abschnitt der Spec).
 TIME_CLUSTER_GAP = timedelta(hours=1)
 
+# Haversine-Distanz, ab der ein neues Cluster beginnt - gleichrangig neben TIME_CLUSTER_GAP
+# (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0029 Punkt 5, ADR 0072 Entscheidung 4).
+# Dokumentierte, UNKALIBRIERTE Modulkonstante wie TIME_CLUSTER_GAP/SHARPNESS_REJECT_THRESHOLD -
+# bewusst kein Settings-/Env-Wert (die sind im Projekt Infrastruktur-Parametern vorbehalten).
+#
+# 500 statt der 2000 aus dem unverbindlichen Vorschlag in ADR 0029: der ausloesende Fall der Spec
+# ist "zwei Sehenswuerdigkeiten kurz hintereinander", und die liegen innerstaedtisch typischerweise
+# einige hundert Meter auseinander (Eiffelturm <-> Trocadero ca. 700 m) - 2000 m haetten genau den
+# benannten Fall nicht getrennt. 500 m liegt zugleich sicher oberhalb der Streuung eines einzelnen
+# Ortsbesuchs (Umherlaufen plus GPS-Ungenauigkeit, Groessenordnung 100-300 m). Bewusst in Kauf
+# genommene Kehrseite: Aufnahmen aus einem fahrenden Fahrzeug erzeugen viele kleine Cluster.
+#
+# ACHTUNG: die Schwelle begrenzt den SCHRITT zwischen zwei aufeinanderfolgenden Fotos, nicht den
+# DURCHMESSER eines Clusters - ein Spaziergang in 400-m-Schritten teilt nie und kann Kilometer
+# ueberspannen. Deshalb traegt api/photos.py::PhotoLocationOut ein `source`-Feld: eine hergeleitete
+# Koordinate ist eine Schaetzung, nie eine Messung.
+GPS_CLUSTER_SPLIT_DISTANCE_METERS = 500.0
+
+# Mittlerer Erdradius (IUGG) fuer die Haversine-Approximation. Fuer die hier relevante Praezision
+# (Cluster-Sprung-Erkennung im Bereich von Metern bis Kilometern) ausreichend - keine neue
+# Abhaengigkeit fuer eine einzelne Distanzformel (ADR 0029 Punkt 4).
+_EARTH_RADIUS_METERS = 6_371_008.8
+
 _LAPLACE_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
 
 # dHash-Rastergroesse: 9x8 Graustufen-Pixel liefern 8x8=64 paarweise Helligkeitsvergleiche
