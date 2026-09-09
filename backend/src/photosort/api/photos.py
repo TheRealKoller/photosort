@@ -130,19 +130,21 @@ class RankingOut(BaseModel):
     # Zugehoerigkeit je Foto und Lauf traegt `true`. Die Oberflaeche liest die Rolle ausschliesslich
     # hier ab und bildet nirgends eine Schwelle nach.
     is_primary: bool
-    # Der Platz DIESER Zugehoerigkeit in der um die eigenen Ablehnungen bereinigten Auswahl ihrer
-    # Kategorie - also das bereits berechnete `row_number()` der Kuratierungs-Query. `null`, wenn
-    # diese Zugehoerigkeit nicht zur angeforderten Auswahl gehoert oder gar keine angefordert wurde.
+    # Der Platz DIESER Zugehoerigkeit in der ANGEZEIGTEN Auswahl ihrer Kategorie. `null`, wenn
+    # diese Zugehoerigkeit nicht zur angeforderten Auswahl gehoert oder gar keine angefordert
+    # wurde.
     #
-    # AUSDRUECKLICH NICHT `rank_position`: jene ist die lauf-globale, UNGEFILTERTE Rangaussage des
-    # Info-Popovers, diese hier die nutzerabhaengige Auswahlposition. Hinter einem vom Nutzer
-    # abgelehnten Foto ist sie kleiner als `rank_position`.
+    # specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071 Entscheidung 2: Der
+    # Ablehnungsfilter der Kuratierungs-Query ist entfallen, der Wert ist damit ENTWEDER `null`
+    # ODER gleich `rank_position` - nicht mehr das um die eigenen Ablehnungen bereinigte
+    # `row_number()`, und nicht mehr nutzerabhaengig.
     #
-    # SICHERHEIT (Security-Punkt 4 der Spec 0300): der Wert wird NIE persistiert und NIE ueber
-    # Requests hinweg zwischengespeichert - er haengt an den Ablehnungen des ANFRAGENDEN Nutzers.
-    # Ein gespeicherter Wert bildete zwangslaeufig die Ablehnungen irgendeines Nutzers ab und waere
-    # fuer den anderen ein Leck. Bekommt `GET /projects/{id}/photos` je eine
-    # Antwort-Zwischenspeicherung oder ein `ETag`, muss der Schluessel den Nutzer enthalten.
+    # Das Feld bleibt trotz des Zusammenfallens bestehen, weil es eine ANDERE Frage beantwortet
+    # als `rank_position`: jene ist die lauf-globale Rangaussage des Info-Popovers (unabhaengig
+    # vom Query-Parameter), diese hier die Zugehoerigkeit zur angeforderten Auswahl ("unter
+    # welchen seiner Kategorien ist dieses Foto zu zeigen"). Es ist seit
+    # specs/features/0300-nebenkategorien.md die einzige Auskunft darueber; ohne sie muesste das
+    # Frontend die Auswahlregel nachbilden.
     curation_position: int | None = None
 
 
@@ -575,6 +577,28 @@ def _to_photo_out(
     partition_sizes: Mapping[tuple[str, str], int] | None = None,
     curation_positions: Mapping[tuple[int, str], int] | None = None,
 ) -> PhotoOut:
+    """Baut die Antwortdarstellung EINES Fotos.
+
+    SICHERHEIT - die Antwort ist eine Funktion des ANFRAGENDEN Nutzers
+    (specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071 Entscheidung 2; die Auflage
+    stand vor dieser Spec am Feld `RankingOut.curation_position` und ist mit ihrer Begruendung
+    hierher gewandert, nicht entfallen):
+
+    Bekommen `GET /projects/{id}/photos` oder `GET /projects/{id}/curation-candidates` je eine
+    Antwort-Zwischenspeicherung, ein `ETag` oder ein `Cache-Control` ueber `no-store` hinaus, MUSS
+    der Schluessel den Nutzer enthalten. Grund ist `PhotoOut.suggestion`: es wird unten genau dann
+    gesetzt, wenn der anfragende Nutzer noch keine eigene Rating-Zeile hat (`has_own_rating`) -
+    zwei Nutzer bekommen fuer dasselbe Foto verschiedene Antwortkoerper. Die Regel gilt in BEIDEN
+    Query-Modi. Nicht theoretisch: das Frontend ist eine PWA mit Workbox
+    (`registerType: 'autoUpdate'`), heute ohne `runtimeCaching` fuer API-Antworten; der
+    Service-Worker-Cache ist pro Browserprofil geteilt, und das JWT liegt in `localStorage`.
+
+    `PhotoOut.ratings[]` traegt diese Auflage AUSDRUECKLICH NICHT: die Liste enthaelt beide
+    Bewertungen und ist fuer beide Anfragenden identisch - sichtbare Fremdbewertung ist gewollt.
+    Tragend ist allein `suggestion`.
+
+    `curation_position` traegt sie seit ADR 0071 ebenfalls nicht mehr (kein Ablehnungsfilter, kein
+    Nutzerbezug)."""
     # Anzeigeregel (Akzeptanzkriterium der Spec): ein Vorschlag ist nur sichtbar, wenn (a)
     # PhotoScore.suggested_status gesetzt ist UND (b) der anfragende Nutzer noch KEINE eigene
     # Rating-Zeile fuer dieses Foto hat - unabhaengig davon, ob eine ANDERE Person das Foto schon
@@ -644,70 +668,61 @@ async def _latest_successful_criterion_scoring_run_id(
 
 
 async def _top_n_per_category_photo_ids(
-    session: AsyncSession, project_id: int, current_user_id: int, top_n: int
+    session: AsyncSession, project_id: int, top_n: int
 ) -> tuple[list[int], dict[tuple[int, str], int], int | None]:
-    """Kategorie-Kuratierung + Backfill (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
-    backfill.md): liefert je Partition (cluster_key x category_key) des LETZTEN erfolgreichen
-    CriterionScoringRun die besten `top_n` nach rank_position, serverseitig um vom aktuellen
-    Nutzer REJECTED-bewertete Fotos gefiltert. Backfill ist dabei reiner Query-Effekt (kein
-    Server-Code "rueckt aktiv nach", ADR 0021 Punkt 4): row_number() wird ERST NACH dem Ausschluss
-    der abgelehnten Fotos berechnet, ein abgelehntes Foto rueckt darin also automatisch fuer das
-    naechste, bisher nicht gezeigte Foto derselben Partition Platz.
+    """Kategorie-Kuratierung (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
+    backfill.md, seit specs/features/0357-voller-bildvorrat-kuratierung.md ohne Backfill):
+    liefert je Partition (cluster_key x category_key) des LETZTEN erfolgreichen
+    CriterionScoringRun die Zugehoerigkeiten mit `rank_position <= top_n`.
 
-    Die Query ist mit specs/features/0300-nebenkategorien.md strukturell unveraendert geblieben -
-    `row_number()` je (cluster_key, category_key) zaehlt Neben- wie Hauptzeilen mit, und `top_n`
-    wirkt weiterhin JE PARTITION. Neu ist nur, dass EIN Foto in mehreren Partitionen unter die
-    Top-N fallen kann. Rueckgabe deshalb dreiteilig:
+    DER ABLEHNUNGSFILTER IST MIT ADR 0071 ENTFALLEN (Entscheidung 1). Die Query filterte bis
+    dahin die vom anfragenden Nutzer REJECTED-bewerteten Fotos per Outer-Join aus und berechnete
+    das `row_number()` erst danach - genau das war der Backfill aus ADR 0021 Punkt 4. Ohne den
+    Filter ist die Fensterfunktion ueberfluessig: `PhotoRanking.rank_position` ist je Partition
+    lueckenlos ab 1 vergeben (`ranking.py::rank_photos` liefert `index + 1` ueber die
+    VOLLSTAENDIGE Partition; `worker.py::run_criterion_scoring` ruft sie je Partition auf, Haupt-
+    wie Nebenzugehoerigkeiten in derselben Liste; `worker.py::reassign_photo_category` vergibt bei
+    einem Override die Positionen beider betroffenen Partitionen vollstaendig neu). Ein
+    `row_number()` ueber dieselbe Sortierung lieferte per Konstruktion denselben Wert - es hat
+    ausschliesslich die Luecken geschlossen, die der Ablehnungsfilter riss.
+
+    Folge: Welche Fotos die Ansicht zeigt, haengt ausschliesslich vom LAUF ab, nicht mehr vom
+    Bewertungsstand des Betrachters. Ein verworfenes Foto bleibt an seiner Position und traegt
+    seinen Zustand in `PhotoOut.ratings[]` (ADR 0071 Entscheidung 3).
+
+    `top_n` wirkt weiterhin JE PARTITION, Neben- wie Hauptzeilen zaehlen mit
+    (specs/features/0300-nebenkategorien.md); EIN Foto kann in mehreren Partitionen unter die
+    Top-N fallen. Rueckgabe deshalb dreiteilig:
 
     * die Foto-Ids in Anzeigereihenfolge, jede hoechstens EINMAL (`PhotoListOut.items` enthaelt
       jedes Foto weiterhin hoechstens einmal),
-    * das berechnete `rn` je (photo_id, category_key) - die `curation_position` der jeweiligen
-      Zugehoerigkeit, aus der die Kuratierungsansicht ablesen kann, in welchen Kategorien sie das
-      Foto zeigen soll,
+    * die `curation_position` je (photo_id, category_key) - nach dem Wegfall des Filters
+      identisch mit `rank_position` -, aus der die Kuratierungsansicht ablesen kann, in welchen
+      Kategorien sie das Foto zeigen soll,
     * die Lauf-Id."""
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
         return [], {}, None
 
-    own_rejection = aliased(Rating)
-    ranked = (
+    result = await session.execute(
         select(
             PhotoRanking.photo_id,
-            PhotoRanking.cluster_key,
             PhotoRanking.category_key,
             PhotoRanking.rank_position,
-            func.row_number()
-            .over(
-                partition_by=(PhotoRanking.cluster_key, PhotoRanking.category_key),
-                order_by=PhotoRanking.rank_position,
-            )
-            .label("rn"),
-        )
-        .select_from(PhotoRanking)
-        .outerjoin(
-            own_rejection,
-            and_(
-                own_rejection.photo_id == PhotoRanking.photo_id,
-                own_rejection.user_id == current_user_id,
-                own_rejection.status == RatingStatus.REJECTED,
-            ),
         )
         .where(
             PhotoRanking.criterion_scoring_run_id == latest_run_id,
-            own_rejection.id.is_(None),
+            PhotoRanking.rank_position <= top_n,
         )
-        .subquery()
-    )
-    result = await session.execute(
-        select(ranked.c.photo_id, ranked.c.category_key, ranked.c.rn)
-        .where(ranked.c.rn <= top_n)
-        .order_by(ranked.c.cluster_key, ranked.c.category_key, ranked.c.rank_position)
+        .order_by(
+            PhotoRanking.cluster_key, PhotoRanking.category_key, PhotoRanking.rank_position
+        )
     )
     ordered_ids: list[int] = []
     seen: set[int] = set()
     curation_positions: dict[tuple[int, str], int] = {}
-    for photo_id, category_key, row_number in result.all():
-        curation_positions[(photo_id, category_key)] = row_number
+    for photo_id, category_key, rank_position in result.all():
+        curation_positions[(photo_id, category_key)] = rank_position
         if photo_id not in seen:
             seen.add(photo_id)
             ordered_ids.append(photo_id)
@@ -800,7 +815,7 @@ async def list_photos(
 
     if top_n_per_category is not None:
         ids, curation_positions, criterion_scoring_run_id = await _top_n_per_category_photo_ids(
-            session, project_id, current_user.id, top_n_per_category
+            session, project_id, top_n_per_category
         )
         photos_by_id = await _photos_by_id(session, ids)
         rankings_by_id = (

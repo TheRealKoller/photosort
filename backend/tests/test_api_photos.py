@@ -635,12 +635,17 @@ class TestTopNPerCategory:
         assert body["total"] == 1
         assert body["items"][0]["id"] == only.id
 
-    async def test_backfill_shows_next_best_photo_after_rejecting_the_top_one(
+    async def test_rejecting_a_photo_does_not_change_the_selection(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        # Kernfall der Spec: nach REJECTED des aktuell sichtbaren Top-Fotos liefert ein erneuter
-        # Abruf automatisch das naechstbeste, bisher nicht gezeigte Foto DERSELBEN Partition -
-        # reiner Query-Effekt, kein Backfill-Endpoint, kein aktives "Nachruecken" im Server-Code.
+        """Gegenteil-Test des frueheren `test_backfill_shows_next_best_photo_after_rejecting_
+        the_top_one` (specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071
+        Entscheidung 1): derselbe Aufbau, umgekehrte Erwartung. Nach dem Verwerfen des
+        Top-Fotos rueckt NICHTS nach - das verworfene Foto bleibt an seiner Position.
+
+        Geprueft als vollstaendiger Listenvergleich (Ids in Reihenfolge), nicht als blosses
+        "das Foto ist noch da": ein Vorhandensein-Test bliebe auch dann gruen, wenn hinter dem
+        Foto die Liste umsortiert wuerde."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
@@ -660,28 +665,87 @@ class TestTopNPerCategory:
         after = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
         )
-        assert [item["id"] for item in after.json()["items"]] == [second.id]
+        assert [item["id"] for item in after.json()["items"]] == [first.id]
+        [item] = after.json()["items"]
+        [ranking] = item["rankings"]
+        assert (ranking["rank_position"], ranking["curation_position"]) == (1, 1)
 
-    async def test_rejection_filter_is_scoped_to_the_current_user(
+    async def test_a_rejected_photo_stays_in_the_selection_with_its_rating(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        # Personenbezug (Akzeptanzkriterium der Spec): ein von Nutzer A abgelehntes Foto bleibt
-        # fuer Nutzer B sichtbar, solange der es nicht selbst ablehnt.
+        """Zweite Haelfte von ADR 0071 Entscheidung 3: das verworfene Foto verschwindet nicht,
+        sondern traegt seinen Zustand dort, wo er im Produkt immer steht - in `ratings[]`. Die
+        Kuratierungsansicht leitet die Kachel-Darstellung ausschliesslich daraus ab
+        (`utils/ownRating.ts::ownRatingStatus`), es gibt kein eigenes Antwortfeld dafuer."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
-        other_user = await _make_second_user(db_session)
-        db_session.add(
-            Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.REJECTED)
+
+        await authenticated_api_client.put(
+            f"/photos/{photo.id}/rating", json={"status": "rejected"}
         )
-        await db_session.commit()
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
         )
 
-        assert [item["id"] for item in response.json()["items"]] == [photo.id]
+        [item] = response.json()["items"]
+        assert item["id"] == photo.id
+        assert [r["status"] for r in item["ratings"]] == ["rejected"]
+
+    async def test_response_is_independent_of_the_asking_user(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Gegenteil-Test der frueheren `test_rejection_filter_is_scoped_to_the_current_user`
+        und `test_curation_position_is_scoped_to_the_rejections_of_the_asking_user`
+        (specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071 Entscheidung 1): der
+        Zwei-Nutzer-Aufbau bleibt, aber statt der Verschiedenheit wird jetzt die GLEICHHEIT
+        zugesichert.
+
+        Ohne diesen Fall bliebe die neue Zusage ("die Auswahl haengt nur noch vom Lauf ab, nicht
+        mehr vom Betrachter") die einzige des Endpunkts ohne Beleg - ein versehentlich
+        stehengebliebener nutzerabhaengiger Join faellt durch jeden Ein-Nutzer-Test."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        second = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
+        await _add_ranking(db_session, run, second, rank_score=0.5, rank_position=2)
+
+        other_user = await _make_second_user(db_session)
+        # Der zweite Nutzer verwirft das Top-Foto - fuer BEIDE Sichten muss das folgenlos sein.
+        db_session.add(
+            Rating(photo_id=first.id, user_id=other_user.id, status=RatingStatus.REJECTED)
+        )
+        await db_session.commit()
+
+        async def selection(client: httpx.AsyncClient) -> tuple[list[int], dict[int, int | None]]:
+            response = await client.get(
+                f"/projects/{project.id}/photos", params={"top_n_per_category": 2}
+            )
+            assert response.status_code == 200
+            items = response.json()["items"]
+            return (
+                [item["id"] for item in items],
+                {item["id"]: item["rankings"][0]["curation_position"] for item in items},
+            )
+
+        own_view = await selection(authenticated_api_client)
+
+        # DIESELBE Anfrage, anderer Nutzer. Nur der Bearer-Token wechselt (und wird danach
+        # zurueckgesetzt), damit derselbe ASGI-Transport und dieselbe Sitzung benutzt werden.
+        own_authorization = authenticated_api_client.headers["Authorization"]
+        authenticated_api_client.headers["Authorization"] = (
+            f"Bearer {create_access_token(other_user)}"
+        )
+        try:
+            other_view = await selection(authenticated_api_client)
+        finally:
+            authenticated_api_client.headers["Authorization"] = own_authorization
+
+        assert own_view == other_view
+        assert own_view == ([first.id, second.id], {first.id: 1, second.id: 2})
 
     async def test_empty_before_any_successful_criterion_scoring_run(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1939,11 +2003,18 @@ class TestMultipleCategoryMemberships:
         assert rankings_by_photo[best.id] == {"landschaft": 1}
         assert rankings_by_photo[guest.id] == {"landschaft": None, "tier": 1}
 
-    async def test_curation_position_is_smaller_than_rank_position_behind_a_rejected_photo(
+    async def test_curation_position_is_null_or_equal_to_rank_position(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Akzeptanzkriterium 23: `curation_position` ist ausdruecklich NICHT `rank_position` -
-        sie zaehlt in der um die eigenen Ablehnungen bereinigten Auswahl."""
+        """Gegenteil-Test des frueheren `test_curation_position_is_smaller_than_rank_position_
+        behind_a_rejected_photo` (specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071
+        Entscheidung 2): derselbe Aufbau - ein verworfenes Foto auf Platz 1 - mit der
+        Zusammenfall-Invariante als Erwartung.
+
+        `curation_position` ist ab hier ENTWEDER `null` ODER gleich `rank_position`; ihre
+        verbliebene Aufgabe ist allein die Unterscheidung "gehoert diese Zugehoerigkeit zur
+        Auswahl?". Die Invariante ist als Testfall notwendig, damit die naechste Aenderung die
+        Redundanz nicht als Fehler liest und das falsche der beiden Felder entfernt."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
@@ -1959,71 +2030,18 @@ class TestMultipleCategoryMemberships:
             f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
         )
 
-        [item] = response.json()["items"]
-        assert item["id"] == second.id
-        [ranking] = item["rankings"]
-        assert ranking["rank_position"] == 2
-        assert ranking["curation_position"] == 1
+        items = response.json()["items"]
+        rankings = [ranking for item in items for ranking in item["rankings"]]
+        assert rankings != []
+        for ranking in rankings:
+            assert ranking["curation_position"] in (None, ranking["rank_position"])
 
-    async def test_curation_position_is_scoped_to_the_rejections_of_the_asking_user(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Security-Punkt 4 der Spec 0300: `curation_position` haengt an den Ablehnungen des
-        ANFRAGENDEN Nutzers - ueber sie darf nichts ueber die Bewertungen des jeweils anderen
-        sichtbar werden. Der Test prueft BEIDE Richtungen in einem Fall:
-
-        * Nutzer B lehnt ab -> die Zahlen von Nutzer A bleiben unveraendert (kein Leck),
-        * Nutzer A lehnt selbst ab -> seine Zahlen aendern sich sehr wohl (die Zahl ist
-          nutzerabhaengig und nicht etwa konstant, was den ersten Teil trivial gruen faerbte).
-
-        Die bestehenden Tests decken das nicht ab: der eine prueft die ID-LISTE statt der Zahl,
-        der andere kennt nur EINEN Nutzer."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        second = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
-        await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
-        await _add_ranking(db_session, run, second, rank_score=0.5, rank_position=2)
-
-        other_user = await _make_second_user(db_session)
-        db_session.add(
-            Rating(photo_id=first.id, user_id=other_user.id, status=RatingStatus.REJECTED)
-        )
-        await db_session.commit()
-
-        async def positions(client: httpx.AsyncClient) -> dict[int, int | None]:
-            response = await client.get(
-                f"/projects/{project.id}/photos", params={"top_n_per_category": 2}
-            )
-            assert response.status_code == 200
-            return {
-                item["id"]: item["rankings"][0]["curation_position"]
-                for item in response.json()["items"]
-            }
-
-        # Nutzer A sieht die volle, ungefilterte Auswahl - die Ablehnung von B wirkt nicht auf ihn.
-        assert await positions(authenticated_api_client) == {first.id: 1, second.id: 2}
-
-        # DIESELBE Anfrage, anderer Nutzer, andere Zahl: fuer B ist das erste Foto ausgefiltert,
-        # das zweite rueckt auf Platz 1 nach. Beide Sichten existieren gleichzeitig - der Wert
-        # kann deshalb nie persistiert oder ueber Requests hinweg zwischengespeichert werden.
-        # Nur der Bearer-Token wechselt (und wird danach zurueckgesetzt), damit derselbe
-        # ASGI-Transport und dieselbe Sitzung wie fuer A benutzt werden.
-        own_authorization = authenticated_api_client.headers["Authorization"]
-        authenticated_api_client.headers["Authorization"] = (
-            f"Bearer {create_access_token(other_user)}"
-        )
-        try:
-            assert await positions(authenticated_api_client) == {second.id: 1}
-        finally:
-            authenticated_api_client.headers["Authorization"] = own_authorization
-
-        # Und die Gegenprobe: lehnt A selbst ab, aendert sich SEINE Zahl.
-        await authenticated_api_client.put(
-            f"/photos/{first.id}/rating", json={"status": "rejected"}
-        )
-
-        assert await positions(authenticated_api_client) == {second.id: 1}
+        # Auch hinter dem verworfenen Foto: es bleibt Platz 1 der Auswahl, das zweite Foto
+        # rueckt NICHT auf Platz 1 nach und faellt bei `top_n=1` schlicht heraus.
+        by_photo = {
+            item["id"]: item["rankings"][0]["curation_position"] for item in items
+        }
+        assert by_photo == {first.id: 1}
 
     async def test_partition_size_counts_secondary_rows_too(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
