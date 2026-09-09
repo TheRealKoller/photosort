@@ -170,6 +170,20 @@ class CategoryCandidateOut(BaseModel):
     category_key: str
     origin: Literal["local", "remote"]
     provider: str | None = None
+    # specs/features/0299-kategorie-konfidenz-anzeigen.md, ADR 0067 Punkt 2: die
+    # Selbsteinschaetzung des Modells zu DIESEM Schluessel. `None` heisst "keine Modellaussage",
+    # nie `0.0` (das hiesse "das Modell war sich zu 0 % sicher").
+    #
+    # Ausdruecklich KEINE Wiederkehr des mit Spec 0289 entfallenen `score`-Felds: jenes war die
+    # Rechengroesse der abgeschafften Zahlenvergleichs-Auswahl. Diese Zahl beeinflusst weder
+    # Auswahl noch Sortierung noch irgendeine Schwelle im Backend - sie wird angezeigt und
+    # ausgewertet, sonst nichts.
+    #
+    # Die Zahl folgt dem SCHLUESSEL, nicht der `origin`-Kennzeichnung: ein lokal UND remote
+    # erkannter Schluessel wird unten zu `origin="local"` zusammengefasst (die spezifischere
+    # Herkunftsaussage), traegt aber die Modellzahl weiter - es gibt eine Modellaussage zu diesem
+    # Schluessel. Ein REIN lokaler Kandidat bekommt `None`.
+    confidence: float | None = None
 
 
 class CloudVisionStatus(enum.StrEnum):
@@ -216,6 +230,11 @@ class PhotoOut(BaseModel):
     # im Lauf tatsaechlich VERGEBENE Kategorie (lokal + remote + Override), hier nur der
     # Remote-Beitrag.
     remote_category: str | None = None
+    # specs/features/0299-kategorie-konfidenz-anzeigen.md: die Konfidenz zu `remote_category`
+    # (PhotoCategoryClassification.category_confidence). Eigenes Feld statt einer clientseitigen
+    # Ableitung aus `category_candidates`: `remote_category` kann `nicht_erkannt` lauten und steht
+    # dann gar nicht in `detected_categories`. Dieses Feld traegt den Kuratierungsfilter.
+    category_confidence: float | None = None
     # Dauerhafte manuelle Uebersteuerung (PhotoScore.category_override), None ohne aktiven
     # Override.
     category_override: str | None = None
@@ -389,7 +408,14 @@ def _category_candidates_out(photo: Photo) -> list[CategoryCandidateOut]:
     origins: dict[str, tuple[Literal["local", "remote"], str | None]] = {}
 
     classification = photo.category_classification
+    # specs/features/0299-kategorie-konfidenz-anzeigen.md: die Konfidenz-Abbildung wird GETRENNT
+    # von den Herkunftsangaben gefuehrt und erst ganz unten je Schluessel nachgeschlagen - genau
+    # deshalb ueberlebt die Zahl das Zusammenfassen eines lokal UND remote erkannten Schluessels
+    # zu `origin="local"`. `or {}` deckt beide "keine Angabe"-Formen ab: keine
+    # Klassifizierungszeile und eine Altzeile mit `NULL` (Akzeptanzkriterium 9).
+    confidences: dict[str, float] = {}
     if classification is not None:
+        confidences = classification.detected_category_confidences or {}
         for category_key in classification.detected_categories:
             origins[category_key] = ("remote", classification.provider)
 
@@ -405,7 +431,10 @@ def _category_candidates_out(photo: Photo) -> list[CategoryCandidateOut]:
 
     return [
         CategoryCandidateOut(
-            category_key=key, origin=origins[key][0], provider=origins[key][1]
+            category_key=key,
+            origin=origins[key][0],
+            provider=origins[key][1],
+            confidence=confidences.get(key),
         )
         for key in CATEGORY_REGISTRY
         if key in origins
@@ -540,6 +569,11 @@ def _to_photo_out(
         fine_labels=_fine_labels_out(photo),
         remote_category=(
             photo.category_classification.category_key
+            if photo.category_classification is not None
+            else None
+        ),
+        category_confidence=(
+            photo.category_classification.category_confidence
             if photo.category_classification is not None
             else None
         ),

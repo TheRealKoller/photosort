@@ -12,7 +12,14 @@ import * as ratingsApi from '../api/ratings'
 import type { CriterionScoreOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { CATEGORY_SET } from '../test/categorySetFixture'
-import { countPhotosInDay, CurateCategoriesPage, toggleDayCollapse } from './CurateCategoriesPage'
+import {
+  countPhotosInDay,
+  CurateCategoriesPage,
+  filterLowConfidence,
+  LOW_CONFIDENCE_EMPTY_TEXT,
+  LOW_CONFIDENCE_THRESHOLD,
+  toggleDayCollapse,
+} from './CurateCategoriesPage'
 
 vi.mock('../api/photos')
 vi.mock('../api/ratings')
@@ -65,6 +72,8 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     criterion_scores: [],
     fine_labels: [],
     remote_category: null,
+    // specs/features/0299-kategorie-konfidenz-anzeigen.md: Basiswert "keine Angabe".
+    category_confidence: null,
     category_override: null,
     category_candidates: [],
     cloud_vision_status: [],
@@ -960,8 +969,8 @@ describe('CurateCategoriesPage', () => {
             criterion_scores: [criterionScore()],
             ranking: ranking({ category_key: 'people' }),
             category_candidates: [
-              { category_key: 'tier', origin: 'remote', provider: 'anthropic' },
-              { category_key: 'menschen', origin: 'local', provider: null },
+              { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+              { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
             ],
           }),
         ],
@@ -983,5 +992,169 @@ describe('CurateCategoriesPage', () => {
 
       await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'tier'))
     })
+  })
+})
+
+
+// specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterium 5
+describe('LOW_CONFIDENCE_THRESHOLD / filterLowConfidence', () => {
+  it('haelt die Schwelle bei 60 %', () => {
+    expect(LOW_CONFIDENCE_THRESHOLD).toBe(0.6)
+  })
+
+  it('behaelt nur Fotos mit einer Sicherheit ECHT unter der Schwelle', () => {
+    // Die Schwelle ist exklusiv: `0.6` selbst gilt nicht als niedrig.
+    const items = [
+      photo({ id: 1, category_confidence: 0.599 }),
+      photo({ id: 2, category_confidence: 0.6 }),
+      photo({ id: 3, category_confidence: 0.9 }),
+      photo({ id: 4, category_confidence: 0 }),
+    ]
+
+    expect(filterLowConfidence(items).map((p) => p.id)).toEqual([1, 4])
+  })
+
+  it('verwirft Fotos OHNE Angabe', () => {
+    // Produktentscheidung: ein Foto ohne Zahl ist keine unsichere Zuordnung, sondern eine
+    // unbekannte - `null` darf nicht wie `0` behandelt werden.
+    const items = [photo({ id: 1, category_confidence: null }), photo({ id: 2, category_confidence: 0.1 })]
+
+    expect(filterLowConfidence(items).map((p) => p.id)).toEqual([2])
+  })
+
+  it('mutiert die uebergebene Liste nicht', () => {
+    const items = [photo({ id: 1, category_confidence: 0.9 })]
+
+    filterLowConfidence(items)
+
+    expect(items).toHaveLength(1)
+  })
+})
+
+describe('CurateCategoriesPage: Filter "Nur unsichere Zuordnungen"', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: false,
+        media: '(hover: hover) and (pointer: fine)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })
+    )
+    vi.mocked(photosApi.listPhotos).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+    vi.mocked(categoriesApi.listCategories).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
+    setToken(makeToken({ sub: '1', username: 'daniel', exp: 4102444800 }))
+  })
+
+  const LIST: PhotoListOut = {
+    items: [
+      photo({
+        id: 1,
+        relative_path: 'sicher.jpg',
+        category_confidence: 0.9,
+        ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }),
+      }),
+      photo({
+        id: 2,
+        relative_path: 'wacklig.jpg',
+        category_confidence: 0.3,
+        ranking: ranking({ cluster_key: 'cluster-0', category_key: 'people' }),
+      }),
+    ],
+    total: 2,
+  }
+
+  it('ist standardmaessig ausgeschaltet und zeigt alle Fotos', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(LIST)
+
+    renderPage()
+
+    const toggle = await screen.findByRole('checkbox', { name: /nur unsichere zuordnungen/i })
+    expect(toggle).not.toBeChecked()
+    expect(screen.getByText('Landscape')).toBeInTheDocument()
+    expect(screen.getByText('People')).toBeInTheDocument()
+  })
+
+  it('zeigt eingeschaltet nur noch die Fotos unter der Schwelle', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(LIST)
+
+    renderPage()
+    await user.click(await screen.findByRole('checkbox', { name: /nur unsichere zuordnungen/i }))
+
+    expect(screen.getByLabelText('Verwerfen: wacklig.jpg')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Verwerfen: sicher.jpg')).not.toBeInTheDocument()
+  })
+
+  it('loest keine neue Anfrage aus', async () => {
+    // Der Filter arbeitet auf den bereits geladenen Daten (Akzeptanzkriterium 5) - ein neuer
+    // Request waere ein zweiter Ladezustand fuer eine reine Sicht-Aenderung.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(LIST)
+
+    renderPage()
+    await screen.findByRole('checkbox', { name: /nur unsichere zuordnungen/i })
+    const callsBefore = vi.mocked(photosApi.listPhotos).mock.calls.length
+
+    await user.click(screen.getByRole('checkbox', { name: /nur unsichere zuordnungen/i }))
+
+    expect(vi.mocked(photosApi.listPhotos).mock.calls).toHaveLength(callsBefore)
+  })
+
+  it('haelt eine leer gefilterte Gruppe sichtbar - mit eigenem, vom Erschoepfungshinweis unterscheidbarem Text', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(LIST)
+
+    renderPage()
+    await user.click(await screen.findByRole('checkbox', { name: /nur unsichere zuordnungen/i }))
+
+    // Die Partition "Landscape" ist leer gefiltert, bleibt aber sichtbar.
+    expect(screen.getByText('Landscape')).toBeInTheDocument()
+    expect(screen.getByText(LOW_CONFIDENCE_EMPTY_TEXT)).toBeInTheDocument()
+    // Und sie wird NICHT als erschoepfter Pool ausgegeben.
+    expect(screen.queryByText('Kein weiteres Foto verfügbar')).not.toBeInTheDocument()
+  })
+
+  it('stellt beim Ausschalten exakt den vorherigen Sichtstand wieder her', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(LIST)
+
+    renderPage()
+    const toggle = await screen.findByRole('checkbox', { name: /nur unsichere zuordnungen/i })
+
+    await user.click(toggle)
+    await user.click(toggle)
+
+    expect(toggle).not.toBeChecked()
+    expect(screen.getByLabelText('Verwerfen: sicher.jpg')).toBeInTheDocument()
+    expect(screen.getByLabelText('Verwerfen: wacklig.jpg')).toBeInTheDocument()
+    expect(screen.queryByText(LOW_CONFIDENCE_EMPTY_TEXT)).not.toBeInTheDocument()
+  })
+
+  it('laesst die Gruppierung nach Tag/Cluster/Kategorie unveraendert', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(LIST)
+
+    renderPage()
+    await user.click(await screen.findByRole('checkbox', { name: /nur unsichere zuordnungen/i }))
+
+    expect(screen.getByText('Montag 20.07.2026')).toBeInTheDocument()
+    expect(screen.getByText('Vormittags (10:00 Uhr)')).toBeInTheDocument()
+  })
+
+  it('gibt dem Kategorie-Chip der Gruppenueberschrift KEINE Zahl', async () => {
+    // Akzeptanzkriterium 4: die Ueberschrift benennt eine Partition, nicht ein Foto.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(LIST)
+
+    renderPage()
+    await screen.findByText('People')
+
+    const heading = screen.getByText('People').closest('h4')
+    expect(heading).not.toBeNull()
+    expect(heading).not.toHaveTextContent('%')
   })
 })

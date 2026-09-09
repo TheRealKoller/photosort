@@ -12,8 +12,13 @@ import { Button } from '../components/ui/button'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../components/ui/popover'
 import { useProjectStatsQuery } from '../hooks/useProjects'
 import {
+  CONFIDENCE_EXPLANATION,
+  CONFIDENCE_EXPLANATION_LABEL,
+} from '../utils/confidenceLabels'
+import {
   formatBytes,
   formatCount,
+  formatCriterionPercent,
   formatDate,
   formatDateTime,
   formatPercent,
@@ -198,7 +203,7 @@ function formatMoment(value: string | null, fallback: string): string {
 }
 
 function StatsContent({ stats }: { stats: ProjectStatsOut }) {
-  const { storage, categories, cost, progress, ratings, diagnostics } = stats
+  const { storage, categories, category_confidence: categoryConfidence, cost, progress, ratings, diagnostics } = stats
   const total = stats.photo_count
   // "x von y" mit ueberall derselben Bezugsgroesse (Akzeptanzkriterium F1) - bei 0 Fotos steht
   // ueberall "0 von 0".
@@ -333,6 +338,70 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
           <Metric
             value={formatCount(stats.manual_category_override_count)}
             label="Manuell korrigiert"
+          />
+        </MetricRow>
+      </Section>
+
+      {/* specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterium 6: EIGENER
+          Abschnitt unmittelbar nach der Kategorienverteilung - und ausdruecklich keine weitere
+          Spalte dort. Beide Bloecke gruppieren ueber verschiedene Mengen: die Verteilung ueber die
+          WIRKSAME Kategorie (lokal + remote + Override), dieser Block ueber die MODELL-Kategorie.
+          In eine Zeile gemischt staenden zwei richtige Zahlen nebeneinander und eine falsche
+          Aussage dazwischen. */}
+      <Section id="stats-category-confidence" title="Konfidenz der Kategorie-Erkennung">
+        <table className="w-full table-fixed text-sm">
+          <thead>
+            <tr className="border-b border-separator text-left text-xs font-semibold uppercase tracking-wide text-text">
+              <th scope="col" className="py-2">
+                Kategorie
+              </th>
+              <th scope="col" className="py-2 text-right">
+                Fotos mit Angabe
+              </th>
+              <th scope="col" className="py-2 text-right">
+                Ø Sicherheit
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {categoryConfidence.entries.map((entry) => (
+              <tr key={entry.category_key} className="border-b border-separator">
+                <th scope="row" className="break-words py-2 text-left font-normal text-text-h">
+                  {entry.display_name}
+                </th>
+                <td className="py-2 text-right font-mono text-text">
+                  {formatCount(entry.photo_count)}
+                </td>
+                {/* Eine Kategorie ohne eine einzige Angabe zeigt KEINEN Prozentwert - `0 %` waere
+                    die Aussage "das Modell war sich durchweg zu 0 % sicher". Deshalb der Strich
+                    aus `NOT_AVAILABLE` ("nicht ermittelbar") und die Pruefung auf `=== null`
+                    statt auf Falsyness: `0` ist ein gueltiger Mittelwert. */}
+                <td className="py-2 text-right font-mono text-text-h">
+                  {entry.average_confidence === null
+                    ? NOT_AVAILABLE
+                    : formatCriterionPercent(entry.average_confidence)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {/* Die BEZUGSBASIS ist Pflichtbestandteil, nicht Beiwerk: ein Mittelwert ohne
+            Bezugsmenge ist eine Zahl ohne Aussage. Beide Zaehler beziehen sich auf die
+            klassifizierten Fotos - Fotos ganz ohne Klassifizierungslauf stehen im Block darueber
+            als "Nicht klassifiziert". */}
+        <MetricRow>
+          <Metric
+            value={formatCount(categoryConfidence.photos_with_confidence)}
+            label="Klassifizierte Fotos mit Angabe"
+            info={
+              <InfoPopover label={CONFIDENCE_EXPLANATION_LABEL}>
+                {CONFIDENCE_EXPLANATION}
+              </InfoPopover>
+            }
+          />
+          <Metric
+            value={formatCount(categoryConfidence.photos_without_confidence)}
+            label="Klassifizierte Fotos ohne Angabe"
           />
         </MetricRow>
       </Section>

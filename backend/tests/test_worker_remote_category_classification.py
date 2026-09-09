@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import pricing, worker
+from photosort.categories import CATEGORY_NOT_RECOGNIZED
 from photosort.cloud_vision import (
     VISION_MODELS_BY_PROVIDER,
     TokenUsage,
@@ -1289,3 +1290,219 @@ async def test_an_earlier_run_keeps_its_model_when_a_later_run_uses_another(
     assert first_model == default_vision_model_for_provider("anthropic")
     assert first.model == first_model
     assert second.model == _STRONGER_ANTHROPIC_MODEL
+
+
+# --- specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 3 -----------------
+
+
+async def test_the_classification_row_persists_the_confidence_mapping(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    photo, run = await _run_for_one_photo(
+        db_session,
+        tmp_path,
+        RemoteClassification(
+            categories=("landschaft", "menschen"),
+            fine_labels=(),
+            category_confidences={"landschaft": 0.31, "menschen": 0.87},
+        ),
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    row = (
+        await db_session.execute(
+            select(PhotoCategoryClassification).where(
+                PhotoCategoryClassification.photo_id == photo.id
+            )
+        )
+    ).scalars().one()
+    assert row.detected_category_confidences == {"landschaft": 0.31, "menschen": 0.87}
+
+
+async def test_the_scalar_follows_the_resolved_category_not_the_highest_number(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """DER aufdeckende Fall (Teststrategie der Spec 0299): die Vorrangreihenfolge waehlt einen
+    ANDEREN Kandidaten als den mit der hoechsten Konfidenz. `menschen` (precedence 3) gewinnt gegen
+    `landschaft` (precedence 10), obwohl `landschaft` die groessere Zahl traegt - der Skalar muss
+    dem aufgeloesten Schluessel folgen, nicht dem Maximum."""
+    photo, _ = await _run_for_one_photo(
+        db_session,
+        tmp_path,
+        RemoteClassification(
+            categories=("landschaft", "menschen"),
+            fine_labels=(),
+            category_confidences={"landschaft": 0.99, "menschen": 0.12},
+        ),
+    )
+
+    row = (
+        await db_session.execute(
+            select(PhotoCategoryClassification).where(
+                PhotoCategoryClassification.photo_id == photo.id
+            )
+        )
+    ).scalars().one()
+    assert row.category_key == "menschen"
+    assert row.category_confidence == 0.12
+
+
+async def test_the_scalar_is_none_when_the_resolved_category_has_no_number(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Eine nicht leere Abbildung ohne Eintrag fuer die aufgeloeste Kategorie: der Skalar bleibt
+    `None`, nie `0.0`."""
+    photo, _ = await _run_for_one_photo(
+        db_session,
+        tmp_path,
+        RemoteClassification(
+            categories=("landschaft", "menschen"),
+            fine_labels=(),
+            category_confidences={"landschaft": 0.7},
+        ),
+    )
+
+    row = (
+        await db_session.execute(
+            select(PhotoCategoryClassification).where(
+                PhotoCategoryClassification.photo_id == photo.id
+            )
+        )
+    ).scalars().one()
+    assert row.category_key == "menschen"
+    assert row.category_confidence is None
+    assert row.detected_category_confidences == {"landschaft": 0.7}
+
+
+async def test_a_not_recognized_photo_has_no_number_on_either_side(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """`nicht_erkannt` steht gar nicht in `detected_categories` - beide Seiten bleiben leer bzw.
+    `None`, und die Zeile entsteht trotzdem (Erfolgssignal der Remote-Phase)."""
+    photo, run = await _run_for_one_photo(
+        db_session, tmp_path, RemoteClassification(categories=(), fine_labels=())
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    row = (
+        await db_session.execute(
+            select(PhotoCategoryClassification).where(
+                PhotoCategoryClassification.photo_id == photo.id
+            )
+        )
+    ).scalars().one()
+    assert row.category_key == CATEGORY_NOT_RECOGNIZED
+    assert row.detected_category_confidences == {}
+    assert row.category_confidence is None
+
+
+async def test_a_classification_without_any_confidence_writes_an_empty_mapping(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ein Modell, das die neue Anweisung ignoriert: die Kategorie bleibt gueltig, die Abbildung ist
+    leer (`{}` = "erhoben, keine brauchbare Zahl"), der Skalar `None`. Der Lauf scheitert nicht und
+    das Foto wird nicht uebersprungen (Best-effort, Akzeptanzkriterium 10)."""
+    photo, run = await _run_for_one_photo(
+        db_session, tmp_path, RemoteClassification(categories=("tier",), fine_labels=("Hund",))
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.photos_processed == 1
+    row = (
+        await db_session.execute(
+            select(PhotoCategoryClassification).where(
+                PhotoCategoryClassification.photo_id == photo.id
+            )
+        )
+    ).scalars().one()
+    assert row.detected_category_confidences == {}
+    assert row.category_confidence is None
+
+
+async def test_the_invariant_holds_for_every_written_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """ADR 0067 Punkt 4: `category_confidence == detected_category_confidences.get(category_key)`
+    - die einzige Rechtfertigung der bewusst redundanten Spiegelspalte. Ueber ALLE im Lauf
+    erzeugten Zeilen geprueft, nicht nur ueber eine."""
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    for index in range(3):
+        photo = await _add_photo(db_session, project, f"{index}.jpg", f"etag-{index}")
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo)
+    await db_session.commit()
+
+    client = PerPhotoCategoryClient(
+        [
+            RemoteClassification(
+                categories=("tier",), fine_labels=(), category_confidences={"tier": 0.55}
+            ),
+            RemoteClassification(
+                categories=("landschaft", "menschen"),
+                fine_labels=(),
+                category_confidences={"landschaft": 0.9},
+            ),
+            RemoteClassification(categories=("menschen",), fine_labels=()),
+        ]
+    )
+
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    rows = (await db_session.execute(select(PhotoCategoryClassification))).scalars().all()
+    assert len(rows) == 3
+    for row in rows:
+        mapping = row.detected_category_confidences or {}
+        assert row.category_confidence == mapping.get(row.category_key)
+        # Die Abbildung traegt nie einen Schluessel ausserhalb der Kandidatenliste.
+        assert set(mapping) <= set(row.detected_categories)
+
+
+async def test_a_repeat_run_leaves_an_old_row_without_confidences_untouched(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium 9: auch ein erneuter Lauf fuellt den Altbestand nicht nach - der Worker
+    ueberspringt jedes Foto mit vorhandener Klassifizierungszeile (Kostenschutz)."""
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo)
+    db_session.add(
+        PhotoCategoryClassification(
+            photo_id=photo.id,
+            category_key="tier",
+            detected_categories=["tier"],
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    client = RecordingCategoryClient(
+        RemoteClassification(
+            categories=("tier",), fine_labels=(), category_confidences={"tier": 0.9}
+        )
+    )
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert client.calls == []
+    row = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
+    assert row.detected_category_confidences is None
+    assert row.category_confidence is None

@@ -10,6 +10,10 @@ import type {
   RankingOut,
   SuggestionOut,
 } from '../api/types'
+import {
+  CONFIDENCE_EXPLANATION,
+  CONFIDENCE_EXPLANATION_LABEL,
+} from '../utils/confidenceLabels'
 import { CriterionDetailsList } from './CriterionDetailsList'
 
 /** Verkuerztes Set (nur `key`/`display_name` werden ausgewertet) in Registry-Anzeigereihenfolge -
@@ -67,6 +71,8 @@ function candidate(overrides: Partial<CategoryCandidateOut> = {}): CategoryCandi
     category_key: 'tier',
     origin: 'remote',
     provider: 'anthropic',
+    // specs/features/0299-kategorie-konfidenz-anzeigen.md: Basiswert "keine Modellaussage".
+    confidence: null,
     ...overrides,
   }
 }
@@ -1026,5 +1032,135 @@ describe('CriterionDetailsList: Feinlabel-Chips', () => {
 
     expect(container.querySelector('img')).toBeNull()
     expect(screen.getByText('<img src=x onerror="alert(1)">')).toBeInTheDocument()
+  })
+})
+
+
+// specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterien 2/3/4/7
+describe('CriterionDetailsList: Modell-Konfidenz', () => {
+  function renderWithCandidates(candidates: CategoryCandidateOut[], categoryKey = 'tier') {
+    return render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: categoryKey })}
+        suggestion={null}
+        showSuggestion={false}
+        categories={CATEGORIES}
+        categoryCandidates={candidates}
+      />
+    )
+  }
+
+  it('zeigt die Zahl an jedem Kandidaten der Kandidatenliste', () => {
+    renderWithCandidates([
+      candidate({ category_key: 'tier', confidence: 0.92 }),
+      candidate({ category_key: 'landschaft', origin: 'local', provider: null, confidence: 0.41 }),
+    ])
+
+    expect(
+      within(screen.getByTestId('category-candidate-row-tier')).getByText('92%')
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('category-candidate-row-landschaft')).getByText('41%')
+    ).toBeInTheDocument()
+  })
+
+  it('rendert fuer einen Kandidaten ohne Angabe KEINEN Platzhalter', () => {
+    // Negativ-Assertion: die Luecke IST das richtige Signal - kein Strich, kein "0%", kein
+    // leeres Prozentzeichen.
+    renderWithCandidates([
+      candidate({ category_key: 'tier', confidence: 0.92 }),
+      candidate({ category_key: 'landschaft', origin: 'local', provider: null, confidence: null }),
+    ])
+
+    const row = screen.getByTestId('category-candidate-row-landschaft')
+    expect(within(row).queryByText(/%/)).not.toBeInTheDocument()
+    expect(row).not.toHaveTextContent('—')
+    expect(row).not.toHaveTextContent('0%')
+  })
+
+  it('zeigt die exakte Null als 0%, nicht als fehlende Angabe', () => {
+    renderWithCandidates([
+      candidate({ category_key: 'tier', confidence: 0 }),
+      candidate({ category_key: 'landschaft', origin: 'local', provider: null }),
+    ])
+
+    expect(
+      within(screen.getByTestId('category-candidate-row-tier')).getByText('0%')
+    ).toBeInTheDocument()
+  })
+
+  it('rundet kaufmaennisch und kennt keine "< 1 %"-Sonderregel', () => {
+    renderWithCandidates([
+      candidate({ category_key: 'tier', confidence: 0.995 }),
+      candidate({ category_key: 'landschaft', origin: 'local', provider: null, confidence: 0.004 }),
+    ])
+
+    expect(
+      within(screen.getByTestId('category-candidate-row-tier')).getByText('100%')
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('category-candidate-row-landschaft')).getByText('0%')
+    ).toBeInTheDocument()
+  })
+
+  it('zeigt die Zahl auch in der einzeiligen Kategorie-Anzeige', () => {
+    // Zweiter Zweig (hoechstens ein Kandidat) - er wird beim Einbau am leichtesten vergessen.
+    renderWithCandidates([candidate({ category_key: 'tier', confidence: 0.78 })])
+
+    expect(screen.getByText('Kategorie')).toBeInTheDocument()
+    expect(screen.getByText('Tier')).toBeInTheDocument()
+    expect(screen.getByText('78%')).toBeInTheDocument()
+  })
+
+  it('laesst die einzeilige Anzeige ohne Angabe unveraendert', () => {
+    renderWithCandidates([candidate({ category_key: 'tier', confidence: null })])
+
+    expect(screen.getByText('Tier')).toBeInTheDocument()
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument()
+  })
+
+  it('zeigt in der einzeiligen Anzeige die Zahl des ANGEZEIGTEN Schluessels', () => {
+    // Die Zahl folgt dem Schluessel: steht in der Rangfolge eine andere Kategorie als beim
+    // einzigen Kandidaten, gehoert dorthin keine fremde Zahl.
+    renderWithCandidates([candidate({ category_key: 'tier', confidence: 0.78 })], 'landschaft')
+
+    expect(screen.getByText('Landschaft')).toBeInTheDocument()
+    expect(screen.queryByText('78%')).not.toBeInTheDocument()
+  })
+
+  it('weist die Zahl ueber einen festen Hinweis als Selbsteinschaetzung aus', async () => {
+    const user = userEvent.setup()
+    renderWithCandidates([candidate({ category_key: 'tier', confidence: 0.92 })])
+
+    const trigger = screen.getByText(CONFIDENCE_EXPLANATION_LABEL)
+    await user.click(trigger)
+
+    expect(screen.getByText(CONFIDENCE_EXPLANATION)).toBeInTheDocument()
+  })
+
+  it('nennt die Zahl nirgends Trefferquote, Genauigkeit oder korrekt', async () => {
+    // Negativ-Assertion zu Akzeptanzkriterium 7: die drei Woerter duerfen ausschliesslich im
+    // Hinweistext selbst vorkommen, der sie ausdruecklich ZURUECKNIMMT.
+    const user = userEvent.setup()
+    const { container } = renderWithCandidates([candidate({ category_key: 'tier', confidence: 0.92 })])
+
+    await user.click(screen.getByText(CONFIDENCE_EXPLANATION_LABEL))
+    const text = (container.textContent ?? '').replace(CONFIDENCE_EXPLANATION, '')
+
+    expect(text).not.toMatch(/Trefferquote/i)
+    expect(text).not.toMatch(/Genauigkeit/i)
+    expect(text).not.toMatch(/korrekt/i)
+  })
+
+  it('zeigt den Hinweis gar nicht, wenn kein einziger Wert dargestellt wird', () => {
+    // Ein Hinweis auf eine Zahl, die nicht da ist, waere reines Rauschen - und der haeufigste
+    // Fall ist der Altbestand ohne jede Angabe.
+    renderWithCandidates([
+      candidate({ category_key: 'tier', confidence: null }),
+      candidate({ category_key: 'landschaft', origin: 'local', provider: null, confidence: null }),
+    ])
+
+    expect(screen.queryByText(CONFIDENCE_EXPLANATION_LABEL)).not.toBeInTheDocument()
   })
 })

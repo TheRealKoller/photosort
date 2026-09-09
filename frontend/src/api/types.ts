@@ -261,6 +261,16 @@ export interface CategoryCandidateOut {
   category_key: CategoryKey
   origin: 'local' | 'remote'
   provider: string | null
+  /** specs/features/0299-kategorie-konfidenz-anzeigen.md: die Selbsteinschaetzung des
+   * Erkennungsmodells zu DIESEM Schluessel, ein Bruchteil zwischen 0 und 1 - keine gemessene
+   * Trefferquote und ausdruecklich keine Wiederkehr des mit Spec 0289 entfallenen `score`-Felds:
+   * die Zahl beeinflusst weder Auswahl noch Sortierung.
+   *
+   * `null` heisst "keine Modellaussage" (z.B. ein rein lokal erkannter Kandidat oder eine
+   * Klassifizierungszeile aus der Zeit vor der Migration) - NIE als `0` behandeln und immer
+   * explizit `=== null` pruefen: `0` ist ein gueltiger Wert und heisst "das Modell war sich zu
+   * 0 % sicher". Fehlt die Zahl, wird KEIN Platzhalter gerendert. */
+  confidence: number | null
 }
 
 // specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
@@ -304,6 +314,11 @@ export interface PhotoOut {
   // Die remote ermittelte Kategorie dieses Fotos, null ohne Remote-Klassifizierung. Bewusst
   // getrennt von `ranking.category_key` (dort steht die im Lauf tatsaechlich vergebene Kategorie).
   remote_category: CategoryKey | null
+  /** specs/features/0299-kategorie-konfidenz-anzeigen.md: die Konfidenz zu `remote_category`.
+   * Eigenes Feld statt einer Ableitung aus `category_candidates` - `remote_category` kann
+   * `nicht_erkannt` sein und steht dann gar nicht in der Kandidatenliste. Traegt den
+   * Kuratierungsfilter "Nur unsichere Zuordnungen". `null` heisst "keine Angabe", nie 0. */
+  category_confidence: number | null
   // Dauerhafte manuelle Uebersteuerung (PhotoScore.category_override), null ohne aktiven
   // Override.
   category_override: CategoryKey | null
@@ -354,6 +369,33 @@ export interface ProjectStatsCategories {
   unclassified_photo_count: number
   /** Immer alle Kategorien des festen Sets inkl. `nicht_erkannt`, in Anzeigereihenfolge. */
   entries: ProjectStatsCategoryEntry[]
+}
+
+/** specs/features/0299-kategorie-konfidenz-anzeigen.md: ein Eintrag des Konfidenzblocks. */
+export interface ProjectStatsCategoryConfidenceEntry {
+  category_key: string
+  /** Anzeigename vom Server (ADR 0049), wie bei `ProjectStatsCategoryEntry`. */
+  display_name: string
+  /** Fotos DIESER Modell-Kategorie mit einer Angabe - nicht alle Fotos der Kategorie. */
+  photo_count: number
+  /** Arithmetisches Mittel genau dieser Angaben, Bruchteil zwischen 0 und 1. `null` bei
+   * `photo_count === 0` - immer explizit `=== null` pruefen, nie truthy: `0` ist ein gueltiger
+   * Mittelwert und eine voellig andere Aussage als "keine Angabe". */
+  average_confidence: number | null
+}
+
+/** Gruppiert ueber die MODELL-Kategorie, ausdruecklich nicht ueber die wirksame Kategorie der
+ * Rangfolge (ADR 0067 Punkt 5) - ein uebersteuertes Foto zaehlt hier weiterhin zu seiner
+ * Modell-Kategorie. Deshalb ein eigener Block neben `ProjectStatsCategories` und keine zusaetzliche
+ * Spalte dort: beide Zahlen stimmen, beziehen sich aber auf verschiedene Mengen.
+ *
+ * Die beiden Zaehler sind die BEZUGSBASIS und beziehen sich auf die klassifizierten Fotos des
+ * Projekts; ihre Summe ist die Zahl der Klassifizierungszeilen, nicht die Fotoanzahl. */
+export interface ProjectStatsCategoryConfidence {
+  /** Immer alle Kategorien des festen Sets inkl. `nicht_erkannt`, in Anzeigereihenfolge. */
+  entries: ProjectStatsCategoryConfidenceEntry[]
+  photos_with_confidence: number
+  photos_without_confidence: number
 }
 
 /** Die beiden Cloud-Zwecke (backend models.py::CloudVisionPhase) - immer beide, auch mit 0. */
@@ -420,6 +462,7 @@ export interface ProjectStatsOut {
   taken_at_earliest: string | null
   taken_at_latest: string | null
   categories: ProjectStatsCategories
+  category_confidence: ProjectStatsCategoryConfidence
   manual_category_override_count: number
   cost: ProjectStatsCost
   progress: ProjectStatsProgress

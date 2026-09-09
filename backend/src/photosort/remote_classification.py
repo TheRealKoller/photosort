@@ -5,7 +5,9 @@ import hashlib
 import logging
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Protocol
 
 import httpx
@@ -48,6 +50,14 @@ logger = logging.getLogger(__name__)
 # Set-Schluessel (je hoechstens ~8 Tokens) plus zwei kurze deutsche Feinlabels und das
 # JSON-Geruest liegen zusammen deutlich unter 100 Ausgabe-Tokens; der mit Spec 0289 deutlich
 # groessere Prompt waechst ausschliesslich auf der EINGABEseite.
+#
+# NEUHERLEITUNG mit specs/features/0299-kategorie-konfidenz-anzeigen.md (Security-Abschnitt
+# Punkt 5): der Kategorien-Eintrag ist vom nackten Schluessel zum Objekt geworden, je Kandidat
+# also rund 10 Tokens mehr ({"key": ..., "confidence": 0.92}). Die vollbesetzte Antwort liegt
+# damit ueberschlaegig bei 80-100 Ausgabe-Tokens gegenueber rund 50 bisher - 256 behaelt klare
+# Reserve und ist ausdruecklich NICHT anzuheben. Das ist hier keine reine Kostenschranke: die
+# Grenze begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und potenziell geloggt
+# werden kann. Beide Groessen sind in tests/test_remote_classification.py festgehalten.
 _MAX_RESPONSE_TOKENS = 256
 
 # Defensive Obergrenze gegen eine entartete Modellantwort (ADR 0032 Punkt 3) - verhindert einen
@@ -63,6 +73,23 @@ MAX_FINE_LABEL_LENGTH = 60
 # Spec 0289, Punkt 4) - zusammen mit dem %r-Format (repr escaped Zeilenumbrueche/Steuerzeichen
 # sichtbar) die Absicherung gegen Log-Injection durch eine entartete Modellantwort.
 _MAX_LOGGED_RAW_VALUE_LENGTH = 60
+
+# specs/features/0299-kategorie-konfidenz-anzeigen.md, Security-Abschnitt Punkt 4: FESTE
+# Grund-Tokens statt des Rohwerts. Fuer einen verworfenen Kategorieschluessel traegt der Rohwert
+# echten Diagnosewert (er zeigt ein Vokabular, das der Prompt nicht gesetzt hat) - fuer eine
+# verworfene Konfidenz liegt er praktisch vollstaendig in der FEHLERKLASSE: "kein Zahlentyp" bzw.
+# "ausserhalb [0,1]" sagt alles fuer eine Prompt-/Schemakorrektur Noetige, die konkrete `1.7`
+# nichts darueber hinaus. Damit enthaelt die Zeile ueberhaupt keinen Fremdtext und die
+# Log-Injection-Frage stellt sich nicht. Zweiter, praktischer Grund: die wahrscheinlichste reale
+# Fehlerform ist eine SYSTEMATISCHE Skalenverwechslung (`92` statt `0.92`) ueber einen ganzen Lauf
+# - ein festes Token macht solche Laeufe zaehlbar und greppbar, tausend Rohwerte nicht.
+_CONFIDENCE_REASON_NOT_NUMERIC = "nicht_numerisch"
+_CONFIDENCE_REASON_OUT_OF_RANGE = "ausserhalb_intervall"
+
+# Sentinel fuer "das Antwort-Objekt nennt gar kein `confidence`-Feld" - unterscheidbar von einem
+# geliefertem `null`. `None` taugt dafuer nicht: es ist selbst ein moeglicher (und dann verworfener)
+# Modellwert.
+_NO_CONFIDENCE = object()
 
 
 class RemoteCategoryClassificationApiError(Exception):
@@ -82,8 +109,16 @@ class RemoteClassification:
     Bekanntes genannt) und wird ueber `resolve_category` zu `nicht_erkannt`, kein Fehler.
 
     `fine_labels` enthaelt die zeichensanierten, freien Feinlabels, hoechstens
-    MAX_FINE_LABELS_PER_PHOTO. Konfidenzen entfallen ersatzlos (ADR 0049 Entwurfsentscheidung 7:
-    sie dienten nur der entfallenen Score-Auswahl)."""
+    MAX_FINE_LABELS_PER_PHOTO.
+
+    `category_confidences` ist die Selbsteinschaetzung des Modells je Kandidat (specs/features/
+    0299-kategorie-konfidenz-anzeigen.md, ADR 0067) - eine ABBILDUNG `category_key -> Wert in
+    [0, 1]`, kein positionsparalleles Array: der Wert haengt am Schluessel und ueberlebt jede
+    Umsortierung. Sie ist eine TEILmenge von `categories` (Invariante
+    `set(category_confidences) <= set(categories)`), darf leer sein, und ihr Fehlen an einem
+    Schluessel heisst "keine Angabe", nie `0.0`. Die frueher hier entfallenen Konfidenzen (ADR 0049
+    Entwurfsentscheidung 7) kehren damit zurueck - aber ausdruecklich OHNE die Eigenschaft, die sie
+    damals zum Ballast machte: sie beeinflussen die Kategorieauswahl an keiner Stelle."""
 
     categories: tuple[str, ...]
     fine_labels: tuple[str, ...]
@@ -92,6 +127,12 @@ class RemoteClassification:
     # die CategoryDetectionClientLike-Signatur bleiben unveraendert. `None` heisst "nicht
     # ermittelbar", nicht "keine Kosten".
     usage: TokenUsage | None = None
+    # `MappingProxyType({})` statt `field(default_factory=dict)`: die Zusage von `frozen=True` gilt
+    # sonst nur fuer die REFERENZ, nicht fuer den Inhalt - genau wie bei den beiden Tupel-Feldern
+    # oben soll auch diese Struktur nach dem Bau unveraenderlich sein. Als Default unbedenklich,
+    # weil ein `MappingProxyType` (anders als ein `{}`) gar nicht mutierbar ist und deshalb nicht
+    # die klassische Falle des veraenderlichen Default-Arguments traegt.
+    category_confidences: Mapping[str, float] = MappingProxyType({})
 
 
 class CategoryDetectionClientLike(Protocol):
@@ -125,6 +166,20 @@ def _log_discarded_category(photo_id: int, raw: object) -> None:
     )
 
 
+def _log_discarded_confidence(photo_id: int, reason: str) -> None:
+    """Schwesterfunktion zu `_log_discarded_category` fuer einen verworfenen KONFIDENZwert
+    (specs/features/0299-kategorie-konfidenz-anzeigen.md, Security-Abschnitt Punkt 4) - eine Zeile,
+    WARNING, kein exc_info: der Lauf bleibt erfolgreich, das Foto behaelt seine Kategorie.
+
+    Geloggt werden ausschliesslich `photo_id` und eines der beiden festen Grund-Tokens, NIE der
+    Rohwert, nie die vollstaendige Antwort, nie der Kategorie-Key, nie Bilddaten. Kein
+    Log-Flooding moeglich: je Foto koennen hoechstens so viele Werte verworfen werden, wie die
+    Antwortliste Eintraege hat (und die ist ueber `_MAX_RESPONSE_TOKENS` begrenzt)."""
+    logger.warning(
+        "remote_category: Konfidenzwert verworfen photo_id=%s grund=%s", photo_id, reason
+    )
+
+
 def _sanitize_label_text(raw: str) -> str:
     """Zeichensanitisierung eines frei formulierten Feinlabels (Security-Abschnitt der Spec 0289,
     Punkt 3) - laeuft VOR der Laengenpruefung und vor resolve_canonical_label/_slugify.
@@ -153,24 +208,99 @@ def _sanitize_label_text(raw: str) -> str:
     return " ".join(without_controls.split())
 
 
-def _categories_from_json(raw_categories: list[Any], photo_id: int) -> tuple[str, ...]:
+def _confidence_from_raw(raw: object, photo_id: int) -> float | None:
+    """Die Selbsteinschaetzung des Modells zu EINEM Kandidaten (specs/features/0299-kategorie-
+    konfidenz-anzeigen.md, ADR 0067 Punkt 3) - `None` heisst "keine brauchbare Zahl".
+
+    Uebernommen wird ausschliesslich ein echter Zahlentyp im Band `0.0 <= v <= 1.0`. Drei
+    Feinheiten, jede mit einer konkreten Ausfallfolge:
+
+    - `isinstance(raw, bool)` wird EXPLIZIT ausgeschlossen, bevor auf `int` geprueft wird:
+      `isinstance(True, int)` ist `True`, `"confidence": true` erschiene sonst als "100 % sicher" -
+      die staerkste Aussage, die das Produkt kennt, erfunden aus einem Nicht-Wert.
+    - Die Bereichspruefung ist als Vergleich geschrieben, damit `NaN`/`±Infinity` DURCHFALLEN
+      (`0.0 <= nan <= 1.0` ist `False`). Pythons `json` parst beide Literale standardmaessig, und
+      beide Provider-Pfade nutzen `json.loads` mit Standardeinstellungen. Ein durchgelassenes
+      `NaN` liesse ueber Starlettes `allow_nan=False` die GESAMTE Listenantwort mit `ValueError`
+      scheitern (nicht nur den einen Eintrag), und PostgreSQL lehnt dasselbe Literal bereits beim
+      Schreiben der JSON-Spalte ab - verfuegbarkeitswirksam, nicht nur unsauber (Security-Abschnitt
+      der Spec 0299, Punkt 2).
+    - VERWORFEN, nicht geklemmt - bewusst anders als `landmark.py::_landmark_detection_from_json`.
+      `1.4 -> 1.0` waere eine Aussage, die das Modell nie getroffen hat; und ein spaeteres Klemmen
+      (`if v > 1.0: v = 1.0`) liesse `NaN` wieder durch, weil der Vergleich `False` ergibt.
+    """
+    if isinstance(raw, bool) or not isinstance(raw, int | float):
+        _log_discarded_confidence(photo_id, _CONFIDENCE_REASON_NOT_NUMERIC)
+        return None
+    value = float(raw)
+    if not 0.0 <= value <= 1.0:
+        _log_discarded_confidence(photo_id, _CONFIDENCE_REASON_OUT_OF_RANGE)
+        return None
+    return value
+
+
+def _categories_from_json(
+    raw_categories: list[Any], photo_id: int
+) -> tuple[tuple[str, ...], Mapping[str, float]]:
     """Verbindliche Verarbeitungsreihenfolge (Spec 0289, Teststrategie 5): trimmen -> leere Werte
     verwerfen -> unbekannte Werte verwerfen (+ genau ein WARNING je Wert) -> deduplizieren unter
     Erhalt der Erstnennungs-Reihenfolge -> ZULETZT kuerzen. Zuerst zu kuerzen wuerde gueltige
-    Werte hinter ungueltigen verlieren."""
+    Werte hinter ungueltigen verlieren.
+
+    Seit specs/features/0299-kategorie-konfidenz-anzeigen.md liefert der EINE Durchlauf ein PAAR
+    (Kandidaten + Konfidenz-Abbildung) statt nur der Kandidaten. Bewusst nicht zwei getrennte
+    Funktionen: Dedup und Kappung koennten sonst zwischen beiden Rueckgaben auseinanderlaufen.
+
+    Ein Eintrag darf ein Objekt mit `key` (optional `confidence`) ODER weiterhin ein blanker String
+    sein (ADR 0067 Punkt 7) - der String-Fall liefert eine Kategorie OHNE Zahl. Alles andere geht
+    durch denselben Verwerfen-Pfad wie bisher, kein neuer stiller Zweig.
+
+    Security-Muss-Kriterium (Spec 0299, Punkt 3): die Konfidenz-Abbildung wird ERST NACH
+    Schluesselvalidierung, Dedup und Kappung auf die verbliebenen Schluessel gefiltert. Ihre
+    Schluessel sind ein zweiter Persistenzkanal - entstuende sie vor oder unabhaengig von der
+    Validierung, wanderte unvalidierter Fremdtext ueber sie in API-Antwort und UI. Invariante:
+    `set(confidences) <= set(categories)`."""
     accepted: list[str] = []
+    confidences: dict[str, float] = {}
     for raw in raw_categories:
-        if not isinstance(raw, str):
+        if isinstance(raw, str):
+            raw_key: object = raw
+            raw_confidence: object = _NO_CONFIDENCE
+        elif isinstance(raw, dict):
+            raw_key = raw.get("key")
+            # `_NO_CONFIDENCE` statt `None`: ein FEHLENDER Schluessel ist der erwartete Regelfall
+            # (das Modell kann sich nicht einschaetzen) und wird still hingenommen, ein explizites
+            # `"confidence": null` ist dagegen ein gelieferter, unbrauchbarer Wert und wird wie
+            # jeder andere verworfene Wert einmal protokolliert.
+            raw_confidence = raw.get("confidence", _NO_CONFIDENCE)
+        else:
             _log_discarded_category(photo_id, raw)
             continue
-        trimmed = raw.strip()
+
+        if not isinstance(raw_key, str):
+            # Bewusst nur der KEY-Anteil ins Log, nie der ganze Eintrag: der Konfidenzwert gehoert
+            # laut Security-Abschnitt Punkt 4 nicht in eine Logzeile.
+            _log_discarded_category(photo_id, raw_key)
+            continue
+        trimmed = raw_key.strip()
         if not trimmed or not is_known_category(trimmed):
-            _log_discarded_category(photo_id, raw)
+            _log_discarded_category(photo_id, raw_key)
             continue
         if trimmed in accepted:
+            # Erstnennung gewinnt - fuer den Schluessel UND fuer die Zahl. Die Konfidenz der
+            # Zweitnennung wird gar nicht erst bewertet (also auch nicht protokolliert): der
+            # Eintrag als Ganzes ist bereits verworfen.
             continue
         accepted.append(trimmed)
-    return tuple(accepted[:MAX_REMOTE_CATEGORIES_PER_PHOTO])
+        if raw_confidence is not _NO_CONFIDENCE:
+            confidence = _confidence_from_raw(raw_confidence, photo_id)
+            if confidence is not None:
+                confidences[trimmed] = confidence
+
+    categories = tuple(accepted[:MAX_REMOTE_CATEGORIES_PER_PHOTO])
+    return categories, MappingProxyType(
+        {key: confidences[key] for key in categories if key in confidences}
+    )
 
 
 def _fine_labels_from_json(raw_labels: list[Any]) -> tuple[str, ...]:
@@ -233,10 +363,12 @@ def _classification_from_json(
             "Unerwartete Antwortstruktur der Vision-API-Antwort ('fine_labels' ist keine Liste)."
         )
 
+    categories, category_confidences = _categories_from_json(raw_categories, photo_id)
     return RemoteClassification(
-        categories=_categories_from_json(raw_categories, photo_id),
+        categories=categories,
         fine_labels=_fine_labels_from_json(raw_fine_labels),
         usage=usage,
+        category_confidences=category_confidences,
     )
 
 

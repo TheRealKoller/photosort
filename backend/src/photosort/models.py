@@ -611,6 +611,35 @@ class PhotoCategoryClassification(Base):
     photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), primary_key=True)
     category_key: Mapped[str]
     detected_categories: Mapped[list[str]] = mapped_column(SQLJSON)
+    # specs/features/0299-kategorie-konfidenz-anzeigen.md, decisions/0067-modellkonfidenz-je-
+    # kategorie-anzeige-und-auswertung.md Punkt 2/4: die Selbsteinschaetzung des Modells je
+    # Kandidat als ABBILDUNG `category_key -> Wert in [0, 1]`, ausschliesslich mit Schluesseln aus
+    # `detected_categories` (Invariante, am Parser erzwungen). Kein positionsparalleles Array und
+    # keine Paarliste - der Wert haengt am Schluessel und ueberlebt jede Umsortierung.
+    #
+    # `category_confidence` ist die Konfidenz zur AUFGELOESTEN Kategorie DIESER Zeile, also
+    # `detected_category_confidences.get(category_key)`. Bewusst redundant: die
+    # Statistik-Aggregation muss in SQL laufen (ein `AVG` ueber einen aus JSON extrahierten Wert
+    # ist in SQLite und PostgreSQL unterschiedlich zu schreiben, und alle Klassifizierungszeilen
+    # eines Projekts nach Python zu laden vertraegt sich nicht mit der Groessenannahme "mehrere
+    # tausend Fotos"). Tragbar, weil es genau EINE schreibende Stelle gibt
+    # (worker.py::run_remote_category_classification) und beide Werte dort aus derselben Quelle in
+    # derselben Transaktion entstehen; die Invariante wird getestet.
+    #
+    # BEIDE nullable, ohne server_default und ohne Backfill - exakt das Muster der Kostenspalten
+    # aus ADR 0051:
+    #     NULL = "nicht erhoben" (Zeile aus der Zeit vor der Migration, oder Modell ohne Angabe)
+    #     0.0  = "das Modell war sich zu 0 % sicher"
+    # Ein `{}` in `detected_category_confidences` heisst wiederum "erhoben, aber keine brauchbare
+    # Zahl geliefert". Ueberall mit `is None` statt truthy zu pruefen.
+    #
+    # KEIN Codepfad, der eine Kategorie BESTIMMT, liest diese beiden Spalten (ADR 0067 Punkt 1) -
+    # sie werden ausschliesslich von der API-Ausgabe, der Statistik-Aggregation und dem Frontend
+    # gelesen.
+    detected_category_confidences: Mapped[dict[str, float] | None] = mapped_column(
+        SQLJSON, default=None
+    )
+    category_confidence: Mapped[float | None] = mapped_column(default=None)
     provider: Mapped[str]
     computed_at: Mapped[datetime]
 

@@ -132,6 +132,25 @@ _BASE_SCORING_AT = datetime(2024, 6, 1, 11, 0, 0)
 # waere bereits entschieden und zeigte den Zustand nicht mehr).
 _OPEN_SUGGESTION_INDEX = 3
 
+# specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 7: zwei Fotos des
+# bewerteten Projekts tragen eine ABSICHTLICH gesetzte Konfidenz-Sonderform, damit beide leicht
+# falsch gebauten Faelle im Browser tatsaechlich sichtbar sind.
+#
+#   _CONFIDENCE_GAP_INDEX  - gar keine Angabe (beide Spalten `NULL`): die Luecke IST die
+#                            Darstellung, es darf dort kein Platzhalter und kein "0 %" stehen.
+#   _LOW_CONFIDENCE_INDEX  - eine Angabe ECHT unter der Kuratierungsschwelle von 60 %, damit der
+#                            Filter "Nur unsichere Zuordnungen" in der Demo nicht leer laeuft.
+#
+# Bewusst zwei VERSCHIEDENE Fotos und beide ausserhalb von `_OPEN_SUGGESTION_INDEX`, damit sich
+# die Sonderfaelle nicht gegenseitig verdecken.
+_CONFIDENCE_GAP_INDEX = 0
+_LOW_CONFIDENCE_INDEX = 1
+
+# Faktor, mit dem der deterministische Basiswert fuer `_LOW_CONFIDENCE_INDEX` in die untere
+# Bandhaelfte gezogen wird: `_deterministic_unit_value` liefert [0.05, 0.98], halbiert also
+# hoechstens 0.49 - garantiert unter 0.6, ohne den Wert fest zu verdrahten.
+_LOW_CONFIDENCE_FACTOR = 0.5
+
 # Reihenfolge, in der die drei Bewertungsstatus auf die ersten Fotos des bewerteten Projekts
 # verteilt werden - ueber das Enum gebildet, damit ein vierter Status nicht stillschweigend
 # unbewertet bliebe.
@@ -440,6 +459,23 @@ def _deterministic_unit_value(slug: str, index: int, salt: str) -> float:
     return round(rng.uniform(0.05, 0.98), 3)
 
 
+def _demo_category_confidences(
+    slug: str, index: int, category_key: str
+) -> dict[str, float] | None:
+    """Die Konfidenz-Abbildung EINES Demo-Fotos (specs/features/0299-kategorie-konfidenz-
+    anzeigen.md) - `None` heisst "nicht erhoben" und ist genau der Fall, den die Oberflaeche als
+    Luecke darstellen muss.
+
+    Reine Funktion ueber demselben deterministischen Zufallsgenerator wie die uebrigen Demo-Werte:
+    zwei Laeufe liefern identische Zahlen, ein Screenshot bleibt vergleichbar."""
+    if index == _CONFIDENCE_GAP_INDEX:
+        return None
+    base = _deterministic_unit_value(slug, index, "category_confidence")
+    if index == _LOW_CONFIDENCE_INDEX:
+        return {category_key: round(base * _LOW_CONFIDENCE_FACTOR, 3)}
+    return {category_key: base}
+
+
 async def _seed_empty_project(
     session: AsyncSession, spec: DemoProjectSpec, cache_dir: Path
 ) -> list[Photo]:
@@ -541,11 +577,22 @@ async def _seed_rated_project(
                 computed_at=_BASE_SCORING_AT,
             )
         )
+        # specs/features/0299-kategorie-konfidenz-anzeigen.md: deterministische Konfidenz je
+        # Foto ueber dasselbe `_deterministic_unit_value`-Muster wie die uebrigen Demo-Werte -
+        # zwei Fotos tragen die Sonderformen (keine Angabe / unterhalb der Kuratierungsschwelle),
+        # siehe die Konstanten oben. Der Skalar entsteht wie im produktiven Schreibpfad per
+        # LOOKUP aus der Abbildung, damit die Demo keinen Zustand erzeugt, den die Anwendung
+        # selbst nie schriebe (Invariante aus ADR 0067 Punkt 4).
+        confidences = _demo_category_confidences(spec.slug, index, category_key)
         session.add(
             PhotoCategoryClassification(
                 photo_id=photo.id,
                 category_key=category_key,
                 detected_categories=[category_key],
+                detected_category_confidences=confidences,
+                category_confidence=(
+                    None if confidences is None else confidences.get(category_key)
+                ),
                 provider="demo-state",
                 computed_at=_BASE_SCORING_AT,
             )

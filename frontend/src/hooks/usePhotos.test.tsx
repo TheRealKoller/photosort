@@ -30,6 +30,8 @@ function page(items: number[], total: number): PhotoListOut {
       criterion_scores: [],
       fine_labels: [],
       remote_category: null,
+      // specs/features/0299-kategorie-konfidenz-anzeigen.md: Basiswert "keine Angabe".
+      category_confidence: null,
       category_override: null,
       category_candidates: [],
       cloud_vision_status: [],

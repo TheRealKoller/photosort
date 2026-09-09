@@ -166,6 +166,14 @@ class AssumedImageUsage:
 #   Prompt: der aus CATEGORY_REGISTRY erzeugte Klassifikations-Prompt (categories.py::
 #   build_classification_prompt, 13 Kategorie-Bloecke, ~3400 Zeichen bei ~4 Zeichen/Token).
 #   Ausgabe: JSON-Array mit 1-3 Objekten, 80-160 Tokens, Mittelwert 120.
+#   NACHGERECHNET mit specs/features/0299-kategorie-konfidenz-anzeigen.md (Security-Abschnitt
+#   Punkt 5): der Kategorien-Eintrag ist vom nackten Schluessel zum Objekt geworden
+#   ({"key": ..., "confidence": 0.92}), rund 10 Tokens mehr je Kandidat. Die vollbesetzte Antwort
+#   liegt jetzt bei ueberschlaegig 80-100 statt rund 50 Ausgabe-Tokens. Der Wert 120 deckt das
+#   weiterhin ab und bleibt deshalb UNVERAENDERT - die Marge schrumpft aber von rund dem
+#   Zweieinhalb- auf etwa das Anderthalbfache. Bei einer weiteren Schema-Erweiterung ist sie
+#   erneut zu pruefen; die Schaetzung ist seit Spec 0296 die einzige verbliebene Absicherung vor
+#   der kostenpflichtigen Aktion.
 # mistral: 2880 Input-Tokens = ~2030 Bild- + ~850 Prompt-Tokens.
 #   Mistral veroeffentlicht fuer die Ministral-Familie KEINE offizielle Bild-Token-Formel (anders
 #   als Anthropic) - dieser Anteil bleibt ausdruecklich DOKUMENTIERT-UNKALIBRIERT, gestuetzt auf

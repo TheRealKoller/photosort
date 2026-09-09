@@ -1320,3 +1320,198 @@ class TestDiagnostics:
 
         after = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
         assert after["diagnostics"]["remote_failures"][0]["photo_count"] == 0
+
+
+# --- specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 5 -----------------
+
+
+async def _add_classification(
+    session: AsyncSession,
+    photo: Photo,
+    category_key: str,
+    *,
+    confidence: float | None = None,
+    detected: list[str] | None = None,
+) -> None:
+    session.add(
+        PhotoCategoryClassification(
+            photo_id=photo.id,
+            category_key=category_key,
+            detected_categories=detected if detected is not None else [category_key],
+            detected_category_confidences=(
+                None if confidence is None else {category_key: confidence}
+            ),
+            category_confidence=confidence,
+            provider="anthropic",
+            computed_at=datetime(2023, 6, 3, 12, 0),
+        )
+    )
+    await session.commit()
+
+
+class TestCategoryConfidence:
+    """Akzeptanzkriterium 6 / ADR 0067 Punkt 5: eigener Block mit EIGENER Grundmenge - gruppiert
+    ueber die MODELL-Kategorie (`photo_category_classifications.category_key`), ausdruecklich nicht
+    ueber die wirksame Kategorie der Rangfolge."""
+
+    async def test_the_average_is_the_arithmetic_mean_per_model_category(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        tmp_path: Path,
+    ) -> None:
+        await _noise_project(db_session, tmp_path)
+        project = await _make_project(db_session, "Costa Rica")
+        photo_a = await _add_photo(db_session, project, "a.jpg")
+        photo_b = await _add_photo(db_session, project, "b.jpg")
+        photo_c = await _add_photo(db_session, project, "c.jpg")
+        await _add_classification(db_session, photo_a, "tier", confidence=0.8)
+        await _add_classification(db_session, photo_b, "tier", confidence=0.6)
+        await _add_classification(db_session, photo_c, "landschaft", confidence=0.5)
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        block = payload["category_confidence"]
+        by_key = {entry["category_key"]: entry for entry in block["entries"]}
+        assert by_key["tier"]["photo_count"] == 2
+        assert by_key["tier"]["average_confidence"] == pytest.approx(0.7)
+        assert by_key["landschaft"]["photo_count"] == 1
+        assert by_key["landschaft"]["average_confidence"] == pytest.approx(0.5)
+        assert block["photos_with_confidence"] == 3
+        assert block["photos_without_confidence"] == 0
+
+    async def test_a_category_without_a_single_number_shows_none_not_zero(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Assertion auf `is None`, NICHT auf Falsyness - `0.0` ist ebenfalls falsy und waere eine
+        voellig andere Aussage."""
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_classification(db_session, photo, "tier", confidence=0.4)
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        by_key = {
+            entry["category_key"]: entry for entry in payload["category_confidence"]["entries"]
+        }
+        assert by_key["menschen"]["photo_count"] == 0
+        assert by_key["menschen"]["average_confidence"] is None
+
+    async def test_a_zero_confidence_is_an_average_of_zero_not_a_missing_value(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_classification(db_session, photo, "tier", confidence=0.0)
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        by_key = {
+            entry["category_key"]: entry for entry in payload["category_confidence"]["entries"]
+        }
+        assert by_key["tier"]["photo_count"] == 1
+        assert by_key["tier"]["average_confidence"] == 0.0
+        assert by_key["tier"]["average_confidence"] is not None
+
+    async def test_classified_photos_without_a_number_land_in_the_basis_not_in_the_average(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 9: eine Altzeile mit `NULL` zaehlt zur Bezugsbasis, verfaelscht den
+        Mittelwert aber nicht (kein `0.0`-Beitrag)."""
+        project = await _make_project(db_session, "Costa Rica")
+        photo_a = await _add_photo(db_session, project, "a.jpg")
+        photo_b = await _add_photo(db_session, project, "b.jpg")
+        await _add_classification(db_session, photo_a, "tier", confidence=0.6)
+        await _add_classification(db_session, photo_b, "tier")
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        block = payload["category_confidence"]
+        by_key = {entry["category_key"]: entry for entry in block["entries"]}
+        assert by_key["tier"]["photo_count"] == 1
+        assert by_key["tier"]["average_confidence"] == pytest.approx(0.6)
+        assert block["photos_with_confidence"] == 1
+        assert block["photos_without_confidence"] == 1
+
+    async def test_the_entries_cover_all_registry_keys_in_display_order(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        block = payload["category_confidence"]
+        assert [entry["category_key"] for entry in block["entries"]] == list(CATEGORY_REGISTRY)
+        assert [entry["display_name"] for entry in block["entries"]] == [
+            definition.display_name for definition in CATEGORY_REGISTRY.values()
+        ]
+        assert block["photos_with_confidence"] == 0
+        assert block["photos_without_confidence"] == 0
+        assert all(entry["average_confidence"] is None for entry in block["entries"])
+
+    async def test_an_overridden_photo_still_counts_towards_its_model_category(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """DIE Abgrenzung zur Kategorienverteilung (ADR 0067 Punkt 5): der vorhandene Block nimmt
+        die WIRKSAME Kategorie (inkl. Override), dieser Block die Aussage des Modells ueber sich
+        selbst. Ein uebersteuertes Foto zaehlt hier weiterhin zu `tier`."""
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo, category_override="menschen")
+        await _add_classification(db_session, photo, "tier", confidence=0.9)
+        run = await _add_criterion_scoring_run(
+            db_session, project, started_at=datetime(2023, 1, 1)
+        )
+        await _add_ranking(db_session, run, photo, "menschen")
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        confidence_by_key = {
+            entry["category_key"]: entry for entry in payload["category_confidence"]["entries"]
+        }
+        distribution_by_key = {
+            entry["category_key"]: entry for entry in payload["categories"]["entries"]
+        }
+        assert confidence_by_key["tier"]["photo_count"] == 1
+        assert confidence_by_key["tier"]["average_confidence"] == pytest.approx(0.9)
+        assert confidence_by_key["menschen"]["photo_count"] == 0
+        # Die Verteilung sieht dasselbe Foto unter `menschen` - beide Zahlen stimmen, weil sie
+        # verschiedene Fragen beantworten.
+        assert distribution_by_key["menschen"]["photo_count"] == 1
+        assert distribution_by_key["tier"]["photo_count"] == 0
+
+    async def test_a_second_project_never_leaks_into_the_aggregate(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        tmp_path: Path,
+    ) -> None:
+        """Projekt-Skopierung ueber `_photos_of_project` - Muss-Kriterium mit eigenem Test
+        (`photo_category_classifications` hat keine eigene `project_id`)."""
+        other = await _make_project(db_session, "Nachbarprojekt")
+        other_photo = await _add_photo(db_session, other, "n.jpg")
+        await _add_classification(db_session, other_photo, "tier", confidence=1.0)
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_classification(db_session, photo, "tier", confidence=0.2)
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        block = payload["category_confidence"]
+        by_key = {entry["category_key"]: entry for entry in block["entries"]}
+        assert by_key["tier"]["photo_count"] == 1
+        assert by_key["tier"]["average_confidence"] == pytest.approx(0.2)
+        assert block["photos_with_confidence"] == 1
+
+    async def test_a_project_without_any_classification_reports_an_empty_basis(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+        await _add_photo(db_session, project, "a.jpg")
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        block = payload["category_confidence"]
+        assert block["photos_with_confidence"] == 0
+        assert block["photos_without_confidence"] == 0
+        assert all(entry["photo_count"] == 0 for entry in block["entries"])

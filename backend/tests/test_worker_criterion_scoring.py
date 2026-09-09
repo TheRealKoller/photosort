@@ -3894,3 +3894,57 @@ async def test_the_model_column_survives_a_run_that_fails_after_the_landmark_blo
 
 def _raise_after_landmark_phase(*args: object, **kwargs: object) -> NoReturn:
     raise RuntimeError("Kriterien-Phase scheitert nach dem Cloud-Anteil")
+
+
+# --- specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterium 12 ---------------
+
+
+async def test_the_confidence_columns_do_not_change_the_resolved_category_or_ranking(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der PAARTEST zu Akzeptanzkriterium 12 / ADR 0067 Punkt 1: zwei Projekte mit identischen
+    Kandidaten, aber gegensaetzlichen Konfidenzen erzeugen identische Kategorie UND identische
+    Rangfolge. `run_criterion_scoring` liest die Kandidaten ueber ein explizites `select(...)` und
+    darf die neuen Spalten gar nicht erst anfassen - waere die Zahl je ein Auswahlkriterium,
+    gewaenne hier einmal `landschaft` und einmal `menschen`."""
+
+    async def _run_with(confidences: dict[str, float], name: str) -> tuple[int, str, int]:
+        project = await _make_project(db_session, name=name)
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photo = await _add_photo(
+            db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="menschen",
+                detected_categories=["landschaft", "menschen"],
+                detected_category_confidences=confidences,
+                category_confidence=confidences.get("menschen"),
+                provider="anthropic",
+                computed_at=datetime.now(UTC),
+            )
+        )
+        await db_session.commit()
+
+        categories = await _run_and_collect_categories(
+            db_session, project, scoring_run.id, tmp_path
+        )
+        ranking = (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
+            )
+        ).scalars().one()
+        return photo.id, categories[photo.id], ranking.rank_position
+
+    _, category_high_landscape, position_high_landscape = await _run_with(
+        {"landschaft": 0.99, "menschen": 0.01}, "Landschaft sicher"
+    )
+    _, category_high_people, position_high_people = await _run_with(
+        {"landschaft": 0.01, "menschen": 0.99}, "Menschen sicher"
+    )
+
+    assert category_high_landscape == category_high_people == "menschen"
+    assert position_high_landscape == position_high_people

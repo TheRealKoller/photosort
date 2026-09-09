@@ -12,7 +12,9 @@ from photosort.categories import (
     build_classification_prompt,
 )
 from photosort.cloud_vision import ANTHROPIC_VISION_MODEL, MISTRAL_VISION_MODEL, TokenUsage
+from photosort.pricing import ASSUMED_USAGE_BY_PROVIDER
 from photosort.remote_classification import (
+    _MAX_RESPONSE_TOKENS,
     CATEGORY_LABEL_SIMILARITY_THRESHOLD,
     MAX_FINE_LABEL_LENGTH,
     AnthropicCategoryClient,
@@ -645,3 +647,311 @@ class TestConfiguredModelReachesTheRequest:
         asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
 
         assert captured["model"] == "ein-anderes-modell"
+
+
+# --- specs/features/0299-kategorie-konfidenz-anzeigen.md -------------------------------------
+
+
+class TestConfidenceParsing:
+    """Umsetzungsschritt 1 der Spec 0299 / ADR 0067 Punkt 3 und 7: der Kategorien-Eintrag darf ein
+    Objekt mit `key`/`confidence` ODER weiterhin ein blanker String sein. Die Zahl wird nur
+    uebernommen, wenn sie ein echter Zahlentyp im Band [0, 1] ist - sonst VERWORFEN, nie geklemmt.
+    """
+
+    def test_an_object_entry_yields_the_category_and_its_confidence(self) -> None:
+        result = _classification_from_json(
+            {"categories": [{"key": "tier", "confidence": 0.92}]}, photo_id=1
+        )
+        assert result.categories == ("tier",)
+        assert result.category_confidences == {"tier": 0.92}
+
+    def test_a_plain_string_entry_stays_valid_and_yields_no_confidence(self) -> None:
+        """ADR 0067 Punkt 7: ein Modell, das die neue Anweisung ignoriert, verschlechtert die
+        ANZEIGE, nicht die Klassifizierung."""
+        result = _classification_from_json({"categories": ["tier"]}, photo_id=1)
+        assert result.categories == ("tier",)
+        assert result.category_confidences == {}
+
+    def test_a_string_and_an_object_entry_can_be_mixed_in_one_response(self) -> None:
+        result = _classification_from_json(
+            {"categories": ["menschen", {"key": "tier", "confidence": 0.4}]}, photo_id=1
+        )
+        assert result.categories == ("menschen", "tier")
+        assert result.category_confidences == {"tier": 0.4}
+
+    def test_an_object_without_a_key_is_discarded_like_any_other_unknown_value(self) -> None:
+        result = _classification_from_json(
+            {"categories": [{"confidence": 0.9}, "tier"]}, photo_id=1
+        )
+        assert result.categories == ("tier",)
+        assert result.category_confidences == {}
+
+    def test_an_object_with_a_key_but_without_a_confidence_yields_no_number(self) -> None:
+        result = _classification_from_json({"categories": [{"key": "tier"}]}, photo_id=1)
+        assert result.categories == ("tier",)
+        assert result.category_confidences == {}
+
+    def test_the_key_of_an_object_entry_is_trimmed_like_a_plain_string(self) -> None:
+        result = _classification_from_json(
+            {"categories": [{"key": "  tier  ", "confidence": 0.5}]}, photo_id=1
+        )
+        assert result.categories == ("tier",)
+        assert result.category_confidences == {"tier": 0.5}
+
+    def test_an_unknown_key_with_a_valid_confidence_logs_exactly_one_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Der Kategoriewert ist bereits verworfen - die Zahl wird gar nicht erst bewertet, es gibt
+        also KEINE zweite Warnung fuer denselben Eintrag."""
+        with caplog.at_level("WARNING", logger="photosort.remote_classification"):
+            result = _classification_from_json(
+                {"categories": [{"key": "einhorn", "confidence": 0.99}]}, photo_id=7
+            )
+
+        assert result.categories == ()
+        assert result.category_confidences == {}
+        assert len(caplog.records) == 1
+        assert "einhorn" in caplog.records[0].getMessage()
+
+    def test_a_non_string_non_dict_entry_is_still_discarded(self) -> None:
+        result = _classification_from_json({"categories": [42, ["tier"], "tier"]}, photo_id=1)
+        assert result.categories == ("tier",)
+
+
+class TestConfidenceValueBand:
+    """Akzeptanzkriterium 1/10 und Security-Punkt 2 der Spec 0299: `int`/`float` (NICHT `bool`) im
+    Band `0.0 <= v <= 1.0`. Alles andere wird verworfen."""
+
+    @pytest.mark.parametrize("raw", [0.0, 1.0, 0.5, 0, 1, -0.0])
+    def test_values_inside_the_band_are_kept(self, raw: float) -> None:
+        result = _classification_from_json(
+            {"categories": [{"key": "tier", "confidence": raw}]}, photo_id=1
+        )
+        assert result.category_confidences == {"tier": float(raw)}
+
+    def test_zero_is_a_value_not_an_absence(self) -> None:
+        """`0.0` heisst "das Modell war sich zu 0 % sicher", NICHT "keine Angabe" - der Schluessel
+        muss in der Abbildung stehen."""
+        result = _classification_from_json(
+            {"categories": [{"key": "tier", "confidence": 0.0}]}, photo_id=1
+        )
+        assert "tier" in result.category_confidences
+        assert result.category_confidences["tier"] == 0.0
+
+    @pytest.mark.parametrize("raw", [1.0000001, -0.5, 2, 100, -1])
+    def test_values_outside_the_band_are_discarded_not_clamped(self, raw: float) -> None:
+        """ADR 0067 Punkt 3: `1.4 -> 1.0` erzeugte aus einer kaputten Antwort die staerkste
+        Aussage, die das Produkt kennt. Die Kategorie selbst bleibt gueltig."""
+        result = _classification_from_json(
+            {"categories": [{"key": "tier", "confidence": raw}]}, photo_id=1
+        )
+        assert result.categories == ("tier",)
+        assert result.category_confidences == {}
+
+    @pytest.mark.parametrize("raw", [True, False])
+    def test_booleans_are_rejected_even_though_bool_is_an_int(self, raw: bool) -> None:
+        """`isinstance(True, int)` ist `True` - ohne expliziten Ausschluss erschiene
+        `"confidence": true` als "100 %"."""
+        result = _classification_from_json(
+            {"categories": [{"key": "tier", "confidence": raw}]}, photo_id=1
+        )
+        assert result.categories == ("tier",)
+        assert result.category_confidences == {}
+
+    @pytest.mark.parametrize("raw", ["0.92", None, ["0.92"], {"value": 0.92}, ""])
+    def test_non_numeric_values_are_discarded_without_conversion(self, raw: object) -> None:
+        result = _classification_from_json(
+            {"categories": [{"key": "tier", "confidence": raw}]}, photo_id=1
+        )
+        assert result.categories == ("tier",)
+        assert result.category_confidences == {}
+
+    @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+    def test_json_float_literals_are_discarded_parsed_from_a_raw_body(self, literal: str) -> None:
+        """Security-Muss-Kriterium 2 der Spec 0299, TESTFORM VERBINDLICH: Eingabe als
+        ROH-Textkoerper (`json.loads` parst diese Literale standardmaessig), nicht als
+        `json.dumps`-erzeugtes Dict. Ein durchgelassenes `NaN` liesse ueber Starlettes
+        `allow_nan=False` die GESAMTE Listenantwort scheitern - und die SQLite-Testdatenbank zeigt
+        den Defekt strukturell nicht."""
+        parsed = json.loads(f'{{"categories":[{{"key":"tier","confidence":{literal}}}]}}')
+
+        result = _classification_from_json(parsed, photo_id=1)
+
+        assert result.categories == ("tier",)
+        assert result.category_confidences == {}
+
+
+class TestConfidenceDiscardLogging:
+    """Security-Punkt 4 der Spec 0299: `photo_id` + festes Grund-Token, KEIN Rohwert."""
+
+    @pytest.mark.parametrize(
+        ("raw_literal", "expected_reason"),
+        [
+            ('"0.92"', "nicht_numerisch"),
+            ("true", "nicht_numerisch"),
+            ("null", "nicht_numerisch"),
+            ("1.7", "ausserhalb_intervall"),
+            ("NaN", "ausserhalb_intervall"),
+        ],
+    )
+    def test_a_discarded_confidence_logs_one_warning_with_a_fixed_reason_token(
+        self, caplog: pytest.LogCaptureFixture, raw_literal: str, expected_reason: str
+    ) -> None:
+        parsed = json.loads(f'{{"categories":[{{"key":"tier","confidence":{raw_literal}}}]}}')
+
+        with caplog.at_level("WARNING", logger="photosort.remote_classification"):
+            _classification_from_json(parsed, photo_id=42)
+
+        assert len(caplog.records) == 1
+        message = caplog.records[0].getMessage()
+        assert "photo_id=42" in message
+        assert expected_reason in message
+
+    def test_the_warning_never_contains_the_raw_value(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Der Diagnosewert liegt in der FEHLERKLASSE - `1.7` sagt darueber hinaus nichts, und ein
+        festes Grund-Token macht eine systematische Skalenverwechslung greppbar."""
+        with caplog.at_level("WARNING", logger="photosort.remote_classification"):
+            _classification_from_json(
+                {"categories": [{"key": "tier", "confidence": "SEHR-SICHER"}]}, photo_id=1
+            )
+
+        message = caplog.records[0].getMessage()
+        assert "SEHR-SICHER" not in message
+
+    def test_a_missing_confidence_key_logs_nothing(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Nichts wurde verworfen - eine fehlende Angabe ist der erwartete Regelfall eines
+        Modells, das sich nicht einschaetzen kann."""
+        with caplog.at_level("WARNING", logger="photosort.remote_classification"):
+            _classification_from_json({"categories": [{"key": "tier"}, "menschen"]}, photo_id=1)
+
+        assert caplog.records == []
+
+    def test_each_discarded_value_logs_exactly_once(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level("WARNING", logger="photosort.remote_classification"):
+            _classification_from_json(
+                {
+                    "categories": [
+                        {"key": "tier", "confidence": 1.7},
+                        {"key": "menschen", "confidence": "hoch"},
+                        {"key": "landschaft", "confidence": 0.3},
+                    ]
+                },
+                photo_id=5,
+            )
+
+        assert len(caplog.records) == 2
+
+
+class TestConfidenceDedupAndTruncation:
+    """Spec 0299, Umsetzungsschritt 1: Schluesselvalidierung, Dedup und Kappung bleiben
+    unveraendert - die Abbildung wird ERST DANACH auf die verbliebenen Schluessel gefiltert."""
+
+    def test_the_first_mention_wins_for_the_key_and_for_the_number(self) -> None:
+        result = _classification_from_json(
+            {
+                "categories": [
+                    {"key": "tier", "confidence": 0.9},
+                    {"key": "tier", "confidence": 0.1},
+                ]
+            },
+            photo_id=1,
+        )
+        assert result.categories == ("tier",)
+        assert result.category_confidences == {"tier": 0.9}
+
+    def test_a_first_mention_without_a_number_is_not_filled_from_a_later_duplicate(self) -> None:
+        result = _classification_from_json(
+            {"categories": ["tier", {"key": "tier", "confidence": 0.8}]}, photo_id=1
+        )
+        assert result.categories == ("tier",)
+        assert result.category_confidences == {}
+
+    def test_confidences_of_truncated_candidates_do_not_survive_the_cap(self) -> None:
+        """Die Invariante ist eine MENGENgleichheit, keine Zaehlung: ein Schluessel, der der
+        Kappung zum Opfer faellt, darf keine verwaiste Zahl hinterlassen."""
+        result = _classification_from_json(
+            {
+                "categories": [
+                    {"key": "tier", "confidence": 0.1},
+                    {"key": "menschen", "confidence": 0.2},
+                    {"key": "landschaft", "confidence": 0.3},
+                    {"key": "fahrzeug", "confidence": 0.4},
+                    {"key": "pflanze", "confidence": 0.5},
+                ]
+            },
+            photo_id=1,
+        )
+
+        assert len(result.categories) == MAX_REMOTE_CATEGORIES_PER_PHOTO
+        assert set(result.category_confidences) <= set(result.categories)
+        assert "fahrzeug" not in result.category_confidences
+        assert "pflanze" not in result.category_confidences
+
+    def test_the_mapping_never_contains_a_key_outside_the_candidate_list(self) -> None:
+        """Security-Muss-Kriterium 3: die Schluessel der Abbildung sind ein ZWEITER
+        Persistenzkanal - hier darf nie unvalidierter Fremdtext landen."""
+        result = _classification_from_json(
+            {
+                "categories": [
+                    {"key": "<script>alert(1)</script>", "confidence": 0.9},
+                    {"key": "tier", "confidence": 0.3},
+                ]
+            },
+            photo_id=1,
+        )
+
+        assert set(result.category_confidences) <= set(result.categories)
+        assert result.category_confidences == {"tier": 0.3}
+
+
+class TestRemoteClassificationConfidenceField:
+    def test_the_default_is_an_empty_immutable_mapping(self) -> None:
+        classification = RemoteClassification(categories=("tier",), fine_labels=())
+
+        assert classification.category_confidences == {}
+        with pytest.raises(TypeError):
+            classification.category_confidences["tier"] = 1.0  # type: ignore[index]
+
+    def test_the_parsed_mapping_is_immutable_too(self) -> None:
+        """`frozen=True` sichert nur die Referenz - fuer den INHALT braucht es
+        `MappingProxyType`, analog den bestehenden Tupel-Feldern."""
+        classification = _classification_from_json(
+            {"categories": [{"key": "tier", "confidence": 0.4}]}, photo_id=1
+        )
+
+        with pytest.raises(TypeError):
+            classification.category_confidences["menschen"] = 1.0  # type: ignore[index]
+
+
+class TestResponseBudgetAfterTheConfidenceSchema:
+    """specs/features/0299-kategorie-konfidenz-anzeigen.md, Security-Abschnitt Punkt 5:
+    `_MAX_RESPONSE_TOKENS` ist eine SICHERHEITSschranke, nicht nur eine Kostenschranke - sie
+    begrenzt auch die Menge an Fremdtext, die je Foto geparst und potenziell geloggt werden kann.
+
+    Das neue Antwortschema (Objekte statt nackter Schluessel) verlaengert die Antwort von rund 50
+    auf ueberschlaegig 80-100 Ausgabe-Tokens. Beide Konstanten decken das weiterhin ab; die Marge
+    von `ASSUMED_USAGE_BY_PROVIDER` schrumpft dabei aber von rund dem Zweieinhalb- auf etwa das
+    Anderthalbfache - deshalb sind beide Groessen hier festgehalten statt nur im Kommentar."""
+
+    def test_the_response_token_ceiling_is_not_raised(self) -> None:
+        """Ausdruecklich NICHT anzuheben: 256 behaelt gegenueber der vollbesetzten neuen Antwort
+        klare Reserve. Wer den Wert anhebt, soll an dieser Zeile auf die Begruendung stossen."""
+        assert _MAX_RESPONSE_TOKENS == 256
+
+    def test_the_assumed_output_tokens_still_cover_the_longer_response(self) -> None:
+        """Die Schaetzung ist seit Spec 0296 die einzige verbliebene Absicherung VOR der
+        kostenpflichtigen Aktion - sie darf die neue Antwortlaenge nicht unterschaetzen."""
+        longest_plausible_response_tokens = 100
+
+        for provider, assumed in ASSUMED_USAGE_BY_PROVIDER.items():
+            assert assumed.output_tokens >= longest_plausible_response_tokens, provider
+
+    def test_the_ceiling_keeps_clear_reserve_over_the_assumption(self) -> None:
+        for provider, assumed in ASSUMED_USAGE_BY_PROVIDER.items():
+            assert _MAX_RESPONSE_TOKENS >= 2 * assumed.output_tokens, provider

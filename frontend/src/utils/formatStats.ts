@@ -76,6 +76,33 @@ export function formatPercent(share: number): string {
   return `${DECIMAL_ONE.format(share * 100)} %`
 }
 
+/**
+ * Kaufmaennisch gerundete Prozentzahl OHNE Nachkommastelle und ohne Leerzeichen vor dem
+ * Prozentzeichen (`92%`) - vermeidet eine Scheingenauigkeit, die die zugrundeliegenden, teils
+ * heuristischen Werte nicht hergeben.
+ *
+ * Bis specs/features/0299-kategorie-konfidenz-anzeigen.md privat in
+ * `components/CriterionDetailsList.tsx`; hierher gewandert, weil die Kandidatenliste und der
+ * Konfidenzblock der Statistikseite dieselbe Darstellung brauchen (Akzeptanzkriterium 2) - zwei
+ * Kopien liefen unweigerlich auseinander.
+ *
+ * BEWUSST NICHT `formatPercent` (eine Nachkommastelle, Leerzeichen, deutsches Dezimalkomma): der
+ * Konfidenzblock folgt hier der Kategorie-Anzeige statt der Statistik-Hausformatierung, damit
+ * dieselbe Zahl am Foto und in der Statistik nicht in zwei Formen erscheint.
+ *
+ * Und bewusst OHNE die `< 0,01`-Sonderregel von `formatUsd`: ein kleiner Wert ungleich null wird
+ * als `0%` gezeigt. Bei einem Geldbetrag darf ein tatsaechlich angefallener Betrag nicht als
+ * "nichts ausgegeben" erscheinen; eine Modell-Selbsteinschaetzung von 0,4 % ist dagegen sachlich
+ * "0 %" - und "< 1 %" laese sich hier als Alarmzeichen statt als Rundungshinweis.
+ *
+ * Die Eingabe ist immer bereits auf [0, 1] normiert (Kriterienwerte aus criteria.py, Konfidenzen
+ * am Parser-Rand geprueft), also nie negativ - `Math.round` rundet in diesem Bereich identisch zu
+ * "kaufmaennisch" (0.5 aufwaerts).
+ */
+export function formatCriterionPercent(value: number): string {
+  return `${Math.round(value * 100)}%`
+}
+
 /** Ganze Zahl mit deutschem Tausenderpunkt - die Fotoanzahlen dieser Seite werden fuenfstellig. */
 export function formatCount(value: number): string {
   return INTEGER.format(value)

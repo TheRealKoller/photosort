@@ -10,6 +10,11 @@ import type {
 } from '../api/types'
 import { cn } from '../lib/utils'
 import { formatCategoryKey, formatProviderLabel, type CategorySet } from '../utils/categoryLabels'
+import {
+  CONFIDENCE_EXPLANATION,
+  CONFIDENCE_EXPLANATION_LABEL,
+} from '../utils/confidenceLabels'
+import { formatCriterionPercent } from '../utils/formatStats'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 import { CategorySelect } from './CategorySelect'
 import { Badge } from './ui/badge'
@@ -60,14 +65,6 @@ interface CriterionDetailsListProps {
   resetPending?: boolean
 }
 
-// Kaufmaennisch gerundete Prozentzahl ohne Nachkommastelle (Akzeptanzkriterium 9 der Spec 0040) -
-// vermeidet eine Scheingenauigkeit, die die zugrundeliegenden, teils heuristischen Scores nicht
-// hergeben. Kriterien-Werte sind immer bereits auf [0, 1] normiert (backend criteria.py), also nie
-// negativ - Math.round rundet in diesem Bereich identisch zu "kaufmaennisch" (0.5 aufwaerts).
-function formatCriterionPercent(value: number): string {
-  return `${Math.round(value * 100)}%`
-}
-
 // specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md,
 // Architektur-Entscheidung 1: die Block-Zuordnung folgt AUSSCHLIESSLICH dem Registry-Flag
 // `category_eligible` aus der API-Antwort - hier wird bewusst KEINE Key-Liste gepflegt, sonst
@@ -83,6 +80,50 @@ function partitionByCategoryEligibility(criterionScores: CriterionScoreOut[]): {
     quality: criterionScores.filter((score) => !score.category_eligible),
     categories: criterionScores.filter((score) => score.category_eligible),
   }
+}
+
+/**
+ * Die Modell-Selbsteinschaetzung als sekundaerer Text unmittelbar rechts neben dem
+ * Kategorienamen (specs/features/0299-kategorie-konfidenz-anzeigen.md, UI/UX-Abschnitt).
+ *
+ * `null` rendert NICHTS - kein Platzhalter, kein Strich, kein `0%`. Die Luecke ist das korrekte
+ * Signal: sie zeigt, dass es zu diesem Schluessel gar keine Modellaussage gibt, und ein
+ * Platzhalter machte daraus eine Aussage. Deshalb die Pruefung auf `=== null` und nicht auf
+ * Falsyness - `0` ist ein gueltiger Wert und heisst "das Modell war sich zu 0 % sicher".
+ *
+ * Die 60-%-Schwelle des Kuratierungsfilters wird hier bewusst NICHT visuell kodiert (keine Farbe,
+ * kein Symbol): eine niedrige Selbsteinschaetzung ist kein Fehler, und eine Warnfarbe
+ * suggerierte eine Bewertung, die die Zahl nicht hergibt.
+ */
+function CandidateConfidence({ confidence }: { confidence: number | null }) {
+  if (confidence === null) {
+    return null
+  }
+  return (
+    <span className="font-normal text-text-muted">{formatCriterionPercent(confidence)}</span>
+  )
+}
+
+/**
+ * Der feste Hinweis, der die Zahl als Selbsteinschaetzung ausweist (Akzeptanzkriterium 7).
+ *
+ * Natives `<details>/<summary>` statt des Info-Popovers der Statistikseite: diese Komponente wird
+ * ihrerseits INNERHALB eines Radix-Popovers gerendert (CriterionDetailsPopover in Raster und
+ * Kuratierung), das seinen Schliess-Zeitpunkt ueber einen eigenen Ref-basierten Grace-Bereich
+ * steuert. Ein zweites, portaliertes Popover darin brauchte genau diesen Mechanismus ein zweites
+ * Mal. `<details>` ist nativ tastatur-, touch- und screenreaderbedienbar und braucht keine freie
+ * Positionierung. Der Wortlaut ist an beiden Anzeigestellen dieselbe Konstante - nur der
+ * Aufklapp-Mechanismus unterscheidet sich.
+ */
+function ConfidenceExplanation() {
+  return (
+    <details className="text-xs text-text">
+      <summary className="cursor-pointer underline decoration-dotted">
+        {CONFIDENCE_EXPLANATION_LABEL}
+      </summary>
+      <p className="mt-2 text-text-muted">{CONFIDENCE_EXPLANATION}</p>
+    </details>
+  )
 }
 
 function CriterionRow({ score }: { score: CriterionScoreOut }) {
@@ -116,7 +157,15 @@ function buildCategoryCandidateRows(
   const overrideIsOrphan =
     categoryOverride !== null && !categoryCandidates.some((c) => c.category_key === categoryOverride)
   if (overrideIsOrphan) {
-    rows.push({ category_key: categoryOverride, origin: 'local', provider: null, isOrphan: true })
+    // `confidence: null` ist hier die inhaltlich richtige Aussage, kein Fuellwert: eine verwaiste
+    // Zeile hat gerade KEINEN Kandidaten mehr in der aktuellen Liste und damit keine Modellzahl.
+    rows.push({
+      category_key: categoryOverride,
+      origin: 'local',
+      provider: null,
+      confidence: null,
+      isOrphan: true,
+    })
   }
   return rows
 }
@@ -159,6 +208,17 @@ export function CriterionDetailsList({
 }: CriterionDetailsListProps) {
   const candidateRows = buildCategoryCandidateRows(categoryCandidates, categoryOverride)
   const showCandidateGroup = candidateRows.length > 1
+  // specs/features/0299-kategorie-konfidenz-anzeigen.md: die Zahl der einzeiligen Anzeige haengt
+  // am angezeigten Schluessel (`ranking.category_key`), nicht am einzigen Kandidaten - beide
+  // koennen auseinanderfallen, z.B. wenn die Rangfolge aus einem aelteren Lauf stammt.
+  const singleLineConfidence =
+    categoryCandidates.find((c) => c.category_key === ranking?.category_key)?.confidence ?? null
+  // Der Hinweis erscheint genau dann, wenn tatsaechlich mindestens eine Zahl dargestellt wird -
+  // eine Erklaerung zu einer nicht vorhandenen Zahl waere reines Rauschen, und der Altbestand
+  // ohne jede Angabe ist auf absehbare Zeit der haeufigste Fall (Akzeptanzkriterium 9).
+  const showsAnyConfidence = showCandidateGroup
+    ? candidateRows.some((row) => row.confidence !== null)
+    : singleLineConfidence !== null
   const { quality: qualityScores, categories: categoryScores } =
     partitionByCategoryEligibility(criterionScores)
   // Die Kandidatenliste bzw. die einzeilige "Kategorie"-Anzeige und "Rang" gehoeren fachlich in
@@ -229,6 +289,7 @@ export function CriterionDetailsList({
                                 <span className="font-medium text-text-h">
                                   {formatCategoryKey(row.category_key, categories)}
                                 </span>
+                                <CandidateConfidence confidence={row.confidence} />
                                 {!row.isOrphan && (
                                   <Badge tone="neutral">
                                     {row.origin === 'remote' && row.provider
@@ -275,7 +336,19 @@ export function CriterionDetailsList({
                   <div className="flex items-baseline justify-between gap-3">
                     <dt className="text-text">Kategorie</dt>
                     <dd className="font-medium text-text-h">
-                      {formatCategoryKey(ranking.category_key, categories)}
+                      {/* Ohne Zahl bleibt die Zeile EXAKT wie bisher (nur der Textknoten, kein
+                          zusaetzliches Element) - der haeufigste Fall soll unveraendert
+                          aussehen. Die Zahl folgt dem ANGEZEIGTEN Schluessel: sie kommt aus der
+                          Kandidatenliste, nicht aus dem einen vorhandenen Kandidaten, denn die
+                          Rangfolge kann eine andere Kategorie zeigen. */}
+                      {singleLineConfidence === null ? (
+                        formatCategoryKey(ranking.category_key, categories)
+                      ) : (
+                        <>
+                          <span>{formatCategoryKey(ranking.category_key, categories)}</span>{' '}
+                          <CandidateConfidence confidence={singleLineConfidence} />
+                        </>
+                      )}
                     </dd>
                   </div>
                 )}
@@ -290,6 +363,7 @@ export function CriterionDetailsList({
                     der Nutzer sieht weiterhin, was das System erkannt hat, bevor er es
                     uebersteuert. Nur eingebunden, wenn ein Uebersteuern ueberhaupt vorgesehen ist
                     (Aufrufer reicht `onOverrideCategory` durch). */}
+                {showsAnyConfidence && <ConfidenceExplanation />}
                 {onOverrideCategory && (
                   <div className="mt-2">
                     <CategorySelect

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import importlib
+import inspect
 import itertools
+from pathlib import Path
 
 import pytest
 
+from photosort import worker
 from photosort.categories import (
     CATEGORY_NOT_RECOGNIZED,
     CATEGORY_REGISTRY,
@@ -293,3 +297,82 @@ class TestBuildClassificationPrompt:
 
     def test_not_recognized_is_a_selectable_option_in_the_prompt(self) -> None:
         assert CATEGORY_NOT_RECOGNIZED in build_classification_prompt()
+
+
+# --- specs/features/0299-kategorie-konfidenz-anzeigen.md -------------------------------------
+
+
+class TestClassificationPromptRequestsConfidence:
+    """Umsetzungsschritt 1 der Spec 0299: der Kategorien-Eintrag der Antwort wird vom nackten
+    Schluessel zum Objekt `{"key": ..., "confidence": ...}`, und der Prompt fordert die
+    Selbsteinschaetzung ausdruecklich als Zahl zwischen 0 und 1 an."""
+
+    def test_the_response_schema_shows_the_object_form_with_key_and_confidence(self) -> None:
+        prompt = build_classification_prompt()
+        assert '{"key":' in prompt
+        assert '"confidence":' in prompt
+
+    def test_the_prompt_asks_for_a_number_between_zero_and_one(self) -> None:
+        prompt = build_classification_prompt()
+        assert "0" in prompt and "1" in prompt
+        assert "sicher" in prompt.casefold()
+
+    def test_the_prompt_still_names_the_fine_labels_key(self) -> None:
+        assert '"fine_labels"' in build_classification_prompt()
+
+    def test_the_prompt_is_still_built_only_from_the_registry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Security-Muss-Kriterium (unveraendert aus Spec 0289): der Prompt entsteht nie aus
+        Datenbankinhalten - das neue Antwortschema aendert daran nichts."""
+        monkeypatch.setattr("photosort.categories.CATEGORY_REGISTRY", {})
+        prompt = build_classification_prompt()
+        for key in CATEGORY_REGISTRY:
+            assert f'- "{key}"' not in prompt
+
+
+class TestConfidenceDoesNotInfluenceCategorySelection:
+    """Akzeptanzkriterium 12 / ADR 0067 Punkt 1 - die tragende Grenze dieser Spec: die Zahl
+    entscheidet nichts. Getestet als Struktur-Invariante, nicht als Verhaltensstichprobe."""
+
+    def test_resolve_category_still_takes_exactly_one_parameter(self) -> None:
+        parameters = inspect.signature(resolve_category).parameters
+        assert list(parameters) == ["candidates"]
+
+    @pytest.mark.parametrize(
+        "module_name",
+        ["photosort.categories", "photosort.ranking"],
+    )
+    def test_no_category_determining_module_mentions_the_confidence_fields(
+        self, module_name: str
+    ) -> None:
+        """Repoweite Abwesenheits-Assertion (Teststrategie der Spec 0299): kein Modul, das eine
+        Kategorie BESTIMMT, darf die neuen Feldnamen ueberhaupt nennen."""
+        source = Path(inspect.getfile(importlib.import_module(module_name))).read_text(
+            encoding="utf-8"
+        )
+        assert "detected_category_confidences" not in source
+        assert "category_confidence" not in source
+
+    def test_criterion_scoring_does_not_read_the_confidence_columns(self) -> None:
+        """`worker.py::run_criterion_scoring` liest die Remote-Kandidaten ueber ein explizites
+        `select(...)` - die neue Spalte darf dort nicht auftauchen (Spec 0299, Punkt 0)."""
+        source = inspect.getsource(worker.run_criterion_scoring)
+        assert "detected_category_confidences" not in source
+        assert "category_confidence" not in source
+
+    def test_the_resolved_category_is_independent_of_the_candidate_order(self) -> None:
+        """`resolve_category` entscheidet allein ueber `precedence`, nie ueber die Position eines
+        Kandidaten in der Liste: dieselbe Menge in umgekehrter Reihenfolge liefert dasselbe
+        Ergebnis (`menschen`, precedence 3, gewinnt gegen `landschaft` und `tier`).
+
+        Das ist die VORAUSSETZUNG dafuer, dass die Konfidenz nichts entscheiden kann - aber nicht
+        ihr Nachweis: dieser Test kennt gar keine Konfidenzen, weil `resolve_category` sie nie
+        sieht. Akzeptanzkriterium 12 wird an drei anderen Stellen abgesichert - dem Signaturtest
+        und der Abwesenheits-Assertion oben in dieser Klasse sowie dem eigentlichen Paartest
+        `test_worker_criterion_scoring.py::
+        test_the_confidence_columns_do_not_change_the_resolved_category_or_ranking`, der zwei
+        Laeufe mit identischen Kandidaten und GEGENSAETZLICHEN Konfidenzen gegeneinander stellt."""
+        candidates = ["landschaft", "menschen", "tier"]
+        assert resolve_category(candidates) == resolve_category(list(reversed(candidates)))
+        assert resolve_category(candidates) == "menschen"
