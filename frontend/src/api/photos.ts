@@ -5,10 +5,20 @@ export interface ListPhotosParams {
   ratingStatus?: RatingFilter
   limit?: number
   offset?: number
-  // Kategorie-Kuratierung + Backfill (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
-  // backfill.md) - wenn gesetzt, ersetzt dieser Query-Modus ratingStatus/limit/offset vollstaendig
-  // (eigenstaendige Kuratierungs-Ansicht, siehe backend api/photos.py::list_photos-Kommentar).
+  // Kategorie-Kuratierung (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md,
+  // seit specs/features/0357-voller-bildvorrat-kuratierung.md ohne Backfill) - wenn gesetzt,
+  // ersetzt dieser Query-Modus ratingStatus/limit/offset vollstaendig (eigenstaendige
+  // Kuratierungs-Ansicht, siehe backend api/photos.py::list_photos-Kommentar).
   topNPerCategory?: number
+}
+
+export interface ListCurationCandidatesParams {
+  clusterKey: string
+  categoryKey: string
+  /** Es werden nur Zugehoerigkeiten mit `rank_position > afterRank` geliefert. */
+  afterRank: number
+  limit?: number
+  offset?: number
 }
 
 export function listPhotos(
@@ -32,6 +42,33 @@ export function listPhotos(
   return apiFetch<PhotoListOut>(
     `/projects/${projectId}/photos${queryString ? `?${queryString}` : ''}`
   )
+}
+
+/**
+ * Die weiteren Kandidaten EINER Partition (specs/features/0357-voller-bildvorrat-kuratierung.md,
+ * ADR 0071 Entscheidung 5) - alles jenseits von `afterRank`, aufsteigend nach `rank_position`,
+ * seitenweise. `total` der Antwort ist die RESTMENGE der Partition und damit unabhaengig von
+ * `limit`/`offset`.
+ *
+ * Bewusst ein eigener Endpunkt statt einer Erweiterung von `listPhotos`: dort gilt die Zusage,
+ * dass `limit`/`offset` im Kuratierungsmodus nicht wirken.
+ */
+export function listCurationCandidates(
+  projectId: number,
+  params: ListCurationCandidatesParams
+): Promise<PhotoListOut> {
+  const query = new URLSearchParams({
+    cluster_key: params.clusterKey,
+    category_key: params.categoryKey,
+    after_rank: String(params.afterRank),
+  })
+  if (params.limit !== undefined) {
+    query.set('limit', String(params.limit))
+  }
+  if (params.offset !== undefined) {
+    query.set('offset', String(params.offset))
+  }
+  return apiFetch<PhotoListOut>(`/projects/${projectId}/curation-candidates?${query.toString()}`)
 }
 
 /**

@@ -22,27 +22,10 @@ import {
   formatCategoryKey,
   sortCategoryKeys,
 } from '../utils/categoryLabels'
+import { parseTopN } from '../utils/curationTopN'
 import { qualityLevel } from '../utils/qualityLevel'
 import { curatedRankings } from '../utils/rankings'
 import { formatClusterHeading, formatDayHeading } from '../utils/timeOfDay'
-
-// specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md: serverseitig deklarativ
-// begrenzt (Field(ge=1, le=10) auf GET /photos) - client-seitiges Klemmen ist nur ein Hinweis,
-// die eigentliche Grenze gilt ohnehin serverseitig.
-const MIN_TOP_N = 1
-const MAX_TOP_N = 10
-const DEFAULT_TOP_N = 3
-
-function parseTopN(value: string | null): number {
-  if (value === null || value === '') {
-    return DEFAULT_TOP_N
-  }
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed)) {
-    return DEFAULT_TOP_N
-  }
-  return Math.min(MAX_TOP_N, Math.max(MIN_TOP_N, Math.round(parsed)))
-}
 
 interface ClusterMeta {
   dayKey: string

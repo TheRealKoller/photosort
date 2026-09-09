@@ -12,6 +12,7 @@ import * as ratingsApi from '../api/ratings'
 import type { CriterionScoreOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { CATEGORY_SET } from '../test/categorySetFixture'
+import { DEFAULT_TOP_N } from '../utils/curationTopN'
 import {
   countPhotosInDay,
   CurateCategoriesPage,
@@ -225,13 +226,15 @@ describe('CurateCategoriesPage', () => {
     )
   })
 
-  it('defaults to top-N 3 when the query string is missing/invalid', async () => {
+  it('defaults to the shared top-N when the query string is missing/invalid', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
 
     renderPage('/projects/1/curate')
 
     await waitFor(() =>
-      expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { topNPerCategory: 3 })
+      // Die Konstante wird importiert, nicht abgeschrieben - den Zahlwert bindet GENAU EIN
+      // Testfall, und der steht in utils/curationTopN.test.ts (Spec 0357, AK 3).
+      expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { topNPerCategory: DEFAULT_TOP_N })
     )
   })
 

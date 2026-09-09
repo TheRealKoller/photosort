@@ -1,6 +1,11 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { deleteCategoryOverride, listPhotos, setCategoryOverride } from '../api/photos'
+import {
+  deleteCategoryOverride,
+  listCurationCandidates,
+  listPhotos,
+  setCategoryOverride,
+} from '../api/photos'
 import { deleteRating, setRating } from '../api/ratings'
 import type { CategoryKey, PhotoListOut, RatingFilter, RatingStatus } from '../api/types'
 
@@ -21,9 +26,7 @@ function photosQueryKey(projectId: number, ratingStatus?: RatingFilter) {
 // bewusst unter demselben ['photos', projectId, ...]-Praefix wie photosQueryKey oben - die
 // bestehende, breite Invalidierung in useSetRatingMutation/useDeleteRatingMutation
 // (queryKey: ['photos', projectId], ohne exact) invalidiert React-Query-seitig automatisch auch
-// diese Query, ohne dass die Kuratierungs-Ansicht einen eigenen Invalidierungs-Pfad braucht -
-// genau das macht Backfill zu einem reinen Nebeneffekt eines erneuten Abrufs (kein aktives
-// "Nachruecken" im Frontend-Code, siehe UI/UX-Abschnitt der Spec "In-place Nachruecken").
+// diese Query, ohne dass die Kuratierungs-Ansicht einen eigenen Invalidierungs-Pfad braucht.
 function curationQueryKey(projectId: number, topN: number) {
   return ['photos', projectId, 'curate', topN] as const
 }
@@ -32,6 +35,55 @@ export function useCurationQuery(projectId: number, topN: number) {
   return useQuery({
     queryKey: curationQueryKey(projectId, topN),
     queryFn: () => listPhotos(projectId, { topNPerCategory: topN }),
+  })
+}
+
+// specs/features/0357-voller-bildvorrat-kuratierung.md: derselbe ['photos', projectId]-Praefix wie
+// oben, und hier ist er nicht Bequemlichkeit, sondern Bedingung: die nachgeladenen Kandidaten sind
+// eine ZWEITE Query ueber demselben Datensatz auf demselben Bildschirm. Dasselbe Foto kann in
+// beiden Listen stehen; wird es in der einen verworfen, muss die andere denselben Zustand zeigen.
+// Genau das leistet die bestehende breite Invalidierung - ohne den Praefix stuenden zwei
+// Wahrheiten ueber dasselbe Foto nebeneinander.
+function curationCandidatesQueryKey(
+  projectId: number,
+  clusterKey: string,
+  categoryKey: string,
+  afterRank: number
+) {
+  return ['photos', projectId, 'curate', 'candidates', clusterKey, categoryKey, afterRank] as const
+}
+
+export interface CurationCandidatesQueryParams {
+  clusterKey: string
+  categoryKey: string
+  afterRank: number
+  /** Der Request laeuft ausschliesslich im AUFGEKLAPPTEN Zustand. */
+  enabled: boolean
+  pageSize?: number
+}
+
+export function useCurationCandidatesQuery(
+  projectId: number,
+  { clusterKey, categoryKey, afterRank, enabled, pageSize = PHOTOS_PAGE_SIZE }: CurationCandidatesQueryParams
+) {
+  return useInfiniteQuery({
+    queryKey: curationCandidatesQueryKey(projectId, clusterKey, categoryKey, afterRank),
+    queryFn: ({ pageParam }: { pageParam: number }) =>
+      listCurationCandidates(projectId, {
+        clusterKey,
+        categoryKey,
+        afterRank,
+        limit: pageSize,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    // Identisch zu usePhotoSequenceQuery: der naechste Offset ist die Zahl der bereits geladenen
+    // Eintraege, und `total` ist die Restmenge der Partition (nicht die Seitengroesse).
+    getNextPageParam: (lastPage: PhotoListOut, allPages: PhotoListOut[]) => {
+      const loaded = allPages.reduce((sum, loadedPage) => sum + loadedPage.items.length, 0)
+      return loaded < lastPage.total ? loaded : undefined
+    },
+    enabled,
   })
 }
 
