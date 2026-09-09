@@ -359,15 +359,21 @@ def test_landmark_model_rejects_the_withdrawn_mistral_model() -> None:
     Dateien.
 
     Geprueft wird zugleich der Meldungsinhalt aus K6: beanstandeter Wert, eingestellter Anbieter,
-    beide gueltigen Werte, Voreinstellung."""
+    beide gueltigen Werte, Voreinstellung. Der Anbieter wird bewusst mitsamt seinem
+    VARIABLENNAMEN abgefragt (`LANDMARK_PROVIDER='mistral'`) und nicht als blosses `"mistral"
+    in message`: der nackte Anbietername ist Teilstring beider gueltigen Modell-IDs und damit
+    trivial erfuellt - eine Assertion, die gruen bliebe, ohne dass die Meldung den eingestellten
+    Anbieter je nennt. Dass sie KEINEN weiteren Settings-Wert enthaelt, prueft
+    `test_the_rejection_leaks_no_other_settings_value` oben generisch."""
     with pytest.raises(ValidationError) as excinfo:
         Settings(_env_file=None, landmark_provider="mistral", landmark_model="ministral-8b-2512")
 
     message = str(excinfo.value)
-    assert "ministral-8b-2512" in message
-    assert "mistral" in message
+    assert "LANDMARK_MODEL='ministral-8b-2512'" in message
+    assert "LANDMARK_PROVIDER='mistral'" in message
     for allowed in VISION_MODELS_BY_PROVIDER["mistral"]:
         assert allowed in message, allowed
+    assert f"Voreinstellung {MISTRAL_VISION_MODEL}" in message
 
 
 # specs/features/0369-mistral-small-loest-ministral-8b-ab.md ab hier: der ZWEISEITIGE Doku-Test.
@@ -379,22 +385,38 @@ def test_landmark_model_rejects_the_withdrawn_mistral_model() -> None:
 # Artefakte werden gleich behandelt.
 #
 # Geltungsbereich ausdruecklich NUR diese beiden Dateien: `specs/**` und Quellkommentare duerfen
-# die Historie nennen und werden hier nicht geprueft.
+# die Historie nennen und werden hier nicht geprueft. Die drei Teilpruefungen liegen bewusst
+# beieinander in DIESER Datei (so von der Spec verortet), obwohl (c) `estimate_usd_per_image`
+# heranzieht: sie sind eine einzige Aussage ueber dieselben zwei Dateien und teilen sich
+# Pfadaufloesung und Extraktion. `estimate_usd_per_image` ist hier die Rechenquelle des
+# erwarteten Betrags, nicht der Testgegenstand - dessen Verhalten prueft test_pricing.py.
 
 _OPERATOR_DOC_FILES = (".env.example", "docs/setup.md")
 
+# URLs und Markdown-Linkziele werden VOR der Extraktion ausgeblendet. Grund ist kein
+# Schoenheitsfehler, sondern eine scharfe Falle: die Preisquelle des neuen Modells,
+# `https://docs.mistral.ai/models/model-cards/mistral-small-4-0-26-03`, traegt selbst einen
+# Anbieter-Praefix und endet auf eine Ziffer - sie kaeme als Modell-ID `mistral-small-4-0-26-03`
+# durch, sobald jemand die Quelle in einer der beiden Dateien zitiert, und die Mengengleichheit
+# unten braeche mit der irrefuehrenden Meldung "Doku listet ein nicht waehlbares Modell".
+_URL_OR_LINK_TARGET = re.compile(r"https?://\S+|\]\([^)]*\)")
+
 # Ein Modell-ID-Kandidat ist ein Anbieter-Praefix plus mindestens ein Bindestrich-Segment. Die
-# Nachbedingung "endet auf eine Ziffer" trennt die IDs von den Spec-/ADR-Dateinamen, die in beiden
-# Dateien verlinkt sind (`0031-mistral-provider-option-cloud-landmark.md`) - jede heute waehlbare
-# ID traegt eine Versions-/Datumsziffer am Ende, und Teilpruefung (b) unten laesst still nicht zu,
-# dass eine kuenftige Namensfamilie aus diesem Muster herausfaellt.
+# Nachbedingung "endet auf eine Ziffer" bleibt als zweite Verteidigungslinie noetig: beide Dateien
+# nennen Spec-/ADR-Dateinamen auch als BLANKEN TEXT statt als Link
+# (`0031-mistral-provider-option-cloud-landmark.md`), den die Ausblendung oben nicht erfasst. Jede
+# heute waehlbare ID traegt eine Versions-/Datumsziffer am Ende; Teilpruefung (b) unten laesst
+# nicht zu, dass eine kuenftige Namensfamilie still aus diesem Muster herausfaellt. Verbleibender
+# Rest: eine dokumentierte, aber NICHT waehlbare ID ohne Endziffer (etwa ein `*-latest`-Alias)
+# rutscht durch - sie waere ein eigener Befund und kein Fall dieser Mengengleichheit.
 _MODEL_ID_CANDIDATE = re.compile(r"\b(?:claude|ministral|mistral)(?:-[a-z0-9]+)+")
 
 
 def _model_ids_in(text: str) -> set[str]:
+    without_links = _URL_OR_LINK_TARGET.sub(" ", text)
     return {
         match.group(0)
-        for match in _MODEL_ID_CANDIDATE.finditer(text)
+        for match in _MODEL_ID_CANDIDATE.finditer(without_links)
         if match.group(0)[-1].isdigit()
     }
 

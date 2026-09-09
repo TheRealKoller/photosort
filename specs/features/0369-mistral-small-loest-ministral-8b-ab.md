@@ -440,11 +440,13 @@ getroffen (siehe Architektur-Abschnitt).
 - Ein Wechsel der Voreinstellung, eines Anbieters oder der Anthropic-Modellauswahl.
 - Eine allgemeine Regel dafür, wie Modelle künftig abgekündigt und entfernt werden. Dies ist der
   erste Entfernungsfall; eine allgemeine Festlegung wäre eine eigene Story.
-- **Die Verallgemeinerung der Testkonventionen für Rücknahmen** (Teilmenge → Mengengleichheit,
-  zweiseitige Doku-Tests, abgeleitet statt abgeschrieben geprüfte Beträge, Literal-Pin bei
-  erstmals asymmetrischen Zahlenpaaren) in
-  [`architecture/0002-testkonzept.md`](../architecture/0002-testkonzept.md). Der `test-engineer`
-  hat sie als Ergänzung vorbereitet; sie ist hier **angewendet**, aber ihre Festschreibung als
-  projektweite Konvention fällt unter den vorstehenden Punkt und ist eine eigene Story wert.
+- **Eine über den Registry-Fall hinausgehende Testkonvention für Rücknahmen.** Die vier hier
+  angewendeten Muster (Teilmenge → Mengengleichheit, zweiseitige Doku-Tests, abgeleitet statt
+  abgeschrieben geprüfte Beträge, Literal-Pin bei erstmals asymmetrischen Zahlenpaaren) werden
+  **in diesem PR** in [`architecture/0002-testkonzept.md`](../architecture/0002-testkonzept.md)
+  festgeschrieben — allerdings ausschließlich an der bestehenden ADR-0059-Sektion (Punkt 11),
+  also für Registry-gebundene Betriebseinstellungen. Draußen bleibt ihre Verallgemeinerung auf
+  beliebige zurückgenommene Werte (Kategorien, Kriterien, Feldwerte einer Enumeration) — das
+  wäre eine eigene Story, ebenso wie der Abkündigungs-*Prozess* aus dem vorstehenden Punkt.
 - Eine Änderung an `formatUsd` oder der Betragsdarstellung im Frontend (siehe UI/UX).
 - Eine Verbrauchsannahme je Modell statt je Anbieter (siehe „Bekannte Grenze").
