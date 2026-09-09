@@ -127,8 +127,8 @@ describe('CriterionDetailsPopover', () => {
         ranking={ranking({ category_key: 'hund' })}
         suggestion={null}
         categoryCandidates={[
-          { category_key: 'tier', origin: 'remote', provider: 'anthropic' },
-          { category_key: 'menschen', origin: 'local', provider: null },
+          { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+          { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
         ]}
         categoryOverride={null}
         onOverrideCategory={onOverrideCategory}

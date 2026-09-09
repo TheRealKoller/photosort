@@ -65,6 +65,8 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     criterion_scores: [],
     fine_labels: [],
     remote_category: null,
+    // specs/features/0299-kategorie-konfidenz-anzeigen.md: Basiswert "keine Angabe".
+    category_confidence: null,
     category_override: null,
     category_candidates: [],
     cloud_vision_status: [],
@@ -960,8 +962,8 @@ describe('CurateCategoriesPage', () => {
             criterion_scores: [criterionScore()],
             ranking: ranking({ category_key: 'people' }),
             category_candidates: [
-              { category_key: 'tier', origin: 'remote', provider: 'anthropic' },
-              { category_key: 'menschen', origin: 'local', provider: null },
+              { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+              { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
             ],
           }),
         ],

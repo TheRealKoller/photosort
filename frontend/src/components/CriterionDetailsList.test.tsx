@@ -67,6 +67,8 @@ function candidate(overrides: Partial<CategoryCandidateOut> = {}): CategoryCandi
     category_key: 'tier',
     origin: 'remote',
     provider: 'anthropic',
+    // specs/features/0299-kategorie-konfidenz-anzeigen.md: Basiswert "keine Modellaussage".
+    confidence: null,
     ...overrides,
   }
 }

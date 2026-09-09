@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatBytes,
   formatCount,
+  formatCriterionPercent,
   formatDate,
   formatDateTime,
   formatPercent,
@@ -107,5 +108,37 @@ describe('formatDate / formatDateTime', () => {
 
   it('ergaenzt beim Lauf-Zeitpunkt die Uhrzeit', () => {
     expect(formatDateTime('2026-08-01T09:05:00')).toMatch(/^01\.08\.2026, 09:05$/)
+  })
+})
+
+
+// specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 10: `formatCriterionPercent`
+// ist von `components/CriterionDetailsList.tsx` hierher gewandert und wird jetzt von der
+// Kandidatenliste UND dem Statistikblock geteilt - eine zweite Formatierungslogik entstuende
+// sonst zwangslaeufig.
+describe('formatCriterionPercent', () => {
+  it('rundet kaufmaennisch auf eine ganze Prozentzahl ohne Leerzeichen', () => {
+    expect(formatCriterionPercent(0.92)).toBe('92%')
+    expect(formatCriterionPercent(0.925)).toBe('93%')
+  })
+
+  it('stellt die Bandgrenzen als 0% und 100% dar', () => {
+    expect(formatCriterionPercent(0)).toBe('0%')
+    expect(formatCriterionPercent(1)).toBe('100%')
+  })
+
+  it('rundet einen kleinen Wert ungleich null auf 0% - ohne "< 1 %"-Sonderregel', () => {
+    // Akzeptanzkriterium 2: bewusst ANDERS als `formatUsd`. Bei einem Geldbetrag darf ein
+    // tatsaechlich angefallener Betrag nicht als "nichts ausgegeben" erscheinen; eine
+    // Modell-Selbsteinschaetzung von 0,4 % ist dagegen sachlich "0 %".
+    expect(formatCriterionPercent(0.004)).toBe('0%')
+    expect(formatCriterionPercent(0.995)).toBe('100%')
+  })
+
+  it('ist bewusst nicht dieselbe Darstellung wie der Statistik-Hausformatierer', () => {
+    // `formatPercent` traegt eine Nachkommastelle und ein Leerzeichen vor dem Prozentzeichen -
+    // der Konfidenzblock folgt hier der Kategorie-Anzeige, nicht der Statistik-Hausformatierung.
+    expect(formatPercent(0.925)).toBe('92,5 %')
+    expect(formatCriterionPercent(0.925)).toBe('93%')
   })
 })

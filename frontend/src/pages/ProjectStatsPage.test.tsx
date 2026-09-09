@@ -53,6 +53,16 @@ function emptyStats(): ProjectStatsOut {
         share: 0,
       })),
     },
+    category_confidence: {
+      entries: CATEGORY_KEYS.map((key) => ({
+        category_key: key,
+        display_name: key,
+        photo_count: 0,
+        average_confidence: null,
+      })),
+      photos_with_confidence: 0,
+      photos_without_confidence: 0,
+    },
     manual_category_override_count: 0,
     cost: {
       currency: 'USD',

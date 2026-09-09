@@ -10,6 +10,7 @@ import type {
 } from '../api/types'
 import { cn } from '../lib/utils'
 import { formatCategoryKey, formatProviderLabel, type CategorySet } from '../utils/categoryLabels'
+import { formatCriterionPercent } from '../utils/formatStats'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 import { CategorySelect } from './CategorySelect'
 import { Badge } from './ui/badge'
@@ -60,14 +61,6 @@ interface CriterionDetailsListProps {
   resetPending?: boolean
 }
 
-// Kaufmaennisch gerundete Prozentzahl ohne Nachkommastelle (Akzeptanzkriterium 9 der Spec 0040) -
-// vermeidet eine Scheingenauigkeit, die die zugrundeliegenden, teils heuristischen Scores nicht
-// hergeben. Kriterien-Werte sind immer bereits auf [0, 1] normiert (backend criteria.py), also nie
-// negativ - Math.round rundet in diesem Bereich identisch zu "kaufmaennisch" (0.5 aufwaerts).
-function formatCriterionPercent(value: number): string {
-  return `${Math.round(value * 100)}%`
-}
-
 // specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md,
 // Architektur-Entscheidung 1: die Block-Zuordnung folgt AUSSCHLIESSLICH dem Registry-Flag
 // `category_eligible` aus der API-Antwort - hier wird bewusst KEINE Key-Liste gepflegt, sonst
@@ -116,7 +109,15 @@ function buildCategoryCandidateRows(
   const overrideIsOrphan =
     categoryOverride !== null && !categoryCandidates.some((c) => c.category_key === categoryOverride)
   if (overrideIsOrphan) {
-    rows.push({ category_key: categoryOverride, origin: 'local', provider: null, isOrphan: true })
+    // `confidence: null` ist hier die inhaltlich richtige Aussage, kein Fuellwert: eine verwaiste
+    // Zeile hat gerade KEINEN Kandidaten mehr in der aktuellen Liste und damit keine Modellzahl.
+    rows.push({
+      category_key: categoryOverride,
+      origin: 'local',
+      provider: null,
+      confidence: null,
+      isOrphan: true,
+    })
   }
   return rows
 }
