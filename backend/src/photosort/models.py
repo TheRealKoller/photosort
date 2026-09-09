@@ -539,13 +539,29 @@ class PhotoRanking(Base):
     Rating-Aenderung, ohne dass irgendein Server-Code aktiv "nachrueckt".
     `category_key` ist wie `criterion_key` ein freier String (kein PhotoCategory-Enum mehr) -
     dieselbe Erweiterbarkeits-Begruendung. `rank_position` ist 1-basiert innerhalb der Partition.
-    UniqueConstraint(criterion_scoring_run_id, photo_id): jedes Foto taucht pro Lauf hoechstens
-    einmal auf (es gehoert zu genau einer Partition)."""
+
+    MEHRFACHZUGEHOERIGKEIT (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 1): ein Foto hat
+    pro Lauf EINE ZEILE JE KATEGORIE, zu der es gehoert - genau eine davon traegt `is_primary=True`.
+    Der Unique-Constraint ist deshalb von `(run, photo)` auf `(run, photo, category_key)` gewandert:
+    ein Foto steht pro Lauf hoechstens einmal JE KATEGORIE statt hoechstens einmal ueberhaupt.
+
+    `rank_score` ist ueber alle Zugehoerigkeitszeilen eines Fotos IDENTISCH (der ungedaempfte
+    gewichtete Kriterien-Mittelwert). `rank_position` ist es NICHT und ist innerhalb einer Partition
+    auch nicht mehr monoton in `rank_score` - die Modellkonfidenz zum Schluessel DIESER Partition
+    daempft den Sortierschluessel (ranking.py::confidence_ordering_score). Gewollt, kein Defekt.
+
+    Die zweite Invariante - GENAU EINE Zeile mit `is_primary=True` je (Lauf, Foto) - ist bewusst
+    nicht als Datenbankbedingung ausdrueckbar und wird stattdessen im Schreibpfad gehalten
+    (worker.py::run_criterion_scoring/reassign_photo_category, dort mit `with_for_update()` gegen
+    ueberlappende Overrides) und in den Tests nach jeder Schreiboperation geprueft."""
 
     __tablename__ = "photo_rankings"
     __table_args__ = (
         UniqueConstraint(
-            "criterion_scoring_run_id", "photo_id", name="uq_photo_ranking_run_photo"
+            "criterion_scoring_run_id",
+            "photo_id",
+            "category_key",
+            name="uq_photo_ranking_run_photo_category",
         ),
     )
 
@@ -556,6 +572,10 @@ class PhotoRanking(Base):
     category_key: Mapped[str]
     rank_score: Mapped[float]
     rank_position: Mapped[int]
+    # BEWUSST OHNE Default (weder Python- noch Server-seitig, siehe Migration c9d0e1f2a3b4): ein
+    # Schreibpfad, der die Spalte vergisst, soll auffallen statt still eine zweite Hauptkategorie
+    # zu erzeugen. Die Spalte traegt genau die Invariante, die sonst niemand haelt.
+    is_primary: Mapped[bool]
 
 
 class PhotoLandmarkDetection(Base):

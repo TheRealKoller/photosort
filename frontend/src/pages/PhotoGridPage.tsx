@@ -18,6 +18,7 @@ import { useConfirmAusschussGateMutation } from '../hooks/useProjects'
 import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
 import { ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
+import { primaryRanking } from '../utils/rankings'
 
 // Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln"
 // (specs/architecture/0004-design-system.md) statt eines vollflaechigen Spinners - Anzahl ist
@@ -224,7 +225,10 @@ export function PhotoGridPage() {
                 topRight={
                   <CriterionDetailsPopover
                     criterionScores={photo.criterion_scores}
-                    ranking={photo.ranking}
+                    /* Das Raster zeigt jedes Foto genau einmal - gemeint ist seine
+                       Hauptzugehoerigkeit (specs/features/0300-nebenkategorien.md). */
+                    ranking={primaryRanking(photo)}
+                    rankings={photo.rankings}
                     suggestion={photo.suggestion}
                     categoryCandidates={photo.category_candidates}
                     fineLabels={photo.fine_labels}

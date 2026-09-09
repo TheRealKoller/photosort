@@ -149,6 +149,7 @@ async def build_project_graph(
                 category_key="landschaft",
                 rank_score=0.9,
                 rank_position=1,
+                is_primary=True,
             ),
             PhotoLandmarkDetection(
                 photo_id=photo.id, name="Eiffelturm", confidence=0.9, computed_at=now

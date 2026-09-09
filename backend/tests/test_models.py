@@ -479,6 +479,7 @@ async def test_create_photo_ranking(db_session: AsyncSession) -> None:
         category_key="landscape",
         rank_score=0.9,
         rank_position=1,
+        is_primary=True,
     )
     db_session.add(ranking)
     await db_session.commit()
@@ -490,10 +491,15 @@ async def test_create_photo_ranking(db_session: AsyncSession) -> None:
     assert stored.photo_id == photo.id
     assert stored.category_key == "landscape"
     assert stored.rank_position == 1
+    assert stored.is_primary is True
 
 
-async def test_photo_ranking_unique_per_run_and_photo(db_session: AsyncSession) -> None:
-    project = Project(name="Costa Rica", opencloud_drive_id="d", opencloud_path="/a")
+async def _make_ranked_photo(
+    db_session: AsyncSession,
+) -> tuple[CriterionScoringRun, Photo]:
+    """Ein Lauf mit einem Foto und dessen HAUPTZEILE - die Vorbedingung aller
+    Mehrfachzugehoerigkeits-Faelle."""
+    project = Project(name=f"Project {uuid4()}", opencloud_drive_id="d", opencloud_path="/a")
     db_session.add(project)
     await db_session.flush()
     scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
@@ -510,21 +516,91 @@ async def test_photo_ranking_unique_per_run_and_photo(db_session: AsyncSession) 
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
             cluster_key="cluster-0",
-            category_key="landscape",
+            category_key="menschen",
             rank_score=0.9,
             rank_position=1,
+            is_primary=True,
         )
     )
     await db_session.commit()
+    return run, photo
+
+
+async def test_photo_ranking_unique_per_run_photo_and_category(
+    db_session: AsyncSession,
+) -> None:
+    """specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 20: der Constraint ist von
+    `(Lauf, Foto)` auf `(Lauf, Foto, Kategorie)` gewandert - eine zweite Zeile mit gleichem
+    Tripel wird weiterhin abgewiesen."""
+    run, photo = await _make_ranked_photo(db_session)
 
     db_session.add(
         PhotoRanking(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
             cluster_key="cluster-0",
-            category_key="landscape",
+            category_key="menschen",
             rank_score=0.1,
             rank_position=2,
+            is_primary=False,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+async def test_the_same_photo_may_appear_in_a_second_category_of_the_same_run(
+    db_session: AsyncSession,
+) -> None:
+    """Die Kernaussage der Spec 0300 auf Datenmodell-Ebene: ein Foto steht pro Lauf hoechstens
+    einmal JE KATEGORIE - aber in mehreren Kategorien."""
+    run, photo = await _make_ranked_photo(db_session)
+
+    db_session.add(
+        PhotoRanking(
+            criterion_scoring_run_id=run.id,
+            photo_id=photo.id,
+            cluster_key="cluster-0",
+            category_key="tier",
+            rank_score=0.9,
+            rank_position=1,
+            is_primary=False,
+        )
+    )
+    await db_session.commit()
+
+    rows = (
+        (
+            await db_session.execute(
+                select(PhotoRanking)
+                .where(PhotoRanking.photo_id == photo.id)
+                .order_by(PhotoRanking.category_key)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [(row.category_key, row.is_primary) for row in rows] == [
+        ("menschen", True),
+        ("tier", False),
+    ]
+    # `rank_score` ist ueber alle Zugehoerigkeitszeilen eines Fotos identisch (ADR 0069 Punkt 4).
+    assert {row.rank_score for row in rows} == {0.9}
+
+
+async def test_photo_ranking_requires_an_explicit_is_primary(db_session: AsyncSession) -> None:
+    """Akzeptanzkriterium 25: die Spalte hat weder Python- noch Server-Default - ein Schreibpfad,
+    der sie vergisst, faellt auf, statt still eine zweite Hauptkategorie zu erzeugen."""
+    run, photo = await _make_ranked_photo(db_session)
+
+    db_session.add(
+        PhotoRanking(
+            criterion_scoring_run_id=run.id,
+            photo_id=photo.id,
+            cluster_key="cluster-0",
+            category_key="tier",
+            rank_score=0.9,
+            rank_position=1,
         )
     )
     with pytest.raises(IntegrityError):
@@ -554,6 +630,7 @@ async def _make_ranking_graph(db_session: AsyncSession) -> tuple[CriterionScorin
             category_key="landscape",
             rank_score=0.9,
             rank_position=1,
+            is_primary=True,
         )
     )
     await db_session.commit()

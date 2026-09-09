@@ -16,7 +16,13 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from './ui/popo
 
 interface CriterionDetailsPopoverProps {
   criterionScores: CriterionScoreOut[]
+  /** Die Zugehoerigkeit, zu der dieses Popover gehoert - in der Kuratierung die der gerenderten
+   * Kachel, sonst die Hauptzugehoerigkeit des Fotos. `null`, solange kein erfolgreicher Lauf
+   * existiert. */
   ranking: RankingOut | null
+  /** ALLE Zugehoerigkeiten des Fotos (specs/features/0300-nebenkategorien.md) - reine
+   * Durchreichung an die Rollen-Sektion in CriterionDetailsList.tsx. */
+  rankings?: RankingOut[]
   suggestion: SuggestionOut | null
   className?: string
   // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: reine
@@ -88,6 +94,7 @@ interface CriterionDetailsPopoverProps {
 export function CriterionDetailsPopover({
   criterionScores,
   ranking,
+  rankings = [],
   suggestion,
   className,
   categoryCandidates,
@@ -188,6 +195,7 @@ export function CriterionDetailsPopover({
         <CriterionDetailsList
           criterionScores={criterionScores}
           ranking={ranking}
+          rankings={rankings}
           suggestion={suggestion}
           showSuggestion={true}
           categoryCandidates={categoryCandidates}

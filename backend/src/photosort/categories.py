@@ -14,7 +14,8 @@ erzwungen (tests/test_categories.py), nicht per Import.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import math
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 # Obergrenzen der Modellantwort (ADR 0049): hier statt in `remote_classification.py`, weil
@@ -29,6 +30,22 @@ MAX_FINE_LABELS_PER_PHOTO = 2
 # `gegenstand`: `gegenstand` ist der letzte Eintrag der Vorrangreihenfolge und wird bei einem
 # tatsaechlichen Kandidaten vergeben, `nicht_erkannt` steht ausserhalb der Reihenfolge.
 CATEGORY_NOT_RECOGNIZED = "nicht_erkannt"
+
+# Ab welcher Modell-Selbsteinschaetzung eine erkannte Kategorie zur NEBENkategorie eines Fotos
+# wird (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 3) - inklusiv verglichen (`>=`),
+# wie `category_presence_threshold` in criteria.py.
+#
+# Steht hier und nicht in `ranking.py`/`worker.py`, weil es eine Aussage ueber die TAXONOMIE ist
+# ("ab wann gehoert ein Foto zu einer Kategorie") und nicht ueber die Rangfolge - dieselbe
+# Trennung, die ADR 0049 zwischen Produkt-Taxonomie und Mess-Signal gezogen hat.
+#
+# Anwendungsweit gleich und bewusst KEIN Konfigurationswert: keine Umgebungsvariable, keine
+# projekt- oder nutzerspezifische Fassung, in keiner API-Antwort und in keiner Oberflaeche
+# sichtbar (Akzeptanzkriterium 4, per Abwesenheits-Assertion in tests/test_categories.py
+# erzwungen). Der Wert 0,7 ist eine Produktentscheidung ("Praezision vor Recall"), keine
+# Kalibrierung gegen einen echten Fotokorpus - derselbe ausdrueckliche Vorbehalt wie bei
+# SHARPNESS_REJECT_THRESHOLD.
+SECONDARY_CATEGORY_MIN_CONFIDENCE = 0.7
 
 
 @dataclass(frozen=True)
@@ -296,6 +313,71 @@ def resolve_category(candidates: Iterable[str]) -> str:
     if best_key is None:
         return CATEGORY_NOT_RECOGNIZED
     return best_key
+
+
+def usable_confidence(value: object) -> float | None:
+    """Lesepfad-Haertung fuer eine persistierte Selbsteinschaetzung (specs/features/0300-
+    nebenkategorien.md, Security-Muss-Kriterium 2): `None`, wenn der Wert keine brauchbare Zahl
+    ist - sonst der Wert selbst als `float`.
+
+    Brauchbar ist ausschliesslich ein `int`/`float` im Band `[0, 1]`. `bool` ist ausdruecklich
+    AUSGESCHLOSSEN, obwohl `isinstance(True, int)` in Python wahr ist: `True >= 0.7` waere sonst
+    eine Nebenkategorie aus einem Wahrheitswert. `NaN` faellt ueber `math.isfinite` heraus - es
+    wuerde jeden Vergleich zu `False` machen und damit eine still falsche, von der
+    Eingabereihenfolge abhaengige Ordnung erzeugen, statt einen Fehler zu werfen.
+
+    Der Neutralwert ist ausdruecklich "keine Angabe" (`None`) und NIE `0.0`: `0.0` hiesse "das
+    Modell war sich zu 0 % sicher" und stellte ein Foto damit schlechter, dessen Zahl lediglich
+    entartet ist. `None` ist die Wahl, die nachweislich kein Foto schlechter stellen kann.
+
+    `object` statt `float | None` als Parametertyp ist Absicht: die Werte stammen aus einer
+    JSON-Spalte, deren Typzusage ueber die Datenbank statt ueber den Parser laeuft. Eine engere
+    Annotation behauptete genau das, was diese Funktion gerade erst pruefen soll."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    number = float(value)
+    if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+        return None
+    return number
+
+
+def secondary_categories(
+    confidences: Mapping[str, object], primary_key: str
+) -> tuple[str, ...]:
+    """Die NEBENkategorien eines Fotos (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 2)
+    - die zweite, von `resolve_category` vollstaendig getrennte Ableitung.
+
+    Liefert in Registry-ANZEIGEREIHENFOLGE alle Schluessel, die (a) im festen Set stehen, (b) nicht
+    die Hauptkategorie sind, (c) nicht `CATEGORY_NOT_RECOGNIZED` sind und (d) eine brauchbare Zahl
+    `>= SECONDARY_CATEGORY_MIN_CONFIDENCE` tragen.
+
+    Einzige Eingabe ist die Konfidenz-Abbildung, NICHT zusaetzlich die Kandidatenliste: ein
+    Schluessel mit Zahl ist konstruktionsbedingt ein erkannter Schluessel (ADR 0067 Punkt 2), und
+    ein erkannter Schluessel ohne Zahl ist per Akzeptanzkriterium 6 keine Nebenkategorie. Eine
+    Eingabe, zwei Regeln, kein Abgleich zweier Listen, der auseinanderlaufen koennte.
+
+    Die Iteration laeuft ueber `CATEGORY_REGISTRY` und NICHT ueber die Eingabe. Das liefert die
+    Anzeigereihenfolge ohne Nachsortieren und ist zugleich die dritte Verteidigungslinie gegen
+    einen Fremdwert (nach der Validierung in `remote_classification.py` und der Persistenzform):
+    ein Schluessel ausserhalb des Sets kann hier nicht durchfallen.
+
+    `CATEGORY_NOT_RECOGNIZED` ist ausgeschlossen, weil es keine Motivaussage ist, sondern deren
+    Abwesenheit - eine "Nebenkategorie Nicht erkannt" neben einer erkannten Hauptkategorie waere
+    ein Widerspruch in sich (ADR 0069 Punkt 3).
+
+    LOKALE Signale kommen hier nie an: sie tragen keine mit der Modellaussage vergleichbare Zahl
+    (das Skalenproblem, an dem ADR 0047 gescheitert ist) und speisen unveraendert ausschliesslich
+    die Kandidatenmenge der HAUPTkategorie (Akzeptanzkriterium 19).
+
+    Reine Funktion, mutiert die Eingabe nicht."""
+    result: list[str] = []
+    for key in CATEGORY_REGISTRY:
+        if key == primary_key or key == CATEGORY_NOT_RECOGNIZED:
+            continue
+        number = usable_confidence(confidences.get(key))
+        if number is not None and number >= SECONDARY_CATEGORY_MIN_CONFIDENCE:
+            result.append(key)
+    return tuple(result)
 
 
 def build_classification_prompt() -> str:

@@ -95,7 +95,11 @@ async def _add_ranking(
     category_key: str = CATEGORY_NOT_RECOGNIZED,
     rank_score: float = 0.5,
     rank_position: int = 1,
+    is_primary: bool = True,
 ) -> PhotoRanking:
+    """specs/features/0300-nebenkategorien.md: `is_primary` ist pflichtig - der Default `True`
+    haelt alle bestehenden Aufrufe bei ihrer bisherigen Bedeutung (eine Zugehoerigkeit je Foto,
+    und die ist die Hauptzeile)."""
     ranking = PhotoRanking(
         criterion_scoring_run_id=run.id,
         photo_id=photo.id,
@@ -103,6 +107,7 @@ async def _add_ranking(
         category_key=category_key,
         rank_score=rank_score,
         rank_position=rank_position,
+        is_primary=is_primary,
     )
     session.add(ranking)
     await session.commit()
@@ -117,6 +122,42 @@ async def _add_classification(session: AsyncSession, photo: Photo, *categories: 
             category_key=categories[0] if categories else CATEGORY_NOT_RECOGNIZED,
             detected_categories=list(categories),
             provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await session.commit()
+
+
+async def _add_classification_with_confidences(
+    session: AsyncSession, photo: Photo, confidences: dict[str, float]
+) -> None:
+    """specs/features/0300-nebenkategorien.md: dieselbe Zeile wie `_add_classification`, nur mit
+    der Konfidenz-Abbildung - `detected_categories` sind genau deren Schluessel (die am Parser
+    erzwungene Invariante aus Spec 0299)."""
+    first_key = next(iter(confidences), CATEGORY_NOT_RECOGNIZED)
+    session.add(
+        PhotoCategoryClassification(
+            photo_id=photo.id,
+            category_key=first_key,
+            detected_categories=list(confidences),
+            detected_category_confidences=confidences,
+            category_confidence=confidences.get(first_key),
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await session.commit()
+
+
+async def _add_criterion_score(
+    session: AsyncSession, photo: Photo, criterion_key: str, value: float
+) -> None:
+    session.add(
+        PhotoCriterionScore(
+            photo_id=photo.id,
+            criterion_key=criterion_key,
+            value=value,
+            source=CriterionSource.LOCAL_HEURISTIC,
             computed_at=datetime.now(UTC),
         )
     )
@@ -355,7 +396,7 @@ class TestPutCategoryOverride:
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
         )
-        assert {item["ranking"]["category_key"] for item in response.json()["items"]} == {
+        assert {item["rankings"][0]["category_key"] for item in response.json()["items"]} == {
             CATEGORY_NOT_RECOGNIZED
         }
 
@@ -366,7 +407,224 @@ class TestPutCategoryOverride:
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
         )
-        assert response.json()["items"][0]["ranking"]["category_key"] == "tier"
+        assert response.json()["items"][0]["rankings"][0]["category_key"] == "tier"
+
+
+class TestOverrideChangesTheDampeningWithoutChangingTheMembership:
+    """specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 22 (Copilot-Review-Fund zu
+    PR #373): die Daempfung haengt NICHT nur an der Zugehoerigkeitsmenge, sondern zusaetzlich am
+    Override-Zustand - eine manuell gesetzte Hauptzeile wird nicht gedaempft.
+
+    Es gibt deshalb zwei Wege, auf denen die Menge unveraendert bleibt und die Reihenfolge
+    innerhalb der Partition sich trotzdem aendern MUSS. Beide laufen hier ueber die Endpunkte,
+    weil nur dort der Override-Zustand realistisch mitlaeuft (die Aufrufer setzen bzw. loeschen
+    ihn VOR der Neuableitung).
+
+    Aufbau beider Faelle: zwei Fotos in derselben Partition, das uebersteuerte mit dem HOEHEREN
+    Rang-Score (0.6 gegen 0.5) und der schlechtesten Selbsteinschaetzung (0.0). Der Abstand liegt
+    unter `CONFIDENCE_RANK_PENALTY` - gedaempft faellt es hinter das andere zurueck (0.45 < 0.5),
+    ungedaempft steht es davor. Genau diese Umkehr macht den Unterschied sichtbar."""
+
+    async def _partition(
+        self, db_session: AsyncSession, *, overridden_from_the_start: bool
+    ) -> tuple[Photo, Photo]:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+
+        overridden = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(
+            db_session,
+            overridden,
+            category_override="tier" if overridden_from_the_start else None,
+        )
+        await _add_criterion_score(db_session, overridden, "sharpness", 0.6)
+        await _add_classification_with_confidences(db_session, overridden, {"tier": 0.0})
+
+        other = await _make_photo(db_session, project, "b.jpg")
+        await _add_score(db_session, other)
+        await _add_criterion_score(db_session, other, "sharpness", 0.5)
+        await _add_classification_with_confidences(db_session, other, {"tier": 1.0})
+
+        # Ausgangsstand wie ihn der Lauf geschrieben haette: mit Override steht das uebersteuerte
+        # Foto ungedaempft vorn, ohne Override gedaempft hinten.
+        await _add_ranking(
+            db_session,
+            run,
+            overridden,
+            category_key="tier",
+            rank_score=0.6,
+            rank_position=1 if overridden_from_the_start else 2,
+        )
+        await _add_ranking(
+            db_session,
+            run,
+            other,
+            category_key="tier",
+            rank_score=0.5,
+            rank_position=2 if overridden_from_the_start else 1,
+        )
+        return overridden, other
+
+    async def _positions(
+        self, db_session: AsyncSession, *photos: Photo
+    ) -> dict[int, tuple[str, int]]:
+        rows = (
+            (
+                await db_session.execute(
+                    select(PhotoRanking).where(
+                        PhotoRanking.photo_id.in_([photo.id for photo in photos])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {row.photo_id: (row.category_key, row.rank_position) for row in rows}
+
+    async def test_setting_an_override_on_the_already_effective_category_lifts_the_dampening(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Weg 1: der Override zielt auf die Kategorie, die ohnehin schon die Hauptkategorie ist.
+        Die Zugehoerigkeitsmenge ist danach dieselbe - die Hauptzeile ist aber von automatisch auf
+        manuell gewechselt und darf nicht mehr gedaempft werden. Das Foto rueckt nach vorn."""
+        overridden, other = await self._partition(db_session, overridden_from_the_start=False)
+        assert await self._positions(db_session, overridden, other) == {
+            overridden.id: ("tier", 2),
+            other.id: ("tier", 1),
+        }
+
+        response = await authenticated_api_client.put(
+            f"/photos/{overridden.id}/category-override", json={"category_key": "tier"}
+        )
+
+        assert response.status_code == 200
+        assert await self._positions(db_session, overridden, other) == {
+            overridden.id: ("tier", 1),
+            other.id: ("tier", 2),
+        }
+
+    async def test_removing_an_override_on_the_automatic_category_restores_the_dampening(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Weg 2, ueber die Oberflaeche gut ausloesbar ("Zuruecksetzen"): der Override wird
+        entfernt, sein Ziel ist die automatisch abgeleitete Kategorie ohnehin. Die Menge bleibt
+        dieselbe - die Daempfung muss aber wieder greifen, das Foto rutscht nach hinten."""
+        overridden, other = await self._partition(db_session, overridden_from_the_start=True)
+        assert await self._positions(db_session, overridden, other) == {
+            overridden.id: ("tier", 1),
+            other.id: ("tier", 2),
+        }
+
+        response = await authenticated_api_client.delete(
+            f"/photos/{overridden.id}/category-override"
+        )
+
+        assert response.status_code == 204
+        assert await self._positions(db_session, overridden, other) == {
+            overridden.id: ("tier", 2),
+            other.id: ("tier", 1),
+        }
+
+
+class TestOverrideWithSecondaryCategories:
+    """specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 15: der Override setzt weiterhin
+    nur `photo_scores.category_override` - die Nebenkategorien werden aus der unveraenderten
+    Modellaussage NEU abgeleitet."""
+
+    async def _memberships(
+        self, session: AsyncSession, photo: Photo
+    ) -> dict[str, bool]:
+        rows = (
+            (
+                await session.execute(
+                    select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # Die Invariante ohne Datenbankbedingung (Security-Muss-Kriterium 5): genau EINE
+        # Hauptzeile je (Lauf, Foto) - nach JEDER Schreiboperation zu pruefen.
+        assert sum(1 for row in rows if row.is_primary) == 1
+        return {row.category_key: row.is_primary for row in rows}
+
+    async def _photo_with_a_secondary(
+        self, db_session: AsyncSession, project: Project, run: CriterionScoringRun
+    ) -> Photo:
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo)
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="menschen",
+                detected_categories=["menschen", "tier"],
+                detected_category_confidences={"menschen": 0.9, "tier": 0.95},
+                category_confidence=0.9,
+                provider="anthropic",
+                computed_at=datetime.now(UTC),
+            )
+        )
+        await db_session.commit()
+        await _add_ranking(db_session, run, photo, category_key="menschen")
+        await _add_ranking(
+            db_session, run, photo, category_key="tier", rank_position=1, is_primary=False
+        )
+        return photo
+
+    async def test_an_override_onto_an_existing_secondary_returns_200_and_merges(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Kein `409`, keine zweite Zeile in der Partition: die Hauptzeile ersetzt die
+        Nebenzeile."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await self._photo_with_a_secondary(db_session, project, run)
+
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": "tier"}
+        )
+
+        assert response.status_code == 200
+        assert await self._memberships(db_session, photo) == {
+            "tier": True,
+            "menschen": False,
+        }
+
+    async def test_taking_the_override_back_restores_the_automatic_membership_set(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await self._photo_with_a_secondary(db_session, project, run)
+        before = await self._memberships(db_session, photo)
+
+        await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": "tier"}
+        )
+        response = await authenticated_api_client.delete(
+            f"/photos/{photo.id}/category-override"
+        )
+
+        assert response.status_code == 204
+        assert await self._memberships(db_session, photo) == before
+
+    async def test_an_override_onto_a_third_category_keeps_both_others_as_secondaries(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await self._photo_with_a_secondary(db_session, project, run)
+
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": "fahrzeug"}
+        )
+
+        assert response.status_code == 200
+        assert await self._memberships(db_session, photo) == {
+            "fahrzeug": True,
+            "menschen": False,
+            "tier": False,
+        }
 
 
 class TestDeleteCategoryOverride:
@@ -453,7 +711,9 @@ class TestDeleteCategoryOverride:
         before = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
         )
-        assert {item["ranking"]["category_key"] for item in before.json()["items"]} == {"detail"}
+        assert {
+            item["rankings"][0]["category_key"] for item in before.json()["items"]
+        } == {"detail"}
 
         response = await authenticated_api_client.delete(f"/photos/{photo.id}/category-override")
 

@@ -288,12 +288,21 @@ async def _ranking_counts_by_category(
 
     Enthaelt auch Schluessel AUSSERHALB des festen Sets (Altbestand) - der Aufrufer entscheidet,
     was damit geschieht: sie zaehlen zum Bearbeitungsstand (`ranked`), aber nicht zur
-    Kategorienverteilung."""
+    Kategorienverteilung.
+
+    Zaehlt AUSSCHLIESSLICH die HAUPTkategorie (`is_primary`, specs/features/0300-
+    nebenkategorien.md, ADR 0069 Punkt 8): nur so bleibt die Summe ueber alle Kategorien die
+    Fotoanzahl - die Zusage, die die Verteilung ueberhaupt lesbar macht. Die Partitionsgroesse im
+    Info-Popover (`api/photos.py::_partition_sizes`) zaehlt dagegen bewusst ALLE Zeilen. Zwei
+    Zaehlweisen, zwei Fragen."""
     if latest_run_id is None:
         return {}
     rows = await session.execute(
         select(PhotoRanking.category_key, func.count())
-        .where(PhotoRanking.criterion_scoring_run_id == latest_run_id)
+        .where(
+            PhotoRanking.criterion_scoring_run_id == latest_run_id,
+            PhotoRanking.is_primary.is_(True),
+        )
         .group_by(PhotoRanking.category_key)
     )
     return {key: count for key, count in rows.all()}

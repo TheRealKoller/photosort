@@ -20,6 +20,7 @@ import {
 } from '../hooks/usePhotos'
 import { findOwnRating, ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
+import { primaryRanking } from '../utils/rankings'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 
 // Bounded so a broken/degenerate filter can never spin forever fetching pages while searching
@@ -310,7 +311,11 @@ export function PhotoDetailPage() {
         <div className="text-sm text-text" data-testid="criterion-details-section">
           <CriterionDetailsList
             criterionScores={currentPhoto.criterion_scores}
-            ranking={currentPhoto.ranking}
+            /* Die Detailansicht zeigt EIN Foto - gemeint ist immer seine Hauptzugehoerigkeit
+               (specs/features/0300-nebenkategorien.md). `rankings[0]` waere hier die falsche
+               Abkuerzung, die Rolle kommt aus `is_primary`. */
+            ranking={primaryRanking(currentPhoto)}
+            rankings={currentPhoto.rankings}
             suggestion={null}
             showSuggestion={false}
             categoryCandidates={currentPhoto.category_candidates}
