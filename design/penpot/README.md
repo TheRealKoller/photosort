@@ -262,6 +262,12 @@ abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0066`, Absch
   einer Komponente, nicht das Board; `variantProps` ist ein **Objekt** je Komponente und nennt die
   Werte dieser einen Ausprägung. Die Formen sind in `frontend/penpot/payload.test.ts` als Tabelle
   statisch zugesichert — genau diese Fehlerklasse hat eine Review-Runde siebenmal gefunden.
+- **Ein Bibliotheks-Baustein ist ein Blatt, und eine Instanz nimmt keine Kinder auf.** Am 2026-09-09
+  an allen elf Bausteinen einzeln gemessen: je ein Brett mit genau **einer** Textbeschriftung;
+  `appendChild` an eine Instanz scheitert mit „Cannot change the structure of a component copy".
+  Karte und Dialog sind im Produkt Behälter, in der Bibliothek aber Blätter. Ein Ansichtsentwurf
+  setzt deshalb **Blatt-Elemente als echte Instanzen** (überschriebene Beschriftung) und **Behälter
+  als tokengebundene Rahmen** — und führt das als Lücke in `views.json`, nicht als erledigt.
 - **Laufweite als blanke px-Zahl.** `-0.02em` wird als Tokenwert akzeptiert, kommt an der Textform
   aber als `0` an; der Erzeuger rechnet gegen die Schriftgröße der Stufe um (`-0.02em` bei 64px →
   `-1.28`).
