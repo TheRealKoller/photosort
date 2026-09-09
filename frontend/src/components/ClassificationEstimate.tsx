@@ -61,13 +61,24 @@ export function ClassificationEstimate({ estimate }: ClassificationEstimateProps
             unknownHint="Menge noch unbekannt — für dieses Projekt gab es noch keinen Durchlauf. Dieser Anteil verursacht trotzdem Kosten."
           />
           <p className="flex items-baseline justify-between gap-3 border-t border-separator pt-1">
-            <span className="font-semibold text-text-h">Gesamtsumme</span>
+            {/* Ist ein Anteil unbekannt, ist die Summe laut ADR 0068 Punkt 7 nur eine UNTERE
+                SCHRANKE. Sie unbeschriftet als "Gesamtsumme" zu zeigen, wäre genau die
+                Fehlaussage, gegen die diese Story geschrieben ist - nur eine Zeile tiefer als
+                die `0`, die sie oben schon vermeidet (Copilot-Fund PR #367). */}
+            <span className="font-semibold text-text-h">
+              {everythingKnown ? 'Gesamtsumme' : 'Mindestens'}
+            </span>
             <span className="shrink-0 font-semibold text-text-h">
               {estimate.estimated_cost_usd === null
                 ? NO_PRICE_TEXT
                 : formatUsd(estimate.estimated_cost_usd)}
             </span>
           </p>
+          {!everythingKnown && (
+            <p className="text-xs text-text-muted">
+              Ein Anteil ist noch unbekannt — der tatsächliche Betrag liegt höher.
+            </p>
+          )}
         </>
       )}
 

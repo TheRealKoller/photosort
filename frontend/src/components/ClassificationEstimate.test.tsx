@@ -88,6 +88,24 @@ describe('ClassificationEstimate: der unbekannte Landmark-Anteil', () => {
     expect(row.textContent).not.toMatch(/\b0\b/)
     expect(row.textContent).not.toMatch(/USD/)
   })
+
+  it('weist die Summe als untere Schranke aus, nicht als Gesamtsumme', () => {
+    // Die Summe der BEKANNTEN Anteile unbeschriftet als "Gesamtsumme" zu zeigen, wäre dieselbe
+    // Fehlaussage wie die `0` eine Zeile darüber: sie behauptet Vollständigkeit über eine Menge,
+    // die niemand kennt (Copilot-Fund PR #367).
+    render(<ClassificationEstimate estimate={unknownLandmark} />)
+
+    expect(block()).not.toHaveTextContent(/gesamtsumme/i)
+    expect(block()).toHaveTextContent(/mindestens/i)
+    expect(block()).toHaveTextContent('der tatsächliche Betrag liegt höher')
+  })
+
+  it('nennt die Summe bei vollständig bekanntem Bestand weiterhin Gesamtsumme', () => {
+    render(<ClassificationEstimate estimate={estimate()} />)
+
+    expect(block()).toHaveTextContent(/gesamtsumme/i)
+    expect(block()).not.toHaveTextContent(/mindestens/i)
+  })
 })
 
 describe('ClassificationEstimate: kein hinterlegter Preis', () => {

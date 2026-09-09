@@ -68,10 +68,18 @@ export function deriveClassificationSteps(
   // Vereinfachung - wo genau er gescheitert ist, sagt die Zeile nicht -, und sie ist folgenlos:
   // die Teilschrittliste wird nur während des Laufs gezeigt, danach tritt die Bilanz an ihre
   // Stelle (die den Fehler über `error_message`/`cloud_error_message` benennt).
-  const currentIndex =
-    run.phase === null
-      ? CLASSIFICATION_STEP_ORDER.length
-      : CLASSIFICATION_STEP_ORDER.indexOf(run.phase)
+  //
+  // Ein `phase`-Wert, den DIESES Bundle nicht kennt, faellt auf denselben Zweig: `indexOf` liefert
+  // dann `-1`, und ohne Abfangen laege der Zeiger vor dem ersten Schritt - jeder Schritt stuende
+  // auf `pending`, waehrend der Lauf arbeitet. Das ist kein theoretischer Fall: PhotoSort ist eine
+  // PWA, Bundles werden gecacht, und genau diese Aenderung haengt zwei Werte an den Enum an. Ein
+  // alter Client saehe waehrend der Landmark-Phase "nichts passiert" statt des Fortschritts.
+  // Neue Phasen werden angehaengt, also ist "alle BEKANNTEN Schritte liegen dahinter" die richtige
+  // Naeherung - der unbekannte Schritt selbst kann ohnehin nicht angezeigt werden, weil er in der
+  // Reihenfolge dieses Bundles fehlt (Copilot-Fund PR #367).
+  const phaseIndex =
+    run.phase === null ? -1 : CLASSIFICATION_STEP_ORDER.indexOf(run.phase)
+  const currentIndex = phaseIndex === -1 ? CLASSIFICATION_STEP_ORDER.length : phaseIndex
 
   const steps: ClassificationStep[] = []
 

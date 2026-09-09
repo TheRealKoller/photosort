@@ -153,6 +153,22 @@ describe('deriveClassificationSteps: Zustände', () => {
 
     expect(stateOf(running, 'landmark')).toBe('pending')
   })
+
+  it('behauptet bei einem unbekannten Phasenwert nicht, es sei noch nichts passiert', () => {
+    // PhotoSort ist eine PWA: Bundles werden gecacht, und diese Änderung hängt zwei Werte an den
+    // Phasen-Enum an. Ein Client, der einen neueren Wert nicht kennt, bekäme aus `indexOf` eine
+    // `-1` - ohne Abfangen stünde JEDER Schritt auf `pending`, während der Lauf arbeitet. Genau
+    // das gemeldete Symptom der Story, nur durch einen veralteten Client erzeugt.
+    const unknownPhase = run({
+      status: 'running',
+      phase: 'eine_kuenftige_phase' as CriterionScoringRunSummary['phase'],
+    })
+
+    const states = deriveClassificationSteps(unknownPhase).map((step) => step.state)
+
+    expect(states).not.toContain('pending')
+    expect(states.every((state) => state === 'done')).toBe(true)
+  })
 })
 
 describe('deriveClassificationSteps: Fortschrittsquellen', () => {
