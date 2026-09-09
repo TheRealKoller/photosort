@@ -349,3 +349,61 @@ def test_the_transparency_downgrade_renders_for_postgres_too() -> None:
     assert rendered.count("DROP COLUMN") == 6
     assert _EXPECTED_FK_NAME.upper() in rendered
     assert "DROP CONSTRAINT" in rendered
+
+
+# specs/features/0300-nebenkategorien.md, decisions/0069 Punkt 9: eine Boolean-Spalte mit einem
+# Server-Default, der unmittelbar danach wieder verschwindet, plus ein Constraint-TAUSCH. SQLite
+# kann davon strukturell nichts pruefen: es kennt kein BOOLEAN (ein `DEFAULT 1` liefe dort
+# klaglos durch und braeche Postgres mit DatatypeMismatch), und der Constraint-Tausch entsteht
+# dort ausschliesslich ueber den Tabellen-Neuaufbau von `batch_alter_table` - nur der
+# Postgres-Renderpfad zeigt die beiden benannten `ALTER TABLE`-Anweisungen einzeln.
+#
+# Bewusst nur `upgrade()` (Teststrategie der Spec): `downgrade()` beginnt mit einem `DELETE` -
+# einer Datenanweisung, die der Mock-Renderpfad nicht sinnvoll abbildet. Ihr Verhalten prueft
+# test_migration_nebenkategorien.py gegen eine echte (SQLite-)Datenbank.
+
+_SECONDARY_CATEGORIES_REVISION = "c9d0e1f2a3b4_nebenkategorien.py"
+
+
+@pytest.fixture(scope="module")
+def secondary_categories_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_SECONDARY_CATEGORIES_REVISION)
+
+
+def test_the_is_primary_column_renders_as_boolean_with_a_boolean_default(
+    secondary_categories_upgrade_ddl: list[str],
+) -> None:
+    """Der Default versorgt den Altbestand - er muss ein BOOLEAN-Literal sein, kein Integer.
+    `DEFAULT 1` liefe unter SQLite durch und liesse den Backend-Container auf Postgres beim
+    `alembic upgrade head` sterben (derselbe Fund wie bei `cloud_requested`)."""
+    statement = _add_column_statement(secondary_categories_upgrade_ddl, "is_primary")
+
+    assert "BOOLEAN" in statement.upper()
+    assert "NOT NULL" in statement.upper()
+    assert "DEFAULT true" in statement
+    assert "DEFAULT 1" not in statement
+
+
+def test_the_server_default_is_dropped_again_after_the_backfill(
+    secondary_categories_upgrade_ddl: list[str],
+) -> None:
+    """DIE eigentliche Aussage dieser Revision (Akzeptanzkriterium 25): der Default hat genau eine
+    Aufgabe und darf sie nicht ueberleben. Bliebe er stehen, erzeugte ein Schreibpfad, der
+    `is_primary` vergisst, still eine ZWEITE Hauptkategorie - und die Spalte traegt genau die
+    Invariante, die das verhindern soll."""
+    rendered = " ".join(secondary_categories_upgrade_ddl).upper()
+
+    assert "ALTER COLUMN IS_PRIMARY DROP DEFAULT" in rendered
+
+
+def test_both_unique_constraints_are_named_in_the_swap(
+    secondary_categories_upgrade_ddl: list[str],
+) -> None:
+    """Beide Constraints BENANNT (ADR 0069 Punkt 9): `Base.metadata` traegt keine
+    `naming_convention`, aus der ein Name entstuende, und ein unbenannter Constraint ist unter
+    SQLite nicht droppbar."""
+    rendered = " ".join(secondary_categories_upgrade_ddl)
+
+    assert "DROP CONSTRAINT uq_photo_ranking_run_photo" in rendered
+    assert "ADD CONSTRAINT uq_photo_ranking_run_photo_category UNIQUE" in rendered
+    assert "criterion_scoring_run_id, photo_id, category_key" in rendered
