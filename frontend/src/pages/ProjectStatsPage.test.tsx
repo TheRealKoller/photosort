@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
 import type { ProjectStatsOut } from '../api/types'
+import { CONFIDENCE_EXPLANATION } from '../utils/confidenceLabels'
 import { ProjectStatsPage } from './ProjectStatsPage'
 
 vi.mock('../api/projects')
@@ -245,7 +247,11 @@ describe('ProjectStatsPage', () => {
     it('listet trotzdem alle Kategorien mit 0 und Anteil 0 %', async () => {
       renderPage()
 
-      const table = await screen.findByRole('table')
+      // Zwei Tabellen auf der Seite, seit specs/features/0299-kategorie-konfidenz-anzeigen.md
+      // den Konfidenzblock ergaenzt - die Abfrage wird deshalb auf den Abschnitt eingegrenzt.
+      const table = within(
+        await screen.findByRole('region', { name: 'Kategorienverteilung' })
+      ).getByRole('table')
       const rows = within(table).getAllByRole('row').slice(1)
       expect(rows).toHaveLength(CATEGORY_KEYS.length)
       expect(within(table).getAllByText('0 %')).toHaveLength(CATEGORY_KEYS.length)
@@ -303,7 +309,11 @@ describe('ProjectStatsPage', () => {
     it('rendert die Kategorientabelle mit allen Set-Keys in Server-Reihenfolge', async () => {
       renderPage()
 
-      const table = await screen.findByRole('table')
+      // Zwei Tabellen auf der Seite, seit specs/features/0299-kategorie-konfidenz-anzeigen.md
+      // den Konfidenzblock ergaenzt - die Abfrage wird deshalb auf den Abschnitt eingegrenzt.
+      const table = within(
+        await screen.findByRole('region', { name: 'Kategorienverteilung' })
+      ).getByRole('table')
       const rowHeaders = within(table)
         .getAllByRole('rowheader')
         .map((cell) => cell.textContent)
@@ -313,7 +323,11 @@ describe('ProjectStatsPage', () => {
     it('nutzt ausschliesslich die vom Server gelieferten Anzeigenamen', async () => {
       renderPage()
 
-      const table = await screen.findByRole('table')
+      // Zwei Tabellen auf der Seite, seit specs/features/0299-kategorie-konfidenz-anzeigen.md
+      // den Konfidenzblock ergaenzt - die Abfrage wird deshalb auf den Abschnitt eingegrenzt.
+      const table = within(
+        await screen.findByRole('region', { name: 'Kategorienverteilung' })
+      ).getByRole('table')
       // Regressionsschutz gegen eine zweite Label-Tabelle im Client (ADR 0049): stuende im
       // Frontend eine eigene Uebersetzung, erschiene hier "Landschaft" statt des Servernamens.
       expect(within(table).queryByText('Landschaft')).not.toBeInTheDocument()
@@ -488,5 +502,122 @@ describe('ProjectStatsPage', () => {
       await screen.findByRole('heading', { name: 'Statistik' })
       expect(vi.mocked(projectsApi.getProjectStats).mock.calls).toHaveLength(1)
     })
+  })
+})
+
+
+// specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterien 6/7
+describe('ProjectStatsPage: Konfidenz der Kategorie-Erkennung', () => {
+  beforeEach(() => {
+    vi.mocked(projectsApi.getProjectStats).mockReset()
+  })
+
+  function statsWithConfidence(): ProjectStatsOut {
+    const base = fullStats()
+    return {
+      ...base,
+      category_confidence: {
+        entries: base.category_confidence.entries.map((entry) => {
+          if (entry.category_key === 'landschaft') {
+            return { ...entry, display_name: 'Landschaft', photo_count: 42, average_confidence: 0.78 }
+          }
+          if (entry.category_key === 'tier') {
+            return { ...entry, display_name: 'Tier', photo_count: 0, average_confidence: null }
+          }
+          return entry
+        }),
+        photos_with_confidence: 42,
+        photos_without_confidence: 8,
+      },
+    }
+  }
+
+  it('zeigt Mittelwert und Fotoanzahl je Modell-Kategorie', async () => {
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
+    const row = within(scope).getByText('Landschaft').closest('tr')
+    expect(row).not.toBeNull()
+    expect(within(row as HTMLElement).getByText('78%')).toBeInTheDocument()
+    expect(within(row as HTMLElement).getByText('42')).toBeInTheDocument()
+  })
+
+  it('zeigt fuer eine Kategorie ganz ohne Angabe KEINEN Prozentwert', async () => {
+    // Akzeptanzkriterium 6: keine Zahl, ausdruecklich nicht "0 %".
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
+    const row = within(scope).getByText('Tier').closest('tr')
+    expect(row).not.toBeNull()
+    expect(row).not.toHaveTextContent('0%')
+    expect(row).not.toHaveTextContent('%')
+  })
+
+  it('weist die Bezugsbasis aus', async () => {
+    // Ein Mittelwert ohne Bezugsmenge ist eine Zahl ohne Aussage - die Basis ist deshalb
+    // Pflichtbestandteil, nicht Beiwerk.
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
+    // Die 42 steht zweimal im Abschnitt (Tabellenzeile und Basiskennzahl) - deshalb ueber das
+    // Label eingegrenzt statt ueber die blosse Zahl.
+    expect(
+      within(scope).getByText('Klassifizierte Fotos mit Angabe').closest('div')
+    ).toHaveTextContent('42')
+    expect(
+      within(scope).getByText('Klassifizierte Fotos ohne Angabe').closest('div')
+    ).toHaveTextContent('8')
+  })
+
+  it('haelt die Registry-Anzeigereihenfolge ein, nicht die alphabetische', async () => {
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
+    const rowHeaders = within(scope)
+      .getAllByRole('rowheader')
+      .map((cell) => cell.textContent)
+    expect(rowHeaders).toHaveLength(CATEGORY_KEYS.length)
+    expect(rowHeaders[0]).toBe(statsWithConfidence().category_confidence.entries[0].display_name)
+  })
+
+  it('weist die Zahl ueber denselben festen Hinweis als Selbsteinschaetzung aus', async () => {
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
+    await user.click(within(scope).getByRole('button', { name: /Modell-Selbsteinschätzung/i }))
+
+    expect(await screen.findByText(CONFIDENCE_EXPLANATION)).toBeInTheDocument()
+  })
+
+  it('nennt den Block nirgends Trefferquote, Genauigkeit oder korrekt', async () => {
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
+    const text = scope.textContent ?? ''
+    expect(text).not.toMatch(/Trefferquote/i)
+    expect(text).not.toMatch(/Genauigkeit/i)
+    expect(text).not.toMatch(/korrekt/i)
+  })
+
+  it('bleibt bei einem Projekt ganz ohne Angaben sichtbar und leer', async () => {
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(emptyStats())
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
+    expect(scope).not.toHaveTextContent('%')
   })
 })
