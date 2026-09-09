@@ -19,10 +19,11 @@ Penpot-Datei — er genügt, um sie zu finden, und verrät nichts über die Infr
 |---|---|---|
 | `tokens.json` | **erzeugt** aus `frontend/src/index.css` | die 86 Tokens (Name, Typ, Wert): 64 `color`, 5 `borderRadius`, 8 `spacing`, 2 `fontFamilies`, 7 `typography` |
 | `icons.json` | **erzeugt** aus `frontend/src/components/ui/icon.tsx` | die zwölf Symbole als SVG-Markup |
-| `components.json` | handgeschrieben | Zustands-/Variantenmatrix der zehn Bausteine, ausschließlich in Tokennamen |
+| `components.json` | handgeschrieben | Zustands-/Variantenmatrix der elf Bausteine, ausschließlich in Tokennamen |
+| `views.json` | handgeschrieben | **keine Nutzlast** — die Soll-Struktur der Ansichtsentwürfe (siehe unten) |
 | `seed-tokens.js` | handgeschrieben | legt den Token-Satz `photosort` an bzw. gleicht ihn ab |
 | `seed-icons.js` | handgeschrieben | legt die zwölf Symbole als Komponenten an |
-| `seed-components.js` | handgeschrieben | baut die zehn Bausteine und ihre Varianten |
+| `seed-components.js` | handgeschrieben | baut die elf Bausteine und ihre Varianten |
 | `verify.js` | handgeschrieben | liest den Stand zurück und gibt ihn als JSON aus |
 
 Die beiden erzeugten Dateien entstehen als Vitest-Dateischnappschuss in
@@ -77,7 +78,7 @@ Vorbedingung steht deshalb fail-closed im Skript selbst, vor dem ersten Schreibz
 **Kein Skript löscht je etwas.** Findet ein Lauf in Penpot ein Token, das der Erzeuger nicht
 kennt, bleibt es unangetastet und wird als **Befund** gemeldet — nicht als Fehler gewertet.
 
-**⚠ Eine Zeitüberschreitung dieses Schritts ist kein Fehlschlag.** 144 Varianten mit je rund einem
+**⚠ Eine Zeitüberschreitung dieses Schritts ist kein Fehlschlag.** 146 Varianten mit je rund einem
 Dutzend API-Aufrufen dauern länger, als `execute_code` auf eine Antwort wartet: Der Aufruf endet
 mit „The operation timed out", **während die Arbeit vollständig ausgeführt wird** (beim ersten
 echten Lauf gemessen). Vor jeder Reaktion wird der Stand **zurückgelesen** — erst das Ergebnis
@@ -91,7 +92,7 @@ Beschriftung, dessen Fläche, Umriss, Radius, Innenabstände und Schriftmerkmale
 sind, daraus je eine Bibliotheks-Komponente, und daraus je Baustein ein Varianten-Container.
 
 **Gebaut wird das vollständige Kreuzprodukt der Achsen** eines Bausteins (Schaltfläche 6 × 3 × 5 =
-90 Varianten, über alle zehn Bausteine **144**). Das ist keine Vorliebe, sondern eine Vorgabe der
+90 Varianten, über alle elf Bausteine **146**). Das ist keine Vorliebe, sondern eine Vorgabe der
 Plugin-API: Ein Varianteneintrag muss für **jede** Varianteneigenschaft einen Wert nennen — ein
 Eintrag, der nur `auspraegung=ghost` trägt und zu `groesse`/`zustand` schweigt, ist keine
 wohldefinierte Variante.
@@ -123,6 +124,65 @@ Rollen, die zu Unterelementen gehören, die dieser Aufbau nicht selbst setzt (Kn
 Statuspille, Dateiname der Karte …), werden **nicht stillschweigend übergangen**, sondern als
 `nachzubinden` zurückgegeben — ihre Bindung entsteht beim Entwerfen in Penpot, wo diese Elemente
 ohnehin ihre Form bekommen.
+
+## Ansichtsentwürfe: `views.json` ist die Soll-Struktur, kein Generator
+
+Seit ADR [`0069`](../../specs/decisions/0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md)
+entsteht ein **Ansichtsentwurf von Hand in Penpot** — es gibt bewusst kein `seed-views.js` und
+keine fünfte Zeile in der Schritttabelle oben. Eine Ansicht besteht fast vollständig aus Werten
+(Position, Größe, Reihenfolge, Schachtelung, Beispieltext), und es gibt keine Quelle, aus der sie
+erzeugt werden könnten: Die Ansicht existiert im Produkt noch nicht — das ist der Zweck eines
+Entwurfs. Eine Datendatei mit Koordinaten wäre die erste getippte Wertekopie des Projekts.
+
+`views.json` ist deshalb **keine Nutzlast**: Sie wird nie ausgeführt und an kein Skript übergeben
+(eingefroren als `'views.json': null` in der Laufregel-Zuordnung von `payload.test.ts`). Sie ist
+die Soll-Aussage, gegen die zurückgelesen wird — je Ansicht der maschinelle Schlüssel, der
+Anzeigename, der Seitenname, die Produktdatei(en), die Breiten, die Zustände, die
+Bausteinschlüssel, die instanziiert sein müssen, und die benannten **Lücken**. Ohne sie wäre ein
+Instanzverlust bei den Ansichten nicht einmal erkennbar: eine Datei ohne Ansichten sähe für
+`verify.js` aus wie eine vollständige.
+
+**Sie trägt keine Koordinate, keine Größe, keinen Farbwert und keinen Beispieltext** — und nach der
+Maskierung der Tokennamen **keine einzige Ziffer**. Das ist eine eigene, nur für sie geltende
+Musterfamilie in `frontend/penpot/payload.test.ts`: Die vier übrigen Familien schweigen an
+`"360x740"` (die blanke Zahl endet vor dem `x`) und an `"0b0c10"` (der Hexwert braucht ein `#`) —
+genau die Schreibweisen, in denen eine Koordinate oder ein Farbwert in eine JSON-Datei rutscht.
+Sie tritt der Suchraumliste `NUTZLAST_DATEIEN` **selbst** bei statt einer daneben gestellten
+zweiten Liste: Diese Konstante speist beide Zusicherungsblöcke — Wertfreiheit *und* die
+abschließende Verbotsliste.
+
+**Das Ablagemuster** (verbindlich für jede weitere Ansicht): eine Penpot-Seite je Ansicht, benannt
+`Ansicht — <Anzeigename>`; ein Brett je Breite, nebeneinander auf derselben Seite; die zwei Breiten
+sind die Prüfbreiten des Projekts aus `e2e/lib/viewports.ts` und werden dort **gelesen**, nicht
+getippt; Zustände sind eine Variantenachse `zustand`, die **Breite ausdrücklich keine**;
+wiedererkannt wird an den Plugin-Daten `ansicht` und `breite`, nie am Namen.
+
+`verify.js` liefert dazu je Brett die Plugin-Daten, die Varianteneigenschaften samt Zahl ihrer
+Ausprägungen, die Zahl der **Bibliotheks-Instanzen**, die Zahl der Formen, die **keine** Instanz
+sind, und die Tokenbindungen des Unterbaums. **Die Zahl der Nicht-Instanzen ist ein Hinweis, keine
+Schwelle** — Texte und Rahmen sind legitim keine Instanzen; sie wird berichtet, nicht gefahren.
+Die Kardinalitäten `ERWARTETE_ANSICHTEN` und `ERWARTETE_ANSICHTSBRETTER` stehen neben den vier
+bestehenden; die Brettzahl entsteht in `views.json` als **Summe** über Breiten × Zustände, nicht
+als zweite getippte Zahl.
+
+**Die Bildexporte werden nicht eingecheckt.** Je Ansichtsbrett ein Export über `export_shape` auf
+die **Form** (nie ein Fensterabzug — ein Bildschirmfoto trüge die Adresszeile).
+
+**`export_shape` legt keine Datei an** (2026-09-09 gemessen): Es liefert das Bild in die laufende
+Sitzung — dort ist der Entwurf vorführbar —, aber die Plugin-API bietet keinen Weg auf die Platte.
+Die Datei für den PR-Anhang entsteht in **Penpots eigenem Export**, nicht in der Session. Liegt sie
+lokal, gehört sie unter `design/penpot/ansichten/`: Das Verzeichnis ist **ungetrackt**
+(`.gitignore`), und der CI-Schritt „keine Bilddatei im Git-Index" deckt seit dieser Erweiterung
+`e2e design` ab — er bleibt auch dann richtig, wenn die Session das Verzeichnis nie selbst befüllt.
+
+Das Anhängen an den Pull Request ist **Daniels Handgriff im Browser** — `gh` kennt keinen
+Bild-Upload, und der Operationskatalog `github-access` führt aus demselben Grund keine Operation
+dafür.
+
+**Was daraus folgt und man wissen muss:** Eine Ansicht ist nach einem Instanzverlust **nicht
+wiederherstellbar und nicht einmal ansehbar**. Tokens, Symbole und Bausteine kommen aus den
+Skripten zurück; von einer Ansicht bleiben nur `views.json` und der UI/UX-Abschnitt ihrer Spec —
+welche Bretter es gab, nicht, wie sie aussahen.
 
 ## Was CI hier nicht prüfen kann
 
@@ -171,7 +231,7 @@ abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0066`, Absch
   zwölf Symbolgruppen ineinander, weil `createComponent` aus dem ersten Symbol ein Board macht.
   **Eine nachträglich gesetzte Position behebt das nicht** — der Elternknoten wird beim Erzeugen
   entschieden. `seed-icons.js` verankert deshalb ausdrücklich; `seed-components.js` tut dasselbe
-  vorsorglich für seine Bretter (dort nicht gemessen, aber billig und bei 144 Ausprägungen ungleich
+  vorsorglich für seine Bretter (dort nicht gemessen, aber billig und bei 146 Ausprägungen ungleich
   teurer zu entwirren).
 - **`/` ist ein Pfadtrenner, kein Namensbestandteil.** `symbol/star` liegt als
   `{ name: "star", path: "symbol" }` vor; die volle Zeichenkette steht in keinem einzelnen Feld.
@@ -209,6 +269,12 @@ abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0066`, Absch
   einer Komponente, nicht das Board; `variantProps` ist ein **Objekt** je Komponente und nennt die
   Werte dieser einen Ausprägung. Die Formen sind in `frontend/penpot/payload.test.ts` als Tabelle
   statisch zugesichert — genau diese Fehlerklasse hat eine Review-Runde siebenmal gefunden.
+- **Ein Bibliotheks-Baustein ist ein Blatt, und eine Instanz nimmt keine Kinder auf.** Am 2026-09-09
+  an allen elf Bausteinen einzeln gemessen: je ein Brett mit genau **einer** Textbeschriftung;
+  `appendChild` an eine Instanz scheitert mit „Cannot change the structure of a component copy".
+  Karte und Dialog sind im Produkt Behälter, in der Bibliothek aber Blätter. Ein Ansichtsentwurf
+  setzt deshalb **Blatt-Elemente als echte Instanzen** (überschriebene Beschriftung) und **Behälter
+  als tokengebundene Rahmen** — und führt das als Lücke in `views.json`, nicht als erledigt.
 - **Laufweite als blanke px-Zahl.** `-0.02em` wird als Tokenwert akzeptiert, kommt an der Textform
   aber als `0` an; der Erzeuger rechnet gegen die Schriftgröße der Stufe um (`-0.02em` bei 64px →
   `-1.28`).
@@ -218,3 +284,17 @@ sind der Ort, an dem eine spätere API-Änderung eine Korrektur braucht statt zw
 künftig ein Punkt als nicht verfügbar heraus, wird das **gemeldet, nicht umgangen** — ein Zustand
 als danebengestelltes Bild erfüllt Akzeptanzkriterium 4 nicht, und ein von Hand gesetzter
 Schriftwert ist als dokumentierte Lücke zu führen.
+
+### Layout-Eigenheiten der Plugin-API (2026-09-09 gemessen)
+
+Beim ersten Ansichtsentwurf gemessen, hier festgehalten, damit der nächste ihn nicht neu entdeckt:
+
+- Das Flex-Layout eines Bretts rechnet **nur bei wachsender Höhe**. Eine feste Höhe unterdrückt es
+  still — die Kinder liegen dann alle übereinander, ohne Fehlermeldung. Ein Brett trägt deshalb feste
+  Breite plus `verticalSizing = 'auto'`, und beide Sizings müssen ausdrücklich gesetzt sein.
+- Eine exakte Prüfbreite **und** -höhe braucht zwei Stufen: äußerer Rahmen ohne Layout, darin ein
+  Inhaltsbrett mit Layout.
+- Kind-Sizing sitzt auf `shape.layoutChild`, nicht am Shape. Am Shape wirft `'fill'`; ein Shape ist
+  nicht erweiterbar.
+- Ein leerer Text ist ungültig — eine unerwünschte Beschriftung wird ausgeblendet, nicht geleert.
+- `penpot.openPage` wirkt nicht zuverlässig im selben Aufruf; Wechsel und Prüfung gehören getrennt.

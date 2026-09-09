@@ -371,21 +371,28 @@ jobs:
       # --- Die vier Nachweis-Schritte laufen VOR dem teuren Image-Bau: eine verletzte
       # --- Sicherheitszusage soll in Sekunden auffallen, nicht erst nach dem Stackstart.
 
-      - name: Nachweis - keine Bilddatei unter e2e/ im Git-Index
+      # Der Suchraum umfasst seit Spec 0358 auch design/: dort liegen die ungetrackten Formexporte
+      # der Ansichtsentwuerfe (design/penpot/ansichten/). Der Schritt bleibt bewusst in diesem Job,
+      # der ohne Pfadfilter laeuft - bekaeme er je einen, ginge die Design-Zusicherung
+      # stillschweigend mit.
+      - name: Nachweis - keine Bilddatei unter e2e/ oder design/ im Git-Index
         run: |
           set -euo pipefail
           pattern='\.(png|jpe?g|gif|webp|bmp|tiff?|avif|heic|ico)$'
-          tracked=$(git ls-files -- e2e | grep -Ei "$pattern" || true)
+          tracked=$(git ls-files -- e2e design | grep -Ei "$pattern" || true)
           if [ -n "$tracked" ]; then
-            echo "Bilddateien unter e2e/ im Git-Index gefunden:" >&2
+            echo "Bilddateien unter e2e/ oder design/ im Git-Index gefunden:" >&2
             echo "$tracked" >&2
             echo "Die wichtigste Projektregel lautet: nie Bilddaten im Repository." >&2
             exit 1
           fi
-          # Gegenprobe: der Ausdruck erkennt eine Bilddatei tatsaechlich. Ohne sie bestuende
-          # dieser Schritt auch mit einem kaputten Muster - er faende dann eben nie etwas.
+          # Gegenprobe: der Ausdruck erkennt eine Bilddatei tatsaechlich, und zwar unter BEIDEN
+          # Pfaden. Ohne sie bestuende dieser Schritt auch mit einem kaputten Muster - er faende
+          # dann eben nie etwas; und ohne den zweiten Beispielpfad belegte sie nur den Ausdruck,
+          # nicht den erweiterten Suchraum.
           echo 'e2e/artifacts/beispiel.png' | grep -Eiq "$pattern"
-          echo "OK: keine Bilddatei unter e2e/ versioniert (Muster durch Gegenprobe belegt)."
+          echo 'design/penpot/ansichten/beispiel.png' | grep -Eiq "$pattern"
+          echo "OK: keine Bilddatei unter e2e/ oder design/ versioniert (Muster durch Gegenprobe belegt)."
 
       - name: Nachweis - eigener Compose-Projektname
         run: |
