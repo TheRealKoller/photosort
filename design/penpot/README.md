@@ -165,12 +165,19 @@ Die Kardinalitäten `ERWARTETE_ANSICHTEN` und `ERWARTETE_ANSICHTSBRETTER` stehen
 bestehenden; die Brettzahl entsteht in `views.json` als **Summe** über Breiten × Zustände, nicht
 als zweite getippte Zahl.
 
-**Die Bildexporte werden nicht eingecheckt.** Je Ansichtsbrett ein PNG über `export_shape` auf die
-**Form** (nie ein Fensterabzug — ein Bildschirmfoto trüge die Adresszeile), abgelegt unter
-`design/penpot/ansichten/`. Dieses Verzeichnis ist **ungetrackt** (`.gitignore`), und der CI-Schritt
-„keine Bilddatei im Git-Index" deckt seit dieser Erweiterung `e2e design` ab. Das Anhängen an den
-Pull Request ist **Daniels Handgriff im Browser** — `gh` kennt keinen Bild-Upload, und der
-Operationskatalog `github-access` führt aus demselben Grund keine Operation dafür.
+**Die Bildexporte werden nicht eingecheckt.** Je Ansichtsbrett ein Export über `export_shape` auf
+die **Form** (nie ein Fensterabzug — ein Bildschirmfoto trüge die Adresszeile).
+
+**`export_shape` legt keine Datei an** (2026-09-09 gemessen): Es liefert das Bild in die laufende
+Sitzung — dort ist der Entwurf vorführbar —, aber die Plugin-API bietet keinen Weg auf die Platte.
+Die Datei für den PR-Anhang entsteht in **Penpots eigenem Export**, nicht in der Session. Liegt sie
+lokal, gehört sie unter `design/penpot/ansichten/`: Das Verzeichnis ist **ungetrackt**
+(`.gitignore`), und der CI-Schritt „keine Bilddatei im Git-Index" deckt seit dieser Erweiterung
+`e2e design` ab — er bleibt auch dann richtig, wenn die Session das Verzeichnis nie selbst befüllt.
+
+Das Anhängen an den Pull Request ist **Daniels Handgriff im Browser** — `gh` kennt keinen
+Bild-Upload, und der Operationskatalog `github-access` führt aus demselben Grund keine Operation
+dafür.
 
 **Was daraus folgt und man wissen muss:** Eine Ansicht ist nach einem Instanzverlust **nicht
 wiederherstellbar und nicht einmal ansehbar**. Tokens, Symbole und Bausteine kommen aus den
