@@ -1550,6 +1550,23 @@ describe('Design-Vertrag: Board-Navigationselement', () => {
     }
   )
 
+  /*
+   * specs/features/0347-navigation-nebenbereich.md (AK5): Die Absetzung der Nebenzielgruppe im
+   * Panel haengt am Block der HAUPTZIELE - so verschwindet die Linie ab `lg:` automatisch mit dem
+   * Block, den sie abtrennt. Gebunden wird die Zeile woertlich, weil hier insbesondere die
+   * Token-Wahl zur Debatte steht: `border-border` waere auf `--elevated` gar keine sichtbare
+   * Linie, und der Fehler faellt in keinem Komponententest auf (jsdom hat keine Layout-Engine).
+   *
+   * NAV_TRIGGER_ACTIVE_CLASSES wird der Bindung oben ausdruecklich NICHT hinzugefuegt: der
+   * Aktivstil des Ausloesers ist ein drittes, absichtlich abweichendes Rezept - ein Symbol-Button
+   * ist kein Board-Navigationselement.
+   */
+  it('bindet die Trenner-Utilities der Panel-Gruppe woertlich (Spec 0347, AK5)', () => {
+    expect(literalsOf('src/components/ProjectNav.tsx')).toContain(
+      'mb-2 border-b border-separator pb-2 lg:hidden'
+    )
+  })
+
   it('bindet nicht gegen ein Rezept, das in keiner der beiden Dateien steht', () => {
     // Positiv-Gegenprobe: ohne sie bestuende die Bindung oben auch dann, wenn `stringLiterals`
     // nichts mehr faende und beide Seiten leer waeren.

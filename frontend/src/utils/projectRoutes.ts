@@ -2,9 +2,10 @@ import { matchPath } from 'react-router'
 
 /*
  * Einzige Quelle der Wahrheit fuer alles, was am Projektkontext einer Route haengt
- * (specs/features/0298-projektnavigation-in-der-kopfzeile.md, Architektur-Abschnitt): welche
- * Routen es mit Projektbezug gibt, welcher Pfad Projektkontext hat, und welches der vier
- * Navigationsziele gerade aktiv ist.
+ * (specs/features/0298-projektnavigation-in-der-kopfzeile.md, Architektur-Abschnitt; seit
+ * specs/features/0347-navigation-nebenbereich.md in zwei Gruppen): welche Routen es mit
+ * Projektbezug gibt, welcher Pfad Projektkontext hat, und welches der fuenf Navigationsziele
+ * gerade aktiv ist.
  *
  * REINES TYPESCRIPT OHNE REACT-IMPORT (Vorbild: utils/pipelineSteps.ts, das PIPELINE_STEPS fuer
  * den Stepper haelt). Bewusst NICHT in App.tsx: sonst importierte components/ProjectNav.tsx aus
@@ -63,7 +64,7 @@ export function matchProjectId(pathname: string): string | null {
   return null
 }
 
-export type ProjectNavTargetId = 'pipeline' | 'photos' | 'compare' | 'settings'
+export type ProjectNavTargetId = 'pipeline' | 'photos' | 'compare' | 'settings' | 'stats'
 
 export interface ProjectNavTarget {
   id: ProjectNavTargetId
@@ -74,9 +75,16 @@ export interface ProjectNavTarget {
   activeRoutePaths: readonly string[]
 }
 
-/**
- * Die vier gleichrangigen Navigationsziele eines Projekts. DIE REIHENFOLGE IM ARRAY IST DIE
- * REIHENFOLGE IN DER LEISTE UND IM PANEL (specs/features/0298, Zuordnungstabelle).
+/*
+ * ZWEI GRUPPEN STATT EINER FLACHEN LISTE (specs/features/0347-navigation-nebenbereich.md): die
+ * drei Hauptziele, zwischen denen beim Sortieren staendig gewechselt wird, und die zwei
+ * Nebenziele, die selten gebraucht werden und deshalb nicht denselben Platz in der Leiste
+ * beanspruchen. DIE REIHENFOLGE INNERHALB EINER GRUPPE IST DIE ANZEIGEREIHENFOLGE (Leiste UND
+ * Panel).
+ *
+ * DER NAME `PROJECT_NAV_TARGETS` IST BEWUSST VERSCHWUNDEN statt "alle fuenf" zu bedeuten: haette
+ * er ueberlebt, aenderte sich die Bedeutung eines Bezeichners still unter allen bestehenden
+ * Aufrufstellen hinweg, und jede von ihnen kompilierte zufaellig weiter.
  *
  * "Projekt" zeigt auf /pipeline statt auf /projects/{id}: letzteres ist laut eigenem Kommentar in
  * App.tsx ein reiner Bestandsschutz-Redirect fuer alte Lesezeichen, kein Ziel. Der
@@ -87,7 +95,7 @@ export interface ProjectNavTarget {
  * Kodieren braeche den Rundlauf. Prozentkodierte IDs sind ueber die Oberflaeche unerreichbar (IDs
  * sind ganzzahlig aus dem Backend) - unveraendert zum bisherigen Verhalten in App.tsx.
  */
-export const PROJECT_NAV_TARGETS: readonly ProjectNavTarget[] = [
+export const PROJECT_NAV_PRIMARY_TARGETS: readonly ProjectNavTarget[] = [
   {
     id: 'pipeline',
     label: 'Projekt',
@@ -110,25 +118,62 @@ export const PROJECT_NAV_TARGETS: readonly ProjectNavTarget[] = [
     buildPath: (projectId) => `/projects/${projectId}/compare`,
     activeRoutePaths: [PROJECT_ROUTE_PATHS.compare],
   },
+]
+
+/**
+ * Die beiden Nebenziele. `stats` ist mit Spec 0347 ueberhaupt erst ein Navigationsziel geworden -
+ * bis dahin war die Statistikseite eine Querschnittsansicht ohne Eintrag und ausschliesslich ueber
+ * einen Link am Ende der Pipeline-Seite erreichbar.
+ */
+export const PROJECT_NAV_SECONDARY_TARGETS: readonly ProjectNavTarget[] = [
   {
     id: 'settings',
     label: 'Einstellungen',
     buildPath: (projectId) => `/projects/${projectId}/settings`,
     activeRoutePaths: [PROJECT_ROUTE_PATHS.settings],
   },
+  {
+    id: 'stats',
+    label: 'Statistik',
+    buildPath: (projectId) => `/projects/${projectId}/stats`,
+    activeRoutePaths: [PROJECT_ROUTE_PATHS.stats],
+  },
 ]
 
 /**
+ * Beide Gruppen in Anzeigereihenfolge - Grundlage von resolveActiveNavTargetId und des Panels
+ * unterhalb `lg:`. ABGELEITET STATT AUSGESCHRIEBEN: eine dritte, von Hand gepflegte Liste waere
+ * genau die Kopie, die beim naechsten neuen Ziel auseinanderlaeuft.
+ */
+export const ALL_PROJECT_NAV_TARGETS: readonly ProjectNavTarget[] = [
+  ...PROJECT_NAV_PRIMARY_TARGETS,
+  ...PROJECT_NAV_SECONDARY_TARGETS,
+]
+
+/**
+ * Gehoert dieses Ziel dem Nebenbereich an? Traegt die Aktiv-Markierung des geschlossenen
+ * Ausloesers (AK6) und ist bewusst eine REINE FUNKTION statt eines Inline-Ausdrucks in
+ * ProjectNav: so ist sie ohne Rendering pruefbar.
+ *
+ * `null` ist ausdruecklich KEIN Nebenbereich. Die naheliegende Fehlimplementierung "kein Hauptziel
+ * aktiv, also Nebenbereich" markierte den Ausloeser auf /curate faelschlich als aktuell.
+ */
+export function isSecondaryNavTargetId(id: ProjectNavTargetId | null): boolean {
+  return id !== null && PROJECT_NAV_SECONDARY_TARGETS.some((target) => target.id === id)
+}
+
+/**
  * Das aktuell aktive Navigationsziel, oder null. Null bedeutet zweierlei und ist in beiden Faellen
- * richtig: gar kein Projektkontext, ODER eine Querschnittsansicht (/stats, /curate), die zu keinem
- * der vier Ziele gehoert - ein Link als aktiv zu markieren, der woanders hinfuehrt, waere
- * schlechter als gar kein Marker (AK8b).
+ * richtig: gar kein Projektkontext, ODER die Kuratierung (/curate), die zu keinem der fuenf Ziele
+ * gehoert - ein Link als aktiv zu markieren, der woanders hinfuehrt, waere schlechter als gar kein
+ * Marker (AK8b). /stats faellt seit Spec 0347 NICHT mehr darunter: es ist ein Nebenziel geworden
+ * und wird als solches markiert.
  */
 export function resolveActiveNavTargetId(pathname: string): ProjectNavTargetId | null {
   if (matchProjectId(pathname) === null) {
     return null
   }
-  const target = PROJECT_NAV_TARGETS.find((candidate) =>
+  const target = ALL_PROJECT_NAV_TARGETS.find((candidate) =>
     candidate.activeRoutePaths.some((path) => matchPath(path, pathname) !== null)
   )
   return target?.id ?? null

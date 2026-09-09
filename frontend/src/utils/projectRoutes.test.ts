@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  ALL_PROJECT_NAV_TARGETS,
+  isSecondaryNavTargetId,
   matchProjectId,
   PROJECT_CONTEXT_ROUTE_PATHS,
-  PROJECT_NAV_TARGETS,
+  PROJECT_NAV_PRIMARY_TARGETS,
+  PROJECT_NAV_SECONDARY_TARGETS,
   PROJECT_ROUTE_PATHS,
   resolveActiveNavTargetId,
 } from './projectRoutes'
@@ -103,23 +106,56 @@ describe('projectRoutes - matchProjectId', () => {
   })
 })
 
-describe('projectRoutes - PROJECT_NAV_TARGETS', () => {
+describe('projectRoutes - Zieltabelle in zwei Gruppen', () => {
   // Die Anzeigereihenfolge IST die Array-Reihenfolge (Leiste UND Panel) und haette sonst keinen
   // Waechter.
-  it('fuehrt genau vier Ziele in fixierter Reihenfolge (AK1)', () => {
-    expect(PROJECT_NAV_TARGETS).toHaveLength(4)
-    expect(PROJECT_NAV_TARGETS.map((target) => target.id)).toEqual([
+  it('fuehrt genau drei Hauptziele in fixierter Reihenfolge (AK1)', () => {
+    expect(PROJECT_NAV_PRIMARY_TARGETS).toHaveLength(3)
+    expect(PROJECT_NAV_PRIMARY_TARGETS.map((target) => target.id)).toEqual([
       'pipeline',
       'photos',
       'compare',
-      'settings',
     ])
-    expect(PROJECT_NAV_TARGETS.map((target) => target.label)).toEqual([
+    expect(PROJECT_NAV_PRIMARY_TARGETS.map((target) => target.label)).toEqual([
       'Projekt',
       'Fotos',
       'Vergleich',
-      'Einstellungen',
     ])
+  })
+
+  it('fuehrt genau zwei Nebenziele in fixierter Reihenfolge (AK2)', () => {
+    expect(PROJECT_NAV_SECONDARY_TARGETS).toHaveLength(2)
+    expect(PROJECT_NAV_SECONDARY_TARGETS.map((target) => target.id)).toEqual(['settings', 'stats'])
+    expect(PROJECT_NAV_SECONDARY_TARGETS.map((target) => target.label)).toEqual([
+      'Einstellungen',
+      'Statistik',
+    ])
+  })
+
+  /*
+   * INVARIANTE STATT DRITTER TABELLE (specs/features/0347, Teststrategie): ALL_ ist exakt die
+   * Verkettung beider Gruppen, fuehrt fuenf EINDEUTIGE ids, und die Gruppen sind disjunkt. Das ist
+   * der Waechter gegen den realistischsten Fehler genau dieses Umbaus - ein Ziel landet per
+   * Copy-Paste in BEIDEN Listen und erzeugt einen doppelten React-Key samt doppelter Panelzeile.
+   * Eine ausgeschriebene Soll-Liste faende das nicht, sie waere selbst die Kopie.
+   */
+  it('setzt ALL_PROJECT_NAV_TARGETS ueberschneidungsfrei aus beiden Gruppen zusammen', () => {
+    expect(ALL_PROJECT_NAV_TARGETS).toEqual([
+      ...PROJECT_NAV_PRIMARY_TARGETS,
+      ...PROJECT_NAV_SECONDARY_TARGETS,
+    ])
+
+    const ids = ALL_PROJECT_NAV_TARGETS.map((target) => target.id)
+    expect(ids).toHaveLength(5)
+    expect(new Set(ids).size, `doppelte id in ${ids.join(', ')}`).toBe(5)
+
+    const primaryIds = new Set<string>(PROJECT_NAV_PRIMARY_TARGETS.map((target) => target.id))
+    expect(
+      PROJECT_NAV_SECONDARY_TARGETS.filter((target) => primaryIds.has(target.id)).map(
+        (target) => target.id
+      ),
+      'Ziel in beiden Gruppen'
+    ).toEqual([])
   })
 
   it.each([
@@ -127,8 +163,9 @@ describe('projectRoutes - PROJECT_NAV_TARGETS', () => {
     ['photos', '/projects/1/photos'],
     ['compare', '/projects/1/compare'],
     ['settings', '/projects/1/settings'],
+    ['stats', '/projects/1/stats'],
   ])('baut fuer %s den Pfad %s', (id, expected) => {
-    const target = PROJECT_NAV_TARGETS.find((candidate) => candidate.id === id)
+    const target = ALL_PROJECT_NAV_TARGETS.find((candidate) => candidate.id === id)
     expect(target, `Ziel ${id}`).toBeDefined()
     expect(target!.buildPath('1')).toBe(expected)
   })
@@ -136,9 +173,31 @@ describe('projectRoutes - PROJECT_NAV_TARGETS', () => {
   // Rundlauf fuer einen nicht-numerischen, zeichenharmlosen Wert (bestehende Konvention):
   // matchPath dekodiert, buildPath kodiert nicht - ein einseitiges encodeURIComponent braeche ihn.
   it('haelt den Rundlauf matchProjectId -> buildPath fuer eine nicht-numerische id', () => {
-    for (const target of PROJECT_NAV_TARGETS) {
+    for (const target of ALL_PROJECT_NAV_TARGETS) {
       expect(matchProjectId(target.buildPath('abc'))).toBe('abc')
     }
+  })
+})
+
+describe('projectRoutes - isSecondaryNavTargetId', () => {
+  /*
+   * GEGEN DIE GRUPPENZUGEHOERIGKEIT GERECHNET, nicht gegen eine zweite Soll-Liste von Hand: die
+   * waere das Duplikat, das beim naechsten neuen Ziel still auseinanderlaeuft. Der Fall bleibt
+   * trotzdem aussagekraeftig, weil er ueber ALL_ laeuft - ein Ziel, das in keiner der beiden
+   * Gruppen steht, taucht hier gar nicht erst auf und faellt der Invariante oben zum Opfer.
+   */
+  it.each(ALL_PROJECT_NAV_TARGETS.map((target) => target.id))(
+    'ordnet %s der richtigen Gruppe zu',
+    (id) => {
+      const isSecondary = PROJECT_NAV_SECONDARY_TARGETS.some((target) => target.id === id)
+      expect(isSecondaryNavTargetId(id)).toBe(isSecondary)
+    }
+  )
+
+  // Edge Case 1 der Spec: die naheliegende Fehlimplementierung ist "kein Hauptziel aktiv ⇒
+  // Nebenbereich aktiv" - der Ausloeser truege dann auf /curate faelschlich den Aktivmarker.
+  it('behandelt null NICHT als Nebenbereich (AK6, Fall /curate)', () => {
+    expect(isSecondaryNavTargetId(null)).toBe(false)
   })
 })
 
@@ -154,18 +213,19 @@ describe('projectRoutes - resolveActiveNavTargetId', () => {
     ['/projects/1/photos/42', 'photos'],
     ['/projects/1/compare', 'compare'],
     ['/projects/1/settings', 'settings'],
+    // specs/features/0347 (AK2): /stats ist mit dem Nebenbereich ein echtes Navigationsziel
+    // geworden. Bewusst HIER als eigener Positivfall und nicht nur aus der Negativtabelle unten
+    // gestrichen - beim blossen Streichen verschwaende die Zusage lautlos (Edge Case 2).
+    ['/projects/1/stats', 'stats'],
   ])('markiert auf %s das Ziel %s als aktiv (AK8a)', (pathname, expected) => {
     expect(resolveActiveNavTargetId(pathname)).toBe(expected)
   })
 
-  // AK8b: Querschnittsansichten. Ein Link als aktiv zu markieren, der woanders hinfuehrt, waere
-  // schlechter als gar kein Marker.
-  it.each(['/projects/1/stats', '/projects/1/curate'])(
-    'markiert auf %s kein Ziel als aktiv (AK8b)',
-    (pathname) => {
-      expect(resolveActiveNavTargetId(pathname)).toBeNull()
-    }
-  )
+  // AK8b, verbliebener Fall: die Kuratierung ist weiterhin kein Navigationsziel. Ein Link als
+  // aktiv zu markieren, der woanders hinfuehrt, waere schlechter als gar kein Marker.
+  it('markiert auf /projects/1/curate kein Ziel als aktiv (AK8b)', () => {
+    expect(resolveActiveNavTargetId('/projects/1/curate')).toBeNull()
+  })
 
   it.each(['/', '/projects/new', '/login', '/some/unknown/path'])(
     'liefert ohne Projektkontext null (%s)',
