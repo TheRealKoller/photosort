@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.0](https://github.com/TheRealKoller/photosort/compare/v0.39.0...v0.40.0) (2026-09-09)
+
+
+### Features
+
+* Klassifizierungslauf vor, während und nach dem Lauf nachvollziehbar (Spec 0348) ([#367](https://github.com/TheRealKoller/photosort/issues/367)) ([330b038](https://github.com/TheRealKoller/photosort/commit/330b038edf83af4eda5487363aef954bf649ae57))
+
 ## [0.39.0](https://github.com/TheRealKoller/photosort/compare/v0.38.0...v0.39.0) (2026-09-09)
 
 
