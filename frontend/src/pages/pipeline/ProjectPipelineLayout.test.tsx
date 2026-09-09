@@ -26,7 +26,6 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     last_scan: null,
     last_scoring_run: null,
     last_criterion_scoring_run: null,
-    last_remote_category_classification_run: null,
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
@@ -78,6 +77,9 @@ function criterionScoringRun(
     phase: null,
     cloud_requested: false,
     cloud_error_message: null,
+    cloud_phases: [],
+    estimated_cost_usd: null,
+    cloud_cost_total_usd: null,
     ...overrides,
   }
 }
@@ -255,14 +257,12 @@ describe('ProjectPipelineLayout', () => {
         last_scan: scan({ status: 'running' }),
         last_scoring_run: scoringRun(),
         last_criterion_scoring_run: criterionScoringRun({ status: 'success' }),
-        last_remote_category_classification_run: null,
       })
       vi.mocked(projectsApi.getProject)
         .mockResolvedValueOnce(doneThroughKriterien)
         .mockResolvedValue({
           ...doneThroughKriterien,
           last_criterion_scoring_run: criterionScoringRun({ status: 'failed' }),
-          last_remote_category_classification_run: null,
         })
 
       renderLayout('/projects/1/pipeline/kuratierung')

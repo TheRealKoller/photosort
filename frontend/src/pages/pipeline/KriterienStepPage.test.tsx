@@ -27,7 +27,6 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     last_scan: null,
     last_scoring_run: scoringRun(),
     last_criterion_scoring_run: null,
-    last_remote_category_classification_run: null,
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
@@ -81,8 +80,8 @@ describe('KriterienStepPage', () => {
     vi.mocked(projectsApi.getClassificationEstimate).mockReset()
     vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
       candidate_count: 0,
-      remote_category_candidate_count: 0,
-      landmark_candidate_count: 0,
+      remote_categories: { candidate_count: 0, estimated_cost_usd: 0 },
+      landmark: { candidate_count: 0, estimated_cost_usd: 0 },
       provider: 'anthropic',
       model: 'claude-haiku-4-5',
       price_per_image_usd: 0.0052,

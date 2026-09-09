@@ -35,9 +35,42 @@ export interface ScoringRunSummary {
   gate_confirmed_at: string | null
 }
 
-// specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md: die beiden Teilschritte
-// eines verketteten Klassifizierungslaufs, in genau dieser Reihenfolge.
-export type ClassificationPhase = 'remote_categories' | 'criteria'
+// specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, erweitert von
+// specs/features/0348-klassifizierungs-transparenz.md: die VIER Teilschritte eines verketteten
+// Klassifizierungslaufs, in genau dieser Reihenfolge.
+//
+// 'landmark' ist die Sehenswuerdigkeits-Erkennung - bis Spec 0348 ein unsichtbarer Teil der
+// Kriterien-Phase, in der sich der Fortschritt nicht mehr bewegte. 'ranking' (Kategorieableitung
+// und Rangfolge) gehoert fachlich zur Kriterien-Phase, laeuft aber DANACH; ohne eigenen Namen
+// bliebe die Anzeige dort auf 'landmark' bei 100 % stehen.
+export type ClassificationPhase = 'remote_categories' | 'criteria' | 'landmark' | 'ranking'
+
+// Ein Cloud-Teilschritt EINES Klassifizierungslaufs (specs/features/0348-klassifizierungs-
+// transparenz.md): waehrend des Laufs die Fortschrittsanzeige, danach die Bilanz - derselbe
+// Datensatz zu zwei Zeitpunkten.
+//
+// Die Felder sind DURCHGAENGIG `| null` und nicht optional (`?`): eine Auslassung an der
+// Anzeigestelle soll ein Typfehler sein, kein stiller `undefined`. `null` heisst ueberall
+// "nicht erfasst"/"unbekannt" - nie `0` und nie "kostenlos"; ein `?? 0` irgendwo im Pfad
+// behauptete Kostenfreiheit fuer einen Lauf, der Geld ausgegeben hat.
+export interface CloudPhaseSummaryOut {
+  purpose: CloudVisionPhase
+  photos_total: number | null
+  // Abgesetzte Aufrufe (Erfolge UND Fehlschlaege) - bewegt sich waehrend des Laufs.
+  photos_processed: number | null
+  // Fehlgeschlagene Einzelaufrufe - bewegt sich ebenfalls waehrend des Laufs.
+  failed_calls: number | null
+  // Verwertete Antworten; steht erst am Phasenende fest, wie Tokens und Betrag.
+  responses_used: number | null
+  input_tokens: number | null
+  output_tokens: number | null
+  cost_usd: number | null
+  model: string | null
+  // Aus `model` abgeleitet; null = Modell nicht (mehr) in der Registry. Die Oberflaeche zeigt
+  // dann die Modell-ID ALLEIN - nie einen geratenen Anbieter und nie einen
+  // Konfigurationshinweis.
+  provider: string | null
+}
 
 // Ersetzt TopSelectionRunSummary (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
 // backfill.md) - kein top_n_per_cluster/candidates_total/suggestions_found mehr: N wird erst
@@ -55,8 +88,8 @@ export interface CriterionScoringRunSummary {
   // Kriterien-Phase.
   //
   // `phase`: der gerade laufende Teilschritt; null = laeuft nicht mehr (beendet, oder Altlauf aus
-  // der Zeit der getrennten Ausloesung). Waehrend 'remote_categories' stehen die Fortschritts-
-  // zahlen in last_remote_category_classification_run, waehrend 'criteria' hier.
+  // der Zeit der getrennten Ausloesung). Die Fortschrittszahlen der beiden Cloud-Teilschritte
+  // stehen seit Spec 0348 in `cloud_phases`, die der Kriterien-Phase hier.
   phase: ClassificationPhase | null
   // War die Cloud-Nutzung fuer DIESEN Lauf angefordert? false heisst "das Ergebnis kann keine
   // Cloud-Anreicherung enthalten" - Grundlage des entsprechenden Hinweises in der Oberflaeche.
@@ -65,17 +98,18 @@ export interface CriterionScoringRunSummary {
   // dass der Lauf fehlgeschlagen ist: der lokale Bewertungsanteil laeuft trotzdem vollstaendig
   // durch, das Ergebnis ist nur nicht (vollstaendig) angereichert.
   cloud_error_message: string | null
-}
-
-// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 6:
-// Run-Tracking analog CriterionScoringRunSummary, aber ohne Ausschuss-Gate-Bezug.
-export interface RemoteCategoryClassificationRunSummary {
-  status: ScanStatus
-  started_at: string
-  finished_at: string | null
-  photos_total: number
-  photos_processed: number
-  error_message: string | null
+  // specs/features/0348-klassifizierungs-transparenz.md: die Bilanz DIESES Durchlaufs.
+  //
+  // `cloud_phases` in Ausfuehrungsreihenfolge (remote_category, dann landmark); ein Eintrag
+  // entsteht, sobald die Phase betreten wurde. Eine LEERE LISTE heisst "dieser Durchlauf hatte
+  // keinen Cloud-Teilschritt" - daran haengt die entsprechende Aussage der Bilanz.
+  //
+  // `estimated_cost_usd` ist die Schaetzung, mit der der Lauf gestartet wurde;
+  // `cloud_cost_total_usd` die Summe der Ist-Betraege, serverseitig `null`, sobald ein Anteil
+  // `null` ist.
+  cloud_phases: CloudPhaseSummaryOut[]
+  estimated_cost_usd: number | null
+  cloud_cost_total_usd: number | null
 }
 
 export interface ProjectOut {
@@ -87,8 +121,10 @@ export interface ProjectOut {
   last_scan: ScanSummary | null
   last_scoring_run: ScoringRunSummary | null
   last_criterion_scoring_run: CriterionScoringRunSummary | null
-  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md
-  last_remote_category_classification_run: RemoteCategoryClassificationRunSummary | null
+  // specs/features/0348-klassifizierungs-transparenz.md: `last_remote_category_classification_run`
+  // ist ERSATZLOS entfallen. Sein einziger Leser war die Fortschrittsanzeige, und die liest jetzt
+  // `last_criterion_scoring_run.cloud_phases` - also den Remote-Lauf DIESES Durchlaufs statt den
+  // juengsten des Projekts.
   // Globales Feature-Flag (specs/features/0024-top-photo-selection-category-mix.md, weiterhin
   // verwendet fuer POST /classify seit Spec 0296), auf ProjectOut statt einem eigenen
   // Endpunkt exponiert - siehe backend api/projects.py-Kommentar.
@@ -107,10 +143,20 @@ export interface ProjectOut {
 // (ADR 0050 Punkt 5): Kostenschaetzung vor dem Lauf, jetzt ueber ALLE Cloud-Anteile, die die
 // Checkbox am Ausloeser freigibt. `candidate_count` ist die Summe der beiden Einzelanteile und
 // bleibt die eine anzuzeigende Zahl.
+// specs/features/0348-klassifizierungs-transparenz.md: ein einzelner Cloud-Anteil der
+// Schaetzung. `candidate_count === null` heisst "nicht verlaesslich schaetzbar" (Landmark-Anteil
+// vor dem ersten erfolgreichen Durchlauf), NIE "null Fotos"; `estimated_cost_usd === null` heisst
+// "kein Preis hinterlegt ODER Anteil unbekannt", nie "kostenlos".
+export interface ClassificationEstimatePartOut {
+  candidate_count: number | null
+  estimated_cost_usd: number | null
+}
+
 export interface ClassificationEstimateOut {
+  // Summe der BEKANNTEN Anteile - bei unbekanntem Landmark-Anteil eine untere Schranke.
   candidate_count: number
-  remote_category_candidate_count: number
-  landmark_candidate_count: number
+  remote_categories: ClassificationEstimatePartOut
+  landmark: ClassificationEstimatePartOut
   provider: string
   // specs/features/0304-cloud-modell-je-anbieter-waehlbar.md: das Modell, auf das sich die
   // Schaetzung bezieht - seit die Modellwahl eine Betriebseinstellung ist, benennt `provider`
@@ -275,7 +321,9 @@ export interface CategoryCandidateOut {
 
 // specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
 // fehler-persistierung.md: die beiden unabhaengigen Cloud-Vision-Laeufe, fuer die pro Foto genau
-// einer von sechs Zustaenden angezeigt wird.
+// einer von sechs Zustaenden angezeigt wird. Seit specs/features/0348-klassifizierungs-
+// transparenz.md schluesselt derselbe Typ auch die Cloud-Teilschritte eines Laufs
+// (`CloudPhaseSummaryOut.purpose`) - dieselben zwei Zwecke, eine Definition.
 export type CloudVisionPhase = 'landmark' | 'remote_category'
 
 // Read-time aus bereits vorhandenen Signalen abgeleitet (backend api/photos.py::
