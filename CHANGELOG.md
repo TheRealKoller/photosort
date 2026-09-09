@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.0](https://github.com/TheRealKoller/photosort/compare/v0.38.0...v0.39.0) (2026-09-09)
+
+
+### Features
+
+* Kategorie-Konfidenz anzeigen und auswerten (Spec 0299) ([#362](https://github.com/TheRealKoller/photosort/issues/362)) ([432c90d](https://github.com/TheRealKoller/photosort/commit/432c90d76742ac13636d8590d5afee73f1abb071))
+
 ## [0.38.0](https://github.com/TheRealKoller/photosort/compare/v0.37.0...v0.38.0) (2026-09-09)
 
 
