@@ -19,6 +19,7 @@ from photosort.api.stats import (
 from photosort.categories import CATEGORY_REGISTRY
 from photosort.config import settings
 from photosort.models import (
+    ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
     Photo,
@@ -1515,3 +1516,69 @@ class TestCategoryConfidence:
         assert block["photos_with_confidence"] == 0
         assert block["photos_without_confidence"] == 0
         assert all(entry["photo_count"] == 0 for entry in block["entries"])
+
+
+class TestTheLiveCountersNeverTriggerTheIncompletenessHint:
+    """specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-
+    vier-teilschritte-und-laufeigene-cloud-bilanz.md Punkt 2/8.
+
+    DER Test, der rot wird, falls jemand die neuen Live-Zaehler doch in die Buchfuehrungsspalten
+    legt. Naheliegend waere, `api_calls`/`landmark_api_calls` waehrend des Laufs hochzuzaehlen -
+    das erfuellte Befund (b) (`api_calls > 0` bei Betrag `0`/`NULL`) bei JEDEM laufenden Cloud-Lauf
+    und faerbte die Statistikseite mitten im Betrieb mit einem Fehlalarm ein. Auf einer Seite,
+    deren einziger Zweck Kostenkontrolle ist, ist ein Fehlalarm so schaedlich wie eine Fehlzahl.
+
+    Die Zeilen werden direkt konstruiert (ein laufender Lauf laesst sich nicht abwarten), samt
+    mindestens einem vorhandenen Ergebnis im Projekt - sonst waere schon die zweite Teilbedingung
+    von Befund (a) unerfuellt und der Test bestuende aus dem falschen Grund."""
+
+    async def test_a_running_landmark_phase_does_not_trigger_the_hint(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_landmark_detection(db_session, photo)
+        run = await _add_criterion_scoring_run(
+            db_session,
+            project,
+            status_value=ScanStatus.RUNNING,
+            started_at=datetime(2023, 1, 1),
+            landmark_api_calls=0,
+            landmark_cost_usd=0.0,
+        )
+        run.phase = ClassificationPhase.LANDMARK
+        run.landmark_photos_total = 10
+        run.landmark_photos_processed = 4
+        run.landmark_failed_calls = 1
+        await db_session.commit()
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        by_purpose = {entry["purpose"]: entry for entry in payload["cost"]["by_purpose"]}
+        assert by_purpose["landmark"]["has_unrecorded_runs"] is False
+        assert by_purpose["remote_category"]["has_unrecorded_runs"] is False
+
+    async def test_a_running_remote_phase_does_not_trigger_the_hint(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_classification(db_session, photo, "tier")
+        run = await _add_remote_category_run(
+            db_session,
+            project,
+            status_value=ScanStatus.RUNNING,
+            started_at=datetime(2023, 1, 1),
+            api_calls=0,
+            cost_usd=0.0,
+        )
+        run.photos_total = 10
+        run.photos_processed = 4
+        run.failed_calls = 1
+        await db_session.commit()
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        by_purpose = {entry["purpose"]: entry for entry in payload["cost"]["by_purpose"]}
+        assert by_purpose["remote_category"]["has_unrecorded_runs"] is False
+        assert by_purpose["landmark"]["has_unrecorded_runs"] is False

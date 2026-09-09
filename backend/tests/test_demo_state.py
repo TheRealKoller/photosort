@@ -57,6 +57,7 @@ from photosort.models import (
     Project,
     Rating,
     RatingStatus,
+    RemoteCategoryClassificationRun,
     ScanRun,
     ScanStatus,
     User,
@@ -1119,3 +1120,92 @@ class TestNoCallPathFromTheRunningApplication:
         assert {"photosort.models", "photosort.config"} <= _import_closure("photosort.main")
         assert "photosort.models" in _import_closure("photosort.demo_state")
         assert "photosort.thumbnails" in _import_closure("photosort.demo_state")
+
+
+class TestTheDemoStateCarriesACloudBalance:
+    """specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-
+    vier-teilschritte-und-laufeigene-cloud-bilanz.md: die Lauf-Bilanz zeigt erstmals an der
+    AUSLOESE-Stelle einen Geldbetrag. Damit sie im Pruefstack/`browse-app` ueberhaupt sichtbar
+    ist, muss der Demo-Zustand einen Lauf MIT Cloud-Anteil tragen - und daneben weiterhin einen
+    OHNE, sonst verliert die Bilanz-Variante "ohne Cloud-Anreicherung durchgefuehrt" ihren Fall.
+
+    Alle Demo-Werte sind frei erfunden (Spec 0321: nur synthetische Demo-Daten; das Repository
+    ist oeffentlich, PR-Anhaenge liegen oeffentlich auf GitHub)."""
+
+    async def test_the_rated_project_has_a_run_with_a_cloud_balance(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        project = await _project(db_session, RATED_PROJECT_NAME)
+        runs = (
+            (
+                await db_session.execute(
+                    select(CriterionScoringRun).where(
+                        CriterionScoringRun.project_id == project.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        # Abgeleitet assertiert, nie ueber einen festen Index: die Reihenfolge der Laeufe ist
+        # keine Zusage des Seeders, die Existenz der Eigenschaft schon.
+        assert any(
+            run.remote_category_classification_run_id is not None
+            and run.landmark_photos_total is not None
+            and run.estimated_cost_usd is not None
+            and run.cloud_requested
+            for run in runs
+        ), [
+            (
+                run.remote_category_classification_run_id,
+                run.landmark_photos_total,
+                run.estimated_cost_usd,
+            )
+            for run in runs
+        ]
+
+    async def test_the_linked_remote_run_belongs_to_the_same_project(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Fremdschluessel darf nicht auf eine Zeile eines anderen Demo-Projekts zeigen -
+        sonst zeigte die Bilanz fremde Kosten als eigene, genau der Zuordnungsfehler, den ADR
+        0068 Punkt 3 beseitigt."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        project = await _project(db_session, RATED_PROJECT_NAME)
+        run = (
+            (
+                await db_session.execute(
+                    select(CriterionScoringRun).where(
+                        CriterionScoringRun.project_id == project.id,
+                        CriterionScoringRun.remote_category_classification_run_id.is_not(None),
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+        assert run is not None
+        remote_run = await db_session.get(
+            RemoteCategoryClassificationRun, run.remote_category_classification_run_id
+        )
+
+        assert remote_run is not None
+        assert remote_run.project_id == project.id
+        assert remote_run.failed_calls is not None
+
+    async def test_at_least_one_project_still_has_a_run_without_any_cloud_phase(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        runs = (
+            (await db_session.execute(select(CriterionScoringRun))).scalars().all()
+        )
+
+        assert any(
+            not run.cloud_requested
+            and run.remote_category_classification_run_id is None
+            and run.landmark_photos_total is None
+            for run in runs
+        )

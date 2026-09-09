@@ -18,10 +18,12 @@ from photosort.api.deps import (
     get_opencloud_client,
     get_session,
 )
+from photosort.cloud_vision import provider_for_vision_model
 from photosort.config import settings
 from photosort.criteria import LANDMARK_CANDIDATE_CRITERION_KEYS, is_landmark_candidate
 from photosort.models import (
     ClassificationPhase,
+    CloudVisionPhase,
     CriterionScoringRun,
     FineLabel,
     Photo,
@@ -105,6 +107,40 @@ class ScoringRunSummary(BaseModel):
     gate_confirmed_at: datetime | None
 
 
+class CloudPhaseSummaryOut(BaseModel):
+    """Ein Cloud-Teilschritt EINES Klassifizierungslaufs (specs/features/0348-klassifizierungs-
+    transparenz.md, decisions/0068-klassifizierungslauf-vier-teilschritte-und-laufeigene-cloud-
+    bilanz.md Punkt 4) - waehrend des Laufs die Fortschrittsanzeige, danach die Bilanz. DERSELBE
+    Datensatz zu zwei Zeitpunkten, keine zweite "Bilanz"-Struktur: eine getrennte waere eine
+    zweite Definition derselben Zahlen und driftete.
+
+    Geschluesselt ueber `CloudVisionPhase` - dieselbe Schluesselung wie `CostByPurposeOut` der
+    Statistikseite, damit "Landmark-Anteil" ueberall dasselbe Wort ist.
+
+    Die Trennung der beiden Zahlengruppen ist die eigentliche Aussage:
+    - `photos_processed`/`failed_calls` bewegen sich LIVE (je asyncio.gather-Block committet),
+    - `responses_used` (= `api_calls`), Tokens und `cost_usd` stehen erst am PHASENENDE fest und
+      sind dann eingefroren (ADR 0051 Punkt 4).
+
+    `cost_usd is None` heisst "kein Preis fuer dieses Modell hinterlegt ODER nicht erfasst", nie
+    "kostenlos" - die `null`-Kette schlaegt bis in die Anzeige durch, kein `?? 0` im Pfad.
+    `provider` wird aus `model` ABGELEITET (`cloud_vision.py::provider_for_vision_model`), nie aus
+    der aktuellen Betriebseinstellung gelesen; `None` heisst "Modell nicht (mehr) in der
+    Registry", und die Oberflaeche zeigt dann die Modell-ID allein statt einen
+    Konfigurationshinweis."""
+
+    purpose: CloudVisionPhase
+    photos_total: int | None
+    photos_processed: int | None
+    failed_calls: int | None
+    responses_used: int | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: float | None
+    model: str | None
+    provider: str | None
+
+
 class CriterionScoringRunSummary(BaseModel):
     """Ersetzt TopSelectionRunSummary (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
     backfill.md) - kein top_n_per_cluster/candidates_total/suggestions_found mehr: N ist beim
@@ -127,21 +163,42 @@ class CriterionScoringRunSummary(BaseModel):
     phase: ClassificationPhase | None
     cloud_requested: bool
     cloud_error_message: str | None
+    # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 4/5.
+    #
+    # `cloud_phases` in AUSFUEHRUNGSREIHENFOLGE (remote_category, dann landmark); ein Eintrag
+    # entsteht, sobald die Phase betreten wurde (Remote: Fremdschluessel gesetzt; Landmark:
+    # `landmark_photos_total is not None`). Eine LEERE LISTE heisst "dieser Durchlauf hatte
+    # keinen Cloud-Teilschritt" - der Anker fuer die entsprechende Aussage der Oberflaeche, statt
+    # leerer Felder oder Nullwerte.
+    #
+    # `estimated_cost_usd` ist die am Lauf eingefrorene Start-Schaetzung; ohne sie waere "die
+    # tatsaechlichen Kosten sind gegen die Schaetzung einordenbar" nach dem Lauf unerfuellbar.
+    #
+    # `cloud_cost_total_usd` faellt auf `None`, sobald EIN beteiligter Anteil `None` ist - die
+    # Regel "unvollstaendig != 0" bleibt damit serverseitig an EINER Stelle (wie
+    # `CostOut.total_usd`), statt in jeder Komponente einzeln zu leben.
+    estimated_cost_usd: float | None
+    cloud_phases: list[CloudPhaseSummaryOut]
+    cloud_cost_total_usd: float | None
 
 
-class RemoteCategoryClassificationRunSummary(BaseModel):
-    """specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
-    Punkt 6: Run-Tracking analog CriterionScoringRunSummary, aber ohne scoring_run_id/Gate-Bezug
-    (dieser Job ist unabhaengig von einem Ausschuss-Gate/ScoringRun)."""
+class ClassificationEstimatePartOut(BaseModel):
+    """Ein einzelner Cloud-Anteil der Vorab-Schaetzung (specs/features/0348-klassifizierungs-
+    transparenz.md, decisions/0068-klassifizierungslauf-vier-teilschritte-und-laufeigene-cloud-
+    bilanz.md Punkt 7) - Kategorie-Vorschlaege bzw. Sehenswuerdigkeits-Erkennung.
 
-    model_config = ConfigDict(from_attributes=True)
+    `candidate_count is None` heisst "dieser Anteil ist nicht verlaesslich schaetzbar", NIE
+    "null Fotos". Der Fall tritt beim Landmark-Anteil vor dem ersten erfolgreichen Durchlauf
+    eines Projekts auf: dort gibt es keine gespeicherten Kriterien-Werte, aus denen sich
+    Kandidaten ableiten liessen. Die frueher an dieser Stelle stehende `0` behauptete
+    Kostenfreiheit fuer einen Anteil, der gleich Geld kostet.
 
-    status: ScanStatus
-    started_at: datetime
-    finished_at: datetime | None
-    photos_total: int
-    photos_processed: int
-    error_message: str | None
+    `estimated_cost_usd is None` heisst "kein Preis hinterlegt ODER Anteil nicht schaetzbar" -
+    dieselbe "`null` heisst unbekannt, nie kostenlos"-Linie wie bei `price_per_image_usd`
+    (ADR 0059 Punkt 4)."""
+
+    candidate_count: int | None
+    estimated_cost_usd: float | None
 
 
 class ClassificationEstimateOut(BaseModel):
@@ -151,13 +208,20 @@ class ClassificationEstimateOut(BaseModel):
     Funktioniert weiterhin unabhaengig vom Consent-Schalter (auch bei deaktiviertem Consent 200,
     kein 403) - die Kosten sollen VOR einer Consent-Entscheidung sichtbar sein.
 
-    `candidate_count` ist die Summe der beiden Einzelanteile und bleibt damit die eine Zahl, die
-    das Frontend anzeigt; die beiden Einzelfelder machen nachvollziehbar, woraus sie sich
-    zusammensetzt."""
+    specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 7: die beiden Anteile
+    sind seither eigene Objekte mit Fotoanzahl UND Betrag - die frueheren Flachfelder
+    `remote_category_candidate_count`/`landmark_candidate_count` gehen darin AUF (ersetzt, nicht
+    akkumuliert: es gibt genau einen Client, und zwei Wege zu derselben Zahl, von denen einer die
+    `null`-Semantik nicht kennt, waeren genau der beseitigte Zustand).
+
+    `candidate_count` ist die Summe der BEKANNTEN Anteile und damit bei unbekanntem
+    Landmark-Anteil ausdruecklich eine UNTERE SCHRANKE. Sie faellt bewusst nicht auf `null`:
+    sonst saehe der Nutzer vor seinem ersten Durchlauf ueberhaupt keinen Betrag mehr, obwohl der
+    Kategorie-Anteil bekannt ist."""
 
     candidate_count: int
-    remote_category_candidate_count: int
-    landmark_candidate_count: int
+    remote_categories: ClassificationEstimatePartOut
+    landmark: ClassificationEstimatePartOut
     provider: str
     # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-
     # anbieter-und-modellgebundene-kostenschaetzung.md Punkt 4: die Antwort sagt selbst, WORAUF
@@ -214,9 +278,12 @@ class ProjectOut(BaseModel):
     last_scan: ScanSummary | None = None
     last_scoring_run: ScoringRunSummary | None = None
     last_criterion_scoring_run: CriterionScoringRunSummary | None = None
-    # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032
-    # Punkt 6: analog last_criterion_scoring_run.
-    last_remote_category_classification_run: RemoteCategoryClassificationRunSummary | None = None
+    # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 4: das frueher hier
+    # stehende `last_remote_category_classification_run` ist ERSATZLOS entfallen. Sein einziger
+    # Leser war die Fortschrittsanzeige, und die geht jetzt ueber
+    # `last_criterion_scoring_run.cloud_phases` - also ueber den Fremdschluessel DES LAUFS statt
+    # ueber "die juengste Remote-Zeile des Projekts". Zwei Wege zu derselben Zeile, von denen
+    # einer die falsche treffen kann, sind genau der Zustand, den ADR 0068 Punkt 3 beseitigt.
     # Globales Feature-Flag, nicht projektspezifisch (specs/features/0024-top-photo-selection-
     # category-mix.md, weiterhin verwendet fuer POST /classify seit Spec 0296) - hier statt
     # in einem neuen Endpunkt exponiert: technische Detailentscheidung der Umsetzung, damit das
@@ -276,6 +343,157 @@ async def _latest_remote_category_classification_run(
         .limit(1)
     )
     return result.scalars().first()
+
+
+async def _cloud_phase_summaries(
+    session: AsyncSession, run: CriterionScoringRun
+) -> list[CloudPhaseSummaryOut]:
+    """Die Cloud-Teilschritte GENAU DIESES Durchlaufs, in Ausfuehrungsreihenfolge
+    (specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 4).
+
+    Der Remote-Anteil kommt ueber den Fremdschluessel (`session.get`, ein Primaerschluessel-
+    Zugriff - dieselbe Query-Anzahl wie die abgeloeste "juengste Remote-Zeile"-Abfrage), der
+    Landmark-Anteil steht an der Lauf-Zeile selbst. Ein Eintrag entsteht, SOBALD die Phase
+    betreten wurde: die Oberflaeche soll den Teilschritt sehen, WAEHREND er Geld ausgibt, nicht
+    erst danach."""
+    phases: list[CloudPhaseSummaryOut] = []
+
+    if run.remote_category_classification_run_id is not None:
+        remote_run = await session.get(
+            RemoteCategoryClassificationRun, run.remote_category_classification_run_id
+        )
+        if remote_run is not None:
+            phases.append(
+                CloudPhaseSummaryOut(
+                    purpose=CloudVisionPhase.REMOTE_CATEGORY,
+                    photos_total=remote_run.photos_total,
+                    photos_processed=remote_run.photos_processed,
+                    failed_calls=remote_run.failed_calls,
+                    responses_used=remote_run.api_calls,
+                    input_tokens=remote_run.input_tokens,
+                    output_tokens=remote_run.output_tokens,
+                    cost_usd=remote_run.cost_usd,
+                    model=remote_run.model,
+                    provider=_provider_of(remote_run.model),
+                )
+            )
+
+    # `landmark_photos_total is not None` ist der MARKER, ob es diesen Teilschritt in diesem Lauf
+    # gab (ADR 0068 Punkt 2) - `0` heisst "fand statt, ohne Kandidaten", `NULL` heisst "fand
+    # nicht statt". Deshalb `is not None` und nicht truthy.
+    if run.landmark_photos_total is not None:
+        phases.append(
+            CloudPhaseSummaryOut(
+                purpose=CloudVisionPhase.LANDMARK,
+                photos_total=run.landmark_photos_total,
+                photos_processed=run.landmark_photos_processed,
+                failed_calls=run.landmark_failed_calls,
+                responses_used=run.landmark_api_calls,
+                input_tokens=run.landmark_input_tokens,
+                output_tokens=run.landmark_output_tokens,
+                cost_usd=run.landmark_cost_usd,
+                model=run.landmark_model,
+                provider=_provider_of(run.landmark_model),
+            )
+        )
+
+    return phases
+
+
+def _provider_of(model: str | None) -> str | None:
+    """Der Anbieter eines gespeicherten Modells - `None`, wenn kein Modell erfasst ist ODER es
+    nicht (mehr) in der Registry steht. NIE `settings.landmark_provider` (ADR 0068 Punkt 6): die
+    aktuelle Betriebseinstellung beschriebe sonst einen vergangenen Lauf, und eine historische
+    Lauf-Antwort koennte die heutige Konfiguration preisgeben."""
+    if model is None:
+        return None
+    return provider_for_vision_model(model)
+
+
+def _cloud_cost_total(phases: list[CloudPhaseSummaryOut]) -> float | None:
+    """Die Gesamtkosten des Durchlaufs - `None`, sobald EIN beteiligter Anteil `None` ist, und
+    `None` ohne jeden Cloud-Teilschritt (ADR 0068 Punkt 4).
+
+    Die Regel "unvollstaendig != 0" liegt damit serverseitig an EINER Stelle, wie bei
+    `CostOut.total_usd` der Statistikseite. Ein `sum(... or 0)` waere hier der gefaehrlichste
+    denkbare Kurzschluss: er tarnte einen Lauf mit unbekanntem Preisanteil als billiger, als er
+    war."""
+    if not phases:
+        return None
+    if any(phase.cost_usd is None for phase in phases):
+        return None
+    return sum(phase.cost_usd for phase in phases if phase.cost_usd is not None)
+
+
+async def _criterion_scoring_run_summary(
+    session: AsyncSession, run: CriterionScoringRun
+) -> CriterionScoringRunSummary:
+    """Bewusst FELDWEISE konstruiert statt ueber `model_validate(run)`: `cloud_phases` und
+    `cloud_cost_total_usd` entstehen nicht an der Zeile, sondern aus ihr plus einem
+    Fremdschluessel-Zugriff - eine nachtraegliche Zuweisung an ein validiertes Modell umginge die
+    Validierung genau der beiden neuen Felder."""
+    phases = await _cloud_phase_summaries(session, run)
+    return CriterionScoringRunSummary(
+        status=run.status,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        photos_total=run.photos_total,
+        photos_processed=run.photos_processed,
+        error_message=run.error_message,
+        phase=run.phase,
+        cloud_requested=run.cloud_requested,
+        cloud_error_message=run.cloud_error_message,
+        estimated_cost_usd=run.estimated_cost_usd,
+        cloud_phases=phases,
+        cloud_cost_total_usd=_cloud_cost_total(phases),
+    )
+
+
+async def _has_successful_classification_run(session: AsyncSession, project_id: int) -> bool:
+    """Gab es in DIESEM Projekt schon einen erfolgreich abgeschlossenen Klassifizierungslauf?
+    (specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 7)
+
+    Das Merkmal ist bewusst eine vorhandene Zeile, kein neuer Zustand: `status = success` belegt,
+    dass Kriterien-Werte geschrieben wurden - und nur aus denen laesst sich der Landmark-Anteil
+    der Schaetzung ableiten. Ein laufender oder fehlgeschlagener Lauf belegt das nicht.
+
+    `EXISTS` statt `COUNT`: die Frage ist eine Ja/Nein-Frage, und die Datenbank darf beim ersten
+    Treffer aufhoeren."""
+    result = await session.execute(
+        select(
+            exists().where(
+                CriterionScoringRun.project_id == project_id,
+                CriterionScoringRun.status == ScanStatus.SUCCESS,
+            )
+        )
+    )
+    return bool(result.scalar_one())
+
+
+def _estimate_part(
+    candidate_count: int | None, price_per_image_usd: float | None
+) -> ClassificationEstimatePartOut:
+    """Ein Anteil der Vorab-Schaetzung (ADR 0068 Punkt 7). Die ZWEIGREIHENFOLGE ist die Aussage
+    und dieselbe wie fuer die Gesamtsumme (Copilot-Fund PR #341), ergaenzt um einen dritten Fall:
+
+    1. Anteil unbekannt (`candidate_count is None`) -> Betrag `None`. Ueber eine unbekannte Menge
+       laesst sich nichts sagen, auch nicht mit einem bekannten Preis.
+    2. Null Kandidaten -> `0.0`. Der Betrag ist hier BEKANNT (es faellt nichts an, weil nichts
+       verarbeitet wird), selbst wenn der Preis je Bild unbekannt ist.
+    3. Kein Preis hinterlegt -> `None`, nie ein stilles `0.0`.
+    """
+    if candidate_count is None:
+        return ClassificationEstimatePartOut(candidate_count=None, estimated_cost_usd=None)
+    if candidate_count == 0:
+        return ClassificationEstimatePartOut(candidate_count=0, estimated_cost_usd=0.0)
+    if price_per_image_usd is None:
+        return ClassificationEstimatePartOut(
+            candidate_count=candidate_count, estimated_cost_usd=None
+        )
+    return ClassificationEstimatePartOut(
+        candidate_count=candidate_count,
+        estimated_cost_usd=candidate_count * price_per_image_usd,
+    )
 
 
 async def _count_remote_category_candidates(session: AsyncSession, project_id: int) -> int:
@@ -363,7 +581,6 @@ async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut
     scan_run = await _latest_scan_run(session, project.id)
     scoring_run = await _latest_scoring_run(session, project.id)
     criterion_scoring_run = await _latest_criterion_scoring_run(session, project.id)
-    remote_category_run = await _latest_remote_category_classification_run(session, project.id)
     return ProjectOut(
         id=project.id,
         name=project.name,
@@ -375,13 +592,8 @@ async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut
             ScoringRunSummary.model_validate(scoring_run) if scoring_run is not None else None
         ),
         last_criterion_scoring_run=(
-            CriterionScoringRunSummary.model_validate(criterion_scoring_run)
+            await _criterion_scoring_run_summary(session, criterion_scoring_run)
             if criterion_scoring_run is not None
-            else None
-        ),
-        last_remote_category_classification_run=(
-            RemoteCategoryClassificationRunSummary.model_validate(remote_category_run)
-            if remote_category_run is not None
             else None
         ),
         category_selection_enabled=settings.category_selection_enabled,
@@ -652,8 +864,28 @@ async def trigger_classify(
             detail="Cloud-Bilderkennung ist fuer dieses Projekt nicht aktiviert.",
         )
 
+    # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 5: die Schaetzung, mit
+    # der dieser Lauf startet, wird HIER serverseitig berechnet und als Job-Argument
+    # durchgereicht - mit denselben Helfern, die `GET .../classify/estimate` benutzt (kein
+    # neuer Rechenweg, keine dritte Kopie der Kandidaten-Zaehlung im Worker).
+    #
+    # Ohne das Einfrieren waere "die tatsaechlichen Kosten sind gegen die Schaetzung einordenbar"
+    # nach dem Lauf unerfuellbar: die Schaetzung rechnet ueber den noch OFFENEN Kandidatenbestand,
+    # den genau dieser Lauf gerade abarbeitet.
+    #
+    # SICHERHEIT: die Zahl entsteht ausschliesslich aus Datenbankzaehlungen und der validierten
+    # Betriebseinstellung. `ClassifyRequest` traegt bewusst KEIN Betrags-, Kosten-, Modell- oder
+    # Anbieterfeld - ein vom Client geliefertes Geldfeld wanderte sonst ungeprueft in die
+    # Buchfuehrung. Bei `use_cloud=false` wird `None` gereicht (und `NULL` gespeichert), nicht
+    # `0.0`: ein Lauf ohne Cloud hat keine Kostenschaetzung.
+    estimated_cost_usd: float | None = None
+    if payload.use_cloud:
+        estimated_cost_usd = (
+            await _build_classification_estimate(session, project_id)
+        ).estimated_cost_usd
+
     await enqueuer.enqueue_job(
-        "classify", project_id, payload.scoring_run_id, payload.use_cloud
+        "classify", project_id, payload.scoring_run_id, payload.use_cloud, estimated_cost_usd
     )
     return {"status": "queued"}
 
@@ -702,21 +934,50 @@ async def estimate_classification(
 
     Funktioniert weiterhin UNABHAENGIG vom Consent-Schalter (auch bei deaktiviertem Consent 200,
     kein 403) - der Nutzer soll die Kosten VOR einer Consent-Entscheidung sehen koennen.
-    `candidate_count=0` liefert weiterhin 200 mit estimated_cost_usd=0.0 (kein Sonderfall)."""
+    `candidate_count=0` liefert weiterhin 200 mit estimated_cost_usd=0.0 (kein Sonderfall).
+
+    specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 7: die beiden Anteile
+    werden getrennt ausgewiesen, und "nicht schaetzbar" ist ein eigener Wert (`null`) statt einer
+    `0`."""
     await _get_project_or_404(project_id, session)
 
+    return await _build_classification_estimate(session, project_id)
+
+
+async def _build_classification_estimate(
+    session: AsyncSession, project_id: int
+) -> ClassificationEstimateOut:
+    """Die Schaetzung selbst, ohne HTTP-Anteil - geteilt zwischen `GET .../classify/estimate` und
+    `POST .../classify` (specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 5).
+
+    Genau EIN Rechenweg fuer die Zahl, die angezeigt und die am Lauf eingefroren wird: eine
+    zweite Kopie liefe mit der ersten auseinander, und dann verglichen Bilanz und Vorschau zwei
+    verschiedene Groessen miteinander. Der Ausloese-Endpunkt hat sein 404 zu diesem Zeitpunkt
+    bereits selbst geworfen, deshalb keine zweite Projektpruefung hier."""
     remote_category_candidate_count = await _count_remote_category_candidates(session, project_id)
-    landmark_candidate_count = await _count_landmark_candidates(session, project_id)
-    candidate_count = remote_category_candidate_count + landmark_candidate_count
+    # ADR 0068 Punkt 7: der Landmark-Anteil ist NICHT SCHAETZBAR, solange im Projekt kein
+    # erfolgreich abgeschlossener Klassifizierungslauf existiert - vor dem ersten Lauf gibt es
+    # keine gespeicherten Kriterien-Werte, aus denen sich Kandidaten ableiten liessen, und
+    # `_count_landmark_candidates` liefert dort strukturell `0`. Diese `0` als Tatsache
+    # anzuzeigen behauptet Kostenfreiheit fuer einen Anteil, der gleich Geld kostet.
+    #
+    # Ein laufender oder fehlgeschlagener Durchlauf gilt ausdruecklich nicht als stattgefunden
+    # (geschaerftes Akzeptanzkriterium): erst ein `success` belegt, dass Kriterien-Werte
+    # geschrieben wurden.
+    landmark_candidate_count: int | None = None
+    if await _has_successful_classification_run(session, project_id):
+        landmark_candidate_count = await _count_landmark_candidates(session, project_id)
     provider = settings.landmark_provider
     # Spec 0304: die Schaetzung haengt am tatsaechlich EINGESTELLTEN Modell, nicht mehr am
     # Anbieter - ein Modellwechsel kann sie damit nicht mehr unbemerkt falsch machen.
     model = settings.resolved_landmark_model()
     price_per_image_usd = estimate_usd_per_image(model, provider)
+    # Die Summe der BEKANNTEN Anteile - bei unbekanntem Landmark-Anteil eine untere Schranke.
+    candidate_count = remote_category_candidate_count + (landmark_candidate_count or 0)
     return ClassificationEstimateOut(
         candidate_count=candidate_count,
-        remote_category_candidate_count=remote_category_candidate_count,
-        landmark_candidate_count=landmark_candidate_count,
+        remote_categories=_estimate_part(remote_category_candidate_count, price_per_image_usd),
+        landmark=_estimate_part(landmark_candidate_count, price_per_image_usd),
         provider=provider,
         model=model,
         price_per_image_usd=price_per_image_usd,
@@ -725,6 +986,10 @@ async def estimate_classification(
         # es faellt nichts an, weil nichts verarbeitet wird. Der Preis JE BILD bleibt daneben
         # korrekt `null`. Andersherum haengt die Zusage des Docstrings ("candidate_count=0
         # liefert 0.0, kein Sonderfall") unausgesprochen daran, dass ein Preis gepflegt ist.
+        #
+        # Kein neuer Rechenweg fuer die Gesamtsumme: dieselbe Multiplikation wie je Anteil, nur
+        # ueber die Summe der bekannten Anteile - die bewusste Grobheit "ein Preis je Bild fuer
+        # beide Cloud-Anteile" (ADR 0059 Punkt 3) bleibt unveraendert.
         estimated_cost_usd=(
             0.0
             if candidate_count == 0

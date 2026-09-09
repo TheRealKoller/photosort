@@ -11,12 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api import projects as projects_api
 from photosort.api.deps import get_job_enqueuer, get_opencloud_client
+from photosort.cloud_vision import VISION_MODELS_BY_PROVIDER
 from photosort.config import settings
 from photosort.main import app
 from photosort.models import (
+    ClassificationPhase,
     CriterionScoringRun,
     Photo,
     PhotoRanking,
+    PhotoScore,
     Project,
     RemoteCategoryClassificationRun,
     ScanRun,
@@ -57,6 +60,13 @@ class FakeEnqueuer:
 
     async def enqueue_job(self, function: str, *args: Any) -> None:
         self.calls.append((function, args))
+
+
+async def _create_project(client: httpx.AsyncClient, name: str = "Costa Rica") -> int:
+    app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
+    created = await client.post("/projects", json={"name": name, "opencloud_path": name})
+    project_id: int = created.json()["id"]
+    return project_id
 
 
 async def test_create_project(authenticated_api_client: httpx.AsyncClient) -> None:
@@ -923,3 +933,533 @@ async def test_delete_project_keeps_204_when_the_cache_cleanup_raises_a_non_oser
     assert len(warnings) == 1
     # Der Fehlertext gehoert ins Log, nie in die Antwort.
     assert response.content == b""
+
+
+# --------------------------------------------------------------------------------------------
+# specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
+# teilschritte-und-laufeigene-cloud-bilanz.md Punkt 4: die laufeigene Cloud-Bilanz an der
+# Run-Zusammenfassung - waehrend des Laufs die Fortschrittsanzeige, danach die Bilanz. Derselbe
+# Datensatz zu zwei Zeitpunkten, keine zweite Struktur, kein neuer Endpunkt.
+# --------------------------------------------------------------------------------------------
+
+
+async def _apply_explicit_nulls(session: AsyncSession, run: Any, nulls: dict[str, Any]) -> None:
+    """Setzt Spalten NACH dem Insert auf `NULL`.
+
+    Noetig, weil SQLAlchemy ein im Konstruktor uebergebenes `None` beim INSERT als "nimm den
+    Python-Default" behandelt - `landmark_cost_usd=None` landete dort also als `0`, und genau der
+    Unterschied zwischen `NULL` ("kein Preis hinterlegt") und `0` ("nichts angefallen") ist der
+    Gegenstand dieser Testfaelle. Ein UPDATE schreibt `NULL` dagegen woertlich."""
+    if not nulls:
+        return
+    for key in nulls:
+        setattr(run, key, None)
+    await session.commit()
+    await session.refresh(run)
+
+
+async def _add_criterion_scoring_run(
+    session: AsyncSession, project_id: int, **fields: Any
+) -> CriterionScoringRun:
+    scoring_run = ScoringRun(project_id=project_id, status=ScanStatus.SUCCESS)
+    session.add(scoring_run)
+    await session.commit()
+    await session.refresh(scoring_run)
+    nulls = {key: value for key, value in fields.items() if value is None}
+    run = CriterionScoringRun(
+        project_id=project_id,
+        scoring_run_id=scoring_run.id,
+        status=fields.pop("status", ScanStatus.SUCCESS),
+        **{key: value for key, value in fields.items() if value is not None},
+    )
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    await _apply_explicit_nulls(session, run, nulls)
+    return run
+
+
+async def _add_remote_run(
+    session: AsyncSession, project_id: int, **fields: Any
+) -> RemoteCategoryClassificationRun:
+    nulls = {key: value for key, value in fields.items() if value is None}
+    run = RemoteCategoryClassificationRun(
+        project_id=project_id,
+        status=fields.pop("status", ScanStatus.SUCCESS),
+        **{key: value for key, value in fields.items() if value is not None},
+    )
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    await _apply_explicit_nulls(session, run, nulls)
+    return run
+
+
+async def _cloud_phases(client: httpx.AsyncClient, project_id: int) -> list[dict[str, Any]]:
+    body = (await client.get(f"/projects/{project_id}")).json()
+    phases: list[dict[str, Any]] = body["last_criterion_scoring_run"]["cloud_phases"]
+    return phases
+
+
+async def test_cloud_phases_is_empty_for_a_run_without_any_cloud_step(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Leere LISTE, nicht `null` und keine erfundenen Nullzeilen: "dieser Durchlauf hatte keinen
+    Cloud-Teilschritt" ist eine Aussage, und die Oberflaeche haengt genau daran ihre Erklaerung
+    auf."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(db_session, project_id, cloud_requested=False)
+
+    assert await _cloud_phases(authenticated_api_client, project_id) == []
+
+
+async def test_cloud_phases_lists_remote_category_before_landmark(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Feste Reihenfolge = Ausfuehrungsreihenfolge. Die Fixture gibt beiden Phasen ABSICHTLICH
+    unterschiedliche Zahlen - bei gleichen Werten waere eine Vertauschung unsichtbar."""
+    project_id = await _create_project(authenticated_api_client)
+    remote = await _add_remote_run(
+        db_session,
+        project_id,
+        photos_total=7,
+        photos_processed=7,
+        failed_calls=1,
+        api_calls=6,
+        input_tokens=600,
+        output_tokens=60,
+        cost_usd=0.6,
+        model="claude-haiku-4-5",
+    )
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        cloud_requested=True,
+        remote_category_classification_run_id=remote.id,
+        landmark_photos_total=3,
+        landmark_photos_processed=3,
+        landmark_failed_calls=0,
+        landmark_api_calls=3,
+        landmark_input_tokens=300,
+        landmark_output_tokens=30,
+        landmark_cost_usd=0.3,
+        landmark_model="claude-haiku-4-5",
+    )
+
+    phases = await _cloud_phases(authenticated_api_client, project_id)
+
+    assert [phase["purpose"] for phase in phases] == ["remote_category", "landmark"]
+    assert phases[0]["photos_total"] == 7
+    assert phases[0]["responses_used"] == 6
+    assert phases[0]["failed_calls"] == 1
+    assert phases[1]["photos_total"] == 3
+    assert phases[1]["responses_used"] == 3
+    assert phases[1]["failed_calls"] == 0
+
+
+async def test_only_the_remote_phase_appears_as_soon_as_it_was_entered(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Merkmal der Remote-Phase ist der gesetzte FREMDSCHLUESSEL - er steht seit ADR 0068 Punkt 3
+    bereits vor dem ersten Cloud-Aufruf da."""
+    project_id = await _create_project(authenticated_api_client)
+    remote = await _add_remote_run(db_session, project_id, status=ScanStatus.RUNNING)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        status=ScanStatus.RUNNING,
+        cloud_requested=True,
+        remote_category_classification_run_id=remote.id,
+    )
+
+    phases = await _cloud_phases(authenticated_api_client, project_id)
+
+    assert [phase["purpose"] for phase in phases] == ["remote_category"]
+
+
+async def test_only_the_landmark_phase_appears_as_soon_as_it_was_entered(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Merkmal der Landmark-Phase ist `landmark_photos_total is not None` - `NULL` heisst "diese
+    Phase fand nicht statt", `0` heisst "fand statt, ohne Kandidaten"."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        cloud_requested=True,
+        landmark_photos_total=0,
+        landmark_photos_processed=0,
+        landmark_failed_calls=0,
+    )
+
+    phases = await _cloud_phases(authenticated_api_client, project_id)
+
+    assert [phase["purpose"] for phase in phases] == ["landmark"]
+    assert phases[0]["photos_total"] == 0
+
+
+async def test_a_running_phase_reports_live_counters_and_no_amount_yet(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Der Punkt der ganzen Struktur: waehrend des Laufs bewegen sich `photos_processed` und
+    `failed_calls`, waehrend `responses_used` und der Betrag noch auf dem Anfangsstand stehen -
+    die Kosten-Buchfuehrung wird erst am Phasenende eingefroren."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        status=ScanStatus.RUNNING,
+        phase=ClassificationPhase.LANDMARK,
+        cloud_requested=True,
+        landmark_photos_total=10,
+        landmark_photos_processed=4,
+        landmark_failed_calls=1,
+        landmark_api_calls=0,
+        landmark_cost_usd=0.0,
+        landmark_model="claude-haiku-4-5",
+    )
+
+    phases = await _cloud_phases(authenticated_api_client, project_id)
+
+    assert phases[0]["photos_processed"] == 4
+    assert phases[0]["failed_calls"] == 1
+    assert phases[0]["responses_used"] == 0
+    assert phases[0]["model"] == "claude-haiku-4-5"
+    assert phases[0]["provider"] == "anthropic"
+
+
+async def test_an_unpriced_phase_reports_null_not_zero(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SECURITY-MUSS (Spec 0348): `null` schlaegt unverfaelscht durch, kein `?? 0` / `or 0.0`
+    irgendwo im Pfad. Ein stilles "0,00 USD" tarnte einen unerwarteten, kostenpflichtigen Lauf
+    als kostenlos."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        cloud_requested=True,
+        landmark_photos_total=2,
+        landmark_photos_processed=2,
+        landmark_failed_calls=0,
+        landmark_api_calls=2,
+        landmark_cost_usd=None,
+        landmark_model="ein-nie-bepreistes-modell",
+    )
+
+    body = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+    run = body["last_criterion_scoring_run"]
+
+    assert run["cloud_phases"][0]["cost_usd"] is None
+    assert run["cloud_cost_total_usd"] is None
+
+
+async def test_the_total_is_null_as_soon_as_one_share_is_null(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Die Regel "unvollstaendig != 0" bleibt SERVERSEITIG an einer Stelle (wie
+    `CostOut.total_usd`) - sonst muesste jede Komponente sie einzeln kennen und eine davon
+    vergaesse sie."""
+    project_id = await _create_project(authenticated_api_client)
+    remote = await _add_remote_run(
+        db_session,
+        project_id,
+        photos_total=1,
+        photos_processed=1,
+        failed_calls=0,
+        api_calls=1,
+        cost_usd=0.5,
+        model="claude-haiku-4-5",
+    )
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        cloud_requested=True,
+        remote_category_classification_run_id=remote.id,
+        landmark_photos_total=1,
+        landmark_photos_processed=1,
+        landmark_failed_calls=0,
+        landmark_api_calls=1,
+        landmark_cost_usd=None,
+        landmark_model="ein-nie-bepreistes-modell",
+    )
+
+    body = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+
+    assert body["last_criterion_scoring_run"]["cloud_cost_total_usd"] is None
+
+
+async def test_the_total_sums_the_known_amounts(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project_id = await _create_project(authenticated_api_client)
+    remote = await _add_remote_run(
+        db_session,
+        project_id,
+        photos_total=1,
+        photos_processed=1,
+        failed_calls=0,
+        api_calls=1,
+        cost_usd=0.5,
+        model="claude-haiku-4-5",
+    )
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        cloud_requested=True,
+        remote_category_classification_run_id=remote.id,
+        landmark_photos_total=1,
+        landmark_photos_processed=1,
+        landmark_failed_calls=0,
+        landmark_api_calls=1,
+        landmark_cost_usd=0.25,
+        landmark_model="claude-haiku-4-5",
+        estimated_cost_usd=1.0,
+    )
+
+    run = (await authenticated_api_client.get(f"/projects/{project_id}")).json()[
+        "last_criterion_scoring_run"
+    ]
+
+    assert run["cloud_cost_total_usd"] == pytest.approx(0.75)
+    assert run["estimated_cost_usd"] == pytest.approx(1.0)
+
+
+async def test_the_provider_is_derived_from_the_stored_model(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """ADR 0068 Punkt 6: NIE aus `settings.landmark_provider` - die aktuelle Betriebseinstellung
+    sagt nichts darueber, womit ein vergangener Lauf gerechnet hat, und eine historische
+    Lauf-Antwort kann so strukturell nicht die heutige Konfiguration preisgeben."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        cloud_requested=True,
+        landmark_photos_total=1,
+        landmark_photos_processed=1,
+        landmark_failed_calls=0,
+        landmark_api_calls=1,
+        landmark_cost_usd=0.1,
+        landmark_model=VISION_MODELS_BY_PROVIDER["mistral"][0],
+    )
+
+    phases = await _cloud_phases(authenticated_api_client, project_id)
+
+    assert phases[0]["provider"] == "mistral"
+    assert settings.landmark_provider != "mistral"
+
+
+async def test_an_unknown_model_leaves_the_provider_null(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        cloud_requested=True,
+        landmark_photos_total=1,
+        landmark_photos_processed=1,
+        landmark_failed_calls=0,
+        landmark_model="ein-laengst-entferntes-modell",
+    )
+
+    phases = await _cloud_phases(authenticated_api_client, project_id)
+
+    assert phases[0]["model"] == "ein-laengst-entferntes-modell"
+    assert phases[0]["provider"] is None
+
+
+async def test_the_response_carries_no_further_configuration_fields(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SECURITY-MUSS (Spec 0348): die Antwort waechst um genau die aufgezaehlten Felder und um
+    KEIN weiteres - keine Basis-URLs, keine `*_concurrency`-Werte, kein "API-Key gesetzt ja/nein",
+    kein Umgebungsvariablenname, kein Pfad."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        cloud_requested=True,
+        landmark_photos_total=1,
+        landmark_photos_processed=1,
+        landmark_failed_calls=0,
+    )
+
+    run = (await authenticated_api_client.get(f"/projects/{project_id}")).json()[
+        "last_criterion_scoring_run"
+    ]
+
+    assert set(run) == {
+        "status",
+        "started_at",
+        "finished_at",
+        "photos_total",
+        "photos_processed",
+        "error_message",
+        "phase",
+        "cloud_requested",
+        "cloud_error_message",
+        "estimated_cost_usd",
+        "cloud_phases",
+        "cloud_cost_total_usd",
+    }
+    assert set(run["cloud_phases"][0]) == {
+        "purpose",
+        "photos_total",
+        "photos_processed",
+        "failed_calls",
+        "responses_used",
+        "input_tokens",
+        "output_tokens",
+        "cost_usd",
+        "model",
+        "provider",
+    }
+
+
+async def test_project_out_no_longer_exposes_last_remote_category_classification_run(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Ersetzt `test_project_out_exposes_last_remote_category_classification_run` (bisher in
+    test_api_classification_estimate.py).
+
+    Die Frage des gestrichenen Tests - "zeigt die API die Remote-Zahlen an?" - wird ab jetzt von
+    den `test_cloud_phases_*`-Faellen oben gestellt, und zwar besser: sie haengen an dem
+    Fremdschluessel des jeweiligen Durchlaufs statt an der juengsten Remote-Zeile des Projekts.
+    Zwei Wege zu derselben Zeile, von denen einer die falsche treffen kann, sind genau der
+    Zustand, den ADR 0068 Punkt 3 beseitigt."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_remote_run(db_session, project_id, photos_total=5, photos_processed=5)
+
+    body = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+
+    assert "last_remote_category_classification_run" not in body
+
+
+class TestTheRunEstimateReachesTheJob:
+    """ADR 0068 Punkt 5: die Schaetzung wird SERVERSEITIG im Ausloese-Endpunkt berechnet und als
+    Job-Argument durchgereicht - nie vom Client mitgeschickt (ungepruefter Geldwert ueber die
+    Vertrauensgrenze) und nie im Worker neu gerechnet (dritte Kopie der Kandidaten-Zaehlung)."""
+
+    async def _prepare(
+        self, client: httpx.AsyncClient, session: AsyncSession, *, photo_count: int
+    ) -> tuple[int, int]:
+        project_id = await _create_project(client)
+        project = await session.get(Project, project_id)
+        assert project is not None
+        project.cloud_vision_detection_enabled = True
+        scoring_run = ScoringRun(
+            project_id=project_id,
+            status=ScanStatus.SUCCESS,
+            suggestions_found=1,
+            gate_confirmed_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+        session.add(scoring_run)
+        await session.commit()
+        await session.refresh(scoring_run)
+        now = datetime(2023, 1, 1, tzinfo=UTC)
+        for index in range(photo_count):
+            photo = Photo(
+                project_id=project_id,
+                relative_path=f"{index}.jpg",
+                etag=f"etag-{index}",
+                content_length=1,
+                taken_at=now,
+                last_modified=now,
+            )
+            session.add(photo)
+            await session.commit()
+            await session.refresh(photo)
+            session.add(
+                PhotoScore(
+                    photo_id=photo.id,
+                    sharpness=100.0,
+                    exposure=0.0,
+                    cluster_key="cluster-0",
+                    suggested_status=None,
+                    computed_at=now,
+                )
+            )
+        await session.commit()
+        return project_id, scoring_run.id
+
+    async def test_the_estimate_of_the_run_is_forwarded_to_the_job(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der erwartete Wert wird AUS `GET .../classify/estimate` gelesen, nicht im Test
+        nachgerechnet: eine Nachrechnung waere eine zweite Kopie derselben Formel und liefe mit
+        ihr auseinander, ohne dass etwas rot wuerde."""
+        project_id, scoring_run_id = await self._prepare(
+            authenticated_api_client, db_session, photo_count=3
+        )
+        expected = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()["estimated_cost_usd"]
+        assert expected is not None and expected > 0
+        fake_enqueuer = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": scoring_run_id, "use_cloud": True},
+        )
+
+        assert response.status_code == 202
+        assert fake_enqueuer.calls == [
+            ("classify", (project_id, scoring_run_id, True, expected))
+        ]
+
+    async def test_a_local_run_forwards_none_and_stores_null(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """`NULL`, nicht `0.0`: ein Lauf ohne Cloud hat keine Kostenschaetzung, und `0.0` waere
+        eine Aussage, die niemand getroffen hat."""
+        project_id, scoring_run_id = await self._prepare(
+            authenticated_api_client, db_session, photo_count=3
+        )
+        fake_enqueuer = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": scoring_run_id, "use_cloud": False},
+        )
+
+        assert response.status_code == 202
+        assert fake_enqueuer.calls == [
+            ("classify", (project_id, scoring_run_id, False, None))
+        ]
+
+    async def test_the_request_body_cannot_influence_the_stored_estimate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SECURITY-MUSS (Spec 0348): pydantic ignoriert unbekannte Felder heute STILL - ohne
+        diesen Test fiele eine spaetere versehentliche Aufnahme von `estimated_cost_usd` ins
+        `ClassifyRequest`-Schema niemandem auf, und ein vom Client geliefertes Geldfeld wanderte
+        ungeprueft in die Buchfuehrung."""
+        project_id, scoring_run_id = await self._prepare(
+            authenticated_api_client, db_session, photo_count=3
+        )
+        expected = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()["estimated_cost_usd"]
+        fake_enqueuer = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={
+                "scoring_run_id": scoring_run_id,
+                "use_cloud": True,
+                "estimated_cost_usd": 999_999.0,
+                "cost_usd": 999_999.0,
+                "model": "ein-untergeschobenes-modell",
+                "provider": "ein-untergeschobener-anbieter",
+            },
+        )
+
+        assert response.status_code == 202
+        assert fake_enqueuer.calls == [
+            ("classify", (project_id, scoring_run_id, True, expected))
+        ]
