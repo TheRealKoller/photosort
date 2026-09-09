@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.0](https://github.com/TheRealKoller/photosort/compare/v0.36.0...v0.37.0) (2026-09-08)
+
+
+### Features
+
+* Penpot als alleinige Design-Quelle (Spec 0352) ([#355](https://github.com/TheRealKoller/photosort/issues/355)) ([ae7d47a](https://github.com/TheRealKoller/photosort/commit/ae7d47a38e56143840f54b0a9bb7125c9543fdb4))
+
 ## [0.36.0](https://github.com/TheRealKoller/photosort/compare/v0.35.0...v0.36.0) (2026-09-06)
 
 
