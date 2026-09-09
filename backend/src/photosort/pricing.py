@@ -7,7 +7,7 @@ from photosort.cloud_vision import (
     ANTHROPIC_VISION_MODEL,
     ANTHROPIC_VISION_MODEL_SONNET,
     MISTRAL_VISION_MODEL,
-    MISTRAL_VISION_MODEL_8B,
+    MISTRAL_VISION_MODEL_SMALL,
     TokenUsage,
 )
 
@@ -69,8 +69,10 @@ _TOKENS_PER_MTOK = 1_000_000
 #   eigenes Bild).
 # - ministral-3b-2512: $0.10/MTok Input UND Output
 #   (https://docs.mistral.ai/models/ministral-3-3b-25-12, abgerufen 2026-09-02 - symmetrische
-#   Preisgestaltung, anders als bei Anthropic; deckt sich mit der frueheren Verifikation vom
-#   2026-08-23 in remote_classification.py::COST_PER_IMAGE_USD).
+#   Preisgestaltung innerhalb der MINISTRAL-3-FAMILIE; deckt sich mit der frueheren Verifikation
+#   vom 2026-08-23 in remote_classification.py::COST_PER_IMAGE_USD). Die Symmetrie ist eine
+#   Eigenschaft dieser Modellfamilie, KEINE des Anbieters Mistral - siehe mistral-small-2603
+#   unten, das erste asymmetrisch bepreiste Mistral-Modell im Produkt.
 #
 # Bekannte Grenze (Teststrategie der Spec, "bewusst nicht automatisiert abgesichert"): die
 # inhaltliche RICHTIGKEIT dieser Werte gegen echte Anbieter-Abrechnungen ist nicht testbar.
@@ -82,12 +84,32 @@ _TOKENS_PER_MTOK = 1_000_000
 #   $10.00/MTok Output (https://platform.claude.com/docs/en/about-claude/pricing, abgerufen
 #   2026-09-06; Vision-Faehigkeit gegen die Modelluebersicht derselben Doku bestaetigt). Cache-
 #   Tarife aus demselben Grund wie oben nicht abgebildet.
-# - ministral-8b-2512 (Spec 0304, das zweite waehlbare Mistral-Modell und der Anlass der Story):
-#   $0.15/MTok Input UND Output (https://docs.mistral.ai/models/ministral-3-8b-25-12, abgerufen
-#   2026-09-06 - symmetrisch wie beim 3B-Geschwistermodell; Vision-Faehigkeit auf derselben Seite
-#   bestaetigt). Nachgetragen, nachdem die Verifikation in der umsetzenden Sitzung an einem
-#   blockierten Netzzugang zu docs.mistral.ai gescheitert war und ADR 0059 Punkt 5 einen
-#   geschaetzten oder aus einer Websuche abgeleiteten Preis ausschliesst.
+# - mistral-small-2603 (specs/features/0369-mistral-small-loest-ministral-8b-ab.md, das zweite
+#   waehlbare Mistral-Modell): $0.15/MTok Input, $0.60/MTok Output
+#   (https://docs.mistral.ai/models/model-cards/mistral-small-4-0-26-03, abgerufen 2026-09-09;
+#   gegengeprueft an https://mistral.ai/pricing/api/ vom selben Tag, die dort ebenfalls
+#   reproduzierten $0.10 fuer 3B belegen, dass die Seite die Werte liefert, gegen die die
+#   Bestandseintraege verifiziert wurden). ERSTES ASYMMETRISCH BEPREISTES MISTRAL-MODELL - der
+#   Ausgabepreis ist das Vierfache des Eingabepreises, anders als bei beiden Ministral-Eintraegen.
+#   Ein vertauschtes oder versehentlich symmetrisch uebernommenes Paar faellt durch KEINEN der
+#   Ordnungstests ("staerker => teurer"), weil auch $0,00045 und $0,0017 ueber der Voreinstellung
+#   $0,0003 liegen; dagegen steht der Literal-Pin auf $0,000504 je Bild in tests/test_pricing.py.
+#   Rechnerisch traegt die Asymmetrie ohne Codeaenderung: `estimate_usd_per_image` ist
+#   `compute_cost_usd` ueber der Annahme und gewichtet Ein-/Ausgabe ohnehin getrennt.
+#   Die Ausgabeseite ist zusaetzlich durch `_MAX_RESPONSE_TOKENS = 256` in BEIDEN Clients hart
+#   gedeckelt (hoechstens $0,00015 Ausgabekosten je Aufruf) - wer den Deckel anhebt, stellt diese
+#   Rechnung neu.
+#   Vision-Faehigkeit samt offen dokumentierter Luecke: siehe den Kommentar an
+#   `cloud_vision.py::MISTRAL_VISION_MODEL_SMALL`.
+#
+#   Es loest `ministral-8b-2512` ab, dessen Preiseintrag VOLLSTAENDIG entfernt wurde (nicht als
+#   "historischer" Wert stehengelassen): Ist-Kosten werden im Moment des Laufs berechnet und in
+#   den Lauf-Spalten eingefroren (ADR 0051 Punkt 4), `compute_cost_usd` wird ausschliesslich mit
+#   `settings.resolved_landmark_model()` aufgerufen - ein zurueckgelassener Eintrag haette damit
+#   keinen Leser, waere aber weiterhin eine gepflegte, unbeaufsichtigt alternde
+#   Tatsachenbehauptung mit `verified_on`-Stempel. Bei einer Wiederaufnahme wird `verified_on`
+#   NEU verifiziert, nie aus dem Altbestand geerbt. Erzwungen ist das durch die Mengengleichheit
+#   der Registry-Invariante in tests/test_pricing.py.
 MODEL_PRICING: dict[str, ModelPricing] = {
     ANTHROPIC_VISION_MODEL: ModelPricing(
         input_usd_per_mtok=1.00,
@@ -107,11 +129,11 @@ MODEL_PRICING: dict[str, ModelPricing] = {
         source_url="https://docs.mistral.ai/models/ministral-3-3b-25-12",
         verified_on=date(2026, 8, 23),
     ),
-    MISTRAL_VISION_MODEL_8B: ModelPricing(
+    MISTRAL_VISION_MODEL_SMALL: ModelPricing(
         input_usd_per_mtok=0.15,
-        output_usd_per_mtok=0.15,
-        source_url="https://docs.mistral.ai/models/ministral-3-8b-25-12",
-        verified_on=date(2026, 9, 6),
+        output_usd_per_mtok=0.60,
+        source_url="https://docs.mistral.ai/models/model-cards/mistral-small-4-0-26-03",
+        verified_on=date(2026, 9, 9),
     ),
 }
 
@@ -184,6 +206,19 @@ class AssumedImageUsage:
 # Preis je Bild fuer BEIDE Cloud-Anteile, obwohl der Landmark-Prompt kuerzer ist als der
 # Kategorie-Prompt. Die Schaetzung ist seit Spec 0296 die einzige verbliebene Absicherung vor der
 # kostenpflichtigen Aktion - sie soll nicht zu niedrig ausfallen.
+#
+# ZWEI MODELLFAMILIEN UNTER EINEM ANBIETER-SCHLUESSEL (specs/features/0369-mistral-small-loest-
+# ministral-8b-ab.md): seit dieser Story deckt der Eintrag "mistral" nicht mehr nur die
+# Ministral-3-Familie ab, sondern auch `mistral-small-2603` (Mistral Small 4) - die Annahme wird
+# damit erstmals ueber eine Modellfamiliengrenze hinweg geerbt und ist fuer das neue Modell
+# ausdruecklich UNKALIBRIERT; die gefaehrliche Abweichungsrichtung ist die Unterschaetzung.
+# Sie wird hier trotzdem NICHT angefasst: die Werte sind an die exakte Reproduktion von $0,0003
+# fuer das Voreinstellungs-Modell gebunden (per Test gepinnt), und eine Anhebung der
+# Ausgabekomponente verschoebe genau die. Groessenordnung: rund $0,0005 gegenueber ~$0,0003;
+# selbst ein Faktor 2 bei den Bild-Tokens bliebe im Zehntelcent-Bereich je Bild. Zeigt die erste
+# reale Rechnung deutlich mehr als 120 Ausgabe-Tokens je Bild, ist das der Anlass fuer eine eigene
+# Story (Verbrauchsannahme je MODELL statt je Anbieter, mit eigener ADR) - nicht fuer eine stille
+# Korrektur hier.
 #
 # Bekannte Grenze (wie bei MODEL_PRICING): die Richtigkeit der Annahme gegen echte Abrechnungen
 # ist nicht testbar. Ersatzverfahren unveraendert: Abgleich der ersten realen Rechnung mit den

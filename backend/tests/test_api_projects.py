@@ -1301,6 +1301,44 @@ async def test_an_unknown_model_leaves_the_provider_null(
     assert phases[0]["provider"] is None
 
 
+async def test_a_withdrawn_model_keeps_its_frozen_amount_and_loses_its_provider(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """specs/features/0369-mistral-small-loest-ministral-8b-ab.md, K7: der Altlauf-Fall mit der
+    TATSAECHLICH zurueckgenommenen Modell-ID.
+
+    Der Test darueber belegt dieselbe Regel an einer erfundenen ID; ab dieser Story ist der
+    `None`-Zweig kein hypothetischer mehr, sondern der regulaere Zustand jedes Laufs, der mit
+    `ministral-8b-2512` gerechnet hat (S10). Zwei Aussagen in einem Fall:
+
+    1. Modellangabe UND eingefrorener Betrag bleiben WOERTLICH stehen - sie kommen aus den
+       Lauf-Spalten (ADR 0051 Punkt 4) und werden nicht gegen die heutige `MODEL_PRICING`
+       nachgerechnet. Ein solcher Lesepfad verwandelte eine erfasste Kostenangabe in "nicht
+       erfasst" (S11); deshalb ist `landmark_cost_usd` hier bewusst GESETZT.
+    2. Der abgeleitete Anbieter ist `null` - kein Rueckfall auf `settings.landmark_provider`,
+       keine Praefix-Heuristik `ministral-*` -> `mistral`, keine Schattenregistry (S9/ADR 0068
+       Punkt 6). Ein geratener Anbieter waere eine Behauptung ueber die Vergangenheit, die der
+       Code nicht belegen kann - und gaebe die heutige Betriebseinstellung preis."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        cloud_requested=True,
+        landmark_photos_total=3,
+        landmark_photos_processed=3,
+        landmark_failed_calls=0,
+        landmark_api_calls=3,
+        landmark_cost_usd=0.00135,
+        landmark_model="ministral-8b-2512",
+    )
+
+    phases = await _cloud_phases(authenticated_api_client, project_id)
+
+    assert phases[0]["model"] == "ministral-8b-2512"
+    assert phases[0]["cost_usd"] == pytest.approx(0.00135)
+    assert phases[0]["provider"] is None
+
+
 async def test_the_response_carries_no_further_configuration_fields(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
