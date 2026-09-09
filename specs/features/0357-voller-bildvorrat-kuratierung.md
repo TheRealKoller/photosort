@@ -1,6 +1,6 @@
 # 0357 - Voller Bildvorrat beim Kuratieren sichtbar
 
-**Status:** Accepted
+**Status:** Implemented ([PR #378](https://github.com/TheRealKoller/photosort/pull/378))
 **Erstellt:** 2026-09-09
 **Bezug:** [GitHub-Issue #357](https://github.com/TheRealKoller/photosort/issues/357), ADR [`0071`](../decisions/0071-kuratierung-stabile-auswahl-ohne-backfill-und-einsehbarer-vorrat.md), berührt ADR [`0021`](../decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md) (Backfill in Punkt 4) und ADR [`0069`](../decisions/0069-nebenkategorien-mehrfachzugehoerigkeit-und-konfidenzgewichtete-rangfolge.md) (Definition von `curation_position` in Punkt 8)
 
