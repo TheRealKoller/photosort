@@ -193,3 +193,64 @@ def test_the_remote_cost_downgrade_renders_for_postgres_too() -> None:
 
     rendered = " ".join(statements).upper()
     assert rendered.count("DROP COLUMN") == 8
+
+
+# specs/features/0299-kategorie-konfidenz-anzeigen.md, ADR 0067 Punkt 3/4: zwei additive
+# Konfidenzspalten. SQLite kann die entscheidende Aussage auch hier strukturell nicht pruefen - es
+# kennt weder einen eigenen JSON-Typ noch den Unterschied zwischen INTEGER und DOUBLE PRECISION und
+# wuerde einen unbeabsichtigten Server-Default klaglos akzeptieren. Genau der waere hier fatal:
+# ein `DEFAULT 0` auf `category_confidence` gaebe jeder Bestandszeile die Aussage "das Modell war
+# sich zu 0 % sicher" (Akzeptanzkriterium 9).
+
+_CONFIDENCE_REVISION = "a3b4c5d6e7f8_kategorie_konfidenz.py"
+
+
+@pytest.fixture(scope="module")
+def confidence_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_CONFIDENCE_REVISION)
+
+
+def test_both_confidence_columns_are_added_for_postgres(
+    confidence_upgrade_ddl: list[str],
+) -> None:
+    for column in ("detected_category_confidences", "category_confidence"):
+        _add_column_statement(confidence_upgrade_ddl, column)
+
+
+def test_the_scalar_confidence_renders_as_a_floating_point_type(
+    confidence_upgrade_ddl: list[str],
+) -> None:
+    """`sa.Float()` rendert auf Postgres als `FLOAT` (laut PostgreSQL-Dokumentation
+    gleichbedeutend mit DOUBLE PRECISION) - entscheidend ist, dass es KEIN ganzzahliger Typ ist:
+    eine Konfidenz von 0.92 wuerde sonst still auf 0 oder 1 gerundet, und SQLite koennte den
+    Unterschied nicht sichtbar machen."""
+    statement = _add_column_statement(confidence_upgrade_ddl, "category_confidence").upper()
+
+    assert "DOUBLE PRECISION" in statement or "FLOAT" in statement
+    assert "INTEGER" not in statement
+
+
+def test_the_confidence_mapping_renders_as_json(confidence_upgrade_ddl: list[str]) -> None:
+    statement = _add_column_statement(
+        confidence_upgrade_ddl, "detected_category_confidences"
+    ).upper()
+
+    assert "JSON" in statement
+
+
+def test_neither_confidence_column_gets_a_server_default(
+    confidence_upgrade_ddl: list[str],
+) -> None:
+    """DIE eigentliche Aussage dieser Datei fuer diese Revision (Akzeptanzkriterium 9): kein
+    Server-Default. Sonst bekaemen Bestandszeilen `0`/`{}` statt `NULL`, und "nicht erhoben" waere
+    dauerhaft nicht mehr von "das Modell war sich zu 0 % sicher" zu unterscheiden."""
+    for column in ("detected_category_confidences", "category_confidence"):
+        statement = _add_column_statement(confidence_upgrade_ddl, column)
+        assert "DEFAULT" not in statement.upper(), column
+
+
+def test_the_confidence_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_CONFIDENCE_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements).upper()
+    assert rendered.count("DROP COLUMN") == 2

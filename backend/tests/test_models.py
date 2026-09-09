@@ -1234,3 +1234,79 @@ async def test_remote_category_classification_run_cost_columns_stay_nullable(
 
     for column in _REMOTE_CATEGORY_COST_COLUMNS:
         assert getattr(run, column) is None, column
+
+
+# --- specs/features/0299-kategorie-konfidenz-anzeigen.md, ADR 0067 Punkt 4 --------------------
+
+
+async def test_a_classification_row_persists_both_confidence_columns(
+    db_session: AsyncSession,
+) -> None:
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoCategoryClassification(
+            photo_id=photo.id,
+            category_key="menschen",
+            detected_categories=["menschen", "landschaft"],
+            detected_category_confidences={"menschen": 0.92, "landschaft": 0.41},
+            category_confidence=0.92,
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+    db_session.expunge_all()
+
+    stored = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
+    assert stored.detected_category_confidences == {"menschen": 0.92, "landschaft": 0.41}
+    assert stored.category_confidence == 0.92
+
+
+async def test_both_confidence_columns_default_to_none_without_a_backfill(
+    db_session: AsyncSession,
+) -> None:
+    """Akzeptanzkriterium 9: `NULL` heisst "nicht erhoben", `0.0` hiesse "das Modell war sich zu
+    0 % sicher". Eine Zeile ohne Angabe muss ohne Zutun `NULL` bleiben - deshalb kein
+    Python-Default `{}`/`0.0` und (siehe Migration) kein `server_default`."""
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoCategoryClassification(
+            photo_id=photo.id,
+            category_key="menschen",
+            detected_categories=["menschen"],
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+    db_session.expunge_all()
+
+    stored = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
+    assert stored.detected_category_confidences is None
+    assert stored.category_confidence is None
+
+
+async def test_an_empty_confidence_mapping_is_distinguishable_from_none(
+    db_session: AsyncSession,
+) -> None:
+    """`{}` heisst "erhoben, das Modell hat keine brauchbare Zahl geliefert" - ein anderer Zustand
+    als "nicht erhoben"."""
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoCategoryClassification(
+            photo_id=photo.id,
+            category_key="menschen",
+            detected_categories=["menschen"],
+            detected_category_confidences={},
+            category_confidence=None,
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+    db_session.expunge_all()
+
+    stored = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
+    assert stored.detected_category_confidences == {}
+    assert stored.detected_category_confidences is not None
+    assert stored.category_confidence is None
