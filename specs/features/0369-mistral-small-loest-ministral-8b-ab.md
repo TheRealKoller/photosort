@@ -1,6 +1,6 @@
 # 0369 - Mistral Small 2603 löst Ministral 8B als Modellwahl ab
 
-**Status:** Accepted
+**Status:** Implemented ([PR #371](https://github.com/TheRealKoller/photosort/pull/371))
 **Erstellt:** 2026-09-09
 **Bezug:** [Issue #369](https://github.com/TheRealKoller/photosort/issues/369)
 
