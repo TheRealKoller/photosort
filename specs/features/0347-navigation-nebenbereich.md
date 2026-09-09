@@ -1,6 +1,6 @@
 # 0347 - Einstellungen und Statistik kompakt im Navigationsmenü
 
-**Status:** Accepted
+**Status:** Implemented ([PR #359](https://github.com/TheRealKoller/photosort/pull/359))
 **Erstellt:** 2026-09-09
 **Bezug:** [Issue #347](https://github.com/TheRealKoller/photosort/issues/347)
 
