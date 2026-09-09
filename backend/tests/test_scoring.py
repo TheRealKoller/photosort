@@ -467,7 +467,7 @@ class TestAssignClustersByLocation:
             ),
         ]
 
-        assert assign_clusters(candidates) == _legacy_assign_clusters(candidates)
+        assert assign_clusters(candidates) == _legacy_assign_time_clusters(candidates)
 
     def test_a_half_coordinate_is_treated_as_no_coordinate(self) -> None:
         """Verteidigung in der Tiefe: `extract_gps` liefert nie eine halbe Koordinate, aber ein

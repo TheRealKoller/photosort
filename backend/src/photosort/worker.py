@@ -101,10 +101,10 @@ from photosort.remote_classification import (
 )
 from photosort.scoring import (
     SHARPNESS_REJECT_THRESHOLD,
+    ClusterCandidate,
     DuplicateCandidate,
-    TimeClusterCandidate,
+    assign_clusters,
     assign_duplicate_clusters,
-    assign_time_clusters,
     compute_dhash,
     compute_exposure,
     compute_sharpness,
@@ -776,7 +776,11 @@ async def run_project_scoring(
         scoring_run.photos_processed = processed
         await session.commit()
 
-        taken_at_by_id = {photo.id: photo.taken_at for photo in photos}
+        # specs/features/0051-gps-landmark-cluster-bildung.md: um die Koordinate erweitert -
+        # KEIN zusaetzlicher Query, die `photos` liegen an dieser Stelle bereits vollstaendig vor.
+        cluster_input_by_id = {
+            photo.id: (photo.taken_at, photo.gps_lat, photo.gps_lon) for photo in photos
+        }
 
         duplicate_of_map = assign_duplicate_clusters(
             [
@@ -791,9 +795,14 @@ async def run_project_scoring(
                 rejected_ids.add(photo_id)
 
         remaining_ids = [photo_id for photo_id in computed if photo_id not in rejected_ids]
-        cluster_map = assign_time_clusters(
+        cluster_map = assign_clusters(
             [
-                TimeClusterCandidate(photo_id=photo_id, taken_at=taken_at_by_id[photo_id])
+                ClusterCandidate(
+                    photo_id=photo_id,
+                    taken_at=cluster_input_by_id[photo_id][0],
+                    gps_lat=cluster_input_by_id[photo_id][1],
+                    gps_lon=cluster_input_by_id[photo_id][2],
+                )
                 for photo_id in remaining_ids
             ]
         )
