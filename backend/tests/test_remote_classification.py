@@ -11,7 +11,12 @@ from photosort.categories import (
     MAX_REMOTE_CATEGORIES_PER_PHOTO,
     build_classification_prompt,
 )
-from photosort.cloud_vision import ANTHROPIC_VISION_MODEL, MISTRAL_VISION_MODEL, TokenUsage
+from photosort.cloud_vision import (
+    ANTHROPIC_VISION_MODEL,
+    MISTRAL_VISION_MODEL,
+    TokenUsage,
+    _sanitize_label_text,
+)
 from photosort.pricing import ASSUMED_USAGE_BY_PROVIDER
 from photosort.remote_classification import (
     _MAX_RESPONSE_TOKENS,
@@ -26,7 +31,6 @@ from photosort.remote_classification import (
     _classification_from_json,
     _cosine_similarity,
     _normalize_label_text,
-    _sanitize_label_text,
     _slugify,
     resolve_canonical_label,
 )

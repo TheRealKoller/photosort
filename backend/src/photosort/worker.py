@@ -64,6 +64,7 @@ from photosort.landmark import (
     LandmarkClientLike,
     LandmarkDetection,
     build_landmark_client,
+    sanitize_landmark_name,
 )
 from photosort.logging_config import configure_logging
 from photosort.models import (
@@ -88,7 +89,7 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
-from photosort.opencloud.exif import extract_taken_at
+from photosort.opencloud.exif import extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.pricing import compute_cost_usd
 from photosort.ranking import rank_photos
@@ -101,13 +102,14 @@ from photosort.remote_classification import (
 )
 from photosort.scoring import (
     SHARPNESS_REJECT_THRESHOLD,
+    ClusterCandidate,
     DuplicateCandidate,
-    TimeClusterCandidate,
+    assign_clusters,
     assign_duplicate_clusters,
-    assign_time_clusters,
     compute_dhash,
     compute_exposure,
     compute_sharpness,
+    refine_clusters_by_landmark,
 )
 from photosort.thumbnails import generate_variants, variant_path
 
@@ -350,6 +352,23 @@ async def _generate_thumbnails(
     generate_variants(cache_dir, photo_id, etag, content)
 
 
+@dataclass(frozen=True)
+class ScanExifResult:
+    """Das EXIF-Ergebnis EINES Arbeitspostens (specs/features/0051-gps-landmark-cluster-
+    bildung.md): Zeitpunkt UND Koordinate aus demselben Range-Read-Fenster.
+
+    Eingefroren und zusammengesetzt statt zweier nackter Rueckgabewerte, damit die Typzusicherung
+    nach `asyncio.gather` in `_process_scan_block` weiterhin die FORM festnageln kann - eine
+    durchgereichte `BaseException` (mit `return_exceptions=True` faengt `gather` ein
+    `CancelledError` einer Kind-Coroutine NICHT ab) darf nicht in die Felder entpackt werden.
+
+    `gps` ist ein Paar oder `None` - nie eine halbe Koordinate (Paar-Invariante von
+    `extract_gps`)."""
+
+    taken_at: datetime
+    gps: tuple[float, float] | None
+
+
 async def _fetch_and_thumbnail(
     client: OpenCloudScanClient,
     webdav_url: str,
@@ -359,22 +378,29 @@ async def _fetch_and_thumbnail(
     photo_id: int,
     etag: str,
     cache_dir: Path,
-) -> datetime:
+) -> ScanExifResult:
     """Der reine I/O-/CPU-Teil eines einzelnen Arbeitspostens aus Phase 2b (specs/features/0036,
-    ADR 0020, Punkt 2): EXIF-Range-Read (nur fuer JPEG-Kandidaten) fuer `taken_at`, danach
-    best-effort Download + Thumbnail-Erzeugung - bewusst OHNE jeglichen Session-Zugriff, damit
-    mehrere Aufrufe sicher parallel per asyncio.gather laufen koennen (_process_scan_block unten).
+    ADR 0020, Punkt 2): EXIF-Range-Read (nur fuer JPEG-Kandidaten) fuer `taken_at` UND die
+    GPS-Koordinate (specs/features/0051), danach best-effort Download + Thumbnail-Erzeugung -
+    bewusst OHNE jeglichen Session-Zugriff, damit mehrere Aufrufe sicher parallel per
+    asyncio.gather laufen koennen (_process_scan_block unten).
     Ein EXIF-Lesefehler wird NICHT abgefangen (identisches Verhalten wie vor der Umstrukturierung):
-    ein einzelner OpenCloud-Fehler hier laesst den gesamten Scan fehlschlagen, siehe ADR."""
+    ein einzelner OpenCloud-Fehler hier laesst den gesamten Scan fehlschlagen, siehe ADR.
+
+    Beide EXIF-Werte stammen aus DEMSELBEN bereits geladenen Byte-Fenster - kein zusaetzlicher
+    Netzwerkzugriff fuer die Koordinate. Fuer Nicht-JPEG-Posten wird gar kein EXIF gelesen: der
+    Zeitpunkt faellt auf `fallback_taken_at` zurueck, die Koordinate bleibt `None`."""
     taken_at = fallback_taken_at
+    gps: tuple[float, float] | None = None
     if extension in _EXIF_CANDIDATE_EXTENSIONS:
         content = await client.get_range(webdav_url, relative_path, _EXIF_RANGE_BYTES)
         exif_taken_at = extract_taken_at(content)
         if exif_taken_at is not None:
             taken_at = exif_taken_at
+        gps = extract_gps(content, photo_id=photo_id)
 
     await _generate_thumbnails(client, webdav_url, relative_path, photo_id, etag, cache_dir)
-    return taken_at
+    return ScanExifResult(taken_at=taken_at, gps=gps)
 
 
 async def _process_scan_block(
@@ -460,9 +486,22 @@ async def _process_scan_block(
         if isinstance(result, BaseException):
             raise result
 
-    for photo, taken_at in zip(photos, results, strict=True):
-        assert isinstance(taken_at, datetime)  # bereits oben auf Exceptions geprueft
-        photo.taken_at = taken_at
+    for photo, exif_result in zip(photos, results, strict=True):
+        # Die Typzusicherung nagelt weiterhin die FORM fest (specs/features/0051, Sicherheits-
+        # konzept Punkt 4) - sie ist nach dem Wechsel auf einen zusammengesetzten Rueckgabewert
+        # NICHT entbehrlich geworden: ohne sie entpackte eine durchgereichte BaseException ihre
+        # Attribute in die Foto-Felder, statt oben als Fehler erkannt zu werden.
+        assert isinstance(exif_result, ScanExifResult)  # bereits oben auf Exceptions geprueft
+        photo.taken_at = exif_result.taken_at
+        # UNBEDINGT beide Felder schreiben, auch zurueck auf None (specs/features/0051-gps-
+        # landmark-cluster-bildung.md, Sicherheitskonzept Punkt 4). Das ist eine
+        # DATENSCHUTZBEDINGUNG, keine Aufraeum-Kosmetik: dies ist der einzige Pfad, ueber den das
+        # ENTFERNEN von GPS aus einer Quelldatei in PhotoSort ankommt - also genau die Handlung,
+        # die eine datenschutzbewusste Person vornimmt. Ein bedingtes Schreiben
+        # (`if gps is not None`) hielte die alte Koordinate unbegrenzt fest, und die Anwendung
+        # zeigte weiter einen Ort an, den die Datei nachweislich nicht mehr enthaelt, ohne dass
+        # das irgendwo auffiele.
+        photo.gps_lat, photo.gps_lon = exif_result.gps or (None, None)
 
     return added, updated
 
@@ -739,7 +778,11 @@ async def run_project_scoring(
         scoring_run.photos_processed = processed
         await session.commit()
 
-        taken_at_by_id = {photo.id: photo.taken_at for photo in photos}
+        # specs/features/0051-gps-landmark-cluster-bildung.md: um die Koordinate erweitert -
+        # KEIN zusaetzlicher Query, die `photos` liegen an dieser Stelle bereits vollstaendig vor.
+        cluster_input_by_id = {
+            photo.id: (photo.taken_at, photo.gps_lat, photo.gps_lon) for photo in photos
+        }
 
         duplicate_of_map = assign_duplicate_clusters(
             [
@@ -754,9 +797,14 @@ async def run_project_scoring(
                 rejected_ids.add(photo_id)
 
         remaining_ids = [photo_id for photo_id in computed if photo_id not in rejected_ids]
-        cluster_map = assign_time_clusters(
+        cluster_map = assign_clusters(
             [
-                TimeClusterCandidate(photo_id=photo_id, taken_at=taken_at_by_id[photo_id])
+                ClusterCandidate(
+                    photo_id=photo_id,
+                    taken_at=cluster_input_by_id[photo_id][0],
+                    gps_lat=cluster_input_by_id[photo_id][1],
+                    gps_lon=cluster_input_by_id[photo_id][2],
+                )
                 for photo_id in remaining_ids
             ]
         )
@@ -1132,6 +1180,42 @@ async def _remote_category_evidence(
         )
         for photo_id, detected, confidences in rows
     }
+
+
+async def _landmark_names(
+    session: AsyncSession, photo_ids: Collection[int]
+) -> dict[int, str | None]:
+    """Die bereits PERSISTIERTEN Sehenswuerdigkeit-Namen der Kandidaten eines Laufs
+    (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072 Entscheidung 2) - dasselbe
+    Muster wie `_remote_category_evidence` oben, ein einzelner Lesezugriff, KEIN Cloud-Aufruf.
+
+    Aus der TABELLE zu lesen statt aus einer laufinternen Abbildung der Cloud-Antworten ist die
+    eigentliche Aussage dieser Funktion: die Verfeinerung wirkt damit auch in einem Lauf, in dem
+    die Cloud-Phase gar nicht lief (Einwilligung aus, Cloud-Haekchen abgewaehlt, oder alle Fotos
+    bereits in einem frueheren Lauf erkannt), und ein erneuter Kriterien-Lauf teilt dieselben
+    Cluster wieder gleich auf. Die In-Memory-Variante haette die Aufteilung still an die Frage
+    gekoppelt, ob im SELBEN Lauf zufaellig Geld ausgegeben wurde.
+
+    SANITISIERUNG IM LESEPFAD (Muss-Kriterium des Sicherheitskonzepts, Abschnitt "Standortdaten"):
+    `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl `_landmark_detection_from_json` sie
+    bereits an der Quelle anwendet. Das ist KEIN Redundanz-Fehlgriff, sondern die einzige Deckung
+    des Altbestands: unter Spec 0047 sind bereits reale, kostenpflichtig erzeugte Zeilen mit
+    unsaniertem Rohtext entstanden - sie neu zu erkennen kostet Geld, sie zu loeschen vernichtet
+    bezahlte Daten, und einen kostenlosen Migrationsweg gibt es nicht. Bitte nicht als vermeintliche
+    Dopplung entfernen. Fachlich wirkt sie hier zusaetzlich als Zusammenfuehrung: ein unsanierter
+    Altname und sein sauberer Zwilling meinen dieselbe Sehenswuerdigkeit und duerfen ihren Cluster
+    nicht zerteilen."""
+    if not photo_ids:
+        return {}
+
+    rows = (
+        await session.execute(
+            select(PhotoLandmarkDetection.photo_id, PhotoLandmarkDetection.name).where(
+                PhotoLandmarkDetection.photo_id.in_(photo_ids)
+            )
+        )
+    ).all()
+    return {photo_id: sanitize_landmark_name(name) for photo_id, name in rows}
 
 
 def derive_photo_category(
@@ -1756,6 +1840,21 @@ async def run_criterion_scoring(
         # Laufs, siehe run_classification - KEIN neuer Cloud-Aufruf hier). Sie liefern die
         # REMOTE-Haelfte der Kandidatenmenge; die lokale Haelfte steckt in candidate_values.
         evidence_by_photo_id = await _remote_category_evidence(session, candidate_values.keys())
+
+        # specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0029 Punkt 1 (Phase 2), ADR
+        # 0072 Entscheidung 2: die Landmark-Verfeinerung ERSETZT `cluster_by_photo` als Ganzes -
+        # bis hierhin steht dort der reine Passthrough aus `PhotoScore.cluster_key`. Die Stelle
+        # ist bewusst NACH dem `finally` der Landmark-Phase (sonst fehlten die Namen, die dieser
+        # Lauf gerade erst erzeugt hat) und VOR dem Aufbau von `partitions` unten (die
+        # Partitionsbildung und damit `PhotoRanking.cluster_key` sollen den verfeinerten Wert
+        # nutzen).
+        #
+        # `PhotoScore.cluster_key` wird dabei NIE mutiert (Ownership-Grenze ADR 0021): der dort
+        # stehende Phase-A-Basiswert bleibt stabil, unabhaengig davon, ob und wann Kriterien-
+        # Scoring laeuft. Die Divergenz beider Felder ist gewollt und dokumentiert.
+        cluster_by_photo = refine_clusters_by_landmark(
+            cluster_by_photo, await _landmark_names(session, candidate_values.keys())
+        )
 
         scores_by_photo_id = {photo.id: score for photo, score in rows}
 

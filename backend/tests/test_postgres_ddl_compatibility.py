@@ -407,3 +407,47 @@ def test_both_unique_constraints_are_named_in_the_swap(
     assert "DROP CONSTRAINT uq_photo_ranking_run_photo" in rendered
     assert "ADD CONSTRAINT uq_photo_ranking_run_photo_category UNIQUE" in rendered
     assert "criterion_scoring_run_id, photo_id, category_key" in rendered
+
+
+# specs/features/0051-gps-landmark-cluster-bildung.md, decisions/0072-ortsbezogene-cluster-
+# anzeigeort-als-antwortableitung.md: zwei additive Koordinatenspalten. SQLite kann beide
+# entscheidenden Aussagen strukturell nicht pruefen - es kennt keinen Unterschied zwischen INTEGER
+# und DOUBLE PRECISION (eine ganzzahlige Spalte machte aus 48.858093 ein 48, ohne dass irgendetwas
+# fehlschluege) und akzeptiert einen unbeabsichtigten Server-Default klaglos. `DEFAULT 0` waere
+# hier keine harmlose Null, sondern eine GUELTIGE Koordinate im Golf von Guinea an jeder
+# Bestandszeile.
+
+_GPS_REVISION = "d1e2f3a4b5c6_gps_koordinaten.py"
+
+
+@pytest.fixture(scope="module")
+def gps_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_GPS_REVISION)
+
+
+def test_both_gps_columns_are_added_for_postgres(gps_upgrade_ddl: list[str]) -> None:
+    for column in ("gps_lat", "gps_lon"):
+        _add_column_statement(gps_upgrade_ddl, column)
+
+
+def test_both_gps_columns_render_as_a_floating_point_type(gps_upgrade_ddl: list[str]) -> None:
+    for column in ("gps_lat", "gps_lon"):
+        statement = _add_column_statement(gps_upgrade_ddl, column).upper()
+        assert "DOUBLE PRECISION" in statement or "FLOAT" in statement, column
+        assert "INTEGER" not in statement, column
+
+
+def test_neither_gps_column_gets_a_server_default(gps_upgrade_ddl: list[str]) -> None:
+    """DIE eigentliche Aussage dieser Revision: kein Server-Default und keine NOT-NULL-Bedingung.
+    "Kein Ort bekannt" muss `NULL` bleiben - `0.0` ist eine Ortsangabe, keine Abwesenheit."""
+    for column in ("gps_lat", "gps_lon"):
+        statement = _add_column_statement(gps_upgrade_ddl, column).upper()
+        assert "DEFAULT" not in statement, column
+        assert "NOT NULL" not in statement, column
+
+
+def test_the_gps_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_GPS_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements).upper()
+    assert rendered.count("DROP COLUMN") == 2

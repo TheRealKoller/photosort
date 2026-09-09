@@ -1,14 +1,19 @@
-from datetime import UTC, datetime
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.categories import CATEGORY_NOT_RECOGNIZED
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
+from photosort.landmark import MAX_LANDMARK_NAME_LENGTH
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
@@ -17,6 +22,7 @@ from photosort.models import (
     PhotoCategoryClassification,
     PhotoCriterionScore,
     PhotoFineLabel,
+    PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -2754,3 +2760,924 @@ class TestCategoryConfidenceFields:
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
         assert response.json()["items"][0]["category_confidence"] is None
+
+
+# ---------------------------------------------------------------------------------------------
+# specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072 Entscheidung 1/7: ZWEI additive
+# Antwortfelder, beide zur Anfragezeit ueber den VOLLSTAENDIGEN Cluster des Bezugslaufs berechnet
+# und nirgends persistiert.
+#
+# `PhotoOut.location`      - der Ort DIESES Fotos, volle EXIF-Praezision, `source` "exif"/"derived"
+# `PhotoOut.cluster_place` - der bereits AUFGELOESTE Ort des CLUSTERS, auf jedem Foto desselben
+#                            Clusters identisch, gerundete Koordinate bzw. Sehenswuerdigkeit-Name
+#
+# Die Bezugsmenge ist ausdruecklich NICHT die Antwort: die Kuratierungsansicht liefert je Partition
+# nur `rank_position <= topN`, die nachgeladenen Kandidaten laufen ueber eine eigene Abfrage und
+# fliessen nie zurueck. Eine Herleitung ueber die Fotos der Antwort waere nicht "springend",
+# sondern DAUERHAFT falsch.
+
+
+async def _make_photo_at(
+    session: AsyncSession,
+    project: Project,
+    path: str,
+    taken_at: datetime,
+    *,
+    gps: tuple[float, float] | None = None,
+) -> Photo:
+    photo = Photo(
+        project_id=project.id,
+        relative_path=path,
+        etag=f"etag-{path}",
+        content_length=100,
+        taken_at=taken_at,
+        last_modified=taken_at,
+        gps_lat=None if gps is None else gps[0],
+        gps_lon=None if gps is None else gps[1],
+    )
+    session.add(photo)
+    await session.commit()
+    await session.refresh(photo)
+    return photo
+
+
+async def _add_landmark(session: AsyncSession, photo: Photo, name: str) -> None:
+    session.add(
+        PhotoLandmarkDetection(
+            photo_id=photo.id,
+            name=name,
+            confidence=0.9,
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await session.commit()
+
+
+@contextmanager
+def _recorded_select_statements() -> Iterator[list[str]]:
+    """Die TATSAECHLICH abgesetzten SELECT-Anweisungen (Muster aus test_project_deletion.py).
+
+    Bewusst ueber das `before_cursor_execute`-Ereignis der Engine und nicht ueber eine daneben
+    gepflegte Zahl: eine Konstante und die ausgefuehrten Anweisungen driften, und geprueft gehoert,
+    was der Endpunkt tut."""
+    statements: list[str] = []
+
+    def _listener(
+        conn: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    event.listen(Engine, "before_cursor_execute", _listener)
+    try:
+        yield statements
+    finally:
+        event.remove(Engine, "before_cursor_execute", _listener)
+
+
+
+_EIFFEL = (48.858093, 2.294694)
+# Rund 40 m vom Eiffelturm entfernt - FAELLT AUF DIESELBE gerundete Stelle (2 Nachkommastellen).
+_EIFFEL_40_M = (48.858450, 2.294694)
+# Trocadero, rund 700 m entfernt - ein anderer ORT, aber (verifiziert) dieselbe gerundete Stelle
+# wie der Eiffelturm: 500 m Trennabstand und ~1,1 km Rundungsraster sind bewusst verschieden grob.
+# Fuer die Nachbarschaftstests der Herleitung ist genau das richtig; fuer "Mehrere Orte" nicht.
+_TROCADERO = (48.862000, 2.288500)
+# Louvre - eine tatsaechlich ANDERE gerundete Stelle (48.86, 2.34 statt 48.86, 2.29). Der
+# Unterschied zu _TROCADERO ist der eigentliche Testgegenstand des "multiple"-Falls: dort wird die
+# GERUNDETE Stelle verglichen, nicht der Rohwert.
+_LOUVRE = (48.860611, 2.337644)
+
+
+class TestPhotoLocationAndClusterPlace:
+    async def test_a_photo_with_its_own_coordinate_reports_source_exif_in_full_precision(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """VOLLE EXIF-Praezision, keine serverseitige Rundung (Daniels Entscheidung) - die
+        Rundung auf zwei Nachkommastellen liegt allein in `cluster_place`, weil dort dieselbe Zahl
+        ueber "coordinate" vs. "multiple" entscheidet."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC), gps=_EIFFEL
+        )
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.status_code == 200
+        [item] = response.json()["items"]
+        assert item["location"] == {
+            "lat": _EIFFEL[0],
+            "lon": _EIFFEL[1],
+            "source": "exif",
+        }
+
+    async def test_a_photo_without_a_coordinate_inherits_the_nearest_one_in_its_cluster(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        anchor = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
+        )
+        blind = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
+        )
+        await _add_ranking(db_session, run, anchor, rank_score=0.9, rank_position=1)
+        await _add_ranking(db_session, run, blind, rank_score=0.5, rank_position=2)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[anchor.id]["location"]["source"] == "exif"
+        assert items[blind.id]["location"] == {
+            "lat": _EIFFEL[0],
+            "lon": _EIFFEL[1],
+            "source": "derived",
+        }
+
+    async def test_the_derived_coordinate_comes_from_the_temporally_nearest_neighbour(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        far = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
+        )
+        blind = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 50, tzinfo=UTC)
+        )
+        near = await _make_photo_at(
+            db_session, project, "c.jpg", datetime(2023, 1, 1, 10, 55, tzinfo=UTC), gps=_TROCADERO
+        )
+        for index, photo in enumerate((far, blind, near), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[blind.id]["location"]["lat"] == _TROCADERO[0]
+        assert items[blind.id]["location"]["source"] == "derived"
+
+    async def test_an_exactly_equidistant_neighbour_is_resolved_towards_the_earlier_one(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Deterministischer Tie-Break: bei zwei gleich weit entfernten Nachbarn gewinnt der
+        FRUEHERE Zeitpunkt. Ohne feste Regel haengt die angezeigte Koordinate an der
+        Zeilenreihenfolge der Datenbank."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        earlier = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
+        )
+        blind = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 10, tzinfo=UTC)
+        )
+        later = await _make_photo_at(
+            db_session, project, "c.jpg", datetime(2023, 1, 1, 10, 20, tzinfo=UTC), gps=_TROCADERO
+        )
+        for index, photo in enumerate((earlier, blind, later), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[blind.id]["location"]["lat"] == _EIFFEL[0]
+
+    async def test_an_identical_timestamp_is_resolved_towards_the_smaller_photo_id(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        same_moment = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        first = await _make_photo_at(db_session, project, "a.jpg", same_moment, gps=_EIFFEL)
+        second = await _make_photo_at(db_session, project, "b.jpg", same_moment, gps=_TROCADERO)
+        blind = await _make_photo_at(db_session, project, "c.jpg", same_moment)
+        for index, photo in enumerate((first, second, blind), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert min(first.id, second.id) == first.id
+        assert items[blind.id]["location"]["lat"] == _EIFFEL[0]
+
+    async def test_a_photo_earlier_than_every_anchor_inherits_the_first_one(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Randfall "vor allen Ankern" - die Einfuegestelle ist 0, und es gibt keinen frueheren
+        Nachbarn, gegen den abgewogen werden koennte. Ohne eigenen Fall bliebe genau der Zweig
+        ungeprueft, der bei einer Umstellung der Suche als erstes bricht."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        blind = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        )
+        nearest = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC), gps=_EIFFEL
+        )
+        farther = await _make_photo_at(
+            db_session, project, "c.jpg", datetime(2023, 1, 1, 11, 0, tzinfo=UTC), gps=_LOUVRE
+        )
+        for index, photo in enumerate((blind, nearest, farther), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[blind.id]["location"] == {
+            "lat": _EIFFEL[0],
+            "lon": _EIFFEL[1],
+            "source": "derived",
+        }
+
+    async def test_a_photo_later_than_every_anchor_inherits_the_last_one(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der gespiegelte Randfall: die Einfuegestelle liegt hinter dem letzten Anker."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        farther = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_LOUVRE
+        )
+        nearest = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 55, tzinfo=UTC), gps=_EIFFEL
+        )
+        blind = await _make_photo_at(
+            db_session, project, "c.jpg", datetime(2023, 1, 1, 11, 0, tzinfo=UTC)
+        )
+        for index, photo in enumerate((farther, nearest, blind), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[blind.id]["location"] == {
+            "lat": _EIFFEL[0],
+            "lon": _EIFFEL[1],
+            "source": "derived",
+        }
+
+    async def test_duplicate_anchor_timestamps_still_resolve_to_the_smaller_photo_id(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zwei Anker auf DEMSELBEN Zeitpunkt plus ein spaeterer dritter - der Fall, der die
+        Sortier-Voraussetzung der Suche tatsaechlich beansprucht: die Ankerliste ist nach
+        `(taken_at, photo_id)` sortiert, und die Suche darf nur den ERSTEN der beiden gleichen
+        Zeitstempel treffen. Der bestehende Gleichstand-Test kommt ohne einen dritten, spaeteren
+        Anker aus und wuerde eine falsche Einfuegestelle deshalb nicht bemerken."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        same_moment = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        first = await _make_photo_at(db_session, project, "a.jpg", same_moment, gps=_EIFFEL)
+        second = await _make_photo_at(db_session, project, "b.jpg", same_moment, gps=_TROCADERO)
+        later = await _make_photo_at(
+            db_session, project, "c.jpg", datetime(2023, 1, 1, 10, 30, tzinfo=UTC), gps=_LOUVRE
+        )
+        blind = await _make_photo_at(db_session, project, "d.jpg", same_moment)
+        for index, photo in enumerate((first, second, later, blind), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert first.id < second.id < later.id
+        assert items[blind.id]["location"] == {
+            "lat": _EIFFEL[0],
+            "lon": _EIFFEL[1],
+            "source": "derived",
+        }
+
+    async def test_both_fields_are_null_when_the_cluster_carries_no_location_at_all(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """KEIN Objekt aus lauter `null`-Feldern - `null` heisst "kein Ort", und die Ueberschrift
+        sieht dann zeichengleich aus wie heute."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        [item] = response.json()["items"]
+        assert item["location"] is None
+        assert item["cluster_place"] is None
+
+    async def test_location_is_null_while_cluster_place_is_set_for_a_name_only_cluster(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die `null`-Abgrenzung getrennt fuer BEIDE Felder: ein Cluster mit einem Namen, aber
+        ohne jede Koordinate, hat einen Ort - aber kein Foto hat eine Koordinate."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        await _add_landmark(db_session, photo, "Eiffelturm")
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        [item] = response.json()["items"]
+        assert item["location"] is None
+        assert item["cluster_place"] == {
+            "kind": "landmark",
+            "landmark_name": "Eiffelturm",
+            "lat": None,
+            "lon": None,
+        }
+
+
+class TestClusterPlaceKind:
+    async def test_a_detected_landmark_wins_over_diverging_coordinates(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der Name hat Vorrang - auch dann, wenn zusaetzlich abweichende Koordinaten vorliegen."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        named = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
+        )
+        other = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC), gps=_TROCADERO
+        )
+        for index, photo in enumerate((named, other), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+        await _add_landmark(db_session, named, "Eiffelturm")
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        for item in response.json()["items"]:
+            assert item["cluster_place"]["kind"] == "landmark"
+            assert item["cluster_place"]["landmark_name"] == "Eiffelturm"
+
+    async def test_two_coordinates_on_the_same_rounded_cell_are_one_coordinate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der naheliegende Fehler ist ein Vergleich der UNGERUNDETEN Werte - der schluege schon
+        bei zwei 40 m auseinanderliegenden Aufnahmen zu und machte aus einem Ortsbesuch "Mehrere
+        Orte"."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        first = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
+        )
+        second = await _make_photo_at(
+            db_session,
+            project,
+            "b.jpg",
+            datetime(2023, 1, 1, 10, 5, tzinfo=UTC),
+            gps=_EIFFEL_40_M,
+        )
+        assert _EIFFEL != _EIFFEL_40_M
+        for index, photo in enumerate((first, second), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        for item in response.json()["items"]:
+            assert item["cluster_place"] == {
+                "kind": "coordinate",
+                "landmark_name": None,
+                "lat": 48.86,
+                "lon": 2.29,
+            }
+
+    async def test_diverging_rounded_coordinates_produce_multiple_without_a_coordinate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """`kind="multiple"` fuehrt NIE `lat`/`lon` - strukturell geprueft, nicht nur "die Anzeige
+        zeigt sie nicht". Sonst entstuende eine zweite, stille Wahrheit ueber den Ort eines
+        Clusters, den es als EINZELNEN Ort gerade nicht gibt."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        first = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
+        )
+        second = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC), gps=_LOUVRE
+        )
+        for index, photo in enumerate((first, second), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        for item in response.json()["items"]:
+            assert item["cluster_place"] == {
+                "kind": "multiple",
+                "landmark_name": None,
+                "lat": None,
+                "lon": None,
+            }
+
+    async def test_the_rounding_convention_lives_in_the_backend(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Rundung entscheidet ueber die STUFE ("coordinate" vs. "multiple") und gehoert
+        deshalb dorthin, wo diese Entscheidung faellt. Das Frontend formatiert nur noch."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo_at(
+            db_session,
+            project,
+            "a.jpg",
+            datetime(2023, 1, 1, tzinfo=UTC),
+            gps=(-33.856789, 151.215432),
+        )
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        [item] = response.json()["items"]
+        assert item["cluster_place"]["lat"] == -33.86
+        assert item["cluster_place"]["lon"] == 151.22
+        # Die volle Praezision steht unveraendert daneben.
+        assert item["location"]["lat"] == -33.856789
+
+    async def test_a_coordinate_rounding_to_zero_never_reports_negative_zero(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """`-0.0` waere im JSON `-0.0` und im Frontend `"-0.00"` - eine Himmelsrichtung, die es
+        nicht gibt."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo_at(
+            db_session,
+            project,
+            "a.jpg",
+            datetime(2023, 1, 1, tzinfo=UTC),
+            gps=(-0.001, -0.002),
+        )
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        [item] = response.json()["items"]
+        place = item["cluster_place"]
+        assert place["kind"] == "coordinate"
+        assert str(place["lat"]) == "0.0"
+        assert str(place["lon"]) == "0.0"
+
+
+class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
+    async def _seed_cluster_with_a_deep_anchor(
+        self,
+        db_session: AsyncSession,
+        *,
+        anchor_gps: tuple[float, float] | None = None,
+        anchor_landmark: str | None = None,
+        shallow_gps: tuple[float, float] | None = None,
+    ) -> tuple[Project, CriterionScoringRun, Photo]:
+        """Ein Cluster mit 11 Fotos, dessen tragendes Foto auf `rank_position` 11 liegt - also
+        ausserhalb jeder realistischen Top-N-Antwort."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        base = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        for index in range(1, 11):
+            shallow = await _make_photo_at(
+                db_session,
+                project,
+                f"shallow-{index}.jpg",
+                base + timedelta(minutes=index),
+                gps=shallow_gps,
+            )
+            await _add_ranking(
+                db_session, run, shallow, rank_score=1.0 / index, rank_position=index
+            )
+        anchor = await _make_photo_at(
+            db_session, project, "anchor.jpg", base + timedelta(minutes=11), gps=anchor_gps
+        )
+        await _add_ranking(db_session, run, anchor, rank_score=0.01, rank_position=11)
+        if anchor_landmark is not None:
+            await _add_landmark(db_session, anchor, anchor_landmark)
+        return project, run, anchor
+
+    async def test_the_only_coordinate_of_a_cluster_reaches_photos_that_outrank_it(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """ROT-ANKER 1: das EINZIGE koordinatentragende Foto liegt auf Rang 11, abgefragt wird mit
+        `top_n_per_category=3`. Eine Herleitung ueber die Fotos der Antwort lieferte hier `null`."""
+        project, _run, _anchor = await self._seed_cluster_with_a_deep_anchor(
+            db_session, anchor_gps=_EIFFEL
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 3}
+        )
+
+        items = response.json()["items"]
+        assert len(items) == 3
+        for item in items:
+            assert item["location"] == {
+                "lat": _EIFFEL[0],
+                "lon": _EIFFEL[1],
+                "source": "derived",
+            }
+
+    async def test_the_only_landmark_of_a_cluster_names_photos_that_outrank_it(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """ROT-ANKER 2a: ohne diesen Fall bliebe ein erkannter Cluster DAUERHAFT unbenannt - die
+        nachgeladenen Kandidaten fliessen nie in `items` zurueck."""
+        project, _run, _anchor = await self._seed_cluster_with_a_deep_anchor(
+            db_session, anchor_landmark="Eiffelturm"
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 3}
+        )
+
+        items = response.json()["items"]
+        assert len(items) == 3
+        for item in items:
+            assert item["cluster_place"]["kind"] == "landmark"
+            assert item["cluster_place"]["landmark_name"] == "Eiffelturm"
+
+    async def test_a_deviating_coordinate_outside_the_answer_still_produces_multiple(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """ROT-ANKER 2b: ohne diesen Fall waere die Stufe "Mehrere Orte" fuer einen Cluster,
+        dessen Vielfalt erst ab Rang 11 beginnt, dauerhaft unerreichbar."""
+        project, _run, _anchor = await self._seed_cluster_with_a_deep_anchor(
+            db_session, anchor_gps=_LOUVRE, shallow_gps=_EIFFEL
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 3}
+        )
+
+        items = response.json()["items"]
+        assert len(items) == 3
+        for item in items:
+            assert item["cluster_place"]["kind"] == "multiple"
+
+    async def test_cluster_place_does_not_change_between_top_n_one_and_ten(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """`top_n` ist ein Suchparameter der Seite (1-10) - der Ortsteil der Ueberschrift darf sich
+        beim Verstellen nicht aendern."""
+        project, _run, _anchor = await self._seed_cluster_with_a_deep_anchor(
+            db_session, anchor_gps=_LOUVRE, shallow_gps=_EIFFEL
+        )
+
+        narrow = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
+        )
+        wide = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 10}
+        )
+
+        assert narrow.json()["items"][0]["cluster_place"] == (
+            wide.json()["items"][0]["cluster_place"]
+        )
+
+    async def test_cluster_place_does_not_change_between_limit_one_and_sixty(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, _run, _anchor = await self._seed_cluster_with_a_deep_anchor(
+            db_session, anchor_gps=_LOUVRE, shallow_gps=_EIFFEL
+        )
+
+        narrow = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"limit": 1}
+        )
+        wide = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"limit": 60}
+        )
+
+        assert narrow.json()["items"][0]["cluster_place"] == (
+            wide.json()["items"][0]["cluster_place"]
+        )
+
+    async def test_both_fields_are_field_equal_across_photos_and_curation_candidates(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der direkte "springt nicht"-Nachweis: dasselbe Foto einmal ueber das Standard-Listing
+        und einmal ueber den Nachlade-Endpunkt."""
+        project, _run, anchor = await self._seed_cluster_with_a_deep_anchor(
+            db_session, anchor_gps=_LOUVRE, shallow_gps=_EIFFEL
+        )
+
+        listing = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+        candidates = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"cluster_key": "cluster-0", "category_key": "landscape", "after_rank": 10},
+        )
+
+        assert candidates.status_code == 200
+        from_listing = {item["id"]: item for item in listing.json()["items"]}[anchor.id]
+        [from_candidates] = candidates.json()["items"]
+        assert from_candidates["id"] == anchor.id
+        assert from_candidates["location"] == from_listing["location"]
+        assert from_candidates["cluster_place"] == from_listing["cluster_place"]
+
+    async def test_cluster_place_is_identical_on_every_photo_of_a_cluster(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Gruppiert nach `cluster_key` geprueft, nicht stichprobenweise an einem Foto: das ist die
+        Zusicherung, aus der die Frontend-Seite ihre Berechtigung zieht, den Wert aus einem
+        BELIEBIGEN Foto des Clusters zu lesen. `location` DARF je Foto verschieden sein,
+        `cluster_place` nicht."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        base = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        first_cluster = []
+        for index in range(1, 4):
+            photo = await _make_photo_at(
+                db_session,
+                project,
+                f"a-{index}.jpg",
+                base + timedelta(minutes=index),
+                gps=_EIFFEL if index == 1 else None,
+            )
+            await _add_ranking(
+                db_session, run, photo, cluster_key="cluster-0", rank_score=1.0 / index,
+                rank_position=index,
+            )
+            first_cluster.append(photo)
+        for index in range(1, 3):
+            photo = await _make_photo_at(
+                db_session,
+                project,
+                f"b-{index}.jpg",
+                base + timedelta(hours=5, minutes=index),
+                gps=_TROCADERO,
+            )
+            await _add_ranking(
+                db_session, run, photo, cluster_key="cluster-1", rank_score=1.0 / index,
+                rank_position=index,
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        places_by_cluster: dict[str, list[object]] = {}
+        for item in response.json()["items"]:
+            for ranking in item["rankings"]:
+                places_by_cluster.setdefault(ranking["cluster_key"], []).append(
+                    item["cluster_place"]
+                )
+        assert set(places_by_cluster) == {"cluster-0", "cluster-1"}
+        for cluster_key, places in places_by_cluster.items():
+            assert len(places) > 1, cluster_key
+            assert all(place == places[0] for place in places), cluster_key
+
+
+class TestPlaceRunBinding:
+    async def test_a_foreign_project_with_the_same_cluster_key_contributes_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SICHERHEIT, Pflichtfall (Muss-Kriterium der Spec): `cluster_key` ist `cluster-<n>`, je
+        Lauf neu vergeben und in JEDEM Projekt derselbe String; `photo_rankings` traegt keine
+        `project_id`. Ohne das `criterion_scoring_run_id`-Praedikat zieht die Herleitung
+        Koordinaten UND Namen aus einem fremden Projekt - systematisch, nicht im Grenzfall."""
+        project_a = await _make_project(db_session, name="A")
+        project_b = await _make_project(db_session, name="B")
+        run_a = await _make_criterion_scoring_run(db_session, project_a)
+        run_b = await _make_criterion_scoring_run(db_session, project_b)
+        blind = await _make_photo_at(
+            db_session, project_a, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        )
+        await _add_ranking(
+            db_session, run_a, blind, cluster_key="cluster-0", rank_score=0.9, rank_position=1
+        )
+        foreign = await _make_photo_at(
+            db_session, project_b, "b.jpg", datetime(2023, 1, 1, 10, 1, tzinfo=UTC), gps=_EIFFEL
+        )
+        await _add_ranking(
+            db_session, run_b, foreign, cluster_key="cluster-0", rank_score=0.9, rank_position=1
+        )
+        await _add_landmark(db_session, foreign, "Eiffelturm")
+
+        response = await authenticated_api_client.get(f"/projects/{project_a.id}/photos")
+
+        [item] = response.json()["items"]
+        assert item["location"] is None
+        assert item["cluster_place"] is None
+
+    async def test_an_older_run_of_the_same_project_contributes_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Dieselbe Bindung greift auch INNERHALB eines Projekts: `cluster-0` ist in jedem Lauf
+        neu vergeben, ein aelterer Lauf beschreibt eine andere Cluster-Zusammensetzung."""
+        project = await _make_project(db_session)
+        old_run = await _make_criterion_scoring_run(
+            db_session, project, started_at=datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        new_run = await _make_criterion_scoring_run(
+            db_session, project, started_at=datetime(2023, 6, 1, tzinfo=UTC)
+        )
+        anchor = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
+        )
+        blind = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
+        )
+        # Nur im ALTEN Lauf liegen beide im selben Cluster.
+        await _add_ranking(
+            db_session, old_run, anchor, cluster_key="cluster-0", rank_score=0.9, rank_position=1
+        )
+        await _add_ranking(
+            db_session, old_run, blind, cluster_key="cluster-0", rank_score=0.5, rank_position=2
+        )
+        # Im NEUEN Lauf ist `blind` allein in `cluster-0`, `anchor` gar nicht dabei.
+        await _add_ranking(
+            db_session, new_run, blind, cluster_key="cluster-0", rank_score=0.5, rank_position=1
+        )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[blind.id]["location"] is None
+        assert items[blind.id]["cluster_place"] is None
+
+    async def test_without_a_successful_run_only_the_own_coordinate_remains(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Ausfallrichtung "nichts anzeigen", nie "aus irgendeinem Lauf herleiten": ohne Bezugslauf
+        gibt es keinen Cluster - was bleibt, ist die EIGENE EXIF-Koordinate."""
+        project = await _make_project(db_session)
+        photo = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC), gps=_EIFFEL
+        )
+        await _make_photo_at(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[photo.id]["location"] == {
+            "lat": _EIFFEL[0],
+            "lon": _EIFFEL[1],
+            "source": "exif",
+        }
+        assert items[photo.id]["cluster_place"] is None
+
+    async def test_a_photo_without_a_candidate_row_keeps_its_own_coordinate_only(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Und es traegt seine Koordinate NICHT in den Cluster ein - das pinnt die Definition
+        "vollstaendiger Cluster = Kandidatenzeilen des Bezugslaufs"."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        gated = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
+        )
+        blind = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
+        )
+        await _add_ranking(db_session, run, blind, rank_score=0.5, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[gated.id]["location"]["source"] == "exif"
+        assert items[gated.id]["cluster_place"] is None
+        assert items[blind.id]["location"] is None
+        assert items[blind.id]["cluster_place"] is None
+
+
+class TestClusterPlaceNameHardening:
+    async def test_an_unsanitised_legacy_name_is_sanitised_on_the_read_path(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Pflichtfall mit einer BESTANDSZEILE: unter Spec 0047 sind bereits reale, kostenpflichtig
+        erzeugte Zeilen mit unsaniertem Rohtext entstanden, und es gibt keinen kostenlosen
+        Migrationsweg. Ein Test nur an der Quelle bewiese fuer sie nichts."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        await _add_landmark(db_session, photo, "Eiffel‮turm​")
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        [item] = response.json()["items"]
+        assert item["cluster_place"]["landmark_name"] == "Eiffelturm"
+
+    async def test_an_overlong_legacy_name_falls_back_to_the_coordinate_step(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der RUECKFALL ist der Testgegenstand, nicht das Verwerfen: "Name wird verworfen" allein
+        liesse offen, ob die Stufe darunter noch erreicht wird."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC), gps=_EIFFEL
+        )
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        await _add_landmark(db_session, photo, "A" * (MAX_LANDMARK_NAME_LENGTH + 1))
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        [item] = response.json()["items"]
+        assert item["cluster_place"] == {
+            "kind": "coordinate",
+            "landmark_name": None,
+            "lat": 48.86,
+            "lon": 2.29,
+        }
+
+    async def test_a_name_that_is_empty_after_sanitisation_falls_back_to_null(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        await _add_landmark(db_session, photo, "​‮")
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        [item] = response.json()["items"]
+        assert item["cluster_place"] is None
+
+    async def test_the_name_of_the_chronologically_earliest_photo_wins(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Nach der Verfeinerung traegt ein Cluster hoechstens EINEN Namen - defensiv wird der des
+        chronologisch fruehesten Fotos genommen, damit die Anzeige auch bei einem Altbestand
+        deterministisch bleibt."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        earlier = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        )
+        later = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
+        )
+        for index, photo in enumerate((earlier, later), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+        await _add_landmark(db_session, earlier, "Zugspitze")
+        await _add_landmark(db_session, later, "Alexanderplatz")
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        for item in response.json()["items"]:
+            assert item["cluster_place"]["landmark_name"] == "Zugspitze"
+
+
+class TestPlaceQueryCount:
+    async def test_the_place_derivation_costs_a_fixed_number_of_queries(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """EIN Query pro Anfrage, nicht einer pro Foto (Verfuegbarkeits-Muss der Spec, Praezedenz
+        `_partition_sizes`): die Abfrageanzahl muss zwischen 2 und 20 Fotos GLEICH bleiben."""
+        small = await _make_project(db_session, name="klein")
+        large = await _make_project(db_session, name="gross")
+        base = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        for project, count in ((small, 2), (large, 20)):
+            run = await _make_criterion_scoring_run(db_session, project)
+            for index in range(1, count + 1):
+                photo = await _make_photo_at(
+                    db_session,
+                    project,
+                    f"{project.name}-{index}.jpg",
+                    base + timedelta(minutes=index),
+                    gps=_EIFFEL if index == 1 else None,
+                )
+                await _add_ranking(
+                    db_session, run, photo, rank_score=1.0 / index, rank_position=index
+                )
+
+        with _recorded_select_statements() as small_statements:
+            small_response = await authenticated_api_client.get(f"/projects/{small.id}/photos")
+        with _recorded_select_statements() as large_statements:
+            large_response = await authenticated_api_client.get(f"/projects/{large.id}/photos")
+
+        assert small_response.status_code == large_response.status_code == 200
+        assert len(small_response.json()["items"]) == 2
+        assert len(large_response.json()["items"]) == 20
+        assert len(small_statements) == len(large_statements)

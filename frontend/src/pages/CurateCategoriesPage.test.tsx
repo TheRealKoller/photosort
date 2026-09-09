@@ -1538,6 +1538,66 @@ describe('CurateCategoriesPage — Mengenangaben', () => {
     expect(screen.getByText('(2 Kandidaten)')).toBeInTheDocument()
   })
 
+  it('zeigt den Ortsteil vor der Tageszeit in derselben Ueberschrift', async () => {
+    // specs/features/0051-gps-landmark-cluster-bildung.md: der Ort ERGAENZT die Tageszeit, er
+    // ersetzt sie nicht. `CurateCategoriesPage.tsx` selbst bleibt unveraendert - es reicht die
+    // vollen PhotoOut-Objekte bereits an formatClusterHeading() durch.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          rankings: [ranking({ category_key: 'landscape' })],
+          cluster_place: {
+            kind: 'landmark',
+            landmark_name: 'Eiffelturm',
+            lat: null,
+            lon: null,
+          },
+        }),
+      ],
+      total: 1,
+    })
+
+    renderPage()
+    await screen.findByText('Landscape')
+
+    const clusterHeading = screen.getByRole('heading', { level: 3 })
+    expect(clusterHeading.textContent).toBe('Eiffelturm · Vormittags (10:00 Uhr)')
+  })
+
+  it('rendert einen HTML-artigen Sehenswuerdigkeit-Namen als Text, nicht als Markup', async () => {
+    // Sicherheits-Muss-Kriterium der Spec 0051 (wortgleich aus dem Feinlabel-Fall uebernommen):
+    // `landmark_name` ist der Rohausgabe-Text eines externen Modells und darf ausschliesslich als
+    // regulaerer React-Textknoten erscheinen. Analog CloudVisionStatusList.test.tsx.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          rankings: [ranking({ category_key: 'landscape' })],
+          cluster_place: {
+            kind: 'landmark',
+            landmark_name: '<img src=x onerror="window.__pwned = true">',
+            lat: null,
+            lon: null,
+          },
+        }),
+      ],
+      total: 1,
+    })
+
+    renderPage()
+    await screen.findByText('Landscape')
+
+    const clusterHeading = screen.getByRole('heading', { level: 3 })
+    expect(clusterHeading.textContent).toBe(
+      '<img src=x onerror="window.__pwned = true"> · Vormittags (10:00 Uhr)'
+    )
+    // Auf die Ueberschrift eingegrenzt: die Seite enthaelt legitime <img>-Kacheln, ein
+    // dokumentweites querySelector('img') pruefte hier gar nichts.
+    expect(clusterHeading.querySelector('img')).toBeNull()
+    expect(clusterHeading.innerHTML).not.toContain('<img')
+  })
+
   it('beschriftet genau einen Kandidaten in der Einzahl', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
       items: [photo({ id: 1, rankings: [ranking({ category_key: 'landscape' })] })],

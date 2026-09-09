@@ -24,6 +24,7 @@ from photosort.cloud_vision import (
     MISTRAL_CHAT_COMPLETIONS_URL,
     VISION_REQUEST_TIMEOUT_SECONDS,
     TokenUsage,
+    _sanitize_label_text,
     anthropic_response_to_json,
     anthropic_usage_from_response,
     mistral_response_to_json,
@@ -178,34 +179,6 @@ def _log_discarded_confidence(photo_id: int, reason: str) -> None:
     logger.warning(
         "remote_category: Konfidenzwert verworfen photo_id=%s grund=%s", photo_id, reason
     )
-
-
-def _sanitize_label_text(raw: str) -> str:
-    """Zeichensanitisierung eines frei formulierten Feinlabels (Security-Abschnitt der Spec 0289,
-    Punkt 3) - laeuft VOR der Laengenpruefung und vor resolve_canonical_label/_slugify.
-
-    Entfernt alle Unicode-Steuer- und Formatzeichen (Kategorien `Cc`/`Cf`: `\x00`,
-    Zero-Width-Zeichen wie U+200B, Bidi-Overrides wie U+202E) und zieht Whitespace-Folgen zu einem
-    einzelnen Leerzeichen zusammen. Steuerzeichen, die selbst Whitespace SIND (Zeilenumbruch,
-    Tabulator, Wagenruecklauf), werden dabei durch ein Leerzeichen ersetzt statt ersatzlos
-    entfernt - sonst verschmoelzen zwei Woerter ueber einen Zeilenumbruch hinweg zu einem
-    (`str.split()` behandelt auch NBSP
-    und andere Unicode-Leerzeichen als Whitespace); fuehrende/abschliessende Leerzeichen
-    entfallen dabei mit.
-
-    Bewusst eine BLACKLIST (Steuerzeichen), keine Zeichen-Whitelist (Entscheidung 1 der Spec):
-    Feinlabels sind freier deutscher Text, eine Whitelist aus Buchstaben/Ziffern/Leerzeichen/
-    Bindestrich wuerde legitime Labels beschaedigen. Escapetes Rendering im Frontend schuetzt
-    gegen XSS, aber weder gegen optische Verfaelschung der Oberflaeche durch Bidi-/Zero-Width-
-    Zeichen noch gegen mehrzeilige Logeintraege - genau diese Luecke schliesst diese Funktion.
-    Nachruestbar an genau dieser einen Stelle, falls sich die Blacklist als zu schwach erweist."""
-    without_controls = "".join(
-        (" " if char.isspace() else "")
-        if unicodedata.category(char) in ("Cc", "Cf")
-        else char
-        for char in raw
-    )
-    return " ".join(without_controls.split())
 
 
 def _confidence_from_raw(raw: object, photo_id: int) -> float | None:

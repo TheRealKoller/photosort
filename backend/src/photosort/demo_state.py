@@ -42,7 +42,7 @@ import io
 import os
 import random
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -66,6 +66,7 @@ from photosort.models import (
     PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -210,6 +211,56 @@ _DEMO_LANDMARK_INPUT_TOKENS = 6_200
 _DEMO_LANDMARK_OUTPUT_TOKENS = 540
 _DEMO_LANDMARK_COST_USD = 0.11
 _DEMO_ESTIMATED_COST_USD = 0.52
+
+# specs/features/0051-gps-landmark-cluster-bildung.md: der "bewertet"-Zustand muss ALLE VIER
+# Anzeigezustaende der Cluster-Ueberschrift hergeben - Sehenswuerdigkeit, eine Koordinate, mehrere
+# Orte und gar kein Ort. Sonst ist die Sichtpruefung ueber den `browse-app`-Skill fuer drei davon
+# blind, und sie ist die einzige nicht automatisierte Kontrollinstanz dieses Features.
+#
+# Dafuer verteilt der Seeder die Fotos auf VIER statt bisher drei Cluster (`index % 4`), und jedes
+# Cluster steht fuer genau einen Zustand.
+_DEMO_CLUSTER_COUNT = 4
+_DEMO_LANDMARK_CLUSTER = 0
+_DEMO_SINGLE_COORDINATE_CLUSTER = 1
+_DEMO_MULTIPLE_PLACES_CLUSTER = 2
+_DEMO_NO_LOCATION_CLUSTER = 3
+
+# Frei erfundene, aber plausible Koordinaten rund um den Eiffelturm (Spec 0321: ausschliesslich
+# synthetische Demo-Daten - das Repository ist oeffentlich, und Standortdaten der Familie duerfen
+# es nie erreichen).
+_DEMO_BASE_LAT = 48.8583
+_DEMO_BASE_LON = 2.2945
+# Streuung INNERHALB einer 2-Nachkommastellen-Zelle (~1,1 km): alle Fotos eines Clusters fallen auf
+# dieselbe gerundete Stelle -> `kind="coordinate"`.
+_DEMO_SAME_CELL_STEP = 0.0001
+# Streuung ueber Zellgrenzen hinweg -> `kind="multiple"`.
+_DEMO_OTHER_CELL_STEP = 0.02
+
+_DEMO_LANDMARK_NAME = "Eiffelturm"
+_DEMO_LANDMARK_CONFIDENCE = 0.91
+
+
+def _demo_gps(index: int) -> tuple[float, float] | None:
+    """Die Koordinate des Demo-Fotos `index` - deterministisch, ohne Zufall, damit zwei
+    Seeder-Laeufe byte-gleiche Werte liefern (specs/features/0051-gps-landmark-cluster-bildung.md).
+
+    Die Zuordnung folgt dem Cluster: das Landmark- und das Koordinaten-Cluster streuen INNERHALB
+    einer gerundeten Zelle, das "Mehrere Orte"-Cluster ueber Zellgrenzen hinweg, und das vierte
+    Cluster bekommt gar keine Koordinate. `None` heisst hier wie ueberall "kein Ort" - nie eine
+    halbe Koordinate."""
+    cluster = index % _DEMO_CLUSTER_COUNT
+    if cluster == _DEMO_NO_LOCATION_CLUSTER:
+        return None
+    step = index // _DEMO_CLUSTER_COUNT
+    spread = (
+        _DEMO_OTHER_CELL_STEP
+        if cluster == _DEMO_MULTIPLE_PLACES_CLUSTER
+        else _DEMO_SAME_CELL_STEP
+    )
+    return (
+        round(_DEMO_BASE_LAT + spread * step, 6),
+        round(_DEMO_BASE_LON + spread * step, 6),
+    )
 
 
 class DemoStateError(Exception):
@@ -452,19 +503,35 @@ async def _create_project(session: AsyncSession, spec: DemoProjectSpec) -> Proje
 
 
 async def _create_photos(
-    session: AsyncSession, project: Project, spec: DemoProjectSpec, cache_dir: Path
+    session: AsyncSession,
+    project: Project,
+    spec: DemoProjectSpec,
+    cache_dir: Path,
+    location_of: Callable[[int], tuple[float, float] | None] | None = None,
 ) -> list[Photo]:
     """Legt die Fotos eines Demo-Projekts an und schreibt ihre Bildvarianten ueber die ECHTE
-    thumbnails.py-Logik in den Cache - kein nachgebauter Cache-Schluessel."""
+    thumbnails.py-Logik in den Cache - kein nachgebauter Cache-Schluessel.
+
+    `location_of` liefert je Foto-Index die Koordinate (specs/features/0051-gps-landmark-cluster-
+    bildung.md). Bewusst als Parameter statt fest verdrahtet: nur das "bewertet"-Projekt braucht
+    Ortsdaten, und nur dort ist die Cluster-Zuordnung bekannt, aus der sich die vier
+    Anzeigezustaende ergeben. Ohne den Parameter bleibt jedes Foto ohne Koordinate - der
+    haeufigste reale Fall."""
     photos: list[Photo] = []
     for index in range(spec.photo_count):
         image_bytes = render_demo_image(slug=spec.slug, index=index)
+        gps = None if location_of is None else location_of(index)
         photo = Photo(
             project_id=project.id,
             relative_path=demo_relative_path(spec.slug, index),
             etag=demo_etag(spec.slug, index),
             content_length=len(image_bytes),
             taken_at=demo_taken_at(index),
+            # Beide Felder oder keines - nie eine halbe Koordinate (Paar-Invariante von
+            # `extract_gps`; die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie
+            # schriebe).
+            gps_lat=None if gps is None else gps[0],
+            gps_lon=None if gps is None else gps[1],
             last_modified=demo_taken_at(index),
         )
         session.add(photo)
@@ -579,7 +646,7 @@ async def _seed_rated_project(
 
     Rueckgabe: die Fotos und die Anzahl der Nutzer, fuer die Bewertungen geschrieben wurden."""
     project = await _create_project(session, spec)
-    photos = await _create_photos(session, project, spec, cache_dir)
+    photos = await _create_photos(session, project, spec, cache_dir, location_of=_demo_gps)
     session.add(
         _scan_run(
             project,
@@ -667,7 +734,7 @@ async def _seed_rated_project(
     # produktiven Schreibpfad).
     memberships: list[tuple[tuple[str, str], Photo, float, bool]] = []
     for index, (photo, category_key) in enumerate(zip(photos, CATEGORY_REGISTRY, strict=True)):
-        cluster_key = f"{spec.slug}-cluster-{index % 3}"
+        cluster_key = f"{spec.slug}-cluster-{index % _DEMO_CLUSTER_COUNT}"
         category_override = (
             _DEMO_OVERRIDE_CATEGORY_KEY if index == _DEMO_OVERRIDE_INDEX else None
         )
@@ -715,6 +782,22 @@ async def _seed_rated_project(
                 computed_at=_BASE_SCORING_AT,
             )
         )
+        # specs/features/0051-gps-landmark-cluster-bildung.md: GENAU EIN erkannter Name im
+        # Landmark-Cluster. Genau einer, nicht mehrere - `refine_clusters_by_landmark` teilt erst
+        # ab ZWEI verschiedenen Namen auf, und der Demo-Zustand soll den ungeteilten Cluster mit
+        # `kind="landmark"` zeigen, nicht seine Aufteilung. Die uebrigen Fotos des Clusters
+        # bekommen den Namen ueber `cluster_place` mit - genau das ist der Zustand, den die
+        # Sichtpruefung sehen soll.
+        if index == _DEMO_LANDMARK_CLUSTER:
+            session.add(
+                PhotoLandmarkDetection(
+                    photo_id=photo.id,
+                    name=_DEMO_LANDMARK_NAME,
+                    confidence=_DEMO_LANDMARK_CONFIDENCE,
+                    provider="demo-state",
+                    computed_at=_BASE_SCORING_AT,
+                )
+            )
         rank_score = _deterministic_unit_value(spec.slug, index, "rank")
         primary_key = category_override or category_key
         memberships.append(((cluster_key, primary_key), photo, rank_score, True))

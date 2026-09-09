@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -517,6 +517,33 @@ async def test_time_clustering_groups_photos_within_gap(
     }
     assert scores[close_a.id].cluster_key == scores[close_b.id].cluster_key
     assert scores[far.id].cluster_key != scores[close_a.id].cluster_key
+
+
+async def test_a_location_jump_splits_a_cluster_without_any_time_gap(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die VERDRAHTUNG (specs/features/0051-gps-landmark-cluster-bildung.md): dass
+    `assign_clusters` den Ortssprung trennt, pruefen die Unit-Tests in test_scoring.py - hier geht
+    es allein darum, dass `run_project_scoring` die gespeicherten Koordinaten ueberhaupt an die
+    Funktion weiterreicht. Ohne diese Durchreichung waere jeder Unit-Test gruen und das Feature
+    trotzdem wirkungslos."""
+    project = await _make_project(db_session)
+    base = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    eiffel = await _add_photo(db_session, project, "a.jpg", "etag-a", base)
+    trocadero = await _add_photo(db_session, project, "b.jpg", "etag-b", base)
+    # Eiffelturm <-> Trocadero, rund 700 m - genau der ausloesende Fall der Spec, und genau der,
+    # den die 2000 m aus dem urspruenglichen Vorschlag NICHT getrennt haetten.
+    eiffel.gps_lat, eiffel.gps_lon = 48.8584, 2.2945
+    trocadero.gps_lat, trocadero.gps_lon = 48.8620, 2.2885
+    trocadero.taken_at = base.replace(tzinfo=None) + timedelta(minutes=5)
+    await db_session.commit()
+    for i, photo in enumerate([eiffel, trocadero]):
+        _write_display_variant(tmp_path, photo, _distinct_photo_image(i))
+
+    await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    scores = {s.photo_id: s for s in (await db_session.execute(select(PhotoScore))).scalars()}
+    assert scores[eiffel.id].cluster_key != scores[trocadero.id].cluster_key
 
 
 async def test_gate_is_auto_confirmed_when_no_suggestions_are_found(
