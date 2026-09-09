@@ -361,10 +361,18 @@ class TestConfidenceDoesNotInfluenceCategorySelection:
         assert "detected_category_confidences" not in source
         assert "category_confidence" not in source
 
-    def test_the_resolved_category_is_identical_for_different_confidences(self) -> None:
-        """Zwei Laeufe mit identischen Kandidaten, aber unterschiedlichen Konfidenzen erzeugen
-        identische Kategorie und identische Rangfolge - `resolve_category` sieht die Zahlen gar
-        nicht."""
+    def test_the_resolved_category_is_independent_of_the_candidate_order(self) -> None:
+        """`resolve_category` entscheidet allein ueber `precedence`, nie ueber die Position eines
+        Kandidaten in der Liste: dieselbe Menge in umgekehrter Reihenfolge liefert dasselbe
+        Ergebnis (`menschen`, precedence 3, gewinnt gegen `landschaft` und `tier`).
+
+        Das ist die VORAUSSETZUNG dafuer, dass die Konfidenz nichts entscheiden kann - aber nicht
+        ihr Nachweis: dieser Test kennt gar keine Konfidenzen, weil `resolve_category` sie nie
+        sieht. Akzeptanzkriterium 12 wird an drei anderen Stellen abgesichert - dem Signaturtest
+        und der Abwesenheits-Assertion oben in dieser Klasse sowie dem eigentlichen Paartest
+        `test_worker_criterion_scoring.py::
+        test_the_confidence_columns_do_not_change_the_resolved_category_or_ranking`, der zwei
+        Laeufe mit identischen Kandidaten und GEGENSAETZLICHEN Konfidenzen gegeneinander stellt."""
         candidates = ["landschaft", "menschen", "tier"]
         assert resolve_category(candidates) == resolve_category(list(reversed(candidates)))
         assert resolve_category(candidates) == "menschen"
