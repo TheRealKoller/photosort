@@ -301,21 +301,24 @@ class TestVisionModelsByProvider:
         Story nicht."""
         assert any(len(models) >= 2 for models in VISION_MODELS_BY_PROVIDER.values())
 
-    def test_the_stronger_mistral_model_is_selectable(self) -> None:
-        """Akzeptanzkriterium woertlich: "darunter das staerkere Mistral-Modell, das den Anlass
-        dieser Story bildet". Bewusst gegen die AUSGESCHRIEBENE Modell-ID statt gegen
-        `MISTRAL_VISION_MODEL_8B` - ein Vergleich mit der Konstante bliebe gruen, wenn jemand
-        ihren Wert aendert.
+    def test_the_mistral_registry_is_exactly_the_curated_pair(self) -> None:
+        """specs/features/0369-mistral-small-loest-ministral-8b-ab.md, K1/K2/K3: VOLLE
+        Tupel-Gleichheit statt zweier Anwesenheits-Assertionen.
 
-        Der Punkt blieb in der umsetzenden Sitzung offen, weil die Mistral-Dokumentation dort
-        nicht erreichbar war und ADR 0059 Punkt 5 einen ungeprueften Preis verbietet."""
-        assert "ministral-8b-2512" in VISION_MODELS_BY_PROVIDER["mistral"]
+        Der erste Fall im Projekt, in dem ein waehlbarer Wert ZURUECKGENOMMEN statt ergaenzt wird
+        - und damit der Punkt, an dem eine Teilmengen-/Anwesenheitspruefung nicht mehr genuegt:
+        `in` haette das abgeloeste `ministral-8b-2512` nie herausgezwungen, und `>= 2` haelt auch
+        bei drei Modellen. Eine Assertion pinnt hier gleichzeitig die Waehlbarkeit des neuen
+        Modells (K1), das Verschwinden des alten (K2), die unveraenderte Voreinstellung an
+        Position 0 (K3) und die Reihenfolge "Voreinstellung zuerst".
 
-    def test_the_stronger_mistral_model_is_not_the_default(self) -> None:
-        """Gegenprobe zum Akzeptanzkriterium "ohne gesetzte Einstellung exakt wie bisher": das
-        staerkere Modell ist waehlbar, aendert aber nichts an der Voreinstellung (ADR 0025/ADR
-        0031 Punkt 2 bleiben unangetastet)."""
-        assert VISION_MODELS_BY_PROVIDER["mistral"].index("ministral-8b-2512") > 0
+        Bewusst gegen die AUSGESCHRIEBENEN Modell-IDs statt gegen `MISTRAL_VISION_MODEL`/
+        `MISTRAL_VISION_MODEL_SMALL` (bestehende Absicht aus Spec 0304): ein Vergleich mit den
+        Konstanten waere tautologisch und bliebe gruen, wenn jemand ihren WERT aendert."""
+        assert VISION_MODELS_BY_PROVIDER["mistral"] == (
+            "ministral-3b-2512",
+            "mistral-small-2603",
+        )
 
     def test_both_providers_offer_the_same_kind_of_choice(self) -> None:
         """Akzeptanzkriterium "beide Anbieter werden gleich behandelt; es entsteht kein Sonderweg

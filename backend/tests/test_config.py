@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from photosort.cloud_vision import (
     VISION_MODELS_BY_PROVIDER,
 )
 from photosort.config import Settings
+from photosort.pricing import estimate_usd_per_image
 
 
 def test_settings_have_sane_defaults() -> None:
@@ -345,20 +347,128 @@ def test_an_invalid_provider_with_a_set_model_still_raises_a_validation_error() 
         Settings(_env_file=None, landmark_provider="openai", landmark_model=ANTHROPIC_VISION_MODEL)
 
 
-def test_env_example_documents_every_selectable_model() -> None:
-    """specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, Akzeptanzkriterium "die neue
-    Einstellung ist dort dokumentiert, wo die bestehenden Betriebseinstellungen dokumentiert
-    sind, samt Voreinstellung und waehlbaren Werten": ohne diesen Test veraltet die dokumentierte
-    Auswahl beim ersten ergaenzten Modell, und der Betreiber erfaehrt von einer Moeglichkeit,
-    die es gibt, nichts.
+def test_landmark_model_rejects_the_withdrawn_mistral_model() -> None:
+    """specs/features/0369-mistral-small-loest-ministral-8b-ab.md, K6/S3: eine bestehende
+    Betreiberkonfiguration `LANDMARK_PROVIDER=mistral` + `LANDMARK_MODEL=ministral-8b-2512` bricht
+    den Start ab - kein stiller Rueckfall auf die Voreinstellung, keine Alias-Zuordnung auf das
+    Nachfolgemodell, kein Lauf mit einem anderen als dem konfigurierten Modell.
+
+    Der Fall braucht keinen eigenen Produktionscode: der Feldvalidator leistet ihn, sobald das
+    Modell die Registry verlaesst. Dieser Test pinnt genau das - mit dem TATSAECHLICH entfallenen
+    Wert statt einer erfundenen Fantasie-ID, denn nur dieser eine steht in bestehenden `.env`-
+    Dateien.
+
+    Geprueft wird zugleich der Meldungsinhalt aus K6: beanstandeter Wert, eingestellter Anbieter,
+    beide gueltigen Werte, Voreinstellung."""
+    with pytest.raises(ValidationError) as excinfo:
+        Settings(_env_file=None, landmark_provider="mistral", landmark_model="ministral-8b-2512")
+
+    message = str(excinfo.value)
+    assert "ministral-8b-2512" in message
+    assert "mistral" in message
+    for allowed in VISION_MODELS_BY_PROVIDER["mistral"]:
+        assert allowed in message, allowed
+
+
+# specs/features/0369-mistral-small-loest-ministral-8b-ab.md ab hier: der ZWEISEITIGE Doku-Test.
+#
+# Die abgeloeste Fassung (Spec 0304) forderte nur die ANWESENHEIT jedes waehlbaren Modells in
+# `.env.example`. Das sichert die Aufnahme eines Modells ab, nicht seine Ruecknahme: die Zeile zum
+# entfallenen `ministral-8b-2512` waere gruen stehengeblieben, und `docs/setup.md` hatte
+# ueberhaupt keinen Test. Beide Richtungen sind ab hier Pflicht, und beide betreiberseitigen
+# Artefakte werden gleich behandelt.
+#
+# Geltungsbereich ausdruecklich NUR diese beiden Dateien: `specs/**` und Quellkommentare duerfen
+# die Historie nennen und werden hier nicht geprueft.
+
+_OPERATOR_DOC_FILES = (".env.example", "docs/setup.md")
+
+# Ein Modell-ID-Kandidat ist ein Anbieter-Praefix plus mindestens ein Bindestrich-Segment. Die
+# Nachbedingung "endet auf eine Ziffer" trennt die IDs von den Spec-/ADR-Dateinamen, die in beiden
+# Dateien verlinkt sind (`0031-mistral-provider-option-cloud-landmark.md`) - jede heute waehlbare
+# ID traegt eine Versions-/Datumsziffer am Ende, und Teilpruefung (b) unten laesst still nicht zu,
+# dass eine kuenftige Namensfamilie aus diesem Muster herausfaellt.
+_MODEL_ID_CANDIDATE = re.compile(r"\b(?:claude|ministral|mistral)(?:-[a-z0-9]+)+")
+
+
+def _model_ids_in(text: str) -> set[str]:
+    return {
+        match.group(0)
+        for match in _MODEL_ID_CANDIDATE.finditer(text)
+        if match.group(0)[-1].isdigit()
+    }
+
+
+def _selectable_models() -> set[str]:
+    return {model for models in VISION_MODELS_BY_PROVIDER.values() for model in models}
+
+
+def _documented_estimate(model: str, provider: str) -> str:
+    """Der in der Betriebsdoku erwartete Betrag, ABGELEITET aus `estimate_usd_per_image` statt
+    abgeschrieben - sonst prueft der Test nur, dass zwei Stellen dieselbe handgepflegte Zahl
+    tragen, und eine Preisaenderung liesse die Doku still veralten.
+
+    Format `~$0,dddd` (deutsches Dezimalkomma, vier Nachkommastellen) - die Schreibweise, in der
+    beide Dateien die Betraege bereits fuehren. Die Bereichspruefung haelt das Format ehrlich: ab
+    einem Betrag von $0,1 je Bild rundeten vier Nachkommastellen die Aussage weg, und ein solches
+    Modell braucht eine bewusste Formatentscheidung statt einer stillen Erweiterung."""
+    estimate = estimate_usd_per_image(model, provider)
+
+    assert estimate is not None, (provider, model)
+    assert 0 < estimate < 0.1, (provider, model, estimate)
+    return f"~$0,{round(estimate * 10_000):04d}"
+
+
+@pytest.mark.parametrize("doc_file", _OPERATOR_DOC_FILES)
+def test_the_operator_docs_list_exactly_the_selectable_models(doc_file: str) -> None:
+    """Teilpruefung (a): MENGENGLEICHHEIT, nicht Anwesenheit. Ein ergaenztes Modell fehlt sonst in
+    der Doku (Betreiber erfaehrt nichts von der Moeglichkeit), ein zurueckgenommenes bleibt sonst
+    als Empfehlung stehen, die den Start scheitern laesst.
 
     Scheitert laut statt still, wenn die Datei nicht auffindbar ist."""
+    path = Path(__file__).resolve().parents[2] / doc_file
+
+    assert path.is_file(), f"{path} nicht gefunden"
+
+    assert _model_ids_in(path.read_text(encoding="utf-8")) == _selectable_models()
+
+
+def test_every_selectable_model_id_matches_the_documentation_pattern() -> None:
+    """Teilpruefung (b), Selbstschutz des Tests darueber: nur weil das Muster ALLE waehlbaren IDs
+    erfasst, ist seine Mengengleichheit eine Aussage. Eine kuenftige Namensfamilie, die aus dem
+    Muster faellt, engte die Doku-Pruefung sonst still ein - der Test bliebe gruen und pruefte
+    weniger."""
+    for model in _selectable_models():
+        assert _model_ids_in(model) == {model}, model
+
+
+@pytest.mark.parametrize("doc_file", _OPERATOR_DOC_FILES)
+def test_the_operator_docs_carry_the_derived_estimate_of_every_selectable_model(
+    doc_file: str,
+) -> None:
+    """Teilpruefung (c): die Kostenschaetzung je Bild steht in beiden Dateien und stimmt mit der
+    aus `estimate_usd_per_image` abgeleiteten ueberein.
+
+    Der Betreiber entscheidet ueber die Modellwahl anhand dieser Zahl; sie ist seit Spec 0296 die
+    einzige verbliebene Absicherung vor der kostenpflichtigen Aktion. Eine veraltete Zahl in der
+    Doku ist deshalb kein Schoenheitsfehler."""
+    path = Path(__file__).resolve().parents[2] / doc_file
+
+    assert path.is_file(), f"{path} nicht gefunden"
+    content = path.read_text(encoding="utf-8")
+
+    for provider, models in VISION_MODELS_BY_PROVIDER.items():
+        for model in models:
+            expected = _documented_estimate(model, provider)
+
+            assert expected in content, (doc_file, model, expected)
+
+
+def test_env_example_documents_the_landmark_model_variable() -> None:
+    """Die Variable selbst muss in `.env.example` als Platzhalter stehen - eine Modellliste ohne
+    die zugehoerige Zeile waere Prosa ohne Anfassbares."""
     env_example = Path(__file__).resolve().parents[2] / ".env.example"
 
     assert env_example.is_file(), f"{env_example} nicht gefunden"
-    content = env_example.read_text(encoding="utf-8")
 
-    assert "LANDMARK_MODEL=" in content
-    for models in VISION_MODELS_BY_PROVIDER.values():
-        for model in models:
-            assert model in content, model
+    assert "LANDMARK_MODEL=" in env_example.read_text(encoding="utf-8")

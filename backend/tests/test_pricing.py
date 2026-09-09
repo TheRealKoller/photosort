@@ -85,6 +85,17 @@ class TestComputeCostUsd:
 
         assert compute_cost_usd("ein-nie-bepreistes-modell", usage) is None
 
+    def test_the_withdrawn_mistral_model_has_no_price_left(self) -> None:
+        """specs/features/0369-mistral-small-loest-ministral-8b-ab.md, K2/S8: der Preiseintrag des
+        abgeloesten `ministral-8b-2512` ist VOLLSTAENDIG entfernt, nicht als "historischer" Wert
+        stehengeblieben.
+
+        Ausgeschriebene ID statt einer aus der Registry abgeleiteten Nicht-Mitgliedschaft: die
+        Aussage ist genau diese eine, tatsaechlich zurueckgenommene Modell-ID. K7 (Altlaeufe
+        behalten Modellangabe und Betrag) haengt NICHT an diesem Eintrag, sondern an den
+        eingefrorenen Lauf-Spalten (ADR 0051 Punkt 4)."""
+        assert compute_cost_usd("ministral-8b-2512", TokenUsage(1_000_000, 1_000_000)) is None
+
     def test_a_realistic_small_usage_stays_below_one_cent(self) -> None:
         cost = compute_cost_usd(ANTHROPIC_VISION_MODEL, TokenUsage(1_500, 60))
 
@@ -93,19 +104,27 @@ class TestComputeCostUsd:
 
 
 class TestModelPricingRegistry:
-    def test_every_selectable_model_has_a_price(self) -> None:
+    def test_the_price_table_covers_exactly_the_selectable_models(self) -> None:
         """Registry-Vollstaendigkeits-Invariante (analog CATEGORY_REGISTRY/CRITERION_REGISTRY) -
         der einzige automatisierte Schutz gegen einen Modellwechsel ohne Preispflege, und seit
         specs/features/0304-cloud-modell-je-anbieter-waehlbar.md zugleich der Schutz davor, dass
         ein WAEHLBARES Modell ohne Preis in die Auswahl geraet (ADR 0059 Punkt 4/5). Bewusst gegen
         `VISION_MODELS_BY_PROVIDER` statt gegen eine feste Liste: ein NEU aufgenommenes Modell
-        soll diesen Test zum Fehlschlagen bringen."""
+        soll diesen Test zum Fehlschlagen bringen.
+
+        MENGENGLEICHHEIT statt der frueheren Teilmengenpruefung `selectable <= set(MODEL_PRICING)`
+        (specs/features/0369-mistral-small-loest-ministral-8b-ab.md, K2/S8): `<=` sichert die
+        AUFNAHME eines Modells ab, nicht seine RUECKNAHME. Ein Preiseintrag zu einem nicht mehr
+        waehlbaren Modell haette keinen Leser (`compute_cost_usd` wird ausschliesslich mit
+        `settings.resolved_landmark_model()` aufgerufen), waere aber weiterhin eine gepflegte
+        Tatsachenbehauptung mit Quelle und `verified_on`-Stempel, die unbeaufsichtigt altert und
+        bei einer spaeteren Wiederaufnahme stillschweigend wieder gaelte."""
         selectable = {
             model for models in VISION_MODELS_BY_PROVIDER.values() for model in models
         }
 
         assert selectable, "keine waehlbaren Modelle in VISION_MODELS_BY_PROVIDER gefunden"
-        assert selectable <= set(MODEL_PRICING)
+        assert selectable == set(MODEL_PRICING)
 
     def test_all_prices_are_positive(self) -> None:
         """Ein Preis von 0 wuerde Befund (b) des Unvollstaendigkeits-Hinweises (ADR 0051 Punkt 5)
@@ -255,6 +274,27 @@ class TestEstimateUsdPerImage:
 
         assert default_estimate is not None and stronger_estimate is not None
         assert stronger_estimate > default_estimate
+
+    def test_the_stronger_mistral_model_is_pinned_to_its_literal_amount(self) -> None:
+        """specs/features/0369-mistral-small-loest-ministral-8b-ab.md, K5: $0,000504 je Bild fuer
+        `mistral-small-2603`, ausgeschrieben statt aus der Preistabelle abgeleitet.
+
+        Der Preis ist ASYMMETRISCH (0,15 Eingabe / 0,60 Ausgabe) - das erste Mal bei Mistral,
+        dessen beide Vorgaengermodelle symmetrisch bepreist waren. Ein vertauschtes Paar
+        (0,60/0,15) ergaebe $0,001746, ein versehentlich symmetrisch uebernommenes (0,15/0,15)
+        $0,00045; beide lagen weiterhin ueber der Voreinstellung ($0,0003) und blieben damit unter
+        JEDEM bestehenden Ordnungstest ("staerker => teurer") gruen. Nur dieser Literal-Pin plus
+        die Ungleichheits-Assertion faengt das.
+
+        `abs=1e-9` wie beim Voreinstellungs-Pin: die Assertion soll an einer fachlichen Aenderung
+        scheitern, nicht am Float-Rauschen."""
+        pricing = MODEL_PRICING["mistral-small-2603"]
+
+        assert pricing.input_usd_per_mtok != pricing.output_usd_per_mtok
+        assert pricing.output_usd_per_mtok > pricing.input_usd_per_mtok
+        assert estimate_usd_per_image("mistral-small-2603", "mistral") == pytest.approx(
+            0.000504, abs=1e-9
+        )
 
     def test_a_different_model_of_the_same_provider_yields_a_different_estimate(self) -> None:
         """Der Kern der Story: die Schaetzung folgt dem MODELL, nicht dem Anbieter. Waere sie
