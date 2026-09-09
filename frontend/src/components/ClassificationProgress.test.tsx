@@ -210,6 +210,26 @@ describe('ClassificationProgress: eigene Fortschrittsquellen je Teilschritt', ()
     expect(bar.hasAttribute('max')).toBe(false)
   })
 
+  it('behauptet bei unbekanntem Zähler keine 0, sondern zeigt den unbestimmten Balken', () => {
+    // `null` heisst "nicht erfasst". Ein `?? 0` behauptete hier "es ist noch nichts passiert" -
+    // eine Aussage, die niemand getroffen hat, und dieselbe Fehlerart wie ein stilles
+    // "0,00 USD" beim Betrag.
+    render(
+      <ClassificationProgress
+        run={run({
+          cloud_requested: false,
+          cloud_phases: [],
+          photos_total: 8,
+          photos_processed: null as unknown as number,
+        })}
+      />
+    )
+
+    const bar = screen.getAllByRole('progressbar')[0] as HTMLProgressElement
+    expect(bar.hasAttribute('value')).toBe(false)
+    expect(stepRow('criteria').textContent).not.toMatch(/0\/8/)
+  })
+
   it('kündigt den Fortschritt höflich an', () => {
     render(<ClassificationProgress run={run()} />)
 

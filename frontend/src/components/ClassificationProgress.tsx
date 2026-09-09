@@ -68,12 +68,15 @@ export function ClassificationProgress({ run }: ClassificationProgressProps) {
             </p>
           )}
           {step.total !== null &&
-            // `max={0}` ist als HTML-Attribut ungültig - im kurzen Fenster unmittelbar nach dem
-            // Auslösen steht `photos_total` noch auf 0. Dort der unbestimmte Balken, der ohnehin
-            // die ehrlichere Aussage ist ("läuft, Menge noch unbekannt").
-            (step.total > 0 ? (
-              <Progress className="h-1.5" value={step.processed ?? 0} max={step.total}>
-                {step.processed ?? 0}/{step.total}
+            // Zwei Gründe für den UNBESTIMMTEN Balken, beide dieselbe Regel:
+            // - `max={0}` ist als HTML-Attribut ungültig; im kurzen Fenster unmittelbar nach dem
+            //   Auslösen steht `photos_total` noch auf 0.
+            // - Ein `processed` von `null` heisst "nicht erfasst". Ein `?? 0` behauptete hier
+            //   "es ist noch nichts passiert" - dieselbe Fehlerart wie ein stilles "0,00 USD"
+            //   beim Betrag, nur eine Zeile weiter oben.
+            (step.total > 0 && step.processed !== null ? (
+              <Progress className="h-1.5" value={step.processed} max={step.total}>
+                {step.processed}/{step.total}
               </Progress>
             ) : (
               <Progress className="h-1.5" />

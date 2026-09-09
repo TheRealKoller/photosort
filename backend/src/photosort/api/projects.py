@@ -972,8 +972,14 @@ async def _build_classification_estimate(
     # Anbieter - ein Modellwechsel kann sie damit nicht mehr unbemerkt falsch machen.
     model = settings.resolved_landmark_model()
     price_per_image_usd = estimate_usd_per_image(model, provider)
-    # Die Summe der BEKANNTEN Anteile - bei unbekanntem Landmark-Anteil eine untere Schranke.
-    candidate_count = remote_category_candidate_count + (landmark_candidate_count or 0)
+    # Die Summe der BEKANNTEN Anteile - bei unbekanntem Landmark-Anteil ausdruecklich eine
+    # UNTERE SCHRANKE. Bewusst ueber ein `is not None` und nicht ueber ein `or 0`: die Regel
+    # "unbekannt ist nicht null" gilt in diesem Modul durchgaengig, und ein `or`-Kurzschluss
+    # sieht an einer Geldrechnung genau wie ihre Verletzung aus, auch wo er zufaellig dasselbe
+    # Ergebnis liefert.
+    candidate_count = remote_category_candidate_count
+    if landmark_candidate_count is not None:
+        candidate_count += landmark_candidate_count
     return ClassificationEstimateOut(
         candidate_count=candidate_count,
         remote_categories=_estimate_part(remote_category_candidate_count, price_per_image_usd),
