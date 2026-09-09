@@ -1,6 +1,6 @@
 # 0348 - Transparenz über den Klassifizierungsprozess
 
-**Status:** Accepted
+**Status:** Implemented ([PR #367](https://github.com/TheRealKoller/photosort/pull/367))
 **Erstellt:** 2026-09-09
 **Bezug:** [Issue #348](https://github.com/TheRealKoller/photosort/issues/348)
 
