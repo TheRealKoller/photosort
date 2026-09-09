@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,6 +24,7 @@ from photosort.cloud_vision import (
 )
 from photosort.landmark import LandmarkApiError, LandmarkDetection
 from photosort.models import (
+    ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
@@ -43,6 +45,7 @@ from photosort.models import (
 from photosort.pricing import compute_cost_usd
 from photosort.thumbnails import display_path
 from photosort.worker import _select_landmark_candidates, run_criterion_scoring, run_project_scoring
+from tests.run_bookkeeping import assert_call_bookkeeping_invariant
 
 
 async def _make_project(session: AsyncSession, *, name: str = "Costa Rica") -> Project:
@@ -3519,6 +3522,7 @@ async def _run_with_landmark_client(
     client: object,
     *,
     use_cloud: bool = True,
+    run: CriterionScoringRun | None = None,
 ) -> CriterionScoringRun:
     return await run_criterion_scoring(
         db_session,
@@ -3531,6 +3535,7 @@ async def _run_with_landmark_client(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda _model: client,
+        run=run,
         use_cloud=use_cloud,
     )
 
@@ -3948,3 +3953,447 @@ async def test_the_confidence_columns_do_not_change_the_resolved_category_or_ran
 
     assert category_high_landscape == category_high_people == "menschen"
     assert position_high_landscape == position_high_people
+
+
+# --------------------------------------------------------------------------------------------
+# specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
+# teilschritte-und-laufeigene-cloud-bilanz.md Punkt 2: die LIVE-Zaehler der Landmark-Phase.
+#
+# Grundmuster aller Tests hier: der Landmark-Client schnappschuesst bei JEDEM Aufruf den Zustand
+# der Lauf-Zeile. Assertiert wird ueber die Schnappschussliste, nicht ueber den Endzustand - "der
+# Fortschritt bewegt sich waehrend des Laufs mit" ist am Endzustand grundsaetzlich nicht
+# nachweisbar.
+# --------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _LandmarkSnapshot:
+    phase: ClassificationPhase | None
+    photos_total: int | None
+    photos_processed: int | None
+    failed_calls: int | None
+    api_calls: int | None
+    model: str | None
+    cost_usd: float | None
+    last_progress_at: datetime
+
+
+def _snapshot(run: CriterionScoringRun) -> _LandmarkSnapshot:
+    return _LandmarkSnapshot(
+        phase=run.phase,
+        photos_total=run.landmark_photos_total,
+        photos_processed=run.landmark_photos_processed,
+        failed_calls=run.landmark_failed_calls,
+        api_calls=run.landmark_api_calls,
+        model=run.landmark_model,
+        cost_usd=run.landmark_cost_usd,
+        last_progress_at=run.last_progress_at,
+    )
+
+
+class SnapshottingLandmarkClient:
+    """Wie PerPhotoLandmarkClient, zeichnet zusaetzlich vor JEDEM Aufruf den Zustand der
+    Lauf-Zeile auf. Die Zeile wird dem Test vorab uebergeben (`run=`-Parameter von
+    run_criterion_scoring) - sonst haette der Client waehrend des Laufs keinen Zugriff auf sie."""
+
+    def __init__(
+        self, run: CriterionScoringRun, results: list[LandmarkDetection | Exception]
+    ) -> None:
+        self._run = run
+        self._results = results
+        self.snapshots: list[_LandmarkSnapshot] = []
+
+    async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+        self.snapshots.append(_snapshot(self._run))
+        result = self._results[len(self.snapshots) - 1]
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+async def _prepared_run(
+    session: AsyncSession, project: Project, scoring_run: ScoringRun
+) -> CriterionScoringRun:
+    """Legt die Lauf-Zeile VOR dem Aufruf an und reicht sie ueber `run=` hinein - dasselbe, was
+    run_classification produktiv tut (ADR 0050 Punkt 3). Der Test bekommt damit eine Referenz auf
+    genau die Zeile, die der Lauf fortschreibt."""
+    run = CriterionScoringRun(
+        project_id=project.id,
+        scoring_run_id=scoring_run.id,
+        status=ScanStatus.RUNNING,
+        cloud_requested=True,
+    )
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    return run
+
+
+def _unbuildable_landmark_client_builder(model: str) -> NoReturn:
+    raise RuntimeError("simulierter Modell-Ladefehler")
+
+
+class TestLandmarkPhaseLiveCounters:
+    """ADR 0068 Punkt 2 - die drei Zahlen, die die Story WAEHREND eines Cloud-Teilschritts
+    verlangt: Fortschritt, abgesetzte Aufrufe, Fehlschlaege."""
+
+    async def test_the_counters_are_set_to_zero_when_the_phase_is_entered(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`0` und nicht `None`: `NULL` heisst "Phase nicht betreten", `0` heisst "betreten,
+        noch nichts passiert". Ohne das Setzen beim Betreten waere der Marker
+        `landmark_photos_total` erst am Phasenende da - die Oberflaeche saehe den Teilschritt
+        genau dann nicht, wenn er laeuft."""
+        monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 1)
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=3
+        )
+        run = await _prepared_run(db_session, project, scoring_run)
+        client = SnapshottingLandmarkClient(run, [_detection_with_usage(10, 1)] * 3)
+
+        await _run_with_landmark_client(
+            db_session, project, scoring_run, tmp_path, client, run=run
+        )
+
+        first = client.snapshots[0]
+        assert first.photos_total == 3
+        assert first.photos_processed == 0
+        assert first.failed_calls == 0
+        assert first.phase is ClassificationPhase.LANDMARK
+
+    async def test_the_processed_counter_grows_block_by_block(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """DER Nachweis "der Fortschritt bewegt sich mit" (geschaerftes Akzeptanzkriterium:
+        Fortschreibung mindestens einmal je parallel abgearbeitetem Aufruf-Block)."""
+        monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 1)
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=3
+        )
+        run = await _prepared_run(db_session, project, scoring_run)
+        client = SnapshottingLandmarkClient(run, [_detection_with_usage(10, 1)] * 3)
+
+        await _run_with_landmark_client(
+            db_session, project, scoring_run, tmp_path, client, run=run
+        )
+
+        assert [snapshot.photos_processed for snapshot in client.snapshots] == [0, 1, 2]
+        assert run.landmark_photos_processed == 3
+
+    async def test_the_live_counters_are_committed_at_every_block_end_not_only_at_the_end(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Eine Attributaenderung ist noch keine Sichtbarkeit: die Oberflaeche pollt ueber eine
+        ANDERE Verbindung und sieht ausschliesslich Committetes. Ohne diesen Test bliebe "die
+        pollende Oberflaeche sieht den Fortschritt" unbelegt."""
+        monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 1)
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=3
+        )
+        run = await _prepared_run(db_session, project, scoring_run)
+        committed: list[tuple[int | None, int | None]] = []
+        real_commit = db_session.commit
+
+        async def _recording_commit() -> None:
+            await real_commit()
+            committed.append((run.landmark_photos_processed, run.landmark_failed_calls))
+
+        monkeypatch.setattr(db_session, "commit", _recording_commit)
+        client = SnapshottingLandmarkClient(
+            run,
+            [
+                _detection_with_usage(10, 1),
+                LandmarkApiError("simulierter Cloud-Fehler"),
+                _detection_with_usage(10, 1),
+            ],
+        )
+
+        await _run_with_landmark_client(
+            db_session, project, scoring_run, tmp_path, client, run=run
+        )
+
+        assert (1, 0) in committed
+        assert (2, 1) in committed
+        assert (3, 1) in committed
+
+    async def test_last_progress_at_advances_during_the_landmark_phase(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """DER geschlossene Watchdog-Defekt: bis hierher hatte die Landmark-Phase keinen einzigen
+        Commit-Punkt vor dem `finally`, und `reap_stalled_runs` setzte einen Lauf mit mehr als
+        STALL_THRESHOLD (15 min) Landmark-Arbeit auf FAILED - OHNE die Coroutine abzubrechen. Der
+        Lauf rief danach unveraendert weiter kostenpflichtig beim Anbieter an, waehrend die
+        Oberflaeche "fehlgeschlagen" sagte.
+
+        Bewusst KEIN zweiter Testfall in test_worker_reap_stalled_runs.py: `reap_stalled_runs`
+        liest ausschliesslich `last_progress_at`, ein Test dort verdoppelte diese Zusage."""
+        monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 1)
+        ticks = iter(datetime(2030, 1, 1, 12, 0, second) for second in range(0, 60))
+        monkeypatch.setattr(worker, "_now_utc", lambda: next(ticks))
+
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=3
+        )
+        run = await _prepared_run(db_session, project, scoring_run)
+        client = SnapshottingLandmarkClient(run, [_detection_with_usage(10, 1)] * 3)
+
+        await _run_with_landmark_client(
+            db_session, project, scoring_run, tmp_path, client, run=run
+        )
+
+        stamps = [snapshot.last_progress_at for snapshot in client.snapshots]
+        assert stamps == sorted(stamps)
+        assert stamps[-1] > stamps[0], (
+            "last_progress_at hat sich waehrend der Landmark-Phase nicht bewegt - ein "
+            "arbeitender Lauf sieht damit fuer reap_stalled_runs aus wie ein stehender."
+        )
+
+    async def test_failed_single_calls_are_counted_while_the_run_is_still_going(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Eigenes Akzeptanzkriterium: "Fehlgeschlagene Einzelaufrufe sind BEREITS WAEHREND des
+        Laufs erkennbar, nicht erst nach seinem Abschluss"."""
+        monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 1)
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=4
+        )
+        run = await _prepared_run(db_session, project, scoring_run)
+        client = SnapshottingLandmarkClient(
+            run,
+            [
+                _detection_with_usage(10, 1),
+                LandmarkApiError("simulierter Cloud-Fehler"),
+                _detection_with_usage(10, 1),
+                _detection_with_usage(10, 1),
+            ],
+        )
+
+        await _run_with_landmark_client(
+            db_session, project, scoring_run, tmp_path, client, run=run
+        )
+
+        assert [snapshot.failed_calls for snapshot in client.snapshots] == [0, 0, 1, 1]
+
+    async def test_the_model_is_written_at_the_phase_start_while_the_amount_is_not(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Beide Haelften der ADR-Zusage in EINEM Test (ADR 0068 Punkt 6): Modell/Anbieter stehen
+        schon WAEHREND des Teilschritts da (sonst koennte die laufende Anzeige nicht sagen, wohin
+        die Aufrufe gehen), der BETRAG bleibt am Phasenende eingefroren (ADR 0051 Punkt 4).
+
+        Der Sentinel-Modellwert kommt aus einer NICHT voreingestellten Einstellung - mit dem
+        Default waere die Assertion tautologisch (der Wert stuende dann auch bei einem falsch
+        gelesenen `settings` da)."""
+        stronger = VISION_MODELS_BY_PROVIDER["anthropic"][1]
+        monkeypatch.setattr(worker.settings, "landmark_model", stronger)
+        monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 1)
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=2
+        )
+        run = await _prepared_run(db_session, project, scoring_run)
+        client = SnapshottingLandmarkClient(run, [_detection_with_usage(1_000, 10)] * 2)
+
+        await _run_with_landmark_client(
+            db_session, project, scoring_run, tmp_path, client, run=run
+        )
+
+        first = client.snapshots[0]
+        assert first.model == stronger
+        assert first.api_calls == 0
+        assert first.cost_usd == 0
+        assert run.landmark_api_calls == 2
+        assert run.landmark_cost_usd is not None and run.landmark_cost_usd > 0
+
+    @pytest.mark.parametrize(
+        "use_cloud,consent,photo_count",
+        [
+            pytest.param(False, True, 1, id="cloud-checkbox-aus"),
+            pytest.param(True, False, 1, id="einwilligung-aus"),
+            pytest.param(True, True, 0, id="keine-fotos"),
+        ],
+    )
+    async def test_an_untouched_landmark_phase_leaves_null_not_zero(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        use_cloud: bool,
+        consent: bool,
+        photo_count: int,
+    ) -> None:
+        """Die Vierfeldertafel additiver Lauf-Spalten (ADR 0051 Punkt 3): `NULL` heisst "Phase
+        nicht betreten", `0` heisst "betreten, nichts passiert". Ohne die Unterscheidung koennte
+        die Bilanz einen Lauf ohne Cloud-Teilschritt nicht von einem mit leerer Kandidatenmenge
+        trennen und zeigte fuer beide dieselben Nullzeilen."""
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=photo_count
+        )
+        project.cloud_vision_detection_enabled = consent
+        await db_session.commit()
+
+        run = await _run_with_landmark_client(
+            db_session,
+            project,
+            scoring_run,
+            tmp_path,
+            RecordingLandmarkClient(),
+            use_cloud=use_cloud,
+        )
+
+        assert run.landmark_photos_total is None
+        assert run.landmark_photos_processed is None
+        assert run.landmark_failed_calls is None
+        assert_call_bookkeeping_invariant(run)
+
+    async def test_an_unbuildable_client_leaves_the_counters_null_too(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der vierte NULL-Fall: die Phase wird betreten, der Client ist aber nicht
+        konstruierbar - es findet kein einziger Aufruf statt, also gibt es auch nichts zu
+        zaehlen."""
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=1
+        )
+
+        run = await run_criterion_scoring(
+            db_session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
+            build_detector=_no_face_detector,
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_landscape_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+            build_landmark_client=_unbuildable_landmark_client_builder,
+            use_cloud=True,
+        )
+
+        assert run.landmark_photos_total is None
+        assert run.landmark_failed_calls is None
+        assert_call_bookkeeping_invariant(run)
+
+
+class TestLandmarkCallBookkeepingInvariant:
+    """ADR 0068 Punkt 2: `photos_processed == api_calls + failed_calls` - die Klammer, die den
+    laufend fortgeschriebenen Zaehler und die eingefrorene Kosten-Buchfuehrung zusammenhaelt."""
+
+    async def test_all_calls_successful(self, db_session: AsyncSession, tmp_path: Path) -> None:
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=3
+        )
+        client = PerPhotoLandmarkClient([_detection_with_usage(10, 1)] * 3)
+
+        run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+        assert run.landmark_photos_processed == 3
+        assert run.landmark_failed_calls == 0
+        assert_call_bookkeeping_invariant(run)
+
+    async def test_mixed_success_and_failure(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=3
+        )
+        client = PerPhotoLandmarkClient(
+            [
+                _detection_with_usage(10, 1),
+                LandmarkApiError("simulierter Cloud-Fehler"),
+                _detection_with_usage(10, 1),
+            ]
+        )
+
+        run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+        assert run.landmark_photos_processed == 3
+        assert run.landmark_api_calls == 2
+        assert run.landmark_failed_calls == 1
+        assert_call_bookkeeping_invariant(run)
+
+    async def test_every_call_failed(self, db_session: AsyncSession, tmp_path: Path) -> None:
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=2
+        )
+        client = PerPhotoLandmarkClient([LandmarkApiError("a"), LandmarkApiError("b")])
+
+        run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+        assert run.landmark_photos_processed == 2
+        assert run.landmark_api_calls == 0
+        assert run.landmark_failed_calls == 2
+        assert_call_bookkeeping_invariant(run)
+
+    async def test_a_run_that_fails_after_the_cloud_phase_keeps_the_invariant(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Erweiterung von test_costs_survive_a_run_that_fails_after_the_landmark_block: das Geld
+        war ausgegeben, also muss auch die Zaehler-Bilanz stimmen."""
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=2
+        )
+        client = PerPhotoLandmarkClient(
+            [_detection_with_usage(1_000, 10), LandmarkApiError("simulierter Cloud-Fehler")]
+        )
+
+        def _explode(*args: object, **kwargs: object) -> NoReturn:
+            raise RuntimeError("simulierter Fehlschlag nach der Cloud-Phase")
+
+        monkeypatch.setattr(worker, "rank_photos", _explode)
+
+        run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+        assert run.status == ScanStatus.FAILED
+        assert_call_bookkeeping_invariant(run)
+
+    async def test_a_cancelled_block_counts_neither_as_processed_nor_as_an_api_call(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Die Implementierungsvorgabe, die aus der Invariante folgt: der Live-Zaehler wird AM
+        BLOCKENDE fortgeschrieben, nie beim Betreten. Wuerde er beim Betreten hochgezaehlt,
+        stuende nach einem Abbruch mitten im Block ein `processed` da, dem weder ein Aufruf noch
+        ein Fehlschlag gegenuebersteht."""
+        monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 1)
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=2
+        )
+        run = await _prepared_run(db_session, project, scoring_run)
+
+        with pytest.raises(asyncio.CancelledError):
+            await _run_with_landmark_client(
+                db_session,
+                project,
+                scoring_run,
+                tmp_path,
+                CancellingLandmarkClient(),
+                run=run,
+            )
+
+        assert run.landmark_photos_processed == 0
+        assert run.landmark_api_calls == 0
+
+    async def test_the_invariant_is_not_claimed_for_a_run_cancelled_inside_a_block(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Die Ausnahme wird ausdruecklich festgehalten statt beim ersten Abbruch-Testfall
+        stillschweigend gestrichen zu werden: die Invariante gilt fuer VOLLSTAENDIG abgearbeitete
+        Bloecke. Nach einem Abbruch mitten im ersten Block ist sie hier trivialerweise erfuellt,
+        weil gar kein Block fertig wurde - der Testfall haelt genau das fest, statt die
+        Erwartung spaeter kommentarlos zu streichen."""
+        monkeypatch.setattr(worker.settings, "landmark_api_concurrency", 1)
+        project, scoring_run, _photos = await _landmark_cost_setup(
+            db_session, tmp_path, photo_count=2
+        )
+        run = await _prepared_run(db_session, project, scoring_run)
+
+        with pytest.raises(asyncio.CancelledError):
+            await _run_with_landmark_client(
+                db_session,
+                project,
+                scoring_run,
+                tmp_path,
+                CancellingLandmarkClient(),
+                run=run,
+            )
+
+        assert run.landmark_failed_calls == 0
+        assert_call_bookkeeping_invariant(run)

@@ -1503,6 +1503,14 @@ async def run_criterion_scoring(
         # projektweite Einwilligung vorliegt (Security-Muss-Kriterium der Spec: "kein einziger
         # Cloud-Aufruf im gesamten Durchlauf").
         if use_cloud and project.cloud_vision_detection_enabled and rows:
+            # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 1: die
+            # Sehenswuerdigkeits-Erkennung ist ab hier ein EIGENER, benannter Teilschritt statt
+            # eines unsichtbaren Teils der Kriterien-Phase. Vorher stand `phase` hier weiter auf
+            # `criteria`, waehrend `photos_processed` bereits auf `photos_total` stand - ein
+            # langer Durchlauf war in dieser Phase von einem haengengebliebenen nicht zu
+            # unterscheiden.
+            run.phase = ClassificationPhase.LANDMARK
+            await session.commit()
             # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 7: das
             # Modell wird EINMAL je Cloud-Phase aufgeloest und danach durchgereicht - derselbe
             # lokale Wert baut den Client, rechnet die Ist-Kosten und landet in der Modellspalte
@@ -1520,8 +1528,19 @@ async def run_criterion_scoring(
                     "fehlgeschlagen)."
                 )
             if landmark_client is not None:
+                # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 6: die
+                # Modellspalte wandert vom `finally` an den PHASENANFANG. Es bleibt derselbe
+                # lokale Wert, der den Client gebaut hat und gleich die Kosten rechnen wird (ADR
+                # 0059 Punkt 7 unveraendert) - nur frueher committet, damit die Oberflaeche schon
+                # WAEHREND des Teilschritts sagen kann, wohin die Aufrufe gehen. Der BETRAG
+                # bleibt im `finally` und am Phasenende eingefroren (ADR 0051 Punkt 4).
+                run.landmark_model = landmark_model
+                await session.commit()
                 landmark_failures = 0
                 landmark_attempts = 0
+                # ADR 0068 Punkt 2: der laufend fortgeschriebene Fortschritt der Phase, streng
+                # getrennt von der Kosten-Buchfuehrung unten.
+                landmark_processed = 0
                 # specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 1: Ist-Kosten-
                 # Buchfuehrung dieser Phase. Summiert wird ueber die ERFOLGREICHEN Ergebnisse -
                 # ein fehlgeschlagener Aufruf liefert keinen auswertbaren Verbrauch (ADR 0051
@@ -1541,6 +1560,17 @@ async def run_criterion_scoring(
                     photos_by_id = {photo.id: photo for photo, _score in rows}
                     landmark_concurrency = settings.landmark_api_concurrency
                     landmark_attempts = len(landmark_candidate_ids)
+                    # ADR 0068 Punkt 2: die Live-Zaehler werden beim BETRETEN der Phase auf `0`
+                    # gesetzt (nicht bei der Zeilenanlage) - `NULL` bleibt damit die Aussage
+                    # "diesen Teilschritt gab es in diesem Lauf nicht", `0` heisst "gab es,
+                    # nichts zu tun". `landmark_photos_total` ist zugleich der Marker, an dem die
+                    # API entscheidet, ob dieser Lauf einen Landmark-Eintrag in `cloud_phases`
+                    # bekommt - er muss deshalb schon VOR dem ersten Aufruf dastehen, sonst saehe
+                    # die Oberflaeche den Teilschritt genau dann nicht, wenn er laeuft.
+                    run.landmark_photos_total = landmark_attempts
+                    run.landmark_photos_processed = 0
+                    run.landmark_failed_calls = 0
+                    await session.commit()
                     for start in range(0, len(landmark_candidate_ids), landmark_concurrency):
                         block_ids = landmark_candidate_ids[start : start + landmark_concurrency]
                         results = await asyncio.gather(
@@ -1616,6 +1646,28 @@ async def run_criterion_scoring(
                                 await _upsert_landmark_detection(
                                     session, photo_id, detection, now, settings.landmark_provider
                                 )
+
+                        # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 2:
+                        # der erste Commit-Punkt INNERHALB der Landmark-Phase - bis hierher gab
+                        # es nur den `finally` unten. Fortgeschrieben wird AM BLOCKENDE, nie beim
+                        # Betreten des Blocks: sonst stuende nach einem Abbruch mitten im Block
+                        # ein `processed` da, dem weder ein Aufruf noch ein Fehlschlag
+                        # gegenuebersteht (Invariante `photos_processed == api_calls +
+                        # failed_calls`).
+                        #
+                        # `last_progress_at` gehoert VERBINDLICH dazu und schliesst einen
+                        # bestehenden Defekt: die Landmark-Phase hat den Zeitstempel bisher gar
+                        # nicht angefasst, `reap_stalled_runs` (ADR 0019) setzte einen Lauf mit
+                        # mehr als STALL_THRESHOLD (15 min) Landmark-Arbeit auf FAILED - OHNE die
+                        # Coroutine abzubrechen. Der Lauf rief danach unveraendert weiter
+                        # kostenpflichtig beim Anbieter an, waehrend die Oberflaeche
+                        # "fehlgeschlagen" sagte, und die Kostenerfassung des `finally` schrieb
+                        # ihren Betrag auf eine bereits als gescheitert ausgewiesene Zeile.
+                        landmark_processed += len(block_ids)
+                        run.landmark_photos_processed = landmark_processed
+                        run.landmark_failed_calls = landmark_failures
+                        run.last_progress_at = _now_utc()
+                        await session.commit()
                 finally:
                     aclose = getattr(landmark_client, "aclose", None)
                     if aclose is not None:
@@ -1639,11 +1691,10 @@ async def run_criterion_scoring(
                         ),
                     )
                     # Spec 0304/ADR 0059 Punkt 6: die Preisgrundlage des eben eingefrorenen
-                    # Betrags, an derselben Stelle und im selben Commit gespeichert - ohne sie ist
-                    # ein historischer Betrag weder erklaerbar noch nach einer erkannten
-                    # Preiskorrektur nachrechenbar, und ein Modellvergleich waere nicht
-                    # auswertbar.
-                    run.landmark_model = landmark_model
+                    # Betrags. `run.landmark_model` steht seit Spec 0348/ADR 0068 Punkt 6 bereits
+                    # vom PHASENANFANG her da (oben, direkt nach der Client-Konstruktion) - es
+                    # ist derselbe lokale `landmark_model`, aus dem hier der Betrag entsteht, nur
+                    # frueher sichtbar. Deshalb keine zweite Zuweisung an dieser Stelle.
                     await _commit_phase_costs(session)
                 # ADR 0050 Punkt 4: Zaehl-Zusammenfassung statt N Einzelmeldungen - die
                 # Einzelfehler bleiben pro Foto ueber photo_cloud_vision_errors abrufbar
@@ -1654,6 +1705,15 @@ async def run_criterion_scoring(
                         f"Sehenswuerdigkeits-Erkennung: {landmark_failures} von "
                         f"{landmark_attempts} Fotos fehlgeschlagen.",
                     )
+
+        # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 1: der
+        # RANKING-Teilschritt (Kategorieableitung + rank_photos je Partition + Schreiben der
+        # PhotoRanking-Zeilen). Er gehoert fachlich zur Kriterien-Phase, laeuft aber NACH der
+        # Landmark-Phase - ohne eigenen Namen bliebe `phase` hier auf `landmark` bei 100 %
+        # Fortschritt stehen (dasselbe "haengt oder laeuft?"-Symptom, nur eine Phase spaeter)
+        # oder muesste auf `criteria` zurueckspringen. Der vierte Wert macht die Abfolge monoton.
+        run.phase = ClassificationPhase.RANKING
+        await session.commit()
 
         # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 5: laedt die bereits
         # vorhandenen Klassifikations-Zeilen (seit Spec 0296 im Regelfall aus Phase 1 DESSELBEN
@@ -1900,6 +1960,8 @@ async def run_remote_category_classification(
         [str], CategoryDetectionClientLike
     ] = build_category_classification_client,
     build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
+    *,
+    run: RemoteCategoryClassificationRun | None = None,
 ) -> RemoteCategoryClassificationRun:
     """Eigenstaendiger, expliziter Job (specs/features/0055-remote-kategorie-klassifizierung-mit-
     kostenschaetzung.md, ADR 0032 Punkt 5) - KEIN Teil von run_criterion_scoring, eigene Run-
@@ -1908,11 +1970,20 @@ async def run_remote_category_classification(
     `project.cloud_vision_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread,
     dokumentierte Vereinfachung analog run_criterion_scoring) - ist der Schalter aus (Default)
     ODER der Kandidatenpool leer, wird `build_client` GAR NICHT ERST aufgerufen (Security-Muss-
-    Kriterium, geteiltes Consent-Gate mit `landmark`)."""
-    run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.RUNNING)
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
+    Kriterium, geteiltes Consent-Gate mit `landmark`).
+
+    specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 3: `run` ist der bereits
+    von run_classification angelegte Lauf-Datensatz - exakt das Muster, das ADR 0050 Punkt 3 fuer
+    CriterionScoringRun/run_criterion_scoring eingefuehrt hat, eine Ebene tiefer und aus demselben
+    Grund. Der uebergeordnete Klassifizierungslauf setzt seinen Fremdschluessel darauf, BEVOR
+    Phase 1 startet; ohne diesen frueheren Anlagezeitpunkt haette die Oberflaeche waehrend der
+    Remote-Phase keinen Anker fuer den laufenden Vorgang. Wird keiner uebergeben (Direktaufruf,
+    Tests), legt diese Funktion die Zeile wie bisher selbst an."""
+    if run is None:
+        run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.RUNNING)
+        session.add(run)
+        await session.commit()
+        await session.refresh(run)
 
     try:
         candidates = await select_remote_category_candidates(session, project.id)
@@ -1955,6 +2026,17 @@ async def run_remote_category_classification(
         api_calls = 0
         input_tokens = 0
         output_tokens = 0
+        # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 2: der Live-Zaehler
+        # der Fehlschlaege - streng getrennt von `api_calls` daneben, das die Kosten-Buchfuehrung
+        # ist und einmal am Phasenende geschrieben wird.
+        failed_calls = 0
+        # ADR 0068 Punkt 6: Modell und Zaehler stehen beim BETRETEN der Phase da, nicht erst im
+        # `finally` - `failed_calls = 0` heisst "erfasst, noch nichts fehlgeschlagen" und
+        # unterscheidet sich damit von `NULL` = "diese Phase fand nicht statt". Der BETRAG bleibt
+        # am Phasenende eingefroren (ADR 0051 Punkt 4).
+        run.model = model
+        run.failed_calls = failed_calls
+        await session.commit()
 
         try:
             snapshot_rows = (await session.execute(select(FineLabel))).scalars().all()
@@ -1994,6 +2076,12 @@ async def run_remote_category_classification(
                         # ADR 0035 Punkt 3/Copilot-Review-Fund PR #255: type(exc).__name__/
                         # str(exc) GENAU EINMAL berechnet, an beide Senken (Logger, DB)
                         # weitergereicht - keine zweite Auswertung.
+                        #
+                        # Spec 0348/ADR 0068 Punkt 2: das Zaehlen fuehrt AUSDRUECKLICH keine
+                        # weitere Logzeile ein - der Fehlergrund bleibt, wo er liegt (Logzeile
+                        # unten mit fester Meldung, photo_cloud_vision_errors, laufweite
+                        # cloud_error_message). Der Zaehler ist eine Anzahl, kein Fremdtext.
+                        failed_calls += 1
                         exc_type_name = type(result).__name__
                         exc_message = str(result)
                         _log_cloud_vision_failure(
@@ -2095,6 +2183,11 @@ async def run_remote_category_classification(
 
                 processed += len(block)
                 run.photos_processed = processed
+                # Spec 0348/ADR 0068 Punkt 2: der Live-Zaehler wird am BEREITS VORHANDENEN
+                # Block-Commit-Punkt mitgeschrieben - am Blockende, nie beim Betreten des Blocks
+                # (sonst stuende nach einem Abbruch mitten im Block ein `processed` da, dem weder
+                # ein Aufruf noch ein Fehlschlag gegenuebersteht).
+                run.failed_calls = failed_calls
                 run.last_progress_at = _now_utc()
                 await session.commit()
         finally:
@@ -2112,8 +2205,10 @@ async def run_remote_category_classification(
                 model,
                 TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
             )
-            # Spec 0304/ADR 0059 Punkt 6, Begruendung wortgleich zur Landmark-Phase oben.
-            run.model = model
+            # Spec 0304/ADR 0059 Punkt 6, Begruendung wortgleich zur Landmark-Phase oben:
+            # `run.model` steht seit Spec 0348/ADR 0068 Punkt 6 bereits vom Phasenanfang her da
+            # (derselbe lokale `model`, aus dem hier der Betrag entsteht) - keine zweite
+            # Zuweisung.
             await _commit_phase_costs(session)
 
         run.status = ScanStatus.SUCCESS
