@@ -2030,11 +2030,27 @@ async def run_remote_category_classification(
                     # Kandidatenliste - nie die Rohliste des Modells (Security-Muss-Kriterium:
                     # sonst wanderte unvalidierter Fremdtext ueber einen zweiten Kanal in
                     # API-Antwort und UI).
+                    # specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 3:
+                    # `resolve_category` bleibt unveraendert die Quelle des Schluessels - die
+                    # Konfidenz geht in KEINE Auswahl ein (ADR 0067 Punkt 1). Der Skalar entsteht
+                    # per LOOKUP aus der bereits gebauten Abbildung, nicht durch eine zweite
+                    # Berechnung: eine zweite Berechnung driftet, und die Invariante
+                    # `category_confidence == detected_category_confidences.get(category_key)` ist
+                    # die einzige Rechtfertigung der redundanten Spiegelspalte. `None` heisst
+                    # "keine Angabe", nie `0.0` - eine fehlende oder unplausible Konfidenz ist nie
+                    # ein Grund, ein Foto zu ueberspringen oder den Lauf scheitern zu lassen.
+                    category_key = resolve_category(classification.categories)
                     session.add(
                         PhotoCategoryClassification(
                             photo_id=photo.id,
-                            category_key=resolve_category(classification.categories),
+                            category_key=category_key,
                             detected_categories=list(classification.categories),
+                            detected_category_confidences=dict(
+                                classification.category_confidences
+                            ),
+                            category_confidence=classification.category_confidences.get(
+                                category_key
+                            ),
                             provider=settings.landmark_provider,
                             computed_at=now,
                         )
