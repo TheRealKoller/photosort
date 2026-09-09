@@ -2356,7 +2356,16 @@ async def reassign_photo_category(
       derselben Partition: die Hauptzeile ersetzt die Nebenzeile.
     * Nach jedem Aufruf existiert wieder GENAU EINE Zeile mit `is_primary=True` je (Lauf, Foto).
 
-    No-op (0 rank_photos-Aufrufe), wenn die Zielmenge bereits exakt der bestehenden entspricht.
+    KEIN frueher Ausstieg bei unveraenderter Zugehoerigkeitsmenge (Copilot-Review-Fund zu PR #373):
+    die Daempfung haengt zusaetzlich am OVERRIDE-ZUSTAND, den die Aufrufer vor diesem Aufruf setzen
+    bzw. loeschen. Ein Override auf die bereits wirksame Hauptkategorie (Hauptzeile wird von
+    automatisch zu manuell) und seine Ruecknahme auf dieselbe Kategorie (umgekehrt) lassen die
+    Menge unveraendert und aendern die Reihenfolge innerhalb der Partition trotzdem - ein
+    Mengenvergleich als Abbruchbedingung uebersaehe beides und liesse `rank_position` auf dem alten
+    Stand stehen (Akzeptanzkriterium 22). Die Neusortierung ist deshalb bedingungslos: sie arbeitet
+    ausschliesslich auf bereits persistierten Werten, kostet keinen Cloud-Aufruf und ist auf die
+    beruehrten Partitionen begrenzt. Einziger Ausstieg bleibt "dieses Foto hat in diesem Lauf gar
+    keine Zeile".
 
     NEBENLAEUFIGKEIT (Security-Muss-Kriterium 5 der Spec 0300): diese Funktion schreibt UND loescht
     Zeilen im Request-Pfad. Der Unique-Constraint traegt davon nur die halbe Invariante - er
@@ -2384,9 +2393,6 @@ async def reassign_photo_category(
     target: dict[str, bool] = {new_category_key: True}
     for key in secondary_categories(evidence.confidences, new_category_key):
         target[key] = False
-
-    if {row.category_key: row.is_primary for row in existing_rows} == target:
-        return
 
     touched_categories = {row.category_key for row in existing_rows} | set(target)
 

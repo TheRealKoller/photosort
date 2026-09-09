@@ -172,19 +172,31 @@ async def _assert_positions_are_gapless(
         assert sorted(found) == list(range(1, len(found) + 1)), partition
 
 
-async def test_no_op_when_the_new_category_key_matches_the_current_one(
+async def test_an_unchanged_target_set_still_reranks_but_changes_nothing(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """VERHALTENSAENDERUNG gegenueber der ersten Fassung (Copilot-Review-Fund zu PR #373):
+    frueher stieg die Funktion bei unveraenderter Zielmenge VOR der Neusortierung aus
+    (`0 rank_photos-Aufrufe`). Das war falsch - die Daempfung haengt zusaetzlich am
+    Override-Zustand, den die Aufrufer vorher setzen bzw. loeschen, und der Mengenvergleich
+    uebersah genau diese beiden Wege (Akzeptanzkriterium 22, siehe
+    test_api_category_override.py::TestOverrideChangesTheDampeningWithoutChangingTheMembership).
+
+    Der Test haelt deshalb ab hier das Gegenteil fest und bleibt trotzdem eine echte Zusage: die
+    Neusortierung LAEUFT (genau einmal, fuer die eine beruehrte Partition), und sie aendert im
+    unveraenderten Fall nichts - dieselbe Zeile, dieselbe Kategorie, dieselbe Position, keine
+    Loeschung und keine Neuanlage."""
     project = await _make_project(db_session)
     run = await _add_criterion_scoring_run(db_session, project)
     photo = await _add_photo(db_session, project, "a.jpg")
-    await _add_ranking(
+    await _add_criterion_score(db_session, photo, "sharpness", 0.9)
+    before = await _add_ranking(
         db_session,
         run,
         photo,
         cluster_key="c1",
         category_key="people",
-        rank_score=1.0,
+        rank_score=0.9,
         rank_position=1,
     )
 
@@ -198,13 +210,16 @@ async def test_no_op_when_the_new_category_key_matches_the_current_one(
     monkeypatch.setattr(worker, "rank_photos", spy)
     await reassign_photo_category(db_session, run.id, photo.id, "c1", "people")
 
-    assert calls == []
+    assert len(calls) == 1
     ranking = (
         await db_session.execute(
             select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
         )
     ).scalar_one()
+    assert ranking.id == before.id
     assert ranking.category_key == "people"
+    assert ranking.rank_position == 1
+    assert ranking.is_primary is True
 
 
 async def test_moving_a_photo_recomputes_rank_in_both_partitions(
