@@ -2975,6 +2975,98 @@ class TestPhotoLocationAndClusterPlace:
         assert min(first.id, second.id) == first.id
         assert items[blind.id]["location"]["lat"] == _EIFFEL[0]
 
+    async def test_a_photo_earlier_than_every_anchor_inherits_the_first_one(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Randfall "vor allen Ankern" - die Einfuegestelle ist 0, und es gibt keinen frueheren
+        Nachbarn, gegen den abgewogen werden koennte. Ohne eigenen Fall bliebe genau der Zweig
+        ungeprueft, der bei einer Umstellung der Suche als erstes bricht."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        blind = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        )
+        nearest = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC), gps=_EIFFEL
+        )
+        farther = await _make_photo_at(
+            db_session, project, "c.jpg", datetime(2023, 1, 1, 11, 0, tzinfo=UTC), gps=_LOUVRE
+        )
+        for index, photo in enumerate((blind, nearest, farther), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[blind.id]["location"] == {
+            "lat": _EIFFEL[0],
+            "lon": _EIFFEL[1],
+            "source": "derived",
+        }
+
+    async def test_a_photo_later_than_every_anchor_inherits_the_last_one(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der gespiegelte Randfall: die Einfuegestelle liegt hinter dem letzten Anker."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        farther = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_LOUVRE
+        )
+        nearest = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 55, tzinfo=UTC), gps=_EIFFEL
+        )
+        blind = await _make_photo_at(
+            db_session, project, "c.jpg", datetime(2023, 1, 1, 11, 0, tzinfo=UTC)
+        )
+        for index, photo in enumerate((farther, nearest, blind), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[blind.id]["location"] == {
+            "lat": _EIFFEL[0],
+            "lon": _EIFFEL[1],
+            "source": "derived",
+        }
+
+    async def test_duplicate_anchor_timestamps_still_resolve_to_the_smaller_photo_id(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zwei Anker auf DEMSELBEN Zeitpunkt plus ein spaeterer dritter - der Fall, der die
+        Sortier-Voraussetzung der Suche tatsaechlich beansprucht: die Ankerliste ist nach
+        `(taken_at, photo_id)` sortiert, und die Suche darf nur den ERSTEN der beiden gleichen
+        Zeitstempel treffen. Der bestehende Gleichstand-Test kommt ohne einen dritten, spaeteren
+        Anker aus und wuerde eine falsche Einfuegestelle deshalb nicht bemerken."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        same_moment = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        first = await _make_photo_at(db_session, project, "a.jpg", same_moment, gps=_EIFFEL)
+        second = await _make_photo_at(db_session, project, "b.jpg", same_moment, gps=_TROCADERO)
+        later = await _make_photo_at(
+            db_session, project, "c.jpg", datetime(2023, 1, 1, 10, 30, tzinfo=UTC), gps=_LOUVRE
+        )
+        blind = await _make_photo_at(db_session, project, "d.jpg", same_moment)
+        for index, photo in enumerate((first, second, later, blind), start=1):
+            await _add_ranking(
+                db_session, run, photo, rank_score=1.0 / index, rank_position=index
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert first.id < second.id < later.id
+        assert items[blind.id]["location"] == {
+            "lat": _EIFFEL[0],
+            "lon": _EIFFEL[1],
+            "source": "derived",
+        }
+
     async def test_both_fields_are_null_when_the_cluster_carries_no_location_at_all(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:

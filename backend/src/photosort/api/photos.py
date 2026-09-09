@@ -714,13 +714,19 @@ def _derived_location_of(
     `anchors` sind die koordinatentragenden Mitglieder, aufsteigend nach `(taken_at, photo_id)`.
     Tie-Break (deterministisch, sonst haenge die angezeigte Koordinate an der Zeilenreihenfolge der
     Datenbank): bei gleichem Abstand gewinnt der FRUEHERE Zeitpunkt, bei identischem `taken_at` die
-    kleinere `photo_id` - beides ergibt sich aus der Sortierung plus dem `<=`-Vergleich unten."""
+    kleinere `photo_id` - beides ergibt sich aus der Sortierung plus dem `<=`-Vergleich unten.
+
+    Die Suche laeuft ueber `key=` DIREKT auf `anchors` (Copilot-Review-Fund, PR #381): eine
+    vorgeschaltete Hilfsliste aller Zeitstempel waere bereits linear und machte den `bisect` zur
+    Zierde - und zwar einmal JE FOTO der Antwort, also O(N x M). Der vollstaendige Cluster kann
+    deutlich mehr Anker tragen, als die Antwort Fotos enthaelt (Top-N-Auswahl, ADR 0071), womit
+    genau der teure Faktor der ist, den die Antwort gar nicht sieht."""
     if photo.gps_lat is not None and photo.gps_lon is not None:
         return PhotoLocationOut(lat=photo.gps_lat, lon=photo.gps_lon, source="exif")
     if not anchors:
         return None
 
-    index = bisect_left([anchor.taken_at for anchor in anchors], photo.taken_at)
+    index = bisect_left(anchors, photo.taken_at, key=lambda anchor: anchor.taken_at)
     nearest = anchors[min(index, len(anchors) - 1)]
     if index > 0:
         earlier = anchors[index - 1]
