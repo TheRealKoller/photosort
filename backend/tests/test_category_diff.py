@@ -152,8 +152,16 @@ async def _make_run(
 
 
 async def _add_ranking(
-    session: AsyncSession, run: CriterionScoringRun, photo: Photo, category_key: str
+    session: AsyncSession,
+    run: CriterionScoringRun,
+    photo: Photo,
+    category_key: str,
+    *,
+    is_primary: bool = True,
 ) -> None:
+    """specs/features/0300-nebenkategorien.md: `is_primary` ist pflichtig - der Default `True`
+    haelt alle bestehenden Aufrufe bei ihrer bisherigen Bedeutung (eine Zugehoerigkeit je Foto,
+    und die ist die Hauptzeile)."""
     session.add(
         PhotoRanking(
             criterion_scoring_run_id=run.id,
@@ -162,6 +170,7 @@ async def _add_ranking(
             category_key=category_key,
             rank_score=0.5,
             rank_position=1,
+            is_primary=is_primary,
         )
     )
     await session.commit()

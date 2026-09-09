@@ -95,7 +95,11 @@ async def _add_ranking(
     category_key: str = CATEGORY_NOT_RECOGNIZED,
     rank_score: float = 0.5,
     rank_position: int = 1,
+    is_primary: bool = True,
 ) -> PhotoRanking:
+    """specs/features/0300-nebenkategorien.md: `is_primary` ist pflichtig - der Default `True`
+    haelt alle bestehenden Aufrufe bei ihrer bisherigen Bedeutung (eine Zugehoerigkeit je Foto,
+    und die ist die Hauptzeile)."""
     ranking = PhotoRanking(
         criterion_scoring_run_id=run.id,
         photo_id=photo.id,
@@ -103,6 +107,7 @@ async def _add_ranking(
         category_key=category_key,
         rank_score=rank_score,
         rank_position=rank_position,
+        is_primary=is_primary,
     )
     session.add(ranking)
     await session.commit()
@@ -355,7 +360,7 @@ class TestPutCategoryOverride:
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
         )
-        assert {item["ranking"]["category_key"] for item in response.json()["items"]} == {
+        assert {item["rankings"][0]["category_key"] for item in response.json()["items"]} == {
             CATEGORY_NOT_RECOGNIZED
         }
 
@@ -366,7 +371,7 @@ class TestPutCategoryOverride:
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
         )
-        assert response.json()["items"][0]["ranking"]["category_key"] == "tier"
+        assert response.json()["items"][0]["rankings"][0]["category_key"] == "tier"
 
 
 class TestDeleteCategoryOverride:
@@ -453,7 +458,9 @@ class TestDeleteCategoryOverride:
         before = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
         )
-        assert {item["ranking"]["category_key"] for item in before.json()["items"]} == {"detail"}
+        assert {
+            item["rankings"][0]["category_key"] for item in before.json()["items"]
+        } == {"detail"}
 
         response = await authenticated_api_client.delete(f"/photos/{photo.id}/category-override")
 

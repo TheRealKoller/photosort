@@ -2821,11 +2821,18 @@ async def _run_and_collect_categories(
         db_session, project, scoring_run_id, cache_dir=tmp_path, **kwargs  # type: ignore[arg-type]
     )
     assert run.status == ScanStatus.SUCCESS
+    # Ausdruecklich nur die HAUPTZEILEN (specs/features/0300-nebenkategorien.md): seit dem
+    # Kardinalitaetswechsel 1:1 -> 1:N verloere ein `dict[photo_id, category_key]` ohne diesen
+    # Filter still Zeilen - und die Frage dieser Hilfsfunktion lautet "welche Kategorie hat dieses
+    # Foto bekommen", nicht "in welchen Kategorien taucht es auf".
     return {
         r.photo_id: r.category_key
         for r in (
             await db_session.execute(
-                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+                select(PhotoRanking).where(
+                    PhotoRanking.criterion_scoring_run_id == run.id,
+                    PhotoRanking.is_primary.is_(True),
+                )
             )
         ).scalars()
     }
@@ -3904,14 +3911,19 @@ def _raise_after_landmark_phase(*args: object, **kwargs: object) -> NoReturn:
 # --- specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterium 12 ---------------
 
 
-async def test_the_confidence_columns_do_not_change_the_resolved_category_or_ranking(
+async def test_the_confidence_columns_do_not_change_the_resolved_primary_category(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Der PAARTEST zu Akzeptanzkriterium 12 / ADR 0067 Punkt 1: zwei Projekte mit identischen
-    Kandidaten, aber gegensaetzlichen Konfidenzen erzeugen identische Kategorie UND identische
-    Rangfolge. `run_criterion_scoring` liest die Kandidaten ueber ein explizites `select(...)` und
-    darf die neuen Spalten gar nicht erst anfassen - waere die Zahl je ein Auswahlkriterium,
-    gewaenne hier einmal `landschaft` und einmal `menschen`."""
+    """Der PAARTEST zur HAUPTKATEGORIE (Akzeptanzkriterium 12 der Spec 0299, Akzeptanzkriterium 1
+    der Spec 0300): zwei Projekte mit identischen Kandidaten, aber gegensaetzlichen Konfidenzen
+    erzeugen dieselbe Hauptkategorie. Waere die Zahl je ein Auswahlkriterium, gewaenne hier einmal
+    `landschaft` und einmal `menschen`.
+
+    GEAENDERT gegenueber Spec 0299 (ADR 0069 loest ADR 0067 Punkt 1 in seiner REICHWEITE ab): die
+    Zusage galt frueher fuer Kategorie UND Rangfolge, ab jetzt nur noch fuer die HAUPTKATEGORIE.
+    Die Zahl entscheidet ab Spec 0300 ausdruecklich zweierlei - ob eine zusaetzliche Zugehoerigkeit
+    besteht und an welcher Stelle das Foto in seiner eigenen Kategorie steht -, aber niemals,
+    WELCHE Kategorie die Hauptkategorie ist. Genau diese verbliebene Grenze prueft der Test."""
 
     async def _run_with(confidences: dict[str, float], name: str) -> tuple[int, str, int]:
         project = await _make_project(db_session, name=name)
@@ -3937,9 +3949,13 @@ async def test_the_confidence_columns_do_not_change_the_resolved_category_or_ran
         categories = await _run_and_collect_categories(
             db_session, project, scoring_run.id, tmp_path
         )
+        # Ausdruecklich die HAUPTZEILE: dasselbe Foto kann ab Spec 0300 mehrere Zeilen haben,
+        # `scalars().one()` ohne Filter wuerfe ab der zweiten.
         ranking = (
             await db_session.execute(
-                select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
+                select(PhotoRanking).where(
+                    PhotoRanking.photo_id == photo.id, PhotoRanking.is_primary.is_(True)
+                )
             )
         ).scalars().one()
         return photo.id, categories[photo.id], ranking.rank_position
@@ -3952,7 +3968,9 @@ async def test_the_confidence_columns_do_not_change_the_resolved_category_or_ran
     )
 
     assert category_high_landscape == category_high_people == "menschen"
-    assert position_high_landscape == position_high_people
+    # Beide Fotos sind allein in ihrer Partition - die Hauptzeile steht in beiden Laeufen auf
+    # Platz 1, unabhaengig von jeder Daempfung.
+    assert position_high_landscape == position_high_people == 1
 
 
 # --------------------------------------------------------------------------------------------

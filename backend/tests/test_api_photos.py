@@ -531,7 +531,11 @@ async def _add_ranking(
     category_key: str = "landscape",
     rank_score: float,
     rank_position: int,
+    is_primary: bool = True,
 ) -> None:
+    """specs/features/0300-nebenkategorien.md: `is_primary` ist pflichtig - der Default `True`
+    haelt alle bestehenden Aufrufe bei ihrer bisherigen Bedeutung (eine Zugehoerigkeit je Foto,
+    und die ist die Hauptzeile)."""
     session.add(
         PhotoRanking(
             criterion_scoring_run_id=run.id,
@@ -540,6 +544,7 @@ async def _add_ranking(
             category_key=category_key,
             rank_score=rank_score,
             rank_position=rank_position,
+            is_primary=is_primary,
         )
     )
     await session.commit()
@@ -569,7 +574,7 @@ class TestTopNPerCategory:
         body = response.json()
         assert body["total"] == 2
         assert [item["id"] for item in body["items"]] == [first.id, second.id]
-        ranking = body["items"][0]["ranking"]
+        [ranking] = body["items"][0]["rankings"]
         # partition_size ist die GROESSE DER GESAMTEN Partition (hier 3 Fotos), nicht die
         # angeforderte top_n_per_category=2 - "Rang M von N" soll immer den vollen Pool zeigen
         # (Architektur-Abschnitt der Spec 0040).
@@ -579,6 +584,10 @@ class TestTopNPerCategory:
             "rank_score": 0.9,
             "rank_position": 1,
             "partition_size": 3,
+            "is_primary": True,
+            # Im Kuratierungsmodus traegt jede ausgewaehlte Zugehoerigkeit ihren Platz in der um
+            # die eigenen Ablehnungen bereinigten Auswahl (specs/features/0300-nebenkategorien.md).
+            "curation_position": 1,
         }
 
     async def test_partitions_are_independent(
@@ -723,7 +732,7 @@ class TestTopNPerCategory:
         )
 
         item = response.json()["items"][0]
-        assert item["ranking"] is not None
+        assert item["rankings"] != []
         assert [c["criterion_key"] for c in item["criterion_scores"]] == ["sharpness"]
 
 
@@ -1738,24 +1747,32 @@ class TestDefaultListingRanking:
 
         assert response.status_code == 200
         items = {item["id"]: item for item in response.json()["items"]}
-        assert items[first.id]["ranking"] == {
-            "cluster_key": "cluster-0",
-            "category_key": "landscape",
-            "rank_score": 0.9,
-            "rank_position": 1,
-            "partition_size": 2,
-        }
-        assert items[second.id]["ranking"]["rank_position"] == 2
+        assert items[first.id]["rankings"] == [
+            {
+                "cluster_key": "cluster-0",
+                "category_key": "landscape",
+                "rank_score": 0.9,
+                "rank_position": 1,
+                "partition_size": 2,
+                "is_primary": True,
+                # Ohne angeforderte Auswahl traegt jede Zugehoerigkeit `null`
+                # (specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 23).
+                "curation_position": None,
+            }
+        ]
+        assert items[second.id]["rankings"][0]["rank_position"] == 2
 
-    async def test_default_listing_ranking_is_null_without_criterion_scoring_run(
+    async def test_default_listing_rankings_are_empty_without_criterion_scoring_run(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
+        """specs/features/0300-nebenkategorien.md: `rankings` ist eine LEERE LISTE, nie `null` -
+        analog `ratings`. Der Client muss keinen zweiten Leerzustand unterscheiden."""
         project = await _make_project(db_session)
         await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
-        assert response.json()["items"][0]["ranking"] is None
+        assert response.json()["items"][0]["rankings"] == []
 
     async def test_partition_size_is_isolated_per_project_in_default_listing(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1787,7 +1804,7 @@ class TestDefaultListingRanking:
 
         assert response.status_code == 200
         [item] = response.json()["items"]
-        assert item["ranking"]["partition_size"] == 1
+        assert item["rankings"][0]["partition_size"] == 1
 
 
 async def test_list_photos_returns_404_for_unknown_project(
