@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -9,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
@@ -38,7 +40,8 @@ from photosort.models import (
 )
 from photosort.thumbnails import variant_path
 from photosort.worker import (
-    _remote_category_candidates,
+    NO_REMOTE_CATEGORY_EVIDENCE,
+    _remote_category_evidence,
     derive_photo_category,
     reassign_photo_category,
 )
@@ -48,7 +51,7 @@ from photosort.worker import (
 # Funktionen direkt zu importieren (api/projects.py-Kommentar bei _count_remote_category_
 # candidates) - die Spec verlangt hier ausdruecklich einen SYNCHRONEN Aufruf im selben API-Request
 # ("sofortige Wirkung", kein Hintergrund-Job), reassign_photo_category/derive_photo_category/
-# _remote_category_candidates sind dafuer die einzig richtige, bereits bestehende
+# _remote_category_evidence sind dafuer die einzig richtige, bereits bestehende
 # Implementierungsstelle (DRY mit run_criterion_scoring - beide Stellen leiten die Kategorie
 # ueber denselben Codepfad ab). Der Import selbst ist unproblematisch, da worker.py mediapipe/
 # tensorflow/onnxruntime ausschliesslich lokal innerhalb der jeweiligen build_*()-Funktionen
@@ -103,11 +106,14 @@ class SuggestionOut(BaseModel):
 
 
 class RankingOut(BaseModel):
-    """Kuratierungs-Kontext eines Fotos aus der Kriterien-/Rangfolgen-Pipeline
+    """EINE Zugehoerigkeit eines Fotos zu einer Kategorie aus der Kriterien-/Rangfolgen-Pipeline
     (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md). Seit
     specs/features/0040-bewertungsdetails-info-popover.md auch im Standard-Listing-Zweig befuellt
     (vorher nur bei `top_n_per_category`), nicht mehr nur, wenn das Foto Teil des abgefragten
-    Top-N-Ergebnisses ist. Getrennt von SuggestionOut, siehe dessen Docstring."""
+    Top-N-Ergebnisses ist. Getrennt von SuggestionOut, siehe dessen Docstring.
+
+    specs/features/0300-nebenkategorien.md: ein Foto hat pro Lauf eine solche Zeile JE KATEGORIE,
+    zu der es gehoert - siehe `PhotoOut.rankings`."""
 
     cluster_key: str
     category_key: str
@@ -116,8 +122,28 @@ class RankingOut(BaseModel):
     # Groesse der GESAMTEN Cluster x Kategorie-Partition (nicht nur der angeforderten top_n),
     # fuer "Rang M von N" im Info-Popover (specs/features/0040-bewertungsdetails-info-popover.md,
     # Architektur-Abschnitt) - lauf-global berechnet (siehe _partition_sizes), nicht
-    # nutzerspezifisch gefiltert.
+    # nutzerspezifisch gefiltert. Zaehlt seit Spec 0300 ALLE Zeilen der Partition, Haupt- wie
+    # Nebenzeilen: die Frage lautet "wie viele Fotos stehen in dieser Kategorie dieses Clusters",
+    # und dort steht ein Foto mit Nebenzugehoerigkeit tatsaechlich.
     partition_size: int
+    # specs/features/0300-nebenkategorien.md: ob dies die HAUPTkategorie des Fotos ist. Genau eine
+    # Zugehoerigkeit je Foto und Lauf traegt `true`. Die Oberflaeche liest die Rolle ausschliesslich
+    # hier ab und bildet nirgends eine Schwelle nach.
+    is_primary: bool
+    # Der Platz DIESER Zugehoerigkeit in der um die eigenen Ablehnungen bereinigten Auswahl ihrer
+    # Kategorie - also das bereits berechnete `row_number()` der Kuratierungs-Query. `null`, wenn
+    # diese Zugehoerigkeit nicht zur angeforderten Auswahl gehoert oder gar keine angefordert wurde.
+    #
+    # AUSDRUECKLICH NICHT `rank_position`: jene ist die lauf-globale, UNGEFILTERTE Rangaussage des
+    # Info-Popovers, diese hier die nutzerabhaengige Auswahlposition. Hinter einem vom Nutzer
+    # abgelehnten Foto ist sie kleiner als `rank_position`.
+    #
+    # SICHERHEIT (Security-Punkt 4 der Spec 0300): der Wert wird NIE persistiert und NIE ueber
+    # Requests hinweg zwischengespeichert - er haengt an den Ablehnungen des ANFRAGENDEN Nutzers.
+    # Ein gespeicherter Wert bildete zwangslaeufig die Ablehnungen irgendeines Nutzers ab und waere
+    # fuer den anderen ein Leck. Bekommt `GET /projects/{id}/photos` je eine
+    # Antwort-Zwischenspeicherung oder ein `ETag`, muss der Schluessel den Nutzer enthalten.
+    curation_position: int | None = None
 
 
 class CriterionScoreOut(BaseModel):
@@ -218,7 +244,19 @@ class PhotoOut(BaseModel):
     taken_at: datetime
     ratings: list[RatingOut]
     suggestion: SuggestionOut | None
-    ranking: RankingOut | None = None
+    # ALLE Zugehoerigkeiten des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi
+    # (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 7). Immer eine Liste, nie `null`
+    # (analog `ratings`) - leer, solange kein erfolgreicher Lauf existiert.
+    #
+    # REIHENFOLGE FESTGELEGT: Hauptzeile zuerst, danach die Nebenzeilen in
+    # Registry-Anzeigereihenfolge. Sonst flackerte die Anzeige mit der Zeilenreihenfolge der
+    # Datenbank.
+    #
+    # Ersetzt das entfallene `ranking: RankingOut | None`. Der brechende Feldwechsel ist
+    # beabsichtigt: der Compiler soll an jeder Lesestelle erzwingen, dass sie sich entscheidet,
+    # welche Zugehoerigkeit sie meint - ein beibehaltenes `ranking` neben `rankings` waere genau
+    # die zweite, driftende Abbildung derselben Sache.
+    rankings: list[RankingOut]
     # Immer eine Liste, nie None (analog `ratings`) - best-effort: enthaelt nur Kriterien, fuer
     # die tatsaechlich eine PhotoCriterionScore-Zeile existiert, sortiert nach
     # CRITERIA_REGISTRY-Reihenfolge (specs/features/0040-bewertungsdetails-info-popover.md).
@@ -533,8 +571,9 @@ def _to_photo_out(
     photo: Photo,
     current_user_id: int,
     project: Project,
-    ranking: PhotoRanking | None = None,
-    partition_size: int = 0,
+    rankings: Sequence[PhotoRanking] = (),
+    partition_sizes: Mapping[tuple[str, str], int] | None = None,
+    curation_positions: Mapping[tuple[int, str], int] | None = None,
 ) -> PhotoOut:
     # Anzeigeregel (Akzeptanzkriterium der Spec): ein Vorschlag ist nur sichtbar, wenn (a)
     # PhotoScore.suggested_status gesetzt ist UND (b) der anfragende Nutzer noch KEINE eigene
@@ -554,17 +593,22 @@ def _to_photo_out(
             for r in photo.ratings
         ],
         suggestion=suggestion,
-        ranking=(
+        rankings=[
             RankingOut(
                 cluster_key=ranking.cluster_key,
                 category_key=ranking.category_key,
                 rank_score=ranking.rank_score,
                 rank_position=ranking.rank_position,
-                partition_size=partition_size,
+                partition_size=(partition_sizes or {}).get(
+                    (ranking.cluster_key, ranking.category_key), 0
+                ),
+                is_primary=ranking.is_primary,
+                curation_position=(curation_positions or {}).get(
+                    (ranking.photo_id, ranking.category_key)
+                ),
             )
-            if ranking is not None
-            else None
-        ),
+            for ranking in rankings
+        ],
         criterion_scores=_criterion_scores_out(photo),
         fine_labels=_fine_labels_out(photo),
         remote_category=(
@@ -601,17 +645,29 @@ async def _latest_successful_criterion_scoring_run_id(
 
 async def _top_n_per_category_photo_ids(
     session: AsyncSession, project_id: int, current_user_id: int, top_n: int
-) -> tuple[list[int], int | None]:
+) -> tuple[list[int], dict[tuple[int, str], int], int | None]:
     """Kategorie-Kuratierung + Backfill (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
     backfill.md): liefert je Partition (cluster_key x category_key) des LETZTEN erfolgreichen
     CriterionScoringRun die besten `top_n` nach rank_position, serverseitig um vom aktuellen
     Nutzer REJECTED-bewertete Fotos gefiltert. Backfill ist dabei reiner Query-Effekt (kein
     Server-Code "rueckt aktiv nach", ADR 0021 Punkt 4): row_number() wird ERST NACH dem Ausschluss
     der abgelehnten Fotos berechnet, ein abgelehntes Foto rueckt darin also automatisch fuer das
-    naechste, bisher nicht gezeigte Foto derselben Partition Platz."""
+    naechste, bisher nicht gezeigte Foto derselben Partition Platz.
+
+    Die Query ist mit specs/features/0300-nebenkategorien.md strukturell unveraendert geblieben -
+    `row_number()` je (cluster_key, category_key) zaehlt Neben- wie Hauptzeilen mit, und `top_n`
+    wirkt weiterhin JE PARTITION. Neu ist nur, dass EIN Foto in mehreren Partitionen unter die
+    Top-N fallen kann. Rueckgabe deshalb dreiteilig:
+
+    * die Foto-Ids in Anzeigereihenfolge, jede hoechstens EINMAL (`PhotoListOut.items` enthaelt
+      jedes Foto weiterhin hoechstens einmal),
+    * das berechnete `rn` je (photo_id, category_key) - die `curation_position` der jeweiligen
+      Zugehoerigkeit, aus der die Kuratierungsansicht ablesen kann, in welchen Kategorien sie das
+      Foto zeigen soll,
+    * die Lauf-Id."""
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
-        return [], None
+        return [], {}, None
 
     own_rejection = aliased(Rating)
     ranked = (
@@ -643,11 +699,19 @@ async def _top_n_per_category_photo_ids(
         .subquery()
     )
     result = await session.execute(
-        select(ranked.c.photo_id)
+        select(ranked.c.photo_id, ranked.c.category_key, ranked.c.rn)
         .where(ranked.c.rn <= top_n)
         .order_by(ranked.c.cluster_key, ranked.c.category_key, ranked.c.rank_position)
     )
-    return [row[0] for row in result.all()], latest_run_id
+    ordered_ids: list[int] = []
+    seen: set[int] = set()
+    curation_positions: dict[tuple[int, str], int] = {}
+    for photo_id, category_key, row_number in result.all():
+        curation_positions[(photo_id, category_key)] = row_number
+        if photo_id not in seen:
+            seen.add(photo_id)
+            ordered_ids.append(photo_id)
+    return ordered_ids, curation_positions, latest_run_id
 
 
 async def _partition_sizes(
@@ -656,7 +720,13 @@ async def _partition_sizes(
     """Groesse jeder Cluster x Kategorie-Partition eines Laufs, fuer "Rang M von N" im Info-
     Popover (specs/features/0040-bewertungsdetails-info-popover.md, Architektur-Abschnitt) - ein
     einzelner GROUP BY-Query pro list_photos-Aufruf (nicht pro Foto). Bewusst lauf-global, nicht
-    nutzerspezifisch gefiltert - siehe RankingOut.partition_size-Docstring."""
+    nutzerspezifisch gefiltert - siehe RankingOut.partition_size-Docstring.
+
+    Zaehlt AUSDRUECKLICH ALLE Zeilen der Partition, Haupt- wie Nebenzeilen (specs/features/0300-
+    nebenkategorien.md, ADR 0069 Punkt 8) - anders als die Kategorienverteilung der Statistikseite
+    und `category_diff.py`, die auf `is_primary` filtern. Zwei Zaehlweisen, zwei Fragen: hier "wie
+    viele Fotos stehen in dieser Kategorie dieses Clusters", dort "welche Kategorie hat dieses
+    Foto"."""
     result = await session.execute(
         select(PhotoRanking.cluster_key, PhotoRanking.category_key, func.count())
         .where(PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id)
@@ -665,9 +735,33 @@ async def _partition_sizes(
     return {(cluster_key, category_key): count for cluster_key, category_key, count in result.all()}
 
 
+# Registry-Anzeigereihenfolge als Rang - dieselbe Reihenfolge wie `GET /categories` und die
+# Kandidatenliste, damit kategoriale Listen ueberall im Produkt gleich aussehen.
+_CATEGORY_DISPLAY_ORDER = {key: index for index, key in enumerate(CATEGORY_REGISTRY)}
+
+
+def _ranking_sort_key(ranking: PhotoRanking) -> tuple[int, int, str]:
+    """Hauptzeile zuerst, danach die Nebenzeilen in Registry-Anzeigereihenfolge
+    (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 7) - ohne diese feste Ordnung
+    flackerte die Anzeige mit der Zeilenreihenfolge der Datenbank.
+
+    Ein `category_key` ausserhalb des festen Sets (Altbestand; der Lesepfad ist seit Spec 0289
+    bewusst tolerant) landet hinten und dort alphabetisch stabil, statt die Sortierung zu
+    sprengen."""
+    return (
+        0 if ranking.is_primary else 1,
+        _CATEGORY_DISPLAY_ORDER.get(ranking.category_key, len(_CATEGORY_DISPLAY_ORDER)),
+        ranking.category_key,
+    )
+
+
 async def _rankings_by_photo_id(
     session: AsyncSession, criterion_scoring_run_id: int, photo_ids: list[int]
-) -> dict[int, PhotoRanking]:
+) -> dict[int, list[PhotoRanking]]:
+    """ALLE Zugehoerigkeiten je Foto, nicht mehr genau eine (specs/features/0300-
+    nebenkategorien.md): seit dem Kardinalitaetswechsel 1:1 -> 1:N ist ein
+    `dict[int, PhotoRanking]` hier eine stille Datenverlustquelle - die zweite Zeile eines Fotos
+    ueberschriebe die erste ohne jedes Signal."""
     if not photo_ids:
         return {}
     result = await session.execute(
@@ -676,15 +770,12 @@ async def _rankings_by_photo_id(
             PhotoRanking.photo_id.in_(photo_ids),
         )
     )
-    return {row.photo_id: row for row in result.scalars()}
-
-
-def _partition_size_for(
-    ranking: PhotoRanking | None, partition_sizes: dict[tuple[str, str], int]
-) -> int:
-    if ranking is None:
-        return 0
-    return partition_sizes.get((ranking.cluster_key, ranking.category_key), 0)
+    rankings_by_photo_id: dict[int, list[PhotoRanking]] = {}
+    for row in result.scalars():
+        rankings_by_photo_id.setdefault(row.photo_id, []).append(row)
+    for rows in rankings_by_photo_id.values():
+        rows.sort(key=_ranking_sort_key)
+    return rankings_by_photo_id
 
 
 @router.get("/projects/{project_id}/photos", response_model=PhotoListOut)
@@ -708,7 +799,7 @@ async def list_photos(
     project = await _get_project_or_404(project_id, session)
 
     if top_n_per_category is not None:
-        ids, criterion_scoring_run_id = await _top_n_per_category_photo_ids(
+        ids, curation_positions, criterion_scoring_run_id = await _top_n_per_category_photo_ids(
             session, project_id, current_user.id, top_n_per_category
         )
         photos_by_id = await _photos_by_id(session, ids)
@@ -727,8 +818,9 @@ async def list_photos(
                 photos_by_id[photo_id],
                 current_user.id,
                 project,
-                rankings_by_id.get(photo_id),
-                _partition_size_for(rankings_by_id.get(photo_id), partition_sizes),
+                rankings_by_id.get(photo_id, []),
+                partition_sizes,
+                curation_positions,
             )
             for photo_id in ids
         ]
@@ -756,8 +848,12 @@ async def list_photos(
             photos_by_id[photo_id],
             current_user.id,
             project,
-            rankings_by_id.get(photo_id),
-            _partition_size_for(rankings_by_id.get(photo_id), partition_sizes),
+            rankings_by_id.get(photo_id, []),
+            partition_sizes,
+            # Ohne angeforderte Auswahl traegt JEDE Zugehoerigkeit `curation_position = null`
+            # (specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 23) - es gibt in diesem
+            # Modus keine Auswahl, zu der sie eine Position haben koennte.
+            None,
         )
         for photo_id in ids
     ]
@@ -821,12 +917,67 @@ async def _get_photo_or_404(photo_id: int, session: AsyncSession) -> Photo:
     return photo
 
 
+async def _lock_photo_score(session: AsyncSession, photo_id: int) -> PhotoScore | None:
+    """Sperrt die `photo_scores`-Zeile des Fotos fuer die Dauer der Transaktion
+    (specs/features/0300-nebenkategorien.md, Security-Muss-Kriterium 5).
+
+    Muss VOR dem Lesen der Ranking-Zeilen laufen: `reassign_photo_category` leitet ab Spec 0300 die
+    gesamte Zugehoerigkeitsmenge neu ab und schreibt und LOESCHT dabei Zeilen im Request-Pfad. Der
+    neue Unique-Constraint verhindert nur die doppelte Zugehoerigkeitszeile, nicht das Wettrennen
+    um "genau eine `is_primary`-Zeile je (Lauf, Foto)". Zwei ueberlappende Overrides desselben
+    Fotos (zwei Nutzer, realistischer: ein Doppelklick auf lahmer Verbindung) koennten sonst zwei
+    Hauptzeilen oder keine hinterlassen und damit still die Zusage brechen, dass die Summe ueber
+    alle Kategorien die Fotoanzahl ergibt.
+
+    Unter PostgreSQL serialisiert `FOR UPDATE` konkurrierende Overrides desselben Fotos; unter
+    SQLite ist die Schreibtransaktion ohnehin serialisiert (der SQLite-Dialekt rendert die Klausel
+    gar nicht) - testneutral. `photo_scores` ist der Anker, weil dort der Override selbst steht.
+
+    `None`, wenn das Foto keine `photo_scores`-Zeile hat (dann gibt es auch nichts zu sperren und
+    keinen Override zu setzen)."""
+    return (
+        await session.execute(
+            select(PhotoScore).where(PhotoScore.photo_id == photo_id).with_for_update()
+        )
+    ).scalar_one_or_none()
+
+
+async def _reassign_or_conflict(
+    session: AsyncSession,
+    run_id: int,
+    photo_id: int,
+    cluster_key: str,
+    new_category_key: str,
+) -> None:
+    """Fuehrt die Neuableitung aus und bildet einen `IntegrityError` aus dem
+    `(Lauf, Foto, Kategorie)`-Constraint auf `409` ab - NIE auf eine 500
+    (specs/features/0300-nebenkategorien.md, Security-Muss-Kriterium 5).
+
+    Der Regelfall "Override auf eine bereits bestehende Nebenkategorie" laeuft ausdruecklich NICHT
+    hier hinein: dort fuehrt `reassign_photo_category` beide Zeilen zu einer Hauptzeile zusammen.
+    Diese Abbildung deckt den Rest ab - insbesondere zwei tatsaechlich gleichzeitige Schreibversuche
+    fuer dasselbe Foto, bei denen die Sperre nicht greifen konnte."""
+    try:
+        await reassign_photo_category(session, run_id, photo_id, cluster_key, new_category_key)
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Die Kategorien dieses Fotos wurden gerade veraendert. Bitte erneut versuchen.",
+        ) from exc
+
+
 async def _current_ranking_for_photo(
     session: AsyncSession, project_id: int, photo_id: int
 ) -> tuple[int, PhotoRanking] | None:
     """`None`, wenn kein erfolgreicher CriterionScoringRun existiert ODER dieses Foto darin keine
     PhotoRanking-Zeile hat (409-Faelle des PUT-Endpunkts, ADR 0032 Punkt 6.3) - sonst
-    `(criterion_scoring_run_id, ranking)`."""
+    `(criterion_scoring_run_id, ranking)` der HAUPTZEILE.
+
+    Der `is_primary`-Filter ist seit specs/features/0300-nebenkategorien.md nicht optional:
+    `scalar_one_or_none()` wirft ab der zweiten Zeile, und ein Foto hat ab jetzt bis zu vier.
+    Gemeint ist hier ausschliesslich die Hauptzeile - aus ihr kommt der `cluster_key` fuer die
+    Neuableitung."""
     run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if run_id is None:
         return None
@@ -835,6 +986,7 @@ async def _current_ranking_for_photo(
             select(PhotoRanking).where(
                 PhotoRanking.criterion_scoring_run_id == run_id,
                 PhotoRanking.photo_id == photo_id,
+                PhotoRanking.is_primary.is_(True),
             )
         )
     ).scalar_one_or_none()
@@ -859,7 +1011,11 @@ async def set_category_override(
     (bisher `409`) - die Kandidatenliste ist nur noch Erklaerung, die manuelle Uebersteuerung darf
     jeden der 13 Eintraege setzen. Wirkt SOFORT im selben Request
     (`worker.py::reassign_photo_category`) - kein neuer Ranking-Algorithmus, kein voller
-    Re-Scoring-Lauf."""
+    Re-Scoring-Lauf.
+
+    specs/features/0300-nebenkategorien.md: zielt der Override auf eine Kategorie, die fuer dieses
+    Foto bereits NEBENkategorie ist, gibt es KEIN `409` - die Hauptzeile ersetzt die Nebenzeile.
+    Die uebrigen Nebenkategorien werden aus der unveraenderten Modellaussage neu abgeleitet."""
     photo = await _get_photo_or_404(photo_id, session)
 
     # Whitelist-Pruefung VOR jeder Schreibaktion (Security-Abschnitt der Spec 0289, Punkt 2) -
@@ -870,6 +1026,8 @@ async def set_category_override(
             detail="category_key gehoert nicht zum festen Kategorien-Set.",
         )
 
+    score = await _lock_photo_score(session, photo_id)
+
     current = await _current_ranking_for_photo(session, photo.project_id, photo_id)
     if current is None:
         raise HTTPException(
@@ -878,14 +1036,22 @@ async def set_category_override(
         )
     run_id, ranking = current
 
-    await reassign_photo_category(
-        session, run_id, photo_id, ranking.cluster_key, payload.category_key
-    )
-
-    score = await session.get(PhotoScore, photo_id)
+    # Der Override wird VOR der Neuableitung gesetzt: `reassign_photo_category` leitet die
+    # Zugehoerigkeitsmenge aus dem persistierten Zustand ab und muss dort den neuen Wert sehen -
+    # sonst wuerde die frisch gesetzte Hauptzeile mit der Modellzahl gedaempft, obwohl sie eine
+    # menschliche Festlegung ist (ADR 0069 Punkt 6). Beides liegt in derselben Transaktion;
+    # scheitert die Neuableitung, ist auch der Override nicht geschrieben.
     if score is not None:
         score.category_override = payload.category_key
-        await session.commit()
+
+    await _reassign_or_conflict(
+        session, run_id, photo_id, ranking.cluster_key, payload.category_key
+    )
+    # Zweites `commit()` fuer den Fall, dass die Neuableitung ein No-op war (Override auf die
+    # bereits geltende Hauptkategorie, ohne Aenderung an den Nebenzeilen): der Override selbst ist
+    # trotzdem eine Festlegung des Nutzers und muss persistiert werden - er ueberlebt damit auch
+    # jeden kuenftigen Lauf.
+    await session.commit()
 
     return CategoryOverrideOut(photo_id=photo_id, category_key=payload.category_key)
 
@@ -899,15 +1065,20 @@ async def delete_category_override(
     """specs/features/0055, Akzeptanzkriterium "Manuelle Übernahme (Override) mit sofortiger
     Wirkung": nimmt die Uebernahme zurueck und rekonstruiert den automatisch abgeleiteten
     `category_key` ueber DIESELBE Ableitung wie der Lauf selbst
-    (`worker.py::_remote_category_candidates` + `derive_photo_category`) - kein zweiter,
+    (`worker.py::_remote_category_evidence` + `derive_photo_category`) - kein zweiter,
     driftender Rechenweg. Idempotent (`204` auch ohne aktiven Override).
 
     specs/features/0289-feste-kategorien.md: die Rekonstruktion braucht seit dieser Spec nur noch
     die Werte DIESES Fotos - die abgeloeste Ableitung war laufweit aggregierend und musste dafuer
-    den vollstaendigen Kandidatenpool laden (ADR 0032 Punkt 6.4)."""
+    den vollstaendigen Kandidatenpool laden (ADR 0032 Punkt 6.4).
+
+    specs/features/0300-nebenkategorien.md: die Ruecknahme stellt die gesamte
+    Zugehoerigkeitsmenge des automatischen Laufs wieder her - Haupt- wie Nebenzeilen."""
     await _get_photo_or_404(photo_id, session)
 
-    score = await session.get(PhotoScore, photo_id)
+    # Sperre vor dem Lesen der Ranking-Zeilen (Security-Muss-Kriterium 5 der Spec 0300), siehe
+    # _lock_photo_score.
+    score = await _lock_photo_score(session, photo_id)
     if score is None or score.category_override is None:
         return
 
@@ -930,12 +1101,14 @@ async def delete_category_override(
             )
         ).scalars()
     }
-    remote_candidates = await _remote_category_candidates(session, [photo_id])
-    new_category_key = derive_photo_category(
-        criterion_values, remote_candidates.get(photo_id, [])
+    evidence = (await _remote_category_evidence(session, [photo_id])).get(
+        photo_id, NO_REMOTE_CATEGORY_EVIDENCE
     )
+    new_category_key = derive_photo_category(criterion_values, evidence.candidates)
 
-    await reassign_photo_category(session, run_id, photo_id, ranking.cluster_key, new_category_key)
-
+    # Wie beim Setzen: erst der persistierte Zustand, dann die Neuableitung darauf. Sonst hielte
+    # `reassign_photo_category` die rekonstruierte Hauptzeile faelschlich fuer eine manuelle
+    # Festlegung und liesse sie ungedaempft.
     score.category_override = None
+    await _reassign_or_conflict(session, run_id, photo_id, ranking.cluster_key, new_category_key)
     await session.commit()

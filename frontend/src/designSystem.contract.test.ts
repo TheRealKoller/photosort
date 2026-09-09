@@ -1125,6 +1125,11 @@ describe('Design-Vertrag: Formsprache und Skalen', () => {
       snippet: 'items-center justify-center rounded-full bg-bg/85',
       reason: 'runder Backdrop des Uebersteuerungs-Markers ueber der Fotokachel',
     },
+    {
+      file: 'src/components/SecondaryCategoryMarker.tsx',
+      snippet: 'items-center justify-center rounded-full bg-bg/85',
+      reason: 'runder Backdrop des Nebenkategorie-Markers ueber der Fotokachel',
+    },
   ]
 
   it('verwendet rounded-full nur noch an der abschliessenden Liste, fundstellengenau', () => {
@@ -1424,6 +1429,11 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       file: 'src/components/CategoryOverrideMarker.tsx',
       snippet: 'rounded-full bg-bg/85',
       reason: 'Backdrop des Uebersteuerungs-Markers ueber einer Fotokachel',
+    },
+    {
+      file: 'src/components/SecondaryCategoryMarker.tsx',
+      snippet: 'rounded-full bg-bg/85',
+      reason: 'Backdrop des Nebenkategorie-Markers ueber einer Fotokachel',
     },
     {
       file: 'src/components/CriterionDetailsPopover.tsx',

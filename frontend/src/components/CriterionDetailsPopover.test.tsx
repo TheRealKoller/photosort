@@ -42,6 +42,8 @@ function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
     rank_score: 0.8,
     rank_position: 2,
     partition_size: 5,
+    is_primary: true,
+    curation_position: null,
     ...overrides,
   }
 }

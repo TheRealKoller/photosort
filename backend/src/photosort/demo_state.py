@@ -53,7 +53,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.categories import CATEGORY_REGISTRY
+from photosort.categories import CATEGORY_REGISTRY, secondary_categories
 from photosort.cloud_vision import default_vision_model_for_provider
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
@@ -152,6 +152,33 @@ _LOW_CONFIDENCE_INDEX = 1
 # Bandhaelfte gezogen wird: `_deterministic_unit_value` liefert [0.05, 0.98], halbiert also
 # hoechstens 0.49 - garantiert unter 0.6, ohne den Wert fest zu verdrahten.
 _LOW_CONFIDENCE_FACTOR = 0.5
+
+# specs/features/0300-nebenkategorien.md, Umsetzungsschritt 8: FESTE Zusatzkonfidenzen fuer drei
+# Fotos des bewerteten Projekts, damit die Mehrfachzugehoerigkeit in `browse-app` und im
+# e2e-Prueflauf tatsaechlich zu sehen ist. Bewusst literale Zahlen statt des deterministischen
+# Zufallswerts: die Faelle sollen an der Schwelle nicht kippen, wenn sich der Generator aendert.
+#
+#   Index 4  - ein Foto mit ZWEI Zugehoerigkeiten (Haupt + eine Nebenkategorie); `tier` gehoert
+#              Foto 1, das im selben Cluster liegt - die Partition zeigt damit zwei Fotos.
+#   Index 5  - ein Foto mit DREI Zugehoerigkeiten (Haupt + zwei Nebenkategorien).
+#   Index 6  - das Foto mit Override UND Nebenkategorien: hier stehen beide Ecken-Marker
+#              nebeneinander auf derselben Kachel (Marker-Kollision, UI/UX-Abschnitt der Spec).
+#              Seine automatische Kategorie (`essen_trinken`) traegt eine Zahl ueber der Schwelle
+#              und wird nach dem Uebersteuern zur Nebenkategorie - das Foto verschwindet also
+#              nicht aus der Kategorie, aus der es umgehaengt wurde.
+#
+# Alle uebrigen Fotos behalten GENAU EINE Zugehoerigkeit - der haeufigste Fall muss in der Demo
+# der haeufigste bleiben. Index 0 (`_CONFIDENCE_GAP_INDEX`) traegt weiterhin gar keine Angabe und
+# bekommt daher auch keine Nebenkategorie.
+_DEMO_EXTRA_CONFIDENCES: dict[int, dict[str, float]] = {
+    4: {"tier": 0.86},
+    5: {"menschen": 0.91, "essen_trinken": 0.74},
+    6: {"menschen": 0.88, "essen_trinken": 0.93},
+}
+
+# Das Foto mit dem manuellen Override (Index 6, automatisch `essen_trinken`).
+_DEMO_OVERRIDE_INDEX = 6
+_DEMO_OVERRIDE_CATEGORY_KEY = "kunst_kreatives"
 
 # Reihenfolge, in der die drei Bewertungsstatus auf die ersten Fotos des bewerteten Projekts
 # verteilt werden - ueber das Enum gebildet, damit ein vierter Status nicht stillschweigend
@@ -491,13 +518,20 @@ def _demo_category_confidences(
     Luecke darstellen muss.
 
     Reine Funktion ueber demselben deterministischen Zufallsgenerator wie die uebrigen Demo-Werte:
-    zwei Laeufe liefern identische Zahlen, ein Screenshot bleibt vergleichbar."""
+    zwei Laeufe liefern identische Zahlen, ein Screenshot bleibt vergleichbar.
+
+    specs/features/0300-nebenkategorien.md: drei Fotos bekommen zusaetzlich feste Zahlen zu
+    WEITEREN Schluesseln (`_DEMO_EXTRA_CONFIDENCES`) - daraus entstehen die Nebenkategorien, und
+    zwar ueber dieselbe Ableitung wie im produktiven Schreibpfad (`secondary_categories`), damit
+    die Demo keinen Zustand erzeugt, den die Anwendung selbst nie schriebe."""
     if index == _CONFIDENCE_GAP_INDEX:
         return None
     base = _deterministic_unit_value(slug, index, "category_confidence")
     if index == _LOW_CONFIDENCE_INDEX:
-        return {category_key: round(base * _LOW_CONFIDENCE_FACTOR, 3)}
-    return {category_key: base}
+        confidences = {category_key: round(base * _LOW_CONFIDENCE_FACTOR, 3)}
+    else:
+        confidences = {category_key: base}
+    return confidences | _DEMO_EXTRA_CONFIDENCES.get(index, {})
 
 
 async def _seed_empty_project(
@@ -626,18 +660,32 @@ async def _seed_rated_project(
 
     # Ein Foto je Kategorie-Schluessel des FESTEN Sets - ueber die Registry iteriert, damit eine
     # vierzehnte Kategorie automatisch mit abgedeckt ist statt durchzurutschen.
+    #
+    # specs/features/0300-nebenkategorien.md: die Zugehoerigkeiten werden erst GESAMMELT und dann
+    # partitionsweise geschrieben - ein Foto kann in mehreren Partitionen stehen, und
+    # `rank_position` ist innerhalb einer Partition lueckenlos 1..n (dieselbe Zusage wie im
+    # produktiven Schreibpfad).
+    memberships: list[tuple[tuple[str, str], Photo, float, bool]] = []
     for index, (photo, category_key) in enumerate(zip(photos, CATEGORY_REGISTRY, strict=True)):
+        cluster_key = f"{spec.slug}-cluster-{index % 3}"
+        category_override = (
+            _DEMO_OVERRIDE_CATEGORY_KEY if index == _DEMO_OVERRIDE_INDEX else None
+        )
         session.add(
             PhotoScore(
                 photo_id=photo.id,
                 sharpness=_deterministic_unit_value(spec.slug, index, "sharpness"),
                 exposure=_deterministic_unit_value(spec.slug, index, "exposure"),
-                cluster_key=f"{spec.slug}-cluster-{index % 3}",
+                cluster_key=cluster_key,
                 # Genau ein offener Ausschuss-Vorschlag: ein Foto mit Vorschlag "Ausschuss", das
                 # bewusst KEINE Bewertung traegt - sonst waere der Vorschlag bereits entschieden.
                 suggested_status=(
                     RatingStatus.REJECTED if index == _OPEN_SUGGESTION_INDEX else None
                 ),
+                # Genau ein uebersteuertes Foto - und zwar dasjenige, das zugleich
+                # Nebenkategorien hat: nur so ist die Marker-Kollision (zwei Ecken-Marker
+                # nebeneinander) im Browser ueberhaupt sichtbar.
+                category_override=category_override,
                 computed_at=_BASE_SCORING_AT,
             )
         )
@@ -652,7 +700,13 @@ async def _seed_rated_project(
             PhotoCategoryClassification(
                 photo_id=photo.id,
                 category_key=category_key,
-                detected_categories=[category_key],
+                # Die Kandidatenliste enthaelt genau die Schluessel der Konfidenz-Abbildung -
+                # `set(detected_category_confidences) <= set(detected_categories)` ist die am
+                # Parser erzwungene Invariante (ADR 0067 Punkt 2), und die Demo darf keinen
+                # Zustand erzeugen, den die Anwendung selbst nie schriebe.
+                detected_categories=(
+                    [category_key] if confidences is None else list(confidences)
+                ),
                 detected_category_confidences=confidences,
                 category_confidence=(
                     None if confidences is None else confidences.get(category_key)
@@ -661,16 +715,11 @@ async def _seed_rated_project(
                 computed_at=_BASE_SCORING_AT,
             )
         )
-        session.add(
-            PhotoRanking(
-                criterion_scoring_run_id=criterion_run.id,
-                photo_id=photo.id,
-                cluster_key=f"{spec.slug}-cluster-{index % 3}",
-                category_key=category_key,
-                rank_score=_deterministic_unit_value(spec.slug, index, "rank"),
-                rank_position=index + 1,
-            )
-        )
+        rank_score = _deterministic_unit_value(spec.slug, index, "rank")
+        primary_key = category_override or category_key
+        memberships.append(((cluster_key, primary_key), photo, rank_score, True))
+        for secondary_key in secondary_categories(confidences or {}, primary_key):
+            memberships.append(((cluster_key, secondary_key), photo, rank_score, False))
         for criterion_key, definition in CRITERIA_REGISTRY.items():
             session.add(
                 PhotoCriterionScore(
@@ -679,6 +728,28 @@ async def _seed_rated_project(
                     value=_deterministic_unit_value(spec.slug, index, criterion_key),
                     source=definition.source,
                     computed_at=_BASE_SCORING_AT,
+                )
+            )
+
+    partitions: dict[tuple[str, str], list[tuple[Photo, float, bool]]] = {}
+    for partition_key, photo, rank_score, is_primary in memberships:
+        partitions.setdefault(partition_key, []).append((photo, rank_score, is_primary))
+    for (cluster_key, partition_category_key), rows in partitions.items():
+        # Absteigend nach Rang-Score, Tie-Break ueber die Foto-Id - dieselbe Ordnung wie
+        # ranking.py::rank_photos. Die Konfidenz-Daempfung wird hier bewusst NICHT nachgebaut: die
+        # Demo soll einen plausiblen Zustand zeigen, nicht den Algorithmus ein zweites Mal
+        # implementieren.
+        ordered = sorted(rows, key=lambda row: (-row[1], row[0].id))
+        for position, (photo, rank_score, is_primary) in enumerate(ordered, start=1):
+            session.add(
+                PhotoRanking(
+                    criterion_scoring_run_id=criterion_run.id,
+                    photo_id=photo.id,
+                    cluster_key=cluster_key,
+                    category_key=partition_category_key,
+                    rank_score=rank_score,
+                    rank_position=position,
+                    is_primary=is_primary,
                 )
             )
 

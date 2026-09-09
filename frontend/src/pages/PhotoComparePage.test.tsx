@@ -26,7 +26,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     taken_at: '2026-07-20T10:00:00Z',
     ratings: [],
     suggestion: null,
-    ranking: null,
+    rankings: [],
     criterion_scores: [],
     fine_labels: [],
     remote_category: null,

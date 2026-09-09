@@ -62,6 +62,8 @@ function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
     rank_score: 0.8,
     rank_position: 2,
     partition_size: 5,
+    is_primary: true,
+    curation_position: null,
     ...overrides,
   }
 }
@@ -1162,5 +1164,75 @@ describe('CriterionDetailsList: Modell-Konfidenz', () => {
     ])
 
     expect(screen.queryByText(CONFIDENCE_EXPLANATION_LABEL)).not.toBeInTheDocument()
+  })
+})
+
+describe('CriterionDetailsList — Rollen der Zugehoerigkeiten', () => {
+  /* specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 13: zu jeder Kategorie des Fotos
+   * ist seine Rolle ablesbar - ausschliesslich aus `is_primary`, nie aus einem Zahlenvergleich. */
+
+  function renderWithMemberships(rankings: RankingOut[], current = rankings[0] ?? null) {
+    return render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={current}
+        rankings={rankings}
+        suggestion={null}
+        showSuggestion={false}
+        categories={CATEGORIES}
+      />
+    )
+  }
+
+  it('listet jede Kategorie des Fotos mit ihrer Rolle als TEXT', () => {
+    renderWithMemberships([
+      ranking({ category_key: 'tier', is_primary: true }),
+      ranking({ category_key: 'menschen', is_primary: false }),
+    ])
+
+    const section = screen.getByRole('list', { name: 'Kategorien dieses Fotos' })
+    const rows = within(section).getAllByRole('listitem')
+    expect(rows.map((row) => row.textContent)).toEqual(['TierHaupt', 'MenschenNeben'])
+  })
+
+  it('weist die Rolle AN DIESER STELLE aus (die gerenderte Zugehoerigkeit)', () => {
+    const secondary = ranking({ category_key: 'menschen', is_primary: false })
+    renderWithMemberships([ranking({ category_key: 'tier', is_primary: true }), secondary], secondary)
+
+    const roleTerm = screen.getByText('Rolle')
+    const row = roleTerm.parentElement
+    expect(row).not.toBeNull()
+    expect(within(row as HTMLElement).getByText('Neben')).toBeInTheDocument()
+  })
+
+  it('rendert bei genau einer Zugehoerigkeit weder Sektion noch Rollenzeile', () => {
+    /* Akzeptanzkriterium 24: ohne Nebenkategorien ist die Oberflaeche von heute nicht zu
+     * unterscheiden - Negativ-Assertion auf Text UND Textalternative. */
+    renderWithMemberships([ranking({ category_key: 'tier', is_primary: true })])
+
+    expect(screen.queryByText('Kategorien dieses Fotos')).not.toBeInTheDocument()
+    expect(screen.queryByText('Rolle')).not.toBeInTheDocument()
+    expect(screen.queryByText('Haupt')).not.toBeInTheDocument()
+  })
+
+  it('wiederholt die Konfidenzzahlen in der Rollen-Sektion NICHT', () => {
+    /* Sie stehen unveraendert in der Kandidatenliste darueber (Spec 0299) - eine zweite Stelle
+     * waere eine zweite, driftende Anzeige derselben Zahl. */
+    render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={ranking({ category_key: 'tier', is_primary: true })}
+        rankings={[
+          ranking({ category_key: 'tier', is_primary: true }),
+          ranking({ category_key: 'menschen', is_primary: false }),
+        ]}
+        suggestion={null}
+        showSuggestion={false}
+        categories={CATEGORIES}
+      />
+    )
+
+    const section = screen.getByRole('list', { name: 'Kategorien dieses Fotos' })
+    expect(section.textContent).not.toMatch(/%/)
   })
 })

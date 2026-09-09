@@ -34,6 +34,10 @@ function makeToken(payload: unknown): string {
   return `${header}.${body}.signature-irrelevant`
 }
 
+/* specs/features/0300-nebenkategorien.md: `is_primary` und `curation_position` sind pflichtig.
+ * Die Kuratierung zeigt eine Zugehoerigkeit genau dann, wenn `curation_position !== null` - der
+ * Default `1` haelt damit alle Bestandsfaelle bei ihrer bisherigen Bedeutung (ein Foto, eine
+ * Hauptzugehoerigkeit, in der Auswahl). */
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
   return {
     cluster_key: 'cluster-0',
@@ -41,8 +45,15 @@ function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
     rank_score: 0.8,
     rank_position: 1,
     partition_size: 1,
+    is_primary: true,
+    curation_position: 1,
     ...overrides,
   }
+}
+
+/** Ein gerendertes Kachel-Vorkommen fuer die Unit-Tests von `countPhotosInDay`. */
+function entry(photoOverrides: Partial<PhotoOut> = {}, rankingOverrides: Partial<RankingOut> = {}) {
+  return { photo: photo(photoOverrides), ranking: ranking(rankingOverrides) }
 }
 
 function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionScoreOut {
@@ -68,7 +79,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     taken_at: '2026-07-20T10:00:00',
     ratings: [],
     suggestion: null,
-    ranking: ranking(),
+    rankings: [ranking()],
     criterion_scores: [],
     fine_labels: [],
     remote_category: null,
@@ -86,25 +97,39 @@ describe('countPhotosInDay', () => {
     expect(countPhotosInDay({})).toBe(0)
   })
 
-  it('sums photos.length across every cluster and category of the day', () => {
+  it('sums photos across every cluster and category of the day', () => {
     const clustersForDay = {
       'cluster-a': {
-        landscape: [photo({ id: 1 }), photo({ id: 2 })],
-        people: [photo({ id: 3 })],
+        landscape: [entry({ id: 1 }), entry({ id: 2 })],
+        people: [entry({ id: 3 })],
       },
       'cluster-b': {
-        landscape: [photo({ id: 4 })],
+        landscape: [entry({ id: 4 })],
       },
     }
 
     expect(countPhotosInDay(clustersForDay)).toBe(4)
   })
 
-  it('ignores categories whose pool is already exhausted (photos.length === 0)', () => {
+  it('ignores categories whose pool is already exhausted (no entries)', () => {
     const clustersForDay = {
       'cluster-a': {
-        landscape: [] as PhotoOut[],
-        people: [photo({ id: 1 })],
+        landscape: [],
+        people: [entry({ id: 1 })],
+      },
+    }
+
+    expect(countPhotosInDay(clustersForDay)).toBe(1)
+  })
+
+  it('counts a photo that appears in two categories of the day only once', () => {
+    /* specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 26: die Beschriftung lautet
+     * "N Fotos" - gezaehlt werden EINDEUTIGE FOTOS, nicht Zugehoerigkeiten. Ohne diese Zusage
+     * stuende an einem Tag mit einem einzigen, doppelt gezeigten Foto "2 Fotos". */
+    const clustersForDay = {
+      'cluster-a': {
+        landscape: [entry({ id: 1 }, { category_key: 'landscape' })],
+        people: [entry({ id: 1 }, { category_key: 'people', is_primary: false })],
       },
     }
 
@@ -213,8 +238,8 @@ describe('CurateCategoriesPage', () => {
   it('groups photos by day, then cluster, then category, showing day/cluster headings and the category chip/name', async () => {
     const list: PhotoListOut = {
       items: [
-        photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }) }),
-        photo({ id: 2, ranking: ranking({ cluster_key: 'cluster-0', category_key: 'people' }) }),
+        photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })] }),
+        photo({ id: 2, rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })] }),
       ],
       total: 2,
     }
@@ -238,12 +263,12 @@ describe('CurateCategoriesPage', () => {
         photo({
           id: 1,
           taken_at: '2026-07-21T10:00:00',
-          ranking: ranking({ cluster_key: 'cluster-b', category_key: 'landscape' }),
+          rankings: [ranking({ cluster_key: 'cluster-b', category_key: 'landscape' })],
         }),
         photo({
           id: 2,
           taken_at: '2026-07-20T10:00:00',
-          ranking: ranking({ cluster_key: 'cluster-a', category_key: 'landscape' }),
+          rankings: [ranking({ cluster_key: 'cluster-a', category_key: 'landscape' })],
         }),
       ],
       total: 2,
@@ -272,12 +297,12 @@ describe('CurateCategoriesPage', () => {
           photo({
             id: 1,
             taken_at: '2026-07-20T14:00:00',
-            ranking: ranking({ cluster_key: 'cluster-10', category_key: 'landscape' }),
+            rankings: [ranking({ cluster_key: 'cluster-10', category_key: 'landscape' })],
           }),
           photo({
             id: 2,
             taken_at: '2026-07-20T09:00:00',
-            ranking: ranking({ cluster_key: 'cluster-2', category_key: 'landscape' }),
+            rankings: [ranking({ cluster_key: 'cluster-2', category_key: 'landscape' })],
           }),
         ],
         total: 2,
@@ -303,12 +328,12 @@ describe('CurateCategoriesPage', () => {
           photo({
             id: 1,
             taken_at: '2026-07-21T00:10:00',
-            ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }),
+            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
           }),
           photo({
             id: 2,
             taken_at: '2026-07-20T23:50:00',
-            ranking: ranking({ cluster_key: 'cluster-0', category_key: 'people' }),
+            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })],
           }),
         ],
         total: 2,
@@ -363,11 +388,11 @@ describe('CurateCategoriesPage', () => {
   it('rejects a photo and shows a skeleton in its tile until the backfilled photo arrives', async () => {
     vi.mocked(photosApi.listPhotos)
       .mockResolvedValueOnce({
-        items: [photo({ id: 1, ranking: ranking({ rank_position: 1 }) })],
+        items: [photo({ id: 1, rankings: [ranking({ rank_position: 1 })] })],
         total: 1,
       })
       .mockResolvedValueOnce({
-        items: [photo({ id: 2, relative_path: 'b.jpg', ranking: ranking({ rank_position: 2 }) })],
+        items: [photo({ id: 2, relative_path: 'b.jpg', rankings: [ranking({ rank_position: 2 })] })],
         total: 1,
       })
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
@@ -402,7 +427,7 @@ describe('CurateCategoriesPage', () => {
           items: [
             photo({
               id: 1,
-              ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }),
+              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
             }),
           ],
           total: 1,
@@ -438,12 +463,12 @@ describe('CurateCategoriesPage', () => {
           items: [
             photo({
               id: 1,
-              ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }),
+              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
             }),
             photo({
               id: 2,
               relative_path: 'b.jpg',
-              ranking: ranking({ cluster_key: 'cluster-0', category_key: 'people' }),
+              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })],
             }),
           ],
           total: 2,
@@ -453,7 +478,7 @@ describe('CurateCategoriesPage', () => {
             photo({
               id: 2,
               relative_path: 'b.jpg',
-              ranking: ranking({ cluster_key: 'cluster-0', category_key: 'people' }),
+              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })],
             }),
           ],
           total: 1,
@@ -492,13 +517,13 @@ describe('CurateCategoriesPage', () => {
             photo({
               id: 1,
               taken_at: '2026-07-20T09:00:00',
-              ranking: ranking({ cluster_key: 'cluster-a', category_key: 'landscape' }),
+              rankings: [ranking({ cluster_key: 'cluster-a', category_key: 'landscape' })],
             }),
             photo({
               id: 2,
               relative_path: 'b.jpg',
               taken_at: '2026-07-20T14:00:00',
-              ranking: ranking({ cluster_key: 'cluster-b', category_key: 'landscape' }),
+              rankings: [ranking({ cluster_key: 'cluster-b', category_key: 'landscape' })],
             }),
           ],
           total: 2,
@@ -509,7 +534,7 @@ describe('CurateCategoriesPage', () => {
               id: 2,
               relative_path: 'b.jpg',
               taken_at: '2026-07-20T14:00:00',
-              ranking: ranking({ cluster_key: 'cluster-b', category_key: 'landscape' }),
+              rankings: [ranking({ cluster_key: 'cluster-b', category_key: 'landscape' })],
             }),
           ],
           total: 1,
@@ -543,7 +568,7 @@ describe('CurateCategoriesPage', () => {
 
   it('shows a quality meter derived from rank_score', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
-      items: [photo({ id: 1, ranking: ranking({ rank_score: 0.9 }) })],
+      items: [photo({ id: 1, rankings: [ranking({ rank_score: 0.9 })] })],
       total: 1,
     })
 
@@ -561,7 +586,7 @@ describe('CurateCategoriesPage', () => {
    */
   it('no longer renders its own "Zurück zum Projekt" link (AK10)', async () => {
     const list: PhotoListOut = {
-      items: [photo({ id: 1, ranking: ranking({ category_key: 'landscape' }) })],
+      items: [photo({ id: 1, rankings: [ranking({ category_key: 'landscape' })] })],
       total: 1,
     }
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
@@ -608,8 +633,8 @@ describe('CurateCategoriesPage', () => {
     function twoCategoryDayList(): PhotoListOut {
       return {
         items: [
-          photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }) }),
-          photo({ id: 2, ranking: ranking({ cluster_key: 'cluster-0', category_key: 'people' }) }),
+          photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })] }),
+          photo({ id: 2, rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })] }),
         ],
         total: 2,
       }
@@ -642,7 +667,7 @@ describe('CurateCategoriesPage', () => {
             photo({
               id: 3,
               taken_at: '2026-07-21T14:00:00',
-              ranking: ranking({ cluster_key: 'cluster-1', category_key: 'landscape' }),
+              rankings: [ranking({ cluster_key: 'cluster-1', category_key: 'landscape' })],
             }),
           ],
           total: 3,
@@ -677,7 +702,7 @@ describe('CurateCategoriesPage', () => {
       async () => {
         vi.mocked(photosApi.listPhotos)
           .mockResolvedValueOnce({
-            items: [photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0' }) })],
+            items: [photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0' })] })],
             total: 1,
           })
           .mockResolvedValueOnce({ items: [], total: 0 })
@@ -748,16 +773,16 @@ describe('CurateCategoriesPage', () => {
       async () => {
         vi.mocked(photosApi.listPhotos)
           .mockResolvedValueOnce({
-            items: [photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0' }) })],
+            items: [photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0' })] })],
             total: 1,
           })
           .mockResolvedValueOnce({
             items: [
-              photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0' }) }),
+              photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0' })] }),
               photo({
                 id: 2,
                 taken_at: '2026-07-21T10:00:00',
-                ranking: ranking({ cluster_key: 'cluster-1' }),
+                rankings: [ranking({ cluster_key: 'cluster-1' })],
               }),
             ],
             total: 2,
@@ -801,7 +826,7 @@ describe('CurateCategoriesPage', () => {
         let resolveRefetch: (value: PhotoListOut) => void = () => {}
         vi.mocked(photosApi.listPhotos)
           .mockResolvedValueOnce({
-            items: [photo({ id: 1, ranking: ranking({ cluster_key: 'cluster-0' }) })],
+            items: [photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0' })] })],
             total: 1,
           })
           .mockReturnValueOnce(
@@ -846,7 +871,7 @@ describe('CurateCategoriesPage', () => {
         let resolveRefetch: (value: PhotoListOut) => void = () => {}
         vi.mocked(photosApi.listPhotos)
           .mockResolvedValueOnce({
-            items: [photo({ id: 1, ranking: ranking({ rank_position: 1 }) })],
+            items: [photo({ id: 1, rankings: [ranking({ rank_position: 1 })] })],
             total: 1,
           })
           .mockReturnValueOnce(
@@ -874,7 +899,7 @@ describe('CurateCategoriesPage', () => {
         await user.click(trigger) // expand again, still pending
 
         resolveRefetch({
-          items: [photo({ id: 2, relative_path: 'b.jpg', ranking: ranking({ rank_position: 2 }) })],
+          items: [photo({ id: 2, relative_path: 'b.jpg', rankings: [ranking({ rank_position: 2 })] })],
           total: 1,
         })
 
@@ -896,7 +921,7 @@ describe('CurateCategoriesPage', () => {
 
     it('renders the catch-all section with its neutral explanation when every photo is unrecognized', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1, ranking: ranking({ category_key: 'nicht_erkannt' }) })],
+        items: [photo({ id: 1, rankings: [ranking({ category_key: 'nicht_erkannt' })] })],
         total: 1,
       })
 
@@ -915,11 +940,11 @@ describe('CurateCategoriesPage', () => {
         items: [
           photo({
             id: 1,
-            ranking: ranking({ cluster_key: 'cluster-0', category_key: 'nicht_erkannt' }),
+            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'nicht_erkannt' })],
           }),
           photo({
             id: 2,
-            ranking: ranking({ cluster_key: 'cluster-0', category_key: 'tier' }),
+            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'tier' })],
           }),
         ],
         total: 2,
@@ -937,7 +962,7 @@ describe('CurateCategoriesPage', () => {
 
     it('shows no explanation at all when no photo is unrecognized', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1, ranking: ranking({ category_key: 'tier' }) })],
+        items: [photo({ id: 1, rankings: [ranking({ category_key: 'tier' })] })],
         total: 1,
       })
 
@@ -967,7 +992,7 @@ describe('CurateCategoriesPage', () => {
           photo({
             id: 1,
             criterion_scores: [criterionScore()],
-            ranking: ranking({ category_key: 'people' }),
+            rankings: [ranking({ category_key: 'people' })],
             category_candidates: [
               { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
               { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
@@ -1056,13 +1081,13 @@ describe('CurateCategoriesPage: Filter "Nur unsichere Zuordnungen"', () => {
         id: 1,
         relative_path: 'sicher.jpg',
         category_confidence: 0.9,
-        ranking: ranking({ cluster_key: 'cluster-0', category_key: 'landscape' }),
+        rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
       }),
       photo({
         id: 2,
         relative_path: 'wacklig.jpg',
         category_confidence: 0.3,
-        ranking: ranking({ cluster_key: 'cluster-0', category_key: 'people' }),
+        rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })],
       }),
     ],
     total: 2,
@@ -1156,5 +1181,144 @@ describe('CurateCategoriesPage: Filter "Nur unsichere Zuordnungen"', () => {
     const heading = screen.getByText('People').closest('h4')
     expect(heading).not.toBeNull()
     expect(heading).not.toHaveTextContent('%')
+  })
+})
+
+describe('CurateCategoriesPage — Nebenkategorien', () => {
+  /* specs/features/0300-nebenkategorien.md: dasselbe Foto steht in zwei Kategorien - das ist der
+   * Fall, den die Kuratierung vorher strukturell nicht kannte. */
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: false,
+        media: '(hover: hover) and (pointer: fine)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })
+    )
+    vi.mocked(photosApi.listPhotos).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+    vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
+    setToken(makeToken({ sub: '1', username: 'testuser' }))
+  })
+
+  const TWO_MEMBERSHIPS: PhotoListOut = {
+    items: [
+      photo({
+        id: 1,
+        rankings: [
+          ranking({ category_key: 'landscape', is_primary: true, curation_position: 1 }),
+          ranking({ category_key: 'people', is_primary: false, curation_position: 2 }),
+        ],
+      }),
+    ],
+    total: 1,
+  }
+
+  it('rendert dasselbe Foto in beiden Kategorien, in denen es ausgewaehlt ist', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(TWO_MEMBERSHIPS)
+
+    renderPage()
+
+    expect(await screen.findByText('Landscape')).toBeInTheDocument()
+    expect(screen.getByText('People')).toBeInTheDocument()
+    // Zwei Kacheln fuer EIN Foto - der Dateiname erscheint zweimal.
+    expect(screen.getAllByText('a.jpg')).toHaveLength(2)
+  })
+
+  it('zeigt den Nebenkategorie-Marker nur auf der Kachel der Nebenkategorie', async () => {
+    /* Akzeptanzkriterium 14: die Rolle traegt eine Textalternative (`role="img"` +
+     * `aria-label`), nie nur eine Farbe - und dieselbe Kachel unter ihrer Hauptkategorie traegt
+     * ihn NICHT. */
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(TWO_MEMBERSHIPS)
+
+    renderPage()
+
+    const markers = await screen.findAllByLabelText('Nebenkategorie')
+    expect(markers).toHaveLength(1)
+    expect(markers[0]).toHaveAttribute('role', 'img')
+  })
+
+  it('zeigt Uebersteuerungs- und Nebenkategorie-Marker nebeneinander auf derselben Kachel', async () => {
+    /* Marker-Kollision (UI/UX-Abschnitt der Spec): ein uebersteuertes Foto, das anderswo als
+     * Nebenkategorie steht, braucht BEIDE - kein Stapeln, kein Verdraengen. */
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          category_override: 'landschaft',
+          rankings: [
+            ranking({ category_key: 'landscape', is_primary: true, curation_position: 1 }),
+            ranking({ category_key: 'people', is_primary: false, curation_position: 1 }),
+          ],
+        }),
+      ],
+      total: 1,
+    })
+
+    renderPage()
+
+    const secondaryMarker = await screen.findByLabelText('Nebenkategorie')
+    const container = secondaryMarker.parentElement
+    expect(container).not.toBeNull()
+    expect(within(container as HTMLElement).getByLabelText('Kategorie manuell übersteuert')).toBeInTheDocument()
+    // Beide Kacheln des Fotos tragen den Uebersteuerungs-Marker, nur eine den Nebenkategorie-Marker.
+    expect(screen.getAllByLabelText('Kategorie manuell übersteuert')).toHaveLength(2)
+    expect(screen.getAllByLabelText('Nebenkategorie')).toHaveLength(1)
+  })
+
+  it('rendert weder Marker noch Rollenzeile, wenn ein Foto genau eine Zugehoerigkeit hat', async () => {
+    /* Akzeptanzkriterium 24: ohne Nebenkategorien sieht die Oberflaeche exakt wie heute aus -
+     * Negativ-Assertion auf die Textalternative UND auf den Rollen-Text. */
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
+      total: 1,
+    })
+
+    renderPage()
+    await screen.findByText('Landscape')
+
+    expect(screen.queryByLabelText('Nebenkategorie')).not.toBeInTheDocument()
+    expect(screen.queryByText('Kategorien dieses Fotos')).not.toBeInTheDocument()
+  })
+
+  it('blendet eine Zugehoerigkeit ohne Auswahlposition nicht ein', async () => {
+    /* Die Kuratierung zeigt genau die Zugehoerigkeiten, die der SERVER ausgewaehlt hat
+     * (`curation_position !== null`) - eine nicht ausgewaehlte Zugehoerigkeit ist im Popover
+     * sichtbar, aber sie erzeugt keine Kachel. */
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          rankings: [
+            ranking({ category_key: 'landscape', is_primary: true, curation_position: 1 }),
+            ranking({ category_key: 'people', is_primary: false, curation_position: null }),
+          ],
+        }),
+      ],
+      total: 1,
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('Landscape')).toBeInTheDocument()
+    expect(screen.queryByText('People')).not.toBeInTheDocument()
+    expect(screen.getAllByText('a.jpg')).toHaveLength(1)
+  })
+
+  it('zaehlt ein doppelt gezeigtes Foto in der Tagesueberschrift nur einmal', async () => {
+    // Akzeptanzkriterium 26, hier durch die gerenderte Seite hindurch statt nur an der Funktion.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(TWO_MEMBERSHIPS)
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /montag 20\.07\.2026/i }))
+
+    expect(screen.getByText('(1 Fotos)')).toBeInTheDocument()
   })
 })

@@ -177,9 +177,14 @@ jobs:
             test "$key" = ""
           done
 
+          # specs/features/0369-mistral-small-loest-ministral-8b-ab.md: bewusst das NICHT
+          # voreingestellte Modell des Anbieters - so laeuft die tatsaechlich waehlbare, neue
+          # Modell-ID einmal ausserhalb von pytest durch den echten Betriebspfad
+          # (.env -> docker compose -> Dienst-Umgebung). Mit dem Voreinstellungswert waere der
+          # Durchreichetest nicht von einem leeren Wert zu unterscheiden.
           echo "--- override (LANDMARK_PROVIDER=mistral, LANDMARK_MODEL/MISTRAL_API_KEY set) ---"
           export LANDMARK_PROVIDER=mistral
-          export LANDMARK_MODEL=ministral-3b-2512
+          export LANDMARK_MODEL=mistral-small-2603
           export MISTRAL_API_KEY=ci-static-check-value
           for service in backend worker; do
             provider=$(docker compose config --format json | jq -r ".services.$service.environment.LANDMARK_PROVIDER")
@@ -187,7 +192,7 @@ jobs:
             key=$(docker compose config --format json | jq -r ".services.$service.environment.MISTRAL_API_KEY")
             echo "$service: LANDMARK_PROVIDER=$provider LANDMARK_MODEL=$model MISTRAL_API_KEY=$key"
             test "$provider" = "mistral"
-            test "$model" = "ministral-3b-2512"
+            test "$model" = "mistral-small-2603"
             test "$key" = "ci-static-check-value"
           done
           unset LANDMARK_PROVIDER LANDMARK_MODEL MISTRAL_API_KEY

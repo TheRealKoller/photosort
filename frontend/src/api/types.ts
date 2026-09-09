@@ -235,10 +235,11 @@ export interface CategoryOut {
   locally_available: boolean
 }
 
-// Kuratierungs-Kontext eines Fotos aus der Kriterien-/Rangfolgen-Pipeline
+// EINE Zugehoerigkeit eines Fotos zu einer Kategorie aus der Kriterien-/Rangfolgen-Pipeline
 // (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md). Seit
 // specs/features/0040-bewertungsdetails-info-popover.md auch im Standard-Listing befuellt (nicht
-// mehr nur bei `top_n_per_category`).
+// mehr nur bei `top_n_per_category`). Seit specs/features/0300-nebenkategorien.md hat ein Foto
+// mehrere davon - siehe `PhotoOut.rankings`.
 export interface RankingOut {
   cluster_key: string
   category_key: CategoryKey
@@ -246,7 +247,17 @@ export interface RankingOut {
   rank_position: number
   // Groesse der GESAMTEN Cluster x Kategorie-Partition (nicht nur der angeforderten top_n), fuer
   // "Rang M von N" im Info-Popover (specs/features/0040-bewertungsdetails-info-popover.md).
+  // Zaehlt seit Spec 0300 Haupt- UND Nebenzeilen der Partition.
   partition_size: number
+  /** specs/features/0300-nebenkategorien.md: ob dies die HAUPTkategorie des Fotos ist. Genau eine
+   * Zugehoerigkeit je Foto traegt `true`. Die Rolle kommt ausschliesslich aus diesem Feld - im
+   * Frontend wird KEINE Konfidenz-Schwelle nachgebildet. */
+  is_primary: boolean
+  /** Der Platz dieser Zugehoerigkeit in der um die eigenen Ablehnungen bereinigten Auswahl ihrer
+   * Kategorie. `null` heisst: gehoert nicht zur angeforderten Auswahl, oder es wurde gar keine
+   * angefordert. AUSDRUECKLICH NICHT `rank_position` - jene ist die lauf-globale, ungefilterte
+   * Rangaussage des Info-Popovers. Auf `!== null` pruefen, nie auf Falsyness. */
+  curation_position: number | null
 }
 
 // Herkunft eines Kriterien-Werts (backend models.py::CriterionSource) - aktuell nur zur Anzeige
@@ -355,12 +366,20 @@ export interface PhotoOut {
   taken_at: string
   ratings: RatingOut[]
   suggestion: SuggestionOut | null
-  ranking: RankingOut | null
+  /** ALLE Zugehoerigkeiten des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi
+   * (specs/features/0300-nebenkategorien.md). Immer eine Liste, nie `null` - leer, solange kein
+   * erfolgreicher Lauf existiert. Reihenfolge: Hauptzeile zuerst, danach die Nebenzeilen in
+   * Registry-Anzeigereihenfolge.
+   *
+   * Ersetzt das entfallene `ranking`. Nie `rankings[0]` als "die Hauptzeile" lesen - dafuer gibt es
+   * `utils/rankings.ts::primaryRanking`. */
+  rankings: RankingOut[]
   criterion_scores: CriterionScoreOut[]
   // specs/features/0289-feste-kategorien.md: immer eine Liste (0-2 Eintraege), nie null.
   fine_labels: FineLabelOut[]
   // Die remote ermittelte Kategorie dieses Fotos, null ohne Remote-Klassifizierung. Bewusst
-  // getrennt von `ranking.category_key` (dort steht die im Lauf tatsaechlich vergebene Kategorie).
+  // getrennt von `rankings[].category_key` (dort steht die im Lauf tatsaechlich vergebene
+  // Kategorie).
   remote_category: CategoryKey | null
   /** specs/features/0299-kategorie-konfidenz-anzeigen.md: die Konfidenz zu `remote_category`.
    * Eigenes Feld statt einer Ableitung aus `category_candidates` - `remote_category` kann

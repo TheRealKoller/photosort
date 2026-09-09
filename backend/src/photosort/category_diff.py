@@ -142,12 +142,18 @@ def render_report(
 
 
 async def collect_assignments(session: AsyncSession, run_id: int) -> dict[int, str]:
-    """Duenne DB-Leseschicht: photo_id -> category_key aller PhotoRanking-Zeilen EINES Laufs.
-    Rein lesend, veraendert nichts."""
+    """Duenne DB-Leseschicht: photo_id -> category_key der HAUPTZEILE jedes Fotos in EINEM Lauf.
+    Rein lesend, veraendert nichts.
+
+    Der `is_primary`-Filter ist seit specs/features/0300-nebenkategorien.md notwendig und nicht
+    nur inhaltlich richtig: das Werkzeug bildet EINE Zuordnung je Foto ab (ADR 0047 Punkt 7,
+    ADR 0069 Punkt 8), und ohne den Filter ueberschriebe eine Nebenzeile die Hauptzeile im
+    Ergebnis-Dict still - abhaengig von der Zeilenreihenfolge der Datenbank."""
     rows = (
         await session.execute(
             select(PhotoRanking.photo_id, PhotoRanking.category_key).where(
-                PhotoRanking.criterion_scoring_run_id == run_id
+                PhotoRanking.criterion_scoring_run_id == run_id,
+                PhotoRanking.is_primary.is_(True),
             )
         )
     ).all()
