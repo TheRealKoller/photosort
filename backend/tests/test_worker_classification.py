@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import math
 from datetime import UTC, datetime
 from pathlib import Path
@@ -740,3 +741,409 @@ async def test_a_purely_local_run_resolves_no_model_at_all(
 
     assert run.status == ScanStatus.SUCCESS
     assert run.landmark_model is None
+
+
+# --------------------------------------------------------------------------------------------
+# specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
+# teilschritte-und-laufeigene-cloud-bilanz.md Punkt 1: die VIER benannten Teilschritte.
+#
+# Beobachtet wird die tatsaechlich durchlaufene FOLGE als Liste - vier Einzelasserts ("irgendwann
+# stand `phase` auf landmark") belegten die Monotonie nicht, und genau sie ist die Aussage: ein
+# Zuruecksetzen auf `criteria` nach der Landmark-Phase liesse die Anzeige rueckwaerts laufen.
+# --------------------------------------------------------------------------------------------
+
+
+class _PhaseRecorder:
+    """Sammelt Phasenwerte und faltet unmittelbare Wiederholungen zusammen - beobachtet wird pro
+    Foto/pro Aufruf, die Aussage ist aber die Abfolge, nicht die Aufrufzahl."""
+
+    def __init__(self) -> None:
+        self.sequence: list[str | None] = []
+
+    def record(self, phase: ClassificationPhase | None) -> None:
+        value = phase.value if phase is not None else None
+        if not self.sequence or self.sequence[-1] != value:
+            self.sequence.append(value)
+
+
+async def _current_phase(session: AsyncSession) -> ClassificationPhase | None:
+    run = (await session.execute(select(CriterionScoringRun))).scalar_one()
+    return run.phase
+
+
+def _phase_observing_scene_classifier(
+    session: AsyncSession, recorder: _PhaseRecorder
+) -> object:
+    """Beobachtungspunkt der KRITERIEN-Phase: der Szenen-Klassifikator laeuft je Foto innerhalb
+    der lokalen Foto-Schleife. Ohne ihn haette diese Phase gar keinen Beobachtungspunkt - sie
+    ruft keinen Client auf."""
+
+    class _Observing(_LandscapeSceneLabels):
+        def classify(self, image: object) -> object:
+            # `_compute_content_criteria` laeuft synchron; der Phasenwert steht am selben
+            # In-Memory-Objekt, das die Schleife fortschreibt - kein DB-Roundtrip noetig.
+            run = next(
+                obj
+                for obj in session.identity_map.values()
+                if isinstance(obj, CriterionScoringRun)
+            )
+            recorder.record(run.phase)
+            return super().classify(image)
+
+    return _Observing()
+
+
+async def test_the_phase_sequence_of_a_cloud_run_is_monotone(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+    recorder = _PhaseRecorder()
+
+    class _PhaseObservingCategoryClient(RecordingCategoryClient):
+        async def classify(
+            self, image_bytes: bytes, mime_type: str, photo_id: int
+        ) -> RemoteClassification:
+            recorder.record(await _current_phase(db_session))
+            return await super().classify(image_bytes, mime_type, photo_id)
+
+    class _PhaseObservingLandmarkClient(RecordingLandmarkClient):
+        async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+            recorder.record(await _current_phase(db_session))
+            return await super().detect(image_bytes, mime_type)
+
+    real_rank_photos = worker.rank_photos
+
+    def _observing_rank_photos(*args: object, **kwargs: object) -> object:
+        # Der Ranking-Teilschritt hat keinen Client - der Spy auf rank_photos ist sein einziger
+        # Beobachtungspunkt WAEHREND der Ausfuehrung.
+        run = next(
+            obj
+            for obj in db_session.identity_map.values()
+            if isinstance(obj, CriterionScoringRun)
+        )
+        recorder.record(run.phase)
+        return real_rank_photos(*args, **kwargs)
+
+    monkeypatch.setattr(worker, "rank_photos", _observing_rank_photos)
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: _PhaseObservingCategoryClient(
+            RemoteClassification(categories=("landschaft",), fine_labels=())
+        ),
+        build_landmark_client=lambda _model: _PhaseObservingLandmarkClient(),
+        build_classifier=lambda: _phase_observing_scene_classifier(db_session, recorder),
+    )
+    recorder.record(run.phase)
+
+    assert recorder.sequence == ["remote_categories", "criteria", "landmark", "ranking", None]
+
+
+async def test_a_run_without_cloud_keeps_the_order_and_skips_both_cloud_phases(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+    recorder = _PhaseRecorder()
+
+    real_rank_photos = worker.rank_photos
+
+    def _observing_rank_photos(*args: object, **kwargs: object) -> object:
+        run = next(
+            obj
+            for obj in db_session.identity_map.values()
+            if isinstance(obj, CriterionScoringRun)
+        )
+        recorder.record(run.phase)
+        return real_rank_photos(*args, **kwargs)
+
+    monkeypatch.setattr(worker, "rank_photos", _observing_rank_photos)
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=False,
+        build_category_client=_exploding_category_client_builder,
+        build_landmark_client=_exploding_landmark_client_builder,
+        build_classifier=lambda: _phase_observing_scene_classifier(db_session, recorder),
+    )
+    recorder.record(run.phase)
+
+    assert recorder.sequence == ["criteria", "ranking", None]
+
+
+async def test_the_ranking_step_no_longer_reports_the_landmark_phase(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DER Regressionstest fuer die Existenz des vierten Werts (ADR 0068 Punkt 1): ohne `ranking`
+    bliebe `phase` waehrend der Kategorieableitung/rank_photos auf `landmark` stehen - die Anzeige
+    behauptete dann Cloud-Aufrufe, die nicht mehr stattfinden, bei 100 % Fortschritt."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+    observed: list[ClassificationPhase | None] = []
+
+    real_rank_photos = worker.rank_photos
+
+    def _observing_rank_photos(*args: object, **kwargs: object) -> object:
+        run = next(
+            obj
+            for obj in db_session.identity_map.values()
+            if isinstance(obj, CriterionScoringRun)
+        )
+        observed.append(run.phase)
+        return real_rank_photos(*args, **kwargs)
+
+    monkeypatch.setattr(worker, "rank_photos", _observing_rank_photos)
+
+    await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: RecordingCategoryClient(
+            RemoteClassification(categories=("landschaft",), fine_labels=())
+        ),
+        build_landmark_client=lambda _model: RecordingLandmarkClient(),
+        build_classifier=_LandscapeSceneLabels,
+    )
+
+    assert observed, "rank_photos wurde gar nicht aufgerufen - der Test prueft dann nichts."
+    assert all(phase is ClassificationPhase.RANKING for phase in observed), observed
+
+
+async def test_a_failed_run_leaves_no_phase_behind(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_fail_run` nullt `phase` - haelt fest, dass auch der neue Ranking-Zweig darueber laeuft und
+    ein gescheiterter Lauf nicht dauerhaft als "laeuft gerade" dasteht."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    def _explode(*args: object, **kwargs: object) -> NoReturn:
+        raise RuntimeError("simulierter Fehlschlag im Ranking-Teilschritt")
+
+    monkeypatch.setattr(worker, "rank_photos", _explode)
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: RecordingCategoryClient(),
+        build_landmark_client=lambda _model: RecordingLandmarkClient(),
+    )
+
+    assert run.status == ScanStatus.FAILED
+    assert run.phase is None
+
+
+# --------------------------------------------------------------------------------------------
+# specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
+# teilschritte-und-laufeigene-cloud-bilanz.md Punkt 3: Fremdschluessel statt Sortier-Heuristik.
+#
+# "Die juengste Remote-Zeile des Projekts" schriebe einem Lauf OHNE Cloud-Phase den Geldbetrag
+# des Laufs davor zu. Bei einer Anzeige, die einen Betrag einem Durchlauf zuschreibt, ist das
+# falsch - nicht nur ungenau.
+# --------------------------------------------------------------------------------------------
+
+
+async def test_a_cloud_run_links_its_own_remote_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: RecordingCategoryClient(),
+    )
+
+    remote_run = (
+        (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().one()
+    )
+    assert run.remote_category_classification_run_id == remote_run.id
+
+
+async def test_the_link_exists_before_the_first_remote_call(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der Fremdschluessel wird VOR dem Start von Phase 1 gesetzt und committet - die Oberflaeche
+    braucht den Anker bereits waehrend der Remote-Phase, sonst zeigte sie den gerade laufenden
+    Cloud-Teilschritt genau dann nicht, wenn er Geld ausgibt."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+    observed: list[int | None] = []
+
+    class _LinkObservingClient(RecordingCategoryClient):
+        async def classify(
+            self, image_bytes: bytes, mime_type: str, photo_id: int
+        ) -> RemoteClassification:
+            run = (await db_session.execute(select(CriterionScoringRun))).scalar_one()
+            observed.append(run.remote_category_classification_run_id)
+            return await super().classify(image_bytes, mime_type, photo_id)
+
+    await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: _LinkObservingClient(),
+    )
+
+    remote_run = (
+        (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().one()
+    )
+    assert observed == [remote_run.id]
+
+
+async def test_a_run_without_a_cloud_phase_links_no_remote_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """DIE zweite Haelfte ist der eigentliche Testfall: im selben Projekt liegt eine AELTERE,
+    FREMDE Remote-Zeile. Ohne sie bestuende der Test auch bei leerer Datenbank - und genau dieser
+    Fall ist der Grund fuer die Umkehr von ADR 0050 Punkt 3: die Heuristik "juengste Remote-Zeile
+    des Projekts" haette diesem Lauf die Zahlen des Laufs davor zugeschrieben."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+    foreign_remote_run = RemoteCategoryClassificationRun(
+        project_id=project.id,
+        status=ScanStatus.SUCCESS,
+        api_calls=42,
+        cost_usd=1.23,
+    )
+    db_session.add(foreign_remote_run)
+    await db_session.commit()
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=False,
+        build_category_client=_exploding_category_client_builder,
+        build_landmark_client=_exploding_landmark_client_builder,
+    )
+
+    assert run.remote_category_classification_run_id is None
+
+
+async def test_two_consecutive_runs_each_carry_their_own_remote_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    first = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: RecordingCategoryClient(),
+    )
+    await _add_candidate_photo(db_session, project, "b.jpg", tmp_path)
+    second = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: RecordingCategoryClient(),
+    )
+
+    assert first.id != second.id
+    assert first.remote_category_classification_run_id is not None
+    assert second.remote_category_classification_run_id is not None
+    assert (
+        first.remote_category_classification_run_id
+        != second.remote_category_classification_run_id
+    )
+
+
+# --------------------------------------------------------------------------------------------
+# ADR 0068 Punkt 5: die Schaetzung, mit der ein Lauf gestartet wurde, wird am Lauf eingefroren.
+# --------------------------------------------------------------------------------------------
+
+
+async def test_the_start_estimate_is_frozen_on_the_run_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ohne das Einfrieren ist "die tatsaechlichen Kosten sind gegen die Schaetzung einordenbar"
+    nach dem Lauf unerfuellbar: die Schaetzung rechnet ueber den noch OFFENEN Kandidatenbestand,
+    den genau dieser Lauf gerade abgearbeitet hat - unmittelbar danach schaetzt derselbe Endpunkt
+    nahe null."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    run = await run_classification(
+        db_session,
+        project,
+        scoring_run.id,
+        tmp_path,
+        use_cloud=True,
+        estimated_cost_usd=2.5,
+        build_detector=_NoDetections,
+        build_animal_detector=_NoDetections,
+        build_classifier=_NoSceneLabels,
+        build_aesthetics=_NeutralAesthetics,
+        build_landmarker=_NoDetections,
+        build_embedder=_fake_embedder,
+        build_category_client=lambda _model: RecordingCategoryClient(),
+    )
+
+    assert run.estimated_cost_usd == pytest.approx(2.5)
+
+
+async def test_a_run_without_a_passed_estimate_stores_null_not_zero(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """`NULL`, nicht `0.0` (Security-Muss der Spec): ein Lauf ohne Cloud hat keine
+    Kostenschaetzung, und `0.0` waere eine Aussage, die niemand getroffen hat - dieselbe
+    "null heisst unbekannt, nie kostenlos"-Linie wie bei `price_per_image_usd`."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=False,
+        build_category_client=_exploding_category_client_builder,
+        build_landmark_client=_exploding_landmark_client_builder,
+    )
+
+    assert run.estimated_cost_usd is None
+
+
+def test_the_classify_job_argument_has_a_default() -> None:
+    """Ein zum Deployment-Zeitpunkt bereits eingereihter arq-Job traegt das neue Argument nicht -
+    ohne Default scheiterte er an der Signaturaenderung, nach einem kostenpflichtigen Lauf, dessen
+    Ergebnis niemand mehr sieht."""
+    parameter = inspect.signature(worker.classify).parameters["estimated_cost_usd"]
+
+    assert parameter.default is None

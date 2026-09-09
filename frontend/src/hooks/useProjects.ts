@@ -32,6 +32,12 @@ export function useProjectsQuery() {
  * specs/features/0003-automatic-best-photo-selection.md und
  * specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md (dritte Anwendung
  * desselben granularen Live-Fortschritt-Polling-Musters, ersetzt last_top_selection_run).
+ *
+ * specs/features/0348-klassifizierungs-transparenz.md: die vierte Bedingung
+ * (`last_remote_category_classification_run`) ist mit dem Feld ersatzlos entfallen und wird NICHT
+ * ersetzt - sie war redundant. Der Klassifizierungslauf ist waehrend des GESAMTEN verketteten
+ * Durchlaufs `running`, also auch waehrend seiner Remote-Phase; die dritte Bedingung deckt sie
+ * mit ab.
  */
 export function useProjectQuery(id: number) {
   return useQuery({
@@ -42,8 +48,7 @@ export function useProjectQuery(id: number) {
       const isRunning =
         data?.last_scan?.status === 'running' ||
         data?.last_scoring_run?.status === 'running' ||
-        data?.last_criterion_scoring_run?.status === 'running' ||
-        data?.last_remote_category_classification_run?.status === 'running'
+        data?.last_criterion_scoring_run?.status === 'running'
       return isRunning ? POLL_INTERVAL_MS : false
     },
   })

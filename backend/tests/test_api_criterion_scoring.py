@@ -227,7 +227,10 @@ class TestClassify:
         )
 
         assert response.status_code == 202
-        assert fake_enqueuer.calls == [("classify", (project_id, run.id, False))]
+        # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 5: das vierte
+        # Argument ist die serverseitig berechnete Start-Schaetzung. Ohne Cloud-Nutzung ist sie
+        # `None` - nicht `0.0`: ein Lauf ohne Cloud hat keine Kostenschaetzung.
+        assert fake_enqueuer.calls == [("classify", (project_id, run.id, False, None))]
 
     async def test_auto_confirmed_gate_allows_the_request(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -276,7 +279,10 @@ class TestClassify:
         )
 
         assert response.status_code == 202
-        assert fake_enqueuer.calls == [("classify", (project_id, run.id, True))]
+        # Mit Cloud-Nutzung reicht der Endpunkt die Schaetzung durch. Das Projekt hat hier keine
+        # Kandidaten, die Schaetzung ist deshalb `0.0` - "es faellt nichts an", eine BEKANNTE
+        # Aussage, im Unterschied zum `None` des lokalen Laufs darueber.
+        assert fake_enqueuer.calls == [("classify", (project_id, run.id, True, 0.0))]
 
     async def test_returns_403_when_cloud_is_requested_without_consent(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession

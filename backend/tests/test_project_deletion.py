@@ -16,12 +16,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.db import Base
-from photosort.models import Project
+from photosort.models import CriterionScoringRun, Project
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
 from tests.project_graph import (
     build_project_graph,
@@ -168,3 +168,40 @@ async def test_collect_photo_cache_keys_without_ids_is_empty(db_session: AsyncSe
     await db_session.commit()
 
     assert await collect_photo_cache_keys(db_session, []) == []
+
+
+async def test_a_project_with_a_linked_remote_run_stays_fully_deletable(
+    db_session: AsyncSession,
+) -> None:
+    """specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-
+    vier-teilschritte-und-laufeigene-cloud-bilanz.md Punkt 3: der neue Fremdschluessel
+    `criterion_scoring_runs.remote_category_classification_run_id` zieht eine KANTE ZWISCHEN zwei
+    Tabellen, die bisher nur ueber `projects` verbunden waren.
+
+    Die Loeschreihenfolge in project_deletion.py passt bereits (`criterion_scoring_runs` VOR
+    `remote_category_classification_runs`) - dieser Testfall haelt fest, dass das eine Zusage ist
+    und kein Zufall. Ohne ihn liesse sich die Reihenfolge spaeter umsortieren, ohne dass etwas
+    rot wuerde: die Suite laeuft gegen SQLite OHNE `PRAGMA foreign_keys=ON` (siehe Modul-
+    Docstring), eine verletzte Kante faellt zur Laufzeit nicht auf. Der Nachweis laeuft deshalb
+    ueber die REIHENFOLGE der abgesetzten Anweisungen, nicht ueber einen Integritaetsfehler."""
+    graph = await build_project_graph(db_session, "Costa Rica")
+    await db_session.commit()
+
+    linked = (
+        await db_session.execute(
+            select(CriterionScoringRun).where(CriterionScoringRun.project_id == graph.project_id)
+        )
+    ).scalars().one()
+    assert linked.remote_category_classification_run_id is not None, (
+        "Der Testgraph muss den Fremdschluessel setzen, sonst prueft dieser Fall nichts."
+    )
+
+    with _recorded_delete_targets() as targets:
+        await delete_projects(db_session, [graph.project_id])
+    await db_session.commit()
+
+    assert targets.index("criterion_scoring_runs") < targets.index(
+        "remote_category_classification_runs"
+    )
+    assert await count_rows(db_session, "criterion_scoring_runs") == 0
+    assert await count_rows(db_session, "remote_category_classification_runs") == 0

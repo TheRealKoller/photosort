@@ -10,19 +10,17 @@ import {
 } from '../hooks/useProjects'
 import { useTriggerConfirmation } from '../hooks/useTriggerConfirmation'
 import { formatProviderLabel } from '../utils/categoryLabels'
+import { ClassificationBalance } from './ClassificationBalance'
+import { ClassificationEstimate } from './ClassificationEstimate'
+import { ClassificationProgress } from './ClassificationProgress'
 import { StatusDot } from './StatusDot'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
-import { Progress } from './ui/progress'
 
 interface ClassificationSectionProps {
   project: ProjectOut
   refetchProject: () => unknown
-}
-
-function formatUsd(value: number): string {
-  return `$${value.toFixed(2)}`
 }
 
 /**
@@ -58,6 +56,15 @@ const MAX_FINE_LABELS_SHOWN = 15
  *
  * `useTriggerConfirmation` (etabliert fuer Scan/Score) ueberbrueckt unveraendert das Zeitfenster
  * zwischen der 202-Antwort und dem ersten Poll, der `status="running"` bestaetigt.
+ *
+ * specs/features/0348-klassifizierungs-transparenz.md: diese Datei ist seither der CONTAINER -
+ * Checkbox-Zustand, Consent-Gate, Mutation und Ausloeser bleiben hier, die drei Detailbloecke
+ * (ClassificationEstimate, ClassificationProgress, ClassificationBalance) sind eigene Komponenten.
+ *
+ * Unterhalb des Ausloesers steht zu jedem Zeitpunkt GENAU EINER der beiden Zustandsbloecke -
+ * Fortschrittsliste ODER Bilanz, nie beide. Das ist die pruefbare Form des Akzeptanzkriteriums
+ * "ueberfrachtet die Seite nicht": die Sektion waechst dadurch nicht ueber ihre bisherige Hoehe
+ * hinaus.
  */
 export function ClassificationSection({ project, refetchProject }: ClassificationSectionProps) {
   const estimateQuery = useClassificationEstimateQuery(project.id)
@@ -108,15 +115,11 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
         ? 'Fehler beim Auslösen der Klassifizierung.'
         : null
 
-  // Waehrend der Remote-Phase liefert der Remote-Lauf die Fortschrittszahlen, waehrend der
-  // Kriterien-Phase der Lauf selbst - `phase` entscheidet, welcher der beiden gemeint ist.
-  const remoteRun = project.last_remote_category_classification_run
+  // Die Fortschrittszahlen je Teilschritt kommen seit Spec 0348 aus `cloud_phases` bzw. dem Lauf
+  // selbst - abgeleitet in `utils/classificationSteps.ts`, dargestellt von ClassificationProgress.
+  // Die frueher hier stehende "welcher der beiden Laeufe liefert gerade die Zahlen?"-Weiche
+  // entfaellt damit ersatzlos.
   const isRemotePhase = run?.phase === 'remote_categories'
-  const progressSource = isRemotePhase ? remoteRun : run
-  const photosProcessed = progressSource?.photos_processed ?? 0
-  const photosTotal = progressSource?.photos_total ?? 0
-  const percent = photosTotal > 0 ? Math.floor((photosProcessed / photosTotal) * 100) : 0
-  const announcedDecile = Math.floor(percent / 10) * 10
 
   const providerLabel = estimate ? formatProviderLabel(estimate.provider) : ''
   // Die Serverreihenfolge (photo_count absteigend, Tie-Break canonical_key) wird uebernommen und
@@ -165,21 +168,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
             nur bei angewaehlter Cloud-Nutzung - bei abgewaehlter entstehen keine Kosten, ein
             Betrag waere dort irrefuehrend. */}
         {cloudChecked && estimateQuery.isSuccess && estimate && (
-          <p data-testid="classification-estimate" className="text-sm text-text">
-            {estimate.candidate_count === 0
-              ? 'Alle Fotos bereits klassifiziert — keine Cloud-Kosten zu erwarten.'
-              : estimate.estimated_cost_usd === null
-                ? /* specs/features/0304-cloud-modell-je-anbieter-waehlbar.md: fuer das
-                     eingestellte Modell ist kein Preis hinterlegt. Reiner Textknoten, KEIN
-                     `Alert` - Alert ist im Projekt der Fehler-/Retry-Baustein, und hier liegt
-                     kein Ladefehler vor, sondern eine ehrliche Wissensluecke. Die Kandidatenzahl
-                     bleibt sichtbar: sie ist bekannt und fuer die Freigabeentscheidung die
-                     wichtigere Zahl. Der Startknopf bleibt bedienbar - eine Sperre bestrafte den
-                     Betreiber fuer einen Zustand, den er an der Oberflaeche nicht aufloesen kann
-                     (ADR 0059 Punkt 4). */
-                  `~${estimate.candidate_count} Fotos · Keine Kostenangabe verfügbar. Dieser Durchlauf wird mit Cloud-Erkennung Kosten erzeugen.`
-                : `~${estimate.candidate_count} Fotos · ~${formatUsd(estimate.estimated_cost_usd)} — Schätzung, keine exakte Abrechnung.`}
-          </p>
+          <ClassificationEstimate estimate={estimate} />
         )}
         {cloudChecked && estimateQuery.isError && (
           <Alert onRetry={() => void estimateQuery.refetch()}>
@@ -201,28 +190,21 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
             (isRemotePhase
               ? 'Remote-Kategorisierung läuft…'
               : 'Kriterien-Bewertung läuft…')}
-          {runStatus === 'success' && 'Erfolgreich klassifiziert'}
-          {runStatus === 'failed' && 'Fehlgeschlagen'}
+          {runStatus === 'success' && 'Klassifizierung abgeschlossen'}
+          {runStatus === 'failed' && 'Klassifizierung fehlgeschlagen'}
         </p>
       )}
 
-      {runStatus === 'running' && (
-        <div className="flex w-full max-w-sm flex-col gap-2">
-          <p className="text-sm text-text">
-            {photosProcessed} von {photosTotal} Fotos verarbeitet
-          </p>
-          {photosTotal > 0 ? (
-            <Progress value={photosProcessed} max={photosTotal}>
-              {photosProcessed}/{photosTotal}
-            </Progress>
-          ) : (
-            <Progress />
-          )}
-          <p aria-live="polite" className="text-sm text-text">
-            {announcedDecile}% verarbeitet
-          </p>
-        </div>
-      )}
+      {/* GENAU EINER der beiden Zustandsblöcke, nie beide: läuft der Durchlauf, steht hier die
+          Teilschrittliste, danach die Bilanz dieses einen Laufs. Beide gleichzeitig zu zeigen
+          hieße, denselben Lauf zweimal zu beschreiben - und ließe die Sektion über ihre bisherige
+          Höhe hinauswachsen (Akzeptanzkriterium "überfrachtet die Seite nicht"). */}
+      {run !== null &&
+        (runStatus === 'running' ? (
+          <ClassificationProgress run={run} />
+        ) : (
+          <ClassificationBalance run={run} />
+        ))}
 
       {runStatus === 'failed' && <Alert onRetry={handleTrigger}>{run?.error_message}</Alert>}
 
@@ -235,15 +217,6 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
           {run.cloud_error_message} Das Ergebnis ist ohne (vollständige) Cloud-Anreicherung
           entstanden.
         </Alert>
-      )}
-
-      {/* Bewusst KEIN Fehler-Styling: ein rein lokaler Durchlauf ist ein gewuenschtes Ergebnis,
-          keine Stoerung - der Hinweis macht nur nachvollziehbar, woher das Ergebnis stammt. */}
-      {runStatus === 'success' && run !== null && !run.cloud_requested && (
-        <p className="text-sm text-text">
-          Ohne Cloud-Anreicherung durchgeführt — die Cloud-Nutzung war für diesen Durchlauf
-          abgewählt.
-        </p>
       )}
 
       {/* Feinlabel-Haeufigkeitsliste (specs/features/0289-feste-kategorien.md, UI/UX-Abschnitt):

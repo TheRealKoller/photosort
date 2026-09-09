@@ -254,3 +254,98 @@ def test_the_confidence_downgrade_renders_for_postgres_too() -> None:
 
     rendered = " ".join(statements).upper()
     assert rendered.count("DROP COLUMN") == 2
+
+
+# specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
+# teilschritte-und-laufeigene-cloud-bilanz.md Punkt 2/3/5: fuenf additive Spalten plus ein
+# FREMDSCHLUESSEL auf criterion_scoring_runs, eine Spalte auf remote_category_classification_runs.
+#
+# Neu gegenueber allen bisherigen Revisionen dieser Datei: der Fremdschluessel. Unter SQLite
+# entsteht er ausschliesslich ueber den Tabellen-Neuaufbau von `batch_alter_table` und ist dort
+# von einer reinen Spaltenpruefung nicht zu unterscheiden; unter Postgres ist er ein eigenes
+# `ALTER TABLE ... ADD CONSTRAINT`. Nur der Postgres-Renderpfad zeigt, ob der Constraint seinen
+# EXPLIZITEN NAMEN traegt - und ohne ihn ist der Rueckwaertsweg der Migration nicht ausfuehrbar.
+
+_TRANSPARENCY_REVISION = "b8c9d0e1f2a3_classification_run_transparency.py"
+
+_EXPECTED_TRANSPARENCY_INTEGER_COLUMNS = (
+    "landmark_photos_total",
+    "landmark_photos_processed",
+    "landmark_failed_calls",
+    "remote_category_classification_run_id",
+    "failed_calls",
+)
+_EXPECTED_TRANSPARENCY_FLOAT_COLUMNS = ("estimated_cost_usd",)
+_EXPECTED_FK_NAME = "fk_criterion_scoring_runs_remote_category_classification_run_id"
+
+
+@pytest.fixture(scope="module")
+def transparency_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_TRANSPARENCY_REVISION)
+
+
+def test_all_six_transparency_columns_are_added_for_postgres(
+    transparency_upgrade_ddl: list[str],
+) -> None:
+    for column in (
+        _EXPECTED_TRANSPARENCY_INTEGER_COLUMNS + _EXPECTED_TRANSPARENCY_FLOAT_COLUMNS
+    ):
+        _add_column_statement(transparency_upgrade_ddl, column)
+
+
+def test_the_live_counters_render_as_integer(transparency_upgrade_ddl: list[str]) -> None:
+    for column in _EXPECTED_TRANSPARENCY_INTEGER_COLUMNS:
+        assert "INTEGER" in _add_column_statement(transparency_upgrade_ddl, column).upper(), column
+
+
+def test_the_frozen_estimate_renders_as_a_floating_point_type(
+    transparency_upgrade_ddl: list[str],
+) -> None:
+    """Wie bei den Ist-Betraegen: entscheidend ist, dass es KEIN ganzzahliger Typ ist - eine
+    Schaetzung im Zehntelcent-Bereich wuerde sonst still auf 0 gerundet, und SQLite koennte den
+    Unterschied nicht sichtbar machen."""
+    statement = _add_column_statement(transparency_upgrade_ddl, "estimated_cost_usd").upper()
+
+    assert "DOUBLE PRECISION" in statement or "FLOAT" in statement
+    assert "INTEGER" not in statement
+
+
+def test_no_transparency_column_gets_a_server_default(
+    transparency_upgrade_ddl: list[str],
+) -> None:
+    """Ein `server_default='0'` an `landmark_photos_total` loeschte den Marker "dieser Teilschritt
+    fand statt" unumkehrbar; an `estimated_cost_usd` behauptete er eine Kostenaussage, die niemand
+    getroffen hat. SQLite koennte beides nicht sichtbar machen."""
+    for column in (
+        _EXPECTED_TRANSPARENCY_INTEGER_COLUMNS + _EXPECTED_TRANSPARENCY_FLOAT_COLUMNS
+    ):
+        statement = _add_column_statement(transparency_upgrade_ddl, column)
+        assert "DEFAULT" not in statement.upper(), column
+
+
+def test_the_foreign_key_is_created_under_its_explicit_name(
+    transparency_upgrade_ddl: list[str],
+) -> None:
+    """Security-Muss der Spec: ein per `batch_alter_table` UNBENANNT angelegter Fremdschluessel
+    ist im `downgrade()` unter SQLite nicht droppbar (`drop_constraint` braucht einen Namen), und
+    `Base.metadata` traegt keine `naming_convention`, aus der einer entstuende. Unter Postgres ist
+    der Name im gerenderten DDL direkt sichtbar - hier wird er festgenagelt."""
+    constraint_statements = [
+        statement
+        for statement in transparency_upgrade_ddl
+        if "ADD CONSTRAINT" in statement.upper() and "FOREIGN KEY" in statement.upper()
+    ]
+    assert len(constraint_statements) == 1, transparency_upgrade_ddl
+    statement = constraint_statements[0]
+
+    assert _EXPECTED_FK_NAME in statement
+    assert "remote_category_classification_runs" in statement
+
+
+def test_the_transparency_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_TRANSPARENCY_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements).upper()
+    assert rendered.count("DROP COLUMN") == 6
+    assert _EXPECTED_FK_NAME.upper() in rendered
+    assert "DROP CONSTRAINT" in rendered

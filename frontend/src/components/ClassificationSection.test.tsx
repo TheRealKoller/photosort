@@ -27,7 +27,6 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     last_scan: null,
     last_scoring_run: scoringRun(),
     last_criterion_scoring_run: null,
-    last_remote_category_classification_run: null,
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
@@ -63,20 +62,9 @@ function classificationRun(
     phase: 'criteria',
     cloud_requested: false,
     cloud_error_message: null,
-    ...overrides,
-  }
-}
-
-function remoteRun(
-  overrides: Partial<NonNullable<ProjectOut['last_remote_category_classification_run']>> = {}
-): NonNullable<ProjectOut['last_remote_category_classification_run']> {
-  return {
-    status: 'running',
-    started_at: '2026-07-20T10:06:00Z',
-    finished_at: null,
-    photos_total: 8,
-    photos_processed: 3,
-    error_message: null,
+    cloud_phases: [],
+    estimated_cost_usd: null,
+    cloud_cost_total_usd: null,
     ...overrides,
   }
 }
@@ -104,8 +92,8 @@ beforeEach(() => {
   vi.mocked(projectsApi.getClassificationEstimate).mockReset()
   vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
     candidate_count: 5,
-    remote_category_candidate_count: 4,
-    landmark_candidate_count: 1,
+    remote_categories: { candidate_count: 4, estimated_cost_usd: 0.0208 },
+    landmark: { candidate_count: 1, estimated_cost_usd: 0.0052 },
     provider: 'anthropic',
     model: 'claude-haiku-4-5',
     price_per_image_usd: 0.0052,
@@ -239,13 +227,13 @@ describe('Cloud-Nutzung pro Durchlauf', () => {
 })
 
 describe('Kosten sichtbar vor dem Start', () => {
-  it('shows the estimate right at the checkbox, marked as an estimate', async () => {
+  it('shows the estimate block right at the checkbox', async () => {
+    // Der INHALT der Kostenvorschau (Anteile, Unbekannt-Fälle, Format) wird in
+    // ClassificationEstimate.test.tsx geprüft - hier nur, dass der Block überhaupt an seiner
+    // Stelle vor dem Auslöser erscheint.
     renderSection(project({ cloud_vision_detection_enabled: true }))
 
-    const estimate = await screen.findByTestId('classification-estimate')
-    expect(estimate).toHaveTextContent('~5 Fotos')
-    expect(estimate).toHaveTextContent('~$0.03')
-    expect(estimate).toHaveTextContent(/schätzung, keine exakte abrechnung/i)
+    expect(await screen.findByTestId('classification-estimate')).toBeInTheDocument()
   })
 
   it('hides the estimate while the cloud is unchecked', async () => {
@@ -272,23 +260,6 @@ describe('Kosten sichtbar vor dem Start', () => {
     expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 42, true)
   })
 
-  it('says so when nothing is left to classify', async () => {
-    vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
-      candidate_count: 0,
-      remote_category_candidate_count: 0,
-      landmark_candidate_count: 0,
-      provider: 'anthropic',
-      model: 'claude-haiku-4-5',
-      price_per_image_usd: 0.0052,
-      estimated_cost_usd: 0,
-    })
-    renderSection(project({ cloud_vision_detection_enabled: true }))
-
-    expect(await screen.findByTestId('classification-estimate')).toHaveTextContent(
-      /alle fotos bereits klassifiziert/i
-    )
-  })
-
   it('blocks the cloud run while the estimate cannot be loaded, but allows the local one', async () => {
     vi.mocked(projectsApi.getClassificationEstimate).mockRejectedValue(
       new ApiError(500, 'Serverfehler')
@@ -306,71 +277,65 @@ describe('Kosten sichtbar vor dem Start', () => {
   })
 })
 
-describe('Teilschritt-Fortschritt', () => {
-  it('names the remote sub-step and shows its progress numbers', () => {
+describe('genau einer der beiden Zustandsblöcke', () => {
+  // specs/features/0348-klassifizierungs-transparenz.md: die prüfbare Form des
+  // Akzeptanzkriteriums "überfrachtet die Seite nicht". Der Inhalt der beiden Blöcke wird in
+  // ClassificationProgress.test.tsx bzw. ClassificationBalance.test.tsx geprüft.
+  function isProgressShown(): boolean {
+    return screen.queryByRole('list', { name: /teilschritte der klassifizierung/i }) !== null
+  }
+  function isBalanceShown(): boolean {
+    return screen.queryByTestId('classification-balance') !== null
+  }
+
+  it.each([
+    ['kein Lauf', null, false, false],
+    ['laufend', 'running' as const, true, false],
+    ['erfolgreich', 'success' as const, false, true],
+    ['fehlgeschlagen', 'failed' as const, false, true],
+  ])('rendert bei "%s" genau den erwarteten Block', (_name, status, progress, balance) => {
     renderSection(
       project({
-        cloud_vision_detection_enabled: true,
-        last_criterion_scoring_run: classificationRun({
-          phase: 'remote_categories',
-          cloud_requested: true,
-          photos_total: 0,
-          photos_processed: 0,
-        }),
-        last_remote_category_classification_run: remoteRun({
-          photos_total: 8,
-          photos_processed: 3,
-        }),
+        last_criterion_scoring_run:
+          status === null
+            ? null
+            : classificationRun({ status, phase: status === 'running' ? 'criteria' : null }),
       })
     )
 
-    expect(screen.getByText(/remote-kategorisierung läuft/i)).toBeInTheDocument()
-    expect(screen.getByText(/3 von 8 fotos verarbeitet/i)).toBeInTheDocument()
-    const progress = screen.getByRole('progressbar') as HTMLProgressElement
-    expect(progress.max).toBe(8)
-    expect(progress.value).toBe(3)
+    expect(isProgressShown()).toBe(progress)
+    expect(isBalanceShown()).toBe(balance)
+    // Nie beide gleichzeitig - das ist die eigentliche Zusage.
+    expect(isProgressShown() && isBalanceShown()).toBe(false)
   })
 
-  it('names the criteria sub-step and shows its own progress numbers', () => {
-    renderSection(
+  it('ersetzt die Bilanz wieder durch die Fortschrittsliste, sobald ein neuer Lauf startet', () => {
+    const { rerender } = renderSection(
       project({
-        last_criterion_scoring_run: classificationRun({
-          phase: 'criteria',
-          photos_total: 10,
-          photos_processed: 4,
-        }),
-        last_remote_category_classification_run: remoteRun({
-          status: 'success',
-          photos_total: 8,
-          photos_processed: 8,
-        }),
+        last_criterion_scoring_run: classificationRun({ status: 'success', phase: null }),
       })
     )
+    expect(isBalanceShown()).toBe(true)
 
-    expect(screen.getByText(/kriterien-bewertung läuft/i)).toBeInTheDocument()
-    expect(screen.getByText(/4 von 10 fotos verarbeitet/i)).toBeInTheDocument()
+    rerender(
+      <MemoryRouter>
+        <ClassificationSection
+          project={project({
+            last_criterion_scoring_run: classificationRun({
+              status: 'running',
+              phase: 'remote_categories',
+            }),
+          })}
+          refetchProject={vi.fn()}
+        />
+      </MemoryRouter>
+    )
+
+    expect(isProgressShown()).toBe(true)
+    expect(isBalanceShown()).toBe(false)
   })
 
-  it(
-    'shows an indeterminate progress bar instead of an invalid max=0 during the brief ' +
-      'photos_total=0 window right after the trigger',
-    () => {
-      renderSection(
-        project({
-          last_criterion_scoring_run: classificationRun({
-            photos_total: 0,
-            photos_processed: 0,
-          }),
-        })
-      )
-
-      const progress = screen.getByRole('progressbar') as HTMLProgressElement
-      expect(progress.hasAttribute('value')).toBe(false)
-      expect(progress.hasAttribute('max')).toBe(false)
-    }
-  )
-
-  it('shows a success status once the run succeeded', async () => {
+  it('kündigt den Abschluss des Durchlaufs an', async () => {
     renderSection(
       project({
         cloud_vision_detection_enabled: true,
@@ -385,9 +350,9 @@ describe('Teilschritt-Fortschritt', () => {
       })
     )
 
-    expect(screen.getByText('Erfolgreich klassifiziert')).toBeInTheDocument()
-    // Der Ausloeser ist bei angewaehlter Cloud-Nutzung erst wieder bedienbar, sobald die
-    // Schaetzung vorliegt ("kein Bypass") - deshalb hier abwarten statt synchron zu pruefen.
+    expect(screen.getByText('Klassifizierung abgeschlossen')).toBeInTheDocument()
+    // Der Auslöser ist bei angewählter Cloud-Nutzung erst wieder bedienbar, sobald die Schätzung
+    // vorliegt ("kein Bypass") - deshalb hier abwarten statt synchron zu prüfen.
     await screen.findByTestId('classification-estimate')
     expect(screen.getByRole('button', TRIGGER)).toBeEnabled()
   })
@@ -430,7 +395,7 @@ describe('Fehlerverhalten und Herkunft des Ergebnisses', () => {
     expect(alert).toHaveTextContent('Remote-Kategorisierung fehlgeschlagen: Zeitüberschreitung')
     expect(alert).toHaveTextContent(/ohne \(vollständige\) cloud-anreicherung entstanden/i)
     // Der Lauf selbst ist erfolgreich - der lokale Bewertungsanteil lief vollstaendig durch.
-    expect(screen.getByText('Erfolgreich klassifiziert')).toBeInTheDocument()
+    expect(screen.getByText('Klassifizierung abgeschlossen')).toBeInTheDocument()
   })
 
   it('notes a purely local run without any error styling', () => {
@@ -499,29 +464,17 @@ describe('Feinlabel-Häufigkeiten', () => {
 // eingestellte Modell ist kein Preis hinterlegt - die Schaetzung weist das aus, statt einen
 // falschen (oder gar keinen) Betrag zu zeigen.
 describe('Kostenschätzung ohne hinterlegten Preis', () => {
+  // specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 4. Die DARSTELLUNG
+  // des Falls prüft ClassificationEstimate.test.tsx; hier steht die Zusage des Containers.
   const withoutPrice = {
     candidate_count: 5,
-    remote_category_candidate_count: 4,
-    landmark_candidate_count: 1,
+    remote_categories: { candidate_count: 4, estimated_cost_usd: null },
+    landmark: { candidate_count: 1, estimated_cost_usd: null },
     provider: 'anthropic',
     model: 'ein-nie-bepreistes-modell',
     price_per_image_usd: null,
     estimated_cost_usd: null,
   }
-
-  it('shows a hint instead of an amount, but keeps the photo count visible', async () => {
-    vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue(withoutPrice)
-    renderSection(project({ cloud_vision_detection_enabled: true }))
-
-    const estimate = await screen.findByTestId('classification-estimate')
-
-    expect(estimate).toHaveTextContent(/keine kostenangabe verfügbar/i)
-    expect(estimate).toHaveTextContent(/kosten erzeugen/i)
-    expect(estimate).toHaveTextContent('~5 Fotos')
-    // Ein stilles "0,00 USD" waere die gefaehrlichste aller Anzeigen - es behauptete
-    // Kostenfreiheit (Security-Muss-Kriterium der Spec).
-    expect(estimate.textContent).not.toMatch(/\$|USD|NaN|undefined|null/)
-  })
 
   it('keeps the start button usable when no price is known', async () => {
     vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue(withoutPrice)
@@ -529,23 +482,9 @@ describe('Kostenschätzung ohne hinterlegten Preis', () => {
 
     await screen.findByTestId('classification-estimate')
 
-    // Regressionsschutz: die Sperre haengt an der fehlenden SCHAETZUNG (Ladefehler), nicht am
-    // fehlenden Betrag - ein Guard auf `estimated_cost_usd === null` machte das Produkt bei
-    // einem reinen Preispflege-Versaeumnis unbenutzbar.
+    // Regressionsschutz: die Sperre hängt an der fehlenden SCHÄTZUNG (Ladefehler), nicht am
+    // fehlenden Betrag - ein Guard auf `estimated_cost_usd === null` machte das Produkt bei einem
+    // reinen Preispflege-Versäumnis unbenutzbar.
     expect(screen.getByRole('button', TRIGGER)).toBeEnabled()
-  })
-
-  it('prefers the "everything already classified" message over the missing-price hint', async () => {
-    vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
-      ...withoutPrice,
-      candidate_count: 0,
-      remote_category_candidate_count: 0,
-      landmark_candidate_count: 0,
-    })
-    renderSection(project({ cloud_vision_detection_enabled: true }))
-
-    expect(await screen.findByTestId('classification-estimate')).toHaveTextContent(
-      /alle fotos bereits klassifiziert/i
-    )
   })
 })

@@ -329,16 +329,32 @@ class PhotoCriterionScore(Base):
 
 
 class ClassificationPhase(enum.StrEnum):
-    """Die beiden Teilschritte eines verketteten Klassifizierungslaufs (specs/features/0296-
+    """Die VIER Teilschritte eines verketteten Klassifizierungslaufs (specs/features/0296-
     klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-klassifizierungs-
-    lauf-mit-laufbezogener-cloud-freigabe.md Punkt 1) - in genau dieser Reihenfolge, damit die
+    lauf-mit-laufbezogener-cloud-freigabe.md Punkt 1; erweitert um LANDMARK/RANKING durch
+    specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
+    teilschritte-und-laufeigene-cloud-bilanz.md Punkt 1) - in genau dieser Reihenfolge, damit die
     Remote-Ergebnisse noch im selben Lauf in die Kategorieableitung einfliessen.
 
-    REMOTE_CATEGORIES laeuft nur bei angeforderter UND eingewilligter Cloud-Nutzung; CRITERIA
-    laeuft immer. Getragen von CriterionScoringRun.phase, dort NULL sobald der Lauf beendet ist."""
+    REMOTE_CATEGORIES und LANDMARK laufen nur bei angeforderter UND eingewilligter Cloud-Nutzung;
+    CRITERIA und RANKING laufen immer. Getragen von CriterionScoringRun.phase, dort NULL sobald
+    der Lauf beendet ist.
+
+    RANKING (Kategorieableitung, rank_photos je Partition, Schreiben der PhotoRanking-Zeilen)
+    gehoert fachlich zur Kriterien-Phase, laeuft aber NACH der Landmark-Phase. Ohne eigenen Namen
+    muesste `phase` dort entweder auf LANDMARK stehenbleiben (die Anzeige behauptete dann
+    Cloud-Aufrufe, die nicht mehr stattfinden, bei 100 % Fortschritt - exakt das gemeldete
+    "haengt oder laeuft?"-Symptom, nur eine Phase spaeter) oder auf CRITERIA zurueckspringen. Ein
+    vierter Wert macht die Abfolge monoton.
+
+    Der Wertebereich ist eine Zeichenkette in einer VARCHAR(20)-Spalte OHNE DB-seitige
+    Pruefeinschraenkung (SQLEnum(..., native_enum=False), create_constraint aus) - fuer die beiden
+    mit Spec 0348 hinzugekommenen Werte war deshalb KEINE Migration noetig."""
 
     REMOTE_CATEGORIES = "remote_categories"
     CRITERIA = "criteria"
+    LANDMARK = "landmark"
+    RANKING = "ranking"
 
 
 class CriterionScoringRun(Base):
@@ -447,6 +463,65 @@ class CriterionScoringRun(Base):
     # Bewusst ohne Lesepfad in der Oberflaeche (dieselbe eng begrenzte Ausnahme wie Tokens/
     # Aufrufzahl, ADR 0051 Punkt 3): Adressat ist der Betreiber, nicht der Anwender.
     landmark_model: Mapped[str | None] = mapped_column(default=None)
+
+    # specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-
+    # vier-teilschritte-und-laufeigene-cloud-bilanz.md Punkt 2: die LIVE-Zaehler der Landmark-
+    # Phase - je asyncio.gather-Block fortgeschrieben und committet, gemeinsam mit
+    # `last_progress_at`.
+    #
+    # STRIKT GETRENNT von den vier Kosten-Buchfuehrungsspalten oben, und das ist der Kern der
+    # Entscheidung: `landmark_api_calls` wird EINMAL am Phasenende zusammen mit dem eingefrorenen
+    # Betrag geschrieben (ADR 0051 Punkt 4), und `api_calls > 0` bei Betrag 0/NULL ist der
+    # Ausloeser fuer Befund (b) des Unvollstaendigkeits-Hinweises der Statistikseite (ADR 0051
+    # Punkt 5). Ein laufend hochgezaehltes `landmark_api_calls` erfuellte diese Bedingung bei
+    # JEDEM laufenden Cloud-Lauf und faerbte die Kostenseite mitten im Betrieb mit einem
+    # Fehlalarm ein.
+    #
+    # Nullable mit Python-Default `None`, dasselbe `ScanRun.total_files`-Idiom: `NULL` heisst
+    # "Phase nicht betreten" (oder Altzeile), `0` heisst "betreten, nichts passiert". Gesetzt
+    # werden sie auf `0` beim BETRETEN der Phase, nicht bei der Zeilenanlage.
+    #
+    # `landmark_photos_total` ist zugleich der MARKER, ob es diesen Teilschritt in diesem Lauf
+    # ueberhaupt gab - die API leitet daraus ab, ob ein `cloud_phases`-Eintrag entsteht.
+    # `landmark_photos_processed` zaehlt ABGESETZTE Aufrufe (Erfolge UND Fehlschlaege), nicht
+    # verwertete Antworten. Fuer Laeufe ab der zugehoerigen Migration gilt die per Test
+    # festgeschriebene Invariante `landmark_photos_processed == landmark_api_calls +
+    # landmark_failed_calls`.
+    landmark_photos_total: Mapped[int | None] = mapped_column(default=None)
+    landmark_photos_processed: Mapped[int | None] = mapped_column(default=None)
+    landmark_failed_calls: Mapped[int | None] = mapped_column(default=None)
+
+    # ADR 0068 Punkt 5: die Kostenschaetzung, mit der GENAU DIESER Lauf gestartet wurde -
+    # serverseitig im Ausloese-Endpunkt berechnet und als Job-Argument durchgereicht.
+    #
+    # Ohne sie ist das Akzeptanzkriterium "die tatsaechlich angefallenen Kosten sind gegen die
+    # Schaetzung vor dem Start einordenbar" nach dem Lauf UNERFUELLBAR: die Schaetzung rechnet
+    # ueber den noch OFFENEN Kandidatenbestand, den genau dieser Lauf gerade abgearbeitet hat -
+    # unmittelbar danach schaetzt derselbe Endpunkt nahe null.
+    #
+    # Ein BELEG, nie eine Eingabe (Security-Muss der Spec 0348): der Wert darf in keine spaetere
+    # Rechnung, kein Budget-Gate und keine Ableitung der Ist-Kosten eingehen - sonst wuerde eine
+    # Momentaufnahme autoritativ. Bei `use_cloud=false` steht hier `NULL`, nicht `0.0`: ein Lauf
+    # ohne Cloud hat keine Kostenschaetzung, und `0.0` waere eine Aussage, die niemand getroffen
+    # hat (dieselbe "null heisst unbekannt, nie kostenlos"-Linie wie bei `price_per_image_usd`).
+    estimated_cost_usd: Mapped[float | None] = mapped_column(default=None)
+
+    # ADR 0068 Punkt 3: der Remote-Lauf, der zu DIESEM Klassifizierungslauf gehoert - gesetzt von
+    # run_classification, BEVOR Phase 1 startet (die Oberflaeche braucht den Anker schon waehrend
+    # der Remote-Phase). `NULL` = dieser Lauf hatte keine Remote-Phase, oder Altzeile.
+    #
+    # Kehrt ADR 0050 Punkt 3 ("kein FK zwischen den beiden Run-Tabellen") um, mit dessen eigenem
+    # Argument: solange die Zuordnung nur die Fortschrittsanzeige speiste, war "die juengste
+    # Remote-Zeile des Projekts" genau genug. Eine Bilanz nennt dagegen einen GELDBETRAG - und
+    # die Heuristik ist dafuer nachweislich falsch, sobald zwei Laeufe hintereinander
+    # unterschiedlich viel Cloud nutzen: ein Lauf ohne Cloud-Phase erbte die Zahlen des Laufs
+    # davor und zeigte fremde Kosten als seine eigenen.
+    #
+    # Die Loeschreihenfolge in project_deletion.py passt bereits (criterion_scoring_runs VOR
+    # remote_category_classification_runs); ein Test haelt das fest.
+    remote_category_classification_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("remote_category_classification_runs.id"), default=None
+    )
 
     project: Mapped[Project] = relationship(back_populates="criterion_scoring_runs")
     # specs/features/0044-projekte-loeschen.md: PhotoRanking haengt an ZWEI Elternteilen und
@@ -705,6 +780,16 @@ class RemoteCategoryClassificationRun(Base):
     # Semantik ("NULL = nicht erfasst") und Schreibzeitpunkt wortgleich dort. Kein Praefix wie bei
     # den Kostenspalten dieser Tabelle: ein Lauf, ein Zweck.
     model: Mapped[str | None] = mapped_column(default=None)
+
+    # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 2: der LIVE-Zaehler der
+    # fehlgeschlagenen Einzelaufrufe dieser Phase - Gegenstueck zu
+    # `CriterionScoringRun.landmark_failed_calls`, Begruendung und Nullable-Semantik wortgleich
+    # dort. Geschrieben am bereits vorhandenen Block-Commit-Punkt (`photos_processed`/
+    # `last_progress_at`), NICHT im `finally`: die Story verlangt die Zahl WAEHREND des Laufs.
+    #
+    # `photos_total`/`photos_processed` dieser Tabelle existieren bereits und werden bereits je
+    # Block committet - deshalb kommt hier nur diese eine Spalte hinzu.
+    failed_calls: Mapped[int | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="remote_category_classification_runs")
 

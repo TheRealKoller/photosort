@@ -39,6 +39,7 @@ from photosort.remote_classification import (
 )
 from photosort.thumbnails import display_path
 from photosort.worker import run_remote_category_classification, select_remote_category_candidates
+from tests.run_bookkeeping import assert_call_bookkeeping_invariant
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
 # decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 5: eigenstaendiger
@@ -1506,3 +1507,293 @@ async def test_a_repeat_run_leaves_an_old_row_without_confidences_untouched(
     row = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
     assert row.detected_category_confidences is None
     assert row.category_confidence is None
+
+
+# --------------------------------------------------------------------------------------------
+# specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
+# teilschritte-und-laufeigene-cloud-bilanz.md Punkt 2/6: Live-Zaehler der Fehlschlaege und
+# Modell-Fruehschreibung - das Gegenstueck zur Landmark-Phase in
+# test_worker_criterion_scoring.py.
+# --------------------------------------------------------------------------------------------
+
+
+class SnapshottingCategoryClient:
+    """Zeichnet vor JEDEM Aufruf den Zustand der Lauf-Zeile auf. Die Zeile wird dem Client ueber
+    den `run`-Parameter von run_remote_category_classification vorab uebergeben - sonst haette er
+    waehrend des Laufs keinen Zugriff darauf."""
+
+    def __init__(
+        self,
+        run: RemoteCategoryClassificationRun,
+        results: list[RemoteClassification | Exception],
+    ) -> None:
+        self._run = run
+        self._results = results
+        self.snapshots: list[tuple[int | None, int | None, int | None, str | None]] = []
+
+    async def classify(
+        self, image_bytes: bytes, mime_type: str, photo_id: int
+    ) -> RemoteClassification:
+        self.snapshots.append(
+            (
+                self._run.photos_processed,
+                self._run.failed_calls,
+                self._run.api_calls,
+                self._run.model,
+            )
+        )
+        result = self._results[len(self.snapshots) - 1]
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+async def _prepared_remote_run(
+    session: AsyncSession, project: Project
+) -> RemoteCategoryClassificationRun:
+    run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.RUNNING)
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    return run
+
+
+async def test_failed_calls_are_written_at_the_existing_block_commit_point(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0068 Punkt 2: `failed_calls` wandert an den bereits vorhandenen Block-Commit-Punkt
+    (`photos_processed`/`last_progress_at`), NICHT in den `finally` - die Story verlangt die Zahl
+    WAEHREND des Laufs, nicht erst nach seinem Abschluss."""
+    monkeypatch.setattr(worker.settings, "remote_category_classification_concurrency", 1)
+    project = await _cost_setup(db_session, tmp_path, photo_count=3)
+    run = await _prepared_remote_run(db_session, project)
+    client = SnapshottingCategoryClient(
+        run,
+        [
+            _classification_with_usage(1_000, 10),
+            RemoteCategoryClassificationApiError("simulierter Cloud-Fehler"),
+            _classification_with_usage(1_000, 10),
+        ],
+    )
+
+    result = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
+        run=run,
+    )
+
+    assert [snapshot[1] for snapshot in client.snapshots] == [0, 0, 1]
+    assert result.failed_calls == 1
+
+
+async def test_the_model_is_written_before_the_first_classification_call(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0068 Punkt 6: Modell (und damit der abgeleitete Anbieter) stehen schon WAEHREND des
+    Teilschritts da, der BETRAG bleibt am Phasenende eingefroren. Der Sentinel-Modellwert kommt
+    aus einer nicht voreingestellten Einstellung, sonst waere die Assertion tautologisch."""
+    stronger = VISION_MODELS_BY_PROVIDER["anthropic"][1]
+    monkeypatch.setattr(worker.settings, "landmark_model", stronger)
+    monkeypatch.setattr(worker.settings, "remote_category_classification_concurrency", 1)
+    project = await _cost_setup(db_session, tmp_path, photo_count=2)
+    run = await _prepared_remote_run(db_session, project)
+    client = SnapshottingCategoryClient(run, [_classification_with_usage(1_000, 10)] * 2)
+
+    result = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
+        run=run,
+    )
+
+    first_processed, first_failed, first_api_calls, first_model = client.snapshots[0]
+    assert first_model == stronger
+    assert first_processed == 0
+    assert first_failed == 0
+    assert first_api_calls == 0
+    assert result.api_calls == 2
+    assert result.cost_usd is not None and result.cost_usd > 0
+
+
+async def test_a_passed_run_is_reused_and_no_second_row_is_created(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """ADR 0068 Punkt 3: run_classification legt die Remote-Zeile selbst an und reicht sie
+    hinein, damit der Fremdschluessel schon vor dem ersten Aufruf steht. Wuerde diese Funktion
+    trotzdem eine eigene Zeile anlegen, zeigte der Fremdschluessel auf eine leere Karteileiche."""
+    project = await _cost_setup(db_session, tmp_path, photo_count=1)
+    run = await _prepared_remote_run(db_session, project)
+
+    result = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: PerPhotoCategoryClient(
+            [_classification_with_usage(1_000, 10)]
+        ),
+        build_embedder=_fake_embedder,
+        run=run,
+    )
+
+    assert result.id == run.id
+    rows = (
+        (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().all()
+    )
+    assert len(rows) == 1
+
+
+async def test_a_direct_call_still_creates_its_own_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der Direktaufruf (Tests, kuenftige Aufrufer) legt die Zeile weiterhin selbst an - der neue
+    Parameter ist ein Angebot, keine Vorbedingung."""
+    project = await _cost_setup(db_session, tmp_path, photo_count=1)
+
+    result = await run_remote_category_classification(
+        db_session,
+        project,
+        tmp_path,
+        build_client=lambda _model: PerPhotoCategoryClient(
+            [_classification_with_usage(1_000, 10)]
+        ),
+        build_embedder=_fake_embedder,
+    )
+
+    rows = (
+        (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().all()
+    )
+    assert [row.id for row in rows] == [result.id]
+
+
+class TestRemoteCallBookkeepingInvariant:
+    """ADR 0068 Punkt 2: `photos_processed == api_calls + failed_calls`, hier fuer die
+    Remote-Kategorie-Phase."""
+
+    async def test_all_calls_successful(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project = await _cost_setup(db_session, tmp_path, photo_count=3)
+        client = PerPhotoCategoryClient([_classification_with_usage(1_000, 10)] * 3)
+
+        run = await run_remote_category_classification(
+            db_session,
+            project,
+            tmp_path,
+            build_client=lambda _model: client,
+            build_embedder=_fake_embedder,
+        )
+
+        assert run.failed_calls == 0
+        assert_call_bookkeeping_invariant(run)
+
+    async def test_mixed_success_and_failure(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project = await _cost_setup(db_session, tmp_path, photo_count=3)
+        client = PerPhotoCategoryClient(
+            [
+                _classification_with_usage(1_000, 10),
+                RemoteCategoryClassificationApiError("simulierter Cloud-Fehler"),
+                _classification_with_usage(1_000, 10),
+            ]
+        )
+
+        run = await run_remote_category_classification(
+            db_session,
+            project,
+            tmp_path,
+            build_client=lambda _model: client,
+            build_embedder=_fake_embedder,
+        )
+
+        assert run.api_calls == 2
+        assert run.failed_calls == 1
+        assert_call_bookkeeping_invariant(run)
+
+    async def test_every_call_failed(self, db_session: AsyncSession, tmp_path: Path) -> None:
+        project = await _cost_setup(db_session, tmp_path, photo_count=2)
+        client = PerPhotoCategoryClient(
+            [
+                RemoteCategoryClassificationApiError("a"),
+                RemoteCategoryClassificationApiError("b"),
+            ]
+        )
+
+        run = await run_remote_category_classification(
+            db_session,
+            project,
+            tmp_path,
+            build_client=lambda _model: client,
+            build_embedder=_fake_embedder,
+        )
+
+        assert run.api_calls == 0
+        assert run.failed_calls == 2
+        assert_call_bookkeeping_invariant(run)
+
+    @pytest.mark.parametrize("consent", [True, False], ids=["ohne-kandidaten", "ohne-consent"])
+    async def test_an_untouched_phase_leaves_failed_calls_null(
+        self, db_session: AsyncSession, tmp_path: Path, consent: bool
+    ) -> None:
+        """`NULL` statt `0`: die Phase wurde nicht betreten. Die Bilanz sagt daraufhin "kein
+        Cloud-Teilschritt", statt eine leere Nullzeile zu zeigen."""
+        project = await _cost_setup(db_session, tmp_path, photo_count=0 if consent else 1)
+        project.cloud_vision_detection_enabled = consent
+        await db_session.commit()
+
+        run = await run_remote_category_classification(
+            db_session,
+            project,
+            tmp_path,
+            build_client=lambda _model: PerPhotoCategoryClient([]),
+            build_embedder=_fake_embedder,
+        )
+
+        assert run.failed_calls is None
+        assert_call_bookkeeping_invariant(run)
+
+
+async def test_counting_failures_adds_no_log_line_with_provider_raw_text(
+    db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Security-Muss der Spec 0348: das Zaehlen der Fehlschlaege greift auf die
+    `asyncio.gather(return_exceptions=True)`-Ergebnisliste zu und darf dabei KEINE neue Logzeile
+    einfuehren, die Rohtext einer Provider-Antwort transportiert.
+
+    Es gilt unveraendert die Regel aus ADR 0034 Punkt 5: feste Meldung plus
+    `type(exc).__name__` - eine Provider-Antwort kann die Modellaussage ueber ein Familienfoto,
+    im Fehlerfall Base64-Bilddaten und ein Key-Echo enthalten. Geprueft wird deshalb NEGATIV: der
+    Ausnahmetext selbst taucht in keiner Logzeile auf, und keine Zeile traegt einen
+    Exception-Stacktrace (`exc_info=True`)."""
+    secret_marker = "GEHEIM-BASE64-ECHO-4711"
+    project = await _cost_setup(db_session, tmp_path, photo_count=2)
+    client = PerPhotoCategoryClient(
+        [
+            RemoteCategoryClassificationApiError(secret_marker),
+            _classification_with_usage(1_000, 10),
+        ]
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="photosort"):
+        run = await run_remote_category_classification(
+            db_session,
+            project,
+            tmp_path,
+            build_client=lambda _model: client,
+            build_embedder=_fake_embedder,
+        )
+
+    assert run.failed_calls == 1
+    # Die BESTEHENDE Fehlerzeile (ADR 0034) traegt `str(exc)` bewusst - sie ist an der
+    # Konstruktionsstelle sanitiert und nicht Gegenstand dieser Story. Neu hinzugekommen sein
+    # darf keine weitere Zeile mit diesem Text und keine mit Stacktrace.
+    lines_with_marker = [
+        record for record in caplog.records if secret_marker in record.getMessage()
+    ]
+    assert len(lines_with_marker) == 1, [record.getMessage() for record in caplog.records]
+    assert all(record.exc_info is None for record in caplog.records)

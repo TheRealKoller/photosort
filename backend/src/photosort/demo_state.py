@@ -54,6 +54,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.categories import CATEGORY_REGISTRY
+from photosort.cloud_vision import default_vision_model_for_provider
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.db import make_engine, make_session_factory
@@ -70,6 +71,7 @@ from photosort.models import (
     Project,
     Rating,
     RatingStatus,
+    RemoteCategoryClassificationRun,
     ScanRun,
     ScanStatus,
     ScoringRun,
@@ -159,6 +161,28 @@ _RATED_STATUS_ORDER = tuple(RatingStatus)
 # Das Foto des Fehlerzustands-Projekts, das eine Cloud-Vision-Fehlerzeile traegt (nicht dasselbe
 # wie das Foto ohne Cache-Datei - die Oberflaeche soll beide Fehlerbilder nebeneinander zeigen).
 _CLOUD_VISION_ERROR_INDEX = 1
+
+# specs/features/0348-klassifizierungs-transparenz.md: die Cloud-Bilanz des "bewertet"-Zustands.
+#
+# SAEMTLICHE Werte hier sind FREI ERFUNDEN und stammen aus keinem echten Lauf (Spec 0321: nur
+# synthetische Demo-Daten). Das ist ab dieser Spec keine Formalie mehr: die Bilanz zeigt erstmals
+# einen GELDBETRAG an der Ausloese-Stelle, und Screenshots aus dem Pruefstack landen als
+# PR-Anhaenge in einem oeffentlichen Repository. Ein echter Betrag waere damit
+# Ausgabeninformation der Familie in der Oeffentlichkeit.
+#
+# Gewaehlt so, dass die Oberflaeche etwas Sinnvolles zu zeigen hat: beide Cloud-Teilschritte mit
+# Betraegen deutlich ueber der "< 0,01 USD"-Schwelle, ein Fehlschlag in der Remote-Phase (damit
+# die Fehlschlag-Zeile der Bilanz nicht leer bleibt) und eine Startschaetzung, die von der Summe
+# der Ist-Betraege ABWEICHT - sonst waere die geforderte Einordnung "Ist gegen Schaetzung" im
+# Demo-Zustand gar nicht ablesbar.
+_DEMO_REMOTE_INPUT_TOKENS = 21_400
+_DEMO_REMOTE_OUTPUT_TOKENS = 1_820
+_DEMO_REMOTE_COST_USD = 0.34
+_DEMO_LANDMARK_PHOTOS_TOTAL = 4
+_DEMO_LANDMARK_INPUT_TOKENS = 6_200
+_DEMO_LANDMARK_OUTPUT_TOKENS = 540
+_DEMO_LANDMARK_COST_USD = 0.11
+_DEMO_ESTIMATED_COST_USD = 0.52
 
 
 class DemoStateError(Exception):
@@ -545,6 +569,32 @@ async def _seed_rated_project(
     session.add(scoring_run)
     await session.flush()
 
+    # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 3/4: der Remote-Lauf
+    # DIESES Durchlaufs. Er entsteht vor dem Klassifizierungslauf, damit dessen Fremdschluessel
+    # ihn treffen kann - dieselbe Reihenfolge wie im produktiven Pfad (worker.py::
+    # run_classification).
+    #
+    # SAEMTLICHE Zahlen hier sind frei erfunden (Spec 0321: nur synthetische Demo-Daten - das
+    # Repository ist oeffentlich, PR-Anhaenge liegen oeffentlich auf GitHub). Sie stammen aus
+    # keinem echten Lauf und beschreiben keine tatsaechlichen Ausgaben der Familie.
+    remote_run = RemoteCategoryClassificationRun(
+        project_id=project.id,
+        status=ScanStatus.SUCCESS,
+        started_at=_BASE_SCORING_AT + timedelta(minutes=7),
+        finished_at=_BASE_SCORING_AT + timedelta(minutes=9),
+        last_progress_at=_BASE_SCORING_AT + timedelta(minutes=9),
+        photos_total=len(photos),
+        photos_processed=len(photos),
+        failed_calls=1,
+        api_calls=len(photos) - 1,
+        input_tokens=_DEMO_REMOTE_INPUT_TOKENS,
+        output_tokens=_DEMO_REMOTE_OUTPUT_TOKENS,
+        cost_usd=_DEMO_REMOTE_COST_USD,
+        model=default_vision_model_for_provider("anthropic"),
+    )
+    session.add(remote_run)
+    await session.flush()
+
     criterion_run = CriterionScoringRun(
         project_id=project.id,
         scoring_run_id=scoring_run.id,
@@ -555,7 +605,21 @@ async def _seed_rated_project(
         photos_total=len(photos),
         photos_processed=len(photos),
         phase=ClassificationPhase.CRITERIA,
-        cloud_requested=False,
+        # Der "bewertet"-Zustand traegt seit Spec 0348 die vollstaendige Lauf-Bilanz: beide
+        # Cloud-Teilschritte, verknuepfter Remote-Lauf und eingefrorene Startschaetzung - sonst
+        # waere der neue Block im Pruefstack/`browse-app` gar nicht sichtbar. Der Fall "ohne
+        # Cloud" bleibt im Fehlerzustands-Projekt erhalten.
+        cloud_requested=True,
+        remote_category_classification_run_id=remote_run.id,
+        landmark_photos_total=_DEMO_LANDMARK_PHOTOS_TOTAL,
+        landmark_photos_processed=_DEMO_LANDMARK_PHOTOS_TOTAL,
+        landmark_failed_calls=0,
+        landmark_api_calls=_DEMO_LANDMARK_PHOTOS_TOTAL,
+        landmark_input_tokens=_DEMO_LANDMARK_INPUT_TOKENS,
+        landmark_output_tokens=_DEMO_LANDMARK_OUTPUT_TOKENS,
+        landmark_cost_usd=_DEMO_LANDMARK_COST_USD,
+        landmark_model=default_vision_model_for_provider("anthropic"),
+        estimated_cost_usd=_DEMO_ESTIMATED_COST_USD,
     )
     session.add(criterion_run)
     await session.flush()
@@ -663,6 +727,44 @@ async def _seed_error_project(
                 "OpenCloud nicht erreichbar: Verbindung zum Space abgelehnt "
                 "(Demo-Fehlerzustand, kein echter Vorfall)."
             ),
+        )
+    )
+    # specs/features/0348-klassifizierungs-transparenz.md: der Fall "Lauf OHNE Cloud-Nutzung" der
+    # Bilanz - er ist mit Spec 0348 aus dem "bewertet"-Projekt herausgewandert (dort steht jetzt
+    # die vollstaendige Cloud-Bilanz) und lebt seither hier. Ohne ihn haette die Bilanz-Variante
+    # "Ohne Cloud-Anreicherung durchgefuehrt - es wurden keine Fotos an einen Anbieter gesendet."
+    # im Pruefstack/`browse-app` keinen Fall mehr.
+    #
+    # `status = FAILED` passt zum Zweck dieses Projekts (die Bilanz erscheint auch bei einem
+    # gescheiterten Lauf - das Geld waere ausgegeben gewesen) und deckt zugleich den Fehler-Alert
+    # des Klassifizierungs-Abschnitts ab. Alle Cloud-Spalten bleiben `NULL`: keine Phase betreten.
+    error_scoring_run = ScoringRun(
+        project_id=project.id,
+        status=ScanStatus.SUCCESS,
+        started_at=_BASE_SCORING_AT,
+        finished_at=_BASE_SCORING_AT + timedelta(minutes=3),
+        last_progress_at=_BASE_SCORING_AT + timedelta(minutes=3),
+        photos_total=len(photos),
+        photos_processed=len(photos),
+        suggestions_found=0,
+        gate_confirmed_at=_BASE_SCORING_AT + timedelta(minutes=4),
+    )
+    session.add(error_scoring_run)
+    await session.flush()
+    session.add(
+        CriterionScoringRun(
+            project_id=project.id,
+            scoring_run_id=error_scoring_run.id,
+            status=ScanStatus.FAILED,
+            started_at=_BASE_SCORING_AT + timedelta(minutes=5),
+            finished_at=_BASE_SCORING_AT + timedelta(minutes=6),
+            last_progress_at=_BASE_SCORING_AT + timedelta(minutes=6),
+            photos_total=len(photos),
+            photos_processed=2,
+            error_message=(
+                "Kriterien-Bewertung abgebrochen (Demo-Fehlerzustand, kein echter Vorfall)."
+            ),
+            cloud_requested=False,
         )
     )
     session.add(

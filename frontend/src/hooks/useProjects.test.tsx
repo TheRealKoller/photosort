@@ -37,7 +37,6 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     last_scan: null,
     last_scoring_run: null,
     last_criterion_scoring_run: null,
-    last_remote_category_classification_run: null,
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
@@ -156,10 +155,20 @@ describe('useProjectQuery', () => {
     vi.useRealTimers()
   })
 
-  it('keeps polling while the last remote category classification run is running', async () => {
+  it('keeps polling during the remote phase of a classification run', async () => {
+    // specs/features/0348-klassifizierungs-transparenz.md: Nachfolger von "keeps polling while
+    // the last remote category classification run is running". Die FRAGE bleibt dieselbe - pollt
+    // die Oberflaeche waehrend der Remote-Phase weiter? -, nur die Zeile, die sie beantwortet,
+    // hat gewechselt: `last_remote_category_classification_run` ist entfallen, und der
+    // Klassifizierungslauf ist waehrend des GESAMTEN verketteten Durchlaufs `running`.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.mocked(projectsApi.getProject).mockResolvedValue(
-      project({ last_remote_category_classification_run: runningRemoteCategoryRun() })
+      project({
+        last_criterion_scoring_run: {
+          ...runningCriterionScoringRun()!,
+          phase: 'remote_categories',
+        },
+      })
     )
     const { wrapper } = makeWrapper()
 
@@ -338,8 +347,8 @@ describe('useClassificationEstimateQuery', () => {
   it('fetches the estimate for a project, covering both cloud shares', async () => {
     vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
       candidate_count: 42,
-      remote_category_candidate_count: 40,
-      landmark_candidate_count: 2,
+      remote_categories: { candidate_count: 40, estimated_cost_usd: 0.208 },
+      landmark: { candidate_count: 2, estimated_cost_usd: 0.0104 },
       provider: 'anthropic',
       model: 'claude-haiku-4-5',
       price_per_image_usd: 0.0052,
@@ -352,7 +361,7 @@ describe('useClassificationEstimateQuery', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(projectsApi.getClassificationEstimate).toHaveBeenCalledWith(1)
     expect(result.current.data?.candidate_count).toBe(42)
-    expect(result.current.data?.landmark_candidate_count).toBe(2)
+    expect(result.current.data?.landmark.candidate_count).toBe(2)
   })
 })
 
@@ -397,17 +406,9 @@ function runningCriterionScoringRun(): ProjectOut['last_criterion_scoring_run'] 
     phase: 'criteria',
     cloud_requested: false,
     cloud_error_message: null,
-  }
-}
-
-function runningRemoteCategoryRun(): ProjectOut['last_remote_category_classification_run'] {
-  return {
-    status: 'running',
-    started_at: '2026-07-20T10:00:00Z',
-    finished_at: null,
-    photos_total: 10,
-    photos_processed: 3,
-    error_message: null,
+    cloud_phases: [],
+    estimated_cost_usd: null,
+    cloud_cost_total_usd: null,
   }
 }
 
