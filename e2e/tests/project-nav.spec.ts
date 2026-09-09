@@ -2,23 +2,30 @@
  * Projekt-Navigationsgruppe in der Kopfzeile: Breakpoint, Kopfzeilenhoehe und Ueberlagerung.
  *
  * AUSSCHLIESSLICH DAS, WAS JSDOM PRINZIPIELL NICHT KANN (specs/features/0298-projektnavigation-in-
- * der-kopfzeile.md, Teststrategie; specs/architecture/0002-testkonzept.md, Sektion "Eine
- * Zieltabelle, zwei Darstellungen"): In jsdom greifen Tailwind-Klassen nicht, `hidden`/`lg:hidden`
- * blenden dort nichts aus, beide Darstellungen liegen gleichzeitig im DOM. Ein `toBeVisible()`
- * waere dort eine Zusicherung, die immer dasselbe sagt - unabhaengig davon, ob die Utility
- * ueberhaupt noch am Element haengt. Die Breakpoint-Zusage lebt deshalb nur hier. Die
- * Verhaltenspruefungen (vier Ziele, Sprungziele, aria-current, Escape, Landmark-Kardinalitaet)
- * stehen in ProjectNav.test.tsx und werden hier NICHT wiederholt.
+ * der-kopfzeile.md und specs/features/0347-navigation-nebenbereich.md, Teststrategie;
+ * specs/architecture/0002-testkonzept.md, Sektion "Eine Zieltabelle, zwei Darstellungen"): In
+ * jsdom greifen Tailwind-Klassen nicht, `hidden`/`lg:hidden` blenden dort nichts aus, das Panel
+ * hat dort IMMER fuenf Zeilen. Ein `toBeVisible()` waere dort eine Zusicherung, die immer dasselbe
+ * sagt - unabhaengig davon, ob die Utility ueberhaupt noch am Element haengt. Die
+ * Breakpoint-Zusage lebt deshalb nur hier, ebenso die beiden gemessenen Abnahmemasse aus AK4/AK5
+ * (Ausloeserbreite, Gruppenabstand) und die gerenderte Trennlinie. Die Verhaltenspruefungen (drei
+ * Ziele, Sprungziele, aria-current, Escape, Landmark-Kardinalitaet) stehen in ProjectNav.test.tsx
+ * und werden hier NICHT wiederholt.
  *
  * EIGENE VIEWPORT-BREITEN, an ein einziges Playwright-Projekt gebunden (wie `grid-columns`): Die
  * beiden Projekt-Viewports (360, 1280) liegen beide fern der Grenze und zeigten den Wechsel gar
  * nicht; ohne die Bindung liefe der Spec ausserdem zweimal mit identischem Ergebnis.
  *
- * ROT-NACHWEIS STEHT NOCH AUS: Dieser Spec wurde in einer Remote-Session ohne Docker-Daemon und
- * ohne installierbaren Browser geschrieben und konnte dort nicht ein einziges Mal laufen. Der von
- * der Teststrategie geforderte Nachweis (Breakpoint testweise auf `md:` verschieben, Spec muss rot
- * melden) ist beim ersten ausfuehrbaren Lauf zu erbringen und in der PR-Beschreibung
- * festzuhalten - bis dahin ist die Wirksamkeit dieser drei Tests behauptet, nicht belegt.
+ * ROT-NACHWEIS ERBRACHT (Spec 0347, erster ausfuehrbarer Lauf dieser Datei): Der aus Spec 0298
+ * offen gebliebene Nachweis ist mit diesem Branch nachgeholt und um die drei neuen Zusicherungen
+ * ergaenzt. Belegt wurde je einzeln, dass eine gezielte Verschlechterung diesen Spec ROT meldet:
+ *
+ *  - Breakpoint `lg:` -> `md:` am Leisten-Container  -> Grenztest rot,
+ *  - Trenner-Utilities am Hauptzielblock entfernt    -> Absetzungspruefung rot,
+ *  - `size="icon"` -> `size="default"` mit Beschriftung am Ausloeser -> AK4-Breitenpruefung rot,
+ *  - `lg:hidden` am Hauptzielblock entfernt          -> Panelinhalts-Pruefung rot.
+ *
+ * Die Belege stehen in der PR-Beschreibung.
  */
 
 import { DEMO_PROJECTS, demoProjectId } from '../lib/demo.ts'
@@ -45,7 +52,7 @@ function menuTrigger(page: import('@playwright/test').Page) {
  * Dokumentation (`playwright-core/types/types.d.ts`, Option `includeHidden`) standardmaessig NUR
  * nicht-verborgene Elemente - es sieht den Accessibility-Tree, nicht das DOM. Genau darauf beruht
  * dieser Spec aber: unterhalb `lg:` traegt die Leiste `display: none`, ein `getByRole('link')`
- * faende dort NULL Ziele und `toHaveCount(4)` liefe in die Zeitgrenze. Die DOM-Kardinalitaet wird
+ * faende dort NULL Ziele und `toHaveCount(3)` liefe in die Zeitgrenze. Die DOM-Kardinalitaet wird
  * deshalb ueber `locator('a')`/`locator('button[aria-label=...]')` gefuehrt, die Sichtbarkeit
  * anschliessend GEMESSEN statt lokalisiert.
  */
@@ -84,7 +91,12 @@ async function visibleCount(locator: import('@playwright/test').Locator): Promis
   return rendered.filter(Boolean).length
 }
 
-test('wechselt an der exakten Grenze 1024 px zwischen Leiste und Menue-Ausloeser', async ({
+/** Die drei Hauptziele der Leiste, in Anzeigereihenfolge. */
+const PRIMARY_LABELS = ['Projekt', 'Fotos', 'Vergleich']
+/** Die zwei Nebenziele des Panels, in Anzeigereihenfolge. */
+const SECONDARY_LABELS = ['Einstellungen', 'Statistik']
+
+test('blendet an der exakten Grenze 1024 px die Leiste aus, ohne den Ausloeser anzutasten', async ({
   page,
 }) => {
   const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
@@ -97,12 +109,12 @@ test('wechselt an der exakten Grenze 1024 px zwischen Leiste und Menue-Ausloeser
 
     await expect(projectNav(page), `Navigationsgruppe bei ${width} px`).toBeAttached()
 
-    // Beide Darstellungen speisen sich aus derselben Zieltabelle - im DOM liegen immer genau vier
-    // Ziele und genau ein Ausloeser, unabhaengig von der Breite. Diese beiden Zusicherungen sind
-    // die Vorbedingung der Messung: ohne sie bestuende der 1023-px-Durchlauf ("null sichtbare
-    // Ziele") auch dann, wenn die Leiste gar nicht mehr gerendert wuerde.
+    // Vorbedingung UND zugleich die DOM-Haelfte von AK5: im DOM liegen bei JEDER Breite genau drei
+    // Leistenziele und GENAU EIN Ausloeser. Ohne die erste Zusicherung bestuende der
+    // 1023-px-Durchlauf ("null sichtbare Ziele") auch dann, wenn die Leiste gar nicht mehr
+    // gerendert wuerde; ohne die zweite bliebe die abgewaehlte Zwei-Instanzen-Variante unbemerkt.
     const targets = navTargetsInDom(page)
-    await expect(targets, `Ziele im DOM bei ${width} px`).toHaveCount(4)
+    await expect(targets, `Ziele im DOM bei ${width} px`).toHaveCount(3)
     const trigger = menuTriggerInDom(page)
     await expect(trigger, `Menue-Ausloeser im DOM bei ${width} px`).toHaveCount(1)
 
@@ -114,23 +126,205 @@ test('wechselt an der exakten Grenze 1024 px zwischen Leiste und Menue-Ausloeser
     })
   }
 
-  // AK5: ab 1024 px alle vier gleichzeitig sichtbar, kein Ausloeser.
+  // AK4: ab 1024 px stehen die drei Hauptziele UND der Ausloeser gleichzeitig da.
   expect(measured[0], `Darstellung bei ${BREAKPOINT} px`).toEqual({
     width: BREAKPOINT,
-    visibleTargets: 4,
-    triggerVisible: false,
+    visibleTargets: 3,
+    triggerVisible: true,
   })
-  // AK6: einen Pixel darunter genau umgekehrt - ausschliesslich der Ausloeser.
+  // AK5: einen Pixel darunter bleibt ausschliesslich der Ausloeser - die Leiste verschwindet, er
+  // nicht.
   expect(measured[1], `Darstellung bei ${BREAKPOINT - 1} px`).toEqual({
     width: BREAKPOINT - 1,
     visibleTargets: 0,
     triggerVisible: true,
   })
-  // Beide Messungen MUESSEN sich unterscheiden: waeren sie gleich, haette der Spec nur zweimal
-  // denselben Zustand gesehen und bestuende auch bei voellig fehlendem Breakpoint.
+  /*
+   * DER WIRKSAMKEITSANKER HAENGT AUSSCHLIESSLICH AN DER ZAHL DER SICHTBAREN ZIELE (3 != 0) -
+   * bitte nicht auf ein Tupel zurueckbauen. Bis Spec 0298 trug die Umkehrung BEIDER Messgroessen
+   * den Beleg; seit Spec 0347 ist die Ausloeser-Sichtbarkeit auf beiden Seiten konstant `true`.
+   * Eine Zusicherung auf das ganze Tupel saehe durch diese konstante Haelfte immer "unterschiedlich
+   * genug" aus und bestuende auch bei voellig fehlendem Breakpoint.
+   */
   expect(measured[0]!.visibleTargets, 'Messungen an der Grenze unterscheiden sich').not.toBe(
     measured[1]!.visibleTargets
   )
+})
+
+test('zeigt im Panel ueber die Grenze hinweg unterschiedliche Inhalte aus demselben DOM (AK2/AK5)', async ({
+  page,
+}) => {
+  /*
+   * `getByRole` sieht den ACCESSIBILITY-TREE: was `display: none` traegt, faellt heraus. Genau
+   * darauf beruht diese Zusage - im DOM liegen bei beiden Breiten dieselben fuenf Zeilen, im
+   * Accessibility-Tree ab 1024 px nur die zwei Nebenziele. Die DOM-Zaehlung daneben schliesst den
+   * trivialen Gruen-Fall aus: ohne sie bestuende der 1024-px-Durchlauf auch dann, wenn die drei
+   * Hauptzeilen gar nicht mehr gerendert wuerden - und unterhalb `lg:` waeren sie dann weg.
+   */
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+
+  for (const [width, expectedLabels] of [
+    [BREAKPOINT, SECONDARY_LABELS],
+    [BREAKPOINT - 1, [...PRIMARY_LABELS, ...SECONDARY_LABELS]],
+  ] as const) {
+    await page.setViewportSize({ width, height: VIEWPORT_HEIGHT })
+    await page.goto(`/projects/${projectId}/photos`)
+
+    const trigger = menuTrigger(page)
+    await expect(trigger, `Ausloeser bei ${width} px`).toBeVisible()
+    await trigger.click()
+
+    const panel = page.getByRole('dialog')
+    await expect(panel, `Panel bei ${width} px`).toBeVisible()
+
+    await expect(panel.locator('a'), `Panelzeilen im DOM bei ${width} px`).toHaveCount(5)
+    await expect(
+      panel.getByRole('link'),
+      `dargestellte Panelzeilen bei ${width} px`
+    ).toHaveText(expectedLabels)
+
+    await page.keyboard.press('Escape')
+    await expect(panel, `Panel nach Escape bei ${width} px`).toBeHidden()
+  }
+})
+
+test(`haelt den Ausloeser bei ${BREAKPOINT} px erkennbar kompakter als ein Hauptziel (AK4)`, async ({
+  page,
+}) => {
+  /*
+   * AK4 woertlich: hoechstens 75 % der Breite des SCHMALSTEN dargestellten Hauptziels. Bezugsgroesse
+   * ist das im selben Lauf mitgemessene Hauptziel, nie eine hartkodierte Pixelzahl - die waere auf
+   * Schriftgrad und heutigen Beschriftungssatz kalibriert und ueberlebte keine legitime Aenderung.
+   */
+  await page.setViewportSize({ width: BREAKPOINT, height: VIEWPORT_HEIGHT })
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.goto(`/projects/${projectId}/photos`)
+
+  const trigger = menuTrigger(page)
+  await expect(trigger, 'Ausloeser').toBeVisible()
+
+  const targetWidths: number[] = []
+  for (const label of PRIMARY_LABELS) {
+    const target = projectNav(page).getByRole('link', { name: label })
+    await expect(target, `Hauptziel "${label}"`).toBeVisible()
+    const box = await target.boundingBox()
+    expect(box, `Rechteck von "${label}"`).not.toBeNull()
+    expect(box!.width, `Breite von "${label}"`).toBeGreaterThan(0)
+    targetWidths.push(box!.width)
+  }
+
+  const triggerBox = await trigger.boundingBox()
+  expect(triggerBox, 'Rechteck des Ausloesers').not.toBeNull()
+  expect(triggerBox!.width, 'Breite des Ausloesers').toBeGreaterThan(0)
+
+  const narrowest = Math.min(...targetWidths)
+  expect(
+    triggerBox!.width,
+    `Ausloeser ${triggerBox!.width.toFixed(1)} px gegen schmalstes Hauptziel ` +
+      `${narrowest.toFixed(1)} px (Breiten: ${targetWidths.map((w) => w.toFixed(1)).join(', ')})`
+  ).toBeLessThanOrEqual(narrowest * 0.75)
+})
+
+test(`setzt die Nebengruppe im Panel bei ${MOBILE_WIDTH} px sichtbar ab (AK5)`, async ({ page }) => {
+  /*
+   * ZWEI EIGENSCHAFTEN, EINE ZUSAGE: die Absetzung besteht aus dem groesseren Abstand UND der
+   * gerenderten Linie. Einzeln waere jede angreifbar - ein Abstand ohne Linie ist bei fuenf
+   * gleichfoermigen Zeilen kaum als Gruppengrenze lesbar, und eine Linie mit Alphakanal 0 oder
+   * `border-style: none` ist gar keine.
+   *
+   * Der Abstandswert wird gegen den groessten Abstand INNERHALB der Hauptgruppe gemessen, nicht
+   * gegen eine Pixelzahl - dieselbe Regel wie bei AK4.
+   */
+  await page.setViewportSize({ width: MOBILE_WIDTH, height: VIEWPORT_HEIGHT })
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.goto(`/projects/${projectId}/photos`)
+
+  await menuTrigger(page).click()
+  const panel = page.getByRole('dialog')
+  await expect(panel).toBeVisible()
+
+  const rowBoxes: { label: string; top: number; bottom: number }[] = []
+  for (const label of [...PRIMARY_LABELS, ...SECONDARY_LABELS]) {
+    const row = panel.getByRole('link', { name: label })
+    await expect(row, `Panelzeile "${label}"`).toBeVisible()
+    const box = await row.boundingBox()
+    expect(box, `Rechteck der Zeile "${label}"`).not.toBeNull()
+    expect(box!.height, `Hoehe der Zeile "${label}"`).toBeGreaterThan(0)
+    rowBoxes.push({ label, top: box!.y, bottom: box!.y + box!.height })
+  }
+
+  const innerGaps = [
+    rowBoxes[1]!.top - rowBoxes[0]!.bottom,
+    rowBoxes[2]!.top - rowBoxes[1]!.bottom,
+  ]
+  const largestInnerGap = Math.max(...innerGaps)
+  // Ohne diese Vorbedingung waere "mindestens doppelt so gross" bei einem Innenabstand von 0
+  // trivial wahr - und genau dann saehe man ueberhaupt keine Gruppierung.
+  expect(largestInnerGap, `groesster Abstand innerhalb der Hauptgruppe (${innerGaps.join(', ')})`)
+    .toBeGreaterThan(0)
+
+  const groupGap = rowBoxes[3]!.top - rowBoxes[2]!.bottom
+  expect(
+    groupGap,
+    `Abstand "Vergleich" -> "Einstellungen" (${groupGap.toFixed(1)} px) gegen den groessten ` +
+      `Abstand innerhalb der Hauptgruppe (${largestInnerGap.toFixed(1)} px)`
+  ).toBeGreaterThanOrEqual(largestInnerGap * 2)
+
+  /*
+   * DAS TRENNENDE ELEMENT WIRD AUS DER STRUKTUR HERGELEITET, nicht ueber einen Klassennamen
+   * lokalisiert (Selektor-Konvention): gesucht ist der naechstgelegene Vorfahre der drei
+   * Hauptzeilen, der keine der beiden Nebenzeilen enthaelt und nicht das Panel selbst ist. Genau
+   * dieses Element traegt die Trennlinie.
+   *
+   * DIE ZEILEN WERDEN UEBER IHRE BESCHRIFTUNG ZUGEORDNET, NICHT UEBER IHRE POSITION: ein
+   * `slice(0, 3)`/`slice(3)` haengt still an der Reihenfolge, die dieser Test gar nicht zusichert
+   * (das tut der Panelinhalts-Test weiter oben). Nach einer Umsortierung griffe der Schnitt auf
+   * den falschen Block und die Messung bliebe gruen, waehrend sie das Falsche misst - dieselbe
+   * Adressierung wie bei den Rechtecken oben.
+   */
+  const separator = await panel.evaluate(
+    (element, labels) => {
+      const rows = Array.from(element.querySelectorAll('a'))
+      const byLabel = (label: string) =>
+        rows.find((row) => row.textContent?.trim() === label) ?? null
+      const primary = labels.primary.map(byLabel)
+      const secondary = labels.secondary.map(byLabel)
+      // Ohne diese Vorbedingung liefe eine umbenannte Zeile auf eine leere Menge hinaus - und
+      // `every` ueber einer leeren Menge ist wahr, der erste Vorfahre gewaenne trivial.
+      if (primary.some((row) => row === null) || secondary.some((row) => row === null)) {
+        return { resolved: false, found: false, width: 0, style: 'none', color: 'transparent' }
+      }
+      const primaryRows = primary as Element[]
+      const secondaryRows = secondary as Element[]
+      let candidate: Element | null = primaryRows[0]!.parentElement
+      while (candidate !== null && candidate !== element) {
+        if (
+          primaryRows.every((row) => candidate!.contains(row)) &&
+          !secondaryRows.some((row) => candidate!.contains(row))
+        ) {
+          const style = window.getComputedStyle(candidate)
+          return {
+            resolved: true,
+            found: true,
+            width: Number.parseFloat(style.borderBottomWidth),
+            style: style.borderBottomStyle,
+            color: style.borderBottomColor,
+          }
+        }
+        candidate = candidate.parentElement
+      }
+      return { resolved: true, found: false, width: 0, style: 'none', color: 'transparent' }
+    },
+    { primary: [...PRIMARY_LABELS], secondary: [...SECONDARY_LABELS] }
+  )
+
+  expect(separator.resolved, 'alle fuenf Panelzeilen ueber ihre Beschriftung gefunden').toBe(true)
+  expect(separator.found, 'eigener Block um die drei Hauptzeilen gefunden').toBe(true)
+  expect(separator.width, `border-bottom-width des Trenners (${separator.color})`).toBeGreaterThan(0)
+  expect(separator.style, 'border-bottom-style des Trenners').not.toBe('none')
+  // `transparent` und jedes `rgba(..., 0)` sind gerenderte Linien ohne jede Sichtbarkeit.
+  expect(separator.color, 'Farbe des Trenners').not.toBe('transparent')
+  expect(separator.color, 'Alphakanal der Trennerfarbe').not.toMatch(/,\s*0\s*\)$/)
 })
 
 /*
@@ -226,8 +420,8 @@ test(`haelt die Kopfzeile bei ${MOBILE_WIDTH} px genauso hoch wie ohne Projektbe
   await expect(projectNav(page), 'Gruppe auf der Projektseite').toBeAttached()
   await expect(header, 'Kopfzeilen-Landmark auf der Projektseite').toHaveCount(1)
 
-  // Vorbedingung: bei 360 px ist ausschliesslich der Ausloeser dargestellt (AK6) - genau die
-  // Darstellung, ueber die AK7 eine Aussage macht.
+  // Vorbedingung: bei 360 px ist ausschliesslich der Ausloeser dargestellt (Spec 0347 AK5) -
+  // genau die Darstellung, ueber die AK7 eine Aussage macht.
   expect(await visibleCount(navTargetsInDom(page)), 'sichtbare Ziele bei 360 px').toBe(0)
   expect(await visibleCount(menuTriggerInDom(page)), 'sichtbarer Ausloeser bei 360 px').toBe(1)
 
@@ -245,13 +439,15 @@ test(`haelt die Kopfzeile bei ${MOBILE_WIDTH} px genauso hoch wie ohne Projektbe
 test(`haelt die Kopfzeile bei ${BREAKPOINT} px einzeilig (kein Umbruch)`, async ({ page }) => {
   /*
    * Die verbindliche Regel des Architektur-Abschnitts: "die Kopfzeile darf bei keiner Breite in
-   * eine zweite Zeile umbrechen". 1024 px ist die SCHMALSTE Breite, bei der Wortmarke, VIER
-   * Beschriftungen, "Angemeldet als …" und "Abmelden" gleichzeitig in eine Zeile muessen - also
-   * die einzige, an der die Regel tatsaechlich gefaehrdet ist. Der `lg:`-Breakpoint beruht in der
+   * eine zweite Zeile umbrechen". 1024 px ist die SCHMALSTE Breite, bei der Wortmarke, DREI
+   * Beschriftungen samt Ausloeser, "Angemeldet als …" und "Abmelden" gleichzeitig in eine Zeile
+   * muessen - also die einzige, an der die Regel tatsaechlich gefaehrdet ist. Mit einer
+   * Beschriftung weniger als bis Spec 0298 ist hier Reserve entstanden; sie ist ausdruecklich
+   * Sicherheitsreserve gegen den Umbruch und kein Anlass, den Breakpoint zu verschieben. Der `lg:`-Breakpoint beruht in der
    * Spec auf einer Schaetzung ("rund 800 px"), nicht auf einer Messung.
    *
    * WARUM HIER NICHT DIE HOEHE VERGLICHEN WIRD - bitte nicht auf Hoehengleichheit zurueckbauen:
-   * Die vier Navigationsziele sind das Board-Navigationselement und tragen `border px-3 py-2
+   * Die Navigationsziele sind das Board-Navigationselement und tragen `border px-3 py-2
    * text-xs` -> 1 + 8 + (12px * 1.4 Zeilenhoehe) + 8 + 1 = 34,8 px. Die uebrigen Bedienelemente
    * der Kopfzeile sind Schaltflaechen mit fester Hoehe `h-8` = 32 px. Die Kopfzeile waechst durch
    * die Gruppe also PLANMAESSIG um knapp 3 px - im CI-Lauf zu Commit cc7d6e8 gemessene 2,796875 px.
@@ -275,13 +471,13 @@ test(`haelt die Kopfzeile bei ${BREAKPOINT} px einzeilig (kein Umbruch)`, async 
   const header = appHeader(page)
   await expect(header, 'Kopfzeilen-Landmark auf der Projektseite').toHaveCount(1)
 
-  // Vorbedingung: die vier Beschriftungen sind bei dieser Breite auch tatsaechlich dargestellt -
-  // sonst koennte gar nichts umbrechen und die Messung waere wertlos.
-  expect(await visibleCount(navTargetsInDom(page)), `sichtbare Ziele bei ${BREAKPOINT} px`).toBe(4)
+  // Vorbedingung: die drei Beschriftungen UND der Ausloeser sind bei dieser Breite auch
+  // tatsaechlich dargestellt - sonst koennte gar nichts umbrechen und die Messung waere wertlos.
+  expect(await visibleCount(navTargetsInDom(page)), `sichtbare Ziele bei ${BREAKPOINT} px`).toBe(3)
   expect(
     await visibleCount(menuTriggerInDom(page)),
     `sichtbarer Ausloeser bei ${BREAKPOINT} px`
-  ).toBe(0)
+  ).toBe(1)
 
   const extents = await header.evaluate((element) =>
     Array.from(element.children).map((child) => {
@@ -303,6 +499,9 @@ test('legt das geoeffnete Panel vollstaendig sichtbar ueber den Seiteninhalt', a
   // AK12: zwei Zusagen in einem Test, weil einzeln jede fuer sich wertlos waere - ein Panel weit
   // ausserhalb des Sichtbereichs ueberdeckte nichts, und ein Panel, das nichts ueberdeckt, belegt
   // die Stapelreihenfolge nicht.
+  //
+  // Seit Spec 0347 traegt das Panel bei dieser Breite FUENF Zeilen plus Trenner statt vier - die
+  // Zusage "vollstaendig im Sichtbereich" wird dadurch erst richtig scharf.
   await page.setViewportSize({ width: MOBILE_WIDTH, height: VIEWPORT_HEIGHT })
   const projectId = await demoProjectId(page, DEMO_PROJECTS.large)
   await page.goto(`/projects/${projectId}/photos`)

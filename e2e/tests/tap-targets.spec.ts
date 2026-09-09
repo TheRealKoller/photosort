@@ -33,7 +33,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 8
+const EXPECTED_CONTROL_COUNT = 9
 
 async function assertTappable(control: Locator, label: string): Promise<void> {
   await expect(control, `Bedienelement "${label}"`).toBeVisible()
@@ -132,13 +132,25 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   // Die PANELZEILEN werden bewusst NICHT aufgespannt (Design-System-Regel "zeilenweise Listen
   // werden nicht aufgespannt") - dort ist die Zeile selbst die Trefferflaeche und traegt `min-h-11`.
   // Der Treffertest gilt trotzdem: 44 px sind 44 px, unabhaengig davon, woher sie kommen.
+  //
+  // FUENF ZEILEN SEIT specs/features/0347-navigation-nebenbereich.md: unterhalb `lg:` fuehrt das
+  // Panel alle Ziele - erst die drei Hauptziele, dann die zwei Nebenziele.
   await navTrigger.click()
   const navPanel = page.getByRole('dialog')
   await expect(navPanel).toBeVisible()
   const navRows = navPanel.getByRole('link')
-  await expect(navRows, 'Ziele im Panel der Projekt-Navigation').toHaveCount(4)
+  await expect(navRows, 'Ziele im Panel der Projekt-Navigation').toHaveCount(5)
   await assertTappable(navRows.first(), 'Projekt (Panelzeile der Projekt-Navigation)')
   checked.push('Projekt (Panelzeile)')
+
+  // "Statistik" ist das mit Spec 0347 neu erreichbare Bedienelement und zugleich die LETZTE Zeile
+  // des Panels - die einzige, die unterhalb der Trennlinie und damit im zweiten Block liegt.
+  // Bewusst zusaetzlich geprueft: die Absetzung darf die Trefferflaeche nicht beschneiden.
+  await assertTappable(
+    navPanel.getByRole('link', { name: 'Statistik' }),
+    'Statistik (Panelzeile der Projekt-Navigation)'
+  )
+  checked.push('Statistik (Panelzeile)')
 
   // Ohne diese Zusicherung bestuende der Spec auch dann, wenn keine der Lokalisierungen oben noch
   // etwas faende und jede Schleife ueber eine leere Menge liefe.

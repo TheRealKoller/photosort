@@ -4,6 +4,16 @@
 **Erstellt:** 2026-09-06
 **Bezug:** GitHub-Issue [`#298`](https://github.com/TheRealKoller/photosort/issues/298), Vorgänger-Spec [`0033`](./0033-sticky-titelleiste-projekt-link.md) (teilweise abgelöst, dort als Nachtrag vermerkt), Design-System [`architecture/0004-design-system.md`](../architecture/0004-design-system.md) und Board-Referenz [`architecture/0005-board-dark-utility-register.md`](../architecture/0005-board-dark-utility-register.md), Testkonzept [`architecture/0002-testkonzept.md`](../architecture/0002-testkonzept.md), [`docs/architecture.md`](../../docs/architecture.md)
 
+**Nachtrag (2026-09-09, Umsetzung von Spec [`0347`](./0347-navigation-nebenbereich.md)):** Diese Spec bleibt bewusst `Implemented` und wird **nicht** auf `Superseded` gesetzt — Spec 0347 löst nur einen Teil von ihr ab, dasselbe Verfahren, das diese Spec selbst gegenüber Spec [`0033`](./0033-sticky-titelleiste-projekt-link.md) angewandt hat. Die Akzeptanzkriterien unten bleiben unverändert stehen, sie beschreiben korrekt den damals gebauten und akzeptierten Zustand. Abgelöst durch Spec 0347 sind:
+
+- **AK1** — aus vier gleichrangigen Zielen in der Leiste werden **drei Hauptziele** (Projekt, Fotos, Vergleich) plus ein Auslöser für den Nebenbereich. „Einstellungen" ist kein Ziel der Leiste mehr; „Statistik" kommt als zweites Nebenziel hinzu.
+- **AK5** — der Menü-Auslöser ist ab 1024 px jetzt **sichtbar** (dort führt sein Panel die zwei Nebenziele), nicht mehr ausgeblendet.
+- **AK6** — der Auslöser ist damit keine reine Schmalbild-Darstellung mehr; unterhalb 1024 px führt sein Panel **fünf** Einträge in zwei sichtbar abgesetzten Gruppen statt vier gleichrangiger. Dass die Auswahl navigiert und das Panel schließt, gilt unverändert weiter.
+- **AK8b, ausschließlich für `/projects/{id}/stats`** — dort wird jetzt markiert: der geschlossene Auslöser trägt `aria-current="true"`, die Panelzeile „Statistik" `aria-current="page"`. Für `/projects/{id}/curate` gilt AK8b **unverändert weiter** — die Kuratierung ist weiterhin kein Navigationsziel, und weder Leiste noch Auslöser noch Panel tragen dort eine Markierung.
+- **AK9b** und das damit gegenstandslose **AK9c** — die Schaltfläche „Statistik" am Ende der Pipeline-Seite entfällt ersatzlos, weil die Statistikseite jetzt über den Nebenbereich von jeder Projektseite aus erreichbar ist. Mit ihr entfällt der Container, der sie trug; die Seite endet mit ihrem Schrittinhalt.
+
+Unverändert gültig bleiben **AK2** (neun Routen mit Projektbezug, `/curate` eingeschlossen), **AK3a/b/c**, **AK4** (kein Element der Gruppe ohne Projektkontext), **AK7** (Kopfzeilenhöhe bei 360 px), **AK8a** — für die drei Hauptziele —, **AK8c**, **AK9a**, **AK10**, **AK11a/b/c** (einschließlich des zugänglichen Namens „Projektbereiche" am Auslöser, der routenunabhängig bleibt), **AK12**, **AK13** und **AK14**.
+
 ## Ziel
 
 Die Navigationsziele eines Projekts — Pipeline, Fotos, Vergleich, Einstellungen — sind heute nur am Ende der Pipeline-Seite erreichbar. Wer im Fotoraster, in der Foto-Detailansicht oder in der Vergleichsansicht steht, kommt gar nicht direkt dorthin: erst zurück zum Projekt, dann ans Seitenende scrollen. Beim Durchsehen und Bewerten großer Fotomengen — der Kernbeschäftigung in PhotoSort, häufig am Handy — ist das ein täglich mehrfach wiederholter Umweg.

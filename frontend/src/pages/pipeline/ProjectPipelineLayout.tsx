@@ -1,10 +1,9 @@
-import { Link, Navigate, Outlet, useParams } from 'react-router'
+import { Navigate, Outlet, useParams } from 'react-router'
 
 import { ApiError } from '../../api/client'
 import type { ProjectOut } from '../../api/types'
 import { Stepper } from '../../components/Stepper'
 import { Alert } from '../../components/ui/alert'
-import { Button } from '../../components/ui/button'
 import { useProjectQuery } from '../../hooks/useProjects'
 import {
   computeStepStates,
@@ -120,19 +119,12 @@ export function ProjectPipelineLayout() {
         <Outlet context={outletContext} />
       </div>
 
-      {/* specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK9): "Fotos ansehen",
-          "Bewertungen vergleichen" und "Einstellungen" sind in die Kopfzeilengruppe gewandert und
-          hier ersatzlos entfallen. Der umschliessende <nav aria-label="Fotos"> entfiel mit (AK9c):
-          ein Landmark mit einem einzigen Eintrag und nun falschem Namen ist schlechter als kein
-          Landmark - der Statistik-Button bleibt an derselben Stelle in einem schlichten Container.
-          "Statistik" ist bewusst KEIN Ziel der Kopfzeilengruppe und bliebe sonst unerreichbar
-          (AK9b): eine Querschnittsansicht wie die Einstellungen, kein Pipeline-Schritt
-          (specs/features/0207-projekt-statistikseite.md). */}
-      <div className="flex flex-wrap gap-3">
-        <Button asChild variant="secondary">
-          <Link to={`/projects/${project.id}/stats`}>Statistik</Link>
-        </Button>
-      </div>
+      {/* specs/features/0347-navigation-nebenbereich.md (AK9): Hier stand zuletzt noch ein
+          "Statistik"-Button - der letzte Rest der frueheren Sekundaernavigation am Seitenende.
+          Er ist ersatzlos entfallen, weil die Statistikseite jetzt ein Nebenziel der
+          Kopfzeilengruppe ist und damit von JEDER Projektseite aus erreichbar; ein zweiter
+          Einstiegspunkt nur hier waere eine Dopplung. Die Seite endet damit mit ihrem
+          Schrittinhalt. */}
     </div>
   )
 }

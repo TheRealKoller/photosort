@@ -204,32 +204,44 @@ describe('ProjectPipelineLayout', () => {
   })
 
   /*
-   * specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK9): Die drei Ziele sind in die
-   * Kopfzeilengruppe gewandert und entfallen hier ersatzlos; der umschliessende Landmark "Fotos"
-   * entfaellt mit (ein Landmark mit einem einzigen Eintrag und nun falschem Namen ist schlechter
-   * als kein Landmark).
+   * specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK9) und
+   * specs/features/0347-navigation-nebenbereich.md (AK9): Die drei Ziele sind mit Spec 0298 in die
+   * Kopfzeilengruppe gewandert, der Landmark "Fotos" entfiel mit ihnen. Mit Spec 0347 faellt auch
+   * der letzte Rest - der "Statistik"-Button samt seinem Container: die Statistikseite ist jetzt
+   * ein Nebenziel der Kopfzeilengruppe und von jeder Projektseite aus erreichbar, ein zweiter
+   * Einstiegspunkt am Seitenende waere eine Dopplung.
    *
-   * ANWESENHEIT UND ABWESENHEIT IN EINEM TEST: eine reine Abwesenheitspruefung bestuende auch
-   * dann, wenn versehentlich ALLE VIER Schaltflaechen entfernt wuerden - "Statistik" ist aber
-   * kein Ziel der Kopfzeilengruppe und waere dann unerreichbar (AK9b).
+   * ANWESENHEIT UND ABWESENHEIT IN EINEM TEST, unveraendert wichtig: eine reine
+   * Abwesenheitspruefung bestuende auch dann, wenn die Seite ueberhaupt nichts mehr rendert.
+   * Die Anker sind deshalb der Schrittinhalt und die Projektkennung.
    */
-  it('no longer renders the three navigation buttons or the "Fotos" landmark, but keeps "Statistik" (AK9)', async () => {
+  it('rendert am Seitenende keine Restnavigation mehr - kein Statistik-Link, kein Container (AK9)', async () => {
     vi.mocked(projectsApi.getProject).mockResolvedValue(project())
 
     renderLayout('/projects/1/pipeline/scan')
 
+    // Anker: die Seite ist vollstaendig da.
     await screen.findByText(/schritt-inhalt: scan/i)
+    expect(screen.getByText('Costa Rica')).toBeInTheDocument()
+    expect(screen.getByText('CostaRica')).toBeInTheDocument()
+
+    // Bestand aus Spec 0298: die drei abgeloesten Ziele und ihr Landmark bleiben fort.
     expect(screen.queryByRole('link', { name: /fotos ansehen/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /vergleichen/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /einstellungen/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: 'Fotos' })).not.toBeInTheDocument()
 
-    // specs/features/0207-projekt-statistikseite.md: weiterhin der einzige Einstiegspunkt in die
-    // Statistikseite - AK9b nennt sie ausdruecklich als bleibend.
-    expect(screen.getByRole('link', { name: /statistik/i })).toHaveAttribute(
-      'href',
-      '/projects/1/stats'
-    )
+    // Neu mit Spec 0347: auch "Statistik" ist fort - als Rolle UND als Sprungziel, damit ein
+    // umbenannter, aber weiterhin vorhandener Link nicht durchrutscht.
+    expect(screen.queryByRole('link', { name: /statistik/i })).not.toBeInTheDocument()
+    expect(document.querySelectorAll('a[href="/projects/1/stats"]')).toHaveLength(0)
+
+    // Und es bleibt kein leerer Container zurueck: der Schrittinhalt ist das letzte Element der
+    // Seite. Bewusst ueber die Struktur statt ueber den Klassennamen des alten Containers -
+    // Tests dieses Projekts selektieren nicht ueber CSS-Klassen.
+    const content = document.getElementById('pipeline-content')
+    expect(content, 'Schrittinhalt-Container').not.toBeNull()
+    expect(content!.nextElementSibling, 'Element nach dem Schrittinhalt').toBeNull()
   })
 
   it(

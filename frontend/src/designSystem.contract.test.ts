@@ -240,9 +240,17 @@ const stateSurfaceRows: ContrastRow[] = [
 /**
  * `--separator` ist die LINIE AUF DEM GRUND (Spec 0321): sichtbare Trennlinie oder dekorative
  * Flaeche unmittelbar auf `--bg`/`--surface`. `--border` (1.04-1.45:1) verschwindet dort
- * praktisch. Zugesichert wird der Korridor gegen die beiden Flaechen, auf denen das Token
- * ueberhaupt gilt; auf `--elevated`/`--overlay` gilt es nicht, die Werte dort sind nachrichtlich
- * und tragen keine Schwelle.
+ * praktisch. Zugesichert wird der Korridor gegen die beiden Flaechen, auf denen der KORRIDOR
+ * kalibriert ist; auf `--elevated`/`--overlay` sind die Werte nachrichtlich und tragen keine
+ * Schwelle.
+ *
+ * AUSNAHME: GRUPPENTRENNER AUF `--elevated`/`--overlay` (Spec 0347). Innerhalb von Panels und
+ * Popovern verwenden Gruppengrenzen `--separator` (nicht `--border`), da die Flaechenstufe selbst
+ * nicht zur Trennung ausreicht und die Regel speziell Kanten ZWISCHEN verschiedenen Flaechen
+ * adressiert, nicht Unterteilungen INNERHALB einer Flaeche. Fuer diese Verwendung gilt der
+ * Korridor 2.0-2.5 nicht - er ist auf die beiden Grundflaechen kalibriert. Tragend ist stattdessen
+ * die Zusicherung weiter unten, dass `--separator` auf JEDER der vier Flaechen sichtbarer bleibt
+ * als `--border`; sie stuetzt die Ausnahme, statt von ihr beruehrt zu werden.
  */
 const SEPARATOR_MIN = 2.0
 const SEPARATOR_MAX = 2.5
@@ -251,6 +259,13 @@ const separatorRows: ContrastRow[] = [
   { foreground: '--separator', background: '--bg', threshold: SEPARATOR_MIN },
   { foreground: '--separator', background: '--surface', threshold: SEPARATOR_MIN },
 ]
+
+/**
+ * Die beiden Flaechen der Ausnahme. Sie stehen bewusst NICHT in der Matrix - eine Schwellenzeile
+ * dort waere die stille Ausweitung des Korridors auf einen Fall, fuer den er nicht gerechnet
+ * wurde.
+ */
+const SEPARATOR_INFORMATIONAL_SURFACES = ['--elevated', '--overlay'] as const
 
 const inkRows: ContrastRow[] = [
   { foreground: '--accent-fg', background: '--accent', threshold: TEXT_THRESHOLD },
@@ -362,12 +377,44 @@ describe('Design-Vertrag: Kontrastmatrix', () => {
     ).toBeGreaterThanOrEqual(threshold)
   })
 
+  /*
+   * NACHRICHTLICH, MIT EINER ECHTEN ZUSICHERUNG (Spec 0347): Die Werte fuer `--elevated`/
+   * `--overlay` stehen hier ausgerechnet, damit sie nicht erneut mit den 2.38:1 gegen `--bg`
+   * verwechselt werden - genau diese Verwechslung stand am Anfang der Klaerung zur Ausnahme
+   * "Gruppentrenner auf --elevated/--overlay".
+   *
+   * Zugesichert wird dabei nicht der Wert (er traegt bewusst keine Schwelle), sondern dass fuer
+   * diese beiden Flaechen KEINE Schwellenzeile in der Matrix steht. Wer eine hinzufuegt, weitet
+   * den auf `--bg`/`--surface` kalibrierten Korridor still auf einen Fall aus, fuer den er nicht
+   * gerechnet wurde - und muss die Ausnahme dann bewusst anfassen statt sie zu unterlaufen.
+   */
+  it.each(SEPARATOR_INFORMATIONAL_SURFACES)(
+    'rechnet --separator auf %s nachrichtlich, ohne Schwelle',
+    (surface) => {
+      const separator = contrastRatio(hexOf('--separator'), hexOf(surface))
+      const border = contrastRatio(hexOf('--border'), hexOf(surface))
+
+      expect(
+        contrastRows.filter(
+          (row) => row.foreground === '--separator' && row.background === surface
+        ),
+        `--separator auf ${surface} traegt bewusst keine Schwelle ` +
+          `(gemessen ${separator.toFixed(2)}:1, --border dort ${border.toFixed(2)}:1)`
+      ).toEqual([])
+    }
+  )
+
   it('haelt --separator im Zielkorridor und ueber --border, auf allen vier Flaechen', () => {
     // Die Untergrenze steht bereits als Matrixzeile. Hier zusaetzlich die OBERgrenze (darueber
     // waere es keine dekorative Linie mehr, sondern ein zweiter Grauton), und die eigentliche
     // Aussage der Umstellung: --separator ist auf JEDER Flaeche sichtbarer als --border. Ohne
     // diesen Vergleich bliebe ein Wertewechsel, der die Linie wieder verschwinden laesst,
     // unbemerkt, solange er nur ueber 2.0 landet.
+    //
+    // "AUF JEDER FLAECHE" IST SEIT SPEC 0347 DIE TRAGENDE ZUSICHERUNG DER AUSNAHME
+    // "Gruppentrenner auf --elevated/--overlay": dort gilt der Korridor nicht, aber der Vergleich
+    // gegen --border schon - und genau er belegt, dass die Linie in einem Panel ueberhaupt
+    // sichtbar ist. Die Obergrenze bleibt bewusst auf die beiden Grundflaechen beschraenkt.
     for (const surface of ['--bg', '--surface'] as const) {
       expect(contrastRatio(hexOf('--separator'), hexOf(surface))).toBeLessThanOrEqual(SEPARATOR_MAX)
     }
@@ -1549,6 +1596,23 @@ describe('Design-Vertrag: Board-Navigationselement', () => {
       }
     }
   )
+
+  /*
+   * specs/features/0347-navigation-nebenbereich.md (AK5): Die Absetzung der Nebenzielgruppe im
+   * Panel haengt am Block der HAUPTZIELE - so verschwindet die Linie ab `lg:` automatisch mit dem
+   * Block, den sie abtrennt. Gebunden wird die Zeile woertlich, weil hier insbesondere die
+   * Token-Wahl zur Debatte steht: `border-border` waere auf `--elevated` gar keine sichtbare
+   * Linie, und der Fehler faellt in keinem Komponententest auf (jsdom hat keine Layout-Engine).
+   *
+   * NAV_TRIGGER_ACTIVE_CLASSES wird der Bindung oben ausdruecklich NICHT hinzugefuegt: der
+   * Aktivstil des Ausloesers ist ein drittes, absichtlich abweichendes Rezept - ein Symbol-Button
+   * ist kein Board-Navigationselement.
+   */
+  it('bindet die Trenner-Utilities der Panel-Gruppe woertlich (Spec 0347, AK5)', () => {
+    expect(literalsOf('src/components/ProjectNav.tsx')).toContain(
+      'mb-2 border-b border-separator pb-2 lg:hidden'
+    )
+  })
 
   it('bindet nicht gegen ein Rezept, das in keiner der beiden Dateien steht', () => {
     // Positiv-Gegenprobe: ohne sie bestuende die Bindung oben auch dann, wenn `stringLiterals`
