@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type { PhotoOut } from '../api/types'
+import type { PhotoOut, RankingOut } from '../api/types'
 import { CategoryBadge } from '../components/CategoryBadge'
 import { CategoryOverrideMarker } from '../components/CategoryOverrideMarker'
 import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
 import { PhotoCard } from '../components/PhotoCard'
 import { PhotoImage } from '../components/PhotoImage'
 import { QualityMeter } from '../components/QualityMeter'
+import { SecondaryCategoryMarker } from '../components/SecondaryCategoryMarker'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Checkbox } from '../components/ui/checkbox'
@@ -22,6 +23,7 @@ import {
   sortCategoryKeys,
 } from '../utils/categoryLabels'
 import { qualityLevel } from '../utils/qualityLevel'
+import { curatedRankings } from '../utils/rankings'
 import { formatClusterHeading, formatDayHeading } from '../utils/timeOfDay'
 
 // specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md: serverseitig deklarativ
@@ -52,10 +54,21 @@ interface ClusterMeta {
   earliestTakenAt: string
 }
 
+/**
+ * EIN gerendertes Kachel-Vorkommen: das Foto UND die Zugehoerigkeit, unter der es an dieser Stelle
+ * steht (specs/features/0300-nebenkategorien.md). Seit der Mehrfachzugehoerigkeit reicht das Foto
+ * allein nicht mehr - dasselbe Foto kann in zwei Kategorien stehen und traegt dort verschiedene
+ * Rollen (Haupt- bzw. Nebenkategorie).
+ */
+export interface CurationEntry {
+  photo: PhotoOut
+  ranking: RankingOut
+}
+
 interface GroupedPhotos {
   [dayKey: string]: {
     [clusterKey: string]: {
-      [categoryKey: string]: PhotoOut[]
+      [categoryKey: string]: CurationEntry[]
     }
   }
 }
@@ -63,8 +76,13 @@ interface GroupedPhotos {
 /**
  * Erster Durchlauf sammelt pro `cluster_key` alle zugehoerigen Fotos (kategorieuebergreifend)
  * und berechnet einmal die Cluster-Meta-Info (Tag + Ueberschrift), zweiter Durchlauf sortiert die
- * Fotos in die dreistufige {Tag: {Cluster: {Kategorie: Fotos}}}-Struktur ein (Architektur-
- * Abschnitt der Spec 0039).
+ * Zugehoerigkeiten in die dreistufige {Tag: {Cluster: {Kategorie: Eintraege}}}-Struktur ein
+ * (Architektur-Abschnitt der Spec 0039).
+ *
+ * Iteriert seit specs/features/0300-nebenkategorien.md je Foto ueber `curatedRankings(photo)` -
+ * ein Foto kann damit in MEHREREN Kategorien erscheinen. Welche das sind, entscheidet
+ * ausschliesslich der Server (`curation_position !== null`); das Frontend bildet weder die
+ * Auswahl noch eine Schwelle nach.
  */
 function groupByClusterAndCategory(items: PhotoOut[]): {
   groups: GroupedPhotos
@@ -72,13 +90,13 @@ function groupByClusterAndCategory(items: PhotoOut[]): {
 } {
   const photosByCluster = new Map<string, PhotoOut[]>()
   for (const photo of items) {
-    if (photo.ranking === null) {
-      continue
+    // Ein Foto zaehlt je Cluster nur EINMAL in die Meta-Berechnung, auch wenn es dort in zwei
+    // Kategorien steht - `formatClusterHeading` bildet den Zeitraum, nicht die Kachelanzahl.
+    for (const clusterKey of new Set(curatedRankings(photo).map((r) => r.cluster_key))) {
+      const clusterPhotos = photosByCluster.get(clusterKey) ?? []
+      clusterPhotos.push(photo)
+      photosByCluster.set(clusterKey, clusterPhotos)
     }
-    const clusterKey = photo.ranking.cluster_key
-    const clusterPhotos = photosByCluster.get(clusterKey) ?? []
-    clusterPhotos.push(photo)
-    photosByCluster.set(clusterKey, clusterPhotos)
   }
 
   const clusterMeta = new Map<string, ClusterMeta>()
@@ -89,45 +107,49 @@ function groupByClusterAndCategory(items: PhotoOut[]): {
 
   const groups: GroupedPhotos = {}
   for (const photo of items) {
-    if (photo.ranking === null) {
-      continue
+    for (const ranking of curatedRankings(photo)) {
+      const { cluster_key: clusterKey, category_key: categoryKey } = ranking
+      const meta = clusterMeta.get(clusterKey)
+      if (meta === undefined) {
+        // Unerreichbar: photosByCluster wurde aus denselben `items` gebaut, jeder hier
+        // auftauchende clusterKey hat also zwingend einen Eintrag. Defensive Absicherung statt
+        // einer Non-Null-Assertion.
+        continue
+      }
+      groups[meta.dayKey] ??= {}
+      groups[meta.dayKey][clusterKey] ??= {}
+      groups[meta.dayKey][clusterKey][categoryKey] ??= []
+      groups[meta.dayKey][clusterKey][categoryKey].push({ photo, ranking })
     }
-    const { cluster_key: clusterKey, category_key: categoryKey } = photo.ranking
-    const meta = clusterMeta.get(clusterKey)
-    if (meta === undefined) {
-      // Unerreichbar: photosByCluster wurde aus denselben `items` gebaut, jeder hier
-      // auftauchende clusterKey hat also zwingend einen Eintrag. Defensive Absicherung statt
-      // einer Non-Null-Assertion.
-      continue
-    }
-    groups[meta.dayKey] ??= {}
-    groups[meta.dayKey][clusterKey] ??= {}
-    groups[meta.dayKey][clusterKey][categoryKey] ??= []
-    groups[meta.dayKey][clusterKey][categoryKey].push(photo)
   }
   return { groups, clusterMeta }
 }
 
 /** Ob mindestens eine Kategorie in dieser Cluster-Ebene noch (sichtbare) Fotos hat. */
-function categoriesHavePhotos(categories: { [categoryKey: string]: PhotoOut[] }): boolean {
-  return Object.values(categories).some((photos) => photos.length > 0)
+function categoriesHavePhotos(categories: { [categoryKey: string]: CurationEntry[] }): boolean {
+  return Object.values(categories).some((entries) => entries.length > 0)
 }
 
 /**
  * Fotoanzahl eines Tages fuer die Kurzinfo im zugeklappten Zustand (Akzeptanzkriterium 6 der Spec
- * 0043) - reine Ableitung aus bereits geladenen Daten (Summe `photos.length` ueber alle Cluster/
- * Kategorien des Tages), kein neuer State/Request.
+ * 0043) - reine Ableitung aus bereits geladenen Daten, kein neuer State/Request.
+ *
+ * Zaehlt EINDEUTIGE FOTOS, nicht Zugehoerigkeiten (specs/features/0300-nebenkategorien.md,
+ * Akzeptanzkriterium 26): die Beschriftung lautet "N Fotos" - ein Foto, das an diesem Tag in zwei
+ * Kategorien erscheint, erhoeht die Zahl um eins.
  */
 export function countPhotosInDay(clustersForDay: {
-  [clusterKey: string]: { [categoryKey: string]: PhotoOut[] }
+  [clusterKey: string]: { [categoryKey: string]: CurationEntry[] }
 }): number {
-  let total = 0
+  const photoIds = new Set<number>()
   for (const categories of Object.values(clustersForDay)) {
-    for (const photos of Object.values(categories)) {
-      total += photos.length
+    for (const entries of Object.values(categories)) {
+      for (const entry of entries) {
+        photoIds.add(entry.photo.id)
+      }
     }
   }
-  return total
+  return photoIds.size
 }
 
 /**
@@ -472,7 +494,7 @@ export function CurateCategoriesPage() {
                         )}
                         {!clusterIsEmpty &&
                           categoryKeys.map((categoryKey) => {
-                            const photos = photosByCategory[categoryKey]
+                            const entries = photosByCategory[categoryKey]
                             return (
                               <div key={categoryKey} className="flex flex-col gap-2">
                                 <h4 className="flex items-center gap-2 text-sm font-semibold">
@@ -490,12 +512,18 @@ export function CurateCategoriesPage() {
                                   <p className="text-sm text-text">{CATCH_ALL_EXPLANATION}</p>
                                 )}
                                 <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                                  {photos.map((photo) => {
+                                  {entries.map(({ photo, ranking }) => {
                                     const isRejecting = rejectingPhotoId === photo.id
-                                    const level = qualityLevel(photo.ranking?.rank_score ?? null)
+                                    // `rank_score` ist ueber alle Zugehoerigkeiten eines Fotos
+                                    // identisch (ADR 0069 Punkt 4) - dieselbe Kachel zeigt in
+                                    // zwei Kategorien dieselbe Qualitaetsstufe.
+                                    const level = qualityLevel(ranking.rank_score)
                                     return (
                                       <PhotoCard
-                                        key={photo.id}
+                                        /* photo.id allein ist beim Mehrfachrendering desselben
+                                           Datensatzes keine belastbare Zusage mehr - React
+                                           braucht den Schluessel je VORKOMMEN. */
+                                        key={`${photo.id}-${ranking.category_key}`}
                                         relativePath={photo.relative_path}
                                         image={
                                           isRejecting ? (
@@ -514,16 +542,30 @@ export function CurateCategoriesPage() {
                                            bewusst keinen Bewertungszustand: In der Kuratierung ist
                                            noch nichts bewertet, und ein Kennzeichen "Neu" auf jeder
                                            Kachel waere eine Ergaenzung, keine Umgestaltung. */
+                                        /* Zwei Marker koennen zugleich noetig sein: ein
+                                           uebersteuertes Foto, das anderswo als Nebenkategorie
+                                           steht (specs/features/0300-nebenkategorien.md,
+                                           UI/UX-Abschnitt). Sie stehen NEBENEINANDER - kein
+                                           Stapeln, kein Verdraengen; zwei size-6-Kreise passen
+                                           auch im 360px-Viewport in die Ecke. */
                                         topLeft={
-                                          !isRejecting && photo.category_override !== null ? (
-                                            <CategoryOverrideMarker />
+                                          !isRejecting &&
+                                          (photo.category_override !== null ||
+                                            !ranking.is_primary) ? (
+                                            <div className="flex gap-1">
+                                              {photo.category_override !== null && (
+                                                <CategoryOverrideMarker />
+                                              )}
+                                              {!ranking.is_primary && <SecondaryCategoryMarker />}
+                                            </div>
                                           ) : undefined
                                         }
                                         topRight={
                                           isRejecting ? undefined : (
                                             <CriterionDetailsPopover
                                               criterionScores={photo.criterion_scores}
-                                              ranking={photo.ranking}
+                                              ranking={ranking}
+                                              rankings={photo.rankings}
                                               suggestion={photo.suggestion}
                                               categoryCandidates={photo.category_candidates}
                                               fineLabels={photo.fine_labels}
@@ -578,11 +620,11 @@ export function CurateCategoriesPage() {
                                       erschoepften Pools - dort gibt es Fotos, sie sind nur alle
                                       sicher genug. Derselbe Text fuer beide liesse den Nutzer
                                       glauben, er haette die Gruppe bereits abgearbeitet. */}
-                                  {photos.length < topN && (
+                                  {entries.length < topN && (
                                     <li className="flex aspect-square w-full flex-col items-center justify-center rounded-lg border border-dashed border-separator p-2 text-center text-xs text-text">
                                       {!lowConfidenceOnly
                                         ? 'Kein weiteres Foto verfügbar'
-                                        : photos.length === 0
+                                        : entries.length === 0
                                           ? LOW_CONFIDENCE_EMPTY_TEXT
                                           : LOW_CONFIDENCE_NO_MORE_TEXT}
                                     </li>

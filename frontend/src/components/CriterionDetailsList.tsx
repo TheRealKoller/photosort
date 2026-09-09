@@ -22,7 +22,14 @@ import { Button } from './ui/button'
 
 interface CriterionDetailsListProps {
   criterionScores: CriterionScoreOut[]
+  /** Die Zugehoerigkeit, um die es an dieser Anzeigestelle geht - in der Kuratierung die der
+   * gerenderten Kachel, sonst die Hauptzugehoerigkeit. Traegt "Kategorie" und "Rang". */
   ranking: RankingOut | null
+  /** ALLE Zugehoerigkeiten des Fotos (specs/features/0300-nebenkategorien.md). Grundlage der
+   * Sektion "Kategorien dieses Fotos", die nur bei mehr als einer Zugehoerigkeit erscheint -
+   * ohne Nebenkategorien ist die Oberflaeche von heute nicht zu unterscheiden. Default `[]`,
+   * damit bestehende Aufrufer unveraendert weiterlaufen. */
+  rankings?: RankingOut[]
   suggestion: SuggestionOut | null
   // Blendet die Ausschuss-Gruppe unbedingt aus, unabhaengig von `suggestion` (Akzeptanzkriterium
   // 6, specs/features/0041-bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md) -
@@ -126,6 +133,13 @@ function ConfidenceExplanation() {
   )
 }
 
+/* specs/features/0300-nebenkategorien.md: die Rolle einer Zugehoerigkeit als TEXT. Die Begriffe
+ * folgen der Story ("Haupt"/"Neben", nicht "Primaer"/"Sekundaer") und stehen hier einmal, damit
+ * Rollenzeile und Sektion nicht auseinanderlaufen koennen. */
+const PRIMARY_ROLE_LABEL = 'Haupt'
+const SECONDARY_ROLE_LABEL = 'Neben'
+const MEMBERSHIP_SECTION_LABEL = 'Kategorien dieses Fotos'
+
 function CriterionRow({ score }: { score: CriterionScoreOut }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
@@ -192,6 +206,7 @@ function buildCategoryCandidateRows(
 export function CriterionDetailsList({
   criterionScores,
   ranking,
+  rankings = [],
   suggestion,
   showSuggestion,
   categoryCandidates = [],
@@ -207,6 +222,9 @@ export function CriterionDetailsList({
   resetPending = false,
 }: CriterionDetailsListProps) {
   const candidateRows = buildCategoryCandidateRows(categoryCandidates, categoryOverride)
+  // specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 24: bei genau einer Zugehoerigkeit
+  // (und ohne jede) sieht die Oberflaeche exakt wie heute aus - weder Rollenzeile noch Sektion.
+  const showMembershipRoles = rankings.length > 1
   const showCandidateGroup = candidateRows.length > 1
   // specs/features/0299-kategorie-konfidenz-anzeigen.md: die Zahl der einzeiligen Anzeige haengt
   // am angezeigten Schluessel (`ranking.category_key`), nicht am einzigen Kandidaten - beide
@@ -352,6 +370,22 @@ export function CriterionDetailsList({
                     </dd>
                   </div>
                 )}
+                {/* specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 13: die Rolle AN
+                    DIESER STELLE - in der Kuratierung die der gerenderten Kachel. Sie kommt
+                    ausschliesslich aus `is_primary`, nie aus einem Zahlenvergleich, und steht als
+                    TEXT da, nicht als Farbe. Ohne Nebenkategorien (genau eine Zugehoerigkeit)
+                    erscheint die Zeile gar nicht - die Oberflaeche sieht dann exakt wie bisher
+                    aus (Akzeptanzkriterium 24). */}
+                {showMembershipRoles && (
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt className="text-text">Rolle</dt>
+                    <dd>
+                      <Badge tone="neutral">
+                        {ranking.is_primary ? PRIMARY_ROLE_LABEL : SECONDARY_ROLE_LABEL}
+                      </Badge>
+                    </dd>
+                  </div>
+                )}
                 <div className="flex items-baseline justify-between gap-3">
                   <dt className="text-text">Rang</dt>
                   <dd className="font-medium text-text-h">
@@ -386,6 +420,31 @@ export function CriterionDetailsList({
               kategoriale Einordnung. Bewusst OHNE Icon/Symbol, damit sie nicht mit den
               Bewertungs-Chips verwechselt werden. Ohne Feinlabels wird KEIN Platzhalter
               gerendert - der Bereich entfaellt ersatzlos. Sichtbar auch bei "Nicht erkannt". */}
+          {/* specs/features/0300-nebenkategorien.md, UI/UX-Abschnitt: die Kategorien DES FOTOS
+              mit ihrer jeweiligen Rolle - sichtbar nur, wenn es tatsaechlich mehr als eine gibt.
+              Die Konfidenzzahlen aus Spec 0299 werden hier NICHT wiederholt; sie stehen
+              unveraendert in der Kandidatenliste darueber. */}
+          {showMembershipRoles && (
+            <div className="mt-2 flex flex-col gap-2">
+              <h4 className="text-xs text-text">{MEMBERSHIP_SECTION_LABEL}</h4>
+              <ul aria-label={MEMBERSHIP_SECTION_LABEL} className="flex flex-col gap-2">
+                {rankings.map((membership) => (
+                  <li
+                    key={membership.category_key}
+                    data-category-key={membership.category_key}
+                    className="flex flex-wrap items-baseline justify-between gap-2"
+                  >
+                    <span className="font-medium text-text-h">
+                      {formatCategoryKey(membership.category_key, categories)}
+                    </span>
+                    <Badge tone="neutral">
+                      {membership.is_primary ? PRIMARY_ROLE_LABEL : SECONDARY_ROLE_LABEL}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {fineLabels.length > 0 && (
             <div className="mt-2 flex flex-col gap-2">
               <h4 className="text-xs text-text">Feinlabels</h4>

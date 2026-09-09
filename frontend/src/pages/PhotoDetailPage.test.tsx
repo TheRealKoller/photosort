@@ -40,7 +40,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     taken_at: '2026-07-20T10:00:00Z',
     ratings: [],
     suggestion: null,
-    ranking: null,
+    rankings: [],
     criterion_scores: [],
     fine_labels: [],
     remote_category: null,
@@ -453,13 +453,17 @@ describe('PhotoDetailPage', () => {
           photo({
             id: 1,
             criterion_scores: [criterionScore({ display_name: 'Schärfe', value: 0.734 })],
-            ranking: {
-              cluster_key: 'cluster-0',
-              category_key: 'landscape',
-              rank_score: 0.8,
-              rank_position: 2,
-              partition_size: 5,
-            },
+            rankings: [
+              {
+                cluster_key: 'cluster-0',
+                category_key: 'landscape',
+                rank_score: 0.8,
+                rank_position: 2,
+                partition_size: 5,
+                is_primary: true,
+                curation_position: null,
+              },
+            ],
           }),
         ],
         total: 1,
@@ -628,13 +632,17 @@ describe('PhotoDetailPage', () => {
           photo({
             id: 1,
             criterion_scores: [criterionScore()],
-            ranking: {
-              cluster_key: 'cluster-0',
-              category_key: 'people',
-              rank_score: 0.5,
-              rank_position: 1,
-              partition_size: 1,
-            },
+            rankings: [
+              {
+                cluster_key: 'cluster-0',
+                category_key: 'people',
+                rank_score: 0.5,
+                rank_position: 1,
+                partition_size: 1,
+                is_primary: true,
+                curation_position: null,
+              },
+            ],
             category_candidates: [
               { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
               { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
