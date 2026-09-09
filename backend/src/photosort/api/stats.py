@@ -75,6 +75,46 @@ class CategoriesOut(BaseModel):
     entries: list[CategoryEntryOut]
 
 
+class CategoryConfidenceEntryOut(BaseModel):
+    """Ein Eintrag des Konfidenzblocks (specs/features/0299-kategorie-konfidenz-anzeigen.md,
+    Akzeptanzkriterium 6).
+
+    `photo_count` zaehlt die Fotos DIESER Modell-Kategorie, die tatsaechlich eine Angabe tragen -
+    nicht alle Fotos der Kategorie. `average_confidence` ist das arithmetische Mittel genau dieser
+    Angaben und ist `None` bei `photo_count == 0`, NIE `0.0`: "keine Angabe" und "das Modell war
+    sich zu 0 % sicher" sind verschiedene Aussagen. Ueberall mit `is None` statt truthy zu
+    pruefen."""
+
+    category_key: str
+    display_name: str
+    photo_count: int
+    average_confidence: float | None
+
+
+class CategoryConfidenceOut(BaseModel):
+    """Der Konfidenzblock als Ganzes - eigener Block mit EIGENER Grundmenge (ADR 0067 Punkt 5).
+
+    Gruppiert wird ueber die MODELL-Kategorie (`photo_category_classifications.category_key`),
+    ausdruecklich nicht ueber `photo_rankings.category_key` wie `_categories_out`: der vorhandene
+    Block beantwortet "wie ist mein Bestand verteilt" und braucht dafuer die WIRKSAME Kategorie
+    (lokal + remote + Override), dieser hier beantwortet "wie gut arbeitet die Erkennung" und
+    braucht die Aussage des Modells ueber sich selbst. Ein uebersteuertes Foto zaehlt hier
+    weiterhin zu seiner Modell-Kategorie.
+
+    `entries` enthaelt IMMER alle Set-Keys inklusive `nicht_erkannt` in Registry-Anzeigereihenfolge,
+    auch mit `photo_count: 0` (analog `CategoriesOut`).
+
+    Die BEZUGSBASIS wird mit ausgewiesen, statt einen Mittelwert ohne Bezugsmenge zu zeigen. Beide
+    Zaehler beziehen sich auf die KLASSIFIZIERTEN Fotos des Projekts (die Grundmenge dieses
+    Blocks): `photos_with_confidence + photos_without_confidence` ist die Zahl der
+    Klassifizierungszeilen, nicht die Fotoanzahl. Fotos ganz ohne Klassifizierungszeile stehen im
+    vorhandenen Block als `unclassified_photo_count`."""
+
+    entries: list[CategoryConfidenceEntryOut]
+    photos_with_confidence: int
+    photos_without_confidence: int
+
+
 class CostByPurposeOut(BaseModel):
     """`has_unrecorded_runs` ist das Kennzeichen aus ADR 0051 Punkt 5 - wahr, wenn mindestens
     einer der beiden Befunde zutrifft. Es wird nichts geschaetzt und nichts hochgerechnet; der
@@ -158,6 +198,9 @@ class ProjectStatsOut(BaseModel):
     taken_at_earliest: datetime | None
     taken_at_latest: datetime | None
     categories: CategoriesOut
+    # specs/features/0299-kategorie-konfidenz-anzeigen.md - eigener Block NEBEN `categories`, mit
+    # anderer Grundmenge (siehe CategoryConfidenceOut-Docstring).
+    category_confidence: CategoryConfidenceOut
     manual_category_override_count: int
     cost: CostOut
     progress: ProgressOut
@@ -284,6 +327,71 @@ def _categories_out(counts_by_key: dict[str, int], photo_count: int) -> Categori
         classified_photo_count=classified_photo_count,
         unclassified_photo_count=photo_count - classified_photo_count,
         entries=entries,
+    )
+
+
+async def _category_confidence_stats(
+    session: AsyncSession, project_id: int
+) -> dict[str, tuple[int, float | None, int]]:
+    """Je Modell-Kategorie: (Fotos MIT Angabe, Mittelwert dieser Angaben, Klassifizierungszeilen
+    insgesamt) - EINE GROUP-BY-Abfrage, ausdruecklich kein Query je Kategorie.
+
+    Projekt-Skopierung ueber `_photos_of_project` ist Muss-Kriterium mit eigenem Test:
+    `photo_category_classifications` traegt keine eigene `project_id`, die Einschraenkung ist die
+    einzige Trennung zwischen zwei Projekten.
+
+    `func.avg` ignoriert `NULL`-Werte (SQL-Semantik) und liefert `NULL`, wenn es keinen einzigen
+    Wert gibt - eine Zeile ohne Angabe verfaelscht den Mittelwert also nicht mit einem `0.0`-
+    Beitrag. Defensiv nach `float` gecastet: SQLite und PostgreSQL liefern hier unterschiedliche
+    Python-Typen (u.a. `Decimal`).
+
+    Enthaelt auch Schluessel AUSSERHALB des festen Sets (Altbestand) - der Aufrufer entscheidet,
+    was damit geschieht."""
+    rows = await session.execute(
+        select(
+            PhotoCategoryClassification.category_key,
+            func.count().filter(PhotoCategoryClassification.category_confidence.is_not(None)),
+            func.avg(PhotoCategoryClassification.category_confidence),
+            func.count(),
+        )
+        .where(PhotoCategoryClassification.photo_id.in_(_photos_of_project(project_id)))
+        .group_by(PhotoCategoryClassification.category_key)
+    )
+    return {
+        key: (
+            int(with_confidence),
+            None if average is None else float(average),
+            int(total),
+        )
+        for key, with_confidence, average, total in rows.all()
+    }
+
+
+def _category_confidence_out(
+    stats_by_key: dict[str, tuple[int, float | None, int]],
+) -> CategoryConfidenceOut:
+    """Reine Funktion ueber dem Aggregatergebnis (analog `_categories_out`) - die Registry gibt
+    Reihenfolge und Anzeigenamen vor, das Aggregat nur die Zahlen.
+
+    Die Bezugsbasis summiert ueber ALLE Klassifizierungszeilen des Projekts, auch ueber solche mit
+    einem Kategorieschluessel ausserhalb des festen Sets (Altbestand): sie ist eine Aussage ueber
+    die Grundmenge, nicht ueber die angezeigten Zeilen. Solche Altzeilen tragen ohnehin `NULL` und
+    landen damit in `photos_without_confidence`."""
+    entries = [
+        CategoryConfidenceEntryOut(
+            category_key=definition.key,
+            display_name=definition.display_name,
+            photo_count=stats_by_key.get(definition.key, (0, None, 0))[0],
+            average_confidence=stats_by_key.get(definition.key, (0, None, 0))[1],
+        )
+        for definition in CATEGORY_REGISTRY.values()
+    ]
+    photos_with_confidence = sum(with_confidence for with_confidence, _, _ in stats_by_key.values())
+    photos_total = sum(total for _, _, total in stats_by_key.values())
+    return CategoryConfidenceOut(
+        entries=entries,
+        photos_with_confidence=photos_with_confidence,
+        photos_without_confidence=photos_total - photos_with_confidence,
     )
 
 
@@ -539,6 +647,9 @@ async def get_project_stats(
         taken_at_earliest=taken_at_earliest,
         taken_at_latest=taken_at_latest,
         categories=_categories_out(ranking_counts, photo_count),
+        category_confidence=_category_confidence_out(
+            await _category_confidence_stats(session, project_id)
+        ),
         manual_category_override_count=manual_category_override_count,
         cost=await _cost_out(session, project_id, landmark_results, remote_classified),
         progress=ProgressOut(
