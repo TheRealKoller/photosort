@@ -4,12 +4,7 @@ import { useParams, useSearchParams } from 'react-router'
 import { ApiError } from '../api/client'
 import type { PhotoOut, RankingOut } from '../api/types'
 import { CategoryBadge } from '../components/CategoryBadge'
-import { CategoryOverrideMarker } from '../components/CategoryOverrideMarker'
-import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
-import { PhotoCard } from '../components/PhotoCard'
-import { PhotoImage } from '../components/PhotoImage'
-import { QualityMeter } from '../components/QualityMeter'
-import { SecondaryCategoryMarker } from '../components/SecondaryCategoryMarker'
+import { CurationPhotoTile } from '../components/CurationPhotoTile'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Checkbox } from '../components/ui/checkbox'
@@ -23,7 +18,6 @@ import {
   sortCategoryKeys,
 } from '../utils/categoryLabels'
 import { parseTopN } from '../utils/curationTopN'
-import { qualityLevel } from '../utils/qualityLevel'
 import { curatedRankings } from '../utils/rankings'
 import { formatClusterHeading, formatDayHeading } from '../utils/timeOfDay'
 
@@ -495,109 +489,25 @@ export function CurateCategoriesPage() {
                                   <p className="text-sm text-text">{CATCH_ALL_EXPLANATION}</p>
                                 )}
                                 <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                                  {entries.map(({ photo, ranking }) => {
-                                    const isRejecting = rejectingPhotoId === photo.id
-                                    // `rank_score` ist ueber alle Zugehoerigkeiten eines Fotos
-                                    // identisch (ADR 0069 Punkt 4) - dieselbe Kachel zeigt in
-                                    // zwei Kategorien dieselbe Qualitaetsstufe.
-                                    const level = qualityLevel(ranking.rank_score)
-                                    return (
-                                      <PhotoCard
-                                        /* photo.id allein ist beim Mehrfachrendering desselben
-                                           Datensatzes keine belastbare Zusage mehr - React
-                                           braucht den Schluessel je VORKOMMEN. */
-                                        key={`${photo.id}-${ranking.category_key}`}
-                                        relativePath={photo.relative_path}
-                                        image={
-                                          isRejecting ? (
-                                            <Skeleton className="size-full" />
-                                          ) : (
-                                            <PhotoImage
-                                              photoId={photo.id}
-                                              variant="thumbnail"
-                                              alt={photo.relative_path}
-                                              className="size-full object-cover"
-                                            />
-                                          )
-                                        }
-                                        /* Waehrend `isRejecting` zeigt die Kachel nur den
-                                           Platzhalter, keine Ecken-Trigger. Die Karte traegt hier
-                                           bewusst keinen Bewertungszustand: In der Kuratierung ist
-                                           noch nichts bewertet, und ein Kennzeichen "Neu" auf jeder
-                                           Kachel waere eine Ergaenzung, keine Umgestaltung. */
-                                        /* Zwei Marker koennen zugleich noetig sein: ein
-                                           uebersteuertes Foto, das anderswo als Nebenkategorie
-                                           steht (specs/features/0300-nebenkategorien.md,
-                                           UI/UX-Abschnitt). Sie stehen NEBENEINANDER - kein
-                                           Stapeln, kein Verdraengen; zwei size-6-Kreise passen
-                                           auch im 360px-Viewport in die Ecke. */
-                                        topLeft={
-                                          !isRejecting &&
-                                          (photo.category_override !== null ||
-                                            !ranking.is_primary) ? (
-                                            <div className="flex gap-1">
-                                              {photo.category_override !== null && (
-                                                <CategoryOverrideMarker />
-                                              )}
-                                              {!ranking.is_primary && <SecondaryCategoryMarker />}
-                                            </div>
-                                          ) : undefined
-                                        }
-                                        topRight={
-                                          isRejecting ? undefined : (
-                                            <CriterionDetailsPopover
-                                              criterionScores={photo.criterion_scores}
-                                              ranking={ranking}
-                                              rankings={photo.rankings}
-                                              suggestion={photo.suggestion}
-                                              categoryCandidates={photo.category_candidates}
-                                              fineLabels={photo.fine_labels}
-                                              categories={categorySet}
-                                              categoriesLoading={categoriesQuery.isLoading}
-                                              categoriesError={categoriesQuery.isError}
-                                              onRetryCategories={() => {
-                                                void categoriesQuery.refetch()
-                                              }}
-                                              categoryOverride={photo.category_override}
-                                              onOverrideCategory={(categoryKey) =>
-                                                categoryOverrideControls.overrideCategory(
-                                                  photo.id,
-                                                  categoryKey
-                                                )
-                                              }
-                                              onResetOverride={() =>
-                                                categoryOverrideControls.resetOverride(photo.id)
-                                              }
-                                              pendingOverrideKey={categoryOverrideControls.pendingOverrideKeyFor(
-                                                photo.id
-                                              )}
-                                              resetPending={categoryOverrideControls.isResetPendingFor(
-                                                photo.id
-                                              )}
-                                            />
-                                          )
-                                        }
-                                        footer={
-                                          <div className="flex flex-col gap-2">
-                                            {level && (
-                                              <QualityMeter level={level} className="text-xs" />
-                                            )}
-                                            <Button
-                                              type="button"
-                                              variant="outline"
-                                              size="sm"
-                                              disabled={isRejecting}
-                                              busy={isRejecting}
-                                              aria-label={`Verwerfen: ${photo.relative_path}`}
-                                              onClick={() => handleReject(photo)}
-                                            >
-                                              {isRejecting ? 'Wird verworfen…' : 'Verwerfen'}
-                                            </Button>
-                                          </div>
-                                        }
-                                      />
-                                    )
-                                  })}
+                                  {entries.map(({ photo, ranking }) => (
+                                    <CurationPhotoTile
+                                      /* photo.id allein ist beim Mehrfachrendering desselben
+                                         Datensatzes keine belastbare Zusage mehr - React braucht
+                                         den Schluessel je VORKOMMEN. */
+                                      key={`${photo.id}-${ranking.category_key}`}
+                                      photo={photo}
+                                      ranking={ranking}
+                                      categories={categorySet}
+                                      categoriesLoading={categoriesQuery.isLoading}
+                                      categoriesError={categoriesQuery.isError}
+                                      onRetryCategories={() => {
+                                        void categoriesQuery.refetch()
+                                      }}
+                                      categoryOverrideControls={categoryOverrideControls}
+                                      rejecting={rejectingPhotoId === photo.id}
+                                      onReject={() => handleReject(photo)}
+                                    />
+                                  ))}
                                   {/* Zwei UNTERSCHEIDBARE Leerzustaende (Akzeptanzkriterium 5):
                                       eine leer GEFILTERTE Partition ist das Gegenteil eines
                                       erschoepften Pools - dort gibt es Fotos, sie sind nur alle
