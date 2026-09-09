@@ -6,6 +6,7 @@ import type { PhotoOut, RankingOut } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CategoryBadge } from '../components/CategoryBadge'
+import { CurationCandidates } from '../components/CurationCandidates'
 import { CurationPhotoTile } from '../components/CurationPhotoTile'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
@@ -291,8 +292,19 @@ export function CurateCategoriesPage() {
   // Query-Parameter sieht, und dieser Filter loest bewusst keine neue Anfrage aus.
   const [lowConfidenceOnly, setLowConfidenceOnly] = useState(false)
 
+  // Aufgeklappte Kandidatenbereiche, Schluessel je Partition. Dieselbe kollisionssichere
+  // Schluesselbildung wie `knownGroupKeysRef` (JSON.stringify eines 3-Tupels), damit ein
+  // cluster_key/category_key mit Trennzeichen keine zwei Bereiche verschmelzen laesst.
+  // Standardmaessig ist alles zugeklappt (Akzeptanzkriterium 20) - der Kandidaten-Request laeuft
+  // ausschliesslich im aufgeklappten Zustand.
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set())
+
   function toggleDay(dayKey: string): void {
     setCollapsedDayKeys((prev) => toggleDayCollapse(prev, dayKey))
+  }
+
+  function toggleCandidates(groupKey: string): void {
+    setExpandedGroupKeys((prev) => toggleDayCollapse(prev, groupKey))
   }
 
   // Der frueher hier stehende `useEffect`, der den Busy-Zustand zuruecksetzte, sobald das Foto aus
@@ -544,9 +556,16 @@ export function CurateCategoriesPage() {
                         {!clusterIsEmpty &&
                           categoryKeys.map((categoryKey) => {
                             const entries = photosByCategory[categoryKey]
-                            const categoryCandidateCount = candidateCountOfCategory(
-                              unfilteredCategories[categoryKey] ?? []
-                            )
+                            const unfilteredEntries = unfilteredCategories[categoryKey] ?? []
+                            const categoryCandidateCount =
+                              candidateCountOfCategory(unfilteredEntries)
+                            // Ob es weitere Kandidaten gibt, steht VOR jedem Laden fest - kein
+                            // Probe-Request (Entwurfsentscheidung 8). `rank_position` ist je
+                            // Partition lueckenlos ab 1 vergeben, die Zahl der ungefilterten
+                            // Eintraege ist damit zugleich der hoechste bereits gezeigte Rang.
+                            const remainingCandidateCount =
+                              categoryCandidateCount - unfilteredEntries.length
+                            const groupKey = JSON.stringify([dayKey, clusterKey, categoryKey])
                             return (
                               <div key={categoryKey} className="flex flex-col gap-2">
                                 <h4 className="flex flex-wrap items-center gap-2 text-sm font-semibold">
@@ -597,16 +616,55 @@ export function CurateCategoriesPage() {
                                       erschoepften Pools - dort gibt es Fotos, sie sind nur alle
                                       sicher genug. Derselbe Text fuer beide liesse den Nutzer
                                       glauben, er haette die Gruppe bereits abgearbeitet. */}
-                                  {entries.length < topN && (
-                                    <li className="flex aspect-square w-full flex-col items-center justify-center rounded-lg border border-dashed border-separator p-2 text-center text-xs text-text">
-                                      {!lowConfidenceOnly
-                                        ? 'Kein weiteres Foto verfügbar'
-                                        : entries.length === 0
-                                          ? LOW_CONFIDENCE_EMPTY_TEXT
-                                          : LOW_CONFIDENCE_NO_MORE_TEXT}
-                                    </li>
-                                  )}
+                                  {/* Der Erschoepfungshinweis und der Auslöser weiter unten
+                                      schliessen einander aus (Akzeptanzkriterium 25): "Kein
+                                      weiteres Foto verfügbar" waere neben "es gibt noch drei"
+                                      ein Widerspruch. */}
+                                  {entries.length < topN &&
+                                    (lowConfidenceOnly || remainingCandidateCount <= 0) && (
+                                      <li className="flex aspect-square w-full flex-col items-center justify-center rounded-lg border border-dashed border-separator p-2 text-center text-xs text-text">
+                                        {!lowConfidenceOnly
+                                          ? 'Kein weiteres Foto verfügbar'
+                                          : entries.length === 0
+                                            ? LOW_CONFIDENCE_EMPTY_TEXT
+                                            : LOW_CONFIDENCE_NO_MORE_TEXT}
+                                      </li>
+                                    )}
                                 </ul>
+                                {/* Der Auslöser erst NACH der Top-Foto-Reihe und nur, wenn der
+                                    Vorrat tatsaechlich groesser ist als das Gezeigte. */}
+                                {remainingCandidateCount > 0 && (
+                                  <CurationCandidates
+                                    projectId={id}
+                                    clusterKey={clusterKey}
+                                    categoryKey={categoryKey}
+                                    afterRank={unfilteredEntries.length}
+                                    remainingCount={remainingCandidateCount}
+                                    panelId={`candidates-panel-${encodeURIComponent(groupKey)}`}
+                                    expanded={expandedGroupKeys.has(groupKey)}
+                                    onToggle={() => toggleCandidates(groupKey)}
+                                    filterPhotos={
+                                      lowConfidenceOnly ? filterLowConfidence : undefined
+                                    }
+                                    renderTile={(photo, ranking) => (
+                                      <CurationPhotoTile
+                                        key={`${photo.id}-${ranking.category_key}`}
+                                        photo={photo}
+                                        ranking={ranking}
+                                        categories={categorySet}
+                                        categoriesLoading={categoriesQuery.isLoading}
+                                        categoriesError={categoriesQuery.isError}
+                                        onRetryCategories={() => {
+                                          void categoriesQuery.refetch()
+                                        }}
+                                        categoryOverrideControls={categoryOverrideControls}
+                                        ownStatus={ownRatingStatus(photo.ratings, username)}
+                                        rejecting={rejectingPhotoIds.has(photo.id)}
+                                        onReject={() => handleReject(photo)}
+                                      />
+                                    )}
+                                  />
+                                )}
                               </div>
                             )
                           })}

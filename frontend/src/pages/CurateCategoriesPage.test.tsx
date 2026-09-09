@@ -11,8 +11,10 @@ import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import type { CriterionScoreOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
 import { setToken } from '../auth/token'
+import { CANDIDATES_ALL_FILTERED_TEXT } from '../components/CurationCandidates'
 import { CATEGORY_SET } from '../test/categorySetFixture'
 import { DEFAULT_TOP_N } from '../utils/curationTopN'
+import { PHOTOS_PAGE_SIZE } from '../hooks/usePhotos'
 import {
   candidateCountOfCategory,
   candidateCountOfCluster,
@@ -1891,6 +1893,315 @@ describe('CurateCategoriesPage — Verwerfen ohne Nachruecken', () => {
       for (const resolve of pending) {
         resolve()
       }
+    })
+  })
+})
+
+describe('CurateCategoriesPage — weitere Kandidaten einsehen', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: false,
+        media: '(hover: hover) and (pointer: fine)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })
+    )
+    vi.mocked(photosApi.listPhotos).mockReset()
+    vi.mocked(photosApi.listCurationCandidates).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+    vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
+    setToken(makeToken({ sub: '1', username: 'testuser' }))
+  })
+
+  /** Ein Top-Foto, die Partition hat aber vier Kandidaten - drei stehen also noch aus. */
+  const ONE_OF_FOUR: PhotoListOut = {
+    items: [
+      photo({
+        id: 1,
+        rankings: [ranking({ category_key: 'landscape', partition_size: 4, rank_position: 1 })],
+      }),
+    ],
+    total: 1,
+  }
+
+  function candidate(id: number, rankPosition: number, overrides: Partial<PhotoOut> = {}) {
+    return photo({
+      id,
+      relative_path: `k${id}.jpg`,
+      rankings: [
+        ranking({
+          category_key: 'landscape',
+          partition_size: 4,
+          rank_position: rankPosition,
+          curation_position: rankPosition,
+        }),
+      ],
+      ...overrides,
+    })
+  }
+
+  const TRIGGER = /weitere kandidaten laden/i
+  const COLLAPSE = /weitere kandidaten ausblenden/i
+
+  it('rendert den Auslöser genau dann, wenn es weitere Kandidaten gibt', async () => {
+    // Akzeptanzkriterium 19, BEIDE Richtungen: `partition_size` groesser als die Zahl der
+    // ungefilterten Eintraege -> Auslöser; gleich gross -> kein Auslöser.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+
+    const withMore = renderPage('/projects/1/curate?topN=1')
+    expect(await screen.findByRole('button', { name: TRIGGER })).toBeInTheDocument()
+    withMore.unmount()
+
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          rankings: [ranking({ category_key: 'landscape', partition_size: 1, rank_position: 1 })],
+        }),
+      ],
+      total: 1,
+    })
+    renderPage('/projects/1/curate?topN=1')
+
+    await screen.findByText('Landscape')
+    expect(screen.queryByRole('button', { name: TRIGGER })).not.toBeInTheDocument()
+  })
+
+  it('schliesst Auslöser und Erschoepfungshinweis gegenseitig aus', async () => {
+    // Akzeptanzkriterium 25: beides sind Gegensaetze - "Kein weiteres Foto verfügbar" und "es
+    // gibt noch weitere". Ein Ausschluss-Testfall statt zweier Positivtests, sonst fiele eine
+    // falsch gesetzte Bedingung nirgends auf.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+
+    renderPage('/projects/1/curate?topN=3')
+
+    expect(await screen.findByRole('button', { name: TRIGGER })).toBeInTheDocument()
+    expect(screen.queryByText('Kein weiteres Foto verfügbar')).not.toBeInTheDocument()
+  })
+
+  it('nennt in der Beschriftung die ungefilterte Restmenge', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+
+    renderPage('/projects/1/curate?topN=1')
+
+    // 4 Kandidaten in der Partition, 1 angezeigt -> 3 stehen aus.
+    expect(await screen.findByRole('button', { name: TRIGGER })).toHaveTextContent('3')
+  })
+
+  it('ist standardmaessig zugeklappt und laedt erst beim Aufklappen', async () => {
+    // Akzeptanzkriterium 20: `aria-expanded` wechselt false -> true, `aria-controls` zeigt auf
+    // den eingeblendeten Bereich, und der Text wechselt.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue({
+      items: [candidate(2, 2)],
+      total: 3,
+    })
+
+    renderPage('/projects/1/curate?topN=1')
+    const trigger = await screen.findByRole('button', { name: TRIGGER })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(photosApi.listCurationCandidates).not.toHaveBeenCalled()
+
+    await user.click(trigger)
+
+    const expanded = await screen.findByRole('button', { name: COLLAPSE })
+    expect(expanded).toHaveAttribute('aria-expanded', 'true')
+    const panelId = expanded.getAttribute('aria-controls')
+    expect(panelId).not.toBeNull()
+    await waitFor(() =>
+      expect(document.getElementById(panelId as string)).toBeInTheDocument()
+    )
+    expect(photosApi.listCurationCandidates).toHaveBeenCalledWith(1, {
+      clusterKey: 'cluster-0',
+      categoryKey: 'landscape',
+      afterRank: 1,
+      limit: PHOTOS_PAGE_SIZE,
+      offset: 0,
+    })
+  })
+
+  it('stellt die nachgeladenen Kandidaten HINTER die Top-Fotos, ohne Wiederholung', async () => {
+    // Akzeptanzkriterium 21: aufsteigende Rangfolge, kein bereits gezeigtes Foto doppelt.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue({
+      items: [candidate(2, 2), candidate(3, 3)],
+      total: 3,
+    })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+
+    await screen.findByText('k2.jpg')
+    const names = screen
+      .getAllByRole('listitem')
+      .map((item) => item.querySelector('.font-mono')?.textContent ?? '')
+      .filter((name) => name !== '')
+    expect(names).toEqual(['a.jpg', 'k2.jpg', 'k3.jpg'])
+  })
+
+  it('laesst die Tages-Zahl beim Aufklappen unveraendert', async () => {
+    // Akzeptanzkriterium 8: nachgeladene Kandidaten fliessen NICHT in die Gruppierung ein, aus
+    // der `countPhotosInDay()` rechnet - eine Zahl, die beim Aufklappen spraenge, waere fuer den
+    // Nutzer nicht zuzuordnen.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue({
+      items: [candidate(2, 2), candidate(3, 3)],
+      total: 3,
+    })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('button', { name: /montag 20\.07\.2026/i }))
+    expect(screen.getByText('(1 Fotos)')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /montag 20\.07\.2026/i }))
+
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await screen.findByText('k2.jpg')
+    await user.click(screen.getByRole('button', { name: /montag 20\.07\.2026/i }))
+
+    expect(screen.getByText('(1 Fotos)')).toBeInTheDocument()
+    // Und auch die beiden neuen Zahlen bleiben, wo sie waren (Akzeptanzkriterium 7).
+    await user.click(screen.getByRole('button', { name: /montag 20\.07\.2026/i }))
+    expect(screen.getByText('(4 Kandidaten)')).toBeInTheDocument()
+  })
+
+  it('entfernt die Kacheln beim Ausblenden wieder, ohne die Zahlen anzutasten', async () => {
+    // Akzeptanzkriterium 23.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue({
+      items: [candidate(2, 2)],
+      total: 3,
+    })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await screen.findByText('k2.jpg')
+
+    await user.click(screen.getByRole('button', { name: COLLAPSE }))
+
+    expect(screen.queryByText('k2.jpg')).not.toBeInTheDocument()
+    expect(screen.getByText('(4 Kandidaten)')).toBeInTheDocument()
+    expect(screen.getByText('Landscape').closest('h4')).toHaveTextContent('4 Kandidaten')
+  })
+
+  it('macht nachgeladene Kandidaten verwerfbar - auch nach Zu- und erneutem Aufklappen', async () => {
+    // Akzeptanzkriterium 22: dasselbe Verhalten wie bei den Top-Fotos (AK 11/12).
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates)
+      .mockResolvedValueOnce({ items: [candidate(2, 2)], total: 3 })
+      .mockResolvedValue({
+        items: [
+          candidate(2, 2, { ratings: [{ user_id: 1, username: 'testuser', status: 'rejected' }] }),
+        ],
+        total: 3,
+      })
+    vi.mocked(ratingsApi.setRating).mockResolvedValue({
+      user_id: 1,
+      username: 'testuser',
+      status: 'rejected',
+    })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await user.click(await screen.findByRole('button', { name: 'Verwerfen: k2.jpg' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Verworfen: k2.jpg' })).toBeInTheDocument()
+    )
+
+    await user.click(screen.getByRole('button', { name: COLLAPSE }))
+    await user.click(screen.getByRole('button', { name: TRIGGER }))
+
+    expect(await screen.findByRole('button', { name: 'Verworfen: k2.jpg' })).toBeDisabled()
+  })
+
+  it('filtert auch nachgeladene Kandidaten und unterscheidet "alles weggefiltert" von "noch nichts geladen"', async () => {
+    // Akzeptanzkriterium 24: der Filter hat EINE Bedeutung in der ganzen Ansicht.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          category_confidence: 0.3,
+          rankings: [ranking({ category_key: 'landscape', partition_size: 4, rank_position: 1 })],
+        }),
+      ],
+      total: 1,
+    })
+    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue({
+      items: [candidate(2, 2, { category_confidence: 0.9 })],
+      total: 3,
+    })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('checkbox', { name: /nur unsichere zuordnungen/i }))
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+
+    // Der nachgeladene Kandidat ist sicher genug und faellt heraus …
+    await waitFor(() => expect(photosApi.listCurationCandidates).toHaveBeenCalled())
+    expect(screen.queryByText('k2.jpg')).not.toBeInTheDocument()
+    // … und der Bereich sagt das ausdruecklich, statt so auszusehen wie "noch nichts geladen".
+    expect(await screen.findByText(CANDIDATES_ALL_FILTERED_TEXT)).toBeInTheDocument()
+  })
+
+  it('zeigt einen Ladezustand und einen Fehlerzustand mit erfolgreichem zweitem Versuch', async () => {
+    // Akzeptanzkriterium 26.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates)
+      .mockRejectedValueOnce(new ApiError(500, 'Serverfehler'))
+      .mockResolvedValue({ items: [candidate(2, 2)], total: 3 })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Serverfehler')
+
+    await user.click(within(alert).getByRole('button', { name: /erneut versuchen/i }))
+
+    expect(await screen.findByText('k2.jpg')).toBeInTheDocument()
+  })
+
+  it('laedt die ZWEITE Seite mit dem richtigen Offset nach', async () => {
+    // Akzeptanzkriterium 27: die erste Seite bestuende auch bei einem fest verdrahteten
+    // `offset: 0` - der Pflichtfall ist die zweite.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          rankings: [ranking({ category_key: 'landscape', partition_size: 130, rank_position: 1 })],
+        }),
+      ],
+      total: 1,
+    })
+    vi.mocked(photosApi.listCurationCandidates)
+      .mockResolvedValueOnce({ items: [candidate(2, 2)], total: 2 })
+      .mockResolvedValueOnce({ items: [candidate(3, 3)], total: 2 })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await screen.findByText('k2.jpg')
+
+    await user.click(screen.getByRole('button', { name: /noch mehr kandidaten laden/i }))
+
+    await screen.findByText('k3.jpg')
+    expect(photosApi.listCurationCandidates).toHaveBeenLastCalledWith(1, {
+      clusterKey: 'cluster-0',
+      categoryKey: 'landscape',
+      afterRank: 1,
+      limit: PHOTOS_PAGE_SIZE,
+      offset: 1,
     })
   })
 })
