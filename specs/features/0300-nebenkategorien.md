@@ -99,12 +99,15 @@ Neu in `categories.py` (dort und nicht in `ranking.py`/`worker.py`, weil es eine
 ```python
 SECONDARY_CATEGORY_MIN_CONFIDENCE = 0.7
 
-def secondary_categories(confidences: Mapping[str, float], primary_key: str) -> tuple[str, ...]
+def usable_confidence(value: object) -> float | None
+def secondary_categories(confidences: Mapping[str, object], primary_key: str) -> tuple[str, ...]
 ```
 
 Liefert in Registry-Anzeigereihenfolge alle Schlüssel, die (a) im festen Set stehen, (b) nicht die Hauptkategorie sind, (c) nicht `nicht_erkannt` sind und (d) eine Zahl `>= SECONDARY_CATEGORY_MIN_CONFIDENCE` tragen (inklusiv, wie `category_presence_threshold`). Einzige Eingabe ist die Konfidenz-Abbildung — ein Schlüssel mit Zahl ist konstruktionsbedingt ein erkannter Schlüssel (ADR 0067 Punkt 2), ein erkannter Schlüssel ohne Zahl ist per Akzeptanzkriterium keine Nebenkategorie. Die Iteration läuft über `CATEGORY_REGISTRY` (nicht über die Eingabe) und ist damit zugleich die dritte Verteidigungslinie gegen einen Fremdwert.
 
-**Lesepfad-Härtung (Muss, siehe Security Punkt 2):** Die Funktion liest die JSON-Spalte, deren Typzusage über die Datenbank statt über den Parser läuft. Ein Wert, der nicht `int`/`float` (ohne `bool`) im Band `[0, 1]` ist, gilt als **„keine Angabe"** — nicht als `0.0`.
+**Lesepfad-Härtung (Muss, siehe Security Punkt 2):** Die Funktion liest die JSON-Spalte, deren Typzusage über die Datenbank statt über den Parser läuft. Ein Wert, der nicht `int`/`float` (ohne `bool`, endlich) im Band `[0, 1]` ist, gilt als **„keine Angabe"** — nicht als `0.0`.
+
+**`usable_confidence` ist die eine Stelle, an der „was gilt als Angabe" beantwortet wird** (Umsetzungsentscheidung, gegenüber dem ADR-Entwurf präzisiert): sie steht in `categories.py` und wird von `ranking.py` importiert, statt in beiden Modulen ein zweites Mal geschrieben zu werden — zwei Kopien könnten auseinanderlaufen, und genau das ist der Fehler, den die Härtung verhindern soll. Deshalb tragen beide Funktionen `object` statt `float | None` bzw. `Mapping[str, float]`: die engere Annotation behauptete gerade das, was am Lesepfad zu prüfen ist, und die Prüfung sähe für den Typprüfer wie toter Code aus. Die Werte stammen aus `detected_category_confidences`; der Aufrufer reicht sie unverändert durch.
 
 **Lokale Signale erzeugen nie eine Nebenkategorie** — sie tragen keine mit der Modellaussage vergleichbare Zahl (das Skalenproblem, an dem ADR 0047 gescheitert ist). `resolve_category` und `derive_photo_category` bleiben unverändert; der Invariantentest aus ADR 0067 Punkt 1 bleibt gültig.
 
@@ -115,13 +118,14 @@ Neu in `ranking.py`:
 ```python
 CONFIDENCE_RANK_PENALTY = 0.15
 
-def confidence_ordering_score(rank_score: float, confidence: float | None) -> float:
-    if confidence is None:
+def confidence_ordering_score(rank_score: float, confidence: object) -> float:
+    number = usable_confidence(confidence)
+    if number is None:
         return rank_score
-    return rank_score - CONFIDENCE_RANK_PENALTY * (1.0 - confidence)
+    return rank_score - CONFIDENCE_RANK_PENALTY * (1.0 - number)
 ```
 
-`rank_photos(candidates, weights, confidences: Mapping[int, float | None] | None = None)` sortiert nach diesem Wert (Tie-Break unverändert: kleinere `photo_id`), gibt aber in `RankedPhoto.rank_score` weiterhin den **ungedämpften** Wert zurück. Ohne den neuen Parameter verhält sich die Funktion exakt wie bisher. Der gedämpfte Wert wird nicht persistiert. Dieselbe Lesepfad-Härtung wie oben: ein entarteter persistierter Wert wird zu `None` (keine Dämpfung), nie zu `0.0` (volle Dämpfung) — `None` ist die Wahl, die nachweislich kein Foto schlechter stellen kann.
+`rank_photos(candidates, weights, confidences: Mapping[int, object] | None = None)` sortiert nach diesem Wert (Tie-Break unverändert: kleinere `photo_id`), gibt aber in `RankedPhoto.rank_score` weiterhin den **ungedämpften** Wert zurück. Ohne den neuen Parameter verhält sich die Funktion exakt wie bisher. Der gedämpfte Wert wird nicht persistiert. Dieselbe Lesepfad-Härtung wie oben, und zwar buchstäblich dieselbe Funktion (`usable_confidence` aus `categories.py`): ein entarteter persistierter Wert wird zu `None` (keine Dämpfung), nie zu `0.0` (volle Dämpfung) — `None` ist die Wahl, die nachweislich kein Foto schlechter stellen kann.
 
 Die verwendete Zahl ist die Konfidenz **zum Schlüssel der jeweiligen Partition** (`detected_category_confidences.get(category_key)`) — damit wird nie zwischen zwei Kategorien verglichen, sondern immer nur zwischen zwei Fotos derselben Kategorie.
 

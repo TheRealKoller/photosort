@@ -26,7 +26,7 @@ from photosort.models import (
     ScoringRun,
     User,
 )
-from photosort.security import hash_password
+from photosort.security import create_access_token, hash_password
 from photosort.thumbnails import display_path, thumbnail_path
 
 
@@ -1964,6 +1964,66 @@ class TestMultipleCategoryMemberships:
         [ranking] = item["rankings"]
         assert ranking["rank_position"] == 2
         assert ranking["curation_position"] == 1
+
+    async def test_curation_position_is_scoped_to_the_rejections_of_the_asking_user(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Security-Punkt 4 der Spec 0300: `curation_position` haengt an den Ablehnungen des
+        ANFRAGENDEN Nutzers - ueber sie darf nichts ueber die Bewertungen des jeweils anderen
+        sichtbar werden. Der Test prueft BEIDE Richtungen in einem Fall:
+
+        * Nutzer B lehnt ab -> die Zahlen von Nutzer A bleiben unveraendert (kein Leck),
+        * Nutzer A lehnt selbst ab -> seine Zahlen aendern sich sehr wohl (die Zahl ist
+          nutzerabhaengig und nicht etwa konstant, was den ersten Teil trivial gruen faerbte).
+
+        Die bestehenden Tests decken das nicht ab: der eine prueft die ID-LISTE statt der Zahl,
+        der andere kennt nur EINEN Nutzer."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        second = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
+        await _add_ranking(db_session, run, second, rank_score=0.5, rank_position=2)
+
+        other_user = await _make_second_user(db_session)
+        db_session.add(
+            Rating(photo_id=first.id, user_id=other_user.id, status=RatingStatus.REJECTED)
+        )
+        await db_session.commit()
+
+        async def positions(client: httpx.AsyncClient) -> dict[int, int | None]:
+            response = await client.get(
+                f"/projects/{project.id}/photos", params={"top_n_per_category": 2}
+            )
+            assert response.status_code == 200
+            return {
+                item["id"]: item["rankings"][0]["curation_position"]
+                for item in response.json()["items"]
+            }
+
+        # Nutzer A sieht die volle, ungefilterte Auswahl - die Ablehnung von B wirkt nicht auf ihn.
+        assert await positions(authenticated_api_client) == {first.id: 1, second.id: 2}
+
+        # DIESELBE Anfrage, anderer Nutzer, andere Zahl: fuer B ist das erste Foto ausgefiltert,
+        # das zweite rueckt auf Platz 1 nach. Beide Sichten existieren gleichzeitig - der Wert
+        # kann deshalb nie persistiert oder ueber Requests hinweg zwischengespeichert werden.
+        # Nur der Bearer-Token wechselt (und wird danach zurueckgesetzt), damit derselbe
+        # ASGI-Transport und dieselbe Sitzung wie fuer A benutzt werden.
+        own_authorization = authenticated_api_client.headers["Authorization"]
+        authenticated_api_client.headers["Authorization"] = (
+            f"Bearer {create_access_token(other_user)}"
+        )
+        try:
+            assert await positions(authenticated_api_client) == {second.id: 1}
+        finally:
+            authenticated_api_client.headers["Authorization"] = own_authorization
+
+        # Und die Gegenprobe: lehnt A selbst ab, aendert sich SEINE Zahl.
+        await authenticated_api_client.put(
+            f"/photos/{first.id}/rating", json={"status": "rejected"}
+        )
+
+        assert await positions(authenticated_api_client) == {second.id: 1}
 
     async def test_partition_size_counts_secondary_rows_too(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
