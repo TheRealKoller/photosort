@@ -260,11 +260,17 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     '/projects/1/curate',
   ]
 
-  const EXPECTED_TARGETS = [
+  /** Die drei Hauptziele der Leiste (specs/features/0347: "Einstellungen" ist herausgewandert). */
+  const PRIMARY_TARGETS = [
     { label: 'Projekt', href: '/projects/1/pipeline' },
     { label: 'Fotos', href: '/projects/1/photos' },
     { label: 'Vergleich', href: '/projects/1/compare' },
+  ]
+
+  /** Die zwei Nebenziele - ausschliesslich ueber den Ausloeser erreichbar. */
+  const SECONDARY_TARGETS = [
     { label: 'Einstellungen', href: '/projects/1/settings' },
+    { label: 'Statistik', href: '/projects/1/stats' },
   ]
 
   /** Der eine Landmark der Gruppe; das Panel liegt per Portal ausserhalb davon. */
@@ -272,19 +278,28 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     return screen.getByRole('navigation', { name: 'Projektbereiche' })
   }
 
+  function trigger(): HTMLElement {
+    return screen.getByRole('button', { name: 'Projektbereiche' })
+  }
+
   it.each(PROJECT_CONTEXT_PATHS)(
-    'zeigt die Gruppe mit allen vier Zielen auf %s (AK1/AK2)',
+    'zeigt die Gruppe mit den drei Hauptzielen und dem Ausloeser auf %s (AK1/AK2/AK3)',
     async (path) => {
       renderApp([path])
 
       const links = within(await screen.findByRole('navigation', { name: 'Projektbereiche' }))
         .getAllByRole('link')
       expect(links.map((link) => link.textContent)).toEqual(
-        EXPECTED_TARGETS.map((target) => target.label)
+        PRIMARY_TARGETS.map((target) => target.label)
       )
       links.forEach((link, index) => {
-        expect(link).toHaveAttribute('href', EXPECTED_TARGETS[index].href)
+        expect(link).toHaveAttribute('href', PRIMARY_TARGETS[index].href)
       })
+
+      // AK3: der Ausloeser ist auf JEDER der neun Routen da - einschliesslich /settings und
+      // /stats selbst. Ohne ihn waeren die Nebenziele von genau der Seite aus unerreichbar, auf
+      // der man gerade steht.
+      expect(within(group()).getByRole('button', { name: 'Projektbereiche' })).toBeInTheDocument()
 
       // Zweite Haelfte des Synchronitaets-Waechters: die Route ist real geroutet und nicht ueber
       // den Catch-all auf der Projektliste gelandet.
@@ -311,15 +326,15 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     await screen.findByRole('navigation', { name: 'Projektbereiche' })
     const links = within(group()).getAllByRole('link')
     expect(links.map((link) => link.textContent)).toEqual(
-      EXPECTED_TARGETS.map((target) => target.label)
+      PRIMARY_TARGETS.map((target) => target.label)
     )
     links.forEach((link, index) => {
-      expect(link).toHaveAttribute('href', EXPECTED_TARGETS[index].href)
+      expect(link).toHaveAttribute('href', PRIMARY_TARGETS[index].href)
     })
 
     // Beide Haelften in einem Fall: Der Projektkontext ueberlebt den Query-String UND der Marker
     // steht auf dem richtigen Ziel. Die Sprungziele oben belegen zugleich, dass der Query-String
-    // nicht in die projectId geraten ist - er wuerde sonst in jedem der vier `href` auftauchen.
+    // nicht in die projectId geraten ist - er wuerde sonst in jedem der drei `href` auftauchen.
     const marked = links.filter((link) => link.getAttribute('aria-current') === 'page')
     expect(marked).toHaveLength(1)
     expect(marked[0]).toHaveAccessibleName('Fotos')
@@ -346,31 +361,94 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     ['/projects/1/photos', 'Fotos'],
     ['/projects/1/photos/42', 'Fotos'],
     ['/projects/1/compare', 'Vergleich'],
-    ['/projects/1/settings', 'Einstellungen'],
   ])('markiert auf %s genau "%s" als aktuelle Seite (AK8a)', async (path, expectedLabel) => {
     renderApp([path])
 
     await screen.findByRole('navigation', { name: 'Projektbereiche' })
     // Eingegrenzt auf die Leiste, nie dokumentweit (specs/architecture/0002-testkonzept.md):
-    // bei geoeffnetem Panel laege die Markierung zwangslaeufig doppelt vor.
+    // bei geoeffnetem Panel laege die Markierung zwangslaeufig doppelt vor - und seit Spec 0347
+    // aus einem zweiten, davon unabhaengigen Grund auch am Ausloeser.
     const marked = within(group())
       .getAllByRole('link')
       .filter((link) => link.getAttribute('aria-current') === 'page')
     expect(marked).toHaveLength(1)
     expect(marked[0]).toHaveAccessibleName(expectedLabel)
+    // Der Ausloeser ruht, solange ein Hauptziel aktiv ist.
+    expect(trigger()).not.toHaveAttribute('aria-current')
   })
 
-  it.each(['/projects/1/stats', '/projects/1/curate'])(
-    'zeigt die Gruppe auf %s vollstaendig, aber ohne Markierung (AK8b)',
+  /*
+   * specs/features/0347 (AK6): /stats und /settings sind Nebenziele geworden - der GESCHLOSSENE
+   * Ausloeser traegt die Markierung, damit ohne Oeffnen erkennbar bleibt, wo man steht.
+   *
+   * BEWUSST ALS EIGENER POSITIVFALL und nicht bloss aus der frueheren "kein Ziel aktiv"-Tabelle
+   * gestrichen: beim blossen Streichen waere die Zusage lautlos verschwunden (Edge Case 2 der
+   * Spec). /curate steht unveraendert als Negativfall daneben.
+   */
+  it.each(['/projects/1/settings', '/projects/1/stats'])(
+    'markiert auf %s den geschlossenen Ausloeser statt eines Leistenziels (AK6)',
     async (path) => {
       renderApp([path])
 
       await screen.findByRole('navigation', { name: 'Projektbereiche' })
       const links = within(group()).getAllByRole('link')
-      expect(links).toHaveLength(EXPECTED_TARGETS.length)
+      expect(links).toHaveLength(PRIMARY_TARGETS.length)
       expect(links.filter((link) => link.hasAttribute('aria-current'))).toEqual([])
+      expect(trigger()).toHaveAttribute('aria-current', 'true')
     }
   )
+
+  it('zeigt die Gruppe auf /projects/1/curate vollstaendig, aber ohne jede Markierung (AK6/AK8b)', async () => {
+    renderApp(['/projects/1/curate'])
+
+    await screen.findByRole('navigation', { name: 'Projektbereiche' })
+    const links = within(group()).getAllByRole('link')
+    expect(links).toHaveLength(PRIMARY_TARGETS.length)
+    expect(links.filter((link) => link.hasAttribute('aria-current'))).toEqual([])
+    // Edge Case 1: "kein Hauptziel aktiv" heisst NICHT "Nebenbereich aktiv".
+    expect(trigger()).not.toHaveAttribute('aria-current')
+  })
+
+  /*
+   * specs/features/0347 (AK9), an genau EINER Stelle pruefbar: der Link auf die Statistikseite
+   * existierte bis hierher zweimal im Produkt - einmal am Ende der Pipeline-Seite, kuenftig nur
+   * noch im Panel. "Nicht doppelt vertreten" wird deshalb als Kardinalitaet gefuehrt, nicht als
+   * Abwesenheit: bei geschlossenem Bereich KEINER, bei geoeffnetem GENAU EINER.
+   *
+   * Die Pipeline-Seite ist der richtige Ort dafuer - dort stand der abgeloeste Link.
+   */
+  it('fuehrt den Statistik-Link genau einmal, und nur bei geoeffnetem Bereich (AK9)', async () => {
+    const user = userEvent.setup()
+    renderApp(['/projects/1/pipeline/scan'])
+
+    await screen.findByRole('navigation', { name: 'Projektbereiche' })
+    expect(document.querySelectorAll('a[href="/projects/1/stats"]')).toHaveLength(0)
+
+    await user.click(trigger())
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    expect(document.querySelectorAll('a[href="/projects/1/stats"]')).toHaveLength(1)
+    expect(screen.getByRole('link', { name: 'Statistik' })).toHaveAttribute(
+      'href',
+      '/projects/1/stats'
+    )
+  })
+
+  /** Beide Nebenziele sind aus der Kopfzeile heraus erreichbar - in fester Reihenfolge. */
+  it('bietet im geoeffneten Bereich beide Nebenziele an (AK2)', async () => {
+    const user = userEvent.setup()
+    renderApp(['/projects/1/photos'])
+
+    await user.click(await screen.findByRole('button', { name: 'Projektbereiche' }))
+    const panel = await screen.findByRole('dialog')
+
+    for (const target of SECONDARY_TARGETS) {
+      expect(within(panel).getByRole('link', { name: target.label })).toHaveAttribute(
+        'href',
+        target.href
+      )
+    }
+  })
 
   it('bleibt bei geoeffnetem Panel genau EIN navigation-Landmark "Projektbereiche" (AK3b)', async () => {
     const user = userEvent.setup()
@@ -382,13 +460,17 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     expect(screen.getAllByRole('navigation', { name: 'Projektbereiche' })).toHaveLength(1)
   })
 
-  /** Kein Ziel, kein Ausloeser, kein Landmark - alle drei Haelften von AK4 einzeln. */
+  /**
+   * Kein Ziel, kein Ausloeser, kein Landmark - alle drei Haelften von AK4/AK3 einzeln. Geprueft
+   * ueber ALLE FUENF Beschriftungen: die beiden Nebenziele duerfen ohne Projektkontext ebenso
+   * wenig auftauchen wie die drei Hauptziele.
+   */
   function expectNoGroup(): void {
     expect(
       screen.queryByRole('navigation', { name: 'Projektbereiche' })
     ).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Projektbereiche' })).not.toBeInTheDocument()
-    for (const target of EXPECTED_TARGETS) {
+    for (const target of [...PRIMARY_TARGETS, ...SECONDARY_TARGETS]) {
       expect(screen.queryByRole('link', { name: target.label })).not.toBeInTheDocument()
     }
   }

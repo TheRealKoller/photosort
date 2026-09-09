@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/TheRealKoller/photosort/compare/v0.37.0...v0.38.0) (2026-09-09)
+
+
+### Features
+
+* **frontend:** Einstellungen und Statistik im Navigations-Nebenbereich (Spec 0347) ([#359](https://github.com/TheRealKoller/photosort/issues/359)) ([4441665](https://github.com/TheRealKoller/photosort/commit/44416656872a6bdad798b17c30386924adf983f1))
+
 ## [0.37.0](https://github.com/TheRealKoller/photosort/compare/v0.36.0...v0.37.0) (2026-09-08)
 
 

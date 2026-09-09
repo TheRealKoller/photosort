@@ -81,7 +81,15 @@
      Die Dreiteilung lautet damit: --border = Kante einer Flaeche, --separator = Linie auf dem
      Grund, --border-control = Umriss eines Bedienelements. --separator gilt AUSSCHLIESSLICH dort,
      wo eine Linie oder dekorative Flaeche unmittelbar auf --bg/--surface steht und dort die
-     einzige Grenze ist. */
+     einzige Grenze ist.
+
+     AUSNAHME: GRUPPENTRENNER AUF --elevated/--overlay. Innerhalb von Panels und Popovern
+     verwenden Gruppengrenzen --separator (nicht --border), da die Flaechenstufe selbst nicht zur
+     Trennung ausreicht und die Regel oben speziell Kanten ZWISCHEN verschiedenen Flaechen
+     adressiert, nicht Unterteilungen INNERHALB einer Flaeche. Der Korridor 2.0-2.5 ist auf
+     --bg/--surface kalibriert und gilt fuer diese Ausnahme nicht; die tragende Aussage ist, dass
+     --separator auf JEDER der vier Flaechen sichtbarer bleibt als --border (im Vertragstest
+     zugesichert). */
   --separator: #474e68;
 
   /* --- Die vier Akzente des Boards. ---
