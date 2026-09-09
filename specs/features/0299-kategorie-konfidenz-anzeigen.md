@@ -1,6 +1,6 @@
 # 0299 - Kategorie-Konfidenz: Selbsteinschätzung des Modells anzeigen und auswerten
 
-**Status:** Accepted
+**Status:** Implemented ([PR #362](https://github.com/TheRealKoller/photosort/pull/362))
 **Erstellt:** 2026-09-09
 **Bezug:** [GitHub-Issue #299](https://github.com/TheRealKoller/photosort/issues/299) (Refinement vor dieser Spec-Erstellung abgeschlossen, Story-Inhalt unverändert übernommen und auf Testbarkeit geschärft)
 
