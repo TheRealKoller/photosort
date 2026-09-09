@@ -95,6 +95,32 @@ def default_vision_model_for_provider(provider: str) -> str:
     return models[0]
 
 
+def provider_for_vision_model(model: str) -> str | None:
+    """Der Anbieter, zu dem eine Modell-ID gehoert - die Rueckrichtung von
+    `default_vision_model_for_provider` (specs/features/0348-klassifizierungs-transparenz.md,
+    decisions/0068-klassifizierungslauf-vier-teilschritte-und-laufeigene-cloud-bilanz.md Punkt 6).
+
+    Die Lauf-Zeilen speichern seit ADR 0059 Punkt 6 das MODELL, nicht den Anbieter; die
+    Lauf-Bilanz nennt beides. Die fehlende Haelfte entsteht hier aus einer reinen Rueckwaertssuche
+    ueber die Registry - NICHT aus einer weiteren Spalte und **niemals** aus
+    `settings.landmark_provider`: die aktuelle Betriebseinstellung sagt nichts darueber, womit ein
+    vergangener Lauf gerechnet hat. Genau diese Verwechslung hat ADR 0059 behoben, und
+    sicherheitlich kann eine historische Lauf-Antwort damit strukturell nicht die heutige
+    Konfiguration preisgeben.
+
+    `None` (statt eines Rueckfalls) bei einem Modell, das nicht (mehr) in der Registry steht -
+    Altlauf, entferntes Modell: die Oberflaeche zeigt dann die Modell-ID allein, statt einen
+    Anbieter zu raten. Ein geratener Anbieter waere eine Behauptung ueber die Vergangenheit, die
+    diese Funktion nicht belegen kann.
+
+    Rein wie der Rest dieses Moduls: kein `photosort.config`-Import (`config.py` importiert dieses
+    Modul, die Gegenrichtung erzeugte einen Importzyklus - ADR 0059 Punkt 2)."""
+    for provider, models in VISION_MODELS_BY_PROVIDER.items():
+        if model in models:
+            return provider
+    return None
+
+
 # Modul-Konstante statt Settings-Feld (ADR 0025 Punkt 3: "reiner technischer Wert, kein
 # Betriebsparameter") - grosszuegiger als der OpenCloud-Client-Default (30s), da Vision-LLM-
 # Antwortzeiten tendenziell hoeher sind und beide Aufrufer Hintergrund-Jobs ohne wartenden Nutzer

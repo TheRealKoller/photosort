@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import json
 import logging
+from pathlib import Path
 
 import httpx
 import pytest
@@ -21,6 +23,7 @@ from photosort.cloud_vision import (
     default_vision_model_for_provider,
     mistral_response_to_json,
     mistral_usage_from_response,
+    provider_for_vision_model,
     raise_for_vision_api_status,
 )
 
@@ -349,3 +352,54 @@ class TestDefaultVisionModelForProvider:
 
         assert constants, "keine *VISION_MODEL*-Konstante in cloud_vision.py gefunden"
         assert constants <= selectable
+
+
+class TestProviderForVisionModel:
+    """specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-
+    vier-teilschritte-und-laufeigene-cloud-bilanz.md Punkt 6: die Lauf-Zeilen speichern das
+    MODELL, die Bilanz nennt Modell UND Anbieter. Die fehlende Haelfte entsteht aus einer reinen
+    Rueckwaertssuche ueber die Registry - nicht aus einer weiteren Spalte und nie aus
+    `settings.landmark_provider`."""
+
+    @pytest.mark.parametrize(
+        "provider,model",
+        [
+            (provider, model)
+            for provider, models in VISION_MODELS_BY_PROVIDER.items()
+            for model in models
+        ],
+    )
+    def test_every_registered_model_resolves_to_its_provider(
+        self, provider: str, model: str
+    ) -> None:
+        """Parametrisiert AUS der Registry, nie abgeschrieben: ein kuenftig ergaenztes Modell ist
+        damit automatisch mitgeprueft."""
+        assert provider_for_vision_model(model) == provider
+
+    def test_an_unknown_model_yields_none_not_a_guess(self) -> None:
+        """Ein Modell, das nicht (mehr) in der Registry steht - Altlauf, entferntes Modell -
+        liefert `None`. Die Oberflaeche zeigt dann die Modell-ID allein, statt einen Anbieter zu
+        raten; ein geratener Anbieter waere eine Behauptung ueber einen vergangenen Lauf."""
+        assert provider_for_vision_model("ein-laengst-entferntes-modell") is None
+
+    def test_the_function_does_not_read_the_configuration(self) -> None:
+        """Abwesenheits-Assertion, zwei Gruende in einem:
+
+        1. Fachlich (ADR 0059): die AKTUELLE Betriebseinstellung sagt nichts darueber, womit ein
+           VERGANGENER Lauf gerechnet hat - genau die Verwechslung, die ADR 0059 behoben hat.
+        2. Strukturell (ADR 0059 Punkt 2): `config.py` importiert dieses Modul (der Validator
+           braucht die Registry). Ein Import in die Gegenrichtung erzeugte einen Importzyklus.
+
+        Geprueft ueber den AST statt ueber den Rohtext: die Modul-Kommentare NENNEN
+        `photosort.config` ausdruecklich (als Verbot), eine Textsuche wuerde daran haengenbleiben
+        und damit die Dokumentation der Regel bestrafen.
+        """
+        tree = ast.parse(Path(cloud_vision.__file__).read_text(encoding="utf-8"))
+        imported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                imported.add(node.module)
+
+        assert not any(name.startswith("photosort") for name in imported), imported

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import math
 from datetime import UTC, datetime
 from pathlib import Path
@@ -947,3 +948,202 @@ async def test_a_failed_run_leaves_no_phase_behind(
 
     assert run.status == ScanStatus.FAILED
     assert run.phase is None
+
+
+# --------------------------------------------------------------------------------------------
+# specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
+# teilschritte-und-laufeigene-cloud-bilanz.md Punkt 3: Fremdschluessel statt Sortier-Heuristik.
+#
+# "Die juengste Remote-Zeile des Projekts" schriebe einem Lauf OHNE Cloud-Phase den Geldbetrag
+# des Laufs davor zu. Bei einer Anzeige, die einen Betrag einem Durchlauf zuschreibt, ist das
+# falsch - nicht nur ungenau.
+# --------------------------------------------------------------------------------------------
+
+
+async def test_a_cloud_run_links_its_own_remote_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: RecordingCategoryClient(),
+    )
+
+    remote_run = (
+        (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().one()
+    )
+    assert run.remote_category_classification_run_id == remote_run.id
+
+
+async def test_the_link_exists_before_the_first_remote_call(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der Fremdschluessel wird VOR dem Start von Phase 1 gesetzt und committet - die Oberflaeche
+    braucht den Anker bereits waehrend der Remote-Phase, sonst zeigte sie den gerade laufenden
+    Cloud-Teilschritt genau dann nicht, wenn er Geld ausgibt."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+    observed: list[int | None] = []
+
+    class _LinkObservingClient(RecordingCategoryClient):
+        async def classify(
+            self, image_bytes: bytes, mime_type: str, photo_id: int
+        ) -> RemoteClassification:
+            run = (await db_session.execute(select(CriterionScoringRun))).scalar_one()
+            observed.append(run.remote_category_classification_run_id)
+            return await super().classify(image_bytes, mime_type, photo_id)
+
+    await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: _LinkObservingClient(),
+    )
+
+    remote_run = (
+        (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().one()
+    )
+    assert observed == [remote_run.id]
+
+
+async def test_a_run_without_a_cloud_phase_links_no_remote_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """DIE zweite Haelfte ist der eigentliche Testfall: im selben Projekt liegt eine AELTERE,
+    FREMDE Remote-Zeile. Ohne sie bestuende der Test auch bei leerer Datenbank - und genau dieser
+    Fall ist der Grund fuer die Umkehr von ADR 0050 Punkt 3: die Heuristik "juengste Remote-Zeile
+    des Projekts" haette diesem Lauf die Zahlen des Laufs davor zugeschrieben."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+    foreign_remote_run = RemoteCategoryClassificationRun(
+        project_id=project.id,
+        status=ScanStatus.SUCCESS,
+        api_calls=42,
+        cost_usd=1.23,
+    )
+    db_session.add(foreign_remote_run)
+    await db_session.commit()
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=False,
+        build_category_client=_exploding_category_client_builder,
+        build_landmark_client=_exploding_landmark_client_builder,
+    )
+
+    assert run.remote_category_classification_run_id is None
+
+
+async def test_two_consecutive_runs_each_carry_their_own_remote_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    first = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: RecordingCategoryClient(),
+    )
+    await _add_candidate_photo(db_session, project, "b.jpg", tmp_path)
+    second = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: RecordingCategoryClient(),
+    )
+
+    assert first.id != second.id
+    assert first.remote_category_classification_run_id is not None
+    assert second.remote_category_classification_run_id is not None
+    assert (
+        first.remote_category_classification_run_id
+        != second.remote_category_classification_run_id
+    )
+
+
+# --------------------------------------------------------------------------------------------
+# ADR 0068 Punkt 5: die Schaetzung, mit der ein Lauf gestartet wurde, wird am Lauf eingefroren.
+# --------------------------------------------------------------------------------------------
+
+
+async def test_the_start_estimate_is_frozen_on_the_run_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ohne das Einfrieren ist "die tatsaechlichen Kosten sind gegen die Schaetzung einordenbar"
+    nach dem Lauf unerfuellbar: die Schaetzung rechnet ueber den noch OFFENEN Kandidatenbestand,
+    den genau dieser Lauf gerade abgearbeitet hat - unmittelbar danach schaetzt derselbe Endpunkt
+    nahe null."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    run = await run_classification(
+        db_session,
+        project,
+        scoring_run.id,
+        tmp_path,
+        use_cloud=True,
+        estimated_cost_usd=2.5,
+        build_detector=_NoDetections,
+        build_animal_detector=_NoDetections,
+        build_classifier=_NoSceneLabels,
+        build_aesthetics=_NeutralAesthetics,
+        build_landmarker=_NoDetections,
+        build_embedder=_fake_embedder,
+        build_category_client=lambda _model: RecordingCategoryClient(),
+    )
+
+    assert run.estimated_cost_usd == pytest.approx(2.5)
+
+
+async def test_a_run_without_a_passed_estimate_stores_null_not_zero(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """`NULL`, nicht `0.0` (Security-Muss der Spec): ein Lauf ohne Cloud hat keine
+    Kostenschaetzung, und `0.0` waere eine Aussage, die niemand getroffen hat - dieselbe
+    "null heisst unbekannt, nie kostenlos"-Linie wie bei `price_per_image_usd`."""
+    project = await _make_project(db_session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
+
+    run = await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=False,
+        build_category_client=_exploding_category_client_builder,
+        build_landmark_client=_exploding_landmark_client_builder,
+    )
+
+    assert run.estimated_cost_usd is None
+
+
+def test_the_classify_job_argument_has_a_default() -> None:
+    """Ein zum Deployment-Zeitpunkt bereits eingereihter arq-Job traegt das neue Argument nicht -
+    ohne Default scheiterte er an der Signaturaenderung, nach einem kostenpflichtigen Lauf, dessen
+    Ergebnis niemand mehr sieht."""
+    parameter = inspect.signature(worker.classify).parameters["estimated_cost_usd"]
+
+    assert parameter.default is None

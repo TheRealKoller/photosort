@@ -1775,6 +1775,7 @@ async def run_classification(
     cache_dir: Path,
     *,
     use_cloud: bool,
+    estimated_cost_usd: float | None = None,
     build_detector: Callable[[], FaceDetectorLike] = build_face_detector,
     build_animal_detector: Callable[[], ObjectDetectorLike] = build_object_detector,
     build_classifier: Callable[[], SceneClassifierLike] = build_scene_classifier,
@@ -1815,7 +1816,19 @@ async def run_classification(
 
     Ein Fehlschlag der Cloud-Phase bricht den Lauf NICHT ab (ADR 0050 Punkt 4): der lokale
     Bewertungsanteil ist der Kern des Laufs und laeuft vollstaendig durch, die Fehlermeldung
-    wandert in `cloud_error_message`."""
+    wandert in `cloud_error_message`.
+
+    specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 3 und 5, zwei Zusaetze:
+
+    - Der `RemoteCategoryClassificationRun` wird HIER angelegt und hineingereicht, und sein
+      Fremdschluessel steht an der Lauf-Zeile, BEVOR Phase 1 startet. Damit ist die Zuordnung
+      "welcher Remote-Lauf gehoert zu diesem Durchlauf" ein Schluessel statt einer Sortierung -
+      noetig, weil die Bilanz einen GELDBETRAG einem bestimmten Durchlauf zuschreibt.
+    - `estimated_cost_usd` ist die im Ausloese-Endpunkt serverseitig berechnete Schaetzung dieses
+      Laufs (ADR 0068 Punkt 5). Sie wird hier nur DURCHGEREICHT und gespeichert, nie neu
+      gerechnet: die Modulgrenze "API zaehlt fuer die Schaetzung, Worker selektiert fuer den
+      Lauf" bleibt bestehen. Sie ist ein BELEG, keine Eingabe - kein spaeterer Rechenweg liest
+      sie."""
     cloud_active = use_cloud and project.cloud_vision_detection_enabled
 
     run = CriterionScoringRun(
@@ -1823,6 +1836,7 @@ async def run_classification(
         scoring_run_id=scoring_run_id,
         status=ScanStatus.RUNNING,
         cloud_requested=use_cloud,
+        estimated_cost_usd=estimated_cost_usd,
         phase=(
             ClassificationPhase.REMOTE_CATEGORIES if cloud_active else ClassificationPhase.CRITERIA
         ),
@@ -1832,6 +1846,18 @@ async def run_classification(
     await session.refresh(run)
 
     if cloud_active:
+        # ADR 0068 Punkt 3: die Remote-Zeile entsteht hier, und der Fremdschluessel wird VOR dem
+        # ersten Cloud-Aufruf committet - sonst haette die pollende Oberflaeche waehrend der
+        # gesamten Remote-Phase keinen Anker fuer den Teilschritt, der gerade Geld ausgibt.
+        remote_run = RemoteCategoryClassificationRun(
+            project_id=project.id, status=ScanStatus.RUNNING
+        )
+        session.add(remote_run)
+        await session.commit()
+        await session.refresh(remote_run)
+        run.remote_category_classification_run_id = remote_run.id
+        await session.commit()
+
         try:
             remote_run = await run_remote_category_classification(
                 session,
@@ -1839,6 +1865,7 @@ async def run_classification(
                 cache_dir,
                 build_client=build_category_client,
                 build_embedder=build_embedder,
+                run=remote_run,
             )
         except asyncio.CancelledError:
             # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
@@ -1885,11 +1912,20 @@ async def run_classification(
 
 
 async def classify(
-    ctx: dict[str, Any], project_id: int, scoring_run_id: int, use_cloud: bool
+    ctx: dict[str, Any],
+    project_id: int,
+    scoring_run_id: int,
+    use_cloud: bool,
+    estimated_cost_usd: float | None = None,
 ) -> int:
     """Der einzige Klassifizierungs-Job (specs/features/0296-klassifizierung-ein-ausloeser-cloud-
     checkbox.md) - ersetzt die frueheren, getrennt ausgeloesten Jobs `score_criteria` und
-    `classify_categories_remote` vollstaendig."""
+    `classify_categories_remote` vollstaendig.
+
+    specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 5: `estimated_cost_usd`
+    ist die im Ausloese-Endpunkt berechnete Schaetzung. Der Default `None` ist verbindlich - ein
+    zum Zeitpunkt eines Deployments BEREITS EINGEREIHTER Job traegt das Argument nicht und darf
+    nicht an der Signaturaenderung scheitern."""
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
@@ -1901,6 +1937,7 @@ async def classify(
             scoring_run_id,
             cache_dir=Path(settings.photo_cache_dir),
             use_cloud=use_cloud,
+            estimated_cost_usd=estimated_cost_usd,
         )
         return run.id
 
