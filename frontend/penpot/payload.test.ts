@@ -9,9 +9,14 @@
  * Review ist das einzige Gate zwischen einer Zeile im Repository und ihrer Ausfuehrung. Was
  * statisch pruefbar ist, wird deshalb hier geprueft.
  *
- * SUCHRAUM sind die fuenf handgeschriebenen Dateien unter `design/penpot/`. Ausdruecklich NICHT
+ * SUCHRAUM sind die sechs handgeschriebenen Dateien unter `design/penpot/`. Ausdruecklich NICHT
  * `tokens.json`/`icons.json`: sie sind erzeugt, sie MUESSEN Werte tragen, und genau deshalb sind
  * sie die Gegenprobe. `README.md` ist Prosa und bleibt aussen vor.
+ *
+ * `views.json` IST KEINE NUTZLAST (sie wird nie ausgefuehrt und an kein Skript uebergeben), tritt
+ * dieser Liste aber SELBST bei statt einer daneben gestellten zweiten Liste: `NUTZLAST_DATEIEN`
+ * speist beide Zusicherungsbloecke - Wertfreiheit UND die abschliessende Verbotsliste. Eine
+ * zweite Liste bekaeme genau die Haelfte der Zusicherungen, die sie zu haben scheint.
  *
  * KEIN SELBSTAUSSCHLUSS NOETIG: Diese Datei liegt unter `frontend/penpot/` und damit ausserhalb
  * des eigenen Suchraums - der vorsorglich mitkopierte Selbstausschluss anderer Waechtertests
@@ -26,7 +31,7 @@ import { describe, expect, it } from 'vitest'
 const DESIGN_DIR = fileURLToPath(new URL('../../design/penpot/', import.meta.url))
 const FRONTEND_DIR = fileURLToPath(new URL('../', import.meta.url))
 
-/** Die fuenf handgeschriebenen Dateien - NAMENTLICH behauptet, nicht "mindestens fuenf Dateien
+/** Die sechs handgeschriebenen Dateien - NAMENTLICH behauptet, nicht "mindestens sechs Dateien
  * im Verzeichnis". Eine Verzeichnisaufzaehlung waere von einem kaputten Glob nicht zu
  * unterscheiden. */
 const NUTZLAST_DATEIEN = [
@@ -35,6 +40,7 @@ const NUTZLAST_DATEIEN = [
   'seed-components.js',
   'verify.js',
   'components.json',
+  'views.json',
 ] as const
 
 /** Die erzeugten Datendateien. Sie sind der POSITIVKORPUS der Gegenprobe: was in ihnen steht, muss
@@ -166,6 +172,22 @@ const MUSTER_LAENGE = /(?<![\w.-])\d+(?:\.\d+)?\s*(?:px|rem|em|pt|vh|vw|%)(?![\w
 
 /** Blanke Zahl. Die Freigabe erfolgt nicht hier, sondern fundstellengenau weiter unten. */
 const MUSTER_BLANKE_ZAHL = /(?<![\w.$-])-?\d+(?:\.\d+)?(?![\w.-])/g
+
+/**
+ * FUENFTE FAMILIE, ausschliesslich fuer `views.json`: nach der Maskierung der Tokennamen bleibt
+ * dort KEINE EINZIGE ZIFFER. Die Datei traegt per Bauart keine Zahl - kein Mass, keine Koordinate,
+ * keine Fotoanzahl, kein Datumsbeispiel, kein Fortschrittswert.
+ *
+ * WARUM DIE VIER FAMILIEN HIER NICHT REICHEN (beide Luecken sind gemessen, nicht vermutet):
+ * `MUSTER_BLANKE_ZAHL` endet auf `(?![\w.-])` und trifft `"360x740"` am nachfolgenden `x` NICHT;
+ * `MUSTER_HEX` verlangt ein `#` und laesst `"0b0c10"` durch. Genau in diesen Schreibweisen rutscht
+ * eine Koordinate oder ein Farbwert in eine JSON-Datei.
+ *
+ * BENANNTE RESTLUECKE: ein rein buchstabiger Hexwert (`"ffffff"`) bleibt unerkannt. Ohne `#` ist
+ * er kein Wert, den Penpot annaehme, und eine Regel gegen sechs Buchstaben waere eine
+ * Fehlalarm-Maschine.
+ */
+const MUSTER_ZIFFER = /[0-9]/g
 
 /** Blanke Zahlen, die ueberall unverdaechtig sind: Zaehlanfang, Erstes, Zweites, "nicht
  * gefunden". Sie tragen keine Gestaltungsaussage. */
@@ -305,7 +327,7 @@ describe('Musterfamilien: tabellengetriebene Erkenner-Selbsttests', () => {
 // ---------------------------------------------------------------------------------------------
 
 describe('Suchraum der Abwesenheits-Zusicherung', () => {
-  it('umfasst genau die fuenf namentlich behaupteten Dateien', () => {
+  it('umfasst genau die sechs namentlich behaupteten Dateien', () => {
     expect(nutzlast.map((datei) => datei.datei)).toEqual([...NUTZLAST_DATEIEN])
   })
 
@@ -317,12 +339,14 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
     'seed-components.js': 5000,
     'verify.js': 4000,
     'components.json': 10000,
+    'views.json': 10000,
   }
 
   /* Mindestzahl gescannter Zeilen NACH der Vorbehandlung. Ohne sie ist ein kaputter
      Vorbehandlungsschritt (der alles wegstreicht) von einem sauberen Bestand nicht zu
-     unterscheiden: beide melden null Funde. Gemessen 707, eingefroren auf 600. */
-  const MINDESTZEILEN = 600
+     unterscheiden: beide melden null Funde. Mit `views.json` im Suchraum neu gemessen (1237),
+     eingefroren auf 1100. */
+  const MINDESTZEILEN = 1100
 
   it('hat je Datei ueberhaupt Inhalt', () => {
     for (const datei of nutzlast) {
@@ -343,6 +367,27 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
 // Die tragende Zusicherung: kein woertlicher Farb-/Groessenwert
 // ---------------------------------------------------------------------------------------------
 
+/*
+ * FUNDSTELLENGENAUE FREIGABELISTE, bewusst NICHT dateiweise: `verify.js` braucht legitim seine
+ * Kardinalitaeten, und eine dateiweise Freigabe waere ein stiller Selbstausschalter - ab dann
+ * duerfte dort jeder Farbwert stehen. Eine Freigabe nennt Datei, Zeile, Wert und einen AUSSCHNITT
+ * der Zeile; verschiebt sich die Fundstelle, faellt die Freigabe.
+ *
+ * ⚠ SIE IST AN ZEILENNUMMERN GEBUNDEN: Jede in `verify.js` OBERHALB der Kardinalitaeten eingefuegte
+ * Zeile verschiebt alle Eintraege. Das ist kein Nebenschaden, sondern der eingebaute Waechter -
+ * neue Konstanten gehoeren deshalb UNTER die bestehenden.
+ *
+ * `views.json` bekommt hier keine einzige Freigabe: die Datei traegt per Bauart keine Zahl.
+ */
+const FREIGABEN: { datei: string; zeile: number; wert: string; ausschnitt: string }[] = [
+  { datei: 'verify.js', zeile: 54, wert: '12', ausschnitt: 'ERWARTETE_SYMBOLE = 12' },
+  { datei: 'verify.js', zeile: 55, wert: '11', ausschnitt: 'ERWARTETE_BAUSTEINE = 11' },
+  { datei: 'verify.js', zeile: 56, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
+  { datei: 'verify.js', zeile: 57, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
+  { datei: 'verify.js', zeile: 58, wert: '4', ausschnitt: 'ERWARTETE_ANSICHTEN = 4' },
+  { datei: 'verify.js', zeile: 59, wert: '14', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 14' },
+]
+
 describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast', () => {
   it('enthaelt keinen Hexwert', () => {
     const funde = suche(nutzlast, MUSTER_HEX)
@@ -362,19 +407,6 @@ describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast'
     const funde = suche(nutzlast, MUSTER_LAENGE)
     expect(meldung(funde)).toBe('')
   })
-
-  /*
-   * FUNDSTELLENGENAUE FREIGABELISTE, bewusst NICHT dateiweise: `verify.js` braucht legitim vier
-   * Kardinalitaeten, und eine dateiweise Freigabe waere ein stiller Selbstausschalter - ab dann
-   * duerfte dort jeder Farbwert stehen. Eine Freigabe nennt Datei, Zeile, Wert und einen
-   * AUSSCHNITT der Zeile; verschiebt sich die Fundstelle, faellt die Freigabe.
-   */
-  const FREIGABEN: { datei: string; zeile: number; wert: string; ausschnitt: string }[] = [
-    { datei: 'verify.js', zeile: 53, wert: '12', ausschnitt: 'ERWARTETE_SYMBOLE = 12' },
-    { datei: 'verify.js', zeile: 54, wert: '10', ausschnitt: 'ERWARTETE_BAUSTEINE = 10' },
-    { datei: 'verify.js', zeile: 55, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
-    { datei: 'verify.js', zeile: 56, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
-  ]
 
   function freigabeFuer(fund: Fund): (typeof FREIGABEN)[number] | undefined {
     return FREIGABEN.find(
@@ -432,6 +464,39 @@ describe('Gegenprobe: die erzeugten Datendateien schlagen an', () => {
       (fund) => !UNVERDAECHTIGE_ZAHLEN.has(fund.treffer)
     )
     expect(funde.length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Die Ziffernregel ueber views.json
+// ---------------------------------------------------------------------------------------------
+
+describe('Wertfreiheit von views.json, scharf gefasst', () => {
+  it('traegt nach der Maskierung der Tokennamen keine einzige Ziffer', () => {
+    const funde = suche([dateiVon('views.json')], MUSTER_ZIFFER)
+    expect(meldung(funde)).toBe('')
+  })
+
+  /* ERSTE SYNTHETISCHE GEGENPROBE: die vier Familien SCHWEIGEN an genau den zwei Schreibweisen,
+     wegen derer diese fuenfte Familie existiert. Ohne sie waere die Ziffernregel eine Behauptung
+     ueber eine Luecke, die niemand nachgemessen hat. */
+  it('zeigt, dass die vier Familien an "360x740" und "0b0c10" schweigen', () => {
+    const probe = alsDateien('{ "stelle": "360x740", "grund": "0b0c10" }', 'views.json')
+    expect(suche(probe, MUSTER_HEX)).toEqual([])
+    expect(suche(probe, MUSTER_FARBFUNKTION)).toEqual([])
+    expect(suche(probe, MUSTER_LAENGE)).toEqual([])
+    expect(suche(probe, MUSTER_BLANKE_ZAHL)).toEqual([])
+  })
+
+  /* ZWEITE SYNTHETISCHE GEGENPROBE: die Ziffernregel schlaegt an derselben Probe an. */
+  it('schlaegt an derselben Probe an', () => {
+    const probe = alsDateien('{ "stelle": "360x740", "grund": "0b0c10" }', 'views.json')
+    expect(suche(probe, MUSTER_ZIFFER).length).toBeGreaterThan(0)
+  })
+
+  /* Und sie ist trotzdem kein Fehlalarm auf einen Tokennamen: die Maskierung laeuft vorher. */
+  it('haelt einen Tokennamen mit Zahl im Blatt aus', () => {
+    expect(suche(alsDateien('{ "grund": "space.3" }', 'views.json'), MUSTER_ZIFFER)).toEqual([])
   })
 })
 
@@ -553,9 +618,15 @@ describe('Referentielle Integritaet', () => {
   })
 })
 
-describe('Die zehn Bausteine', () => {
-  /* GESCHLOSSENE NAMENSMENGE, nicht Kardinalitaet: "genau zehn" bestuenden auch zehn beliebige. */
-  it('traegt genau die zehn maschinellen Schluessel', () => {
+describe('Die elf Bausteine', () => {
+  /*
+   * GESCHLOSSENE NAMENSMENGE, nicht Kardinalitaet: "genau elf" bestuenden auch elf beliebige. Die
+   * Menge ist seit der Aufnahme des Platzhalters nicht mehr eingefroren, sondern REGELGEBUNDEN
+   * OFFEN - fortgeschrieben wird trotzdem die Namensliste samt REIHENFOLGE, nicht die Anzahl: die
+   * Bausteine aus `components/ui/` stehen zusammen, der Kategorie-Chip als einziger aus
+   * `components/` am Ende. Ein Anhaengen ans Ende zerrisse diese Ordnung still.
+   */
+  it('traegt genau die elf maschinellen Schluessel', () => {
     expect(komponenten.bausteine.map((baustein) => baustein.schluessel)).toEqual([
       'button',
       'input',
@@ -566,6 +637,7 @@ describe('Die zehn Bausteine', () => {
       'switch',
       'progress',
       'dialog',
+      'skeleton',
       'chip',
     ])
   })
@@ -581,6 +653,7 @@ describe('Die zehn Bausteine', () => {
       'Schalter',
       'Fortschrittsanzeige',
       'Dialog',
+      'Platzhalter',
       'Kategorie-Chip',
     ])
   })
@@ -594,9 +667,9 @@ describe('Die zehn Bausteine', () => {
     }
   })
 
-  /* Die Zuordnungstabelle spannt ZWEI Verzeichnisse: neun der zehn liegen unter
+  /* Die Zuordnungstabelle spannt ZWEI Verzeichnisse: zehn der elf liegen unter
      `src/components/ui/`, der Kategorie-Chip als `src/components/CategoryBadge.tsx`. Wer nur `ui/`
-     aufzaehlt, verliert den zehnten still. */
+     aufzaehlt, verliert den elften still. */
   it('spannt beide Verzeichnisse auf', () => {
     const quellen = komponenten.bausteine.flatMap((baustein) => baustein.quellen)
     expect(quellen).toContain('src/components/CategoryBadge.tsx')
@@ -737,16 +810,16 @@ describe('Die Achsen der Bausteine', () => {
   /*
    * Die Zahl der Varianten, die `seed-components.js` aufbaut: das Kreuzprodukt der Achsen je
    * Baustein. Eingefroren, weil eine versehentlich hinzugefuegte Achse sie sprunghaft vervielfacht
-   * und das sonst niemandem auffiele. 90 + 5 + 9 + 8 + 7 + 3 + 3 + 2 + 4 + 13.
+   * und das sonst niemandem auffiele. 90 + 5 + 9 + 8 + 7 + 3 + 3 + 2 + 4 + 2 + 13.
    */
-  it('baut genau 144 Varianten auf', () => {
+  it('baut genau 146 Varianten auf', () => {
     const gesamt = komponenten.bausteine.reduce(
       (summe, baustein) =>
         summe +
         Object.values(baustein.varianten).reduce((produkt, werte) => produkt * werte.length, 1),
       0
     )
-    expect(gesamt).toBe(144)
+    expect(gesamt).toBe(146)
   })
 })
 
@@ -856,6 +929,338 @@ describe('Der Kategorie-Chip', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
+// Der elfte Baustein: Platzhalter
+// ---------------------------------------------------------------------------------------------
+
+describe('Der Platzhalter', () => {
+  const platzhalter = () => komponenten.bausteine.find((baustein) => baustein.schluessel === 'skeleton')!
+
+  /*
+   * DIE ZWEI AUSPRAEGUNGEN SIND AUS DEM PRODUKTCODE ABGELEITET, NICHT ERFUNDEN: `zeile` ist die
+   * Listenzeile der Projektliste (`rounded-lg`), `kachel` die quadratische bzw. bildfuellende
+   * Flaeche (`rounded-md`, der Grundwert des Bausteins). Die Produktdateien stehen hier NAMENTLICH
+   * - und genau deshalb NICHT in `quellen`:
+   *
+   * ⚠ `src/pages/ProjectListPage.tsx` GEHOERT NICHT IN `quellen`. Der Test "fuehrt in
+   * components.json jeden im Produktcode getragenen Zustand" liest jede Datei aus `quellen` und
+   * verlangt jede dort getragene Tailwind-Zustandsvariante als Auspraegung; eine SEITE dort
+   * einzutragen erzwaenge genau die Zustandsachse, die der Platzhalter bewusst nicht hat.
+   */
+  it('bindet seine zwei Auspraegungen an die Radien aus dem Produktcode', () => {
+    const radien = platzhalter().tokensProAuspraegung?.auspraegung
+    expect(Object.keys(platzhalter().varianten)).toEqual(['auspraegung'])
+    expect(platzhalter().varianten.auspraegung).toEqual(['zeile', 'kachel'])
+    expect(radien?.zeile?.radius).toBe('radius.lg')
+    expect(radien?.kachel?.radius).toBe('radius.md')
+    expect(readFileSync(`${FRONTEND_DIR}src/pages/ProjectListPage.tsx`, 'utf8')).toContain('rounded-lg')
+    expect(readFileSync(`${FRONTEND_DIR}src/components/ui/skeleton.tsx`, 'utf8')).toContain('rounded-md')
+  })
+
+  it('traegt die Flaeche als Token und keine Seite in den Quellen', () => {
+    expect(platzhalter().tokens.flaeche).toBe('color.text-disabled')
+    expect(platzhalter().quellen).toEqual(['src/components/ui/skeleton.tsx'])
+    for (const quelle of platzhalter().quellen) {
+      expect(quelle.startsWith('src/pages/'), quelle).toBe(false)
+    }
+  })
+
+  /* Der Verzicht auf die Zustandsachse ist MECHANISCH gedeckt: die Produktdatei traegt keinen
+     Zustand aus dem geschlossenen Vokabular (`motion-reduce:` ist keiner). Ohne diese Zeile waere
+     "keine Zustandsachse" eine Behauptung ueber eine Abwesenheit, die niemand nachgesehen hat. */
+  it('traegt im Produktcode keinen Zustand aus dem Vokabular', () => {
+    const quelltext = readFileSync(`${FRONTEND_DIR}src/components/ui/skeleton.tsx`, 'utf8')
+    expect(zustaendeIn(quelltext)).toEqual([])
+    expect(quelltext).toContain('motion-reduce:')
+    expect(platzhalter().varianten.zustand).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Die Kardinalitaeten von verify.js
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Liest die `ERWARTETE_*`-Konstanten aus dem GEPARSTEN Baum von `verify.js`. Ueber den Baum und
+ * nicht ueber eine Zeichenkettensuche: eine Erwaehnung im Kommentar ist keine Konstante.
+ */
+export function erwarteteKonstanten(quelltext: string): Record<string, number> {
+  const gefunden: Record<string, number> = {}
+  for (const eintrag of knoten(quelltext, (kandidat) => kandidat.type === 'VariableDeclarator')) {
+    const bezeichner = eintrag.id as Record<string, unknown> | null
+    const wert = eintrag.init as Record<string, unknown> | null
+    if (
+      bezeichner?.type === 'Identifier' &&
+      typeof bezeichner.name === 'string' &&
+      bezeichner.name.startsWith('ERWARTETE_') &&
+      wert?.type === 'Literal' &&
+      typeof wert.value === 'number'
+    ) {
+      gefunden[bezeichner.name] = wert.value
+    }
+  }
+  return gefunden
+}
+
+const ERWARTET = erwarteteKonstanten(dateiVon('verify.js').roh)
+
+describe('Die Kardinalitaeten von verify.js', () => {
+  it('findet die Konstanten ueberhaupt, und zwar im Baum statt im Kommentar', () => {
+    expect(Object.keys(ERWARTET).length).toBeGreaterThanOrEqual(6)
+    expect(erwarteteKonstanten('const ERWARTETE_PROBE = 7')).toEqual({ ERWARTETE_PROBE: 7 })
+    expect(erwarteteKonstanten('/* ERWARTETE_PROBE = 7 */')).toEqual({})
+  })
+
+  /*
+   * BIDIREKTIONALITAET KONSTANTE <-> FREIGABE. Ohne sie kann eine neue Kardinalitaet mit einem
+   * Wert aus `UNVERDAECHTIGE_ZAHLEN` still ohne Freigabe existieren - die blanke-Zahl-Regel
+   * schwiege dazu, und die Freigabeliste waere ab dann unvollstaendig, ohne rot zu werden.
+   *
+   * Eine zusaetzliche "die Zeilennummern stimmen"-Pruefung gibt es bewusst NICHT: sie waere eine
+   * zweite Fassung derselben Aussage und alterte getrennt. Der Umbau WIRD garantiert rot.
+   */
+  it('haelt Konstante und Freigabe deckungsgleich', () => {
+    const freigegeben = FREIGABEN.filter((freigabe) => freigabe.datei === 'verify.js').map(
+      (freigabe) => /ERWARTETE_[A-Z_]+/.exec(freigabe.ausschnitt)?.[0] ?? freigabe.ausschnitt
+    )
+    expect([...freigegeben].sort()).toEqual(Object.keys(ERWARTET).sort())
+  })
+
+  /* Eine Kardinalitaet, die deklariert, aber nie zurueckgegeben wird, ist Dekoration - und fiele
+     ausgerechnet an dem Instanzverlust nicht auf, den sie verhindern soll. */
+  it('gibt jede Kardinalitaet auch zurueck', () => {
+    const quelltext = dateiVon('verify.js').roh
+    const haupt = knoten(
+      quelltext,
+      (eintrag) =>
+        eintrag.type === 'FunctionDeclaration' &&
+        (eintrag.id as Record<string, unknown> | null)?.name === 'main'
+    )
+    expect(haupt).toHaveLength(1)
+    const rueckgaben = knoten(
+      quelltext,
+      (eintrag) =>
+        eintrag.type === 'ReturnStatement' &&
+        (eintrag.argument as Record<string, unknown> | null)?.type === 'ObjectExpression' &&
+        (eintrag.start as number) > (haupt[0]!.start as number) &&
+        (eintrag.start as number) < (haupt[0]!.end as number)
+    )
+    expect(rueckgaben.length).toBeGreaterThan(0)
+    for (const name of Object.keys(ERWARTET)) {
+      expect(
+        rueckgaben.some((rueckgabe) => enthaeltBezeichner(rueckgabe, name)),
+        name
+      ).toBe(true)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Die Soll-Struktur der Ansichten: views.json
+// ---------------------------------------------------------------------------------------------
+
+const E2E_DIR = fileURLToPath(new URL('../../e2e/', import.meta.url))
+
+/**
+ * Die beiden Brettbreiten werden GELESEN, nicht getippt: sie sind die zwei Pruefbreiten des
+ * Projekts. Zwei getippte Namen daneben waeren ab der ersten Umbenennung eine zweite Wahrheit -
+ * und ein Entwurf in einer dritten, nur hier gueltigen Breite waere mit dem spaeteren
+ * Browser-Nachweis nicht mehr vergleichbar.
+ */
+export function breitenNamenAus(quelltext: string): string[] {
+  const block = /const VIEWPORTS = \{([\s\S]*?)\n\}/.exec(streicheKommentare(quelltext))
+  if (block === null) {
+    return []
+  }
+  return [...block[1]!.matchAll(/^\s+([a-z][a-zA-Z0-9-]*)\s*:/gm)].map((treffer) => treffer[1]!)
+}
+
+const viewportQuelle = readFileSync(`${E2E_DIR}lib/viewports.ts`, 'utf8')
+const BREITEN = breitenNamenAus(viewportQuelle)
+
+/** Geschlossenes Zustandsvokabular der Ansichten. `standard` traegt die Ansicht, die genau EINEN
+ * Zustand fuehrt - eine Variantenachse mit einem Wert beschriebe nichts. */
+const ANSICHTSZUSTAENDE = ['standard', 'gefuellt', 'leer', 'ladend', 'fehler'] as const
+
+/** Die zwei absehbaren Luecken sind MUSS-Eintraege: ohne sie waere "Luecken werden ausgewiesen"
+ * eine Zusage, die eine leere Liste erfuellte. */
+const MUSS_LUECKEN = ['bewegung', 'breakpoint'] as const
+
+const ansichtsdatei = JSON.parse(dateiVon('views.json').roh) as {
+  datei: string
+  ansichten: {
+    schluessel: string
+    anzeigename: string
+    seite: string
+    produktdateien: string[]
+    breiten: string[]
+    zustaende: string[]
+    variantenachse: string | null
+    bausteine: string[]
+    luecken: { schluessel: string; stelle: string; grund: string }[]
+  }[]
+}
+
+describe('Die Breiten kommen aus der Pruefbreiten-Datei', () => {
+  it('liest die Namen aus dem Objekt, aus dem auch VIEWPORT_NAMES entsteht', () => {
+    expect(BREITEN).toEqual(['mobile', 'desktop'])
+    // Ohne diese Zeile laese der Test ein Objekt, das mit der exportierten Namensliste nichts zu
+    // tun haben muesste.
+    expect(streicheKommentare(viewportQuelle)).toContain('Object.keys(VIEWPORTS)')
+  })
+
+  it('erkennt die Namen an einer synthetischen Probe', () => {
+    expect(
+      breitenNamenAus('export const VIEWPORTS = {\n  schmal: { width: 1 },\n  breit: { width: 2 },\n} as const')
+    ).toEqual(['schmal', 'breit'])
+    expect(breitenNamenAus('const ANDERES = {\n  schmal: 1,\n}')).toEqual([])
+  })
+})
+
+describe('views.json: die Soll-Struktur der Ansichten', () => {
+  const ansichten = ansichtsdatei.ansichten
+
+  /* GESCHLOSSENE NAMENSMENGE INKLUSIVE REIHENFOLGE, nicht blosse Kardinalitaet - dieselbe Bauart
+     wie bei den Bausteinen. */
+  it('fuehrt genau die vier Ansichten in dieser Reihenfolge', () => {
+    expect(ansichten.map((ansicht) => ansicht.schluessel)).toEqual([
+      'uebersicht',
+      'anlegen',
+      'pflegen',
+      'loeschen',
+    ])
+    expect(ansichten.map((ansicht) => ansicht.anzeigename)).toEqual([
+      'Projektübersicht',
+      'Projekt anlegen',
+      'Projekt pflegen',
+      'Projekt löschen',
+    ])
+  })
+
+  /* Der Seitenname ist eine ABLEITUNG, kein zweiter getippter Wert. */
+  it('leitet den Seitennamen aus dem Anzeigenamen ab', () => {
+    for (const ansicht of ansichten) {
+      expect(ansicht.seite, ansicht.schluessel).toBe(`Ansicht — ${ansicht.anzeigename}`)
+    }
+  })
+
+  /* `/` ist in Penpot ein PFADTRENNER: ein Name mit Schraegstrich kommt anders zurueck, als er
+     gesetzt wurde, und jeder Vergleich am Namen geht danach ins Leere. */
+  it('vergibt keinen Namen mit Schraegstrich', () => {
+    for (const ansicht of ansichten) {
+      for (const name of [ansicht.schluessel, ansicht.anzeigename, ansicht.seite]) {
+        expect(name, name).not.toContain('/')
+      }
+    }
+  })
+
+  it('fuehrt je Ansicht genau die zwei Pruefbreiten', () => {
+    expect(BREITEN.length).toBe(2)
+    for (const ansicht of ansichten) {
+      expect(ansicht.breiten, ansicht.schluessel).toEqual(BREITEN)
+    }
+  })
+
+  it('fuehrt Zustaende nur aus dem geschlossenen Vokabular, ohne Dublette', () => {
+    for (const ansicht of ansichten) {
+      expect(ansicht.zustaende.length, ansicht.schluessel).toBeGreaterThan(0)
+      expect(new Set(ansicht.zustaende).size, ansicht.schluessel).toBe(ansicht.zustaende.length)
+      for (const zustand of ansicht.zustaende) {
+        expect(ANSICHTSZUSTAENDE, `${ansicht.schluessel}: ${zustand}`).toContain(zustand)
+      }
+    }
+  })
+
+  /*
+   * DIE KOPPLUNG, die Akzeptanzkriterium 8 traegt: mehr als ein Zustand GENAU DANN, wenn die
+   * Ansicht die Variantenachse `zustand` fuehrt. Damit ist beides ausgeschlossen - eine Achse mit
+   * einem Wert (sie beschriebe nichts) und vier nebeneinandergestellte Bretter (sie ergaeben mehr
+   * Bretter als die Summe unten zulaesst). Die Breite ist ausdruecklich KEINE Achse.
+   */
+  it('koppelt mehr als einen Zustand an die Variantenachse zustand', () => {
+    for (const ansicht of ansichten) {
+      if (ansicht.zustaende.length > 1) {
+        expect(ansicht.variantenachse, ansicht.schluessel).toBe('zustand')
+      } else {
+        expect(ansicht.variantenachse, ansicht.schluessel).toBeNull()
+      }
+      expect(ansicht.variantenachse, ansicht.schluessel).not.toBe('breite')
+    }
+  })
+
+  /* DIE BRETTZAHL ALS SUMME, nicht als getippte Zahl - und gebunden gegen die Kardinalitaet, mit
+     der `verify.js` denselben Stand zurueckliest. */
+  it('ergibt in der Summe die zurueckgelesene Zahl an Ansichtsbrettern', () => {
+    const bretter = ansichten.reduce(
+      (summe, ansicht) => summe + ansicht.breiten.length * ansicht.zustaende.length,
+      0
+    )
+    expect(ansichten.length).toBe(ERWARTET.ERWARTETE_ANSICHTEN)
+    expect(bretter).toBe(ERWARTET.ERWARTETE_ANSICHTSBRETTER)
+  })
+
+  it('nennt je Ansicht nur Bausteine, die es gibt, und mindestens einen', () => {
+    const bekannt = new Set(komponenten.bausteine.map((baustein) => baustein.schluessel))
+    for (const ansicht of ansichten) {
+      expect(ansicht.bausteine.length, ansicht.schluessel).toBeGreaterThan(0)
+      expect(new Set(ansicht.bausteine).size, ansicht.schluessel).toBe(ansicht.bausteine.length)
+      for (const schluessel of ansicht.bausteine) {
+        expect(bekannt.has(schluessel), `${ansicht.schluessel}: ${schluessel}`).toBe(true)
+      }
+    }
+  })
+
+  /* Ohne diese Zeile bliebe die Aufnahmebedingung des elften Bausteins unbelegt: er waere ein
+     Vorratsbaustein, den kein Entwurf braucht. */
+  it('verwendet den Platzhalter in mindestens einer Ansicht', () => {
+    expect(ansichten.some((ansicht) => ansicht.bausteine.includes('skeleton'))).toBe(true)
+  })
+
+  it('weist jede Luecke mit Stelle und Grund aus', () => {
+    for (const ansicht of ansichten) {
+      expect(ansicht.luecken.length, ansicht.schluessel).toBeGreaterThan(0)
+      const schluessel = ansicht.luecken.map((luecke) => luecke.schluessel)
+      expect(new Set(schluessel).size, ansicht.schluessel).toBe(schluessel.length)
+      for (const luecke of ansicht.luecken) {
+        const pfad = `${ansicht.schluessel}.${luecke.schluessel}`
+        expect(luecke.schluessel.length, pfad).toBeGreaterThan(0)
+        expect(luecke.stelle.length, pfad).toBeGreaterThanOrEqual(12)
+        expect(luecke.grund.length, pfad).toBeGreaterThanOrEqual(40)
+      }
+    }
+  })
+
+  it('fuehrt die zwei absehbaren Luecken als Muss-Eintraege', () => {
+    const gefuehrt = new Set(
+      ansichten.flatMap((ansicht) => ansicht.luecken.map((luecke) => luecke.schluessel))
+    )
+    for (const muss of MUSS_LUECKEN) {
+      expect(gefuehrt.has(muss), muss).toBe(true)
+    }
+  })
+
+  /* BEDINGT: heute ist die Liste leer (die Ansichten sind noch nicht gebaut). Wird sie gefuellt,
+     muss jede genannte Datei tatsaechlich lesbar sein - sonst waere sie eine Behauptung. */
+  it('nennt nur Produktdateien, die es gibt', () => {
+    for (const ansicht of ansichten) {
+      for (const quelle of ansicht.produktdateien) {
+        expect(() => readFileSync(`${FRONTEND_DIR}${quelle}`, 'utf8'), quelle).not.toThrow()
+      }
+    }
+  })
+
+  /* Wo `views.json` einen Tokennamen nennt, gilt dieselbe referentielle Integritaet wie fuer
+     `components.json`. Der Erkenner selbst wird an einer synthetischen Probe belegt - eine
+     Zusicherung, die auf einer leeren Fundmenge bestuende, pruefte nichts. */
+  it('nennt nur Tokens, die es gibt', () => {
+    const genannt = [...dateiVon('views.json').roh.matchAll(TOKENNAME_MUSTER)].map(
+      (treffer) => treffer[0]
+    )
+    expect([...new Set(genannt)].filter((name) => !tokennamen.has(name))).toEqual([])
+    expect([...'color.erfunden-gibt-es-nicht'.matchAll(TOKENNAME_MUSTER)]).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
 // Die Idempotenz-Asymmetrie als FORM
 // ---------------------------------------------------------------------------------------------
 
@@ -867,6 +1272,10 @@ const LAUFREGELN: Record<string, string | null> = {
   'seed-icons.js': 'jederzeit-wiederholbar',
   'seed-components.js': 'nur-auf-leerer-datei',
   'verify.js': null,
+  /* `views.json` laeuft NICHT: sie ist eine Soll-Struktur, keine Nutzlast, und bekommt in der
+     Schritttabelle keinen Einfuegenamen. Hier eingefroren, damit das eine GEPRUEFTE Aussage ist
+     statt einer Absicht - genau wie bei `verify.js`. */
+  'views.json': null,
 }
 
 const LAUFREGEL_ZEILE = /^\s*\/\/ LAUFREGEL: (\S+)\s*$/

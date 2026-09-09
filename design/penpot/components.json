@@ -430,6 +430,32 @@
       }
     },
     {
+      "schluessel": "skeleton",
+      "name": "Platzhalter",
+      "quellen": [
+        "src/components/ui/skeleton.tsx"
+      ],
+      "varianten": {
+        "auspraegung": [
+          "zeile",
+          "kachel"
+        ]
+      },
+      "tokens": {
+        "flaeche": "color.text-disabled"
+      },
+      "tokensProAuspraegung": {
+        "auspraegung": {
+          "zeile": {
+            "radius": "radius.lg"
+          },
+          "kachel": {
+            "radius": "radius.md"
+          }
+        }
+      }
+    },
+    {
       "schluessel": "chip",
       "name": "Kategorie-Chip",
       "quellen": [

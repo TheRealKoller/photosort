@@ -1,0 +1,193 @@
+{
+  "datei": "PhotoSort — Dark Utility Register",
+  "ansichten": [
+    {
+      "schluessel": "uebersicht",
+      "anzeigename": "Projektübersicht",
+      "seite": "Ansicht — Projektübersicht",
+      "produktdateien": [],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["gefuellt", "leer", "ladend", "fehler"],
+      "variantenachse": "zustand",
+      "bausteine": ["button", "badge", "alert", "skeleton"],
+      "luecken": [
+        {
+          "schluessel": "bewegung",
+          "stelle": "Puls des Platzhalters im Zustand ladend",
+          "grund": "Der Puls ist Bewegung. Penpot bildet Bewegung nicht ab, und der Satz photosort führt kein Token dafür. Der Entwurf zeigt den Platzhalter deshalb ruhend in color.text-disabled; das ist eine ausgewiesene Lücke, kein erledigter Punkt."
+        },
+        {
+          "schluessel": "breakpoint",
+          "stelle": "Umbruch von der gestapelten Karte zur einzeiligen Rasterzeile",
+          "grund": "Es gibt kein Breakpoint-Token. Die Umbruchbreite lebt allein in der Voreinstellung des Utility-Frameworks und in der Datei mit den beiden Prüfbreiten des Projekts; im Entwurf wird sie als Wert gesetzt."
+        },
+        {
+          "schluessel": "behaelter",
+          "stelle": "Projektkarte als Behälter für Name, Pfad, Kennzahlen und Stand",
+          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Behälter sind im Entwurf deshalb tokengebundene Rahmen statt Instanzen."
+        },
+        {
+          "schluessel": "inhaltsbreite",
+          "stelle": "Inhaltsspalte der App-Shell auf dem breiten Brett",
+          "grund": "Die Begrenzung der Inhaltsspalte ist ein Layoutmaß ohne Token. Sie wird im Entwurf gesetzt, damit das breite Brett die tatsächliche Spalte zeigt statt einer über die volle Brettbreite gezogenen Fassung."
+        },
+        {
+          "schluessel": "rasterspalten",
+          "stelle": "Spaltenaufteilung der Projektzeile auf dem breiten Brett",
+          "grund": "Für die Spaltenzahl des Rasters gibt es kein Token; gedeckt ist allein der Zwischenraum über die Abstandsstufen. Die Aufteilung selbst steht in Worten im UI-Abschnitt der Spec, nicht hier."
+        },
+        {
+          "schluessel": "platzhalterhoehe",
+          "stelle": "Höhe der Platzhalter im Zustand ladend",
+          "grund": "Größen sind nicht tokenisiert. Die Höhe ist je Breite aus der Kartenhöhe gemessen statt geraten und steht als Wert im Entwurf; sie bleibt eine Lücke des Tokensatzes."
+        },
+        {
+          "schluessel": "trefferflaeche",
+          "stelle": "Mindesthöhe der Projektzeile als Trefferfläche",
+          "grund": "Die Mindesthöhe einer Trefferfläche ist eine Vorgabe der Bedienbarkeit und hat kein eigenes Token; sie wird gesetzt und hier ausgewiesen statt stillschweigend übernommen."
+        },
+        {
+          "schluessel": "schriftschnitt",
+          "stelle": "Halbfetter Schnitt für Projektname und Schrittname",
+          "grund": "Die Schriftstufen tragen selbst keinen Schnitt, und einen eigenen Token dafür gibt es nicht. Der halbfette Schnitt wird im Entwurf gesetzt und bleibt eine Lücke des Tokensatzes."
+        },
+        {
+          "schluessel": "textkuerzung",
+          "stelle": "Einzeilig gekürzter Ordnerpfad in der Projektkarte",
+          "grund": "Für die Kürzung mit Auslassung gibt es kein Token. Im Entwurf steht sie als tatsächlich gekürzter Beispieltext, damit der ungünstige Fall sichtbar ist statt nur der bequeme."
+        }
+      ]
+    },
+    {
+      "schluessel": "anlegen",
+      "anzeigename": "Projekt anlegen",
+      "seite": "Ansicht — Projekt anlegen",
+      "produktdateien": [],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["standard"],
+      "variantenachse": null,
+      "bausteine": ["input", "button"],
+      "luecken": [
+        {
+          "schluessel": "breakpoint",
+          "stelle": "Umbruch von der vollen Breite zur begrenzten Feldbreite",
+          "grund": "Es gibt kein Breakpoint-Token. Die Umbruchbreite lebt allein in der Voreinstellung des Utility-Frameworks und in der Datei mit den beiden Prüfbreiten des Projekts; im Entwurf wird sie als Wert gesetzt."
+        },
+        {
+          "schluessel": "behaelter",
+          "stelle": "Panel des Ordner-Browsers mit Brotkrumenzeile und Ordnerzeilen",
+          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Der Browser wird deshalb aus Instanzen in einem tokengebundenen Rahmen zusammengesetzt."
+        },
+        {
+          "schluessel": "inhaltsbreite",
+          "stelle": "Inhaltsspalte der App-Shell auf dem breiten Brett",
+          "grund": "Die Begrenzung der Inhaltsspalte ist ein Layoutmaß ohne Token. Sie wird im Entwurf gesetzt, damit das breite Brett die tatsächliche Spalte zeigt statt einer über die volle Brettbreite gezogenen Fassung."
+        },
+        {
+          "schluessel": "rasterspalten",
+          "stelle": "Spaltenaufteilung von Namensfeld und Ordner-Browser",
+          "grund": "Für die Spaltenzahl des Rasters gibt es kein Token; gedeckt ist allein der Zwischenraum über die Abstandsstufen. Die Aufteilung selbst steht in Worten im UI-Abschnitt der Spec, nicht hier."
+        },
+        {
+          "schluessel": "trefferflaeche",
+          "stelle": "Mindesthöhe der Ordnerzeilen und der Eingabefelder",
+          "grund": "Die Mindesthöhe einer Trefferfläche ist eine Vorgabe der Bedienbarkeit und hat kein eigenes Token; sie wird gesetzt und hier ausgewiesen statt stillschweigend übernommen."
+        },
+        {
+          "schluessel": "schriftschnitt",
+          "stelle": "Halbfetter Schnitt der Feldbeschriftungen",
+          "grund": "Die Schriftstufen tragen selbst keinen Schnitt, und einen eigenen Token dafür gibt es nicht. Der halbfette Schnitt wird im Entwurf gesetzt und bleibt eine Lücke des Tokensatzes."
+        }
+      ]
+    },
+    {
+      "schluessel": "pflegen",
+      "anzeigename": "Projekt pflegen",
+      "seite": "Ansicht — Projekt pflegen",
+      "produktdateien": [],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["standard"],
+      "variantenachse": null,
+      "bausteine": ["input", "button", "switch"],
+      "luecken": [
+        {
+          "schluessel": "breakpoint",
+          "stelle": "Umbruch der Abschnitte Name und Ordner nebeneinander",
+          "grund": "Es gibt kein Breakpoint-Token. Die Umbruchbreite lebt allein in der Voreinstellung des Utility-Frameworks und in der Datei mit den beiden Prüfbreiten des Projekts; im Entwurf wird sie als Wert gesetzt."
+        },
+        {
+          "schluessel": "behaelter",
+          "stelle": "Panels der Cloud-Bilderkennung und der Gefahrenzone",
+          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Die Panels sind im Entwurf deshalb tokengebundene Rahmen statt Instanzen."
+        },
+        {
+          "schluessel": "inhaltsbreite",
+          "stelle": "Inhaltsspalte der App-Shell auf dem breiten Brett",
+          "grund": "Die Begrenzung der Inhaltsspalte ist ein Layoutmaß ohne Token. Sie wird im Entwurf gesetzt, damit das breite Brett die tatsächliche Spalte zeigt statt einer über die volle Brettbreite gezogenen Fassung."
+        },
+        {
+          "schluessel": "rasterspalten",
+          "stelle": "Spaltenaufteilung von Name und Ordner sowie der Textspalte",
+          "grund": "Für die Spaltenzahl des Rasters gibt es kein Token; gedeckt ist allein der Zwischenraum über die Abstandsstufen. Die Aufteilung selbst steht in Worten im UI-Abschnitt der Spec, nicht hier."
+        },
+        {
+          "schluessel": "trefferflaeche",
+          "stelle": "Mindesthöhe von Eingabefeld und Schalterzeile",
+          "grund": "Die Mindesthöhe einer Trefferfläche ist eine Vorgabe der Bedienbarkeit und hat kein eigenes Token; sie wird gesetzt und hier ausgewiesen statt stillschweigend übernommen."
+        },
+        {
+          "schluessel": "schriftschnitt",
+          "stelle": "Halbfetter Schnitt der Abschnittsüberschriften",
+          "grund": "Die Schriftstufen tragen selbst keinen Schnitt, und einen eigenen Token dafür gibt es nicht. Der halbfette Schnitt wird im Entwurf gesetzt und bleibt eine Lücke des Tokensatzes."
+        },
+        {
+          "schluessel": "popover",
+          "stelle": "Geöffnetes Popover am Info-Auslöser der Cloud-Bilderkennung",
+          "grund": "Die Bibliothek führt keinen Baustein für das Popover. Der Auslöser wird als Instanz gezeigt, das geöffnete Popover ist nicht Teil des Entwurfs; es wird als Lücke geführt statt frei nachgezeichnet."
+        }
+      ]
+    },
+    {
+      "schluessel": "loeschen",
+      "anzeigename": "Projekt löschen",
+      "seite": "Ansicht — Projekt löschen",
+      "produktdateien": [],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["standard"],
+      "variantenachse": null,
+      "bausteine": ["input", "button"],
+      "luecken": [
+        {
+          "schluessel": "breakpoint",
+          "stelle": "Umbruch der Schaltflächenzeile im Bestätigungsdialog",
+          "grund": "Es gibt kein Breakpoint-Token. Die Umbruchbreite lebt allein in der Voreinstellung des Utility-Frameworks und in der Datei mit den beiden Prüfbreiten des Projekts; im Entwurf wird sie als Wert gesetzt."
+        },
+        {
+          "schluessel": "behaelter",
+          "stelle": "Rahmen des Dialogs über der abgedunkelten Pflege-Ansicht",
+          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Der Dialograhmen ist im Entwurf deshalb ein tokengebundener Rahmen statt einer Instanz."
+        },
+        {
+          "schluessel": "inhaltsbreite",
+          "stelle": "Inhaltsspalte der App-Shell hinter dem Dialog",
+          "grund": "Die Begrenzung der Inhaltsspalte ist ein Layoutmaß ohne Token. Sie wird im Entwurf gesetzt, damit das breite Brett die tatsächliche Spalte zeigt statt einer über die volle Brettbreite gezogenen Fassung."
+        },
+        {
+          "schluessel": "abdunklung",
+          "stelle": "Abdunklung der Ansicht hinter dem Dialog",
+          "grund": "Für die Abdunklung hinter einer Überlagerung gibt es keinen benannten Wert im Tokensatz. Sie wird im Entwurf als dunkler Grund gesetzt und bleibt eine ausgewiesene Lücke."
+        },
+        {
+          "schluessel": "dialogbreite",
+          "stelle": "Breite des Dialogs in beiden Brettbreiten",
+          "grund": "Die Dialogbreite ist ein Layoutmaß ohne Token; sie wird je Breite gesetzt. Der abzutippende Name bricht dabei um und wird nie gekürzt, was den Wert mitbestimmt."
+        },
+        {
+          "schluessel": "schriftschnitt",
+          "stelle": "Halbfetter Schnitt des Dialogtitels und der Beschriftung",
+          "grund": "Die Schriftstufen tragen selbst keinen Schnitt, und einen eigenen Token dafür gibt es nicht. Der halbfette Schnitt wird im Entwurf gesetzt und bleibt eine Lücke des Tokensatzes."
+        }
+      ]
+    }
+  ]
+}
