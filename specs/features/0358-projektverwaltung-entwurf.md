@@ -1,6 +1,6 @@
 # 0358 - Entwurf der Projektverwaltung mit Stand je Projekt
 
-**Status:** Accepted
+**Status:** Implemented ([PR #376](https://github.com/TheRealKoller/photosort/pull/376))
 **Erstellt:** 2026-09-09
 **Bezug:** [Issue #358](https://github.com/TheRealKoller/photosort/issues/358)
 
