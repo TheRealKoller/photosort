@@ -332,9 +332,18 @@ def build_classification_prompt() -> str:
             f"Nenne zusaetzlich hoechstens {MAX_FINE_LABELS_PER_PHOTO} kurze, frei formulierte "
             "deutsche Feinlabels, die das Foto naeher beschreiben (Anlass, Ort, konkretes Motiv).",
             "",
+            # specs/features/0299-kategorie-konfidenz-anzeigen.md, ADR 0067 Punkt 7: der
+            # Kategorien-Eintrag wird vom nackten Schluessel zum Objekt. Ausdruecklich als
+            # SELBSTEINSCHAETZUNG formuliert - die Zahl beeinflusst die Kategorieauswahl an keiner
+            # Stelle (ADR 0067 Punkt 1), sie wird ausschliesslich angezeigt und ausgewertet.
+            "Gib zu jeder genannten Kategorie an, wie sicher du dir bei dieser Zuordnung bist - "
+            'als Zahl zwischen 0 und 1 im Feld "confidence" (0 = sehr unsicher, 1 = sehr sicher). '
+            "Nenne keine Zahl, wenn du dich nicht einschaetzen kannst; erfinde keine.",
+            "",
             "Antworte AUSSCHLIESSLICH mit einem einzigen validen JSON-Objekt, ohne "
             "Markdown-Codeblock, ohne weiteren Text, exakt in dieser Form: "
-            '{"categories": ["<Schluessel>", ...], "fine_labels": ["<Feinlabel>", ...]}',
+            '{"categories": [{"key": "<Schluessel>", "confidence": <Zahl>}, ...], '
+            '"fine_labels": ["<Feinlabel>", ...]}',
         ]
     )
     return "\n".join(lines)
