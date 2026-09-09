@@ -277,3 +277,17 @@ sind der Ort, an dem eine spätere API-Änderung eine Korrektur braucht statt zw
 künftig ein Punkt als nicht verfügbar heraus, wird das **gemeldet, nicht umgangen** — ein Zustand
 als danebengestelltes Bild erfüllt Akzeptanzkriterium 4 nicht, und ein von Hand gesetzter
 Schriftwert ist als dokumentierte Lücke zu führen.
+
+### Layout-Eigenheiten der Plugin-API (2026-09-09 gemessen)
+
+Beim ersten Ansichtsentwurf gemessen, hier festgehalten, damit der nächste ihn nicht neu entdeckt:
+
+- Das Flex-Layout eines Bretts rechnet **nur bei wachsender Höhe**. Eine feste Höhe unterdrückt es
+  still — die Kinder liegen dann alle übereinander, ohne Fehlermeldung. Ein Brett trägt deshalb feste
+  Breite plus `verticalSizing = 'auto'`, und beide Sizings müssen ausdrücklich gesetzt sein.
+- Eine exakte Prüfbreite **und** -höhe braucht zwei Stufen: äußerer Rahmen ohne Layout, darin ein
+  Inhaltsbrett mit Layout.
+- Kind-Sizing sitzt auf `shape.layoutChild`, nicht am Shape. Am Shape wirft `'fill'`; ein Shape ist
+  nicht erweiterbar.
+- Ein leerer Text ist ungültig — eine unerwünschte Beschriftung wird ausgeblendet, nicht geleert.
+- `penpot.openPage` wirkt nicht zuverlässig im selben Aufruf; Wechsel und Prüfung gehören getrennt.

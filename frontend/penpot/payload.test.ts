@@ -1213,6 +1213,25 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
     expect(bretter).toBe(ERWARTET.ERWARTETE_ANSICHTSBRETTER)
   })
 
+  /*
+   * UND DIE BEHAELTERZAHL EBENSO. Ohne diese Zeile waere `ERWARTETE_ANSICHTSBEHAELTER` als
+   * einzige der drei Ansichts-Kardinalitaeten an nichts gebunden: Der Test darueber sichert nur,
+   * dass sie im Rueckgabeobjekt vorkommt, nicht WELCHEN Wert sie hat. Sie liesse sich auf eine
+   * beliebige Zahl setzen, ohne dass etwas rot wird - und faellt dann ausgerechnet an dem
+   * Instanzverlust nicht auf, den sie verhindern soll.
+   *
+   * Ein Behaelter entsteht je Breite genau dann, wenn die Ansicht mehr als einen Zustand fuehrt;
+   * das ist dieselbe Bedingung, die den Test "koppelt mehr als einen Zustand an die
+   * Variantenachse zustand" traegt, und sie wird hier abgeleitet statt getippt.
+   */
+  it('ergibt in der Summe die zurueckgelesene Zahl an Ansichts-Behaeltern', () => {
+    const behaelter = ansichten.reduce(
+      (summe, ansicht) => summe + (ansicht.zustaende.length > 1 ? ansicht.breiten.length : 0),
+      0
+    )
+    expect(behaelter).toBe(ERWARTET.ERWARTETE_ANSICHTSBEHAELTER)
+  })
+
   it('nennt je Ansicht nur Bausteine, die es gibt, und mindestens einen', () => {
     const bekannt = new Set(komponenten.bausteine.map((baustein) => baustein.schluessel))
     for (const ansicht of ansichten) {

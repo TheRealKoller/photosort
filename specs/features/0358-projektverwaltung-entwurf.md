@@ -234,6 +234,23 @@ ohne sie wäre ein abgeschnittenes Ergebnis von einem vollständigen nicht zu un
 **und Zeilennummer** gebunden. Jede in `verify.js` oberhalb der bestehenden vier Konstanten eingefügte
 Zeile verschiebt alle vier Einträge.
 
+**Am ersten echten Lauf ergänzt — eine dritte Kardinalität.** Der Varianten-Behälter trägt
+`ansicht`/`breite` ebenfalls; er muss es, sonst wäre die Variantenachse nirgends zurückzulesen und
+AK 8 hätte keinen mechanischen Beleg. Damit zählte er als Brett mit (16 statt 14). Bretter und
+Behälter werden deshalb **getrennt geführt**: `ansichtsBretter()` schließt Behälter aus,
+`ansichtsBehaelter()` liefert sie mit ihrer Achse, und `ERWARTETE_ANSICHTSBEHAELTER` tritt als dritte
+Ansichts-Kardinalität hinzu — aus `views.json` abgeleitet (je Breite ein Behälter, sobald die Ansicht
+mehr als einen Zustand führt), nicht getippt.
+
+**Und eine Präzisierung an einem bestehenden Wächter, die daraus folgt.** Der Bidirektionalitätstest
+verlangte für **jede** `ERWARTETE_*`-Konstante eine Freigabe. Eine Konstante mit einem Wert aus
+`UNVERDAECHTIGE_ZAHLEN` (`0`, `1`, `2`, `-1`) erzeugt aber keinen Fund der blanke-Zahl-Regel, und eine
+Freigabe dafür wäre zwangsläufig **verwaist** — der Test darüber wurde rot. Die beiden Zusicherungen
+widersprachen sich für jeden solchen Wert; aufgefallen an `ERWARTETE_ANSICHTSBEHAELTER = 2`. Der Test
+vergleicht jetzt gegen die Konstanten, die überhaupt eine Freigabe **brauchen**; sein Zweck bleibt
+vollständig, und dass auch die übrigen keine Dekoration sind, sichert weiterhin ausnahmslos der Test
+„gibt jede Kardinalität auch zurück".
+
 ### Der elfte Baustein: `skeleton` / „Platzhalter"
 
 Maschineller Schlüssel `skeleton`, Anzeigename „Platzhalter", Quelle `src/components/ui/skeleton.tsx`.
