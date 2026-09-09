@@ -374,6 +374,107 @@ class TestPutCategoryOverride:
         assert response.json()["items"][0]["rankings"][0]["category_key"] == "tier"
 
 
+class TestOverrideWithSecondaryCategories:
+    """specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 15: der Override setzt weiterhin
+    nur `photo_scores.category_override` - die Nebenkategorien werden aus der unveraenderten
+    Modellaussage NEU abgeleitet."""
+
+    async def _memberships(
+        self, session: AsyncSession, photo: Photo
+    ) -> dict[str, bool]:
+        rows = (
+            (
+                await session.execute(
+                    select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # Die Invariante ohne Datenbankbedingung (Security-Muss-Kriterium 5): genau EINE
+        # Hauptzeile je (Lauf, Foto) - nach JEDER Schreiboperation zu pruefen.
+        assert sum(1 for row in rows if row.is_primary) == 1
+        return {row.category_key: row.is_primary for row in rows}
+
+    async def _photo_with_a_secondary(
+        self, db_session: AsyncSession, project: Project, run: CriterionScoringRun
+    ) -> Photo:
+        photo = await _make_photo(db_session, project, "a.jpg")
+        await _add_score(db_session, photo)
+        db_session.add(
+            PhotoCategoryClassification(
+                photo_id=photo.id,
+                category_key="menschen",
+                detected_categories=["menschen", "tier"],
+                detected_category_confidences={"menschen": 0.9, "tier": 0.95},
+                category_confidence=0.9,
+                provider="anthropic",
+                computed_at=datetime.now(UTC),
+            )
+        )
+        await db_session.commit()
+        await _add_ranking(db_session, run, photo, category_key="menschen")
+        await _add_ranking(
+            db_session, run, photo, category_key="tier", rank_position=1, is_primary=False
+        )
+        return photo
+
+    async def test_an_override_onto_an_existing_secondary_returns_200_and_merges(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Kein `409`, keine zweite Zeile in der Partition: die Hauptzeile ersetzt die
+        Nebenzeile."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await self._photo_with_a_secondary(db_session, project, run)
+
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": "tier"}
+        )
+
+        assert response.status_code == 200
+        assert await self._memberships(db_session, photo) == {
+            "tier": True,
+            "menschen": False,
+        }
+
+    async def test_taking_the_override_back_restores_the_automatic_membership_set(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await self._photo_with_a_secondary(db_session, project, run)
+        before = await self._memberships(db_session, photo)
+
+        await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": "tier"}
+        )
+        response = await authenticated_api_client.delete(
+            f"/photos/{photo.id}/category-override"
+        )
+
+        assert response.status_code == 204
+        assert await self._memberships(db_session, photo) == before
+
+    async def test_an_override_onto_a_third_category_keeps_both_others_as_secondaries(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await self._photo_with_a_secondary(db_session, project, run)
+
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/category-override", json={"category_key": "fahrzeug"}
+        )
+
+        assert response.status_code == 200
+        assert await self._memberships(db_session, photo) == {
+            "fahrzeug": True,
+            "menschen": False,
+            "tier": False,
+        }
+
+
 class TestDeleteCategoryOverride:
     async def test_requires_auth(self, api_client: httpx.AsyncClient) -> None:
         response = await api_client.delete("/photos/1/category-override")

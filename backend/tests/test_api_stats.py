@@ -537,6 +537,48 @@ class TestScopeAndStorage:
 
 
 class TestCategories:
+    async def test_the_distribution_counts_the_primary_category_while_the_partition_counts_all(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+    ) -> None:
+        """specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 16 / ADR 0069 Punkt 8: ZWEI
+        Zaehlweisen, zwei Fragen - und deshalb bewusst in EINEM Testfall mit DERSELBEN Fixture
+        gegeneinander gestellt. Getrennte Positivtests blieben beide gruen, wenn der
+        `is_primary`-Filter an der falschen Stelle saesse.
+
+        * Die Kategorienverteilung zaehlt die HAUPTkategorie: die Summe ueber alle Kategorien
+          bleibt gleich der Fotoanzahl.
+        * Die Partitionsgroesse ("von N" im Popover) zaehlt ALLE Zeilen der Partition - dort steht
+          das Gastfoto tatsaechlich."""
+        project = await _make_project(db_session, "Costa Rica")
+        owner = await _add_photo(db_session, project, "a.jpg")
+        guest = await _add_photo(db_session, project, "b.jpg")
+        run = await _add_criterion_scoring_run(
+            db_session, project, started_at=datetime(2023, 2, 1)
+        )
+        await _add_ranking(db_session, run, owner, "landschaft")
+        await _add_ranking(db_session, run, guest, "tier")
+        await _add_ranking(db_session, run, guest, "landschaft", is_primary=False)
+
+        stats = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+        photos = (await authenticated_api_client.get(f"/projects/{project.id}/photos")).json()
+
+        by_key = {entry["category_key"]: entry for entry in stats["categories"]["entries"]}
+        assert by_key["landschaft"]["photo_count"] == 1
+        assert by_key["tier"]["photo_count"] == 1
+        assert sum(entry["photo_count"] for entry in stats["categories"]["entries"]) == 2
+        assert stats["photo_count"] == 2
+
+        partition_sizes = {
+            (item["id"], ranking["category_key"]): ranking["partition_size"]
+            for item in photos["items"]
+            for ranking in item["rankings"]
+        }
+        assert partition_sizes[(guest.id, "landschaft")] == 2
+        assert partition_sizes[(owner.id, "landschaft")] == 2
+        assert partition_sizes[(guest.id, "tier")] == 1
+
     async def test_the_distribution_comes_from_the_latest_successful_run(
         self,
         authenticated_api_client: httpx.AsyncClient,

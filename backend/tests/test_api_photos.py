@@ -1807,6 +1807,198 @@ class TestDefaultListingRanking:
         assert item["rankings"][0]["partition_size"] == 1
 
 
+class TestMultipleCategoryMemberships:
+    """specs/features/0300-nebenkategorien.md, Umsetzungsschritt 6: aus `PhotoOut.ranking` wird
+    `PhotoOut.rankings`. Jede Lesestelle bekommt eine Vorbedingung mit MEHREREN Zeilen je Foto -
+    das ist die eigentliche Bug-Klasse dieser Story (`scalar_one_or_none()` wirft ab der zweiten
+    Zeile, ein `dict[photo_id, ...]` verliert still)."""
+
+    async def test_rankings_list_the_primary_row_first_then_registry_display_order(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Festgelegte Reihenfolge (ADR 0069 Punkt 7): sonst flackerte die Anzeige mit der
+        Zeilenreihenfolge der Datenbank. `tier` steht in der Registry VOR `landschaft`, die
+        Hauptzeile `landschaft` trotzdem an erster Stelle."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        # Bewusst in "falscher" Reihenfolge angelegt.
+        await _add_ranking(
+            db_session,
+            run,
+            photo,
+            category_key="tier",
+            rank_score=0.9,
+            rank_position=1,
+            is_primary=False,
+        )
+        await _add_ranking(
+            db_session,
+            run,
+            photo,
+            category_key="menschen",
+            rank_score=0.9,
+            rank_position=1,
+            is_primary=False,
+        )
+        await _add_ranking(
+            db_session,
+            run,
+            photo,
+            category_key="landschaft",
+            rank_score=0.9,
+            rank_position=1,
+            is_primary=True,
+        )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        [item] = response.json()["items"]
+        assert [(r["category_key"], r["is_primary"]) for r in item["rankings"]] == [
+            ("landschaft", True),
+            ("menschen", False),
+            ("tier", False),
+        ]
+
+    async def test_a_photo_in_two_partitions_appears_only_once_in_items(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 11: in der API kommt ein Foto trotz mehrerer Zugehoerigkeiten
+        HOECHSTENS EINMAL in `items` vor - welche seiner Zugehoerigkeiten zur Auswahl gehoeren,
+        steht an den einzelnen `rankings`-Eintraegen."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(
+            db_session, run, photo, category_key="landschaft", rank_score=0.9, rank_position=1
+        )
+        await _add_ranking(
+            db_session,
+            run,
+            photo,
+            category_key="tier",
+            rank_score=0.9,
+            rank_position=1,
+            is_primary=False,
+        )
+
+        for params in ({"top_n_per_category": 3}, {}):
+            response = await authenticated_api_client.get(
+                f"/projects/{project.id}/photos", params=params
+            )
+            ids = [item["id"] for item in response.json()["items"]]
+            assert ids == [photo.id]
+            assert len(ids) == len(set(ids))
+
+        curated = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 3}
+        )
+        [item] = curated.json()["items"]
+        assert {r["category_key"]: r["curation_position"] for r in item["rankings"]} == {
+            "landschaft": 1,
+            "tier": 1,
+        }
+
+    async def test_top_n_still_applies_per_partition(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 12: `top_n` wirkt unveraendert JE PARTITION, und das `row_number()`
+        zaehlt Neben- wie Hauptzeilen mit."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        best = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        guest = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        await _add_ranking(
+            db_session, run, best, category_key="landschaft", rank_score=0.9, rank_position=1
+        )
+        # Der Gast steht in `landschaft` NUR als Nebenkategorie - und belegt trotzdem einen der
+        # angeforderten Plaetze.
+        await _add_ranking(
+            db_session,
+            run,
+            guest,
+            category_key="landschaft",
+            rank_score=0.5,
+            rank_position=2,
+            is_primary=False,
+        )
+        await _add_ranking(
+            db_session, run, guest, category_key="tier", rank_score=0.5, rank_position=1
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
+        )
+
+        rankings_by_photo = {
+            item["id"]: {r["category_key"]: r["curation_position"] for r in item["rankings"]}
+            for item in response.json()["items"]
+        }
+        # `landschaft` liefert genau EINEN Vorschlag - der Gast auf Platz 2 faellt heraus, seine
+        # eigene Hauptkategorie bleibt davon unberuehrt.
+        assert rankings_by_photo[best.id] == {"landschaft": 1}
+        assert rankings_by_photo[guest.id] == {"landschaft": None, "tier": 1}
+
+    async def test_curation_position_is_smaller_than_rank_position_behind_a_rejected_photo(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 23: `curation_position` ist ausdruecklich NICHT `rank_position` -
+        sie zaehlt in der um die eigenen Ablehnungen bereinigten Auswahl."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        second = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
+        await _add_ranking(db_session, run, second, rank_score=0.5, rank_position=2)
+
+        await authenticated_api_client.put(
+            f"/photos/{first.id}/rating", json={"status": "rejected"}
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
+        )
+
+        [item] = response.json()["items"]
+        assert item["id"] == second.id
+        [ranking] = item["rankings"]
+        assert ranking["rank_position"] == 2
+        assert ranking["curation_position"] == 1
+
+    async def test_partition_size_counts_secondary_rows_too(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 16, zweite Haelfte: die Partitionsgroesse ("von N" im Popover) zaehlt
+        ALLE Zeilen der Partition - dort steht ein Foto mit Nebenzugehoerigkeit tatsaechlich."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        owner = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        guest = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        await _add_ranking(
+            db_session, run, owner, category_key="landschaft", rank_score=0.9, rank_position=1
+        )
+        await _add_ranking(
+            db_session, run, guest, category_key="tier", rank_score=0.5, rank_position=1
+        )
+        await _add_ranking(
+            db_session,
+            run,
+            guest,
+            category_key="landschaft",
+            rank_score=0.5,
+            rank_position=2,
+            is_primary=False,
+        )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        sizes = {
+            r["category_key"]: r["partition_size"] for r in items[guest.id]["rankings"]
+        }
+        assert sizes == {"tier": 1, "landschaft": 2}
+
+
 async def test_list_photos_returns_404_for_unknown_project(
     authenticated_api_client: httpx.AsyncClient,
 ) -> None:

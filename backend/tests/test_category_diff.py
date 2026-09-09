@@ -193,6 +193,22 @@ class TestCollectAssignments:
     async def test_unknown_run_yields_an_empty_mapping(self, db_session: AsyncSession) -> None:
         assert await collect_assignments(db_session, 999) == {}
 
+    async def test_a_secondary_row_never_displaces_the_primary_assignment(
+        self, db_session: AsyncSession
+    ) -> None:
+        """specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 16 / ADR 0069 Punkt 8: das
+        Werkzeug bildet EINE Zuordnung je Foto ab. Ohne den `is_primary`-Filter ueberschriebe eine
+        Nebenzeile die Hauptzeile im Ergebnis still - abhaengig von der Zeilenreihenfolge der
+        Datenbank. Die Nebenzeile wird hier bewusst NACH der Hauptzeile angelegt, damit genau
+        dieser Fall eintraete."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg")
+        run = await _make_run(db_session, project)
+        await _add_ranking(db_session, run, photo, "menschen")
+        await _add_ranking(db_session, run, photo, "tier", is_primary=False)
+
+        assert await collect_assignments(db_session, run.id) == {photo.id: "menschen"}
+
     async def test_reading_does_not_modify_any_row(self, db_session: AsyncSession) -> None:
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg")
