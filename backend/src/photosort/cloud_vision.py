@@ -44,12 +44,49 @@ ANTHROPIC_VISION_MODEL_SONNET = "claude-sonnet-5"
 # Ebenfalls seit Spec 0304 die Voreinstellung des Anbieters, nicht mehr sein einziges Modell.
 MISTRAL_VISION_MODEL = "ministral-3b-2512"
 
-# Staerkeres, ebenfalls vision-faehiges Modell desselben Anbieters (Spec 0304) - der Anlass der
-# Story, waehlbar, aber NICHT Voreinstellung (dieselbe Begruendung wie bei
-# ANTHROPIC_VISION_MODEL_SONNET oben). Modell-ID und Vision-Faehigkeit verifiziert gegen die
-# offizielle Modelldokumentation (https://docs.mistral.ai/models/ministral-3-8b-25-12, abgerufen
-# 2026-09-06: "best-in-class text and vision capabilities"), Preis siehe pricing.py.
-MISTRAL_VISION_MODEL_8B = "ministral-8b-2512"
+# Staerkeres, ebenfalls vision-faehiges Modell desselben Anbieters - waehlbar, aber NICHT
+# Voreinstellung (dieselbe Begruendung wie bei ANTHROPIC_VISION_MODEL_SONNET oben). Loest seit
+# specs/features/0369-mistral-small-loest-ministral-8b-ab.md das mit Spec 0304 aufgenommene
+# `ministral-8b-2512` ab - der erste Fall im Projekt, in dem ein waehlbarer Wert ZURUECKGENOMMEN
+# statt ergaenzt wird. Der abgeloeste Wert ist samt Preiseintrag vollstaendig entfernt: eine
+# bestehende `.env` mit `LANDMARK_MODEL=ministral-8b-2512` laesst Backend und Worker beim Start
+# scheitern, und das ist beabsichtigt (kein Alias, keine Migrationszuordnung, kein stiller
+# Modellwechsel - der abgerechnete Wert bliebe sonst vom konfigurierten entkoppelt).
+#
+# NAMENS-STOLPERSTEIN: "Small" bezeichnet hier das STAERKERE der beiden waehlbaren
+# Mistral-Modelle - das ist Mistrals Produktnamensgebung ("Mistral Small 4", 119B Parameter,
+# 6,5B aktiv), kein Vertipper und keine falsche Registry-Reihenfolge. Der Konstantenname folgt
+# deshalb der FAMILIE (wie ANTHROPIC_VISION_MODEL_SONNET) statt der Parameterzahl; das fruehere
+# `..._8B` waere fuer dieses Modell schlicht falsch.
+#
+# Modell-ID verifiziert gegen die offizielle Modellkarte
+# (https://docs.mistral.ai/models/model-cards/mistral-small-4-0-26-03, abgerufen 2026-09-09;
+# Release 2026-03-16). Bewusst die datierte ID und NICHT der gleitende Alias
+# `mistral-small-latest` - der wanderte unter uns weg und machte jede Preisverifikation
+# gegenstandslos. Preis siehe pricing.py (erstmals bei Mistral ASYMMETRISCH).
+#
+# VISION-FAEHIGKEIT - Belegkette mit offen dokumentierter Luecke (Entscheidung Daniels
+# 2026-09-09; ab dieser Story gilt projektweit: ein waehlbares Modell braucht ZWEI belegte
+# Tatsachen, verifizierten Token-Preis UND belegte Vision-Faehigkeit):
+#   BELEGT - zwei erstparteiliche Quellen sagen ausdruecklich "accepts both text and image
+#   inputs": die Ankuendigung https://mistral.ai/news/mistral-small-4/ und die offizielle
+#   Modellkarte https://huggingface.co/mistralai/Mistral-Small-4-119B-2603 (beide abgerufen
+#   2026-09-09).
+#   LUECKE - https://docs.mistral.ai/capabilities/vision, die Seite, die die Bildeingabe ueber
+#   /v1/chat/completions regelt, LISTET DAS MODELL ZUM ABRUFZEITPUNKT NICHT (2026-09-09). Sie ist
+#   allerdings erkennbar einen Release-Zyklus veraltet (nennt Mistral Medium 3.1, waehrend die
+#   Modelluebersicht bereits 3.5 fuehrt). Der Vermerk bleibt hier stehen, statt geglaettet zu
+#   werden: die Faehigkeitsseite als Beleg zu zitieren, obwohl sie das Modell nicht fuehrt, waere
+#   eine Falschaussage.
+#   RISIKO - der plausible Ausfall ist laut, nicht still: ein Modell ohne Bildunterstuetzung
+#   weist einen `image_url`-Content-Part mit 4xx zurueck, `raise_for_vision_api_status()` macht
+#   daraus einen Fehler, der Aufruf zaehlt als `failed_calls` und ist in der Lauf-Bilanz sichtbar.
+#   Der stille Fall (Bild angenommen, aber nur der Prompt bewertet) ist strukturell nicht
+#   erkennbar; getragen wird er davon, dass Klassifizierungsergebnisse Vorschlaege in PhotoSorts
+#   eigener Datenbank sind, der OpenCloud-Client ausschliesslich lesend arbeitet und ein Lauf
+#   wiederholbar ist. `docs/setup.md` empfiehlt deshalb beim erstmaligen Umstellen einen kleinen
+#   Probelauf mit Sichtpruefung.
+MISTRAL_VISION_MODEL_SMALL = "mistral-small-2603"
 
 # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-anbieter-
 # und-modellgebundene-kostenschaetzung.md Punkt 2: die KURATIERTE AUSWAHL der waehlbaren Modelle je
@@ -76,7 +113,7 @@ MISTRAL_VISION_MODEL_8B = "ministral-8b-2512"
 # `pricing.py::MODEL_PRICING` ist per Invariantentest erzwungen (tests/test_pricing.py).
 VISION_MODELS_BY_PROVIDER: dict[str, tuple[str, ...]] = {
     "anthropic": (ANTHROPIC_VISION_MODEL, ANTHROPIC_VISION_MODEL_SONNET),
-    "mistral": (MISTRAL_VISION_MODEL, MISTRAL_VISION_MODEL_8B),
+    "mistral": (MISTRAL_VISION_MODEL, MISTRAL_VISION_MODEL_SMALL),
 }
 
 
