@@ -95,7 +95,21 @@ const NAV_TRIGGER_ACTIVE_CLASSES = 'border border-accent bg-overlay text-accent'
  * TRENNER AM BLOCK DER HAUPTZIELE, NICHT AM BLOCK DER NEBENZIELE (AK5): so verschwindet die Linie
  * ab `lg:` automatisch mit dem Block, den sie abtrennt. Ein Trenner am Nebenblock braeuchte eine
  * zweite, gegenlaeufige `lg:`-Regel zum Wieder-Abschalten - eine stille Fehlerquelle.
- * `--separator` ist der dokumentierte Token fuer freistehende Linien auf dem Grund.
+ *
+ * `--separator` STATT `--border` NACH DER BENANNTEN AUSNAHME "Gruppentrenner auf
+ * `--elevated`/`--overlay`" (specs/architecture/0004-design-system.md, Abschnitt "Rahmen in drei
+ * Rollen"; ebenso am Token in index.css vermerkt): Innerhalb von Panels und Popovern verwenden
+ * Gruppengrenzen `--separator`, weil die Flaechenstufe selbst nicht zur Trennung ausreicht und die
+ * Regel speziell Kanten ZWISCHEN verschiedenen Flaechen adressiert, nicht Unterteilungen INNERHALB
+ * einer Flaeche.
+ *
+ * AUSDRUECKLICH NICHT die Regel "Linie auf dem Grund" - die trifft hier NICHT zu: das
+ * `PopoverContent` steht auf `--elevated`, nicht auf `--bg`/`--surface`. Wer diesem Trugschluss
+ * folgt, stellt richtig fest, dass das Panel nicht auf dem Grund steht, und wechselt auf
+ * `--border` - das waere mit 1,04-1,45:1 faktisch keine Linie mehr, und AK5 truege dann allein der
+ * verdoppelte Abstand. Der Korridor 2,0-2,5 ist auf die beiden Grundflaechen kalibriert und gilt
+ * fuer diese Verwendung nicht; tragend ist die Zusicherung, dass `--separator` auf JEDER der vier
+ * Flaechen sichtbarer bleibt als `--border`.
  *
  * EIGENES LITERAL statt inline im `className`: designSystem.contract.test.ts bindet die Zeile
  * woertlich und sichert damit insbesondere die Token-Wahl `border-separator`.
