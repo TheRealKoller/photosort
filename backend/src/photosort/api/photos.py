@@ -875,6 +875,111 @@ async def list_photos(
     return PhotoListOut(items=items, total=total)
 
 
+# Obergrenze der beiden freien Partitionsschluessel (specs/features/0357-voller-bildvorrat-
+# kuratierung.md, Security-Punkt 3): `cluster_key`/`category_key` werden bewusst NICHT gegen
+# CATEGORY_REGISTRY geprueft - der Lesepfad ist seit Spec 0289 tolerant gegenueber Altbestand, und
+# eine Allowlist waere hier ein Produkt-, kein Sicherheitsentscheid (422 statt leerer Liste). Die
+# Laengengrenze ist Verteidigung in der Tiefe (Praezedenz: api/auth.py::_MAX_LOGIN_FIELD_LENGTH,
+# api/projects.py::confirm_name), damit ein entarteter Wert gar nicht erst bis zum
+# Datenbankvergleich kommt.
+_MAX_PARTITION_KEY_LENGTH = 200
+
+# Obergrenze von `after_rank`/`offset` (Security-Punkt 4 der Spec 0357): ein Pydantic-`int` ist
+# unbeschraenkt und landet direkt im SQL-Vergleich; unter SQLite (Testlauf und lokale Entwicklung)
+# wirft ein Wert jenseits von 2^63 einen `OverflowError` und damit eine 500 statt einer leeren
+# Liste. Der Wert liegt weit ueber jeder realistischen Partitionsgroesse - er begrenzt einen
+# Missbrauchsfall, nicht die Benutzung.
+_MAX_QUERY_POSITION = 1_000_000_000
+
+
+@router.get("/projects/{project_id}/curation-candidates", response_model=PhotoListOut)
+async def curation_candidates(
+    project_id: int,
+    cluster_key: str = Query(..., max_length=_MAX_PARTITION_KEY_LENGTH),
+    category_key: str = Query(..., max_length=_MAX_PARTITION_KEY_LENGTH),
+    after_rank: int = Query(0, ge=0, le=_MAX_QUERY_POSITION),
+    limit: int = Query(60, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=_MAX_QUERY_POSITION),
+    session: AsyncSession = Depends(get_session),
+    # SICHERHEIT (Muss-Kriterium 2 der specs/features/0357-voller-bildvorrat-kuratierung.md):
+    # ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE Router-weite
+    # `dependencies`-Liste (siehe Kopfkommentar der Datei) - ein Endpunkt, der diesen Parameter
+    # vergisst, waere hier STILL OEFFENTLICH: kein Fehler, keine 401, nur Daten. `current_user.id`
+    # geht unveraendert an `_to_photo_out` (nie ein Platzhalter wie `0` - der liesse
+    # `PhotoOut.suggestion` auch fuer laengst bewertete Fotos wieder aufblitzen).
+    current_user: User = Depends(get_current_user),
+) -> PhotoListOut:
+    """Die weiteren Kandidaten EINER Partition, auf Abruf (specs/features/0357-voller-bildvorrat-
+    kuratierung.md, ADR 0071 Entscheidung 5): die Zugehoerigkeiten mit
+    `rank_position > after_rank`, aufsteigend nach `rank_position`, seitenweise ueber
+    `limit`/`offset`. `total` ist die RESTMENGE der Partition (`max(partition_size - after_rank,
+    0)`) und damit unabhaengig von `limit`/`offset` - sonst waere der Vorrat bei einer grossen
+    Kategorie wieder nur teilweise einsehbar.
+
+    Bezugslauf ist derselbe wie in der Hauptabfrage (letzter erfolgreicher CriterionScoringRun);
+    verworfene Fotos sind enthalten und tragen ihren Zustand in `ratings[]` (ADR 0071
+    Entscheidung 3). `curation_position` wird AUSSCHLIESSLICH fuer die angefragte Zugehoerigkeit
+    gesetzt - sonst erschiene ein nachgeladenes Foto zusaetzlich unter seinen anderen Kategorien,
+    in denen niemand aufgeklappt hat.
+
+    Kein erfolgreicher Lauf, unbekannter `cluster_key`/`category_key` oder ein `after_rank`
+    jenseits der Partitionsgroesse liefern `200` mit leerem `PhotoListOut` - kein Fehler und
+    ausdruecklich keine Rueckspiegelung der uebergebenen Schluessel in einer Fehlermeldung.
+
+    SICHERHEIT - Projektbindung (Muss-Kriterium 2 der Spec): `PhotoRanking` traegt KEINE
+    `project_id`; `cluster_key` ist `cluster-<n>`, je Lauf neu vergeben und in jedem Projekt
+    derselbe String, `category_key` stammt aus einem global gleichen Set. Die einzige Bindung an
+    das Projekt des Pfadparameters ist `criterion_scoring_run_id` aus
+    `_latest_successful_criterion_scoring_run_id(session, project_id)`. Dieses Praedikat steht
+    deshalb in JEDER Abfrage dieses Endpunkts - der Zaehlabfrage hinter `total` (ueber
+    `_partition_sizes`) eingeschlossen - und wird nie aus einem Query-Parameter abgeleitet.
+    `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie."""
+    project = await _get_project_or_404(project_id, session)
+
+    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    if latest_run_id is None:
+        return PhotoListOut(items=[], total=0)
+
+    partition_sizes = await _partition_sizes(session, latest_run_id)
+    total = max(partition_sizes.get((cluster_key, category_key), 0) - after_rank, 0)
+
+    rows = (
+        await session.execute(
+            select(PhotoRanking.photo_id, PhotoRanking.rank_position)
+            .where(
+                PhotoRanking.criterion_scoring_run_id == latest_run_id,
+                PhotoRanking.cluster_key == cluster_key,
+                PhotoRanking.category_key == category_key,
+                PhotoRanking.rank_position > after_rank,
+            )
+            .order_by(PhotoRanking.rank_position)
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+
+    ids = [photo_id for photo_id, _ in rows]
+    # Nur die ANGEFRAGTE Zugehoerigkeit traegt eine curation_position; alle anderen
+    # Zugehoerigkeiten desselben Fotos bleiben `null` (Akzeptanzkriterium 30).
+    curation_positions = {
+        (photo_id, category_key): rank_position for photo_id, rank_position in rows
+    }
+    photos_by_id = await _photos_by_id(session, ids)
+    rankings_by_id = await _rankings_by_photo_id(session, latest_run_id, ids)
+    items = [
+        _to_photo_out(
+            photos_by_id[photo_id],
+            current_user.id,
+            project,
+            rankings_by_id.get(photo_id, []),
+            partition_sizes,
+            curation_positions,
+        )
+        for photo_id in ids
+    ]
+    return PhotoListOut(items=items, total=total)
+
+
 @router.get("/photos/{photo_id}/image")
 async def get_photo_image(
     photo_id: int,
