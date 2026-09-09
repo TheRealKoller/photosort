@@ -508,13 +508,25 @@ async def test_list_photos_suggested_filter_matches_has_suggestion_parity(
 
 
 async def _make_criterion_scoring_run(
-    session: AsyncSession, project: Project, *, status: ScanStatus = ScanStatus.SUCCESS
+    session: AsyncSession,
+    project: Project,
+    *,
+    status: ScanStatus = ScanStatus.SUCCESS,
+    started_at: datetime | None = None,
 ) -> CriterionScoringRun:
+    """`started_at` bleibt normalerweise beim Server-Default (`now()`). Es ist ausdruecklich zu
+    setzen, sobald ein Test ZWEI Laeufe desselben Projekts unterscheiden muss: unter SQLite hat
+    `CURRENT_TIMESTAMP` Sekundenaufloesung, und zwei unmittelbar nacheinander angelegte Laeufe
+    bekaemen sonst denselben Zeitstempel - "der letzte erfolgreiche Lauf" waere dann nicht
+    eindeutig bestimmt."""
     scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
     session.add(scoring_run)
     await session.flush()
     run = CriterionScoringRun(
-        project_id=project.id, scoring_run_id=scoring_run.id, status=status
+        project_id=project.id,
+        scoring_run_id=scoring_run.id,
+        status=status,
+        **({} if started_at is None else {"started_at": started_at}),
     )
     session.add(run)
     await session.commit()
@@ -635,12 +647,17 @@ class TestTopNPerCategory:
         assert body["total"] == 1
         assert body["items"][0]["id"] == only.id
 
-    async def test_backfill_shows_next_best_photo_after_rejecting_the_top_one(
+    async def test_rejecting_a_photo_does_not_change_the_selection(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        # Kernfall der Spec: nach REJECTED des aktuell sichtbaren Top-Fotos liefert ein erneuter
-        # Abruf automatisch das naechstbeste, bisher nicht gezeigte Foto DERSELBEN Partition -
-        # reiner Query-Effekt, kein Backfill-Endpoint, kein aktives "Nachruecken" im Server-Code.
+        """Gegenteil-Test des frueheren `test_backfill_shows_next_best_photo_after_rejecting_
+        the_top_one` (specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071
+        Entscheidung 1): derselbe Aufbau, umgekehrte Erwartung. Nach dem Verwerfen des
+        Top-Fotos rueckt NICHTS nach - das verworfene Foto bleibt an seiner Position.
+
+        Geprueft als vollstaendiger Listenvergleich (Ids in Reihenfolge), nicht als blosses
+        "das Foto ist noch da": ein Vorhandensein-Test bliebe auch dann gruen, wenn hinter dem
+        Foto die Liste umsortiert wuerde."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
@@ -660,28 +677,87 @@ class TestTopNPerCategory:
         after = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
         )
-        assert [item["id"] for item in after.json()["items"]] == [second.id]
+        assert [item["id"] for item in after.json()["items"]] == [first.id]
+        [item] = after.json()["items"]
+        [ranking] = item["rankings"]
+        assert (ranking["rank_position"], ranking["curation_position"]) == (1, 1)
 
-    async def test_rejection_filter_is_scoped_to_the_current_user(
+    async def test_a_rejected_photo_stays_in_the_selection_with_its_rating(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        # Personenbezug (Akzeptanzkriterium der Spec): ein von Nutzer A abgelehntes Foto bleibt
-        # fuer Nutzer B sichtbar, solange der es nicht selbst ablehnt.
+        """Zweite Haelfte von ADR 0071 Entscheidung 3: das verworfene Foto verschwindet nicht,
+        sondern traegt seinen Zustand dort, wo er im Produkt immer steht - in `ratings[]`. Die
+        Kuratierungsansicht leitet die Kachel-Darstellung ausschliesslich daraus ab
+        (`utils/ownRating.ts::ownRatingStatus`), es gibt kein eigenes Antwortfeld dafuer."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
-        other_user = await _make_second_user(db_session)
-        db_session.add(
-            Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.REJECTED)
+
+        await authenticated_api_client.put(
+            f"/photos/{photo.id}/rating", json={"status": "rejected"}
         )
-        await db_session.commit()
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
         )
 
-        assert [item["id"] for item in response.json()["items"]] == [photo.id]
+        [item] = response.json()["items"]
+        assert item["id"] == photo.id
+        assert [r["status"] for r in item["ratings"]] == ["rejected"]
+
+    async def test_response_is_independent_of_the_asking_user(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Gegenteil-Test der frueheren `test_rejection_filter_is_scoped_to_the_current_user`
+        und `test_curation_position_is_scoped_to_the_rejections_of_the_asking_user`
+        (specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071 Entscheidung 1): der
+        Zwei-Nutzer-Aufbau bleibt, aber statt der Verschiedenheit wird jetzt die GLEICHHEIT
+        zugesichert.
+
+        Ohne diesen Fall bliebe die neue Zusage ("die Auswahl haengt nur noch vom Lauf ab, nicht
+        mehr vom Betrachter") die einzige des Endpunkts ohne Beleg - ein versehentlich
+        stehengebliebener nutzerabhaengiger Join faellt durch jeden Ein-Nutzer-Test."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        second = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
+        await _add_ranking(db_session, run, second, rank_score=0.5, rank_position=2)
+
+        other_user = await _make_second_user(db_session)
+        # Der zweite Nutzer verwirft das Top-Foto - fuer BEIDE Sichten muss das folgenlos sein.
+        db_session.add(
+            Rating(photo_id=first.id, user_id=other_user.id, status=RatingStatus.REJECTED)
+        )
+        await db_session.commit()
+
+        async def selection(client: httpx.AsyncClient) -> tuple[list[int], dict[int, int | None]]:
+            response = await client.get(
+                f"/projects/{project.id}/photos", params={"top_n_per_category": 2}
+            )
+            assert response.status_code == 200
+            items = response.json()["items"]
+            return (
+                [item["id"] for item in items],
+                {item["id"]: item["rankings"][0]["curation_position"] for item in items},
+            )
+
+        own_view = await selection(authenticated_api_client)
+
+        # DIESELBE Anfrage, anderer Nutzer. Nur der Bearer-Token wechselt (und wird danach
+        # zurueckgesetzt), damit derselbe ASGI-Transport und dieselbe Sitzung benutzt werden.
+        own_authorization = authenticated_api_client.headers["Authorization"]
+        authenticated_api_client.headers["Authorization"] = (
+            f"Bearer {create_access_token(other_user)}"
+        )
+        try:
+            other_view = await selection(authenticated_api_client)
+        finally:
+            authenticated_api_client.headers["Authorization"] = own_authorization
+
+        assert own_view == other_view
+        assert own_view == ([first.id, second.id], {first.id: 1, second.id: 2})
 
     async def test_empty_before_any_successful_criterion_scoring_run(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -734,6 +810,339 @@ class TestTopNPerCategory:
         item = response.json()["items"][0]
         assert item["rankings"] != []
         assert [c["criterion_key"] for c in item["criterion_scores"]] == ["sharpness"]
+
+
+class TestCurationCandidates:
+    """Weitere Kandidaten einer Partition auf Abruf
+    (specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071 Entscheidung 5):
+    `GET /projects/{id}/curation-candidates` liefert die Zugehoerigkeiten EINER Partition
+    mit `rank_position > after_rank`, aufsteigend, als `PhotoListOut`."""
+
+    @staticmethod
+    async def _partition(
+        session: AsyncSession,
+        project: Project,
+        run: CriterionScoringRun,
+        size: int,
+        *,
+        cluster_key: str = "cluster-0",
+        category_key: str = "landschaft",
+    ) -> list[Photo]:
+        photos = []
+        for index in range(size):
+            photo = await _make_photo(
+                session, project, f"p{index}-{project.id}.jpg", datetime(2023, 1, 1, tzinfo=UTC)
+            )
+            await _add_ranking(
+                session,
+                run,
+                photo,
+                cluster_key=cluster_key,
+                category_key=category_key,
+                rank_score=1.0 - index / 100,
+                rank_position=index + 1,
+            )
+            photos.append(photo)
+        return photos
+
+    async def test_returns_the_memberships_after_the_given_rank_in_ascending_order(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 28, erste Haelfte."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photos = await self._partition(db_session, project, run, 5)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 2},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [item["id"] for item in body["items"]] == [p.id for p in photos[2:]]
+        assert body["total"] == 3
+
+    async def test_total_is_the_remaining_partition_and_ignores_limit_and_offset(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 28, zweite Haelfte, und Akzeptanzkriterium 27: `total` ist
+        `max(partition_size - after_rank, 0)` und damit UNABHAENGIG von `limit`/`offset` - ein aus
+        `len(items)` gebildetes `total` waere auf der ersten Seite nicht davon zu unterscheiden.
+        Die ZWEITE Seite ist der Pflichtfall: sie wird mit dem richtigen Offset angefordert."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photos = await self._partition(db_session, project, run, 5)
+
+        async def page(limit: int, offset: int) -> tuple[list[int], int]:
+            response = await authenticated_api_client.get(
+                f"/projects/{project.id}/curation-candidates",
+                params={
+                    "cluster_key": "cluster-0",
+                    "category_key": "landschaft",
+                    "after_rank": 1,
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
+            assert response.status_code == 200
+            body = response.json()
+            return [item["id"] for item in body["items"]], body["total"]
+
+        first_page = await page(limit=2, offset=0)
+        second_page = await page(limit=2, offset=2)
+
+        assert first_page == ([photos[1].id, photos[2].id], 4)
+        assert second_page == ([photos[3].id, photos[4].id], 4)
+
+    async def test_rejected_photos_are_included_with_their_ratings(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 29: auch hier ist "verworfen" ein Anzeigezustand, kein
+        Filterkriterium - das Foto bleibt in der Liste und traegt seinen Zustand in `ratings[]`."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photos = await self._partition(db_session, project, run, 3)
+        await authenticated_api_client.put(
+            f"/photos/{photos[2].id}/rating", json={"status": "rejected"}
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 1},
+        )
+
+        items = response.json()["items"]
+        assert [item["id"] for item in items] == [photos[1].id, photos[2].id]
+        assert {item["id"]: [r["status"] for r in item["ratings"]] for item in items} == {
+            photos[1].id: [],
+            photos[2].id: ["rejected"],
+        }
+
+    async def test_curation_position_is_set_only_for_the_requested_membership(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 30: `curation_position` traegt NUR die angefragte Zugehoerigkeit -
+        sonst erschiene das nachgeladene Foto zusaetzlich unter seinen anderen Kategorien, in
+        denen niemand aufgeklappt hat."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(
+            db_session, run, photo, category_key="landschaft", rank_score=0.9, rank_position=2
+        )
+        await _add_ranking(
+            db_session,
+            run,
+            photo,
+            category_key="tier",
+            rank_score=0.9,
+            rank_position=1,
+            is_primary=False,
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 1},
+        )
+
+        [item] = response.json()["items"]
+        assert {r["category_key"]: r["curation_position"] for r in item["rankings"]} == {
+            "landschaft": 2,
+            "tier": None,
+        }
+
+    async def test_empty_without_a_successful_criterion_scoring_run(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 31, erster Rand: 200 mit leerem `PhotoListOut`, kein Fehler."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project, status=ScanStatus.FAILED)
+        await self._partition(db_session, project, run, 3)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 0},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"items": [], "total": 0}
+
+    @pytest.mark.parametrize(
+        ("cluster_key", "category_key", "after_rank"),
+        [
+            pytest.param("cluster-42", "landschaft", 0, id="unbekannter-cluster-key"),
+            pytest.param("cluster-0", "gibtsnicht", 0, id="unbekannter-category-key"),
+            pytest.param("cluster-0", "landschaft", 3, id="after_rank-gleich-partitionsgroesse"),
+            pytest.param("cluster-0", "landschaft", 99, id="after_rank-jenseits-der-partition"),
+        ],
+    )
+    async def test_empty_at_the_silent_edges(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        cluster_key: str,
+        category_key: str,
+        after_rank: int,
+    ) -> None:
+        """Akzeptanzkriterium 31: unbekannter `cluster_key`, unbekannter `category_key` und
+        `after_rank >= partition_size` sind allesamt 200 mit leerer Liste, kein Fehler - und
+        deshalb genau die Faelle, die ohne eigenen Testfall auch dann "bestehen", wenn der
+        Endpunkt aus einem ganz anderen Grund nichts findet. Die Gegenprobe steht im ersten
+        Testfall dieser Klasse: derselbe Aufbau liefert bei richtigen Schluesseln Eintraege."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        await self._partition(db_session, project, run, 3)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={
+                "cluster_key": cluster_key,
+                "category_key": category_key,
+                "after_rank": after_rank,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"items": [], "total": 0}
+
+    async def test_unknown_project_returns_404(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        """Akzeptanzkriterium 32, erster Teil."""
+        response = await authenticated_api_client.get(
+            "/projects/9999/curation-candidates",
+            params={"cluster_key": "cluster-0", "category_key": "landschaft"},
+        )
+
+        assert response.status_code == 404
+
+    async def test_requires_authentication(
+        self, api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 32, zweiter Teil, und Security-Muss-Kriterium 2 der Spec:
+        `api/photos.py` verzichtet bewusst auf eine Router-weite Auth-Dependency (Kopfkommentar
+        der Datei) - ein neuer Endpunkt, der `Depends(get_current_user)` vergisst, ist STILL
+        OEFFENTLICH: kein Fehler, keine 401, nur Daten. Genau dagegen steht dieser Testfall."""
+        project = await _make_project(db_session)
+
+        response = await api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"cluster_key": "cluster-0", "category_key": "landschaft"},
+        )
+
+        assert response.status_code == 401
+
+    async def test_keys_of_another_project_return_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 32, dritter Teil, und Security-Muss-Kriterium 2 der Spec:
+        `PhotoRanking` traegt keine `project_id`, und `cluster_key` (`cluster-<n>`) ist in JEDEM
+        Projekt derselbe String. Die einzige Projektbindung ist `criterion_scoring_run_id`,
+        abgeleitet aus dem PFADPARAMETER. Ohne dieses Praedikat lieferte derselbe
+        Schluesselstring Fotos des Fremdprojekts."""
+        own = await _make_project(db_session, name="Eigenes")
+        foreign = await _make_project(db_session, name="Fremdes")
+        own_run = await _make_criterion_scoring_run(db_session, own)
+        foreign_run = await _make_criterion_scoring_run(db_session, foreign)
+        # Beide Projekte tragen DIESELBEN Partitionsschluessel.
+        await self._partition(db_session, own, own_run, 2)
+        foreign_photos = await self._partition(db_session, foreign, foreign_run, 4)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{own.id}/curation-candidates",
+            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 1},
+        )
+
+        body = response.json()
+        assert {item["id"] for item in body["items"]}.isdisjoint({p.id for p in foreign_photos})
+        # Die Zaehlabfrage hinter `total` traegt dasselbe Praedikat: die groessere Fremdpartition
+        # darf sie nicht aufblaehen (2 eigene Zeilen, `after_rank=1` -> 1).
+        assert body["total"] == 1
+
+    async def test_only_the_latest_successful_run_is_the_reference(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 33: ein aelterer Lauf mit abweichenden Raengen wirkt sich nicht
+        aus - Bezugslauf ist derselbe wie in der Hauptabfrage."""
+        project = await _make_project(db_session)
+        old_run = await _make_criterion_scoring_run(
+            db_session, project, started_at=datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        new_run = await _make_criterion_scoring_run(
+            db_session, project, started_at=datetime(2024, 1, 1, tzinfo=UTC)
+        )
+        taken_at = datetime(2023, 1, 1, tzinfo=UTC)
+        photos = [
+            await _make_photo(db_session, project, f"p{index}.jpg", taken_at)
+            for index in range(4)
+        ]
+        # Derselbe Partitionsschluessel in beiden Laeufen, mit ABWEICHENDEN Raengen: der aeltere
+        # Lauf fuehrt die ersten beiden Fotos, der neuere die letzten beiden.
+        for run, (first, second) in ((old_run, photos[:2]), (new_run, photos[2:])):
+            for position, photo in enumerate((first, second), start=1):
+                await _add_ranking(
+                    db_session,
+                    run,
+                    photo,
+                    category_key="landschaft",
+                    rank_score=1.0 - position / 10,
+                    rank_position=position,
+                )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 1},
+        )
+
+        body = response.json()
+        assert [item["id"] for item in body["items"]] == [photos[3].id]
+        # `total` kommt aus der Partitionsgroesse - auch sie zaehlt nur den neuen Lauf.
+        assert body["total"] == 1
+
+    @pytest.mark.parametrize(
+        "params",
+        [
+            pytest.param({"after_rank": -1}, id="negatives-after_rank"),
+            pytest.param({"after_rank": 2**63}, id="after_rank-jenseits-der-obergrenze"),
+            pytest.param({"offset": -1}, id="negatives-offset"),
+            pytest.param({"offset": 2**63}, id="offset-jenseits-der-obergrenze"),
+            pytest.param({"limit": 0}, id="limit-unter-der-untergrenze"),
+            pytest.param({"limit": 201}, id="limit-ueber-der-obergrenze"),
+            pytest.param({"cluster_key": "x" * 300}, id="cluster_key-zu-lang"),
+            pytest.param({"category_key": "x" * 300}, id="category_key-zu-lang"),
+        ],
+    )
+    async def test_rejects_query_parameters_outside_their_bounds(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        params: dict[str, object],
+    ) -> None:
+        """Security-Punkte 3 und 4 der Spec: `limit` wie im Standard-Listing (`ge=1, le=200`),
+        `after_rank`/`offset` mit `ge=0` UND einer Obergrenze (ein Pydantic-`int` ist unbeschraenkt
+        und landet direkt im SQL-Vergleich; unter SQLite wirft ein Wert jenseits von 2^63 einen
+        `OverflowError` und damit eine 500 statt einer leeren Liste), dazu eine `max_length` auf
+        beiden freien Schluesselparametern."""
+        project = await _make_project(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"cluster_key": "cluster-0", "category_key": "landschaft", **params},
+        )
+
+        assert response.status_code == 422
+
+    async def test_requires_both_partition_keys(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Beide Schluessel sind pflichtig - ohne sie ist gar keine Partition adressiert, und ein
+        Default waere eine stille Auswahl irgendeiner."""
+        project = await _make_project(db_session)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/curation-candidates")
+
+        assert response.status_code == 422
 
 
 class TestCriterionScores:
@@ -1939,11 +2348,18 @@ class TestMultipleCategoryMemberships:
         assert rankings_by_photo[best.id] == {"landschaft": 1}
         assert rankings_by_photo[guest.id] == {"landschaft": None, "tier": 1}
 
-    async def test_curation_position_is_smaller_than_rank_position_behind_a_rejected_photo(
+    async def test_curation_position_is_null_or_equal_to_rank_position(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Akzeptanzkriterium 23: `curation_position` ist ausdruecklich NICHT `rank_position` -
-        sie zaehlt in der um die eigenen Ablehnungen bereinigten Auswahl."""
+        """Gegenteil-Test des frueheren `test_curation_position_is_smaller_than_rank_position_
+        behind_a_rejected_photo` (specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071
+        Entscheidung 2): derselbe Aufbau - ein verworfenes Foto auf Platz 1 - mit der
+        Zusammenfall-Invariante als Erwartung.
+
+        `curation_position` ist ab hier ENTWEDER `null` ODER gleich `rank_position`; ihre
+        verbliebene Aufgabe ist allein die Unterscheidung "gehoert diese Zugehoerigkeit zur
+        Auswahl?". Die Invariante ist als Testfall notwendig, damit die naechste Aenderung die
+        Redundanz nicht als Fehler liest und das falsche der beiden Felder entfernt."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
@@ -1959,71 +2375,18 @@ class TestMultipleCategoryMemberships:
             f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
         )
 
-        [item] = response.json()["items"]
-        assert item["id"] == second.id
-        [ranking] = item["rankings"]
-        assert ranking["rank_position"] == 2
-        assert ranking["curation_position"] == 1
+        items = response.json()["items"]
+        rankings = [ranking for item in items for ranking in item["rankings"]]
+        assert rankings != []
+        for ranking in rankings:
+            assert ranking["curation_position"] in (None, ranking["rank_position"])
 
-    async def test_curation_position_is_scoped_to_the_rejections_of_the_asking_user(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Security-Punkt 4 der Spec 0300: `curation_position` haengt an den Ablehnungen des
-        ANFRAGENDEN Nutzers - ueber sie darf nichts ueber die Bewertungen des jeweils anderen
-        sichtbar werden. Der Test prueft BEIDE Richtungen in einem Fall:
-
-        * Nutzer B lehnt ab -> die Zahlen von Nutzer A bleiben unveraendert (kein Leck),
-        * Nutzer A lehnt selbst ab -> seine Zahlen aendern sich sehr wohl (die Zahl ist
-          nutzerabhaengig und nicht etwa konstant, was den ersten Teil trivial gruen faerbte).
-
-        Die bestehenden Tests decken das nicht ab: der eine prueft die ID-LISTE statt der Zahl,
-        der andere kennt nur EINEN Nutzer."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        second = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
-        await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
-        await _add_ranking(db_session, run, second, rank_score=0.5, rank_position=2)
-
-        other_user = await _make_second_user(db_session)
-        db_session.add(
-            Rating(photo_id=first.id, user_id=other_user.id, status=RatingStatus.REJECTED)
-        )
-        await db_session.commit()
-
-        async def positions(client: httpx.AsyncClient) -> dict[int, int | None]:
-            response = await client.get(
-                f"/projects/{project.id}/photos", params={"top_n_per_category": 2}
-            )
-            assert response.status_code == 200
-            return {
-                item["id"]: item["rankings"][0]["curation_position"]
-                for item in response.json()["items"]
-            }
-
-        # Nutzer A sieht die volle, ungefilterte Auswahl - die Ablehnung von B wirkt nicht auf ihn.
-        assert await positions(authenticated_api_client) == {first.id: 1, second.id: 2}
-
-        # DIESELBE Anfrage, anderer Nutzer, andere Zahl: fuer B ist das erste Foto ausgefiltert,
-        # das zweite rueckt auf Platz 1 nach. Beide Sichten existieren gleichzeitig - der Wert
-        # kann deshalb nie persistiert oder ueber Requests hinweg zwischengespeichert werden.
-        # Nur der Bearer-Token wechselt (und wird danach zurueckgesetzt), damit derselbe
-        # ASGI-Transport und dieselbe Sitzung wie fuer A benutzt werden.
-        own_authorization = authenticated_api_client.headers["Authorization"]
-        authenticated_api_client.headers["Authorization"] = (
-            f"Bearer {create_access_token(other_user)}"
-        )
-        try:
-            assert await positions(authenticated_api_client) == {second.id: 1}
-        finally:
-            authenticated_api_client.headers["Authorization"] = own_authorization
-
-        # Und die Gegenprobe: lehnt A selbst ab, aendert sich SEINE Zahl.
-        await authenticated_api_client.put(
-            f"/photos/{first.id}/rating", json={"status": "rejected"}
-        )
-
-        assert await positions(authenticated_api_client) == {second.id: 1}
+        # Auch hinter dem verworfenen Foto: es bleibt Platz 1 der Auswahl, das zweite Foto
+        # rueckt NICHT auf Platz 1 nach und faellt bei `top_n=1` schlicht heraus.
+        by_photo = {
+            item["id"]: item["rankings"][0]["curation_position"] for item in items
+        }
+        assert by_photo == {first.id: 1}
 
     async def test_partition_size_counts_secondary_rows_too(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession

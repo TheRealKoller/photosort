@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -11,11 +11,17 @@ import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import type { CriterionScoreOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
 import { setToken } from '../auth/token'
+import { CANDIDATES_ALL_FILTERED_TEXT } from '../components/CurationCandidates'
 import { CATEGORY_SET } from '../test/categorySetFixture'
+import { DEFAULT_TOP_N } from '../utils/curationTopN'
+import { PHOTOS_PAGE_SIZE } from '../hooks/usePhotos'
 import {
+  candidateCountOfCategory,
+  candidateCountOfCluster,
   countPhotosInDay,
   CurateCategoriesPage,
   filterLowConfidence,
+  formatCandidateCount,
   LOW_CONFIDENCE_EMPTY_TEXT,
   LOW_CONFIDENCE_THRESHOLD,
   toggleDayCollapse,
@@ -225,13 +231,15 @@ describe('CurateCategoriesPage', () => {
     )
   })
 
-  it('defaults to top-N 3 when the query string is missing/invalid', async () => {
+  it('defaults to the shared top-N when the query string is missing/invalid', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
 
     renderPage('/projects/1/curate')
 
     await waitFor(() =>
-      expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { topNPerCategory: 3 })
+      // Die Konstante wird importiert, nicht abgeschrieben - den Zahlwert bindet GENAU EIN
+      // Testfall, und der steht in utils/curationTopN.test.ts (Spec 0357, AK 3).
+      expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { topNPerCategory: DEFAULT_TOP_N })
     )
   })
 
@@ -385,14 +393,25 @@ describe('CurateCategoriesPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('rejects a photo and shows a skeleton in its tile until the backfilled photo arrives', async () => {
+  it('rejects a photo and keeps its tile in place, marked as rejected', async () => {
+    /* Nachfolger von `rejects a photo and shows a skeleton in its tile until the backfilled photo
+     * arrives` (specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071 Entscheidung 1/3):
+     * derselbe Aufbau, umgekehrte Erwartung. Es rueckt nichts mehr nach, und der Skeleton-Tausch
+     * ueberbrueckte einen Reflow, den es nicht mehr gibt. Die zuvor gemockte zweite Antwort OHNE
+     * das Foto ist serverseitig unmoeglich geworden; sie traegt es jetzt samt seiner Bewertung. */
     vi.mocked(photosApi.listPhotos)
       .mockResolvedValueOnce({
         items: [photo({ id: 1, rankings: [ranking({ rank_position: 1 })] })],
         total: 1,
       })
-      .mockResolvedValueOnce({
-        items: [photo({ id: 2, relative_path: 'b.jpg', rankings: [ranking({ rank_position: 2 })] })],
+      .mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            ratings: [{ user_id: 1, username: 'testuser', status: 'rejected' }],
+            rankings: [ranking({ rank_position: 1 })],
+          }),
+        ],
         total: 1,
       })
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
@@ -408,62 +427,95 @@ describe('CurateCategoriesPage', () => {
 
     expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'rejected')
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Verwerfen: b.jpg' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Verworfen: a.jpg' })).toBeInTheDocument()
     )
+    expect(screen.getByText('a.jpg')).toBeInTheDocument()
   })
 
   it(
-    'keeps the day section visible with its own empty-state text once all its photos are ' +
-      'rejected instead of silently disappearing (Akzeptanzkriterium 7, Tag-Ebene)',
+    'keeps the day and cluster sections visible when a category override empties their only ' +
+      'partition (Akzeptanzkriterium 7 der Spec 0043, umgehaengt auf den einzigen verbliebenen ' +
+      'Ausloeser)',
     async () => {
-      // test-engineer-Review-Fund (urspruenglich fuer die 2-Ebenen-Gruppierung, jetzt auf die
-      // Tag-Ebene uebertragen): der Kernfall, fuer den knownGroupKeysRef ueberhaupt gebaut wurde
-      // - eine Partition, deren letztes Foto per Live-Ablehnung entfernt wird, MUSS mit eigenem
-      // Leerzustand sichtbar bleiben statt spurlos aus der Gruppierung zu verschwinden. Da hier
-      // Tag/Cluster/Kategorie gleichzeitig auf genau ein Element schrumpfen, kollabiert die
-      // Anzeige auf die oberste (Tag-)Ebene statt verschachtelte Leerzustaende zu zeigen.
+      /* Dieser Fall stellte den Erschoepfungs-Leerzustand zuvor ueber eine zweite
+       * `listPhotos`-Antwort OHNE das gerade abgelehnte Foto her. So antwortet der Server seit
+       * specs/features/0357-voller-bildvorrat-kuratierung.md nie mehr - der Test haette eine
+       * Fiktion geprueft und `knownGroupKeysRef` scheinbar abgedeckt. Er haengt deshalb am
+       * Kategorie-Override, der die Partition eines Fotos tatsaechlich noch wechselt.
+       *
+       * Ausdruecklich mit erfasst: Ein TAG kann seit dieser Story gar nicht mehr leerlaufen - der
+       * Override verschiebt das Foto innerhalb desselben Clusters. Die Negativ-Assertion auf
+       * "Keine Fotos für diesen Tag" haelt genau das fest, statt es stillschweigend zu lassen. */
       vi.mocked(photosApi.listPhotos)
         .mockResolvedValueOnce({
           items: [
             photo({
               id: 1,
+              criterion_scores: [criterionScore()],
               rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
+              category_candidates: [
+                { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+                { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+              ],
             }),
           ],
           total: 1,
         })
-        .mockResolvedValueOnce({ items: [], total: 0 })
-      vi.mocked(ratingsApi.setRating).mockResolvedValue({
-        user_id: 1,
-        username: 'testuser',
-        status: 'rejected',
+        .mockResolvedValue({
+          items: [
+            photo({
+              id: 1,
+              category_override: 'tier',
+              criterion_scores: [criterionScore()],
+              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'tier' })],
+              category_candidates: [
+                { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+                { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+              ],
+            }),
+          ],
+          total: 1,
+        })
+      vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
+        photo_id: 1,
+        category_key: 'tier',
       })
       const user = userEvent.setup()
 
       renderPage('/projects/1/curate?topN=1')
-      const rejectButton = await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
-      await user.click(rejectButton)
+      await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+      const tierRow = screen.getByTestId('category-candidate-row-tier')
+      await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
 
-      await waitFor(() =>
-        expect(screen.queryByRole('button', { name: 'Verwerfen: a.jpg' })).not.toBeInTheDocument()
-      )
+      await waitFor(() => expect(screen.getByText('Tier')).toBeInTheDocument())
       expect(screen.getByText('Montag 20.07.2026')).toBeInTheDocument()
-      expect(screen.getByText('Keine Fotos für diesen Tag')).toBeInTheDocument()
-      expect(screen.queryByText('Vormittags (10:00 Uhr)')).not.toBeInTheDocument()
+      expect(screen.getByText('Vormittags (10:00 Uhr)')).toBeInTheDocument()
+      // Die leergelaufene Kategorie bleibt sichtbar, statt spurlos zu verschwinden.
+      expect(screen.getByText('Landscape')).toBeInTheDocument()
+      expect(screen.getByText('Kein weiteres Foto verfügbar')).toBeInTheDocument()
+      expect(screen.queryByText('Keine Fotos für diesen Tag')).not.toBeInTheDocument()
     }
   )
 
   it(
-    'keeps a category section visible with the unchanged empty-pool placeholder once it alone ' +
-      'is exhausted, while a sibling category in the same cluster still has photos ' +
-      '(Akzeptanzkriterium 7, Kategorie-Ebene, unverändert)',
+    'keeps a category section visible with the unchanged empty-pool placeholder once a category ' +
+      'override empties it, while a sibling category in the same cluster still has photos ' +
+      '(Akzeptanzkriterium 7, Kategorie-Ebene)',
     async () => {
+      // Zweiter der drei auf den Kategorie-Override umgehaengten Faelle - siehe die Begruendung
+      // im vorigen Testfall.
       vi.mocked(photosApi.listPhotos)
         .mockResolvedValueOnce({
           items: [
             photo({
               id: 1,
+              criterion_scores: [criterionScore()],
               rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
+              category_candidates: [
+                { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+                { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+              ],
             }),
             photo({
               id: 2,
@@ -473,30 +525,39 @@ describe('CurateCategoriesPage', () => {
           ],
           total: 2,
         })
-        .mockResolvedValueOnce({
+        .mockResolvedValue({
           items: [
+            photo({
+              id: 1,
+              category_override: 'tier',
+              criterion_scores: [criterionScore()],
+              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'tier' })],
+              category_candidates: [
+                { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+                { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+              ],
+            }),
             photo({
               id: 2,
               relative_path: 'b.jpg',
               rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })],
             }),
           ],
-          total: 1,
+          total: 2,
         })
-      vi.mocked(ratingsApi.setRating).mockResolvedValue({
-        user_id: 1,
-        username: 'testuser',
-        status: 'rejected',
+      vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
+        photo_id: 1,
+        category_key: 'tier',
       })
       const user = userEvent.setup()
 
       renderPage('/projects/1/curate?topN=1')
-      const rejectButton = await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
-      await user.click(rejectButton)
+      await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+      const tierRow = screen.getByTestId('category-candidate-row-tier')
+      await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
 
-      await waitFor(() =>
-        expect(screen.queryByRole('button', { name: 'Verwerfen: a.jpg' })).not.toBeInTheDocument()
-      )
+      await waitFor(() => expect(screen.getByText('Tier')).toBeInTheDocument())
       expect(screen.getByText('Montag 20.07.2026')).toBeInTheDocument()
       expect(screen.getByText('Vormittags (10:00 Uhr)')).toBeInTheDocument()
       expect(screen.getByText('Landscape')).toBeInTheDocument()
@@ -507,17 +568,25 @@ describe('CurateCategoriesPage', () => {
   )
 
   it(
-    'keeps a cluster heading available from the clusterMetaRef cache once that cluster is ' +
-      'fully exhausted, while a sibling cluster in the same day still has photos ' +
-      '(Regressionstest laut Architektur-Abschnitt der Spec)',
+    'keeps every cluster heading of the day intact after a category override, including the one ' +
+      'whose category ran empty (Regressionstest laut Architektur-Abschnitt der Spec)',
     async () => {
+      // Dritter der drei umgehaengten Faelle. Die Cluster-Ueberschriften bleiben vollstaendig und
+      // in chronologischer Reihenfolge - ein Cluster selbst kann seit dieser Story nicht mehr
+      // leerlaufen (der Override verschiebt nur die Kategorie), sein Abschnitt darf aber auch
+      // durch die Umsortierung der Kategorien nicht verlorengehen.
       vi.mocked(photosApi.listPhotos)
         .mockResolvedValueOnce({
           items: [
             photo({
               id: 1,
               taken_at: '2026-07-20T09:00:00',
+              criterion_scores: [criterionScore()],
               rankings: [ranking({ cluster_key: 'cluster-a', category_key: 'landscape' })],
+              category_candidates: [
+                { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+                { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+              ],
             }),
             photo({
               id: 2,
@@ -528,8 +597,19 @@ describe('CurateCategoriesPage', () => {
           ],
           total: 2,
         })
-        .mockResolvedValueOnce({
+        .mockResolvedValue({
           items: [
+            photo({
+              id: 1,
+              taken_at: '2026-07-20T09:00:00',
+              category_override: 'tier',
+              criterion_scores: [criterionScore()],
+              rankings: [ranking({ cluster_key: 'cluster-a', category_key: 'tier' })],
+              category_candidates: [
+                { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+                { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+              ],
+            }),
             photo({
               id: 2,
               relative_path: 'b.jpg',
@@ -537,26 +617,22 @@ describe('CurateCategoriesPage', () => {
               rankings: [ranking({ cluster_key: 'cluster-b', category_key: 'landscape' })],
             }),
           ],
-          total: 1,
+          total: 2,
         })
-      vi.mocked(ratingsApi.setRating).mockResolvedValue({
-        user_id: 1,
-        username: 'testuser',
-        status: 'rejected',
+      vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
+        photo_id: 1,
+        category_key: 'tier',
       })
       const user = userEvent.setup()
 
       renderPage('/projects/1/curate?topN=1')
-      const rejectButton = await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
-      await user.click(rejectButton)
+      await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+      const tierRow = screen.getByTestId('category-candidate-row-tier')
+      await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
 
-      await waitFor(() =>
-        expect(screen.queryByRole('button', { name: 'Verwerfen: a.jpg' })).not.toBeInTheDocument()
-      )
+      await waitFor(() => expect(screen.getByText('Tier')).toBeInTheDocument())
       expect(screen.getByText('Montag 20.07.2026')).toBeInTheDocument()
-      expect(screen.getByText('Vormittags (09:00 Uhr)')).toBeInTheDocument()
-      expect(screen.getByText('Keine Fotos in dieser Tageszeit')).toBeInTheDocument()
-      expect(screen.getByText('Nachmittags (14:00 Uhr)')).toBeInTheDocument()
 
       const clusterHeadings = screen.getAllByRole('heading', { level: 3 })
       expect(clusterHeadings.map((heading) => heading.textContent)).toEqual([
@@ -1311,14 +1387,889 @@ describe('CurateCategoriesPage — Nebenkategorien', () => {
     expect(screen.getAllByText('a.jpg')).toHaveLength(1)
   })
 
-  it('zaehlt ein doppelt gezeigtes Foto in der Tagesueberschrift nur einmal', async () => {
-    // Akzeptanzkriterium 26, hier durch die gerenderte Seite hindurch statt nur an der Funktion.
+  it('zaehlt ein doppelt gezeigtes Foto in der Tagesueberschrift einmal, in der Cluster-Zahl zweimal', async () => {
+    // Akzeptanzkriterium 26 der Spec 0300, hier durch die gerenderte Seite hindurch statt nur an
+    // der Funktion - und seit specs/features/0357-voller-bildvorrat-kuratierung.md zusammen mit
+    // der GEGENSAETZLICHEN Zaehlweise eine Ebene tiefer, in DEMSELBEN Testfall (Akzeptanzkriterium
+    // 5/6). Zwei getrennte Positivtests blieben auch dann gruen, wenn beide Zahlen aus derselben
+    // Quelle kaemen; die beiden Zahlen unterscheiden sich hier NUR an diesem einen Foto mit
+    // Mehrfachzugehoerigkeit.
     const user = userEvent.setup()
     vi.mocked(photosApi.listPhotos).mockResolvedValue(TWO_MEMBERSHIPS)
 
     renderPage()
+    await screen.findByText('Landscape')
+
+    // Cluster-Zahl: zwei Zugehoerigkeiten desselben Fotos -> 2 Kandidaten.
+    expect(screen.getByText('(2 Kandidaten)')).toBeInTheDocument()
+    // Invariante statt abgeschriebener Zahlen: Cluster-Zahl == Summe der Kategorie-Zahlen.
+    const categoryCounts = screen
+      .getAllByRole('heading', { level: 4 })
+      .map((heading) => Number(/(\d+) Kandidat/.exec(heading.textContent ?? '')?.[1] ?? 0))
+    expect(categoryCounts).toEqual([1, 1])
+    expect(categoryCounts.reduce((sum, count) => sum + count, 0)).toBe(2)
+
+    // Tages-Zahl: EIN eindeutiges Foto.
+    await user.click(screen.getByRole('button', { name: /montag 20\.07\.2026/i }))
+    expect(screen.getByText('(1 Fotos)')).toBeInTheDocument()
+  })
+})
+
+describe('candidateCountOfCategory / candidateCountOfCluster', () => {
+  /* specs/features/0357-voller-bildvorrat-kuratierung.md, Akzeptanzkriterium 5: die Zahl einer
+   * Kategorie ist ihre `partition_size` (alle Eintraege einer Partition tragen denselben Wert),
+   * die Zahl eines Clusters die SUMME seiner Kategorie-Zahlen - ein Foto in zwei Kategorien
+   * desselben Clusters zaehlt darin zweimal. */
+
+  it('liest die Kategorie-Zahl aus der partition_size des ersten Eintrags', () => {
+    expect(candidateCountOfCategory([entry({ id: 1 }, { partition_size: 7 })])).toBe(7)
+  })
+
+  it('liefert 0 fuer eine leergelaufene Kategorie', () => {
+    // Akzeptanzkriterium 10: ohne Eintrag beschreibt die Antwort den Bestand gar nicht mehr.
+    expect(candidateCountOfCategory([])).toBe(0)
+  })
+
+  it('summiert die Kategorie-Zahlen eines Clusters', () => {
+    expect(
+      candidateCountOfCluster({
+        landscape: [entry({ id: 1 }, { category_key: 'landscape', partition_size: 3 })],
+        people: [entry({ id: 2 }, { category_key: 'people', partition_size: 2 })],
+      })
+    ).toBe(5)
+  })
+
+  it('zaehlt ein Foto in zwei Kategorien desselben Clusters zweimal', () => {
+    // Bewusste Produktentscheidung (ADR 0071 Entscheidung 4) - deshalb heisst die Zahl
+    // "Kandidaten" und nicht "Fotos".
+    expect(
+      candidateCountOfCluster({
+        landscape: [entry({ id: 1 }, { category_key: 'landscape', partition_size: 1 })],
+        people: [entry({ id: 1 }, { category_key: 'people', partition_size: 1 })],
+      })
+    ).toBe(2)
+  })
+
+  it('ueberspringt leergelaufene Kategorien in der Summe', () => {
+    expect(
+      candidateCountOfCluster({
+        landscape: [entry({ id: 1 }, { partition_size: 4 })],
+        people: [],
+      })
+    ).toBe(4)
+  })
+})
+
+describe('formatCandidateCount', () => {
+  it('nutzt bei genau einem Kandidaten die Einzahl', () => {
+    // Akzeptanzkriterium 9 - kein Randfall: im Demo-Bestand hat jede Partition genau ein Foto.
+    expect(formatCandidateCount(1)).toBe('1 Kandidat')
+  })
+
+  it('nutzt sonst die Mehrzahl', () => {
+    expect(formatCandidateCount(2)).toBe('2 Kandidaten')
+  })
+})
+
+describe('CurateCategoriesPage — Mengenangaben', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: false,
+        media: '(hover: hover) and (pointer: fine)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })
+    )
+    vi.mocked(photosApi.listPhotos).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+    vi.mocked(photosApi.setCategoryOverride).mockReset()
+    vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
+    setToken(makeToken({ sub: '1', username: 'testuser' }))
+  })
+
+  /** partition_size == Zahl der angezeigten Eintraege: kein Auslöser, widerspruchsfreier Bestand. */
+  const EXACTLY_FULL: PhotoListOut = {
+    items: [
+      photo({
+        id: 1,
+        rankings: [ranking({ category_key: 'landscape', partition_size: 2, rank_position: 1 })],
+      }),
+      photo({
+        id: 2,
+        relative_path: 'b.jpg',
+        rankings: [
+          ranking({
+            category_key: 'landscape',
+            partition_size: 2,
+            rank_position: 2,
+            curation_position: 2,
+          }),
+        ],
+      }),
+    ],
+    total: 2,
+  }
+
+  it('zeigt die Kategorie-Zahl in der Kategorie-Ueberschrift', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(EXACTLY_FULL)
+
+    renderPage()
+
+    const heading = (await screen.findByText('Landscape')).closest('h4')
+    expect(heading).toHaveTextContent('2 Kandidaten')
+  })
+
+  it('zeigt die Cluster-Zahl NEBEN der unveraenderten Cluster-Ueberschrift', async () => {
+    // Akzeptanzkriterium 4 samt Negativ-Nachweis: der von formatClusterHeading() erzeugte Text
+    // (Tageszeit + Zeitraum) steht UNVERAENDERT im Baum - die Zahl verdraengt ihn nicht und nimmt
+    // der spaeter vorgesehenen Ortsangabe ihren Platz nicht weg.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(EXACTLY_FULL)
+
+    renderPage()
+    await screen.findByText('Landscape')
+
+    const clusterHeading = screen.getByRole('heading', { level: 3 })
+    expect(clusterHeading.textContent).toBe('Vormittags (10:00 Uhr)')
+    expect(screen.getByText('(2 Kandidaten)')).toBeInTheDocument()
+  })
+
+  it('beschriftet genau einen Kandidaten in der Einzahl', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [photo({ id: 1, rankings: [ranking({ category_key: 'landscape' })] })],
+      total: 1,
+    })
+
+    renderPage()
+
+    const heading = (await screen.findByText('Landscape')).closest('h4')
+    expect(heading).toHaveTextContent('1 Kandidat')
+    expect(heading?.textContent).not.toMatch(/1 Kandidaten/)
+  })
+
+  it('laesst beide Zahlen vom Konfidenzfilter unberuehrt', async () => {
+    // Akzeptanzkriterium 7: die Zahlen kommen aus der UNGEFILTERTEN Gruppierung. Sonst
+    // verschwaenden sie genau dort, wo der Filter eine Gruppe leer raeumt, obwohl der Bestand
+    // unveraendert ist. Geprueft mit Filter AUS und AN, nicht nur eingeschaltet.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        // "landscape" wird vom Filter komplett leer geraeumt (beide Fotos sind sicher genug) …
+        photo({
+          id: 1,
+          category_confidence: 0.9,
+          rankings: [ranking({ category_key: 'landscape', partition_size: 2, rank_position: 1 })],
+        }),
+        photo({
+          id: 2,
+          relative_path: 'b.jpg',
+          category_confidence: 0.9,
+          rankings: [
+            ranking({
+              category_key: 'landscape',
+              partition_size: 2,
+              rank_position: 2,
+              curation_position: 2,
+            }),
+          ],
+        }),
+        // … "people" ueberlebt ihn, damit der Tag nicht als Ganzes zuklappt und die Ebenen mit
+        // den Zahlen sichtbar bleiben.
+        photo({
+          id: 3,
+          relative_path: 'c.jpg',
+          category_confidence: 0.3,
+          rankings: [ranking({ category_key: 'people', partition_size: 1, rank_position: 1 })],
+        }),
+      ],
+      total: 3,
+    })
+
+    renderPage()
+    await screen.findByText('Landscape')
+    expect(screen.getByText('(3 Kandidaten)')).toBeInTheDocument()
+    expect(screen.getByText('Landscape').closest('h4')).toHaveTextContent('2 Kandidaten')
+
+    await user.click(screen.getByRole('checkbox', { name: /nur unsichere zuordnungen/i }))
+
+    // Die Kategorie ist leer gefiltert - die Zahlen beschreiben trotzdem weiter den vollen
+    // Bestand, und die Cluster-Summe verliert die weggefilterte Kategorie nicht.
+    expect(screen.getByText(LOW_CONFIDENCE_EMPTY_TEXT)).toBeInTheDocument()
+    expect(screen.getByText('(3 Kandidaten)')).toBeInTheDocument()
+    expect(screen.getByText('Landscape').closest('h4')).toHaveTextContent('2 Kandidaten')
+    expect(screen.getByText('People').closest('h4')).toHaveTextContent('1 Kandidat')
+  })
+
+  it('laesst beide Zahlen vom Verwerfen unberuehrt', async () => {
+    // Akzeptanzkriterium 7: `partition_size` ist lauf-global und nicht nutzerspezifisch gefiltert.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos)
+      .mockResolvedValueOnce(EXACTLY_FULL)
+      .mockResolvedValueOnce({
+        items: [
+          photo({
+            id: 1,
+            ratings: [{ user_id: 1, username: 'testuser', status: 'rejected' }],
+            rankings: [ranking({ category_key: 'landscape', partition_size: 2, rank_position: 1 })],
+          }),
+          EXACTLY_FULL.items[1],
+        ],
+        total: 2,
+      })
+    vi.mocked(ratingsApi.setRating).mockResolvedValue({
+      user_id: 1,
+      username: 'testuser',
+      status: 'rejected',
+    })
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Verwerfen: a.jpg' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Verworfen: a.jpg' })).toBeInTheDocument()
+    )
+    expect(screen.getByText('(2 Kandidaten)')).toBeInTheDocument()
+    expect(screen.getByText('Landscape').closest('h4')).toHaveTextContent('2 Kandidaten')
+  })
+
+  it('gibt einer leergelaufenen Kategorie GAR KEINE Zahl', async () => {
+    // Akzeptanzkriterium 10: kein "0 Kandidaten", kein "undefined"/"NaN" - eine leergelaufene
+    // Partition wird von der Antwort gar nicht mehr beschrieben. Ausgeloest wird der Fall ueber
+    // den Kategorie-Override, den einzigen verbliebenen Weg, eine Partition leer laufen zu lassen.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos)
+      .mockResolvedValueOnce({
+        items: [
+          photo({
+            id: 1,
+            criterion_scores: [criterionScore()],
+            rankings: [ranking({ category_key: 'landscape' })],
+            category_candidates: [
+              { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+              { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+            ],
+          }),
+        ],
+        total: 1,
+      })
+      .mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            category_override: 'tier',
+            criterion_scores: [criterionScore()],
+            rankings: [ranking({ category_key: 'tier' })],
+            category_candidates: [
+              { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+              { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+            ],
+          }),
+        ],
+        total: 1,
+      })
+    vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({ photo_id: 1, category_key: 'tier' })
+
+    renderPage()
+    await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
+    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+    const tierRow = screen.getByTestId('category-candidate-row-tier')
+    await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
+
+    await waitFor(() => expect(screen.getByText('Tier')).toBeInTheDocument())
+    const emptied = screen.getByText('Landscape').closest('h4')
+    expect(emptied).not.toBeNull()
+    expect(emptied?.textContent).not.toMatch(/Kandidat|undefined|NaN/)
+  })
+})
+
+describe('CurateCategoriesPage — Verwerfen ohne Nachruecken', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: false,
+        media: '(hover: hover) and (pointer: fine)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })
+    )
+    vi.mocked(photosApi.listPhotos).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+    vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
+    setToken(makeToken({ sub: '1', username: 'testuser' }))
+  })
+
+  const TWO_TILES: PhotoListOut = {
+    items: [
+      photo({
+        id: 1,
+        rankings: [ranking({ category_key: 'landscape', partition_size: 2, rank_position: 1 })],
+      }),
+      photo({
+        id: 2,
+        relative_path: 'b.jpg',
+        rankings: [
+          ranking({
+            category_key: 'landscape',
+            partition_size: 2,
+            rank_position: 2,
+            curation_position: 2,
+          }),
+        ],
+      }),
+    ],
+    total: 2,
+  }
+
+  function rejectedFirst(): PhotoListOut {
+    return {
+      items: [
+        photo({
+          id: 1,
+          ratings: [{ user_id: 1, username: 'testuser', status: 'rejected' }],
+          rankings: [ranking({ category_key: 'landscape', partition_size: 2, rank_position: 1 })],
+        }),
+        TWO_TILES.items[1],
+      ],
+      total: 2,
+    }
+  }
+
+  /** Die vollstaendige Kachelliste in Reihenfolge - der Dateiname identifiziert die Kachel. */
+  function tileNames(): string[] {
+    return screen
+      .getAllByRole('listitem')
+      .map((item) => item.querySelector('.font-mono')?.textContent ?? '')
+      .filter((name) => name !== '')
+  }
+
+  it('laesst die vollstaendige Kachelliste nach dem Verwerfen unveraendert', async () => {
+    // Akzeptanzkriterium 11: geprueft als LISTENVERGLEICH, nicht als "das Foto ist noch da" - ein
+    // Vorhandensein-Test bliebe auch dann gruen, wenn hinter dem Foto umsortiert wuerde.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos)
+      .mockResolvedValueOnce(TWO_TILES)
+      .mockResolvedValue(rejectedFirst())
+    vi.mocked(ratingsApi.setRating).mockResolvedValue({
+      user_id: 1,
+      username: 'testuser',
+      status: 'rejected',
+    })
+
+    renderPage()
+    await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
+    const before = tileNames()
+
+    await user.click(screen.getByRole('button', { name: 'Verwerfen: a.jpg' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Verworfen: a.jpg' })).toBeInTheDocument()
+    )
+
+    expect(tileNames()).toEqual(before)
+    expect(before).toEqual(['a.jpg', 'b.jpg'])
+  })
+
+  it('markiert die verworfene Kachel und deaktiviert ihre Schaltflaeche an derselben Stelle', async () => {
+    // Akzeptanzkriterium 12: PhotoCard status='rejected' (Badge "Verworfen", data-struck), die
+    // Schaltflaeche bleibt an ihrer Stelle, ist deaktiviert und traegt den Dateinamen im
+    // zugaenglichen Namen - sonst hiessen auf einer Seite mit vielen Kacheln alle gleich.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos)
+      .mockResolvedValueOnce(TWO_TILES)
+      .mockResolvedValue(rejectedFirst())
+    vi.mocked(ratingsApi.setRating).mockResolvedValue({
+      user_id: 1,
+      username: 'testuser',
+      status: 'rejected',
+    })
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Verwerfen: a.jpg' }))
+
+    const rejected = await screen.findByRole('button', { name: 'Verworfen: a.jpg' })
+    expect(rejected).toBeDisabled()
+    expect(rejected).toHaveTextContent('Verworfen')
+    const tile = rejected.closest('li')
+    expect(tile).toHaveAttribute('data-rating-status', 'rejected')
+    expect(within(tile as HTMLElement).getByText('a.jpg')).toHaveAttribute('data-struck', 'true')
+    // Die Nachbarkachel bleibt unberuehrt bedienbar.
+    expect(screen.getByRole('button', { name: 'Verwerfen: b.jpg' })).toBeEnabled()
+  })
+
+  it('zeigt ein nur vom ANDEREN Nutzer verworfenes Foto nicht als verworfen', async () => {
+    // Akzeptanzkriterium 16 und Security-Muss-Kriterium 5 der Spec: der eigene Zustand kommt
+    // ausschliesslich aus `ownRatingStatus`, nie aus `ratings[]` insgesamt (etwa "erster
+    // Eintrag") - sonst stellte die Ansicht den Zustand des anderen als eigenen dar.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          ratings: [{ user_id: 2, username: 'andere', status: 'rejected' }],
+          rankings: [ranking({ category_key: 'landscape' })],
+        }),
+      ],
+      total: 1,
+    })
+
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Verworfen: a.jpg' })).not.toBeInTheDocument()
+  })
+
+  it('markiert beide Kacheln eines doppelt gezeigten Fotos', async () => {
+    // Akzeptanzkriterium 15: steht dasselbe Foto in zwei Kategorien, tragen BEIDE Kacheln den
+    // Zustand - der Zustand haengt am Foto, nicht am Vorkommen.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          ratings: [{ user_id: 1, username: 'testuser', status: 'rejected' }],
+          rankings: [
+            ranking({ category_key: 'landscape', curation_position: 1 }),
+            ranking({ category_key: 'people', is_primary: false, curation_position: 1 }),
+          ],
+        }),
+      ],
+      total: 1,
+    })
+
+    renderPage()
+
+    expect(await screen.findAllByRole('button', { name: 'Verworfen: a.jpg' })).toHaveLength(2)
+  })
+
+  it('beendet den Busy-Zustand, OBWOHL das Foto in der Liste bleibt', async () => {
+    // Akzeptanzkriterium 17: der frueher dafuer zustaendige useEffect wartete auf das Verschwinden
+    // des Fotos aus `items`. Ohne Nachruecken verschwindet es nie - die Schaltflaeche bliebe
+    // dauerhaft busy, und das faellt in keinem Test auf, der nur die Liste betrachtet. Die hier
+    // gemockte Antwort traegt die Bewertung bewusst NICHT: geprueft wird das Ende des
+    // Busy-Zustands, nicht die Markierung.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(TWO_TILES)
+    vi.mocked(ratingsApi.setRating).mockResolvedValue({
+      user_id: 1,
+      username: 'testuser',
+      status: 'rejected',
+    })
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Verwerfen: a.jpg' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Verwerfen: a.jpg' })).toBeEnabled()
+    )
+  })
+
+  /**
+   * Zwei Klicks OHNE zwischenzeitliches Neurendern - beide landen im selben React-Durchlauf,
+   * die Schaltflaeche ist beim zweiten also noch nicht deaktiviert.
+   *
+   * `userEvent.click()` taugt dafuer NICHT: es spuelt zwischen den Klicks, und der zweite trifft
+   * bereits die deaktivierte Schaltflaeche. Genau dieser Unterschied ist der Testgegenstand -
+   * `disabled` ist eine Folge eines State-Updates und deshalb keine verlaessliche Sperre.
+   */
+  async function clickWithoutRerenderBetween(buttons: HTMLElement[]): Promise<void> {
+    await act(async () => {
+      for (const button of buttons) {
+        fireEvent.click(button)
+      }
+    })
+  }
+
+  it('verwirft zwei Fotos bei zwei schnellen Klicks auf verschiedene Kacheln', async () => {
+    // Akzeptanzkriterium 18: die seitenweite Einfach-Sperre (`rejectingPhotoId !== null`) ist
+    // aufgegeben. Wo bisher ein zweiter Klick still verpuffte, ist sein Gelingen zuzusichern -
+    // sonst ist von aussen nicht zu unterscheiden, ob die Sperre absichtlich fiel. Beide Klicks
+    // laufen bewusst im selben Durchlauf: nur so belegt der Fall, dass die Sperre JE FOTO greift
+    // und nicht bloss die Schaltflaechen-Deaktivierung den zweiten Klick durchliess.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(TWO_TILES)
+    const pending: (() => void)[] = []
+    vi.mocked(ratingsApi.setRating).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          pending.push(() => resolve({ user_id: 1, username: 'testuser', status: 'rejected' }))
+        })
+    )
+
+    renderPage()
+    await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
+    await clickWithoutRerenderBetween([
+      screen.getByRole('button', { name: 'Verwerfen: a.jpg' }),
+      screen.getByRole('button', { name: 'Verwerfen: b.jpg' }),
+    ])
+
+    expect(ratingsApi.setRating).toHaveBeenCalledTimes(2)
+    expect(ratingsApi.setRating).toHaveBeenNthCalledWith(1, 1, 'rejected')
+    expect(ratingsApi.setRating).toHaveBeenNthCalledWith(2, 2, 'rejected')
+    await act(async () => {
+      for (const resolve of pending) {
+        resolve()
+      }
+    })
+  })
+
+  it('loest bei zwei schnellen Klicks auf DIESELBE Kachel nur EINEN Vorgang aus', async () => {
+    /* Die Kehrseite von Akzeptanzkriterium 18 (Copilot-Review-Fund): aufgegeben wurde die
+     * SEITENWEITE Sperre, nicht der Schutz gegen einen zweiten Vorgang fuer DASSELBE Foto.
+     * `Rating` traegt `UniqueConstraint(photo_id, user_id)` - zwei nebenlaeufige Anfragen, die
+     * beide "noch keine Bewertung vorhanden" lesen, laufen in einen IntegrityError und damit in
+     * eine 500. Das `disabled` der Schaltflaeche ist dagegen kein Schutz: es entsteht erst durch
+     * ein State-Update, und beide Klicks dieses Falls liegen davor. */
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(TWO_TILES)
+    vi.mocked(ratingsApi.setRating).mockImplementation(() => new Promise(() => {}))
+
+    renderPage()
+    await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
+    const button = screen.getByRole('button', { name: 'Verwerfen: a.jpg' })
+    await clickWithoutRerenderBetween([button, button])
+
+    expect(ratingsApi.setRating).toHaveBeenCalledTimes(1)
+    expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'rejected')
+  })
+
+  it('behandelt die zwei Kacheln DESSELBEN Fotos als ein Foto', async () => {
+    /* Seit specs/features/0300-nebenkategorien.md kann dasselbe Foto in zwei Kategorien stehen
+     * und hat dann ZWEI Kacheln mit je eigener Schaltflaeche. Ein schneller Klick auf beide ist
+     * ein realistischer Bedienweg, kein konstruierter Doppelklick - und muss trotzdem genau
+     * einen Vorgang ausloesen, weil es genau eine Bewertungszeile gibt. */
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          rankings: [
+            ranking({ category_key: 'landscape', curation_position: 1 }),
+            ranking({ category_key: 'people', is_primary: false, curation_position: 1 }),
+          ],
+        }),
+      ],
+      total: 1,
+    })
+    vi.mocked(ratingsApi.setRating).mockImplementation(() => new Promise(() => {}))
+
+    renderPage()
+    await screen.findAllByRole('button', { name: 'Verwerfen: a.jpg' })
+    const buttons = screen.getAllByRole('button', { name: 'Verwerfen: a.jpg' })
+    expect(buttons).toHaveLength(2)
+
+    await clickWithoutRerenderBetween(buttons)
+
+    expect(ratingsApi.setRating).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('CurateCategoriesPage — weitere Kandidaten einsehen', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: false,
+        media: '(hover: hover) and (pointer: fine)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })
+    )
+    vi.mocked(photosApi.listPhotos).mockReset()
+    vi.mocked(photosApi.listCurationCandidates).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+    vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockReset()
+    vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
+    setToken(makeToken({ sub: '1', username: 'testuser' }))
+  })
+
+  /** Ein Top-Foto, die Partition hat aber vier Kandidaten - drei stehen also noch aus. */
+  const ONE_OF_FOUR: PhotoListOut = {
+    items: [
+      photo({
+        id: 1,
+        rankings: [ranking({ category_key: 'landscape', partition_size: 4, rank_position: 1 })],
+      }),
+    ],
+    total: 1,
+  }
+
+  function candidate(id: number, rankPosition: number, overrides: Partial<PhotoOut> = {}) {
+    return photo({
+      id,
+      relative_path: `k${id}.jpg`,
+      rankings: [
+        ranking({
+          category_key: 'landscape',
+          partition_size: 4,
+          rank_position: rankPosition,
+          curation_position: rankPosition,
+        }),
+      ],
+      ...overrides,
+    })
+  }
+
+  const TRIGGER = /weitere kandidaten laden/i
+  const COLLAPSE = /weitere kandidaten ausblenden/i
+
+  it('rendert den Auslöser genau dann, wenn es weitere Kandidaten gibt', async () => {
+    // Akzeptanzkriterium 19, BEIDE Richtungen: `partition_size` groesser als die Zahl der
+    // ungefilterten Eintraege -> Auslöser; gleich gross -> kein Auslöser.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+
+    const withMore = renderPage('/projects/1/curate?topN=1')
+    expect(await screen.findByRole('button', { name: TRIGGER })).toBeInTheDocument()
+    withMore.unmount()
+
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          rankings: [ranking({ category_key: 'landscape', partition_size: 1, rank_position: 1 })],
+        }),
+      ],
+      total: 1,
+    })
+    renderPage('/projects/1/curate?topN=1')
+
+    await screen.findByText('Landscape')
+    expect(screen.queryByRole('button', { name: TRIGGER })).not.toBeInTheDocument()
+  })
+
+  it('schliesst Auslöser und Erschoepfungshinweis gegenseitig aus', async () => {
+    // Akzeptanzkriterium 25: beides sind Gegensaetze - "Kein weiteres Foto verfügbar" und "es
+    // gibt noch weitere". Ein Ausschluss-Testfall statt zweier Positivtests, sonst fiele eine
+    // falsch gesetzte Bedingung nirgends auf.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+
+    renderPage('/projects/1/curate?topN=3')
+
+    expect(await screen.findByRole('button', { name: TRIGGER })).toBeInTheDocument()
+    expect(screen.queryByText('Kein weiteres Foto verfügbar')).not.toBeInTheDocument()
+  })
+
+  it('nennt in der Beschriftung die ungefilterte Restmenge', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+
+    renderPage('/projects/1/curate?topN=1')
+
+    // 4 Kandidaten in der Partition, 1 angezeigt -> 3 stehen aus.
+    expect(await screen.findByRole('button', { name: TRIGGER })).toHaveTextContent('3')
+  })
+
+  it('ist standardmaessig zugeklappt und laedt erst beim Aufklappen', async () => {
+    // Akzeptanzkriterium 20: `aria-expanded` wechselt false -> true, `aria-controls` zeigt auf
+    // den eingeblendeten Bereich, und der Text wechselt.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue({
+      items: [candidate(2, 2)],
+      total: 3,
+    })
+
+    renderPage('/projects/1/curate?topN=1')
+    const trigger = await screen.findByRole('button', { name: TRIGGER })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(photosApi.listCurationCandidates).not.toHaveBeenCalled()
+
+    await user.click(trigger)
+
+    const expanded = await screen.findByRole('button', { name: COLLAPSE })
+    expect(expanded).toHaveAttribute('aria-expanded', 'true')
+    const panelId = expanded.getAttribute('aria-controls')
+    expect(panelId).not.toBeNull()
+    await waitFor(() =>
+      expect(document.getElementById(panelId as string)).toBeInTheDocument()
+    )
+    expect(photosApi.listCurationCandidates).toHaveBeenCalledWith(1, {
+      clusterKey: 'cluster-0',
+      categoryKey: 'landscape',
+      afterRank: 1,
+      limit: PHOTOS_PAGE_SIZE,
+      offset: 0,
+    })
+  })
+
+  it('stellt die nachgeladenen Kandidaten HINTER die Top-Fotos, ohne Wiederholung', async () => {
+    // Akzeptanzkriterium 21: aufsteigende Rangfolge, kein bereits gezeigtes Foto doppelt.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue({
+      items: [candidate(2, 2), candidate(3, 3)],
+      total: 3,
+    })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+
+    await screen.findByText('k2.jpg')
+    const names = screen
+      .getAllByRole('listitem')
+      .map((item) => item.querySelector('.font-mono')?.textContent ?? '')
+      .filter((name) => name !== '')
+    expect(names).toEqual(['a.jpg', 'k2.jpg', 'k3.jpg'])
+  })
+
+  it('laesst die Tages-Zahl beim Aufklappen unveraendert', async () => {
+    // Akzeptanzkriterium 8: nachgeladene Kandidaten fliessen NICHT in die Gruppierung ein, aus
+    // der `countPhotosInDay()` rechnet - eine Zahl, die beim Aufklappen spraenge, waere fuer den
+    // Nutzer nicht zuzuordnen.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue({
+      items: [candidate(2, 2), candidate(3, 3)],
+      total: 3,
+    })
+
+    renderPage('/projects/1/curate?topN=1')
     await user.click(await screen.findByRole('button', { name: /montag 20\.07\.2026/i }))
+    expect(screen.getByText('(1 Fotos)')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /montag 20\.07\.2026/i }))
+
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await screen.findByText('k2.jpg')
+    await user.click(screen.getByRole('button', { name: /montag 20\.07\.2026/i }))
 
     expect(screen.getByText('(1 Fotos)')).toBeInTheDocument()
+    // Und auch die beiden neuen Zahlen bleiben, wo sie waren (Akzeptanzkriterium 7).
+    await user.click(screen.getByRole('button', { name: /montag 20\.07\.2026/i }))
+    expect(screen.getByText('(4 Kandidaten)')).toBeInTheDocument()
+  })
+
+  it('entfernt die Kacheln beim Ausblenden wieder, ohne die Zahlen anzutasten', async () => {
+    // Akzeptanzkriterium 23.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue({
+      items: [candidate(2, 2)],
+      total: 3,
+    })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await screen.findByText('k2.jpg')
+
+    await user.click(screen.getByRole('button', { name: COLLAPSE }))
+
+    expect(screen.queryByText('k2.jpg')).not.toBeInTheDocument()
+    expect(screen.getByText('(4 Kandidaten)')).toBeInTheDocument()
+    expect(screen.getByText('Landscape').closest('h4')).toHaveTextContent('4 Kandidaten')
+  })
+
+  it('macht nachgeladene Kandidaten verwerfbar - auch nach Zu- und erneutem Aufklappen', async () => {
+    // Akzeptanzkriterium 22: dasselbe Verhalten wie bei den Top-Fotos (AK 11/12).
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates)
+      .mockResolvedValueOnce({ items: [candidate(2, 2)], total: 3 })
+      .mockResolvedValue({
+        items: [
+          candidate(2, 2, { ratings: [{ user_id: 1, username: 'testuser', status: 'rejected' }] }),
+        ],
+        total: 3,
+      })
+    vi.mocked(ratingsApi.setRating).mockResolvedValue({
+      user_id: 1,
+      username: 'testuser',
+      status: 'rejected',
+    })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await user.click(await screen.findByRole('button', { name: 'Verwerfen: k2.jpg' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Verworfen: k2.jpg' })).toBeInTheDocument()
+    )
+
+    await user.click(screen.getByRole('button', { name: COLLAPSE }))
+    await user.click(screen.getByRole('button', { name: TRIGGER }))
+
+    expect(await screen.findByRole('button', { name: 'Verworfen: k2.jpg' })).toBeDisabled()
+  })
+
+  it('filtert auch nachgeladene Kandidaten und unterscheidet "alles weggefiltert" von "noch nichts geladen"', async () => {
+    // Akzeptanzkriterium 24: der Filter hat EINE Bedeutung in der ganzen Ansicht.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          category_confidence: 0.3,
+          rankings: [ranking({ category_key: 'landscape', partition_size: 4, rank_position: 1 })],
+        }),
+      ],
+      total: 1,
+    })
+    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue({
+      items: [candidate(2, 2, { category_confidence: 0.9 })],
+      total: 3,
+    })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('checkbox', { name: /nur unsichere zuordnungen/i }))
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+
+    // Der nachgeladene Kandidat ist sicher genug und faellt heraus …
+    await waitFor(() => expect(photosApi.listCurationCandidates).toHaveBeenCalled())
+    expect(screen.queryByText('k2.jpg')).not.toBeInTheDocument()
+    // … und der Bereich sagt das ausdruecklich, statt so auszusehen wie "noch nichts geladen".
+    expect(await screen.findByText(CANDIDATES_ALL_FILTERED_TEXT)).toBeInTheDocument()
+  })
+
+  it('zeigt einen Ladezustand und einen Fehlerzustand mit erfolgreichem zweitem Versuch', async () => {
+    // Akzeptanzkriterium 26.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(ONE_OF_FOUR)
+    vi.mocked(photosApi.listCurationCandidates)
+      .mockRejectedValueOnce(new ApiError(500, 'Serverfehler'))
+      .mockResolvedValue({ items: [candidate(2, 2)], total: 3 })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Serverfehler')
+
+    await user.click(within(alert).getByRole('button', { name: /erneut versuchen/i }))
+
+    expect(await screen.findByText('k2.jpg')).toBeInTheDocument()
+  })
+
+  it('laedt die ZWEITE Seite mit dem richtigen Offset nach', async () => {
+    // Akzeptanzkriterium 27: die erste Seite bestuende auch bei einem fest verdrahteten
+    // `offset: 0` - der Pflichtfall ist die zweite.
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          rankings: [ranking({ category_key: 'landscape', partition_size: 130, rank_position: 1 })],
+        }),
+      ],
+      total: 1,
+    })
+    vi.mocked(photosApi.listCurationCandidates)
+      .mockResolvedValueOnce({ items: [candidate(2, 2)], total: 2 })
+      .mockResolvedValueOnce({ items: [candidate(3, 3)], total: 2 })
+
+    renderPage('/projects/1/curate?topN=1')
+    await user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await screen.findByText('k2.jpg')
+
+    await user.click(screen.getByRole('button', { name: /noch mehr kandidaten laden/i }))
+
+    await screen.findByText('k3.jpg')
+    expect(photosApi.listCurationCandidates).toHaveBeenLastCalledWith(1, {
+      clusterKey: 'cluster-0',
+      categoryKey: 'landscape',
+      afterRank: 1,
+      limit: PHOTOS_PAGE_SIZE,
+      offset: 1,
+    })
   })
 })

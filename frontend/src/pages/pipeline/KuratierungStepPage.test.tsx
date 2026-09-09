@@ -5,6 +5,7 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { CriterionScoringRunSummary, ProjectOut } from '../../api/types'
+import { DEFAULT_TOP_N, MAX_TOP_N } from '../../utils/curationTopN'
 import { KuratierungStepPage } from './KuratierungStepPage'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 
@@ -76,15 +77,31 @@ describe('KuratierungStepPage', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows the explanation line and links to /curate with the default top-N of 3', () => {
+  it('shows the explanation line and links to /curate with the shared default top-N', () => {
     renderPage(project())
 
     expect(
       screen.getByText(/zeigt pro foto-moment und kategorie die besten n fotos/i)
     ).toBeInTheDocument()
     const link = screen.getByRole('link', { name: 'Kuratierung öffnen' })
-    expect(link).toHaveAttribute('href', '/projects/1/curate?topN=3')
-    expect((screen.getByLabelText(/top-fotos pro kategorie/i) as HTMLInputElement).value).toBe('3')
+    expect(link).toHaveAttribute('href', `/projects/1/curate?topN=${DEFAULT_TOP_N}`)
+    expect((screen.getByLabelText(/top-fotos pro kategorie/i) as HTMLInputElement).value).toBe(
+      String(DEFAULT_TOP_N)
+    )
+  })
+
+  it('no longer promises that a rejected photo is replaced by the next best one', () => {
+    // specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071 Entscheidung 1: der Satz
+    // "sortierst du eines aus, rückt automatisch das nächstbeste derselben Kategorie nach" ist ab
+    // dieser Story unwahr. Die Negativ-Assertion gehoert dazu - ein reiner Positivtest auf den
+    // neuen Text bliebe auch dann gruen, wenn der alte Satz danebenstehen bliebe.
+    renderPage(project())
+
+    expect(screen.queryByText(/rückt automatisch das nächstbeste/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/nachrück/i)).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/verworfene fotos bleiben an ihrer stelle sichtbar/i)
+    ).toBeInTheDocument()
   })
 
   it('reflects a typed top-N value in the curate link', async () => {
@@ -111,7 +128,7 @@ describe('KuratierungStepPage', () => {
 
     expect(screen.getByRole('link', { name: 'Kuratierung öffnen' })).toHaveAttribute(
       'href',
-      '/projects/1/curate?topN=10'
+      `/projects/1/curate?topN=${MAX_TOP_N}`
     )
   })
 
@@ -124,7 +141,7 @@ describe('KuratierungStepPage', () => {
 
     expect(screen.getByRole('link', { name: 'Kuratierung öffnen' })).toHaveAttribute(
       'href',
-      '/projects/1/curate?topN=3'
+      `/projects/1/curate?topN=${DEFAULT_TOP_N}`
     )
   })
 })

@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { apiFetch, apiFetchBlob } from './client'
-import { deleteCategoryOverride, fetchPhotoImageBlobUrl, listPhotos, setCategoryOverride } from './photos'
+import {
+  deleteCategoryOverride,
+  fetchPhotoImageBlobUrl,
+  listCurationCandidates,
+  listPhotos,
+  setCategoryOverride,
+} from './photos'
 import type { PhotoListOut } from './types'
 
 vi.mock('./client', () => ({
@@ -57,6 +63,37 @@ describe('api/photos', () => {
     await listPhotos(1, { topNPerCategory: 3 })
 
     expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?top_n_per_category=3')
+  })
+
+  it('requests further curation candidates of one partition', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
+
+    const result = await listCurationCandidates(1, {
+      clusterKey: 'cluster-0',
+      categoryKey: 'landschaft',
+      afterRank: 10,
+      limit: 60,
+      offset: 60,
+    })
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/projects/1/curation-candidates?cluster_key=cluster-0&category_key=landschaft&after_rank=10&limit=60&offset=60'
+    )
+    expect(result).toEqual(PHOTO_LIST)
+  })
+
+  it('escapes partition keys that are not URL-safe', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
+
+    await listCurationCandidates(1, {
+      clusterKey: 'cluster 0&x=1',
+      categoryKey: 'a/b',
+      afterRank: 0,
+    })
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/projects/1/curation-candidates?cluster_key=cluster+0%26x%3D1&category_key=a%2Fb&after_rank=0'
+    )
   })
 
   it('fetchPhotoImageBlobUrl requests the image and returns an object URL', async () => {
