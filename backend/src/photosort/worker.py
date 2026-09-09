@@ -64,6 +64,7 @@ from photosort.landmark import (
     LandmarkClientLike,
     LandmarkDetection,
     build_landmark_client,
+    sanitize_landmark_name,
 )
 from photosort.logging_config import configure_logging
 from photosort.models import (
@@ -108,6 +109,7 @@ from photosort.scoring import (
     compute_dhash,
     compute_exposure,
     compute_sharpness,
+    refine_clusters_by_landmark,
 )
 from photosort.thumbnails import generate_variants, variant_path
 
@@ -1180,6 +1182,42 @@ async def _remote_category_evidence(
     }
 
 
+async def _landmark_names(
+    session: AsyncSession, photo_ids: Collection[int]
+) -> dict[int, str | None]:
+    """Die bereits PERSISTIERTEN Sehenswuerdigkeit-Namen der Kandidaten eines Laufs
+    (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072 Entscheidung 2) - dasselbe
+    Muster wie `_remote_category_evidence` oben, ein einzelner Lesezugriff, KEIN Cloud-Aufruf.
+
+    Aus der TABELLE zu lesen statt aus einer laufinternen Abbildung der Cloud-Antworten ist die
+    eigentliche Aussage dieser Funktion: die Verfeinerung wirkt damit auch in einem Lauf, in dem
+    die Cloud-Phase gar nicht lief (Einwilligung aus, Cloud-Haekchen abgewaehlt, oder alle Fotos
+    bereits in einem frueheren Lauf erkannt), und ein erneuter Kriterien-Lauf teilt dieselben
+    Cluster wieder gleich auf. Die In-Memory-Variante haette die Aufteilung still an die Frage
+    gekoppelt, ob im SELBEN Lauf zufaellig Geld ausgegeben wurde.
+
+    SANITISIERUNG IM LESEPFAD (Muss-Kriterium des Sicherheitskonzepts, Abschnitt "Standortdaten"):
+    `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl `_landmark_detection_from_json` sie
+    bereits an der Quelle anwendet. Das ist KEIN Redundanz-Fehlgriff, sondern die einzige Deckung
+    des Altbestands: unter Spec 0047 sind bereits reale, kostenpflichtig erzeugte Zeilen mit
+    unsaniertem Rohtext entstanden - sie neu zu erkennen kostet Geld, sie zu loeschen vernichtet
+    bezahlte Daten, und einen kostenlosen Migrationsweg gibt es nicht. Bitte nicht als vermeintliche
+    Dopplung entfernen. Fachlich wirkt sie hier zusaetzlich als Zusammenfuehrung: ein unsanierter
+    Altname und sein sauberer Zwilling meinen dieselbe Sehenswuerdigkeit und duerfen ihren Cluster
+    nicht zerteilen."""
+    if not photo_ids:
+        return {}
+
+    rows = (
+        await session.execute(
+            select(PhotoLandmarkDetection.photo_id, PhotoLandmarkDetection.name).where(
+                PhotoLandmarkDetection.photo_id.in_(photo_ids)
+            )
+        )
+    ).all()
+    return {photo_id: sanitize_landmark_name(name) for photo_id, name in rows}
+
+
 def derive_photo_category(
     criterion_values: dict[str, float], remote_candidates: Sequence[str]
 ) -> str:
@@ -1802,6 +1840,21 @@ async def run_criterion_scoring(
         # Laufs, siehe run_classification - KEIN neuer Cloud-Aufruf hier). Sie liefern die
         # REMOTE-Haelfte der Kandidatenmenge; die lokale Haelfte steckt in candidate_values.
         evidence_by_photo_id = await _remote_category_evidence(session, candidate_values.keys())
+
+        # specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0029 Punkt 1 (Phase 2), ADR
+        # 0072 Entscheidung 2: die Landmark-Verfeinerung ERSETZT `cluster_by_photo` als Ganzes -
+        # bis hierhin steht dort der reine Passthrough aus `PhotoScore.cluster_key`. Die Stelle
+        # ist bewusst NACH dem `finally` der Landmark-Phase (sonst fehlten die Namen, die dieser
+        # Lauf gerade erst erzeugt hat) und VOR dem Aufbau von `partitions` unten (die
+        # Partitionsbildung und damit `PhotoRanking.cluster_key` sollen den verfeinerten Wert
+        # nutzen).
+        #
+        # `PhotoScore.cluster_key` wird dabei NIE mutiert (Ownership-Grenze ADR 0021): der dort
+        # stehende Phase-A-Basiswert bleibt stabil, unabhaengig davon, ob und wann Kriterien-
+        # Scoring laeuft. Die Divergenz beider Felder ist gewollt und dokumentiert.
+        cluster_by_photo = refine_clusters_by_landmark(
+            cluster_by_photo, await _landmark_names(session, candidate_values.keys())
+        )
 
         scores_by_photo_id = {photo.id: score for photo, score in rows}
 
