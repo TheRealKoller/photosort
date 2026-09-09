@@ -11,6 +11,7 @@ import { PhotoImage } from '../components/PhotoImage'
 import { QualityMeter } from '../components/QualityMeter'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
+import { Checkbox } from '../components/ui/checkbox'
 import { Skeleton } from '../components/ui/skeleton'
 import { useCategoriesQuery } from '../hooks/useCategories'
 import { useCategoryOverrideControls } from '../hooks/useCategoryOverrideControls'
@@ -144,6 +145,61 @@ export function toggleDayCollapse(collapsedDayKeys: Set<string>, dayKey: string)
 }
 
 /**
+ * Die Schwelle des Kuratierungsfilters "Nur unsichere Zuordnungen" (specs/features/0299-kategorie-
+ * konfidenz-anzeigen.md, Akzeptanzkriterium 5) - EXKLUSIV: `0.6` selbst gilt nicht als niedrig.
+ *
+ * Sie lebt bewusst NUR hier im Frontend (ADR 0067 Punkt 6): weder API noch Datenbank kennen einen
+ * Begriff von "unsicher". Eine Schwelle, die beide Seiten braeuchten, muesste gespiegelt oder
+ * ueber ein neues API-Feld transportiert werden - fuer eine Frage, die keine fachliche ist,
+ * sondern eine Sicht.
+ */
+export const LOW_CONFIDENCE_THRESHOLD = 0.6
+
+/**
+ * Hinweistext einer durch den Filter LEER GEWORDENEN Partition - bewusst ein anderer Text als
+ * "Kein weiteres Foto verfügbar" (erschoepfter Pool). Beide Zustaende sehen sonst gleich aus,
+ * bedeuten aber Gegensaetzliches: hier gibt es Fotos, sie sind nur alle sicher genug.
+ *
+ * Aus der Konstante gebildet statt ausgeschrieben, damit Schwelle und Text nicht auseinanderlaufen.
+ */
+export const LOW_CONFIDENCE_EMPTY_TEXT = `Keine Fotos mit einer Sicherheit unter ${
+  LOW_CONFIDENCE_THRESHOLD * 100
+} % in dieser Gruppe.`
+
+/**
+ * Variante fuer eine Partition, in der noch Fotos stehen, aber weniger als `topN` - bei aktivem
+ * Filter fehlen die uebrigen Plaetze wegen des Filters, NICHT weil der Pool erschoepft waere.
+ * "Kein weiteres Foto verfügbar" waere dort eine falsche Aussage ueber den Bearbeitungsstand.
+ */
+const LOW_CONFIDENCE_NO_MORE_TEXT = `Kein weiteres Foto unter ${
+  LOW_CONFIDENCE_THRESHOLD * 100
+} % in dieser Gruppe.`
+
+const LOW_CONFIDENCE_EMPTY_DAY_TEXT = `Keine Fotos mit einer Sicherheit unter ${
+  LOW_CONFIDENCE_THRESHOLD * 100
+} % an diesem Tag.`
+
+const LOW_CONFIDENCE_EMPTY_CLUSTER_TEXT = `Keine Fotos mit einer Sicherheit unter ${
+  LOW_CONFIDENCE_THRESHOLD * 100
+} % in dieser Tageszeit.`
+
+const LOW_CONFIDENCE_FILTER_LABEL = 'Nur unsichere Zuordnungen'
+
+/**
+ * Reine Filterfunktion ueber den bereits geladenen Fotos (Akzeptanzkriterium 5) - laeuft VOR
+ * `groupByClusterAndCategory`, damit die Gruppierung selbst unveraendert bleibt.
+ *
+ * Ein Foto OHNE Angabe faellt heraus (Produktentscheidung Daniels): es ist keine unsichere
+ * Zuordnung, sondern eine unbekannte. Deshalb die Pruefung auf `!== null` und nicht auf
+ * Falsyness - `0` ist ein gueltiger Wert und gehoert eindeutig unter die Schwelle.
+ */
+export function filterLowConfidence(items: PhotoOut[]): PhotoOut[] {
+  return items.filter(
+    (item) => item.category_confidence !== null && item.category_confidence < LOW_CONFIDENCE_THRESHOLD
+  )
+}
+
+/**
  * Neutraler Erklaertext des Auffang-Abschnitts (UI/UX-Abschnitt der Spec 0217, unveraendert
  * gueltig fuer den Set-Eintrag "Nicht erkannt" aus specs/features/0289-feste-kategorien.md) -
  * struktureller Text, KEINE Fehler-Semantik (kein `role="alert"`, keine Fehlerfarbe): das Fehlen
@@ -183,6 +239,11 @@ export function CurateCategoriesPage() {
   // ueber einen Reload hinaus (Out-of-Scope-Abschnitt der Spec).
   const [collapsedDayKeys, setCollapsedDayKeys] = useState<Set<string>>(new Set())
 
+  // specs/features/0299-kategorie-konfidenz-anzeigen.md: der Filterzustand lebt in `useState` wie
+  // `collapsedDayKeys`, NICHT in den Suchparametern - dort steht nur, was das Backend als
+  // Query-Parameter sieht, und dieser Filter loest bewusst keine neue Anfrage aus.
+  const [lowConfidenceOnly, setLowConfidenceOnly] = useState(false)
+
   function toggleDay(dayKey: string): void {
     setCollapsedDayKeys((prev) => toggleDayCollapse(prev, dayKey))
   }
@@ -210,14 +271,23 @@ export function CurateCategoriesPage() {
   // erschoepfte Cluster weiterhin die zuletzt bekannte Meta-Info.
   const clusterMetaRef = useRef<Map<string, ClusterMeta>>(new Map())
 
-  const { groups, clusterMeta } = groupByClusterAndCategory(items)
-  for (const [clusterKey, meta] of clusterMeta) {
+  // ZWEI Gruppierungen, wenn der Filter aktiv ist - das ist kein Versehen: die Merkliste
+  // gesehener Partitionen und der Cluster-Meta-Cache werden weiterhin aus den UNGEFILTERTEN
+  // `items` gespeist (specs/features/0299-kategorie-konfidenz-anzeigen.md). Speiste man sie aus
+  // der gefilterten Sicht, verschwaenden Partitionen beim Einschalten des Filters DAUERHAFT: sie
+  // waeren nach dem Ausschalten nicht mehr in der Merkliste und ihre Cluster-Ueberschrift nicht
+  // mehr berechenbar.
+  const unfiltered = groupByClusterAndCategory(items)
+  const groups = lowConfidenceOnly
+    ? groupByClusterAndCategory(filterLowConfidence(items)).groups
+    : unfiltered.groups
+  for (const [clusterKey, meta] of unfiltered.clusterMeta) {
     clusterMetaRef.current.set(clusterKey, meta)
   }
 
-  for (const dayKey of Object.keys(groups)) {
-    for (const clusterKey of Object.keys(groups[dayKey])) {
-      for (const categoryKey of Object.keys(groups[dayKey][clusterKey])) {
+  for (const dayKey of Object.keys(unfiltered.groups)) {
+    for (const clusterKey of Object.keys(unfiltered.groups[dayKey])) {
+      for (const categoryKey of Object.keys(unfiltered.groups[dayKey][clusterKey])) {
         knownGroupKeysRef.current.add(JSON.stringify([dayKey, clusterKey, categoryKey]))
       }
     }
@@ -282,7 +352,9 @@ export function CurateCategoriesPage() {
         // Zwei globale Aktionen (Akzeptanzkriterium 7 der Spec 0043) - bleiben auch bei genau
         // einem Tag im Projekt sichtbar/funktionsfaehig, da hier nicht extra auf `dayKeys.length
         // > 1` geprueft wird. Sekundaerer Ton (Hilfsfunktion, keine Akzentfarbe, UI/UX-Abschnitt).
-        <div className="flex gap-2">
+        // `gap-3` statt `gap-2`: zwischen aufgespannten Trefferflaechen verlangt das
+        // Design-System mindestens 12px - das Kontrollkaestchen bringt eine eigene mit.
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             type="button"
             variant="secondary"
@@ -299,6 +371,15 @@ export function CurateCategoriesPage() {
           >
             Alle Tage zuklappen
           </Button>
+          {/* specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterium 5:
+              Kontrollkaestchen statt Schalter - der Schalter steht im Produkt fuer eine
+              DAUERHAFTE Einstellung, dies ist eine Sicht-Entscheidung dieses Besuchs. Der Filter
+              arbeitet auf den bereits geladenen Daten und loest keine neue Anfrage aus. */}
+          <Checkbox
+            checked={lowConfidenceOnly}
+            onCheckedChange={setLowConfidenceOnly}
+            label={LOW_CONFIDENCE_FILTER_LABEL}
+          />
         </div>
       )}
 
@@ -365,7 +446,11 @@ export function CurateCategoriesPage() {
               // gerendert statt nur CSS-versteckt (Akzeptanzkriterium 4) - spart bei grossen
               // Projekten auch tatsaechliche Render-Arbeit (Architektur-Abschnitt der Spec).
               <div id={panelId} className="flex flex-col gap-4">
-                {dayIsEmpty && <p className="text-sm text-text">Keine Fotos für diesen Tag</p>}
+                {dayIsEmpty && (
+                  <p className="text-sm text-text">
+                    {lowConfidenceOnly ? LOW_CONFIDENCE_EMPTY_DAY_TEXT : 'Keine Fotos für diesen Tag'}
+                  </p>
+                )}
                 {!dayIsEmpty &&
                   clusterKeysForDay.map((clusterKey) => {
                     const photosByCategory = clustersForDay[clusterKey]
@@ -379,7 +464,11 @@ export function CurateCategoriesPage() {
                       <section key={clusterKey} className="flex flex-col gap-4">
                         <h3 className="text-base">{heading}</h3>
                         {clusterIsEmpty && (
-                          <p className="text-sm text-text">Keine Fotos in dieser Tageszeit</p>
+                          <p className="text-sm text-text">
+                            {lowConfidenceOnly
+                              ? LOW_CONFIDENCE_EMPTY_CLUSTER_TEXT
+                              : 'Keine Fotos in dieser Tageszeit'}
+                          </p>
                         )}
                         {!clusterIsEmpty &&
                           categoryKeys.map((categoryKey) => {
@@ -484,9 +573,18 @@ export function CurateCategoriesPage() {
                                       />
                                     )
                                   })}
+                                  {/* Zwei UNTERSCHEIDBARE Leerzustaende (Akzeptanzkriterium 5):
+                                      eine leer GEFILTERTE Partition ist das Gegenteil eines
+                                      erschoepften Pools - dort gibt es Fotos, sie sind nur alle
+                                      sicher genug. Derselbe Text fuer beide liesse den Nutzer
+                                      glauben, er haette die Gruppe bereits abgearbeitet. */}
                                   {photos.length < topN && (
                                     <li className="flex aspect-square w-full flex-col items-center justify-center rounded-lg border border-dashed border-separator p-2 text-center text-xs text-text">
-                                      Kein weiteres Foto verfügbar
+                                      {!lowConfidenceOnly
+                                        ? 'Kein weiteres Foto verfügbar'
+                                        : photos.length === 0
+                                          ? LOW_CONFIDENCE_EMPTY_TEXT
+                                          : LOW_CONFIDENCE_NO_MORE_TEXT}
                                     </li>
                                   )}
                                 </ul>
