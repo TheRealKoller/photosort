@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import itertools
+import math
 from pathlib import Path
 
 import pytest
@@ -14,10 +15,12 @@ from photosort.categories import (
     LOCAL_CATEGORY_SIGNALS,
     MAX_FINE_LABELS_PER_PHOTO,
     MAX_REMOTE_CATEGORIES_PER_PHOTO,
+    SECONDARY_CATEGORY_MIN_CONFIDENCE,
     CategoryDefinition,
     build_classification_prompt,
     is_known_category,
     resolve_category,
+    secondary_categories,
 )
 from photosort.criteria import CRITERIA_REGISTRY
 
@@ -376,3 +379,118 @@ class TestConfidenceDoesNotInfluenceCategorySelection:
         candidates = ["landschaft", "menschen", "tier"]
         assert resolve_category(candidates) == resolve_category(list(reversed(candidates)))
         assert resolve_category(candidates) == "menschen"
+
+
+class TestSecondaryCategories:
+    """specs/features/0300-nebenkategorien.md, Umsetzungsschritt 1: die zweite, von der
+    Hauptkategorie GETRENNTE Ableitung. Reine Funktion ueber einer geschlossenen Datenstruktur -
+    der Testschwerpunkt liegt deshalb hier auf Unit-Ebene (Teststrategie der Spec)."""
+
+    def test_returns_every_key_at_or_above_the_threshold(self) -> None:
+        assert secondary_categories({"tier": 0.9, "landschaft": 0.8}, "menschen") == (
+            "tier",
+            "landschaft",
+        )
+
+    def test_skips_the_primary_key_even_with_a_high_number(self) -> None:
+        """Akzeptanzkriterium 2 (b): die Hauptkategorie ist nie zugleich Nebenkategorie."""
+        assert secondary_categories({"menschen": 1.0, "tier": 0.9}, "menschen") == ("tier",)
+
+    def test_orders_by_registry_display_order_not_by_the_model_answer(self) -> None:
+        """Akzeptanzkriterium 2: Registry-Anzeigereihenfolge, nicht die Reihenfolge der
+        Modellantwort - die Iteration laeuft ueber `CATEGORY_REGISTRY`, nicht ueber die Eingabe."""
+        registry_order = tuple(key for key in CATEGORY_REGISTRY if key != CATEGORY_NOT_RECOGNIZED)
+        confidences: dict[str, object] = {key: 1.0 for key in reversed(registry_order)}
+
+        assert secondary_categories(confidences, "menschen") == tuple(
+            key for key in registry_order if key != "menschen"
+        )
+
+    def test_a_value_below_the_threshold_creates_no_secondary_category(self) -> None:
+        """Akzeptanzkriterium 3."""
+        assert secondary_categories({"tier": 0.5}, "menschen") == ()
+
+    def test_exactly_the_threshold_still_creates_one(self) -> None:
+        """Akzeptanzkriterium 3, Rand: der Vergleich ist inklusiv (`>=`), wie
+        `category_presence_threshold` in criteria.py."""
+        assert secondary_categories({"tier": SECONDARY_CATEGORY_MIN_CONFIDENCE}, "menschen") == (
+            "tier",
+        )
+
+    def test_the_next_smaller_representable_value_does_not(self) -> None:
+        """Akzeptanzkriterium 3, Gegenprobe zum Rand: der naechstkleinere darstellbare Wert faellt
+        heraus - ohne diesen Fall bliebe ein `>`-statt-`>=`-Fehler in beide Richtungen unbemerkt."""
+        just_below = math.nextafter(SECONDARY_CATEGORY_MIN_CONFIDENCE, 0.0)
+        assert secondary_categories({"tier": just_below}, "menschen") == ()
+
+    def test_not_recognized_is_never_a_secondary_category(self) -> None:
+        """Akzeptanzkriterium 5: `nicht_erkannt` ist die ABWESENHEIT einer Motivaussage - eine
+        Nebenkategorie daraus waere ein Widerspruch in sich (ADR 0069 Punkt 3)."""
+        assert secondary_categories({CATEGORY_NOT_RECOGNIZED: 1.0}, "menschen") == ()
+
+    def test_keys_outside_the_fixed_set_are_ignored(self) -> None:
+        """Dritte Verteidigungslinie gegen einen Fremdwert (ADR 0069 Punkt 2): die Iteration laeuft
+        ueber die Registry, ein Schluessel ausserhalb des Sets kann hier nicht durchfallen."""
+        assert secondary_categories({"drohnenaufnahme": 1.0, "tier": 0.9}, "menschen") == ("tier",)
+
+    def test_an_empty_mapping_yields_no_secondary_category(self) -> None:
+        assert secondary_categories({}, "menschen") == ()
+
+    @pytest.mark.parametrize(
+        "degenerate",
+        ["0.9", None, True, 2.0, -0.1, float("nan"), float("inf"), [0.9], {"wert": 0.9}],
+    )
+    def test_a_degenerate_persisted_value_counts_as_no_statement(self, degenerate: object) -> None:
+        """Lesepfad-Haertung, Security-Muss-Kriterium 2 der Spec: die Funktion liest eine
+        JSON-Spalte, deren Typzusage ueber die Datenbank statt ueber den Parser laeuft. Alles, was
+        nicht `int`/`float` (ohne `bool`) im Band `[0, 1]` ist, gilt als "keine Angabe" - und
+        "keine Angabe" erzeugt keine Nebenkategorie.
+
+        `True` ist ausdruecklich dabei: `isinstance(True, int)` ist in Python wahr und `True >= 0.7`
+        ebenfalls - eine reine Bandpruefung machte daraus stillschweigend eine Nebenkategorie."""
+        assert secondary_categories({"tier": degenerate}, "menschen") == ()
+
+    def test_an_integer_inside_the_band_is_a_valid_statement(self) -> None:
+        """Die Gegenprobe zur Haertung: `1` (int) ist eine gueltige Zahl im Band, kein Fremdwert -
+        eine Haertung, die jede ganze Zahl verwuerfe, waere ebenso falsch wie gar keine."""
+        assert secondary_categories({"tier": 1}, "menschen") == ("tier",)
+
+    def test_the_input_mapping_is_not_mutated(self) -> None:
+        confidences: dict[str, object] = {"tier": 0.9, "menschen": 0.8}
+        secondary_categories(confidences, "menschen")
+        assert confidences == {"tier": 0.9, "menschen": 0.8}
+
+
+class TestSecondaryCategoryThreshold:
+    """Akzeptanzkriterium 4: die Schwelle ist eine Konstante der Taxonomie, kein
+    Konfigurationswert."""
+
+    def test_the_literal_value_is_pinned(self) -> None:
+        """GENAU EIN Test pinnt den literalen Wert (Teststrategie der Spec) - eine Wertaenderung
+        ist damit eine sichtbare Handlung statt eines stillen Nebeneffekts. Der Wert ist eine
+        Produktentscheidung Daniels ("Praezision vor Recall", ADR 0069 Punkt 3); alle uebrigen
+        Tests leiten ihre Grenzfaelle aus der Konstante ab."""
+        assert SECONDARY_CATEGORY_MIN_CONFIDENCE == 0.7
+
+    def test_the_threshold_appears_in_no_frontend_file_and_in_no_environment_example(
+        self,
+    ) -> None:
+        """Repoweite Abwesenheits-Assertion (Akzeptanzkriterium 4): die Schwelle erscheint in
+        keiner Umgebungsvariable und keiner Frontend-Datei - sie ist fuer alle Projekte und Nutzer
+        dieselbe und in der Oberflaeche nicht sichtbar."""
+        repo_root = Path(__file__).resolve().parents[2]
+        haystacks = list((repo_root / "frontend" / "src").rglob("*.ts"))
+        haystacks += list((repo_root / "frontend" / "src").rglob("*.tsx"))
+        haystacks.append(repo_root / "backend" / "src" / "photosort" / "config.py")
+        haystacks.append(repo_root / ".env.example")
+        for path in haystacks:
+            assert (
+                "SECONDARY_CATEGORY_MIN_CONFIDENCE" not in path.read_text(encoding="utf-8")
+            ), f"{path} nennt die Schwelle"
+
+    def test_no_api_module_reads_the_threshold(self) -> None:
+        """Zweite Haelfte derselben Zusage: die Schwelle taucht in keiner API-Antwort auf - kein
+        Modul unter `api/` liest sie ueberhaupt."""
+        api_dir = Path(__file__).resolve().parents[1] / "src" / "photosort" / "api"
+        for path in api_dir.glob("*.py"):
+            assert "SECONDARY_CATEGORY_MIN_CONFIDENCE" not in path.read_text(encoding="utf-8")
