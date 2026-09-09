@@ -96,6 +96,19 @@ class Photo(Base):
     etag: Mapped[str]
     content_length: Mapped[int]
     taken_at: Mapped[datetime]
+    # specs/features/0051-gps-landmark-cluster-bildung.md, decisions/0029-gps-landmark-cluster-
+    # bildung.md + decisions/0072-ortsbezogene-cluster-anzeigeort-als-antwortableitung.md:
+    # Dezimalgrad aus dem EXIF-GPSInfo-IFD (opencloud/exif.py::extract_gps), beim Scan aus
+    # demselben Range-Read-Fenster wie `taken_at` gelesen. `None` heisst "kein Ort bekannt" - es
+    # gibt NIE eine halbe Koordinate: scheitert eine Komponente, sind beide Felder `None`
+    # (Paar-Invariante von extract_gps). Volle EXIF-Praezision, keine Rundung beim Speichern; die
+    # Anzeigerundung auf zwei Nachkommastellen liegt allein in api/photos.py::cluster_place.
+    #
+    # KEIN server_default und kein Backfill: `0.0` waere eine gueltige Koordinate (Golf von
+    # Guinea), kein Abwesenheitswert. Bereits gescannte Fotos bleiben ohne Koordinate, bis sich
+    # die Datei auf OpenCloud aendert (Daniels Entscheidung, siehe "Out of Scope" der Spec).
+    gps_lat: Mapped[float | None] = mapped_column(default=None)
+    gps_lon: Mapped[float | None] = mapped_column(default=None)
     last_modified: Mapped[datetime]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
