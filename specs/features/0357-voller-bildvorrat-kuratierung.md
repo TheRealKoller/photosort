@@ -275,8 +275,17 @@ bleiben 1/10, deckungsgleich mit der serverseitigen Durchsetzung (`Query(None, g
 `handleReject()` ignoriert heute jeden Klick, solange eine Ablehnung läuft
 (`if (rejectingPhotoId !== null) return`) — sinnvoll, solange die Liste danach umsprang. Ohne
 Nachrücken springt nichts mehr, und ein zweiter Klick verpuffte still. Der Zustand wird deshalb
-von einer einzelnen Foto-Id auf eine **Menge laufender Foto-Ids** umgestellt; jede Kachel verwirft
+von einer einzelnen Foto-Id auf eine **Menge laufender Foto-Ids** umgestellt; jedes Foto verwirft
 unabhängig. Produktentscheidung Daniels.
+
+**Aufgegeben wird dabei die seitenweite Sperre, nicht die Sperre je Foto.** Ein zweiter Vorgang für
+*dasselbe* Foto bleibt ausgeschlossen: `Rating` trägt `UniqueConstraint(photo_id, user_id)`, zwei
+nebenläufige Anfragen liefen in einen `IntegrityError` und damit in eine 500. Seit Spec 0300 hat
+dasselbe Foto zudem bis zu vier Kacheln mit je eigener Schaltfläche — ein schneller Klick auf zwei
+davon ist ein realistischer Bedienweg, kein konstruierter Doppelklick. Die Prüfung darf dabei
+nicht gegen den Zustand im Render-Closure laufen, und `disabled` an der Schaltfläche ist kein
+Ersatz: beides entsteht erst durch ein State-Update, zwei Klicks im selben Durchlauf sähen
+denselben, leeren Schnappschuss.
 
 ### Betroffene Dateien
 
@@ -318,6 +327,12 @@ unabhängig. Produktentscheidung Daniels.
   zweite Stelle, an der eine künftige Änderung vergessen wird. Props tragen `photo` **und**
   `ranking` (die Zugehörigkeit dieses Vorkommens) — die Kachel ist seit Spec 0300 nicht mehr durch
   das Foto allein bestimmt.
+- `frontend/src/components/CurationCandidates.tsx` *(neu, mit Abdeckung durch die
+  Seiten-Integrationstests)* — der Aufklapp-Auslöser und der Bereich darunter: eigener
+  Ladezustand (Skeleton), Fehlerzustand (`Alert` + "Erneut versuchen"), die beiden
+  unterscheidbaren Leerzustände und der Nachlade-Auslöser weiterer Seiten. Er besitzt die
+  Kandidaten-Query; die Kachel selbst baut die Seite über eine `renderTile`-Rückrufsfunktion,
+  weil Verwerfen-Zustand und Override-Steuerung dort leben.
 - `frontend/src/pages/CurateCategoriesPage.tsx` — Zahlen in Cluster- und Kategorie-Überschrift;
   verworfener Zustand an der Kachel; Aufklappbereich je Kategorie samt Nachladen weiterer Seiten;
   Umstellung von `rejectingPhotoId` auf eine Menge laufender Foto-Ids; Entfall des
@@ -337,6 +352,9 @@ unabhängig. Produktentscheidung Daniels.
   Backend-Absatz um `GET /projects/{id}/curation-candidates` ergänzt.
 - `specs/architecture/0004-design-system.md` — das Muster "In-place Nachrücken (Backfill) statt
   Reflow" ist zurückgenommen (Wortlaut im Abschnitt UI/UX).
+- `.claude/skills/design-system/SKILL.md` — führt dasselbe Muster in Kurzform und wird bei jeder
+  Frontend-Arbeit gelesen; er wird im selben Schritt nachgezogen, damit die Regel nicht an zwei
+  Stellen mit gegensätzlichem Inhalt steht.
 
 ### Reihenfolge der Umsetzung
 

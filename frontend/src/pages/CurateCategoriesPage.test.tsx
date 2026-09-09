@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -1868,11 +1868,28 @@ describe('CurateCategoriesPage — Verwerfen ohne Nachruecken', () => {
     )
   })
 
+  /**
+   * Zwei Klicks OHNE zwischenzeitliches Neurendern - beide landen im selben React-Durchlauf,
+   * die Schaltflaeche ist beim zweiten also noch nicht deaktiviert.
+   *
+   * `userEvent.click()` taugt dafuer NICHT: es spuelt zwischen den Klicks, und der zweite trifft
+   * bereits die deaktivierte Schaltflaeche. Genau dieser Unterschied ist der Testgegenstand -
+   * `disabled` ist eine Folge eines State-Updates und deshalb keine verlaessliche Sperre.
+   */
+  async function clickWithoutRerenderBetween(buttons: HTMLElement[]): Promise<void> {
+    await act(async () => {
+      for (const button of buttons) {
+        fireEvent.click(button)
+      }
+    })
+  }
+
   it('verwirft zwei Fotos bei zwei schnellen Klicks auf verschiedene Kacheln', async () => {
     // Akzeptanzkriterium 18: die seitenweite Einfach-Sperre (`rejectingPhotoId !== null`) ist
     // aufgegeben. Wo bisher ein zweiter Klick still verpuffte, ist sein Gelingen zuzusichern -
-    // sonst ist von aussen nicht zu unterscheiden, ob die Sperre absichtlich fiel.
-    const user = userEvent.setup()
+    // sonst ist von aussen nicht zu unterscheiden, ob die Sperre absichtlich fiel. Beide Klicks
+    // laufen bewusst im selben Durchlauf: nur so belegt der Fall, dass die Sperre JE FOTO greift
+    // und nicht bloss die Schaltflaechen-Deaktivierung den zweiten Klick durchliess.
     vi.mocked(photosApi.listPhotos).mockResolvedValue(TWO_TILES)
     const pending: (() => void)[] = []
     vi.mocked(ratingsApi.setRating).mockImplementation(
@@ -1883,8 +1900,11 @@ describe('CurateCategoriesPage — Verwerfen ohne Nachruecken', () => {
     )
 
     renderPage()
-    await user.click(await screen.findByRole('button', { name: 'Verwerfen: a.jpg' }))
-    await user.click(screen.getByRole('button', { name: 'Verwerfen: b.jpg' }))
+    await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
+    await clickWithoutRerenderBetween([
+      screen.getByRole('button', { name: 'Verwerfen: a.jpg' }),
+      screen.getByRole('button', { name: 'Verwerfen: b.jpg' }),
+    ])
 
     expect(ratingsApi.setRating).toHaveBeenCalledTimes(2)
     expect(ratingsApi.setRating).toHaveBeenNthCalledWith(1, 1, 'rejected')
@@ -1894,6 +1914,54 @@ describe('CurateCategoriesPage — Verwerfen ohne Nachruecken', () => {
         resolve()
       }
     })
+  })
+
+  it('loest bei zwei schnellen Klicks auf DIESELBE Kachel nur EINEN Vorgang aus', async () => {
+    /* Die Kehrseite von Akzeptanzkriterium 18 (Copilot-Review-Fund): aufgegeben wurde die
+     * SEITENWEITE Sperre, nicht der Schutz gegen einen zweiten Vorgang fuer DASSELBE Foto.
+     * `Rating` traegt `UniqueConstraint(photo_id, user_id)` - zwei nebenlaeufige Anfragen, die
+     * beide "noch keine Bewertung vorhanden" lesen, laufen in einen IntegrityError und damit in
+     * eine 500. Das `disabled` der Schaltflaeche ist dagegen kein Schutz: es entsteht erst durch
+     * ein State-Update, und beide Klicks dieses Falls liegen davor. */
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(TWO_TILES)
+    vi.mocked(ratingsApi.setRating).mockImplementation(() => new Promise(() => {}))
+
+    renderPage()
+    await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
+    const button = screen.getByRole('button', { name: 'Verwerfen: a.jpg' })
+    await clickWithoutRerenderBetween([button, button])
+
+    expect(ratingsApi.setRating).toHaveBeenCalledTimes(1)
+    expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'rejected')
+  })
+
+  it('behandelt die zwei Kacheln DESSELBEN Fotos als ein Foto', async () => {
+    /* Seit specs/features/0300-nebenkategorien.md kann dasselbe Foto in zwei Kategorien stehen
+     * und hat dann ZWEI Kacheln mit je eigener Schaltflaeche. Ein schneller Klick auf beide ist
+     * ein realistischer Bedienweg, kein konstruierter Doppelklick - und muss trotzdem genau
+     * einen Vorgang ausloesen, weil es genau eine Bewertungszeile gibt. */
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          rankings: [
+            ranking({ category_key: 'landscape', curation_position: 1 }),
+            ranking({ category_key: 'people', is_primary: false, curation_position: 1 }),
+          ],
+        }),
+      ],
+      total: 1,
+    })
+    vi.mocked(ratingsApi.setRating).mockImplementation(() => new Promise(() => {}))
+
+    renderPage()
+    await screen.findAllByRole('button', { name: 'Verwerfen: a.jpg' })
+    const buttons = screen.getAllByRole('button', { name: 'Verwerfen: a.jpg' })
+    expect(buttons).toHaveLength(2)
+
+    await clickWithoutRerenderBetween(buttons)
+
+    expect(ratingsApi.setRating).toHaveBeenCalledTimes(1)
   })
 })
 

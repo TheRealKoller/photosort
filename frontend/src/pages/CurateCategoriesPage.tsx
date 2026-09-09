@@ -279,7 +279,12 @@ export function CurateCategoriesPage() {
   // Die Fotos mit gerade LAUFENDER Verwerfen-Mutation - eine MENGE, nicht eine einzelne Id
   // (specs/features/0357-voller-bildvorrat-kuratierung.md, Entwurfsentscheidung 11). Die fruehere
   // seitenweite Einfach-Sperre war sinnvoll, solange die Liste danach umsprang; ohne Nachruecken
-  // springt nichts mehr, und ein zweiter Klick verpuffte still. Jede Kachel verwirft unabhaengig.
+  // springt nichts mehr, und ein zweiter Klick verpuffte still. Jedes Foto verwirft unabhaengig.
+  //
+  // ZWEI Ablagen fuer dieselbe Menge, mit verschiedenen Aufgaben: der Ref ist die SYNCHRONE
+  // Wahrheit fuer die Sperre je Foto (siehe `handleReject`), der State loest das Neurendern der
+  // betroffenen Kacheln aus. Beide werden ausschliesslich zusammen fortgeschrieben.
+  const rejectingPhotoIdsRef = useRef<Set<number>>(new Set())
   const [rejectingPhotoIds, setRejectingPhotoIds] = useState<Set<number>>(new Set())
 
   // Klapp-Zustand der Tages-Abschnitte (Spec 0043): leeres Set = alles aufgeklappt (Default,
@@ -358,18 +363,36 @@ export function CurateCategoriesPage() {
   }
 
   function handleReject(photo: PhotoOut): void {
-    setRejectingPhotoIds((prev) => new Set(prev).add(photo.id))
+    // SPERRE JE FOTO, nicht seitenweit (Entwurfsentscheidung 11 der Spec 0357): verschiedene
+    // Fotos verwerfen unabhaengig voneinander, ein ZWEITER Vorgang fuer DASSELBE Foto wird
+    // verhindert. Aufgegeben wurde die seitenweite Einfachsperre, nicht dieser Schutz:
+    // `Rating` traegt `UniqueConstraint(photo_id, user_id)`, zwei nebenlaeufige Anfragen laufen
+    // in einen IntegrityError und damit in eine 500. Seit specs/features/0300-nebenkategorien.md
+    // hat dasselbe Foto ausserdem bis zu vier Kacheln mit je eigener Schaltflaeche - ein
+    // schneller Klick auf zwei davon ist ein realistischer Bedienweg.
+    //
+    // Geprueft wird gegen den REF, nicht gegen den State: `disabled` an der Schaltflaeche und
+    // `rejectingPhotoIds` im Render-Closure entstehen beide erst durch ein State-Update, das
+    // React fruehestens beim naechsten Render verarbeitet - zwei Klicks im selben Durchlauf
+    // saehen beide denselben, leeren Schnappschuss. Auch die funktionale Updater-Form traegt
+    // nicht: sie laeuft erst in der Render-Phase, also nach dem zweiten Klick. Der Ref ist die
+    // synchrone Wahrheit, der State speist ausschliesslich die Anzeige.
+    if (rejectingPhotoIdsRef.current.has(photo.id)) {
+      return
+    }
+    rejectingPhotoIdsRef.current = new Set(rejectingPhotoIdsRef.current).add(photo.id)
+    setRejectingPhotoIds(new Set(rejectingPhotoIdsRef.current))
     setRatingMutation.mutate(
       { photoId: photo.id, status: 'rejected' },
       {
         // `onSettled` statt `onError`: das Foto bleibt ohne Nachruecken in der Liste, es gibt
         // also kein "verschwindet" mehr, an dem sich das Ende der Mutation ablesen liesse.
-        onSettled: () =>
-          setRejectingPhotoIds((prev) => {
-            const next = new Set(prev)
-            next.delete(photo.id)
-            return next
-          }),
+        onSettled: () => {
+          const next = new Set(rejectingPhotoIdsRef.current)
+          next.delete(photo.id)
+          rejectingPhotoIdsRef.current = next
+          setRejectingPhotoIds(next)
+        },
       }
     )
   }
