@@ -308,7 +308,7 @@ Um beide Funktionen tatsächlich zu nutzen, in `.env`:
   | `LANDMARK_PROVIDER` | wählbare `LANDMARK_MODEL`-Werte | Voreinstellung (leer) | Schätzung je Bild |
   |---|---|---|---|
   | `anthropic` | `claude-haiku-4-5`, `claude-sonnet-5` | `claude-haiku-4-5` | ~$0,0052 / ~$0,0104 |
-  | `mistral` | `ministral-3b-2512`, `ministral-8b-2512` | `ministral-3b-2512` | ~$0,0003 / ~$0,00045 |
+  | `mistral` | `ministral-3b-2512`, `mistral-small-2603` | `ministral-3b-2512` | ~$0,0003 / ~$0,0005 |
 
   Ein Wert außerhalb dieser Auswahl — auch ein für den *anderen* Provider gültiges Modell —
   lässt den Prozess beim Start mit einem Validierungsfehler abbrechen, kein stiller Fallback.
@@ -318,6 +318,27 @@ Um beide Funktionen tatsächlich zu nutzen, in `.env`:
   Ein Modell, das noch nicht in der Auswahl steht, wird über eine Code-Änderung aufgenommen
   (`cloud_vision.py::VISION_MODELS_BY_PROVIDER` samt verifiziertem Preis in `pricing.py`), nicht
   über diese Variable.
+
+  **Umstellung 2026-09-09 (Spec [`0369`](../specs/features/0369-mistral-small-loest-ministral-8b-ab.md)):**
+  Der bis dahin an zweiter Stelle stehende `mistral`-Wert ist **nicht mehr wählbar**; an seine
+  Stelle ist `mistral-small-2603` getreten (die zurückgenommene Modell-ID steht in der Spec, damit
+  diese Betriebsdoku nur noch tatsächlich einstellbare Werte nennt). Eine bestehende Konfiguration
+  mit dem alten Wert lässt Backend **und** Worker beim Start scheitern —
+  das ist beabsichtigt und kein Defekt; der Wert ist neu zu wählen. Es gibt bewusst keinen stillen
+  Rückfall auf die Voreinstellung und keine Alias-Zuordnung auf das Nachfolgemodell, weil das den
+  abgerechneten vom konfigurierten Wert entkoppeln würde. Bereits durchgeführte Klassifizierungen
+  behalten ihre gespeicherte Modellangabe und ihre eingefrorenen Ist-Kosten unverändert; in der
+  Lauf-Bilanz steht bei einem solchen Altlauf ab jetzt allerdings kein Anbieter mehr, sondern nur
+  noch die Modell-ID (ein Anbieter würde sonst aus der heutigen Betriebseinstellung geraten).
+
+  **Erstmaliges Umstellen auf ein nicht voreingestelltes Modell:** zuerst einen kleinen Probelauf
+  machen und einige Ergebnisse ansehen, bevor der gesamte Bestand klassifiziert wird. Für
+  `mistral-small-2603` ist die Bildeingabe durch zwei erstparteiliche Quellen des Anbieters belegt
+  (Ankündigung und offizielle Modellkarte), das Modell steht zum Stand 2026-09-09 aber nicht auf
+  dessen — erkennbar einen Release-Zyklus veralteter — Vision-Fähigkeitsübersicht. Ein Modell ohne
+  Bildunterstützung lehnt den Aufruf sichtbar mit einem Fehler ab (der Lauf weist ihn als
+  fehlgeschlagenen Aufruf aus); der stille Fall, in dem das Bild angenommen, aber nicht bewertet
+  wird, ist nur durch die Sichtprüfung zu erkennen.
 - Je nach gewähltem Provider `ANTHROPIC_API_KEY` bzw. `MISTRAL_API_KEY` auf einen echten API-Key
   setzen (leer = beide Funktionen bleiben für alle Projekte unbenutzbar, auch bei aktivierter
   Einwilligung schlägt der Aufruf dann fehl).
