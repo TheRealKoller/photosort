@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, event
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import cache_cleanup
@@ -27,7 +28,16 @@ from photosort.cache_cleanup import CACHE_CLEANUP_GRACE_SECONDS, cleanup_orphane
 from photosort.models import Photo, Project
 from photosort.thumbnails import CacheSweepResult, display_path, thumbnail_path
 
-_PHOTO_SELECT = re.compile(r"\s*SELECT\b.*\bFROM\s+photos\b", re.IGNORECASE | re.DOTALL)
+# Optionale Anfuehrungszeichen und ein optionales Schema-Praefix: der Dialekt entscheidet, ob
+# `FROM photos`, `FROM "photos"` (Postgres/SQLite), `FROM \`photos\`` (MySQL) oder
+# `FROM "public"."photos"` gerendert wird. Ohne die Quotes traefe das Muster beim ersten Dialekt-
+# wechsel nicht mehr, und der Reihenfolge-Test unten wuerde rot, ohne dass sich an der geprueften
+# Reihenfolge etwas geaendert haette. Das `\b` hinter `photos` haelt `photos_archive` draussen.
+_QUOTE = r'["`]?'
+_PHOTO_SELECT = re.compile(
+    rf"\s*SELECT\b.*\bFROM\s+(?:{_QUOTE}\w+{_QUOTE}\s*\.\s*)?{_QUOTE}photos\b{_QUOTE}",
+    re.IGNORECASE | re.DOTALL,
+)
 
 _LOGGER_NAME = "photosort.cache_cleanup"
 
