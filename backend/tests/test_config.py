@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from photosort.cloud_vision import (
     ANTHROPIC_VISION_MODEL,
+    DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER,
     MISTRAL_VISION_MODEL,
     VISION_MODELS_BY_PROVIDER,
 )
@@ -494,3 +495,70 @@ def test_env_example_documents_the_landmark_model_variable() -> None:
     assert env_example.is_file(), f"{env_example} nicht gefunden"
 
     assert "LANDMARK_MODEL=" in env_example.read_text(encoding="utf-8")
+
+
+# specs/features/0382-cloud-rate-limits-aussitzen.md, K4/K10: die einzige neue Betriebsvariable
+# dieser Story - die Anfragerate an den Anbieter, fuer beide Cloud-Teilschritte gemeinsam.
+
+
+def test_cloud_vision_requests_per_minute_defaults_to_zero() -> None:
+    """`0` heisst "Voreinstellung des eingestellten Anbieters" (Muster von `LANDMARK_MODEL`) -
+    ausdruecklich NICHT leer: ein leerer Wert ist fuer ein Zahlenfeld ein Startfehler."""
+    assert Settings(_env_file=None).cloud_vision_requests_per_minute == 0
+
+
+def test_cloud_vision_requests_per_minute_rejects_a_negative_value() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, cloud_vision_requests_per_minute=-1)
+
+
+def test_an_empty_cloud_vision_requests_per_minute_is_a_startup_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Der Unterschied zu `LANDMARK_MODEL=` (dort heisst leer "Voreinstellung"): fuer ein
+    Zahlenfeld ist ein leerer Wert kein "nicht gesetzt", sondern ein Startfehler. `.env.example`
+    traegt deshalb `=0` und sagt das ausdruecklich."""
+    monkeypatch.setenv("CLOUD_VISION_REQUESTS_PER_MINUTE", "")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_cloud_vision_requests_per_minute_is_read_from_the_environment_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLOUD_VISION_REQUESTS_PER_MINUTE", "120")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.cloud_vision_requests_per_minute == 120
+
+
+@pytest.mark.parametrize(("provider", "expected"), [("anthropic", 60), ("mistral", 40)])
+def test_zero_resolves_to_the_provider_default(provider: str, expected: int) -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.resolved_cloud_vision_requests_per_minute(provider) == expected
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "mistral"])
+def test_a_set_value_wins_for_both_providers(provider: str) -> None:
+    settings = Settings(_env_file=None, cloud_vision_requests_per_minute=90)
+
+    assert settings.resolved_cloud_vision_requests_per_minute(provider) == 90
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "mistral"])
+def test_the_resolution_never_returns_zero(provider: str) -> None:
+    """Sicherheits-Muss-Kriterium der Spec 0382 (Punkt 6): die Schrittmacher-Instanzen entstehen
+    zur MODUL-IMPORTZEIT aus `60 / rate`. Eine `0` von hier waere ein ZeroDivisionError beim
+    Import und damit ein gleichzeitiger Startfehler von Backend UND Worker - nicht ein
+    fehlgeschlagener Lauf. Zu pruefen ist die Aufloesung, nicht die Division."""
+    assert Settings(_env_file=None).resolved_cloud_vision_requests_per_minute(provider) > 0
+
+
+def test_the_provider_defaults_cover_exactly_the_selectable_providers() -> None:
+    """K10/K4: die Voreinstellungstabelle deckt genau die Anbieter ab, die
+    `Settings.landmark_provider` zulaesst - ein neuer Anbieter ohne Voreinstellung waere ein
+    `KeyError` beim Prozessstart."""
+    assert set(DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER) == set(VISION_MODELS_BY_PROVIDER)
