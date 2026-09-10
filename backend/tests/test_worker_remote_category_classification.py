@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import NoReturn
 
+import httpx
 import pytest
 from PIL import Image
 from sqlalchemy import select
@@ -15,6 +17,7 @@ from photosort import pricing, worker
 from photosort.categories import CATEGORY_NOT_RECOGNIZED
 from photosort.cloud_vision import (
     VISION_MODELS_BY_PROVIDER,
+    CloudRequestThrottle,
     TokenUsage,
     default_vision_model_for_provider,
 )
@@ -34,6 +37,7 @@ from photosort.models import (
 )
 from photosort.pricing import compute_cost_usd
 from photosort.remote_classification import (
+    AnthropicCategoryClient,
     RemoteCategoryClassificationApiError,
     RemoteClassification,
 )
@@ -1797,3 +1801,220 @@ async def test_counting_failures_adds_no_log_line_with_provider_raw_text(
     ]
     assert len(lines_with_marker) == 1, [record.getMessage() for record in caplog.records]
     assert all(record.exc_info is None for record in caplog.records)
+
+
+# specs/features/0382-cloud-rate-limits-aussitzen.md, K8/K9 ab hier - der zweite Cloud-
+# Teilschritt, strukturell analog zur Landmark-Phase in test_worker_criterion_scoring.py. Ueber
+# die vorhandene Factory-Injektion wird ausnahmsweise ein ECHTER Client mit httpx.MockTransport
+# hereingereicht: ein Fake-Double abstrahierte genau die Schicht weg, um die es geht.
+
+
+def _throttle_recording_waits(waits: list[float]) -> CloudRequestThrottle:
+    async def sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    return CloudRequestThrottle(min_interval_seconds=0.0, clock=lambda: 0.0, sleep=sleep)
+
+
+def _category_transport(responses: list[httpx.Response]) -> httpx.MockTransport:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        index = min(calls["n"], len(responses) - 1)
+        calls["n"] += 1
+        return responses[index]
+
+    return httpx.MockTransport(handler)
+
+
+def _category_ok() -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps({"categories": ["tier"], "fine_labels": ["Hund"]}),
+                }
+            ]
+        },
+    )
+
+
+async def _run_with_real_category_client(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    transport: httpx.MockTransport,
+    throttle: CloudRequestThrottle,
+) -> tuple[RemoteCategoryClassificationRun, Photo]:
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo)
+
+    client = AnthropicCategoryClient(
+        api_key="sk-test-not-a-real-secret",
+        model=default_vision_model_for_provider("anthropic"),
+        transport=transport,
+        throttle=throttle,
+    )
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
+    )
+    return run, photo
+
+
+class TestTheRemoteCategoryPhaseSitsOutARateLimit:
+    async def test_a_429_followed_by_a_200_still_produces_the_result_row(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        waits: list[float] = []
+        run, photo = await _run_with_real_category_client(
+            db_session,
+            tmp_path,
+            _category_transport([httpx.Response(429), _category_ok()]),
+            _throttle_recording_waits(waits),
+        )
+
+        assert run.status == ScanStatus.SUCCESS
+        assert run.failed_calls == 0
+        rows = (
+            await db_session.execute(
+                select(PhotoCategoryClassification).where(
+                    PhotoCategoryClassification.photo_id == photo.id
+                )
+            )
+        ).scalars().all()
+        assert len(rows) == 1
+        errors = (
+            await db_session.execute(
+                select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+            )
+        ).scalars().all()
+        assert errors == []
+        assert waits == [2.0]
+
+    async def test_a_permanent_429_keeps_todays_behaviour(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        waits: list[float] = []
+        run, photo = await _run_with_real_category_client(
+            db_session,
+            tmp_path,
+            _category_transport([httpx.Response(429)]),
+            _throttle_recording_waits(waits),
+        )
+
+        assert run.status == ScanStatus.SUCCESS
+        assert run.failed_calls == 1
+        rows = (
+            await db_session.execute(
+                select(PhotoCategoryClassification).where(
+                    PhotoCategoryClassification.photo_id == photo.id
+                )
+            )
+        ).scalars().all()
+        assert rows == []
+        error_row = (
+            await db_session.execute(
+                select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+            )
+        ).scalar_one()
+        assert "429" in error_row.error_message
+        assert waits == [2.0, 4.0, 8.0, 16.0]
+
+
+class TestTheRemoteCategoryPhaseSummarisesItsThrottling:
+    async def test_without_any_waiting_no_line_is_written(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        throttle = _throttle_recording_waits([])
+        monkeypatch.setattr(worker, "throttle_for_provider", lambda _provider: throttle)
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        await db_session.commit()
+        photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo)
+        client = PerPhotoCategoryClient(
+            [RemoteClassification(categories=("tier",), fine_labels=("Hund",))]
+        )
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            run = await run_remote_category_classification(
+                db_session,
+                project,
+                cache_dir=tmp_path,
+                build_client=lambda _model: client,
+                build_embedder=_fake_embedder,
+            )
+
+        assert run.status == ScanStatus.SUCCESS
+        assert [record for record in caplog.records if record.name == "photosort.worker"] == []
+
+    async def test_after_waiting_exactly_one_summary_line_is_written(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        throttle = _throttle_recording_waits([])
+        monkeypatch.setattr(worker, "throttle_for_provider", lambda _provider: throttle)
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            run, _photo = await _run_with_real_category_client(
+                db_session,
+                tmp_path,
+                _category_transport([httpx.Response(429), _category_ok()]),
+                throttle,
+            )
+
+        assert run.status == ScanStatus.SUCCESS
+        records = [record for record in caplog.records if record.name == "photosort.worker"]
+        assert len(records) == 1
+        assert records[0].levelno == logging.WARNING
+        message = records[0].getMessage()
+        assert "remote_category" in message
+        assert "anthropic" in message
+        assert "1 Wiederholungen" in message
+        assert "2.0 s Wartezeit" in message
+
+    async def test_the_summary_reports_only_the_difference_of_this_phase(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Ohne diesen Fall schriebe der zweite Cloud-Teilschritt sich die Wartezeit des ersten zu
+        und waere bei einem einzelnen Teilschritt trotzdem gruen."""
+        throttle = _throttle_recording_waits([])
+        throttle.record_retry_wait(41.0)
+        throttle.record_retry_wait(1.0)
+        monkeypatch.setattr(worker, "throttle_for_provider", lambda _provider: throttle)
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            await _run_with_real_category_client(
+                db_session,
+                tmp_path,
+                _category_transport([httpx.Response(429), _category_ok()]),
+                throttle,
+            )
+
+        records = [record for record in caplog.records if record.name == "photosort.worker"]
+        assert len(records) == 1
+        message = records[0].getMessage()
+        assert "42.0" not in message
+        assert "1 Wiederholungen" in message
+        assert "2.0 s Wartezeit" in message
