@@ -139,4 +139,4 @@ Dieser Abschnitt trägt bewusst **keinen** Codeblock. Ein vorformulierter Aufruf
 
 1. **Kein Test kann Penpot lesen.** Ob eine Runde tatsächlich so aussieht, wie sie gemeint war, weiß nur, wer hinsieht.
 2. **Liegengebliebene Arbeitsseiten fallen nirgends auf.** Es gibt keine Meldung und keinen Test dafür; die Auskunft aus Schritt 7 ist die einzige Erinnerung.
-3. **Ob eine Penpot-Seite Plugin-Daten trägt, ist im Projekt ungemessen** — alle bisherigen sitzen an Formen. Trägt sie keine, ist der Ausweg ein eigens dafür angelegtes, leeres Brett auf der Arbeitsseite als Träger der vier Laufmarken; die Wiederaufnahme liest dann dort. Das ist eine Umsetzungsfrage, keine Entscheidung — was dabei herauskommt, gehört gemeldet.
+3. **Dass eine Penpot-Seite Plugin-Daten trägt, ist inzwischen gemessen** — die vier Laufmarken sitzen an der Seite selbst, ein eigens angelegtes Trägerbrett braucht es nicht. Was dagegen nirgends auffällt, ist liegengebliebenes Bildmaterial: Beispielbilder, die ein Lauf in die Datei hochgeladen hat, bleiben dort, auch wenn die Arbeitsseite weggeworfen wird.
