@@ -258,6 +258,19 @@ export function buildTokens(css: string): TokenBuildResult {
       continue
     }
 
+    /*
+     * `--spacing-header` (specs/features/0387-schrittleiste-fortschritt.md) ist KEIN Design-Token,
+     * sondern eine Layout-Konstante der App-Huelle: die Hoehe der fixierten Kopfzeile, aus der
+     * `h-header` und `top-header` entstehen. Sie beschreibt nichts, was in Penpot gezeichnet oder
+     * gewaehlt wird - ein Token dafuer waere ein Wert ohne Gegenstueck im Entwurf und verschoebe
+     * die Kardinalitaeten der Nutzlast. Bewusst NAMENTLICH uebersprungen und nicht ueber ein
+     * Praefixmuster: ein kuenftiges, echtes Abstands-Token soll weiterhin im Fehlerzweig landen
+     * statt still zu verschwinden.
+     */
+    if (name === '--spacing-header') {
+      continue
+    }
+
     const radius = /^--radius-([a-z0-9]+)$/.exec(name)
     if (radius !== null) {
       tokens.push({ name: `radius.${radius[1]}`, type: TOKEN_TYPE_BY_GROUP.radius, value })

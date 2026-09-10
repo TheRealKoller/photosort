@@ -157,7 +157,7 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
       </a>
       <nav
         aria-label="Fortschritt der Pipeline"
-        className="sticky top-0 z-10 border-b border-separator bg-bg/95 px-4 py-3 backdrop-blur-sm sm:px-6"
+        className="sticky top-header z-10 border-b border-separator bg-bg/95 px-4 py-3 backdrop-blur-sm sm:px-6"
       >
         {/* Schmale Orientierungszeile unterhalb sm: (UI/UX-Abschnitt) - ersetzt die ab sm:
             sichtbaren Labels unter den Kreisen, verhindert Umbruch/Horizontal-Scroll der Leiste. */}

@@ -1711,6 +1711,46 @@ describe('Design-Vertrag: geteiltes Hoehen-Token der fixierten Bereiche', () => 
     }
   }, 60_000)
 
+  /** Die Klassen-Literale einer Produktivdatei - ohne Kommentare, damit eine Erlaeuterung nicht
+   * als Fundstelle zaehlt. */
+  function classesOf(label: string): string[] {
+    const file = sourceFiles.find((candidate) => candidate.label === label)
+    expect(file, `${label} nicht gefunden`).toBeDefined()
+    return stringLiterals(file!.content).flatMap((literal) => literal.split(/\s+/))
+  }
+
+  it('ruft das Token an genau den beiden vorgesehenen Stellen auf', () => {
+    expect(classesOf('src/App.tsx'), 'Kopfzeile ohne h-header').toContain('h-header')
+    expect(classesOf('src/components/Stepper.tsx'), 'Leiste ohne top-header').toContain('top-header')
+  })
+
+  it('traegt in keiner der beiden Dateien einen zweiten, freihaendigen Hoehenwert', () => {
+    // Ein zweiter Zahlenwert fuer dieselbe Hoehe waere die Fehlerquelle, gegen die das Token
+    // ueberhaupt steht: er driftet still, und die Naht zwischen beiden Leisten reisst auf.
+    const zweiterWert = /\b(?:top|h|pt|mt)-(?:14|\[[^\]]+\])/
+    for (const label of ['src/App.tsx', 'src/components/Stepper.tsx']) {
+      const file = sourceFiles.find((candidate) => candidate.label === label)!
+      expect(findMatches(zweiterWert, [file]).map((hit) => hit.match), label).toEqual([])
+    }
+  })
+
+  it('haelt die Schrittleiste nicht mehr auf top-0', () => {
+    const classes = classesOf('src/components/Stepper.tsx')
+    expect(classes, 'Leiste haftet noch auf top-0').not.toContain('top-0')
+    // Positiv-Gegenprobe: die Datei traegt ueberhaupt Klassen und haftet weiterhin.
+    expect(classes).toContain('sticky')
+  })
+
+  it('laesst die Kopfzeile nicht mehr umbrechen', () => {
+    // Mit fester Hoehe waere ein Umbruch stilles Abschneiden statt sichtbaren Wachsens; der
+    // Nutzername wird stattdessen gekuerzt. Gegenprobe, damit die Abwesenheit nicht auch bei
+    // einer leer gelesenen Datei bestuende.
+    const classes = classesOf('src/App.tsx')
+    expect(classes, 'Kopfzeile bricht weiterhin um').not.toContain('flex-wrap')
+    expect(classes).toContain('truncate')
+    expect(classes).toContain('min-w-0')
+  })
+
   it('fuehrt den Hoehenwert genau einmal - ein Wert, zwei Aufrufstellen', () => {
     const declarations = indexCss
       .split('\n')

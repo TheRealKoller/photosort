@@ -130,6 +130,34 @@ describe('App', () => {
     expect(screen.getByText(/angemeldet als daniel/i)).toBeInTheDocument()
   })
 
+  /*
+   * specs/features/0387-schrittleiste-fortschritt.md, Edge Case 10: Die Kopfzeile hat seit dem
+   * geteilten Hoehen-Token eine FESTE Hoehe und bricht nicht mehr um. Ein sehr langer Nutzername
+   * wird deshalb gekuerzt DARGESTELLT - er bleibt aber vollstaendig im Baum, also fuer
+   * Screenreader und Kopieren erhalten. Genau das ist hier die Zusage; dass die Kuerzung
+   * gestalterisch greift, bindet der Design-Vertrag (Utilities) und `no-horizontal-scroll` (Folge).
+   *
+   * Startet bewusst gruen: der Fall ist ein Regressionsnetz gegen das stille Abschneiden, das die
+   * feste Hoehe erst moeglich macht - der TDD-Treiber fuer die Kuerzung selbst sitzt im
+   * Design-Vertrag, weil Komponententests in diesem Projekt keine CSS-Assertions bekommen.
+   */
+  it('haelt einen sehr langen Nutzernamen vollstaendig im Baum, statt die Kopfzeile umbrechen zu lassen', () => {
+    const username = 'daniel-mit-einem-sehr-langen-anmeldenamen-der-nicht-umbrechen-darf'
+    setToken(makeToken({ sub: '1', username }))
+
+    renderApp(['/'])
+
+    // Ueber die Abmelden-Schaltflaeche lokalisiert statt ueber die Rolle `banner`: eine
+    // Seite unterhalb der Huelle darf ihren eigenen `<header>` haben, und die Rollenabfrage
+    // traefe dann zwei Elemente.
+    const banner = screen.getByRole('button', { name: /abmelden/i }).closest('header')
+    expect(banner, 'Kopfzeile der App-Huelle').not.toBeNull()
+    expect(within(banner!).getByText(`Angemeldet als ${username}`)).toBeInTheDocument()
+    // Die Kopfzeile bleibt EIN Landmark mit ihren beiden Gruppen - kein zweiter, umgebrochener
+    // Zweig, in dem der Name ein zweites Mal stuende.
+    expect(within(banner!).getAllByText(new RegExp(username))).toHaveLength(1)
+  })
+
   it('logs out without a backend call: clears the token and navigates to /login', async () => {
     setToken(makeToken({ sub: '1', username: 'daniel' }))
     const user = userEvent.setup()
