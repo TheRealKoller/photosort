@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -289,3 +292,122 @@ def mistral_usage_from_response(payload: Any, model: str) -> TokenUsage | None:
     providerspezifisch ABWEICHENDEN Feldnamen sind der einzige Unterschied zum Anthropic-Gegenpart
     oben (OpenAI-kompatibles Chat-Completion-Schema)."""
     return _usage_from_response(payload, model, "prompt_tokens", "completion_tokens")
+
+
+# specs/features/0382-cloud-rate-limits-aussitzen.md, decisions/0074-cloud-vision-schrittmacher-
+# je-anbieter-und-wiederholung-nur-bei-429.md ab hier: Verteilung (Schrittmacher) und
+# Wiederholung bei HTTP 429 - der EINE Ort, durch den seitdem alle vier Cloud-Aufrufstellen
+# senden (ADR 0074 Entscheidung 1). Bewusst hier und nicht in landmark.py/remote_classification.py:
+# ADR 0032 Punkt 3 hat dieses Modul genau fuer providerneutrale HTTP-Bausteine angelegt.
+#
+# Dieses Modul bleibt KONFIGURATIONSFREI (es darf photosort.config nicht importieren, ADR 0059
+# Punkt 2 - die Gegenrichtung existiert bereits fuer den LANDMARK_MODEL-Validator). Der
+# MECHANISMUS steht deshalb hier, die prozessweiten INSTANZEN leben in cloud_vision_throttle.py.
+
+
+@dataclass(frozen=True)
+class ThrottleStats:
+    """Zaehlerstand EINES Schrittmachers (ADR 0074 Entscheidung 8) - reine Zahlen, nie eine
+    Antwort und nie ein Headerwert (Sicherheits-Muss-Kriterium der Spec 0382, Punkt 4). Frozen wie
+    TokenUsage daneben: ein Messwert, kein veraenderlicher Zustand.
+
+    Die Zaehler sind PROZESSWEIT (eine Instanz je Anbieter, von beiden Cloud-Teilschritten und
+    mehreren gleichzeitigen Laeufen geteilt). Fuer eine Aussage ueber einen einzelnen Teilschritt
+    ist deshalb ausschliesslich die DIFFERENZ zweier Schnappschuesse brauchbar - siehe `since`."""
+
+    delayed_requests: int
+    total_delay_seconds: float
+    retries: int
+    total_retry_wait_seconds: float
+
+    def since(self, previous: ThrottleStats) -> ThrottleStats:
+        """Der Zuwachs gegenueber einem frueheren Schnappschuss.
+
+        Geklemmt auf `>= 0`: die Zaehler eines prozessweiten Schrittmachers wachsen zwar
+        monoton, aber eine negative Zahl in einer Logzeile ("-3 Anfragen eingereiht") waere ein
+        stiller Aussagefehler statt eines auffallenden Fehlschlags."""
+        return ThrottleStats(
+            delayed_requests=max(0, self.delayed_requests - previous.delayed_requests),
+            total_delay_seconds=max(0.0, self.total_delay_seconds - previous.total_delay_seconds),
+            retries=max(0, self.retries - previous.retries),
+            total_retry_wait_seconds=max(
+                0.0, self.total_retry_wait_seconds - previous.total_retry_wait_seconds
+            ),
+        )
+
+
+class CloudRequestThrottle:
+    """Schrittmacher: haelt einen MINDESTABSTAND zwischen zwei Anfragen an denselben Anbieter.
+
+    Bewusst KEIN Token-Bucket (ADR 0074 Entscheidung 2): ein Bucket erlaubt genau den Stoss, der
+    den `429` ausloest - Anthropic dokumentiert selbst, eine Minutenrate koenne sekundengenau
+    durchgesetzt werden.
+
+    `clock`/`sleep` sind Konstruktor-Parameter (Voreinstellungen `time.monotonic`/`asyncio.sleep`).
+    Ohne sie waere weder diese Klasse noch `post_vision_request` ohne echte Wartezeit testbar -
+    `post_vision_request` wartet ausdruecklich AUSSCHLIESSLICH ueber den `sleep` dieses Objekts
+    (Auflage 1 der Teststrategie der Spec 0382), es gibt keinen zweiten Zeitgeber im Pfad.
+
+    `min_interval_seconds=0.0` ist ein gueltiger Wert und bedeutet "kein Schrittmacher"; das ist
+    die Bauform, mit der die Client-Tests konstruieren."""
+
+    def __init__(
+        self,
+        min_interval_seconds: float,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        self._min_interval_seconds = min_interval_seconds
+        self._clock = clock
+        self._sleep = sleep
+        # `-inf` statt `clock()`: der erste Aufruf wartet dadurch nie, ohne dass beim BAU der
+        # Instanz (Importzeit von cloud_vision_throttle.py) schon die Uhr gelesen werden muesste.
+        self._next_free = float("-inf")
+        self._delayed_requests = 0
+        self._total_delay_seconds = 0.0
+        self._retries = 0
+        self._total_retry_wait_seconds = 0.0
+
+    @property
+    def sleep(self) -> Callable[[float], Awaitable[None]]:
+        """Der Zeitgeber dieses Schrittmachers - lesbar herausgegeben, damit
+        `post_vision_request` seine Wiederholungs-Wartezeiten ueber DENSELBEN Zeitgeber nimmt
+        (Auflage 1 der Teststrategie der Spec 0382)."""
+        return self._sleep
+
+    async def acquire(self) -> None:
+        """Reiht die aufrufende Anfrage ein - vor JEDEM Absenden, erster Versuch wie jede
+        Wiederholung (K4).
+
+        Die Reservierung ist bewusst SPERRENFREI und muss es bleiben: zwischen dem Lesen und dem
+        Zurueckschreiben von `_next_free` steht kein `await`, dadurch ist der Abschnitt im
+        Einzel-Loop von asyncio atomar. Stuende dort eines, bekaemen mehrere gleichzeitige
+        Aufrufer denselben Startzeitpunkt und der Schrittmacher waere wirkungslos - genau das
+        prueft der `asyncio.gather`-Fall in test_cloud_vision.py nach."""
+        now = self._clock()
+        start = max(now, self._next_free)
+        self._next_free = start + self._min_interval_seconds
+        wait = start - now
+        if wait > 0:
+            self._delayed_requests += 1
+            self._total_delay_seconds += wait
+            # KEIN Abfangen von BaseException hier oder beim Aufrufer (Sicherheits-Muss-Kriterium
+            # der Spec 0382, Punkt 5): ein verschlucktes CancelledError machte den Job
+            # unabbrechbar (ADR 0068 Punkt 2).
+            await self._sleep(wait)
+
+    def record_retry_wait(self, seconds: float) -> None:
+        """Bucht eine Wiederholungs-Wartezeit von `post_vision_request` ein. Die beiden
+        Wiederholungs-Zaehler leben hier und nicht im Aufrufer, weil `ThrottleStats` sie sonst
+        nicht fuehren koennte - der Worker liest ausschliesslich diesen einen Zaehlerstand ab."""
+        self._retries += 1
+        self._total_retry_wait_seconds += seconds
+
+    def stats(self) -> ThrottleStats:
+        return ThrottleStats(
+            delayed_requests=self._delayed_requests,
+            total_delay_seconds=self._total_delay_seconds,
+            retries=self._retries,
+            total_retry_wait_seconds=self._total_retry_wait_seconds,
+        )

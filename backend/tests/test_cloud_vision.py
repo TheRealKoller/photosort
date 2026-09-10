@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -406,3 +407,190 @@ class TestProviderForVisionModel:
                 imported.add(node.module)
 
         assert not any(name.startswith("photosort") for name in imported), imported
+
+
+# ---------------------------------------------------------------------------
+# specs/features/0382-cloud-rate-limits-aussitzen.md, decisions/0074-cloud-vision-schrittmacher-
+# je-anbieter-und-wiederholung-nur-bei-429.md ab hier: Schrittmacher (CloudRequestThrottle),
+# Wartezeit-Ermittlung (retry_after_seconds) und der eine neue Sende-/Wiederholungspfad
+# (post_vision_request), durch den seitdem ALLE vier Cloud-Aufrufstellen gehen.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingSleep:
+    """Aufzeichnender Ersatz fuer `asyncio.sleep` - macht Wartezeiten zu einer Liste erwarteter
+    Zahlen (Teststrategie der Spec 0382, Abschnitt 1: "beide ohne echte Wartezeit"). Das
+    `await asyncio.sleep(0)` haelt den Ablauf ein echter Abgabepunkt an den Event-Loop, damit die
+    Nebenlaeufigkeits-Faelle (asyncio.gather) ueberhaupt verschraenken KOENNEN - genau das macht
+    den Atomaritaetsnachweis unten aussagekraeftig."""
+
+    def __init__(self) -> None:
+        self.calls: list[float] = []
+
+    async def __call__(self, seconds: float) -> None:
+        self.calls.append(seconds)
+        await asyncio.sleep(0)
+
+
+class _AdvancingClock:
+    """Fortschreitende Uhr: ihr `sleep` addiert die Wartezeit auf `now`, und der Test darf `now`
+    selbst weiterstellen (Teststrategie der Spec 0382, Abschnitt 1, Double (b))."""
+
+    def __init__(self, now: float = 0.0) -> None:
+        self.now = now
+        self.calls: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.calls.append(seconds)
+        self.now += seconds
+        await asyncio.sleep(0)
+
+
+class TestCloudRequestThrottle:
+    """K4: Mindestabstand zwischen zwei Anfragen an denselben Anbieter - kein Token-Bucket, kein
+    Stoss (ADR 0074 Entscheidung 2)."""
+
+    async def test_the_first_request_never_waits(self) -> None:
+        sleep = _RecordingSleep()
+        throttle = cloud_vision.CloudRequestThrottle(
+            min_interval_seconds=1.0, clock=lambda: 0.0, sleep=sleep
+        )
+
+        await throttle.acquire()
+
+        assert sleep.calls == []
+        assert throttle.stats().delayed_requests == 0
+
+    async def test_the_second_request_waits_exactly_one_interval(self) -> None:
+        sleep = _RecordingSleep()
+        throttle = cloud_vision.CloudRequestThrottle(
+            min_interval_seconds=1.5, clock=lambda: 0.0, sleep=sleep
+        )
+
+        await throttle.acquire()
+        await throttle.acquire()
+
+        assert sleep.calls == [1.5]
+        assert throttle.stats().delayed_requests == 1
+        assert throttle.stats().total_delay_seconds == pytest.approx(1.5)
+
+    async def test_it_does_not_brake_retroactively(self) -> None:
+        """Ist zwischen zwei Aufrufen mehr als `min_interval` vergangen, wartet der zweite NICHT -
+        der Schrittmacher holt eine bereits verstrichene Pause nicht nach."""
+        clock = _AdvancingClock()
+        throttle = cloud_vision.CloudRequestThrottle(
+            min_interval_seconds=1.0, clock=clock, sleep=clock.sleep
+        )
+
+        await throttle.acquire()
+        clock.now += 10.0
+        await throttle.acquire()
+
+        assert clock.calls == []
+        assert throttle.stats().delayed_requests == 0
+
+    async def test_a_zero_interval_means_no_throttling_at_all(self) -> None:
+        """`min_interval_seconds=0.0` ist ein GUELTIGER Wert - die Bauform, mit der die
+        bestehenden Client-Tests konstruieren. Kein `sleep`-Aufruf, kein Zaehlerstand."""
+        sleep = _RecordingSleep()
+        throttle = cloud_vision.CloudRequestThrottle(
+            min_interval_seconds=0.0, clock=lambda: 0.0, sleep=sleep
+        )
+
+        for _ in range(5):
+            await throttle.acquire()
+
+        assert sleep.calls == []
+        assert throttle.stats().delayed_requests == 0
+        assert throttle.stats().total_delay_seconds == 0.0
+
+    async def test_five_concurrent_acquires_are_spaced_without_a_duplicate(self) -> None:
+        """Sperrenfreiheit/Atomaritaet (Entwurfsentscheidung 2 der Spec): zwischen dem Lesen und
+        dem Zurueckschreiben des naechsten freien Zeitpunkts darf KEIN `await` stehen. Genau
+        dieser Fall wird rot, wenn doch eines dort steht - dann bekaemen mehrere gleichzeitige
+        Aufrufer denselben Startzeitpunkt.
+
+        Der erste der fuenf Aufrufer ist der `0 x min_interval`-Fall: er wartet gar nicht und
+        erzeugt deshalb keinen `sleep`-Aufruf. Aufgezeichnet werden die vier uebrigen."""
+        sleep = _RecordingSleep()
+        throttle = cloud_vision.CloudRequestThrottle(
+            min_interval_seconds=2.0, clock=lambda: 0.0, sleep=sleep
+        )
+
+        await asyncio.gather(*(throttle.acquire() for _ in range(5)))
+
+        assert sorted(sleep.calls) == [2.0, 4.0, 6.0, 8.0]
+        assert len(set(sleep.calls)) == len(sleep.calls)
+        assert throttle.stats().delayed_requests == 4
+
+    async def test_a_cancellation_from_the_sleep_propagates_unchanged(self) -> None:
+        """K7: ein Abbruch (JOB_TIMEOUT_SECONDS/Worker-Shutdown) laeuft durch den Wartevorgang
+        HINDURCH - `acquire()` faengt kein `BaseException`."""
+
+        async def cancelling_sleep(seconds: float) -> None:
+            raise asyncio.CancelledError
+
+        throttle = cloud_vision.CloudRequestThrottle(
+            min_interval_seconds=1.0, clock=lambda: 0.0, sleep=cancelling_sleep
+        )
+
+        await throttle.acquire()
+        with pytest.raises(asyncio.CancelledError):
+            await throttle.acquire()
+
+
+class TestThrottleStats:
+    def test_since_returns_the_difference(self) -> None:
+        before = cloud_vision.ThrottleStats(
+            delayed_requests=3,
+            total_delay_seconds=6.0,
+            retries=1,
+            total_retry_wait_seconds=2.0,
+        )
+        after = cloud_vision.ThrottleStats(
+            delayed_requests=5,
+            total_delay_seconds=10.0,
+            retries=4,
+            total_retry_wait_seconds=30.0,
+        )
+
+        diff = after.since(before)
+
+        assert diff == cloud_vision.ThrottleStats(
+            delayed_requests=2,
+            total_delay_seconds=4.0,
+            retries=3,
+            total_retry_wait_seconds=28.0,
+        )
+
+    def test_since_never_returns_negative_values(self) -> None:
+        """Die Zaehler sind prozessweit; ein Schnappschuss, der (wie auch immer) juenger ist als
+        der spaetere Abruf, darf keine negative "gewartete Zeit" in eine Logzeile tragen."""
+        early = cloud_vision.ThrottleStats(
+            delayed_requests=0, total_delay_seconds=0.0, retries=0, total_retry_wait_seconds=0.0
+        )
+        later = cloud_vision.ThrottleStats(
+            delayed_requests=7, total_delay_seconds=9.0, retries=2, total_retry_wait_seconds=4.0
+        )
+
+        diff = early.since(later)
+
+        assert diff == cloud_vision.ThrottleStats(
+            delayed_requests=0, total_delay_seconds=0.0, retries=0, total_retry_wait_seconds=0.0
+        )
+
+    async def test_the_retry_counters_come_from_the_throttle(self) -> None:
+        throttle = cloud_vision.CloudRequestThrottle(
+            min_interval_seconds=0.0, clock=lambda: 0.0, sleep=_RecordingSleep()
+        )
+        before = throttle.stats()
+
+        throttle.record_retry_wait(2.0)
+        throttle.record_retry_wait(4.0)
+
+        diff = throttle.stats().since(before)
+        assert diff.retries == 2
+        assert diff.total_retry_wait_seconds == pytest.approx(6.0)
