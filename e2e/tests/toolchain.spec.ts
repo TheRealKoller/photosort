@@ -24,6 +24,7 @@ import { DEFAULT_BASE_URL, resolveBaseUrl } from '../lib/baseUrl.ts'
 import { DEMO_PROJECTS } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 import { PACKAGE_ROOT } from '../lib/paths.ts'
+import { DESKTOP_ONLY, MOBILE_ONLY } from '../playwright.config.ts'
 import { VIEWPORTS } from '../lib/viewports.ts'
 
 const REPO_ROOT = path.join(PACKAGE_ROOT, '..')
@@ -42,6 +43,42 @@ test('das Verlaesslichkeitsregime ist an die Konfiguration gebunden', () => {
   expect(info.config.forbidOnly, 'forbidOnly').toBe(true)
   // Alle Specs teilen sich EINEN geseedeten Datenbestand.
   expect(info.config.workers, 'workers').toBe(1)
+})
+
+/**
+ * specs/features/0387-schrittleiste-fortschritt.md: Zwei Specs sagen ihre Aussage AUSDRUECKLICH
+ * fuer beide Breiten zu - `sticky-header` (die beiden fixierten Leisten stehen fugenlos
+ * untereinander) und `stepper-progress` (die Balkenfuellung endet unter der Spaltenmitte). Die
+ * Zweibreitigkeit ist damit Teil der Zusage und darf nicht in einer Konfigurationsdatei still
+ * verschwinden - ein Eintrag in einer der beiden Ausschlusslisten haette genau diese Wirkung, ohne
+ * dass irgendein Lauf rot wuerde.
+ */
+test('die beidbreitigen Specs stehen in keiner Ausschlussliste', () => {
+  const listen: [string, RegExp[]][] = [
+    ['MOBILE_ONLY', MOBILE_ONLY],
+    ['DESKTOP_ONLY', DESKTOP_ONLY],
+  ]
+  const beidbreitig = ['tests/sticky-header.spec.ts', 'tests/stepper-progress.spec.ts']
+
+  for (const spec of beidbreitig) {
+    for (const [name, liste] of listen) {
+      expect(
+        liste.some((muster) => muster.test(spec)),
+        `${spec} ist in ${name} ausgeschlossen`
+      ).toBe(false)
+    }
+  }
+
+  // Gegenprobe: die Listen greifen ueberhaupt. Ohne sie bestuende der Test auch dann, wenn beide
+  // leer waeren oder die Muster gar nichts mehr treffen.
+  expect(
+    MOBILE_ONLY.some((muster) => muster.test('tests/tap-targets.spec.ts')),
+    'MOBILE_ONLY greift'
+  ).toBe(true)
+  expect(
+    DESKTOP_ONLY.some((muster) => muster.test('tests/login.spec.ts')),
+    'DESKTOP_ONLY greift'
+  ).toBe(true)
 })
 
 test('die beiden festen Viewport-Projekte haben die zugesagten Groessen', () => {
