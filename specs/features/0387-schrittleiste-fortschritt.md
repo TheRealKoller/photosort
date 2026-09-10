@@ -1,6 +1,6 @@
 # 0387 - Schrittleiste zeigt den Fortschritt und verdeckt die Kopfzeile nicht mehr
 
-**Status:** Accepted
+**Status:** Implemented ([PR #389](https://github.com/TheRealKoller/photosort/pull/389))
 **Erstellt:** 2026-09-10
 **Bezug:** [Issue #387](https://github.com/TheRealKoller/photosort/issues/387) (fasst zusätzlich den zuvor getrennt erfassten Befund #330 mit)
 
