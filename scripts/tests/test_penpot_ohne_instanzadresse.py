@@ -12,8 +12,9 @@ verfaellt.
 
 Drei Zusicherungen:
 
-* Unter `design/penpot/**`, `frontend/penpot/**` und `.claude/skills/penpot-design/**` steht kein
-  `://` ausser den beiden bekannten, harmlosen Praefixen (SVG-Namensraum, dieses GitHub-Projekt).
+* Unter `design/penpot/**`, `frontend/penpot/**`, `.claude/skills/penpot-design/**` und
+  `.claude/skills/penpot-entwurfsrunden/**` steht kein `://` ausser den beiden bekannten,
+  harmlosen Praefixen (SVG-Namensraum, dieses GitHub-Projekt).
 * Dieselben Pfade tragen keine IP-Adresse.
 * `.env.example` traegt keinen `PENPOT_`-Eintrag - ausdruecklich benannt, weil das die
   naheliegendste Stelle waere, an der eine Instanzadresse als „Vorlage" doch noch hineingeriete.
@@ -39,6 +40,9 @@ SUCHRAUM_PRAEFIXE = (
     "design/penpot/",
     "frontend/penpot/",
     ".claude/skills/penpot-design/",
+    # Der Rundenablauf beschreibt Arbeit an derselben privaten, selbst gehosteten Instanz -
+    # er gehoert in denselben Suchraum wie `penpot-design`.
+    ".claude/skills/penpot-entwurfsrunden/",
 )
 
 SELBST = "scripts/tests/test_penpot_ohne_instanzadresse.py"
@@ -63,7 +67,7 @@ MINDESTZAHL_DATEIEN = 8
 
 
 def suchraum() -> dict[str, str]:
-    """Reine Funktion: die von Git verwalteten Dateien der drei Penpot-Pfade."""
+    """Reine Funktion: die von Git verwalteten Dateien der vier Penpot-Pfade."""
     ergebnis = subprocess.run(
         ["git", "ls-files", "-z", "--", *SUCHRAUM_PRAEFIXE],
         cwd=REPO_WURZEL,

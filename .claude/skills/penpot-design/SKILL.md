@@ -95,6 +95,8 @@ Ein neuer Entwurf wird aus **Bibliotheks-Instanzen** zusammengesetzt, nie aus fr
 
 Neues wird in Penpot **nicht „zur Vorsorge"** angelegt: Was das Produkt nicht hat, kommt mit der Story, die es einführt. Ein **Baustein**, der in der Bibliothek fehlt, wird nicht frei nachgezeichnet: Er kommt hinzu, wenn er im Produkt existiert, Tokens trägt und ein Entwurf ihn braucht — in derselben Story, samt Eintrag in `components.json`.
 
+**Ein Entwurf kann statt in einem Zug auch in Runden entstehen** — mehrere Vorschläge je Runde, Rückmeldung dazwischen, auf einer eigenen Arbeitsseite. Der Rundenablauf steht im Skill `penpot-entwurfsrunden`; der einmalige Durchlauf hier bleibt daneben gültig, etwa für einen Nachtrag an einer bestehenden Ansicht.
+
 ### Das Ablagemuster für Ansichten (verbindlich für jede Ansicht)
 
 - **Eine Penpot-Seite je Ansicht**, benannt `Ansicht — <Anzeigename>`. Ansichten werden nicht auf einer gemeinsamen Seite gestapelt.

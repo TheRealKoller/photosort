@@ -95,6 +95,45 @@ test('der browse-app-Skill nennt die Freigabe-Zeichenkette des Seeders woertlich
   expect(repoFile('docker-compose.e2e.yml'), 'Freigabe-Zeichenkette im Overlay').toContain(match![1])
 })
 
+test('penpot-entwurfsrunden nennt genau die beiden Pruefbreiten dieses Pakets', () => {
+  const skill = repoFile('.claude/skills/penpot-entwurfsrunden/SKILL.md')
+
+  // Waehrend einer Entwurfsrunde wird auf EINE Breite vereinfacht - und die ist keine frei
+  // gewaehlte, sondern eine der beiden Pruefbreiten, die DIESES Paket besitzt. Deshalb liegt der
+  // Test hier: eine Umbenennung in lib/viewports.ts faerbt die Anleitung rot, statt sie still
+  // falsch werden zu lassen. Vorbild ist der browse-app-Test oben (Doku an Code gebunden).
+  const namen = Object.keys(VIEWPORTS)
+  expect(namen.length, 'Zahl der Pruefbreiten dieses Pakets').toBe(2)
+
+  // Gelesen werden die Zeilen, die die Herkunft selbst nennen - dort und nur dort stehen die
+  // Namen. Der Pfad in Backticks ist nicht einer der Namen und faellt raus.
+  const quellzeilen = skill.split('\n').filter((zeile) => zeile.includes('e2e/lib/viewports.ts'))
+  expect(
+    quellzeilen.length,
+    'Zeilen im Skill, die die Pruefbreiten aus diesem Paket beziehen'
+  ).toBeGreaterThan(0)
+
+  const genannt = new Set<string>()
+  for (const zeile of quellzeilen) {
+    for (const treffer of zeile.matchAll(/`([^`\n]+)`/g)) {
+      const token = treffer[1]!
+      if (token.includes('/') || token.includes('.')) continue
+      genannt.add(token)
+    }
+  }
+
+  // Gleichheit, nicht "enthaelt": eine dritte, nur im Skill gueltige Breite machte den Entwurf
+  // mit dem spaeteren Browser-Nachweis unvergleichbar - und faellt genau hier auf.
+  expect([...genannt].sort(), 'im Skill genannte Breitennamen').toEqual([...namen].sort())
+
+  // Und keine getippte Breite an den Namen vorbei. Die Zahlen leben ausschliesslich hier.
+  for (const [name, groesse] of Object.entries(VIEWPORTS)) {
+    expect(skill, `Breitenwert von "${name}" darf nicht im Skilltext stehen`).not.toContain(
+      String(groesse.width)
+    )
+  }
+})
+
 test('die Demo-Projektnamen des Pruefsatzes stammen aus dem Seeder', () => {
   const seeder = repoFile('backend/src/photosort/demo_state.py')
 
