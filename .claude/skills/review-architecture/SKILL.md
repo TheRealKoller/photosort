@@ -5,7 +5,7 @@ description: Architektur-Review eines Feature-Branch-Diffs gegen `main` — Einh
 
 # review-architecture — Architektur-Entscheidungstreue, drei Blickwinkel
 
-Prüft den Diff des Feature-Branches gegen `main` (`git diff main...HEAD` bzw. den genannten Branch) darauf, ob bestehende Architekturentscheidungen (ADRs, `docs/architecture.md`, ggf. der Abschnitt "Architektur / Umsetzung" der Spec) eingehalten wurden — keine stillen Abweichungen, kein neues, unabgestimmtes Muster.
+Prüft den Diff des Feature-Branches gegen `main` (`git diff origin/main...HEAD` bzw. den genannten Branch) darauf, ob bestehende Architekturentscheidungen (ADRs, `docs/architecture.md`, ggf. der Abschnitt "Architektur / Umsetzung" der Spec) eingehalten wurden — keine stillen Abweichungen, kein neues, unabgestimmtes Muster.
 
 Die Prüf-Methodik ist die bisherige Feature-Branch-Review-Aufgabe des `architect`-Agenten (Review aus drei Blickwinkeln), unverändert in einen Hauptsession-Skill überführt.
 

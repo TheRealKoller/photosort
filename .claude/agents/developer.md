@@ -84,7 +84,7 @@ Ist Schritt 4 grün, committe einen letzten Zwischenstand (falls noch etwas offe
 <Freitext: was gebaut wurde>
 
 ### Betroffene Dateien
-<Ausgabe von `git diff --name-only main...HEAD` als Liste>
+<Ausgabe von `git diff --name-only origin/main...HEAD` als Liste>
 
 ### Tests & Codequalität
 <Testlauf/Coverage/Lint/Typecheck-Ergebnis, Status>

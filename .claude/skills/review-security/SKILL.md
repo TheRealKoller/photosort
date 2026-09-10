@@ -5,7 +5,7 @@ description: Sicherheitsfokussiertes Review eines Feature-Branch-Diffs gegen `ma
 
 # review-security — Sicherheit
 
-Prüft den Diff des Feature-Branches gegen `main` (`git diff main...HEAD` bzw. den genannten Branch) ausschließlich aus Sicherheitsperspektive — die übrige Code-Qualität liegt bei `review-tests`, hier nicht doppeln, sondern in die Tiefe gehen.
+Prüft den Diff des Feature-Branches gegen `main` (`git diff origin/main...HEAD` bzw. den genannten Branch) ausschließlich aus Sicherheitsperspektive — die übrige Code-Qualität liegt bei `review-tests`, hier nicht doppeln, sondern in die Tiefe gehen.
 
 Die Prüf-Methodik ist die bisherige Feature-Branch-Review-Aufgabe des `security-engineer`-Agenten, unverändert in einen Hauptsession-Skill überführt.
 
