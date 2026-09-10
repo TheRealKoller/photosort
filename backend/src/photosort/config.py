@@ -4,6 +4,7 @@ from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from photosort.cloud_vision import (
+    DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER,
     VISION_MODELS_BY_PROVIDER,
     default_vision_model_for_provider,
 )
@@ -193,6 +194,40 @@ class Settings(BaseSettings):
     # soll unabhaengig voneinander tunbar bleiben. `Field(ge=1)` analog den uebrigen Concurrency-
     # Feldern.
     remote_category_classification_concurrency: int = Field(default=2, ge=1)
+
+    # specs/features/0382-cloud-rate-limits-aussitzen.md, decisions/0074-cloud-vision-
+    # schrittmacher-je-anbieter-und-wiederholung-nur-bei-429.md Entscheidung 7: die einzige neue
+    # Betriebsvariable dieser Story - die ANFRAGERATE an den Anbieter, fuer BEIDE Cloud-
+    # Teilschritte gemeinsam. Sie muss ein Settings-Feld sein und darf keine Modulkonstante wie
+    # VISION_REQUEST_TIMEOUT_SECONDS werden: die zulaessige Rate haengt an der KONTOSTUFE des
+    # Betreibers, ist also ein Betriebsparameter im Sinne von ADR 0025 Punkt 3. Versuchszahl,
+    # Wartebudget, Staffel und Deckel bleiben aus demselben Grund Modulkonstanten in
+    # cloud_vision.py - sie haengen an der Watchdog-Rechnung, nicht an einer Kontostufe.
+    #
+    # Der Namenspraefix bricht bewusst mit der `LANDMARK_*`-Familie (ADR 0074 Entscheidung 7):
+    # ADR 0059 Punkt 1 hat deren Ungenauigkeit nur fortgeschrieben, weil ein Umbenennen fuer den
+    # Betrieb breaking gewesen waere - fuer einen NEUEN Namen gibt es dieses Argument nicht.
+    #
+    # `0` heisst "Voreinstellung des eingestellten Anbieters" (Muster von `LANDMARK_MODEL`).
+    # ACHTUNG, UNTERSCHIED ZU `LANDMARK_MODEL=`: ein LEERER Wert ist fuer ein Zahlenfeld ein
+    # Startfehler, kein "nicht gesetzt" - `.env.example` traegt deshalb `=0` und sagt das
+    # ausdruecklich. `ge=0` analog den Concurrency-Feldern oben: eine fehlerhafte .env faellt
+    # beim Prozessstart auf, nicht mitten im naechsten kostenpflichtigen Lauf.
+    cloud_vision_requests_per_minute: int = Field(default=0, ge=0)
+
+    def resolved_cloud_vision_requests_per_minute(self, provider: str) -> int:
+        """Die tatsaechlich zu verwendende Anfragerate (Muster `resolved_landmark_model()`).
+
+        Gibt NIEMALS `0` zurueck (Sicherheits-Muss-Kriterium der Spec 0382, Punkt 6): aus dem
+        Rueckgabewert bildet cloud_vision_throttle.py zur MODUL-IMPORTZEIT den Mindestabstand
+        `60 / rate`. Eine `0` von hier waere ein ZeroDivisionError beim Import - und damit ein
+        gleichzeitiger Startfehler von Backend UND Worker statt eines fehlgeschlagenen Laufs.
+        Getragen wird das von zwei Seiten: `ge=0` schliesst negative Werte aus, und die
+        Voreinstellungstabelle enthaelt (per Test erzwungen) fuer jeden waehlbaren Anbieter einen
+        Wert > 0."""
+        return self.cloud_vision_requests_per_minute or DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER[
+            provider
+        ]
 
 
 settings = Settings()

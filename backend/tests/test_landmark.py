@@ -7,7 +7,12 @@ import json
 import httpx
 import pytest
 
-from photosort.cloud_vision import ANTHROPIC_VISION_MODEL, MISTRAL_VISION_MODEL, TokenUsage
+from photosort.cloud_vision import (
+    ANTHROPIC_VISION_MODEL,
+    MISTRAL_VISION_MODEL,
+    CloudRequestThrottle,
+    TokenUsage,
+)
 from photosort.landmark import (
     MAX_LANDMARK_NAME_LENGTH,
     AnthropicLandmarkClient,
@@ -29,6 +34,27 @@ API_KEY = "sk-ant-test-key-not-a-real-secret"
 IMAGE_BYTES = b"\xff\xd8\xff\xe0fake-jpeg-bytes"
 
 
+# specs/features/0382-cloud-rate-limits-aussitzen.md: der Schrittmacher ist an beiden
+# Client-Klassen ein Pflicht-Schluesselwortparameter OHNE Default. Die Bestandsfaelle bekommen
+# deshalb einen wirkungslosen (`min_interval_seconds=0.0` heisst "kein Schrittmacher") - sie
+# aendern sich sonst inhaltlich nicht.
+
+
+def _no_throttle() -> CloudRequestThrottle:
+    return CloudRequestThrottle(min_interval_seconds=0.0)
+
+
+def _recording_throttle(waits: list[float]) -> CloudRequestThrottle:
+    """Kein Mindestabstand, aber jede Wiederholungs-Wartezeit als Zahl in `waits` - und ohne eine
+    einzige echte Sekunde Wartezeit (`post_vision_request` wartet ausschliesslich ueber DIESEN
+    `sleep`)."""
+
+    async def sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    return CloudRequestThrottle(min_interval_seconds=0.0, clock=lambda: 0.0, sleep=sleep)
+
+
 def _success_response(name: str | None, confidence: float) -> httpx.Response:
     payload = {
         "content": [{"type": "text", "text": json.dumps({"name": name, "confidence": confidence})}]
@@ -36,9 +62,15 @@ def _success_response(name: str | None, confidence: float) -> httpx.Response:
     return httpx.Response(200, json=payload)
 
 
-def _client(handler: httpx.MockTransport) -> AnthropicLandmarkClient:
+def _client(
+    handler: httpx.MockTransport, throttle: CloudRequestThrottle | None = None
+) -> AnthropicLandmarkClient:
     return AnthropicLandmarkClient(
-        api_key=API_KEY, model=ANTHROPIC_VISION_MODEL, transport=handler)
+        api_key=API_KEY,
+        model=ANTHROPIC_VISION_MODEL,
+        transport=handler,
+        throttle=throttle or _no_throttle(),
+    )
 
 
 class FakeLandmarkClient:
@@ -207,6 +239,7 @@ async def test_aclose_closes_the_underlying_http_client() -> None:
         api_key=API_KEY,
         model=ANTHROPIC_VISION_MODEL,
         transport=httpx.MockTransport(lambda r: _success_response("x", 0.1)),
+        throttle=_no_throttle(),
     )
     await client.aclose()
     assert client._client.is_closed  # Whitebox-Konfigurationsnachweis
@@ -238,6 +271,7 @@ async def test_timeout_is_applied_to_the_underlying_http_client() -> None:
         api_key=API_KEY,
         model=ANTHROPIC_VISION_MODEL,
         transport=httpx.MockTransport(lambda r: _success_response("x", 0.1)),
+        throttle=_no_throttle(),
     )
     assert client._client.timeout.read == 60.0  # Whitebox-Konfigurationsnachweis
 
@@ -305,9 +339,15 @@ def _mistral_success_response(name: str | None, confidence: float) -> httpx.Resp
     return httpx.Response(200, json=payload)
 
 
-def _mistral_client(handler: httpx.MockTransport) -> MistralLandmarkClient:
+def _mistral_client(
+    handler: httpx.MockTransport, throttle: CloudRequestThrottle | None = None
+) -> MistralLandmarkClient:
     return MistralLandmarkClient(
-        api_key=MISTRAL_API_KEY, model=MISTRAL_VISION_MODEL, transport=handler)
+        api_key=MISTRAL_API_KEY,
+        model=MISTRAL_VISION_MODEL,
+        transport=handler,
+        throttle=throttle or _no_throttle(),
+    )
 
 
 async def test_mistral_detect_parses_a_successful_response_with_a_landmark_name() -> None:
@@ -463,6 +503,7 @@ async def test_mistral_aclose_closes_the_underlying_http_client() -> None:
     client = MistralLandmarkClient(
         api_key=MISTRAL_API_KEY, model=MISTRAL_VISION_MODEL,
         transport=httpx.MockTransport(lambda r: _mistral_success_response("x", 0.1)),
+        throttle=_no_throttle(),
     )
     await client.aclose()
     assert client._client.is_closed  # Whitebox-Konfigurationsnachweis
@@ -472,6 +513,7 @@ async def test_mistral_timeout_is_applied_to_the_underlying_http_client() -> Non
     client = MistralLandmarkClient(
         api_key=MISTRAL_API_KEY, model=MISTRAL_VISION_MODEL,
         transport=httpx.MockTransport(lambda r: _mistral_success_response("x", 0.1)),
+        throttle=_no_throttle(),
     )
     assert client._client.timeout.read == 60.0  # Whitebox-Konfigurationsnachweis, geteilte
     # LANDMARK_REQUEST_TIMEOUT_SECONDS-Konstante (Akzeptanzkriterium der Spec, keine eigene)
@@ -603,7 +645,10 @@ class TestConfiguredModelReachesTheRequest:
             )
 
         client = AnthropicLandmarkClient(
-            api_key="test", model="ein-anderes-modell", transport=httpx.MockTransport(handler)
+            api_key="test",
+            model="ein-anderes-modell",
+            transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
 
         asyncio.run(client.detect(IMAGE_BYTES, "image/jpeg"))
@@ -625,12 +670,109 @@ class TestConfiguredModelReachesTheRequest:
             )
 
         client = MistralLandmarkClient(
-            api_key="test", model="ein-anderes-modell", transport=httpx.MockTransport(handler)
+            api_key="test",
+            model="ein-anderes-modell",
+            transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
 
         asyncio.run(client.detect(IMAGE_BYTES, "image/jpeg"))
 
         assert captured["model"] == "ein-anderes-modell"
+
+
+# specs/features/0382-cloud-rate-limits-aussitzen.md, K1/K5/K6: beide Landmark-Clients senden
+# seitdem ueber cloud_vision.py::post_vision_request. Je Client ein PAAR - "429 dann 200" und
+# "dauerhaft 429" -, weil erst der Kontrast die Zusage der Story belegt.
+
+
+class TestTheLandmarkClientsSitOutARateLimit:
+    def _responses(self, responses: list[httpx.Response]) -> httpx.MockTransport:
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            index = min(calls["n"], len(responses) - 1)
+            calls["n"] += 1
+            return responses[index]
+
+        return httpx.MockTransport(handler)
+
+    async def test_anthropic_retries_a_429_and_returns_the_following_result(self) -> None:
+        waits: list[float] = []
+        transport = self._responses(
+            [httpx.Response(429), _success_response("Eiffelturm", 0.87)]
+        )
+        client = _client(transport, _recording_throttle(waits))
+
+        detection = await client.detect(IMAGE_BYTES, "image/jpeg")
+
+        assert detection.name == "Eiffelturm"
+        assert detection.confidence == pytest.approx(0.87)
+        assert waits == [2.0]
+
+    async def test_anthropic_gives_up_after_five_attempts_on_a_permanent_429(self) -> None:
+        waits: list[float] = []
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(429)
+
+        client = _client(httpx.MockTransport(handler), _recording_throttle(waits))
+
+        with pytest.raises(LandmarkApiError) as excinfo:
+            await client.detect(IMAGE_BYTES, "image/jpeg")
+
+        assert "429" in str(excinfo.value)
+        assert len(requests) == 5
+        assert waits == [2.0, 4.0, 8.0, 16.0]
+
+    async def test_mistral_retries_a_429_and_returns_the_following_result(self) -> None:
+        waits: list[float] = []
+        transport = self._responses(
+            [httpx.Response(429), _mistral_success_response("Kolosseum", 0.75)]
+        )
+        client = _mistral_client(transport, _recording_throttle(waits))
+
+        detection = await client.detect(IMAGE_BYTES, "image/jpeg")
+
+        assert detection.name == "Kolosseum"
+        assert detection.confidence == pytest.approx(0.75)
+        assert waits == [2.0]
+
+    async def test_mistral_gives_up_after_five_attempts_on_a_permanent_429(self) -> None:
+        waits: list[float] = []
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(429)
+
+        client = _mistral_client(httpx.MockTransport(handler), _recording_throttle(waits))
+
+        with pytest.raises(LandmarkApiError) as excinfo:
+            await client.detect(IMAGE_BYTES, "image/jpeg")
+
+        assert "429" in str(excinfo.value)
+        assert len(requests) == 5
+        assert waits == [2.0, 4.0, 8.0, 16.0]
+
+    async def test_a_401_is_still_never_retried(self) -> None:
+        """K5: der bestehende best-effort-Skip bleibt unveraendert - genau EIN HTTP-Versuch."""
+        waits: list[float] = []
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(401)
+
+        client = _client(httpx.MockTransport(handler), _recording_throttle(waits))
+
+        with pytest.raises(LandmarkApiError):
+            await client.detect(IMAGE_BYTES, "image/jpeg")
+
+        assert len(requests) == 1
+        assert waits == []
 
 
 # ---------------------------------------------------------------------------------------------

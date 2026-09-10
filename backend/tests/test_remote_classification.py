@@ -14,6 +14,7 @@ from photosort.categories import (
 from photosort.cloud_vision import (
     ANTHROPIC_VISION_MODEL,
     MISTRAL_VISION_MODEL,
+    CloudRequestThrottle,
     TokenUsage,
     _sanitize_label_text,
 )
@@ -41,6 +42,25 @@ from photosort.remote_classification import (
 # eines festen Enums. httpx.MockTransport statt unittest.mock.patch (Teststrategie-Abschnitt).
 
 IMAGE_BYTES = b"\xff\xd8\xff\xe0fake-jpeg-bytes"
+
+
+# specs/features/0382-cloud-rate-limits-aussitzen.md: der Schrittmacher ist an beiden
+# Client-Klassen ein Pflicht-Schluesselwortparameter OHNE Default. Die Bestandsfaelle bekommen
+# deshalb einen wirkungslosen (`min_interval_seconds=0.0` heisst "kein Schrittmacher").
+
+
+def _no_throttle() -> CloudRequestThrottle:
+    return CloudRequestThrottle(min_interval_seconds=0.0)
+
+
+def _recording_throttle(waits: list[float]) -> CloudRequestThrottle:
+    """Kein Mindestabstand, aber jede Wiederholungs-Wartezeit als Zahl in `waits` - und ohne eine
+    einzige echte Sekunde Wartezeit."""
+
+    async def sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    return CloudRequestThrottle(min_interval_seconds=0.0, clock=lambda: 0.0, sleep=sleep)
 
 
 def _anthropic_success_response(body: dict[str, object]) -> httpx.Response:
@@ -293,6 +313,7 @@ class TestAnthropicCategoryClient:
             api_key="sk-test",
             model=ANTHROPIC_VISION_MODEL,
             transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
 
         classification = asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
@@ -316,6 +337,7 @@ class TestAnthropicCategoryClient:
             api_key="sk-test",
             model=ANTHROPIC_VISION_MODEL,
             transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
 
         with pytest.raises(RemoteCategoryClassificationApiError):
@@ -341,6 +363,7 @@ class TestMistralCategoryClient:
             api_key="mistral-test",
             model=MISTRAL_VISION_MODEL,
             transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
 
         classification = asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
@@ -360,6 +383,7 @@ class TestMistralCategoryClient:
             api_key="mistral-test",
             model=MISTRAL_VISION_MODEL,
             transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
 
         with pytest.raises(RemoteCategoryClassificationApiError):
@@ -547,6 +571,7 @@ class TestAnthropicCategoryClientFillsUsage:
             api_key=ANTHROPIC_API_KEY,
             model=ANTHROPIC_VISION_MODEL,
             transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
         classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
 
@@ -561,6 +586,7 @@ class TestAnthropicCategoryClientFillsUsage:
             api_key=ANTHROPIC_API_KEY,
             model=ANTHROPIC_VISION_MODEL,
             transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
         classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
 
@@ -583,6 +609,7 @@ class TestMistralCategoryClientFillsUsage:
             api_key=MISTRAL_API_KEY,
             model=MISTRAL_VISION_MODEL,
             transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
         classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
 
@@ -596,6 +623,7 @@ class TestMistralCategoryClientFillsUsage:
             api_key=MISTRAL_API_KEY,
             model=MISTRAL_VISION_MODEL,
             transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
         classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
 
@@ -623,7 +651,10 @@ class TestConfiguredModelReachesTheRequest:
             )
 
         client = AnthropicCategoryClient(
-            api_key="test", model="ein-anderes-modell", transport=httpx.MockTransport(handler)
+            api_key="test",
+            model="ein-anderes-modell",
+            transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
 
         asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
@@ -645,7 +676,10 @@ class TestConfiguredModelReachesTheRequest:
             )
 
         client = MistralCategoryClient(
-            api_key="test", model="ein-anderes-modell", transport=httpx.MockTransport(handler)
+            api_key="test",
+            model="ein-anderes-modell",
+            transport=httpx.MockTransport(handler),
+            throttle=_no_throttle(),
         )
 
         asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
@@ -959,3 +993,119 @@ class TestResponseBudgetAfterTheConfidenceSchema:
     def test_the_ceiling_keeps_clear_reserve_over_the_assumption(self) -> None:
         for provider, assumed in ASSUMED_USAGE_BY_PROVIDER.items():
             assert _MAX_RESPONSE_TOKENS >= 2 * assumed.output_tokens, provider
+
+
+# specs/features/0382-cloud-rate-limits-aussitzen.md, K1/K5/K6: beide Kategorie-Clients senden
+# seitdem ueber cloud_vision.py::post_vision_request - dieselbe Funktion wie die beiden
+# Landmark-Clients. Je Client ein PAAR, "429 dann 200" und "dauerhaft 429".
+
+
+def _sequence_transport(responses: list[httpx.Response]) -> httpx.MockTransport:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        index = min(calls["n"], len(responses) - 1)
+        calls["n"] += 1
+        return responses[index]
+
+    return httpx.MockTransport(handler)
+
+
+class TestTheCategoryClientsSitOutARateLimit:
+    async def test_anthropic_retries_a_429_and_returns_the_following_result(self) -> None:
+        waits: list[float] = []
+        client = AnthropicCategoryClient(
+            api_key=ANTHROPIC_API_KEY,
+            model=ANTHROPIC_VISION_MODEL,
+            transport=_sequence_transport(
+                [httpx.Response(429), _anthropic_success_response(_VALID_BODY)]
+            ),
+            throttle=_recording_throttle(waits),
+        )
+
+        classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
+
+        assert classification.categories == _classification_from_json(_VALID_BODY, 7).categories
+        assert waits == [2.0]
+
+    async def test_anthropic_gives_up_after_five_attempts_on_a_permanent_429(self) -> None:
+        waits: list[float] = []
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(429)
+
+        client = AnthropicCategoryClient(
+            api_key=ANTHROPIC_API_KEY,
+            model=ANTHROPIC_VISION_MODEL,
+            transport=httpx.MockTransport(handler),
+            throttle=_recording_throttle(waits),
+        )
+
+        with pytest.raises(RemoteCategoryClassificationApiError) as excinfo:
+            await client.classify(IMAGE_BYTES, "image/jpeg", 7)
+
+        assert "429" in str(excinfo.value)
+        assert len(requests) == 5
+        assert waits == [2.0, 4.0, 8.0, 16.0]
+
+    async def test_mistral_retries_a_429_and_returns_the_following_result(self) -> None:
+        waits: list[float] = []
+        client = MistralCategoryClient(
+            api_key=MISTRAL_API_KEY,
+            model=MISTRAL_VISION_MODEL,
+            transport=_sequence_transport(
+                [httpx.Response(429), _mistral_success_response(_VALID_BODY)]
+            ),
+            throttle=_recording_throttle(waits),
+        )
+
+        classification = await client.classify(IMAGE_BYTES, "image/jpeg", 7)
+
+        assert classification.categories == _classification_from_json(_VALID_BODY, 7).categories
+        assert waits == [2.0]
+
+    async def test_mistral_gives_up_after_five_attempts_on_a_permanent_429(self) -> None:
+        waits: list[float] = []
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(429)
+
+        client = MistralCategoryClient(
+            api_key=MISTRAL_API_KEY,
+            model=MISTRAL_VISION_MODEL,
+            transport=httpx.MockTransport(handler),
+            throttle=_recording_throttle(waits),
+        )
+
+        with pytest.raises(RemoteCategoryClassificationApiError) as excinfo:
+            await client.classify(IMAGE_BYTES, "image/jpeg", 7)
+
+        assert "429" in str(excinfo.value)
+        assert len(requests) == 5
+        assert waits == [2.0, 4.0, 8.0, 16.0]
+
+    async def test_a_500_is_still_never_retried(self) -> None:
+        """K5: `5xx` bleibt der unveraenderte best-effort-Skip - genau EIN HTTP-Versuch."""
+        waits: list[float] = []
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(500)
+
+        client = MistralCategoryClient(
+            api_key=MISTRAL_API_KEY,
+            model=MISTRAL_VISION_MODEL,
+            transport=httpx.MockTransport(handler),
+            throttle=_recording_throttle(waits),
+        )
+
+        with pytest.raises(RemoteCategoryClassificationApiError):
+            await client.classify(IMAGE_BYTES, "image/jpeg", 7)
+
+        assert len(requests) == 1
+        assert waits == []

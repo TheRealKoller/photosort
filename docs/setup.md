@@ -347,6 +347,40 @@ Um beide Funktionen tatsächlich zu nutzen, in `.env`:
 - Optional `REMOTE_CATEGORY_CLASSIFICATION_CONCURRENCY` (Default `2`) anpassen — eigenständige
   Obergrenze für die Remote-Kategorie-Klassifizierung (unabhängig von `LANDMARK_API_CONCURRENCY`,
   da dieser Job auf einem größeren, ungefilterten Kandidatenpool läuft).
+- Optional `CLOUD_VISION_REQUESTS_PER_MINUTE` anpassen (Spec
+  [`0382`](../specs/features/0382-cloud-rate-limits-aussitzen.md), ADR
+  [`0074`](../specs/decisions/0074-cloud-vision-schrittmacher-je-anbieter-und-wiederholung-nur-bei-429.md))
+  — die **Anfragerate** an den Anbieter, für beide Cloud-Teilschritte gemeinsam. PhotoSort hält
+  zwischen zwei Anfragen an denselben Anbieter mindestens `60 ÷ Wert` Sekunden Abstand, damit
+  dessen Grenze gar nicht erst erreicht wird; wird sie trotzdem erreicht (HTTP `429`), wartet
+  PhotoSort und stellt dieselbe Anfrage erneut, statt das Foto zu überspringen. Ein Lauf dauert
+  dadurch länger und lässt dafür keine Fotos wegen der Drosselung ohne Ergebnis zurück. **`0`
+  (Default) = Voreinstellung des eingestellten Anbieters**; die Variable darf nicht *leer* gesetzt
+  werden (Zahlenfeld, ein leerer Wert ist ein Startfehler).
+
+  | `LANDMARK_PROVIDER` | Voreinstellung (`0`) | entspricht |
+  |---|---|---|
+  | `anthropic` | 60 Anfragen/Minute | 1 Anfrage pro Sekunde |
+  | `mistral` | 40 Anfragen/Minute | 1 Anfrage alle 1,5 Sekunden |
+
+  **Die eigene tatsächliche Grenze steht nur im Konto beim Anbieter** (Anthropic: Console →
+  Limits; Mistral: Admin-Panel → API → Limits). Mistral veröffentlicht seit dem Recherchestand
+  2026-09-10 keine Zahlen je Tarif mehr; die Voreinstellung oben ist deshalb eine bewusst
+  vorsichtige Setzung, keine belegte Grenze. **Höher** setzen, wenn die eigene Kontostufe mehr
+  erlaubt — der Lauf wird dann schneller. **Niedriger**, wenn im Lauf-Protokoll trotz der
+  Verteilung noch Wiederholungen wegen `429` auftauchen.
+
+  Diese Grenze und die beiden `*_CONCURRENCY`-Werte darüber gelten **nebeneinander**: Letztere
+  begrenzen die Zahl *gleichzeitig offener* Anfragen, `CLOUD_VISION_REQUESTS_PER_MINUTE` die
+  *Rate*. Ein sehr kleiner Ratenwert zusammen mit einer erhöhten Nebenläufigkeit kann die
+  Einreihung eines Anfrage-Blocks über die 15-Minuten-Schwelle des Fortschritts-Watchdogs heben —
+  der Lauf gilt dann als hängend, obwohl er nur wartet. Für die Voreinstellungen ist das
+  ausgeschlossen.
+
+  **Woran man sieht, dass die Verteilung greift:** Das Lauf-Protokoll (`docker compose logs`)
+  enthält je Cloud-Teilschritt höchstens eine Zusammenfassungszeile mit der summierten Wartezeit
+  und je Wiederholung eine eigene Zeile — beides nur, wenn tatsächlich gewartet wurde. Eine
+  ungewöhnlich lange Laufzeit ist damit dort erklärbar.
 
 Danach die Einwilligung für das jeweilige Projekt einmalig über die Settings-Seite
 (`/projects/:id/settings`) aktivieren.

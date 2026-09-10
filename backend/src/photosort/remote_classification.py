@@ -20,17 +20,19 @@ from photosort.categories import (
 )
 from photosort.cloud_vision import (
     ANTHROPIC_API_VERSION,
-    ANTHROPIC_MESSAGES_URL,
-    MISTRAL_CHAT_COMPLETIONS_URL,
+    ANTHROPIC_ENDPOINT,
+    MISTRAL_ENDPOINT,
     VISION_REQUEST_TIMEOUT_SECONDS,
+    CloudRequestThrottle,
     TokenUsage,
     _sanitize_label_text,
     anthropic_response_to_json,
     anthropic_usage_from_response,
     mistral_response_to_json,
     mistral_usage_from_response,
-    raise_for_vision_api_status,
+    post_vision_request,
 )
+from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 from photosort.label_embedding import LabelEmbedderLike
 
@@ -357,10 +359,15 @@ class AnthropicCategoryClient:
         model: str,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = VISION_REQUEST_TIMEOUT_SECONDS,
+        *,
+        throttle: CloudRequestThrottle,
     ) -> None:
         # PFLICHTPARAMETER ohne Default (ADR 0059 Punkt 7), Begruendung wortgleich zu
-        # landmark.py::AnthropicLandmarkClient.
+        # landmark.py::AnthropicLandmarkClient. Seit Spec 0382 gilt dasselbe fuer den
+        # Schrittmacher (K6): ein Aufrufer, der ihn vergisst, fiele nicht beim Typecheck auf,
+        # sondern erst an der Anfragerate des Anbieters.
         self._model = model
+        self._throttle = throttle
         self._client = httpx.AsyncClient(
             headers={
                 "x-api-key": api_key,
@@ -397,15 +404,16 @@ class AnthropicCategoryClient:
                 }
             ],
         }
-        try:
-            response = await self._client.post(ANTHROPIC_MESSAGES_URL, json=body)
-        except httpx.HTTPError as exc:
-            raise RemoteCategoryClassificationApiError(
-                f"Anthropic Vision API nicht erreichbar: {exc}"
-            ) from exc
-
-        raise_for_vision_api_status(
-            response, "Anthropic", RemoteCategoryClassificationApiError
+        # specs/features/0382-cloud-rate-limits-aussitzen.md, K6: EIN Aufruf statt des bisher
+        # viermal abgeschriebenen post/except/raise_for_status-Blocks - dieselbe Funktion, die
+        # auch die beiden Landmark-Clients benutzen. Meldungstexte und Statuslabel unveraendert
+        # (sie stecken jetzt in ANTHROPIC_ENDPOINT).
+        response = await post_vision_request(
+            self._client,
+            ANTHROPIC_ENDPOINT,
+            body,
+            error_class=RemoteCategoryClassificationApiError,
+            throttle=self._throttle,
         )
         payload = response.json()
         parsed = anthropic_response_to_json(payload, RemoteCategoryClassificationApiError)
@@ -424,8 +432,11 @@ class MistralCategoryClient:
         model: str,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = VISION_REQUEST_TIMEOUT_SECONDS,
+        *,
+        throttle: CloudRequestThrottle,
     ) -> None:
         self._model = model
+        self._throttle = throttle
         self._client = httpx.AsyncClient(
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -461,14 +472,14 @@ class MistralCategoryClient:
                 }
             ],
         }
-        try:
-            response = await self._client.post(MISTRAL_CHAT_COMPLETIONS_URL, json=body)
-        except httpx.HTTPError as exc:
-            raise RemoteCategoryClassificationApiError(
-                f"Mistral Chat Completions API nicht erreichbar: {exc}"
-            ) from exc
-
-        raise_for_vision_api_status(response, "Mistral", RemoteCategoryClassificationApiError)
+        # Spec 0382, K6 - Begruendung wortgleich zu AnthropicCategoryClient.classify oben.
+        response = await post_vision_request(
+            self._client,
+            MISTRAL_ENDPOINT,
+            body,
+            error_class=RemoteCategoryClassificationApiError,
+            throttle=self._throttle,
+        )
         payload = response.json()
         parsed = mistral_response_to_json(payload, RemoteCategoryClassificationApiError)
         return _classification_from_json(
@@ -486,13 +497,16 @@ def build_category_classification_client(model: str) -> CategoryDetectionClientL
     landmark.py::build_landmark_client) - und es ist DASSELBE Modell wie dort, weil
     `LANDMARK_MODEL` wie `LANDMARK_PROVIDER` fuer beide Cloud-Anteile gilt (Akzeptanzkriterium:
     "nicht zwei unterschiedliche Modelle nebeneinander")."""
+    # Spec 0382, K4: DERSELBE prozessweite Schrittmacher, den auch build_landmark_client() zieht -
+    # beide Cloud-Teilschritte teilen sich einen je Anbieter.
+    throttle = throttle_for_provider(settings.landmark_provider)
     if settings.landmark_provider == "mistral":
         mistral_client: CategoryDetectionClientLike = MistralCategoryClient(
-            api_key=settings.mistral_api_key, model=model
+            api_key=settings.mistral_api_key, model=model, throttle=throttle
         )
         return mistral_client
     anthropic_client: CategoryDetectionClientLike = AnthropicCategoryClient(
-        api_key=settings.anthropic_api_key, model=model
+        api_key=settings.anthropic_api_key, model=model, throttle=throttle
     )
     return anthropic_client
 

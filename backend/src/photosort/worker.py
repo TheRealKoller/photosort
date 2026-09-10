@@ -37,7 +37,8 @@ from photosort.classification import (
     detect_objects,
     detect_person,
 )
-from photosort.cloud_vision import TokenUsage
+from photosort.cloud_vision import ThrottleStats, TokenUsage
+from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 from photosort.criteria import (
     CRITERIA_REGISTRY,
@@ -975,6 +976,57 @@ def _log_cloud_vision_failure(
     )
 
 
+def _counted(count: int, singular: str, plural: str) -> str:
+    """Zahlwort mit passendem Numerus - "1 Wiederholung", aber "0"/"2 Wiederholungen"
+    (Copilot-Review-Fund auf PR #385).
+
+    Erster Helfer dieser Art im Projekt: bis Spec 0382 trug keine Logzeile ein gezaehltes
+    Substantiv. Bewusst hier und nicht in einem eigenen Modul - die eine Zeile unten ist die
+    einzige Verwendung, und ein i18n-Baustein waere fuer ein einsprachiges Server-Log
+    ueberdimensioniert."""
+    return f"{count} {singular if count == 1 else plural}"
+
+
+def _log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats) -> None:
+    """Strukturiertes WARNING-Logging der VERTEILUNG eines Cloud-Teilschritts
+    (specs/features/0382-cloud-rate-limits-aussitzen.md, ADR 0074 Entscheidung 8) - der
+    Gegenpart zu _log_cloud_vision_failure daneben, an demselben Ort, an dem sich beide
+    Cloud-Teilschritte ihre Logzeilen schon heute teilen.
+
+    Hoechstens EINE Zeile je Teilschritt, und nur wenn tatsaechlich gewartet wurde: der Helfer
+    kehrt wirkungslos zurueck, wenn weder eine Anfrage eingereiht noch eine Wiederholung noetig
+    war. Dadurch bleiben alle bestehenden Worker-Tests (die mit Test-Doubles arbeiten und den
+    Schrittmacher nie beruehren) unveraendert still - und das Logvolumen bleibt an den Ausnahmefall
+    gebunden statt an jeden Lauf.
+
+    Level WARNING statt INFO (ADR 0034 Punkt 2/3, ADR 0074 Entscheidung 8): das Root-Level des
+    Projekts ist WARNING, eine INFO-Zeile erschiene in `docker compose logs` gar nicht erst - und
+    die Zusage der Story ("eine ungewoehnlich lange Laufzeit ist im Lauf-Protokoll erklaerbar")
+    waere nicht eingeloest.
+
+    `stats` sind ausschliesslich ZAHLEN (Sicherheits-Muss-Kriterium der Spec 0382, Punkt 4): nie
+    eine Antwort, nie ein Headerwert, nie `response.text`/`.headers`/`.json()`.
+
+    Die Zeile benennt den Schrittmacher ausdruecklich als ANBIETERWEIT (Restrisiko (b) der Spec
+    0382): `ThrottleStats.since()` liest prozessweite Zaehler, bei zwei gleichzeitigen Jobs
+    enthaelt die Zusammenfassung des einen Laufs die Wartezeiten des anderen. Eine Zahl, die etwas
+    anderes misst als ihr Label verspricht, schwaecht genau die Lauf-/Kostentransparenz, der das
+    Sicherheitskonzept die Rolle eines Erkennungsmechanismus zuschreibt."""
+    if stats.delayed_requests == 0 and stats.retries == 0:
+        return
+    logger.warning(
+        "Cloud-Vision-Anfragen gedrosselt (%s): %s eingereiht, %.1f s verteilt, "
+        "%s nach 429 mit %.1f s Wartezeit - der Schrittmacher gilt anbieterweit "
+        "(%s) und nicht nur fuer diesen Lauf.",
+        phase,
+        _counted(stats.delayed_requests, "Anfrage", "Anfragen"),
+        stats.total_delay_seconds,
+        _counted(stats.retries, "Wiederholung", "Wiederholungen"),
+        stats.total_retry_wait_seconds,
+        provider,
+    )
+
+
 # specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
 # fehler-persistierung.md Punkt 2: defensive Obergrenze fuer eine entartete Fehlermeldung, analog
 # remote_classification.py::MAX_REMOTE_LABEL_LENGTH - die eigentliche Absicherung bleibt die in
@@ -1656,6 +1708,13 @@ async def run_criterion_scoring(
                 # bleibt im `finally` und am Phasenende eingefroren (ADR 0051 Punkt 4).
                 run.landmark_model = landmark_model
                 await session.commit()
+                # specs/features/0382-cloud-rate-limits-aussitzen.md, K8: Zaehlerstand des
+                # ANBIETERWEITEN Schrittmachers beim Betreten des Teilschritts. Die
+                # Zusammenfassung unten entsteht ausschliesslich aus der DIFFERENZ zu diesem
+                # Schnappschuss - die Zaehler selbst sind prozessweit und enthalten auch die
+                # Wartezeiten des jeweils anderen Cloud-Teilschritts und paralleler Laeufe.
+                landmark_throttle = throttle_for_provider(settings.landmark_provider)
+                landmark_throttle_before = landmark_throttle.stats()
                 landmark_failures = 0
                 landmark_attempts = 0
                 # ADR 0068 Punkt 2: der laufend fortgeschriebene Fortschritt der Phase, streng
@@ -1816,6 +1875,13 @@ async def run_criterion_scoring(
                     # ist derselbe lokale `landmark_model`, aus dem hier der Betrag entsteht, nur
                     # frueher sichtbar. Deshalb keine zweite Zuweisung an dieser Stelle.
                     await _commit_phase_costs(session)
+                # Spec 0382, K8: hoechstens eine Zeile, und nur wenn in DIESEM Teilschritt
+                # tatsaechlich gewartet wurde.
+                _log_cloud_vision_throttling(
+                    "landmark",
+                    settings.landmark_provider,
+                    landmark_throttle.stats().since(landmark_throttle_before),
+                )
                 # ADR 0050 Punkt 4: Zaehl-Zusammenfassung statt N Einzelmeldungen - die
                 # Einzelfehler bleiben pro Foto ueber photo_cloud_vision_errors abrufbar
                 # (ADR 0035), das hier ist die Laufebene.
@@ -2243,6 +2309,13 @@ async def run_remote_category_classification(
         run.failed_calls = failed_calls
         await session.commit()
 
+        # specs/features/0382-cloud-rate-limits-aussitzen.md, K8: Zaehlerstand des ANBIETERWEITEN
+        # Schrittmachers beim Betreten des Teilschritts - Begruendung wortgleich zur
+        # Landmark-Phase in run_criterion_scoring. Die Zusammenfassung unten entsteht
+        # ausschliesslich aus der DIFFERENZ zu diesem Schnappschuss.
+        throttle = throttle_for_provider(settings.landmark_provider)
+        throttle_before = throttle.stats()
+
         try:
             snapshot_rows = (await session.execute(select(FineLabel))).scalars().all()
             snapshot = [
@@ -2415,6 +2488,14 @@ async def run_remote_category_classification(
             # (derselbe lokale `model`, aus dem hier der Betrag entsteht) - keine zweite
             # Zuweisung.
             await _commit_phase_costs(session)
+
+        # Spec 0382, K8: hoechstens eine Zeile, und nur wenn in DIESEM Teilschritt tatsaechlich
+        # gewartet wurde.
+        _log_cloud_vision_throttling(
+            "remote_category",
+            settings.landmark_provider,
+            throttle.stats().since(throttle_before),
+        )
 
         run.status = ScanStatus.SUCCESS
         run.finished_at = _now_utc()

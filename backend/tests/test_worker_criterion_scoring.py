@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import NoReturn
 
+import httpx
 import numpy as np
 import pytest
 from PIL import Image
@@ -19,10 +21,17 @@ from photosort import pricing, worker
 from photosort.categories import CATEGORY_NOT_RECOGNIZED, is_known_category
 from photosort.cloud_vision import (
     VISION_MODELS_BY_PROVIDER,
+    CloudRequestThrottle,
+    ThrottleStats,
     TokenUsage,
     default_vision_model_for_provider,
 )
-from photosort.landmark import MAX_LANDMARK_NAME_LENGTH, LandmarkApiError, LandmarkDetection
+from photosort.landmark import (
+    MAX_LANDMARK_NAME_LENGTH,
+    AnthropicLandmarkClient,
+    LandmarkApiError,
+    LandmarkDetection,
+)
 from photosort.models import (
     ClassificationPhase,
     CloudVisionPhase,
@@ -4732,6 +4741,372 @@ class TestSecondaryCategoryRows:
         assert by_photo_id[sure.id].rank_position == 1
         assert by_photo_id[unsure.id].rank_position == 2
         assert by_photo_id[sure.id].rank_score == by_photo_id[unsure.id].rank_score
+
+
+# specs/features/0382-cloud-rate-limits-aussitzen.md, K8/K9 ab hier: die eigentliche Zusage der
+# Story auf LAUF-Ebene. Ein Client-Test zeigt nicht, dass der Lauf das Foto verbucht - deshalb
+# wird ueber die vorhandene Factory-Injektion ausnahmsweise ein ECHTER Client mit
+# httpx.MockTransport hereingereicht: ein Fake-Double abstrahierte genau die Schicht weg, um die
+# es geht.
+
+
+def _throttle_recording_waits(waits: list[float]) -> CloudRequestThrottle:
+    async def sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    return CloudRequestThrottle(min_interval_seconds=0.0, clock=lambda: 0.0, sleep=sleep)
+
+
+def _landmark_success_transport(responses: list[httpx.Response]) -> httpx.MockTransport:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        index = min(calls["n"], len(responses) - 1)
+        calls["n"] += 1
+        return responses[index]
+
+    return httpx.MockTransport(handler)
+
+
+def _landmark_ok(name: str, confidence: float) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "content": [
+                {"type": "text", "text": json.dumps({"name": name, "confidence": confidence})}
+            ]
+        },
+    )
+
+
+class TestTheLandmarkPhaseSitsOutARateLimit:
+    """K9: ein Lauf, dessen Fotos heute wegen der Drosselung ohne Ergebnis blieben, liefert danach
+    fuer dieselben Fotos ein Ergebnis - und bei einem dauerhaft drosselnden Anbieter bleibt es
+    beim heutigen Verhalten. Erst der Kontrast belegt die Zusage."""
+
+    async def _run(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        transport: httpx.MockTransport,
+        throttle: CloudRequestThrottle,
+    ) -> tuple[CriterionScoringRun, Photo]:
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        await db_session.commit()
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photo = await _add_photo(
+            db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+        client = AnthropicLandmarkClient(
+            api_key="sk-test-not-a-real-secret",
+            model=default_vision_model_for_provider("anthropic"),
+            transport=transport,
+            throttle=throttle,
+        )
+        run = await run_criterion_scoring(
+            db_session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
+            build_detector=_no_face_detector,
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_landscape_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+            build_landmark_client=lambda _model: client,
+            use_cloud=True,
+        )
+        return run, photo
+
+    async def test_a_429_followed_by_a_200_still_produces_the_result_row(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        waits: list[float] = []
+        run, photo = await self._run(
+            db_session,
+            tmp_path,
+            _landmark_success_transport([httpx.Response(429), _landmark_ok("Eiffelturm", 0.87)]),
+            _throttle_recording_waits(waits),
+        )
+
+        assert run.status == ScanStatus.SUCCESS
+        assert run.landmark_failed_calls == 0
+        detection_row = (
+            await db_session.execute(
+                select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+            )
+        ).scalar_one()
+        assert detection_row.name == "Eiffelturm"
+        errors = (
+            await db_session.execute(
+                select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+            )
+        ).scalars().all()
+        assert errors == []
+        assert waits == [2.0]
+
+    async def test_a_permanent_429_keeps_todays_behaviour(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        waits: list[float] = []
+        run, photo = await self._run(
+            db_session,
+            tmp_path,
+            _landmark_success_transport([httpx.Response(429)]),
+            _throttle_recording_waits(waits),
+        )
+
+        assert run.status == ScanStatus.SUCCESS
+        assert run.landmark_failed_calls == 1
+        rows = (
+            await db_session.execute(
+                select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+            )
+        ).scalars().all()
+        assert rows == []
+        error_row = (
+            await db_session.execute(
+                select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+            )
+        ).scalar_one()
+        assert "429" in error_row.error_message
+        assert waits == [2.0, 4.0, 8.0, 16.0]
+
+
+class TestTheLandmarkPhaseSummarisesItsThrottling:
+    """K8: je Cloud-Teilschritt HOECHSTENS EINE WARNING-Zusammenfassung, und nur, wenn in DIESEM
+    Teilschritt tatsaechlich gewartet wurde."""
+
+    async def _run(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        throttle: CloudRequestThrottle,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> CriterionScoringRun:
+        # Etablierte Konvention (vgl. test_worker_reap_stalled_runs.py): Worker und injizierter
+        # Client muessen DENSELBEN Schrittmacher sehen, sonst misst die Zusammenfassung nichts.
+        monkeypatch.setattr(worker, "throttle_for_provider", lambda _provider: throttle)
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        await db_session.commit()
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photo = await _add_photo(
+            db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+        client = AnthropicLandmarkClient(
+            api_key="sk-test-not-a-real-secret",
+            model=default_vision_model_for_provider("anthropic"),
+            transport=_landmark_success_transport(
+                [httpx.Response(429), _landmark_ok("Eiffelturm", 0.87)]
+            ),
+            throttle=throttle,
+        )
+        return await run_criterion_scoring(
+            db_session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
+            build_detector=_no_face_detector,
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_landscape_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+            build_landmark_client=lambda _model: client,
+            use_cloud=True,
+        )
+
+    async def test_without_any_waiting_no_line_is_written(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Zugleich der Grund, warum alle BESTEHENDEN Worker-Tests still bleiben: sie arbeiten mit
+        Test-Doubles und beruehren den Schrittmacher nie."""
+        throttle = _throttle_recording_waits([])
+        monkeypatch.setattr(worker, "throttle_for_provider", lambda _provider: throttle)
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        await db_session.commit()
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photo = await _add_photo(
+            db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+        client = RecordingLandmarkClient(
+            detection=LandmarkDetection(name="Eiffelturm", confidence=0.87)
+        )
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            run = await run_criterion_scoring(
+                db_session,
+                project,
+                scoring_run.id,
+                cache_dir=tmp_path,
+                build_detector=_no_face_detector,
+                build_animal_detector=_no_animal_detector,
+                build_classifier=_landscape_scene_classifier,
+                build_aesthetics=_no_aesthetics_model,
+                build_landmarker=_no_face_landmarker,
+                build_landmark_client=lambda _model: client,
+                use_cloud=True,
+            )
+
+        assert run.status == ScanStatus.SUCCESS
+        assert [record for record in caplog.records if record.name == "photosort.worker"] == []
+
+    async def test_after_waiting_exactly_one_summary_line_is_written(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        throttle = _throttle_recording_waits([])
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            run = await self._run(db_session, tmp_path, throttle, monkeypatch)
+
+        assert run.status == ScanStatus.SUCCESS
+        # Gefiltert auf den Worker-Logger: der Client-Logger (photosort.cloud_vision) schreibt im
+        # selben Lauf seine eigene Zeile JE WIEDERHOLUNG - das ist K8s andere Haelfte und hier
+        # nicht der Gegenstand.
+        records = [record for record in caplog.records if record.name == "photosort.worker"]
+        assert len(records) == 1
+        assert records[0].levelno == logging.WARNING
+        message = records[0].getMessage()
+        assert "landmark" in message
+        assert "anthropic" in message
+        # Genau EINE Wiederholung - Singular. Bewusst mit dem Folgewort assertiert:
+        # `"1 Wiederholung" in "1 Wiederholungen"` waere sonst auch beim Plural wahr.
+        assert "1 Wiederholung nach 429" in message
+        assert "2.0" in message  # summierte Wiederholungs-Wartezeit
+
+    async def test_the_summary_reports_only_the_difference_of_this_phase(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Die Zaehler sind PROZESSWEIT. Ohne diesen Fall schriebe der zweite Cloud-Teilschritt
+        sich die Wartezeit des ersten zu und waere bei einem einzelnen Teilschritt trotzdem
+        gruen."""
+        throttle = _throttle_recording_waits([])
+        # Zaehlerstand VOR dem Teilschritt kuenstlich ungleich null.
+        throttle.record_retry_wait(41.0)
+        throttle.record_retry_wait(1.0)
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            await self._run(db_session, tmp_path, throttle, monkeypatch)
+
+        records = [record for record in caplog.records if record.name == "photosort.worker"]
+        assert len(records) == 1
+        message = records[0].getMessage()
+        # Die Zeile meldet die EINE Wiederholung dieses Teilschritts, nicht alle drei des
+        # Prozesses - und nicht die 42.0 s, die vor dem Teilschritt bereits auf dem prozessweiten
+        # Zaehler standen.
+        assert "42.0" not in message
+        # Genau EINE Wiederholung - Singular. Bewusst mit dem Folgewort assertiert:
+        # `"1 Wiederholung" in "1 Wiederholungen"` waere sonst auch beim Plural wahr.
+        assert "1 Wiederholung nach 429" in message
+        assert "2.0 s Wartezeit" in message
+
+
+class TestLogCloudVisionThrottling:
+    """Reine Unit-Faelle des Helfers mit handgebauten ThrottleStats."""
+
+    def test_it_stays_silent_without_any_waiting(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        stats = ThrottleStats(
+            delayed_requests=0, total_delay_seconds=0.0, retries=0, total_retry_wait_seconds=0.0
+        )
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            worker._log_cloud_vision_throttling("landmark", "anthropic", stats)
+
+        assert caplog.records == []
+
+    def test_a_queued_request_alone_already_yields_a_line(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        stats = ThrottleStats(
+            delayed_requests=3, total_delay_seconds=4.5, retries=0, total_retry_wait_seconds=0.0
+        )
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            worker._log_cloud_vision_throttling("remote_category", "mistral", stats)
+
+        assert len(caplog.records) == 1
+        message = caplog.records[0].getMessage()
+        assert "remote_category" in message
+        assert "mistral" in message
+        assert "3 Anfragen eingereiht" in message
+        assert "4.5" in message
+        # Null Wiederholungen ist im Deutschen ebenfalls Plural.
+        assert "0 Wiederholungen nach 429" in message
+
+    def test_both_counts_are_singular_for_exactly_one(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Copilot-Review-Fund (PR #385), auf BEIDE Zahlwoerter erweitert: "1 Anfragen"/"1
+        Wiederholungen" laesen sich falsch. Diese Zeile ist der einzige Traeger der Zusage "eine
+        ungewoehnlich lange Laufzeit ist im Lauf-Protokoll erklaerbar" - und genau EINE
+        Wiederholung ist der haeufigste Fall, den man dort antrifft."""
+        stats = ThrottleStats(
+            delayed_requests=1, total_delay_seconds=1.5, retries=1, total_retry_wait_seconds=2.0
+        )
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            worker._log_cloud_vision_throttling("landmark", "anthropic", stats)
+
+        message = caplog.records[0].getMessage()
+        assert "1 Anfrage eingereiht" in message
+        assert "1 Wiederholung nach 429" in message
+        assert "Anfragen eingereiht" not in message
+        assert "Wiederholungen" not in message
+
+    def test_both_counts_are_plural_for_more_than_one(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        stats = ThrottleStats(
+            delayed_requests=2, total_delay_seconds=3.0, retries=4, total_retry_wait_seconds=30.0
+        )
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            worker._log_cloud_vision_throttling("landmark", "anthropic", stats)
+
+        message = caplog.records[0].getMessage()
+        assert "2 Anfragen eingereiht" in message
+        assert "4 Wiederholungen nach 429" in message
+
+    def test_the_line_names_the_throttle_as_provider_wide(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Restrisiko (b) der Spec: `ThrottleStats.since()` liest prozessweite Zaehler - bei zwei
+        gleichzeitigen Jobs enthaelt die Zusammenfassung des einen Laufs die Wartezeiten des
+        anderen. Eine Zahl, die etwas anderes misst als ihr Label verspricht, schwaecht die
+        Lauf-/Kostentransparenz, der das Sicherheitskonzept die Rolle eines
+        Erkennungsmechanismus zuschreibt."""
+        stats = ThrottleStats(
+            delayed_requests=1, total_delay_seconds=1.0, retries=1, total_retry_wait_seconds=2.0
+        )
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            worker._log_cloud_vision_throttling("landmark", "anthropic", stats)
+
+        assert "anbieterweit" in caplog.records[0].getMessage()
 
 
 # ---------------------------------------------------------------------------------------------

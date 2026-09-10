@@ -8,17 +8,19 @@ import httpx
 
 from photosort.cloud_vision import (
     ANTHROPIC_API_VERSION,
-    ANTHROPIC_MESSAGES_URL,
-    MISTRAL_CHAT_COMPLETIONS_URL,
+    ANTHROPIC_ENDPOINT,
+    MISTRAL_ENDPOINT,
     VISION_REQUEST_TIMEOUT_SECONDS,
+    CloudRequestThrottle,
     TokenUsage,
     _sanitize_label_text,
     anthropic_response_to_json,
     anthropic_usage_from_response,
     mistral_response_to_json,
     mistral_usage_from_response,
-    raise_for_vision_api_status,
+    post_vision_request,
 )
+from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 
 # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-
@@ -166,12 +168,19 @@ class AnthropicLandmarkClient:
         model: str,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = LANDMARK_REQUEST_TIMEOUT_SECONDS,
+        *,
+        throttle: CloudRequestThrottle,
     ) -> None:
         # PFLICHTPARAMETER ohne Default (Spec 0304/ADR 0059 Punkt 7, Fund `test-engineer`):
         # ein Default auf die Modulkonstante stellte genau die Kopplung wieder her, die diese
         # Spec aufloest - ein Aufrufer, der das Modell vergisst, fiele nicht beim Typecheck auf,
         # sondern erst in der Cloud-Rechnung.
         self._model = model
+        # specs/features/0382-cloud-rate-limits-aussitzen.md, K6: der Schrittmacher ebenfalls als
+        # PFLICHT-SCHLUESSELWORTPARAMETER ohne Default, dieselbe Begruendung wie beim Modell - ein
+        # Aufrufer, der ihn vergisst, fiele nicht beim Typecheck auf, sondern erst an der
+        # Anfragerate des Anbieters.
+        self._throttle = throttle
         self._client = httpx.AsyncClient(
             headers={
                 "x-api-key": api_key,
@@ -206,15 +215,18 @@ class AnthropicLandmarkClient:
                 }
             ],
         }
-        try:
-            response = await self._client.post(ANTHROPIC_MESSAGES_URL, json=body)
-        except httpx.HTTPError as exc:
-            # Kein embed von exc-Details ueber den httpx-eigenen Fehlertext hinaus - httpx-
-            # Exceptions enthalten weder den API-Key (der lebt nur in den Request-Headern, nicht
-            # in der Exception) noch die Base64-Bilddaten.
-            raise LandmarkApiError(f"Anthropic Vision API nicht erreichbar: {exc}") from exc
-
-        raise_for_vision_api_status(response, "Anthropic", LandmarkApiError)
+        # specs/features/0382-cloud-rate-limits-aussitzen.md, K6: EIN Aufruf statt des bisher
+        # viermal abgeschriebenen post/except/raise_for_status-Blocks. Verteilung ueber den
+        # Schrittmacher und Wiederholung bei 429 liegen damit strukturell an genau einer Stelle,
+        # nicht in vier gepflegten Kopien. Meldungstexte und Statuslabel sind unveraendert (sie
+        # stecken jetzt in ANTHROPIC_ENDPOINT), der Fehlerpfad des Workers bleibt derselbe.
+        response = await post_vision_request(
+            self._client,
+            ANTHROPIC_ENDPOINT,
+            body,
+            error_class=LandmarkApiError,
+            throttle=self._throttle,
+        )
         payload = response.json()
         parsed = anthropic_response_to_json(payload, LandmarkApiError)
         return _landmark_detection_from_json(
@@ -235,8 +247,13 @@ class MistralLandmarkClient:
         model: str,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = LANDMARK_REQUEST_TIMEOUT_SECONDS,
+        *,
+        throttle: CloudRequestThrottle,
     ) -> None:
         self._model = model
+        # Pflicht-Schluesselwortparameter ohne Default, Begruendung wortgleich zu
+        # AnthropicLandmarkClient oben.
+        self._throttle = throttle
         self._client = httpx.AsyncClient(
             headers={
                 # Abweichend von Anthropics x-api-key+anthropic-version-Kombination (ADR 0031
@@ -278,14 +295,14 @@ class MistralLandmarkClient:
                 }
             ],
         }
-        try:
-            response = await self._client.post(MISTRAL_CHAT_COMPLETIONS_URL, json=body)
-        except httpx.HTTPError as exc:
-            # Kein embed von exc-Details ueber den httpx-eigenen Fehlertext hinaus - httpx-
-            # Exceptions enthalten weder den API-Key noch die Base64-Bilddaten.
-            raise LandmarkApiError(f"Mistral Chat Completions API nicht erreichbar: {exc}") from exc
-
-        raise_for_vision_api_status(response, "Mistral", LandmarkApiError)
+        # Spec 0382, K6 - Begruendung wortgleich zu AnthropicLandmarkClient.detect oben.
+        response = await post_vision_request(
+            self._client,
+            MISTRAL_ENDPOINT,
+            body,
+            error_class=LandmarkApiError,
+            throttle=self._throttle,
+        )
         payload = response.json()
         parsed = mistral_response_to_json(payload, LandmarkApiError)
         return _landmark_detection_from_json(
@@ -305,12 +322,18 @@ def build_landmark_client(model: str) -> LandmarkClientLike:
     je Cloud-Phase auf und benutzt denselben Wert fuer Client-Bau, Kostenrechnung und Modellspalte
     des Laufs - "angezeigt = abgerechnet = tatsaechlich aufgerufen" wird dadurch strukturell wahr
     statt durch drei zufaellig uebereinstimmende Lesevorgaenge derselben globalen `settings`."""
+    # specs/features/0382-cloud-rate-limits-aussitzen.md, K4: der PROZESSWEITE Schrittmacher des
+    # eingestellten Anbieters - dieselbe Instanz, die auch
+    # build_category_classification_client() zieht. Beide Cloud-Teilschritte und mehrere
+    # gleichzeitig laufende Jobs teilen sich dadurch einen Schrittmacher je Anbieter; der
+    # Anbieter sieht ohnehin nur eine einzige Quelle.
+    throttle = throttle_for_provider(settings.landmark_provider)
     if settings.landmark_provider == "mistral":
         mistral_client: LandmarkClientLike = MistralLandmarkClient(
-            api_key=settings.mistral_api_key, model=model
+            api_key=settings.mistral_api_key, model=model, throttle=throttle
         )
         return mistral_client
     anthropic_client: LandmarkClientLike = AnthropicLandmarkClient(
-        api_key=settings.anthropic_api_key, model=model
+        api_key=settings.anthropic_api_key, model=model, throttle=throttle
     )
     return anthropic_client
