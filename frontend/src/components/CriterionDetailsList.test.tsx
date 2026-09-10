@@ -14,7 +14,11 @@ import {
   CONFIDENCE_EXPLANATION,
   CONFIDENCE_EXPLANATION_LABEL,
 } from '../utils/confidenceLabels'
-import { CriterionDetailsList } from './CriterionDetailsList'
+import {
+  CriterionDetailsList,
+  hasCategoryControls,
+  type CriterionDetailsPart,
+} from './CriterionDetailsList'
 
 /** Verkuerztes Set (nur `key`/`display_name` werden ausgewertet) in Registry-Anzeigereihenfolge -
  * specs/features/0289-feste-kategorien.md. */
@@ -1234,5 +1238,354 @@ describe('CriterionDetailsList — Rollen der Zugehoerigkeiten', () => {
 
     const section = screen.getByRole('list', { name: 'Kategorien dieses Fotos' })
     expect(section.textContent).not.toMatch(/%/)
+  })
+})
+
+/* -------------------------------------------------------------------------------------------
+ * specs/features/0370-bedienelemente-zuerst.md: Teilrendering ueber das Prop `part`.
+ *
+ * BEWUSST NUR ANGEHAENGT: die Bestandsfaelle oben bleiben inhaltlich unveraendert - dass sie mit
+ * dem Vorgabewert 'all' woertlich weiterlaufen, IST der Regressionsnachweis fuer
+ * Akzeptanzkriterium 8 (Raster/Kuratierung unveraendert). Neue Faelle stehen ausschliesslich in
+ * diesen neuen describe-Bloecken.
+ * ----------------------------------------------------------------------------------------- */
+
+/** Maximal-Props: JEDER darstellbare Bereich ist aktiv. Grundlage der Partitions-Zusicherung -
+ * eine Fixture, in der ein Bereich fehlte, koennte die Doppelanzeige dieses Bereichs gar nicht
+ * finden. `part` bewusst optional durchgereicht, damit derselbe Aufbau auch den Vorgabewert
+ * (kein `part`) abdeckt. */
+function renderMaximalDetails(part?: CriterionDetailsPart) {
+  return render(
+    <CriterionDetailsList
+      part={part}
+      criterionScores={[
+        criterionScore({ criterion_key: 'sharpness', display_name: 'Schärfe' }),
+        criterionScore({
+          criterion_key: 'content_people',
+          display_name: 'Menschen erkannt',
+          category_eligible: true,
+        }),
+      ]}
+      ranking={ranking({ category_key: 'tier', is_primary: true })}
+      rankings={[
+        ranking({ category_key: 'tier', is_primary: true }),
+        ranking({ category_key: 'menschen', is_primary: false }),
+      ]}
+      suggestion={suggestion()}
+      showSuggestion={true}
+      categoryCandidates={[
+        candidate({ category_key: 'tier', confidence: 0.9 }),
+        candidate({ category_key: 'menschen', origin: 'local', provider: null }),
+      ]}
+      fineLabels={[fineLabel()]}
+      categories={CATEGORIES}
+      onOverrideCategory={vi.fn()}
+      onResetOverride={vi.fn()}
+    />
+  )
+}
+
+/** Literale Sondenliste je Bereich - NICHT aus dem Rendering abgeleitet (eine aus der Ausgabe
+ * gewonnene Erwartung prueft sich selbst). Je Bereich eine Beschriftung, die es nur dort gibt. */
+const PART_PROBES = [
+  { text: 'Qualität', part: 'info' },
+  { text: 'Schärfe', part: 'info' },
+  { text: 'Kategorien', part: 'info' },
+  { text: 'Menschen erkannt', part: 'info' },
+  { text: 'Kategorie-Kandidaten', part: 'controls' },
+  { text: CONFIDENCE_EXPLANATION_LABEL, part: 'controls' },
+  { text: 'Alle Kategorien', part: 'controls' },
+  { text: 'Rolle', part: 'info' },
+  { text: 'Rang', part: 'info' },
+  { text: 'Kategorien dieses Fotos', part: 'info' },
+  { text: 'Feinlabels', part: 'info' },
+  { text: 'Ausschuss-Vorschlag', part: 'info' },
+] as const
+
+function showsProbe(container: HTMLElement, text: string): boolean {
+  return within(container).queryAllByText(text).length > 0
+}
+
+describe('CriterionDetailsList — Teilrendering über `part`', () => {
+  /* Partition statt zweier Positivlisten: "in beiden Teilen" waere eine Doppelanzeige, "in
+   * keinem" ein verschluckter Bereich - zwei getrennte Positivtests faenden beides nicht. */
+  it('zeigt jeden in `all` vorhandenen Bereich in GENAU EINEM der beiden Teile', () => {
+    const all = renderMaximalDetails('all').container
+    const controls = renderMaximalDetails('controls').container
+    const info = renderMaximalDetails('info').container
+
+    const actual = PART_PROBES.map(({ text }) => ({
+      text,
+      all: showsProbe(all, text),
+      controls: showsProbe(controls, text),
+      info: showsProbe(info, text),
+    }))
+
+    expect(actual).toEqual(
+      PART_PROBES.map(({ text, part }) => ({
+        text,
+        all: true,
+        controls: part === 'controls',
+        info: part === 'info',
+      }))
+    )
+  })
+
+  it('rendert ohne `part` exakt dieselben Bereiche wie `part="all"` (Vorgabewert)', () => {
+    const withoutPart = renderMaximalDetails().container
+    const all = renderMaximalDetails('all').container
+
+    expect(PART_PROBES.map(({ text }) => showsProbe(withoutPart, text))).toEqual(
+      PART_PROBES.map(({ text }) => showsProbe(all, text))
+    )
+  })
+
+  /* Ohne eigenes <dl> stuenden dt/dd des Bedienteils ohne <dl>-Vorfahren - invalides Markup und
+   * ein stiller Bruch von Spec 0041 AK12. */
+  it('stellt die `dt` des Bedienteils unter einen `dl`-Vorfahren (Kandidatenliste)', () => {
+    const { container } = renderMaximalDetails('controls')
+
+    const term = within(container).getByText('Kategorie-Kandidaten')
+    expect(term.tagName).toBe('DT')
+    expect(term.closest('dl')).not.toBeNull()
+  })
+
+  it('stellt die `dt` des Bedienteils unter einen `dl`-Vorfahren (einzeilige Anzeige)', () => {
+    const { container } = render(
+      <CriterionDetailsList
+        part="controls"
+        criterionScores={[criterionScore()]}
+        ranking={ranking({ category_key: 'tier' })}
+        suggestion={null}
+        showSuggestion={false}
+        categories={CATEGORIES}
+      />
+    )
+
+    const term = within(container).getByText('Kategorie')
+    expect(term.tagName).toBe('DT')
+    expect(term.closest('dl')).not.toBeNull()
+  })
+
+  it('gibt der einzeiligen "Kategorie"-Anzeige den Bedienteil, nicht den Informationsteil', () => {
+    const controls = render(
+      <CriterionDetailsList
+        part="controls"
+        criterionScores={[criterionScore()]}
+        ranking={ranking({ category_key: 'tier' })}
+        suggestion={null}
+        showSuggestion={false}
+        categories={CATEGORIES}
+      />
+    ).container
+    const info = render(
+      <CriterionDetailsList
+        part="info"
+        criterionScores={[criterionScore()]}
+        ranking={ranking({ category_key: 'tier' })}
+        suggestion={null}
+        showSuggestion={false}
+        categories={CATEGORIES}
+      />
+    ).container
+
+    expect(showsProbe(controls, 'Kategorie')).toBe(true)
+    expect(showsProbe(controls, 'Tier')).toBe(true)
+    expect(showsProbe(info, 'Kategorie')).toBe(false)
+  })
+
+  /* Der Bedienteil traegt bewusst KEINE eigene Ueberschrift und kein role="group": zwei
+   * gleichlautende "Kategorien"-Ueberschriften auf einer Seite waeren mehrdeutig, und eine
+   * unbeschriftete Gruppe ist im Accessibility-Tree wertlos (Akzeptanzkriterium 6). */
+  it('gibt dem Bedienteil weder Überschrift noch beschriftete Gruppe', () => {
+    const { container } = renderMaximalDetails('controls')
+
+    expect(within(container).queryByRole('heading')).not.toBeInTheDocument()
+    // Gefragt ist die Abwesenheit des gesetzten Attributs, nicht der Rolle: das `<details>` des
+    // Konfidenz-Hinweises traegt die Rolle `group` implizit und bleibt hier bewusst stehen.
+    expect(container.querySelector('[role="group"]')).toBeNull()
+    expect(container.querySelector('[aria-labelledby]')).toBeNull()
+  })
+
+  it('behält im Informationsteil beide beschrifteten Blöcke', () => {
+    const { container } = renderMaximalDetails('info')
+
+    expect(within(container).getByRole('group', { name: 'Qualität' })).toBeInTheDocument()
+    expect(within(container).getByRole('group', { name: 'Kategorien' })).toBeInTheDocument()
+  })
+
+  /* Ein leerer Flex-Container erzeugte im `gap-4` der Seite eine sichtbare Luecke, die kein
+   * anderer Test bemerkte - deshalb `null` statt eines leeren <div>. */
+  it('gibt für einen leeren Teil `null` zurück statt eines leeren Containers', () => {
+    const emptyControls = render(
+      <CriterionDetailsList
+        part="controls"
+        criterionScores={[criterionScore()]}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={false}
+      />
+    ).container
+    const emptyInfo = render(
+      <CriterionDetailsList
+        part="info"
+        criterionScores={[]}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={false}
+      />
+    ).container
+
+    expect(emptyControls.firstChild).toBeNull()
+    expect(emptyInfo.firstChild).toBeNull()
+  })
+
+  /* Gegenprobe: `all` bleibt woertlich beim Bestandsverhalten (aeusserer Container auch ohne
+   * Inhalt) - die `null`-Rueckgabe ist ausdruecklich NUR eine Zusage der beiden Teile. */
+  it('lässt `all` bei leerer Eingabe unverändert den äußeren Container rendern', () => {
+    const { container } = render(
+      <CriterionDetailsList
+        criterionScores={[]}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={false}
+      />
+    )
+
+    expect(container.firstChild).not.toBeNull()
+  })
+
+  /* Die exportierte Vorbedingung wird an das tatsaechliche Rendern GEBUNDEN - ein reiner
+   * Tabellentest belegte nur, was die Funktion sagt, und sie wuerde beim naechsten Gate zu einer
+   * zweiten, driftenden Meinung. */
+  it('bindet `hasCategoryControls` über alle vier Kombinationen an das Rendern von `controls`', () => {
+    const combinations = [
+      { criterionScores: [], ranking: null },
+      { criterionScores: [criterionScore()], ranking: null },
+      { criterionScores: [], ranking: ranking() },
+      { criterionScores: [criterionScore()], ranking: ranking() },
+    ]
+
+    const actual = combinations.map((combination) => {
+      const { container, unmount } = render(
+        <CriterionDetailsList
+          part="controls"
+          criterionScores={combination.criterionScores}
+          ranking={combination.ranking}
+          suggestion={null}
+          showSuggestion={false}
+          categories={CATEGORIES}
+        />
+      )
+      const renders = container.firstChild !== null
+      unmount()
+      return {
+        precondition: hasCategoryControls(combination.criterionScores, combination.ranking),
+        renders,
+      }
+    })
+
+    expect(actual).toEqual([
+      { precondition: false, renders: false },
+      { precondition: false, renders: false },
+      { precondition: false, renders: false },
+      { precondition: true, renders: true },
+    ])
+  })
+
+  it('zeigt im Informationsteil den Kategorien-Block auch ohne kategoriefähiges Kriterium', () => {
+    const { container } = render(
+      <CriterionDetailsList
+        part="info"
+        criterionScores={[criterionScore()]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={false}
+        categories={CATEGORIES}
+      />
+    )
+
+    expect(
+      within(container).getByRole('heading', { name: 'Kategorien', level: 3 })
+    ).toBeInTheDocument()
+    expect(within(container).getByText('Rang 2 von 5')).toBeInTheDocument()
+  })
+
+  it('lässt im Informationsteil den Kategorien-Block ohne Ranking und ohne Kategorie-Kriterium weg', () => {
+    const { container } = render(
+      <CriterionDetailsList
+        part="info"
+        criterionScores={[criterionScore()]}
+        ranking={null}
+        suggestion={null}
+        showSuggestion={false}
+        categories={CATEGORIES}
+      />
+    )
+
+    expect(
+      within(container).getByRole('heading', { name: 'Qualität', level: 3 })
+    ).toBeInTheDocument()
+    expect(within(container).queryByRole('heading', { name: 'Kategorien' })).not.toBeInTheDocument()
+  })
+
+  it('zeigt die Ausschuss-Gruppe nur im Informationsteil', () => {
+    const controls = render(
+      <CriterionDetailsList
+        part="controls"
+        criterionScores={[criterionScore()]}
+        ranking={ranking()}
+        suggestion={suggestion()}
+        showSuggestion={true}
+        categories={CATEGORIES}
+      />
+    ).container
+
+    expect(showsProbe(controls, 'Ausschuss-Vorschlag')).toBe(false)
+  })
+
+  it('zeigt den Konfidenz-Erklärhinweis unverändert als `details` im Bedienteil', () => {
+    const { container } = renderMaximalDetails('controls')
+
+    const summary = within(container).getByText(CONFIDENCE_EXPLANATION_LABEL)
+    expect(summary.tagName).toBe('SUMMARY')
+    expect(summary.closest('details')).not.toBeNull()
+    expect(within(container).getByText(CONFIDENCE_EXPLANATION)).toBeInTheDocument()
+  })
+})
+
+// specs/features/0370-bedienelemente-zuerst.md, Security-Abschnitt (Auflage des
+// security-engineer): der Bestandsfall oben rendert ohne `part` und deckt damit nach dem Umbau
+// nur noch den Vorgabewert 'all' ab - die Einzelbildansicht rendert die Chips ueber `part="info"`.
+describe('CriterionDetailsList: Feinlabel-Sicherheit je Teilbereich', () => {
+  const XSS_PAYLOAD = '<img src=x onerror="alert(1)">'
+
+  function renderWithFineLabelPayload(part: CriterionDetailsPart) {
+    return render(
+      <CriterionDetailsList
+        part={part}
+        criterionScores={[]}
+        ranking={ranking()}
+        suggestion={null}
+        showSuggestion={true}
+        categories={CATEGORIES}
+        fineLabels={[fineLabel({ display_name: XSS_PAYLOAD, canonical_key: 'xss' })]}
+      />
+    )
+  }
+
+  it('never renders a fine label via dangerouslySetInnerHTML with part="info"', () => {
+    const { container } = renderWithFineLabelPayload('info')
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(within(container).getByText(XSS_PAYLOAD)).toBeInTheDocument()
+  })
+
+  it('renders no fine-label chips at all in the controls part', () => {
+    const { container } = renderWithFineLabelPayload('controls')
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(within(container).queryByText(XSS_PAYLOAD)).not.toBeInTheDocument()
+    expect(within(container).queryByRole('list', { name: 'Feinlabels' })).not.toBeInTheDocument()
   })
 })

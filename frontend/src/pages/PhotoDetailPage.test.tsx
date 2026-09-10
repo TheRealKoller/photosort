@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -667,6 +667,383 @@ describe('PhotoDetailPage', () => {
       await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
 
       await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'tier'))
+    })
+  })
+
+  // specs/features/0370-bedienelemente-zuerst.md: Bedienelemente stehen vor jeder reinen
+  // Informationsanzeige. Die Reihenfolge IST das Feature - geprueft wird deshalb die tatsaechliche
+  // Dokumentreihenfolge in EINER Assertion, nicht das blosse Vorhandensein.
+  describe('Reihenfolge: Bedienelemente zuerst', () => {
+    /** Foto mit JEDEM Bereich der Seite gleichzeitig - ein fehlender Bereich koennte in der
+     * Soll-Folge nicht auffallen. */
+    function fullPhoto(overrides: Partial<PhotoOut> = {}): PhotoOut {
+      return photo({
+        id: 1,
+        criterion_scores: [
+          criterionScore({ criterion_key: 'sharpness', display_name: 'Schärfe' }),
+          criterionScore({
+            criterion_key: 'content_people',
+            display_name: 'Menschen erkannt',
+            category_eligible: true,
+          }),
+        ],
+        rankings: [
+          {
+            cluster_key: 'cluster-0',
+            category_key: 'tier',
+            rank_score: 0.8,
+            rank_position: 2,
+            partition_size: 5,
+            is_primary: true,
+            curation_position: null,
+          },
+        ],
+        category_candidates: [
+          { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: 0.9 },
+          { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+        ],
+        fine_labels: [
+          {
+            canonical_key: 'urlaub',
+            display_name: 'Urlaub',
+            raw_label: 'Urlaub',
+            provider: 'anthropic',
+          },
+        ],
+        cloud_vision_status: [cloudVisionStatusEntry({ phase: 'landmark', status: 'not_run' })],
+        suggestion: suggestion({ reason: 'low_quality' }),
+        ...overrides,
+      })
+    }
+
+    /** Dokumentreihenfolge der uebergebenen Handles. `compareDocumentPosition` wird gegen die
+     * BITMASKE geprueft, nie per Gleichheit: liegen zwei Elemente ineinander, liefert der Aufruf
+     * `20` (CONTAINED_BY | FOLLOWING), und ein Gleichheitsvergleich waere falsch-rot. */
+    function inDocumentOrder(handles: { name: string; element: HTMLElement }[]): string[] {
+      return [...handles]
+        .sort((a, b) =>
+          (a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+            ? -1
+            : 1
+        )
+        .map((handle) => handle.name)
+    }
+
+    async function collectSectionHandles(): Promise<{ name: string; element: HTMLElement }[]> {
+      return [
+        { name: 'Shortcut-Zeile', element: screen.getByText(/^Shortcuts:/) },
+        { name: 'Zähler', element: screen.getByText('1/1') },
+        { name: 'Foto', element: await screen.findByAltText('a.jpg') },
+        { name: 'Bewertungsleiste', element: screen.getByRole('group', { name: 'Bewertung' }) },
+        { name: 'Kategorie-Bedienteil', element: screen.getByTestId('category-controls-section') },
+        { name: 'Navigation', element: screen.getByRole('button', { name: 'Vorheriges Foto' }) },
+        { name: 'Cloud-Vision-Status', element: screen.getByTestId('cloud-vision-status-section') },
+        { name: 'Informationsteil', element: screen.getByTestId('criterion-details-section') },
+        { name: 'Zurück zum Grid', element: screen.getByRole('link', { name: 'Zurück zum Grid' }) },
+      ]
+    }
+
+    it('stellt alle Bedienelemente vor jede reine Informationsanzeige (mit Vorschlag)', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [fullPhoto()], total: 1 })
+
+      renderPage('/projects/1/photos/1')
+      await screen.findByText('1/1')
+
+      const handles = await collectSectionHandles()
+      handles.push({
+        name: 'Automatischer Vorschlag',
+        element: screen.getByText(/^Automatischer Vorschlag/),
+      })
+
+      expect(inDocumentOrder(handles)).toEqual([
+        'Shortcut-Zeile',
+        'Zähler',
+        'Foto',
+        'Bewertungsleiste',
+        'Kategorie-Bedienteil',
+        'Navigation',
+        'Automatischer Vorschlag',
+        'Cloud-Vision-Status',
+        'Informationsteil',
+        'Zurück zum Grid',
+      ])
+    })
+
+    /* Zweite Variante ohne den optionalen Vorschlagskasten, damit die Zusage nicht an einem
+     * Bereich haengt, den es nicht immer gibt. */
+    it('hält dieselbe Reihenfolge ohne Vorschlagskasten', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [fullPhoto({ suggestion: null })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+      await screen.findByText('1/1')
+
+      expect(screen.queryByText(/^Automatischer Vorschlag/)).not.toBeInTheDocument()
+      expect(inDocumentOrder(await collectSectionHandles())).toEqual([
+        'Shortcut-Zeile',
+        'Zähler',
+        'Foto',
+        'Bewertungsleiste',
+        'Kategorie-Bedienteil',
+        'Navigation',
+        'Cloud-Vision-Status',
+        'Informationsteil',
+        'Zurück zum Grid',
+      ])
+    })
+
+    /* Akzeptanzkriterium 3: die Informationsanzeigen sind ohne jede Bedienhandlung vollstaendig
+     * sichtbar. Abwesenheitszusage INNERHALB des Informationsabschnitts - seitenweit waere sie
+     * falsch, weil der Konfidenz-Erklaerhinweis bewusst ein <details> im Bedienteil bleibt. */
+    it('lässt den Informationsteil ohne aufklappbares Element und ohne Trigger', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [fullPhoto()], total: 1 })
+
+      renderPage('/projects/1/photos/1')
+
+      const info = await screen.findByTestId('criterion-details-section')
+      expect(info.querySelector('details')).toBeNull()
+      expect(info.querySelector('summary')).toBeNull()
+      expect(info.querySelector('[aria-expanded]')).toBeNull()
+      expect(info.querySelector('[aria-haspopup]')).toBeNull()
+      expect(within(info).queryByRole('button')).not.toBeInTheDocument()
+      // Gegenprobe: im Bedienteil steht das <details> unveraendert weiter.
+      expect(
+        screen.getByTestId('category-controls-section').querySelector('details')
+      ).not.toBeNull()
+    })
+
+    it('zeigt die Feinlabel-Chips im Informationsteil und nicht im Bedienteil', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [fullPhoto()], total: 1 })
+
+      renderPage('/projects/1/photos/1')
+
+      const info = await screen.findByTestId('criterion-details-section')
+      expect(within(info).getByText('Urlaub')).toBeInTheDocument()
+      expect(
+        within(screen.getByTestId('category-controls-section')).queryByText('Urlaub')
+      ).not.toBeInTheDocument()
+    })
+
+    /* Akzeptanzkriterium 6: kein leerer Platzhalter. Ohne Kriterien erscheint KEINER der beiden
+     * Bereiche, der Cloud-Vision-Status bleibt unveraendert immer sichtbar. */
+    it('rendert ohne criterion_scores weder Bedien- noch Informationsteil', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, criterion_scores: [] })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+      await screen.findByText('1/1')
+
+      expect(screen.queryByTestId('category-controls-section')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('criterion-details-section')).not.toBeInTheDocument()
+      expect(screen.getByTestId('cloud-vision-status-section')).toBeInTheDocument()
+    })
+
+    it('rendert ohne Ranking keinen Bedienteil, den Informationsteil aber schon', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, criterion_scores: [criterionScore()], rankings: [] })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+      await screen.findByText('1/1')
+
+      expect(screen.queryByTestId('category-controls-section')).not.toBeInTheDocument()
+      expect(screen.getByTestId('criterion-details-section')).toBeInTheDocument()
+    })
+  })
+
+  /* Verdrahtung der ZWEITEN Einbindung (Bedienteil) - die Logik selbst liegt auf
+   * Komponentenebene, hier wird nur geprueft, dass die Props tatsaechlich ankommen. */
+  describe('Kategorie-Bedienteil: Verdrahtung', () => {
+    function photoWithOverride(): PhotoOut {
+      return photo({
+        id: 1,
+        criterion_scores: [criterionScore()],
+        rankings: [
+          {
+            cluster_key: 'cluster-0',
+            category_key: 'tier',
+            rank_score: 0.5,
+            rank_position: 1,
+            partition_size: 1,
+            is_primary: true,
+            curation_position: null,
+          },
+        ],
+        category_override: 'tier',
+        category_candidates: [
+          { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+          { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+        ],
+      })
+    }
+
+    it('setzt eine manuelle Kategorie aus dem Bedienteil zurück', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photoWithOverride()], total: 1 })
+      vi.mocked(photosApi.deleteCategoryOverride).mockResolvedValue(undefined)
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/1')
+
+      const controls = await screen.findByTestId('category-controls-section')
+      await user.click(within(controls).getByRole('button', { name: /^zurücksetzen$/i }))
+
+      await waitFor(() => expect(photosApi.deleteCategoryOverride).toHaveBeenCalledWith(1))
+    })
+
+    it('übernimmt eine Kategorie aus der Auswahl "Alle Kategorien" im Bedienteil', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photoWithOverride()], total: 1 })
+      vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
+        photo_id: 1,
+        category_key: 'pflanze',
+      })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/1')
+
+      const controls = await screen.findByTestId('category-controls-section')
+      await user.selectOptions(within(controls).getByLabelText('Alle Kategorien'), 'pflanze')
+
+      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'pflanze'))
+    })
+  })
+
+  /* specs/features/0370-bedienelemente-zuerst.md, UI/UX-Abschnitt "Zustände" und Teststrategie
+   * ("laufende Mutation, mit der ausdrücklichen Gegenprobe, dass Bewertungs- und
+   * Override-Mutation NICHT gekoppelt sind"): Beide Busy-Quellen stehen seit dem Umbau erstmals
+   * direkt untereinander. Eine versehentliche Kopplung (ein gemeinsames `isMutating` an beiden)
+   * sähe plausibel aus und würde von keinem anderen Test bemerkt. */
+  describe('Getrennte Mutationspfade: Bewertung vs. Kategorie-Override', () => {
+    function photoWithBothPaths(): PhotoOut {
+      return photo({
+        id: 1,
+        ratings: [],
+        suggestion: suggestion({ reason: 'low_quality' }),
+        criterion_scores: [criterionScore()],
+        rankings: [
+          {
+            cluster_key: 'cluster-0',
+            category_key: 'tier',
+            rank_score: 0.5,
+            rank_position: 1,
+            partition_size: 1,
+            is_primary: true,
+            curation_position: null,
+          },
+        ],
+        category_candidates: [
+          { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+          { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+        ],
+      })
+    }
+
+    it('lässt die Übernehmen-Schaltflächen des Bedienteils während einer laufenden Bewertung bedienbar', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photoWithBothPaths()],
+        total: 1,
+      })
+      // Nie aufloesende Anfrage: die Bewertungs-Mutation bleibt fuer die Dauer des Tests pending.
+      vi.mocked(ratingsApi.setRating).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/1')
+      await screen.findByText('1/1')
+
+      await user.click(screen.getByRole('button', { name: /favorit/i }))
+
+      // Beide Bedienelemente des Bewertungspfads sind busy...
+      await waitFor(() => expect(screen.getByRole('button', { name: /favorit/i })).toBeDisabled())
+      expect(screen.getByRole('button', { name: 'Album-würdig' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /vorschlag übernehmen/i })).toBeDisabled()
+      // ...der Kategorie-Bedienteil bleibt davon unberührt (getrennter Mutationspfad).
+      const controls = screen.getByTestId('category-controls-section')
+      expect(within(controls).getByRole('button', { name: /^übernehmen$/i })).toBeEnabled()
+      expect(within(controls).getByLabelText('Alle Kategorien')).toBeEnabled()
+    })
+
+    it('lässt die Bewertungsleiste während einer laufenden Kategorie-Übernahme bedienbar', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photoWithBothPaths()],
+        total: 1,
+      })
+      vi.mocked(photosApi.setCategoryOverride).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/1')
+
+      const controls = await screen.findByTestId('category-controls-section')
+      await user.click(within(controls).getByRole('button', { name: /^übernehmen$/i }))
+
+      await waitFor(() =>
+        expect(within(controls).getByRole('button', { name: /^übernehmen$/i })).toBeDisabled()
+      )
+      expect(screen.getByRole('button', { name: /favorit/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Verwerfen' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /vorschlag übernehmen/i })).toBeEnabled()
+    })
+  })
+
+  /* Akzeptanzkriterium 5: Tastenkuerzel und Wischgesten wirken unveraendert. ArrowLeft und die
+   * Wischgesten hatten bis zu dieser Spec keinen Test - ohne sie waere "unveraendert" beim
+   * Umbau der Seite eine unbelegte Behauptung. */
+  describe('Blättern per Tastatur und Wischgeste', () => {
+    function twoPhotos(): PhotoListOut {
+      return { items: [photo({ id: 1 }), photo({ id: 2, relative_path: 'b.jpg' })], total: 2 }
+    }
+
+    it('navigates to the previous photo on ArrowLeft', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(twoPhotos())
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/2')
+      await screen.findByText('2/2')
+
+      await user.keyboard('{ArrowLeft}')
+
+      await screen.findByText('1/2')
+    })
+
+    it('blättert bei einer Wischgeste nach links zum nächsten Foto', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(twoPhotos())
+
+      renderPage('/projects/1/photos/1')
+      const image = await screen.findByAltText('a.jpg')
+
+      fireEvent.touchStart(image, { touches: [{ clientX: 200 }] })
+      fireEvent.touchEnd(image, { changedTouches: [{ clientX: 100 }] })
+
+      await screen.findByText('2/2')
+    })
+
+    it('blättert bei einer Wischgeste nach rechts zum vorherigen Foto', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(twoPhotos())
+
+      renderPage('/projects/1/photos/2')
+      const image = await screen.findByAltText('b.jpg')
+
+      fireEvent.touchStart(image, { touches: [{ clientX: 100 }] })
+      fireEvent.touchEnd(image, { changedTouches: [{ clientX: 200 }] })
+
+      await screen.findByText('1/2')
+    })
+
+    /* Ohne diesen Fall bestuende auch ein Vergleich, der JEDE Beruehrung als Wisch liest - die
+     * 50-px-Schwelle waere eine Zahl ohne Zusage. */
+    it('navigiert unterhalb der 50-px-Schwelle nicht', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(twoPhotos())
+
+      renderPage('/projects/1/photos/1')
+      const image = await screen.findByAltText('a.jpg')
+
+      fireEvent.touchStart(image, { touches: [{ clientX: 200 }] })
+      fireEvent.touchEnd(image, { changedTouches: [{ clientX: 170 }] })
+
+      expect(screen.getByText('1/2')).toBeInTheDocument()
     })
   })
 })
