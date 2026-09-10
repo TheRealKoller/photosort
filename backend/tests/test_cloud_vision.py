@@ -4,6 +4,9 @@ import ast
 import asyncio
 import json
 import logging
+import time
+from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
 from pathlib import Path
 
 import httpx
@@ -594,3 +597,109 @@ class TestThrottleStats:
         diff = throttle.stats().since(before)
         assert diff.retries == 2
         assert diff.total_retry_wait_seconds == pytest.approx(6.0)
+
+
+def _response_with_headers(headers: dict[str, str]) -> httpx.Response:
+    return httpx.Response(429, headers=headers)
+
+
+class TestRetryAfterSeconds:
+    """K2: die Anbieterangabe zur Wartezeit - in beiden vom HTTP-Standard erlaubten Formen.
+    "Nicht auswertbar" ist ausdruecklich KEIN Fehler, sondern "keine Angabe"."""
+
+    def test_integer_seconds_are_read(self) -> None:
+        assert cloud_vision.retry_after_seconds(
+            _response_with_headers({"Retry-After": "30"})
+        ) == pytest.approx(30.0)
+
+    @pytest.mark.parametrize("raw", ["nan", "NaN", "inf", "-inf", "Infinity"])
+    def test_non_finite_values_are_no_information(self, raw: str) -> None:
+        """Sicherheits-Muss-Kriterium der Spec 0382 (Punkt 2a): `float("nan")`/`float("inf")`
+        PARSEN ERFOLGREICH. Ohne `math.isfinite` fielen beide Zeit-Deckel lautlos aus -
+        `min(float("nan"), 60.0)` liefert `nan`, und `nan > budget` ist immer False."""
+        response = _response_with_headers({"Retry-After": raw})
+        assert cloud_vision.retry_after_seconds(response) is None
+
+    @pytest.mark.parametrize("raw", ["0", "-5", "-0.5"])
+    def test_zero_or_negative_is_no_information(self, raw: str) -> None:
+        """Punkt 2c: niemals eine negative Zahl zurueckgeben - die Gefahr ist nicht
+        `asyncio.sleep(-5)` (das kehrt sofort zurueck), sondern ein negativer Summand, der das
+        Restbudget VERGROESSERT."""
+        response = _response_with_headers({"Retry-After": raw})
+        assert cloud_vision.retry_after_seconds(response) is None
+
+    @pytest.mark.parametrize("raw", ["", "   ", "bald", "1,5", "9" * 5000])
+    def test_missing_empty_or_unparsable_values_are_no_information(self, raw: str) -> None:
+        """Punkt 2b: die Funktion traegt KEINE Exception aus dem Header nach aussen -
+        `parsedate_to_datetime("garbage")` wirft `ValueError`, eine sehr lange Ziffernfolge
+        laeuft in die `sys.set_int_max_str_digits`-Grenze bzw. auf `inf`."""
+        response = _response_with_headers({"Retry-After": raw})
+        assert cloud_vision.retry_after_seconds(response) is None
+
+    def test_a_missing_header_is_no_information(self) -> None:
+        assert cloud_vision.retry_after_seconds(_response_with_headers({})) is None
+
+    def test_retry_after_ms_is_deliberately_ignored(self) -> None:
+        """ADR 0074 Entscheidung 5: `retry-after-ms` wird bewusst NICHT ausgewertet."""
+        assert (
+            cloud_vision.retry_after_seconds(_response_with_headers({"retry-after-ms": "500"}))
+            is None
+        )
+
+    def test_an_http_date_in_the_future_is_read_against_the_injected_now(self) -> None:
+        now = datetime(2026, 9, 10, 12, 0, 0, tzinfo=UTC)
+        target = format_datetime(now + timedelta(seconds=45), usegmt=True)
+
+        result = cloud_vision.retry_after_seconds(
+            _response_with_headers({"Retry-After": target}), now=now
+        )
+
+        assert result == pytest.approx(45.0)
+
+    def test_an_http_date_in_the_past_is_no_information(self) -> None:
+        now = datetime(2026, 9, 10, 12, 0, 0, tzinfo=UTC)
+        target = format_datetime(now - timedelta(seconds=45), usegmt=True)
+
+        assert (
+            cloud_vision.retry_after_seconds(
+                _response_with_headers({"Retry-After": target}), now=now
+            )
+            is None
+        )
+
+    def test_a_naive_http_date_is_read_as_utc(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Der Fall braucht eine VERSTELLTE Prozess-Zeitzone: auf einer UTC-Maschine waere eine
+        Implementierung, die ein zonenloses Datum als ORTSZEIT liest, sonst zufaellig gruen."""
+        monkeypatch.setenv("TZ", "Asia/Tokyo")
+        time.tzset()
+        try:
+            now = datetime(2026, 9, 10, 12, 0, 0, tzinfo=UTC)
+            # Zonenloses Datum (kein "GMT"-Suffix) - genau 45 s nach `now`, in UTC gelesen.
+            naive = "Thu, 10 Sep 2026 12:00:45"
+
+            result = cloud_vision.retry_after_seconds(
+                _response_with_headers({"Retry-After": naive}), now=now
+            )
+
+            assert result == pytest.approx(45.0)
+        finally:
+            monkeypatch.undo()
+            time.tzset()
+
+    def test_a_naive_reference_time_is_treated_as_utc_as_well(self) -> None:
+        now = datetime(2026, 9, 10, 12, 0, 0)
+        target = format_datetime(datetime(2026, 9, 10, 12, 0, 20, tzinfo=UTC), usegmt=True)
+
+        result = cloud_vision.retry_after_seconds(
+            _response_with_headers({"Retry-After": target}), now=now
+        )
+
+        assert result == pytest.approx(20.0)
+
+    def test_without_an_injected_now_the_current_time_is_used(self) -> None:
+        target = format_datetime(datetime.now(UTC) + timedelta(seconds=30), usegmt=True)
+
+        result = cloud_vision.retry_after_seconds(_response_with_headers({"Retry-After": target}))
+
+        assert result is not None
+        assert 25.0 <= result <= 30.0

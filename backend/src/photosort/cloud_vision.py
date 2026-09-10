@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -411,3 +414,70 @@ class CloudRequestThrottle:
             retries=self._retries,
             total_retry_wait_seconds=self._total_retry_wait_seconds,
         )
+
+
+def retry_after_seconds(response: httpx.Response, *, now: datetime | None = None) -> float | None:
+    """Die vom Anbieter angegebene Wartezeit in Sekunden - oder `None` fuer "keine Angabe" (K2).
+
+    Beide vom HTTP-Standard erlaubten Formen werden gelesen: Ganzzahl-Sekunden und HTTP-Datum.
+    `retry-after-ms` wird bewusst NICHT ausgewertet (ADR 0074 Entscheidung 5).
+
+    "Nicht auswertbar" ist ausdruecklich KEIN Fehler, sondern "keine Angabe" - der Aufrufer faellt
+    dann auf die verdoppelnde Staffel zurueck. Das ist bei Mistral der eingeplante Normalfall, dort
+    ist kein `Retry-After` dokumentiert.
+
+    SICHERHEITS-MUSS-KRITERIEN der Spec 0382 (Punkt 2), jedes testseitig abgedeckt:
+    (a) `math.isfinite` VOR jeder Verwendung - `float("nan")`/`float("inf")` parsen erfolgreich und
+        sind "keine Angabe", nicht ein grosser Wert. Nachgestellt (Python 3.12):
+        `min(float("nan"), 60.0)` liefert `nan` (die Argumentreihenfolge entscheidet!), und
+        `nan > budget` ist immer `False` - die Deckelung per `min(...)` ersetzt die Pruefung also
+        NICHT, ohne sie fielen beide Zeit-Deckel des Aufrufers lautlos aus.
+    (b) Es traegt KEINE Exception aus dem Header nach aussen. Der Wert ist eine Eingabe von aussen
+        und unterliegt derselben Validierungspflicht wie jeder Request-Body; ein `ValueError` aus
+        `parsedate_to_datetime` oder aus der `sys.set_int_max_str_digits`-Grenze ist "keine
+        Angabe", kein Fehlerpfad. Deshalb hier bewusst breit `except Exception` - und ausdruecklich
+        NIEMALS `BaseException`, sonst verschluckte diese Funktion ein `CancelledError`.
+    (c) Rueckgabe ist `> 0` oder `None`, NIE eine negative Zahl. Die Gefahr ist nicht
+        `asyncio.sleep(-5)` (das kehrt sofort zurueck), sondern ein negativer Summand, der das
+        Restbudget des Aufrufers vergroessern wuerde.
+    (d) Ein naives Datum ohne Zeitzone wird als UTC gelesen, nie als Ortszeit des Prozesses.
+    (e) Rueckgabetyp `float | None` - niemals ein durchgereichter String.
+
+    `now` ist ausschliesslich fuer die Tests injizierbar (Auflage 2 der Teststrategie der Spec
+    0382): ohne einen festen Bezugszeitpunkt waeren die HTTP-Datum-Faelle nur mit einem
+    Toleranzfenster pruefbar."""
+    raw = response.headers.get("Retry-After")
+    if raw is None:
+        return None
+    raw = raw.strip()
+    if not raw:
+        return None
+
+    try:
+        seconds = float(raw)
+    except Exception:
+        seconds = None
+    if seconds is not None:
+        if not math.isfinite(seconds) or seconds <= 0:
+            return None
+        return seconds
+
+    try:
+        target = parsedate_to_datetime(raw)
+    except Exception:
+        return None
+    if target is None:
+        return None
+    if target.tzinfo is None:
+        # (d): zonenlos heisst UTC. `astimezone()` laese es als ORTSZEIT des Prozesses - auf einer
+        # UTC-Maschine faellt der Unterschied nicht auf, im Betrieb schon.
+        target = target.replace(tzinfo=UTC)
+
+    reference = now if now is not None else datetime.now(UTC)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=UTC)
+
+    delta = (target - reference).total_seconds()
+    if not math.isfinite(delta) or delta <= 0:
+        return None
+    return delta
