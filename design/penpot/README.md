@@ -165,7 +165,13 @@ Die Kardinalitäten `ERWARTETE_ANSICHTEN` und `ERWARTETE_ANSICHTSBRETTER` stehen
 bestehenden; die Brettzahl entsteht in `views.json` als **Summe** über Breiten × Zustände, nicht
 als zweite getippte Zahl.
 
-**Ein Entwurf kann in Runden entstehen** (Skill `penpot-entwurfsrunden`): Ein Rundenlauf legt eine eigene Arbeitsseite `Entwurf — <Bezeichnung>` an und legt dort je Vorschlag ein Brett ab, vereinfacht auf eine Breite und einen Zustand. Solche Seiten sind **Arbeitsstand und nicht Teil der Soll-Struktur** — sie stehen nicht in `views.json`, und ihre Bretter tragen ausdrücklich **nicht** die Plugin-Daten `ansicht`/`breite`. Für `verify.js` ist ein laufender Entwurf damit nicht vorhanden: Er kann den Abgleich weder rot färben noch Zählwerte verschieben. Weggeworfen wird eine Arbeitsseite von Daniel in Penpot; kein Skript entfernt sie.
+**Ein Entwurf kann in Runden entstehen** (Skill `penpot-entwurfsrunden`): Ein Rundenlauf legt eine
+eigene Arbeitsseite `Entwurf — <Bezeichnung>` an und legt dort je Vorschlag ein Brett ab,
+vereinfacht auf eine Breite und einen Zustand. Solche Seiten sind **Arbeitsstand und nicht Teil der
+Soll-Struktur** — sie stehen nicht in `views.json`, und ihre Bretter tragen ausdrücklich **nicht**
+die Plugin-Daten `ansicht`/`breite`. Für `verify.js` ist ein laufender Entwurf damit nicht
+vorhanden: Er kann den Abgleich weder rot färben noch Zählwerte verschieben. Weggeworfen wird eine
+Arbeitsseite von Daniel in Penpot; kein Skript entfernt sie.
 
 **Die Bildexporte werden nicht eingecheckt.** Je Ansichtsbrett ein Export über `export_shape` auf
 die **Form** (nie ein Fensterabzug — ein Bildschirmfoto trüge die Adresszeile).

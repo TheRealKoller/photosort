@@ -202,7 +202,7 @@ Weil `payload.test.ts` diesmal nicht angefasst wird, ist das der **einzige** Ank
 
 `e2e/tests/toolchain.spec.ts` trägt bereits Doku-an-Code-Tests über `.claude/skills/`, und der Kommentar dort nennt das Kriterium selbst: Sie liegen dort, **weil sie Zusagen dieses Pakets sind**. Danach wird aufgeteilt, statt beides an einen Ort zu zwingen:
 
-- **`e2e/tests/toolchain.spec.ts` (vitest) — genau ein neuer Test:** Der Skill nennt die beiden Prüfbreitennamen wörtlich so, wie sie in `e2e/lib/viewports.ts` stehen, und keine dritte. Das ist eine Zusage dieses Pakets (es besitzt die Prüfbreiten); eine Umbenennung dort färbt die Anleitung rot, statt sie still falsch werden zu lassen. Vorbild: der bestehende `browse-app`-Test zur Freigabe-Zeichenkette.
+- **`e2e/tests/toolchain.spec.ts` (Playwright) — genau ein neuer Test:** Der Skill nennt die beiden Prüfbreitennamen wörtlich so, wie sie in `e2e/lib/viewports.ts` stehen, und keine dritte. Das ist eine Zusage dieses Pakets (es besitzt die Prüfbreiten); eine Umbenennung dort färbt die Anleitung rot, statt sie still falsch werden zu lassen. Vorbild: der bestehende `browse-app`-Test zur Freigabe-Zeichenkette.
 - **`scripts/tests/test_entwurfsrunden_skill.py` (pytest) — alles Übrige:** Diese Zusicherungen haben keinen e2e-Bezug; sie prüfen Skilltext gegen Skilltext bzw. gegen `design/penpot/verify.js`. Dort liegen mit `test_board_befehle_in_skills.py` und `test_issue_befehle_in_skills.py` die etablierten Vorbilder für Skill-Codeblock-Prüfungen samt synthetischer Proben.
 
 ### `scripts/tests/test_entwurfsrunden_skill.py` (neu)
