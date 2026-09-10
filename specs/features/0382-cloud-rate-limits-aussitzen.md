@@ -208,14 +208,25 @@ importiert `cloud_vision.py` für den `LANDMARK_MODEL`-Validator, die Gegenricht
 Importzyklus). Der *Mechanismus* bleibt deshalb in `cloud_vision.py`, nur die *Instanzen* leben
 im neuen Modul. Inhalt:
 
-- `DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER = {"anthropic": 60, "mistral": 40}` — je Eintrag mit
-  Quelle und Abrufdatum im Kommentar (Belegpflicht analog ADR 0059 Punkt 5). Die Herleitung
-  beider Zahlen und die **offen bleibende Beleglücke bei Mistral** stehen in ADR 0074
-  Entscheidung 7 und sind von dort zu übernehmen, nicht neu zu erfinden.
+- `build_throttles(settings) -> dict[str, CloudRequestThrottle]` — reine Funktion über einem
+  übergebenen `Settings`-Objekt (Auflage 2 der Teststrategie), die das Modul beim Import genau
+  einmal aufruft.
 - `_THROTTLES: dict[str, CloudRequestThrottle]`, beim Import gefüllt.
 - `throttle_for_provider(provider: str) -> CloudRequestThrottle` — direkter Dict-Zugriff, ein
   unbekannter Anbieter ist ein `KeyError` (durch das `Literal` auf `Settings.landmark_provider`
   unerreichbar).
+
+Die **Voreinstellungstabelle** `DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER = {"anthropic": 60,
+"mistral": 40}` gehört dagegen **nicht** hierher, sondern nach `cloud_vision.py` — aus derselben
+Importrichtung heraus, die das eigene Modul überhaupt nötig macht: `config.py` löst die `0` gegen
+sie auf (`resolved_cloud_vision_requests_per_minute`) und müsste sie sonst aus
+`cloud_vision_throttle.py` importieren, also aus genau dem Modul, das seinerseits `config.py`
+importiert. `cloud_vision.py` ist konfigurationsfrei und führt mit `VISION_MODELS_BY_PROVIDER`
+schon die Schwester-Registry, die für `LANDMARK_MODEL` dieselbe Rolle spielt. Unverändert gilt:
+je Eintrag Quelle und Abrufdatum im Kommentar (Belegpflicht analog ADR 0059 Punkt 5); die
+Herleitung beider Zahlen und die **offen bleibende Beleglücke bei Mistral** stehen in ADR 0074
+Entscheidung 7 (samt datiertem Umsetzungs-Nachtrag zu diesem Ort) und sind von dort zu übernehmen,
+nicht neu zu erfinden.
 
 Der Schrittmacher ist an den vier Client-Klassen ein **Pflicht-Schlüsselwortparameter ohne
 Default** — dieselbe Begründung, die ADR 0059 Punkt 7 für `model` ausgeschrieben hat: Ein
@@ -322,7 +333,7 @@ ist kein Fehler, und `cloud_error_message` ist der Fehlerkanal.
 
 | Datei | Art der Änderung |
 |---|---|
-| `backend/src/photosort/cloud_vision.py` | **Kern.** `VisionEndpoint` + zwei Endpunkt-Konstanten, `CloudRequestThrottle`, `ThrottleStats`, `retry_after_seconds`, `post_vision_request`, vier neue Modulkonstanten. `raise_for_vision_api_status` bleibt unverändert und wird von `post_vision_request` am Ende aufgerufen. |
+| `backend/src/photosort/cloud_vision.py` | **Kern.** `VisionEndpoint` + zwei Endpunkt-Konstanten, `CloudRequestThrottle`, `ThrottleStats`, `retry_after_seconds`, `post_vision_request`, vier neue Modulkonstanten, `DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER` (siehe Zeile darunter). `raise_for_vision_api_status` bleibt unverändert und wird von `post_vision_request` am Ende aufgerufen. |
 | `backend/src/photosort/cloud_vision_throttle.py` | **neu**, klein: prozessweite Instanzen + `throttle_for_provider`. (Umsetzung: die Voreinstellungstabelle liegt in `cloud_vision.py` neben `VISION_MODELS_BY_PROVIDER` — `config.py` löst gegen sie auf und dürfte dieses Modul sonst nicht importieren, siehe Nachtrag in ADR 0074 Entscheidung 7.) |
 | `backend/src/photosort/config.py` | neues Feld `cloud_vision_requests_per_minute` + `resolved_cloud_vision_requests_per_minute()`. |
 | `backend/src/photosort/landmark.py` | `throttle`-Pflichtparameter an beiden Client-Klassen, beide `detect`-Blöcke auf `post_vision_request` umgestellt, `build_landmark_client` reicht den Schrittmacher durch. |
