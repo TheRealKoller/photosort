@@ -1,6 +1,6 @@
 # 0370 - Bedienelemente zuerst in der Einzelbildansicht
 
-**Status:** Accepted
+**Status:** Implemented ([PR #386](https://github.com/TheRealKoller/photosort/pull/386))
 **Erstellt:** 2026-09-10
 **Bezug:** [Issue #370](https://github.com/TheRealKoller/photosort/issues/370)
 
