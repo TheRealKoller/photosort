@@ -1679,6 +1679,47 @@ describe('Design-Vertrag: unbestimmter Fortschritt', () => {
   })
 })
 
+describe('Design-Vertrag: geteiltes Hoehen-Token der fixierten Bereiche', () => {
+  /*
+   * specs/features/0387-schrittleiste-fortschritt.md, Architektur-Abschnitt 1: Kopfzeile und
+   * Schrittleiste haften beide oben und duerfen sich nicht ueberlagern. Getrennt werden sie
+   * GEOMETRISCH ueber EINEN Wert: `--spacing-header` im `@theme`-Block erzeugt in Tailwind v4 die
+   * Utilities `h-header` (Kopfzeile) und `top-header` (Versatz der Schrittleiste).
+   *
+   * WARUM DAS HIER GEPRUEFT WIRD UND NICHT IN JSDOM: Eine unbekannte Utility ist in Tailwind KEIN
+   * Buildfehler. Ein `top-header`, fuer das der `--spacing-*`-Namensraum wider Erwarten keine
+   * Regel erzeugt, bliebe wirkungslos - die Leiste waere gar nicht mehr versetzt, und weder Build
+   * noch Typpruefung noch Komponententest saehen es. Der echte Tailwind-Lauf ist der einzige
+   * Mechanismus im Projekt, der diesen stillen Fehlschlag ueberhaupt bemerkt.
+   */
+  async function producesRule(utility: string): Promise<boolean> {
+    // Eigener `compile()`-Lauf je Kandidat: `build()` arbeitet inkrementell, ein gemeinsamer Lauf
+    // faerbte den zweiten Kandidaten am ersten gruen.
+    const compiled = await compile(indexCss, { base: SRC_DIR, onDependency: () => {} })
+    const baseline = compiled.build([])
+    return compiled.build([utility]) !== baseline
+  }
+
+  it('erzeugt fuer h-header und top-header tatsaechlich Regeln', async () => {
+    for (const utility of ['h-header', 'top-header']) {
+      expect(await producesRule(utility), utility).toBe(true)
+    }
+    // Gegenprobe: ein Tippfehler im selben Namensraum erzeugt KEINE Regel. Ohne sie bestuende der
+    // Test auch dann, wenn `build()` alles durchwinkte.
+    for (const utility of ['top-headr', 'h-headr']) {
+      expect(await producesRule(utility), utility).toBe(false)
+    }
+  }, 60_000)
+
+  it('fuehrt den Hoehenwert genau einmal - ein Wert, zwei Aufrufstellen', () => {
+    const declarations = indexCss
+      .split('\n')
+      .filter((line) => /--spacing-header\s*:/.test(line))
+    expect(declarations, 'Deklarationen von --spacing-header in index.css').toHaveLength(1)
+    expect(declarations[0]).toMatch(/--spacing-header:\s*3\.5rem;/)
+  })
+})
+
 describe('Design-Vertrag: Typoskala', () => {
   it('legt die Board-Groessen auf die bestehenden Tailwind-Stufen', () => {
     for (const [utility, value] of [
