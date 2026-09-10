@@ -944,6 +944,40 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     expect(FLOWING_TEXT_DANGER.test(line)).toBe(expected)
   })
 
+  /** Der Variantenpraefix einer Utility (`group-active:bg-border` -> `group-active:`), leer bei
+   * einer unpraefixierten. */
+  function variantPrefix(utility: string): string {
+    const cut = utility.lastIndexOf(':')
+    return cut === -1 ? '' : utility.slice(0, cut + 1)
+  }
+
+  /**
+   * Der Vordergrund, der GLEICHZEITIG mit einer Flaeche gilt: der mit demselben Variantenpraefix,
+   * sonst der unpraefixierte Ruhewert. Ohne diese Unterscheidung meldete die Regel unten jedes
+   * Rezept falsch-rot, das Ruhezustand und Zustandsvarianten in EINEM Klassenliteral fuehrt -
+   * seit dem `group-`-Muster (Spec 0387) ist das der Regelfall, und der Ruhevordergrund gilt dort
+   * gerade NICHT auf der gedrueckten Flaeche.
+   */
+  function foregroundWith(classes: string[], surface: string): string | undefined {
+    const prefix = variantPrefix(surface)
+    const foregrounds = classes.filter((cls) => /(^|:)text-[a-z-]+$/.test(cls))
+    return (
+      foregrounds.find((cls) => variantPrefix(cls) === prefix) ??
+      foregrounds.find((cls) => variantPrefix(cls) === '')
+    )
+  }
+
+  it.each([
+    [['bg-border', 'text-text-muted'], 'text-text-muted'],
+    [['group-active:bg-border', 'text-text-muted', 'group-active:text-text'], 'group-active:text-text'],
+    [['group-active:bg-border', 'text-text-muted'], 'text-text-muted'],
+  ])('Erkenner "Vordergrund auf der Flaeche": %s -> %s', (classes, expected) => {
+    // Selbsttest des Zuordners: ohne ihn koennte er stets `undefined` liefern und die Regel
+    // unten waere dauerhaft gruen.
+    const surface = classes.find((cls) => /(^|:)bg-border$/.test(cls))!
+    expect(foregroundWith(classes, surface)).toBe(expected)
+  })
+
   it('setzt auf die gedrueckte Flaeche --border nur die dort gerechneten Vordergruende', () => {
     // `--text-muted` misst auf `--border` 4.36:1 und `--danger-text` 4.33:1 - beide verfehlen AA.
     // Der gedrueckte Zustand ist am Telefon der EINZIGE Zustand, den es gibt (Tailwind bindet
@@ -954,13 +988,11 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     for (const file of tsxFiles()) {
       for (const literal of stringLiterals(file.content)) {
         const classes = literal.split(/\s+/)
-        const usesBorderSurface = classes.some((cls) => /(^|:)bg-border$/.test(cls))
-        if (!usesBorderSurface) continue
-        const bad = classes.filter((cls) =>
-          forbiddenOnBorder.some((name) => cls.endsWith(name))
-        )
-        if (bad.length > 0) {
-          offenders.push(`${file.label}: ${bad.join(' ')} auf bg-border`)
+        for (const surface of classes.filter((cls) => /(^|:)bg-border$/.test(cls))) {
+          const foreground = foregroundWith(classes, surface)
+          if (foreground !== undefined && forbiddenOnBorder.some((name) => foreground.endsWith(name))) {
+            offenders.push(`${file.label}: ${foreground} auf ${surface}`)
+          }
         }
       }
     }
@@ -1484,11 +1516,6 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Ueberfahren/Gedrueckt der zerstoererischen Schaltflaeche - zeichengleich zur primaeren',
     },
     {
-      file: 'src/components/Stepper.tsx',
-      snippet: "isBlocked && 'opacity-40'",
-      reason: 'Beschriftung eines blockierten Schritts - das Schloss-Symbol bleibt voll deckend',
-    },
-    {
       file: 'src/components/RatingButtons.tsx',
       snippet: 'text-rating-favorite-fg hover:opacity-85 active:opacity-70',
       reason: 'aktiver Eintrag der Bewertungsleiste (Favorit)',
@@ -1598,12 +1625,33 @@ describe('Design-Vertrag: Board-Navigationselement', () => {
     return stringLiterals(file!.content)
   }
 
+  /**
+   * Die Schrittmarke traegt seit specs/features/0387-schrittleiste-fortschritt.md die Zustaende
+   * des UMSCHLIESSENDEN Bedienelements (`group` in Stepper.tsx) und schreibt sie deshalb
+   * `group-`-praefixiert. Die Bindung leitet diese Fassung aus der Fassung der
+   * Projekt-Navigationsgruppe AB, statt sie ein zweites Mal zu tippen - sonst waere genau die
+   * Dopplung entstanden, gegen die diese Zusicherung antritt.
+   */
+  function groupPraefixiert(recipe: string): string {
+    return recipe.replace(/(^|\s)(hover|active):/g, '$1group-$2:')
+  }
+
+  it('praefixiert im Ableiter nur Zustaende, nicht beliebige Woerter', () => {
+    // Selbsttest des Ableiters: ohne ihn koennte er alles oder nichts umschreiben und die
+    // Bindung unten waere in beiden Faellen gruen.
+    expect(groupPraefixiert('bg-surface hover:bg-overlay')).toBe('bg-surface group-hover:bg-overlay')
+    expect(groupPraefixiert('text-accent')).toBe('text-accent')
+  })
+
   it.each(Object.entries(RECIPES))(
-    'fuehrt das %s-Rezept in Stepper und ProjectNav zeichengleich',
+    'fuehrt das %s-Rezept in StepMarker und ProjectNav zeichengleich',
     (_name, recipe) => {
-      for (const label of ['src/components/Stepper.tsx', 'src/components/ProjectNav.tsx']) {
-        expect(literalsOf(label), `${label} ohne das Rezept`).toContain(recipe)
-      }
+      expect(literalsOf('src/components/ProjectNav.tsx'), 'ProjectNav ohne das Rezept').toContain(
+        recipe
+      )
+      expect(literalsOf('src/components/StepMarker.tsx'), 'StepMarker ohne das Rezept').toContain(
+        groupPraefixiert(recipe)
+      )
     }
   )
 
@@ -1627,7 +1675,7 @@ describe('Design-Vertrag: Board-Navigationselement', () => {
   it('bindet nicht gegen ein Rezept, das in keiner der beiden Dateien steht', () => {
     // Positiv-Gegenprobe: ohne sie bestuende die Bindung oben auch dann, wenn `stringLiterals`
     // nichts mehr faende und beide Seiten leer waeren.
-    for (const label of ['src/components/Stepper.tsx', 'src/components/ProjectNav.tsx']) {
+    for (const label of ['src/components/StepMarker.tsx', 'src/components/ProjectNav.tsx']) {
       expect(literalsOf(label).length).toBeGreaterThan(0)
       expect(literalsOf(label)).not.toContain('border-accent bg-overlay font-black text-accent')
     }

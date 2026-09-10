@@ -42,9 +42,8 @@ const AKTIV_RECIPE = 'border-accent bg-overlay font-bold text-accent'
  * Zustaende kommen vom umschliessenden Bedienelement, nicht vom Marker selbst. Der Design-Vertrag
  * leitet diese Fassung aus der Fassung in ProjectNav.tsx ab, statt sie ein zweites Mal zu tippen.
  */
-const RUHEND_RECIPE =
-  'border-border-control bg-surface text-text group-hover:bg-overlay group-hover:text-text-h ' +
-  'group-active:bg-border group-active:text-text'
+// prettier-ignore
+const RUHEND_RECIPE = 'border-border-control bg-surface text-text group-hover:bg-overlay group-hover:text-text-h group-active:bg-border group-active:text-text'
 
 /*
  * Groesse: schmal ueber die volle Spaltenbreite gedehnt (`h-8 w-full`), ab `sm:` quadratisch
@@ -73,9 +72,8 @@ const AUSPRAEGUNG_CLASSES: Record<StepMarkerAuspraegung, string> = {
   // Blockiert: gedaempfter Umriss und gedaempfte Schrift, Schloss als Glyphe. Kein pauschales
   // `opacity` auf dem ganzen Element - so bleibt das Schloss selbst lesbar. Die Rueckmeldung beim
   // Ueberfahren bleibt, denn der gesperrte Schritt IST bedienbar: er oeffnet seinen Sperrgrund.
-  blockiert:
-    'border-border bg-surface text-text-muted group-hover:bg-overlay group-hover:text-text-h ' +
-    'group-active:bg-border group-active:text-text',
+  // prettier-ignore
+  blockiert: 'border-border bg-surface text-text-muted group-hover:bg-overlay group-hover:text-text-h group-active:bg-border group-active:text-text',
 }
 
 /**
