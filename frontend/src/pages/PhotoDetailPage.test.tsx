@@ -912,6 +912,82 @@ describe('PhotoDetailPage', () => {
     })
   })
 
+  /* specs/features/0370-bedienelemente-zuerst.md, UI/UX-Abschnitt "Zustände" und Teststrategie
+   * ("laufende Mutation, mit der ausdrücklichen Gegenprobe, dass Bewertungs- und
+   * Override-Mutation NICHT gekoppelt sind"): Beide Busy-Quellen stehen seit dem Umbau erstmals
+   * direkt untereinander. Eine versehentliche Kopplung (ein gemeinsames `isMutating` an beiden)
+   * sähe plausibel aus und würde von keinem anderen Test bemerkt. */
+  describe('Getrennte Mutationspfade: Bewertung vs. Kategorie-Override', () => {
+    function photoWithBothPaths(): PhotoOut {
+      return photo({
+        id: 1,
+        ratings: [],
+        suggestion: suggestion({ reason: 'low_quality' }),
+        criterion_scores: [criterionScore()],
+        rankings: [
+          {
+            cluster_key: 'cluster-0',
+            category_key: 'tier',
+            rank_score: 0.5,
+            rank_position: 1,
+            partition_size: 1,
+            is_primary: true,
+            curation_position: null,
+          },
+        ],
+        category_candidates: [
+          { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
+          { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
+        ],
+      })
+    }
+
+    it('lässt die Übernehmen-Schaltflächen des Bedienteils während einer laufenden Bewertung bedienbar', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photoWithBothPaths()],
+        total: 1,
+      })
+      // Nie aufloesende Anfrage: die Bewertungs-Mutation bleibt fuer die Dauer des Tests pending.
+      vi.mocked(ratingsApi.setRating).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/1')
+      await screen.findByText('1/1')
+
+      await user.click(screen.getByRole('button', { name: /favorit/i }))
+
+      // Beide Bedienelemente des Bewertungspfads sind busy...
+      await waitFor(() => expect(screen.getByRole('button', { name: /favorit/i })).toBeDisabled())
+      expect(screen.getByRole('button', { name: 'Album-würdig' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /vorschlag übernehmen/i })).toBeDisabled()
+      // ...der Kategorie-Bedienteil bleibt davon unberührt (getrennter Mutationspfad).
+      const controls = screen.getByTestId('category-controls-section')
+      expect(within(controls).getByRole('button', { name: /^übernehmen$/i })).toBeEnabled()
+      expect(within(controls).getByLabelText('Alle Kategorien')).toBeEnabled()
+    })
+
+    it('lässt die Bewertungsleiste während einer laufenden Kategorie-Übernahme bedienbar', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photoWithBothPaths()],
+        total: 1,
+      })
+      vi.mocked(photosApi.setCategoryOverride).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/1')
+
+      const controls = await screen.findByTestId('category-controls-section')
+      await user.click(within(controls).getByRole('button', { name: /^übernehmen$/i }))
+
+      await waitFor(() =>
+        expect(within(controls).getByRole('button', { name: /^übernehmen$/i })).toBeDisabled()
+      )
+      expect(screen.getByRole('button', { name: /favorit/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Verwerfen' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /vorschlag übernehmen/i })).toBeEnabled()
+    })
+  })
+
   /* Akzeptanzkriterium 5: Tastenkuerzel und Wischgesten wirken unveraendert. ArrowLeft und die
    * Wischgesten hatten bis zu dieser Spec keinen Test - ohne sie waere "unveraendert" beim
    * Umbau der Seite eine unbelegte Behauptung. */

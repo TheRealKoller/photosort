@@ -268,12 +268,15 @@ export function PhotoDetailPage() {
      showSuggestion={false} - die Ausschuss-Gruppe bleibt exklusiv im "Automatischer
      Vorschlag"-Kasten, suggestion wird hier bewusst nicht durchgereicht (kein Feld-/Logik-Merge
      zwischen beiden Bereichen). */
+  /* Die Detailansicht zeigt EIN Foto - gemeint ist immer seine Hauptzugehoerigkeit
+     (specs/features/0300-nebenkategorien.md). `rankings[0]` waere hier die falsche Abkuerzung,
+     die Rolle kommt aus `is_primary`. Einmal gebildet, weil sie an zwei Stellen gebraucht wird:
+     im Sichtbarkeitsgate des Bedienteils und in den Props beider Einbindungen. */
+  const ranking = primaryRanking(currentPhoto)
+
   const detailsProps = {
     criterionScores: currentPhoto.criterion_scores,
-    /* Die Detailansicht zeigt EIN Foto - gemeint ist immer seine Hauptzugehoerigkeit
-       (specs/features/0300-nebenkategorien.md). `rankings[0]` waere hier die falsche
-       Abkuerzung, die Rolle kommt aus `is_primary`. */
-    ranking: primaryRanking(currentPhoto),
+    ranking,
     rankings: currentPhoto.rankings,
     suggestion: null,
     showSuggestion: false,
@@ -333,7 +336,7 @@ export function PhotoDetailPage() {
           auch die Komponente prueft - sonst verbrauchte ein leerer Bereich im `gap-4` dieser
           Seite einen sichtbaren Abstand. Bewusst kein Card-Rahmen/Schatten wie das Popover
           (Designprinzip "Die Fotos sind der Star"). */}
-      {hasCategoryControls(currentPhoto.criterion_scores, primaryRanking(currentPhoto)) && (
+      {hasCategoryControls(currentPhoto.criterion_scores, ranking) && (
         <div className="text-sm text-text" data-testid="category-controls-section">
           <CriterionDetailsList {...detailsProps} part="controls" />
         </div>
