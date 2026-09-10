@@ -1,4 +1,6 @@
 import asyncio
+import os
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,11 +10,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import worker
+from photosort.cache_cleanup import CACHE_CLEANUP_GRACE_SECONDS
 from photosort.db import make_session_factory
 from photosort.models import Photo, Project, ScanRun, ScanStatus
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
-from photosort.thumbnails import display_path, thumbnail_path
+from photosort.thumbnails import (
+    display_path,
+    generate_variants,
+    measure_cache_usage,
+    thumbnail_path,
+)
 from photosort.worker import run_project_scan
 
 DRIVE = Drive(id="drive-1", name="Family", drive_type="project", webdav_url="https://cloud.example.com/dav/spaces/drive-1")
@@ -1126,3 +1134,318 @@ async def test_a_cancelled_error_from_a_parallel_worker_is_not_unpacked_into_the
 
     with pytest.raises(asyncio.CancelledError):
         await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+
+# specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0075 ab hier: die Anbindung der
+# Bereinigung an den Lauf. Die rund 30 Faelle OBERHALB dieser Zeile sind zugleich der
+# Regressionsnachweis der `return`-Verschiebung aus dem `try` heraus - sie laufen ab jetzt alle
+# durch die Bereinigung (mit `tmp_path` als Cache-Verzeichnis) und belegen, dass sie frisch
+# erzeugte Cache-Dateien nicht anfasst. Jede Anpassung, die an einem von ihnen noetig wuerde,
+# waere ein Befund und keine Nachpflege.
+
+
+def _write_orphan(
+    cache_dir: Path, photo_id: int, etag: str, age_seconds: float, size: int = 100
+) -> Path:
+    """Eine verwaiste Cache-Datei unter einem Schluessel, zu dem es keine Foto-Zeile (mehr) gibt.
+
+    Der Pfad entsteht ueber `thumbnail_path`, nie als handgetippter Hex-String - sonst driften
+    Test und Namensschema auseinander."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = thumbnail_path(cache_dir, photo_id, etag)
+    path.write_bytes(b"x" * size)
+    moment = time.time() - age_seconds
+    os.utime(path, (moment, moment))
+    return path
+
+
+async def _make_second_project_with_photo(
+    session: AsyncSession, moment: datetime
+) -> tuple[Project, Photo]:
+    """Ein zweites, NICHT gescanntes Projekt mit einem gueltigen Foto - der Aufbau, ohne den ein
+    versehentliches `where(project_id == ...)` in der Gueltigkeitsmenge unentdeckt bliebe."""
+    project = Project(name="Island", opencloud_drive_id="drive-1", opencloud_path="Island")
+    session.add(project)
+    await session.commit()
+    await session.refresh(project)
+    photo = Photo(
+        project_id=project.id,
+        relative_path="Island/b.jpg",
+        etag="etag-b",
+        content_length=10,
+        taken_at=moment,
+        last_modified=moment,
+    )
+    session.add(photo)
+    await session.commit()
+    await session.refresh(photo)
+    return project, photo
+
+
+# Weit ausserhalb der Schonfrist - die Sekundengenauigkeit ist nirgends Gegenstand.
+_GEALTERT = CACHE_CLEANUP_GRACE_SECONDS + 3600.0
+
+
+async def test_a_successful_scan_removes_an_aged_orphan_and_spares_foreign_valid_files(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Traegt Akzeptanzkriterium 1, 3 und 5 zugleich: der Rest verschwindet ohne gesonderten
+    Anstoss, die gueltigen Dateien eines NICHT gescannten Projekts bleiben unangetastet, und die
+    im Lauf frisch erzeugten Dateien ueberleben ihn."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    _, foreign_photo = await _make_second_project_with_photo(db_session, modified)
+
+    orphan = _write_orphan(tmp_path, 9999, "etag-weg", _GEALTERT)
+    foreign_valid = _write_orphan(tmp_path, foreign_photo.id, "etag-b", _GEALTERT)
+
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_bytes()},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    assert not orphan.exists()
+    assert foreign_valid.is_file()
+    scanned = (
+        await db_session.execute(select(Photo).where(Photo.project_id == project.id))
+    ).scalar_one()
+    assert thumbnail_path(tmp_path, scanned.id, "etag-1").is_file()
+    assert display_path(tmp_path, scanned.id, "etag-1").is_file()
+
+
+async def test_cache_files_of_a_photo_removed_during_the_scan_go_in_the_same_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium 2, zweiter Entstehungsweg - und zugleich der Beleg dafuer, dass der
+    Schnappschuss NACH dem Loesch-Commit gezogen wird.
+
+    Das zweite Projekt mit einem gueltigen Foto ist nicht Beiwerk: ohne es bliebe nach dem
+    Entfernen der einzigen Foto-Zeile GAR keine Zeile uebrig, und die fail-closed-Regel
+    (Security-Muss-Kriterium 5) griffe - der ausdruecklich in Kauf genommene Randfall
+    "Installation ohne ein einziges Foto behaelt ihre Reste"."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    _, foreign_photo = await _make_second_project_with_photo(db_session, modified)
+    foreign_valid = _write_orphan(tmp_path, foreign_photo.id, "etag-b", _GEALTERT)
+    photo = Photo(
+        project_id=project.id,
+        relative_path="CostaRica/gone.jpg",
+        etag="etag-weg",
+        content_length=10,
+        taken_at=modified,
+        last_modified=modified,
+    )
+    db_session.add(photo)
+    await db_session.commit()
+    await db_session.refresh(photo)
+    cached = _write_orphan(tmp_path, photo.id, "etag-weg", _GEALTERT)
+
+    scan_run = await run_project_scan(
+        db_session, FakeOpenCloudClient(entries=[]), project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.photos_removed == 1
+    assert not cached.exists()
+    assert foreign_valid.is_file()
+
+
+async def test_cache_files_under_the_previous_etag_go_after_an_etag_change(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium 2, erster Entstehungsweg. Erweiterung von
+    `test_scan_updates_photo_on_etag_change`, nicht dessen Ersatz."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    photo = Photo(
+        project_id=project.id,
+        relative_path="CostaRica/img001.jpg",
+        etag="old-etag",
+        content_length=10,
+        taken_at=modified,
+        last_modified=modified,
+    )
+    db_session.add(photo)
+    await db_session.commit()
+    await db_session.refresh(photo)
+    stale = _write_orphan(tmp_path, photo.id, "old-etag", _GEALTERT)
+
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "new-etag", modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_bytes()},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.photos_updated == 1
+    assert not stale.exists()
+    assert thumbnail_path(tmp_path, photo.id, "new-etag").is_file()
+
+
+async def test_a_freshly_written_orphan_survives_the_scan(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium 4, der wichtigste Einzelfall der Story: genau das, was ein PARALLEL
+    laufender Scan zwischen Dateischreiben und Commit der Foto-Zeile hinterlaesst. Ohne diesen
+    Fall waere die Bereinigung eine Datenverlustquelle."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    fresh = _write_orphan(tmp_path, 9999, "etag-anderer-scan", age_seconds=0.0)
+
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_bytes()},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    assert fresh.is_file()
+
+
+async def test_a_failed_scan_does_not_clean_up(db_session: AsyncSession, tmp_path: Path) -> None:
+    """Akzeptanzkriterium 8: der Aufruf sitzt HINTER dem Fehler-Handler, nicht darin."""
+    project = await _make_project(db_session)
+    orphan = _write_orphan(tmp_path, 9999, "etag-weg", _GEALTERT)
+    client = FakeOpenCloudClient(entries=[], fail_with=OpenCloudError("Verbindung verweigert"))
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.FAILED
+    assert orphan.is_file()
+
+
+async def test_a_cancelled_scan_does_not_clean_up(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium 8, zweiter Zweig: die `CancelledError` propagiert unveraendert und
+    erreicht die Bereinigung strukturell nicht."""
+    project = await _make_project(db_session)
+    project_id = project.id
+    orphan = _write_orphan(tmp_path, 9999, "etag-weg", _GEALTERT)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = WalkFailsWithCancelledErrorClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))]
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    assert orphan.is_file()
+    scan_run = (
+        await db_session.execute(select(ScanRun).where(ScanRun.project_id == project_id))
+    ).scalar_one()
+    assert scan_run.status == ScanStatus.FAILED
+
+
+async def test_a_single_file_error_does_not_devalue_the_scan(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Akzeptanzkriterium 7: die uebrigen Reste werden dennoch entfernt, der Pfad der
+    gescheiterten Datei steht im Log, und der Lauf bleibt erfolgreich.
+
+    Das zweite Projekt mit einem gueltigen Foto haelt die Gueltigkeitsmenge nicht-leer - sonst
+    griffe die fail-closed-Regel (Security-Muss-Kriterium 5) und es wuerde ueberhaupt nichts
+    geloescht."""
+    project = await _make_project(db_session)
+    await _make_second_project_with_photo(db_session, datetime(2023, 8, 15, 10, 0, tzinfo=UTC))
+    doomed = _write_orphan(tmp_path, 9998, "etag-weg", _GEALTERT)
+    other = _write_orphan(tmp_path, 9999, "etag-weg", _GEALTERT)
+    original_unlink = Path.unlink
+
+    def _failing_unlink(self: Path, missing_ok: bool = False) -> None:
+        if self == doomed:
+            raise OSError("Nur-Lese-Dateisystem")
+        original_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", _failing_unlink)
+
+    with caplog.at_level("WARNING"):
+        scan_run = await run_project_scan(
+            db_session,
+            FakeOpenCloudClient(entries=[]),
+            project,
+            drive_name=None,
+            cache_dir=tmp_path,
+        )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    assert doomed.is_file()
+    assert not other.exists()
+    assert str(doomed) in caplog.text
+
+
+async def test_a_failing_cleanup_leaves_the_run_successful_and_the_session_usable(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Auflage 1 der Teststrategie. Die Bereinigung setzt die Reihenfolge `commit()` -> `SELECT`
+    -> Fehler -> `rollback()`; ohne das anschliessende `refresh(scan_run)` scheitert der naechste
+    ATTRIBUTZUGRIFF mit `MissingGreenlet` - der Job stuerzte also NACH einem erfolgreichen Scan
+    ab, waehrend der Lauf auf SUCCESS steht und arq ihn als fehlgeschlagen verbucht. Bauform wie
+    `test_fail_run_result_is_immediately_readable_without_a_fresh_query`: die Assertions kommen
+    ohne dazwischenliegendes `await` und ohne frisches `select` aus."""
+    project = await _make_project(db_session)
+
+    async def _cleanup_that_queries_and_then_fails(
+        session: AsyncSession, cache_dir: Path
+    ) -> object:
+        await session.execute(select(Photo))
+        raise RuntimeError("Cache-Verzeichnis nicht lesbar")
+
+    monkeypatch.setattr(worker, "cleanup_orphaned_cache", _cleanup_that_queries_and_then_fails)
+
+    with caplog.at_level("WARNING"):
+        scan_run = await run_project_scan(
+            db_session,
+            FakeOpenCloudClient(entries=[]),
+            project,
+            drive_name=None,
+            cache_dir=tmp_path,
+        )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    assert scan_run.id is not None
+    assert "Bereinigung" in caplog.text
+    assert (await db_session.execute(select(Photo))).scalars().all() == []
+
+
+async def test_the_directory_matches_the_reported_storage_after_a_scan(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium 9 als Invariante: nach einer Bereinigung entspricht die Summe der
+    Dateigroessen im Bild-Cache der Summe der ueber alle Projekte ausgewiesenen Speicherbedarfe.
+    Die Verbindung zwischen Statistikseite und Verzeichnis gibt es im Produktivcode bewusst nicht
+    - sie ist genau deshalb ein Test."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    _, foreign_photo = await _make_second_project_with_photo(db_session, modified)
+    generate_variants(tmp_path, foreign_photo.id, "etag-b", _jpeg_bytes())
+    _write_orphan(tmp_path, 9999, "etag-weg", _GEALTERT)
+
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_bytes()},
+    )
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photos = (await db_session.execute(select(Photo.id, Photo.etag))).all()
+    reported = measure_cache_usage(tmp_path, [(photo_id, etag) for photo_id, etag in photos])
+    on_disk = sum(path.stat().st_size for path in tmp_path.iterdir() if path.is_file())
+
+    assert on_disk == reported.total_bytes

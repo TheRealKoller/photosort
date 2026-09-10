@@ -19,6 +19,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
+from photosort.cache_cleanup import cleanup_orphaned_cache
 from photosort.categories import LOCAL_CATEGORY_SIGNALS, resolve_category, secondary_categories
 from photosort.classification import (
     FaceBoundingBox,
@@ -629,7 +630,6 @@ async def run_project_scan(
         scan_run.photos_removed = len(removed_paths)
         scan_run.files_skipped = files_skipped
         await session.commit()
-        return scan_run
     except asyncio.CancelledError:
         # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
         # watchdog.md, ADR 0019): ein arq job_timeout-Ablauf, ein geplanter Worker-Shutdown und ein
@@ -651,6 +651,30 @@ async def run_project_scan(
         # deshalb aus - exakt das bereits bestehende Muster in run_project_scoring unten.
         await _fail_run(session, scan_run, str(exc))
         return scan_run
+
+    # Ab hier ist der Lauf SUCCESS: der Erfolgspfad faellt aus dem `try` HERAUS (das `return` ist
+    # dafuer nach unten gewandert), beide Fehlerzweige kehren oben zurueck bzw. re-raisen. Damit
+    # erreicht die Bereinigung den Abbruch- und den Fehlerpfad strukturell nicht
+    # (specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0075 Punkt 1: bei
+    # Abbruch/Fehlschlag wird nicht aufgeraeumt, der naechste erfolgreiche Scan holt es nach).
+    #
+    # AUSSERHALB des Fehler-Handlers und mit eigenem `except`: ein Fehler beim Aufraeumen darf
+    # einen bereits erfolgreichen Lauf nicht nachtraeglich auf FAILED setzen. Der unmittelbar
+    # vorangehende `commit()` ist zugleich der Commit-Rand, nach dem der Schnappschuss der
+    # Bereinigung gezogen wird.
+    try:
+        await cleanup_orphaned_cache(session, cache_dir)
+    except Exception:
+        # Das `rollback()` ist keine Kosmetik: schlaegt die Schnappschuss-Abfrage fehl, bliebe die
+        # Transaktion sonst blockiert. Es expired aber alle ORM-Objekte der Session - ohne das
+        # anschliessende `refresh()` liefe der Attributzugriff auf `scan_run.id` in `scan_project`
+        # in einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
+        # (sqlalchemy.exc.MissingGreenlet), und der Job stuerzte NACH einem erfolgreichen Scan ab.
+        # Dieselbe Fehlerklasse wie der bereits behobene Fund in `_fail_run` (PR #67).
+        await session.rollback()
+        await session.refresh(scan_run)
+        logger.warning("Bereinigung des Bild-Caches fehlgeschlagen", exc_info=True)
+    return scan_run
 
 
 async def scan_project(ctx: dict[str, Any], project_id: int) -> int:
