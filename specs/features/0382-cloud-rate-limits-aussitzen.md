@@ -1,6 +1,6 @@
 # 0382 - Vollständige Cloud-Läufe trotz Anbieter-Rate-Limits
 
-**Status:** Accepted
+**Status:** Implemented ([PR #385](https://github.com/TheRealKoller/photosort/pull/385))
 **Erstellt:** 2026-09-10
 **Bezug:** [Issue #382](https://github.com/TheRealKoller/photosort/issues/382)
 
