@@ -6,22 +6,10 @@
       "anzeigename": "Projektübersicht",
       "seite": "Ansicht — Projektübersicht",
       "produktdateien": [],
-      "breiten": [
-        "mobile",
-        "desktop"
-      ],
-      "zustaende": [
-        "gefuellt",
-        "leer",
-        "ladend",
-        "fehler"
-      ],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["gefuellt", "leer", "ladend", "fehler"],
       "variantenachse": "zustand",
-      "bausteine": [
-        "button",
-        "alert",
-        "skeleton"
-      ],
+      "bausteine": ["button", "alert", "skeleton"],
       "luecken": [
         {
           "schluessel": "bewegung",
@@ -75,18 +63,10 @@
       "anzeigename": "Projekt anlegen",
       "seite": "Ansicht — Projekt anlegen",
       "produktdateien": [],
-      "breiten": [
-        "mobile",
-        "desktop"
-      ],
-      "zustaende": [
-        "standard"
-      ],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["standard"],
       "variantenachse": null,
-      "bausteine": [
-        "input",
-        "button"
-      ],
+      "bausteine": ["input", "button"],
       "luecken": [
         {
           "schluessel": "breakpoint",
@@ -125,19 +105,10 @@
       "anzeigename": "Projekt pflegen",
       "seite": "Ansicht — Projekt pflegen",
       "produktdateien": [],
-      "breiten": [
-        "mobile",
-        "desktop"
-      ],
-      "zustaende": [
-        "standard"
-      ],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["standard"],
       "variantenachse": null,
-      "bausteine": [
-        "input",
-        "button",
-        "switch"
-      ],
+      "bausteine": ["input", "button", "switch"],
       "luecken": [
         {
           "schluessel": "breakpoint",
@@ -181,18 +152,10 @@
       "anzeigename": "Projekt löschen",
       "seite": "Ansicht — Projekt löschen",
       "produktdateien": [],
-      "breiten": [
-        "mobile",
-        "desktop"
-      ],
-      "zustaende": [
-        "standard"
-      ],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["standard"],
       "variantenachse": null,
-      "bausteine": [
-        "input",
-        "button"
-      ],
+      "bausteine": ["input", "button"],
       "luecken": [
         {
           "schluessel": "breakpoint",
@@ -231,17 +194,10 @@
       "anzeigename": "Schrittleiste",
       "seite": "Ansicht — Schrittleiste",
       "produktdateien": [],
-      "breiten": [
-        "mobile",
-        "desktop"
-      ],
-      "zustaende": [
-        "standard"
-      ],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["standard"],
       "variantenachse": null,
-      "bausteine": [
-        "step-marker"
-      ],
+      "bausteine": ["step-marker"],
       "luecken": [
         {
           "schluessel": "schloss",
@@ -285,23 +241,10 @@
       "anzeigename": "Fotos",
       "seite": "Ansicht — Fotos",
       "produktdateien": [],
-      "breiten": [
-        "mobile",
-        "desktop"
-      ],
-      "zustaende": [
-        "gefuellt",
-        "leer",
-        "ladend",
-        "fehler"
-      ],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["gefuellt", "leer", "ladend", "fehler"],
       "variantenachse": "zustand",
-      "bausteine": [
-        "button",
-        "badge",
-        "alert",
-        "skeleton"
-      ],
+      "bausteine": ["button", "badge", "alert", "skeleton"],
       "luecken": [
         {
           "schluessel": "seitenverhaeltnis",
