@@ -114,7 +114,7 @@ Versuchszahl, Wartebudget, Staffel und Deckel bleiben aus demselben Grund **Modu
 
 **Der Name bricht bewusst mit der `LANDMARK_*`-Familie.** ADR 0059 Punkt 1 hat die Ungenauigkeit von `LANDMARK_PROVIDER`/`LANDMARK_MODEL` (beide gelten für beide Cloud-Anteile) nur deshalb fortgeschrieben, weil ein Umbenennen für den Betrieb eine breaking Änderung gewesen wäre. Für einen **neuen** Namen gibt es dieses Argument nicht, und der abweichende Präfix trägt hier sogar eine Aussage: Der Wert hängt am Anbieterkonto und gilt für beide Teilschritte gemeinsam — anders als die beiden `*_CONCURRENCY`-Werte, die je Teilschritt getrennt sind.
 
-**Die Voreinstellungen je Anbieter stehen im Code** (`cloud_vision_throttle.py`), mit Quelle und Abrufdatum am Eintrag — dieselbe Belegpflicht, die ADR 0059 Punkt 5 für Modellpreise eingeführt hat. Sie sind bewusst vorsichtig: Eine zu vorsichtige Voreinstellung macht einen Lauf langsamer und ist über die Variable zu heben; eine zu großzügige führt genau den Zustand herbei, den diese Story abschafft.
+**Die Voreinstellungen je Anbieter stehen im Code** (`cloud_vision.py`, unmittelbar neben `VISION_MODELS_BY_PROVIDER`, das dieselbe Rolle für `LANDMARK_MODEL` spielt), mit Quelle und Abrufdatum am Eintrag — dieselbe Belegpflicht, die ADR 0059 Punkt 5 für Modellpreise eingeführt hat. Sie sind bewusst vorsichtig: Eine zu vorsichtige Voreinstellung macht einen Lauf langsamer und ist über die Variable zu heben; eine zu großzügige führt genau den Zustand herbei, den diese Story abschafft.
 
 | Anbieter | Voreinstellung | Herleitung (Recherchestand 2026-09-10) |
 |---|---|---|
@@ -122,6 +122,8 @@ Versuchszahl, Wartebudget, Staffel und Deckel bleiben aus demselben Grund **Modu
 | `mistral` | **40/min** (1 Anfrage alle 1,5 s) | **Nicht erstparteilich belegbar.** Mistral veröffentlicht keine Zahlen mehr je Tarif und verweist ausschließlich auf das Admin-Panel des eigenen Kontos; der frühere Hilfeartikel mit den Werten der kostenlosen Stufe liefert seit dem Recherchestand `404`. Der Wert liegt bewusst unterhalb der (nur noch sekundär kolportierten, hier ausdrücklich **nicht** als Beleg herangezogenen) Größenordnung von einer Anfrage je Sekunde. Er ist damit eine begründete Setzung, keine belegte Grenze — und genau der Fall, für den die Variable existiert. |
 
 **Die Belegkette bleibt an dieser Stelle ausdrücklich unvollständig, statt geglättet zu werden.** Der verlässliche Wert für ein konkretes Konto steht nur im Admin-Panel des Anbieters. `docs/setup.md` sagt deshalb, wo er nachzusehen ist und in welche Richtung die Variable dann zu stellen ist.
+
+**Nachtrag bei der Umsetzung (`developer`, 2026-09-10):** Die Tabelle steht in `cloud_vision.py` statt, wie hier ursprünglich vorgesehen, in `cloud_vision_throttle.py` — zwingend, kein Geschmack: `config.py::resolved_cloud_vision_requests_per_minute()` löst die `0` gegen sie auf und müsste sie sonst aus `cloud_vision_throttle.py` importieren, also aus genau dem Modul, das seinerseits `config.py` importiert, um die Instanzen zu bauen. Das wäre der Importzyklus, den ADR 0059 Punkt 2 für dieselbe Konstellation bereits ausschließt. `cloud_vision.py` ist konfigurationsfrei und führt mit `VISION_MODELS_BY_PROVIDER` aus genau diesem Grund schon die Schwester-Registry. Die *Instanzen* liegen unverändert in `cloud_vision_throttle.py`.
 
 ### 8. Sichtbar wird das im Lauf-Protokoll — keine neue Spalte, kein neues Antwortfeld, keine Anzeige
 

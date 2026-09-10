@@ -323,7 +323,7 @@ ist kein Fehler, und `cloud_error_message` ist der Fehlerkanal.
 | Datei | Art der Änderung |
 |---|---|
 | `backend/src/photosort/cloud_vision.py` | **Kern.** `VisionEndpoint` + zwei Endpunkt-Konstanten, `CloudRequestThrottle`, `ThrottleStats`, `retry_after_seconds`, `post_vision_request`, vier neue Modulkonstanten. `raise_for_vision_api_status` bleibt unverändert und wird von `post_vision_request` am Ende aufgerufen. |
-| `backend/src/photosort/cloud_vision_throttle.py` | **neu**, klein: Voreinstellungen je Anbieter + prozessweite Instanzen + `throttle_for_provider`. |
+| `backend/src/photosort/cloud_vision_throttle.py` | **neu**, klein: prozessweite Instanzen + `throttle_for_provider`. (Umsetzung: die Voreinstellungstabelle liegt in `cloud_vision.py` neben `VISION_MODELS_BY_PROVIDER` — `config.py` löst gegen sie auf und dürfte dieses Modul sonst nicht importieren, siehe Nachtrag in ADR 0074 Entscheidung 7.) |
 | `backend/src/photosort/config.py` | neues Feld `cloud_vision_requests_per_minute` + `resolved_cloud_vision_requests_per_minute()`. |
 | `backend/src/photosort/landmark.py` | `throttle`-Pflichtparameter an beiden Client-Klassen, beide `detect`-Blöcke auf `post_vision_request` umgestellt, `build_landmark_client` reicht den Schrittmacher durch. |
 | `backend/src/photosort/remote_classification.py` | dasselbe für beide `classify`-Methoden und `build_category_classification_client`. |
