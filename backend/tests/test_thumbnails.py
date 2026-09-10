@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 from pathlib import Path
 
 import pytest
@@ -9,9 +10,12 @@ from PIL import Image
 from photosort.thumbnails import (
     DISPLAY_MAX_SIZE,
     THUMBNAIL_MAX_SIZE,
+    CacheSweepResult,
     CacheUsage,
     cache_key,
+    collect_cache_entries,
     delete_cached_variants,
+    delete_orphaned_entries,
     display_path,
     generate_variants,
     measure_cache_usage,
@@ -307,3 +311,384 @@ def test_delete_cached_variants_keeps_going_after_an_oserror_and_logs_the_path(
     assert not thumbnail_path(tmp_path, 2, "etag-b").exists()
     assert not display_path(tmp_path, 2, "etag-b").exists()
     assert str(doomed) in caplog.text
+
+
+# specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0075 ab hier: der EINE gemusterte
+# Verzeichnisdurchgang des Projekts. Das Muster gehoert neben die Pfadbildung, die es
+# wiedererkennt - wer `thumbnail_path`/`display_path` aendert, muss es in derselben Datei
+# anfassen. Beide Funktionen sind rein/DB-frei und damit gegen `tmp_path` pruefbar, ohne
+# Datenbank, ohne Fake-Client und ohne Uhr: das Alter kommt ausschliesslich ueber `os.utime`,
+# die Grenze als Parameter.
+
+
+def _write_aged(path: Path, size: int, mtime: float) -> None:
+    _write_variant(path, size)
+    os.utime(path, (mtime, mtime))
+
+
+class TestCollectCacheEntries:
+    def test_missing_cache_directory_yields_no_entries(self, tmp_path: Path) -> None:
+        assert collect_cache_entries(tmp_path / "existiert-nicht") == []
+
+    def test_empty_cache_directory_yields_no_entries(self, tmp_path: Path) -> None:
+        assert collect_cache_entries(tmp_path) == []
+
+    def test_both_variants_of_one_photo_become_two_entries_with_the_same_key(
+        self, tmp_path: Path
+    ) -> None:
+        _write_variant(thumbnail_path(tmp_path, 1, "etag-1"), 100)
+        _write_variant(display_path(tmp_path, 1, "etag-1"), 200)
+
+        entries = collect_cache_entries(tmp_path)
+
+        assert len(entries) == 2
+        assert {entry.key for entry in entries} == {cache_key(1, "etag-1")}
+        assert {entry.path for entry in entries} == {
+            thumbnail_path(tmp_path, 1, "etag-1"),
+            display_path(tmp_path, 1, "etag-1"),
+        }
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "0" * 63 + "_thumbnail.jpg",
+            "0" * 65 + "_thumbnail.jpg",
+            "A" * 64 + "_thumbnail.jpg",
+            "0" * 64 + "_thumbnail.jpeg",
+            "0" * 64 + "_preview.jpg",
+            "_thumbnail.jpg",
+            "vorher-" + "0" * 64 + "_thumbnail.jpg",
+            "0" * 64 + "_thumbnail.jpg.bak",
+        ],
+        ids=[
+            "63-hexstellen",
+            "65-hexstellen",
+            "grossbuchstaben",
+            "jpeg-statt-jpg",
+            "unbekannte-variante",
+            "ohne-schluessel",
+            "praefix",
+            "suffix",
+        ],
+    )
+    def test_schema_similar_names_are_not_collected(self, tmp_path: Path, name: str) -> None:
+        """Schemaaehnliche Nicht-Treffer, nicht "irgendwas-fremdes.jpg": nur sie pruefen das
+        Muster tatsaechlich."""
+        _write_variant(tmp_path / name, 50)
+
+        assert collect_cache_entries(tmp_path) == []
+
+    def test_a_trailing_newline_in_the_name_is_not_collected(self, tmp_path: Path) -> None:
+        """Security-Muss-Kriterium 1 der Spec: `re.match` traefe diesen Namen, weil `$` auch
+        unmittelbar vor einem abschliessenden Zeilenumbruch passt - und ein Dateiname mit `\\n`
+        ist unter Linux anlegbar. Nur `re.fullmatch` weist ihn ab; er ist zugleich die einzige
+        Log-Injection-Flaeche des Features."""
+        _write_variant(tmp_path / ("0" * 64 + "_display.jpg\n"), 50)
+
+        assert collect_cache_entries(tmp_path) == []
+
+    def test_a_subdirectory_with_a_valid_name_is_not_collected_and_not_descended(
+        self, tmp_path: Path
+    ) -> None:
+        directory = tmp_path / ("0" * 64 + "_thumbnail.jpg")
+        directory.mkdir()
+        _write_variant(directory / ("1" * 64 + "_display.jpg"), 50)
+
+        assert collect_cache_entries(tmp_path) == []
+
+    def test_a_symlink_with_a_valid_name_is_not_collected_and_not_followed(
+        self, tmp_path: Path
+    ) -> None:
+        """Der Fall, der die Schutzwirkung des abgeloesten Verbots aus ADR 0062 Punkt 5 ersetzt -
+        ohne eigenen Test nur eine Absichtserklaerung."""
+        outside = tmp_path.parent / "fremde-datei.bin"
+        outside.write_bytes(b"x" * 999)
+        (tmp_path / ("0" * 64 + "_display.jpg")).symlink_to(outside)
+
+        assert collect_cache_entries(tmp_path) == []
+        assert outside.is_file()
+
+    def test_the_entry_carries_the_modification_time_set_via_utime(self, tmp_path: Path) -> None:
+        path = thumbnail_path(tmp_path, 1, "etag-1")
+        _write_aged(path, 100, mtime=1_600_000_000.0)
+
+        entries = collect_cache_entries(tmp_path)
+
+        assert len(entries) == 1
+        assert entries[0].mtime == pytest.approx(1_600_000_000.0)
+
+    def test_an_oserror_on_a_single_entry_does_not_abort_the_collection(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        good = thumbnail_path(tmp_path, 2, "etag-2")
+        _write_variant(good, 100)
+        doomed_name = "0" * 64 + "_display.jpg"
+        real_scandir = os.scandir
+
+        class _ExplodingEntry:
+            name = doomed_name
+            path = str(tmp_path / doomed_name)
+
+            def is_file(self, *, follow_symlinks: bool = True) -> bool:
+                return True
+
+            def stat(self, *, follow_symlinks: bool = True) -> object:
+                raise PermissionError("Zugriff verweigert")
+
+        class _FakeScandir:
+            def __enter__(self) -> object:
+                return iter([_ExplodingEntry(), *real_scandir(tmp_path)])
+
+            def __exit__(self, *args: object) -> bool:
+                return False
+
+        monkeypatch.setattr(os, "scandir", lambda _path: _FakeScandir())
+
+        entries = collect_cache_entries(tmp_path)
+
+        assert [entry.path for entry in entries] == [good]
+
+
+# Die Grenze `CUTOFF` ist ein reiner Parameter - keine Uhr, keine Wartezeit. `ALT` liegt weit
+# davor, `JUNG` weit dahinter; die Sekundengenauigkeit ist nirgends Gegenstand ausser im
+# ausdruecklichen Grenzwertfall.
+CUTOFF = 1_600_000_000.0
+ALT = CUTOFF - 10_000.0
+JUNG = CUTOFF + 10_000.0
+
+
+class TestDeleteOrphanedEntries:
+    """Jeder Loeschfall traegt eine Ueberlebens-Assertion auf einer Nachbardatei: ein Test, der
+    nur "die verwaiste Datei ist weg" behauptet, bliebe gruen, wenn die Implementierung das
+    Verzeichnis leerraeumt."""
+
+    def test_an_empty_input_yields_four_zeros(self, tmp_path: Path) -> None:
+        result = delete_orphaned_entries([], {cache_key(1, "etag-1")}, CUTOFF)
+
+        assert result == CacheSweepResult(
+            deleted_files=0, freed_bytes=0, failed_files=0, kept_recent=0
+        )
+
+    def test_entries_with_only_valid_keys_yield_four_zeros_and_survive(
+        self, tmp_path: Path
+    ) -> None:
+        _write_aged(thumbnail_path(tmp_path, 1, "etag-1"), 100, ALT)
+        _write_aged(display_path(tmp_path, 1, "etag-1"), 200, ALT)
+
+        result = delete_orphaned_entries(
+            collect_cache_entries(tmp_path), {cache_key(1, "etag-1")}, CUTOFF
+        )
+
+        assert result == CacheSweepResult(
+            deleted_files=0, freed_bytes=0, failed_files=0, kept_recent=0
+        )
+        assert thumbnail_path(tmp_path, 1, "etag-1").is_file()
+        assert display_path(tmp_path, 1, "etag-1").is_file()
+
+    def test_an_orphaned_and_aged_file_is_removed_while_a_valid_neighbour_survives(
+        self, tmp_path: Path
+    ) -> None:
+        orphan = thumbnail_path(tmp_path, 9, "etag-weg")
+        valid = thumbnail_path(tmp_path, 1, "etag-1")
+        _write_aged(orphan, 300, ALT)
+        _write_aged(valid, 100, ALT)
+
+        result = delete_orphaned_entries(
+            collect_cache_entries(tmp_path), {cache_key(1, "etag-1")}, CUTOFF
+        )
+
+        assert not orphan.exists()
+        assert valid.is_file()
+        assert result == CacheSweepResult(
+            deleted_files=1, freed_bytes=300, failed_files=0, kept_recent=0
+        )
+
+    def test_an_orphaned_but_young_file_stays_and_counts_as_kept_recent(
+        self, tmp_path: Path
+    ) -> None:
+        """Ohne das eigene Zaehlfeld waere "bewusst behalten" von "gar nicht betrachtet" nicht zu
+        unterscheiden - und der Fall, der Akzeptanzkriterium 4 traegt, bestuende leer."""
+        young_orphan = thumbnail_path(tmp_path, 9, "etag-weg")
+        valid = thumbnail_path(tmp_path, 1, "etag-1")
+        _write_aged(young_orphan, 300, JUNG)
+        _write_aged(valid, 100, ALT)
+
+        result = delete_orphaned_entries(
+            collect_cache_entries(tmp_path), {cache_key(1, "etag-1")}, CUTOFF
+        )
+
+        assert young_orphan.is_file()
+        assert valid.is_file()
+        assert result == CacheSweepResult(
+            deleted_files=0, freed_bytes=0, failed_files=0, kept_recent=1
+        )
+
+    def test_the_cutoff_itself_is_the_keeping_side(self, tmp_path: Path) -> None:
+        """Eine Seite festlegen und pruefen: `mtime < cutoff` loescht, `mtime == cutoff` bleibt."""
+        on_the_line = thumbnail_path(tmp_path, 8, "etag-genau")
+        just_before = thumbnail_path(tmp_path, 9, "etag-knapp-davor")
+        _write_aged(on_the_line, 100, CUTOFF)
+        _write_aged(just_before, 100, CUTOFF - 1.0)
+
+        result = delete_orphaned_entries(collect_cache_entries(tmp_path), {"unbenutzt"}, CUTOFF)
+
+        assert on_the_line.is_file()
+        assert not just_before.exists()
+        assert result == CacheSweepResult(
+            deleted_files=1, freed_bytes=100, failed_files=0, kept_recent=1
+        )
+
+    def test_a_file_rewritten_between_collection_and_unlink_survives(
+        self, tmp_path: Path
+    ) -> None:
+        """Der Kern von Akzeptanzkriterium 4: die Aenderungszeit wird unmittelbar vor dem `unlink`
+        ERNEUT gelesen. Ohne diesen Fall bliebe eine Implementierung gruen, die die Zeit aus dem
+        Schnappschuss nimmt."""
+        orphan = thumbnail_path(tmp_path, 9, "etag-weg")
+        neighbour = thumbnail_path(tmp_path, 8, "etag-auch-weg")
+        _write_aged(orphan, 300, ALT)
+        _write_aged(neighbour, 100, ALT)
+        entries = collect_cache_entries(tmp_path)
+
+        os.utime(orphan, (JUNG, JUNG))
+
+        result = delete_orphaned_entries(entries, {"unbenutzt"}, CUTOFF)
+
+        assert orphan.is_file()
+        assert not neighbour.exists()
+        assert result == CacheSweepResult(
+            deleted_files=1, freed_bytes=100, failed_files=0, kept_recent=1
+        )
+
+    def test_a_symlink_swapped_in_before_the_unlink_is_not_removed(
+        self, tmp_path: Path
+    ) -> None:
+        """Security-Muss-Kriterium 2: `Path.stat()` folgte dem Symlink und autorisierte seine
+        Entfernung ueber die Aenderungszeit einer FREMDEN Datei. `lstat()` plus erneutes
+        `S_ISREG` faellt ihn heraus - auch dann, wenn die eigene Aenderungszeit des Links
+        (per `follow_symlinks=False` gealtert) die Schonfrist gar nicht mehr schuetzt."""
+        orphan = thumbnail_path(tmp_path, 9, "etag-weg")
+        _write_aged(orphan, 300, ALT)
+        entries = collect_cache_entries(tmp_path)
+
+        outside = tmp_path.parent / "fremde-datei.bin"
+        _write_aged(outside, 999, ALT)
+        orphan.unlink()
+        orphan.symlink_to(outside)
+        os.utime(orphan, (ALT, ALT), follow_symlinks=False)
+
+        result = delete_orphaned_entries(entries, {"unbenutzt"}, CUTOFF)
+
+        assert orphan.is_symlink()
+        assert outside.is_file()
+        assert result.deleted_files == 0
+        assert result.freed_bytes == 0
+
+    def test_freed_bytes_sums_only_the_actually_deleted_files(self, tmp_path: Path) -> None:
+        _write_aged(thumbnail_path(tmp_path, 9, "etag-weg"), 300, ALT)
+        _write_aged(display_path(tmp_path, 9, "etag-weg"), 4_000, ALT)
+        _write_aged(thumbnail_path(tmp_path, 1, "etag-1"), 111, ALT)
+
+        result = delete_orphaned_entries(
+            collect_cache_entries(tmp_path), {cache_key(1, "etag-1")}, CUTOFF
+        )
+
+        assert result.deleted_files == 2
+        assert result.freed_bytes == 4_300
+        assert thumbnail_path(tmp_path, 1, "etag-1").is_file()
+
+    def test_an_oserror_on_unlink_is_counted_logged_and_does_not_stop_the_rest(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Die eigentliche Zusage ist die zweite Haelfte (Akzeptanzkriterium 7): die ZWEITE
+        verwaiste Datei ist trotzdem weg."""
+        doomed = thumbnail_path(tmp_path, 9, "etag-weg")
+        other = thumbnail_path(tmp_path, 8, "etag-auch-weg")
+        _write_aged(doomed, 300, ALT)
+        _write_aged(other, 100, ALT)
+        entries = collect_cache_entries(tmp_path)
+        original_unlink = Path.unlink
+
+        def _failing_unlink(self: Path, missing_ok: bool = False) -> None:
+            if self == doomed:
+                raise OSError("Nur-Lese-Dateisystem")
+            original_unlink(self, missing_ok=missing_ok)
+
+        monkeypatch.setattr(Path, "unlink", _failing_unlink)
+
+        with caplog.at_level("WARNING"):
+            result = delete_orphaned_entries(entries, {"unbenutzt"}, CUTOFF)
+
+        assert doomed.is_file()
+        assert not other.exists()
+        assert result == CacheSweepResult(
+            deleted_files=1, freed_bytes=100, failed_files=1, kept_recent=0
+        )
+        assert str(doomed) in caplog.text
+
+    def test_an_oserror_on_lstat_is_counted_and_the_file_stays(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        doomed = thumbnail_path(tmp_path, 9, "etag-weg")
+        _write_aged(doomed, 300, ALT)
+        entries = collect_cache_entries(tmp_path)
+
+        def _explode(self: Path) -> object:
+            raise PermissionError(f"Zugriff verweigert: {self}")
+
+        monkeypatch.setattr(Path, "lstat", _explode)
+
+        with caplog.at_level("WARNING"):
+            result = delete_orphaned_entries(entries, {"unbenutzt"}, CUTOFF)
+
+        assert doomed.is_file()
+        assert result == CacheSweepResult(
+            deleted_files=0, freed_bytes=0, failed_files=0 + 1, kept_recent=0
+        )
+        assert str(doomed) in caplog.text
+
+    def test_a_file_that_vanished_before_the_lstat_is_skipped_silently(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Auflage 2 der Teststrategie: die harmlose Wettlaufsituation trifft ab jetzt den
+        `lstat`, nicht mehr das `missing_ok=True` des `unlink`. Sie ist KEIN Fehlschlag - sonst
+        meldet der Normalfall Fehler, die keine sind, und ein echtes Rechteproblem geht im
+        Rauschen unter."""
+        vanishing = thumbnail_path(tmp_path, 9, "etag-weg")
+        _write_aged(vanishing, 300, ALT)
+        entries = collect_cache_entries(tmp_path)
+        vanishing.unlink()
+
+        with caplog.at_level("DEBUG"):
+            result = delete_orphaned_entries(entries, {"unbenutzt"}, CUTOFF)
+
+        assert result == CacheSweepResult(
+            deleted_files=0, freed_bytes=0, failed_files=0, kept_recent=0
+        )
+        assert caplog.records == []
+
+    def test_an_empty_valid_key_set_deletes_nothing_and_warns(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Security-Muss-Kriterium 5, fail-closed: eine leere Gueltigkeitsmenge ist der einzige
+        Zustand, in dem der Durchgang den kompletten Bild-Cache raeumte - und zugleich das Symptom
+        praktisch jedes denkbaren Fehlers an der Schnappschuss-Abfrage."""
+        orphan = thumbnail_path(tmp_path, 9, "etag-weg")
+        _write_aged(orphan, 300, ALT)
+
+        with caplog.at_level("WARNING"):
+            result = delete_orphaned_entries(collect_cache_entries(tmp_path), set(), CUTOFF)
+
+        assert orphan.is_file()
+        assert result == CacheSweepResult(
+            deleted_files=0, freed_bytes=0, failed_files=0, kept_recent=0
+        )
+        assert [record.levelname for record in caplog.records] == ["WARNING"]
+
+    def test_cache_sweep_result_is_frozen(self) -> None:
+        result = CacheSweepResult(
+            deleted_files=1, freed_bytes=2, failed_files=3, kept_recent=4
+        )
+
+        with pytest.raises(AttributeError):
+            result.deleted_files = 5  # type: ignore[misc]
