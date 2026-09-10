@@ -540,6 +540,66 @@
           }
         }
       }
+    },
+    {
+      "schluessel": "step-marker",
+      "name": "Schrittmarke",
+      "quellen": [
+        "src/components/StepMarker.tsx"
+      ],
+      "varianten": {
+        "auspraegung": [
+          "erledigt",
+          "aktuell",
+          "ausstehend",
+          "blockiert"
+        ],
+        "zustand": [
+          "normal",
+          "hover",
+          "active"
+        ]
+      },
+      "tokens": {
+        "radius": "radius.md",
+        "typografie": "text.xs",
+        "innenabstand-quer": "space.2",
+        "innenabstand-laengs": "space.2"
+      },
+      "tokensProAuspraegung": {
+        "auspraegung": {
+          "erledigt": {
+            "flaeche": "color.surface",
+            "umriss": "color.border-control",
+            "schrift": "color.text"
+          },
+          "aktuell": {
+            "flaeche": "color.overlay",
+            "umriss": "color.accent",
+            "schrift": "color.accent"
+          },
+          "ausstehend": {
+            "flaeche": "color.surface",
+            "umriss": "color.border-control",
+            "schrift": "color.text"
+          },
+          "blockiert": {
+            "flaeche": "color.surface",
+            "umriss": "color.border",
+            "schrift": "color.text-muted"
+          }
+        },
+        "zustand": {
+          "hover": {
+            "flaeche": "color.overlay",
+            "schrift": "color.text-h"
+          },
+          "active": {
+            "flaeche": "color.border",
+            "schrift": "color.text"
+          }
+        }
+      }
     }
   ]
 }

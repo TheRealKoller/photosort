@@ -12,7 +12,11 @@ import { ARTIFACTS_DIR, AUTH_STATE_FILE } from './lib/paths.ts'
 import { VIEWPORTS } from './lib/viewports.ts'
 
 // Nur bei 360px sinnvoll bzw. nur einmal noetig - siehe Kommentare an den jeweiligen Specs.
-const MOBILE_ONLY = [
+// EXPORTIERT, weil die Zuordnung eines Specs zu BEIDEN Breiten selbst eine Zusage ist:
+// `tests/toolchain.spec.ts` bindet, dass kein Viewport-Projekt einen Spec ausschliesst, dessen
+// Akzeptanzkriterium "in beiden Breiten geprueft" lautet. Ohne diese Bindung koennte die
+// Zweibreitigkeit hier still verschwinden.
+export const MOBILE_ONLY = [
   /tap-targets\.spec\.ts/,
   /no-horizontal-scroll\.spec\.ts/,
   // Kollisionsvermeidung ist erst im schmalen Viewport eine echte Frage: bei 1280 px liegt der
@@ -20,7 +24,7 @@ const MOBILE_ONLY = [
   // Panel anstiesse - der Spec liefe dort gruen, ohne die Eigenschaft herauszufordern.
   /popover-position\.spec\.ts/,
 ]
-const DESKTOP_ONLY = [
+export const DESKTOP_ONLY = [
   /grid-columns\.spec\.ts/,
   /login\.spec\.ts/,
   /toolchain\.spec\.ts/,

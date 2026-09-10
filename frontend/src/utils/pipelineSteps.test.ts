@@ -7,6 +7,7 @@ import {
   getHighestReachableStepId,
   isStepId,
   PIPELINE_STEPS,
+  stepProgress,
   type StepId,
 } from './pipelineSteps'
 
@@ -406,4 +407,47 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
       expect(getDefaultStepId(states)).toBe(getHighestReachableStepId(states))
     })
   }
+})
+
+/*
+ * specs/features/0387-schrittleiste-fortschritt.md, Teststrategie "Unit: stepProgress".
+ *
+ * Die Funktion liefert die Fuellung des Fortschrittsbalkens unter der Schrittleiste. `max` wird
+ * IMMER aus `PIPELINE_STEPS.length` hergeleitet und nie als `10` erwartet - sonst waere der Test
+ * bei einer sechsten Pipeline-Stufe still falsch statt rot.
+ */
+describe('stepProgress', () => {
+  const MAX = 2 * PIPELINE_STEPS.length
+
+  it.each([
+    { activeIndex: 0, value: 1 },
+    { activeIndex: 1, value: 3 },
+    { activeIndex: 2, value: 5 },
+    { activeIndex: 3, value: 7 },
+    { activeIndex: 4, value: 9 },
+  ])('liefert fuer Index $activeIndex die Spaltenmitte $value/$max', ({ activeIndex, value }) => {
+    expect(stepProgress(activeIndex)).toEqual({ value, max: MAX })
+  })
+
+  it.each([-1, PIPELINE_STEPS.length, 1.5, Number.NaN])(
+    'liefert fuer den unbrauchbaren Index %p den Wert 0',
+    (activeIndex) => {
+      expect(stepProgress(activeIndex)).toEqual({ value: 0, max: MAX })
+    }
+  )
+
+  /*
+   * Invariante statt fuenf Einzelwerte: der Balken waechst streng monoton und ist NIE voll -
+   * "fertig" gibt es in dieser Pipeline nicht (siehe `isDone: false` fuer `kuratierung`).
+   */
+  it('waechst streng monoton und bleibt echt zwischen 0 und max', () => {
+    let previous = 0
+    for (let index = 0; index < PIPELINE_STEPS.length; index += 1) {
+      const { value, max } = stepProgress(index)
+      expect(max).toBe(MAX)
+      expect(value).toBeGreaterThan(previous)
+      expect(value).toBeLessThan(max)
+      previous = value
+    }
+  })
 })

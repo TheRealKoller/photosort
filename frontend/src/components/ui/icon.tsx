@@ -37,10 +37,17 @@ import type { LucideIcon } from 'lucide-react'
  * Figma-Export hat lediglich Boegen in kubische Beziers aufgeloest und `star` gegenlaeufig
  * gezeichnet. Es gibt damit keine Geometrie-Abweichung zwischen Board und Paket.
  *
- * Der Satz wird NICHT stillschweigend erweitert. Die fuenf dokumentierten Luecken (`x` Schliessen,
- * `✎` Uebersteuerungs-Marker, `○` "nicht gelaufen", `●●○` Qualitaetsmesser, `–` unbewertet)
- * bleiben Textzeichen bzw. bestehende Komponenten - sie mit beliebigen weiteren Lucide-Symbolen zu
- * fuellen waere eine Gestaltungsentscheidung ohne Vorlage.
+ * Der Satz wird NICHT stillschweigend erweitert. Die SIEBEN dokumentierten Luecken (`x`
+ * Schliessen, `✎` Uebersteuerungs-Marker, `○` "nicht gelaufen", `●●○` Qualitaetsmesser, `–`
+ * unbewertet, `↳` Nebenkategorie-Marker und - seit specs/features/0387-schrittleiste-
+ * fortschritt.md - das SCHLOSS des gesperrten Pipeline-Schritts) bleiben Textzeichen, dateilokale
+ * SVGs bzw. bestehende Komponenten - sie mit beliebigen weiteren Lucide-Symbolen zu fuellen waere
+ * eine Gestaltungsentscheidung ohne Vorlage.
+ *
+ * Das Schloss lebt als dateilokales SVG in src/components/StepMarker.tsx. Ein dreizehntes Zeichen
+ * haette den Board-Beleg nicht, den alle zwoelf hier haben, und beruehrte diese Datei, ihre Tests,
+ * die parametrisierten Vertragszusagen, die Penpot-Nutzlast samt Kardinalitaeten und die Aussage
+ * "Zwoelfer-Symbolsatz" in Design-System und ADR - fuer EINEN Aufrufer.
  */
 const ICONS = {
   star: Star,

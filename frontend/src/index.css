@@ -278,6 +278,21 @@
   --font-mono: var(--mono);
 
   /*
+   * HOEHE DER DAUERHAFT FIXIERTEN KOPFZEILE (specs/features/0387-schrittleiste-fortschritt.md).
+   * EIN Wert, ZWEI Aufrufstellen: `h-header` gibt der Kopfzeile in App.tsx ihre Hoehe,
+   * `top-header` setzt den Haftpunkt der Schrittleiste in Stepper.tsx genau darunter. Beide
+   * Utilities entstehen aus diesem einen Token - ein zweiter, freihaendiger Pixelwert an der
+   * Leiste waere die Fehlerquelle, gegen die das hier steht (er driftet still, und die Leiste
+   * ueberlappte oder hinterliesse eine Fuge, durch die Inhalt durchscrollt).
+   *
+   * Die Kopfzeile darf deshalb NICHT umbrechen (kein `flex-wrap`, Nutzername `truncate`): mit
+   * fester Hoehe waere ein Umbruch stilles Abschneiden statt sichtbaren Wachsens. 3.5rem = 56px
+   * fassen die 32px hohen Bedienelemente plus 2x12px Polsterung und die 1px-Unterkante
+   * (Border-Box). Der Vertragstest bindet Wert und Einquelligkeit, e2e die fugenlose Naht.
+   */
+  --spacing-header: 3.5rem;
+
+  /*
    * Radienskala des Boards. Die bestehenden rounded-md- und rounded-xl-Aufrufstellen werden durch
    * den Wertetausch automatisch board-konform, ohne angefasst zu werden.
    *   xs 4px  Hotkey-Kaestchen, Fortschrittsbalken, Auswahlpunkt

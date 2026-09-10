@@ -33,13 +33,28 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 9
+const EXPECTED_CONTROL_COUNT = 11
 
-async function assertTappable(control: Locator, label: string): Promise<void> {
+async function assertTappable(
+  control: Locator,
+  label: string,
+  options: { ariaDisabled?: boolean } = {}
+): Promise<void> {
   await expect(control, `Bedienelement "${label}"`).toBeVisible()
-  // `disabled:pointer-events-none` im Button-Stil wuerde den Treffertest zwangslaeufig auf einen
-  // Vorfahren umlenken - ein deaktiviertes Element waere also falsch-rot statt aussagekraeftig.
-  await expect(control, `Bedienelement "${label}" ist bedienbar`).toBeEnabled()
+  if (options.ariaDisabled === true) {
+    // Der gesperrte Schritt der Schrittleiste (specs/features/0387-schrittleiste-fortschritt.md)
+    // traegt `aria-disabled`, NIE `disabled` - Playwright zaehlt `aria-disabled` zu "disabled",
+    // `toBeEnabled()` waere hier also falsch-rot. Dass Zeigerereignisse ihn trotzdem erreichen,
+    // belegt der Treffertest unten selbst; mit `disabled` waere er es nicht, und der Sperrgrund
+    // am Telefon unerreichbar. Beide Attribute werden geprueft, damit die Ausnahme nicht
+    // versehentlich ein wirklich deaktiviertes Element durchwinkt.
+    await expect(control, `"${label}" traegt aria-disabled`).toHaveAttribute('aria-disabled', 'true')
+    await expect(control, `"${label}" traegt kein disabled`).not.toHaveAttribute('disabled', /.*/)
+  } else {
+    // `disabled:pointer-events-none` im Button-Stil wuerde den Treffertest zwangslaeufig auf einen
+    // Vorfahren umlenken - ein deaktiviertes Element waere also falsch-rot statt aussagekraeftig.
+    await expect(control, `Bedienelement "${label}" ist bedienbar`).toBeEnabled()
+  }
 
   // Mittig in den Sichtbereich rollen statt nur "gerade so hinein": die sticky Kopfzeile liegt
   // sonst ueber einem knapp oben stehenden Element, und der Treffertest meldete SIE.
@@ -151,6 +166,37 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
     'Statistik (Panelzeile der Projekt-Navigation)'
   )
   checked.push('Statistik (Panelzeile)')
+
+  // --- Schrittleiste der Pipeline (specs/features/0387-schrittleiste-fortschritt.md) -----------
+  // Der Wechsel von `tap-target-square` am Marker auf `tap-target` am spaltenfuellenden
+  // Bedienelement loest genau die beiden hier pruefbaren Fehlerklassen aus: waagerechter Ueberhang
+  // und ueberlappende Trefferflaechen benachbarter Bedienelemente. Bei 360px ist eine Spalte nur
+  // rund 72px breit - dort schlaegt ein Ueberhang sofort durch. Die Leiste ist auf jeder
+  // Pipeline-Seite dauerhaft sichtbar und damit heisser Pfad nach derselben Begruendung, mit der
+  // Spec 0298 den Kopfzeilen-Ausloeser aufgenommen hat.
+  //
+  // Geprueft werden ZWEI Bedienelemente: der ERSTE Schritt (Randspalte, dort ist ein Ueberhang am
+  // wahrscheinlichsten) und ein GESPERRTER Schritt. Letzterer ist der neue `aria-disabled`-Knopf,
+  // und der Treffertest ist zugleich der Nachweis, dass Zeigerereignisse ihn ueberhaupt erreichen -
+  // mit `disabled` taeten sie es nicht, und der Sperrgrund waere am Telefon unerreichbar.
+  //
+  // Eigenes Demo-Projekt: im "bewertet"-Projekt ist jeder Schritt erreichbar, es gaebe dort gar
+  // keinen gesperrten Schritt zu pruefen.
+  const pipelineProjectId = await demoProjectId(page, DEMO_PROJECTS.error)
+  await page.goto(`/projects/${pipelineProjectId}/pipeline/scan`)
+  const stepper = page.getByRole('navigation', { name: 'Fortschritt der Pipeline' })
+  await expect(stepper).toBeVisible()
+
+  await assertTappable(
+    stepper.getByRole('link', { name: /^Schritt 1 von 5: Scan/ }),
+    'Schritt 1 der Schrittleiste (Randspalte)'
+  )
+  checked.push('Schritt 1 der Schrittleiste')
+
+  const gesperrt = stepper.getByRole('button', { name: /, blockiert$/ })
+  await expect(gesperrt, 'gesperrte Schritte der Leiste').toHaveCount(1)
+  await assertTappable(gesperrt, 'gesperrter Schritt der Schrittleiste', { ariaDisabled: true })
+  checked.push('gesperrter Schritt der Schrittleiste')
 
   // Ohne diese Zusicherung bestuende der Spec auch dann, wenn keine der Lokalisierungen oben noch
   // etwas faende und jede Schleife ueber eine leere Menge liefe.

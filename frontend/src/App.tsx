@@ -83,9 +83,20 @@ function AppShell() {
           hier jetzt explizit gesetzt (bisher trug nur der aeussere Wrapper die Hintergrundfarbe),
           damit scrollender Inhalt im Sticky-Zustand nicht sichtbar durchscheinen kann, falls eine
           kuenftige Seite einen abweichenden Hintergrund einfuehrt. CSS-Sticky-Verhalten ist in
-          jsdom nicht automatisiert pruefbar - manueller Smoke-Test vor Merge (Scrollen durch eine
-          Fotoliste, kein Layout-Overlap, Light/Dark). */}
-      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-separator bg-bg px-4 py-3 sm:px-6">
+          jsdom nicht automatisiert pruefbar - `e2e/tests/sticky-header.spec.ts` misst es.
+
+          FESTE HOEHE STATT POLSTERUNG (specs/features/0387-schrittleiste-fortschritt.md): `py-3`
+          ist `h-header` gewichen. Der Wert kommt aus `--spacing-header` in index.css und ist
+          dieselbe Quelle, aus der die Schrittleiste ihren Haftpunkt `top-header` bezieht - beide
+          Leisten haften gleichzeitig oben, ohne sich zu ueberlagern und ohne Fuge dazwischen. Ein
+          zweiter, freihaendiger Zahlenwert an einer der beiden Stellen ist deshalb verboten (im
+          Design-Vertrag gebunden).
+
+          KEIN `flex-wrap` MEHR: mit fester Hoehe waere ein Umbruch stilles Abschneiden statt
+          sichtbaren Wachsens. Der Nutzername wird stattdessen gekuerzt (`min-w-0`/`truncate`) -
+          damit schlaegt zu enger Inhalt kuenftig laut an (no-horizontal-scroll bei 360px), statt
+          unsichtbar zu verschwinden. */}
+      <header className="sticky top-0 z-10 flex h-header items-center justify-between gap-3 border-b border-separator bg-bg px-4 sm:px-6">
         {/* Requirements-Review-Fund (Branch feature/0012-visual-redesign-views): als einziges
             interaktives Element im Header nicht ueber die Button-Komponente verdrahtet, dadurch
             unter dem 44x44px-Touch-Ziel (AK "tatsaechlich messbar") - jetzt per Button asChild
@@ -93,7 +104,7 @@ function AppShell() {
         {/* gap-2 statt gap-1: 8px ist der Mindestabstand zwischen zwei fokussierbaren
             Elementen - die aufgespannten Trefferflaechen der beiden Links duerfen sich nicht
             ueberlappen, in einer Ueberlappung gewinnt das obenliegende Element. */}
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <Button
             asChild
             variant="ghost"
@@ -111,8 +122,13 @@ function AppShell() {
               laedt oder fehlgeschlagen ist. Genau dann ist ein Weg heraus am wertvollsten. */}
           {projectId !== null && <ProjectNav projectId={projectId} />}
         </div>
-        <div className="flex items-center gap-3">
-          {username && <span className="text-sm text-text">Angemeldet als {username}</span>}
+        <div className="flex min-w-0 items-center gap-3">
+          {/* `min-w-0` an Behaelter UND Text: ohne beides greift `truncate` in einem Flex-Kind
+              nicht, das Kind behielte seine inhaltsbestimmte Mindestbreite und schoebe die
+              Abmelden-Schaltflaeche aus der Zeile. */}
+          {username && (
+            <span className="min-w-0 truncate text-sm text-text">Angemeldet als {username}</span>
+          )}
           <Button type="button" variant="outline" size="sm" onClick={handleLogout}>
             Abmelden
           </Button>
