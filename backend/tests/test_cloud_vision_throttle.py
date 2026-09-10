@@ -11,6 +11,16 @@ from photosort.cloud_vision import (
 )
 from photosort.cloud_vision_throttle import build_throttles, throttle_for_provider
 from photosort.config import Settings
+from photosort.landmark import (
+    AnthropicLandmarkClient,
+    MistralLandmarkClient,
+    build_landmark_client,
+)
+from photosort.remote_classification import (
+    AnthropicCategoryClient,
+    MistralCategoryClient,
+    build_category_classification_client,
+)
 
 # specs/features/0382-cloud-rate-limits-aussitzen.md, decisions/0074-cloud-vision-schrittmacher-
 # je-anbieter-und-wiederholung-nur-bei-429.md Entscheidung 3: die prozessweiten Schrittmacher-
@@ -100,3 +110,33 @@ class TestTheProviderDefaults:
 
         assert "2026-09-10" in preceding
         assert "0074" in preceding
+
+
+class TestTheThrottleIsAlwaysPassedIn:
+    """K6, Bauform analog `TestTheModelIsAlwaysPassedIn` in test_pricing.py: der Schrittmacher ist
+    an allen vier Client-Klassen ein Schluesselwortparameter OHNE Default. Ein Default (etwa auf
+    einen frisch gebauten, wirkungslosen Schrittmacher) hoehlte die Zusage der Story aus - ein
+    Aufrufer, der ihn vergisst, fiele nicht beim Typecheck auf, sondern erst an der Anfragerate
+    des Anbieters."""
+
+    def test_no_client_constructor_defaults_the_throttle(self) -> None:
+        for client in (
+            AnthropicLandmarkClient,
+            MistralLandmarkClient,
+            AnthropicCategoryClient,
+            MistralCategoryClient,
+        ):
+            parameter = inspect.signature(client.__init__).parameters["throttle"]
+
+            assert parameter.default is inspect.Parameter.empty, client.__name__
+            assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, client.__name__
+
+    def test_both_factories_pull_the_process_wide_throttle(self) -> None:
+        """Die beiden Factories laufen in keinem automatisierten Test (echtes Secret, echter
+        Netzwerkversuch) - abgesichert ist ihr Durchreichen deshalb als Quelltext-Verankerung
+        plus `mypy --strict`."""
+        for factory in (build_landmark_client, build_category_classification_client):
+            source = inspect.getsource(factory)
+
+            assert "throttle_for_provider(settings.landmark_provider)" in source, factory.__name__
+            assert "throttle=throttle" in source, factory.__name__
