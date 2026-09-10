@@ -4,6 +4,13 @@
 **Erstellt:** 2026-08-15
 **Bezug:** Inbox-Eintrag [`specs/inbox/0020-bewertungsdetails-immer-sichtbar-in-detailansicht.md`](../inbox/0020-bewertungsdetails-immer-sichtbar-in-detailansicht.md) (2026-08-15), idea-sharpener-Gespräch mit Daniel; erweitert Spec [0040](./0040-bewertungsdetails-info-popover.md).
 
+**Nachtrag (2026-09-10, Umsetzung von Spec [`0370`](./0370-bedienelemente-zuerst.md) "Bedienelemente zuerst in der Einzelbildansicht"):** Diese Spec bleibt bewusst `Implemented` und wird **nicht** auf `Superseded` gesetzt — Spec 0370 löst nur einen einzigen Punkt von ihr ab (gleiches Vorgehen wie Spec [`0033`](./0033-sticky-titelleiste-projekt-link.md) gegenüber Spec 0298). Die Akzeptanzkriterien unten bleiben unverändert stehen, sie beschreiben korrekt den damals gebauten und akzeptierten Zustand. Abgelöst durch Spec 0370 ist ausschließlich die **Platzierung** der permanenten Sektion:
+
+- **AK1** — "direkt unter dem Foto (vor den Vor-/Zurück-Navigationsbuttons)". Seit Spec 0370 stehen unter dem Foto zuerst die Bedienelemente (Bewertungsleiste, Kategorie-Bedienteil, Navigation, Vorschlagskasten); die reinen Informationsanzeigen der Sektion folgen dahinter. Die Sektion ist dafür in zwei Einbindungen derselben Komponente geteilt (`part="controls"`/`part="info"`).
+- **Der entsprechende Satz im Abschnitt "Architektur / Umsetzung"** und **der erste Aufzählungspunkt "Platzierung" im Abschnitt "UI/UX"** — aus demselben Grund.
+
+Unverändert gültig bleibt alles Übrige: die permanente Sichtbarkeit selbst und das Weglassen des leeren Bereichs (AK2/AK3), die unveränderten Popover in Raster und Kuratierung (AK4), die geteilte Präsentationskomponente inklusive `showSuggestion` (AK5/AK6), das Hover-Auto-Close (AK7–AK11) sowie AK12/AK13.
+
 ## Ziel
 
 Seit Spec [0040](./0040-bewertungsdetails-info-popover.md) zeigt PhotoSort die Bewertungsdetails (Einzelkriterien-Scores, Kategorie/Rang, Ausschuss-Grund) überall nur über ein Info-Icon mit On-Demand-Popover. In der Einzelbild-Detailansicht (`PhotoDetailPage.tsx`) ist der zusätzliche Klick unnötig — anders als im Grid oder in der Kuratierung, wo Platz knapp ist, steht dort ohnehin nur ein einziges Foto im Fokus. Diese Spec macht die Kriterien-Aufschlüsselung dort permanent sichtbar und entfernt das Icon an dieser einen Stelle; Grid und Kuratierung behalten Icon+Popover unverändert. Zusätzlich bekommt das verbleibende Popover ein natürlicheres Schließverhalten: wurde es per Hover geöffnet, schließt es automatisch, sobald die Maus es verlässt, statt nur über Klick/Escape/Außenklick.
