@@ -188,6 +188,53 @@
           "grund": "Die Schriftstufen tragen selbst keinen Schnitt, und einen eigenen Token dafür gibt es nicht. Der halbfette Schnitt wird im Entwurf gesetzt und bleibt eine Lücke des Tokensatzes."
         }
       ]
+    },
+    {
+      "schluessel": "schrittleiste",
+      "anzeigename": "Schrittleiste",
+      "seite": "Ansicht — Schrittleiste",
+      "produktdateien": [],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["standard"],
+      "variantenachse": null,
+      "bausteine": ["step-marker"],
+      "luecken": [
+        {
+          "schluessel": "schloss",
+          "stelle": "Glyphe des blockierten Schritts in den blockiert-Varianten der Schrittmarke",
+          "grund": "Der Symbolsatz führt kein Schloss; im Produkt lebt es als dateilokales SVG in der Stepper-Datei. Der Baustein nutzt deshalb eine Instanz aus der verbundenen Fremdbibliothek — als einziger Baustein hängt er damit an einer Bibliothek, die sich trennen lässt. Ein dreizehntes Symbol wäre eine Erweiterung des Satzes, der ausdrücklich gegen stillschweigendes Wachstum geschützt ist, und gehört in eine eigene Story."
+        },
+        {
+          "schluessel": "wiederherstellung",
+          "stelle": "Aufbau der Schrittmarke durch das Bausteinskript",
+          "grund": "Das Skript baut je Variante ein Brett mit genau einer Textbeschriftung. Die Schrittmarke trägt zusätzlich eine Glyphe in einem inneren Rahmen und ist damit die erste Ausnahme von dieser Bauform. Nach einem Instanzverlust entstünde sie ohne Glyphe und ist danach von Hand nachzuziehen."
+        },
+        {
+          "schluessel": "fortschrittsanteil",
+          "stelle": "Länge des gefüllten Abschnitts der Fortschrittsschiene je Breite",
+          "grund": "Der Anteil ist aus der Zahl erledigter Schritte und der Spaltenteilung gerechnet, damit er unter der Mitte des aktuellen Schritts endet. Für dieses Verhältnis gibt es kein Token; es wird je Breite als Wert gesetzt."
+        },
+        {
+          "schluessel": "spaltenteilung",
+          "stelle": "Breite der Schrittspalten auf dem breiten und der gedehnten Marken auf dem schmalen Brett",
+          "grund": "Die Aufteilung der verfügbaren Breite auf fünf Schritte ist ein Layoutmaß ohne Token. Der Baustein ist allein die quadratische Marke; die Beschriftung daneben und die Dehnung auf dem schmalen Brett sind Entscheidungen der Ansicht."
+        },
+        {
+          "schluessel": "trefferflaeche",
+          "stelle": "Mindesthöhe der Schrittmarke als Trefferfläche",
+          "grund": "Die Mindesthöhe einer Trefferfläche ist eine Vorgabe der Bedienbarkeit und hat kein eigenes Token; sie wird gesetzt und hier ausgewiesen statt stillschweigend übernommen."
+        },
+        {
+          "schluessel": "schriftschnitt",
+          "stelle": "Halbfetter Schnitt der Schrittbeschriftung",
+          "grund": "Die Schriftstufen tragen selbst keinen Schnitt, und einen eigenen Token dafür gibt es nicht. Der halbfette Schnitt wird im Entwurf gesetzt und bleibt eine Lücke des Tokensatzes."
+        },
+        {
+          "schluessel": "popover",
+          "stelle": "Geöffneter Grund der Sperrung am blockierten Schritt",
+          "grund": "Die Bibliothek führt keinen Baustein für das Popover. Der gesperrte Schritt ist als Auslöser gezeigt, der geöffnete Grund ist nicht Teil der abgelegten Ansicht; er wird als Lücke geführt statt frei nachgezeichnet."
+        }
+      ]
     }
   ]
 }

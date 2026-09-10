@@ -381,11 +381,11 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
  */
 const FREIGABEN: { datei: string; zeile: number; wert: string; ausschnitt: string }[] = [
   { datei: 'verify.js', zeile: 54, wert: '12', ausschnitt: 'ERWARTETE_SYMBOLE = 12' },
-  { datei: 'verify.js', zeile: 55, wert: '11', ausschnitt: 'ERWARTETE_BAUSTEINE = 11' },
+  { datei: 'verify.js', zeile: 55, wert: '12', ausschnitt: 'ERWARTETE_BAUSTEINE = 12' },
   { datei: 'verify.js', zeile: 56, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
   { datei: 'verify.js', zeile: 57, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
-  { datei: 'verify.js', zeile: 58, wert: '4', ausschnitt: 'ERWARTETE_ANSICHTEN = 4' },
-  { datei: 'verify.js', zeile: 59, wert: '14', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 14' },
+  { datei: 'verify.js', zeile: 58, wert: '5', ausschnitt: 'ERWARTETE_ANSICHTEN = 5' },
+  { datei: 'verify.js', zeile: 59, wert: '16', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 16' },
 ]
 
 describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast', () => {
@@ -618,15 +618,15 @@ describe('Referentielle Integritaet', () => {
   })
 })
 
-describe('Die elf Bausteine', () => {
+describe('Die zwoelf Bausteine', () => {
   /*
-   * GESCHLOSSENE NAMENSMENGE, nicht Kardinalitaet: "genau elf" bestuenden auch elf beliebige. Die
+   * GESCHLOSSENE NAMENSMENGE, nicht Kardinalitaet: "genau zwoelf" bestuenden auch zwoelf beliebige. Die
    * Menge ist seit der Aufnahme des Platzhalters nicht mehr eingefroren, sondern REGELGEBUNDEN
    * OFFEN - fortgeschrieben wird trotzdem die Namensliste samt REIHENFOLGE, nicht die Anzahl: die
    * Bausteine aus `components/ui/` stehen zusammen, der Kategorie-Chip als einziger aus
    * `components/` am Ende. Ein Anhaengen ans Ende zerrisse diese Ordnung still.
    */
-  it('traegt genau die elf maschinellen Schluessel', () => {
+  it('traegt genau die zwoelf maschinellen Schluessel', () => {
     expect(komponenten.bausteine.map((baustein) => baustein.schluessel)).toEqual([
       'button',
       'input',
@@ -639,6 +639,7 @@ describe('Die elf Bausteine', () => {
       'dialog',
       'skeleton',
       'chip',
+      'step-marker',
     ])
   })
 
@@ -655,6 +656,7 @@ describe('Die elf Bausteine', () => {
       'Dialog',
       'Platzhalter',
       'Kategorie-Chip',
+      'Schrittmarke',
     ])
   })
 
@@ -810,16 +812,16 @@ describe('Die Achsen der Bausteine', () => {
   /*
    * Die Zahl der Varianten, die `seed-components.js` aufbaut: das Kreuzprodukt der Achsen je
    * Baustein. Eingefroren, weil eine versehentlich hinzugefuegte Achse sie sprunghaft vervielfacht
-   * und das sonst niemandem auffiele. 90 + 5 + 9 + 8 + 7 + 3 + 3 + 2 + 4 + 2 + 13.
+   * und das sonst niemandem auffiele. 90 + 5 + 9 + 8 + 7 + 3 + 3 + 2 + 4 + 2 + 13 + 12.
    */
-  it('baut genau 146 Varianten auf', () => {
+  it('baut genau 158 Varianten auf', () => {
     const gesamt = komponenten.bausteine.reduce(
       (summe, baustein) =>
         summe +
         Object.values(baustein.varianten).reduce((produkt, werte) => produkt * werte.length, 1),
       0
     )
-    expect(gesamt).toBe(146)
+    expect(gesamt).toBe(158)
   })
 })
 
@@ -1136,18 +1138,20 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
 
   /* GESCHLOSSENE NAMENSMENGE INKLUSIVE REIHENFOLGE, nicht blosse Kardinalitaet - dieselbe Bauart
      wie bei den Bausteinen. */
-  it('fuehrt genau die vier Ansichten in dieser Reihenfolge', () => {
+  it('fuehrt genau die fuenf Ansichten in dieser Reihenfolge', () => {
     expect(ansichten.map((ansicht) => ansicht.schluessel)).toEqual([
       'uebersicht',
       'anlegen',
       'pflegen',
       'loeschen',
+      'schrittleiste',
     ])
     expect(ansichten.map((ansicht) => ansicht.anzeigename)).toEqual([
       'Projektübersicht',
       'Projekt anlegen',
       'Projekt pflegen',
       'Projekt löschen',
+      'Schrittleiste',
     ])
   })
 
