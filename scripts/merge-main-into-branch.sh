@@ -4,8 +4,9 @@
 #
 # Aufgerufen von .claude/skills/ship-feature/SKILL.md an zwei Zeitpunkten (Schritt 6 vor dem
 # Push, Schritt 8 als erste Handlung vor der Finalisierung). Hintergrund und Begruendung:
-# specs/decisions/0063-abgleich-mit-main-als-getestetes-lokales-skript-merge-statt-rebase.md
-# und specs/features/0338-abgleich-mit-main-vor-der-freigabe.md.
+# specs/decisions/0075-abgleich-mit-main-fasst-den-lokalen-main-ref-nicht-mehr-an.md (loest
+# Abschnitt 3 von specs/decisions/0063-... teilweise ab) und
+# specs/features/0365-abgleich-mit-main-aus-dem-arbeitsbaum.md.
 #
 # Keine Argumente: "origin" und "main" stehen als Literale hier, gearbeitet wird im Repositorium
 # des aktuellen Arbeitsverzeichnisses auf dem aktuell ausgecheckten Branch. Das Ziel wird nie aus
@@ -19,13 +20,35 @@
 #   30  Vorbedingung verletzt oder Umgebung nicht in Ordnung: Zustand unveraendert, Begruendung
 #       auf stderr.
 #
+# Dieses Skript fasst refs/heads/main NIE an - es liest ihn nicht und schreibt ihn erst recht
+# nicht. Geholt wird ausschliesslich in den Remote-Tracking-Namensraum, gemerged wird der
+# Tracking-Ref, und die Vergleichsbasis der Review-Phase ist entsprechend "origin/main...HEAD".
+# Grund: Hintergrund-Laeufe arbeiten in einem eigenen Arbeitsbaum unter .claude/worktrees/,
+# waehrend der Haupt-Checkout meist main ausgecheckt hat. "git fetch origin main:main"
+# verweigert in dieser Lage gemessen den Dienst (Exit 128) - die Verweigerung gilt dem Ref, nicht
+# dem Verzeichnis, und sie tritt auf, sobald main in irgendeinem Arbeitsbaum desselben
+# Repositoriums ausgecheckt ist. Das Ausweichen ueber "git update-ref refs/heads/main" scheidet
+# aus: Der Ref wanderte, waehrend Index und Arbeitsbaum des Haupt-Checkouts stehen blieben.
+#
+# Die Refspec steht ausgeschrieben und voll qualifiziert da, nicht als "git fetch origin main":
+# Ein lokaler Branch namens "origin/main" wuerde einen unqualifizierten Namen sonst auf sich
+# ziehen (gemessen: git loest dann auf refs/heads/origin/main auf und warnt nur), und die
+# No-Op-Rechnung meldete "bereits enthalten" fuer einen Stand, den dieses Skript nie geholt hat.
+# Das fuehrende "+" der Refspec ist kein "--force" auf einen Branch: Es betrifft ausschliesslich
+# einen Ref unterhalb von refs/remotes/ und ist gegenueber dem Remote rein lesend. Weil es die
+# von git sonst durchgesetzte Vorspul-Pruefung aufhebt, wird das Umschreiben von main auf origin
+# stattdessen ausdruecklich gemessen (siehe Umschreib-Pruefung unten).
+#
 # Was dieses Skript nie tut (zugesichert durch scripts/tests/test_main_abgleich_verdrahtung.py):
-# es schreibt nichts zum Remote zurueck, es schreibt keine bestehenden Commits um, und es checkt
-# main nie aus. Es enthaelt deshalb weder einen Push noch ein Rebase, weder ein Nachbessern des
-# letzten Commits noch ein hartes Zuruecksetzen.
+# es schreibt nichts zum Remote zurueck, es schreibt keine bestehenden Commits um, es schreibt
+# keinen Ref unterhalb von refs/heads/, und es checkt main nie aus. Es enthaelt deshalb weder
+# einen Push noch ein Rebase, weder ein Nachbessern des letzten Commits noch ein hartes
+# Zuruecksetzen.
 #
 # Alle Entscheidungen fallen an Exit-Codes und Dateizustaenden, nie an Ausgabetexten von git -
-# die sind uebersetzbar und formulierungsabhaengig.
+# die sind uebersetzbar und formulierungsabhaengig. Jedes Kommando, dessen Rueckgabe ausgewertet
+# wird, verschluckt dabei seine eigene Ausgabe: Der Meldungskanal traegt ausschliesslich selbst
+# erzeugten Text, nie eine rohe git-Zeile.
 
 set -euo pipefail
 
@@ -38,6 +61,10 @@ unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
 
 readonly REMOTE="origin"
 readonly HAUPTZWEIG="main"
+# Voll qualifiziert, damit ein gleichnamiger lokaler Branch die Aufloesung nicht an sich ziehen
+# kann. Das ist keine Kosmetik, sondern die Zusicherung selbst: Exit 0 ist der einzige Ausgang,
+# der still falsch sein kann.
+readonly TRACKING_REF="refs/remotes/origin/main"
 readonly MERGE_NACHRICHT="chore: Stand von main in den Feature-Branch übernehmen"
 
 readonly EXIT_ENTHALTEN=0
@@ -83,21 +110,51 @@ if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
     abbruch "kein Remote '$REMOTE' konfiguriert."
 fi
 
-# Die Refspec zieht den *lokalen* main-Ref mit. Ohne sie bliebe die Merge-Basis auf dem alten
-# Stand stehen, und "git diff main...HEAD" zeigte ab hier den Feature-Diff plus alles
-# zwischenzeitlich auf main Passierte - an allen sechs Stellen der Review-Phase.
-# Ein Fehlschlag hat drei moegliche Ursachen (Remote nicht erreichbar, dort kein main, main
-# lokal nicht vorspulbar). Unterschieden werden sie hier bewusst nicht: Das ginge nur ueber den
-# Meldungstext von git, und der ist uebersetzbar.
-if ! git fetch --quiet "$REMOTE" "$HAUPTZWEIG:$HAUPTZWEIG" >/dev/null 2>&1; then
-    abbruch "'$HAUPTZWEIG' konnte nicht von '$REMOTE' geholt werden: Remote nicht erreichbar, '$HAUPTZWEIG' dort nicht vorhanden, oder '$HAUPTZWEIG' lokal nicht vorspulbar (umgeschrieben). Ein Fall fuer Daniel, nicht fuer eine Korrektur nebenbei."
+# Der Stand des Tracking-Refs *vor* dem Fetch. Er ist die einzige Grundlage, auf der sich ein
+# umgeschriebenes main hinterher noch messen laesst - das "+" der Refspec nimmt git die
+# Vorspul-Pruefung ab, die diese Messung sonst uebernommen haette.
+# Fehlt der Ref (frischer Klon, frischer Arbeitsbaum), bleibt die Variable leer. Das heisst
+# "keine Messung", nicht "geprueft", und wird unten als eigener Zweig behandelt.
+tracking_vorher="$(git rev-parse --verify --quiet "$TRACKING_REF" || true)"
+
+# Ein Fehlschlag hat hier noch zwei moegliche Ursachen (Remote nicht erreichbar, dort kein main).
+# Unterschieden werden sie bewusst nicht: Das ginge nur ueber den Meldungstext von git, und der
+# ist uebersetzbar. Die dritte frueher genannte Ursache ("lokal nicht vorspulbar") kann diese
+# Zeile wegen des "+" nicht mehr ausloesen; sie wird stattdessen gemessen.
+if ! git fetch --quiet "$REMOTE" "+refs/heads/$HAUPTZWEIG:$TRACKING_REF" >/dev/null 2>&1; then
+    abbruch "'$HAUPTZWEIG' konnte nicht von '$REMOTE' geholt werden: Remote nicht erreichbar oder '$HAUPTZWEIG' dort nicht vorhanden. Ein Fall fuer Daniel, nicht fuer eine Korrektur nebenbei."
+fi
+
+# Guertel und Hosentraeger: Ein durchgelaufener Fetch, nach dem das benannte Ziel trotzdem fehlt,
+# ist keine Lage, in der weitergerechnet werden darf - jede Folgemessung liefe auf einen Ref, den
+# es nicht gibt, und endete in einer Fehlermeldung ueber das falsche Thema.
+if ! git rev-parse --verify --quiet "$TRACKING_REF" >/dev/null 2>&1; then
+    abbruch "'$TRACKING_REF' existiert auch nach dem Holen nicht. Hier wurde nichts uebernommen, und es gibt nichts zu messen - bitte von Hand ansehen."
+fi
+
+# Umschreib-Pruefung: gemessen statt geraten. Nur mit einem gemerkten Vorher-Stand gibt es
+# ueberhaupt etwas zu vergleichen - "" ist kein Ref, und `merge-base --is-ancestor "" <ref>`
+# liefert gemessen 128. Ein ungeprueft eingesetzter leerer Wert machte jeden frischen Klon zu
+# einem falschen Exit 30, also genau zu der Fehlmeldung, gegen die dieses Skript umgebaut wurde.
+if [[ -n "$tracking_vorher" ]]; then
+    umschreib_rueckgabe=0
+    git merge-base --is-ancestor "$tracking_vorher" "$TRACKING_REF" >/dev/null 2>&1 ||
+        umschreib_rueckgabe=$?
+
+    if [[ "$umschreib_rueckgabe" -eq 1 ]]; then
+        abbruch "'$HAUPTZWEIG' auf '$REMOTE' wurde umgeschrieben: der zuvor geholte Stand ist im neuen kein Vorfahre mehr. Ein Fall fuer Daniel, nicht fuer eine Korrektur nebenbei."
+    fi
+
+    if [[ "$umschreib_rueckgabe" -ne 0 ]]; then
+        abbruch "'git merge-base --is-ancestor' meldete beim Vergleich der beiden Tracking-Staende Rueckgabe $umschreib_rueckgabe. Weder 'fortgeschrieben' noch 'umgeschrieben' - hier wurde nichts gemessen."
+    fi
 fi
 
 # Der No-Op wird gerechnet, nicht gelesen - und ausschliesslich Rueckgabe 0 heisst "enthalten".
 # Rueckgabe 1 heisst "nicht enthalten", 128 heisst "unbekanntes Objekt/kaputtes Repositorium"
 # (Bedrohung 2: still falsch sein kann allein dieser Ausgang).
 vorfahre_rueckgabe=0
-git merge-base --is-ancestor "$HAUPTZWEIG" HEAD || vorfahre_rueckgabe=$?
+git merge-base --is-ancestor "$TRACKING_REF" HEAD >/dev/null 2>&1 || vorfahre_rueckgabe=$?
 
 if [[ "$vorfahre_rueckgabe" -eq 0 ]]; then
     exit "$EXIT_ENTHALTEN"
@@ -107,11 +164,11 @@ if [[ "$vorfahre_rueckgabe" -ne 1 ]]; then
     abbruch "'git merge-base --is-ancestor' meldete Rueckgabe $vorfahre_rueckgabe. Weder 'enthalten' noch 'nicht enthalten' - hier wurde nichts gemessen."
 fi
 
-# --no-ff sichert zu, dass der bisherige Kopf immer erster Elternteil des neuen bleibt (AK 4).
+# --no-ff sichert zu, dass der bisherige Kopf immer erster Elternteil des neuen bleibt (AK 1).
 # Ohne es schoebe ein Vorspulen den Feature-Branch stillschweigend auf main und leerte den
 # Pull Request.
 merge_rueckgabe=0
-git merge --no-ff --no-edit -m "$MERGE_NACHRICHT" "$HAUPTZWEIG" >/dev/null 2>&1 ||
+git merge --no-ff --no-edit -m "$MERGE_NACHRICHT" "$TRACKING_REF" >/dev/null 2>&1 ||
     merge_rueckgabe=$?
 
 if [[ "$merge_rueckgabe" -eq 0 ]]; then
