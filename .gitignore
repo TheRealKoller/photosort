@@ -42,6 +42,11 @@ e2e/playwright-report/
 # "keine Bilddatei im Git-Index" ist ein Detektor nach dem Push, kein Verhinderer.
 design/penpot/ansichten/
 
+# Unverkleinerte Originale der Beispielbilder. Der eingecheckte, auf 2048 px verkleinerte Satz
+# liegt unter assets/beispielbilder/ (siehe dessen README.md); die Originale bleiben lokal, damit
+# 25 MB nicht dauerhaft in jedem Klon eines sonst reinen Textrepos liegen.
+example-pictures/
+
 # Docker / data volumes
 photo-cache/
 
