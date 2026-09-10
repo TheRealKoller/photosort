@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.41.0](https://github.com/TheRealKoller/photosort/compare/v0.40.0...v0.41.0) (2026-09-10)
+
+
+### Features
+
+* Cloud-Läufe sitzen Anbieter-Rate-Limits aus (Spec 0382) ([#385](https://github.com/TheRealKoller/photosort/issues/385)) ([0104121](https://github.com/TheRealKoller/photosort/commit/01041219518b4f3c2a38d989ab6b0ed95111c70e))
+* **cloud-vision:** mistral-small-2603 löst ministral-8b-2512 als Modellwahl ab (Spec 0369) ([#371](https://github.com/TheRealKoller/photosort/issues/371)) ([d20bd7b](https://github.com/TheRealKoller/photosort/commit/d20bd7b990323ba3dfbbefb5d9b548f35c577a19))
+* **design:** Projektverwaltung in Penpot entwerfen (Spec 0358) ([#376](https://github.com/TheRealKoller/photosort/issues/376)) ([a509eaf](https://github.com/TheRealKoller/photosort/commit/a509eaf03c5474ecae19e5c6f1f492a4b40247ff))
+* Fotocluster nach Ort und Zeit (Spec 0051) ([#381](https://github.com/TheRealKoller/photosort/issues/381)) ([36f7e15](https://github.com/TheRealKoller/photosort/commit/36f7e150733dc67533fda4c8b05600db0b613287))
+* **frontend:** Bedienelemente zuerst in der Einzelbildansicht (Spec 0370) ([#386](https://github.com/TheRealKoller/photosort/issues/386)) ([dda29b1](https://github.com/TheRealKoller/photosort/commit/dda29b12042a3c2289b9ee03896bc2f2ab597348))
+* Nebenkategorien — ein Foto gehört mehreren Kategorien an (Spec 0300) ([#373](https://github.com/TheRealKoller/photosort/issues/373)) ([c37b6ef](https://github.com/TheRealKoller/photosort/commit/c37b6ef569e85cd8a9e373928e26fc2c68be8971))
+* **skills:** Design-Entwürfe in Runden mit Auswahl (Spec 0380) ([#384](https://github.com/TheRealKoller/photosort/issues/384)) ([7797426](https://github.com/TheRealKoller/photosort/commit/7797426e927ad86b2f91aec9edc529c950b25ec7))
+* voller Bildvorrat beim Kuratieren sichtbar (Spec 0357) ([#378](https://github.com/TheRealKoller/photosort/issues/378)) ([3ce2a7f](https://github.com/TheRealKoller/photosort/commit/3ce2a7f8f9035521a7912e11baba3007f739f4f5))
+
 ## [0.40.0](https://github.com/TheRealKoller/photosort/compare/v0.39.0...v0.40.0) (2026-09-09)
 
 
