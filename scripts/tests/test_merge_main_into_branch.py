@@ -33,8 +33,9 @@ Dateizustaenden (`git merge-base --is-ancestor`, Existenz von `MERGE_HEAD`,
 Textabhaengigkeit gerade *verdecken*; der ehrliche Pruefer ist der statische Abwesenheitstest auf
 `Already up to date`/`CONFLICT` im Skripttext (siehe `test_main_abgleich_verdrahtung.py`).
 
-**Der tragende Test ist `test_nach_dem_abgleich_zeigt_origin_main_head_nur_die_dateien_des_branches`,
-und er traegt seine Gegenprobe im selben Lauf** (ADR 0075, Spec 0365): Dieselbe Messung ueber die
+**Der tragende Test ist
+`test_nach_dem_abgleich_zeigt_origin_main_head_nur_die_dateien_des_branches`, und er traegt seine
+Gegenprobe im selben Lauf** (ADR 0075, Spec 0365): Dieselbe Messung ueber die
 **alte** Basis (`main...HEAD`) liefert nachweislich die zwischenzeitlich auf `main` entstandene
 Datei mit - genau der Grund, aus dem die acht Prosa-Fundstellen der Review-Phase mitwandern
 mussten. Ohne diese zweite Haelfte belegte der Test nur, dass eine Liste nicht leer ist. Zur
@@ -400,7 +401,9 @@ def zwei_arbeitsbaeume(fabrik: Callable[..., Spielplatz]) -> Spielplatz:
 
 
 @pytest.fixture(params=BAUFORMEN, ids=BAUFORMEN)
-def kern_spielplatz(request: pytest.FixtureRequest, fabrik: Callable[..., Spielplatz]) -> Spielplatz:
+def kern_spielplatz(
+    request: pytest.FixtureRequest, fabrik: Callable[..., Spielplatz]
+) -> Spielplatz:
     """Der Ausgangs-Kern (`0`/`10`/`20`/Fehlerfamilie) laeuft ueber **beide** Bauformen (AK 1)."""
     bauform = str(request.param)
     return fabrik(f"kern-{bauform}", bauform)
