@@ -667,6 +667,36 @@ class TestDeleteOrphanedEntries:
         )
         assert caplog.records == []
 
+    def test_a_file_that_vanishes_between_lstat_and_unlink_counts_as_neither(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Das Mikrosekundenfenster zwischen letzter Zeitpruefung und `unlink` ist in der
+        Wirklichkeit nicht herstellbar (ADR 0075, "Konsequenzen") - die AUFFANGLOGIK dafuer ist es
+        sehr wohl: der Ausgang zaehlt weder als Fehlschlag noch als geloeschte Datei, und er
+        traegt keine Bytes zu `freed_bytes` bei."""
+        vanishing = thumbnail_path(tmp_path, 9, "etag-weg")
+        other = thumbnail_path(tmp_path, 8, "etag-auch-weg")
+        _write_aged(vanishing, 300, ALT)
+        _write_aged(other, 100, ALT)
+        entries = collect_cache_entries(tmp_path)
+        original_unlink = Path.unlink
+
+        def _vanishing_unlink(self: Path, missing_ok: bool = False) -> None:
+            if self == vanishing:
+                raise FileNotFoundError(f"Datei bereits entfernt: {self}")
+            original_unlink(self, missing_ok=missing_ok)
+
+        monkeypatch.setattr(Path, "unlink", _vanishing_unlink)
+
+        with caplog.at_level("DEBUG"):
+            result = delete_orphaned_entries(entries, {"unbenutzt"}, CUTOFF)
+
+        assert not other.exists()
+        assert result == CacheSweepResult(
+            deleted_files=1, freed_bytes=100, failed_files=0, kept_recent=0
+        )
+        assert caplog.records == []
+
     def test_an_empty_valid_key_set_deletes_nothing_and_warns(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
