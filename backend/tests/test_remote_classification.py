@@ -16,6 +16,7 @@ from photosort.cloud_vision import (
     MISTRAL_VISION_MODEL,
     CloudRequestThrottle,
     TokenUsage,
+    _sanitize_label_text,
 )
 from photosort.pricing import ASSUMED_USAGE_BY_PROVIDER
 from photosort.remote_classification import (
@@ -31,7 +32,6 @@ from photosort.remote_classification import (
     _classification_from_json,
     _cosine_similarity,
     _normalize_label_text,
-    _sanitize_label_text,
     _slugify,
     resolve_canonical_label,
 )

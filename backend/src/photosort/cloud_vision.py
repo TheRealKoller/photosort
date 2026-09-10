@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -295,6 +296,40 @@ def mistral_usage_from_response(payload: Any, model: str) -> TokenUsage | None:
     providerspezifisch ABWEICHENDEN Feldnamen sind der einzige Unterschied zum Anthropic-Gegenpart
     oben (OpenAI-kompatibles Chat-Completion-Schema)."""
     return _usage_from_response(payload, model, "prompt_tokens", "completion_tokens")
+
+
+def _sanitize_label_text(raw: str) -> str:
+    """Zeichensanitisierung eines frei formulierten, von einem Vision-Modell erzeugten Textes
+    (Security-Abschnitt der Spec 0289, Punkt 3).
+
+    LIEGT SEIT specs/features/0051-gps-landmark-cluster-bildung.md HIER statt in
+    remote_classification.py: sie wird inzwischen von BEIDEN Cloud-Pfaden gebraucht - vom
+    Feinlabel-Pfad (`remote_classification.py::_fine_labels_from_json`, vor der Laengenpruefung
+    und vor resolve_canonical_label/_slugify) und vom Sehenswuerdigkeit-Pfad
+    (`landmark.py::sanitize_landmark_name`). Das Sicherheitskonzept verlangt ausdruecklich
+    DIESELBE Funktion, nicht eine zweite Fassung davon, und `cloud_vision.py` ist bereits die
+    providerneutrale gemeinsame Schicht beider Pfade.
+
+    Entfernt alle Unicode-Steuer- und Formatzeichen (Kategorien `Cc`/`Cf`: `\x00`,
+    Zero-Width-Zeichen wie U+200B, Bidi-Overrides wie U+202E) und zieht Whitespace-Folgen zu einem
+    einzelnen Leerzeichen zusammen. Steuerzeichen, die selbst Whitespace SIND (Zeilenumbruch,
+    Tabulator, Wagenruecklauf), werden dabei durch ein Leerzeichen ersetzt statt ersatzlos
+    entfernt - sonst verschmoelzen zwei Woerter ueber einen Zeilenumbruch hinweg zu einem
+    (`str.split()` behandelt auch NBSP
+    und andere Unicode-Leerzeichen als Whitespace); fuehrende/abschliessende Leerzeichen
+    entfallen dabei mit.
+
+    Bewusst eine BLACKLIST (Steuerzeichen), keine Zeichen-Whitelist (Entscheidung 1 der Spec
+    0289): der Text ist freier deutscher Text, eine Whitelist aus Buchstaben/Ziffern/Leerzeichen/
+    Bindestrich wuerde legitime Werte beschaedigen. Escapetes Rendering im Frontend schuetzt
+    gegen XSS, aber weder gegen optische Verfaelschung der Oberflaeche durch Bidi-/Zero-Width-
+    Zeichen noch gegen mehrzeilige Logeintraege - genau diese Luecke schliesst diese Funktion.
+    Nachruestbar an genau dieser einen Stelle, falls sich die Blacklist als zu schwach erweist."""
+    without_controls = "".join(
+        (" " if char.isspace() else "") if unicodedata.category(char) in ("Cc", "Cf") else char
+        for char in raw
+    )
+    return " ".join(without_controls.split())
 
 
 # specs/features/0382-cloud-rate-limits-aussitzen.md, decisions/0074-cloud-vision-schrittmacher-

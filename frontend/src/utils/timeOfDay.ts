@@ -8,6 +8,8 @@
 // Datums-/Uhrzeit-Strings"). Min/Max-Zeitpunkt-Vergleich ebenfalls per reinem String-Vergleich
 // (ISO-8601 sortiert lexikographisch = chronologisch), kein `Date`-Parsing noetig.
 
+import type { ClusterPlace } from '../api/types'
+
 /** Kalendertag als `YYYY-MM-DD`, reines String-Slicing. */
 export function dayKeyOf(iso: string): string {
   return iso.slice(0, 10)
@@ -56,15 +58,78 @@ export function formatTimeRange(minIso: string, maxIso: string): string {
 }
 
 /**
- * Ermittelt Tag und fertige Cluster-Ueberschrift aus den sichtbaren Fotos eines Clusters.
- * Frueheste-Foto-Regel (Akzeptanzkriterium 6): sowohl Tag als auch Tageszeit-Bucket werden vom
- * chronologisch fruehesten Foto abgeleitet, die angezeigte Spanne bleibt die exakte Min/Max-
- * Spanne aller uebergebenen (sichtbaren) Fotos. Erwartet ein nicht-leeres Array - der Aufrufer
- * (`groupByClusterAndCategory`) ruft diese Funktion nur fuer Cluster mit mindestens einem noch
- * sichtbaren Foto auf, fuer erschoepfte Cluster wird stattdessen der `clusterMetaRef`-Cache
- * gelesen.
+ * Formatiert eine bereits serverseitig gerundete Koordinate auf genau zwei Nachkommastellen
+ * (specs/features/0051-gps-landmark-cluster-bildung.md).
+ *
+ * REINE FORMATIERUNG: die Rundungskonvention selbst liegt im Backend, weil dort dieselbe Zahl
+ * ueber `"coordinate"` vs. `"multiple"` entscheidet - hier wird nur noch die Stellenzahl
+ * vereinheitlicht (`48.9` -> `48.90`, damit die Anzeige ueber alle Cluster hinweg dieselbe Breite
+ * hat).
+ *
+ * `-0` wird zu `0.00`: `(-0).toFixed(2)` liefert in JavaScript zwar bereits `"0.00"`, aber jeder
+ * Wert knapp unterhalb von null (`-0.001`) ergaebe `"-0.00"` - eine Himmelsrichtung, die es nicht
+ * gibt.
  */
-export function formatClusterHeading(photos: { taken_at: string }[]): {
+function formatCoordinate(value: number): string {
+  const formatted = value.toFixed(2)
+  return formatted === '-0.00' ? '0.00' : formatted
+}
+
+/**
+ * Der Ortsteil der Cluster-Ueberschrift, oder `null`, wenn es keinen gibt
+ * (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072 Entscheidung 1).
+ *
+ * Das Frontend bildet die RANGFOLGE NICHT NACH - der Server liefert mit `kind` bereits den
+ * aufgeloesten Zustand, und nur er kennt den vollstaendigen Cluster (die Ansicht sieht je Partition
+ * nur die Top-N). Hier steht deshalb ein reines `switch`, keine Priorisierung.
+ *
+ * Die `null`-Rueckfaelle bei fehlendem Namen bzw. fehlenden Zahlen sind defensiv: der Server
+ * liefert diese Kombinationen nicht, aber `"null, null"` in einer Ueberschrift waere schlimmer als
+ * gar kein Ortsteil.
+ */
+function clusterPlaceLabel(place: ClusterPlace | null | undefined): string | null {
+  if (!place) {
+    return null
+  }
+  switch (place.kind) {
+    case 'landmark':
+      return place.landmark_name || null
+    case 'coordinate':
+      return place.lat === null || place.lon === null
+        ? null
+        : `${formatCoordinate(place.lat)}, ${formatCoordinate(place.lon)}`
+    case 'multiple':
+      // Traegt bewusst NIE eine stellvertretende Koordinate - den einen Ort, den sie
+      // repraesentieren muesste, gibt es gerade nicht.
+      return 'Mehrere Orte'
+  }
+}
+
+/**
+ * Ermittelt Tag und fertige Cluster-Ueberschrift aus den sichtbaren Fotos eines Clusters.
+ * Frueheste-Foto-Regel (Akzeptanzkriterium 6 der Spec 0039): sowohl Tag als auch Tageszeit-Bucket
+ * werden vom chronologisch fruehesten Foto abgeleitet, die angezeigte Spanne bleibt die exakte
+ * Min/Max-Spanne aller uebergebenen (sichtbaren) Fotos. Erwartet ein nicht-leeres Array - der
+ * Aufrufer (`groupByClusterAndCategory`) ruft diese Funktion nur fuer Cluster mit mindestens einem
+ * noch sichtbaren Foto auf, fuer erschoepfte Cluster wird stattdessen der `clusterMetaRef`-Cache
+ * gelesen.
+ *
+ * Seit specs/features/0051-gps-landmark-cluster-bildung.md kommt ein optionaler ORTSTEIL davor:
+ * `"<Ort> · <Tageszeit> (<Zeitspanne>)"`. Der Ort ERGAENZT die Tageszeit, er ersetzt sie nie -
+ * ohne Ortsinformation ist die Ueberschrift zeichengleich mit der bisherigen.
+ *
+ * Der Ortsteil wird vom ERSTEN Foto mit gesetztem `cluster_place` uebernommen und nicht selbst
+ * aggregiert: der Server sichert zu, dass der Wert auf jedem Foto desselben Clusters identisch
+ * ist. Genau daraus folgt die TEILMENGEN-INVARIANZ - der Ortsteil haengt nicht davon ab, wie
+ * viele Fotos des Clusters gerade sichtbar sind (Tag, Tageszeit und Zeitspanne tun das
+ * unveraendert schon).
+ *
+ * Das Trennzeichen ist ein Mittelpunkt und bewusst kein Komma: das waere mit dem Dezimaltrenner
+ * der Koordinate zu verwechseln.
+ */
+export function formatClusterHeading(
+  photos: { taken_at: string; cluster_place?: ClusterPlace | null }[]
+): {
   dayKey: string
   heading: string
   // Roher (nicht formatierter) Zeitstempel des chronologisch fruehesten Fotos - Review-Fund
@@ -92,7 +157,15 @@ export function formatClusterHeading(photos: { taken_at: string }[]): {
   const dayKey = dayKeyOf(minIso)
   const bucketLabel = timeOfDayBucketLabel(hourOf(minIso))
   const timeRange = formatTimeRange(minIso, maxIso)
-  return { dayKey, heading: `${bucketLabel} (${timeRange})`, earliestIso: minIso }
+  const timePart = `${bucketLabel} (${timeRange})`
+  const placeLabel = clusterPlaceLabel(
+    photos.find((photo) => photo.cluster_place)?.cluster_place
+  )
+  return {
+    dayKey,
+    heading: placeLabel === null ? timePart : `${placeLabel} · ${timePart}`,
+    earliestIso: minIso,
+  }
 }
 
 const WEEKDAY_LABELS = [

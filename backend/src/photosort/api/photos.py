@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import enum
+from bisect import bisect_left
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -22,6 +24,7 @@ from photosort.categories import (
 )
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY, is_landmark_candidate
+from photosort.landmark import sanitize_landmark_name
 from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
@@ -30,6 +33,7 @@ from photosort.models import (
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
+    PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -174,7 +178,7 @@ class FineLabelOut(BaseModel):
 
     `confidence` ist ersatzlos entfallen (ADR 0049 Entwurfsentscheidung 7). `display_name` und
     `raw_label` sind freier, extern erzeugter LLM-Text - sie sind beim Uebernehmen der
-    Modellantwort zeichensaniert worden (remote_classification.py::_sanitize_label_text) und
+    Modellantwort zeichensaniert worden (cloud_vision.py::_sanitize_label_text) und
     duerfen im Frontend ausschliesslich als regulaerer Textknoten gerendert werden."""
 
     canonical_key: str
@@ -240,6 +244,59 @@ class CloudVisionStatusOut(BaseModel):
     attempted_at: datetime | None = None
 
 
+class PhotoLocationOut(BaseModel):
+    """Der Ort DIESES Fotos (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072
+    Entscheidung 1) - in VOLLER EXIF-Praezision, ohne serverseitige Rundung (Daniels Entscheidung;
+    die Rundung auf zwei Nachkommastellen liegt allein in `ClusterPlaceOut`, weil dort dieselbe
+    Zahl ueber "coordinate" vs. "multiple" entscheidet).
+
+    `source` ist ein SICHERHEITSMERKMAL, kein Anzeigedetail (Muss-Kriterium des
+    Sicherheitskonzepts): `GPS_CLUSTER_SPLIT_DISTANCE_METERS` begrenzt den SCHRITT zwischen zwei
+    aufeinanderfolgenden Fotos, nicht den DURCHMESSER eines Clusters - ein Spaziergang in
+    400-m-Schritten teilt nie und kann Kilometer ueberspannen. Eine `"derived"`-Koordinate kann
+    deshalb beliebig weit von der tatsaechlichen Aufnahmestelle entfernt liegen; sie ist eine
+    SCHAETZUNG, nie eine Messung. Kein kuenftiger Verbraucher (Kartenansicht, Export,
+    Reverse-Geocoding) darf `derived` wie `exif` behandeln - genau dafuer existiert das Feld.
+
+    Wird NIRGENDS persistiert."""
+
+    lat: float
+    lon: float
+    source: Literal["exif", "derived"]
+
+
+class ClusterPlaceOut(BaseModel):
+    """Der bereits AUFGELOESTE Ort des CLUSTERS (specs/features/0051-gps-landmark-cluster-
+    bildung.md, ADR 0072 Entscheidung 1) - auf jedem Foto desselben Clusters identisch, `null`
+    ohne jede Ortsinformation.
+
+    Der Server liefert den fertigen ZUSTAND, nicht die Rohdaten fuer eine Rangfolge: `kind` benennt,
+    welche Stufe (erkannte Sehenswuerdigkeit -> ungefaehre Koordinate -> mehrere Orte) tatsaechlich
+    gilt. Das Frontend bildet die Rangfolge NICHT nach, es formatiert nur.
+
+    Warum das nicht im Frontend entstehen kann: die Kuratierungsansicht sieht je Partition nur
+    `rank_position <= topN` (ADR 0071), die nachgeladenen Kandidaten laufen ueber eine eigene
+    Abfrage und fliessen nie in `items` zurueck. Jede Aussage, die eine AGGREGATION ueber den
+    Cluster ist, waere dort dauerhaft eine Aussage ueber die Top-N - sowohl "Mehrere Orte" als auch
+    der Sehenswuerdigkeit-Name.
+
+    `kind="multiple"` traegt STRUKTURELL keine Koordinate: es gibt den einen Ort, den sie
+    repraesentieren muesste, gerade nicht. Zwei Felder statt einer stellvertretenden Zahl zu
+    fuehren waere eine zweite, stille Wahrheit.
+
+    `landmark_name` ist freier, extern erzeugter LLM-Text (`PhotoLandmarkDetection.name`, Spec
+    0047) - dieselbe Auflage wie bei `FineLabelOut.raw_label`: ausschliesslich als regulaerer
+    React-Textknoten rendern, nie `dangerouslySetInnerHTML`, nie als HTML-String-Prop, nie in
+    `href`/`src`/`style`, nie als React-`key`.
+
+    Wird NIRGENDS persistiert."""
+
+    kind: Literal["landmark", "coordinate", "multiple"]
+    landmark_name: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+
+
 class PhotoOut(BaseModel):
     id: int
     relative_path: str
@@ -285,6 +342,13 @@ class PhotoOut(BaseModel):
     # CloudVisionPhase), feste Reihenfolge [landmark, remote_category] - siehe
     # _cloud_vision_status_out.
     cloud_vision_status: list[CloudVisionStatusOut]
+    # specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072 Entscheidung 1: zwei additive,
+    # OPTIONALE Felder mit Vorgabewert `null` - damit bleiben bestehende Testfixturen unveraendert.
+    # Beide werden einheitlich auf ALLEN Lesepfaden ausgeliefert (Daniels Entscheidung, 2026-09-09),
+    # nicht nur im Kuratierungsmodus: ein je Query-Modus divergierendes `PhotoOut` waere genau die
+    # "zweite, driftende Abbildung", vor der der `rankings`-Kommentar oben warnt.
+    location: PhotoLocationOut | None = None
+    cluster_place: ClusterPlaceOut | None = None
 
 
 class PhotoListOut(BaseModel):
@@ -569,6 +633,233 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     ]
 
 
+# Anzeigerundung der Cluster-Koordinate: zwei Nachkommastellen entsprechen rund 1,1 km
+# (specs/features/0051-gps-landmark-cluster-bildung.md, Daniels Entscheidung "grob, ~1 km").
+# Die Rundung liegt im BACKEND, weil dieselbe Zahl hier ueber `"coordinate"` vs. `"multiple"`
+# entscheidet - eine Rundung im Frontend koennte die Stufe gar nicht bestimmen, ohne den
+# vollstaendigen Cluster zu kennen. Das Frontend formatiert den bereits gerundeten Wert nur noch.
+_CLUSTER_PLACE_COORDINATE_DIGITS = 2
+
+
+def _rounded(value: float) -> float:
+    """Auf die Anzeigegenauigkeit gerundet, mit `-0.0` normalisiert auf `0.0`.
+
+    `-0.0` waere im JSON `-0.0` und im Frontend `"-0.00"` - eine Himmelsrichtung, die es nicht
+    gibt. Die Addition von `0.0` erledigt das nach IEEE 754 ohne Sonderfallzweig
+    (`-0.0 + 0.0 == +0.0`) und laesst jeden anderen Wert unveraendert."""
+    return round(value, _CLUSTER_PLACE_COORDINATE_DIGITS) + 0.0
+
+
+@dataclass(frozen=True)
+class _ClusterMember:
+    """Ein Foto des vollstaendigen Clusters, soweit es zur Ortsaussage beitraegt."""
+
+    photo_id: int
+    taken_at: datetime
+    gps_lat: float | None
+    gps_lon: float | None
+    landmark_name: str | None
+
+
+@dataclass(frozen=True)
+class PhotoPlace:
+    """Das Ergebnis der Ortsherleitung fuer EIN Foto - beide Antwortfelder aus derselben
+    Cluster-Abfrage. `NO_PLACE` ist der Zustand "kein Ort bekannt"; er ist auch die
+    AUSFALLRICHTUNG, wenn kein Bezugslauf existiert oder ein Foto keine Kandidatenzeile hat."""
+
+    location: PhotoLocationOut | None = None
+    cluster_place: ClusterPlaceOut | None = None
+
+
+NO_PLACE = PhotoPlace()
+
+
+def _cluster_place_of(members: list[_ClusterMember]) -> ClusterPlaceOut | None:
+    """Die Stufenentscheidung ueber den VOLLSTAENDIGEN Cluster (ADR 0072 Entscheidung 1).
+
+    Rangfolge: erkannte Sehenswuerdigkeit -> genau eine gerundete Koordinate -> mehrere Orte ->
+    `None`. Der Name hat Vorrang auch dann, wenn zusaetzlich abweichende Koordinaten vorliegen.
+
+    `members` ist bereits nach `(taken_at, photo_id)` sortiert: nach der Verfeinerung traegt ein
+    Cluster hoechstens EINEN Namen - defensiv gewinnt der des chronologisch fruehesten Fotos, damit
+    die Anzeige auch bei einem Altbestand deterministisch bleibt."""
+    for member in members:
+        if member.landmark_name is not None:
+            return ClusterPlaceOut(kind="landmark", landmark_name=member.landmark_name)
+
+    # VERGLICHEN WIRD DIE GERUNDETE Stelle, nicht der Rohwert: ein Vergleich der ungerundeten
+    # Werte schluege schon bei zwei 40 m auseinanderliegenden Aufnahmen zu und machte aus einem
+    # einzelnen Ortsbesuch "Mehrere Orte".
+    cells = {
+        (_rounded(member.gps_lat), _rounded(member.gps_lon))
+        for member in members
+        if member.gps_lat is not None and member.gps_lon is not None
+    }
+    if not cells:
+        return None
+    if len(cells) > 1:
+        # Traegt STRUKTURELL keine Koordinate - es gibt den einen Ort, den sie repraesentieren
+        # muesste, gerade nicht.
+        return ClusterPlaceOut(kind="multiple")
+    [(lat, lon)] = cells
+    return ClusterPlaceOut(kind="coordinate", lat=lat, lon=lon)
+
+
+def _derived_location_of(
+    photo: Photo, anchors: list[_ClusterMember]
+) -> PhotoLocationOut | None:
+    """Der Ort EINES Fotos: die eigene Koordinate in voller Praezision, sonst die des zeitlich
+    naechstgelegenen Fotos MIT Koordinate im selben Cluster.
+
+    `anchors` sind die koordinatentragenden Mitglieder, aufsteigend nach `(taken_at, photo_id)`.
+    Tie-Break (deterministisch, sonst haenge die angezeigte Koordinate an der Zeilenreihenfolge der
+    Datenbank): bei gleichem Abstand gewinnt der FRUEHERE Zeitpunkt, bei identischem `taken_at` die
+    kleinere `photo_id` - beides ergibt sich aus der Sortierung plus dem `<=`-Vergleich unten.
+
+    Die Suche laeuft ueber `key=` DIREKT auf `anchors` (Copilot-Review-Fund, PR #381): eine
+    vorgeschaltete Hilfsliste aller Zeitstempel waere bereits linear und machte den `bisect` zur
+    Zierde - und zwar einmal JE FOTO der Antwort, also O(N x M). Der vollstaendige Cluster kann
+    deutlich mehr Anker tragen, als die Antwort Fotos enthaelt (Top-N-Auswahl, ADR 0071), womit
+    genau der teure Faktor der ist, den die Antwort gar nicht sieht."""
+    if photo.gps_lat is not None and photo.gps_lon is not None:
+        return PhotoLocationOut(lat=photo.gps_lat, lon=photo.gps_lon, source="exif")
+    if not anchors:
+        return None
+
+    index = bisect_left(anchors, photo.taken_at, key=lambda anchor: anchor.taken_at)
+    nearest = anchors[min(index, len(anchors) - 1)]
+    if index > 0:
+        earlier = anchors[index - 1]
+        if index >= len(anchors) or (photo.taken_at - earlier.taken_at) <= (
+            nearest.taken_at - photo.taken_at
+        ):
+            nearest = earlier
+
+    assert nearest.gps_lat is not None and nearest.gps_lon is not None
+    return PhotoLocationOut(lat=nearest.gps_lat, lon=nearest.gps_lon, source="derived")
+
+
+async def _place_by_photo_id(
+    session: AsyncSession,
+    criterion_scoring_run_id: int | None,
+    photos_by_id: Mapping[int, Photo],
+    rankings_by_photo_id: Mapping[int, Sequence[PhotoRanking]],
+) -> dict[int, PhotoPlace]:
+    """Beide Ortsfelder aller Fotos einer Antwort - aus EINER Abfrage ueber den VOLLSTAENDIGEN
+    Cluster des Bezugslaufs (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072
+    Entscheidung 1/7).
+
+    Die Bezugsmenge ist ausdruecklich NICHT die Antwort: die Kuratierungsansicht liefert je
+    Partition nur `rank_position <= topN`, und die nachgeladenen Kandidaten fliessen nie in `items`
+    zurueck (eigene Abfrage in `CurationCandidates.tsx`). Ueber die Fotos der Antwort hergeleitet
+    waere der Cluster-Ort deshalb nicht "springend", sondern DAUERHAFT eine Aussage ueber die
+    Top-N - und `topN` ist zusaetzlich ein Suchparameter der Seite (1-10).
+
+    SICHERHEIT - Laufbindung (Muss-Kriterium der Spec, gilt fuer BEIDE Felder): `cluster_key` ist
+    `cluster-<n>`, je Lauf neu vergeben und IN JEDEM PROJEKT DERSELBE STRING; `photo_rankings`
+    traegt keine `project_id`. Die einzige Bindung eines Clusters an sein Projekt ist
+    `criterion_scoring_run_id` aus `_latest_successful_criterion_scoring_run_id(session,
+    project_id)`. Dieses Praedikat steht deshalb AUSGESCHRIEBEN in der Abfrage unten - ohne es
+    ordnete die Herleitung SYSTEMATISCH (nicht im Grenzfall) Koordinaten aus fremden Projekten zu
+    und benennte ein Cluster nach einer Sehenswuerdigkeit aus einem fremden Projekt, weil die
+    Schluesselkollision garantiert ist. `_photos_by_id` filtert nur nach Id und ist ausdruecklich
+    KEINE zweite Verteidigungslinie.
+
+    Die Lauf-Id wird EINMAL PRO REQUEST aufgeloest und hierher durchgereicht, nie innerhalb dieser
+    Funktion neu bestimmt - sonst traefen Rangzeilen aus Lauf A auf Cluster-Mitgliedschaften aus
+    Lauf B, sobald zwischen zwei Queries ein Lauf fertig wird. Fehlt sie, bleibt es bei der EIGENEN
+    EXIF-Koordinate: die Ausfallrichtung ist "nichts anzeigen", nie "aus irgendeinem Lauf
+    herleiten".
+
+    Gelesen wird `PhotoRanking.cluster_key` (der landmark-VERFEINERTE Schluessel), nicht
+    `PhotoScore.cluster_key` - der groebere fuehrte den Ort ueber genau die Landmark-Grenze hinweg,
+    die dieses Feature gerade zieht.
+
+    VERFUEGBARKEIT: EIN Query pro Request, nicht einer pro Foto (Praezedenz `_partition_sizes`).
+    Die Ergebnismenge ist durch die Projektgroesse begrenzt - dieselbe Schranke, unter der
+    `_partition_sizes` bereits laeuft."""
+    # Alle Rangzeilen EINES Fotos tragen denselben cluster_key (die Partitionen sind
+    # cluster x kategorie, die Cluster-Zugehoerigkeit ist pro Foto eindeutig) - die erste genuegt.
+    cluster_key_by_photo_id = {
+        photo_id: rankings[0].cluster_key
+        for photo_id, rankings in rankings_by_photo_id.items()
+        if rankings
+    }
+    cluster_keys = set(cluster_key_by_photo_id.values())
+    if criterion_scoring_run_id is None or not cluster_keys:
+        return {
+            photo_id: PhotoPlace(location=_derived_location_of(photo, []))
+            for photo_id, photo in photos_by_id.items()
+        }
+
+    landmark = aliased(PhotoLandmarkDetection)
+    rows = (
+        await session.execute(
+            select(
+                PhotoRanking.cluster_key,
+                Photo.id,
+                Photo.taken_at,
+                Photo.gps_lat,
+                Photo.gps_lon,
+                landmark.name,
+            )
+            .join(Photo, Photo.id == PhotoRanking.photo_id)
+            .join(landmark, landmark.photo_id == Photo.id, isouter=True)
+            .where(
+                # SICHERHEIT: das Pflichtpraedikat, siehe Docstring. Nie `cluster_key` allein.
+                PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id,
+                PhotoRanking.cluster_key.in_(cluster_keys),
+                # Nur Zeilen, die ueberhaupt etwas zur Ortsaussage beitragen - die Ergebnismenge
+                # bleibt damit deutlich unter der Partitionsgroesse.
+                (Photo.gps_lat.is_not(None)) | (landmark.name.is_not(None)),
+            )
+            # Ein Foto hat je Kategorie eine eigene Rangzeile - ohne `distinct` erschiene es
+            # mehrfach im selben Cluster und verzerrte den Tie-Break der Herleitung.
+            .distinct()
+        )
+    ).all()
+
+    members_by_cluster: dict[str, list[_ClusterMember]] = {}
+    for cluster_key, photo_id, taken_at, gps_lat, gps_lon, landmark_name in rows:
+        members_by_cluster.setdefault(cluster_key, []).append(
+            _ClusterMember(
+                photo_id=photo_id,
+                taken_at=taken_at,
+                gps_lat=gps_lat,
+                gps_lon=gps_lon,
+                # SANITISIERUNG IM LESEPFAD (Muss-Kriterium des Sicherheitskonzepts, Abschnitt
+                # "Standortdaten"): `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl
+                # `landmark.py::_landmark_detection_from_json` sie bereits an der Quelle anwendet.
+                # Das ist KEIN Redundanz-Fehlgriff, sondern die einzige Deckung des Altbestands:
+                # unter Spec 0047 sind bereits reale, kostenpflichtig erzeugte Zeilen mit
+                # unsaniertem Rohtext entstanden - sie neu zu erkennen kostet Geld, sie zu loeschen
+                # vernichtet bezahlte Daten, und einen kostenlosen Migrationsweg gibt es nicht
+                # (anders als beim Feinlabel-Fall, der mit einem UPDATE zu heilen war).
+                # BITTE NICHT als vermeintliche Dopplung entfernen.
+                landmark_name=sanitize_landmark_name(landmark_name),
+            )
+        )
+
+    place_by_cluster: dict[str, tuple[ClusterPlaceOut | None, list[_ClusterMember]]] = {}
+    for cluster_key, members in members_by_cluster.items():
+        members.sort(key=lambda member: (member.taken_at, member.photo_id))
+        anchors = [
+            member
+            for member in members
+            if member.gps_lat is not None and member.gps_lon is not None
+        ]
+        place_by_cluster[cluster_key] = (_cluster_place_of(members), anchors)
+
+    result: dict[int, PhotoPlace] = {}
+    for photo_id, photo in photos_by_id.items():
+        cluster_key = cluster_key_by_photo_id.get(photo_id)
+        cluster_place, anchors = place_by_cluster.get(cluster_key or "", (None, []))
+        result[photo_id] = PhotoPlace(
+            location=_derived_location_of(photo, anchors), cluster_place=cluster_place
+        )
+    return result
+
+
 def _to_photo_out(
     photo: Photo,
     current_user_id: int,
@@ -576,6 +867,7 @@ def _to_photo_out(
     rankings: Sequence[PhotoRanking] = (),
     partition_sizes: Mapping[tuple[str, str], int] | None = None,
     curation_positions: Mapping[tuple[int, str], int] | None = None,
+    place: PhotoPlace = NO_PLACE,
 ) -> PhotoOut:
     """Baut die Antwortdarstellung EINES Fotos.
 
@@ -648,6 +940,12 @@ def _to_photo_out(
         category_override=photo.score.category_override if photo.score is not None else None,
         category_candidates=_category_candidates_out(photo),
         cloud_vision_status=_cloud_vision_status_out(photo, project),
+        # specs/features/0051-gps-landmark-cluster-bildung.md: beide Felder kommen fertig aus
+        # `_place_by_photo_id` (EINE Abfrage ueber den vollstaendigen Cluster des Bezugslaufs).
+        # Der Vorgabewert `NO_PLACE` haelt die Ausfallrichtung fest: eine vergessene Durchreichung
+        # ergibt `null`, nie einen falschen Ort.
+        location=place.location,
+        cluster_place=place.cluster_place,
     )
 
 
@@ -828,6 +1126,9 @@ async def list_photos(
             if criterion_scoring_run_id is not None
             else {}
         )
+        place_by_id = await _place_by_photo_id(
+            session, criterion_scoring_run_id, photos_by_id, rankings_by_id
+        )
         items = [
             _to_photo_out(
                 photos_by_id[photo_id],
@@ -836,6 +1137,7 @@ async def list_photos(
                 rankings_by_id.get(photo_id, []),
                 partition_sizes,
                 curation_positions,
+                place_by_id.get(photo_id, NO_PLACE),
             )
             for photo_id in ids
         ]
@@ -858,6 +1160,7 @@ async def list_photos(
     partition_sizes = (
         await _partition_sizes(session, latest_run_id) if latest_run_id is not None else {}
     )
+    place_by_id = await _place_by_photo_id(session, latest_run_id, photos_by_id, rankings_by_id)
     items = [
         _to_photo_out(
             photos_by_id[photo_id],
@@ -869,6 +1172,7 @@ async def list_photos(
             # (specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 23) - es gibt in diesem
             # Modus keine Auswahl, zu der sie eine Position haben koennte.
             None,
+            place_by_id.get(photo_id, NO_PLACE),
         )
         for photo_id in ids
     ]
@@ -966,6 +1270,7 @@ async def curation_candidates(
     }
     photos_by_id = await _photos_by_id(session, ids)
     rankings_by_id = await _rankings_by_photo_id(session, latest_run_id, ids)
+    place_by_id = await _place_by_photo_id(session, latest_run_id, photos_by_id, rankings_by_id)
     items = [
         _to_photo_out(
             photos_by_id[photo_id],
@@ -974,6 +1279,7 @@ async def curation_candidates(
             rankings_by_id.get(photo_id, []),
             partition_sizes,
             curation_positions,
+            place_by_id.get(photo_id, NO_PLACE),
         )
         for photo_id in ids
     ]

@@ -47,12 +47,15 @@ from photosort.demo_state import (
     rebuild_demo_state,
     render_demo_image,
 )
+from photosort.landmark import sanitize_landmark_name
 from photosort.models import (
     CriterionScoringRun,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoLandmarkDetection,
+    PhotoRanking,
     PhotoScore,
     Project,
     Rating,
@@ -1209,3 +1212,139 @@ class TestTheDemoStateCarriesACloudBalance:
             and run.landmark_photos_total is None
             for run in runs
         )
+
+
+# ---------------------------------------------------------------------------------------------
+# specs/features/0051-gps-landmark-cluster-bildung.md, Teststrategie: der Seeder MUSS alle vier
+# Anzeigezustaende der Cluster-Ueberschrift erzeugen - sonst ist die Sichtpruefung ueber
+# `browse-app` fuer drei davon blind, und das ist die einzige nicht automatisierte
+# Kontrollinstanz dieses Features.
+
+
+class TestDemoStateCoversAllFourHeadingStates:
+    async def _rated_state(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> tuple[dict[str, list[Photo]], dict[int, str]]:
+        """Die Fotos des "bewertet"-Projekts, nach ihrem `PhotoRanking.cluster_key` gruppiert,
+        plus die Landmark-Namen je Foto-Id - also genau die beiden Eingaben, aus denen
+        `api/photos.py::_place_by_photo_id` den Ortsteil der Ueberschrift bildet."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        photos = {photo.id: photo for photo in await _photos_of(db_session, RATED_PROJECT_NAME)}
+        rankings = (
+            (
+                await db_session.execute(
+                    select(PhotoRanking).where(PhotoRanking.photo_id.in_(photos))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        by_cluster: dict[str, list[Photo]] = {}
+        for ranking in rankings:
+            members = by_cluster.setdefault(ranking.cluster_key, [])
+            if photos[ranking.photo_id] not in members:
+                members.append(photos[ranking.photo_id])
+        names = {
+            row.photo_id: row.name
+            for row in (
+                (
+                    await db_session.execute(
+                        select(PhotoLandmarkDetection).where(
+                            PhotoLandmarkDetection.photo_id.in_(photos)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        }
+        return by_cluster, names
+
+    @staticmethod
+    def _heading_kind(members: list[Photo], names: dict[int, str]) -> str:
+        """Bildet die Stufenentscheidung aus `api/photos.py` nach - bewusst hier im Test und nicht
+        durch einen Aufruf der Produktionsfunktion: geprueft gehoert, dass die DATEN alle vier
+        Zustaende hergeben, nicht dass die Funktion sich selbst gleicht."""
+        if any(photo.id in names for photo in members):
+            return "landmark"
+        cells = {
+            (round(photo.gps_lat, 2), round(photo.gps_lon, 2))
+            for photo in members
+            if photo.gps_lat is not None and photo.gps_lon is not None
+        }
+        if not cells:
+            return "null"
+        return "coordinate" if len(cells) == 1 else "multiple"
+
+    async def test_the_rated_project_produces_every_heading_state_at_least_once(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        by_cluster, names = await self._rated_state(db_session, tmp_path)
+
+        kinds = {self._heading_kind(members, names) for members in by_cluster.values()}
+
+        assert kinds == {"landmark", "coordinate", "multiple", "null"}
+
+    async def test_at_least_one_photo_carries_no_coordinate_at_all(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der haeufigste reale Fall (kein GPS im EXIF) muss in der Demo vorkommen - sonst zeigt
+        sie ausgerechnet den Normalzustand nicht."""
+        by_cluster, _names = await self._rated_state(db_session, tmp_path)
+        photos = [photo for members in by_cluster.values() for photo in members]
+
+        assert any(photo.gps_lat is None and photo.gps_lon is None for photo in photos)
+
+    async def test_no_photo_ever_carries_half_a_coordinate(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Paar-Invariante: die Demo darf keinen Zustand erzeugen, den `extract_gps` selbst nie
+        schriebe."""
+        by_cluster, _names = await self._rated_state(db_session, tmp_path)
+        photos = [photo for members in by_cluster.values() for photo in members]
+
+        for photo in photos:
+            assert (photo.gps_lat is None) == (photo.gps_lon is None), photo.relative_path
+
+    async def test_every_demo_coordinate_lies_inside_the_valid_range(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        by_cluster, _names = await self._rated_state(db_session, tmp_path)
+        photos = [photo for members in by_cluster.values() for photo in members]
+
+        for photo in photos:
+            if photo.gps_lat is None or photo.gps_lon is None:
+                continue
+            assert -90.0 <= photo.gps_lat <= 90.0, photo.relative_path
+            assert -180.0 <= photo.gps_lon <= 180.0, photo.relative_path
+            assert (photo.gps_lat, photo.gps_lon) != (0.0, 0.0), photo.relative_path
+
+    async def test_the_landmark_name_survives_the_sanitisation_of_the_read_path(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Ein Demo-Name, den der Lesepfad verwuerfe (zu lang oder nach der Sanitisierung leer),
+        liesse den Cluster still auf die Koordinatenstufe zurueckfallen - die Sichtpruefung saehe
+        dann den falschen Zustand."""
+        _by_cluster, names = await self._rated_state(db_session, tmp_path)
+
+        assert names
+        for name in names.values():
+            assert sanitize_landmark_name(name) == name
+
+    async def test_the_coordinates_are_deterministic_across_two_rebuilds(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        first_dir = tmp_path / "first"
+        second_dir = tmp_path / "second"
+        await rebuild_demo_state(db_session, first_dir, large_collection_photo_count=3)
+        first = {
+            photo.relative_path: (photo.gps_lat, photo.gps_lon)
+            for photo in await _photos_of(db_session, RATED_PROJECT_NAME)
+        }
+        await rebuild_demo_state(db_session, second_dir, large_collection_photo_count=3)
+        second = {
+            photo.relative_path: (photo.gps_lat, photo.gps_lon)
+            for photo in await _photos_of(db_session, RATED_PROJECT_NAME)
+        }
+
+        assert first == second
