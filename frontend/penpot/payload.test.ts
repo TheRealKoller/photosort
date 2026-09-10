@@ -669,6 +669,22 @@ describe('Die zwoelf Bausteine', () => {
     }
   })
 
+  /*
+   * GLEICHHEIT, NICHT "ENTHAELT" (specs/features/0387-schrittleiste-fortschritt.md): Der
+   * Zustandstraeger der Schrittmarke ist seit dieser Spec ueber zwei Dateien verteilt - `group`
+   * sitzt am Bedienelement in Stepper.tsx, die `group-*`-Varianten am Marker in StepMarker.tsx.
+   * Der Zustandsscanner unten liest ausschliesslich die Dateien aus `quellen`; ein
+   * stehengebliebener Alteintrag liesse ihn weiter die falsche Datei lesen und waere STILL GRUEN.
+   * Deshalb ist die Zuordnung hier keine Kosmetik, sondern die tragende Angabe.
+   */
+  it('zeigt die Quelle der Schrittmarke genau auf die Marker-Datei', () => {
+    const schrittmarke = komponenten.bausteine.find(
+      (baustein) => baustein.schluessel === 'step-marker'
+    )
+    expect(schrittmarke, 'Baustein step-marker nicht gefunden').toBeDefined()
+    expect(schrittmarke!.quellen).toEqual(['src/components/StepMarker.tsx'])
+  })
+
   /* Die Zuordnungstabelle spannt ZWEI Verzeichnisse: zehn der elf liegen unter
      `src/components/ui/`, der Kategorie-Chip als `src/components/CategoryBadge.tsx`. Wer nur `ui/`
      aufzaehlt, verliert den elften still. */

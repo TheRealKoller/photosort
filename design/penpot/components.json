@@ -545,7 +545,7 @@
       "schluessel": "step-marker",
       "name": "Schrittmarke",
       "quellen": [
-        "src/components/Stepper.tsx"
+        "src/components/StepMarker.tsx"
       ],
       "varianten": {
         "auspraegung": [
