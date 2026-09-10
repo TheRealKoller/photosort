@@ -235,6 +235,73 @@
           "grund": "Die Bibliothek führt keinen Baustein für das Popover. Der gesperrte Schritt ist als Auslöser gezeigt, der geöffnete Grund ist nicht Teil der abgelegten Ansicht; er wird als Lücke geführt statt frei nachgezeichnet."
         }
       ]
+    },
+    {
+      "schluessel": "fotos",
+      "anzeigename": "Fotos",
+      "seite": "Ansicht — Fotos",
+      "produktdateien": [],
+      "breiten": ["mobile", "desktop"],
+      "zustaende": ["gefuellt", "leer", "ladend", "fehler"],
+      "variantenachse": "zustand",
+      "bausteine": ["button", "badge", "alert", "skeleton"],
+      "luecken": [
+        {
+          "schluessel": "seitenverhaeltnis",
+          "stelle": "Zeilenhöhe und Kartenbreiten des justierten Rasters",
+          "grund": "Die Fotos behalten ihr eigenes Seitenverhältnis statt quadratisch beschnitten zu werden. Die Höhe einer Zeile und die daraus folgenden Kartenbreiten sind deshalb gerechnete Layoutmaße ohne Token; sie stehen im Entwurf als Werte."
+        },
+        {
+          "schluessel": "mindestzeilenhoehe",
+          "stelle": "Untergrenze der Zeilenhöhe im justierten Raster",
+          "grund": "Ohne Untergrenze werden Hochformate so schmal, dass Kennzeichen und Dateiname nebeneinander nicht mehr tragen. Die Grenze ist eine Bedienbarkeitsvorgabe ohne Token und wird als Wert gesetzt."
+        },
+        {
+          "schluessel": "behaelter",
+          "stelle": "Fotokarte als Behälter für Bildfläche, Statuszeile und Fußzeile",
+          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Die Karte ist im Entwurf deshalb ein tokengebundener Rahmen statt einer Instanz."
+        },
+        {
+          "schluessel": "inhaltsbreite",
+          "stelle": "Inhaltsspalte der App-Shell auf beiden Brettern",
+          "grund": "Die Begrenzung der Inhaltsspalte ist ein Layoutmaß ohne Token. Sie wird im Entwurf gesetzt, damit die Bretter die tatsächliche Spalte zeigen statt einer über die volle Brettbreite gezogenen Fassung."
+        },
+        {
+          "schluessel": "daempfung",
+          "stelle": "Zurücktretende Bildfläche im Zustand verworfen",
+          "grund": "Für die Dämpfung einer aussortierten Bildfläche gibt es keinen benannten Wert im Tokensatz. Sie wird im Entwurf als Deckkraft gesetzt; Kennzeichen, Dateiname und Durchstreichung bleiben voll deckend."
+        },
+        {
+          "schluessel": "eckenoverlay",
+          "stelle": "Runder Info-Auslöser in der Bildecke",
+          "grund": "Kreisform, Eckabstand und die Teildeckkraft des Auslösers haben kein Token. Der Auslöser selbst ist eine Instanz des Schaltflächen-Bausteins, seine Fläche ist im Entwurf korrigiert an ein Token gebunden — der Baustein in der Bibliothek trägt dort keine Bindung und erscheint deshalb weiß."
+        },
+        {
+          "schluessel": "uebersteuerungsmarker",
+          "stelle": "Marker für die manuell übersteuerte Kategorie, Bildecke oben links",
+          "grund": "Die Bibliothek führt dafür keinen Baustein. Er wird nicht frei nachgezeichnet, sondern hier als Lücke geführt; er kommt hinzu, wenn eine Story ihn samt Eintrag in components.json aufnimmt."
+        },
+        {
+          "schluessel": "gatemodus",
+          "stelle": "Hinweisfeld des Ausschuss-Gates über dem Raster",
+          "grund": "Der Gate-Modus ist ein eigener Bildschirmzustand derselben Ansicht und nicht Teil der vier Zustände der Variantenachse. Er ist im Entwurf nicht abgebildet und wird hier als Lücke geführt statt stillschweigend zu fehlen."
+        },
+        {
+          "schluessel": "bewegung",
+          "stelle": "Puls der Platzhalter im Zustand ladend",
+          "grund": "Der Puls ist Bewegung. Penpot bildet Bewegung nicht ab, und der Satz photosort führt kein Token dafür. Der Entwurf zeigt die Platzhalter ruhend; das ist eine ausgewiesene Lücke, kein erledigter Punkt."
+        },
+        {
+          "schluessel": "schriftschnitt",
+          "stelle": "Halbfetter Schnitt der Überschrift",
+          "grund": "Die Schriftstufen tragen selbst keinen Schnitt, und einen eigenen Token dafür gibt es nicht. Der Schnitt wird im Entwurf gesetzt und bleibt eine Lücke des Tokensatzes."
+        },
+        {
+          "schluessel": "textkuerzung",
+          "stelle": "Einzeilig gekürzter Dateiname in schmalen Karten",
+          "grund": "Für die Kürzung mit Auslassung gibt es kein Token. Im Entwurf steht sie als tatsächlich gekürzter Beispieltext, damit der ungünstige Fall sichtbar ist statt nur der bequeme."
+        }
+      ]
     }
   ]
 }

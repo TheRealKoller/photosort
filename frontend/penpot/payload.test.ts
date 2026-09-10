@@ -384,8 +384,9 @@ const FREIGABEN: { datei: string; zeile: number; wert: string; ausschnitt: strin
   { datei: 'verify.js', zeile: 55, wert: '12', ausschnitt: 'ERWARTETE_BAUSTEINE = 12' },
   { datei: 'verify.js', zeile: 56, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
   { datei: 'verify.js', zeile: 57, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
-  { datei: 'verify.js', zeile: 58, wert: '5', ausschnitt: 'ERWARTETE_ANSICHTEN = 5' },
-  { datei: 'verify.js', zeile: 59, wert: '16', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 16' },
+  { datei: 'verify.js', zeile: 58, wert: '6', ausschnitt: 'ERWARTETE_ANSICHTEN = 6' },
+  { datei: 'verify.js', zeile: 59, wert: '24', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 24' },
+  { datei: 'verify.js', zeile: 60, wert: '4', ausschnitt: 'ERWARTETE_ANSICHTSBEHAELTER = 4' },
 ]
 
 describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast', () => {
@@ -1154,13 +1155,14 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
 
   /* GESCHLOSSENE NAMENSMENGE INKLUSIVE REIHENFOLGE, nicht blosse Kardinalitaet - dieselbe Bauart
      wie bei den Bausteinen. */
-  it('fuehrt genau die fuenf Ansichten in dieser Reihenfolge', () => {
+  it('fuehrt genau die sechs Ansichten in dieser Reihenfolge', () => {
     expect(ansichten.map((ansicht) => ansicht.schluessel)).toEqual([
       'uebersicht',
       'anlegen',
       'pflegen',
       'loeschen',
       'schrittleiste',
+      'fotos',
     ])
     expect(ansichten.map((ansicht) => ansicht.anzeigename)).toEqual([
       'Projektübersicht',
@@ -1168,6 +1170,7 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
       'Projekt pflegen',
       'Projekt löschen',
       'Schrittleiste',
+      'Fotos',
     ])
   })
 
