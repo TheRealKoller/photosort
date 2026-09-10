@@ -944,6 +944,40 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     expect(FLOWING_TEXT_DANGER.test(line)).toBe(expected)
   })
 
+  /** Der Variantenpraefix einer Utility (`group-active:bg-border` -> `group-active:`), leer bei
+   * einer unpraefixierten. */
+  function variantPrefix(utility: string): string {
+    const cut = utility.lastIndexOf(':')
+    return cut === -1 ? '' : utility.slice(0, cut + 1)
+  }
+
+  /**
+   * Der Vordergrund, der GLEICHZEITIG mit einer Flaeche gilt: der mit demselben Variantenpraefix,
+   * sonst der unpraefixierte Ruhewert. Ohne diese Unterscheidung meldete die Regel unten jedes
+   * Rezept falsch-rot, das Ruhezustand und Zustandsvarianten in EINEM Klassenliteral fuehrt -
+   * seit dem `group-`-Muster (Spec 0387) ist das der Regelfall, und der Ruhevordergrund gilt dort
+   * gerade NICHT auf der gedrueckten Flaeche.
+   */
+  function foregroundWith(classes: string[], surface: string): string | undefined {
+    const prefix = variantPrefix(surface)
+    const foregrounds = classes.filter((cls) => /(^|:)text-[a-z-]+$/.test(cls))
+    return (
+      foregrounds.find((cls) => variantPrefix(cls) === prefix) ??
+      foregrounds.find((cls) => variantPrefix(cls) === '')
+    )
+  }
+
+  it.each([
+    [['bg-border', 'text-text-muted'], 'text-text-muted'],
+    [['group-active:bg-border', 'text-text-muted', 'group-active:text-text'], 'group-active:text-text'],
+    [['group-active:bg-border', 'text-text-muted'], 'text-text-muted'],
+  ])('Erkenner "Vordergrund auf der Flaeche": %s -> %s', (classes, expected) => {
+    // Selbsttest des Zuordners: ohne ihn koennte er stets `undefined` liefern und die Regel
+    // unten waere dauerhaft gruen.
+    const surface = classes.find((cls) => /(^|:)bg-border$/.test(cls))!
+    expect(foregroundWith(classes, surface)).toBe(expected)
+  })
+
   it('setzt auf die gedrueckte Flaeche --border nur die dort gerechneten Vordergruende', () => {
     // `--text-muted` misst auf `--border` 4.36:1 und `--danger-text` 4.33:1 - beide verfehlen AA.
     // Der gedrueckte Zustand ist am Telefon der EINZIGE Zustand, den es gibt (Tailwind bindet
@@ -954,13 +988,11 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     for (const file of tsxFiles()) {
       for (const literal of stringLiterals(file.content)) {
         const classes = literal.split(/\s+/)
-        const usesBorderSurface = classes.some((cls) => /(^|:)bg-border$/.test(cls))
-        if (!usesBorderSurface) continue
-        const bad = classes.filter((cls) =>
-          forbiddenOnBorder.some((name) => cls.endsWith(name))
-        )
-        if (bad.length > 0) {
-          offenders.push(`${file.label}: ${bad.join(' ')} auf bg-border`)
+        for (const surface of classes.filter((cls) => /(^|:)bg-border$/.test(cls))) {
+          const foreground = foregroundWith(classes, surface)
+          if (foreground !== undefined && forbiddenOnBorder.some((name) => foreground.endsWith(name))) {
+            offenders.push(`${file.label}: ${foreground} auf ${surface}`)
+          }
         }
       }
     }
@@ -1484,11 +1516,6 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Ueberfahren/Gedrueckt der zerstoererischen Schaltflaeche - zeichengleich zur primaeren',
     },
     {
-      file: 'src/components/Stepper.tsx',
-      snippet: "isBlocked && 'opacity-40'",
-      reason: 'Beschriftung eines blockierten Schritts - das Schloss-Symbol bleibt voll deckend',
-    },
-    {
       file: 'src/components/RatingButtons.tsx',
       snippet: 'text-rating-favorite-fg hover:opacity-85 active:opacity-70',
       reason: 'aktiver Eintrag der Bewertungsleiste (Favorit)',
@@ -1598,12 +1625,33 @@ describe('Design-Vertrag: Board-Navigationselement', () => {
     return stringLiterals(file!.content)
   }
 
+  /**
+   * Die Schrittmarke traegt seit specs/features/0387-schrittleiste-fortschritt.md die Zustaende
+   * des UMSCHLIESSENDEN Bedienelements (`group` in Stepper.tsx) und schreibt sie deshalb
+   * `group-`-praefixiert. Die Bindung leitet diese Fassung aus der Fassung der
+   * Projekt-Navigationsgruppe AB, statt sie ein zweites Mal zu tippen - sonst waere genau die
+   * Dopplung entstanden, gegen die diese Zusicherung antritt.
+   */
+  function groupPraefixiert(recipe: string): string {
+    return recipe.replace(/(^|\s)(hover|active):/g, '$1group-$2:')
+  }
+
+  it('praefixiert im Ableiter nur Zustaende, nicht beliebige Woerter', () => {
+    // Selbsttest des Ableiters: ohne ihn koennte er alles oder nichts umschreiben und die
+    // Bindung unten waere in beiden Faellen gruen.
+    expect(groupPraefixiert('bg-surface hover:bg-overlay')).toBe('bg-surface group-hover:bg-overlay')
+    expect(groupPraefixiert('text-accent')).toBe('text-accent')
+  })
+
   it.each(Object.entries(RECIPES))(
-    'fuehrt das %s-Rezept in Stepper und ProjectNav zeichengleich',
+    'fuehrt das %s-Rezept in StepMarker und ProjectNav zeichengleich',
     (_name, recipe) => {
-      for (const label of ['src/components/Stepper.tsx', 'src/components/ProjectNav.tsx']) {
-        expect(literalsOf(label), `${label} ohne das Rezept`).toContain(recipe)
-      }
+      expect(literalsOf('src/components/ProjectNav.tsx'), 'ProjectNav ohne das Rezept').toContain(
+        recipe
+      )
+      expect(literalsOf('src/components/StepMarker.tsx'), 'StepMarker ohne das Rezept').toContain(
+        groupPraefixiert(recipe)
+      )
     }
   )
 
@@ -1627,7 +1675,7 @@ describe('Design-Vertrag: Board-Navigationselement', () => {
   it('bindet nicht gegen ein Rezept, das in keiner der beiden Dateien steht', () => {
     // Positiv-Gegenprobe: ohne sie bestuende die Bindung oben auch dann, wenn `stringLiterals`
     // nichts mehr faende und beide Seiten leer waeren.
-    for (const label of ['src/components/Stepper.tsx', 'src/components/ProjectNav.tsx']) {
+    for (const label of ['src/components/StepMarker.tsx', 'src/components/ProjectNav.tsx']) {
       expect(literalsOf(label).length).toBeGreaterThan(0)
       expect(literalsOf(label)).not.toContain('border-accent bg-overlay font-black text-accent')
     }
@@ -1676,6 +1724,87 @@ describe('Design-Vertrag: unbestimmter Fortschritt', () => {
     expect(findMatches('bg-border', progress)).toEqual([])
     // Positiv-Gegenprobe: die Datei faerbt die Spur ueberhaupt ein.
     expect(findMatches('bg-separator', progress).length).toBeGreaterThan(0)
+  })
+})
+
+describe('Design-Vertrag: geteiltes Hoehen-Token der fixierten Bereiche', () => {
+  /*
+   * specs/features/0387-schrittleiste-fortschritt.md, Architektur-Abschnitt 1: Kopfzeile und
+   * Schrittleiste haften beide oben und duerfen sich nicht ueberlagern. Getrennt werden sie
+   * GEOMETRISCH ueber EINEN Wert: `--spacing-header` im `@theme`-Block erzeugt in Tailwind v4 die
+   * Utilities `h-header` (Kopfzeile) und `top-header` (Versatz der Schrittleiste).
+   *
+   * WARUM DAS HIER GEPRUEFT WIRD UND NICHT IN JSDOM: Eine unbekannte Utility ist in Tailwind KEIN
+   * Buildfehler. Ein `top-header`, fuer das der `--spacing-*`-Namensraum wider Erwarten keine
+   * Regel erzeugt, bliebe wirkungslos - die Leiste waere gar nicht mehr versetzt, und weder Build
+   * noch Typpruefung noch Komponententest saehen es. Der echte Tailwind-Lauf ist der einzige
+   * Mechanismus im Projekt, der diesen stillen Fehlschlag ueberhaupt bemerkt.
+   */
+  async function producesRule(utility: string): Promise<boolean> {
+    // Eigener `compile()`-Lauf je Kandidat: `build()` arbeitet inkrementell, ein gemeinsamer Lauf
+    // faerbte den zweiten Kandidaten am ersten gruen.
+    const compiled = await compile(indexCss, { base: SRC_DIR, onDependency: () => {} })
+    const baseline = compiled.build([])
+    return compiled.build([utility]) !== baseline
+  }
+
+  it('erzeugt fuer h-header und top-header tatsaechlich Regeln', async () => {
+    for (const utility of ['h-header', 'top-header']) {
+      expect(await producesRule(utility), utility).toBe(true)
+    }
+    // Gegenprobe: ein Tippfehler im selben Namensraum erzeugt KEINE Regel. Ohne sie bestuende der
+    // Test auch dann, wenn `build()` alles durchwinkte.
+    for (const utility of ['top-headr', 'h-headr']) {
+      expect(await producesRule(utility), utility).toBe(false)
+    }
+  }, 60_000)
+
+  /** Die Klassen-Literale einer Produktivdatei - ohne Kommentare, damit eine Erlaeuterung nicht
+   * als Fundstelle zaehlt. */
+  function classesOf(label: string): string[] {
+    const file = sourceFiles.find((candidate) => candidate.label === label)
+    expect(file, `${label} nicht gefunden`).toBeDefined()
+    return stringLiterals(file!.content).flatMap((literal) => literal.split(/\s+/))
+  }
+
+  it('ruft das Token an genau den beiden vorgesehenen Stellen auf', () => {
+    expect(classesOf('src/App.tsx'), 'Kopfzeile ohne h-header').toContain('h-header')
+    expect(classesOf('src/components/Stepper.tsx'), 'Leiste ohne top-header').toContain('top-header')
+  })
+
+  it('traegt in keiner der beiden Dateien einen zweiten, freihaendigen Hoehenwert', () => {
+    // Ein zweiter Zahlenwert fuer dieselbe Hoehe waere die Fehlerquelle, gegen die das Token
+    // ueberhaupt steht: er driftet still, und die Naht zwischen beiden Leisten reisst auf.
+    const zweiterWert = /\b(?:top|h|pt|mt)-(?:14|\[[^\]]+\])/
+    for (const label of ['src/App.tsx', 'src/components/Stepper.tsx']) {
+      const file = sourceFiles.find((candidate) => candidate.label === label)!
+      expect(findMatches(zweiterWert, [file]).map((hit) => hit.match), label).toEqual([])
+    }
+  })
+
+  it('haelt die Schrittleiste nicht mehr auf top-0', () => {
+    const classes = classesOf('src/components/Stepper.tsx')
+    expect(classes, 'Leiste haftet noch auf top-0').not.toContain('top-0')
+    // Positiv-Gegenprobe: die Datei traegt ueberhaupt Klassen und haftet weiterhin.
+    expect(classes).toContain('sticky')
+  })
+
+  it('laesst die Kopfzeile nicht mehr umbrechen', () => {
+    // Mit fester Hoehe waere ein Umbruch stilles Abschneiden statt sichtbaren Wachsens; der
+    // Nutzername wird stattdessen gekuerzt. Gegenprobe, damit die Abwesenheit nicht auch bei
+    // einer leer gelesenen Datei bestuende.
+    const classes = classesOf('src/App.tsx')
+    expect(classes, 'Kopfzeile bricht weiterhin um').not.toContain('flex-wrap')
+    expect(classes).toContain('truncate')
+    expect(classes).toContain('min-w-0')
+  })
+
+  it('fuehrt den Hoehenwert genau einmal - ein Wert, zwei Aufrufstellen', () => {
+    const declarations = indexCss
+      .split('\n')
+      .filter((line) => /--spacing-header\s*:/.test(line))
+    expect(declarations, 'Deklarationen von --spacing-header in index.css').toHaveLength(1)
+    expect(declarations[0]).toMatch(/--spacing-header:\s*3\.5rem;/)
   })
 })
 

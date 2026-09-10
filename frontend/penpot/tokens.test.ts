@@ -273,6 +273,26 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
     ).toThrow(/--unbekannt-xs/)
   })
 
+  /*
+   * Die EINE namentliche Ausnahme (specs/features/0387-schrittleiste-fortschritt.md):
+   * `--spacing-header` ist eine Layout-Konstante der App-Huelle, kein Design-Token - sie erzeugt
+   * bewusst keinen Eintrag. Geprueft wird beides zugleich, sonst waere die Ausnahme ein Loch:
+   * sie schweigt NUR fuer diesen einen Namen, jeder andere `--spacing-*`-Name faellt weiterhin in
+   * den Fehlerzweig.
+   */
+  it('ueberspringt --spacing-header namentlich, nicht ueber ein Praefixmuster', () => {
+    const mitHeader = buildTokens(
+      ':root {\n  --bg: #0b0c10;\n}\n@theme {\n  --spacing-header: 3.5rem;\n}'
+    )
+    const namen = mitHeader.tokens.map((token) => token.name)
+    expect(namen.filter((name) => name.includes('header'))).toEqual([])
+    // Positiv-Gegenprobe: der Lauf hat ueberhaupt Tokens erzeugt.
+    expect(namen).toContain('color.bg')
+    expect(() =>
+      buildTokens(':root {\n  --bg: #0b0c10;\n}\n@theme {\n  --spacing-sidebar: 3.5rem;\n}')
+    ).toThrow(/--spacing-sidebar/)
+  })
+
   it('scheitert an einem :root-Wert, der kein 6-stelliger Hexwert ist', () => {
     expect(() =>
       buildTokens(':root {\n  --bg: color-mix(in srgb, #fff 50%, #000);\n}\n@theme {\n}')
