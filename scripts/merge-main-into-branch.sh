@@ -100,8 +100,9 @@ if [[ "$zweig" == "$HAUPTZWEIG" ]]; then
     abbruch "'$HAUPTZWEIG' ist ausgecheckt. Der Abgleich laeuft ausschliesslich auf einem Feature-Branch."
 fi
 
-# Unversionierte Dateien blockieren bewusst nicht (AK 10): Ein Entwicklungslauf hat fast immer
-# Streudateien. Kollidiert eine davon tatsaechlich, verweigert git den Merge von sich aus.
+# Unversionierte Dateien blockieren bewusst nicht (AK 10 der Spec 0338): Ein
+# Entwicklungslauf hat fast immer Streudateien. Kollidiert eine davon tatsaechlich,
+# verweigert git den Merge von sich aus.
 if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
     abbruch "Arbeitsverzeichnis nicht sauber (gestagte oder ungestagte Aenderung an einer verfolgten Datei). Erst committen, dann abgleichen."
 fi
@@ -164,7 +165,8 @@ if [[ "$vorfahre_rueckgabe" -ne 1 ]]; then
     abbruch "'git merge-base --is-ancestor' meldete Rueckgabe $vorfahre_rueckgabe. Weder 'enthalten' noch 'nicht enthalten' - hier wurde nichts gemessen."
 fi
 
-# --no-ff sichert zu, dass der bisherige Kopf immer erster Elternteil des neuen bleibt (AK 1).
+# --no-ff sichert zu, dass der bisherige Kopf immer erster Elternteil des neuen bleibt
+# (AK 1 der Spec 0365).
 # Ohne es schoebe ein Vorspulen den Feature-Branch stillschweigend auf main und leerte den
 # Pull Request.
 merge_rueckgabe=0
@@ -175,7 +177,8 @@ if [[ "$merge_rueckgabe" -eq 0 ]]; then
     exit "$EXIT_UEBERNOMMEN"
 fi
 
-# AK 11: "Merge-Rueckgabe ungleich 0" ist nicht gleich "Konflikt". Ein pre-merge-commit-Hook
+# AK 11 der Spec 0338: "Merge-Rueckgabe ungleich 0" ist nicht gleich "Konflikt". Ein
+# pre-merge-commit-Hook
 # (oder commit.gpgsign ohne Schluessel) laesst git merge scheitern, MERGE_HEAD existieren - und
 # hinterlaesst null Pfade im Konfliktzustand.
 konflikt_rueckgabe=0
@@ -198,7 +201,8 @@ fi
 #   (b) Der Merge hat gar nicht erst begonnen - gemessen etwa, wenn eine unversionierte Datei mit
 #       einer neu auf `main` entstandenen kollidiert (Rueckgabe 2). MERGE_HEAD existiert nie, und
 #       `git merge --abort` scheiterte hier mit "There is no merge to abort". Es gibt nichts
-#       zurueckzunehmen; genau das ist die Zusage aus AK 10, dass git selbst verweigert.
+#       zurueckzunehmen; genau das ist die Zusage aus AK 10 der Spec 0338, dass git selbst
+#       verweigert.
 # Unterschieden wird an der Existenz von MERGE_HEAD, nicht an einem Ausgabetext.
 if [[ -e "$git_verzeichnis/MERGE_HEAD" ]]; then
     if ! git merge --abort >/dev/null 2>&1; then

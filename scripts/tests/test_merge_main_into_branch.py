@@ -271,7 +271,7 @@ def main_laeuft_weiter(spielplatz: Spielplatz) -> None:
 
 
 def origin_refs(spielplatz: Spielplatz) -> str:
-    """Saemtliche Refs des baren `origin` - nicht nur `main` (AK 7)."""
+    """Saemtliche Refs des baren `origin` - nicht nur `main` (AK 7, Spec 0338)."""
     return spielplatz.ausgabe(
         spielplatz.origin, "for-each-ref", "--format=%(refname) %(objectname)"
     )
@@ -344,7 +344,8 @@ class Momentaufnahme:
 def momentaufnahme(spielplatz: Spielplatz) -> Momentaufnahme:
     """Der Zustand des Arbeitsbaums samt `refs/heads/main` - **ohne** den Tracking-Ref.
 
-    `refs/heads/main` gehoert hinein, weil das Skript ihn ab Spec 0365 nie mehr anfasst (AK 8);
+    `refs/heads/main` gehoert hinein, weil das Skript ihn nie mehr anfasst (AK 8 der
+    Spec 0365);
     `refs/remotes/origin/main` gehoert ausdruecklich **nicht** hinein - der bewegt sich
     planmaessig, und eine Gleichheitszusage darauf machte jeden gelungenen Abgleich rot.
     """
@@ -360,7 +361,7 @@ def momentaufnahme(spielplatz: Spielplatz) -> Momentaufnahme:
 
 @dataclass(frozen=True)
 class HauptZustand:
-    """AK 8: was der Abgleich am Haupt-Checkout anrichtet - ein eigener Pruefgegenstand."""
+    """AK 8 (Spec 0365): was der Abgleich am Haupt-Checkout anrichtet - eigener Gegenstand."""
 
     main_ref: str
     head: str
@@ -404,7 +405,11 @@ def zwei_arbeitsbaeume(fabrik: Callable[..., Spielplatz]) -> Spielplatz:
 def kern_spielplatz(
     request: pytest.FixtureRequest, fabrik: Callable[..., Spielplatz]
 ) -> Spielplatz:
-    """Der Ausgangs-Kern (`0`/`10`/`20`/Fehlerfamilie) laeuft ueber **beide** Bauformen (AK 1)."""
+    """Der Ausgangs-Kern (`0`/`10`/`20`/Fehlerfamilie) laeuft ueber **beide** Bauformen.
+
+    AK 1 der Spec 0365 verlangt aus dem Arbeitsbaum heraus denselben Ausgang und denselben
+    Zustand des Feature-Branches wie aus dem Haupt-Checkout heraus.
+    """
     bauform = str(request.param)
     return fabrik(f"kern-{bauform}", bauform)
 
@@ -465,7 +470,7 @@ def test_die_zweite_bauform_haelt_main_im_haupt_checkout_ausgecheckt(
 def test_gegenprobe_die_alte_refspec_scheitert_im_verbundenen_arbeitsbaum(
     zwei_arbeitsbaeume: Spielplatz,
 ) -> None:
-    """Der Beleg, dass die Fixture ueberhaupt die Lage aus Issue #365 herstellt (AK 6).
+    """Der Beleg, dass die Fixture ueberhaupt die Lage aus Issue #365 herstellt (AK 6, Spec 0365).
 
     Ohne diese Gegenprobe belegen die Kern-Tests der zweiten Bauform nur, dass irgendein
     Repositorium funktioniert. Gemessen (ADR 0075, Messpunkt 1) verweigert git die alte Refspec
@@ -508,7 +513,7 @@ def test_die_neue_refspec_laeuft_in_derselben_lage_durch(zwei_arbeitsbaeume: Spi
 
 
 def test_no_op_meldet_nichts_und_aendert_nichts(kern_spielplatz: Spielplatz) -> None:
-    """AK 2/AK 4: `origin/main` bereits Vorfahre → Exit 0, **stdout und stderr leer**."""
+    """AK 2/AK 4 (Spec 0365): `origin/main` Vorfahre → Exit 0, **stdout/stderr leer**."""
     spielplatz = kern_spielplatz
     vorher = momentaufnahme(spielplatz)
 
@@ -517,7 +522,8 @@ def test_no_op_meldet_nichts_und_aendert_nichts(kern_spielplatz: Spielplatz) -> 
     assert ergebnis.returncode == EXIT_ENTHALTEN, ergebnis.stderr
     assert ergebnis.stdout == "", f"stdout nicht leer: {ergebnis.stdout!r}"
     assert ergebnis.stderr == "", (
-        f"stderr nicht leer: {ergebnis.stderr!r}. 'Keine Meldung' (AK 2) verlangt ein --quiet am "
+        f"stderr nicht leer: {ergebnis.stderr!r}. 'Keine Meldung' (AK 2 der Spec 0365) "
+        "verlangt ein --quiet am "
         "fetch, der seinen Fortschritt sonst nach stderr schreibt."
     )
     assert momentaufnahme(spielplatz) == vorher
@@ -527,14 +533,14 @@ def test_no_op_meldet_nichts_und_aendert_nichts(kern_spielplatz: Spielplatz) -> 
 def test_no_op_bleibt_still_auch_wenn_der_fetch_den_tracking_ref_vorspult(
     spielplatz: Spielplatz,
 ) -> None:
-    """Der No-Op schweigt auch dann, wenn der fetch wirklich einen Ref vorspult (AK 2).
+    """Der No-Op schweigt auch dann, wenn der fetch wirklich einen Ref vorspult (AK 2, Spec 0365).
 
     Der naheliegende No-Op-Test darueber prueft diese Zusage nur halb: Steht `main` still,
     transportiert der fetch nichts und schwiege selbst ohne jede Massnahme. Hier liegt der Stand
     von `main` bereits im Branch (ueber einen anderen lokalen Ref hereingeholt), waehrend der
     Tracking-Ref hinterherhinkt - der fetch spult ihn wirklich vor. Gemessen (2026-09-08)
     schreibt `git fetch` **jedes** Ref-Update nach stderr, auch ein rein lokales ohne
-    Objekttransfer; ohne Gegenmassnahme im Skript ist AK 2 hier verletzt.
+    Objekttransfer; ohne Gegenmassnahme im Skript ist AK 2 (Spec 0365) hier verletzt.
 
     **Der Vorlauf holt ueber den Pfad des baren `origin`, nicht ueber den Remote-Namen.** Ueber
     den Namen feuert die konfigurierte `remote.origin.fetch` opportunistisch mit und zieht
@@ -542,9 +548,9 @@ def test_no_op_bleibt_still_auch_wenn_der_fetch_den_tracking_ref_vorspult(
     dann schon aktuell, und dieser Test verloere **still** seinen Gegenstand.
 
     Welche der beiden Massnahmen es ist - `--quiet` oder die Umleitung nach `/dev/null` - kann
-    dieser Test nicht unterscheiden; beide erzeugen dieselbe Beobachtung. Dass das von AK 2
-    ausdruecklich verlangte `--quiet` am fetch steht, ist eine Texteigenschaft und wird deshalb
-    in `test_main_abgleich_verdrahtung.py` festgehalten.
+    dieser Test nicht unterscheiden; beide erzeugen dieselbe Beobachtung. Dass das von AK 2 der
+    Spec 0365 ausdruecklich verlangte `--quiet` am fetch steht, ist eine Texteigenschaft und
+    wird deshalb in `test_main_abgleich_verdrahtung.py` festgehalten.
     """
     main_laeuft_weiter(spielplatz)
     spielplatz.git(
@@ -571,7 +577,7 @@ def test_no_op_bleibt_still_auch_wenn_der_fetch_den_tracking_ref_vorspult(
     assert ergebnis.returncode == EXIT_ENTHALTEN, ergebnis.stderr
     assert (ergebnis.stdout, ergebnis.stderr) == ("", ""), (
         "Der fetch hat hier wirklich einen Ref vorgespult - ungebremst steht sein Fortschritt "
-        "damit auf stderr, und AK 2 ('keine Meldung') ist verletzt."
+        "damit auf stderr, und AK 2 (Spec 0365, 'keine Meldung') ist verletzt."
     )
     assert momentaufnahme(spielplatz) == vorher
     assert tracking_stand(spielplatz) != tracking_vorher, (
@@ -599,7 +605,7 @@ def test_zweiter_lauf_direkt_nach_dem_abgleich_ist_ein_no_op(spielplatz: Spielpl
 def test_sauberer_merge_haengt_genau_einen_commit_mit_zwei_eltern_an(
     kern_spielplatz: Spielplatz,
 ) -> None:
-    """AK 1 in seiner pruefbaren Fassung: der alte Kopf ist erster Elternteil des neuen.
+    """AK 1 (Spec 0365), pruefbare Fassung: der alte Kopf ist erster Elternteil des neuen.
 
     Der **zweite** Elternteil wird gegen den Tracking-Ref geprueft, nicht gegen `refs/heads/main`:
     Der bleibt ab Spec 0365 auf dem alten Stand stehen, und ein Vergleich gegen ihn waere in
@@ -622,7 +628,7 @@ def test_sauberer_merge_haengt_genau_einen_commit_mit_zwei_eltern_an(
     assert nachher.status == ""
     assert nachher.zweig == ZWEIG
     assert nachher.main_ref == vorher.main_ref, (
-        "`refs/heads/main` hat sich bewegt. Das Skript fasst ihn ab Spec 0365 nie mehr an (AK 8)."
+        "`refs/heads/main` hat sich bewegt. Das Skript fasst ihn nie mehr an (AK 8, Spec 0365)."
     )
     assert spielplatz.ausgabe(spielplatz.arbeit, "log", "-1", "--format=%B").strip() == (
         MERGE_NACHRICHT
@@ -632,7 +638,7 @@ def test_sauberer_merge_haengt_genau_einen_commit_mit_zwei_eltern_an(
 def test_der_alte_kopf_bleibt_vorfahre_kein_commit_wird_umgeschrieben(
     spielplatz: Spielplatz,
 ) -> None:
-    """AK 4: kein bestehender Commit-Hash aendert sich - Review-Threads bleiben verankert."""
+    """AK 4 (Spec 0338): kein Commit-Hash aendert sich - Review-Threads bleiben verankert."""
     main_laeuft_weiter(spielplatz)
     alte_commits = spielplatz.ausgabe(spielplatz.arbeit, "rev-list", "HEAD").split("\n")
 
@@ -651,7 +657,7 @@ def test_der_alte_kopf_bleibt_vorfahre_kein_commit_wird_umgeschrieben(
 def test_nach_dem_abgleich_zeigt_origin_main_head_nur_die_dateien_des_branches(
     kern_spielplatz: Spielplatz,
 ) -> None:
-    """AK 3, der tragende Regressionstest - mit seiner Gegenprobe **im selben Lauf**.
+    """AK 3 (Spec 0365), der tragende Regressionstest - mit seiner Gegenprobe **im selben Lauf**.
 
     Acht Stellen der Review-Phase vergleichen ab Spec 0365 mit `git diff origin/main...HEAD`.
     Geprueft wird deshalb dreierlei nebeneinander: `origin/main` ist Vorfahre von `HEAD` (ohne
@@ -710,7 +716,7 @@ def test_branch_vollstaendig_in_main_enthalten_bekommt_trotzdem_einen_merge_comm
 
 
 def test_unversionierte_dateien_blockieren_den_abgleich_nicht(spielplatz: Spielplatz) -> None:
-    """AK 10, letzter Satz: Ein Entwicklungslauf hat fast immer Streudateien."""
+    """AK 10 (Spec 0338), letzter Satz: Ein Entwicklungslauf hat fast immer Streudateien."""
     main_laeuft_weiter(spielplatz)
     schreibe(spielplatz.arbeit, "streudatei.tmp", "unversioniert\n")
 
@@ -767,7 +773,7 @@ def konflikt_vorbereiten(spielplatz: Spielplatz, art: str) -> list[str]:
 
 @pytest.mark.parametrize("art", ["modify/modify", "add/add", "delete/modify"])
 def test_konflikt_meldet_genau_die_konfliktpfade(kern_spielplatz: Spielplatz, art: str) -> None:
-    """AK 4, Skript-Haelfte: Exit 20, `MERGE_HEAD` da, stdout = Konfliktpfade und sonst nichts."""
+    """AK 5 (Spec 0338), Skript-Haelfte: Exit 20, `MERGE_HEAD` da, stdout = nur Pfade."""
     spielplatz = kern_spielplatz
     erwartet = konflikt_vorbereiten(spielplatz, art)
     vorher = momentaufnahme(spielplatz)
@@ -790,7 +796,7 @@ def test_konflikt_meldet_genau_die_konfliktpfade(kern_spielplatz: Spielplatz, ar
 def test_konfliktpfade_sind_repo_relativ_auch_aus_einem_unterverzeichnis(
     spielplatz: Spielplatz,
 ) -> None:
-    """AK 5: 'repo-relativ'. Ohne Gegenmassnahme entscheidet darueber die Konfiguration.
+    """AK 5 (Spec 0338): 'repo-relativ'. Ohne Gegenmassnahme entscheidet darueber die Konfiguration.
 
     `diff.relative` schaltet die Ausgabe auf 'relativ zum Arbeitsverzeichnis' um. Ein so
     konfiguriertes Repositorium meldete `datei.txt` statt `unter/tiefer/datei.txt`, und der
@@ -863,7 +869,7 @@ def test_bei_konflikt_liegt_die_feste_nachricht_in_merge_msg(spielplatz: Spielpl
 def test_der_dokumentierte_abschlussbefehl_erzeugt_genau_eine_zeile(
     spielplatz: Spielplatz,
 ) -> None:
-    """Der in `developer.md` dokumentierte Weg wird ausgefuehrt, nicht angenommen (AK 8)."""
+    """Der in `developer.md` dokumentierte Weg wird ausgefuehrt (AK 8, Spec 0338)."""
     konfliktpfade = konflikt_vorbereiten(spielplatz, "modify/modify")
     assert spielplatz.skript().returncode == EXIT_KONFLIKT
 
@@ -880,7 +886,7 @@ def test_der_dokumentierte_abschlussbefehl_erzeugt_genau_eine_zeile(
 def test_ohne_cleanup_strip_bliebe_die_konfliktliste_im_commit_body(
     fabrik: Callable[..., Spielplatz],
 ) -> None:
-    """Gegenprobe zum Test darueber: Die Zusage aus AK 8 haengt am Flag, nicht an der Absicht."""
+    """Gegenprobe: Die Zusage aus AK 8 (Spec 0338) haengt am Flag, nicht an der Absicht."""
     spielplatz = fabrik("ohne-strip")
     konfliktpfade = konflikt_vorbereiten(spielplatz, "modify/modify")
     assert spielplatz.skript().returncode == EXIT_KONFLIKT
@@ -895,7 +901,7 @@ def test_ohne_cleanup_strip_bliebe_die_konfliktliste_im_commit_body(
 
 
 def test_merge_abort_stellt_den_ausgangszustand_her(zwei_arbeitsbaeume: Spielplatz) -> None:
-    """AK 4/AK 8, skriptseitig pruefbare Haelfte - in der Regellage der Hintergrund-Laeufe.
+    """AK 6 (Spec 0338) und AK 8 (Spec 0365), skriptseitig pruefbare Haelfte.
 
     Der Tracking-Ref bleibt nach dem Abbruch auf dem geholten Stand stehen. Das ist unschaedlich
     und wird hier nachgerechnet statt geglaubt: Die Merge-Basis zwischen dem fortgeschriebenen
@@ -922,7 +928,7 @@ def test_merge_abort_stellt_den_ausgangszustand_her(zwei_arbeitsbaeume: Spielpla
     )
     assert not merge_head(spielplatz).exists()
     assert haupt_zustand(spielplatz) == haupt_vorher, (
-        "AK 8: Der Haupt-Checkout ist auch nach dem Abbruch unberuehrt."
+        "AK 8 (Spec 0365): Der Haupt-Checkout ist auch nach dem Abbruch unberuehrt."
     )
 
 
@@ -932,7 +938,7 @@ def test_merge_abort_stellt_den_ausgangszustand_her(zwei_arbeitsbaeume: Spielpla
 def test_merge_scheitert_ohne_konflikt_endet_in_der_fehlerfamilie(
     kern_spielplatz: Spielplatz,
 ) -> None:
-    """AK 4: 'Merge-Exit ungleich 0' ist nicht 'Konflikt' (am Bestand mit Hook nachgestellt).
+    """AK 11 (Spec 0338): 'Merge-Exit ungleich 0' ist nicht 'Konflikt' (Hook nachgestellt).
 
     Ein `pre-merge-commit`-Hook laesst `git merge` mit Exit 1 enden, `MERGE_HEAD` **existiert**,
     und es gibt **null** Pfade im Konfliktzustand. Wer das auf 20 abbildet, schickt den
@@ -971,14 +977,14 @@ def test_merge_scheitert_ohne_konflikt_endet_in_der_fehlerfamilie(
 def test_eine_kollidierende_unversionierte_datei_meldet_keine_ruecknahme(
     spielplatz: Spielplatz,
 ) -> None:
-    """Die andere Haelfte von AK 10 - und der Zweig, auf dem ihre Begruendung ruht.
+    """Die andere Haelfte von AK 10 (Spec 0338) - und der Zweig, auf dem ihre Begruendung ruht.
 
     "Unversionierte Dateien blockieren nicht" gilt, *weil* git bei einer echten Kollision von
     sich aus verweigert. Am Bestand gemessen (2026-09-08): `git merge` endet mit Rueckgabe 2,
     **ohne** einen Merge begonnen zu haben - `MERGE_HEAD` entsteht nie, und ein `git merge
     --abort` scheitert mit "There is no merge to abort". Eine Meldung, die hier eine Ruecknahme
     behauptet, beschreibt eine Handlung, die nicht stattgefunden hat; sie ist der Text, den
-    `ship-feature` bei AK 6 unveraendert an Daniel weitergibt.
+    `ship-feature` bei AK 6 (Spec 0338) unveraendert an Daniel weitergibt.
     """
     auf_main(
         spielplatz,
@@ -1166,7 +1172,7 @@ VORBEDINGUNGEN: tuple[tuple[str, Callable[[Spielplatz], None]], ...] = (
 def test_verletzte_vorbedingung_bricht_ab_und_begruendet_es(
     spielplatz: Spielplatz, name: str, vorbereiten: Callable[[Spielplatz], None]
 ) -> None:
-    """AK 4: Exit ausserhalb {0, 10, 20}, Zustand unveraendert, Begruendung auf stderr.
+    """AK 10 (Spec 0338): Exit ausserhalb {0, 10, 20}, Zustand unveraendert, Begruendung auf stderr.
 
     Bewusst **nur** am Einzel-Checkout, nicht ueber beide Bauformen: `main` selbst auszuchecken
     ist im verbundenen Arbeitsbaum unmoeglich (gemessen Exit 128, "wird bereits von
@@ -1357,7 +1363,7 @@ def test_die_fehlermeldung_nennt_die_remote_url_nicht(spielplatz: Spielplatz) ->
     assert "x-access-token" not in ergebnis.stderr
 
 
-# --- Einbahnstrasse (AK 7), nach jedem Ausgang -------------------------------------------------
+# --- Einbahnstrasse (AK 7, Spec 0338), nach jedem Ausgang -----------------------------------------
 
 
 def _szenario_no_op(spielplatz: Spielplatz) -> int:
@@ -1396,7 +1402,7 @@ def test_nach_jedem_ausgang_sind_die_origin_refs_unveraendert(
     """Einbahnstrasse: saemtliche Refs des `origin`, nicht nur `main` - erfasst auch Fremd-Pushes.
 
     Dazu ab Spec 0365 `refs/heads/main` in derselben Parametrisierung: Er ist nach **jedem**
-    Ausgang unveraendert, weil das Skript ihn nie mehr schreibt (AK 8).
+    Ausgang unveraendert, weil das Skript ihn nie mehr schreibt (AK 8, Spec 0365).
     """
     erwarteter_ausgang = szenario(spielplatz)
     refs_vorher = origin_refs(spielplatz)
@@ -1413,7 +1419,7 @@ def test_nach_jedem_ausgang_sind_die_origin_refs_unveraendert(
         f"Ausgang '{name}' hat Refs im origin veraendert. Das Skript pusht nie."
     )
     assert spielplatz.ausgabe(spielplatz.arbeit, "rev-parse", HAUPT_REF) == main_vorher, (
-        f"Ausgang '{name}' hat 'refs/heads/main' bewegt (AK 8)."
+        f"Ausgang '{name}' hat 'refs/heads/main' bewegt (AK 8, Spec 0365)."
     )
     assert spielplatz.ausgabe(spielplatz.arbeit, "branch", "--show-current") == zweig_vorher
     assert not main_wurde_ausgecheckt(spielplatz), (
@@ -1428,7 +1434,7 @@ def test_nach_jedem_ausgang_sind_die_origin_refs_unveraendert(
 def test_der_haupt_checkout_bleibt_nach_jedem_ausgang_unversehrt(
     zwei_arbeitsbaeume: Spielplatz, name: str, szenario: Callable[[Spielplatz], int]
 ) -> None:
-    """AK 8: die Zusicherung gegen den in ADR 0075 ausgeschlossenen `git update-ref`-Ausweg.
+    """AK 8 (Spec 0365): Zusicherung gegen den in ADR 0075 ausgeschlossenen Ausweg.
 
     Der wandernde Ref allein waere kein sichtbarer Schaden - der Schaden entsteht daran, dass
     Index und Arbeitsbaum des Haupt-Checkouts dabei stehen blieben. Daniel faende dort einen Berg
@@ -1454,7 +1460,7 @@ def test_der_haupt_checkout_bleibt_nach_jedem_ausgang_unversehrt(
 def test_das_skript_arbeitet_im_aktuellen_verzeichnis_nicht_im_eigenen_ablageort(
     spielplatz: Spielplatz,
 ) -> None:
-    """AK 7, zweiter Satz. Ein `cd $(dirname $0)` merget im echten PhotoSort-Repositorium."""
+    """AK 7 (Spec 0338), zweiter Satz. Ein `cd $(dirname $0)` merget im echten Repo."""
     echtes_head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=REPO_WURZEL,

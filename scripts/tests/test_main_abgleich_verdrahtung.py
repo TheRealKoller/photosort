@@ -6,9 +6,10 @@ geprueft. Die andere ist Ablauftext in `.claude/skills/ship-feature/SKILL.md` un
 `.claude/agents/developer.md`, den zur Laufzeit ein LLM interpretiert. Zugesichert wird hier
 deshalb ausschliesslich **Nachweisbares**:
 
-1. Das Skript existiert, ist ausfuehrbar und traegt die Eigenschaften, die AK 4 und AK 7 zu
-   Texteigenschaften machen: kein `push`, kein `rebase`, kein `commit --amend`, kein
-   `reset --hard`, kein `--force`. Damit liegt AK 7 im Required Check `demo-scripts`.
+1. Das Skript existiert, ist ausfuehrbar und traegt die Eigenschaften, die AK 4 und AK 7 der
+   Spec 0338 zu Texteigenschaften machen: kein `push`, kein `rebase`, kein `commit --amend`,
+   kein `reset --hard`, kein `--force`. Damit liegt AK 7 (Spec 0338) im Required Check
+   `demo-scripts`.
 2. Der `fetch` traegt das `--quiet`, und das **Ziel** seiner Refspec liegt unter
    `refs/remotes/`; nirgends im Skript steht ein Schreibzugriff auf `refs/heads/…`. Das ist die
    schaerfere Nachfolgezusage von frueher "eine Refspec ist vorhanden" (ADR 0075, Spec 0365):
@@ -30,7 +31,8 @@ deshalb ausschliesslich **Nachweisbares**:
 6. Beide neuen Anker stehen wortgleich in `developer.md` und werden **nur** dort definiert;
    `ship-feature` nennt sie in seiner Trigger-Liste, ohne das Format zu wiederholen.
 7. Die feste Merge-Nachricht kommt im Suchraum `scripts/` + `.claude/` **genau einmal** vor,
-   naemlich im Skript - und `release-please-config.json` schaltet `chore` nicht sichtbar (AK 8
+   naemlich im Skript - und `release-please-config.json` schaltet `chore` nicht
+   sichtbar (AK 8 der Spec 0338
    haengt an dieser Vorgabe, ein `changelog-sections`-Eintrag kippte sie still).
 8. Der dokumentierte Abschlussbefehl traegt `--cleanup=strip` und schliesst pfadgenau ab; ein
    `git add -A`/`git commit -a` steht nirgends in `developer.md` (Sicherheitskonzept,
@@ -38,7 +40,8 @@ deshalb ausschliesslich **Nachweisbares**:
 
 **Was hier bewusst NICHT gebaut wird:** ein Pruefer, der aus dem Prosatext herausliest, dass nach
 Exit 10 der Qualitaetscheck laeuft oder dass bei Rot abgebrochen wird. Er waere gruen, weil ein
-Satz dasteht, und froere nebenbei die Formulierung ein. AK 2, 5, 6 und 9 sind damit je zur
+Satz dasteht, und froere nebenbei die Formulierung ein. AK 2, 5, 6 und 9 der Spec 0338
+sind damit je zur
 Haelfte zugesichert: Skript ausfuehrbar bewiesen, Ablauf nur verankert.
 
 **Selbstschutz** wie bei den uebrigen Repo-Konsistenztests, weil die Haelfte der Zusagen hier
@@ -65,7 +68,8 @@ Verknuepfungspruefung geschoben (Reihenfolge ueber Offsets) und danach ganz gelo
 die Merge-Nachricht zusaetzlich in `developer.md` gesetzt (Einmaligkeit); `## Blockiert:
 main-Abgleich fehlgeschlagen` in einen Codeblock in `ship-feature` gesetzt (einzige
 Definitionsstelle); `"changelog-sections": [{"type": "chore", "section": "Sonstiges", "hidden":
-false}]` in `release-please-config.json` (AK 8). **Am selben Tag nachgetragen**, nachdem das
+false}]` in `release-please-config.json` (AK 8, Spec 0338). **Am selben Tag
+nachgetragen**, nachdem das
 Copilot-Review den toten Filter `if "unset" in zeile or True` gefunden hatte: `GIT_CONFIG_COUNT`
 aus dem `unset` des Skripts entfernt und zugleich in einer *wirksamen* Zeile (keinem Kommentar)
 mit fuehrendem Leerzeichen erwaehnt - also in genau der Form, die der alte Substring-Vergleich
@@ -107,7 +111,8 @@ ANKER_ABSCHLUSS = "## Abschlussbericht (Folgeauftrag: main-Abgleich)"
 ANKER_BLOCKIERT = "## Blockiert: main-Abgleich fehlgeschlagen"
 NEUE_ANKER = (ANKER_ABSCHLUSS, ANKER_BLOCKIERT)
 
-# AK 4 und AK 7 als Texteigenschaft. Der Suchraum ist der kommentarfreie Skripttext - der
+# AK 4 und AK 7 der Spec 0338 als Texteigenschaft. Der Suchraum ist der
+# kommentarfreie Skripttext - der
 # Kopfkommentar benennt notwendigerweise, was er verbietet.
 VERBOTENE_BEFEHLE = {
     "push": re.compile(r"\bpush\b", re.IGNORECASE),
@@ -257,7 +262,7 @@ def fehlende_unset_variablen(text: str) -> list[str]:
 
 
 def verbotene_befehle(text: str) -> list[str]:
-    """AK 4/AK 7 als Texteigenschaft: meldet jeden schreibenden oder umschreibenden Befehl."""
+    """AK 4/AK 7 (Spec 0338): meldet jeden schreibenden oder umschreibenden Befehl."""
     wirksam = wirksamer_skripttext(text)
     _pruefe_nicht_leer(wirksam, SKRIPT_REPO_RELATIV)
     return [
@@ -333,7 +338,9 @@ def fetch_befunde(text: str) -> list[str]:
     werte = readonly_literale(text)
     befunde: list[str] = []
     if "--quiet" not in zeile:
-        befunde.append(f"'--quiet' fehlt in {zeile!r} (AK 2: keine Ausgabe bei Exit 0).")
+        befunde.append(
+            f"'--quiet' fehlt in {zeile!r} (AK 2 der Spec 0365: keine Ausgabe bei Exit 0)."
+        )
 
     refspecs = fetch_refspecs(zeile, werte)
     if len(refspecs) != 1:
@@ -558,8 +565,9 @@ def test_das_skript_enthaelt_keinen_schreibenden_oder_umschreibenden_befehl() ->
 
     assert not befunde, (
         f"{SKRIPT_REPO_RELATIV} enthaelt wieder einen verbotenen Befehl: {'; '.join(befunde)}.\n"
-        "Der Abgleich ist eine Einbahnstrasse (AK 7) und schreibt keine veroeffentlichten "
-        "Commits um (AK 4). Die Freigabe nach main bleibt vollstaendig Daniels Entscheidung."
+        "Der Abgleich ist eine Einbahnstrasse (AK 7, Spec 0338) und schreibt keine "
+        "veroeffentlichten Commits um (AK 4, Spec 0338). Die Freigabe nach main bleibt "
+        "vollstaendig Daniels Entscheidung."
     )
 
 
@@ -617,7 +625,7 @@ def test_der_fetch_traegt_quiet_und_ein_ziel_im_tracking_namensraum() -> None:
 
 
 def test_das_skript_schreibt_keinen_ref_unterhalb_von_refs_heads() -> None:
-    """AK 8: Der Haupt-Checkout bleibt unversehrt, weil `refs/heads/main` nie geschrieben wird."""
+    """AK 8 (Spec 0365): `refs/heads/main` wird nie geschrieben - Haupt-Checkout heil."""
     befunde = refs_heads_schreibzugriffe(skripttext())
 
     assert not befunde, (
@@ -817,12 +825,12 @@ def test_ship_feature_ruft_das_skript_an_genau_zwei_stellen_auf() -> None:
     assert text.count(SKRIPT_REPO_RELATIV) == 2, (
         f"{text.count(SKRIPT_REPO_RELATIV)} Aufrufstellen in ship-feature, erwartet genau zwei "
         "(Schritt 6 vor dem Push, Schritt 8 als erste Handlung). Der zweite Zeitpunkt ist der "
-        "tragende: Zwischen PR-Eroeffnung und Freigabe vergeht die meiste Zeit (AK 2)."
+        "tragende: Zwischen PR-Eroeffnung und Freigabe vergeht die meiste Zeit (AK 2, Spec 0338)."
     )
 
 
 def test_der_erste_aufruf_steht_nach_dem_commit_und_vor_dem_push() -> None:
-    """AK 1, Reihenfolge ueber Zeichenoffsets statt ueber eine Formulierung."""
+    """AK 1 (Spec 0338), Reihenfolge ueber Zeichenoffsets statt ueber eine Formulierung."""
     schritt = abschnitt(dateitext(SHIP_FEATURE_PFAD), "## Schritt 6")
 
     assert schritt.count(SKRIPT_REPO_RELATIV) == 1
@@ -837,7 +845,7 @@ def test_der_erste_aufruf_steht_nach_dem_commit_und_vor_dem_push() -> None:
 
 
 def test_der_zweite_aufruf_ist_die_erste_handlung_in_schritt_acht() -> None:
-    """AK 2: vor der Verknuepfungspruefung und vor dem Setzen der Statuszeile."""
+    """AK 2 (Spec 0338): vor der Verknuepfungspruefung und vor dem Setzen der Statuszeile."""
     schritt = abschnitt(dateitext(SHIP_FEATURE_PFAD), "## Schritt 8")
 
     assert schritt.count(SKRIPT_REPO_RELATIV) == 1
@@ -951,8 +959,12 @@ def test_die_merge_nachricht_kommt_im_suchraum_genau_einmal_vor() -> None:
 def test_die_merge_nachricht_ist_einzeilig_und_konventionell() -> None:
     assert "\n" not in MERGE_NACHRICHT
     assert MERGE_NACHRICHT.startswith("chore: ")
-    assert "#" not in MERGE_NACHRICHT, "AK 8: kein '#' - es wuerde im Squash-Body ausgewertet."
-    assert not re.search(r"\b[0-9a-f]{7,40}\b", MERGE_NACHRICHT), "AK 8: kein Commit-Hash."
+    assert "#" not in MERGE_NACHRICHT, (
+        "AK 8 (Spec 0338): kein '#' - es wuerde im Squash-Body ausgewertet."
+    )
+    assert not re.search(r"\b[0-9a-f]{7,40}\b", MERGE_NACHRICHT), (
+        "AK 8 (Spec 0338): kein Commit-Hash."
+    )
 
 
 def test_eine_zweite_fundstelle_der_nachricht_wuerde_gemeldet() -> None:
@@ -968,7 +980,7 @@ def test_ein_leerer_suchraum_scheitert_laut_statt_still() -> None:
 
 
 def test_release_please_schaltet_chore_nicht_sichtbar() -> None:
-    """AK 8 haengt an dieser Vorgabe: `chore` ist in den Vorgabe-Sektionen ausgeblendet."""
+    """AK 8 (Spec 0338) haengt daran: `chore` ist in den Vorgabe-Sektionen ausgeblendet."""
     konfiguration = json.loads(RELEASE_PLEASE_PFAD.read_text(encoding="utf-8"))
     sektionen: Iterable[dict[str, object]] = konfiguration.get("changelog-sections", [])
 
@@ -980,7 +992,8 @@ def test_release_please_schaltet_chore_nicht_sichtbar() -> None:
 
     assert not sichtbare_chore, (
         f"release-please-config.json schaltet 'chore' sichtbar: {sichtbare_chore}. Damit "
-        "erschiene der Merge-Commit des Abgleichs im Changelog und AK 8 ('kein Rauschen') "
+        "erschiene der Merge-Commit des Abgleichs im Changelog, und AK 8 (Spec 0338, "
+        "'kein Rauschen') "
         "faellt - nachzuziehen ist dann ADR 0063, nicht dieser Test."
     )
 
@@ -989,7 +1002,7 @@ def test_release_please_schaltet_chore_nicht_sichtbar() -> None:
 
 
 def test_developer_dokumentiert_den_abschlussbefehl_mit_cleanup_strip() -> None:
-    """Ohne `--cleanup=strip` bliebe die `# Conflicts:`-Liste im Commit-Body (AK 8)."""
+    """Ohne `--cleanup=strip` bliebe die `# Conflicts:`-Liste im Commit-Body (AK 8, Spec 0338)."""
     assert ABSCHLUSSBEFEHL in dateitext(DEVELOPER_PFAD), (
         f"{ABSCHLUSSBEFEHL!r} steht nicht in developer.md. 'git commit --no-edit' allein laesst "
         "die von git angehaengte Konfliktliste im Body stehen; sie wandert in den Squash-Body."
