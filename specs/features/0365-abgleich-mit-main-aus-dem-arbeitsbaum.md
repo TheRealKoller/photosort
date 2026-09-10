@@ -1,6 +1,6 @@
 # 0365 - Der Abgleich mit `main` läuft aus dem Arbeitsbaum durch
 
-**Status:** Accepted
+**Status:** Implemented ([PR #393](https://github.com/TheRealKoller/photosort/pull/393))
 **Erstellt:** 2026-09-10
 **Bezug:** GitHub-Issue [`#365`](https://github.com/TheRealKoller/photosort/issues/365), Architekturentscheidung ADR [`0075`](../decisions/0075-abgleich-mit-main-fasst-den-lokalen-main-ref-nicht-mehr-an.md), teilweise abgelöste ADR [`0063`](../decisions/0063-abgleich-mit-main-als-getestetes-lokales-skript-merge-statt-rebase.md), fortgeführte Spec [`0338`](./0338-abgleich-mit-main-vor-der-freigabe.md), `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`
 
