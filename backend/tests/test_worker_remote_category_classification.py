@@ -1987,7 +1987,9 @@ class TestTheRemoteCategoryPhaseSummarisesItsThrottling:
         message = records[0].getMessage()
         assert "remote_category" in message
         assert "anthropic" in message
-        assert "1 Wiederholungen" in message
+        # Genau EINE Wiederholung - Singular. Bewusst mit dem Folgewort assertiert:
+        # `"1 Wiederholung" in "1 Wiederholungen"` waere sonst auch beim Plural wahr.
+        assert "1 Wiederholung nach 429" in message
         assert "2.0 s Wartezeit" in message
 
     async def test_the_summary_reports_only_the_difference_of_this_phase(
@@ -2016,5 +2018,7 @@ class TestTheRemoteCategoryPhaseSummarisesItsThrottling:
         assert len(records) == 1
         message = records[0].getMessage()
         assert "42.0" not in message
-        assert "1 Wiederholungen" in message
+        # Genau EINE Wiederholung - Singular. Bewusst mit dem Folgewort assertiert:
+        # `"1 Wiederholung" in "1 Wiederholungen"` waere sonst auch beim Plural wahr.
+        assert "1 Wiederholung nach 429" in message
         assert "2.0 s Wartezeit" in message

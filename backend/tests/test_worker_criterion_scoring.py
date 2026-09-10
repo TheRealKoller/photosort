@@ -4987,7 +4987,9 @@ class TestTheLandmarkPhaseSummarisesItsThrottling:
         message = records[0].getMessage()
         assert "landmark" in message
         assert "anthropic" in message
-        assert "1 Wiederholungen" in message
+        # Genau EINE Wiederholung - Singular. Bewusst mit dem Folgewort assertiert:
+        # `"1 Wiederholung" in "1 Wiederholungen"` waere sonst auch beim Plural wahr.
+        assert "1 Wiederholung nach 429" in message
         assert "2.0" in message  # summierte Wiederholungs-Wartezeit
 
     async def test_the_summary_reports_only_the_difference_of_this_phase(
@@ -5015,7 +5017,9 @@ class TestTheLandmarkPhaseSummarisesItsThrottling:
         # Prozesses - und nicht die 42.0 s, die vor dem Teilschritt bereits auf dem prozessweiten
         # Zaehler standen.
         assert "42.0" not in message
-        assert "1 Wiederholungen" in message
+        # Genau EINE Wiederholung - Singular. Bewusst mit dem Folgewort assertiert:
+        # `"1 Wiederholung" in "1 Wiederholungen"` waere sonst auch beim Plural wahr.
+        assert "1 Wiederholung nach 429" in message
         assert "2.0 s Wartezeit" in message
 
 
@@ -5048,8 +5052,44 @@ class TestLogCloudVisionThrottling:
         message = caplog.records[0].getMessage()
         assert "remote_category" in message
         assert "mistral" in message
-        assert "3" in message
+        assert "3 Anfragen eingereiht" in message
         assert "4.5" in message
+        # Null Wiederholungen ist im Deutschen ebenfalls Plural.
+        assert "0 Wiederholungen nach 429" in message
+
+    def test_both_counts_are_singular_for_exactly_one(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Copilot-Review-Fund (PR #385), auf BEIDE Zahlwoerter erweitert: "1 Anfragen"/"1
+        Wiederholungen" laesen sich falsch. Diese Zeile ist der einzige Traeger der Zusage "eine
+        ungewoehnlich lange Laufzeit ist im Lauf-Protokoll erklaerbar" - und genau EINE
+        Wiederholung ist der haeufigste Fall, den man dort antrifft."""
+        stats = ThrottleStats(
+            delayed_requests=1, total_delay_seconds=1.5, retries=1, total_retry_wait_seconds=2.0
+        )
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            worker._log_cloud_vision_throttling("landmark", "anthropic", stats)
+
+        message = caplog.records[0].getMessage()
+        assert "1 Anfrage eingereiht" in message
+        assert "1 Wiederholung nach 429" in message
+        assert "Anfragen eingereiht" not in message
+        assert "Wiederholungen" not in message
+
+    def test_both_counts_are_plural_for_more_than_one(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        stats = ThrottleStats(
+            delayed_requests=2, total_delay_seconds=3.0, retries=4, total_retry_wait_seconds=30.0
+        )
+
+        with caplog.at_level(logging.WARNING, logger="photosort.worker"):
+            worker._log_cloud_vision_throttling("landmark", "anthropic", stats)
+
+        message = caplog.records[0].getMessage()
+        assert "2 Anfragen eingereiht" in message
+        assert "4 Wiederholungen nach 429" in message
 
     def test_the_line_names_the_throttle_as_provider_wide(
         self, caplog: pytest.LogCaptureFixture

@@ -976,6 +976,17 @@ def _log_cloud_vision_failure(
     )
 
 
+def _counted(count: int, singular: str, plural: str) -> str:
+    """Zahlwort mit passendem Numerus - "1 Wiederholung", aber "0"/"2 Wiederholungen"
+    (Copilot-Review-Fund auf PR #385).
+
+    Erster Helfer dieser Art im Projekt: bis Spec 0382 trug keine Logzeile ein gezaehltes
+    Substantiv. Bewusst hier und nicht in einem eigenen Modul - die eine Zeile unten ist die
+    einzige Verwendung, und ein i18n-Baustein waere fuer ein einsprachiges Server-Log
+    ueberdimensioniert."""
+    return f"{count} {singular if count == 1 else plural}"
+
+
 def _log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats) -> None:
     """Strukturiertes WARNING-Logging der VERTEILUNG eines Cloud-Teilschritts
     (specs/features/0382-cloud-rate-limits-aussitzen.md, ADR 0074 Entscheidung 8) - der
@@ -1004,13 +1015,13 @@ def _log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats
     if stats.delayed_requests == 0 and stats.retries == 0:
         return
     logger.warning(
-        "Cloud-Vision-Anfragen gedrosselt (%s): %s Anfragen eingereiht, %.1f s verteilt, "
-        "%s Wiederholungen nach 429 mit %.1f s Wartezeit - der Schrittmacher gilt anbieterweit "
+        "Cloud-Vision-Anfragen gedrosselt (%s): %s eingereiht, %.1f s verteilt, "
+        "%s nach 429 mit %.1f s Wartezeit - der Schrittmacher gilt anbieterweit "
         "(%s) und nicht nur fuer diesen Lauf.",
         phase,
-        stats.delayed_requests,
+        _counted(stats.delayed_requests, "Anfrage", "Anfragen"),
         stats.total_delay_seconds,
-        stats.retries,
+        _counted(stats.retries, "Wiederholung", "Wiederholungen"),
         stats.total_retry_wait_seconds,
         provider,
     )
