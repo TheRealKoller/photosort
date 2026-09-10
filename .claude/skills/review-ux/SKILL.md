@@ -5,7 +5,7 @@ description: UI/UX-Review eines Feature-Branch-Diffs gegen `main` — Design-Sys
 
 # review-ux — Design-System-Konsistenz und Usability
 
-Prüft den Diff des Feature-Branches gegen `main` (`git diff main...HEAD` bzw. den genannten Branch) aus Design-/Usability-Perspektive — **nur wenn der Branch tatsächlich Frontend-/UI-Dateien ändert** (Dateien unter `frontend/`). Bei reinem Backend triggert der `review`-Orchestrator diese Perspektive gar nicht erst.
+Prüft den Diff des Feature-Branches gegen `main` (`git diff origin/main...HEAD` bzw. den genannten Branch) aus Design-/Usability-Perspektive — **nur wenn der Branch tatsächlich Frontend-/UI-Dateien ändert** (Dateien unter `frontend/`). Bei reinem Backend triggert der `review`-Orchestrator diese Perspektive gar nicht erst.
 
 Die Prüf-Methodik ist die bisherige Feature-Branch-Review-Aufgabe des `ux-ui-designer`-Agenten, unverändert in einen Hauptsession-Skill überführt.
 

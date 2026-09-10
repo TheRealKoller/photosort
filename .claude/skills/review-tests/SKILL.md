@@ -5,7 +5,7 @@ description: Test-, Bug- und Konventions-Review eines Feature-Branch-Diffs gegen
 
 # review-tests — Test / Bugs / Konventionen
 
-Prüft den Diff des Feature-Branches gegen `main` (`git diff main...HEAD` bzw. den vom Aufrufer/Orchestrator genannten Branch) aus der Testperspektive und deckt dabei das generische Code-Review mit ab (Bugs, Logikfehler, Konventionen). Die Sicherheitsprüfung übernimmt `review-security`, die Architektur-Entscheidungstreue `review-architecture` — hier nicht doppeln.
+Prüft den Diff des Feature-Branches gegen `main` (`git diff origin/main...HEAD` bzw. den vom Aufrufer/Orchestrator genannten Branch) aus der Testperspektive und deckt dabei das generische Code-Review mit ab (Bugs, Logikfehler, Konventionen). Die Sicherheitsprüfung übernimmt `review-security`, die Architektur-Entscheidungstreue `review-architecture` — hier nicht doppeln.
 
 Die Prüf-Methodik ist die bisherige Feature-Branch-Review-Aufgabe des `test-engineer`-Agenten, unverändert in einen Hauptsession-Skill überführt.
 

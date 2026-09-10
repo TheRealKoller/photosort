@@ -35,7 +35,7 @@ Nicht dem Bericht vertrauen — selbst ermitteln:
 
 1. `git branch --show-current` — gegen den im Bericht genannten `**Feature-Branch:**` abgleichen (bei Ad-hoc-Aufruf: der aktuelle Branch). Bei Abweichung `git checkout <gemeldeter-branch>`.
 2. `git status` — muss sauber sein. Behauptet der Bericht "sauber, alles committet", ist es aber nicht, das nicht stillschweigend ignorieren: im Findings-Output vermerken.
-3. `git diff --name-only main...HEAD` **selbst ausführen** — das ist die verbindliche Quelle für die Trigger-Auswertung, nicht die im Bericht gelistete Datei-Liste. Sichtbare Abweichung von der gemeldeten Liste im Findings-Output vermerken.
+3. `git diff --name-only origin/main...HEAD` **selbst ausführen** — das ist die verbindliche Quelle für die Trigger-Auswertung, nicht die im Bericht gelistete Datei-Liste. Sichtbare Abweichung von der gemeldeten Liste im Findings-Output vermerken.
 
 ## Schritt 3: Perspektiven-Trigger-Tabelle auswerten
 
