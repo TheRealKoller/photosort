@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type { RatingStatus } from '../api/types'
+import type { CategoryKey, RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CloudVisionStatusList } from '../components/CloudVisionStatusList'
-import { CriterionDetailsList } from '../components/CriterionDetailsList'
+import { CriterionDetailsList, hasCategoryControls } from '../components/CriterionDetailsList'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
 import { Alert } from '../components/ui/alert'
@@ -261,6 +261,38 @@ export function PhotoDetailPage() {
 
   const isMutating = setMutation.isPending || deleteMutation.isPending
 
+  /* Beide Einbindungen der Aufschluesselung teilen EIN Props-Objekt
+     (specs/features/0370-bedienelemente-zuerst.md): Bedienteil oben und Informationsteil unten
+     sind zwei Ausschnitte derselben Darstellung und duerfen nicht auseinanderlaufen - zwei
+     getrennt gepflegte Prop-Listen taeten genau das beim naechsten neuen Prop.
+     showSuggestion={false} - die Ausschuss-Gruppe bleibt exklusiv im "Automatischer
+     Vorschlag"-Kasten, suggestion wird hier bewusst nicht durchgereicht (kein Feld-/Logik-Merge
+     zwischen beiden Bereichen). */
+  const detailsProps = {
+    criterionScores: currentPhoto.criterion_scores,
+    /* Die Detailansicht zeigt EIN Foto - gemeint ist immer seine Hauptzugehoerigkeit
+       (specs/features/0300-nebenkategorien.md). `rankings[0]` waere hier die falsche
+       Abkuerzung, die Rolle kommt aus `is_primary`. */
+    ranking: primaryRanking(currentPhoto),
+    rankings: currentPhoto.rankings,
+    suggestion: null,
+    showSuggestion: false,
+    categoryCandidates: currentPhoto.category_candidates,
+    fineLabels: currentPhoto.fine_labels,
+    categories: categorySet,
+    categoriesLoading: categoriesQuery.isLoading,
+    categoriesError: categoriesQuery.isError,
+    onRetryCategories: () => {
+      void categoriesQuery.refetch()
+    },
+    categoryOverride: currentPhoto.category_override,
+    onOverrideCategory: (categoryKey: CategoryKey) =>
+      categoryOverrideControls.overrideCategory(currentPhoto.id, categoryKey),
+    onResetOverride: () => categoryOverrideControls.resetOverride(currentPhoto.id),
+    pendingOverrideKey: categoryOverrideControls.pendingOverrideKeyFor(currentPhoto.id),
+    resetPending: categoryOverrideControls.isResetPendingFor(currentPhoto.id),
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Bleibt unveraendert stehen (Spec 0321, "es wird nichts entfernt"): durch die neuen
@@ -284,56 +316,26 @@ export function PhotoDetailPage() {
         />
       </div>
 
-      {/* specs/features/0058-cloud-vision-status-transparenz.md, UI/UX-Abschnitt "Layout &
-          Platzierung": unmittelbar vor der bestehenden CriterionDetailsList (technische
-          Detailentscheidung des developer-Agenten - der Spec-Text nennt zusaetzlich "nach den
-          Bewertungs-Buttons", was mit der tatsaechlichen DOM-Reihenfolge dieser Seite [RatingButtons
-          steht bereits WEITER UNTEN, nach dieser Sektion] nicht gleichzeitig erfuellbar ist; die
-          eindeutige, wortwoertlich umsetzbare Instruktion "vor CriterionDetailsList" ist
-          maßgeblich). IMMER sichtbar (bewusste Stakeholder-Entscheidung, kein Ausblenden bei
-          not_candidate/not_run, siehe Spec-Abschnitt "Entscheidungen") - anders als
-          CriterionDetailsList unten kein `.length > 0`-Sichtbarkeitsgate. */}
-      <div className="text-sm text-text" data-testid="cloud-vision-status-section">
-        <CloudVisionStatusList cloudVisionStatus={currentPhoto.cloud_vision_status} />
-      </div>
+      {/* Unmittelbar unter dem Foto: die primaere, haeufigste Handlung
+          (specs/features/0370-bedienelemente-zuerst.md, Akzeptanzkriterium 1a). role="group" mit
+          aria-label="Bewertung" bleibt unveraendert - die Leiste wandert nur nach oben. */}
+      <RatingButtons
+        currentStatus={currentOwnStatus}
+        onToggle={handleToggleRating}
+        disabled={isMutating}
+        busy={isMutating}
+      />
 
-      {/* Permanente Sektion statt Info-Popover (Akzeptanzkriterien 1-4,
-          specs/features/0041-bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md) -
-          hier steht im Gegensatz zu Grid/Kuratierung ohnehin nur ein einziges Foto im Fokus, der
-          zusaetzliche Klick auf ein Info-Icon ist unnoetig. Gleiche Sichtbarkeitsregel wie die
-          bisherige Icon-Sichtbarkeit (Spec 0040 AK1): kein leerer Bereich bei leerer Liste.
-          showSuggestion={false} - die Ausschuss-Gruppe bleibt exklusiv im "Automatischer
-          Vorschlag"-Kasten weiter unten, suggestion wird hier bewusst nicht durchgereicht (kein
-          Feld-/Logik-Merge zwischen beiden Bereichen). Bewusst kein Card-Rahmen/Schatten wie das
-          Popover (Designprinzip "Die Fotos sind der Star", UI/UX-Abschnitt der Spec) - ein
-          schlichter, dezenter Block, der sich optisch unterordnet. */}
-      {currentPhoto.criterion_scores.length > 0 && (
-        <div className="text-sm text-text" data-testid="criterion-details-section">
-          <CriterionDetailsList
-            criterionScores={currentPhoto.criterion_scores}
-            /* Die Detailansicht zeigt EIN Foto - gemeint ist immer seine Hauptzugehoerigkeit
-               (specs/features/0300-nebenkategorien.md). `rankings[0]` waere hier die falsche
-               Abkuerzung, die Rolle kommt aus `is_primary`. */
-            ranking={primaryRanking(currentPhoto)}
-            rankings={currentPhoto.rankings}
-            suggestion={null}
-            showSuggestion={false}
-            categoryCandidates={currentPhoto.category_candidates}
-            fineLabels={currentPhoto.fine_labels}
-            categories={categorySet}
-            categoriesLoading={categoriesQuery.isLoading}
-            categoriesError={categoriesQuery.isError}
-            onRetryCategories={() => {
-              void categoriesQuery.refetch()
-            }}
-            categoryOverride={currentPhoto.category_override}
-            onOverrideCategory={(categoryKey) =>
-              categoryOverrideControls.overrideCategory(currentPhoto.id, categoryKey)
-            }
-            onResetOverride={() => categoryOverrideControls.resetOverride(currentPhoto.id)}
-            pendingOverrideKey={categoryOverrideControls.pendingOverrideKeyFor(currentPhoto.id)}
-            resetPending={categoryOverrideControls.isResetPendingFor(currentPhoto.id)}
-          />
+      {/* Bedienteil der Bewertungsdetails (Akzeptanzkriterium 1b): Kandidatenliste bzw. die
+          einzeilige "Kategorie"-Anzeige, der Konfidenz-Erklaerhinweis und die "Alle
+          Kategorien"-Auswahl. Die reinen Informationsanzeigen derselben Komponente stehen weiter
+          unten (`part="info"`). Der Wrapper haengt an derselben exportierten Vorbedingung, die
+          auch die Komponente prueft - sonst verbrauchte ein leerer Bereich im `gap-4` dieser
+          Seite einen sichtbaren Abstand. Bewusst kein Card-Rahmen/Schatten wie das Popover
+          (Designprinzip "Die Fotos sind der Star"). */}
+      {hasCategoryControls(currentPhoto.criterion_scores, primaryRanking(currentPhoto)) && (
+        <div className="text-sm text-text" data-testid="category-controls-section">
+          <CriterionDetailsList {...detailsProps} part="controls" />
         </div>
       )}
 
@@ -379,12 +381,34 @@ export function PhotoDetailPage() {
         </div>
       )}
 
-      <RatingButtons
-        currentStatus={currentOwnStatus}
-        onToggle={handleToggleRating}
-        disabled={isMutating}
-        busy={isMutating}
-      />
+      {/* Trennlinie zwischen Bedien- und Informationsteil (Spec 0370, UI/UX-Abschnitt): ohne sie
+          stiessen Vorschlagskasten und Informationsblöcke unvermittelt aneinander, und der
+          Wechsel von "was ich mit diesem Foto tue" zu "was das System über dieses Foto weiß"
+          waere nicht ablesbar. `--separator` ist die freistehende Linie auf dem Grund. */}
+      <div className="border-t border-separator" />
+
+      {/* specs/features/0058-cloud-vision-status-transparenz.md, UI/UX-Abschnitt "Layout &
+          Platzierung": unmittelbar vor der CriterionDetailsList UND nach den Bewertungs-Buttons -
+          beides zusammen war bis Spec 0370 nicht erfuellbar (die Bewertungsleiste stand damals
+          weiter unten) und ist es seit der Umordnung erstmals. IMMER sichtbar (bewusste
+          Stakeholder-Entscheidung, kein Ausblenden bei not_candidate/not_run, siehe
+          Spec-Abschnitt "Entscheidungen") - anders als die CriterionDetailsList darunter kein
+          `.length > 0`-Sichtbarkeitsgate. */}
+      <div className="text-sm text-text" data-testid="cloud-vision-status-section">
+        <CloudVisionStatusList cloudVisionStatus={currentPhoto.cloud_vision_status} />
+      </div>
+
+      {/* Informationsteil der permanenten Sektion (Spec 0370, Akzeptanzkriterium 2) - permanent
+          statt Info-Popover (Akzeptanzkriterien 1-4, specs/features/0041-bewertungsdetails-
+          permanent-in-detailansicht-hover-auto-close.md; dessen Platzierungsvorgabe "vor den
+          Navigationsbuttons" ist durch Spec 0370 abgeloest, die permanente Sichtbarkeit selbst
+          gilt unveraendert weiter). Gleiche Sichtbarkeitsregel wie die bisherige
+          Icon-Sichtbarkeit (Spec 0040 AK1): kein leerer Bereich bei leerer Liste. */}
+      {currentPhoto.criterion_scores.length > 0 && (
+        <div className="text-sm text-text" data-testid="criterion-details-section">
+          <CriterionDetailsList {...detailsProps} part="info" />
+        </div>
+      )}
 
       <Button asChild variant="ghost" className="self-start">
         <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
