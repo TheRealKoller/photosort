@@ -14,7 +14,11 @@ import {
   CONFIDENCE_EXPLANATION,
   CONFIDENCE_EXPLANATION_LABEL,
 } from '../utils/confidenceLabels'
-import { CriterionDetailsList, hasCategoryControls } from './CriterionDetailsList'
+import {
+  CriterionDetailsList,
+  hasCategoryControls,
+  type CriterionDetailsPart,
+} from './CriterionDetailsList'
 
 /** Verkuerztes Set (nur `key`/`display_name` werden ausgewertet) in Registry-Anzeigereihenfolge -
  * specs/features/0289-feste-kategorien.md. */
@@ -1246,13 +1250,11 @@ describe('CriterionDetailsList — Rollen der Zugehoerigkeiten', () => {
  * diesen neuen describe-Bloecken.
  * ----------------------------------------------------------------------------------------- */
 
-type DetailsPart = 'all' | 'controls' | 'info'
-
 /** Maximal-Props: JEDER darstellbare Bereich ist aktiv. Grundlage der Partitions-Zusicherung -
  * eine Fixture, in der ein Bereich fehlte, koennte die Doppelanzeige dieses Bereichs gar nicht
  * finden. `part` bewusst optional durchgereicht, damit derselbe Aufbau auch den Vorgabewert
  * (kein `part`) abdeckt. */
-function renderMaximalDetails(part?: DetailsPart) {
+function renderMaximalDetails(part?: CriterionDetailsPart) {
   return render(
     <CriterionDetailsList
       part={part}
@@ -1558,7 +1560,7 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
 describe('CriterionDetailsList: Feinlabel-Sicherheit je Teilbereich', () => {
   const XSS_PAYLOAD = '<img src=x onerror="alert(1)">'
 
-  function renderWithFineLabelPayload(part: DetailsPart) {
+  function renderWithFineLabelPayload(part: CriterionDetailsPart) {
     return render(
       <CriterionDetailsList
         part={part}
