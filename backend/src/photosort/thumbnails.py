@@ -196,15 +196,20 @@ def delete_cached_variants(cache_dir: Path, photos: Iterable[tuple[int, str]]) -
 # Punkt 5 bleibt fuer jeden anderen Loeschpfad unveraendert in Kraft.
 
 
-CACHE_FILE_PATTERN = re.compile(r"([0-9a-f]{64})_(?:thumbnail|display)\.jpg")
+CACHE_FILE_PATTERN = re.compile(r"^([0-9a-f]{64})_(?:thumbnail|display)\.jpg\Z")
 """Die exakte Signatur der eigenen Schreiboperation - `cache_key` + `thumbnail_path`/
 `display_path` und nichts sonst.
 
 Wird IMMER per `re.fullmatch` angewandt, nie per `.match`/`.search` (Security-Muss-Kriterium 1 der
-Spec): mit `^...$` und `.match` traefe `<64 hex>_display.jpg\\n` ebenfalls, weil `$` auch
-unmittelbar vor einem abschliessenden Zeilenumbruch passt - und ein Dateiname mit `\\n` ist unter
-Linux anlegbar. Deshalb steht hier auch kein `^`/`$`: `fullmatch` braucht sie nicht, und ihr
-Fehlen macht ein spaeteres versehentliches `.match` sofort sichtbar. Kein `re.IGNORECASE` -
+Spec). Das Endanker ist `\\Z` und NICHT `$`: `$` passt auch unmittelbar VOR einem abschliessenden
+Zeilenumbruch, ein `.match` gegen `^...$` traefe deshalb `<64 hex>_display.jpg\\n` - und ein
+Dateiname mit `\\n` ist unter Linux anlegbar. `\\Z` ist das absolute Ende der Zeichenkette und hat
+diese Schwaeche nicht.
+
+Die Anker sind damit ein zweites, unabhaengiges Netz unter der `fullmatch`-Regel: `fullmatch`
+braucht sie nicht, aber sollte hier je jemand versehentlich auf `.match`/`.search` wechseln,
+bliebe das Muster trotzdem exakt - ohne sie traefe ein `.match` jeden Namen, der mit der Signatur
+nur BEGINNT (`<64 hex>_thumbnail.jpg.bak`), und loeschte ihn. Kein `re.IGNORECASE` -
 `hashlib.hexdigest()` liefert ausschliesslich Kleinbuchstaben."""
 
 

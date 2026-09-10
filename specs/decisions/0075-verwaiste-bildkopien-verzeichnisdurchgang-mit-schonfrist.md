@@ -54,7 +54,7 @@ Gelöscht wird ausschließlich, was **alle** folgenden Bedingungen erfüllt:
 
 - direkter Eintrag in `settings.photo_cache_dir`, **nicht rekursiv**;
 - **reguläre Datei** (kein Verzeichnis, kein Symlink, kein Gerät — `os.scandir` ohne Symlink-Folgen);
-- Name trifft exakt `^[0-9a-f]{64}_(thumbnail|display)\.jpg$` — dieselbe Form, die `cache_key` +
+- Name trifft exakt `^[0-9a-f]{64}_(thumbnail|display)\.jpg\Z` — dieselbe Form, die `cache_key` +
   `thumbnail_path`/`display_path` erzeugen;
 - der 64-stellige Schlüssel liegt **nicht** in der Gültigkeitsmenge aus Punkt 3;
 - die Änderungszeit liegt vor der Schonfrist-Grenze aus Punkt 4.

@@ -8,6 +8,7 @@ import pytest
 from PIL import Image
 
 from photosort.thumbnails import (
+    CACHE_FILE_PATTERN,
     DISPLAY_MAX_SIZE,
     THUMBNAIL_MAX_SIZE,
     CacheSweepResult,
@@ -324,6 +325,39 @@ def test_delete_cached_variants_keeps_going_after_an_oserror_and_logs_the_path(
 def _write_aged(path: Path, size: int, mtime: float) -> None:
     _write_variant(path, size)
     os.utime(path, (mtime, mtime))
+
+
+class TestCacheFilePattern:
+    """Die Anker `^...\\Z` sind ein zweites Netz UNTER der `fullmatch`-Regel und keine Zierde.
+
+    Geprueft wird deshalb hier ausdruecklich `.match` - der Aufruf, den der Produktivcode nie
+    macht: verrutschte er dorthin, muss das Muster trotzdem exakt bleiben."""
+
+    @pytest.mark.parametrize(
+        "name",
+        ["0" * 64 + "_display.jpg\n", "0" * 64 + "_thumbnail.jpg.bak"],
+        ids=["zeilenumbruch", "angehaengtes-suffix"],
+    )
+    def test_even_an_accidental_match_would_reject_a_merely_prefixed_name(
+        self, name: str
+    ) -> None:
+        """`$` statt `\\Z` liesse den Zeilenumbruch-Namen durch, ein ANKERLOSES Muster zusaetzlich
+        jeden Namen, der mit der Signatur nur beginnt - beide wuerden dann geloescht."""
+        assert CACHE_FILE_PATTERN.match(name) is None
+
+    def test_the_pattern_accepts_exactly_what_the_write_operation_produces(
+        self, tmp_path: Path
+    ) -> None:
+        """Der Treffer entsteht ueber `thumbnail_path`/`display_path`, nie als handgetippter
+        Hex-String - sonst driften Muster und Namensschema auseinander."""
+        for path in (
+            thumbnail_path(tmp_path, 1, "etag-1"),
+            display_path(tmp_path, 1, "etag-1"),
+        ):
+            match = CACHE_FILE_PATTERN.fullmatch(path.name)
+
+            assert match is not None
+            assert match.group(1) == cache_key(1, "etag-1")
 
 
 class TestCollectCacheEntries:

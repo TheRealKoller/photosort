@@ -285,12 +285,14 @@ async def test_exactly_one_info_line_summarises_the_run_and_carries_no_path(
     records = [record for record in caplog.records if record.name == _LOGGER_NAME]
     assert len(records) == 1
     assert records[0].levelname == "INFO"
+    # Gegen `args` statt gegen Teilzeichenketten der Meldung: die vier Werte sind einander
+    # gefaehrlich aehnlich ("0" ist Teil von "300"), und eine Substring-Pruefung bliebe gruen,
+    # wenn entfernt/freigegeben/fehlgeschlagen/behalten VERTAUSCHT in der Zeile stuenden.
+    assert records[0].args == (1, 300, 0, 1)
     message = records[0].getMessage()
     assert str(orphan) not in message
     assert str(young) not in message
     assert str(tmp_path) not in message
-    for number in ("1", "300", "0", "1"):
-        assert number in message
 
 
 async def test_a_missing_cache_directory_is_not_an_error(

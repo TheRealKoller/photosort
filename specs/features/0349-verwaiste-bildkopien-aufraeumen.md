@@ -111,7 +111,8 @@ finden will, muss das Verzeichnis lesen — genau einmal, an genau einer Stelle,
 DB-frei/synchron, wie es `measure_cache_usage`/`delete_cached_variants` schon sind:
 
 ```python
-CACHE_FILE_PATTERN = re.compile(r"^([0-9a-f]{64})_(?:thumbnail|display)\.jpg$")
+# Nachtrag aus der Umsetzung: das Endanker ist `\Z`, nicht `$` - siehe Security Punkt 1.
+CACHE_FILE_PATTERN = re.compile(r"^([0-9a-f]{64})_(?:thumbnail|display)\.jpg\Z")
 
 @dataclass(frozen=True)
 class CacheEntry:          # path, key, mtime
@@ -534,6 +535,16 @@ nachgestellt). `fullmatch` weist denselben Namen ab. Der Unterschied trägt die 
 angehängtem Zeilenumbruch ist **nicht**, was `thumbnail_path`/`display_path` schreiben. Kein
 `re.IGNORECASE` — `hashlib.hexdigest()` liefert Kleinbuchstaben. Eigener Test mit einem
 `…_display.jpg\n`-Namen (per `tmp_path` anlegbar), der nicht gelöscht werden darf.
+
+**Nachtrag aus der Umsetzung (Review-Fund, 2026-09-10): das Endanker im Muster ist `\Z`, nicht
+`$`.** Die Anker bleiben im Muster stehen — anders als in einer Zwischenfassung der Umsetzung
+erwogen —, aber `$` wird durch `\Z` (absolutes Ende der Zeichenkette) ersetzt. Damit sind sie ein
+zweites, unabhängiges Netz **unter** der `fullmatch`-Regel statt einer Verdopplung mit eigener
+Schwäche: `fullmatch` braucht sie nicht, aber ein künftiges versehentliches `.match`/`.search`
+bliebe dadurch sowohl auffällig **als auch harmlos**. Ohne Anker träfe ein `.match` jeden Namen,
+der mit der Signatur nur **beginnt** (`<64 hex>_thumbnail.jpg.bak`), und löschte ihn; mit `^…$`
+träfe es weiterhin den oben beschriebenen Zeilenumbruch-Fall. Eigene Testfälle prüfen deshalb
+ausdrücklich `.match` gegen beide Namen — den Aufruf, den der Produktivcode nie macht.
 
 **2. Die Wiederholungsprüfung unmittelbar vor dem `unlink` liest `lstat`, nicht `stat`. Muss.**
 Nachgestellt: `Path.stat()` folgt einem Symlink und liefert `st_mode`, `st_size` und `st_mtime` des
