@@ -1,6 +1,6 @@
 # 0349 - Verwaiste lokale Bildkopien nach jedem Scan aufräumen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #394](https://github.com/TheRealKoller/photosort/pull/394))
 **Erstellt:** 2026-09-10
 **Bezug:** [Issue #349](https://github.com/TheRealKoller/photosort/issues/349)
 
