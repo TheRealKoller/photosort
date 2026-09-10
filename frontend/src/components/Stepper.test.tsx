@@ -484,6 +484,28 @@ describe('Stepper', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
+  /*
+   * WER KLICKT, MEINT "FESTHALTEN" (Review-Fund zu Spec 0387). Bis dahin galt ein per Ueberfahren
+   * geoeffnetes Panel auch nach einem Klick weiter als hover-geoeffnet und schloss beim Verlassen
+   * des Ausloesers - ein Klick blieb also folgenlos, obwohl er eine Absicht ausdrueckt. Der Fall
+   * ist die Partition zu "schliesst ein per Ueberfahren geoeffnetes Panel beim Verlassen": beide
+   * beginnen identisch, EIN Klick dazwischen kehrt das Ergebnis um.
+   */
+  it('haelt ein per Ueberfahren geoeffnetes Panel nach einem Klick fest, auch wenn der Zeiger geht', async () => {
+    stubMatchMedia(true)
+    const user = userEvent.setup()
+    renderStepper()
+    const blocked = gesperrterSchritt('Schritt 3 von 5: Ausschuss-Gate, blockiert')
+
+    fireEvent.pointerEnter(blocked)
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    await user.click(blocked)
+    fireEvent.mouseLeave(blocked, { relatedTarget: document.body })
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
   /* Bestehende `justOpenedByHoverRef`-Mechanik: der unmittelbar auf ein Hover-Oeffnen folgende
      Klick darf das Panel nicht sofort wieder schliessen. */
   it('haelt das Panel offen, wenn direkt nach dem Ueberfahren geklickt wird', async () => {
@@ -563,6 +585,13 @@ describe('Stepper', () => {
 
     await user.click(blocked)
     expect(screen.queryByRole('dialog')).toBeNull()
+
+    // Auch auf einem hover-faehigen Zeigergeraet stoesst das Ueberfahren hier nichts an - es gibt
+    // kein Panel, das oeffnen koennte.
+    stubMatchMedia(true)
+    fireEvent.pointerEnter(blocked)
+    expect(screen.queryByRole('dialog')).toBeNull()
+
     expect(fokussierbareInDerLeiste()).toHaveLength(5)
   })
 

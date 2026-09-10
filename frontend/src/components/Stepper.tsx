@@ -117,6 +117,11 @@ function BlockedStep({
   }
 
   function handlePointerEnter(): void {
+    // Ohne Grund gibt es gar kein Panel (siehe unten) - ein `setOpen` waere hier ein
+    // Zustandswechsel ohne jede Wirkung, also ein Neuzeichnen fuer nichts.
+    if (reason === '') {
+      return
+    }
     if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
       if (!open) {
         justOpenedByHoverRef.current = true
@@ -131,11 +136,18 @@ function BlockedStep({
       event.preventDefault()
     }
     justOpenedByHoverRef.current = false
+    // WER KLICKT, MEINT "FESTHALTEN": ab dem Klick gilt das Panel nicht mehr als per Ueberfahren
+    // geoeffnet. Ohne diese Zeile schloesse es weiterhin, sobald der Zeiger den Ausloeser
+    // verlaesst - der Klick waere dann folgenlos, obwohl er eine Absicht ausdrueckt. Geschlossen
+    // wird danach ueber die ausdruecklichen Wege: erneuter Klick, Escape, Aussenklick, "x".
+    openedByHoverRef.current = false
   }
 
   function handleMouseLeave(): void {
-    // Kein Grace-Bereich ueber die Portal-Grenze wie in CriterionDetailsPopover: der Panelinhalt
-    // ist EIN SATZ ohne Bedienelement - es gibt dort nichts zu erreichen.
+    // Schliesst NUR ein Panel, das per Ueberfahren geoeffnet wurde und seither nicht angeklickt
+    // worden ist (siehe `handleTriggerClick`). Kein Grace-Bereich ueber die Portal-Grenze wie in
+    // CriterionDetailsPopover: der Panelinhalt ist EIN SATZ ohne Bedienelement - es gibt dort
+    // nichts zu erreichen.
     if (openedByHoverRef.current) {
       handleOpenChange(false)
     }

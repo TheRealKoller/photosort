@@ -253,8 +253,12 @@ stehen in **exakt gleich breiten Spalten ohne Abstand zwischen den Spalten**
 Geschwister **im selben Kasten** direkt darunter. Nur dann liegt das Ende der Füllung wirklich
 unter der Spaltenmitte. Ein `gap-*` am `<ol>` verschöbe die Spaltenmitten gegenüber der
 Balkenskala (bei `gap-3` um bis zu ~5 px an den Rändern) — der sichtbare Abstand zwischen den
-Marken kommt deshalb aus `mx-1` **innerhalb** der Spalte, nicht aus einem Spaltenabstand. Dieser
-Zusammenhang gehört als Kommentar an die Stelle, sonst „räumt" ihn die nächste Überarbeitung weg.
+Marken kommt deshalb aus einer Polsterung **innerhalb** der Spalte, nicht aus einem
+Spaltenabstand. Umgesetzt als `px-1` am spaltenfüllenden Bedienelement (nachgezogen bei der
+Umsetzung; ein `mx-1` am Marker selbst wäre neben dessen `w-full` über die Spalte
+hinausgelaufen — die Wirkung ist dieselbe, 8 px zwischen zwei Marken, und die tragende Zusage
+„kein Spaltenabstand am `<ol>`" bleibt unberührt). Dieser Zusammenhang gehört als Kommentar an
+die Stelle, sonst „räumt" ihn die nächste Überarbeitung weg.
 
 Die heutigen Verbindungslinien zwischen den Schritten
 (`<span className="h-0.5 flex-1 bg-separator" />`) entfallen ersatzlos — der durchgehende Balken
@@ -289,9 +293,14 @@ Der Entwurf ist an dieser Stelle maßgeblich und weicht vom heutigen Code ab: **
 allein die Marke, nicht Marke plus Beschriftung.** Umsetzung:
 
 - **Neu: `frontend/src/components/StepMarker.tsx`** — rein präsentational, ohne Zustand, ohne
-  Routing. Props: `auspraegung: 'erledigt' | 'aktuell' | 'ausstehend' | 'blockiert'` und die
-  Schrittnummer. Rendert die umrandete Fläche mit genau einer Glyphe (Haken / Nummer / Schloss),
-  setzt `data-step-state`, enthält das lokale `LockIcon`. Größe:
+  Routing. Props: `auspraegung: 'erledigt' | 'aktuell' | 'ausstehend' | 'blockiert'`, die
+  Schrittnummer und `istErledigt` (bei der Umsetzung ergänzt; Vorgabewert
+  `auspraegung === 'erledigt'`). Die dritte Prop ist nötig, weil Zustandsbenennung und
+  Glyphenwahl **zwei verschiedenen Rangfolgen** folgen (siehe Edge Case 2): ein erledigter,
+  inzwischen wieder gesperrter Schritt heißt „blockiert" und zeigt trotzdem den Haken — ohne
+  diese Angabe könnte der Marker die Glyphe nicht wählen. Gesetzt wird sie nur dort, wo beide
+  Aussagen auseinanderfallen. Rendert die umrandete Fläche mit genau einer Glyphe
+  (Haken / Nummer / Schloss), setzt `data-step-state`, enthält das lokale `LockIcon`. Größe:
   `h-8 w-full sm:size-8 sm:shrink-0` — schmal über die Spalte gedehnt, ab `sm:` quadratisch.
   Tokens aus `design/penpot/components.json` (`radius.md`, `text.xs`, Flächen/Umriss/Schrift je
   Ausprägung).
@@ -424,7 +433,7 @@ Der Marker ist **nicht die Verbindungslinie**, sondern allein die Glyphe und ihr
 
 ### Breiten und Spalten-Geometrie
 
-**Schmal (<sm):** Fünf Marker verteilen sich über die volle Inhaltsbreite ohne Abstand zwischen den Spalten, je Marker `h-8 w-full` (gedehnt rechteckig). Beschriftung `hidden`, nur die Glyphe sichtbar. Die Spaltengeometrie ist **tragend**: die Füllung des Fortschrittsbalkens endet unter der Mitte der Spalte, deshalb keine `gap` am `<ol>`, sondern Abstand **innerhalb** der Marker via `mx-1`.
+**Schmal (<sm):** Fünf Marker verteilen sich über die volle Inhaltsbreite ohne Abstand zwischen den Spalten, je Marker `h-8 w-full` (gedehnt rechteckig). Beschriftung `hidden`, nur die Glyphe sichtbar. Die Spaltengeometrie ist **tragend**: die Füllung des Fortschrittsbalkens endet unter der Mitte der Spalte, deshalb keine `gap` am `<ol>`, sondern Abstand **innerhalb** der Spalte — `px-1` am spaltenfüllenden Bedienelement (siehe Architektur, Punkt 4).
 
 **Breit (≥sm):** Fünf Marker bleiben quadratisch `size-8 sm:shrink-0`, Beschriftung daneben unbegrenzt umbruchend, nie gekürzt. Gleiche Spalten-Geometrie — keine Abstände zwischen Spalten, Marker-Abstand innen.
 
