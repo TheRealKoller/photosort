@@ -189,7 +189,7 @@ def delete_cached_variants(cache_dir: Path, photos: Iterable[tuple[int, str]]) -
                 logger.warning("Cache-Datei konnte nicht entfernt werden: %s", path)
 
 
-# specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0075 ab hier: die einzige Stelle des
+# specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0076 ab hier: die einzige Stelle des
 # Projekts, die das Cache-Verzeichnis LIEST, statt ihre Pfade aus `(photo_id, etag)` zu berechnen.
 # Sie muss es, weil sie einen Rest aufraeumt, dessen Schluessel sich per Definition nicht mehr aus
 # der Datenbank berechnen laesst (siehe die benannte Grenze in `delete_cached_variants`). ADR 0062

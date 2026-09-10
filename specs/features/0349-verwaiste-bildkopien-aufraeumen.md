@@ -76,7 +76,7 @@ Komponenten „Lokaler Cache" und „Worker".
 
 ## Architektur / Umsetzung
 
-**Grundlage:** ADR [`0075`](../decisions/0075-verwaiste-bildkopien-verzeichnisdurchgang-mit-schonfrist.md)
+**Grundlage:** ADR [`0076`](../decisions/0076-verwaiste-bildkopien-verzeichnisdurchgang-mit-schonfrist.md)
 (mit dieser Story angelegt; sie löst ADR [`0062`](../decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md)
 **Punkt 5** in genau einem Teilsatz ab — der Kopf von 0062 trägt den Vermerk bereits).
 
@@ -137,7 +137,7 @@ CACHE_CLEANUP_GRACE_SECONDS = 3600
 async def cleanup_orphaned_cache(session, cache_dir: Path) -> CacheSweepResult
 ```
 
-**2. Gelöscht wird nur, was fünf Bedingungen zugleich erfüllt** (ADR 0075 Punkt 2): direkter
+**2. Gelöscht wird nur, was fünf Bedingungen zugleich erfüllt** (ADR 0076 Punkt 2): direkter
 Eintrag in `cache_dir` (**nicht rekursiv**), **reguläre** Datei (`os.scandir`,
 `follow_symlinks=False` — kein Verzeichnis, kein Symlink), Name trifft `CACHE_FILE_PATTERN`
 **exakt** (`re.fullmatch`, nie `.match` — siehe Security Punkt 1), Schlüssel nicht in der
@@ -258,7 +258,7 @@ behalten) — keine Meldung in der Oberfläche, kein Bedienelement, keine Einste
 | `backend/tests/test_thumbnails.py` | Tests der beiden reinen Funktionen |
 | `backend/tests/test_cache_cleanup.py` | **neu**: Orchestrierung (Gültigkeitsmenge über alle Projekte, Reihenfolge, Grenze) |
 | `backend/tests/test_worker_scan_project.py` | Tests der Anbindung (Erfolg räumt, Fehlschlag/Abbruch nicht, Dateifehler entwertet den Scan nicht) |
-| `specs/decisions/0075-…md`, `specs/decisions/0062-…md` (Kopfvermerk) | angelegt/ergänzt |
+| `specs/decisions/0076-…md`, `specs/decisions/0062-…md` (Kopfvermerk) | angelegt/ergänzt |
 | `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md` | ergänzt (Konsultationen Schritt 3) |
 | `docs/architecture.md` | Komponenten „Lokaler Cache"/„Worker" + Kopfeintrag |
 
@@ -498,7 +498,7 @@ keine Nachpflege** — sie wäre der Beleg, dass die Bereinigung sichtbares Verh
   `scan_download_concurrency` (Vorgabe 4), nicht gemessen. Ersatzverfahren: Blick auf `kept_recent`
   in der INFO-Zeile nach dem ersten größeren Parallellauf.
 - **Das Mikrosekundenfenster zwischen letzter Zeitprüfung und `unlink`** — per Konstruktion nicht
-  testbar (ADR 0075, „Konsequenzen"), Auswirkung im Trefferfall ist eine fehlende Vorschaudatei.
+  testbar (ADR 0076, „Konsequenzen"), Auswirkung im Trefferfall ist eine fehlende Vorschaudatei.
 - **Verhalten unter echten Dateisystemrechten.** Fehlschläge werden über `monkeypatch` erzeugt, wie
   überall im Projekt: `chmod`-basierte Tests sind als root im Container wirkungslos.
 
@@ -531,7 +531,7 @@ dokumentiert): `re.compile(r"^[0-9a-f]{64}_(?:thumbnail|display)\.jpg$").match("
 **trifft** und liefert den Schlüssel aus Gruppe 1 — `$` passt auch unmittelbar vor einem
 abschließenden Zeilenumbruch, und ein Dateiname mit `\n` ist unter Linux anlegbar (ebenfalls
 nachgestellt). `fullmatch` weist denselben Namen ab. Der Unterschied trägt die ganze Zusage aus ADR
-0075 Punkt 2 („das Muster ist die exakte Signatur der eigenen Schreiboperation"): ein Name mit
+0076 Punkt 2 („das Muster ist die exakte Signatur der eigenen Schreiboperation"): ein Name mit
 angehängtem Zeilenumbruch ist **nicht**, was `thumbnail_path`/`display_path` schreiben. Kein
 `re.IGNORECASE` — `hashlib.hexdigest()` liefert Kleinbuchstaben. Eigener Test mit einem
 `…_display.jpg\n`-Namen (per `tmp_path` anlegbar), der nicht gelöscht werden darf.
@@ -555,7 +555,7 @@ Moment seiner Erstellung und greift ohnehin die Schonfrist. Die Aufnahme benutzt
 `os.scandir` mit `entry.is_file(follow_symlinks=False)` und `entry.stat(follow_symlinks=False)`.
 Der eigentliche Datenverlust-Pfad ist unabhängig davon geschlossen — `Path.unlink` folgt keinem
 Symlink, entfernt also den Link und nie sein Ziel (nachgestellt), und ein Hardlink teilt nur den
-Inode, sodass an einer zweiten Stelle nichts verschwindet. TOCTOU bleibt damit auf das in ADR 0075
+Inode, sodass an einer zweiten Stelle nichts verschwindet. TOCTOU bleibt damit auf das in ADR 0076
 benannte Mikrosekunden-Fenster begrenzt, und dieses ist für eine **gültige** Datei gar nicht
 erreichbar (ihr Schlüssel liegt in der Gültigkeitsmenge).
 
@@ -577,7 +577,7 @@ aufnehmen, dann Schnappschuss ziehen, und der Schnappschuss nach einem Commit-Ra
 (`run_project_scan` committet unmittelbar davor) — umgekehrt wäre jede im Zwischenfenster sichtbar
 gewordene Datei ungeschützt.
 
-**5. Fail-closed bei leerer Gültigkeitsmenge. Muss — Ergänzung gegenüber ADR 0075 Punkt 2.**
+**5. Fail-closed bei leerer Gültigkeitsmenge. Muss — Ergänzung gegenüber ADR 0076 Punkt 2.**
 Sind Einträge vorhanden, die Menge der gültigen Schlüssel aber leer, wird **nichts** gelöscht und
 eine `WARNING` geschrieben (`CacheSweepResult` bleibt bei null gelöschten Dateien). Eine leere Menge
 ist der einzige Zustand, in dem der Durchgang den kompletten Bild-Cache räumte, und zugleich das
@@ -610,7 +610,7 @@ auslöst, ist Umstand, nicht Zusicherung.
 
 **8. Verfügbarkeit: die Kopien sind ableitbar, aber sie heilen nicht von selbst.**
 Die Einstufung „Quelle der Wahrheit ist OpenCloud, kein Originalbild betroffen" trägt — mit einer
-Präzisierung gegenüber ADR 0075, die dort als „es fehlt **eine** Vorschaudatei" formuliert ist. Am
+Präzisierung gegenüber ADR 0076, die dort als „es fehlt **eine** Vorschaudatei" formuliert ist. Am
 Code nachgeprüft: Die `display`-Variante ist keine reine Anzeigedatei, sondern die Eingabe der
 lokalen Kriterien-Bewertung (`worker.py::_compute_photo_metrics`, `if path.is_file()`), der
 Landmark-Erkennung und der Remote-Kategorie-Klassifizierung; alle drei überspringen ein Foto ohne
@@ -639,10 +639,10 @@ Token könnte mit `DELETE /projects/{id}` ungleich mehr vernichten.
   formuliert. Der heute vorhandene Altbestand (Kriterium 5) ist davon nicht betroffen — er ist um
   Größenordnungen älter als die Schonfrist. Die Alternative wäre gewesen, Scans systemweit zu
   serialisieren; das setzt genau das voraus, was Kriterium 4 schützen will.
-- **Schonfrist als Konstante, nicht als Umgebungsvariable** (ADR 0075 Punkt 4): ein
+- **Schonfrist als Konstante, nicht als Umgebungsvariable** (ADR 0076 Punkt 4): ein
   Korrektheitsabstand, kein Betriebsparameter. Als Einstellung lüde der Wert dazu ein, ihn auf 0
   zu setzen und damit Kriterium 4 still aufzugeben.
-- **ADR 0075 angelegt**, weil der Ansatz ADR 0062 Punkt 5 („nie über ein Verzeichnismuster")
+- **ADR 0076 angelegt**, weil der Ansatz ADR 0062 Punkt 5 („nie über ein Verzeichnismuster")
   in genau einem Teilsatz ablöst. Ohne Verzeichnisdurchgang ist Kriterium 5 strukturell
   unerfüllbar: die Schlüssel des Altbestands sind nirgends mehr gespeichert.
 - **Nachtrag `test-engineer` (Auflage 1): nach dem `rollback()` im Bereinigungs-Handler folgt
@@ -679,7 +679,7 @@ Keine.
 
 - Ein Bedienelement, eine Einstellung oder eine Anzeige für die Bereinigung (durch
   Akzeptanzkriterium 6 ausgeschlossen).
-- Eine Cache-Buchführung in der Datenbank (in ADR 0075 als Alternative verworfen).
+- Eine Cache-Buchführung in der Datenbank (in ADR 0076 als Alternative verworfen).
 - Änderungen am Projekt-Löschpfad (`api/projects.py::delete_project`,
   `project_deletion.py`, `demo_state.py`): er rechnet seine Pfade unverändert aus
   `(photo_id, etag)` und bekommt weiterhin kein `glob` und kein `rmtree` (ADR 0062 Punkte 1–4

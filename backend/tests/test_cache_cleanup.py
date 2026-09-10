@@ -1,4 +1,4 @@
-"""specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0075: die async-Klammer um den
+"""specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0076: die async-Klammer um den
 Verzeichnisdurchgang.
 
 Die Ebene, auf der die GUELTIGKEITSMENGE geprueft wird - Fotos werden direkt als `Photo`-Zeilen

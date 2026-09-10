@@ -314,7 +314,7 @@ def test_delete_cached_variants_keeps_going_after_an_oserror_and_logs_the_path(
     assert str(doomed) in caplog.text
 
 
-# specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0075 ab hier: der EINE gemusterte
+# specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0076 ab hier: der EINE gemusterte
 # Verzeichnisdurchgang des Projekts. Das Muster gehoert neben die Pfadbildung, die es
 # wiedererkennt - wer `thumbnail_path`/`display_path` aendert, muss es in derselben Datei
 # anfassen. Beide Funktionen sind rein/DB-frei und damit gegen `tmp_path` pruefbar, ohne
@@ -705,7 +705,7 @@ class TestDeleteOrphanedEntries:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Das Mikrosekundenfenster zwischen letzter Zeitpruefung und `unlink` ist in der
-        Wirklichkeit nicht herstellbar (ADR 0075, "Konsequenzen") - die AUFFANGLOGIK dafuer ist es
+        Wirklichkeit nicht herstellbar (ADR 0076, "Konsequenzen") - die AUFFANGLOGIK dafuer ist es
         sehr wohl: der Ausgang zaehlt weder als Fehlschlag noch als geloeschte Datei, und er
         traegt keine Bytes zu `freed_bytes` bei."""
         vanishing = thumbnail_path(tmp_path, 9, "etag-weg")

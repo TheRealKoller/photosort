@@ -655,7 +655,7 @@ async def run_project_scan(
     # Ab hier ist der Lauf SUCCESS: der Erfolgspfad faellt aus dem `try` HERAUS (das `return` ist
     # dafuer nach unten gewandert), beide Fehlerzweige kehren oben zurueck bzw. re-raisen. Damit
     # erreicht die Bereinigung den Abbruch- und den Fehlerpfad strukturell nicht
-    # (specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0075 Punkt 1: bei
+    # (specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0076 Punkt 1: bei
     # Abbruch/Fehlschlag wird nicht aufgeraeumt, der naechste erfolgreiche Scan holt es nach).
     #
     # AUSSERHALB des Fehler-Handlers und mit eigenem `except`: ein Fehler beim Aufraeumen darf

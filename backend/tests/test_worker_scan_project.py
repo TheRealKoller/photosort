@@ -1136,7 +1136,7 @@ async def test_a_cancelled_error_from_a_parallel_worker_is_not_unpacked_into_the
         await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
 
 
-# specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0075 ab hier: die Anbindung der
+# specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0076 ab hier: die Anbindung der
 # Bereinigung an den Lauf. Die rund 30 Faelle OBERHALB dieser Zeile sind zugleich der
 # Regressionsnachweis der `return`-Verschiebung aus dem `try` heraus - sie laufen ab jetzt alle
 # durch die Bereinigung (mit `tmp_path` als Cache-Verzeichnis) und belegen, dass sie frisch

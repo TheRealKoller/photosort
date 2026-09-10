@@ -1,4 +1,4 @@
-# 0075 - Verwaiste Bildkopien: gemusterter Verzeichnisdurchgang mit Schonfrist, nach jedem erfolgreichen Scan
+# 0076 - Verwaiste Bildkopien: gemusterter Verzeichnisdurchgang mit Schonfrist, nach jedem erfolgreichen Scan
 
 **Status:** Accepted
 **Datum:** 2026-09-10
