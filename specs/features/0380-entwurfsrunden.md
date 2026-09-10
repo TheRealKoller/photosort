@@ -1,6 +1,6 @@
 # 0380 - Design-Entwürfe zur Auswahl, in kurzen Runden verfeinert
 
-**Status:** Accepted
+**Status:** Implemented ([PR #384](https://github.com/TheRealKoller/photosort/pull/384))
 **Erstellt:** 2026-09-10
 **Bezug:** [GitHub-Issue #380](https://github.com/TheRealKoller/photosort/issues/380), ADR [`decisions/0073-entwurfsrunden-auf-arbeitsseite-aufraeumen-als-handgriff.md`](../decisions/0073-entwurfsrunden-auf-arbeitsseite-aufraeumen-als-handgriff.md)
 
