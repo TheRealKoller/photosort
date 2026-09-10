@@ -202,7 +202,7 @@
         {
           "schluessel": "schloss",
           "stelle": "Glyphe des blockierten Schritts in den blockiert-Varianten der Schrittmarke",
-          "grund": "Der Symbolsatz führt kein Schloss; im Produkt lebt es als dateilokales SVG in der Stepper-Datei. Der Baustein nutzt deshalb eine Instanz aus der verbundenen Fremdbibliothek — als einziger Baustein hängt er damit an einer Bibliothek, die sich trennen lässt. Ein dreizehntes Symbol wäre eine Erweiterung des Satzes, der ausdrücklich gegen stillschweigendes Wachstum geschützt ist, und gehört in eine eigene Story."
+          "grund": "Der Symbolsatz führt kein Schloss; im Produkt lebt es als dateilokales SVG in der Schrittmarken-Datei (src/components/StepMarker.tsx). Der Baustein nutzt deshalb eine Instanz aus der verbundenen Fremdbibliothek — als einziger Baustein hängt er damit an einer Bibliothek, die sich trennen lässt. Ein dreizehntes Symbol wäre eine Erweiterung des Satzes, der ausdrücklich gegen stillschweigendes Wachstum geschützt ist, und gehört in eine eigene Story."
         },
         {
           "schluessel": "wiederherstellung",

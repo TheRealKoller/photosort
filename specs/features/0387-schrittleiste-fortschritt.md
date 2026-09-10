@@ -284,8 +284,9 @@ Gründe:
 
 Umsetzung: Der Kommentarblock in `icon.tsx`, der die dokumentierten Lücken des Satzes aufzählt,
 bekommt das Schloss als **siebte** benannte Lücke (nach `↳` als sechster). Die Penpot-Lücke
-„schloss" in `design/penpot/views.json` bleibt unverändert bestehen und wird **nicht**
-geschlossen.
+„schloss" in `design/penpot/views.json` bleibt bestehen und wird **nicht** geschlossen — einzig
+ihre Ortsangabe wird nachgezogen (das Schloss lebt ab jetzt in `StepMarker.tsx` statt in
+`Stepper.tsx`), damit die Design-Quelle keinen Stand beschreibt, den es nicht mehr gibt.
 
 ### 6. Komponentenschnitt: die Marke wird eigener Baustein, die Leiste bleibt Ansicht
 
