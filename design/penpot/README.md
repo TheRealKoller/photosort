@@ -306,3 +306,46 @@ Beim ersten Ansichtsentwurf gemessen, hier festgehalten, damit der nächste ihn 
   nicht erweiterbar.
 - Ein leerer Text ist ungültig — eine unerwünschte Beschriftung wird ausgeblendet, nicht geleert.
 - `penpot.openPage` wirkt nicht zuverlässig im selben Aufruf; Wechsel und Prüfung gehören getrennt.
+
+### Layout-Eigenheiten der Plugin-API (2026-09-10 gemessen)
+
+Im Entwurfsrundenlauf zur Fotoansicht gemessen. Wie die Punkte darüber scheitert jeder von ihnen
+**still** — kein Fehler, nur ein falsches Bild:
+
+- **Layoutwerte stehen erst im FOLGENDEN `execute_code`-Aufruf.** Im selben Aufruf gelesen, ist die
+  Brett-Höhe noch `1` und alle Kinder liegen auf `0,0`. Das sieht wie der Feste-Höhe-Fehler oben
+  aus, ist aber keiner: Bauen und Messen gehören in getrennte Aufrufe.
+- **Ein Brett, das Kind eines Flex-Layouts ist, wächst nie in der Höhe** — auch
+  `layoutChild.verticalSizing = 'auto'` bewirkt nichts. Die Kinder werden horizontal trotzdem
+  korrekt gesetzt, nur die Höhe bleibt `1`. Griff: nach dem Einhängen aller Kinder einmal
+  `resize(breite, ausgerechneteHoehe)`. Das innere Layout bleibt dabei intakt, und das äußere Brett
+  wächst korrekt mit.
+- **`switchVariant(pos, value)` nimmt die POSITION der Achse, nicht ihren Namen.** Die Reihenfolge
+  ist `Object.keys(komponente.variantProps)`. Sowohl `switchVariant({achse: wert})` als auch
+  `switchVariant('achse', wert)` scheitern mit „Value not valid … Code: :pos".
+- **Ein neu erzeugtes Board hat eine WEISSE Fläche, nicht etwa keine.** Jedes Struktur-Brett ohne
+  gebundene Fläche (Statuszeile, Rasterzeile, Inhaltsspalte …) leuchtet weiß aus einem dunklen
+  Entwurf heraus. `fills = []` macht es transparent. Auf schmalen Streifen sieht das nach Absicht
+  aus und rutscht durch: Beim Bauen entweder Fläche binden ODER ausdrücklich leeren, nie weglassen.
+- **`penpot.library.local.components` listet je Baustein genau EINE Komponente**, nicht ihre
+  Varianten. `komponente.instance()` erzeugt eine Kopie; deren erstes Textkind lässt sich
+  überschreiben, und die Kopie schrumpft danach auf ihre Inhaltsbreite. An einer solchen Kopie
+  lassen sich Tokens binden und Ecken-Radien setzen.
+- **Eine Penpot-SEITE trägt Plugin-Daten** (`setPluginData`/`getPluginData` am `Page`-Objekt).
+  Marken brauchen also kein eigens angelegtes Trägerbrett.
+- **`textDecoration = 'line-through'` wirkt an einer Textform.**
+
+### Bilder in die Datei bringen (2026-09-10 gemessen)
+
+- `await penpot.uploadMediaData(name, Uint8Array, 'image/jpeg')` legt ein Bild **dauerhaft als
+  Medium in der Datei** ab (`await` wird unterstützt); gesetzt wird es über
+  `shape.fills = [{ fillOpacity: 1, fillImage: imageData }]`.
+- **Base64 durch den Aufruftext ist unzuverlässig.** Zeichen gehen verloren ODER werden ersetzt —
+  bei gleicher Länge. Eine Längenprüfung genügt deshalb NICHT: ein so hochgeladenes Bild kam durch
+  die Prüfung und war trotzdem reines Farbrauschen. Nötig ist eine Inhalts-Prüfsumme, lokal und im
+  Aufruf gleich berechnet. Von acht Bildern scheiterten drei, eines davon dreimal hintereinander.
+- **Der verlässliche Weg ist ein anderer:** Die Bilder von Hand in Penpot hochladen (Drag & Drop auf
+  eine Seite). Die Formen tragen die Bilddaten dann in `fills[0].fillImage`, und von dort sind sie
+  ohne jedes Kopierrisiko und in voller Auflösung weiterverwendbar. Die acht Beispielbilder aus
+  `assets/beispielbilder/` liegen so auf der Seite `Material — Beispielbilder`, jede Fläche mit
+  Herkunftsdatei, Seitenverhältnis und Lage in den Plugin-Daten.

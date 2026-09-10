@@ -5,7 +5,7 @@ description: Anforderungstreue-Review eines Feature-Branch-Diffs gegen `main` �
 
 # review-requirements — Anforderungstreue / Scope
 
-Prüft den Diff des Feature-Branches gegen `main` (`git diff main...HEAD` bzw. den genannten Branch) gegen die zugehörige Feature-Spec — ausschließlich auf Anforderungstreue, nicht auf Code-Qualität, Sicherheit, Architektur oder Design (das decken die anderen `review-*`-Skills ab).
+Prüft den Diff des Feature-Branches gegen `main` (`git diff origin/main...HEAD` bzw. den genannten Branch) gegen die zugehörige Feature-Spec — ausschließlich auf Anforderungstreue, nicht auf Code-Qualität, Sicherheit, Architektur oder Design (das decken die anderen `review-*`-Skills ab).
 
 Die Prüf-Methodik ist die bisherige Feature-Branch-Review-Aufgabe des `requirements-engineer`-Agenten, unverändert in einen Hauptsession-Skill überführt.
 
