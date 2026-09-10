@@ -1009,7 +1009,9 @@ def test_eine_kollidierende_unversionierte_datei_meldet_keine_ruecknahme(
     )
 
 
-def git_shim(verzeichnis: Path, unterbefehl: str, rueckgabe: int) -> Path:
+def git_shim(
+    verzeichnis: Path, unterbefehl: str, rueckgabe: int, meldung: str = ""
+) -> Path:
     """Legt ein `git` an, das genau einen Unterbefehl mit fester Rueckgabe scheitern laesst.
 
     Der einzige Weg, die gemessene Rueckgabe `128` von `git merge-base --is-ancestor`
@@ -1017,13 +1019,19 @@ def git_shim(verzeichnis: Path, unterbefehl: str, rueckgabe: int) -> Path:
     zerstoertes Objekt repariert `git fetch` im selben Lauf wieder (am Bestand nachgemessen,
     2026-09-08 - der fetch laedt das fehlende Objekt nach und meldet danach sauber `1`).
     Alles ausser dem einen Unterbefehl laeuft unveraendert durch das echte git.
+
+    `meldung` stellt die **rohe git-Ausgabe auf stderr** nach, die das echte git im 128-Fall
+    schreibt. Ohne sie liesse sich nicht messen, ob die auswertende Zeile ihre Ausgabe wirklich
+    verschluckt - der Shim schwiege von sich aus, und der Test waere aus dem falschen Grund
+    gruen.
     """
     echtes_git = shutil.which("git")
     assert echtes_git is not None
     verzeichnis.mkdir(parents=True, exist_ok=True)
     shim = verzeichnis / "git"
+    ausgabe = f'  printf \'%s\\n\' "{meldung}" >&2\n' if meldung else ""
     shim.write_text(
-        f'#!/bin/sh\nif [ "$1" = "{unterbefehl}" ]; then exit {rueckgabe}; fi\n'
+        f'#!/bin/sh\nif [ "$1" = "{unterbefehl}" ]; then\n{ausgabe}  exit {rueckgabe}\nfi\n'
         f'exec "{echtes_git}" "$@"\n',
         encoding="utf-8",
     )
@@ -1054,6 +1062,41 @@ def test_eine_unklare_rueckgabe_von_merge_base_ist_kein_no_op(spielplatz: Spielp
     )
     assert "128" in ergebnis.stderr
     assert momentaufnahme(spielplatz) == vorher
+
+
+ROHE_GIT_MELDUNG = "fatal: Not a valid object name refs/remotes/origin/main"
+
+
+@pytest.mark.parametrize("tracking_ref_vorhanden", [True, False], ids=["mit_vorher", "ohne_vorher"])
+def test_keine_rohe_git_ausgabe_auf_dem_meldungskanal(
+    spielplatz: Spielplatz, tracking_ref_vorhanden: bool
+) -> None:
+    """Sicherheitskonzept, Bedrohung 3: stderr traegt ausschliesslich selbst erzeugten Text.
+
+    `ship-feature` uebernimmt diesen Kanal unveraendert in den Chat-Bericht und in eine
+    `SendMessage`. Eine rohe git-Zeile dort ist nicht nur haesslich - in einer Umgebung mit
+    credential-behaftetem Remote waere sie der Weg, auf dem ein Token nach draussen gerät.
+    Beide Parametrisierungen treffen eine andere der beiden Rechnungen: mit gemerktem
+    Vorher-Stand die Umschreib-Pruefung, ohne ihn die No-Op-Rechnung.
+    """
+    main_laeuft_weiter(spielplatz)
+    if not tracking_ref_vorhanden:
+        spielplatz.git(spielplatz.arbeit, "update-ref", "-d", TRACKING_REF)
+    env = dict(spielplatz.env)
+    shim = git_shim(spielplatz.wurzel / "shim", "merge-base", 128, ROHE_GIT_MELDUNG)
+    env["PATH"] = f"{shim}{os.pathsep}{env['PATH']}"
+
+    ergebnis = _lauf(spielplatz.arbeit, [str(SKRIPT)], env)
+
+    assert ergebnis.returncode not in BEKANNTE_AUSGAENGE, ergebnis.stdout
+    assert ROHE_GIT_MELDUNG not in ergebnis.stderr, (
+        "Die rohe git-Ausgabe steht auf dem Meldungskanal. Die auswertende Zeile verschluckt "
+        f"ihre Ausgabe nicht: {ergebnis.stderr!r}"
+    )
+    assert "fatal" not in ergebnis.stderr.lower()
+    assert ergebnis.stderr.startswith("merge-main-into-branch: ")
+    assert "128" in ergebnis.stderr
+    assert ergebnis.stdout == ""
 
 
 def _unsauber_gestagt(spielplatz: Spielplatz) -> None:
