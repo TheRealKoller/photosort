@@ -4,6 +4,13 @@
 **Erstellt:** 2026-08-30
 **Bezug:** [GitHub-Issue #209](https://github.com/TheRealKoller/photosort/issues/209) (Refinement bereits vor dieser Spec-Erstellung abgeschlossen)
 
+**Nachtrag (2026-09-10, Umsetzung von Spec [`0370`](./0370-bedienelemente-zuerst.md) „Bedienelemente zuerst in der Einzelbildansicht"):** Diese Spec bleibt bewusst `Implemented` und wird **nicht** auf `Superseded` gesetzt — Spec 0370 löst nur einen einzigen Punkt von ihr ab, und auch den nur für **eine** der beiden Anzeigestellen (gleiches Vorgehen wie Spec [`0033`](./0033-sticky-titelleiste-projekt-link.md) gegenüber Spec 0298). Abgelöst ist:
+
+- **Der Schlusssatz von AK6** („Kandidatenliste und ‚Rang' stehen dabei innerhalb des Kategorien-Blocks") — und zwar ausschließlich für die **Einzelbildansicht**. Dort steht die Kandidatenliste seit Spec 0370 im Bedienteil oberhalb des Fotos-Informationsbereichs, ohne eigene Überschrift und ohne `role="group"`, während „Rang" im Informationsteil bleibt. **Im Popover in Raster und Kuratierung gilt AK6 vollständig weiter** — dort ist die Darstellung unverändert verschränkt.
+- **Die Festlegung im Abschnitt „Architektur / Umsetzung"**, es sei „ausdrücklich **nicht** vorgesehen, dafür eine zusätzliche Komponente oder eine Varianten-Prop einzuführen". Genau eine solche Varianten-Prop (`part`) führt Spec 0370 ein; sie ist der Weg, auf dem das Popover buchstäblich unverändert bleibt. Der tragende Teil der Festlegung — kein zweiter, duplizierter Renderpfad — gilt unverändert weiter: es gibt weiterhin genau eine Komponente.
+
+Alle übrigen Kriterien gelten an **beiden** Anzeigestellen unverändert weiter, insbesondere AK1 (zwei beschriftete Blöcke, auch in der permanenten Sektion — der Informationsteil trägt sie dort) und AK7 (kein leerer Block, keine leere Überschrift).
+
 ## Ziel
 
 Die Foto-Detailansicht (permanente Sektion) und das Info-Popover in Grid-/Kuratierungsansicht zeigen aktuell alle Bewertungskriterien eines Fotos als eine einzige undifferenzierte Liste, gefolgt von einem unbeschrifteten Bereich mit den erkannten Kategorie-Kandidaten. Dabei ist nicht auf einen Blick erkennbar, welche Werte die technische Bildqualität betreffen und welche zur Kategorie-Erkennung beitragen. Ziel ist, die Bewertungsdetails in zwei klar beschriftete, fachlich sinnvolle Blöcke zu gliedern — "Qualität" und "Kategorien" — damit die Darstellung auf einen Blick verständlich ist.
