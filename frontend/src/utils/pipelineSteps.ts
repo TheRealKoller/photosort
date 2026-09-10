@@ -116,3 +116,32 @@ export function getBlockedReason(id: StepId, project: ProjectOut): string {
       return ''
   }
 }
+
+export interface StepProgress {
+  value: number
+  max: number
+}
+
+/**
+ * Fuellung des Fortschrittsbalkens unter der Schrittleiste
+ * (specs/features/0387-schrittleiste-fortschritt.md, Architektur-Abschnitt 4).
+ *
+ * REINE FUNKTION STATT AUSDRUCK IM JSX (Muster wie computeStepStates/sortCategoryKeys): Der
+ * Balken ist ein natives `<progress value max>`, ein berechneter Prozentwert liesse sich weder
+ * als Tailwind-Klasse noch als Inline-Style ausdruecken. Die Skala ist bewusst doppelt so fein
+ * wie die Schrittzahl: `2 * index + 1` von `2 * n` ist exakt die MITTE der `index`-ten von `n`
+ * gleich breiten Spalten - also 10/30/50/70/90 % bei fuenf Schritten. Genau darauf beruht die
+ * Zusage, dass die rechte Kante der Fuellung unter der Mitte des aktuellen Schritts liegt; die
+ * gleich breiten, abstandslosen Spalten in Stepper.tsx sind dafuer tragende Geometrie.
+ *
+ * `max` wird aus PIPELINE_STEPS abgeleitet, nicht als Konstante gefuehrt - eine sechste Stufe
+ * veraendert damit automatisch die Skala statt sie still zu verschieben. Ein unbrauchbarer Index
+ * (kein aktiver Schritt, Deep-Link auf eine unbekannte Stufe) liefert 0: der Balken ist dann leer
+ * statt zufaellig gefuellt.
+ */
+export function stepProgress(activeIndex: number): StepProgress {
+  const max = 2 * PIPELINE_STEPS.length
+  const isUsable =
+    Number.isInteger(activeIndex) && activeIndex >= 0 && activeIndex < PIPELINE_STEPS.length
+  return { value: isUsable ? 2 * activeIndex + 1 : 0, max }
+}
