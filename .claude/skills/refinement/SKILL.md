@@ -134,6 +134,18 @@ Schreib die neue Fassung mit dem Schreib-Werkzeug in eine Titel-Datei (nie per S
 
 Das ist ein **Issue**-Zugriff, kein Board-Schreibzugriff: Scheitert er auf allen Wegen, gib die Meldung des zuletzt versuchten Wegs unverändert an Daniel weiter und führe **alle** nachfolgenden Operationen nicht mehr aus — Priorität lesen, Priorität schreiben, Status `Ready`. Das Issue erreicht `Ready` dann nicht, und das ist richtig so: Die Story ist damit sichtbar „noch nicht fertig geschärft", und der Abschluss wird als Ganzes wiederholt. Ein fehlgeschlagenes `issue-titel-schreiben` erscheint deshalb **nicht** unter `## Lokal nachzuholen` — dort steht nur, was sich nachholen lässt, ohne den Abschluss zu wiederholen.
 
+### Bereich vergeben
+
+Leite aus `## Ziel` und den Akzeptanzkriterien des soeben geschriebenen Bodys ab, welche Bereiche des Projekts die Story betrifft, und schreib die Menge ans Issue (Vorrat und Form vollständig im Skill `github-access`; dieser Skill nennt keinen einzigen der Werte):
+
+- `issue-bereich-setzen`
+
+**Der Bereich ist ein Metadatum, kein technisches Detail.** Das Verbot technischer Details in Schritt 6 gilt unverändert — es betrifft den **Body**, nicht das Label. Ein Label, das die betroffene Projektseite benennt, ist keine Architektur-Aussage und nimmt `spec-writer` nichts vorweg.
+
+**Trifft kein Bereich zu und trägt das Issue auch keinen, entfällt die Operation ersatzlos** — es gibt keinen Pfad „leere Menge zurückschreiben". Den bisherigen Bestand liefert `labels` aus dem `issue-lesen` in Schritt 0; ein zusätzlicher Lesezugriff entsteht dafür nicht. Gegenstand der Operation ist der **Zielzustand** der Menge: Ein Bereich, der nach der Schärfung nicht mehr zutrifft, wird entfernt und nicht bloß durch einen zweiten ergänzt.
+
+Das ist ein **Issue**-Zugriff, kein Board-Schreibzugriff: Scheitert er auf allen Wegen, gib die Meldung des zuletzt versuchten Wegs unverändert an Daniel weiter und führe **alle** nachfolgenden Operationen nicht mehr aus — Priorität lesen, Priorität schreiben, Status `Ready`. Das Issue erreicht `Ready` dann nicht, und der Abschluss wird als Ganzes wiederholt. Ein fehlgeschlagenes `issue-bereich-setzen` erscheint deshalb **nicht** unter `## Lokal nachzuholen`.
+
 ### Priorität, Status und Zusammenfassung
 
 Danach die **Priorität lesen, bevor sie geschrieben wird**. First-write-wins ist ab jetzt genau diese Reihenfolge und kein Werkzeugverhalten mehr; `board-status-und-prioritaet-lesen` liefert Status und Priorität in einem Aufruf. Ausgewertet wird der Knoten mit `project.number == 8`, nie `nodes[0]`. Nur wenn die Priorität dort leer (`null`) ist, wird die Empfehlung geschrieben:

@@ -81,15 +81,17 @@ BEKANNTE_UNTERBEFEHLE = frozenset({"issue", "pr", "project", "api", "auth"})
 
 # --- Der Operationskatalog ---------------------------------------------------------------
 
-# Die 17 Operations-IDs aus ADR 0061, Abschnitt 2, als geschlossene Menge. Der
-# Buchhaltungs-Vorbehalt gegen Konstantenvergleiche gilt hier ausdruecklich nicht: Die Menge
-# selbst *ist* die Zusage ("keine heute vorhandene Operation geht verloren"), und ihr stiller
-# Verlust beim Umzug der sechs PR-Operationen aus `ship-feature` ist genau der Fehler, den die
-# Story riskiert.
+# Die 19 Operations-IDs als geschlossene Menge - 17 aus ADR 0061, Abschnitt 2, dazu
+# `issue-bereich-setzen` und `issue-liste-lesen` aus ADR 0085. Der Buchhaltungs-Vorbehalt gegen
+# Konstantenvergleiche gilt hier ausdruecklich nicht: Die Menge selbst *ist* die Zusage ("keine
+# heute vorhandene Operation geht verloren"), und ihr stiller Verlust beim Umzug der sechs
+# PR-Operationen aus `ship-feature` ist genau der Fehler, den die Story riskiert.
 ERWARTETE_OPERATIONEN = frozenset(
     {
         "issue-anlegen",
         "issue-lesen",
+        "issue-liste-lesen",
+        "issue-bereich-setzen",
         "issue-body-schreiben",
         "issue-titel-schreiben",
         "issue-kommentieren",
@@ -128,6 +130,7 @@ BOARD_SCHREIBOPERATIONEN = frozenset(
 LESENDE_OPERATIONEN = frozenset(
     {
         "issue-lesen",
+        "issue-liste-lesen",
         "pr-verknuepfung-lesen",
         "pr-reviewstand-lesen",
         "pr-reviewkommentare-lesen",
@@ -680,7 +683,7 @@ def test_der_katalog_fuehrt_genau_die_erwarteten_operationen() -> None:
         f"unerwartet: {sorted(set(ids) - ERWARTETE_OPERATIONEN)}. Der Katalog ist geschlossen - "
         "keine heute vorhandene Operation geht verloren, und keine kommt unbemerkt dazu."
     )
-    assert len(ids) == 17
+    assert len(ids) == 19
 
 
 def test_jede_operation_haelt_die_verbindliche_form() -> None:
