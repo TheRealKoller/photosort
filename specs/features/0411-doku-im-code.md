@@ -146,6 +146,12 @@ eine Datei ohne Ballast bleibt unverändert:
 Reihenfolge innerhalb eines PR: erst der mechanische Schnitt, dann der inhaltliche. Messung als
 Wegwerf-Auswertung, nicht als eingechecktes Skript.
 
+**Das Keyword `Closes #411` trägt allein PR 5.** Es schließt das Issue beim Merge; stünde es schon
+in PR 1, gälte die Story nach einem Fünftel der Arbeit als erledigt. PR 1 bis 4 verweisen deshalb
+ohne Keyword auf das Issue, die Board-Karte bleibt bis dahin auf `In Progress` — das ist der
+zutreffende Wert, kein ausgebliebener Übergang. Ebenso wird die `**Status:**`-Zeile dieser Spec
+erst in PR 5 auf `Implemented` gesetzt.
+
 ### Nachvollziehbarkeit je Datei
 
 Der PR-Body trägt eine Zeile je geänderter Datei (Form siehe Akzeptanzkriterien). Commits werden
