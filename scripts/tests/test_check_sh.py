@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from collections.abc import Callable
 
 import pytest
@@ -691,3 +692,130 @@ def test_die_typescript_pruefungen_laufen_ausschliesslich_als_npm_run_skript(
             f"{baum}: {programm} {argumente} - die TypeScript-Pruefungen laufen ausschliesslich "
             "als 'npm run <skript>'."
         )
+
+
+# --- 6. Die Verankerung in `.claude/agents/developer.md` ---------------------------------------
+#
+# Was hier zugesichert wird, ist ausschliesslich, dass der Befehl an der richtigen Stelle
+# **dasteht** - nicht, dass ein Lauf ihn absetzt. Es ist Ablauftext, den zur Laufzeit ein LLM
+# interpretiert; derselbe Vorbehalt, den test_main_abgleich_verdrahtung.py bereits ausspricht.
+# Ausdruecklich nicht gebaut: ein Pruefer, der aus der Prosa herausliest, dass der Befehl laeuft.
+
+ABLAUFDATEI = ".claude/agents/developer.md"
+
+UEBERSCHRIFT_SCHRITT_2 = "## Schritt 2: TDD-Zyklus"
+UEBERSCHRIFT_SCHRITT_3 = "## Schritt 3: Codequalität prüfen"
+UEBERSCHRIFT_SCHRITT_4 = "## Schritt 4: Abschließender Qualitätscheck"
+
+# Ordnungsmarken innerhalb von Schritt 2 - der Pruefpunkt gehoert zwischen sie.
+MARKE_REFACTOR = "**Refactor:**"
+MARKE_COMMIT = "Committe nach jeder abgeschlossenen Einheit"
+
+# Die sechs verschiedenen Befehlsliterale aus den zehn Pruefungen. Keines steht danach noch
+# unter `.claude/`. Gemessen am Bestand (2026-09-11) vor der Ausdehnung des Suchraums: Von den
+# 24 verwalteten Dateien unter `.claude/` traegt sie ausschliesslich `developer.md`, und dort je
+# genau einmal - `ruff check .`, `mypy src`, `npm run lint`, `npm run typecheck`. Eine
+# Pfad-Ausnahme braucht es deshalb nicht.
+BEFEHLSLITERALE = tuple(
+    dict.fromkeys(f"{programm} {argumente}" for _, programm, argumente in ZEHN_PRUEFUNGEN)
+)
+
+MINDESTZAHL_VERWALTETER_CLAUDE_DATEIEN = 10
+
+
+def verwaltete_claude_dateien() -> list[str]:
+    """Duenner Leser: die von Git verwalteten Pfade unter `.claude/`, nullbyte-getrennt."""
+    fertig = subprocess.run(
+        ["git", "ls-files", "-z", ".claude"],
+        cwd=REPO_WURZEL,
+        capture_output=True,
+        check=True,
+    )
+    return [pfad.decode("utf-8") for pfad in fertig.stdout.split(b"\0") if pfad]
+
+
+def abschnitt(text: str, von: str, bis: str) -> str:
+    """Der Text zwischen zwei Ueberschriften - beide muessen da sein, sonst laut scheitern."""
+    assert von in text, f"Die Ueberschrift {von!r} fehlt in {ABLAUFDATEI}."
+    assert bis in text, f"Die Ueberschrift {bis!r} fehlt in {ABLAUFDATEI}."
+    return text[text.index(von) : text.index(bis)]
+
+
+def ablauftext() -> str:
+    return (REPO_WURZEL / ABLAUFDATEI).read_text(encoding="utf-8")
+
+
+def test_der_ablauf_nennt_den_pruefbefehl_genau_zweimal() -> None:
+    """K13: einmal in Schritt 2, einmal in Schritt 3 - und sonst nirgends.
+
+    Die Kardinalitaet traegt hier mehr als die blosse Anwesenheit: Eine dritte Nennung waere
+    entweder eine Wiederholung, die driften kann, oder eine Verschiebung an eine Stelle, an der
+    der Befehl nichts zu suchen hat.
+    """
+    treffer = ablauftext().count(SKRIPT_REPO_RELATIV)
+    assert treffer == 2, (
+        f"{ABLAUFDATEI} nennt {SKRIPT_REPO_RELATIV!r} {treffer}-mal, erwartet sind genau zwei "
+        "Nennungen: der Prueflauf je TDD-Einheit in Schritt 2 und der Befehl in Schritt 3."
+    )
+
+
+def test_die_erste_nennung_steht_in_schritt_2_nach_refactor_und_vor_dem_commit() -> None:
+    """Der Ort ist die ganze Aenderung: Ein Prueflauf am Ende von Schritt 3 gibt es schon."""
+    schritt = abschnitt(ablauftext(), UEBERSCHRIFT_SCHRITT_2, UEBERSCHRIFT_SCHRITT_3)
+
+    assert schritt.count(SKRIPT_REPO_RELATIV) == 1, (
+        f"Schritt 2 nennt {SKRIPT_REPO_RELATIV!r} {schritt.count(SKRIPT_REPO_RELATIV)}-mal, "
+        "erwartet ist genau einmal."
+    )
+    for marke in (MARKE_REFACTOR, MARKE_COMMIT):
+        assert marke in schritt, (
+            f"Die Ordnungsmarke {marke!r} fehlt in Schritt 2 von {ABLAUFDATEI}. Ohne sie ist die "
+            "Ortspruefung unten bedeutungslos - sie scheitert deshalb hier, laut."
+        )
+    assert schritt.index(MARKE_REFACTOR) < schritt.index(SKRIPT_REPO_RELATIV), (
+        "Der Prueflauf gehoert hinter den Refactor-Teilschritt. Davor ist die Einheit noch nicht "
+        "fertig, und die Rot-Phase ist per Konstruktion rot."
+    )
+    assert schritt.index(SKRIPT_REPO_RELATIV) < schritt.index(MARKE_COMMIT), (
+        "Der Prueflauf gehoert vor den Commit der Einheit. Danach steckt der Verstoss bereits in "
+        "der Versionsgeschichte, und genau den Nachbesserungszyklus soll die Aenderung sparen."
+    )
+
+
+def test_die_zweite_nennung_steht_in_schritt_3() -> None:
+    schritt = abschnitt(ablauftext(), UEBERSCHRIFT_SCHRITT_3, UEBERSCHRIFT_SCHRITT_4)
+    assert schritt.count(SKRIPT_REPO_RELATIV) == 1, (
+        f"Schritt 3 nennt {SKRIPT_REPO_RELATIV!r} {schritt.count(SKRIPT_REPO_RELATIV)}-mal, "
+        "erwartet ist genau einmal - er ersetzt dort die Aufzaehlung der Beispielbefehle."
+    )
+
+
+@pytest.mark.parametrize("literal", BEFEHLSLITERALE)
+def test_keines_der_zehn_befehlsliterale_steht_noch_unter_claude(literal: str) -> None:
+    """K13: Aufzaehlungen weichen einem Befehl - sonst driften beide auseinander.
+
+    Der Suchraum ist ganz `.claude/`, weil die Fundstellenmenge dort gemessen wurde, bevor die
+    Abwesenheit dorthin ausgedehnt wurde: Ausser `developer.md` traegt keine der verwalteten
+    Dateien eines der Literale. Eine Pfad-Ausnahme waere laut Testkonzept die letzte Wahl.
+    """
+    dateien = verwaltete_claude_dateien()
+
+    assert len(dateien) >= MINDESTZAHL_VERWALTETER_CLAUDE_DATEIEN, (
+        f"Nur {len(dateien)} verwaltete Dateien unter .claude/ gefunden - der Suchraum ist "
+        "offensichtlich kaputt, und die Abwesenheitspruefung waere bedeutungslos."
+    )
+    assert ABLAUFDATEI in dateien, (
+        f"{ABLAUFDATEI} ist nicht in der Dateiliste. Ausgerechnet die Datei, um die es geht, "
+        "faellt aus dem Suchraum."
+    )
+
+    treffer = [
+        pfad
+        for pfad in dateien
+        if literal in (REPO_WURZEL / pfad).read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert treffer == [], (
+        f"{literal!r} steht noch in {treffer}. Die zehn Befehle stehen ab jetzt in "
+        f"{SKRIPT_REPO_RELATIV}; eine zweite Aufzaehlung unter .claude/ kann von ihm abweichen, "
+        "ohne dass es auffaellt."
+    )
