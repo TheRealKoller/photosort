@@ -1,4 +1,4 @@
-# 0076 - Ein Entwurfslauf endet im Pull Request: Übergabe per Anker an einen eigenen schlanken Auslieferpfad
+# 0077 - Ein Entwurfslauf endet im Pull Request: Übergabe per Anker an einen eigenen schlanken Auslieferpfad
 
 **Status:** Accepted
 **Datum:** 2026-09-11

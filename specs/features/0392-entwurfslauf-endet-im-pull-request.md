@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Erstellt:** 2026-09-11
-**Bezug:** [GitHub-Issue #392](https://github.com/TheRealKoller/photosort/issues/392), ADR [`decisions/0076-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md`](../decisions/0076-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md)
+**Bezug:** [GitHub-Issue #392](https://github.com/TheRealKoller/photosort/issues/392), ADR [`decisions/0077-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md`](../decisions/0077-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md)
 
 ## Ziel
 
@@ -47,7 +47,7 @@ fasst weder Backend noch Datenbank an. `docs/architecture.md` bleibt unberührt.
 
 ## Architektur / Umsetzung
 
-**Diese Spec trägt eine neue ADR:** [`decisions/0076-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md`](../decisions/0076-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md). Sie entscheidet die Übergabe per Anker, den eigenen Auslieferpfad, die Zulassungsmenge des Diffs und den begründeten Verzicht auf Perspektivenrunde und Copilot. ADR [`0073`](../decisions/0073-entwurfsrunden-auf-arbeitsseite-aufraeumen-als-handgriff.md) wird dabei **teilweise abgelöst** — Abschnitt 5, letzter Absatz (der Satz, der die Nachträge „in die Story, in deren Rahmen der Lauf stattfand" schob). Alles Übrige von ADR 0073 bleibt wörtlich in Kraft, insbesondere Abschnitt 4 (der Ablauf löscht nichts) und Abschnitt 7 (jederzeit aufrufbar, Erlaubnisstufe „kein GitHub-Zugriff").
+**Diese Spec trägt eine neue ADR:** [`decisions/0077-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md`](../decisions/0077-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md). Sie entscheidet die Übergabe per Anker, den eigenen Auslieferpfad, die Zulassungsmenge des Diffs und den begründeten Verzicht auf Perspektivenrunde und Copilot. ADR [`0073`](../decisions/0073-entwurfsrunden-auf-arbeitsseite-aufraeumen-als-handgriff.md) wird dabei **teilweise abgelöst** — Abschnitt 5, letzter Absatz (der Satz, der die Nachträge „in die Story, in deren Rahmen der Lauf stattfand" schob). Alles Übrige von ADR 0073 bleibt wörtlich in Kraft, insbesondere Abschnitt 4 (der Ablauf löscht nichts) und Abschnitt 7 (jederzeit aufrufbar, Erlaubnisstufe „kein GitHub-Zugriff").
 
 **In dieser Spec entsteht kein Produktcode.** Kein `.tsx`, kein Backend, kein Datenmodell, keine Abhängigkeit — `docs/architecture.md` und `docs/setup.md` bleiben unberührt (Penpot ist Werkzeug- und keine Laufzeitabhängigkeit). `docs/ai-workflow.md` ändert sich dagegen **doch**, und zwar minimal: Es gibt ab jetzt einen zweiten Skill mit GitHub-Schreibzugriff, und die Rollen-Landkarte behauptet heute das Gegenteil.
 
@@ -110,10 +110,10 @@ Der Verzicht ist der einzige unbequeme Teil und hängt an der Reihenfolge: **Zul
 
 | Datei | Was |
 |---|---|
-| `specs/decisions/0076-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md` | **neu**, bereits angelegt |
+| `specs/decisions/0077-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md` | **neu**, bereits angelegt |
 | `specs/decisions/0073-…aufraeumen-als-handgriff.md` | **bereits erledigt**: Kopfzeile `**Teilweise abgelöst:**`; Entscheidungstext unverändert |
 | `specs/architecture/0002-testkonzept.md` | **bereits erledigt**: neuer Punkt 10, zwei bekannte Lücken, Kopfzeile fortgeschrieben |
-| `specs/architecture/0003-securitykonzept.md` | **bereits erledigt**: neuer Abschnitt zu ADR 0076, Einschränkung am ersten Restrisiko-Punkt |
+| `specs/architecture/0003-securitykonzept.md` | **bereits erledigt**: neuer Abschnitt zu ADR 0077, Einschränkung am ersten Restrisiko-Punkt |
 | `.claude/skills/ship-entwurf/SKILL.md` | **neu** — Erlaubnisstufe „lesend und schreibend", Hauptsession, nur Operations-IDs |
 | `.claude/skills/penpot-entwurfsrunden/SKILL.md` | neuer Schritt 7, Umnummerierung 7→8, Pull-Request-Zeile in der Aufräum-Auskunft, Querverweis in Schritt 2, abgelösten Satz streichen; **Erlaubnisstufe unverändert** |
 | `.claude/skills/github-access/SKILL.md` | Erlaubnisstufen-Tabelle: `ship-entwurf` unter „lesend und schreibend"; `description` nennt ihn als Aufrufer |
@@ -154,7 +154,7 @@ GitHub-Schreibrecht nimmt die Ausgabe eines Ablaufs **ohne** Zugriffsrecht als A
 und macht daraus ein öffentliches, nicht zurücknehmbares Artefakt — als einziger
 PR-Pfad des Repositories ohne Perspektivenrunde und ohne Copilot-Review. Vollständige
 Herleitung im Sicherheitskonzept
-([`architecture/0003`](../architecture/0003-securitykonzept.md), Abschnitt zu ADR 0076).
+([`architecture/0003`](../architecture/0003-securitykonzept.md), Abschnitt zu ADR 0077).
 
 **Der Übergabeblock ist ein Textkanal, keine typisierte Schnittstelle.** Anker und Block
 überqueren eine Zuständigkeits-, aber keine Prozessgrenze: Beide Seiten laufen in
@@ -199,7 +199,7 @@ zurück.
   CI geprüft (`\.(png|jpe?g|gif|webp|bmp|tiff?|avif|heic|ico)$`, ohne Beachtung der
   Groß-/Kleinschreibung); ein Treffer hält an.
 
-**Härtungsregel 4.3/4.4 am öffentlichen Artefakt.** Richtig in ADR 0076 angelegt:
+**Härtungsregel 4.3/4.4 am öffentlichen Artefakt.** Richtig in ADR 0077 angelegt:
 Arbeitsseite aus dem validierten `entwurfslauf`, Ergebnis-Ansicht aus
 `anzeigename`/`schluessel` in `views.json`, kein Penpot-Rücklesen, keine Brettnamen und
 Rundentexte im Body. Zwei Lücken bleiben:
@@ -246,7 +246,7 @@ zwei benannten Kanten.**
    ist, dass ein ADR- oder Konzepttext mitfährt.
 
 **Die Trigger-Tabelle deckt die Datei, nicht den Pfad.** `design/penpot/**` ist bereits
-Security-Trigger, und ADR 0076 Abschnitt 9 nimmt `.claude/skills/ship-entwurf/**` auf —
+Security-Trigger, und ADR 0077 Abschnitt 9 nimmt `.claude/skills/ship-entwurf/**` auf —
 beides greift nur, wenn eine Perspektivenrunde **stattfindet**. Der Eintrag schützt
 Änderungen **an** dem Skill, nicht Änderungen, die **durch** ihn fahren. Festgehalten,
 damit die Aufnahme nicht als Schließung dieser Lücke gelesen wird.
@@ -306,7 +306,7 @@ Lücken".
 
 ## Entscheidungen
 
-- **`architect` konsultiert (Schritt 1):** legt Anker-Übergabe, eigenen Skill `ship-entwurf`, Zulassungsmenge und Umsetzungsreihenfolge fest; ADR 0076 angelegt, ADR 0073 teilweise abgelöst.
+- **`architect` konsultiert (Schritt 1):** legt Anker-Übergabe, eigenen Skill `ship-entwurf`, Zulassungsmenge und Umsetzungsreihenfolge fest; ADR 0077 angelegt, ADR 0073 teilweise abgelöst.
 - **`ux-ui-designer` nicht konsultiert (Schritt 2):** Die Story berührt keine sichtbare Oberfläche — es entsteht keine Ansicht, kein Zustand, kein Bedienelement, und `frontend/src/**` steht ausdrücklich als unverändert in der Dateitabelle. Die einzige Interaktion ist eine Chat-Rückfrage der Ablaufsteuerung.
 - **`test-engineer` konsultiert (Schritt 3):** Akzeptanzkriterien geschärft, Testkonzept ergänzt; sechs Befunde gegen die Umsetzungsplanung sind oben eingearbeitet (Ein-Definitions-Regel für den Block, Kardinalität statt Abwesenheit beim Abbruch, Offsets statt `abschnitt()`, `-A`/`-a`-Verbot, `ABLAUF_SKILLS`, Whitelist-Gleichheit statt Verbotsliste).
 - **`security-engineer` konsultiert (Schritt 3):** sicherheitsrelevant; Sicherheitskonzept ergänzt. Schärfster Befund: Wächter und Bewachtes liegen in derselben Zulassungsmenge.

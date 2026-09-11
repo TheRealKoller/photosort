@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.42.0](https://github.com/TheRealKoller/photosort/compare/v0.41.0...v0.42.0) (2026-09-10)
+
+
+### Features
+
+* **frontend:** Schrittleiste zeigt den Fortschritt und verdeckt die Kopfzeile nicht mehr (Spec 0387) ([#389](https://github.com/TheRealKoller/photosort/issues/389)) ([141092d](https://github.com/TheRealKoller/photosort/commit/141092dee6f2743bd18ec8430cca842c0deeb825))
+
+
+### Bug Fixes
+
+* **scripts:** Abgleich mit main läuft aus dem Arbeitsbaum durch (Spec 0365) ([#393](https://github.com/TheRealKoller/photosort/issues/393)) ([107a8c8](https://github.com/TheRealKoller/photosort/commit/107a8c8044fd527cfbf79c129c377c7bebc77c97))
+* verwaiste lokale Bildkopien nach jedem Scan aufräumen (Spec 0349) ([#394](https://github.com/TheRealKoller/photosort/issues/394)) ([08f2046](https://github.com/TheRealKoller/photosort/commit/08f20466f7c63b5a769aa8f5fdc225ca6fb881bf))
+
 ## [0.41.0](https://github.com/TheRealKoller/photosort/compare/v0.40.0...v0.41.0) (2026-09-10)
 
 

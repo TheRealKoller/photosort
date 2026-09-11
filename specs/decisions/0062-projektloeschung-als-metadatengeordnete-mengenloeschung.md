@@ -1,6 +1,7 @@
 # 0062 - Projektweites Löschen als metadatengeordnete Mengenlöschung, nicht als ORM-Kaskade
 
 **Status:** Accepted
+**Teilweise abgelöst:** **Punkt 5**, und dort ausschließlich der absolute Teil („nie über ein Verzeichnismuster"), durch ADR [`0076`](./0076-verwaiste-bildkopien-verzeichnisdurchgang-mit-schonfrist.md). Ab dort gibt es genau **eine** Stelle, die das Cache-Verzeichnis aufzählt — die Bereinigung nach einem erfolgreichen Scan —, weil sie einen Rest räumen muss, dessen Schlüssel sich per Definition nicht mehr aus vorhandenen Zeilen berechnen lässt (Issue #349, dort das in Punkt 5 selbst benannte „Restrisiko 2"). Der **Löschpfad des Projekts** bleibt unverändert: `api/projects.py::delete_project` und `demo_state.py::purge_demo_state` räumen weiterhin ausschließlich über berechnete Pfade, ohne `glob` und ohne `rmtree`. **Alles Übrige dieser ADR bleibt unverändert in Kraft** — das gemeinsame Modul (Punkt 1), die Mengenlöschung statt ORM-Kaskade (Punkt 2), die aus den ORM-Metadaten abgeleitete Reihenfolge (Punkt 3) und der Vollständigkeitstest (Punkt 4). Deshalb `Accepted` und nicht `Superseded`; die Abstufung ist in [`../README.md`](../README.md) beschrieben.
 **Datum:** 2026-09-07
 **Bezug:** [GitHub-Issue #162](https://github.com/TheRealKoller/photosort/issues/162), [`features/0044-projekte-loeschen.md`](../features/0044-projekte-loeschen.md)
 
