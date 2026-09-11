@@ -1,4 +1,4 @@
-# 0077 - Dateiarbeit läuft über die dedizierten Werkzeuge; die Shell ist die begründete Ausnahme
+# 0078 - Dateiarbeit läuft über die dedizierten Werkzeuge; die Shell ist die begründete Ausnahme
 
 **Status:** Accepted — vollständig. Der eine Punkt, der über eine technische Detailfrage hinausging (die Verankerungstiefe, Abschnitt 7), ist Daniel vor der Umsetzung vorgelegt und von ihm am 2026-09-11 zugunsten der hier beschriebenen Fassung entschieden worden: nur Text, kein Hook.
 **Datum:** 2026-09-11

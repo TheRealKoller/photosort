@@ -1,6 +1,8 @@
 """Haelt fest, dass die Werkzeugwahl bei Dateiarbeit an genau einem Ort verankert ist.
 
-Seit ADR 0077 steht die Konvention als eigener Abschnitt `## Werkzeugwahl bei Dateiarbeit` in
+Seit ADR 0078 ("Dateiarbeit laeuft ueber die dedizierten Werkzeuge"; **nicht** ADR 0077, die von
+einem anderen Gegenstand handelt) steht die Konvention als eigener Abschnitt
+`## Werkzeugwahl bei Dateiarbeit` in
 `CLAUDE.md` - zwischen `## Konventionen` und `## Doku-Pflege`, getragen von sieben Markerzeilen.
 Keine andere Datei formuliert die Regel noch einmal; in `.claude/agents/developer.md` steht
 ausschliesslich der zugehoerige **Ablaufschritt**, nicht die Regel.
@@ -37,7 +39,7 @@ waere eine Luecke; hier ist die *Form* die Zusicherung ("eine Zeile an fester St
 Marker"), und eine Erwaehnung im Fliesstext soll ausdruecklich frei bleiben.
 
 **Normalisierung - gemessen, nicht angenommen** (2026-09-11, zweimal unabhaengig nachgerechnet;
-die Werte bestaetigen ADR 0077 Abschnitt 8). **Nachzurechnen ist das mit den Bausteinen dieser
+die Werte bestaetigen ADR 0078 Abschnitt 8). **Nachzurechnen ist das mit den Bausteinen dieser
 Datei selbst**, ohne Zusatzwerkzeug - `absatzweise_normalisiert(haertungsregel_block(
 dateitext(KATALOG))).count(<nadel>)` gegen `dateitext(KATALOG).count(<nadel>)`. Das Wegwerf-
 Skript, mit dem die Tabelle urspruenglich entstanden ist, ist bewusst **nicht** eingecheckt: Es
@@ -106,7 +108,7 @@ jemand die Regel mit dem Argument "die neue Konvention deckt das ab" weichschrei
 ihre **Relativierung** durch einen spaeter eingefuegten Weichmacher-Halbsatz - ein solcher liesse
 jeden Treffer bestehen. Eine Negativliste verbotener Formulierungen wird bewusst **nicht** gebaut:
 unvollstaendig, fehlalarmanfaellig, und sie erzeugte genau das Sicherheitsgefuehl ohne
-Absicherung, das ADR 0077 beim Hook ablehnt. Zweite Restschwaeche, ebenfalls offen: Die
+Absicherung, das ADR 0078 beim Hook ablehnt. Zweite Restschwaeche, ebenfalls offen: Die
 Normalisierung ist blind fuer einen Umbruch *innerhalb* eines Wortes - kein Werkzeug im Projekt
 bricht so um. Drittens nicht geprueft, je mit Absicht: die Reihenfolge der sieben Marker (sie
 traegt keine Aussage), der Wortlaut der Gegenfaelle (das waere Formulierungspolizei) und die

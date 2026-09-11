@@ -2,7 +2,7 @@
 
 **Status:** Implemented (PR-Verweis wird nach dem Eröffnen nachgetragen)
 **Erstellt:** 2026-09-11
-**Bezug:** GitHub-Issue [`#395`](https://github.com/TheRealKoller/photosort/issues/395), Architekturentscheidung ADR [`0077`](../decisions/0077-dateiarbeit-ueber-dedizierte-werkzeuge-als-vorgabe.md), ADR [`0061`](../decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md) (Härtungsregel 4.1 — ergänzt, nicht abgelöst), `CLAUDE.md`, `.claude/skills/github-access/SKILL.md`, `.claude/agents/developer.md`, `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`
+**Bezug:** GitHub-Issue [`#395`](https://github.com/TheRealKoller/photosort/issues/395), Architekturentscheidung ADR [`0078`](../decisions/0078-dateiarbeit-ueber-dedizierte-werkzeuge-als-vorgabe.md), ADR [`0061`](../decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md) (Härtungsregel 4.1 — ergänzt, nicht abgelöst), `CLAUDE.md`, `.claude/skills/github-access/SKILL.md`, `.claude/agents/developer.md`, `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`
 
 ## Ziel
 
@@ -58,7 +58,7 @@ ergänzt wurde, steht der Grund dabei — die Prüfgegenstände sind dieselben.
       Abschnittsgrenze des Tests an derselben Stelle festmacht.
 - [ ] **(neu, Abwesenheitshälfte)** Keine andere Datei unter `.claude/**` und keine weitere
       Stelle in `CLAUDE.md` trägt eine der sieben Markerzeilen. Suchraum ausdrücklich **ohne**
-      `specs/` — ADR 0077 und diese Spec zitieren die Markernamen legitim. *Warum neu:* „Ein Ort"
+      `specs/` — ADR 0078 und diese Spec zitieren die Markernamen legitim. *Warum neu:* „Ein Ort"
       hat zwei Hälften, und im Issue steht nur die Anwesenheitshälfte. Ohne die
       Abwesenheitshälfte ist die bewusste Abweichung vom `github-access`-Muster (keine
       Wiederholung in den 24 Agenten-/Skill-Dateien) unbewacht — und sie zurückzudrehen ist genau
@@ -86,7 +86,7 @@ ergänzt wurde, steht der Grund dabei — die Prüfgegenstände sind dieselben.
       tragen muss.
 - [ ] **(Review-Kriterium)** Der unter `**Grund:**` genannte Grund ist *der* Grund: laut
       scheiterndes gegen still danebengreifendes Ersetzen, plus die Quoting-Fallen. Ausdrücklich
-      **nicht** Kontextsparsamkeit — diese Begründung ist in ADR 0077 als falsch ausgewiesen und
+      **nicht** Kontextsparsamkeit — diese Begründung ist in ADR 0078 als falsch ausgewiesen und
       verlöre beim ersten Nachrechnen. *Warum nur Review:* Ob ein Text eine Begründung trägt oder
       eine falsche, entscheidet kein Muster; ein Wortscan darauf wäre Formulierungspolizei.
 
@@ -168,7 +168,7 @@ ergänzt wurde, steht der Grund dabei — die Prüfgegenstände sind dieselben.
       Nicht-Ziel, das nur in der ADR steht, wird beim nächsten Review als Lücke gemeldet und dann
       „geschlossen" — mit einer Heuristik über Commit-Muster oder Sitzungsprotokolle. Die wäre
       grün, ohne etwas zu wissen, und damit schädlicher als gar kein Test, weil sie die offene
-      Flanke aus ADR 0077 Abschnitt 7 zudeckte.
+      Flanke aus ADR 0078 Abschnitt 7 zudeckte.
 
 ## Datenmodell-Bezug
 
@@ -178,7 +178,7 @@ Arbeitsweise der Entwicklung, nicht die Anwendung.
 
 ## Architektur / Umsetzung
 
-Vollständig festgelegt in ADR [`0077`](../decisions/0077-dateiarbeit-ueber-dedizierte-werkzeuge-als-vorgabe.md);
+Vollständig festgelegt in ADR [`0078`](../decisions/0078-dateiarbeit-ueber-dedizierte-werkzeuge-als-vorgabe.md);
 hier steht das Ergebnis, nicht dessen Begründung.
 
 ### Genau ein Ort: ein eigener Abschnitt in `CLAUDE.md`
@@ -223,7 +223,7 @@ deckt genau ein Kriterium:
 
 ### Betroffene Dateien, in Umsetzungsreihenfolge
 
-1. `specs/decisions/0077-dateiarbeit-ueber-dedizierte-werkzeuge-als-vorgabe.md` — **liegt
+1. `specs/decisions/0078-dateiarbeit-ueber-dedizierte-werkzeuge-als-vorgabe.md` — **liegt
    bereits an** (Abschnitt 7 nach Daniels Entscheidung vom 2026-09-11 geschlossen).
 2. `scripts/tests/test_werkzeugwahl_verankert.py` — neu, zuerst rot (TDD).
 3. `CLAUDE.md` — neuer Abschnitt, macht 2. grün.
@@ -244,7 +244,7 @@ Coverage-Gate ist nicht berührt.
 
 Abgewogen wurde gegen einen nicht-blockierenden `PreToolUse`-Hook in einem eingecheckten
 `.claude/settings.json`, der Shell-Aufrufe auf Änderungsmuster absucht. **Daniel hat sich am
-2026-09-11 gegen den Hook und für reinen Text entschieden** (ADR 0077, Abschnitt 7). Gründe: Ein
+2026-09-11 gegen den Hook und für reinen Text entschieden** (ADR 0078, Abschnitt 7). Gründe: Ein
 eingecheckter Hook wirkte auf jede Session in diesem Repository, nicht nur auf Agentenläufe;
 blockieren dürfte er nicht (das wäre das ausgeschlossene Verbot), und ein Hinweis, der bei jedem
 legitimen Einzeiler mit `>>` mitfeuert, wird binnen Tagen überlesen — ein überlesener Wächter ist
@@ -347,7 +347,7 @@ Sonst wird ein *anderer* Test rot:
 
 `specs/architecture/0002-testkonzept.md` wird ergänzt: eine neue `###`-Untersektion am Ende von
 `## Repo-Konfiguration & Dokumentation (kein Anwendungscode)`, in der dort etablierten Form
-`### Erweiterung für ADR 0077`, plus ein Eintrag unter `## Bekannte Lücken`. Drei Regeln gehen
+`### Erweiterung für ADR 0078`, plus ein Eintrag unter `## Bekannte Lücken`. Drei Regeln gehen
 über diesen Branch hinaus und gehören deshalb ins lebende Dokument:
 
 1. **Ein Wächter, der eine Formulierung aus einer Markdown-Datei zitiert, normalisiert Whitespace
@@ -410,7 +410,7 @@ mechanischen Prüfung") genügt.
 **Relativierung** durch einen später eingefügten Weichmacher-Halbsatz — ein solcher ließe jeden
 Treffer bestehen. Eine Negativliste verbotener Formulierungen wird ausdrücklich **nicht** gebaut:
 unvollständig, fehlalarmanfällig, und sie erzeugte genau das Sicherheitsgefühl ohne Absicherung,
-das ADR 0077 Abschnitt 7 beim Hook ablehnt. Die Lücke steht im Test-Docstring, nicht nur hier.
+das ADR 0078 Abschnitt 7 beim Hook ablehnt. Die Lücke steht im Test-Docstring, nicht nur hier.
 
 **Sicherheitskonzept.** `specs/architecture/0003-securitykonzept.md` wird um einen Abschnitt
 „Werkzeugwahl bei Dateiarbeit als weiche Konvention neben der harten Härtungsregel 4.1" vor
@@ -452,9 +452,9 @@ an.
 - **Verankerungstiefe (Daniel, 2026-09-11):** nur Text in `CLAUDE.md`, **kein** eingechecktes
   `.claude/settings.json` mit `PreToolUse`-Hook. Vorgelegt, weil die Entscheidung über eine
   technische Detailfrage hinausgeht — ein eingecheckter Hook wirkte auf jede Session in diesem
-  Repository, auch auf Daniels eigene. ADR 0077, Abschnitt 7 ist entsprechend geschlossen.
+  Repository, auch auf Daniels eigene. ADR 0078, Abschnitt 7 ist entsprechend geschlossen.
 - **`architect` konsultiert (Schritt 1):** Verankerungsort, Dateiliste, Testzuschnitt und ADR
-  0077.
+  0078.
 - **`ux-ui-designer` nicht konsultiert (Schritt 2):** Es besteht kein konkret benennbarer Bezug
   zu einer sichtbaren Oberfläche — das Feature ändert ausschließlich die Arbeitsweise der
   Entwicklung, es entsteht keine Anzeige, keine Eingabe und kein darzustellendes Datum.
