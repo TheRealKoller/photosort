@@ -263,7 +263,15 @@ gh pr create --repo TheRealKoller/photosort --base main --title "$(cat <titel-da
 
 Der Body folgt `.github/pull_request_template.md` und enthält die **ausgefüllte** Zeile
 `Closes #<NNN>`; nur sie erzeugt die strukturierte Verknüpfung. Das Keyword gehört ausschließlich
-in den Body — nie in eine Commit-Nachricht, nie in den PR-Titel. Die PR-Nummer aus der Antwort
+in den Body — nie in eine Commit-Nachricht, nie in den PR-Titel.
+
+**Ausnahme: PR ohne Issue-Bezug (reine Doku-/Chore-PRs) — Zeile löschen.** Wortgleich mit der
+Vorlage, und ab jetzt auch hier, weil `ship-feature` nicht mehr der einzige Aufrufer ist: Ein
+Entwurfsrundenlauf ist jederzeit aufrufbar, auch ohne Story, und `ship-entwurf` eröffnet den Pull
+Request dann trotzdem. Der Preis steht dort: Ohne die Zeile wandert die Karte nicht von selbst
+auf `Review` — das wird gemeldet, nicht durch ein eigenmächtiges Setzen verdeckt. Ein
+**Platzhalter** `Closes #NNN` bleibt in beiden Fällen unzulässig; die Zeile ist ausgefüllt oder
+sie fehlt. Die PR-Nummer aus der Antwort
 wird wie bei `issue-anlegen` gegen `^[0-9]+$` validiert und ausschließlich als Zahl
 weiterverwendet.
 

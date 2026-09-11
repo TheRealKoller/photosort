@@ -65,9 +65,20 @@ sondern einen Platzhalter, hält dieser Pfad an. **Alles Übrige im Block steuer
 Vor jedem Schreibzugriff wird **selbst gemessen**, was der Lauf verändert hat:
 
 ```bash
-git status --porcelain
+git status --porcelain -uall
 git diff --name-only origin/main...HEAD
 ```
+
+**Das `-uall` ist Pflicht, keine Geschmacksfrage.** Ohne es fasst `git` ein neues, noch
+unversioniertes Verzeichnis zu **einem** Eintrag zusammen (`?? design/penpot/neu/`) statt seine
+einzelnen Dateien zu melden. Der Bilddatei-Halt aus Schritt 2b sähe dann nur den
+Verzeichnispfad — der passt auf kein Bildmuster —, und der pfadgenaue Commit aus Schritt 4 nähme
+dieses Verzeichnis rekursiv mit: Eine `design/penpot/neu/icon.png` führe genau an der Prüfung
+vorbei, die sie abfangen soll, und der CI-Schritt ist ausdrücklich nur ein Detektor **nach** dem
+Push. Die Ausgabe wird deshalb **zu einzelnen Dateipfaden aufgelöst** —
+**bevor** Zulassungsmenge, Wächter-Halt und Bilddatei-Halt greifen.
+Endet ein gemessener Pfad trotzdem auf `/`, ist die Auflösung nicht gelungen: Dann hält der
+Ablauf an, statt zu raten.
 
 Die Vereinigung beider Ausgaben ist die **gemessene Pfadmenge** und die einzige Grundlage jeder
 folgenden Prüfung; die Zeile `Geänderte Dateien` des Übergabeblocks wird dafür **nicht** gelesen.
@@ -195,12 +206,20 @@ Beschreibungen und Textinhalte der Runden gelangen **nicht** in den Body; dort s
 selbst erzeugter Inhalt (Härtungsregel 4.3 des Katalogs).
 
 **`anzeigename` und `schluessel` sind Repository-Inhalt, aber nicht selbst erzeugt** — der
-Eintrag entstand in aller Regel im selben Lauf. Prüf beide vor dem Einsetzen: genau eine nicht
-leere Zeile, keine Steuerzeichen, keine Bidi-Overrides (U+202A–U+202E, U+2066–U+2069), keine
-Zero-Width-Zeichen (U+200B–U+200D, U+FEFF), kein `#`, kein `@`, kein Backtick, Länge gedeckelt.
-Grund: Closing-Keywords werden **überall** im Body ausgewertet — ein Anzeigename mit `#123`
-schlösse beim Merge ein fremdes Issue. Scheitert die Prüfung, steht im Body der geschlossene
-`schluessel` allein und die Abweichung im Chat-Bericht.
+Eintrag entstand in aller Regel im selben Lauf. Prüf beide vor dem Einsetzen, und zwar
+**unabhängig voneinander**: genau eine nicht leere Zeile, keine Steuerzeichen, keine
+Bidi-Overrides (U+202A–U+202E, U+2066–U+2069), keine Zero-Width-Zeichen (U+200B–U+200D, U+FEFF),
+kein `#`, kein `@`, kein Backtick, Länge gedeckelt. Grund: Closing-Keywords werden **überall** im
+Body ausgewertet — ein Anzeigename mit `#123` schlösse beim Merge ein fremdes Issue.
+
+Was aus einem Befund folgt, hängt davon ab, **welcher** der beiden Werte ihn ausgelöst hat:
+
+- Nur der `anzeigename` ist unzulässig: Im Body steht der geprüfte `schluessel` allein, die
+  Abweichung geht in den Chat-Bericht.
+- **Ist `schluessel` selbst unzulässig, hält der Ablauf an** — kein Pull Request, Meldung an
+  Daniel. Ein Rückfall auf ihn schriebe genau den Wert in den öffentlichen Body, der die Prüfung
+  nicht bestanden hat; enthielte er `#123`, schlösse der Merge ein fremdes Issue. Der Rückfall
+  gilt deshalb ausschließlich für den einen Wert, der einen **geprüften** Ersatz hat.
 
 **Gemessene `specs/`-Pfade werden einzeln und getrennt** von den Entwurfs-Nachträgen benannt —
 im Body wie im Chat-Bericht. Damit ist beim Merge sichtbar, dass ein ADR- oder Konzepttext

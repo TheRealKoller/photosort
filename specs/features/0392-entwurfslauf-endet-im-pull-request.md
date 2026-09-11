@@ -27,7 +27,7 @@ Legende: **[M]** mechanisch geprüft · **[S]** Sichtprüfung · **[—]** bewus
 - [ ] **[M/S]** Beim **Abbruch** wird nicht gefragt und kein Pull Request eröffnet. *(Geprüft als **Kardinalität, nicht als Abwesenheit**: Der Übergabeanker kommt im Skilltext **genau einmal** vor, und der Offset dieses Vorkommens liegt zwischen der Überschrift des Fertig-Schritts und der des Aufräumschritts; zusätzlich steht der Bedingungssatz wörtlich in diesem Schritt: [M]. Dass der Schritt im Abbruchfall übersprungen wird: [S].)*
 - [ ] **[M]** Die Erlaubnisstufe des Rundenablaufs bleibt **wörtlich** „kein GitHub-Zugriff". `ship-entwurf` trägt „lesend und schreibend" und nennt **ausschließlich Operations-IDs** aus `github-access` — keinen Werkzeugnamen, keinen Befehl.
 - [ ] **[M/S]** Bei „ja" schreibt der Ablauf den **Übergabeblock** und hört damit auf; die Hauptsession erkennt den Anker und ruft `ship-entwurf`. Der Block samt Feldnamen ist **an genau einer Stelle definiert** (im erzeugenden Skill, als umzäunter Block); `ship-entwurf` führt nur die **Ankerzeile** in seiner Auslöseliste, als Inline-Code, nicht als eigene `##`-Überschrift. *(Einzige Definitionsstelle, Ankerzeile in beiden Dateien wortgleich, keine zweite Blockkopie: [M]. Dass die Hauptsession den Anker erkennt: [S].)*
-- [ ] **[M/S]** Vor jedem Schreibzugriff steht die Bestandsaufnahme; jeder Pfad wird gegen die geschlossene Zulassungsmenge `design/penpot/**`, `frontend/penpot/**`, `specs/**` geprüft, jeder Pfad außerhalb hält an (kein Commit, kein Push, kein Pull Request). Die geprüfte Menge wird **selbst gemessen** (`git status --porcelain` plus `git diff --name-only origin/main...HEAD`); die Zeile `Geänderte Dateien` des Übergabeblocks wird dafür **nicht gelesen**. *(Präfixe, Ausschlüsse und Vergleichsbasis wörtlich: [M]. Dass tatsächlich angehalten wird: [S].)*
+- [ ] **[M/S]** Vor jedem Schreibzugriff steht die Bestandsaufnahme; jeder Pfad wird gegen die geschlossene Zulassungsmenge `design/penpot/**`, `frontend/penpot/**`, `specs/**` geprüft, jeder Pfad außerhalb hält an (kein Commit, kein Push, kein Pull Request). Die geprüfte Menge wird **selbst gemessen** (`git status --porcelain -uall` plus `git diff --name-only origin/main...HEAD`; das `-uall` ist Pflicht — ohne es meldet `git` ein neues, noch unversioniertes Verzeichnis als **einen** Eintrag, und eine Bilddatei darin käme an Schritt 2b vorbei); die Zeile `Geänderte Dateien` des Übergabeblocks wird dafür **nicht gelesen**. *(Präfixe, Ausschlüsse und Vergleichsbasis wörtlich: [M]. Dass tatsächlich angehalten wird: [S].)*
 - [ ] **[M]** Der Commit ist **pfadgenau** über die gemessenen Pfade: kein pauschales Hinzufügen (`git add -A`), kein Commit über den Arbeitsbaum (`git commit -a`). Ohne dieses Kriterium ist die Zulassungsmenge Zierde.
 - [ ] **[M/S]** **Wächter-Halt:** `ship-entwurf` hält zusätzlich an, wenn der gemessene Diff (a) eine **neue** `*.js`-Datei unter `design/penpot/` enthält oder (b) hinzugefügte/entfernte Zeilen in `frontend/penpot/payload.test.ts` enthält, die `VERBOTENE_BEZEICHNER`, `BEZEICHNER_FREIGABEN`, `bezeichner:` oder `muster:` berühren. Grund: Nutzlast und ihre Verbotsliste liegen beide in der Zulassungsmenge — ein Pull Request mit Nutzlast-Zeile *und* passender Freigabe wäre sonst grün und sähe keinen Prüfer. *(Die beiden Fälle wörtlich im Skilltext, prüfbar an `git diff -U0`: [M]. Dass angehalten wird: [S].)*
 - [ ] **[M/S]** Vor dem Commit wird die gemessene Pfadmenge gegen dasselbe Bilddatei-Muster geprüft, das die CI verwendet (`\.(png|jpe?g|gif|webp|bmp|tiff?|avif|heic|ico)$`, ohne Beachtung der Groß-/Kleinschreibung); ein Treffer hält an. Grund: Der CI-Schritt ist ein Detektor **nach** dem Push, und ein roter Check nimmt einen gepushten Blob nicht zurück.
@@ -83,7 +83,7 @@ Nachgesehen statt gefühlt entschieden: Von den neun Schritten des `ship-feature
 
 ### 3. Was `ship-entwurf` tut, in dieser Reihenfolge
 
-1. **Bestandsaufnahme vor jedem Schreibzugriff.** `git status --porcelain`, `git diff --name-only origin/main...HEAD`. Die so **selbst gemessene** Menge ist die einzige Grundlage; die Zeile `Geänderte Dateien` des Übergabeblocks wird dafür nicht gelesen (Begründung im Abschnitt „Security"). Jeder Pfad wird gegen eine **geschlossene Zulassungsmenge** geprüft: `design/penpot/**`, `frontend/penpot/**`, `specs/**`. **Jeder Pfad außerhalb hält den Ablauf an** — kein Commit, kein Push, kein Pull Request, Meldung an Daniel. Ein leerer Diff ist kein Fehler, sondern eine Auskunft: dann entsteht kein Pull Request, statt einen leeren zu versuchen.
+1. **Bestandsaufnahme vor jedem Schreibzugriff.** `git status --porcelain -uall`, `git diff --name-only origin/main...HEAD`. Das `-uall` ist Pflicht: Ohne es fasst `git` ein neues, noch unversioniertes Verzeichnis zu **einem** Eintrag zusammen, der Bilddatei-Halt sähe nur den Verzeichnispfad, und der pfadgenaue Commit nähme ihn rekursiv mit — die Ausgabe wird zu einzelnen Dateipfaden aufgelöst, bevor eine der Prüfungen greift. Die so **selbst gemessene** Menge ist die einzige Grundlage; die Zeile `Geänderte Dateien` des Übergabeblocks wird dafür nicht gelesen (Begründung im Abschnitt „Security"). Jeder Pfad wird gegen eine **geschlossene Zulassungsmenge** geprüft: `design/penpot/**`, `frontend/penpot/**`, `specs/**`. **Jeder Pfad außerhalb hält den Ablauf an** — kein Commit, kein Push, kein Pull Request, Meldung an Daniel. Ein leerer Diff ist kein Fehler, sondern eine Auskunft: dann entsteht kein Pull Request, statt einen leeren zu versuchen.
 2. **Zwei Halte-Prüfungen auf der gemessenen Menge, vor dem Commit.** (a) **Wächter-Halt:** neue `*.js` unter `design/penpot/`, oder hinzugefügte/entfernte Zeilen in `frontend/penpot/payload.test.ts`, die `VERBOTENE_BEZEICHNER`, `BEZEICHNER_FREIGABEN`, `bezeichner:` oder `muster:` berühren (an `git diff -U0` geprüft). (b) **Bilddatei-Halt:** ein Pfad, der auf `\.(png|jpe?g|gif|webp|bmp|tiff?|avif|heic|ico)$` passt.
 3. **Branch.** Aktueller Branch ≠ `main` → dieser wird verwendet. Auf `main` → `design/<entwurfslauf>` anlegen. Der Namensteil ist genau der Wert, der ohnehin gegen `^[a-z0-9][a-z0-9-]{2,39}$` validiert ist (ADR 0073, Abschnitt 6a) — der einzige Wert aus der Design-Datei, der unter geschlossenem Muster steht und deshalb einen Befehl steuern darf.
 4. **Commit** der gemessenen Pfade, **pfadexplizit** (`git add <Pfade>`, nie `git add -A`, nie `git commit -a`), Conventional Commits.
@@ -179,7 +179,8 @@ nachweisbar.
 **Die Zeile `Geänderte Dateien` bestimmt den Diff-Umfang nicht.**
 
 - **Muss:** Die Zulassungsprüfung läuft ausschließlich über die **selbst gemessene** Menge
-  (`git status --porcelain` + `git diff --name-only origin/main...HEAD`); die Zeile des
+  (`git status --porcelain -uall` + `git diff --name-only origin/main...HEAD`, zu einzelnen
+  Dateipfaden aufgelöst); die Zeile des
   Blocks wird dafür **nicht gelesen**. Grund: Die geschlossene Diff-Klasse ist die
   Bedingung, unter der der Reviewverzicht vertretbar ist — ruhte sie auf einer Textzeile
   aus demselben Kontext, der auch die Penpot-Rücklesungen enthielt, reichte ein
@@ -209,8 +210,11 @@ Rundentexte im Body. Zwei Lücken bleiben:
   eine nicht leere Zeile, keine Steuerzeichen, keine Bidi-Overrides (U+202A–U+202E,
   U+2066–U+2069), keine Zero-Width-Zeichen (U+200B–U+200D, U+FEFF), kein `#`, kein `@`,
   kein Backtick, Länge gedeckelt. Grund: GitHub wertet Closing-Keywords **überall** im Body
-  aus — ein Anzeigename mit `#123` schlösse beim Merge ein fremdes Issue. Scheitert die
-  Prüfung, steht im Body der geschlossene `schluessel` allein, die Abweichung im Bericht.
+  aus — ein Anzeigename mit `#123` schlösse beim Merge ein fremdes Issue. Beide Werte
+  werden **unabhängig voneinander** geprüft: Scheitert nur der `anzeigename`, steht im Body
+  der geprüfte `schluessel` allein und die Abweichung im Bericht; ist **der `schluessel`
+  selbst** unzulässig, hält der Ablauf an — ein Rückfall auf ihn schriebe genau den Wert in
+  den öffentlichen Body, der die Prüfung nicht bestanden hat.
 - **Muss:** Die Beschreibung in `chore(design): <Beschreibung>` wird von `ship-entwurf`
   selbst formuliert oder aus `entwurfslauf`/`schluessel` gebildet, nie aus einem
   Penpot-Wert übernommen, enthält kein `#`, und wird über die **Titel-Datei** mechanisch

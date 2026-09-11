@@ -6,7 +6,7 @@ beiden liegt kein Subagenten-Fenster, sondern nur dieser eine Satz - er ist die 
 an der ablesbar bleibt, wo ein Text ohne Zugriffsrecht aufhoert und einer mit Zugriffsrecht
 anfaengt. Diese Datei sichert genau die Teile dieser Konstruktion, die statisch pruefbar sind.
 
-Fuenf Gruppen:
+Sechs Gruppen:
 
 1. **Anker und Ein-Definitions-Regel.** Die Ankerzeile steht in beiden Dateien woertlich gleich;
    der **Block samt Feldnamen** steht ausschliesslich in der *erzeugenden* Datei
@@ -41,6 +41,13 @@ Fuenf Gruppen:
    Verbotsliste zu fuehren: Ein auftauchendes `copilot-review-anfordern` wird rot, eine vergessene
    ID ebenfalls. Dazu die woertlichen Zusagen (Titelform, `Closes #NNN`, alle Validierungsmuster,
    Herkunft der Namen).
+6. **Die No-Story-Ausnahme an beiden normativen Stellen.** `ship-entwurf` ist der erste Aufrufer
+   von `pr-erstellen` **ohne** Story - der Rundenablauf ist jederzeit aufrufbar, auch ohne Issue.
+   Der Katalogeintrag war im Kontext von `ship-feature` geschrieben, wo es immer eine Story gibt,
+   und formulierte die Closing-Zeile ohne Ausnahme; die Vorlage kennt sie ausdruecklich. Geprueft
+   wird, dass beide Texte dieselbe Ausnahme woertlich fuehren - mit einem Selbstschutz fuer den
+   Blockschnitt, weil ein leer gelesener oder ueberlaufender Eintrag die Zusage zufaellig
+   bestuende.
 
 **Zur Empfindlichkeit:** Jede Abwesenheits- und jede Mengenzusage traegt eine synthetische Probe
 (der Erkenner findet seinen eigenen Verstoss) und eine Gegenprobe (der erlaubte Fall bleibt
@@ -139,7 +146,19 @@ NAMENTLICHE_AUSSCHLUESSE = (
     "`.claude/**`",
 )
 
-MESSBEFEHLE = ("git status --porcelain", "git diff --name-only origin/main...HEAD")
+# Der Statusbefehl traegt `-uall` **nicht** als Geschmacksfrage: Ohne ihn meldet git ein neues,
+# noch unversioniertes Verzeichnis als **einen** Eintrag (`?? design/penpot/neu/`) statt als seine
+# einzelnen Dateien. Bilddatei-Halt und Zulassungspruefung sähen dann nur den Verzeichnispfad -
+# der passt auf kein Bilddatei-Muster -, und der pfadgenaue Commit fuegte genau diesen Pfad
+# rekursiv hinzu. Eine `design/penpot/neu/icon.png` faehre damit an der einen Pruefung vorbei, die
+# sie abfangen soll, und der CI-Schritt ist ausdruecklich nur ein Detektor **nach** dem Push.
+MESSBEFEHLE = ("git status --porcelain -uall", "git diff --name-only origin/main...HEAD")
+
+# Fuer die Verankerung der Zusage: **jedes** Vorkommen des Statusbefehls muss die enumerierende
+# Form tragen. Eine blosse Anwesenheitspruefung auf die lange Form ginge daran vorbei, weil die
+# kurze Form ihr Praefix ist - eine zweite, zusammenfassende Fundstelle bliebe unbemerkt.
+_STATUSBEFEHL = re.compile(r"git status --porcelain(?P<rest>[^\n`]*)")
+ENUMERIERENDE_FORMEN = ("-uall", "--untracked-files=all")
 
 # Je Zusage ein eigener Eintrag, damit ein Ausfall benennt, WELCHE verschwunden ist.
 VERBRAUCHER_ZUSAGEN: tuple[tuple[str, str], ...] = (
@@ -147,6 +166,23 @@ VERBRAUCHER_ZUSAGEN: tuple[tuple[str, str], ...] = (
     (
         "Blockzeile steuert den Diff-Umfang nicht",
         "die Zeile `Geänderte Dateien` des Übergabeblocks wird dafür **nicht** gelesen",
+    ),
+    # Warum der Statusbefehl enumerieren muss - der Grund gehoert neben den Befehl, sonst
+    # verschwindet das `-uall` bei der naechsten Vereinfachung.
+    (
+        "Unversionierte Verzeichnisse werden aufgelöst",
+        "zu **einem** Eintrag zusammen",
+    ),
+    (
+        "Enumeration vor allen Prüfungen",
+        "**bevor** Zulassungsmenge, Wächter-Halt und Bilddatei-Halt greifen",
+    ),
+    # Die beiden Namen des Bodys werden unabhaengig geprueft; der Rueckfall gilt nur fuer den
+    # einen von ihnen, der einen geprueften Ersatz hat.
+    ("Beide Namen unabhängig geprüft", "unabhängig voneinander"),
+    (
+        "Kein Rückfall auf einen unzulässigen Schlüssel",
+        "`schluessel` selbst unzulässig, hält der Ablauf an",
     ),
     ("Halt ausserhalb der Zulassungsmenge", "hält den Ablauf an"),
     ("Leerer Diff ist eine Auskunft", "Ein leerer Diff ist eine Auskunft, kein Fehler"),
@@ -214,6 +250,28 @@ _ID_VERWENDUNG = re.compile(r"`((?:issue|board|pr|copilot)-[a-z][a-z-]*)`")
 
 _CODEBLOCK = re.compile(r"^```[^\n]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 
+# --- Die No-Story-Ausnahme, an zwei normativen Stellen -------------------------------------
+
+# `ship-entwurf` ist der erste Aufrufer von `pr-erstellen` **ohne** Story: Der Rundenablauf ist
+# jederzeit aufrufbar, auch ohne Issue. Der Katalogeintrag war im Kontext von `ship-feature`
+# geschrieben, wo es immer eine Story gibt, und formulierte die Closing-Zeile deshalb ohne
+# Ausnahme - die Vorlage kennt sie ausdruecklich. Zwei normative Texte, die einander
+# widersprechen, sind schlimmer als einer, der schweigt: Zur Laufzeit waehlt der Ablauf sonst
+# selbst, welchem er folgt.
+KATALOG_PFAD = ".claude/skills/github-access/SKILL.md"
+PR_VORLAGE_PFAD = ".github/pull_request_template.md"
+PR_ERSTELLEN_KOPF = "### `pr-erstellen`"
+
+# Woertlich die Formulierung der Vorlage - abgeschrieben wird sie in den Katalog, nicht
+# umgekehrt: Die Vorlage ist der Text, den GitHub tatsaechlich in den Body legt.
+NO_STORY_AUSNAHME = "Ausnahme: PR ohne Issue-Bezug (reine Doku-/Chore-PRs) — Zeile löschen."
+
+# Selbstschutz fuer den Blockschnitt: Ein leer gelesener Eintrag bestuende jede Zusicherung
+# ueber ihn per Konstruktion nicht - aber ein auf den Resttext der Datei ueberlaufender ebenso
+# zufaellig. Untergrenze bewusst weit unter dem Ist-Stand, Obergrenze weit darueber.
+KATALOGEINTRAG_MINDESTLAENGE = 400
+KATALOGEINTRAG_HOECHSTLAENGE = 6000
+
 # Die pauschalen Formen, in allen Schreibweisen, die am Bestand oder in der Doku vorkommen. Der
 # letzte Eintrag faengt das zusammengezogene `-am`, das beide Verstoesse in einem Wort begeht.
 PAUSCHAL_ERKENNER: dict[str, re.Pattern[str]] = {
@@ -272,6 +330,30 @@ def pauschal_funde(bloecke: list[str]) -> list[str]:
 def offset(text: str, literal: str) -> int:
     """Reine Funktion: der Zeichenoffset eines Literals; -1, wenn es fehlt."""
     return text.find(literal)
+
+
+def zusammenfassende_statusaufrufe(text: str) -> list[str]:
+    """Reine Funktion: je Fundstelle der Statusbefehl **ohne** enumerierende Option.
+
+    Geprueft wird jedes Vorkommen, nicht die blosse Anwesenheit der langen Form: Die kurze Form
+    ist ein Praefix der langen, eine zweite, zusammenfassende Fundstelle bliebe sonst unbemerkt.
+    """
+    befunde: list[str] = []
+    for treffer in _STATUSBEFEHL.finditer(text):
+        rest = treffer.group("rest")
+        if not any(form in rest for form in ENUMERIERENDE_FORMEN):
+            befunde.append(treffer.group(0).strip())
+    return befunde
+
+
+def katalogeintrag(text: str, kopf: str) -> str:
+    """Reine Funktion: der Rumpf eines `###`-Katalogeintrags bis zur naechsten Ueberschrift."""
+    beginn = text.find(kopf)
+    if beginn == -1:
+        return ""
+    rest = text[beginn + len(kopf) :]
+    grenzen = [stelle for stelle in (rest.find("\n### "), rest.find("\n## ")) if stelle != -1]
+    return rest if not grenzen else rest[: min(grenzen)]
 
 
 # --- Selbstschutz --------------------------------------------------------------------------
@@ -498,6 +580,37 @@ def test_die_gemessene_menge_hat_ihre_beiden_quellen(befehl: str) -> None:
     )
 
 
+def test_jeder_statusaufruf_enumeriert_unversionierte_dateien() -> None:
+    """Ohne `-uall` meldet git ein neues Verzeichnis als **einen** Eintrag, nicht als Dateien."""
+    befunde = zusammenfassende_statusaufrufe(verbrauchertext())
+
+    assert not befunde, (
+        "Statusaufruf ohne enumerierende Option in "
+        f"{VERBRAUCHER_PFAD}: " + "; ".join(befunde) + ". Ein neues, noch unversioniertes "
+        "Verzeichnis stuende dann als ein einziger Pfad in der gemessenen Menge; der "
+        "Bilddatei-Halt saehe nur den Verzeichnisnamen (der auf kein Bildmuster passt), und der "
+        "pfadgenaue Commit naehme das Verzeichnis rekursiv mit. Genau die Luecke, die der Halt "
+        "schliessen soll - und der CI-Schritt danach ist nur ein Detektor."
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "erwartete_befunde"),
+    [
+        ("Setz `git status --porcelain` ab.", 1),
+        ("Setz `git status --porcelain -uall` ab.", 0),
+        ("Setz `git status --porcelain --untracked-files=all` ab.", 0),
+        ("git status --porcelain -uall\ngit status --porcelain\n", 1),
+        ("Hier steht kein Statusaufruf.", 0),
+    ],
+)
+def test_der_statusbefehl_pruefer_unterscheidet_beide_richtungen(
+    text: str, erwartete_befunde: int
+) -> None:
+    """Gegenprobe an synthetischem Text - die kurze Form ist ein Praefix der langen."""
+    assert len(zusammenfassende_statusaufrufe(text)) == erwartete_befunde
+
+
 # --- 4. Diff-Hygiene --------------------------------------------------------------------------
 
 
@@ -594,13 +707,75 @@ def test_der_id_erkenner_liest_seine_eigenen_proben(probe: str, erwartet: frozen
     assert operations_ids(probe) == set(erwartet)
 
 
-def test_eine_zusaetzliche_operation_wuerde_die_gleichheit_brechen() -> None:
-    """Gegenprobe in beide Richtungen: zu viel **und** zu wenig faellt auf."""
-    zu_viel = set(ERWARTETE_OPERATIONEN) | {"copilot-review-anfordern"}
-    zu_wenig = set(ERWARTETE_OPERATIONEN) - {"board-status-setzen"}
+def test_eine_zusaetzliche_operation_im_skilltext_wuerde_die_gleichheit_brechen() -> None:
+    """Gegenprobe am **echten** Text, nicht an zwei von Hand gebildeten Mengen.
 
-    assert zu_viel != set(ERWARTETE_OPERATIONEN)
-    assert zu_wenig != set(ERWARTETE_OPERATIONEN)
+    Der Vorgaenger dieses Tests verglich zwei literal notierte Mengen und war damit eine
+    Tautologie: Er haette auch dann bestanden, wenn die Whitelist-Pruefung vom gelesenen
+    Skilltext entkoppelt worden waere. Mutiert wird deshalb `verbrauchertext()` selbst, und
+    geprueft wird das **geparste** Ergebnis - in beide Richtungen.
+    """
+    echt = operations_ids(verbrauchertext())
+    assert echt == set(ERWARTETE_OPERATIONEN), "Vorbedingung: der Ist-Stand ist gleich."
+
+    zu_viel = operations_ids(verbrauchertext() + "\nRuf `copilot-review-anfordern` auf.\n")
+
+    assert zu_viel != set(ERWARTETE_OPERATIONEN), (
+        "Eine im Skilltext ergaenzte Operations-ID veraendert die geparste Menge nicht - der "
+        "Erkenner liest den Text nicht mehr, und die Whitelist-Gleichheit bestuende leer."
+    )
+    assert zu_viel - set(ERWARTETE_OPERATIONEN) == {"copilot-review-anfordern"}
+
+    zu_wenig = operations_ids(
+        verbrauchertext().replace("`board-status-setzen`", "den Board-Wert")
+    )
+
+    assert zu_wenig != set(ERWARTETE_OPERATIONEN), (
+        "Eine aus dem Skilltext entfernte Operations-ID veraendert die geparste Menge nicht - "
+        "eine vergessene ID fiele damit nicht auf."
+    )
+    assert set(ERWARTETE_OPERATIONEN) - zu_wenig == {"board-status-setzen"}
+
+
+# --- 6. Die No-Story-Ausnahme an beiden normativen Stellen -------------------------------------
+
+
+def test_der_katalogeintrag_pr_erstellen_wird_als_block_gelesen() -> None:
+    """Selbstschutz: ein leerer oder ueberlaufender Block bestuende die Zusage unten zufaellig."""
+    block = katalogeintrag(dateitext(KATALOG_PFAD), PR_ERSTELLEN_KOPF)
+
+    assert KATALOGEINTRAG_MINDESTLAENGE <= len(block) <= KATALOGEINTRAG_HOECHSTLAENGE, (
+        f"Der Eintrag {PR_ERSTELLEN_KOPF} wurde mit {len(block)} Zeichen gelesen. Entweder ist "
+        "die Ueberschrift gewandert (leer) oder der Blockschnitt greift nicht mehr und zieht den "
+        "Resttext der Datei mit (zu lang)."
+    )
+
+
+def test_die_no_story_ausnahme_steht_woertlich_in_katalog_und_vorlage() -> None:
+    """`ship-entwurf` ist der erste Aufrufer von `pr-erstellen` ohne Story."""
+    vorlage = dateitext(PR_VORLAGE_PFAD)
+    block = katalogeintrag(dateitext(KATALOG_PFAD), PR_ERSTELLEN_KOPF)
+
+    assert NO_STORY_AUSNAHME in vorlage, (
+        f"Die Ausnahme steht nicht mehr woertlich in {PR_VORLAGE_PFAD} (erwartet: "
+        f"{NO_STORY_AUSNAHME!r}). Sie ist der Text, den GitHub tatsaechlich in den Body legt - "
+        "wandert sie, wandert die Zusicherung mit."
+    )
+    assert NO_STORY_AUSNAHME in block, (
+        f"Der Katalogeintrag {PR_ERSTELLEN_KOPF} nennt die Ausnahme nicht. Er formuliert die "
+        "Closing-Zeile sonst ohne Ausnahme (enthaelt die **ausgefuellte** Zeile) und "
+        "widerspricht damit der Vorlage. Zwei normative Texte, die einander widersprechen, sind "
+        "schlimmer als einer, der schweigt: Zur Laufzeit waehlt der Ablauf selbst, welchem er "
+        "folgt - und das Akzeptanzkriterium 'ohne Story entsteht der PR trotzdem' haengt daran."
+    )
+
+
+def test_der_blockschnitt_endet_an_der_naechsten_ueberschrift() -> None:
+    """Gegenprobe: ohne sie liefe der Block bis zum Dateiende und bestuende jede Zusage."""
+    probe = "### `a`\nInhalt A\n\n### `b`\nInhalt B\n"
+
+    assert katalogeintrag(probe, "### `a`").strip() == "Inhalt A"
+    assert katalogeintrag(probe, "### `c`") == ""
 
 
 @pytest.mark.parametrize(("bezeichnung", "literal"), VERBRAUCHER_ZUSAGEN)
