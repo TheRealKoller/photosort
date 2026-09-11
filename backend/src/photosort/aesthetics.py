@@ -8,10 +8,9 @@ import numpy as np
 from PIL import Image
 
 # NIMA (idealo/image-quality-assessment, Apache-2.0, MobileNet-Backbone) ueber tensorflow
-# (CPU-only, regulaerer Paketname statt des urspruenglich erwogenen "tensorflow-cpu"). Eigenes
-# Modul statt Erweiterung von classification.py - haelt die schwere tensorflow-Abhaengigkeit auf
-# genau den Importpfad begrenzt, der sie tatsaechlich braucht: NUR build_aesthetics_model()
-# importiert tensorflow, lokal (analog zum lokalen mediapipe-Import in
+# (CPU-only). Eigenes Modul statt Erweiterung von classification.py - haelt die schwere
+# tensorflow-Abhaengigkeit auf genau den Importpfad begrenzt, der sie tatsaechlich braucht: NUR
+# build_aesthetics_model() importiert tensorflow, lokal (analog zum lokalen mediapipe-Import in
 # classification.py::_to_mp_image) - der Rest dieses Moduls (Preprocessing, Normierung) ist reines
 # PIL/NumPy und braucht kein installiertes tensorflow, um importiert/getestet zu werden.
 
@@ -22,17 +21,15 @@ from PIL import Image
 # ausdruecklich "Bildqualitaet/Schoenheit" (aesthetic quality) statt technischer Bildfehler
 # (technical quality, z.B. Kompressionsartefakte) verlangt ist.
 #
-# WICHTIG (Keras/H5-Modell-Deserialisierung): diese Datei ist eine reine Keras-GEWICHTE-Datei
-# (kein `tf.keras.models.load_model()`, sondern `model.load_weights()` auf eine im Code
-# rekonstruierte Architektur, siehe build_aesthetics_model unten) - verifiziert per
-# h5py-Inspektion vor dem Commit, dass die Datei KEINEN eingebetteten
-# `model_config`-Header (die Keras-SavedModel-Architektur-Serialisierung, die Lambda-Layer/
-# beliebigen Python-Code enthalten koennte) besitzt - nur benannte Gewichts-Arrays. Das
-# Lambda-Layer-Deserialisierungsrisiko ist fuer dieses Asset-Format strukturell nicht anwendbar
-# (HDF5-Gewichtsgruppen koennen keinen Python-Code enthalten) - `safe_mode=True` (fuer
-# `load_model`) ist daher nicht einschlaegig, die SHA256-Integritaetspruefung bleibt trotzdem als
-# Schutz gegen nachtraegliche Manipulation bestehen; sie bricht in
-# tests/test_aesthetics.py::TestAestheticsModelAsset (ein Fall).
+# WICHTIG (Keras/H5-Modell-Deserialisierung): diese Datei ist eine reine Keras-GEWICHTE-Datei.
+# Geladen wird sie ueber `model.load_weights()` auf eine im Code rekonstruierte Architektur (siehe
+# build_aesthetics_model unten), NIE ueber `tf.keras.models.load_model()`. Sie traegt keinen
+# eingebetteten `model_config`-Header (die Keras-SavedModel-Architektur-Serialisierung, die
+# Lambda-Layer/beliebigen Python-Code enthalten koennte), nur benannte Gewichts-Arrays; da
+# HDF5-Gewichtsgruppen keinen Python-Code enthalten koennen, ist das
+# Lambda-Layer-Deserialisierungsrisiko fuer dieses Asset-Format strukturell nicht anwendbar. Die
+# SHA256-Integritaetspruefung bleibt trotzdem als Schutz gegen nachtraegliche Manipulation; sie
+# bricht in tests/test_aesthetics.py::TestAestheticsModelAsset (ein Fall).
 _ASSET_PATH = Path(__file__).parent / "assets" / "weights_mobilenet_aesthetic_0.07.hdf5"
 
 AESTHETICS_MODEL_SHA256 = "e563ad91b3d47410e45f7238f07ab8f6abd1bd0c4b18a4b0af9c681a21a91cb2"
@@ -94,9 +91,7 @@ def build_aesthetics_model() -> AestheticsModelLike:
     `load_model()`-Aufrufs. Lokaler tensorflow-Import (analog zum lokalen mediapipe-Import in
     classification.py), damit die schwere Abhaengigkeit nicht in einen leichteren Importpfad
     einsickert, der sie nicht braucht. Wird NIE in einem automatisierten Test aufgerufen
-    (Infrastruktur-/CI-Risiko) - real end-to-end (Gewichte laden + Inferenz auf einem
-    synthetischen Bild) in einem isolierten python:3.12-slim-Docker-Container verifiziert, nicht
-    in CI."""
+    (Infrastruktur-/CI-Risiko)."""
     from tensorflow.keras.applications.mobilenet import MobileNet
     from tensorflow.keras.layers import Dense, Dropout
     from tensorflow.keras.models import Model
