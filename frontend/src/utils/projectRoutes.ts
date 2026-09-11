@@ -1,21 +1,19 @@
 import { matchPath } from 'react-router'
 
 /*
- * Einzige Quelle der Wahrheit fuer alles, was am Projektkontext einer Route haengt
- * (specs/features/0298-projektnavigation-in-der-kopfzeile.md, Architektur-Abschnitt; seit
- * specs/features/0347-navigation-nebenbereich.md in zwei Gruppen): welche Routen es mit
- * Projektbezug gibt, welcher Pfad Projektkontext hat, und welches der fuenf Navigationsziele
- * gerade aktiv ist.
+ * Einzige Quelle der Wahrheit für alles, was am Projektkontext einer Route hängt: welche
+ * Routen es mit Projektbezug gibt, welcher Pfad Projektkontext hat, und welches der fünf
+ * Navigationsziele gerade aktiv ist.
  *
- * REINES TYPESCRIPT OHNE REACT-IMPORT (Vorbild: utils/pipelineSteps.ts, das PIPELINE_STEPS fuer
- * den Stepper haelt). Bewusst NICHT in App.tsx: sonst importierte components/ProjectNav.tsx aus
- * genau der Datei, die ProjectNav rendert.
+ * REINES TYPESCRIPT OHNE REACT-IMPORT (Vorbild: utils/pipelineSteps.ts). Bewusst NICHT in
+ * App.tsx: sonst importierte components/ProjectNav.tsx aus genau der Datei, die ProjectNav
+ * rendert.
  */
 
 /**
- * Die neun Pfadmuster mit Projektkontext, benannt statt nur aufgezaehlt - App.tsx bezieht daraus
- * sowohl die <Route>-Deklarationen als auch die Matching-Liste, sodass eine kuenftige Route nicht
- * mehr nur in einer der beiden Stellen landen kann.
+ * Die neun Pfadmuster mit Projektkontext, benannt statt nur aufgezählt - App.tsx bezieht
+ * daraus sowohl die <Route>-Deklarationen als auch die Matching-Liste, sodass eine neue
+ * Route nicht mehr nur an einer der beiden Stellen landen kann.
  */
 export const PROJECT_ROUTE_PATHS = {
   detail: '/projects/:projectId',
@@ -26,9 +24,6 @@ export const PROJECT_ROUTE_PATHS = {
   compare: '/projects/:projectId/compare',
   settings: '/projects/:projectId/settings',
   stats: '/projects/:projectId/stats',
-  // specs/features/0298: NEU im Projektkontext - kehrt die ausdrueckliche Gegenfestlegung aus
-  // Spec 0033 um (dort trug die Kuratierungsseite bewusst keinen Kopfzeilen-Projektbezug). Spec
-  // 0033 traegt dazu einen datierten Nachtrag statt eines Superseded-Status.
   curate: '/projects/:projectId/curate',
 } as const
 
@@ -76,24 +71,19 @@ export interface ProjectNavTarget {
 }
 
 /*
- * ZWEI GRUPPEN STATT EINER FLACHEN LISTE (specs/features/0347-navigation-nebenbereich.md): die
- * drei Hauptziele, zwischen denen beim Sortieren staendig gewechselt wird, und die zwei
- * Nebenziele, die selten gebraucht werden und deshalb nicht denselben Platz in der Leiste
- * beanspruchen. DIE REIHENFOLGE INNERHALB EINER GRUPPE IST DIE ANZEIGEREIHENFOLGE (Leiste UND
- * Panel).
+ * ZWEI GRUPPEN STATT EINER FLACHEN LISTE: die drei Hauptziele, zwischen denen beim Sortieren
+ * ständig gewechselt wird, und die zwei Nebenziele, die selten gebraucht werden und deshalb
+ * nicht denselben Platz in der Leiste beanspruchen. DIE REIHENFOLGE INNERHALB EINER GRUPPE
+ * IST DIE ANZEIGEREIHENFOLGE (Leiste UND Panel).
  *
- * DER NAME `PROJECT_NAV_TARGETS` IST BEWUSST VERSCHWUNDEN statt "alle fuenf" zu bedeuten: haette
- * er ueberlebt, aenderte sich die Bedeutung eines Bezeichners still unter allen bestehenden
- * Aufrufstellen hinweg, und jede von ihnen kompilierte zufaellig weiter.
+ * "Projekt" zeigt auf /pipeline statt auf /projects/{id}: letzteres ist laut eigenem
+ * Kommentar in App.tsx ein reiner Bestandsschutz-Redirect für alte Lesezeichen, kein Ziel.
+ * Der Redirect-Zwischenzustand zählt trotzdem als "Projektübersicht aktiv", damit der Marker
+ * während des kurzen Zustands nicht flackert.
  *
- * "Projekt" zeigt auf /pipeline statt auf /projects/{id}: letzteres ist laut eigenem Kommentar in
- * App.tsx ein reiner Bestandsschutz-Redirect fuer alte Lesezeichen, kein Ziel. Der
- * Redirect-Zwischenzustand zaehlt trotzdem als "Projektuebersicht aktiv", damit der Marker
- * waehrend des kurzen Zustands nicht flackert.
- *
- * buildPath kodiert bewusst NICHT (kein encodeURIComponent): matchPath dekodiert, ein einseitiges
- * Kodieren braeche den Rundlauf. Prozentkodierte IDs sind ueber die Oberflaeche unerreichbar (IDs
- * sind ganzzahlig aus dem Backend) - unveraendert zum bisherigen Verhalten in App.tsx.
+ * buildPath kodiert bewusst NICHT (kein encodeURIComponent): matchPath dekodiert, ein
+ * einseitiges Kodieren bräche den Rundlauf. Prozentkodierte IDs sind über die Oberfläche
+ * unerreichbar, IDs sind ganzzahlig aus dem Backend.
  */
 export const PROJECT_NAV_PRIMARY_TARGETS: readonly ProjectNavTarget[] = [
   {
@@ -120,11 +110,7 @@ export const PROJECT_NAV_PRIMARY_TARGETS: readonly ProjectNavTarget[] = [
   },
 ]
 
-/**
- * Die beiden Nebenziele. `stats` ist mit Spec 0347 ueberhaupt erst ein Navigationsziel geworden -
- * bis dahin war die Statistikseite eine Querschnittsansicht ohne Eintrag und ausschliesslich ueber
- * einen Link am Ende der Pipeline-Seite erreichbar.
- */
+/** Die beiden Nebenziele. */
 export const PROJECT_NAV_SECONDARY_TARGETS: readonly ProjectNavTarget[] = [
   {
     id: 'settings',
@@ -154,23 +140,23 @@ export const ALL_PROJECT_NAV_TARGETS: readonly ProjectNavTarget[] = [
 ]
 
 /**
- * Gehoert dieses Ziel dem Nebenbereich an? Traegt die Aktiv-Markierung des geschlossenen
- * Ausloesers (AK6) und ist bewusst eine REINE FUNKTION statt eines Inline-Ausdrucks in
- * ProjectNav: so ist sie ohne Rendering pruefbar.
+ * Gehört dieses Ziel dem Nebenbereich an? Trägt die Aktiv-Markierung des geschlossenen
+ * Auslösers und ist bewusst eine REINE FUNKTION statt eines Inline-Ausdrucks in ProjectNav:
+ * so ist sie ohne Rendering prüfbar.
  *
- * `null` ist ausdruecklich KEIN Nebenbereich. Die naheliegende Fehlimplementierung "kein Hauptziel
- * aktiv, also Nebenbereich" markierte den Ausloeser auf /curate faelschlich als aktuell.
+ * `null` ist ausdrücklich KEIN Nebenbereich. Die naheliegende Fehlimplementierung "kein
+ * Hauptziel aktiv, also Nebenbereich" markierte den Auslöser auf /curate fälschlich als
+ * aktuell.
  */
 export function isSecondaryNavTargetId(id: ProjectNavTargetId | null): boolean {
   return id !== null && PROJECT_NAV_SECONDARY_TARGETS.some((target) => target.id === id)
 }
 
 /**
- * Das aktuell aktive Navigationsziel, oder null. Null bedeutet zweierlei und ist in beiden Faellen
- * richtig: gar kein Projektkontext, ODER die Kuratierung (/curate), die zu keinem der fuenf Ziele
- * gehoert - ein Link als aktiv zu markieren, der woanders hinfuehrt, waere schlechter als gar kein
- * Marker (AK8b). /stats faellt seit Spec 0347 NICHT mehr darunter: es ist ein Nebenziel geworden
- * und wird als solches markiert.
+ * Das aktuell aktive Navigationsziel, oder null. Null bedeutet zweierlei und ist in beiden
+ * Fällen richtig: gar kein Projektkontext, ODER die Kuratierung (/curate), die zu keinem der
+ * fünf Ziele gehört - einen Link als aktiv zu markieren, der woanders hinführt, wäre
+ * schlechter als gar kein Marker.
  */
 export function resolveActiveNavTargetId(pathname: string): ProjectNavTargetId | null {
   if (matchProjectId(pathname) === null) {
