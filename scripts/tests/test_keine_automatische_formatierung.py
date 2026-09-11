@@ -1,6 +1,6 @@
 r"""Waechter gegen jede eingecheckte Datei, die ein Kommando automatisch ausloest (K8, Spec 0400).
 
-**Der Modul traegt seit Spec 0398 (K5) eine zweite Zusage, und sie ist breiter als die erste:
+**Das Modul traegt seit Spec 0398 (K5) eine zweite Zusage, und sie ist breiter als die erste:
 keine eingecheckte Datei loest ein Kommando ohne Zutun des Agenten aus** - nicht nur keine
 Formatierung. Wer dieses Modul spaeter auf "Formatierung" zurueckschneidet, nimmt die einzige
 mechanische Zusage jener Story still mit. Eine fuenfte Musterfamilie entsteht dafuer

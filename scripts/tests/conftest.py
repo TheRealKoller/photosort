@@ -88,6 +88,12 @@ def _attrappe(name: str, *, versions_ausdruck: str | None = None) -> str:
 
     `SPIELPLATZ_BEFUNDE` steuert, welcher einzelne Pruefaufruf mit 1 endet - Schluesselform
     `[<baum>|<programm>|<argumente>]`. Ohne Treffer endet jeder Aufruf mit 0.
+
+    `SPIELPLATZ_ENTFERNE_BEI`/`SPIELPLATZ_ENTFERNE_PFAD` entfernen bei genau einem Aufruf ein
+    Verzeichnis. Das ist der einzige Weg, einen Baum **zwischen** Phase 1 und Phase 2
+    verschwinden zu lassen: Waehrend des Laufs handelt nur die Attrappe. Ein Rechteentzug von
+    aussen taugt dafuer nicht - er muesste zum selben Zeitpunkt fallen und waere als `root`
+    zusaetzlich wirkungslos.
     """
     zeilen = [
         "#!/usr/bin/env bash",
@@ -102,6 +108,10 @@ def _attrappe(name: str, *, versions_ausdruck: str | None = None) -> str:
         ]
     zeilen += [
         'schluessel="${PWD##*/}|' + name + '|$*"',
+        'if [ -n "${SPIELPLATZ_ENTFERNE_PFAD:-}" ] &&',
+        '   [ "$schluessel" = "${SPIELPLATZ_ENTFERNE_BEI:-}" ]; then',
+        '  rm -rf "$SPIELPLATZ_ENTFERNE_PFAD"',
+        "fi",
         'case "${SPIELPLATZ_BEFUNDE:-}" in',
         '  *"[$schluessel]"*) exit 1 ;;',
         "esac",
@@ -248,6 +258,7 @@ def baue_spielplatz(
     venv_ruff_ausgabe_je_baum: dict[str, str] | None = None,
     npm_skripte_je_baum: dict[str, tuple[str, ...]] | None = None,
     befunde: Sequence[tuple[str, str, str]] = (),
+    entferne_baum_bei: tuple[str, tuple[str, str, str]] | None = None,
 ) -> Spielplatz:
     pin_je_baum = pin_je_baum or {}
     node_modules_je_baum = node_modules_je_baum or {}
@@ -296,6 +307,8 @@ def baue_spielplatz(
         "SPIELPLATZ_BEFUNDE": "".join(
             f"[{baum}|{programm}|{argumente}]" for baum, programm, argumente in befunde
         ),
+        "SPIELPLATZ_ENTFERNE_PFAD": str(wurzel / entferne_baum_bei[0]) if entferne_baum_bei else "",
+        "SPIELPLATZ_ENTFERNE_BEI": "|".join(entferne_baum_bei[1]) if entferne_baum_bei else "",
         "LC_ALL": "C",
     }
     return Spielplatz(wurzel=wurzel, protokoll=protokoll, env=env, skript_relativ=skript)

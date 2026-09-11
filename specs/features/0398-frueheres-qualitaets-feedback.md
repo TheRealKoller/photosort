@@ -353,9 +353,9 @@ der Auflage: `command -v ruff || true` und `grep -c '' || true` sind aus `script
 an der ein übersprungener Baum sichtbar wird, statt in einer grünen Bilanz zu verschwinden.
 
 **S2 — Die vier TypeScript-Prüfungen laufen ausschließlich als `npm run <skript>` (Muss).** Nie als
-direkter `prettier`-/`tsc`-/`oxlint`-Aufruf. `--ignore-path /.prettierignore` steckt im npm-Skript,
-und `/.prettierignore` ist seit Spec 0400 die einzige Ausschlussquelle für Prettier. Ein direkter
-Aufruf aus `e2e/` stiege in `e2e/.auth/` ab; bei einem Parse-Fehler auf einer halb geschriebenen
+direkter `prettier`-/`tsc`-/`oxlint`-Aufruf. `--ignore-path ../.prettierignore` steckt im
+npm-Skript, und `/.prettierignore` ist seit Spec 0400 die einzige Ausschlussquelle für Prettier.
+Ein direkter Aufruf aus `e2e/` stiege in `e2e/.auth/` ab; bei einem Parse-Fehler auf einer halb geschriebenen
 `state.json` steht der dort gespeicherte, 30 Tage gültige und nicht widerrufbare JWT im Code-Frame
 und damit im Protokoll des Laufs.
 

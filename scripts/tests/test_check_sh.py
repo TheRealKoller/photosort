@@ -667,6 +667,42 @@ def test_ein_befund_schlaegt_einen_ungepruefen_baum_im_exit_code(
     assert "8 von 10" in ergebnis.meldung, ergebnis.meldung
 
 
+def test_ein_baum_der_zwischen_phase_1_und_phase_2_verschwindet_zaehlt_nicht_als_geprueft(
+    fabrik: Callable[..., Spielplatz],
+) -> None:
+    """S1: Der Zähler darf nur zählen, was wirklich gelaufen ist.
+
+    Ein nicht betretbares Verzeichnis ist eine **Umgebungsstoerung**, keine Beanstandung am
+    Arbeitsstand - dieselbe Klasse wie ein fehlendes Werkzeug (K11c), und deshalb "nicht
+    geprueft" statt "Befund". Zaehlte das gescheiterte Betreten als Lauf mit, behauptete die
+    Bilanzzeile `N von 10` drei Laeufe, die nie stattfanden - ausgerechnet die Zeile, mit der S1
+    seine Vollstaendigkeit belegt.
+
+    Herstellbar ist der Fall nur von innen: Zwischen Phase 1 und Phase 2 handelt allein die
+    Attrappe. Sie entfernt `frontend/` beim letzten `scripts`-Aufruf, also nach der
+    Vorbedingungspruefung und vor dem ersten Zugriff auf den Baum.
+    """
+    spielplatz = fabrik(entferne_baum_bei=("frontend", ("scripts", "ruff", "check .")))
+    ergebnis = laufe(spielplatz)
+
+    assert spielplatz.pruefaufrufe() == ohne("frontend"), (
+        "backend, scripts und e2e muessen vollstaendig laufen; nur der verschwundene Baum faellt "
+        f"aus. Protokoll: {spielplatz.aufrufe()}"
+    )
+    assert "10 von 10" not in ergebnis.meldung, (
+        "Die Bilanz behauptet zehn abgeschlossene Pruefungen, obwohl drei nie aufgerufen wurden. "
+        f"Meldung: {ergebnis.meldung!r}"
+    )
+    assert "7 von 10" in ergebnis.meldung, ergebnis.meldung
+    assert befundzeilen(ergebnis) == [], (
+        "Ein nicht betretbares Verzeichnis ist ein Umgebungsmangel, kein Befund - sonst ist es "
+        f"von einem echten Lint- oder Typfehler nicht zu unterscheiden. Meldung: "
+        f"{ergebnis.meldung!r}"
+    )
+    assert ergebnis.exit_code == 1, ergebnis.meldung
+    assert "frontend" in ergebnis.meldung and "Nicht geprueft" in ergebnis.meldung, ergebnis.meldung
+
+
 def test_ein_sauberer_lauf_schreibt_keine_einzige_datei(
     fabrik: Callable[..., Spielplatz],
 ) -> None:

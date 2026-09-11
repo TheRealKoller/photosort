@@ -147,11 +147,22 @@ npm_vorbedingung() {
 
 # Ein Prueflauf. Der Zaehler steht hier und nur hier: Ausgang 0 verlangt, dass alle zehn
 # tatsaechlich gelaufen sind - nicht, dass nichts gemeldet wurde.
+#
+# Das Betreten des Baums steht getrennt vor dem Aufruf, und beides zusammenzuziehen waere genau
+# der Fehler, gegen den der Zaehler antritt: Ein Verzeichnis, das zwischen Phase 1 und hier
+# verschwindet, liesse die Subshell scheitern, der Fehlschlag ginge als Befund durch und der
+# Zaehler stiege - die Bilanzzeile behauptete einen Lauf, den es nicht gab. Ein nicht
+# betretbarer Baum ist eine Umgebungsstoerung, keine Beanstandung am Arbeitsstand; er gehoert in
+# dieselbe Klasse wie ein fehlendes Werkzeug und damit nach UNGEPRUEFT.
 pruefe() {
     local baum="$1"
     shift
     local bezeichnung
     bezeichnung="$(basename -- "$1") ${*:2}"
+    if ! (cd "$REPO_WURZEL/$baum" 2>/dev/null); then
+        melde_ungeprueft "$baum" "$bezeichnung wurde nicht ausgefuehrt: $baum/ ist nicht betretbar (verschwunden oder ohne Zugriffsrecht), obwohl die Vorbedingungen des Baums erfuellt waren. Arbeitsstand pruefen und erneut laufen lassen."
+        return
+    fi
     if ! (cd "$REPO_WURZEL/$baum" && "$@"); then
         BEFUNDE+=("$baum: $bezeichnung")
     fi
