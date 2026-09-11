@@ -1339,12 +1339,28 @@ blanken Namen wäre unmöglich, `ai-workflow` ist ein Dateiname und `design`, `b
 eigenen Bestand sofort rot und würde so lange abgeschwächt, bis es nichts mehr aussagt.
 **Regel:** Soll ein Wertvorrat durch eine Abwesenheit gesichert werden, ist die Präfixbindung
 Bedingung der Prüfbarkeit und gehört ins Akzeptanzkriterium, nicht in die Umsetzung. Der
-Suchraum ist der **lebende** Anweisungsraum (`.claude/**`, `CLAUDE.md`, `docs/**`) ohne `specs/`
-— dort stehen eingefrorene Momentaufnahmen, und die Spec nennt den Vorrat selbst; dieselbe
-Begründung wie beim Abschnittszitat-Scan. Der Erfolgsfall ist eine Abwesenheit, der Wächter
-startet also **grün**: Tragend sind allein die Mutationsprobe und die Untergrenze für das
-*Gesehene* (mindestens sechs Vorkommen des Musters am erlaubten Ort), nicht der triviale erste
-Lauf.
+Erfolgsfall ist eine Abwesenheit, der Wächter startet also **grün**: Tragend sind allein die
+Mutationsprobe und die Untergrenze für das *Gesehene* (mindestens sechs Vorkommen des Musters am
+erlaubten Ort), nicht der triviale erste Lauf.
+
+**1b. Der Suchraum eines Abwesenheits-Tests wird als Negativliste gebildet, nicht als
+Aufzählung — im Review dieser Story am Bestand widerlegt, nicht theoretisch befürchtet.** Die
+erste Fassung zählte den „lebenden Anweisungsraum" auf (`.claude/**`, `CLAUDE.md`, `docs/**`) und
+übersah dabei `.github/ISSUE_TEMPLATE/*.yml` — Dateien, die **nachweislich Label vergeben**
+(`labels: ["bug"]`, `labels: ["feature", "needs-spec"]`). Ein Bereichswert in einer solchen Zeile
+ist genau der zweite Wahrheitsort, gegen den die Zusicherung antritt; die Probe blieb grün. Der
+Suchraum ist deshalb alles von Git Verwaltete **außer** einzeln begründeten Ausschlüssen:
+`specs/**` (eingefrorene Momentaufnahmen, dieselbe Begründung wie beim Abschnittszitat-Scan) und
+die Wächterdatei selbst (sie führt die Werte als Erwartungsmenge und in jeder Gegenprobe; der
+Ausschluss ist an ihren eigenen Pfad gebunden und wird gegen ihn geprüft, damit er nicht auf einen
+toten Pfad verrottet). **Regel:** Eine Positivliste wächst nicht mit — ein künftiger Ort fällt
+durch, und der Wächter bleibt dabei grün, weil er dort schlicht nicht hinsieht. Sie ist nur
+dort richtig, wo die *Erlaubnis* aufgezählt wird (die Formprüfungen über den Katalog), nie dort,
+wo eine Abwesenheit zugesichert wird. Zwei Folgen für jeden Leser dieser Bauart: Nicht als UTF-8
+lesbare Dateien (Bilder, Modelldateien — gemessen 2026-09-11: 19 von 688) werden übersprungen
+statt den Lauf abzubrechen; und die Untergrenze allein trägt den Selbstschutz nicht mehr, weil
+sie erfüllt bleibt, während ein ganzer Zweig herausfällt — daneben gehören **namentliche Anker**
+für die belegten Orte der Labelvergabe.
 
 **2. Eine Reihenfolge-Kette wächst nur mit ihren Bedingungen.** Die Kette aus der
 Spec-0288-Sektion (Body → Titel → `Ready`) bekommt ein viertes Glied (→ Bereich → **jede**

@@ -16,13 +16,26 @@ die Operations-ID, nie einen der Werte. Vier Zusicherungen tragen das:
 * **(d)** `capture` nennt weder die Operation noch einen Wert. Die Leere beim Erfassen ist das
   Fehlen eines Schritts, geprueft als Abwesenheit.
 
-**Der Suchraum von (b) ist `.claude/**`, `CLAUDE.md`, `docs/**` - bewusst ohne `specs/`.** Dort
-stehen eingefrorene Momentaufnahmen, und Spec 0259 sowie ADR 0085 nennen den Vorrat selbst; ein
-Textscan koennte lebende und historische Nennung nicht trennen und wuerde zum Umschreiben von
-Geschichte zwingen. Dieselbe Begruendung wie beim Abschnittszitat-Scan in
-`test_github_zugriff_an_einer_stelle.py`. **Diese Testdatei liegt unter `scripts/tests/` und
-damit ausserhalb jedes Suchraums** - sie darf die Werte literal fuehren, und ein Selbstausschluss
-ist nicht noetig. Das ist eine Feststellung, keine Auslassung.
+**Der Suchraum von (b) ist eine Negativliste: alles, was `git ls-files` liefert, ausser `specs/**`
+und dieser Datei selbst.** Eine Positivliste waere hier die falsche Bauart, und das ist im Review
+am Bestand belegt worden, nicht befuerchtet: Die erste Fassung zaehlte `.claude/**`, `CLAUDE.md`
+und `docs/**` auf und uebersah `.github/ISSUE_TEMPLATE/*.yml` - Dateien, die **nachweislich Label
+vergeben** (`labels: ["bug"]`, `labels: ["feature", "needs-spec"]`). Ein Bereichswert in einer
+solchen `labels:`-Zeile ist genau der zweite Wahrheitsort, den (b) verhindern soll; die Probe
+blieb gruen. **Regel:** Eine Positivliste waechst nicht mit - jeder kuenftige Ort faellt durch,
+und der Waechter bleibt dabei gruen. Ein Ausschluss wird einzeln begruendet:
+
+* **`specs/**`** sind eingefrorene Momentaufnahmen; Spec 0259 und ADR 0085 nennen den Vorrat
+  selbst. Ein Textscan koennte lebende und historische Nennung dort nicht trennen und wuerde zum
+  Umschreiben von Geschichte zwingen - dieselbe Begruendung wie beim Abschnittszitat-Scan in
+  `test_github_zugriff_an_einer_stelle.py`.
+* **Diese Datei selbst** fuehrt die Werte als Erwartungsmenge und in jeder Gegenprobe. Der
+  Ausschluss ist an den eigenen Pfad gebunden und wird gegen ihn geprueft, damit er nicht zu
+  einem Pfad verrottet, den es nicht mehr gibt.
+
+Nicht als UTF-8 lesbare Dateien (Bilder, Modelldateien - gemessen 2026-09-11: 19 von 688) werden
+uebersprungen. Das ist eine bewusste Grenze, kein Versehen: Ein Label-Vorrat wird nicht in einer
+`.tflite` dokumentiert, und ein Leser, der an der ersten Bilddatei abbricht, prueft gar nichts.
 
 **Warum die Praefixbindung die Pruefbarkeit ueberhaupt traegt.** Ein Scan nach den blanken Werten
 ist unmoeglich: `ai-workflow` ist der Dateiname `docs/ai-workflow.md`, und `design`, `backend`,
@@ -75,14 +88,19 @@ ERWARTETER_VORRAT = frozenset(
     }
 )
 
-# Der lebende Anweisungsraum. `CLAUDE.md` liegt nicht unter `.claude/` und braucht einen eigenen
-# Aufzaehlungszweig; ein stillschweigend nicht mitgelesenes `CLAUDE.md` ist auch hier der
-# wahrscheinlichste Defekt.
-SUCHRAUM = (".claude", "CLAUDE.md", "docs")
+# Der Suchraum ist alles, was Git verwaltet - abzueglich genau dieser Praefixe. Negativliste
+# statt Aufzaehlung: Eine Positivliste waechst nicht mit, und ein Ort, der ihr fehlt, faellt
+# nicht auf, weil der Waechter dort schlicht nicht hinsieht.
+AUSGESCHLOSSENE_PRAEFIXE = ("specs/",)
 
-# Selbstschutz: bewusst weit unter dem Ist-Stand - faengt den Totalausfall der Aufzaehlung, nicht
-# jede geloeschte Datei.
-MINDESTZAHL_DATEIEN_IM_SUCHRAUM = 15
+# Diese Datei fuehrt die Werte als Erwartungsmenge und in jeder Gegenprobe. Der Ausschluss ist
+# an den eigenen Pfad gebunden und wird gegen ihn geprueft (siehe Selbstschutz unten).
+WAECHTERDATEI = "scripts/tests/test_bereichsvorrat.py"
+
+# Selbstschutz: bewusst weit unter dem Ist-Stand (gemessen 2026-09-11: 688 verwaltete Dateien,
+# davon 19 nicht als UTF-8 lesbar und 214 unter `specs/`, also rund 454 im Suchraum) - faengt den
+# Totalausfall der Aufzaehlung, nicht jede geloeschte Datei.
+MINDESTZAHL_DATEIEN_IM_SUCHRAUM = 300
 
 # Untergrenze fuer das *Gesehene*, nicht fuer den gelesenen Raum: Ein Muster, das nirgends
 # trifft, meldet einen sauberen Bestand und einen kaputten Scanner gleich.
@@ -197,20 +215,31 @@ def label_argumente(block: str) -> list[str]:
 # --- Duenne Leser -------------------------------------------------------------------------
 
 
-def anweisungsraum(wurzel: Path = REPO_WURZEL) -> dict[str, str]:
-    """Der lebende Anweisungsraum - `.claude/**`, `CLAUDE.md`, `docs/**`, ohne `specs/`.
+def suchraum(wurzel: Path = REPO_WURZEL) -> dict[str, str]:
+    """Alles von Git Verwaltete ausser `specs/**` und dieser Datei - als Pfad->Text-Abbild.
 
     Ueber `git ls-files` statt `rglob`, damit nicht verwaltete Arbeitskopien (etwa ein Worktree
-    unterhalb von `.claude/`) nicht in den Suchraum geraten.
+    unterhalb von `.claude/`) nicht in den Suchraum geraten. Nicht als UTF-8 lesbare Dateien
+    werden uebersprungen statt den Lauf abzubrechen; in ihnen wird kein Label-Vorrat
+    dokumentiert.
     """
     ergebnis = subprocess.run(
-        ["git", "ls-files", "-z", "--", *SUCHRAUM],
+        ["git", "ls-files", "-z"],
         cwd=wurzel,
         capture_output=True,
         check=True,
     )
     pfade = [pfad.decode("utf-8") for pfad in ergebnis.stdout.split(b"\0") if pfad]
-    return {pfad: (wurzel / pfad).read_text(encoding="utf-8") for pfad in pfade}
+
+    abbild: dict[str, str] = {}
+    for pfad in pfade:
+        if pfad == WAECHTERDATEI or pfad.startswith(AUSGESCHLOSSENE_PRAEFIXE):
+            continue
+        try:
+            abbild[pfad] = (wurzel / pfad).read_text(encoding="utf-8")
+        except (UnicodeDecodeError, FileNotFoundError):
+            continue
+    return abbild
 
 
 def katalogtext(wurzel: Path = REPO_WURZEL) -> str:
@@ -223,7 +252,7 @@ def katalogtext(wurzel: Path = REPO_WURZEL) -> str:
 
 def test_der_suchraum_hat_eine_plausible_groesse() -> None:
     """Eine kaputte Aufzaehlung darf nicht als Nullbefund durchgehen."""
-    dateien = anweisungsraum()
+    dateien = suchraum()
 
     assert len(dateien) >= MINDESTZAHL_DATEIEN_IM_SUCHRAUM, (
         f"Nur {len(dateien)} Dateien im Suchraum (erwartet: mindestens "
@@ -234,7 +263,7 @@ def test_der_suchraum_hat_eine_plausible_groesse() -> None:
 
 def test_der_katalog_und_capture_liegen_im_suchraum() -> None:
     """Beide geprueften Orte muessen im aufgezaehlten Bestand liegen, nicht bloss gelesen werden."""
-    dateien = anweisungsraum()
+    dateien = suchraum()
 
     assert KATALOG in dateien, (
         f"{KATALOG} liegt nicht im Suchraum. Dann prueft der Abwesenheits-Test einen Raum, in dem "
@@ -246,22 +275,51 @@ def test_der_katalog_und_capture_liegen_im_suchraum() -> None:
     )
 
 
-def test_claude_md_liegt_im_suchraum() -> None:
-    """Zweiter Aufzaehlungszweig: `CLAUDE.md` liegt nicht unter `.claude/`."""
-    assert "CLAUDE.md" in anweisungsraum(), (
-        "CLAUDE.md fehlt im Suchraum. Es liegt nicht unter `.claude/` und braucht einen eigenen "
-        "Aufzaehlungszweig - ein stillschweigend nicht mitgelesenes CLAUDE.md ist der "
-        "wahrscheinlichste Defekt dieses Tests."
+@pytest.mark.parametrize(
+    ("pfad", "warum"),
+    [
+        (
+            "CLAUDE.md",
+            "die Verfassung des Projekts - sie liegt in keinem Verzeichnis und fiel aus jeder "
+            "verzeichnisweisen Aufzaehlung heraus",
+        ),
+        (
+            "docs/ai-workflow.md",
+            "dort wird der Ablauf beschrieben, ein Wert sickert hier am ehesten ein",
+        ),
+        (
+            ".github/ISSUE_TEMPLATE/feature_request.yml",
+            "eine `labels:`-Zeile vergibt Label - genau der zweite Wahrheitsort, den die "
+            "erste, aufzaehlende Fassung dieses Waechters uebersehen hat",
+        ),
+    ],
+)
+def test_ein_belegter_ort_der_labelvergabe_liegt_im_suchraum(pfad: str, warum: str) -> None:
+    """Namentliche Anker neben der Untergrenze: Sie treffen den Fall 'ein Zweig faellt weg'."""
+    assert pfad in suchraum(), (
+        f"{pfad} liegt nicht im Suchraum ({warum}). Eine Untergrenze allein faengt das nicht - "
+        "sie bliebe erfuellt, waehrend ausgerechnet dieser Ort ungeprueft bleibt."
     )
 
 
-def test_docs_liegt_im_suchraum() -> None:
-    """Dritter Zweig: `docs/**` ist der Ort, an dem eine Wert-Nennung am ehesten einsickert."""
-    dateien = anweisungsraum()
+def test_specs_liegt_nicht_im_suchraum() -> None:
+    """Der eine begruendete Ausschluss - und er ist gewollt, nicht vergessen."""
+    dateien = suchraum()
 
-    assert any(pfad.startswith("docs/") for pfad in dateien), (
-        "Keine einzige Datei unter `docs/` im Suchraum. Der Ablauf wird dort beschrieben; faellt "
-        "der Zweig weg, darf dort unbemerkt ein Bereichswert stehen."
+    assert not [pfad for pfad in dateien if pfad.startswith("specs/")], (
+        "`specs/**` liegt im Suchraum. Dort stehen eingefrorene Momentaufnahmen, und Spec 0259 "
+        "wie ADR 0085 nennen den Vorrat selbst - der Waechter wuerde zum Umschreiben von "
+        "Geschichte zwingen."
+    )
+
+
+def test_die_waechterdatei_schliesst_sich_unter_ihrem_eigenen_pfad_aus() -> None:
+    """Ein Selbstausschluss, der auf einen toten Pfad zeigt, nimmt nichts aus - und faellt auf."""
+    assert Path(__file__).resolve().relative_to(REPO_WURZEL.resolve()).as_posix() == WAECHTERDATEI
+
+    assert WAECHTERDATEI not in suchraum(), (
+        f"{WAECHTERDATEI} liegt im Suchraum. Sie fuehrt die Werte als Erwartungsmenge und in "
+        "jeder Gegenprobe; der Waechter meldete sich selbst."
     )
 
 
@@ -304,7 +362,7 @@ def test_der_vorrat_ist_die_eingefrorene_menge() -> None:
 
 
 def test_kein_bereichswert_ausserhalb_des_katalogs() -> None:
-    befunde = werte_ausserhalb_des_katalogs(anweisungsraum())
+    befunde = werte_ausserhalb_des_katalogs(suchraum())
 
     assert not befunde, (
         f"`bereich:`-Wert(e) ausserhalb von {KATALOG}: {'; '.join(befunde)}. Ablauf-Skills und "
@@ -318,7 +376,7 @@ def test_kein_bereichswert_ausserhalb_des_katalogs() -> None:
 
 def test_capture_nennt_die_operation_nicht() -> None:
     """Die Leere beim Erfassen ist das Fehlen eines Schritts, nicht ein neuer Schritt."""
-    fundstellen = nennungen({CAPTURE: anweisungsraum()[CAPTURE]}, BEREICH_OPERATION)
+    fundstellen = nennungen({CAPTURE: suchraum()[CAPTURE]}, BEREICH_OPERATION)
 
     assert not fundstellen, (
         f"`{BEREICH_OPERATION}` kommt in {CAPTURE} vor ({fundstellen}). Der Bereich entsteht beim "
@@ -328,7 +386,7 @@ def test_capture_nennt_die_operation_nicht() -> None:
 
 
 def test_capture_nennt_keinen_bereichswert() -> None:
-    fundstellen = werte_ausserhalb_des_katalogs({CAPTURE: anweisungsraum()[CAPTURE]})
+    fundstellen = werte_ausserhalb_des_katalogs({CAPTURE: suchraum()[CAPTURE]})
 
     assert not fundstellen, (
         f"`bereich:`-Wert(e) in {CAPTURE}: {'; '.join(fundstellen)}. Auch ein Beispielwert ist "
@@ -459,6 +517,27 @@ def test_eine_andere_datei_wird_nicht_uebergangen() -> None:
     befunde = werte_ausserhalb_des_katalogs(abbild)
 
     assert befunde == ["docs/ai-workflow.md:2: 'bereich:design'"]
+
+
+@pytest.mark.parametrize(
+    "pfad",
+    [
+        ".github/ISSUE_TEMPLATE/feature_request.yml",
+        ".github/workflows/ci.yml",
+        "backend/src/photosort/labels.py",
+        "frontend/src/api/client.ts",
+        "README.md",
+    ],
+)
+def test_ein_wert_ausserhalb_der_frueheren_drei_zweige_faellt_auf(pfad: str) -> None:
+    """Die Regression zur ersten, aufzaehlenden Fassung - sie sah keinen dieser Orte.
+
+    Ein Issue-Formular mit `labels: ["bereich:frontend"]` ist ein zweiter Wahrheitsort und
+    verletzt Akzeptanzkriterium 1; unter der Positivliste blieb genau das gruen.
+    """
+    abbild = {KATALOG: _FORMZEILE, pfad: 'labels: ["bug", "bereich:frontend"]\n'}
+
+    assert werte_ausserhalb_des_katalogs(abbild) == [f"{pfad}:1: 'bereich:frontend'"]
 
 
 def test_ein_leerer_suchraum_scheitert_laut_statt_still() -> None:

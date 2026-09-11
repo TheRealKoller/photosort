@@ -32,10 +32,16 @@ Issues zu öffnen.
 ## Akzeptanzkriterien
 
 - [ ] **Vorrat.** Der Bereichsvorrat steht als geschlossene Menge in **genau einer Zeile fester
-      Form** im Operationskatalog (`.claude/skills/github-access/SKILL.md`). Im lebenden
-      Anweisungsraum (`.claude/**`, `CLAUDE.md`, `docs/**`) kommt außerhalb dieser Datei **kein**
-      `bereich:`-Wert vor. Eine Erweiterung verlangt eine Änderung an dieser Zeile **und** an der
-      eingefrorenen Erwartungsmenge des Wächters — dieses Paar ist die „bewusste Ergänzung".
+      Form** im Operationskatalog (`.claude/skills/github-access/SKILL.md`). In **allem von Git
+      Verwalteten außer `specs/**` und der Wächterdatei selbst** kommt außerhalb dieser Datei
+      **kein** `bereich:`-Wert vor. Eine Erweiterung verlangt eine Änderung an dieser Zeile
+      **und** an der eingefrorenen Erwartungsmenge des Wächters — dieses Paar ist die „bewusste
+      Ergänzung".
+      *Nachgezogen im Review (Muss-Fix 1):* Die ursprüngliche Fassung nannte hier den
+      aufgezählten Anweisungsraum (`.claude/**`, `CLAUDE.md`, `docs/**`) und ließ damit
+      `.github/ISSUE_TEMPLATE/*.yml` durch — Dateien, die nachweislich Label vergeben. Der
+      Suchraum ist eine Negativliste geworden; die Zusicherung wird dadurch **weiter**, nicht
+      schwächer.
 - [ ] **Startvorrat**, in Trägerform: `bereich:frontend`, `bereich:backend`, `bereich:pipeline`,
       `bereich:ai-workflow`, `bereich:design`, `bereich:infra`. Die Präfixbindung ist Teil des
       Kriteriums, nicht Umsetzungsdetail (Begründung unter „Teststrategie").
@@ -264,9 +270,13 @@ Zusicherung. Vier Zusicherungen:
 - **(a)** Genau **eine** Zeile fester Form trägt den Vorrat, geparst über `^\*\*Bereichsvorrat`,
   verglichen gegen eine eingefrorene Menge. „Genau eine" statt „mindestens eine" — eine zweite
   Vorrat-Zeile ist ein Widerspruch und muss laut auffallen.
-- **(b)** Kein `bereich:`-Wert außerhalb des Katalogs, unverankert gesucht. **Suchraum:
-  `.claude/**`, `CLAUDE.md`, `docs/**` — bewusst ohne `specs/`**, denn diese Spec nennt den Vorrat
-  selbst; `specs/` sind eingefrorene Momentaufnahmen.
+- **(b)** Kein `bereich:`-Wert außerhalb des Katalogs, unverankert gesucht. **Suchraum als
+  Negativliste: alles von Git Verwaltete außer `specs/**` und der Wächterdatei selbst** — erstere
+  sind eingefrorene Momentaufnahmen und diese Spec nennt den Vorrat selbst, letztere führt ihn als
+  Erwartungsmenge und in jeder Gegenprobe. Nicht als UTF-8 lesbare Dateien werden übersprungen.
+  Eine Positivliste wäre hier die falsche Bauart und ist im Review am Bestand widerlegt worden:
+  Sie übersah `.github/ISSUE_TEMPLATE/*.yml`, wo `labels:`-Zeilen stehen, und blieb bei einem dort
+  eingesetzten Bereichswert grün.
 - **(c)** `refinement` führt eine Ausführungsstelle von `issue-bereich-setzen` an der richtigen
   Kettenposition (ausgelagert in `test_issue_befehle_in_skills.py`).
 - **(d)** `capture` nennt weder die Operation noch einen Wert.
@@ -344,10 +354,13 @@ Board-**Ansicht** ist eine neue Klasse untestbarer Zusage neben Branch Protectio
      `gh`-Weg zu beschränken (fiele in Cloud-Sessions aus) oder nach jedem Schreiben zurückzulesen.
 - **Bekannte, bewusst getragene Lücke:** Der `ci.yml`-Kommentar ist eine ungewachte zweite Nennung
   der Operationszahl. Ein Kommentar trägt keine Zusage, deshalb entsteht dafür kein Wächter.
-- **Hinweis für die Review-Phase:** Der Diff liegt vollständig unter `.claude/**`,
-  `scripts/tests/**` und `specs/**`. Die Trigger-Tabelle in `.claude/skills/review/SKILL.md` nennt
-  keinen dieser Pfade — `review-security` muss für diesen Branch **ausdrücklich** angefordert
-  werden, obwohl der Diff den Operationskatalog erweitert.
+- **Hinweis für die Review-Phase, im Review selbst korrigiert:** Der Diff liegt unter
+  `.claude/**`, `scripts/tests/**`, `specs/**` — und unter `.github/workflows/ci.yml`. Die
+  Trigger-Tabelle in `.claude/skills/review/SKILL.md` nennt von diesen Pfaden allein
+  `.github/workflows/**`; `review-security` lief damit mechanisch getriggert, eine ausdrückliche
+  Anforderung war nicht nötig. Ausgelöst hat das aber eine **Kommentarzeile** („17 Operationen" →
+  „19") — ohne sie hätte der Diff keinen Trigger getroffen. Der Befund steht unter „Bekannte
+  Lücken" im Sicherheitskonzept.
 
 ## Out of Scope
 
