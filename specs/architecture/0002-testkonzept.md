@@ -1095,6 +1095,22 @@ wieder ein Werkzeug ein externes CLI aufruft:
 
 Was von den Erweiterungen dieses Musters weitergilt, steht in den folgenden vier Abschnitten.
 
+Zwei Regeln aus der Zeit dieses Werkzeugs gelten unabhängig von ihm weiter:
+
+- **Muss-Fix-Regel für `review-tests` (dauerhaft):** Enthält eine Commit-Nachricht auf dem
+  Feature-Branch — oder der PR-Titel — ein Closing-Keyword, ist das ein Muss-Fix-Finding. Das
+  Repository squasht mit `squash_merge_commit_message = COMMIT_MESSAGES` **und**
+  `squash_merge_commit_title = COMMIT_OR_PR_TITLE`: Beide Texte wandern in den Merge-Commit, von
+  dort ins Changelog und in den Body des release-please-PRs, wo das Keyword beim nächsten
+  Release-Merge erneut ausgewertet würde. Ein Keyword in einer Commit-Nachricht schließt das Issue
+  beim Merge in den Default-Branch, erzeugt aber **keine** PR-Verknüpfung — es taucht in
+  `closingIssuesReferences` nicht auf und bringt nur den Schaden, nicht den Nutzen. Prüfung:
+  `git log main..HEAD --format=%B | grep -inE '\b(close[sd]?|fix(es|ed)?|resolve[sd]?)\b[^\S\r\n]*:?[^\S\r\n]+#[0-9]+'`
+  — muss leer sein.
+- **Kein CI-Gate dafür, bewusst:** Eine repo-weite Keyword-Prüfung in CI müsste die Ausnahme für
+  Pull Requests ohne Issue-Bezug heuristisch erraten und würde release-please- und
+  Dependabot-PRs blockieren.
+
 
 ### Erweiterung für ADR [`0053`](../decisions/0053-gh-bereitstellung-per-umgebungs-setup-script.md) (`gh`-Bereitstellung außerhalb des Repositories — testbar bleibt allein die dokumentierte Kopiervorlage: Bindung an die Konstante und ihr Zeichenvorrat)
 
@@ -1201,7 +1217,7 @@ Der Lebenszyklus selbst läuft über Board-Zustand und Agenten-Verhalten, nicht 
 
 **Was auf dieser Ebene nicht prüfbar ist und deshalb „(Review-Kriterium)" heißt.** Das Verhalten der Leiter selbst — einen vorhandenen Weg immer versuchen statt zu beurteilen, ein fehlendes Werkzeug überspringen ohne Schluss daraus, kein Gedächtnis über Operationen hinweg, die Meldung des zuletzt versuchten Wegs wörtlich in den Chat-Bericht — ist LLM-interpretierter Text, dieselbe Klasse wie „Priorität first-write-wins". Statisch verankert wird nur, dass die Regeln im Katalog stehen. Als **schwacher, ausdrücklich als schwach geführter** Zusatzwächter gegen die Rückkehr der Vorabmessung ist ein **enumerierter** Negativscan vertretbar (`gh auth status`, `gh api rate_limit`, `CODESPACES`, `GITHUB_ACTIONS`, `GH_TOKEN`) — enumeriert und je begründet, nicht als freier Wortscan über „Cloud-Session"/„remote", der nach der `Todo`-Begründung Formulierungspolizei wäre. Er reitet auf demselben Leser wie der Abwesenheits-Test und erbt dessen Selbstschutz; eine repo-seitige Gegenprobe hat er naturgemäß nicht (null legitime Vorkommen), sein Positivfall ist synthetisch.
 
-**Zu den Erwähnungen von `github-board` in den älteren Sektionen dieses Dokuments:** Sie bleiben stehen und werden **nicht** umgeschrieben. Sie sind eingefrorene Momentaufnahmen früherer Konsultationen, und die Absätze, in denen sie stehen, handeln zum Teil von Dingen, die es ebenfalls nicht mehr gibt (`finalize`, `MIN_GH_VERSION`, der gelöschte Befehlstabellen-Test). Der Pfad dort auf `github-access` zu ziehen, repariert keinen Verweis, sondern behauptet etwas Falsches über heute. **Wo eine Aussage dieses Dokuments im Präsens auf den Skill verweist, ist sie nachgezogen** (zwei Stellen unter „Bekannte Lücken"); alles Übrige ist historisch zu lesen. Deshalb bleibt auch die `specs/`-Ausnahme in `scripts/tests/test_board_referenzfreiheit.py` unverengt: Ein mechanisches Muster kann lebende und historische Erwähnung hier nicht trennen, und eine Regel, die bei der Hälfte ihrer Funde die falsche Reparatur erzwingt, ist schlechter als keine.
+**Die `specs/`-Ausnahme in `scripts/tests/test_board_referenzfreiheit.py` bleibt unverengt.** Ein mechanisches Muster kann eine lebende von einer historischen Erwähnung des gelöschten Werkzeugs nicht trennen, und eine Regel, die bei der Hälfte ihrer Funde die falsche Reparatur erzwingt, ist schlechter als keine. Wo eine Aussage dieses Dokuments im Präsens auf den Skill verweist, ist sie auf `github-access` nachgezogen; eine verbliebene Erwähnung von `github-board` ist historisch zu lesen.
 
 **Eine Umbenennung, die Nummern trägt, braucht einen Test, der Text und Ziel gegeneinander bindet — und dieser Wächter gilt über diese Story hinaus.** Nachgetragen am 2026-09-06, ausgelöst durch einen echten Fehler beim Auflösen einer ADR-Nummernkollision: Zwei Branches hatten parallel eine `0059` angelegt; beim Umnummerieren der einen auf `0060` wurden die Verweise per pauschaler Ersetzung über die betroffenen Dateien nachgezogen. In den beiden **lebenden** Konzeptdokumenten war das falsch — sie handeln nicht von *einer* Sache, sondern von allen, und trugen deshalb auch Verweise auf die *fremde* `0059`. Die Ersetzung zog dort den Linktext auf `0060`, während das Ziel weiter auf `0059-modellwahl-…` zeigte. **Die Lehre:** Eine pauschale Ersetzung über eine Datei ist nur so gut wie die Annahme, dass die Datei von einer Sache handelt — und lebende Dokumente handeln von mehreren.
 

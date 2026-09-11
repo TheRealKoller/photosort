@@ -44,8 +44,11 @@ Verarbeitungs-Cache (Thumbnails).
   - die Zieltabelle ist in Haupt- und Nebenziele geteilt — die Leiste führt ab `lg:` nur noch
     Projekt, Fotos und Vergleich, ein einziger Auslöser (bei jeder Breite genau einer im DOM) öffnet
     den Nebenbereich mit Einstellungen und Statistik; unterhalb `lg:` führt sein Panel alle fünf
-    Ziele in zwei abgesetzten Blöcken. Der frühere „Statistik"-Button am Ende der Pipeline-Seite
-    entfällt damit. Ebenfalls reines Frontend, kein API-Delta, keine neue Route.
+    Ziele in zwei abgesetzten Blöcken. `utils/projectRoutes.ts` führt sie dafür in zwei Gruppen
+    (`PROJECT_NAV_PRIMARY_TARGETS`, `PROJECT_NAV_SECONDARY_TARGETS`, `ALL_PROJECT_NAV_TARGETS` als
+    abgeleitete Verkettung); der Name `PROJECT_NAV_TARGETS` entfällt bewusst, damit sich die
+    Bedeutung eines Bezeichners nicht still unter allen Aufrufstellen ändert. Ebenfalls reines
+    Frontend, kein API-Delta, keine neue Route.
   - die Klassifizierungs-Sektion zerfällt in einen Container (`ClassificationSection.tsx` —
     Checkbox, Consent-Gate, Mutation, Auslöser) und drei neue Blöcke: `ClassificationEstimate.tsx`
     (aufgeschlüsselte Kostenvorschau inkl. Anbieter/Modell und der „nicht schätzbar"-Aussage),
@@ -120,8 +123,10 @@ Verarbeitungs-Cache (Thumbnails).
     zusätzlich `remote_category_candidate_count`/`landmark_candidate_count`, deren Summe
     `candidate_count` ist (neuer Helfer `_count_landmark_candidates`, wertet
     `criteria.py::is_landmark_candidate` gegen die bereits gespeicherten Kriterien-Werte aus —
-    strukturell eine Schätzung, vor dem ersten Lauf eines Projekts 0). `CriterionScoringRunSummary`
-    trägt additiv `phase`/`cloud_requested`/`cloud_error_message`.
+    strukturell eine Schätzung, vor dem ersten Lauf eines Projekts 0). Kein hinterlegter Preis
+    heißt `null`, nie `0` — `ClassificationEstimateOut.price_per_image_usd`/`.estimated_cost_usd`
+    sind entsprechend nullable, dazu das Feld `model`. `CriterionScoringRunSummary` trägt additiv
+    `phase`/`cloud_requested`/`cloud_error_message`.
   - neues Router-Modul `api/stats.py` mit dem einzigen Endpunkt `GET /projects/{project_id}/stats` —
     reine Leseleistung über Bestandsdaten, löst keinen Lauf aus und schreibt nichts. Auth doppelt:
     `current_user` als expliziter Parameter (der Bewertungsstand ist die erste rein personenbezogene
@@ -399,12 +404,29 @@ Verarbeitungs-Cache (Thumbnails).
     Fremdtext. Der `classify`-Job bekommt ein viertes Argument `estimated_cost_usd` mit Default
     `None`, damit ein zum Zeitpunkt eines Deployments bereits eingereihter Job nicht an der
     Signaturänderung scheitert.
+  - **Der Anbieter wird aus dem gespeicherten Modell abgeleitet**
+    (`cloud_vision.py::provider_for_vision_model`), nie aus `settings.landmark_provider`: Die
+    aktuelle Betriebseinstellung sagt nichts darüber, womit ein vergangener Lauf gerechnet hat.
   - Alle Cloud-Aufrufe beider Teilschritte laufen über einen prozessweiten **Schrittmacher je
     Anbieter** (`cloud_vision_throttle.py`) und werden bei HTTP `429` — und nur dort — nach einer
-    gedeckelten Wartezeit wiederholt.
+    gedeckelten Wartezeit wiederholt. Die Zeitgrenzen des Laufs werden dabei **nicht abgefragt**,
+    sondern durch ein hart gedeckeltes Wartebudget je Anfrage eingehalten (höchstens 5 Versuche,
+    120 s summierte Wartezeit, 60 s je Wartevorgang → schlimmster Fall 420 s gegen die
+    15-Minuten-Schwelle des Fortschritts-Watchdogs, als Invariantentest festgeschrieben).
   - `run_project_scan` räumt nach einem **erfolgreichen** Lauf verwaiste lokale Bildkopien auf
     (neues Modul `cache_cleanup.py`, reine Mechanik in `thumbnails.py`) — der Aufruf sitzt hinter
-    dem Fehler-Handler und erreicht Abbruch- und Fehlerpfad strukturell nicht.
+    dem Fehler-Handler und erreicht Abbruch- und Fehlerpfad strukturell nicht, mit eigenem `except`
+    samt `rollback()`/`refresh(scan_run)`, damit ein Fehler beim Aufräumen einen erfolgreichen Lauf
+    weder auf `FAILED` setzt noch den anschließenden Attributzugriff in ein `MissingGreenlet` laufen
+    lässt. Gelöscht wird nur, was **alles zugleich** erfüllt: direkter, **regulärer** Eintrag im
+    Cache-Verzeichnis (nicht rekursiv, `os.scandir` ohne Symlink-Folgen), Name trifft
+    `CACHE_FILE_PATTERN` per `re.fullmatch` exakt, Schlüssel nicht in der **ungefilterten,
+    projektübergreifenden** Gültigkeitsmenge (`select(Photo.id, Photo.etag)` ohne `where`) und
+    Änderungszeit älter als die Schonfrist von einer Stunde. Die Schonfrist trägt den
+    Nebenläufigkeitsfall: Ein paralleler Scan schreibt die Cache-Datei **vor** dem Commit der
+    Foto-Zeile, in diesem Fenster ist die Datei da und die Zeile unsichtbar — Jugend schützt, und
+    unmittelbar vor dem `unlink` werden `lstat()` (nie `stat()`, das einem untergeschobenen Symlink
+    folgte), `S_ISREG` und die Änderungszeit **erneut** geprüft.
 - **Postgres**: Metadaten (Projekte, Fotos, Bewertungen, Nutzer), keine Bilddaten.
 - **Redis**: Job-Queue für den Worker.
 - **Lokaler Cache**: Docker-Volume für Thumbnails/Zwischenergebnisse, kein Ersatz für OpenCloud als
@@ -503,8 +525,10 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     nullable, **kein** `server_default` — `0.0` wäre eine gültige Koordinate, keine
     Abwesenheitsmarkierung —, kein Backfill). Dezimalgrad aus dem EXIF-`GPSInfo`-IFD, beim Scan über
     `opencloud/exif.py::extract_gps` aus **demselben** Range-Read-Fenster wie `taken_at` gelesen
-    (kein zusätzlicher Netzwerkzugriff). Es gibt nie eine halbe Koordinate: scheitert eine
-    Komponente, sind beide `None`. `_process_scan_block` schreibt beide Felder für jeden
+    (kein zusätzlicher Netzwerkzugriff). `extract_gps` prüft Wertebereiche als **Vergleich, nie als
+    Klemmen** — ein `IFDRational` mit Nenner 0 ergibt `nan` ohne Exception, und ein einziges
+    betroffenes Foto legte sonst die gesamte Listenantwort des Projekts auf 500. Es gibt nie eine
+    halbe Koordinate: scheitert eine Komponente, sind beide `None`. `_process_scan_block` schreibt beide Felder für jeden
     verarbeiteten Arbeitsposten **unbedingt**, auch zurück auf `None` — das ist der einzige Pfad,
     über den das *Entfernen* von GPS aus einer Quelldatei in PhotoSort ankommt
     (Datenschutzbedingung, siehe Sicherheitskonzept). Bereits gescannte Fotos bekommen ihre
