@@ -179,6 +179,40 @@ function tokenBindungen(komponenten) {
   return gesehen.sort()
 }
 
+/**
+ * Zwei ZAEHLWERTE je Baustein - nie ein Farbwert.
+ *
+ * Ein neu erzeugtes Board traegt eine deckend WEISSE Standardfuellung, nicht etwa keine. Sie ist
+ * keine Bindung und taucht in `tokenBindungen` deshalb nirgends auf: Ein weisses Brett sieht dort
+ * aus wie ein leeres. Greifbar ist der Unterschied allein ueber diese beiden Zahlen - die zweite
+ * ist der eigentliche Befund (eine Flaeche, die aus keinem Token stammt) und muss ueber alle
+ * Bausteine 0 sein.
+ *
+ * ZURUECK KOMMEN ZWEI ZAHLEN. Der Vergleich gegen das Soll entsteht wie jeder andere ausserhalb,
+ * gegen `components.json`; ein gelesener Farbwert hat hier nichts verloren - auch nicht als
+ * Beispiel in einer Fehlermeldung.
+ */
+function flaechenBefund(komponenten) {
+  let ohneFuellung = 0
+  let ohneBindung = 0
+  for (const komponente of komponenten) {
+    const wurzel = komponente.mainInstance()
+    if (!wurzel) {
+      continue
+    }
+    if ((wurzel.fills || []).length === 0) {
+      ohneFuellung = ohneFuellung + 1
+      continue
+    }
+    // Gemessen: `shape.tokens` liefert die Zuordnung Eigenschaft -> Tokenname. Fehlt `fill` darin,
+    // stammt die Fuellung aus keinem Token.
+    if (!(wurzel.tokens || {}).fill) {
+      ohneBindung = ohneBindung + 1
+    }
+  }
+  return { variantenOhneFuellung: ohneFuellung, variantenMitFuellungOhneBindung: ohneBindung }
+}
+
 /** Es muessen BIBLIOTHEKS-KOMPONENTEN sein, nicht Formen gleichen Namens: geprueft daran, dass
  * jede Variantenkomponente tatsaechlich eine Hauptinstanz mit Id liefert - die blosse Existenz
  * der Methode traegt die Zusage nicht. */
@@ -204,12 +238,15 @@ function bausteinListe() {
     .filter((behaelter) => Boolean(behaelter.getPluginData('schluessel')))
     .map((behaelter) => {
       const komponenten = behaelter.variants.variantComponents()
+      const flaechen = flaechenBefund(komponenten)
       return {
         name: behaelter.name,
         schluessel: behaelter.getPluginData('schluessel'),
         istKomponente: sindBibliothekskomponenten(komponenten),
         variantProps: varianteneigenschaften(komponenten),
         bindungen: tokenBindungen(komponenten),
+        variantenOhneFuellung: flaechen.variantenOhneFuellung,
+        variantenMitFuellungOhneBindung: flaechen.variantenMitFuellungOhneBindung,
       }
     })
     .sort((a, b) => (a.name < b.name ? -1 : 1))

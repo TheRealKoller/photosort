@@ -1109,6 +1109,143 @@ describe('Die Kardinalitaeten von verify.js', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
+// Der Rueckleser belegt die Abwesenheit einer Bindung als ZAEHLWERT
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Eine ungebundene Standardfuellung ist keine Bindung und taucht in `tokenBindungen` nirgends auf -
+ * ein weisses Brett sieht dort aus wie ein leeres. Belegbar ist der Unterschied nur ueber zwei
+ * Zaehlwerte je Baustein (ADR 0081 Abschnitt 4).
+ *
+ * ⚠ ZURUECK KOMMEN ZWEI ZAHLEN, KEIN FARBWERT - und kein gelesener Wert gelangt in eine
+ * Fehlermeldung: Eine Ausnahme geht denselben Weg in den Sitzungskontext wie die Rueckgabe.
+ */
+const FLAECHEN_ZAEHLWERTE = ['variantenOhneFuellung', 'variantenMitFuellungOhneBindung'] as const
+
+/** Alle `throw new Error(...)`-Argumente einer Datei, als geparste Knoten. */
+function fehlermeldungen(quelltext: string): unknown[] {
+  return knoten(quelltext, (eintrag) => eintrag.type === 'ThrowStatement').map(
+    (eintrag) => eintrag.argument,
+  )
+}
+
+function enthaeltKnotenart(wurzel: unknown, art: string): boolean {
+  let gefunden = false
+  const gehe = (wert: unknown): void => {
+    if (gefunden || wert === null || typeof wert !== 'object') return
+    if (Array.isArray(wert)) {
+      for (const kind of wert) gehe(kind)
+      return
+    }
+    const eintrag = wert as Record<string, unknown>
+    if (eintrag.type === art) {
+      gefunden = true
+      return
+    }
+    for (const teil of Object.values(eintrag)) gehe(teil)
+  }
+  gehe(wurzel)
+  return gefunden
+}
+
+describe('Der Rueckleser zaehlt die Flaechen, statt sie zu lesen', () => {
+  const quelltext = () => dateiVon('verify.js').roh
+
+  it('gibt je Baustein beide Zaehlwerte zurueck', () => {
+    const liste = knoten(
+      quelltext(),
+      (eintrag) =>
+        eintrag.type === 'FunctionDeclaration' &&
+        (eintrag.id as Record<string, unknown> | null)?.name === 'bausteinListe',
+    )[0]
+    expect(liste, 'bausteinListe nicht gefunden').toBeDefined()
+    const befunde = knoten(
+      quelltext(),
+      (eintrag) =>
+        eintrag.type === 'ObjectExpression' &&
+        (eintrag.start as number) > (liste!.start as number) &&
+        (eintrag.end as number) < (liste!.end as number),
+    )
+    for (const name of FLAECHEN_ZAEHLWERTE) {
+      expect(
+        befunde.some((eintrag) => schluesselVon(eintrag).includes(name)),
+        name,
+      ).toBe(true)
+    }
+  })
+
+  /* Die Zaehlung selbst: der Befund traegt GENAU die beiden Schluessel, und ihre Werte sind
+     Zaehler - kein `form.fills`, kein `gesetzt.fill`, also kein Farbwert. */
+  it('gibt aus dem Befund zwei Zaehler zurueck, keinen gelesenen Wert', () => {
+    const erwartet = [...FLAECHEN_ZAEHLWERTE].sort().join(',')
+    const befunde = knoten(
+      quelltext(),
+      (eintrag) =>
+        eintrag.type === 'ObjectExpression' && schluesselVon(eintrag).join(',') === erwartet,
+    )
+    expect(befunde.length, 'Objekt mit genau den beiden Zaehlwerten').toBeGreaterThan(0)
+    for (const eintrag of befunde) {
+      for (const eigenschaft of (eintrag.properties as Record<string, unknown>[]) ?? []) {
+        const wert = eigenschaft.value as Record<string, unknown>
+        expect(wert.type, String((eigenschaft.key as Record<string, unknown>).name)).toBe(
+          'Identifier',
+        )
+      }
+    }
+  })
+
+  /* Und auf dem Weg in die Rueckgabe kommt nichts Gelesenes dazu: Die beiden Schluessel des
+     Bausteinbefunds tragen nirgends eine Fuellung oder eine Tokenzuordnung selbst. */
+  it('reicht in der Bausteinliste keine gelesene Fuellung durch', () => {
+    for (const eintrag of knoten(
+      quelltext(),
+      (kandidat) =>
+        kandidat.type === 'ObjectExpression' &&
+        FLAECHEN_ZAEHLWERTE.every((name) => schluesselVon(kandidat).includes(name)),
+    )) {
+      for (const eigenschaft of (eintrag.properties as Record<string, unknown>[]) ?? []) {
+        const name = (eigenschaft.key as Record<string, unknown>).name as string
+        if (!FLAECHEN_ZAEHLWERTE.includes(name as (typeof FLAECHEN_ZAEHLWERTE)[number])) continue
+        expect(enthaeltBezeichner(eigenschaft.value, 'fills'), name).toBe(false)
+        expect(enthaeltBezeichner(eigenschaft.value, 'tokens'), name).toBe(false)
+      }
+    }
+  })
+
+  /* AUFLAGE 5: keine Fehlermeldung traegt einen gelesenen Wert. Mechanisch gefasst als "kein
+     Argument einer Ausnahme enthaelt einen Eigenschaftszugriff" - `form.fills[0].fillColor` in
+     einer Meldung waere genau derselbe Weg in den Sitzungskontext wie die Rueckgabe. */
+  it('traegt keinen gelesenen Wert in eine Fehlermeldung', () => {
+    const meldungen = fehlermeldungen(quelltext())
+    expect(meldungen.length).toBeGreaterThan(0)
+    for (const meldung of meldungen) {
+      expect(enthaeltKnotenart(meldung, 'MemberExpression')).toBe(false)
+    }
+  })
+
+  it('erkennt eine Meldung mit gelesenem Wert an einer synthetischen Probe', () => {
+    expect(
+      enthaeltKnotenart(
+        fehlermeldungen("throw new Error('x: ' + form.fills)")[0],
+        'MemberExpression',
+      ),
+    ).toBe(true)
+    expect(
+      enthaeltKnotenart(fehlermeldungen("throw new Error('x: ' + NAME)")[0], 'MemberExpression'),
+    ).toBe(false)
+  })
+
+  /* Keine neue `ERWARTETE_*`-Konstante: Die zwei Zaehlwerte sind ein BEFUND, keine Kardinalitaet -
+     ihr Soll entsteht ausserhalb, gegen `components.json`. */
+  it('fuehrt fuer die Zaehlwerte keine neue Kardinalitaet ein', () => {
+    for (const name of Object.keys(ERWARTET)) {
+      expect(name.toLowerCase()).not.toContain('fuellung')
+      expect(name.toLowerCase()).not.toContain('flaeche')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
 // Die Soll-Struktur der Ansichten: views.json
 // ---------------------------------------------------------------------------------------------
 
