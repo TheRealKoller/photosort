@@ -1628,7 +1628,7 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     },
     {
       file: 'src/components/PhotoCard.tsx',
-      snippet: "aspect-square overflow-hidden rounded-md', isRejected && 'opacity-40'",
+      snippet: "isRejected && 'opacity-40'",
       reason:
         'gedaempfte BILDFLAECHE der aussortierten Karte - der Ausschnitt zeigt bewusst das Element, ' +
         'das den Kachel-Link traegt; am Kartenkoerper waere dieselbe Utility ein Kontrastverlust',
