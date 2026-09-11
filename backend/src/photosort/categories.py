@@ -341,9 +341,7 @@ def usable_confidence(value: object) -> float | None:
     return number
 
 
-def secondary_categories(
-    confidences: Mapping[str, object], primary_key: str
-) -> tuple[str, ...]:
+def secondary_categories(confidences: Mapping[str, object], primary_key: str) -> tuple[str, ...]:
     """Die NEBENkategorien eines Fotos (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 2)
     - die zweite, von `resolve_category` vollstaendig getrennte Ableitung.
 

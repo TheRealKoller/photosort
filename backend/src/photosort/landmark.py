@@ -65,7 +65,7 @@ _PROMPT = (
     "Wahrzeichen zu erkennen? Antworte AUSSCHLIESSLICH mit einem einzigen validen JSON-Objekt, "
     "ohne Markdown-Codeblock, ohne weiteren Text, exakt in dieser Form: "
     '{"name": "<Name der Sehenswuerdigkeit oder null>", "confidence": <Zahl zwischen 0 und 1>}. '
-    "Ist keine Sehenswuerdigkeit erkennbar, setze \"name\" auf null und \"confidence\" auf 0."
+    'Ist keine Sehenswuerdigkeit erkennbar, setze "name" auf null und "confidence" auf 0.'
 )
 
 
@@ -286,8 +286,7 @@ class MistralLandmarkClient:
                             # OpenAI-Schema - Verwechslungsgefahr, bewusst 1:1 aus dem
                             # Mistral-Cookbook uebernommen.
                             "image_url": (
-                                f"data:{mime_type};base64,"
-                                f"{base64.b64encode(image_bytes).decode()}"
+                                f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode()}"
                             ),
                         },
                         {"type": "text", "text": _PROMPT},

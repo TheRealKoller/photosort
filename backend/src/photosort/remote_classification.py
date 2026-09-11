@@ -463,8 +463,7 @@ class MistralCategoryClient:
                         {
                             "type": "image_url",
                             "image_url": (
-                                f"data:{mime_type};base64,"
-                                f"{base64.b64encode(image_bytes).decode()}"
+                                f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode()}"
                             ),
                         },
                         {"type": "text", "text": build_classification_prompt()},

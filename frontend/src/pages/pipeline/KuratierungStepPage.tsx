@@ -34,8 +34,8 @@ export function KuratierungStepPage() {
             frühere Satz "sortierst du eines aus, rückt automatisch das nächstbeste derselben
             Kategorie nach" ist ab dieser Story unwahr — es rückt nichts mehr nach. */}
         <p className="text-sm text-text">
-          Zeigt pro Foto-Moment und Kategorie die besten N Fotos — verworfene Fotos bleiben an
-          ihrer Stelle sichtbar, und weitere Kandidaten lassen sich bei Bedarf einblenden.
+          Zeigt pro Foto-Moment und Kategorie die besten N Fotos — verworfene Fotos bleiben an ihrer
+          Stelle sichtbar, und weitere Kandidaten lassen sich bei Bedarf einblenden.
         </p>
 
         <div className="flex flex-wrap items-end gap-3">

@@ -33,9 +33,7 @@ async def _get_photo_or_404(photo_id: int, session: AsyncSession) -> Photo:
     return photo
 
 
-async def _get_own_rating(
-    session: AsyncSession, photo_id: int, user_id: int
-) -> Rating | None:
+async def _get_own_rating(session: AsyncSession, photo_id: int, user_id: int) -> Rating | None:
     result = await session.execute(
         select(Rating).where(Rating.photo_id == photo_id, Rating.user_id == user_id)
     )

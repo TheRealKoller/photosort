@@ -18,7 +18,7 @@ function stubMatchMedia(matches: boolean): void {
       media: '(hover: hover) and (pointer: fine)',
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
-    })
+    }),
   )
 }
 
@@ -71,12 +71,10 @@ describe('CriterionDetailsPopover', () => {
 
   // Akzeptanzkriterium 1: kein Icon/Popover im DOM, wenn criterion_scores leer ist.
   it('renders nothing when criterionScores is empty', () => {
-    render(
-      <CriterionDetailsPopover criterionScores={[]} ranking={null} suggestion={null} />
-    )
+    render(<CriterionDetailsPopover criterionScores={[]} ranking={null} suggestion={null} />)
 
     expect(
-      screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' })
+      screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' }),
     ).not.toBeInTheDocument()
   })
 
@@ -86,7 +84,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore()]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
 
     expect(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })).toBeInTheDocument()
@@ -104,7 +102,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore({ display_name: 'Schärfe', value: 0.734 })]}
         ranking={ranking({ category_key: 'landscape', rank_position: 2, partition_size: 5 })}
         suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
-      />
+      />,
     )
 
     await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
@@ -134,7 +132,7 @@ describe('CriterionDetailsPopover', () => {
         ]}
         categoryOverride={null}
         onOverrideCategory={onOverrideCategory}
-      />
+      />,
     )
 
     await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
@@ -164,7 +162,7 @@ describe('CriterionDetailsPopover', () => {
         ]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
 
     await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
@@ -172,7 +170,7 @@ describe('CriterionDetailsPopover', () => {
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByRole('heading', { name: 'Qualität', level: 3 })).toBeInTheDocument()
     expect(
-      within(dialog).getByRole('heading', { name: 'Kategorien', level: 3 })
+      within(dialog).getByRole('heading', { name: 'Kategorien', level: 3 }),
     ).toBeInTheDocument()
   })
 
@@ -183,7 +181,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore()]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
     const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
@@ -200,7 +198,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore()]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
 
     await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
@@ -216,7 +214,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore()]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
 
     await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
@@ -235,7 +233,7 @@ describe('CriterionDetailsPopover', () => {
           suggestion={null}
         />
         <button type="button">Ausserhalb</button>
-      </div>
+      </div>,
     )
 
     await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
@@ -253,7 +251,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore()]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
 
     await user.hover(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
@@ -270,7 +268,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore()]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
 
     await user.hover(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
@@ -288,7 +286,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore()]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
 
     await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
@@ -308,7 +306,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore()]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
     const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
@@ -335,7 +333,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore()]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
 
     await user.hover(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
@@ -358,7 +356,7 @@ describe('CriterionDetailsPopover', () => {
           suggestion={null}
         />
         <button type="button">Ausserhalb</button>
-      </div>
+      </div>,
     )
 
     await user.hover(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
@@ -385,7 +383,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore()]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
     const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
@@ -408,7 +406,7 @@ describe('CriterionDetailsPopover', () => {
         criterionScores={[criterionScore()]}
         ranking={null}
         suggestion={null}
-      />
+      />,
     )
 
     await user.tab()
@@ -453,7 +451,7 @@ describe('CriterionDetailsPopover', () => {
           criterionScores={[criterionScore()]}
           ranking={null}
           suggestion={null}
-        />
+        />,
       )
       const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
@@ -472,7 +470,7 @@ describe('CriterionDetailsPopover', () => {
           criterionScores={[criterionScore()]}
           ranking={null}
           suggestion={null}
-        />
+        />,
       )
       const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
@@ -496,7 +494,7 @@ describe('CriterionDetailsPopover', () => {
             suggestion={null}
           />
           <button type="button">Woanders</button>
-        </div>
+        </div>,
       )
       const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
@@ -520,7 +518,7 @@ describe('CriterionDetailsPopover', () => {
             suggestion={null}
           />
           <button type="button">Woanders</button>
-        </div>
+        </div>,
       )
       const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
@@ -543,7 +541,7 @@ describe('CriterionDetailsPopover', () => {
           criterionScores={[criterionScore()]}
           ranking={null}
           suggestion={null}
-        />
+        />,
       )
       const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
@@ -567,7 +565,7 @@ describe('CriterionDetailsPopover', () => {
             suggestion={null}
           />
           <button type="button">Woanders</button>
-        </div>
+        </div>,
       )
       const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 
@@ -594,7 +592,7 @@ describe('CriterionDetailsPopover', () => {
             suggestion={null}
           />
           <button type="button">Woanders</button>
-        </div>
+        </div>,
       )
       const trigger = screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' })
 

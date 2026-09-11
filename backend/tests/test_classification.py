@@ -539,9 +539,7 @@ class FakeFaceLandmarker:
 
     def detect(self, image: object) -> object:
         return SimpleNamespace(
-            face_landmarks=[
-                [SimpleNamespace(x=x, y=y) for x, y in face] for face in self._faces
-            ],
+            face_landmarks=[[SimpleNamespace(x=x, y=y) for x, y in face] for face in self._faces],
             facial_transformation_matrixes=self._matrixes,
         )
 
@@ -554,9 +552,7 @@ class TestDetectFaceOrientation:
         landmarks = [(0.3, 0.2), (0.7, 0.2), (0.5, 0.8)]
         landmarker = FakeFaceLandmarker([landmarks], matrixes=[_rotation_matrix_y(25.0)])
         orientation = detect_face_orientation(_solid(), landmarker)
-        assert orientation == FaceOrientation(
-            yaw_degrees=pytest.approx(25.0), min_x=0.3, max_x=0.7
-        )
+        assert orientation == FaceOrientation(yaw_degrees=pytest.approx(25.0), min_x=0.3, max_x=0.7)
 
     def test_multiple_faces_despite_num_faces_one_uses_only_the_first(self) -> None:
         # Edge Case aus dem Teststrategie-Abschnitt der Spec 0048: "mehrere Gesichter trotz

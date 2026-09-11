@@ -76,7 +76,10 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
         // Platzhalterflaeche: dekorative Flaeche unmittelbar auf dem Grund. `bg-border/60` war
         // doppelt problematisch - unsichtbar (1.45:1 vor der Abdunklung) und ueber den
         // Deckkraft-Modifikator statisch nicht nachrechenbar (Spec 0321).
-        className={cn('flex items-center justify-center rounded-md bg-separator text-xs text-text', className)}
+        className={cn(
+          'flex items-center justify-center rounded-md bg-separator text-xs text-text',
+          className,
+        )}
         role="img"
         aria-label={`${alt}: wird noch verarbeitet`}
       />
@@ -91,7 +94,7 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
           // zweier Deckkraft-Toenungen: ueber einer Deckkraft-Tinte ist der Kontrast statisch
           // nicht nachrechenbar und bliebe damit dauerhaft ungeprueft (Spec 0321).
           'flex items-center justify-center rounded-md border border-status-failed bg-elevated px-2 text-center text-xs text-text-h',
-          className
+          className,
         )}
         role="alert"
       >

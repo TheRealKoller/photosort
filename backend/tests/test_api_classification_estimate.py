@@ -41,7 +41,10 @@ class FakeOpenCloudClient:
         if self._fail:
             raise self._fail
         return Drive(
-            id="drive-1", name="Family", drive_type="project", webdav_url="https://x/dav/spaces/drive-1"
+            id="drive-1",
+            name="Family",
+            drive_type="project",
+            webdav_url="https://x/dav/spaces/drive-1",
         )
 
     async def list_folder(self, webdav_url: str, path: str, depth: str = "1") -> list[DavEntry]:
@@ -98,9 +101,7 @@ async def _add_classification_run(
     session.add(scoring_run)
     await session.commit()
     await session.refresh(scoring_run)
-    run = CriterionScoringRun(
-        project_id=project_id, scoring_run_id=scoring_run.id, status=status
-    )
+    run = CriterionScoringRun(project_id=project_id, scoring_run_id=scoring_run.id, status=status)
     session.add(run)
     await session.commit()
     await session.refresh(run)
@@ -130,9 +131,7 @@ class TestEstimateEndpoint:
     async def test_returns_404_for_unknown_project(
         self, authenticated_api_client: httpx.AsyncClient
     ) -> None:
-        response = await authenticated_api_client.get(
-            "/projects/999/classify/estimate"
-        )
+        response = await authenticated_api_client.get("/projects/999/classify/estimate")
         assert response.status_code == 404
 
     async def test_zero_candidates_returns_200_with_zero_cost(
@@ -140,9 +139,7 @@ class TestEstimateEndpoint:
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project_id}/classify/estimate"
-        )
+        response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
 
         assert response.status_code == 200
         body = response.json()
@@ -155,9 +152,7 @@ class TestEstimateEndpoint:
         # Consent bleibt deaktiviert (Default) - trotzdem 200, kein 403 (Akzeptanzkriterium).
         project_id = await _create_project(authenticated_api_client)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project_id}/classify/estimate"
-        )
+        response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
 
         assert response.status_code == 200
 
@@ -169,9 +164,7 @@ class TestEstimateEndpoint:
         await _add_photo_candidate(db_session, project_id, "b.jpg")
         await _add_photo_candidate(db_session, project_id, "c.jpg", rejected=True)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project_id}/classify/estimate"
-        )
+        response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
 
         assert response.status_code == 200
         body = response.json()
@@ -214,9 +207,7 @@ class TestEstimateEndpoint:
         )
         await db_session.commit()
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project_id}/classify/estimate"
-        )
+        response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
 
         assert response.status_code == 200
         assert response.json()["candidate_count"] == 1
@@ -378,9 +369,7 @@ class TestTheEstimateFollowsTheConfiguredModel:
         project_id = await _create_project(authenticated_api_client)
         await _add_photo_candidate(db_session, project_id, "a.jpg")
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project_id}/classify/estimate"
-        )
+        response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
 
         assert response.status_code == 200
         body = response.json()
@@ -622,9 +611,7 @@ async def test_the_two_flat_candidate_fields_are_gone(
     project_id = await _create_project(authenticated_api_client)
     await _add_photo_candidate(db_session, project_id, "a.jpg")
 
-    body = (
-        await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
-    ).json()
+    body = (await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")).json()
 
     assert "remote_category_candidate_count" not in body
     assert "landmark_candidate_count" not in body

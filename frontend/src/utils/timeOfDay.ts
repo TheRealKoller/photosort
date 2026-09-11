@@ -123,7 +123,7 @@ function clusterPlaceLabel(place: ClusterPlace | null | undefined): string | nul
  * der Koordinate zu verwechseln.
  */
 export function formatClusterHeading(
-  photos: { taken_at: string; cluster_place?: ClusterPlace | null }[]
+  photos: { taken_at: string; cluster_place?: ClusterPlace | null }[],
 ): {
   dayKey: string
   heading: string
@@ -153,9 +153,7 @@ export function formatClusterHeading(
   const bucketLabel = timeOfDayBucketLabel(hourOf(minIso))
   const timeRange = formatTimeRange(minIso, maxIso)
   const timePart = `${bucketLabel} (${timeRange})`
-  const placeLabel = clusterPlaceLabel(
-    photos.find((photo) => photo.cluster_place)?.cluster_place
-  )
+  const placeLabel = clusterPlaceLabel(photos.find((photo) => photo.cluster_place)?.cluster_place)
   return {
     dayKey,
     heading: placeLabel === null ? timePart : `${placeLabel} · ${timePart}`,

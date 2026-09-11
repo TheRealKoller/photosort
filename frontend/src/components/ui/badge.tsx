@@ -66,7 +66,7 @@ export function Badge({ tone = 'neutral', suggested = false, className, ...props
         data-badge-tone={tone}
         className={cn(
           'inline-flex h-6 min-w-6 items-center justify-center rounded-sm border border-border px-2 text-xs text-text',
-          className
+          className,
         )}
         {...props}
       />
@@ -83,7 +83,7 @@ export function Badge({ tone = 'neutral', suggested = false, className, ...props
       className={cn(
         'inline-flex h-6 min-w-6 items-center justify-center gap-1 rounded-sm px-2 text-xs font-semibold',
         TONE_CLASSES[tone][variant],
-        className
+        className,
       )}
       {...props}
     />

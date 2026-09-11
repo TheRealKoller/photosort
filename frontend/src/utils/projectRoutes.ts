@@ -52,7 +52,11 @@ export const RESERVED_PROJECT_ID_SEGMENTS: ReadonlySet<string> = new Set(['new']
 export function matchProjectId(pathname: string): string | null {
   for (const path of PROJECT_CONTEXT_ROUTE_PATHS) {
     const projectId = matchPath(path, pathname)?.params.projectId
-    if (projectId !== undefined && projectId !== '' && !RESERVED_PROJECT_ID_SEGMENTS.has(projectId)) {
+    if (
+      projectId !== undefined &&
+      projectId !== '' &&
+      !RESERVED_PROJECT_ID_SEGMENTS.has(projectId)
+    ) {
       return projectId
     }
   }
@@ -163,7 +167,7 @@ export function resolveActiveNavTargetId(pathname: string): ProjectNavTargetId |
     return null
   }
   const target = ALL_PROJECT_NAV_TARGETS.find((candidate) =>
-    candidate.activeRoutePaths.some((path) => matchPath(path, pathname) !== null)
+    candidate.activeRoutePaths.some((path) => matchPath(path, pathname) !== null),
   )
   return target?.id ?? null
 }

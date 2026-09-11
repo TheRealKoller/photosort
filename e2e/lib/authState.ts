@@ -56,7 +56,7 @@ export function authStateCoversOrigin(raw: string, origin: string): boolean {
       (eintrag: unknown) =>
         typeof eintrag === 'object' &&
         eintrag !== null &&
-        (eintrag as { name?: unknown }).name === TOKEN_STORAGE_KEY
+        (eintrag as { name?: unknown }).name === TOKEN_STORAGE_KEY,
     )
   })
 }

@@ -81,7 +81,13 @@ export function CurationCandidates({
   return (
     <>
       <div>
-        <Button variant="ghost" size="sm" aria-expanded={expanded} aria-controls={panelId} onClick={onToggle}>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-expanded={expanded}
+          aria-controls={panelId}
+          onClick={onToggle}
+        >
           {expanded
             ? 'Weitere Kandidaten ausblenden'
             : `Weitere Kandidaten laden (${remainingCount})`}
@@ -90,7 +96,11 @@ export function CurationCandidates({
       {expanded && (
         <div id={panelId} className="flex flex-col gap-3">
           {query.isLoading && (
-            <ul role="status" aria-label="Weitere Kandidaten werden geladen…" className={TILE_GRID_CLASS}>
+            <ul
+              role="status"
+              aria-label="Weitere Kandidaten werden geladen…"
+              className={TILE_GRID_CLASS}
+            >
               {Array.from({ length: SKELETON_TILE_COUNT }, (_, index) => (
                 <li key={index} aria-hidden="true">
                   <Skeleton className="aspect-square w-full rounded-md" />
@@ -113,7 +123,7 @@ export function CurationCandidates({
                 // Die Rangfolge kommt vom Server und wird nicht nachsortiert. `curatedRankings`
                 // liefert hier genau EINE Zugehoerigkeit: der Endpunkt setzt `curation_position`
                 // ausschliesslich fuer die angefragte Partition.
-                curatedRankings(photo).map((ranking) => renderTile(photo, ranking))
+                curatedRankings(photo).map((ranking) => renderTile(photo, ranking)),
               )}
             </ul>
           )}

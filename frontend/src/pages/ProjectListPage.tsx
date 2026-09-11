@@ -92,7 +92,9 @@ export function ProjectListPage() {
                     className="flex min-h-11 flex-col justify-center gap-2 px-4 py-3"
                   >
                     <span className="flex min-w-0 flex-col">
-                      <span className="text-lg font-semibold leading-tight text-text-h">{project.name}</span>
+                      <span className="text-lg font-semibold leading-tight text-text-h">
+                        {project.name}
+                      </span>
                       {/* Pfad in Festbreitenschrift und einzeilig gekuerzt (Vorlage): ein
                           Cloud-Pfad ist eine technische Kennung, kein Fliesstext. */}
                       <span className="truncate font-mono text-xs text-text">

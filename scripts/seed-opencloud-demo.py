@@ -118,8 +118,7 @@ async def fetch_drives(client: httpx.AsyncClient, base_url: str) -> list[dict]:
         # payload selbst ist kein JSON-Objekt (z.B. ein Array/String an oberster Ebene) - .get()
         # existiert dann nicht (analoger Fund im Backend-Client, Copilot-Review auf PR #12).
         raise SeedError(
-            "Unerwartete Antwortstruktur der Graph-API-Space-Liste "
-            "(GET /graph/v1.0/me/drives)."
+            "Unerwartete Antwortstruktur der Graph-API-Space-Liste (GET /graph/v1.0/me/drives)."
         ) from exc
     if not isinstance(raw_drives, list):
         # "value" ist zwar vorhanden, aber kein Array (z.B. explizit null) - payload.get(...)
@@ -311,9 +310,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--username", default=os.environ.get("OPENCLOUD_USERNAME", "alan"))
     parser.add_argument("--app-token", default=os.environ.get("OPENCLOUD_APP_TOKEN", "demo"))
-    parser.add_argument(
-        "--drive-name", default=os.environ.get("OPENCLOUD_DRIVE_NAME") or None
-    )
+    parser.add_argument("--drive-name", default=os.environ.get("OPENCLOUD_DRIVE_NAME") or None)
     parser.add_argument("--folder-name", default="PhotoSort Demo")
     parser.add_argument("--photos-dir", default=str(DEFAULT_PHOTOS_DIR))
     parser.add_argument("--max-wait-attempts", type=int, default=DEFAULT_MAX_WAIT_ATTEMPTS)

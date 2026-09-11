@@ -85,9 +85,7 @@ def suchraum() -> dict[str, str]:
     )
     pfade = [pfad.decode("utf-8") for pfad in ergebnis.stdout.split(b"\0") if pfad]
     return {
-        pfad: (REPO_WURZEL / pfad).read_text(encoding="utf-8")
-        for pfad in pfade
-        if pfad != SELBST
+        pfad: (REPO_WURZEL / pfad).read_text(encoding="utf-8") for pfad in pfade if pfad != SELBST
     }
 
 

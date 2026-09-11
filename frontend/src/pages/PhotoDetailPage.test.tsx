@@ -80,7 +80,7 @@ function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
 }
 
 function cloudVisionStatusEntry(
-  overrides: Partial<CloudVisionStatusOut> = {}
+  overrides: Partial<CloudVisionStatusOut> = {},
 ): CloudVisionStatusOut {
   return {
     phase: 'landmark',
@@ -105,7 +105,7 @@ function renderPage(initialPath: string) {
         <Route path="/projects/:projectId/photos/:photoId" element={<PhotoDetailPage />} />
       </Routes>
     </MemoryRouter>,
-    { wrapper }
+    { wrapper },
   )
 }
 
@@ -186,7 +186,7 @@ describe('PhotoDetailPage', () => {
 
     expect(photosApi.listPhotos).toHaveBeenCalledWith(
       1,
-      expect.objectContaining({ ratingStatus: undefined })
+      expect.objectContaining({ ratingStatus: undefined }),
     )
   })
 
@@ -239,24 +239,27 @@ describe('PhotoDetailPage', () => {
     ['1', 'favorite', 'Favorit'],
     ['2', 'album_worthy', 'Album-würdig'],
     ['3', 'rejected', 'Verwerfen'],
-  ] as const)('sets the rating of key "%s" and shows that very key on its button', async (key, status, label) => {
-    const list: PhotoListOut = { items: [photo({ id: 1 }), photo({ id: 2 })], total: 2 }
-    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
-    vi.mocked(ratingsApi.setRating).mockResolvedValue({
-      user_id: 1,
-      username: 'testuser',
-      status,
-    })
-    const user = userEvent.setup()
+  ] as const)(
+    'sets the rating of key "%s" and shows that very key on its button',
+    async (key, status, label) => {
+      const list: PhotoListOut = { items: [photo({ id: 1 }), photo({ id: 2 })], total: 2 }
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+      vi.mocked(ratingsApi.setRating).mockResolvedValue({
+        user_id: 1,
+        username: 'testuser',
+        status,
+      })
+      const user = userEvent.setup()
 
-    renderPage('/projects/1/photos/1')
-    await screen.findByText('1/2')
+      renderPage('/projects/1/photos/1')
+      await screen.findByText('1/2')
 
-    await user.keyboard(key)
+      await user.keyboard(key)
 
-    expect(ratingsApi.setRating).toHaveBeenCalledWith(1, status)
-    expect(screen.getByRole('button', { name: label })).toHaveTextContent(key)
-  })
+      expect(ratingsApi.setRating).toHaveBeenCalledWith(1, status)
+      expect(screen.getByRole('button', { name: label })).toHaveTextContent(key)
+    },
+  )
 
   it('toggles an existing rating back to unrated when the same button is clicked again', async () => {
     const list: PhotoListOut = {
@@ -300,7 +303,9 @@ describe('PhotoDetailPage', () => {
 
     await user.click(screen.getByRole('button', { name: /favorit/i }))
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/keine weiteren unbewerteten fotos/i)
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      /keine weiteren unbewerteten fotos/i,
+    )
   })
 
   /*
@@ -326,18 +331,18 @@ describe('PhotoDetailPage', () => {
 
     await user.click(screen.getByRole('button', { name: /favorit/i }))
     expect(await screen.findByRole('status')).toHaveTextContent(
-      /keine weiteren unbewerteten fotos/i
+      /keine weiteren unbewerteten fotos/i,
     )
 
     // Der Grid-Link bewahrt den aktiven Filter - genau das unterscheidet ihn vom Kopfzeilenziel
     // "Fotos", das immer auf die ungefilterte Liste zeigt.
     expect(screen.getByRole('link', { name: 'Zurück zum Grid' })).toHaveAttribute(
       'href',
-      '/projects/1/photos?filter=unrated'
+      '/projects/1/photos?filter=unrated',
     )
     expect(screen.getByRole('link', { name: 'Zur Vergleichsansicht' })).toHaveAttribute(
       'href',
-      '/projects/1/compare'
+      '/projects/1/compare',
     )
   })
 
@@ -505,9 +510,11 @@ describe('PhotoDetailPage', () => {
       renderPage('/projects/1/photos/1')
 
       const section = await screen.findByTestId('criterion-details-section')
-      expect(within(section).getByRole('heading', { name: 'Qualität', level: 3 })).toBeInTheDocument()
       expect(
-        within(section).getByRole('heading', { name: 'Kategorien', level: 3 })
+        within(section).getByRole('heading', { name: 'Qualität', level: 3 }),
+      ).toBeInTheDocument()
+      expect(
+        within(section).getByRole('heading', { name: 'Kategorien', level: 3 }),
       ).toBeInTheDocument()
     })
 
@@ -538,7 +545,7 @@ describe('PhotoDetailPage', () => {
 
       await screen.findByText('Schärfe')
       expect(
-        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' })
+        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' }),
       ).not.toBeInTheDocument()
     })
 
@@ -724,7 +731,7 @@ describe('PhotoDetailPage', () => {
         .sort((a, b) =>
           (a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
             ? -1
-            : 1
+            : 1,
         )
         .map((handle) => handle.name)
     }
@@ -810,7 +817,7 @@ describe('PhotoDetailPage', () => {
       expect(within(info).queryByRole('button')).not.toBeInTheDocument()
       // Gegenprobe: im Bedienteil steht das <details> unveraendert weiter.
       expect(
-        screen.getByTestId('category-controls-section').querySelector('details')
+        screen.getByTestId('category-controls-section').querySelector('details'),
       ).not.toBeNull()
     })
 
@@ -822,7 +829,7 @@ describe('PhotoDetailPage', () => {
       const info = await screen.findByTestId('criterion-details-section')
       expect(within(info).getByText('Urlaub')).toBeInTheDocument()
       expect(
-        within(screen.getByTestId('category-controls-section')).queryByText('Urlaub')
+        within(screen.getByTestId('category-controls-section')).queryByText('Urlaub'),
       ).not.toBeInTheDocument()
     })
 
@@ -980,7 +987,7 @@ describe('PhotoDetailPage', () => {
       await user.click(within(controls).getByRole('button', { name: /^übernehmen$/i }))
 
       await waitFor(() =>
-        expect(within(controls).getByRole('button', { name: /^übernehmen$/i })).toBeDisabled()
+        expect(within(controls).getByRole('button', { name: /^übernehmen$/i })).toBeDisabled(),
       )
       expect(screen.getByRole('button', { name: /favorit/i })).toBeEnabled()
       expect(screen.getByRole('button', { name: 'Verwerfen' })).toBeEnabled()

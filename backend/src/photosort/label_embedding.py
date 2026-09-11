@@ -42,9 +42,7 @@ LABEL_EMBEDDER_ONNX_PATH = Path(__file__).parent / "assets" / "label_embedder.on
 LABEL_EMBEDDER_TOKENIZER_PATH = Path(__file__).parent / "assets" / "label_embedder_tokenizer.json"
 
 LABEL_EMBEDDER_ONNX_SHA256 = "d6ea442ff6a891daefed7c83b2f596fc5dc66bf697e4d006236f64f34bbcf4c8"
-LABEL_EMBEDDER_TOKENIZER_SHA256 = (
-    "b60b6b43406a48bf3638526314f3d232d97058bc93472ff2de930d43686fa441"
-)
+LABEL_EMBEDDER_TOKENIZER_SHA256 = "b60b6b43406a48bf3638526314f3d232d97058bc93472ff2de930d43686fa441"
 
 # hidden_size des Basismodells (config.json, verifiziert vor dem Commit) - 384-dimensionale
 # Sentence-Embeddings, ADR 0032 Punkt 4.
@@ -117,9 +115,7 @@ def build_label_embedder() -> LabelEmbedderLike:
             }
             outputs = session.run(None, feed)
             last_hidden_state = outputs[0][0]
-            return _mean_pool_and_normalize(
-                last_hidden_state.tolist(), encoding.attention_mask
-            )
+            return _mean_pool_and_normalize(last_hidden_state.tolist(), encoding.attention_mask)
 
     embedder: LabelEmbedderLike = _OnnxLabelEmbedder()
     return embedder

@@ -1,5 +1,11 @@
 import { apiFetch, apiFetchBlob } from './client'
-import type { CategoryKey, CategoryOverrideOut, PhotoListOut, PhotoVariant, RatingFilter } from './types'
+import type {
+  CategoryKey,
+  CategoryOverrideOut,
+  PhotoListOut,
+  PhotoVariant,
+  RatingFilter,
+} from './types'
 
 export interface ListPhotosParams {
   ratingStatus?: RatingFilter
@@ -23,7 +29,7 @@ export interface ListCurationCandidatesParams {
 
 export function listPhotos(
   projectId: number,
-  params: ListPhotosParams = {}
+  params: ListPhotosParams = {},
 ): Promise<PhotoListOut> {
   const query = new URLSearchParams()
   if (params.ratingStatus !== undefined) {
@@ -40,7 +46,7 @@ export function listPhotos(
   }
   const queryString = query.toString()
   return apiFetch<PhotoListOut>(
-    `/projects/${projectId}/photos${queryString ? `?${queryString}` : ''}`
+    `/projects/${projectId}/photos${queryString ? `?${queryString}` : ''}`,
   )
 }
 
@@ -55,7 +61,7 @@ export function listPhotos(
  */
 export function listCurationCandidates(
   projectId: number,
-  params: ListCurationCandidatesParams
+  params: ListCurationCandidatesParams,
 ): Promise<PhotoListOut> {
   const query = new URLSearchParams({
     cluster_key: params.clusterKey,
@@ -79,7 +85,7 @@ export function listCurationCandidates(
  */
 export async function fetchPhotoImageBlobUrl(
   photoId: number,
-  variant: PhotoVariant
+  variant: PhotoVariant,
 ): Promise<string> {
   const blob = await apiFetchBlob(`/photos/${photoId}/image?variant=${variant}`)
   return URL.createObjectURL(blob)
@@ -89,7 +95,7 @@ export async function fetchPhotoImageBlobUrl(
 // 6.3: der gesetzte Wert wird direkt zurueckgegeben (analog PUT /photos/{id}/rating).
 export function setCategoryOverride(
   photoId: number,
-  categoryKey: CategoryKey
+  categoryKey: CategoryKey,
 ): Promise<CategoryOverrideOut> {
   return apiFetch<CategoryOverrideOut>(`/photos/${photoId}/category-override`, {
     method: 'PUT',

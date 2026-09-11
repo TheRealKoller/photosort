@@ -36,9 +36,7 @@ describe('api/opencloud', () => {
 
     await browseFolder('Costa Rica/Sub Folder')
 
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/opencloud/browse?path=Costa%20Rica%2FSub%20Folder'
-    )
+    expect(apiFetch).toHaveBeenCalledWith('/opencloud/browse?path=Costa%20Rica%2FSub%20Folder')
   })
 
   it('fetches folder counts for the root level when called without a path', async () => {
@@ -64,7 +62,7 @@ describe('api/opencloud', () => {
     await fetchFolderCounts('Costa Rica/Sub Folder')
 
     expect(apiFetch).toHaveBeenCalledWith(
-      '/opencloud/folder-counts?path=Costa%20Rica%2FSub%20Folder'
+      '/opencloud/folder-counts?path=Costa%20Rica%2FSub%20Folder',
     )
   })
 })

@@ -12,10 +12,5 @@ import { cn } from '../../lib/utils'
  * stapeln, ohne unruhig zu wirken.
  */
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn('rounded-lg border border-border bg-elevated', className)}
-      {...props}
-    />
-  )
+  return <div className={cn('rounded-lg border border-border bg-elevated', className)} {...props} />
 }

@@ -48,7 +48,7 @@ function curationCandidatesQueryKey(
   projectId: number,
   clusterKey: string,
   categoryKey: string,
-  afterRank: number
+  afterRank: number,
 ) {
   return ['photos', projectId, 'curate', 'candidates', clusterKey, categoryKey, afterRank] as const
 }
@@ -64,7 +64,13 @@ export interface CurationCandidatesQueryParams {
 
 export function useCurationCandidatesQuery(
   projectId: number,
-  { clusterKey, categoryKey, afterRank, enabled, pageSize = PHOTOS_PAGE_SIZE }: CurationCandidatesQueryParams
+  {
+    clusterKey,
+    categoryKey,
+    afterRank,
+    enabled,
+    pageSize = PHOTOS_PAGE_SIZE,
+  }: CurationCandidatesQueryParams,
 ) {
   return useInfiniteQuery({
     queryKey: curationCandidatesQueryKey(projectId, clusterKey, categoryKey, afterRank),
@@ -90,7 +96,7 @@ export function useCurationCandidatesQuery(
 export function usePhotoSequenceQuery(
   projectId: number,
   ratingStatus?: RatingFilter,
-  pageSize: number = PHOTOS_PAGE_SIZE
+  pageSize: number = PHOTOS_PAGE_SIZE,
 ) {
   return useInfiniteQuery({
     queryKey: photosQueryKey(projectId, ratingStatus),

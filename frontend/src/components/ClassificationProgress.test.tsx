@@ -67,10 +67,7 @@ describe('ClassificationProgress: die Teilschrittliste', () => {
     render(<ClassificationProgress run={run({ cloud_requested: false, cloud_phases: [] })} />)
 
     const items = screen.getAllByRole('listitem')
-    expect(items.map((item) => item.getAttribute('data-step-id'))).toEqual([
-      'criteria',
-      'ranking',
-    ])
+    expect(items.map((item) => item.getAttribute('data-step-id'))).toEqual(['criteria', 'ranking'])
   })
 
   it('benennt die Sehenswürdigkeits-Erkennung als eigenen Teilschritt', () => {
@@ -86,7 +83,7 @@ describe('ClassificationProgress: die Teilschrittliste', () => {
           phase: 'ranking',
           cloud_phases: [cloudPhase(), cloudPhase({ purpose: 'landmark', photos_total: 6 })],
         })}
-      />
+      />,
     )
 
     // Drei Balken im Cloud-Lauf: remote_categories, criteria, landmark - nicht ranking.
@@ -108,9 +105,7 @@ describe('ClassificationProgress: Zustände als Text', () => {
 
   it('schreibt "übersprungen" aus, wenn ein angeforderter Cloud-Schritt keine Spur hinterließ', () => {
     render(
-      <ClassificationProgress
-        run={run({ status: 'success', phase: null, cloud_phases: [] })}
-      />
+      <ClassificationProgress run={run({ status: 'success', phase: null, cloud_phases: [] })} />,
     )
 
     expect(stepRow('landmark')).toHaveTextContent('übersprungen')
@@ -154,7 +149,7 @@ describe('ClassificationProgress: der laufende Cloud-Teilschritt', () => {
           phase: 'remote_categories',
           cloud_phases: [cloudPhase({ model: 'ein-entferntes-modell', provider: null })],
         })}
-      />
+      />,
     )
 
     const row = stepRow('remote_categories')
@@ -170,9 +165,7 @@ describe('ClassificationProgress: eigene Fortschrittsquellen je Teilschritt', ()
       phase: 'landmark',
       photos_total: 10,
       photos_processed: 10,
-      cloud_phases: [
-        cloudPhase({ purpose: 'landmark', photos_total: 6, photos_processed: 1 }),
-      ],
+      cloud_phases: [cloudPhase({ purpose: 'landmark', photos_total: 6, photos_processed: 1 })],
     })
     const { rerender } = render(<ClassificationProgress run={before} />)
     const criteriaBefore = stepRow('criteria').textContent
@@ -181,11 +174,9 @@ describe('ClassificationProgress: eigene Fortschrittsquellen je Teilschritt', ()
       <ClassificationProgress
         run={{
           ...before,
-          cloud_phases: [
-            cloudPhase({ purpose: 'landmark', photos_total: 6, photos_processed: 4 }),
-          ],
+          cloud_phases: [cloudPhase({ purpose: 'landmark', photos_total: 6, photos_processed: 4 })],
         }}
-      />
+      />,
     )
 
     expect(stepRow('landmark')).toHaveTextContent('4/6')
@@ -202,7 +193,7 @@ describe('ClassificationProgress: eigene Fortschrittsquellen je Teilschritt', ()
           photos_total: 0,
           photos_processed: 0,
         })}
-      />
+      />,
     )
 
     const bar = screen.getByRole('progressbar') as HTMLProgressElement
@@ -222,7 +213,7 @@ describe('ClassificationProgress: eigene Fortschrittsquellen je Teilschritt', ()
           photos_total: 8,
           photos_processed: null as unknown as number,
         })}
-      />
+      />,
     )
 
     const bar = screen.getAllByRole('progressbar')[0] as HTMLProgressElement

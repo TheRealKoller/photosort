@@ -332,9 +332,7 @@ MISTRAL_API_KEY = "mistral-test-key-not-a-real-secret"
 
 def _mistral_success_response(name: str | None, confidence: float) -> httpx.Response:
     payload = {
-        "choices": [
-            {"message": {"content": json.dumps({"name": name, "confidence": confidence})}}
-        ]
+        "choices": [{"message": {"content": json.dumps({"name": name, "confidence": confidence})}}]
     }
     return httpx.Response(200, json=payload)
 
@@ -501,7 +499,8 @@ async def test_mistral_detect_raises_landmark_api_error_when_name_is_not_a_strin
 
 async def test_mistral_aclose_closes_the_underlying_http_client() -> None:
     client = MistralLandmarkClient(
-        api_key=MISTRAL_API_KEY, model=MISTRAL_VISION_MODEL,
+        api_key=MISTRAL_API_KEY,
+        model=MISTRAL_VISION_MODEL,
         transport=httpx.MockTransport(lambda r: _mistral_success_response("x", 0.1)),
         throttle=_no_throttle(),
     )
@@ -511,7 +510,8 @@ async def test_mistral_aclose_closes_the_underlying_http_client() -> None:
 
 async def test_mistral_timeout_is_applied_to_the_underlying_http_client() -> None:
     client = MistralLandmarkClient(
-        api_key=MISTRAL_API_KEY, model=MISTRAL_VISION_MODEL,
+        api_key=MISTRAL_API_KEY,
+        model=MISTRAL_VISION_MODEL,
         transport=httpx.MockTransport(lambda r: _mistral_success_response("x", 0.1)),
         throttle=_no_throttle(),
     )
@@ -572,6 +572,7 @@ class TestAnthropicClientFillsUsage:
     async def test_a_response_without_usage_still_yields_a_successful_detection(self) -> None:
         """ADR 0051 Punkt 1: eine fehlende Abrechnungsangabe darf die Erkennung nie scheitern
         lassen - das Ergebnis bleibt gueltig, nur `usage` ist `None`."""
+
         def handler(request: httpx.Request) -> httpx.Response:
             return _success_response("Dom", 0.8)
 
@@ -588,11 +589,7 @@ class TestMistralClientFillsUsage:
                 200,
                 json={
                     "choices": [
-                        {
-                            "message": {
-                                "content": json.dumps({"name": "Dom", "confidence": 0.8})
-                            }
-                        }
+                        {"message": {"content": json.dumps({"name": "Dom", "confidence": 0.8})}}
                     ],
                     # Mistral benennt die Felder anders als Anthropic - genau das ist die Stelle,
                     # an der eine Verwechslung still 0 Tokens erzeugen wuerde.
@@ -611,11 +608,7 @@ class TestMistralClientFillsUsage:
                 200,
                 json={
                     "choices": [
-                        {
-                            "message": {
-                                "content": json.dumps({"name": None, "confidence": 0.0})
-                            }
-                        }
+                        {"message": {"content": json.dumps({"name": None, "confidence": 0.0})}}
                     ]
                 },
             )
@@ -663,9 +656,7 @@ class TestConfiguredModelReachesTheRequest:
             return httpx.Response(
                 200,
                 json={
-                    "choices": [
-                        {"message": {"content": '{"name": null, "confidence": 0.0}'}}
-                    ],
+                    "choices": [{"message": {"content": '{"name": null, "confidence": 0.0}'}}],
                 },
             )
 
@@ -699,9 +690,7 @@ class TestTheLandmarkClientsSitOutARateLimit:
 
     async def test_anthropic_retries_a_429_and_returns_the_following_result(self) -> None:
         waits: list[float] = []
-        transport = self._responses(
-            [httpx.Response(429), _success_response("Eiffelturm", 0.87)]
-        )
+        transport = self._responses([httpx.Response(429), _success_response("Eiffelturm", 0.87)])
         client = _client(transport, _recording_throttle(waits))
 
         detection = await client.detect(IMAGE_BYTES, "image/jpeg")
@@ -788,9 +777,7 @@ class TestLandmarkNameSanitisation:
     def test_control_and_format_characters_are_stripped_at_the_source(self) -> None:
         """Escapetes Rendering im Frontend schuetzt gegen XSS, aber weder gegen optische
         Verfaelschung durch Bidi-/Zero-Width-Zeichen noch gegen mehrzeilige Logeintraege."""
-        detection = _landmark_detection_from_json(
-            {"name": "Eiffel‮turm​", "confidence": 0.9}
-        )
+        detection = _landmark_detection_from_json({"name": "Eiffel‮turm​", "confidence": 0.9})
 
         assert detection.name == "Eiffelturm"
 

@@ -60,7 +60,7 @@ test('geoeffnete Popover bleiben vollstaendig im Sichtbereich', async ({ page })
       elements.map((element) => {
         const rect = element.getBoundingClientRect()
         return { centerX: rect.x + rect.width / 2, width: rect.width }
-      })
+      }),
     )
     const viewportWidth = viewport!.width
     const distances = boxes.map((box) => Math.min(box.centerX, viewportWidth - box.centerX))
@@ -80,7 +80,7 @@ test('geoeffnete Popover bleiben vollstaendig im Sichtbereich', async ({ page })
     const edgeDistance = Math.min(triggerCenterX, viewportWidth - triggerCenterX)
     expect(
       edgeDistance,
-      `Abstand des gewaehlten Triggers auf "${route.label}" zum naechsten Viewport-Rand`
+      `Abstand des gewaehlten Triggers auf "${route.label}" zum naechsten Viewport-Rand`,
     ).toBeLessThan(POPOVER_WIDTH / 2)
 
     await trigger.click()
@@ -99,16 +99,16 @@ test('geoeffnete Popover bleiben vollstaendig im Sichtbereich', async ({ page })
     expect(x, `linke Kante des Popovers auf "${route.label}"`).toBeGreaterThanOrEqual(-TOLERANCE)
     expect(y, `obere Kante des Popovers auf "${route.label}"`).toBeGreaterThanOrEqual(-TOLERANCE)
     expect(x + width, `rechte Kante des Popovers auf "${route.label}"`).toBeLessThanOrEqual(
-      viewportWidth + TOLERANCE
+      viewportWidth + TOLERANCE,
     )
     expect(y + height, `untere Kante des Popovers auf "${route.label}"`).toBeLessThanOrEqual(
-      viewport!.height + TOLERANCE
+      viewport!.height + TOLERANCE,
     )
 
     // Die Hoehenschranke des Panels (`max-h-[60vh]`) - ohne sie koennte ein langer Inhalt das
     // Panel ueber die gesamte Seitenhoehe ziehen, statt in sich zu scrollen.
     expect(height, `Hoehenanteil des Popovers auf "${route.label}"`).toBeLessThanOrEqual(
-      viewport!.height * MAX_HEIGHT_SHARE + TOLERANCE
+      viewport!.height * MAX_HEIGHT_SHARE + TOLERANCE,
     )
 
     await page.keyboard.press('Escape')

@@ -61,7 +61,7 @@ function StepLabel({ label, auspraegung }: { label: string; auspraegung: StepMar
         // Zustandsangabe steht im aria-label, es geht keine Information verloren.
         auspraegung === 'blockiert' && 'text-text-muted',
         (auspraegung === 'erledigt' || auspraegung === 'ausstehend') &&
-          'text-text group-hover:text-text-h'
+          'text-text group-hover:text-text-h',
       )}
     >
       {label}

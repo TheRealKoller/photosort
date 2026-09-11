@@ -110,10 +110,7 @@ def rank_photos(
             score = 0.0
         else:
             score = (
-                sum(
-                    criterion_values[key] * weight
-                    for key, weight in applicable_weights.items()
-                )
+                sum(criterion_values[key] * weight for key, weight in applicable_weights.items())
                 / total_weight
             )
         scored.append((photo_id, score))

@@ -53,7 +53,7 @@ export function PopoverContent({
           // ist genau der Wert, den Radix bei der Kollisionsvermeidung ohnehin misst; das
           // Minimum aus beiden haelt die Board-Schranke UND den Sichtbereich ein.
           'z-50 max-h-[min(60vh,var(--radix-popover-content-available-height))] w-72 overflow-y-auto rounded-md border border-border bg-elevated p-4 text-sm text-text',
-          className
+          className,
         )}
         {...props}
       />

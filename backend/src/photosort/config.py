@@ -186,9 +186,10 @@ class Settings(BaseSettings):
         Worker statt eines fehlgeschlagenen Laufs. Getragen wird das von zwei Seiten: `ge=0`
         schließt negative Werte aus, und die Voreinstellungstabelle enthält (per Test erzwungen)
         für jeden wählbaren Anbieter einen Wert > 0."""
-        return self.cloud_vision_requests_per_minute or DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER[
-            provider
-        ]
+        return (
+            self.cloud_vision_requests_per_minute
+            or DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER[provider]
+        )
 
 
 settings = Settings()

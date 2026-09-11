@@ -83,9 +83,7 @@ function getFrontierStepId(states: PipelineStepState[]): StepId {
     return frontier.id
   }
   const reachableSteps = states.filter((step) => step.isReachable)
-  return reachableSteps.length > 0
-    ? reachableSteps[reachableSteps.length - 1].id
-    : FALLBACK_STEP_ID
+  return reachableSteps.length > 0 ? reachableSteps[reachableSteps.length - 1].id : FALLBACK_STEP_ID
 }
 
 export function getDefaultStepId(states: PipelineStepState[]): StepId {

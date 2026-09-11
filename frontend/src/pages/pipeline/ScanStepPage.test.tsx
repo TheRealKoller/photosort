@@ -51,7 +51,9 @@ function scan(overrides: Partial<ScanSummary> = {}): ScanSummary {
 // ProjectPipelineLayout ueber <Outlet context={...}/> liefern wuerde, ohne die volle Layout-
 // Guard-/Ladelogik erneut mitzurendern.
 function OutletHost({ project: contextProject, refetchProject }: PipelineOutletContext) {
-  return <Outlet context={{ project: contextProject, refetchProject } satisfies PipelineOutletContext} />
+  return (
+    <Outlet context={{ project: contextProject, refetchProject } satisfies PipelineOutletContext} />
+  )
 }
 
 function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
@@ -70,7 +72,7 @@ function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
           </Route>
         </Routes>
       </MemoryRouter>,
-      { wrapper }
+      { wrapper },
     ),
     refetchProject,
   }
@@ -114,12 +116,16 @@ describe('ScanStepPage', () => {
 
     await user.click(screen.getByRole('button', { name: /aktualisieren/i }))
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled(),
+    )
     expect(await screen.findByRole('alert')).toHaveTextContent('Serverfehler')
   })
 
   it('shows "Dateien werden gezählt…" with an indeterminate progress bar during the enumeration phase', () => {
-    renderPage(project({ last_scan: scan({ status: 'running', total_files: null, files_found: 5 }) }))
+    renderPage(
+      project({ last_scan: scan({ status: 'running', total_files: null, files_found: 5 }) }),
+    )
 
     expect(screen.getByText('Dateien werden gezählt…')).toBeInTheDocument()
     const progress = screen.getByRole('progressbar') as HTMLProgressElement
@@ -137,7 +143,9 @@ describe('ScanStepPage', () => {
   })
 
   it('throttles the aria-live announcement to 10%-steps during the processing phase', () => {
-    renderPage(project({ last_scan: scan({ status: 'running', total_files: 100, files_found: 34 }) }))
+    renderPage(
+      project({ last_scan: scan({ status: 'running', total_files: 100, files_found: 34 }) }),
+    )
 
     const liveRegion = screen.getByText(/30% verarbeitet/i)
     expect(liveRegion).toHaveAttribute('aria-live', 'polite')
@@ -148,13 +156,15 @@ describe('ScanStepPage', () => {
     'shows an indeterminate progress bar instead of an invalid max=0 for an empty project ' +
       '(total_files === 0, already processing phase, not enumeration)',
     () => {
-      renderPage(project({ last_scan: scan({ status: 'running', total_files: 0, files_found: 0 }) }))
+      renderPage(
+        project({ last_scan: scan({ status: 'running', total_files: 0, files_found: 0 }) }),
+      )
 
       expect(screen.getByText('0 von 0 Dateien verarbeitet')).toBeInTheDocument()
       const progress = screen.getByRole('progressbar') as HTMLProgressElement
       expect(progress.hasAttribute('value')).toBe(false)
       expect(progress.hasAttribute('max')).toBe(false)
-    }
+    },
   )
 
   it('shows the five-stat summary once the scan succeeded, with two initially-collapsed disclosures', () => {
@@ -169,7 +179,7 @@ describe('ScanStepPage', () => {
           files_skipped: 2,
           files_found: 16,
         }),
-      })
+      }),
     )
 
     expect(screen.getByText('Erfolgreich')).toBeInTheDocument()
@@ -183,8 +193,12 @@ describe('ScanStepPage', () => {
     const user = userEvent.setup()
     renderPage(
       project({
-        last_scan: scan({ status: 'success', finished_at: '2026-07-20T10:05:00Z', photos_removed: 3 }),
-      })
+        last_scan: scan({
+          status: 'success',
+          finished_at: '2026-07-20T10:05:00Z',
+          photos_removed: 3,
+        }),
+      }),
     )
 
     const summary = screen.getByText('Entfernt')
@@ -197,7 +211,7 @@ describe('ScanStepPage', () => {
     renderPage(
       project({
         last_scan: scan({ status: 'failed', error_message: 'OpenCloud nicht erreichbar' }),
-      })
+      }),
     )
 
     expect(screen.getByText('OpenCloud nicht erreichbar')).toBeInTheDocument()

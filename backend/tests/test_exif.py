@@ -306,9 +306,7 @@ def test_no_coordinate_value_ever_reaches_the_log(caplog: pytest.LogCaptureFixtu
     Logzeile ist eine schwaecher geschuetzte, laenger lebende Oberflaeche als die Datenbank. Die
     Zeile traegt ausschliesslich ein FESTES Grund-Token und die `photo_id` - weder der akzeptierte
     noch der verworfene Rohwert."""
-    jpeg_bytes = _make_jpeg_with_gps(
-        {1: "N", 2: _dms(91, 0, 0.0), 3: "E", 4: _dms(179, 12, 55.8)}
-    )
+    jpeg_bytes = _make_jpeg_with_gps({1: "N", 2: _dms(91, 0, 0.0), 3: "E", 4: _dms(179, 12, 55.8)})
 
     with caplog.at_level(logging.WARNING):
         assert extract_gps(jpeg_bytes, photo_id=4711) is None

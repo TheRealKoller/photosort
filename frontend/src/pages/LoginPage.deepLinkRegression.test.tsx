@@ -55,7 +55,7 @@ function renderWithDeepLinkState() {
         <Route path="/login" element={<LoginRoute />} />
       </Routes>
     </MemoryRouter>,
-    { wrapper }
+    { wrapper },
   )
 }
 

@@ -314,9 +314,7 @@ async def test_a_missing_cache_directory_is_not_an_error(
     with caplog.at_level("INFO", logger=_LOGGER_NAME):
         result = await cleanup_orphaned_cache(db_session, tmp_path / "gibt-es-nicht")
 
-    assert result == CacheSweepResult(
-        deleted_files=0, freed_bytes=0, failed_files=0, kept_recent=0
-    )
+    assert result == CacheSweepResult(deleted_files=0, freed_bytes=0, failed_files=0, kept_recent=0)
     assert [record.name for record in caplog.records if record.name == _LOGGER_NAME] == [
         _LOGGER_NAME
     ]

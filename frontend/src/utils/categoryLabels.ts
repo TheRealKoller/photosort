@@ -77,7 +77,7 @@ export function categoryAbbreviation(categoryKey: CategoryKey, categories: Categ
  */
 export function sortCategoryKeys(
   categoryKeys: readonly CategoryKey[],
-  categories: CategorySet
+  categories: CategorySet,
 ): CategoryKey[] {
   const registryOrder = new Map<string, number>()
   categories.forEach((entry, index) => registryOrder.set(entry.key, index))

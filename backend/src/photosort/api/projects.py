@@ -535,8 +535,11 @@ async def _count_landmark_candidates(session: AsyncSession, project_id: int) -> 
     )
     rows = (
         await session.execute(
-            select(PhotoCriterionScore.photo_id, PhotoCriterionScore.criterion_key,
-                   PhotoCriterionScore.value)
+            select(
+                PhotoCriterionScore.photo_id,
+                PhotoCriterionScore.criterion_key,
+                PhotoCriterionScore.value,
+            )
             .join(Photo, Photo.id == PhotoCriterionScore.photo_id)
             .join(PhotoScore, PhotoScore.photo_id == Photo.id)
             .where(
@@ -624,9 +627,7 @@ async def list_projects(session: AsyncSession = Depends(get_session)) -> list[Pr
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
-async def get_project(
-    project_id: int, session: AsyncSession = Depends(get_session)
-) -> ProjectOut:
+async def get_project(project_id: int, session: AsyncSession = Depends(get_session)) -> ProjectOut:
     project = await _get_project_or_404(project_id, session)
     return await _to_project_out(session, project)
 
@@ -710,9 +711,7 @@ async def delete_project(
     # Fehlertext (er enthaelt den absoluten Cache-Pfad, also interne Deployment-Struktur) gehoert
     # ins Log, nie in die Antwort.
     try:
-        await asyncio.to_thread(
-            delete_cached_variants, Path(settings.photo_cache_dir), cache_keys
-        )
+        await asyncio.to_thread(delete_cached_variants, Path(settings.photo_cache_dir), cache_keys)
     except Exception:
         logger.warning(
             "Cache-Cleanup nach dem Loeschen von Projekt %s fehlgeschlagen - die Datenloeschung "
@@ -1020,8 +1019,10 @@ async def list_fine_labels(
             .join(Photo, Photo.id == PhotoFineLabel.photo_id)
             .where(Photo.project_id == project_id)
             .group_by(FineLabel.id, FineLabel.canonical_key, FineLabel.display_name)
-            .order_by(func.count(func.distinct(PhotoFineLabel.photo_id)).desc(),
-                      FineLabel.canonical_key.asc())
+            .order_by(
+                func.count(func.distinct(PhotoFineLabel.photo_id)).desc(),
+                FineLabel.canonical_key.asc(),
+            )
         )
     ).all()
 

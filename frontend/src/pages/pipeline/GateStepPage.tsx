@@ -43,7 +43,9 @@ export function GateStepPage() {
 
       {gateConfirmedAt === null && (
         <Button asChild variant="secondary" size="sm">
-          <Link to={`/projects/${project.id}/photos?filter=suggested&gate=1`}>Ausschuss sichten</Link>
+          <Link to={`/projects/${project.id}/photos?filter=suggested&gate=1`}>
+            Ausschuss sichten
+          </Link>
         </Button>
       )}
     </section>

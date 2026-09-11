@@ -170,9 +170,7 @@ def anthropic_response_to_json(payload: Any, error_class: type[Exception]) -> An
     except (KeyError, TypeError, StopIteration, ValueError, json.JSONDecodeError) as exc:
         # SICHERHEIT: bewusst generische Meldung OHNE die rohe Antwort - keine Base64-Bilddaten
         # und kein Key in der Fehlermeldung.
-        raise error_class(
-            "Unerwartete Antwortstruktur der Anthropic Messages API."
-        ) from exc
+        raise error_class("Unerwartete Antwortstruktur der Anthropic Messages API.") from exc
 
 
 def mistral_response_to_json(payload: Any, error_class: type[Exception]) -> Any:
@@ -184,9 +182,7 @@ def mistral_response_to_json(payload: Any, error_class: type[Exception]) -> Any:
         text = payload["choices"][0]["message"]["content"]
         return json.loads(text)
     except (KeyError, TypeError, IndexError, ValueError, json.JSONDecodeError) as exc:
-        raise error_class(
-            "Unerwartete Antwortstruktur der Mistral Chat Completions API."
-        ) from exc
+        raise error_class("Unerwartete Antwortstruktur der Mistral Chat Completions API.") from exc
 
 
 # Ab hier: der REALE Token-Verbrauch, den beide Provider in jeder Antwort mitliefern. Er

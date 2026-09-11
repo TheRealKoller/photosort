@@ -272,6 +272,7 @@ _UEBERSCHRIFT = re.compile(r"^#{2,3}\s+(?P<titel>.+?)\s*$", re.MULTILINE)
 # nennt den Marker nicht und zaehlt nicht mit.
 AUDIT_MARKER = "Skip-/Perspektiven-Set des vorigen Features"
 
+
 @dataclass(frozen=True)
 class Fund:
     """Ein einzelnes Vorkommen eines GitHub-Zugriffs, so wie es in einer Datei steht."""
@@ -395,9 +396,7 @@ def katalog_aus_text(text: str) -> list[Katalogeintrag]:
             grenzen.append(naechster_abschnitt.start())
         block = text[kopf.start() : min(grenzen)]
         wege_zeile = _WEGE_ZEILE.search(block)
-        wege = (
-            tuple(_WEG_TOKEN.findall(wege_zeile.group("rest"))) if wege_zeile else ()
-        )
+        wege = tuple(_WEG_TOKEN.findall(wege_zeile.group("rest"))) if wege_zeile else ()
         gruende = tuple(
             treffer.group("grund").strip() for treffer in _KEIN_MCP_ZEILE.finditer(block)
         )
@@ -527,9 +526,7 @@ def stufen_verstoesse(abbild: Mapping[str, str], erwartung: Mapping[str, str]) -
             )
             continue
         if getragen[0] != erwartung[datei]:
-            befunde.append(
-                f"{datei}: traegt {getragen[0]!r}, erwartet {erwartung[datei]!r}."
-            )
+            befunde.append(f"{datei}: traegt {getragen[0]!r}, erwartet {erwartung[datei]!r}.")
     return befunde
 
 
@@ -552,9 +549,7 @@ def zitat_suchraum(wurzel: Path = REPO_WURZEL) -> dict[str, str]:
     )
     pfade = [pfad.decode("utf-8") for pfad in ergebnis.stdout.split(b"\0") if pfad]
     return {
-        pfad: (wurzel / pfad).read_text(encoding="utf-8")
-        for pfad in pfade
-        if pfad.endswith(".md")
+        pfad: (wurzel / pfad).read_text(encoding="utf-8") for pfad in pfade if pfad.endswith(".md")
     }
 
 
@@ -940,10 +935,7 @@ def test_ein_unbekannter_weg_wird_gemeldet() -> None:
 
 
 def test_eine_board_operation_mit_zweitem_weg_wird_gemeldet() -> None:
-    text = (
-        _BLOCK.format(id="board-status-setzen", wege="`mcp`, `gh`")
-        + f"{REMOTE_MARKIERUNG}\n"
-    )
+    text = _BLOCK.format(id="board-status-setzen", wege="`mcp`, `gh`") + f"{REMOTE_MARKIERUNG}\n"
 
     befunde = form_verstoesse(katalog_aus_text(text))
 
@@ -970,9 +962,7 @@ def test_eine_operation_ohne_ziel_literal_wird_gemeldet() -> None:
 
 
 def test_eine_lesende_operation_ohne_auswertungsgrenze_wird_gemeldet() -> None:
-    befunde = form_verstoesse(
-        katalog_aus_text(_BLOCK.format(id="issue-lesen", wege="`mcp`, `gh`"))
-    )
+    befunde = form_verstoesse(katalog_aus_text(_BLOCK.format(id="issue-lesen", wege="`mcp`, `gh`")))
 
     assert len(befunde) == 1
     assert AUSWERTUNGSGRENZE in befunde[0]
@@ -1042,8 +1032,10 @@ def test_eine_leere_begruendung_wird_gemeldet() -> None:
     [
         ("Fuehr `issue-body-schreiben` aus.", ["issue-body-schreiben"]),
         ("`board-status-setzen` mit Wert `Ready`.", ["board-status-setzen"]),
-        ("Danach `pr-erstellen` und `copilot-review-anfordern`.",
-         ["pr-erstellen", "copilot-review-anfordern"]),
+        (
+            "Danach `pr-erstellen` und `copilot-review-anfordern`.",
+            ["pr-erstellen", "copilot-review-anfordern"],
+        ),
         ("Der Skill `review-tests` ist keine Operation.", []),
         ("`ship-feature` ebenfalls nicht.", []),
         ("Ein Platzhalter wie `<issue-url>` ist keine ID.", []),

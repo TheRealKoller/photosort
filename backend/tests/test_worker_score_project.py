@@ -101,9 +101,7 @@ def _distinct_photo_image(variant: int, size: int = 200) -> Image.Image:
     return image
 
 
-async def test_scoring_run_success_scores_photo(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_scoring_run_success_scores_photo(db_session: AsyncSession, tmp_path: Path) -> None:
     project = await _make_project(db_session)
     photo = await _add_photo(
         db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
@@ -164,10 +162,7 @@ async def test_scoring_run_marks_duplicate_cluster_loser_and_keeps_sharper_winne
 
     await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
-    scores = {
-        s.photo_id: s
-        for s in (await db_session.execute(select(PhotoScore))).scalars()
-    }
+    scores = {s.photo_id: s for s in (await db_session.execute(select(PhotoScore))).scalars()}
     assert scores[winner.id].duplicate_of is None
     assert scores[winner.id].suggested_status is None
     assert scores[loser.id].duplicate_of == winner.id
@@ -512,9 +507,7 @@ async def test_time_clustering_groups_photos_within_gap(
 
     await run_project_scoring(db_session, project, cache_dir=tmp_path)
 
-    scores = {
-        s.photo_id: s for s in (await db_session.execute(select(PhotoScore))).scalars()
-    }
+    scores = {s.photo_id: s for s in (await db_session.execute(select(PhotoScore))).scalars()}
     assert scores[close_a.id].cluster_key == scores[close_b.id].cluster_key
     assert scores[far.id].cluster_key != scores[close_a.id].cluster_key
 

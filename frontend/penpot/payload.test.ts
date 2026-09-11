@@ -213,7 +213,9 @@ function alsDateien(inhalt: string, datei = 'probe.js'): Datei[] {
 }
 
 function meldung(funde: Fund[]): string {
-  return funde.map((fund) => `${fund.datei}:${fund.zeile}: ${fund.treffer} | ${fund.text.trim()}`).join('\n')
+  return funde
+    .map((fund) => `${fund.datei}:${fund.zeile}: ${fund.treffer} | ${fund.text.trim()}`)
+    .join('\n')
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -356,8 +358,9 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
 
   it('scannt nach der Vorbehandlung noch genug Zeilen', () => {
     const zeilen = nutzlast.reduce(
-      (summe, datei) => summe + datei.inhalt.split('\n').filter((zeile) => zeile.trim().length > 0).length,
-      0
+      (summe, datei) =>
+        summe + datei.inhalt.split('\n').filter((zeile) => zeile.trim().length > 0).length,
+      0,
     )
     expect(zeilen).toBeGreaterThanOrEqual(MINDESTZEILEN)
   })
@@ -415,12 +418,12 @@ describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast'
         freigabe.datei === fund.datei &&
         freigabe.zeile === fund.zeile &&
         freigabe.wert === fund.treffer &&
-        fund.text.includes(freigabe.ausschnitt)
+        fund.text.includes(freigabe.ausschnitt),
     )
   }
 
   const blankeZahlen = suche(nutzlast, MUSTER_BLANKE_ZAHL).filter(
-    (fund) => !UNVERDAECHTIGE_ZAHLEN.has(fund.treffer)
+    (fund) => !UNVERDAECHTIGE_ZAHLEN.has(fund.treffer),
   )
 
   it('enthaelt keine unfreigegebene blanke Zahl', () => {
@@ -432,7 +435,7 @@ describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast'
      freigibt, ist eine Erlaubnis auf Vorrat. */
   it('fuehrt keine verwaiste Freigabe', () => {
     const verwaist = FREIGABEN.filter(
-      (freigabe) => !blankeZahlen.some((fund) => freigabeFuer(fund) === freigabe)
+      (freigabe) => !blankeZahlen.some((fund) => freigabeFuer(fund) === freigabe),
     )
     expect(verwaist).toEqual([])
   })
@@ -442,7 +445,10 @@ describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast'
   it('verlangt einen aussagekraeftigen Ausschnitt je Freigabe', () => {
     for (const freigabe of FREIGABEN) {
       expect(freigabe.ausschnitt.length, freigabe.ausschnitt).toBeGreaterThanOrEqual(6)
-      expect(freigabe.ausschnitt.replace(/[0-9]/g, '').trim().length, freigabe.ausschnitt).toBeGreaterThan(0)
+      expect(
+        freigabe.ausschnitt.replace(/[0-9]/g, '').trim().length,
+        freigabe.ausschnitt,
+      ).toBeGreaterThan(0)
     }
   })
 })
@@ -462,7 +468,7 @@ describe('Gegenprobe: die erzeugten Datendateien schlagen an', () => {
 
   it('findet blanke Zahlen in den erzeugten Dateien', () => {
     const funde = suche(erzeugt, MUSTER_BLANKE_ZAHL).filter(
-      (fund) => !UNVERDAECHTIGE_ZAHLEN.has(fund.treffer)
+      (fund) => !UNVERDAECHTIGE_ZAHLEN.has(fund.treffer),
     )
     expect(funde.length).toBeGreaterThan(0)
   })
@@ -557,7 +563,7 @@ function tokenSlots(): { pfad: string; wert: string }[] {
  * der Datendatei) - jedes punktierte Literal dort MUSS also ein Tokenname sein. */
 function punktierteLiteraleAus(quelltext: string): string[] {
   return [...streicheKommentare(quelltext).matchAll(/'([a-z][a-z0-9-]*\.[a-z0-9-]+)'/g)].map(
-    (treffer) => treffer[1]
+    (treffer) => treffer[1],
   )
 }
 
@@ -680,7 +686,7 @@ describe('Die zwoelf Bausteine', () => {
    */
   it('zeigt die Quelle der Schrittmarke genau auf die Marker-Datei', () => {
     const schrittmarke = komponenten.bausteine.find(
-      (baustein) => baustein.schluessel === 'step-marker'
+      (baustein) => baustein.schluessel === 'step-marker',
     )
     expect(schrittmarke, 'Baustein step-marker nicht gefunden').toBeDefined()
     expect(schrittmarke!.quellen).toEqual(['src/components/StepMarker.tsx'])
@@ -692,7 +698,9 @@ describe('Die zwoelf Bausteine', () => {
   it('spannt beide Verzeichnisse auf', () => {
     const quellen = komponenten.bausteine.flatMap((baustein) => baustein.quellen)
     expect(quellen).toContain('src/components/CategoryBadge.tsx')
-    expect(quellen.filter((quelle) => quelle.startsWith('src/components/ui/')).length).toBeGreaterThan(0)
+    expect(
+      quellen.filter((quelle) => quelle.startsWith('src/components/ui/')).length,
+    ).toBeGreaterThan(0)
   })
 })
 
@@ -734,7 +742,7 @@ interface AchsenBaustein {
 /** Reine Funktion: Achsen, die weder eigene Tokens tragen noch als Ausnahme gefuehrt sind. */
 export function achsenOhneTokens(
   bausteine: AchsenBaustein[],
-  ausnahmen: Record<string, string>
+  ausnahmen: Record<string, string>,
 ): string[] {
   const befunde: string[] = []
   for (const baustein of bausteine) {
@@ -779,7 +787,7 @@ describe('Die Achsen der Bausteine', () => {
 
   it('fuehrt keine verwaiste Ausnahme', () => {
     const achsen = komponenten.bausteine.flatMap((baustein) =>
-      Object.keys(baustein.varianten).map((achse) => `${baustein.schluessel}.${achse}`)
+      Object.keys(baustein.varianten).map((achse) => `${baustein.schluessel}.${achse}`),
     )
     for (const pfad of Object.keys(ACHSEN_OHNE_EIGENE_TOKENS)) {
       expect(achsen, pfad).toContain(pfad)
@@ -836,7 +844,7 @@ describe('Die Achsen der Bausteine', () => {
       (summe, baustein) =>
         summe +
         Object.values(baustein.varianten).reduce((produkt, werte) => produkt * werte.length, 1),
-      0
+      0,
     )
     expect(gesamt).toBe(158)
   })
@@ -873,7 +881,10 @@ export function zustaendeIn(quelltext: string): string[] {
     const variante = new RegExp(`(?:^|[^\\w-])(?:(?:group|peer)-)?${zustand}:`)
     // `has-[:disabled]:` ist dieselbe Aussage in anderer Schreibweise.
     const eingebettet = zustand === 'disabled' ? /\[:disabled\]/ : null
-    if (variante.test(ohneKommentare) || (eingebettet !== null && eingebettet.test(ohneKommentare))) {
+    if (
+      variante.test(ohneKommentare) ||
+      (eingebettet !== null && eingebettet.test(ohneKommentare))
+    ) {
       gefunden.push(zustand)
     }
   }
@@ -899,7 +910,9 @@ describe('Zustandsabdeckung gegen den Produktcode', () => {
       for (const quelle of baustein.quellen) {
         const quelltext = readFileSync(`${FRONTEND_DIR}${quelle}`, 'utf8')
         for (const zustand of zustaendeIn(quelltext)) {
-          expect(gefuehrt.has(zustand), `${baustein.schluessel} <- ${quelle}: ${zustand}`).toBe(true)
+          expect(gefuehrt.has(zustand), `${baustein.schluessel} <- ${quelle}: ${zustand}`).toBe(
+            true,
+          )
         }
       }
     }
@@ -909,7 +922,9 @@ describe('Zustandsabdeckung gegen den Produktcode', () => {
      sauberen Bestand nicht zu unterscheiden: "kein Zustand gefunden" bestuende immer. */
   it('hat im Bestand ueberhaupt Zustaende gesehen', () => {
     const gesehen = komponenten.bausteine.flatMap((baustein) =>
-      baustein.quellen.flatMap((quelle) => zustaendeIn(readFileSync(`${FRONTEND_DIR}${quelle}`, 'utf8')))
+      baustein.quellen.flatMap((quelle) =>
+        zustaendeIn(readFileSync(`${FRONTEND_DIR}${quelle}`, 'utf8')),
+      ),
     )
     expect(new Set(gesehen).size).toBeGreaterThanOrEqual(4)
     expect(gesehen.length).toBeGreaterThanOrEqual(6)
@@ -952,7 +967,8 @@ describe('Der Kategorie-Chip', () => {
 // ---------------------------------------------------------------------------------------------
 
 describe('Der Platzhalter', () => {
-  const platzhalter = () => komponenten.bausteine.find((baustein) => baustein.schluessel === 'skeleton')!
+  const platzhalter = () =>
+    komponenten.bausteine.find((baustein) => baustein.schluessel === 'skeleton')!
 
   /*
    * DIE ZWEI AUSPRAEGUNGEN SIND AUS DEM PRODUKTCODE ABGELEITET, NICHT ERFUNDEN: `zeile` ist die
@@ -971,8 +987,12 @@ describe('Der Platzhalter', () => {
     expect(platzhalter().varianten.auspraegung).toEqual(['zeile', 'kachel'])
     expect(radien?.zeile?.radius).toBe('radius.lg')
     expect(radien?.kachel?.radius).toBe('radius.md')
-    expect(readFileSync(`${FRONTEND_DIR}src/pages/ProjectListPage.tsx`, 'utf8')).toContain('rounded-lg')
-    expect(readFileSync(`${FRONTEND_DIR}src/components/ui/skeleton.tsx`, 'utf8')).toContain('rounded-md')
+    expect(readFileSync(`${FRONTEND_DIR}src/pages/ProjectListPage.tsx`, 'utf8')).toContain(
+      'rounded-lg',
+    )
+    expect(readFileSync(`${FRONTEND_DIR}src/components/ui/skeleton.tsx`, 'utf8')).toContain(
+      'rounded-md',
+    )
   })
 
   it('traegt die Flaeche als Token und keine Seite in den Quellen', () => {
@@ -1039,7 +1059,7 @@ describe('Die Kardinalitaeten von verify.js', () => {
    */
   it('haelt Konstante und Freigabe deckungsgleich', () => {
     const freigegeben = FREIGABEN.filter((freigabe) => freigabe.datei === 'verify.js').map(
-      (freigabe) => /ERWARTETE_[A-Z_]+/.exec(freigabe.ausschnitt)?.[0] ?? freigabe.ausschnitt
+      (freigabe) => /ERWARTETE_[A-Z_]+/.exec(freigabe.ausschnitt)?.[0] ?? freigabe.ausschnitt,
     )
     /*
      * VERGLICHEN WIRD GEGEN DIE KONSTANTEN, DIE UEBERHAUPT EINE FREIGABE BRAUCHEN. Eine
@@ -1054,7 +1074,7 @@ describe('Die Kardinalitaeten von verify.js', () => {
      * und der gilt ausnahmslos fuer alle.
      */
     const brauchtFreigabe = Object.keys(ERWARTET).filter(
-      (name) => !UNVERDAECHTIGE_ZAHLEN.has(String(ERWARTET[name]))
+      (name) => !UNVERDAECHTIGE_ZAHLEN.has(String(ERWARTET[name])),
     )
     expect([...freigegeben].sort()).toEqual(brauchtFreigabe.sort())
   })
@@ -1067,7 +1087,7 @@ describe('Die Kardinalitaeten von verify.js', () => {
       quelltext,
       (eintrag) =>
         eintrag.type === 'FunctionDeclaration' &&
-        (eintrag.id as Record<string, unknown> | null)?.name === 'main'
+        (eintrag.id as Record<string, unknown> | null)?.name === 'main',
     )
     expect(haupt).toHaveLength(1)
     const rueckgaben = knoten(
@@ -1076,13 +1096,13 @@ describe('Die Kardinalitaeten von verify.js', () => {
         eintrag.type === 'ReturnStatement' &&
         (eintrag.argument as Record<string, unknown> | null)?.type === 'ObjectExpression' &&
         (eintrag.start as number) > (haupt[0]!.start as number) &&
-        (eintrag.start as number) < (haupt[0]!.end as number)
+        (eintrag.start as number) < (haupt[0]!.end as number),
     )
     expect(rueckgaben.length).toBeGreaterThan(0)
     for (const name of Object.keys(ERWARTET)) {
       expect(
         rueckgaben.some((rueckgabe) => enthaeltBezeichner(rueckgabe, name)),
-        name
+        name,
       ).toBe(true)
     }
   })
@@ -1144,7 +1164,9 @@ describe('Die Breiten kommen aus der Pruefbreiten-Datei', () => {
 
   it('erkennt die Namen an einer synthetischen Probe', () => {
     expect(
-      breitenNamenAus('export const VIEWPORTS = {\n  schmal: { width: 1 },\n  breit: { width: 2 },\n} as const')
+      breitenNamenAus(
+        'export const VIEWPORTS = {\n  schmal: { width: 1 },\n  breit: { width: 2 },\n} as const',
+      ),
     ).toEqual(['schmal', 'breit'])
     expect(breitenNamenAus('const ANDERES = {\n  schmal: 1,\n}')).toEqual([])
   })
@@ -1230,7 +1252,7 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
   it('ergibt in der Summe die zurueckgelesene Zahl an Ansichtsbrettern', () => {
     const bretter = ansichten.reduce(
       (summe, ansicht) => summe + ansicht.breiten.length * ansicht.zustaende.length,
-      0
+      0,
     )
     expect(ansichten.length).toBe(ERWARTET.ERWARTETE_ANSICHTEN)
     expect(bretter).toBe(ERWARTET.ERWARTETE_ANSICHTSBRETTER)
@@ -1250,7 +1272,7 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
   it('ergibt in der Summe die zurueckgelesene Zahl an Ansichts-Behaeltern', () => {
     const behaelter = ansichten.reduce(
       (summe, ansicht) => summe + (ansicht.zustaende.length > 1 ? ansicht.breiten.length : 0),
-      0
+      0,
     )
     expect(behaelter).toBe(ERWARTET.ERWARTETE_ANSICHTSBEHAELTER)
   })
@@ -1288,7 +1310,7 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
 
   it('fuehrt die zwei absehbaren Luecken als Muss-Eintraege', () => {
     const gefuehrt = new Set(
-      ansichten.flatMap((ansicht) => ansicht.luecken.map((luecke) => luecke.schluessel))
+      ansichten.flatMap((ansicht) => ansicht.luecken.map((luecke) => luecke.schluessel)),
     )
     for (const muss of MUSS_LUECKEN) {
       expect(gefuehrt.has(muss), muss).toBe(true)
@@ -1310,7 +1332,7 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
      Zusicherung, die auf einer leeren Fundmenge bestuende, pruefte nichts. */
   it('nennt nur Tokens, die es gibt', () => {
     const genannt = [...dateiVon('views.json').roh.matchAll(TOKENNAME_MUSTER)].map(
-      (treffer) => treffer[0]
+      (treffer) => treffer[0],
     )
     expect([...new Set(genannt)].filter((name) => !tokennamen.has(name))).toEqual([])
     expect([...'color.erfunden-gibt-es-nicht'.matchAll(TOKENNAME_MUSTER)]).toHaveLength(1)
@@ -1363,7 +1385,9 @@ describe('Idempotenz-Asymmetrie: die Laufregel als Form', () => {
   })
 
   it('erkennt eine Erwaehnung im Fliesstext nicht als Laufregel', () => {
-    expect(LAUFREGEL_ZEILE.test(' * frueher galt hier LAUFREGEL: jederzeit-wiederholbar')).toBe(false)
+    expect(LAUFREGEL_ZEILE.test(' * frueher galt hier LAUFREGEL: jederzeit-wiederholbar')).toBe(
+      false,
+    )
     expect(LAUFREGEL_ZEILE.test('// LAUFREGEL: jederzeit-wiederholbar')).toBe(true)
   })
 })
@@ -1553,7 +1577,7 @@ const JS_NUTZLAST = ['seed-tokens.js', 'seed-icons.js', 'seed-components.js', 'v
 
 describe('Die Form der Plugin-API-Aufrufe', () => {
   const alleAufrufe = JS_NUTZLAST.flatMap((datei) =>
-    aufrufe(dateiVon(datei).roh).map((aufruf) => ({ datei, aufruf }))
+    aufrufe(dateiVon(datei).roh).map((aufruf) => ({ datei, aufruf })),
   )
 
   for (const form of AUFRUFFORMEN) {
@@ -1610,17 +1634,19 @@ describe('Die Form der Plugin-API-Aufrufe', () => {
     expect(form('addToken').haelt(argumenteVon('satz.addToken(a, b, c)', 'addToken'))).toBe(false)
     expect(
       form('addToken').haelt(
-        argumenteVon('satz.addToken({ type: t, name: n, value: v })', 'addToken')
-      )
+        argumenteVon('satz.addToken({ type: t, name: n, value: v })', 'addToken'),
+      ),
     ).toBe(true)
     expect(
-      form('applyToShapes').haelt(argumenteVon("token.applyToShapes(formen)", 'applyToShapes'))
+      form('applyToShapes').haelt(argumenteVon('token.applyToShapes(formen)', 'applyToShapes')),
     ).toBe(false)
     expect(
-      form('applyToShapes').haelt(argumenteVon("token.applyToShapes(formen, 'fill')", 'applyToShapes'))
+      form('applyToShapes').haelt(
+        argumenteVon("token.applyToShapes(formen, 'fill')", 'applyToShapes'),
+      ),
     ).toBe(true)
     expect(
-      form('createComponent').haelt(argumenteVon('bib.createComponent(brett)', 'createComponent'))
+      form('createComponent').haelt(argumenteVon('bib.createComponent(brett)', 'createComponent')),
     ).toBe(false)
   })
 })
@@ -1686,7 +1712,7 @@ function objektKonstante(quelltext: string, name: string): Record<string, string
     quelltext,
     (eintrag) =>
       eintrag.type === 'VariableDeclarator' &&
-      (eintrag.id as Record<string, unknown>)?.name === name
+      (eintrag.id as Record<string, unknown>)?.name === name,
   )[0]
   if (deklaration === undefined) {
     throw new Error(`${name} nicht gefunden.`)
@@ -1705,13 +1731,14 @@ function objektKonstante(quelltext: string, name: string): Record<string, string
       throw new Error(`${name}.${rolle} bildet nicht auf eine Liste ab, sondern auf ${wert.type}.`)
     }
     ergebnis[rolle] = ((wert.elements as Record<string, unknown>[]) ?? []).map(
-      (element) => element.value as string
+      (element) => element.value as string,
     )
   }
   return ergebnis
 }
 
-const rollenTabelle = () => objektKonstante(dateiVon('seed-components.js').roh, 'ROLLE_ZU_EIGENSCHAFT')
+const rollenTabelle = () =>
+  objektKonstante(dateiVon('seed-components.js').roh, 'ROLLE_ZU_EIGENSCHAFT')
 
 describe('Die Penpot-Eigenschaften', () => {
   it('bildet jede Rolle auf eine Liste ab, auch bei nur einer Eigenschaft', () => {
@@ -1759,12 +1786,12 @@ describe('Die Penpot-Eigenschaften', () => {
       quelltext,
       (eintrag) =>
         eintrag.type === 'VariableDeclarator' &&
-        (eintrag.id as Record<string, unknown>)?.name === 'STRICH_EIGENSCHAFTEN'
+        (eintrag.id as Record<string, unknown>)?.name === 'STRICH_EIGENSCHAFTEN',
     )[0]
     expect(liste, 'STRICH_EIGENSCHAFTEN nicht gefunden').toBeDefined()
-    const werte = (((liste.init as Record<string, unknown>).elements as Record<string, unknown>[]) ?? []).map(
-      (element) => element.value as string
-    )
+    const werte = (
+      ((liste.init as Record<string, unknown>).elements as Record<string, unknown>[]) ?? []
+    ).map((element) => element.value as string)
     expect(werte.length).toBeGreaterThan(0)
     for (const eigenschaft of werte) {
       expect(PENPOT_EIGENSCHAFTEN, eigenschaft).toContain(eigenschaft)
@@ -1847,7 +1874,8 @@ describe('Der Symbolimport', () => {
   it('setzt den Pfadpraefix je Symbol genau einmal', () => {
     const zuweisungen = knoten(
       quelltext,
-      (eintrag) => eintrag.type === 'AssignmentExpression' && enthaeltBezeichner(eintrag.right, 'SYMBOL_PFAD')
+      (eintrag) =>
+        eintrag.type === 'AssignmentExpression' && enthaeltBezeichner(eintrag.right, 'SYMBOL_PFAD'),
     )
     expect(zuweisungen).toHaveLength(1)
   })
@@ -1926,7 +1954,7 @@ describe('Die geteilten Erkennungen', () => {
     it(`${geteilt.name}: wird in beiden Dateien tatsaechlich benutzt`, () => {
       for (const datei of geteilt.dateien) {
         const stellen = aufrufe(dateiVon(datei).roh).filter(
-          (aufruf) => aufruf.name === geteilt.aufruf
+          (aufruf) => aufruf.name === geteilt.aufruf,
         )
         expect(stellen.length, datei).toBeGreaterThan(0)
       }
@@ -1964,10 +1992,10 @@ describe('Verdrahtung des TS-Projekts', () => {
   // Die tsconfig-Dateien sind JSONC; die Kommentarstreichung von oben macht sie lesbar, ohne dass
   // dafuer ein Parser dazukaeme.
   const tsconfig = JSON.parse(
-    streicheKommentare(readFileSync(`${FRONTEND_DIR}tsconfig.json`, 'utf8'))
+    streicheKommentare(readFileSync(`${FRONTEND_DIR}tsconfig.json`, 'utf8')),
   ) as { references: { path: string }[] }
   const penpotConfig = JSON.parse(
-    streicheKommentare(readFileSync(`${FRONTEND_DIR}tsconfig.penpot.json`, 'utf8'))
+    streicheKommentare(readFileSync(`${FRONTEND_DIR}tsconfig.penpot.json`, 'utf8')),
   ) as { include: string[] }
 
   /* OHNE DIESE ZUSICHERUNG ist der stille Fehlermodus, dass `frontend/penpot/**` von `tsc -b` GAR
@@ -1984,7 +2012,7 @@ describe('Verdrahtung des TS-Projekts', () => {
         'penpot/payload.test.ts',
         'penpot/tokens.test.ts',
         'penpot/tokens.ts',
-      ].sort()
+      ].sort(),
     )
   })
 })
@@ -2024,9 +2052,12 @@ const VERBOTENE_BEZEICHNER: { name: string; muster: RegExp; probe: string }[] = 
  * Skript selbst entstanden ist. Die Freigabe ist an Datei, Zeile und Ausschnitt gebunden, damit
  * sie nicht zur Generalerlaubnis fuer `remove` in dieser Datei wird.
  */
-const BEZEICHNER_FREIGABEN: { datei: string; zeile: number; bezeichner: string; ausschnitt: string }[] = [
-  { datei: 'seed-icons.js', zeile: 106, bezeichner: 'remove', ausschnitt: 'kind.remove()' },
-]
+const BEZEICHNER_FREIGABEN: {
+  datei: string
+  zeile: number
+  bezeichner: string
+  ausschnitt: string
+}[] = [{ datei: 'seed-icons.js', zeile: 106, bezeichner: 'remove', ausschnitt: 'kind.remove()' }]
 
 describe('Was die Nutzlast darf, ist abschliessend', () => {
   function verstoesse(verboten: (typeof VERBOTENE_BEZEICHNER)[number]): Fund[] {
@@ -2038,8 +2069,8 @@ describe('Was die Nutzlast darf, ist abschliessend', () => {
             freigabe.bezeichner === verboten.name &&
             freigabe.datei === fund.datei &&
             freigabe.zeile === fund.zeile &&
-            fund.text.includes(freigabe.ausschnitt)
-        )
+            fund.text.includes(freigabe.ausschnitt),
+        ),
     )
   }
 
@@ -2051,17 +2082,22 @@ describe('Was die Nutzlast darf, ist abschliessend', () => {
 
   it('fuehrt keine verwaiste Bezeichner-Freigabe', () => {
     for (const freigabe of BEZEICHNER_FREIGABEN) {
-      const verboten = VERBOTENE_BEZEICHNER.find((kandidat) => kandidat.name === freigabe.bezeichner)
+      const verboten = VERBOTENE_BEZEICHNER.find(
+        (kandidat) => kandidat.name === freigabe.bezeichner,
+      )
       expect(verboten, freigabe.bezeichner).toBeDefined()
-      const alle = suche(nutzlast, new RegExp(verboten!.muster.source, `${verboten!.muster.flags}g`))
+      const alle = suche(
+        nutzlast,
+        new RegExp(verboten!.muster.source, `${verboten!.muster.flags}g`),
+      )
       expect(
         alle.some(
           (fund) =>
             fund.datei === freigabe.datei &&
             fund.zeile === freigabe.zeile &&
-            fund.text.includes(freigabe.ausschnitt)
+            fund.text.includes(freigabe.ausschnitt),
         ),
-        `${freigabe.datei}:${freigabe.zeile}`
+        `${freigabe.datei}:${freigabe.zeile}`,
       ).toBe(true)
     }
   })

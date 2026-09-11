@@ -27,7 +27,12 @@ class FakeOpenCloudClient:
     async def resolve_drive(self, name: str | None) -> Drive:
         if self._fail:
             raise self._fail
-        return Drive(id="drive-1", name="Family", drive_type="project", webdav_url="https://x/dav/spaces/drive-1")
+        return Drive(
+            id="drive-1",
+            name="Family",
+            drive_type="project",
+            webdav_url="https://x/dav/spaces/drive-1",
+        )
 
     async def list_folder(self, webdav_url: str, path: str, depth: str = "1") -> list[DavEntry]:
         if self._fail:

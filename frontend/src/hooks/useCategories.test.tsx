@@ -37,7 +37,7 @@ describe('useCategoriesQuery', () => {
     expect(categoriesApi.listCategories).toHaveBeenCalledTimes(1)
     // Reihenfolge unveraendert uebernommen, nicht neu sortiert.
     expect(result.current.data?.map((entry) => entry.key)).toEqual(
-      CATEGORY_SET.map((entry) => entry.key)
+      CATEGORY_SET.map((entry) => entry.key),
     )
   })
 

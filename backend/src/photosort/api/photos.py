@@ -107,13 +107,13 @@ class SuggestionOut(BaseModel):
 
 
 class RankingOut(BaseModel):
-    """EINE Zugehoerigkeit eines Fotos zu einer Kategorie aus der Kriterien-/Rangfolgen-Pipeline
-   . Seit
-    auch im Standard-Listing-Zweig befüllt, nicht nur, wenn das Foto Teil des abgefragten
+    """EINE Zugehörigkeit eines Fotos zu einer Kategorie aus der Kriterien-/Rangfolgen-Pipeline.
+
+    Auch im Standard-Listing-Zweig befüllt, nicht nur, wenn das Foto Teil des abgefragten
     Top-N-Ergebnisses ist. Getrennt von SuggestionOut, siehe dessen Docstring.
 
-    Ein Foto hat pro Lauf eine solche Zeile JE KATEGORIE,
-    zu der es gehoert - siehe `PhotoOut.rankings`."""
+    Ein Foto hat pro Lauf eine solche Zeile JE KATEGORIE, zu der es gehört - siehe
+    `PhotoOut.rankings`."""
 
     cluster_key: str
     category_key: str
@@ -380,9 +380,7 @@ async def _filtered_photo_ids(
     elif rating_status is not None:
         base = base.where(own_rating.status == RatingStatus(rating_status.value))
 
-    total = (
-        await session.execute(select(func.count()).select_from(base.subquery()))
-    ).scalar_one()
+    total = (await session.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
 
     paged = base.order_by(Photo.taken_at, Photo.id).offset(offset).limit(limit)
     ids = [row[0] for row in (await session.execute(paged)).all()]
@@ -687,9 +685,7 @@ def _cluster_place_of(members: list[_ClusterMember]) -> ClusterPlaceOut | None:
     return ClusterPlaceOut(kind="coordinate", lat=lat, lon=lon)
 
 
-def _derived_location_of(
-    photo: Photo, anchors: list[_ClusterMember]
-) -> PhotoLocationOut | None:
+def _derived_location_of(photo: Photo, anchors: list[_ClusterMember]) -> PhotoLocationOut | None:
     """Der Ort EINES Fotos: die eigene Koordinate in voller Praezision, sonst die des zeitlich
     naechstgelegenen Fotos MIT Koordinate im selben Cluster.
 
@@ -948,33 +944,31 @@ async def _latest_successful_criterion_scoring_run_id(
 async def _top_n_per_category_photo_ids(
     session: AsyncSession, project_id: int, top_n: int
 ) -> tuple[list[int], dict[tuple[int, str], int], int | None]:
-    """Kategorie-Kuratierung, ohne Backfill: liefert je Partition
-    (cluster_key x category_key) des LETZTEN erfolgreichen
-    CriterionScoringRun die Zugehoerigkeiten mit `rank_position <= top_n`.
+    """Kategorie-Kuratierung, ohne Backfill: liefert je Partition (cluster_key x category_key)
+    des LETZTEN erfolgreichen CriterionScoringRun die Zugehörigkeiten mit
+    `rank_position <= top_n`.
 
     KEIN ABLEHNUNGSFILTER: die Query filtert die vom anfragenden Nutzer REJECTED-bewerteten
     Fotos NICHT aus, und damit ist auch keine Fensterfunktion nötig -
-    `PhotoRanking.rank_position` ist je Partition
-    lueckenlos ab 1 vergeben (`ranking.py::rank_photos` liefert `index + 1` ueber die
-    VOLLSTAENDIGE Partition; `worker.py::run_criterion_scoring` ruft sie je Partition auf, Haupt-
-    wie Nebenzugehoerigkeiten in derselben Liste; `worker.py::reassign_photo_category` vergibt bei
-    einem Override die Positionen beider betroffenen Partitionen vollstaendig neu). Ein
-    `row_number()` ueber dieselbe Sortierung lieferte per Konstruktion denselben Wert - es hat
-    ausschliesslich die Luecken geschlossen, die der Ablehnungsfilter riss.
+    `PhotoRanking.rank_position` ist je Partition lückenlos ab 1 vergeben
+    (`ranking.py::rank_photos` liefert `index + 1` über die VOLLSTÄNDIGE Partition;
+    `worker.py::run_criterion_scoring` ruft sie je Partition auf, Haupt- wie
+    Nebenzugehörigkeiten in derselben Liste; `worker.py::reassign_photo_category` vergibt bei
+    einem Override die Positionen beider betroffenen Partitionen vollständig neu). Ein
+    `row_number()` über dieselbe Sortierung lieferte per Konstruktion denselben Wert.
 
-    Folge: Welche Fotos die Ansicht zeigt, haengt ausschliesslich vom LAUF ab, nicht mehr vom
-    Bewertungsstand des Betrachters. Ein verworfenes Foto bleibt an seiner Position und traegt
+    Folge: Welche Fotos die Ansicht zeigt, hängt ausschließlich vom LAUF ab, nicht vom
+    Bewertungsstand des Betrachters. Ein verworfenes Foto bleibt an seiner Position und trägt
     seinen Zustand in `PhotoOut.ratings[]`.
 
-    `top_n` wirkt weiterhin JE PARTITION, Neben- wie Hauptzeilen zaehlen mit
-   ; EIN Foto kann in mehreren Partitionen unter die
-    Top-N fallen. Rueckgabe deshalb dreiteilig:
+    `top_n` wirkt JE PARTITION, Neben- wie Hauptzeilen zählen mit; EIN Foto kann in mehreren
+    Partitionen unter die Top-N fallen. Rückgabe deshalb dreiteilig:
 
-    * die Foto-Ids in Anzeigereihenfolge, jede hoechstens EINMAL (`PhotoListOut.items` enthaelt
-      jedes Foto weiterhin hoechstens einmal),
-    * die `curation_position` je (photo_id, category_key) - nach dem Wegfall des Filters
-      identisch mit `rank_position` -, aus der die Kuratierungsansicht ablesen kann, in welchen
-      Kategorien sie das Foto zeigen soll,
+    * die Foto-Ids in Anzeigereihenfolge, jede höchstens EINMAL (`PhotoListOut.items` enthält
+      jedes Foto weiterhin höchstens einmal),
+    * die `curation_position` je (photo_id, category_key) - ohne Ablehnungsfilter identisch mit
+      `rank_position` -, aus der die Kuratierungsansicht ablesen kann, in welchen Kategorien sie
+      das Foto zeigen soll,
     * die Lauf-Id."""
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
@@ -990,9 +984,7 @@ async def _top_n_per_category_photo_ids(
             PhotoRanking.criterion_scoring_run_id == latest_run_id,
             PhotoRanking.rank_position <= top_n,
         )
-        .order_by(
-            PhotoRanking.cluster_key, PhotoRanking.category_key, PhotoRanking.rank_position
-        )
+        .order_by(PhotoRanking.cluster_key, PhotoRanking.category_key, PhotoRanking.rank_position)
     )
     ordered_ids: list[int] = []
     seen: set[int] = set()

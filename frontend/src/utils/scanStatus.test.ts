@@ -29,6 +29,6 @@ describe('deriveScanStatus', () => {
       })
 
       expect(deriveScanStatus(project)).toBe(status)
-    }
+    },
   )
 })

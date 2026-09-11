@@ -17,7 +17,10 @@ describe('RatingButtons', () => {
     render(<RatingButtons currentStatus="favorite" onToggle={vi.fn()} />)
 
     expect(screen.getByRole('button', { name: /favorit/i })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: /verwerfen/i })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /verwerfen/i })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
   })
 
   it('calls onToggle with the clicked status', async () => {
@@ -66,13 +69,15 @@ describe('RatingButtons', () => {
       render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
 
       expect(screen.getAllByRole('button', { name: label })).toHaveLength(1)
-    }
+    },
   )
 
   it('keeps exactly three buttons in the group - the key box is not a control', () => {
     render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
 
-    expect(within(screen.getByRole('group', { name: 'Bewertung' })).getAllByRole('button')).toHaveLength(3)
+    expect(
+      within(screen.getByRole('group', { name: 'Bewertung' })).getAllByRole('button'),
+    ).toHaveLength(3)
   })
 
   it('shows the label of every entry visibly', () => {

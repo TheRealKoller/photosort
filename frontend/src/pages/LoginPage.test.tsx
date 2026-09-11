@@ -36,7 +36,7 @@ function renderLoginPage(initialEntries: Array<string | { pathname: string; stat
         <Route path="/login" element={<LoginPage />} />
       </Routes>
     </MemoryRouter>,
-    { wrapper }
+    { wrapper },
   )
 }
 
@@ -62,9 +62,7 @@ describe('LoginPage', () => {
     })
     const user = userEvent.setup()
 
-    renderLoginPage([
-      { pathname: '/login', state: { from: { pathname: '/projects/42' } } },
-    ])
+    renderLoginPage([{ pathname: '/login', state: { from: { pathname: '/projects/42' } } }])
 
     await user.type(screen.getByLabelText(/benutzername/i), 'daniel')
     await user.type(screen.getByLabelText(/passwort/i), 'geheim')
@@ -113,7 +111,7 @@ describe('LoginPage', () => {
     vi.mocked(authApi.login).mockReturnValue(
       new Promise((resolve) => {
         resolveLogin = resolve
-      })
+      }),
     )
     const user = userEvent.setup()
 

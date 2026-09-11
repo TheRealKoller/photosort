@@ -46,7 +46,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
         'focus:border-[1.5px] focus:border-accent',
         'aria-invalid:border aria-invalid:border-danger',
         'disabled:pointer-events-none disabled:border-border disabled:text-text-disabled',
-        className
+        className,
       )}
       {...props}
     />

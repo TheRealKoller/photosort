@@ -119,9 +119,7 @@ class TestModelPricingRegistry:
         `settings.resolved_landmark_model()` aufgerufen), waere aber weiterhin eine gepflegte
         Tatsachenbehauptung mit Quelle und `verified_on`-Stempel, die unbeaufsichtigt altert und
         bei einer spaeteren Wiederaufnahme stillschweigend wieder gaelte."""
-        selectable = {
-            model for models in VISION_MODELS_BY_PROVIDER.values() for model in models
-        }
+        selectable = {model for models in VISION_MODELS_BY_PROVIDER.values() for model in models}
 
         assert selectable, "keine waehlbaren Modelle in VISION_MODELS_BY_PROVIDER gefunden"
         assert selectable == set(MODEL_PRICING)
@@ -232,7 +230,7 @@ class TestEstimateUsdPerImage:
         )
 
     def test_the_estimate_is_exactly_the_cost_of_the_assumed_usage(self) -> None:
-        """"Kein neuer Rechenweg" (ADR 0059 Punkt 3): die Schaetzung ist `compute_cost_usd` ueber
+        """ "Kein neuer Rechenweg" (ADR 0059 Punkt 3): die Schaetzung ist `compute_cost_usd` ueber
         einer angenommenen statt einer gemessenen Tokenzahl."""
         assumed = ASSUMED_USAGE_BY_PROVIDER["anthropic"]
 

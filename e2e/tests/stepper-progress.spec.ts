@@ -62,7 +62,7 @@ async function messe(page: Page, erwarteterIndex: number): Promise<Messung> {
         // trotzdem gruen ist.
         istAktiv: element.querySelector('[aria-current="step"]') !== null,
       }
-    })
+    }),
   )
 
   // VORBEDINGUNG SPALTENGEOMETRIE: fuenf Spalten mit Breite > 0, paarweise gleich breit und
@@ -72,18 +72,20 @@ async function messe(page: Page, erwarteterIndex: number): Promise<Messung> {
     expect(kasten.width, `Breite der Spalte ${index + 1}`).toBeGreaterThan(0)
     expect(
       Math.abs(kasten.width - kaesten[0]!.width),
-      `Spalte ${index + 1} ist nicht so breit wie die erste`
+      `Spalte ${index + 1} ist nicht so breit wie die erste`,
     ).toBeLessThanOrEqual(TOLERANCE)
     if (index > 0) {
       const vorherigesEnde = kaesten[index - 1]!.x + kaesten[index - 1]!.width
       expect(
         Math.abs(kasten.x - vorherigesEnde),
-        `Abstand zwischen Spalte ${index} und ${index + 1}`
+        `Abstand zwischen Spalte ${index} und ${index + 1}`,
       ).toBeLessThanOrEqual(TOLERANCE)
     }
   }
 
-  const aktiveIndizes = kaesten.map((kasten, index) => (kasten.istAktiv ? index : -1)).filter((index) => index >= 0)
+  const aktiveIndizes = kaesten
+    .map((kasten, index) => (kasten.istAktiv ? index : -1))
+    .filter((index) => index >= 0)
   expect(aktiveIndizes, 'genau ein Schritt traegt aria-current="step"').toHaveLength(1)
   const aktiverIndex = aktiveIndizes[0]!
   expect(aktiverIndex, 'Index des aktuellen Schritts').toBe(erwarteterIndex)
@@ -100,12 +102,12 @@ async function messe(page: Page, erwarteterIndex: number): Promise<Messung> {
   // ueberein. Ohne sie waere die Rechnung unten auf einen anderen Kasten bezogen als die Spalten.
   expect(
     Math.abs(balkenKasten.x - kaesten[0]!.x),
-    'linke Kante des Balkens gegenueber der ersten Spalte'
+    'linke Kante des Balkens gegenueber der ersten Spalte',
   ).toBeLessThanOrEqual(TOLERANCE)
   const letzte = kaesten[kaesten.length - 1]!
   expect(
     Math.abs(balkenKasten.x + balkenKasten.width - (letzte.x + letzte.width)),
-    'rechte Kante des Balkens gegenueber der letzten Spalte'
+    'rechte Kante des Balkens gegenueber der letzten Spalte',
   ).toBeLessThanOrEqual(TOLERANCE)
 
   // `value`/`max` werden GELESEN, nicht angenommen - und zusaetzlich gegen die Skala gehalten,
@@ -146,7 +148,7 @@ test('die Fuellung des Fortschrittsbalkens endet unter der Mitte des aktuellen S
 
     expect(
       Math.abs(gerechneteFuellkante - mitteDesAktivenSchritts),
-      `Abstand der Fuellkante zur Spaltenmitte auf /pipeline/${step}`
+      `Abstand der Fuellkante zur Spaltenmitte auf /pipeline/${step}`,
     ).toBeLessThanOrEqual(TOLERANCE)
 
     gemesseneKanten.push(gerechneteFuellkante)
@@ -157,6 +159,6 @@ test('die Fuellung des Fortschrittsbalkens endet unter der Mitte des aktuellen S
   expect(gemesseneKanten, 'Zahl der Messungen').toHaveLength(faelle.length)
   expect(
     Math.abs(gemesseneKanten[1]! - gemesseneKanten[0]!),
-    'Unterschied der beiden Fuellkanten'
+    'Unterschied der beiden Fuellkanten',
   ).toBeGreaterThan(TOLERANCE)
 })

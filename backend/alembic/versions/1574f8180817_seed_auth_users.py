@@ -5,6 +5,7 @@ Revises: c6c17d0ef6d5
 Create Date: 2026-07-21 22:00:39.953987
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -13,8 +14,8 @@ from photosort.config import settings
 from photosort.seed import configured_seed_users, seed_configured_users
 
 # revision identifiers, used by Alembic.
-revision: str = '1574f8180817'
-down_revision: Union[str, Sequence[str], None] = 'c6c17d0ef6d5'
+revision: str = "1574f8180817"
+down_revision: Union[str, Sequence[str], None] = "c6c17d0ef6d5"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

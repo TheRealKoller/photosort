@@ -75,9 +75,7 @@ export function ProjectPipelineLayout() {
   // Betrachtens per Poll nicht mehr erreichbarer Schritt wird dadurch automatisch beim naechsten
   // Poll-Tick verlassen, ohne Nutzerinteraktion (AK11).
   if (step === undefined) {
-    return (
-      <Navigate to={`/projects/${project.id}/pipeline/${getDefaultStepId(states)}`} replace />
-    )
+    return <Navigate to={`/projects/${project.id}/pipeline/${getDefaultStepId(states)}`} replace />
   }
 
   if (!isStepId(step)) {

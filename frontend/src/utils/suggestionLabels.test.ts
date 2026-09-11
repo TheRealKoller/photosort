@@ -23,13 +23,13 @@ describe('formatSuggestionReason', () => {
   // bewertungsdetails-info-popover.md).
   it('formats a duplicate reason with the referenced photo id', () => {
     expect(formatSuggestionReason(suggestion({ reason: 'duplicate', duplicate_of: 42 }))).toBe(
-      'Duplikat von Foto #42'
+      'Duplikat von Foto #42',
     )
   })
 
   it('formats a low_quality reason', () => {
     expect(formatSuggestionReason(suggestion({ reason: 'low_quality' }))).toBe(
-      'Geringe Bildqualität'
+      'Geringe Bildqualität',
     )
   })
 })
@@ -37,8 +37,6 @@ describe('formatSuggestionReason', () => {
 describe('formatSuggestionStatusLabel', () => {
   it('reuses RATING_STATUS_LABELS for the suggested status', () => {
     expect(formatSuggestionStatusLabel(suggestion({ status: 'rejected' }))).toBe('Verworfen')
-    expect(formatSuggestionStatusLabel(suggestion({ status: 'album_worthy' }))).toBe(
-      'Album-würdig'
-    )
+    expect(formatSuggestionStatusLabel(suggestion({ status: 'album_worthy' }))).toBe('Album-würdig')
   })
 })

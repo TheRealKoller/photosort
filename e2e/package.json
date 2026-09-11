@@ -10,12 +10,15 @@
   "scripts": {
     "test": "playwright test",
     "typecheck": "tsc --noEmit",
+    "format": "prettier --ignore-path ../.prettierignore --write .",
+    "format:check": "prettier --ignore-path ../.prettierignore --check .",
     "shot": "node bin/shot.ts",
     "drive": "node bin/drive.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@types/node": "22.20.1",
+    "prettier": "3.9.6",
     "typescript": "6.0.3"
   }
 }

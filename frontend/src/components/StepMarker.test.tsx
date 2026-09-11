@@ -16,7 +16,7 @@ import { STEP_MARKER_AUSPRAEGUNGEN, StepMarker, type StepMarkerAuspraegung } fro
 
 function marker(auspraegung: StepMarkerAuspraegung, options: { istErledigt?: boolean } = {}) {
   const { container } = render(
-    <StepMarker auspraegung={auspraegung} nummer={3} istErledigt={options.istErledigt} />
+    <StepMarker auspraegung={auspraegung} nummer={3} istErledigt={options.istErledigt} />,
   )
   const root = container.querySelector('[data-step-state]')
   expect(root, 'Marker ohne data-step-state').not.toBeNull()
@@ -63,7 +63,7 @@ describe('StepMarker', () => {
       expect(root).toHaveAttribute('data-step-state', auspraegung)
       expect(container.querySelectorAll('[data-glyph]')).toHaveLength(1)
       expect(container.querySelector('[data-glyph]')).toHaveAttribute('data-glyph', 'haken')
-    }
+    },
   )
 
   it('zeigt die Schrittnummer, wo die Nummer die Glyphe ist', () => {
@@ -76,8 +76,8 @@ describe('StepMarker', () => {
    * allein unterscheidbar" in seiner pruefbaren Form, und zwar ueber alle vier statt wie bisher
    * ueber drei. */
   it('unterscheidet alle vier Auspraegungen ohne Farbe', () => {
-    const werte = STEP_MARKER_AUSPRAEGUNGEN.map(
-      (auspraegung) => marker(auspraegung).root.getAttribute('data-step-state')
+    const werte = STEP_MARKER_AUSPRAEGUNGEN.map((auspraegung) =>
+      marker(auspraegung).root.getAttribute('data-step-state'),
     )
 
     expect(new Set(werte).size).toBe(STEP_MARKER_AUSPRAEGUNGEN.length)
@@ -85,10 +85,13 @@ describe('StepMarker', () => {
 
   /* Der Marker traegt KEINEN eigenen zugaenglichen Namen: der kommt vollstaendig vom
    * umschliessenden Bedienelement. Ein zweiter Name dort waere eine Dopplung im Screenreader. */
-  it.each([...STEP_MARKER_AUSPRAEGUNGEN])('bleibt bei %s ohne eigenen zugaenglichen Namen', (auspraegung) => {
-    const { root, container } = marker(auspraegung)
+  it.each([...STEP_MARKER_AUSPRAEGUNGEN])(
+    'bleibt bei %s ohne eigenen zugaenglichen Namen',
+    (auspraegung) => {
+      const { root, container } = marker(auspraegung)
 
-    expect(root).toHaveAccessibleName('')
-    expect(container.querySelector('[data-glyph]')).toHaveAttribute('aria-hidden', 'true')
-  })
+      expect(root).toHaveAccessibleName('')
+      expect(container.querySelector('[data-glyph]')).toHaveAttribute('aria-hidden', 'true')
+    },
+  )
 })

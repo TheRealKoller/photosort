@@ -7,7 +7,7 @@ import type { RatingOut, RatingStatus } from '../api/types'
  */
 export function findOwnRating(
   ratings: RatingOut[],
-  username: string | null
+  username: string | null,
 ): RatingOut | undefined {
   if (username === null) {
     return undefined
@@ -15,6 +15,9 @@ export function findOwnRating(
   return ratings.find((rating) => rating.username === username)
 }
 
-export function ownRatingStatus(ratings: RatingOut[], username: string | null): RatingStatus | null {
+export function ownRatingStatus(
+  ratings: RatingOut[],
+  username: string | null,
+): RatingStatus | null {
   return findOwnRating(ratings, username)?.status ?? null
 }

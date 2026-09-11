@@ -17,8 +17,20 @@ import type { IconName } from './ui/icon'
  * `--rating-rejected`: der Board-Ton erreicht auf `--overlay` nur 3.96:1 und ist hier TEXT.
  * Das ist die geltende --danger/--danger-text-Regel, keine neue Festlegung.
  */
-const OPTIONS: { status: RatingStatus; label: string; icon: IconName; key: string; keyClass: string }[] = [
-  { status: 'favorite', label: 'Favorit', icon: 'star', key: '1', keyClass: 'text-rating-favorite' },
+const OPTIONS: {
+  status: RatingStatus
+  label: string
+  icon: IconName
+  key: string
+  keyClass: string
+}[] = [
+  {
+    status: 'favorite',
+    label: 'Favorit',
+    icon: 'star',
+    key: '1',
+    keyClass: 'text-rating-favorite',
+  },
   {
     status: 'album_worthy',
     label: 'Album-würdig',
@@ -26,7 +38,13 @@ const OPTIONS: { status: RatingStatus; label: string; icon: IconName; key: strin
     key: '2',
     keyClass: 'text-rating-album-worthy',
   },
-  { status: 'rejected', label: 'Verwerfen', icon: 'x-circle', key: '3', keyClass: 'text-danger-text' },
+  {
+    status: 'rejected',
+    label: 'Verwerfen',
+    icon: 'x-circle',
+    key: '3',
+    keyClass: 'text-danger-text',
+  },
 ]
 
 // Bewertungsfarben - nur auf dem aktiv gedrückten Button als volle Fläche, nicht auf allen
@@ -40,7 +58,8 @@ const OPTIONS: { status: RatingStatus; label: string; icon: IconName; key: strin
 // stattfindet.
 const ACTIVE_TONE_CLASSES: Record<RatingStatus, string> = {
   favorite: 'bg-rating-favorite text-rating-favorite-fg hover:opacity-85 active:opacity-70',
-  album_worthy: 'bg-rating-album-worthy text-rating-album-worthy-fg hover:opacity-85 active:opacity-70',
+  album_worthy:
+    'bg-rating-album-worthy text-rating-album-worthy-fg hover:opacity-85 active:opacity-70',
   rejected: 'bg-rating-rejected text-rating-rejected-fg hover:opacity-85 active:opacity-70',
 }
 
@@ -131,7 +150,7 @@ export function RatingButtons({
               HOT_PATH_HEIGHT,
               ENTRY_LAYOUT,
               'gap-1 px-3',
-              isActive && ACTIVE_TONE_CLASSES[option.status]
+              isActive && ACTIVE_TONE_CLASSES[option.status],
             )}
             onClick={() => onToggle(option.status)}
           >
@@ -150,7 +169,7 @@ export function RatingButtons({
               aria-hidden="true"
               className={cn(
                 'ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-xs bg-overlay px-1 font-mono text-xs leading-none sm:ml-0',
-                option.keyClass
+                option.keyClass,
               )}
             >
               {option.key}

@@ -1,5 +1,14 @@
 import type { ReactElement } from 'react'
-import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router'
+import {
+  Link,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+} from 'react-router'
 
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { decodeUsername } from './auth/jwt'

@@ -274,9 +274,7 @@ async def _add_rating(
 
 async def _current_user(session: AsyncSession) -> User:
     """Der von `authenticated_api_client` angelegte Testnutzer."""
-    user = (
-        await session.execute(select(User).where(User.username == "testuser"))
-    ).scalar_one()
+    user = (await session.execute(select(User).where(User.username == "testuser"))).scalar_one()
     return user
 
 
@@ -494,9 +492,7 @@ class TestScopeAndStorage:
             db_session, project, "b.jpg", content_length=2_500, taken_at=datetime(2019, 4, 19, 18)
         )
 
-        payload = (
-            await authenticated_api_client.get(f"/projects/{project.id}/stats")
-        ).json()
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
 
         assert payload["photo_count"] == 2
         assert payload["storage"]["opencloud_bytes"] == 3_500
@@ -554,9 +550,7 @@ class TestCategories:
         project = await _make_project(db_session, "Costa Rica")
         owner = await _add_photo(db_session, project, "a.jpg")
         guest = await _add_photo(db_session, project, "b.jpg")
-        run = await _add_criterion_scoring_run(
-            db_session, project, started_at=datetime(2023, 2, 1)
-        )
+        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 2, 1))
         await _add_ranking(db_session, run, owner, "landschaft")
         await _add_ranking(db_session, run, guest, "tier")
         await _add_ranking(db_session, run, guest, "landschaft", is_primary=False)
@@ -661,9 +655,7 @@ class TestCategories:
         project = await _make_project(db_session, "Costa Rica")
         photo_a = await _add_photo(db_session, project, "a.jpg")
         photo_b = await _add_photo(db_session, project, "b.jpg")
-        run = await _add_criterion_scoring_run(
-            db_session, project, started_at=datetime(2023, 1, 1)
-        )
+        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 1, 1))
         await _add_ranking(db_session, run, photo_a, "tier")
         await _add_ranking(db_session, run, photo_b, "ein-alter-freitext-key")
 
@@ -686,9 +678,7 @@ class TestCategories:
         project = await _make_project(db_session, "Costa Rica")
         photo = await _add_photo(db_session, project, "a.jpg")
         await _add_score(db_session, photo, category_override="tier")
-        run = await _add_criterion_scoring_run(
-            db_session, project, started_at=datetime(2023, 1, 1)
-        )
+        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 1, 1))
         await _add_ranking(db_session, run, photo, "tier")
 
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
@@ -723,9 +713,7 @@ class TestCategories:
         ranked_photo = await _add_photo(db_session, project, "a.jpg")
         rejected_photo = await _add_photo(db_session, project, "b.jpg")
         await _add_score(db_session, rejected_photo, duplicate_of=ranked_photo.id)
-        run = await _add_criterion_scoring_run(
-            db_session, project, started_at=datetime(2023, 1, 1)
-        )
+        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 1, 1))
         await _add_ranking(db_session, run, ranked_photo, "tier")
 
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
@@ -951,9 +939,7 @@ class TestCosts:
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
 
         assert payload["cost"]["total_usd"] == 0.0
-        assert all(
-            entry["has_unrecorded_runs"] is False for entry in payload["cost"]["by_purpose"]
-        )
+        assert all(entry["has_unrecorded_runs"] is False for entry in payload["cost"]["by_purpose"])
 
     async def test_e_calls_without_an_amount_trigger_the_hint_even_without_results(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1061,9 +1047,7 @@ class TestProgress:
         await _add_score(db_session, photo_a)
         await _add_score(db_session, photo_b)
         await _add_category_classification(db_session, photo_a)
-        run = await _add_criterion_scoring_run(
-            db_session, project, started_at=datetime(2023, 1, 1)
-        )
+        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 1, 1))
         await _add_ranking(db_session, run, photo_a, "tier")
 
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
@@ -1511,9 +1495,7 @@ class TestCategoryConfidence:
         photo = await _add_photo(db_session, project, "a.jpg")
         await _add_score(db_session, photo, category_override="menschen")
         await _add_classification(db_session, photo, "tier", confidence=0.9)
-        run = await _add_criterion_scoring_run(
-            db_session, project, started_at=datetime(2023, 1, 1)
-        )
+        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 1, 1))
         await _add_ranking(db_session, run, photo, "menschen")
 
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()

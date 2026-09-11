@@ -39,7 +39,7 @@ describe('Checkbox', () => {
     const onCheckedChange = vi.fn()
     const user = userEvent.setup()
     render(
-      <Checkbox checked={false} onCheckedChange={onCheckedChange} label="Cloud nutzen" disabled />
+      <Checkbox checked={false} onCheckedChange={onCheckedChange} label="Cloud nutzen" disabled />,
     )
 
     const checkbox = screen.getByRole('checkbox', { name: 'Cloud nutzen' })
@@ -61,7 +61,7 @@ describe('Checkbox', () => {
         label="Cloud nutzen"
         // @ts-expect-error - defaultChecked ist aus CheckboxProps ausgeschlossen
         defaultChecked
-      />
+      />,
     )
 
     expect(screen.getByRole('checkbox', { name: 'Cloud nutzen' })).toBeChecked()
@@ -76,7 +76,7 @@ describe('Checkbox', () => {
         label="Cloud nutzen"
         // @ts-expect-error - bewusst ein von CheckboxProps ausgeschlossenes Attribut
         type="text"
-      />
+      />,
     )
 
     expect(screen.getByRole('checkbox', { name: 'Cloud nutzen' })).toBeChecked()

@@ -86,9 +86,7 @@ def compute_dhash(image: Image.Image) -> str:
     """Difference Hash (dHash): Graustufen-Resize auf 9x8 Pixel + bitweiser Vergleich
     benachbarter Pixel -> 64-Bit-Hash, hex-codiert. Strukturell (nicht
     farb-)sensitiv, ausreichend fuer Burst-/Duplikaterkennung nahezu identischer Aufnahmen."""
-    grayscale = image.convert("L").resize(
-        (_DHASH_WIDTH, _DHASH_HEIGHT), Image.Resampling.LANCZOS
-    )
+    grayscale = image.convert("L").resize((_DHASH_WIDTH, _DHASH_HEIGHT), Image.Resampling.LANCZOS)
     pixels = list(grayscale.getdata())
 
     value = 0
@@ -236,9 +234,7 @@ def assign_clusters(
     for candidate in ordered:
         coordinate = _coordinate_of(candidate)
 
-        time_boundary = (
-            previous_taken_at is None or candidate.taken_at - previous_taken_at > gap
-        )
+        time_boundary = previous_taken_at is None or candidate.taken_at - previous_taken_at > gap
         distance_boundary = (
             coordinate is not None
             and reference_coordinate is not None

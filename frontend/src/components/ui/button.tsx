@@ -88,12 +88,11 @@ const buttonVariants = cva(
       variant: 'default',
       size: 'default',
     },
-  }
+  },
 )
 
 export interface ButtonProps
-  extends ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
+  extends ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   /**
    * Busy-Button-Muster: erzwingt den deaktivierten Zustand zentral in der Komponente, statt sich
    * darauf zu verlassen, dass jeder Aufrufer `disabled` UND `busy` synchron hält. Der
@@ -156,7 +155,7 @@ export function Button({
       className={cn(
         buttonVariants({ variant, size, className }),
         tapTargetClass,
-        isDisabledSlot && 'pointer-events-none opacity-40'
+        isDisabledSlot && 'pointer-events-none opacity-40',
       )}
       disabled={asChild ? undefined : isDisabled}
       aria-disabled={isDisabledSlot ? true : undefined}

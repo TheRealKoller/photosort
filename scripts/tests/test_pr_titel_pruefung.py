@@ -449,9 +449,7 @@ def test_ein_workflow_kommando_im_titel_beginnt_keine_zeile(
 
 
 @pytest.mark.parametrize("titel", UNGUELTIGE_TITEL)
-def test_ein_ungueltiger_titel_scheitert(
-    titel: str, skript: str, umgebung: dict[str, str]
-) -> None:
+def test_ein_ungueltiger_titel_scheitert(titel: str, skript: str, umgebung: dict[str, str]) -> None:
     code, ausgabe = fuehre_aus(skript, titel, umgebung)
 
     assert code == 1, (
@@ -650,9 +648,7 @@ def test_eine_fehlende_locale_scheitert_laut() -> None:
 
 @pytest.mark.parametrize("locale", ["C.UTF-8", "en_US.UTF-8", "de_DE.utf8"])
 def test_gleichwertige_schreibweisen_einer_utf8_locale_gelten(locale: str) -> None:
-    assert laufumgebung(f"        env:\n          LC_ALL: {locale}\n") == {
-        LOCALE_VARIABLE: locale
-    }
+    assert laufumgebung(f"        env:\n          LC_ALL: {locale}\n") == {LOCALE_VARIABLE: locale}
 
 
 # --- Statische Zusicherungen an der Workflow-Datei ---------------------------------------------

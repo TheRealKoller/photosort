@@ -46,7 +46,7 @@ describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
         '/projects/:projectId/pipeline/:step',
         '/projects/:projectId/settings',
         '/projects/:projectId/stats',
-      ].sort()
+      ].sort(),
     )
   })
 
@@ -70,7 +70,7 @@ describe('projectRoutes - matchProjectId', () => {
     'weist %s ab',
     (pathname) => {
       expect(matchProjectId(pathname)).toBeNull()
-    }
+    },
   )
 
   it('akzeptiert eine nicht-numerische projectId ohne clientseitige Validierung', () => {
@@ -152,9 +152,9 @@ describe('projectRoutes - Zieltabelle in zwei Gruppen', () => {
     const primaryIds = new Set<string>(PROJECT_NAV_PRIMARY_TARGETS.map((target) => target.id))
     expect(
       PROJECT_NAV_SECONDARY_TARGETS.filter((target) => primaryIds.has(target.id)).map(
-        (target) => target.id
+        (target) => target.id,
       ),
-      'Ziel in beiden Gruppen'
+      'Ziel in beiden Gruppen',
     ).toEqual([])
   })
 
@@ -191,7 +191,7 @@ describe('projectRoutes - isSecondaryNavTargetId', () => {
     (id) => {
       const isSecondary = PROJECT_NAV_SECONDARY_TARGETS.some((target) => target.id === id)
       expect(isSecondaryNavTargetId(id)).toBe(isSecondary)
-    }
+    },
   )
 
   // Edge Case 1 der Spec: die naheliegende Fehlimplementierung ist "kein Hauptziel aktiv ⇒
@@ -231,6 +231,6 @@ describe('projectRoutes - resolveActiveNavTargetId', () => {
     'liefert ohne Projektkontext null (%s)',
     (pathname) => {
       expect(resolveActiveNavTargetId(pathname)).toBeNull()
-    }
+    },
   )
 })

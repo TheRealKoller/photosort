@@ -95,7 +95,7 @@ describe('useCurationCandidatesQuery', () => {
 
     const { result } = renderHook(
       () => useCurationCandidatesQuery(1, { ...partition, enabled: false }),
-      { wrapper }
+      { wrapper },
     )
 
     await waitFor(() => expect(result.current.fetchStatus).toBe('idle'))
@@ -107,7 +107,7 @@ describe('useCurationCandidatesQuery', () => {
 
     const { result } = renderHook(
       () => useCurationCandidatesQuery(1, { ...partition, enabled: true }),
-      { wrapper }
+      { wrapper },
     )
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
@@ -129,7 +129,7 @@ describe('useCurationCandidatesQuery', () => {
 
     const { result } = renderHook(
       () => useCurationCandidatesQuery(1, { ...partition, enabled: true, pageSize: 2 }),
-      { wrapper }
+      { wrapper },
     )
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.hasNextPage).toBe(true)
@@ -164,7 +164,7 @@ describe('useCurationCandidatesQuery', () => {
     )
     const candidates = renderHook(
       () => useCurationCandidatesQuery(1, { ...partition, enabled: true }),
-      { wrapper: sharedWrapper }
+      { wrapper: sharedWrapper },
     )
     await waitFor(() => expect(candidates.result.current.isSuccess).toBe(true))
 

@@ -50,5 +50,10 @@ export const CATEGORY_SET: CategoryOut[] = [
     definition: 'd',
     locally_available: false,
   },
-  { key: 'nicht_erkannt', display_name: 'Nicht erkannt', definition: 'd', locally_available: false },
+  {
+    key: 'nicht_erkannt',
+    display_name: 'Nicht erkannt',
+    definition: 'd',
+    locally_available: false,
+  },
 ]

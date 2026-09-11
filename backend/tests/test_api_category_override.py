@@ -238,9 +238,7 @@ class TestPutCategoryOverride:
         assert response.status_code == 200
         assert response.json() == {"photo_id": photo.id, "category_key": "kunst_kreatives"}
         ranking = (
-            await db_session.execute(
-                select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
-            )
+            await db_session.execute(select(PhotoRanking).where(PhotoRanking.photo_id == photo.id))
         ).scalar_one()
         assert ranking.category_key == "kunst_kreatives"
 
@@ -341,9 +339,7 @@ class TestPutCategoryOverride:
         assert score is not None
         assert score.category_override is None
         ranking = (
-            await db_session.execute(
-                select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
-            )
+            await db_session.execute(select(PhotoRanking).where(PhotoRanking.photo_id == photo.id))
         ).scalar_one()
         assert ranking.category_key == "tier"
 
@@ -531,15 +527,9 @@ class TestOverrideWithSecondaryCategories:
     nur `photo_scores.category_override` - die Nebenkategorien werden aus der unveraenderten
     Modellaussage NEU abgeleitet."""
 
-    async def _memberships(
-        self, session: AsyncSession, photo: Photo
-    ) -> dict[str, bool]:
+    async def _memberships(self, session: AsyncSession, photo: Photo) -> dict[str, bool]:
         rows = (
-            (
-                await session.execute(
-                    select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
-                )
-            )
+            (await session.execute(select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)))
             .scalars()
             .all()
         )
@@ -601,9 +591,7 @@ class TestOverrideWithSecondaryCategories:
         await authenticated_api_client.put(
             f"/photos/{photo.id}/category-override", json={"category_key": "tier"}
         )
-        response = await authenticated_api_client.delete(
-            f"/photos/{photo.id}/category-override"
-        )
+        response = await authenticated_api_client.delete(f"/photos/{photo.id}/category-override")
 
         assert response.status_code == 204
         assert await self._memberships(db_session, photo) == before
@@ -668,9 +656,7 @@ class TestDeleteCategoryOverride:
         assert score is not None
         assert score.category_override is None
         ranking = (
-            await db_session.execute(
-                select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
-            )
+            await db_session.execute(select(PhotoRanking).where(PhotoRanking.photo_id == photo.id))
         ).scalar_one()
         assert ranking.category_key == "menschen"
 
@@ -690,9 +676,7 @@ class TestDeleteCategoryOverride:
         await authenticated_api_client.delete(f"/photos/{photo.id}/category-override")
 
         ranking = (
-            await db_session.execute(
-                select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
-            )
+            await db_session.execute(select(PhotoRanking).where(PhotoRanking.photo_id == photo.id))
         ).scalar_one()
         assert ranking.category_key == "sport_aktivitaet"
 
@@ -711,17 +695,15 @@ class TestDeleteCategoryOverride:
         before = await authenticated_api_client.get(
             f"/projects/{project.id}/photos", params={"top_n_per_category": 5}
         )
-        assert {
-            item["rankings"][0]["category_key"] for item in before.json()["items"]
-        } == {"detail"}
+        assert {item["rankings"][0]["category_key"] for item in before.json()["items"]} == {
+            "detail"
+        }
 
         response = await authenticated_api_client.delete(f"/photos/{photo.id}/category-override")
 
         assert response.status_code == 204
         ranking = (
-            await db_session.execute(
-                select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
-            )
+            await db_session.execute(select(PhotoRanking).where(PhotoRanking.photo_id == photo.id))
         ).scalar_one()
         assert ranking.category_key == CATEGORY_NOT_RECOGNIZED
 
@@ -777,9 +759,7 @@ class TestOverrideLeavesTheConfidenceColumnsUntouched:
 
         assert response.status_code == 200
         db_session.expunge_all()
-        row = (
-            await db_session.execute(select(PhotoCategoryClassification))
-        ).scalars().one()
+        row = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
         assert row.category_key == "tier"
         assert row.category_confidence == 0.81
         assert row.detected_category_confidences == {"tier": 0.81, "landschaft": 0.22}
@@ -822,14 +802,10 @@ class TestOverrideLeavesTheConfidenceColumnsUntouched:
         await _add_ranking(db_session, run, photo, category_key="landschaft")
         await self._classify(db_session, photo)
 
-        response = await authenticated_api_client.delete(
-            f"/photos/{photo.id}/category-override"
-        )
+        response = await authenticated_api_client.delete(f"/photos/{photo.id}/category-override")
 
         assert response.status_code == 204
         db_session.expunge_all()
-        row = (
-            await db_session.execute(select(PhotoCategoryClassification))
-        ).scalars().one()
+        row = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
         assert row.category_confidence == 0.81
         assert row.detected_category_confidences == {"tier": 0.81, "landschaft": 0.22}

@@ -23,7 +23,12 @@ from photosort.thumbnails import (
 )
 from photosort.worker import run_project_scan
 
-DRIVE = Drive(id="drive-1", name="Family", drive_type="project", webdav_url="https://cloud.example.com/dav/spaces/drive-1")
+DRIVE = Drive(
+    id="drive-1",
+    name="Family",
+    drive_type="project",
+    webdav_url="https://cloud.example.com/dav/spaces/drive-1",
+)
 
 
 def _entry(name: str, etag: str, last_modified: datetime, content_length: int = 100) -> DavEntry:
@@ -180,9 +185,7 @@ async def _make_project(session: AsyncSession) -> Project:
     return project
 
 
-async def test_scan_adds_new_photos(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_scan_adds_new_photos(db_session: AsyncSession, tmp_path: Path) -> None:
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
@@ -209,9 +212,7 @@ async def test_scan_adds_new_photos(
     assert photos[0].taken_at == modified.replace(tzinfo=None)
 
 
-async def test_scan_updates_photo_on_etag_change(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_scan_updates_photo_on_etag_change(db_session: AsyncSession, tmp_path: Path) -> None:
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     db_session.add(
@@ -300,9 +301,7 @@ async def test_scan_removes_photos_no_longer_present(
     assert result.scalars().all() == []
 
 
-async def test_scan_skips_non_image_files(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_scan_skips_non_image_files(db_session: AsyncSession, tmp_path: Path) -> None:
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
     client = FakeOpenCloudClient(
@@ -320,9 +319,7 @@ async def test_scan_skips_non_image_files(
     assert client.download_requests == []
 
 
-async def test_scan_extracts_exif_for_jpeg(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_scan_extracts_exif_for_jpeg(db_session: AsyncSession, tmp_path: Path) -> None:
     import io
 
     from PIL import Image
@@ -851,9 +848,7 @@ class TestResumeIdempotency:
             ("CostaRica/img003.jpg", _entry("img003.jpg", "etag-3", modified)),
             ("CostaRica/img004.jpg", _entry("img004.jpg", "etag-4", modified)),
         ]
-        failing_client = DownloadFailsOnceClient(
-            entries=entries, fail_path="CostaRica/img003.jpg"
-        )
+        failing_client = DownloadFailsOnceClient(entries=entries, fail_path="CostaRica/img003.jpg")
 
         first_run = await run_project_scan(
             db_session, failing_client, project, drive_name=None, cache_dir=tmp_path
@@ -917,8 +912,9 @@ class TestResumeIdempotency:
 # zurueck auf `None`.
 
 
-def _jpeg_with_gps(lat_ref: str, lat: tuple[int, int, float], lon_ref: str,
-                   lon: tuple[int, int, float]) -> bytes:
+def _jpeg_with_gps(
+    lat_ref: str, lat: tuple[int, int, float], lon_ref: str, lon: tuple[int, int, float]
+) -> bytes:
     import io
 
     from PIL import Image
@@ -1325,9 +1321,7 @@ async def test_a_failed_scan_does_not_clean_up(db_session: AsyncSession, tmp_pat
     assert orphan.is_file()
 
 
-async def test_a_cancelled_scan_does_not_clean_up(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_a_cancelled_scan_does_not_clean_up(db_session: AsyncSession, tmp_path: Path) -> None:
     """Akzeptanzkriterium 8, zweiter Zweig: die `CancelledError` propagiert unveraendert und
     erreicht die Bereinigung strukturell nicht."""
     project = await _make_project(db_session)
