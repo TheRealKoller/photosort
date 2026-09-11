@@ -1,6 +1,5 @@
 """Schreibendes CLI: legt einen deterministischen Demo-Datenbestand fuer die browsergestuetzte
-Oberflaechenpruefung an (specs/features/0174-browser-zugang-fuer-claude.md, ADR decisions/0057-
-browsergestuetzte-oberflaechenpruefung.md).
+Oberflaechenpruefung an.
 
 Aufruf::
 
@@ -10,8 +9,8 @@ Aufruf::
 Vier Projekte mit dem festen Namenspraefix ``Demo — `` decken die vier prueflohnenden Zustaende ab
 (leer, grosse Sammlung, bewertet, Fehlerzustand). Die Bilddateien entstehen synthetisch mit Pillow
 und werden ueber die ECHTE ``thumbnails.py``-Logik in den lokalen Cache geschrieben - kein zweites
-Abbild von Datenmodell oder Cache-Schluessel, das bei einer Modelaenderung still abdriften koennte
-(ADR 0058 Punkt 4).
+Abbild von Datenmodell oder Cache-Schluessel, das bei einer Modelaenderung still abdriften
+koennte.
 
 WARUM DIESES MODUL IM PRODUKTIV-PAKET LIEGT UND TROTZDEM UNGEFAEHRLICH IST: Es braucht die echten
 SQLAlchemy-Modelle und die echte Cache-Schluessel-Bildung, liegt damit im Produktiv-Image - und ist
@@ -135,8 +134,8 @@ _BASE_SCORING_AT = datetime(2024, 6, 1, 11, 0, 0)
 # waere bereits entschieden und zeigte den Zustand nicht mehr).
 _OPEN_SUGGESTION_INDEX = 3
 
-# specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 7: zwei Fotos des
-# bewerteten Projekts tragen eine ABSICHTLICH gesetzte Konfidenz-Sonderform, damit beide leicht
+# Zwei Fotos des bewerteten Projekts tragen eine ABSICHTLICH gesetzte Konfidenz-Sonderform,
+# damit beide leicht
 # falsch gebauten Faelle im Browser tatsaechlich sichtbar sind.
 #
 #   _CONFIDENCE_GAP_INDEX  - gar keine Angabe (beide Spalten `NULL`): die Luecke IST die
@@ -154,8 +153,8 @@ _LOW_CONFIDENCE_INDEX = 1
 # hoechstens 0.49 - garantiert unter 0.6, ohne den Wert fest zu verdrahten.
 _LOW_CONFIDENCE_FACTOR = 0.5
 
-# specs/features/0300-nebenkategorien.md, Umsetzungsschritt 8: FESTE Zusatzkonfidenzen fuer drei
-# Fotos des bewerteten Projekts, damit die Mehrfachzugehoerigkeit in `browse-app` und im
+# FESTE Zusatzkonfidenzen fuer drei Fotos des bewerteten Projekts, damit die
+# Mehrfachzugehoerigkeit in `browse-app` und im
 # e2e-Prueflauf tatsaechlich zu sehen ist. Bewusst literale Zahlen statt des deterministischen
 # Zufallswerts: die Faelle sollen an der Schwelle nicht kippen, wenn sich der Generator aendert.
 #
@@ -190,10 +189,10 @@ _RATED_STATUS_ORDER = tuple(RatingStatus)
 # wie das Foto ohne Cache-Datei - die Oberflaeche soll beide Fehlerbilder nebeneinander zeigen).
 _CLOUD_VISION_ERROR_INDEX = 1
 
-# specs/features/0348-klassifizierungs-transparenz.md: die Cloud-Bilanz des "bewertet"-Zustands.
+# Die Cloud-Bilanz des "bewertet"-Zustands.
 #
-# SAEMTLICHE Werte hier sind FREI ERFUNDEN und stammen aus keinem echten Lauf (Spec 0321: nur
-# synthetische Demo-Daten). Das ist ab dieser Spec keine Formalie mehr: die Bilanz zeigt erstmals
+# SAEMTLICHE Werte hier sind FREI ERFUNDEN und stammen aus keinem echten Lauf (nur synthetische
+# Demo-Daten). Das ist keine Formalie: die Bilanz zeigt
 # einen GELDBETRAG an der Ausloese-Stelle, und Screenshots aus dem Pruefstack landen als
 # PR-Anhaenge in einem oeffentlichen Repository. Ein echter Betrag waere damit
 # Ausgabeninformation der Familie in der Oeffentlichkeit.
@@ -212,8 +211,8 @@ _DEMO_LANDMARK_OUTPUT_TOKENS = 540
 _DEMO_LANDMARK_COST_USD = 0.11
 _DEMO_ESTIMATED_COST_USD = 0.52
 
-# specs/features/0051-gps-landmark-cluster-bildung.md: der "bewertet"-Zustand muss ALLE VIER
-# Anzeigezustaende der Cluster-Ueberschrift hergeben - Sehenswuerdigkeit, eine Koordinate, mehrere
+# Der "bewertet"-Zustand muss ALLE VIER Anzeigezustaende der Cluster-Ueberschrift hergeben -
+# Sehenswuerdigkeit, eine Koordinate, mehrere
 # Orte und gar kein Ort. Sonst ist die Sichtpruefung ueber den `browse-app`-Skill fuer drei davon
 # blind, und sie ist die einzige nicht automatisierte Kontrollinstanz dieses Features.
 #
@@ -225,9 +224,9 @@ _DEMO_SINGLE_COORDINATE_CLUSTER = 1
 _DEMO_MULTIPLE_PLACES_CLUSTER = 2
 _DEMO_NO_LOCATION_CLUSTER = 3
 
-# Frei erfundene, aber plausible Koordinaten rund um den Eiffelturm (Spec 0321: ausschliesslich
-# synthetische Demo-Daten - das Repository ist oeffentlich, und Standortdaten der Familie duerfen
-# es nie erreichen).
+# Frei erfundene, aber plausible Koordinaten rund um den Eiffelturm (ausschliesslich synthetische
+# Demo-Daten - das Repository ist oeffentlich, und Standortdaten der Familie duerfen es nie
+# erreichen).
 _DEMO_BASE_LAT = 48.8583
 _DEMO_BASE_LON = 2.2945
 # Streuung INNERHALB einer 2-Nachkommastellen-Zelle (~1,1 km): alle Fotos eines Clusters fallen auf
@@ -242,7 +241,7 @@ _DEMO_LANDMARK_CONFIDENCE = 0.91
 
 def _demo_gps(index: int) -> tuple[float, float] | None:
     """Die Koordinate des Demo-Fotos `index` - deterministisch, ohne Zufall, damit zwei
-    Seeder-Laeufe byte-gleiche Werte liefern (specs/features/0051-gps-landmark-cluster-bildung.md).
+    Seeder-Laeufe byte-gleiche Werte liefern.
 
     Die Zuordnung folgt dem Cluster: das Landmark- und das Koordinaten-Cluster streuen INNERHALB
     einer gerundeten Zelle, das "Mehrere Orte"-Cluster ueber Zellgrenzen hinweg, und das vierte
@@ -459,8 +458,7 @@ async def purge_demo_state(session: AsyncSession, cache_dir: Path) -> int:
     Cache-Dateinamen sind flache Hash-Schluessel ohne Projektzuordnung, bei einem geteilten Volume
     traefe ein Glob echte Familien-Thumbnails.
 
-    Die Aufzaehlung der abhaengigen Tabellen und die Cache-Loeschung stehen seit
-    specs/features/0044-projekte-loeschen.md NICHT mehr hier, sondern in
+    Die Aufzaehlung der abhaengigen Tabellen und die Cache-Loeschung stehen NICHT hier, sondern in
     `project_deletion.py`/`thumbnails.py` - dieselbe Loeschung existierte sonst ein zweites Mal
     neben `DELETE /projects/{id}`, und zwei Aufzaehlungen driften. Die Import-Richtung ist dabei
     verbindlich: dieses Modul importiert `project_deletion`, nie umgekehrt (M3, siehe
@@ -480,8 +478,8 @@ async def purge_demo_state(session: AsyncSession, cache_dir: Path) -> int:
     cache_keys = await collect_photo_cache_keys(session, project_ids)
     await delete_projects(session, project_ids)
     await session.flush()
-    # Ueber to_thread, wie es der Docstring von delete_cached_variants zusagt (Copilot-Fund,
-    # PR #351): die Funktion ist rein synchron und setzt bis zu zwei unlink-Aufrufe je Foto ab -
+    # Ueber to_thread, wie es der Docstring von delete_cached_variants zusagt: die Funktion ist
+    # rein synchron und setzt bis zu zwei unlink-Aufrufe je Foto ab -
     # ein direkter Aufruf aus dieser Koroutine heraus blockierte die Event-Loop. Der Endpunkt
     # nebenan macht es richtig; eine Zusage, an die sich nur einer der beiden Aufrufer haelt, ist
     # keine.
@@ -510,8 +508,8 @@ async def _create_photos(
     """Legt die Fotos eines Demo-Projekts an und schreibt ihre Bildvarianten ueber die ECHTE
     thumbnails.py-Logik in den Cache - kein nachgebauter Cache-Schluessel.
 
-    `location_of` liefert je Foto-Index die Koordinate (specs/features/0051-gps-landmark-cluster-
-    bildung.md). Bewusst als Parameter statt fest verdrahtet: nur das "bewertet"-Projekt braucht
+    `location_of` liefert je Foto-Index die Koordinate. Bewusst als Parameter statt fest
+    verdrahtet: nur das "bewertet"-Projekt braucht
     Ortsdaten, und nur dort ist die Cluster-Zuordnung bekannt, aus der sich die vier
     Anzeigezustaende ergeben. Ohne den Parameter bleibt jedes Foto ohne Koordinate - der
     haeufigste reale Fall."""
@@ -576,15 +574,14 @@ def _deterministic_unit_value(slug: str, index: int, salt: str) -> float:
 
 
 def _demo_category_confidences(slug: str, index: int, category_key: str) -> dict[str, float] | None:
-    """Die Konfidenz-Abbildung EINES Demo-Fotos (specs/features/0299-kategorie-konfidenz-
-    anzeigen.md) - `None` heisst "nicht erhoben" und ist genau der Fall, den die Oberflaeche als
-    Luecke darstellen muss.
+    """Die Konfidenz-Abbildung EINES Demo-Fotos - `None` heisst "nicht erhoben" und ist genau der
+    Fall, den die Oberflaeche als Luecke darstellen muss.
 
     Reine Funktion ueber demselben deterministischen Zufallsgenerator wie die uebrigen Demo-Werte:
     zwei Laeufe liefern identische Zahlen, ein Screenshot bleibt vergleichbar.
 
-    specs/features/0300-nebenkategorien.md: drei Fotos bekommen zusaetzlich feste Zahlen zu
-    WEITEREN Schluesseln (`_DEMO_EXTRA_CONFIDENCES`) - daraus entstehen die Nebenkategorien, und
+    Drei Fotos bekommen zusaetzlich feste Zahlen zu WEITEREN Schluesseln
+    (`_DEMO_EXTRA_CONFIDENCES`) - daraus entstehen die Nebenkategorien, und
     zwar ueber dieselbe Ableitung wie im produktiven Schreibpfad (`secondary_categories`), damit
     die Demo keinen Zustand erzeugt, den die Anwendung selbst nie schriebe."""
     if index == _CONFIDENCE_GAP_INDEX:
@@ -666,13 +663,13 @@ async def _seed_rated_project(
     session.add(scoring_run)
     await session.flush()
 
-    # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 3/4: der Remote-Lauf
-    # DIESES Durchlaufs. Er entsteht vor dem Klassifizierungslauf, damit dessen Fremdschluessel
+    # Der Remote-Lauf DIESES Durchlaufs. Er entsteht vor dem Klassifizierungslauf, damit dessen
+    # Fremdschluessel
     # ihn treffen kann - dieselbe Reihenfolge wie im produktiven Pfad (worker.py::
     # run_classification).
     #
-    # SAEMTLICHE Zahlen hier sind frei erfunden (Spec 0321: nur synthetische Demo-Daten - das
-    # Repository ist oeffentlich, PR-Anhaenge liegen oeffentlich auf GitHub). Sie stammen aus
+    # SAEMTLICHE Zahlen hier sind frei erfunden (nur synthetische Demo-Daten - das Repository ist
+    # oeffentlich, PR-Anhaenge liegen oeffentlich auf GitHub). Sie stammen aus
     # keinem echten Lauf und beschreiben keine tatsaechlichen Ausgaben der Familie.
     remote_run = RemoteCategoryClassificationRun(
         project_id=project.id,
@@ -702,9 +699,9 @@ async def _seed_rated_project(
         photos_total=len(photos),
         photos_processed=len(photos),
         phase=ClassificationPhase.CRITERIA,
-        # Der "bewertet"-Zustand traegt seit Spec 0348 die vollstaendige Lauf-Bilanz: beide
-        # Cloud-Teilschritte, verknuepfter Remote-Lauf und eingefrorene Startschaetzung - sonst
-        # waere der neue Block im Pruefstack/`browse-app` gar nicht sichtbar. Der Fall "ohne
+        # Der "bewertet"-Zustand traegt die vollstaendige Lauf-Bilanz: beide Cloud-Teilschritte,
+        # verknuepfter Remote-Lauf und eingefrorene Startschaetzung - sonst waere der Block im
+        # Pruefstack/`browse-app` gar nicht sichtbar. Der Fall "ohne
         # Cloud" bleibt im Fehlerzustands-Projekt erhalten.
         cloud_requested=True,
         remote_category_classification_run_id=remote_run.id,
@@ -724,8 +721,8 @@ async def _seed_rated_project(
     # Ein Foto je Kategorie-Schluessel des FESTEN Sets - ueber die Registry iteriert, damit eine
     # vierzehnte Kategorie automatisch mit abgedeckt ist statt durchzurutschen.
     #
-    # specs/features/0300-nebenkategorien.md: die Zugehoerigkeiten werden erst GESAMMELT und dann
-    # partitionsweise geschrieben - ein Foto kann in mehreren Partitionen stehen, und
+    # Die Zugehoerigkeiten werden erst GESAMMELT und dann partitionsweise geschrieben - ein Foto
+    # kann in mehreren Partitionen stehen, und
     # `rank_position` ist innerhalb einer Partition lueckenlos 1..n (dieselbe Zusage wie im
     # produktiven Schreibpfad).
     memberships: list[tuple[tuple[str, str], Photo, float, bool]] = []
@@ -750,12 +747,12 @@ async def _seed_rated_project(
                 computed_at=_BASE_SCORING_AT,
             )
         )
-        # specs/features/0299-kategorie-konfidenz-anzeigen.md: deterministische Konfidenz je
-        # Foto ueber dasselbe `_deterministic_unit_value`-Muster wie die uebrigen Demo-Werte -
+        # Deterministische Konfidenz je Foto ueber dasselbe `_deterministic_unit_value`-Muster
+        # wie die uebrigen Demo-Werte -
         # zwei Fotos tragen die Sonderformen (keine Angabe / unterhalb der Kuratierungsschwelle),
         # siehe die Konstanten oben. Der Skalar entsteht wie im produktiven Schreibpfad per
         # LOOKUP aus der Abbildung, damit die Demo keinen Zustand erzeugt, den die Anwendung
-        # selbst nie schriebe (Invariante aus ADR 0067 Punkt 4).
+        # selbst nie schriebe (Invariante des Schreibpfads).
         confidences = _demo_category_confidences(spec.slug, index, category_key)
         session.add(
             PhotoCategoryClassification(
@@ -763,7 +760,7 @@ async def _seed_rated_project(
                 category_key=category_key,
                 # Die Kandidatenliste enthaelt genau die Schluessel der Konfidenz-Abbildung -
                 # `set(detected_category_confidences) <= set(detected_categories)` ist die am
-                # Parser erzwungene Invariante (ADR 0067 Punkt 2), und die Demo darf keinen
+                # Parser erzwungene Invariante, und die Demo darf keinen
                 # Zustand erzeugen, den die Anwendung selbst nie schriebe.
                 detected_categories=([category_key] if confidences is None else list(confidences)),
                 detected_category_confidences=confidences,
@@ -774,8 +771,8 @@ async def _seed_rated_project(
                 computed_at=_BASE_SCORING_AT,
             )
         )
-        # specs/features/0051-gps-landmark-cluster-bildung.md: GENAU EIN erkannter Name im
-        # Landmark-Cluster. Genau einer, nicht mehrere - `refine_clusters_by_landmark` teilt erst
+        # GENAU EIN erkannter Name im Landmark-Cluster. Genau einer, nicht mehrere -
+        # `refine_clusters_by_landmark` teilt erst
         # ab ZWEI verschiedenen Namen auf, und der Demo-Zustand soll den ungeteilten Cluster mit
         # `kind="landmark"` zeigen, nicht seine Aufteilung. Die uebrigen Fotos des Clusters
         # bekommen den Namen ueber `cluster_place` mit - genau das ist der Zustand, den die
@@ -875,9 +872,8 @@ async def _seed_error_project(
             ),
         )
     )
-    # specs/features/0348-klassifizierungs-transparenz.md: der Fall "Lauf OHNE Cloud-Nutzung" der
-    # Bilanz - er ist mit Spec 0348 aus dem "bewertet"-Projekt herausgewandert (dort steht jetzt
-    # die vollstaendige Cloud-Bilanz) und lebt seither hier. Ohne ihn haette die Bilanz-Variante
+    # Der Fall "Lauf OHNE Cloud-Nutzung" der Bilanz - er lebt hier, weil im "bewertet"-Projekt
+    # jetzt die vollstaendige Cloud-Bilanz steht. Ohne ihn haette die Bilanz-Variante
     # "Ohne Cloud-Anreicherung durchgefuehrt - es wurden keine Fotos an einen Anbieter gesendet."
     # im Pruefstack/`browse-app` keinen Fall mehr.
     #

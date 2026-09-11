@@ -1,10 +1,9 @@
-"""Festes, anwendungsweit einheitliches Kategorien-Set (specs/features/0289-feste-kategorien.md,
-decisions/0049-festes-kategorien-set-mit-vorrangreihenfolge-und-freien-feinlabels.md).
+"""Festes, anwendungsweit einheitliches Kategorien-Set.
 
-Bewusst ein EIGENES Modul und nicht Teil von `criteria.py` (ADR 0049, Entwurfsentscheidung 1):
-Kriterien sind Mess-Signale fuers Ranking, dieses Set ist eine Produkt-Taxonomie. Die Vermischung
-beider Anliegen in `criteria.py` war die Ursache der Skalen-/Namensraum-Probleme, die ADR 0032 und
-ADR 0047 nacheinander zu reparieren versuchten.
+Bewusst ein EIGENES Modul und nicht Teil von `criteria.py`: Kriterien sind Mess-Signale fuers
+Ranking, dieses Set ist eine Produkt-Taxonomie. Die Vermischung beider Anliegen in `criteria.py`
+war die Ursache der Skalen-/Namensraum-Probleme, die danach zweimal nacheinander repariert werden
+mussten.
 
 Das Modul ist bewusst REIN: keine DB-, Netzwerk- oder Bildverarbeitungs-Abhaengigkeit und kein
 Import aus `criteria.py`/`models.py` - `LOCAL_CATEGORY_SIGNALS` referenziert Kriterien-Keys nur als
@@ -18,7 +17,7 @@ import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-# Obergrenzen der Modellantwort (ADR 0049): hier statt in `remote_classification.py`, weil
+# Obergrenzen der Modellantwort: hier statt in `remote_classification.py`, weil
 # `build_classification_prompt()` sie in den erzeugten Prompt schreibt - eine Definition dort
 # haette einen Zirkelimport erzwungen (remote_classification importiert dieses Modul).
 # `remote_classification.py` importiert beide Werte von hier und kuerzt die geparste Antwort
@@ -26,18 +25,17 @@ from dataclasses import dataclass
 MAX_REMOTE_CATEGORIES_PER_PHOTO = 3
 MAX_FINE_LABELS_PER_PHOTO = 2
 
-# Auffangwert fuer "kein Bildmotiv sicher bestimmbar" (ADR 0049). Bewusst KEIN Ersatz fuer
+# Auffangwert fuer "kein Bildmotiv sicher bestimmbar". Bewusst KEIN Ersatz fuer
 # `gegenstand`: `gegenstand` ist der letzte Eintrag der Vorrangreihenfolge und wird bei einem
 # tatsaechlichen Kandidaten vergeben, `nicht_erkannt` steht ausserhalb der Reihenfolge.
 CATEGORY_NOT_RECOGNIZED = "nicht_erkannt"
 
 # Ab welcher Modell-Selbsteinschaetzung eine erkannte Kategorie zur NEBENkategorie eines Fotos
-# wird (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 3) - inklusiv verglichen (`>=`),
-# wie `category_presence_threshold` in criteria.py.
+# wird - inklusiv verglichen (`>=`), wie `category_presence_threshold` in criteria.py.
 #
 # Steht hier und nicht in `ranking.py`/`worker.py`, weil es eine Aussage ueber die TAXONOMIE ist
 # ("ab wann gehoert ein Foto zu einer Kategorie") und nicht ueber die Rangfolge - dieselbe
-# Trennung, die ADR 0049 zwischen Produkt-Taxonomie und Mess-Signal gezogen hat.
+# Trennung zwischen Produkt-Taxonomie und Mess-Signal.
 #
 # Anwendungsweit gleich und bewusst KEIN Konfigurationswert: keine Umgebungsvariable, keine
 # projekt- oder nutzerspezifische Fassung, in keiner API-Antwort und in keiner Oberflaeche
@@ -50,8 +48,8 @@ SECONDARY_CATEGORY_MIN_CONFIDENCE = 0.7
 
 @dataclass(frozen=True)
 class CategoryDefinition:
-    """Ein Eintrag des festen Sets (ADR 0049, Entwurfsentscheidung 2: Registry-Dataclass statt
-    `StrEnum`). `definition` und `delimitation` sind fachlich Teil der Kategorie - sie sind
+    """Ein Eintrag des festen Sets (Registry-Dataclass statt `StrEnum`). `definition` und
+    `delimitation` sind fachlich Teil der Kategorie - sie sind
     zugleich Prompt-Grundlage (`build_classification_prompt`) und UI-Erklaerung (`GET /categories`);
     ein Enum haette sie in eine zweite, driftende Struktur gedraengt.
 
@@ -233,7 +231,7 @@ CATEGORY_REGISTRY: dict[str, CategoryDefinition] = {
             "Nicht bei einem abgestellten Sportgerät ohne handelnde Person (→ Gegenstand bzw. "
             "Fahrzeug)."
         ),
-        # Steht BEWUSST vor `menschen` (ADR 0049): bei sportlichen Aktivitäten sind fast immer
+        # Steht BEWUSST vor `menschen`: bei sportlichen Aktivitäten sind fast immer
         # Personen bildbestimmend - ohne diesen Vorrang koennte die Kategorie faktisch nie
         # gewinnen. Eigener, literaler Testfall in tests/test_categories.py.
         precedence=2,
@@ -256,7 +254,7 @@ CATEGORY_REGISTRY: dict[str, CategoryDefinition] = {
 
 
 # Welche lokal berechneten Kriterien (criteria.py::CRITERIA_REGISTRY) welche Kategorie als
-# Kandidaten stuetzen (ADR 0049). Nur SECHS der zwoelf Kategorien sind lokal bestimmbar - die
+# Kandidaten stuetzen. Nur SECHS der zwoelf Kategorien sind lokal bestimmbar - die
 # uebrigen entstehen ausschliesslich im Remote-Lauf (bewusst akzeptierte Grenze der Spec).
 #
 # `landmark` speist `gebaeude_bauwerk` mit, bildet aber KEINE eigene Kategorie mehr: der erkannte
@@ -275,7 +273,8 @@ LOCAL_CATEGORY_SIGNALS: dict[str, frozenset[str]] = {
 
 def is_known_category(key: str) -> bool:
     """Reine Whitelist-Pruefung gegen das feste Set - Validierungsfunktion von
-    `PUT /photos/{id}/category-override` (Security-Abschnitt der Spec 0289, Punkt 2).
+    `PUT /photos/{id}/category-override`. Bricht in
+    tests/test_categories.py::TestIsKnownCategory::test_unknown_or_differently_cased_values_are_not_known.
 
     BEWUSST ohne jede Normalisierung des Eingabewerts (kein `strip()`/`casefold()`, kein Praefix-/
     Regex-Vergleich): der Client schickt den Key exakt so zurueck, wie `GET /categories` ihn
@@ -284,12 +283,12 @@ def is_known_category(key: str) -> bool:
 
 
 def resolve_category(candidates: Iterable[str]) -> str:
-    """Bestimmt die EINE Kategorie eines Fotos aus seiner Kandidatenmenge (ADR 0049,
-    Entwurfsentscheidung 4: "Das Modell nennt Kandidaten, der Code entscheidet").
+    """Bestimmt die EINE Kategorie eines Fotos aus seiner Kandidatenmenge ("Das Modell nennt
+    Kandidaten, der Code entscheidet").
 
     Reine Funktion ueber einer geschlossenen Datenstruktur - unabhaengig davon, welche anderen
-    Fotos im Projekt liegen (das ist der Kern-Unterschied zur abgeloesten Haeufigkeitsableitung aus
-    ADR 0023) und unabhaengig von der HERKUNFT eines Kandidaten: lokale Signale und
+    Fotos im Projekt liegen (das ist der Kern-Unterschied zur abgeloesten
+    Haeufigkeitsableitung) und unabhaengig von der HERKUNFT eines Kandidaten: lokale Signale und
     Remote-Kategorien gehen als EINE Menge ein.
 
     Regeln: unbekannte Werte werden ignoriert (nicht abgelehnt - eine gesteuerte oder entartete
@@ -316,9 +315,8 @@ def resolve_category(candidates: Iterable[str]) -> str:
 
 
 def usable_confidence(value: object) -> float | None:
-    """Lesepfad-Haertung fuer eine persistierte Selbsteinschaetzung (specs/features/0300-
-    nebenkategorien.md, Security-Muss-Kriterium 2): `None`, wenn der Wert keine brauchbare Zahl
-    ist - sonst der Wert selbst als `float`.
+    """Lesepfad-Haertung fuer eine persistierte Selbsteinschaetzung (Security-Muss-Kriterium):
+    `None`, wenn der Wert keine brauchbare Zahl ist - sonst der Wert selbst als `float`.
 
     Brauchbar ist ausschliesslich ein `int`/`float` im Band `[0, 1]`. `bool` ist ausdruecklich
     AUSGESCHLOSSEN, obwohl `isinstance(True, int)` in Python wahr ist: `True >= 0.7` waere sonst
@@ -342,16 +340,16 @@ def usable_confidence(value: object) -> float | None:
 
 
 def secondary_categories(confidences: Mapping[str, object], primary_key: str) -> tuple[str, ...]:
-    """Die NEBENkategorien eines Fotos (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 2)
-    - die zweite, von `resolve_category` vollstaendig getrennte Ableitung.
+    """Die NEBENkategorien eines Fotos - die zweite, von `resolve_category` vollstaendig
+    getrennte Ableitung.
 
     Liefert in Registry-ANZEIGEREIHENFOLGE alle Schluessel, die (a) im festen Set stehen, (b) nicht
     die Hauptkategorie sind, (c) nicht `CATEGORY_NOT_RECOGNIZED` sind und (d) eine brauchbare Zahl
     `>= SECONDARY_CATEGORY_MIN_CONFIDENCE` tragen.
 
     Einzige Eingabe ist die Konfidenz-Abbildung, NICHT zusaetzlich die Kandidatenliste: ein
-    Schluessel mit Zahl ist konstruktionsbedingt ein erkannter Schluessel (ADR 0067 Punkt 2), und
-    ein erkannter Schluessel ohne Zahl ist per Akzeptanzkriterium 6 keine Nebenkategorie. Eine
+    Schluessel mit Zahl ist konstruktionsbedingt ein erkannter Schluessel, und ein erkannter
+    Schluessel ohne Zahl ist keine Nebenkategorie. Eine
     Eingabe, zwei Regeln, kein Abgleich zweier Listen, der auseinanderlaufen koennte.
 
     Die Iteration laeuft ueber `CATEGORY_REGISTRY` und NICHT ueber die Eingabe. Das liefert die
@@ -361,11 +359,11 @@ def secondary_categories(confidences: Mapping[str, object], primary_key: str) ->
 
     `CATEGORY_NOT_RECOGNIZED` ist ausgeschlossen, weil es keine Motivaussage ist, sondern deren
     Abwesenheit - eine "Nebenkategorie Nicht erkannt" neben einer erkannten Hauptkategorie waere
-    ein Widerspruch in sich (ADR 0069 Punkt 3).
+    ein Widerspruch in sich.
 
     LOKALE Signale kommen hier nie an: sie tragen keine mit der Modellaussage vergleichbare Zahl
-    (das Skalenproblem, an dem ADR 0047 gescheitert ist) und speisen unveraendert ausschliesslich
-    die Kandidatenmenge der HAUPTkategorie (Akzeptanzkriterium 19).
+    (das Skalenproblem der frueheren Ableitung) und speisen unveraendert ausschliesslich die
+    Kandidatenmenge der HAUPTkategorie.
 
     Reine Funktion, mutiert die Eingabe nicht."""
     result: list[str] = []
@@ -379,13 +377,14 @@ def secondary_categories(confidences: Mapping[str, object], primary_key: str) ->
 
 
 def build_classification_prompt() -> str:
-    """Erzeugt den Klassifizierungs-Prompt AUSSCHLIESSLICH aus `CATEGORY_REGISTRY` (ADR 0049,
-    Entwurfsentscheidung 3) - Prompt und Set koennen damit nicht auseinanderlaufen, eine zweite
-    gepflegte Liste im Prompt-Literal gibt es nicht.
+    """Erzeugt den Klassifizierungs-Prompt AUSSCHLIESSLICH aus `CATEGORY_REGISTRY` - Prompt und
+    Set koennen damit nicht auseinanderlaufen, eine zweite gepflegte Liste im Prompt-Literal gibt
+    es nicht.
 
-    Security-Muss-Kriterium (Spec 0289, Abschnitt 5): der Prompt entsteht nie aus Datenbankinhalten
-    und nie aus vorherigen Modellantworten - es gibt keinen Rueckkopplungspfad, ueber den eine
-    Antwort den naechsten Prompt beeinflussen koennte."""
+    Security-Muss-Kriterium: der Prompt entsteht nie aus Datenbankinhalten und nie aus vorherigen
+    Modellantworten - es gibt keinen Rueckkopplungspfad, ueber den eine Antwort den naechsten
+    Prompt beeinflussen koennte. Bricht in tests/test_categories.py::
+    TestBuildClassificationPrompt::test_the_prompt_is_generated_from_the_registry_not_a_literal."""
     lines = [
         "Analysiere dieses Foto und ordne es einem festen Kategorien-Set zu.",
         "",
@@ -412,10 +411,9 @@ def build_classification_prompt() -> str:
             f"Nenne zusaetzlich hoechstens {MAX_FINE_LABELS_PER_PHOTO} kurze, frei formulierte "
             "deutsche Feinlabels, die das Foto naeher beschreiben (Anlass, Ort, konkretes Motiv).",
             "",
-            # specs/features/0299-kategorie-konfidenz-anzeigen.md, ADR 0067 Punkt 7: der
-            # Kategorien-Eintrag wird vom nackten Schluessel zum Objekt. Ausdruecklich als
-            # SELBSTEINSCHAETZUNG formuliert - die Zahl beeinflusst die Kategorieauswahl an keiner
-            # Stelle (ADR 0067 Punkt 1), sie wird ausschliesslich angezeigt und ausgewertet.
+            # Der Kategorien-Eintrag ist ein Objekt, nicht der nackte Schluessel. Ausdruecklich
+            # als SELBSTEINSCHAETZUNG formuliert - die Zahl beeinflusst die Kategorieauswahl an
+            # keiner Stelle, sie wird ausschliesslich angezeigt und ausgewertet.
             "Gib zu jeder genannten Kategorie an, wie sicher du dir bei dieser Zuordnung bist - "
             'als Zahl zwischen 0 und 1 im Feld "confidence" (0 = sehr unsicher, 1 = sehr sicher). '
             "Nenne keine Zahl, wenn du dich nicht einschaetzen kannst; erfinde keine.",

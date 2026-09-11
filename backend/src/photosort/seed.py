@@ -23,7 +23,7 @@ users_table = Table(
 def seed_user(connection: Connection, username: str, password: str) -> None:
     """Legt den User an, falls er noch nicht existiert - idempotent.
 
-    Ueberschreibt nie einen bestehenden password_hash (siehe specs/features/0006-auth.md).
+    Ueberschreibt nie einen bestehenden password_hash.
     """
     existing = connection.execute(
         select(users_table.c.username).where(users_table.c.username == username)

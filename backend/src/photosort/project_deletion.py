@@ -1,4 +1,4 @@
-"""Die EINE Aufzaehlung dessen, was an einem Projekt haengt (ADR 0062, Spec 0044).
+"""Die EINE Aufzaehlung dessen, was an einem Projekt haengt.
 
 Metadatengeordnete Mengenloeschung statt ORM-Kaskade: `session.delete(project)` laedt bei
 mehreren tausend Fotos rund 10^5 abhaengige Zeilen als Objekte und setzt ein DELETE je Zeile ab.
@@ -12,14 +12,15 @@ ab - noetig, weil die Testsuite gegen SQLite ohne `PRAGMA foreign_keys=ON` laeuf
 falsche Reihenfolge dort strukturell nicht auffiele.
 
 Nicht geloescht werden `users` und `fine_labels`: beide sind Fremdschluessel-ELTERN (die
-Feinlabel-Registry ist projektuebergreifendes Vokabular, ADR 0032) und fallen aus der
+Feinlabel-Registry ist projektuebergreifendes Vokabular) und fallen aus der
 Erreichbarkeitspruefung automatisch heraus, ohne eigene Ausnahmeliste.
 
-SICHERHEITS-MUSS-KRITERIUM (Spec 0044, Abschnitt Security - Demo-Seeder-Sperre M3): Dieses Modul
-importiert `demo_state` NICHT (die Import-Richtung ist umgekehrt), nimmt die zu loeschenden
-Projekt-IDs ausschliesslich vom Aufrufer entgegen und enthaelt KEINE Projekt-AUSWAHL-Logik (kein
-Namenspraefix, kein "alle Projekte"). Sonst waere ausgerechnet der Teil, den die dreiteilige
-Demo-Sperre bewacht, ueber einen HTTP-Endpunkt erreichbar.
+SICHERHEITS-MUSS-KRITERIUM (Demo-Seeder-Sperre M3): Dieses Modul importiert `demo_state` NICHT
+(die Import-Richtung ist umgekehrt), nimmt die zu loeschenden Projekt-IDs ausschliesslich vom
+Aufrufer entgegen und enthaelt KEINE Projekt-AUSWAHL-Logik (kein Namenspraefix, kein "alle
+Projekte"). Sonst waere ausgerechnet der Teil, den die dreiteilige Demo-Sperre bewacht, ueber
+einen HTTP-Endpunkt erreichbar. Bricht in
+tests/test_demo_state.py::TestNoCallPathFromTheRunningApplication (drei Faelle).
 """
 
 from __future__ import annotations

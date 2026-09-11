@@ -14,9 +14,8 @@ router = APIRouter(
     prefix="/opencloud", tags=["opencloud"], dependencies=[Depends(get_current_user)]
 )
 
-# Reiner Anzeige-/UX-Wert ohne betriebliche Tuning-Notwendigkeit (specs/features/0050-dateianzahl-
-# im-ordner-browser.md, ADR decisions/0028-ordner-browser-bilddatei-zaehlung.md Punkt 5) - anders
-# als settings.opencloud_folder_count_concurrency deshalb eine Modul-Konstante statt eines
+# Reiner Anzeige-/UX-Wert ohne betriebliche Tuning-Notwendigkeit - anders als
+# settings.opencloud_folder_count_concurrency deshalb eine Modul-Konstante statt eines
 # Settings-Felds, analog worker.py::SCAN_COMMIT_BATCH_SIZE.
 FOLDER_COUNT_LIMIT = 500
 
@@ -59,9 +58,8 @@ async def _count_images_up_to_limit(
     client: OpenCloudClient, webdav_url: str, path: str, limit: int
 ) -> tuple[int, bool]:
     """Konsumiert client.walk() (bestehende BFS-Traversierung mit Zyklenschutz, Endpunkt-lokale
-    Geschaeftslogik, siehe ADR decisions/0028 Punkt 1) und zaehlt nur Bilddateien
-    (IMAGE_EXTENSIONS). Bricht die async-for-Schleife ab, sobald limit erreicht ist - walk() ist
-    ein Async-Generator,
+    Geschaeftslogik) und zaehlt nur Bilddateien (IMAGE_EXTENSIONS). Bricht die async-for-Schleife
+    ab, sobald limit erreicht ist - walk() ist ein Async-Generator,
     der ab diesem Punkt keine weiteren PROPFIND-Anfragen mehr stellt (echter Early-Exit auf
     Netzwerkebene, kein "erst alles traversieren und danach kappen"). Haelt bewusst keinen eigenen
     visited-Zustand - der Zyklenschutz von walk() bleibt dadurch unveraendert wirksam."""
@@ -101,7 +99,7 @@ async def folder_counts(
 
     # Serverseitige Gesamt-Nebenlaeufigkeit ueber ALLE Unterordner-Zaehlungen dieses Requests
     # hinweg (nicht pro Unterordner) - der eigentliche Grund fuer den Batch- statt
-    # Einzel-Request-Endpunkt (ADR decisions/0028 Punkt 2).
+    # Einzel-Request-Endpunkt.
     semaphore = asyncio.Semaphore(settings.opencloud_folder_count_concurrency)
     raw_results = await asyncio.gather(
         *(
@@ -111,7 +109,7 @@ async def folder_counts(
         return_exceptions=True,
     )
 
-    # Verifizierter Python-Async-Fallstrick (siehe worker.py::_process_scan_block, ADR 0020):
+    # Verifizierter Python-Async-Fallstrick (siehe worker.py::_process_scan_block):
     # return_exceptions=True faengt ein CancelledError einer einzelnen Kind-Coroutine NICHT als
     # Exception ab, sondern reicht es als gewoehnliches Ergebniselement durch - das muss weiterhin
     # propagieren (z.B. bei einem echten Request-Abbruch), statt als error=True verschluckt zu
@@ -124,8 +122,8 @@ async def folder_counts(
     for subfolder_path, raw_result in zip(subfolder_paths, raw_results, strict=True):
         if isinstance(raw_result, BaseException):
             # Einzelner Unterordner-Zaehlfehler (z.B. Netzwerkfehler mitten in dessen
-            # Traversierung) blockiert weder die uebrigen Zaehler noch die Gesamtantwort (ADR
-            # decisions/0028 Punkt 4) - nur das vorgelagerte Listing oben liefert einen echten 400.
+            # Traversierung) blockiert weder die uebrigen Zaehler noch die Gesamtantwort - nur das
+            # vorgelagerte Listing oben liefert einen echten 400.
             results.append(FolderCountOut(path=subfolder_path, count=0, at_limit=False, error=True))
             continue
         count, at_limit = raw_result

@@ -270,10 +270,11 @@ class ClusterPlaceOut(BaseModel):
     repraesentieren muesste, gerade nicht. Zwei Felder statt einer stellvertretenden Zahl zu
     fuehren waere eine zweite, stille Wahrheit.
 
-    `landmark_name` ist freier, extern erzeugter LLM-Text (`PhotoLandmarkDetection.name`, Spec
-    0047) - dieselbe Auflage wie bei `FineLabelOut.raw_label`: ausschliesslich als regulaerer
+    `landmark_name` ist freier, extern erzeugter LLM-Text (`PhotoLandmarkDetection.name`) -
+    dieselbe Auflage wie bei `FineLabelOut.raw_label`: ausschliesslich als regulaerer
     React-Textknoten rendern, nie `dangerouslySetInnerHTML`, nie als HTML-String-Prop, nie in
-    `href`/`src`/`style`, nie als React-`key`.
+    `href`/`src`/`style`, nie als React-`key`. Bricht in `CurateCategoriesPage.test.tsx > rendert
+    einen HTML-artigen Sehenswuerdigkeit-Namen als Text, nicht als Markup`.
 
     Wird NIRGENDS persistiert."""
 

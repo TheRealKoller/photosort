@@ -13,7 +13,8 @@ from photosort.security import create_access_token, verify_dummy_password, verif
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Bewusst identischer, dokumentierter Wortlaut fuer "unbekannter User" und "falsches Passwort"
-# (Anti-Enumeration, siehe specs/features/0006-auth.md).
+# (Anti-Enumeration, User-Enumeration ueber unterschiedliche Fehlertexte). Bricht in
+# tests/test_api_auth.py::test_login_with_unknown_username_returns_identical_401.
 INVALID_CREDENTIALS_DETAIL = "Ungültige Anmeldedaten"
 
 _MAX_LOGIN_FIELD_LENGTH = 128

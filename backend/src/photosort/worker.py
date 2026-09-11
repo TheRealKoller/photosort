@@ -302,8 +302,7 @@ async def _fail_run(
         # er wird auch vom Fortschritts-Watchdog (reap_stalled_runs -> _fail_if_stalled) benutzt,
         # der einen haengenden Lauf abraeumt, ohne dass die Job-Coroutine je zurueckkehrt. `phase`
         # existiert nur auf CriterionScoringRun, deshalb die isinstance-Pruefung statt eines
-        # gemeinsamen Basisklassen-Feldes (die vier Run-Modelle haben bewusst keine, ADR
-        # 0019).
+        # gemeinsamen Basisklassen-Feldes (die vier Run-Modelle haben bewusst keine).
         run.phase = None
     await session.commit()
     # das vorangehende rollback() expired ORM-Objekte der Session -
@@ -462,8 +461,8 @@ async def _process_scan_block(
     # Coroutine wirft, NICHT als Exception ab, sondern reicht es als gewoehnliches Element der
     # Ergebnisliste durch - `await gather(...)` selbst wirft in diesem Fall NICHTS. Ohne diese
     # explizite Pruefung wuerde ein Abbruch mitten in einer parallelen I/O-Coroutine NICHT den
-    # bestehenden `except asyncio.CancelledError`-Zweig in run_project_scan erreichen (ADR-0019-
-    # Kompatibilitaet, Akzeptanzkriterium der Spec). Eine ECHTE aeussere Task-Cancellation (arq
+    # bestehenden `except asyncio.CancelledError`-Zweig in run_project_scan erreichen. Eine ECHTE
+    # aeussere Task-Cancellation (arq
     # job_timeout) propagiert dagegen bereits ohne Sonderbehandlung roh durch `await gather(...)`
     # hindurch - dieser Fall betrifft ausschliesslich eine Kind-Coroutine, die CancelledError
     # selbst wirft/traegt.
@@ -513,9 +512,8 @@ async def _enumerate_scan_entries(
     root_path: str,
     scan_run: ScanRun,
 ) -> list[tuple[str, DavEntry]]:
-    """Phase 1 (Enumeration, ADR
-    0020, Punkt 1): materialisiert `client.walk(...)` zu einer In-Memory-Liste - KEIN Photo-DB-
-    Schreibzugriff, nur periodische files_found/last_progress_at-Checkpoints (bestehende
+    """Phase 1 (Enumeration): materialisiert `client.walk(...)` zu einer In-Memory-Liste - KEIN
+    Photo-DB-Schreibzugriff, nur periodische files_found/last_progress_at-Checkpoints (bestehende
     Checkpoint-Kadenz, Zweitverwendung von _maybe_commit_progress_checkpoint). Erst nach
     vollstaendigem Abschluss ist die Gesamtzahl bekannt (run_project_scan setzt danach
     ScanRun.total_files)."""
@@ -1017,9 +1015,9 @@ def _log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats
 
 
 # Defensive Obergrenze fuer eine entartete Fehlermeldung, analog
-# remote_classification.py::MAX_REMOTE_LABEL_LENGTH - die eigentliche Absicherung bleibt die in ADR
-# 0034 Punkt 5 verifizierte str(exc)-Konstruktion (keine Secrets/Rohdaten), diese Kappung ist nur
-# eine Storage-/Degenerationsgrenze.
+# remote_classification.py::MAX_REMOTE_LABEL_LENGTH - die eigentliche Absicherung bleibt die
+# verifizierte str(exc)-Konstruktion (keine Secrets/Rohdaten), diese Kappung ist nur eine
+# Storage-/Degenerationsgrenze.
 #
 # SICHERHEIT (die Zielgruppe dieser Fehlermeldung reicht vom Server-Log-Leser bis zum
 # App-Nutzer): vor der Umsetzung verifiziert, ob str(exc) bei einem von
@@ -1109,8 +1107,8 @@ async def _record_cloud_vision_error(
 async def _clear_cloud_vision_error(
     session: AsyncSession, photo_id: int, phase: CloudVisionPhase
 ) -> None:
-    """Loescht eine ggf. vorhandene Fehler-Zeile nach einem erfolgreichen (Retry-)Versuch (ADR
-    0035 Punkt 2: "Aufraeumen bei Erfolg") - haelt die Tabelle konsistent mit ihrer eigenen
+    """Loescht eine ggf. vorhandene Fehler-Zeile nach einem erfolgreichen (Retry-)Versuch
+    ("Aufraeumen bei Erfolg") - haelt die Tabelle konsistent mit ihrer eigenen
     Bedeutung ("letzter bekannter Versuch ist fehlgeschlagen"), auch wenn die Prioritaets-Kaskade
     in api/photos.py::_cloud_vision_status_out einen vergessenen Aufruf funktional abfangen
     wuerde (Erfolg schlaegt Fehler)."""
@@ -1669,8 +1667,8 @@ async def run_criterion_scoring(
                 )
             if landmark_client is not None:
                 # Die Modellspalte wandert vom `finally` an den PHASENANFANG. Es bleibt derselbe
-                # lokale Wert, der den Client gebaut hat und gleich die Kosten rechnen wird (ADR
-                # 0059 Punkt 7 unveraendert) - nur frueher committet, damit die Oberflaeche schon
+                # lokale Wert, der den Client gebaut hat und gleich die Kosten rechnen wird - nur
+                # frueher committet, damit die Oberflaeche schon
                 # WAEHREND des Teilschritts sagen kann, wohin die Aufrufe gehen. Der BETRAG bleibt
                 # im `finally` und am Phasenende eingefroren.
                 run.landmark_model = landmark_model

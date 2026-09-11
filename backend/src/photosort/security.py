@@ -15,8 +15,8 @@ TOKEN_TTL = timedelta(days=30)
 
 _hasher = PasswordHasher()
 # Fixer Dummy-Hash (identische Kostenparameter wie echte Hashes, siehe _hasher oben) fuer die
-# Anti-Enumeration-Verifikation bei unbekanntem Username in POST /auth/login - siehe
-# specs/features/0006-auth.md und architecture/0003-securitykonzept.md.
+# Anti-Enumeration-Verifikation bei unbekanntem Username in POST /auth/login. Bricht in
+# tests/test_api_auth.py::test_login_with_unknown_username_still_runs_dummy_verification.
 _DUMMY_PASSWORD_HASH = _hasher.hash("dummy-password-for-constant-codepath")
 
 
@@ -36,7 +36,7 @@ def verify_dummy_password(password: str) -> None:
 
     Existiert ausschliesslich dafuer, dass der Login-Codepfad bei unbekanntem Username
     denselben Argon2-Verify-Aufwand betreibt wie bei einem existierenden User mit falschem
-    Passwort (Anti-Enumeration, siehe Spec 0006).
+    Passwort (Anti-Enumeration gegen User-Enumeration).
     """
     try:
         _hasher.verify(_DUMMY_PASSWORD_HASH, password)
@@ -57,6 +57,7 @@ def create_access_token(user: User) -> str:
 
 def decode_access_token(token: str) -> dict[str, Any]:
     # algorithms=[ALGORITHM] fixiert den erlaubten Algorithmus explizit - niemals aus dem
-    # Token-Header uebernehmen oder weglassen (Algorithm-Confusion/"alg: none", siehe
-    # architecture/0003-securitykonzept.md).
+    # Token-Header uebernehmen oder weglassen (Algorithm-Confusion/"alg: none"). Bricht in
+    # tests/test_security.py::test_decode_access_token_rejects_alg_none und
+    # tests/test_auth_guard.py::test_protected_endpoint_rejects_alg_none_token.
     return jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])

@@ -5,28 +5,27 @@ from dataclasses import dataclass
 
 from photosort.categories import usable_confidence
 
-# specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md, decisions/0021-kriterien-
-# datenmodell-kuratierungs-pipeline.md, Punkt 3: reine, DB-freie Rangfolgen-Funktion (analog
+# Reine, DB-freie Rangfolgen-Funktion (analog
 # scoring.py::assign_time_clusters/classification.py's ehemaligem select_top_n_with_category_mix).
 # Operiert auf EINER Partition (cluster_key x category_key) pro Aufruf - der Worker ruft sie je
 # Partition auf und ergaenzt cluster_key/category_key erst beim Persistieren der PhotoRanking-
 # Zeilen (siehe worker.py::run_criterion_scoring). Die konkrete Default-Gewichtung ist bewusst
-# austauschbar, nicht Teil dieser Spec (siehe "Out of Scope").
+# austauschbar.
 #
 # `usable_confidence` kommt aus categories.py und wird hier NICHT ein zweites Mal geschrieben
-# (specs/features/0300-nebenkategorien.md, Security-Muss-Kriterium 2): "was gilt als Angabe" muss
+# (Security-Muss-Kriterium): "was gilt als Angabe" muss
 # an beiden Lesestellen dieselbe Antwort geben - zwei Kopien koennten auseinanderlaufen, und genau
 # das ist der Fehler, den die Haertung verhindern soll. Der Import bleibt DB-, netzwerk- und
 # bildverarbeitungsfrei; categories.py ist selbst ein reines Modul und importiert nichts aus
 # diesem hier (kein Zirkel).
 
 
-# Der maximale Abzug auf den SORTIERSCHLUESSEL einer Partition (ADR 0069 Punkt 5) - erreicht bei
+# Der maximale Abzug auf den SORTIERSCHLUESSEL einer Partition - erreicht bei
 # einer Selbsteinschaetzung von 0, null bei 1. Produktentscheidung Daniels: spuerbar, aber
 # gedeckelt. Bewusst additiv statt multiplikativ: `rank_score` ist ein auf [0, 1] normierter
 # gewichteter Mittelwert, auf dieser Skala ist ein Abstand eine Aussage, ein Faktor nicht (und ein
 # Faktor bestrafte gut bewertete Fotos absolut staerker als schlecht bewertete - genau verkehrt
-# herum). Nicht gegen einen echten Fotokorpus kalibriert (ADR 0069, Konsequenzen).
+# herum). Nicht gegen einen echten Fotokorpus kalibriert.
 CONFIDENCE_RANK_PENALTY = 0.15
 
 
@@ -38,9 +37,8 @@ class RankedPhoto:
 
 
 def confidence_ordering_score(rank_score: float, confidence: object) -> float:
-    """Der gedaempfte SORTIERSCHLUESSEL eines Fotos innerhalb seiner Partition
-    (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 5) - ausdruecklich NICHT sein
-    `rank_score`.
+    """Der gedaempfte SORTIERSCHLUESSEL eines Fotos innerhalb seiner Partition - ausdruecklich
+    NICHT sein `rank_score`.
 
     Ohne brauchbare Zahl ist das Ergebnis der `rank_score` selbst, sonst
     `rank_score - CONFIDENCE_RANK_PENALTY * (1 - confidence)`. Der Abzug liegt damit fuer jede
@@ -75,11 +73,11 @@ def rank_photos(
     confidences: Mapping[int, object] | None = None,
 ) -> list[RankedPhoto]:
     """Bildet fuer jeden Kandidaten (photo_id -> {criterion_key: value}) einen gewichteten
-    Rang-Score und sortiert absteigend (Tie-Break: niedrigere photo_id gewinnt, Determinismus-
-    Konvention aus Spec 0003/0024 fortgeführt).
+    Rang-Score und sortiert absteigend (Tie-Break: niedrigere photo_id gewinnt, projektweite
+    Determinismus-Konvention).
 
-    `confidences` (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 5) ist die Konfidenz je
-    Foto ZUM SCHLUESSEL GENAU DIESER PARTITION - damit wird nie zwischen zwei Kategorien
+    `confidences` ist die Konfidenz je Foto ZUM SCHLUESSEL GENAU DIESER PARTITION - damit wird nie
+    zwischen zwei Kategorien
     verglichen, sondern immer nur zwischen zwei Fotos derselben Kategorie. Sortiert wird dann nach
     `confidence_ordering_score`; `RankedPhoto.rank_score` bleibt der UNGEDAEMPFTE Wert und ist
     damit ueber alle Zugehoerigkeitszeilen eines Fotos identisch. `rank_position` ist es nicht: sie

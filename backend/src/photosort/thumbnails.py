@@ -16,8 +16,7 @@ from PIL import Image, ImageOps
 
 logger = logging.getLogger(__name__)
 
-# Groessen laut UI/UX-Abschnitt von specs/features/0002-manual-categorization.md: Grid nutzt
-# Thumbnail-, Einzelbild-/Vergleichsansicht Display-Auflösung.
+# Grid nutzt die Thumbnail-, Einzelbild-/Vergleichsansicht die Display-Auflösung.
 THUMBNAIL_MAX_SIZE = 400
 DISPLAY_MAX_SIZE = 2048
 JPEG_QUALITY_THUMBNAIL = 82
@@ -29,7 +28,7 @@ Variant = Literal["thumbnail", "display"]
 def cache_key(photo_id: int, etag: str) -> str:
     """Deterministischer, dateisystemsicherer Cache-Schluessel aus photo_id+etag.
 
-    Kein neues DB-Feld noetig (specs/features/0002): aendert sich das Foto auf OpenCloud,
+    Kein neues DB-Feld noetig: aendert sich das Foto auf OpenCloud,
     aendert sich der etag und damit automatisch der Schluessel - alte Cache-Dateien werden
     dadurch implizit ungueltig, ohne dass eine explizite Invalidierung noetig waere.
     """
@@ -85,9 +84,9 @@ def generate_variants(cache_dir: Path, photo_id: int, etag: str, image_bytes: by
             display_path(cache_dir, photo_id, etag), format="JPEG", quality=JPEG_QUALITY_DISPLAY
         )
     except Exception:
-        # Bewusst breiter Except-Block statt einer festen Liste von PIL-/OS-Exceptions (Security-
-        # Review-Fund, specs/features/0002-manual-categorization.md, erweitert um Code-Review-Fund
-        # zu Schreibfehlern): Image.DecompressionBombError erbt NICHT von OSError und wuerde von
+        # Bewusst breiter Except-Block statt einer festen Liste von PIL-/OS-Exceptions (deckt
+        # neben Dekodier- auch Schreibfehler ab): Image.DecompressionBombError erbt NICHT von
+        # OSError und wuerde von
         # einer engeren Liste durchgelassen - ein ungewoehnlich hochaufloesendes, aber nicht
         # boeswilliges Foto (Panorama/Drohnenaufnahme) duerfte den gesamten Scan-Job trotzdem nicht
         # crashen lassen. Aus demselben Grund deckt der Block jetzt auch mkdir()/save() ab: ein
@@ -99,7 +98,7 @@ def generate_variants(cache_dir: Path, photo_id: int, etag: str, image_bytes: by
     return True
 
 
-# specs/features/0207-projekt-statistikseite.md, Abschnitt 4 "Speicherbedarf" ab hier.
+# Speicherbedarf ab hier.
 
 
 @dataclass(frozen=True)
@@ -154,7 +153,7 @@ def measure_cache_usage(cache_dir: Path, photos: Iterable[tuple[int, str]]) -> C
     return CacheUsage(total_bytes=total_bytes, complete_photo_count=complete_photo_count)
 
 
-# specs/features/0044-projekte-loeschen.md, Punkt 2 "Cache-Cleanup" ab hier.
+# Cache-Cleanup ab hier.
 
 
 def delete_cached_variants(cache_dir: Path, photos: Iterable[tuple[int, str]]) -> None:
@@ -165,10 +164,9 @@ def delete_cached_variants(cache_dir: Path, photos: Iterable[tuple[int, str]]) -
     bei mehreren tausend `unlink`-Aufrufen nicht blockiert.
 
     Die Pfade werden ausschliesslich aus `photo_id`/`etag` BERECHNET, nie ueber ein
-    Verzeichnismuster gesucht (ADR 0062 Punkt 5): der Cache ist flach und projektuebergreifend,
-    ein `glob` traefe fremde Dateien. Aus derselben Rechnung folgt die benannte Grenze - Varianten
-    unter einem inzwischen veralteten `etag` erreicht diese Funktion strukturell nicht (siehe
-    `cache_key`, Restrisiko 2 der Spec, Issue #349).
+    Verzeichnismuster gesucht: der Cache ist flach und projektuebergreifend, ein `glob` traefe
+    fremde Dateien. Aus derselben Rechnung folgt die benannte Grenze - Varianten unter einem
+    inzwischen veralteten `etag` erreicht diese Funktion strukturell nicht (siehe `cache_key`).
 
     Best-effort je Datei: `missing_ok=True` deckt den Race-Fall "Datei bereits weg" ab, ein
     `OSError` wird mit dem Pfad GELOGGT und bricht den Cleanup der uebrigen Dateien nicht ab. Ein
@@ -187,11 +185,11 @@ def delete_cached_variants(cache_dir: Path, photos: Iterable[tuple[int, str]]) -
                 logger.warning("Cache-Datei konnte nicht entfernt werden: %s", path)
 
 
-# specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0076 ab hier: die einzige Stelle des
-# Projekts, die das Cache-Verzeichnis LIEST, statt ihre Pfade aus `(photo_id, etag)` zu berechnen.
-# Sie muss es, weil sie einen Rest aufraeumt, dessen Schluessel sich per Definition nicht mehr aus
-# der Datenbank berechnen laesst (siehe die benannte Grenze in `delete_cached_variants`). ADR 0062
-# Punkt 5 bleibt fuer jeden anderen Loeschpfad unveraendert in Kraft.
+# Ab hier die einzige Stelle des Projekts, die das Cache-Verzeichnis LIEST, statt ihre Pfade aus
+# `(photo_id, etag)` zu berechnen. Sie muss es, weil sie einen Rest aufraeumt, dessen Schluessel
+# sich per Definition nicht mehr aus der Datenbank berechnen laesst (siehe die benannte Grenze in
+# `delete_cached_variants`). Fuer jeden anderen Loeschpfad gilt die Berechnungs-Regel unveraendert
+# weiter.
 
 
 CACHE_FILE_PATTERN = re.compile(r"^([0-9a-f]{64})_(?:thumbnail|display)\.jpg\Z")
