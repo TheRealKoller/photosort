@@ -2297,6 +2297,208 @@ describe('Binden oder leeren: die Flaeche jeder Variante', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
+// Der Kontrast der Beschriftung gegen ihren Untergrund
+// ---------------------------------------------------------------------------------------------
+
+/*
+ * GERECHNET, NICHT ABGESCHRIEBEN: Die Einzelwerte werden ausdruecklich NICHT eingefroren - sie
+ * waeren die getippte Wertekopie, gegen die diese Testdatei sonst ueberall antritt. Eingefroren
+ * sind die Schwelle, die Ausnahmen und ihre Zahl.
+ *
+ * DIE HELFERFUNKTION IST DUPLIZIERT, nicht geteilt (src/designSystem.contract.test.ts rechnet
+ * dasselbe fuer index.css): Zwei getrennte Testprojekte, und eine geteilte Fassung machte aus
+ * einem Rechenfehler an einer Stelle einen gruenen Test an beiden. Der Preis ist ein eigener
+ * Selbsttest am bekannten Referenzpaar.
+ */
+function relativeLeuchtdichte(hex: string): number {
+  const kanaele = [1, 3, 5].map((versatz) => parseInt(hex.slice(versatz, versatz + 2), 16) / 255)
+  const linear = kanaele.map((kanal) =>
+    kanal <= 0.03928 ? kanal / 12.92 : Math.pow((kanal + 0.055) / 1.055, 2.4),
+  )
+  return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
+}
+
+function kontrastVerhaeltnis(a: string, b: string): number {
+  const [heller, dunkler] = [relativeLeuchtdichte(a), relativeLeuchtdichte(b)].sort((x, y) => y - x)
+  return (heller! + 0.05) / (dunkler! + 0.05)
+}
+
+const KONTRAST_SCHWELLE = 4.5
+
+/** Der Grund der Penpot-Seite steht in keiner Datei und wird von keinem Skript gesetzt; fuer die
+ * transparent bleibenden Varianten ist Kriterium 3 deshalb nur hiergegen rechenbar. Dass die Seite
+ * tatsaechlich so steht, bleibt Sichtpruefung. */
+const SEITENGRUND = 'color.bg'
+
+function hexVon(tokenName: string): string {
+  const token = tokens.find((kandidat) => kandidat.name === tokenName)
+  if (token === undefined || typeof token.value !== 'string') {
+    throw new Error(`Token ${tokenName} fehlt in tokens.json oder traegt keinen Einzelwert.`)
+  }
+  if (!/^#[0-9a-fA-F]{6}$/.test(token.value)) {
+    throw new Error(`Token ${tokenName} traegt keinen 6-stelligen Hexwert.`)
+  }
+  return token.value
+}
+
+/**
+ * Varianten, deren Beschriftung in Penpots Standardfarbe steht, weil ihr Baustein gar keine Rolle
+ * `schrift` fuehrt - eingefroren mit Zahl und Grund.
+ *
+ * ⚠ DAS IST EINE GEFUEHRTE LUECKE, KEINE ERLEDIGUNG. Es ist derselbe Defekt wie bei Schalter und
+ * Fortschrittsanzeige, nur ohne die weisse Flaeche darunter. Er steht hier, damit er unuebersehbar
+ * ist statt in einem Dokument geparkt; ein spaeterer Fix loescht einen Eintrag.
+ */
+const VARIANTEN_OHNE_SCHRIFTFARBE: { pfad: string; varianten: number; grund: string }[] = [
+  {
+    pfad: 'card',
+    varianten: 8,
+    grund:
+      'Die Karte fuehrt `dateiname-schrift` und `hinweis-schrift` - beide gelten Textformen, die ' +
+      'dieser Aufbau nicht anlegt. Eine Schriftfarbe fuer die eine Beschriftung des Bretts hat ' +
+      'sie nicht.',
+  },
+  {
+    pfad: 'alert.auspraegung.hinweis-success',
+    varianten: 1,
+    grund:
+      'Der Hinweis traegt seine Tinte als `symbol` und `beitext`; beides sind Unterelemente. Die ' +
+      'sieben Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
+  },
+  {
+    pfad: 'alert.auspraegung.hinweis-warning',
+    varianten: 1,
+    grund:
+      'Der Hinweis traegt seine Tinte als `symbol` und `beitext`; beides sind Unterelemente. Die ' +
+      'sieben Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
+  },
+  {
+    pfad: 'alert.auspraegung.hinweis-error',
+    varianten: 1,
+    grund:
+      'Der Hinweis traegt seine Tinte als `symbol` und `beitext`; beides sind Unterelemente. Die ' +
+      'sieben Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
+  },
+  {
+    pfad: 'skeleton',
+    varianten: 2,
+    grund:
+      'Der Platzhalter zeigt im Produkt ueberhaupt keinen Text - seine Flaeche IST die Aussage. ' +
+      'Die Beschriftung des Bretts existiert nur, weil die Bibliothek je Variante eine fuehrt.',
+  },
+]
+
+/**
+ * Die einzige Paarung, die die Schwelle unterschreiten darf: inaktive Bedienelemente.
+ *
+ * WCAG 1.4.3/1.4.11 nehmen sie ausdruecklich aus. Die Ausnahme haengt NICHT an einer Namensliste,
+ * sondern an der Bedingung, die das Design-System ohnehin fuehrt (`--text-disabled` tritt
+ * ausschliesslich als `disabled:`-Variante auf, abgesichert in src/designSystem.contract.test.ts):
+ * Schrift `color.text-disabled` UND eine Auspraegung `disabled` in der Kombination.
+ */
+const AUSNAHME_SCHRIFT = 'color.text-disabled'
+const AUSNAHME_AUSPRAEGUNG = 'disabled'
+
+/** Die Zahl der so ausgenommenen Varianten - eingefroren, damit die Ausnahme nicht still um sich
+ * greift. 18 (Schaltflaeche) + 1 (Eingabefeld) + 1 (Auswahlkaestchen) + 1 (Schalter). */
+const AUSGENOMMENE_VARIANTEN = 21
+
+describe('Der Kontrast der Beschriftung gegen ihren Untergrund', () => {
+  it('rechnet richtig - am bekannten Referenzpaar nachgemessen', () => {
+    expect(kontrastVerhaeltnis('#FFFFFF', '#000000')).toBeCloseTo(21.0, 2)
+    expect(kontrastVerhaeltnis('#FFFFFF', '#0B0C10')).toBeCloseTo(19.55, 1)
+    // Und sie faellt nicht ueberall gruen aus: dieselbe Rechnung an einem bekannten Fehlschlag.
+    expect(kontrastVerhaeltnis('#FFFFFF', '#FF3D00')).toBeLessThan(KONTRAST_SCHWELLE)
+    expect(hexVon(SEITENGRUND)).toMatch(/^#[0-9a-f]{6}$/)
+  })
+
+  function ausnahmeFuer(schluessel: string, kombination: Record<string, string>) {
+    return VARIANTEN_OHNE_SCHRIFTFARBE.filter((eintrag) => {
+      const teile = eintrag.pfad.split('.')
+      if (teile.length === 1) return teile[0] === schluessel
+      return teile[0] === schluessel && kombination[teile[1]!] === teile[2]
+    })
+  }
+
+  /* AKZEPTANZKRITERIUM 3. Der Untergrund kommt aus der Simulation - bei den transparent
+     bleibenden Varianten aus `color.bg`, weil dort das Brett durchscheint. */
+  it('haelt an jeder Variante mit Schriftfarbe die WCAG-AA-Schwelle', () => {
+    const verfehlt: string[] = []
+    for (const { baustein, bindung } of alleBindungen()) {
+      if (bindung.schrift === null) continue
+      const untergrund = bindung.flaeche ?? SEITENGRUND
+      const verhaeltnis = kontrastVerhaeltnis(hexVon(bindung.schrift), hexVon(untergrund))
+      if (verhaeltnis >= KONTRAST_SCHWELLE) continue
+      const ausgenommen =
+        bindung.schrift === AUSNAHME_SCHRIFT &&
+        Object.values(bindung.kombination).includes(AUSNAHME_AUSPRAEGUNG)
+      if (!ausgenommen) {
+        verfehlt.push(
+          `${baustein.schluessel} ${JSON.stringify(bindung.kombination)}: ` +
+            `${bindung.schrift} auf ${untergrund} = ${verhaeltnis.toFixed(2)}`,
+        )
+      }
+    }
+    expect(verfehlt.join('\n')).toBe('')
+  })
+
+  /* Die Ausnahme greift um sich, wenn niemand sie zaehlt - und sie gilt NUR der einen Paarung. */
+  it('nimmt genau die inaktiven Bedienelemente aus, und zwar 21', () => {
+    const ausgenommen = alleBindungen().filter(({ bindung }) => {
+      if (bindung.schrift === null) return false
+      const untergrund = bindung.flaeche ?? SEITENGRUND
+      return kontrastVerhaeltnis(hexVon(bindung.schrift), hexVon(untergrund)) < KONTRAST_SCHWELLE
+    })
+    expect(ausgenommen).toHaveLength(AUSGENOMMENE_VARIANTEN)
+    for (const { baustein, bindung } of ausgenommen) {
+      const pfad = `${baustein.schluessel} ${JSON.stringify(bindung.kombination)}`
+      expect(bindung.schrift, pfad).toBe(AUSNAHME_SCHRIFT)
+      expect(Object.values(bindung.kombination), pfad).toContain(AUSNAHME_AUSPRAEGUNG)
+    }
+  })
+
+  /* Die beiden Bausteine dieser Story sind der Anlass und stehen deshalb namentlich: Ohne die
+     ergaenzte `schrift` stuenden ihre Beschriftungen in Penpots Standardfarbe. */
+  it('gibt Schalter und Fortschrittsanzeige je Zustand eine Schriftfarbe', () => {
+    for (const schluessel of ['switch', 'progress']) {
+      const baustein = komponenten.bausteine.find((kandidat) => kandidat.schluessel === schluessel)!
+      for (const bindung of bindungenVon(baustein, rollenTabelle(), textRollenTabelle())) {
+        const pfad = `${schluessel} ${JSON.stringify(bindung.kombination)}`
+        expect(bindung.schrift, pfad).not.toBeNull()
+        expect(bindung.flaeche, pfad).not.toBeNull()
+      }
+    }
+  })
+
+  /* AKZEPTANZKRITERIUM 6: die Flaeche von `progress/indeterminate` bleibt unberuehrt - nur seine
+     Beschriftungsfarbe kommt hinzu. */
+  it('laesst die Flaeche von progress/indeterminate unberuehrt', () => {
+    const progress = komponenten.bausteine.find((kandidat) => kandidat.schluessel === 'progress')!
+    expect(progress.tokensProAuspraegung?.zustand?.indeterminate?.flaeche).toBe('color.accent')
+  })
+
+  it('fuehrt jede Variante ohne Schriftfarbe namentlich, mit Zahl und Grund', () => {
+    const gezaehlt: Record<string, number> = {}
+    const offen: string[] = []
+    for (const { baustein, bindung } of alleBindungen()) {
+      if (bindung.schrift !== null) continue
+      const gedeckt = ausnahmeFuer(baustein.schluessel, bindung.kombination)
+      if (gedeckt.length !== 1) {
+        offen.push(`${baustein.schluessel}: ${JSON.stringify(bindung.kombination)}`)
+        continue
+      }
+      gezaehlt[gedeckt[0]!.pfad] = (gezaehlt[gedeckt[0]!.pfad] ?? 0) + 1
+    }
+    expect(offen).toEqual([])
+    for (const eintrag of VARIANTEN_OHNE_SCHRIFTFARBE) {
+      expect(gezaehlt[eintrag.pfad], eintrag.pfad).toBe(eintrag.varianten)
+      expect(eintrag.grund.length, eintrag.pfad).toBeGreaterThan(40)
+    }
+    expect(VARIANTEN_OHNE_SCHRIFTFARBE.reduce((summe, e) => summe + e.varianten, 0)).toBe(13)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
 // Die Reihenfolge des Leerens - fuenfteilig ueber den geparsten Baum
 // ---------------------------------------------------------------------------------------------
 
