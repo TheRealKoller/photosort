@@ -1,0 +1,47 @@
+# Ausschlussliste fuer Prettier (specs/decisions/0078-maschinelle-formatierung-ruff-format-und-
+# prettier.md Abschnitt 7/9, specs/features/0400-einheitliche-code-formatierung.md Abschnitt 4/6).
+#
+# Diese Datei liegt im Wurzelverzeichnis und wird von beiden TypeScript-Baeumen ueber
+# `--ignore-path ../.prettierignore` gelesen (Prettier sucht die Ignore-Datei NICHT aufwaerts,
+# anders als die Konfiguration). Das Flag ERSETZT Prettiers Vorgabe vollstaendig - damit entfaellt
+# die .gitignore-Auswertung, und diese Datei ist ab sofort die einzige Ausschlussquelle. Muster
+# sind relativ zum Verzeichnis DIESER Datei, nicht zum Arbeitsverzeichnis; hier stehen also
+# repo-weite Pfade, so wie man sie liest.
+
+# Akzeptanzkriterium K2: Markdown bleibt ausgenommen - die handgesetzten Zeilenumbrueche in Specs,
+# ADRs und Doku tragen dort Absatzstruktur. Prettier erfasst *.md im Verzeichnislauf sonst
+# standardmaessig.
+*.md
+
+# Von npm erzeugt und bei jeder Installation neu geschrieben; ein Formatierer darauf erzeugt
+# endlose Scheindifferenzen. Bewusst ohne Pfadpraefix, damit der Eintrag in JEDEM Baum greift.
+package-lock.json
+
+# Bauartefakte. Tragend, seit die .gitignore-Vorgabe durch --ignore-path entfaellt.
+dist/
+
+# Fremdcode. Prettier ignoriert node_modules zwar von sich aus (fest verdrahtet, kein
+# Ignore-Datei-Mechanismus), der Eintrag macht die Absicht an einer Stelle nachlesbar.
+node_modules/
+
+# Penpot-Nutzlast, ein Verzeichnis mit zwei Gruenden (ADR 0078 Abschnitt 9): tokens.json und
+# icons.json sind ERZEUGT (frontend/penpot/tokens.test.ts und icons.test.ts schreiben sie per
+# toMatchFileSnapshot), ein Formatierer darauf braechte den Snapshot-Test zu Fall; die uebrige
+# Nutzlast ist handgeschrieben und wird als Text in eine Penpot-Sitzung eingefuegt.
+design/
+
+# Sicherheitsbefund S1 (K11), keine Aufraeumarbeit: Weil --ignore-path die Vorgabe ersetzt,
+# entfaellt die .gitignore-Auswertung, und Prettier steigt auch in Punktverzeichnisse ab. Ohne
+# diese Eintraege erfasst ein lokaler `--write`-Lauf aus e2e/ heraus .auth/state.json mit dem
+# gespeicherten, 30 Tage gueltigen und nicht widerrufbaren JWT und SCHREIBT die Datei neu; bei
+# einem Parse-Fehler gibt Prettier zudem einen Code-Frame mit dem Dateiinhalt aus. Die
+# Playwright-Artefakte tragen Traces mit Netzwerkinhalten samt Login-Request und
+# localStorage-Zustand. Dauerregel darueber hinaus: Jeder .gitignore-Eintrag unterhalb von
+# frontend/ oder e2e/, der eine von Prettier unterstuetzte Endung treffen kann, gehoert hierher -
+# auch jeder kuenftige.
+e2e/.auth/
+e2e/artifacts/
+e2e/test-results/
+e2e/playwright-report/
+e2e/scratch/
+frontend/dist-ssr/
