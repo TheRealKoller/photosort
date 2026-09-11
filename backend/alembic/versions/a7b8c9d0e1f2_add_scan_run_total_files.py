@@ -21,8 +21,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020: additive Spalte,
-    # nullable/kein server_default (anders als last_progress_at oben) - NULL ist hier ein
+    # Additive Spalte, nullable/kein server_default (anders als last_progress_at oben) - NULL ist
+    # hier ein
     # bedeutungstragender Wert ("Enumerationsphase noch nicht abgeschlossen"), kein technischer
     # Platzhalter. Bereits heute laufende ("running") oder abgeschlossene Scan-Zeilen erhalten
     # dadurch bewusst NULL statt eines irrefuehrenden 0 - fuer laengst abgeschlossene Laeufe zeigt

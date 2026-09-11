@@ -1,7 +1,6 @@
 """criterion_scoring_runs: phase, cloud_requested, cloud_error_message
 
-specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-
-klassifizierungslauf-mit-laufbezogener-cloud-freigabe.md Punkt 3.
+Drei additive Spalten an criterion_scoring_runs.
 
 Rein additiv, keine Datenmigration: `criterion_scoring_runs` traegt ab dieser Revision den
 Run-Datensatz des GESAMTEN Klassifizierungslaufs (Remote-Kategorisierung -> Kriterien-Bewertung)

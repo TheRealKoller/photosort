@@ -1,7 +1,6 @@
 """cloud vision errors: photo_cloud_vision_errors table
 
-specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
-fehler-persistierung.md Punkt 2 - neue, schlanke Tabelle photo_cloud_vision_errors: erfasst
+Neue, schlanke Tabelle photo_cloud_vision_errors: erfasst
 ausschliesslich den letzten bekannten Fehlschlag eines Cloud-Vision-Laufs (landmark/
 remote_category) je Foto, composite PK (photo_id, phase), kein Verlauf/Historie (ein erneuter
 Fehlschlag ueberschreibt die bestehende Zeile, ein erfolgreicher Retry loescht sie). `phase` ist

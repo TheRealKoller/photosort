@@ -24,7 +24,7 @@ def upgrade() -> None:
     """Idempotente Seed-Migration fuer die zwei bekannten PhotoSort-Nutzer.
 
     Legt fehlende Accounts aus AUTH_SEED_USER1/2_USERNAME/PASSWORD (.env) an; bestehende
-    password_hash-Werte werden nie ueberschrieben (siehe specs/features/0006-auth.md).
+    password_hash-Werte werden nie ueberschrieben.
     """
     bind = op.get_bind()
     seed_configured_users(bind, configured_seed_users(settings))

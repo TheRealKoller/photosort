@@ -1,7 +1,6 @@
 """GPS-Koordinaten am Foto: photos.gps_lat / photos.gps_lon
 
-specs/features/0051-gps-landmark-cluster-bildung.md, decisions/0029-gps-landmark-cluster-
-bildung.md, decisions/0072-ortsbezogene-cluster-anzeigeort-als-antwortableitung.md.
+Zwei nullable Gleitkommaspalten.
 
 Rein additiv: zwei NULLABLE Gleitkommaspalten an `photos`. Keine bestehende Spalte aendert sich,
 kein Constraint, kein Index.

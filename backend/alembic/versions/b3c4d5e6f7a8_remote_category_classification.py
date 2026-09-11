@@ -1,8 +1,7 @@
 """remote category classification: naming migration + category_override + category_labels +
 photo_category_detections + remote_category_classification_runs
 
-specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
-decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 2 - fuenf Teile:
+Fuenf Teile:
 
 a) Umbenennung `projects.cloud_landmark_detection_enabled`/`cloud_landmark_consent_at` ->
    `cloud_vision_detection_enabled`/`cloud_vision_consent_at` (wertsicheres RENAME COLUMN, keine
@@ -48,7 +47,7 @@ def upgrade() -> None:
     # b) Additiv, PhotoScore.category_override.
     op.add_column("photo_scores", sa.Column("category_override", sa.String(), nullable=True))
 
-    # c1) Kanonische Label-Registry, projektuebergreifend (kein project_id-Bezug, ADR 0032 Punkt 2).
+    # c1) Kanonische Label-Registry, projektuebergreifend (kein project_id-Bezug).
     op.create_table(
         "category_labels",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -60,7 +59,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("canonical_key", name="uq_category_label_canonical_key"),
     )
 
-    # c2) 1:N zu photos (bis zu drei Zeilen pro Foto, ADR 0032 Punkt 2).
+    # c2) 1:N zu photos (bis zu drei Zeilen pro Foto).
     op.create_table(
         "photo_category_detections",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -78,9 +77,9 @@ def upgrade() -> None:
         ),
     )
 
-    # d) Run-Tracking, analog criterion_scoring_runs, aber ohne scoring_run_id-FK (ADR 0032 Punkt
-    # 2: dieser Job schreibt ausschliesslich in photo_category_detections/category_labels, beruehrt
-    # weder cluster_key noch PhotoRanking direkt).
+    # d) Run-Tracking, analog criterion_scoring_runs, aber ohne scoring_run_id-FK: dieser Job
+    # schreibt ausschliesslich in photo_category_detections/category_labels, beruehrt weder
+    # cluster_key noch PhotoRanking direkt.
     op.create_table(
         "remote_category_classification_runs",
         sa.Column("id", sa.Integer(), nullable=False),

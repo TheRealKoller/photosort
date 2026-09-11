@@ -1,7 +1,7 @@
 """Laufeigene Cloud-Bilanz und Live-Zaehler: fuenf Spalten + FK, eine Spalte
 
-specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
-teilschritte-und-laufeigene-cloud-bilanz.md Punkt 2, 3 und 5.
+Fuenf Spalten plus Fremdschluessel an criterion_scoring_runs, eine Spalte an
+remote_category_classification_runs.
 
 Rein additiv, keine Datenmigration, kein Backfill:
 
@@ -11,10 +11,10 @@ Rein additiv, keine Datenmigration, kein Backfill:
   Fehlschlaege), je asyncio.gather-Block fortgeschrieben.
 - `criterion_scoring_runs.landmark_failed_calls` - fehlgeschlagene Einzelaufrufe, ebenso live.
 - `criterion_scoring_runs.estimated_cost_usd` - die Schaetzung, mit der dieser Lauf gestartet
-  wurde (ADR 0068 Punkt 5); ohne sie ist "Ist gegen Schaetzung einordenbar" nach dem Lauf
+  wurde; ohne sie ist "Ist gegen Schaetzung einordenbar" nach dem Lauf
   unerfuellbar, weil derselbe Endpunkt danach nahe null schaetzt.
 - `criterion_scoring_runs.remote_category_classification_run_id` - FK auf den Remote-Lauf DIESES
-  Durchlaufs (ADR 0068 Punkt 3), Ersatz fuer die Heuristik "juengste Remote-Zeile des Projekts".
+  Durchlaufs, Ersatz fuer die Heuristik "juengste Remote-Zeile des Projekts".
 - `remote_category_classification_runs.failed_calls` - dasselbe wie oben fuer die Remote-Phase.
 
 NULL-SEMANTIK (der Grund fuer "nullable, aber KEIN server_default"), exakt wie bei den

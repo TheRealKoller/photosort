@@ -1,9 +1,8 @@
 """criterion scoring pipeline: photo_criterion_scores, criterion_scoring_runs, photo_rankings,
 gate_confirmed_at; drop photo_scores.category/local_quality_score and top_selection_runs
 
-specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md,
-decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md - erste nicht-additive Migration im
-Projekt (Akzeptanzkriterium der Spec): ein zum Deploy-Zeitpunkt noch RUNNING befindlicher alter
+Erste nicht-additive Migration im Projekt: ein zum Deploy-Zeitpunkt noch RUNNING befindlicher
+alter
 TopSelectionRun wird durch den Tabellen-Drop ersatzlos nicht mehr referenzierbar (dokumentiertes,
 akzeptiertes Verhalten, kein Rating-Datenverlust).
 
@@ -111,9 +110,9 @@ def upgrade() -> None:
         ),
     )
 
-    # Copilot-Review-Finding auf PR #80 (specs/features/0037): der alte, hiermit entfernte
-    # select_top-Job setzte suggested_status=ALBUM_WORTHY. Seit Spec 0037 kennt SuggestionOut nur
-    # noch duplicate/low_quality - ein bestehender ALBUM_WORTHY-Altwert wuerde ohne Bereinigung
+    # Der alte, hiermit entfernte select_top-Job setzte suggested_status=ALBUM_WORTHY. SuggestionOut
+    # kennt nur noch duplicate/low_quality - ein bestehender ALBUM_WORTHY-Altwert wuerde ohne
+    # Bereinigung
     # nach dem Deploy faelschlich als low_quality-Ausschuss-Vorschlag angezeigt. REJECTED-Werte
     # bleiben unangetastet, da sie weiterhin gueltige Ausschuss-Vorschlaege sind.
     op.execute(

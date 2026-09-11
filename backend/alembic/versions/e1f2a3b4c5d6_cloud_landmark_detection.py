@@ -1,9 +1,8 @@
 """cloud landmark detection: projects.cloud_landmark_detection_enabled/
 cloud_landmark_consent_at, photo_landmark_detections table
 
-specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md,
-decisions/0025-cloud-landmark-erkennung.md - vollstaendig additiv (zwei neue Project-Spalten,
-eine neue Tabelle), keine Aenderung an bestehenden Spalten/Tabellen.
+Vollstaendig additiv (zwei neue Project-Spalten, eine neue Tabelle), keine Aenderung an
+bestehenden Spalten/Tabellen.
 
 Revision ID: e1f2a3b4c5d6
 Revises: c1d2e3f4a5b6

@@ -1,7 +1,6 @@
 """Nebenkategorien: is_primary an photo_rankings, Unique-Constraint auf (Lauf, Foto, Kategorie)
 
-specs/features/0300-nebenkategorien.md, decisions/0069-nebenkategorien-mehrfachzugehoerigkeit-und-
-konfidenzgewichtete-rangfolge.md Punkt 1/9.
+Eine additive Spalte plus Tausch des Unique-Constraints.
 
 Ein Foto bekommt pro Klassifizierungslauf EINE ZEILE JE KATEGORIE, zu der es gehoert; genau eine
 davon ist die Hauptzeile. Dafuer drei Schritte (siehe `upgrade()` zur Aufteilung auf zwei
@@ -24,7 +23,7 @@ behalten ihre Zeilen unveraendert (`is_primary=true`, keine Nebenzeilen) - Neben
 entstehen erst im naechsten Kriterien-Lauf. Und Klassifizierungszeilen von vor Revision
 a3b4c5d6e7f8 tragen `NULL` in der Konfidenz-Abbildung; sie erzeugen auch in einem neuen Lauf keine
 Nebenkategorie, weil ohne Zahl kein Massstab existiert. Ein erneuter Cloud-Aufruf findet dafuer
-nicht statt (das Skip-Kriterium aus ADR 0049/0067 bleibt unangetastet).
+nicht statt (das bestehende Skip-Kriterium bleibt unangetastet).
 
 `downgrade()` loescht VOR dem Zuruecktauschen des Constraints die Nebenzeilen
 (`DELETE ... WHERE is_primary = false`) - sonst verletzte der wiederhergestellte alte Constraint

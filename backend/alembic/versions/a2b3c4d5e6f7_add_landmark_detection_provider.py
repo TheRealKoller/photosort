@@ -1,8 +1,7 @@
 """add landmark detection provider: photo_landmark_detections.provider
 
-specs/features/0054-mistral-provider-option-cloud-landmark.md,
-decisions/0031-mistral-provider-option-cloud-landmark.md Punkt 5 - vollstaendig additiv (eine
-neue Spalte), keine Aenderung an bestehenden Spalten/Tabellen. server_default="anthropic"
+Vollstaendig additiv (eine neue Spalte), keine Aenderung an bestehenden Spalten/Tabellen.
+server_default="anthropic"
 backfillt bestehende Zeilen (Anthropic war bis zu dieser Migration der einzige Provider) - der
 ORM-Model-Default (models.py::PhotoLandmarkDetection.provider) deckt dieselbe Situation
 Python-seitig fuer neue, ohne explizites provider-Kwarg angelegte Instanzen ab.
