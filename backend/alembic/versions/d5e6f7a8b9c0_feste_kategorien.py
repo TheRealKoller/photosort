@@ -25,8 +25,8 @@ dort stehen weiterhin Altwerte außerhalb des Sets.
 EINBAHNSTRASSE: `downgrade()` stellt ausschließlich das SCHEMA wieder her. Die in (c) und (d)
 gelöschten Daten sind nicht rekonstruierbar - beide destruktiven Schritte liegen in derselben
 Revision und damit in derselben Transaktion, ein Rollback nach erfolgreichem Upgrade gibt sie
-nicht zurück. Das ist von der Spec so akzeptiert ("keine erhaltenswerten Bestände") und durch
-einen eigenen, benannten Test festgehalten, damit es später niemand für einen Bug hält.
+nicht zurück. Das ist bewusst so und durch einen eigenen, benannten Test festgehalten, damit es
+später niemand für einen Bug hält.
 
 Revision ID: d5e6f7a8b9c0
 Revises: c2d3e4f5a6b7

@@ -123,33 +123,24 @@ class AssumedImageUsage:
     output_tokens: int
 
 
-# Herleitung der beiden Annahmen. Sie sind so kalibriert, dass die abgeleitete Schätzung für das
-# jeweilige VOREINSTELLUNGS-Modell $0,0052 anthropic bzw. $0,0003 mistral exakt reproduziert -
-# beide Beträge sind in tests/test_pricing.py gepinnt.
+# Beide Annahmen sind so kalibriert, dass die abgeleitete Schätzung für das jeweilige
+# VOREINSTELLUNGS-Modell $0,0052 anthropic bzw. $0,0003 mistral exakt reproduziert - beide Beträge
+# sind in tests/test_pricing.py gepinnt. Jede Änderung hier verschiebt genau diese Pins.
 #
-# anthropic: 4600 Input-Tokens = ~3900 Bild- + ~700 Prompt-Tokens.
-#   Bild: offizielle Anthropic-Formel `tokens ~= breite_px * hoehe_px / 750` (verifiziert gegen
-#   den bekannten Referenzwert 1092x1092px ~= 1590 Tokens), gerechnet auf die real versendete
-#   `display`-Variante (DISPLAY_MAX_SIZE=2048px lange Kante, Seitenverhältnis erhalten): ein
-#   typisches 3:2-/4:3-Landschaftsfoto an dieser Obergrenze ergibt ca. 3700-4200 Bild-Tokens.
-#   Prompt: der aus CATEGORY_REGISTRY erzeugte Klassifikations-Prompt (categories.py::
-#   build_classification_prompt, 13 Kategorie-Blöcke, ~3400 Zeichen bei ~4 Zeichen/Token).
-#   Ausgabe: JSON-Array mit 1-3 Objekten. Der Wert 120 deckt die heute vollbesetzte Antwort
-#   (überschlägig 80-100 Tokens) ab; bei einer weiteren Erweiterung des Antwortschemas ist die
-#   Marge erneut zu prüfen - sie beträgt nur noch etwa das Anderthalbfache, und die Schätzung ist
-#   die einzige Absicherung vor der kostenpflichtigen Aktion.
+# anthropic: 4600 Input-Tokens = ~3900 Bild- + ~700 Prompt-Tokens, der Bildanteil nach der
+#   offiziellen Anthropic-Formel `tokens ~= breite_px * hoehe_px / 750`, gerechnet auf die real
+#   versendete `display`-Variante (DISPLAY_MAX_SIZE=2048px lange Kante). Ausgabe: der Wert 120
+#   deckt die heute vollbesetzte Antwort ab; bei einer weiteren Erweiterung des Antwortschemas ist
+#   die Marge erneut zu prüfen - sie beträgt nur noch etwa das Anderthalbfache, und die Schätzung
+#   ist die einzige Absicherung vor der kostenpflichtigen Aktion.
 # mistral: 2880 Input-Tokens = ~2030 Bild- + ~850 Prompt-Tokens.
 #   Mistral veröffentlicht KEINE offizielle Bild-Token-Formel (anders als Anthropic) - dieser
-#   Anteil bleibt ausdrücklich DOKUMENTIERT-UNKALIBRIERT, gestützt auf das vergleichbare
-#   Pixtral-Familien-Tiling (Bandbreite 1000-4000 Bild-Tokens je nach Auflösung/Kachelung).
-#   Der Eintrag deckt zwei Modellfamilien ab: `mistral-small-2603` erbt die Annahme über eine
-#   Familiengrenze hinweg und ist damit ebenfalls unkalibriert, die gefährliche
-#   Abweichungsrichtung ist die Unterschätzung. Sie wird trotzdem NICHT angefasst - die Werte
-#   sind an die exakte Reproduktion von $0,0003 gebunden, eine Anhebung verschöbe genau die.
-#   Größenordnung rund $0,0005 gegenüber ~$0,0003, selbst ein Faktor 2 bliebe im Zehntelcent-
-#   Bereich je Bild. Zeigt die erste reale Rechnung deutlich mehr als 120 Ausgabe-Tokens je Bild,
-#   ist das der Anlass für eine eigene Story (Verbrauchsannahme je MODELL statt je Anbieter) -
-#   nicht für eine stille Korrektur hier.
+#   Anteil bleibt ausdrücklich DOKUMENTIERT-UNKALIBRIERT. Der Eintrag deckt zwei Modellfamilien
+#   ab: `mistral-small-2603` erbt die Annahme über eine Familiengrenze hinweg und ist damit
+#   ebenfalls unkalibriert, die gefährliche Abweichungsrichtung ist die Unterschätzung. Zeigt die
+#   erste reale Rechnung deutlich mehr als 120 Ausgabe-Tokens je Bild, ist das der Anlass für eine
+#   eigene Story (Verbrauchsannahme je MODELL statt je Anbieter) - nie für eine stille Korrektur
+#   hier.
 #
 # Bewusst grob und eher über- als unterschätzend: EIN Preis je Bild für BEIDE Cloud-Anteile,
 # obwohl der Landmark-Prompt kürzer ist als der Kategorie-Prompt. Die Schätzung soll nicht zu

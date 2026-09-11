@@ -28,9 +28,9 @@ Variant = Literal["thumbnail", "display"]
 def cache_key(photo_id: int, etag: str) -> str:
     """Deterministischer, dateisystemsicherer Cache-Schluessel aus photo_id+etag.
 
-    Kein neues DB-Feld noetig: aendert sich das Foto auf OpenCloud,
-    aendert sich der etag und damit automatisch der Schluessel - alte Cache-Dateien werden
-    dadurch implizit ungueltig, ohne dass eine explizite Invalidierung noetig waere.
+    Kein neues DB-Feld noetig: aendert sich das Foto auf OpenCloud, aendert sich der etag und
+    damit automatisch der Schluessel - alte Cache-Dateien werden dadurch implizit ungueltig, ohne
+    dass eine explizite Invalidierung noetig waere.
     """
     digest = hashlib.sha256(f"{photo_id}:{etag}".encode()).hexdigest()
     return digest
@@ -84,16 +84,14 @@ def generate_variants(cache_dir: Path, photo_id: int, etag: str, image_bytes: by
             display_path(cache_dir, photo_id, etag), format="JPEG", quality=JPEG_QUALITY_DISPLAY
         )
     except Exception:
-        # Bewusst breiter Except-Block statt einer festen Liste von PIL-/OS-Exceptions (deckt
-        # neben Dekodier- auch Schreibfehler ab): Image.DecompressionBombError erbt NICHT von
-        # OSError und wuerde von einer engeren Liste durchgelassen - ein ungewoehnlich
-        # hochaufloesendes, aber nicht
-        # boeswilliges Foto (Panorama/Drohnenaufnahme) duerfte den gesamten Scan-Job trotzdem nicht
-        # crashen lassen. Aus demselben Grund deckt der Block jetzt auch mkdir()/save() ab: ein
-        # Schreibfehler (Volume read-only, Platte voll) darf den Scan-Job ebenfalls nicht crashen
-        # und den ScanRun dauerhaft auf RUNNING haengen lassen, statt nur dieses eine Thumbnail
-        # best-effort zu ueberspringen. Gleiches Best-effort-Muster wie
-        # opencloud/exif.py::extract_taken_at.
+        # Bewusst breiter Except-Block, nie eine feste Liste von PIL-/OS-Exceptions:
+        # Image.DecompressionBombError erbt NICHT von OSError und wuerde von einer engeren Liste
+        # durchgelassen - ein ungewoehnlich hochaufloesendes, aber nicht boeswilliges Foto
+        # (Panorama/Drohnenaufnahme) duerfte den gesamten Scan-Job trotzdem nicht crashen lassen.
+        # Aus demselben Grund deckt der Block mkdir()/save() mit ab: ein Schreibfehler (Volume
+        # read-only, Platte voll) darf den Scan-Job ebenfalls nicht crashen und den ScanRun
+        # dauerhaft auf RUNNING haengen lassen, statt nur dieses eine Thumbnail best-effort zu
+        # ueberspringen. Gleiches Best-effort-Muster wie opencloud/exif.py::extract_taken_at.
         return False
     return True
 
@@ -123,10 +121,10 @@ def measure_cache_usage(cache_dir: Path, photos: Iterable[tuple[int, str]]) -> C
     Fotos (siehe `cache_key`).
 
     Rein synchron und ohne DB-Bezug (deshalb `(photo_id, etag)`-Tupel statt ORM-Objekten): der
-    Aufrufer fuehrt sie ueber `asyncio.to_thread` aus, damit die Event-Loop bei zwei `stat`-
-    Aufrufen je Foto nicht blockiert.
+    Aufrufer fuehrt sie ueber `asyncio.to_thread` aus, damit die Event-Loop bei zwei
+    `stat`-Aufrufen je Foto nicht blockiert.
 
-    Best-effort je Datei (Security-Muss-Kriterium der Spec): ein `OSError` - fehlende Datei,
+    SICHERHEIT, best-effort je Datei: ein `OSError` - fehlende Datei,
     fehlende Rechte, Verzeichnis an Dateistelle - zaehlt als 0 Bytes und wird NIE nach oben
     gereicht. Seine Meldung enthaelt den absoluten Cache-Pfad, also interne Deployment-Struktur,
     und duerfte deshalb weder in einer HTTPException noch in einem Antwortfeld landen."""
@@ -193,11 +191,11 @@ def delete_cached_variants(cache_dir: Path, photos: Iterable[tuple[int, str]]) -
 
 
 CACHE_FILE_PATTERN = re.compile(r"^([0-9a-f]{64})_(?:thumbnail|display)\.jpg\Z")
-"""Die exakte Signatur der eigenen Schreiboperation - `cache_key` + `thumbnail_path`/
-`display_path` und nichts sonst.
+"""Die exakte Signatur der eigenen Schreiboperation - `cache_key` +
+`thumbnail_path`/`display_path` und nichts sonst.
 
-Wird IMMER per `re.fullmatch` angewandt, nie per `.match`/`.search` (Security-Muss-Kriterium 1 der
-Spec). Das Endanker ist `\\Z` und NICHT `$`: `$` passt auch unmittelbar VOR einem abschliessenden
+SICHERHEIT: Wird IMMER per `re.fullmatch` angewandt, nie per `.match`/`.search`. Das Endanker ist
+`\\Z` und NICHT `$`: `$` passt auch unmittelbar VOR einem abschliessenden
 Zeilenumbruch, ein `.match` gegen `^...$` traefe deshalb `<64 hex>_display.jpg\\n` - und ein
 Dateiname mit `\\n` ist unter Linux anlegbar. `\\Z` ist das absolute Ende der Zeichenkette und hat
 diese Schwaeche nicht.
@@ -226,8 +224,8 @@ class CacheSweepResult:
     """Ergebnis EINES Bereinigungsdurchgangs - vier reine Zahlen, kein Pfad.
 
     `kept_recent` ist kein Beiwerk: ohne dieses Feld waere "wegen der Schonfrist bewusst behalten"
-    von "gar nicht betrachtet" nicht zu unterscheiden, und genau daran haengt Akzeptanzkriterium 4
-    (ein parallel laufender Scan verliert nichts)."""
+    von "gar nicht betrachtet" nicht zu unterscheiden, und genau daran haengt die Zusage, dass ein
+    parallel laufender Scan nichts verliert."""
 
     deleted_files: int
     freed_bytes: int
@@ -252,9 +250,9 @@ def collect_cache_entries(cache_dir: Path) -> list[CacheEntry]:
     Aufrufer fuehrt sie ueber `asyncio.to_thread` aus.
 
     Best-effort: ein fehlendes oder unlesbares Verzeichnis liefert eine leere Liste (kein Fehler),
-    ein `OSError` auf einem EINZELNEN Eintrag ueberspringt nur diesen. Ein Name, der das Muster
-    NICHT bestanden hat, wird nie geloggt (Security-Muss-Kriterium 6: er ist die einzige
-    Log-Injection-Flaeche des Features - gezaehlt wird er, benannt nicht)."""
+    ein `OSError` auf einem EINZELNEN Eintrag ueberspringt nur diesen. SICHERHEIT: Ein Name, der
+    das Muster NICHT bestanden hat, wird nie geloggt - er ist die einzige Log-Injection-Flaeche
+    des Features, gezaehlt wird er, benannt nicht."""
     entries: list[CacheEntry] = []
     try:
         with os.scandir(cache_dir) as scan:
@@ -291,15 +289,15 @@ def delete_orphaned_entries(
     Verglichen wird ausschliesslich gegen `st_mtime`, nie gegen einen Datenbank-Zeitstempel: beide
     Zeiten stammen so aus derselben Quelle (Host-Kernel).
 
-    FAIL-CLOSED (Security-Muss-Kriterium 5 der Spec): Sind Eintraege vorhanden, die Menge der
-    gueltigen Schluessel aber leer, wird NICHTS geloescht und eine WARNING geschrieben. Eine leere
+    SICHERHEIT, FAIL-CLOSED: Sind Eintraege vorhanden, die Menge der gueltigen Schluessel aber
+    leer, wird NICHTS geloescht und eine WARNING geschrieben. Eine leere
     Menge ist der einzige Zustand, in dem dieser Durchgang den kompletten Bild-Cache raeumte, und
     zugleich das Symptom praktisch jedes denkbaren Fehlers an der Schnappschuss-Abfrage (falsche
     Datenbank, versehentlicher Filter, unbrauchbare Session). Der Preis ist der Randfall
     "Installation ohne ein einziges Foto behaelt ihre Reste".
 
-    Unmittelbar vor dem `unlink` wird `lstat()` gelesen - NICHT `stat()` (Security-Muss-Kriterium
-    2): `stat()` folgte einem zwischenzeitlich untergeschobenen Symlink und autorisierte dessen
+    SICHERHEIT: Unmittelbar vor dem `unlink` wird `lstat()` gelesen, NIE `stat()` - `stat()` folgte
+    einem zwischenzeitlich untergeschobenen Symlink und autorisierte dessen
     Entfernung ueber die Aenderungszeit einer FREMDEN Datei, dazu verfaelschte es `freed_bytes` um
     deren Groesse. Derselbe Aufruf liefert `st_size` und erlaubt die erneute `S_ISREG`-Pruefung.
     Auch die Aenderungszeit wird dabei erneut gegen `mtime_cutoff` geprueft: ein zwischenzeitliches

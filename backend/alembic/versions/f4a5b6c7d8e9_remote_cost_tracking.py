@@ -1,7 +1,5 @@
 """Ist-Kostenerfassung der Remote-Laeufe: je vier Spalten an beiden Run-Tabellen
 
-Je vier additive Spalten, keine Datenmigration.
-
 Rein additiv, keine Datenmigration:
 
 - `criterion_scoring_runs`: `landmark_api_calls`, `landmark_input_tokens`,
@@ -19,8 +17,8 @@ NULL-vs.-0-SEMANTIK (der Grund fuer "nullable, aber KEIN server_default"):
     0    = "erfasst, es sind keine Kosten angefallen" - z.B. ein Lauf ohne Cloud-Nutzung.
 
 Beides zu unterscheiden ist der ganze Zweck dieser Spaltenform: die Statistikseite weist eine
-unvollstaendige Summe ausdruecklich als solche aus, statt "0,00
-USD" wie eine belastbare Antwort aussehen zu lassen. Ein `server_default="0"` wuerde die
+unvollstaendige Summe ausdruecklich als solche aus, statt "0,00 USD" wie eine belastbare Antwort
+aussehen zu lassen. Ein `server_default="0"` wuerde die
 Bestandszeilen genau dieser Unterscheidung berauben - deshalb bewusst KEINER. Neue Zeilen
 bekommen ihre `0` stattdessen ueber den Python-seitigen Modell-Default
 (models.py::CriterionScoringRun/RemoteCategoryClassificationRun), exakt das bereits etablierte
