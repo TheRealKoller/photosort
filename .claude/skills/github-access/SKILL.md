@@ -1,6 +1,6 @@
 ---
 name: github-access
-description: Verbindlicher Operationskatalog für **jeden** GitHub-Zugriff des Entwicklungsablaufs — Story-Issue anlegen, lesen, beschreiben und verwerfen, Board-Status und Priorität setzen und lesen, Pull Request eröffnen, verknüpfen und finalisieren, Copilot-Review anfordern und auswerten. Jede Operation trägt eine stabile ID und ihre Zugangswege in fester Reihenfolge, dazu die Härtungsregeln, die Erlaubnisstufen und der Berichtsabschnitt `## Lokal nachzuholen`. Nutze diesen Skill, wenn `capture`/`refinement`/`spec-writer`/`ship-feature`/`ship-entwurf` an ihren jeweiligen Stellen einen GitHub-Zugriff brauchen, oder wenn Daniel direkt danach fragt ("setz Issue #NNN auf Ready", "welchen Status hat #NNN").
+description: Verbindlicher Operationskatalog für **jeden** GitHub-Zugriff des Entwicklungsablaufs — Story-Issue anlegen, lesen, auflisten, beschreiben, mit einem Bereich versehen und verwerfen, Board-Status und Priorität setzen und lesen, Pull Request eröffnen, verknüpfen und finalisieren, Copilot-Review anfordern und auswerten. Jede Operation trägt eine stabile ID und ihre Zugangswege in fester Reihenfolge, dazu die Härtungsregeln, die Erlaubnisstufen und der Berichtsabschnitt `## Lokal nachzuholen`. Nutze diesen Skill, wenn `capture`/`refinement`/`spec-writer`/`ship-feature`/`ship-entwurf` an ihren jeweiligen Stellen einen GitHub-Zugriff brauchen, oder wenn Daniel direkt danach fragt ("setz Issue #NNN auf Ready", "welchen Status hat #NNN").
 ---
 
 # GitHub Access — der Operationskatalog
