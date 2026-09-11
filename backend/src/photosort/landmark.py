@@ -23,19 +23,16 @@ from photosort.cloud_vision import (
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 
-# Erste tatsaechlich produktive Cloud-Abhaengigkeit im Kriterien-Scoring-Pfad. Isoliertes Modul -
-# haelt den bestehenden synchronen criteria.py-Vertrag aller sieben lokalen Kriterien unangetastet.
-# Direkter httpx-REST-Aufruf gegen die Anthropic Messages API, KEIN anthropic-Python-SDK - exakt das
-# Muster von opencloud/client.py (eigene Exception-Klasse, httpx.AsyncClient,
-# httpx.MockTransport-testbar).
+# Isoliertes Modul - haelt den synchronen criteria.py-Vertrag aller sieben lokalen Kriterien
+# unangetastet. Direkter httpx-REST-Aufruf gegen die Anthropic Messages API, KEIN
+# anthropic-Python-SDK - exakt das Muster von opencloud/client.py (eigene Exception-Klasse,
+# httpx.AsyncClient, httpx.MockTransport-testbar).
 #
-# URLs/Modell-IDs/Timeout/Response-Parsing-Envelope-Helfer sind nach cloud_vision.py extrahiert
-# (providerneutral, von landmark.py UND remote_classification.py genutzt) - die bisherigen Namen
-# bleiben hier als re-exportierte Aliase bestehen.
+# URLs, Modell-IDs, Timeout und die Response-Huellen-Helfer liegen providerneutral in
+# cloud_vision.py; hier stehen nur re-exportierte Aliase.
 #
-# Die frueheren Aliase ANTHROPIC_LANDMARK_MODEL/MISTRAL_LANDMARK_MODEL sind ersatzlos entfallen: die
-# Modellwahl wirkt auf beide Cloud-Anteile einheitlich, nicht zwei Modelle nebeneinander. Das Modell
-# kommt als Konstruktor-Parameter herein und wird durchgereicht.
+# Die Modellwahl wirkt auf beide Cloud-Anteile einheitlich, nie zwei Modelle nebeneinander. Das
+# Modell kommt als Konstruktor-Parameter herein und wird durchgereicht.
 LANDMARK_REQUEST_TIMEOUT_SECONDS = VISION_REQUEST_TIMEOUT_SECONDS
 
 # Kurze, reine Klassifikationsantwort - kein Grund fuer ein hohes max_tokens (nur ein kleines
@@ -44,14 +41,11 @@ _MAX_RESPONSE_TOKENS = 256
 
 # Sicherheits-Muss-Kriterium: Obergrenze eines verwendbaren Sehenswuerdigkeit-Namens. Wie
 # `MAX_FINE_LABEL_LENGTH` eine DEGENERATIONSGRENZE, keine Sanitisierungsmassnahme - und wie dort
-# wird VERWORFEN statt abgeschnitten:
-# `scoring.py::refine_clusters_by_landmark` vergleicht exakt, ein abgeschnittener
-# Name fuehrte zwei verschiedene Sehenswuerdigkeiten in einem Cluster zusammen (dieselbe
-# Begruendung wie die Slug-Kollision bei den Feinlabels). Der Cluster faellt dann auf die
-# Koordinatenstufe zurueck.
+# wird VERWORFEN statt abgeschnitten: `scoring.py::refine_clusters_by_landmark` vergleicht exakt,
+# ein abgeschnittener Name fuehrte zwei verschiedene Sehenswuerdigkeiten in einem Cluster zusammen.
+# Der Cluster faellt dann auf die Koordinatenstufe zurueck.
 #
-# 80 statt der 60 des Feinlabel-Pfads, weil echte Sehenswuerdigkeitsnamen laenger sind
-# ("Kathedrale von Santiago de Compostela").
+# 80 statt der 60 des Feinlabel-Pfads: Sehenswuerdigkeitsnamen sind laenger.
 MAX_LANDMARK_NAME_LENGTH = 80
 
 _PROMPT = (
@@ -65,9 +59,9 @@ _PROMPT = (
 
 class LandmarkApiError(Exception):
     """Fehler beim Aufruf der Anthropic Messages API (Netzwerk, 4xx/5xx, unerwartete
-    Antwortstruktur) - analog OpenCloudError. Sicherheitskritisches Muss-Kriterium der Spec:
-    Meldungen betten NIEMALS den API-Key oder Base64-Bilddaten ein, nur Statuscode/Reason-Phrase
-    bzw. eine generische Strukturbeschreibung (analog opencloud/client.py::_raise_for_status)."""
+    Antwortstruktur) - analog OpenCloudError. SICHERHEIT: Meldungen betten NIEMALS den API-Key oder
+    Base64-Bilddaten ein, nur Statuscode/Reason-Phrase bzw. eine generische
+    Strukturbeschreibung."""
 
 
 @dataclass(frozen=True)
@@ -79,10 +73,9 @@ class LandmarkDetection:
     name: str | None
     confidence: float
     # Der reale Token-Verbrauch DIESES Aufrufs, den worker.py ueber alle erfolgreichen Aufrufe der
-    # Phase summiert. MIT Default - dadurch bleiben alle bestehenden Test-Doubles und die
-    # LandmarkClientLike-Signatur unveraendert. `None` heisst "nicht ermittelbar"
-    # (fehlender/kaputter usage-Block): der Aufruf traegt dann nichts zur Tokensumme bei, wird aber
-    # trotzdem als stattgefundener Aufruf gezaehlt.
+    # Phase summiert. `None` heisst "nicht ermittelbar" (fehlender/kaputter usage-Block): der
+    # Aufruf traegt dann nichts zur Tokensumme bei, wird aber trotzdem als stattgefundener Aufruf
+    # gezaehlt.
     usage: TokenUsage | None = None
 
 
@@ -96,7 +89,7 @@ class LandmarkClientLike(Protocol):
 def sanitize_landmark_name(raw: object) -> str | None:
     """Der einzige Weg, auf dem ein Sehenswuerdigkeit-Name in PhotoSort verwendbar wird
     (Sicherheits-Muss-Kriterium). Bricht in
-    tests/test_landmark.py::TestLandmarkNameSanitisation (acht Faelle).
+    tests/test_landmark.py::TestLandmarkNameSanitisation, acht Faelle.
 
     Zeichensanitisierung mit DERSELBEN Funktion wie der Feinlabel-Pfad
     (`cloud_vision.py::_sanitize_label_text`, nicht mit einer zweiten Fassung davon), danach die
@@ -118,16 +111,15 @@ def sanitize_landmark_name(raw: object) -> str | None:
 def _landmark_detection_from_json(
     parsed: Any, usage: TokenUsage | None = None
 ) -> LandmarkDetection:
-    """Providerneutrale Extraktion von name/confidence aus dem bereits geparsten JSON-Objekt
-    (Refactoring des frueheren _parse_detection) - wird von beiden Clients nach ihrer jeweils
-    providerspezifischen
-    Extraktion des rohen JSON-Texts aus ihrer unterschiedlichen Response-Huelle aufgerufen."""
+    """Providerneutrale Extraktion von name/confidence aus dem bereits geparsten JSON-Objekt -
+    wird von beiden Clients nach ihrer jeweils providerspezifischen Extraktion des rohen
+    JSON-Texts aus ihrer unterschiedlichen Response-Huelle aufgerufen."""
     try:
         name = parsed.get("name")
         confidence = float(parsed.get("confidence", 0.0))
     except (AttributeError, TypeError, ValueError) as exc:
-        # Bewusst generische, providerneutrale Meldung (kein Provider-Name mehr bekannt an dieser
-        # Stelle) - analog der Begruendung in cloud_vision.py::anthropic_response_to_json.
+        # Generische, providerneutrale Meldung - an dieser Stelle ist kein Provider-Name mehr
+        # bekannt.
         raise LandmarkApiError("Unerwartete Antwortstruktur der Vision-API-Antwort.") from exc
     if name is not None and not isinstance(name, str):
         raise LandmarkApiError("Unerwartete Antwortstruktur der Vision-API-Antwort.")
@@ -140,19 +132,18 @@ def _landmark_detection_from_json(
     # Das Vision-LLM-JSON ist nicht garantiert auf [0, 1] begrenzt - geklemmt bereits HIER (an der
     # Quelle), nicht erst in criteria.py::compute_landmark_score.
     # worker.py::_upsert_landmark_detection schreibt detection.confidence UNVERAENDERT nach
-    # photo_landmark_detections - ohne dieses Klemmen wuerde dieser Wert von dem separat
-    # geklemmten PhotoCriterionScore.value abweichen koennen, obwohl beide atomar aus derselben
-    # API-Antwort stammen sollen. compute_landmark_score klemmt zusaetzlich
-    # weiterhin defensiv (bewusste Redundanz, kein Widerspruch).
+    # photo_landmark_detections - ohne dieses Klemmen koennte dieser Wert von dem separat
+    # geklemmten PhotoCriterionScore.value abweichen, obwohl beide atomar aus derselben API-Antwort
+    # stammen sollen. compute_landmark_score klemmt zusaetzlich defensiv (bewusste Redundanz).
     clamped_confidence = max(0.0, min(1.0, confidence))
     return LandmarkDetection(name=name, confidence=clamped_confidence, usage=usage)
 
 
 class AnthropicLandmarkClient:
-    """Echte, httpx-basierte Implementierung von LandmarkClientLike - direkter
-    REST-Aufruf gegen die Anthropic Messages API, kein anthropic-SDK. `transport` ist injizierbar
-    (httpx.MockTransport in Tests, analog OpenCloudClient) - `build_landmark_client()` unten
-    laeuft dagegen NIE in einem automatisierten Test (echtes Secret + echter Netzwerkversuch)."""
+    """Echte, httpx-basierte Implementierung von LandmarkClientLike - direkter REST-Aufruf gegen
+    die Anthropic Messages API, kein anthropic-SDK. `transport` ist injizierbar
+    (httpx.MockTransport in Tests, analog OpenCloudClient) - `build_landmark_client()` unten laeuft
+    dagegen NIE in einem automatisierten Test (echtes Secret + echter Netzwerkversuch)."""
 
     def __init__(
         self,
@@ -205,11 +196,9 @@ class AnthropicLandmarkClient:
                 }
             ],
         }
-        # EIN Aufruf statt des bisher viermal abgeschriebenen post/except/raise_for_status-Blocks.
-        # Verteilung ueber den Schrittmacher und Wiederholung bei 429 liegen damit strukturell an
-        # genau einer Stelle, nicht in vier gepflegten Kopien. Meldungstexte und Statuslabel sind
-        # unveraendert (sie stecken jetzt in ANTHROPIC_ENDPOINT), der Fehlerpfad des Workers bleibt
-        # derselbe.
+        # Verteilung ueber den Schrittmacher und Wiederholung bei 429 liegen strukturell an genau
+        # einer Stelle, nie in einer Kopie je Client. Meldungstexte und Statuslabel stecken in
+        # ANTHROPIC_ENDPOINT.
         response = await post_vision_request(
             self._client,
             ANTHROPIC_ENDPOINT,
@@ -225,11 +214,11 @@ class AnthropicLandmarkClient:
 
 
 class MistralLandmarkClient:
-    """Echte, httpx-basierte Implementierung von LandmarkClientLike, exakt
-    analog AnthropicLandmarkClient - direkter REST-Aufruf gegen die Mistral Chat Completions API,
-    kein Mistral-SDK. `transport` ist injizierbar (httpx.MockTransport in Tests) -
-    `build_landmark_client()` unten laeuft dagegen NIE in einem automatisierten Test (echtes
-    Secret + echter Netzwerkversuch)."""
+    """Echte, httpx-basierte Implementierung von LandmarkClientLike, exakt analog
+    AnthropicLandmarkClient - direkter REST-Aufruf gegen die Mistral Chat Completions API, kein
+    Mistral-SDK. `transport` ist injizierbar (httpx.MockTransport in Tests) -
+    `build_landmark_client()` unten laeuft dagegen NIE in einem automatisierten Test (echtes Secret
+    + echter Netzwerkversuch)."""
 
     def __init__(
         self,
@@ -262,8 +251,8 @@ class MistralLandmarkClient:
         body = {
             "model": self._model,
             "max_tokens": _MAX_RESPONSE_TOKENS,
-            # Nativer JSON-Mode - Mistral unterstuetzt das, Anthropic nicht (dort bleibt die
-            # bestehende reine Prompt-Anweisung unveraendert).
+            # Nativer JSON-Mode - Mistral unterstuetzt das, Anthropic nicht (dort traegt allein
+            # die Prompt-Anweisung).
             "response_format": {"type": "json_object"},
             "messages": [
                 {
@@ -272,8 +261,7 @@ class MistralLandmarkClient:
                         {
                             "type": "image_url",
                             # WICHTIG: image_url ist bei Mistral ein FLACHER String (Data-URI), KEIN
-                            # verschachteltes {"url": "..."}-Objekt wie im OpenAI-Schema -
-                            # Verwechslungsgefahr, bewusst 1:1 aus dem Mistral-Cookbook uebernommen.
+                            # verschachteltes {"url": "..."}-Objekt wie im OpenAI-Schema.
                             "image_url": (
                                 f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode()}"
                             ),
@@ -299,17 +287,16 @@ class MistralLandmarkClient:
 
 
 def build_landmark_client(model: str) -> LandmarkClientLike:
-    """Dispatch-Factory zwischen AnthropicLandmarkClient (unveraendert, weiterhin Default) und
-    MistralLandmarkClient je nach settings.landmark_provider. Analog
-    build_face_detector/build_aesthetics_model: laeuft NIE in einem automatisierten Test (echtes
-    Secret + echter Netzwerkversuch - ein versehentlicher Aufruf in CI muesste als harter
-    Fehlschlag auffallen).
+    """Dispatch-Factory zwischen AnthropicLandmarkClient (Default) und MistralLandmarkClient je
+    nach settings.landmark_provider. Analog build_face_detector/build_aesthetics_model: laeuft NIE
+    in einem automatisierten Test (echtes Secret + echter Netzwerkversuch - ein versehentlicher
+    Aufruf in CI muesste als harter Fehlschlag auffallen).
 
     `model` ist ein Parameter statt einer hier gelesenen Modulkonstante: der Aufrufer loest das
-    Modell EINMAL
-    je Cloud-Phase auf und benutzt denselben Wert fuer Client-Bau, Kostenrechnung und Modellspalte
-    des Laufs - "angezeigt = abgerechnet = tatsaechlich aufgerufen" wird dadurch strukturell wahr
-    statt durch drei zufaellig uebereinstimmende Lesevorgaenge derselben globalen `settings`."""
+    Modell EINMAL je Cloud-Phase auf und benutzt denselben Wert fuer Client-Bau, Kostenrechnung und
+    Modellspalte des Laufs - "angezeigt = abgerechnet = tatsaechlich aufgerufen" wird dadurch
+    strukturell wahr statt durch drei zufaellig uebereinstimmende Lesevorgaenge derselben globalen
+    `settings`."""
     # Der PROZESSWEITE Schrittmacher des eingestellten Anbieters - dieselbe Instanz, die auch
     # build_category_classification_client() zieht. Beide Cloud-Teilschritte und mehrere
     # gleichzeitig laufende Jobs teilen sich dadurch einen Schrittmacher je Anbieter; der Anbieter

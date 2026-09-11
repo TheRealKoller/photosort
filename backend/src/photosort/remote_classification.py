@@ -42,20 +42,15 @@ from photosort.label_embedding import LabelEmbedderLike
 
 logger = logging.getLogger(__name__)
 
-# Die frueheren Aliase ANTHROPIC_CATEGORY_MODEL/MISTRAL_CATEGORY_MODEL sind ersatzlos entfallen
-# (Begruendung wortgleich zu landmark.py) - das Modell kommt als Konstruktor-Parameter herein.
+# Das Modell kommt als Konstruktor-Parameter herein, nie aus einer Modulkonstante.
 
-# Kurze, reine Klassifikationsantwort - 256 bleibt ausreichend: drei Set-Schluessel (je hoechstens
-# ~8 Tokens) plus zwei kurze deutsche Feinlabels und das JSON-Geruest liegen zusammen deutlich unter
-# 100 Ausgabe-Tokens; der deutlich groessere Prompt waechst ausschliesslich auf der EINGABEseite.
-#
-# NEUHERLEITUNG seit dem Konfidenzschema: der Kategorien-Eintrag ist vom nackten Schluessel zum
-# Objekt geworden, je Kandidat also rund 10 Tokens mehr ({"key": ..., "confidence": 0.92}). Die
-# vollbesetzte Antwort liegt damit ueberschlaegig bei 80-100 Ausgabe-Tokens gegenueber rund 50
-# bisher - 256 behaelt klare Reserve und ist ausdruecklich NICHT anzuheben. Das ist hier keine reine
-# Kostenschranke: die Grenze begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und
-# potenziell geloggt werden kann. Beide Groessen sind in tests/test_remote_classification.py
-# festgehalten.
+# Kurze, reine Klassifikationsantwort: eine vollbesetzte Antwort (drei Kategorie-Objekte mit
+# Konfidenz plus zwei kurze deutsche Feinlabels und das JSON-Geruest) liegt ueberschlaegig bei
+# 80-100 Ausgabe-Tokens; der deutlich groessere Prompt waechst ausschliesslich auf der
+# EINGABEseite. 256 behaelt damit klare Reserve und ist ausdruecklich NICHT anzuheben - die Grenze
+# ist keine reine Kostenschranke, sie begrenzt zugleich die Menge an Fremdtext, die je Foto
+# geparst und potenziell geloggt werden kann. Beide Groessen sind in
+# tests/test_remote_classification.py festgehalten.
 _MAX_RESPONSE_TOKENS = 256
 
 # Defensive Obergrenze gegen eine entartete Modellantwort - verhindert einen uebermaessig langen
@@ -73,13 +68,10 @@ _MAX_LOGGED_RAW_VALUE_LENGTH = 60
 
 # Sicherheits-Muss-Kriterium: FESTE Grund-Tokens statt des Rohwerts. Fuer einen verworfenen
 # Kategorieschluessel traegt der Rohwert echten Diagnosewert (er zeigt ein Vokabular, das der
-# Prompt nicht gesetzt hat) - fuer eine
-# verworfene Konfidenz liegt er praktisch vollstaendig in der FEHLERKLASSE: "kein Zahlentyp" bzw.
-# "ausserhalb [0,1]" sagt alles fuer eine Prompt-/Schemakorrektur Noetige, die konkrete `1.7`
-# nichts darueber hinaus. Damit enthaelt die Zeile ueberhaupt keinen Fremdtext und die
-# Log-Injection-Frage stellt sich nicht. Zweiter, praktischer Grund: die wahrscheinlichste reale
-# Fehlerform ist eine SYSTEMATISCHE Skalenverwechslung (`92` statt `0.92`) ueber einen ganzen Lauf
-# - ein festes Token macht solche Laeufe zaehlbar und greppbar, tausend Rohwerte nicht.
+# Prompt nicht gesetzt hat) - fuer eine verworfene Konfidenz liegt er praktisch vollstaendig in der
+# FEHLERKLASSE: "kein Zahlentyp" bzw. "ausserhalb [0,1]" sagt alles fuer eine
+# Prompt-/Schemakorrektur Noetige, die konkrete `1.7` nichts darueber hinaus. Damit enthaelt die
+# Zeile ueberhaupt keinen Fremdtext und die Log-Injection-Frage stellt sich nicht.
 _CONFIDENCE_REASON_NOT_NUMERIC = "nicht_numerisch"
 _CONFIDENCE_REASON_OUT_OF_RANGE = "ausserhalb_intervall"
 
@@ -97,8 +89,7 @@ class RemoteCategoryClassificationApiError(Exception):
 
 @dataclass(frozen=True)
 class RemoteClassification:
-    """Die validierte Antwort des Vision-LLM fuer EIN Foto - ersetzt die fruehere
-    `list[CategoryLabelDetection]`.
+    """Die validierte Antwort des Vision-LLM fuer EIN Foto.
 
     `categories` enthaelt ausschliesslich bekannte Set-Keys (categories.py::CATEGORY_REGISTRY) in
     Erstnennungs-Reihenfolge, hoechstens MAX_REMOTE_CATEGORIES_PER_PHOTO - unbekannte Rohwerte
@@ -109,19 +100,16 @@ class RemoteClassification:
     MAX_FINE_LABELS_PER_PHOTO.
 
     `category_confidences` ist die Selbsteinschaetzung des Modells je Kandidat - eine ABBILDUNG
-    `category_key -> Wert in [0, 1]`, kein positionsparalleles Array: der Wert haengt am
-    Schluessel und ueberlebt jede
-    Umsortierung. Sie ist eine TEILmenge von `categories` (Invariante
+    `category_key -> Wert in [0, 1]`, kein positionsparalleles Array: der Wert haengt am Schluessel
+    und ueberlebt jede Umsortierung. Sie ist eine TEILmenge von `categories` (Invariante
     `set(category_confidences) <= set(categories)`), darf leer sein, und ihr Fehlen an einem
-    Schluessel heisst "keine Angabe", nie `0.0`. Die frueher hier entfallenen Konfidenzen kehren
-    damit zurueck - aber ausdruecklich OHNE die Eigenschaft, die sie damals zum Ballast machte:
-    sie beeinflussen die Kategorieauswahl an keiner Stelle."""
+    Schluessel heisst "keine Angabe", nie `0.0`. Sie beeinflusst die Kategorieauswahl an keiner
+    Stelle."""
 
     categories: tuple[str, ...]
     fine_labels: tuple[str, ...]
-    # Der reale Token-Verbrauch DIESES Aufrufs (analog LandmarkDetection.usage). MIT Default -
-    # bestehende Test-Doubles und die CategoryDetectionClientLike-Signatur bleiben unveraendert.
-    # `None` heisst "nicht ermittelbar", nicht "keine Kosten".
+    # Der reale Token-Verbrauch DIESES Aufrufs (analog LandmarkDetection.usage). `None` heisst
+    # "nicht ermittelbar", nicht "keine Kosten".
     usage: TokenUsage | None = None
     # `MappingProxyType({})` statt `field(default_factory=dict)`: die Zusage von `frozen=True` gilt
     # sonst nur fuer die REFERENZ, nicht fuer den Inhalt - genau wie bei den beiden Tupel-Feldern
@@ -135,9 +123,9 @@ class CategoryDetectionClientLike(Protocol):
     """Schmale, injizierbare Schnittstelle (analog LandmarkClientLike).
 
     `photo_id` ist eine technische Detailentscheidung dieser Umsetzung (die WARNING-Zeile traegt
-    den einzelnen verworfenen Wert PLUS photo_id): der Parser sitzt innerhalb von `classify`,
-    kennt das Foto sonst aber nicht.
-    Der Wert wird ausschliesslich fuer diese Logzeile benutzt, nie an die API gesendet."""
+    den einzelnen verworfenen Wert PLUS photo_id): der Parser sitzt innerhalb von `classify`, kennt
+    das Foto sonst aber nicht. Der Wert wird ausschliesslich fuer diese Logzeile benutzt, nie an
+    die API gesendet."""
 
     async def classify(
         self, image_bytes: bytes, mime_type: str, photo_id: int
@@ -148,12 +136,12 @@ def _log_discarded_category(photo_id: int, raw: object) -> None:
     """Ein verworfener, unbekannter Kategoriewert (eine Zeile, WARNING, kein exc_info/Traceback -
     der Lauf bleibt erfolgreich, das ist erwartetes Best-effort-Verhalten).
 
-    Security-Muss-Kriterien: geloggt wird AUSSCHLIESSLICH der einzelne
-    verworfene Wert plus photo_id - nie die vollstaendige API-Antwort, nie der Request-Body, nie
-    Base64-Bilddaten, nie der API-Key. Der Rohwert geht laengenbegrenzt und ueber %r (repr) ins
-    Log, nie roh ueber %s: ein mehrzeiliger Modellwert koennte sonst gefaelschte Logzeilen
-    erzeugen. Kein Log-Flooding moeglich - pro Foto koennen hoechstens so viele Werte verworfen
-    werden, wie die Antwortliste Eintraege hat."""
+    Security-Muss-Kriterien: geloggt wird AUSSCHLIESSLICH der einzelne verworfene Wert plus
+    photo_id - nie die vollstaendige API-Antwort, nie der Request-Body, nie Base64-Bilddaten, nie
+    der API-Key. Der Rohwert geht laengenbegrenzt und ueber %r (repr) ins Log, nie roh ueber %s:
+    ein mehrzeiliger Modellwert koennte sonst gefaelschte Logzeilen erzeugen. Kein Log-Flooding
+    moeglich - pro Foto koennen hoechstens so viele Werte verworfen werden, wie die Antwortliste
+    Eintraege hat."""
     text = raw if isinstance(raw, str) else repr(raw)
     if len(text) > _MAX_LOGGED_RAW_VALUE_LENGTH:
         text = text[:_MAX_LOGGED_RAW_VALUE_LENGTH] + "..."
@@ -209,23 +197,23 @@ def _confidence_from_raw(raw: object, photo_id: int) -> float | None:
 def _categories_from_json(
     raw_categories: list[Any], photo_id: int
 ) -> tuple[tuple[str, ...], Mapping[str, float]]:
-    """Verbindliche Verarbeitungsreihenfolge: trimmen -> leere Werte
-    verwerfen -> unbekannte Werte verwerfen (+ genau ein WARNING je Wert) -> deduplizieren unter
-    Erhalt der Erstnennungs-Reihenfolge -> ZULETZT kuerzen. Zuerst zu kuerzen wuerde gueltige
-    Werte hinter ungueltigen verlieren.
+    """Verbindliche Verarbeitungsreihenfolge: trimmen -> leere Werte verwerfen -> unbekannte Werte
+    verwerfen (+ genau ein WARNING je Wert) -> deduplizieren unter Erhalt der
+    Erstnennungs-Reihenfolge -> ZULETZT kuerzen. Zuerst zu kuerzen wuerde gueltige Werte hinter
+    ungueltigen verlieren.
 
     Der EINE Durchlauf liefert ein PAAR (Kandidaten + Konfidenz-Abbildung) statt nur der
-    Kandidaten. Bewusst nicht zwei getrennte
-    Funktionen: Dedup und Kappung koennten sonst zwischen beiden Rueckgaben auseinanderlaufen.
+    Kandidaten, und nie zwei getrennte Funktionen: Dedup und Kappung koennten sonst zwischen beiden
+    Rueckgaben auseinanderlaufen.
 
-    Ein Eintrag darf ein Objekt mit `key` (optional `confidence`) ODER weiterhin ein blanker String
-    sein - der String-Fall liefert eine Kategorie OHNE Zahl. Alles andere geht
-    durch denselben Verwerfen-Pfad wie bisher, kein neuer stiller Zweig.
+    Ein Eintrag darf ein Objekt mit `key` (optional `confidence`) ODER ein blanker String sein -
+    der String-Fall liefert eine Kategorie OHNE Zahl. Alles andere geht durch denselben
+    Verwerfen-Pfad, kein stiller Zweig daneben.
 
-    Security-Muss-Kriterium: die Konfidenz-Abbildung wird ERST NACH
-    Schluesselvalidierung, Dedup und Kappung auf die verbliebenen Schluessel gefiltert. Ihre
-    Schluessel sind ein zweiter Persistenzkanal - entstuende sie vor oder unabhaengig von der
-    Validierung, wanderte unvalidierter Fremdtext ueber sie in API-Antwort und UI. Invariante:
+    Security-Muss-Kriterium: die Konfidenz-Abbildung wird ERST NACH Schluesselvalidierung, Dedup
+    und Kappung auf die verbliebenen Schluessel gefiltert. Ihre Schluessel sind ein zweiter
+    Persistenzkanal - entstuende sie vor oder unabhaengig von der Validierung, wanderte
+    unvalidierter Fremdtext ueber sie in API-Antwort und UI. Invariante:
     `set(confidences) <= set(categories)`."""
     accepted: list[str] = []
     confidences: dict[str, float] = {}
@@ -245,8 +233,8 @@ def _categories_from_json(
             continue
 
         if not isinstance(raw_key, str):
-            # Bewusst nur der KEY-Anteil ins Log, nie der ganze Eintrag: der Konfidenzwert gehoert
-            # laut Security-Abschnitt Punkt 4 nicht in eine Logzeile.
+            # Nur der KEY-Anteil ins Log, nie der ganze Eintrag: der Konfidenzwert gehoert nicht
+            # in eine Logzeile.
             _log_discarded_category(photo_id, raw_key)
             continue
         trimmed = raw_key.strip()
@@ -275,8 +263,8 @@ def _fine_labels_from_json(raw_labels: list[Any]) -> tuple[str, ...]:
     Set-Whitelist: sanitisieren -> leere/zu lange Werte verwerfen -> deduplizieren (Erstnennung
     gewinnt) -> ZULETZT kuerzen. Verworfene Feinlabels werden NICHT geloggt: anders als bei einem
     unbekannten Kategoriewert (der auf ein Prompt-/Set-Problem hindeutet) ist ein leeres oder
-    entartetes Feinlabel ohne Diagnosewert, und der Wert selbst waere genau der Fremdtext, den
-    Punkt 4 des Security-Abschnitts aus dem Log heraushalten will."""
+    entartetes Feinlabel ohne Diagnosewert, und der Wert selbst waere genau der Fremdtext, der aus
+    dem Log herauszuhalten ist."""
     accepted: list[str] = []
     for raw in raw_labels:
         if not isinstance(raw, str):
@@ -301,8 +289,8 @@ def _classification_from_json(
     _MAX_RESPONSE_TOKENS abgeschnittene Antwort landet ueber denselben Pfad hier - nie bei einem
     teilweise geparsten Datensatz.
 
-    INHALTLICH TOLERANT: unbekannte Kategoriewerte und entartete Feinlabels
-    werden VERWORFEN statt abgelehnt. Der wichtigste Grenzfall: sind ALLE Kategoriewerte
+    INHALTLICH TOLERANT: unbekannte Kategoriewerte und entartete Feinlabels werden VERWORFEN statt
+    abgelehnt. Der wichtigste Grenzfall: sind ALLE Kategoriewerte
     unbekannt, ist das KEIN Fehler - das Ergebnis ist ein leeres Kategorien-Tupel, das ueber
     `resolve_category` zu `nicht_erkannt` wird, und die Feinlabels desselben Fotos bleiben
     erhalten. `fine_labels` ist optional (fehlender Schluessel -> leeres Tupel), `categories`
@@ -340,9 +328,9 @@ def _classification_from_json(
 
 class AnthropicCategoryClient:
     """Echte, httpx-basierte Implementierung von CategoryDetectionClientLike, strukturell analog
-    AnthropicLandmarkClient. `transport` ist injizierbar (httpx.MockTransport in
-    Tests) - `build_category_classification_client()` unten laeuft NIE in einem automatisierten
-    Test (echtes Secret + echter Netzwerkversuch)."""
+    AnthropicLandmarkClient. `transport` ist injizierbar (httpx.MockTransport in Tests) -
+    `build_category_classification_client()` unten laeuft NIE in einem automatisierten Test (echtes
+    Secret + echter Netzwerkversuch)."""
 
     def __init__(
         self,
@@ -354,9 +342,9 @@ class AnthropicCategoryClient:
         throttle: CloudRequestThrottle,
     ) -> None:
         # PFLICHTPARAMETER ohne Default, Begruendung wortgleich zu
-        # landmark.py::AnthropicLandmarkClient. Dasselbe gilt fuer den Schrittmacher: ein
-        # Aufrufer, der ihn vergisst, fiele nicht beim Typecheck auf,
-        # sondern erst an der Anfragerate des Anbieters.
+        # landmark.py::AnthropicLandmarkClient. Dasselbe gilt fuer den Schrittmacher: ein Aufrufer,
+        # der ihn vergisst, fiele nicht beim Typecheck auf, sondern erst an der Anfragerate des
+        # Anbieters.
         self._model = model
         self._throttle = throttle
         self._client = httpx.AsyncClient(
@@ -395,9 +383,8 @@ class AnthropicCategoryClient:
                 }
             ],
         }
-        # EIN Aufruf statt des bisher viermal abgeschriebenen post/except/raise_for_status-Blocks -
-        # dieselbe Funktion, die auch die beiden Landmark-Clients benutzen. Meldungstexte und
-        # Statuslabel unveraendert (sie stecken jetzt in ANTHROPIC_ENDPOINT).
+        # Derselbe Sende- und Wiederholungspfad, den auch die beiden Landmark-Clients benutzen.
+        # Meldungstexte und Statuslabel stecken in ANTHROPIC_ENDPOINT.
         response = await post_vision_request(
             self._client,
             ANTHROPIC_ENDPOINT,
@@ -478,13 +465,13 @@ class MistralCategoryClient:
 
 def build_category_classification_client(model: str) -> CategoryDetectionClientLike:
     """Dispatch-Factory zwischen AnthropicCategoryClient (Default) und MistralCategoryClient je
-    nach settings.landmark_provider (KEIN neues Provider-Setting - derselbe Schalter wie fuer
-    landmark). Laeuft NIE in einem automatisierten Test (echtes Secret + echter
-    Netzwerkversuch), analog build_landmark_client/build_face_detector.
+    nach settings.landmark_provider (KEIN eigenes Provider-Setting - derselbe Schalter wie fuer
+    landmark). Laeuft NIE in einem automatisierten Test (echtes Secret + echter Netzwerkversuch),
+    analog build_landmark_client/build_face_detector.
 
     `model` ist ein Parameter (Begruendung wortgleich zu landmark.py::build_landmark_client) - und
     es ist DASSELBE Modell wie dort, weil `LANDMARK_MODEL` wie `LANDMARK_PROVIDER` fuer beide
-    Cloud-Anteile gilt: nicht zwei unterschiedliche Modelle nebeneinander."""
+    Cloud-Anteile gilt: nie zwei unterschiedliche Modelle nebeneinander."""
     # DERSELBE prozessweite Schrittmacher, den auch build_landmark_client() zieht - beide
     # Cloud-Teilschritte teilen sich einen je Anbieter.
     throttle = throttle_for_provider(settings.landmark_provider)
@@ -499,20 +486,9 @@ def build_category_classification_client(model: str) -> CategoryDetectionClientL
     return anthropic_client
 
 
-# Die frueher hier stehende Konstante COST_PER_IMAGE_USD (Vorab-Schaetzung, Preis pro BILD, je
-# PROVIDER) ist ersatzlos entfallen: an den Anbieter gebunden statt an das Modell, wurde sie bei
-# einem Modellwechsel unbemerkt falsch. Die Schaetzung lebt seitdem in
-# `pricing.py::estimate_usd_per_image()` und wird aus derselben modell-geschluesselten
-# Preistabelle abgeleitet wie die Ist-Kosten; die dokumentierte Herleitung der
-# Token-Annahmen ist mit nach `pricing.py::ASSUMED_USAGE_BY_PROVIDER` gewandert.
-
-# Dokumentiert-unkalibrierter Startwert (developer verifiziert/kalibriert mit ein paar echten
-# Test-Label-Paaren wie "Hund"/"Hunde"/"dog" vs. "Katze"/"Hund" vor dem Festschreiben - gleiche
-# Klasse wie CATEGORY_ACTIVE_THRESHOLD_FRACTION/SHARPNESS_NORMALIZATION_CEILING, kein
-# Fotokorpus/Label-Korpus im Repo zur Kalibrierung). Stichprobe gegen die echten Assets vor dem
-# Commit (test_label_embedding.py::TestRealAssetOutputDimension) ergab Kosinus-Aehnlichkeiten von
-# 0.92-0.99 fuer "Hund"/"Hunde"/"dog" und < 0.4 fuer "Katze"/"Strand" - 0.78 liegt komfortabel
-# zwischen beiden Gruppen.
+# Dokumentiert-unkalibrierter Startwert - gleiche Klasse wie
+# CATEGORY_ACTIVE_THRESHOLD_FRACTION/SHARPNESS_NORMALIZATION_CEILING: es gibt keinen Foto- oder
+# Label-Korpus im Repository, gegen den er kalibriert werden koennte.
 CATEGORY_LABEL_SIMILARITY_THRESHOLD = 0.78
 
 
@@ -532,9 +508,9 @@ class FineLabelSnapshotEntry:
 
 
 def _normalize_label_text(raw: str) -> str:
-    """Reine String-Normalisierung (Schritt 1) - kein Modell-Aufruf. NFKC deckt
-    u.a. Ligaturen/Kompatibilitaetszeichen ab (z.B. "ﬁsch" -> "fisch"), casefold ist eine
-    aggressivere, unicode-bewusste Kleinschreibung als .lower()."""
+    """Reine String-Normalisierung (Schritt 1) - kein Modell-Aufruf. NFKC deckt u.a.
+    Ligaturen/Kompatibilitaetszeichen ab (z.B. "ﬁsch" -> "fisch"), casefold ist eine aggressivere,
+    unicode-bewusste Kleinschreibung als .lower()."""
     return unicodedata.normalize("NFKC", raw).strip().casefold()
 
 
@@ -542,21 +518,20 @@ _SLUG_INVALID_CHARS = re.compile(r"[^a-z0-9]+")
 
 
 def _slugify(text: str) -> str:
-    """Bildet einen URL-/Key-sicheren Slug (Schritt 4): casefoldet defensiv
-    zusaetzlich selbst (funktioniert damit unabhaengig davon, ob der Aufrufer bereits normalisiert
-    hat), Sonderzeichen/Leerzeichen zu `_`, doppelte `_` reduziert, fuehrende/abschliessende `_`
-    entfernt - dieselbe Klasse einfacher, reiner Textfunktion wie andernorts im Projekt (z.B.
-    worker.py-Cache-Key-Bildung), keine neue Bibliothek.
+    """Bildet einen URL-/Key-sicheren Slug (Schritt 4): casefoldet defensiv zusaetzlich selbst
+    (funktioniert damit unabhaengig davon, ob der Aufrufer bereits normalisiert hat),
+    Sonderzeichen/Leerzeichen zu `_`, doppelte `_` reduziert, fuehrende/abschliessende `_`
+    entfernt - eine reine Textfunktion, keine neue Bibliothek.
 
     Hash-Fallback: `_SLUG_INVALID_CHARS` matcht nur a-z/0-9 als gueltig - ein rein
     nicht-lateinisches Rohlabel (z.B. japanisch/chinesisch, ein vom offenen Remote-Vokabular
-    explizit nicht ausgeschlossener Fall) wuerde sonst zu
-    einem leeren String slugifien. Zwei verschiedene solche Label wuerden dann denselben (leeren)
-    canonical_key produzieren und an UniqueConstraint(fine_labels.canonical_key) scheitern -
-    ein Verfuegbarkeitsrisiko, das den ganzen Batch-Lauf abbricht statt nur das eine betroffene
-    Foto zu ueberspringen (best-effort ohne Retry gilt pro Foto, nicht fuer eine IntegrityError
-    beim Label-Anlegen). Deterministischer SHA256-Praefix statt Zufallswert -
-    derselbe Rohtext liefert bei einem Wiederholungslauf denselben Slug, kein Duplikat-Risiko."""
+    explizit nicht ausgeschlossener Fall) wuerde sonst zu einem leeren String slugifien. Zwei
+    verschiedene solche Label wuerden dann denselben (leeren) canonical_key produzieren und an
+    UniqueConstraint(fine_labels.canonical_key) scheitern - ein Verfuegbarkeitsrisiko, das den
+    ganzen Batch-Lauf abbricht statt nur das eine betroffene Foto zu ueberspringen (best-effort
+    ohne Retry gilt pro Foto, nicht fuer eine IntegrityError beim Label-Anlegen).
+    Deterministischer SHA256-Praefix, nie ein Zufallswert - derselbe Rohtext liefert bei einem
+    Wiederholungslauf denselben Slug, kein Duplikat-Risiko."""
     slug = _SLUG_INVALID_CHARS.sub("_", text.casefold()).strip("_")
     if slug:
         return slug
@@ -565,9 +540,9 @@ def _slugify(text: str) -> str:
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Reine Vektor-Aehnlichkeitsfunktion (Schritt 3) - beide Embedding-Vektoren
-    sind bereits L2-normiert (label_embedding.py::_mean_pool_and_normalize), das Skalarprodukt
-    entspricht deshalb direkt der Kosinus-Aehnlichkeit, keine erneute Normierung noetig."""
+    """Reine Vektor-Aehnlichkeitsfunktion (Schritt 3) - beide Embedding-Vektoren sind bereits
+    L2-normiert (label_embedding.py::_mean_pool_and_normalize), das Skalarprodukt entspricht
+    deshalb direkt der Kosinus-Aehnlichkeit, keine erneute Normierung noetig."""
     return sum(x * y for x, y in zip(a, b, strict=True))
 
 
@@ -576,12 +551,11 @@ def resolve_canonical_label(
     existing_labels: list[FineLabelSnapshotEntry],
     embedder: LabelEmbedderLike,
 ) -> FineLabelSnapshotEntry:
-    """Reine, DB-freie Funktion - loest ein einzelnes Roh-Label auf einen
-    kanonischen Eintrag auf: (1) exakter Normalisierungs-Fast-Path (KEIN embed()-Aufruf), (2)
-    Kosinus-Aehnlichkeits-Fallback gegen ALLE `existing_labels` (`>=` CATEGORY_LABEL_SIMILARITY_
-    THRESHOLD, inklusiv), (3) sonst ein neuer kanonischer Eintrag, der `existing_labels` sofort
-    (in-place) ergaenzt - verhindert Duplikat-Anlage bei zwei sehr aehnlichen neuen Labeln
-    innerhalb desselben Laufs (Teststrategie-Abschnitt der Spec)."""
+    """Reine, DB-freie Funktion - loest ein einzelnes Roh-Label auf einen kanonischen Eintrag auf:
+    (1) exakter Normalisierungs-Fast-Path (KEIN embed()-Aufruf), (2) Kosinus-Aehnlichkeits-Fallback
+    gegen ALLE `existing_labels` (`>=` CATEGORY_LABEL_SIMILARITY_THRESHOLD, inklusiv), (3) sonst
+    ein neuer kanonischer Eintrag, der `existing_labels` sofort (in-place) ergaenzt - verhindert
+    Duplikat-Anlage bei zwei sehr aehnlichen neuen Labeln innerhalb desselben Laufs."""
     normalized = _normalize_label_text(raw_label)
 
     for entry in existing_labels:
