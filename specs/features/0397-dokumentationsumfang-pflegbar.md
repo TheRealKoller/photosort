@@ -1,6 +1,6 @@
 # 0397 - Dokumentationsumfang bleibt pflegbar
 
-**Status:** Implemented ([PR #407](https://github.com/TheRealKoller/photosort/pull/407))
+**Status:** Implemented ([PR #407](https://github.com/TheRealKoller/photosort/pull/407), [PR #NNN](https://github.com/TheRealKoller/photosort/pull/NNN))
 **Erstellt:** 2026-09-11
 **Bezug:** [Issue #397](https://github.com/TheRealKoller/photosort/issues/397)
 **Umfang:** über dem Richtwert von rund 200 Zeilen, weil die Abschnitte „Security" und
