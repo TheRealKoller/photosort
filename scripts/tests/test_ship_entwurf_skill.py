@@ -88,7 +88,9 @@ BLOCK_FELDER = (
 
 # --- 2. Platzierung im erzeugenden Skill --------------------------------------------------
 
-UEBERSCHRIFT_ABSCHLUSS = "## Schritt 6: Abschluss — das Ergebnis wird ausgearbeitet, nicht verschoben"
+UEBERSCHRIFT_ABSCHLUSS = (
+    "## Schritt 6: Abschluss — das Ergebnis wird ausgearbeitet, nicht verschoben"
+)
 UEBERSCHRIFT_UEBERGABE = "## Schritt 7: Pull Request — einmal fragen, dann übergeben"
 UEBERSCHRIFT_AUFRAEUMEN = "## Schritt 8: Aufräumen ist eine Auskunft — der Ablauf entfernt nichts"
 
@@ -408,7 +410,7 @@ def test_der_anker_kommt_im_erzeuger_genau_einmal_vor() -> None:
 
 
 def test_der_anker_steht_zwischen_fertig_und_aufraeumschritt() -> None:
-    """Ueber Zeichenoffsets, nicht ueber `abschnitt()` - der Block enthaelt selbst eine `##`-Zeile."""
+    """Ueber Zeichenoffsets statt ueber `abschnitt()`: Der Block traegt selbst eine `##`-Zeile."""
     text = erzeugertext()
 
     abschluss = offset(text, UEBERSCHRIFT_ABSCHLUSS)
