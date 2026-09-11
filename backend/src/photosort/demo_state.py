@@ -134,9 +134,8 @@ _BASE_SCORING_AT = datetime(2024, 6, 1, 11, 0, 0)
 # waere bereits entschieden und zeigte den Zustand nicht mehr).
 _OPEN_SUGGESTION_INDEX = 3
 
-# Zwei Fotos des bewerteten Projekts tragen eine ABSICHTLICH gesetzte Konfidenz-Sonderform,
-# damit beide leicht
-# falsch gebauten Faelle im Browser tatsaechlich sichtbar sind.
+# Zwei Fotos des bewerteten Projekts tragen eine ABSICHTLICH gesetzte Konfidenz-Sonderform, damit
+# beide leicht falsch gebauten Faelle im Browser tatsaechlich sichtbar sind.
 #
 #   _CONFIDENCE_GAP_INDEX  - gar keine Angabe (beide Spalten `NULL`): die Luecke IST die
 #                            Darstellung, es darf dort kein Platzhalter und kein "0 %" stehen.
@@ -153,10 +152,10 @@ _LOW_CONFIDENCE_INDEX = 1
 # hoechstens 0.49 - garantiert unter 0.6, ohne den Wert fest zu verdrahten.
 _LOW_CONFIDENCE_FACTOR = 0.5
 
-# FESTE Zusatzkonfidenzen fuer drei Fotos des bewerteten Projekts, damit die
-# Mehrfachzugehoerigkeit in `browse-app` und im
-# e2e-Prueflauf tatsaechlich zu sehen ist. Bewusst literale Zahlen statt des deterministischen
-# Zufallswerts: die Faelle sollen an der Schwelle nicht kippen, wenn sich der Generator aendert.
+# FESTE Zusatzkonfidenzen fuer drei Fotos des bewerteten Projekts, damit die Mehrfachzugehoerigkeit
+# in `browse-app` und im e2e-Prueflauf tatsaechlich zu sehen ist. Bewusst literale Zahlen statt des
+# deterministischen Zufallswerts: die Faelle sollen an der Schwelle nicht kippen, wenn sich der
+# Generator aendert.
 #
 #   Index 4  - ein Foto mit ZWEI Zugehoerigkeiten (Haupt + eine Nebenkategorie); `tier` gehoert
 #              Foto 1, das im selben Cluster liegt - die Partition zeigt damit zwei Fotos.
@@ -192,10 +191,9 @@ _CLOUD_VISION_ERROR_INDEX = 1
 # Die Cloud-Bilanz des "bewertet"-Zustands.
 #
 # SAEMTLICHE Werte hier sind FREI ERFUNDEN und stammen aus keinem echten Lauf (nur synthetische
-# Demo-Daten). Das ist keine Formalie: die Bilanz zeigt
-# einen GELDBETRAG an der Ausloese-Stelle, und Screenshots aus dem Pruefstack landen als
-# PR-Anhaenge in einem oeffentlichen Repository. Ein echter Betrag waere damit
-# Ausgabeninformation der Familie in der Oeffentlichkeit.
+# Demo-Daten). Das ist keine Formalie: die Bilanz zeigt einen GELDBETRAG an der Ausloese-Stelle, und
+# Screenshots aus dem Pruefstack landen als PR-Anhaenge in einem oeffentlichen Repository. Ein
+# echter Betrag waere damit Ausgabeninformation der Familie in der Oeffentlichkeit.
 #
 # Gewaehlt so, dass die Oberflaeche etwas Sinnvolles zu zeigen hat: beide Cloud-Teilschritte mit
 # Betraegen deutlich ueber der "< 0,01 USD"-Schwelle, ein Fehlschlag in der Remote-Phase (damit
@@ -212,9 +210,9 @@ _DEMO_LANDMARK_COST_USD = 0.11
 _DEMO_ESTIMATED_COST_USD = 0.52
 
 # Der "bewertet"-Zustand muss ALLE VIER Anzeigezustaende der Cluster-Ueberschrift hergeben -
-# Sehenswuerdigkeit, eine Koordinate, mehrere
-# Orte und gar kein Ort. Sonst ist die Sichtpruefung ueber den `browse-app`-Skill fuer drei davon
-# blind, und sie ist die einzige nicht automatisierte Kontrollinstanz dieses Features.
+# Sehenswuerdigkeit, eine Koordinate, mehrere Orte und gar kein Ort. Sonst ist die Sichtpruefung
+# ueber den `browse-app`-Skill fuer drei davon blind, und sie ist die einzige nicht automatisierte
+# Kontrollinstanz dieses Features.
 #
 # Dafuer verteilt der Seeder die Fotos auf VIER statt bisher drei Cluster (`index % 4`), und jedes
 # Cluster steht fuer genau einen Zustand.
@@ -478,11 +476,10 @@ async def purge_demo_state(session: AsyncSession, cache_dir: Path) -> int:
     cache_keys = await collect_photo_cache_keys(session, project_ids)
     await delete_projects(session, project_ids)
     await session.flush()
-    # Ueber to_thread, wie es der Docstring von delete_cached_variants zusagt: die Funktion ist
-    # rein synchron und setzt bis zu zwei unlink-Aufrufe je Foto ab -
-    # ein direkter Aufruf aus dieser Koroutine heraus blockierte die Event-Loop. Der Endpunkt
-    # nebenan macht es richtig; eine Zusage, an die sich nur einer der beiden Aufrufer haelt, ist
-    # keine.
+    # Ueber to_thread, wie es der Docstring von delete_cached_variants zusagt: die Funktion ist rein
+    # synchron und setzt bis zu zwei unlink-Aufrufe je Foto ab - ein direkter Aufruf aus dieser
+    # Koroutine heraus blockierte die Event-Loop. Der Endpunkt nebenan macht es richtig; eine
+    # Zusage, an die sich nur einer der beiden Aufrufer haelt, ist keine.
     await asyncio.to_thread(delete_cached_variants, cache_dir, cache_keys)
     return len(project_ids)
 
@@ -664,13 +661,12 @@ async def _seed_rated_project(
     await session.flush()
 
     # Der Remote-Lauf DIESES Durchlaufs. Er entsteht vor dem Klassifizierungslauf, damit dessen
-    # Fremdschluessel
-    # ihn treffen kann - dieselbe Reihenfolge wie im produktiven Pfad (worker.py::
-    # run_classification).
+    # Fremdschluessel ihn treffen kann - dieselbe Reihenfolge wie im produktiven Pfad
+    # (worker.py::run_classification).
     #
     # SAEMTLICHE Zahlen hier sind frei erfunden (nur synthetische Demo-Daten - das Repository ist
-    # oeffentlich, PR-Anhaenge liegen oeffentlich auf GitHub). Sie stammen aus
-    # keinem echten Lauf und beschreiben keine tatsaechlichen Ausgaben der Familie.
+    # oeffentlich, PR-Anhaenge liegen oeffentlich auf GitHub). Sie stammen aus keinem echten Lauf
+    # und beschreiben keine tatsaechlichen Ausgaben der Familie.
     remote_run = RemoteCategoryClassificationRun(
         project_id=project.id,
         status=ScanStatus.SUCCESS,
@@ -701,8 +697,8 @@ async def _seed_rated_project(
         phase=ClassificationPhase.CRITERIA,
         # Der "bewertet"-Zustand traegt die vollstaendige Lauf-Bilanz: beide Cloud-Teilschritte,
         # verknuepfter Remote-Lauf und eingefrorene Startschaetzung - sonst waere der Block im
-        # Pruefstack/`browse-app` gar nicht sichtbar. Der Fall "ohne
-        # Cloud" bleibt im Fehlerzustands-Projekt erhalten.
+        # Pruefstack/`browse-app` gar nicht sichtbar. Der Fall "ohne Cloud" bleibt im
+        # Fehlerzustands-Projekt erhalten.
         cloud_requested=True,
         remote_category_classification_run_id=remote_run.id,
         landmark_photos_total=_DEMO_LANDMARK_PHOTOS_TOTAL,
@@ -722,9 +718,8 @@ async def _seed_rated_project(
     # vierzehnte Kategorie automatisch mit abgedeckt ist statt durchzurutschen.
     #
     # Die Zugehoerigkeiten werden erst GESAMMELT und dann partitionsweise geschrieben - ein Foto
-    # kann in mehreren Partitionen stehen, und
-    # `rank_position` ist innerhalb einer Partition lueckenlos 1..n (dieselbe Zusage wie im
-    # produktiven Schreibpfad).
+    # kann in mehreren Partitionen stehen, und `rank_position` ist innerhalb einer Partition
+    # lueckenlos 1..n (dieselbe Zusage wie im produktiven Schreibpfad).
     memberships: list[tuple[tuple[str, str], Photo, float, bool]] = []
     for index, (photo, category_key) in enumerate(zip(photos, CATEGORY_REGISTRY, strict=True)):
         cluster_key = f"{spec.slug}-cluster-{index % _DEMO_CLUSTER_COUNT}"
@@ -747,21 +742,20 @@ async def _seed_rated_project(
                 computed_at=_BASE_SCORING_AT,
             )
         )
-        # Deterministische Konfidenz je Foto ueber dasselbe `_deterministic_unit_value`-Muster
-        # wie die uebrigen Demo-Werte -
-        # zwei Fotos tragen die Sonderformen (keine Angabe / unterhalb der Kuratierungsschwelle),
-        # siehe die Konstanten oben. Der Skalar entsteht wie im produktiven Schreibpfad per
-        # LOOKUP aus der Abbildung, damit die Demo keinen Zustand erzeugt, den die Anwendung
-        # selbst nie schriebe (Invariante des Schreibpfads).
+        # Deterministische Konfidenz je Foto ueber dasselbe `_deterministic_unit_value`-Muster wie
+        # die uebrigen Demo-Werte - zwei Fotos tragen die Sonderformen (keine Angabe / unterhalb der
+        # Kuratierungsschwelle), siehe die Konstanten oben. Der Skalar entsteht wie im produktiven
+        # Schreibpfad per LOOKUP aus der Abbildung, damit die Demo keinen Zustand erzeugt, den die
+        # Anwendung selbst nie schriebe (Invariante des Schreibpfads).
         confidences = _demo_category_confidences(spec.slug, index, category_key)
         session.add(
             PhotoCategoryClassification(
                 photo_id=photo.id,
                 category_key=category_key,
                 # Die Kandidatenliste enthaelt genau die Schluessel der Konfidenz-Abbildung -
-                # `set(detected_category_confidences) <= set(detected_categories)` ist die am
-                # Parser erzwungene Invariante, und die Demo darf keinen
-                # Zustand erzeugen, den die Anwendung selbst nie schriebe.
+                # `set(detected_category_confidences) <= set(detected_categories)` ist die am Parser
+                # erzwungene Invariante, und die Demo darf keinen Zustand erzeugen, den die
+                # Anwendung selbst nie schriebe.
                 detected_categories=([category_key] if confidences is None else list(confidences)),
                 detected_category_confidences=confidences,
                 category_confidence=(
@@ -772,11 +766,10 @@ async def _seed_rated_project(
             )
         )
         # GENAU EIN erkannter Name im Landmark-Cluster. Genau einer, nicht mehrere -
-        # `refine_clusters_by_landmark` teilt erst
-        # ab ZWEI verschiedenen Namen auf, und der Demo-Zustand soll den ungeteilten Cluster mit
-        # `kind="landmark"` zeigen, nicht seine Aufteilung. Die uebrigen Fotos des Clusters
-        # bekommen den Namen ueber `cluster_place` mit - genau das ist der Zustand, den die
-        # Sichtpruefung sehen soll.
+        # `refine_clusters_by_landmark` teilt erst ab ZWEI verschiedenen Namen auf, und der
+        # Demo-Zustand soll den ungeteilten Cluster mit `kind="landmark"` zeigen, nicht seine
+        # Aufteilung. Die uebrigen Fotos des Clusters bekommen den Namen ueber `cluster_place` mit -
+        # genau das ist der Zustand, den die Sichtpruefung sehen soll.
         if index == _DEMO_LANDMARK_CLUSTER:
             session.add(
                 PhotoLandmarkDetection(
@@ -872,10 +865,10 @@ async def _seed_error_project(
             ),
         )
     )
-    # Der Fall "Lauf OHNE Cloud-Nutzung" der Bilanz - er lebt hier, weil im "bewertet"-Projekt
-    # jetzt die vollstaendige Cloud-Bilanz steht. Ohne ihn haette die Bilanz-Variante
-    # "Ohne Cloud-Anreicherung durchgefuehrt - es wurden keine Fotos an einen Anbieter gesendet."
-    # im Pruefstack/`browse-app` keinen Fall mehr.
+    # Der Fall "Lauf OHNE Cloud-Nutzung" der Bilanz - er lebt hier, weil im "bewertet"-Projekt jetzt
+    # die vollstaendige Cloud-Bilanz steht. Ohne ihn haette die Bilanz-Variante "Ohne
+    # Cloud-Anreicherung durchgefuehrt - es wurden keine Fotos an einen Anbieter gesendet." im
+    # Pruefstack/`browse-app` keinen Fall mehr.
     #
     # `status = FAILED` passt zum Zweck dieses Projekts (die Bilanz erscheint auch bei einem
     # gescheiterten Lauf - das Geld waere ausgegeben gewesen) und deckt zugleich den Fehler-Alert

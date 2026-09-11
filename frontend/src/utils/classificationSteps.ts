@@ -70,8 +70,8 @@ export function deriveClassificationSteps(run: CriterionScoringRunSummary): Clas
   // dann `-1`, und ohne Abfangen laege der Zeiger vor dem ersten Schritt - jeder Schritt stuende
   // auf `pending`, waehrend der Lauf arbeitet. Das ist kein theoretischer Fall: PhotoSort ist eine
   // PWA, Bundles werden gecacht, und genau diese Aenderung haengt zwei Werte an den Enum an. Ein
-  // alter Client saehe waehrend der Landmark-Phase "nichts passiert" statt des Fortschritts.
-  // Neue Phasen werden angehaengt, also ist "alle BEKANNTEN Schritte liegen dahinter" die richtige
+  // alter Client saehe waehrend der Landmark-Phase "nichts passiert" statt des Fortschritts. Neue
+  // Phasen werden angehaengt, also ist "alle BEKANNTEN Schritte liegen dahinter" die richtige
   // Naeherung - der unbekannte Schritt selbst kann ohnehin nicht angezeigt werden, weil er in der
   // Reihenfolge dieses Bundles fehlt.
   const phaseIndex = run.phase === null ? -1 : CLASSIFICATION_STEP_ORDER.indexOf(run.phase)

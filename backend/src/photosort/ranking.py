@@ -5,27 +5,26 @@ from dataclasses import dataclass
 
 from photosort.categories import usable_confidence
 
-# Reine, DB-freie Rangfolgen-Funktion (analog
-# scoring.py::assign_time_clusters/classification.py's ehemaligem select_top_n_with_category_mix).
+# Reine, DB-freie Rangfolgen-Funktion, analog
+# scoring.py::assign_time_clusters/classification.py's ehemaligem select_top_n_with_category_mix.
 # Operiert auf EINER Partition (cluster_key x category_key) pro Aufruf - der Worker ruft sie je
 # Partition auf und ergaenzt cluster_key/category_key erst beim Persistieren der PhotoRanking-
 # Zeilen (siehe worker.py::run_criterion_scoring). Die konkrete Default-Gewichtung ist bewusst
 # austauschbar.
 #
 # `usable_confidence` kommt aus categories.py und wird hier NICHT ein zweites Mal geschrieben
-# (Security-Muss-Kriterium): "was gilt als Angabe" muss
-# an beiden Lesestellen dieselbe Antwort geben - zwei Kopien koennten auseinanderlaufen, und genau
-# das ist der Fehler, den die Haertung verhindern soll. Der Import bleibt DB-, netzwerk- und
-# bildverarbeitungsfrei; categories.py ist selbst ein reines Modul und importiert nichts aus
-# diesem hier (kein Zirkel).
+# (Security-Muss-Kriterium): "was gilt als Angabe" muss an beiden Lesestellen dieselbe Antwort geben
+# - zwei Kopien koennten auseinanderlaufen, und genau das ist der Fehler, den die Haertung
+# verhindern soll. Der Import bleibt DB-, netzwerk- und bildverarbeitungsfrei; categories.py ist
+# selbst ein reines Modul und importiert nichts aus diesem hier (kein Zirkel).
 
 
-# Der maximale Abzug auf den SORTIERSCHLUESSEL einer Partition - erreicht bei
-# einer Selbsteinschaetzung von 0, null bei 1. Produktentscheidung Daniels: spuerbar, aber
-# gedeckelt. Bewusst additiv statt multiplikativ: `rank_score` ist ein auf [0, 1] normierter
-# gewichteter Mittelwert, auf dieser Skala ist ein Abstand eine Aussage, ein Faktor nicht (und ein
-# Faktor bestrafte gut bewertete Fotos absolut staerker als schlecht bewertete - genau verkehrt
-# herum). Nicht gegen einen echten Fotokorpus kalibriert.
+# Der maximale Abzug auf den SORTIERSCHLUESSEL einer Partition - erreicht bei einer
+# Selbsteinschaetzung von 0, null bei 1. Produktentscheidung Daniels: spuerbar, aber gedeckelt.
+# Bewusst additiv statt multiplikativ: `rank_score` ist ein auf [0, 1] normierter gewichteter
+# Mittelwert, auf dieser Skala ist ein Abstand eine Aussage, ein Faktor nicht (und ein Faktor
+# bestrafte gut bewertete Fotos absolut staerker als schlecht bewertete - genau verkehrt herum).
+# Nicht gegen einen echten Fotokorpus kalibriert.
 CONFIDENCE_RANK_PENALTY = 0.15
 
 

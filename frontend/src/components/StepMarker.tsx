@@ -19,9 +19,8 @@ export const STEP_MARKER_AUSPRAEGUNGEN: readonly StepMarkerAuspraegung[] = [
 
 /*
  * DIE ERSTE VERWENDUNG DES `group`-MUSTERS IM PROJEKT - deshalb hier ausdruecklich erklaert: Der
- * Marker ist
- * NICHT das Bedienelement. Ueberfahren und Gedruecktwerden passieren am umschliessenden `<Link>`
- * bzw. `<button>` in Stepper.tsx, das dafuer `group` traegt; der Marker drueckt sie als
+ * Marker ist NICHT das Bedienelement. Ueberfahren und Gedruecktwerden passieren am umschliessenden
+ * `<Link>` bzw. `<button>` in Stepper.tsx, das dafuer `group` traegt; der Marker drueckt sie als
  * `group-hover:`/`group-active:` aus. Der Zustandstraeger ist damit ueber zwei Dateien verteilt -
  * genau deshalb zeigt die `quellen`-Angabe des Bausteins auf DIESE Datei: der Zustandsscanner der
  * Penpot-Nutzlast liest sie, und er verlangt jeden hier getragenen Zustand als gefuehrte Achse.
@@ -78,9 +77,8 @@ const AUSPRAEGUNG_CLASSES: Record<StepMarkerAuspraegung, string> = {
 
 /**
  * Das Schloss ist bewusst KEIN dreizehntes Zeichen des Symbolsatzes: der Zwoelfer-Satz ist eine
- * belegte Ableitung aus dem Board, ein dreizehntes Zeichen
- * haette diesen Beleg nicht. Es bleibt deshalb ein dateilokales SVG und ist in `ui/icon.tsx` als
- * benannte Luecke des Satzes gefuehrt.
+ * belegte Ableitung aus dem Board, ein dreizehntes Zeichen haette diesen Beleg nicht. Es bleibt
+ * deshalb ein dateilokales SVG und ist in `ui/icon.tsx` als benannte Luecke des Satzes gefuehrt.
  */
 function LockIcon() {
   return (

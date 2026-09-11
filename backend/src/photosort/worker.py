@@ -462,8 +462,8 @@ async def _process_scan_block(
     # Ergebnisliste durch - `await gather(...)` selbst wirft in diesem Fall NICHTS. Ohne diese
     # explizite Pruefung wuerde ein Abbruch mitten in einer parallelen I/O-Coroutine NICHT den
     # bestehenden `except asyncio.CancelledError`-Zweig in run_project_scan erreichen. Eine ECHTE
-    # aeussere Task-Cancellation (arq
-    # job_timeout) propagiert dagegen bereits ohne Sonderbehandlung roh durch `await gather(...)`
+    # aeussere Task-Cancellation (arq job_timeout) propagiert dagegen bereits ohne
+    # Sonderbehandlung roh durch `await gather(...)`
     # hindurch - dieser Fall betrifft ausschliesslich eine Kind-Coroutine, die CancelledError
     # selbst wirft/traegt.
     for result in results:
@@ -1668,9 +1668,9 @@ async def run_criterion_scoring(
             if landmark_client is not None:
                 # Die Modellspalte wandert vom `finally` an den PHASENANFANG. Es bleibt derselbe
                 # lokale Wert, der den Client gebaut hat und gleich die Kosten rechnen wird - nur
-                # frueher committet, damit die Oberflaeche schon
-                # WAEHREND des Teilschritts sagen kann, wohin die Aufrufe gehen. Der BETRAG bleibt
-                # im `finally` und am Phasenende eingefroren.
+                # frueher committet, damit die Oberflaeche schon WAEHREND des Teilschritts sagen
+                # kann, wohin die Aufrufe gehen. Der BETRAG bleibt im `finally` und am Phasenende
+                # eingefroren.
                 run.landmark_model = landmark_model
                 await session.commit()
                 # Zählerstand des

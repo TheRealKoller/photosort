@@ -180,8 +180,8 @@ class OpenCloudClient:
         )
 
         # Terminierungs-Fix: eine unerwartete/kaputte WebDAV-Antwort (z.B. abgeschnittenes
-        # XML-Tag, nicht-numerischer
-        # content-length, unparsbares Datum in _parse_last_modified) darf hier nicht als roher
+        # XML-Tag, nicht-numerischer content-length, unparsbares Datum in _parse_last_modified)
+        # darf hier nicht als roher
         # ParseError/ValueError/TypeError propagieren - sonst laeuft die Exception ungefangen bis
         # in worker.py::run_project_scan durch, dessen (frueher zu enger) Fehlerbehandlungs-Block
         # den zugehoerigen ScanRun dann dauerhaft auf "running" stehen laesst. Analog zum
@@ -197,13 +197,12 @@ class OpenCloudClient:
 
     async def walk(self, webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
         # Zyklenschutz: ohne dieses Set wuerde ein (hypothetischer) Zyklus in der
-        # WebDAV-Verzeichnisstruktur
-        # (ein Kind-Ordner-Eintrag verweist auf einen bereits besuchten Pfad) denselben Pfad
-        # immer wieder in die BFS-Queue einreihen - files_found/last_progress_at wuerden dabei
-        # laufend "fortschreiten", ohne dass Schicht 2 (reap_stalled_runs) einen echten Stillstand
-        # erkennen wuerde. child_relative wird VOR dem queue.append geprueft, nicht erst beim
-        # Dequeuen - so wird auch eine doppelte Referenz innerhalb DERSELBEN Listing-Antwort
-        # abgefangen.
+        # WebDAV-Verzeichnisstruktur (ein Kind-Ordner-Eintrag verweist auf einen bereits besuchten
+        # Pfad) denselben Pfad immer wieder in die BFS-Queue einreihen -
+        # files_found/last_progress_at wuerden dabei laufend "fortschreiten", ohne dass Schicht 2
+        # (reap_stalled_runs) einen echten Stillstand erkennen wuerde. child_relative wird VOR dem
+        # queue.append geprueft, nicht erst beim Dequeuen - so wird auch eine doppelte Referenz
+        # innerhalb DERSELBEN Listing-Antwort abgefangen.
         start = root_path.strip("/")
         visited: set[str] = {start}
         queue: deque[str] = deque([start])

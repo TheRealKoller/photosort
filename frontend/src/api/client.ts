@@ -39,9 +39,9 @@ async function extractDetail(response: Response): Promise<string> {
 }
 
 /**
- * Duenner Fetch-Wrapper, der einzige Ort, der tatsaechlich HTTP-Requests an das Backend baut
- * Haengt bei vorhandenem Token automatisch den Authorization-Header an; loescht das Token und
- * dispatcht UNAUTHORIZED_EVENT bei 401.
+ * Duenner Fetch-Wrapper, der einzige Ort, der tatsaechlich HTTP-Requests an das Backend baut Haengt
+ * bei vorhandenem Token automatisch den Authorization-Header an; loescht das Token und dispatcht
+ * UNAUTHORIZED_EVENT bei 401.
  */
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const token = getToken()

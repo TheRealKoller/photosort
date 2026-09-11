@@ -29,10 +29,10 @@ interface CategorySelectProps {
 }
 
 /**
- * "Alle Kategorien"-Auswahl fuer die manuelle Uebersteuerung - bietet ALLE 13 Eintraege des
- * festen Sets an, unabhaengig
- * davon, was fuer dieses Foto erkannt wurde. Die bestehende "Kategorie-Kandidaten"-Gruppe bleibt
- * daneben als Erklaerung erhalten ("das hat das System erkannt"), sie wird nicht ersetzt.
+ * "Alle Kategorien"-Auswahl fuer die manuelle Uebersteuerung - bietet ALLE 13 Eintraege des festen
+ * Sets an, unabhaengig davon, was fuer dieses Foto erkannt wurde. Die bestehende
+ * "Kategorie-Kandidaten"-Gruppe bleibt daneben als Erklaerung erhalten ("das hat das System
+ * erkannt"), sie wird nicht ersetzt.
  *
  * Bedienform: ein natives `<select>`. Die Spec skizziert Desktop-Dropdown UND einen eigenen
  * Modal-Dialog fuer Mobil mit 44x44px-Tap-Zielen - eine technische Detailentscheidung dieser

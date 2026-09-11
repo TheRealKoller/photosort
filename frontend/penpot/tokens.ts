@@ -18,9 +18,8 @@
  */
 
 /** Penpot-Tokentyp je Namensgruppe (an einer verbundenen Instanz gemessen). Die sieben
- * Schriftstufen sind **Verbundtokens** vom Typ `typography`: Penpot
- * kennt keinen Token-Typ fuer Zeilenhoehen, und eine Stufe wird beim Entwerfen ohnehin in einem
- * Zug angewandt.
+ * Schriftstufen sind **Verbundtokens** vom Typ `typography`: Penpot kennt keinen Token-Typ fuer
+ * Zeilenhoehen, und eine Stufe wird beim Entwerfen ohnehin in einem Zug angewandt.
  *
  * Ihre Gruppe heisst `text` und nicht `font-size`: Das Token traegt neben der Groesse auch
  * Zeilenhoehe, Schnitt und Laufweite - ein Gruppenname `font-size` verspraeche weniger, als
@@ -48,9 +47,8 @@ export const TOKEN_TYPE_BY_GROUP: Readonly<Record<string, string>> = {
  *
  * Wo der Bestand kein Feld hat, FEHLT es deshalb: `--text-xs` und `--text-sm` tragen kein
  * `--font-weight`, nur `--text-3xl` traegt ein `--letter-spacing`. An der Zusage dahinter aendert
- * das nichts - einen Standardwert `400` zu ergaenzen waere weiterhin genau die getippte
- * Wertekopie, die dieser Erzeuger verbietet; das Feld ist nur nicht mehr leer da, sondern gar
- * nicht.
+ * das nichts - einen Standardwert `400` zu ergaenzen waere weiterhin genau die getippte Wertekopie,
+ * die dieser Erzeuger verbietet; das Feld ist nur nicht mehr leer da, sondern gar nicht.
  *
  * `fontSize` traegt seine Einheit (`"12px"`) - ebenfalls gemessen und gueltig.
  */
@@ -149,10 +147,10 @@ function parseDeclarations(body: string): [string, string][] {
 }
 
 /**
- * EINZIGE BEWUSSTE UEBERSETZUNG DIESES ERZEUGERS: uebernommen wird die
- * Primaerfamilie, nicht der vollstaendige CSS-Stack. Eine Ausweichkette ist eine Browser-
- * Eigenschaft und in einem Entwurfswerkzeug bedeutungslos; ein Schriftname MIT Anfuehrungszeichen
- * findet in Penpot ausserdem keine Schrift. Das ist keine Auslassung, sondern die Uebersetzung.
+ * EINZIGE BEWUSSTE UEBERSETZUNG DIESES ERZEUGERS: uebernommen wird die Primaerfamilie, nicht der
+ * vollstaendige CSS-Stack. Eine Ausweichkette ist eine Browser-Eigenschaft und in einem
+ * Entwurfswerkzeug bedeutungslos; ein Schriftname MIT Anfuehrungszeichen findet in Penpot ausserdem
+ * keine Schrift. Das ist keine Auslassung, sondern die Uebersetzung.
  */
 function primaryFontFamily(stack: string): string {
   const first = stack.split(',')[0].trim()
@@ -259,12 +257,12 @@ export function buildTokens(css: string): TokenBuildResult {
     }
 
     /*
-     * `--spacing-header` ist KEIN Design-Token, sondern eine Layout-Konstante der App-Huelle: die Hoehe der fixierten Kopfzeile, aus der
-     * `h-header` und `top-header` entstehen. Sie beschreibt nichts, was in Penpot gezeichnet oder
-     * gewaehlt wird - ein Token dafuer waere ein Wert ohne Gegenstueck im Entwurf und verschoebe
-     * die Kardinalitaeten der Nutzlast. Bewusst NAMENTLICH uebersprungen und nicht ueber ein
-     * Praefixmuster: ein kuenftiges, echtes Abstands-Token soll weiterhin im Fehlerzweig landen
-     * statt still zu verschwinden.
+     * `--spacing-header` ist KEIN Design-Token, sondern eine Layout-Konstante der App-Huelle: die
+     * Hoehe der fixierten Kopfzeile, aus der `h-header` und `top-header` entstehen. Sie beschreibt
+     * nichts, was in Penpot gezeichnet oder gewaehlt wird - ein Token dafuer waere ein Wert ohne
+     * Gegenstueck im Entwurf und verschoebe die Kardinalitaeten der Nutzlast. Bewusst NAMENTLICH
+     * uebersprungen und nicht ueber ein Praefixmuster: ein kuenftiges, echtes Abstands-Token soll
+     * weiterhin im Fehlerzweig landen statt still zu verschwinden.
      */
     if (name === '--spacing-header') {
       continue

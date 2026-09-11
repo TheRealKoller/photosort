@@ -12,9 +12,8 @@ const TONE_BY_STATUS: Record<RatingStatus, BadgeTone> = {
 }
 
 /*
- * Die drei Bewertungssymbole des Boards (Favorit `star`, Album `book`, Aussortiert `x-circle`).
- * Sie ersetzen die frueheren
- * Sonderzeichen ★/✓/✕.
+ * Die drei Bewertungssymbole des Boards (Favorit `star`, Album `book`, Aussortiert `x-circle`). Sie
+ * ersetzen die frueheren Sonderzeichen ★/✓/✕.
  *
  * `book` fuer "Album-wuerdig" folgt dem Board und der ADR (0055 Punkt 6c nennt den achromatischen
  * Nachweis ausdruecklich als `star`/`book`/`x-circle`); die Umsetzungsliste der Spec fuehrt an
@@ -28,10 +27,9 @@ const SYMBOLS: Record<RatingStatus, IconName> = {
   rejected: 'x-circle',
 }
 
-// Zahnrad-Praefix vor dem Stufensymbol fuer einen automatischen Vorschlag
-// (Design-System-Ergaenzung "Vorschlags-Badge"): volle Fuellung = von
-// einem Menschen entschieden, getoente Flaeche mit farbigem Rand + Praefix = maschineller
-// Vorschlag, noch offen.
+// Zahnrad-Praefix vor dem Stufensymbol fuer einen automatischen Vorschlag (Design-System-Ergaenzung
+// "Vorschlags-Badge"): volle Fuellung = von einem Menschen entschieden, getoente Flaeche mit
+// farbigem Rand + Praefix = maschineller Vorschlag, noch offen.
 const SUGGESTION_PREFIX: IconName = 'cog'
 
 interface RatingBadgeProps {

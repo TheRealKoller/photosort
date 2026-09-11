@@ -30,10 +30,10 @@ import { ProjectStatsPage } from './pages/ProjectStatsPage'
 import { matchProjectId, PROJECT_ROUTE_PATHS } from './utils/projectRoutes'
 
 /**
- * Reiner Redirect: ersetzt die frueher hier stehende ProjectDetailPage.tsx als Ziel
- * dieser Route - Bestandsschutz fuer bestehende Links/Bookmarks auf /projects/:projectId. Bewusst
- * absoluter Template-String statt relativem `to="pipeline"`, konsistent mit dem im Projekt
- * durchgehend etablierten Muster expliziter absoluter Pfade (Architektur-Abschnitt der Spec).
+ * Reiner Redirect: ersetzt die frueher hier stehende ProjectDetailPage.tsx als Ziel dieser Route -
+ * Bestandsschutz fuer bestehende Links/Bookmarks auf /projects/:projectId. Bewusst absoluter
+ * Template-String statt relativem `to="pipeline"`, konsistent mit dem im Projekt durchgehend
+ * etablierten Muster expliziter absoluter Pfade (Architektur-Abschnitt der Spec).
  */
 function ProjectDetailRedirect() {
   const { projectId } = useParams()
@@ -43,9 +43,9 @@ function ProjectDetailRedirect() {
 // Zuordnung Pfad -> Element fuer die flachen Routen mit Projektkontext. Die PFADE kommen aus
 // utils/projectRoutes.ts - dort liegt die einzige Quelle der Wahrheit dafuer, welche Routen
 // Projektkontext haben; hier steht nur noch, welches Element eine davon rendert. Damit kann eine
-// neue :projectId-Route nicht mehr still ohne Kopfzeilen-Navigation bleiben.
-// `element` ist als `ReactElement` typisiert statt des global nicht verfuegbaren `JSX.Element`
-// (moduleDetection: "force", TS2503).
+// neue :projectId-Route nicht mehr still ohne Kopfzeilen-Navigation bleiben. `element` ist als
+// `ReactElement` typisiert statt des global nicht verfuegbaren `JSX.Element` (moduleDetection:
+// "force", TS2503).
 //
 // Die verschachtelte Pipeline-Route (Layout + eigene Kind-Route fuer den Outlet-Context) kann
 // NICHT ueber dieses flache PROJECT_ROUTES.map() erzeugt werden und steht deshalb unten separat -
@@ -58,8 +58,8 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   { path: PROJECT_ROUTE_PATHS.compare, element: <PhotoComparePage /> },
   // Erste dedizierte Projekteinstellungs-Route.
   { path: PROJECT_ROUTE_PATHS.settings, element: <ProjectSettingsPage /> },
-  // Querschnittsansicht wie die Einstellungsseite, bewusst ausserhalb der
-  // Pipeline-Schritt-Routen (sie ist kein Schritt des Ablaufs).
+  // Querschnittsansicht wie die Einstellungsseite, bewusst ausserhalb der Pipeline-Schritt-Routen
+  // (sie ist kein Schritt des Ablaufs).
   { path: PROJECT_ROUTE_PATHS.stats, element: <ProjectStatsPage /> },
 ]
 
@@ -74,24 +74,26 @@ function AppShell() {
   const projectId = useProjectIdFromRoute()
 
   function handleLogout(): void {
-    // Bestaetigungslose Aktion - kein Backend-Aufruf, da es
-    // ohne Server-Session-Store nichts zu invalidieren gaebe.
+    // Bestaetigungslose Aktion - kein Backend-Aufruf, da es ohne Server-Session-Store nichts zu
+    // invalidieren gaebe.
     clearToken()
     navigate('/login')
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-bg text-text">
-      {/* Sticky Header: bleibt beim Scrollen einer Seite am oberen Viewport-Rand sichtbar. z-10 ist der erste Eintrag einer
-          projektweiten Z-Index-Konvention - bleibt unter Radix-Portal-Overlays (Dialoge/Tooltips
+      {/* Sticky Header: bleibt beim Scrollen einer Seite am oberen Viewport-Rand sichtbar. z-10
+          ist der erste Eintrag einer projektweiten Z-Index-Konvention - bleibt unter
+          Radix-Portal-Overlays (Dialoge/Tooltips
           landen per Portal mit eigenen, hoeheren Werten ausserhalb des normalen Baums). bg-bg wird
           hier jetzt explizit gesetzt (bisher trug nur der aeussere Wrapper die Hintergrundfarbe),
           damit scrollender Inhalt im Sticky-Zustand nicht sichtbar durchscheinen kann, falls eine
           kuenftige Seite einen abweichenden Hintergrund einfuehrt. CSS-Sticky-Verhalten ist in
           jsdom nicht automatisiert pruefbar - `e2e/tests/sticky-header.spec.ts` misst es.
 
-          FESTE HOEHE STATT POLSTERUNG: `py-3` ist `h-header` gewichen. Der Wert kommt aus `--spacing-header` in index.css und ist
-          dieselbe Quelle, aus der die Schrittleiste ihren Haftpunkt `top-header` bezieht - beide
+          FESTE HOEHE STATT POLSTERUNG: `py-3` ist `h-header` gewichen. Der Wert kommt aus
+          `--spacing-header` in index.css und ist dieselbe Quelle, aus der die Schrittleiste ihren
+          Haftpunkt `top-header` bezieht - beide
           Leisten haften gleichzeitig oben, ohne sich zu ueberlagern und ohne Fuge dazwischen. Ein
           zweiter, freihaendiger Zahlenwert an einer der beiden Stellen ist deshalb verboten (im
           Design-Vertrag gebunden).
@@ -112,9 +114,9 @@ function AppShell() {
           <Button
             asChild
             variant="ghost"
-            // Kein `h-11` mehr: die Wortmarke ist weder heisser Pfad noch Zeile einer
-            // zeilenweisen Liste. Sichtbar gilt das Board-Mass 32px, die 44px kommen aus der
-            // Aufspannung, die das Button-Primitiv ohnehin mitbringt.
+            // Kein `h-11` mehr: die Wortmarke ist weder heisser Pfad noch Zeile einer zeilenweisen
+            // Liste. Sichtbar gilt das Board-Mass 32px, die 44px kommen aus der Aufspannung, die
+            // das Button-Primitiv ohnehin mitbringt.
             className="justify-start px-2 text-lg font-semibold text-text-h hover:bg-transparent"
           >
             <Link to="/">PhotoSort</Link>

@@ -4,15 +4,14 @@ import { cn } from '../../lib/utils'
 
 /**
  * Duenner Wrapper um das native <progress>-Element (kein neues Balken-Widget, keine neue
- * Abhaengigkeit, determinierter Fortschritt). Kein Radix-Primitive noetig - natives <progress> bringt Rolle/Semantik bereits mit; nur
- * Tailwind-Utilities auf den browserspezifischen Pseudo-Elementen fuer die Akzentfarbe statt des
- * Browser-Standardblaus.
+ * Abhaengigkeit, determinierter Fortschritt). Kein Radix-Primitive noetig - natives <progress>
+ * bringt Rolle/Semantik bereits mit; nur Tailwind-Utilities auf den browserspezifischen
+ * Pseudo-Elementen fuer die Akzentfarbe statt des Browser-Standardblaus.
  *
- * Board-Masse: Fuellung `--accent`, Hoehe 8px, Radius 4px. Die SPUR liegt auf `--separator`
- * statt auf
- * `--border`: als dekorative Flaeche unmittelbar auf dem Grund erreichte `--border` nur 1.45:1 und
- * war damit praktisch unsichtbar - genau der Befund "Trennlinien und Statuspunkte verschwinden auf
- * dem Grund".
+ * Board-Masse: Fuellung `--accent`, Hoehe 8px, Radius 4px. Die SPUR liegt auf `--separator` statt
+ * auf `--border`: als dekorative Flaeche unmittelbar auf dem Grund erreichte `--border` nur 1.45:1
+ * und war damit praktisch unsichtbar - genau der Befund "Trennlinien und Statuspunkte verschwinden
+ * auf dem Grund".
  *
  * UNBESTIMMTER ZUSTAND (`value` weggelassen, siehe ScanStepPage/AusschussStepPage/
  * ClassificationSection): Der Browser zeichnet dort von sich aus ein WANDERNDES Segment - eine

@@ -20,9 +20,9 @@ import { ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
 import { primaryRanking } from '../utils/rankings'
 
-// Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln"
-// statt eines vollflaechigen Spinners - Anzahl ist
-// nur eine plausible Annaeherung an einen typischen Batch, keine harte Vorgabe.
+// Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln" statt
+// eines vollflaechigen Spinners - Anzahl ist nur eine plausible Annaeherung an einen typischen
+// Batch, keine harte Vorgabe.
 const SKELETON_TILE_COUNT = 6
 
 const FILTERS: { value: RatingFilter | ''; label: string }[] = [
@@ -41,8 +41,7 @@ export function PhotoGridPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const filterParam = parseRatingFilter(searchParams.get('filter'))
   const ratingStatus = filterParam === '' ? undefined : filterParam
-  // Ausschuss-Gate-Modus: kein neuer Screen, sondern diese bestehende Seite um `&gate=1`
-  // erweitert.
+  // Ausschuss-Gate-Modus: kein neuer Screen, sondern diese bestehende Seite um `&gate=1` erweitert.
   const isGateMode = searchParams.get('gate') === '1'
 
   const token = getToken()
@@ -52,8 +51,8 @@ export function PhotoGridPage() {
   const setRatingMutation = useSetRatingMutation(id)
   const gateMutation = useConfirmAusschussGateMutation(id)
   const categoryOverrideControls = useCategoryOverrideControls(id)
-  // Das feste Set kommt vom Server (langlebiger Cache) - Grundlage der Anzeigenamen und der
-  // "Alle Kategorien"-Override-Auswahl.
+  // Das feste Set kommt vom Server (langlebiger Cache) - Grundlage der Anzeigenamen und der "Alle
+  // Kategorien"-Override-Auswahl.
   const categoriesQuery = useCategoriesQuery()
   const categorySet = categoriesQuery.data ?? []
   const photos = query.data?.pages.flatMap((page) => page.items) ?? []
@@ -64,8 +63,8 @@ export function PhotoGridPage() {
       return
     }
     gateMutation.mutate(undefined, {
-      // Redirect-Ziel ist /projects/:id/pipeline statt /projects/:id (feste Einzelseite)
-      // (ohne festen :step) - landet ueber getDefaultStepId automatisch beim naechsten sinnvollen
+      // Redirect-Ziel ist /projects/:id/pipeline statt /projects/:id (feste Einzelseite) (ohne
+      // festen :step) - landet ueber getDefaultStepId automatisch beim naechsten sinnvollen
       // Schritt, statt immer auf der (jetzt entfallenen) statischen Projekt-Detailseite.
       onSuccess: () => navigate(`/projects/${id}/pipeline`),
     })

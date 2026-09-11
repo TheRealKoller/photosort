@@ -45,36 +45,35 @@ logger = logging.getLogger(__name__)
 # Die frueheren Aliase ANTHROPIC_CATEGORY_MODEL/MISTRAL_CATEGORY_MODEL sind ersatzlos entfallen
 # (Begruendung wortgleich zu landmark.py) - das Modell kommt als Konstruktor-Parameter herein.
 
-# Kurze, reine Klassifikationsantwort - 256 bleibt ausreichend: drei Set-Schluessel (je
-# hoechstens ~8 Tokens) plus zwei kurze deutsche Feinlabels und das JSON-Geruest liegen zusammen
-# deutlich unter 100 Ausgabe-Tokens; der deutlich groessere Prompt waechst ausschliesslich auf der
-# EINGABEseite.
+# Kurze, reine Klassifikationsantwort - 256 bleibt ausreichend: drei Set-Schluessel (je hoechstens
+# ~8 Tokens) plus zwei kurze deutsche Feinlabels und das JSON-Geruest liegen zusammen deutlich unter
+# 100 Ausgabe-Tokens; der deutlich groessere Prompt waechst ausschliesslich auf der EINGABEseite.
 #
 # NEUHERLEITUNG seit dem Konfidenzschema: der Kategorien-Eintrag ist vom nackten Schluessel zum
-# Objekt geworden, je Kandidat
-# also rund 10 Tokens mehr ({"key": ..., "confidence": 0.92}). Die vollbesetzte Antwort liegt
-# damit ueberschlaegig bei 80-100 Ausgabe-Tokens gegenueber rund 50 bisher - 256 behaelt klare
-# Reserve und ist ausdruecklich NICHT anzuheben. Das ist hier keine reine Kostenschranke: die
-# Grenze begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und potenziell geloggt
-# werden kann. Beide Groessen sind in tests/test_remote_classification.py festgehalten.
+# Objekt geworden, je Kandidat also rund 10 Tokens mehr ({"key": ..., "confidence": 0.92}). Die
+# vollbesetzte Antwort liegt damit ueberschlaegig bei 80-100 Ausgabe-Tokens gegenueber rund 50
+# bisher - 256 behaelt klare Reserve und ist ausdruecklich NICHT anzuheben. Das ist hier keine reine
+# Kostenschranke: die Grenze begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und
+# potenziell geloggt werden kann. Beide Groessen sind in tests/test_remote_classification.py
+# festgehalten.
 _MAX_RESPONSE_TOKENS = 256
 
 # Defensive Obergrenze gegen eine entartete Modellantwort - verhindert einen uebermaessig langen
 # canonical_key/display_name, BEVOR resolve_canonical_label/_slugify aufgerufen wird
-# (Sicherheits-Muss-Kriterium). Ein zu langes Label wird VERWORFEN, nicht
-# gekuerzt: ein auf 60 Zeichen abgeschnittenes Label erzeugte sonst dauerhaft einen unbrauchbaren
-# canonical_key in der projektuebergreifenden Registry, und zwei verschiedene Labels koennten auf
-# denselben Slug fallen. Storage-/Degenerationsgrenze, KEINE Sanitisierungsmassnahme.
+# (Sicherheits-Muss-Kriterium). Ein zu langes Label wird VERWORFEN, nicht gekuerzt: ein auf 60
+# Zeichen abgeschnittenes Label erzeugte sonst dauerhaft einen unbrauchbaren canonical_key in der
+# projektuebergreifenden Registry, und zwei verschiedene Labels koennten auf denselben Slug fallen.
+# Storage-/Degenerationsgrenze, KEINE Sanitisierungsmassnahme.
 MAX_FINE_LABEL_LENGTH = 60
 
-# Laengenbegrenzung fuer den in der WARNING-Zeile mitgeloggten Rohwert (Sicherheits-Muss-
-# Kriterium) - zusammen mit dem %r-Format (repr escaped Zeilenumbrueche/Steuerzeichen sichtbar)
-# die Absicherung gegen Log-Injection durch eine entartete Modellantwort.
+# Laengenbegrenzung fuer den in der WARNING-Zeile mitgeloggten Rohwert (Sicherheits-Muss-Kriterium)
+# - zusammen mit dem %r-Format (repr escaped Zeilenumbrueche/Steuerzeichen sichtbar) die Absicherung
+# gegen Log-Injection durch eine entartete Modellantwort.
 _MAX_LOGGED_RAW_VALUE_LENGTH = 60
 
 # Sicherheits-Muss-Kriterium: FESTE Grund-Tokens statt des Rohwerts. Fuer einen verworfenen
-# Kategorieschluessel traegt der Rohwert
-# echten Diagnosewert (er zeigt ein Vokabular, das der Prompt nicht gesetzt hat) - fuer eine
+# Kategorieschluessel traegt der Rohwert echten Diagnosewert (er zeigt ein Vokabular, das der
+# Prompt nicht gesetzt hat) - fuer eine
 # verworfene Konfidenz liegt er praktisch vollstaendig in der FEHLERKLASSE: "kein Zahlentyp" bzw.
 # "ausserhalb [0,1]" sagt alles fuer eine Prompt-/Schemakorrektur Noetige, die konkrete `1.7`
 # nichts darueber hinaus. Damit enthaelt die Zeile ueberhaupt keinen Fremdtext und die
@@ -121,9 +120,8 @@ class RemoteClassification:
     categories: tuple[str, ...]
     fine_labels: tuple[str, ...]
     # Der reale Token-Verbrauch DIESES Aufrufs (analog LandmarkDetection.usage). MIT Default -
-    # bestehende Test-Doubles und
-    # die CategoryDetectionClientLike-Signatur bleiben unveraendert. `None` heisst "nicht
-    # ermittelbar", nicht "keine Kosten".
+    # bestehende Test-Doubles und die CategoryDetectionClientLike-Signatur bleiben unveraendert.
+    # `None` heisst "nicht ermittelbar", nicht "keine Kosten".
     usage: TokenUsage | None = None
     # `MappingProxyType({})` statt `field(default_factory=dict)`: die Zusage von `frozen=True` gilt
     # sonst nur fuer die REFERENZ, nicht fuer den Inhalt - genau wie bei den beiden Tupel-Feldern
@@ -397,10 +395,9 @@ class AnthropicCategoryClient:
                 }
             ],
         }
-        # EIN Aufruf statt des bisher viermal abgeschriebenen
-        # post/except/raise_for_status-Blocks - dieselbe Funktion, die
-        # auch die beiden Landmark-Clients benutzen. Meldungstexte und Statuslabel unveraendert
-        # (sie stecken jetzt in ANTHROPIC_ENDPOINT).
+        # EIN Aufruf statt des bisher viermal abgeschriebenen post/except/raise_for_status-Blocks -
+        # dieselbe Funktion, die auch die beiden Landmark-Clients benutzen. Meldungstexte und
+        # Statuslabel unveraendert (sie stecken jetzt in ANTHROPIC_ENDPOINT).
         response = await post_vision_request(
             self._client,
             ANTHROPIC_ENDPOINT,
@@ -504,9 +501,9 @@ def build_category_classification_client(model: str) -> CategoryDetectionClientL
 
 # Die frueher hier stehende Konstante COST_PER_IMAGE_USD (Vorab-Schaetzung, Preis pro BILD, je
 # PROVIDER) ist ersatzlos entfallen: an den Anbieter gebunden statt an das Modell, wurde sie bei
-# einem Modellwechsel unbemerkt falsch. Die Schaetzung
-# lebt seitdem in `pricing.py::estimate_usd_per_image()` und wird aus derselben modell-
-# geschluesselten Preistabelle abgeleitet wie die Ist-Kosten; die dokumentierte Herleitung der
+# einem Modellwechsel unbemerkt falsch. Die Schaetzung lebt seitdem in
+# `pricing.py::estimate_usd_per_image()` und wird aus derselben modell-geschluesselten
+# Preistabelle abgeleitet wie die Ist-Kosten; die dokumentierte Herleitung der
 # Token-Annahmen ist mit nach `pricing.py::ASSUMED_USAGE_BY_PROVIDER` gewandert.
 
 # Dokumentiert-unkalibrierter Startwert (developer verifiziert/kalibriert mit ein paar echten

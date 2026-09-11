@@ -31,8 +31,8 @@ from PIL import Image
 # Lambda-Layer-Deserialisierungsrisiko ist fuer dieses Asset-Format strukturell nicht anwendbar
 # (HDF5-Gewichtsgruppen koennen keinen Python-Code enthalten) - `safe_mode=True` (fuer
 # `load_model`) ist daher nicht einschlaegig, die SHA256-Integritaetspruefung bleibt trotzdem als
-# Schutz gegen nachtraegliche Manipulation bestehen; sie bricht in tests/test_aesthetics.py::
-# TestAestheticsModelAsset::test_committed_weights_file_matches_the_documented_sha256.
+# Schutz gegen nachtraegliche Manipulation bestehen; sie bricht in
+# tests/test_aesthetics.py::TestAestheticsModelAsset (ein Fall).
 _ASSET_PATH = Path(__file__).parent / "assets" / "weights_mobilenet_aesthetic_0.07.hdf5"
 
 AESTHETICS_MODEL_SHA256 = "e563ad91b3d47410e45f7238f07ab8f6abd1bd0c4b18a4b0af9c681a21a91cb2"
@@ -40,8 +40,8 @@ AESTHETICS_MODEL_SHA256 = "e563ad91b3d47410e45f7238f07ab8f6abd1bd0c4b18a4b0af9c6
 # NIMA/MobileNet-Eingabegroesse (idealo-Repo: src/utils/utils.py, MobileNet-Standardgroesse).
 _INPUT_SIZE = 224
 
-# NIMA liefert eine Wahrscheinlichkeitsverteilung ueber 10 Ratingklassen (Index 0 = Rating 1,
-# Index 9 = Rating 10, NIMA-Papier-Konvention).
+# NIMA liefert eine Wahrscheinlichkeitsverteilung ueber 10 Ratingklassen (Index 0 = Rating 1, Index
+# 9 = Rating 10, NIMA-Papier-Konvention).
 _RATING_COUNT = 10
 
 

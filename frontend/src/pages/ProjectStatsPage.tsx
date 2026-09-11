@@ -20,9 +20,9 @@ import {
 } from '../utils/formatStats'
 
 /**
- * Projekt-Statistikseite - eine MOMENTAUFNAHME des Projektzustands an einem Ort: Umfang,
- * Speicher, Ist-Kosten der Remote-Berechnungen,
- * Bearbeitungs- und Bewertungsstand, Kategorienverteilung, Diagnose.
+ * Projekt-Statistikseite - eine MOMENTAUFNAHME des Projektzustands an einem Ort: Umfang, Speicher,
+ * Ist-Kosten der Remote-Berechnungen, Bearbeitungs- und Bewertungsstand, Kategorienverteilung,
+ * Diagnose.
  *
  * Reine Anzeige (Akzeptanzkriterium A3): keine Foto-Vorschauen, keine Bewertungs- oder
  * Kategorie-Bedienelemente, keine Ausloeser fuer Verarbeitungslaeufe, keine Filter-, Sortier- oder
@@ -69,11 +69,10 @@ function Metric({
 /**
  * Kennzahlen stehen auf breiten Schirmen nebeneinander und auf dem Smartphone gestapelt.
  *
- * Die erste Verwendung des 12-Spalten-Rasters des Boards (Spaltenbreite fluessig, Zwischenraum
- * 12px = `gap-x-3`). Bewusst
- * hier und nicht als Seitengeruest: eine Kennzahlenreihe ist genau der Fall, fuer den ein festes
- * Spaltenraster gegenueber `flex-wrap` etwas bringt - die Werte stehen untereinander auf einer
- * Achse statt inhaltsabhaengig zu springen.
+ * Die erste Verwendung des 12-Spalten-Rasters des Boards (Spaltenbreite fluessig, Zwischenraum 12px
+ * = `gap-x-3`). Bewusst hier und nicht als Seitengeruest: eine Kennzahlenreihe ist genau der Fall,
+ * fuer den ein festes Spaltenraster gegenueber `flex-wrap` etwas bringt - die Werte stehen
+ * untereinander auf einer Achse statt inhaltsabhaengig zu springen.
  */
 function MetricRow({ children }: { children: ReactNode }) {
   return <div className="grid grid-cols-12 gap-x-3 gap-y-6">{children}</div>
@@ -340,8 +339,9 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
         </MetricRow>
       </Section>
 
-      {/* EIGENER Abschnitt unmittelbar nach der Kategorienverteilung - und ausdruecklich keine weitere
-          Spalte dort. Beide Bloecke gruppieren ueber verschiedene Mengen: die Verteilung ueber die
+      {/* EIGENER Abschnitt unmittelbar nach der Kategorienverteilung - und ausdruecklich keine
+          weitere Spalte dort. Beide Bloecke gruppieren ueber verschiedene Mengen: die Verteilung
+          ueber die
           WIRKSAME Kategorie (lokal + remote + Override), dieser Block ueber die MODELL-Kategorie.
           In eine Zeile gemischt staenden zwei richtige Zahlen nebeneinander und eine falsche
           Aussage dazwischen. */}

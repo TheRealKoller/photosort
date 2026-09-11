@@ -2,8 +2,8 @@ import { apiFetch } from './client'
 import type { BrowseEntry, FolderCountOut } from './types'
 
 /**
- * Laedt genau eine Ebene (die direkten Unterordner) des uebergebenen Pfads. Ein leerer Pfad
- * laedt die Wurzelebene ohne Query-Parameter.
+ * Laedt genau eine Ebene (die direkten Unterordner) des uebergebenen Pfads. Ein leerer Pfad laedt
+ * die Wurzelebene ohne Query-Parameter.
  */
 export function browseFolder(path: string): Promise<BrowseEntry[]> {
   const query = path ? `?path=${encodeURIComponent(path)}` : ''

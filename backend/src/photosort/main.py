@@ -9,9 +9,9 @@ from photosort.config import settings
 from photosort.logging_config import configure_logging
 from photosort.rate_limit import limiter
 
-# Muss-Kriterium: ein Signing-Secret, das dem oeffentlich bekannten Platzhalter entspricht oder
-# zu kurz ist, erlaubt beliebige JWT-Faelschung - vollen Zugriff auf beide Accounts und damit
-# transitiv auf alle Familienfotos. Bricht in tests/test_main_secret_key_guard.py (drei Faelle).
+# Muss-Kriterium: ein Signing-Secret, das dem oeffentlich bekannten Platzhalter entspricht oder zu
+# kurz ist, erlaubt beliebige JWT-Faelschung - vollen Zugriff auf beide Accounts und damit transitiv
+# auf alle Familienfotos. Bricht in tests/test_main_secret_key_guard.py (drei Faelle).
 MIN_SECRET_KEY_LENGTH = 32
 PLACEHOLDER_SECRET_KEY = "change-me"
 

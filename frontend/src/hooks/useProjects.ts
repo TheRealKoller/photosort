@@ -31,10 +31,9 @@ export function useProjectsQuery() {
  * Anwendung desselben granularen Live-Fortschritt-Polling-Musters.
  *
  * Die vierte Bedingung (`last_remote_category_classification_run`) ist mit dem Feld ersatzlos
- * entfallen und wird NICHT
- * ersetzt - sie war redundant. Der Klassifizierungslauf ist waehrend des GESAMTEN verketteten
- * Durchlaufs `running`, also auch waehrend seiner Remote-Phase; die dritte Bedingung deckt sie
- * mit ab.
+ * entfallen und wird NICHT ersetzt - sie war redundant. Der Klassifizierungslauf ist waehrend des
+ * GESAMTEN verketteten Durchlaufs `running`, also auch waehrend seiner Remote-Phase; die dritte
+ * Bedingung deckt sie mit ab.
  */
 export function useProjectQuery(id: number) {
   return useQuery({
@@ -157,9 +156,8 @@ export function classificationEstimateQueryKey(id: number) {
 
 // "Eager-Schätzung" - beim Seitenaufruf geladen, analog dem bestehenden Eager-Zaehler-Muster.
 // Funktioniert unabhaengig vom Consent-Schalter. Sie steht nicht in einem Bestaetigungsdialog,
-// sondern dauerhaft an der Cloud-Checkbox - das Eager-Laden ist damit nicht nur eine
-// Optimierung, sondern
-// Voraussetzung dafuer, dass die Kosten VOR dem Start sichtbar sind.
+// sondern dauerhaft an der Cloud-Checkbox - das Eager-Laden ist damit nicht nur eine Optimierung,
+// sondern Voraussetzung dafuer, dass die Kosten VOR dem Start sichtbar sind.
 export function useClassificationEstimateQuery(id: number) {
   return useQuery({
     queryKey: classificationEstimateQueryKey(id),
@@ -173,9 +171,8 @@ export function fineLabelsQueryKey(id: number) {
 
 /**
  * Haeufigste Feinlabels des Projekts - bewusst eine eigene Query statt eines Feldes an
- * `ProjectOut`: die Liste haengt am Ergebnis des
- * Remote-Laufs, nicht am Projektstammsatz, und wuerde sonst bei jedem `useProjectQuery`-Poll
- * (POLL_INTERVAL_MS) mitgeladen.
+ * `ProjectOut`: die Liste haengt am Ergebnis des Remote-Laufs, nicht am Projektstammsatz, und
+ * wuerde sonst bei jedem `useProjectQuery`-Poll (POLL_INTERVAL_MS) mitgeladen.
  */
 export function useFineLabelsQuery(id: number) {
   return useQuery({
@@ -185,10 +182,10 @@ export function useFineLabelsQuery(id: number) {
 }
 
 /**
- * Wie lange das Ergebnis der Statistikseite als frisch gilt (Sicherheits-Muss-Kriterium).
- * Zusammen mit `refetchOnWindowFocus: false` die
- * Frontend-Haelfte der Selbst-DoS-Gegenmassnahme: der Endpunkt misst zwei `os.stat` je Foto -
- * auf den QueryClient-Defaults stiesse jeder Tab-Wechsel eine vollstaendige neue Messung an.
+ * Wie lange das Ergebnis der Statistikseite als frisch gilt (Sicherheits-Muss-Kriterium). Zusammen
+ * mit `refetchOnWindowFocus: false` die Frontend-Haelfte der Selbst-DoS-Gegenmassnahme: der
+ * Endpunkt misst zwei `os.stat` je Foto - auf den QueryClient-Defaults stiesse jeder Tab-Wechsel
+ * eine vollstaendige neue Messung an.
  */
 export const PROJECT_STATS_STALE_TIME_MS = 60_000
 

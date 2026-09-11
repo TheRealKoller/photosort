@@ -21,14 +21,14 @@ interface AlertProps {
 }
 
 /*
- * Einheitliche Meldungskomponente ("Fehlerzustand mit Retry"), in der Toast-Konstruktion des
- * Boards und in drei Auspraegungen: Flaeche `--elevated`,
- * farbiger 1px-Rand, Symbol 18px, Titel in Primaertext, Beitext in Sekundaertext.
+ * Einheitliche Meldungskomponente ("Fehlerzustand mit Retry"), in der Toast-Konstruktion des Boards
+ * und in drei Auspraegungen: Flaeche `--elevated`, farbiger 1px-Rand, Symbol 18px, Titel in
+ * Primaertext, Beitext in Sekundaertext.
  *
- * BEWUSSTE ABGRENZUNG: Uebernommen wird die OPTIK des Board-Toasts, nicht sein VERHALTEN.
- * Meldungen bleiben inline und kontextnah (Banner ueber der betroffenen Ansicht, mit "Erneut
- * versuchen", wo eine Wiederholung sinnvoll ist). Ein schwebendes, selbst verschwindendes
- * Toast-System waere neues Verhalten und damit eine funktionale Aenderung - ausgeschlossen.
+ * BEWUSSTE ABGRENZUNG: Uebernommen wird die OPTIK des Board-Toasts, nicht sein VERHALTEN. Meldungen
+ * bleiben inline und kontextnah (Banner ueber der betroffenen Ansicht, mit "Erneut versuchen", wo
+ * eine Wiederholung sinnvoll ist). Ein schwebendes, selbst verschwindendes Toast-System waere neues
+ * Verhalten und damit eine funktionale Aenderung - ausgeschlossen.
  *
  * Die frueher hier verwendete Konstruktion (`bg-status-failed/10` + `border-status-failed/40`) lag
  * ausserhalb jeder Kontrastmatrix: ueber einer Deckkraft-Tinte ist Kontrast statisch nicht

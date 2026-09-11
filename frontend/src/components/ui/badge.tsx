@@ -7,9 +7,8 @@ export type BadgeTone = 'favorite' | 'album-worthy' | 'rejected' | 'accent' | 'n
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   tone?: BadgeTone
   /**
-   * Vorschlags-Badge-Muster: volle Fuellung = von
-   * einem Menschen entschieden, getoente Flaeche mit farbigem Rand und farbiger Beschriftung =
-   * maschineller Vorschlag, noch offen.
+   * Vorschlags-Badge-Muster: volle Fuellung = von einem Menschen entschieden, getoente Flaeche mit
+   * farbigem Rand und farbiger Beschriftung = maschineller Vorschlag, noch offen.
    */
   suggested?: boolean
 }
@@ -23,9 +22,8 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
  *
  * SOLID: Board-Bewertungs-Badge - voll gefuellte Flaeche mit DUNKLER TINTE. Jeder Bewertungston
  * bringt seine eigene Vordergrundfarbe mit (`--rating-<ton>-fg`); sie tragen zwar alle denselben
- * Wert, bleiben
- * aber drei getrennte Tokens: dass eine gemeinsame Tinte auf allen drei Toenen haelt, ist eine
- * Eigenschaft dieser konkreten Palette und keine Regel - beim Vorgaengersystem war sie
+ * Wert, bleiben aber drei getrennte Tokens: dass eine gemeinsame Tinte auf allen drei Toenen haelt,
+ * ist eine Eigenschaft dieser konkreten Palette und keine Regel - beim Vorgaengersystem war sie
  * nachweislich nicht gegeben, und ein Ton-Wechsel wuerde die Kopplung sonst still brechen.
  *
  * SUGGESTED: umgestellt auf die TOAST-KONSTRUKTION des Boards (Flaeche `--elevated`, farbiger

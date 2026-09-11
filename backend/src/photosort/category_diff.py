@@ -296,8 +296,8 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
         # Fehlertexte gehen bewusst nach stderr, der REPORT dagegen nach stdout (Review-Fund,
         # bewusst getroffene Entscheidung): die Ausgabe-Hygiene-Vorgabe "ausschliesslich stdout"
         # zielt auf den Report mit den `relative_path`-Werten privater Fotos - Fehlermeldungen
-        # enthalten keine Fotopfade, und die uebliche
-        # CLI-Trennung haelt ein `... | less`/`> datei` des Reports frei von Fehlertexten.
+        # enthalten keine Fotopfade, und die uebliche CLI-Trennung haelt ein `... | less`/`> datei`
+        # des Reports frei von Fehlertexten.
         print(f"Fehler: {exc}", file=sys.stderr)
         return 1
     except SQLAlchemyError as exc:

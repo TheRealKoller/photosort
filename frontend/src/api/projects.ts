@@ -64,8 +64,8 @@ export function confirmAusschussGate(id: number): Promise<TriggerScanResponse> {
 
 /**
  * Der EINE Ausloeser der Klassifizierung - ersetzt triggerScoreCriteria UND
- * triggerClassifyCategoriesRemote. Der Server
- * verkettet beide Phasen; die frueher noetige Reihenfolge-Kenntnis entfaellt.
+ * triggerClassifyCategoriesRemote. Der Server verkettet beide Phasen; die frueher noetige
+ * Reihenfolge-Kenntnis entfaellt.
  *
  * `scoringRunId`: Staleness-Guard bei einem zwischenzeitlichen Re-Scan/Re-Scoring (siehe
  * ScoringRunSummary.id). `useCloud`: laufbezogene Cloud-Freigabe - erteilt KEINE Einwilligung
@@ -95,17 +95,16 @@ export function setCloudVisionConsent(
   })
 }
 
-// Die Schaetzung deckt beide Cloud-Anteile ab. Funktioniert unabhaengig vom Consent-Schalter
-// (auch bei deaktiviertem Consent 200) -
-// die Kosten sollen vor einer Consent-Entscheidung sichtbar sein.
+// Die Schaetzung deckt beide Cloud-Anteile ab. Funktioniert unabhaengig vom Consent-Schalter (auch
+// bei deaktiviertem Consent 200) - die Kosten sollen vor einer Consent-Entscheidung sichtbar sein.
 export function getClassificationEstimate(id: number): Promise<ClassificationEstimateOut> {
   return apiFetch<ClassificationEstimateOut>(`/projects/${id}/classify/estimate`)
 }
 
 /**
- * Haeufigste Feinlabels dieses Projekts - absteigend nach `photo_count`, Tie-Break
- * `canonical_key` aufsteigend, bereits vom Server sortiert. Die
- * Reihenfolge wird im Frontend uebernommen, nicht neu sortiert.
+ * Haeufigste Feinlabels dieses Projekts - absteigend nach `photo_count`, Tie-Break `canonical_key`
+ * aufsteigend, bereits vom Server sortiert. Die Reihenfolge wird im Frontend uebernommen, nicht neu
+ * sortiert.
  *
  * Die Zaehlung ist projekt-skopiert (das Vokabular selbst ist projektuebergreifend) - ein leeres
  * Projekt liefert eine leere Liste mit `200`.

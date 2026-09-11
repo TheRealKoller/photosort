@@ -97,9 +97,8 @@ async def folder_counts(
         f"{base}/{entry.name}".strip("/") for entry in entries if entry.is_collection
     ]
 
-    # Serverseitige Gesamt-Nebenlaeufigkeit ueber ALLE Unterordner-Zaehlungen dieses Requests
-    # hinweg (nicht pro Unterordner) - der eigentliche Grund fuer den Batch- statt
-    # Einzel-Request-Endpunkt.
+    # Serverseitige Gesamt-Nebenlaeufigkeit ueber ALLE Unterordner-Zaehlungen dieses Requests hinweg
+    # (nicht pro Unterordner) - der eigentliche Grund fuer den Batch- statt Einzel-Request-Endpunkt.
     semaphore = asyncio.Semaphore(settings.opencloud_folder_count_concurrency)
     raw_results = await asyncio.gather(
         *(
@@ -121,9 +120,9 @@ async def folder_counts(
     results: list[FolderCountOut] = []
     for subfolder_path, raw_result in zip(subfolder_paths, raw_results, strict=True):
         if isinstance(raw_result, BaseException):
-            # Einzelner Unterordner-Zaehlfehler (z.B. Netzwerkfehler mitten in dessen
-            # Traversierung) blockiert weder die uebrigen Zaehler noch die Gesamtantwort - nur das
-            # vorgelagerte Listing oben liefert einen echten 400.
+            # Einzelner Unterordner-Zaehlfehler (z.B. Netzwerkfehler mitten in dessen Traversierung)
+            # blockiert weder die uebrigen Zaehler noch die Gesamtantwort - nur das vorgelagerte
+            # Listing oben liefert einen echten 400.
             results.append(FolderCountOut(path=subfolder_path, count=0, at_limit=False, error=True))
             continue
         count, at_limit = raw_result

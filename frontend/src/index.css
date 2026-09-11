@@ -21,11 +21,10 @@
  * Wert - dadurch tragen rund 175 der etwa 190 Farb-Aufrufstellen in den 91 .tsx-Dateien die
  * Umstellung, ohne angefasst zu werden.
  *
- * DUNKEL IST DAS EINZIGE FARBSCHEMA. Es gibt keinen hellen Grund und keinen Umschalter; ein
- * frueher vorgesehener heller Grund ist ausdruecklich zurueckgenommen. Grund: Die Oberflaeche
- * steht unmittelbar neben dem Foto und beeinflusst dessen Farbwahrnehmung - ein farbneutrales,
- * dunkles Umfeld ist fuer die Kernaufgabe die sachlich bessere Wahl, nicht eine gleichwertige
- * Alternative.
+ * DUNKEL IST DAS EINZIGE FARBSCHEMA. Es gibt keinen hellen Grund und keinen Umschalter; ein frueher
+ * vorgesehener heller Grund ist ausdruecklich zurueckgenommen. Grund: Die Oberflaeche steht
+ * unmittelbar neben dem Foto und beeinflusst dessen Farbwahrnehmung - ein farbneutrales, dunkles
+ * Umfeld ist fuer die Kernaufgabe die sachlich bessere Wahl, nicht eine gleichwertige Alternative.
  *
  * JEDES Token traegt hier einen ausgeschriebenen 6-stelligen Hexwert, nie var() oder color-mix().
  * Das ist keine Stilfrage: src/designSystem.contract.test.ts rechnet die vollstaendige
@@ -275,12 +274,12 @@
   --font-mono: var(--mono);
 
   /*
-   * HOEHE DER DAUERHAFT FIXIERTEN KOPFZEILE.
-   * EIN Wert, ZWEI Aufrufstellen: `h-header` gibt der Kopfzeile in App.tsx ihre Hoehe,
-   * `top-header` setzt den Haftpunkt der Schrittleiste in Stepper.tsx genau darunter. Beide
-   * Utilities entstehen aus diesem einen Token - ein zweiter, freihaendiger Pixelwert an der
-   * Leiste waere die Fehlerquelle, gegen die das hier steht (er driftet still, und die Leiste
-   * ueberlappte oder hinterliesse eine Fuge, durch die Inhalt durchscrollt).
+   * HOEHE DER DAUERHAFT FIXIERTEN KOPFZEILE. EIN Wert, ZWEI Aufrufstellen: `h-header` gibt der
+   * Kopfzeile in App.tsx ihre Hoehe, `top-header` setzt den Haftpunkt der Schrittleiste in
+   * Stepper.tsx genau darunter. Beide Utilities entstehen aus diesem einen Token - ein zweiter,
+   * freihaendiger Pixelwert an der Leiste waere die Fehlerquelle, gegen die das hier steht (er
+   * driftet still, und die Leiste ueberlappte oder hinterliesse eine Fuge, durch die Inhalt
+   * durchscrollt).
    *
    * Die Kopfzeile darf deshalb NICHT umbrechen (kein `flex-wrap`, Nutzername `truncate`): mit
    * fester Hoehe waere ein Umbruch stilles Abschneiden statt sichtbaren Wachsens. 3.5rem = 56px
@@ -357,10 +356,10 @@
    * = 4/8/12/16/24/32/48/64px. Das 12-Spalten-Raster mit 12px Zwischenraum ist
    * `grid-cols-12 gap-3`. Beides ist hier nur dokumentiert, nicht redeklariert.
    *
-   * Harte Untergrenze: zwischen FOKUSSIERBAREN Elementen
-   * mindestens 8px (sonst laeuft die abgesetzte Fokuskontur ins Nachbarelement) und zwischen
-   * aufgespannten Trefferflaechen mindestens 12px (sonst ueberlappen sie sich). Die 4er-Stufe ist
-   * eine Stufe fuer Innenabstaende, nicht fuer Abstaende zwischen Bedienelementen.
+   * Harte Untergrenze: zwischen FOKUSSIERBAREN Elementen mindestens 8px (sonst laeuft die
+   * abgesetzte Fokuskontur ins Nachbarelement) und zwischen aufgespannten Trefferflaechen
+   * mindestens 12px (sonst ueberlappen sie sich). Die 4er-Stufe ist eine Stufe fuer Innenabstaende,
+   * nicht fuer Abstaende zwischen Bedienelementen.
    */
 }
 
@@ -428,12 +427,12 @@
 
 @layer utilities {
   /*
-   * Trefferflaechen-Aufspannung. Die bisherige 44x44px-Regel des
-   * Design-Systems war eine GROESSEN-Regel und der Grund, warum ueberall h-11 stand - die
-   * Oberflaeche war dadurch gerade nicht dicht. Sie wird zu einer TREFFERFLAECHEN-Regel:
-   * Bedienelemente tragen die kompakten Board-Masse (Standard-Schaltflaeche 32px hoch), und ein
-   * transparentes Pseudo-Element spannt die Trefferflaeche ueber die Mitte auf mindestens 44px
-   * auf. Beides wird erfuellt, statt eines gegen das andere auszuspielen.
+   * Trefferflaechen-Aufspannung. Die bisherige 44x44px-Regel des Design-Systems war eine
+   * GROESSEN-Regel und der Grund, warum ueberall h-11 stand - die Oberflaeche war dadurch gerade
+   * nicht dicht. Sie wird zu einer TREFFERFLAECHEN-Regel: Bedienelemente tragen die kompakten
+   * Board-Masse (Standard-Schaltflaeche 32px hoch), und ein transparentes Pseudo-Element spannt die
+   * Trefferflaeche ueber die Mitte auf mindestens 44px auf. Beides wird erfuellt, statt eines gegen
+   * das andere auszuspielen.
    *
    * Vier Regeln, ohne die die Aufspannung neue, schlechter auffindbare Fehler erzeugt als die,
    * die sie behebt:

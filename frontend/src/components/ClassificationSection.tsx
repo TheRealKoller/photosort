@@ -25,16 +25,14 @@ interface ClassificationSectionProps {
 
 /**
  * Obergrenze der angezeigten Feinlabels (maximal die haeufigsten 10-15 Eintraege). Die Kuerzung
- * sitzt bewusst HIER und nicht im
- * Backend: der Endpunkt ist eine vollstaendige Auswertung, die Begrenzung eine reine
- * Darstellungsentscheidung gegen Ueberinformation.
+ * sitzt bewusst HIER und nicht im Backend: der Endpunkt ist eine vollstaendige Auswertung, die
+ * Begrenzung eine reine Darstellungsentscheidung gegen Ueberinformation.
  */
 const MAX_FINE_LABELS_SHOWN = 15
 
 /**
  * Die EINE "Klassifizierung"-Section auf KriterienStepPage.tsx. Ersetzt die frueher getrennten
- * Bedienelemente
- * "Kriterien-Bewertung" (inline auf der Seite) und "Remote-Kategorisierung"
+ * Bedienelemente "Kriterien-Bewertung" (inline auf der Seite) und "Remote-Kategorisierung"
  * (RemoteCategoryClassificationSection.tsx, geloescht) vollstaendig - ein Auslöser, eine
  * Statusanzeige, ein Fortschritt.
  *
@@ -57,8 +55,8 @@ const MAX_FINE_LABELS_SHOWN = 15
  * zwischen der 202-Antwort und dem ersten Poll, der `status="running"` bestaetigt.
  *
  * Diese Datei ist der CONTAINER - Checkbox-Zustand, Consent-Gate, Mutation und Ausloeser bleiben
- * hier, die drei Detailbloecke
- * (ClassificationEstimate, ClassificationProgress, ClassificationBalance) sind eigene Komponenten.
+ * hier, die drei Detailbloecke (ClassificationEstimate, ClassificationProgress,
+ * ClassificationBalance) sind eigene Komponenten.
  *
  * Unterhalb des Ausloesers steht zu jedem Zeitpunkt GENAU EINER der beiden Zustandsbloecke -
  * Fortschrittsliste ODER Bilanz, nie beide. Das ist die pruefbare Form des Akzeptanzkriteriums
@@ -115,9 +113,9 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
         : null
 
   // Die Fortschrittszahlen je Teilschritt kommen aus `cloud_phases` bzw. dem Lauf selbst -
-  // abgeleitet in `utils/classificationSteps.ts`, dargestellt von ClassificationProgress.
-  // Die frueher hier stehende "welcher der beiden Laeufe liefert gerade die Zahlen?"-Weiche
-  // entfaellt damit ersatzlos.
+  // abgeleitet in `utils/classificationSteps.ts`, dargestellt von ClassificationProgress. Die
+  // frueher hier stehende "welcher der beiden Laeufe liefert gerade die Zahlen?"-Weiche entfaellt
+  // damit ersatzlos.
   const isRemotePhase = run?.phase === 'remote_categories'
 
   const providerLabel = estimate ? formatProviderLabel(estimate.provider) : ''

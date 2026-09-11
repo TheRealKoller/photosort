@@ -8,11 +8,11 @@ import { KriterienStepPage } from './KriterienStepPage'
 import { KuratierungStepPage } from './KuratierungStepPage'
 import { ScanStepPage } from './ScanStepPage'
 
-// Feste Zuordnung Schritt -> Detailseiten-Komponente.
-// Bewusst HIER co-lokalisiert statt in utils/pipelineSteps.ts: diese Datei ist dort selbst als
-// reine, seiteneffekt-/fetch-freie Logik-Datei dokumentiert (analog utils/timeOfDay.ts) - eine
-// Komponenten-/JSX-Zuordnung dort würde diese Eigenschaft aufweichen und pipelineSteps.test.ts
-// unnötig an React koppeln. Technische Detailentscheidung innerhalb der akzeptierten Spec.
+// Feste Zuordnung Schritt -> Detailseiten-Komponente. Bewusst HIER co-lokalisiert statt in
+// utils/pipelineSteps.ts: diese Datei ist dort selbst als reine, seiteneffekt-/fetch-freie
+// Logik-Datei dokumentiert (analog utils/timeOfDay.ts) - eine Komponenten-/JSX-Zuordnung dort würde
+// diese Eigenschaft aufweichen und pipelineSteps.test.ts unnötig an React koppeln. Technische
+// Detailentscheidung innerhalb der akzeptierten Spec.
 const STEP_COMPONENTS: Record<StepId, ComponentType> = {
   scan: ScanStepPage,
   ausschuss: AusschussStepPage,

@@ -25,8 +25,7 @@ interface CriterionDetailsPopoverProps {
   rankings?: RankingOut[]
   suggestion: SuggestionOut | null
   className?: string
-  // Reine Durchreichung an CriterionDetailsList.tsx (siehe dortige Props-Dokumentation) -
-  // dieselben
+  // Reine Durchreichung an CriterionDetailsList.tsx (siehe dortige Props-Dokumentation) - dieselben
   // neutralen Defaults, kein eigenes Verhalten hier.
   categoryCandidates?: CategoryCandidateOut[]
   fineLabels?: FineLabelOut[]
@@ -42,10 +41,9 @@ interface CriterionDetailsPopoverProps {
 }
 
 /**
- * Info-Popover mit den berechneten Bewertungsdetails eines Fotos - feature-spezifische
- * Komposition auf ui/popover.tsx, analog
- * zum bestehenden Muster ui/badge.tsx -> CategoryBadge.tsx. Rendert bewusst nichts, wenn
- * criterionScores leer ist - EINE Stelle entscheidet das statt jeder der drei
+ * Info-Popover mit den berechneten Bewertungsdetails eines Fotos - feature-spezifische Komposition
+ * auf ui/popover.tsx, analog zum bestehenden Muster ui/badge.tsx -> CategoryBadge.tsx. Rendert
+ * bewusst nichts, wenn criterionScores leer ist - EINE Stelle entscheidet das statt jeder der drei
  * Einbindungsstellen einzeln. Die eigentliche `<dl>`-Darstellung des Inhalts lebt in der
  * wiederverwendbaren Praesentationskomponente CriterionDetailsList.tsx (hier mit
  * showSuggestion={true} eingebunden) - dieses Popover selbst traegt nur noch Trigger/Portal/
@@ -77,19 +75,19 @@ interface CriterionDetailsPopoverProps {
  * wuerde `preventDefault()` ignorieren). Escape/Aussenklick/der "×"-Button laufen dadurch
  * unveraendert direkt ueber `Popover.onOpenChange={setOpen}`.
  *
- * Hover-Auto-Close mit Grace-Bereich ueber Trigger UND Content: `openedByHoverRef` ist - anders
- * als `justOpenedByHoverRef` oben, der nur den EINEN Klick
- * direkt nach einem Hover-Oeffnen unterdrueckt und danach zurueckgesetzt wird - ueber die gesamte
- * Offen-Dauer persistent und haelt fest, ob der aktuelle Offen-Zustand ueberhaupt per Hover
- * zustandegekommen ist. `handleOpenChange` setzt ihn synchron zu `justOpenedByHoverRef` beim
- * Oeffnen und setzt ihn beim Schliessen zurueck. `handlePossibleHoverClose` haengt an
- * `onMouseLeave` von Trigger-Button UND `PopoverContent` und prueft bei
- * `openedByHoverRef.current === true` per `Node.contains()` gegen `triggerRef`/`contentRef`, ob
- * `event.relatedTarget` (das neue Ziel des Pointers) ausserhalb beider liegt - nur dann schliesst
- * es. Ref-basiert statt eines naiven `event.currentTarget.contains(event.relatedTarget)`-
- * Bubbling-Checks, weil `PopoverContent` ueber `PopoverPrimitive.Portal` an einer anderen Stelle im
- * DOM-Baum liegt als der Trigger - ein Uebergang Trigger->Content wuerde sonst faelschlich als
- * "verlassen" gewertet. Kein Timer/Delay noetig.
+ * Hover-Auto-Close mit Grace-Bereich ueber Trigger UND Content: `openedByHoverRef` ist - anders als
+ * `justOpenedByHoverRef` oben, der nur den EINEN Klick direkt nach einem Hover-Oeffnen unterdrueckt
+ * und danach zurueckgesetzt wird - ueber die gesamte Offen-Dauer persistent und haelt fest, ob der
+ * aktuelle Offen-Zustand ueberhaupt per Hover zustandegekommen ist. `handleOpenChange` setzt ihn
+ * synchron zu `justOpenedByHoverRef` beim Oeffnen und setzt ihn beim Schliessen zurueck.
+ * `handlePossibleHoverClose` haengt an `onMouseLeave` von Trigger-Button UND `PopoverContent` und
+ * prueft bei `openedByHoverRef.current === true` per `Node.contains()` gegen
+ * `triggerRef`/`contentRef`, ob `event.relatedTarget` (das neue Ziel des Pointers) ausserhalb
+ * beider liegt - nur dann schliesst es. Ref-basiert statt eines naiven
+ * `event.currentTarget.contains(event.relatedTarget)`- Bubbling-Checks, weil `PopoverContent` ueber
+ * `PopoverPrimitive.Portal` an einer anderen Stelle im DOM-Baum liegt als der Trigger - ein
+ * Uebergang Trigger->Content wuerde sonst faelschlich als "verlassen" gewertet. Kein Timer/Delay
+ * noetig.
  */
 export function CriterionDetailsPopover({
   criterionScores,
@@ -140,11 +138,11 @@ export function CriterionDetailsPopover({
       openedByHoverRef.current = justOpenedByHoverRef.current
     } else {
       openedByHoverRef.current = false
-      // Ohne diesen Reset blieb
-      // justOpenedByHoverRef nach einem Schliessen ueber einen anderen Weg als den direkt
-      // folgenden Trigger-Klick (Escape/Aussenklick/"x"-Button/Hover-Auto-Close) faelschlich
-      // `true` stehen - ein spaeterer, voellig unabhaengiger Klick (z.B. per Tastatur) haette
-      // dadurch faelschlich per preventDefault() unterdrueckt und das Popover nicht geoeffnet.
+      // Ohne diesen Reset blieb justOpenedByHoverRef nach einem Schliessen ueber einen anderen Weg
+      // als den direkt folgenden Trigger-Klick (Escape/Aussenklick/"x"-Button/Hover-Auto-Close)
+      // faelschlich `true` stehen - ein spaeterer, voellig unabhaengiger Klick (z.B. per Tastatur)
+      // haette dadurch faelschlich per preventDefault() unterdrueckt und das Popover nicht
+      // geoeffnet.
       justOpenedByHoverRef.current = false
     }
     setOpen(nextOpen)
@@ -173,8 +171,8 @@ export function CriterionDetailsPopover({
           onPointerEnter={handlePointerEnter}
           onMouseLeave={handlePossibleHoverClose}
           className={cn(
-            // Runder Backdrop ueber der Fotokachel - eine der wenigen verbleibenden Rundformen:
-            // der Trigger liegt auf dem Bild, ein Kreis grenzt sich dort von jeder rechteckigen
+            // Runder Backdrop ueber der Fotokachel - eine der wenigen verbleibenden Rundformen: der
+            // Trigger liegt auf dem Bild, ein Kreis grenzt sich dort von jeder rechteckigen
             // Bildstruktur ab.
             'shrink-0 rounded-full border border-border-control bg-bg/85 backdrop-blur-sm',
             className,

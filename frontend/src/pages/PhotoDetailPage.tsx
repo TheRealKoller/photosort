@@ -23,9 +23,9 @@ import { parseRatingFilter } from '../utils/ratingFilter'
 import { primaryRanking } from '../utils/rankings'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 
-// Bounded so a broken/degenerate filter can never spin forever fetching pages while searching
-// for the next unrated photo - 80 * PHOTOS_PAGE_SIZE(60) covers well beyond any realistic
-// project size for this two-person MVP.
+// Bounded so a broken/degenerate filter can never spin forever fetching pages while searching for
+// the next unrated photo - 80 * PHOTOS_PAGE_SIZE(60) covers well beyond any realistic project size
+// for this two-person MVP.
 const MAX_AUTO_ADVANCE_PAGE_FETCHES = 80
 
 const SWIPE_THRESHOLD_PX = 50
@@ -58,8 +58,8 @@ export function PhotoDetailPage() {
   const setMutation = useSetRatingMutation(id)
   const deleteMutation = useDeleteRatingMutation(id)
   const categoryOverrideControls = useCategoryOverrideControls(id)
-  // Das feste Set kommt vom Server (langlebiger Cache) - Grundlage der Anzeigenamen und der
-  // "Alle Kategorien"-Override-Auswahl.
+  // Das feste Set kommt vom Server (langlebiger Cache) - Grundlage der Anzeigenamen und der "Alle
+  // Kategorien"-Override-Auswahl.
   const categoriesQuery = useCategoriesQuery()
   const categorySet = categoriesQuery.data ?? []
 
@@ -102,11 +102,11 @@ export function PhotoDetailPage() {
 
   /**
    * Sucht ab fromIndex vorwaerts in der zum Klick-Zeitpunkt geladenen Foto-Sequenz nach dem
-   * naechsten unbewerteten Foto (Auto-Advance).
-   * Arbeitet bewusst auf dieser VOR der durch die Mutation ausgeloesten Invalidierung erfassten
-   * Momentaufnahme statt auf einem Refetch zu warten: da sich nur das gerade bewertete Foto
-   * aendert, bleibt der Bewertungsstatus aller anderen Fotos in der Momentaufnahme weiterhin
-   * korrekt - unabhaengig davon, ob/wann die Invalidierung neu laedt.
+   * naechsten unbewerteten Foto (Auto-Advance). Arbeitet bewusst auf dieser VOR der durch die
+   * Mutation ausgeloesten Invalidierung erfassten Momentaufnahme statt auf einem Refetch zu warten:
+   * da sich nur das gerade bewertete Foto aendert, bleibt der Bewertungsstatus aller anderen Fotos
+   * in der Momentaufnahme weiterhin korrekt - unabhaengig davon, ob/wann die Invalidierung neu
+   * laedt.
    */
   async function advanceToNextUnrated(fromIndex: number): Promise<void> {
     let currentPhotos = photos
@@ -189,8 +189,8 @@ export function PhotoDetailPage() {
     return () => window.removeEventListener('keydown', handleKeydown)
   }, [])
 
-  // Swipe navigiert, Bewertung erfolgt separat per Tap auf die Bewertungs-Buttons (nicht per
-  // Swipe, um versehentliche Bewertungen zu vermeiden).
+  // Swipe navigiert, Bewertung erfolgt separat per Tap auf die Bewertungs-Buttons (nicht per Swipe,
+  // um versehentliche Bewertungen zu vermeiden).
   const touchStartXRef = useRef<number | null>(null)
 
   function handleTouchStart(event: React.TouchEvent<HTMLDivElement>): void {

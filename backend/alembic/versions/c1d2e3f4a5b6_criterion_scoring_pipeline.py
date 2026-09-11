@@ -112,9 +112,8 @@ def upgrade() -> None:
 
     # Der alte, hiermit entfernte select_top-Job setzte suggested_status=ALBUM_WORTHY. SuggestionOut
     # kennt nur noch duplicate/low_quality - ein bestehender ALBUM_WORTHY-Altwert wuerde ohne
-    # Bereinigung
-    # nach dem Deploy faelschlich als low_quality-Ausschuss-Vorschlag angezeigt. REJECTED-Werte
-    # bleiben unangetastet, da sie weiterhin gueltige Ausschuss-Vorschlaege sind.
+    # Bereinigung nach dem Deploy faelschlich als low_quality-Ausschuss-Vorschlag angezeigt.
+    # REJECTED-Werte bleiben unangetastet, da sie weiterhin gueltige Ausschuss-Vorschlaege sind.
     op.execute(
         sa.text(
             "UPDATE photo_scores SET suggested_status = NULL "

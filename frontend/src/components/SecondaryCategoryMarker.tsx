@@ -5,8 +5,8 @@ interface SecondaryCategoryMarkerProps {
 }
 
 /**
- * Dezenter Kachel-Marker fuer eine Kachel, die unter einer ihrer NEBENkategorien steht -
- * gleicher Aufbau und dieselbe halbtransparente `--bg`-Kreis-Backdrop-Technik wie der
+ * Dezenter Kachel-Marker fuer eine Kachel, die unter einer ihrer NEBENkategorien steht - gleicher
+ * Aufbau und dieselbe halbtransparente `--bg`-Kreis-Backdrop-Technik wie der
  * `CategoryOverrideMarker` daneben.
  *
  * Das Zeichen ist bewusst ein VERZWEIGUNGSPFEIL `↳` und kein `↓`: es bezeichnet eine

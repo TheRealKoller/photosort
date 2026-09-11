@@ -22,18 +22,14 @@ export interface PipelineOutletContext {
 }
 
 /**
- * Uebernimmt die frueher in ProjectDetailPage.tsx liegende Verantwortung: Laden/404/
- * Fehlerzustand, Projekt-Header, Sekundaernavigation, Stepper-Leiste,
- * Redirect-Guards - EINE zentrale Stelle statt fuenffacher Duplikation je Detailseite.
+ * Uebernimmt die frueher in ProjectDetailPage.tsx liegende Verantwortung: Laden/404/Fehlerzustand,
+ * Projekt-Header, Sekundaernavigation, Stepper-Leiste, Redirect-Guards - EINE zentrale Stelle statt
+ * fuenffacher Duplikation je Detailseite.
  *
  * "Zurueck zur Projektliste"-Link bewusst NICHT erneut ergaenzt: die Sekundaernavigation dieses
- * Links wurde bereits entfernt (ersetzt durch den Sticky-Header-Wordmark-Link "PhotoSort") -
- * ProjectDetailPage.test.tsx haelt
- * das explizit als Regressionsschutz fest ("no longer renders its own 'Zurueck zur
- * Projektliste'-Link ... now covered by the sticky header/wordmark link"). Ein erneutes Hinzufuegen
- * waere ein stiller Widerspruch zu diesem bereits getroffenen, weiterhin gueltigen
- * Bestandsschutz-Test - technische Detailentscheidung, die den tatsaechlichen (getesteten) Stand
- * ueber die inzwischen leicht veraltete Prosa-Aufzaehlung im Architektur-Abschnitt stellt.
+ * Links wurde bereits entfernt, ersetzt durch den Sticky-Header-Wordmark-Link "PhotoSort". Ein
+ * erneutes Hinzufuegen waere ein stiller Widerspruch zu dieser weiterhin gueltigen Entscheidung.
+ * Kein Test erzwingt die Abwesenheit hier; die Auflage steht deshalb in voller Aussage am Code.
  */
 export function ProjectPipelineLayout() {
   const { projectId, step } = useParams()

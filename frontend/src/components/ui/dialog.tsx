@@ -21,8 +21,8 @@ export interface DialogProps {
   actions?: ReactNode
   cancelLabel?: string
   /** Deaktiviert die eingebaute Abbrechen-Schaltflaeche, solange der Aufrufer eine Anfrage
-   * laufen hat. Die Zusage "Esc ruft IMMER `onClose`"
-   * bleibt davon unberuehrt - ein Aufrufer, der waehrend seiner Anfrage nicht geschlossen werden
+   * laufen hat. Die Zusage "Esc ruft IMMER `onClose`" bleibt davon unberuehrt - ein Aufrufer, der
+   * waehrend seiner Anfrage nicht geschlossen werden
    * will, ignoriert `onClose` selbst; das ist hier ausdruecklich vorgesehen. */
   cancelDisabled?: boolean
 }
@@ -32,8 +32,8 @@ const FOCUSABLE_SELECTOR =
 
 /**
  * Ueberlagerung/Modal nach dem Board: Flaeche `--overlay`, Rand `--border`, Radius 16px,
- * Polsterung 24px, Titelzeile mit
- * Symbol, Schaltflaechenzeile rechtsbuendig, verdunkelter Hintergrund ueber `::backdrop`.
+ * Polsterung 24px, Titelzeile mit Symbol, Schaltflaechenzeile rechtsbuendig, verdunkelter
+ * Hintergrund ueber `::backdrop`.
  *
  * Natives <dialog> statt eines neuen @radix-ui/react-dialog-Pakets - dieselbe Linie wie
  * switch.tsx und checkbox.tsx ("Radix-Primitives nur dort einsetzen, wo natives HTML nicht
@@ -157,9 +157,9 @@ export function Dialog({
     const first = focusable[0]
     const last = focusable[focusable.length - 1]
     const active = document.activeElement
-    // Der Ausreisserfall wurde zuvor NUR fuer Shift+Tab behandelt -
-    // vorwaerts traf kein Zweig zu und der Fokus wanderte aus dem Modal heraus. Beide Richtungen
-    // fangen ihn jetzt gleich ab: rueckwaerts auf das letzte, vorwaerts auf das erste Element.
+    // Der Ausreisserfall wurde zuvor NUR fuer Shift+Tab behandelt - vorwaerts traf kein Zweig zu
+    // und der Fokus wanderte aus dem Modal heraus. Beide Richtungen fangen ihn jetzt gleich ab:
+    // rueckwaerts auf das letzte, vorwaerts auf das erste Element.
     const hasStrayFocus = !dialog.contains(active)
 
     if (event.shiftKey && (hasStrayFocus || active === first)) {

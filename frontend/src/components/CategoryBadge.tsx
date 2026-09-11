@@ -51,9 +51,8 @@ const CHIP_CLASSES: Readonly<Record<string, string>> = {
 const NEUTRAL_CHIP_CLASSES = CHIP_CLASSES.nicht_erkannt
 
 /**
- * Kategorie-Chip in der Board-Form: Radius 16px, Polsterung 12/6px, Inter Semi-Bold 12px,
- * GETOENTE Flaeche mit heller,
- * bunter Schrift.
+ * Kategorie-Chip in der Board-Form: Radius 16px, Polsterung 12/6px, Inter Semi-Bold 12px, GETOENTE
+ * Flaeche mit heller, bunter Schrift.
  *
  * Der strukturelle Gegensatz zum Bewertungs-Badge (voll GEFUELLTE Flaeche mit dunkler Tinte,
  * Radius 6px) ist der eigentliche Unterscheidungstraeger und keine Kosmetik: "Menschen" liegt
@@ -61,10 +60,9 @@ const NEUTRAL_CHIP_CLASSES = CHIP_CLASSES.nicht_erkannt
  * bestehenden Regel "Kategorie-Badge in der Gegenecke zur Rating-Badge" bleibt auf einer Kachel
  * ohne Nachdenken erkennbar, welches von beiden die Bewertung ist.
  *
- * Sichtbar sind drei Grossbuchstaben aus dem ANZEIGENAMEN (ueber das feste Set kollisionsfrei),
- * der vollstaendige Name steht als
- * `aria-label`/`title`. Die Namen kommen weiterhin zur Laufzeit vom Server; die Teil-Ruecknahme
- * von 0289 gilt ausschliesslich fuer Farben.
+ * Sichtbar sind drei Grossbuchstaben aus dem ANZEIGENAMEN (ueber das feste Set kollisionsfrei), der
+ * vollstaendige Name steht als `aria-label`/`title`. Die Namen kommen weiterhin zur Laufzeit vom
+ * Server; die Teil-Ruecknahme von 0289 gilt ausschliesslich fuer Farben.
  */
 export function CategoryBadge({ categoryKey, categories, className }: CategoryBadgeProps) {
   const label = formatCategoryKey(categoryKey, categories)

@@ -1,7 +1,6 @@
 /**
  * Zahlenformatierung der Projekt-Statistikseite. Reine Funktionen mit eigenen Unit-Tests - die
- * Seite selbst
- * enthaelt keine Formatierungslogik.
+ * Seite selbst enthaelt keine Formatierungslogik.
  *
  * Durchgehend deutsches Zahlenformat (Dezimalkomma, Tausenderpunkt): die Anwendung hat genau zwei
  * deutschsprachige Nutzer, es gibt keine Lokalisierungsschicht und soll auch keine geben.

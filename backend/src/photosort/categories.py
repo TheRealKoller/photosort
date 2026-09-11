@@ -18,24 +18,24 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 # Obergrenzen der Modellantwort: hier statt in `remote_classification.py`, weil
-# `build_classification_prompt()` sie in den erzeugten Prompt schreibt - eine Definition dort
-# haette einen Zirkelimport erzwungen (remote_classification importiert dieses Modul).
-# `remote_classification.py` importiert beide Werte von hier und kuerzt die geparste Antwort
-# gegen genau dieselben Konstanten: Prompt und Validierung koennen nicht auseinanderlaufen.
+# `build_classification_prompt()` sie in den erzeugten Prompt schreibt - eine Definition dort haette
+# einen Zirkelimport erzwungen (remote_classification importiert dieses Modul).
+# `remote_classification.py` importiert beide Werte von hier und kuerzt die geparste Antwort gegen
+# genau dieselben Konstanten: Prompt und Validierung koennen nicht auseinanderlaufen.
 MAX_REMOTE_CATEGORIES_PER_PHOTO = 3
 MAX_FINE_LABELS_PER_PHOTO = 2
 
-# Auffangwert fuer "kein Bildmotiv sicher bestimmbar". Bewusst KEIN Ersatz fuer
-# `gegenstand`: `gegenstand` ist der letzte Eintrag der Vorrangreihenfolge und wird bei einem
-# tatsaechlichen Kandidaten vergeben, `nicht_erkannt` steht ausserhalb der Reihenfolge.
+# Auffangwert fuer "kein Bildmotiv sicher bestimmbar". Bewusst KEIN Ersatz fuer `gegenstand`:
+# `gegenstand` ist der letzte Eintrag der Vorrangreihenfolge und wird bei einem tatsaechlichen
+# Kandidaten vergeben, `nicht_erkannt` steht ausserhalb der Reihenfolge.
 CATEGORY_NOT_RECOGNIZED = "nicht_erkannt"
 
-# Ab welcher Modell-Selbsteinschaetzung eine erkannte Kategorie zur NEBENkategorie eines Fotos
-# wird - inklusiv verglichen (`>=`), wie `category_presence_threshold` in criteria.py.
+# Ab welcher Modell-Selbsteinschaetzung eine erkannte Kategorie zur NEBENkategorie eines Fotos wird
+# - inklusiv verglichen (`>=`), wie `category_presence_threshold` in criteria.py.
 #
 # Steht hier und nicht in `ranking.py`/`worker.py`, weil es eine Aussage ueber die TAXONOMIE ist
-# ("ab wann gehoert ein Foto zu einer Kategorie") und nicht ueber die Rangfolge - dieselbe
-# Trennung zwischen Produkt-Taxonomie und Mess-Signal.
+# ("ab wann gehoert ein Foto zu einer Kategorie") und nicht ueber die Rangfolge - dieselbe Trennung
+# zwischen Produkt-Taxonomie und Mess-Signal.
 #
 # Anwendungsweit gleich und bewusst KEIN Konfigurationswert: keine Umgebungsvariable, keine
 # projekt- oder nutzerspezifische Fassung, in keiner API-Antwort und in keiner Oberflaeche
@@ -231,9 +231,9 @@ CATEGORY_REGISTRY: dict[str, CategoryDefinition] = {
             "Nicht bei einem abgestellten Sportgerät ohne handelnde Person (→ Gegenstand bzw. "
             "Fahrzeug)."
         ),
-        # Steht BEWUSST vor `menschen`: bei sportlichen Aktivitäten sind fast immer
-        # Personen bildbestimmend - ohne diesen Vorrang koennte die Kategorie faktisch nie
-        # gewinnen. Eigener, literaler Testfall in tests/test_categories.py.
+        # Steht BEWUSST vor `menschen`: bei sportlichen Aktivitäten sind fast immer Personen
+        # bildbestimmend - ohne diesen Vorrang koennte die Kategorie faktisch nie gewinnen. Eigener,
+        # literaler Testfall in tests/test_categories.py.
         precedence=2,
     ),
     CATEGORY_NOT_RECOGNIZED: CategoryDefinition(
@@ -383,8 +383,8 @@ def build_classification_prompt() -> str:
 
     Security-Muss-Kriterium: der Prompt entsteht nie aus Datenbankinhalten und nie aus vorherigen
     Modellantworten - es gibt keinen Rueckkopplungspfad, ueber den eine Antwort den naechsten
-    Prompt beeinflussen koennte. Bricht in tests/test_categories.py::
-    TestBuildClassificationPrompt::test_the_prompt_is_generated_from_the_registry_not_a_literal."""
+    Prompt beeinflussen koennte. Bricht in tests/test_categories.py::TestBuildClassificationPrompt,
+    Fall `test_the_prompt_is_generated_from_the_registry_not_a_literal`."""
     lines = [
         "Analysiere dieses Foto und ordne es einem festen Kategorien-Set zu.",
         "",
@@ -411,9 +411,9 @@ def build_classification_prompt() -> str:
             f"Nenne zusaetzlich hoechstens {MAX_FINE_LABELS_PER_PHOTO} kurze, frei formulierte "
             "deutsche Feinlabels, die das Foto naeher beschreiben (Anlass, Ort, konkretes Motiv).",
             "",
-            # Der Kategorien-Eintrag ist ein Objekt, nicht der nackte Schluessel. Ausdruecklich
-            # als SELBSTEINSCHAETZUNG formuliert - die Zahl beeinflusst die Kategorieauswahl an
-            # keiner Stelle, sie wird ausschliesslich angezeigt und ausgewertet.
+            # Der Kategorien-Eintrag ist ein Objekt, nicht der nackte Schluessel. Ausdruecklich als
+            # SELBSTEINSCHAETZUNG formuliert - die Zahl beeinflusst die Kategorieauswahl an keiner
+            # Stelle, sie wird ausschliesslich angezeigt und ausgewertet.
             "Gib zu jeder genannten Kategorie an, wie sicher du dir bei dieser Zuordnung bist - "
             'als Zahl zwischen 0 und 1 im Feld "confidence" (0 = sehr unsicher, 1 = sehr sicher). '
             "Nenne keine Zahl, wenn du dich nicht einschaetzen kannst; erfinde keine.",

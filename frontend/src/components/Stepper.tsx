@@ -71,10 +71,10 @@ function StepLabel({ label, auspraegung }: { label: string; auspraegung: StepMar
 
 /**
  * DER GESPERRTE SCHRITT IST SELBST DER AUSLOESER seines Sperrgrunds - der bisherige eigene
- * `i`-Knopf daneben ist ersatzlos entfallen. Wiederverwendet
- * wird das dokumentierte Muster "Info-Popover fuer situative Kurzerklaerungen" samt
- * geraeteunabhaengigem Oeffnungsverhalten (Vorlage: components/CriterionDetailsPopover.tsx). Kein
- * Radix-Tooltip: das ARIA-Tooltip-Muster ist hover/focus-only und oeffnet nicht per Tippen.
+ * `i`-Knopf daneben ist ersatzlos entfallen. Wiederverwendet wird das dokumentierte Muster
+ * "Info-Popover fuer situative Kurzerklaerungen" samt geraeteunabhaengigem Oeffnungsverhalten
+ * (Vorlage: components/CriterionDetailsPopover.tsx). Kein Radix-Tooltip: das ARIA-Tooltip-Muster
+ * ist hover/focus-only und oeffnet nicht per Tippen.
  *
  * `<button type="button">` mit `aria-disabled="true"`, NIE `disabled`: `disabled` naehme das
  * Element aus der Tab-Reihenfolge UND schaltete Zeigerereignisse ab - genau die Luecke, die diese
@@ -208,9 +208,8 @@ function BlockedStep({
 
 /**
  * Sticky Stepper-Fortschrittsnavigation (Design-System-Muster) - rein praesentational, steuert
- * nichts selbst: die
- * Erreichbarkeit haengt ausschliesslich an `isReachable`, der "aktuelle" Schritt kommt
- * ausschliesslich aus der URL (`activeStepId`) und wird nicht algorithmisch aus `states`
+ * nichts selbst: die Erreichbarkeit haengt ausschliesslich an `isReachable`, der "aktuelle" Schritt
+ * kommt ausschliesslich aus der URL (`activeStepId`) und wird nicht algorithmisch aus `states`
  * hergeleitet.
  */
 export function Stepper({ projectId, project, states, activeStepId }: StepperProps) {
@@ -230,8 +229,9 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
         Zum Seiteninhalt springen
       </a>
       {/*
-        DIE ORIENTIERUNGSZEILE STEHT AUSSERHALB DES `<nav>`: Sie scrollt mit dem Inhalt weg, statt Platz im dauerhaft fixierten Bereich zu belegen -
-        schmal bleibt die haftende Leiste dadurch rund 25px flacher. Der aktuelle Schritt bleibt
+        DIE ORIENTIERUNGSZEILE STEHT AUSSERHALB DES `<nav>`: Sie scrollt mit dem Inhalt weg,
+        statt Platz im dauerhaft fixierten Bereich zu belegen - schmal bleibt die haftende Leiste
+        dadurch rund 25px flacher. Der aktuelle Schritt bleibt
         auch danach markiert (Akzentrand, fetter Schnitt, `aria-current="step"`).
 
         Bewusst KEIN gemeinsamer Behaelter mit dem `<nav>`: ein haftendes Element kann seinen
@@ -267,11 +267,11 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
             const isBlocked = !isReachable
 
             /*
-             * DIE RANGFOLGE DER AUSPRAEGUNGEN, wenn mehrere Merkmale zugleich wahr sind
-             * blockiert vor aktuell vor erledigt vor ausstehend.
-             * "aktuell" gewinnt gegen "erledigt", weil ein bereits erledigter Schritt beim
-             * erneuten Aufrufen wieder der aktuelle ist - wo man gerade steht, ist dann die
-             * wichtigere Information; dass er erledigt ist, sagt weiterhin der Haken.
+             * DIE RANGFOLGE DER AUSPRAEGUNGEN, wenn mehrere Merkmale zugleich wahr sind blockiert
+             * vor aktuell vor erledigt vor ausstehend. "aktuell" gewinnt gegen "erledigt", weil ein
+             * bereits erledigter Schritt beim erneuten Aufrufen wieder der aktuelle ist - wo man
+             * gerade steht, ist dann die wichtigere Information; dass er erledigt ist, sagt
+             * weiterhin der Haken.
              *
              * Die GLYPHE folgt einer eigenen, davon unabhaengigen Rangfolge: Haken vor Schloss
              * (siehe StepMarker.tsx). Beide zusammen sind als vollstaendige Wahrheitstabelle ueber

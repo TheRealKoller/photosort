@@ -13,15 +13,15 @@ import type { PipelineOutletContext } from './ProjectPipelineLayout'
  * erfolgreich war (isReachable('kuratierung')).
  *
  * Die "Remote-Kategorisierung"-Section ist nicht hier eingebunden, sondern auf
- * KriterienStepPage.tsx (fachlich
- * naeher an ihrer Wirkung: Ergebnisse fliessen erst durch einen Kriterien-Bewertungs-Lauf ein).
+ * KriterienStepPage.tsx (fachlich naeher an ihrer Wirkung: Ergebnisse fliessen erst durch einen
+ * Kriterien-Bewertungs-Lauf ein).
  */
 export function KuratierungStepPage() {
   const { project } = useOutletContext<PipelineOutletContext>()
 
-  // Standardwert und Grenzen kommen aus utils/curationTopN.ts (eine Stelle fuer beide Seiten) -
-  // die Grenzen sind nur clientseitige Hinweise, die eigentliche Grenze wird serverseitig
-  // durchgesetzt. `''` ist ein bewusst erlaubter Zwischenzustand fuer ein geleertes Eingabefeld.
+  // Standardwert und Grenzen kommen aus utils/curationTopN.ts (eine Stelle fuer beide Seiten) - die
+  // Grenzen sind nur clientseitige Hinweise, die eigentliche Grenze wird serverseitig durchgesetzt.
+  // `''` ist ein bewusst erlaubter Zwischenzustand fuer ein geleertes Eingabefeld.
   const [topNPerCategory, setTopNPerCategory] = useState<number | ''>(DEFAULT_TOP_N)
   const effectiveTopNPerCategory = topNPerCategory === '' ? DEFAULT_TOP_N : topNPerCategory
 

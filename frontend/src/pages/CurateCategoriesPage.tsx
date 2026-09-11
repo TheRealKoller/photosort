@@ -38,8 +38,7 @@ interface ClusterMeta {
 /**
  * EIN gerendertes Kachel-Vorkommen: das Foto UND die Zugehoerigkeit, unter der es an dieser Stelle
  * steht. Bei Mehrfachzugehoerigkeit reicht das Foto allein nicht - dasselbe Foto kann in zwei
- * Kategorien stehen und traegt dort verschiedene
- * Rollen (Haupt- bzw. Nebenkategorie).
+ * Kategorien stehen und traegt dort verschiedene Rollen (Haupt- bzw. Nebenkategorie).
  */
 export interface CurationEntry {
   photo: PhotoOut
@@ -55,14 +54,13 @@ interface GroupedPhotos {
 }
 
 /**
- * Erster Durchlauf sammelt pro `cluster_key` alle zugehoerigen Fotos (kategorieuebergreifend)
- * und berechnet einmal die Cluster-Meta-Info (Tag + Ueberschrift), zweiter Durchlauf sortiert die
+ * Erster Durchlauf sammelt pro `cluster_key` alle zugehoerigen Fotos (kategorieuebergreifend) und
+ * berechnet einmal die Cluster-Meta-Info (Tag + Ueberschrift), zweiter Durchlauf sortiert die
  * Zugehoerigkeiten in die dreistufige {Tag: {Cluster: {Kategorie: Eintraege}}}-Struktur ein.
  *
  * Iteriert je Foto ueber `curatedRankings(photo)` - ein Foto kann damit in MEHREREN Kategorien
- * erscheinen. Welche das sind, entscheidet
- * ausschliesslich der Server (`curation_position !== null`); das Frontend bildet weder die
- * Auswahl noch eine Schwelle nach.
+ * erscheinen. Welche das sind, entscheidet ausschliesslich der Server (`curation_position !==
+ * null`); das Frontend bildet weder die Auswahl noch eine Schwelle nach.
  */
 function groupByClusterAndCategory(items: PhotoOut[]): {
   groups: GroupedPhotos
@@ -114,8 +112,8 @@ function categoriesHavePhotos(categories: { [categoryKey: string]: CurationEntry
  * Fotoanzahl eines Tages fuer die Kurzinfo im zugeklappten Zustand - reine Ableitung aus bereits
  * geladenen Daten, kein neuer State/Request.
  *
- * Zaehlt EINDEUTIGE FOTOS, nicht Zugehoerigkeiten: die Beschriftung lautet "N Fotos" - ein Foto, das an diesem Tag in zwei
- * Kategorien erscheint, erhoeht die Zahl um eins.
+ * Zaehlt EINDEUTIGE FOTOS, nicht Zugehoerigkeiten: die Beschriftung lautet "N Fotos" - ein Foto,
+ * das an diesem Tag in zwei Kategorien erscheint, erhoeht die Zahl um eins.
  */
 export function countPhotosInDay(clustersForDay: {
   [clusterKey: string]: { [categoryKey: string]: CurationEntry[] }
@@ -133,9 +131,8 @@ export function countPhotosInDay(clustersForDay: {
 
 /**
  * Kandidatenzahl EINER Kategorie eines Clusters: schlicht die `partition_size` - alle Eintraege
- * einer
- * Partition tragen denselben Wert, weil er lauf-global je (cluster_key, category_key) berechnet
- * wird und nicht nutzerspezifisch gefiltert ist.
+ * einer Partition tragen denselben Wert, weil er lauf-global je (cluster_key, category_key)
+ * berechnet wird und nicht nutzerspezifisch gefiltert ist.
  *
  * `0` fuer eine leergelaufene Kategorie (nur noch ueber `knownGroupKeysRef` bekannt, nach einem
  * Kategorie-Override). Die Ueberschrift bekommt dann GAR KEINE Zahl - "0 Kandidaten" waere eine
@@ -146,16 +143,15 @@ export function candidateCountOfCategory(entries: CurationEntry[]): number {
 }
 
 /**
- * Kandidatenzahl eines Clusters: die SUMME der Kategorie-Zahlen darunter. Ein Foto, das im
- * selben Cluster in zwei Kategorien steht, zaehlt darin
- * ZWEIMAL - bewusste Produktentscheidung Daniels: die Zahl beschreibt, was tatsaechlich zu sichten
- * ist (die Kachel erscheint zweimal und ist zweimal einzeln zu beurteilen), nicht wie viele
- * verschiedene Fotos es sind.
+ * Kandidatenzahl eines Clusters: die SUMME der Kategorie-Zahlen darunter. Ein Foto, das im selben
+ * Cluster in zwei Kategorien steht, zaehlt darin ZWEIMAL - bewusste Produktentscheidung Daniels:
+ * die Zahl beschreibt, was tatsaechlich zu sichten ist (die Kachel erscheint zweimal und ist
+ * zweimal einzeln zu beurteilen), nicht wie viele verschiedene Fotos es sind.
  *
  * Genau deshalb heisst sie "Kandidaten" und nicht "Fotos" - die Tages-Ueberschrift zaehlt
- * ausdruecklich eindeutige FOTOS (siehe `countPhotosInDay`). Verschiedene Groessen
- * tragen verschiedene Woerter; das ist die einzige Stelle, an der diese Entscheidung fuer den
- * Nutzer lesbar bleibt.
+ * ausdruecklich eindeutige FOTOS (siehe `countPhotosInDay`). Verschiedene Groessen tragen
+ * verschiedene Woerter; das ist die einzige Stelle, an der diese Entscheidung fuer den Nutzer
+ * lesbar bleibt.
  */
 export function candidateCountOfCluster(photosByCategory: {
   [categoryKey: string]: CurationEntry[]
@@ -172,8 +168,8 @@ export function formatCandidateCount(count: number): string {
 }
 
 /**
- * Toggelt den Klapp-Zustand eines einzelnen Tages - liefert
- * ein neues `Set` statt das uebergebene zu mutieren, andere `dayKey`s bleiben unveraendert.
+ * Toggelt den Klapp-Zustand eines einzelnen Tages - liefert ein neues `Set` statt das uebergebene
+ * zu mutieren, andere `dayKey`s bleiben unveraendert.
  */
 export function toggleDayCollapse(collapsedDayKeys: Set<string>, dayKey: string): Set<string> {
   const next = new Set(collapsedDayKeys)
@@ -189,10 +185,9 @@ export function toggleDayCollapse(collapsedDayKeys: Set<string>, dayKey: string)
  * Die Schwelle des Kuratierungsfilters "Nur unsichere Zuordnungen" - EXKLUSIV: `0.6` selbst gilt
  * nicht als niedrig.
  *
- * Sie lebt bewusst NUR hier im Frontend: weder API noch Datenbank kennen einen
- * Begriff von "unsicher". Eine Schwelle, die beide Seiten braeuchten, muesste gespiegelt oder
- * ueber ein neues API-Feld transportiert werden - fuer eine Frage, die keine fachliche ist,
- * sondern eine Sicht.
+ * Sie lebt bewusst NUR hier im Frontend: weder API noch Datenbank kennen einen Begriff von
+ * "unsicher". Eine Schwelle, die beide Seiten braeuchten, muesste gespiegelt oder ueber ein neues
+ * API-Feld transportiert werden - fuer eine Frage, die keine fachliche ist, sondern eine Sicht.
  */
 export const LOW_CONFIDENCE_THRESHOLD = 0.6
 
@@ -242,9 +237,9 @@ export function filterLowConfidence(items: PhotoOut[]): PhotoOut[] {
 }
 
 /**
- * Neutraler Erklaertext des Auffang-Abschnitts (Set-Eintrag "Nicht erkannt") - struktureller
- * Text, KEINE Fehler-Semantik (kein `role="alert"`, keine Fehlerfarbe): das Fehlen
- * einer Erkennung ist kein Fehler.
+ * Neutraler Erklaertext des Auffang-Abschnitts (Set-Eintrag "Nicht erkannt") - struktureller Text,
+ * KEINE Fehler-Semantik (kein `role="alert"`, keine Fehlerfarbe): das Fehlen einer Erkennung ist
+ * kein Fehler.
  */
 const CATCH_ALL_EXPLANATION = 'Für diese Fotos war kein Bildmotiv sicher bestimmbar.'
 
@@ -276,8 +271,8 @@ export function CurateCategoriesPage() {
 
   // Die Fotos mit gerade LAUFENDER Verwerfen-Mutation - eine MENGE, nicht eine einzelne Id
   // - die fruehere seitenweite Einfach-Sperre war sinnvoll, solange die Liste danach umsprang;
-  // ohne Nachruecken
-  // springt nichts mehr, und ein zweiter Klick verpuffte still. Jedes Foto verwirft unabhaengig.
+  // ohne Nachruecken springt nichts mehr, und ein zweiter Klick verpuffte still. Jedes Foto
+  // verwirft unabhaengig.
   //
   // ZWEI Ablagen fuer dieselbe Menge, mit verschiedenen Aufgaben: der Ref ist die SYNCHRONE
   // Wahrheit fuer die Sperre je Foto (siehe `handleReject`), der State loest das Neurendern der
@@ -289,8 +284,9 @@ export function CurateCategoriesPage() {
   // localStorage/sessionStorage/Query-Param, keine Persistierung ueber einen Reload hinaus.
   const [collapsedDayKeys, setCollapsedDayKeys] = useState<Set<string>>(new Set())
 
-  // Der Filterzustand lebt in `useState` wie `collapsedDayKeys`, NICHT in den Suchparametern - dort steht nur, was das Backend als
-  // Query-Parameter sieht, und dieser Filter loest bewusst keine neue Anfrage aus.
+  // Der Filterzustand lebt in `useState` wie `collapsedDayKeys`, NICHT in den Suchparametern - dort
+  // steht nur, was das Backend als Query-Parameter sieht, und dieser Filter loest bewusst keine
+  // neue Anfrage aus.
   const [lowConfidenceOnly, setLowConfidenceOnly] = useState(false)
 
   // Aufgeklappte Kandidatenbereiche, Schluessel je Partition. Dieselbe kollisionssichere
@@ -309,19 +305,19 @@ export function CurateCategoriesPage() {
   }
 
   // Der frueher hier stehende `useEffect`, der den Busy-Zustand zuruecksetzte, sobald das Foto aus
-  // `items` verschwand, ist mit dem Nachruecken entfallen: ohne Backfill verschwindet das Foto
-  // nie, die Schaltflaeche bliebe dauerhaft busy. Ersatz ist der `onSettled`-Callback der
-  // Mutation in `handleReject`.
+  // `items` verschwand, ist mit dem Nachruecken entfallen: ohne Backfill verschwindet das Foto nie,
+  // die Schaltflaeche bliebe dauerhaft busy. Ersatz ist der `onSettled`-Callback der Mutation in
+  // `handleReject`.
 
-  // Erschoepfter Pool (Akzeptanzkriterium 7 der Spec): eine Partition, die inzwischen komplett
-  // leer ist (letztes Foto gerade abgelehnt), wuerde sonst spurlos aus der Gruppierung
-  // verschwinden - einmal gesehene Partitionen bleiben deshalb fuer die Dauer des Seitenbesuchs
-  // bekannt, damit ihr Abschnitt (mit eigenem Leerzustand statt kommentarlosem Verschwinden)
-  // sichtbar bleibt. Schluessel via JSON.stringify() statt eines zusammengesetzten Strings mit
-  // Trennzeichen (Review-Fund test-engineer/security-engineer/architect): ein einzelnes
-  // Trennzeichen waere anfaellig fuer eine Kollision, sollte ein kuenftiger cluster_key/
-  // category_key es selbst enthalten - JSON.stringify(["a","b","c"]) ist immer eindeutig
-  // umkehrbar. 3-Tupel [dayKey, clusterKey, categoryKey], nicht 2-Tupel.
+  // Erschoepfter Pool (Akzeptanzkriterium 7 der Spec): eine Partition, die inzwischen komplett leer
+  // ist (letztes Foto gerade abgelehnt), wuerde sonst spurlos aus der Gruppierung verschwinden -
+  // einmal gesehene Partitionen bleiben deshalb fuer die Dauer des Seitenbesuchs bekannt, damit ihr
+  // Abschnitt (mit eigenem Leerzustand statt kommentarlosem Verschwinden) sichtbar bleibt.
+  // Schluessel via JSON.stringify() statt eines zusammengesetzten Strings mit Trennzeichen
+  // (Review-Fund test-engineer/security-engineer/architect): ein einzelnes Trennzeichen waere
+  // anfaellig fuer eine Kollision, sollte ein kuenftiger cluster_key/category_key es selbst
+  // enthalten - JSON.stringify(["a","b","c"]) ist immer eindeutig umkehrbar. 3-Tupel [dayKey,
+  // clusterKey, categoryKey], nicht 2-Tupel.
   const knownGroupKeysRef = useRef<Set<string>>(new Set())
   // Cache fuer die Cluster-Meta-Info (Tag + Ueberschrift + Sortier-Zeitstempel): sobald das
   // letzte Foto eines Clusters abgelehnt wird, verschwindet der cluster_key komplett aus `items`
@@ -330,12 +326,11 @@ export function CurateCategoriesPage() {
   // erschoepfte Cluster weiterhin die zuletzt bekannte Meta-Info.
   const clusterMetaRef = useRef<Map<string, ClusterMeta>>(new Map())
 
-  // ZWEI Gruppierungen, wenn der Filter aktiv ist - das ist kein Versehen: die Merkliste
-  // gesehener Partitionen und der Cluster-Meta-Cache werden weiterhin aus den UNGEFILTERTEN
-  // `items` gespeist. Speiste man sie aus
-  // der gefilterten Sicht, verschwaenden Partitionen beim Einschalten des Filters DAUERHAFT: sie
-  // waeren nach dem Ausschalten nicht mehr in der Merkliste und ihre Cluster-Ueberschrift nicht
-  // mehr berechenbar.
+  // ZWEI Gruppierungen, wenn der Filter aktiv ist - das ist kein Versehen: die Merkliste gesehener
+  // Partitionen und der Cluster-Meta-Cache werden weiterhin aus den UNGEFILTERTEN `items` gespeist.
+  // Speiste man sie aus der gefilterten Sicht, verschwaenden Partitionen beim Einschalten des
+  // Filters DAUERHAFT: sie waeren nach dem Ausschalten nicht mehr in der Merkliste und ihre
+  // Cluster-Ueberschrift nicht mehr berechenbar.
   const unfiltered = groupByClusterAndCategory(items)
   const groups = lowConfidenceOnly
     ? groupByClusterAndCategory(filterLowConfidence(items)).groups
@@ -359,12 +354,12 @@ export function CurateCategoriesPage() {
   }
 
   function handleReject(photo: PhotoOut): void {
-    // SPERRE JE FOTO, nicht seitenweit: verschiedene Fotos verwerfen unabhaengig voneinander, ein ZWEITER Vorgang fuer DASSELBE Foto wird
-    // verhindert. Aufgegeben wurde die seitenweite Einfachsperre, nicht dieser Schutz:
-    // `Rating` traegt `UniqueConstraint(photo_id, user_id)`, zwei nebenlaeufige Anfragen laufen
-    // in einen IntegrityError und damit in eine 500. Dasselbe Foto hat ausserdem bis zu vier
-    // Kacheln mit je eigener Schaltflaeche - ein
-    // schneller Klick auf zwei davon ist ein realistischer Bedienweg.
+    // SPERRE JE FOTO, nicht seitenweit: verschiedene Fotos verwerfen unabhaengig voneinander, ein
+    // ZWEITER Vorgang fuer DASSELBE Foto wird verhindert. Aufgegeben wurde die seitenweite
+    // Einfachsperre, nicht dieser Schutz: `Rating` traegt `UniqueConstraint(photo_id, user_id)`,
+    // zwei nebenlaeufige Anfragen laufen in einen IntegrityError und damit in eine 500. Dasselbe
+    // Foto hat ausserdem bis zu vier Kacheln mit je eigener Schaltflaeche - ein schneller Klick auf
+    // zwei davon ist ein realistischer Bedienweg.
     //
     // Geprueft wird gegen den REF, nicht gegen den State: `disabled` an der Schaltflaeche und
     // `rejectingPhotoIds` im Render-Closure entstehen beide erst durch ein State-Update, das
@@ -431,11 +426,11 @@ export function CurateCategoriesPage() {
       )}
 
       {dayKeys.length > 0 && (
-        // Zwei globale Aktionen - bleiben auch bei genau
-        // einem Tag im Projekt sichtbar/funktionsfaehig, da hier nicht extra auf `dayKeys.length
-        // > 1` geprueft wird. Sekundaerer Ton (Hilfsfunktion, keine Akzentfarbe, UI/UX-Abschnitt).
-        // `gap-3` statt `gap-2`: zwischen aufgespannten Trefferflaechen verlangt das
-        // Design-System mindestens 12px - das Kontrollkaestchen bringt eine eigene mit.
+        // Zwei globale Aktionen - bleiben auch bei genau einem Tag im Projekt
+        // sichtbar/funktionsfaehig, da hier nicht extra auf `dayKeys.length > 1` geprueft wird.
+        // Sekundaerer Ton (Hilfsfunktion, keine Akzentfarbe, UI/UX-Abschnitt). `gap-3` statt
+        // `gap-2`: zwischen aufgespannten Trefferflaechen verlangt das Design-System mindestens
+        // 12px - das Kontrollkaestchen bringt eine eigene mit.
         <div className="flex flex-wrap items-center gap-3">
           <Button
             type="button"

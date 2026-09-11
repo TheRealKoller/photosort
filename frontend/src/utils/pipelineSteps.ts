@@ -8,9 +8,9 @@ export interface PipelineStepDefinition {
 }
 
 // Einzige Quelle der Wahrheit fuer Anzeigereihenfolge UND Routing-Zuordnung - sowohl der Stepper
-// (Anzeigereihenfolge) als auch PipelineStepView (Komponenten-Zuordnung) und
-// App.tsx (Routing-Erzeugung analog zum bestehenden PROJECT_ROUTES-Muster) leiten sich aus dieser
-// Liste ab, statt die fuenf IDs an mehreren Stellen unabhaengig zu wiederholen.
+// (Anzeigereihenfolge) als auch PipelineStepView (Komponenten-Zuordnung) und App.tsx
+// (Routing-Erzeugung analog zum bestehenden PROJECT_ROUTES-Muster) leiten sich aus dieser Liste ab,
+// statt die fuenf IDs an mehreren Stellen unabhaengig zu wiederholen.
 export const PIPELINE_STEPS: readonly PipelineStepDefinition[] = [
   { id: 'scan', label: 'Scan' },
   { id: 'ausschuss', label: 'Ausschuss-Erkennung' },
@@ -31,11 +31,10 @@ export function isStepId(value: string): value is StepId {
 
 /**
  * Leitet den vollstaendigen Pipeline-Fortschritt ausschliesslich aus bereits vorhandenen
- * `ProjectOut`-Feldern ab - 1:1 aus dem bisherigen,
- * produktiven Gating-Verhalten von ProjectDetailPage.tsx uebernommen (siehe dortige, jetzt
- * entfernte isGateSectionActive/isCriteriaGateDisabled/isCurationAvailable-Ableitungen), keine
- * neue/strengere Logik. Kein Seiteneffekt, kein Fetch (analog utils/timeOfDay.ts,
- * utils/qualityLevel.ts).
+ * `ProjectOut`-Feldern ab - 1:1 aus dem bisherigen, produktiven Gating-Verhalten von
+ * ProjectDetailPage.tsx uebernommen (siehe dortige, jetzt entfernte
+ * isGateSectionActive/isCriteriaGateDisabled/isCurationAvailable-Ableitungen), keine neue/strengere
+ * Logik. Kein Seiteneffekt, kein Fetch (analog utils/timeOfDay.ts, utils/qualityLevel.ts).
  */
 export function computeStepStates(project: ProjectOut): PipelineStepState[] {
   const gateConfirmedAt = project.last_scoring_run?.gate_confirmed_at ?? null

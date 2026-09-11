@@ -12,11 +12,10 @@ import { usePhotoSequenceQuery } from '../hooks/usePhotos'
 import { findOwnRating } from '../utils/ownRating'
 
 /**
- * Vergleichsansicht: zeigt pro Foto beide
- * Bewertungen nebeneinander, inkl. "unbewertet" als eigener sichtbarer Zustand. Nur lesend hier -
- * die Bearbeitung findet in der (per Deep-Link geoeffneten) Einzelbild-Ansicht statt, die
- * ohnehin ausschliesslich die eigene Bewertung des angemeldeten Nutzers editiert (user_id kommt
- * serverseitig immer aus dem JWT, nie aus der Navigation).
+ * Vergleichsansicht: zeigt pro Foto beide Bewertungen nebeneinander, inkl. "unbewertet" als eigener
+ * sichtbarer Zustand. Nur lesend hier - die Bearbeitung findet in der (per Deep-Link geoeffneten)
+ * Einzelbild-Ansicht statt, die ohnehin ausschliesslich die eigene Bewertung des angemeldeten
+ * Nutzers editiert (user_id kommt serverseitig immer aus dem JWT, nie aus der Navigation).
  */
 export function PhotoComparePage() {
   const { projectId } = useParams()
@@ -54,8 +53,8 @@ export function PhotoComparePage() {
             const mine = findOwnRating(photo.ratings, username)
             const others = photo.ratings.filter((rating) => rating.username !== username)
             // Der Vorschlag ersetzt innerhalb der bestehenden "Ich"-Position nur die bisherige
-            // "–"-Darstellung, solange keine eigene
-            // Bewertung vorliegt - kein dritter Spalten-/Personen-Slot neben "Ich"/"Andere".
+            // "–"-Darstellung, solange keine eigene Bewertung vorliegt - kein dritter
+            // Spalten-/Personen-Slot neben "Ich"/"Andere".
             const myStatus = mine?.status ?? photo.suggestion?.status ?? null
             const myStatusIsSuggested = mine === undefined && photo.suggestion !== null
             return (

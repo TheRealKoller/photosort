@@ -36,8 +36,8 @@ export function LoginPage() {
     },
   })
 
-  // Direkter Aufruf von /login bei bereits vorhandenem Token: sofortiger Redirect ohne
-  // Formular anzuzeigen.
+  // Direkter Aufruf von /login bei bereits vorhandenem Token: sofortiger Redirect ohne Formular
+  // anzuzeigen.
   if (getToken()) {
     return <Navigate to={redirectTarget} replace />
   }

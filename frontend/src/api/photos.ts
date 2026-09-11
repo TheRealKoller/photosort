@@ -12,8 +12,8 @@ export interface ListPhotosParams {
   limit?: number
   offset?: number
   // Kategorie-Kuratierung (ohne Backfill) - wenn gesetzt, ersetzt dieser Query-Modus
-  // ratingStatus/limit/offset vollstaendig (eigenstaendige
-  // Kuratierungs-Ansicht, siehe backend api/photos.py::list_photos-Kommentar).
+  // ratingStatus/limit/offset vollstaendig (eigenstaendige Kuratierungs-Ansicht, siehe backend
+  // api/photos.py::list_photos-Kommentar).
   topNPerCategory?: number
 }
 
@@ -51,9 +51,8 @@ export function listPhotos(
 
 /**
  * Die weiteren Kandidaten EINER Partition - alles jenseits von `afterRank`, aufsteigend nach
- * `rank_position`,
- * seitenweise. `total` der Antwort ist die RESTMENGE der Partition und damit unabhaengig von
- * `limit`/`offset`.
+ * `rank_position`, seitenweise. `total` der Antwort ist die RESTMENGE der Partition und damit
+ * unabhaengig von `limit`/`offset`.
  *
  * Bewusst ein eigener Endpunkt statt einer Erweiterung von `listPhotos`: dort gilt die Zusage,
  * dass `limit`/`offset` im Kuratierungsmodus nicht wirken.

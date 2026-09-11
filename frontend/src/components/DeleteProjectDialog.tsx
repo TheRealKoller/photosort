@@ -49,9 +49,9 @@ function toFailure(error: unknown): DeleteFailure {
 /**
  * Bestaetigungsdialog vor der Projektloeschung.
  *
- * Erster Konsument von `ui/dialog.tsx` - natives `<dialog>`, keine neue
- * Abhaengigkeit. Bewusst KEIN `icon`: das Grundelement zeichnet das Titelsymbol in `--accent`,
- * `x-circle` in Bernstein waere gleichzeitig das Aussortiert-Symbol in der Favoritenfarbe.
+ * Erster Konsument von `ui/dialog.tsx` - natives `<dialog>`, keine neue Abhaengigkeit. Bewusst KEIN
+ * `icon`: das Grundelement zeichnet das Titelsymbol in `--accent`, `x-circle` in Bernstein waere
+ * gleichzeitig das Aussortiert-Symbol in der Favoritenfarbe.
  *
  * Der Inhalt ist KEIN `<form>`: die Eingabetaste darf nicht ausloesen, ausgeloest wird
  * ausschliesslich ueber die Schaltflaeche. Die bewusste Reibung ist der Zweck.

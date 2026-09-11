@@ -65,8 +65,8 @@ export function CurationPhotoTile({
   rejecting,
   onReject,
 }: CurationPhotoTileProps) {
-  // `rank_score` ist ueber alle Zugehoerigkeiten eines Fotos identisch - dieselbe Kachel zeigt
-  // in zwei Kategorien dieselbe Qualitaetsstufe.
+  // `rank_score` ist ueber alle Zugehoerigkeiten eines Fotos identisch - dieselbe Kachel zeigt in
+  // zwei Kategorien dieselbe Qualitaetsstufe.
   const level = qualityLevel(ranking.rank_score)
   const isRejected = ownStatus === 'rejected'
 

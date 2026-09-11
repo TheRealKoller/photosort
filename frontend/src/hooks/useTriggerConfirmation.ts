@@ -22,22 +22,20 @@ import { POLL_INTERVAL_MS } from './useProjects'
  *
  * Ein blosses `status !== null` wuerde AC1 zwar erfuellen, aber Grund 1 wieder aufreissen: bei
  * einem erneuten, ebenso schnellen Lauf auf einem bereits zuvor gelaufenen Projekt kann der
- * unmittelbare Invalidierungs-Refetch noch denselben (stale) Endzustand vom VORHERIGEN Lauf
- * liefern (z.B. wieder "failed") - der wuerde dann faelschlich als Bestaetigung des NEUEN Laufs
- * durchgehen. Da jeder Lauf serverseitig einen frischen `started_at`-Zeitstempel bekommt (neue
+ * unmittelbare Invalidierungs-Refetch noch denselben (stale) Endzustand vom VORHERIGEN Lauf liefern
+ * (z.B. wieder "failed") - der wuerde dann faelschlich als Bestaetigung des NEUEN Laufs durchgehen.
+ * Da jeder Lauf serverseitig einen frischen `started_at`-Zeitstempel bekommt (neue
  * ScanRun/ScoringRun-Zeile, backend/src/photosort/worker.py), dient ein Vergleich des zuletzt vor
  * dem Klick beobachteten `started_at` gegen den aktuell beobachteten als zuverlaessiges
  * Unterscheidungsmerkmal zwischen "frischer, neuer Lauf" und "stehengebliebener, stale Status vom
  * vorherigen Lauf" - technische Detailentscheidung, die den Reset bei success/failed mit der
  * bestehenden Anti-Regressions-Testerwartung (Grund 1) vereinbar macht. Das awaiting-Flag wird
- * deshalb
- * zurueckgesetzt, sobald "running" beobachtet wird (kann nie ein stale Wert sein, das Projekt
- * kann nicht schon vor dem Klick "running" gewesen sein) ODER sobald ein NEUER `started_at`
- * zusammen mit einem beliebigen Endzustand (success/failed) beobachtet wird. Eine Kollision
- * zweier `started_at`-Werte (alter und neuer Lauf identisch) ist
- * praktisch ausgeschlossen, da Postgres `func.now()` Mikrosekunden-Praezision liefert und der
- * Button ohnehin waehrend des Wartens deaktiviert ist - vernachlaessigbares Restrisiko, kein Fix
- * noetig.
+ * deshalb zurueckgesetzt, sobald "running" beobachtet wird (kann nie ein stale Wert sein, das
+ * Projekt kann nicht schon vor dem Klick "running" gewesen sein) ODER sobald ein NEUER `started_at`
+ * zusammen mit einem beliebigen Endzustand (success/failed) beobachtet wird. Eine Kollision zweier
+ * `started_at`-Werte (alter und neuer Lauf identisch) ist praktisch ausgeschlossen, da Postgres
+ * `func.now()` Mikrosekunden-Praezision liefert und der Button ohnehin waehrend des Wartens
+ * deaktiviert ist - vernachlaessigbares Restrisiko, kein Fix noetig.
  *
  * Geteilter Hilfs-Hook statt dateilokaler Ableitung: mehrere getrennte Konsumenten-Dateien (fuenf
  * Detailseiten statt einer einzigen Section-Seite) brauchen dieselbe Logik.

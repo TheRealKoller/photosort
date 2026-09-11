@@ -21,20 +21,18 @@ from typing import Protocol
 # Community-Export DESSELBEN Basismodells, config.json bestaetigt
 # "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2" als _name_or_path, hidden_size=384)
 # verwendet - "onnx/model_int8.onnx" + "tokenizer.json". Beide werden SHA256-gepinnt verifiziert,
-# aber NICHT mehr beide eingecheckt: "tokenizer.json" (label_embedder_tokenizer.json, 17 MB)
-# bleibt wie gewohnt
-# committet, "model_int8.onnx" (label_embedder.onnx, ~113 MiB) ueberschreitet GitHubs 100-MiB-
-# Push-Limit und wird stattdessen bei Bedarf per verifiziertem Download bezogen (kein Commit-
-# Versuch mehr!) - siehe scripts/fetch-label-embedder-model.sh (aufgerufen aus backend/Dockerfile,
-# .github/workflows/ci.yml, sowie einmalig manuell im lokalen Bare-Metal-Dev-Setup,
-# docs/setup.md). Reale Groesse VOR dem urspruenglichen (inzwischen wieder entfernten) Commit
-# gemessen:
-# model_int8.onnx 118.054.609 Bytes (~113 MiB), tokenizer.json 17.082.913 Bytes (~16 MiB) - liegt
-# innerhalb der in der ADR grob geschaetzten Bandbreite (~100-150 MB), kein Ruecksprache-Anlass.
-# Ein-Wort-Cosinus-Stichprobe vor dem Commit verifiziert (siehe TestRealAssetOutputDimension):
-# "Hund"/"Hunde"/"dog" clustern (Kosinus 0.92-0.99), "Katze"/"Strand" liegen deutlich darunter
-# (< 0.4) - CATEGORY_LABEL_SIMILARITY_THRESHOLD=0.78 (remote_classification.py) liegt komfortabel
-# zwischen beiden Gruppen.
+# aber NICHT mehr beide eingecheckt: "tokenizer.json" (label_embedder_tokenizer.json, 17 MB) bleibt
+# wie gewohnt committet, "model_int8.onnx" (label_embedder.onnx, ~113 MiB) ueberschreitet GitHubs
+# 100-MiB-Push-Limit und wird stattdessen bei Bedarf per verifiziertem Download bezogen (kein
+# Commit-Versuch mehr!) - siehe scripts/fetch-label-embedder-model.sh (aufgerufen aus
+# backend/Dockerfile, .github/workflows/ci.yml, sowie einmalig manuell im lokalen
+# Bare-Metal-Dev-Setup, docs/setup.md). Reale Groesse VOR dem urspruenglichen (inzwischen wieder
+# entfernten) Commit gemessen: model_int8.onnx 118.054.609 Bytes (~113 MiB), tokenizer.json
+# 17.082.913 Bytes (~16 MiB) - liegt innerhalb der in der ADR grob geschaetzten Bandbreite (~100-150
+# MB), kein Ruecksprache-Anlass. Ein-Wort-Cosinus-Stichprobe vor dem Commit verifiziert (siehe
+# TestRealAssetOutputDimension): "Hund"/"Hunde"/"dog" clustern (Kosinus 0.92-0.99), "Katze"/"Strand"
+# liegen deutlich darunter (< 0.4) - CATEGORY_LABEL_SIMILARITY_THRESHOLD=0.78
+# (remote_classification.py) liegt komfortabel zwischen beiden Gruppen.
 LABEL_EMBEDDER_ONNX_PATH = Path(__file__).parent / "assets" / "label_embedder.onnx"
 LABEL_EMBEDDER_TOKENIZER_PATH = Path(__file__).parent / "assets" / "label_embedder_tokenizer.json"
 

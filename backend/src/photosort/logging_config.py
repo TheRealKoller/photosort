@@ -3,10 +3,10 @@ from __future__ import annotations
 import logging
 import sys
 
-# Eigenes, sehr kleines Modul statt Anhaengsel an config.py (das nur die pydantic-Settings
-# fuehrt, keine Prozess-
-# Bootstrap-Logik) - konsistent mit dem im Projekt etablierten Prinzip, eine neue, isolierte
-# Zustaendigkeit in ein eigenes kleines Modul zu legen (aesthetics.py, landmark.py, horizon.py).
+# Eigenes, sehr kleines Modul statt Anhaengsel an config.py (das nur die pydantic-Settings fuehrt,
+# keine Prozess-Bootstrap-Logik) - konsistent mit dem im Projekt etablierten Prinzip, eine neue,
+# isolierte Zustaendigkeit in ein eigenes kleines Modul zu legen (aesthetics.py, landmark.py,
+# horizon.py).
 #
 # Aufgerufen an BEIDEN Prozess-Einstiegspunkten (main.py::create_app() fuer den API-Prozess,
 # worker.py::WorkerSettings.on_startup fuer den Worker-Prozess) - beide Prozesse bekommen

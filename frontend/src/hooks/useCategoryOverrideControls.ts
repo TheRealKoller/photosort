@@ -5,12 +5,11 @@ import { useDeleteCategoryOverrideMutation, useSetCategoryOverrideMutation } fro
 
 /**
  * Geteilte Steuerungslogik fuer den Kategorie-Override - EIN Mutation-Paar pro Seite (nicht pro
- * Foto/Kachel),
- * da eine Seite potenziell Dutzende Kacheln gleichzeitig rendert. Verfolgt lokal, WELCHES Foto x
- * Kandidat gerade eine laufende Anfrage hat, damit nur der tatsaechlich angeklickte Button busy
- * wird (Design-System: "blockiert nicht die uebrige Liste") statt aller Buttons auf der Seite.
- * Genutzt von PhotoGridPage.tsx, CurateCategoriesPage.tsx und PhotoDetailPage.tsx - identische
- * Logik, keine drei separaten Kopien.
+ * Foto/Kachel), da eine Seite potenziell Dutzende Kacheln gleichzeitig rendert. Verfolgt lokal,
+ * WELCHES Foto x Kandidat gerade eine laufende Anfrage hat, damit nur der tatsaechlich angeklickte
+ * Button busy wird (Design-System: "blockiert nicht die uebrige Liste") statt aller Buttons auf der
+ * Seite. Genutzt von PhotoGridPage.tsx, CurateCategoriesPage.tsx und PhotoDetailPage.tsx -
+ * identische Logik, keine drei separaten Kopien.
  */
 export function useCategoryOverrideControls(projectId: number) {
   const setMutation = useSetCategoryOverrideMutation(projectId)

@@ -6,9 +6,9 @@ import numpy as np
 from PIL import Image
 
 # Neues, eigenstaendiges Modul (analog aesthetics.py) - haelt den lokalen cv2-Import (siehe
-# compute_horizon_tilt_score) auf
-# genau den Importpfad begrenzt, der ihn tatsaechlich braucht, exakt dasselbe Muster wie der
-# lokale tensorflow-Import in aesthetics.py bzw. der lokale mediapipe-Import in
+# compute_horizon_tilt_score) auf genau den Importpfad begrenzt, der ihn tatsaechlich braucht,
+# exakt dasselbe Muster wie der lokale tensorflow-Import in aesthetics.py bzw. der lokale
+# mediapipe-Import in
 # classification.py::_to_mp_image. `cv2.Canny`+`cv2.HoughLinesP` werden AUSSCHLIESSLICH auf einem
 # bereits ueber Pillow dekodierten Graustufen-Array angewendet - nie `cv2.imread`/`cv2.imdecode`,
 # Pillow bleibt die alleinige Bild-I/O-Bibliothek im Projekt (Security-Abschnitt der Spec: die
@@ -36,15 +36,14 @@ _HOUGH_MAX_LINE_GAP = 10
 # durch Testfall gepinnt).
 HORIZON_MAX_CANDIDATE_ANGLE = 45.0
 
-# Maximale Winkelabweichung, ab der der Score auf 0.0 geklemmt wird - eine
-# Linie exakt bei dieser Grenze ergibt score == 0.0 (nicht negativ, durch Testfall gepinnt).
+# Maximale Winkelabweichung, ab der der Score auf 0.0 geklemmt wird - eine Linie exakt bei dieser
+# Grenze ergibt score == 0.0 (nicht negativ, durch Testfall gepinnt).
 HORIZON_MAX_PENALIZED_ANGLE_DEGREES = 15.0
 
 # Kein Kandidat gefunden (z.B. Portrait-Nahaufnahme ohne Linienstruktur) -> neutraler, NICHT
-# niedriger Fallback (bewusste Abweichung von der goldener_schnitt-Praezedenz): die
-# Abwesenheit einer geraden Struktur ist kein Hinweis auf eine schiefe Aufnahme - ein niedriger
-# Fallback wuerde eine ganze Klasse legitimer Fotos (z.B. Portraits ohne Horizont) systematisch
-# abwerten.
+# niedriger Fallback (bewusste Abweichung von der goldener_schnitt-Praezedenz): die Abwesenheit
+# einer geraden Struktur ist kein Hinweis auf eine schiefe Aufnahme - ein niedriger Fallback wuerde
+# eine ganze Klasse legitimer Fotos (z.B. Portraits ohne Horizont) systematisch abwerten.
 _NO_CANDIDATE_FALLBACK_SCORE = 0.5
 
 

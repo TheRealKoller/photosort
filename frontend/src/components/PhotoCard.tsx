@@ -69,12 +69,12 @@ export function PhotoCard({
   /*
    * AUSSORTIERT: Nur die BILDFLAECHE tritt zurueck, die Bedeutungstraeger nicht (Entscheidung 4).
    * Das Board daempft die ganze Karte auf 40 %; das ist bindend abgelehnt - Deckkraft auf einem
-   * Container mischt gegen den Seitengrund und ist statisch
-   * nicht nachrechenbar (weisse Schrift bei 40 % ueber `--bg` erreicht 3.79:1, die dunkle Tinte
-   * auf dem roten Badge wird praktisch unlesbar). Kennzeichen, Dateiname, die beiden Ecken-Trigger
-   * und die Fusszeilen-Aktion bleiben deshalb voll deckend; der Dateiname traegt zusaetzlich die
-   * Durchstreichung. Optisch tritt die Karte trotzdem zurueck, und die Zusage "ohne
-   * Farbwahrnehmung erkennbar" traegt ueber Deckkraft UND Durchstreichung UND Symbol UND Text.
+   * Container mischt gegen den Seitengrund und ist statisch nicht nachrechenbar (weisse Schrift bei
+   * 40 % ueber `--bg` erreicht 3.79:1, die dunkle Tinte auf dem roten Badge wird praktisch
+   * unlesbar). Kennzeichen, Dateiname, die beiden Ecken-Trigger und die Fusszeilen-Aktion bleiben
+   * deshalb voll deckend; der Dateiname traegt zusaetzlich die Durchstreichung. Optisch tritt die
+   * Karte trotzdem zurueck, und die Zusage "ohne Farbwahrnehmung erkennbar" traegt ueber Deckkraft
+   * UND Durchstreichung UND Symbol UND Text.
    *
    * Diese eine Zeile ist die einzige `opacity-`-Fundstelle der Datei und als solche im
    * Vertragstest freigegeben - ein spaeteres `opacity-40` am Kartenkoerper wuerde dort rot.

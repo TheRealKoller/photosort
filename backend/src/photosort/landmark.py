@@ -24,18 +24,18 @@ from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 
 # Erste tatsaechlich produktive Cloud-Abhaengigkeit im Kriterien-Scoring-Pfad. Isoliertes Modul -
-# haelt den bestehenden synchronen criteria.py-Vertrag aller sieben lokalen Kriterien
-# unangetastet. Direkter httpx-REST-Aufruf gegen die Anthropic Messages API, KEIN
-# anthropic-Python-SDK - exakt das Muster von opencloud/client.py (eigene Exception-Klasse,
-# httpx.AsyncClient, httpx.MockTransport-testbar).
+# haelt den bestehenden synchronen criteria.py-Vertrag aller sieben lokalen Kriterien unangetastet.
+# Direkter httpx-REST-Aufruf gegen die Anthropic Messages API, KEIN anthropic-Python-SDK - exakt das
+# Muster von opencloud/client.py (eigene Exception-Klasse, httpx.AsyncClient,
+# httpx.MockTransport-testbar).
 #
 # URLs/Modell-IDs/Timeout/Response-Parsing-Envelope-Helfer sind nach cloud_vision.py extrahiert
 # (providerneutral, von landmark.py UND remote_classification.py genutzt) - die bisherigen Namen
 # bleiben hier als re-exportierte Aliase bestehen.
 #
-# Die frueheren Aliase ANTHROPIC_LANDMARK_MODEL/MISTRAL_LANDMARK_MODEL sind ersatzlos entfallen:
-# die Modellwahl wirkt auf beide Cloud-Anteile einheitlich, nicht zwei Modelle nebeneinander. Das
-# Modell kommt als Konstruktor-Parameter herein und wird durchgereicht.
+# Die frueheren Aliase ANTHROPIC_LANDMARK_MODEL/MISTRAL_LANDMARK_MODEL sind ersatzlos entfallen: die
+# Modellwahl wirkt auf beide Cloud-Anteile einheitlich, nicht zwei Modelle nebeneinander. Das Modell
+# kommt als Konstruktor-Parameter herein und wird durchgereicht.
 LANDMARK_REQUEST_TIMEOUT_SECONDS = VISION_REQUEST_TIMEOUT_SECONDS
 
 # Kurze, reine Klassifikationsantwort - kein Grund fuer ein hohes max_tokens (nur ein kleines
@@ -43,9 +43,9 @@ LANDMARK_REQUEST_TIMEOUT_SECONDS = VISION_REQUEST_TIMEOUT_SECONDS
 _MAX_RESPONSE_TOKENS = 256
 
 # Sicherheits-Muss-Kriterium: Obergrenze eines verwendbaren Sehenswuerdigkeit-Namens. Wie
-# `MAX_FINE_LABEL_LENGTH` eine
-# DEGENERATIONSGRENZE, keine Sanitisierungsmassnahme - und wie dort wird VERWORFEN statt
-# abgeschnitten: `scoring.py::refine_clusters_by_landmark` vergleicht exakt, ein abgeschnittener
+# `MAX_FINE_LABEL_LENGTH` eine DEGENERATIONSGRENZE, keine Sanitisierungsmassnahme - und wie dort
+# wird VERWORFEN statt abgeschnitten:
+# `scoring.py::refine_clusters_by_landmark` vergleicht exakt, ein abgeschnittener
 # Name fuehrte zwei verschiedene Sehenswuerdigkeiten in einem Cluster zusammen (dieselbe
 # Begruendung wie die Slug-Kollision bei den Feinlabels). Der Cluster faellt dann auf die
 # Koordinatenstufe zurueck.
@@ -78,12 +78,11 @@ class LandmarkDetection:
 
     name: str | None
     confidence: float
-    # Der reale Token-Verbrauch DIESES Aufrufs, den worker.py ueber alle erfolgreichen Aufrufe
-    # der Phase summiert. MIT Default - dadurch bleiben alle bestehenden Test-Doubles und die
+    # Der reale Token-Verbrauch DIESES Aufrufs, den worker.py ueber alle erfolgreichen Aufrufe der
+    # Phase summiert. MIT Default - dadurch bleiben alle bestehenden Test-Doubles und die
     # LandmarkClientLike-Signatur unveraendert. `None` heisst "nicht ermittelbar"
-    # (fehlender/kaputter usage-Block): der Aufruf traegt dann nichts zur Tokensumme bei, wird
-    # aber trotzdem als
-    # stattgefundener Aufruf gezaehlt.
+    # (fehlender/kaputter usage-Block): der Aufruf traegt dann nichts zur Tokensumme bei, wird aber
+    # trotzdem als stattgefundener Aufruf gezaehlt.
     usage: TokenUsage | None = None
 
 
@@ -135,9 +134,8 @@ def _landmark_detection_from_json(
     # Sicherheits-Muss-Kriterium: Sanitisierung und Laengengrenze AN DER QUELLE. Solange der Name
     # nirgends gerendert wurde, ging er als Rohwert in die Datenbank - mit dem Rendern in der
     # Cluster-Ueberschrift faellt dieser Schutz weg. Ein zu langer Name wird GANZ verworfen, nie
-    # abgeschnitten:
-    # `scoring.py::refine_clusters_by_landmark` vergleicht exakt, ein abgeschnittener Name fuehrte
-    # zwei verschiedene Sehenswuerdigkeiten in einem Cluster zusammen.
+    # abgeschnitten: `scoring.py::refine_clusters_by_landmark` vergleicht exakt, ein
+    # abgeschnittener Name fuehrte zwei verschiedene Sehenswuerdigkeiten in einem Cluster zusammen.
     name = sanitize_landmark_name(name)
     # Das Vision-LLM-JSON ist nicht garantiert auf [0, 1] begrenzt - geklemmt bereits HIER (an der
     # Quelle), nicht erst in criteria.py::compute_landmark_score.
@@ -170,9 +168,8 @@ class AnthropicLandmarkClient:
         # vergisst, fiele nicht beim Typecheck auf, sondern erst in der Cloud-Rechnung.
         self._model = model
         # Der Schrittmacher ebenfalls als PFLICHT-SCHLUESSELWORTPARAMETER ohne Default, dieselbe
-        # Begruendung wie beim Modell - ein
-        # Aufrufer, der ihn vergisst, fiele nicht beim Typecheck auf, sondern erst an der
-        # Anfragerate des Anbieters.
+        # Begruendung wie beim Modell - ein Aufrufer, der ihn vergisst, fiele nicht beim Typecheck
+        # auf, sondern erst an der Anfragerate des Anbieters.
         self._throttle = throttle
         self._client = httpx.AsyncClient(
             headers={
@@ -208,11 +205,11 @@ class AnthropicLandmarkClient:
                 }
             ],
         }
-        # EIN Aufruf statt des bisher viermal abgeschriebenen
-        # post/except/raise_for_status-Blocks. Verteilung ueber den
-        # Schrittmacher und Wiederholung bei 429 liegen damit strukturell an genau einer Stelle,
-        # nicht in vier gepflegten Kopien. Meldungstexte und Statuslabel sind unveraendert (sie
-        # stecken jetzt in ANTHROPIC_ENDPOINT), der Fehlerpfad des Workers bleibt derselbe.
+        # EIN Aufruf statt des bisher viermal abgeschriebenen post/except/raise_for_status-Blocks.
+        # Verteilung ueber den Schrittmacher und Wiederholung bei 429 liegen damit strukturell an
+        # genau einer Stelle, nicht in vier gepflegten Kopien. Meldungstexte und Statuslabel sind
+        # unveraendert (sie stecken jetzt in ANTHROPIC_ENDPOINT), der Fehlerpfad des Workers bleibt
+        # derselbe.
         response = await post_vision_request(
             self._client,
             ANTHROPIC_ENDPOINT,
@@ -265,8 +262,8 @@ class MistralLandmarkClient:
         body = {
             "model": self._model,
             "max_tokens": _MAX_RESPONSE_TOKENS,
-            # Nativer JSON-Mode - Mistral unterstuetzt das, Anthropic nicht
-            # (dort bleibt die bestehende reine Prompt-Anweisung unveraendert).
+            # Nativer JSON-Mode - Mistral unterstuetzt das, Anthropic nicht (dort bleibt die
+            # bestehende reine Prompt-Anweisung unveraendert).
             "response_format": {"type": "json_object"},
             "messages": [
                 {
@@ -274,10 +271,9 @@ class MistralLandmarkClient:
                     "content": [
                         {
                             "type": "image_url",
-                            # WICHTIG: image_url ist bei Mistral ein FLACHER
-                            # String (Data-URI), KEIN verschachteltes {"url": "..."}-Objekt wie im
-                            # OpenAI-Schema - Verwechslungsgefahr, bewusst 1:1 aus dem
-                            # Mistral-Cookbook uebernommen.
+                            # WICHTIG: image_url ist bei Mistral ein FLACHER String (Data-URI), KEIN
+                            # verschachteltes {"url": "..."}-Objekt wie im OpenAI-Schema -
+                            # Verwechslungsgefahr, bewusst 1:1 aus dem Mistral-Cookbook uebernommen.
                             "image_url": (
                                 f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode()}"
                             ),
@@ -316,8 +312,8 @@ def build_landmark_client(model: str) -> LandmarkClientLike:
     statt durch drei zufaellig uebereinstimmende Lesevorgaenge derselben globalen `settings`."""
     # Der PROZESSWEITE Schrittmacher des eingestellten Anbieters - dieselbe Instanz, die auch
     # build_category_classification_client() zieht. Beide Cloud-Teilschritte und mehrere
-    # gleichzeitig laufende Jobs teilen sich dadurch einen Schrittmacher je Anbieter; der
-    # Anbieter sieht ohnehin nur eine einzige Quelle.
+    # gleichzeitig laufende Jobs teilen sich dadurch einen Schrittmacher je Anbieter; der Anbieter
+    # sieht ohnehin nur eine einzige Quelle.
     throttle = throttle_for_provider(settings.landmark_provider)
     if settings.landmark_provider == "mistral":
         mistral_client: LandmarkClientLike = MistralLandmarkClient(

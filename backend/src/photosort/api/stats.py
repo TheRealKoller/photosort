@@ -32,9 +32,9 @@ from photosort.models import (
 )
 from photosort.thumbnails import measure_cache_usage
 
-# EIN aggregierender Nur-Lese-Endpunkt je Projekt. Ein Endpunkt statt mehrerer, weil
-# die Seite eine Momentaufnahme ohne Filter ist - mehrere Endpunkte erzeugten mehrere
-# Ladezustaende fuer einen fachlich atomaren Stand.
+# EIN aggregierender Nur-Lese-Endpunkt je Projekt. Ein Endpunkt statt mehrerer, weil die Seite eine
+# Momentaufnahme ohne Filter ist - mehrere Endpunkte erzeugten mehrere Ladezustaende fuer einen
+# fachlich atomaren Stand.
 #
 # Auth doppelt (Security-Abschnitt der Spec, Punkt 1): `current_user` als expliziter Parameter,
 # weil der Bewertungsstand das User-Objekt braucht, UND `dependencies=[Depends(get_current_user)]`

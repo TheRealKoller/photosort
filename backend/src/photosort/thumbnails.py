@@ -86,8 +86,8 @@ def generate_variants(cache_dir: Path, photo_id: int, etag: str, image_bytes: by
     except Exception:
         # Bewusst breiter Except-Block statt einer festen Liste von PIL-/OS-Exceptions (deckt
         # neben Dekodier- auch Schreibfehler ab): Image.DecompressionBombError erbt NICHT von
-        # OSError und wuerde von
-        # einer engeren Liste durchgelassen - ein ungewoehnlich hochaufloesendes, aber nicht
+        # OSError und wuerde von einer engeren Liste durchgelassen - ein ungewoehnlich
+        # hochaufloesendes, aber nicht
         # boeswilliges Foto (Panorama/Drohnenaufnahme) duerfte den gesamten Scan-Job trotzdem nicht
         # crashen lassen. Aus demselben Grund deckt der Block jetzt auch mkdir()/save() ab: ein
         # Schreibfehler (Volume read-only, Platte voll) darf den Scan-Job ebenfalls nicht crashen

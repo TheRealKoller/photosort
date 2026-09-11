@@ -49,7 +49,7 @@ def validate_demo_base_url(base_url: str) -> None:
     lokalen OpenCloud-Demo-Container zeigt - verhindert, dass ein versehentlicher Lauf mit der
     produktiven .env (echte OPENCLOUD_BASE_URL) Fotos in einen echten Familien-Space schreibt
     (Security-Muss-Kriterium). Bricht in
-    tests/test_seed_opencloud_demo.py::TestValidateDemoBaseUrl::test_rejects_non_demo_hosts."""
+    scripts/tests/test_seed_opencloud_demo.py::TestValidateDemoBaseUrl::test_rejects_non_demo_hosts."""
     parsed = urlparse(base_url)
     # Review-Finding (Copilot): ohne explizite Port-Pruefung wuerde z.B. "http://localhost"
     # (impliziter Port 80) akzeptiert, obwohl die Fehlermeldung unten selbst einen Port verlangt -
@@ -133,10 +133,10 @@ def _drive_webdav_url(drive: Any) -> str:
     # dieser Spec, siehe Abschlussbericht): die Graph-API liefert "webDavUrl" verschachtelt unter
     # "root", nicht auf oberster Ebene des Drive-Objekts.
     #
-    # drive ist bewusst nicht als dict typisiert: jede unerwartete Struktur (drive selbst kein
-    # dict, "root" kein dict, fehlendes "webDavUrl") wird gleichwertig behandelt - ein
-    # KeyError/TypeError hier soll immer als SeedError propagieren (siehe auch das analoge Muster
-    # in backend/src/photosort/opencloud/client.py).
+    # drive ist bewusst nicht als dict typisiert: jede unerwartete Struktur (drive selbst kein dict,
+    # "root" kein dict, fehlendes "webDavUrl") wird gleichwertig behandelt - ein KeyError/TypeError
+    # hier soll immer als SeedError propagieren (siehe auch das analoge Muster in
+    # backend/src/photosort/opencloud/client.py).
     try:
         return str(drive["root"]["webDavUrl"])
     except (KeyError, TypeError) as exc:
