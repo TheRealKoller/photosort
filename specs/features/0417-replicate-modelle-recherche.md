@@ -220,6 +220,13 @@ Akzeptanzkriterium).
   Story erfasst: Sie ist im Rechercheergebnis ausdrücklich zurückgestellt, bis #420 und #421
   gemessen sind, und ein Board-Eintrag für eine zurückgestellte Option behauptete eine Beauftragung,
   die es nicht gibt. Sie ist im Rechercheergebnis Punkt 8.3 und im Body von #421 festgehalten.
+  **Woran die Zurückstellung *nicht* hängt:** an der Kostenvorschau. Die Beträge dieser Modelle
+  liegen unter der heutigen Anthropic-Voreinstellung, der fehlende Vorab-Betrag ist dort ein
+  Anzeigemangel und kein Risiko. Tragend sind allein der eigene Pipeline-Schritt, der fremde
+  Container-Code auf Familienfotos und die Abhängigkeit von #420. Die Gewichtung steht
+  ausgeschrieben in Punkt 8.3 — sie ist dort bewusst gegen den ersten Anschein festgehalten,
+  weil „die Kostenvorschau trägt nicht" nach einem Hinderungsgrund klingt und in dieser
+  Größenordnung keiner ist.
 
 ## Offene Fragen
 
@@ -570,10 +577,30 @@ Gestaffelt, in dieser Reihenfolge:
    inhaltlich: ein drittes, andersartig trainiertes Weltwissen für Sehenswürdigkeiten.
 3. **Für welchen der beiden Zwecke?** Für **Sehenswürdigkeiten** ist Replicate nur als
    Gemini-Zugang interessant — Spezialisten gibt es dort nicht. Für **Kategorien** gäbe es
-   echte Spezialisten (RAM, SigLIP) zu einem Zehntel bis Fünfzigstel der heutigen Kosten,
-   aber genau die sprengen die Kostenvorschau, bringen Kaltstarts und tragen das
-   Gemeinschaftscontainer-Risiko. Diese Option ist **zurückzustellen**, bis Schritt 1
-   und 2 gemessen sind — sie ist ein eigenes Feature, keine Anbieter-Erweiterung.
+   echte Spezialisten (RAM, SigLIP) zu einem Zehntel bis Fünfzigstel der heutigen Kosten.
+   Diese Option ist **zurückzustellen**, bis Schritt 1 und 2 gemessen sind — aber aus
+   folgenden Gründen, in dieser Gewichtung:
+
+   1. **Es ist ein eigenes Feature, keine Anbieter-Erweiterung.** RAM und SigLIP liefern Tags
+      bzw. Scores gegen eine Labelliste, keine Modellantwort im heutigen Format. Sie ersetzen
+      den bestehenden Aufruf nicht, sondern kämen als zusätzlicher Schritt daneben — mit
+      eigenem Ergebnisformat, eigener Fehlerbehandlung und einer eigenen Zusammenführung mit
+      den vorhandenen Kategorien und Konfidenzen. Das ist Architekturarbeit, kein
+      Registry-Eintrag.
+   2. **Fremder Container-Code verarbeitet dabei Familienfotos.** Qualitativ etwas anderes als
+      bei einem offiziellen Modell, und der sachlich schwerste der drei Punkte.
+   3. **Der Zweig kann ganz entfallen.** Trifft `mistral-small-2603` die Kategorien gut genug
+      (Schritt 1), erübrigt sich die Frage.
+
+   **Ausdrücklich *nicht* tragend ist die Kostenvorschau**, obwohl sie naheliegt: Auf 5000
+   Fotos kostet SigLIP rund $0,50 und RAM rund $7 — gegenüber rund $26 mit der heutigen
+   Anthropic-Voreinstellung. Selbst eine Streuung um Faktor 3 hielte RAM unter dem heutigen
+   Betrag. Die Vorschau soll vor einem ungewollt teuren Lauf schützen; in dieser Größenordnung
+   kann die sekundenbasierte Abrechnung den Betrag gar nicht dorthin heben, und „kein Preis
+   bekannt" ist ohnehin ein vorgesehener Zustand, kein Defekt. Der fehlende Vorab-Betrag ist
+   hier ein Anzeigemangel, kein Risiko — und für sich allein **kein** Grund zurückzustellen.
+   Dasselbe gilt für den Kaltstart: Bei SigLIP auf CPU sind Sekunden zu erwarten, bei einem
+   Stapellauf über tausende Fotos fällt er ohnehin nur einmal an und wird nicht berechnet.
 4. **Bleibt es bei der früheren Ablehnung?** Für Gemeinschaftsmodelle: aus heutiger Sicht ja,
    vorerst. Für offizielle Modelle: die Ablehnungsgründe treffen dort deutlich schwächer zu,
    und der Nutzen (Gemini) ist neu. Die Entscheidung liegt bei Daniel.
