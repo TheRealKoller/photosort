@@ -32,7 +32,7 @@
  * Stand, und der ist nach ADR 0065 das Original, keine Kopie.
  *
  * `execute_code` FUEHRT DEN TEXT ALS FUNKTIONSRUMPF AUS und liefert nur zurueck, was ein `return`
- * zurueckgibt (gemessen) - deshalb endet diese Datei, wie alle vier, auf ein `return`.
+ * zurueckgibt (gemessen) - deshalb endet diese Datei, wie jede Nutzlastdatei, auf ein `return`.
  *
  * DIESES SKRIPT LOESCHT NICHTS.
  *
@@ -137,7 +137,7 @@ const TEXT_ROLLEN = ['schrift', 'schriftfamilie', 'typografie']
  * dieselbe Regel wie in `seed-icons.js`: auf die Blattformen, nicht auf die Gruppe.
  */
 
-/* GETEILTE ERKENNUNG - wortgleich auch in verify.js, statisch zugesichert. */
+/* GETEILTE ERKENNUNG - wortgleich auch in fix-flaechen.js und verify.js, statisch zugesichert. */
 function bausteinSchluesselInDatei() {
   const gefunden = []
   for (const komponente of penpot.library.local.components) {

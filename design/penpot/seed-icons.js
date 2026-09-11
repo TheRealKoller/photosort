@@ -9,7 +9,7 @@
  * gefolgt von dieser Datei, unveraendert.
  *
  * `execute_code` FUEHRT DEN TEXT ALS FUNKTIONSRUMPF AUS und liefert nur zurueck, was ein `return`
- * zurueckgibt (gemessen) - deshalb endet diese Datei, wie alle vier, auf ein `return`.
+ * zurueckgibt (gemessen) - deshalb endet diese Datei, wie jede Nutzlastdatei, auf ein `return`.
  *
  * LAUFREGEL "jederzeit-wiederholbar": der Inhalt ist vollstaendig aus `ui/icon.tsx` erzeugt.
  *

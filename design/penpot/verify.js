@@ -13,7 +13,7 @@
  *
  * `execute_code` FUEHRT DEN TEXT ALS FUNKTIONSRUMPF AUS und liefert nur zurueck, was ein `return`
  * zurueckgibt (gemessen). Ohne `return` waere der gesamte nachpruefbare Abschluss dieser Story
- * still verloren - deshalb endet diese Datei, wie alle vier, auf ein `return`.
+ * still verloren - deshalb endet diese Datei, wie jede Nutzlastdatei, auf ein `return`.
  *
  * WAS ZURUECKKOMMT, IST AUF DEN VERGLEICH BEGRENZT: Tokennamen, Tokenwerte, Symbolnamen,
  * Varianteneigenschaften der elf Bausteine und je Baustein die gesetzten Eigenschaften MIT dem
@@ -78,7 +78,8 @@ function symbolNameVon(komponente) {
   return komponente.name
 }
 
-/* GETEILTE ERKENNUNG - wortgleich auch in seed-components.js, statisch zugesichert. */
+/* GETEILTE ERKENNUNG - wortgleich auch in seed-components.js und fix-flaechen.js, statisch
+   zugesichert. */
 function bausteinSchluesselInDatei() {
   const gefunden = []
   for (const komponente of penpot.library.local.components) {
