@@ -11,7 +11,7 @@ Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`; lad
 
 Der Sinn dieses Skills ist Geschwindigkeit: eine Idee oder ein (vermeintlicher) Bug wird roh festgehalten, ohne sie im selben Moment zu bewerten, zu hinterfragen oder auszuarbeiten — das übernimmt später `refinement`. Stell deshalb **keine** inhaltlichen Rückfragen zur Sache selbst (kein "warum", kein "für wen", keine Recherche im Code oder in `specs/`) — nur die technischen Minimal-Angaben unten, falls sie nicht eindeutig aus dem Gesagten hervorgehen.
 
-Seit Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) entsteht dabei **keine** lokale Datei mehr unter `specs/inbox/` — der Rohtext lebt ausschließlich als neues GitHub-Issue, das `refinement` später direkt liest und verfeinert.
+Es entsteht dabei **keine** lokale Datei — der Rohtext lebt ausschließlich als neues GitHub-Issue, das `refinement` später direkt liest und verfeinert.
 
 ## Schritt 1: Typ bestimmen
 

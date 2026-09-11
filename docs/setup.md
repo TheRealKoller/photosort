@@ -2,6 +2,9 @@
 
 Anleitung zum lokalen Entwickeln und Ausprobieren von PhotoSort.
 
+**Umfang:** über dem Richtwert von rund 300 Zeilen, weil der Setup-Script-Block für die
+Cloud-Umgebung hier als Referenztext mitsteht — er lebt sonst nur in einer Weboberfläche.
+
 ## Quick Start (Entwicklung)
 
 ```bash
@@ -95,12 +98,9 @@ sodass nach einer fehlgeschlagenen Prüfsummenprüfung **trotzdem entpackt und i
 Die Subshell steht deshalb allein, und ihr Ergebnis wird danach über `$?` ausgewertet. Wer den
 Block überarbeitet, darf diese Form nicht „vereinfachen" — ein Test in CI hält sie fest.
 
-**Zur Vorinstallation:** Die Dokumentation der Cloud-Umgebungen führt `gh` unter den
-mitgelieferten Werkzeugen. Zwei eigene Messungen in Remote-Sessions zeigten dagegen
-`command not found` (Exit-Code 127). Welche Angabe für eine frisch **angelegte** Umgebung
-zutrifft, ist offen — bei der Messung war nur der Container frisch, nicht die
-Umgebungs-Konfiguration. Der Block trägt beide Fälle: Liegt bereits eine ausreichende Version
-vor, lädt er nichts und sagt das.
+**Zur Vorinstallation:** Ob eine frisch angelegte Cloud-Umgebung `gh` bereits mitbringt, ist
+offen — die Dokumentation sagt ja, zwei Messungen sagten `command not found`. Der Block trägt
+beide Fälle: Liegt bereits eine ausreichende Version vor, lädt er nichts und sagt das.
 
 An lokalen Arbeitsplätzen ändert sich durch all das nichts — es gibt keine eingecheckte Datei,
 die Sessionverhalten steuert, und keinen Eingriff in eine vorhandene Installation.
@@ -197,16 +197,8 @@ gibt es seit ADR 0057 bewusst nicht mehr: Für zwei Einzeiler wäre sie größer
 
 ### Was der Story-Lebenszyklus remote trägt — und was nicht
 
-Gemessen in einer echten Remote-Session am 2026-09-05, ausführlich in
-[ADR 0056](../specs/decisions/0056-remote-grenze-gemessene-board-faehigkeit-statt-session-erkennung.md)
-(Befund weiterhin gültig, Konsequenz seit
-[ADR 0057](../specs/decisions/0057-board-lebenszyklus-nativ-statt-eigenbau.md), Abschnitt 7 neu
-gefasst) und Spec [`0318`](../specs/features/0318-remote-lebenszyklus-grenze.md), Konsequenz für
-den Zugangsweg seit
-[ADR 0061](../specs/decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md);
-die Messungen mit Befehl und wörtlicher Ausgabe stehen im
-[Messbericht an Issue #318](https://github.com/TheRealKoller/photosort/issues/318#issuecomment-5550813926).
-`gh` liegt dort seit ADR 0053/0054 vor — die Grenze liegt woanders:
+`gh` liegt in einer Cloud-Session vor — die Grenze liegt woanders, gemessen in einer echten
+Remote-Session:
 
 - **Board-Zugriffe aus einer Session tragen dort auf keinem Weg.** Die Zwischenschicht der
   Session bedient GraphQL nur für einen fest verdrahteten Satz von Pull-Request-Operationen und

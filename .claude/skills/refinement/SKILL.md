@@ -7,9 +7,11 @@ description: Schärft eine neue Produkt-/Feature-Idee rein fachlich zu einer Sto
 
 **GitHub-Erlaubnisstufe:** lesend und schreibend
 
+**Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Fragerunden, das Lohnenswert-Gate und die Issue-Schreibregeln hier vollständig stehen.
+
 Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`; lade ihn einmal über das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (Schritt 0). Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum.
 
-Übernimmt die fachliche Hälfte des früheren `idea-sharpener`-Ablaufs (Spec [`0059`](../../../specs/features/0059-story-lebenszyklus-github-issues.md) / ADR [`0036`](../../../specs/decisions/0036-github-issue-natives-story-refinement-inbox-entfaellt.md)): eine Idee wird erst dann als `Ready` markiert, wenn sie drei Dinge überstanden hat — echtes gegenseitiges Verständnis, Abgleich mit dem, was schon existiert, und kritischen Gegenwind. Die technische Umsetzungsplanung (Architektur/UI-UX/Test/Security/Spec-Anlage) ist bewusst **nicht** Teil dieses Skills — das übernimmt, wenn die Story tatsächlich umgesetzt werden soll, `spec-writer`.
+Eine Idee wird erst dann als `Ready` markiert, wenn sie drei Dinge überstanden hat — echtes gegenseitiges Verständnis, Abgleich mit dem, was schon existiert, und kritischen Gegenwind. Die technische Umsetzungsplanung (Architektur/UI-UX/Test/Security/Spec-Anlage) ist bewusst **nicht** Teil dieses Skills — das übernimmt, wenn die Story tatsächlich umgesetzt werden soll, `spec-writer`.
 
 Ergebnis dieses Skills ist **kein** neues Spec-File, sondern ein strukturierter GitHub-Issue-Body (`## Ziel`, `## User Story`, `## Akzeptanzkriterien`) mit Status `Ready` — keine lokale Zwischendatei.
 
