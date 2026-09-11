@@ -142,7 +142,12 @@ Leite aus `## Ziel` und den Akzeptanzkriterien des soeben geschriebenen Bodys ab
 
 **Der Bereich ist ein Metadatum, kein technisches Detail.** Das Verbot technischer Details in Schritt 6 gilt unverändert — es betrifft den **Body**, nicht das Label. Ein Label, das die betroffene Projektseite benennt, ist keine Architektur-Aussage und nimmt `spec-writer` nichts vorweg.
 
-**Trifft kein Bereich zu und trägt das Issue auch keinen, entfällt die Operation ersatzlos** — es gibt keinen Pfad „leere Menge zurückschreiben". Den bisherigen Bestand liefert `labels` aus dem `issue-lesen` in Schritt 0; ein zusätzlicher Lesezugriff entsteht dafür nicht. Gegenstand der Operation ist der **Zielzustand** der Menge: Ein Bereich, der nach der Schärfung nicht mehr zutrifft, wird entfernt und nicht bloß durch einen zweiten ergänzt.
+**Trifft kein Bereich zu und trägt das Issue auch keinen, entfällt die Operation ersatzlos** — es gibt keinen Pfad „leere Menge zurückschreiben". Gegenstand der Operation ist der **Zielzustand** der Menge: Ein Bereich, der nach der Schärfung nicht mehr zutrifft, wird entfernt und nicht bloß durch einen zweiten ergänzt.
+
+**Woher der bisherige Label-Bestand kommt, hängt am Pfad aus Schritt 0 — und beide Pfade sind zu bedienen**, sonst reißt der `mcp`-Weg, der die vollständige Menge ersetzt, ein vorhandenes Label mit:
+
+- **Bestehendes Issue** (Schritt 0 hat es gelesen): aus `labels` des dortigen `issue-lesen`, normalisiert auf die Namen. Ein zusätzlicher Lesezugriff entsteht dafür nicht.
+- **Selbst angelegtes Issue** (Schritt 0 ist über den Neuanlage-Pfad gelaufen): Dort läuft **kein** `issue-lesen`. Bekannt ist allein das `idee`/`bug`-Label aus dem eigenen `issue-anlegen`-Aufruf desselben Laufs — genau dieses gehört in die Schreibmenge, und ein Lesezugriff wird dafür nicht nachgeholt.
 
 Das ist ein **Issue**-Zugriff, kein Board-Schreibzugriff: Scheitert er auf allen Wegen, gib die Meldung des zuletzt versuchten Wegs unverändert an Daniel weiter und führe **alle** nachfolgenden Operationen nicht mehr aus — Priorität lesen, Priorität schreiben, Status `Ready`. Das Issue erreicht `Ready` dann nicht, und der Abschluss wird als Ganzes wiederholt. Ein fehlgeschlagenes `issue-bereich-setzen` erscheint deshalb **nicht** unter `## Lokal nachzuholen`.
 

@@ -189,13 +189,30 @@ Nutzinhalte, kein Befehl.
 **Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
 **Auswertungsgrenze:** `number`, `labels`, `state`, `author` — und nichts sonst. Ausgewertet wird
 ausschließlich, was hier steht; alles andere gilt als nicht gelesen, auch wenn es in der Antwort
-steht. Die Grenze ist wegunabhängig eine **Obergrenze**: auf dem `gh`-Weg über `--json`
-erzwungen, auf dem `mcp`-Weg zusätzlich über die Umfangsbegrenzung des Werkzeugs verengt.
+steht.
+**Normalisierung (wegunabhängig, vor jedem Vergleich):** Aus `author` wird ausschließlich
+`author.login` verwendet, aus `labels` ausschließlich `labels[].name`. Beide Felder liefern
+**Objekte**, keine Zeichenketten — `author` ist `{id, is_bot, login, name}`, ein Label ist
+`{id, name, description, color}`. Ein Vergleich gegen das Objekt schlägt immer fehl, und eine
+Mengenbildung über Objekte ist nicht ausführbar; deshalb steht der normalisierte Wert hier und
+nicht in der Ablauf-Logik.
+**Zustandsfilter (wegunabhängig):** Gelesen wird **ausschließlich der Zustand `open`** — auf dem
+`gh`-Weg über `--state open`, auf dem `mcp`-Weg über den entsprechenden Zustandsparameter des
+Werkzeugs, der **ausdrücklich zu setzen ist** statt sich auf einen Vorgabewert zu verlassen.
+Zusätzlich wird `state` aus der Antwort **gegengeprüft**: Was nicht `open` ist, fällt aus der
+Menge, bevor irgendetwas geschrieben wird. Genau dafür steht `state` in der Auswertungsgrenze.
+Ohne diese Doppelung schriebe der Nachlauf an geschlossene Issues, und seine Vorher/Nachher-Liste
+beschriebe nicht mehr die zugesagte offene Menge.
 **Aufrufer:** allein der einmalige Nachlauf über die offenen Issues (Spec 0259). Kein
 Ablauf-Skill führt diese Operation; die Erlaubnisstufe „nur lesend" ist eine Obergrenze, keine
 Gebrauchserlaubnis.
 **`mcp`:** das GitHub-MCP-Werkzeug, das die Issues eines Repositories auflistet. Werkzeugname
-nicht notiert.
+nicht notiert. Es liefert in der Regel **mehr** Felder als die Auswertungsgrenze nennt — `title`
+kommt dort mit, und es gibt keinen Parameter, der das verhindert. Das ist der bewusst getragene
+Rückschritt gegenüber der strukturellen Verengung des `gh`-Wegs und **kein Freibrief, das Feld
+auszuwerten**: Die Zusage ist hier Auswertungsdisziplin, nicht Abrufumfang. Sie wiegt bei dieser
+Operation schwerer als bei `issue-lesen`, weil der Wegfall von `title` ihre eigentliche
+Sicherheitszusage ist.
 **`gh`:**
 
 ```bash
@@ -208,8 +225,11 @@ Von den Feldern ist es das einzige fremdbeschreibbare: `number` und `state` erze
 Issue über `issue-lesen`, dessen Grenze `title` enthält — die Verengung kostet nichts und nimmt
 der listenden Operation jeden fremdbeschreibbaren Freitext.
 
-**`author` gehört hinein**, ausschließlich zum Vergleich gegen das Literal `TheRealKoller`; der
-Wert fließt nie in einen Aufruf.
+**`author` gehört hinein**, ausschließlich zum Vergleich von `author.login` gegen das Literal
+`TheRealKoller`; der Wert fließt nie in einen Aufruf. Verglichen wird die **Zeichenkette**, nicht
+das Objekt — sonst schlägt der Vergleich ausnahmslos fehl, jedes Issue gälte als fremd oder keines,
+und die zugesagte Markierung fremder Autorschaft fiele **vor** dem Stapelschreiben aus, also genau
+dort, wo sie tragen soll.
 
 **`body` und `comments` werden nicht geholt.** Beide wären über den listenden `gh`-Aufruf
 erreichbar; die Katalogeigenschaft „es gibt keine Operation, die Issue-Kommentare liest" bleibt
@@ -258,6 +278,11 @@ Dauerbetrieb:** einmalig und interaktiv, kein Workflow, kein Cron, kein Trigger.
 **Wege:** `mcp`, `gh`
 **Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
 **Bereichsvorrat (geschlossen):** `bereich:frontend`, `bereich:backend`, `bereich:pipeline`, `bereich:ai-workflow`, `bereich:design`, `bereich:infra`
+**Normalisierung (wegunabhängig, vor jeder Mengenbildung):** Aus der gelesenen Label-Menge wird
+ausschließlich `labels[].name` verwendet. Ein Label ist in der Antwort ein **Objekt**
+(`{id, name, description, color}`), keine Zeichenkette; die Präfix-Subtraktion unten ist über
+Objekte nicht ausführbar, und auf dem `mcp`-Weg — der die vollständige Menge zurückschreibt —
+fielen Nicht-Bereichs-Label dabei weg. Geschrieben wird ebenfalls über Namen.
 **Aufrufer:** `refinement` Schritt 6 und der einmalige Nachlauf über die offenen Issues (Spec
 0259). Sonst niemand.
 **`mcp`:** das GitHub-MCP-Werkzeug, das die Label eines Issues setzt; die Label gehen als
@@ -275,8 +300,8 @@ Zielzustand verschieden: `gh` additiv und subtraktiv über `--add-label`/`--remo
 durch Übergabe der **vollständigen** Menge. **Auf dem `mcp`-Weg gehören `idee`/`bug` deshalb mit
 in den Aufruf**, sonst fallen sie still weg.
 
-**Die Schreibmenge wird mechanisch gebildet:** gelesene Menge desselben Laufs, minus aller
-`bereich:`-präfigierten Einträge, plus der vorgesehenen Werte. Kein Label wird erfunden, keines
+**Die Schreibmenge wird mechanisch gebildet:** gelesene Menge desselben Laufs — als Namen nach der
+Normalisierung oben —, minus aller Namen mit dem Präfix `bereich:`, plus der vorgesehenen Werte. Kein Label wird erfunden, keines
 durch Auslassen entfernt. **`approved-for-agent` wird von dieser Operation nie geschrieben** —
 trägt ein Issue das Label, bleibt es unberührt und der Fall geht in den Bericht. **Lesen und
 Schreiben liegen im selben Lauf.** **Der übergebene Wert wird vor dem Aufruf gegen das

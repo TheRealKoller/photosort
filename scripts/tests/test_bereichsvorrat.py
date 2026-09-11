@@ -111,10 +111,25 @@ MINDESTZAHL_VORKOMMEN_IM_KATALOG = 6
 # auffallen und nicht am Muster vorbeirutschen.
 _VORRAT_ZEILE = re.compile(r"^\*\*Bereichsvorrat(?P<rest>[^\n]*)$", re.MULTILINE)
 
-# Unverankert: Im geprueften Raum ist **kein** Vorkommen legitim, auch keines mitten in einer
-# Prosa-Zeile. Der Lookbehind trennt den Wert vom deutschen Fliesstext - "Anwendungsbereich:" und
-# "Der Bereich:" sind keine Werte, `bereich:design` ist einer.
-_BEREICH_WERT = re.compile(r"(?<![\w-])bereich:[a-z][a-z0-9-]*")
+# **Zwei Muster mit zwei Aufgaben.** Sie sehen aehnlich aus und duerfen nicht zusammengelegt
+# werden - ihre Fehlerrichtungen sind entgegengesetzt:
+#
+# * `_VORRATS_WERT` liest die Formzeile und prueft die Label-Argumente des `gh`-Wegs. Hier ist
+#   **eng** richtig: Was dort steht, soll wohlgeformt sein, und ein Wert, der es nicht ist, faellt
+#   ueber den Vergleich gegen die eingefrorene Menge auf.
+# * `_FREMDER_WERT` sucht **ausserhalb** des Katalogs. Hier ist eng **falsch**, und das ist im
+#   Copilot-Review belegt worden: `bereich:Frontend`, `bereich:1` und `bereich:FOO` sind genau
+#   das, was die Abwesenheit verhindern soll - ein zweiter Wahrheitsort -, passierten das enge
+#   Muster aber unbemerkt. Dieselbe Klasse wie die Positivliste im Suchraum: **Die Zusicherung war
+#   enger als ihr Zweck.** Ein Abwesenheits-Scan wird deshalb so breit formuliert, wie der Schaden
+#   reicht, nicht so eng wie der erwuenschte Wert.
+#
+# Beide teilen den Lookbehind, der den Wert vom deutschen Fliesstext trennt: "Anwendungsbereich:"
+# und "Der Bereich:" sind keine Werte, `bereich:design` ist einer. Der breite Matcher verlangt
+# mindestens ein Wortzeichen hinter dem Doppelpunkt - ein blosses "bereich:" am Zeilenende ist
+# kein vergebener Wert.
+_VORRATS_WERT = re.compile(r"(?<![\w-])bereich:[a-z][a-z0-9-]*")
+_FREMDER_WERT = re.compile(r"(?<![\w-])bereich:[\w-]+")
 
 _EINTRAG_KOPF = re.compile(r"^### `(?P<id>[^`\n]+)`", re.MULTILINE)
 _ABSCHNITT = re.compile(r"^## ", re.MULTILINE)
@@ -147,7 +162,7 @@ def vorrat_aus_text(text: str) -> frozenset[str]:
             "dieses Tests prueft nichts. Mehr als eine heisst: Es gibt zwei Wahrheitsorte, die "
             "auseinanderlaufen koennen."
         )
-    return frozenset(_BEREICH_WERT.findall(zeilen[0]))
+    return frozenset(_VORRATS_WERT.findall(zeilen[0]))
 
 
 def werte_ausserhalb_des_katalogs(abbild: Mapping[str, str]) -> list[str]:
@@ -167,7 +182,7 @@ def werte_ausserhalb_des_katalogs(abbild: Mapping[str, str]) -> list[str]:
         if datei == KATALOG:
             continue
         for nummer, zeile in enumerate(abbild[datei].split("\n"), start=1):
-            befunde.extend(f"{datei}:{nummer}: {wert!r}" for wert in _BEREICH_WERT.findall(zeile))
+            befunde.extend(f"{datei}:{nummer}: {wert!r}" for wert in _FREMDER_WERT.findall(zeile))
     return befunde
 
 
@@ -323,12 +338,17 @@ def test_die_waechterdatei_schliesst_sich_unter_ihrem_eigenen_pfad_aus() -> None
     )
 
 
-def test_das_muster_findet_im_katalog_mindestens_sechs_vorkommen() -> None:
-    """Untergrenze fuer das Gesehene - sonst ist ein kaputtes Muster ein sauberer Bestand."""
-    treffer = _BEREICH_WERT.findall(katalogtext())
+@pytest.mark.parametrize("muster", [_VORRATS_WERT, _FREMDER_WERT], ids=["vorrat", "fremd"])
+def test_jedes_muster_findet_im_katalog_mindestens_sechs_vorkommen(muster: re.Pattern[str]) -> None:
+    """Untergrenze fuer das Gesehene - sonst ist ein kaputtes Muster ein sauberer Bestand.
+
+    Je Muster einzeln: Der breite Matcher traegt den Abwesenheits-Scan und wird am Bestand sonst
+    nie ausgeuebt, weil dort ausserhalb des Katalogs null Vorkommen liegen.
+    """
+    treffer = muster.findall(katalogtext())
 
     assert len(treffer) >= MINDESTZAHL_VORKOMMEN_IM_KATALOG, (
-        f"Das `bereich:`-Muster findet im Katalog nur {len(treffer)} Vorkommen (erwartet: "
+        f"Das Muster {muster.pattern!r} findet im Katalog nur {len(treffer)} Vorkommen (erwartet: "
         f"mindestens {MINDESTZAHL_VORKOMMEN_IM_KATALOG}). Der Erfolgsfall des Abwesenheits-Tests "
         "ist 'nichts gefunden' - ohne diese Untergrenze waere ein kaputtes Muster davon nicht zu "
         "unterscheiden."
@@ -490,6 +510,34 @@ def test_eine_abweichend_eingeleitete_zweite_zeile_gilt_als_dublette() -> None:
 def test_ein_wert_wird_an_beliebiger_stelle_der_zeile_gefunden(zeile: str) -> None:
     """Unverankert: Im geprueften Raum ist kein Vorkommen legitim, auch keines in Prosa."""
     assert werte_ausserhalb_des_katalogs({".claude/skills/x/SKILL.md": zeile + "\n"})
+
+
+@pytest.mark.parametrize(
+    "wert",
+    ["bereich:Frontend", "bereich:FOO", "bereich:1", "bereich:Ai-Workflow", "bereich:tippfehler"],
+)
+def test_ein_nicht_wohlgeformter_wert_faellt_dem_aussenscan_trotzdem_auf(wert: str) -> None:
+    """Copilot-Befund: Die Zusicherung war enger als ihr Zweck.
+
+    Ein zweiter Wahrheitsort ist ein zweiter Wahrheitsort, auch wenn der Wert dort falsch
+    geschrieben ist - erst recht dann, denn er passt auf keines der sechs Label und erzeugt beim
+    Setzen entweder einen lauten Fehlschlag (`gh`) oder ein still angelegtes Label (`mcp`).
+    """
+    befunde = werte_ausserhalb_des_katalogs({".github/ISSUE_TEMPLATE/x.yml": f'labels: ["{wert}"]'})
+
+    assert befunde == [f".github/ISSUE_TEMPLATE/x.yml:1: '{wert}'"]
+
+
+@pytest.mark.parametrize("wert", ["bereich:Frontend", "bereich:FOO", "bereich:1"])
+def test_der_vorratsparser_bleibt_eng(wert: str) -> None:
+    """Gegenrichtung: Waeren beide Muster gleich breit, taugte keines mehr fuer seine Aufgabe.
+
+    Ein nicht wohlgeformter Wert in der Formzeile darf nicht als gueltiger Vorratswert gelesen
+    werden - er faellt dann als *fehlender* Wert gegen die eingefrorene Menge auf, und die
+    Meldung nennt die richtige Ursache.
+    """
+    assert _VORRATS_WERT.findall(wert) != [wert]
+    assert _FREMDER_WERT.findall(wert) == [wert]
 
 
 @pytest.mark.parametrize(

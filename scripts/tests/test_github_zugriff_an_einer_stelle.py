@@ -170,6 +170,41 @@ ZIEL_LITERAL = "`owner` = `TheRealKoller`, `repo` = `photosort`"
 
 AUSWERTUNGSGRENZE = "**Auswertungsgrenze:**"
 
+# `form_verstoesse` fordert von jeder lesenden Operation nur, dass sie *irgendeine*
+# Auswertungsgrenze nennt, und `test_keine_operation_liest_issue_kommentare` verbietet daraus
+# allein ein Kommentar-Feld. Fuer `issue-liste-lesen` reicht das nicht, und der Copilot-Review hat
+# genau dort hingefasst: Ihre gesamte Sicherheitszusage ist die **Feldmenge selbst** - `title`
+# entfaellt, weil es das einzige fremdbeschreibbare Feld ist, und `author` muss da sein, weil die
+# Markierung fremder Autorschaft vor dem Stapelschreiben daran haengt. Beides waere lautlos zu
+# verlieren. Deshalb hier **exakt**, nicht "mindestens".
+#
+# Bewusst nur diese eine Operation: Bei den uebrigen lesenden ist die Feldmenge eine
+# Sparsamkeitsfrage; eine eingefrorene Tabelle ueber alle waere die Buchhaltungskonstante, gegen
+# die der Vorbehalt aus der ADR-0056-Sektion gerichtet ist.
+ERWARTETE_AUSWERTUNGSGRENZE: dict[str, tuple[str, ...]] = {
+    "issue-liste-lesen": ("number", "labels", "state", "author"),
+}
+
+# Eine API-Antwort ist strukturiert, nicht flach: `author` ist ein Objekt mit `login`, `id`,
+# `is_bot`, `name`; `labels` ist eine Liste von Objekten mit `name`, `id`, `description`, `color`.
+# Ein Eintrag, der nur das Feld nennt, laesst offen, **wogegen** verglichen und **woraus** die
+# Schreibmenge gebildet wird - ein Vergleich gegen das ganze Objekt schlaegt immer fehl, und eine
+# Praefix-Subtraktion ueber Objekte ist nicht ausfuehrbar. Der normalisierte Wert steht deshalb
+# wegunabhaengig in einer eigenen Zeile, damit auf beiden Wegen dasselbe verglichen wird.
+#
+# Geprueft wird eine **Form** (Zeilenanfang), keine Zeichenkette irgendwo im Block: Die Zeile
+# fuehrt hinter dem Wort noch ihren Geltungsbereich ("wegunabhaengig, vor jedem Vergleich"), und
+# eine erlaeuternde Erwaehnung im Fliesstext soll sie nicht erfuellen koennen.
+NORMALISIERUNGS_MARKER = "**Normalisierung"
+_NORMALISIERUNGS_ZEILE = re.compile(r"^\*\*Normalisierung[^\n]*$", re.MULTILINE)
+ERWARTETE_NORMALISIERUNG: dict[str, tuple[str, ...]] = {
+    "issue-liste-lesen": ("author.login", "labels[].name"),
+    "issue-bereich-setzen": ("labels[].name",),
+}
+
+_AUSWERTUNGSGRENZE_ZEILE = re.compile(r"^\*\*Auswertungsgrenze:\*\*(?P<rest>[^\n]*)$", re.MULTILINE)
+_BACKTICK_TOKEN = re.compile(r"`([^`\n]+)`")
+
 _EINTRAG_KOPF = re.compile(r"^### `(?P<id>[^`\n]+)`", re.MULTILINE)
 # Ein Eintragsblock endet an der naechsten Operation **oder** am naechsten `##`-Abschnitt. Ohne
 # die zweite Grenze zoege der letzte Eintrag den gesamten Resttext der Datei in seinen Block und
@@ -499,6 +534,30 @@ def _mcp_begruendungs_verstoesse(eintrag: Katalogeintrag) -> list[str]:
     return befunde
 
 
+def ausgewertete_felder(block: str) -> tuple[str, ...]:
+    """Reine Funktion: die Feldnamen einer Auswertungsgrenze, in Fundreihenfolge.
+
+    Gelesen wird ausschliesslich der Teil **vor** dem Gedankenstrich. Die Katalogform ist
+    "`<feld>`, `<feld>` — und nichts sonst.", und hinter dem Strich steht Prosa, die ihrerseits
+    Backticks fuehrt. Ohne diese Grenze zoege jedes erlaeuternde Wort in die Feldmenge - dieselbe
+    Falle wie ein Blockscan, der "gilt" nicht von "galt" trennt, nur eine Zeile tiefer.
+    """
+    treffer = _AUSWERTUNGSGRENZE_ZEILE.search(block)
+    if not treffer:
+        raise ValueError(
+            f"Keine {AUSWERTUNGSGRENZE}-Zeile im Block. Ohne sie ist die Feldmenge nicht "
+            "bestimmbar, und eine Zusicherung darueber waere leer wahr."
+        )
+    rest = treffer.group("rest")
+    if "—" not in rest:
+        raise ValueError(
+            f"Die {AUSWERTUNGSGRENZE}-Zeile fuehrt keinen Gedankenstrich. Die Katalogform ist "
+            "'`<feld>`, `<feld>` — und nichts sonst.'; ohne den Strich ist Feldmenge nicht von "
+            "Erlaeuterung zu trennen."
+        )
+    return tuple(_BACKTICK_TOKEN.findall(rest.split("—")[0]))
+
+
 def verwendete_ids(abbild: Mapping[str, str]) -> dict[str, list[str]]:
     """Reine Funktion: sammelt je verwendeter Operations-ID ihre Fundstellen."""
     fundstellen: dict[str, list[str]] = {}
@@ -726,6 +785,40 @@ def test_keine_operation_liest_issue_kommentare() -> None:
     assert not fremde_grenzen, (
         f"Auswertungsgrenze mit Kommentar-Feld: {fremde_grenzen}. Kommentare sind der einzige "
         "Kanal, ueber den ein Dritter Text an ein bestehendes Issue anhaengen kann."
+    )
+
+
+def test_die_feldmenge_der_listenden_leseoperation_ist_exakt_festgelegt() -> None:
+    """Exakt, nicht "mindestens": Die Feldmenge **ist** hier die Sicherheitszusage."""
+    eintraege = {eintrag.id: eintrag for eintrag in katalog_aus_text(katalogtext())}
+
+    for operation, erwartet in sorted(ERWARTETE_AUSWERTUNGSGRENZE.items()):
+        felder = ausgewertete_felder(eintraege[operation].block)
+
+        assert felder == erwartet, (
+            f"{operation}: Auswertungsgrenze {list(felder)} statt {list(erwartet)}. `title` ist "
+            "das einzige fremdbeschreibbare Feld dieser Antwort und darf nicht dazukommen; "
+            "`author` traegt die Markierung fremder Autorschaft vor dem Stapelschreiben und darf "
+            "nicht wegfallen. Beides ohne diese Zusicherung lautlos."
+        )
+
+
+def test_beide_neuen_eintraege_benennen_ihren_normalisierten_wert() -> None:
+    """Eine API-Antwort ist strukturiert: Was verglichen wird, steht als Wert, nicht als Feld."""
+    eintraege = {eintrag.id: eintrag for eintrag in katalog_aus_text(katalogtext())}
+
+    befunde: list[str] = []
+    for operation, werte in sorted(ERWARTETE_NORMALISIERUNG.items()):
+        block = eintraege[operation].block
+        if not _NORMALISIERUNGS_ZEILE.search(block):
+            befunde.append(f"{operation}: keine {NORMALISIERUNGS_MARKER}…:**-Zeile.")
+            continue
+        befunde.extend(f"{operation}: nennt {wert!r} nicht." for wert in werte if wert not in block)
+
+    assert not befunde, (
+        "; ".join(befunde) + " Ohne den normalisierten Wert vergleicht ein Ablauf gegen ein "
+        "Objekt statt gegen eine Zeichenkette - der Vergleich schlaegt dann immer fehl, und die "
+        "Praefix-Subtraktion ueber die Label-Menge ist gar nicht ausfuehrbar."
     )
 
 
@@ -969,6 +1062,51 @@ def test_eine_lesende_operation_ohne_auswertungsgrenze_wird_gemeldet() -> None:
 
     assert len(befunde) == 1
     assert AUSWERTUNGSGRENZE in befunde[0]
+
+
+_GRENZ_ZEILE = (
+    "**Auswertungsgrenze:** `number`, `labels`, `state`, `author` — und nichts sonst. "
+    "Ausgewertet wird ausschliesslich, was hier steht.\n"
+)
+
+
+def test_die_erwartete_auswertungsgrenze_wird_exakt_gelesen() -> None:
+    felder = ausgewertete_felder(_GRENZ_ZEILE)
+
+    assert felder == ERWARTETE_AUSWERTUNGSGRENZE["issue-liste-lesen"]
+
+
+def test_ein_ergaenztes_feld_faellt_auf() -> None:
+    """`title` ist der Fall, um dessentwillen es diese Zusicherung gibt."""
+    text = _GRENZ_ZEILE.replace("`state`", "`state`, `title`")
+
+    assert ausgewertete_felder(text) != ERWARTETE_AUSWERTUNGSGRENZE["issue-liste-lesen"]
+    assert "title" in ausgewertete_felder(text)
+
+
+def test_ein_entferntes_feld_faellt_auf() -> None:
+    """Ohne `author` faellt die Markierung fremder Autorschaft aus - still."""
+    text = _GRENZ_ZEILE.replace(", `author`", "")
+
+    assert ausgewertete_felder(text) != ERWARTETE_AUSWERTUNGSGRENZE["issue-liste-lesen"]
+    assert "author" not in ausgewertete_felder(text)
+
+
+def test_prosa_hinter_dem_gedankenstrich_zaehlt_nicht_zur_feldmenge() -> None:
+    """Sonst zoege jedes in Backticks gesetzte Wort der Erlaeuterung in die Feldmenge."""
+    text = "**Auswertungsgrenze:** `number` — und nichts sonst, insbesondere nicht `title`.\n"
+
+    assert ausgewertete_felder(text) == ("number",)
+
+
+def test_eine_grenzzeile_ohne_gedankenstrich_scheitert_laut_statt_still() -> None:
+    with pytest.raises(ValueError, match=r"Gedankenstrich"):
+        ausgewertete_felder("**Auswertungsgrenze:** `number`, `labels`\n")
+
+
+def test_ein_block_ohne_grenzzeile_scheitert_laut_statt_still() -> None:
+    with pytest.raises(ValueError, match=r"Keine"):
+        ausgewertete_felder("### `issue-liste-lesen`\n\nNur Prosa.\n")
 
 
 _GRUND = "Ein solches Werkzeug ist fuer diese Operation nicht belegt."
