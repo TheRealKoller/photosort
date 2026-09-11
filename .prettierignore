@@ -110,3 +110,29 @@ logs/
 photo-cache/
 .idea/
 *.ntvs*
+
+# Der Rest der Spiegelung, nachgetragen, als scripts/tests/test_prettierignore_spiegelung.py die
+# Erwartung zum ersten Mal MECHANISCH aus den .gitignore-Dateien ableitete statt aus einer von
+# Hand gefuehrten Liste. Genau dafuer ist der Waechter da: Die Liste oben war von Hand erhoben,
+# und von Hand erhobene Listen sind unvollstaendig.
+#
+# Alle zehn folgen derselben Regel wie der Block darueber, und keiner von ihnen ist heute ein
+# realer Fall - `.env`/`.env.*` treffen im Verzeichnislauf mangels Parser ohnehin nichts, die
+# fuenf Debug-Protokolle sind Bausteine der Vite-Vorlage. Sie stehen hier, weil die Regel
+# mechanisch bleiben soll: Ein ueberfluessiger Eintrag kostet eine Zeile in einer Datei, die
+# ohnehin nur Ausschluesse fuehrt.
+#
+# Zwei davon sind trotzdem mehr als Buchhaltung: `.env.*` kann `.env.json` treffen, und dafuer
+# HAT Prettier einen Parser - die Datei traegt Secrets. Und die fuenf `*-debug.log*`-Muster
+# lassen den Dateinamen nach hinten offen (`npm-debug.log.json`), anders als das benachbarte
+# `*.log`, das ihn abschliesst und deshalb nicht spiegelungspflichtig ist.
+.env
+.env.*
+.DS_Store
+.coverage
+example-pictures/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
