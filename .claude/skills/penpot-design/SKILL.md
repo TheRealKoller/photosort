@@ -7,6 +7,8 @@ description: Bespielt und prüft die Penpot-Design-Datei „PhotoSort — Dark U
 
 **GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
 
+**Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Auflagen des Werkzeugkanals — was ausgeführt wird, was nie gelöscht wird — hier vollständig stehen müssen.
+
 Die Penpot-Instanz ist ein **dritter Werkzeugkanal** neben `gh` und den GitHub-Werkzeugen. Die Erlaubnisstufe oben regelt nur den GitHub-Kanal; was den Penpot-Kanal begrenzt, ist allein die abschließende Liste im Abschnitt „Was die Nutzlast darf".
 
 **Nur in der Hauptsession.** Subagenten dieses Repositories haben keine MCP-Werkzeuge, und es braucht ohnehin eine von Daniel geöffnete, verbundene Sitzung. Ein Hintergrundlauf, der „mal eben" etwas in Penpot nachzieht, existiert nicht.
@@ -19,7 +21,7 @@ Der Halbsatz „auch selbst geschriebener Text" ist kein Formalismus: Die Beispi
 
 Gearbeitet wird ausschließlich in der Datei **„PhotoSort — Dark Utility Register"**. Ihre Adresse steht nirgends im Repository; der Zugang liegt in Daniels lokaler Werkzeugkonfiguration.
 
-Seit ADR [`0065`](../../../specs/decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md) gilt: **Gestaltung — Penpot gewinnt.** Was ein Baustein haben *soll*, entscheidet Penpot. **Gültiger Wert — `frontend/src/index.css` gewinnt.** Was heute *gilt und ausgeliefert wird*, steht dort; eine Penpot-Änderung wird erst wirksam, wenn sie über den normalen Weg (Story → Spec → PR) im Repository ankommt. Ein Auseinanderlaufen ist kein Streitfall, sondern eine offene Aufgabe.
+**Gestaltung — Penpot gewinnt.** Was ein Baustein haben *soll*, entscheidet Penpot. **Gültiger Wert — `frontend/src/index.css` gewinnt.** Was heute *gilt und ausgeliefert wird*, steht dort; eine Penpot-Änderung wird erst wirksam, wenn sie über den normalen Weg (Story → Spec → PR) im Repository ankommt. Ein Auseinanderlaufen ist kein Streitfall, sondern eine offene Aufgabe.
 
 **Einzige Ausnahme:** Ein Penpot-Wert, der WCAG-AA gegen die Fläche verfehlt, auf der er steht (4,5:1 Fließtext, 3:1 grafisch und Bedienelement-Umrisse), wird korrigiert übernommen — die Fläche bleibt, angepasst wird die Schrift- oder Linienfarbe — **und die Korrektur wird nach Penpot zurückgeschrieben**. Der Vorgang endet in Penpot, nicht im Repository.
 

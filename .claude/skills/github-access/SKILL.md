@@ -7,6 +7,8 @@ description: Verbindlicher Operationskatalog für **jeden** GitHub-Zugriff des E
 
 **GitHub-Erlaubnisstufe:** lesend und schreibend
 
+**Umfang:** über dem Richtwert von rund 120 Zeilen, weil ein Operationskatalog je Operation ihre Wege in fester Reihenfolge führt — Inhalt, der nirgends sonst steht.
+
 Dies ist die **einzige** Stelle des Repositories, an der ein GitHub-Zugriff des
 Entwicklungsablaufs steht — Issue, Board, Pull Request, Copilot-Review. Jede andere Datei nennt
 nur noch den **Namen einer Operation** aus dem Katalog unten, in Backticks, plus die Ablauf-Logik

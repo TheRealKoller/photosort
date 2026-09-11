@@ -50,7 +50,23 @@ PhotoSort wird in zwei Modi weiterentwickelt:
 - Keine Bilddaten der Familie werden je ins Repository committet — Fotos bleiben ausschließlich auf OpenCloud, lokal nur als Cache (siehe `.gitignore`).
 - Secrets (App-Tokens, API-Keys) niemals im Code oder in Specs, nur über Umgebungsvariablen (`.env`, nie eingecheckt — siehe `.env.example`).
 - **Diagramme:** einheitlich mit [D2](https://d2lang.com) (`--sketch`-Modus) statt Mermaid erzeugen. Quelle + gerendertes SVG liegen nebeneinander unter `specs/diagrams/<name>.d2`/`.svg` und werden beide eingecheckt; Generierung über `scripts/render-diagrams.sh`.
-- **Skills/Agents:** enthalten keine Verweise auf ADRs/Specs, die nur der historischen Begründung einer Regel dienen — die Regel selbst steht vollständig im Text, das "warum/wie kam es dazu" nicht. Ein Verweis auf eine andere Datei bleibt erlaubt, wenn er funktional nötig ist (die Datei muss gelesen, gegen sie geprüft, oder sie muss gepflegt werden, um die Aufgabe zu erfüllen).
+- **Doku-Ballast:** Nicht in ein Dokument und nicht in einen Doku-Block gehören: historische
+  Begründung einer Regel, Verweise auf Specs/ADRs/PRs, die nur begründen, Wiederholung der
+  Versionsgeschichte, Wiederholung dessen, was der Code selbst zeigt. Die Regel gilt an allen
+  fünf Orten: Feature-Specs, ADRs, Skill- und Agenten-Dateien, Setup-/Architektur-Dokumentation
+  (`docs/`, `specs/architecture/`), Doku-Blöcke im Code. Geschützt — und von jedem Kürzen
+  ausgenommen — sind Invarianten, Zusicherungen und bewusste Abweichungen, die aus dem Code nicht
+  ablesbar sind: die Regel selbst steht vollständig im Text, das "warum/wie kam es dazu" nicht.
+  Ein Verweis auf eine andere Datei bleibt erlaubt, wenn er funktional nötig ist (die Datei muss
+  gelesen, gegen sie geprüft, oder sie muss gepflegt werden, um die Aufgabe zu erfüllen).
+  Abgeschlossene Feature-Specs (`Implemented`/`Superseded`) werden nicht nachträglich gekürzt.
+  Umfangs-Richtwerte für **neu entstehende** Dokumente: Feature-Spec ~200 Zeilen, ADR ~100,
+  Skill-/Agenten-Datei ~120, lebendes Konzept-/Übersichtsdokument (`docs/`,
+  `specs/architecture/`) ~300, Doku-Block einer Quellcode-Datei ~25 % ihrer Zeilen. Gezählt wird
+  in Zeilen zu höchstens 100 Zeichen, also `Zeichenzahl ÷ 100`, wo eine Datei diesem Umbruch
+  nicht folgt. Ein Richtwert ist keine Grenze: Überschreitung ist zulässig, wenn sie im Dokument
+  selbst in einem Satz begründet ist. Es entsteht dafür kein CI-Check und kein
+  `review-*`-Kriterium — nichts weist eine Änderung allein wegen ihrer Länge zurück.
 
 ## Werkzeugwahl bei Dateiarbeit
 
