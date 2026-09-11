@@ -5,17 +5,17 @@ import { Icon } from './ui/icon'
 import type { IconName } from './ui/icon'
 
 /*
- * Ein Eintrag der Board-Bewertungsleiste: Symbol, sichtbare Beschriftung und die Ziffer der Taste,
- * die ihn tatsaechlich ausloest.
+ * Ein Eintrag der Board-Bewertungsleiste: Symbol, sichtbare Beschriftung und die Ziffer der
+ * Taste, die ihn tatsächlich auslöst.
  *
- * DIE BELEGUNG BLEIBT 1 / 2 / 3 (entschieden): Uebernommen wird die FORM des Kaestchens, nicht die
- * Board-Beschriftung F/A/X. Die Ziffern stehen hier, die Belegung in `PhotoDetailPage` - beide
- * koennen auseinanderlaufen, deshalb prueft `PhotoDetailPage.test.tsx` sie tabellengetrieben
- * gegeneinander.
+ * DIE BELEGUNG BLEIBT 1 / 2 / 3: Übernommen wird die FORM des Kästchens, nicht die
+ * Board-Beschriftung F/A/X. Die Ziffern stehen hier, die Belegung in `PhotoDetailPage` -
+ * beide können auseinanderlaufen, deshalb prüft `PhotoDetailPage.test.tsx` sie
+ * tabellengetrieben gegeneinander.
  *
- * ZIFFERNFARBE IN DER ZUSTANDSFARBE (Board), aber fuer "Verwerfen" `--danger-text` statt
- * `--rating-rejected`: der Board-Ton erreicht auf `--overlay` nur 3.96:1 und ist hier TEXT. Das ist
- * die bereits geltende --danger/--danger-text-Regel, keine neue Festlegung.
+ * ZIFFERNFARBE IN DER ZUSTANDSFARBE, aber für "Verwerfen" `--danger-text` statt
+ * `--rating-rejected`: der Board-Ton erreicht auf `--overlay` nur 3.96:1 und ist hier TEXT.
+ * Das ist die geltende --danger/--danger-text-Regel, keine neue Festlegung.
  */
 const OPTIONS: { status: RatingStatus; label: string; icon: IconName; key: string; keyClass: string }[] = [
   { status: 'favorite', label: 'Favorit', icon: 'star', key: '1', keyClass: 'text-rating-favorite' },
@@ -29,14 +29,15 @@ const OPTIONS: { status: RatingStatus; label: string; icon: IconName; key: strin
   { status: 'rejected', label: 'Verwerfen', icon: 'x-circle', key: '3', keyClass: 'text-danger-text' },
 ]
 
-// Bewertungsfarben (specs/architecture/0004-design-system.md) - nur auf dem aktiv gedrueckten
-// Button als volle Flaeche, nicht auf allen dreien, damit "auf einen Blick" erkennbar bleibt,
-// welche Stufe tatsaechlich gesetzt ist. Als Beschriftungsfarbe die tonspezifische
-// `--rating-<ton>-fg` (dieselbe Kalibrierung wie bei Badge) - die tonspezifische Kopplung bleibt
-// bestehen, auch wenn alle drei Toene seit ADR 0055 Punkt 4e denselben Wert tragen.
+// Bewertungsfarben - nur auf dem aktiv gedrückten Button als volle Fläche, nicht auf allen
+// dreien, damit "auf einen Blick" erkennbar bleibt, welche Stufe tatsächlich gesetzt ist. Als
+// Beschriftungsfarbe die tonspezifische `--rating-<ton>-fg` (dieselbe Kalibrierung wie bei
+// Badge) - die tonspezifische Kopplung bleibt bestehen, auch wenn alle drei Töne denselben
+// Wert tragen.
 //
-// `active:` ist Pflicht: Tailwind bindet `hover:` an `@media (hover: hover)`, am Telefon faellt
-// der Zustand also ersatzlos weg - und das Bewerten ist genau die Handlung, die dort stattfindet.
+// `active:` ist Pflicht: Tailwind bindet `hover:` an `@media (hover: hover)`, am Telefon
+// fällt der Zustand ersatzlos weg - und das Bewerten ist genau die Handlung, die dort
+// stattfindet.
 const ACTIVE_TONE_CLASSES: Record<RatingStatus, string> = {
   favorite: 'bg-rating-favorite text-rating-favorite-fg hover:opacity-85 active:opacity-70',
   album_worthy: 'bg-rating-album-worthy text-rating-album-worthy-fg hover:opacity-85 active:opacity-70',
@@ -44,50 +45,48 @@ const ACTIVE_TONE_CLASSES: Record<RatingStatus, string> = {
 }
 
 /*
- * HEISSER PFAD (specs/features/0320-dark-utility-register.md, UI/UX-Abschnitt 3, Stakeholder-
- * Entscheidung): Bewertungsschaltflaechen werden waehrend des Sichtens wiederholt und schnell
- * getroffen, und ein Fehlgriff schreibt hier einen falschen DATENWERT, kein blosses Aergernis.
- * Deshalb am Telefon SICHTBAR mindestens 44px hoch, am Desktop das Board-Mass 32px - man zielt auf
- * das, was man sieht.
+ * HEISSER PFAD: Bewertungsschaltflächen werden während des Sichtens wiederholt und schnell
+ * getroffen, und ein Fehlgriff schreibt hier einen falschen DATENWERT, kein bloßes Ärgernis.
+ * Deshalb am Telefon SICHTBAR mindestens 44px hoch, am Desktop das Board-Maß 32px - man
+ * zielt auf das, was man sieht.
  *
- * Der Abstand ist aus demselben Grund 12px (`gap-3`) statt der frueheren 8px: die
- * Trefferflaechen-Aufspannung ragt bis zu 6px je Seite ueber das Sichtbare hinaus, bei 8px
- * ueberlappen die Trefferflaechen benachbarter Schaltflaechen - und in der Ueberlappung gewinnt
+ * Der Abstand ist aus demselben Grund 12px (`gap-3`) und kein Geschmack: die
+ * Trefferflächen-Aufspannung ragt bis zu 6px je Seite über das Sichtbare hinaus, bei 8px
+ * überlappen die Trefferflächen benachbarter Schaltflächen - und in der Überlappung gewinnt
  * das obenliegende Element.
  */
 const HOT_PATH_HEIGHT = 'h-11 sm:h-8'
 
 /*
- * UNTERHALB `sm:` STEHEN DIE EINTRAEGE UNTEREINANDER (specs/features/0321-dark-utility-register-
- * ansichten.md, UI/UX-Abschnitt 4). Arithmetisch belegt: 360 - 32 (`px-4`) - 16 (`p-2` des
- * Containers) = 312px innen, minus 2x `gap-3` = 288px fuer drei Eintraege; drei Eintraege mit
- * Symbol, sichtbarer Beschriftung und Kaestchen brauchen rund 400px. Kuerzen der Beschriftung
- * verbietet ein Akzeptanzkriterium, waagerechtes Scrollen die Abnahme.
+ * UNTERHALB `sm:` STEHEN DIE EINTRÄGE UNTEREINANDER. Arithmetisch belegt: 360 - 32 (`px-4`)
+ * - 16 (`p-2` des Containers) = 312px innen, minus 2x `gap-3` = 288px für drei Einträge;
+ * drei Einträge mit Symbol, sichtbarer Beschriftung und Kästchen brauchen rund 400px.
+ * Kürzen der Beschriftung verbietet ein Akzeptanzkriterium, waagerechtes Scrollen die
+ * Abnahme.
  *
- * Der Umbruch entsteht ueber Utilities auf EINEM DOM-Baum, nicht ueber zwei parallele Teilbaeume
- * (`hidden sm:flex` neben `flex sm:hidden`) - doppelte Zweige wuerden Rollen, Namen und
- * Elementanzahl verdoppeln und sowohl `toHaveCount(3)` als auch `EXPECTED_CONTROL_COUNT = 6`
- * brechen.
+ * Der Umbruch entsteht über Utilities auf EINEM DOM-Baum, nicht über zwei parallele
+ * Teilbäume (`hidden sm:flex` neben `flex sm:hidden`) - doppelte Zweige würden Rollen, Namen
+ * und Elementanzahl verdoppeln und sowohl `toHaveCount(3)` als auch
+ * `EXPECTED_CONTROL_COUNT = 6` brechen.
  *
- * Nebeneffekt und Gewinn: Die drei Eintraege stehen dann von oben nach unten in derselben
- * Reihenfolge wie ihre Tasten 1/2/3, statt in einer je nach Breite unterschiedlich umbrechenden
- * Reihe.
+ * Nebeneffekt und Gewinn: Die drei Einträge stehen dann von oben nach unten in derselben
+ * Reihenfolge wie ihre Tasten 1/2/3, statt in einer je nach Breite unterschiedlich
+ * umbrechenden Reihe.
  */
 const ENTRY_LAYOUT = 'w-full justify-start sm:w-auto'
 
 interface RatingButtonsProps {
   currentStatus: RatingStatus | null
   /**
-   * Toggle-Entscheidung (erneutes Klicken derselben Bewertung setzt zurueck auf unbewertet,
-   * siehe specs/features/0002-manual-categorization.md) liegt bewusst beim Aufrufer, nicht hier
-   * in der Komponente - so kann dieselbe Logik auch von einem Tastatur-Shortcut-Handler
-   * (1/2/3-Tasten) auf Seitenebene wiederverwendet werden, statt sie zu duplizieren.
+   * Die Toggle-Entscheidung (erneutes Klicken derselben Bewertung setzt zurück auf
+   * unbewertet) liegt bewusst beim Aufrufer, nicht hier in der Komponente - so kann
+   * dieselbe Logik auch von einem Tastatur-Shortcut-Handler (1/2/3-Tasten) auf Seitenebene
+   * wiederverwendet werden, statt sie zu duplizieren.
    */
   onToggle: (status: RatingStatus) => void
   disabled?: boolean
   /**
-   * Busy-Button-Muster (specs/architecture/0004-design-system.md: "gilt ab jetzt für jeden
-   * auslösenden Button im Produkt") - zeigt einen Inline-Indikator, solange die auslösende
+   * Busy-Button-Muster - zeigt einen Inline-Indikator, solange die auslösende
    * Bewertungsanfrage noch unterwegs ist, statt die Buttons nur stumm zu deaktivieren.
    */
   busy?: boolean
@@ -99,14 +98,13 @@ export function RatingButtons({
   disabled = false,
   busy = false,
 }: RatingButtonsProps) {
-  // Funktionaler Fix 1 (specs/features/0012-visual-redesign.md) zentral hier statt ueber die
-  // Button-eigene busy-Prop erzwungen: `isDisabled` bleibt garantiert wahr, sobald `busy` gesetzt
-  // ist, unabhaengig davon, ob der Aufrufer `disabled` synchron mithaelt. UX-Review-Fund: das
-  // Button-eigene busy-Prop (eigener Spinner pro Button) bewusst NICHT an alle drei Buttons
-  // gleichzeitig weitergereicht - drei parallele Spinner plus die separate "Speichert…"-Zeile
-  // waren redundante Bewegungsunruhe fuer eine haeufig wiederholte, schnelle Aktion (Designprinzip
-  // "Durchsatz vor Erklaerung" / "keine Bewegungseffekte, die das zuegige Durchsehen bremsen").
-  // Die zentrale Statuszeile bleibt der einzige Busy-Indikator.
+  // Zentral hier erzwungen statt über die Button-eigene busy-Prop: `isDisabled` bleibt
+  // garantiert wahr, sobald `busy` gesetzt ist, unabhängig davon, ob der Aufrufer
+  // `disabled` synchron mithält. Das Button-eigene busy-Prop (eigener Spinner je Button)
+  // wird bewusst NICHT an alle drei Buttons weitergereicht - drei parallele Spinner plus
+  // die separate "Speichert…"-Zeile wären redundante Bewegungsunruhe für eine häufig
+  // wiederholte, schnelle Aktion ("Durchsatz vor Erklärung"). Die zentrale Statuszeile
+  // bleibt der einzige Busy-Indikator.
   const isDisabled = disabled || busy
 
   return (
