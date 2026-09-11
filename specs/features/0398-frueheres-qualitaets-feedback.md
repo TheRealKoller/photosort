@@ -1,6 +1,6 @@
 # 0398 - Früheres Qualitäts-Feedback
 
-**Status:** Accepted
+**Status:** Implemented ([PR #415](https://github.com/TheRealKoller/photosort/pull/415))
 **Erstellt:** 2026-09-11
 **Bezug:** https://github.com/TheRealKoller/photosort/issues/398
 
