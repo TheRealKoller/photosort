@@ -5,9 +5,8 @@ import { matchPath } from 'react-router'
  * Routen es mit Projektbezug gibt, welcher Pfad Projektkontext hat, und welches der fünf
  * Navigationsziele gerade aktiv ist.
  *
- * REINES TYPESCRIPT OHNE REACT-IMPORT (Vorbild: utils/pipelineSteps.ts). Bewusst NICHT in
- * App.tsx: sonst importierte components/ProjectNav.tsx aus genau der Datei, die ProjectNav
- * rendert.
+ * REINES TYPESCRIPT OHNE REACT-IMPORT. Bewusst NICHT in App.tsx: sonst importierte
+ * components/ProjectNav.tsx aus genau der Datei, die ProjectNav rendert.
  */
 
 /**
@@ -80,10 +79,10 @@ export interface ProjectNavTarget {
  * nicht denselben Platz in der Leiste beanspruchen. DIE REIHENFOLGE INNERHALB EINER GRUPPE
  * IST DIE ANZEIGEREIHENFOLGE (Leiste UND Panel).
  *
- * "Projekt" zeigt auf /pipeline statt auf /projects/{id}: letzteres ist laut eigenem
- * Kommentar in App.tsx ein reiner Bestandsschutz-Redirect für alte Lesezeichen, kein Ziel.
- * Der Redirect-Zwischenzustand zählt trotzdem als "Projektübersicht aktiv", damit der Marker
- * während des kurzen Zustands nicht flackert.
+ * "Projekt" zeigt auf /pipeline statt auf /projects/{id}: letzteres ist ein reiner
+ * Bestandsschutz-Redirect für alte Lesezeichen, kein Ziel. Der Redirect-Zwischenzustand zählt
+ * trotzdem als "Projektübersicht aktiv", damit der Marker während des kurzen Zustands nicht
+ * flackert.
  *
  * buildPath kodiert bewusst NICHT (kein encodeURIComponent): matchPath dekodiert, ein
  * einseitiges Kodieren bräche den Rundlauf. Prozentkodierte IDs sind über die Oberfläche

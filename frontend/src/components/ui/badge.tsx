@@ -23,14 +23,13 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
  * SOLID: Board-Bewertungs-Badge - voll gefuellte Flaeche mit DUNKLER TINTE. Jeder Bewertungston
  * bringt seine eigene Vordergrundfarbe mit (`--rating-<ton>-fg`); sie tragen zwar alle denselben
  * Wert, bleiben aber drei getrennte Tokens: dass eine gemeinsame Tinte auf allen drei Toenen haelt,
- * ist eine Eigenschaft dieser konkreten Palette und keine Regel - beim Vorgaengersystem war sie
- * nachweislich nicht gegeben, und ein Ton-Wechsel wuerde die Kopplung sonst still brechen.
+ * ist eine Eigenschaft dieser konkreten Palette und keine Regel - ein Ton-Wechsel wuerde die
+ * Kopplung sonst still brechen.
  *
- * SUGGESTED: umgestellt auf die TOAST-KONSTRUKTION des Boards (Flaeche `--elevated`, farbiger
- * 1px-Rand, farbige Beschriftung). Die frueher hier verwendete Konstruktion `bg-rating-<ton>` mit 10 % Deckkraft plus
- * `text-text-h` war eine PhotoSort-eigene Erfindung, die das Board nicht kennt: ueber einer
- * Deckkraft-Tinte ist Kontrast statisch nicht rechenbar, sie waere damit dauerhaft ungeprueft
- * geblieben. Auf `--elevated` faellt jetzt jedes Paar in die Kontrastmatrix.
+ * SUGGESTED: die TOAST-KONSTRUKTION des Boards (Flaeche `--elevated`, farbiger 1px-Rand, farbige
+ * Beschriftung). KEINE Deckkraft-Flaeche wie `bg-rating-<ton>` mit 10 % plus `text-text-h`: ueber
+ * einer Deckkraft-Tinte ist Kontrast statisch nicht rechenbar und bliebe dauerhaft ungeprueft.
+ * Auf `--elevated` faellt jedes Paar in die Kontrastmatrix.
  *
  * `rejected` traegt als Beschriftung `--danger-text` statt `--rating-rejected`: der Board-Ton
  * erreicht auf der erhoehten Flaeche nur 4.46:1 und haelt als Fliesstext kein AA.
@@ -74,9 +73,9 @@ export function Badge({ tone = 'neutral', suggested = false, className, ...props
     <span
       data-badge-tone={tone}
       data-badge-variant={variant}
-      // Radius 6px statt der frueheren vollen Pille (Board-Formsprache: die einzige verbleibende
-      // Pillenform ist der Kategorie-Chip mit 16px). Der Formunterschied 6px <-> 16px ist eine
-      // der drei Gegenmassnahmen zur Farbnaehe zwischen Bewertungs- und Kategoriefarben.
+      // Radius 6px, keine Pillenform (Board-Formsprache: die einzige Pillenform ist der
+      // Kategorie-Chip mit 16px). Der Formunterschied 6px <-> 16px ist eine der drei
+      // Gegenmassnahmen zur Farbnaehe zwischen Bewertungs- und Kategoriefarben.
       className={cn(
         'inline-flex h-6 min-w-6 items-center justify-center gap-1 rounded-sm px-2 text-xs font-semibold',
         TONE_CLASSES[tone][variant],

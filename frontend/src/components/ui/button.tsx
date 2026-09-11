@@ -31,8 +31,8 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // Primär: gefüllte Akzentfläche mit dunkler Tinte (10.67:1) - sofort als die eine
-        // Hauptaktion lesbar. Überfahren/gedrückt nur über Deckkraft, die Fläche bleibt.
+        // Primär: gefüllte Akzentfläche mit dunkler Tinte - sofort als die eine Hauptaktion
+        // lesbar. Überfahren/gedrückt nur über Deckkraft, die Fläche bleibt.
         default: 'bg-accent text-accent-fg hover:opacity-85 active:opacity-70',
         // Sekundär: der UMRISS ist hier das Identifikationsmerkmal, nicht die Fläche - in einem
         // Dialog ist die Fläche identisch zum Grund. Deshalb --border-control (>= 3:1) und nicht
@@ -40,8 +40,7 @@ const buttonVariants = cva(
         secondary:
           'border border-border-control bg-overlay text-text-h hover:opacity-80 active:bg-border active:text-text',
         // `outline` ist auf Sekundär vereinheitlicht: das Board kennt keine vierte gefüllte
-        // Ausprägung. Bewusst als eigener Variantenname erhalten, damit die bestehenden
-        // Aufrufstellen unverändert bleiben.
+        // Ausprägung. Der Variantenname bleibt bewusst erhalten.
         outline:
           'border border-border-control bg-overlay text-text-h hover:opacity-80 active:bg-border active:text-text',
         // Unaufdringlich: nur Beschriftung; erst beim Überfahren/Drücken entsteht eine Fläche.
@@ -50,12 +49,11 @@ const buttonVariants = cva(
         // der EINZIGE Zustand, den es gibt, also kein Randfall.
         ghost:
           'bg-transparent text-text hover:bg-overlay hover:text-text-h active:bg-border active:text-text',
-        // Zerstörerisch: zeichengleich zur primären, nur andere Fläche. Gefüllt statt umrandet,
-        // und zwar nicht aus Geschmack - eine umrandete Danger-Variante ist mit dieser Palette
-        // nicht sauber baubar: --danger-text misst auf --overlay (Dialogfläche) 4.51 und auf der
-        // gedrückten Zustandsfläche --border 4.33, der am Telefon EINZIGE Zustand "gedrückt"
-        // verfehlte also AA. Dazu stünden "Abbrechen" (sekundär, umrandet) und "Löschen" als zwei
-        // gleich aussehende Umrisse nebeneinander.
+        // Zerstörerisch: zeichengleich zur primären, nur andere Fläche. Gefüllt statt umrandet -
+        // eine umrandete Danger-Variante ist mit dieser Palette nicht sauber baubar:
+        // --danger-text misst auf --overlay (Dialogfläche) 4.51 und auf der gedrückten
+        // Zustandsfläche --border 4.33, der am Telefon EINZIGE Zustand "gedrückt" verfehlte
+        // also AA.
         //
         // EINE Ausprägung, nicht zwei: Auslöser und bestätigende Aktion im Dialog tragen
         // dieselbe. KOLLISIONSREGEL (verbindlich): gefülltes --danger mit dunkler Tinte bei
@@ -96,17 +94,15 @@ export interface ButtonProps
   /**
    * Busy-Button-Muster: erzwingt den deaktivierten Zustand zentral in der Komponente, statt sich
    * darauf zu verlassen, dass jeder Aufrufer `disabled` UND `busy` synchron hält. Der
-   * Label-Text-Wechsel (z.B. "Anmelden…") bleibt bewusst Aufgabe des Aufrufers - diese Komponente
-   * ergänzt nur den zentralen Spinner und die erzwungene Deaktivierung.
+   * Label-Text-Wechsel (z.B. "Anmelden…") bleibt bewusst Aufgabe des Aufrufers.
    */
   busy?: boolean
   /** Rendert die Styling-/Verhaltens-Props auf das einzelne Kind-Element (Radix Slot) statt auf
    * ein eigenes <button> - z.B. um einen react-router <Link> wie einen Button aussehen zu lassen,
    * ohne ein <button> um ein <a> zu verschachteln (invalides HTML). */
   asChild?: boolean
-  /** React 19 reicht `ref` als reguläre Prop durch; `ButtonHTMLAttributes` deklariert sie nicht.
-   * Gebraucht z.B. von ui/dialog.tsx, das den Erstfokus gezielt auf die Abbrechen-Schaltfläche
-   * legt. */
+  /** React 19 reicht `ref` als reguläre Prop durch; `ButtonHTMLAttributes` deklariert sie
+   * nicht. */
   ref?: Ref<HTMLButtonElement>
 }
 
@@ -147,8 +143,7 @@ export function Button({
   // übergebenen - `preventDefault()` kommt zu spät. Stattdessen wird die Interaktion an der Wurzel
   // unterbunden: `pointer-events-none` verhindert, dass ein Mausklick das Element überhaupt trifft
   // (kein Klick-Event entsteht), `tabIndex={-1}` entfernt es aus der Tab-Reihenfolge, sodass
-  // Enter/Leertaste es nicht auslösen können. Präventive Absicherung der Basiskomponente: es gibt
-  // derzeit keinen Aufrufer mit `asChild disabled`.
+  // Enter/Leertaste es nicht auslösen können.
   return (
     <Comp
       type={asChild ? undefined : type}

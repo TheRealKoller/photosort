@@ -16,7 +16,7 @@ const DECIMAL_TWO = new Intl.NumberFormat('de-DE', {
 })
 const INTEGER = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 })
 
-/** Basis 1024 (Akzeptanzkriterium S1) - dieselbe Zaehlweise wie `du`/der Dateimanager. */
+/** Basis 1024 - dieselbe Zaehlweise wie `du`/der Dateimanager. */
 const MEBIBYTE = 1024 * 1024
 const GIBIBYTE = 1024 * MEBIBYTE
 
@@ -48,14 +48,14 @@ export function formatBytes(bytes: number | null): string {
  * Geldbetrag mit zwei Nachkommastellen und der Kennzeichnung "USD" (der Abrechnungswaehrung
  * beider Provider - es wird bewusst nicht umgerechnet).
  *
- * Ein Betrag groesser 0, der auf 0,00 runden wuerde, wird als "< 0,01 USD" ausgewiesen
- * (Akzeptanzkriterium K4): auf einer Seite zur Kostenkontrolle darf ein tatsaechlich angefallener
- * Betrag nicht als "nichts ausgegeben" erscheinen.
+ * Ein Betrag groesser 0, der auf 0,00 runden wuerde, wird als "< 0,01 USD" ausgewiesen: auf einer
+ * Seite zur Kostenkontrolle darf ein tatsaechlich angefallener Betrag nicht als "nichts
+ * ausgegeben" erscheinen.
  *
  * Bewusst NICHT dieselbe Funktion wie die `$0.0052`-Darstellung der Vorab-Schaetzung in
  * `components/ClassificationSection.tsx`: die Schaetzung braucht vier Nachkommastellen (ihre
  * Betraege liegen pro Bild im Zehntelcent-Bereich), die Ist-Summe hier zwei plus die
- * Waehrungskennzeichnung. Zwei bewusst verschiedene Darstellungen fuer zwei verschiedene Groessen.
+ * Waehrungskennzeichnung.
  */
 export function formatUsd(amountUsd: number): string {
   if (amountUsd > 0 && Math.round(amountUsd * 100) === 0) {
@@ -80,9 +80,8 @@ export function formatPercent(share: number): string {
  * Prozentzeichen (`92%`) - vermeidet eine Scheingenauigkeit, die die zugrundeliegenden, teils
  * heuristischen Werte nicht hergeben.
  *
- * Frueher privat in `components/CriterionDetailsList.tsx`; hierher gewandert, weil die
- * Kandidatenliste und der Konfidenzblock der Statistikseite dieselbe Darstellung brauchen - zwei
- * Kopien liefen unweigerlich auseinander.
+ * Kandidatenliste und Konfidenzblock der Statistikseite teilen sich diese eine Darstellung; eine
+ * zweite Kopie liefe unweigerlich auseinander.
  *
  * BEWUSST NICHT `formatPercent` (eine Nachkommastelle, Leerzeichen, deutsches Dezimalkomma): der
  * Konfidenzblock folgt hier der Kategorie-Anzeige statt der Statistik-Hausformatierung, damit

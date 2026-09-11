@@ -15,7 +15,6 @@ import type { IconName } from './ui/icon'
  *
  * ZIFFERNFARBE IN DER ZUSTANDSFARBE, aber für "Verwerfen" `--danger-text` statt
  * `--rating-rejected`: der Board-Ton erreicht auf `--overlay` nur 3.96:1 und ist hier TEXT.
- * Das ist die geltende --danger/--danger-text-Regel, keine neue Festlegung.
  */
 const OPTIONS: {
   status: RatingStatus
@@ -68,29 +67,18 @@ const ACTIVE_TONE_CLASSES: Record<RatingStatus, string> = {
  * getroffen, und ein Fehlgriff schreibt hier einen falschen DATENWERT, kein bloßes Ärgernis.
  * Deshalb am Telefon SICHTBAR mindestens 44px hoch, am Desktop das Board-Maß 32px - man
  * zielt auf das, was man sieht.
- *
- * Der Abstand ist aus demselben Grund 12px (`gap-3`) und kein Geschmack: die
- * Trefferflächen-Aufspannung ragt bis zu 6px je Seite über das Sichtbare hinaus, bei 8px
- * überlappen die Trefferflächen benachbarter Schaltflächen - und in der Überlappung gewinnt
- * das obenliegende Element.
  */
 const HOT_PATH_HEIGHT = 'h-11 sm:h-8'
 
 /*
- * UNTERHALB `sm:` STEHEN DIE EINTRÄGE UNTEREINANDER. Arithmetisch belegt: 360 - 32 (`px-4`)
- * - 16 (`p-2` des Containers) = 312px innen, minus 2x `gap-3` = 288px für drei Einträge;
- * drei Einträge mit Symbol, sichtbarer Beschriftung und Kästchen brauchen rund 400px.
- * Kürzen der Beschriftung verbietet ein Akzeptanzkriterium, waagerechtes Scrollen die
- * Abnahme.
+ * UNTERHALB `sm:` STEHEN DIE EINTRÄGE UNTEREINANDER - auf 360px passen die drei Einträge mit
+ * Symbol, Beschriftung und Kästchen nicht nebeneinander. Weder wird dafür die Beschriftung
+ * gekürzt noch waagerecht gescrollt.
  *
  * Der Umbruch entsteht über Utilities auf EINEM DOM-Baum, nicht über zwei parallele
  * Teilbäume (`hidden sm:flex` neben `flex sm:hidden`) - doppelte Zweige würden Rollen, Namen
  * und Elementanzahl verdoppeln und sowohl `toHaveCount(3)` als auch
  * `EXPECTED_CONTROL_COUNT = 6` brechen.
- *
- * Nebeneffekt und Gewinn: Die drei Einträge stehen dann von oben nach unten in derselben
- * Reihenfolge wie ihre Tasten 1/2/3, statt in einer je nach Breite unterschiedlich
- * umbrechenden Reihe.
  */
 const ENTRY_LAYOUT = 'w-full justify-start sm:w-auto'
 
@@ -122,8 +110,7 @@ export function RatingButtons({
   // `disabled` synchron mithält. Das Button-eigene busy-Prop (eigener Spinner je Button)
   // wird bewusst NICHT an alle drei Buttons weitergereicht - drei parallele Spinner plus
   // die separate "Speichert…"-Zeile wären redundante Bewegungsunruhe für eine häufig
-  // wiederholte, schnelle Aktion ("Durchsatz vor Erklärung"). Die zentrale Statuszeile
-  // bleibt der einzige Busy-Indikator.
+  // wiederholte, schnelle Aktion ("Durchsatz vor Erklärung").
   const isDisabled = disabled || busy
 
   return (

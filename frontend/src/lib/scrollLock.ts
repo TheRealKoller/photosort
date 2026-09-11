@@ -1,12 +1,12 @@
 /**
  * Zaehlende Sperre des Hintergrund-Scrollens hinter einer Ueberlagerung.
  *
- * WARUM MODULWEIT UND NICHT PRO KOMPONENTE: Die vorherige Loesung merkte sich den vorgefundenen
- * Wert von `document.body.style.overflow` im Effekt der jeweiligen Ueberlagerung. Bei zwei
- * gleichzeitig offenen Ueberlagerungen liest die zweite bereits 'hidden' als "vorherigen" Wert;
- * schliesst danach die ERSTE zuerst, schreibt sie ihr leeres '' zurueck und der Hintergrund
- * scrollt, obwohl noch eine Ueberlagerung offen ist. Ein gemeinsamer Zaehler ist der einzige Ort,
- * an dem sich diese Reihenfolge korrekt aufloesen laesst.
+ * MODULWEIT UND NICHT PRO KOMPONENTE: Merkte sich jede Ueberlagerung den vorgefundenen Wert von
+ * `document.body.style.overflow` in ihrem eigenen Effekt, laese bei zwei gleichzeitig offenen
+ * Ueberlagerungen die zweite bereits 'hidden' als "vorherigen" Wert; schloesse danach die ERSTE
+ * zuerst, schriebe sie ihr leeres '' zurueck und der Hintergrund scrollte, obwohl noch eine
+ * Ueberlagerung offen ist. Ein gemeinsamer Zaehler ist der einzige Ort, an dem sich diese
+ * Reihenfolge korrekt aufloesen laesst.
  *
  * IDEMPOTENZ DER FREIGABE: React ruft Effekt-Aufraeumungen im StrictMode doppelt auf
  * (`main.tsx` rendert unter StrictMode). Ohne eigenes Flag je Freigabe wuerde der zweite Aufruf
@@ -36,9 +36,7 @@ export function lockBodyScroll(): () => void {
     released = true
     // BEI NULL GEKLEMMT, nicht nackt heruntergezaehlt: `resetBodyScrollLock()` setzt den Zaehler
     // hart auf 0, eine danach noch laufende Freigabe aus der Zeit davor druecke ihn sonst auf -1 -
-    // und die naechste Sperre griffe nicht mehr, weil sie nur beim Uebergang 0 -> 1 sichert. Dass
-    // das heute nicht auftritt, haengt allein an der Aufrufreihenfolge der `afterEach`-Hooks in
-    // Vitest, die nirgends zugesichert ist.
+    // und die naechste Sperre griffe nicht mehr, weil sie nur beim Uebergang 0 -> 1 sichert.
     lockCount = Math.max(0, lockCount - 1)
     if (lockCount === 0) {
       document.body.style.overflow = savedOverflow

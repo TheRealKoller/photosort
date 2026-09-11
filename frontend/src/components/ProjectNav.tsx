@@ -23,56 +23,45 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
  * Aktiv-Ableitung existieren genau einmal.
  *
  * GENAU EINE Popover-INSTANZ MIT GENAU EINEM AUSLOESER, unabhaengig von der Breite; der Breakpoint
- * steuert ausschliesslich, welche Teile des Panels dargestellt werden. Der naheliegende
- * Gegenentwurf - zwei Instanzen (eine `lg:hidden` mit allen fuenf, eine `hidden lg:block` mit den
- * zwei Nebenzielen) - ist ausdruecklich abgewaehlt: er legte zwei Buttons mit demselben
- * zugaenglichen Namen ins DOM und machte jede Rollen-Query darauf mehrdeutig (auch in
- * e2e/tests/tap-targets.spec.ts und popover-position.spec.ts, die den Ausloeser bereits
- * ansteuern). Mit einer Instanz ist die Zusage "genau ein Ausloeser" im DOM pruefbar statt nur
- * visuell.
+ * steuert ausschliesslich, welche Teile des Panels dargestellt werden. Nicht in zwei Instanzen
+ * aufteilen (eine `lg:hidden` mit allen fuenf, eine `hidden lg:block` mit den zwei Nebenzielen):
+ * das legte zwei Buttons mit demselben zugaenglichen Namen ins DOM und machte jede Rollen-Query
+ * darauf mehrdeutig - auch die in e2e/tests/tap-targets.spec.ts und popover-position.spec.ts, die
+ * den Ausloeser ansteuern.
  *
- * DER LANDMARK UMSCHLIESST LEISTE UND AUSLÖSER, nicht nur die Leiste: es muss zu jedem
- * Zeitpunkt und in jeder Darstellung genau EIN `navigation`-Landmark "Projektbereiche"
- * geben. Läge das
+ * DER LANDMARK UMSCHLIESST LEISTE UND AUSLÖSER, nicht nur die Leiste: es muss zu jedem Zeitpunkt
+ * und in jeder Darstellung genau EIN `navigation`-Landmark "Projektbereiche" geben. Läge das
  * `aria-label` auf dem `hidden lg:flex`-Container, gaebe es unterhalb `lg:` gar keinen Landmark
- * mehr - `display: none` nimmt das Element aus dem Accessibility-Tree. So bleibt in beiden
- * Darstellungen genau einer uebrig: ab `lg:` umschliesst er die drei sichtbaren Hauptziele samt
- * Ausloeser, darunter den Ausloeser allein.
+ * mehr - `display: none` nimmt das Element aus dem Accessibility-Tree. Ab `lg:` umschliesst er
+ * die drei sichtbaren Hauptziele samt Ausloeser, darunter den Ausloeser allein.
  *
  * DER PANEL-INHALT LIEGT DAGEGEN AUSSERHALB DIESES `<nav>`: `PopoverContent` wickelt sich in
  * `PopoverPrimitive.Portal` (ui/popover.tsx) und haengt damit an `document.body`, nicht im
- * Komponentenbaum. Ein zweites, gleichnamiges `<nav>` um die Panelzeilen waere die naheliegende
- * Reaktion darauf und ist bewusst NICHT gesetzt: zwei gleichnamige Landmarks nebeneinander sind
- * ein Bedienbarkeitsfehler in der Landmark-Liste des Screenreaders und machten jede Rollen-Query
- * darauf mehrdeutig. Die Panelzeilen bleiben echte `<a>` und damit in jeder Linkliste - was ihnen
- * fehlt, ist ausschliesslich die Landmark-Einordnung.
+ * Komponentenbaum. Ein zweites, gleichnamiges `<nav>` um die Panelzeilen ist bewusst NICHT
+ * gesetzt: zwei gleichnamige Landmarks nebeneinander sind ein Bedienbarkeitsfehler in der
+ * Landmark-Liste des Screenreaders und machten jede Rollen-Query darauf mehrdeutig. Die
+ * Panelzeilen bleiben echte `<a>` und damit in jeder Linkliste - was ihnen fehlt, ist
+ * ausschliesslich die Landmark-Einordnung.
  *
  * MENUE UEBER DAS VORHANDENE RADIX-POPOVER, NICHT UEBER @radix-ui/react-dropdown-menu: dessen
  * ARIA-`menu`-Muster (`role="menu"`/`menuitem`) naehme den Zielen ihre Link-Semantik - sie waeren
  * fuer Screenreader keine Links mehr und tauchten in keiner Linkliste auf. Verschärft gilt das
  * unterhalb `lg:`: dort liegen ALLE FÜNF Ziele im Panel, die Anwendung hätte auf schmalen
  * Bildschirmen dann ueberhaupt keine Navigationslinks mehr.
- *
- * Das Popover liefert ausserdem ohne Zutun alles, was die Akzeptanzkriterien verlangen: Portal mit
- * `z-50` (Panel ueber Kopfzeile und Stepper, beide `z-10`), kollisionsbewusste Platzierung samt
- * Hoehenschranke, Schliessen per Escape/Klick ausserhalb, Fokus ins Panel und zurueck auf den
- * Ausloeser.
  */
 
 /*
  * DIE DREI BOARD-ZUSTAENDE DES NAVIGATIONSELEMENTS - zeichengleich zum Schrittmarker in
- * components/Stepper.tsx, nicht neu hergeleitet. Bewusst
- * DATEILOKAL und nicht mit Stepper geteilt: etablierte "erst ab dem dritten Konsumenten
- * auslagern"-Praxis dieses Projekts.
+ * components/Stepper.tsx, nicht neu hergeleitet. Bewusst DATEILOKAL und nicht mit Stepper geteilt.
  *
- * Kein `Button`-Wrapper fuer die Ziele, sondern schlichte `<Link>` mit diesem Rezept - aus
- * demselben Grund, aus dem Stepper es so haelt: ruhend/ueberfahren/aktiv sind keine
- * `Button`-Auspraegung, und der Aktiv-Zustand braucht Rand, Schnitt und Farbe GEMEINSAM.
+ * Kein `Button`-Wrapper fuer die Ziele, sondern schlichte `<Link>` mit diesem Rezept:
+ * ruhend/ueberfahren/aktiv sind keine `Button`-Auspraegung, und der Aktiv-Zustand braucht Rand,
+ * Schnitt und Farbe GEMEINSAM.
  *
- * `--border-control` statt des rein dekorativen `--border`: ein Bedienelement
- * mit `--border` waere auf dunklem Grund unsichtbar. Zu jeder `hover:`-Variante steht eine
- * `active:`-Variante - Tailwind bindet `hover:` an `@media (hover: hover)`, am Telefon ist
- * "gedrueckt" der einzige Zustand, den es ueberhaupt gibt.
+ * `--border-control` statt des rein dekorativen `--border`: ein Bedienelement mit `--border`
+ * waere auf dunklem Grund unsichtbar. Zu jeder `hover:`-Variante steht eine `active:`-Variante -
+ * Tailwind bindet `hover:` an `@media (hover: hover)`, am Telefon ist "gedrueckt" der einzige
+ * Zustand, den es ueberhaupt gibt.
  */
 const NAV_LINK_BASE_CLASSES =
   'flex items-center rounded-md border px-3 py-2 text-xs font-semibold transition-colors'
@@ -81,8 +70,8 @@ const NAV_LINK_RESTING_CLASSES =
   'border-border-control bg-surface text-text hover:bg-overlay hover:text-text-h active:bg-border active:text-text'
 
 /*
- * AKTIVSTIL DES GESCHLOSSENEN AUSLÖSERS - ein DRITTES, absichtlich abweichendes Rezept,
- * das der Stepper-Bindung in designSystem.contract.test.ts bewusst NICHT hinzugefuegt wird: ein
+ * AKTIVSTIL DES GESCHLOSSENEN AUSLÖSERS - ein DRITTES, absichtlich abweichendes Rezept, das der
+ * Stepper-Bindung in designSystem.contract.test.ts bewusst NICHT hinzugefuegt wird: ein
  * Symbol-Button ist kein Board-Navigationselement.
  *
  * NICHT FARBE ALLEIN: der ruhende Ghost-Button hat GAR KEINEN Rand - der Rand selbst ist damit der
@@ -97,18 +86,12 @@ const NAV_TRIGGER_ACTIVE_CLASSES = 'border border-accent bg-overlay text-accent'
  *
  * `--separator` STATT `--border` NACH DER BENANNTEN AUSNAHME "Gruppentrenner auf
  * `--elevated`/`--overlay`" des Design-Systems (ebenso am Token in index.css vermerkt):
- * Innerhalb von Panels und Popovern verwenden
- * Gruppengrenzen `--separator`, weil die Flaechenstufe selbst nicht zur Trennung ausreicht und die
- * Regel speziell Kanten ZWISCHEN verschiedenen Flaechen adressiert, nicht Unterteilungen INNERHALB
- * einer Flaeche.
+ * Innerhalb von Panels und Popovern verwenden Gruppengrenzen `--separator`.
  *
  * AUSDRUECKLICH NICHT die Regel "Linie auf dem Grund" - die trifft hier NICHT zu: das
- * `PopoverContent` steht auf `--elevated`, nicht auf `--bg`/`--surface`. Wer diesem Trugschluss
- * folgt, stellt richtig fest, dass das Panel nicht auf dem Grund steht, und wechselt auf
- * `--border` - das wäre mit 1,04-1,45:1 faktisch keine Linie mehr, und die Trennung trüge dann
- * allein der verdoppelte Abstand. Der Korridor 2,0-2,5 ist auf die beiden Grundflächen
- * kalibriert und gilt
- * fuer diese Verwendung nicht; tragend ist die Zusicherung, dass `--separator` auf JEDER der vier
+ * `PopoverContent` steht auf `--elevated`, nicht auf `--bg`/`--surface`. Ein Wechsel auf
+ * `--border` waere hier faktisch keine Linie mehr, die Trennung truege dann allein der
+ * verdoppelte Abstand. Tragend ist die Zusicherung, dass `--separator` auf JEDER der vier
  * Flaechen sichtbarer bleibt als `--border`.
  *
  * EIGENES LITERAL statt inline im `className`: designSystem.contract.test.ts bindet die Zeile

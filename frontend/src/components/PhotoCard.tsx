@@ -6,10 +6,7 @@ import { cn } from '../lib/utils'
 import { RatingBadge } from './RatingBadge'
 
 export interface PhotoCardProps {
-  /**
-   * Ziel des Kachel-Links. Fehlt es, ist die Bildflaeche KEIN Link - die Kuratierung kennt heute
-   * keinen Sprung in die Detailansicht, und "es wird nichts hinzugefuegt" ist Akzeptanzkriterium.
-   */
+  /** Ziel des Kachel-Links. Fehlt es, ist die Bildflaeche KEIN Link. */
   to?: string
   /** Vollstaendiger Pfad des Fotos. Sichtbar wird ausschliesslich der Basisname. */
   relativePath: string
@@ -31,28 +28,25 @@ export interface PhotoCardProps {
 }
 
 /**
- * Die Foto-Karte des Boards. Sie lebt GENAU EINMAL: zuvor war die Kachel in `PhotoGridPage`,
- * `CurateCategoriesPage` und `PhotoComparePage` dreimal von Hand gebaut und dreimal verschieden -
- * vier Zustaende in drei Kopien waeren dreimal derselbe Fehler gewesen.
+ * Die Foto-Karte des Boards. Sie lebt GENAU EINMAL - `PhotoGridPage`, `CurateCategoriesPage` und
+ * `PhotoComparePage` bauen keine eigene Kachel.
  *
  * AUFBAU (zugleich DOM- und Fokusreihenfolge): Bildbereich mit den beiden Ecken-Overlays,
  * darunter die Statuszeile (Kennzeichen links, Dateiname rechts), darunter die Fusszeile.
  * Kennzeichen und Dateiname sind nicht fokussierbar und schieben sich damit zwischen Bild und
  * Fusszeile, ohne die Reihenfolge der Bedienelemente zu veraendern.
  *
- * DAS KENNZEICHEN SITZT IM KARTENKOERPER, NICHT IN DER BILDECKE (Entscheidung 2). Board-treu und
- * zugleich die Loesung eines echten Problems: Ein Textbadge "Album-wuerdig" ueber dem Foto braucht
- * bei 360px und zwei Spalten mehr Platz, als die Ecke hat, und die Ecke oben rechts ist fuer den
- * Info-Trigger reserviert. Damit entfaellt zugleich der `pointer-events-none`-Kniff, mit dem die
- * Badge Klicks an den darunterliegenden Link durchreichte.
+ * DAS KENNZEICHEN SITZT IM KARTENKOERPER, NICHT IN DER BILDECKE: Ein Textbadge "Album-wuerdig"
+ * ueber dem Foto braucht bei 360px und zwei Spalten mehr Platz, als die Ecke hat, und die Ecke
+ * oben rechts ist fuer den Info-Trigger reserviert.
  *
  * DIE ECKEN-OVERLAYS SIND GESCHWISTER DER BILDFLAECHE, NIE IHRE KINDER. Die Bildflaeche traegt
  * `overflow-hidden`; eine aufgespannte Trefferflaeche innerhalb eines beschneidenden Containers
  * wuerde still abgeschnitten.
  *
- * DER FUENFTE BOARD-ZUSTAND "AUSGEWAEHLT" WIRD NICHT GEBAUT (Entscheidung 5, von Daniel
- * zurueckgestellt): PhotoSort kennt heute keine Foto-Auswahl. Es gibt weder eine `selected`-Prop
- * noch ein `data-selected`, und es entsteht keine Vorbereitung darauf.
+ * DER FUENFTE BOARD-ZUSTAND "AUSGEWAEHLT" WIRD NICHT GEBAUT: PhotoSort kennt heute keine
+ * Foto-Auswahl. Es gibt weder eine `selected`-Prop noch ein `data-selected`, und es entsteht
+ * keine Vorbereitung darauf.
  */
 export function PhotoCard({
   to,
@@ -67,7 +61,7 @@ export function PhotoCard({
   const isRejected = status === 'rejected'
 
   /*
-   * AUSSORTIERT: Nur die BILDFLAECHE tritt zurueck, die Bedeutungstraeger nicht (Entscheidung 4).
+   * AUSSORTIERT: Nur die BILDFLAECHE tritt zurueck, die Bedeutungstraeger nicht.
    * Das Board daempft die ganze Karte auf 40 %; das ist bindend abgelehnt - Deckkraft auf einem
    * Container mischt gegen den Seitengrund und ist statisch nicht nachrechenbar (weisse Schrift bei
    * 40 % ueber `--bg` erreicht 3.79:1, die dunkle Tinte auf dem roten Badge wird praktisch
@@ -111,9 +105,9 @@ export function PhotoCard({
 
       <div className="flex items-center justify-between gap-2">
         {status === null && (
-          // Entscheidung 3: Der Zustand "neu" traegt das WORT, nicht das neutrale "–"-Badge. Reiner
-          // Text, kein `aria-label`, kein `RatingBadge` - das "–" bleibt seinen uebrigen
-          // Aufrufstellen (Vergleichsansicht) vorbehalten, wo es "hat nicht bewertet" heisst.
+          // Der Zustand "neu" traegt das WORT, nicht das neutrale "–"-Badge. Reiner Text, kein
+          // `aria-label`, kein `RatingBadge` - das "–" bleibt seinen uebrigen Aufrufstellen
+          // (Vergleichsansicht) vorbehalten, wo es "hat nicht bewertet" heisst.
           <span className="shrink-0 text-xs text-text-muted">Neu</span>
         )}
         {status !== undefined && status !== null && (

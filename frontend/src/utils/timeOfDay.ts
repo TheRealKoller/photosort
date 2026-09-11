@@ -102,12 +102,9 @@ function clusterPlaceLabel(place: ClusterPlace | null | undefined): string | nul
 
 /**
  * Ermittelt Tag und fertige Cluster-Ueberschrift aus den sichtbaren Fotos eines Clusters.
- * Früheste-Foto-Regel: sowohl Tag als auch Tageszeit-Bucket
- * werden vom chronologisch fruehesten Foto abgeleitet, die angezeigte Spanne bleibt die exakte
- * Min/Max-Spanne aller uebergebenen (sichtbaren) Fotos. Erwartet ein nicht-leeres Array - der
- * Aufrufer (`groupByClusterAndCategory`) ruft diese Funktion nur fuer Cluster mit mindestens einem
- * noch sichtbaren Foto auf, fuer erschoepfte Cluster wird stattdessen der `clusterMetaRef`-Cache
- * gelesen.
+ * Früheste-Foto-Regel: sowohl Tag als auch Tageszeit-Bucket werden vom chronologisch fruehesten
+ * Foto abgeleitet, die angezeigte Spanne bleibt die exakte Min/Max-Spanne aller uebergebenen
+ * (sichtbaren) Fotos. Erwartet ein nicht-leeres Array.
  *
  * Ein optionaler ORTSTEIL steht davor: `"<Ort> · <Tageszeit> (<Zeitspanne>)"`. Der Ort
  * ERGÄNZT die Tageszeit, er ersetzt sie nie.
@@ -126,10 +123,8 @@ export function formatClusterHeading(
 ): {
   dayKey: string
   heading: string
-  // Roher (nicht formatierter) Zeitstempel des chronologisch frühesten Fotos: statt ihn im
-  // Aufrufer (`CurateCategoriesPage.tsx`) ein zweites Mal zu berechnen, liefert diese
-  // Funktion ihn als einzige Quelle gleich mit - genutzt für die chronologische
-  // Cluster-Sortierung.
+  // Roher (nicht formatierter) Zeitstempel des chronologisch frühesten Fotos - die einzige
+  // Quelle für die chronologische Cluster-Sortierung, im Aufrufer nicht neu berechnen.
   earliestIso: string
 } {
   // Expliziter Guard statt eines unklaren "cannot read properties of undefined" beim
@@ -176,7 +171,7 @@ export function formatDayHeading(dayKey: string): string {
   // Bewusst `T00:00:00` (lokale Mitternacht) statt eines bloßen Datums-Strings an `new Date()`
   // uebergeben: `new Date("2026-07-20")` waere UTC-Mitternacht, `new Date("2026-07-20T00:00:00")`
   // dagegen lokale Mitternacht - in Zeitzonen westlich von UTC wuerde die erste Variante sonst
-  // teils den falschen (vorherigen) Wochentag liefern (siehe Testkonzept).
+  // teils den falschen (vorherigen) Wochentag liefern.
   const date = new Date(`${dayKey}T00:00:00`)
   const weekday = WEEKDAY_LABELS[date.getDay()]
   const dd = String(day).padStart(2, '0')

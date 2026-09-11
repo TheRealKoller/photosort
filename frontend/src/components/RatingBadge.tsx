@@ -12,14 +12,11 @@ const TONE_BY_STATUS: Record<RatingStatus, BadgeTone> = {
 }
 
 /*
- * Die drei Bewertungssymbole des Boards (Favorit `star`, Album `book`, Aussortiert `x-circle`). Sie
- * ersetzen die frueheren Sonderzeichen ★/✓/✕.
+ * Die drei Bewertungssymbole des Boards (Favorit `star`, Album `book`, Aussortiert `x-circle`).
  *
- * `book` fuer "Album-wuerdig" folgt dem Board und der ADR (0055 Punkt 6c nennt den achromatischen
- * Nachweis ausdruecklich als `star`/`book`/`x-circle`); die Umsetzungsliste der Spec fuehrt an
- * dieser einen Stelle `check` auf, was die bisherigen Zeichen 1:1 uebersetzt haette. Aufgeloest
- * zugunsten des Boards: `check` ist im Produkt bereits das Symbol der Erfolgsmeldung
- * (ui/alert.tsx), eine Doppelbelegung braeche "Bewertungsstufen auf einen Blick unterscheidbar".
+ * Fuer "Album-wuerdig" gilt `book` und NICHT `check`: `check` ist im Produkt bereits das Symbol
+ * der Erfolgsmeldung (ui/alert.tsx), eine Doppelbelegung braeche "Bewertungsstufen auf einen
+ * Blick unterscheidbar".
  */
 const SYMBOLS: Record<RatingStatus, IconName> = {
   favorite: 'star',
@@ -36,19 +33,19 @@ interface RatingBadgeProps {
   status: RatingStatus | null
   /**
    * true fuer einen unbestaetigten automatischen Vorschlag aus PhotoOut.suggestion statt einer
-   * echten Bewertung aus ratings[] - siehe Anzeigeregel im UI/UX-Abschnitt der Spec: eine eigene
-   * Bewertung hat immer Vorrang, ein Vorschlag wird nur gezeigt, solange keine eigene Bewertung
-   * existiert (diese Entscheidung trifft der Aufrufer, nicht diese Komponente).
+   * echten Bewertung aus ratings[]. Eine eigene Bewertung hat immer Vorrang, ein Vorschlag wird
+   * nur gezeigt, solange keine eigene Bewertung existiert (diese Entscheidung trifft der
+   * Aufrufer, nicht diese Komponente).
    */
   suggested?: boolean
   className?: string
 }
 
 /**
- * MEHRFACHCODIERUNG DER DREI BEWERTUNGSZUSTAENDE (Akzeptanzkriterium "ohne Farbwahrnehmung
- * unterscheidbar"). Nachgerechnet in Graustufen-Luminanz liegen Favorit (0.48) und Album-wuerdig
- * (0.54) bei nur 1.10:1 zueinander - als reine Farbflaechen praktisch identisch hell. Das
- * Kriterium traegt deshalb AUSSCHLIESSLICH ueber die Mehrfachcodierung:
+ * MEHRFACHCODIERUNG DER DREI BEWERTUNGSZUSTAENDE - sie muessen ohne Farbwahrnehmung
+ * unterscheidbar bleiben. In Graustufen-Luminanz liegen Favorit (0.48) und Album-wuerdig (0.54)
+ * bei nur 1.10:1 zueinander, als reine Farbflaechen also praktisch identisch hell. Die
+ * Unterscheidbarkeit traegt AUSSCHLIESSLICH ueber die Mehrfachcodierung:
  *   1. zugaenglicher Name (Favorit / Album-wuerdig / Verworfen),
  *   2. eigenes Symbol (`data-icon`: star / book / x-circle),
  *   3. beim Aussortierten zusaetzlich `data-struck` als DOM-Merkmal der Durchstreichung.
@@ -86,11 +83,10 @@ export function RatingBadge({ status, suggested = false, className }: RatingBadg
     >
       {suggested && <Icon name={SUGGESTION_PREFIX} size={14} />}
       <Icon name={SYMBOLS[status]} size={14} />
-      {/* Sichtbares Produktwort neben dem Symbol (Board-Kennzeichen). Es ist die
-          Haelfte der Graustufen-Zusage: Favorit und Album-wuerdig liegen achromatisch bei 1.08:1
-          zueinander, ihre Unterscheidung traegt ausschliesslich ueber Wort und Symbolsilhouette.
-          Der "Vorschlag:"-Praefix bleibt dem zugaenglichen Namen vorbehalten - sichtbar
-          unterscheidet ihn der Zahnrad-Praefix und die Vorschlags-Konstruktion. */}
+      {/* Sichtbares Produktwort neben dem Symbol (Board-Kennzeichen) - Traeger der
+          Graustufen-Zusage oben, zusammen mit der Symbolsilhouette. Der "Vorschlag:"-Praefix
+          bleibt dem zugaenglichen Namen vorbehalten - sichtbar unterscheidet ihn der
+          Zahnrad-Praefix und die Vorschlags-Konstruktion. */}
       {RATING_STATUS_LABELS[status]}
     </Badge>
   )

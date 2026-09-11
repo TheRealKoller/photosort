@@ -15,8 +15,6 @@ export interface ScanSummary {
   error_message: string | null
 }
 
-// Wiederverwendet ScanStatus (running/success/failed) statt eines eigenen Typs - identische
-// Semantik für einen asynchron laufenden Worker-Job, siehe backend models.py::ScoringRun.
 export interface ScoringRunSummary {
   // Wird als scoring_run_id an POST /classify weitergereicht - Staleness-Guard bei einem
   // zwischenzeitlichen Re-Scan/Re-Scoring.
@@ -34,18 +32,17 @@ export interface ScoringRunSummary {
 
 // Die VIER Teilschritte eines verketteten Klassifizierungslaufs, in genau dieser Reihenfolge.
 //
-// 'landmark' ist die Sehenswürdigkeits-Erkennung. 'ranking' (Kategorieableitung und
-// Rangfolge) gehört fachlich zur Kriterien-Phase, läuft aber DANACH; ohne eigenen Namen
-// bliebe die Anzeige dort auf 'landmark' bei 100 % stehen.
+// 'landmark' ist die Sehenswürdigkeits-Erkennung. 'ranking' (Kategorieableitung und Rangfolge)
+// gehört fachlich zur Kriterien-Phase, läuft aber DANACH.
 export type ClassificationPhase = 'remote_categories' | 'criteria' | 'landmark' | 'ranking'
 
-// Ein Cloud-Teilschritt EINES Klassifizierungslaufs: während des Laufs die
-// Fortschrittsanzeige, danach die Bilanz - derselbe Datensatz zu zwei Zeitpunkten.
+// Ein Cloud-Teilschritt EINES Klassifizierungslaufs: während des Laufs die Fortschrittsanzeige,
+// danach die Bilanz.
 //
 // Die Felder sind DURCHGÄNGIG `| null` und nicht optional (`?`): eine Auslassung an der
-// Anzeigestelle soll ein Typfehler sein, kein stilles `undefined`. `null` heißt überall
-// "nicht erfasst"/"unbekannt" - nie `0` und nie "kostenlos"; ein `?? 0` irgendwo im Pfad
-// behauptete Kostenfreiheit für einen Lauf, der Geld ausgegeben hat.
+// Anzeigestelle soll ein Typfehler sein, kein stilles `undefined`. `null` heißt überall "nicht
+// erfasst"/"unbekannt" - nie `0` und nie "kostenlos"; ein `?? 0` irgendwo im Pfad behauptete
+// Kostenfreiheit für einen Lauf, der Geld ausgegeben hat.
 export interface CloudPhaseSummaryOut {
   purpose: CloudVisionPhase
   photos_total: number | null
@@ -112,8 +109,7 @@ export interface ProjectOut {
   last_scan: ScanSummary | null
   last_scoring_run: ScoringRunSummary | null
   last_criterion_scoring_run: CriterionScoringRunSummary | null
-  // Globales Feature-Flag, auf ProjectOut statt einem eigenen Endpunkt exponiert - siehe den
-  // Kommentar in backend api/projects.py.
+  // Globales Feature-Flag, nicht projektspezifisch.
   category_selection_enabled: boolean
   // Projektweiter Einwilligungs-Schalter für produktive Cloud-Vision-Datenflüsse - Default
   // false, consent_at null solange nicht aktiviert. Er gated BEIDE Cloud-Anteile.
@@ -138,8 +134,8 @@ export interface ClassificationEstimateOut {
   remote_categories: ClassificationEstimatePartOut
   landmark: ClassificationEstimatePartOut
   provider: string
-  // Das Modell, auf das sich die Schätzung bezieht - da die Modellwahl eine
-  // Betriebseinstellung ist, benennt `provider` allein die Preisgrundlage nicht eindeutig.
+  // Das Modell, auf das sich die Schätzung bezieht - `provider` allein benennt die
+  // Preisgrundlage nicht eindeutig.
   model: string
   // `| null` heißt "für das eingestellte Modell ist kein Preis hinterlegt", NIE 0. Ein
   // `?? 0` an dieser Stelle behauptete Kostenfreiheit - `tsc` erzwingt die Behandlung an der
@@ -241,11 +237,9 @@ export interface CriterionScoreOut {
   display_name: string
   value: number
   source: CriterionSource
-  // Spiegelt `CriterionDefinition.category_eligible` der Backend-Registry und ist die
-  // ALLEINIGE Grundlage der Gliederung in die Blöcke "Qualität" (false) / "Kategorien"
-  // (true) - im Frontend wird dazu bewusst keine Merkmalsliste gepflegt. Pflichtfeld statt
-  // optional, damit `tsc` alle Test-Fixtures erzwingt, statt stillschweigend `undefined` in
-  // die Blockbildung durchzureichen.
+  // Spiegelt `CriterionDefinition.category_eligible` der Backend-Registry und ist die ALLEINIGE
+  // Grundlage der Gliederung in die Blöcke "Qualität" (false) / "Kategorien" (true) - im
+  // Frontend wird dazu bewusst keine Merkmalsliste gepflegt.
   category_eligible: boolean
 }
 
@@ -293,9 +287,9 @@ export interface CategoryCandidateOut {
   confidence: number | null
 }
 
-// Die beiden unabhängigen Cloud-Vision-Läufe, für die pro Foto genau einer von sechs
-// Zuständen angezeigt wird. Derselbe Typ schlüsselt auch die Cloud-Teilschritte eines Laufs
-// (`CloudPhaseSummaryOut.purpose`) - dieselben zwei Zwecke, eine Definition.
+// Die beiden unabhängigen Cloud-Vision-Läufe, für die pro Foto genau einer von sechs Zuständen
+// angezeigt wird. Derselbe Typ schlüsselt auch die Cloud-Teilschritte eines Laufs
+// (`CloudPhaseSummaryOut.purpose`).
 export type CloudVisionPhase = 'landmark' | 'remote_category'
 
 // Read-time aus bereits vorhandenen Signalen abgeleitet (backend api/photos.py::
@@ -369,10 +363,10 @@ export interface PhotoOut {
   // getrennt von `rankings[].category_key` (dort steht die im Lauf tatsaechlich vergebene
   // Kategorie).
   remote_category: CategoryKey | null
-  /** Die Konfidenz zu `remote_category`. Eigenes Feld statt einer Ableitung aus
-   * `category_candidates` - `remote_category` kann `nicht_erkannt` sein und steht dann gar
-   * nicht in der Kandidatenliste. Trägt den Kuratierungsfilter "Nur unsichere Zuordnungen".
-   * `null` heißt "keine Angabe", nie 0. */
+  /** Die Konfidenz zu `remote_category`. Nicht aus `category_candidates` ableiten -
+   * `remote_category` kann `nicht_erkannt` sein und steht dann gar nicht in der Kandidatenliste.
+   * Trägt den Kuratierungsfilter "Nur unsichere Zuordnungen". `null` heißt "keine Angabe",
+   * nie 0. */
   category_confidence: number | null
   // Dauerhafte manuelle Uebersteuerung (PhotoScore.category_override), null ohne aktiven
   // Override.
@@ -381,10 +375,9 @@ export interface PhotoOut {
   category_candidates: CategoryCandidateOut[]
   // Immer genau 2 Einträge, feste Reihenfolge [landmark, remote_category].
   cloud_vision_status: CloudVisionStatusOut[]
-  /** Beide Felder liefert die API IMMER (auf allen Lesepfaden, `null` ohne
-   * Ortsinformation). Hier trotzdem OPTIONAL deklariert, damit die bestehenden
-   * Fixture-Literale der Testsuite unverändert gültig bleiben - `undefined` und `null`
-   * bedeuten an jeder Lesestelle dasselbe: kein Ort. */
+  /** Beide Felder liefert die API IMMER (auf allen Lesepfaden, `null` ohne Ortsinformation).
+   * Hier trotzdem OPTIONAL deklariert: `undefined` und `null` bedeuten an jeder Lesestelle
+   * dasselbe - kein Ort. */
   location?: PhotoLocation | null
   cluster_place?: ClusterPlace | null
 }
@@ -443,13 +436,12 @@ export interface ProjectStatsCategoryConfidenceEntry {
 }
 
 /** Gruppiert über die MODELL-Kategorie, ausdrücklich nicht über die wirksame Kategorie der
- * Rangfolge - ein übersteuertes Foto zählt hier weiterhin zu seiner Modell-Kategorie.
- * Deshalb ein eigener Block neben `ProjectStatsCategories` und keine zusätzliche Spalte
- * dort: beide Zahlen stimmen, beziehen sich aber auf verschiedene Mengen.
+ * Rangfolge - ein übersteuertes Foto zählt hier weiterhin zu seiner Modell-Kategorie. Die Zahlen
+ * dieses Blocks und die aus `ProjectStatsCategories` beziehen sich deshalb auf verschiedene
+ * Mengen.
  *
- * Die beiden Zähler sind die BEZUGSBASIS und beziehen sich auf die klassifizierten Fotos
- * des Projekts; ihre Summe ist die Zahl der Klassifizierungszeilen, nicht die
- * Fotoanzahl. */
+ * Die beiden Zähler sind die BEZUGSBASIS und beziehen sich auf die klassifizierten Fotos des
+ * Projekts; ihre Summe ist die Zahl der Klassifizierungszeilen, nicht die Fotoanzahl. */
 export interface ProjectStatsCategoryConfidence {
   /** Immer alle Kategorien des festen Sets inkl. `nicht_erkannt`, in Anzeigereihenfolge. */
   entries: ProjectStatsCategoryConfidenceEntry[]
