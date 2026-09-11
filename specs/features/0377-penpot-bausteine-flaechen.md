@@ -66,10 +66,13 @@ Gehalt ist unverändert. Was daran geändert wurde und warum, steht unter "Entsc
 - [ ] **3.** Die Beschriftung jeder betroffenen Variante erreicht gegen den Untergrund, auf dem
       sie im Entwurf steht, mindestens die WCAG-AA-Untergrenze. Nachgewiesen wird die
       **Token-Paarung** (Schriftfarbe gegen gebundene Fläche, bei den transparenten Varianten
-      gegen `color.bg`), gerechnet aus `design/penpot/tokens.json`. `switch/disabled` fällt unter
-      die im Design-System dokumentierte WCAG-Ausnahme für inaktive Bedienelemente. Dass der
-      Seitengrund tatsächlich `color.bg` ist, wird beim Nachziehen gesetzt und bleibt
-      Sichtprüfung.
+      gegen `color.bg`), gerechnet aus `design/penpot/tokens.json`. Ausgenommen sind inaktive
+      Bedienelemente — die im Design-System dokumentierte WCAG-Ausnahme (1.4.3 / 1.4.11). Geführt
+      wird sie über ihre **Bedingung**, nicht als Namensliste: Schriftfarbe `color.text-disabled`
+      **und** eine Ausprägung `disabled` in der Kombination. Das trifft über alle Bausteine **21**
+      Varianten (Schaltfläche 18, Eingabefeld 1, Auswahlkästchen 1, Schalter 1); die Zahl ist
+      eingefroren, damit die Ausnahme nicht still um sich greift. Dass der Seitengrund tatsächlich
+      `color.bg` ist, wird beim Nachziehen gesetzt und bleibt Sichtprüfung.
 - [ ] **4.** Die Korrektur wirkt dauerhaft: Nach einem Verlust und Wiederaufbau der Penpot-Datei
       ist der Fehler nicht zurück. Nachgewiesen wird die **Bedingung** — dass
       `seed-components.js` und `components.json` den korrigierten Zustand erzeugen —, nicht die
@@ -241,7 +244,8 @@ dann nicht im Skript stecken.
 
 **Kontrast wird gerechnet, nicht abgeschrieben.** Kontrastverhältnis aus `tokens.json` gegen
 Schwelle 4,5, Untergrund aus der Simulation bzw. `color.bg` bei den transparenten Varianten;
-`switch/disabled` als begründete Ausnahme. Die nachgerechneten Einzelwerte werden **nicht**
+inaktive Bedienelemente als begründete Ausnahme, geführt über ihre Bedingung und mit
+eingefrorener Zahl (siehe Kriterium 3 und "Entscheidungen"). Die nachgerechneten Einzelwerte werden **nicht**
 eingefroren — sie wären die getippte Wertekopie, gegen die diese Testdatei sonst überall antritt.
 Die Helferfunktion wird dupliziert statt geteilt, mit eigenem Referenzpaar-Selbsttest.
 
@@ -265,11 +269,13 @@ Alle Paarungen der Tabelle unter "Architektur / Umsetzung" sind aus `tokens.json
 halten die WCAG-AA-Schwelle von 4,5:1. Die transparent bleibenden Varianten messen gegen
 `color.bg` zwischen 7,95:1 und 11,71:1.
 
-**Die eine Ausnahme:** `switch/disabled` liegt bei 1,81:1. Sie fällt unter die WCAG-Ausnahme für
-inaktive Bedienelemente (1.4.3 / 1.4.11), die das Design-System bereits führt und die ein
-Vertragstest absichert (`--text-disabled` tritt ausschließlich als `disabled:`-Variante auf). Die
-Schaltfläche trägt dieselbe Paarung im Zustand `disabled` schon heute — der Schalter folgt einer
-bestehenden Regel, statt einen Mangel fortzuschreiben.
+**Die eine Ausnahme ist eine Paarung, kein Einzelfall:** `switch/disabled` liegt bei 1,81:1 —
+`color.text-disabled` auf `color.surface`. Genau diese Paarung tragen im Zustand `disabled` auch
+Schaltfläche, Eingabefeld und Auswahlkästchen, und zwar schon heute; über alle Bausteine sind es
+**21** Varianten (Schaltfläche 18, Eingabefeld 1, Auswahlkästchen 1, Schalter 1). Sie fallen unter
+die WCAG-Ausnahme für inaktive Bedienelemente (1.4.3 / 1.4.11), die das Design-System bereits führt
+und die ein Vertragstest absichert (`--text-disabled` tritt ausschließlich als `disabled:`-Variante
+auf). Der Schalter folgt damit einer bestehenden Regel, statt einen Mangel fortzuschreiben.
 
 **Der Seitengrund gehört zur Nachführung.** Er steht nirgends im Repository und wird von keinem
 Skript gesetzt. Für die transparent bleibenden Varianten ist Kriterium 3 deshalb nur gegen
@@ -344,6 +350,14 @@ wiederholbar auf das Original schreibt — die sechs Auflagen verdichtet, plus d
   der Defekt dieser Story ist; die Ausnahme steht namentlich im Kriterium statt in einer Fußnote.
 - **Akzeptanzkriterium 5 blockiert den Pull Request nicht.** Sonst wäre er unabschließbar oder das
   Kriterium würde stillschweigend abgehakt.
+- **Die Kontrastausnahme wird über ihre Bedingung geführt, nicht als Namensliste** (bei der
+  Umsetzung entschieden, Kriterium 3 entsprechend nachgezogen). Die Zusicherung rechnet über
+  **alle** 158 Varianten — anders hätte die Lücke bei `card`/`alert`/`skeleton` gar keinen Ort.
+  Dabei zeigt sich: `switch/disabled` ist kein Einzelfall, sondern einer von 21 Fällen derselben
+  Paarung. Eine Namensliste wäre bei jeder neuen `disabled`-Variante nachzupflegen und bei jedem
+  Versäumnis rot, ohne dass etwas falsch wäre; die Bedingung (`color.text-disabled` **und**
+  Ausprägung `disabled`) ist dieselbe Regel, die der Design-System-Vertragstest ohnehin erzwingt.
+  Die eingefrorene Zahl 21 hält die Ausnahme trotzdem eng: Sie wächst nicht unbemerkt.
 - **`ghost` × `hover` und `ghost` × `active` bleiben eine benannte Lücke.** Im Produkt zeigen sie
   sehr wohl eine Fläche (`hover:bg-overlay`, `active:bg-border`), aber Kriterium 2 legt für
   `ghost`/`link` pauschal "transparent" fest, und die Variantenmatrix kann eine Achsenkombination

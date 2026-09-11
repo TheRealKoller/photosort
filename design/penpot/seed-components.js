@@ -246,6 +246,30 @@ function bindeRollen(brett, beschriftung, rollen, herkunft, nachzubinden) {
 }
 
 /**
+ * GETEILTE TABELLENREIHENFOLGE - wortgleich auch in fix-flaechen.js, statisch zugesichert.
+ *
+ * Welche Rollen-Tabellen eine Variante betreffen und in welcher Reihenfolge sie angewandt werden:
+ * erst die Grundtabelle des Bausteins, dann je Achse die Tabelle ihrer Auspraegung, in der
+ * Achsenreihenfolge der Datendatei. Wer spaeter kommt, gewinnt.
+ *
+ * ⚠ DER KORREKTURLAUF LEITET SEIN SOLL AUS DERSELBEN FUNKTION AB. Zweimal geschrieben liefe die
+ * Reihenfolge irgendwann auseinander, und `fix-flaechen.js` schriebe ein anderes Soll in den
+ * bespielten Stand, als dieser Aufbau erzeugt - ohne dass ein Test das saehe.
+ */
+function rollenTabellenFuer(baustein, achsenwerte) {
+  const tabellen = [baustein.tokens]
+  const proAuspraegung = baustein.tokensProAuspraegung || {}
+  for (const achse of Object.keys(baustein.varianten)) {
+    const achsenTabelle = proAuspraegung[achse] || {}
+    const besondere = achsenTabelle[achsenwerte[achse]]
+    if (besondere) {
+      tabellen.push(besondere)
+    }
+  }
+  return tabellen
+}
+
+/**
  * DAS KREUZPRODUKT ALLER ACHSEN eines Bausteins.
  *
  * Penpot verlangt je Variante einen Wert fuer JEDE Varianteneigenschaft: Ein Eintrag, der nur
@@ -302,15 +326,9 @@ function baueVariante(baustein, kombination, lage, nachzubinden) {
   brett.appendChild(beschriftung)
 
   const herkunft = baustein.schluessel + '/' + brett.name
-  let gesetzt = bindeRollen(brett, beschriftung, baustein.tokens, herkunft, nachzubinden)
-
-  const proAuspraegung = baustein.tokensProAuspraegung || {}
-  for (const achse of Object.keys(kombination)) {
-    const achsenTabelle = proAuspraegung[achse] || {}
-    const besondere = achsenTabelle[kombination[achse]]
-    if (besondere) {
-      gesetzt = gesetzt.concat(bindeRollen(brett, beschriftung, besondere, herkunft, nachzubinden))
-    }
+  let gesetzt = []
+  for (const tabelle of rollenTabellenFuer(baustein, kombination)) {
+    gesetzt = gesetzt.concat(bindeRollen(brett, beschriftung, tabelle, herkunft, nachzubinden))
   }
 
   /*

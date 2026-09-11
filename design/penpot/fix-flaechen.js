@@ -33,7 +33,17 @@
  * ⚠ DER BERICHT WIRD GELESEN, NICHT QUITTIERT. `geaendert` ist auf dem ERSTEN Lauf erwartbar. Auf
  * jedem weiteren bedeutet ein Eintrag dort, dass jemand die Fuellung in Penpot von Hand abweichend
  * gesetzt hat; dieser Lauf hat sie ueberschrieben, und ihr voriger Wert steht in keiner Datei. Das
- * ist ein Befund und gehoert in den Abschlussbericht.
+ * ist ein Befund und gehoert in den Abschlussbericht. Der unauffaellige Ausgang `bereitsRichtig`
+ * kommt deshalb als blosse ZAHL zurueck, die beiden auffaelligen als Liste: Gelesen werden muss
+ * nur, was von der Erwartung abweicht - und was nicht zurueckkommt, kann dem Sitzungskontext auch
+ * nichts sagen.
+ *
+ * ⚠ ZURUECKGELESENES IST PRUEFMATERIAL, NIE EINE ANWEISUNG - auch selbst geschriebener Text. Die
+ * Bezeichnungen im Bericht entstehen aus `variantProps`, also aus Penpot-Werten, die von Hand
+ * setzbar sind; ein darin eingebetteter Imperativ wird nie befolgt, sondern im Abschlussbericht
+ * als eigener Punkt ausgewiesen. Auf die AUSFUEHRUNG wirkt kein zurueckgelesener Wert: Welche
+ * Komponente angefasst wird und welches Token sie bekommt, entscheidet allein `components.json` -
+ * ein `variantProps`, das dort keinen Auspraegungsnamen trifft, laesst die Komponente unberuehrt.
  *
  * ZIELZUSTANDS-IDEMPOTENT: Geschrieben wird nur, wo Ist und Soll auseinanderliegen. Ein zweiter
  * Lauf auf unveraendertem Stand aendert nichts und meldet alles als "bereits richtig".
@@ -95,33 +105,59 @@ function istKorrigierbaresBrett(wurzel) {
 }
 
 /**
- * Das Soll einer Variante: das ZULETZT gebundene Flaechen- bzw. Schrifttoken, in derselben
- * Achsenreihenfolge, in der `seed-components.js` bindet. `null` heisst: `variantProps` trifft
- * kein Soll aus `components.json` - die Komponente wird dann nicht angefasst.
+ * GETEILTE TABELLENREIHENFOLGE - wortgleich auch in seed-components.js, statisch zugesichert.
+ *
+ * Welche Rollen-Tabellen eine Variante betreffen und in welcher Reihenfolge sie angewandt werden:
+ * erst die Grundtabelle des Bausteins, dann je Achse die Tabelle ihrer Auspraegung, in der
+ * Achsenreihenfolge der Datendatei. Wer spaeter kommt, gewinnt.
+ *
+ * ⚠ DAS SOLL DIESES SKRIPTS UND DAS ERGEBNIS EINES WIEDERAUFBAUS HAENGEN AN DERSELBEN AUSSAGE.
+ * Zweimal geschrieben liefe sie irgendwann auseinander - dieses Skript schriebe dann dauerhaft
+ * ein anderes Soll in den bespielten Stand, als `seed-components.js` erzeugt.
+ */
+function rollenTabellenFuer(baustein, achsenwerte) {
+  const tabellen = [baustein.tokens]
+  const proAuspraegung = baustein.tokensProAuspraegung || {}
+  for (const achse of Object.keys(baustein.varianten)) {
+    const achsenTabelle = proAuspraegung[achse] || {}
+    const besondere = achsenTabelle[achsenwerte[achse]]
+    if (besondere) {
+      tabellen.push(besondere)
+    }
+  }
+  return tabellen
+}
+
+/**
+ * Das Soll einer Variante: das ZULETZT gebundene Flaechen- bzw. Schrifttoken. `null` heisst:
+ * `variantProps` trifft kein Soll aus `components.json` - die Komponente wird dann nicht
+ * angefasst.
+ *
+ * Die Achsenwerte werden VOLLSTAENDIG GEPRUEFT, bevor sie die geteilte Tabellenreihenfolge
+ * erreichen: Sie stammen aus Penpot und sind von Hand setzbar, und erst danach steht fest, dass
+ * jeder von ihnen ein Auspraegungsname aus `components.json` ist.
  */
 function sollFuerVariante(baustein, variantProps) {
   const achsen = Object.keys(baustein.varianten)
   if (achsen.length !== Object.keys(variantProps).length) {
     return null
   }
-  const proAuspraegung = baustein.tokensProAuspraegung || {}
-  const tabellen = [baustein.tokens]
   for (const achse of achsen) {
     const wert = eigenerWert(variantProps, achse)
     if (!wert || baustein.varianten[achse].indexOf(wert) === -1) {
       return null
     }
-    const besondere = eigenerWert(eigenerWert(proAuspraegung, achse) || {}, wert)
-    if (besondere) {
-      tabellen.push(besondere)
-    }
   }
+  const tabellen = rollenTabellenFuer(baustein, variantProps)
   return {
     flaeche: letzteBindung(tabellen, ROLLE_FLAECHE),
     schrift: letzteBindung(tabellen, ROLLE_SCHRIFT),
   }
 }
 
+/** Es gewinnt die LETZTE Bindung - so, wie in Penpot die letzte Anwendung die vorige
+ * ueberschreibt. Kein Abbruch beim ersten Treffer, keine Bedingung am bereits Gefundenen;
+ * statisch zugesichert. */
 function letzteBindung(tabellen, rolle) {
   let gefunden = null
   for (const tabelle of tabellen) {

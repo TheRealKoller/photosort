@@ -385,13 +385,13 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
  * `views.json` bekommt hier keine einzige Freigabe: die Datei traegt per Bauart keine Zahl.
  */
 const FREIGABEN: { datei: string; zeile: number; wert: string; ausschnitt: string }[] = [
-  { datei: 'verify.js', zeile: 54, wert: '12', ausschnitt: 'ERWARTETE_SYMBOLE = 12' },
-  { datei: 'verify.js', zeile: 55, wert: '12', ausschnitt: 'ERWARTETE_BAUSTEINE = 12' },
-  { datei: 'verify.js', zeile: 56, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
-  { datei: 'verify.js', zeile: 57, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
-  { datei: 'verify.js', zeile: 58, wert: '6', ausschnitt: 'ERWARTETE_ANSICHTEN = 6' },
-  { datei: 'verify.js', zeile: 59, wert: '24', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 24' },
-  { datei: 'verify.js', zeile: 60, wert: '4', ausschnitt: 'ERWARTETE_ANSICHTSBEHAELTER = 4' },
+  { datei: 'verify.js', zeile: 55, wert: '12', ausschnitt: 'ERWARTETE_SYMBOLE = 12' },
+  { datei: 'verify.js', zeile: 56, wert: '12', ausschnitt: 'ERWARTETE_BAUSTEINE = 12' },
+  { datei: 'verify.js', zeile: 57, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
+  { datei: 'verify.js', zeile: 58, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
+  { datei: 'verify.js', zeile: 59, wert: '6', ausschnitt: 'ERWARTETE_ANSICHTEN = 6' },
+  { datei: 'verify.js', zeile: 60, wert: '24', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 24' },
+  { datei: 'verify.js', zeile: 61, wert: '4', ausschnitt: 'ERWARTETE_ANSICHTSBEHAELTER = 4' },
 ]
 
 describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast', () => {
@@ -2096,6 +2096,32 @@ const GETEILTE_TOKENANWENDUNG = [
   '}',
 ].join('\n')
 
+/**
+ * Vierter geteilter Block: WELCHE Rollen-Tabellen eine Variante betreffen und in WELCHER
+ * Reihenfolge sie angewandt werden.
+ *
+ * ⚠ DAS IST DIE STELLE, AN DER DIE BEIDEN WEGE AUSEINANDERLAUFEN KOENNTEN. `seed-components.js`
+ * baut daraus die Bindungen eines Wiederaufbaus, `fix-flaechen.js` daraus das Soll des bespielten
+ * Standes - Akzeptanzkriterium 4 und Akzeptanzkriterium 1 haengen also an derselben Aussage. Waere
+ * sie zweimal geschrieben, genuegte eine Iteration ueber `Object.keys(variantProps)` statt ueber
+ * die Achsen der Datendatei, und der Korrekturlauf schriebe dauerhaft ein anderes Soll, als ein
+ * Wiederaufbau erzeugt - ohne dass irgendein Test rot wuerde.
+ */
+const GETEILTE_TABELLENREIHENFOLGE = [
+  'function rollenTabellenFuer(baustein, achsenwerte) {',
+  '  const tabellen = [baustein.tokens]',
+  '  const proAuspraegung = baustein.tokensProAuspraegung || {}',
+  '  for (const achse of Object.keys(baustein.varianten)) {',
+  '    const achsenTabelle = proAuspraegung[achse] || {}',
+  '    const besondere = achsenTabelle[achsenwerte[achse]]',
+  '    if (besondere) {',
+  '      tabellen.push(besondere)',
+  '    }',
+  '  }',
+  '  return tabellen',
+  '}',
+].join('\n')
+
 const GETEILTE_BLOECKE: {
   name: string
   dateien: readonly string[]
@@ -2113,6 +2139,12 @@ const GETEILTE_BLOECKE: {
     dateien: ['seed-components.js', 'fix-flaechen.js'],
     block: GETEILTE_TOKENANWENDUNG,
     aufruf: 'wendeTokenAn',
+  },
+  {
+    name: 'Tabellenreihenfolge',
+    dateien: ['seed-components.js', 'fix-flaechen.js'],
+    block: GETEILTE_TABELLENREIHENFOLGE,
+    aufruf: 'rollenTabellenFuer',
   },
   {
     name: 'Symbolerkennung',
@@ -2275,6 +2307,140 @@ describe('fix-flaechen.js: die Schreibflaeche ist geschlossen', () => {
   it('liest ueberhaupt Zeichenketten - sonst pruefte die Zeile darueber nichts', () => {
     expect(zeichenkettenAus(quelltext()).length).toBeGreaterThan(0)
     expect(zeichenkettenAus("const a = 'x'")).toEqual(['x'])
+  })
+})
+
+/**
+ * Der zweite Teil der Bindungsregel: **es gewinnt die letzte Bindung.**
+ *
+ * WELCHE Tabellen in welcher Reihenfolge gelten, ist als wortgleicher Block geteilt und damit
+ * zwischen Wiederaufbau und Korrekturlauf nicht mehr trennbar. Was `fix-flaechen.js` daraus
+ * ableitet, ist die zweite Haelfte: In Penpot gewinnt die letzte Anwendung, weil sie die vorige
+ * ueberschreibt - `letzteBindung` muss dasselbe tun. Ein `break` beim ersten Treffer oder eine
+ * Bedingung „nur, wenn noch nichts gefunden" kehrte die Regel um, und der Korrekturlauf schriebe
+ * dauerhaft das Grundtoken statt des Auspraegungstokens.
+ */
+export function letzteGewinntBefund(
+  quelltext: string,
+  name: string,
+): { gefunden: boolean; abbrueche: number; ueberschreibt: boolean; nenntAkkumulator: boolean } {
+  const funktion = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'FunctionDeclaration' &&
+      (eintrag.id as Record<string, unknown> | null)?.name === name,
+  )[0]
+  if (funktion === undefined) {
+    return { gefunden: false, abbrueche: 0, ueberschreibt: false, nenntAkkumulator: true }
+  }
+  const innen = (eintrag: Record<string, unknown>): boolean =>
+    (eintrag.start as number) >= (funktion.start as number) &&
+    (eintrag.end as number) <= (funktion.end as number)
+
+  const schleifen = knoten(
+    quelltext,
+    (eintrag) => SCHLEIFENKNOTEN.includes(eintrag.type as string) && innen(eintrag),
+  )
+  const inSchleife = (eintrag: Record<string, unknown>): boolean =>
+    schleifen.some(
+      (schleife) =>
+        (eintrag.start as number) > (schleife.start as number) &&
+        (eintrag.end as number) < (schleife.end as number),
+    )
+
+  const abbrueche = knoten(
+    quelltext,
+    (eintrag) =>
+      innen(eintrag) &&
+      (eintrag.type === 'BreakStatement' || eintrag.type === 'ReturnStatement') &&
+      inSchleife(eintrag),
+  ).length
+
+  const zuweisungen = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'AssignmentExpression' &&
+      innen(eintrag) &&
+      inSchleife(eintrag) &&
+      (eintrag.left as Record<string, unknown> | null)?.type === 'Identifier',
+  )
+  const akkumulatoren = zuweisungen.map(
+    (eintrag) => (eintrag.left as Record<string, unknown>).name as string,
+  )
+  // Nennt die umschliessende Bedingung den Akkumulator selbst, haengt die Uebernahme daran, dass
+  // noch nichts gefunden wurde - dann gewinnt die ERSTE Bindung.
+  const nenntAkkumulator = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'IfStatement' &&
+      innen(eintrag) &&
+      zuweisungen.some(
+        (zuweisung) =>
+          (zuweisung.start as number) > (eintrag.start as number) &&
+          (zuweisung.end as number) < (eintrag.end as number),
+      ),
+  ).some((eintrag) => akkumulatoren.some((kandidat) => enthaeltBezeichner(eintrag.test, kandidat)))
+
+  return {
+    gefunden: true,
+    abbrueche,
+    ueberschreibt: zuweisungen.length > 0,
+    nenntAkkumulator,
+  }
+}
+
+describe('fix-flaechen.js: es gewinnt die letzte Bindung', () => {
+  const befund = () => letzteGewinntBefund(dateiVon('fix-flaechen.js').roh, 'letzteBindung')
+
+  it('uebernimmt jeden Treffer und bricht die Suche nie ab', () => {
+    expect(befund().gefunden, 'letzteBindung').toBe(true)
+    expect(befund().ueberschreibt).toBe(true)
+    expect(befund().abbrueche).toBe(0)
+    expect(befund().nenntAkkumulator).toBe(false)
+  })
+
+  /* DREI SYNTHETISCHE GEGENPROBEN - ohne sie bestuende der Befund auch bei umgekehrter Regel. */
+  it('meldet einen Abbruch beim ersten Treffer', () => {
+    const gegenprobe = letzteGewinntBefund(
+      [
+        'function letzteBindung(tabellen, rolle) {',
+        '  let gefunden = null',
+        '  for (const tabelle of tabellen) {',
+        '    const wert = eigenerWert(tabelle, rolle)',
+        '    if (wert) {',
+        '      gefunden = wert',
+        '      break',
+        '    }',
+        '  }',
+        '  return gefunden',
+        '}',
+      ].join('\n'),
+      'letzteBindung',
+    )
+    expect(gegenprobe.abbrueche).toBe(1)
+  })
+
+  it('meldet eine Bedingung, die am Akkumulator haengt', () => {
+    const gegenprobe = letzteGewinntBefund(
+      [
+        'function letzteBindung(tabellen, rolle) {',
+        '  let gefunden = null',
+        '  for (const tabelle of tabellen) {',
+        '    const wert = eigenerWert(tabelle, rolle)',
+        '    if (wert && !gefunden) {',
+        '      gefunden = wert',
+        '    }',
+        '  }',
+        '  return gefunden',
+        '}',
+      ].join('\n'),
+      'letzteBindung',
+    )
+    expect(gegenprobe.nenntAkkumulator).toBe(true)
+  })
+
+  it('meldet eine fehlende Funktion, statt leer wahr zu werden', () => {
+    expect(letzteGewinntBefund('const a = 1', 'letzteBindung').gefunden).toBe(false)
   })
 })
 
@@ -2686,21 +2852,21 @@ const VARIANTEN_OHNE_SCHRIFTFARBE: { pfad: string; varianten: number; grund: str
     varianten: 1,
     grund:
       'Der Hinweis traegt seine Tinte als `symbol` und `beitext`; beides sind Unterelemente. Die ' +
-      'sieben Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
+      'vier Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
   },
   {
     pfad: 'alert.auspraegung.hinweis-warning',
     varianten: 1,
     grund:
       'Der Hinweis traegt seine Tinte als `symbol` und `beitext`; beides sind Unterelemente. Die ' +
-      'sieben Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
+      'vier Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
   },
   {
     pfad: 'alert.auspraegung.hinweis-error',
     varianten: 1,
     grund:
       'Der Hinweis traegt seine Tinte als `symbol` und `beitext`; beides sind Unterelemente. Die ' +
-      'sieben Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
+      'vier Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
   },
   {
     pfad: 'skeleton',

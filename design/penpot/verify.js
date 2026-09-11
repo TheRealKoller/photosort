@@ -16,10 +16,11 @@
  * still verloren - deshalb endet diese Datei, wie jede Nutzlastdatei, auf ein `return`.
  *
  * WAS ZURUECKKOMMT, IST AUF DEN VERGLEICH BEGRENZT: Tokennamen, Tokenwerte, Symbolnamen,
- * Varianteneigenschaften der elf Bausteine und je Baustein die gesetzten Eigenschaften MIT dem
- * Tokennamen, der sie traegt; je Ansichtsbrett die Plugin-Daten, die Varianteneigenschaften, drei
- * Zaehlwerte und die Bindungen. Keine Beschreibungen, keine Kommentare, keine Textinhalte, keine
- * beliebigen Objektnamen der Datei; die Bindungen kommen zusammengefasst zurueck, nicht je Form.
+ * Varianteneigenschaften der zwoelf Bausteine, je Baustein die gesetzten Eigenschaften MIT dem
+ * Tokennamen, der sie traegt, und zwei Zaehlwerte ueber die Brettfuellungen; je Ansichtsbrett die
+ * Plugin-Daten, die Varianteneigenschaften, drei Zaehlwerte und die Bindungen. Keine
+ * Beschreibungen, keine Kommentare, keine Textinhalte, keine beliebigen Objektnamen der Datei;
+ * die Bindungen kommen zusammengefasst zurueck, nicht je Form - und kein Farbwert, nirgends.
  * Zwei Gruende fallen hier zusammen: die Tokenbindung ist die Haelfte von Akzeptanzkriterium 1,
  * die die blosse Existenz einer Tokenliste nicht belegt - und was nicht zurueckkommt, kann dem
  * Sitzungskontext auch nichts sagen.
