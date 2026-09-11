@@ -32,7 +32,7 @@ Die vier Antworten sind ab hier der Rahmen des Laufs. Sie werden nicht im Gespr�
 
 Ein Lauf legt **eine** Penpot-Seite an, benannt `Entwurf — <Bezeichnung>`. Das Präfix ist absichtlich ein anderes als `Ansicht — `: Wer die Seitenliste ansieht, muss Arbeitsstand von Ergebnis unterscheiden können, ohne hineinzuklicken.
 
-**Eine Seite je Lauf, und auf ihr liegt nichts anderes.** Das ist die tragende Voraussetzung dafür, dass der Handgriff aus Schritt 7 gefahrlos ist — auf der Seite liegt nichts, was nicht zum Lauf gehört, und das Ergebnis liegt am Ende woanders. Ein zweiter Lauf benutzt **nie** dieselbe Seite mit.
+**Eine Seite je Lauf, und auf ihr liegt nichts anderes.** Das ist die tragende Voraussetzung dafür, dass der Handgriff aus Schritt 8 gefahrlos ist — auf der Seite liegt nichts, was nicht zum Lauf gehört, und das Ergebnis liegt am Ende woanders. Ein zweiter Lauf benutzt **nie** dieselbe Seite mit.
 
 Unmittelbar nach dem Anlegen bekommt die Seite ihre vier Marken (Tabelle unten). Erst danach entsteht das erste Brett — eine Arbeitsseite ohne Marken ist nach einem Kontextverlust nicht wiedererkennbar.
 
@@ -118,9 +118,36 @@ Ist der Entwurf für fertig erklärt, entsteht das Ergebnis auf der Ansichtsseit
 
 Das ist die aufwendige Hälfte des Vorgangs. Sie wird nicht als „übernehmen und fertig" angekündigt, und wer den Aufwand einer Ansichts-Story schätzt, addiert Runden **und** Ausarbeitung.
 
-Im selben Zug wird `design/penpot/views.json` nachgezogen (Eintrag oder Erweiterung samt der benannten **Lücken**: Stelle und Grund, in Worten, ohne den Wert) und die Kardinalitäten in `design/penpot/verify.js` werden angehoben; neue Konstanten gehören **unter** die bestehenden. Beides gehört in denselben Pull Request wie der fertige Entwurf — in die Story, in deren Rahmen der Lauf stattfand.
+Im selben Zug wird `design/penpot/views.json` nachgezogen (Eintrag oder Erweiterung samt der benannten **Lücken**: Stelle und Grund, in Worten, ohne den Wert) und die Kardinalitäten in `design/penpot/verify.js` werden angehoben; neue Konstanten gehören **unter** die bestehenden. Ausgeliefert wird beides im Schritt danach.
 
-## Schritt 7: Aufräumen ist eine Auskunft — der Ablauf entfernt nichts
+## Schritt 7: Pull Request — einmal fragen, dann übergeben
+
+Dieser Schritt läuft **nur im Fertig-Fall**. **Beim Abbruch wird dieser Schritt übersprungen** — direkt weiter zu Schritt 8. Ein abgebrochener Lauf hat kein Ergebnis, das ausgeliefert werden könnte; ein Pull Request wäre die teuerste Art, einen Abbruch zu dokumentieren.
+
+Gefragt wird **genau einmal**, per `AskUserQuestion`, mit zwei Antwortmöglichkeiten. Die Frage lautet, ob aus dem Lauf ein Pull Request entstehen soll.
+
+**Die Antwortmöglichkeit „ja" nennt ihre Folge mit** — nicht in einer Fußnote, sondern im Text der Antwort selbst, weil das der einzige Ort ist, an dem diese Folge noch wählbar ist:
+
+- **mit Story-Bezug:** Der Body trägt `Closes #NNN` mit der **konkreten** Nummer dieses Laufs (kein Platzhalter). Die Karte wandert auf `Review`, und das Issue schließt beim Merge — auch dann, wenn der Lauf die Story fachlich nicht abschließt.
+- **ohne Story-Bezug:** keine Verknüpfung und keine Board-Bewegung. Der Pull Request entsteht trotzdem.
+
+**„Nein" heißt: nichts weiter** — direkt zu Schritt 8, Verhalten wie bisher. Das ist auch die richtige Antwort, wenn die Nachträge ohnehin im Pull Request einer laufenden Story mitfahren.
+
+Bei „ja" **eröffnet dieser Ablauf nichts selbst**: Seine Erlaubnisstufe ist unverändert „kein GitHub-Zugriff". Er schreibt stattdessen den folgenden Übergabeblock und hört damit auf; die Hauptsession erkennt die erste Zeile und ruft den Auslieferpfad `ship-entwurf` auf.
+
+```
+## Entwurfslauf abgeschlossen: Pull Request erwünscht
+
+**Arbeitsseite:** Entwurf — <entwurfslauf>
+**Runden und Vorschläge:** <n> Runden, <k> Vorschläge
+**Ergebnis-Ansicht:** <anzeigename aus views.json> (`<schluessel>`) | keine
+**Story:** #<NNN> | keine
+**Geänderte Dateien:** <Pfad>, <Pfad>, …
+```
+
+Der Block **beendet nicht den Lauf**, sondern dessen GitHub-freien Teil. Nach der Rückkehr des Auslieferpfads — mit einer Pull-Request-Nummer oder mit einem Fehlschlag — geht es in Schritt 8 weiter.
+
+## Schritt 8: Aufräumen ist eine Auskunft — der Ablauf entfernt nichts
 
 **Der Ablauf entfernt nichts** — kein Brett, keine Seite, kein Token, und auch nicht „nur den Ausschuss". Es gibt dafür kein Skript und keinen von Hand zusammengesetzten Aufruf. Weggeworfen wird die Arbeitsseite von Daniel in Penpot, mit Rechtsklick auf die Seite in der Seitenliste.
 
@@ -129,7 +156,8 @@ Zum Abschluss — und **ebenso beim Abbruch** — wird deshalb in Worten mitgete
 - der Name der Arbeitsseite (`Entwurf — <Bezeichnung>`),
 - wie viele Runden und wie viele Vorschläge insgesamt darauf liegen,
 - wo das Ergebnis steht, falls es eines gibt (`Ansicht — <Anzeigename>`), und dass die Arbeitsseite damit entbehrlich ist,
-- dass Daniel die Seite wegwerfen kann, wenn er den Rundenstand nicht behalten will — und dass sie sonst stehen bleibt.
+- dass Daniel die Seite wegwerfen kann, wenn er den Rundenstand nicht behalten will — und dass sie sonst stehen bleibt,
+- der eröffnete Pull Request, falls es einen gibt (Nummer und Titel), bzw. der Grund, warum keiner entstanden ist.
 
 **Beim Abbruch wird gefragt, nicht entschieden.** „Stehenlassen" heißt: Der Ablauf tut nichts. „Wegwerfen" heißt: Daniel tut es. In keine der beiden Richtungen entscheidet der Ablauf selbst, und in keinem Fall behält er stillschweigend.
 
@@ -138,5 +166,5 @@ Dieser Abschnitt trägt bewusst **keinen** Codeblock. Ein vorformulierter Aufruf
 ## Was dieser Skill nicht kann
 
 1. **Kein Test kann Penpot lesen.** Ob eine Runde tatsächlich so aussieht, wie sie gemeint war, weiß nur, wer hinsieht.
-2. **Liegengebliebene Arbeitsseiten fallen nirgends auf.** Es gibt keine Meldung und keinen Test dafür; die Auskunft aus Schritt 7 ist die einzige Erinnerung.
+2. **Liegengebliebene Arbeitsseiten fallen nirgends auf.** Es gibt keine Meldung und keinen Test dafür; die Auskunft aus Schritt 8 ist die einzige Erinnerung.
 3. **Dass eine Penpot-Seite Plugin-Daten trägt, ist inzwischen gemessen** — die vier Laufmarken sitzen an der Seite selbst, ein eigens angelegtes Trägerbrett braucht es nicht. Was dagegen nirgends auffällt, ist liegengebliebenes Bildmaterial: Beispielbilder, die ein Lauf in die Datei hochgeladen hat, bleiben dort, auch wenn die Arbeitsseite weggeworfen wird.
