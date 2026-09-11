@@ -4,12 +4,14 @@
 **Erstellt:** 2026-09-11
 **Bezug:** https://github.com/TheRealKoller/photosort/issues/398
 
-**Umfang:** rund 374 statt der Richtwert-200 Zeilen. Grund: Das Ergebnis dieser Story ist eine
+**Umfang:** rund 394 statt der Richtwert-200 Zeilen. Grund: Das Ergebnis dieser Story ist eine
 *Entscheidung*, deren Prüfgegenstand ausschließlich aus Zusicherungen besteht — fünfzehn
 Akzeptanzkriterien, die je den Nachweis mitführen, an dem sie gemessen werden, und drei
 Muss-Auflagen gegen genau einen Fehlermodus (den falsch-grünen Prüflauf), der unbemerkt bliebe,
-wenn er nur gemeint statt aufgeschrieben wäre. Gekürzt wurde vorher um die historische Herleitung
-im Ziel und die Edge-Case-Liste, die die Kriterien wiederholte.
+wenn er nur gemeint statt aufgeschrieben wäre. Dazu die Auflösung eines Widerspruchs zwischen zwei
+dieser Zusicherungen (K10 gegen S3) — eine bewusste Abweichung, die vom Kürzen ausgenommen ist.
+Gekürzt wurde vorher um die historische Herleitung im Ziel und die Edge-Case-Liste, die die
+Kriterien wiederholte.
 
 ## Ziel
 
@@ -284,8 +286,9 @@ Umgebung" — und der Befund stand die ganze Zeit da.
 5. **Statische Totalverbote am wirksamen Skripttext** (ganzzeilige Kommentare vorher zu Leerzeilen,
    sonst macht der Kopfkommentar die Prüfung rot, die er erklärt), im Muster von
    `test_format_sh.py` Abschnitt 1: `eval`, `uvx`, `pip install`, `uv pip`, `--write`, `--fix`,
-   `--unsafe-fixes`, `format.sh`, `npx`, `npm install`, `npm ci`, `prettier`, `--ignore-path`,
-   `git `, `hooksPath`, `.git/hooks`, `settings.json`. Dazu Ausführbarkeit, `set -euo pipefail`,
+   `--unsafe-fixes`, `format.sh`, `npx`, `prettier`, `--ignore-path`, `git `, `hooksPath`,
+   `.git/hooks`, `settings.json` — dazu `npm ci` und `npm install` an der Ausführungsposition
+   statt am Skripttext, samt Gegenprobe (Begründung in S3). Dazu Ausführbarkeit, `set -euo pipefail`,
    kein `set +e`, kein `bilanz=$?`, und der Selbstschutz gegen einen leeren Skripttext.
    Ausdrücklich **kein** textuelles `||`-Verbot: `command -v ruff || true` und `grep -c '' || true`
    sind aus `format.sh` übernommene, legitime Bausteine. Eine Selbst-Ausnahme wie in
@@ -357,13 +360,29 @@ Aufruf aus `e2e/` stiege in `e2e/.auth/` ab; bei einem Parse-Fehler auf einer ha
 und damit im Protokoll des Laufs.
 
 **S3 — Das Skript installiert nichts, schreibt nichts und ruft `git` nicht auf (Muss).** Die
-statische Verbotsliste in `scripts/tests/test_check_sh.py` umfasst neben `eval`, `uvx`,
-`pip install`, `uv pip` zusätzlich `npx`, `npm install`, `npm ci`, `prettier`, `--ignore-path`,
-`git `, `hooksPath`, `.git/hooks` und `settings.json` — geprüft am wirksamen Skripttext (ganzzeilige
-Kommentare neutralisiert). Das `git `-Totalverbot ist bewusst total statt kontextanalysierend:
-`check.sh` hat keinen legitimen Grund, `git` aufzurufen, denn die Bäume leitet es wie `format.sh`
-aus `BASH_SOURCE` ab. `npm ci` wäre die naheliegende „Reparatur" der `node_modules`-Vorbedingung und
-ist genau das, was ein übersprungener Baum bewusst nicht tut.
+statische Verbotsliste in `scripts/tests/test_check_sh.py` greift an **zwei Textebenen**, und der
+Unterschied ist nicht Bequemlichkeit, sondern die Auflösung eines echten Widerspruchs zwischen
+dieser Auflage und K10:
+
+- **Total am wirksamen Skripttext** (ganzzeilige Kommentare zu Leerzeilen normalisiert):
+  `eval`, `uvx`, `pip install`, `uv pip`, `npx`, `prettier`, `--ignore-path`, `git `, `hooksPath`,
+  `.git/hooks`, `settings.json`. Das `git `-Totalverbot ist bewusst total statt
+  kontextanalysierend: `check.sh` hat keinen legitimen Grund, `git` aufzurufen, denn die Bäume
+  leitet es wie `format.sh` aus `BASH_SOURCE` ab.
+- **An der Ausführungsposition** (zusätzlich der Inhalt einfach gequoteter Zeichenketten je Zeile
+  geleert): `npm ci` und `npm install`. `npm ci` wäre die naheliegende „Reparatur" der
+  `node_modules`-Vorbedingung und ist genau das, was ein übersprungener Baum bewusst nicht tut —
+  **zugleich verlangt K10 denselben String wörtlich in der Meldung**. Ein Totalverbot am
+  Skripttext machte beide Zusicherungen zusammen unerfüllbar. Tragfähig ist die Ausführungsebene,
+  weil `eval` selbst verboten ist: Ohne `eval` führt aus einem gequoteten Zeichenkettenliteral
+  kein Weg zu einem ausgeführten Befehl.
+- **Gegenprobe, ohne die das Verbot die falsche Hälfte belohnte:** Ein Test sichert, dass der
+  Skripttext `npm ci` weiterhin **enthält**. Sonst wäre die bequemste Art, das Verbot zu
+  erfüllen, den Handgriff aus der Meldung zu streichen — und der Aufrufer im verbundenen
+  Arbeitsbaum wüsste nicht, was zu tun ist.
+
+Die Regel gilt ab jetzt projektweit und steht in `specs/architecture/0002-testkonzept.md`
+(„Zwei Textebenen für statische Verbote").
 
 **S4-Konformität.** Die Pin-Extraktion folgt `scripts/format.sh` wörtlich: verankert,
 zeichenklassenbegrenzt, Abbruch bei leerem oder mehrdeutigem Leseergebnis, der gelesene Wert wird
@@ -474,6 +493,15 @@ Absichten.
   Gegengrenze ist scharf und eine Verbotsregel: `check.sh` ruft `format.sh` nicht auf, und keiner
   seiner Befehle trägt `--write`, `--fix` oder `--unsafe-fixes`.
 - **Teilprüfung je Baum statt Komplettabbruch** (Daniel, 2026-09-11). Siehe K10.
+- **Diese Spec trug einen echten Widerspruch, und er ist an der Textebene aufgelöst.** K10 verlangt
+  `npm ci` **wörtlich in der Meldung** eines übersprungenen TypeScript-Baums; S3 führte `npm ci` in
+  einer Verbotsliste, die **am Skripttext** greift. Beides zugleich ist an derselben Textebene
+  unerfüllbar — die Meldung steht im Skript, und wer sie schreibt, verletzt das Verbot. Aufgelöst
+  im Umsetzungslauf, nicht durch Aufgeben einer der beiden Seiten: Das Verbot meint ab jetzt die
+  **Ausführungsposition** (einfach gequotete Zeichenketten zusätzlich geleert), die übrigen Verbote
+  bleiben total, und eine Gegenprobe hält fest, dass der Handgriff in der Meldung stehen bleibt.
+  Die Fassung von S3 oben beschreibt den gebauten Stand; die überholte stand bis zur Review-Runde
+  hier und ist der Grund, warum der Fall festgehalten gehört statt weggekürzt zu werden.
 - **Ungeprüfter Baum und Befund zugleich ergeben Ausgang 2.** Ein Befund löst Handlungsbedarf aus;
   die Bilanz nennt den ungeprüften Baum ohnehin.
 - **`test_keine_automatische_formatierung.py` bekommt keine fünfte Musterfamilie.** Die vier
