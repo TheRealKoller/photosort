@@ -31,13 +31,14 @@ import { describe, expect, it } from 'vitest'
 const DESIGN_DIR = fileURLToPath(new URL('../../design/penpot/', import.meta.url))
 const FRONTEND_DIR = fileURLToPath(new URL('../', import.meta.url))
 
-/** Die sechs handgeschriebenen Dateien - NAMENTLICH behauptet, nicht "mindestens sechs Dateien
+/** Die sieben handgeschriebenen Dateien - NAMENTLICH behauptet, nicht "mindestens sieben Dateien
  * im Verzeichnis". Eine Verzeichnisaufzaehlung waere von einem kaputten Glob nicht zu
  * unterscheiden. */
 const NUTZLAST_DATEIEN = [
   'seed-tokens.js',
   'seed-icons.js',
   'seed-components.js',
+  'fix-flaechen.js',
   'verify.js',
   'components.json',
   'views.json',
@@ -329,7 +330,7 @@ describe('Musterfamilien: tabellengetriebene Erkenner-Selbsttests', () => {
 // ---------------------------------------------------------------------------------------------
 
 describe('Suchraum der Abwesenheits-Zusicherung', () => {
-  it('umfasst genau die sechs namentlich behaupteten Dateien', () => {
+  it('umfasst genau die sieben namentlich behaupteten Dateien', () => {
     expect(nutzlast.map((datei) => datei.datei)).toEqual([...NUTZLAST_DATEIEN])
   })
 
@@ -339,6 +340,7 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
     'seed-tokens.js': 2000,
     'seed-icons.js': 2500,
     'seed-components.js': 5000,
+    'fix-flaechen.js': 8000,
     'verify.js': 4000,
     'components.json': 10000,
     'views.json': 10000,
@@ -346,9 +348,9 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
 
   /* Mindestzahl gescannter Zeilen NACH der Vorbehandlung. Ohne sie ist ein kaputter
      Vorbehandlungsschritt (der alles wegstreicht) von einem sauberen Bestand nicht zu
-     unterscheiden: beide melden null Funde. Mit `views.json` im Suchraum neu gemessen (1237),
-     eingefroren auf 1100. */
-  const MINDESTZEILEN = 1100
+     unterscheiden: beide melden null Funde. Mit `fix-flaechen.js` im Suchraum neu gemessen
+     (1619), eingefroren auf 1450. */
+  const MINDESTZEILEN = 1450
 
   it('hat je Datei ueberhaupt Inhalt', () => {
     for (const datei of nutzlast) {
@@ -1487,6 +1489,10 @@ const LAUFREGELN: Record<string, string | null> = {
   'seed-tokens.js': 'jederzeit-wiederholbar',
   'seed-icons.js': 'jederzeit-wiederholbar',
   'seed-components.js': 'nur-auf-leerer-datei',
+  /* Das Korrekturskript legt nichts an, verschiebt nichts, loescht nichts und ist
+     zielzustands-idempotent - die Schadensklasse, vor der der fail-closed-Waechter von
+     `seed-components.js` bewahrt, ist hier konstruktiv nicht erreichbar. */
+  'fix-flaechen.js': 'jederzeit-wiederholbar',
   'verify.js': null,
   /* `views.json` laeuft NICHT: sie ist eine Soll-Struktur, keine Nutzlast, und bekommt in der
      Schritttabelle keinen Einfuegenamen. Hier eingefroren, damit das eine GEPRUEFTE Aussage ist
@@ -1710,7 +1716,13 @@ const AUFRUFFORMEN: {
   },
 ]
 
-const JS_NUTZLAST = ['seed-tokens.js', 'seed-icons.js', 'seed-components.js', 'verify.js'] as const
+const JS_NUTZLAST = [
+  'seed-tokens.js',
+  'seed-icons.js',
+  'seed-components.js',
+  'fix-flaechen.js',
+  'verify.js',
+] as const
 
 describe('Die Form der Plugin-API-Aufrufe', () => {
   const alleAufrufe = JS_NUTZLAST.flatMap((datei) =>
@@ -2060,6 +2072,30 @@ const GETEILTE_SYMBOLERKENNUNG = [
   '}',
 ].join('\n')
 
+/**
+ * Dritter geteilter Block: die Tokenanwendung. `fix-flaechen.js` bindet dieselben Flaechen wie
+ * `seed-components.js` und muss sie auf dieselbe Weise binden - die Aufrufform von
+ * `applyToShapes` (Formenmenge plus Eigenschaftsliste) weicht von der Doku ab und ist gemessen.
+ */
+const GETEILTE_TOKENANWENDUNG = [
+  'function findeToken(tokenName) {',
+  '  const satz = penpot.library.local.tokens.sets.find((kandidat) => kandidat.name === SATZ_NAME)',
+  '  if (!satz) {',
+  "    throw new Error('Token-Satz fehlt - seed-tokens.js zuerst ausfuehren.')",
+  '  }',
+  '  const token = satz.tokens.find((kandidat) => kandidat.name === tokenName)',
+  '  if (!token) {',
+  "    throw new Error('Unbekanntes Token: ' + tokenName)",
+  '  }',
+  '  return token',
+  '}',
+  '',
+  '/** Aufrufform gemessen: Formenmenge plus Eigenschaftsliste. */',
+  'function wendeTokenAn(formen, eigenschaften, tokenName) {',
+  '  findeToken(tokenName).applyToShapes(formen, eigenschaften)',
+  '}',
+].join('\n')
+
 const GETEILTE_BLOECKE: {
   name: string
   dateien: readonly string[]
@@ -2068,9 +2104,15 @@ const GETEILTE_BLOECKE: {
 }[] = [
   {
     name: 'Bausteinerkennung',
-    dateien: ['seed-components.js', 'verify.js'],
+    dateien: ['seed-components.js', 'fix-flaechen.js', 'verify.js'],
     block: GETEILTE_ERKENNUNG,
     aufruf: 'bausteinSchluesselInDatei',
+  },
+  {
+    name: 'Tokenanwendung',
+    dateien: ['seed-components.js', 'fix-flaechen.js'],
+    block: GETEILTE_TOKENANWENDUNG,
+    aufruf: 'wendeTokenAn',
   },
   {
     name: 'Symbolerkennung',
@@ -2117,6 +2159,150 @@ describe('Die geteilten Erkennungen', () => {
   it('vergleicht nirgends gegen einen zusammengesetzten Pfadnamen', () => {
     for (const datei of ['seed-icons.js', 'verify.js'] as const) {
       expect(dateiVon(datei).inhalt, datei).not.toContain("'symbol/'")
+    }
+  })
+
+  /* Der Satzname ist eine Konstante und muss in beiden Dateien dieselbe sein - der geteilte Block
+     der Tokenanwendung liest sie, traegt sie aber nicht. */
+  it('Tokenanwendung liest denselben Satznamen in beiden Dateien', () => {
+    for (const datei of ['seed-components.js', 'fix-flaechen.js'] as const) {
+      expect(dateiVon(datei).roh, datei).toContain("const SATZ_NAME = 'photosort'")
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Das Korrekturskript: eine geschlossene Schreibflaeche
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * `fix-flaechen.js` ist die erste Datei des Projekts, die WIEDERHOLBAR AUF DEN BESPIELTEN STAND
+ * schreibt - und der ist nach ADR 0065 das Original, keine Kopie. Ein Wiederaufbau scheidet als
+ * Reparaturweg aus (er kostet die von Hand entstandenen Ansichten), also traegt die Begrenzung
+ * allein die Schreibflaeche selbst.
+ *
+ * ⚠ DIE BESTEHENDE VERBOTSLISTE SIEHT ZUWEISUNGEN NICHT. `createBoard`, `appendChild`,
+ * `setPluginData` oder ein `shape.x = …` stehen in keinem ihrer Muster. Ohne die zwei Zusicherungen
+ * hier waere "fasst ausschliesslich die Fuellung an" eine Zusage statt einer Zusicherung.
+ */
+const SCHREIB_WEISSLISTE = ['applyToShapes'] as const
+
+/** Die vier Ausgaenge des Berichts - eingefroren. "Struktur abweichend" ist ein EIGENER Ausgang:
+ * Eine Komponente, die die Vorbedingungen verfehlt, darf nie als "bereits richtig" durchgehen. */
+const BERICHT_AUSGAENGE = ['bereitsRichtig', 'geaendert', 'nichtGefunden', 'strukturAbweichend']
+
+/** Alle Zeichenketten-Literale einer Datei, aus dem geparsten Baum. */
+export function zeichenkettenAus(quelltext: string): string[] {
+  return knoten(quelltext, (eintrag) => eintrag.type === 'Literal')
+    .map((eintrag) => eintrag.value)
+    .filter((wert): wert is string => typeof wert === 'string')
+}
+
+describe('fix-flaechen.js: die Schreibflaeche ist geschlossen', () => {
+  const quelltext = () => dateiVon('fix-flaechen.js').roh
+
+  it('ruft von allen schreibenden Aufrufen ausschliesslich applyToShapes auf', () => {
+    const schreibend = aufrufe(quelltext()).filter((aufruf) => SCHREIBAUFRUFE.includes(aufruf.name))
+    // Ohne die Untergrenze bestuende die Zusage auch fuer eine Datei, die gar nichts schreibt.
+    expect(schreibend.length).toBeGreaterThan(0)
+    expect([...new Set(schreibend.map((aufruf) => aufruf.name))]).toEqual([...SCHREIB_WEISSLISTE])
+  })
+
+  it('weist an keiner Eigenschaft etwas zu ausser fills, und dort nur ein leeres Array', () => {
+    const zuweisungen = knoten(
+      quelltext(),
+      (eintrag) =>
+        eintrag.type === 'AssignmentExpression' &&
+        (eintrag.left as Record<string, unknown> | null)?.type === 'MemberExpression',
+    )
+    expect(zuweisungen.length, 'Eigenschafts-Zuweisung').toBeGreaterThan(0)
+    for (const eintrag of zuweisungen) {
+      const links = eintrag.left as Record<string, unknown>
+      const wert = eintrag.right as Record<string, unknown>
+      expect((links.property as Record<string, unknown> | null)?.name).toBe('fills')
+      expect(wert.type).toBe('ArrayExpression')
+      expect((wert.elements as unknown[]) ?? []).toHaveLength(0)
+    }
+  })
+
+  /* Dieselbe Bauart wie die Vorbedingung von `seed-components.js`: ueber die GEPARSTE
+     Aufrufstelle, nie ueber eine Zeichenkettensuche. Fail-closed je KOMPONENTE statt je Lauf -
+     Plugin-Daten sind von Hand setzbar, und mindestens ein Baustein ist in Penpot von Hand
+     entstanden. Eine Seed-Provenienz darf dieses Skript nirgends unterstellen. */
+  it('prueft die Struktur einer Komponente vor dem ersten Schreibzugriff', () => {
+    const geparst = aufrufe(quelltext())
+    const wache = geparst.find((aufruf) => aufruf.name === 'istKorrigierbaresBrett')
+    const ersterSchreibzugriff = geparst.find((aufruf) => SCHREIBAUFRUFE.includes(aufruf.name))
+    expect(wache, 'istKorrigierbaresBrett').toBeDefined()
+    expect(ersterSchreibzugriff).toBeDefined()
+    expect(wache!.start).toBeLessThan(ersterSchreibzugriff!.start)
+  })
+
+  it('berichtet genau vier Ausgaenge, darunter den abweichenden Aufbau', () => {
+    const bericht = knoten(
+      quelltext(),
+      (eintrag) =>
+        eintrag.type === 'ObjectExpression' &&
+        schluesselVon(eintrag).join(',') === BERICHT_AUSGAENGE.join(','),
+    )
+    expect(bericht, 'Bericht mit genau den vier Ausgaengen').toHaveLength(1)
+  })
+
+  /*
+   * DIE GESTALTUNGSABSICHT KANN NICHT IM SKRIPT STECKEN: kein Tokenname, kein Bausteinschluessel,
+   * kein Auspraegungsname als Literal. Das Soll kommt vollstaendig aus `components.json`; ein
+   * geratener Standard haette hier keinen Platz, an dem er stehen koennte.
+   */
+  it('nennt keinen Tokennamen', () => {
+    expect(punktierteLiteraleAus(quelltext())).toEqual([])
+  })
+
+  it('nennt keinen Bausteinschluessel und keinen Auspraegungsnamen', () => {
+    const verboten = new Set<string>()
+    for (const baustein of komponenten.bausteine) {
+      verboten.add(baustein.schluessel)
+      verboten.add(baustein.name)
+      for (const werte of Object.values(baustein.varianten)) {
+        for (const wert of werte) verboten.add(wert)
+      }
+    }
+    // Selbsttest der Sollmenge: ohne sie pruefte die Zeile darunter gegen eine leere Menge.
+    expect(verboten.has('ghost')).toBe(true)
+    expect(verboten.size).toBeGreaterThan(30)
+    expect(zeichenkettenAus(quelltext()).filter((wert) => verboten.has(wert))).toEqual([])
+  })
+
+  it('liest ueberhaupt Zeichenketten - sonst pruefte die Zeile darueber nichts', () => {
+    expect(zeichenkettenAus(quelltext()).length).toBeGreaterThan(0)
+    expect(zeichenkettenAus("const a = 'x'")).toEqual(['x'])
+  })
+})
+
+describe('Das Rollenvokabular loest ueber eigene Schluessel auf', () => {
+  /*
+   * `components.json` wird vom Test mit `JSON.parse` gelesen, von Penpot aber als Objektliteral
+   * ausgewertet - fuer `__proto__` sind die beiden NICHT aequivalent. Geprueft wird deshalb der
+   * Rohtext, nicht das geparste Ergebnis: Sonst liefe die Pruefung auf einem anderen Substrat als
+   * die Ausfuehrung.
+   */
+  it('traegt in components.json weder __proto__ noch constructor', () => {
+    for (const verboten of ['__proto__', 'constructor', 'prototype']) {
+      expect(dateiVon('components.json').roh, verboten).not.toContain(verboten)
+    }
+  })
+
+  /* Und der Nachschlag selbst faellt nicht auf ein geerbtes Feld herein: Eine Rolle `constructor`
+     loeste an einem Objektliteral zu einer Funktion auf - aus einer unbekannten Rolle wuerde eine
+     scheinbar bekannte, und `applyToShapes` bekaeme sie als Eigenschaftsliste. */
+  it('schlaegt Rollen in beiden Skripten ueber eigene Schluessel nach', () => {
+    for (const datei of ['seed-components.js', 'fix-flaechen.js'] as const) {
+      const stellen = knoten(
+        dateiVon(datei).roh,
+        (eintrag) =>
+          eintrag.type === 'MemberExpression' &&
+          (eintrag.property as Record<string, unknown> | null)?.name === 'hasOwnProperty',
+      )
+      expect(stellen.length, datei).toBeGreaterThan(0)
     }
   })
 })
