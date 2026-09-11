@@ -25,7 +25,7 @@ einmal je Feature-Lauf, nicht je Dateiänderung.
 
 Die Story war bewusst ergebnisoffen geschnitten — automatisch feuernde Hooks waren eine Option
 unter mehreren, ein begründetes „nein" ein zulässiges Ergebnis. Die Abwägung ist getroffen und
-steht in ADR [`0081`](../decisions/0081-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-tdd-einheit.md).
+steht in ADR [`0083`](../decisions/0083-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-tdd-einheit.md).
 
 Bei der Ausarbeitung ist eine Lücke aufgefallen, die unabhängig vom Ausgang zu schließen war:
 `.claude/agents/developer.md` kennt die mit Spec [`0400`](./0400-einheitliche-code-formatierung.md)
@@ -179,7 +179,7 @@ entfällt und verändert sich keine Entität, keine Tabelle und keine Migration.
 
 ## Architektur / Umsetzung
 
-**Entscheidung:** ADR [`0081`](../decisions/0081-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-tdd-einheit.md).
+**Entscheidung:** ADR [`0083`](../decisions/0083-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-tdd-einheit.md).
 Weg (a) — Prüfungen, die nach einer Dateiänderung automatisch feuern — wird verworfen, in der
 eingecheckten wie in der lokalen Ausprägung. Gebaut werden (b) `scripts/check.sh` und (c) ein
 Prüfpunkt je TDD-Einheit im `developer`-Ablauf. Die Abwägung steht in der ADR und wird hier nicht
@@ -317,7 +317,7 @@ Umgebung" — und der Befund stand die ganze Zeit da.
    Hinweis, dass Ausgang `1` im verbundenen Arbeitsbaum der **Normalfall** ist.
 10. **Nachweis der Randbedingung** (K5), als Messung im Abschlussbericht statt als neuer Testcode:
     die vier Familien aus `test_keine_automatische_formatierung.py` laufen auf dem fertigen Branch
-    und melden null Befunde. Begründung, warum nicht erweitert wird: ADR 0081 Abschnitt 7.
+    und melden null Befunde. Begründung, warum nicht erweitert wird: ADR 0083 Abschnitt 7.
 
 ### Entwurfsentscheidungen, die nicht neu zu treffen sind
 
@@ -485,7 +485,7 @@ Absichten.
 
 - **Kernfrage beantwortet mit „ja, aber (b) + (c)".** Weg (a) — Prüfungen, die nach einer
   Dateiänderung automatisch feuern — ist verworfen, in der eingecheckten wie in der lokalen
-  Ausprägung. Gründe in ADR 0081.
+  Ausprägung. Gründe in ADR 0083.
 - **Die Formatprüfung gehört in den Prüfbefehl**, obwohl ein Akzeptanzkriterium der Story
   „automatische Code-Formatierung" ausnimmt. Formatierung ist das Umschreiben von Dateien;
   `ruff format --check` und `prettier --check` schreiben nichts. Die Abgrenzung galt zudem gegen
@@ -531,5 +531,5 @@ Keine. Die eine Produktentscheidung — Verhalten im verbundenen Arbeitsbaum —
   nicht mehr sagt, welcher Baum rot war.
 - **Eine exakte Fixierung von `mypy`.** `mypy>=1.13` kann lokal grün und in CI rot sein. Das
   besteht seit jeher, ist nicht Gegenstand dieser Story und wäre eine eigene Entscheidung; in
-  ADR 0081 als bekannte Restschwäche benannt.
+  ADR 0083 als bekannte Restschwäche benannt.
 - **Ein Bereichs-Argument** (`check.sh backend`). Fester Umfang wie bei `format.sh`.

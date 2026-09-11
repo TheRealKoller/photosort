@@ -87,7 +87,7 @@ Vorbedingungen sind dieselben wie beim Formatierbefehl oben (`node_modules`, pas
 `ruff`-Version je Baum), dazu ein aufrufbares `mypy` und die aufgerufenen npm-Skriptnamen. Auch
 hier läuft nichts von selbst: kein Git-Hook, kein Editor-Automatismus, keine Prüfung, die nach
 einer Dateiänderung feuert (das ist Absicht, siehe
-[`specs/decisions/0081-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-tdd-einheit.md`](../specs/decisions/0081-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-tdd-einheit.md)).
+[`specs/decisions/0083-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-tdd-einheit.md`](../specs/decisions/0083-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-tdd-einheit.md)).
 Der Befehl hat deshalb nichts, was sich abschalten ließe — er tut nichts, bis ihn jemand aufruft.
 
 Je Ausgang ein Handgriff:

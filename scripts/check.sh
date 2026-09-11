@@ -3,7 +3,7 @@
 # Prueft das ganze Repository in einem Aufruf: Formatierung, Lint und Typen in backend/,
 # scripts/, frontend/ und e2e/ - zehn Befehle, dieselben wie in .github/workflows/ci.yml.
 #
-# Siehe specs/decisions/0081-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-
+# Siehe specs/decisions/0083-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-
 # tdd-einheit.md. Verhalten zugesichert durch scripts/tests/test_check_sh.py.
 
 set -euo pipefail
