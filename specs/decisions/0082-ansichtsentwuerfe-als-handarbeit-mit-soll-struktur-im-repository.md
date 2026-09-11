@@ -1,7 +1,9 @@
-# 0069 - Ansichtsentwürfe sind Handarbeit in Penpot; das Repository führt nur ihre Soll-Struktur
+# 0082 - Ansichtsentwürfe sind Handarbeit in Penpot; das Repository führt nur ihre Soll-Struktur
 
 **Status:** Accepted
 **Datum:** 2026-09-09
+**Frühere Nummer:** 0069 (bis 2026-09-11), aufgelöste Dublette mit
+`0069-nebenkategorien-mehrfachzugehoerigkeit-und-konfidenzgewichtete-rangfolge.md`.
 **Bezug:** [GitHub-Issue #358](https://github.com/TheRealKoller/photosort/issues/358), [`features/0358-projektverwaltung-entwurf.md`](../features/0358-projektverwaltung-entwurf.md), [`decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md`](./0065-penpot-als-design-quelle-rangfolge-umgekehrt.md), [`decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md`](./0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md)
 
 **Berührt außerdem (keine Ablösung):**

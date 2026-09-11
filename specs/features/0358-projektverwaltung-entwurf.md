@@ -154,7 +154,7 @@ die `GET /projects` liefert. Was daraus folgt, steht im Abschnitt „Architektur
 ## Architektur / Umsetzung
 
 **Zwei ADRs tragen diese Spec.**
-[`decisions/0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md`](../decisions/0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md)
+[`decisions/0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md`](../decisions/0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md)
 legt fest, *wie* eine Ansicht in der Design-Quelle abgelegt wird — das Muster, dem jeder weitere
 Entwurf folgt.
 [`decisions/0070-bausteinmenge-regelgebunden-offen-statt-geschlossen.md`](../decisions/0070-bausteinmenge-regelgebunden-offen-statt-geschlossen.md)
@@ -303,7 +303,7 @@ Binärdateien sind im Repository nicht neu). Den Ausschlag gibt die Menge, nicht
 vierzehn Bretter allein hier, und jede weitere Ansichts-Story folgte dem Muster. Eine Ausnahme, die
 mit jeder Story wächst, ist eine zweite Ablage — und zwar eine, die ab dem Tag ihrer Erstellung
 veraltet, weil in Penpot weiterentworfen wird und niemand ein Bild nachzieht. Die Begründung steht in
-ADR [`0069`](../decisions/0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md)
+ADR [`0082`](../decisions/0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md)
 Abschnitt 7.
 
 **Das Anhängen an den Pull Request ist ein Handgriff von Daniel im Browser, kein automatisierbarer
@@ -405,7 +405,7 @@ Verbindlicher Bestandteil der Spec, keine Entschuldigung am Rand:
    Bausteinen sie bestanden, welche Lücken sie trugen — nicht, wie sie aussahen. Sie kommt
    ausschließlich durch erneutes Entwerfen von Hand zurück, und zwar **ohne Vorlage**. Das ist die
    schärfste Grenze dieser Konstruktion und der Preis zweier bewusster Entscheidungen zugleich: kein
-   Generator (ADR 0069 Abschnitt 1) und kein eingechecktes Bild (Abschnitt 7).
+   Generator (ADR 0082 Abschnitt 1) und kein eingechecktes Bild (Abschnitt 7).
 2. **`views.json` sichert Struktur, nicht Gestaltung.** Dass vier Ansichten in zwei Breiten
    existieren, sagt nichts darüber, ob der Entwurf trägt. Die Beurteilung bleibt eine Handlung.
 3. **Kein Test kann Penpot lesen**, und die Erweiterung von `verify.js` ist zum PR-Zeitpunkt
@@ -741,7 +741,7 @@ Kein Blocker.
 
 Für die vier Aufbauskripte trägt die Herkunftsregel („ausschließlich aus Dateien des Branches, zum
 Ausführungszeitpunkt gelesen"): Jede ausgeführte Zeile stand in einem Diff und hat ein Review gesehen.
-Ansichten entstehen nach ADR 0069 **von Hand**, aus vielen kleinen Aufrufen, deren Text im Moment des
+Ansichten entstehen nach ADR 0082 **von Hand**, aus vielen kleinen Aufrufen, deren Text im Moment des
 Absendens entsteht — kein Diff, **kein Review**. Das einzige Gate fällt für diesen Anteil weg.
 
 Die Bewertung lautet deshalb: Handarbeit ist gegenüber der erzeugten Nutzlast **nicht besser, sondern
@@ -763,7 +763,7 @@ im Zuge dieser Spec:
 
 Die dritte denkbare Stufe („jeder Aufruftext zuvor als Datei im Branch") wurde geprüft und verworfen:
 Sie wäre die vollständige Herkunftsregel, machte den Entwurf aber faktisch wieder zu einem Generator
-und widerspräche damit ADR 0069 Abschnitt 1.
+und widerspräche damit ADR 0082 Abschnitt 1.
 
 ### 2. Beispieldaten sind eine Veröffentlichung, kein Layoutdetail (Muss)
 
@@ -813,7 +813,7 @@ folgen zwei Umsetzungsauflagen:
 
 ### 4. Rücklesen: die Klausel deckt Injektion, nicht Umfang (Muss)
 
-`verify.js` gibt konstruktiv nur zurück, was der mechanische Vergleich braucht, und ADR 0069 Abschnitt
+`verify.js` gibt konstruktiv nur zurück, was der mechanische Vergleich braucht, und ADR 0082 Abschnitt
 6 hält das für die neue Ansichtsliste durch (Plugin-Daten, Zählwerte, Varianteneigenschaften,
 Bindungen — keine Beschreibungen, keine Textinhalte). Die **Ad-hoc-Abfragen** des Entwerfens haben
 diese Bauart nicht; für sie fehlt die Regel bisher:
@@ -839,7 +839,7 @@ ausreichend. Die Einordnung ist wichtig, damit später niemand die falsche Hälf
 hält: Die Bilder gehen **ohnehin und absichtlich** an einen öffentlichen Pull Request, und ein
 PR-Anhang ist so wenig zurücknehmbar wie ein Commit. Ein versehentliches Einchecken offenbart daher
 nichts Zusätzliches — es beschädigt die Schärfe der Projektregel „nie Bilddaten im Repository" und
-hinterlässt mitwachsende, still veraltende Binärdateien (der Grund von ADR 0069 Abschnitt 7).
+hinterlässt mitwachsende, still veraltende Binärdateien (der Grund von ADR 0082 Abschnitt 7).
 **Vertraulichkeit hängt allein an Punkt 2**, nicht an `.gitignore`.
 
 Zwei Auflagen: Die Gegenprobe des CI-Schritts bekommt eine zweite Beispielzeile unter `design/` —
@@ -971,7 +971,7 @@ Brettbreiten die beiden E2E-Breiten. Keine Vitest-Komponententests (es entsteht 
 **Keine Prüfung des Entwurfs selbst**, aus zwei je für sich tragenden Gründen: kein Werkzeug in CI
 kann Penpot lesen; und Gestaltung ist eine *Entscheidung*, keine Ableitung — ein Test darüber müsste
 den Entwurf abtippen und wäre die erste getippte Wertekopie des Projekts, also genau die Fehlerklasse,
-gegen die ADR 0069 den Generator verworfen hat. Kein Ausführen von `verify.js` oder
+gegen die ADR 0082 den Generator verworfen hat. Kein Ausführen von `verify.js` oder
 `seed-components.js` in CI (`execute_code` läuft ohne Sandbox in einer angemeldeten Sitzung). Kein
 Bild-/Snapshot-Vergleich. **Keine Prüfung der Wortlaut-Tabelle aus AK 3** — sie wird in der
 Folge-Story gegen `PIPELINE_STEPS` testbar; sie jetzt in `views.json` oder einen Test zu schreiben
@@ -995,11 +995,11 @@ Abschnitt „Struktur-Soll ohne ausführende Nutzlast").
 
 Getroffen im Zuge dieser Spec. Drei davon hat Daniel entschieden, sie sind als solche gekennzeichnet.
 
-1. **Kein `seed-views.js`, stattdessen `views.json` als Soll-Struktur** — ADR 0069. Ein Generator wäre
+1. **Kein `seed-views.js`, stattdessen `views.json` als Soll-Struktur** — ADR 0082. Ein Generator wäre
    die erste getippte Wertekopie des Projekts und holte die Layoutentscheidung ins Repository zurück,
    gegen die Rangfolge aus ADR 0065.
 2. **Die Bausteinmenge wird von zehn auf elf geöffnet und die Schließung durch eine Aufnahmeregel
-   ersetzt** — ADR 0070, bewusst getrennt von ADR 0069, damit die Regel auch dann gilt, wenn das
+   ersetzt** — ADR 0070, bewusst getrennt von ADR 0082, damit die Regel auch dann gilt, wenn das
    Ablagemuster einmal ausgetauscht wird.
 3. **(Daniel) Der Bildexport wird nicht eingecheckt.** Alle Bilder gehen an den Pull Request; die
    Regel „nichts aus der Instanz wird eingecheckt" bleibt wortgleich bestehen. Abgewogen gegen 14 PNGs

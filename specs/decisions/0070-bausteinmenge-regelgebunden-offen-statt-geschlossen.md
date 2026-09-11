@@ -95,7 +95,7 @@ Die Zahl steht an mehr Stellen, als man beim ersten Hinsehen vermutet. Abschlie�
 | Ort | Was dort steht |
 |---|---|
 | `design/penpot/components.json` | der neue Eintrag selbst |
-| `frontend/penpot/payload.test.ts` | Blocktitel „Die zehn Bausteine", die Liste der maschinellen Schlüssel, die Liste der Anzeigenamen, der Kommentar „neun der zehn liegen unter `ui/`", die Zusicherung „baut genau 144 Varianten auf", der Suchraum der Wertfreiheits-Zusicherung (fünf → sechs Dateien, siehe ADR 0069) |
+| `frontend/penpot/payload.test.ts` | Blocktitel „Die zehn Bausteine", die Liste der maschinellen Schlüssel, die Liste der Anzeigenamen, der Kommentar „neun der zehn liegen unter `ui/`", die Zusicherung „baut genau 144 Varianten auf", der Suchraum der Wertfreiheits-Zusicherung (fünf → sechs Dateien, siehe ADR 0082) |
 | `design/penpot/verify.js` | `ERWARTETE_BAUSTEINE = 10` |
 | `frontend/penpot/payload.test.ts`, Freigabeliste | der zeilen- und ausschnittgebundene Eintrag zu `ERWARTETE_BAUSTEINE`; **jede** Zeilenverschiebung in `verify.js` betrifft zusätzlich die drei übrigen Einträge |
 | `design/penpot/seed-components.js` | Kopfkommentar („zehn Bausteine", „144 Varianten") und der Kommentar an `pruefeLeereDatei` |

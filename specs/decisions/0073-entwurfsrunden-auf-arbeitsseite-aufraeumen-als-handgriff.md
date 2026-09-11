@@ -3,17 +3,17 @@
 **Status:** Accepted
 **Teilweise abgelöst:** **Abschnitt 5, letzter Absatz** — der Satz „Beides gehört in denselben Pull Request wie der fertige Entwurf — in die Story, in deren Rahmen der Lauf stattfand" — durch ADR [`0077`](./0077-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md). Ein Lauf liefert seine Nachträge ab dort in einem **eigenen** Pull Request aus, den ein eigener schlanker Skill (`ship-entwurf`) nach einer einmaligen Frage im Abschluss eröffnet; eine Story ist dafür nicht mehr Voraussetzung, ihr Issue wird nur noch referenziert, wenn es sie gibt. **Alles Übrige dieser ADR bleibt unverändert in Kraft** — insbesondere der eigene Skill neben `penpot-design` (Abschnitt 1), die Arbeitsseite samt Vereinfachungen (Abschnitt 2), die Marken und die Wiederaufnahme (Abschnitt 3), **der Ablauf löscht nichts** und das Aufräumen bleibt eine Auskunft (Abschnitt 4), das Ausarbeiten statt Verschieben und der Nachtrag an der Nutzlast (Abschnitt 5 im Übrigen), die beiden Auflagen (Abschnitt 6), die jederzeitige Aufrufbarkeit ohne Story und die Erlaubnisstufe „kein GitHub-Zugriff" (Abschnitt 7) sowie der Security-Trigger (Abschnitt 8, von ADR 0077 erweitert, nicht ersetzt). Deshalb `Accepted` und nicht `Superseded`; die Abstufung ist in [`../README.md`](../README.md) beschrieben.
 **Datum:** 2026-09-10
-**Bezug:** [GitHub-Issue #380](https://github.com/TheRealKoller/photosort/issues/380), [`decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md`](./0065-penpot-als-design-quelle-rangfolge-umgekehrt.md), [`decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md`](./0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md), [`decisions/0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md`](./0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md)
+**Bezug:** [GitHub-Issue #380](https://github.com/TheRealKoller/photosort/issues/380), [`decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md`](./0065-penpot-als-design-quelle-rangfolge-umgekehrt.md), [`decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md`](./0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md), [`decisions/0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md`](./0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md)
 
 **Berührt außerdem (keine Ablösung):**
-- [`decisions/0069`](./0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 3 (Ablagemuster) und Abschnitt 6 (`verify.js` liest Ansichten mit zurück): **unverändert gültig**. Diese ADR fügt kein zweites Ablagemuster hinzu, sondern trennt den **Zwischenstand einer Runde** vom **Ergebnis**: Nur das Ergebnis ist ein Ansichtsentwurf im Sinne von Abschnitt 3. Der Zwischenstand trägt die Ansichts-Plugin-Daten ausdrücklich **nicht** und ist für `verify.js` deshalb nicht vorhanden.
-- [`decisions/0069`](./0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 1 (kein `seed-views.js`, die Aufbau-Schritttabelle bleibt bei vier Einträgen): unverändert. Diese ADR fügt der Nutzlast **keine Datei hinzu**; die Schritttabelle bleibt bei vier Einträgen.
+- [`decisions/0082`](./0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 3 (Ablagemuster) und Abschnitt 6 (`verify.js` liest Ansichten mit zurück): **unverändert gültig**. Diese ADR fügt kein zweites Ablagemuster hinzu, sondern trennt den **Zwischenstand einer Runde** vom **Ergebnis**: Nur das Ergebnis ist ein Ansichtsentwurf im Sinne von Abschnitt 3. Der Zwischenstand trägt die Ansichts-Plugin-Daten ausdrücklich **nicht** und ist für `verify.js` deshalb nicht vorhanden.
+- [`decisions/0082`](./0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 1 (kein `seed-views.js`, die Aufbau-Schritttabelle bleibt bei vier Einträgen): unverändert. Diese ADR fügt der Nutzlast **keine Datei hinzu**; die Schritttabelle bleibt bei vier Einträgen.
 - [`decisions/0066`](./0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md) Abschnitt 4 („Kein Skript löscht je etwas") und Abschnitt 5 Punkt 6 (die abschließende Liste): **wortgleich und ungeschmälert in Kraft**. Diese ADR fasst das Löschverbot **nicht an** — siehe Abschnitt 4. Das steht hier ausdrücklich, damit ein späterer Leser nicht vermutet, an dieser Stelle sei etwas offengeblieben oder stillschweigend geweitet worden.
 
 ## Kontext
 
 Ein Ansichtsentwurf entsteht heute als **ein** langer Handarbeitslauf (ADR
-[`0069`](./0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md)): ein
+[`0082`](./0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md)): ein
 Vorschlag, keine Auswahl, Rückmeldung erst am Ende. Beim ersten echten Lauf (Spec 0358, vier
 Ansichten, vierzehn Bretter) war das teuer und nicht steuerbar — und es steht noch rund acht Mal
 an, weil die Design-Quelle bisher genau eine Produktansicht trägt.
@@ -82,7 +82,7 @@ Nachtrag an einer bestehenden Ansicht.
 
 Ein Lauf legt **eine Penpot-Seite** an, benannt `Entwurf — <Bezeichnung>`. Das Präfix ist
 absichtlich ein anderes als `Ansicht — ` aus ADR
-[`0069`](./0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 3:
+[`0082`](./0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 3:
 Wer die Seitenliste ansieht, muss Arbeitsstand von Ergebnis unterscheiden können, ohne
 hineinzuklicken. Seit Abschnitt 4 ist das zusätzlich die Voraussetzung dafür, dass der Handgriff
 „diese Seite wegwerfen" gefahrlos ist — **eine Seite je Lauf, und auf ihr liegt nichts anderes.**
@@ -127,7 +127,7 @@ Wiedererkennung ist teurer als anderswo — sie wird später geglaubt.
 
 Ein Vorschlagsbrett trägt **niemals** `ansicht` oder `breite`. Das ist die Stelle, an der diese
 Entscheidung mit ADR
-[`0069`](./0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 6
+[`0082`](./0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 6
 verzahnt ist: `verify.js` erkennt Ansichtsbretter ausschließlich an `ansicht`. Ein laufender Entwurf
 ist für das Rücklesen deshalb **unsichtbar** — er kann den Abgleich gegen `views.json` weder rot
 färben noch Zählwerte verschieben, und `verify.js` braucht für diese Story **keine Zeile Änderung**.
@@ -175,7 +175,7 @@ woanders.
 Im selben Zug wird `design/penpot/views.json` nachgezogen (Eintrag oder Erweiterung samt Lücken) und
 die Kardinalitäten in `verify.js` werden angehoben. **Was im Entwurf nicht regelkonform darstellbar
 war, wird als Lücke benannt** — mit Stelle und Grund, in Worten, ohne den Wert, wie ADR
-[`0069`](./0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 5 es
+[`0082`](./0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 5 es
 festlegt.
 
 **Bildexporte entstehen während der Runden nicht.** Die Rückkopplung ist Daniels Blick in die
@@ -296,7 +296,7 @@ Ansicht" niemandem auffiele.
   - **Das Ausarbeiten am Ende ist echte Arbeit**, die die Runden nicht abnehmen. Wer den Aufwand
     einer Ansichts-Story schätzt, addiert Runden **und** Ausarbeitung.
   - **Der Zwischenstand ist nirgends gesichert.** Ist die Seite weggeworfen, ist der Lauf weg; ADR
-    [`0069`](./0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 7
+    [`0082`](./0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) Abschnitt 7
     (kein Bild im Repository) gilt für Runden erst recht.
 - **Folgearbeit:** Ob der Rundenablauf auch für andere Gegenstände als Ansichten taugt (etwa für
   einen neuen Bibliotheks-Baustein nach der Aufnahmeregel aus ADR
