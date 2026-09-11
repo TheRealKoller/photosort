@@ -61,7 +61,7 @@ from photosort.worker import (
 # importiert (nicht auf Modulebene) - kein zusaetzliches Gewicht im uvicorn-Importpfad.
 
 # Bewusste Abweichung vom Router-Level-dependencies=[Depends(get_current_user)]-Muster aus
-# projects.py/opencloud.py (Architektur-Review-Fund): jeder Endpunkt hier braucht das tatsaechliche
+# projects.py/opencloud.py: jeder Endpunkt hier braucht das tatsächliche
 # User-Objekt (fuer die eigene Bewertung/den Datenzugriff), nicht nur die Auth-Pruefung als reinen
 # Torwaechter - deshalb current_user als normaler Depends()-Parameter statt Router-weiter
 # dependencies-Liste. Sicherheitswirkung ist identisch (jeder Endpunkt bleibt auth-pflichtig).
@@ -699,7 +699,7 @@ def _derived_location_of(
     Datenbank): bei gleichem Abstand gewinnt der FRUEHERE Zeitpunkt, bei identischem `taken_at` die
     kleinere `photo_id` - beides ergibt sich aus der Sortierung plus dem `<=`-Vergleich unten.
 
-    Die Suche laeuft ueber `key=` DIREKT auf `anchors` (Copilot-Review-Fund, PR #381): eine
+    Die Suche laeuft ueber `key=` DIREKT auf `anchors`: eine
     vorgeschaltete Hilfsliste aller Zeitstempel waere bereits linear und machte den `bisect` zur
     Zierde - und zwar einmal JE FOTO der Antwort, also O(N x M). Der vollstaendige Cluster kann
     deutlich mehr Anker tragen, als die Antwort Fotos enthaelt (Top-N-Auswahl), womit

@@ -454,7 +454,7 @@ def _estimate_part(
     candidate_count: int | None, price_per_image_usd: float | None
 ) -> ClassificationEstimatePartOut:
     """Ein Anteil der Vorab-Schaetzung. Die ZWEIGREIHENFOLGE ist die Aussage
-    und dieselbe wie fuer die Gesamtsumme (Copilot-Fund PR #341), ergaenzt um einen dritten Fall:
+    und dieselbe wie für die Gesamtsumme, ergänzt um einen dritten Fall:
 
     1. Anteil unbekannt (`candidate_count is None`) -> Betrag `None`. Ueber eine unbekannte Menge
        laesst sich nichts sagen, auch nicht mit einem bekannten Preis.
@@ -489,7 +489,7 @@ async def _count_remote_category_candidates(session: AsyncSession, project_id: i
     Architektur-Klarheitsgrund, siehe api/photos.py fuer die eine bewusste Ausnahme, wo die Spec
     einen synchronen Aufruf im selben Request verlangt.)
 
-    Copilot-Review-Fund (PR #201): vorher zwei getrennte SELECTs (alle Kandidaten-`photo_id`s nach
+    vorher zwei getrennte SELECTs (alle Kandidaten-`photo_id`s nach
     Python laden, dann ein zweites SELECT + Python-seitiger Filter) - bei einem grossen Projekt
     unnoetig viel Speicher/IO, gerade weil die Kostenschaetzung eager beim Laden der
     Kuratierungs-Seite ausgefuehrt wird. Jetzt ein einzelnes `COUNT` mit `NOT EXISTS`, komplett
@@ -702,7 +702,7 @@ async def delete_project(
     # zunichtemachen. Ueber to_thread, weil das bei mehreren tausend Fotos ebenso viele
     # unlink-Aufrufe sind, die die Event-Loop nicht blockieren duerfen.
     #
-    # Der breite `except` ist die zweite Haelfte derselben Zusage (Copilot-Fund, PR #351):
+    # Der breite `except` ist die zweite Hälfte derselben Zusage:
     # `delete_cached_variants` faengt nur `OSError` JE DATEI ab. Alles darueber hinaus - ein
     # Fehler beim Berechnen eines Pfads, eine erschoepfte Thread-Ressource, was auch immer aus
     # `to_thread` selbst kommt - schluege sonst als `500` bis zum Client durch, obwohl die
@@ -956,7 +956,7 @@ async def _build_classification_estimate(
         provider=provider,
         model=model,
         price_per_image_usd=price_per_image_usd,
-        # Reihenfolge der Zweige ist die Aussage (Copilot-Fund, PR #341): null Kandidaten
+        # Reihenfolge der Zweige ist die Aussage: null Kandidaten
         # zuerst. `null` heisst "unbekannt" - bei null Kandidaten ist der Betrag aber bekannt,
         # es faellt nichts an, weil nichts verarbeitet wird. Der Preis JE BILD bleibt daneben
         # korrekt `null`. Andersherum haengt die Zusage des Docstrings ("candidate_count=0
