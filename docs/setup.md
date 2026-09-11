@@ -22,10 +22,14 @@ Das Frontend ruft die API cross-origin auf und braucht dafür zwei zusammenspiel
 ### Tests
 
 ```bash
-cd backend && pytest
-cd frontend && npm test
-cd scripts && pytest
+(cd backend && pytest)
+(cd frontend && npm test)
+(cd scripts && pytest)
 ```
+
+Die Klammern sind hier aus demselben Grund gesetzt wie weiter unten beim Installieren: Ohne sie
+stünde man nach der ersten Zeile in `backend/`, und die beiden folgenden lösten
+`backend/frontend` und `backend/scripts` auf und schlügen fehl.
 
 Der dritte Lauf ist der kleinste und betrifft am ehesten, wer nur Doku oder Specs geändert hat:
 Unter `scripts/tests/` liegen die Repo-Konsistenzprüfungen, die Texte und Dateinamen dieses

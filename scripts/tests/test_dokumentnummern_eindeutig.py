@@ -455,6 +455,15 @@ def wegwerf_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     (repo / "specs" / "decisions" / "0001-ungetrackt.md").write_text("# 0001\n", encoding="utf-8")
     (repo / "specs" / "decisions" / "0001-ignoriert.md").write_text("# 0001\n", encoding="utf-8")
+
+    # Zwei Namen, an denen sich die Aufzaehlungsform entscheidet. Der Umlaut steht hier
+    # absichtlich als echtes Zeichen und nicht umschrieben wie die Prosa ringsum: Er IST der
+    # Pruefgegenstand. Beide tragen eigene, kollisionsfreie Nummern, damit sie die Dublettenprobe
+    # oben unberuehrt lassen.
+    (repo / "specs" / "decisions" / "0002-mit leerzeichen.md").write_text("#\n", encoding="utf-8")
+    (repo / "specs" / "decisions" / "0003-gateführte-pipeline.md").write_text(
+        "#\n", encoding="utf-8"
+    )
     return repo
 
 
@@ -486,3 +495,48 @@ def test_eine_neue_datei_zaehlt_vor_dem_git_add_mit_eine_ignorierte_nicht(
     assert "2-fach vergeben" in befunde[0]
     assert "specs/decisions/0001-ungetrackt.md" in befunde[0]
     assert "0001-ignoriert" not in befunde[0]
+
+
+def test_ein_dateiname_mit_sonderzeichen_kommt_unverfaelscht_zurueck(wegwerf_repo: Path) -> None:
+    """`-z` ist die einzige Aufzaehlungsform, die jeden Dateinamen unveraendert durchlaesst.
+
+    Ohne `-z` **quotet** Git jeden Pfad mit Nicht-ASCII-Zeichen: Aus
+    `specs/features/0037-gatefuehrte-….md` wird buchstaeblich
+    `"specs/features/0037-gatef\\303\\274hrte-….md"`, mit fuehrendem Anfuehrungszeichen. Ein so
+    gelesener Pfad zerfaellt beim Zerlegen anders - sein Elternverzeichnis heisst dann
+    `"specs/features` statt `specs/features` -, und das Dokument faellt **still** aus dem
+    Suchraum, statt geprueft zu werden. Genau ein solcher Name liegt im echten Bestand.
+
+    Warum dieser Test noetig ist, obwohl der Selbstschutz greift: Ein ersatzloses Entfernen von
+    `-z` ist ein **totaler** Ausfall (kein Nullbyte, ein einziges Element, `suchraum_pruefen`
+    wirft) und faellt ueberall auf. Der gefaehrliche Umbau ist der **partielle**: zeilenweises
+    Lesen. Dann kommen alle ASCII-Pfade weiter korrekt an, und nur die Handvoll mit Sonderzeichen
+    verschwindet - kein anderer Test bemerkt das.
+
+    Mutationsprobe am 2026-09-11, zweimal: (1) `-z` ersatzlos entfernt - 11 Tests rot, der Ausfall
+    ist unuebersehbar. (2) `-z` entfernt **und** `splitlines()` statt `split(b"\\0")` eingesetzt,
+    also der realistische Umbau - **28 gruen, 1 rot**, und dieser eine war die Zusicherung auf den
+    Umlaut-Pfad hier; der Leerzeichen-Pfad kam unbeschadet durch, weil Git Leerzeichen nicht
+    quotet. Beides zurueckgenommen. Wer die Aufzaehlungsform aendert, wiederholt die Probe, statt
+    sie zu glauben.
+    """
+    pfade = set(verwaltete_pfade(wegwerf_repo))
+
+    assert "specs/decisions/0002-mit leerzeichen.md" in pfade, (
+        "Ein Leerzeichen im Dateinamen hat den Pfad zerteilt - die Aufzaehlung ist nicht "
+        "nullterminiert gelesen worden."
+    )
+    assert "specs/decisions/0003-gateführte-pipeline.md" in pfade, (
+        "Der Umlaut-Pfad kam nicht unveraendert zurueck - vermutlich ist `-z` weggefallen und "
+        "Git hat den Namen gequotet. Solche Dokumente fallen still aus der Pruefung."
+    )
+    assert not any(pfad.startswith('"') for pfad in pfade), (
+        "Mindestens ein Pfad traegt ein fuehrendes Anfuehrungszeichen - das ist Gits "
+        "Quoting-Form, kein Dateiname."
+    )
+
+    # Der Umlaut-Pfad muss nicht nur ankommen, er muss auch bis in die Zusicherung durchkommen.
+    dokumente = dokumente_je_verzeichnis(pfade)
+
+    assert "specs/decisions/0003-gateführte-pipeline.md" in dokumente["specs/decisions"]
+    assert praefix_befunde(dokumente) == []
