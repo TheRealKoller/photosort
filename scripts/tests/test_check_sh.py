@@ -51,6 +51,7 @@ from conftest import (
     REPO_WURZEL,
     SKRIPT_CHECK_SH,
     TS_BAEUME,
+    Ergebnis,
     Spielplatz,
     laufe,
 )
@@ -441,3 +442,132 @@ def test_alle_vier_baeume_ungeprueft_melden_null_von_zehn_und_nicht_sauber(
         "Ein Lauf ohne eine einzige Pruefung darf das Wort 'sauber' nicht in den Mund nehmen. "
         f"Meldung: {ergebnis.meldung!r}"
     )
+
+
+# --- 5. Phase 2: Befunde, Zaehler und Bilanz ---------------------------------------------------
+
+
+def befundzeilen(ergebnis: Ergebnis) -> list[str]:
+    """Die Eintraege unter der Ueberschrift `Befunde:` - nichts sonst."""
+    zeilen = ergebnis.stdout.splitlines()
+    if "Befunde:" not in zeilen:
+        return []
+    gefunden: list[str] = []
+    for zeile in zeilen[zeilen.index("Befunde:") + 1 :]:
+        if not zeile.startswith("  - "):
+            break
+        gefunden.append(zeile[4:])
+    return gefunden
+
+
+@pytest.mark.parametrize(
+    "rote_pruefung", ZEHN_PRUEFUNGEN, ids=[bezeichnung(p) for p in ZEHN_PRUEFUNGEN]
+)
+def test_jede_einzelne_pruefung_fuehrt_bei_fehlschlag_zu_ausgang_2(
+    fabrik: Callable[..., Spielplatz], rote_pruefung: tuple[str, str, str]
+) -> None:
+    """K8, zehn Faelle statt einem.
+
+    "Meldet Befunde" ist schon durch einen einzigen korrekt verdrahteten Aufruf erfuellt - neun
+    blinde Stellen blieben unentdeckt. Geprueft wird deshalb je Pruefung einzeln: Ausgang 2, die
+    Bilanz nennt genau dieses (Baum, Pruefung)-Paar und kein gruenes, und die uebrigen neun
+    Aufrufe erfolgen trotzdem (K9).
+    """
+    spielplatz = fabrik(befunde=[rote_pruefung])
+    ergebnis = laufe(spielplatz)
+
+    assert ergebnis.exit_code == 2, (
+        f"{bezeichnung(rote_pruefung)} ist rot, der Lauf endet aber mit {ergebnis.exit_code}. "
+        f"Meldung: {ergebnis.meldung!r}"
+    )
+    assert befundzeilen(ergebnis) == [bezeichnung(rote_pruefung)], (
+        f"Die Bilanz muss genau das rote Paar nennen - und kein gruenes. Meldung: "
+        f"{ergebnis.meldung!r}"
+    )
+    assert spielplatz.pruefaufrufe() == list(ZEHN_PRUEFUNGEN), (
+        "Ein roter Baum darf den Sammellauf nicht abbrechen; sonst entsteht genau die Schleife "
+        f"(beheben, neu laufen, naechster Fund), die entfallen soll. Protokoll: "
+        f"{spielplatz.aufrufe()}"
+    )
+    assert "10 von 10" in ergebnis.meldung, ergebnis.meldung
+
+
+def test_zwei_rote_pruefungen_in_verschiedenen_baeumen_stehen_beide_in_der_bilanz(
+    fabrik: Callable[..., Spielplatz],
+) -> None:
+    rote = [ZEHN_PRUEFUNGEN[0], ZEHN_PRUEFUNGEN[6]]
+    spielplatz = fabrik(befunde=rote)
+    ergebnis = laufe(spielplatz)
+
+    assert ergebnis.exit_code == 2, ergebnis.meldung
+    assert befundzeilen(ergebnis) == [bezeichnung(rote[0]), bezeichnung(rote[1])], ergebnis.meldung
+    assert spielplatz.pruefaufrufe() == list(ZEHN_PRUEFUNGEN), spielplatz.aufrufe()
+
+
+def test_ein_befund_schlaegt_einen_ungepruefen_baum_im_exit_code(
+    fabrik: Callable[..., Spielplatz],
+) -> None:
+    """K8: Der Gleichstand geht an 2 - und die Bilanz nennt trotzdem beides.
+
+    Exit-Codes ordnen nach erforderlicher Handlung: Ein Befund verlangt eine Aenderung am
+    Arbeitsstand, die 1 nur eine an der Umgebung. Umgekehrt ginge Information verloren - wer 1
+    bekaeme, installierte node_modules und meldete "war nur die Umgebung", waehrend der Befund
+    die ganze Zeit dastand.
+    """
+    spielplatz = fabrik(befunde=[ZEHN_PRUEFUNGEN[0]], node_modules_je_baum={"e2e": False})
+    ergebnis = laufe(spielplatz)
+
+    assert ergebnis.exit_code == 2, ergebnis.meldung
+    assert befundzeilen(ergebnis) == [bezeichnung(ZEHN_PRUEFUNGEN[0])], ergebnis.meldung
+    assert "e2e" in ergebnis.meldung and "npm ci" in ergebnis.meldung, (
+        "Der uebersprungene Baum muss trotz des Befunds in der Bilanz stehen; nur der Exit-Code "
+        f"traegt allein das Dringendere. Meldung: {ergebnis.meldung!r}"
+    )
+    assert "8 von 10" in ergebnis.meldung, ergebnis.meldung
+
+
+def test_ein_sauberer_lauf_schreibt_keine_einzige_datei(
+    fabrik: Callable[..., Spielplatz],
+) -> None:
+    """K7, die Aufzeichnungsebene: keine Aufrufform schreibt.
+
+    Die Zusicherung haengt nicht am leeren Ergebnis allein - das waere auch bei ausgefallener
+    Aufzeichnung leer -, sondern daran, dass daneben die vollstaendige Aufrufliste steht.
+    """
+    spielplatz = fabrik()
+    ergebnis = laufe(spielplatz)
+
+    assert ergebnis.exit_code == 0, ergebnis.meldung
+    assert spielplatz.pruefaufrufe() == list(ZEHN_PRUEFUNGEN), spielplatz.aufrufe()
+    assert spielplatz.formatierlaeufe() == [], (
+        "Ein Aufruf hat 'ruff format' ohne --check oder 'npm run format' ohne :check abgesetzt. "
+        "Ein Pruefbefehl, der mitten im TDD-Zyklus Dateien umschreibt, veraendert den Stand, den "
+        f"der Aufrufer gerade geprueft hat. Protokoll: {spielplatz.aufrufe()}"
+    )
+
+
+def test_die_typescript_pruefungen_laufen_ausschliesslich_als_npm_run_skript(
+    fabrik: Callable[..., Spielplatz],
+) -> None:
+    """S2: nie als direkter prettier-/tsc-/oxlint-Aufruf.
+
+    `--ignore-path ../.prettierignore` steckt im npm-Skript, und diese Datei ist die einzige
+    Ausschlussquelle fuer Prettier. Ein direkter Aufruf aus `e2e/` stiege in `e2e/.auth/` ab;
+    bei einem Parse-Fehler auf einer halb geschriebenen `state.json` stuende der dort
+    gespeicherte, 30 Tage gueltige und nicht widerrufbare JWT im Code-Frame und damit im
+    Protokoll des Laufs.
+    """
+    spielplatz = fabrik()
+    laufe(spielplatz)
+
+    ts_aufrufe = [
+        (baum, programm, argumente)
+        for baum, programm, argumente in spielplatz.pruefaufrufe()
+        if baum in TS_BAEUME
+    ]
+    assert len(ts_aufrufe) == 5, spielplatz.aufrufe()
+    for baum, programm, argumente in ts_aufrufe:
+        assert programm == "npm" and argumente.startswith("run "), (
+            f"{baum}: {programm} {argumente} - die TypeScript-Pruefungen laufen ausschliesslich "
+            "als 'npm run <skript>'."
+        )
