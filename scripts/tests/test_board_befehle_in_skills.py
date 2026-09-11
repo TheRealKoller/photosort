@@ -48,8 +48,10 @@ ERLAUBTE_WERTE: dict[str, frozenset[str]] = {
     "Priorität": frozenset({"Hoch", "Mittel", "Niedrig", "<Hoch|Mittel|Niedrig>"}),
 }
 
-# Die vier Ablauf-Skills mit Board-Schreibzugriff.
-ABLAUF_SKILLS = ("capture", "refinement", "spec-writer", "ship-feature")
+# Die fuenf Ablauf-Skills mit Board-Schreibzugriff. **Wer hier fehlt, wird nicht geprueft** - die
+# Zusicherung unten schlaegt fuer ihn nicht fehl, sie findet gar nicht erst statt. Ein neuer
+# Ablauf-Skill mit `## Lokal nachzuholen` gehoert deshalb in derselben Aenderung in diese Liste.
+ABLAUF_SKILLS = ("capture", "refinement", "spec-writer", "ship-feature", "ship-entwurf")
 
 BERICHTSABSCHNITT = "## Lokal nachzuholen"
 
