@@ -72,10 +72,24 @@ dieselben Treffer (nachgerechnet) - die absatzweise ist also gratis strenger.
 4.1 und einmal in der Operation `issue-body-schreiben`. Ueber die ganze Datei gesucht bliebe die
 Zusicherung gruen, **wenn der gesamte 4.1-Block geloescht wuerde** - ein Waechter, der die
 Loeschung der Regel, die er bewacht, nicht bemerkt, ist ein Scheintest. Gesucht wird deshalb
-ausschliesslich ueber dem Block zwischen den Zeilenanfaengen `**4.1 ` und `**4.2 `. Der tragende
-Satz ("Freitext ist immer ein abgegrenzter Wert, nie Teil der Aufrufstruktur") steht zuerst: Die
-beiden Bullet-Zitate sind nur die `gh`-Konkretisierung, ohne die Regel-Ueberschrift bliebe ein
-Umbau moeglich, der die Konkretisierungen stehen laesst und die Regel selbst umschreibt.
+ausschliesslich ueber dem Block zwischen den Zeilenanfaengen `**4.1 ` und `**4.2 `.
+
+**Zwei Zusicherungen ueber diesem Block, und ihre Trennung ist tragend.** Der tragende Satz
+("Freitext ist immer ein abgegrenzter Wert, nie Teil der Aufrufstruktur") ist die **Regel
+selbst** und wird an der **Ueberschriftszeile** geprueft - als Form, nicht als Vorkommen
+irgendwo. Die drei Bullet-Zitate sind ihre `gh`-Konkretisierung und werden weiterhin ueber dem
+Blockinhalt gesucht; fuer sie gibt es keine Zeile an fester Stelle.
+
+Die Trennung ist am 2026-09-11 nach einem Copilot-Review nachgetragen worden, und der Befund war
+berechtigt: Vorher stand der tragende Satz als vierte Nadel in derselben Blocksuche. Damit
+verletzte diese Datei genau das Prinzip, das sie aus ADR 0061 zitiert - eine Suche ueber einen
+Textblock kann "gilt" nicht von "galt einmal" unterscheiden. Eine Umschreibung der Ueberschrift
+zu `**4.1 Freitext darf …**` samt historischem Zitat des alten Wortlauts weiter unten im Block
+waere **gruen** geblieben und haette die Regel gleichzeitig weichgeschrieben - fuer die
+wichtigste der vier Zusicherungen der Scheintest, gegen den die ganze Datei gebaut ist. Der Fall
+steht jetzt als eigene Gegenprobe
+(`test_der_alte_satz_im_fliesstext_rettet_eine_umgeschriebene_ueberschrift_nicht`), die
+Gegenrichtung ebenfalls (`test_eine_neu_umbrochene_ueberschrift_gilt_weiterhin`).
 
 **Mutationsprobe am echten Bestand, nach Gruen gefuehrt (2026-09-11).** Der Bestand ist nach der
 Umsetzung sauber, der Test startet also gruen - ein Rot-Lauf davor belegt nichts. Tragend ist
@@ -83,8 +97,18 @@ allein die Probe danach; jede Mutation wurde gesetzt, der Lauf beobachtet und di
 zurueckgenommen:
 
 * je einen der **sieben** Marker aus `CLAUDE.md` entfernt - **7 von 7 rot**;
-* je eine der drei `gh`-seitigen 4.1-Zeichenketten umformuliert - **rot**;
+* je eine der drei `gh`-seitigen 4.1-Zeichenketten umformuliert, Fundstelle **im** Block -
+  **3 von 3 rot**;
+* die **Ueberschrift** von 4.1 umgeschrieben (`**4.1 Freitext darf in begruendeten Faellen …**`),
+  Konkretisierungen unberuehrt - **rot**;
+* dieselbe Umschreibung **plus** dem alten Wortlaut als historischem Zitat im Block - **rot**.
+  Das ist der Fall aus dem Copilot-Review vom 2026-09-11: Vor der Trennung von Ueberschrifts- und
+  Blockpruefung war er **gruen**, und er ist der Grund fuer `REGEL_UEBERSCHRIFT`;
 * den gesamten 4.1-Block geloescht - **rot** (`ValueError: Blockgrenze(n) …`);
+* die Fundstelle **ausserhalb** des Blocks geaendert (`issue-body-schreiben`, Zeile 196) -
+  **gruen, und das ist richtig so**: Die Blockbindung schlaegt nur fuer 4.1 an, nicht fuer jede
+  gleichlautende Stelle der Datei. Ohne diese Gegenrichtung waere nicht belegt, dass der
+  Waechter den Block trifft statt die Datei;
 * den Ablaufschritt aus `developer.md` Schritt 0 entfernt - **rot**;
 * die Ueberschrift in `CLAUDE.md` umbenannt - **rot**;
 * einen der drei Gegenfall-Listenpunkte gestrichen (3 -> 2) - **rot**;
@@ -197,14 +221,30 @@ ARBEITSSTAND_LITERALE = ("Arbeitsstand", "Worktree")
 BLOCK_START = "**4.1 "
 BLOCK_ENDE = "**4.2 "
 
-# Normalisiert hinterlegt, nicht roh aus der Datei kopiert (siehe Modul-Docstring). Der tragende
-# Satz steht zuerst; die drei uebrigen sind die `gh`-Konkretisierung.
+# Der tragende Satz - die Regel selbst. Er wird **an der Ueberschriftszeile** geprueft, nicht
+# ueber dem Blockinhalt, und das ist kein Feinschliff:
+#
+# Ueber den Block gesucht kann eine Zeichenkette "gilt" nicht von "galt einmal" unterscheiden
+# (die Lehre aus ADR 0061, die dieser Docstring selbst zitiert). Eine Umschreibung der
+# Ueberschrift zu `**4.1 Freitext darf …**` samt einem Zitat des alten Satzes weiter unten im
+# Fliesstext desselben Blocks liesse eine Blocksuche **gruen** - und schriebe die Regel
+# gleichzeitig weich. Fuer die wichtigste der vier Zusicherungen waere das der Scheintest, gegen
+# den die ganze Datei gebaut ist. Die Ueberschrift ist eine **Form**: eine Zeile an fester
+# Stelle, die Fliesstext weder erfuellen noch ausloesen kann.
+REGEL_UEBERSCHRIFT = "Freitext ist immer ein abgegrenzter Wert, nie Teil der Aufrufstruktur"
+
+# Die drei `gh`-Konkretisierungen. Sie stehen als Aufzaehlung **im** Block und werden deshalb
+# weiterhin ueber dem Blockinhalt gesucht - fuer sie gibt es keine Zeile an fester Stelle.
+# Normalisiert hinterlegt, nicht roh aus der Datei kopiert (siehe Modul-Docstring).
 HAERTUNGSREGEL_NADELN = (
-    "Freitext ist immer ein abgegrenzter Wert, nie Teil der Aufrufstruktur",
     "mit dem Schreib-Werkzeug angelegt",
     "nie per Shell-Umleitung mit interpoliertem Inhalt",
     "Bodies **immer** über `--body-file`",
 )
+
+# Der Titeltext zwischen `**4.1 ` und dem schliessenden `**`. Ueber dem normalisierten ersten
+# Absatz ausgewertet, damit ein legitimer Neuumbruch der Ueberschrift nichts bricht.
+_REGEL_KOPF = re.compile(r"^\*\*4\.1 (?P<titel>.*?)\*\*", re.DOTALL)
 
 # --- Selbstschutz ------------------------------------------------------------------------
 
@@ -441,10 +481,53 @@ def haertungsregel_block(text: str) -> str:
     return text[start.start() : ende.start()]
 
 
+def regeltitel(block: str) -> str:
+    """Reine Funktion: der Titel zwischen `**4.1 ` und dem schliessenden `**`.
+
+    Ueber dem **normalisierten ersten Absatz** ausgewertet: Die Ueberschrift darf legitim neu
+    umbrechen, sie darf nur nicht etwas anderes sagen.
+    """
+    erster_absatz = _ABSATZGRENZE.split(block, maxsplit=1)[0]
+    treffer = _REGEL_KOPF.match(_WHITESPACE.sub(" ", erster_absatz).strip())
+    if treffer is None:
+        raise ValueError(
+            "Der 4.1-Block beginnt nicht mit einer abgeschlossenen `**4.1 …**`-Ueberschrift. "
+            "Entweder ist die Auszeichnung kaputt, oder die Regel hat ihre Form verloren - in "
+            "beiden Faellen darf hier kein stiller Nullbefund entstehen."
+        )
+    return treffer.group("titel")
+
+
 def fehlende_nadeln(block: str) -> list[str]:
-    """Reine Funktion: welche der eingefrorenen 4.1-Zitate im Block fehlen."""
+    """Reine Funktion: welche der drei `gh`-Konkretisierungen im Blockinhalt fehlen."""
     normalisiert = absatzweise_normalisiert(block)
     return [nadel for nadel in HAERTUNGSREGEL_NADELN if nadel not in normalisiert]
+
+
+def erosions_befunde(block: str) -> list[str]:
+    """Reine Funktion: die vollstaendige Anti-Erosions-Pruefung fuer Haertungsregel 4.1.
+
+    Zwei getrennte Zusicherungen, und die Trennung ist der Kern: Die **Regel selbst** wird an
+    ihrer Ueberschriftszeile geprueft (eine Form, kein Vorkommen), ihre drei `gh`-
+    Konkretisierungen ueber dem Blockinhalt (dort gibt es keine feste Zeile).
+    """
+    befunde: list[str] = []
+
+    titel = regeltitel(block)
+    if REGEL_UEBERSCHRIFT not in titel:
+        befunde.append(
+            f"Die Ueberschrift von 4.1 traegt die Regel nicht mehr. Erwartet als Bestandteil: "
+            f"{REGEL_UEBERSCHRIFT!r}; vorgefunden: {titel!r}. Ein Vorkommen desselben Satzes "
+            "weiter unten im Block zaehlt hier ausdruecklich **nicht** - sonst liesse sich die "
+            "Regel umschreiben und der alte Wortlaut daneben als Zitat stehen lassen."
+        )
+
+    fehlend = fehlende_nadeln(block)
+    if fehlend:
+        befunde.append(
+            f"Die `gh`-Konkretisierung(en) {fehlend} stehen nicht mehr im 4.1-Block."
+        )
+    return befunde
 
 
 def markerzeilen_ausserhalb(abbild: Mapping[str, str]) -> list[str]:
@@ -597,11 +680,11 @@ def test_die_konvention_ist_in_claude_md_verankert() -> None:
 
 
 def test_haertungsregel_4_1_behaelt_ihre_absolute_form() -> None:
-    """Anti-Erosion: blockgebunden, absatzweise normalisiert, tragender Satz zuerst."""
-    fehlend = fehlende_nadeln(haertungsregel_block(dateitext(KATALOG)))
+    """Anti-Erosion: blockgebunden, absatzweise normalisiert, die Regel an der Ueberschrift."""
+    befunde = erosions_befunde(haertungsregel_block(dateitext(KATALOG)))
 
-    assert not fehlend, (
-        f"Haertungsregel 4.1 in {KATALOG} fuehrt diese Zusicherung(en) nicht mehr: {fehlend}. "
+    assert not befunde, (
+        f"Haertungsregel 4.1 in {KATALOG}: {' '.join(befunde)} "
         "Neben der weicheren Werkzeugwahl-Konvention steht 4.1 unveraendert als **Verbot** - der "
         "realistische Schadensweg ist nicht ihre Umgehung, sondern ihre spaetere Subsumtion "
         "unter den weicheren Default ('die neue Konvention deckt das ab'). Ist die "
@@ -918,21 +1001,80 @@ def test_eine_geloeschte_4_1_wird_bemerkt_obwohl_die_nadel_anderswo_steht() -> N
     assert "mit dem Schreib-Werkzeug angelegt" in absatzweise_normalisiert(ohne_4_1)
 
 
+_ECHTER_BLOCK = (
+    "**4.1 Freitext ist immer ein abgegrenzter Wert, nie Teil der Aufrufstruktur.**\n\n"
+    "- Auf dem `gh`-Weg: Bodies **immer** über `--body-file`; beide Dateien mit dem\n"
+    "  Schreib-Werkzeug angelegt, nie per Shell-Umleitung mit interpoliertem Inhalt.\n"
+)
+
+
 def test_eine_umformulierte_nadel_im_block_wird_gemeldet() -> None:
-    block = (
-        "**4.1 Freitext ist immer ein abgegrenzter Wert, nie Teil der Aufrufstruktur.**\n\n"
-        "- Auf dem `gh`-Weg: Bodies **immer** über `--body-file`; beide Dateien mit dem\n"
-        "  Schreib-Werkzeug angelegt, nie per Shell-Umleitung mit interpoliertem Inhalt.\n"
-    )
-    weichgeschrieben = block.replace(
+    weichgeschrieben = _ECHTER_BLOCK.replace(
         "nie per Shell-Umleitung mit interpoliertem Inhalt",
         "moeglichst nicht per Shell-Umleitung",
     )
 
-    assert fehlende_nadeln(block) == []
+    assert fehlende_nadeln(_ECHTER_BLOCK) == []
     assert fehlende_nadeln(weichgeschrieben) == [
         "nie per Shell-Umleitung mit interpoliertem Inhalt"
     ]
+    assert erosions_befunde(_ECHTER_BLOCK) == []
+
+
+def test_eine_umgeschriebene_ueberschrift_wird_gemeldet() -> None:
+    """Die Regel selbst weichgeschrieben, die Konkretisierungen unberuehrt."""
+    befunde = erosions_befunde(
+        _ECHTER_BLOCK.replace(
+            "**4.1 Freitext ist immer ein abgegrenzter Wert, nie Teil der Aufrufstruktur.**",
+            "**4.1 Freitext soll möglichst ein abgegrenzter Wert sein.**",
+        )
+    )
+
+    assert len(befunde) == 1
+    assert "Ueberschrift von 4.1" in befunde[0]
+
+
+def test_der_alte_satz_im_fliesstext_rettet_eine_umgeschriebene_ueberschrift_nicht() -> None:
+    """Genau das Loch, das eine Suche ueber den Blockinhalt offen liesse.
+
+    Die Regel ist umgeschrieben, ihr frueherer Wortlaut steht als historisches Zitat daneben -
+    eine Blocksuche faende ihn und bliebe gruen. Die Ueberschrift-Form faellt darauf nicht
+    herein.
+    """
+    umgebaut = (
+        "**4.1 Freitext darf in begründeten Fällen Teil der Aufrufstruktur sein.**\n\n"
+        "Bis 2026-09-11 lautete die Regel: „Freitext ist immer ein abgegrenzter Wert, nie Teil\n"
+        "der Aufrufstruktur.\"\n\n"
+        "- Auf dem `gh`-Weg: Bodies **immer** über `--body-file`; beide Dateien mit dem\n"
+        "  Schreib-Werkzeug angelegt, nie per Shell-Umleitung mit interpoliertem Inhalt.\n"
+    )
+
+    # Die drei Konkretisierungen stehen unveraendert da - eine reine Blocksuche waere hier still.
+    assert fehlende_nadeln(umgebaut) == []
+    assert REGEL_UEBERSCHRIFT in absatzweise_normalisiert(umgebaut)
+
+    befunde = erosions_befunde(umgebaut)
+
+    assert len(befunde) == 1
+    assert "Ueberschrift von 4.1" in befunde[0]
+
+
+def test_eine_neu_umbrochene_ueberschrift_gilt_weiterhin() -> None:
+    """Gegenrichtung: Der Titel darf umbrechen, er darf nur nichts anderes sagen."""
+    umbrochen = (
+        "**4.1 Freitext ist immer ein abgegrenzter Wert, nie Teil\n"
+        "der Aufrufstruktur.**\n"
+        "Kein Text, den der Ablauf nicht selbst erzeugt hat, wird verkettet.\n\n"
+        "- Auf dem `gh`-Weg: Bodies **immer** über `--body-file`; beide Dateien mit dem\n"
+        "  Schreib-Werkzeug angelegt, nie per Shell-Umleitung mit interpoliertem Inhalt.\n"
+    )
+
+    assert erosions_befunde(umbrochen) == []
+
+
+def test_ein_block_ohne_abgeschlossene_ueberschrift_scheitert_laut_statt_still() -> None:
+    with pytest.raises(ValueError, match=r"Ueberschrift"):
+        regeltitel("**4.1 Freitext ist immer ein abgegrenzter Wert\n\nohne Abschluss.\n")
 
 
 def test_eine_verdrehte_blockgrenze_scheitert_laut_statt_still() -> None:

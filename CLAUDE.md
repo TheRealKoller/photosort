@@ -70,7 +70,7 @@ PhotoSort wird in zwei Modi weiterentwickelt:
 
 **Hintergrund-Läufe:** Lehnt die Arbeitsumgebung eine Änderung am geteilten Arbeitsstand ab, wird der isolierte Arbeitsstand hergestellt, statt auf die Shell auszuweichen.
 
-**Unberührt:** Freitext, der in ein GitHub-Artefakt gelangt (Titel, Bodys, Kommentare), fällt nicht unter diesen Abschnitt, sondern unter Härtungsregel 4.1 in `github-access` — immer über eine Datei, nie als Zeichenkette in einer Kommandozeile. Das ist ein **Verbot, kein Default**: Keiner der oben genannten Gegenfälle gilt dort, auch die Bündelung mehrerer Schritte in einem Aufruf nicht.
+**Unberührt:** Freitext, der in ein GitHub-Artefakt gelangt (Titel, Bodys, Kommentare), fällt nicht unter diesen Abschnitt, sondern unter Härtungsregel 4.1 in `github-access` — nie als Zeichenkette in eine Kommandozeile interpoliert, sondern auf dem `gh`-Weg über eine Datei und auf dem `mcp`-Weg als typisierter Parameter; der Titel geht auf **beiden** Wegen über eine Datei, weil die Prüfung auf unsichtbare Zeichen ein Substrat braucht (Härtungsregel 4.4). Das ist ein **Verbot, kein Default**: Keiner der oben genannten Gegenfälle gilt dort, auch die Bündelung mehrerer Schritte in einem Aufruf nicht.
 
 ## Doku-Pflege
 

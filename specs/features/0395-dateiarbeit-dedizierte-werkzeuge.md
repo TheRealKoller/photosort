@@ -25,8 +25,9 @@ expandiert `$…` und Backticks, ein `sed`-Ausdruck mit ungeschütztem `&` oder 
 anderes als gemeint.
 
 Das Projekt hat diese Lektion an einer Stelle bereits bezahlt: Für Freitext, der in
-GitHub-Artefakte gelangt, gilt seit ADR 0061 verbindlich, dass er über eine Datei und nie über
-die Kommandozeile läuft (Härtungsregel 4.1). Diese Einsicht gilt bisher nur punktuell und
+GitHub-Artefakte gelangt, gilt seit ADR 0061 verbindlich, dass er nie als Zeichenkette in eine
+Kommandozeile interpoliert wird, sondern auf dem `gh`-Weg über eine Datei und auf dem `mcp`-Weg
+als typisierter Parameter läuft (Härtungsregel 4.1). Diese Einsicht gilt bisher nur punktuell und
 sicherheitsbegründet, nicht als allgemeine Arbeitsweise.
 
 Betroffen ist ausschließlich die Arbeitsweise der Entwicklung selbst — für die Nutzer der
@@ -122,9 +123,14 @@ ergänzt wurde, steht der Grund dabei — die Prüfgegenstände sind dieselben.
       (Zeile 529) und einmal in der Operation `issue-body-schreiben` (Zeile 196). Über die ganze
       Datei gesucht bliebe die Zusicherung grün, **wenn der gesamte 4.1-Block gelöscht würde**.
       Ein Wächter, der die Löschung der Regel, die er bewacht, nicht bemerkt, ist ein Scheintest.
-      *Warum der tragende Satz zuerst:* Die beiden Bullet-Zitate sind die `gh`-Konkretisierung;
-      ohne die Regel-Überschrift bliebe ein Umbau möglich, der die Konkretisierungen stehen lässt
-      und die Regel selbst umschreibt.
+      *Warum der tragende Satz dazugehört:* Die beiden Bullet-Zitate sind die
+      `gh`-Konkretisierung; ohne die Regel-Überschrift bliebe ein Umbau möglich, der die
+      Konkretisierungen stehen lässt und die Regel selbst umschreibt. *Nachgeschärft am
+      2026-09-11 (Copilot-Review), strenger als hier gefordert:* Der tragende Satz wird **an der
+      Überschriftszeile** geprüft, nicht als Vorkommen irgendwo im Block. Über den Blockinhalt
+      gesucht wäre er durch ein historisches Zitat des alten Wortlauts zu retten, während die
+      Überschrift bereits umgeschrieben ist — grün aus dem falschen Grund, bei genau der
+      Zusicherung, die am meisten trägt.
 - [ ] **(neu)** Die `**Unberührt:**`-Zeile nennt `github-access` und `4.1`. *Warum neu:* Eine
       Abgrenzungszeile, die ihren Gegenstand nicht benennt, grenzt nichts ab. Zwei Literale sind
       die billigste Form, die das entscheidet.
@@ -267,8 +273,8 @@ Gegenprobe bekommt, ohne das Repository anzufassen.
    ≥ 3 Listenpunkte nach `**Shell ist die bessere Wahl bei:**`; zwei Literale in
    `**Unberührt:**`.
 2. **Anti-Erosion für Härtungsregel 4.1:** absatzweise normalisiert **und auf den Block zwischen
-   `**4.1 ` und `**4.2 ` eingeschränkt**, tragender Satz zuerst, danach die drei
-   `gh`-Konkretisierungen.
+   `**4.1 ` und `**4.2 ` eingeschränkt**; der tragende Satz an der **Überschriftszeile** geprüft,
+   die drei `gh`-Konkretisierungen über dem Blockinhalt.
 3. **Der Ablaufschritt in `developer.md`, Schritt 0.**
 4. **Kein Marker außerhalb des einen Abschnitts** im Suchraum `.claude/**` + `CLAUDE.md`.
 5. **Markerzeilen innerhalb eines Codeblocks zählen nicht** — Codefences werden vor dem Parsen
@@ -389,15 +395,27 @@ Bündelung eingeschlossen; anderer Schutzzweck; eine Lockerung dieses Abschnitts
 mit. Als Vorlage:
 
 > **Unberührt:** Freitext, der in ein GitHub-Artefakt gelangt (Titel, Bodys, Kommentare), fällt
-> nicht unter diesen Abschnitt, sondern unter Härtungsregel 4.1 in `github-access` — immer über
-> eine Datei, nie als Zeichenkette in einer Kommandozeile. Das ist ein **Verbot, kein Default**:
-> Keiner der oben genannten Gegenfälle gilt dort, auch die Bündelung mehrerer Schritte in einem
-> Aufruf nicht.
+> nicht unter diesen Abschnitt, sondern unter Härtungsregel 4.1 in `github-access` — nie als
+> Zeichenkette in eine Kommandozeile interpoliert, sondern auf dem `gh`-Weg über eine Datei und
+> auf dem `mcp`-Weg als typisierter Parameter; der Titel geht auf **beiden** Wegen über eine
+> Datei, weil die Prüfung auf unsichtbare Zeichen ein Substrat braucht (Härtungsregel 4.4). Das
+> ist ein **Verbot, kein Default**: Keiner der oben genannten Gegenfälle gilt dort, auch die
+> Bündelung mehrerer Schritte in einem Aufruf nicht.
+
+**Nachgeschärft am 2026-09-11 (Copilot-Review).** Die ursprüngliche Vorlage lautete „immer über
+eine Datei, nie als Zeichenkette in einer Kommandozeile" und behauptete damit mehr, als der
+Katalog sagt: Auf dem `mcp`-Weg führt `github-access` 4.1 als **strukturell erfüllt**, der Text
+geht dort als typisierter Parameter und nicht über eine Datei. Wegunabhängig ist der harte Kern
+(nie in eine Kommandozeile interpoliert) und der Titel-Sonderfall aus 4.4; wegabhängig ist allein
+die Form der Übergabe. Die Verbots-Natur und der namentliche Ausschluss der Gegenfälle bleiben
+unverändert — die Korrektur betrifft die Genauigkeit, nicht die Härte.
 
 **Gegenmaßnahme 2 — Zuschnitt der Anti-Erosion-Zusicherung.** Siehe `## Teststrategie`,
-Zusicherung 2: blockgebunden zwischen `**4.1 ` und `**4.2 `, tragender Satz zuerst. Ohne die
-Blockbindung bliebe die Zusicherung grün, wenn 4.1 vollständig gelöscht würde — der zweite
-Treffer von `mit dem Schreib-Werkzeug angelegt` liegt in der Operation `issue-body-schreiben`.
+Zusicherung 2: blockgebunden zwischen `**4.1 ` und `**4.2 `, der tragende Satz an der
+Überschriftszeile. Ohne die Blockbindung bliebe die Zusicherung grün, wenn 4.1 vollständig
+gelöscht würde — der zweite Treffer von `mit dem Schreib-Werkzeug angelegt` liegt in der
+Operation `issue-body-schreiben`. Ohne die Überschriftsbindung bliebe sie grün, wenn die Regel
+umgeschrieben und ihr alter Wortlaut als Zitat daneben stehen gelassen würde.
 
 **Nebenbefund für die Umsetzung:** Der Gegenfall „gezieltes Lesen eines Ausschnitts" darf nicht
 als Erlaubnis gelesen werden, die mechanische Titelprüfung nach Härtungsregel 4.4 durch Lesen und
