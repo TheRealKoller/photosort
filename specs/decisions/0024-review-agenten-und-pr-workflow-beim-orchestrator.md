@@ -152,15 +152,9 @@ ADR 0014 wird **nicht editiert** — exakt dieselbe Handhabung wie bereits bei A
 
 ## Konsequenzen
 
-Betroffene Dateien, in sinnvoller Bearbeitungsreihenfolge (Umsetzung erfolgt im Rahmen von Feature-Spec 0046, nicht durch diese ADR selbst):
-
-1. `specs/features/0046-...md` (neu, von `idea-sharpener` angelegt, Status `Accepted`, Abschnitt "Architektur / Umsetzung" mit dem Ergebnis dieser Konsultation).
-2. `.claude/skills/ship-feature/SKILL.md` (neu) — muss vor der Umschreibung von `developer.md` existieren, da Letzteres darauf verweist.
-3. `.claude/agents/developer.md` — Schritt 4 entfällt vollständig; Schritt 1 bekommt die "Blockiert"-Eskalation statt eines eigenen Agent-Tool-Aufrufs; Schritt 6 (Qualitätscheck) und der neue Abschlussbericht (Teil 3 dieser ADR) folgen direkt auf Schritt 3; Schritt 7/8 entfallen vollständig (wandern in `ship-feature`); Restrukturierung/Umnummerierung der Schritte.
-4. `CLAUDE.md` — Konventionen-Bullet ("siehe `developer`-Agent, Schritt 8") aktualisieren: Copilot-Review-Bewertung liegt jetzt beim Orchestrator/Skill `ship-feature`, nicht mehr bei `developer`.
-5. `docs/ai-workflow.md`, Abschnitt "Kosteneffiziente Agenten-Nutzung" — Aufrufer-Beschreibung von "`developer`-Review (Schritt 4)" auf "Orchestrator (Skill `ship-feature`, nach `developer`-Abschlussbericht)" aktualisieren, Verweis auf diese ADR zusätzlich zu ADR 0014 ergänzen (analog zum bereits bestehenden Muster für ADR 0018).
-6. `.claude/agents/architect.md`, `test-engineer.md`, `security-engineer.md`, `requirements-engineer.md`, `ux-ui-designer.md` — je eigene Beschreibung ("wird automatisch vom `developer`-Agenten aufgerufen" / "läuft im developer-Workflow Schritt 4") auf "wird vom Orchestrator nach Abschluss des `developer`-Agenten aufgerufen (Skill `ship-feature`)" aktualisieren; `architect.md` zusätzlich Punkt (4) der eigenen Beschreibung (Umsetzungsplanung) anpassen, da `developer` nicht mehr selbst konsultiert, sondern der Orchestrator nach einer "Blockiert"-Rückmeldung.
-7. `specs/diagrams/workflow-overview.d2`/`.svg` — `review`-Knoten (und ggf. `pr`-Knoten) im `implement`-Subgraph so beschriften, dass die Ausführung beim Orchestrator liegt, nicht bei `developer` selbst; neu rendern via `scripts/render-diagrams.sh`.
-8. Kein Effekt auf `docs/architecture.md`/`docs/setup.md` — reine Prozess-/Workflow-Änderung, keine System-/Datenmodell-Änderung.
+Betroffen sind `specs/features/0046-*.md`, `.claude/skills/ship-feature/SKILL.md` (neu),
+`.claude/agents/developer.md`, `CLAUDE.md`, `docs/ai-workflow.md`, die fünf Fachagenten-Dateien
+und `specs/diagrams/workflow-overview.d2`/`.svg`. Kein Effekt auf `docs/architecture.md` und
+`docs/setup.md` — reine Prozess-/Workflow-Änderung, keine System-/Datenmodell-Änderung.
 
 **Laufende Beobachtung statt einmaliges Gate:** Sollte sich in der Praxis zeigen, dass das feste Freitext-Anker-Format (Teil 3) vom Orchestrator zuverlässig falsch/unvollständig gelesen wird, oder dass der SendMessage-Mechanismus den Subagenten-Kontext entgegen der Annahme nicht zuverlässig erhält, ist das ein Grund für eine neue, diese ADR ablösende ADR (z.B. anderes Übergabeformat), nicht für ein stillschweigendes Abweichen vom festgelegten Format.
