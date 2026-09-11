@@ -48,10 +48,10 @@ FAILED tests/test_dokumentnummern_eindeutig.py::test_keine_nummer_ist_in_einem_v
 
 Die Meldung stand im Lauf in **einer** Zeile; oben ist sie allein zur Zeilenbreite umbrochen,
 Wortlaut und Reihenfolge sind unveraendert. Der Lauf belegt in einem: dass die Pruefung im
-reguleren Pruefsatz mitlaeuft und ihn fehlschlagen laesst (nicht bloss warnt), und dass die
+regulaeren Pruefsatz mitlaeuft und ihn fehlschlagen laesst (nicht bloss warnt), und dass die
 Meldung **alle** betroffenen Dateien vollstaendig nennt statt nur der mehrdeutigen Nummer.
 
-Der oben zitierte alte Dateiname `0069-ansichtsentwuerfe-…` ist damit eine bewusste, historische
+Der oben zitierte alte Dateiname `0069-ansichtsentwuerfe-...` ist damit eine bewusste, historische
 Nennung und die einzige ausserhalb von ADR 0081 und der Spec 0406. Wer nach Resten der
 Umnummerierung sucht, zaehlt diese Stelle nicht als uebersehene Fundstelle.
 
