@@ -95,7 +95,7 @@ jobs:
   # seit ADR 0057 an die Stelle des geloeschten Board-Werkzeugs getreten sind. Seit ADR 0061
   # steht jeder GitHub-Zugriff des Ablaufs an genau einer Stelle
   # (.claude/skills/github-access/SKILL.md); die Tests hier pruefen deren Text: die Form der
-  # gh-Befehle, die Katalogform (17 Operationen, Wege in fester Reihenfolge), die
+  # gh-Befehle, die Katalogform (19 Operationen, Wege in fester Reihenfolge), die
   # referentielle Integritaet der Operations-IDs, die Erlaubnisstufen je Skill-/Agenten-Datei -
   # und vor allem eine Abwesenheit, naemlich dass ausserhalb dieser einen Stelle kein
   # GitHub-Zugriff steht. Kein numerisches Coverage-Gate (anders als backend), der

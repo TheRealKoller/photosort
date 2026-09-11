@@ -55,16 +55,29 @@ REPO = "TheRealKoller/photosort"
 # zufaelligen Arbeitsverzeichnis der Session abhaengt. `view` ist ausgenommen - die beiden
 # bestehenden Lese-Aufrufe tragen bewusst kein `--repo`.
 SCHREIBENDE_VERBEN = frozenset({"create", "edit", "close", "comment"})
-LESENDE_VERBEN = frozenset({"view"})
+# `list` seit ADR 0085 (`issue-liste-lesen`). Ohne diesen Eintrag meldete der Formtest den neuen
+# Lesebefehl als unbekanntes Verb. Die Menge steuert allein die `--repo`-Pflicht: Sie gilt fuer
+# die schreibenden Verben. Dass der Katalogbefehl `--repo` trotzdem traegt, ist hier erlaubt und
+# dort begruendet - gefordert wird es nicht.
+LESENDE_VERBEN = frozenset({"view", "list"})
 
 BEFEHLSSAMMLUNG = ".claude/skills/github-access/SKILL.md"
 REFINEMENT = ".claude/skills/refinement/SKILL.md"
 
-# Die drei Operationen, deren Reihenfolge das Ablauf-Gate aus Spec 0288 traegt.
+# Die Operationen, deren Reihenfolge das Ablauf-Gate traegt: drei aus Spec 0288, seit Spec 0259
+# ein viertes Glied. Die Kette lautet Body < Titel < Bereich < jede `board-`-Ausfuehrungsstelle.
 BODY_OPERATION = "issue-body-schreiben"
 TITEL_OPERATION = "issue-titel-schreiben"
+BEREICH_OPERATION = "issue-bereich-setzen"
 STATUS_OPERATION = "board-status-setzen"
 READY = "`Ready`"
+
+# Das vierte Glied bindet gegen **jede** Board-Ausfuehrungsstelle, nicht nur gegen die mit Wert
+# `Ready`: `issue-bereich-setzen` ist ein Issue-Zugriff, dessen Fehlschlag alle nachfolgenden
+# Operationen entfallen laesst - auch das Lesen und Schreiben der Prioritaet. Ein Bezug allein
+# auf den `Ready`-Statuswechsel waere bereits erfuellt, wenn die Bereich-Stelle zwischen
+# `board-prioritaet-setzen` und `board-status-setzen` geriete.
+BOARD_PRAEFIX = "board-"
 
 # Ein Befehl steht am Zeilenanfang; eine blosse *Erwaehnung* steht mitten im Fliesstext. Vor dem
 # Kommando zugelassen sind ausschliesslich Formen, die es weiterhin als Befehl lesbar lassen:
@@ -204,16 +217,18 @@ def ausfuehrungsstellen(text: str, datei: str = "<text>") -> list[Ausfuehrungsst
 
 
 def reihenfolge_verstoesse(text: str, datei: str = "<text>") -> list[str]:
-    """Reine Funktion: prueft die Kette Body -> Titel -> `Ready` ueber Ausfuehrungsstellen.
+    """Reine Funktion: prueft die Kette Body -> Titel -> Bereich -> Board ueber Ausfuehrungsstellen.
 
     Ausdruecklich **nicht** ueber Textstellen (`text.index("issue-titel-schreiben")`): Der
-    Skill-Text nennt beide IDs auch in Prosa, eine Suche nach der Zeichenkette kehrte die Aussage
-    um. Beide Existenz-Zusicherungen haben eine eigene Meldung - ohne sie waere die
-    Reihenfolge-Aussage leer wahr, sobald eine der beiden Stellen verschwindet.
+    Skill-Text nennt alle IDs auch in Prosa, eine Suche nach der Zeichenkette kehrte die Aussage
+    um. Jede Existenz-Zusicherung hat eine eigene Meldung - ohne sie waere die
+    Reihenfolge-Aussage leer wahr, sobald eine der Stellen verschwindet.
     """
     stellen = ausfuehrungsstellen(text, datei)
     body = [stelle for stelle in stellen if stelle.id == BODY_OPERATION]
     titel = [stelle for stelle in stellen if stelle.id == TITEL_OPERATION]
+    bereich = [stelle for stelle in stellen if stelle.id == BEREICH_OPERATION]
+    board = [stelle for stelle in stellen if stelle.id.startswith(BOARD_PRAEFIX)]
     ready = [stelle for stelle in stellen if stelle.id == STATUS_OPERATION and READY in stelle.rest]
 
     befunde: list[str] = []
@@ -227,6 +242,22 @@ def reihenfolge_verstoesse(text: str, datei: str = "<text>") -> list[str]:
         befunde.append(
             f"{datei}: keine Ausfuehrungsstelle von `{BODY_OPERATION}` gefunden. Der Body ist die "
             "fachliche Arbeit des Ablaufs; ohne ihn ist die Reihenfolge gegenstandslos."
+        )
+    if not board:
+        befunde.append(
+            f"{datei}: keine Ausfuehrungsstelle einer `{BOARD_PRAEFIX}`-Operation gefunden. Die "
+            "Aussage 'der Bereich steht vor jeder Board-Stelle' ist ohne eine solche Stelle leer "
+            "wahr - der Ablauf koennte saemtliche Board-Zugriffe verlieren, ohne dass etwas rot "
+            "wird. Dieselbe Pflichtbeigabe wie bei den drei Gliedern davor, nur fuer das "
+            "Folgeglied."
+        )
+    if not bereich:
+        befunde.append(
+            f"{datei}: keine Ausfuehrungsstelle von `{BEREICH_OPERATION}` gefunden. Ohne sie "
+            "entsteht der Bereich eines Issues nirgends - die Story erreicht `Ready`, ohne dass "
+            "das Board zeigt, woran sie ruehrt. Eine Ausfuehrungsstelle nennt ihre ID "
+            "zeilenanfangs-verankert in Backticks; zur Laufzeit darf der Schritt entfallen, die "
+            "Stelle im Text nicht."
         )
     if not titel or not body:
         return befunde
@@ -243,6 +274,24 @@ def reihenfolge_verstoesse(text: str, datei: str = "<text>") -> list[str]:
             f"{titel[0].fundstelle}: `{TITEL_OPERATION}` steht nicht vor jeder "
             f"Ausfuehrungsstelle von `{STATUS_OPERATION}` mit Wert {READY} (Zeile(n) "
             f"{zu_frueh}). Scheitert der Titel, darf das Issue `Ready` nicht mehr erreichen."
+        )
+    if not bereich:
+        return befunde
+
+    if not titel[0].zeile < bereich[0].zeile:
+        befunde.append(
+            f"{bereich[0].fundstelle}: `{BEREICH_OPERATION}` steht nicht hinter "
+            f"`{TITEL_OPERATION}` ({titel[0].fundstelle}). Der Bereich ist ein Metadatum am "
+            "bereits geschaerften Issue; scheitert der Titel, soll der Bereich gar nicht erst "
+            "geschrieben werden."
+        )
+    board_zu_frueh = [stelle.fundstelle for stelle in board if stelle.zeile <= bereich[0].zeile]
+    if board_zu_frueh:
+        befunde.append(
+            f"{bereich[0].fundstelle}: `{BEREICH_OPERATION}` steht nicht vor **jeder** "
+            f"`{BOARD_PRAEFIX}`-Ausfuehrungsstelle ({board_zu_frueh}). Scheitert der Bereich, "
+            "entfallen alle nachfolgenden Operationen und das Issue erreicht `Ready` nicht - das "
+            "gilt nur, solange keine davon vorher steht."
         )
     return befunde
 
@@ -440,30 +489,35 @@ def test_ein_suchraum_ohne_issue_aufruf_scheitert_laut_statt_still() -> None:
 
 _BODY_STELLE = f"- `{BODY_OPERATION}`"
 _TITEL_STELLE = f"- `{TITEL_OPERATION}`"
+_BEREICH_STELLE = f"- `{BEREICH_OPERATION}`"
 _READY_STELLE = f"- `{STATUS_OPERATION}` mit Wert {READY}"
 _IN_PROGRESS_STELLE = f"- `{STATUS_OPERATION}` mit Wert `In Progress`"
+_PRIO_STELLE = "- `board-prioritaet-setzen`"
+_KETTE = [_BODY_STELLE, _TITEL_STELLE, _BEREICH_STELLE, _PRIO_STELLE, _READY_STELLE]
 
 
 def test_die_erwartete_kette_gilt_nicht_als_verstoss() -> None:
-    text = "\n".join([_BODY_STELLE, _TITEL_STELLE, _READY_STELLE]) + "\n"
+    text = "\n".join(_KETTE) + "\n"
 
     assert reihenfolge_verstoesse(text, "refinement.md") == []
 
 
 def test_prosa_ueber_die_operationen_kehrt_die_reihenfolge_nicht_um() -> None:
-    """Im Skill-Text stehen beide IDs auch in Fliesstext, weit vor den Ausfuehrungsstellen."""
+    """Im Skill-Text stehen alle IDs auch in Fliesstext, weit vor den Ausfuehrungsstellen."""
     text = (
         f"Scheitert `{TITEL_OPERATION}`, entfaellt `{STATUS_OPERATION}` mit Wert {READY}.\n"
-        f"Der Body (`{BODY_OPERATION}`) steht bewusst vorn.\n"
-        + "\n".join([_BODY_STELLE, _TITEL_STELLE, _READY_STELLE])
-        + "\n"
+        f"Dasselbe gilt fuer `{BEREICH_OPERATION}` und `board-prioritaet-setzen`.\n"
+        f"Der Body (`{BODY_OPERATION}`) steht bewusst vorn.\n" + "\n".join(_KETTE) + "\n"
     )
 
     assert reihenfolge_verstoesse(text, "refinement.md") == []
 
 
 def test_eine_titel_stelle_vor_der_body_stelle_wird_gemeldet() -> None:
-    text = "\n".join([_TITEL_STELLE, _BODY_STELLE, _READY_STELLE]) + "\n"
+    text = (
+        "\n".join([_TITEL_STELLE, _BODY_STELLE, _BEREICH_STELLE, _PRIO_STELLE, _READY_STELLE])
+        + "\n"
+    )
 
     befunde = reihenfolge_verstoesse(text, "refinement.md")
 
@@ -472,17 +526,16 @@ def test_eine_titel_stelle_vor_der_body_stelle_wird_gemeldet() -> None:
 
 
 def test_eine_titel_stelle_hinter_der_ready_stelle_wird_gemeldet() -> None:
-    text = "\n".join([_BODY_STELLE, _READY_STELLE, _TITEL_STELLE]) + "\n"
+    text = "\n".join([_BODY_STELLE, _READY_STELLE, _TITEL_STELLE, _BEREICH_STELLE]) + "\n"
 
     befunde = reihenfolge_verstoesse(text, "refinement.md")
 
-    assert len(befunde) == 1
-    assert "`Ready`" in befunde[0]
+    assert [b for b in befunde if TITEL_OPERATION in b and READY in b]
 
 
 def test_eine_geloeschte_titel_stelle_wird_gemeldet() -> None:
     """Ohne diese Zusicherung waere die Reihenfolge-Aussage leer wahr."""
-    text = "\n".join([_BODY_STELLE, _READY_STELLE]) + "\n"
+    text = "\n".join([_BODY_STELLE, _BEREICH_STELLE, _READY_STELLE]) + "\n"
 
     befunde = reihenfolge_verstoesse(text, "refinement.md")
 
@@ -491,7 +544,7 @@ def test_eine_geloeschte_titel_stelle_wird_gemeldet() -> None:
 
 
 def test_eine_geloeschte_body_stelle_wird_gemeldet() -> None:
-    text = "\n".join([_TITEL_STELLE, _READY_STELLE]) + "\n"
+    text = "\n".join([_TITEL_STELLE, _BEREICH_STELLE, _READY_STELLE]) + "\n"
 
     befunde = reihenfolge_verstoesse(text, "refinement.md")
 
@@ -499,11 +552,84 @@ def test_eine_geloeschte_body_stelle_wird_gemeldet() -> None:
     assert BODY_OPERATION in befunde[0]
 
 
-def test_ein_anderer_statuswert_gilt_nicht_als_ready_gate() -> None:
-    """`In Progress` ist derselbe Operationsname - nur der Wert trennt die beiden Stellen."""
-    text = "\n".join([_BODY_STELLE, _IN_PROGRESS_STELLE, _TITEL_STELLE, _READY_STELLE]) + "\n"
+def test_eine_geloeschte_bereich_stelle_wird_gemeldet() -> None:
+    """Viertes Glied, dieselbe Pflichtbeigabe: ohne Existenz-Zusicherung leer wahr."""
+    text = "\n".join([_BODY_STELLE, _TITEL_STELLE, _PRIO_STELLE, _READY_STELLE]) + "\n"
 
-    assert reihenfolge_verstoesse(text, "refinement.md") == []
+    befunde = reihenfolge_verstoesse(text, "refinement.md")
+
+    assert len(befunde) == 1
+    assert BEREICH_OPERATION in befunde[0]
+
+
+def test_verschwundene_board_stellen_werden_gemeldet() -> None:
+    """Das Folgeglied braucht seine Existenz-Zusicherung so gut wie die drei davor.
+
+    Ohne sie bleibt `board_zu_frueh` leer, weil es nichts zu vergleichen gibt - und der Test
+    waere gruen, waehrend `refinement` jeden Board-Zugriff verloren hat.
+    """
+    text = "\n".join([_BODY_STELLE, _TITEL_STELLE, _BEREICH_STELLE]) + "\n"
+
+    befunde = reihenfolge_verstoesse(text, "refinement.md")
+
+    assert len(befunde) == 1
+    assert BOARD_PRAEFIX in befunde[0]
+
+
+def test_eine_bereich_stelle_vor_der_titel_stelle_wird_gemeldet() -> None:
+    text = (
+        "\n".join([_BODY_STELLE, _BEREICH_STELLE, _TITEL_STELLE, _PRIO_STELLE, _READY_STELLE])
+        + "\n"
+    )
+
+    befunde = reihenfolge_verstoesse(text, "refinement.md")
+
+    assert len(befunde) == 1
+    assert "nicht hinter" in befunde[0]
+
+
+def test_eine_bereich_stelle_hinter_dem_ersten_board_zugriff_wird_gemeldet() -> None:
+    """Gebunden wird gegen *jede* Board-Stelle: Der Prioritaets-Zugriff steht vor dem Status."""
+    text = (
+        "\n".join([_BODY_STELLE, _TITEL_STELLE, _PRIO_STELLE, _BEREICH_STELLE, _READY_STELLE])
+        + "\n"
+    )
+
+    befunde = reihenfolge_verstoesse(text, "refinement.md")
+
+    assert len(befunde) == 1
+    assert "vor **jeder**" in befunde[0]
+
+
+def test_eine_bereich_stelle_im_fliesstext_zaehlt_nicht_als_ausfuehrungsstelle() -> None:
+    """Aus der Ausfuehrungsstelle Prosa zu machen, entfernt sie - und das faellt auf."""
+    text = (
+        "\n".join([_BODY_STELLE, _TITEL_STELLE])
+        + f"\nSetz danach ueber `{BEREICH_OPERATION}` den Bereich des Issues.\n"
+        + "\n".join([_PRIO_STELLE, _READY_STELLE])
+        + "\n"
+    )
+
+    befunde = reihenfolge_verstoesse(text, "refinement.md")
+
+    assert len(befunde) == 1
+    assert BEREICH_OPERATION in befunde[0]
+
+
+def test_ein_anderer_statuswert_gilt_nicht_als_ready_gate() -> None:
+    """`In Progress` ist derselbe Operationsname - nur der Wert trennt die beiden Stellen.
+
+    Die `In Progress`-Stelle steht hier bewusst **vor** der Titel-Stelle: Ein Ready-Gate, das
+    den Wert nicht ausliest, feuerte genau hier. Gemeldet wird deshalb allein das vierte Glied
+    (eine Board-Stelle vor dem Bereich) - kein Befund nennt `issue-titel-schreiben`.
+    """
+    text = "\n".join([_BODY_STELLE, _IN_PROGRESS_STELLE, *_KETTE[1:]]) + "\n"
+
+    befunde = reihenfolge_verstoesse(text, "refinement.md")
+
+    assert len(befunde) == 1
+    assert TITEL_OPERATION not in befunde[0]
+    assert "vor **jeder**" in befunde[0]
 
 
 @pytest.mark.parametrize(
