@@ -1343,24 +1343,44 @@ Erfolgsfall ist eine Abwesenheit, der Wächter startet also **grün**: Tragend s
 Mutationsprobe und die Untergrenze für das *Gesehene* (mindestens sechs Vorkommen des Musters am
 erlaubten Ort), nicht der triviale erste Lauf.
 
-**1b. Der Suchraum eines Abwesenheits-Tests wird als Negativliste gebildet, nicht als
-Aufzählung — im Review dieser Story am Bestand widerlegt, nicht theoretisch befürchtet.** Die
-erste Fassung zählte den „lebenden Anweisungsraum" auf (`.claude/**`, `CLAUDE.md`, `docs/**`) und
-übersah dabei `.github/ISSUE_TEMPLATE/*.yml` — Dateien, die **nachweislich Label vergeben**
-(`labels: ["bug"]`, `labels: ["feature", "needs-spec"]`). Ein Bereichswert in einer solchen Zeile
-ist genau der zweite Wahrheitsort, gegen den die Zusicherung antritt; die Probe blieb grün. Der
-Suchraum ist deshalb alles von Git Verwaltete **außer** einzeln begründeten Ausschlüssen:
-`specs/**` (eingefrorene Momentaufnahmen, dieselbe Begründung wie beim Abschnittszitat-Scan) und
-die Wächterdatei selbst (sie führt die Werte als Erwartungsmenge und in jeder Gegenprobe; der
-Ausschluss ist an ihren eigenen Pfad gebunden und wird gegen ihn geprüft, damit er nicht auf einen
-toten Pfad verrottet). **Regel:** Eine Positivliste wächst nicht mit — ein künftiger Ort fällt
-durch, und der Wächter bleibt dabei grün, weil er dort schlicht nicht hinsieht. Sie ist nur
-dort richtig, wo die *Erlaubnis* aufgezählt wird (die Formprüfungen über den Katalog), nie dort,
-wo eine Abwesenheit zugesichert wird. Zwei Folgen für jeden Leser dieser Bauart: Nicht als UTF-8
-lesbare Dateien (Bilder, Modelldateien — gemessen 2026-09-11: 19 von 688) werden übersprungen
-statt den Lauf abzubrechen; und die Untergrenze allein trägt den Selbstschutz nicht mehr, weil
-sie erfüllt bleibt, während ein ganzer Zweig herausfällt — daneben gehören **namentliche Anker**
-für die belegten Orte der Labelvergabe.
+**1b. Eine Zusicherung wird so breit formuliert, wie der Schaden reicht — nicht so eng wie der
+erwartete Wert.** Das ist die tragende Regel dieser Sektion. Ein Wächter, der nur den Fall
+abdeckt, den sein Autor vor Augen hatte, ist gegen alles andere grün, und die Probe, die genau
+diesen Fall bestätigt, belegt deshalb nichts. **Operativ wird die Regel über eine einzige Frage,
+zu beantworten, bevor ein Wächter als fertig gilt:** *Welche Änderung wäre schädlich und bliebe
+trotzdem grün?* Wer darauf eine Antwort findet, ist nicht fertig; wer keine findet, belegt das
+mit einer Probe, statt es zu behaupten.
+
+**Fünf Formen, in denen dieselbe Verengung auftritt** — ein Prüfraster, das über diese Story
+hinaus gilt:
+
+- **Positivliste statt Negativliste.** Der Suchraum zählt auf, *wo* gesucht wird, statt
+  auszunehmen, wo *nicht* gesucht wird. Jeder künftig dazukommende Ort fällt durch.
+- **Objekt statt Zeichenkette.** Die Zusicherung nennt ein Feld, die Antwort liefert eine
+  Struktur (`author` → `{id, is_bot, login, name}`); verglichen wird dann nie das, was gemeint
+  war, und der Vergleich schlägt entweder immer oder nie an.
+- **Präfix statt Form.** Geprüft wird, womit eine Zeile anfängt; zugesichert war ihre Form. Eine
+  missgebildete Zeile gilt dann als gültige Quelle, solange der herausgelöste Wert zufällig passt.
+- **Positionsaussage ohne Existenz-Zusicherung.** „X steht vor jedem Y" ist leer wahr, solange es
+  kein Y gibt — die Zusicherung überlebt das Verschwinden ihres eigenen Gegenstands.
+- **Zeitraum statt Zeitpunkt.** „im selben Lauf" schließt nicht aus, was „im selben Moment"
+  ausschlösse; ein Lauf ist kein Moment. Zwischen Lesen und Schreiben passt eine fremde Änderung.
+
+**Der konkrete Fall dieser Sektion — der Suchraum eines Abwesenheits-Tests.** Er ist alles von
+Git Verwaltete **außer** einzeln begründeten Ausschlüssen: `specs/**` (eingefrorene
+Momentaufnahmen, dieselbe Begründung wie beim Abschnittszitat-Scan) und die Wächterdatei selbst
+(sie führt die Werte als Erwartungsmenge und in jeder Gegenprobe; der Ausschluss ist an ihren
+eigenen Pfad gebunden und wird gegen ihn geprüft, damit er nicht auf einen toten Pfad verrottet).
+Eine Aufzählung des „lebenden Anweisungsraums" (`.claude/**`, `CLAUDE.md`, `docs/**`) trägt hier
+nachweislich nicht: `.github/ISSUE_TEMPLATE/*.yml` **vergibt Label** (`labels: ["bug"]`,
+`labels: ["feature", "needs-spec"]`) und ist damit ein möglicher zweiter Wahrheitsort, gegen den
+die Zusicherung gerade antritt. **Regel:** Eine Positivliste ist nur dort richtig, wo die
+*Erlaubnis* aufgezählt wird (die Formprüfungen über den Katalog), nie dort, wo eine **Abwesenheit**
+zugesichert wird. Zwei Folgen für jeden Leser dieser Bauart: Nicht als UTF-8 lesbare Dateien
+(Bilder, Modelldateien — gemessen 2026-09-11: 19 von 688) werden übersprungen statt den Lauf
+abzubrechen; und die Untergrenze allein trägt den Selbstschutz nicht mehr, weil sie erfüllt
+bleibt, während ein ganzer Zweig herausfällt — daneben gehören **namentliche Anker** für die
+belegten Orte der Labelvergabe.
 
 **2. Eine Reihenfolge-Kette wächst nur mit ihren Bedingungen.** Die Kette aus der
 Spec-0288-Sektion (Body → Titel → `Ready`) bekommt ein viertes Glied (→ Bereich → **jede**

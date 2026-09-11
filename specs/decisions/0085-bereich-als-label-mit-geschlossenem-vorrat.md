@@ -52,9 +52,21 @@ Bereichswert außerhalb des Katalogs.
 ### 4. Die sechs Label existieren im Repository; keine Operation legt sie an
 
 Einmalige Einrichtung durch Daniel — derselbe Umgang wie mit den Board-Feldern und ihren Optionen.
+
 Auf dem `gh`-Weg scheitert `--add-label` mit einem unbekannten Wert laut; das ist eine geschenkte
-zweite Schranke. **Auf dem `mcp`-Weg gilt sie nicht:** Die Issues-API legt ein unbekanntes Label
-beim Setzen stillschweigend an. Tragend ist deshalb Punkt 3, nicht diese Nebenwirkung.
+zweite Schranke. **Gemessen** am 2026-09-11: `'bereich:tippfehler' not found`, Exit 1, und **kein
+Label angelegt**.
+
+**Auf dem `mcp`-Weg gilt diese Schranke vermutlich nicht** — die Issues-API legt ein unbekanntes
+Label beim Setzen der vollständigen Menge stillschweigend an. Das ist eine **unbelegte Annahme aus
+der API-Dokumentation, keine Messung dieses Repositoriums:** Der `mcp`-Schreibversuch wurde vom
+Berechtigungs-Klassifizierer der Umgebung abgelehnt, und auf dem `gh`-Weg ist die Eigenschaft
+grundsätzlich nicht zu zeigen — dass ein Wert *still* angelegt wird, ist gerade die Eigenschaft
+des anderen Wegs.
+
+Tragend ist deshalb Punkt 3, nicht diese Nebenwirkung — und das gilt erst recht, solange sie
+unbelegt ist: Der Abgleich gegen das Vorrat-Literal vor dem Aufruf greift unabhängig davon, wie
+sich der `mcp`-Weg tatsächlich verhält.
 
 ### 5. Eine Operation schreibt den Bereich, und sie schreibt einen Zielzustand
 
