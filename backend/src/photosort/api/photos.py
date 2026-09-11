@@ -698,8 +698,8 @@ def _derived_location_of(
     Datenbank): bei gleichem Abstand gewinnt der FRUEHERE Zeitpunkt, bei identischem `taken_at` die
     kleinere `photo_id` - beides ergibt sich aus der Sortierung plus dem `<=`-Vergleich unten.
 
-    Die Suche laeuft ueber `key=` DIREKT auf `anchors`: eine
-    vorgeschaltete Hilfsliste aller Zeitstempel waere bereits linear und machte den `bisect` zur
+    Die Suche läuft über `key=` DIREKT auf `anchors` - eine vorgeschaltete Hilfsliste aller
+    Zeitstempel waere bereits linear und machte den `bisect` zur
     Zierde - und zwar einmal JE FOTO der Antwort, also O(N x M). Der vollstaendige Cluster kann
     deutlich mehr Anker tragen, als die Antwort Fotos enthaelt (Top-N-Auswahl), womit
     genau der teure Faktor der ist, den die Antwort gar nicht sieht."""

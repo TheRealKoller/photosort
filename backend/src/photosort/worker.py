@@ -1433,8 +1433,8 @@ def _compute_content_criteria(
 # Defensive Obergrenze fuer die zusammengesetzte laufweite Cloud-Fehlermeldung - analog
 # _MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH. Die eigentliche Absicherung bleibt, dass jeder
 # Baustein entweder fest codiert ist oder aus einer bereits an der Exception-Konstruktionsstelle
-# sanitierten Meldung stammt; diese Kappung ist nur eine Storage-/ Degenerationsgrenze fuer den Fall
-# mehrerer langer Teilmeldungen.
+# sanitierten Meldung stammt; diese Kappung ist nur eine Storage-/Degenerationsgrenze für den
+# Fall mehrerer langer Teilmeldungen.
 _MAX_RUN_CLOUD_ERROR_MESSAGE_LENGTH = 1000
 
 
@@ -1687,7 +1687,7 @@ async def run_criterion_scoring(
                 # der laufend fortgeschriebene Fortschritt der Phase, streng
                 # getrennt von der Kosten-Buchfuehrung unten.
                 landmark_processed = 0
-                # Ist-Kosten- Buchfuehrung dieser Phase. Summiert wird ueber die ERFOLGREICHEN
+                # Ist-Kosten-Buchführung dieser Phase. Summiert wird über die ERFOLGREICHEN
                 # Ergebnisse -ein fehlgeschlagener Aufruf liefert keinen auswertbaren Verbrauch
                 # (dokumentierte Untererfassung).
                 landmark_api_calls = 0
@@ -2233,8 +2233,8 @@ async def run_remote_category_classification(
             await session.commit()
             return run
 
-        # Ist-Kosten- Buchfuehrung dieses Laufs, identisch zur Landmark-Phase in
-        # run_criterion_scoring -summiert ueber die ERFOLGREICHEN Ergebnisse, geschrieben im
+        # Ist-Kosten-Buchführung dieses Laufs, identisch zur Landmark-Phase in
+        # run_criterion_scoring - summiert über die ERFOLGREICHEN Ergebnisse, geschrieben im
         # `finally` unten.
         #
         # VOR dem `try` gebunden, analog zur Landmark-Phase:
