@@ -87,13 +87,17 @@ formuliert hatte, steht jetzt der Befehl, an dem die Wirkung gemessen wird.
 - [ ] **K10** Die einmalige Durchformatierung erfolgt getrennt von jeder inhaltlichen Änderung,
       damit sie in der Historie als reine Formatierung erkennbar bleibt und einen inhaltlichen
       Diff nicht überdeckt.
-- [ ] **K11** `/.prettierignore` schließt jedes Verzeichnis aus, das die `.gitignore`-Dateien
-      unterhalb von `frontend/` und `e2e/` ausschließen und das eine von Prettier unterstützte
-      Endung enthalten kann — namentlich `e2e/.auth/`, `e2e/artifacts/`, `e2e/test-results/`,
-      `e2e/playwright-report/`, `e2e/scratch/`. Begründung: `--ignore-path` ersetzt die
-      `.gitignore`-Auswertung vollständig, und `e2e/.auth/state.json` trägt ein 30 Tage gültiges,
-      nicht widerrufbares JWT. Gehalten durch
-      `scripts/tests/test_prettierignore_spiegelung.py`. *(Neu, `security-engineer`.)*
+- [ ] **K11** `/.prettierignore` spiegelt die `.gitignore`-Einträge **vollständig und
+      mechanisch**: jeden Eintrag, der unterhalb von `frontend/` oder `e2e/` greift und eine von
+      Prettier unterstützte Endung treffen kann — ohne Ausnahmeliste und ohne Ermessen darüber,
+      welcher Fall "realistisch" auftritt. Sicherheitstragend und deshalb zusätzlich namentlich:
+      `e2e/.auth/`, `e2e/artifacts/`, `e2e/test-results/`, `e2e/playwright-report/`,
+      `e2e/scratch/`. Begründung: `--ignore-path` ersetzt die `.gitignore`-Auswertung
+      vollständig, und `e2e/.auth/state.json` trägt ein 30 Tage gültiges, nicht widerrufbares
+      JWT. Gehalten durch `scripts/tests/test_prettierignore_spiegelung.py`, der seine Erwartung
+      genau deshalb mechanisch aus den `.gitignore`-Dateien ableiten kann. *(Neu,
+      `security-engineer`; auf die vollständige Spiegelung erweitert am 2026-09-11, Entscheidung
+      Daniels — siehe Abschnitt 4.)*
 - [ ] **K12** Die Durchformatierung wird vor dem Eröffnen von PR A durch einen
       **Reproduktionsnachweis** abgenommen: Auf dem Elternstand des Durchformatier-Commits
       erzeugt ein Lauf der fixierten Werkzeuge einen byte-gleichen Baum
@@ -239,6 +243,20 @@ e2e/test-results/
 e2e/playwright-report/
 e2e/scratch/
 frontend/dist-ssr/
+.vscode/
+__pycache__/
+*.egg-info/
+build/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.vite/
+logs/
+photo-cache/
+.idea/
+*.ntvs*
 ```
 
 `*.md` ist die aktive Umsetzung des Akzeptanzkriteriums (verifiziert: Prettier erfasst `*.md` im
@@ -265,6 +283,50 @@ unterstützte Endung treffen kann, muss dort gespiegelt werden — auch jeder k�
 diese Zusicherung still bricht (lokal fällt sie nur als "eine Datei mehr formatiert" auf, in CI
 gar nicht), hält sie ein dritter Wächtertest, `scripts/tests/test_prettierignore_spiegelung.py`.
 Die Regel steht zusätzlich dauerhaft im Sicherheitskonzept.
+
+**Die Spiegelung ist vollständig, nicht nach Ermessen — und die Liste stammt aus einer Messung**
+(Review-Fund und Entscheidung Daniels, 2026-09-11). Ein erster Entwurf dieses Abschnitts führte
+nur die elf oberen Einträge; nachgemessen erfasste Prettier darüber hinaus **vierzehn** weitere
+Kandidaten. Erhoben wurde das nicht durch Nachdenken, sondern durch je ein `PROBE.json` in jedem
+in Frage kommenden Verzeichnis unter `frontend/`, gefolgt von
+`prettier --ignore-path ../.prettierignore --check .`:
+
+```bash
+cd frontend && for d in build .venv .vite .mypy_cache htmlcov .pytest_cache logs .idea \
+    __pycache__ .ruff_cache probe.egg-info photo-cache .vscode; do
+  mkdir -p "$d" && printf '{  "a":   1 }\n' > "$d/PROBE.json"; done
+./node_modules/.bin/prettier --ignore-path ../.prettierignore --check . 2>&1 | grep PROBE
+```
+
+Zwei Erkenntnisse daraus, die den nächsten Leser davor bewahren, denselben Weg zu gehen:
+
+- **Die Frage nach der Dateiendung trägt die Entscheidung nicht — die nach dem Verzeichnis trägt
+  sie.** Ein Eintrag wie `logs` oder `.idea` sieht nach einer Endung aus, die Prettier nicht
+  kennt, trifft aber ein *Verzeichnis*, in dem eine `.json` liegen kann. Wer nach Endungen
+  filtert, findet nur `.vscode/` und hält die Spiegelung fälschlich für vollständig — genau
+  dieser Fehler ist im Review einmal passiert. `*.ntvs*` ist der einzige Datei-Glob der Liste,
+  weil sein nachgestelltes `*` ihn `foo.ntvs.json` treffen lässt; alle übrigen (`*.log`,
+  `*.local`, `*.suo`, `*.sln`, `*.sw?`, `.DS_Store`, `.coverage`) schließen den Dateinamen nach
+  hinten ab und können eine unterstützte Endung strukturell nicht treffen.
+- **Ein wörtlich aus einer `.gitignore` übernommenes Muster kann wirkungslos sein.**
+  `frontend/.gitignore` schreibt `.vscode/*`; dieser Schrägstrich *in der Mitte* bindet das
+  Muster an das Verzeichnis der Ignore-Datei, hier also an die Repository-Wurzel, und ließe
+  `frontend/.vscode/` unberührt. Nur `.vscode/` — Schrägstrich ausschließlich am Ende — greift
+  auf jeder Ebene. Nachgemessen mit vier Varianten. Ebenso nachgemessen: Der Wiedereinschluss
+  `!.vscode/extensions.json` bleibt wirkungslos, weil gitignore-Semantik eine Datei unterhalb
+  eines ausgeschlossenen Verzeichnisses nicht wieder einschließen kann; er wird deshalb nicht
+  gespiegelt.
+
+Die meisten der nachgetragenen Einträge können unter `frontend/` oder `e2e/` heute gar nicht
+entstehen — es sind Artefakte der Python-Werkzeugkette (`.venv/`, `__pycache__/`, `.mypy_cache/`,
+`.pytest_cache/`, `.ruff_cache/`, `htmlcov/`, `*.egg-info/`) oder Bausteine der Vite-Vorlage
+(`logs`, `.idea/`, `*.ntvs*`). Sie stehen trotzdem dort, und **das ist der Punkt:** Die
+Asymmetrie trägt die Entscheidung. Ein überflüssiger Eintrag kostet eine Zeile in einer Datei,
+die ohnehin nur Ausschlüsse führt; ein fehlender kostet eine still umgeschriebene, unversionierte
+lokale Datei — bei `e2e/.auth/` war genau das ein Sicherheitsbefund. Und nur die vollständige
+Liste lässt `test_prettierignore_spiegelung.py` seine Erwartung mechanisch aus den
+`.gitignore`-Dateien ableiten; jede Ausnahmeliste wäre eine Ermessensentscheidung, die später
+jemand ohne Kenntnis des Anlasses neu treffen müsste.
 
 Die Python-Hälfte ist davon nicht betroffen: `ruff` behält `respect-gitignore = true`, und
 `[tool.ruff.format] exclude` **ergänzt** die Vorgabe, statt sie zu ersetzen. `.env` ist für beide
