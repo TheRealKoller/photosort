@@ -67,3 +67,46 @@ frontend/dist-ssr/
 # hinnehmbar - eine kuenftige, dann versionierte extensions.json bliebe unformatiert; sie ist
 # eine Empfehlungsliste, kein Quelltext.
 .vscode/
+
+# Der Rest der Spiegelung, mechanisch statt nach Ermessen (Entscheidung Daniels, 2026-09-11).
+#
+# Alle folgenden Eintraege stammen aus den .gitignore-Dateien des Repositoriums und stehen hier,
+# weil --ignore-path deren Auswertung VOLLSTAENDIG ersetzt. Keines dieser Verzeichnisse traegt
+# zu formatierenden Quelltext; die meisten koennen unter frontend/ oder e2e/ heute gar nicht
+# entstehen, weil es Artefakte der Python-Werkzeugkette oder Bausteine der Vite-Vorlage sind.
+# Sie stehen trotzdem hier - und das ist der Punkt: Die Regel bleibt damit mechanisch, statt von
+# einem Urteil darueber abzuhaengen, was "realistisch" auftreten kann. Die Asymmetrie traegt die
+# Entscheidung: Ein ueberfluessiger Eintrag kostet eine Zeile in einer Datei, die ohnehin nur
+# Ausschluesse fuehrt; ein fehlender kostet eine still umgeschriebene, unversionierte lokale
+# Datei - und bei e2e/.auth/ war genau das ein Sicherheitsbefund. Nur die vollstaendige Liste
+# laesst den Waechtertest scripts/tests/test_prettierignore_spiegelung.py seine Erwartung
+# mechanisch aus den .gitignore-Dateien ableiten; jede Ausnahmeliste waere eine
+# Ermessensentscheidung, die spaeter jemand ohne Kenntnis des Anlasses neu treffen muesste.
+#
+# Erhoben wurde die Liste durch Messung, nicht durch Nachdenken: je ein `PROBE.json` in jedes
+# Kandidatenverzeichnis unter frontend/, dann `prettier --ignore-path ../.prettierignore
+# --check .`. Zwei Erkenntnisse daraus, die beim naechsten Mal sonst wieder teuer erarbeitet
+# wuerden:
+#
+#   * Die Frage nach der DATEIENDUNG traegt die Entscheidung nicht - die nach dem VERZEICHNIS
+#     traegt sie. Ein Eintrag wie `logs` oder `.idea` sieht nach einer Endung aus, die Prettier
+#     nicht kennt, trifft aber ein Verzeichnis, in dem eine .json liegen kann. Wer nach Endungen
+#     filtert, findet nur `.vscode/` und haelt die Spiegelung faelschlich fuer vollstaendig.
+#   * `*.ntvs*` ist der einzige Datei-Glob der Liste: Das nachgestellte `*` laesst ihn
+#     `foo.ntvs.json` treffen. Alle uebrigen Datei-Globs der .gitignore-Dateien (`*.log`,
+#     `*.local`, `*.suo`, `*.sln`, `*.sw?`, `.DS_Store`, `.coverage`) koennen eine von Prettier
+#     unterstuetzte Endung strukturell nicht treffen, weil sie den Dateinamen nach hinten
+#     abschliessen - sie sind deshalb nicht spiegelungspflichtig.
+__pycache__/
+*.egg-info/
+build/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.vite/
+logs/
+photo-cache/
+.idea/
+*.ntvs*
