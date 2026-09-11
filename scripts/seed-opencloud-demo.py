@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """Seeds a local OpenCloud demo container with a small set of bundled example photos.
 
-Eigenstaendiges Dev-/Demo-Tooling, bewusst ausserhalb von backend/src/photosort/ (siehe
-specs/features/0009-local-opencloud-demo-stack.md,
-specs/decisions/0009-local-opencloud-demo-stack.md,
-specs/decisions/0010-demo-seed-script-as-compose-service.md). Laeuft als eigener Compose-Service
-(profile "seed") im selben Docker-Netzwerk wie der opencloud-demo-Container - siehe README.md.
+Eigenstaendiges Dev-/Demo-Tooling, bewusst ausserhalb von backend/src/photosort/. Laeuft als
+eigener Compose-Service (profile "seed") im selben Docker-Netzwerk wie der
+opencloud-demo-Container - siehe README.md.
 
 Spricht denselben Graph-API-/WebDAV-Codepfad wie das Produktiv-Backend
 (backend/src/photosort/opencloud/client.py) direkt per httpx an, nutzt aber bewusst KEINEN Import
-von dort (eigenstaendiges Tool, kein Upload-Feature im Produktivcode - siehe ADR 0009).
+von dort (eigenstaendiges Tool, kein Upload-Feature im Produktivcode).
 """
 
 from __future__ import annotations
@@ -30,15 +28,13 @@ _IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png"})
 DEFAULT_PHOTOS_DIR = Path(__file__).parent / "demo_photos"
 
 # Standardwerte fuer die Warte-/Retry-Logik: 40 Versuche a 3s Wartezeit dazwischen ergeben ein
-# Timeout von ca. 120s (AK aus specs/features/0009-local-opencloud-demo-stack.md: "innerhalb
-# einer definierten Zeitspanne (z.B. 120s)").
+# Timeout von ca. 120s.
 DEFAULT_MAX_WAIT_ATTEMPTS = 40
 DEFAULT_POLL_INTERVAL = 3.0
 
-# Hostnamen, die als "eindeutig der lokale Demo-Container" gelten (Security-Muss-Kriterium,
-# specs/architecture/0003-securitykonzept.md, Abschnitt "Docker-Compose-Netzwerk"):
-# "opencloud-demo" ist der Servicename im gemeinsamen Compose-Netzwerk (siehe ADR 0010, der
-# Normalfall bei Ausfuehrung als "seed"-Compose-Service); "localhost"/"127.0.0.1"/"::1" decken den
+# Hostnamen, die als "eindeutig der lokale Demo-Container" gelten (Security-Muss-Kriterium):
+# "opencloud-demo" ist der Servicename im gemeinsamen Compose-Netzwerk (der Normalfall bei
+# Ausfuehrung als "seed"-Compose-Service); "localhost"/"127.0.0.1"/"::1" decken den
 # seltener genutzten Fall ab, dass jemand das Skript direkt gegen den auf 127.0.0.1 gebundenen
 # Host-Port startet (z.B. fuer einen manuellen Test ausserhalb von Docker).
 _DEMO_HOSTS = frozenset({"opencloud-demo", "localhost", "127.0.0.1", "::1"})
@@ -52,7 +48,8 @@ def validate_demo_base_url(base_url: str) -> None:
     """Bricht mit einer klaren SeedError ab, falls `base_url` nicht offensichtlich auf den
     lokalen OpenCloud-Demo-Container zeigt - verhindert, dass ein versehentlicher Lauf mit der
     produktiven .env (echte OPENCLOUD_BASE_URL) Fotos in einen echten Familien-Space schreibt
-    (Security-Muss-Kriterium, specs/features/0009-local-opencloud-demo-stack.md)."""
+    (Security-Muss-Kriterium). Bricht in
+    tests/test_seed_opencloud_demo.py::TestValidateDemoBaseUrl::test_rejects_non_demo_hosts."""
     parsed = urlparse(base_url)
     # Review-Finding (Copilot): ohne explizite Port-Pruefung wuerde z.B. "http://localhost"
     # (impliziter Port 80) akzeptiert, obwohl die Fehlermeldung unten selbst einen Port verlangt -
@@ -76,7 +73,7 @@ async def wait_until_ready(
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> None:
     """Wartet aktiv, bis der Demo-Container antwortet, statt sofort mit Verbindungsfehler
-    abzubrechen (AK aus specs/features/0009-local-opencloud-demo-stack.md). Prueft schlicht
+    abzubrechen. Prueft schlicht
     Erreichbarkeit der Login-Seite (kein dokumentiert stabiler /health-Endpoint fuer dieses
     Deployment-Muster bekannt) - jeder Status < 500 gilt als "Server ist da und antwortet
     sinnvoll", auch 401/403/redirects."""
@@ -100,9 +97,8 @@ async def wait_until_ready(
 
 
 async def fetch_drives(client: httpx.AsyncClient, base_url: str) -> list[dict]:
-    """Graph-API-Space-Liste - derselbe Codepfad wie OpenCloudClient.list_drives (AK aus
-    specs/features/0009-local-opencloud-demo-stack.md), eigenstaendig implementiert (kein Import
-    aus backend/src/photosort, siehe ADR 0009)."""
+    """Graph-API-Space-Liste - derselbe Codepfad wie OpenCloudClient.list_drives, eigenstaendig
+    implementiert (kein Import aus backend/src/photosort)."""
     try:
         response = await client.get(f"{base_url.rstrip('/')}/graph/v1.0/me/drives")
     except httpx.HTTPError as exc:
@@ -116,7 +112,7 @@ async def fetch_drives(client: httpx.AsyncClient, base_url: str) -> list[dict]:
         raw_drives = payload.get("value", [])
     except AttributeError as exc:
         # payload selbst ist kein JSON-Objekt (z.B. ein Array/String an oberster Ebene) - .get()
-        # existiert dann nicht (analoger Fund im Backend-Client, Copilot-Review auf PR #12).
+        # existiert dann nicht (analoges Muster im Backend-Client).
         raise SeedError(
             "Unerwartete Antwortstruktur der Graph-API-Space-Liste (GET /graph/v1.0/me/drives)."
         ) from exc
@@ -140,7 +136,7 @@ def _drive_webdav_url(drive: Any) -> str:
     # drive ist bewusst nicht als dict typisiert: jede unerwartete Struktur (drive selbst kein
     # dict, "root" kein dict, fehlendes "webDavUrl") wird gleichwertig behandelt - ein
     # KeyError/TypeError hier soll immer als SeedError propagieren (siehe auch das analoge Muster
-    # in backend/src/photosort/opencloud/client.py, Fund aus dem Copilot-Review von PR #12).
+    # in backend/src/photosort/opencloud/client.py).
     try:
         return str(drive["root"]["webDavUrl"])
     except (KeyError, TypeError) as exc:
@@ -161,7 +157,7 @@ def _drive_type(drive: Any) -> Any:
 def resolve_drive_webdav_url(drives: list[dict], drive_name: str | None) -> str:
     """Waehlt den Ziel-Space: bei explizitem Namen exaktes Match, sonst das persoenliche Drive des
     Demo-Nutzers (driveType == "personal"), sonst das erste vorhandene Drive - analog zur Absicht
-    von OpenCloudClient.resolve_drive, aber eigenstaendig implementiert (siehe ADR 0009). Nutzt
+    von OpenCloudClient.resolve_drive, aber eigenstaendig implementiert. Nutzt
     _drive_name()/_drive_type() statt drive.get(...) direkt, damit ein Nicht-dict-Eintrag in
     "drives" (z.B. ein String/int) hier nicht mit einem rohen AttributeError abbricht, sondern
     beim eigentlichen Ziel-Match einfach nicht passt und weiter unten regulaer als SeedError
@@ -262,8 +258,7 @@ async def seed(
 ) -> SeedResult:
     """Orchestriert den vollstaendigen Seed-Lauf: URL-Sicherheitscheck -> Fotos lokal
     ermitteln (fail-fast, bevor ueberhaupt ein Request rausgeht) -> auf Container warten ->
-    Ziel-Space aufloesen -> Ordner anlegen -> Fotos hochladen (siehe Akzeptanzkriterien,
-    specs/features/0009-local-opencloud-demo-stack.md).
+    Ziel-Space aufloesen -> Ordner anlegen -> Fotos hochladen.
 
     `client` ist fuer Tests injizierbar (httpx.MockTransport); ohne Angabe wird ein echter,
     Basic-Auth-authentifizierter Client erzeugt und am Ende wieder geschlossen."""
@@ -302,7 +297,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     """CLI-/Env-Var-Schnittstelle. Nutzt bewusst dieselben Env-Var-Namen wie das Backend
     (OPENCLOUD_BASE_URL/OPENCLOUD_USERNAME/OPENCLOUD_APP_TOKEN/OPENCLOUD_DRIVE_NAME, siehe
     backend/src/photosort/config.py) - Defaults passen zum Demo-Container laut .env.demo.example
-    und zur Ausfuehrung als eigener Compose-Service im selben Docker-Netzwerk (ADR 0010), sodass
+    und zur Ausfuehrung als eigener Compose-Service im selben Docker-Netzwerk, sodass
     das Skript ohne jede manuelle Konfiguration laeuft."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
