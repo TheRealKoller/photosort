@@ -19,11 +19,12 @@ Penpot-Datei — er genügt, um sie zu finden, und verrät nichts über die Infr
 |---|---|---|
 | `tokens.json` | **erzeugt** aus `frontend/src/index.css` | die 86 Tokens (Name, Typ, Wert): 64 `color`, 5 `borderRadius`, 8 `spacing`, 2 `fontFamilies`, 7 `typography` |
 | `icons.json` | **erzeugt** aus `frontend/src/components/ui/icon.tsx` | die zwölf Symbole als SVG-Markup |
-| `components.json` | handgeschrieben | Zustands-/Variantenmatrix der elf Bausteine, ausschließlich in Tokennamen |
+| `components.json` | handgeschrieben | Zustands-/Variantenmatrix der zwölf Bausteine, ausschließlich in Tokennamen |
 | `views.json` | handgeschrieben | **keine Nutzlast** — die Soll-Struktur der Ansichtsentwürfe (siehe unten) |
 | `seed-tokens.js` | handgeschrieben | legt den Token-Satz `photosort` an bzw. gleicht ihn ab |
 | `seed-icons.js` | handgeschrieben | legt die zwölf Symbole als Komponenten an |
-| `seed-components.js` | handgeschrieben | baut die elf Bausteine und ihre Varianten |
+| `seed-components.js` | handgeschrieben | baut die zwölf Bausteine und ihre Varianten |
+| `fix-flaechen.js` | handgeschrieben | zieht Fläche und Schriftfarbe im **bespielten** Stand nach (siehe unten) |
 | `verify.js` | handgeschrieben | liest den Stand zurück und gibt ihn als JSON aus |
 
 Die beiden erzeugten Dateien entstehen als Vitest-Dateischnappschuss in
@@ -62,12 +63,14 @@ erzeugt — nie der Aufruf angepasst.
 | 2 | `seed-icons.js` | `icons.json` | `ICONS` |
 | 3 | `seed-components.js` | `components.json` | `BAUSTEINE` |
 | 4 | `verify.js` | — | — |
+| K — nur auf ausdrückliche Anforderung | `fix-flaechen.js` | `components.json` | `BAUSTEINE` |
 
 ## ⚠ Warnhinweis zu `seed-components.js`
 
-`seed-tokens.js` und `seed-icons.js` dürfen **jederzeit erneut laufen** — ihr Inhalt ist
-vollständig erzeugt, in ihm kann keine Gestaltungsabsicht stecken, die nicht auch im Repository
-stünde.
+`seed-tokens.js`, `seed-icons.js` und `fix-flaechen.js` dürfen **jederzeit erneut laufen** — die
+ersten beiden, weil ihr Inhalt vollständig erzeugt ist und in ihm keine Gestaltungsabsicht stecken
+kann, die nicht auch im Repository stünde; das dritte, weil es nichts anlegt, nichts verschiebt,
+nichts löscht und nur schreibt, wo Ist und Soll auseinanderliegen.
 
 **`seed-components.js` läuft nur auf einer leeren oder neu aufgebauten Datei.** Nach dem ersten
 Bespielen gehören die Bausteine Penpot: Dort wird entworfen, dort entstehen Änderungen, und ein
@@ -78,7 +81,7 @@ Vorbedingung steht deshalb fail-closed im Skript selbst, vor dem ersten Schreibz
 **Kein Skript löscht je etwas.** Findet ein Lauf in Penpot ein Token, das der Erzeuger nicht
 kennt, bleibt es unangetastet und wird als **Befund** gemeldet — nicht als Fehler gewertet.
 
-**⚠ Eine Zeitüberschreitung dieses Schritts ist kein Fehlschlag.** 146 Varianten mit je rund einem
+**⚠ Eine Zeitüberschreitung dieses Schritts ist kein Fehlschlag.** 158 Varianten mit je rund einem
 Dutzend API-Aufrufen dauern länger, als `execute_code` auf eine Antwort wartet: Der Aufruf endet
 mit „The operation timed out", **während die Arbeit vollständig ausgeführt wird** (beim ersten
 echten Lauf gemessen). Vor jeder Reaktion wird der Stand **zurückgelesen** — erst das Ergebnis
@@ -91,8 +94,18 @@ Was `seed-components.js` aufbaut, ist der token-gebundene Rumpf: je Variante ein
 Beschriftung, dessen Fläche, Umriss, Radius, Innenabstände und Schriftmerkmale an Tokens gebunden
 sind, daraus je eine Bibliotheks-Komponente, und daraus je Baustein ein Varianten-Container.
 
+**Jedes Brett bindet eine Fläche oder wird ausdrücklich geleert — nie weggelassen.** Ein neu
+erzeugtes Board trägt eine deckend **weiße** Standardfüllung, nicht etwa keine; wo nichts gebunden
+wird, leuchtet es aus einem dunklen Entwurf heraus und die Beschriftung darauf erreicht rund 2,2:1.
+Geleert wird **nach** dem Binden und nur dort, wo die Bindungslogik nachweislich keine Fläche auf
+das Brett angewandt hat (ADR [`0081`](../../specs/decisions/0081-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md)).
+Eine fehlende Rolle `flaeche` in `components.json` heißt damit: **im Produkt ist diese Fläche
+transparent** — eine Aussage, die je Ausprägung namentlich mit Grund geführt wird, samt
+Gegenrichtung. Heute sind das 25 der 158 Varianten (`button/ghost`, `button/link`,
+`badge/neutral`).
+
 **Gebaut wird das vollständige Kreuzprodukt der Achsen** eines Bausteins (Schaltfläche 6 × 3 × 5 =
-90 Varianten, über alle elf Bausteine **146**). Das ist keine Vorliebe, sondern eine Vorgabe der
+90 Varianten, über alle zwölf Bausteine **158**). Das ist keine Vorliebe, sondern eine Vorgabe der
 Plugin-API: Ein Varianteneintrag muss für **jede** Varianteneigenschaft einen Wert nennen — ein
 Eintrag, der nur `auspraegung=ghost` trägt und zu `groesse`/`zustand` schweigt, ist keine
 wohldefinierte Variante.
@@ -124,6 +137,36 @@ Rollen, die zu Unterelementen gehören, die dieser Aufbau nicht selbst setzt (Kn
 Statuspille, Dateiname der Karte …), werden **nicht stillschweigend übergangen**, sondern als
 `nachzubinden` zurückgegeben — ihre Bindung entsteht beim Entwerfen in Penpot, wo diese Elemente
 ohnehin ihre Form bekommen.
+
+## Den bespielten Stand nachziehen: `fix-flaechen.js`
+
+„Nach einem Wiederaufbau richtig" und „im heutigen Stand richtig" sind **zwei Wege**, und sie
+werden nicht zusammengeführt. Den ersten tragen `seed-components.js` und `components.json`. Den
+zweiten trägt `fix-flaechen.js`: Es setzt in der bereits bespielten Datei die **Füllung** der
+Variantenbretter und die **Farbe ihrer Beschriftung** auf das Soll aus `components.json`.
+
+**Es läuft nie im Normalablauf**, sondern nur auf ausdrückliche Anforderung — etwa, wenn
+`verify.js` einen Brettbestand mit Füllung ohne Tokenbindung meldet. Ein Wiederaufbau scheidet als
+Reparaturweg aus: Er kostet die von Hand entstandenen Ansichten.
+
+- **Abschließend, was es anfasst:** keine Struktur, keine Position, keine Größe, keine Benennung,
+  keine Plugin-Daten, keine Löschung. Erlaubt sind allein `applyToShapes` und `fills = []` —
+  statisch zugesichert über Aufrufe *und* Zuweisungen, denn die Verbotsliste sieht Zuweisungen
+  nicht.
+- **Fail-closed je Komponente, nicht je Lauf:** Angefasst wird nur, wessen Hauptinstanz ein Brett
+  mit genau einem Textkind ist und wessen `variantProps` ein Soll aus `components.json` treffen.
+  Alles andere bleibt unberührt und erscheint als eigener Ausgang „Struktur abweichend" — nie als
+  „bereits richtig", nie mit einem geratenen Standard. Plugin-Daten sind von Hand setzbar, und der
+  Platzhalter ist in Penpot von Hand entstanden: Eine Seed-Herkunft wird nirgends unterstellt.
+- **Zielzustands-idempotent:** Geschrieben wird nur, wo Ist und Soll auseinanderliegen.
+- **Der Bericht wird gelesen, nicht quittiert:** Ein „geändert" auf einem Lauf **nach dem ersten**
+  bedeutet, dass jemand die Füllung in Penpot von Hand abweichend gesetzt hat; dieser Lauf hat sie
+  überschrieben, und ihr voriger Wert steht in keiner Datei. Das ist ein Befund und gehört in den
+  Abschlussbericht. Verhindern kann das nur, wer die Wiederholbarkeit aufgibt.
+
+**Der Seitengrund gehört zur selben Nachführung** und steht in keiner Datei: Die Seite ist in
+Penpot von Hand auf `color.bg` zu setzen, sonst prüft das Auge gegen einen anderen Untergrund als
+den, gegen den der Kontrast gerechnet ist.
 
 ## Ansichtsentwürfe: `views.json` ist die Soll-Struktur, kein Generator
 

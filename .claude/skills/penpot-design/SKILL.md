@@ -7,7 +7,7 @@ description: Bespielt und prüft die Penpot-Design-Datei „PhotoSort — Dark U
 
 **GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
 
-**Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Auflagen des Werkzeugkanals — was ausgeführt wird, was nie gelöscht wird — hier vollständig stehen müssen.
+**Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Auflagen des Werkzeugkanals — was ausgeführt wird, was nie gelöscht wird, und was der einzige wiederholbar schreibende Schritt anfassen darf — hier vollständig stehen müssen.
 
 Die Penpot-Instanz ist ein **dritter Werkzeugkanal** neben `gh` und den GitHub-Werkzeugen. Die Erlaubnisstufe oben regelt nur den GitHub-Kanal; was den Penpot-Kanal begrenzt, ist allein die abschließende Liste im Abschnitt „Was die Nutzlast darf".
 
@@ -67,6 +67,9 @@ Alles, was ausgeführt wird, liegt unter `design/penpot/` (siehe `design/penpot/
 | 2 | `seed-icons.js` | `icons.json` | `ICONS` |
 | 3 | `seed-components.js` | `components.json` | `BAUSTEINE` |
 | 4 | `verify.js` | — (keine Einfügestelle) | — |
+| K — **nur auf ausdrückliche Anforderung** | `fix-flaechen.js` | `components.json` | `BAUSTEINE` |
+
+**Schritt K ist kein Teil des Normalablaufs.** Er läuft nur, wenn Daniel die Korrektur ausdrücklich verlangt — siehe „Schritt K" unten. Die vier nummerierten Schritte laufen ohne ihn vollständig durch.
 
 **Herkunft (Muss).** Die Nutzlast stammt ausschließlich aus den Dateien des aktuellen Branches, zum Ausführungszeitpunkt gelesen. Nie aus einer Chat-Nachricht, einem Modell-Nachbau, einem eingefügten Schnipsel, nie „mit einer kleinen Anpassung". Das ist zugleich eine Sicherheitsregel: Es ist die Stelle, an der sonst eine Zeile in die Ausführung käme, die kein Review gesehen hat.
 
@@ -123,7 +126,9 @@ Ein Formexport zeigt **jeden Text, der in den Entwurf getippt wurde**, und geht 
 
 ## Schritt 4: Rücklesen und Abschluss
 
-`verify.js` unverändert ausführen. Der Vergleich gegen `tokens.json`, `icons.json`, `components.json` und `views.json` ist **mechanisch** — ein Zeichenkettenvergleich, kein „durchlesen und beurteilen". Er gilt als bestanden, wenn bei den **erzeugten** Objekten keine Abweichung bleibt: jeder erzeugte Tokenname vorhanden und wertgleich, zwölf Symbole, elf Bausteine mit den in `components.json` genannten Varianteneigenschaften und deren Anzahl Ausprägungen, dazu je Baustein die Tokenbindungen. Zusätzlich in Penpot vorhandene Objekte werden als Zahl mitgemeldet.
+`verify.js` unverändert ausführen. Der Vergleich gegen `tokens.json`, `icons.json`, `components.json` und `views.json` ist **mechanisch** — ein Zeichenkettenvergleich, kein „durchlesen und beurteilen". Er gilt als bestanden, wenn bei den **erzeugten** Objekten keine Abweichung bleibt: jeder erzeugte Tokenname vorhanden und wertgleich, zwölf Symbole, zwölf Bausteine mit den in `components.json` genannten Varianteneigenschaften und deren Anzahl Ausprägungen, dazu je Baustein die Tokenbindungen. Zusätzlich in Penpot vorhandene Objekte werden als Zahl mitgemeldet.
+
+**Zwei Zählwerte je Baustein gehören zum bestandenen Abgleich:** `variantenOhneFuellung` und `variantenMitFuellungOhneBindung`. Der zweite ist der eigentliche Befund — eine Fläche, die aus keinem Token stammt — und **muss über alle Bausteine 0 sein**. Eine ungebundene Standardfüllung ist keine Bindung und taucht in der Bindungsliste nirgends auf: Ein weißes Brett sieht dort aus wie ein leeres. Ist der Wert nicht 0, ist der Weg zurück Schritt K, nicht ein Wiederaufbau.
 
 **Die Ansichtsliste gehört zum selben Abgleich.** `verify.js` liefert je Ansichtsbrett die Plugin-Daten `ansicht`/`breite`, die Varianteneigenschaften samt Zahl ihrer Ausprägungen, die Zahl der Bibliotheks-Instanzen, die Zahl der Formen, die **keine** Instanz sind, und die Tokenbindungen des Unterbaums. Verglichen wird gegen `views.json`: die Ansichtsschlüssel, je Ansicht die zwei Breiten, die Zustände als Ausprägungen der Achse `zustand`, dazu `ERWARTETE_ANSICHTEN`, `ERWARTETE_ANSICHTSBRETTER` und `ERWARTETE_ANSICHTSBEHAELTER`. **Behälter zählen nicht als Bretter** — sie tragen `ansicht`/`breite` ebenfalls, werden aber getrennt geführt; ohne diese Trennung zählte der erste echte Lauf 16 statt 14. **Die Zahl der Nicht-Instanzen ist ein Hinweis, keine Schwelle** — Texte und Rahmen sind legitim keine Instanzen; sie wird berichtet, nicht gefahren, und die Beurteilung „zusammengesetzt statt nachgezeichnet" trifft ein Mensch.
 
@@ -138,6 +143,19 @@ Dazu eine Sichtprüfung über `export_shape` auf eine **Form**, nie ein Fenstera
 **Der Abschlussbericht ist selbst formuliert.** In ein dauerhaftes Artefakt (Pull-Request-Text, Spec, Datei) gelangt ausschließlich ein eigenes Urteil, **nie die eingefügte Ausgabe** von `verify.js` und nie eine Fehlermeldung des MCP-Servers: Rohausgaben tragen typischerweise Instanz-IDs und Pfade mit, und ein PR-Body ist öffentlich und nicht zurücknehmbar. Rohausgaben gehen in den Chat, den ein Mensch liest.
 
 **Nichts aus der Instanz wird eingecheckt:** kein `.penpot`-Export, kein Bildschirmfoto mit Adresszeile, kein Prüfbericht als Datei (er wäre eine dritte Wertekopie, veraltet ab dem Tag seiner Erstellung).
+
+## Schritt K: Flächen im bespielten Stand nachziehen — nur auf ausdrückliche Anforderung
+
+`fix-flaechen.js` zieht die **Füllung** der Variantenbretter und die **Farbe ihrer Beschriftung** auf das Soll aus `components.json` nach. Es läuft **nie** als Teil des Normalablaufs, sondern nur, wenn Daniel es verlangt oder Schritt 4 `variantenMitFuellungOhneBindung > 0` gemeldet hat.
+
+Es ist die einzige Datei der Nutzlast, die **wiederholbar auf den bespielten Stand schreibt** — und der ist nach ADR [`0065`](../../../specs/decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md) das Original. Ein Wiederaufbau zur Reparatur scheidet aus: Er kostet die von Hand entstandenen Ansichten.
+
+- **Es fasst nichts anderes an.** Keine Struktur, keine Position, keine Größe, keine Benennung, keine Plugin-Daten, keine Löschung. Erlaubt sind allein `applyToShapes` und `fills = []`; das ist statisch zugesichert.
+- **Fail-closed je Komponente.** Wer Aufbau oder Achsenwerte verfehlt, bleibt unberührt und erscheint als `strukturAbweichend`. Ein solcher Eintrag ist **kein Fehlschlag des Laufs**, sondern ein Befund: Die betroffene Komponente ist von Hand entstanden oder abgewandelt worden.
+- **Der Bericht wird gelesen, nicht quittiert (Muss).** `geaendert` ist auf dem **ersten** Lauf erwartbar. Auf jedem weiteren bedeutet ein Eintrag dort, dass jemand die Füllung in Penpot von Hand abweichend gesetzt hat; dieser Lauf hat sie überschrieben, und ihr voriger Wert steht in **keiner** Datei. Das gehört in den Abschlussbericht, mit Namen der betroffenen Varianten.
+- **Danach Schritt 4 erneut**, und `variantenMitFuellungOhneBindung` muss 0 sein.
+
+**Der Seitengrund gehört zur selben Nachführung.** Er steht in keiner Datei und wird von keinem Skript gesetzt: Die Penpot-Seite der Bausteine ist von Hand auf `color.bg` zu setzen, sonst beurteilt die Sichtprüfung einen anderen Untergrund als den, gegen den der Kontrast gerechnet ist.
 
 ## Was die Nutzlast darf — abschließend
 
