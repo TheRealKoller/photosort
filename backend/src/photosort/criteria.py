@@ -137,9 +137,7 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
     # weitere, davon unabhaengige Kompositions-Ranking-Signale (analog goldener_schnitt/
     # aesthetics) - alle drei category_eligible=False (reine Ranking-Signale, keine neuen
     # Kuratierungs-Kategorien, ADR 0026).
-    "symmetrie": CriterionDefinition(
-        "symmetrie", "Symmetrie", CriterionSource.LOCAL_HEURISTIC
-    ),
+    "symmetrie": CriterionDefinition("symmetrie", "Symmetrie", CriterionSource.LOCAL_HEURISTIC),
     "horizont": CriterionDefinition(
         "horizont", "Horizont-Neigung", CriterionSource.LOCAL_HEURISTIC
     ),

@@ -225,9 +225,10 @@ class Settings(BaseSettings):
         Getragen wird das von zwei Seiten: `ge=0` schliesst negative Werte aus, und die
         Voreinstellungstabelle enthaelt (per Test erzwungen) fuer jeden waehlbaren Anbieter einen
         Wert > 0."""
-        return self.cloud_vision_requests_per_minute or DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER[
-            provider
-        ]
+        return (
+            self.cloud_vision_requests_per_minute
+            or DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER[provider]
+        )
 
 
 settings = Settings()

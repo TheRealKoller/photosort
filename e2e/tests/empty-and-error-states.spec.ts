@@ -51,7 +51,7 @@ test('leeres Projekt zeigt eine sichtbare Aussage statt einer leeren Flaeche', a
   // Foto-Kachel. Exakte Kardinalitaet statt "wenige".
   await expect(
     page.getByRole('listitem').filter({ has: page.locator('a[href*="/photos/"]') }),
-    'Foto-Kacheln im leeren Projekt'
+    'Foto-Kacheln im leeren Projekt',
   ).toHaveCount(0)
 })
 
@@ -101,14 +101,14 @@ test('Ordner-Browser zeigt ohne OpenCloud eine Fehlermeldung statt eines Dauer-L
   // dieser Statuscode. Die Zusicherung laeuft ueber die IMMER mitgeschriebene Sitzungsmitschrift -
   // sie belegt zugleich, dass das Werkzeug Laufzeitfehler ohne Zutun des Aufrufers wahrnimmt.
   const browseFailures = sessionLog.failedRequests.filter((request) =>
-    request.url.includes(EXPECTED_BROWSE_ERROR.path)
+    request.url.includes(EXPECTED_BROWSE_ERROR.path),
   )
   expect(
     browseFailures.map((request) => request.status),
-    `Antwortstatus von ${EXPECTED_BROWSE_ERROR.path} ohne OpenCloud`
+    `Antwortstatus von ${EXPECTED_BROWSE_ERROR.path} ohne OpenCloud`,
   ).toContain(EXPECTED_BROWSE_ERROR.status)
   expect(
     sessionLog.console.filter((message) => message.type === 'error').length,
-    'mitgeschriebene Konsolenfehler'
+    'mitgeschriebene Konsolenfehler',
   ).toBeGreaterThan(0)
 })

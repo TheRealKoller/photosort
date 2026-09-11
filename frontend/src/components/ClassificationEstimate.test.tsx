@@ -161,7 +161,7 @@ describe('ClassificationEstimate: Schätzcharakter', () => {
           landmark: { candidate_count: 0, estimated_cost_usd: 0 },
           estimated_cost_usd: 0,
         })}
-      />
+      />,
     )
 
     expect(block()).toHaveTextContent(/alle fotos bereits klassifiziert/i)
@@ -176,7 +176,7 @@ describe('ClassificationEstimate: Schätzcharakter', () => {
           landmark: { candidate_count: null, estimated_cost_usd: null },
           estimated_cost_usd: 0,
         })}
-      />
+      />,
     )
 
     expect(block()).not.toHaveTextContent(/alle fotos bereits klassifiziert/i)

@@ -3,10 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
-import {
-  PROJECT_NAV_PRIMARY_TARGETS,
-  PROJECT_NAV_SECONDARY_TARGETS,
-} from '../utils/projectRoutes'
+import { PROJECT_NAV_PRIMARY_TARGETS, PROJECT_NAV_SECONDARY_TARGETS } from '../utils/projectRoutes'
 import { ProjectNav } from './ProjectNav'
 
 /**
@@ -53,7 +50,7 @@ function renderNav(initialPath = '/projects/1/photos') {
     <MemoryRouter initialEntries={[initialPath]}>
       <ProjectNav projectId="1" />
       <LocationProbe />
-    </MemoryRouter>
+    </MemoryRouter>,
   )
   return { user }
 }
@@ -97,7 +94,7 @@ describe('ProjectNav - Leiste', () => {
     const links = within(bar()).getAllByRole('link')
     expect(links).toHaveLength(PRIMARY_TARGETS.length)
     expect(links.map((link) => link.textContent)).toEqual(
-      PRIMARY_TARGETS.map((target) => target.label)
+      PRIMARY_TARGETS.map((target) => target.label),
     )
     links.forEach((link, index) => {
       expect(link).toHaveAttribute('href', PRIMARY_TARGETS[index].href)
@@ -114,7 +111,7 @@ describe('ProjectNav - Leiste', () => {
       renderNav()
 
       expect(within(bar()).queryByRole('link', { name: label })).not.toBeInTheDocument()
-    }
+    },
   )
 
   it('nutzt den sichtbaren Text als zugaenglichen Namen, ohne zusaetzliches aria-label (AK11b)', () => {
@@ -153,7 +150,7 @@ describe('ProjectNav - Leiste', () => {
       const links = within(bar()).getAllByRole('link')
       expect(links).toHaveLength(PRIMARY_TARGETS.length)
       expect(links.filter((link) => link.hasAttribute('aria-current'))).toEqual([])
-    }
+    },
   )
 
   it('zeichnet das aktive Ziel nicht allein farblich aus (AK8c)', () => {
@@ -180,7 +177,7 @@ describe('ProjectNav - Ausloeser des Nebenbereichs', () => {
     expect(trigger().textContent).toBe('')
     expect(trigger().querySelector('[data-icon="chevron-down"]')).toHaveAttribute(
       'aria-hidden',
-      'true'
+      'true',
     )
   })
 
@@ -219,7 +216,7 @@ describe('ProjectNav - Ausloeser des Nebenbereichs', () => {
        */
       expect(trigger().className).toMatch(/(^|\s)border(\s|$)/)
       expect(trigger().className).toContain('border-accent')
-    }
+    },
   )
 
   /*
@@ -279,7 +276,7 @@ describe('ProjectNav - Panel des Nebenbereichs', () => {
     // nur die zwei Nebenziele" liegt ausschliesslich im E2E-Spec.
     const links = within(panel).getAllByRole('link')
     expect(links.map((link) => link.textContent)).toEqual(
-      PANEL_TARGETS.map((target) => target.label)
+      PANEL_TARGETS.map((target) => target.label),
     )
     links.forEach((link, index) => {
       expect(link).toHaveAttribute('href', PANEL_TARGETS[index].href)
@@ -307,7 +304,7 @@ describe('ProjectNav - Panel des Nebenbereichs', () => {
     expect(panel.contains(block!), 'der Block liegt innerhalb des Panels').toBe(true)
     for (const row of secondaryRows) {
       expect(block!.contains(row), `Nebenzeile "${row.textContent}" ausserhalb des Blocks`).toBe(
-        false
+        false,
       )
     }
   })
@@ -318,17 +315,20 @@ describe('ProjectNav - Panel des Nebenbereichs', () => {
     // specs/features/0347 (AK6): /stats ist als Positivfall zurueck - beim blossen Streichen aus
     // der frueheren "kein Ziel aktiv"-Tabelle waere die Zusage lautlos verschwunden.
     ['/projects/1/stats', 'Statistik'],
-  ])('markiert im Panel auf %s genau "%s" (AK6, je Darstellung eingegrenzt)', async (path, label) => {
-    const { user } = renderNav(path)
+  ])(
+    'markiert im Panel auf %s genau "%s" (AK6, je Darstellung eingegrenzt)',
+    async (path, label) => {
+      const { user } = renderNav(path)
 
-    const panel = await openPanel(user)
+      const panel = await openPanel(user)
 
-    const marked = within(panel)
-      .getAllByRole('link')
-      .filter((link) => link.getAttribute('aria-current') === 'page')
-    expect(marked).toHaveLength(1)
-    expect(marked[0]).toHaveAccessibleName(label)
-  })
+      const marked = within(panel)
+        .getAllByRole('link')
+        .filter((link) => link.getAttribute('aria-current') === 'page')
+      expect(marked).toHaveLength(1)
+      expect(marked[0]).toHaveAccessibleName(label)
+    },
+  )
 
   it('markiert im Panel auf /projects/1/curate kein Ziel (AK6, Edge Case 1)', async () => {
     const { user } = renderNav('/projects/1/curate')
@@ -338,25 +338,28 @@ describe('ProjectNav - Panel des Nebenbereichs', () => {
     expect(
       within(panel)
         .getAllByRole('link')
-        .filter((link) => link.hasAttribute('aria-current'))
+        .filter((link) => link.hasAttribute('aria-current')),
     ).toEqual([])
   })
 
   it.each([
     ['Statistik', '/projects/1/stats'],
     ['Vergleich', '/projects/1/compare'],
-  ])('navigiert bei Auswahl von "%s" UND schliesst das Panel (AK7)', async (label, expectedPath) => {
-    const { user } = renderNav('/projects/1/photos')
+  ])(
+    'navigiert bei Auswahl von "%s" UND schliesst das Panel (AK7)',
+    async (label, expectedPath) => {
+      const { user } = renderNav('/projects/1/photos')
 
-    const panel = await openPanel(user)
-    await user.click(within(panel).getByRole('link', { name: label }))
+      const panel = await openPanel(user)
+      await user.click(within(panel).getByRole('link', { name: label }))
 
-    // BEIDE Haelften sind noetig: nur "Panel weg" bestuende auch, wenn das onClick die
-    // Navigation verschluckte. Auf Fokuszusagen baut dieser Fall bewusst nicht auf - Radix gibt
-    // den Fokus beim Schliessen zurueck, waehrend gleichzeitig die Route wechselt.
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(screen.getByTestId('pathname')).toHaveTextContent(expectedPath)
-  })
+      // BEIDE Haelften sind noetig: nur "Panel weg" bestuende auch, wenn das onClick die
+      // Navigation verschluckte. Auf Fokuszusagen baut dieser Fall bewusst nicht auf - Radix gibt
+      // den Fokus beim Schliessen zurueck, waehrend gleichzeitig die Route wechselt.
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(screen.getByTestId('pathname')).toHaveTextContent(expectedPath)
+    },
+  )
 
   it('bleibt auch bei geoeffnetem Panel genau EIN navigation-Landmark "Projektbereiche" (AK3b)', async () => {
     const { user } = renderNav()
@@ -373,10 +376,16 @@ describe('ProjectNav - eine Zieltabelle', () => {
 
     const panel = await openPanel(user)
 
-    expect(within(bar()).getAllByRole('link').map((link) => link.textContent)).toEqual(
-      PROJECT_NAV_PRIMARY_TARGETS.map((target) => target.label)
-    )
-    expect(within(panel).getAllByRole('link').map((link) => link.textContent)).toEqual([
+    expect(
+      within(bar())
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(PROJECT_NAV_PRIMARY_TARGETS.map((target) => target.label))
+    expect(
+      within(panel)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual([
       ...PROJECT_NAV_PRIMARY_TARGETS.map((target) => target.label),
       ...PROJECT_NAV_SECONDARY_TARGETS.map((target) => target.label),
     ])

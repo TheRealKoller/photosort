@@ -151,9 +151,7 @@ async def _assert_exactly_one_primary_row_per_photo(
     assert all(count == 1 for count in primaries.values()), primaries
 
 
-async def _assert_positions_are_gapless(
-    session: AsyncSession, run: CriterionScoringRun
-) -> None:
+async def _assert_positions_are_gapless(session: AsyncSession, run: CriterionScoringRun) -> None:
     """`rank_position` ist in JEDER beruehrten Partition lueckenlos `1..n` und doppelungsfrei
     (Akzeptanzkriterium 7) - Haupt- und Nebenzeilen werden in EINEM Durchgang sortiert."""
     rows = (
@@ -212,9 +210,7 @@ async def test_an_unchanged_target_set_still_reranks_but_changes_nothing(
 
     assert len(calls) == 1
     ranking = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
-        )
+        await db_session.execute(select(PhotoRanking).where(PhotoRanking.photo_id == photo.id))
     ).scalar_one()
     assert ranking.id == before.id
     assert ranking.category_key == "people"

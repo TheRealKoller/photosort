@@ -15,7 +15,7 @@ function setup(initialStatus: ProcessStatus | null, initialStartedAt: string | n
   const hook = renderHook(
     ({ status, startedAt }: { status: ProcessStatus | null; startedAt: string | null }) =>
       useTriggerConfirmation(status, startedAt, refetch),
-    { initialProps: { status: initialStatus, startedAt: initialStartedAt } }
+    { initialProps: { status: initialStatus, startedAt: initialStartedAt } },
   )
   return { ...hook, refetch }
 }
@@ -54,7 +54,7 @@ describe('useTriggerConfirmation', () => {
       rerender({ status: 'success', startedAt: '2026-07-20T10:00:01Z' })
 
       expect(result.current[0]).toBe(false)
-    }
+    },
   )
 
   it(
@@ -71,7 +71,7 @@ describe('useTriggerConfirmation', () => {
       rerender({ status: 'failed', startedAt: staleStartedAt })
 
       expect(result.current[0]).toBe(true)
-    }
+    },
   )
 
   it('polls via refetch every POLL_INTERVAL_MS while awaiting stays true', () => {

@@ -137,33 +137,46 @@ class TestAnthropicUsageFromResponse:
         assert caplog.records[0].levelno == logging.WARNING
 
     def test_missing_single_field_yields_none_instead_of_raising(self) -> None:
-        assert anthropic_usage_from_response(
-            {"usage": {"input_tokens": 10}}, ANTHROPIC_VISION_MODEL
-        ) is None
+        assert (
+            anthropic_usage_from_response({"usage": {"input_tokens": 10}}, ANTHROPIC_VISION_MODEL)
+            is None
+        )
 
     def test_wrong_field_type_yields_none_instead_of_raising(self) -> None:
-        assert anthropic_usage_from_response(
-            {"usage": {"input_tokens": "viele", "output_tokens": 3}}, ANTHROPIC_VISION_MODEL
-        ) is None
+        assert (
+            anthropic_usage_from_response(
+                {"usage": {"input_tokens": "viele", "output_tokens": 3}}, ANTHROPIC_VISION_MODEL
+            )
+            is None
+        )
 
     def test_null_field_yields_none_instead_of_raising(self) -> None:
-        assert anthropic_usage_from_response(
-            {"usage": {"input_tokens": None, "output_tokens": 3}}, ANTHROPIC_VISION_MODEL
-        ) is None
+        assert (
+            anthropic_usage_from_response(
+                {"usage": {"input_tokens": None, "output_tokens": 3}}, ANTHROPIC_VISION_MODEL
+            )
+            is None
+        )
 
     def test_boolean_token_count_yields_none(self) -> None:
         """`isinstance(True, int)` ist in Python wahr - ohne eigenen Waechter wuerde `true` still
         als ein Token gezaehlt und als plausibler Abrechnungsbeleg ausgewiesen."""
-        assert anthropic_usage_from_response(
-            {"usage": {"input_tokens": True, "output_tokens": 3}}, ANTHROPIC_VISION_MODEL
-        ) is None
+        assert (
+            anthropic_usage_from_response(
+                {"usage": {"input_tokens": True, "output_tokens": 3}}, ANTHROPIC_VISION_MODEL
+            )
+            is None
+        )
 
     def test_negative_token_count_yields_none(self) -> None:
         """Eine negative Tokenzahl wuerde die Laufsumme (und damit den Betrag) VERKLEINERN - eine
         stille Untererfassung auf einer Seite zur Kostenkontrolle."""
-        assert anthropic_usage_from_response(
-            {"usage": {"input_tokens": 10, "output_tokens": -1}}, ANTHROPIC_VISION_MODEL
-        ) is None
+        assert (
+            anthropic_usage_from_response(
+                {"usage": {"input_tokens": 10, "output_tokens": -1}}, ANTHROPIC_VISION_MODEL
+            )
+            is None
+        )
 
     def test_usage_block_of_wrong_shape_yields_none(self) -> None:
         assert anthropic_usage_from_response({"usage": "keine-map"}, ANTHROPIC_VISION_MODEL) is None
@@ -174,9 +187,12 @@ class TestAnthropicUsageFromResponse:
     def test_does_not_accept_the_mistral_field_names(self) -> None:
         """Kreuz-Test (Teststrategie der Spec): die Feldnamen unterscheiden sich zwischen den
         Providern - ein versehentlich vertauschter Extraktor liefert sonst still 0 Tokens."""
-        assert anthropic_usage_from_response(
-            {"usage": {"prompt_tokens": 10, "completion_tokens": 20}}, ANTHROPIC_VISION_MODEL
-        ) is None
+        assert (
+            anthropic_usage_from_response(
+                {"usage": {"prompt_tokens": 10, "completion_tokens": 20}}, ANTHROPIC_VISION_MODEL
+            )
+            is None
+        )
 
 
 class TestMistralUsageFromResponse:
@@ -197,14 +213,20 @@ class TestMistralUsageFromResponse:
         assert len(caplog.records) == 1
 
     def test_wrong_field_type_yields_none_instead_of_raising(self) -> None:
-        assert mistral_usage_from_response(
-            {"usage": {"prompt_tokens": {}, "completion_tokens": 1}}, MISTRAL_VISION_MODEL
-        ) is None
+        assert (
+            mistral_usage_from_response(
+                {"usage": {"prompt_tokens": {}, "completion_tokens": 1}}, MISTRAL_VISION_MODEL
+            )
+            is None
+        )
 
     def test_does_not_accept_the_anthropic_field_names(self) -> None:
-        assert mistral_usage_from_response(
-            {"usage": {"input_tokens": 10, "output_tokens": 20}}, MISTRAL_VISION_MODEL
-        ) is None
+        assert (
+            mistral_usage_from_response(
+                {"usage": {"input_tokens": 10, "output_tokens": 20}}, MISTRAL_VISION_MODEL
+            )
+            is None
+        )
 
 
 class TestUsageWarningLeaksNothing:
@@ -1058,8 +1080,7 @@ class TestWaitBudgetStaysUnderTheStallThreshold:
 
     def test_the_caps_are_internally_consistent(self) -> None:
         assert (
-            cloud_vision.VISION_MAX_SINGLE_WAIT_SECONDS
-            <= cloud_vision.VISION_RETRY_BUDGET_SECONDS
+            cloud_vision.VISION_MAX_SINGLE_WAIT_SECONDS <= cloud_vision.VISION_RETRY_BUDGET_SECONDS
         )
         assert cloud_vision.VISION_MAX_RATE_LIMIT_ATTEMPTS >= 1
         assert cloud_vision.VISION_INITIAL_RETRY_WAIT_SECONDS > 0

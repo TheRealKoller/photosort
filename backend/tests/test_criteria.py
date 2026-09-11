@@ -552,9 +552,7 @@ class TestComputeGebaeudeScore:
 
     def test_allow_listed_label_exactly_at_the_old_threshold_still_hits(self) -> None:
         # Grenzfall exakt AUF der alten Schwelle bleibt inklusiv (`>=`), wie bisher.
-        assert compute_gebaeude_score(
-            [SceneLabel(category="church", confidence=0.5)]
-        ) == 0.5
+        assert compute_gebaeude_score([SceneLabel(category="church", confidence=0.5)]) == 0.5
 
     def test_a_weak_allow_listed_label_does_not_mask_a_strong_one(self) -> None:
         labels = [
@@ -689,9 +687,7 @@ class TestIsLandmarkCandidate:
         landschaft_threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
         assert landschaft_threshold is not None
         assert is_landmark_candidate({"landschaft": 0.0, "gebaeude": 0.0}) is False
-        assert (
-            is_landmark_candidate({"landschaft": landschaft_threshold, "gebaeude": 0.0}) is True
-        )
+        assert is_landmark_candidate({"landschaft": landschaft_threshold, "gebaeude": 0.0}) is True
 
     def test_a_photo_with_only_a_high_content_landscape_value_is_no_longer_a_candidate(
         self,

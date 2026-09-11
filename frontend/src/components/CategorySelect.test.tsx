@@ -14,7 +14,7 @@ import { CategorySelect } from './CategorySelect'
 
 function renderSelect(props: Partial<Parameters<typeof CategorySelect>[0]> = {}) {
   return render(
-    <CategorySelect categories={CATEGORY_SET} value={null} onSelect={vi.fn()} {...props} />
+    <CategorySelect categories={CATEGORY_SET} value={null} onSelect={vi.fn()} {...props} />,
   )
 }
 
@@ -56,7 +56,7 @@ describe('CategorySelect: Platzhalter und leeres Set', () => {
     expect(
       within(screen.getByLabelText('Alle Kategorien')).getByRole('option', {
         name: 'wird geladen…',
-      })
+      }),
     ).toBeInTheDocument()
   })
 

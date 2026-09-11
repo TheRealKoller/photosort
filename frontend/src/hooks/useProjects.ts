@@ -190,7 +190,6 @@ export function useFineLabelsQuery(id: number) {
   })
 }
 
-
 /**
  * Wie lange das Ergebnis der Statistikseite als frisch gilt (specs/features/0207-projekt-
  * statistikseite.md, Security-Abschnitt Punkt 3). Zusammen mit `refetchOnWindowFocus: false` die

@@ -19,7 +19,7 @@ setup('anmelden und Sitzungszustand speichern', async ({ page }) => {
 
   const token = await page.evaluate(
     (schluessel) => window.localStorage.getItem(schluessel),
-    TOKEN_STORAGE_KEY
+    TOKEN_STORAGE_KEY,
   )
   // Ohne diese Zusicherung koennte ein leerer storageState gespeichert werden und jeder
   // Folge-Spec liefe still abgemeldet gegen die Login-Weiterleitung.

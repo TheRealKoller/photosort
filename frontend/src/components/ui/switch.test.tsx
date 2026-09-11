@@ -22,7 +22,7 @@ describe('Switch', () => {
 
     expect(screen.getByRole('switch', { name: 'Testschalter' })).toHaveAttribute(
       'aria-checked',
-      'true'
+      'true',
     )
   })
 
@@ -45,7 +45,7 @@ describe('Switch', () => {
         onCheckedChange={onCheckedChange}
         disabled
         aria-label="Testschalter"
-      />
+      />,
     )
 
     await user.click(screen.getByRole('switch', { name: 'Testschalter' }))
@@ -65,7 +65,7 @@ describe('Switch', () => {
         aria-label="Testschalter"
         type="submit"
         aria-checked="false"
-      />
+      />,
     )
 
     const toggle = screen.getByRole('switch', { name: 'Testschalter' })
@@ -91,7 +91,7 @@ describe('Switch', () => {
   // sonst waere "ein"/"aus" ohne Farbwahrnehmung nicht unterscheidbar.
   it('carries the state through the knob position, not through colour alone', () => {
     const { rerender } = render(
-      <Switch checked={false} onCheckedChange={vi.fn()} aria-label="Testschalter" />
+      <Switch checked={false} onCheckedChange={vi.fn()} aria-label="Testschalter" />,
     )
     const knob = () => screen.getByRole('switch', { name: 'Testschalter' }).querySelector('span')!
     const off = knob().className

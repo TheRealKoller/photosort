@@ -60,16 +60,12 @@ async def collect_photo_cache_keys(
     if not project_ids:
         return []
     rows = (
-        await session.execute(
-            select(Photo.id, Photo.etag).where(Photo.project_id.in_(project_ids))
-        )
+        await session.execute(select(Photo.id, Photo.etag).where(Photo.project_id.in_(project_ids)))
     ).all()
     return [(photo_id, etag) for photo_id, etag in rows]
 
 
-async def delete_projects(
-    session: AsyncSession, project_ids: Sequence[int]
-) -> dict[str, int]:
+async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> dict[str, int]:
     """Loescht die uebergebenen Projekte samt aller an ihnen haengenden Zeilen.
 
     Weder `commit()` noch `flush()` - die Transaktionsgrenze gehoert dem Aufrufer (der Endpunkt

@@ -23,7 +23,10 @@ export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>
   return (
     <div
       aria-hidden="true"
-      className={cn('animate-pulse motion-reduce:animate-none rounded-md bg-text-disabled', className)}
+      className={cn(
+        'animate-pulse motion-reduce:animate-none rounded-md bg-text-disabled',
+        className,
+      )}
       {...props}
     />
   )

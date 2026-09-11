@@ -41,9 +41,7 @@ class _FakeWalkClient:
 
 
 async def test_count_images_up_to_limit_counts_only_image_extensions() -> None:
-    async def walk(
-        webdav_url: str, root_path: str
-    ) -> AsyncIterator[tuple[str, DavEntry]]:
+    async def walk(webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
         yield "CostaRica/img1.jpg", _entry("img1.jpg")
         yield "CostaRica/notes.txt", _entry("notes.txt")
         yield "CostaRica/img2.HEIC", _entry("img2.HEIC")
@@ -63,9 +61,7 @@ async def test_count_images_up_to_limit_stops_consuming_once_limit_reached() -> 
     # verfuegbar waeren.
     consumed = 0
 
-    async def walk(
-        webdav_url: str, root_path: str
-    ) -> AsyncIterator[tuple[str, DavEntry]]:
+    async def walk(webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
         nonlocal consumed
         for i in range(1000):
             consumed += 1
@@ -81,9 +77,7 @@ async def test_count_images_up_to_limit_stops_consuming_once_limit_reached() -> 
 
 
 async def test_count_images_up_to_limit_exactly_499_images_is_not_at_limit() -> None:
-    async def walk(
-        webdav_url: str, root_path: str
-    ) -> AsyncIterator[tuple[str, DavEntry]]:
+    async def walk(webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
         for i in range(499):
             yield f"CostaRica/img{i:04d}.jpg", _entry(f"img{i:04d}.jpg")
 
@@ -98,9 +92,7 @@ async def test_count_images_up_to_limit_exactly_499_images_is_not_at_limit() -> 
 
 
 async def test_count_images_up_to_limit_exactly_500_images_is_at_limit() -> None:
-    async def walk(
-        webdav_url: str, root_path: str
-    ) -> AsyncIterator[tuple[str, DavEntry]]:
+    async def walk(webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
         for i in range(500):
             yield f"CostaRica/img{i:04d}.jpg", _entry(f"img{i:04d}.jpg")
 
@@ -117,9 +109,7 @@ async def test_count_images_up_to_limit_exactly_500_images_is_at_limit() -> None
 async def test_count_images_up_to_limit_real_empty_folder_returns_zero_not_at_limit() -> None:
     # Echter Leerordner - separat getestet von "nur Nicht-Bild-Dateien" (unterschiedliche
     # Ursache, siehe Akzeptanzkriterium).
-    async def walk(
-        webdav_url: str, root_path: str
-    ) -> AsyncIterator[tuple[str, DavEntry]]:
+    async def walk(webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
         return
         yield  # pragma: no cover - macht die Funktion zu einem Async-Generator
 
@@ -135,9 +125,7 @@ async def test_count_images_up_to_limit_folder_with_only_non_images_returns_zero
     None
 ):
     # Ordner mit ausschliesslich Nicht-Bild-Dateien - separat getestet vom echten Leerordner oben.
-    async def walk(
-        webdav_url: str, root_path: str
-    ) -> AsyncIterator[tuple[str, DavEntry]]:
+    async def walk(webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
         yield "CostaRica/notes.txt", _entry("notes.txt")
         yield "CostaRica/video.mp4", _entry("video.mp4")
 
@@ -225,9 +213,7 @@ async def test_count_images_up_to_limit_preserves_cycle_protection_of_walk() -> 
     # "Sub"-Referenz in derselben Listing-Antwort.
     calls: list[str] = []
 
-    async def fake_list_folder(
-        webdav_url: str, path: str = "", depth: str = "1"
-    ) -> list[DavEntry]:
+    async def fake_list_folder(webdav_url: str, path: str = "", depth: str = "1") -> list[DavEntry]:
         calls.append(path)
         if path == "CostaRica":
             return [_entry("Sub", is_collection=True), _entry("Sub", is_collection=True)]
@@ -279,9 +265,7 @@ class FakeCountClient:
             raise self._list_folder_fail
         return self._entries
 
-    async def walk(
-        self, webdav_url: str, root_path: str
-    ) -> AsyncIterator[tuple[str, DavEntry]]:
+    async def walk(self, webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
         self._active_walks += 1
         self.max_concurrent_walks = max(self.max_concurrent_walks, self._active_walks)
         try:

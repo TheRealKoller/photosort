@@ -19,7 +19,7 @@ describe('useCategoryOverrideControls', () => {
     vi.mocked(photosApi.setCategoryOverride).mockReturnValue(
       new Promise((resolve) => {
         resolveMutation = () => resolve({ photo_id: 1, category_key: 'hund' })
-      })
+      }),
     )
 
     const { result } = renderHook(() => useCategoryOverrideControls(1), { wrapper })
@@ -41,7 +41,7 @@ describe('useCategoryOverrideControls', () => {
     vi.mocked(photosApi.deleteCategoryOverride).mockReturnValue(
       new Promise((resolve) => {
         resolveMutation = () => resolve(undefined)
-      })
+      }),
     )
 
     const { result } = renderHook(() => useCategoryOverrideControls(1), { wrapper })

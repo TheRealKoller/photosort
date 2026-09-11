@@ -57,9 +57,7 @@ export function ClassificationBalance({ run }: ClassificationBalanceProps) {
         // Fall (C): Altlauf ohne erfasste Bilanz, oder eine zwischen Auslösen und Start entzogene
         // Einwilligung. Eine ehrliche Aussage statt erfundener Zahlen - es ist nicht nachholbar
         // und heilt mit dem nächsten Lauf.
-        <p className="text-sm text-text">
-          Für diesen Durchlauf wurde keine Cloud-Bilanz erfasst.
-        </p>
+        <p className="text-sm text-text">Für diesen Durchlauf wurde keine Cloud-Bilanz erfasst.</p>
       ) : (
         // Fall (B): bewusst KEIN Fehler-Styling und keine leere Tabelle - ein rein lokaler
         // Durchlauf ist ein gewünschtes Ergebnis.
@@ -80,8 +78,8 @@ function CloudPhaseRow({ phase }: { phase: CloudPhaseSummaryOut }) {
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <span className="text-sm text-text-h">{PHASE_LABELS[phase.purpose]}</span>
         <span className="text-xs text-text-muted">
-          {countOrDash(phase.photos_total)} Fotos gesendet ·{' '}
-          {countOrDash(phase.responses_used)} Antworten verwertet
+          {countOrDash(phase.photos_total)} Fotos gesendet · {countOrDash(phase.responses_used)}{' '}
+          Antworten verwertet
         </span>
       </div>
       <p className="text-xs text-text-muted">
@@ -89,9 +87,8 @@ function CloudPhaseRow({ phase }: { phase: CloudPhaseSummaryOut }) {
         {phase.cost_usd === null ? 'kein Preis hinterlegt' : formatUsd(phase.cost_usd)}
         {/* Grundlage des Betrags: Modell und abgerechneter Tokenverbrauch - reine Textknoten,
             nie HTML. Ohne sie stünde der Betrag unerklärt da. */}
-        {phase.model !== null && ` · Modell ${phase.model}`} ·{' '}
-        {countOrDash(phase.input_tokens)} Eingabe-/{countOrDash(phase.output_tokens)}{' '}
-        Ausgabe-Tokens
+        {phase.model !== null && ` · Modell ${phase.model}`} · {countOrDash(phase.input_tokens)}{' '}
+        Eingabe-/{countOrDash(phase.output_tokens)} Ausgabe-Tokens
       </p>
     </div>
   )

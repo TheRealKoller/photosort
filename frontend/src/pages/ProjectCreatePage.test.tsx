@@ -46,7 +46,7 @@ function renderPage() {
         <Route path="/projects/:id" element={<ProjectDetailStub />} />
       </Routes>
     </MemoryRouter>,
-    { wrapper }
+    { wrapper },
   )
 }
 
@@ -92,7 +92,7 @@ describe('ProjectCreatePage', () => {
       expect(projectsApi.createProject).toHaveBeenCalledWith({
         name: 'Costa Rica',
         opencloud_path: 'Sub',
-      })
+      }),
     )
     expect(await screen.findByText('Projekt-Detail-Seite')).toBeInTheDocument()
   })
@@ -102,7 +102,7 @@ describe('ProjectCreatePage', () => {
     vi.mocked(projectsApi.createProject).mockReturnValue(
       new Promise((resolve) => {
         resolveCreate = resolve
-      })
+      }),
     )
     const user = userEvent.setup()
 
@@ -121,7 +121,7 @@ describe('ProjectCreatePage', () => {
 
   it('shows the backend detail and keeps the form on a 409 name conflict without redirecting', async () => {
     vi.mocked(projectsApi.createProject).mockRejectedValue(
-      new ApiError(409, "Projekt 'Costa Rica' existiert bereits.")
+      new ApiError(409, "Projekt 'Costa Rica' existiert bereits."),
     )
     const user = userEvent.setup()
 
@@ -131,7 +131,7 @@ describe('ProjectCreatePage', () => {
     await user.click(screen.getByRole('button', { name: /projekt anlegen/i }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      "Projekt 'Costa Rica' existiert bereits."
+      "Projekt 'Costa Rica' existiert bereits.",
     )
     expect(screen.getByLabelText(/name/i)).toHaveValue('Costa Rica')
     expect(screen.queryByText('Projekt-Detail-Seite')).not.toBeInTheDocument()
@@ -139,7 +139,7 @@ describe('ProjectCreatePage', () => {
 
   it('shows the backend detail and keeps the form editable on a 400 invalid-folder error', async () => {
     vi.mocked(projectsApi.createProject).mockRejectedValue(
-      new ApiError(400, 'Ordner nicht gefunden')
+      new ApiError(400, 'Ordner nicht gefunden'),
     )
     const user = userEvent.setup()
 
@@ -162,7 +162,7 @@ describe('ProjectCreatePage', () => {
     await user.type(screen.getByLabelText(/name/i), 'Costa Rica')
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /projekt anlegen/i })).toBeDisabled()
+      expect(screen.getByRole('button', { name: /projekt anlegen/i })).toBeDisabled(),
     )
   })
 

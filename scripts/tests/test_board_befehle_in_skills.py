@@ -42,9 +42,7 @@ PROJEKT_OWNER = "TheRealKoller"
 # Operationskatalog (`.claude/skills/github-access/SKILL.md`) als Vorlage stehen. `Todo` ist seit
 # ADR 0057 keine Option des Felds `Status` mehr und deshalb hier nicht aufgefuehrt.
 ERLAUBTE_WERTE: dict[str, frozenset[str]] = {
-    "Status": frozenset(
-        {"Unrefined", "Ready", "In Progress", "Review", "Done", "<Wert>"}
-    ),
+    "Status": frozenset({"Unrefined", "Ready", "In Progress", "Review", "Done", "<Wert>"}),
     "Priorität": frozenset({"Hoch", "Mittel", "Niedrig", "<Hoch|Mittel|Niedrig>"}),
 }
 
@@ -324,7 +322,7 @@ def test_eine_erwaehnung_im_fliesstext_gilt_nicht_als_aufruf() -> None:
         '$ gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"',
         '`gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"`',
         '- gh project item-edit 8 --owner TheRealKoller --field "Status" --value "Ready"',
-        '- `status-review`: `gh project item-edit 8 --owner TheRealKoller '
+        "- `status-review`: `gh project item-edit 8 --owner TheRealKoller "
         '--field "Status" --value "Ready"`',
     ],
 )

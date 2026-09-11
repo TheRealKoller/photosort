@@ -25,7 +25,7 @@ describe('Badge', () => {
     render(
       <Badge tone="rejected" suggested>
         ⚙✕
-      </Badge>
+      </Badge>,
     )
 
     expect(screen.getByText('⚙✕')).toHaveAttribute('data-badge-variant', 'suggested')
@@ -38,7 +38,7 @@ describe('Badge', () => {
     render(
       <Badge tone="rejected" suggested>
         ⚙✕
-      </Badge>
+      </Badge>,
     )
     const suggested = screen.getByText('⚙✕').className
 
@@ -67,7 +67,7 @@ describe('Badge', () => {
     render(
       <Badge tone="rejected" suggested>
         ⚙✕
-      </Badge>
+      </Badge>,
     )
 
     const className = screen.getByText('⚙✕').className
@@ -91,11 +91,14 @@ describe('Badge', () => {
     ['favorite', '★'],
     ['album-worthy', '✓'],
     ['rejected', '✕'],
-  ] as const)('pairs the solid %s tone with its own calibrated foreground token', (tone, symbol) => {
-    render(<Badge tone={tone}>{symbol}</Badge>)
+  ] as const)(
+    'pairs the solid %s tone with its own calibrated foreground token',
+    (tone, symbol) => {
+      render(<Badge tone={tone}>{symbol}</Badge>)
 
-    const className = screen.getByText(symbol).className
-    expect(className).toContain(`bg-rating-${tone}`)
-    expect(className).toContain(`text-rating-${tone}-fg`)
-  })
+      const className = screen.getByText(symbol).className
+      expect(className).toContain(`bg-rating-${tone}`)
+      expect(className).toContain(`text-rating-${tone}-fg`)
+    },
+  )
 })

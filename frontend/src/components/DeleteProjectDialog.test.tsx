@@ -54,7 +54,7 @@ function renderDialog(props: { projectId?: number; projectName?: string } = {}) 
       projectId={props.projectId ?? 1}
       projectName={props.projectName ?? PROJECT_NAME}
     />,
-    { wrapper: Wrapper }
+    { wrapper: Wrapper },
   )
   return { onClose, queryClient }
 }
@@ -164,7 +164,7 @@ describe('DeleteProjectDialog', () => {
     vi.mocked(projectsApi.deleteProject).mockReturnValue(
       new Promise<void>((resolve) => {
         resolveDelete = resolve
-      })
+      }),
     )
     const { onClose } = renderDialog()
 
@@ -191,7 +191,7 @@ describe('DeleteProjectDialog', () => {
   it('keeps field and button usable after a 409 and repeats on a second click', async () => {
     const user = userEvent.setup()
     vi.mocked(projectsApi.deleteProject).mockRejectedValue(
-      new ApiError(409, 'Für dieses Projekt läuft gerade ein Vorgang.')
+      new ApiError(409, 'Für dieses Projekt läuft gerade ein Vorgang.'),
     )
     renderDialog()
 
@@ -232,7 +232,7 @@ describe('DeleteProjectDialog', () => {
   it('locks the dialog after a 404 without navigating on its own', async () => {
     const user = userEvent.setup()
     vi.mocked(projectsApi.deleteProject).mockRejectedValue(
-      new ApiError(404, 'Projekt nicht gefunden.')
+      new ApiError(404, 'Projekt nicht gefunden.'),
     )
     const { onClose } = renderDialog()
 
@@ -258,7 +258,7 @@ describe('DeleteProjectDialog', () => {
   it('takes the same way out of a 404 via Escape', async () => {
     const user = userEvent.setup()
     vi.mocked(projectsApi.deleteProject).mockRejectedValue(
-      new ApiError(404, 'Projekt nicht gefunden.')
+      new ApiError(404, 'Projekt nicht gefunden.'),
     )
     const { onClose } = renderDialog()
 

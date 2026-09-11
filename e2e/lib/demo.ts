@@ -44,7 +44,10 @@ export async function demoProjectId(page: Page, projectName: string): Promise<nu
 
   const href = await link.getAttribute('href')
   const match = /^\/projects\/(\d+)$/.exec(href ?? '')
-  expect(match, `Projektlink "${projectName}" zeigt auf /projects/<id>, gefunden: ${href}`).not.toBeNull()
+  expect(
+    match,
+    `Projektlink "${projectName}" zeigt auf /projects/<id>, gefunden: ${href}`,
+  ).not.toBeNull()
   return Number(match?.[1])
 }
 

@@ -196,7 +196,7 @@ export function Dialog({
       // Verwerfen, das hier ausgeschlossen ist.
       className={cn(
         'm-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-border bg-overlay p-6 text-text',
-        'backdrop:bg-black/60'
+        'backdrop:bg-black/60',
       )}
     >
       <div className="flex flex-col gap-6">

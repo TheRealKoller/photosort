@@ -25,7 +25,7 @@ describe('Icon', () => {
         'star',
         'tag',
         'x-circle',
-      ].sort()
+      ].sort(),
     )
   })
 

@@ -173,9 +173,7 @@ def test_existing_rows_keep_null_in_every_new_column(tmp_path: Path) -> None:
                 )
             ).one()
             remote_row = connection.execute(
-                text(
-                    "SELECT failed_calls FROM remote_category_classification_runs WHERE id = 1"
-                )
+                text("SELECT failed_calls FROM remote_category_classification_runs WHERE id = 1")
             ).one()
     finally:
         engine.dispose()
@@ -220,9 +218,7 @@ def test_downgrade_removes_every_new_column_and_the_foreign_key(tmp_path: Path) 
             _apply_downgrade(connection)
 
         inspector = inspect(engine)
-        criterion_columns = {
-            col["name"] for col in inspector.get_columns("criterion_scoring_runs")
-        }
+        criterion_columns = {col["name"] for col in inspector.get_columns("criterion_scoring_runs")}
         remote_columns = {
             col["name"] for col in inspector.get_columns("remote_category_classification_runs")
         }

@@ -137,8 +137,7 @@ class OpenCloudClient:
             # payload selbst ist kein JSON-Objekt (z.B. ein Array/String an oberster Ebene) -
             # .get() existiert dann nicht.
             raise OpenCloudError(
-                "Unerwartete Antwortstruktur der Graph-API-Space-Liste "
-                "(GET /graph/v1.0/me/drives)."
+                "Unerwartete Antwortstruktur der Graph-API-Space-Liste (GET /graph/v1.0/me/drives)."
             ) from exc
         if not isinstance(raw_drives, list):
             # "value" ist zwar vorhanden, aber kein Array (z.B. explizit null oder eine Zahl) -
@@ -198,9 +197,7 @@ class OpenCloudClient:
         target_path = unquote(urlparse(target_url).path).rstrip("/")
         return [entry for entry in entries if unquote(entry.href).rstrip("/") != target_path]
 
-    async def walk(
-        self, webdav_url: str, root_path: str
-    ) -> AsyncIterator[tuple[str, DavEntry]]:
+    async def walk(self, webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
         # Zyklenschutz (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
         # ohne dieses Set wuerde ein (hypothetischer) Zyklus in der WebDAV-Verzeichnisstruktur
         # (ein Kind-Ordner-Eintrag verweist auf einen bereits besuchten Pfad) denselben Pfad

@@ -51,7 +51,7 @@ import { POLL_INTERVAL_MS } from './useProjects'
 export function useTriggerConfirmation(
   status: ProcessStatus | null,
   startedAt: string | null,
-  refetch: () => unknown
+  refetch: () => unknown,
 ): [boolean, (value: boolean) => void] {
   const [awaiting, setAwaiting] = useState(false)
 

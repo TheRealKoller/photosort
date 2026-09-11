@@ -53,7 +53,7 @@ describe('api/photos', () => {
     await listPhotos(1, { ratingStatus: 'unrated', limit: 30, offset: 60 })
 
     expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/photos?rating_status=unrated&limit=30&offset=60'
+      '/projects/1/photos?rating_status=unrated&limit=30&offset=60',
     )
   })
 
@@ -77,7 +77,7 @@ describe('api/photos', () => {
     })
 
     expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/curation-candidates?cluster_key=cluster-0&category_key=landschaft&after_rank=10&limit=60&offset=60'
+      '/projects/1/curation-candidates?cluster_key=cluster-0&category_key=landschaft&after_rank=10&limit=60&offset=60',
     )
     expect(result).toEqual(PHOTO_LIST)
   })
@@ -92,7 +92,7 @@ describe('api/photos', () => {
     })
 
     expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/curation-candidates?cluster_key=cluster+0%26x%3D1&category_key=a%2Fb&after_rank=0'
+      '/projects/1/curation-candidates?cluster_key=cluster+0%26x%3D1&category_key=a%2Fb&after_rank=0',
     )
   })
 

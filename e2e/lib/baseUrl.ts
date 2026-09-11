@@ -28,7 +28,7 @@ export function resolveBaseUrl(raw: string | undefined): string {
     parsed = new URL(raw)
   } catch {
     throw new Error(
-      `${BASE_URL_ENV_VAR} ist keine gueltige URL. Erwartet: http://<localhost|127.0.0.1>:<port>.`
+      `${BASE_URL_ENV_VAR} ist keine gueltige URL. Erwartet: http://<localhost|127.0.0.1>:<port>.`,
     )
   }
   // Port explizit verlangt (gleicher Copilot-Review-Fund wie im Python-Pendant): "http://localhost"
@@ -37,7 +37,7 @@ export function resolveBaseUrl(raw: string | undefined): string {
     throw new Error(
       `${BASE_URL_ENV_VAR} zeigt nicht auf einen lokalen Pruefstack. Erwartet: ` +
         'http://<localhost|127.0.0.1>:<port>, Port explizit angegeben. Abbruch, um nicht ' +
-        'versehentlich gegen eine echte Instanz zu laufen.'
+        'versehentlich gegen eine echte Instanz zu laufen.',
     )
   }
   return parsed.origin

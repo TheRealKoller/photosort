@@ -177,7 +177,7 @@ export function CriterionDetailsPopover({
             // (specs/features/0320-dark-utility-register.md): der Trigger liegt auf dem Bild, ein
             // Kreis grenzt sich dort von jeder rechteckigen Bildstruktur ab.
             'shrink-0 rounded-full border border-border-control bg-bg/85 backdrop-blur-sm',
-            className
+            className,
           )}
         >
           i

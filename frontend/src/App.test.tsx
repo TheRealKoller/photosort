@@ -95,7 +95,7 @@ function renderApp(initialEntries: string[] = ['/']) {
     <MemoryRouter initialEntries={initialEntries}>
       <App />
     </MemoryRouter>,
-    { wrapper }
+    { wrapper },
   )
 }
 
@@ -229,12 +229,9 @@ describe('App', () => {
     renderApp(['/projects/1/settings'])
 
     expect(screen.getByText('PhotoSort')).toBeInTheDocument()
-    expect(
-      await screen.findByRole('heading', { name: 'Projekteinstellungen' })
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Projekteinstellungen' })).toBeInTheDocument()
   })
 })
-
 
 /*
  * specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK1-AK4, AK8): Die Kopfzeile traegt
@@ -314,10 +311,11 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     async (path) => {
       renderApp([path])
 
-      const links = within(await screen.findByRole('navigation', { name: 'Projektbereiche' }))
-        .getAllByRole('link')
+      const links = within(
+        await screen.findByRole('navigation', { name: 'Projektbereiche' }),
+      ).getAllByRole('link')
       expect(links.map((link) => link.textContent)).toEqual(
-        PRIMARY_TARGETS.map((target) => target.label)
+        PRIMARY_TARGETS.map((target) => target.label),
       )
       links.forEach((link, index) => {
         expect(link).toHaveAttribute('href', PRIMARY_TARGETS[index].href)
@@ -331,7 +329,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
       // Zweite Haelfte des Synchronitaets-Waechters: die Route ist real geroutet und nicht ueber
       // den Catch-all auf der Projektliste gelandet.
       expect(screen.queryByRole('heading', { name: 'Projekte' })).not.toBeInTheDocument()
-    }
+    },
   )
 
   /*
@@ -353,7 +351,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     await screen.findByRole('navigation', { name: 'Projektbereiche' })
     const links = within(group()).getAllByRole('link')
     expect(links.map((link) => link.textContent)).toEqual(
-      PRIMARY_TARGETS.map((target) => target.label)
+      PRIMARY_TARGETS.map((target) => target.label),
     )
     links.forEach((link, index) => {
       expect(link).toHaveAttribute('href', PRIMARY_TARGETS[index].href)
@@ -377,7 +375,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     // Kopfzeile nicht mehr vorkommen.
     expect(screen.queryByRole('link', { name: 'Projekt' })).not.toHaveAttribute(
       'href',
-      '/projects/1'
+      '/projects/1',
     )
   })
 
@@ -422,7 +420,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
       expect(links).toHaveLength(PRIMARY_TARGETS.length)
       expect(links.filter((link) => link.hasAttribute('aria-current'))).toEqual([])
       expect(trigger()).toHaveAttribute('aria-current', 'true')
-    }
+    },
   )
 
   it('zeigt die Gruppe auf /projects/1/curate vollstaendig, aber ohne jede Markierung (AK6/AK8b)', async () => {
@@ -457,7 +455,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     expect(document.querySelectorAll('a[href="/projects/1/stats"]')).toHaveLength(1)
     expect(screen.getByRole('link', { name: 'Statistik' })).toHaveAttribute(
       'href',
-      '/projects/1/stats'
+      '/projects/1/stats',
     )
   })
 
@@ -472,7 +470,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     for (const target of SECONDARY_TARGETS) {
       expect(within(panel).getByRole('link', { name: target.label })).toHaveAttribute(
         'href',
-        target.href
+        target.href,
       )
     }
   })
@@ -493,9 +491,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
    * wenig auftauchen wie die drei Hauptziele.
    */
   function expectNoGroup(): void {
-    expect(
-      screen.queryByRole('navigation', { name: 'Projektbereiche' })
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Projektbereiche' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Projektbereiche' })).not.toBeInTheDocument()
     for (const target of [...PRIMARY_TARGETS, ...SECONDARY_TARGETS]) {
       expect(screen.queryByRole('link', { name: target.label })).not.toBeInTheDocument()

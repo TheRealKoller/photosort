@@ -55,7 +55,7 @@ async function stickyElements(page: import('@playwright/test').Page): Promise<Re
       .map((element) => {
         const rect = element.getBoundingClientRect()
         return { y: rect.y, height: rect.height }
-      })
+      }),
   )
 }
 
@@ -89,9 +89,10 @@ test('Kopfzeile bleibt beim Scrollen am oberen Rand stehen', async ({ page }) =>
   // Erst jetzt die eigentliche Zusage.
   const headerBox = await header.boundingBox()
   expect(headerBox, 'Kopfzeile im gescrollten Zustand').not.toBeNull()
-  expect(Math.abs(headerBox!.y), 'Abstand der Kopfzeile zum oberen Viewport-Rand').toBeLessThanOrEqual(
-    TOP_TOLERANCE
-  )
+  expect(
+    Math.abs(headerBox!.y),
+    'Abstand der Kopfzeile zum oberen Viewport-Rand',
+  ).toBeLessThanOrEqual(TOP_TOLERANCE)
   expect(headerBox!.height, 'Hoehe der Kopfzeile').toBeGreaterThan(0)
   await expect(header).toBeVisible()
 
@@ -149,7 +150,7 @@ test('Stepper-Leiste und Kopfzeile stehen im gescrollten Zustand fugenlos untere
   // entfernt war. Ohne sticky-Verhalten waere sie damit zwingend aus dem Sichtbereich
   // herausgelaufen - genau das macht die folgenden Zusicherungen aussagekraeftig statt trivial.
   expect(scrollY, 'Scroll-Weg gegenueber der Ausgangsposition der Stepper-Leiste').toBeGreaterThan(
-    stepperBefore!.y
+    stepperBefore!.y,
   )
 
   const sticky = await stickyElements(page)
@@ -160,11 +161,11 @@ test('Stepper-Leiste und Kopfzeile stehen im gescrollten Zustand fugenlos untere
   for (const rect of sticky) {
     expect(rect.height, 'Hoehe eines sticky Elements').toBeGreaterThan(0)
     expect(rect.y, 'Oberkante eines sticky Elements liegt im Sichtbereich').toBeGreaterThanOrEqual(
-      -TOP_TOLERANCE
+      -TOP_TOLERANCE,
     )
     expect(
       rect.y + rect.height,
-      'Unterkante eines sticky Elements liegt im Sichtbereich'
+      'Unterkante eines sticky Elements liegt im Sichtbereich',
     ).toBeLessThanOrEqual(viewportHeight + TOP_TOLERANCE)
   }
 
@@ -189,12 +190,15 @@ test('Stepper-Leiste und Kopfzeile stehen im gescrollten Zustand fugenlos untere
   // 4. BEDIENBARKEIT als Treffertest.
   const bedienelemente: [string, Locator][] = [
     ['Abmelden', page.getByRole('button', { name: 'Abmelden' })],
-    ['Projektbereiche (Ausloeser der Projektnavigation)', page.getByRole('button', { name: 'Projektbereiche' })],
+    [
+      'Projektbereiche (Ausloeser der Projektnavigation)',
+      page.getByRole('button', { name: 'Projektbereiche' }),
+    ],
     ['erster Schritt der Leiste', page.getByRole('link', { name: /^Schritt 1 von 5: Scan/ })],
   ]
   for (const [name, control] of bedienelemente) {
     expect(await trefferInDerMitte(control), `Treffer in der Mitte von "${name}"`).toBe(
-      'Bedienelement'
+      'Bedienelement',
     )
   }
 
@@ -208,7 +212,7 @@ test('Stepper-Leiste und Kopfzeile stehen im gescrollten Zustand fugenlos untere
     expect(zeile, 'Kasten der Orientierungszeile').not.toBeNull()
     expect(
       zeile!.y + zeile!.height,
-      'Unterkante der Orientierungszeile liegt oberhalb des Sichtbereichs'
+      'Unterkante der Orientierungszeile liegt oberhalb des Sichtbereichs',
     ).toBeLessThanOrEqual(0)
   }
 })

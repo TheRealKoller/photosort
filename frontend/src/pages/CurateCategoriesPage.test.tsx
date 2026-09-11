@@ -187,15 +187,18 @@ function renderPage(initialPath = '/projects/1/curate?topN=3') {
   // `queryClient` wird mit zurueckgegeben (Erweiterung fuer Spec 0043): einzelne Tests loesen
   // damit gezielt einen Refetch aus (`queryClient.invalidateQueries(...)`), ohne denselben Pfad
   // wie eine echte Verwerfen-Mutation ueber die UI nachstellen zu muessen.
-  return { ...render(
-    <MemoryRouter initialEntries={[initialPath]}>
-      <Routes>
-        <Route path="/projects/:projectId" element={<p>Projekt-Detailseite</p>} />
-        <Route path="/projects/:projectId/curate" element={<CurateCategoriesPage />} />
-      </Routes>
-    </MemoryRouter>,
-    { wrapper }
-  ), queryClient }
+  return {
+    ...render(
+      <MemoryRouter initialEntries={[initialPath]}>
+        <Routes>
+          <Route path="/projects/:projectId" element={<p>Projekt-Detailseite</p>} />
+          <Route path="/projects/:projectId/curate" element={<CurateCategoriesPage />} />
+        </Routes>
+      </MemoryRouter>,
+      { wrapper },
+    ),
+    queryClient,
+  }
 }
 
 describe('CurateCategoriesPage', () => {
@@ -210,7 +213,7 @@ describe('CurateCategoriesPage', () => {
         media: '(hover: hover) and (pointer: fine)',
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
-      })
+      }),
     )
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
@@ -227,7 +230,7 @@ describe('CurateCategoriesPage', () => {
     renderPage('/projects/1/curate?topN=5')
 
     await waitFor(() =>
-      expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { topNPerCategory: 5 })
+      expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { topNPerCategory: 5 }),
     )
   })
 
@@ -239,14 +242,17 @@ describe('CurateCategoriesPage', () => {
     await waitFor(() =>
       // Die Konstante wird importiert, nicht abgeschrieben - den Zahlwert bindet GENAU EIN
       // Testfall, und der steht in utils/curationTopN.test.ts (Spec 0357, AK 3).
-      expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { topNPerCategory: DEFAULT_TOP_N })
+      expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { topNPerCategory: DEFAULT_TOP_N }),
     )
   })
 
   it('groups photos by day, then cluster, then category, showing day/cluster headings and the category chip/name', async () => {
     const list: PhotoListOut = {
       items: [
-        photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })] }),
+        photo({
+          id: 1,
+          rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
+        }),
         photo({ id: 2, rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })] }),
       ],
       total: 2,
@@ -291,7 +297,7 @@ describe('CurateCategoriesPage', () => {
     // exakte Gleichheit des rohen h2-textContent.
     const headings = await screen.findAllByRole('heading', { level: 2 })
     const dayLabels = headings.map(
-      (heading) => heading.textContent?.match(/(Montag|Dienstag) \d{2}\.\d{2}\.\d{4}/)?.[0]
+      (heading) => heading.textContent?.match(/(Montag|Dienstag) \d{2}\.\d{2}\.\d{4}/)?.[0],
     )
     expect(dayLabels).toEqual(['Montag 20.07.2026', 'Dienstag 21.07.2026'])
   })
@@ -324,7 +330,7 @@ describe('CurateCategoriesPage', () => {
         'Vormittags (09:00 Uhr)',
         'Nachmittags (14:00 Uhr)',
       ])
-    }
+    },
   )
 
   it(
@@ -352,7 +358,7 @@ describe('CurateCategoriesPage', () => {
 
       expect(await screen.findByText('Montag 20.07.2026')).toBeInTheDocument()
       expect(screen.getByText('Nachts (23:50–00:10 Uhr)')).toBeInTheDocument()
-    }
+    },
   )
 
   it('shows an empty-pool placeholder when a category has fewer than N photos', async () => {
@@ -389,7 +395,7 @@ describe('CurateCategoriesPage', () => {
     renderPage()
 
     expect(
-      await screen.findByText(/noch keine kategorie-kuratierung verfügbar/i)
+      await screen.findByText(/noch keine kategorie-kuratierung verfügbar/i),
     ).toBeInTheDocument()
   })
 
@@ -427,7 +433,7 @@ describe('CurateCategoriesPage', () => {
 
     expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'rejected')
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Verworfen: a.jpg' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Verworfen: a.jpg' })).toBeInTheDocument(),
     )
     expect(screen.getByText('a.jpg')).toBeInTheDocument()
   })
@@ -495,7 +501,7 @@ describe('CurateCategoriesPage', () => {
       expect(screen.getByText('Landscape')).toBeInTheDocument()
       expect(screen.getByText('Kein weiteres Foto verfügbar')).toBeInTheDocument()
       expect(screen.queryByText('Keine Fotos für diesen Tag')).not.toBeInTheDocument()
-    }
+    },
   )
 
   it(
@@ -564,7 +570,7 @@ describe('CurateCategoriesPage', () => {
       expect(screen.getByText('People')).toBeInTheDocument()
       expect(screen.getByText('Kein weiteres Foto verfügbar')).toBeInTheDocument()
       expect(screen.queryByText('Keine Fotos in dieser Tageszeit')).not.toBeInTheDocument()
-    }
+    },
   )
 
   it(
@@ -639,7 +645,7 @@ describe('CurateCategoriesPage', () => {
         'Vormittags (09:00 Uhr)',
         'Nachmittags (14:00 Uhr)',
       ])
-    }
+    },
   )
 
   it('shows a quality meter derived from rank_score', async () => {
@@ -685,7 +691,7 @@ describe('CurateCategoriesPage', () => {
       renderPage()
 
       expect(
-        await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
+        await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' }),
       ).toBeInTheDocument()
     })
 
@@ -699,7 +705,7 @@ describe('CurateCategoriesPage', () => {
 
       await screen.findAllByRole('listitem')
       expect(
-        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' })
+        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' }),
       ).not.toBeInTheDocument()
     })
   })
@@ -709,8 +715,14 @@ describe('CurateCategoriesPage', () => {
     function twoCategoryDayList(): PhotoListOut {
       return {
         items: [
-          photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })] }),
-          photo({ id: 2, rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })] }),
+          photo({
+            id: 1,
+            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
+          }),
+          photo({
+            id: 2,
+            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })],
+          }),
         ],
         total: 2,
       }
@@ -761,7 +773,7 @@ describe('CurateCategoriesPage', () => {
 
         expect(mondayTrigger).toHaveAttribute('aria-expanded', 'false')
         expect(screen.getByRole('button', { name: 'Montag 20.07.2026 (2 Fotos)' })).toBe(
-          mondayTrigger
+          mondayTrigger,
         )
         // Teilbaum ist nicht nur CSS-versteckt, sondern per conditional JSX gar nicht gerendert.
         expect(screen.queryByText('Vormittags (10:00 Uhr)')).not.toBeInTheDocument()
@@ -769,7 +781,7 @@ describe('CurateCategoriesPage', () => {
         // Der andere Tag bleibt unveraendert aufgeklappt.
         expect(tuesdayTrigger).toHaveAttribute('aria-expanded', 'true')
         expect(screen.getByText('Nachmittags (14:00 Uhr)')).toBeInTheDocument()
-      }
+      },
     )
 
     it(
@@ -793,7 +805,9 @@ describe('CurateCategoriesPage', () => {
         const rejectButton = await screen.findByRole('button', { name: 'Verwerfen: a.jpg' })
         await user.click(rejectButton)
         await waitFor(() =>
-          expect(screen.queryByRole('button', { name: 'Verwerfen: a.jpg' })).not.toBeInTheDocument()
+          expect(
+            screen.queryByRole('button', { name: 'Verwerfen: a.jpg' }),
+          ).not.toBeInTheDocument(),
         )
         expect(screen.getByText('Keine Fotos für diesen Tag')).toBeInTheDocument()
 
@@ -801,9 +815,11 @@ describe('CurateCategoriesPage', () => {
         await user.click(trigger)
 
         expect(trigger).toHaveAttribute('aria-expanded', 'false')
-        expect(screen.getByRole('button', { name: 'Montag 20.07.2026 (0 Fotos)' })).toBeInTheDocument()
+        expect(
+          screen.getByRole('button', { name: 'Montag 20.07.2026 (0 Fotos)' }),
+        ).toBeInTheDocument()
         expect(screen.queryByText('Keine Fotos für diesen Tag')).not.toBeInTheDocument()
-      }
+      },
     )
 
     it(
@@ -820,7 +836,7 @@ describe('CurateCategoriesPage', () => {
         expect(trigger).toHaveAttribute('aria-expanded', 'true')
         // eslint-disable-next-line testing-library/no-node-access -- Verifiziert die aria-controls-Verknuepfung selbst per ID-Lookup, kein Ersatz fuer eine Rollen-Query.
         expect(document.getElementById(controlsId as string)).not.toBeNull()
-      }
+      },
     )
 
     it(
@@ -840,7 +856,7 @@ describe('CurateCategoriesPage', () => {
 
         await user.click(expandAll)
         expect(dayTrigger).toHaveAttribute('aria-expanded', 'true')
-      }
+      },
     )
 
     it(
@@ -870,7 +886,7 @@ describe('CurateCategoriesPage', () => {
         await user.click(screen.getByRole('button', { name: 'Alle Tage zuklappen' }))
         expect(screen.getByRole('button', { name: /Montag 20\.07\.2026/ })).toHaveAttribute(
           'aria-expanded',
-          'false'
+          'false',
         )
 
         // Der neue Tag "erscheint" ueber denselben Invalidierungs-/Refetch-Pfad, den auch eine
@@ -886,13 +902,13 @@ describe('CurateCategoriesPage', () => {
 
         expect(screen.getByRole('button', { name: /Montag 20\.07\.2026/ })).toHaveAttribute(
           'aria-expanded',
-          'false'
+          'false',
         )
         expect(screen.getByRole('button', { name: 'Dienstag 21.07.2026' })).toHaveAttribute(
           'aria-expanded',
-          'true'
+          'true',
         )
-      }
+      },
     )
 
     it(
@@ -908,7 +924,7 @@ describe('CurateCategoriesPage', () => {
           .mockReturnValueOnce(
             new Promise((resolve) => {
               resolveRefetch = resolve
-            })
+            }),
           )
         vi.mocked(ratingsApi.setRating).mockResolvedValue({
           user_id: 1,
@@ -931,13 +947,14 @@ describe('CurateCategoriesPage', () => {
 
         await waitFor(() =>
           expect(
-            screen.getByRole('button', { name: 'Montag 20.07.2026 (0 Fotos)' })
-          ).toBeInTheDocument()
+            screen.getByRole('button', { name: 'Montag 20.07.2026 (0 Fotos)' }),
+          ).toBeInTheDocument(),
         )
-        expect(
-          screen.getByRole('button', { name: 'Montag 20.07.2026 (0 Fotos)' })
-        ).toHaveAttribute('aria-expanded', 'false')
-      }
+        expect(screen.getByRole('button', { name: 'Montag 20.07.2026 (0 Fotos)' })).toHaveAttribute(
+          'aria-expanded',
+          'false',
+        )
+      },
     )
 
     it(
@@ -953,7 +970,7 @@ describe('CurateCategoriesPage', () => {
           .mockReturnValueOnce(
             new Promise((resolve) => {
               resolveRefetch = resolve
-            })
+            }),
           )
         vi.mocked(ratingsApi.setRating).mockResolvedValue({
           user_id: 1,
@@ -975,16 +992,18 @@ describe('CurateCategoriesPage', () => {
         await user.click(trigger) // expand again, still pending
 
         resolveRefetch({
-          items: [photo({ id: 2, relative_path: 'b.jpg', rankings: [ranking({ rank_position: 2 })] })],
+          items: [
+            photo({ id: 2, relative_path: 'b.jpg', rankings: [ranking({ rank_position: 2 })] }),
+          ],
           total: 1,
         })
 
         await waitFor(() =>
-          expect(screen.getByRole('button', { name: 'Verwerfen: b.jpg' })).toBeInTheDocument()
+          expect(screen.getByRole('button', { name: 'Verwerfen: b.jpg' })).toBeInTheDocument(),
         )
         expect(screen.queryByRole('button', { name: 'Verwerfen: a.jpg' })).not.toBeInTheDocument()
         expect(screen.queryByTestId('button-spinner')).not.toBeInTheDocument()
-      }
+      },
     )
   })
 
@@ -1096,7 +1115,6 @@ describe('CurateCategoriesPage', () => {
   })
 })
 
-
 // specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterium 5
 describe('LOW_CONFIDENCE_THRESHOLD / filterLowConfidence', () => {
   it('haelt die Schwelle bei 60 %', () => {
@@ -1118,7 +1136,10 @@ describe('LOW_CONFIDENCE_THRESHOLD / filterLowConfidence', () => {
   it('verwirft Fotos OHNE Angabe', () => {
     // Produktentscheidung: ein Foto ohne Zahl ist keine unsichere Zuordnung, sondern eine
     // unbekannte - `null` darf nicht wie `0` behandelt werden.
-    const items = [photo({ id: 1, category_confidence: null }), photo({ id: 2, category_confidence: 0.1 })]
+    const items = [
+      photo({ id: 1, category_confidence: null }),
+      photo({ id: 2, category_confidence: 0.1 }),
+    ]
 
     expect(filterLowConfidence(items).map((p) => p.id)).toEqual([2])
   })
@@ -1141,7 +1162,7 @@ describe('CurateCategoriesPage: Filter "Nur unsichere Zuordnungen"', () => {
         media: '(hover: hover) and (pointer: fine)',
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
-      })
+      }),
     )
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
@@ -1272,7 +1293,7 @@ describe('CurateCategoriesPage — Nebenkategorien', () => {
         media: '(hover: hover) and (pointer: fine)',
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
-      })
+      }),
     )
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
@@ -1342,7 +1363,9 @@ describe('CurateCategoriesPage — Nebenkategorien', () => {
     const secondaryMarker = await screen.findByLabelText('Nebenkategorie')
     const container = secondaryMarker.parentElement
     expect(container).not.toBeNull()
-    expect(within(container as HTMLElement).getByLabelText('Kategorie manuell übersteuert')).toBeInTheDocument()
+    expect(
+      within(container as HTMLElement).getByLabelText('Kategorie manuell übersteuert'),
+    ).toBeInTheDocument()
     // Beide Kacheln des Fotos tragen den Uebersteuerungs-Marker, nur eine den Nebenkategorie-Marker.
     expect(screen.getAllByLabelText('Kategorie manuell übersteuert')).toHaveLength(2)
     expect(screen.getAllByLabelText('Nebenkategorie')).toHaveLength(1)
@@ -1435,7 +1458,7 @@ describe('candidateCountOfCategory / candidateCountOfCluster', () => {
       candidateCountOfCluster({
         landscape: [entry({ id: 1 }, { category_key: 'landscape', partition_size: 3 })],
         people: [entry({ id: 2 }, { category_key: 'people', partition_size: 2 })],
-      })
+      }),
     ).toBe(5)
   })
 
@@ -1446,7 +1469,7 @@ describe('candidateCountOfCategory / candidateCountOfCluster', () => {
       candidateCountOfCluster({
         landscape: [entry({ id: 1 }, { category_key: 'landscape', partition_size: 1 })],
         people: [entry({ id: 1 }, { category_key: 'people', partition_size: 1 })],
-      })
+      }),
     ).toBe(2)
   })
 
@@ -1455,7 +1478,7 @@ describe('candidateCountOfCategory / candidateCountOfCluster', () => {
       candidateCountOfCluster({
         landscape: [entry({ id: 1 }, { partition_size: 4 })],
         people: [],
-      })
+      }),
     ).toBe(4)
   })
 })
@@ -1480,7 +1503,7 @@ describe('CurateCategoriesPage — Mengenangaben', () => {
         media: '(hover: hover) and (pointer: fine)',
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
-      })
+      }),
     )
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
@@ -1590,7 +1613,7 @@ describe('CurateCategoriesPage — Mengenangaben', () => {
 
     const clusterHeading = screen.getByRole('heading', { level: 3 })
     expect(clusterHeading.textContent).toBe(
-      '<img src=x onerror="window.__pwned = true"> · Vormittags (10:00 Uhr)'
+      '<img src=x onerror="window.__pwned = true"> · Vormittags (10:00 Uhr)',
     )
     // Auf die Ueberschrift eingegrenzt: die Seite enthaelt legitime <img>-Kacheln, ein
     // dokumentweites querySelector('img') pruefte hier gar nichts.
@@ -1690,7 +1713,7 @@ describe('CurateCategoriesPage — Mengenangaben', () => {
     await user.click(await screen.findByRole('button', { name: 'Verwerfen: a.jpg' }))
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Verworfen: a.jpg' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Verworfen: a.jpg' })).toBeInTheDocument(),
     )
     expect(screen.getByText('(2 Kandidaten)')).toBeInTheDocument()
     expect(screen.getByText('Landscape').closest('h4')).toHaveTextContent('2 Kandidaten')
@@ -1731,7 +1754,10 @@ describe('CurateCategoriesPage — Mengenangaben', () => {
         ],
         total: 1,
       })
-    vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({ photo_id: 1, category_key: 'tier' })
+    vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
+      photo_id: 1,
+      category_key: 'tier',
+    })
 
     renderPage()
     await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
@@ -1755,7 +1781,7 @@ describe('CurateCategoriesPage — Verwerfen ohne Nachruecken', () => {
         media: '(hover: hover) and (pointer: fine)',
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
-      })
+      }),
     )
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
@@ -1829,7 +1855,7 @@ describe('CurateCategoriesPage — Verwerfen ohne Nachruecken', () => {
 
     await user.click(screen.getByRole('button', { name: 'Verwerfen: a.jpg' }))
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Verworfen: a.jpg' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Verworfen: a.jpg' })).toBeInTheDocument(),
     )
 
     expect(tileNames()).toEqual(before)
@@ -1924,7 +1950,7 @@ describe('CurateCategoriesPage — Verwerfen ohne Nachruecken', () => {
     await user.click(await screen.findByRole('button', { name: 'Verwerfen: a.jpg' }))
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Verwerfen: a.jpg' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Verwerfen: a.jpg' })).toBeEnabled(),
     )
   })
 
@@ -1956,7 +1982,7 @@ describe('CurateCategoriesPage — Verwerfen ohne Nachruecken', () => {
       () =>
         new Promise((resolve) => {
           pending.push(() => resolve({ user_id: 1, username: 'testuser', status: 'rejected' }))
-        })
+        }),
     )
 
     renderPage()
@@ -2034,7 +2060,7 @@ describe('CurateCategoriesPage — weitere Kandidaten einsehen', () => {
         media: '(hover: hover) and (pointer: fine)',
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
-      })
+      }),
     )
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.listCurationCandidates).mockReset()
@@ -2142,9 +2168,7 @@ describe('CurateCategoriesPage — weitere Kandidaten einsehen', () => {
     expect(expanded).toHaveAttribute('aria-expanded', 'true')
     const panelId = expanded.getAttribute('aria-controls')
     expect(panelId).not.toBeNull()
-    await waitFor(() =>
-      expect(document.getElementById(panelId as string)).toBeInTheDocument()
-    )
+    await waitFor(() => expect(document.getElementById(panelId as string)).toBeInTheDocument())
     expect(photosApi.listCurationCandidates).toHaveBeenCalledWith(1, {
       clusterKey: 'cluster-0',
       categoryKey: 'landscape',
@@ -2243,7 +2267,7 @@ describe('CurateCategoriesPage — weitere Kandidaten einsehen', () => {
     await user.click(await screen.findByRole('button', { name: 'Verwerfen: k2.jpg' }))
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Verworfen: k2.jpg' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Verworfen: k2.jpg' })).toBeInTheDocument(),
     )
 
     await user.click(screen.getByRole('button', { name: COLLAPSE }))

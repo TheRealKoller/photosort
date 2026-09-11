@@ -38,7 +38,7 @@ const EXPECTED_CONTROL_COUNT = 11
 async function assertTappable(
   control: Locator,
   label: string,
-  options: { ariaDisabled?: boolean } = {}
+  options: { ariaDisabled?: boolean } = {},
 ): Promise<void> {
   await expect(control, `Bedienelement "${label}"`).toBeVisible()
   if (options.ariaDisabled === true) {
@@ -48,7 +48,10 @@ async function assertTappable(
     // belegt der Treffertest unten selbst; mit `disabled` waere er es nicht, und der Sperrgrund
     // am Telefon unerreichbar. Beide Attribute werden geprueft, damit die Ausnahme nicht
     // versehentlich ein wirklich deaktiviertes Element durchwinkt.
-    await expect(control, `"${label}" traegt aria-disabled`).toHaveAttribute('aria-disabled', 'true')
+    await expect(control, `"${label}" traegt aria-disabled`).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     await expect(control, `"${label}" traegt kein disabled`).not.toHaveAttribute('disabled', /.*/)
   } else {
     // `disabled:pointer-events-none` im Button-Stil wuerde den Treffertest zwangslaeufig auf einen
@@ -85,12 +88,9 @@ async function assertTappable(
     })
   }, TAP_TARGET_SIZE)
 
-  expect(hits, `Treffer an den vier Ecken der ${TAP_TARGET_SIZE}px-Flaeche von "${label}"`).toEqual([
-    'Bedienelement',
-    'Bedienelement',
-    'Bedienelement',
-    'Bedienelement',
-  ])
+  expect(hits, `Treffer an den vier Ecken der ${TAP_TARGET_SIZE}px-Flaeche von "${label}"`).toEqual(
+    ['Bedienelement', 'Bedienelement', 'Bedienelement', 'Bedienelement'],
+  )
 }
 
 test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ page }) => {
@@ -163,7 +163,7 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   // Bewusst zusaetzlich geprueft: die Absetzung darf die Trefferflaeche nicht beschneiden.
   await assertTappable(
     navPanel.getByRole('link', { name: 'Statistik' }),
-    'Statistik (Panelzeile der Projekt-Navigation)'
+    'Statistik (Panelzeile der Projekt-Navigation)',
   )
   checked.push('Statistik (Panelzeile)')
 
@@ -189,7 +189,7 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
 
   await assertTappable(
     stepper.getByRole('link', { name: /^Schritt 1 von 5: Scan/ }),
-    'Schritt 1 der Schrittleiste (Randspalte)'
+    'Schritt 1 der Schrittleiste (Randspalte)',
   )
   checked.push('Schritt 1 der Schrittleiste')
 
@@ -201,6 +201,6 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   // Ohne diese Zusicherung bestuende der Spec auch dann, wenn keine der Lokalisierungen oben noch
   // etwas faende und jede Schleife ueber eine leere Menge liefe.
   expect(checked.length, 'Anzahl tatsaechlich gepruefter Bedienelemente').toBe(
-    EXPECTED_CONTROL_COUNT
+    EXPECTED_CONTROL_COUNT,
   )
 })

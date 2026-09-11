@@ -49,6 +49,7 @@ Revises: 5ab22032843c
 Create Date: 2026-09-09 10:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -56,17 +57,15 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a3b4c5d6e7f8'
-down_revision: Union[str, Sequence[str], None] = '5ab22032843c'
+revision: str = "a3b4c5d6e7f8"
+down_revision: Union[str, Sequence[str], None] = "5ab22032843c"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
     with op.batch_alter_table("photo_category_classifications") as batch_op:
-        batch_op.add_column(
-            sa.Column("detected_category_confidences", sa.JSON(), nullable=True)
-        )
+        batch_op.add_column(sa.Column("detected_category_confidences", sa.JSON(), nullable=True))
         batch_op.add_column(sa.Column("category_confidence", sa.Float(), nullable=True))
 
 

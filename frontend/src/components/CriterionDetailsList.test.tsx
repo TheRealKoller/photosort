@@ -10,10 +10,7 @@ import type {
   RankingOut,
   SuggestionOut,
 } from '../api/types'
-import {
-  CONFIDENCE_EXPLANATION,
-  CONFIDENCE_EXPLANATION_LABEL,
-} from '../utils/confidenceLabels'
+import { CONFIDENCE_EXPLANATION, CONFIDENCE_EXPLANATION_LABEL } from '../utils/confidenceLabels'
 import {
   CriterionDetailsList,
   hasCategoryControls,
@@ -33,7 +30,12 @@ const CATEGORIES: CategoryOut[] = [
     definition: 'd',
     locally_available: false,
   },
-  { key: 'nicht_erkannt', display_name: 'Nicht erkannt', definition: 'd', locally_available: false },
+  {
+    key: 'nicht_erkannt',
+    display_name: 'Nicht erkannt',
+    definition: 'd',
+    locally_available: false,
+  },
 ]
 
 function fineLabel(overrides: Partial<FineLabelOut> = {}): FineLabelOut {
@@ -110,7 +112,7 @@ describe('CriterionDetailsList', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     const dtTexts = screen.getAllByText(/Schärfe|Belichtung/).map((el) => el.textContent)
@@ -127,7 +129,7 @@ describe('CriterionDetailsList', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(screen.getByText('1%')).toBeInTheDocument()
@@ -140,7 +142,7 @@ describe('CriterionDetailsList', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(screen.queryByText('Belichtung')).not.toBeInTheDocument()
@@ -154,7 +156,7 @@ describe('CriterionDetailsList', () => {
         ranking={ranking({ category_key: 'landscape', rank_position: 2, partition_size: 5 })}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(screen.getByText('Landscape')).toBeInTheDocument()
@@ -169,7 +171,7 @@ describe('CriterionDetailsList', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(screen.queryByText(/^Rang /)).not.toBeInTheDocument()
@@ -183,7 +185,7 @@ describe('CriterionDetailsList', () => {
         ranking={null}
         suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(screen.getByText('Verworfen')).toBeInTheDocument()
@@ -198,7 +200,7 @@ describe('CriterionDetailsList', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(screen.queryByText('Duplikat von Foto #42')).not.toBeInTheDocument()
@@ -215,7 +217,7 @@ describe('CriterionDetailsList', () => {
         ranking={null}
         suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
         showSuggestion={false}
-      />
+      />,
     )
 
     expect(screen.queryByText('Duplikat von Foto #42')).not.toBeInTheDocument()
@@ -230,7 +232,7 @@ describe('CriterionDetailsList', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(container.querySelector('dl')).not.toBeNull()
@@ -276,7 +278,7 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     const quality = screen.getByRole('group', { name: 'Qualität' })
@@ -308,11 +310,13 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     const terms = (block: HTMLElement) =>
-      within(block).getAllByRole('term').map((el) => el.textContent)
+      within(block)
+        .getAllByRole('term')
+        .map((el) => el.textContent)
     const union = [
       ...terms(screen.getByRole('group', { name: 'Qualität' })),
       ...terms(screen.getByRole('group', { name: 'Kategorien' })),
@@ -336,19 +340,21 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     const quality = screen.getByRole('group', { name: 'Qualität' })
     const categories = screen.getByRole('group', { name: 'Kategorien' })
-    expect(within(quality).getAllByRole('term').map((el) => el.textContent)).toEqual([
-      'Schärfe',
-      'Belichtung',
-    ])
-    expect(within(categories).getAllByRole('term').map((el) => el.textContent)).toEqual([
-      'Menschen erkannt',
-      'Tier erkannt',
-    ])
+    expect(
+      within(quality)
+        .getAllByRole('term')
+        .map((el) => el.textContent),
+    ).toEqual(['Schärfe', 'Belichtung'])
+    expect(
+      within(categories)
+        .getAllByRole('term')
+        .map((el) => el.textContent),
+    ).toEqual(['Menschen erkannt', 'Tier erkannt'])
   })
 
   // Akzeptanzkriterium 9: unbekannter criterion_key (Backend-Fallback category_eligible=false)
@@ -363,14 +369,14 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(
-      within(screen.getByRole('group', { name: 'Qualität' })).getByText('future_criterion')
+      within(screen.getByRole('group', { name: 'Qualität' })).getByText('future_criterion'),
     ).toBeInTheDocument()
     expect(
-      within(screen.getByRole('group', { name: 'Kategorien' })).queryByText('future_criterion')
+      within(screen.getByRole('group', { name: 'Kategorien' })).queryByText('future_criterion'),
     ).not.toBeInTheDocument()
   })
 
@@ -383,7 +389,7 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(screen.queryByRole('heading', { name: 'Qualität', level: 3 })).not.toBeInTheDocument()
@@ -398,7 +404,7 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(screen.getByRole('heading', { name: 'Qualität', level: 3 })).toBeInTheDocument()
@@ -415,7 +421,7 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={ranking({ category_key: 'landscape', rank_position: 2, partition_size: 5 })}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     const categories = screen.getByRole('group', { name: 'Kategorien' })
@@ -439,7 +445,7 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ]}
         categoryOverride={null}
         onOverrideCategory={onOverrideCategory}
-      />
+      />,
     )
 
     const categories = screen.getByRole('group', { name: 'Kategorien' })
@@ -460,7 +466,7 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(screen.queryByRole('heading')).not.toBeInTheDocument()
@@ -478,7 +484,7 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={null}
         suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(screen.getByText('Duplikat von Foto #42')).toBeInTheDocument()
@@ -495,14 +501,14 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={null}
         suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
         showSuggestion={true}
-      />
+      />,
     )
 
     expect(
-      within(screen.getByRole('group', { name: 'Qualität' })).queryByText('Ausschuss-Vorschlag')
+      within(screen.getByRole('group', { name: 'Qualität' })).queryByText('Ausschuss-Vorschlag'),
     ).not.toBeInTheDocument()
     expect(
-      within(screen.getByRole('group', { name: 'Kategorien' })).queryByText('Ausschuss-Vorschlag')
+      within(screen.getByRole('group', { name: 'Kategorien' })).queryByText('Ausschuss-Vorschlag'),
     ).not.toBeInTheDocument()
     expect(screen.getByText('Ausschuss-Vorschlag')).toBeInTheDocument()
   })
@@ -523,7 +529,7 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={ranking()}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     // dt -> Zeilen-<div> -> <dl>: in beiden Bloecken identisch, keine Zwischenebene.
@@ -542,7 +548,7 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={true}
-      />
+      />,
     )
 
     for (const label of ['Qualität', 'Kategorien']) {
@@ -578,12 +584,10 @@ describe('CriterionDetailsList - Bloecke Qualität/Kategorien', () => {
           suggestion={null}
           showSuggestion={true}
         />
-      </>
+      </>,
     )
 
-    const ids = screen
-      .getAllByRole('group')
-      .map((block) => block.getAttribute('aria-labelledby'))
+    const ids = screen.getAllByRole('group').map((block) => block.getAttribute('aria-labelledby'))
     expect(ids).toHaveLength(4)
     expect(new Set(ids).size).toBe(4)
   })
@@ -601,7 +605,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
         suggestion={null}
         showSuggestion={true}
         categoryCandidates={[candidate({ category_key: 'hund' })]}
-      />
+      />,
     )
 
     expect(screen.getByText('Kategorie')).toBeInTheDocument()
@@ -620,7 +624,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
           candidate({ category_key: 'hund', origin: 'remote', provider: 'anthropic' }),
           candidate({ category_key: 'people', origin: 'local', provider: null }),
         ]}
-      />
+      />,
     )
 
     expect(screen.getByText('Kategorie-Kandidaten')).toBeInTheDocument()
@@ -648,7 +652,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
           candidate({ category_key: 'menschen' }),
           candidate({ category_key: 'tier' }),
         ]}
-      />
+      />,
     )
 
     const rows = screen.getAllByRole('listitem')
@@ -670,7 +674,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
           candidate({ category_key: 'tier' }),
           candidate({ category_key: 'menschen' }),
         ]}
-      />
+      />,
     )
 
     const row = screen.getByTestId('category-candidate-row-tier')
@@ -688,7 +692,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
           candidate({ category_key: 'hund', origin: 'remote', provider: 'anthropic' }),
           candidate({ category_key: 'people', origin: 'local', provider: null }),
         ]}
-      />
+      />,
     )
 
     expect(screen.getByText('Anthropic')).toBeInTheDocument()
@@ -707,7 +711,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
           candidate({ category_key: 'people' }),
         ]}
         categoryOverride={null}
-      />
+      />,
     )
 
     const currentRow = screen.getByTestId('category-candidate-row-hund')
@@ -727,7 +731,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
           candidate({ category_key: 'people' }),
         ]}
         categoryOverride="hund"
-      />
+      />,
     )
 
     const currentRow = screen.getByTestId('category-candidate-row-hund')
@@ -750,7 +754,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
         ]}
         categoryOverride={null}
         onOverrideCategory={onOverrideCategory}
-      />
+      />,
     )
 
     const otherRow = screen.getByTestId('category-candidate-row-people')
@@ -769,10 +773,13 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
         ranking={ranking({ category_key: 'hund' })}
         suggestion={null}
         showSuggestion={true}
-        categoryCandidates={[candidate({ category_key: 'hund' }), candidate({ category_key: 'people' })]}
+        categoryCandidates={[
+          candidate({ category_key: 'hund' }),
+          candidate({ category_key: 'people' }),
+        ]}
         categoryOverride="hund"
         onResetOverride={onResetOverride}
-      />
+      />,
     )
 
     await user.click(screen.getByRole('button', { name: /zurücksetzen/i }))
@@ -795,7 +802,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
           candidate({ category_key: 'hund', origin: 'remote' }),
         ]}
         categoryOverride="urlaub"
-      />
+      />,
     )
 
     const orphanRow = screen.getByTestId('category-candidate-row-urlaub')
@@ -818,7 +825,7 @@ describe('CriterionDetailsList - Kategorie-Kandidaten', () => {
         ]}
         categoryOverride={null}
         pendingOverrideKey="people"
-      />
+      />,
     )
 
     const pendingRow = screen.getByTestId('category-candidate-row-people')
@@ -844,7 +851,7 @@ describe('CriterionDetailsList: Alle-Kategorien-Auswahl', () => {
         categoryCandidates={[candidate({ category_key: 'tier' })]}
         onOverrideCategory={() => {}}
         {...props}
-      />
+      />,
     )
   }
 
@@ -942,7 +949,7 @@ describe('CriterionDetailsList: Alle-Kategorien-Auswahl', () => {
         suggestion={null}
         showSuggestion={true}
         categories={CATEGORIES}
-      />
+      />,
     )
 
     expect(screen.queryByLabelText('Alle Kategorien')).not.toBeInTheDocument()
@@ -959,7 +966,7 @@ describe('CriterionDetailsList: Feinlabel-Chips', () => {
         showSuggestion={true}
         categories={CATEGORIES}
         fineLabels={[fineLabel(), fineLabel({ canonical_key: 'bluete', display_name: 'Blüte' })]}
-      />
+      />,
     )
 
     const list = screen.getByRole('list', { name: 'Feinlabels' })
@@ -978,10 +985,12 @@ describe('CriterionDetailsList: Feinlabel-Chips', () => {
         showSuggestion={true}
         categories={CATEGORIES}
         fineLabels={[fineLabel()]}
-      />
+      />,
     )
 
-    expect(within(screen.getByRole('list', { name: 'Feinlabels' })).getByText('Urlaub')).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('list', { name: 'Feinlabels' })).getByText('Urlaub'),
+    ).toBeInTheDocument()
   })
 
   it('renders no placeholder at all without fine labels', () => {
@@ -993,7 +1002,7 @@ describe('CriterionDetailsList: Feinlabel-Chips', () => {
         showSuggestion={true}
         categories={CATEGORIES}
         fineLabels={[]}
-      />
+      />,
     )
 
     expect(screen.queryByRole('list', { name: 'Feinlabels' })).toBeNull()
@@ -1011,10 +1020,12 @@ describe('CriterionDetailsList: Feinlabel-Chips', () => {
         showSuggestion={true}
         categories={CATEGORIES}
         fineLabels={[fineLabel()]}
-      />
+      />,
     )
 
-    const chip = container.querySelector('[data-badge-tone="accent"][data-badge-variant="suggested"]')
+    const chip = container.querySelector(
+      '[data-badge-tone="accent"][data-badge-variant="suggested"]',
+    )
     expect(chip).toHaveTextContent('Urlaub')
   })
 
@@ -1033,14 +1044,13 @@ describe('CriterionDetailsList: Feinlabel-Chips', () => {
         fineLabels={[
           fineLabel({ display_name: '<img src=x onerror="alert(1)">', canonical_key: 'xss' }),
         ]}
-      />
+      />,
     )
 
     expect(container.querySelector('img')).toBeNull()
     expect(screen.getByText('<img src=x onerror="alert(1)">')).toBeInTheDocument()
   })
 })
-
 
 // specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterien 2/3/4/7
 describe('CriterionDetailsList: Modell-Konfidenz', () => {
@@ -1053,7 +1063,7 @@ describe('CriterionDetailsList: Modell-Konfidenz', () => {
         showSuggestion={false}
         categories={CATEGORIES}
         categoryCandidates={candidates}
-      />
+      />,
     )
   }
 
@@ -1064,10 +1074,10 @@ describe('CriterionDetailsList: Modell-Konfidenz', () => {
     ])
 
     expect(
-      within(screen.getByTestId('category-candidate-row-tier')).getByText('92%')
+      within(screen.getByTestId('category-candidate-row-tier')).getByText('92%'),
     ).toBeInTheDocument()
     expect(
-      within(screen.getByTestId('category-candidate-row-landschaft')).getByText('41%')
+      within(screen.getByTestId('category-candidate-row-landschaft')).getByText('41%'),
     ).toBeInTheDocument()
   })
 
@@ -1092,7 +1102,7 @@ describe('CriterionDetailsList: Modell-Konfidenz', () => {
     ])
 
     expect(
-      within(screen.getByTestId('category-candidate-row-tier')).getByText('0%')
+      within(screen.getByTestId('category-candidate-row-tier')).getByText('0%'),
     ).toBeInTheDocument()
   })
 
@@ -1103,10 +1113,10 @@ describe('CriterionDetailsList: Modell-Konfidenz', () => {
     ])
 
     expect(
-      within(screen.getByTestId('category-candidate-row-tier')).getByText('100%')
+      within(screen.getByTestId('category-candidate-row-tier')).getByText('100%'),
     ).toBeInTheDocument()
     expect(
-      within(screen.getByTestId('category-candidate-row-landschaft')).getByText('0%')
+      within(screen.getByTestId('category-candidate-row-landschaft')).getByText('0%'),
     ).toBeInTheDocument()
   })
 
@@ -1149,7 +1159,9 @@ describe('CriterionDetailsList: Modell-Konfidenz', () => {
     // Negativ-Assertion zu Akzeptanzkriterium 7: die drei Woerter duerfen ausschliesslich im
     // Hinweistext selbst vorkommen, der sie ausdruecklich ZURUECKNIMMT.
     const user = userEvent.setup()
-    const { container } = renderWithCandidates([candidate({ category_key: 'tier', confidence: 0.92 })])
+    const { container } = renderWithCandidates([
+      candidate({ category_key: 'tier', confidence: 0.92 }),
+    ])
 
     await user.click(screen.getByText(CONFIDENCE_EXPLANATION_LABEL))
     const text = (container.textContent ?? '').replace(CONFIDENCE_EXPLANATION, '')
@@ -1184,7 +1196,7 @@ describe('CriterionDetailsList — Rollen der Zugehoerigkeiten', () => {
         suggestion={null}
         showSuggestion={false}
         categories={CATEGORIES}
-      />
+      />,
     )
   }
 
@@ -1201,7 +1213,10 @@ describe('CriterionDetailsList — Rollen der Zugehoerigkeiten', () => {
 
   it('weist die Rolle AN DIESER STELLE aus (die gerenderte Zugehoerigkeit)', () => {
     const secondary = ranking({ category_key: 'menschen', is_primary: false })
-    renderWithMemberships([ranking({ category_key: 'tier', is_primary: true }), secondary], secondary)
+    renderWithMemberships(
+      [ranking({ category_key: 'tier', is_primary: true }), secondary],
+      secondary,
+    )
 
     const roleTerm = screen.getByText('Rolle')
     const row = roleTerm.parentElement
@@ -1233,7 +1248,7 @@ describe('CriterionDetailsList — Rollen der Zugehoerigkeiten', () => {
         suggestion={null}
         showSuggestion={false}
         categories={CATEGORIES}
-      />
+      />,
     )
 
     const section = screen.getByRole('list', { name: 'Kategorien dieses Fotos' })
@@ -1281,7 +1296,7 @@ function renderMaximalDetails(part?: CriterionDetailsPart) {
       categories={CATEGORIES}
       onOverrideCategory={vi.fn()}
       onResetOverride={vi.fn()}
-    />
+    />,
   )
 }
 
@@ -1327,7 +1342,7 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
         all: true,
         controls: part === 'controls',
         info: part === 'info',
-      }))
+      })),
     )
   })
 
@@ -1336,7 +1351,7 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
     const all = renderMaximalDetails('all').container
 
     expect(PART_PROBES.map(({ text }) => showsProbe(withoutPart, text))).toEqual(
-      PART_PROBES.map(({ text }) => showsProbe(all, text))
+      PART_PROBES.map(({ text }) => showsProbe(all, text)),
     )
   })
 
@@ -1359,7 +1374,7 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
         suggestion={null}
         showSuggestion={false}
         categories={CATEGORIES}
-      />
+      />,
     )
 
     const term = within(container).getByText('Kategorie')
@@ -1376,7 +1391,7 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
         suggestion={null}
         showSuggestion={false}
         categories={CATEGORIES}
-      />
+      />,
     ).container
     const info = render(
       <CriterionDetailsList
@@ -1386,7 +1401,7 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
         suggestion={null}
         showSuggestion={false}
         categories={CATEGORIES}
-      />
+      />,
     ).container
 
     expect(showsProbe(controls, 'Kategorie')).toBe(true)
@@ -1424,7 +1439,7 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={false}
-      />
+      />,
     ).container
     const emptyInfo = render(
       <CriterionDetailsList
@@ -1433,7 +1448,7 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={false}
-      />
+      />,
     ).container
 
     expect(emptyControls.firstChild).toBeNull()
@@ -1449,7 +1464,7 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
         ranking={null}
         suggestion={null}
         showSuggestion={false}
-      />
+      />,
     )
 
     expect(container.firstChild).not.toBeNull()
@@ -1475,7 +1490,7 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
           suggestion={null}
           showSuggestion={false}
           categories={CATEGORIES}
-        />
+        />,
       )
       const renders = container.firstChild !== null
       unmount()
@@ -1502,11 +1517,11 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
         suggestion={null}
         showSuggestion={false}
         categories={CATEGORIES}
-      />
+      />,
     )
 
     expect(
-      within(container).getByRole('heading', { name: 'Kategorien', level: 3 })
+      within(container).getByRole('heading', { name: 'Kategorien', level: 3 }),
     ).toBeInTheDocument()
     expect(within(container).getByText('Rang 2 von 5')).toBeInTheDocument()
   })
@@ -1520,11 +1535,11 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
         suggestion={null}
         showSuggestion={false}
         categories={CATEGORIES}
-      />
+      />,
     )
 
     expect(
-      within(container).getByRole('heading', { name: 'Qualität', level: 3 })
+      within(container).getByRole('heading', { name: 'Qualität', level: 3 }),
     ).toBeInTheDocument()
     expect(within(container).queryByRole('heading', { name: 'Kategorien' })).not.toBeInTheDocument()
   })
@@ -1538,7 +1553,7 @@ describe('CriterionDetailsList — Teilrendering über `part`', () => {
         suggestion={suggestion()}
         showSuggestion={true}
         categories={CATEGORIES}
-      />
+      />,
     ).container
 
     expect(showsProbe(controls, 'Ausschuss-Vorschlag')).toBe(false)
@@ -1570,7 +1585,7 @@ describe('CriterionDetailsList: Feinlabel-Sicherheit je Teilbereich', () => {
         showSuggestion={true}
         categories={CATEGORIES}
         fineLabels={[fineLabel({ display_name: XSS_PAYLOAD, canonical_key: 'xss' })]}
-      />
+      />,
     )
   }
 

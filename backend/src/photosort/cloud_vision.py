@@ -200,9 +200,7 @@ def anthropic_response_to_json(payload: Any, error_class: type[Exception]) -> An
     except (KeyError, TypeError, StopIteration, ValueError, json.JSONDecodeError) as exc:
         # Bewusst generische Meldung OHNE die rohe Antwort einzubetten (Sicherheits-Muss-
         # Kriterium: keine Base64-Bilddaten/kein Key in der Fehlermeldung).
-        raise error_class(
-            "Unerwartete Antwortstruktur der Anthropic Messages API."
-        ) from exc
+        raise error_class("Unerwartete Antwortstruktur der Anthropic Messages API.") from exc
 
 
 def mistral_response_to_json(payload: Any, error_class: type[Exception]) -> Any:
@@ -213,9 +211,7 @@ def mistral_response_to_json(payload: Any, error_class: type[Exception]) -> Any:
         text = payload["choices"][0]["message"]["content"]
         return json.loads(text)
     except (KeyError, TypeError, IndexError, ValueError, json.JSONDecodeError) as exc:
-        raise error_class(
-            "Unerwartete Antwortstruktur der Mistral Chat Completions API."
-        ) from exc
+        raise error_class("Unerwartete Antwortstruktur der Mistral Chat Completions API.") from exc
 
 
 # specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-

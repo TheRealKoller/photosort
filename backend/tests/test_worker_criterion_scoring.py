@@ -928,9 +928,7 @@ async def test_freiraum_criterion_is_written_when_a_face_is_detected(
 
     # Gesicht weit links im Bild, nach rechts (steigendes x) gedreht -> viel Freiraum in
     # Blickrichtung (looking_space = 1 - 0.15 = 0.85, opposite_space = 0.05).
-    stub = FaceLandmarkerStub(
-        landmarks=[(0.05, 0.1), (0.15, 0.3)], matrix=_rotation_matrix_y(20.0)
-    )
+    stub = FaceLandmarkerStub(landmarks=[(0.05, 0.1), (0.15, 0.3)], matrix=_rotation_matrix_y(20.0))
 
     await run_criterion_scoring(
         db_session,
@@ -1029,9 +1027,7 @@ async def test_freiraum_criterion_is_unaffected_by_a_failing_face_detector(
     await _add_score(db_session, photo, sharpness=100.0, exposure=0.0)
     _write_display_variant(tmp_path, photo, _flat_image())
 
-    stub = FaceLandmarkerStub(
-        landmarks=[(0.05, 0.1), (0.15, 0.3)], matrix=_rotation_matrix_y(20.0)
-    )
+    stub = FaceLandmarkerStub(landmarks=[(0.05, 0.1), (0.15, 0.3)], matrix=_rotation_matrix_y(20.0))
 
     run = await run_criterion_scoring(
         db_session,
@@ -1620,9 +1616,7 @@ async def test_every_written_category_key_belongs_to_the_fixed_set(
     Test ueber ALLE geschriebenen category_key-Werte, nicht ueber ein einzelnes Foto."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
-    await _add_photos_with_optional_animal_marker(
-        db_session, project, tmp_path, total=6, marked=3
-    )
+    await _add_photos_with_optional_animal_marker(db_session, project, tmp_path, total=6, marked=3)
 
     run = await run_criterion_scoring(
         db_session,
@@ -1639,10 +1633,14 @@ async def test_every_written_category_key_belongs_to_the_fixed_set(
     )
 
     rankings = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert rankings
     assert all(is_known_category(r.category_key) for r in rankings)
 
@@ -1655,9 +1653,7 @@ async def test_a_run_without_remote_classification_only_uses_the_local_six_or_th
     geschriebenen Werte eines Laufs, nicht ueber ein einzelnes Foto."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
-    await _add_photos_with_optional_animal_marker(
-        db_session, project, tmp_path, total=6, marked=3
-    )
+    await _add_photos_with_optional_animal_marker(db_session, project, tmp_path, total=6, marked=3)
 
     run = await run_criterion_scoring(
         db_session,
@@ -1674,10 +1670,14 @@ async def test_a_run_without_remote_classification_only_uses_the_local_six_or_th
     )
 
     rankings = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     locally_reachable = {
         "menschen",
         "tier",
@@ -1870,9 +1870,7 @@ class CancellingLandmarkClient:
     Regressionsnachweis, dass return_exceptions=True das CancelledError nicht verschluckt."""
 
     async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
-        raise asyncio.CancelledError(
-            "simulierter Abbruch waehrend eines parallelen Cloud-Aufrufs"
-        )
+        raise asyncio.CancelledError("simulierter Abbruch waehrend eines parallelen Cloud-Aufrufs")
 
 
 def _failing_landmark_client_builder(model: str) -> NoReturn:
@@ -2034,9 +2032,7 @@ async def test_landmark_detection_row_persists_the_configured_provider(
     await _add_score(db_session, photo)
     _write_display_variant(tmp_path, photo, _flat_image())
 
-    client = RecordingLandmarkClient(
-        detection=LandmarkDetection(name="Eiffelturm", confidence=0.9)
-    )
+    client = RecordingLandmarkClient(detection=LandmarkDetection(name="Eiffelturm", confidence=0.9))
 
     run = await run_criterion_scoring(
         db_session,
@@ -2741,10 +2737,12 @@ async def test_multiple_simultaneously_failing_landmark_calls_each_log_their_own
     assert client.calls == 3
     assert len(caplog.records) == 2
     messages = [record.message for record in caplog.records]
-    assert any(str(photo_a.id) in message and photo_a.relative_path in message
-               for message in messages)
-    assert any(str(photo_c.id) in message and photo_c.relative_path in message
-               for message in messages)
+    assert any(
+        str(photo_a.id) in message and photo_a.relative_path in message for message in messages
+    )
+    assert any(
+        str(photo_c.id) in message and photo_c.relative_path in message for message in messages
+    )
     assert not any(str(photo_b.id) in message for message in messages)
 
 
@@ -2797,9 +2795,7 @@ async def test_cancelled_error_from_a_parallel_landmark_call_propagates_and_fail
 # entfallen.
 
 
-async def _add_classification(
-    session: AsyncSession, photo: Photo, *categories: str
-) -> None:
+async def _add_classification(session: AsyncSession, photo: Photo, *categories: str) -> None:
     session.add(
         PhotoCategoryClassification(
             photo_id=photo.id,
@@ -2829,7 +2825,11 @@ async def _run_and_collect_categories(
     }
     kwargs.update(builders)
     run = await run_criterion_scoring(
-        db_session, project, scoring_run_id, cache_dir=tmp_path, **kwargs  # type: ignore[arg-type]
+        db_session,
+        project,
+        scoring_run_id,
+        cache_dir=tmp_path,
+        **kwargs,  # type: ignore[arg-type]
     )
     assert run.status == ScanStatus.SUCCESS
     # Ausdruecklich nur die HAUPTZEILEN (specs/features/0300-nebenkategorien.md): seit dem
@@ -2994,9 +2994,7 @@ async def test_the_origin_of_a_candidate_does_not_change_the_result(
         db_session, remote_project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
     )
     await _add_score(db_session, remote_photo)
-    _write_display_variant(
-        tmp_path, remote_photo, _textured_image_below_landscape_threshold()
-    )
+    _write_display_variant(tmp_path, remote_photo, _textured_image_below_landscape_threshold())
     await _add_classification(db_session, remote_photo, "tier")
 
     remote_result = await _run_and_collect_categories(
@@ -3578,9 +3576,7 @@ def _expected_cost(input_tokens: int, output_tokens: int) -> float:
 async def test_landmark_costs_are_summed_over_all_successful_calls(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    project, scoring_run, _photos = await _landmark_cost_setup(
-        db_session, tmp_path, photo_count=3
-    )
+    project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=3)
     client = PerPhotoLandmarkClient(
         [
             _detection_with_usage(1_000, 10),
@@ -3622,12 +3618,16 @@ async def test_a_partially_failing_landmark_phase_only_counts_the_successful_cal
     assert run.landmark_cost_usd == pytest.approx(_expected_cost(2_000, 20))
 
     errors = (
-        await db_session.execute(
-            select(PhotoCloudVisionError).where(
-                PhotoCloudVisionError.phase == CloudVisionPhase.LANDMARK
+        (
+            await db_session.execute(
+                select(PhotoCloudVisionError).where(
+                    PhotoCloudVisionError.phase == CloudVisionPhase.LANDMARK
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert {error.photo_id for error in errors} == {photos[0].id, photos[2].id}
 
 
@@ -3638,9 +3638,7 @@ async def test_a_result_without_usage_still_counts_as_an_api_call(
     ohne `usage`-Block (Tokenbeitrag dann 0). Sonst entstuende die stille Kombination
     "api_calls == 0 bei real erfolgten Aufrufen" - und `api_calls > 0` ist zugleich der Ausloeser
     fuer Befund (b) des Unvollstaendigkeits-Hinweises."""
-    project, scoring_run, _photos = await _landmark_cost_setup(
-        db_session, tmp_path, photo_count=2
-    )
+    project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=2)
     client = PerPhotoLandmarkClient(
         [
             LandmarkDetection(name="Eiffelturm", confidence=0.9),  # ohne usage
@@ -3663,9 +3661,7 @@ async def test_an_unpriced_model_records_tokens_but_no_amount(
     der Lauf faellt dadurch als Erfassungsluecke auf, statt sich als kostenlos zu tarnen. Der
     gemessene Verbrauch bleibt trotzdem erhalten und ist spaeter nachrechenbar."""
     monkeypatch.setattr(pricing, "MODEL_PRICING", {})
-    project, scoring_run, _photos = await _landmark_cost_setup(
-        db_session, tmp_path, photo_count=1
-    )
+    project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
     client = PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)])
 
     run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
@@ -3680,11 +3676,9 @@ async def test_an_unpriced_model_records_tokens_but_no_amount(
 async def test_a_run_without_any_cloud_usage_records_zero_not_null(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """"Erfasst, keine Kosten angefallen" - das ist etwas anderes als "nicht erfasst" (`NULL`),
+    """ "Erfasst, keine Kosten angefallen" - das ist etwas anderes als "nicht erfasst" (`NULL`),
     und nur diese Unterscheidung haelt den Unvollstaendigkeits-Hinweis fehlalarmfrei."""
-    project, scoring_run, _photos = await _landmark_cost_setup(
-        db_session, tmp_path, photo_count=1
-    )
+    project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
 
     run = await run_criterion_scoring(
         db_session,
@@ -3714,9 +3708,7 @@ async def test_costs_survive_a_run_that_fails_after_the_landmark_block(
     scheitert, hat das Geld bereits ausgegeben. Wuerden die Summen erst vor `status=success`
     geschrieben, waere der Betrag `0` - und wegen `0` statt `NULL` nicht einmal als Luecke
     erkennbar."""
-    project, scoring_run, _photos = await _landmark_cost_setup(
-        db_session, tmp_path, photo_count=1
-    )
+    project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
     client = PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)])
 
     def _explode(*args: object, **kwargs: object) -> NoReturn:
@@ -3740,9 +3732,11 @@ async def test_a_second_run_only_carries_its_own_costs(
     durch Aufsummieren der Laeufe (ADR 0051 Punkt 3/4)."""
     project, scoring_run, photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
     first = await _run_with_landmark_client(
-        db_session, project, scoring_run, tmp_path, PerPhotoLandmarkClient(
-            [_detection_with_usage(1_000, 10)]
-        )
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)]),
     )
     assert first.landmark_api_calls == 1
 
@@ -3764,9 +3758,7 @@ async def test_a_second_run_only_carries_its_own_costs(
 async def test_the_landmark_client_is_still_closed_exactly_once_when_costs_are_written(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    project, scoring_run, _photos = await _landmark_cost_setup(
-        db_session, tmp_path, photo_count=1
-    )
+    project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
     client = RecordingLandmarkClient(detection=_detection_with_usage(1_000, 10))
 
     run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
@@ -3781,9 +3773,7 @@ async def test_landmark_costs_use_the_configured_provider_model(
     """Der Betrag haengt am tatsaechlich genutzten Modell - bei Mistral ist derselbe Verbrauch
     deutlich guenstiger als bei Anthropic."""
     monkeypatch.setattr(worker.settings, "landmark_provider", "mistral")
-    project, scoring_run, _photos = await _landmark_cost_setup(
-        db_session, tmp_path, photo_count=1
-    )
+    project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
     client = PerPhotoLandmarkClient([_detection_with_usage(1_000_000, 0)])
 
     run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
@@ -3809,9 +3799,7 @@ async def test_the_landmark_phase_builds_its_client_with_the_configured_model(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(worker.settings, "landmark_model", _STRONGER_ANTHROPIC_MODEL)
-    project, scoring_run, _photos = await _landmark_cost_setup(
-        db_session, tmp_path, photo_count=1
-    )
+    project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
     client = PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)])
     received: list[str] = []
 
@@ -3844,9 +3832,7 @@ async def test_the_client_the_billing_and_the_persisted_model_are_one_and_the_sa
     mit den Modell-Aliasen entfallenen Waechtertest aus test_pricing.py - geprueft wird jetzt das
     tatsaechliche Laufzeitverhalten statt der Gleichheit zweier Literale."""
     monkeypatch.setattr(worker.settings, "landmark_model", _STRONGER_ANTHROPIC_MODEL)
-    project, scoring_run, _photos = await _landmark_cost_setup(
-        db_session, tmp_path, photo_count=1
-    )
+    project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
     client = PerPhotoLandmarkClient([_detection_with_usage(1_000_000, 0)])
     received: list[str] = []
 
@@ -3883,9 +3869,7 @@ async def test_a_run_without_a_cloud_phase_leaves_the_model_column_null(
 ) -> None:
     """`NULL` heisst "nicht erfasst" - ein eingetragenes Modell behauptete Cloud-Nutzung, wo keine
     stattfand (dieselbe Semantik wie bei `landmark_cost_usd`)."""
-    project, scoring_run, _photos = await _landmark_cost_setup(
-        db_session, tmp_path, photo_count=1
-    )
+    project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
     client = PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)])
 
     run = await _run_with_landmark_client(
@@ -3901,13 +3885,9 @@ async def test_the_model_column_survives_a_run_that_fails_after_the_landmark_blo
     """Die Spalte wird im selben `finally` und Commit geschrieben wie der eingefrorene Betrag -
     ein Lauf, der spaeter scheitert, hat das Geld bereits ausgegeben und muss erklaerbar bleiben."""
     monkeypatch.setattr(worker.settings, "landmark_model", _STRONGER_ANTHROPIC_MODEL)
-    project, scoring_run, _photos = await _landmark_cost_setup(
-        db_session, tmp_path, photo_count=1
-    )
+    project, scoring_run, _photos = await _landmark_cost_setup(db_session, tmp_path, photo_count=1)
     client = PerPhotoLandmarkClient([_detection_with_usage(1_000, 10)])
-    monkeypatch.setattr(
-        worker, "rank_photos", _raise_after_landmark_phase, raising=True
-    )
+    monkeypatch.setattr(worker, "rank_photos", _raise_after_landmark_phase, raising=True)
 
     run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
 
@@ -3963,12 +3943,16 @@ async def test_the_confidence_columns_do_not_change_the_resolved_primary_categor
         # Ausdruecklich die HAUPTZEILE: dasselbe Foto kann ab Spec 0300 mehrere Zeilen haben,
         # `scalars().one()` ohne Filter wuerfe ab der zweiten.
         ranking = (
-            await db_session.execute(
-                select(PhotoRanking).where(
-                    PhotoRanking.photo_id == photo.id, PhotoRanking.is_primary.is_(True)
+            (
+                await db_session.execute(
+                    select(PhotoRanking).where(
+                        PhotoRanking.photo_id == photo.id, PhotoRanking.is_primary.is_(True)
+                    )
                 )
             )
-        ).scalars().one()
+            .scalars()
+            .one()
+        )
         return photo.id, categories[photo.id], ranking.rank_position
 
     _, category_high_landscape, position_high_landscape = await _run_with(
@@ -4080,9 +4064,7 @@ class TestLandmarkPhaseLiveCounters:
         run = await _prepared_run(db_session, project, scoring_run)
         client = SnapshottingLandmarkClient(run, [_detection_with_usage(10, 1)] * 3)
 
-        await _run_with_landmark_client(
-            db_session, project, scoring_run, tmp_path, client, run=run
-        )
+        await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client, run=run)
 
         first = client.snapshots[0]
         assert first.photos_total == 3
@@ -4102,9 +4084,7 @@ class TestLandmarkPhaseLiveCounters:
         run = await _prepared_run(db_session, project, scoring_run)
         client = SnapshottingLandmarkClient(run, [_detection_with_usage(10, 1)] * 3)
 
-        await _run_with_landmark_client(
-            db_session, project, scoring_run, tmp_path, client, run=run
-        )
+        await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client, run=run)
 
         assert [snapshot.photos_processed for snapshot in client.snapshots] == [0, 1, 2]
         assert run.landmark_photos_processed == 3
@@ -4137,9 +4117,7 @@ class TestLandmarkPhaseLiveCounters:
             ],
         )
 
-        await _run_with_landmark_client(
-            db_session, project, scoring_run, tmp_path, client, run=run
-        )
+        await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client, run=run)
 
         assert (1, 0) in committed
         assert (2, 1) in committed
@@ -4166,9 +4144,7 @@ class TestLandmarkPhaseLiveCounters:
         run = await _prepared_run(db_session, project, scoring_run)
         client = SnapshottingLandmarkClient(run, [_detection_with_usage(10, 1)] * 3)
 
-        await _run_with_landmark_client(
-            db_session, project, scoring_run, tmp_path, client, run=run
-        )
+        await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client, run=run)
 
         stamps = [snapshot.last_progress_at for snapshot in client.snapshots]
         assert stamps == sorted(stamps)
@@ -4197,9 +4173,7 @@ class TestLandmarkPhaseLiveCounters:
             ],
         )
 
-        await _run_with_landmark_client(
-            db_session, project, scoring_run, tmp_path, client, run=run
-        )
+        await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client, run=run)
 
         assert [snapshot.failed_calls for snapshot in client.snapshots] == [0, 0, 1, 1]
 
@@ -4222,9 +4196,7 @@ class TestLandmarkPhaseLiveCounters:
         run = await _prepared_run(db_session, project, scoring_run)
         client = SnapshottingLandmarkClient(run, [_detection_with_usage(1_000, 10)] * 2)
 
-        await _run_with_landmark_client(
-            db_session, project, scoring_run, tmp_path, client, run=run
-        )
+        await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client, run=run)
 
         first = client.snapshots[0]
         assert first.model == stronger
@@ -4514,7 +4486,11 @@ async def _run_and_collect_rankings(
     }
     kwargs.update(builders)
     run = await run_criterion_scoring(
-        db_session, project, scoring_run_id, cache_dir=tmp_path, **kwargs  # type: ignore[arg-type]
+        db_session,
+        project,
+        scoring_run_id,
+        cache_dir=tmp_path,
+        **kwargs,  # type: ignore[arg-type]
     )
     assert run.status == ScanStatus.SUCCESS
     rows = list(
@@ -4842,10 +4818,14 @@ class TestTheLandmarkPhaseSitsOutARateLimit:
         ).scalar_one()
         assert detection_row.name == "Eiffelturm"
         errors = (
-            await db_session.execute(
-                select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+            (
+                await db_session.execute(
+                    select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert errors == []
         assert waits == [2.0]
 
@@ -4863,10 +4843,16 @@ class TestTheLandmarkPhaseSitsOutARateLimit:
         assert run.status == ScanStatus.SUCCESS
         assert run.landmark_failed_calls == 1
         rows = (
-            await db_session.execute(
-                select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+            (
+                await db_session.execute(
+                    select(PhotoLandmarkDetection).where(
+                        PhotoLandmarkDetection.photo_id == photo.id
+                    )
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert rows == []
         error_row = (
             await db_session.execute(
@@ -5026,9 +5012,7 @@ class TestTheLandmarkPhaseSummarisesItsThrottling:
 class TestLogCloudVisionThrottling:
     """Reine Unit-Faelle des Helfers mit handgebauten ThrottleStats."""
 
-    def test_it_stays_silent_without_any_waiting(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_it_stays_silent_without_any_waiting(self, caplog: pytest.LogCaptureFixture) -> None:
         stats = ThrottleStats(
             delayed_requests=0, total_delay_seconds=0.0, retries=0, total_retry_wait_seconds=0.0
         )
@@ -5303,9 +5287,7 @@ async def test_landmark_rows_of_mixed_origin_both_take_effect_in_one_run(
     )
     await db_session.commit()
 
-    client = RecordingLandmarkClient(
-        detection=LandmarkDetection(name="Zugspitze", confidence=0.8)
-    )
+    client = RecordingLandmarkClient(detection=LandmarkDetection(name="Zugspitze", confidence=0.8))
     run = await run_criterion_scoring(
         db_session,
         project,

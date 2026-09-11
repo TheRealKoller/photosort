@@ -24,7 +24,7 @@ export function BrandMark({ className }: BrandMarkProps) {
       aria-hidden="true"
       className={cn(
         'flex size-16 items-center justify-center rounded-md bg-accent text-accent-fg',
-        className
+        className,
       )}
     >
       <Icon name="camera" size={24} />

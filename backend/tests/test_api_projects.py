@@ -46,7 +46,12 @@ class FakeOpenCloudClient:
     async def resolve_drive(self, name: str | None) -> Drive:
         if self._fail:
             raise self._fail
-        return Drive(id="drive-1", name="Family", drive_type="project", webdav_url="https://x/dav/spaces/drive-1")
+        return Drive(
+            id="drive-1",
+            name="Family",
+            drive_type="project",
+            webdav_url="https://x/dav/spaces/drive-1",
+        )
 
     async def list_folder(self, webdav_url: str, path: str, depth: str = "1") -> list[DavEntry]:
         if self._fail:
@@ -459,13 +464,9 @@ async def _add_run(
     Reihenfolge unbestimmt."""
     started_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=minutes_ago)
     if run_kind == "scan":
-        session.add(
-            ScanRun(project_id=graph.project_id, status=status, started_at=started_at)
-        )
+        session.add(ScanRun(project_id=graph.project_id, status=status, started_at=started_at))
     elif run_kind == "scoring":
-        session.add(
-            ScoringRun(project_id=graph.project_id, status=status, started_at=started_at)
-        )
+        session.add(ScoringRun(project_id=graph.project_id, status=status, started_at=started_at))
     elif run_kind == "criterion_scoring":
         session.add(
             CriterionScoringRun(
@@ -765,9 +766,7 @@ async def test_delete_project_has_no_owner_check(
     db_session.add_all([project, other])
     await db_session.flush()
     await db_session.refresh(other)
-    authenticated_api_client.headers["Authorization"] = (
-        f"Bearer {create_access_token(other)}"
-    )
+    authenticated_api_client.headers["Authorization"] = f"Bearer {create_access_token(other)}"
 
     response = await _delete_project(authenticated_api_client, project.id, "Costa Rica")
 
@@ -791,7 +790,8 @@ async def test_delete_project_logs_exactly_one_info_line_without_the_project_nam
 
     assert response.status_code == 204
     info_lines = [
-        record for record in caplog.records
+        record
+        for record in caplog.records
         if record.levelno == logging.INFO and record.name == "photosort.api.projects"
     ]
     assert len(info_lines) == 1
@@ -1475,9 +1475,7 @@ class TestTheRunEstimateReachesTheJob:
         )
 
         assert response.status_code == 202
-        assert fake_enqueuer.calls == [
-            ("classify", (project_id, scoring_run_id, True, expected))
-        ]
+        assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, True, expected))]
 
     async def test_a_local_run_forwards_none_and_stores_null(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1496,9 +1494,7 @@ class TestTheRunEstimateReachesTheJob:
         )
 
         assert response.status_code == 202
-        assert fake_enqueuer.calls == [
-            ("classify", (project_id, scoring_run_id, False, None))
-        ]
+        assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, False, None))]
 
     async def test_the_request_body_cannot_influence_the_stored_estimate(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1529,6 +1525,4 @@ class TestTheRunEstimateReachesTheJob:
         )
 
         assert response.status_code == 202
-        assert fake_enqueuer.calls == [
-            ("classify", (project_id, scoring_run_id, True, expected))
-        ]
+        assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, True, expected))]

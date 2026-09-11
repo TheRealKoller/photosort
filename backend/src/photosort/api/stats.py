@@ -631,9 +631,7 @@ async def get_project_stats(
     ranking_counts = await _ranking_counts_by_category(session, latest_run_id)
 
     cache_entries = (
-        await session.execute(
-            select(Photo.id, Photo.etag).where(Photo.project_id == project_id)
-        )
+        await session.execute(select(Photo.id, Photo.etag).where(Photo.project_id == project_id))
     ).all()
     # Ueber to_thread, damit die Event-Loop bei zwei os.stat je Foto nicht blockiert
     # (Security-Abschnitt der Spec, Punkt 3 "Selbst-DoS begrenzen"; die zweite Haelfte der

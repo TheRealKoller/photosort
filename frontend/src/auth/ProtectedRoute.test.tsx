@@ -25,7 +25,7 @@ function renderAt(path: string) {
           <Route path="/projects/:id" element={<ProtectedContent />} />
         </Route>
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 

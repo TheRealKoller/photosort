@@ -20,7 +20,12 @@ import { authStateCoversOrigin } from './authState.ts'
 import { logIn } from './auth.ts'
 import { BASE_URL } from './baseUrl.ts'
 import { ARTIFACTS_DIR, AUTH_DIR, AUTH_STATE_FILE } from './paths.ts'
-import { createSessionLog, formatSessionLog, instrumentContext, type SessionLog } from './session.ts'
+import {
+  createSessionLog,
+  formatSessionLog,
+  instrumentContext,
+  type SessionLog,
+} from './session.ts'
 import { VIEWPORTS, type ViewportName } from './viewports.ts'
 
 export interface AdhocSession {
@@ -56,10 +61,7 @@ export async function ensureAuthState(browser: Browser): Promise<void> {
   }
 }
 
-export async function openSession(
-  browser: Browser,
-  viewport: ViewportName
-): Promise<AdhocSession> {
+export async function openSession(browser: Browser, viewport: ViewportName): Promise<AdhocSession> {
   const context = await browser.newContext({
     viewport: VIEWPORTS[viewport],
     storageState: AUTH_STATE_FILE,

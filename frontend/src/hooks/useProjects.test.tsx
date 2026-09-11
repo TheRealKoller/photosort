@@ -81,9 +81,7 @@ describe('useProjectQuery', () => {
 
   it('keeps polling while the last scan is running', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
-    vi.mocked(projectsApi.getProject).mockResolvedValue(
-      project({ last_scan: runningScan() })
-    )
+    vi.mocked(projectsApi.getProject).mockResolvedValue(project({ last_scan: runningScan() }))
     const { wrapper } = makeWrapper()
 
     const { result } = renderHook(() => useProjectQuery(1), { wrapper })
@@ -94,7 +92,7 @@ describe('useProjectQuery', () => {
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBeGreaterThan(
-      callsAfterFirstFetch
+      callsAfterFirstFetch,
     )
     vi.useRealTimers()
   })
@@ -118,7 +116,7 @@ describe('useProjectQuery', () => {
   it('keeps polling while the last scoring run is running', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.mocked(projectsApi.getProject).mockResolvedValue(
-      project({ last_scoring_run: runningScoringRun() })
+      project({ last_scoring_run: runningScoringRun() }),
     )
     const { wrapper } = makeWrapper()
 
@@ -130,7 +128,7 @@ describe('useProjectQuery', () => {
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBeGreaterThan(
-      callsAfterFirstFetch
+      callsAfterFirstFetch,
     )
     vi.useRealTimers()
   })
@@ -138,7 +136,7 @@ describe('useProjectQuery', () => {
   it('keeps polling while the last criterion-scoring run is running', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.mocked(projectsApi.getProject).mockResolvedValue(
-      project({ last_criterion_scoring_run: runningCriterionScoringRun() })
+      project({ last_criterion_scoring_run: runningCriterionScoringRun() }),
     )
     const { wrapper } = makeWrapper()
 
@@ -150,7 +148,7 @@ describe('useProjectQuery', () => {
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBeGreaterThan(
-      callsAfterFirstFetch
+      callsAfterFirstFetch,
     )
     vi.useRealTimers()
   })
@@ -168,7 +166,7 @@ describe('useProjectQuery', () => {
           ...runningCriterionScoringRun()!,
           phase: 'remote_categories',
         },
-      })
+      }),
     )
     const { wrapper } = makeWrapper()
 
@@ -180,7 +178,7 @@ describe('useProjectQuery', () => {
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(vi.mocked(projectsApi.getProject).mock.calls.length).toBeGreaterThan(
-      callsAfterFirstFetch
+      callsAfterFirstFetch,
     )
     vi.useRealTimers()
   })
@@ -364,7 +362,6 @@ describe('useClassificationEstimateQuery', () => {
     expect(result.current.data?.landmark.candidate_count).toBe(2)
   })
 })
-
 
 function runningScan(): ProjectOut['last_scan'] {
   return {

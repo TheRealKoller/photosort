@@ -57,14 +57,14 @@ await withBrowser(async (browser) => {
       const logFile = writeSessionLog(
         `shot-${slug}-${viewport}.log.txt`,
         log,
-        `Aufruf: ${BASE_URL}${targetPath} (${viewport})`
+        `Aufruf: ${BASE_URL}${targetPath} (${viewport})`,
       )
 
       console.log(`Screenshot: ${screenshot}`)
       console.log(`Protokoll:  ${logFile}`)
       console.log(
         `  Konsole: ${log.console.length}, Seitenfehler: ${log.pageErrors.length}, ` +
-          `fehlgeschlagene Aufrufe: ${log.failedRequests.length}`
+          `fehlgeschlagene Aufrufe: ${log.failedRequests.length}`,
       )
     } finally {
       await context.close()

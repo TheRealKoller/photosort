@@ -58,17 +58,25 @@ function walk(dir: string): string[] {
 const scannedFiles: { path: string; label: string; content: string }[] = [
   ...walk(SRC_DIR)
     .filter((path) => !path.endsWith(SELF_FILE))
-    .map((path) => ({ path, label: `src/${path.slice(SRC_DIR.length)}`, content: readFileSync(path, 'utf8') })),
+    .map((path) => ({
+      path,
+      label: `src/${path.slice(SRC_DIR.length)}`,
+      content: readFileSync(path, 'utf8'),
+    })),
   { path: INDEX_HTML_PATH, label: 'index.html', content: indexHtml },
   { path: VITE_CONFIG_PATH, label: 'vite.config.ts', content: viteConfig },
 ]
 
 const sourceFiles = scannedFiles.filter(
-  (file) => file.label.endsWith('.tsx') || (file.label.endsWith('.ts') && file.label.startsWith('src/'))
+  (file) =>
+    file.label.endsWith('.tsx') || (file.label.endsWith('.ts') && file.label.startsWith('src/')),
 )
 
 function findOccurrences(needle: string | RegExp): string[] {
-  const pattern = typeof needle === 'string' ? null : new RegExp(needle.source, needle.flags.replace('g', '') + 'g')
+  const pattern =
+    typeof needle === 'string'
+      ? null
+      : new RegExp(needle.source, needle.flags.replace('g', '') + 'g')
   const hits: string[] = []
   for (const file of scannedFiles) {
     const lines = file.content.split('\n')
@@ -147,7 +155,9 @@ function hexOf(token: string): string {
 
 function relativeLuminance(hex: string): number {
   const channels = [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255)
-  const linear = channels.map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)))
+  const linear = channels.map((c) =>
+    c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4),
+  )
   return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 }
 
@@ -365,17 +375,22 @@ describe('Design-Vertrag: Kontrastmatrix', () => {
 
   it('deklariert genau 3 Bewertungspaare und 4 Status-Pillen', () => {
     expect([...rootTokens.keys()].filter((name) => /^--rating-.+-fg$/.test(name))).toHaveLength(3)
-    expect([...rootTokens.keys()].filter((name) => /^--status-.+-strong$/.test(name))).toHaveLength(4)
+    expect([...rootTokens.keys()].filter((name) => /^--status-.+-strong$/.test(name))).toHaveLength(
+      4,
+    )
     expect([...rootTokens.keys()].filter((name) => /^--status-.+-tint$/.test(name))).toHaveLength(4)
   })
 
-  it.each(contrastRows)('$foreground auf $background erreicht $threshold:1', ({ foreground, background, threshold }) => {
-    const ratio = contrastRatio(hexOf(foreground), hexOf(background))
-    expect(
-      ratio,
-      `${foreground} (${hexOf(foreground)}) auf ${background} (${hexOf(background)}) = ${ratio.toFixed(2)}:1`
-    ).toBeGreaterThanOrEqual(threshold)
-  })
+  it.each(contrastRows)(
+    '$foreground auf $background erreicht $threshold:1',
+    ({ foreground, background, threshold }) => {
+      const ratio = contrastRatio(hexOf(foreground), hexOf(background))
+      expect(
+        ratio,
+        `${foreground} (${hexOf(foreground)}) auf ${background} (${hexOf(background)}) = ${ratio.toFixed(2)}:1`,
+      ).toBeGreaterThanOrEqual(threshold)
+    },
+  )
 
   /*
    * NACHRICHTLICH, MIT EINER ECHTEN ZUSICHERUNG (Spec 0347): Die Werte fuer `--elevated`/
@@ -396,12 +411,12 @@ describe('Design-Vertrag: Kontrastmatrix', () => {
 
       expect(
         contrastRows.filter(
-          (row) => row.foreground === '--separator' && row.background === surface
+          (row) => row.foreground === '--separator' && row.background === surface,
         ),
         `--separator auf ${surface} traegt bewusst keine Schwelle ` +
-          `(gemessen ${separator.toFixed(2)}:1, --border dort ${border.toFixed(2)}:1)`
+          `(gemessen ${separator.toFixed(2)}:1, --border dort ${border.toFixed(2)}:1)`,
       ).toEqual([])
-    }
+    },
   )
 
   it('haelt --separator im Zielkorridor und ueber --border, auf allen vier Flaechen', () => {
@@ -421,7 +436,10 @@ describe('Design-Vertrag: Kontrastmatrix', () => {
     for (const surface of SURFACES) {
       const separator = contrastRatio(hexOf('--separator'), hexOf(surface))
       const border = contrastRatio(hexOf('--border'), hexOf(surface))
-      expect(separator, `${surface}: separator ${separator.toFixed(2)} vs border ${border.toFixed(2)}`).toBeGreaterThan(border)
+      expect(
+        separator,
+        `${surface}: separator ${separator.toFixed(2)} vs border ${border.toFixed(2)}`,
+      ).toBeGreaterThan(border)
     }
   })
 
@@ -466,8 +484,14 @@ const STRUCK_TOKENS: { needle: string; why: string }[] = [
   { needle: 'accent-border', why: 'Deckkraft-Tinte, statisch nicht kontrastpruefbar' },
   { needle: 'prefers-color-scheme', why: 'es gibt nur noch ein Farbschema' },
   { needle: 'color-scheme: light', why: 'es gibt nur noch ein Farbschema' },
-  { needle: 'fonts.googleapis.com', why: 'Schriften sind self-gehostet (Offline-Anspruch, Datenschutz)' },
-  { needle: 'fonts.gstatic.com', why: 'Schriften sind self-gehostet (Offline-Anspruch, Datenschutz)' },
+  {
+    needle: 'fonts.googleapis.com',
+    why: 'Schriften sind self-gehostet (Offline-Anspruch, Datenschutz)',
+  },
+  {
+    needle: 'fonts.gstatic.com',
+    why: 'Schriften sind self-gehostet (Offline-Anspruch, Datenschutz)',
+  },
   { needle: '@fontsource/caprasimo', why: 'Display-Schrift des Organic-Systems' },
   { needle: '@fontsource/figtree', why: 'Fliesstextschrift des Organic-Systems' },
 ]
@@ -486,13 +510,45 @@ function escapeForRegExp(value: string): string {
 /** Die Farbwelt des Organic-Systems, vollstaendig. Findet sich einer dieser Werte noch irgendwo in
  * `frontend/`, ist die Umstellung nicht vollstaendig. */
 const ORGANIC_HEX_VALUES = [
-  '#f5ead8', '#ebddc5', '#201e1d', '#645c50',
-  '#f9f4ed', '#eee7db', '#dcd3c4', '#c0b6a5', '#a19786', '#82796a', '#474238', '#2e2b25',
-  '#c67139', '#8c491a', '#fff2eb', '#ffe1d0', '#ffc6a5', '#f6a06b', '#d67f48', '#b2622d',
-  '#643312', '#402310',
-  '#7a8a5e', '#56633f', '#f0fae1', '#e1eecc', '#ccdbb2', '#aebf92', '#8fa073', '#728157',
-  '#3d472b', '#272e1b',
-  '#c9962c', '#a8442c', '#e0b455', '#e08a6f', '#f6ddd4', '#7d2f1c', '#f3b5a0',
+  '#f5ead8',
+  '#ebddc5',
+  '#201e1d',
+  '#645c50',
+  '#f9f4ed',
+  '#eee7db',
+  '#dcd3c4',
+  '#c0b6a5',
+  '#a19786',
+  '#82796a',
+  '#474238',
+  '#2e2b25',
+  '#c67139',
+  '#8c491a',
+  '#fff2eb',
+  '#ffe1d0',
+  '#ffc6a5',
+  '#f6a06b',
+  '#d67f48',
+  '#b2622d',
+  '#643312',
+  '#402310',
+  '#7a8a5e',
+  '#56633f',
+  '#f0fae1',
+  '#e1eecc',
+  '#ccdbb2',
+  '#aebf92',
+  '#8fa073',
+  '#728157',
+  '#3d472b',
+  '#272e1b',
+  '#c9962c',
+  '#a8442c',
+  '#e0b455',
+  '#e08a6f',
+  '#f6ddd4',
+  '#7d2f1c',
+  '#f3b5a0',
   '#111111',
 ]
 
@@ -586,7 +642,9 @@ describe('Design-Vertrag: Fokusdarstellung', () => {
     // --elevated/--overlay einen falsch getoenten Kranz.
     const matches = indexCss.match(/:focus-visible/g) ?? []
     expect(matches).toHaveLength(1)
-    expect(indexCss).toMatch(/:focus-visible\s*\{[^}]*outline:\s*2px\s+solid\s+var\(--accent\)[^}]*\}/)
+    expect(indexCss).toMatch(
+      /:focus-visible\s*\{[^}]*outline:\s*2px\s+solid\s+var\(--accent\)[^}]*\}/,
+    )
     expect(indexCss).toMatch(/:focus-visible\s*\{[^}]*outline-offset:\s*2px[^}]*\}/)
   })
 })
@@ -605,7 +663,7 @@ const TAP_TARGET_UTILITY = 'tap-target'
  * Test ausraeumen soll.
  */
 const FOCUS_SUPPRESSING_UTILITY = new RegExp(
-  `ring-offset|focus-visible:|(^|[\\s'"\`([])(?:[a-z-]+:)*outline-${'none'}\\b`
+  `ring-offset|focus-visible:|(^|[\\s'"\`([])(?:[a-z-]+:)*outline-${'none'}\\b`,
 )
 
 /**
@@ -674,7 +732,10 @@ function findMatches(needle: Needle, files: ScannedFile[]): Occurrence[] {
           }
           return
         }
-        const pattern = new RegExp(needle.source, needle.flags.includes('g') ? needle.flags : `${needle.flags}g`)
+        const pattern = new RegExp(
+          needle.source,
+          needle.flags.includes('g') ? needle.flags : `${needle.flags}g`,
+        )
         const seen = new Set<string>()
         let match: RegExpExecArray | null
         while ((match = pattern.exec(line)) !== null) {
@@ -723,14 +784,14 @@ function isBareNeedle(snippet: string, needle: Needle): boolean {
 function allowlistedOccurrences(
   needle: Needle,
   entries: AllowlistEntry[],
-  files: ScannedFile[] = tsxFiles()
+  files: ScannedFile[] = tsxFiles(),
 ): string[] {
   const problems: string[] = []
   const matched = new Set<number>()
 
   for (const occurrence of findMatches(needle, files)) {
     const index = entries.findIndex(
-      (entry) => entry.file === occurrence.label && occurrence.text.includes(entry.snippet)
+      (entry) => entry.file === occurrence.label && occurrence.text.includes(entry.snippet),
     )
     if (index === -1) {
       problems.push(`nicht freigegeben: ${occurrence.label}:${occurrence.line}: ${occurrence.text}`)
@@ -782,7 +843,11 @@ describe('Design-Vertrag: Selbsttest des Fundstellen-Helfers', () => {
   }
 
   it('meldet eine Fundstelle ohne passenden Eintrag mit Datei und Zeilennummer', () => {
-    const problems = allowlistedOccurrences(needle, [], [file('src/a.tsx', 'const x = 1', 'className="rounded-full"')])
+    const problems = allowlistedOccurrences(
+      needle,
+      [],
+      [file('src/a.tsx', 'const x = 1', 'className="rounded-full"')],
+    )
 
     expect(problems).toHaveLength(1)
     expect(problems[0]).toContain('src/a.tsx')
@@ -793,7 +858,7 @@ describe('Design-Vertrag: Selbsttest des Fundstellen-Helfers', () => {
     const problems = allowlistedOccurrences(
       needle,
       [{ file: 'src/a.tsx', snippet: 'size-2.5 shrink-0 rounded-full', reason: 'Statuspunkt' }],
-      [file('src/a.tsx', '<span className="size-2.5 shrink-0 rounded-full bg-accent" />')]
+      [file('src/a.tsx', '<span className="size-2.5 shrink-0 rounded-full bg-accent" />')],
     )
 
     expect(problems).toEqual([])
@@ -807,7 +872,13 @@ describe('Design-Vertrag: Selbsttest des Fundstellen-Helfers', () => {
     const problems = allowlistedOccurrences(
       needle,
       [{ file: 'src/a.tsx', snippet: 'Spinner rounded-full', reason: 'Lade-Spinner' }],
-      [file('src/a.tsx', '<i className="Spinner rounded-full" />', '<button className="rounded-full" />')]
+      [
+        file(
+          'src/a.tsx',
+          '<i className="Spinner rounded-full" />',
+          '<button className="rounded-full" />',
+        ),
+      ],
     )
 
     expect(problems).toHaveLength(1)
@@ -818,7 +889,7 @@ describe('Design-Vertrag: Selbsttest des Fundstellen-Helfers', () => {
     const problems = allowlistedOccurrences(
       needle,
       [{ file: 'src/weg.tsx', snippet: 'einst rounded-full', reason: 'laengst entfernt' }],
-      [file('src/a.tsx', 'const x = 1')]
+      [file('src/a.tsx', 'const x = 1')],
     )
 
     expect(problems).toHaveLength(1)
@@ -829,7 +900,7 @@ describe('Design-Vertrag: Selbsttest des Fundstellen-Helfers', () => {
     const problems = allowlistedOccurrences(
       needle,
       [{ file: 'src/a.tsx', snippet: 'rounded-full', reason: 'zu grob' }],
-      [file('src/a.tsx', '<i className="rounded-full" />')]
+      [file('src/a.tsx', '<i className="rounded-full" />')],
     )
 
     expect(problems).toHaveLength(1)
@@ -837,7 +908,11 @@ describe('Design-Vertrag: Selbsttest des Fundstellen-Helfers', () => {
   })
 
   it('meldet eine Fundstelle nicht, die nur in einem Zeilenkommentar steht', () => {
-    const problems = allowlistedOccurrences(needle, [], [file('src/a.tsx', '// frueher rounded-full, heute nicht mehr')])
+    const problems = allowlistedOccurrences(
+      needle,
+      [],
+      [file('src/a.tsx', '// frueher rounded-full, heute nicht mehr')],
+    )
 
     expect(problems).toEqual([])
   })
@@ -846,7 +921,15 @@ describe('Design-Vertrag: Selbsttest des Fundstellen-Helfers', () => {
     const problems = allowlistedOccurrences(
       needle,
       [],
-      [file('src/a.tsx', '/* Zeile 1', '   Zeile 2', '   Zeile 3 */', '<i className="rounded-full" />')]
+      [
+        file(
+          'src/a.tsx',
+          '/* Zeile 1',
+          '   Zeile 2',
+          '   Zeile 3 */',
+          '<i className="rounded-full" />',
+        ),
+      ],
     )
 
     expect(problems).toHaveLength(1)
@@ -869,7 +952,9 @@ describe('Design-Vertrag: Selbsttest des Fundstellen-Helfers', () => {
    * ueberhaupt Kandidaten sieht - hier festgehalten, damit die Vorkehrung nicht wegoptimiert wird.
    */
   it('findet in einer nicht leeren Eingabemenge auch Fundstellen', () => {
-    expect(findMatches(needle, [file('src/a.tsx', '<i className="rounded-full" />')])).toHaveLength(1)
+    expect(findMatches(needle, [file('src/a.tsx', '<i className="rounded-full" />')])).toHaveLength(
+      1,
+    )
   })
 })
 
@@ -969,7 +1054,10 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
 
   it.each([
     [['bg-border', 'text-text-muted'], 'text-text-muted'],
-    [['group-active:bg-border', 'text-text-muted', 'group-active:text-text'], 'group-active:text-text'],
+    [
+      ['group-active:bg-border', 'text-text-muted', 'group-active:text-text'],
+      'group-active:text-text',
+    ],
     [['group-active:bg-border', 'text-text-muted'], 'text-text-muted'],
   ])('Erkenner "Vordergrund auf der Flaeche": %s -> %s', (classes, expected) => {
     // Selbsttest des Zuordners: ohne ihn koennte er stets `undefined` liefern und die Regel
@@ -990,7 +1078,10 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
         const classes = literal.split(/\s+/)
         for (const surface of classes.filter((cls) => /(^|:)bg-border$/.test(cls))) {
           const foreground = foregroundWith(classes, surface)
-          if (foreground !== undefined && forbiddenOnBorder.some((name) => foreground.endsWith(name))) {
+          if (
+            foreground !== undefined &&
+            forbiddenOnBorder.some((name) => foreground.endsWith(name))
+          ) {
             offenders.push(`${file.label}: ${foreground} auf ${surface}`)
           }
         }
@@ -1023,7 +1114,9 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
   })
 
   it('importiert lucide-react ausschliesslich benannt und ausschliesslich in ui/icon.tsx', () => {
-    const importingFiles = sourceFiles.filter((file) => /from\s+'lucide-react'/.test(stripComments(file.content)))
+    const importingFiles = sourceFiles.filter((file) =>
+      /from\s+'lucide-react'/.test(stripComments(file.content)),
+    )
     expect(importingFiles.map((file) => file.label)).toEqual(['src/components/ui/icon.tsx'])
 
     const iconSource = stripComments(importingFiles[0].content)
@@ -1042,7 +1135,7 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
       const file = sourceFiles.find((candidate) => candidate.label.endsWith(name))
       expect(file, `${name} nicht gefunden`).toBeDefined()
       expect(stripComments(file!.content)).not.toMatch(/`[^`]*\$\{/)
-    }
+    },
   )
 
   it('hebelt die globale Fokusdarstellung nirgends in einer .tsx aus', () => {
@@ -1371,7 +1464,7 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     'erkennt %s als willkuerlichen Wert',
     (utility) => {
       expect(arbitraryValues(`className="${utility}"`)).toEqual([utility])
-    }
+    },
   )
 
   it.each([
@@ -1389,14 +1482,14 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     'erkennt %s als Deckkraft-Modifikator auf einer Farb-Utility',
     (utility) => {
       expect(colorOpacityModifiers(`className="${utility}"`)).not.toEqual([])
-    }
+    },
   )
 
   it.each(['w-1/2', 'h-1/3', 'basis-1/2', 'bg-border', 'aspect-[4/3]'])(
     'erkennt %s NICHT als Deckkraft-Modifikator',
     (utility) => {
       expect(colorOpacityModifiers(`className="${utility}"`)).toEqual([])
-    }
+    },
   )
 
   // -----------------------------------------------------------------------------------------
@@ -1435,13 +1528,15 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     },
     {
       file: 'src/pages/PhotoDetailPage.tsx',
-      snippet: "className=\"aspect-[4/3] w-full",
+      snippet: 'className="aspect-[4/3] w-full',
       reason: 'Seitenverhaeltnis der Detailbildflaeche - Tailwind kennt nur square und video',
     },
   ]
 
   it('verwendet willkuerliche Werte nur an der begruendeten Liste', () => {
-    expect(allowlistedOccurrences(arbitraryValues, ARBITRARY_VALUE_ALLOWLIST, productionTsxFiles())).toEqual([])
+    expect(
+      allowlistedOccurrences(arbitraryValues, ARBITRARY_VALUE_ALLOWLIST, productionTsxFiles()),
+    ).toEqual([])
     // Positiv-Gegenprobe: Die Regel laeuft nicht gegen eine leere Kandidatenmenge.
     expect(findMatches(arbitraryValues, productionTsxFiles()).length).toBeGreaterThan(0)
   })
@@ -1476,7 +1571,7 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
 
   it('verwendet Deckkraft-Modifikatoren auf Farb-Utilities nur an der begruendeten Liste', () => {
     expect(
-      allowlistedOccurrences(colorOpacityModifiers, COLOR_OPACITY_ALLOWLIST, productionTsxFiles())
+      allowlistedOccurrences(colorOpacityModifiers, COLOR_OPACITY_ALLOWLIST, productionTsxFiles()),
     ).toEqual([])
     // Positiv-Gegenprobe: Die drei freigegebenen Abdunklungen werden tatsaechlich gefunden.
     expect(findMatches(colorOpacityModifiers, productionTsxFiles()).length).toBeGreaterThan(0)
@@ -1513,7 +1608,8 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     {
       file: 'src/components/ui/button.tsx',
       snippet: 'bg-danger text-danger-fg hover:opacity-85 active:opacity-70',
-      reason: 'Ueberfahren/Gedrueckt der zerstoererischen Schaltflaeche - zeichengleich zur primaeren',
+      reason:
+        'Ueberfahren/Gedrueckt der zerstoererischen Schaltflaeche - zeichengleich zur primaeren',
     },
     {
       file: 'src/components/RatingButtons.tsx',
@@ -1568,7 +1664,7 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     },
     {
       file: 'src/components/CategorySelect.tsx',
-      snippet: "className=\"h-11 rounded-sm border",
+      snippet: 'className="h-11 rounded-sm border',
       reason: 'Auswahlfeld: ersetztes Element, zugleich heisser Pfad der Kategorie-Zuordnung',
     },
     {
@@ -1583,8 +1679,9 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     },
     {
       file: 'src/pages/LoginPage.tsx',
-      snippet: "className=\"mt-2 h-11 w-full text-base\"",
-      reason: 'Absende-Schaltflaeche der Anmeldung: einzige Aktion des Bildschirms, einhaendig bedient',
+      snippet: 'className="mt-2 h-11 w-full text-base"',
+      reason:
+        'Absende-Schaltflaeche der Anmeldung: einzige Aktion des Bildschirms, einhaendig bedient',
     },
     {
       file: 'src/components/ProjectNav.tsx',
@@ -1597,7 +1694,7 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
 
   it('verwendet die sichtbaren 44px nur an den drei begruendeten Kategorien', () => {
     expect(
-      allowlistedOccurrences(/\bmin-h-11\b|\bh-11\b/, TALL_CONTROL_ALLOWLIST, productionTsxFiles())
+      allowlistedOccurrences(/\bmin-h-11\b|\bh-11\b/, TALL_CONTROL_ALLOWLIST, productionTsxFiles()),
     ).toEqual([])
   })
 })
@@ -1639,7 +1736,9 @@ describe('Design-Vertrag: Board-Navigationselement', () => {
   it('praefixiert im Ableiter nur Zustaende, nicht beliebige Woerter', () => {
     // Selbsttest des Ableiters: ohne ihn koennte er alles oder nichts umschreiben und die
     // Bindung unten waere in beiden Faellen gruen.
-    expect(groupPraefixiert('bg-surface hover:bg-overlay')).toBe('bg-surface group-hover:bg-overlay')
+    expect(groupPraefixiert('bg-surface hover:bg-overlay')).toBe(
+      'bg-surface group-hover:bg-overlay',
+    )
     expect(groupPraefixiert('text-accent')).toBe('text-accent')
   })
 
@@ -1647,12 +1746,12 @@ describe('Design-Vertrag: Board-Navigationselement', () => {
     'fuehrt das %s-Rezept in StepMarker und ProjectNav zeichengleich',
     (_name, recipe) => {
       expect(literalsOf('src/components/ProjectNav.tsx'), 'ProjectNav ohne das Rezept').toContain(
-        recipe
+        recipe,
       )
       expect(literalsOf('src/components/StepMarker.tsx'), 'StepMarker ohne das Rezept').toContain(
-        groupPraefixiert(recipe)
+        groupPraefixiert(recipe),
       )
-    }
+    },
   )
 
   /*
@@ -1668,7 +1767,7 @@ describe('Design-Vertrag: Board-Navigationselement', () => {
    */
   it('bindet die Trenner-Utilities der Panel-Gruppe woertlich (Spec 0347, AK5)', () => {
     expect(literalsOf('src/components/ProjectNav.tsx')).toContain(
-      'mb-2 border-b border-separator pb-2 lg:hidden'
+      'mb-2 border-b border-separator pb-2 lg:hidden',
     )
   })
 
@@ -1769,7 +1868,9 @@ describe('Design-Vertrag: geteiltes Hoehen-Token der fixierten Bereiche', () => 
 
   it('ruft das Token an genau den beiden vorgesehenen Stellen auf', () => {
     expect(classesOf('src/App.tsx'), 'Kopfzeile ohne h-header').toContain('h-header')
-    expect(classesOf('src/components/Stepper.tsx'), 'Leiste ohne top-header').toContain('top-header')
+    expect(classesOf('src/components/Stepper.tsx'), 'Leiste ohne top-header').toContain(
+      'top-header',
+    )
   })
 
   it('traegt in keiner der beiden Dateien einen zweiten, freihaendigen Hoehenwert', () => {
@@ -1778,7 +1879,10 @@ describe('Design-Vertrag: geteiltes Hoehen-Token der fixierten Bereiche', () => 
     const zweiterWert = /\b(?:top|h|pt|mt)-(?:14|\[[^\]]+\])/
     for (const label of ['src/App.tsx', 'src/components/Stepper.tsx']) {
       const file = sourceFiles.find((candidate) => candidate.label === label)!
-      expect(findMatches(zweiterWert, [file]).map((hit) => hit.match), label).toEqual([])
+      expect(
+        findMatches(zweiterWert, [file]).map((hit) => hit.match),
+        label,
+      ).toEqual([])
     }
   })
 
@@ -1800,9 +1904,7 @@ describe('Design-Vertrag: geteiltes Hoehen-Token der fixierten Bereiche', () => 
   })
 
   it('fuehrt den Hoehenwert genau einmal - ein Wert, zwei Aufrufstellen', () => {
-    const declarations = indexCss
-      .split('\n')
-      .filter((line) => /--spacing-header\s*:/.test(line))
+    const declarations = indexCss.split('\n').filter((line) => /--spacing-header\s*:/.test(line))
     expect(declarations, 'Deklarationen von --spacing-header in index.css').toHaveLength(1)
     expect(declarations[0]).toMatch(/--spacing-header:\s*3\.5rem;/)
   })
@@ -1826,7 +1928,14 @@ describe('Design-Vertrag: Typoskala', () => {
   it('erzeugt fuer text-4xl und groesser keine Regel mehr', async () => {
     const compiled = await compile(indexCss, { base: SRC_DIR, onDependency: () => {} })
     const baseline = compiled.build([])
-    for (const utility of ['text-4xl', 'text-5xl', 'text-6xl', 'text-7xl', 'text-8xl', 'text-9xl']) {
+    for (const utility of [
+      'text-4xl',
+      'text-5xl',
+      'text-6xl',
+      'text-7xl',
+      'text-8xl',
+      'text-9xl',
+    ]) {
       expect(compiled.build([utility]), utility).toBe(baseline)
     }
     // Gegenprobe: die verbliebenen Stufen erzeugen sehr wohl eine Regel - sonst bestuende der
@@ -1844,7 +1953,7 @@ describe('Design-Vertrag: Typoskala', () => {
     const compiled = await compile(indexCss, { base: SRC_DIR, onDependency: () => {} })
     const output = compiled.build(['focus:border-accent', 'aria-invalid:border-danger'])
     expect(output.indexOf('aria-invalid\\:border-danger')).toBeGreaterThan(
-      output.indexOf('focus\\:border-accent')
+      output.indexOf('focus\\:border-accent'),
     )
   }, 30_000)
 

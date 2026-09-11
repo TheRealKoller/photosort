@@ -177,9 +177,7 @@ async def _add_ranking(
 
 
 class TestCollectAssignments:
-    async def test_reads_exactly_the_rows_of_the_given_run(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_reads_exactly_the_rows_of_the_given_run(self, db_session: AsyncSession) -> None:
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg")
         old_run = await _make_run(db_session, project)
@@ -244,9 +242,7 @@ class TestResolveRunIds:
         )
         assert oldest.id not in (middle.id, newest.id)
 
-    async def test_failed_runs_are_ignored_for_the_default(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_failed_runs_are_ignored_for_the_default(self, db_session: AsyncSession) -> None:
         project = await _make_project(db_session)
         first = await _make_run(db_session, project, started_at=datetime(2023, 1, 1, tzinfo=UTC))
         second = await _make_run(db_session, project, started_at=datetime(2023, 2, 1, tzinfo=UTC))
@@ -266,9 +262,7 @@ class TestResolveRunIds:
         with pytest.raises(CategoryDiffError):
             await resolve_run_ids(db_session, 999, None, None)
 
-    async def test_fewer_than_two_successful_runs_raises(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_fewer_than_two_successful_runs_raises(self, db_session: AsyncSession) -> None:
         project = await _make_project(db_session)
         await _make_run(db_session, project)
 
@@ -285,9 +279,7 @@ class TestResolveRunIds:
             second.id,
         )
 
-    async def test_a_run_of_a_different_project_is_rejected(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_a_run_of_a_different_project_is_rejected(self, db_session: AsyncSession) -> None:
         # Konsistenz-Guard (Security-Abschnitt der Spec 0217, Punkt 3): lieber Abbruch als still
         # die Daten zweier Projekte vermischen.
         project = await _make_project(db_session)
@@ -326,12 +318,8 @@ def _seed_database(database_url: str) -> dict[str, int]:
         async with session_factory() as session:
             project = await _make_project(session)
             photo = await _make_photo(session, project, "urlaub/berg.jpg")
-            before = await _make_run(
-                session, project, started_at=datetime(2023, 1, 1, tzinfo=UTC)
-            )
-            after = await _make_run(
-                session, project, started_at=datetime(2023, 2, 1, tzinfo=UTC)
-            )
+            before = await _make_run(session, project, started_at=datetime(2023, 1, 1, tzinfo=UTC))
+            after = await _make_run(session, project, started_at=datetime(2023, 2, 1, tzinfo=UTC))
             await _add_ranking(session, before, photo, "landscape")
             await _add_ranking(session, after, photo, "unerkannt")
             ids = {

@@ -23,10 +23,7 @@ export function useCategoryOverrideControls(projectId: number) {
 
   function overrideCategory(photoId: number, categoryKey: CategoryKey): void {
     setPendingOverride({ photoId, categoryKey })
-    setMutation.mutate(
-      { photoId, categoryKey },
-      { onSettled: () => setPendingOverride(null) }
-    )
+    setMutation.mutate({ photoId, categoryKey }, { onSettled: () => setPendingOverride(null) })
   }
 
   function resetOverride(photoId: number): void {

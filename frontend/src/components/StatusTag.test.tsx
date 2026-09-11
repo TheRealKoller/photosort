@@ -34,7 +34,7 @@ describe('StatusTag', () => {
       render(<StatusTag status={status} />)
 
       expect(screen.queryByTestId('status-tag-spinner')).not.toBeInTheDocument()
-    }
+    },
   )
 
   /*

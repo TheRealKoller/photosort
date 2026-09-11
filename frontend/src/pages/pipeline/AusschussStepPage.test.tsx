@@ -46,7 +46,9 @@ function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSumma
 }
 
 function OutletHost({ project: contextProject, refetchProject }: PipelineOutletContext) {
-  return <Outlet context={{ project: contextProject, refetchProject } satisfies PipelineOutletContext} />
+  return (
+    <Outlet context={{ project: contextProject, refetchProject } satisfies PipelineOutletContext} />
+  )
 }
 
 function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
@@ -65,7 +67,7 @@ function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
           </Route>
         </Routes>
       </MemoryRouter>,
-      { wrapper }
+      { wrapper },
     ),
     refetchProject,
   }
@@ -96,7 +98,7 @@ describe('AusschussStepPage', () => {
       renderPage(project({ last_scan: null, last_scoring_run: null }))
 
       expect(screen.getByRole('button', { name: /ausschuss aussortieren/i })).toBeEnabled()
-    }
+    },
   )
 
   it('disables the button synchronously on click and sends exactly one request on a double click', async () => {
@@ -120,15 +122,13 @@ describe('AusschussStepPage', () => {
     await user.click(screen.getByRole('button', { name: /ausschuss aussortieren/i }))
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /ausschuss aussortieren/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /ausschuss aussortieren/i })).toBeEnabled(),
     )
     expect(await screen.findByRole('alert')).toHaveTextContent('Serverfehler')
   })
 
   it('shows granular "X von Y" progress with a native progress element while running', () => {
-    renderPage(
-      project({ last_scoring_run: scoringRun({ photos_total: 10, photos_processed: 4 }) })
-    )
+    renderPage(project({ last_scoring_run: scoringRun({ photos_total: 10, photos_processed: 4 }) }))
 
     expect(screen.getByText(/4 von 10 fotos verarbeitet/i)).toBeInTheDocument()
     const progress = screen.getByRole('progressbar') as HTMLProgressElement
@@ -140,12 +140,14 @@ describe('AusschussStepPage', () => {
     'shows an indeterminate progress bar instead of an invalid max=0 during the brief ' +
       'photos_total=0 window right after the trigger',
     () => {
-      renderPage(project({ last_scoring_run: scoringRun({ photos_total: 0, photos_processed: 0 }) }))
+      renderPage(
+        project({ last_scoring_run: scoringRun({ photos_total: 0, photos_processed: 0 }) }),
+      )
 
       const progress = screen.getByRole('progressbar') as HTMLProgressElement
       expect(progress.hasAttribute('value')).toBe(false)
       expect(progress.hasAttribute('max')).toBe(false)
-    }
+    },
   )
 
   it('shows a summary with the plural suggestion count once scoring succeeded, plus a link to review it', () => {
@@ -158,12 +160,12 @@ describe('AusschussStepPage', () => {
           photos_processed: 10,
           suggestions_found: 3,
         }),
-      })
+      }),
     )
 
     expect(screen.getByText('3 Vorschläge gefunden')).toBeInTheDocument()
     expect(
-      screen.getByRole('link', { name: 'Vorschläge aus der Ausschuss-Aussortierung ansehen' })
+      screen.getByRole('link', { name: 'Vorschläge aus der Ausschuss-Aussortierung ansehen' }),
     ).toHaveAttribute('href', '/projects/1/photos?filter=suggested')
   })
 
@@ -177,7 +179,7 @@ describe('AusschussStepPage', () => {
           photos_processed: 10,
           suggestions_found: 1,
         }),
-      })
+      }),
     )
 
     expect(screen.getByText('1 Vorschlag gefunden')).toBeInTheDocument()
@@ -187,7 +189,9 @@ describe('AusschussStepPage', () => {
     vi.mocked(projectsApi.triggerScore).mockResolvedValue({ status: 'queued' })
     const user = userEvent.setup()
     renderPage(
-      project({ last_scoring_run: scoringRun({ status: 'failed', error_message: 'Unerwarteter Fehler' }) })
+      project({
+        last_scoring_run: scoringRun({ status: 'failed', error_message: 'Unerwarteter Fehler' }),
+      }),
     )
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Unerwarteter Fehler')

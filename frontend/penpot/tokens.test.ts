@@ -94,8 +94,7 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
   })
 
   it('benennt jedes Token als <gruppe>.<blatt>', () => {
-    const shape =
-      /^(color|radius|space|font-family|text)\.[a-z0-9-]+$/
+    const shape = /^(color|radius|space|font-family|text)\.[a-z0-9-]+$/
     const wrong = tokens.filter((token) => !shape.test(token.name))
     expect(wrong.map((token) => token.name)).toEqual([])
   })
@@ -153,9 +152,9 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
     const stufen = ['xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl']
 
     it('traegt je Stufe genau ein Verbundtoken', () => {
-      expect(tokens.filter((token) => groupOf(token) === 'text').map((token) => token.name)).toEqual(
-        stufen.map((stufe) => `text.${stufe}`)
-      )
+      expect(
+        tokens.filter((token) => groupOf(token) === 'text').map((token) => token.name),
+      ).toEqual(stufen.map((stufe) => `text.${stufe}`))
     })
 
     /* Die Felder stehen in fester Reihenfolge und in Singularform; weggelassen wird nur, was
@@ -182,7 +181,7 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
 
     it('scheitert an einer Schriftstufe ohne Groesse oder Zeilenhoehe', () => {
       expect(() =>
-        buildTokens(':root {\n  --bg: #0b0c10;\n}\n@theme {\n  --text-xs: 12px;\n}')
+        buildTokens(':root {\n  --bg: #0b0c10;\n}\n@theme {\n  --text-xs: 12px;\n}'),
       ).toThrow(/xs/)
     })
 
@@ -196,14 +195,14 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
 
     /* `fontSize` traegt seine Einheit - an der laufenden Instanz als gueltig gemessen. */
     it('traegt Groesse und Zeilenhoehe jeder Stufe aus index.css', () => {
-      expect([
-        typografieWert('text.xs').fontSize,
-        typografieWert('text.xs').lineHeight,
-      ]).toEqual(['12px', '1.4'])
-      expect([
-        typografieWert('text.3xl').fontSize,
-        typografieWert('text.3xl').lineHeight,
-      ]).toEqual(['64px', '1.05'])
+      expect([typografieWert('text.xs').fontSize, typografieWert('text.xs').lineHeight]).toEqual([
+        '12px',
+        '1.4',
+      ])
+      expect([typografieWert('text.3xl').fontSize, typografieWert('text.3xl').lineHeight]).toEqual([
+        '64px',
+        '1.05',
+      ])
       for (const stufe of stufen) {
         expect(typografieWert(`text.${stufe}`).fontSize, stufe).toMatch(/^[0-9]+px$/)
         expect(typografieWert(`text.${stufe}`).lineHeight, stufe).toMatch(/^[0-9.]+$/)
@@ -218,9 +217,13 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
     it('laesst den Schnitt weg, wo index.css keinen fuehrt', () => {
       expect(Object.keys(typografieWert('text.xs'))).not.toContain('fontWeight')
       expect(Object.keys(typografieWert('text.sm'))).not.toContain('fontWeight')
-      expect(
-        stufen.filter((stufe) => 'fontWeight' in typografieWert(`text.${stufe}`))
-      ).toEqual(['base', 'lg', 'xl', '2xl', '3xl'])
+      expect(stufen.filter((stufe) => 'fontWeight' in typografieWert(`text.${stufe}`))).toEqual([
+        'base',
+        'lg',
+        'xl',
+        '2xl',
+        '3xl',
+      ])
       expect(typografieWert('text.3xl').fontWeight).toBe('700')
     })
 
@@ -228,9 +231,9 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
        em-Wert wird als Tokenwert akzeptiert und loest auch auf, kommt an der Textform aber als 0
        an (gemessen). Umgerechnet gegen die Schriftgroesse der Stufe greift sie nachweislich. */
     it('rechnet die Laufweite von em in eine blanke px-Zahl um', () => {
-      expect(
-        stufen.filter((stufe) => 'letterSpacing' in typografieWert(`text.${stufe}`))
-      ).toEqual(['3xl'])
+      expect(stufen.filter((stufe) => 'letterSpacing' in typografieWert(`text.${stufe}`))).toEqual([
+        '3xl',
+      ])
       expect(typografieWert('text.3xl').letterSpacing).toBe('-1.28')
       expect(typografieWert('text.3xl').letterSpacing).not.toContain('em')
     })
@@ -256,7 +259,10 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
     ])
     expect(built.excludedInitialTokens).toHaveLength(6)
     for (const step of ['4xl', '5xl', '6xl', '7xl', '8xl', '9xl']) {
-      expect(tokens.some((token) => token.name === `text.${step}`), step).toBe(false)
+      expect(
+        tokens.some((token) => token.name === `text.${step}`),
+        step,
+      ).toBe(false)
     }
   })
 
@@ -269,7 +275,7 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
   it('scheitert an einer nicht verstandenen Deklaration statt sie zu ueberspringen', () => {
     expect(() => buildTokens(':root {\n  farbe: #ffffff;\n}\n@theme {\n}')).toThrow()
     expect(() =>
-      buildTokens(':root {\n  --bg: #0b0c10;\n}\n@theme {\n  --unbekannt-xs: 3px;\n}')
+      buildTokens(':root {\n  --bg: #0b0c10;\n}\n@theme {\n  --unbekannt-xs: 3px;\n}'),
     ).toThrow(/--unbekannt-xs/)
   })
 
@@ -282,20 +288,20 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
    */
   it('ueberspringt --spacing-header namentlich, nicht ueber ein Praefixmuster', () => {
     const mitHeader = buildTokens(
-      ':root {\n  --bg: #0b0c10;\n}\n@theme {\n  --spacing-header: 3.5rem;\n}'
+      ':root {\n  --bg: #0b0c10;\n}\n@theme {\n  --spacing-header: 3.5rem;\n}',
     )
     const namen = mitHeader.tokens.map((token) => token.name)
     expect(namen.filter((name) => name.includes('header'))).toEqual([])
     // Positiv-Gegenprobe: der Lauf hat ueberhaupt Tokens erzeugt.
     expect(namen).toContain('color.bg')
     expect(() =>
-      buildTokens(':root {\n  --bg: #0b0c10;\n}\n@theme {\n  --spacing-sidebar: 3.5rem;\n}')
+      buildTokens(':root {\n  --bg: #0b0c10;\n}\n@theme {\n  --spacing-sidebar: 3.5rem;\n}'),
     ).toThrow(/--spacing-sidebar/)
   })
 
   it('scheitert an einem :root-Wert, der kein 6-stelliger Hexwert ist', () => {
     expect(() =>
-      buildTokens(':root {\n  --bg: color-mix(in srgb, #fff 50%, #000);\n}\n@theme {\n}')
+      buildTokens(':root {\n  --bg: color-mix(in srgb, #fff 50%, #000);\n}\n@theme {\n}'),
     ).toThrow(/--bg/)
   })
 
@@ -315,7 +321,11 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
 
   it('leitet die acht Abstandsstufen aus Tailwinds Basis ab', () => {
     expect(SPACING_STEPS).toEqual([1, 2, 3, 4, 6, 8, 12, 16])
-    expect(tokens.filter((token) => groupOf(token) === 'space').map((token) => [token.name, token.value])).toEqual([
+    expect(
+      tokens
+        .filter((token) => groupOf(token) === 'space')
+        .map((token) => [token.name, token.value]),
+    ).toEqual([
       ['space.1', '4px'],
       ['space.2', '8px'],
       ['space.3', '12px'],
@@ -351,7 +361,8 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
       // `p-1` gibt Tailwind ohne Faktor aus (`padding: var(--spacing)`), ab `p-2` mit `calc()`.
       const withFactor = /padding:\s*calc\(var\(--spacing\)\s*\*\s*([0-9.]+)\)/.exec(output)
       const withoutFactor = /padding:\s*var\(--spacing\)\s*;/.exec(output)
-      const factor = withFactor === null ? (withoutFactor === null ? Number.NaN : 1) : Number(withFactor[1])
+      const factor =
+        withFactor === null ? (withoutFactor === null ? Number.NaN : 1) : Number(withFactor[1])
       expect(factor, `p-${step}: unverstandene Padding-Deklaration`).toBe(step)
 
       // 1rem = 16px; die Tokenwerte sind Pixel, weil Penpot keine rem-Kaskade kennt.

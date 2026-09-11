@@ -93,12 +93,12 @@ await withBrowser(async (browser) => {
     const logFile = writeSessionLog(
       `drive-${slug}-${viewport}.log.txt`,
       log,
-      `Skript: ${rawScript} (${viewport})`
+      `Skript: ${rawScript} (${viewport})`,
     )
     console.log(`Protokoll:  ${logFile}`)
     console.log(
       `  Konsole: ${log.console.length}, Seitenfehler: ${log.pageErrors.length}, ` +
-        `fehlgeschlagene Aufrufe: ${log.failedRequests.length}`
+        `fehlgeschlagene Aufrufe: ${log.failedRequests.length}`,
     )
     await context.close()
   }

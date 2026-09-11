@@ -85,7 +85,10 @@ export function PhotoComparePage() {
                     </span>
                     {others.length > 0 ? (
                       others.map((rating) => (
-                        <span key={rating.user_id} className="flex items-center gap-2 text-sm text-text">
+                        <span
+                          key={rating.user_id}
+                          className="flex items-center gap-2 text-sm text-text"
+                        >
                           {rating.username}: <RatingBadge status={rating.status} />
                         </span>
                       ))

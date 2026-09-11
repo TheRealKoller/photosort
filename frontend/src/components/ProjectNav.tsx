@@ -141,7 +141,7 @@ function ProjectNavLink({ target, projectId, isActive, layout, onSelect }: Proje
       className={cn(
         NAV_LINK_BASE_CLASSES,
         layout === 'bar' ? 'tap-target' : 'min-h-11 w-full',
-        isActive ? NAV_LINK_ACTIVE_CLASSES : NAV_LINK_RESTING_CLASSES
+        isActive ? NAV_LINK_ACTIVE_CLASSES : NAV_LINK_RESTING_CLASSES,
       )}
     >
       {target.label}

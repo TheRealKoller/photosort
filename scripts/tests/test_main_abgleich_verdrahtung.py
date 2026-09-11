@@ -139,9 +139,7 @@ SCHREIBMUSTER_AUF_HEADS = {
     "branch -f/--force/-M/-m": re.compile(
         r"\bgit\b[^\n]*\bbranch\b[^\n]*(?:\s-f\b|\s--force\b|\s-M\b|\s-m\b)"
     ),
-    "symbolic-ref auf refs/heads/": re.compile(
-        r"\bgit\b[^\n]*\bsymbolic-ref\b[^\n]*refs/heads/"
-    ),
+    "symbolic-ref auf refs/heads/": re.compile(r"\bgit\b[^\n]*\bsymbolic-ref\b[^\n]*refs/heads/"),
 }
 
 # Die acht Fundstellen der Vergleichsbasis in der Review-Phase (ADR 0075).
@@ -206,8 +204,7 @@ def wirksame_zeilen(text: str, kommentarzeichen: str) -> list[str]:
     `#` blendete Inhalt hinter einem `#` in einer Zeichenkette aus.
     """
     return [
-        "" if zeile.lstrip().startswith(kommentarzeichen) else zeile
-        for zeile in text.splitlines()
+        "" if zeile.lstrip().startswith(kommentarzeichen) else zeile for zeile in text.splitlines()
     ]
 
 
@@ -577,7 +574,7 @@ def test_das_skript_enthaelt_keinen_schreibenden_oder_umschreibenden_befehl() ->
         'git push --quiet "$REMOTE" HEAD',
         'git push --force-with-lease "$REMOTE" HEAD',
         'git rebase "$HAUPTZWEIG"',
-        'git commit --amend --no-edit',
+        "git commit --amend --no-edit",
         'git reset --hard "$HAUPTZWEIG"',
         'git merge --no-ff --force "$HAUPTZWEIG"',
     ],
@@ -641,8 +638,8 @@ def test_das_skript_schreibt_keinen_ref_unterhalb_von_refs_heads() -> None:
         'git fetch --quiet "$REMOTE"',
         'git fetch "$REMOTE" "+refs/heads/$HAUPTZWEIG:$TRACKING_REF"',
         'git fetch "$REMOTE"',
-        'git fetch --quiet origin main:main',
-        'git fetch --quiet origin +refs/remotes/origin/main:main',
+        "git fetch --quiet origin main:main",
+        "git fetch --quiet origin +refs/remotes/origin/main:main",
         'git fetch --quiet "$REMOTE" "$REFSPEC"',
         'git fetch --quiet "$REMOTE" "+refs/heads/$HAUPTZWEIG:$UNBEKANNT"',
     ],
@@ -656,7 +653,7 @@ def test_eine_vereinfachte_oder_zurueckgedrehte_fetch_zeile_wird_gemeldet(zeile:
     "zeile",
     [
         'git fetch --quiet "$REMOTE" "+refs/heads/$HAUPTZWEIG:$TRACKING_REF" >/dev/null 2>&1',
-        'git fetch --quiet origin +refs/heads/main:refs/remotes/origin/main',
+        "git fetch --quiet origin +refs/heads/main:refs/remotes/origin/main",
         'git fetch --quiet "$REMOTE" "refs/heads/$HAUPTZWEIG:$TRACKING_REF"',
     ],
 )

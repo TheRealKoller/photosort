@@ -71,7 +71,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
 
   it('marks scan done once the last scan succeeded', () => {
     const states = computeStepStates(
-      project({ last_scan: { status: 'success' } as ProjectOut['last_scan'] })
+      project({ last_scan: { status: 'success' } as ProjectOut['last_scan'] }),
     )
 
     expect(states.find((s) => s.id === 'scan')).toEqual({
@@ -88,7 +88,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
       const states = computeStepStates(project({ last_scan: null }))
 
       expect(states.find((s) => s.id === 'ausschuss')?.isReachable).toBe(true)
-    }
+    },
   )
 
   it('marks ausschuss done once the last scoring run succeeded', () => {
@@ -105,7 +105,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
           error_message: null,
           gate_confirmed_at: null,
         },
-      })
+      }),
     )
 
     expect(states.find((s) => s.id === 'ausschuss')).toEqual({
@@ -129,7 +129,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
           error_message: null,
           gate_confirmed_at: null,
         },
-      })
+      }),
     )
 
     expect(states.find((s) => s.id === 'gate')).toEqual({
@@ -153,7 +153,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:05:00Z',
         },
-      })
+      }),
     )
 
     expect(states.find((s) => s.id === 'gate')?.isDone).toBe(true)
@@ -173,7 +173,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:06:00Z',
         },
-      })
+      }),
     )
 
     expect(states.find((s) => s.id === 'gate')?.isDone).toBe(true)
@@ -194,7 +194,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:05:00Z',
         },
-      })
+      }),
     )
 
     expect(states.find((s) => s.id === 'kriterien')).toEqual({
@@ -218,7 +218,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
           error_message: null,
           gate_confirmed_at: '2026-07-20T10:05:00Z',
         },
-      })
+      }),
     )
 
     expect(states.find((s) => s.id === 'kriterien')?.isReachable).toBe(true)
@@ -244,7 +244,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
             estimated_cost_usd: null,
             cloud_cost_total_usd: null,
           },
-        })
+        }),
       )
 
       expect(states.find((s) => s.id === 'kuratierung')).toEqual({
@@ -252,7 +252,7 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
         isDone: false,
         isReachable: true,
       })
-    }
+    },
   )
 
   it('keeps kuratierung unreachable until the criterion scoring run succeeded', () => {
@@ -433,7 +433,7 @@ describe('stepProgress', () => {
     'liefert fuer den unbrauchbaren Index %p den Wert 0',
     (activeIndex) => {
       expect(stepProgress(activeIndex)).toEqual({ value: 0, max: MAX })
-    }
+    },
   )
 
   /*

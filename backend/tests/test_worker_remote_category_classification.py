@@ -59,9 +59,7 @@ async def _make_project(session: AsyncSession, *, name: str = "Costa Rica") -> P
     return project
 
 
-async def _add_photo(
-    session: AsyncSession, project: Project, path: str, etag: str
-) -> Photo:
+async def _add_photo(session: AsyncSession, project: Project, path: str, etag: str) -> Photo:
     now = datetime(2023, 1, 1, tzinfo=UTC)
     photo = Photo(
         project_id=project.id,
@@ -375,12 +373,16 @@ async def test_a_successful_call_writes_exactly_one_classification_row(
     assert run.status == ScanStatus.SUCCESS
     assert run.photos_processed == 1
     rows = (
-        await db_session.execute(
-            select(PhotoCategoryClassification).where(
-                PhotoCategoryClassification.photo_id == photo.id
+        (
+            await db_session.execute(
+                select(PhotoCategoryClassification).where(
+                    PhotoCategoryClassification.photo_id == photo.id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     # `menschen` gewinnt gegen `landschaft` (kleinere precedence) - die Zeile haelt das bereits
     # AUFGELOESTE Ergebnis, nicht die Rohantwort.
@@ -401,10 +403,14 @@ async def test_a_successful_call_writes_up_to_two_fine_label_rows(
 
     assert run.status == ScanStatus.SUCCESS
     rows = (
-        await db_session.execute(
-            select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+        (
+            await db_session.execute(
+                select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert {row.raw_label for row in rows} == {"Hund", "Strand"}
 
 
@@ -422,20 +428,28 @@ async def test_fine_labels_are_written_even_when_the_category_is_not_recognized(
 
     assert run.status == ScanStatus.SUCCESS
     classification = (
-        await db_session.execute(
-            select(PhotoCategoryClassification).where(
-                PhotoCategoryClassification.photo_id == photo.id
+        (
+            await db_session.execute(
+                select(PhotoCategoryClassification).where(
+                    PhotoCategoryClassification.photo_id == photo.id
+                )
             )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     assert classification.category_key == "nicht_erkannt"
     assert classification.detected_categories == []
 
     fine_labels = (
-        await db_session.execute(
-            select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+        (
+            await db_session.execute(
+                select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert [row.raw_label for row in fine_labels] == ["Fabelwesen"]
 
 
@@ -447,9 +461,7 @@ async def test_a_photo_without_fine_labels_gets_a_classification_row_anyway(
     )
 
     assert (
-        await db_session.execute(
-            select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
-        )
+        await db_session.execute(select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id))
     ).scalars().all() == []
     assert (
         await db_session.execute(
@@ -473,10 +485,14 @@ async def test_two_fine_labels_with_the_same_canonical_key_write_only_one_row(
 
     assert run.status == ScanStatus.SUCCESS
     rows = (
-        await db_session.execute(
-            select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+        (
+            await db_session.execute(
+                select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     # Erstnennung gewinnt (ein Konfidenz-Vergleich ist mit dem Wegfall der Konfidenzen
     # gegenstandslos geworden).
@@ -757,9 +773,7 @@ async def test_cancelled_error_propagates_and_fails_the_run(
     # ausserhalb eines aktiven Session-await-Kontexts wuerde sonst denselben MissingGreenlet-
     # Fallstrick ausloesen, den _fail_run fuer `run` bereits per session.refresh(run) vermeidet
     # (siehe worker.py::_fail_run-Kommentar) - hier reicht die ungefilterte Abfrage aus.
-    run_row = (
-        await db_session.execute(select(RemoteCategoryClassificationRun))
-    ).scalars().first()
+    run_row = (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().first()
     assert run_row is not None
     assert run_row.status == ScanStatus.FAILED
 
@@ -950,9 +964,7 @@ def _expected_cost(input_tokens: int, output_tokens: int, provider: str = "anthr
     return cost
 
 
-async def _cost_setup(
-    db_session: AsyncSession, tmp_path: Path, *, photo_count: int
-) -> Project:
+async def _cost_setup(db_session: AsyncSession, tmp_path: Path, *, photo_count: int) -> Project:
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
     await db_session.commit()
@@ -1186,9 +1198,7 @@ async def test_a_failure_before_the_counters_keeps_the_original_error_message(
     DB-Fehler beim Laden des Feinlabel-Snapshots -, laeuft der `finally`-Block trotzdem los. Sind
     die Zaehler dort noch ungebunden, ersetzt ein `UnboundLocalError` die Originalmeldung."""
     project = await _cost_setup(db_session, tmp_path, photo_count=1)
-    db_session.add(
-        FineLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
-    )
+    db_session.add(FineLabel(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0]))
     await db_session.commit()
 
     def _explode(**kwargs: object) -> NoReturn:
@@ -1273,9 +1283,7 @@ async def test_an_earlier_run_keeps_its_model_when_a_later_run_uses_another(
         db_session,
         project,
         tmp_path,
-        build_client=lambda _model: PerPhotoCategoryClient(
-            [_classification_with_usage(1_000, 10)]
-        ),
+        build_client=lambda _model: PerPhotoCategoryClient([_classification_with_usage(1_000, 10)]),
         build_embedder=_fake_embedder,
     )
     first_model = first.model
@@ -1285,9 +1293,7 @@ async def test_an_earlier_run_keeps_its_model_when_a_later_run_uses_another(
         db_session,
         project,
         tmp_path,
-        build_client=lambda _model: PerPhotoCategoryClient(
-            [_classification_with_usage(1_000, 10)]
-        ),
+        build_client=lambda _model: PerPhotoCategoryClient([_classification_with_usage(1_000, 10)]),
         build_embedder=_fake_embedder,
     )
 
@@ -1315,12 +1321,16 @@ async def test_the_classification_row_persists_the_confidence_mapping(
 
     assert run.status == ScanStatus.SUCCESS
     row = (
-        await db_session.execute(
-            select(PhotoCategoryClassification).where(
-                PhotoCategoryClassification.photo_id == photo.id
+        (
+            await db_session.execute(
+                select(PhotoCategoryClassification).where(
+                    PhotoCategoryClassification.photo_id == photo.id
+                )
             )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     assert row.detected_category_confidences == {"landschaft": 0.31, "menschen": 0.87}
 
 
@@ -1342,12 +1352,16 @@ async def test_the_scalar_follows_the_resolved_category_not_the_highest_number(
     )
 
     row = (
-        await db_session.execute(
-            select(PhotoCategoryClassification).where(
-                PhotoCategoryClassification.photo_id == photo.id
+        (
+            await db_session.execute(
+                select(PhotoCategoryClassification).where(
+                    PhotoCategoryClassification.photo_id == photo.id
+                )
             )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     assert row.category_key == "menschen"
     assert row.category_confidence == 0.12
 
@@ -1368,12 +1382,16 @@ async def test_the_scalar_is_none_when_the_resolved_category_has_no_number(
     )
 
     row = (
-        await db_session.execute(
-            select(PhotoCategoryClassification).where(
-                PhotoCategoryClassification.photo_id == photo.id
+        (
+            await db_session.execute(
+                select(PhotoCategoryClassification).where(
+                    PhotoCategoryClassification.photo_id == photo.id
+                )
             )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     assert row.category_key == "menschen"
     assert row.category_confidence is None
     assert row.detected_category_confidences == {"landschaft": 0.7}
@@ -1390,12 +1408,16 @@ async def test_a_not_recognized_photo_has_no_number_on_either_side(
 
     assert run.status == ScanStatus.SUCCESS
     row = (
-        await db_session.execute(
-            select(PhotoCategoryClassification).where(
-                PhotoCategoryClassification.photo_id == photo.id
+        (
+            await db_session.execute(
+                select(PhotoCategoryClassification).where(
+                    PhotoCategoryClassification.photo_id == photo.id
+                )
             )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     assert row.category_key == CATEGORY_NOT_RECOGNIZED
     assert row.detected_category_confidences == {}
     assert row.category_confidence is None
@@ -1414,12 +1436,16 @@ async def test_a_classification_without_any_confidence_writes_an_empty_mapping(
     assert run.status == ScanStatus.SUCCESS
     assert run.photos_processed == 1
     row = (
-        await db_session.execute(
-            select(PhotoCategoryClassification).where(
-                PhotoCategoryClassification.photo_id == photo.id
+        (
+            await db_session.execute(
+                select(PhotoCategoryClassification).where(
+                    PhotoCategoryClassification.photo_id == photo.id
+                )
             )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     assert row.detected_category_confidences == {}
     assert row.category_confidence is None
 
@@ -1637,17 +1663,13 @@ async def test_a_passed_run_is_reused_and_no_second_row_is_created(
         db_session,
         project,
         tmp_path,
-        build_client=lambda _model: PerPhotoCategoryClient(
-            [_classification_with_usage(1_000, 10)]
-        ),
+        build_client=lambda _model: PerPhotoCategoryClient([_classification_with_usage(1_000, 10)]),
         build_embedder=_fake_embedder,
         run=run,
     )
 
     assert result.id == run.id
-    rows = (
-        (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().all()
-    )
+    rows = (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().all()
     assert len(rows) == 1
 
 
@@ -1662,15 +1684,11 @@ async def test_a_direct_call_still_creates_its_own_row(
         db_session,
         project,
         tmp_path,
-        build_client=lambda _model: PerPhotoCategoryClient(
-            [_classification_with_usage(1_000, 10)]
-        ),
+        build_client=lambda _model: PerPhotoCategoryClient([_classification_with_usage(1_000, 10)]),
         build_embedder=_fake_embedder,
     )
 
-    rows = (
-        (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().all()
-    )
+    rows = (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().all()
     assert [row.id for row in rows] == [result.id]
 
 
@@ -1678,9 +1696,7 @@ class TestRemoteCallBookkeepingInvariant:
     """ADR 0068 Punkt 2: `photos_processed == api_calls + failed_calls`, hier fuer die
     Remote-Kategorie-Phase."""
 
-    async def test_all_calls_successful(
-        self, db_session: AsyncSession, tmp_path: Path
-    ) -> None:
+    async def test_all_calls_successful(self, db_session: AsyncSession, tmp_path: Path) -> None:
         project = await _cost_setup(db_session, tmp_path, photo_count=3)
         client = PerPhotoCategoryClient([_classification_with_usage(1_000, 10)] * 3)
 
@@ -1885,18 +1901,26 @@ class TestTheRemoteCategoryPhaseSitsOutARateLimit:
         assert run.status == ScanStatus.SUCCESS
         assert run.failed_calls == 0
         rows = (
-            await db_session.execute(
-                select(PhotoCategoryClassification).where(
-                    PhotoCategoryClassification.photo_id == photo.id
+            (
+                await db_session.execute(
+                    select(PhotoCategoryClassification).where(
+                        PhotoCategoryClassification.photo_id == photo.id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         errors = (
-            await db_session.execute(
-                select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+            (
+                await db_session.execute(
+                    select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert errors == []
         assert waits == [2.0]
 
@@ -1914,12 +1938,16 @@ class TestTheRemoteCategoryPhaseSitsOutARateLimit:
         assert run.status == ScanStatus.SUCCESS
         assert run.failed_calls == 1
         rows = (
-            await db_session.execute(
-                select(PhotoCategoryClassification).where(
-                    PhotoCategoryClassification.photo_id == photo.id
+            (
+                await db_session.execute(
+                    select(PhotoCategoryClassification).where(
+                        PhotoCategoryClassification.photo_id == photo.id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert rows == []
         error_row = (
             await db_session.execute(

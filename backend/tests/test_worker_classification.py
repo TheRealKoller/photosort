@@ -114,9 +114,7 @@ class _NoDetections:
     echten Builder duerfen in Tests NIE laufen (specs/features/0038/0048)."""
 
     def detect(self, image: object) -> object:
-        return SimpleNamespace(
-            detections=[], face_landmarks=[], facial_transformation_matrixes=[]
-        )
+        return SimpleNamespace(detections=[], face_landmarks=[], facial_transformation_matrixes=[])
 
 
 class _NoSceneLabels:
@@ -132,9 +130,7 @@ class _LandscapeSceneLabels:
     def classify(self, image: object) -> object:
         return SimpleNamespace(
             classifications=[
-                SimpleNamespace(
-                    categories=[SimpleNamespace(category_name="valley", score=0.7)]
-                )
+                SimpleNamespace(categories=[SimpleNamespace(category_name="valley", score=0.7)])
             ]
         )
 
@@ -771,9 +767,7 @@ async def _current_phase(session: AsyncSession) -> ClassificationPhase | None:
     return run.phase
 
 
-def _phase_observing_scene_classifier(
-    session: AsyncSession, recorder: _PhaseRecorder
-) -> object:
+def _phase_observing_scene_classifier(session: AsyncSession, recorder: _PhaseRecorder) -> object:
     """Beobachtungspunkt der KRITERIEN-Phase: der Szenen-Klassifikator laeuft je Foto innerhalb
     der lokalen Foto-Schleife. Ohne ihn haette diese Phase gar keinen Beobachtungspunkt - sie
     ruft keinen Client auf."""
@@ -783,9 +777,7 @@ def _phase_observing_scene_classifier(
             # `_compute_content_criteria` laeuft synchron; der Phasenwert steht am selben
             # In-Memory-Objekt, das die Schleife fortschreibt - kein DB-Roundtrip noetig.
             run = next(
-                obj
-                for obj in session.identity_map.values()
-                if isinstance(obj, CriterionScoringRun)
+                obj for obj in session.identity_map.values() if isinstance(obj, CriterionScoringRun)
             )
             recorder.record(run.phase)
             return super().classify(image)
@@ -819,9 +811,7 @@ async def test_the_phase_sequence_of_a_cloud_run_is_monotone(
         # Der Ranking-Teilschritt hat keinen Client - der Spy auf rank_photos ist sein einziger
         # Beobachtungspunkt WAEHREND der Ausfuehrung.
         run = next(
-            obj
-            for obj in db_session.identity_map.values()
-            if isinstance(obj, CriterionScoringRun)
+            obj for obj in db_session.identity_map.values() if isinstance(obj, CriterionScoringRun)
         )
         recorder.record(run.phase)
         return real_rank_photos(*args, **kwargs)
@@ -857,9 +847,7 @@ async def test_a_run_without_cloud_keeps_the_order_and_skips_both_cloud_phases(
 
     def _observing_rank_photos(*args: object, **kwargs: object) -> object:
         run = next(
-            obj
-            for obj in db_session.identity_map.values()
-            if isinstance(obj, CriterionScoringRun)
+            obj for obj in db_session.identity_map.values() if isinstance(obj, CriterionScoringRun)
         )
         recorder.record(run.phase)
         return real_rank_photos(*args, **kwargs)
@@ -896,9 +884,7 @@ async def test_the_ranking_step_no_longer_reports_the_landmark_phase(
 
     def _observing_rank_photos(*args: object, **kwargs: object) -> object:
         run = next(
-            obj
-            for obj in db_session.identity_map.values()
-            if isinstance(obj, CriterionScoringRun)
+            obj for obj in db_session.identity_map.values() if isinstance(obj, CriterionScoringRun)
         )
         observed.append(run.phase)
         return real_rank_photos(*args, **kwargs)
@@ -976,9 +962,7 @@ async def test_a_cloud_run_links_its_own_remote_run(
         build_category_client=lambda _model: RecordingCategoryClient(),
     )
 
-    remote_run = (
-        (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().one()
-    )
+    remote_run = (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().one()
     assert run.remote_category_classification_run_id == remote_run.id
 
 
@@ -1010,9 +994,7 @@ async def test_the_link_exists_before_the_first_remote_call(
         build_category_client=lambda _model: _LinkObservingClient(),
     )
 
-    remote_run = (
-        (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().one()
-    )
+    remote_run = (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().one()
     assert observed == [remote_run.id]
 
 
@@ -1077,8 +1059,7 @@ async def test_two_consecutive_runs_each_carry_their_own_remote_run(
     assert first.remote_category_classification_run_id is not None
     assert second.remote_category_classification_run_id is not None
     assert (
-        first.remote_category_classification_run_id
-        != second.remote_category_classification_run_id
+        first.remote_category_classification_run_id != second.remote_category_classification_run_id
     )
 
 

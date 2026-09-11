@@ -109,8 +109,7 @@ class TestSchema:
                 _apply_upgrade(connection)
             inspector = inspect(engine)
             columns = {
-                col["name"]
-                for col in inspector.get_columns("photo_category_classifications")
+                col["name"] for col in inspector.get_columns("photo_category_classifications")
             }
             pk = inspector.get_pk_constraint("photo_category_classifications")
         finally:
@@ -183,9 +182,7 @@ class TestSchema:
 class TestDataStepC:
     """Datenschritt (c): `DELETE FROM photo_fine_labels`, aber `fine_labels` BLEIBT."""
 
-    def test_photo_fine_labels_are_deleted_but_the_registry_survives(
-        self, tmp_path: Path
-    ) -> None:
+    def test_photo_fine_labels_are_deleted_but_the_registry_survives(self, tmp_path: Path) -> None:
         engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
         try:
             with engine.begin() as connection:
@@ -198,9 +195,11 @@ class TestDataStepC:
                 detection_count = connection.execute(
                     text("SELECT count(*) FROM photo_fine_labels")
                 ).scalar_one()
-                registry_rows = connection.execute(
-                    text("SELECT canonical_key FROM fine_labels")
-                ).scalars().all()
+                registry_rows = (
+                    connection.execute(text("SELECT canonical_key FROM fine_labels"))
+                    .scalars()
+                    .all()
+                )
         finally:
             engine.dispose()
 

@@ -64,7 +64,7 @@ describe('formatClusterHeading', () => {
     // leeren Array ein unklares "cannot read properties of undefined" statt einer nachvollziehbaren
     // Meldung, die auf den verletzten Vertrag (nicht-leeres Array) hinweist.
     expect(() => formatClusterHeading([])).toThrow(
-      'formatClusterHeading() erwartet ein nicht-leeres Array'
+      'formatClusterHeading() erwartet ein nicht-leeres Array',
     )
   })
 
@@ -112,7 +112,6 @@ describe('formatDayHeading', () => {
     expect(formatDayHeading('2026-02-01')).toBe('Sonntag 01.02.2026')
   })
 })
-
 
 // specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072 Entscheidung 1: der Ortsteil der
 // Cluster-Ueberschrift kommt FERTIG AUFGELOEST als `PhotoOut.cluster_place` vom Server. Das
@@ -317,7 +316,7 @@ describe('formatClusterHeading mit Ortsangabe', () => {
     ])
 
     expect(result.heading).toBe(
-      '<img src=x onerror="window.__pwned = true"> · Nachmittags (13:00 Uhr)'
+      '<img src=x onerror="window.__pwned = true"> · Nachmittags (13:00 Uhr)',
     )
   })
 })

@@ -338,9 +338,7 @@ class TestAssignClustersByLocation:
         base = datetime(2023, 1, 1, 10, 0, 0)
         candidates = [
             ClusterCandidate(photo_id=1, taken_at=base, gps_lat=0.0, gps_lon=0.0),
-            ClusterCandidate(
-                photo_id=2, taken_at=base + _one_second(), gps_lat=None, gps_lon=None
-            ),
+            ClusterCandidate(photo_id=2, taken_at=base + _one_second(), gps_lat=None, gps_lon=None),
             ClusterCandidate(
                 photo_id=3, taken_at=base + 2 * _one_second(), gps_lat=0.0, gps_lon=0.0
             ),
@@ -360,9 +358,7 @@ class TestAssignClustersByLocation:
         base = datetime(2023, 1, 1, 10, 0, 0)
         candidates = [
             ClusterCandidate(photo_id=1, taken_at=base, gps_lat=0.0, gps_lon=0.0),
-            ClusterCandidate(
-                photo_id=2, taken_at=base + _one_second(), gps_lat=None, gps_lon=None
-            ),
+            ClusterCandidate(photo_id=2, taken_at=base + _one_second(), gps_lat=None, gps_lon=None),
             ClusterCandidate(
                 photo_id=3,
                 taken_at=base + 2 * _one_second(),
@@ -451,9 +447,7 @@ class TestAssignClustersByLocation:
         base = datetime(2023, 1, 1, 10, 0, 0)
         candidates = [
             ClusterCandidate(photo_id=1, taken_at=base, gps_lat=None, gps_lon=None),
-            ClusterCandidate(
-                photo_id=2, taken_at=base + _one_second(), gps_lat=None, gps_lon=None
-            ),
+            ClusterCandidate(photo_id=2, taken_at=base + _one_second(), gps_lat=None, gps_lon=None),
             ClusterCandidate(
                 photo_id=3,
                 taken_at=base + TIME_CLUSTER_GAP + _one_second(),
@@ -477,9 +471,7 @@ class TestAssignClustersByLocation:
         base = datetime(2023, 1, 1, 10, 0, 0)
         candidates = [
             ClusterCandidate(photo_id=1, taken_at=base, gps_lat=0.0, gps_lon=0.0),
-            ClusterCandidate(
-                photo_id=2, taken_at=base + _one_second(), gps_lat=80.0, gps_lon=None
-            ),
+            ClusterCandidate(photo_id=2, taken_at=base + _one_second(), gps_lat=80.0, gps_lon=None),
         ]
 
         result = assign_clusters(candidates)

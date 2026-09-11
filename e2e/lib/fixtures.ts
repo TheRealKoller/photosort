@@ -40,19 +40,19 @@ export const test = base.extend<Fixtures & Options>({
 
       expect(
         log.pageErrors.map((error) => error.message),
-        'unbehandelte Seitenfehler im Browser'
+        'unbehandelte Seitenfehler im Browser',
       ).toEqual([])
 
       const unexpected = serverErrors(log).filter(
         (request) =>
           !expectedServerErrors.some(
             (expected) =>
-              expected.status === request.status && expected.urlPattern.test(request.url)
-          )
+              expected.status === request.status && expected.urlPattern.test(request.url),
+          ),
       )
       expect(
         unexpected.map((request) => `${request.method} ${request.url} -> ${request.status}`),
-        'unerwartete 5xx-Antworten'
+        'unerwartete 5xx-Antworten',
       ).toEqual([])
     },
     // "auto": die Zusage darf nicht davon abhaengen, dass ein Spec die Fixture anfordert.

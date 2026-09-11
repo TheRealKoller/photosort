@@ -5,6 +5,7 @@ Revises: b2d3e4f5a6b7
 Create Date: 2026-08-08 09:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -12,8 +13,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'd4e5f6a7b8c9'
-down_revision: Union[str, Sequence[str], None] = 'b2d3e4f5a6b7'
+revision: str = "d4e5f6a7b8c9"
+down_revision: Union[str, Sequence[str], None] = "b2d3e4f5a6b7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -21,35 +22,42 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
     op.add_column(
-        'photo_scores',
+        "photo_scores",
         sa.Column(
-            'category',
-            sa.Enum('LANDSCAPE', 'DETAIL', 'PEOPLE', name='photocategory', native_enum=False, length=20),
+            "category",
+            sa.Enum(
+                "LANDSCAPE", "DETAIL", "PEOPLE", name="photocategory", native_enum=False, length=20
+            ),
             nullable=True,
         ),
     )
     op.create_table(
-        'top_selection_runs',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('project_id', sa.Integer(), nullable=False),
+        "top_selection_runs",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("project_id", sa.Integer(), nullable=False),
         sa.Column(
-            'status',
-            sa.Enum('RUNNING', 'SUCCESS', 'FAILED', name='scanstatus', native_enum=False, length=20),
+            "status",
+            sa.Enum(
+                "RUNNING", "SUCCESS", "FAILED", name="scanstatus", native_enum=False, length=20
+            ),
             nullable=False,
         ),
-        sa.Column('started_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-        sa.Column('finished_at', sa.DateTime(), nullable=True),
-        sa.Column('top_n_per_cluster', sa.Integer(), nullable=False),
-        sa.Column('candidates_total', sa.Integer(), nullable=False),
-        sa.Column('candidates_processed', sa.Integer(), nullable=False),
-        sa.Column('suggestions_found', sa.Integer(), nullable=False),
-        sa.Column('error_message', sa.String(), nullable=True),
-        sa.ForeignKeyConstraint(['project_id'], ['projects.id'], ),
-        sa.PrimaryKeyConstraint('id'),
+        sa.Column("started_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("finished_at", sa.DateTime(), nullable=True),
+        sa.Column("top_n_per_cluster", sa.Integer(), nullable=False),
+        sa.Column("candidates_total", sa.Integer(), nullable=False),
+        sa.Column("candidates_processed", sa.Integer(), nullable=False),
+        sa.Column("suggestions_found", sa.Integer(), nullable=False),
+        sa.Column("error_message", sa.String(), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["project_id"],
+            ["projects.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
     )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_table('top_selection_runs')
-    op.drop_column('photo_scores', 'category')
+    op.drop_table("top_selection_runs")
+    op.drop_column("photo_scores", "category")

@@ -164,7 +164,7 @@ export function candidateCountOfCluster(photosByCategory: {
 }): number {
   return Object.values(photosByCategory).reduce(
     (sum, entries) => sum + candidateCountOfCategory(entries),
-    0
+    0,
   )
 }
 
@@ -238,7 +238,8 @@ const LOW_CONFIDENCE_FILTER_LABEL = 'Nur unsichere Zuordnungen'
  */
 export function filterLowConfidence(items: PhotoOut[]): PhotoOut[] {
   return items.filter(
-    (item) => item.category_confidence !== null && item.category_confidence < LOW_CONFIDENCE_THRESHOLD
+    (item) =>
+      item.category_confidence !== null && item.category_confidence < LOW_CONFIDENCE_THRESHOLD,
   )
 }
 
@@ -393,7 +394,7 @@ export function CurateCategoriesPage() {
           rejectingPhotoIdsRef.current = next
           setRejectingPhotoIds(next)
         },
-      }
+      },
     )
   }
 
@@ -535,7 +536,9 @@ export function CurateCategoriesPage() {
               <div id={panelId} className="flex flex-col gap-4">
                 {dayIsEmpty && (
                   <p className="text-sm text-text">
-                    {lowConfidenceOnly ? LOW_CONFIDENCE_EMPTY_DAY_TEXT : 'Keine Fotos für diesen Tag'}
+                    {lowConfidenceOnly
+                      ? LOW_CONFIDENCE_EMPTY_DAY_TEXT
+                      : 'Keine Fotos für diesen Tag'}
                   </p>
                 )}
                 {!dayIsEmpty &&
@@ -543,7 +546,7 @@ export function CurateCategoriesPage() {
                     const photosByCategory = clustersForDay[clusterKey]
                     const categoryKeys = sortCategoryKeys(
                       Object.keys(photosByCategory),
-                      categorySet
+                      categorySet,
                     )
                     const clusterIsEmpty = !categoriesHavePhotos(photosByCategory)
                     const heading = clusterMetaRef.current.get(clusterKey)?.heading ?? clusterKey

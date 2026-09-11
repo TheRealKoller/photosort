@@ -10,10 +10,7 @@ import type {
 } from '../api/types'
 import { cn } from '../lib/utils'
 import { formatCategoryKey, formatProviderLabel, type CategorySet } from '../utils/categoryLabels'
-import {
-  CONFIDENCE_EXPLANATION,
-  CONFIDENCE_EXPLANATION_LABEL,
-} from '../utils/confidenceLabels'
+import { CONFIDENCE_EXPLANATION, CONFIDENCE_EXPLANATION_LABEL } from '../utils/confidenceLabels'
 import { formatCriterionPercent } from '../utils/formatStats'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 import { CategorySelect } from './CategorySelect'
@@ -95,7 +92,7 @@ export type CriterionDetailsPart = 'all' | 'controls' | 'info'
  */
 export function hasCategoryControls(
   criterionScores: CriterionScoreOut[],
-  ranking: RankingOut | null
+  ranking: RankingOut | null,
 ): boolean {
   return criterionScores.length > 0 && ranking !== null
 }
@@ -134,9 +131,7 @@ function CandidateConfidence({ confidence }: { confidence: number | null }) {
   if (confidence === null) {
     return null
   }
-  return (
-    <span className="font-normal text-text-muted">{formatCriterionPercent(confidence)}</span>
-  )
+  return <span className="font-normal text-text-muted">{formatCriterionPercent(confidence)}</span>
 }
 
 /**
@@ -188,7 +183,7 @@ interface CategoryCandidateRow extends CategoryCandidateOut {
 
 function buildCategoryCandidateRows(
   categoryCandidates: CategoryCandidateOut[],
-  categoryOverride: CategoryKey | null
+  categoryOverride: CategoryKey | null,
 ): CategoryCandidateRow[] {
   // specs/features/0289-feste-kategorien.md: die Reihenfolge kommt seit dieser Spec bereits vom
   // Server (Registry-Anzeigereihenfolge) - hier wird bewusst NICHT mehr umsortiert. Das frueher
@@ -197,7 +192,8 @@ function buildCategoryCandidateRows(
   // haette keine Entsprechung mehr in der Logik.
   const rows: CategoryCandidateRow[] = [...categoryCandidates]
   const overrideIsOrphan =
-    categoryOverride !== null && !categoryCandidates.some((c) => c.category_key === categoryOverride)
+    categoryOverride !== null &&
+    !categoryCandidates.some((c) => c.category_key === categoryOverride)
   if (overrideIsOrphan) {
     // `confidence: null` ist hier die inhaltlich richtige Aussage, kein Fuellwert: eine verwaiste
     // Zeile hat gerade KEINEN Kandidaten mehr in der aktuellen Liste und damit keine Modellzahl.

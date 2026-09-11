@@ -63,9 +63,7 @@ def test_migration_adds_both_confidence_columns(tmp_path: Path) -> None:
             _create_pre_migration_schema(connection)
             _apply(connection, "upgrade")
 
-        columns = {
-            c["name"] for c in inspect(engine).get_columns("photo_category_classifications")
-        }
+        columns = {c["name"] for c in inspect(engine).get_columns("photo_category_classifications")}
     finally:
         engine.dispose()
 
@@ -133,9 +131,7 @@ def test_downgrade_removes_both_columns_again(tmp_path: Path) -> None:
             _apply(connection, "upgrade")
             _apply(connection, "downgrade")
 
-        columns = {
-            c["name"] for c in inspect(engine).get_columns("photo_category_classifications")
-        }
+        columns = {c["name"] for c in inspect(engine).get_columns("photo_category_classifications")}
     finally:
         engine.dispose()
 

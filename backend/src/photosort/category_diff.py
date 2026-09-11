@@ -84,9 +84,7 @@ class CategoryDiff:
         return counts
 
 
-def diff_category_assignments(
-    before: Mapping[int, str], after: Mapping[int, str]
-) -> CategoryDiff:
+def diff_category_assignments(before: Mapping[int, str], after: Mapping[int, str]) -> CategoryDiff:
     """Reine, DB-freie Vergleichsfunktion (ADR 0047 Punkt 7: Logik rein, I/O aussen). Fotos, die
     nur in einem der beiden Laeufe eine Zuordnung haben, erscheinen mit MISSING_CATEGORY auf der
     fehlenden Seite - sie fallen nicht stillschweigend aus dem Vergleich. Sortierung nach
@@ -160,17 +158,13 @@ async def collect_assignments(session: AsyncSession, run_id: int) -> dict[int, s
     return {photo_id: category_key for photo_id, category_key in rows}
 
 
-async def collect_photo_paths(
-    session: AsyncSession, photo_ids: Iterable[int]
-) -> dict[int, str]:
+async def collect_photo_paths(session: AsyncSession, photo_ids: Iterable[int]) -> dict[int, str]:
     """Duenne DB-Leseschicht: photo_id -> relative_path fuer die Foto-Einzelliste."""
     ids = list(photo_ids)
     if not ids:
         return {}
     rows = (
-        await session.execute(
-            select(Photo.id, Photo.relative_path).where(Photo.id.in_(ids))
-        )
+        await session.execute(select(Photo.id, Photo.relative_path).where(Photo.id.in_(ids)))
     ).all()
     return {photo_id: relative_path for photo_id, relative_path in rows}
 
@@ -203,9 +197,7 @@ async def resolve_run_ids(
         for run_id in (before_run_id, after_run_id):
             run = await session.get(CriterionScoringRun, run_id)
             if run is None or run.project_id != project_id:
-                raise CategoryDiffError(
-                    f"Lauf {run_id} gehoert nicht zu Projekt {project_id}."
-                )
+                raise CategoryDiffError(f"Lauf {run_id} gehoert nicht zu Projekt {project_id}.")
         return before_run_id, after_run_id
 
     run_ids = list(
@@ -245,9 +237,7 @@ async def build_report(
     after = await collect_assignments(session, resolved_after)
     diff = diff_category_assignments(before, after)
     paths = await collect_photo_paths(session, (t.photo_id for t in diff.transitions))
-    return render_report(
-        diff, paths, before_run_id=resolved_before, after_run_id=resolved_after
-    )
+    return render_report(diff, paths, before_run_id=resolved_before, after_run_id=resolved_after)
 
 
 async def _build_report_with_own_session(

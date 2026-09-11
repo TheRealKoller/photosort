@@ -68,7 +68,7 @@ export function CategorySelect({
 
   const orderedKeys = sortCategoryKeys(
     categories.map((entry) => entry.key),
-    categories
+    categories,
   )
   const selectedValue = value !== null && orderedKeys.includes(value) ? value : ''
 
@@ -100,8 +100,8 @@ export function CategorySelect({
         ))}
       </select>
       <p id={hintId} className="text-xs text-text">
-        „{formatCategoryKey(CATCH_ALL_CATEGORY_KEY, categories)}“ verwendest du, wenn kein
-        Bildmotiv sicher bestimmbar ist.
+        „{formatCategoryKey(CATCH_ALL_CATEGORY_KEY, categories)}“ verwendest du, wenn kein Bildmotiv
+        sicher bestimmbar ist.
       </p>
     </div>
   )

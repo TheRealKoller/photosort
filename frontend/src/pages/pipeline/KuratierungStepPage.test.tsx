@@ -27,7 +27,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
 }
 
 function criterionScoringRun(
-  overrides: Partial<CriterionScoringRunSummary> = {}
+  overrides: Partial<CriterionScoringRunSummary> = {},
 ): CriterionScoringRunSummary {
   return {
     status: 'success',
@@ -47,7 +47,9 @@ function criterionScoringRun(
 }
 
 function OutletHost({ project: contextProject, refetchProject }: PipelineOutletContext) {
-  return <Outlet context={{ project: contextProject, refetchProject } satisfies PipelineOutletContext} />
+  return (
+    <Outlet context={{ project: contextProject, refetchProject } satisfies PipelineOutletContext} />
+  )
 }
 
 function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
@@ -61,7 +63,7 @@ function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
           </Route>
         </Routes>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -70,10 +72,10 @@ describe('KuratierungStepPage', () => {
     renderPage(project())
 
     expect(
-      screen.queryByRole('heading', { name: 'Remote-Kategorisierung' })
+      screen.queryByRole('heading', { name: 'Remote-Kategorisierung' }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: /remote-kategorisierung starten/i })
+      screen.queryByRole('button', { name: /remote-kategorisierung starten/i }),
     ).not.toBeInTheDocument()
   })
 
@@ -81,12 +83,12 @@ describe('KuratierungStepPage', () => {
     renderPage(project())
 
     expect(
-      screen.getByText(/zeigt pro foto-moment und kategorie die besten n fotos/i)
+      screen.getByText(/zeigt pro foto-moment und kategorie die besten n fotos/i),
     ).toBeInTheDocument()
     const link = screen.getByRole('link', { name: 'Kuratierung öffnen' })
     expect(link).toHaveAttribute('href', `/projects/1/curate?topN=${DEFAULT_TOP_N}`)
     expect((screen.getByLabelText(/top-fotos pro kategorie/i) as HTMLInputElement).value).toBe(
-      String(DEFAULT_TOP_N)
+      String(DEFAULT_TOP_N),
     )
   })
 
@@ -100,7 +102,7 @@ describe('KuratierungStepPage', () => {
     expect(screen.queryByText(/rückt automatisch das nächstbeste/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/nachrück/i)).not.toBeInTheDocument()
     expect(
-      screen.getByText(/verworfene fotos bleiben an ihrer stelle sichtbar/i)
+      screen.getByText(/verworfene fotos bleiben an ihrer stelle sichtbar/i),
     ).toBeInTheDocument()
   })
 
@@ -114,7 +116,7 @@ describe('KuratierungStepPage', () => {
 
     expect(screen.getByRole('link', { name: 'Kuratierung öffnen' })).toHaveAttribute(
       'href',
-      '/projects/1/curate?topN=5'
+      '/projects/1/curate?topN=5',
     )
   })
 
@@ -128,7 +130,7 @@ describe('KuratierungStepPage', () => {
 
     expect(screen.getByRole('link', { name: 'Kuratierung öffnen' })).toHaveAttribute(
       'href',
-      `/projects/1/curate?topN=${MAX_TOP_N}`
+      `/projects/1/curate?topN=${MAX_TOP_N}`,
     )
   })
 
@@ -141,7 +143,7 @@ describe('KuratierungStepPage', () => {
 
     expect(screen.getByRole('link', { name: 'Kuratierung öffnen' })).toHaveAttribute(
       'href',
-      `/projects/1/curate?topN=${DEFAULT_TOP_N}`
+      `/projects/1/curate?topN=${DEFAULT_TOP_N}`,
     )
   })
 })

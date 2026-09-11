@@ -69,9 +69,7 @@ async def test_login_with_unknown_username_still_runs_dummy_verification(
     def fake_verify_dummy_password(password: str) -> None:
         calls.append(password)
 
-    monkeypatch.setattr(
-        "photosort.api.auth.verify_dummy_password", fake_verify_dummy_password
-    )
+    monkeypatch.setattr("photosort.api.auth.verify_dummy_password", fake_verify_dummy_password)
 
     response = await api_client.post(
         "/auth/login", json={"username": "unknown-user", "password": "some-password"}

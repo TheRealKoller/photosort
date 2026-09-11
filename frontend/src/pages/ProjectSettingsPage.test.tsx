@@ -46,7 +46,7 @@ function renderPage() {
           <Route path="/projects/:projectId/settings" element={<ProjectSettingsPage />} />
         </Routes>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -66,7 +66,7 @@ describe('ProjectSettingsPage', () => {
 
   it('shows a not-found message for an unknown project', async () => {
     vi.mocked(projectsApi.getProject).mockRejectedValue(
-      new ApiError(404, 'Projekt nicht gefunden.')
+      new ApiError(404, 'Projekt nicht gefunden.'),
     )
 
     renderPage()
@@ -90,7 +90,7 @@ describe('ProjectSettingsPage', () => {
       project({
         cloud_vision_detection_enabled: true,
         cloud_vision_consent_at: '2026-08-21T10:00:00Z',
-      })
+      }),
     )
 
     renderPage()
@@ -115,9 +115,7 @@ describe('ProjectSettingsPage', () => {
     })
     await user.click(toggle)
 
-    await waitFor(() =>
-      expect(projectsApi.setCloudVisionConsent).toHaveBeenCalledWith(1, true)
-    )
+    await waitFor(() => expect(projectsApi.setCloudVisionConsent).toHaveBeenCalledWith(1, true))
   })
 
   it('disables the consent via the PUT endpoint when an already-enabled toggle is switched off', async () => {
@@ -126,7 +124,7 @@ describe('ProjectSettingsPage', () => {
       project({
         cloud_vision_detection_enabled: true,
         cloud_vision_consent_at: '2026-08-21T10:00:00Z',
-      })
+      }),
     )
     vi.mocked(projectsApi.setCloudVisionConsent).mockResolvedValue({
       cloud_vision_detection_enabled: false,
@@ -139,9 +137,7 @@ describe('ProjectSettingsPage', () => {
     })
     await user.click(toggle)
 
-    await waitFor(() =>
-      expect(projectsApi.setCloudVisionConsent).toHaveBeenCalledWith(1, false)
-    )
+    await waitFor(() => expect(projectsApi.setCloudVisionConsent).toHaveBeenCalledWith(1, false))
   })
 
   it('shows the info popover explaining the cloud processing when the info trigger is clicked', async () => {
@@ -154,9 +150,7 @@ describe('ProjectSettingsPage', () => {
     })
     await user.click(infoTrigger)
 
-    expect(
-      await screen.findByText(/an die anthropic-cloud-api versendet/i)
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/an die anthropic-cloud-api versendet/i)).toBeInTheDocument()
   })
 
   it('disables the toggle while the consent update is in flight (busy-button pattern)', async () => {
@@ -179,7 +173,7 @@ describe('ProjectSettingsPage', () => {
     renderPage()
 
     expect(
-      await screen.findByRole('heading', { name: 'Gefahrenzone', level: 2 })
+      await screen.findByRole('heading', { name: 'Gefahrenzone', level: 2 }),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Projekt löschen' })).toBeInTheDocument()
     expect(screen.getByText(/Die Original-Fotos auf OpenCloud bleiben unverändert/)).toBeVisible()
@@ -220,7 +214,7 @@ describe('ProjectSettingsPage', () => {
     const firstDialog = within(await screen.findByRole('dialog'))
     await user.type(
       firstDialog.getByLabelText(/Projektnamen zur Bestätigung eintippen/),
-      'Costa Rica'
+      'Costa Rica',
     )
     expect(firstDialog.getByRole('button', { name: 'Projekt löschen' })).toBeEnabled()
 

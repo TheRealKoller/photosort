@@ -42,7 +42,7 @@ function renderPage() {
         <Route path="/projects/:id" element={<p>Projekt-Detail-Seite</p>} />
       </Routes>
     </MemoryRouter>,
-    { wrapper }
+    { wrapper },
   )
 }
 

@@ -21,7 +21,7 @@ function renderProbe() {
         <Route path="/" element={<Probe />} />
         <Route path="/login" element={<LoginStub />} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 

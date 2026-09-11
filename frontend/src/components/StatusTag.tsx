@@ -42,7 +42,7 @@ export function StatusTag({ status, className }: StatusTagProps) {
       className={cn(
         'inline-flex items-center gap-1 rounded-sm border px-2 py-1 text-xs font-semibold',
         TONE_CLASSES[status],
-        className
+        className,
       )}
     >
       {status === 'running' && (
@@ -51,7 +51,7 @@ export function StatusTag({ status, className }: StatusTagProps) {
           aria-hidden="true"
           className={cn(
             'inline-block size-2.5 shrink-0 rounded-full border-2 border-current border-t-transparent',
-            'animate-spin motion-reduce:animate-none'
+            'animate-spin motion-reduce:animate-none',
           )}
         />
       )}

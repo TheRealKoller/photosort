@@ -293,9 +293,7 @@ class TestDemoPhotoIdentity:
 
     def test_etag_is_unique_per_photo(self) -> None:
         etags = {
-            demo_etag(slug, index)
-            for slug in ("bewertet", "grosse-sammlung")
-            for index in range(5)
+            demo_etag(slug, index) for slug in ("bewertet", "grosse-sammlung") for index in range(5)
         }
         assert len(etags) == 10
 
@@ -319,9 +317,7 @@ async def _make_user(session: AsyncSession, username: str) -> User:
 
 
 async def _project(session: AsyncSession, name: str) -> Project:
-    project = (
-        (await session.execute(select(Project).where(Project.name == name))).scalars().first()
-    )
+    project = (await session.execute(select(Project).where(Project.name == name))).scalars().first()
     assert project is not None, f"Projekt {name!r} fehlt"
     return project
 
@@ -537,9 +533,7 @@ class TestRebuildDemoStateProducesTheFourStates:
         runs = (
             (
                 await db_session.execute(
-                    select(CriterionScoringRun).where(
-                        CriterionScoringRun.project_id == project.id
-                    )
+                    select(CriterionScoringRun).where(CriterionScoringRun.project_id == project.id)
                 )
             )
             .scalars()
@@ -603,7 +597,6 @@ class TestRebuildDemoStateProducesTheFourStates:
         )
         assert len(errors) >= 1
         assert all(error.error_message.strip() != "" for error in errors)
-
 
     # --- specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 7 -------------
 
@@ -724,11 +717,7 @@ class TestRebuildDemoStateIsTargetStateIdempotent:
         await db_session.execute(delete(Photo).where(Photo.id == doomed.id))
         rated_photo_ids = [photo.id for photo in await _photos_of(db_session, RATED_PROJECT_NAME)]
         rating = (
-            (
-                await db_session.execute(
-                    select(Rating).where(Rating.photo_id.in_(rated_photo_ids))
-                )
-            )
+            (await db_session.execute(select(Rating).where(Rating.photo_id.in_(rated_photo_ids))))
             .scalars()
             .first()
         )
@@ -1143,9 +1132,7 @@ class TestTheDemoStateCarriesACloudBalance:
         runs = (
             (
                 await db_session.execute(
-                    select(CriterionScoringRun).where(
-                        CriterionScoringRun.project_id == project.id
-                    )
+                    select(CriterionScoringRun).where(CriterionScoringRun.project_id == project.id)
                 )
             )
             .scalars()
@@ -1202,9 +1189,7 @@ class TestTheDemoStateCarriesACloudBalance:
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
-        runs = (
-            (await db_session.execute(select(CriterionScoringRun))).scalars().all()
-        )
+        runs = (await db_session.execute(select(CriterionScoringRun))).scalars().all()
 
         assert any(
             not run.cloud_requested

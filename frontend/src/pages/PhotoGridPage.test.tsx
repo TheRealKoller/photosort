@@ -90,7 +90,7 @@ function renderPage(initialPath = '/projects/1/photos') {
         <Route path="/projects/:projectId/photos/:photoId" element={<p>Einzelbild-Seite</p>} />
       </Routes>
     </MemoryRouter>,
-    { wrapper }
+    { wrapper },
   )
 }
 
@@ -107,7 +107,7 @@ describe('PhotoGridPage', () => {
         media: '(hover: hover) and (pointer: fine)',
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
-      })
+      }),
     )
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
@@ -163,7 +163,7 @@ describe('PhotoGridPage', () => {
     expect(screen.getByText('Neu')).toBeInTheDocument()
   })
 
-  it('only shows the current user\'s own rating, not another user\'s', async () => {
+  it("only shows the current user's own rating, not another user's", async () => {
     const list: PhotoListOut = {
       items: [
         photo({
@@ -200,8 +200,8 @@ describe('PhotoGridPage', () => {
     await waitFor(() =>
       expect(photosApi.listPhotos).toHaveBeenCalledWith(
         1,
-        expect.objectContaining({ ratingStatus: undefined })
-      )
+        expect.objectContaining({ ratingStatus: undefined }),
+      ),
     )
     expect(screen.getByRole('button', { name: 'Alle' })).toHaveAttribute('aria-pressed', 'true')
   })
@@ -218,8 +218,8 @@ describe('PhotoGridPage', () => {
     await waitFor(() =>
       expect(photosApi.listPhotos).toHaveBeenLastCalledWith(
         1,
-        expect.objectContaining({ ratingStatus: 'favorite' })
-      )
+        expect.objectContaining({ ratingStatus: 'favorite' }),
+      ),
     )
   })
 
@@ -235,8 +235,8 @@ describe('PhotoGridPage', () => {
     await waitFor(() =>
       expect(photosApi.listPhotos).toHaveBeenLastCalledWith(
         1,
-        expect.objectContaining({ ratingStatus: 'suggested' })
-      )
+        expect.objectContaining({ ratingStatus: 'suggested' }),
+      ),
     )
   })
 
@@ -248,12 +248,12 @@ describe('PhotoGridPage', () => {
     await waitFor(() =>
       expect(photosApi.listPhotos).toHaveBeenCalledWith(
         1,
-        expect.objectContaining({ ratingStatus: 'suggested' })
-      )
+        expect.objectContaining({ ratingStatus: 'suggested' }),
+      ),
     )
     expect(screen.getByRole('button', { name: 'Vorgeschlagen' })).toHaveAttribute(
       'aria-pressed',
-      'true'
+      'true',
     )
   })
 
@@ -269,8 +269,8 @@ describe('PhotoGridPage', () => {
     await waitFor(() =>
       expect(photosApi.listPhotos).toHaveBeenLastCalledWith(
         1,
-        expect.objectContaining({ ratingStatus: undefined })
-      )
+        expect.objectContaining({ ratingStatus: undefined }),
+      ),
     )
   })
 
@@ -311,7 +311,7 @@ describe('PhotoGridPage', () => {
     // sind sonst per Tastatur/Screenreader nicht auseinanderzuhalten, da alle Buttons denselben
     // sichtbaren Text "Uebernehmen" tragen.
     expect(
-      screen.getByRole('button', { name: 'Vorschlag übernehmen: sunset.jpg' })
+      screen.getByRole('button', { name: 'Vorschlag übernehmen: sunset.jpg' }),
     ).toBeInTheDocument()
   })
 
@@ -327,7 +327,7 @@ describe('PhotoGridPage', () => {
     expect(screen.queryByRole('button', { name: /übernehmen/i })).not.toBeInTheDocument()
   })
 
-  it('shows a busy state only on the confirming tile\'s own button while its request is in flight', async () => {
+  it("shows a busy state only on the confirming tile's own button while its request is in flight", async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
       items: [
         photo({ id: 1, ratings: [], suggestion: suggestion() }),
@@ -348,7 +348,7 @@ describe('PhotoGridPage', () => {
     expect(secondButton).toBeEnabled()
   })
 
-  it('allows confirming a second tile while an earlier tile\'s confirm is still in flight', async () => {
+  it("allows confirming a second tile while an earlier tile's confirm is still in flight", async () => {
     // Regression fuer einen im UI/UX-Review gefundenen Bug: eine gemeinsam genutzte
     // useSetRatingMutation-Instanz fuer die ganze Seite hat frueher jeden weiteren Klick
     // stillschweigend ignoriert, solange irgendeine andere Kachel noch "isPending" war - genau
@@ -363,7 +363,7 @@ describe('PhotoGridPage', () => {
     vi.mocked(ratingsApi.setRating).mockImplementation((photoId) =>
       photoId === 1
         ? new Promise(() => {})
-        : Promise.resolve({ user_id: 1, username: 'testuser', status: 'rejected' })
+        : Promise.resolve({ user_id: 1, username: 'testuser', status: 'rejected' }),
     )
     const user = userEvent.setup()
 
@@ -426,7 +426,7 @@ describe('PhotoGridPage', () => {
 
       await screen.findAllByRole('listitem')
       expect(
-        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' })
+        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' }),
       ).not.toBeInTheDocument()
     })
 
@@ -495,9 +495,7 @@ describe('PhotoGridPage', () => {
 
       renderPage('/projects/1/photos?filter=suggested')
       await screen.findAllByRole('listitem')
-      expect(
-        screen.queryByRole('button', { name: /ausschuss gesichtet/i })
-      ).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /ausschuss gesichtet/i })).not.toBeInTheDocument()
     })
 
     it('shows the banner and candidate count when gate=1', async () => {
@@ -509,7 +507,9 @@ describe('PhotoGridPage', () => {
       renderPage('/projects/1/photos?filter=suggested&gate=1')
 
       expect(await screen.findByText(/2 kandidaten/i)).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Ausschuss gesichtet, weiter' })).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: 'Ausschuss gesichtet, weiter' }),
+      ).toBeInTheDocument()
     })
 
     it('confirms the gate and navigates to the project pipeline overview on click (Spec 0042, AK9)', async () => {
@@ -532,7 +532,7 @@ describe('PhotoGridPage', () => {
     it('shows an error alert when confirming the gate fails', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 1 })], total: 1 })
       vi.mocked(projectsApi.confirmAusschussGate).mockRejectedValue(
-        new ApiError(409, 'Kein erfolgreicher Ausschuss-Lauf.')
+        new ApiError(409, 'Kein erfolgreicher Ausschuss-Lauf.'),
       )
       const user = userEvent.setup()
 
@@ -542,7 +542,9 @@ describe('PhotoGridPage', () => {
       })
       await user.click(confirmButton)
 
-      expect(await screen.findByRole('alert')).toHaveTextContent('Kein erfolgreicher Ausschuss-Lauf.')
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Kein erfolgreicher Ausschuss-Lauf.',
+      )
     })
   })
 
@@ -615,9 +617,7 @@ describe('PhotoGridPage', () => {
       const tierRow = screen.getByTestId('category-candidate-row-tier')
       await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
 
-      await waitFor(() =>
-        expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'tier')
-      )
+      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'tier'))
     })
   })
 })

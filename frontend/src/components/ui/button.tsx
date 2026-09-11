@@ -95,12 +95,11 @@ const buttonVariants = cva(
       variant: 'default',
       size: 'default',
     },
-  }
+  },
 )
 
 export interface ButtonProps
-  extends ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
+  extends ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   /**
    * Busy-Button-Muster (specs/architecture/0004-design-system.md, Funktionaler Fix 1 aus
    * specs/features/0012-visual-redesign.md): erzwingt den deaktivierten Zustand zentral in der
@@ -167,7 +166,7 @@ export function Button({
       className={cn(
         buttonVariants({ variant, size, className }),
         tapTargetClass,
-        isDisabledSlot && 'pointer-events-none opacity-40'
+        isDisabledSlot && 'pointer-events-none opacity-40',
       )}
       disabled={asChild ? undefined : isDisabled}
       aria-disabled={isDisabledSlot ? true : undefined}

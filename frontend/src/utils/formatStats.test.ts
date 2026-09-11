@@ -111,7 +111,6 @@ describe('formatDate / formatDateTime', () => {
   })
 })
 
-
 // specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 10: `formatCriterionPercent`
 // ist von `components/CriterionDetailsList.tsx` hierher gewandert und wird jetzt von der
 // Kandidatenliste UND dem Statistikblock geteilt - eine zweite Formatierungslogik entstuende
