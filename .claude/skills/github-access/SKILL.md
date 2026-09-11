@@ -1,6 +1,6 @@
 ---
 name: github-access
-description: Verbindlicher Operationskatalog für **jeden** GitHub-Zugriff des Entwicklungsablaufs — Story-Issue anlegen, lesen, beschreiben und verwerfen, Board-Status und Priorität setzen und lesen, Pull Request eröffnen, verknüpfen und finalisieren, Copilot-Review anfordern und auswerten. Jede Operation trägt eine stabile ID und ihre Zugangswege in fester Reihenfolge, dazu die Härtungsregeln, die Erlaubnisstufen und der Berichtsabschnitt `## Lokal nachzuholen`. Nutze diesen Skill, wenn `capture`/`refinement`/`spec-writer`/`ship-feature` an ihren jeweiligen Stellen einen GitHub-Zugriff brauchen, oder wenn Daniel direkt danach fragt ("setz Issue #NNN auf Ready", "welchen Status hat #NNN").
+description: Verbindlicher Operationskatalog für **jeden** GitHub-Zugriff des Entwicklungsablaufs — Story-Issue anlegen, lesen, beschreiben und verwerfen, Board-Status und Priorität setzen und lesen, Pull Request eröffnen, verknüpfen und finalisieren, Copilot-Review anfordern und auswerten. Jede Operation trägt eine stabile ID und ihre Zugangswege in fester Reihenfolge, dazu die Härtungsregeln, die Erlaubnisstufen und der Berichtsabschnitt `## Lokal nachzuholen`. Nutze diesen Skill, wenn `capture`/`refinement`/`spec-writer`/`ship-feature`/`ship-entwurf` an ihren jeweiligen Stellen einen GitHub-Zugriff brauchen, oder wenn Daniel direkt danach fragt ("setz Issue #NNN auf Ready", "welchen Status hat #NNN").
 ---
 
 # GitHub Access — der Operationskatalog
@@ -612,7 +612,7 @@ sind ein Widerspruch.
 
 | Stufe | Bedeutung | Wer |
 |---|---|---|
-| lesend und schreibend | darf jede Operation des Katalogs | `capture`, `refinement`, `spec-writer`, `ship-feature`, `github-access` |
+| lesend und schreibend | darf jede Operation des Katalogs | `capture`, `refinement`, `spec-writer`, `ship-feature`, `ship-entwurf`, `github-access` |
 | nur lesend | darf ausschließlich lesende Operationen | `review` (der Orchestrator) |
 | kein GitHub-Zugriff | weder lesend noch schreibend | die fünf Perspektiven-Skills `review-tests`, `review-requirements`, `review-security`, `review-architecture`, `review-ux`; alle sieben Agenten-Dateien unter `.claude/agents/`; `browse-app`, `design-system`, `skiller` |
 
@@ -689,7 +689,8 @@ Trifft eines von beidem zu, ist allein noch dieser Abschnitt nachzuziehen.
 ## Ein Fehlschlag bleibt sichtbar — das Muster (einmal vollständig, hier)
 
 Gilt für jeden Ablauf mit GitHub-Schritten (`capture`, `refinement`, `spec-writer`,
-`ship-feature`). Die vier Skills verweisen hierher, statt das Muster zu wiederholen.
+`ship-feature`, `ship-entwurf`). Die fünf Skills verweisen hierher, statt das Muster zu
+wiederholen.
 
 **1. Kein Urteil vor dem Versuch.** Es wird **nicht** vorab gemessen, ob eine Operation
 erreichbar ist — sie wird ausgeführt. Sie zu versuchen kostet nicht mehr, als sie zu messen, und
