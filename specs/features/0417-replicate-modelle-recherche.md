@@ -1,6 +1,6 @@
 # 0417 - Replicate-Modelle: Entscheidungsgrundlage und Kurzanleitung
 
-**Status:** Implemented
+**Status:** Implemented ([PR #422](https://github.com/TheRealKoller/photosort/pull/422))
 **Erstellt:** 2026-09-11
 **Bezug:** [GitHub-Issue #417](https://github.com/TheRealKoller/photosort/issues/417). Frühere
 Recherche zum selben Themenkomplex: [`0035`](./0035-klassifizierung-qualitaet-inhalt-recherche.md)
