@@ -310,9 +310,13 @@ Bericht nennt je Issue die tatsächlich geschriebene Menge**, damit ein stilles 
 wird.
 
 **Die beiden wegabhängigen Eigenheiten, benannt statt vorausgesetzt:** Ein unbekannter Wert
-scheitert auf dem `gh`-Weg laut — eine geschenkte zweite Schranke —, und auf dem `mcp`-Weg legt
-die Issues-API ihn stillschweigend als neues Label an. Tragend ist deshalb der Abgleich gegen das
-Vorrat-Literal, nicht die Nebenwirkung des einen Wegs.
+scheitert auf dem `gh`-Weg laut — am 2026-09-11 gemessen: `'bereich:tippfehler' not found`,
+Exit 1, **und kein angelegtes Label** —, und auf dem `mcp`-Weg legt die Issues-API ihn laut
+Dokumentation stillschweigend als neues Label an. Die zweite Eigenschaft ist in diesem Repository
+**nicht nachgemessen** (der `mcp`-Schreibversuch wurde von der Umgebung abgelehnt, und auf dem
+`gh`-Weg ist sie grundsätzlich nicht zu belegen). Das ändert nichts: Tragend ist der Abgleich
+gegen das Vorrat-Literal, nicht die Nebenwirkung des einen Wegs — er greift unabhängig davon, wie
+sich der `mcp`-Weg tatsächlich verhält.
 
 **Die sechs Label existieren im Repository; diese Operation legt keines an.** Einmalige
 Einrichtung durch Daniel, derselbe Umgang wie mit den Board-Feldern und ihren Optionen.

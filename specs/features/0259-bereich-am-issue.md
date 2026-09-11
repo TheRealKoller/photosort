@@ -31,7 +31,7 @@ Issues zu öffnen.
 
 ## Akzeptanzkriterien
 
-- [ ] **Vorrat.** Der Bereichsvorrat steht als geschlossene Menge in **genau einer Zeile fester
+- [x] **Vorrat.** Der Bereichsvorrat steht als geschlossene Menge in **genau einer Zeile fester
       Form** im Operationskatalog (`.claude/skills/github-access/SKILL.md`). In **allem von Git
       Verwalteten außer `specs/**` und der Wächterdatei selbst** kommt außerhalb dieser Datei
       **kein** `bereich:`-Wert vor. Eine Erweiterung verlangt eine Änderung an dieser Zeile
@@ -42,34 +42,40 @@ Issues zu öffnen.
       `.github/ISSUE_TEMPLATE/*.yml` durch — Dateien, die nachweislich Label vergeben. Der
       Suchraum ist eine Negativliste geworden; die Zusicherung wird dadurch **weiter**, nicht
       schwächer.
-- [ ] **Startvorrat**, in Trägerform: `bereich:frontend`, `bereich:backend`, `bereich:pipeline`,
+- [x] **Startvorrat**, in Trägerform: `bereich:frontend`, `bereich:backend`, `bereich:pipeline`,
       `bereich:ai-workflow`, `bereich:design`, `bereich:infra`. Die Präfixbindung ist Teil des
-      Kriteriums, nicht Umsetzungsdetail (Begründung unter „Teststrategie").
-- [ ] **Mehrere oder keiner.** Träger ist eine Label-Menge; mehrere Werte und die leere Menge sind
+      Kriteriums, nicht Umsetzungsdetail (Begründung unter „Teststrategie"). Die sechs Label sind
+      im Repository angelegt.
+- [x] **Mehrere oder keiner.** Träger ist eine Label-Menge; mehrere Werte und die leere Menge sind
       zulässige Zustände. Der Katalogeintrag beschreibt den **Zielzustand** der Menge, nicht einen
       Zuwachs, und hält fest, dass auf dem `mcp`-Weg die vollständige Menge einschließlich
       `idee`/`bug` zu übergeben ist. Nicht automatisiert prüfbar (Zustand auf GitHub) —
-      Review-Kriterium plus einmaliger Beleg am Wegwerf-Issue.
+      Review-Kriterium plus Beleg aus dem Nachlauf: **Alle 11 vorbestehenden `bug`/`idee`-Label
+      sind erhalten geblieben**, es gab kein stilles Wegfallen. `bereich:design` ist an keinem
+      Issue vergeben — die leere Menge eines Werts ist damit ebenfalls belegt, und der Wert bleibt
+      im Vorrat.
 - [ ] **Auf der Karte sichtbar.** **Offen**, bis die Board-Ansicht das Label zeigt und es einmal
-      belegt ist. Kein Test dieses Repositoriums prüft das.
-- [ ] **Board eingrenzbar** (`label:"bereich:…"`). Dieselbe Klasse, derselbe Beleg, ebenfalls
-      **offen** bis zum Nachweis.
-- [ ] **Beim Schärfen vergeben, beim Erfassen leer.** In `refinement`, Schritt 6, steht eine
+      belegt ist. Kein Test dieses Repositoriums prüft das; der Nachweis ist eine
+      Ansichtseinstellung des Boards und liegt bei Daniel.
+- [x] **Board eingrenzbar** (`label:"bereich:…"`). Im Nachlauf gemessen: `bereich:pipeline` grenzt
+      auf 8 Issues ein, `bereich:ai-workflow` auf 5, `bereich:design` auf 0.
+- [x] **Beim Schärfen vergeben, beim Erfassen leer.** In `refinement`, Schritt 6, steht eine
       Ausführungsstelle von `issue-bereich-setzen` — zeilenanfangs-verankert in Backticks — hinter
       `issue-titel-schreiben` und vor **jeder** Ausführungsstelle einer `board-`-Operation. In
       `capture/SKILL.md` kommt weder die Operations-ID noch ein `bereich:`-Wert vor. Zur Laufzeit
       darf der Schritt entfallen (kein Bereich trifft zu); die **Ausführungsstelle im Text** muss
       trotzdem existieren — ihr Fehlen ist ein Befund, kein Sonderfall.
-- [ ] **Einmalige Nachkennzeichnung.** Maßgeblicher Zeitpunkt ist der Lauf unmittelbar vor
+- [x] **Einmalige Nachkennzeichnung.** Maßgeblicher Zeitpunkt ist der Lauf unmittelbar vor
       Eröffnung des Pull Requests. Beleg im PR-Body: die über `issue-liste-lesen` erhobene Liste
       der offenen Issues vorher und nachher, die Zahl der gekennzeichneten Issues und die
       namentliche Nennung jedes bewusst ohne Bereich belassenen Issues samt Grund. Benannte
       Nachweispflicht, kein Test — danach geöffnete Issues fallen unter das vorige Kriterium.
-- [ ] **Tritt neben Status und Priorität.** Kein Katalogeintrag einer `board-`-Operation ändert
+      **Gelaufen: 21 offene Issues, alle gekennzeichnet, keines bewusst ohne Bereich gelassen.**
+- [x] **Tritt neben Status und Priorität.** Kein Katalogeintrag einer `board-`-Operation ändert
       sich; `issue-bereich-setzen` schreibt kein Board-Feld und trägt keine Nachhol-Zeile; die
       Kette in `refinement` behält `board-prioritaet-setzen` und `board-status-setzen` mit Wert
       `Ready` unverändert als letzte Schritte.
-- [ ] **Fehlschlag hält die Story zurück.** Scheitert `issue-bereich-setzen` auf allen Wegen,
+- [x] **Fehlschlag hält die Story zurück.** Scheitert `issue-bereich-setzen` auf allen Wegen,
       entfallen alle nachfolgenden Operationen, das Issue erreicht `Ready` nicht, und der Schritt
       erscheint **nicht** unter `## Lokal nachzuholen`.
 
@@ -139,7 +145,8 @@ Wahrheitsort, keine Synchronisation, kein Zustand im Repository.
    echten Bestand verdrahten. Mutationsnachweis wird geführt, nicht geglaubt.
 3. **Ablauf.** `refinement` Schritt 6 ergänzen, Ketten-Zusicherung mitziehen.
 4. **Mitziehen.** `ci.yml`-Kommentar, `docs/ai-workflow.md`, Test- und Sicherheitskonzept.
-5. **Einmalige Einrichtung und Nachlauf** (kein Code, vor Eröffnung des Pull Requests): Daniel legt
+5. **Einmalige Einrichtung und Nachlauf** — **gelaufen** (kein Code, vor Eröffnung des Pull
+   Requests; Ergebnisse unter „Teststrategie" und in den Akzeptanzkriterien): Daniel legt
    die sechs Label einmal im Repository an — keine Operation legt sie an. Danach ein Sitzungslauf:
    `issue-liste-lesen`, je Issue `issue-lesen`, Zuordnung, `issue-bereich-setzen`. Dazu der
    Repro-Lauf am Wegwerf-Issue (siehe „Teststrategie").
@@ -315,13 +322,27 @@ Vorkommen findet — sonst ist ein kaputtes Muster von einem sauberen Bestand ni
 **Board-Karte und Board-Filter — der Beleg statt eines Ersatztests.** Kein Test dieses
 Repositoriums kann prüfen, dass das Label auf der Karte sichtbar ist oder dass sich das Board
 eingrenzen lässt; beides sind Eigenschaften von GitHubs Oberfläche. Die einzige repo-seitige
-Ersatzzusicherung ist die **Wahl des Trägers**. Ein einziger Repro-Lauf an einem Wegwerf-Issue
-belegt vier Dinge, die sonst Annahme blieben: (1) das Label erscheint auf der Karte, (2) das Board
-lässt sich eingrenzen, (3) `gh issue edit --add-label bereich:tippfehler` scheitert laut, (4)
-derselbe unbekannte Wert wird auf dem `mcp`-Weg still angelegt. Punkt 3 und 4 sind tragend für die
-Risikoabwägung und bisher **nicht belegt**; fällt die Messung anders aus, ändert sich die Antwort.
-Danach werden Wegwerf-Issue und versehentlich entstandenes Label entfernt; das Ergebnis gehört als
-benannter Nachweis in den PR-Body.
+Ersatzzusicherung ist die **Wahl des Trägers**. Vier Dinge sollten gemessen statt angenommen
+werden. **Drei sind es inzwischen, eines bleibt offen und wird als Auslassung ausgewiesen, nicht
+als erledigt:**
+
+1. **Das Label erscheint auf der Karte — offen.** Eine Ansichtseinstellung des Boards; der
+   Nachweis liegt bei Daniel.
+2. **Das Board lässt sich eingrenzen — belegt.** `bereich:pipeline` grenzt auf 8 Issues ein,
+   `bereich:ai-workflow` auf 5, `bereich:design` auf 0.
+3. **Ein unbekannter Wert scheitert auf dem `gh`-Weg laut — belegt.**
+   `--add-label bereich:tippfehler` scheitert mit `'bereich:tippfehler' not found`, Exit 1, **und
+   legt kein Label an**. Es gab folglich auch nichts aufzuräumen.
+4. **Derselbe Wert wird auf dem `mcp`-Weg still angelegt — nicht belegt, und das bleibt so.** Der
+   `mcp`-Schreibzugriff wurde vom Berechtigungs-Klassifizierer der Umgebung abgelehnt. Auf dem
+   `gh`-Weg ist dieser Nachweis **grundsätzlich nicht führbar**: Dass ein unbekannter Wert *still*
+   angelegt wird, ist gerade die Eigenschaft des anderen Wegs. Die Aussage stammt damit weiterhin
+   aus der API-Dokumentation und nicht aus einer Messung dieses Repositoriums, und die auf ihr
+   ruhende Risikoabwägung (Variante A unter „Entscheidungen") steht **unter diesem Vorbehalt**.
+   Tragend ist ohnehin nicht sie, sondern der Abgleich gegen das Vorrat-Literal vor dem Aufruf —
+   der greift unabhängig davon, wie sich der `mcp`-Weg tatsächlich verhält.
+
+Das Ergebnis gehört als benannter Nachweis in den PR-Body.
 
 **`specs/architecture/0002-testkonzept.md`** bekommt eine neue `###`-Sektion mit vier Regeln: ein
 geschlossener Wertvorrat wird an einer Formzeile geparst und durch einen Abwesenheits-Scan
@@ -350,7 +371,9 @@ Board-**Ansicht** ist eine neue Klasse untestbarer Zusage neben Branch Protectio
   3. Fremd angelegte Issues werden **mitgekennzeichnet**, aber über `author` erkannt und in der
      Vorab-Liste markiert. Die Wirkung eines `bereich:`-Labels ist gering und reversibel.
   4. Das still anlegbare Label auf dem `mcp`-Weg wird **hingenommen** (Variante A), abgesichert
-     durch den Abgleich gegen das Vorrat-Literal. Die Alternativen wären, die Operation auf den
+     durch den Abgleich gegen das Vorrat-Literal. *Nachtrag nach dem Nachlauf:* Die Eigenschaft
+     selbst ist unbelegt geblieben (Teststrategie, Punkt 4) — die Entscheidung steht unter diesem
+     Vorbehalt, ihre Absicherung hängt aber nicht daran. Die Alternativen wären, die Operation auf den
      `gh`-Weg zu beschränken (fiele in Cloud-Sessions aus) oder nach jedem Schreiben zurückzulesen.
 - **Bekannte, bewusst getragene Lücke:** Der `ci.yml`-Kommentar ist eine ungewachte zweite Nennung
   der Operationszahl. Ein Kommentar trägt keine Zusage, deshalb entsteht dafür kein Wächter.
