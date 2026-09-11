@@ -2296,6 +2296,245 @@ describe('Binden oder leeren: die Flaeche jeder Variante', () => {
   })
 })
 
+// ---------------------------------------------------------------------------------------------
+// Die Reihenfolge des Leerens - fuenfteilig ueber den geparsten Baum
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Der Befund ueber `baueVariante`: WO und UNTER WELCHER BEDINGUNG das Brett geleert wird.
+ *
+ * ⚠ EIN OFFSET-VERGLEICH ALLEIN BELEGT DIE REIHENFOLGE NICHT. Steht `brett.fills = []` textlich
+ * hinter dem letzten `bindeRollen`-Aufruf, aber INNERHALB der Achsenschleife, ist der Offset
+ * groesser und die Ausfuehrung trotzdem falsch - es traefe `button/ghost/disabled`, dessen Flaeche
+ * erst in der letzten Iteration kommt. Deshalb die Pruefung auf Verschachtelungstiefe.
+ *
+ * Der AKKUMULATOR wird nicht namentlich erwartet, sondern abgeleitet: Bezeichner, die den
+ * Rueckgabewert von `bindeRollen` aufnehmen. Ein getippter Name waere eine zweite Wahrheit.
+ */
+interface LeerungsBefund {
+  fillsZuweisungen: number
+  zuweisungen: number
+  hinterLetzterBindung: boolean
+  ausserhalbSchleife: boolean
+  inBedingungMitAkkumulator: boolean
+  blankeBindungsaufrufe: number
+}
+
+const SCHLEIFENKNOTEN = [
+  'ForStatement',
+  'ForOfStatement',
+  'ForInStatement',
+  'WhileStatement',
+  'DoWhileStatement',
+]
+
+export function leerungsBefund(quelltext: string): LeerungsBefund {
+  const funktion = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'FunctionDeclaration' &&
+      (eintrag.id as Record<string, unknown> | null)?.name === 'baueVariante',
+  )[0]
+  if (funktion === undefined) {
+    throw new Error('baueVariante nicht gefunden.')
+  }
+  const von = funktion.start as number
+  const bis = funktion.end as number
+  const innen = (eintrag: Record<string, unknown>): boolean =>
+    (eintrag.start as number) >= von && (eintrag.end as number) <= bis
+
+  const bindungen = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'CallExpression' &&
+      (eintrag.callee as Record<string, unknown> | null)?.name === 'bindeRollen' &&
+      innen(eintrag),
+  )
+  const letzteBindung = bindungen.reduce(
+    (groesster, eintrag) => Math.max(groesster, eintrag.start as number),
+    -1,
+  )
+
+  const akkumulatoren = new Set<string>()
+  for (const eintrag of knoten(
+    quelltext,
+    (kandidat) =>
+      innen(kandidat) &&
+      (kandidat.type === 'VariableDeclarator' || kandidat.type === 'AssignmentExpression'),
+  )) {
+    const ziel = (eintrag.type === 'VariableDeclarator' ? eintrag.id : eintrag.left) as Record<
+      string,
+      unknown
+    > | null
+    const wert = eintrag.type === 'VariableDeclarator' ? eintrag.init : eintrag.right
+    if (
+      ziel?.type === 'Identifier' &&
+      typeof ziel.name === 'string' &&
+      enthaeltBezeichner(wert, 'bindeRollen')
+    ) {
+      akkumulatoren.add(ziel.name)
+    }
+  }
+
+  const fillsZuweisungen = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'AssignmentExpression' &&
+      innen(eintrag) &&
+      ((eintrag.left as Record<string, unknown> | null)?.property as Record<string, unknown> | null)
+        ?.name === 'fills',
+  )
+  const treffer = fillsZuweisungen.filter((eintrag) => {
+    const links = eintrag.left as Record<string, unknown>
+    const objekt = links.object as Record<string, unknown> | null
+    const wert = eintrag.right as Record<string, unknown> | null
+    return (
+      objekt?.type === 'Identifier' &&
+      objekt.name === 'brett' &&
+      wert?.type === 'ArrayExpression' &&
+      ((wert.elements as unknown[]) ?? []).length === 0
+    )
+  })
+  const stelle = treffer.length === 1 ? (treffer[0]!.start as number) : undefined
+
+  const umschliessend = (typen: string[]): Record<string, unknown>[] =>
+    stelle === undefined
+      ? []
+      : knoten(
+          quelltext,
+          (eintrag) =>
+            typen.includes(eintrag.type as string) &&
+            innen(eintrag) &&
+            (eintrag.start as number) < stelle &&
+            (eintrag.end as number) > stelle,
+        )
+
+  return {
+    fillsZuweisungen: fillsZuweisungen.length,
+    zuweisungen: treffer.length,
+    hinterLetzterBindung: stelle !== undefined && stelle > letzteBindung && letzteBindung >= 0,
+    ausserhalbSchleife: stelle !== undefined && umschliessend(SCHLEIFENKNOTEN).length === 0,
+    inBedingungMitAkkumulator: umschliessend(['IfStatement']).some((eintrag) =>
+      [...akkumulatoren].some((name) => enthaeltBezeichner(eintrag.test, name)),
+    ),
+    blankeBindungsaufrufe: knoten(
+      quelltext,
+      (eintrag) =>
+        eintrag.type === 'ExpressionStatement' &&
+        innen(eintrag) &&
+        (eintrag.expression as Record<string, unknown> | null)?.type === 'CallExpression' &&
+        ((eintrag.expression as Record<string, unknown>).callee as Record<string, unknown> | null)
+          ?.name === 'bindeRollen',
+    ).length,
+  }
+}
+
+describe('Geleert wird nach dem Binden, genau einmal und nur bedingt', () => {
+  const befund = () => leerungsBefund(dateiVon('seed-components.js').roh)
+
+  it('leert genau einmal, auf dem Brett, mit leerem Array-Literal', () => {
+    expect(befund().fillsZuweisungen).toBe(1)
+    expect(befund().zuweisungen).toBe(1)
+  })
+
+  it('leert hinter dem letzten Bindungsaufruf', () => {
+    expect(befund().hinterLetzterBindung).toBe(true)
+  })
+
+  it('leert ausserhalb jeder Schleife', () => {
+    expect(befund().ausserhalbSchleife).toBe(true)
+  })
+
+  it('leert nur, wenn der Akkumulator es sagt', () => {
+    expect(befund().inBedingungMitAkkumulator).toBe(true)
+  })
+
+  /* Ein Aufruf als blankes `ExpressionStatement` wirft seinen Rueckgabewert weg - der Akkumulator
+     verloere genau die Bindungen dieses Aufrufs, und 16 heute korrekte Varianten wuerden geleert. */
+  it('wirft den Rueckgabewert keines Bindungsaufrufs weg', () => {
+    expect(befund().blankeBindungsaufrufe).toBe(0)
+  })
+
+  /*
+   * VIER SYNTHETISCHE GEGENPROBEN. Ohne sie ist der Block darueber eine Beruhigung: Ein Befund,
+   * der auch bei falscher Reihenfolge gruen bliebe, sichert nichts zu.
+   */
+  const probe = (rumpf: string) => `function baueVariante(a, b) {\n${rumpf}\n}`
+
+  it('meldet eine Leerung VOR dem letzten Bindungsaufruf', () => {
+    const gegenprobe = leerungsBefund(
+      probe(
+        [
+          "  let gesetzt = bindeRollen(brett, text, a, 'h', [])",
+          "  if (gesetzt.indexOf('fill') === -1) { brett.fills = [] }",
+          "  gesetzt = gesetzt.concat(bindeRollen(brett, text, b, 'h', []))",
+        ].join('\n'),
+      ),
+    )
+    expect(gegenprobe.zuweisungen).toBe(1)
+    expect(gegenprobe.hinterLetzterBindung).toBe(false)
+  })
+
+  it('meldet eine Leerung INNERHALB der Achsenschleife, trotz groesserem Offset', () => {
+    const gegenprobe = leerungsBefund(
+      probe(
+        [
+          "  let gesetzt = bindeRollen(brett, text, a, 'h', [])",
+          '  for (const achse of achsen) {',
+          "    gesetzt = gesetzt.concat(bindeRollen(brett, text, b, 'h', []))",
+          "    if (gesetzt.indexOf('fill') === -1) { brett.fills = [] }",
+          '  }',
+        ].join('\n'),
+      ),
+    )
+    // Der Offset-Vergleich allein bliebe hier gruen - genau das ist der Punkt.
+    expect(gegenprobe.hinterLetzterBindung).toBe(true)
+    expect(gegenprobe.ausserhalbSchleife).toBe(false)
+  })
+
+  it('meldet eine UNBEDINGTE Leerung', () => {
+    const gegenprobe = leerungsBefund(
+      probe(
+        ["  let gesetzt = bindeRollen(brett, text, a, 'h', [])", '  brett.fills = []'].join('\n'),
+      ),
+    )
+    expect(gegenprobe.zuweisungen).toBe(1)
+    expect(gegenprobe.inBedingungMitAkkumulator).toBe(false)
+  })
+
+  it('meldet eine Leerung am FALSCHEN Ziel', () => {
+    const gegenprobe = leerungsBefund(
+      probe(
+        [
+          "  let gesetzt = bindeRollen(brett, text, a, 'h', [])",
+          "  if (gesetzt.indexOf('fill') === -1) { beschriftung.fills = [] }",
+        ].join('\n'),
+      ),
+    )
+    expect(gegenprobe.fillsZuweisungen).toBe(1)
+    expect(gegenprobe.zuweisungen).toBe(0)
+  })
+
+  it('meldet einen weggeworfenen Rueckgabewert', () => {
+    expect(
+      leerungsBefund(probe("  bindeRollen(brett, text, a, 'h', [])")).blankeBindungsaufrufe,
+    ).toBe(1)
+  })
+
+  /* Und die Bedingung haengt am ABGELEITETEN Akkumulator, nicht an einem beliebigen Bezeichner. */
+  it('erkennt eine Bedingung ohne den Akkumulator nicht als Bedingung', () => {
+    const gegenprobe = leerungsBefund(
+      probe(
+        [
+          "  let gesetzt = bindeRollen(brett, text, a, 'h', [])",
+          '  if (baustein.schluessel) { brett.fills = [] }',
+        ].join('\n'),
+      ),
+    )
+    expect(gegenprobe.inBedingungMitAkkumulator).toBe(false)
+  })
+})
+
 describe('Das Rollenvokabular bildet ab oder ist gefuehrt', () => {
   const rollenIn = (): string[] => [
     ...new Set(tokenSlots().map((slot) => slot.pfad.split('.').slice(-1)[0]!)),

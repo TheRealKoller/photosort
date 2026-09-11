@@ -209,16 +209,40 @@ function wendeTokenAn(formen, eigenschaften, tokenName) {
   findeToken(tokenName).applyToShapes(formen, eigenschaften)
 }
 
+/**
+ * Bindet die Rollen einer Tabelle und GIBT ZURUECK, welche Penpot-Eigenschaften dabei auf das
+ * BRETT angewandt wurden. Der Rueckgabewert traegt die Entscheidung, ob das Brett anschliessend
+ * geleert wird (ADR 0081 Abschnitt 1) - er ist das Ergebnis der Bindungslogik und kann von ihr
+ * deshalb nicht abweichen.
+ *
+ * ⚠ EIGENSCHAFTEN, NICHT ROLLENNAMEN. `schrift` bildet ebenfalls auf `fill` ab, geht aber an die
+ * BESCHRIFTUNG. Wer die vorgekommenen Rollen sammelt statt der aufs Brett angewandten
+ * Eigenschaften, haelt praktisch jede Variante fuer gebunden - und der Fehler bliebe bestehen,
+ * waehrend alles gruen ist.
+ *
+ * Der Nachschlag laeuft ueber EIGENE Schluessel: `constructor` loeste an einem Objektliteral sonst
+ * auf, und aus einer unbekannten Rolle wuerde eine scheinbar bekannte.
+ */
 function bindeRollen(brett, beschriftung, rollen, herkunft, nachzubinden) {
+  const gesetzt = []
   for (const rolle of Object.keys(rollen)) {
-    const eigenschaften = ROLLE_ZU_EIGENSCHAFT[rolle]
+    const bekannt = Object.prototype.hasOwnProperty.call(ROLLE_ZU_EIGENSCHAFT, rolle)
+    const eigenschaften = bekannt ? ROLLE_ZU_EIGENSCHAFT[rolle] : null
     if (!eigenschaften) {
       nachzubinden.push(herkunft + ': ' + rolle + ' -> ' + rollen[rolle])
       continue
     }
-    const ziel = TEXT_ROLLEN.indexOf(rolle) !== -1 ? beschriftung : brett
-    wendeTokenAn([ziel], eigenschaften, rollen[rolle])
+    const aufsBrett = TEXT_ROLLEN.indexOf(rolle) === -1
+    wendeTokenAn([aufsBrett ? brett : beschriftung], eigenschaften, rollen[rolle])
+    if (aufsBrett) {
+      for (const eigenschaft of eigenschaften) {
+        if (gesetzt.indexOf(eigenschaft) === -1) {
+          gesetzt.push(eigenschaft)
+        }
+      }
+    }
   }
+  return gesetzt
 }
 
 /**
@@ -278,15 +302,29 @@ function baueVariante(baustein, kombination, lage, nachzubinden) {
   brett.appendChild(beschriftung)
 
   const herkunft = baustein.schluessel + '/' + brett.name
-  bindeRollen(brett, beschriftung, baustein.tokens, herkunft, nachzubinden)
+  let gesetzt = bindeRollen(brett, beschriftung, baustein.tokens, herkunft, nachzubinden)
 
   const proAuspraegung = baustein.tokensProAuspraegung || {}
   for (const achse of Object.keys(kombination)) {
     const achsenTabelle = proAuspraegung[achse] || {}
     const besondere = achsenTabelle[kombination[achse]]
     if (besondere) {
-      bindeRollen(brett, beschriftung, besondere, herkunft, nachzubinden)
+      gesetzt = gesetzt.concat(bindeRollen(brett, beschriftung, besondere, herkunft, nachzubinden))
     }
+  }
+
+  /*
+   * BINDEN ODER LEEREN, nie weglassen: Ein neu erzeugtes Board traegt eine DECKEND WEISSE
+   * Standardfuellung, nicht etwa keine (2026-09-10 gemessen). Wo nichts gebunden wurde, leuchtet
+   * das Brett sonst weiss aus einem dunklen Entwurf heraus, und die Beschriftung darauf erreicht
+   * rund 2,2:1.
+   *
+   * NACH dem Binden und AUSSERHALB der Achsenschleife: Eine Bindung, die auf ein geleertes Brett
+   * folgt, waere unbelegt - und `button/ghost/disabled` bekommt seine Flaeche erst in der letzten
+   * Iteration. Die 133 gebundenen Bretter werden hier gar nicht erst angefasst.
+   */
+  if (gesetzt.indexOf('fill') === -1) {
+    brett.fills = []
   }
 
   // Abstand ist eine Brettbreite; die Zeilenhoehe waechst mit dem hoechsten Brett der Reihe.
