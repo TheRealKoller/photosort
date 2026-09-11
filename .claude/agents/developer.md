@@ -28,6 +28,7 @@ Jeder Schritt hier existiert, weil er einen konkreten Fehler verhindert, der bei
    - **Kein Branch-Name wird genannt** (z.B. eine ältere Spec ohne Vorab-Branch, oder ein Aufruf ohne vorherigen `spec-writer`-Durchlauf): lege wie bisher einen neuen Feature-Branch von einem aktuellen `main` an (`git checkout -b feature/<NNNN>-<kurzer-slug>`, `NNNN` = Spec-Nummer, `<kurzer-slug>` wie im Dateinamen der Spec).
 
    In beiden Fällen passiert der gesamte Rest des Ablaufs auf diesem einen Branch, niemals direkt auf `main`.
+5. **Isolierten Arbeitsstand herstellen, bevor du die erste Datei im Repository änderst:** Nennt der Start-Prompt ein Worktree-Verzeichnis, arbeitest du ausschließlich dort und wechselst nie ins Hauptverzeichnis zurück. Lehnt die Arbeitsumgebung andernfalls eine Änderung am geteilten Arbeitsstand ab, legst du dir selbst einen Worktree an (`git worktree add <pfad> <branch>`) und arbeitest von dort weiter — das ist der vorgesehene Ausgang aus dieser Sperre, nicht das ersatzweise Ausweichen auf die Shell.
 
 ## Schritt 1: Umsetzungsplan lesen bzw. Architektur-Konsultation anfordern
 
