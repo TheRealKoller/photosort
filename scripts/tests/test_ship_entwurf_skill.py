@@ -446,9 +446,7 @@ def test_der_verbraucher_fuehrt_den_anker_als_inline_code_nicht_als_ueberschrift
         "steht sie als Zeichenkette, nicht als gesetzte Ueberschrift."
     )
 
-    eigene_ueberschriften = [
-        zeile for zeile in text.splitlines() if zeile.startswith(ANKER)
-    ]
+    eigene_ueberschriften = [zeile for zeile in text.splitlines() if zeile.startswith(ANKER)]
 
     assert not eigene_ueberschriften, (
         f"{VERBRAUCHER_PFAD} setzt die Ankerzeile als eigene `##`-Ueberschrift. Damit erzeugte "
@@ -726,9 +724,7 @@ def test_eine_zusaetzliche_operation_im_skilltext_wuerde_die_gleichheit_brechen(
     )
     assert zu_viel - set(ERWARTETE_OPERATIONEN) == {"copilot-review-anfordern"}
 
-    zu_wenig = operations_ids(
-        verbrauchertext().replace("`board-status-setzen`", "den Board-Wert")
-    )
+    zu_wenig = operations_ids(verbrauchertext().replace("`board-status-setzen`", "den Board-Wert"))
 
     assert zu_wenig != set(ERWARTETE_OPERATIONEN), (
         "Eine aus dem Skilltext entfernte Operations-ID veraendert die geparste Menge nicht - "

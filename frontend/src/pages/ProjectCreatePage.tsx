@@ -31,13 +31,14 @@ export function ProjectCreatePage() {
         onSuccess: (project) => {
           navigate(`/projects/${project.id}`)
         },
-      }
+      },
     )
   }
 
   const errorDetail =
     mutation.isError && mutation.error instanceof ApiError ? mutation.error.detail : null
-  const isNameConflict = mutation.isError && mutation.error instanceof ApiError && mutation.error.status === 409
+  const isNameConflict =
+    mutation.isError && mutation.error instanceof ApiError && mutation.error.status === 409
 
   return (
     <div className="flex flex-col gap-6">

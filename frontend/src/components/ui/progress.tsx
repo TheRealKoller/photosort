@@ -31,10 +31,7 @@ import { cn } from '../../lib/utils'
  * Tailwind-Lauf, dass die Varianten ueberhaupt eine Regel erzeugen, die Darstellung selbst ist
  * Sichtpruefung.
  */
-export function Progress({
-  className,
-  ...props
-}: ProgressHTMLAttributes<HTMLProgressElement>) {
+export function Progress({ className, ...props }: ProgressHTMLAttributes<HTMLProgressElement>) {
   return (
     <progress
       className={cn(
@@ -43,7 +40,7 @@ export function Progress({
         '[&::-moz-progress-bar]:bg-accent',
         'indeterminate:bg-accent indeterminate:animate-pulse motion-reduce:animate-none',
         'indeterminate:[&::-webkit-progress-bar]:bg-accent indeterminate:[&::-moz-progress-bar]:bg-transparent',
-        className
+        className,
       )}
       {...props}
     />

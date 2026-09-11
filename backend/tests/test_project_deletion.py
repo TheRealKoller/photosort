@@ -92,8 +92,7 @@ async def test_delete_projects_covers_every_table_reachable_from_projects(
 
     missing = expected - set(targets)
     assert not missing, (
-        f"project_deletion.py loescht diese am Projekt haengenden Tabellen nicht: "
-        f"{sorted(missing)}"
+        f"project_deletion.py loescht diese am Projekt haengenden Tabellen nicht: {sorted(missing)}"
     )
     assert set(targets) - expected == {Project.__tablename__}, (
         "project_deletion.py loescht eine Tabelle, die gar nicht am Projekt haengt."
@@ -188,10 +187,16 @@ async def test_a_project_with_a_linked_remote_run_stays_fully_deletable(
     await db_session.commit()
 
     linked = (
-        await db_session.execute(
-            select(CriterionScoringRun).where(CriterionScoringRun.project_id == graph.project_id)
+        (
+            await db_session.execute(
+                select(CriterionScoringRun).where(
+                    CriterionScoringRun.project_id == graph.project_id
+                )
+            )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     assert linked.remote_category_classification_run_id is not None, (
         "Der Testgraph muss den Fremdschluessel setzen, sonst prueft dieser Fall nichts."
     )

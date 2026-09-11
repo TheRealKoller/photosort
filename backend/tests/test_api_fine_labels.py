@@ -37,9 +37,7 @@ async def _make_photo(session: AsyncSession, project: Project, path: str) -> Pho
 
 
 async def _make_label(session: AsyncSession, canonical_key: str, display_name: str) -> FineLabel:
-    label = FineLabel(
-        canonical_key=canonical_key, display_name=display_name, embedding=[1.0, 0.0]
-    )
+    label = FineLabel(canonical_key=canonical_key, display_name=display_name, embedding=[1.0, 0.0])
     session.add(label)
     await session.commit()
     await session.refresh(label)

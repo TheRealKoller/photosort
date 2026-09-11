@@ -92,9 +92,7 @@ async def test_list_photos_includes_ratings_of_all_users(
     other_user = await _make_second_user(db_session)
 
     # Der eigene Nutzer der authenticated_api_client-Fixture ist "testuser".
-    me = (
-        await db_session.execute(select(User).where(User.username == "testuser"))
-    ).scalar_one()
+    me = (await db_session.execute(select(User).where(User.username == "testuser"))).scalar_one()
     db_session.add(Rating(photo_id=photo.id, user_id=me.id, status=RatingStatus.FAVORITE))
     db_session.add(Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.REJECTED))
     await db_session.commit()
@@ -620,7 +618,11 @@ class TestTopNPerCategory:
             db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC)
         )
         await _add_ranking(
-            db_session, run, landscape_photo, category_key="landscape", rank_score=0.9,
+            db_session,
+            run,
+            landscape_photo,
+            category_key="landscape",
+            rank_score=0.9,
             rank_position=1,
         )
         await _add_ranking(
@@ -1080,8 +1082,7 @@ class TestCurationCandidates:
         )
         taken_at = datetime(2023, 1, 1, tzinfo=UTC)
         photos = [
-            await _make_photo(db_session, project, f"p{index}.jpg", taken_at)
-            for index in range(4)
+            await _make_photo(db_session, project, f"p{index}.jpg", taken_at) for index in range(4)
         ]
         # Derselbe Partitionsschluessel in beiden Laeufen, mit ABWEICHENDEN Raengen: der aeltere
         # Lauf fuehrt die ersten beiden Fotos, der neuere die letzten beiden.
@@ -2389,9 +2390,7 @@ class TestMultipleCategoryMemberships:
 
         # Auch hinter dem verworfenen Foto: es bleibt Platz 1 der Auswahl, das zweite Foto
         # rueckt NICHT auf Platz 1 nach und faellt bei `top_n=1` schlicht heraus.
-        by_photo = {
-            item["id"]: item["rankings"][0]["curation_position"] for item in items
-        }
+        by_photo = {item["id"]: item["rankings"][0]["curation_position"] for item in items}
         assert by_photo == {first.id: 1}
 
     async def test_partition_size_counts_secondary_rows_too(
@@ -2422,9 +2421,7 @@ class TestMultipleCategoryMemberships:
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
         items = {item["id"]: item for item in response.json()["items"]}
-        sizes = {
-            r["category_key"]: r["partition_size"] for r in items[guest.id]["rankings"]
-        }
+        sizes = {r["category_key"]: r["partition_size"] for r in items[guest.id]["rankings"]}
         assert sizes == {"tier": 1, "landschaft": 2}
 
 
@@ -2841,7 +2838,6 @@ def _recorded_select_statements() -> Iterator[list[str]]:
         event.remove(Engine, "before_cursor_execute", _listener)
 
 
-
 _EIFFEL = (48.858093, 2.294694)
 # Rund 40 m vom Eiffelturm entfernt - FAELLT AUF DIESELBE gerundete Stelle (2 Nachkommastellen).
 _EIFFEL_40_M = (48.858450, 2.294694)
@@ -2918,9 +2914,7 @@ class TestPhotoLocationAndClusterPlace:
             db_session, project, "c.jpg", datetime(2023, 1, 1, 10, 55, tzinfo=UTC), gps=_TROCADERO
         )
         for index, photo in enumerate((far, blind, near), start=1):
-            await _add_ranking(
-                db_session, run, photo, rank_score=1.0 / index, rank_position=index
-            )
+            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -2946,9 +2940,7 @@ class TestPhotoLocationAndClusterPlace:
             db_session, project, "c.jpg", datetime(2023, 1, 1, 10, 20, tzinfo=UTC), gps=_TROCADERO
         )
         for index, photo in enumerate((earlier, blind, later), start=1):
-            await _add_ranking(
-                db_session, run, photo, rank_score=1.0 / index, rank_position=index
-            )
+            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -2965,9 +2957,7 @@ class TestPhotoLocationAndClusterPlace:
         second = await _make_photo_at(db_session, project, "b.jpg", same_moment, gps=_TROCADERO)
         blind = await _make_photo_at(db_session, project, "c.jpg", same_moment)
         for index, photo in enumerate((first, second, blind), start=1):
-            await _add_ranking(
-                db_session, run, photo, rank_score=1.0 / index, rank_position=index
-            )
+            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -2993,9 +2983,7 @@ class TestPhotoLocationAndClusterPlace:
             db_session, project, "c.jpg", datetime(2023, 1, 1, 11, 0, tzinfo=UTC), gps=_LOUVRE
         )
         for index, photo in enumerate((blind, nearest, farther), start=1):
-            await _add_ranking(
-                db_session, run, photo, rank_score=1.0 / index, rank_position=index
-            )
+            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -3022,9 +3010,7 @@ class TestPhotoLocationAndClusterPlace:
             db_session, project, "c.jpg", datetime(2023, 1, 1, 11, 0, tzinfo=UTC)
         )
         for index, photo in enumerate((farther, nearest, blind), start=1):
-            await _add_ranking(
-                db_session, run, photo, rank_score=1.0 / index, rank_position=index
-            )
+            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -3053,9 +3039,7 @@ class TestPhotoLocationAndClusterPlace:
         )
         blind = await _make_photo_at(db_session, project, "d.jpg", same_moment)
         for index, photo in enumerate((first, second, later, blind), start=1):
-            await _add_ranking(
-                db_session, run, photo, rank_score=1.0 / index, rank_position=index
-            )
+            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -3074,9 +3058,7 @@ class TestPhotoLocationAndClusterPlace:
         sieht dann zeichengleich aus wie heute."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
-        photo = await _make_photo_at(
-            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
-        )
+        photo = await _make_photo_at(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
@@ -3092,9 +3074,7 @@ class TestPhotoLocationAndClusterPlace:
         ohne jede Koordinate, hat einen Ort - aber kein Foto hat eine Koordinate."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
-        photo = await _make_photo_at(
-            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
-        )
+        photo = await _make_photo_at(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
         await _add_landmark(db_session, photo, "Eiffelturm")
 
@@ -3124,9 +3104,7 @@ class TestClusterPlaceKind:
             db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC), gps=_TROCADERO
         )
         for index, photo in enumerate((named, other), start=1):
-            await _add_ranking(
-                db_session, run, photo, rank_score=1.0 / index, rank_position=index
-            )
+            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
         await _add_landmark(db_session, named, "Eiffelturm")
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
@@ -3155,9 +3133,7 @@ class TestClusterPlaceKind:
         )
         assert _EIFFEL != _EIFFEL_40_M
         for index, photo in enumerate((first, second), start=1):
-            await _add_ranking(
-                db_session, run, photo, rank_score=1.0 / index, rank_position=index
-            )
+            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -3184,9 +3160,7 @@ class TestClusterPlaceKind:
             db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC), gps=_LOUVRE
         )
         for index, photo in enumerate((first, second), start=1):
-            await _add_ranking(
-                db_session, run, photo, rank_score=1.0 / index, rank_position=index
-            )
+            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -3355,8 +3329,8 @@ class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
             f"/projects/{project.id}/photos", params={"top_n_per_category": 10}
         )
 
-        assert narrow.json()["items"][0]["cluster_place"] == (
-            wide.json()["items"][0]["cluster_place"]
+        assert (
+            narrow.json()["items"][0]["cluster_place"] == (wide.json()["items"][0]["cluster_place"])
         )
 
     async def test_cluster_place_does_not_change_between_limit_one_and_sixty(
@@ -3373,8 +3347,8 @@ class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
             f"/projects/{project.id}/photos", params={"limit": 60}
         )
 
-        assert narrow.json()["items"][0]["cluster_place"] == (
-            wide.json()["items"][0]["cluster_place"]
+        assert (
+            narrow.json()["items"][0]["cluster_place"] == (wide.json()["items"][0]["cluster_place"])
         )
 
     async def test_both_fields_are_field_equal_across_photos_and_curation_candidates(
@@ -3419,7 +3393,11 @@ class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
                 gps=_EIFFEL if index == 1 else None,
             )
             await _add_ranking(
-                db_session, run, photo, cluster_key="cluster-0", rank_score=1.0 / index,
+                db_session,
+                run,
+                photo,
+                cluster_key="cluster-0",
+                rank_score=1.0 / index,
                 rank_position=index,
             )
             first_cluster.append(photo)
@@ -3432,7 +3410,11 @@ class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
                 gps=_TROCADERO,
             )
             await _add_ranking(
-                db_session, run, photo, cluster_key="cluster-1", rank_score=1.0 / index,
+                db_session,
+                run,
+                photo,
+                cluster_key="cluster-1",
+                rank_score=1.0 / index,
                 rank_position=index,
             )
 
@@ -3572,9 +3554,7 @@ class TestClusterPlaceNameHardening:
         Migrationsweg. Ein Test nur an der Quelle bewiese fuer sie nichts."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
-        photo = await _make_photo_at(
-            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
-        )
+        photo = await _make_photo_at(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
         await _add_landmark(db_session, photo, "Eiffel‮turm​")
 
@@ -3611,9 +3591,7 @@ class TestClusterPlaceNameHardening:
     ) -> None:
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
-        photo = await _make_photo_at(
-            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
-        )
+        photo = await _make_photo_at(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
         await _add_landmark(db_session, photo, "​‮")
 
@@ -3637,9 +3615,7 @@ class TestClusterPlaceNameHardening:
             db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
         )
         for index, photo in enumerate((earlier, later), start=1):
-            await _add_ranking(
-                db_session, run, photo, rank_score=1.0 / index, rank_position=index
-            )
+            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
         await _add_landmark(db_session, earlier, "Zugspitze")
         await _add_landmark(db_session, later, "Alexanderplatz")
 

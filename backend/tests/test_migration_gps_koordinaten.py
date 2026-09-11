@@ -122,9 +122,7 @@ def test_after_the_upgrade_an_insert_without_coordinates_still_works(tmp_path: P
             _insert_legacy_row(connection, row_id=7)
 
         with engine.connect() as connection:
-            row = connection.execute(
-                text("SELECT gps_lat, gps_lon FROM photos WHERE id = 7")
-            ).one()
+            row = connection.execute(text("SELECT gps_lat, gps_lon FROM photos WHERE id = 7")).one()
     finally:
         engine.dispose()
 

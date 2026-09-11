@@ -25,14 +25,11 @@ interface FolderBrowserProps {
 // specs/features/0050-dateianzahl-im-ordner-browser.md, UI/UX-Abschnitt "Eager-Zaehler neben
 // Listeneintraegen": vier moegliche Anzeigezustaende pro gelistetem Unterordner.
 type FolderCountDisplay =
-  | { kind: 'loading' }
-  | { kind: 'count'; count: number }
-  | { kind: 'at_limit' }
-  | { kind: 'error' }
+  { kind: 'loading' } | { kind: 'count'; count: number } | { kind: 'at_limit' } | { kind: 'error' }
 
 function folderCountDisplayFor(
   path: string,
-  counts: { isLoading: boolean; isError: boolean; data: FolderCountOut[] | undefined }
+  counts: { isLoading: boolean; isError: boolean; data: FolderCountOut[] | undefined },
 ): FolderCountDisplay {
   if (counts.isLoading) {
     return { kind: 'loading' }
@@ -135,7 +132,11 @@ export function FolderBrowser({ value, onChange, onErrorChange }: FolderBrowserP
         ))}
       </nav>
 
-      {query.isLoading && <p role="status" className="text-sm text-text">Ordner werden geladen…</p>}
+      {query.isLoading && (
+        <p role="status" className="text-sm text-text">
+          Ordner werden geladen…
+        </p>
+      )}
       {errorDetail && <Alert>{errorDetail}</Alert>}
       {query.isSuccess && query.data.length === 0 && (
         <p className="text-sm text-text">Keine Unterordner</p>

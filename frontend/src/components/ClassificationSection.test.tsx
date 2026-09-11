@@ -50,7 +50,7 @@ function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSumma
 }
 
 function classificationRun(
-  overrides: Partial<CriterionScoringRunSummary> = {}
+  overrides: Partial<CriterionScoringRunSummary> = {},
 ): CriterionScoringRunSummary {
   return {
     status: 'running',
@@ -80,7 +80,7 @@ function renderSection(initialProject: ProjectOut, refetchProject = vi.fn()) {
     <MemoryRouter>
       <ClassificationSection project={initialProject} refetchProject={refetchProject} />
     </MemoryRouter>,
-    { wrapper }
+    { wrapper },
   )
 }
 
@@ -110,10 +110,10 @@ describe('ein Auslöser', () => {
     expect(screen.getAllByRole('button', TRIGGER)).toHaveLength(1)
     // Regressionsschutz gegen ein Wiederauftauchen der zweiten Auslösung.
     expect(
-      screen.queryByRole('button', { name: /remote-kategorisierung starten/i })
+      screen.queryByRole('button', { name: /remote-kategorisierung starten/i }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: /kriterien-bewertung starten/i })
+      screen.queryByRole('button', { name: /kriterien-bewertung starten/i }),
     ).not.toBeInTheDocument()
   })
 
@@ -142,7 +142,7 @@ describe('ein Auslöser', () => {
 
   it('re-enables the button and shows an error when the trigger request itself fails', async () => {
     vi.mocked(projectsApi.triggerClassification).mockRejectedValue(
-      new ApiError(500, 'Serverfehler')
+      new ApiError(500, 'Serverfehler'),
     )
     const user = userEvent.setup()
     renderSection(project())
@@ -161,7 +161,7 @@ describe('ein Auslöser', () => {
           status: 'success',
           cloud_requested: true,
         }),
-      })
+      }),
     )
 
     // Der Hinweis aus Spec 0218 ist durch die Verkettung gegenstandslos geworden.
@@ -185,7 +185,7 @@ describe('Cloud-Nutzung pro Durchlauf', () => {
     expect(checkbox).not.toBeChecked()
     expect(checkbox).toBeDisabled()
     expect(
-      screen.getByRole('link', { name: /in den projekteinstellungen aktivieren/i })
+      screen.getByRole('link', { name: /in den projekteinstellungen aktivieren/i }),
     ).toHaveAttribute('href', '/projects/1/settings')
   })
 
@@ -221,7 +221,7 @@ describe('Cloud-Nutzung pro Durchlauf', () => {
     await user.click(screen.getByRole('checkbox', CHECKBOX))
 
     expect(screen.getByTestId('classification-scope-text')).toHaveTextContent(
-      /läuft vollständig lokal auf diesem server/i
+      /läuft vollständig lokal auf diesem server/i,
     )
   })
 })
@@ -262,7 +262,7 @@ describe('Kosten sichtbar vor dem Start', () => {
 
   it('blocks the cloud run while the estimate cannot be loaded, but allows the local one', async () => {
     vi.mocked(projectsApi.getClassificationEstimate).mockRejectedValue(
-      new ApiError(500, 'Serverfehler')
+      new ApiError(500, 'Serverfehler'),
     )
     const user = userEvent.setup()
     renderSection(project({ cloud_vision_detection_enabled: true }))
@@ -300,7 +300,7 @@ describe('genau einer der beiden Zustandsblöcke', () => {
           status === null
             ? null
             : classificationRun({ status, phase: status === 'running' ? 'criteria' : null }),
-      })
+      }),
     )
 
     expect(isProgressShown()).toBe(progress)
@@ -313,7 +313,7 @@ describe('genau einer der beiden Zustandsblöcke', () => {
     const { rerender } = renderSection(
       project({
         last_criterion_scoring_run: classificationRun({ status: 'success', phase: null }),
-      })
+      }),
     )
     expect(isBalanceShown()).toBe(true)
 
@@ -328,7 +328,7 @@ describe('genau einer der beiden Zustandsblöcke', () => {
           })}
           refetchProject={vi.fn()}
         />
-      </MemoryRouter>
+      </MemoryRouter>,
     )
 
     expect(isProgressShown()).toBe(true)
@@ -347,7 +347,7 @@ describe('genau einer der beiden Zustandsblöcke', () => {
           photos_total: 10,
           photos_processed: 10,
         }),
-      })
+      }),
     )
 
     expect(screen.getByText('Klassifizierung abgeschlossen')).toBeInTheDocument()
@@ -367,7 +367,7 @@ describe('genau einer der beiden Zustandsblöcke', () => {
           phase: null,
           error_message: 'Unerwarteter Fehler',
         }),
-      })
+      }),
     )
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Unerwarteter Fehler')
@@ -388,7 +388,7 @@ describe('Fehlerverhalten und Herkunft des Ergebnisses', () => {
           cloud_requested: true,
           cloud_error_message: 'Remote-Kategorisierung fehlgeschlagen: Zeitüberschreitung',
         }),
-      })
+      }),
     )
 
     const alert = await screen.findByRole('alert')
@@ -407,7 +407,7 @@ describe('Fehlerverhalten und Herkunft des Ergebnisses', () => {
           phase: null,
           cloud_requested: false,
         }),
-      })
+      }),
     )
 
     expect(screen.getByText(/ohne cloud-anreicherung durchgeführt/i)).toBeInTheDocument()
@@ -424,7 +424,7 @@ describe('Fehlerverhalten und Herkunft des Ergebnisses', () => {
           cloud_requested: true,
           cloud_error_message: null,
         }),
-      })
+      }),
     )
 
     expect(screen.queryByText(/ohne cloud-anreicherung durchgeführt/i)).not.toBeInTheDocument()
@@ -455,7 +455,7 @@ describe('Feinlabel-Häufigkeiten', () => {
     renderSection(project())
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /feinlabels konnten nicht geladen werden/i
+      /feinlabels konnten nicht geladen werden/i,
     )
   })
 })

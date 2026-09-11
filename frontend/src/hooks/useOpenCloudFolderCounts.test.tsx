@@ -52,7 +52,7 @@ describe('useOpenCloudFolderCountsQuery', () => {
 
     const { rerender } = renderHook(
       ({ path }: { path: string }) => useOpenCloudFolderCountsQuery(path),
-      { wrapper: localWrapper, initialProps: { path: 'CostaRica' } }
+      { wrapper: localWrapper, initialProps: { path: 'CostaRica' } },
     )
     await waitFor(() => expect(opencloudApi.fetchFolderCounts).toHaveBeenCalledTimes(1))
 

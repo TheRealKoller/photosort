@@ -41,7 +41,9 @@ function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSumma
 }
 
 function OutletHost({ project: contextProject, refetchProject }: PipelineOutletContext) {
-  return <Outlet context={{ project: contextProject, refetchProject } satisfies PipelineOutletContext} />
+  return (
+    <Outlet context={{ project: contextProject, refetchProject } satisfies PipelineOutletContext} />
+  )
 }
 
 function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
@@ -59,7 +61,7 @@ function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
         </Route>
       </Routes>
     </MemoryRouter>,
-    { wrapper }
+    { wrapper },
   )
 }
 
@@ -76,7 +78,7 @@ describe('GateStepPage', () => {
     expect(screen.getByText('Ausstehend')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Ausschuss sichten' })).toHaveAttribute(
       'href',
-      '/projects/1/photos?filter=suggested&gate=1'
+      '/projects/1/photos?filter=suggested&gate=1',
     )
   })
 
@@ -86,20 +88,28 @@ describe('GateStepPage', () => {
     () => {
       renderPage(
         project({
-          last_scoring_run: scoringRun({ suggestions_found: 0, gate_confirmed_at: '2026-07-20T10:05:00Z' }),
-        })
+          last_scoring_run: scoringRun({
+            suggestions_found: 0,
+            gate_confirmed_at: '2026-07-20T10:05:00Z',
+          }),
+        }),
       )
 
-      expect(screen.getByText('Kein Ausschuss gefunden — automatisch bestätigt')).toBeInTheDocument()
+      expect(
+        screen.getByText('Kein Ausschuss gefunden — automatisch bestätigt'),
+      ).toBeInTheDocument()
       expect(screen.queryByRole('link', { name: 'Ausschuss sichten' })).not.toBeInTheDocument()
-    }
+    },
   )
 
   it('shows the confirmation date once manually confirmed', () => {
     renderPage(
       project({
-        last_scoring_run: scoringRun({ suggestions_found: 3, gate_confirmed_at: '2026-07-20T10:05:00Z' }),
-      })
+        last_scoring_run: scoringRun({
+          suggestions_found: 3,
+          gate_confirmed_at: '2026-07-20T10:05:00Z',
+        }),
+      }),
     )
 
     expect(screen.getByText(/ausschuss gesichtet am/i)).toBeInTheDocument()

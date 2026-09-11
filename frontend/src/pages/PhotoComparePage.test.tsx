@@ -64,7 +64,7 @@ function renderPage() {
         <Route path="/projects/:projectId/photos/:photoId" element={<p>Einzelbild-Seite</p>} />
       </Routes>
     </MemoryRouter>,
-    { wrapper }
+    { wrapper },
   )
 }
 
@@ -93,7 +93,7 @@ describe('PhotoComparePage', () => {
     expect(screen.queryByRole('link', { name: /zurück zum projekt/i })).not.toBeInTheDocument()
   })
 
-  it('shows both ratings side by side, own and the other user\'s', async () => {
+  it("shows both ratings side by side, own and the other user's", async () => {
     const list: PhotoListOut = {
       items: [
         photo({

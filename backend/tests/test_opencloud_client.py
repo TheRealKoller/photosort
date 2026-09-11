@@ -103,7 +103,9 @@ async def test_list_drives_parses_response() -> None:
     drives = await client.list_drives()
 
     assert [d.name for d in drives] == ["Daniel", "Family"]
-    assert drives[1].webdav_url == "https://cloud.example.com/dav/spaces/storage-project-1$family-id"
+    assert (
+        drives[1].webdav_url == "https://cloud.example.com/dav/spaces/storage-project-1$family-id"
+    )
 
 
 async def test_list_drives_raises_opencloud_error_for_missing_root_webdav_url() -> None:
@@ -253,7 +255,7 @@ async def test_list_folder_raises_opencloud_error_for_malformed_xml_body() -> No
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             207,
-            content=b"<?xml version=\"1.0\"?><d:multistatus xmlns:d=\"DAV:\"><d:response>",
+            content=b'<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response>',
             headers={"content-type": "application/xml"},
         )
 
@@ -301,9 +303,7 @@ async def test_walk_terminates_when_a_child_entry_points_at_an_already_visited_p
 
     calls: list[str] = []
 
-    async def fake_list_folder(
-        webdav_url: str, path: str = "", depth: str = "1"
-    ) -> list[DavEntry]:
+    async def fake_list_folder(webdav_url: str, path: str = "", depth: str = "1") -> list[DavEntry]:
         calls.append(path)
         if path == "CostaRica":
             # "Sub" wird hier absichtlich ZWEIMAL referenziert - simuliert eine kaputte/

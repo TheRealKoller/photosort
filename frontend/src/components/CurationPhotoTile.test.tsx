@@ -51,9 +51,9 @@ const CONTROLS: CategoryOverrideControls = {
   isResetPendingFor: () => false,
 }
 
-function renderTile(
-  props: Partial<React.ComponentProps<typeof CurationPhotoTile>> = {}
-): { onReject: ReturnType<typeof vi.fn> } {
+function renderTile(props: Partial<React.ComponentProps<typeof CurationPhotoTile>> = {}): {
+  onReject: ReturnType<typeof vi.fn>
+} {
   const onReject = vi.fn()
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -75,7 +75,7 @@ function renderTile(
         {...props}
       />
     </ul>,
-    { wrapper }
+    { wrapper },
   )
   return { onReject }
 }
@@ -90,9 +90,7 @@ describe('CurationPhotoTile', () => {
     renderTile()
 
     expect(screen.getByText('a.jpg')).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Verwerfen: urlaub/a.jpg' })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Verwerfen: urlaub/a.jpg' })).toBeInTheDocument()
   })
 
   it('calls onReject when the action is pressed', async () => {

@@ -69,19 +69,14 @@ function idsOf(summary: CriterionScoringRunSummary): ClassificationStepId[] {
 
 function stateOf(
   summary: CriterionScoringRunSummary,
-  id: ClassificationStepId
+  id: ClassificationStepId,
 ): string | undefined {
   return deriveClassificationSteps(summary).find((step) => step.id === id)?.state
 }
 
 describe('deriveClassificationSteps: Menge und Reihenfolge', () => {
   it('liefert bei angeforderter Cloud-Nutzung alle vier Teilschritte in Ausführungsreihenfolge', () => {
-    expect(idsOf(run())).toEqual([
-      'remote_categories',
-      'criteria',
-      'landmark',
-      'ranking',
-    ])
+    expect(idsOf(run())).toEqual(['remote_categories', 'criteria', 'landmark', 'ranking'])
   })
 
   it('lässt beide Cloud-Teilschritte ohne angeforderte Cloud-Nutzung ganz weg', () => {
@@ -93,12 +88,7 @@ describe('deriveClassificationSteps: Menge und Reihenfolge', () => {
   it('folgt der Reihenfolge der Ableitung, nicht der der Serverantwort', () => {
     const reversed = run({ cloud_phases: [LANDMARK_PHASE, REMOTE_PHASE] })
 
-    expect(idsOf(reversed)).toEqual([
-      'remote_categories',
-      'criteria',
-      'landmark',
-      'ranking',
-    ])
+    expect(idsOf(reversed)).toEqual(['remote_categories', 'criteria', 'landmark', 'ranking'])
   })
 })
 
@@ -111,10 +101,11 @@ describe('deriveClassificationSteps: Zustände', () => {
 
       for (const step of steps) {
         const index = CLASSIFICATION_STEP_ORDER.indexOf(step.id)
-        const expected = index < currentIndex ? 'done' : index === currentIndex ? 'running' : 'pending'
+        const expected =
+          index < currentIndex ? 'done' : index === currentIndex ? 'running' : 'pending'
         expect(step.state, step.id).toBe(expected)
       }
-    }
+    },
   )
 
   it('markiert nach einem erfolgreichen Lauf ohne laufende Phase alle Teilschritte als erledigt', () => {
@@ -220,7 +211,7 @@ describe('deriveClassificationSteps: Fortschrittsquellen', () => {
       ],
     })
     const remote = deriveClassificationSteps(withoutCounters).find(
-      (step) => step.id === 'remote_categories'
+      (step) => step.id === 'remote_categories',
     )
 
     expect(remote?.processed).toBeNull()
@@ -231,9 +222,7 @@ describe('deriveClassificationSteps: Fortschrittsquellen', () => {
     const odd = run({
       cloud_phases: [cloudPhase({ photos_total: 2, photos_processed: 5 })],
     })
-    const remote = deriveClassificationSteps(odd).find(
-      (step) => step.id === 'remote_categories'
-    )
+    const remote = deriveClassificationSteps(odd).find((step) => step.id === 'remote_categories')
 
     expect(remote?.processed).toBe(5)
     expect(remote?.total).toBe(2)

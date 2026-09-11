@@ -115,9 +115,7 @@ function fullStats(): ProjectStatsOut {
       classified_photo_count: 9800,
       unclassified_photo_count: 2243,
       entries: base.categories.entries.map((entry) =>
-        entry.category_key === 'landschaft'
-          ? { ...entry, photo_count: 9800, share: 1 }
-          : entry
+        entry.category_key === 'landschaft' ? { ...entry, photo_count: 9800, share: 1 } : entry,
       ),
     },
     manual_category_override_count: 37,
@@ -165,7 +163,7 @@ function renderPage() {
           <Route path="/projects/:projectId/stats" element={<ProjectStatsPage />} />
         </Routes>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -185,7 +183,7 @@ describe('ProjectStatsPage', () => {
 
     it('zeigt bei einem unbekannten Projekt nur einen Kurztext, keine Statistikbloecke', async () => {
       vi.mocked(projectsApi.getProjectStats).mockRejectedValue(
-        new ApiError(404, 'Projekt nicht gefunden.')
+        new ApiError(404, 'Projekt nicht gefunden.'),
       )
 
       renderPage()
@@ -196,14 +194,12 @@ describe('ProjectStatsPage', () => {
 
     it('zeigt die Server-Fehlermeldung woertlich in einem Alert', async () => {
       vi.mocked(projectsApi.getProjectStats).mockRejectedValue(
-        new ApiError(500, 'Interner Serverfehler beim Aggregieren.')
+        new ApiError(500, 'Interner Serverfehler beim Aggregieren.'),
       )
 
       renderPage()
 
-      expect(
-        await screen.findByText('Interner Serverfehler beim Aggregieren.')
-      ).toBeInTheDocument()
+      expect(await screen.findByText('Interner Serverfehler beim Aggregieren.')).toBeInTheDocument()
     })
   })
 
@@ -250,7 +246,7 @@ describe('ProjectStatsPage', () => {
       // Zwei Tabellen auf der Seite, seit specs/features/0299-kategorie-konfidenz-anzeigen.md
       // den Konfidenzblock ergaenzt - die Abfrage wird deshalb auf den Abschnitt eingegrenzt.
       const table = within(
-        await screen.findByRole('region', { name: 'Kategorienverteilung' })
+        await screen.findByRole('region', { name: 'Kategorienverteilung' }),
       ).getByRole('table')
       const rows = within(table).getAllByRole('row').slice(1)
       expect(rows).toHaveLength(CATEGORY_KEYS.length)
@@ -287,9 +283,7 @@ describe('ProjectStatsPage', () => {
       renderPage()
 
       expect(await screen.findByText('Originaldateien in OpenCloud')).toBeInTheDocument()
-      expect(
-        screen.getByText('Lokal belegt (Thumbnail-Cache + Datenbestand)')
-      ).toBeInTheDocument()
+      expect(screen.getByText('Lokal belegt (Thumbnail-Cache + Datenbestand)')).toBeInTheDocument()
     })
 
     it('weist den geschaetzten Datenbank-Anteil getrennt vom Cache aus', async () => {
@@ -312,7 +306,7 @@ describe('ProjectStatsPage', () => {
       // Zwei Tabellen auf der Seite, seit specs/features/0299-kategorie-konfidenz-anzeigen.md
       // den Konfidenzblock ergaenzt - die Abfrage wird deshalb auf den Abschnitt eingegrenzt.
       const table = within(
-        await screen.findByRole('region', { name: 'Kategorienverteilung' })
+        await screen.findByRole('region', { name: 'Kategorienverteilung' }),
       ).getByRole('table')
       const rowHeaders = within(table)
         .getAllByRole('rowheader')
@@ -326,7 +320,7 @@ describe('ProjectStatsPage', () => {
       // Zwei Tabellen auf der Seite, seit specs/features/0299-kategorie-konfidenz-anzeigen.md
       // den Konfidenzblock ergaenzt - die Abfrage wird deshalb auf den Abschnitt eingegrenzt.
       const table = within(
-        await screen.findByRole('region', { name: 'Kategorienverteilung' })
+        await screen.findByRole('region', { name: 'Kategorienverteilung' }),
       ).getByRole('table')
       // Regressionsschutz gegen eine zweite Label-Tabelle im Client (ADR 0049): stuende im
       // Frontend eine eigene Uebersetzung, erschiene hier "Landschaft" statt des Servernamens.
@@ -374,13 +368,15 @@ describe('ProjectStatsPage', () => {
       const unaffected = container.querySelector('[data-purpose="remote_category"]')
       expect(affected).not.toBeNull()
       expect(unaffected).not.toBeNull()
-      expect(within(affected as HTMLElement).getByText('Summe unvollständig erfasst')).toBeInTheDocument()
+      expect(
+        within(affected as HTMLElement).getByText('Summe unvollständig erfasst'),
+      ).toBeInTheDocument()
       expect(within(affected as HTMLElement).getByText(INCOMPLETE_EXPLANATION)).toBeInTheDocument()
       expect(
-        within(unaffected as HTMLElement).queryByText('Summe unvollständig erfasst')
+        within(unaffected as HTMLElement).queryByText('Summe unvollständig erfasst'),
       ).not.toBeInTheDocument()
       expect(
-        within(unaffected as HTMLElement).queryByText(INCOMPLETE_EXPLANATION)
+        within(unaffected as HTMLElement).queryByText(INCOMPLETE_EXPLANATION),
       ).not.toBeInTheDocument()
     })
 
@@ -465,7 +461,9 @@ describe('ProjectStatsPage', () => {
       renderPage()
 
       const scope = await screen.findByRole('region', { name: 'Umfang und Speicher' })
-      expect(within(scope).getByText(/Datenbank \(geschätzt\): nicht ermittelbar/)).toBeInTheDocument()
+      expect(
+        within(scope).getByText(/Datenbank \(geschätzt\): nicht ermittelbar/),
+      ).toBeInTheDocument()
     })
   })
 
@@ -505,7 +503,6 @@ describe('ProjectStatsPage', () => {
   })
 })
 
-
 // specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterien 6/7
 describe('ProjectStatsPage: Konfidenz der Kategorie-Erkennung', () => {
   beforeEach(() => {
@@ -519,7 +516,12 @@ describe('ProjectStatsPage: Konfidenz der Kategorie-Erkennung', () => {
       category_confidence: {
         entries: base.category_confidence.entries.map((entry) => {
           if (entry.category_key === 'landschaft') {
-            return { ...entry, display_name: 'Landschaft', photo_count: 42, average_confidence: 0.78 }
+            return {
+              ...entry,
+              display_name: 'Landschaft',
+              photo_count: 42,
+              average_confidence: 0.78,
+            }
           }
           if (entry.category_key === 'tier') {
             return { ...entry, display_name: 'Tier', photo_count: 0, average_confidence: null }
@@ -568,10 +570,10 @@ describe('ProjectStatsPage: Konfidenz der Kategorie-Erkennung', () => {
     // Die 42 steht zweimal im Abschnitt (Tabellenzeile und Basiskennzahl) - deshalb ueber das
     // Label eingegrenzt statt ueber die blosse Zahl.
     expect(
-      within(scope).getByText('Klassifizierte Fotos mit Angabe').closest('div')
+      within(scope).getByText('Klassifizierte Fotos mit Angabe').closest('div'),
     ).toHaveTextContent('42')
     expect(
-      within(scope).getByText('Klassifizierte Fotos ohne Angabe').closest('div')
+      within(scope).getByText('Klassifizierte Fotos ohne Angabe').closest('div'),
     ).toHaveTextContent('8')
   })
 

@@ -66,7 +66,7 @@ dev = [
     "pytest-cov>=6.0",
     "pytest-asyncio>=0.24",
     "aiosqlite>=0.20",
-    "ruff>=0.7",
+    "ruff==0.16.4",
     "mypy>=1.13",
 ]
 
@@ -96,10 +96,32 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 src = ["src"]
-extend-exclude = ["alembic/versions"]
+
+# Markdown bleibt ausgenommen (Akzeptanzkriterium K2, ADR 0080 Abschnitt 4): ruff formatiert seit
+# 0.16.0 standardmaessig Python-Codebloecke INNERHALB von .md-Dateien. Heute liegt unter backend/
+# keine .md-Datei - der Ausschluss ist aktiv konfiguriert, damit der Fall nicht eintritt, sobald
+# jemand dort eine anlegt.
+[tool.ruff.format]
+exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+# Der Ausschluss von alembic/versions gilt bewusst nur fuer den LINTER, nicht fuer den Formatierer
+# (ADR 0080 Abschnitt 2): Von Alembic erzeugte Migrationen tragen UP007/UP035/I001-Befunde, der
+# Formatierer hat dagegen keine Meinung, die generierter Code verletzen koennte. Achtung, stille
+# Falle: Das schlichte "alembic/versions" wirkt hier NICHT - erst der Glob schliesst aus (unter
+# [tool.ruff] greift dieselbe Schreibweise dagegen).
+exclude = ["alembic/versions/*"]
+
+# Der Formatierer bricht Zeilen nur nach bestem Bemuehen um; an einer Stelle im Bestand
+# (tests/test_config.py, Docstring, der mit einem Anfuehrungszeichen beginnt) setzt er zur
+# Entschaerfung ein Leerzeichen ein und schiebt die Zeile damit selbst ueber 100 Zeichen - ein
+# noqa ist dort unmoeglich, weil die beanstandete Zeile in einem Stringliteral liegt.
+# line-length = 100 bleibt die Zielbreite des Formatierers; E501 bleibt aktiv (einziger Waechter
+# gegen ueberlange Kommentare und Docstrings, die der Formatierer nie anfasst) und schlaegt erst
+# ab 111 Zeichen an.
+[tool.ruff.lint.pycodestyle]
+max-line-length = 110
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path"]

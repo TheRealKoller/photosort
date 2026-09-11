@@ -24,7 +24,7 @@ export function CategoryOverrideMarker({ className }: CategoryOverrideMarkerProp
       aria-label="Kategorie manuell übersteuert"
       className={cn(
         'flex size-6 items-center justify-center rounded-full bg-bg/85 text-xs text-text-h backdrop-blur-sm',
-        className
+        className,
       )}
     >
       <span aria-hidden="true">✎</span>

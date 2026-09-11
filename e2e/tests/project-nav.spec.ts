@@ -86,7 +86,7 @@ async function visibleCount(locator: import('@playwright/test').Locator): Promis
     elements.map((element) => {
       const rect = element.getBoundingClientRect()
       return rect.width > 0 && rect.height > 0
-    })
+    }),
   )
   return rendered.filter(Boolean).length
 }
@@ -147,7 +147,7 @@ test('blendet an der exakten Grenze 1024 px die Leiste aus, ohne den Ausloeser a
    * genug" aus und bestuende auch bei voellig fehlendem Breakpoint.
    */
   expect(measured[0]!.visibleTargets, 'Messungen an der Grenze unterscheiden sich').not.toBe(
-    measured[1]!.visibleTargets
+    measured[1]!.visibleTargets,
   )
 })
 
@@ -178,10 +178,9 @@ test('zeigt im Panel ueber die Grenze hinweg unterschiedliche Inhalte aus demsel
     await expect(panel, `Panel bei ${width} px`).toBeVisible()
 
     await expect(panel.locator('a'), `Panelzeilen im DOM bei ${width} px`).toHaveCount(5)
-    await expect(
-      panel.getByRole('link'),
-      `dargestellte Panelzeilen bei ${width} px`
-    ).toHaveText(expectedLabels)
+    await expect(panel.getByRole('link'), `dargestellte Panelzeilen bei ${width} px`).toHaveText(
+      expectedLabels,
+    )
 
     await page.keyboard.press('Escape')
     await expect(panel, `Panel nach Escape bei ${width} px`).toBeHidden()
@@ -221,11 +220,13 @@ test(`haelt den Ausloeser bei ${BREAKPOINT} px erkennbar kompakter als ein Haupt
   expect(
     triggerBox!.width,
     `Ausloeser ${triggerBox!.width.toFixed(1)} px gegen schmalstes Hauptziel ` +
-      `${narrowest.toFixed(1)} px (Breiten: ${targetWidths.map((w) => w.toFixed(1)).join(', ')})`
+      `${narrowest.toFixed(1)} px (Breiten: ${targetWidths.map((w) => w.toFixed(1)).join(', ')})`,
   ).toBeLessThanOrEqual(narrowest * 0.75)
 })
 
-test(`setzt die Nebengruppe im Panel bei ${MOBILE_WIDTH} px sichtbar ab (AK5)`, async ({ page }) => {
+test(`setzt die Nebengruppe im Panel bei ${MOBILE_WIDTH} px sichtbar ab (AK5)`, async ({
+  page,
+}) => {
   /*
    * ZWEI EIGENSCHAFTEN, EINE ZUSAGE: die Absetzung besteht aus dem groesseren Abstand UND der
    * gerenderten Linie. Einzeln waere jede angreifbar - ein Abstand ohne Linie ist bei fuenf
@@ -253,21 +254,20 @@ test(`setzt die Nebengruppe im Panel bei ${MOBILE_WIDTH} px sichtbar ab (AK5)`, 
     rowBoxes.push({ label, top: box!.y, bottom: box!.y + box!.height })
   }
 
-  const innerGaps = [
-    rowBoxes[1]!.top - rowBoxes[0]!.bottom,
-    rowBoxes[2]!.top - rowBoxes[1]!.bottom,
-  ]
+  const innerGaps = [rowBoxes[1]!.top - rowBoxes[0]!.bottom, rowBoxes[2]!.top - rowBoxes[1]!.bottom]
   const largestInnerGap = Math.max(...innerGaps)
   // Ohne diese Vorbedingung waere "mindestens doppelt so gross" bei einem Innenabstand von 0
   // trivial wahr - und genau dann saehe man ueberhaupt keine Gruppierung.
-  expect(largestInnerGap, `groesster Abstand innerhalb der Hauptgruppe (${innerGaps.join(', ')})`)
-    .toBeGreaterThan(0)
+  expect(
+    largestInnerGap,
+    `groesster Abstand innerhalb der Hauptgruppe (${innerGaps.join(', ')})`,
+  ).toBeGreaterThan(0)
 
   const groupGap = rowBoxes[3]!.top - rowBoxes[2]!.bottom
   expect(
     groupGap,
     `Abstand "Vergleich" -> "Einstellungen" (${groupGap.toFixed(1)} px) gegen den groessten ` +
-      `Abstand innerhalb der Hauptgruppe (${largestInnerGap.toFixed(1)} px)`
+      `Abstand innerhalb der Hauptgruppe (${largestInnerGap.toFixed(1)} px)`,
   ).toBeGreaterThanOrEqual(largestInnerGap * 2)
 
   /*
@@ -315,12 +315,14 @@ test(`setzt die Nebengruppe im Panel bei ${MOBILE_WIDTH} px sichtbar ab (AK5)`, 
       }
       return { resolved: true, found: false, width: 0, style: 'none', color: 'transparent' }
     },
-    { primary: [...PRIMARY_LABELS], secondary: [...SECONDARY_LABELS] }
+    { primary: [...PRIMARY_LABELS], secondary: [...SECONDARY_LABELS] },
   )
 
   expect(separator.resolved, 'alle fuenf Panelzeilen ueber ihre Beschriftung gefunden').toBe(true)
   expect(separator.found, 'eigener Block um die drei Hauptzeilen gefunden').toBe(true)
-  expect(separator.width, `border-bottom-width des Trenners (${separator.color})`).toBeGreaterThan(0)
+  expect(separator.width, `border-bottom-width des Trenners (${separator.color})`).toBeGreaterThan(
+    0,
+  )
   expect(separator.style, 'border-bottom-style des Trenners').not.toBe('none')
   // `transparent` und jedes `rgba(..., 0)` sind gerenderte Linien ohne jede Sichtbarkeit.
   expect(separator.color, 'Farbe des Trenners').not.toBe('transparent')
@@ -373,7 +375,7 @@ test('erkennt eine umgebrochene Zeile als solche (Selbsttest des Messverfahrens)
       { top: 12, bottom: 46.8 },
       { top: 13.4, bottom: 45.4 },
     ]),
-    'zwei nebeneinander stehende Gruppen'
+    'zwei nebeneinander stehende Gruppen',
   ).toBe(true)
   // Dieselben zwei Gruppen nach einem Umbruch: die zweite steht vollstaendig unter der ersten.
   expect(
@@ -381,7 +383,7 @@ test('erkennt eine umgebrochene Zeile als solche (Selbsttest des Messverfahrens)
       { top: 12, bottom: 46.8 },
       { top: 58.8, bottom: 90.8 },
     ]),
-    'zwei untereinander stehende Gruppen'
+    'zwei untereinander stehende Gruppen',
   ).toBe(false)
   // Randfall Beruehrung: Unterkante der einen genau auf der Oberkante der anderen ist bereits
   // ein Umbruch, keine gemeinsame Zeile.
@@ -390,7 +392,7 @@ test('erkennt eine umgebrochene Zeile als solche (Selbsttest des Messverfahrens)
       { top: 12, bottom: 46.8 },
       { top: 46.8, bottom: 78.8 },
     ]),
-    'buendig aneinander grenzende Gruppen'
+    'buendig aneinander grenzende Gruppen',
   ).toBe(false)
 })
 
@@ -432,7 +434,7 @@ test(`haelt die Kopfzeile bei ${MOBILE_WIDTH} px genauso hoch wie ohne Projektbe
   expect(withoutProject!.height, 'Hoehe der Kopfzeile ohne Projektbezug').toBeGreaterThan(0)
   expect(
     Math.abs(withProject!.height - withoutProject!.height),
-    `Hoehenunterschied der Kopfzeile bei ${MOBILE_WIDTH} px`
+    `Hoehenunterschied der Kopfzeile bei ${MOBILE_WIDTH} px`,
   ).toBeLessThanOrEqual(TOLERANCE)
 })
 
@@ -476,14 +478,14 @@ test(`haelt die Kopfzeile bei ${BREAKPOINT} px einzeilig (kein Umbruch)`, async 
   expect(await visibleCount(navTargetsInDom(page)), `sichtbare Ziele bei ${BREAKPOINT} px`).toBe(3)
   expect(
     await visibleCount(menuTriggerInDom(page)),
-    `sichtbarer Ausloeser bei ${BREAKPOINT} px`
+    `sichtbarer Ausloeser bei ${BREAKPOINT} px`,
   ).toBe(1)
 
   const extents = await header.evaluate((element) =>
     Array.from(element.children).map((child) => {
       const rect = child.getBoundingClientRect()
       return { top: rect.top, bottom: rect.bottom }
-    })
+    }),
   )
 
   // Ohne diese Zusicherung bestuende der Test auch dann, wenn die Kopfzeile nur noch ein einziges
@@ -491,7 +493,7 @@ test(`haelt die Kopfzeile bei ${BREAKPOINT} px einzeilig (kein Umbruch)`, async 
   expect(extents.length, 'direkte Kinder der Kopfzeile').toBeGreaterThanOrEqual(2)
   expect(
     sharesHorizontalBand(extents),
-    `Kinder der Kopfzeile bei ${BREAKPOINT} px in einer Zeile (gemessen: ${JSON.stringify(extents)})`
+    `Kinder der Kopfzeile bei ${BREAKPOINT} px in einer Zeile (gemessen: ${JSON.stringify(extents)})`,
   ).toBe(true)
 })
 
@@ -534,9 +536,7 @@ test('legt das geoeffnete Panel vollstaendig sichtbar ueber den Seiteninhalt', a
   expect(box!.x, 'linke Panelkante').toBeGreaterThanOrEqual(-TOLERANCE)
   expect(box!.y, 'obere Panelkante').toBeGreaterThanOrEqual(-TOLERANCE)
   expect(box!.x + box!.width, 'rechte Panelkante').toBeLessThanOrEqual(MOBILE_WIDTH + TOLERANCE)
-  expect(box!.y + box!.height, 'untere Panelkante').toBeLessThanOrEqual(
-    VIEWPORT_HEIGHT + TOLERANCE
-  )
+  expect(box!.y + box!.height, 'untere Panelkante').toBeLessThanOrEqual(VIEWPORT_HEIGHT + TOLERANCE)
 
   const points = probePoints(box!)
 
@@ -548,7 +548,7 @@ test('legt das geoeffnete Panel vollstaendig sichtbar ueber den Seiteninhalt', a
     })
   }, points)
   expect(hitsWhileOpen, 'getroffene Elemente an den Pruefpunkten des offenen Panels').toEqual(
-    points.map(() => 'Panel')
+    points.map(() => 'Panel'),
   )
 
   // GEGENPROBE: An denselben Punkten liegt bei geschlossenem Panel nachweislich Seiteninhalt -
@@ -566,6 +566,6 @@ test('legt das geoeffnete Panel vollstaendig sichtbar ueber den Seiteninhalt', a
   }, points)
   expect(
     contentHits.filter(Boolean).length,
-    'Pruefpunkte, an denen ohne Panel Seiteninhalt liegt'
+    'Pruefpunkte, an denen ohne Panel Seiteninhalt liegt',
   ).toBeGreaterThan(0)
 })

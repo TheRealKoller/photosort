@@ -638,9 +638,7 @@ async def run_project_scan(
         # das jetzt bewusst NICHT mehr unbehandelt durchgelassen: der Lauf wird sofort auf FAILED
         # gesetzt, danach re-raised (kein Verschlucken einer BaseException) - arqs eigene
         # Task-/Retry-Buchhaltung funktioniert dadurch unveraendert weiter.
-        await _fail_run(
-            session, scan_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
-        )
+        await _fail_run(session, scan_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
         raise
     except Exception as exc:
         # Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): vorher
@@ -1552,13 +1550,17 @@ async def run_criterion_scoring(
 
     try:
         latest_scoring_run = (
-            await session.execute(
-                select(ScoringRun)
-                .where(ScoringRun.project_id == project.id)
-                .order_by(ScoringRun.started_at.desc())
-                .limit(1)
+            (
+                await session.execute(
+                    select(ScoringRun)
+                    .where(ScoringRun.project_id == project.id)
+                    .order_by(ScoringRun.started_at.desc())
+                    .limit(1)
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if (
             latest_scoring_run is None
             or latest_scoring_run.status != ScanStatus.SUCCESS
@@ -1645,9 +1647,7 @@ async def run_criterion_scoring(
             values["sharpness"] = sharpness_value
 
             exposure_value = normalize_exposure(score.exposure)
-            _upsert_criterion(
-                photo.id, "exposure", exposure_value, CriterionSource.LOCAL_HEURISTIC
-            )
+            _upsert_criterion(photo.id, "exposure", exposure_value, CriterionSource.LOCAL_HEURISTIC)
             values["exposure"] = exposure_value
 
             # Kein assert-is-not-None mehr hier (Copilot-Review-Fund, PR #88): jeder der fuenf
@@ -1720,8 +1720,9 @@ async def run_criterion_scoring(
                 # konstruierbarer Client liess die Sehenswuerdigkeits-Erkennung wortlos aus.
                 # Jetzt Teil der laufweiten Cloud-Fehlermeldung.
                 _append_cloud_error(
-                    run, "Sehenswuerdigkeits-Erkennung nicht verfuegbar (Initialisierung "
-                    "fehlgeschlagen)."
+                    run,
+                    "Sehenswuerdigkeits-Erkennung nicht verfuegbar (Initialisierung "
+                    "fehlgeschlagen).",
                 )
             if landmark_client is not None:
                 # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 6: die
@@ -2132,9 +2133,7 @@ async def run_classification(
             # CriterionScoringRun, den run_classification vor Phase 1 anlegt, bis zum naechsten
             # Cron-Tick auf RUNNING stehen. Vor Spec 0296 gab es zu diesem Zeitpunkt noch gar
             # keine solche Zeile, deshalb ist das ein mit der Verkettung neu entstandener Fall.
-            await _fail_run(
-                session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
-            )
+            await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
             raise
         if remote_run.status == ScanStatus.FAILED:
             # _fail_run hat die Session zurueckgerollt und damit JEDES Objekt darin expired -
@@ -2225,12 +2224,16 @@ async def select_remote_category_candidates(session: AsyncSession, project_id: i
     `GET .../classify/estimate` (api/projects.py) genutzt - "ermittelt ueber
     dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf" (Akzeptanzkriterium der Spec)."""
     rows = (
-        await session.execute(
-            select(Photo)
-            .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-            .where(Photo.project_id == project_id, PhotoScore.suggested_status.is_(None))
+        (
+            await session.execute(
+                select(Photo)
+                .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+                .where(Photo.project_id == project_id, PhotoScore.suggested_status.is_(None))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if not rows:
         return []
@@ -2435,9 +2438,7 @@ async def run_remote_category_classification(
                             photo_id=photo.id,
                             category_key=category_key,
                             detected_categories=list(classification.categories),
-                            detected_category_confidences=dict(
-                                classification.category_confidences
-                            ),
+                            detected_category_confidences=dict(classification.category_confidences),
                             category_confidence=classification.category_confidences.get(
                                 category_key
                             ),
@@ -2526,9 +2527,7 @@ async def run_remote_category_classification(
         await session.commit()
         return run
     except asyncio.CancelledError:
-        await _fail_run(
-            session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
-        )
+        await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
         raise
     except Exception as exc:
         await _fail_run(session, run, str(exc))
@@ -2656,9 +2655,9 @@ async def reassign_photo_category(
 
     values_by_photo_id: dict[int, dict[str, float]] = {}
     for criterion_row in criterion_rows:
-        values_by_photo_id.setdefault(criterion_row.photo_id, {})[
-            criterion_row.criterion_key
-        ] = criterion_row.value
+        values_by_photo_id.setdefault(criterion_row.photo_id, {})[criterion_row.criterion_key] = (
+            criterion_row.value
+        )
     for photo_id_in_partition in photo_ids:
         values_by_photo_id.setdefault(photo_id_in_partition, {})
 
@@ -2686,18 +2685,16 @@ async def reassign_photo_category(
     def _confidence_for(row: PhotoRanking) -> object:
         if row.is_primary and overrides_by_photo_id.get(row.photo_id) is not None:
             return None
-        return evidence_by_photo_id.get(
-            row.photo_id, NO_REMOTE_CATEGORY_EVIDENCE
-        ).confidences.get(row.category_key)
+        return evidence_by_photo_id.get(row.photo_id, NO_REMOTE_CATEGORY_EVIDENCE).confidences.get(
+            row.category_key
+        )
 
     rows_by_category: dict[str, dict[int, PhotoRanking]] = {}
     for row in partition_rankings:
         rows_by_category.setdefault(row.category_key, {})[row.photo_id] = row
     for category_rows in rows_by_category.values():
         partition_candidates = {pid: values_by_photo_id[pid] for pid in category_rows}
-        partition_confidences = {
-            pid: _confidence_for(row) for pid, row in category_rows.items()
-        }
+        partition_confidences = {pid: _confidence_for(row) for pid, row in category_rows.items()}
         for ranked_photo in rank_photos(
             partition_candidates, DEFAULT_CRITERION_WEIGHTS, partition_confidences
         ):
@@ -2721,6 +2718,7 @@ JOB_TIMEOUT_SECONDS = 86400
 # ist, gilt als haengend, unabhaengig von seiner Gesamtlaufzeit (bindende Stakeholder-Anforderung:
 # "nur ein echter Stillstand ist ein Fehler, keine feste Obergrenze").
 STALL_THRESHOLD = timedelta(minutes=15)
+
 
 def _stall_message() -> str:
     # Copilot-Review-Fund (PR #67): die Minutenzahl wird bewusst aus STALL_THRESHOLD abgeleitet
@@ -2772,13 +2770,17 @@ async def reap_stalled_runs(
     async with session_factory() as session:
         try:
             stalled_scan_runs = (
-                await session.execute(
-                    select(ScanRun).where(
-                        ScanRun.status == ScanStatus.RUNNING,
-                        ScanRun.last_progress_at < threshold,
+                (
+                    await session.execute(
+                        select(ScanRun).where(
+                            ScanRun.status == ScanStatus.RUNNING,
+                            ScanRun.last_progress_at < threshold,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         except Exception:
             # architect-Review-Fund (Spec 0034): ohne rollback() bliebe die Transaktion auf einer
             # echten Postgres-Verbindung nach einem fehlgeschlagenen SELECT im Zustand "current
@@ -2797,13 +2799,17 @@ async def reap_stalled_runs(
 
         try:
             stalled_scoring_runs = (
-                await session.execute(
-                    select(ScoringRun).where(
-                        ScoringRun.status == ScanStatus.RUNNING,
-                        ScoringRun.last_progress_at < threshold,
+                (
+                    await session.execute(
+                        select(ScoringRun).where(
+                            ScoringRun.status == ScanStatus.RUNNING,
+                            ScoringRun.last_progress_at < threshold,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         except Exception:
             await session.rollback()
             stalled_scoring_runs = []
@@ -2813,13 +2819,17 @@ async def reap_stalled_runs(
 
         try:
             stalled_criterion_scoring_runs = (
-                await session.execute(
-                    select(CriterionScoringRun).where(
-                        CriterionScoringRun.status == ScanStatus.RUNNING,
-                        CriterionScoringRun.last_progress_at < threshold,
+                (
+                    await session.execute(
+                        select(CriterionScoringRun).where(
+                            CriterionScoringRun.status == ScanStatus.RUNNING,
+                            CriterionScoringRun.last_progress_at < threshold,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         except Exception:
             await session.rollback()
             stalled_criterion_scoring_runs = []
@@ -2829,13 +2839,17 @@ async def reap_stalled_runs(
 
         try:
             stalled_remote_category_runs = (
-                await session.execute(
-                    select(RemoteCategoryClassificationRun).where(
-                        RemoteCategoryClassificationRun.status == ScanStatus.RUNNING,
-                        RemoteCategoryClassificationRun.last_progress_at < threshold,
+                (
+                    await session.execute(
+                        select(RemoteCategoryClassificationRun).where(
+                            RemoteCategoryClassificationRun.status == ScanStatus.RUNNING,
+                            RemoteCategoryClassificationRun.last_progress_at < threshold,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
         except Exception:
             await session.rollback()
             stalled_remote_category_runs = []

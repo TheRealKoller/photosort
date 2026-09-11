@@ -134,9 +134,7 @@ class TestClassificationFromJsonCategories:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
-            result = _classification_from_json(
-                {"categories": ["einhorn", "tier"]}, photo_id=42
-            )
+            result = _classification_from_json({"categories": ["einhorn", "tier"]}, photo_id=42)
 
         assert result.categories == ("tier",)
         warnings = [r for r in caplog.records if r.levelname == "WARNING"]
@@ -196,9 +194,7 @@ class TestClassificationFromJsonCategories:
         assert result.categories == ("tier", "menschen", "landschaft")
 
     def test_duplicates_are_removed_keeping_the_first_mention(self) -> None:
-        result = _classification_from_json(
-            {"categories": ["tier", "tier", "menschen"]}, photo_id=1
-        )
+        result = _classification_from_json({"categories": ["tier", "tier", "menschen"]}, photo_id=1)
         assert result.categories == ("tier", "menschen")
 
     def test_a_non_string_category_value_is_discarded_not_fatal(self) -> None:
@@ -305,9 +301,7 @@ class TestAnthropicCategoryClient:
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured["body"] = json.loads(request.content)
-            return _anthropic_success_response(
-                {"categories": ["tier"], "fine_labels": ["Hund"]}
-            )
+            return _anthropic_success_response({"categories": ["tier"], "fine_labels": ["Hund"]})
 
         client = AnthropicCategoryClient(
             api_key="sk-test",
@@ -318,9 +312,7 @@ class TestAnthropicCategoryClient:
 
         classification = asyncio.run(client.classify(IMAGE_BYTES, "image/jpeg", 1))
 
-        assert classification == RemoteClassification(
-            categories=("tier",), fine_labels=("Hund",)
-        )
+        assert classification == RemoteClassification(categories=("tier",), fine_labels=("Hund",))
         body = captured["body"]
         assert isinstance(body, dict)
         assert body["model"] == ANTHROPIC_VISION_MODEL
@@ -450,9 +442,7 @@ class FakeLabelEmbedder:
 class TestResolveCanonicalLabel:
     def test_exact_normalized_match_reuses_the_existing_entry_without_calling_embed(self) -> None:
         existing = [
-            FineLabelSnapshotEntry(
-                canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0]
-            )
+            FineLabelSnapshotEntry(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
         ]
         embedder = FakeLabelEmbedder({})
 
@@ -464,9 +454,7 @@ class TestResolveCanonicalLabel:
 
     def test_similarity_at_exactly_the_threshold_reuses_the_existing_entry(self) -> None:
         existing = [
-            FineLabelSnapshotEntry(
-                canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0]
-            )
+            FineLabelSnapshotEntry(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
         ]
         # Konstruiert einen Vektor mit Kosinus-Aehnlichkeit EXAKT CATEGORY_LABEL_SIMILARITY_
         # THRESHOLD zu [1.0, 0.0]: cos = x -> Vektor (x, sqrt(1-x^2)).
@@ -485,9 +473,7 @@ class TestResolveCanonicalLabel:
         import math
 
         existing = [
-            FineLabelSnapshotEntry(
-                canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0]
-            )
+            FineLabelSnapshotEntry(canonical_key="hund", display_name="Hund", embedding=[1.0, 0.0])
         ]
         threshold = CATEGORY_LABEL_SIMILARITY_THRESHOLD
         below = threshold - 0.01
@@ -644,9 +630,7 @@ class TestConfiguredModelReachesTheRequest:
             return httpx.Response(
                 200,
                 json={
-                    "content": [
-                        {"type": "text", "text": '{"categories": [], "fine_labels": []}'}
-                    ],
+                    "content": [{"type": "text", "text": '{"categories": [], "fine_labels": []}'}],
                 },
             )
 
@@ -669,9 +653,7 @@ class TestConfiguredModelReachesTheRequest:
             return httpx.Response(
                 200,
                 json={
-                    "choices": [
-                        {"message": {"content": '{"categories": [], "fine_labels": []}'}}
-                    ],
+                    "choices": [{"message": {"content": '{"categories": [], "fine_labels": []}'}}],
                 },
             )
 
@@ -858,9 +840,7 @@ class TestConfidenceDiscardLogging:
         message = caplog.records[0].getMessage()
         assert "SEHR-SICHER" not in message
 
-    def test_a_missing_confidence_key_logs_nothing(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_a_missing_confidence_key_logs_nothing(self, caplog: pytest.LogCaptureFixture) -> None:
         """Nichts wurde verworfen - eine fehlende Angabe ist der erwartete Regelfall eines
         Modells, das sich nicht einschaetzen kann."""
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
@@ -868,9 +848,7 @@ class TestConfidenceDiscardLogging:
 
         assert caplog.records == []
 
-    def test_each_discarded_value_logs_exactly_once(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_each_discarded_value_logs_exactly_once(self, caplog: pytest.LogCaptureFixture) -> None:
         with caplog.at_level("WARNING", logger="photosort.remote_classification"):
             _classification_from_json(
                 {

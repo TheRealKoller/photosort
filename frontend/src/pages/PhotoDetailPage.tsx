@@ -86,7 +86,11 @@ export function PhotoDetailPage() {
     }
     let currentPhotos = photos
     let fetches = 0
-    while (index + 1 >= currentPhotos.length && query.hasNextPage && fetches < MAX_AUTO_ADVANCE_PAGE_FETCHES) {
+    while (
+      index + 1 >= currentPhotos.length &&
+      query.hasNextPage &&
+      fetches < MAX_AUTO_ADVANCE_PAGE_FETCHES
+    ) {
       const result = await query.fetchNextPage()
       currentPhotos = result.data?.pages.flatMap((page) => page.items) ?? currentPhotos
       fetches += 1
@@ -146,7 +150,7 @@ export function PhotoDetailPage() {
       const fromIndex = index + 1
       setMutation.mutate(
         { photoId: currentPhoto.id, status },
-        { onSuccess: () => void advanceToNextUnrated(fromIndex) }
+        { onSuccess: () => void advanceToNextUnrated(fromIndex) },
       )
     }
   }
@@ -301,7 +305,9 @@ export function PhotoDetailPage() {
       {/* Bleibt unveraendert stehen (Spec 0321, "es wird nichts entfernt"): durch die neuen
           Tasten-Kaestchen teilweise redundant, aber der Pfeiltasten-Teil hat kein sichtbares
           Gegenstueck. Nur als Metadatenzeile gesetzt statt als Fliesstext. */}
-      <p className="text-xs text-text-muted">Shortcuts: 1 Favorit, 2 Album-würdig, 3 Verwerfen, ←/→ navigieren</p>
+      <p className="text-xs text-text-muted">
+        Shortcuts: 1 Favorit, 2 Album-würdig, 3 Verwerfen, ←/→ navigieren
+      </p>
       <p className="text-xs text-text-muted">
         {index + 1}/{total}
       </p>
@@ -343,7 +349,13 @@ export function PhotoDetailPage() {
       )}
 
       <div className="flex justify-between gap-3">
-        <Button type="button" variant="outline" aria-label="Vorheriges Foto" onClick={handlePrev} disabled={index <= 0}>
+        <Button
+          type="button"
+          variant="outline"
+          aria-label="Vorheriges Foto"
+          onClick={handlePrev}
+          disabled={index <= 0}
+        >
           Zurück
         </Button>
         <Button
@@ -359,7 +371,9 @@ export function PhotoDetailPage() {
 
       {suggestion && (
         <div className="flex flex-col items-start gap-2 rounded-md border border-accent bg-elevated p-3 text-sm">
-          <p className="text-text-h">Automatischer Vorschlag: {formatSuggestionStatusLabel(suggestion)}</p>
+          <p className="text-text-h">
+            Automatischer Vorschlag: {formatSuggestionStatusLabel(suggestion)}
+          </p>
           {/* Formatierung aus utils/suggestionLabels.ts (specs/features/0040-bewertungsdetails-
               info-popover.md, Architektur-Abschnitt) - dasselbe Muster wird jetzt auch vom neuen
               CriterionDetailsPopover.tsx verwendet, keine zweite Kopie derselben Logik. Der

@@ -76,7 +76,7 @@ export function confirmAusschussGate(id: number): Promise<TriggerScanResponse> {
 export function triggerClassification(
   id: number,
   scoringRunId: number,
-  useCloud: boolean
+  useCloud: boolean,
 ): Promise<TriggerScanResponse> {
   return apiFetch<TriggerScanResponse>(`/projects/${id}/classify`, {
     method: 'POST',
@@ -88,7 +88,7 @@ export function triggerClassification(
 // Zustand gesetzt wird statt ein Job ausgeloest (siehe backend api/projects.py-Kommentar).
 export function setCloudVisionConsent(
   id: number,
-  enabled: boolean
+  enabled: boolean,
 ): Promise<CloudVisionConsentOut> {
   return apiFetch<CloudVisionConsentOut>(`/projects/${id}/cloud-vision-consent`, {
     method: 'PUT',

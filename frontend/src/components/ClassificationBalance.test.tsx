@@ -105,9 +105,7 @@ describe('ClassificationBalance (A): Cloud-Teilschritte vorhanden', () => {
   })
 
   it('zeigt die Bilanz auch für einen fehlgeschlagenen Lauf — das Geld war ausgegeben', () => {
-    render(
-      <ClassificationBalance run={run({ status: 'failed', error_message: 'Abbruch' })} />
-    )
+    render(<ClassificationBalance run={run({ status: 'failed', error_message: 'Abbruch' })} />)
 
     expect(block()).toHaveTextContent('1,23 USD')
   })

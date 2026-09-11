@@ -26,10 +26,12 @@ describe('CloudVisionStatusList', () => {
           statusEntry({ phase: 'landmark', status: 'not_run' }),
           statusEntry({ phase: 'remote_category', status: 'not_run' }),
         ]}
-      />
+      />,
     )
 
-    const terms = screen.getAllByText(/Landmark-Erkennung|Remote-Kategorie/).map((el) => el.textContent)
+    const terms = screen
+      .getAllByText(/Landmark-Erkennung|Remote-Kategorie/)
+      .map((el) => el.textContent)
     expect(terms).toEqual(['Landmark-Erkennung', 'Remote-Kategorie'])
   })
 
@@ -49,7 +51,7 @@ describe('CloudVisionStatusList', () => {
           statusEntry({ phase: 'landmark', status }),
           statusEntry({ phase: 'remote_category', status: companionStatus }),
         ]}
-      />
+      />,
     )
 
     expect(screen.getByText(label)).toBeInTheDocument()
@@ -67,7 +69,7 @@ describe('CloudVisionStatusList', () => {
           }),
           statusEntry({ phase: 'remote_category', status: 'not_run' }),
         ]}
-      />
+      />,
     )
 
     expect(screen.getByText('Fehler beim Versuch')).toBeInTheDocument()
@@ -78,10 +80,14 @@ describe('CloudVisionStatusList', () => {
     render(
       <CloudVisionStatusList
         cloudVisionStatus={[
-          statusEntry({ phase: 'landmark', status: 'result', attempted_at: '2026-08-24T10:00:00Z' }),
+          statusEntry({
+            phase: 'landmark',
+            status: 'result',
+            attempted_at: '2026-08-24T10:00:00Z',
+          }),
           statusEntry({ phase: 'remote_category', status: 'not_run' }),
         ]}
-      />
+      />,
     )
 
     expect(screen.queryByText(/nicht erreichbar/)).not.toBeInTheDocument()
@@ -91,10 +97,14 @@ describe('CloudVisionStatusList', () => {
     render(
       <CloudVisionStatusList
         cloudVisionStatus={[
-          statusEntry({ phase: 'landmark', status: 'result', attempted_at: '2026-08-24T10:00:00Z' }),
+          statusEntry({
+            phase: 'landmark',
+            status: 'result',
+            attempted_at: '2026-08-24T10:00:00Z',
+          }),
           statusEntry({ phase: 'remote_category', status: 'consent_disabled' }),
         ]}
-      />
+      />,
     )
 
     expect(screen.getByText('Ergebnis vorhanden')).toBeInTheDocument()
@@ -115,12 +125,10 @@ describe('CloudVisionStatusList', () => {
           }),
           statusEntry({ phase: 'remote_category', status: 'not_run' }),
         ]}
-      />
+      />,
     )
 
-    expect(
-      screen.getByText('<img src=x onerror="window.__pwned = true">')
-    ).toBeInTheDocument()
+    expect(screen.getByText('<img src=x onerror="window.__pwned = true">')).toBeInTheDocument()
     expect(document.querySelector('img')).not.toBeInTheDocument()
   })
 
@@ -128,10 +136,19 @@ describe('CloudVisionStatusList', () => {
     const { container } = render(
       <CloudVisionStatusList
         cloudVisionStatus={[
-          statusEntry({ phase: 'landmark', status: 'error', error_message: 'x', attempted_at: '2026-08-24T10:00:00Z' }),
-          statusEntry({ phase: 'remote_category', status: 'result', attempted_at: '2026-08-24T10:00:00Z' }),
+          statusEntry({
+            phase: 'landmark',
+            status: 'error',
+            error_message: 'x',
+            attempted_at: '2026-08-24T10:00:00Z',
+          }),
+          statusEntry({
+            phase: 'remote_category',
+            status: 'result',
+            attempted_at: '2026-08-24T10:00:00Z',
+          }),
         ]}
-      />
+      />,
     )
 
     const hiddenIcons = container.querySelectorAll('[aria-hidden="true"]')
@@ -157,7 +174,7 @@ describe('CloudVisionStatusList', () => {
 
     const texts = statuses.map((status) => {
       const { container, unmount } = render(
-        <CloudVisionStatusList cloudVisionStatus={[statusEntry({ phase: 'landmark', status })]} />
+        <CloudVisionStatusList cloudVisionStatus={[statusEntry({ phase: 'landmark', status })]} />,
       )
       const text = container.querySelector('dd')!.textContent
       unmount()
@@ -170,7 +187,7 @@ describe('CloudVisionStatusList', () => {
   it('shares one neutral dot across the three "not run" states instead of inventing a symbol', () => {
     for (const status of ['not_run', 'not_candidate', 'consent_disabled'] as const) {
       const { container, unmount } = render(
-        <CloudVisionStatusList cloudVisionStatus={[statusEntry({ phase: 'landmark', status })]} />
+        <CloudVisionStatusList cloudVisionStatus={[statusEntry({ phase: 'landmark', status })]} />,
       )
       expect(container.querySelector('dd [data-icon]')).toBeNull()
       unmount()
@@ -183,7 +200,7 @@ describe('CloudVisionStatusList', () => {
     ['result', 'check'],
   ] as const)('uses the board symbol %s -> %s', (status, icon) => {
     const { container } = render(
-      <CloudVisionStatusList cloudVisionStatus={[statusEntry({ phase: 'landmark', status })]} />
+      <CloudVisionStatusList cloudVisionStatus={[statusEntry({ phase: 'landmark', status })]} />,
     )
 
     expect(container.querySelector(`dd [data-icon="${icon}"]`)).not.toBeNull()

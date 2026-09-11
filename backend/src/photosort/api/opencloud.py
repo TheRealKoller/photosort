@@ -126,9 +126,7 @@ async def folder_counts(
             # Einzelner Unterordner-Zaehlfehler (z.B. Netzwerkfehler mitten in dessen
             # Traversierung) blockiert weder die uebrigen Zaehler noch die Gesamtantwort (ADR
             # decisions/0028 Punkt 4) - nur das vorgelagerte Listing oben liefert einen echten 400.
-            results.append(
-                FolderCountOut(path=subfolder_path, count=0, at_limit=False, error=True)
-            )
+            results.append(FolderCountOut(path=subfolder_path, count=0, at_limit=False, error=True))
             continue
         count, at_limit = raw_result
         results.append(

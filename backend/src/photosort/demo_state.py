@@ -253,9 +253,7 @@ def _demo_gps(index: int) -> tuple[float, float] | None:
         return None
     step = index // _DEMO_CLUSTER_COUNT
     spread = (
-        _DEMO_OTHER_CELL_STEP
-        if cluster == _DEMO_MULTIPLE_PLACES_CLUSTER
-        else _DEMO_SAME_CELL_STEP
+        _DEMO_OTHER_CELL_STEP if cluster == _DEMO_MULTIPLE_PLACES_CLUSTER else _DEMO_SAME_CELL_STEP
     )
     return (
         round(_DEMO_BASE_LAT + spread * step, 6),
@@ -577,9 +575,7 @@ def _deterministic_unit_value(slug: str, index: int, salt: str) -> float:
     return round(rng.uniform(0.05, 0.98), 3)
 
 
-def _demo_category_confidences(
-    slug: str, index: int, category_key: str
-) -> dict[str, float] | None:
+def _demo_category_confidences(slug: str, index: int, category_key: str) -> dict[str, float] | None:
     """Die Konfidenz-Abbildung EINES Demo-Fotos (specs/features/0299-kategorie-konfidenz-
     anzeigen.md) - `None` heisst "nicht erhoben" und ist genau der Fall, den die Oberflaeche als
     Luecke darstellen muss.
@@ -735,9 +731,7 @@ async def _seed_rated_project(
     memberships: list[tuple[tuple[str, str], Photo, float, bool]] = []
     for index, (photo, category_key) in enumerate(zip(photos, CATEGORY_REGISTRY, strict=True)):
         cluster_key = f"{spec.slug}-cluster-{index % _DEMO_CLUSTER_COUNT}"
-        category_override = (
-            _DEMO_OVERRIDE_CATEGORY_KEY if index == _DEMO_OVERRIDE_INDEX else None
-        )
+        category_override = _DEMO_OVERRIDE_CATEGORY_KEY if index == _DEMO_OVERRIDE_INDEX else None
         session.add(
             PhotoScore(
                 photo_id=photo.id,
@@ -771,9 +765,7 @@ async def _seed_rated_project(
                 # `set(detected_category_confidences) <= set(detected_categories)` ist die am
                 # Parser erzwungene Invariante (ADR 0067 Punkt 2), und die Demo darf keinen
                 # Zustand erzeugen, den die Anwendung selbst nie schriebe.
-                detected_categories=(
-                    [category_key] if confidences is None else list(confidences)
-                ),
+                detected_categories=([category_key] if confidences is None else list(confidences)),
                 detected_category_confidences=confidences,
                 category_confidence=(
                     None if confidences is None else confidences.get(category_key)

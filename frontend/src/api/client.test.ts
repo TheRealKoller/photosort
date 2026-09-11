@@ -54,7 +54,7 @@ describe('api/client', () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(404, { detail: 'Projekt nicht gefunden.' }))
 
     await expect(apiFetch('/projects/999')).rejects.toMatchObject(
-      new ApiError(404, 'Projekt nicht gefunden.')
+      new ApiError(404, 'Projekt nicht gefunden.'),
     )
   })
 
@@ -65,9 +65,7 @@ describe('api/client', () => {
   })
 
   it('falls back to a generic message when the response body is not valid JSON', async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response('not json', { status: 500 })
-    )
+    vi.mocked(fetch).mockResolvedValue(new Response('not json', { status: 500 }))
 
     const error = await apiFetch('/projects').catch((e: unknown) => e)
 
@@ -93,7 +91,7 @@ describe('api/client', () => {
   it('fetches a blob with the Authorization header attached (apiFetchBlob)', async () => {
     setToken('my-token')
     vi.mocked(fetch).mockResolvedValue(
-      new Response('fake-image-bytes', { status: 200, headers: { 'Content-Type': 'image/jpeg' } })
+      new Response('fake-image-bytes', { status: 200, headers: { 'Content-Type': 'image/jpeg' } }),
     )
 
     const result = await apiFetchBlob('/photos/1/image?variant=thumbnail')
@@ -109,7 +107,7 @@ describe('api/client', () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(404, { detail: 'Bild wird noch verarbeitet.' }))
 
     await expect(apiFetchBlob('/photos/1/image?variant=thumbnail')).rejects.toMatchObject(
-      new ApiError(404, 'Bild wird noch verarbeitet.')
+      new ApiError(404, 'Bild wird noch verarbeitet.'),
     )
   })
 
@@ -138,7 +136,7 @@ describe('api/client', () => {
     window.addEventListener('photosort:unauthorized', listener)
 
     await expect(
-      apiFetch('/auth/login', { method: 'POST', body: { username: 'x', password: 'y' } })
+      apiFetch('/auth/login', { method: 'POST', body: { username: 'x', password: 'y' } }),
     ).rejects.toBeInstanceOf(ApiError)
 
     expect(listener).toHaveBeenCalledTimes(0)

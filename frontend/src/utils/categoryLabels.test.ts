@@ -70,9 +70,7 @@ describe('categoryAbbreviation', () => {
   it('is collision-free across the whole set', () => {
     // Parametrisiert ueber ALLE 13 Anzeigenamen statt einer Stichprobe (Teststrategie 9) - eine
     // Praefix-Kollision waere in der Grid-Kachel nicht mehr aufloesbar.
-    const abbreviations = CATEGORY_SET.map((entry) =>
-      categoryAbbreviation(entry.key, CATEGORY_SET)
-    )
+    const abbreviations = CATEGORY_SET.map((entry) => categoryAbbreviation(entry.key, CATEGORY_SET))
     expect(new Set(abbreviations).size).toBe(CATEGORY_SET.length)
   })
 
@@ -101,9 +99,11 @@ describe('sortCategoryKeys', () => {
   })
 
   it('puts unknown legacy values after the set but before the catch-all', () => {
-    expect(
-      sortCategoryKeys([CATCH_ALL_CATEGORY_KEY, 'landscape', 'tier'], CATEGORY_SET)
-    ).toEqual(['tier', 'landscape', CATCH_ALL_CATEGORY_KEY])
+    expect(sortCategoryKeys([CATCH_ALL_CATEGORY_KEY, 'landscape', 'tier'], CATEGORY_SET)).toEqual([
+      'tier',
+      'landscape',
+      CATCH_ALL_CATEGORY_KEY,
+    ])
   })
 
   it('sorts several legacy values deterministically among themselves', () => {

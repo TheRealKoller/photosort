@@ -139,7 +139,7 @@ describe('Penpot-Symbole: Erzeugung aus ui/icon.tsx', () => {
       expect(normalizeIconMarkup(raw)).toBe(
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" ' +
           'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
-          'class="lucide lucide-star"><path d="M1 1"></path></svg>'
+          'class="lucide lucide-star"><path d="M1 1"></path></svg>',
       )
     })
 
@@ -147,13 +147,13 @@ describe('Penpot-Symbole: Erzeugung aus ui/icon.tsx', () => {
        Symbol seine Strichstaerke, und zwar unbemerkt. */
     it('verwechselt stroke-width nicht mit width', () => {
       expect(normalizeIconMarkup('<svg stroke-width="2" width="16"></svg>')).toBe(
-        '<svg stroke-width="2"></svg>'
+        '<svg stroke-width="2"></svg>',
       )
     })
 
     it('fasst ausschliesslich die oeffnende Marke an', () => {
       expect(normalizeIconMarkup('<svg width="16"><rect width="4" height="4"></rect></svg>')).toBe(
-        '<svg><rect width="4" height="4"></rect></svg>'
+        '<svg><rect width="4" height="4"></rect></svg>',
       )
     })
 

@@ -59,9 +59,7 @@ function isCloudStep(id: ClassificationStepId): id is keyof typeof CLOUD_PURPOSE
   return id in CLOUD_PURPOSE_BY_STEP
 }
 
-export function deriveClassificationSteps(
-  run: CriterionScoringRunSummary
-): ClassificationStep[] {
+export function deriveClassificationSteps(run: CriterionScoringRunSummary): ClassificationStep[] {
   const isFinished = run.status !== 'running'
   // `phase === null` heisst "läuft nicht mehr". Der Zeiger steht dann hinter dem letzten Schritt,
   // alle liegen davor und gelten als erledigt. Für einen GESCHEITERTEN Lauf ist das eine
@@ -77,8 +75,7 @@ export function deriveClassificationSteps(
   // Neue Phasen werden angehaengt, also ist "alle BEKANNTEN Schritte liegen dahinter" die richtige
   // Naeherung - der unbekannte Schritt selbst kann ohnehin nicht angezeigt werden, weil er in der
   // Reihenfolge dieses Bundles fehlt (Copilot-Fund PR #367).
-  const phaseIndex =
-    run.phase === null ? -1 : CLASSIFICATION_STEP_ORDER.indexOf(run.phase)
+  const phaseIndex = run.phase === null ? -1 : CLASSIFICATION_STEP_ORDER.indexOf(run.phase)
   const currentIndex = phaseIndex === -1 ? CLASSIFICATION_STEP_ORDER.length : phaseIndex
 
   const steps: ClassificationStep[] = []
@@ -137,7 +134,7 @@ function deriveState({
 function progressOf(
   id: ClassificationStepId,
   run: CriterionScoringRunSummary,
-  cloud: CloudPhaseSummaryOut | null
+  cloud: CloudPhaseSummaryOut | null,
 ): { processed: number | null; total: number | null } {
   if (isCloudStep(id)) {
     // Jeder Cloud-Teilschritt liest ausschliesslich SEINEN eigenen Eintrag - die beiden Quellen

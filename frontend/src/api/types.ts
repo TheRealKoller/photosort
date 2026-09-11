@@ -342,12 +342,7 @@ export type CloudVisionPhase = 'landmark' | 'remote_category'
 // `phase === 'landmark'` auf (ADR 0032 Punkt 3: Remote-Kategorie kennt keinen "nichts
 // gefunden"-Fall, Erfolg schreibt immer 1-3 Zeilen).
 export type CloudVisionStatus =
-  | 'not_run'
-  | 'not_candidate'
-  | 'consent_disabled'
-  | 'error'
-  | 'no_result'
-  | 'result'
+  'not_run' | 'not_candidate' | 'consent_disabled' | 'error' | 'no_result' | 'result'
 
 // Ein Eintrag von `PhotoOut.cloud_vision_status` - immer genau zwei (einer je CloudVisionPhase),
 // feste Reihenfolge [landmark, remote_category].

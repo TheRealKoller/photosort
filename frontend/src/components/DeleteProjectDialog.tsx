@@ -123,12 +123,7 @@ export function DeleteProjectDialog({
       cancelLabel={isGone ? 'Zur Projektliste' : 'Abbrechen'}
       cancelDisabled={isPending}
       actions={
-        <Button
-          variant="destructive"
-          busy={isPending}
-          disabled={!canDelete}
-          onClick={handleDelete}
-        >
+        <Button variant="destructive" busy={isPending} disabled={!canDelete} onClick={handleDelete}>
           {isPending ? 'Wird gelöscht…' : 'Projekt löschen'}
         </Button>
       }

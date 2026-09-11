@@ -111,9 +111,7 @@ async def build_project_graph(
     )
     scan_run = ScanRun(project_id=project.id, status=ScanStatus.SUCCESS)
     scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
-    remote_run = RemoteCategoryClassificationRun(
-        project_id=project.id, status=ScanStatus.SUCCESS
-    )
+    remote_run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.SUCCESS)
     session.add_all([photo, scan_run, scoring_run, remote_run])
     await session.flush()
 
@@ -132,9 +130,7 @@ async def build_project_graph(
     session.add_all(
         [
             Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.FAVORITE),
-            PhotoScore(
-                photo_id=photo.id, sharpness=0.8, exposure=0.5, computed_at=now
-            ),
+            PhotoScore(photo_id=photo.id, sharpness=0.8, exposure=0.5, computed_at=now),
             PhotoCriterionScore(
                 photo_id=photo.id,
                 criterion_key="sharpness",

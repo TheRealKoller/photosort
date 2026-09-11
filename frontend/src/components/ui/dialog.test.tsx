@@ -245,17 +245,20 @@ describe('Dialog', () => {
   it.each([
     ['in Anlegereihenfolge', true],
     ['in umgekehrter Reihenfolge', false],
-  ])('keeps the background locked while a second dialog is still open (%s)', (_name, closeFirstFirst) => {
-    const first = render(<TestDialog />)
-    const second = render(<TestDialog />)
-    expect(document.body.style.overflow).toBe('hidden')
+  ])(
+    'keeps the background locked while a second dialog is still open (%s)',
+    (_name, closeFirstFirst) => {
+      const first = render(<TestDialog />)
+      const second = render(<TestDialog />)
+      expect(document.body.style.overflow).toBe('hidden')
 
-    const [closedFirst, closedLast] = closeFirstFirst ? [first, second] : [second, first]
+      const [closedFirst, closedLast] = closeFirstFirst ? [first, second] : [second, first]
 
-    closedFirst.unmount()
-    expect(document.body.style.overflow).toBe('hidden')
+      closedFirst.unmount()
+      expect(document.body.style.overflow).toBe('hidden')
 
-    closedLast.unmount()
-    expect(document.body.style.overflow).toBe('')
-  })
+      closedLast.unmount()
+      expect(document.body.style.overflow).toBe('')
+    },
+  )
 })

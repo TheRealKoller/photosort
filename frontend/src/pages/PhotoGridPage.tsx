@@ -98,9 +98,9 @@ export function PhotoGridPage() {
         <div className="flex flex-col items-start gap-3 rounded-md border border-accent bg-elevated p-3 text-sm">
           <p className="text-text-h">
             Sichte den erkannten Ausschuss ({totalSuggested}{' '}
-            {totalSuggested === 1 ? 'Kandidat' : 'Kandidaten'}), bevor du fortfährst. Einzelne
-            Fotos kannst du hier korrigieren ("Übernehmen"-Button/Bewertung in der
-            Detailansicht) - das ist aber nicht Voraussetzung, um fortzufahren.
+            {totalSuggested === 1 ? 'Kandidat' : 'Kandidaten'}), bevor du fortfährst. Einzelne Fotos
+            kannst du hier korrigieren ("Übernehmen"-Button/Bewertung in der Detailansicht) - das
+            ist aber nicht Voraussetzung, um fortzufahren.
           </p>
           <Button
             type="button"
@@ -194,7 +194,7 @@ export function PhotoGridPage() {
                       return next
                     })
                   },
-                }
+                },
               )
             }
 

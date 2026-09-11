@@ -2,19 +2,12 @@ import type { ReactNode } from 'react'
 import { useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type {
-  CloudVisionPurpose,
-  ProjectStatsCostByPurpose,
-  ProjectStatsOut,
-} from '../api/types'
+import type { CloudVisionPurpose, ProjectStatsCostByPurpose, ProjectStatsOut } from '../api/types'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../components/ui/popover'
 import { useProjectStatsQuery } from '../hooks/useProjects'
-import {
-  CONFIDENCE_EXPLANATION,
-  CONFIDENCE_EXPLANATION_LABEL,
-} from '../utils/confidenceLabels'
+import { CONFIDENCE_EXPLANATION, CONFIDENCE_EXPLANATION_LABEL } from '../utils/confidenceLabels'
 import {
   formatBytes,
   formatCount,
@@ -87,15 +80,7 @@ function MetricRow({ children }: { children: ReactNode }) {
   return <div className="grid grid-cols-12 gap-x-3 gap-y-6">{children}</div>
 }
 
-function Section({
-  id,
-  title,
-  children,
-}: {
-  id: string
-  title: string
-  children: ReactNode
-}) {
+function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
     // Abschnittstrenner auf --separator: als freistehende Linie auf dem Grund erreichte --border
     // 1.45:1 und war praktisch keine Linie.
@@ -203,22 +188,32 @@ function formatMoment(value: string | null, fallback: string): string {
 }
 
 function StatsContent({ stats }: { stats: ProjectStatsOut }) {
-  const { storage, categories, category_confidence: categoryConfidence, cost, progress, ratings, diagnostics } = stats
+  const {
+    storage,
+    categories,
+    category_confidence: categoryConfidence,
+    cost,
+    progress,
+    ratings,
+    diagnostics,
+  } = stats
   const total = stats.photo_count
   // "x von y" mit ueberall derselben Bezugsgroesse (Akzeptanzkriterium F1) - bei 0 Fotos steht
   // ueberall "0 von 0".
   const outOf = (value: number) => `${formatCount(value)} von ${formatCount(total)}`
   // Der lokale Gesamtwert ist die Summe des BEKANNTEN: ist der Datenbank-Anteil nicht ermittelbar,
   // fliesst er nicht als 0 ein, sondern die Teilzeile darunter sagt ausdruecklich, dass er fehlt.
-  const localTotalBytes =
-    storage.local_cache_bytes + (storage.local_database_bytes_estimate ?? 0)
+  const localTotalBytes = storage.local_cache_bytes + (storage.local_database_bytes_estimate ?? 0)
 
   return (
     <div className="flex flex-col gap-8">
       <Section id="stats-scope" title="Umfang und Speicher">
         <MetricRow>
           <Metric value={formatCount(total)} label="Fotos im Projekt" />
-          <Metric value={formatBytes(storage.opencloud_bytes)} label="Originaldateien in OpenCloud" />
+          <Metric
+            value={formatBytes(storage.opencloud_bytes)}
+            label="Originaldateien in OpenCloud"
+          />
           <Metric
             value={formatBytes(localTotalBytes)}
             label="Lokal belegt (Thumbnail-Cache + Datenbestand)"
@@ -316,8 +311,12 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
                 <th scope="row" className="break-words py-2 text-left font-normal text-text-h">
                   {entry.display_name}
                 </th>
-                <td className="py-2 text-right font-mono text-text-h">{formatCount(entry.photo_count)}</td>
-                <td className="py-2 text-right font-mono text-text">{formatPercent(entry.share)}</td>
+                <td className="py-2 text-right font-mono text-text-h">
+                  {formatCount(entry.photo_count)}
+                </td>
+                <td className="py-2 text-right font-mono text-text">
+                  {formatPercent(entry.share)}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -420,7 +419,7 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
           <DetailRow term="Letzte Remote-Kategorisierung">
             {formatMoment(
               stats.last_successful_runs.remote_category_classification,
-              'noch nie gelaufen'
+              'noch nie gelaufen',
             )}
           </DetailRow>
           <DetailRow

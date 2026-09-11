@@ -82,9 +82,7 @@ def test_boolean_column_default_is_rendered_as_a_boolean_literal(
     """DER Regressionstest zum Review-Fund: `DEFAULT 0` auf einer BOOLEAN-Spalte laeuft in SQLite
     durch und bricht Postgres. Erwartet wird ein Boolean-Literal (`false`), nicht `0`."""
     add_column = [
-        statement
-        for statement in classification_run_upgrade_ddl
-        if "cloud_requested" in statement
+        statement for statement in classification_run_upgrade_ddl if "cloud_requested" in statement
     ]
     assert add_column, "kein ADD COLUMN fuer cloud_requested im gerenderten DDL gefunden"
     statement = add_column[0]
@@ -287,9 +285,7 @@ def transparency_upgrade_ddl() -> list[str]:
 def test_all_six_transparency_columns_are_added_for_postgres(
     transparency_upgrade_ddl: list[str],
 ) -> None:
-    for column in (
-        _EXPECTED_TRANSPARENCY_INTEGER_COLUMNS + _EXPECTED_TRANSPARENCY_FLOAT_COLUMNS
-    ):
+    for column in _EXPECTED_TRANSPARENCY_INTEGER_COLUMNS + _EXPECTED_TRANSPARENCY_FLOAT_COLUMNS:
         _add_column_statement(transparency_upgrade_ddl, column)
 
 
@@ -316,9 +312,7 @@ def test_no_transparency_column_gets_a_server_default(
     """Ein `server_default='0'` an `landmark_photos_total` loeschte den Marker "dieser Teilschritt
     fand statt" unumkehrbar; an `estimated_cost_usd` behauptete er eine Kostenaussage, die niemand
     getroffen hat. SQLite koennte beides nicht sichtbar machen."""
-    for column in (
-        _EXPECTED_TRANSPARENCY_INTEGER_COLUMNS + _EXPECTED_TRANSPARENCY_FLOAT_COLUMNS
-    ):
+    for column in _EXPECTED_TRANSPARENCY_INTEGER_COLUMNS + _EXPECTED_TRANSPARENCY_FLOAT_COLUMNS:
         statement = _add_column_statement(transparency_upgrade_ddl, column)
         assert "DEFAULT" not in statement.upper(), column
 

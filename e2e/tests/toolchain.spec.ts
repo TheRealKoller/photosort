@@ -64,7 +64,7 @@ test('die beidbreitigen Specs stehen in keiner Ausschlussliste', () => {
     for (const [name, liste] of listen) {
       expect(
         liste.some((muster) => muster.test(spec)),
-        `${spec} ist in ${name} ausgeschlossen`
+        `${spec} ist in ${name} ausgeschlossen`,
       ).toBe(false)
     }
   }
@@ -73,11 +73,11 @@ test('die beidbreitigen Specs stehen in keiner Ausschlussliste', () => {
   // leer waeren oder die Muster gar nichts mehr treffen.
   expect(
     MOBILE_ONLY.some((muster) => muster.test('tests/tap-targets.spec.ts')),
-    'MOBILE_ONLY greift'
+    'MOBILE_ONLY greift',
   ).toBe(true)
   expect(
     DESKTOP_ONLY.some((muster) => muster.test('tests/login.spec.ts')),
-    'DESKTOP_ONLY greift'
+    'DESKTOP_ONLY greift',
   ).toBe(true)
 })
 
@@ -114,7 +114,7 @@ test('review-ux bleibt ohne laufende Instanz voll funktionsfaehig', () => {
   // der etwas startet oder abfotografiert. Der Verweis auf `browse-app` bleibt ein Verweis.
   for (const forbidden of ['docker compose', 'npm run shot', 'npm run drive', 'playwright test']) {
     expect(skill, `review-ux enthaelt keinen ausfuehrbaren Schritt "${forbidden}"`).not.toContain(
-      forbidden
+      forbidden,
     )
   }
 })
@@ -129,7 +129,9 @@ test('der browse-app-Skill nennt die Freigabe-Zeichenkette des Seeders woertlich
   // Doku an Code gebunden statt abgeschrieben: aendert sich das Literal, faellt die Anleitung
   // hier auf - und nicht erst bei Daniel im Terminal als Abbruchmeldung des Seeders.
   expect(skill, 'Freigabe-Zeichenkette im browse-app-Skill').toContain(match![1])
-  expect(repoFile('docker-compose.e2e.yml'), 'Freigabe-Zeichenkette im Overlay').toContain(match![1])
+  expect(repoFile('docker-compose.e2e.yml'), 'Freigabe-Zeichenkette im Overlay').toContain(
+    match![1],
+  )
 })
 
 test('penpot-entwurfsrunden nennt genau die beiden Pruefbreiten dieses Pakets', () => {
@@ -147,7 +149,7 @@ test('penpot-entwurfsrunden nennt genau die beiden Pruefbreiten dieses Pakets', 
   const quellzeilen = skill.split('\n').filter((zeile) => zeile.includes('e2e/lib/viewports.ts'))
   expect(
     quellzeilen.length,
-    'Zeilen im Skill, die die Pruefbreiten aus diesem Paket beziehen'
+    'Zeilen im Skill, die die Pruefbreiten aus diesem Paket beziehen',
   ).toBeGreaterThan(0)
 
   const genannt = new Set<string>()
@@ -166,7 +168,7 @@ test('penpot-entwurfsrunden nennt genau die beiden Pruefbreiten dieses Pakets', 
   // Und keine getippte Breite an den Namen vorbei. Die Zahlen leben ausschliesslich hier.
   for (const [name, groesse] of Object.entries(VIEWPORTS)) {
     expect(skill, `Breitenwert von "${name}" darf nicht im Skilltext stehen`).not.toContain(
-      String(groesse.width)
+      String(groesse.width),
     )
   }
 })
@@ -185,7 +187,7 @@ test('die Demo-Projektnamen des Pruefsatzes stammen aus dem Seeder', () => {
     expect(fullName, `Praefix des Demo-Projekts "${key}"`).toContain(prefix)
     const suffix = fullName.slice(prefix.length)
     expect(seeder, `Projektname "${fullName}" im Seeder`).toContain(
-      `f"{DEMO_PROJECT_PREFIX}${suffix}"`
+      `f"{DEMO_PROJECT_PREFIX}${suffix}"`,
     )
   }
 })
@@ -222,11 +224,11 @@ test('die Ziel-Allowlist der Werkzeuge laesst genau die lokalen Adressen durch',
   // Der praktische Fall: ein bereits laufender Stack belegt 8080.
   expect(resolveBaseUrl('http://localhost:8180'), 'abweichender Port').toBe('http://localhost:8180')
   expect(resolveBaseUrl('http://127.0.0.1:8180'), 'zweiter erlaubter Host').toBe(
-    'http://127.0.0.1:8180'
+    'http://127.0.0.1:8180',
   )
   // Auf die Origin reduziert - ein mitgegebener Pfad darf nicht Teil der Basis-URL werden.
   expect(resolveBaseUrl('http://localhost:8180/projects/2'), 'Pfadanteil').toBe(
-    'http://localhost:8180'
+    'http://localhost:8180',
   )
 })
 
@@ -243,7 +245,7 @@ test('die Ziel-Allowlist der Werkzeuge weist jede der drei Bedingungen einzeln a
   for (const [bedingung, wert] of rejected) {
     expect(
       () => resolveBaseUrl(wert),
-      `verletzte Bedingung "${bedingung}" (${wert}) muss zum Abbruch fuehren`
+      `verletzte Bedingung "${bedingung}" (${wert}) muss zum Abbruch fuehren`,
     ).toThrow()
   }
 
@@ -279,7 +281,7 @@ test('ein Anmeldezustand gilt nur fuer die Origin, unter der er entstanden ist',
   // damit bei jedem Aufruf eine neue Anmeldung erzwaenge.
   expect(
     authStateCoversOrigin(storageStateFuer(jetzt, TOKEN_STORAGE_KEY), jetzt),
-    'passende Origin mit Token'
+    'passende Origin mit Token',
   ).toBe(true)
 
   // Je Fall ist genau ein Grund verletzt.

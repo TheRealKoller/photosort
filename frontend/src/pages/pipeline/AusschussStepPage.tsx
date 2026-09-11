@@ -24,7 +24,7 @@ export function AusschussStepPage() {
   const [awaitingScoreConfirmation, setAwaitingScoreConfirmation] = useTriggerConfirmation(
     scoringStatus,
     scoringStartedAt,
-    refetchProject
+    refetchProject,
   )
 
   const isScoreBusy =
@@ -54,16 +54,14 @@ export function AusschussStepPage() {
 
   const suggestionsFound = scoringRun?.suggestions_found ?? 0
   const suggestionsFoundText =
-    suggestionsFound === 1
-      ? '1 Vorschlag gefunden'
-      : `${suggestionsFound} Vorschläge gefunden`
+    suggestionsFound === 1 ? '1 Vorschlag gefunden' : `${suggestionsFound} Vorschläge gefunden`
 
   return (
     <section className="flex flex-col items-start gap-3">
       <h2 className="text-lg">Ausschuss-Erkennung</h2>
       <p className="text-sm text-text">
-        Erkennt automatisch unscharfe, überbelichtete oder doppelte Fotos als
-        Ausschuss-Vorschläge — läuft vollständig lokal auf diesem Server.
+        Erkennt automatisch unscharfe, überbelichtete oder doppelte Fotos als Ausschuss-Vorschläge —
+        läuft vollständig lokal auf diesem Server.
       </p>
 
       <Button type="button" onClick={handleTriggerScore} disabled={isScoreBusy} busy={isScoreBusy}>
@@ -109,7 +107,9 @@ export function AusschussStepPage() {
         </div>
       )}
 
-      {scoringStatus === 'failed' && <Alert onRetry={handleTriggerScore}>{scoringRun?.error_message}</Alert>}
+      {scoringStatus === 'failed' && (
+        <Alert onRetry={handleTriggerScore}>{scoringRun?.error_message}</Alert>
+      )}
     </section>
   )
 }

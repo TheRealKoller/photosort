@@ -337,9 +337,7 @@ def test_die_meldung_nennt_die_zeilennummer_der_echten_datei() -> None:
     """Kommentarzeilen werden zu Leerzeilen, nicht entfernt - sonst verschoebe sich die Nummer."""
     text = "# Kommentar\n# noch einer\non:\n  x: ${{ needs.build.outputs.y }}\n"
 
-    assert ausdrucks_fundstellen(text) == [
-        "Zeile 4: 'needs.' in 'x: ${{ needs.build.outputs.y }}'"
-    ]
+    assert ausdrucks_fundstellen(text) == ["Zeile 4: 'needs.' in 'x: ${{ needs.build.outputs.y }}'"]
 
 
 @pytest.mark.parametrize(

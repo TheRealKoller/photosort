@@ -338,9 +338,7 @@ class TestCacheFilePattern:
         ["0" * 64 + "_display.jpg\n", "0" * 64 + "_thumbnail.jpg.bak"],
         ids=["zeilenumbruch", "angehaengtes-suffix"],
     )
-    def test_even_an_accidental_match_would_reject_a_merely_prefixed_name(
-        self, name: str
-    ) -> None:
+    def test_even_an_accidental_match_would_reject_a_merely_prefixed_name(self, name: str) -> None:
         """`$` statt `\\Z` liesse den Zeilenumbruch-Namen durch, ein ANKERLOSES Muster zusaetzlich
         jeden Namen, der mit der Signatur nur beginnt - beide wuerden dann geloescht."""
         assert CACHE_FILE_PATTERN.match(name) is None
@@ -572,9 +570,7 @@ class TestDeleteOrphanedEntries:
             deleted_files=1, freed_bytes=100, failed_files=0, kept_recent=1
         )
 
-    def test_a_file_rewritten_between_collection_and_unlink_survives(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_file_rewritten_between_collection_and_unlink_survives(self, tmp_path: Path) -> None:
         """Der Kern von Akzeptanzkriterium 4: die Aenderungszeit wird unmittelbar vor dem `unlink`
         ERNEUT gelesen. Ohne diesen Fall bliebe eine Implementierung gruen, die die Zeit aus dem
         Schnappschuss nimmt."""
@@ -594,9 +590,7 @@ class TestDeleteOrphanedEntries:
             deleted_files=1, freed_bytes=100, failed_files=0, kept_recent=1
         )
 
-    def test_a_symlink_swapped_in_before_the_unlink_is_not_removed(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_symlink_swapped_in_before_the_unlink_is_not_removed(self, tmp_path: Path) -> None:
         """Security-Muss-Kriterium 2: `Path.stat()` folgte dem Symlink und autorisierte seine
         Entfernung ueber die Aenderungszeit einer FREMDEN Datei. `lstat()` plus erneutes
         `S_ISREG` faellt ihn heraus - auch dann, wenn die eigene Aenderungszeit des Links
@@ -750,9 +744,7 @@ class TestDeleteOrphanedEntries:
         assert [record.levelname for record in caplog.records] == ["WARNING"]
 
     def test_cache_sweep_result_is_frozen(self) -> None:
-        result = CacheSweepResult(
-            deleted_files=1, freed_bytes=2, failed_files=3, kept_recent=4
-        )
+        result = CacheSweepResult(deleted_files=1, freed_bytes=2, failed_files=3, kept_recent=4)
 
         with pytest.raises(AttributeError):
             result.deleted_files = 5  # type: ignore[misc]

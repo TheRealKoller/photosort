@@ -158,9 +158,7 @@ class TestRegistryInvariants:
         Konvention (Teststrategie 2, Punkt 3)."""
         assert CATEGORY_REGISTRY[CATEGORY_NOT_RECOGNIZED].precedence is None
         assert [
-            key
-            for key, definition in CATEGORY_REGISTRY.items()
-            if definition.precedence is None
+            key for key, definition in CATEGORY_REGISTRY.items() if definition.precedence is None
         ] == [CATEGORY_NOT_RECOGNIZED]
 
     def test_the_precedence_order_is_exactly_the_one_the_spec_fixes(self) -> None:
@@ -239,9 +237,7 @@ class TestLocalCategorySignals:
         # mehr - deshalb ist es Teil eines LOCAL_CATEGORY_SIGNALS-Eintrags, nicht dessen Schluessel.
         wired = {key for keys in LOCAL_CATEGORY_SIGNALS.values() for key in keys}
         eligible = {
-            key
-            for key, definition in CRITERIA_REGISTRY.items()
-            if definition.category_eligible
+            key for key, definition in CRITERIA_REGISTRY.items() if definition.category_eligible
         }
         assert eligible - wired == set()
 
@@ -484,9 +480,9 @@ class TestSecondaryCategoryThreshold:
         haystacks.append(repo_root / "backend" / "src" / "photosort" / "config.py")
         haystacks.append(repo_root / ".env.example")
         for path in haystacks:
-            assert (
-                "SECONDARY_CATEGORY_MIN_CONFIDENCE" not in path.read_text(encoding="utf-8")
-            ), f"{path} nennt die Schwelle"
+            assert "SECONDARY_CATEGORY_MIN_CONFIDENCE" not in path.read_text(encoding="utf-8"), (
+                f"{path} nennt die Schwelle"
+            )
 
     def test_no_api_module_reads_the_threshold(self) -> None:
         """Zweite Haelfte derselben Zusage: die Schwelle taucht in keiner API-Antwort auf - kein

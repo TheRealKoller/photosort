@@ -114,9 +114,7 @@ class CacheUsage:
     complete_photo_count: int
 
 
-def measure_cache_usage(
-    cache_dir: Path, photos: Iterable[tuple[int, str]]
-) -> CacheUsage:
+def measure_cache_usage(cache_dir: Path, photos: Iterable[tuple[int, str]]) -> CacheUsage:
     """Misst den vom lokalen Cache belegten Platz fuer die uebergebenen (photo_id, etag)-Paare.
 
     Bewusst gezielt ueber die Pfade DIESER Fotos statt ueber das ganze Verzeichnis: der Cache ist
@@ -321,9 +319,7 @@ def delete_orphaned_entries(
             "kein einziger gueltiger Cache-Schluessel - es wird nichts geloescht.",
             len(entries),
         )
-        return CacheSweepResult(
-            deleted_files=0, freed_bytes=0, failed_files=0, kept_recent=0
-        )
+        return CacheSweepResult(deleted_files=0, freed_bytes=0, failed_files=0, kept_recent=0)
 
     deleted_files = 0
     freed_bytes = 0

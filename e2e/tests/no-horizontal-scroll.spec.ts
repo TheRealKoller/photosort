@@ -70,7 +70,11 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
     },
     { label: 'Statistik', path: `/projects/${ratedId}/stats`, heading: 'Statistik' },
     { label: 'Kuratierung', path: `/projects/${ratedId}/curate`, heading: 'Kategorie-Kuratierung' },
-    { label: 'Einstellungen', path: `/projects/${ratedId}/settings`, heading: 'Projekteinstellungen' },
+    {
+      label: 'Einstellungen',
+      path: `/projects/${ratedId}/settings`,
+      heading: 'Projekteinstellungen',
+    },
     { label: 'Vergleich', path: `/projects/${ratedId}/compare`, heading: 'Vergleich' },
     // Die Detailseite traegt seit Spec 0321 die umbrechende Bewertungsleiste: drei Eintraege mit
     // Symbol, Beschriftung und Tasten-Kaestchen brauchen nebeneinander rund 400px, bei 360px
@@ -119,14 +123,14 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
     // Vorbedingung 2: der Inhaltsbereich hat eine nennenswerte Hoehe - ein auf null kollabiertes
     // <main> koennte gar nicht ueberstehen.
     expect(metrics.contentHeight, `Hoehe des Inhaltsbereichs auf "${route.label}"`).toBeGreaterThan(
-      MIN_CONTENT_HEIGHT
+      MIN_CONTENT_HEIGHT,
     )
 
     expect(
       metrics.scrollWidth,
       `Dokumentbreite auf "${route.label}" (ueberstehende Elemente: ${
         metrics.overflowing.length === 0 ? 'keine gefunden' : metrics.overflowing.join(' | ')
-      })`
+      })`,
     ).toBeLessThanOrEqual(metrics.clientWidth + TOLERANCE)
   }
 })

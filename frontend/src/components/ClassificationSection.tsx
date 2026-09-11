@@ -84,7 +84,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
   const [awaitingConfirmation, setAwaitingConfirmation] = useTriggerConfirmation(
     runStatus,
     runStartedAt,
-    refetchProject
+    refetchProject,
   )
 
   const isBusy = triggerMutation.isPending || awaitingConfirmation || runStatus === 'running'
@@ -104,7 +104,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
     setAwaitingConfirmation(true)
     triggerMutation.mutate(
       { scoringRunId: scoringRun.id, useCloud: cloudChecked },
-      { onError: () => setAwaitingConfirmation(false) }
+      { onError: () => setAwaitingConfirmation(false) },
     )
   }
 
@@ -187,9 +187,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
         <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
           <StatusDot status={runStatus} />
           {runStatus === 'running' &&
-            (isRemotePhase
-              ? 'Remote-Kategorisierung läuft…'
-              : 'Kriterien-Bewertung läuft…')}
+            (isRemotePhase ? 'Remote-Kategorisierung läuft…' : 'Kriterien-Bewertung läuft…')}
           {runStatus === 'success' && 'Klassifizierung abgeschlossen'}
           {runStatus === 'failed' && 'Klassifizierung fehlgeschlagen'}
         </p>

@@ -113,9 +113,7 @@ def test_an_existing_row_becomes_the_primary_row_of_its_photo(tmp_path: Path) ->
             _apply(connection, "upgrade")
 
         with engine.connect() as connection:
-            rows = connection.execute(
-                text("SELECT id, is_primary FROM photo_rankings")
-            ).all()
+            rows = connection.execute(text("SELECT id, is_primary FROM photo_rankings")).all()
     finally:
         engine.dispose()
 

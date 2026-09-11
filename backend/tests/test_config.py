@@ -255,7 +255,7 @@ def test_landmark_model_rejects_a_value_outside_the_curated_choice() -> None:
 
 
 def test_the_rejection_message_names_the_allowed_values() -> None:
-    """"Verstaendliche Fehlermeldung" ist das Akzeptanzkriterium - eine Meldung, die nur "ungueltig"
+    """ "Verstaendliche Fehlermeldung" ist das Akzeptanzkriterium - eine Meldung, die nur "ungueltig"
     sagt, laesst den Betreiber ohne den Wert zurueck, den er einsetzen soll."""
     with pytest.raises(ValidationError) as excinfo:
         Settings(_env_file=None, landmark_model="gpt-4o-mini")

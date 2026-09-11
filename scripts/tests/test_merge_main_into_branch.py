@@ -242,9 +242,7 @@ def baue_spielplatz(wurzel: Path, bauform: str = EINZEL) -> Spielplatz:
     return spielplatz
 
 
-def auf_main(
-    spielplatz: Spielplatz, nachricht: str, aenderung: Callable[[Path], None]
-) -> None:
+def auf_main(spielplatz: Spielplatz, nachricht: str, aenderung: Callable[[Path], None]) -> None:
     """Laesst `main` im baren `origin` weiterlaufen - ueber den zweiten Klon, nie ueber `arbeit`."""
     spielplatz.git(spielplatz.pflege, "fetch", "--quiet", "origin")
     spielplatz.git(spielplatz.pflege, "checkout", "--quiet", "-B", "main", "origin/main")
@@ -254,9 +252,7 @@ def auf_main(
     spielplatz.git(spielplatz.pflege, "push", "--quiet", "origin", "main")
 
 
-def auf_feature(
-    spielplatz: Spielplatz, nachricht: str, aenderung: Callable[[Path], None]
-) -> None:
+def auf_feature(spielplatz: Spielplatz, nachricht: str, aenderung: Callable[[Path], None]) -> None:
     aenderung(spielplatz.arbeit)
     spielplatz.git(spielplatz.arbeit, "add", "-A")
     spielplatz.git(spielplatz.arbeit, "commit", "--quiet", "-m", nachricht)
@@ -710,9 +706,7 @@ def test_branch_vollstaendig_in_main_enthalten_bekommt_trotzdem_einen_merge_comm
 
     assert ergebnis.returncode == EXIT_UEBERNOMMEN, ergebnis.stderr
     assert spielplatz.ausgabe(spielplatz.arbeit, "rev-parse", "HEAD^1") == vorher.head
-    assert spielplatz.ausgabe(spielplatz.arbeit, "rev-parse", "HEAD") != tracking_stand(
-        spielplatz
-    )
+    assert spielplatz.ausgabe(spielplatz.arbeit, "rev-parse", "HEAD") != tracking_stand(spielplatz)
 
 
 def test_unversionierte_dateien_blockieren_den_abgleich_nicht(spielplatz: Spielplatz) -> None:
@@ -1015,9 +1009,7 @@ def test_eine_kollidierende_unversionierte_datei_meldet_keine_ruecknahme(
     )
 
 
-def git_shim(
-    verzeichnis: Path, unterbefehl: str, rueckgabe: int, meldung: str = ""
-) -> Path:
+def git_shim(verzeichnis: Path, unterbefehl: str, rueckgabe: int, meldung: str = "") -> Path:
     """Legt ein `git` an, das genau einen Unterbefehl mit fester Rueckgabe scheitern laesst.
 
     Der einzige Weg, die gemessene Rueckgabe `128` von `git merge-base --is-ancestor`
@@ -1035,7 +1027,7 @@ def git_shim(
     assert echtes_git is not None
     verzeichnis.mkdir(parents=True, exist_ok=True)
     shim = verzeichnis / "git"
-    ausgabe = f'  printf \'%s\\n\' "{meldung}" >&2\n' if meldung else ""
+    ausgabe = f"  printf '%s\\n' \"{meldung}\" >&2\n" if meldung else ""
     shim.write_text(
         f'#!/bin/sh\nif [ "$1" = "{unterbefehl}" ]; then\n{ausgabe}  exit {rueckgabe}\nfi\n'
         f'exec "{echtes_git}" "$@"\n',
@@ -1393,9 +1385,7 @@ AUSGAENGE: tuple[tuple[str, Callable[[Spielplatz], int]], ...] = (
 )
 
 
-@pytest.mark.parametrize(
-    ("name", "szenario"), AUSGAENGE, ids=[eintrag[0] for eintrag in AUSGAENGE]
-)
+@pytest.mark.parametrize(("name", "szenario"), AUSGAENGE, ids=[eintrag[0] for eintrag in AUSGAENGE])
 def test_nach_jedem_ausgang_sind_die_origin_refs_unveraendert(
     spielplatz: Spielplatz, name: str, szenario: Callable[[Spielplatz], int]
 ) -> None:
@@ -1428,9 +1418,7 @@ def test_nach_jedem_ausgang_sind_die_origin_refs_unveraendert(
     )
 
 
-@pytest.mark.parametrize(
-    ("name", "szenario"), AUSGAENGE, ids=[eintrag[0] for eintrag in AUSGAENGE]
-)
+@pytest.mark.parametrize(("name", "szenario"), AUSGAENGE, ids=[eintrag[0] for eintrag in AUSGAENGE])
 def test_der_haupt_checkout_bleibt_nach_jedem_ausgang_unversehrt(
     zwei_arbeitsbaeume: Spielplatz, name: str, szenario: Callable[[Spielplatz], int]
 ) -> None:

@@ -24,7 +24,7 @@ function renderCard(props: Partial<Parameters<typeof PhotoCard>[0]> = {}) {
           {...props}
         />
       </ul>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 
@@ -52,7 +52,7 @@ describe('PhotoCard', () => {
               image={<img alt="2024/07/IMG_0042.jpg" src="blob:x" />}
             />
           </ul>
-        </MemoryRouter>
+        </MemoryRouter>,
       )
       const item = container.querySelector('li')!
       const signature = [
@@ -66,7 +66,10 @@ describe('PhotoCard', () => {
 
     expect(new Set(signatures).size).toBe(4)
     for (const field of [0, 1, 2]) {
-      expect(new Set(signatures.map((entry) => entry.split('|')[field])).size, `Merkmal ${field}`).toBe(4)
+      expect(
+        new Set(signatures.map((entry) => entry.split('|')[field])).size,
+        `Merkmal ${field}`,
+      ).toBe(4)
     }
   })
 
@@ -81,7 +84,9 @@ describe('PhotoCard', () => {
     // Kennzeichen selbst fuehrt `data-struck` seit Stufe 1 ebenfalls (es benennt den Zustand,
     // ohne selbst gestrichen zu sein) - geprueft wird deshalb gezielt der Dateiname.
     const { container } = renderCard({ status: 'rejected' })
-    const struck = [...container.querySelectorAll('[data-struck="true"]')].map((node) => node.textContent)
+    const struck = [...container.querySelectorAll('[data-struck="true"]')].map(
+      (node) => node.textContent,
+    )
     expect(struck).toContain('IMG_0042.jpg')
   })
 

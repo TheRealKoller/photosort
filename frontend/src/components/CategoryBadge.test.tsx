@@ -12,7 +12,12 @@ const CATEGORIES: CategoryOut[] = [
     definition: 'd',
     locally_available: true,
   },
-  { key: 'nicht_erkannt', display_name: 'Nicht erkannt', definition: 'd', locally_available: false },
+  {
+    key: 'nicht_erkannt',
+    display_name: 'Nicht erkannt',
+    definition: 'd',
+    locally_available: false,
+  },
 ]
 
 describe('CategoryBadge', () => {
@@ -65,7 +70,9 @@ describe('CategoryBadge', () => {
     'sport_aktivitaet',
     'nicht_erkannt',
   ])('gives %s its own chip colour pair', (categoryKey) => {
-    const { container } = render(<CategoryBadge categoryKey={categoryKey} categories={CATEGORIES} />)
+    const { container } = render(
+      <CategoryBadge categoryKey={categoryKey} categories={CATEGORIES} />,
+    )
 
     const chip = container.querySelector(`[data-category-key="${categoryKey}"]`)
     expect(chip).not.toBeNull()
@@ -90,7 +97,7 @@ describe('CategoryBadge', () => {
     ]
     const pairs = keys.map((categoryKey) => {
       const { container, unmount } = render(
-        <CategoryBadge categoryKey={categoryKey} categories={CATEGORIES} />
+        <CategoryBadge categoryKey={categoryKey} categories={CATEGORIES} />,
       )
       const className = container.querySelector('[data-category-key]')!.className
       unmount()
@@ -106,20 +113,20 @@ describe('CategoryBadge', () => {
       // `constructor` ist bewusst mit dabei: ohne Object.hasOwn-Pruefung lieferte der Lookup einen
       // geerbten Prototyp-Wert statt des Neutral-Fallbacks.
       const { container } = render(
-        <CategoryBadge categoryKey={categoryKey} categories={CATEGORIES} />
+        <CategoryBadge categoryKey={categoryKey} categories={CATEGORIES} />,
       )
 
       const chip = container.querySelector('[data-category-key]')!
       expect(chip.className).toContain('bg-chip-nicht-erkannt')
       expect(chip.textContent).not.toBe('')
-    }
+    },
   )
 
   it('gives the catch-all the neutral pair, not an error styling', () => {
     // Design-System-Muster "Auffangkorb-Kategorie mit erklaerend dezentem Signal": ein fehlendes
     // Erkennungsergebnis ist kein Fehler.
     const { container } = render(
-      <CategoryBadge categoryKey="nicht_erkannt" categories={CATEGORIES} />
+      <CategoryBadge categoryKey="nicht_erkannt" categories={CATEGORIES} />,
     )
 
     const chip = container.querySelector('[data-category-key="nicht_erkannt"]')!

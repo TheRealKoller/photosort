@@ -44,7 +44,7 @@ describe('Button', () => {
     render(
       <Button busy onClick={onClick}>
         Anmelden…
-      </Button>
+      </Button>,
     )
 
     await user.click(screen.getByRole('button', { name: 'Anmelden…' }))
@@ -119,7 +119,7 @@ describe('Button', () => {
       const className = screen.getByRole('button', { name: 'Aktion' }).className
       expect(className).toMatch(/hover:/)
       expect(className).toMatch(/active:/)
-    }
+    },
   )
 
   it('inks the destructive variant with --danger-fg, not with a text colour', () => {
@@ -156,7 +156,7 @@ describe('Button', () => {
     render(<Button size="icon" aria-label="Schließen" />)
 
     expect(screen.getByRole('button', { name: 'Schließen' }).className).toMatch(
-      /(^|\s)tap-target-square(\s|$)/
+      /(^|\s)tap-target-square(\s|$)/,
     )
   })
 
@@ -164,7 +164,7 @@ describe('Button', () => {
     render(
       <Button asChild>
         <a href="/projects/new">Neues Projekt anlegen</a>
-      </Button>
+      </Button>,
     )
 
     const link = screen.getByRole('link', { name: 'Neues Projekt anlegen' })
@@ -180,7 +180,7 @@ describe('Button', () => {
     render(
       <Button asChild disabled>
         <a href="/projects/new">Neues Projekt anlegen</a>
-      </Button>
+      </Button>,
     )
 
     const link = screen.getByRole('link', { name: 'Neues Projekt anlegen' })

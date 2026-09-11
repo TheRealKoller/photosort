@@ -80,7 +80,10 @@ export function PhotoCard({
    * Diese eine Zeile ist die einzige `opacity-`-Fundstelle der Datei und als solche im
    * Vertragstest freigegeben - ein spaeteres `opacity-40` am Kartenkoerper wuerde dort rot.
    */
-  const imageAreaClassName = cn('block aspect-square overflow-hidden rounded-md', isRejected && 'opacity-40')
+  const imageAreaClassName = cn(
+    'block aspect-square overflow-hidden rounded-md',
+    isRejected && 'opacity-40',
+  )
 
   // Nur der Basisname: Der Ordnerteil ist auf ~60px ohnehin unlesbar und steht bereits im `alt`
   // des Bildes sowie im `aria-label` der Fusszeilen-Aktion.
@@ -131,7 +134,7 @@ export function PhotoCard({
           data-struck={isRejected ? 'true' : undefined}
           className={cn(
             'min-w-6 truncate font-mono text-xs',
-            isRejected ? 'text-text-muted line-through' : 'text-text'
+            isRejected ? 'text-text-muted line-through' : 'text-text',
           )}
         >
           {fileName}

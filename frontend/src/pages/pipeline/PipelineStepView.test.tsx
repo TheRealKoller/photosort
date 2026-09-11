@@ -44,7 +44,7 @@ function renderAt(step: StepId) {
           </Route>
         </Routes>
       </MemoryRouter>
-    </QueryClientProvider>
+    </QueryClientProvider>,
   )
 }
 

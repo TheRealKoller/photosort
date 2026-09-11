@@ -11,7 +11,7 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
-    "ruff>=0.7",
+    "ruff==0.16.4",
 ]
 
 [build-system]
@@ -35,5 +35,18 @@ asyncio_mode = "auto"
 line-length = 100
 extend-exclude = ["demo_photos"]
 
+# Markdown bleibt ausgenommen (Akzeptanzkriterium K2, ADR 0080 Abschnitt 4): ruff formatiert seit
+# 0.16.0 standardmaessig Python-Codebloecke INNERHALB von .md-Dateien. Heute liegt unter scripts/
+# keine .md-Datei - der Ausschluss ist aktiv konfiguriert, damit der Fall nicht eintritt, sobald
+# jemand dort eine anlegt.
+[tool.ruff.format]
+exclude = ["*.md"]
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+# Dieselbe getrennte E501-Grenze wie in backend/pyproject.toml (ADR 0080 Abschnitt 3): der
+# Formatierer darf die Zielbreite ueberschreiten, wo er nicht umbrechen kann. line-length = 100
+# bleibt die Zielbreite; E501 bleibt aktiv und schlaegt erst ab 111 Zeichen an.
+[tool.ruff.lint.pycodestyle]
+max-line-length = 110

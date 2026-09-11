@@ -51,7 +51,7 @@ export function Checkbox({
         // Der deaktivierte Zustand haengt am Eingabefeld, nicht an einer JS-Kopie des Props:
         // `has-[:disabled]:` folgt dem tatsaechlichen DOM-Zustand und kann nicht auseinanderlaufen.
         'has-[:disabled]:cursor-not-allowed has-[:disabled]:text-text-disabled',
-        className
+        className,
       )}
     >
       <input
@@ -65,7 +65,7 @@ export function Checkbox({
         onChange={(event) => onCheckedChange(event.target.checked)}
         className={cn(
           'size-[18px] shrink-0 rounded-xs border border-border-control bg-surface accent-accent',
-          'disabled:cursor-not-allowed disabled:border-border'
+          'disabled:cursor-not-allowed disabled:border-border',
         )}
       />
       <span>{label}</span>

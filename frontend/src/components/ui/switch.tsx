@@ -27,13 +27,7 @@ export interface SwitchProps extends Omit<ComponentProps<'button'>, 'onClick' | 
   onCheckedChange: (checked: boolean) => void
 }
 
-export function Switch({
-  checked,
-  onCheckedChange,
-  className,
-  disabled,
-  ...props
-}: SwitchProps) {
+export function Switch({ checked, onCheckedChange, className, disabled, ...props }: SwitchProps) {
   return (
     <button
       // Copilot-Review-Fund (PR #181): {...props} MUSS vor den invarianten Attributen
@@ -51,7 +45,7 @@ export function Switch({
         'group tap-target relative inline-flex h-6 w-12 shrink-0 items-center rounded-full border transition-colors',
         'disabled:cursor-not-allowed disabled:border-border disabled:bg-surface',
         checked ? 'border-accent bg-accent' : 'border-border-control bg-overlay',
-        className
+        className,
       )}
     >
       <span
@@ -61,7 +55,7 @@ export function Switch({
           checked ? 'translate-x-6 bg-accent-fg' : 'bg-text',
           // Ueber die Gruppe an den TATSAECHLICHEN :disabled-Zustand der Schaltflaeche gebunden,
           // nicht an eine JS-Kopie des Props - beide koennen so nicht auseinanderlaufen.
-          'group-disabled:bg-text-disabled'
+          'group-disabled:bg-text-disabled',
         )}
       />
     </button>

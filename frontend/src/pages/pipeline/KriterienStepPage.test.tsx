@@ -70,7 +70,7 @@ function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
         </Route>
       </Routes>
     </MemoryRouter>,
-    { wrapper }
+    { wrapper },
   )
 }
 

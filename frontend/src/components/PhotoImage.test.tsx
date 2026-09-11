@@ -33,7 +33,7 @@ describe('PhotoImage', () => {
 
   it('shows a placeholder state on a 404 (not yet processed)', async () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockRejectedValue(
-      new ApiError(404, 'Bild wird noch verarbeitet.')
+      new ApiError(404, 'Bild wird noch verarbeitet.'),
     )
 
     render(<PhotoImage photoId={1} variant="thumbnail" alt="Foto 1" />)

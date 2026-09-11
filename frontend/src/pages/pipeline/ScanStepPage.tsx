@@ -24,7 +24,7 @@ export function ScanStepPage() {
   const [awaitingConfirmation, setAwaitingConfirmation] = useTriggerConfirmation(
     scanStatus,
     scanStartedAt,
-    refetchProject
+    refetchProject,
   )
 
   const isBusy = scanMutation.isPending || awaitingConfirmation || scanStatus === 'running'

@@ -207,9 +207,7 @@ async def test_deleting_photo_cascades_to_ratings(db_session: AsyncSession) -> N
 
 async def _make_photo(db_session: AsyncSession, project: Project | None = None) -> Photo:
     if project is None:
-        project = Project(
-            name=f"Project {uuid4()}", opencloud_drive_id="d", opencloud_path="/a"
-        )
+        project = Project(name=f"Project {uuid4()}", opencloud_drive_id="d", opencloud_path="/a")
         db_session.add(project)
         await db_session.flush()
 
@@ -236,9 +234,7 @@ async def test_scoring_run_defaults(db_session: AsyncSession) -> None:
     db_session.add(scoring_run)
     await db_session.commit()
 
-    result = await db_session.execute(
-        select(ScoringRun).where(ScoringRun.project_id == project.id)
-    )
+    result = await db_session.execute(select(ScoringRun).where(ScoringRun.project_id == project.id))
     stored = result.scalar_one()
     assert stored.status == ScanStatus.RUNNING
     assert stored.photos_total == 0
@@ -957,9 +953,7 @@ async def test_deleting_project_leaves_shared_fine_label_and_other_project_untou
     remaining_photos = (await db_session.execute(select(Photo))).scalars().all()
     assert [p.id for p in remaining_photos] == [photo_b.id]
 
-    remaining_detections = (
-        (await db_session.execute(select(PhotoFineLabel))).scalars().all()
-    )
+    remaining_detections = (await db_session.execute(select(PhotoFineLabel))).scalars().all()
     assert [d.photo_id for d in remaining_detections] == [photo_b.id]
 
 
@@ -1122,9 +1116,7 @@ async def test_photo_category_classification_is_one_to_one_and_round_trips(
     await db_session.commit()
     db_session.expunge_all()
 
-    stored = (
-        await db_session.execute(select(PhotoCategoryClassification))
-    ).scalars().one()
+    stored = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
     assert stored.photo_id == photo.id
     assert stored.category_key == "menschen"
     assert stored.detected_categories == ["menschen", "landschaft"]

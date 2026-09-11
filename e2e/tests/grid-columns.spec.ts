@@ -50,12 +50,12 @@ test('Foto-Grid rendert 2 / 3 / 4 Spalten ueber die Breakpoint-Leiter', async ({
       elements.map((element) => {
         const rect = element.getBoundingClientRect()
         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-      })
+      }),
     )
     // Ohne diese Zusicherung koennte die erste Zeile aus einer einzigen Kachel bestehen und der
     // Spec meldete "1 Spalte" statt "Grid gar nicht gerendert".
     expect(boxes.length, `Kacheln im Grid bei ${width} px`).toBeGreaterThan(
-      LADDER[LADDER.length - 1]!.expectedColumns
+      LADDER[LADDER.length - 1]!.expectedColumns,
     )
 
     const firstRowY = Math.min(...boxes.map((box) => box.y))

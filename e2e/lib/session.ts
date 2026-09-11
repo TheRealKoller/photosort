@@ -83,7 +83,7 @@ export function consoleErrors(log: SessionLog): RecordedConsoleMessage[] {
 
 export function serverErrors(log: SessionLog): RecordedFailedRequest[] {
   return log.failedRequests.filter(
-    (request) => request.status !== null && request.status >= SERVER_ERROR_STATUS_THRESHOLD
+    (request) => request.status !== null && request.status >= SERVER_ERROR_STATUS_THRESHOLD,
   )
 }
 
@@ -94,14 +94,14 @@ export function formatSessionLog(log: SessionLog, heading: string): string {
   lines.push(
     ...(log.console.length === 0
       ? ['  (keine)']
-      : log.console.map((message) => `  [${message.type}] ${message.text}  @ ${message.location}`))
+      : log.console.map((message) => `  [${message.type}] ${message.text}  @ ${message.location}`)),
   )
 
   lines.push('', `Unbehandelte Seitenfehler (${log.pageErrors.length}):`)
   lines.push(
     ...(log.pageErrors.length === 0
       ? ['  (keine)']
-      : log.pageErrors.map((error) => `  ${error.message}`))
+      : log.pageErrors.map((error) => `  ${error.message}`)),
   )
 
   lines.push('', `Fehlgeschlagene Netzwerkaufrufe (${log.failedRequests.length}):`)
@@ -110,8 +110,8 @@ export function formatSessionLog(log: SessionLog, heading: string): string {
       ? ['  (keine)']
       : log.failedRequests.map(
           (request) =>
-            `  ${request.method} ${request.url} -> ${request.status ?? request.failure ?? '?'}`
-        ))
+            `  ${request.method} ${request.url} -> ${request.status ?? request.failure ?? '?'}`,
+        )),
   )
 
   return `${lines.join('\n')}\n`

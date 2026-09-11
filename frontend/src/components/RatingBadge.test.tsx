@@ -84,7 +84,7 @@ describe('RatingBadge', () => {
     const { container } = render(<RatingBadge status="favorite" suggested />)
 
     const icons = [...container.querySelectorAll('[data-icon]')].map((node) =>
-      node.getAttribute('data-icon')
+      node.getAttribute('data-icon'),
     )
     expect(icons).toEqual(['cog', 'star'])
   })

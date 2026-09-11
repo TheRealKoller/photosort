@@ -1,7 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { createMemoryRouter, MemoryRouter, RouterProvider, Route, Routes, useOutletContext, useParams } from 'react-router'
+import {
+  createMemoryRouter,
+  MemoryRouter,
+  RouterProvider,
+  Route,
+  Routes,
+  useOutletContext,
+  useParams,
+} from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../../api/client'
@@ -65,7 +73,7 @@ function scoringRun(overrides: Partial<ScoringRunSummary> = {}): ScoringRunSumma
 }
 
 function criterionScoringRun(
-  overrides: Partial<CriterionScoringRunSummary> = {}
+  overrides: Partial<CriterionScoringRunSummary> = {},
 ): CriterionScoringRunSummary {
   return {
     status: 'success',
@@ -111,7 +119,7 @@ function renderLayout(initialPath = '/projects/1/pipeline') {
           </Route>
         </Routes>
       </MemoryRouter>,
-      { wrapper }
+      { wrapper },
     ),
     queryClient,
   }
@@ -123,7 +131,9 @@ describe('ProjectPipelineLayout', () => {
   })
 
   it('shows a dedicated not-found state on a 404 instead of a broken page', async () => {
-    vi.mocked(projectsApi.getProject).mockRejectedValue(new ApiError(404, 'Projekt nicht gefunden.'))
+    vi.mocked(projectsApi.getProject).mockRejectedValue(
+      new ApiError(404, 'Projekt nicht gefunden.'),
+    )
 
     renderLayout('/projects/1/pipeline/scan')
 
@@ -176,13 +186,13 @@ describe('ProjectPipelineLayout', () => {
       project({
         last_scan: scan(),
         last_scoring_run: scoringRun(),
-      })
+      }),
     )
 
     renderLayout('/projects/1/pipeline/gate')
 
     expect(
-      await screen.findByText('Schritt-Inhalt: gate / Projekt: Costa Rica')
+      await screen.findByText('Schritt-Inhalt: gate / Projekt: Costa Rica'),
     ).toBeInTheDocument()
   })
 
@@ -274,11 +284,10 @@ describe('ProjectPipelineLayout', () => {
       // absichtlich "running"/nicht erledigt, siehe getFrontierStepId-Kommentar in
       // utils/pipelineSteps.ts: der erste erreichbare, NICHT erledigte Schritt gewinnt, unabhaengig
       // davon, wie weit die Pipeline dahinter schon fortgeschritten ist).
-      await waitFor(
-        () => expect(screen.getByText(/schritt-inhalt: scan/i)).toBeInTheDocument(),
-        { timeout: 8000 }
-      )
-    }
+      await waitFor(() => expect(screen.getByText(/schritt-inhalt: scan/i)).toBeInTheDocument(), {
+        timeout: 8000,
+      })
+    },
   )
 
   it(
@@ -298,13 +307,13 @@ describe('ProjectPipelineLayout', () => {
             children: [{ path: ':step', element: <StepProbe /> }],
           },
         ],
-        { initialEntries: ['/', '/projects/1/pipeline/kriterien'], initialIndex: 1 }
+        { initialEntries: ['/', '/projects/1/pipeline/kriterien'], initialIndex: 1 },
       )
 
       render(
         <QueryClientProvider client={queryClient}>
           <RouterProvider router={router} />
-        </QueryClientProvider>
+        </QueryClientProvider>,
       )
 
       // Fuer ein frisches Projekt (nur scan/ausschuss erreichbar) ist der hoechste erreichbare
@@ -314,12 +323,12 @@ describe('ProjectPipelineLayout', () => {
       router.navigate(-1)
 
       await waitFor(() => expect(router.state.location.pathname).toBe('/'))
-    }
+    },
   )
 
   it('stops fetching after unmount while polling is active (no leaked interval)', async () => {
     vi.mocked(projectsApi.getProject).mockResolvedValue(
-      project({ last_scan: scan({ status: 'running' }) })
+      project({ last_scan: scan({ status: 'running' }) }),
     )
 
     const { unmount } = renderLayout('/projects/1/pipeline/scan')

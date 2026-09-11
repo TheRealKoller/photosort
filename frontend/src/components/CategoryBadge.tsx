@@ -84,7 +84,7 @@ export function CategoryBadge({ categoryKey, categories, className }: CategoryBa
       className={cn(
         'inline-flex items-center justify-center rounded-xl px-3 py-1 text-xs font-semibold',
         chipClasses,
-        className
+        className,
       )}
     >
       {categoryAbbreviation(categoryKey, categories)}

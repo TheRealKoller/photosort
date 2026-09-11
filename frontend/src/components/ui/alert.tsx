@@ -36,7 +36,10 @@ interface AlertProps {
  * ausserhalb jeder Kontrastmatrix: ueber einer Deckkraft-Tinte ist Kontrast statisch nicht
  * rechenbar. Das `⚠`-Textzeichen entfaellt - es steht in keiner der beiden Symbollisten.
  */
-const VARIANTS: Record<AlertVariant, { icon: IconName; title: string; frame: string; body: string }> = {
+const VARIANTS: Record<
+  AlertVariant,
+  { icon: IconName; title: string; frame: string; body: string }
+> = {
   success: {
     icon: 'check',
     title: 'Erfolg',
@@ -79,7 +82,7 @@ export function Alert({
       className={cn(
         'flex flex-wrap items-start gap-3 rounded-md border bg-elevated p-3 text-sm',
         config.frame,
-        className
+        className,
       )}
     >
       <Icon name={config.icon} size={18} className="shrink-0" />

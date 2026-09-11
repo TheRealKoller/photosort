@@ -118,7 +118,7 @@ def compute_uniform_area_fraction(image: Image.Image) -> float:
 
 
 def _mean_abs_edge_energy(edges: np.ndarray) -> float:
-    """"Energie" eines Bildbereichs (ADR 0026 Punkt 1) = mittlerer Betrag der Laplace-
+    """ "Energie" eines Bildbereichs (ADR 0026 Punkt 1) = mittlerer Betrag der Laplace-
     Kantenwerte - ein Aktivitaets-/Kontrastmass, keine Positions-/Motivbewertung (Abgrenzung zu
     goldener_schnitt). 0-geschuetzt gegen ein leeres Array (degenerierter Quadrant bei sehr
     kleinen Bildern, analog compute_uniform_area_fraction's total_tiles-Schutz)."""
@@ -318,9 +318,7 @@ _OBJECT_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "efficientdet_l
 
 # Security-Muss-Kriterium (Spec-0038-Security-Abschnitt, Punkt 3: "automatisierter Test fuer jedes
 # der vier Modell-Assets, nicht nur nice to have") - siehe test_classification.py.
-OBJECT_DETECTOR_MODEL_SHA256 = (
-    "0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb"
-)
+OBJECT_DETECTOR_MODEL_SHA256 = "0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb"
 
 
 class DetectionCategoryLike(Protocol):

@@ -394,9 +394,7 @@ async def _filtered_photo_ids(
     elif rating_status is not None:
         base = base.where(own_rating.status == RatingStatus(rating_status.value))
 
-    total = (
-        await session.execute(select(func.count()).select_from(base.subquery()))
-    ).scalar_one()
+    total = (await session.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
 
     paged = base.order_by(Photo.taken_at, Photo.id).offset(offset).limit(limit)
     ids = [row[0] for row in (await session.execute(paged)).all()]
@@ -705,9 +703,7 @@ def _cluster_place_of(members: list[_ClusterMember]) -> ClusterPlaceOut | None:
     return ClusterPlaceOut(kind="coordinate", lat=lat, lon=lon)
 
 
-def _derived_location_of(
-    photo: Photo, anchors: list[_ClusterMember]
-) -> PhotoLocationOut | None:
+def _derived_location_of(photo: Photo, anchors: list[_ClusterMember]) -> PhotoLocationOut | None:
     """Der Ort EINES Fotos: die eigene Koordinate in voller Praezision, sonst die des zeitlich
     naechstgelegenen Fotos MIT Koordinate im selben Cluster.
 
@@ -1012,9 +1008,7 @@ async def _top_n_per_category_photo_ids(
             PhotoRanking.criterion_scoring_run_id == latest_run_id,
             PhotoRanking.rank_position <= top_n,
         )
-        .order_by(
-            PhotoRanking.cluster_key, PhotoRanking.category_key, PhotoRanking.rank_position
-        )
+        .order_by(PhotoRanking.cluster_key, PhotoRanking.category_key, PhotoRanking.rank_position)
     )
     ordered_ids: list[int] = []
     seen: set[int] = set()

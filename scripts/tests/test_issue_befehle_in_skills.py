@@ -214,11 +214,7 @@ def reihenfolge_verstoesse(text: str, datei: str = "<text>") -> list[str]:
     stellen = ausfuehrungsstellen(text, datei)
     body = [stelle for stelle in stellen if stelle.id == BODY_OPERATION]
     titel = [stelle for stelle in stellen if stelle.id == TITEL_OPERATION]
-    ready = [
-        stelle
-        for stelle in stellen
-        if stelle.id == STATUS_OPERATION and READY in stelle.rest
-    ]
+    ready = [stelle for stelle in stellen if stelle.id == STATUS_OPERATION and READY in stelle.rest]
 
     befunde: list[str] = []
     if not titel:
