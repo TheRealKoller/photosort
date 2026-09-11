@@ -26,6 +26,40 @@ cd backend && pytest
 cd frontend && npm test
 ```
 
+### Formatierung
+
+Die Formatierung ist maschinell hergestellt und wird in CI geprüft. Ein Aufruf formatiert alle
+vier Bäume (`backend/`, `scripts/` mit `ruff format`, `frontend/`, `e2e/` mit Prettier):
+
+```bash
+./scripts/format.sh
+```
+
+Das Skript ist der einzige Handgriff — es gibt **keinen** Git-Hook und keinen Editor-Automatismus,
+der beim Speichern oder Committen formatiert (das ist Absicht, siehe
+[`specs/decisions/0080-maschinelle-formatierung-ruff-format-und-prettier.md`](../specs/decisions/0080-maschinelle-formatierung-ruff-format-und-prettier.md)).
+
+**Wird die CI-Prüfung `Formatierung pruefen` rot:** `./scripts/format.sh` laufen lassen und das
+Ergebnis committen. Mehr ist nicht zu tun — die Prüfung vergleicht nur gegen die Ausgabe derselben
+Werkzeuge in denselben Versionen.
+
+Zwei Vorbedingungen prüft das Skript selbst und bricht sonst mit einem Hinweis ab:
+
+- **`node_modules` fehlt** in `frontend/` oder `e2e/` → dort `npm ci` (nie `npm install` — das
+  Lockfile ist die Fixierung).
+- **Die `ruff`-Version passt nicht zum Pin** der `pyproject.toml` des jeweiligen Baums. Beide
+  Python-Bäume haben eine eigene `.venv`, und beide müssen den gepinnten Stand tragen; sonst
+  entsteht ein Diff, den CI nicht bestätigt. Nach einer Änderung des Pins — oder bei einer älteren
+  `.venv` — je Baum neu installieren:
+
+  ```bash
+  cd backend && uv pip install -e ".[dev]"
+  cd scripts && uv pip install -e ".[dev]"
+  ```
+
+Nach `alembic revision --autogenerate` ist die erzeugte Migration unformatiert; der Formatierlauf
+gehört dort zum Anlegen dazu.
+
 ## GitHub-CLI (`gh`)
 
 Der Story-Lebenszyklus des Projekts — Story-Issue anlegen, Issue-Body schreiben, Board-Status
