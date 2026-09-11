@@ -8,6 +8,8 @@ description: Koordiniert auf oberster Ebene (Orchestrator/Hauptsession) die Nach
 
 **GitHub-Erlaubnisstufe:** lesend und schreibend
 
+**Umfang:** über dem Richtwert von rund 120 Zeilen, weil der Ablauf acht Schritte mit je eigener Bedingung und eigenem Fehlerpfad trägt.
+
 Übernimmt genau die Verantwortung, die ein per Agent-Tool gestarteter `developer`-Subagent strukturell nicht selbst wahrnehmen kann: eine weitere Verschachtelungsebene an Subagenten (`architect` bei einer Planungslücke) und GitHub-Schreibzugriff (Push, PR-Erstellung, Copilot-Review). Die eigentliche Review-Prüfung übernimmt der Skill `review` (`.claude/skills/review/SKILL.md`) — dieser Skill hier ruft ihn nur auf und kümmert sich um alles davor und danach. `developer` bleibt für die Dauer dieses gesamten Ablaufs als offener Subagent ansprechbar (SendMessage), es wird für Folgeaufträge kein neuer Lauf gestartet, solange der Subagent noch erreichbar ist.
 
 **Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`.** Lade ihn einmal über das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (das ist Schritt 6), und arbeite danach für den Rest des Laufs mit dem geladenen Katalog. Dieser Skill hier nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum — wann eine Operation läuft, unter welcher Bedingung, wie ihr Ergebnis ausgewertet wird. Rein lokales `git` (`git status`, `git log`, `git diff`, `git push`) ist davon unberührt und steht weiterhin hier.
@@ -28,7 +30,7 @@ Eine `developer`-Antwort löst diesen Skill aus, wenn sie einen der folgenden w�
 
 Format (Feldnamen `**Feature-Branch:**`, `**Grund:**`, `**Bisheriger Stand:**`) siehe `.claude/agents/developer.md`.
 
-1. Ruf `architect` auf (Agent-Tool, `subagent_type: architect`, Standard-Modell — kein `model`-Parameter, wie bisher in `developer.md` Schritt 1 vorgesehen), im Vordergrund/`run_in_background: false`. Gib ihm den genannten Grund, den Spec-Bezug und den bisherigen Stand mit.
+1. Ruf `architect` auf (Agent-Tool, `subagent_type: architect`, Standard-Modell — kein `model`-Parameter), im Vordergrund/`run_in_background: false`. Gib ihm den genannten Grund, den Spec-Bezug und den bisherigen Stand mit.
 2. Gib das Ergebnis per `SendMessage` an denselben, weiterhin offenen `developer`-Subagenten zurück, der bei Schritt 1 seines Ablaufs fortfährt.
 3. Schlägt `SendMessage` fehl (Subagenten-Fenster bereits geschlossen/Timeout): siehe Abschnitt "Recovery" unten.
 
@@ -95,7 +97,7 @@ Nach Bestätigung geht es weiter zu Schritt 6 (PR-Erstellung) bzw., falls die Fi
    - **Steht etwas anderes:** GitHub verarbeitet die Verknüpfung asynchron, unmittelbar nach `pr-erstellen` kann der alte Wert noch stehen. Deshalb **einmal** kurz warten (wenige Sekunden) und ein zweites Mal lesen, bevor daraus ein Befund wird — sonst meldet jeder Lauf einen Fehlschlag, den es nicht gibt.
    - **Steht auch dann nicht `Review`** (oder scheitert die Leseoperation auf allen ihren Wegen): Der Übergang ist ausgeblieben, in aller Regel, weil der Workflow im Projekt deaktiviert wurde. Den Wert **nicht** stillschweigend selbst nachsetzen — das verdeckte genau die Ursache, die dieser Schritt sichtbar machen soll. Stattdessen `board-status-setzen` mit Wert `Review` in den Abschnitt `## Lokal nachzuholen` (PR-Body und Chat-Bericht), mit der Nachhol-Zeile aus dem Katalogeintrag. Regeln zu Form und Inhalt dieses Abschnitts vollständig im Skill `github-access` — hier nicht wiederholen. Ist der PR-Body zu diesem Zeitpunkt bereits geschrieben, wird er einmal per `pr-body-schreiben` nachgezogen.
 
-   Ein früherer, verfrühter `Implemented`-Bump des Spec-Status direkt nach der PR-Erstellung entfällt ersatzlos — die Finalisierung passiert erst in Schritt 8, nach Review und Copilot-Auswertung, aber noch **vor** dem Merge im selben PR.
+   Der Spec-Status wird hier **nicht** gesetzt: Die Finalisierung passiert erst in Schritt 8, nach Review und Copilot-Auswertung, aber noch **vor** dem Merge im selben PR.
 
 ## Schritt 7: Copilot-Review anfordern und auswerten
 

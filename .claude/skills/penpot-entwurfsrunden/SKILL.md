@@ -7,6 +7,8 @@ description: Entwickelt einen Ansichts-, Ausschnitts- oder Bausteinentwurf in de
 
 **GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
 
+**Umfang:** über dem Richtwert von rund 120 Zeilen, weil der Rundenbetrieb seinen Zustand in Penpot hält und nach einem Kontextverlust allein aus diesem Text fortsetzbar sein muss.
+
 **Nur in der Hauptsession**, und **jederzeit aufrufbar** — auch ohne laufende Story. Der Ablauf legt kein Issue an, setzt keinen Board-Status und eröffnet keinen Pull Request.
 
 **Ein Entwurfsvorgang ist ein Zustand über Sitzungen hinweg**, kein Durchlauf. Er endet nur auf Ansage: wenn Daniel den Entwurf für fertig erklärt oder abbricht. Die Zahl der Runden ist nicht vorgegeben.
