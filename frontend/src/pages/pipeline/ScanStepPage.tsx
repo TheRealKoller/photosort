@@ -10,10 +10,9 @@ import { useTriggerConfirmation } from '../../hooks/useTriggerConfirmation'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 
 /**
- * 1:1-Migration der bisherigen Scan-Section aus ProjectDetailPage.tsx (Akzeptanzkriterium 7 der
- * Spec 0042) - fachliche Logik/Zustaende/Texte unveraendert, ergaenzt um die kurze Erklaerzeile aus
- * dem UI/UX-Abschnitt ("bekommen die drei bisher unkommentierten Schritte dieselbe kurze
- * Erklaerzeile wie die beiden bereits beschrifteten Schritte").
+ * 1:1-Migration der frueheren Scan-Section aus ProjectDetailPage.tsx - fachliche
+ * Logik/Zustaende/Texte unveraendert, ergaenzt um dieselbe kurze Erklaerzeile, die auch die
+ * uebrigen Schritte tragen.
  */
 export function ScanStepPage() {
   const { project, refetchProject } = useOutletContext<PipelineOutletContext>()

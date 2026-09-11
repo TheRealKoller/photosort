@@ -21,7 +21,7 @@ export interface DialogProps {
   actions?: ReactNode
   cancelLabel?: string
   /** Deaktiviert die eingebaute Abbrechen-Schaltflaeche, solange der Aufrufer eine Anfrage
-   * laufen hat (specs/features/0044-projekte-loeschen.md). Die Zusage "Esc ruft IMMER `onClose`"
+   * laufen hat. Die Zusage "Esc ruft IMMER `onClose`"
    * bleibt davon unberuehrt - ein Aufrufer, der waehrend seiner Anfrage nicht geschlossen werden
    * will, ignoriert `onClose` selbst; das ist hier ausdruecklich vorgesehen. */
   cancelDisabled?: boolean
@@ -31,8 +31,8 @@ const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 /**
- * Ueberlagerung/Modal nach dem Board (specs/architecture/0005-board-dark-utility-register.md
- * Abschnitt 6): Flaeche `--overlay`, Rand `--border`, Radius 16px, Polsterung 24px, Titelzeile mit
+ * Ueberlagerung/Modal nach dem Board: Flaeche `--overlay`, Rand `--border`, Radius 16px,
+ * Polsterung 24px, Titelzeile mit
  * Symbol, Schaltflaechenzeile rechtsbuendig, verdunkelter Hintergrund ueber `::backdrop`.
  *
  * Natives <dialog> statt eines neuen @radix-ui/react-dialog-Pakets - dieselbe Linie wie
@@ -46,7 +46,7 @@ const FOCUSABLE_SELECTOR =
  * untestbar, und der Projekt-Polyfill in setupTests.ts wuerde in einem Test nur sich selbst
  * bestaetigen.
  *
- * Verbindlich (UI/UX-Abschnitt der Spec 0320):
+ * Verbindlich:
  *  - Erstfokus auf der am wenigsten eingreifenden Schaltflaeche (Abbrechen), nie auf einer
  *    bestaetigenden oder loeschenden Aktion.
  *  - Esc schliesst; ein Klick auf den verdunkelten Hintergrund schliesst NICHT (der erste
@@ -103,7 +103,7 @@ export function Dialog({
 
     // Zaehlende Sperre statt eigener Merkvariable: bei zwei gleichzeitig offenen Dialogen las die
     // zweite bereits 'hidden' als "vorherigen" Wert, und ein Schliessen in Anlegereihenfolge gab
-    // den Hintergrund frei, obwohl noch ein Dialog offen war (Spec 0321, Etappe 1).
+    // den Hintergrund frei, obwohl noch ein Dialog offen war.
     const releaseScrollLock = lockBodyScroll()
 
     return () => {
@@ -157,7 +157,7 @@ export function Dialog({
     const first = focusable[0]
     const last = focusable[focusable.length - 1]
     const active = document.activeElement
-    // Copilot-Review-Fund (PR #322): Der Ausreisserfall wurde zuvor NUR fuer Shift+Tab behandelt -
+    // Der Ausreisserfall wurde zuvor NUR fuer Shift+Tab behandelt -
     // vorwaerts traf kein Zweig zu und der Fokus wanderte aus dem Modal heraus. Beide Richtungen
     // fangen ihn jetzt gleich ab: rueckwaerts auf das letzte, vorwaerts auf das erste Element.
     const hasStrayFocus = !dialog.contains(active)

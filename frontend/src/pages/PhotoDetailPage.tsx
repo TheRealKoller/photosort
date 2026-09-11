@@ -25,7 +25,7 @@ import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/su
 
 // Bounded so a broken/degenerate filter can never spin forever fetching pages while searching
 // for the next unrated photo - 80 * PHOTOS_PAGE_SIZE(60) covers well beyond any realistic
-// project size for this two-person MVP (specs/features/0002-manual-categorization.md).
+// project size for this two-person MVP.
 const MAX_AUTO_ADVANCE_PAGE_FETCHES = 80
 
 const SWIPE_THRESHOLD_PX = 50
@@ -58,8 +58,8 @@ export function PhotoDetailPage() {
   const setMutation = useSetRatingMutation(id)
   const deleteMutation = useDeleteRatingMutation(id)
   const categoryOverrideControls = useCategoryOverrideControls(id)
-  // specs/features/0289-feste-kategorien.md: das feste Set kommt vom Server (langlebiger Cache) -
-  // Grundlage der Anzeigenamen und der "Alle Kategorien"-Override-Auswahl.
+  // Das feste Set kommt vom Server (langlebiger Cache) - Grundlage der Anzeigenamen und der
+  // "Alle Kategorien"-Override-Auswahl.
   const categoriesQuery = useCategoriesQuery()
   const categorySet = categoriesQuery.data ?? []
 
@@ -102,7 +102,7 @@ export function PhotoDetailPage() {
 
   /**
    * Sucht ab fromIndex vorwaerts in der zum Klick-Zeitpunkt geladenen Foto-Sequenz nach dem
-   * naechsten unbewerteten Foto (specs/features/0002-manual-categorization.md: Auto-Advance).
+   * naechsten unbewerteten Foto (Auto-Advance).
    * Arbeitet bewusst auf dieser VOR der durch die Mutation ausgeloesten Invalidierung erfassten
    * Momentaufnahme statt auf einem Refetch zu warten: da sich nur das gerade bewertete Foto
    * aendert, bleibt der Bewertungsstatus aller anderen Fotos in der Momentaufnahme weiterhin
@@ -190,8 +190,7 @@ export function PhotoDetailPage() {
   }, [])
 
   // Swipe navigiert, Bewertung erfolgt separat per Tap auf die Bewertungs-Buttons (nicht per
-  // Swipe, um versehentliche Bewertungen zu vermeiden) - specs/features/0002-manual-
-  // categorization.md.
+  // Swipe, um versehentliche Bewertungen zu vermeiden).
   const touchStartXRef = useRef<number | null>(null)
 
   function handleTouchStart(event: React.TouchEvent<HTMLDivElement>): void {
@@ -265,15 +264,15 @@ export function PhotoDetailPage() {
 
   const isMutating = setMutation.isPending || deleteMutation.isPending
 
-  /* Beide Einbindungen der Aufschluesselung teilen EIN Props-Objekt
-     (specs/features/0370-bedienelemente-zuerst.md): Bedienteil oben und Informationsteil unten
+  /* Beide Einbindungen der Aufschluesselung teilen EIN Props-Objekt: Bedienteil oben und
+     Informationsteil unten
      sind zwei Ausschnitte derselben Darstellung und duerfen nicht auseinanderlaufen - zwei
      getrennt gepflegte Prop-Listen taeten genau das beim naechsten neuen Prop.
      showSuggestion={false} - die Ausschuss-Gruppe bleibt exklusiv im "Automatischer
      Vorschlag"-Kasten, suggestion wird hier bewusst nicht durchgereicht (kein Feld-/Logik-Merge
      zwischen beiden Bereichen). */
-  /* Die Detailansicht zeigt EIN Foto - gemeint ist immer seine Hauptzugehoerigkeit
-     (specs/features/0300-nebenkategorien.md). `rankings[0]` waere hier die falsche Abkuerzung,
+  /* Die Detailansicht zeigt EIN Foto - gemeint ist immer seine Hauptzugehoerigkeit.
+     `rankings[0]` waere hier die falsche Abkuerzung,
      die Rolle kommt aus `is_primary`. Einmal gebildet, weil sie an zwei Stellen gebraucht wird:
      im Sichtbarkeitsgate des Bedienteils und in den Props beider Einbindungen. */
   const ranking = primaryRanking(currentPhoto)
@@ -302,7 +301,7 @@ export function PhotoDetailPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Bleibt unveraendert stehen (Spec 0321, "es wird nichts entfernt"): durch die neuen
+      {/* Bleibt unveraendert stehen (es wird nichts entfernt): durch die neuen
           Tasten-Kaestchen teilweise redundant, aber der Pfeiltasten-Teil hat kein sichtbares
           Gegenstueck. Nur als Metadatenzeile gesetzt statt als Fliesstext. */}
       <p className="text-xs text-text-muted">
@@ -325,8 +324,7 @@ export function PhotoDetailPage() {
         />
       </div>
 
-      {/* Unmittelbar unter dem Foto: die primaere, haeufigste Handlung
-          (specs/features/0370-bedienelemente-zuerst.md, Akzeptanzkriterium 1a). role="group" mit
+      {/* Unmittelbar unter dem Foto: die primaere, haeufigste Handlung. role="group" mit
           aria-label="Bewertung" bleibt unveraendert - die Leiste wandert nur nach oben. */}
       <RatingButtons
         currentStatus={currentOwnStatus}
@@ -374,11 +372,10 @@ export function PhotoDetailPage() {
           <p className="text-text-h">
             Automatischer Vorschlag: {formatSuggestionStatusLabel(suggestion)}
           </p>
-          {/* Formatierung aus utils/suggestionLabels.ts (specs/features/0040-bewertungsdetails-
-              info-popover.md, Architektur-Abschnitt) - dasselbe Muster wird jetzt auch vom neuen
+          {/* Formatierung aus utils/suggestionLabels.ts - dasselbe Muster wird auch von
               CriterionDetailsPopover.tsx verwendet, keine zweite Kopie derselben Logik. Der
-              fruehere dritte Fall "top_pick" (Spec 0024, Kategorie + Qualitaets-Einordnung) ist
-              mit Spec 0037 entfallen - dieser Kuratierungs-Kontext lebt jetzt in der
+              fruehere dritte Fall "top_pick" (Kategorie + Qualitaets-Einordnung) ist entfallen -
+              dieser Kuratierungs-Kontext lebt in der
               eigenstaendigen /curate-Ansicht statt in diesem Ausschuss-Vorschlagskasten (siehe
               api/types.ts::SuggestionOut-Docstring). */}
           <p className="text-text">{formatSuggestionReason(suggestion)}</p>
@@ -398,16 +395,15 @@ export function PhotoDetailPage() {
         </div>
       )}
 
-      {/* Trennlinie zwischen Bedien- und Informationsteil (Spec 0370, UI/UX-Abschnitt): ohne sie
+      {/* Trennlinie zwischen Bedien- und Informationsteil: ohne sie
           stiessen Vorschlagskasten und Informationsblöcke unvermittelt aneinander, und der
           Wechsel von "was ich mit diesem Foto tue" zu "was das System über dieses Foto weiß"
           waere nicht ablesbar. `--separator` ist die freistehende Linie auf dem Grund. */}
       <div className="border-t border-separator" />
 
-      {/* specs/features/0058-cloud-vision-status-transparenz.md, UI/UX-Abschnitt "Layout &
-          Platzierung": unmittelbar vor der CriterionDetailsList UND nach den Bewertungs-Buttons -
-          beides zusammen war bis Spec 0370 nicht erfuellbar (die Bewertungsleiste stand damals
-          weiter unten) und ist es seit der Umordnung erstmals. IMMER sichtbar (bewusste
+      {/* Layout & Platzierung: unmittelbar vor der CriterionDetailsList UND nach den
+          Bewertungs-Buttons - beides zusammen ist erst seit der Umordnung der Seite erfuellbar
+          (die Bewertungsleiste stand zuvor weiter unten). IMMER sichtbar (bewusste
           Stakeholder-Entscheidung, kein Ausblenden bei not_candidate/not_run, siehe
           Spec-Abschnitt "Entscheidungen") - anders als die CriterionDetailsList darunter kein
           `.length > 0`-Sichtbarkeitsgate. */}
@@ -415,12 +411,10 @@ export function PhotoDetailPage() {
         <CloudVisionStatusList cloudVisionStatus={currentPhoto.cloud_vision_status} />
       </div>
 
-      {/* Informationsteil der permanenten Sektion (Spec 0370, Akzeptanzkriterium 2) - permanent
-          statt Info-Popover (Akzeptanzkriterien 1-4, specs/features/0041-bewertungsdetails-
-          permanent-in-detailansicht-hover-auto-close.md; dessen Platzierungsvorgabe "vor den
-          Navigationsbuttons" ist durch Spec 0370 abgeloest, die permanente Sichtbarkeit selbst
-          gilt unveraendert weiter). Gleiche Sichtbarkeitsregel wie die bisherige
-          Icon-Sichtbarkeit (Spec 0040 AK1): kein leerer Bereich bei leerer Liste. */}
+      {/* Informationsteil der permanenten Sektion - permanent statt Info-Popover; die fruehere
+          Platzierungsvorgabe "vor den Navigationsbuttons" ist abgeloest, die permanente
+          Sichtbarkeit selbst gilt weiter. Gleiche Sichtbarkeitsregel wie die bisherige
+          Icon-Sichtbarkeit: kein leerer Bereich bei leerer Liste. */}
       {currentPhoto.criterion_scores.length > 0 && (
         <div className="text-sm text-text" data-testid="criterion-details-section">
           <CriterionDetailsList {...detailsProps} part="info" />

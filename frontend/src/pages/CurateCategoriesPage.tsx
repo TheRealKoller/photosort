@@ -37,8 +37,8 @@ interface ClusterMeta {
 
 /**
  * EIN gerendertes Kachel-Vorkommen: das Foto UND die Zugehoerigkeit, unter der es an dieser Stelle
- * steht (specs/features/0300-nebenkategorien.md). Seit der Mehrfachzugehoerigkeit reicht das Foto
- * allein nicht mehr - dasselbe Foto kann in zwei Kategorien stehen und traegt dort verschiedene
+ * steht. Bei Mehrfachzugehoerigkeit reicht das Foto allein nicht - dasselbe Foto kann in zwei
+ * Kategorien stehen und traegt dort verschiedene
  * Rollen (Haupt- bzw. Nebenkategorie).
  */
 export interface CurationEntry {
@@ -57,11 +57,10 @@ interface GroupedPhotos {
 /**
  * Erster Durchlauf sammelt pro `cluster_key` alle zugehoerigen Fotos (kategorieuebergreifend)
  * und berechnet einmal die Cluster-Meta-Info (Tag + Ueberschrift), zweiter Durchlauf sortiert die
- * Zugehoerigkeiten in die dreistufige {Tag: {Cluster: {Kategorie: Eintraege}}}-Struktur ein
- * (Architektur-Abschnitt der Spec 0039).
+ * Zugehoerigkeiten in die dreistufige {Tag: {Cluster: {Kategorie: Eintraege}}}-Struktur ein.
  *
- * Iteriert seit specs/features/0300-nebenkategorien.md je Foto ueber `curatedRankings(photo)` -
- * ein Foto kann damit in MEHREREN Kategorien erscheinen. Welche das sind, entscheidet
+ * Iteriert je Foto ueber `curatedRankings(photo)` - ein Foto kann damit in MEHREREN Kategorien
+ * erscheinen. Welche das sind, entscheidet
  * ausschliesslich der Server (`curation_position !== null`); das Frontend bildet weder die
  * Auswahl noch eine Schwelle nach.
  */
@@ -112,11 +111,10 @@ function categoriesHavePhotos(categories: { [categoryKey: string]: CurationEntry
 }
 
 /**
- * Fotoanzahl eines Tages fuer die Kurzinfo im zugeklappten Zustand (Akzeptanzkriterium 6 der Spec
- * 0043) - reine Ableitung aus bereits geladenen Daten, kein neuer State/Request.
+ * Fotoanzahl eines Tages fuer die Kurzinfo im zugeklappten Zustand - reine Ableitung aus bereits
+ * geladenen Daten, kein neuer State/Request.
  *
- * Zaehlt EINDEUTIGE FOTOS, nicht Zugehoerigkeiten (specs/features/0300-nebenkategorien.md,
- * Akzeptanzkriterium 26): die Beschriftung lautet "N Fotos" - ein Foto, das an diesem Tag in zwei
+ * Zaehlt EINDEUTIGE FOTOS, nicht Zugehoerigkeiten: die Beschriftung lautet "N Fotos" - ein Foto, das an diesem Tag in zwei
  * Kategorien erscheint, erhoeht die Zahl um eins.
  */
 export function countPhotosInDay(clustersForDay: {
@@ -134,8 +132,8 @@ export function countPhotosInDay(clustersForDay: {
 }
 
 /**
- * Kandidatenzahl EINER Kategorie eines Clusters (specs/features/0357-voller-bildvorrat-
- * kuratierung.md, Akzeptanzkriterium 5): schlicht die `partition_size` - alle Eintraege einer
+ * Kandidatenzahl EINER Kategorie eines Clusters: schlicht die `partition_size` - alle Eintraege
+ * einer
  * Partition tragen denselben Wert, weil er lauf-global je (cluster_key, category_key) berechnet
  * wird und nicht nutzerspezifisch gefiltert ist.
  *
@@ -148,14 +146,14 @@ export function candidateCountOfCategory(entries: CurationEntry[]): number {
 }
 
 /**
- * Kandidatenzahl eines Clusters: die SUMME der Kategorie-Zahlen darunter (ADR 0071
- * Entscheidung 4). Ein Foto, das im selben Cluster in zwei Kategorien steht, zaehlt darin
+ * Kandidatenzahl eines Clusters: die SUMME der Kategorie-Zahlen darunter. Ein Foto, das im
+ * selben Cluster in zwei Kategorien steht, zaehlt darin
  * ZWEIMAL - bewusste Produktentscheidung Daniels: die Zahl beschreibt, was tatsaechlich zu sichten
  * ist (die Kachel erscheint zweimal und ist zweimal einzeln zu beurteilen), nicht wie viele
  * verschiedene Fotos es sind.
  *
- * Genau deshalb heisst sie "Kandidaten" und nicht "Fotos" - die Tages-Ueberschrift zaehlt seit
- * Spec 0300 ausdruecklich eindeutige FOTOS (siehe `countPhotosInDay`). Verschiedene Groessen
+ * Genau deshalb heisst sie "Kandidaten" und nicht "Fotos" - die Tages-Ueberschrift zaehlt
+ * ausdruecklich eindeutige FOTOS (siehe `countPhotosInDay`). Verschiedene Groessen
  * tragen verschiedene Woerter; das ist die einzige Stelle, an der diese Entscheidung fuer den
  * Nutzer lesbar bleibt.
  */
@@ -174,7 +172,7 @@ export function formatCandidateCount(count: number): string {
 }
 
 /**
- * Toggelt den Klapp-Zustand eines einzelnen Tages (Akzeptanzkriterium 3 der Spec 0043) - liefert
+ * Toggelt den Klapp-Zustand eines einzelnen Tages - liefert
  * ein neues `Set` statt das uebergebene zu mutieren, andere `dayKey`s bleiben unveraendert.
  */
 export function toggleDayCollapse(collapsedDayKeys: Set<string>, dayKey: string): Set<string> {
@@ -188,10 +186,10 @@ export function toggleDayCollapse(collapsedDayKeys: Set<string>, dayKey: string)
 }
 
 /**
- * Die Schwelle des Kuratierungsfilters "Nur unsichere Zuordnungen" (specs/features/0299-kategorie-
- * konfidenz-anzeigen.md, Akzeptanzkriterium 5) - EXKLUSIV: `0.6` selbst gilt nicht als niedrig.
+ * Die Schwelle des Kuratierungsfilters "Nur unsichere Zuordnungen" - EXKLUSIV: `0.6` selbst gilt
+ * nicht als niedrig.
  *
- * Sie lebt bewusst NUR hier im Frontend (ADR 0067 Punkt 6): weder API noch Datenbank kennen einen
+ * Sie lebt bewusst NUR hier im Frontend: weder API noch Datenbank kennen einen
  * Begriff von "unsicher". Eine Schwelle, die beide Seiten braeuchten, muesste gespiegelt oder
  * ueber ein neues API-Feld transportiert werden - fuer eine Frage, die keine fachliche ist,
  * sondern eine Sicht.
@@ -244,9 +242,8 @@ export function filterLowConfidence(items: PhotoOut[]): PhotoOut[] {
 }
 
 /**
- * Neutraler Erklaertext des Auffang-Abschnitts (UI/UX-Abschnitt der Spec 0217, unveraendert
- * gueltig fuer den Set-Eintrag "Nicht erkannt" aus specs/features/0289-feste-kategorien.md) -
- * struktureller Text, KEINE Fehler-Semantik (kein `role="alert"`, keine Fehlerfarbe): das Fehlen
+ * Neutraler Erklaertext des Auffang-Abschnitts (Set-Eintrag "Nicht erkannt") - struktureller
+ * Text, KEINE Fehler-Semantik (kein `role="alert"`, keine Fehlerfarbe): das Fehlen
  * einer Erkennung ist kein Fehler.
  */
 const CATCH_ALL_EXPLANATION = 'Für diese Fotos war kein Bildmotiv sicher bestimmbar.'
@@ -258,14 +255,14 @@ export function CurateCategoriesPage() {
   const id = Number(projectId)
   const [searchParams] = useSearchParams()
   const topN = parseTopN(searchParams.get('topN'))
-  // specs/features/0289-feste-kategorien.md: das feste Set kommt vom Server und wird langlebig
-  // gecacht - es speist Anzeigenamen, Abschnitts-Reihenfolge und die "Alle Kategorien"-Auswahl.
+  // Das feste Set kommt vom Server und wird langlebig gecacht - es speist Anzeigenamen,
+  // Abschnitts-Reihenfolge und die "Alle Kategorien"-Auswahl.
   const categoriesQuery = useCategoriesQuery()
   const categorySet = categoriesQuery.data ?? []
   // Der EIGENE Bewertungszustand wird ausschliesslich hierueber abgeleitet (`ownRatingStatus` mit
   // dem `username`-Claim des JWT, wie in Raster- und Detailansicht) - nie ueber `ratings[]`
   // insgesamt, sonst stellte die Ansicht die Bewertung des jeweils anderen als eigene dar
-  // (specs/features/0357-voller-bildvorrat-kuratierung.md, Security-Muss-Kriterium 5).
+  // (Sicherheits-Muss-Kriterium).
   const token = getToken()
   const username = token ? decodeUsername(token) : null
 
@@ -278,8 +275,8 @@ export function CurateCategoriesPage() {
   const items = useMemo(() => query.data?.items ?? [], [query.data])
 
   // Die Fotos mit gerade LAUFENDER Verwerfen-Mutation - eine MENGE, nicht eine einzelne Id
-  // (specs/features/0357-voller-bildvorrat-kuratierung.md, Entwurfsentscheidung 11). Die fruehere
-  // seitenweite Einfach-Sperre war sinnvoll, solange die Liste danach umsprang; ohne Nachruecken
+  // - die fruehere seitenweite Einfach-Sperre war sinnvoll, solange die Liste danach umsprang;
+  // ohne Nachruecken
   // springt nichts mehr, und ein zweiter Klick verpuffte still. Jedes Foto verwirft unabhaengig.
   //
   // ZWEI Ablagen fuer dieselbe Menge, mit verschiedenen Aufgaben: der Ref ist die SYNCHRONE
@@ -288,13 +285,11 @@ export function CurateCategoriesPage() {
   const rejectingPhotoIdsRef = useRef<Set<number>>(new Set())
   const [rejectingPhotoIds, setRejectingPhotoIds] = useState<Set<number>>(new Set())
 
-  // Klapp-Zustand der Tages-Abschnitte (Spec 0043): leeres Set = alles aufgeklappt (Default,
-  // Akzeptanzkriterium 2) - kein localStorage/sessionStorage/Query-Param, keine Persistierung
-  // ueber einen Reload hinaus (Out-of-Scope-Abschnitt der Spec).
+  // Klapp-Zustand der Tages-Abschnitte: leeres Set = alles aufgeklappt (Default) - kein
+  // localStorage/sessionStorage/Query-Param, keine Persistierung ueber einen Reload hinaus.
   const [collapsedDayKeys, setCollapsedDayKeys] = useState<Set<string>>(new Set())
 
-  // specs/features/0299-kategorie-konfidenz-anzeigen.md: der Filterzustand lebt in `useState` wie
-  // `collapsedDayKeys`, NICHT in den Suchparametern - dort steht nur, was das Backend als
+  // Der Filterzustand lebt in `useState` wie `collapsedDayKeys`, NICHT in den Suchparametern - dort steht nur, was das Backend als
   // Query-Parameter sieht, und dieser Filter loest bewusst keine neue Anfrage aus.
   const [lowConfidenceOnly, setLowConfidenceOnly] = useState(false)
 
@@ -316,7 +311,7 @@ export function CurateCategoriesPage() {
   // Der frueher hier stehende `useEffect`, der den Busy-Zustand zuruecksetzte, sobald das Foto aus
   // `items` verschwand, ist mit dem Nachruecken entfallen: ohne Backfill verschwindet das Foto
   // nie, die Schaltflaeche bliebe dauerhaft busy. Ersatz ist der `onSettled`-Callback der
-  // Mutation in `handleReject` (specs/features/0357-voller-bildvorrat-kuratierung.md, AK 17).
+  // Mutation in `handleReject`.
 
   // Erschoepfter Pool (Akzeptanzkriterium 7 der Spec): eine Partition, die inzwischen komplett
   // leer ist (letztes Foto gerade abgelehnt), wuerde sonst spurlos aus der Gruppierung
@@ -326,7 +321,7 @@ export function CurateCategoriesPage() {
   // Trennzeichen (Review-Fund test-engineer/security-engineer/architect): ein einzelnes
   // Trennzeichen waere anfaellig fuer eine Kollision, sollte ein kuenftiger cluster_key/
   // category_key es selbst enthalten - JSON.stringify(["a","b","c"]) ist immer eindeutig
-  // umkehrbar. Seit Spec 0039 3-Tupel [dayKey, clusterKey, categoryKey] statt 2-Tupel.
+  // umkehrbar. 3-Tupel [dayKey, clusterKey, categoryKey], nicht 2-Tupel.
   const knownGroupKeysRef = useRef<Set<string>>(new Set())
   // Cache fuer die Cluster-Meta-Info (Tag + Ueberschrift + Sortier-Zeitstempel): sobald das
   // letzte Foto eines Clusters abgelehnt wird, verschwindet der cluster_key komplett aus `items`
@@ -337,7 +332,7 @@ export function CurateCategoriesPage() {
 
   // ZWEI Gruppierungen, wenn der Filter aktiv ist - das ist kein Versehen: die Merkliste
   // gesehener Partitionen und der Cluster-Meta-Cache werden weiterhin aus den UNGEFILTERTEN
-  // `items` gespeist (specs/features/0299-kategorie-konfidenz-anzeigen.md). Speiste man sie aus
+  // `items` gespeist. Speiste man sie aus
   // der gefilterten Sicht, verschwaenden Partitionen beim Einschalten des Filters DAUERHAFT: sie
   // waeren nach dem Ausschalten nicht mehr in der Merkliste und ihre Cluster-Ueberschrift nicht
   // mehr berechenbar.
@@ -364,12 +359,11 @@ export function CurateCategoriesPage() {
   }
 
   function handleReject(photo: PhotoOut): void {
-    // SPERRE JE FOTO, nicht seitenweit (Entwurfsentscheidung 11 der Spec 0357): verschiedene
-    // Fotos verwerfen unabhaengig voneinander, ein ZWEITER Vorgang fuer DASSELBE Foto wird
+    // SPERRE JE FOTO, nicht seitenweit: verschiedene Fotos verwerfen unabhaengig voneinander, ein ZWEITER Vorgang fuer DASSELBE Foto wird
     // verhindert. Aufgegeben wurde die seitenweite Einfachsperre, nicht dieser Schutz:
     // `Rating` traegt `UniqueConstraint(photo_id, user_id)`, zwei nebenlaeufige Anfragen laufen
-    // in einen IntegrityError und damit in eine 500. Seit specs/features/0300-nebenkategorien.md
-    // hat dasselbe Foto ausserdem bis zu vier Kacheln mit je eigener Schaltflaeche - ein
+    // in einen IntegrityError und damit in eine 500. Dasselbe Foto hat ausserdem bis zu vier
+    // Kacheln mit je eigener Schaltflaeche - ein
     // schneller Klick auf zwei davon ist ein realistischer Bedienweg.
     //
     // Geprueft wird gegen den REF, nicht gegen den State: `disabled` an der Schaltflaeche und
@@ -437,7 +431,7 @@ export function CurateCategoriesPage() {
       )}
 
       {dayKeys.length > 0 && (
-        // Zwei globale Aktionen (Akzeptanzkriterium 7 der Spec 0043) - bleiben auch bei genau
+        // Zwei globale Aktionen - bleiben auch bei genau
         // einem Tag im Projekt sichtbar/funktionsfaehig, da hier nicht extra auf `dayKeys.length
         // > 1` geprueft wird. Sekundaerer Ton (Hilfsfunktion, keine Akzentfarbe, UI/UX-Abschnitt).
         // `gap-3` statt `gap-2`: zwischen aufgespannten Trefferflaechen verlangt das
@@ -459,8 +453,7 @@ export function CurateCategoriesPage() {
           >
             Alle Tage zuklappen
           </Button>
-          {/* specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterium 5:
-              Kontrollkaestchen statt Schalter - der Schalter steht im Produkt fuer eine
+          {/* Kontrollkaestchen statt Schalter - der Schalter steht im Produkt fuer eine
               DAUERHAFTE Einstellung, dies ist eine Sicht-Entscheidung dieses Besuchs. Der Filter
               arbeitet auf den bereits geladenen Daten und loest keine neue Anfrage aus. */}
           <Checkbox
@@ -484,7 +477,7 @@ export function CurateCategoriesPage() {
           return 0
         })
         const dayIsEmpty = !Object.values(clustersForDay).some(categoriesHavePhotos)
-        // dayKey (Format YYYY-MM-DD) ist bereits ID-sicher (Architektur-Abschnitt der Spec 0043).
+        // dayKey (Format YYYY-MM-DD) ist bereits ID-sicher.
         const panelId = `day-panel-${dayKey}`
         const isCollapsed = collapsedDayKeys.has(dayKey)
         return (
@@ -498,7 +491,7 @@ export function CurateCategoriesPage() {
               {/* Gesamte Kopfzeile als Trigger (Akzeptanzkriterium 1) - kein separates Icon als
                   alleiniger interaktiver Traeger, `w-full`+`text-left` macht die ganze Zeile
                   klickbar, `min-h-11` sichert ein Touch-Ziel von mindestens 44px. */}
-              {/* Spec 0321, Etappe 2: keine handgerollte Schaltflaeche mehr - Flaeche, Zustaende
+              {/* Keine handgerollte Schaltflaeche - Flaeche, Zustaende
                   und Trefferflaeche kommen aus dem `Button`-Primitiv. Die ZEILENFORM bleibt und
                   wird ausgeschrieben ueberschrieben: `min-h-11` als Zeilenhoehe einer zeilenweisen
                   Liste (Trefferflaechen-Regel 3), `whitespace-normal` gegen das `whitespace-nowrap`
@@ -609,8 +602,7 @@ export function CurateCategoriesPage() {
                                     </span>
                                   )}
                                 </h4>
-                                {/* Auffangkorb-Kategorie mit erklärend dezentem Signal
-                                    (specs/architecture/0004-design-system.md, Spec 0217):
+                                {/* Auffangkorb-Kategorie mit erklärend dezentem Signal:
                                     kurzer struktureller Hinweistext direkt unter der
                                     Überschrift, kein Icon/Badge, keine Fehler-Optik. */}
                                 {categoryKey === CATCH_ALL_CATEGORY_KEY && (
@@ -703,9 +695,8 @@ export function CurateCategoriesPage() {
         )
       })}
 
-      {/* specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK10): "Zurück zum Projekt"
-          entfaellt hier ersatzlos - die Kopfzeile traegt die Projektnavigation jetzt auf jeder
-          Projektseite, /curate eingeschlossen (AK2). */}
+      {/* "Zurück zum Projekt" entfaellt hier ersatzlos - die Kopfzeile traegt die
+          Projektnavigation auf jeder Projektseite, /curate eingeschlossen. */}
     </div>
   )
 }

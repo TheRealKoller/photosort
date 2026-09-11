@@ -7,9 +7,8 @@ export interface PipelineStepDefinition {
   label: string
 }
 
-// Einzige Quelle der Wahrheit fuer Anzeigereihenfolge UND Routing-Zuordnung
-// (specs/features/0042-automatisierter-flow-stepper-detailseiten.md, Architektur-Abschnitt) -
-// sowohl der Stepper (Anzeigereihenfolge) als auch PipelineStepView (Komponenten-Zuordnung) und
+// Einzige Quelle der Wahrheit fuer Anzeigereihenfolge UND Routing-Zuordnung - sowohl der Stepper
+// (Anzeigereihenfolge) als auch PipelineStepView (Komponenten-Zuordnung) und
 // App.tsx (Routing-Erzeugung analog zum bestehenden PROJECT_ROUTES-Muster) leiten sich aus dieser
 // Liste ab, statt die fuenf IDs an mehreren Stellen unabhaengig zu wiederholen.
 export const PIPELINE_STEPS: readonly PipelineStepDefinition[] = [
@@ -32,7 +31,7 @@ export function isStepId(value: string): value is StepId {
 
 /**
  * Leitet den vollstaendigen Pipeline-Fortschritt ausschliesslich aus bereits vorhandenen
- * `ProjectOut`-Feldern ab (Akzeptanzkriterium 3 der Spec 0042) - 1:1 aus dem bisherigen,
+ * `ProjectOut`-Feldern ab - 1:1 aus dem bisherigen,
  * produktiven Gating-Verhalten von ProjectDetailPage.tsx uebernommen (siehe dortige, jetzt
  * entfernte isGateSectionActive/isCriteriaGateDisabled/isCurationAvailable-Ableitungen), keine
  * neue/strengere Logik. Kein Seiteneffekt, kein Fetch (analog utils/timeOfDay.ts,
@@ -121,8 +120,7 @@ export interface StepProgress {
 }
 
 /**
- * Fuellung des Fortschrittsbalkens unter der Schrittleiste
- * (specs/features/0387-schrittleiste-fortschritt.md, Architektur-Abschnitt 4).
+ * Fuellung des Fortschrittsbalkens unter der Schrittleiste.
  *
  * REINE FUNKTION STATT AUSDRUCK IM JSX (Muster wie computeStepStates/sortCategoryKeys): Der
  * Balken ist ein natives `<progress value max>`, ein berechneter Prozentwert liesse sich weder

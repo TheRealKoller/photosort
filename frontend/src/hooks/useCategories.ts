@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { listCategories } from '../api/categories'
 
 /**
- * Laedt das feste Kategorien-Set einmal und cacht es langlebig (UI/UX-Abschnitt der Spec 0289).
+ * Laedt das feste Kategorien-Set einmal und cacht es langlebig.
  *
  * `staleTime: Infinity` + `gcTime: Infinity`: das Set aendert sich ausschliesslich durch ein
  * Server-Deployment, nicht zur Laufzeit - ein Refetch beim Fenster-Fokus oder beim Mount einer

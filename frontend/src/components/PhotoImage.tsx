@@ -20,8 +20,8 @@ type PhotoImageState =
   | { status: 'error' }
 
 /**
- * Laedt ein Foto-Bild authentifiziert (siehe api/client.ts::apiFetchBlob) und deckt die vier in
- * specs/architecture/0004-design-system.md vorgesehenen Zustaende ab: Ladend, fertig geladen,
+ * Laedt ein Foto-Bild authentifiziert (siehe api/client.ts::apiFetchBlob) und deckt die vier vom
+ * Design-System vorgesehenen Zustaende ab: Ladend, fertig geladen,
  * Platzhalter (Backend liefert 404, weil der Worker die Variante noch nicht erzeugt hat) und
  * Fehler (jede andere Fehlerantwort). Object-URLs werden beim Unmount bzw. bei
  * photoId/variant-Wechsel wieder freigegeben, um keine Blob-URLs zu leaken.
@@ -75,7 +75,7 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
       <div
         // Platzhalterflaeche: dekorative Flaeche unmittelbar auf dem Grund. `bg-border/60` war
         // doppelt problematisch - unsichtbar (1.45:1 vor der Abdunklung) und ueber den
-        // Deckkraft-Modifikator statisch nicht nachrechenbar (Spec 0321).
+        // Deckkraft-Modifikator statisch nicht nachrechenbar.
         className={cn(
           'flex items-center justify-center rounded-md bg-separator text-xs text-text',
           className,
@@ -92,7 +92,7 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
         className={cn(
           // Toast-Konstruktion des Boards (Flaeche `--elevated`, farbiger 1px-Rand) statt
           // zweier Deckkraft-Toenungen: ueber einer Deckkraft-Tinte ist der Kontrast statisch
-          // nicht nachrechenbar und bliebe damit dauerhaft ungeprueft (Spec 0321).
+          // nicht nachrechenbar und bliebe damit dauerhaft ungeprueft.
           'flex items-center justify-center rounded-md border border-status-failed bg-elevated px-2 text-center text-xs text-text-h',
           className,
         )}

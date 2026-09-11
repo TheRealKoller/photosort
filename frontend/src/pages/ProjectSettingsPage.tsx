@@ -10,12 +10,10 @@ import { Switch } from '../components/ui/switch'
 import { useProjectQuery, useSetCloudVisionConsentMutation } from '../hooks/useProjects'
 
 /**
- * Erste dedizierte Projekteinstellungs-Seite im Projekt (specs/features/0047-sehenswuerdigkeit-
- * erkennung-cloud-vision-api.md, UI/UX-Abschnitt) - Toggle-Switch fuer die projektweite Cloud-
- * Bilderkennungs-Einwilligung + Info-Popover, das den Cloud-Versand erklaert. Label/Erklaertext
- * seit specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md auf
- * "Cloud-Bilderkennung" erweitert (reine Textpflege, kein neues UI-Element) - derselbe Schalter
- * gated ab sofort zusaetzlich die neue Remote-Kategorie-Klassifizierung.
+ * Erste dedizierte Projekteinstellungs-Seite im Projekt - Toggle-Switch fuer die projektweite
+ * Cloud-Bilderkennungs-Einwilligung + Info-Popover, das den Cloud-Versand erklaert.
+ * Label/Erklaertext lauten auf "Cloud-Bilderkennung" - derselbe Schalter gated zusaetzlich die
+ * Remote-Kategorie-Klassifizierung.
  *
  * Bewusst OHNE die geraetespezifische Hover-Auto-Close-Logik von CriterionDetailsPopover.tsx
  * (technische Detailentscheidung der Umsetzung): dieses Popover sitzt an einer einzelnen
@@ -119,8 +117,8 @@ export function ProjectSettingsPage() {
         </div>
       </div>
 
-      {/* GEFAHRENZONE (specs/features/0044-projekte-loeschen.md), letztes Kind des gap-6-
-          Containers. Bewusst hier und nicht in der Projektliste: die Namenseingabe als Huerde
+      {/* GEFAHRENZONE, letztes Kind des gap-6-Containers. Bewusst hier und nicht in der
+          Projektliste: die Namenseingabe als Huerde
           setzt voraus, dass man weiss, welches Projekt man vor sich hat - eine Liste ist eine
           Ueberflieg-Oberflaeche und der schlechtere Ort fuer eine irreversible Aktion. Die
           Einstellungsseite liegt als Querschnittsansicht vollstaendig ausserhalb des Arbeitspfads,
@@ -155,7 +153,7 @@ export function ProjectSettingsPage() {
         </div>
       </section>
 
-      {/* Nur gerendert, solange er offen ist (Copilot-Fund, PR #351). Das Grundelement gibt bei
+      {/* Nur gerendert, solange er offen ist. Das Grundelement gibt bei
           `open=false` zwar `null` zurueck, aber DeleteProjectDialog selbst blieb dabei gemountet -
           und mit ihm seine getippte Bestaetigung: wer den Namen einmal vollstaendig tippte und
           abbrach, fand die Loeschen-Schaltflaeche beim naechsten Oeffnen sofort freigeschaltet.

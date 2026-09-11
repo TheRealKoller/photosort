@@ -13,10 +13,8 @@ interface QualityMeterProps {
 }
 
 /**
- * Grobe, verstaendliche 3-Stufen-Qualitaets-Einordnung statt eines Rohwerts
- * (specs/features/0024-top-photo-selection-category-mix.md, UI/UX-Abschnitt "Grobe Qualitaets-
- * Einordnung statt Rohwert") - bewusst kein Stern-Symbol (Kollision mit dem `favorite`-★) und keine
- * Prozess-Status-Farbe (Qualitaet ist weder Erfolg noch Fehler). Das Drei-Punkte-Meter ist rein
+ * Grobe, verstaendliche 3-Stufen-Qualitaets-Einordnung statt eines Rohwerts - bewusst kein
+ * Stern-Symbol (Kollision mit dem `favorite`-★) und keine Prozess-Status-Farbe (Qualitaet ist weder Erfolg noch Fehler). Das Drei-Punkte-Meter ist rein
  * dekorativ (`aria-hidden`), der ausgeschriebene Stufenname daneben ist der eigentliche,
  * screenreader-sichtbare Text (Barrierefreiheits-Grundsatz "Information nie nur ueber Farbe/Form").
  * Nur in der Detailansicht verwendet, nicht auf der Grid-Kachel.

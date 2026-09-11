@@ -3,8 +3,7 @@ import type { ComponentProps } from 'react'
 
 import { cn } from '../../lib/utils'
 
-// Duenner Radix-Wrapper (specs/features/0040-bewertungsdetails-info-popover.md, Architektur-
-// Abschnitt) - erste Verwendung von @radix-ui/react-popover im Projekt (bisher nur
+// Duenner Radix-Wrapper - erste Verwendung von @radix-ui/react-popover im Projekt (bisher nur
 // @radix-ui/react-slot fuer `asChild`-Komposition, siehe ui/button.tsx). Bewusst Popover statt
 // Tooltip: das ARIA-Tooltip-Pattern ist hover/focus-only konzipiert und oeffnet sich nicht per
 // Tap, Radix Popover hat einen echten Button-Trigger, der nativ per Tap funktioniert. Enthaelt
@@ -20,13 +19,12 @@ export const PopoverClose = PopoverPrimitive.Close
 // Rueckmeldung, wohin der Fokus gesprungen ist - und eine outline-unterdrueckende Utility liegt
 // in einer spaeteren Cascade Layer als die globale Fokusregel, wuerde sie also gewinnen.
 //
-// Board-Werte (specs/architecture/0005-board-dark-utility-register.md Abschnitt 5/6): Radius 8px,
+// Board-Werte: Radius 8px,
 // Flaeche `--elevated`, flach. Das Popover rueckt damit von `--surface` auf `--elevated` - es
 // liest so als aufgesetzte Ebene und nicht als weitere Karte. Der frueher hier gesetzte Schatten
 // entfaellt ersatzlos: Tiefe tragen die vier Flaechenstufen.
 //
-// `ref` als normale Prop (React 19, kein `forwardRef` noetig, specs/features/0041-
-// bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md, Architektur-Abschnitt) - laesst
+// `ref` als normale Prop (React 19, kein `forwardRef` noetig) - laesst
 // CriterionDetailsPopover.tsx einen contentRef an den tatsaechlichen DOM-Knoten binden, fuer den
 // Ref-basierten Grace-Bereich-Check des Hover-Auto-Close ueber die Portal-Grenze hinweg. Kein
 // eigener Unit-Test hier (Testkonzept Punkt 7, "duenne generische Primitive") - ein kaputtes
@@ -44,7 +42,7 @@ export function PopoverContent({
         ref={ref}
         sideOffset={sideOffset}
         className={cn(
-          // HOEHENSCHRANKE ZWEISTUFIG (Befund aus dem e2e-Lauf zu Spec 0321): `max-h-[60vh]`
+          // HOEHENSCHRANKE ZWEISTUFIG: `max-h-[60vh]`
           // allein ist eine Schranke gegen den VIEWPORT, keine gegen den tatsaechlich
           // verfuegbaren Platz. Sobald der Trigger so steht, dass weder ueber noch unter ihm 60vh
           // frei sind - seit die Foto-Karte einen Kartenkoerper hat, ist das bei 360px der

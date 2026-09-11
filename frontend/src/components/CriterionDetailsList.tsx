@@ -22,32 +22,31 @@ interface CriterionDetailsListProps {
   /** Die Zugehoerigkeit, um die es an dieser Anzeigestelle geht - in der Kuratierung die der
    * gerenderten Kachel, sonst die Hauptzugehoerigkeit. Traegt "Kategorie" und "Rang". */
   ranking: RankingOut | null
-  /** ALLE Zugehoerigkeiten des Fotos (specs/features/0300-nebenkategorien.md). Grundlage der
-   * Sektion "Kategorien dieses Fotos", die nur bei mehr als einer Zugehoerigkeit erscheint -
+  /** ALLE Zugehoerigkeiten des Fotos. Grundlage der Sektion "Kategorien dieses Fotos", die nur
+   * bei mehr als einer Zugehoerigkeit erscheint -
    * ohne Nebenkategorien ist die Oberflaeche von heute nicht zu unterscheiden. Default `[]`,
    * damit bestehende Aufrufer unveraendert weiterlaufen. */
   rankings?: RankingOut[]
   suggestion: SuggestionOut | null
-  // Blendet die Ausschuss-Gruppe unbedingt aus, unabhaengig von `suggestion` (Akzeptanzkriterium
-  // 6, specs/features/0041-bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md) -
-  // die permanente Sektion in PhotoDetailPage.tsx reicht `suggestion` zwar ohnehin nicht durch,
+  // Blendet die Ausschuss-Gruppe unbedingt aus, unabhaengig von `suggestion` - die permanente
+  // Sektion in PhotoDetailPage.tsx reicht `suggestion` zwar ohnehin nicht durch,
   // dieses Flag ist trotzdem die alleinige, direkt getestete Absicherung gegen ein versehentliches
   // kuenftiges Durchreichen.
   showSuggestion: boolean
-  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt
-  // "Mehrfachkandidaten-Vergleich mit Override-Aktion" - alle sechs Props sind optional mit
+  // Mehrfachkandidaten-Vergleich mit Override-Aktion: alle sechs Props sind optional mit
   // neutralen Defaults, damit bestehende Aufrufer (die diese Props noch nicht kennen) unveraendert
   // weiterlaufen (Regressionspflicht): mit dem Default `categoryCandidates=[]` bleibt die neue
   // Gruppe immer ausgeblendet (0 <= 1 Kandidat), die bisherige einzeilige "Kategorie"-Anzeige
   // bleibt unveraendert sichtbar.
   categoryCandidates?: CategoryCandidateOut[]
-  /** Bis zu zwei frei formulierte Feinlabels (specs/features/0289-feste-kategorien.md) - reine
-   * Zusatzinformation am Foto, keine Kategorie. Ohne Feinlabels wird KEIN Platzhalter gerendert.
+  /** Bis zu zwei frei formulierte Feinlabels - reine Zusatzinformation am Foto, keine Kategorie.
+   * Ohne Feinlabels wird KEIN Platzhalter gerendert.
    *
    * SICHERHEITSHINWEIS: freier, extern erzeugter LLM-Text - ausschliesslich als regulaerer
    * React-Textknoten rendern (nie dangerouslySetInnerHTML, nie als HTML-String-Prop, nie in
-   * href/src/style). Das ist keine blosse Konvention, sondern die tragende Voraussetzung der
-   * localStorage-Token-Entscheidung (ADR 0005). */
+   * href/src/style). Das ist keine blosse Konvention, sondern die tragende Voraussetzung dafuer,
+   * dass das Session-Token in `localStorage` liegen darf. Bricht in
+   * `CriterionDetailsList.test.tsx > never renders a fine label via dangerouslySetInnerHTML`. */
   fineLabels?: FineLabelOut[]
   /** Das ueber `GET /categories` geladene feste Set - Grundlage von Anzeigenamen, Reihenfolge und
    * der "Alle Kategorien"-Auswahl. Leer, solange es laedt (generischer Fallback greift). */
@@ -67,8 +66,8 @@ interface CriterionDetailsListProps {
   /** Ob die "Zuruecksetzen"-Anfrage fuer den aktuellen Override-Ziel-Kandidaten laeuft - es gibt
    * nur genau ein Override-Ziel gleichzeitig, deshalb reicht ein einzelnes Flag statt eines Keys. */
   resetPending?: boolean
-  /** Welcher Teil der Aufschluesselung gerendert wird (specs/features/0370-bedienelemente-
-   * zuerst.md). `'all'` (Vorgabe) ist die unveraenderte, verschraenkte Gesamtdarstellung des
+  /** Welcher Teil der Aufschluesselung gerendert wird. `'all'` (Vorgabe) ist die unveraenderte,
+   * verschraenkte Gesamtdarstellung des
    * Popovers; `'controls'` und `'info'` rendern die beiden Teilmengen, aus denen die
    * Einzelbildansicht ihre neue Reihenfolge zusammensetzt (Bedienelemente vor Information).
    *
@@ -77,12 +76,12 @@ interface CriterionDetailsListProps {
   part?: CriterionDetailsPart
 }
 
-/** specs/features/0370-bedienelemente-zuerst.md: Bedienteil, Informationsteil oder beides. */
+/** Bedienteil, Informationsteil oder beides. */
 export type CriterionDetailsPart = 'all' | 'controls' | 'info'
 
 /**
  * Vorbedingung des Bedienteils, als EINZIGE Quelle der Wahrheit exportiert
- * (specs/features/0370-bedienelemente-zuerst.md): Ohne sie rendert `part='controls'` `null`, und
+ * Ohne sie rendert `part='controls'` `null`, und
  * die Seite laesst ihren Wrapper weg. Zwei getrennte Bedingungen an zwei Stellen ergaeben sonst
  * einen leeren Flex-Container, der im `gap-4` der Seite eine sichtbare Luecke erzeugt.
  *
@@ -97,8 +96,7 @@ export function hasCategoryControls(
   return criterionScores.length > 0 && ranking !== null
 }
 
-// specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md,
-// Architektur-Entscheidung 1: die Block-Zuordnung folgt AUSSCHLIESSLICH dem Registry-Flag
+// Die Block-Zuordnung folgt AUSSCHLIESSLICH dem Registry-Flag
 // `category_eligible` aus der API-Antwort - hier wird bewusst KEINE Key-Liste gepflegt, sonst
 // liefen Backend-Registry und Frontend beim naechsten neuen Kriterium auseinander. Bewusst
 // ordnungserhaltend (zweimal `filter`, kein Sortieren): die Reihenfolge innerhalb eines Blocks
@@ -116,7 +114,7 @@ function partitionByCategoryEligibility(criterionScores: CriterionScoreOut[]): {
 
 /**
  * Die Modell-Selbsteinschaetzung als sekundaerer Text unmittelbar rechts neben dem
- * Kategorienamen (specs/features/0299-kategorie-konfidenz-anzeigen.md, UI/UX-Abschnitt).
+ * Kategorienamen.
  *
  * `null` rendert NICHTS - kein Platzhalter, kein Strich, kein `0%`. Die Luecke ist das korrekte
  * Signal: sie zeigt, dass es zu diesem Schluessel gar keine Modellaussage gibt, und ein
@@ -156,8 +154,8 @@ function ConfidenceExplanation() {
   )
 }
 
-/* specs/features/0300-nebenkategorien.md: die Rolle einer Zugehoerigkeit als TEXT. Die Begriffe
- * folgen der Story ("Haupt"/"Neben", nicht "Primaer"/"Sekundaer") und stehen hier einmal, damit
+/* Die Rolle einer Zugehoerigkeit als TEXT. Die Begriffe lauten "Haupt"/"Neben", nicht
+ * "Primaer"/"Sekundaer", und stehen hier einmal, damit
  * Rollenzeile und Sektion nicht auseinanderlaufen koennen. */
 const PRIMARY_ROLE_LABEL = 'Haupt'
 const SECONDARY_ROLE_LABEL = 'Neben'
@@ -185,8 +183,8 @@ function buildCategoryCandidateRows(
   categoryCandidates: CategoryCandidateOut[],
   categoryOverride: CategoryKey | null,
 ): CategoryCandidateRow[] {
-  // specs/features/0289-feste-kategorien.md: die Reihenfolge kommt seit dieser Spec bereits vom
-  // Server (Registry-Anzeigereihenfolge) - hier wird bewusst NICHT mehr umsortiert. Das frueher
+  // Die Reihenfolge kommt bereits vom Server (Registry-Anzeigereihenfolge) - hier wird bewusst
+  // NICHT umsortiert. Das frueher
   // hier verwendete Score-Sortierkriterium ist mit dem `score`-Feld entfallen: die Auswahl
   // entscheidet die feste Vorrangreihenfolge im Backend, ein Zahlenvergleich in der Oberflaeche
   // haette keine Entsprechung mehr in der Logik.
@@ -210,9 +208,8 @@ function buildCategoryCandidateRows(
 
 /**
  * Reine Praesentationskomponente mit den Bewertungsdetails eines Fotos - extrahiert aus dem
- * bisher inline in CriterionDetailsPopover.tsx liegenden `<dl>`-Markup
- * (specs/features/0041-bewertungsdetails-permanent-in-detailansicht-hover-auto-close.md,
- * Architektur-Abschnitt), damit sowohl das Popover (Grid/Kuratierung) als auch die permanente
+ * bisher inline in CriterionDetailsPopover.tsx liegenden `<dl>`-Markup, damit sowohl das Popover
+ * (Grid/Kuratierung) als auch die permanente
  * Sektion in PhotoDetailPage.tsx dieselbe Darstellung/Formatierungslogik teilen (DRY,
  * Akzeptanzkriterium 5/13). Prueft selbst NICHT, ob `criterionScores` leer ist - die Entscheidung,
  * den Bereich bei leerer Liste gar nicht erst einzubinden, bleibt bewusst bei den jeweiligen
@@ -220,11 +217,10 @@ function buildCategoryCandidateRows(
  * ohnehin schon selbst pruefen muessen (Popover fuer den Trigger, PhotoDetailPage.tsx fuer den
  * Abschnitts-Rahmen).
  *
- * Gliedert die Kriterien in zwei beschriftete Bloecke "Qualitaet"/"Kategorien"
- * (specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md): ein Block ohne Inhalt
- * wird komplett weggelassen (keine Ueberschrift, kein leeres `<dl>`), bei komplett leerer Eingabe
- * rendert die Komponente nur noch den aeusseren Container ohne jedes `dt`/`dd` - der bis Spec 0209
- * hier dokumentierte Sonderfall "leeres `<dl>`" gilt nicht mehr. Der Ausschuss-Vorschlag bleibt
+ * Gliedert die Kriterien in zwei beschriftete Bloecke "Qualitaet"/"Kategorien": ein Block ohne
+ * Inhalt wird komplett weggelassen (keine Ueberschrift, kein leeres `<dl>`),
+ * bei komplett leerer Eingabe rendert die Komponente nur noch den aeusseren Container ohne jedes
+ * `dt`/`dd`; einen Sonderfall "leeres `<dl>`" gibt es nicht. Der Ausschuss-Vorschlag bleibt
  * ein dritter, eigener Bereich ausserhalb beider Bloecke und ohne eigene Ueberschrift.
  */
 export function CriterionDetailsList({
@@ -246,18 +242,18 @@ export function CriterionDetailsList({
   resetPending = false,
   part = 'all',
 }: CriterionDetailsListProps) {
-  // specs/features/0370-bedienelemente-zuerst.md: JEDES bestehende Sichtbarkeitsgate bleibt
-  // woertlich erhalten und bekommt nur den passenden Teil-Faktor dazu. Fuer `part='all'` ergibt
+  // JEDES bestehende Sichtbarkeitsgate bleibt woertlich erhalten und bekommt nur den passenden
+  // Teil-Faktor dazu. Fuer `part='all'` ergibt
   // damit jedes Gate wieder genau die heutige Bedingung - das Popover ist nachweislich unberuehrt.
   const showControlsPart = part !== 'info'
   const showInfoPart = part !== 'controls'
   const candidateRows = buildCategoryCandidateRows(categoryCandidates, categoryOverride)
-  // specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 24: bei genau einer Zugehoerigkeit
-  // (und ohne jede) sieht die Oberflaeche exakt wie heute aus - weder Rollenzeile noch Sektion.
+  // Bei genau einer Zugehoerigkeit (und ohne jede) sieht die Oberflaeche aus wie ohne
+  // Nebenkategorien - weder Rollenzeile noch Sektion.
   const showMembershipRoles = rankings.length > 1
   const showCandidateGroup = candidateRows.length > 1
-  // specs/features/0299-kategorie-konfidenz-anzeigen.md: die Zahl der einzeiligen Anzeige haengt
-  // am angezeigten Schluessel (`ranking.category_key`), nicht am einzigen Kandidaten - beide
+  // Die Zahl der einzeiligen Anzeige haengt am angezeigten Schluessel (`ranking.category_key`),
+  // nicht am einzigen Kandidaten - beide
   // koennen auseinanderfallen, z.B. wenn die Rangfolge aus einem aelteren Lauf stammt.
   const singleLineConfidence =
     categoryCandidates.find((c) => c.category_key === ranking?.category_key)?.confidence ?? null
@@ -279,8 +275,8 @@ export function CriterionDetailsList({
   const showSuggestionGroup = showInfoPart && showSuggestion && suggestion !== null
   // Ein einzelnes useId() mit Suffixen statt zweier Aufrufe (React-Doku-Muster fuer mehrere
   // zusammengehoerige Ids) - noetig, weil zwei Instanzen gleichzeitig im DOM stehen koennen
-  // (Popover ueber der permanenten Sektion, seit Spec 0370 zusaetzlich Bedien- und
-  // Informationsteil derselben Seite) und feste Ids dann kollidieren wuerden.
+  // (Popover ueber der permanenten Sektion, dazu Bedien- und Informationsteil derselben Seite)
+  // und feste Ids dann kollidieren wuerden.
   const blockId = useId()
   const qualityHeadingId = `${blockId}-quality`
   const categoriesHeadingId = `${blockId}-categories`
@@ -302,13 +298,12 @@ export function CriterionDetailsList({
     // Der groessere Abstand vor der Kandidaten-/Rang-Gruppe sitzt als Margin an der
     // Gruppe selbst statt als `gap-3` am <dl>: so haengen die Kriterienzeilen in beiden
     // Bloecken auf derselben Ebene (<dl> > Zeilen-<div> > dt/dd) statt im
-    // Kategorien-Block eine Wrapper-<div>-Ebene tiefer (Copilot-Review-Fund auf PR
-    // #277). `mt-2` (0.375rem) addiert sich zum `gap-2` des <dl> auf exakt die
+    // Kategorien-Block eine Wrapper-<div>-Ebene tiefer. `mt-2` (0.375rem) addiert sich zum
+    // `gap-2` des <dl> auf exakt die
     // 0.75rem des vorherigen `gap-3` - und entfaellt, wenn keine Kriterienzeile
     // vorausgeht, weil dann auch vorher kein Abstand gerendert wurde (im Bedienteil also
     // immer, dort steht nie eine Kriterienzeile davor). Die Darstellung bleibt damit in jedem
-    // Fall pixelgleich (Spec 0209, Akzeptanzkriterium 6: reine Umgruppierung, keine visuelle
-    // Aenderung).
+    // Fall pixelgleich: reine Umgruppierung, keine visuelle Aenderung.
     <div className={cn('flex flex-col gap-2', showInfoPart && categoryScores.length > 0 && 'mt-2')}>
       {showControlsPart &&
         (showCandidateGroup ? (
@@ -393,8 +388,7 @@ export function CriterionDetailsList({
             </dd>
           </div>
         ))}
-      {/* specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 13: die Rolle AN
-          DIESER STELLE - in der Kuratierung die der gerenderten Kachel. Sie kommt
+      {/* Die Rolle AN DIESER STELLE - in der Kuratierung die der gerenderten Kachel. Sie kommt
           ausschliesslich aus `is_primary`, nie aus einem Zahlenvergleich, und steht als
           TEXT da, nicht als Farbe. Ohne Nebenkategorien (genau eine Zugehoerigkeit)
           erscheint die Zeile gar nicht - die Oberflaeche sieht dann exakt wie bisher
@@ -417,8 +411,7 @@ export function CriterionDetailsList({
           </dd>
         </div>
       )}
-      {/* specs/features/0289-feste-kategorien.md, UI/UX-Abschnitt: die
-          "Alle Kategorien"-Auswahl ERGAENZT die Kandidatenliste, sie ersetzt sie nicht -
+      {/* Die "Alle Kategorien"-Auswahl ERGAENZT die Kandidatenliste, sie ersetzt sie nicht -
           der Nutzer sieht weiterhin, was das System erkannt hat, bevor er es
           uebersteuert. Nur eingebunden, wenn ein Uebersteuern ueberhaupt vorgesehen ist
           (Aufrufer reicht `onOverrideCategory` durch). */}
@@ -448,15 +441,14 @@ export function CriterionDetailsList({
           categoryScores.map((score) => <CriterionRow key={score.criterion_key} score={score} />)}
         {categoryRankGroup}
       </dl>
-      {/* Feinlabel-Chips (specs/features/0289-feste-kategorien.md, UI/UX-Abschnitt): raeumlich
-          deutlich von der Kategorie getrennt, kompakter und in einem anderen Ton
+      {/* Feinlabel-Chips: raeumlich deutlich von der Kategorie getrennt, kompakter und in einem anderen Ton
           (`suggested`-Variante des Akzent-Chips) - sie sind Zusatzinformation, keine
           kategoriale Einordnung. Bewusst OHNE Icon/Symbol, damit sie nicht mit den
           Bewertungs-Chips verwechselt werden. Ohne Feinlabels wird KEIN Platzhalter
           gerendert - der Bereich entfaellt ersatzlos. Sichtbar auch bei "Nicht erkannt". */}
-      {/* specs/features/0300-nebenkategorien.md, UI/UX-Abschnitt: die Kategorien DES FOTOS
-          mit ihrer jeweiligen Rolle - sichtbar nur, wenn es tatsaechlich mehr als eine gibt.
-          Die Konfidenzzahlen aus Spec 0299 werden hier NICHT wiederholt; sie stehen
+      {/* Die Kategorien DES FOTOS mit ihrer jeweiligen Rolle - sichtbar nur, wenn es
+          tatsaechlich mehr als eine gibt. Die Konfidenzzahlen werden hier NICHT wiederholt; sie
+          stehen
           unveraendert in der Kandidatenliste darueber. */}
       {showInfoPart && showMembershipRoles && (
         <div className="mt-2 flex flex-col gap-2">
@@ -502,8 +494,7 @@ export function CriterionDetailsList({
       {showQualityBlock && (
         // role="group" + aria-labelledby am Wrapper, NICHT am <dl>: ein <dl> hat in dieser
         // Toolchain keine namensfaehige Rolle, die Beschriftung kaeme dort weder im
-        // Accessibility-Tree noch in einer Rollenabfrage an (Spec 0209,
-        // Architektur-Entscheidung 3).
+        // Accessibility-Tree noch in einer Rollenabfrage an.
         <div role="group" aria-labelledby={qualityHeadingId} className="flex flex-col gap-2">
           <h3 id={qualityHeadingId} className="text-xs font-medium text-text-h">
             Qualität
@@ -525,17 +516,16 @@ export function CriterionDetailsList({
           </div>
         ) : (
           /* Der Bedienteil (`part='controls'`) rendert denselben Inhalt OHNE <h3> und ohne
-             role="group"/aria-labelledby (specs/features/0370-bedienelemente-zuerst.md): zwei
-             gleichlautende "Kategorien"-Ueberschriften auf einer Seite waeren mehrdeutig, eine neu
-             erfundene Ueberschrift eine von Akzeptanzkriterium 4 ausgeschlossene
+             role="group"/aria-labelledby: zwei gleichlautende "Kategorien"-Ueberschriften auf
+             einer Seite waeren mehrdeutig, eine neu erfundene Ueberschrift eine ausgeschlossene
              Beschriftungsaenderung, und eine unbeschriftete Gruppe ist im Accessibility-Tree
              wertlos. Seine Elemente sind einzeln beschriftet ("Kategorie-Kandidaten"/"Kategorie"
              als <dt>, "Alle Kategorien" als <label>). Das <dl> steckt in
              `categoriesBlockContent` - ohne es stuenden dt/dd hier ohne <dl>-Vorfahren. */
           <div className="flex flex-col gap-2">{categoriesBlockContent}</div>
         ))}
-      {/* Dritter, eigener Bereich ausserhalb beider Bloecke und bewusst OHNE eigene Ueberschrift
-          (Spec 0209, Akzeptanzkriterium 8) - erscheint auch dann, wenn beide Bloecke leer sind. */}
+      {/* Dritter, eigener Bereich ausserhalb beider Bloecke und bewusst OHNE eigene
+          Ueberschrift - erscheint auch dann, wenn beide Bloecke leer sind. */}
       {showSuggestionGroup && (
         <dl className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between gap-3">

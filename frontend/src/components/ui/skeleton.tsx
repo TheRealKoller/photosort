@@ -3,7 +3,7 @@ import type { HTMLAttributes } from 'react'
 import { cn } from '../../lib/utils'
 
 /**
- * Skeleton-Ladezustand (specs/architecture/0004-design-system.md): Platzhalterbloecke mit dezentem
+ * Skeleton-Ladezustand: Platzhalterbloecke mit dezentem
  * Puls - kein Shimmer-Lauflicht (unnoetige Bewegungsunruhe beim zuegigen Durchsehen vieler Fotos).
  * `prefers-reduced-motion` respektiert Tailwinds `motion-reduce:animate-none`.
  *

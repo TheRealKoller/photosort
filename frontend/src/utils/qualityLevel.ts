@@ -1,9 +1,7 @@
 export type QualityLevel = 'low' | 'medium' | 'high'
 
-// Grobe, verstaendliche 3-Stufen-Einordnung statt eines Rohwerts (urspruenglich specs/features/
-// 0024-top-photo-selection-category-mix.md, UI/UX-Abschnitt "Grobe Qualitaets-Einordnung statt
-// Rohwert") - seit specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md aus
-// PhotoRanking.rank_score abgeleitet statt aus dem entfallenen local_quality_score. rank_score
+// Grobe, verstaendliche 3-Stufen-Einordnung statt eines Rohwerts - aus PhotoRanking.rank_score
+// abgeleitet statt aus dem entfallenen local_quality_score. rank_score
 // ist bereits auf [0, 1] normiert (gewichteter Mittelwert bereits normierter Kriterien-Werte,
 // backend ranking.py::rank_photos), die Schwellwerte sind daher ebenfalls auf dieser Skala.
 // Technische Detailentscheidung der Umsetzung, nicht gegen einen echten Fotokorpus kalibriert

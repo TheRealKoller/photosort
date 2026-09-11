@@ -5,7 +5,7 @@ import { UNAUTHORIZED_EVENT } from '../api/client'
 
 /**
  * Reagiert auf das globale photosort:unauthorized-Event (ausgeloest von api/client.ts bei
- * einem 401 auf einem geschuetzten Endpunkt - siehe specs/features/0006-auth.md) und navigiert
+ * einem 401 auf einem geschuetzten Endpunkt) und navigiert
  * zu /login mit state.reason = "expired", damit LoginPage einen neutralen
  * Sitzungs-abgelaufen-Hinweis statt eines Fehlerbanners zeigen kann.
  */

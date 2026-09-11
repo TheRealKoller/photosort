@@ -18,8 +18,8 @@ export const STEP_MARKER_AUSPRAEGUNGEN: readonly StepMarkerAuspraegung[] = [
 ]
 
 /*
- * DIE ERSTE VERWENDUNG DES `group`-MUSTERS IM PROJEKT (specs/features/0387-schrittleiste-
- * fortschritt.md, Architektur-Abschnitt 6) - deshalb hier ausdruecklich erklaert: Der Marker ist
+ * DIE ERSTE VERWENDUNG DES `group`-MUSTERS IM PROJEKT - deshalb hier ausdruecklich erklaert: Der
+ * Marker ist
  * NICHT das Bedienelement. Ueberfahren und Gedruecktwerden passieren am umschliessenden `<Link>`
  * bzw. `<button>` in Stepper.tsx, das dafuer `group` traegt; der Marker drueckt sie als
  * `group-hover:`/`group-active:` aus. Der Zustandstraeger ist damit ueber zwei Dateien verteilt -
@@ -77,8 +77,8 @@ const AUSPRAEGUNG_CLASSES: Record<StepMarkerAuspraegung, string> = {
 }
 
 /**
- * Das Schloss ist bewusst KEIN dreizehntes Zeichen des Symbolsatzes (Architektur-Abschnitt 5 der
- * Spec 0387): der Zwoelfer-Satz ist eine belegte Ableitung aus dem Board, ein dreizehntes Zeichen
+ * Das Schloss ist bewusst KEIN dreizehntes Zeichen des Symbolsatzes: der Zwoelfer-Satz ist eine
+ * belegte Ableitung aus dem Board, ein dreizehntes Zeichen
  * haette diesen Beleg nicht. Es bleibt deshalb ein dateilokales SVG und ist in `ui/icon.tsx` als
  * benannte Luecke des Satzes gefuehrt.
  */

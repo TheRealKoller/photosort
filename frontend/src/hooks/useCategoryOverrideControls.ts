@@ -4,8 +4,8 @@ import type { CategoryKey } from '../api/types'
 import { useDeleteCategoryOverrideMutation, useSetCategoryOverrideMutation } from './usePhotos'
 
 /**
- * Geteilte Steuerungslogik fuer den Kategorie-Override (specs/features/0055-remote-kategorie-
- * klassifizierung-mit-kostenschaetzung.md) - EIN Mutation-Paar pro Seite (nicht pro Foto/Kachel),
+ * Geteilte Steuerungslogik fuer den Kategorie-Override - EIN Mutation-Paar pro Seite (nicht pro
+ * Foto/Kachel),
  * da eine Seite potenziell Dutzende Kacheln gleichzeitig rendert. Verfolgt lokal, WELCHES Foto x
  * Kandidat gerade eine laufende Anfrage hat, damit nur der tatsaechlich angeklickte Button busy
  * wird (Design-System: "blockiert nicht die uebrige Liste") statt aller Buttons auf der Seite.

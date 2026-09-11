@@ -1,7 +1,7 @@
 export type ProcessStatus = 'running' | 'success' | 'failed'
 
 /**
- * Prozess-Status-Punkt-Farben (specs/architecture/0004-design-system.md) - geteilt zwischen
+ * Prozess-Status-Punkt-Farben - geteilt zwischen
  * ProjectListPage und ProjectDetailPage, damit dieselbe running/success/failed-Semantik nicht an
  * zwei Stellen unterschiedlich implementiert wird (Architect-/UX-Review-Fund, Branch
  * feature/0012-visual-redesign-views: ProjectDetailPage faerbte urspruenglich den sichtbaren

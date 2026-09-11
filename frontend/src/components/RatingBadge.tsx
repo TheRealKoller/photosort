@@ -12,8 +12,8 @@ const TONE_BY_STATUS: Record<RatingStatus, BadgeTone> = {
 }
 
 /*
- * Die drei Bewertungssymbole des Boards (specs/architecture/0005-board-dark-utility-register.md
- * Abschnitt 6: Favorit `star`, Album `book`, Aussortiert `x-circle`). Sie ersetzen die frueheren
+ * Die drei Bewertungssymbole des Boards (Favorit `star`, Album `book`, Aussortiert `x-circle`).
+ * Sie ersetzen die frueheren
  * Sonderzeichen ★/✓/✕.
  *
  * `book` fuer "Album-wuerdig" folgt dem Board und der ADR (0055 Punkt 6c nennt den achromatischen
@@ -28,8 +28,8 @@ const SYMBOLS: Record<RatingStatus, IconName> = {
   rejected: 'x-circle',
 }
 
-// Zahnrad-Praefix vor dem Stufensymbol fuer einen automatischen Vorschlag (Design-System-Ergaenzung
-// "Vorschlags-Badge", specs/features/0003-automatic-best-photo-selection.md): volle Fuellung = von
+// Zahnrad-Praefix vor dem Stufensymbol fuer einen automatischen Vorschlag
+// (Design-System-Ergaenzung "Vorschlags-Badge"): volle Fuellung = von
 // einem Menschen entschieden, getoente Flaeche mit farbigem Rand + Praefix = maschineller
 // Vorschlag, noch offen.
 const SUGGESTION_PREFIX: IconName = 'cog'
@@ -88,7 +88,7 @@ export function RatingBadge({ status, suggested = false, className }: RatingBadg
     >
       {suggested && <Icon name={SUGGESTION_PREFIX} size={14} />}
       <Icon name={SYMBOLS[status]} size={14} />
-      {/* Sichtbares Produktwort neben dem Symbol (Spec 0321, Board-Kennzeichen). Es ist die
+      {/* Sichtbares Produktwort neben dem Symbol (Board-Kennzeichen). Es ist die
           Haelfte der Graustufen-Zusage: Favorit und Album-wuerdig liegen achromatisch bei 1.08:1
           zueinander, ihre Unterscheidung traegt ausschliesslich ueber Wort und Symbolsilhouette.
           Der "Vorschlag:"-Praefix bleibt dem zugaenglichen Namen vorbehalten - sichtbar

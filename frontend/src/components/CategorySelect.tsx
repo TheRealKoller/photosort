@@ -29,8 +29,8 @@ interface CategorySelectProps {
 }
 
 /**
- * "Alle Kategorien"-Auswahl fuer die manuelle Uebersteuerung (specs/features/0289-feste-
- * kategorien.md, UI/UX-Abschnitt) - bietet ALLE 13 Eintraege des festen Sets an, unabhaengig
+ * "Alle Kategorien"-Auswahl fuer die manuelle Uebersteuerung - bietet ALLE 13 Eintraege des
+ * festen Sets an, unabhaengig
  * davon, was fuer dieses Foto erkannt wurde. Die bestehende "Kategorie-Kandidaten"-Gruppe bleibt
  * daneben als Erklaerung erhalten ("das hat das System erkannt"), sie wird nicht ersetzt.
  *

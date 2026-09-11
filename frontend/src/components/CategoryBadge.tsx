@@ -4,7 +4,7 @@ import { cn } from '../lib/utils'
 
 interface CategoryBadgeProps {
   categoryKey: CategoryKey
-  /** Das ueber `GET /categories` geladene Set (specs/features/0289-feste-kategorien.md) - liefert
+  /** Das ueber `GET /categories` geladene Set - liefert
    * Anzeigename und Kuerzel. Darf leer sein, solange das Set noch laedt; dann greift der
    * generische Fallback, das Badge bleibt lesbar statt leer. */
   categories: CategorySet
@@ -12,13 +12,12 @@ interface CategoryBadgeProps {
 }
 
 /*
- * Die dreizehn Chip-Farbpaare, geschluesselt nach `category_key`
- * (decisions/0055-dark-utility-register-fundament.md Punkt 6). Vollstaendig ausgeschriebene
+ * Die dreizehn Chip-Farbpaare, geschluesselt nach `category_key`. Vollstaendig ausgeschriebene
  * Klassennamen, kein Zusammenbauen per Template-String - Tailwind erkennt Utility-Klassen nur als
  * statische, vollstaendige Strings; dieselbe Regel wie in ui/badge.tsx, statisch erzwungen in
  * src/designSystem.contract.test.ts.
  *
- * DAS IST DIE TEIL-RUECKNAHME VON SPEC 0289. Dort wurde jede frontendseitige, nach `category_key`
+ * DAS IST EINE TEIL-RUECKNAHME. Zuvor wurde jede frontendseitige, nach `category_key`
  * geschluesselte Tabelle abgeschafft, weil Anzeigenamen zur Laufzeit vom Server kommen. Fuer
  * ANZEIGENAMEN bleibt das so (sie kommen weiterhin ueber `GET /categories`, siehe unten). Fuer
  * FARBEN entsteht hier eine neue solche Tabelle, weil der Server keine Farben liefert und auch
@@ -52,8 +51,8 @@ const CHIP_CLASSES: Readonly<Record<string, string>> = {
 const NEUTRAL_CHIP_CLASSES = CHIP_CLASSES.nicht_erkannt
 
 /**
- * Kategorie-Chip in der Board-Form (specs/architecture/0005-board-dark-utility-register.md
- * Abschnitt 6): Radius 16px, Polsterung 12/6px, Inter Semi-Bold 12px, GETOENTE Flaeche mit heller,
+ * Kategorie-Chip in der Board-Form: Radius 16px, Polsterung 12/6px, Inter Semi-Bold 12px,
+ * GETOENTE Flaeche mit heller,
  * bunter Schrift.
  *
  * Der strukturelle Gegensatz zum Bewertungs-Badge (voll GEFUELLTE Flaeche mit dunkler Tinte,
@@ -62,8 +61,8 @@ const NEUTRAL_CHIP_CLASSES = CHIP_CLASSES.nicht_erkannt
  * bestehenden Regel "Kategorie-Badge in der Gegenecke zur Rating-Badge" bleibt auf einer Kachel
  * ohne Nachdenken erkennbar, welches von beiden die Bewertung ist.
  *
- * Sichtbar sind drei Grossbuchstaben aus dem ANZEIGENAMEN (specs/features/0289-feste-
- * kategorien.md - ueber das feste Set kollisionsfrei), der vollstaendige Name steht als
+ * Sichtbar sind drei Grossbuchstaben aus dem ANZEIGENAMEN (ueber das feste Set kollisionsfrei),
+ * der vollstaendige Name steht als
  * `aria-label`/`title`. Die Namen kommen weiterhin zur Laufzeit vom Server; die Teil-Ruecknahme
  * von 0289 gilt ausschliesslich fuer Farben.
  */

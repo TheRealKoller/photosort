@@ -37,7 +37,7 @@ export function LoginPage() {
   })
 
   // Direkter Aufruf von /login bei bereits vorhandenem Token: sofortiger Redirect ohne
-  // Formular anzuzeigen (siehe specs/features/0006-auth.md).
+  // Formular anzuzeigen.
   if (getToken()) {
     return <Navigate to={redirectTarget} replace />
   }
@@ -76,7 +76,7 @@ export function LoginPage() {
             <label htmlFor="login-username" className="text-xs text-text">
               Benutzername
             </label>
-            {/* Die Feldhoehe kommt seit Spec 0321 aus dem Input-Primitiv (`h-11`, dritte
+            {/* Die Feldhoehe kommt aus dem Input-Primitiv (`h-11`, dritte
                 `h-11`-Kategorie: ein ersetztes Element traegt keine Pseudo-Elemente und loest
                 seine Trefferflaeche ausschliesslich ueber die sichtbare Zeilenhoehe). Die
                 frueheren 48px waren eine zusaetzliche, nirgends sonst vorkommende Stufe. */}

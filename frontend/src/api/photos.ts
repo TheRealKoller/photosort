@@ -11,9 +11,8 @@ export interface ListPhotosParams {
   ratingStatus?: RatingFilter
   limit?: number
   offset?: number
-  // Kategorie-Kuratierung (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md,
-  // seit specs/features/0357-voller-bildvorrat-kuratierung.md ohne Backfill) - wenn gesetzt,
-  // ersetzt dieser Query-Modus ratingStatus/limit/offset vollstaendig (eigenstaendige
+  // Kategorie-Kuratierung (ohne Backfill) - wenn gesetzt, ersetzt dieser Query-Modus
+  // ratingStatus/limit/offset vollstaendig (eigenstaendige
   // Kuratierungs-Ansicht, siehe backend api/photos.py::list_photos-Kommentar).
   topNPerCategory?: number
 }
@@ -51,8 +50,8 @@ export function listPhotos(
 }
 
 /**
- * Die weiteren Kandidaten EINER Partition (specs/features/0357-voller-bildvorrat-kuratierung.md,
- * ADR 0071 Entscheidung 5) - alles jenseits von `afterRank`, aufsteigend nach `rank_position`,
+ * Die weiteren Kandidaten EINER Partition - alles jenseits von `afterRank`, aufsteigend nach
+ * `rank_position`,
  * seitenweise. `total` der Antwort ist die RESTMENGE der Partition und damit unabhaengig von
  * `limit`/`offset`.
  *
@@ -91,8 +90,7 @@ export async function fetchPhotoImageBlobUrl(
   return URL.createObjectURL(blob)
 }
 
-// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
-// 6.3: der gesetzte Wert wird direkt zurueckgegeben (analog PUT /photos/{id}/rating).
+// Der gesetzte Wert wird direkt zurueckgegeben (analog PUT /photos/{id}/rating).
 export function setCategoryOverride(
   photoId: number,
   categoryKey: CategoryKey,

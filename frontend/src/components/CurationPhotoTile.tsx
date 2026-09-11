@@ -23,9 +23,9 @@ export interface CategoryOverrideControls {
 export interface CurationPhotoTileProps {
   photo: PhotoOut
   /**
-   * Die Zugehoerigkeit, unter der dieses Vorkommen steht. Seit
-   * specs/features/0300-nebenkategorien.md ist die Kachel NICHT mehr durch das Foto allein
-   * bestimmt: dasselbe Foto kann in zwei Kategorien stehen und traegt dort verschiedene Rollen.
+   * Die Zugehoerigkeit, unter der dieses Vorkommen steht. Die Kachel ist NICHT durch das Foto
+   * allein bestimmt: dasselbe Foto kann in zwei Kategorien stehen und traegt dort verschiedene
+   * Rollen.
    */
   ranking: RankingOut
   categories: CategoryOut[]
@@ -36,8 +36,7 @@ export interface CurationPhotoTileProps {
   /**
    * Die EIGENE Bewertung des anfragenden Nutzers (`utils/ownRating.ts::ownRatingStatus`), nie
    * eine zweite Ableitung aus `photo.ratings[]` - sonst stellte die Kachel die Bewertung des
-   * jeweils anderen als eigene dar (specs/features/0357-voller-bildvorrat-kuratierung.md,
-   * Security-Muss-Kriterium 5).
+   * jeweils anderen als eigene dar (Sicherheits-Muss-Kriterium).
    */
   ownStatus: RatingStatus | null
   /** true, solange die Verwerfen-Mutation DIESES Fotos laeuft. */
@@ -46,8 +45,8 @@ export interface CurationPhotoTileProps {
 }
 
 /**
- * EINE Kachel der Kuratierungsansicht (specs/features/0357-voller-bildvorrat-kuratierung.md):
- * `PhotoCard` samt Info-Popover, Ecken-Markern, Qualitaetsstufe und Verwerfen-Aktion.
+ * EINE Kachel der Kuratierungsansicht: `PhotoCard` samt Info-Popover, Ecken-Markern,
+ * Qualitaetsstufe und Verwerfen-Aktion.
  *
  * Sie lag zuvor als rund 100 Zeilen JSX inline in `CurateCategoriesPage`. Mit dieser Story wird
  * sie an ZWEI Stellen gebraucht - fuer die Top-Auswahl und fuer die eingeblendeten weiteren
@@ -66,8 +65,8 @@ export function CurationPhotoTile({
   rejecting,
   onReject,
 }: CurationPhotoTileProps) {
-  // `rank_score` ist ueber alle Zugehoerigkeiten eines Fotos identisch (ADR 0069 Punkt 4) -
-  // dieselbe Kachel zeigt in zwei Kategorien dieselbe Qualitaetsstufe.
+  // `rank_score` ist ueber alle Zugehoerigkeiten eines Fotos identisch - dieselbe Kachel zeigt
+  // in zwei Kategorien dieselbe Qualitaetsstufe.
   const level = qualityLevel(ranking.rank_score)
   const isRejected = ownStatus === 'rejected'
 
@@ -82,14 +81,14 @@ export function CurationPhotoTile({
           className="size-full object-cover"
         />
       }
-      /* "Verworfen" ist ein ANZEIGEzustand, kein Filterkriterium (ADR 0071 Entscheidung 3): die
+      /* "Verworfen" ist ein ANZEIGEzustand, kein Filterkriterium: die
          bestehende `PhotoCard`-Prop stellt ihn bereits vollstaendig dar (gedaempfte Bildflaeche,
          RatingBadge mit x-circle, durchgestrichener Dateiname). `undefined` heisst "die Karte
          traegt keinen Zustand" und haelt die bestehende Entscheidung aufrecht, dass in der
          Kuratierung nicht auf jeder Kachel "Neu" steht. */
       status={isRejected ? 'rejected' : undefined}
       /* Zwei Marker koennen zugleich noetig sein: ein uebersteuertes Foto, das anderswo als
-         Nebenkategorie steht (specs/features/0300-nebenkategorien.md, UI/UX-Abschnitt). Sie stehen
+         Nebenkategorie steht. Sie stehen
          NEBENEINANDER - kein Stapeln, kein Verdraengen; zwei size-6-Kreise passen auch im
          360px-Viewport in die Ecke. */
       topLeft={

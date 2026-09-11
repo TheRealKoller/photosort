@@ -10,8 +10,8 @@ import type { PipelineOutletContext } from './ProjectPipelineLayout'
  * alten Erklaertexte leben als Blockiert-Gruende im Stepper-Popover weiter
  * (utils/pipelineSteps.ts::getBlockedReason).
  *
- * Seit specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md traegt die Seite genau
- * EINE Sektion: die bis dahin getrennten Bedienelemente "Kriterien-Bewertung" (hier inline) und
+ * Die Seite traegt genau EINE Sektion: die frueher getrennten Bedienelemente
+ * "Kriterien-Bewertung" (hier inline) und
  * "Remote-Kategorisierung" (RemoteCategoryClassificationSection, seither geloescht) sind zu einem
  * Auslöser verschmolzen. Die gesamte Darstellung lebt in ClassificationSection - die Seite bleibt
  * bewusst eine reine Verdrahtung von Outlet-Kontext zu Komponente.

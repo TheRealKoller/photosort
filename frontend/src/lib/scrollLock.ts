@@ -1,6 +1,5 @@
 /**
- * Zaehlende Sperre des Hintergrund-Scrollens hinter einer Ueberlagerung
- * (specs/features/0321-dark-utility-register-ansichten.md, Etappe 1).
+ * Zaehlende Sperre des Hintergrund-Scrollens hinter einer Ueberlagerung.
  *
  * WARUM MODULWEIT UND NICHT PRO KOMPONENTE: Die vorherige Loesung merkte sich den vorgefundenen
  * Wert von `document.body.style.overflow` im Effekt der jeweiligen Ueberlagerung. Bei zwei

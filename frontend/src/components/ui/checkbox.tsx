@@ -3,8 +3,8 @@ import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '../../lib/utils'
 
 /*
- * specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, UI/UX-Abschnitt: natives
- * <input type="checkbox"> statt eines neuen @radix-ui/react-checkbox-Pakets - dieselbe Linie wie
+ * Natives <input type="checkbox"> statt eines neuen @radix-ui/react-checkbox-Pakets - dieselbe
+ * Linie wie
  * switch.tsx und der native <dialog> ("Radix-Primitives nur dort einsetzen, wo natives HTML nicht
  * reicht", Design-System). Eine Checkbox braucht weder Portal noch freie Positionierung; die
  * native Variante bringt Tastatur-, Screenreader- und Formularsemantik vollstaendig mit.
@@ -20,7 +20,7 @@ import { cn } from '../../lib/utils'
  * nicht eingefuehrt - es gibt keinen Anwendungsfall.
  */
 export interface CheckboxProps
-  // `defaultChecked` ist bewusst mit ausgeschlossen (Copilot-Review-Fund, PR #307): die Komponente
+  // `defaultChecked` ist bewusst mit ausgeschlossen: die Komponente
   // ist ueber `checked`/`onCheckedChange` durchgaengig kontrolliert. Setzt ein Aufrufer zusaetzlich
   // `defaultChecked`, warnt React ueber die Vermischung von controlled und uncontrolled input -
   // ein Fehler, der zur Laufzeit nur als Konsolenwarnung auffaellt. Der Typ verhindert ihn.
@@ -55,7 +55,7 @@ export function Checkbox({
       )}
     >
       <input
-        // Analog switch.tsx (Copilot-Review-Fund PR #181): {...props} MUSS vor den invarianten
+        // Analog switch.tsx: {...props} MUSS vor den invarianten
         // Attributen stehen, damit ein Aufrufer die kontrollierte Semantik nicht versehentlich
         // ueber die uebrigen Props ueberschreibt.
         {...props}

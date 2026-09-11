@@ -72,8 +72,7 @@ function formatCoordinate(value: number): string {
 }
 
 /**
- * Der Ortsteil der Cluster-Ueberschrift, oder `null`, wenn es keinen gibt
- * (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072 Entscheidung 1).
+ * Der Ortsteil der Cluster-Ueberschrift, oder `null`, wenn es keinen gibt.
  *
  * Das Frontend bildet die RANGFOLGE NICHT NACH - der Server liefert mit `kind` bereits den
  * aufgeloesten Zustand, und nur er kennt den vollstaendigen Cluster (die Ansicht sieht je Partition
