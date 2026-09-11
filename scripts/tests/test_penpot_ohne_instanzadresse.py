@@ -12,9 +12,9 @@ verfaellt.
 
 Drei Zusicherungen:
 
-* Unter `design/penpot/**`, `frontend/penpot/**`, `.claude/skills/penpot-design/**` und
-  `.claude/skills/penpot-entwurfsrunden/**` steht kein `://` ausser den beiden bekannten,
-  harmlosen Praefixen (SVG-Namensraum, dieses GitHub-Projekt).
+* Unter `design/penpot/**`, `frontend/penpot/**`, `.claude/skills/penpot-design/**`,
+  `.claude/skills/penpot-entwurfsrunden/**` und `.claude/skills/ship-entwurf/**` steht kein
+  `://` ausser den beiden bekannten, harmlosen Praefixen (SVG-Namensraum, dieses GitHub-Projekt).
 * Dieselben Pfade tragen keine IP-Adresse.
 * `.env.example` traegt keinen `PENPOT_`-Eintrag - ausdruecklich benannt, weil das die
   naheliegendste Stelle waere, an der eine Instanzadresse als „Vorlage" doch noch hineingeriete.
@@ -22,6 +22,12 @@ Drei Zusicherungen:
 Der Suchraum kommt aus `git ls-files`, nicht aus einem Verzeichnis-Walk: Eine nicht verwaltete
 Arbeitskopie soll den Test weder rot noch gruen faerben. Diese Datei selbst ist ausgenommen - sie
 fuehrt die Suchmuster im Text.
+
+**Der Bestand ist sauber, dieser Test startet also gruen - ein Rot-Lauf belegt hier nichts.**
+Tragender Beleg ist die Mutationsprobe: am 2026-09-11 probeweise eine Instanzadresse in
+`.claude/skills/ship-entwurf/SKILL.md` gesetzt (der neu aufgenommene fuenfte Pfad), den Test rot
+gesehen und die Zeile zurueckgenommen. Wer den Suchraum aendert, wiederholt diese Probe, statt sie
+zu glauben.
 
 Kein Netzwerk - gelesen werden ausschliesslich Dateien dieses Repositories.
 """
@@ -43,6 +49,9 @@ SUCHRAUM_PRAEFIXE = (
     # Der Rundenablauf beschreibt Arbeit an derselben privaten, selbst gehosteten Instanz -
     # er gehoert in denselben Suchraum wie `penpot-design`.
     ".claude/skills/penpot-entwurfsrunden/",
+    # Der Auslieferpfad eines Entwurfslaufs benennt Werte, die aus derselben privaten Instanz
+    # stammen, und macht aus ihnen ein oeffentliches, nicht zurueckzunehmendes Artefakt.
+    ".claude/skills/ship-entwurf/",
 )
 
 SELBST = "scripts/tests/test_penpot_ohne_instanzadresse.py"
@@ -67,7 +76,7 @@ MINDESTZAHL_DATEIEN = 8
 
 
 def suchraum() -> dict[str, str]:
-    """Reine Funktion: die von Git verwalteten Dateien der vier Penpot-Pfade."""
+    """Reine Funktion: die von Git verwalteten Dateien der fuenf Penpot-Pfade."""
     ergebnis = subprocess.run(
         ["git", "ls-files", "-z", "--", *SUCHRAUM_PRAEFIXE],
         cwd=REPO_WURZEL,

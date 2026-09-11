@@ -44,6 +44,7 @@ PhotoSort wird in zwei Modi weiterentwickelt:
 - **Commits:** Conventional Commits — zehn zulässige Typen: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `build:`, `ci:`, `perf:`, `revert:`.
 - **PR-Titel:** trägt dieselbe Form wie eine Commit-Nachricht: `typ(scope)!: Beschreibung`, mit einem der zehn Typen oben, Scope und `!` optional, Kleinschreibung des Typs, Doppelpunkt plus genau ein Leerzeichen plus nicht-leere Beschreibung. Grund: Das Repository squasht mit `COMMIT_OR_PR_TITLE` — der PR-Titel wird zum Titel des Merge-Commits auf `main`, und genau diesen wertet `release-please` aus. Ein Titel ohne zulässiges Präfix wird **still** übergangen: kein Changelog-Eintrag, kein Versions-Bump, keine Fehlermeldung; nach dem Merge ist das nicht mehr korrigierbar. Der Workflow `.github/workflows/pr-titel.yml` (Job-Schlüssel und damit Name des Checks: pr-titel) prüft das bei jedem `opened`/`edited`/`reopened`/`synchronize` und wird rot, wenn der Titel die Form verfehlt.
 - **PRs:** klein und fokussiert, referenzieren die zugehörige Spec/das Issue (siehe `.github/pull_request_template.md`). Vor der PR-Erstellung durchläuft der Feature-Branch die Review-Phase über die `review-*`-Skills (Hauptsession, koordiniert vom `review`-Skill statt fünf parallelen Review-Subagenten). Nach dem Eröffnen wird ein Copilot-Review angefordert (Operation `copilot-review-anfordern`), außer der PR ändert ausschließlich Doku-/Spec-Dateien (`specs/`, `docs/`, `*.md`, reine Config-Kommentare) ohne jede Code-Datei — dann entfällt der Schritt vollständig; sobald ein angefordertes Review vorliegt, werden die Findings bewertet und notwendige Fixes umgesetzt (siehe Skill `ship-feature`/Orchestrator, nicht mehr der `developer`-Agent selbst).
+  **Eine Ausnahme, und nur diese eine:** Ein Pull Request, der aus einem Penpot-Entwurfsrundenlauf entsteht (Skill `ship-entwurf`), durchläuft **weder** die Review-Phase **noch** ein angefordertes Copilot-Review. Ein Entwurf wird durch Hinsehen beurteilt, und die Design-Datei, an der er hängt, kann kein Prüfer dieses Projekts lesen. Getragen wird das von einer geschlossenen Pfad-Zulassungsmenge (`design/penpot/**`, `frontend/penpot/**`, `specs/**` — jeder Pfad außerhalb hält den Ablauf an), zwei zusätzlichen Halte-Prüfungen auf demselben Diff, der unverändert laufenden CI und davon, dass Daniel merged.
 - **Backend:** Python 3.12, FastAPI, `ruff` (Lint), `mypy --strict` (Typprüfung), `pytest` (Test).
 - **Frontend:** React + TypeScript + Vite, `oxlint` (Lint), `tsc` (Typprüfung), `vitest` (Test).
 - Keine Bilddaten der Familie werden je ins Repository committet — Fotos bleiben ausschließlich auf OpenCloud, lokal nur als Cache (siehe `.gitignore`).
@@ -66,6 +67,26 @@ PhotoSort wird in zwei Modi weiterentwickelt:
   nicht folgt. Ein Richtwert ist keine Grenze: Überschreitung ist zulässig, wenn sie im Dokument
   selbst in einem Satz begründet ist. Es entsteht dafür kein CI-Check und kein
   `review-*`-Kriterium — nichts weist eine Änderung allein wegen ihrer Länge zurück.
+
+## Werkzeugwahl bei Dateiarbeit
+
+**Vorgabe:** Dateien werden im Regelfall über die dedizierten Werkzeuge gelesen, geändert und angelegt — das Lese-Werkzeug zum Lesen, das Änderungs-Werkzeug zum Ändern, das Schreib-Werkzeug zum Anlegen und vollständigen Ersetzen, die Such-Werkzeuge zum Suchen.
+
+**Grund:** Eine gezielte Änderung über das Änderungs-Werkzeug scheitert **laut**, wenn die zu ersetzende Stelle nicht eindeutig ist; eine Ersetzung über die Shell greift in derselben Lage **still** daneben — sie trifft die erste Fundstelle, oder alle, oder keine, und meldet in allen drei Fällen Erfolg. Dazu kommen die Quoting-Fallen: Ein Heredoc mit nicht maskiertem Inhalt expandiert `$…` und Backticks, ein `sed`-Ausdruck mit ungeschütztem `&` oder `/` schreibt etwas anderes als gemeint. Ausdrücklich **nicht** der Grund ist Kontextsparsamkeit — ein gezielter Ausschnitt ist sparsamer als das vollständige Einlesen.
+
+**Shell ist die bessere Wahl bei:** diesen drei Fällen — sie sind benannt, damit eine Abweichung begründet statt beiläufig ist:
+
+- Versionsverwaltung, Paketmanager, Testläufe, Builds (`git status`, `npm run lint`, `pytest`) — dafür gibt es kein dediziertes Werkzeug.
+- gezieltem Lesen eines Ausschnitts einer großen Datei — zum Sichten, nie als Ersatz einer mechanischen Prüfung: Unsichtbare Steuerzeichen sieht kein Blick.
+- mehreren zusammengehörigen Schritten, die sich in einem Aufruf bündeln lassen.
+
+**Bündelung:** Wo die Shell zum Einsatz kommt, werden zusammengehörige Aufrufe in **einem** Aufruf abgesetzt statt als Kette einzelner.
+
+**Vorrang:** Diese Vorgabe gilt auch gegen einen Hinweis der Arbeitsumgebung, der von sich aus zur Shell für Dateiarbeit rät; eine Abweichung wird benannt, nicht stillschweigend vollzogen.
+
+**Hintergrund-Läufe:** Lehnt die Arbeitsumgebung eine Änderung am geteilten Arbeitsstand ab, wird der isolierte Arbeitsstand hergestellt, statt auf die Shell auszuweichen.
+
+**Unberührt:** Freitext, der in ein GitHub-Artefakt gelangt (Titel, Bodys, Kommentare), fällt nicht unter diesen Abschnitt, sondern unter Härtungsregel 4.1 in `github-access` — nie als Zeichenkette in eine Kommandozeile interpoliert, sondern auf dem `gh`-Weg über eine Datei und auf dem `mcp`-Weg als typisierter Parameter; der Titel geht auf **beiden** Wegen über eine Datei, weil die Prüfung auf unsichtbare Zeichen ein Substrat braucht (Härtungsregel 4.4). Das ist ein **Verbot, kein Default**: Keiner der oben genannten Gegenfälle gilt dort, auch die Bündelung mehrerer Schritte in einem Aufruf nicht.
 
 ## Doku-Pflege
 

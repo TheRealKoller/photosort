@@ -221,6 +221,7 @@ ERWARTETE_STUFEN: dict[str, str] = {
     ".claude/skills/review-tests/SKILL.md": STUFE_KEINE,
     ".claude/skills/review-ux/SKILL.md": STUFE_KEINE,
     ".claude/skills/review/SKILL.md": STUFE_LESEND,
+    ".claude/skills/ship-entwurf/SKILL.md": STUFE_SCHREIBEND,
     ".claude/skills/ship-feature/SKILL.md": STUFE_SCHREIBEND,
     ".claude/skills/skiller/SKILL.md": STUFE_KEINE,
     ".claude/skills/spec-writer/SKILL.md": STUFE_SCHREIBEND,

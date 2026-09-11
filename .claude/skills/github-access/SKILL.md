@@ -1,6 +1,6 @@
 ---
 name: github-access
-description: Verbindlicher Operationskatalog für **jeden** GitHub-Zugriff des Entwicklungsablaufs — Story-Issue anlegen, lesen, beschreiben und verwerfen, Board-Status und Priorität setzen und lesen, Pull Request eröffnen, verknüpfen und finalisieren, Copilot-Review anfordern und auswerten. Jede Operation trägt eine stabile ID und ihre Zugangswege in fester Reihenfolge, dazu die Härtungsregeln, die Erlaubnisstufen und der Berichtsabschnitt `## Lokal nachzuholen`. Nutze diesen Skill, wenn `capture`/`refinement`/`spec-writer`/`ship-feature` an ihren jeweiligen Stellen einen GitHub-Zugriff brauchen, oder wenn Daniel direkt danach fragt ("setz Issue #NNN auf Ready", "welchen Status hat #NNN").
+description: Verbindlicher Operationskatalog für **jeden** GitHub-Zugriff des Entwicklungsablaufs — Story-Issue anlegen, lesen, beschreiben und verwerfen, Board-Status und Priorität setzen und lesen, Pull Request eröffnen, verknüpfen und finalisieren, Copilot-Review anfordern und auswerten. Jede Operation trägt eine stabile ID und ihre Zugangswege in fester Reihenfolge, dazu die Härtungsregeln, die Erlaubnisstufen und der Berichtsabschnitt `## Lokal nachzuholen`. Nutze diesen Skill, wenn `capture`/`refinement`/`spec-writer`/`ship-feature`/`ship-entwurf` an ihren jeweiligen Stellen einen GitHub-Zugriff brauchen, oder wenn Daniel direkt danach fragt ("setz Issue #NNN auf Ready", "welchen Status hat #NNN").
 ---
 
 # GitHub Access — der Operationskatalog
@@ -265,7 +265,15 @@ gh pr create --repo TheRealKoller/photosort --base main --title "$(cat <titel-da
 
 Der Body folgt `.github/pull_request_template.md` und enthält die **ausgefüllte** Zeile
 `Closes #<NNN>`; nur sie erzeugt die strukturierte Verknüpfung. Das Keyword gehört ausschließlich
-in den Body — nie in eine Commit-Nachricht, nie in den PR-Titel. Die PR-Nummer aus der Antwort
+in den Body — nie in eine Commit-Nachricht, nie in den PR-Titel.
+
+**Ausnahme: PR ohne Issue-Bezug (reine Doku-/Chore-PRs) — Zeile löschen.** Wortgleich mit der
+Vorlage, und ab jetzt auch hier, weil `ship-feature` nicht mehr der einzige Aufrufer ist: Ein
+Entwurfsrundenlauf ist jederzeit aufrufbar, auch ohne Story, und `ship-entwurf` eröffnet den Pull
+Request dann trotzdem. Der Preis steht dort: Ohne die Zeile wandert die Karte nicht von selbst
+auf `Review` — das wird gemeldet, nicht durch ein eigenmächtiges Setzen verdeckt. Ein
+**Platzhalter** `Closes #NNN` bleibt in beiden Fällen unzulässig; die Zeile ist ausgefüllt oder
+sie fehlt. Die PR-Nummer aus der Antwort
 wird wie bei `issue-anlegen` gegen `^[0-9]+$` validiert und ausschließlich als Zahl
 weiterverwendet.
 
@@ -614,7 +622,7 @@ sind ein Widerspruch.
 
 | Stufe | Bedeutung | Wer |
 |---|---|---|
-| lesend und schreibend | darf jede Operation des Katalogs | `capture`, `refinement`, `spec-writer`, `ship-feature`, `github-access` |
+| lesend und schreibend | darf jede Operation des Katalogs | `capture`, `refinement`, `spec-writer`, `ship-feature`, `ship-entwurf`, `github-access` |
 | nur lesend | darf ausschließlich lesende Operationen | `review` (der Orchestrator) |
 | kein GitHub-Zugriff | weder lesend noch schreibend | die fünf Perspektiven-Skills `review-tests`, `review-requirements`, `review-security`, `review-architecture`, `review-ux`; alle sieben Agenten-Dateien unter `.claude/agents/`; `browse-app`, `design-system`, `skiller` |
 
@@ -691,7 +699,8 @@ Trifft eines von beidem zu, ist allein noch dieser Abschnitt nachzuziehen.
 ## Ein Fehlschlag bleibt sichtbar — das Muster (einmal vollständig, hier)
 
 Gilt für jeden Ablauf mit GitHub-Schritten (`capture`, `refinement`, `spec-writer`,
-`ship-feature`). Die vier Skills verweisen hierher, statt das Muster zu wiederholen.
+`ship-feature`, `ship-entwurf`). Die fünf Skills verweisen hierher, statt das Muster zu
+wiederholen.
 
 **1. Kein Urteil vor dem Versuch.** Es wird **nicht** vorab gemessen, ob eine Operation
 erreichbar ist — sie wird ausgeführt. Sie zu versuchen kostet nicht mehr, als sie zu messen, und
