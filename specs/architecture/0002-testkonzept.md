@@ -1323,6 +1323,65 @@ Fünfte Story auf der Ebene der Repo-Konsistenztests (`scripts/tests/test_dokume
 
 **Coverage-Gate: kein Bezug.** Der Wächter liegt unter `scripts/tests/` im Job `demo-scripts` ohne Gate; die Story fasst keine Zeile Anwendungscode an.
 
+### Erweiterung für Spec [`0259`](../features/0259-bereich-am-issue.md) / ADR [`0085`](../decisions/0085-bereich-als-label-mit-geschlossenem-vorrat.md) (der Bereich eines Issues ist ein Label mit geschlossenem Vorrat): ein Vorrat an einer Formzeile, ein Präfix als Bedingung der Prüfbarkeit, und eine gewachsene Kette
+
+Sechste Story auf der Ebene der Repo-Konsistenztests (`scripts/tests/test_bereichsvorrat.py`, Job
+`demo-scripts`). Vier Regeln gelten über diesen Branch hinaus.
+
+**1. Ein geschlossener Wertvorrat wird an einer Formzeile geparst — und die Abwesenheit daneben
+hängt an einem Präfix.** Der Vorrat steht als Literal in genau einer Zeile fester Form
+(`^\*\*Bereichsvorrat`), verglichen gegen eine eingefrorene Menge; „genau eine" statt „mindestens
+eine", weil eine zweite Vorrat-Zeile ein Widerspruch ist und nicht von der ersten verdeckt werden
+darf (dieselbe Linie wie bei den Erlaubnisstufen). Die Gegenrichtung — kein Wert außerhalb dieses
+Ortes — ist überhaupt nur formulierbar, **weil die Werte ein Präfix tragen**: Ein Scan nach den
+blanken Namen wäre unmöglich, `ai-workflow` ist ein Dateiname und `design`, `backend`,
+`frontend`, `pipeline`, `infra` sind Alltagswörter dieses Projekts. Ein solches Wortverbot wäre am
+eigenen Bestand sofort rot und würde so lange abgeschwächt, bis es nichts mehr aussagt.
+**Regel:** Soll ein Wertvorrat durch eine Abwesenheit gesichert werden, ist die Präfixbindung
+Bedingung der Prüfbarkeit und gehört ins Akzeptanzkriterium, nicht in die Umsetzung. Der
+Suchraum ist der **lebende** Anweisungsraum (`.claude/**`, `CLAUDE.md`, `docs/**`) ohne `specs/`
+— dort stehen eingefrorene Momentaufnahmen, und die Spec nennt den Vorrat selbst; dieselbe
+Begründung wie beim Abschnittszitat-Scan. Der Erfolgsfall ist eine Abwesenheit, der Wächter
+startet also **grün**: Tragend sind allein die Mutationsprobe und die Untergrenze für das
+*Gesehene* (mindestens sechs Vorkommen des Musters am erlaubten Ort), nicht der triviale erste
+Lauf.
+
+**2. Eine Reihenfolge-Kette wächst nur mit ihren Bedingungen.** Die Kette aus der
+Spec-0288-Sektion (Body → Titel → `Ready`) bekommt ein viertes Glied (→ Bereich → **jede**
+`board-`-Ausführungsstelle). Jedes neue Glied erbt die vier Bedingungen (a)–(d) vollständig,
+insbesondere (b) „vor *jeder*" statt „vor der ersten" und (d) die Existenz-Zusicherung mit eigener
+Meldung. Das ist kein Formalismus: Ohne (d) wäre die neue Aussage in dem Moment leer wahr, in dem
+jemand die Ausführungsstelle löscht — und genau das ist die wahrscheinliche Änderung. Ohne (b)
+wäre sie schon erfüllt, wenn das neue Glied zwischen zwei Board-Zugriffe gerät. **Regel:** Wer
+eine bestehende Kette verlängert, prüft das neue Glied nicht schwächer als die alten, auch wenn
+es „offensichtlich" richtig steht.
+
+**3. Eine Zusage, die nur an einer Stelle genannt wird, kann nicht desynchronisieren.** Die
+Kettenposition des neuen Glieds steht **nicht** im Vorrat-Wächter, sondern ausschließlich dort, wo
+die Kette ohnehin vollständig liegt; der Vorrat-Wächter nennt sie im Docstring und verweist. Eine
+zweite Fassung daneben liefe mit der nächsten Änderung auseinander, und der Test, der zuerst
+nachgezogen wird, verdeckte den anderen. Spiegelbildlich gilt das für den Gegenstand selbst: Der
+Vorrat steht als Literal im Katalog und in der eingefrorenen Erwartungsmenge — dieses **Paar** ist
+die bewusste Ergänzung, nicht die eine oder die andere Seite. Bewusst ungewacht bleibt dagegen die
+Operationszahl im Kommentar von `.github/workflows/ci.yml`: Ein Kommentar trägt keine Zusage, und
+ein Wächter darüber wäre Buchhaltung.
+
+**4. Die Board-**Ansicht** ist eine neue Klasse untestbarer Zusage.** Neben „Branch Protection ist
+eine Einstellung außerhalb des Repositoriums" und „die `main`-Workflows laufen erst nach dem
+Merge" tritt: **ob ein Label auf einer Projects-Karte erscheint und ob sich das Board danach
+eingrenzen lässt, ist eine Eigenschaft von GitHubs Oberfläche.** Kein Test dieses Repositoriums
+erreicht sie, und ein Ersatztest, der sie behauptete, wäre grün, ohne etwas zu wissen. Die
+repo-seitige Ersatzzusicherung ist allein die **Wahl des Trägers** (ein Label reist ohne weiteren
+Schritt auf die Karte); den Rest belegt ein einziger Repro-Lauf an einem Wegwerf-Issue, dessen
+Ergebnis als benannter Nachweis in den PR-Body gehört. Derselbe Lauf misst zwei Eigenschaften, die
+bisher nur behauptet sind und die Risikoabwägung tragen: dass ein unbekannter Wert auf dem
+`gh`-Weg laut scheitert und auf dem `mcp`-Weg still angelegt wird. **Regel:** Was eine fremde
+Oberfläche zusichert, wird einmal gemessen und als Messung ausgewiesen — nicht in einen Test
+gegossen, der etwas anderes prüft als das, wonach er benannt ist.
+
+**Coverage-Gate: kein Bezug.** Der Wächter liegt unter `scripts/tests/` im Job `demo-scripts` ohne
+Gate; die Story fasst keine Zeile Anwendungscode an.
+
 ## Reine Bash-Wrapper-Skripte ohne Testframework (`scripts/*.sh`)
 
 **Neu seit der Diagramm-Tooling-Richtlinie** ([ADR `0013`](../decisions/0013-diagram-tooling-d2.md)/Spec [`0018`](../features/0018-diagram-tooling-migration.md)) — erstes Bash-Skript im Projekt, `scripts/render-diagrams.sh`. Anders als `scripts/seed-opencloud-demo.py` (Spec 0009, Python mit echter Retry-/Idempotenz-Verzweigung, eigene `pytest`-Suite trotz Lage außerhalb des Coverage-Gates) ist die Verzweigungslogik hier bewusst minimal (ein PATH-Check, eine Schleife über `*.d2`, ein `d2`-Aufruf pro Datei) — genau der Unterschied, der hier eine andere Verifikationsebene rechtfertigt statt automatisch das Python-Muster zu kopieren:
