@@ -18,15 +18,18 @@ Die Nummernräume der drei Verzeichnisse überlappen einander von Bauart wegen: 
 trägt die Nummer ihres Issues (ADR
 [`0043`](./0043-spec-nummer-gleich-issue-nummer-sync-tool-entfaellt.md)), `decisions/` und
 `architecture/` zählen je für sich fortlaufend. Gemessen sind es 66 Nummern, die `decisions/` und
-`features/` heute gemeinsam führen, und vier, die `architecture/` und `features/` teilen.
+`features/` heute gemeinsam führen, vier, die `architecture/` und `features/` teilen, und
+dieselben vier auch zwischen `decisions/` und `architecture/`: `0002` bis `0005` liegen in **allen
+drei** Verzeichnissen. Die drei Paarzahlen sind deshalb nicht addierbar — zusammengenommen sind es
+66 verschiedene Nummern, die mehr als ein Verzeichnis führt.
 
 ## Entscheidung
 
 ### 1. Eindeutig ist eine Nummer je Verzeichnis, nicht verzeichnisübergreifend
 
 `specs/decisions/`, `specs/architecture/` und `specs/features/` sind drei getrennte Nummernräume.
-Eine verzeichnisübergreifende Eindeutigkeit wird **nicht** eingeführt — sie wäre heute an 70
-Stellen verletzt und stünde gegen ADR 0043.
+Eine verzeichnisübergreifende Eindeutigkeit wird **nicht** eingeführt — sie wäre heute an 66
+Nummern verletzt und stünde gegen ADR 0043.
 
 ### 2. Eine Dublette wird aufgelöst, nie ausgenommen — und es zieht die jüngere um
 

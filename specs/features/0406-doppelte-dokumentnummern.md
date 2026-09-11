@@ -86,10 +86,10 @@ Umnummerierung folgt einem dreiteiligen Verfahren (Inventar → Klassifikation �
 ### Entwurfsentscheidungen
 
 1. **Geprüft wird je Verzeichnis, nicht verzeichnisübergreifend.** Die drei Nummernräume
-   überlappen von Bauart wegen (ADR 0043: Feature-Nummer = Issue-Nummer). Gemessen: 65 Nummern
+   überlappen von Bauart wegen (ADR 0043: Feature-Nummer = Issue-Nummer). Gemessen: 66 Nummern
    führen `decisions/` und `features/` gemeinsam, vier `architecture/` und `features/`, vier
-   `decisions/` und `architecture/`. Eine gemeinsame Prüfung wäre an 73 Nummern rot — und sachlich
-   falsch.
+   `decisions/` und `architecture/` — `0002` bis `0005` liegen in allen drei, die Paarzahlen sind
+   also nicht addierbar. Eine gemeinsame Prüfung wäre an 66 Nummern rot — und sachlich falsch.
 
 2. **Suchraum ist `git ls-files --cached --others --exclude-standard`**, nicht `git ls-files`
    allein. Die Dublette entsteht in dem Moment, in dem die Datei angelegt wird — vor dem
@@ -146,10 +146,13 @@ Momentaufnahme auf `f50375e` und dienen als Gegenprobe zum eigenen Inventar, nic
   `specs/architecture/0004-design-system.md` und `0002-testkonzept.md` Zeile 496;
   `specs/features/0051`, `0300`, `0357`; sowie **rund 26 Fundstellen unter `backend/` und
   `frontend/`** (Doku-Blöcke, Tests, eine Migration).
-- *Nennungen der Kollision selbst:* in ADR `0081` und in **dieser Spec** beschreiben die
-  Nennungen von `0069` die doppelt vergebene Nummer als solche und meinen keines der beiden
-  Dokumente. Sie bleiben; das schließt die Stellen ein, an denen hier der alte Dateirumpf genannt
-  wird, um die Umbenennung überhaupt beschreiben zu können.
+- *Nennungen der Kollision selbst:* in ADR `0081`, in **dieser Spec** und in der neuen Prüfung
+  `scripts/tests/test_dokumentnummern_eindeutig.py` beschreiben die Nennungen von `0069` die
+  doppelt vergebene Nummer als solche und meinen keines der beiden Dokumente. Sie bleiben; das
+  schließt die Stellen ein, an denen hier der alte Dateirumpf genannt wird, um die Umbenennung
+  überhaupt beschreiben zu können. Im Testcode sind es synthetische Beispielpfade und der
+  eingefrorene Rot-Lauf — dort steht als einziger Stelle im Repository auch der **vollständige**
+  alte Dateiname, weil die Meldung des Laufs ihn enthält und wörtlich festgehalten wird.
 
 **Die zwei gefährlichen Dateien** sind `specs/architecture/0002-testkonzept.md` und
 `specs/architecture/0003-securitykonzept.md`: Sie führen Nennungen **beider** Dokumente. Genau
@@ -186,8 +189,14 @@ dort zerstört eine pauschale Ersetzung etwas und meldet Erfolg.
    - `git diff --name-only` ergibt exakt die Tabelle oben plus die neuen Dateien. Insbesondere
      **keine** Datei unter `backend/`, `frontend/`, `e2e/`.
    - Verbliebene `0069`-Fundstellen = |N| + |K|; `0082`-Fundstellen = |A|.
-   - Der alte vollständige Dateiname der umgezogenen ADR kommt **außerhalb von ADR 0081 und dieser
-     Spec** nirgends mehr vor; der Dateirumpf der bleibenden ADR trägt nirgends das Präfix `0082`.
+   - Der alte vollständige Dateiname der umgezogenen ADR kommt **außerhalb des Docstrings der
+     neuen Prüfung** nirgends mehr vor. Dort steht er zweimal — im eingefrorenen Rot-Lauf und in
+     dem Satz, der ihn als bewusste historische Nennung ausweist —, und beide Stellen sind
+     gewollt: Die Meldung des Laufs enthält ihn, und Schritt 1 verlangt den Lauf wörtlich. Wer
+     diese Probe später wiederholt, zählt sie nicht als übersehene Fundstelle und kürzt sie erst
+     recht nicht weg; der Verdrahtungsbeleg ist nicht wiederherstellbar. ADR 0081 und diese Spec
+     kommen ohne den vollständigen alten Namen aus, weil sie Präfix und Dateirumpf getrennt
+     schreiben. Der Dateirumpf der bleibenden ADR trägt nirgends das Präfix `0082`.
 7. **Grün.** Neue Prüfung und `test_verweisnummern_in_markdown.py` grün, danach der volle
    Prüfsatz (`backend`, `frontend`, `scripts`). Die Umbenennung fasst keinen Code an — ein roter
    Backend-Test wäre hier selbst schon der Befund.
@@ -242,7 +251,7 @@ den Fall synthetisch nach"), nicht als Erzählung des Vorfalls.
    zählt erst ab zwei **verschiedenen** Pfaden — sonst meldet der Wächter mitten im Abgleich mit
    `main` eine Datei als Dublette ihrer selbst.
 2. **Drei und mehr Dateien auf derselben Nummer:** die Meldung nennt alle, nicht die ersten zwei.
-3. **Dieselbe Nummer in verschiedenen Verzeichnissen ist kein Befund** (73 Nummern betroffen).
+3. **Dieselbe Nummer in verschiedenen Verzeichnissen ist kein Befund** (66 Nummern betroffen).
 4. **Nicht verwaltete Datei** (`--others`) zählt mit, ignorierte nicht.
 5. **Kein gültiges Präfix** (fünfstellig, ohne Trennstrich, Ziffern mitten im Namen): keine
    Dokumentnummer — fällt nicht still heraus, sondern in die zweite Zusicherung.
@@ -266,7 +275,7 @@ und mechanisch allein über Summenprobe und Restbestandsprobe abgesichert.
   zeigen vier **Teil-Vermerke** anderer ADRs, die nach `specs/README.md` unveränderlich sind, auf
   die Ansichts-ADR keiner.
 - **Die Prüfung prüft je Verzeichnis, nicht verzeichnisübergreifend** — die Nummernräume überlappen
-  von Bauart wegen, eine gemeinsame Prüfung wäre an 73 Nummern rot und sachlich falsch.
+  von Bauart wegen, eine gemeinsame Prüfung wäre an 66 Nummern rot und sachlich falsch.
 - **Die Prüfung kommt ohne CI-Änderung aus** — `scripts/tests/` läuft bereits im Job
   `demo-scripts`.
 - **Die Präfix-Vollständigkeit (AK 9) gehört in dieselbe Prüfung**, nicht daneben: Ohne sie entkommt

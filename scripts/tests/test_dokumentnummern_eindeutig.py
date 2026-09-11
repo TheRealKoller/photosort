@@ -16,8 +16,8 @@ bewusst so, denn eine Ausweitung der Namenskonvention soll entschieden werden st
 
 **Je Verzeichnis, nicht verzeichnisuebergreifend.** Die drei Nummernraeume ueberlappen von Bauart
 wegen (eine Feature-Spec traegt die Nummer ihres Issues, ADR 0043; `decisions/` und
-`architecture/` zaehlen je fuer sich). Gemessen sind 73 Nummern von zwei Verzeichnissen gemeinsam
-gefuehrt - eine gemeinsame Pruefung waere dort rot und sachlich falsch.
+`architecture/` zaehlen je fuer sich). Gemessen fuehren 66 verschiedene Nummern mehr als ein
+Verzeichnis - eine gemeinsame Pruefung waere an jeder von ihnen rot und sachlich falsch.
 
 **Keine Ausnahmeliste, auch keine leere vorbereitete.** Eine gefundene Dublette wird aufgeloest,
 nicht ausgenommen (ADR 0081). Eine Ausnahme, die nichts ausnimmt, ist eine Einladung, spaeter eine
@@ -68,6 +68,7 @@ Bestandes.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from collections.abc import Iterable, Mapping
@@ -326,7 +327,7 @@ def test_drei_dateien_auf_derselben_nummer_werden_alle_genannt() -> None:
 
 
 def test_dieselbe_nummer_in_verschiedenen_verzeichnissen_ist_kein_befund() -> None:
-    """Die Nummernraeume ueberlappen von Bauart wegen - heute an 73 Nummern."""
+    """Die Nummernraeume ueberlappen von Bauart wegen - heute an 66 Nummern."""
     pfade = [
         "specs/decisions/0051-eine-entscheidung.md",
         "specs/features/0051-ein-feature.md",
@@ -404,3 +405,84 @@ def test_der_leser_findet_die_dokumente_dieses_repositories() -> None:
 
     assert "specs/architecture/0002-testkonzept.md" in dokumente["specs/architecture"]
     assert all(pfad.endswith(".md") for pfad in dokumente["specs/decisions"])
+
+
+# --- Gegenprobe zum Leser an einem Wegwerf-Repositorium -----------------------------------
+
+
+def _git(repo: Path, *args: str) -> None:
+    ergebnis = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert ergebnis.returncode == 0, (
+        f"Fixture-Aufbau gescheitert: git {' '.join(args)} -> {ergebnis.returncode}\n"
+        f"{ergebnis.stderr}"
+    )
+
+
+@pytest.fixture
+def wegwerf_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Ein Mini-Repositorium mit drei Dokumenten auf **derselben** Nummer, in drei Zustaenden.
+
+    Saemtliche `GIT_*` der aufrufenden Umgebung werden entfernt und die Decke auf das
+    Elternverzeichnis gesetzt: Sonst richtete ein stehen gebliebenes `GIT_DIR` den Leser auf das
+    echte PhotoSort-Repositorium, und der Test waere aus dem falschen Grund gruen.
+    """
+    for name in [n for n in os.environ if n.startswith("GIT_")]:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    monkeypatch.setenv("GIT_TERMINAL_PROMPT", "0")
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "PhotoSort Test")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "test@example.invalid")
+    monkeypatch.setenv("GIT_COMMITTER_NAME", "PhotoSort Test")
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "test@example.invalid")
+
+    repo = tmp_path / "repo"
+    (repo / "specs" / "decisions").mkdir(parents=True)
+    _git(repo, "init", "--quiet", "-b", "main")
+
+    (repo / ".gitignore").write_text("*-ignoriert.md\n", encoding="utf-8")
+    (repo / "specs" / "decisions" / "0001-committet.md").write_text("# 0001\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "--quiet", "-m", "chore: Ausgangsstand")
+
+    (repo / "specs" / "decisions" / "0001-ungetrackt.md").write_text("# 0001\n", encoding="utf-8")
+    (repo / "specs" / "decisions" / "0001-ignoriert.md").write_text("# 0001\n", encoding="utf-8")
+    return repo
+
+
+def test_eine_neue_datei_zaehlt_vor_dem_git_add_mit_eine_ignorierte_nicht(
+    wegwerf_repo: Path,
+) -> None:
+    """Entwurfsentscheidung 2: Die Dublette entsteht beim Anlegen der Datei, nicht beim `add`.
+
+    Beide Haelften haengen an je einem Schalter des Leseaufrufs. Faellt `--others` weg, wird der
+    Waechter erst nach dem `git add` scharf - also genau dann nicht mehr, wenn er gebraucht wird.
+    Faellt `--exclude-standard` weg, faerbt jede ignorierte Ablage rot. Ohne diesen Test bemerkt
+    beides kein einziger Lauf.
+
+    Mutationsprobe am 2026-09-11: Jeder der beiden Schalter wurde einzeln aus `verwaltete_pfade`
+    entfernt; beide Male faerbte genau dieser Test rot, mit der jeweils zugehoerigen Meldung.
+    Danach zurueckgenommen. Wer den Leseaufruf aendert, wiederholt die Probe, statt sie zu glauben.
+    """
+    pfade = set(verwaltete_pfade(wegwerf_repo))
+
+    assert "specs/decisions/0001-committet.md" in pfade
+    assert "specs/decisions/0001-ungetrackt.md" in pfade, "--others fehlt im Leseaufruf"
+    assert "specs/decisions/0001-ignoriert.md" not in pfade, (
+        "--exclude-standard fehlt im Leseaufruf"
+    )
+
+    befunde = dubletten_befunde(dokumente_je_verzeichnis(pfade))
+
+    assert len(befunde) == 1
+    assert "2-fach vergeben" in befunde[0]
+    assert "specs/decisions/0001-ungetrackt.md" in befunde[0]
+    assert "0001-ignoriert" not in befunde[0]
