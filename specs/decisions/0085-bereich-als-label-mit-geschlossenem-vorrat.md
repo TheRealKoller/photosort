@@ -90,6 +90,15 @@ niemand wiederholt. Der Nachlauf braucht die Liste der offenen Issues; dafür be
 — die bewusste Erweiterung einer geschlossenen Liste um eine Lesemöglichkeit, die ihr heute fehlt,
 nicht ihre Aufweichung.
 
+Damit entsteht eine **zweite, eng gefasste Ausnahme von Härtungsregel 4.2**, und sie wird als
+solche in den Katalog geschrieben statt stillschweigend genommen: Die Nummern aus der Antwort
+dieser Operation dürfen den anschließenden Schreibzugriff steuern — gegen `^[0-9]+$` validiert,
+ausschließlich als Zahl weiterverwendet, die URL aus der geprüften Zahl gebildet. Tragfähig ist
+sie, weil die Menge der Nummern hier durch das Ziel-Literal der Operation selbst auf dieses
+Repository begrenzt ist; die Gefahr, gegen die 4.2 gebaut ist — eine Nummer aus fremdem Fließtext
+schickt einen Schreibzugriff an ein fremdes Issue —, entsteht dabei nicht. `title` und `labels`
+bleiben Fließtext und steuern **nichts**.
+
 ## Begründung
 
 - **Die Mehrfachzuordnung beendet die Abwägung, bevor sie beginnt.** Sie ist ein hartes
