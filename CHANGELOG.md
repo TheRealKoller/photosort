@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.43.0](https://github.com/TheRealKoller/photosort/compare/v0.42.0...v0.43.0) (2026-09-11)
+
+
+### Features
+
+* Dateiarbeit läuft über die dedizierten Werkzeuge (Spec 0395) ([#403](https://github.com/TheRealKoller/photosort/issues/403)) ([191506e](https://github.com/TheRealKoller/photosort/commit/191506ea1c9fd8d626aebc8999e695ce17659a9f))
+* früheres Qualitäts-Feedback über einen Prüfbefehl und einen Prüfpunkt je TDD-Einheit (Spec 0398) ([#415](https://github.com/TheRealKoller/photosort/issues/415)) ([52749d6](https://github.com/TheRealKoller/photosort/commit/52749d63df21b09de939ee4ca5b27895e788bc64))
+* **github-access:** Issues tragen ihren Bereich als Label (Spec 0259) ([#418](https://github.com/TheRealKoller/photosort/issues/418)) ([903a9ee](https://github.com/TheRealKoller/photosort/commit/903a9eeec441be319f0751879847660216acd087))
+* **skills:** Entwurfsrundenlauf endet auf Wunsch im Pull Request (Spec 0392) ([#401](https://github.com/TheRealKoller/photosort/issues/401)) ([bf74188](https://github.com/TheRealKoller/photosort/commit/bf7418852db25e810f82ebdd85b96cfe7fd93e6a))
+
+
+### Bug Fixes
+
+* doppelte Dokumentnummern fallen auf statt still zu bleiben (Spec 0406) ([#412](https://github.com/TheRealKoller/photosort/issues/412)) ([bf4582d](https://github.com/TheRealKoller/photosort/commit/bf4582dbe6f6e520c8394861c813b66d845463da))
+* **penpot:** Bausteine tragen die Flächen des Produkts (Spec 0377) ([#413](https://github.com/TheRealKoller/photosort/issues/413)) ([2752b7e](https://github.com/TheRealKoller/photosort/commit/2752b7e12b99735ad6908efab78a4746cae4e037))
+* **penpot:** der Korrekturlauf erreicht alle Varianten (Spec 0377) ([#416](https://github.com/TheRealKoller/photosort/issues/416)) ([c8c2bdf](https://github.com/TheRealKoller/photosort/commit/c8c2bdf80b58b373f385e9ac398b85d7a94ce684))
+
 ## [0.42.0](https://github.com/TheRealKoller/photosort/compare/v0.41.0...v0.42.0) (2026-09-10)
 
 
