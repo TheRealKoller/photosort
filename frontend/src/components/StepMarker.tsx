@@ -9,7 +9,7 @@ import { Icon } from './ui/icon'
 export type StepMarkerAuspraegung = 'erledigt' | 'aktuell' | 'ausstehend' | 'blockiert'
 
 /** Die vier Namen als Laufzeitwert - Grundlage der parametrisierten Tests, damit eine fuenfte
- * Auspraegung nicht ungeprueft hinzukommen kann (Muster wie ICON_NAMES in ui/icon.tsx). */
+ * Auspraegung nicht ungeprueft hinzukommen kann. */
 export const STEP_MARKER_AUSPRAEGUNGEN: readonly StepMarkerAuspraegung[] = [
   'erledigt',
   'aktuell',
@@ -18,12 +18,12 @@ export const STEP_MARKER_AUSPRAEGUNGEN: readonly StepMarkerAuspraegung[] = [
 ]
 
 /*
- * DIE ERSTE VERWENDUNG DES `group`-MUSTERS IM PROJEKT - deshalb hier ausdruecklich erklaert: Der
- * Marker ist NICHT das Bedienelement. Ueberfahren und Gedruecktwerden passieren am umschliessenden
- * `<Link>` bzw. `<button>` in Stepper.tsx, das dafuer `group` traegt; der Marker drueckt sie als
- * `group-hover:`/`group-active:` aus. Der Zustandstraeger ist damit ueber zwei Dateien verteilt -
- * genau deshalb zeigt die `quellen`-Angabe des Bausteins auf DIESE Datei: der Zustandsscanner der
- * Penpot-Nutzlast liest sie, und er verlangt jeden hier getragenen Zustand als gefuehrte Achse.
+ * DER MARKER IST NICHT DAS BEDIENELEMENT. Ueberfahren und Gedruecktwerden passieren am
+ * umschliessenden `<Link>` bzw. `<button>` in Stepper.tsx, das dafuer `group` traegt; der Marker
+ * drueckt sie als `group-hover:`/`group-active:` aus. Der Zustandstraeger ist damit ueber zwei
+ * Dateien verteilt - genau deshalb zeigt die `quellen`-Angabe des Bausteins auf DIESE Datei: der
+ * Zustandsscanner der Penpot-Nutzlast liest sie, und er verlangt jeden hier getragenen Zustand
+ * als gefuehrte Achse.
  *
  * NICHT ZULAESSIG sind hier `aria-disabled:`-Varianten als Stilquelle: der Scanner verlangte dann
  * eine Achse `aria-disabled`, die der Entwurf nicht fuehrt. Die Sperrung ist eine Auspraegung.
@@ -102,8 +102,8 @@ interface StepMarkerProps {
    * Ob der Schritt erledigt ist. Wird normalerweise aus der Auspraegung abgeleitet und nur dort
    * gesetzt, wo beide Aussagen auseinanderfallen: ein erledigter Schritt, der inzwischen wieder
    * gesperrt ist, HEISST "blockiert" und zeigt trotzdem den Haken. Zustandsbenennung und
-   * Glyphenwahl folgen zwei verschiedenen, je unveraenderten Rangfolgen (Edge Case 2 der Spec):
-   * blockiert ▸ aktuell ▸ erledigt fuer den Namen, Haken vor Schloss fuer die Glyphe.
+   * Glyphenwahl folgen zwei verschiedenen, je unveraenderten Rangfolgen: blockiert ▸ aktuell ▸
+   * erledigt fuer den Namen, Haken vor Schloss fuer die Glyphe.
    */
   istErledigt?: boolean
 }

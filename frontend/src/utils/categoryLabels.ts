@@ -1,12 +1,11 @@
 import type { CategoryKey, CategoryOut } from '../api/types'
 
-// Die Anzeigetabelle kommt zur LAUFZEIT vom Server (`GET /categories`) - das frueher hier gepflegte
-// `CATEGORY_DISPLAY_NAME_OVERRIDES`-Woerterbuch ist ersatzlos entfallen.
+// Die Anzeigetabelle kommt zur LAUFZEIT vom Server (`GET /categories`); im Frontend wird keine
+// zweite gepflegt.
 //
-// Die drei Helfer sind bewusst REINE FUNKTIONEN mit dem geladenen Set als EXPLIZITEM Parameter
-// (Testvorgabe der Spec, nicht Stilfrage): eine modul-globale, vom Query-Cache befuellte Variable
-// haette sie nur noch mit `QueryClientProvider` testbar gemacht und ihre Tests von Query-Zustand
-// abhaengig.
+// Die drei Helfer sind bewusst REINE FUNKTIONEN mit dem geladenen Set als EXPLIZITEM Parameter:
+// eine modul-globale, vom Query-Cache befuellte Variable machte sie nur noch mit
+// `QueryClientProvider` testbar und ihre Tests von Query-Zustand abhaengig.
 //
 // `categories` darf jederzeit leer sein (Set noch nicht geladen) - dann greift ueberall der
 // generische Fallback, kein Absturz und kein leeres Badge.
@@ -45,9 +44,8 @@ function findDisplayName(categoryKey: string, categories: CategorySet): string |
 /**
  * Anzeigename eines `category_key`: der `display_name` aus dem geladenen Set, sonst der generische
  * Fallback. Bewusst eine lineare Suche ueber genau 13 Eintraege statt eines aus dem Set gebauten
- * Objekt-Lookups - damit gibt es auch keinen `Object.prototype`-Durchgriff mehr, gegen den der
- * fruehere `Object.hasOwn`-Check schuetzen musste. Ein Key wie `"toString"` trifft hier strukturell
- * keinen Eintrag und faellt korrekt auf den Fallback.
+ * Objekt-Lookups: so gibt es keinen `Object.prototype`-Durchgriff. Ein Key wie `"toString"` trifft
+ * hier strukturell keinen Eintrag und faellt korrekt auf den Fallback.
  */
 export function formatCategoryKey(categoryKey: CategoryKey, categories: CategorySet): string {
   return findDisplayName(categoryKey, categories) ?? genericFallback(categoryKey)

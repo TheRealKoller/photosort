@@ -9,8 +9,8 @@ export interface PipelineStepDefinition {
 
 // Einzige Quelle der Wahrheit fuer Anzeigereihenfolge UND Routing-Zuordnung - sowohl der Stepper
 // (Anzeigereihenfolge) als auch PipelineStepView (Komponenten-Zuordnung) und App.tsx
-// (Routing-Erzeugung analog zum bestehenden PROJECT_ROUTES-Muster) leiten sich aus dieser Liste ab,
-// statt die fuenf IDs an mehreren Stellen unabhaengig zu wiederholen.
+// (Routing-Erzeugung) leiten sich aus dieser Liste ab, statt die fuenf IDs an mehreren Stellen
+// unabhaengig zu wiederholen.
 export const PIPELINE_STEPS: readonly PipelineStepDefinition[] = [
   { id: 'scan', label: 'Scan' },
   { id: 'ausschuss', label: 'Ausschuss-Erkennung' },
@@ -31,10 +31,7 @@ export function isStepId(value: string): value is StepId {
 
 /**
  * Leitet den vollstaendigen Pipeline-Fortschritt ausschliesslich aus bereits vorhandenen
- * `ProjectOut`-Feldern ab - 1:1 aus dem bisherigen, produktiven Gating-Verhalten von
- * ProjectDetailPage.tsx uebernommen (siehe dortige, jetzt entfernte
- * isGateSectionActive/isCriteriaGateDisabled/isCurationAvailable-Ableitungen), keine neue/strengere
- * Logik. Kein Seiteneffekt, kein Fetch (analog utils/timeOfDay.ts, utils/qualityLevel.ts).
+ * `ProjectOut`-Feldern ab. Kein Seiteneffekt, kein Fetch.
  */
 export function computeStepStates(project: ProjectOut): PipelineStepState[] {
   const gateConfirmedAt = project.last_scoring_run?.gate_confirmed_at ?? null
@@ -45,13 +42,12 @@ export function computeStepStates(project: ProjectOut): PipelineStepState[] {
 
   return [
     { id: 'scan', isDone: project.last_scan?.status === 'success', isReachable: true },
-    // Bewusst ungegatet (Akzeptanzkriterium 3, Abschnitt "Entscheidungen"): der "Ausschuss
-    // aussortieren"-Button war nie an last_scan.status gekoppelt - kein neues, strengeres Gate.
+    // Bewusst ungegatet: `ausschuss` wird nicht an last_scan.status gekoppelt.
     { id: 'ausschuss', isDone: isAusschussDone, isReachable: true },
     { id: 'gate', isDone: gateConfirmedAt !== null, isReachable: isAusschussDone },
     { id: 'kriterien', isDone: isKriterienDone, isReachable: isKriterienReachable },
-    // Kein Abschlusssignal im Datenmodell fuer einen offenen Review-Prozess (Akzeptanzkriterium
-    // 3) - isDone bleibt konstant false, unabhaengig vom Kriterien-Bewertungsstatus.
+    // Kein Abschlusssignal im Datenmodell fuer einen offenen Review-Prozess - isDone bleibt
+    // konstant false, unabhaengig vom Kriterien-Bewertungsstatus.
     { id: 'kuratierung', isDone: false, isReachable: isKriterienDone },
   ]
 }
@@ -59,21 +55,19 @@ export function computeStepStates(project: ProjectOut): PipelineStepState[] {
 const FALLBACK_STEP_ID: StepId = 'kuratierung'
 
 /**
- * Gemeinsame Ableitung fuer getDefaultStepId/getHighestReachableStepId - technische
- * Detailentscheidung innerhalb der akzeptierten Spec: Akzeptanzkriterium 4 fordert explizit, dass
- * beide Funktionen fuer dieselbe Zustandskombination dasselbe Ziel liefern ("Basis-Route ohne
- * :step und ein unerreichbarer Deep-Link landen konsistent am selben Ort"). Eine woertliche
- * Umsetzung von getHighestReachableStepId als "letzter erreichbarer Schritt in Reihenfolge,
- * UNABHAENGIG vom isDone-Status" widerspricht dieser Vorgabe in einem realen, durch
- * Akzeptanzkriterium 3 bewusst zugelassenen Fall: `ausschuss` ist IMMER erreichbar, auch bevor
- * `scan` erledigt ist (kein neues Gate). Bei einem frisch angelegten Projekt (nichts erledigt)
- * waeren `scan` (erster erreichbarer, noch nicht erledigter Schritt) und `ausschuss` (woertlich
- * "letzter erreichbarer Schritt in Reihenfolge", da `scan` UND `ausschuss` beide erreichbar sind)
- * zwei VERSCHIEDENE Ziele - genau der in Akzeptanzkriterium 4 ausgeschlossene Fall. Beide
- * oeffentlichen Funktionen nutzen deshalb dieselbe "Frontier"-Ableitung: der erste erreichbare,
- * noch nicht erledigte Schritt; fehlt ein solcher (z.B. Kriterien-Bewertung durch dauerhaft
- * ausgeschaltetes Feature-Flag nie gelaufen und nie erreichbar), der jeweils letzte erreichbare
- * Schritt, sonst der feste Fallback `kuratierung`.
+ * Gemeinsame Ableitung fuer getDefaultStepId/getHighestReachableStepId. Beide MUESSEN fuer
+ * dieselbe Zustandskombination dasselbe Ziel liefern: eine Basis-Route ohne :step und ein
+ * unerreichbarer Deep-Link landen am selben Ort.
+ *
+ * getHighestReachableStepId deshalb NICHT woertlich als "letzter erreichbarer Schritt in
+ * Reihenfolge, UNABHAENGIG vom isDone-Status" umsetzen: `ausschuss` ist IMMER erreichbar, auch
+ * bevor `scan` erledigt ist. Bei einem frisch angelegten Projekt lieferten die beiden Funktionen
+ * dann `scan` und `ausschuss` - zwei verschiedene Ziele.
+ *
+ * Die gemeinsame "Frontier"-Ableitung ist: der erste erreichbare, noch nicht erledigte Schritt;
+ * fehlt ein solcher (z.B. Kriterien-Bewertung durch dauerhaft ausgeschaltetes Feature-Flag nie
+ * gelaufen und nie erreichbar), der jeweils letzte erreichbare Schritt, sonst der feste Fallback
+ * `kuratierung`.
  */
 function getFrontierStepId(states: PipelineStepState[]): StepId {
   const frontier = states.find((step) => step.isReachable && !step.isDone)
@@ -93,9 +87,8 @@ export function getHighestReachableStepId(states: PipelineStepState[]): StepId {
 }
 
 /**
- * Erklaertext fuer einen aktuell blockierten Schritt (Akzeptanzkriterium 5, Stepper-Popover) -
- * 1:1 aus den bisherigen Erklaertexten von ProjectDetailPage.tsx uebernommen. `scan`/`ausschuss`
- * sind nie blockiert (siehe computeStepStates), der leere Default-Fall wird deshalb praktisch nie
+ * Erklaertext fuer einen aktuell blockierten Schritt (Stepper-Popover). `scan`/`ausschuss` sind
+ * nie blockiert (siehe computeStepStates), der leere Default-Fall wird deshalb praktisch nie
  * gerendert - nur als defensiver Fallback vorhanden.
  */
 export function getBlockedReason(id: StepId, project: ProjectOut): string {
@@ -121,13 +114,13 @@ export interface StepProgress {
 /**
  * Fuellung des Fortschrittsbalkens unter der Schrittleiste.
  *
- * REINE FUNKTION STATT AUSDRUCK IM JSX (Muster wie computeStepStates/sortCategoryKeys): Der
- * Balken ist ein natives `<progress value max>`, ein berechneter Prozentwert liesse sich weder
- * als Tailwind-Klasse noch als Inline-Style ausdruecken. Die Skala ist bewusst doppelt so fein
- * wie die Schrittzahl: `2 * index + 1` von `2 * n` ist exakt die MITTE der `index`-ten von `n`
- * gleich breiten Spalten - also 10/30/50/70/90 % bei fuenf Schritten. Genau darauf beruht die
- * Zusage, dass die rechte Kante der Fuellung unter der Mitte des aktuellen Schritts liegt; die
- * gleich breiten, abstandslosen Spalten in Stepper.tsx sind dafuer tragende Geometrie.
+ * REINE FUNKTION STATT AUSDRUCK IM JSX: Der Balken ist ein natives `<progress value max>`, ein
+ * berechneter Prozentwert liesse sich weder als Tailwind-Klasse noch als Inline-Style
+ * ausdruecken. Die Skala ist bewusst doppelt so fein wie die Schrittzahl: `2 * index + 1` von
+ * `2 * n` ist exakt die MITTE der `index`-ten von `n` gleich breiten Spalten - also
+ * 10/30/50/70/90 % bei fuenf Schritten. Genau darauf beruht die Zusage, dass die rechte Kante der
+ * Fuellung unter der Mitte des aktuellen Schritts liegt; die gleich breiten, abstandslosen
+ * Spalten in Stepper.tsx sind dafuer tragende Geometrie.
  *
  * `max` wird aus PIPELINE_STEPS abgeleitet, nicht als Konstante gefuehrt - eine sechste Stufe
  * veraendert damit automatisch die Skala statt sie still zu verschieben. Ein unbrauchbarer Index
