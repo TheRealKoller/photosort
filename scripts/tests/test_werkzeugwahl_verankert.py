@@ -36,8 +36,12 @@ in `test_github_zugriff_an_einer_stelle.py`. Dort sind null Vorkommen legitim un
 waere eine Luecke; hier ist die *Form* die Zusicherung ("eine Zeile an fester Stelle mit eigenem
 Marker"), und eine Erwaehnung im Fliesstext soll ausdruecklich frei bleiben.
 
-**Normalisierung - gemessen, nicht angenommen** (2026-09-11, mit `messung_0395.py` nachgerechnet,
-Werte bestaetigen ADR 0077 Abschnitt 8):
+**Normalisierung - gemessen, nicht angenommen** (2026-09-11, zweimal unabhaengig nachgerechnet;
+die Werte bestaetigen ADR 0077 Abschnitt 8). **Nachzurechnen ist das mit den Bausteinen dieser
+Datei selbst**, ohne Zusatzwerkzeug - `absatzweise_normalisiert(haertungsregel_block(
+dateitext(KATALOG))).count(<nadel>)` gegen `dateitext(KATALOG).count(<nadel>)`. Das Wegwerf-
+Skript, mit dem die Tabelle urspruenglich entstanden ist, ist bewusst **nicht** eingecheckt: Es
+koennte nur dasselbe noch einmal, muesste aber mitgepflegt werden.
 
 | Zeichenkette                                        | roh | normalisiert |
 |-----------------------------------------------------|-----|--------------|
@@ -47,7 +51,7 @@ Werte bestaetigen ADR 0077 Abschnitt 8):
 | `Freitext ist immer ein abgegrenzter Wert, …`       |   1 |            1 |
 
 Die zweite Zeichenkette hat im Bestand **null** rohe Treffer - sie steht dort ueber einen
-Zeilenumbruch mit Folgeeinrichtung verteilt ("… mit interpoliertem\\n  Inhalt."). Deshalb wird
+Zeilenumbruch mit Folgeeinrueckung verteilt ("… mit interpoliertem\\n  Inhalt."). Deshalb wird
 absatzweise normalisiert (`re.split(r"\\n\\s*\\n", …)`, dann `re.sub(r"\\s+", " ", …)`) und die
 Nadeln werden **normalisiert hinterlegt**, nicht roh aus der Datei kopiert.
 
@@ -854,7 +858,7 @@ def test_eine_fehlende_ueberschrift_scheitert_laut_statt_still() -> None:
 
 # Die Nadel `nie per Shell-Umleitung mit interpoliertem Inhalt` hat im Bestand **null** rohe
 # Treffer (gemessen 2026-09-11) - sie steht dort ueber einen Zeilenumbruch mit zweistelliger
-# Folgeeinrichtung verteilt. Dieser Befund ist bewusst **keine** Assertion gegen die lebende
+# Folgeeinrueckung verteilt. Dieser Befund ist bewusst **keine** Assertion gegen die lebende
 # Datei: Er wuerde beim ersten legitimen Neuumbruch rot, also genau bei dem Ereignis, das die
 # Normalisierung absorbieren soll. Ausgeuebt wird sie deshalb hier, an nachgebautem Text.
 _UMBROCHEN = (
