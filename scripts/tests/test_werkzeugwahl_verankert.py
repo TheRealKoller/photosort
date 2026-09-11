@@ -524,9 +524,7 @@ def erosions_befunde(block: str) -> list[str]:
 
     fehlend = fehlende_nadeln(block)
     if fehlend:
-        befunde.append(
-            f"Die `gh`-Konkretisierung(en) {fehlend} stehen nicht mehr im 4.1-Block."
-        )
+        befunde.append(f"Die `gh`-Konkretisierung(en) {fehlend} stehen nicht mehr im 4.1-Block.")
     return befunde
 
 
@@ -798,9 +796,7 @@ def test_eine_falsche_position_wird_gemeldet() -> None:
 @pytest.mark.parametrize("fehlender", MARKER)
 def test_ein_fehlender_marker_wird_gemeldet(fehlender: str) -> None:
     vollstaendig = _vollstaendige_marker()
-    ohne = "\n".join(
-        zeile for zeile in vollstaendig.split("\n") if not zeile.startswith(fehlender)
-    )
+    ohne = "\n".join(zeile for zeile in vollstaendig.split("\n") if not zeile.startswith(fehlender))
 
     befunde = verankerungs_verstoesse(_ABSCHNITT_VORLAGE.format(marker=ohne))
 
@@ -965,9 +961,7 @@ def test_eine_geloeschte_nadel_wird_auch_normalisiert_nicht_gefunden() -> None:
     """Sonst faende die Normalisierung irgendwann alles."""
     ohne = _UMBROCHEN.replace("nie per Shell-Umleitung mit interpoliertem\n  Inhalt.", "")
 
-    assert "nie per Shell-Umleitung mit interpoliertem Inhalt" not in absatzweise_normalisiert(
-        ohne
-    )
+    assert "nie per Shell-Umleitung mit interpoliertem Inhalt" not in absatzweise_normalisiert(ohne)
 
 
 def test_ein_ueber_zwei_absaetze_zerrissener_satz_gilt_nicht_als_vorhanden() -> None:
@@ -1044,7 +1038,7 @@ def test_der_alte_satz_im_fliesstext_rettet_eine_umgeschriebene_ueberschrift_nic
     umgebaut = (
         "**4.1 Freitext darf in begründeten Fällen Teil der Aufrufstruktur sein.**\n\n"
         "Bis 2026-09-11 lautete die Regel: „Freitext ist immer ein abgegrenzter Wert, nie Teil\n"
-        "der Aufrufstruktur.\"\n\n"
+        'der Aufrufstruktur."\n\n'
         "- Auf dem `gh`-Weg: Bodies **immer** über `--body-file`; beide Dateien mit dem\n"
         "  Schreib-Werkzeug angelegt, nie per Shell-Umleitung mit interpoliertem Inhalt.\n"
     )
