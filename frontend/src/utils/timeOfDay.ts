@@ -1,11 +1,8 @@
-// specs/features/0039-kuratierung-tage-und-benannte-cluster.md
-//
 // `taken_at` ist ein naives Datetime (EXIF DateTimeOriginal, keine Zeitzone), serialisiert ohne
 // `Z`/Offset (z.B. "2026-07-20T10:00:00"). Zeit-/Datumsextraktion deshalb per String-Slicing der
 // ISO-Zeichenkette statt ueber `Date`-Getter (`getHours()`/`getUTCHours()`) - deren Ergebnis
 // hinge vom An-/Abwesenheitszustand eines `Z`-Suffix und der Zeitzone des ausfuehrenden
-// Browsers/Testrunners ab (siehe specs/architecture/0002-testkonzept.md, Sektion "Naive
-// Datums-/Uhrzeit-Strings"). Min/Max-Zeitpunkt-Vergleich ebenfalls per reinem String-Vergleich
+// Browsers/Testrunners ab. Min/Max-Zeitpunkt-Vergleich ebenfalls per reinem String-Vergleich
 // (ISO-8601 sortiert lexikographisch = chronologisch), kein `Date`-Parsing noetig.
 
 import type { ClusterPlace } from '../api/types'
@@ -20,7 +17,7 @@ export function hourOf(iso: string): number {
   return Number(iso.slice(11, 13))
 }
 
-// Tageszeit-Bucket-Tabelle (Akzeptanzkriterium 5 der Spec): untere Grenze inklusive, obere
+// Tageszeit-Bucket-Tabelle: untere Grenze inklusive, obere
 // Grenze exklusiv, lueckenlos. Aufsteigend nach `startHour` sortiert - Nachts deckt sowohl
 // [22,24) als auch [0,5) ab und ist deshalb der Fallback-Wert, falls keine andere Startstunde
 // erreicht wird (siehe timeOfDayBucketLabel).
@@ -46,7 +43,7 @@ export function timeOfDayBucketLabel(hour: number): string {
 
 /**
  * Formatiert die Uhrzeitspanne zweier ISO-Zeitstempel, kollabiert bei identischer Minute auf
- * einen einzelnen Zeitpunkt (Akzeptanzkriterium 4 der Spec).
+ * einen einzelnen Zeitpunkt.
  */
 export function formatTimeRange(minIso: string, maxIso: string): string {
   const minTime = minIso.slice(11, 16)
@@ -58,8 +55,7 @@ export function formatTimeRange(minIso: string, maxIso: string): string {
 }
 
 /**
- * Formatiert eine bereits serverseitig gerundete Koordinate auf genau zwei Nachkommastellen
- * (specs/features/0051-gps-landmark-cluster-bildung.md).
+ * Formatiert eine bereits serverseitig gerundete Koordinate auf genau zwei Nachkommastellen.
  *
  * REINE FORMATIERUNG: die Rundungskonvention selbst liegt im Backend, weil dort dieselbe Zahl
  * ueber `"coordinate"` vs. `"multiple"` entscheidet - hier wird nur noch die Stellenzahl
@@ -107,16 +103,15 @@ function clusterPlaceLabel(place: ClusterPlace | null | undefined): string | nul
 
 /**
  * Ermittelt Tag und fertige Cluster-Ueberschrift aus den sichtbaren Fotos eines Clusters.
- * Frueheste-Foto-Regel (Akzeptanzkriterium 6 der Spec 0039): sowohl Tag als auch Tageszeit-Bucket
+ * Früheste-Foto-Regel: sowohl Tag als auch Tageszeit-Bucket
  * werden vom chronologisch fruehesten Foto abgeleitet, die angezeigte Spanne bleibt die exakte
  * Min/Max-Spanne aller uebergebenen (sichtbaren) Fotos. Erwartet ein nicht-leeres Array - der
  * Aufrufer (`groupByClusterAndCategory`) ruft diese Funktion nur fuer Cluster mit mindestens einem
  * noch sichtbaren Foto auf, fuer erschoepfte Cluster wird stattdessen der `clusterMetaRef`-Cache
  * gelesen.
  *
- * Seit specs/features/0051-gps-landmark-cluster-bildung.md kommt ein optionaler ORTSTEIL davor:
- * `"<Ort> · <Tageszeit> (<Zeitspanne>)"`. Der Ort ERGAENZT die Tageszeit, er ersetzt sie nie -
- * ohne Ortsinformation ist die Ueberschrift zeichengleich mit der bisherigen.
+ * Ein optionaler ORTSTEIL steht davor: `"<Ort> · <Tageszeit> (<Zeitspanne>)"`. Der Ort
+ * ERGÄNZT die Tageszeit, er ersetzt sie nie.
  *
  * Der Ortsteil wird vom ERSTEN Foto mit gesetztem `cluster_place` uebernommen und nicht selbst
  * aggregiert: der Server sichert zu, dass der Wert auf jedem Foto desselben Clusters identisch
@@ -132,15 +127,15 @@ export function formatClusterHeading(
 ): {
   dayKey: string
   heading: string
-  // Roher (nicht formatierter) Zeitstempel des chronologisch fruehesten Fotos - Review-Fund
-  // architect: statt diesen Wert ein zweites Mal im Aufrufer (`CurateCategoriesPage.tsx`) zu
-  // berechnen, liefert diese Funktion ihn als Single Source of Truth gleich mit, genutzt fuer die
-  // chronologische Cluster-Sortierung (Akzeptanzkriterium 2).
+  // Roher (nicht formatierter) Zeitstempel des chronologisch frühesten Fotos: statt ihn im
+  // Aufrufer (`CurateCategoriesPage.tsx`) ein zweites Mal zu berechnen, liefert diese
+  // Funktion ihn als einzige Quelle gleich mit - genutzt für die chronologische
+  // Cluster-Sortierung.
   earliestIso: string
 } {
-  // Copilot-Review-Fund (PR #91): expliziter Guard statt eines unklaren "cannot read properties
-  // of undefined" beim naechsten Zeilenzugriff auf photos[0] - der Vertrag "nicht-leeres Array"
-  // war zuvor nur im Docstring, nicht zur Laufzeit geprueft.
+  // Expliziter Guard statt eines unklaren "cannot read properties of undefined" beim
+  // Zeilenzugriff auf photos[0]: der Vertrag "nicht-leeres Array" gilt zur Laufzeit, nicht
+  // nur im Docstring.
   if (photos.length === 0) {
     throw new Error('formatClusterHeading() erwartet ein nicht-leeres Array')
   }
