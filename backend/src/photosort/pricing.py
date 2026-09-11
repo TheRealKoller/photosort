@@ -11,38 +11,29 @@ from photosort.cloud_vision import (
     TokenUsage,
 )
 
-# specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
-# laeufe.md Punkt 2: die Preisquelle der IST-Kostenrechnung - eine Code-Konstante je Modell-ID,
-# KEIN Settings-/env-Feld. Eine Preisaenderung ist kein Deployment-Parameter, sondern eine
-# belegpflichtige Tatsachenbehauptung: sie gehoert in einen Commit mit Datum, Quelle und Review -
-# nicht in eine `.env`, in der sie unbemerkt jeden historischen Betrag umdeuten koennte.
+# Preisquelle der Ist-Kostenrechnung: eine Code-Konstante je Modell-ID, KEIN Settings-/env-Feld.
+# Eine Preisänderung ist kein Deployment-Parameter, sondern eine belegpflichtige
+# Tatsachenbehauptung - sie gehört in einen Commit mit Datum, Quelle und Review, nicht in eine
+# `.env`, in der sie unbemerkt jeden historischen Betrag umdeuten könnte.
 #
-# EINE PREISQUELLE, ZWEI ABLEITUNGEN (specs/features/0304-cloud-modell-je-anbieter-waehlbar.md,
-# decisions/0059-modellwahl-je-anbieter-und-modellgebundene-kostenschaetzung.md Punkt 3): bis
-# Spec 0304 standen hier zwei handgepflegte Preiskonstanten nebeneinander - `MODEL_PRICING` (Ist-
-# Rechnung pro TOKEN, nach dem Lauf) und `remote_classification.py::COST_PER_IMAGE_USD` (Vorab-
-# Schaetzung pro BILD, je PROVIDER). Die zweite ist ersatzlos entfallen: sie war je Provider
-# geschluesselt und wurde damit bei einem Modellwechsel unbemerkt falsch - genau der Defekt, den
-# Spec 0304 behebt. Die Schaetzung ist seitdem `estimate_usd_per_image()` unten, abgeleitet aus
-# DIESER Tabelle ueber eine offengelegte Verbrauchsannahme. Ein neues Modell braucht damit genau
-# EINE gepflegte Tatsache - seine verifizierten Token-Preise -, und die Schaetzung folgt
-# zwangslaeufig. Dies loest die gegenteilige Festlegung aus ADR 0051 Punkt 2 ab; alle uebrigen
-# Punkte von ADR 0051 bleiben in Kraft.
+# Es ist die EINZIGE gepflegte Preistatsache: die Vorab-Schätzung je Bild
+# (`estimate_usd_per_image` unten) ist aus dieser Tabelle abgeleitet, keine zweite Konstante
+# daneben. Ein neues Modell braucht damit genau eine gepflegte Tatsache - seine verifizierten
+# Token-Preise -, und die Schätzung folgt zwangsläufig.
 
 
 @dataclass(frozen=True)
 class ModelPricing:
     """Listenpreis eines Modells in USD je einer Million Tokens, getrennt nach Ein- und Ausgabe.
 
-    `float` statt `Decimal` analog zur Persistenz der Betraege (ADR 0051 Punkt 3): die Betraege
-    liegen im Cent-Bereich, es findet keine Buchhaltung statt, gerundet wird erst bei der
-    Ausgabe.
+    `float` statt `Decimal`: die Beträge liegen im Cent-Bereich, es findet keine Buchhaltung
+    statt, gerundet wird erst bei der Ausgabe.
 
-    `source_url`/`verified_on` sind PFLICHTFELDER (ADR 0059 Punkt 5): die Verifikation gegen die
-    offizielle Anbieterdokumentation ist damit nicht mehr ein Kommentar, den man vergessen kann,
-    sondern ein Feld, ohne das der Eintrag nicht konstruierbar ist. Ein Preis, der nicht gegen die
-    offizielle Quelle verifiziert werden konnte, gehoert nicht ins Produkt - und sein Modell nicht
-    in `cloud_vision.py::VISION_MODELS_BY_PROVIDER`."""
+    `source_url`/`verified_on` sind PFLICHTFELDER: die Verifikation gegen die offizielle
+    Anbieterdokumentation ist damit nicht ein Kommentar, den man vergessen kann, sondern ein
+    Feld, ohne das der Eintrag nicht konstruierbar ist. Ein Preis, der nicht gegen die offizielle
+    Quelle verifiziert werden konnte, gehört nicht ins Produkt - und sein Modell nicht in
+    `cloud_vision.py::VISION_MODELS_BY_PROVIDER`."""
 
     input_usd_per_mtok: float
     output_usd_per_mtok: float
@@ -52,64 +43,29 @@ class ModelPricing:
 
 _TOKENS_PER_MTOK = 1_000_000
 
-# Schluessel ist die MODELL-ID (nicht der Provider): der Preis haengt am Modell, und die
-# Modell-IDs werden bereits in cloud_vision.py zentral gefuehrt. Die Vollstaendigkeit dieser
-# Tabelle gegenueber `cloud_vision.py::VISION_MODELS_BY_PROVIDER` ist per Invariantentest
-# erzwungen (tests/test_pricing.py) - der einzige automatisierte Schutz gegen einen Modellwechsel
-# ohne Preispflege, und seit Spec 0304 zugleich der Schutz davor, dass ein WAEHLBARES Modell ohne
-# Preis in die Auswahl geraet.
+# Schlüssel ist die MODELL-ID (nicht der Provider): der Preis hängt am Modell. Die
+# Mengengleichheit dieser Tabelle mit `cloud_vision.py::VISION_MODELS_BY_PROVIDER` ist per
+# Invariantentest erzwungen (tests/test_pricing.py) - der einzige automatisierte Schutz davor,
+# dass ein wählbares Modell ohne Preis in die Auswahl gerät, und zugleich davor, dass ein Eintrag
+# ohne Leser als unbeaufsichtigt alternde Tatsachenbehauptung liegenbleibt. Wird ein abgelöstes
+# Modell wieder aufgenommen, wird `verified_on` NEU verifiziert, nie aus dem Altbestand geerbt.
 #
-# Beide Werte sind gegen die offiziellen Preislisten der Anbieter verifiziert (developer-Agent,
-# 2026-09-02):
+# Beide Werte je Eintrag sind gegen `source_url` zum Stand `verified_on` verifiziert. Die dort
+# ebenfalls gelisteten Cache-Tarife sind bewusst NICHT abgebildet: das Projekt setzt kein
+# Prompt-Caching ein, jeder Vision-Aufruf schickt ein eigenes Bild.
 #
-# - claude-haiku-4-5: $1.00/MTok Input, $5.00/MTok Output
-#   (https://docs.claude.com/en/docs/about-claude/pricing, abgerufen 2026-09-02; die dort
-#   ebenfalls gelisteten Cache-Tarife - $1.25/$2.00 Schreiben, $0.10 Lesen - sind hier bewusst
-#   NICHT abgebildet: das Projekt setzt kein Prompt-Caching ein, jeder Vision-Aufruf schickt ein
-#   eigenes Bild).
-# - ministral-3b-2512: $0.10/MTok Input UND Output
-#   (https://docs.mistral.ai/models/ministral-3-3b-25-12, abgerufen 2026-09-02 - symmetrische
-#   Preisgestaltung innerhalb der MINISTRAL-3-FAMILIE; deckt sich mit der frueheren Verifikation
-#   vom 2026-08-23 in remote_classification.py::COST_PER_IMAGE_USD). Die Symmetrie ist eine
-#   Eigenschaft dieser Modellfamilie, KEINE des Anbieters Mistral - siehe mistral-small-2603
-#   unten, das erste asymmetrisch bepreiste Mistral-Modell im Produkt.
+# `mistral-small-2603` ist das erste asymmetrisch bepreiste Mistral-Modell - der Ausgabepreis ist
+# das Vierfache des Eingabepreises, beide Ministral-Einträge sind symmetrisch. Ein vertauschtes
+# oder versehentlich symmetrisch übernommenes Paar fällt durch KEINEN der Ordnungstests
+# ("stärker => teurer"), weil auch $0,00045 und $0,0017 über der Voreinstellung $0,0003 liegen;
+# dagegen steht allein der Literal-Pin auf $0,000504 je Bild in tests/test_pricing.py. Die
+# Ausgabeseite ist zusätzlich durch `_MAX_RESPONSE_TOKENS = 256` in BEIDEN Clients hart gedeckelt
+# (höchstens $0,00015 Ausgabekosten je Aufruf) - wer den Deckel anhebt, stellt diese Rechnung neu.
 #
-# Bekannte Grenze (Teststrategie der Spec, "bewusst nicht automatisiert abgesichert"): die
-# inhaltliche RICHTIGKEIT dieser Werte gegen echte Anbieter-Abrechnungen ist nicht testbar.
-# Ersatzverfahren: Abgleich der ersten realen Rechnung mit der Summe auf der Statistikseite; bei
-# Abweichung die Konstante korrigieren und die Betraege aus den gespeicherten Tokens (die deshalb
-# mitpersistiert werden, ADR 0051 Punkt 3) neu berechnen.
-#
-# - claude-sonnet-5 (Spec 0304, das zweite waehlbare Anthropic-Modell): $2.00/MTok Input,
-#   $10.00/MTok Output (https://platform.claude.com/docs/en/about-claude/pricing, abgerufen
-#   2026-09-06; Vision-Faehigkeit gegen die Modelluebersicht derselben Doku bestaetigt). Cache-
-#   Tarife aus demselben Grund wie oben nicht abgebildet.
-# - mistral-small-2603 (specs/features/0369-mistral-small-loest-ministral-8b-ab.md, das zweite
-#   waehlbare Mistral-Modell): $0.15/MTok Input, $0.60/MTok Output
-#   (https://docs.mistral.ai/models/model-cards/mistral-small-4-0-26-03, abgerufen 2026-09-09;
-#   gegengeprueft an https://mistral.ai/pricing/api/ vom selben Tag, die dort ebenfalls
-#   reproduzierten $0.10 fuer 3B belegen, dass die Seite die Werte liefert, gegen die die
-#   Bestandseintraege verifiziert wurden). ERSTES ASYMMETRISCH BEPREISTES MISTRAL-MODELL - der
-#   Ausgabepreis ist das Vierfache des Eingabepreises, anders als bei beiden Ministral-Eintraegen.
-#   Ein vertauschtes oder versehentlich symmetrisch uebernommenes Paar faellt durch KEINEN der
-#   Ordnungstests ("staerker => teurer"), weil auch $0,00045 und $0,0017 ueber der Voreinstellung
-#   $0,0003 liegen; dagegen steht der Literal-Pin auf $0,000504 je Bild in tests/test_pricing.py.
-#   Rechnerisch traegt die Asymmetrie ohne Codeaenderung: `estimate_usd_per_image` ist
-#   `compute_cost_usd` ueber der Annahme und gewichtet Ein-/Ausgabe ohnehin getrennt.
-#   Die Ausgabeseite ist zusaetzlich durch `_MAX_RESPONSE_TOKENS = 256` in BEIDEN Clients hart
-#   gedeckelt (hoechstens $0,00015 Ausgabekosten je Aufruf) - wer den Deckel anhebt, stellt diese
-#   Rechnung neu.
-#   Vision-Faehigkeit samt offen dokumentierter Luecke: siehe den Kommentar an
-#   `cloud_vision.py::MISTRAL_VISION_MODEL_SMALL`.
-#
-#   Es loest `ministral-8b-2512` ab, dessen Preiseintrag VOLLSTAENDIG entfernt wurde (nicht als
-#   "historischer" Wert stehengelassen): Ist-Kosten werden im Moment des Laufs berechnet und in
-#   den Lauf-Spalten eingefroren (ADR 0051 Punkt 4), `compute_cost_usd` wird ausschliesslich mit
-#   `settings.resolved_landmark_model()` aufgerufen - ein zurueckgelassener Eintrag haette damit
-#   keinen Leser, waere aber weiterhin eine gepflegte, unbeaufsichtigt alternde
-#   Tatsachenbehauptung mit `verified_on`-Stempel. Bei einer Wiederaufnahme wird `verified_on`
-#   NEU verifiziert, nie aus dem Altbestand geerbt. Erzwungen ist das durch die Mengengleichheit
-#   der Registry-Invariante in tests/test_pricing.py.
+# Bekannte Grenze, bewusst nicht automatisiert abgesichert: die inhaltliche RICHTIGKEIT dieser
+# Werte gegen echte Anbieter-Abrechnungen ist nicht testbar. Ersatzverfahren: Abgleich der ersten
+# realen Rechnung mit der Summe auf der Statistikseite; bei Abweichung die Konstante korrigieren
+# und die Beträge aus den gespeicherten Tokens neu berechnen.
 MODEL_PRICING: dict[str, ModelPricing] = {
     ANTHROPIC_VISION_MODEL: ModelPricing(
         input_usd_per_mtok=1.00,
@@ -139,12 +95,12 @@ MODEL_PRICING: dict[str, ModelPricing] = {
 
 
 def compute_cost_usd(model: str, usage: TokenUsage) -> float | None:
-    """Ist-Kosten EINER Phase in USD aus ihrem gemessenen Token-Verbrauch (ADR 0051 Punkt 1).
+    """Ist-Kosten EINER Phase in USD aus ihrem gemessenen Token-Verbrauch.
 
     Reine Funktion ohne DB und ohne Netz. Ein hier nicht hinterlegtes Modell liefert `None`, nie
-    ein stilles `0.0` (ADR 0051 Punkt 2): ein Modellwechsel ohne Preispflege soll als "nicht
-    erfasst" auffallen, statt sich als kostenloser Lauf zu tarnen. `TokenUsage(0, 0)` liefert
-    dagegen `0.0` - "erfasst, es sind keine Kosten angefallen"."""
+    ein stilles `0.0`: ein Modellwechsel ohne Preispflege soll als "nicht erfasst" auffallen,
+    statt sich als kostenloser Lauf zu tarnen. `TokenUsage(0, 0)` liefert dagegen `0.0` -
+    "erfasst, es sind keine Kosten angefallen"."""
     pricing = MODEL_PRICING.get(model)
     if pricing is None:
         return None
@@ -154,17 +110,11 @@ def compute_cost_usd(model: str, usage: TokenUsage) -> float | None:
     ) / _TOKENS_PER_MTOK
 
 
-# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 3 ab hier: die VORAB-
-# Schaetzung. Sie ist seit Spec 0304 keine eigene Konstante mehr, sondern `compute_cost_usd` ueber
-# einer ANGENOMMENEN statt einer gemessenen Tokenzahl - derselbe Rechenweg, dieselbe Preistabelle,
-# damit dasselbe Modell.
-
-
 @dataclass(frozen=True)
 class AssumedImageUsage:
-    """Angenommener Token-Verbrauch EINES Bildes, je Provider (ADR 0059 Punkt 3).
+    """Angenommener Token-Verbrauch EINES Bildes, je Provider.
 
-    Bewusst je PROVIDER und nicht je Modell: die Annahme haengt an unserer Bildquelle (die
+    Bewusst je PROVIDER und nicht je Modell: die Annahme hängt an unserer Bildquelle (die
     `display`-Cache-Variante, 2048px lange Kante, thumbnails.py) und unserem Prompt, nicht am
     Modell - nur die Umrechnung Pixel -> Tokens ist providerspezifisch. Ein neues Modell desselben
     Anbieters erbt die Annahme und braucht nur seine verifizierten Token-Preise."""
@@ -173,56 +123,37 @@ class AssumedImageUsage:
     output_tokens: int
 
 
-# Herleitung, uebernommen aus der frueheren `remote_classification.py::COST_PER_IMAGE_USD` und
-# dort geloescht (ADR 0059 Punkt 3) - die Werte sind so kalibriert, dass die abgeleitete Schaetzung
-# fuer das jeweilige VOREINSTELLUNGS-Modell die bisherigen Betraege exakt reproduziert
-# ($0.0052 anthropic / $0.0003 mistral, per Test gepinnt). Das macht das Akzeptanzkriterium "ohne
-# gesetzte Einstellung exakt wie bisher" zu einer Testaussage statt zu einer Behauptung.
+# Herleitung der beiden Annahmen. Sie sind so kalibriert, dass die abgeleitete Schätzung für das
+# jeweilige VOREINSTELLUNGS-Modell $0,0052 anthropic bzw. $0,0003 mistral exakt reproduziert -
+# beide Beträge sind in tests/test_pricing.py gepinnt.
 #
 # anthropic: 4600 Input-Tokens = ~3900 Bild- + ~700 Prompt-Tokens.
-#   Bild: offizielle Anthropic-Formel `tokens ~= breite_px * hoehe_px / 750` (verifiziert gegen den
-#   bekannten Referenzwert 1092x1092px ~= 1590 Tokens), gerechnet auf die real versendete
-#   `display`-Variante (DISPLAY_MAX_SIZE=2048px lange Kante, Seitenverhaeltnis erhalten): ein
-#   typisches 3:2-/4:3-Landschaftsfoto an dieser Obergrenze ergibt ca. 3700-4200 Bild-Tokens
-#   (2048x1365 bzw. 2048x1536); viele reale Quellfotos sind kleiner und verbrauchen weniger.
+#   Bild: offizielle Anthropic-Formel `tokens ~= breite_px * hoehe_px / 750` (verifiziert gegen
+#   den bekannten Referenzwert 1092x1092px ~= 1590 Tokens), gerechnet auf die real versendete
+#   `display`-Variante (DISPLAY_MAX_SIZE=2048px lange Kante, Seitenverhältnis erhalten): ein
+#   typisches 3:2-/4:3-Landschaftsfoto an dieser Obergrenze ergibt ca. 3700-4200 Bild-Tokens.
 #   Prompt: der aus CATEGORY_REGISTRY erzeugte Klassifikations-Prompt (categories.py::
-#   build_classification_prompt, 13 Kategorie-Bloecke, ~3400 Zeichen bei ~4 Zeichen/Token).
-#   Ausgabe: JSON-Array mit 1-3 Objekten, 80-160 Tokens, Mittelwert 120.
-#   NACHGERECHNET mit specs/features/0299-kategorie-konfidenz-anzeigen.md (Security-Abschnitt
-#   Punkt 5): der Kategorien-Eintrag ist vom nackten Schluessel zum Objekt geworden
-#   ({"key": ..., "confidence": 0.92}), rund 10 Tokens mehr je Kandidat. Die vollbesetzte Antwort
-#   liegt jetzt bei ueberschlaegig 80-100 statt rund 50 Ausgabe-Tokens. Der Wert 120 deckt das
-#   weiterhin ab und bleibt deshalb UNVERAENDERT - die Marge schrumpft aber von rund dem
-#   Zweieinhalb- auf etwa das Anderthalbfache. Bei einer weiteren Schema-Erweiterung ist sie
-#   erneut zu pruefen; die Schaetzung ist seit Spec 0296 die einzige verbliebene Absicherung vor
-#   der kostenpflichtigen Aktion.
+#   build_classification_prompt, 13 Kategorie-Blöcke, ~3400 Zeichen bei ~4 Zeichen/Token).
+#   Ausgabe: JSON-Array mit 1-3 Objekten. Der Wert 120 deckt die heute vollbesetzte Antwort
+#   (überschlägig 80-100 Tokens) ab; bei einer weiteren Erweiterung des Antwortschemas ist die
+#   Marge erneut zu prüfen - sie beträgt nur noch etwa das Anderthalbfache, und die Schätzung ist
+#   die einzige Absicherung vor der kostenpflichtigen Aktion.
 # mistral: 2880 Input-Tokens = ~2030 Bild- + ~850 Prompt-Tokens.
-#   Mistral veroeffentlicht fuer die Ministral-Familie KEINE offizielle Bild-Token-Formel (anders
-#   als Anthropic) - dieser Anteil bleibt ausdruecklich DOKUMENTIERT-UNKALIBRIERT, gestuetzt auf
-#   das vergleichbare Pixtral-Familien-Tiling (Bandbreite 1000-4000 Bild-Tokens je nach
-#   Aufloesung/Kachelung). Ausgabe wie oben.
+#   Mistral veröffentlicht KEINE offizielle Bild-Token-Formel (anders als Anthropic) - dieser
+#   Anteil bleibt ausdrücklich DOKUMENTIERT-UNKALIBRIERT, gestützt auf das vergleichbare
+#   Pixtral-Familien-Tiling (Bandbreite 1000-4000 Bild-Tokens je nach Auflösung/Kachelung).
+#   Der Eintrag deckt zwei Modellfamilien ab: `mistral-small-2603` erbt die Annahme über eine
+#   Familiengrenze hinweg und ist damit ebenfalls unkalibriert, die gefährliche
+#   Abweichungsrichtung ist die Unterschätzung. Sie wird trotzdem NICHT angefasst - die Werte
+#   sind an die exakte Reproduktion von $0,0003 gebunden, eine Anhebung verschöbe genau die.
+#   Größenordnung rund $0,0005 gegenüber ~$0,0003, selbst ein Faktor 2 bliebe im Zehntelcent-
+#   Bereich je Bild. Zeigt die erste reale Rechnung deutlich mehr als 120 Ausgabe-Tokens je Bild,
+#   ist das der Anlass für eine eigene Story (Verbrauchsannahme je MODELL statt je Anbieter) -
+#   nicht für eine stille Korrektur hier.
 #
-# Bewusst grob und eher ueber- als unterschaetzend (unveraendert gegenueber ADR 0050 Punkt 5): EIN
-# Preis je Bild fuer BEIDE Cloud-Anteile, obwohl der Landmark-Prompt kuerzer ist als der
-# Kategorie-Prompt. Die Schaetzung ist seit Spec 0296 die einzige verbliebene Absicherung vor der
-# kostenpflichtigen Aktion - sie soll nicht zu niedrig ausfallen.
-#
-# ZWEI MODELLFAMILIEN UNTER EINEM ANBIETER-SCHLUESSEL (specs/features/0369-mistral-small-loest-
-# ministral-8b-ab.md): seit dieser Story deckt der Eintrag "mistral" nicht mehr nur die
-# Ministral-3-Familie ab, sondern auch `mistral-small-2603` (Mistral Small 4) - die Annahme wird
-# damit erstmals ueber eine Modellfamiliengrenze hinweg geerbt und ist fuer das neue Modell
-# ausdruecklich UNKALIBRIERT; die gefaehrliche Abweichungsrichtung ist die Unterschaetzung.
-# Sie wird hier trotzdem NICHT angefasst: die Werte sind an die exakte Reproduktion von $0,0003
-# fuer das Voreinstellungs-Modell gebunden (per Test gepinnt), und eine Anhebung der
-# Ausgabekomponente verschoebe genau die. Groessenordnung: rund $0,0005 gegenueber ~$0,0003;
-# selbst ein Faktor 2 bei den Bild-Tokens bliebe im Zehntelcent-Bereich je Bild. Zeigt die erste
-# reale Rechnung deutlich mehr als 120 Ausgabe-Tokens je Bild, ist das der Anlass fuer eine eigene
-# Story (Verbrauchsannahme je MODELL statt je Anbieter, mit eigener ADR) - nicht fuer eine stille
-# Korrektur hier.
-#
-# Bekannte Grenze (wie bei MODEL_PRICING): die Richtigkeit der Annahme gegen echte Abrechnungen
-# ist nicht testbar. Ersatzverfahren unveraendert: Abgleich der ersten realen Rechnung mit den
-# Ist-Kosten auf der Statistikseite.
+# Bewusst grob und eher über- als unterschätzend: EIN Preis je Bild für BEIDE Cloud-Anteile,
+# obwohl der Landmark-Prompt kürzer ist als der Kategorie-Prompt. Die Schätzung soll nicht zu
+# niedrig ausfallen. Bekannte Grenze und Ersatzverfahren wie bei MODEL_PRICING oben.
 ASSUMED_USAGE_BY_PROVIDER: dict[str, AssumedImageUsage] = {
     "anthropic": AssumedImageUsage(input_tokens=4_600, output_tokens=120),
     "mistral": AssumedImageUsage(input_tokens=2_880, output_tokens=120),
@@ -230,12 +161,12 @@ ASSUMED_USAGE_BY_PROVIDER: dict[str, AssumedImageUsage] = {
 
 
 def estimate_usd_per_image(model: str, provider: str) -> float | None:
-    """Vorab-Schaetzung der Kosten EINES Bildes fuer ein Modell (ADR 0059 Punkt 3).
+    """Vorab-Schätzung der Kosten EINES Bildes für ein Modell.
 
-    `None` heisst "kein Preis hinterlegt", nie ein stilles `0.0` - dieselbe Semantik wie
-    `compute_cost_usd` (ADR 0051 Punkt 2/ADR 0059 Punkt 4). Die Oberflaeche weist diesen Fall als
-    fehlende Kostenangabe aus, statt einen falschen Betrag zu zeigen. Ein unbekannter Provider
-    liefert aus demselben Grund `None` statt zu werfen."""
+    `None` heißt "kein Preis hinterlegt", nie ein stilles `0.0` - dieselbe Semantik wie
+    `compute_cost_usd`. Die Oberfläche weist diesen Fall als fehlende Kostenangabe aus, statt
+    einen falschen Betrag zu zeigen. Ein unbekannter Provider liefert aus demselben Grund `None`
+    statt zu werfen."""
     assumed = ASSUMED_USAGE_BY_PROVIDER.get(provider)
     if assumed is None:
         return None
