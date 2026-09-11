@@ -126,6 +126,34 @@ def ausfuehrungstext() -> str:
     )
 
 
+ZWEI_SETS = ("set -euo pipefail", "set +e")
+
+# S3, total am wirksamen Skripttext. `git ` steht bewusst als Totalverbot statt
+# kontextanalysierend: `check.sh` leitet seine Baeume wie `format.sh` aus BASH_SOURCE ab und hat
+# keinen legitimen Grund, `git` aufzurufen.
+VERBOTEN_TOTAL = (
+    "eval ",
+    "eval\t",
+    "uvx ",
+    "pip install",
+    "uv pip",
+    "npx",
+    "prettier",
+    "--ignore-path",
+    "git ",
+    "hooksPath",
+    ".git/hooks",
+    "settings.json",
+)
+
+# K7, ebenso total: Ein verlorenes `--check` ist der teuerste stille Fehler dieses Skripts - es
+# schriebe mitten im TDD-Zyklus Dateien um, und der Lauf endete trotzdem mit 0.
+VERBOTEN_SCHREIBEND = ("--write", "--fix", "--unsafe-fixes", "format.sh")
+
+# S3, aber an der Ausfuehrungsposition statt am Meldungstext - Begruendung im Modul-Docstring.
+VERBOTEN_IN_AUSFUEHRUNG = ("npm ci", "npm install")
+
+
 def test_das_skript_existiert_und_ist_ausfuehrbar() -> None:
     assert SKRIPT_PFAD.is_file(), (
         f"{SKRIPT_REPO_RELATIV} fehlt. docs/setup.md und .claude/agents/developer.md nennen den "
@@ -134,6 +162,98 @@ def test_das_skript_existiert_und_ist_ausfuehrbar() -> None:
     assert os.access(SKRIPT_PFAD, os.X_OK), (
         f"{SKRIPT_REPO_RELATIV} ist nicht ausfuehrbar (Modus "
         f"{SKRIPT_PFAD.stat().st_mode & 0o777:o}). Das Ausfuehrungsbit ist Teil des Commits."
+    )
+
+
+def test_der_wirksame_skripttext_traegt_genug_zeilen_fuer_die_abwesenheitspruefungen() -> None:
+    """Selbstschutz: Ein Skripttext von 0 wirksamen Zeilen liesse alle Verbote vakuum-gruen."""
+    zeilen = wirksamer_skripttext().strip().splitlines()
+    assert len(zeilen) >= MINDESTZAHL_WIRKSAMER_ZEILEN, (
+        f"Nur {len(zeilen)} wirksame Zeilen im Skript - die Abwesenheitspruefungen dieses Moduls "
+        "waeren bedeutungslos."
+    )
+
+
+def test_das_skript_bricht_bei_echten_fehlern_ab_laesst_aber_die_zehn_pruefungen_laufen() -> None:
+    """K9, die Textebene - beide Haelften, weil sie einander scheinbar widersprechen.
+
+    Ohne `set -euo pipefail` liefe das Skript nach einem echten Skriptfehler weiter; mit ihm
+    duerfte kein einziger der zehn Aufrufe direkt dastehen. Beides zugleich geht nur in der
+    `if ! ...`-Form, und `set +e` bleibt aussen vor.
+    """
+    text = wirksamer_skripttext()
+    vorhanden, verboten = ZWEI_SETS
+    assert vorhanden in text, (
+        "Sicherheitskonzept S4: Ohne 'set -euo pipefail' laeuft das Skript nach einem echten "
+        "Fehler weiter und meldet eine Bilanz, die nichts mehr wert ist."
+    )
+    assert verboten not in text, (
+        f"{SKRIPT_REPO_RELATIV} enthaelt {verboten!r}. Der Sammellauf entsteht aus der "
+        "`if ! ...`-Form, nicht daraus, dass die Fehlerbehandlung abgeschaltet wird."
+    )
+
+
+def test_die_rueckgabewerte_werden_nie_hinter_dem_befehl_eingesammelt() -> None:
+    """S1: `bilanz=$?` unter `set -e` wird hinter einem fehlschlagenden Befehl nie erreicht.
+
+    Genau dort entstuende die 0 aus dem Ausbleiben von Befunden statt aus zehn gelaufenen
+    Pruefungen - der einzige Fehlermodus, den niemand bemerkt.
+    """
+    text = wirksamer_skripttext()
+    assert "=$?" not in text, (
+        f"{SKRIPT_REPO_RELATIV} sammelt einen Rueckgabewert ueber '=$?' ein. Unter 'set -e' wird "
+        "diese Zeile hinter einem fehlschlagenden Befehl nie erreicht."
+    )
+    assert "if ! " in text, (
+        "Die Befundsammlung steht als 'if ! ...' - fehlt sie, prueft das Skript entweder nichts "
+        "oder bricht beim ersten Befund ab."
+    )
+
+
+@pytest.mark.parametrize("verboten", VERBOTEN_SCHREIBEND)
+def test_das_skript_schreibt_nie(verboten: str) -> None:
+    """K7: Ein Pruefbefehl, der reparieren kann, ist kein Pruefbefehl mehr."""
+    assert verboten not in wirksamer_skripttext(), (
+        f"{SKRIPT_REPO_RELATIV} enthaelt {verboten!r}. Das Skript meldet und beendet sich; es "
+        "schreibt nicht, repariert nicht und ruft format.sh nicht auf - auch nicht bedingt und "
+        "nicht auf Wunsch."
+    )
+
+
+@pytest.mark.parametrize("verboten", VERBOTEN_TOTAL)
+def test_das_skript_installiert_nichts_und_ruft_git_nicht_auf(verboten: str) -> None:
+    """S3, und S4 fuer die ersten vier: Der gelesene Wert wird ausschliesslich verglichen."""
+    assert verboten not in wirksamer_skripttext(), (
+        f"{SKRIPT_REPO_RELATIV} enthaelt {verboten!r}. Das Skript installiert nichts, ruft kein "
+        "Werkzeug unter Umgehung seines npm-Skripts auf und braucht kein git - die Baeume haengen "
+        "an BASH_SOURCE."
+    )
+
+
+@pytest.mark.parametrize("verboten", VERBOTEN_IN_AUSFUEHRUNG)
+def test_das_skript_repariert_die_node_modules_vorbedingung_nicht(verboten: str) -> None:
+    """S3: `npm ci` waere die naheliegende "Reparatur" - und genau das tut Ausgang 1 nicht.
+
+    Geprueft am Ausfuehrungstext: Die Meldung eines uebersprungenen Baums muss den Handgriff
+    woertlich nennen (K10), der Befehl darf ihn nicht ausfuehren. Ohne `eval` - selbst verboten -
+    fuehrt aus einem gequoteten Zeichenkettenliteral kein Weg zu einem ausgefuehrten Befehl.
+    """
+    assert verboten not in ausfuehrungstext(), (
+        f"{SKRIPT_REPO_RELATIV} fuehrt {verboten!r} aus. Ein uebersprungener Baum wird gemeldet, "
+        "nicht repariert - und schon gar nicht mit 'npm install' statt 'npm ci'."
+    )
+
+
+def test_die_meldung_nennt_den_handgriff_trotz_des_verbots_woertlich() -> None:
+    """Die Gegenprobe zum Test darueber: Das Verbot darf K10 nicht aushebeln.
+
+    Stuende hier nur das Verbot, waere die bequemste Art es zu erfuellen, den Handgriff aus der
+    Meldung zu streichen - und der Aufrufer im verbundenen Arbeitsbaum wuesste nicht, was zu tun
+    ist.
+    """
+    assert "npm ci" in skripttext(), (
+        "Der Skripttext nennt 'npm ci' nirgends mehr. Die Meldung eines uebersprungenen "
+        "TypeScript-Baums muss den Handgriff woertlich tragen (K10)."
     )
 
 
