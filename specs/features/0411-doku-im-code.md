@@ -1,6 +1,6 @@
 # 0411 - Doku im Code bleibt knapp und wächst nicht nach
 
-**Status:** Accepted
+**Status:** Implemented ([PR #438](https://github.com/TheRealKoller/photosort/pull/438))
 **Erstellt:** 2026-09-11
 **Bezug:** [Issue #411](https://github.com/TheRealKoller/photosort/issues/411)
 **Umfang:** über dem Richtwert von rund 200 Zeilen, weil die Spec fünf Pull Requests trägt und
@@ -146,11 +146,16 @@ eine Datei ohne Ballast bleibt unverändert:
 Reihenfolge innerhalb eines PR: erst der mechanische Schnitt, dann der inhaltliche. Messung als
 Wegwerf-Auswertung, nicht als eingechecktes Skript.
 
-**Das Keyword `Closes #411` trägt allein PR 5.** Es schließt das Issue beim Merge; stünde es schon
-in PR 1, gälte die Story nach einem Fünftel der Arbeit als erledigt. PR 1 bis 4 verweisen deshalb
-ohne Keyword auf das Issue, die Board-Karte bleibt bis dahin auf `In Progress` — das ist der
-zutreffende Wert, kein ausgebliebener Übergang. Ebenso wird die `**Status:**`-Zeile dieser Spec
-erst in PR 5 auf `Implemented` gesetzt.
+**Kein Pull Request dieser Story trägt das schließende Schlüsselwort.** Vorgesehen war, dass allein
+PR 5 es trägt — bei fünf Pull Requests gälte die Story sonst nach einem Fünftel der Arbeit als
+erledigt. Tatsächlich hat der Merge von PR 1 das Issue bereits geschlossen: Ein Commit-Body zitierte
+das Schlüsselwort erklärend, und beim Squash wandert jeder Commit-Body in den Merge-Commit, wo
+GitHub es auswertet. **Über das Schlüsselwort schreiben, ohne es zu schreiben** — das ist die Regel,
+die daraus folgt, und sie gilt für Commit-Bodys wie für Pull-Request-Bodys.
+
+Die Entscheidung, das Issue nicht wieder zu öffnen, liegt bei Daniel und ist gefallen: `Done` ist
+der Endzustand, den die Story ohnehin erreicht, und ein erneutes Öffnen holte die Board-Karte nicht
+zurück. Die `**Status:**`-Zeile dieser Spec wird in PR 5 auf `Implemented` gesetzt.
 
 ### Nachvollziehbarkeit je Datei
 

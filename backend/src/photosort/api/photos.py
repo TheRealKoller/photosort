@@ -51,14 +51,13 @@ from photosort.worker import (
 )
 
 # Einzige bewusste Ausnahme vom sonst in api/*.py durchgehaltenen Prinzip, keine worker.py-
-# Funktionen direkt zu importieren (api/projects.py-Kommentar bei _count_remote_category_
-# candidates) - die Spec verlangt hier ausdruecklich einen SYNCHRONEN Aufruf im selben API-Request
-# ("sofortige Wirkung", kein Hintergrund-Job), reassign_photo_category/derive_photo_category/
-# _remote_category_evidence sind dafuer die einzig richtige, bereits bestehende
-# Implementierungsstelle (DRY mit run_criterion_scoring - beide Stellen leiten die Kategorie
-# ueber denselben Codepfad ab). Der Import selbst ist unproblematisch, da worker.py mediapipe/
-# tensorflow/onnxruntime ausschliesslich lokal innerhalb der jeweiligen build_*()-Funktionen
-# importiert (nicht auf Modulebene) - kein zusaetzliches Gewicht im uvicorn-Importpfad.
+# Funktionen direkt zu importieren: die Umkategorisierung wirkt SYNCHRON im selben API-Request
+# ("sofortige Wirkung", kein Hintergrund-Job). reassign_photo_category/derive_photo_category/
+# _remote_category_evidence leiten die Kategorie ueber denselben Codepfad ab wie
+# run_criterion_scoring - kein zweiter, driftender Rechenweg.
+# Voraussetzung dieses Imports: worker.py importiert mediapipe/tensorflow/onnxruntime
+# ausschliesslich lokal innerhalb der jeweiligen build_*()-Funktionen, NIE auf Modulebene - sonst
+# traegt der uvicorn-Importpfad ihr Gewicht.
 
 # Bewusste Abweichung vom Router-Level-dependencies=[Depends(get_current_user)]-Muster aus
 # projects.py/opencloud.py: jeder Endpunkt hier braucht das tatsächliche
@@ -87,15 +86,10 @@ class SuggestionOut(BaseModel):
     ein Vorschlag ist strukturell nie eine Rating-Zeile. `reason` ist regelbasiert aus
     duplicate_of abgeleitet, nicht separat in PhotoScore gespeichert.
 
-    PhotoScore.suggested_status wird "praktisch nur noch REJECTED"
-    gesetzt; die Rangfolge trägt die Kriterien-Pipeline (PhotoRanking, siehe RankingOut
-    unten).
-    Technische Umsetzungsentscheidung des developer-Agenten (von der Spec explizit an dieser
-    Stelle delegiert): statt `reason` um einen dritten Wert ("Rang-Vorschlag") zu erweitern, lebt
-    die Rangfolgen-Information in einem eigenen, additiven `PhotoOut.ranking`-Feld - strukturell
-    sauberer getrennt, da "Top-N-Kandidat einer Partition" kein Duplikat-/Qualitaets-Ausschuss-
-    Urteil ist, sondern eine andere Art von Information (Kuratierungs-Kontext statt
-    Ausschluss-Begruendung)."""
+    PhotoScore.suggested_status wird "praktisch nur noch REJECTED" gesetzt; die Rangfolge trägt
+    die Kriterien-Pipeline (PhotoRanking, siehe RankingOut unten). `reason` traegt ausschliesslich
+    `duplicate`/`low_quality` - die Rangfolgen-Information steht in `PhotoOut.rankings`, nie
+    hier."""
 
     status: RatingStatus
     reason: Literal["duplicate", "low_quality"]
@@ -119,12 +113,10 @@ class RankingOut(BaseModel):
     category_key: str
     rank_score: float
     rank_position: int
-    # Größe der GESAMTEN Cluster x Kategorie-Partition (nicht nur der angeforderten
-    # top_n), für "Rang M von N" im Info-Popover - lauf-global berechnet (siehe
-    # _partition_sizes), nicht nutzerspezifisch gefiltert. Zählt ALLE Zeilen der
-    # Partition, Haupt- wie
-    # Nebenzeilen: die Frage lautet "wie viele Fotos stehen in dieser Kategorie dieses Clusters",
-    # und dort steht ein Foto mit Nebenzugehoerigkeit tatsaechlich.
+    # Größe der GESAMTEN Cluster x Kategorie-Partition (nicht nur der angeforderten top_n), für
+    # "Rang M von N" im Info-Popover - lauf-global berechnet (siehe _partition_sizes), nicht
+    # nutzerspezifisch gefiltert. Zählt ALLE Zeilen der Partition, Haupt- wie Nebenzeilen: die
+    # Frage lautet "wie viele Fotos stehen in dieser Kategorie dieses Clusters".
     partition_size: int
     # Ob dies die HAUPTkategorie des Fotos ist. Genau eine
     # Zugehoerigkeit je Foto und Lauf traegt `true`. Die Oberflaeche liest die Rolle ausschliesslich
@@ -134,15 +126,13 @@ class RankingOut(BaseModel):
     # diese Zugehoerigkeit nicht zur angeforderten Auswahl gehoert oder gar keine angefordert
     # wurde.
     #
-    # Die Kuratierungs-Query hat KEINEN Ablehnungsfilter, der Wert ist damit ENTWEDER `null`
-    # ODER gleich `rank_position` - nicht mehr das um die eigenen Ablehnungen bereinigte
-    # `row_number()`, und nicht mehr nutzerabhaengig.
+    # Die Kuratierungs-Query hat KEINEN Ablehnungsfilter, der Wert ist damit ENTWEDER `null` ODER
+    # gleich `rank_position`, und nicht nutzerabhaengig.
     #
-    # Das Feld bleibt trotz des Zusammenfallens bestehen, weil es eine ANDERE Frage beantwortet
-    # als `rank_position`: jene ist die lauf-globale Rangaussage des Info-Popovers (unabhaengig
-    # vom Query-Parameter), diese hier die Zugehoerigkeit zur angeforderten Auswahl ("unter
-    # welchen seiner Kategorien ist dieses Foto zu zeigen"). Es ist die einzige Auskunft
-    # darüber; ohne sie müsste das Frontend die Auswahlregel nachbilden.
+    # Trotz des Zusammenfallens NICHT mit `rank_position` zusammenlegen: jene ist die lauf-globale
+    # Rangaussage des Info-Popovers (unabhaengig vom Query-Parameter), diese hier die
+    # Zugehoerigkeit zur angeforderten Auswahl ("unter welchen seiner Kategorien ist dieses Foto
+    # zu zeigen") - die einzige Auskunft darueber, die das Frontend sonst nachbilden muesste.
     curation_position: int | None = None
 
 
@@ -181,13 +171,11 @@ class FineLabelOut(BaseModel):
 class CategoryCandidateOut(BaseModel):
     """Die fuer DIESES Foto tatsaechlich gueltige Kategorie-Kandidatenmenge - lokal qualifizierende
     Signale (Wert >= der jeweiligen `category_presence_threshold`) UND die remote genannten
-    Kategorien zusammen - das verhindert, dass das Frontend die Präsenz-Schwellenlogik selbst
-    nachbilden müsste.
+    Kategorien zusammen; das Frontend bildet die Präsenz-Schwellenlogik nicht nach.
 
-    `category_key` ist IMMER ein Key des festen Sets (categories.py); ein `score`-Feld
-    ist ersatzlos entfallen - die Auswahl entscheidet die feste Vorrangreihenfolge, nicht mehr ein
-    Zahlenvergleich, und eine angezeigte Zahl ohne Wirkung waere irrefuehrend. `provider` ist nur
-    bei `origin="remote"` gesetzt."""
+    `category_key` ist IMMER ein Key des festen Sets (categories.py). Es gibt KEIN `score`-Feld:
+    die Auswahl entscheidet die feste Vorrangreihenfolge, nie ein Zahlenvergleich. `provider` ist
+    nur bei `origin="remote"` gesetzt."""
 
     category_key: str
     origin: Literal["local", "remote"]
@@ -232,9 +220,8 @@ class CloudVisionStatusOut(BaseModel):
 
 
 class PhotoLocationOut(BaseModel):
-    """Der Ort DIESES Fotos - in VOLLER EXIF-Präzision, ohne serverseitige Rundung (
-    die Rundung auf zwei Nachkommastellen liegt allein in `ClusterPlaceOut`, weil dort dieselbe
-    Zahl ueber "coordinate" vs. "multiple" entscheidet).
+    """Der Ort DIESES Fotos - in VOLLER EXIF-Präzision, ohne serverseitige Rundung (die Rundung
+    auf zwei Nachkommastellen liegt allein in `ClusterPlaceOut`).
 
     `source` ist ein SICHERHEITSMERKMAL, kein Anzeigedetail (Muss-Kriterium des
     Sicherheitskonzepts): `GPS_CLUSTER_SPLIT_DISTANCE_METERS` begrenzt den SCHRITT zwischen zwei
@@ -260,15 +247,8 @@ class ClusterPlaceOut(BaseModel):
     welche Stufe (erkannte Sehenswuerdigkeit -> ungefaehre Koordinate -> mehrere Orte) tatsaechlich
     gilt. Das Frontend bildet die Rangfolge NICHT nach, es formatiert nur.
 
-    Warum das nicht im Frontend entstehen kann: die Kuratierungsansicht sieht je Partition nur
-    `rank_position <= topN`, die nachgeladenen Kandidaten laufen ueber eine eigene
-    Abfrage und fliessen nie in `items` zurueck. Jede Aussage, die eine AGGREGATION ueber den
-    Cluster ist, waere dort dauerhaft eine Aussage ueber die Top-N - sowohl "Mehrere Orte" als auch
-    der Sehenswuerdigkeit-Name.
-
     `kind="multiple"` traegt STRUKTURELL keine Koordinate: es gibt den einen Ort, den sie
-    repraesentieren muesste, gerade nicht. Zwei Felder statt einer stellvertretenden Zahl zu
-    fuehren waere eine zweite, stille Wahrheit.
+    repraesentieren muesste, gerade nicht.
 
     `landmark_name` ist freier, extern erzeugter LLM-Text (`PhotoLandmarkDetection.name`) -
     dieselbe Auflage wie bei `FineLabelOut.raw_label`: ausschliesslich als regulaerer
@@ -291,18 +271,16 @@ class PhotoOut(BaseModel):
     taken_at: datetime
     ratings: list[RatingOut]
     suggestion: SuggestionOut | None
-    # ALLE Zugehoerigkeiten des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi
-    # Immer eine Liste, nie `null`
-    # (analog `ratings`) - leer, solange kein erfolgreicher Lauf existiert.
+    # ALLE Zugehoerigkeiten des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi. Immer
+    # eine Liste, nie `null` (analog `ratings`) - leer, solange kein erfolgreicher Lauf existiert.
     #
     # REIHENFOLGE FESTGELEGT: Hauptzeile zuerst, danach die Nebenzeilen in
     # Registry-Anzeigereihenfolge. Sonst flackerte die Anzeige mit der Zeilenreihenfolge der
     # Datenbank.
     #
-    # Ersetzt das entfallene `ranking: RankingOut | None`. Der brechende Feldwechsel ist
-    # beabsichtigt: der Compiler soll an jeder Lesestelle erzwingen, dass sie sich entscheidet,
-    # welche Zugehoerigkeit sie meint - ein beibehaltenes `ranking` neben `rankings` waere genau
-    # die zweite, driftende Abbildung derselben Sache.
+    # KEIN zweites Einzelfeld `ranking: RankingOut | None` daneben - das waere die zweite,
+    # driftende Abbildung derselben Sache. Jede Lesestelle entscheidet sich, welche
+    # Zugehoerigkeit sie meint.
     rankings: list[RankingOut]
     # Immer eine Liste, nie None (analog `ratings`) - best-effort: enthaelt nur Kriterien, fuer
     # die tatsaechlich eine PhotoCriterionScore-Zeile existiert, sortiert nach
@@ -330,11 +308,10 @@ class PhotoOut(BaseModel):
     # CloudVisionPhase), feste Reihenfolge [landmark, remote_category] - siehe
     # _cloud_vision_status_out.
     cloud_vision_status: list[CloudVisionStatusOut]
-    # Zwei additive,
-    # OPTIONALE Felder mit Vorgabewert `null` - damit bleiben bestehende Testfixturen unveraendert.
-    # Beide werden einheitlich auf ALLEN Lesepfaden ausgeliefert (Daniels Entscheidung, 2026-09-09),
-    # nicht nur im Kuratierungsmodus: ein je Query-Modus divergierendes `PhotoOut` waere genau die
-    # "zweite, driftende Abbildung", vor der der `rankings`-Kommentar oben warnt.
+    # Zwei additive, OPTIONALE Felder mit Vorgabewert `null`. Beide werden einheitlich auf ALLEN
+    # Lesepfaden ausgeliefert, nicht nur im Kuratierungsmodus: ein je Query-Modus divergierendes
+    # `PhotoOut` waere genau die "zweite, driftende Abbildung", vor der der `rankings`-Kommentar
+    # oben warnt.
     location: PhotoLocationOut | None = None
     cluster_place: ClusterPlaceOut | None = None
 
@@ -371,11 +348,11 @@ async def _filtered_photo_ids(
     if rating_status is RatingFilter.UNRATED:
         base = base.where(own_rating.id.is_(None))
     elif rating_status is RatingFilter.SUGGESTED:
-        # Bildet dieselbe Regel wie has_suggestion in _to_photo_out als SQL-Praedikat nach
-        # (Architektur-Abschnitt):
-        # kein eigenes Rating des anfragenden Nutzers UND PhotoScore.suggested_status gesetzt.
-        # Bewusst keine gemeinsame Codebasis mit has_suggestion (ORM-Query vs. Objekt-Praedikat) -
-        # Konsistenz wird stattdessen ueber den Paritaets-Test in test_api_photos.py sichergestellt.
+        # Bildet dieselbe Regel wie has_suggestion in _to_photo_out als SQL-Praedikat nach: kein
+        # eigenes Rating des anfragenden Nutzers UND PhotoScore.suggested_status gesetzt. Bewusst
+        # keine gemeinsame Codebasis mit has_suggestion (ORM-Query vs. Objekt-Praedikat) -
+        # Konsistenz sichert stattdessen
+        # `tests/test_api_photos.py::test_list_photos_suggested_filter_matches_has_suggestion_parity`.
         base = base.join(PhotoScore, PhotoScore.photo_id == Photo.id).where(
             own_rating.id.is_(None), PhotoScore.suggested_status.is_not(None)
         )
@@ -408,12 +385,10 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
             # Grundlage von PhotoOut.remote_category/
             # category_candidates und des Remote-Erfolgssignals in _cloud_vision_status_out.
             selectinload(Photo.category_classification),
-            # Eager geladen (analog
-            # criterion_scores/fine_labels oben), kein zusaetzliches Query je Foto
-            # fuer _cloud_vision_status_out. Photo.landmark_detection war zuvor NIE eager geladen
-            # (kein bestehender Aufrufer griff bislang darauf zu) - ohne dieses selectinload
-            # loest photo.landmark_detection ein Lazy-Load aus und schlaegt im Async-Kontext mit
-            # MissingGreenlet fehl (Review-verifiziert).
+            # Eager geladen (analog criterion_scores/fine_labels oben), kein zusaetzliches Query
+            # je Foto fuer _cloud_vision_status_out. Ohne dieses selectinload loest
+            # photo.landmark_detection einen Lazy-Load aus und schlaegt im Async-Kontext mit
+            # MissingGreenlet fehl.
             selectinload(Photo.landmark_detection),
             selectinload(Photo.cloud_vision_errors),
         )
@@ -442,9 +417,8 @@ def _criterion_scores_out(photo: Photo) -> list[CriterionScoreOut]:
     Reihenfolge; Zeilen, deren criterion_key nicht in der
     Registry steht (Registry-/Daten-Drift), landen ans Ende, sortiert nach ihrem eigenen Key fuer
     ein deterministisches Ergebnis, und bekommen den rohen Key als display_name-Fallback sowie
-    `category_eligible=False` (identisch zum Registry-Default des Attributs). Fehlt
-    umgekehrt ein Registry-Kriterium in der DB, taucht es einfach nicht auf (kein Platzhalter,
-    Akzeptanzkriterium 8)."""
+    `category_eligible=False` (identisch zum Registry-Default des Attributs). Fehlt umgekehrt ein
+    Registry-Kriterium in der DB, taucht es einfach nicht auf - kein Platzhalter."""
     registry_order = {key: index for index, key in enumerate(CRITERIA_REGISTRY)}
     sorted_scores = sorted(
         photo.criterion_scores,
@@ -483,24 +457,21 @@ def _fine_labels_out(photo: Photo) -> list[FineLabelOut]:
 
 
 def _category_candidates_out(photo: Photo) -> list[CategoryCandidateOut]:
-    """Die für DIESES Foto gültige Kandidatenmenge - lokal
-    qualifizierende Signale (criteria.py-Schwelle erreicht, ueber LOCAL_CATEGORY_SIGNALS auf einen
-    Set-Key abgebildet) UND die remote genannten Set-Keys.
+    """Die Liste ist reine ERKLAERUNG in der Oberflaeche ("das hat das System erkannt"): sie
+    beschränkt NICHT, was manuell übersteuert werden darf - dafür gilt die staerkere Whitelist
+    gegen das geschlossene Set (`is_known_category` in `set_category_override`).
 
-    Die Liste ist reine ERKLAERUNG in der Oberflaeche ("das hat das System erkannt"): sie
-    beschränkt NICHT, was manuell übersteuert werden darf - dafür gilt die
-    staerkere Whitelist gegen das geschlossene Set (`is_known_category` in
-    `set_category_override`). Sortiert in Registry-Anzeigereihenfolge; ein Key, der lokal UND
-    remote Kandidat ist, erscheint einmal mit `origin="local"` (die lokale Herkunft ist die
-    spezifischere Aussage: sie beruht auf einem nachvollziehbaren Messwert)."""
+    Lokal qualifizierende Signale (criteria.py-Schwelle erreicht, ueber LOCAL_CATEGORY_SIGNALS auf
+    einen Set-Key abgebildet) und die remote genannten Set-Keys zusammen, sortiert in
+    Registry-Anzeigereihenfolge; ein Key, der lokal UND remote Kandidat ist, erscheint einmal mit
+    `origin="local"` - die spezifischere Herkunftsaussage."""
     origins: dict[str, tuple[Literal["local", "remote"], str | None]] = {}
 
     classification = photo.category_classification
-    # Die Konfidenz-Abbildung wird GETRENNT
-    # von den Herkunftsangaben gefuehrt und erst ganz unten je Schluessel nachgeschlagen - genau
-    # deshalb ueberlebt die Zahl das Zusammenfassen eines lokal UND remote erkannten Schluessels
-    # zu `origin="local"`. `or {}` deckt beide "keine Angabe"-Formen ab: keine
-    # Klassifizierungszeile und eine Altzeile mit `NULL` (Akzeptanzkriterium 9).
+    # Die Konfidenz-Abbildung wird GETRENNT von den Herkunftsangaben gefuehrt und erst ganz unten
+    # je Schluessel nachgeschlagen - genau deshalb ueberlebt die Zahl das Zusammenfassen eines
+    # lokal UND remote erkannten Schluessels zu `origin="local"`. `or {}` deckt beide "keine
+    # Angabe"-Formen ab: keine Klassifizierungszeile und eine Altzeile mit `NULL`.
     confidences: dict[str, float] = {}
     if classification is not None:
         confidences = classification.detected_category_confidences or {}
@@ -569,8 +540,8 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
 
     # Landmark: Erfolgssignal ist entweder eine tatsaechliche Detection ("gefunden", RESULT) oder
     # eine PhotoCriterionScore(criterion_key="landmark")-Zeile ohne Detection ("nichts gefunden",
-    # NO_RESULT eigener Sonderfall) - die PRAESENZ der Score-Zeile entscheidet,
-    # nicht ihr konkreter Wert (Datenanomalie-Regressionstest der Teststrategie).
+    # NO_RESULT eigener Sonderfall) - die PRAESENZ der Score-Zeile entscheidet, nicht ihr
+    # konkreter Wert.
     landmark_score = next(
         (score for score in photo.criterion_scores if score.criterion_key == "landmark"), None
     )
@@ -580,11 +551,10 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     elif landmark_score is not None:
         landmark_success = (CloudVisionStatus.NO_RESULT, landmark_score.computed_at)
 
-    # Remote-Kategorie: kein "nichts gefunden"-Fall - ein Erfolg schreibt seit
-    # immer GENAU EINE Klassifikations-Zeile, auch wenn die
-    # Kategorie `nicht_erkannt` lautet und keine Feinlabels entstanden sind. Die PRAESENZ dieser
-    # Zeile ist damit das Erfolgssignal (vorher: mindestens eine Feinlabel-Zeile, was einen
-    # legitimen "nichts Bekanntes genannt"-Ausgang faelschlich als "nicht gelaufen" gezeigt haette).
+    # Remote-Kategorie: kein "nichts gefunden"-Fall - ein Erfolg schreibt GENAU EINE
+    # Klassifikations-Zeile, auch wenn die Kategorie `nicht_erkannt` lautet und keine Feinlabels
+    # entstanden sind. Die PRAESENZ dieser Zeile ist damit das Erfolgssignal, nicht die Existenz
+    # einer Feinlabel-Zeile.
     remote_category_success: tuple[CloudVisionStatus, datetime] | None = None
     if photo.category_classification is not None:
         remote_category_success = (
@@ -615,11 +585,10 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     ]
 
 
-# Anzeigerundung der Cluster-Koordinate: zwei Nachkommastellen entsprechen rund 1,1 km
-# (Vorgabe "grob, ~1 km").
-# Die Rundung liegt im BACKEND, weil dieselbe Zahl hier ueber `"coordinate"` vs. `"multiple"`
-# entscheidet - eine Rundung im Frontend koennte die Stufe gar nicht bestimmen, ohne den
-# vollstaendigen Cluster zu kennen. Das Frontend formatiert den bereits gerundeten Wert nur noch.
+# Anzeigerundung der Cluster-Koordinate: zwei Nachkommastellen entsprechen rund 1,1 km (Vorgabe
+# "grob, ~1 km"). Die Rundung liegt im BACKEND, nie im Frontend - dieselbe Zahl entscheidet hier
+# ueber `"coordinate"` vs. `"multiple"`, und diese Stufe ist ohne den vollstaendigen Cluster nicht
+# bestimmbar. Das Frontend formatiert den bereits gerundeten Wert nur noch.
 _CLUSTER_PLACE_COORDINATE_DIGITS = 2
 
 
@@ -680,8 +649,7 @@ def _cluster_place_of(members: list[_ClusterMember]) -> ClusterPlaceOut | None:
     if not cells:
         return None
     if len(cells) > 1:
-        # Traegt STRUKTURELL keine Koordinate - es gibt den einen Ort, den sie repraesentieren
-        # muesste, gerade nicht.
+        # Strukturell ohne Koordinate, siehe ClusterPlaceOut.
         return ClusterPlaceOut(kind="multiple")
     [(lat, lon)] = cells
     return ClusterPlaceOut(kind="coordinate", lat=lat, lon=lon)
@@ -696,11 +664,9 @@ def _derived_location_of(photo: Photo, anchors: list[_ClusterMember]) -> PhotoLo
     Datenbank): bei gleichem Abstand gewinnt der FRUEHERE Zeitpunkt, bei identischem `taken_at` die
     kleinere `photo_id` - beides ergibt sich aus der Sortierung plus dem `<=`-Vergleich unten.
 
-    Die Suche läuft über `key=` DIREKT auf `anchors` - eine vorgeschaltete Hilfsliste aller
-    Zeitstempel waere bereits linear und machte den `bisect` zur
-    Zierde - und zwar einmal JE FOTO der Antwort, also O(N x M). Der vollstaendige Cluster kann
-    deutlich mehr Anker tragen, als die Antwort Fotos enthaelt (Top-N-Auswahl), womit
-    genau der teure Faktor der ist, den die Antwort gar nicht sieht."""
+    Die Suche läuft über `key=` DIREKT auf `anchors`: KEINE vorgeschaltete Hilfsliste aller
+    Zeitstempel - die waere bereits linear, und zwar einmal JE FOTO der Antwort (O(N x M)), und
+    machte den `bisect` zur Zierde."""
     if photo.gps_lat is not None and photo.gps_lon is not None:
         return PhotoLocationOut(lat=photo.gps_lat, lon=photo.gps_lon, source="exif")
     if not anchors:
@@ -754,9 +720,8 @@ async def _place_by_photo_id(
     `PhotoScore.cluster_key` - der groebere fuehrte den Ort ueber genau die Landmark-Grenze hinweg,
     die dieses Feature gerade zieht.
 
-    VERFUEGBARKEIT: EIN Query pro Request, nicht einer pro Foto (Praezedenz `_partition_sizes`).
-    Die Ergebnismenge ist durch die Projektgroesse begrenzt - dieselbe Schranke, unter der
-    `_partition_sizes` bereits laeuft."""
+    VERFUEGBARKEIT: EIN Query pro Request, nicht einer pro Foto; die Ergebnismenge ist durch die
+    Projektgroesse begrenzt."""
     # Alle Rangzeilen EINES Fotos tragen denselben cluster_key (die Partitionen sind
     # cluster x kategorie, die Cluster-Zugehoerigkeit ist pro Foto eindeutig) - die erste genuegt.
     cluster_key_by_photo_id = {
@@ -809,11 +774,8 @@ async def _place_by_photo_id(
                 # SANITISIERUNG IM LESEPFAD (Muss-Kriterium des Sicherheitskonzepts, Abschnitt
                 # "Standortdaten"): `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl
                 # `landmark.py::_landmark_detection_from_json` sie bereits an der Quelle anwendet.
-                # Das ist KEIN Redundanz-Fehlgriff, sondern die einzige Deckung des Altbestands:
-                # Aus der Zeit vor der Sanitisierung sind reale, kostenpflichtig erzeugte Zeilen mit
-                # unsaniertem Rohtext entstanden - sie neu zu erkennen kostet Geld, sie zu loeschen
-                # vernichtet bezahlte Daten, und einen kostenlosen Migrationsweg gibt es nicht
-                # (anders als beim Feinlabel-Fall, der mit einem UPDATE zu heilen war).
+                # Sie ist die einzige Deckung des Altbestands: es gibt reale Zeilen mit
+                # unsaniertem Rohtext und fuer sie keinen Migrationsweg.
                 # BITTE NICHT als vermeintliche Dopplung entfernen.
                 landmark_name=sanitize_landmark_name(landmark_name),
             )
@@ -850,9 +812,7 @@ def _to_photo_out(
 ) -> PhotoOut:
     """Baut die Antwortdarstellung EINES Fotos.
 
-    SICHERHEIT - die Antwort ist eine Funktion des ANFRAGENDEN Nutzers
-    (die Auflage steht am Feld `RankingOut.curation_position` und ist mit ihrer Begründung
-    hierher gewandert, nicht entfallen):
+    SICHERHEIT - die Antwort ist eine Funktion des ANFRAGENDEN Nutzers:
 
     Bekommen `GET /projects/{id}/photos` oder `GET /projects/{id}/curation-candidates` je eine
     Antwort-Zwischenspeicherung, ein `ETag` oder ein `Cache-Control` ueber `no-store` hinaus, MUSS
@@ -869,10 +829,10 @@ def _to_photo_out(
 
     `curation_position` trägt sie ebenfalls nicht (kein Ablehnungsfilter, kein
     Nutzerbezug)."""
-    # Anzeigeregel (Akzeptanzkriterium der Spec): ein Vorschlag ist nur sichtbar, wenn (a)
-    # PhotoScore.suggested_status gesetzt ist UND (b) der anfragende Nutzer noch KEINE eigene
-    # Rating-Zeile fuer dieses Foto hat - unabhaengig davon, ob eine ANDERE Person das Foto schon
-    # bewertet hat (eigene Bewertung hat immer Vorrang, siehe UI/UX-Abschnitt der Spec).
+    # Anzeigeregel: ein Vorschlag ist nur sichtbar, wenn (a) PhotoScore.suggested_status gesetzt
+    # ist UND (b) der anfragende Nutzer noch KEINE eigene Rating-Zeile fuer dieses Foto hat -
+    # unabhaengig davon, ob eine ANDERE Person das Foto schon bewertet hat; die eigene Bewertung
+    # hat immer Vorrang.
     has_own_rating = any(rating.user_id == current_user_id for rating in photo.ratings)
     has_suggestion = (
         photo.score is not None and photo.score.suggested_status is not None and not has_own_rating
@@ -918,10 +878,9 @@ def _to_photo_out(
         category_override=photo.score.category_override if photo.score is not None else None,
         category_candidates=_category_candidates_out(photo),
         cloud_vision_status=_cloud_vision_status_out(photo, project),
-        # Beide Felder kommen fertig aus
-        # `_place_by_photo_id` (EINE Abfrage ueber den vollstaendigen Cluster des Bezugslaufs).
-        # Der Vorgabewert `NO_PLACE` haelt die Ausfallrichtung fest: eine vergessene Durchreichung
-        # ergibt `null`, nie einen falschen Ort.
+        # Beide Felder kommen fertig aus `_place_by_photo_id`. Der Vorgabewert `NO_PLACE` haelt
+        # die Ausfallrichtung fest: eine vergessene Durchreichung ergibt `null`, nie einen
+        # falschen Ort.
         location=place.location,
         cluster_place=place.cluster_place,
     )
@@ -956,8 +915,7 @@ async def _top_n_per_category_photo_ids(
     (`ranking.py::rank_photos` liefert `index + 1` über die VOLLSTÄNDIGE Partition;
     `worker.py::run_criterion_scoring` ruft sie je Partition auf, Haupt- wie
     Nebenzugehörigkeiten in derselben Liste; `worker.py::reassign_photo_category` vergibt bei
-    einem Override die Positionen beider betroffenen Partitionen vollständig neu). Ein
-    `row_number()` über dieselbe Sortierung lieferte per Konstruktion denselben Wert.
+    einem Override die Positionen beider betroffenen Partitionen vollständig neu).
 
     Folge: Welche Fotos die Ansicht zeigt, hängt ausschließlich vom LAUF ab, nicht vom
     Bewertungsstand des Betrachters. Ein verworfenes Foto bleibt an seiner Position und trägt
@@ -1026,13 +984,11 @@ _CATEGORY_DISPLAY_ORDER = {key: index for index, key in enumerate(CATEGORY_REGIS
 
 
 def _ranking_sort_key(ranking: PhotoRanking) -> tuple[int, int, str]:
-    """Hauptzeile zuerst, danach die Nebenzeilen in Registry-Anzeigereihenfolge
-    - ohne diese feste Ordnung
-    flackerte die Anzeige mit der Zeilenreihenfolge der Datenbank.
+    """Hauptzeile zuerst, danach die Nebenzeilen in Registry-Anzeigereihenfolge (siehe
+    `PhotoOut.rankings`).
 
-    Ein `category_key` außerhalb des festen Sets (Altbestand; der Lesepfad ist bewusst
-    tolerant) landet hinten und dort alphabetisch stabil, statt die Sortierung zu
-    sprengen."""
+    Ein `category_key` außerhalb des festen Sets (Altbestand; der Lesepfad ist bewusst tolerant)
+    landet hinten und dort alphabetisch stabil, statt die Sortierung zu sprengen."""
     return (
         0 if ranking.is_primary else 1,
         _CATEGORY_DISPLAY_ORDER.get(ranking.category_key, len(_CATEGORY_DISPLAY_ORDER)),
@@ -1067,12 +1023,10 @@ async def list_photos(
     project_id: int,
     rating_status: RatingFilter | None = None,
     # Kategorie-Kuratierung: serverseitig deklarativ begrenzt (Field(ge=1, le=10)) -
-    # Robustheits-/Ressourcen-Kriterium, kein Sicherheitskriterium. Wenn gesetzt, ersetzt
-    # dieser
-    # Query-Modus rating_status vollstaendig (eigenstaendige Kuratierungs-Ansicht, siehe UI/UX-
-    # Abschnitt der Spec: eigene Route /curate statt einer Kombination mit dem bestehenden
-    # Grid-Filter) - limit/offset werden in diesem Modus ignoriert, da der volle Partitions-Pool
-    # (N x Partitionsanzahl) fuer ein Zwei-Personen-Familienprojekt naturgemaess klein bleibt.
+    # Robustheits-/Ressourcen-Kriterium, kein Sicherheitskriterium. Wenn gesetzt, ersetzt dieser
+    # Query-Modus rating_status vollstaendig (eigenstaendige Kuratierungs-Ansicht) - limit/offset
+    # werden in diesem Modus ignoriert, da der volle Partitions-Pool (N x Partitionsanzahl) fuer
+    # ein Zwei-Personen-Familienprojekt naturgemaess klein bleibt.
     top_n_per_category: int | None = Query(None, ge=1, le=10),
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -1137,9 +1091,8 @@ async def list_photos(
             project,
             rankings_by_id.get(photo_id, []),
             partition_sizes,
-            # Ohne angeforderte Auswahl traegt JEDE Zugehoerigkeit `curation_position = null`
-            # - es gibt in diesem
-            # Modus keine Auswahl, zu der sie eine Position haben koennte.
+            # Ohne angeforderte Auswahl traegt JEDE Zugehoerigkeit `curation_position = null` - es
+            # gibt in diesem Modus keine Auswahl, zu der sie eine Position haben koennte.
             None,
             place_by_id.get(photo_id, NO_PLACE),
         )
@@ -1150,11 +1103,9 @@ async def list_photos(
 
 # SICHERHEIT - Obergrenze der beiden freien Partitionsschlüssel: `cluster_key`/`category_key`
 # werden bewusst NICHT gegen CATEGORY_REGISTRY geprüft - der Lesepfad ist tolerant gegenüber
-# Altbestand, und
-# eine Allowlist waere hier ein Produkt-, kein Sicherheitsentscheid (422 statt leerer Liste). Die
-# Laengengrenze ist Verteidigung in der Tiefe (Praezedenz: api/auth.py::_MAX_LOGIN_FIELD_LENGTH,
-# api/projects.py::confirm_name), damit ein entarteter Wert gar nicht erst bis zum
-# Datenbankvergleich kommt.
+# Altbestand, und eine Allowlist waere hier ein Produkt-, kein Sicherheitsentscheid (422 statt
+# leerer Liste). Die Laengengrenze ist Verteidigung in der Tiefe, damit ein entarteter Wert gar
+# nicht erst bis zum Datenbankvergleich kommt.
 _MAX_PARTITION_KEY_LENGTH = 200
 
 # SICHERHEIT - Obergrenze von `after_rank`/`offset`: ein Pydantic-`int` ist
@@ -1232,7 +1183,7 @@ async def curation_candidates(
 
     ids = [photo_id for photo_id, _ in rows]
     # Nur die ANGEFRAGTE Zugehoerigkeit traegt eine curation_position; alle anderen
-    # Zugehoerigkeiten desselben Fotos bleiben `null` (Akzeptanzkriterium 30).
+    # Zugehoerigkeiten desselben Fotos bleiben `null`.
     curation_positions = {
         (photo_id, category_key): rank_position for photo_id, rank_position in rows
     }
@@ -1314,9 +1265,8 @@ async def _lock_photo_score(session: AsyncSession, photo_id: int) -> PhotoScore 
     """SICHERHEIT: sperrt die `photo_scores`-Zeile des Fotos für die Dauer der Transaktion.
 
     Muss VOR dem Lesen der Ranking-Zeilen laufen: `reassign_photo_category` leitet die
-    gesamte Zugehörigkeitsmenge neu ab und schreibt und LÖSCHT dabei Zeilen im Request-Pfad.
-    Der
-    neue Unique-Constraint verhindert nur die doppelte Zugehoerigkeitszeile, nicht das Wettrennen
+    gesamte Zugehörigkeitsmenge neu ab und schreibt und LÖSCHT dabei Zeilen im Request-Pfad. Der
+    Unique-Constraint verhindert nur die doppelte Zugehoerigkeitszeile, nicht das Wettrennen
     um "genau eine `is_primary`-Zeile je (Lauf, Foto)". Zwei ueberlappende Overrides desselben
     Fotos (zwei Nutzer, realistischer: ein Doppelklick auf lahmer Verbindung) koennten sonst zwei
     Hauptzeilen oder keine hinterlassen und damit still die Zusage brechen, dass die Summe ueber
