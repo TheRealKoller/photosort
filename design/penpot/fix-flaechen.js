@@ -181,16 +181,29 @@ function varianteName(komponente) {
     .join(', ')
 }
 
-/* Gemessen: `shape.tokens` liefert die Zuordnung Eigenschaft -> Tokenname. Fehlt `fill` darin,
-   stammt die Fuellung aus keinem Token - und eine leere Fuellung ist das Soll der transparenten
-   Varianten. */
+/**
+ * Gemessen: `shape.tokens` liefert die Zuordnung Eigenschaft -> Tokenname. Fehlt `fill` darin,
+ * stammt die Fuellung aus keinem Token - und eine leere Fuellung ist das Soll der transparenten
+ * Varianten.
+ *
+ * ⚠ EINE BINDUNG IST KEINE FUELLUNG, deshalb wird im gebundenen Fall BEIDES verlangt. Wer die
+ * Fuellung in Penpot von Hand entfernt, laesst die Bindung stehen; ein Brett mit Bindung und
+ * leerem `fills` gaelte sonst als richtig, der Lauf uebersprunge es und meldete es als "bereits
+ * richtig" - und ein zweiter Lauf bestaetigte den Schaden, statt ihn zu heilen. Ob Penpot diesen
+ * Zustand zulaesst, ist NICHT gemessen; die Pruefung ruht deshalb nicht darauf.
+ */
 function flaecheIstSoll(brett, tokenName) {
   if (!tokenName) {
     return (brett.fills || []).length === 0
   }
-  return (brett.tokens || {}).fill === tokenName
+  return (brett.fills || []).length > 0 && (brett.tokens || {}).fill === tokenName
 }
 
+/* Bei der BESCHRIFTUNG bleibt es bei der Bindung allein - und das ist eine bewusste Asymmetrie:
+   Eine Textform traegt ihre Farbe auch je Textabschnitt, ein leeres `fills` an der Form ist dort
+   also kein Mangel. Es zusaetzlich zu verlangen, hiesse dieselbe ungemessene Annahme in die andere
+   Richtung machen - jeder Lauf schriebe die Schriftfarbe neu und meldete "geaendert", und genau
+   diese Meldung ist nach Auflage 4 ein Befund. */
 function schriftIstSoll(beschriftung, tokenName) {
   return (beschriftung.tokens || {}).fill === tokenName
 }

@@ -694,9 +694,9 @@ describe('Die zwoelf Bausteine', () => {
     expect(schrittmarke!.quellen).toEqual(['src/components/StepMarker.tsx'])
   })
 
-  /* Die Zuordnungstabelle spannt ZWEI Verzeichnisse: zehn der elf liegen unter
-     `src/components/ui/`, der Kategorie-Chip als `src/components/CategoryBadge.tsx`. Wer nur `ui/`
-     aufzaehlt, verliert den elften still. */
+  /* Die Zuordnungstabelle spannt ZWEI Verzeichnisse: zehn der zwoelf liegen unter
+     `src/components/ui/`, Kategorie-Chip und Schrittmarke unmittelbar unter `src/components/`.
+     Wer nur `ui/` aufzaehlt, verliert die beiden still. */
   it('spannt beide Verzeichnisse auf', () => {
     const quellen = komponenten.bausteine.flatMap((baustein) => baustein.quellen)
     expect(quellen).toContain('src/components/CategoryBadge.tsx')
@@ -2307,6 +2307,78 @@ describe('fix-flaechen.js: die Schreibflaeche ist geschlossen', () => {
   it('liest ueberhaupt Zeichenketten - sonst pruefte die Zeile darueber nichts', () => {
     expect(zeichenkettenAus(quelltext()).length).toBeGreaterThan(0)
     expect(zeichenkettenAus("const a = 'x'")).toEqual(['x'])
+  })
+})
+
+/**
+ * Die Soll-Prüfung misst das ERGEBNIS, nicht die Metadaten.
+ *
+ * ⚠ EINE BINDUNG IST KEINE FUELLUNG. Traegt ein Brett die Tokenbindung `fill`, ist sein `fills`
+ * aber leer - jemand hat die Fuellung in Penpot von Hand entfernt, die Bindung blieb stehen -,
+ * dann haelt eine Pruefung, die nur die Bindung liest, das Brett fuer richtig: Der Korrekturlauf
+ * ueberspringt es, meldet es als "bereits richtig", und die fehlende Flaeche ueberlebt. Ein
+ * zweiter Lauf heilte den Schaden nicht, sondern bestaetigte ihn.
+ *
+ * Ob Penpot diesen Zustand ueberhaupt zulaesst, ist NICHT gemessen - und genau deshalb steht die
+ * Zusicherung hier: Die einzige Datei, die wiederholbar auf das Original schreibt, ruht nicht auf
+ * einer ungemessenen Annahme ueber fremdes Verhalten.
+ */
+export function liestDieFuellung(
+  quelltext: string,
+  name: string,
+): { gefunden: boolean; rueckgaben: number; ohneFuellung: number } {
+  const funktion = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'FunctionDeclaration' &&
+      (eintrag.id as Record<string, unknown> | null)?.name === name,
+  )[0]
+  if (funktion === undefined) {
+    return { gefunden: false, rueckgaben: 0, ohneFuellung: 0 }
+  }
+  const rueckgaben = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'ReturnStatement' &&
+      (eintrag.start as number) >= (funktion.start as number) &&
+      (eintrag.end as number) <= (funktion.end as number),
+  )
+  return {
+    gefunden: true,
+    rueckgaben: rueckgaben.length,
+    ohneFuellung: rueckgaben.filter((eintrag) => !enthaeltBezeichner(eintrag.argument, 'fills'))
+      .length,
+  }
+}
+
+describe('fix-flaechen.js: die Soll-Pruefung misst die Flaeche selbst', () => {
+  it('liest auf jedem Rueckgabeweg die tatsaechliche Fuellung', () => {
+    const befund = liestDieFuellung(dateiVon('fix-flaechen.js').roh, 'flaecheIstSoll')
+    expect(befund.gefunden, 'flaecheIstSoll').toBe(true)
+    // Beide Faelle - gebunden und ausdruecklich geleert - haben einen eigenen Rueckgabeweg.
+    expect(befund.rueckgaben).toBe(2)
+    expect(befund.ohneFuellung).toBe(0)
+  })
+
+  /* GEGENPROBE: die Fassung, die nur die Bindung liest, wird gemeldet. */
+  it('meldet eine Pruefung, die nur die Bindung liest', () => {
+    const gegenprobe = liestDieFuellung(
+      [
+        'function flaecheIstSoll(brett, tokenName) {',
+        '  if (!tokenName) {',
+        '    return (brett.fills || []).length === 0',
+        '  }',
+        '  return (brett.tokens || {}).fill === tokenName',
+        '}',
+      ].join('\n'),
+      'flaecheIstSoll',
+    )
+    expect(gegenprobe.rueckgaben).toBe(2)
+    expect(gegenprobe.ohneFuellung).toBe(1)
+  })
+
+  it('meldet eine fehlende Funktion, statt leer wahr zu werden', () => {
+    expect(liestDieFuellung('const a = 1', 'flaecheIstSoll').gefunden).toBe(false)
   })
 })
 

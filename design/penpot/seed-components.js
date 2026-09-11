@@ -1,6 +1,6 @@
 // LAUFREGEL: nur-auf-leerer-datei
 /*
- * Baut die elf Bausteine und ihre Varianten in der Penpot-Datei
+ * Baut die zwoelf Bausteine und ihre Varianten in der Penpot-Datei
  * "PhotoSort — Dark Utility Register" auf (decisions/0066-penpot-stand-als-erzeugte-idempotente-
  * nutzlast.md Abschnitt 4).
  *
@@ -17,11 +17,11 @@
  *   const BAUSTEINE = <exakter Inhalt von components.json>;
  * gefolgt von dieser Datei, unveraendert.
  *
- * ⚠ EINE ZEITUEBERSCHREITUNG DIESES AUFRUFS IST KEIN FEHLSCHLAG. 146 Varianten mit je rund einem
+ * ⚠ EINE ZEITUEBERSCHREITUNG DIESES AUFRUFS IST KEIN FEHLSCHLAG. 158 Varianten mit je rund einem
  * Dutzend API-Aufrufen dauern laenger, als `execute_code` auf eine Antwort wartet: Der Aufruf
  * endet mit "The operation timed out", waehrend die Arbeit vollstaendig ausgefuehrt wird - beim
- * ersten echten Lauf gemessen, alle Bausteine und alle Bindungen waren danach da. Bei 146
- * Varianten ist das der NORMALFALL, nicht der Ausnahmefall.
+ * ersten echten Lauf gemessen (damals 146 Varianten), alle Bausteine und alle Bindungen waren
+ * danach da. Bei 158 Varianten ist das der NORMALFALL, nicht der Ausnahmefall.
  *
  * Vor jeder Reaktion wird der Stand ZURUECKGELESEN (Zahl der Variantenbehaelter und ihrer
  * Auspraegungen). Erst das Ergebnis entscheidet, ob etwas fehlt - nicht die Meldung. Fehlt
@@ -43,7 +43,8 @@
  * gepflegt werden muesste. In der Story, die den Platzhalter aufgenommen hat, LAEUFT dieses
  * Skript nicht: die Datei traegt bereits Bausteine, der Waechter unten greift, und der elfte
  * Baustein entsteht in Penpot von Hand. Mitgezogen wird das Skript ausschliesslich fuer seine
- * dauerhafte Rolle - die WIEDERHERSTELLUNG NACH INSTANZVERLUST, bei der es alle elf aufbaut.
+ * dauerhafte Rolle - die WIEDERHERSTELLUNG NACH INSTANZVERLUST, bei der es alle aufbaut, die
+ * `components.json` fuehrt.
  *
  * WORAN DIE BAUSTEINE WIEDERERKANNT WERDEN: an den Plugin-Daten `schluessel`, die jede
  * Variantenkomponente traegt - NICHT am Namen. `createVariantContainer` benennt die
@@ -57,7 +58,7 @@
  * `createShapeFromSvg` ist gemessen, dass die Form sonst im zuletzt angelegten Board landet - im
  * ersten echten Lauf der Symbole steckten dadurch alle zwoelf Gruppen ineinander. Ob `createBoard`
  * dieselbe Eigenschaft hat, ist NICHT gemessen; die Verankerung steht hier vorsorglich, weil sie
- * billig und in beiden Faellen richtig ist - und weil eine Verschachtelung bei 146 Auspraegungen
+ * billig und in beiden Faellen richtig ist - und weil eine Verschachtelung bei 158 Auspraegungen
  * ungleich schwerer zu entwirren waere. Aus demselben Grund bekommt jedes Brett eine Position:
  * je Baustein eine Reihe, die Bausteine untereinander. Die Abstaende ergeben sich aus den Massen
  * der Bretter selbst, nicht aus einem getippten Raster.
@@ -151,7 +152,7 @@ function bausteinSchluesselInDatei() {
 
 /**
  * FAIL-CLOSED. Bricht ab, sobald die Datei bereits einen der Bausteine aus `components.json`
- * traegt - heute elf. Ein blosser Hinweis genuegte hier nicht: das Ueberschreiben waere
+ * traegt - heute zwoelf. Ein blosser Hinweis genuegte hier nicht: das Ueberschreiben waere
  * unwiederbringlich. Die Zahl steht bewusst nicht in der Bedingung: geprueft wird die Kollision
  * je Schluessel, nicht eine Anzahl.
  */
@@ -276,8 +277,8 @@ function rollenTabellenFuer(baustein, achsenwerte) {
  * `auspraegung=ghost` traegt und zu `groesse`/`zustand` schweigt, ist keine wohldefinierte
  * Variante. Gebaut wird deshalb das vollstaendige Kreuzprodukt der in `components.json`
  * gefuehrten Achsen - die Achsen selbst sind eine Design-System-Aussage und werden hier NICHT
- * reduziert. Das ergibt bei der Schaltflaeche 6 x 3 x 5 = 90 Varianten und ueber alle elf
- * Bausteine 146; das ist viel, aber mechanisch und ohne Urteil abgeleitet.
+ * reduziert. Das ergibt bei der Schaltflaeche 6 x 3 x 5 = 90 Varianten und ueber alle zwoelf
+ * Bausteine 158; das ist viel, aber mechanisch und ohne Urteil abgeleitet.
  */
 function kombinationen(varianten) {
   let ergebnis = [{}]

@@ -282,7 +282,7 @@ abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0066`, Absch
   zwölf Symbolgruppen ineinander, weil `createComponent` aus dem ersten Symbol ein Board macht.
   **Eine nachträglich gesetzte Position behebt das nicht** — der Elternknoten wird beim Erzeugen
   entschieden. `seed-icons.js` verankert deshalb ausdrücklich; `seed-components.js` tut dasselbe
-  vorsorglich für seine Bretter (dort nicht gemessen, aber billig und bei 146 Ausprägungen ungleich
+  vorsorglich für seine Bretter (dort nicht gemessen, aber billig und bei 158 Ausprägungen ungleich
   teurer zu entwirren).
 - **`/` ist ein Pfadtrenner, kein Namensbestandteil.** `symbol/star` liegt als
   `{ name: "star", path: "symbol" }` vor; die volle Zeichenkette steht in keinem einzelnen Feld.
@@ -311,7 +311,7 @@ abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0066`, Absch
   `["Inter"]`). Der Abgleich in `seed-tokens.js` behandelt ein einelementiges Array deshalb wie
   seinen Skalar — sonst meldete jeder Lauf beide Schriftfamilien als „nicht schreibbar".
 - **`execute_code` führt den Text als Funktionsrumpf aus** und liefert nur zurück, was ein
-  `return` zurückgibt. Alle vier Dateien enden deshalb auf ein `return`; ein blanker Ausdruck ginge
+  `return` zurückgibt. Jede Skriptdatei endet deshalb auf ein `return`; ein blanker Ausdruck ginge
   still verloren — bei `verify.js` wäre das der gesamte nachprüfbare Abschluss.
 - **Argumentformen, die von der Doku abweichen:** `addSet({ name })` und
   `addToken({ type, name, value })` nehmen je **ein Objekt**; die Strichfarbe heißt `strokeColor`
@@ -321,7 +321,7 @@ abgeräumt) — es wird an diesen Stellen nicht mehr vermutet (ADR `0066`, Absch
   Werte dieser einen Ausprägung. Die Formen sind in `frontend/penpot/payload.test.ts` als Tabelle
   statisch zugesichert — genau diese Fehlerklasse hat eine Review-Runde siebenmal gefunden.
 - **Ein Bibliotheks-Baustein ist ein Blatt, und eine Instanz nimmt keine Kinder auf.** Am 2026-09-09
-  an allen elf Bausteinen einzeln gemessen: je ein Brett mit genau **einer** Textbeschriftung;
+  an jedem damals vorhandenen Baustein einzeln gemessen: je ein Brett mit genau **einer** Textbeschriftung;
   `appendChild` an eine Instanz scheitert mit „Cannot change the structure of a component copy".
   Karte und Dialog sind im Produkt Behälter, in der Bibliothek aber Blätter. Ein Ansichtsentwurf
   setzt deshalb **Blatt-Elemente als echte Instanzen** (überschriebene Beschriftung) und **Behälter
