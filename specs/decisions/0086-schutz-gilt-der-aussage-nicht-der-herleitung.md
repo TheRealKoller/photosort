@@ -8,7 +8,7 @@
 `review-*`-Kriterium). Die übrigen fünf Abschnitte von 0079 gelten unverändert.
 **Bezug:** [Issue #411](https://github.com/TheRealKoller/photosort/issues/411), Spec
 [`../features/0411-doku-im-code.md`](../features/0411-doku-im-code.md)
-**Umfang:** rund 125 statt der Richtwert-100 Zeilen, weil Abschnitt 1 den neuen Schutztext
+**Umfang:** rund 137 statt der Richtwert-100 Zeilen, weil Abschnitt 1 den neuen Schutztext
 wörtlich trägt — er *ist* die Regel und geht in keiner Zusammenfassung auf.
 
 ## Kontext

@@ -102,7 +102,7 @@ erreichten Frontend. Der Verweis-Bestand ist fast vollständig begründend, nich
 |---|---|
 | `specs/decisions/0086-*.md` | liegt vor |
 | `specs/decisions/0079-*.md` | Kopfzeile `**Teilweise abgelöst:**` — liegt vor |
-| `specs/architecture/0003-securitykonzept.md` | Ankerliste Auflage → Codestelle → Test — liegt vor |
+| `specs/architecture/0003-securitykonzept.md` | Ankerliste Auflage → Codestelle → Test; dazu zwei veraltete Aussagen korrigiert, die Auth als nicht implementiert führten (REST-API-Angriffsfläche und Compose-Abschnitt) — liegt vor |
 | `specs/architecture/0002-testkonzept.md` | ein Abschnitt „Nachweis ohne Rot-Grün", rund 15 Zeilen |
 | `CLAUDE.md`, Punkt „Doku-Ballast" | Schutzsatz durch ADR 0086 Abschnitt 1 ersetzen; den Gate-Satz in Länge (unverändert absolut) und Inhalt (Kriterium in `review-tests`) trennen |
 | `.claude/skills/review-tests/SKILL.md` | Prüfkatalog Punkt 2 bekommt das Inhalts-Kriterium |
