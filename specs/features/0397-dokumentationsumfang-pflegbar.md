@@ -1,6 +1,6 @@
 # 0397 - Dokumentationsumfang bleibt pflegbar
 
-**Status:** Implemented ([PR #407](https://github.com/TheRealKoller/photosort/pull/407), [PR #NNN](https://github.com/TheRealKoller/photosort/pull/NNN))
+**Status:** Implemented ([PR #407](https://github.com/TheRealKoller/photosort/pull/407), [PR #410](https://github.com/TheRealKoller/photosort/pull/410))
 **Erstellt:** 2026-09-11
 **Bezug:** [Issue #397](https://github.com/TheRealKoller/photosort/issues/397)
 **Umfang:** über dem Richtwert von rund 200 Zeilen, weil die Abschnitte „Security" und
@@ -62,8 +62,10 @@ werden.
       Datei die entfernte Inhaltsart aus dem geschlossenen Vokabular der Regel und — bei einem
       nur-begründenden Verweis — wo der Inhalt weiterhin steht (ADR-Nummer, Commit, Codestelle).
 - [ ] Die Regel erzeugt keine neue eigenständige Dokumentationsdatei.
-- [ ] Beide PRs ändern **keine** Testdatei und keine Testkonfiguration; alle CI-Jobs bleiben grün.
-      Eine Teständerung ist ein Finding, keine Anpassung.
+- [ ] Beide PRs ändern **keine bestehende** Testdatei und keine Testkonfiguration; alle CI-Jobs
+      bleiben grün. Eine angepasste Erwartung in einem bestehenden Test ist ein Finding, keine
+      Lösung. Ausgenommen ist allein der eine neue Test, den der Abschnitt „Teststrategie" für
+      PR 2 vorsieht — er sichert die OpenAPI-Beschreibungen, die sonst still wegfallen könnten.
 
 ## Datenmodell-Bezug
 
