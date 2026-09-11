@@ -20,5 +20,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/designSystem.contract.test.ts"]
+  /* Das Projekt der Node-Umgebungs-Tests unter src/ - nicht nur des Design-Vertrags. Beide
+     Dateien pruefen Eigenschaften des Repositoriums statt Anwendungsverhalten und brauchen dafuer
+     Dateisystem- und Werkzeugzugriff. */
+  "include": ["src/designSystem.contract.test.ts", "src/prettierSupportInfo.test.ts"]
 }

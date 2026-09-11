@@ -41,6 +41,7 @@ import os
 import shutil
 import stat
 import subprocess
+import tempfile
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -533,30 +534,56 @@ def test_eine_verletzte_vorbedingung_im_letzten_baum_verhindert_jeden_formatierl
 # --- 6. Der echte Bestand ----------------------------------------------------------------------
 
 
-def test_der_echte_pin_steht_in_beiden_python_baeumen_exakt_und_gleich() -> None:
-    """Gegenprobe gegen die Synthetik: Am echten Bestand findet dasselbe Muster den Pin."""
-    import re
+def test_die_pin_extraktion_des_skripts_trifft_die_echten_pyproject_dateien() -> None:
+    """Die Sed-Extraktion des Skripts gegen einen unabhaengigen Leser derselben echten Datei.
+
+    **Abgrenzung, bewusst entschieden (Spec 0400, PR B).** Hier stand zuvor eine Pruefung, die
+    den echten Pin auf Exaktheit und Gleichheit abklopfte. Diese beiden Zusicherungen sind die
+    (a) und (c) von `test_formatierer_fixierung.py` und liegen jetzt dort - allein. Zwei Module,
+    die dieselbe Aussage treffen, gehen bei einer legitimen Aenderung an zwei Stellen mit
+    verschiedenen Meldungen rot, und keines der beiden ist dann offensichtlich das zustaendige.
+
+    Was diese Datei zu sagen hat, ist etwas anderes und wird von jenem Modul nicht abgedeckt:
+    **ob die Extraktion des Skripts mit der Gestalt der echten Dateien zurechtkommt.** Die
+    synthetische `pyproject.toml` der Spielplaetze oben ist eine Nachbildung; die echten tragen
+    Kommentare, auskommentierte Eintraege und eine andere Reihenfolge. Geprueft wird deshalb
+    kreuzweise: Der Spielplatz bekommt Kopien der **echten** `pyproject.toml`, und die
+    `ruff`-Attrappe meldet die Version, die ein unabhaengiger Leser (`tomllib`) daraus liest.
+    Weichen die beiden Extraktionswege voneinander ab, scheitert der Versionsvergleich im Skript
+    - und dieser Test wird rot, ohne selbst eine Meinung darueber zu haben, welche Version
+    richtig ist.
+    """
     import tomllib
 
-    gefunden: dict[str, str] = {}
+    gelesen: dict[str, str] = {}
     for baum in PYTHON_BAEUME:
-        pfad = REPO_WURZEL / baum / "pyproject.toml"
-        daten = tomllib.loads(pfad.read_text(encoding="utf-8"))
+        daten = tomllib.loads((REPO_WURZEL / baum / "pyproject.toml").read_text(encoding="utf-8"))
         eintraege = [
             eintrag
             for eintrag in daten["project"]["optional-dependencies"]["dev"]
-            if re.match(r"^ruff\s*[=<>~!]", eintrag) or eintrag.strip() == "ruff"
+            if eintrag.split("==")[0].strip() == "ruff"
         ]
         assert len(eintraege) == 1, f"{baum}/pyproject.toml: {eintraege}"
-        treffer = re.fullmatch(r"ruff\s*==\s*(\d+\.\d+(?:\.\d+)?)", eintraege[0])
-        assert treffer is not None, (
-            f"{baum}/pyproject.toml nennt {eintraege[0]!r} - keine exakte Angabe. "
-            "Eine offene Schranke fixiert nichts (gemessen: drei verschiedene ruff-Versionen in "
-            "drei lokalen Umgebungen desselben Repositoriums unter derselben >=0.7-Angabe)."
-        )
-        gefunden[baum] = treffer.group(1)
+        gelesen[baum] = eintraege[0].split("==", 1)[1].strip()
 
-    assert len(set(gefunden.values())) == 1, (
-        f"Die beiden Python-Baeume nennen verschiedene ruff-Versionen: {gefunden}. Dann "
-        "formatieren sie verschieden, und einer der beiden CI-Jobs wird rot."
+    assert len(set(gelesen.values())) == 1, (
+        f"Verschiedene Pins in den beiden Baeumen: {gelesen}. Dieser Test kann dann nicht EINE "
+        "Attrappenversion setzen; die Zusicherung dazu fuehrt test_formatierer_fixierung.py."
     )
+    version = next(iter(gelesen.values()))
+
+    spielplatz = baue_spielplatz(
+        Path(tempfile.mkdtemp(prefix="format-sh-echt-")), ruff_ausgabe=f"ruff {version}"
+    )
+    for baum in PYTHON_BAEUME:
+        shutil.copy2(
+            REPO_WURZEL / baum / "pyproject.toml", spielplatz.wurzel / baum / "pyproject.toml"
+        )
+
+    ergebnis = laufe(spielplatz)
+    assert ergebnis.exit_code == 0, (
+        "Das Skript liest aus den ECHTEN pyproject.toml einen anderen Wert als tomllib "
+        f"({version!r}) - oder gar keinen. Genau das ist der stille Fall, gegen den die "
+        f"Waechter oben antreten, hier an der echten Dateigestalt. Meldung: {ergebnis.meldung!r}"
+    )
+    assert len(spielplatz.formatierlaeufe()) == 4, spielplatz.aufrufe()

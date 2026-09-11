@@ -1,6 +1,6 @@
 # 0400 - Einheitliche Code-Formatierung ist verbindlich
 
-**Status:** Accepted
+**Status:** Implemented ([PR #408](https://github.com/TheRealKoller/photosort/pull/408), [PR #409](https://github.com/TheRealKoller/photosort/pull/409))
 **Erstellt:** 2026-09-11
 **Bezug:** https://github.com/TheRealKoller/photosort/issues/400
 
@@ -329,9 +329,19 @@ Liste lässt `test_prettierignore_spiegelung.py` seine Erwartung mechanisch aus 
 jemand ohne Kenntnis des Anlasses neu treffen müsste.
 
 Die Python-Hälfte ist davon nicht betroffen: `ruff` behält `respect-gitignore = true`, und
-`[tool.ruff.format] exclude` **ergänzt** die Vorgabe, statt sie zu ersetzen. `.env` ist für beide
-Werkzeuge unerreichbar — Prettier wählt im Verzeichnislauf nur Dateien mit unterstützter Endung,
-für `.env` gibt es keinen Parser.
+`[tool.ruff.format] exclude` **ergänzt** die Vorgabe, statt sie zu ersetzen. `.env` selbst ist für
+beide Werkzeuge unerreichbar — Prettier wählt im Verzeichnislauf nur Dateien mit unterstützter
+Endung, für `.env` gibt es keinen Parser.
+
+**Berichtigung während der Umsetzung (PR B):** Der Satz davor gilt für `.env`, **nicht** für die
+Sternform `.env.*` — eine `.env.json` hat sehr wohl einen Parser, und die Datei trägt Secrets. Der
+mechanische Wächter hat das gefunden, als er die Erwartung zum ersten Mal aus den
+`.gitignore`-Dateien ableitete statt aus der von Hand geführten Liste oben: Es fehlten zehn
+Einträge, darunter `.env`, `.env.*` und fünf `*-debug.log*`-Muster, die den Dateinamen nach hinten
+offen lassen (`npm-debug.log.json`) — anders als das benachbarte `*.log`, das ihn abschließt. Alle
+zehn sind nachgetragen. Das ist der erste Beleg dafür, dass die Entscheidung für die starke,
+ableitende Form richtig war: Eine von Hand erhobene Liste war unvollständig, obwohl sie sorgfältig
+erhoben wurde.
 
 **Nebennutzen der Wurzel-Ablage:** Ein versehentliches `npx prettier --write .` aus dem
 Repository-Wurzelverzeichnis findet die Ignore-Datei über die Vorgabe und lässt die
