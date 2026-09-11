@@ -2122,12 +2122,37 @@ const GETEILTE_TABELLENREIHENFOLGE = [
   '}',
 ].join('\n')
 
+/**
+ * Fuenfter geteilter Block: woran ein Varianten-BEHAELTER erkannt wird.
+ *
+ * ⚠ GEMESSEN AM ERSTEN ECHTEN KORREKTURLAUF (2026-09-11): `penpot.library.local.components`
+ * liefert je Baustein GENAU EINE Komponente, nicht ihre Varianten - 12 statt 158. Die
+ * Variantenkomponenten haengen am Behaelter (`behaelter.variants.variantComponents()`), und der
+ * ist ein Board und steht deshalb gar nicht in dieser Liste. Ein Korrekturlauf, der ueber
+ * `penpot.library.local.components` iteriert, erreicht ein Zwoelftel des Bestandes und meldet
+ * trotzdem Erfolg - der erste Lauf hat genau das getan.
+ *
+ * Beide Dateien, die den Bestand durchgehen, brauchen dieselbe Erkennung: `verify.js` zaehlt
+ * darueber, `fix-flaechen.js` schreibt darueber.
+ */
+const GETEILTE_BEHAELTERERKENNUNG = [
+  'function istVariantenBehaelter(form) {',
+  '  return Boolean(form.isVariantContainer) && Boolean(form.isVariantContainer())',
+  '}',
+].join('\n')
+
 const GETEILTE_BLOECKE: {
   name: string
   dateien: readonly string[]
   block: string
   aufruf: string
 }[] = [
+  {
+    name: 'Behaeltererkennung',
+    dateien: ['fix-flaechen.js', 'verify.js'],
+    block: GETEILTE_BEHAELTERERKENNUNG,
+    aufruf: 'istVariantenBehaelter',
+  },
   {
     name: 'Bausteinerkennung',
     dateien: ['seed-components.js', 'fix-flaechen.js', 'verify.js'],
@@ -2200,6 +2225,56 @@ describe('Die geteilten Erkennungen', () => {
     for (const datei of ['seed-components.js', 'fix-flaechen.js'] as const) {
       expect(dateiVon(datei).roh, datei).toContain("const SATZ_NAME = 'photosort'")
     }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Der Korrekturlauf erreicht den ganzen Bestand, nicht einen je Baustein
+// ---------------------------------------------------------------------------------------------
+
+/*
+ * ⚠ DIESE ZUSICHERUNG STAMMT AUS EINEM FEHLGESCHLAGENEN ECHTEN LAUF, nicht aus einer Ueberlegung.
+ * Am 2026-09-11 lief `fix-flaechen.js` zum ersten Mal gegen die bespielte Datei und meldete
+ * 2 geaendert / 9 bereits richtig / 1 strukturabweichend - zusammen ZWOELF. Das ist die Zahl der
+ * Bausteine, nicht die der 158 Varianten. Gemessen in derselben Sitzung:
+ * `penpot.library.local.components` traegt 12 Eintraege mit `schluessel`, die 12 Behaelter tragen
+ * zusammen 158 Variantenkomponenten, und alle 158 tragen den `schluessel` ebenfalls.
+ *
+ * Der Lauf war damit kein Fehlschlag, den man gesehen haette: Er lief durch, meldete Erfolg und
+ * liess fuenf Sechstel des Bestandes unberuehrt. Kein statischer Test konnte das fangen - die
+ * Nutzlast ist unausgefuehrter Code, und wie viele Objekte ein API-Aufruf liefert, steht in keiner
+ * Datei dieses Repositoriums.
+ */
+describe('fix-flaechen.js: der Lauf geht ueber die Variantenkomponenten', () => {
+  const quelltext = () => dateiVon('fix-flaechen.js').roh
+
+  it('holt die Komponenten ueber die Behaelter, nicht aus der Bibliotheksliste', () => {
+    const stellen = aufrufe(quelltext()).filter((aufruf) => aufruf.name === 'variantComponents')
+    expect(stellen.length, 'Aufruf von variantComponents').toBeGreaterThan(0)
+  })
+
+  /* GEGENPROBE: Ohne sie bestuende die Zusicherung auch mit einem Erkenner, der nie etwas findet. */
+  it('erkennt eine Fassung ohne Variantenzugriff an einer synthetischen Probe', () => {
+    const ohne = 'function main() {\n  for (const k of penpot.library.local.components) {\n  }\n}'
+    expect(aufrufe(ohne).filter((aufruf) => aufruf.name === 'variantComponents')).toHaveLength(0)
+  })
+
+  /*
+   * Die Bibliotheksliste bleibt an GENAU EINER Stelle zulaessig: im geteilten Block, der die
+   * vorhandenen Bausteinschluessel einsammelt. Dort ist sie richtig - je Baustein ein Eintrag
+   * genuegt, um zu wissen, WELCHE Bausteine ueberhaupt da sind. Ueberall sonst ist sie der Fehler
+   * des ersten Laufs.
+   */
+  it('nennt die Bibliotheksliste nur innerhalb der geteilten Bausteinerkennung', () => {
+    /* Gezaehlt wird im KOMMENTARFREIEN Inhalt: Der Kopf dieser Datei beschreibt den Fehlgriff des
+       ersten Laufs ausdruecklich und nennt die Liste dabei beim Namen - eine Zaehlung im Rohtext
+       schluege genau an dieser Warnung an. */
+    const gesamt = dateiVon('fix-flaechen.js').inhalt.split(
+      'penpot.library.local.components',
+    ).length
+    const imBlock = GETEILTE_ERKENNUNG.split('penpot.library.local.components').length
+    expect(imBlock - 1, 'der geteilte Block nennt sie').toBeGreaterThan(0)
+    expect(gesamt, 'keine Nennung ausserhalb des geteilten Blocks').toBe(imBlock)
   })
 })
 

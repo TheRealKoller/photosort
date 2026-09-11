@@ -53,6 +53,15 @@
  * steht wortgleich auch in `seed-components.js` und `verify.js`; die Uebereinstimmung ist statisch
  * zugesichert.
  *
+ * ⚠ DER DURCHGANG GEHT UEBER DIE BEHAELTER, NICHT UEBER DIE BIBLIOTHEKSLISTE.
+ * `penpot.library.local.components` liefert je Baustein GENAU EINE Komponente, nicht ihre
+ * Varianten - 2026-09-11 am ersten echten Lauf gemessen: 12 statt 158. Die Variantenkomponenten
+ * haengen am Behaelter (`behaelter.variants.variantComponents()`), und der ist ein Board und steht
+ * deshalb gar nicht in jener Liste. Der erste Lauf iterierte ueber sie, erreichte ein Zwoelftel
+ * des Bestandes und meldete trotzdem Erfolg: 2 geaendert, 9 bereits richtig, 1 abweichend. Kein
+ * statischer Test konnte das fangen - wie viele Objekte ein API-Aufruf liefert, steht in keiner
+ * Datei dieses Repositoriums.
+ *
  * `execute_code` FUEHRT DEN TEXT ALS FUNKTIONSRUMPF AUS und liefert nur zurueck, was ein `return`
  * zurueckgibt (gemessen) - deshalb endet diese Datei, wie die uebrigen, auf ein `return`.
  *
@@ -77,7 +86,21 @@ const FARB_EIGENSCHAFT = ['fill']
 const BRETT_ART = 'board'
 const TEXT_ART = 'text'
 
-/* GETEILTE ERKENNUNG - wortgleich auch in seed-components.js und verify.js, statisch zugesichert. */
+/* GETEILTE BEHAELTERERKENNUNG - wortgleich auch in verify.js, statisch zugesichert.
+ *
+ * ⚠ HIER HAENGT DER GANZE BESTAND DRAN. `penpot.library.local.components` liefert je Baustein
+ * GENAU EINE Komponente, nicht ihre Varianten (2026-09-11 am ersten echten Lauf gemessen: 12 statt
+ * 158). Die Variantenkomponenten haengen am Behaelter, und der ist ein Board und steht deshalb
+ * gar nicht in jener Liste. Ein Lauf ueber die Bibliotheksliste erreicht ein Zwoelftel des
+ * Bestandes und meldet trotzdem Erfolg - genau das ist beim ersten Lauf passiert. */
+function istVariantenBehaelter(form) {
+  return Boolean(form.isVariantContainer) && Boolean(form.isVariantContainer())
+}
+
+/* GETEILTE ERKENNUNG - wortgleich auch in seed-components.js und verify.js, statisch zugesichert.
+ * Sie beantwortet nur, WELCHE Bausteine ueberhaupt vorhanden sind; dafuer genuegt je Baustein ein
+ * Eintrag, und die Bibliotheksliste ist dafuer die richtige Quelle. Fuer den Durchgang durch die
+ * einzelnen Varianten ist sie es nicht. */
 function bausteinSchluesselInDatei() {
   const gefunden = []
   for (const komponente of penpot.library.local.components) {
@@ -220,8 +243,8 @@ function main() {
   const geaendert = []
   const bereitsRichtig = []
   const strukturAbweichend = []
-  for (const komponente of penpot.library.local.components) {
-    const schluessel = komponente.getPluginData('schluessel')
+  for (const behaelter of penpotUtils.findShapes((form) => istVariantenBehaelter(form))) {
+    const schluessel = behaelter.getPluginData('schluessel')
     if (!schluessel) {
       continue
     }
@@ -229,19 +252,21 @@ function main() {
     if (!baustein) {
       continue
     }
-    const bezeichnung = schluessel + ': ' + varianteName(komponente)
-    const wurzel = komponente.mainInstance()
-    const soll = istKorrigierbaresBrett(wurzel)
-      ? sollFuerVariante(baustein, komponente.variantProps || {})
-      : null
-    if (!soll) {
-      strukturAbweichend.push(bezeichnung)
-      continue
-    }
-    if (zieheNach(wurzel, soll)) {
-      geaendert.push(bezeichnung)
-    } else {
-      bereitsRichtig.push(bezeichnung)
+    for (const komponente of behaelter.variants.variantComponents()) {
+      const bezeichnung = schluessel + ': ' + varianteName(komponente)
+      const wurzel = komponente.mainInstance()
+      const soll = istKorrigierbaresBrett(wurzel)
+        ? sollFuerVariante(baustein, komponente.variantProps || {})
+        : null
+      if (!soll) {
+        strukturAbweichend.push(bezeichnung)
+        continue
+      }
+      if (zieheNach(wurzel, soll)) {
+        geaendert.push(bezeichnung)
+      } else {
+        bereitsRichtig.push(bezeichnung)
+      }
     }
   }
 
