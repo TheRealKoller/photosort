@@ -2,11 +2,8 @@
  * Erzeugt die Penpot-Tokenliste aus `frontend/src/index.css`.
  *
  * DIE RICHTUNG IST index.css -> Penpot, ERZEUGT STATT ABGESCHRIEBEN. Der Penpot-Plugin-Kontext hat
- * kein Dateisystem; die Werte muessen also in der Nutzlast stehen. Die Frage ist damit nicht, ob es
- * diese Kopie gibt, sondern ob sie erzeugt oder getippt ist - getippt waere sie der klassische Weg,
- * auf dem ein Design-System still auseinanderlaeuft. Ausgefuehrt wird dieser Erzeuger von
- * `tokens.test.ts` ueber einen Vitest-Dateischnappschuss; ein eigener TS-Runner, ein npm-Skript
- * oder eine neue Abhaengigkeit entstehen dadurch nicht.
+ * kein Dateisystem; die Werte muessen also in der Nutzlast stehen. Ausgefuehrt wird dieser Erzeuger
+ * von `tokens.test.ts` ueber einen Vitest-Dateischnappschuss.
  *
  * FEHLSCHLAGEN STATT UEBERSPRINGEN: Jede nicht verstandene Deklaration wirft. Ein still
  * uebersprungenes Token ist genau die Fehlerklasse, gegen die dieser Erzeuger antritt - es fehlte
@@ -17,17 +14,11 @@
  * Tailwind-Utilities.
  */
 
-/** Penpot-Tokentyp je Namensgruppe (an einer verbundenen Instanz gemessen). Die sieben
- * Schriftstufen sind **Verbundtokens** vom Typ `typography`: Penpot kennt keinen Token-Typ fuer
- * Zeilenhoehen, und eine Stufe wird beim Entwerfen ohnehin in einem Zug angewandt.
- *
- * Ihre Gruppe heisst `text` und nicht `font-size`: Das Token traegt neben der Groesse auch
- * Zeilenhoehe, Schnitt und Laufweite - ein Gruppenname `font-size` verspraeche weniger, als
- * darin steckt. `text.base` spiegelt ausserdem `--text-base` aus index.css unmittelbar.
+/** Penpot-Tokentyp je Namensgruppe. Die sieben Schriftstufen sind **Verbundtokens** vom Typ
+ * `typography`: Penpot kennt keinen Token-Typ fuer Zeilenhoehen.
  *
  * Die Tabelle ist zugleich das GESCHLOSSENE Gruppenvokabular und erschoepfend: genau die fuenf
- * Gruppen, die es gibt, keine auf Vorrat. Eine erlaubte, aber unbenutzte Gruppe waere eine
- * Zusicherung, die nichts zusichert. */
+ * Gruppen, die es gibt, keine auf Vorrat. */
 export const TOKEN_TYPE_BY_GROUP: Readonly<Record<string, string>> = {
   color: 'color',
   radius: 'borderRadius',
@@ -39,28 +30,25 @@ export const TOKEN_TYPE_BY_GROUP: Readonly<Record<string, string>> = {
 /**
  * Schreibwert eines `typography`-Tokens. **Singular-Schluessel** - die Pluralformen der
  * dokumentierten `TokenTypographyValue` sind die LESEform (`resolvedValue`) und werden als
- * Schreibwert abgelehnt (gemessen).
+ * Schreibwert abgelehnt.
  *
  * EIN FELD TRAEGT EINEN WERT ODER FEHLT GANZ. Eine leere Zeichenkette ist ein ungueltiger Wert
- * und laesst den ganzen Aufruf scheitern ("Field 0.value is invalid") - am 2026-09-08 an der
- * laufenden Instanz gemessen, nachdem genau daran der erste echte Lauf abgebrochen ist.
+ * und laesst den ganzen Aufruf scheitern ("Field 0.value is invalid").
  *
  * Wo der Bestand kein Feld hat, FEHLT es deshalb: `--text-xs` und `--text-sm` tragen kein
- * `--font-weight`, nur `--text-3xl` traegt ein `--letter-spacing`. An der Zusage dahinter aendert
- * das nichts - einen Standardwert `400` zu ergaenzen waere weiterhin genau die getippte Wertekopie,
- * die dieser Erzeuger verbietet; das Feld ist nur nicht mehr leer da, sondern gar nicht.
+ * `--font-weight`, nur `--text-3xl` traegt ein `--letter-spacing`. Einen Standardwert `400` zu
+ * ergaenzen ist genau die getippte Wertekopie, die dieser Erzeuger verbietet.
  *
- * `fontSize` traegt seine Einheit (`"12px"`) - ebenfalls gemessen und gueltig.
+ * `fontSize` traegt seine Einheit (`"12px"`).
  */
 export interface TypografieWert {
-  /** Verweis auf eines der beiden Familientokens statt einer Wiederholung des Namens -
-   * Referenzen loesen im Verbundwert nachweislich auf. */
+  /** Verweis auf eines der beiden Familientokens, nie der Schriftname selbst - Referenzen loesen
+   * im Verbundwert auf. */
   fontFamily: string
   fontSize: string
   lineHeight: string
   fontWeight?: string
-  /** Blanke Zahl in px. Ein em-Wert wird als Tokenwert zwar akzeptiert, kommt an der Textform
-   * aber als `0` an (gemessen) - deshalb gegen die Schriftgroesse der Stufe umgerechnet. */
+  /** Blanke Zahl in px, umgerechnet von `letterSpacingToPixels`. */
   letterSpacing?: string
 }
 
@@ -150,7 +138,7 @@ function parseDeclarations(body: string): [string, string][] {
  * EINZIGE BEWUSSTE UEBERSETZUNG DIESES ERZEUGERS: uebernommen wird die Primaerfamilie, nicht der
  * vollstaendige CSS-Stack. Eine Ausweichkette ist eine Browser-Eigenschaft und in einem
  * Entwurfswerkzeug bedeutungslos; ein Schriftname MIT Anfuehrungszeichen findet in Penpot ausserdem
- * keine Schrift. Das ist keine Auslassung, sondern die Uebersetzung.
+ * keine Schrift.
  */
 function primaryFontFamily(stack: string): string {
   const first = stack.split(',')[0].trim()
@@ -169,9 +157,8 @@ function lengthToPixels(value: string, context: string): number {
 
 /**
  * Rechnet eine Laufweite in `em` gegen die Schriftgroesse ihrer Stufe in eine blanke px-Zahl um
- * (`-0.02em` bei `64px` -> `-1.28`). GEMESSEN, nicht vermutet: Ein em-Wert wird als Tokenwert
- * akzeptiert und loest auch auf, kommt an der Textform aber als `0` an; als blanke Zahl greift die
- * Laufweite nachweislich.
+ * (`-0.02em` bei `64px` -> `-1.28`). Ein em-Wert wird als Tokenwert akzeptiert und loest auch auf,
+ * kommt an der Textform aber als `0` an; nur als blanke Zahl greift die Laufweite.
  */
 export function letterSpacingToPixels(value: string, fontSize: string): string {
   const em = /^(-?[0-9]*\.?[0-9]+)em$/.exec(value.trim())
@@ -204,7 +191,7 @@ function festerTypografieWert(stufe: string, roh: TypoRohwert): TypografieWert {
     lineHeight: roh.lineHeight,
   }
   // Ein Feld ohne Wert wird WEGGELASSEN, nie als leere Zeichenkette gesetzt - die waere ein
-  // ungueltiger Wert und liesse den ganzen Aufruf scheitern (gemessen).
+  // ungueltiger Wert und liesse den ganzen Aufruf scheitern.
   if (roh.fontWeight !== undefined) wert.fontWeight = roh.fontWeight
   if (roh.letterSpacing !== undefined) wert.letterSpacing = roh.letterSpacing
   return wert
