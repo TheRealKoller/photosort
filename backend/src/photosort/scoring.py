@@ -7,10 +7,9 @@ from math import atan2, cos, radians, sin, sqrt
 
 from PIL import Image, ImageFilter, ImageStat
 
-# Schwellenwerte fuer Phase A (specs/features/0003-automatic-best-photo-selection.md,
-# decisions/0006-local-scoring-datamodel.md). Bewusst als benannte Konstanten statt Magic Numbers,
-# aber NICHT gegen echte Kamerafotos kalibriert (kein Korpus im Repo, siehe Teststrategie-Abschnitt
-# der Spec) - nur die Logik "Wert unter/ueber Schwelle -> erwartetes Verhalten" ist getestet.
+# Schwellenwerte für Phase A. Bewusst als benannte Konstanten statt Magic Numbers, aber NICHT
+# gegen echte Kamerafotos kalibriert (kein Korpus im Repo) - nur die Logik "Wert
+# unter/über Schwelle -> erwartetes Verhalten" ist getestet.
 # Tatsaechliche Kalibrierung bleibt manueller Smoke-Test mit echten Projektfotos vor dem Merge.
 
 # Laplace-Kernel-Varianz unterhalb dieses Werts gilt als "zu unscharf fuer eine Empfehlung".
@@ -28,16 +27,16 @@ DUPLICATE_HAMMING_THRESHOLD = 6
 
 # Zeitliche Luecke, ab der ein neues Zeitfenster-Cluster beginnt (cluster_key) - trennt
 # unterschiedliche Aufnahme-Anlaesse/Situationen innerhalb eines Projekts. Reine Zeitfenster-Bildung
-# ohne visuelle Aehnlichkeit (technische Detailentscheidung, siehe Architektur-Abschnitt der Spec).
+# ohne visuelle Ähnlichkeit - technische Detailentscheidung der Umsetzung.
 TIME_CLUSTER_GAP = timedelta(hours=1)
 
 # Haversine-Distanz, ab der ein neues Cluster beginnt - gleichrangig neben TIME_CLUSTER_GAP
-# (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0029 Punkt 5, ADR 0072 Entscheidung 4).
-# Dokumentierte, UNKALIBRIERTE Modulkonstante wie TIME_CLUSTER_GAP/SHARPNESS_REJECT_THRESHOLD -
-# bewusst kein Settings-/Env-Wert (die sind im Projekt Infrastruktur-Parametern vorbehalten).
+# Dokumentierte, UNKALIBRIERTE Modulkonstante wie
+# TIME_CLUSTER_GAP/SHARPNESS_REJECT_THRESHOLD - bewusst kein Settings-/Env-Wert (die sind im
+# Projekt Infrastruktur-Parametern vorbehalten).
 #
-# 500 statt der 2000 aus dem unverbindlichen Vorschlag in ADR 0029: der ausloesende Fall der Spec
-# ist "zwei Sehenswuerdigkeiten kurz hintereinander", und die liegen innerstaedtisch typischerweise
+# 500 m statt 2000 m: der auslösende Fall ist "zwei Sehenswürdigkeiten kurz hintereinander",
+# und die liegen innerstädtisch typischerweise
 # einige hundert Meter auseinander (Eiffelturm <-> Trocadero ca. 700 m) - 2000 m haetten genau den
 # benannten Fall nicht getrennt. 500 m liegt zugleich sicher oberhalb der Streuung eines einzelnen
 # Ortsbesuchs (Umherlaufen plus GPS-Ungenauigkeit, Groessenordnung 100-300 m). Bewusst in Kauf
@@ -51,7 +50,7 @@ GPS_CLUSTER_SPLIT_DISTANCE_METERS = 500.0
 
 # Mittlerer Erdradius (IUGG) fuer die Haversine-Approximation. Fuer die hier relevante Praezision
 # (Cluster-Sprung-Erkennung im Bereich von Metern bis Kilometern) ausreichend - keine neue
-# Abhaengigkeit fuer eine einzelne Distanzformel (ADR 0029 Punkt 4).
+# Abhängigkeit für eine einzelne Distanzformel.
 _EARTH_RADIUS_METERS = 6_371_008.8
 
 _LAPLACE_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
@@ -64,7 +63,7 @@ _DHASH_HEIGHT = 8
 
 def compute_sharpness(image: Image.Image) -> float:
     """Schaerfe als Varianz eines 3x3-Laplace-Kernels (klassische "Blur-Detection ohne OpenCV",
-    liefert dieselbe Kennzahl wie cv2.Laplacian(...).var() - decisions/0006)."""
+    liefert dieselbe Kennzahl wie cv2.Laplacian(...).var())."""
     grayscale = image.convert("L")
     edges = grayscale.filter(_LAPLACE_KERNEL)
     variance = ImageStat.Stat(edges).var[0]
@@ -85,7 +84,7 @@ def compute_exposure(image: Image.Image) -> float:
 
 def compute_dhash(image: Image.Image) -> str:
     """Difference Hash (dHash): Graustufen-Resize auf 9x8 Pixel + bitweiser Vergleich
-    benachbarter Pixel -> 64-Bit-Hash, hex-codiert (decisions/0006). Strukturell (nicht
+    benachbarter Pixel -> 64-Bit-Hash, hex-codiert. Strukturell (nicht
     farb-)sensitiv, ausreichend fuer Burst-/Duplikaterkennung nahezu identischer Aufnahmen."""
     grayscale = image.convert("L").resize((_DHASH_WIDTH, _DHASH_HEIGHT), Image.Resampling.LANCZOS)
     pixels = list(grayscale.getdata())
@@ -115,7 +114,7 @@ def assign_duplicate_clusters(
 ) -> dict[int, int]:
     """Gruppiert Fotos anhand der Hamming-Distanz ihrer dHashes (Union-Find, transitiv) und
     bestimmt je Cluster mit mehr als einem Mitglied den Gewinner (hoechste sharpness, bei
-    Gleichstand niedrigere photo_id - Akzeptanzkriterium der Spec).
+    Gleichstand niedrigere photo_id).
 
     Rueckgabe: photo_id -> duplicate_of, NUR fuer die Verlierer eines Clusters. Fotos ohne
     Duplikat (Cluster-Groesse 1) oder der Cluster-Gewinner selbst tauchen im Ergebnis nicht auf.
@@ -154,7 +153,7 @@ def assign_duplicate_clusters(
 
 
 def _haversine_meters(lat_a: float, lon_a: float, lat_b: float, lon_b: float) -> float:
-    """Grosskreisdistanz zweier Koordinaten in METERN (Haversine, Stdlib-`math`, ADR 0029 Punkt 4).
+    """Großkreisdistanz zweier Koordinaten in METERN (Haversine, Stdlib-`math`).
 
     Die Einheit ist Teil des Vertrags und nicht bloss Konvention: bei einer Trennschwelle von
     500 m ist ein Meter/Kilometer-Dreher die Grenze zwischen "trennt nie" und "trennt immer", und
@@ -175,14 +174,11 @@ def _haversine_meters(lat_a: float, lon_a: float, lat_b: float, lon_b: float) ->
 
 @dataclass(frozen=True)
 class ClusterCandidate:
-    """Ein Foto der Phase-A-Clusterbildung (specs/features/0051-gps-landmark-cluster-bildung.md).
-
-    Hiess bis Spec 0051 `TimeClusterCandidate`; die Umbenennung ist Teil derselben Erweiterung
-    (dieselbe Funktion um ein zweites Signal ergaenzt, kein Parallelmuster neben der alten).
+    """Ein Foto der Phase-A-Clusterbildung.
 
     `gps_lat`/`gps_lon` haben den Vorgabewert `None` - "kein Ort" ist der Normalfall, kein
-    Sonderfall (ADR 0029, Backward Compatibility): ein Projekt ganz ohne Koordinaten laeuft ueber
-    denselben Code und liefert exakt das bisherige Zeitfensterverhalten."""
+    Sonderfall: ein Projekt ganz ohne Koordinaten läuft über denselben Code und liefert
+    exakt das reine Zeitfensterverhalten."""
 
     photo_id: int
     taken_at: datetime
@@ -206,9 +202,7 @@ def assign_clusters(
     gap: timedelta = TIME_CLUSTER_GAP,
     split_distance_meters: float = GPS_CLUSTER_SPLIT_DISTANCE_METERS,
 ) -> dict[int, str]:
-    """Phase-A-Clusterbildung aus Zeit UND Ort in EINEM sortierten Durchlauf
-    (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0029 Punkt 1, ADR 0072
-    Entscheidung 5). Bis Spec 0051 hiess diese Funktion `assign_time_clusters`.
+    """Phase-A-Clusterbildung aus Zeit UND Ort in EINEM sortierten Durchlauf.
 
     Ein neues Cluster beginnt, wenn die Zeitluecke `gap` ueberschritten wird ODER die
     Haversine-Distanz zum letzten Foto MIT Koordinate im laufenden Cluster
@@ -264,9 +258,7 @@ def refine_clusters_by_landmark(
     base_cluster_key_by_photo: Mapping[int, str],
     landmark_name_by_photo: Mapping[int, str | None],
 ) -> dict[int, str]:
-    """Phase-2-Verfeinerung der Cluster anhand erkannter Sehenswuerdigkeiten
-    (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0029 Punkt 1, ADR 0072
-    Entscheidung 3).
+    """Phase-2-Verfeinerung der Cluster anhand erkannter Sehenswürdigkeiten.
 
     REIN und DB-FREI: die Namen kommen als einfaches `dict` herein, die Funktion kennt ihre
     Datenherkunft nicht. Das ist Absicht - so bleibt die Schluesselvergabe ohne Cloud-Fixture
@@ -282,23 +274,23 @@ def refine_clusters_by_landmark(
     Verfeinerung statt (sonst waeren `cluster-3` und `cluster-3-1` beide belegt, ohne jeden
     Nutzen).
 
-    Kein Name im Schluessel (ADR 0072 Entscheidung 3): `cluster_key` ist ein Partitionsschluessel,
+    SICHERHEIT - kein Name im Schlüssel: `cluster_key` ist ein Partitionsschlüssel,
     der als Query-Parameter an `GET /projects/{id}/curation-candidates` zurueckwandert und im
     Frontend als React-Key dient - freier, extern erzeugter LLM-Text hat dort nichts zu suchen.
 
-    Exakter Zeichenkettenvergleich, KEIN Fuzzy-Matching (bewusste v1-Vereinfachung, ADR 0029
-    Punkt 5): zwei Schreibweisen-Varianten desselben Orts splitten.
+    Exakter Zeichenkettenvergleich, KEIN Fuzzy-Matching (bewusste Vereinfachung): zwei
+    Schreibweisen-Varianten desselben Orts splitten.
 
     Das Ergebnis geht ausschliesslich nach `PhotoRanking.cluster_key`; `PhotoScore.cluster_key`
-    wird NIE mutiert (Ownership-Grenze ADR 0021). Die Divergenz beider Felder ist gewollt und
+    wird NIE mutiert (Ownership-Grenze). Die Divergenz beider Felder ist gewollt und
     dokumentiert.
 
-    OBERE SCHRANKE der Wirkung (ADR 0069, Muss-Kriterium fuer jede steuernde Verwendung eines
-    Fremdwerts): der Name stammt aus einem Vision-Modell und steuert hier erstmals Kontrollfluss.
+    SICHERHEIT - OBERE SCHRANKE der Wirkung, Muss-Kriterium für jede steuernde Verwendung
+    eines Fremdwerts: der Name stammt aus einem Vision-Modell und steuert hier Kontrollfluss.
     Die Zahl der Teil-Cluster eines Basis-Clusters ist durch die Zahl der Fotos IN DIESEM Cluster
     absolut begrenzt (Extremfall: jedes Foto ein eigenes Cluster) - der Kuratierungsmodus liefert
-    dann hoechstens den vollen Bildvorrat des Projekts aus, also genau die Antwortgroesse, die
-    ADR 0071 mit `GET /projects/{id}/curation-candidates` ohnehin als zulaessig gesetzt hat."""
+    dann höchstens den vollen Bildvorrat des Projekts aus, also genau die Antwortgröße, die
+    `GET /projects/{id}/curation-candidates` ohnehin als zulässig gesetzt hat."""
     names_by_cluster: dict[str, set[str]] = {}
     for photo_id, base_key in base_cluster_key_by_photo.items():
         name = (landmark_name_by_photo.get(photo_id) or "").strip()

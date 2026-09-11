@@ -25,22 +25,14 @@ class Project(Base):
     opencloud_drive_id: Mapped[str]
     opencloud_path: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    # Projektweiter Einwilligungs-Schalter fuer produktive Cloud-Vision-Datenfluesse
-    # (urspruenglich nur die Cloud-Sehenswuerdigkeit-Erkennung, specs/features/0047-
-    # sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-landmark-erkennung.md
-    # Punkt 5) - Default AUS (anders als category_selection_enabled, ein rein lokales/kostenloses
-    # Feature). Projektweit statt personenbezogen (konsistent mit dem "kein Innentaeter-Modell"-
-    # Grundsatz, siehe Security-Abschnitt der Spec) - kein user_id-Bezug.
-    #
-    # Umbenannt von cloud_landmark_detection_enabled/cloud_landmark_consent_at
-    # (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
-    # decisions/0032, Punkt 2 Migration a): wertsicheres RENAME COLUMN, kein neuer, zweiter
-    # Consent-Schalter - dieselbe Einwilligung gated seitdem sowohl `landmark` als auch die neue
-    # Remote-Kategorie-Klassifizierung. Ein Projekt, das die Cloud-Erkennung bereits aktiviert
-    # hatte, bleibt nach der Migration technisch identisch aktiv.
+    # Projektweiter Einwilligungs-Schalter für produktive Cloud-Vision-Datenflüsse. Es ist der
+    # EINE Schalter für beide Cloud-Anteile (landmark und Remote-Kategorie-Klassifizierung), kein
+    # zweiter daneben. Default AUS (anders als category_selection_enabled, ein rein lokales,
+    # kostenloses Feature). Projektweit statt personenbezogen, konsistent mit dem "kein
+    # Innentäter-Modell"-Grundsatz - kein user_id-Bezug.
     cloud_vision_detection_enabled: Mapped[bool] = mapped_column(default=False)
-    # Zeitstempel, gesetzt beim Aktivieren, auf NULL zurueckgesetzt beim Deaktivieren - kein
-    # voller Audit-Log (konsistent mit ScoringRun.gate_confirmed_at, ADR 0025 Punkt 5).
+    # Zeitstempel, gesetzt beim Aktivieren, auf NULL zurückgesetzt beim Deaktivieren - bewusst
+    # kein voller Audit-Log (konsistent mit ScoringRun.gate_confirmed_at).
     cloud_vision_consent_at: Mapped[datetime | None] = mapped_column(default=None)
 
     photos: Mapped[list[Photo]] = relationship(
@@ -52,16 +44,13 @@ class Project(Base):
     scoring_runs: Mapped[list[ScoringRun]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
-    # Ersetzt top_selection_runs (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
-    # backfill.md, decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md, Punkt 5).
     criterion_scoring_runs: Mapped[list[CriterionScoringRun]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
-    # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt
-    # 2 Migration d - kein Cascade-Ziel fuer fine_labels selbst (projektuebergreifend, siehe
-    # FineLabel-Docstring): DELETE /projects/{id} loescht ueber die photos-Kaskade oben die
-    # projekteigenen photo_fine_labels-Zeilen, laesst einen weiterhin von einem ANDEREN
-    # Projekt referenzierten fine_labels-Eintrag unangetastet.
+    # Kein Cascade-Ziel für fine_labels selbst (projektübergreifend, siehe FineLabel-Docstring):
+    # DELETE /projects/{id} löscht über die photos-Kaskade oben die projekteigenen
+    # photo_fine_labels-Zeilen, lässt einen weiterhin von einem ANDEREN Projekt referenzierten
+    # fine_labels-Eintrag unangetastet.
     remote_category_classification_runs: Mapped[list[RemoteCategoryClassificationRun]] = (
         relationship(back_populates="project", cascade="all, delete-orphan")
     )
@@ -74,10 +63,7 @@ class RatingStatus(enum.StrEnum):
 
 
 class CriterionSource(enum.StrEnum):
-    """Herkunft eines PhotoCriterionScore-Werts (specs/features/0037-gatefuehrte-bewertungs-
-    pipeline-mit-backfill.md, decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md, Punkt
-    1). `CLOUD` ist ein reiner Registry-Wert in dieser Spec - kein source=cloud-Compute-Pfad wird
-    hier implementiert (siehe Security-Abschnitt der Spec)."""
+    """Herkunft eines PhotoCriterionScore-Werts."""
 
     LOCAL_HEURISTIC = "local_heuristic"
     LOCAL_ML = "local_ml"
@@ -96,17 +82,15 @@ class Photo(Base):
     etag: Mapped[str]
     content_length: Mapped[int]
     taken_at: Mapped[datetime]
-    # specs/features/0051-gps-landmark-cluster-bildung.md, decisions/0029-gps-landmark-cluster-
-    # bildung.md + decisions/0072-ortsbezogene-cluster-anzeigeort-als-antwortableitung.md:
     # Dezimalgrad aus dem EXIF-GPSInfo-IFD (opencloud/exif.py::extract_gps), beim Scan aus
-    # demselben Range-Read-Fenster wie `taken_at` gelesen. `None` heisst "kein Ort bekannt" - es
+    # demselben Range-Read-Fenster wie `taken_at` gelesen. `None` heißt "kein Ort bekannt" - es
     # gibt NIE eine halbe Koordinate: scheitert eine Komponente, sind beide Felder `None`
-    # (Paar-Invariante von extract_gps). Volle EXIF-Praezision, keine Rundung beim Speichern; die
+    # (Paar-Invariante von extract_gps). Volle EXIF-Präzision, keine Rundung beim Speichern; die
     # Anzeigerundung auf zwei Nachkommastellen liegt allein in api/photos.py::cluster_place.
     #
-    # KEIN server_default und kein Backfill: `0.0` waere eine gueltige Koordinate (Golf von
+    # KEIN server_default und kein Backfill: `0.0` wäre eine gültige Koordinate (Golf von
     # Guinea), kein Abwesenheitswert. Bereits gescannte Fotos bleiben ohne Koordinate, bis sich
-    # die Datei auf OpenCloud aendert (Daniels Entscheidung, siehe "Out of Scope" der Spec).
+    # die Datei auf OpenCloud ändert.
     gps_lat: Mapped[float | None] = mapped_column(default=None)
     gps_lon: Mapped[float | None] = mapped_column(default=None)
     last_modified: Mapped[datetime]
@@ -126,35 +110,30 @@ class Photo(Base):
     criterion_scores: Mapped[list[PhotoCriterionScore]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
     )
-    # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: 1:1 wie score oben,
-    # optional (nur angelegt, wenn tatsaechlich ein Landmark-Name identifiziert wurde).
+    # 1:1 wie score oben, optional - nur angelegt, wenn tatsächlich ein Landmark-Name
+    # identifiziert wurde.
     landmark_detection: Mapped[PhotoLandmarkDetection | None] = relationship(
         back_populates="photo", uselist=False, cascade="all, delete-orphan"
     )
-    # specs/features/0055, ADR 0032 Punkt 2 Migration c2, umbenannt in
-    # specs/features/0289-feste-kategorien.md: 1:N (0-2 Zeilen pro Foto, ein freies Feinlabel je
-    # Zeile). Feinlabels sind seit Spec 0289 reine ZUSATZINFORMATION am Foto - sie bilden keine
-    # Kategorie mehr (siehe category_classification unten).
+    # 1:N (0-2 Zeilen pro Foto, ein freies Feinlabel je Zeile). Feinlabels sind reine
+    # ZUSATZINFORMATION am Foto - sie bilden keine Kategorie (siehe category_classification).
     fine_labels: Mapped[list[PhotoFineLabel]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
     )
-    # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 3a: 1:1 wie score/
-    # landmark_detection, optional (nur angelegt, wenn ein Remote-Klassifizierungslauf dieses Foto
-    # tatsaechlich verarbeitet hat).
+    # 1:1 wie score/landmark_detection, optional - nur angelegt, wenn ein
+    # Remote-Klassifizierungslauf dieses Foto tatsächlich verarbeitet hat.
     category_classification: Mapped[PhotoCategoryClassification | None] = relationship(
         back_populates="photo", uselist=False, cascade="all, delete-orphan"
     )
-    # specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
-    # fehler-persistierung.md Punkt 2: hoechstens zwei Zeilen pro Foto (eine je CloudVisionPhase),
-    # ausschliesslich der jeweils LETZTE bekannte Fehlschlag, kein Verlauf.
+    # Höchstens zwei Zeilen pro Foto (eine je CloudVisionPhase), ausschließlich der jeweils
+    # LETZTE bekannte Fehlschlag, kein Verlauf.
     cloud_vision_errors: Mapped[list[PhotoCloudVisionError]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
     )
-    # specs/features/0044-projekte-loeschen.md: die Foto-Seite derselben Luecke wie bei
-    # CriterionScoringRun.rankings - und der Grund, warum sie ein echter Defekt und nicht nur
-    # Kosmetik ist: worker.py::run_project_scan loescht beim Re-Scan die auf OpenCloud
+    # Die Foto-Seite derselben Kaskade wie bei CriterionScoringRun.rankings, und hier kein
+    # Schönheitsfehler: worker.py::run_project_scan löscht beim Re-Scan die auf OpenCloud
     # verschwundenen Fotos (removed_paths); steht so ein Foto in einem photo_rankings-Eintrag,
-    # scheitert der Scan unter echtem Postgres an der Fremdschluesselverletzung.
+    # scheitert der Scan unter echtem Postgres an der Fremdschlüsselverletzung.
     rankings: Mapped[list[PhotoRanking]] = relationship(cascade="all, delete-orphan")
 
 
@@ -172,20 +151,16 @@ class ScanRun(Base):
     photos_removed: Mapped[int] = mapped_column(default=0)
     files_skipped: Mapped[int] = mapped_column(default=0)
     error_message: Mapped[str | None] = mapped_column(default=None)
-    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
-    # server-seitig defaultet (analog started_at), damit ein frisch angelegter Lauf sofort einen
-    # last_progress_at-Wert hat und nicht bereits ab Zeile 1 als Stillstand gilt. Wird an denselben
-    # Stellen wie files_found periodisch zwischen-committet (worker.py::
-    # _maybe_commit_progress_checkpoint, seit specs/features/0036-scan-performance-zweiphasig-
-    # parallel.md aus Phase 1/Phase 2a von run_project_scan aufgerufen) und von
-    # worker.py::reap_stalled_runs gelesen.
+    # Fortschritts-Watchdog: server-seitig defaultet (analog started_at), damit ein frisch
+    # angelegter Lauf sofort einen last_progress_at-Wert hat und nicht bereits ab Zeile 1 als
+    # Stillstand gilt. Wird an denselben Stellen wie files_found periodisch zwischen-committet
+    # (worker.py::_maybe_commit_progress_checkpoint) und von worker.py::reap_stalled_runs gelesen.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    # specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020: additiv, default=None
-    # (nicht 0) - unterscheidet bewusst "Enumerationsphase (Phase 1) noch nicht abgeschlossen,
-    # Gesamtzahl unbekannt" von "Projekt enthaelt 0 Dateien". Ueberall mit `is not None` statt
-    # truthy zu pruefen (0 ist ein gueltiger, informativer Wert). Wird nach Abschluss von Phase 1
-    # (worker.py::run_project_scan) einmalig auf len(entries) gesetzt und danach nicht mehr
-    # veraendert.
+    # default=None (nicht 0) - unterscheidet bewusst "Enumerationsphase (Phase 1) noch nicht
+    # abgeschlossen, Gesamtzahl unbekannt" von "Projekt enthält 0 Dateien". Überall mit
+    # `is not None` statt truthy zu prüfen (0 ist ein gültiger, informativer Wert). Wird nach
+    # Abschluss von Phase 1 (worker.py::run_project_scan) einmalig auf len(entries) gesetzt und
+    # danach nicht mehr verändert.
     total_files: Mapped[int | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="scan_runs")
@@ -201,11 +176,11 @@ class User(Base):
 
 
 class Rating(Base):
-    """Bewertung eines Photos durch einen User (specs/features/0002-manual-categorization.md).
+    """Bewertung eines Photos durch einen User.
 
     "Unbewertet" wird bewusst nicht als eigener Enum-Wert modelliert, sondern als Fehlen einer
-    Zeile fuer (photo_id, user_id) - macht Toggle/Ueberschreiben zu einem einfachen Upsert ueber
-    den Unique-Constraint, siehe api/ratings.py.
+    Zeile für (photo_id, user_id) - macht Toggle/Überschreiben zu einem einfachen Upsert über den
+    Unique-Constraint, siehe api/ratings.py.
     """
 
     __tablename__ = "ratings"
@@ -224,15 +199,12 @@ class Rating(Base):
 
 
 class ScoringRun(Base):
-    """Ein Lauf des lokalen Scoring-Jobs (specs/features/0003-automatic-best-photo-selection.md,
-    decisions/0006-local-scoring-datamodel.md), analog ScanRun. Nutzt bewusst denselben
-    ScanStatus-Enum wie ScanRun statt eines eigenen ScoringStatus - beide Enums haben identische
-    Semantik (running/success/failed) fuer einen asynchron laufenden Worker-Job.
+    """Ein Lauf des lokalen Scoring-Jobs, analog ScanRun. Nutzt bewusst denselben
+    ScanStatus-Enum wie ScanRun statt eines eigenen ScoringStatus - beide haben identische
+    Semantik (running/success/failed) für einen asynchron laufenden Worker-Job.
 
     photos_total/photos_processed liefern granularen Live-Fortschritt (periodisch
-    zwischen-committet, siehe worker.py::run_project_scoring) - analog zu ScanRun.files_found, das
-    seit specs/features/0022-scan-live-fortschrittszaehler.md ebenfalls periodisch statt nur am
-    Ende committet wird (siehe worker.py::run_project_scan, SCAN_COMMIT_BATCH_SIZE).
+    zwischen-committet, siehe worker.py::run_project_scoring) - analog zu ScanRun.files_found.
     """
 
     __tablename__ = "scoring_runs"
@@ -246,31 +218,27 @@ class ScoringRun(Base):
     photos_processed: Mapped[int] = mapped_column(default=0)
     error_message: Mapped[str | None] = mapped_column(default=None)
     # Anzahl der Fotos, deren PhotoScore.suggested_status in diesem Lauf gesetzt wurde
-    # (Duplikat-Verlierer + zu unscharfe Fotos, siehe worker.py::run_project_scoring,
-    # Variable rejected_ids). Bleibt bei einem fehlgeschlagenen Lauf auf dem Default 0 - kein
-    # irrefuehrender Teilstand (specs/features/0021-scoring-run-vorschlagszaehler.md).
+    # (Duplikat-Verlierer + zu unscharfe Fotos, siehe worker.py::run_project_scoring, Variable
+    # rejected_ids). Bleibt bei einem fehlgeschlagenen Lauf auf dem Default 0 - kein
+    # irreführender Teilstand.
     suggestions_found: Mapped[int] = mapped_column(default=0, server_default="0")
-    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md), analog
-    # ScanRun.last_progress_at oben.
+    # Fortschritts-Watchdog, analog ScanRun.last_progress_at oben.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    # Ausschuss-Gate (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md,
-    # decisions/0021, Punkt 6): additiv, projektweit (kein user_id-Bezug, bewusst konsistent mit
-    # allen anderen Run-Tabellen - nur Rating ist personenbezogen, siehe Security-Abschnitt der
-    # Spec). None = Gate noch nicht bestaetigt. Wird entweder ueber POST /confirm-ausschuss-gate
-    # gesetzt oder automatisch von run_project_scoring, wenn suggestions_found == 0 (kein
-    # Ausschuss zum Sichten vorhanden).
+    # Ausschuss-Gate: projektweit, bewusst ohne user_id-Bezug wie alle Run-Tabellen - nur Rating
+    # ist personenbezogen. None = Gate noch nicht bestätigt. Wird entweder über POST
+    # /confirm-ausschuss-gate gesetzt oder automatisch von run_project_scoring, wenn
+    # suggestions_found == 0 (kein Ausschuss zum Sichten vorhanden).
     gate_confirmed_at: Mapped[datetime | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="scoring_runs")
 
 
 class PhotoScore(Base):
-    """Automatisch berechnete Bewertungsgrundlage eines Fotos, 1:1 zu Photo
-    (specs/features/0003-automatic-best-photo-selection.md, decisions/0006-local-scoring-
-    datamodel.md). Bewusst KEINE Rating-Zeile und bewusst eine eigene Tabelle statt eines
-    source-Felds an Rating (siehe ADR 0006) - ein Vorschlag wird erst durch aktive
-    Nutzerbestaetigung ueber den bestehenden PUT /photos/{id}/rating-Endpunkt zu einer echten
-    Bewertung. `photo_id` ist Primary Key (kein separates id+Unique-Constraint-Paar wie bei
+    """Automatisch berechnete Bewertungsgrundlage eines Fotos, 1:1 zu Photo.
+
+    Bewusst KEINE Rating-Zeile und bewusst eine eigene Tabelle statt eines source-Felds an Rating:
+    ein Vorschlag wird erst durch aktive Nutzerbestätigung über PUT /photos/{id}/rating zu einer
+    echten Bewertung. `photo_id` ist Primary Key (kein separates id+Unique-Constraint-Paar wie bei
     Rating), weil es strukturell nie mehrere Zeilen pro Foto gibt.
     """
 
@@ -282,47 +250,37 @@ class PhotoScore(Base):
     phash: Mapped[str | None] = mapped_column(default=None)
     # Selbstreferenzierender FK auf photos.id (nicht auf photo_scores.photo_id): zeigt auf das im
     # Duplikat-/Burst-Cluster behaltene FOTO, das nicht zwingend selbst schon eine PhotoScore-Zeile
-    # braucht, um referenziert werden zu koennen.
+    # braucht, um referenziert werden zu können.
     duplicate_of: Mapped[int | None] = mapped_column(ForeignKey("photos.id"), default=None)
     cluster_key: Mapped[str | None] = mapped_column(default=None)
-    # Wiederverwendet das bestehende RatingStatus-Enum (Akzeptanzkriterium der Spec) - Phase A
-    # setzt darueber praktisch nur REJECTED, offene Positivempfehlungen bleiben Phase B
-    # vorbehalten, ohne dass das Feld dafuer erneut migriert werden muesste.
+    # Wiederverwendet bewusst das bestehende RatingStatus-Enum: gesetzt wird darüber praktisch
+    # nur REJECTED, offene Positivempfehlungen sind ohne erneute Migration möglich.
     suggested_status: Mapped[RatingStatus | None] = mapped_column(
         SQLEnum(RatingStatus, native_enum=False, length=20), default=None
     )
     computed_at: Mapped[datetime]
-    # `category`/`local_quality_score` (specs/features/0024) entfallen ersatzlos
-    # (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md, decisions/0021, Punkt
-    # 2) - reiner, nie manuell editierter Ableitungszustand, dessen Nachfolge jetzt strukturell
-    # durch PhotoCriterionScore+PhotoRanking (Kriterien-/Rangfolgen-Schicht) uebernommen wird statt
-    # in eigenen PhotoScore-Spalten.
-    #
-    # specs/features/0055, ADR 0032 Punkt 2 Migration b: additiv, dauerhafte manuelle
-    # Uebersteuerung des sonst automatisch abgeleiteten category_key
+    # Dauerhafte manuelle Übersteuerung des sonst automatisch abgeleiteten category_key
     # (worker.py::run_criterion_scoring verwendet `score.category_override or
-    # resolve_category(...)`) - ueberlebt damit auch kuenftige volle Re-Scoring-Laeufe.
+    # resolve_category(...)`) - überlebt damit auch künftige volle Re-Scoring-Läufe.
     #
-    # specs/features/0289-feste-kategorien.md: der zulaessige Wertebereich ist seit dieser Spec das
-    # geschlossene 13er-Set (categories.py::CATEGORY_REGISTRY), nicht mehr ein beliebiger
-    # `canonical_key`. Weiterhin freier String ohne FK - die Whitelist-Pruefung
-    # (`is_known_category`) lebt am Override-Endpunkt selbst, nicht hier; der LESEPFAD bleibt
-    # bewusst tolerant gegenueber einem Altwert ausserhalb des Sets (Defense in Depth gegen einen
-    # unvollstaendig gelaufenen Migrationsschritt, Security-Abschnitt der Spec Punkt 2).
+    # Der zulässige Wertebereich ist das geschlossene Set aus categories.py::CATEGORY_REGISTRY,
+    # trotzdem ein freier String ohne FK: die Whitelist-Prüfung (`is_known_category`) lebt am
+    # Override-Endpunkt selbst, nicht hier. Der LESEPFAD bleibt bewusst tolerant gegenüber einem
+    # Altwert außerhalb des Sets - Defense in Depth gegen einen unvollständig gelaufenen
+    # Migrationsschritt.
     category_override: Mapped[str | None] = mapped_column(default=None)
 
     photo: Mapped[Photo] = relationship(back_populates="score", foreign_keys=[photo_id])
 
 
 class PhotoCriterionScore(Base):
-    """Ein normierter Kriterien-Wert fuer ein Foto (specs/features/0037-gatefuehrte-bewertungs-
-    pipeline-mit-backfill.md, decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md, Punkt
-    1) - generische Tabelle statt weiterer fixer PhotoScore-Spalten, damit neue Kriterien nie eine
-    neue Migration erzwingen (nur einen neuen Eintrag in criteria.py::CRITERIA_REGISTRY).
-    `criterion_key` ist bewusst ein freier String (kein Enum) - genau das macht die Erweiterbarkeit
-    aus. `value` ist immer bereits auf [0, 1] normiert, "hoeher = besser", zum
-    Berechnungszeitpunkt (nicht erst beim Lesen). UniqueConstraint(photo_id, criterion_key): ein
-    erneuter Kriterien-Lauf ueberschreibt (Upsert) den bestehenden Wert, keine Historie."""
+    """Ein normierter Kriterien-Wert für ein Foto - generische Tabelle statt weiterer fixer
+    PhotoScore-Spalten, damit ein neues Kriterium nie eine Migration erzwingt (nur einen neuen
+    Eintrag in criteria.py::CRITERIA_REGISTRY). `criterion_key` ist bewusst ein freier String
+    (kein Enum) - genau das macht die Erweiterbarkeit aus. `value` ist immer bereits auf [0, 1]
+    normiert, "höher = besser", zum Berechnungszeitpunkt und nicht erst beim Lesen.
+    UniqueConstraint(photo_id, criterion_key): ein erneuter Kriterien-Lauf überschreibt (Upsert)
+    den bestehenden Wert, keine Historie."""
 
     __tablename__ = "photo_criterion_scores"
     __table_args__ = (
@@ -342,27 +300,23 @@ class PhotoCriterionScore(Base):
 
 
 class ClassificationPhase(enum.StrEnum):
-    """Die VIER Teilschritte eines verketteten Klassifizierungslaufs (specs/features/0296-
-    klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-klassifizierungs-
-    lauf-mit-laufbezogener-cloud-freigabe.md Punkt 1; erweitert um LANDMARK/RANKING durch
-    specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-vier-
-    teilschritte-und-laufeigene-cloud-bilanz.md Punkt 1) - in genau dieser Reihenfolge, damit die
-    Remote-Ergebnisse noch im selben Lauf in die Kategorieableitung einfliessen.
+    """Die VIER Teilschritte eines verketteten Klassifizierungslaufs, in genau dieser
+    Reihenfolge, damit die Remote-Ergebnisse noch im selben Lauf in die Kategorieableitung
+    einfließen.
 
     REMOTE_CATEGORIES und LANDMARK laufen nur bei angeforderter UND eingewilligter Cloud-Nutzung;
     CRITERIA und RANKING laufen immer. Getragen von CriterionScoringRun.phase, dort NULL sobald
     der Lauf beendet ist.
 
     RANKING (Kategorieableitung, rank_photos je Partition, Schreiben der PhotoRanking-Zeilen)
-    gehoert fachlich zur Kriterien-Phase, laeuft aber NACH der Landmark-Phase. Ohne eigenen Namen
-    muesste `phase` dort entweder auf LANDMARK stehenbleiben (die Anzeige behauptete dann
-    Cloud-Aufrufe, die nicht mehr stattfinden, bei 100 % Fortschritt - exakt das gemeldete
-    "haengt oder laeuft?"-Symptom, nur eine Phase spaeter) oder auf CRITERIA zurueckspringen. Ein
-    vierter Wert macht die Abfolge monoton.
+    gehört fachlich zur Kriterien-Phase, läuft aber NACH der Landmark-Phase. Ohne eigenen Namen
+    müsste `phase` dort entweder auf LANDMARK stehenbleiben - die Anzeige behauptete dann
+    Cloud-Aufrufe, die nicht mehr stattfinden, bei 100 % Fortschritt - oder auf CRITERIA
+    zurückspringen. Ein vierter Wert macht die Abfolge monoton.
 
     Der Wertebereich ist eine Zeichenkette in einer VARCHAR(20)-Spalte OHNE DB-seitige
-    Pruefeinschraenkung (SQLEnum(..., native_enum=False), create_constraint aus) - fuer die beiden
-    mit Spec 0348 hinzugekommenen Werte war deshalb KEINE Migration noetig."""
+    Prüfeinschränkung (SQLEnum(..., native_enum=False), create_constraint aus) - ein weiterer Wert
+    braucht deshalb keine Migration."""
 
     REMOTE_CATEGORIES = "remote_categories"
     CRITERIA = "criteria"
@@ -371,20 +325,15 @@ class ClassificationPhase(enum.StrEnum):
 
 
 class CriterionScoringRun(Base):
-    """Ein Lauf des Kriterien-/Rangfolgen-Jobs (specs/features/0037-gatefuehrte-bewertungs-
-    pipeline-mit-backfill.md, decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md, Punkt
-    5) - ersetzt TopSelectionRun/select_top_photos vollstaendig. Analog ScoringRun/ScanRun (nutzt
-    denselben ScanStatus-Enum). `scoring_run_id` bindet den Lauf explizit an den ScoringRun, dessen
-    Ausschuss-Ergebnis (insb. cluster_key) er voraussetzt - Grundlage fuer den 409-Staleness-Guard
-    bei einem zwischenzeitlichen Re-Scan/Re-Scoring (ADR 0021, Punkt 7).
+    """Ein Lauf des Kriterien-/Rangfolgen-Jobs, analog ScoringRun/ScanRun (nutzt denselben
+    ScanStatus-Enum). `scoring_run_id` bindet den Lauf explizit an den ScoringRun, dessen
+    Ausschuss-Ergebnis (insb. cluster_key) er voraussetzt - Grundlage für den 409-Staleness-Guard
+    bei einem zwischenzeitlichen Re-Scan/Re-Scoring.
 
-    photos_total/photos_processed liefern granularen Live-Fortschritt (periodisch zwischen-
-    committet, siehe worker.py::run_criterion_scoring) - analog ScoringRun.photos_total/
-    photos_processed. Kein top_n_per_cluster/candidates_total mehr (anders als das fruehere
-    TopSelectionRun): N ist beim Scoren nicht mehr bekannt, wird erst beim Lesen angewendet (ADR
-    0021, Punkt 4) - der Job verarbeitet immer alle Ausschuss-Ueberlebenden. Kein suggestions_found
-    mehr: der Job waehlt keine Top-N mehr aus, sondern berechnet immer den vollen Rangfolge-Pool je
-    Partition (siehe PhotoRanking)."""
+    photos_total/photos_processed liefern granularen Live-Fortschritt (periodisch
+    zwischen-committet, siehe worker.py::run_criterion_scoring). Bewusst kein Top-N-Parameter und
+    kein suggestions_found: N ist beim Scoren nicht bekannt und wird erst beim Lesen angewendet -
+    der Job berechnet immer den vollen Rangfolge-Pool je Partition (siehe PhotoRanking)."""
 
     __tablename__ = "criterion_scoring_runs"
 
@@ -397,176 +346,153 @@ class CriterionScoringRun(Base):
     photos_total: Mapped[int] = mapped_column(default=0)
     photos_processed: Mapped[int] = mapped_column(default=0)
     error_message: Mapped[str | None] = mapped_column(default=None)
-    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md), analog
-    # ScanRun.last_progress_at oben.
+    # Fortschritts-Watchdog, analog ScanRun.last_progress_at oben.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-
-    # verketteter-klassifizierungslauf-mit-laufbezogener-cloud-freigabe.md Punkt 3: diese Zeile
-    # ist seit Spec 0296 der Run-Datensatz des GESAMTEN Klassifizierungslaufs, nicht mehr nur
-    # seiner Kriterien-Phase - sie wird deshalb von worker.py::run_classification angelegt, bevor
-    # die erste Phase startet, und nicht mehr von run_criterion_scoring selbst. Ohne diesen
-    # frueheren Anlagezeitpunkt zeigte `last_criterion_scoring_run` waehrend der Remote-Phase noch
-    # auf den Lauf DAVOR, und die Oberflaeche haette keinen Anker fuer den laufenden Vorgang.
+    # Diese Zeile ist der Run-Datensatz des GESAMTEN Klassifizierungslaufs, nicht nur seiner
+    # Kriterien-Phase - sie wird deshalb von worker.py::run_classification angelegt, bevor die
+    # erste Phase startet, und nicht von run_criterion_scoring selbst. Ohne diesen frühen
+    # Anlagezeitpunkt zeigte `last_criterion_scoring_run` während der Remote-Phase noch auf den
+    # Lauf DAVOR, und die Oberfläche hätte keinen Anker für den laufenden Vorgang.
     #
-    # `phase`: der gerade laufende Teilschritt; NULL heisst "laeuft nicht mehr" (beendet - oder
-    # Altzeile aus der Zeit der getrennten Ausloesung). Bewusst KEIN eigener Enum-Wert "done":
-    # der Abschluss steht bereits in `status`, ein zweiter Ort dafuer koennte auseinanderlaufen.
+    # `phase`: der gerade laufende Teilschritt; NULL heißt "läuft nicht mehr" (beendet, oder
+    # Altzeile). Bewusst KEIN eigener Enum-Wert "done": der Abschluss steht bereits in `status`,
+    # ein zweiter Ort dafür könnte auseinanderlaufen.
     phase: Mapped[ClassificationPhase | None] = mapped_column(
         SQLEnum(ClassificationPhase, native_enum=False, length=20), default=None
     )
-    # War die Cloud-Nutzung fuer DIESEN Lauf angefordert (Checkbox am Ausloeser)? Macht
-    # nachtraeglich erkennbar, ob das Ergebnis ueberhaupt Cloud-Anreicherung enthalten kann.
-    # Sagt NICHT, ob tatsaechlich Cloud-Aufrufe stattgefunden haben - das Gate ist die Konjunktion
-    # mit Project.cloud_vision_detection_enabled (ADR 0050 Punkt 2).
+    # War die Cloud-Nutzung für DIESEN Lauf angefordert (Checkbox am Auslöser)? Macht
+    # nachträglich erkennbar, ob das Ergebnis überhaupt Cloud-Anreicherung enthalten kann. Sagt
+    # NICHT, ob tatsächlich Cloud-Aufrufe stattgefunden haben - das Gate ist die Konjunktion mit
+    # Project.cloud_vision_detection_enabled.
     cloud_requested: Mapped[bool] = mapped_column(default=False)
-    # Menschenlesbare Zusammenfassung der Cloud-Probleme dieses Laufs (ADR 0050 Punkt 4), NULL =
-    # keine. Laufebene, nicht Foto-Ebene: die Einzelfehler bleiben pro Foto in
-    # photo_cloud_vision_errors abrufbar (ADR 0035). Gesetzt zu werden heisst NICHT, dass der Lauf
-    # fehlgeschlagen ist - der lokale Bewertungsanteil laeuft trotzdem vollstaendig durch, der
-    # Lauf endet mit SUCCESS, das Ergebnis ist nur nicht (vollstaendig) angereichert.
+    # Menschenlesbare Zusammenfassung der Cloud-Probleme dieses Laufs, NULL = keine. Laufebene,
+    # nicht Foto-Ebene: die Einzelfehler bleiben pro Foto in photo_cloud_vision_errors abrufbar.
+    # Gesetzt zu werden heißt NICHT, dass der Lauf fehlgeschlagen ist - der lokale
+    # Bewertungsanteil läuft trotzdem vollständig durch, der Lauf endet mit SUCCESS, das Ergebnis
+    # ist nur nicht (vollständig) angereichert.
     cloud_error_message: Mapped[str | None] = mapped_column(default=None)
 
-    # specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-
-    # remote-laeufe.md Punkt 3: die IST-Kosten-Buchfuehrung des Landmark-Anteils dieses
-    # Laufs.
-    # Praefix `landmark_`, weil diese Tabelle seit ADR 0050 den GESAMTEN
-    # Klassifizierungslauf traegt und die Kriterien-Phase selbst nichts kostet.
+    # Die IST-Kosten-Buchführung des Landmark-Anteils dieses Laufs. Präfix `landmark_`, weil
+    # diese Tabelle den GESAMTEN Klassifizierungslauf trägt und die Kriterien-Phase nichts kostet.
     #
     # Alle vier Spalten sind NULLABLE mit Python-seitigem Default `0` - exakt das
-    # `ScanRun.total_files`-Idiom: `NULL` heisst "nicht erfasst" (Zeile aus der Zeit vor
-    # der zugehoerigen Migration), `0` heisst "erfasst, es sind keine Kosten angefallen".
-    # Ohne diese Unterscheidung waere ein Altlauf nicht von einem kostenlosen Lauf zu
-    # trennen; auf genau ihr beruht Befund (a) des Unvollstaendigkeits-Hinweises der
-    # Statistikseite (ADR 0051 Punkt 5). Ueberall mit `is None` statt truthy zu pruefen.
+    # `ScanRun.total_files`-Idiom: `NULL` heißt "nicht erfasst" (Altzeile), `0` heißt "erfasst, es
+    # sind keine Kosten angefallen". Ohne diese Unterscheidung wäre ein Altlauf nicht von einem
+    # kostenlosen Lauf zu trennen; auf genau ihr beruht Befund (a) des
+    # Unvollständigkeits-Hinweises der Statistikseite. Überall mit `is None` statt truthy zu
+    # prüfen.
     #
-    # `landmark_api_calls` zaehlt jeden STATTGEFUNDENEN Aufruf, auch wenn dessen `usage`-Block
-    # fehlte (der Tokenbeitrag ist dann 0). Das ist zugleich der Ausloeser fuer Befund (b):
-    # ein Betrag von exakt 0 bei nachweislich abgesetzten Aufrufen ist bei Token-Preisen
-    # groesser null strukturell unmoeglich und damit ein zuverlaessiger Indikator fuer eine
-    # Erfassungsluecke.
+    # `landmark_api_calls` zählt jeden STATTGEFUNDENEN Aufruf, auch wenn dessen `usage`-Block
+    # fehlte (der Tokenbeitrag ist dann 0). Das ist zugleich der Auslöser für Befund (b): ein
+    # Betrag von exakt 0 bei nachweislich abgesetzten Aufrufen ist bei Token-Preisen größer null
+    # strukturell unmöglich und damit ein zuverlässiger Indikator für eine Erfassungslücke.
     #
-    # `landmark_cost_usd` ist der beim Laufende EINGEFRORENE Betrag (ADR 0051 Punkt 4) - eine
-    # spaetere Preisaenderung veraendert keinen historischen Betrag. `None` trotz erfasster
-    # Tokens heisst: das Modell war in `pricing.py::MODEL_PRICING` nicht hinterlegt.
-    # `float` statt `Numeric` (ADR 0051 Punkt 3): Cent-Betraege, keine Buchhaltung,
-    # gerundet wird erst bei der Ausgabe. Tokens und Aufrufzahl werden bewusst OHNE
-    # eigenen Anzeigepfad mitgespeichert (eng begrenzte Ausnahme, ADR 0051 Punkt 3): ohne
-    # sie ist ein historischer Betrag nach einer erkannten Preiskorrektur nicht mehr
-    # nachrechenbar, und der Verbrauch existiert nur im Moment der API-Antwort.
+    # `landmark_cost_usd` ist der beim Laufende EINGEFRORENE Betrag - eine spätere Preisänderung
+    # verändert keinen historischen Betrag. `None` trotz erfasster Tokens heißt: das Modell war in
+    # `pricing.py::MODEL_PRICING` nicht hinterlegt. `float` statt `Numeric`: Cent-Beträge, keine
+    # Buchhaltung, gerundet wird erst bei der Ausgabe. Tokens und Aufrufzahl werden bewusst OHNE
+    # eigenen Anzeigepfad mitgespeichert - ohne sie ist ein historischer Betrag nach einer
+    # erkannten Preiskorrektur nicht mehr nachrechenbar, und der Verbrauch existiert nur im Moment
+    # der API-Antwort.
     landmark_api_calls: Mapped[int | None] = mapped_column(default=0)
     landmark_input_tokens: Mapped[int | None] = mapped_column(default=0)
     landmark_output_tokens: Mapped[int | None] = mapped_column(default=0)
     landmark_cost_usd: Mapped[float | None] = mapped_column(default=0)
 
-    # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-
-    # anbieter-und-modellgebundene-kostenschaetzung.md Punkt 6: die Modell-ID der Landmark-Phase
-    # dieses Laufs - die PREISGRUNDLAGE des eingefrorenen `landmark_cost_usd` daneben. Seit die
-    # Modellwahl eine Betriebseinstellung ist, sagt der Provider allein nicht mehr, womit ein Lauf
-    # gerechnet hat; ohne diese Spalte waere ein historischer Betrag nach einer Preiskorrektur
-    # nicht mehr nachrechenbar und ein Modellvergleich nicht auswertbar.
+    # Die Modell-ID der Landmark-Phase dieses Laufs - die PREISGRUNDLAGE des eingefrorenen
+    # `landmark_cost_usd` daneben. Da die Modellwahl eine Betriebseinstellung ist, sagt der
+    # Provider allein nicht, womit ein Lauf gerechnet hat; ohne diese Spalte wäre ein historischer
+    # Betrag nach einer Preiskorrektur nicht mehr nachrechenbar.
     #
-    # Nullable mit Python-seitigem Default `None` - `NULL` heisst "nicht erfasst" (Zeile aus der
-    # Zeit vor der zugehoerigen Migration), NICHT "kein Modell"; dasselbe `ScanRun.total_files`-
-    # Idiom wie bei den vier Kostenspalten oben. Geschrieben wird sie an derselben Stelle und mit
-    # demselben Commit wie der eingefrorene Betrag, aus demselben lokalen Wert (ADR 0059 Punkt 7).
+    # Nullable mit Default `None` - `NULL` heißt "nicht erfasst" (Altzeile), NICHT "kein Modell";
+    # dasselbe Idiom wie bei den vier Kostenspalten oben. Geschrieben an derselben Stelle und mit
+    # demselben Commit wie der eingefrorene Betrag, aus demselben lokalen Wert.
     #
     # An der LAUF-Zeile und nicht an den `provider`-Spalten der Foto-Zeilen: eine Foto-Zeile
-    # entsteht nur bei einem Treffer (_upsert_landmark_detection laeuft nur bei erkanntem Namen) -
-    # ein Lauf, der Aufrufe bezahlt und nichts erkennt, hinterliesse dort keine Spur des Modells.
-    # Bewusst ohne Lesepfad in der Oberflaeche (dieselbe eng begrenzte Ausnahme wie Tokens/
-    # Aufrufzahl, ADR 0051 Punkt 3): Adressat ist der Betreiber, nicht der Anwender.
+    # entsteht nur bei einem Treffer (_upsert_landmark_detection läuft nur bei erkanntem Namen) -
+    # ein Lauf, der Aufrufe bezahlt und nichts erkennt, hinterließe dort keine Spur des Modells.
+    # Bewusst ohne Lesepfad in der Oberfläche: Adressat ist der Betreiber, nicht der Anwender.
     landmark_model: Mapped[str | None] = mapped_column(default=None)
 
-    # specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-
-    # vier-teilschritte-und-laufeigene-cloud-bilanz.md Punkt 2: die LIVE-Zaehler der Landmark-
-    # Phase - je asyncio.gather-Block fortgeschrieben und committet, gemeinsam mit
-    # `last_progress_at`.
+    # Die LIVE-Zähler der Landmark-Phase - je asyncio.gather-Block fortgeschrieben und
+    # committet, gemeinsam mit `last_progress_at`.
     #
-    # STRIKT GETRENNT von den vier Kosten-Buchfuehrungsspalten oben, und das ist der Kern der
-    # Entscheidung: `landmark_api_calls` wird EINMAL am Phasenende zusammen mit dem eingefrorenen
-    # Betrag geschrieben (ADR 0051 Punkt 4), und `api_calls > 0` bei Betrag 0/NULL ist der
-    # Ausloeser fuer Befund (b) des Unvollstaendigkeits-Hinweises der Statistikseite (ADR 0051
-    # Punkt 5). Ein laufend hochgezaehltes `landmark_api_calls` erfuellte diese Bedingung bei
-    # JEDEM laufenden Cloud-Lauf und faerbte die Kostenseite mitten im Betrieb mit einem
-    # Fehlalarm ein.
+    # STRIKT GETRENNT von den vier Kosten-Buchführungsspalten oben: `landmark_api_calls` wird
+    # EINMAL am Phasenende zusammen mit dem eingefrorenen Betrag geschrieben, und `api_calls > 0`
+    # bei Betrag 0/NULL ist der Auslöser für Befund (b) des Unvollständigkeits-Hinweises der
+    # Statistikseite. Ein laufend hochgezähltes `landmark_api_calls` erfüllte diese Bedingung bei
+    # JEDEM laufenden Cloud-Lauf und färbte die Kostenseite mitten im Betrieb mit einem Fehlalarm
+    # ein.
     #
-    # Nullable mit Python-Default `None`, dasselbe `ScanRun.total_files`-Idiom: `NULL` heisst
-    # "Phase nicht betreten" (oder Altzeile), `0` heisst "betreten, nichts passiert". Gesetzt
-    # werden sie auf `0` beim BETRETEN der Phase, nicht bei der Zeilenanlage.
+    # Nullable mit Default `None`, dasselbe Idiom: `NULL` heißt "Phase nicht betreten" (oder
+    # Altzeile), `0` heißt "betreten, nichts passiert". Gesetzt werden sie auf `0` beim BETRETEN
+    # der Phase, nicht bei der Zeilenanlage.
     #
     # `landmark_photos_total` ist zugleich der MARKER, ob es diesen Teilschritt in diesem Lauf
-    # ueberhaupt gab - die API leitet daraus ab, ob ein `cloud_phases`-Eintrag entsteht.
-    # `landmark_photos_processed` zaehlt ABGESETZTE Aufrufe (Erfolge UND Fehlschlaege), nicht
-    # verwertete Antworten. Fuer Laeufe ab der zugehoerigen Migration gilt die per Test
+    # überhaupt gab - die API leitet daraus ab, ob ein `cloud_phases`-Eintrag entsteht.
+    # `landmark_photos_processed` zählt ABGESETZTE Aufrufe (Erfolge UND Fehlschläge), nicht
+    # verwertete Antworten. Für Läufe ab der zugehörigen Migration gilt die per Test
     # festgeschriebene Invariante `landmark_photos_processed == landmark_api_calls +
     # landmark_failed_calls`.
     landmark_photos_total: Mapped[int | None] = mapped_column(default=None)
     landmark_photos_processed: Mapped[int | None] = mapped_column(default=None)
     landmark_failed_calls: Mapped[int | None] = mapped_column(default=None)
 
-    # ADR 0068 Punkt 5: die Kostenschaetzung, mit der GENAU DIESER Lauf gestartet wurde -
-    # serverseitig im Ausloese-Endpunkt berechnet und als Job-Argument durchgereicht.
+    # Die Kostenschätzung, mit der GENAU DIESER Lauf gestartet wurde - serverseitig im
+    # Auslöse-Endpunkt berechnet und als Job-Argument durchgereicht. Sie muss festgehalten werden,
+    # weil die Schätzung über den noch OFFENEN Kandidatenbestand rechnet, den genau dieser Lauf
+    # abgearbeitet hat: unmittelbar danach schätzt derselbe Endpunkt nahe null.
     #
-    # Ohne sie ist das Akzeptanzkriterium "die tatsaechlich angefallenen Kosten sind gegen die
-    # Schaetzung vor dem Start einordenbar" nach dem Lauf UNERFUELLBAR: die Schaetzung rechnet
-    # ueber den noch OFFENEN Kandidatenbestand, den genau dieser Lauf gerade abgearbeitet hat -
-    # unmittelbar danach schaetzt derselbe Endpunkt nahe null.
-    #
-    # Ein BELEG, nie eine Eingabe (Security-Muss der Spec 0348): der Wert darf in keine spaetere
-    # Rechnung, kein Budget-Gate und keine Ableitung der Ist-Kosten eingehen - sonst wuerde eine
-    # Momentaufnahme autoritativ. Bei `use_cloud=false` steht hier `NULL`, nicht `0.0`: ein Lauf
-    # ohne Cloud hat keine Kostenschaetzung, und `0.0` waere eine Aussage, die niemand getroffen
-    # hat (dieselbe "null heisst unbekannt, nie kostenlos"-Linie wie bei `price_per_image_usd`).
+    # Ein BELEG, nie eine Eingabe: der Wert darf in keine spätere Rechnung, kein Budget-Gate und
+    # keine Ableitung der Ist-Kosten eingehen - sonst würde eine Momentaufnahme autoritativ. Bei
+    # `use_cloud=false` steht hier `NULL`, nicht `0.0`: ein Lauf ohne Cloud hat keine
+    # Kostenschätzung, und `0.0` wäre eine Aussage, die niemand getroffen hat (dieselbe "null
+    # heißt unbekannt, nie kostenlos"-Linie wie bei `price_per_image_usd`).
     estimated_cost_usd: Mapped[float | None] = mapped_column(default=None)
 
-    # ADR 0068 Punkt 3: der Remote-Lauf, der zu DIESEM Klassifizierungslauf gehoert - gesetzt von
-    # run_classification, BEVOR Phase 1 startet (die Oberflaeche braucht den Anker schon waehrend
+    # Der Remote-Lauf, der zu DIESEM Klassifizierungslauf gehört - gesetzt von
+    # run_classification, BEVOR Phase 1 startet (die Oberfläche braucht den Anker schon während
     # der Remote-Phase). `NULL` = dieser Lauf hatte keine Remote-Phase, oder Altzeile.
     #
-    # Kehrt ADR 0050 Punkt 3 ("kein FK zwischen den beiden Run-Tabellen") um, mit dessen eigenem
-    # Argument: solange die Zuordnung nur die Fortschrittsanzeige speiste, war "die juengste
-    # Remote-Zeile des Projekts" genau genug. Eine Bilanz nennt dagegen einen GELDBETRAG - und
-    # die Heuristik ist dafuer nachweislich falsch, sobald zwei Laeufe hintereinander
-    # unterschiedlich viel Cloud nutzen: ein Lauf ohne Cloud-Phase erbte die Zahlen des Laufs
-    # davor und zeigte fremde Kosten als seine eigenen.
+    # Der explizite Fremdschlüssel ist Pflicht, keine Bequemlichkeit: Die Heuristik "die jüngste
+    # Remote-Zeile des Projekts" ist nachweislich falsch, sobald zwei Läufe hintereinander
+    # unterschiedlich viel Cloud nutzen - ein Lauf ohne Cloud-Phase erbte die Zahlen des Laufs
+    # davor und zeigte fremde Kosten als seine eigenen. Eine Bilanz nennt einen GELDBETRAG.
     #
-    # Die Loeschreihenfolge in project_deletion.py passt bereits (criterion_scoring_runs VOR
-    # remote_category_classification_runs); ein Test haelt das fest.
+    # Die Löschreihenfolge in project_deletion.py muss criterion_scoring_runs VOR
+    # remote_category_classification_runs halten; ein Test hält das fest.
     remote_category_classification_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("remote_category_classification_runs.id"), default=None
     )
 
     project: Mapped[Project] = relationship(back_populates="criterion_scoring_runs")
-    # specs/features/0044-projekte-loeschen.md: PhotoRanking haengt an ZWEI Elternteilen und
-    # hatte bis dahin auf keiner der beiden Seiten eine Relationship. Ohne diese Kaskade bleiben
-    # beim Loeschen eines Kuratierungslaufs verwaiste photo_rankings-Zeilen zurueck.
+    # PhotoRanking hängt an ZWEI Elternteilen. Ohne diese Kaskade bleiben beim Löschen eines
+    # Kuratierungslaufs verwaiste photo_rankings-Zeilen zurück.
     rankings: Mapped[list[PhotoRanking]] = relationship(cascade="all, delete-orphan")
 
 
 class PhotoRanking(Base):
-    """Der volle, sortierte Kandidatenpool einer Partition (cluster_key x category_key) fuer einen
-    CriterionScoringRun (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md,
-    decisions/0021, Punkt 4) - NICHT nur die Top-N. Macht "zeig die besten X pro Kategorie" zu
-    einer reinen Lese-Query (GET /projects/{id}/photos?top_n_per_category=N) statt eines
-    Job-Parameters, und macht Backfill zu einem reinen Nebeneffekt eines erneuten Abrufs nach einer
-    Rating-Aenderung, ohne dass irgendein Server-Code aktiv "nachrueckt".
-    `category_key` ist wie `criterion_key` ein freier String (kein PhotoCategory-Enum mehr) -
-    dieselbe Erweiterbarkeits-Begruendung. `rank_position` ist 1-basiert innerhalb der Partition.
+    """Der volle, sortierte Kandidatenpool einer Partition (cluster_key x category_key) für einen
+    CriterionScoringRun - NICHT nur die Top-N. Macht "zeig die besten X pro Kategorie" zu einer
+    reinen Lese-Query (GET /projects/{id}/photos?top_n_per_category=N) statt eines Job-Parameters,
+    und Backfill zu einem Nebeneffekt eines erneuten Abrufs nach einer Rating-Änderung, ohne dass
+    irgendein Server-Code aktiv "nachrückt". `category_key` ist wie `criterion_key` ein freier
+    String, `rank_position` ist 1-basiert innerhalb der Partition.
 
-    MEHRFACHZUGEHOERIGKEIT (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 1): ein Foto hat
-    pro Lauf EINE ZEILE JE KATEGORIE, zu der es gehoert - genau eine davon traegt `is_primary=True`.
-    Der Unique-Constraint ist deshalb von `(run, photo)` auf `(run, photo, category_key)` gewandert:
-    ein Foto steht pro Lauf hoechstens einmal JE KATEGORIE statt hoechstens einmal ueberhaupt.
+    MEHRFACHZUGEHÖRIGKEIT: ein Foto hat pro Lauf EINE ZEILE JE KATEGORIE, zu der es gehört - genau
+    eine davon trägt `is_primary=True`. Daher der Unique-Constraint über
+    `(run, photo, category_key)`: ein Foto steht pro Lauf höchstens einmal JE KATEGORIE, nicht
+    höchstens einmal überhaupt.
 
-    `rank_score` ist ueber alle Zugehoerigkeitszeilen eines Fotos IDENTISCH (der ungedaempfte
-    gewichtete Kriterien-Mittelwert). `rank_position` ist es NICHT und ist innerhalb einer Partition
-    auch nicht mehr monoton in `rank_score` - die Modellkonfidenz zum Schluessel DIESER Partition
-    daempft den Sortierschluessel (ranking.py::confidence_ordering_score). Gewollt, kein Defekt.
+    `rank_score` ist über alle Zugehörigkeitszeilen eines Fotos IDENTISCH (der ungedämpfte
+    gewichtete Kriterien-Mittelwert). `rank_position` ist es NICHT und innerhalb einer Partition
+    auch nicht monoton in `rank_score` - die Modellkonfidenz zum Schlüssel DIESER Partition dämpft
+    den Sortierschlüssel (ranking.py::confidence_ordering_score). Gewollt, kein Defekt.
 
     Die zweite Invariante - GENAU EINE Zeile mit `is_primary=True` je (Lauf, Foto) - ist bewusst
-    nicht als Datenbankbedingung ausdrueckbar und wird stattdessen im Schreibpfad gehalten
+    nicht als Datenbankbedingung ausdrückbar und wird stattdessen im Schreibpfad gehalten
     (worker.py::run_criterion_scoring/reassign_photo_category, dort mit `with_for_update()` gegen
-    ueberlappende Overrides) und in den Tests nach jeder Schreiboperation geprueft."""
+    überlappende Overrides) und in den Tests nach jeder Schreiboperation geprüft."""
 
     __tablename__ = "photo_rankings"
     __table_args__ = (
@@ -585,33 +511,27 @@ class PhotoRanking(Base):
     category_key: Mapped[str]
     rank_score: Mapped[float]
     rank_position: Mapped[int]
-    # BEWUSST OHNE Default (weder Python- noch Server-seitig, siehe Migration c9d0e1f2a3b4): ein
-    # Schreibpfad, der die Spalte vergisst, soll auffallen statt still eine zweite Hauptkategorie
-    # zu erzeugen. Die Spalte traegt genau die Invariante, die sonst niemand haelt.
+    # BEWUSST OHNE Default, weder Python- noch Server-seitig: ein Schreibpfad, der die Spalte
+    # vergisst, soll auffallen statt still eine zweite Hauptkategorie zu erzeugen. Die Spalte
+    # trägt genau die Invariante, die sonst niemand hält.
     is_primary: Mapped[bool]
 
 
 class PhotoLandmarkDetection(Base):
-    """Der vom Vision-LLM identifizierte Sehenswuerdigkeit-Name, 1:1 zu Photo
-    (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, decisions/0025-cloud-
-    landmark-erkennung.md Punkt 6) - analog PhotoScore. `photo_id` ist Primary Key (kein
-    separates id+Unique-Constraint-Paar wie bei PhotoCriterionScore), weil dies eine optionale
-    Detail-Zeile pro Foto ist, kein Mehrfach-Kriterien-Fact. Nur angelegt, wenn tatsaechlich ein
-    Name identifiziert wurde (kein Platzhalter-"unbekannt"). `confidence` dupliziert bewusst den
-    zugehoerigen PhotoCriterionScore(criterion_key="landmark").value (ADR 0025 Punkt 6) - haelt
-    diese Tabelle fuer eine spaetere UI-Abfrage ohne Join selbsttragend, beide Werte stammen
-    atomar aus derselben API-Antwort (kein Divergenzrisiko). Kein UI-Verweis in v1 - reine
-    Persistenz-Vorbereitung, vermeidet einen spaeteren, erneut kostenpflichtigen Cloud-Durchlauf
-    aller bereits gescorten Fotos, falls der Name doch einmal angezeigt werden soll.
+    """Der vom Vision-LLM identifizierte Sehenswürdigkeit-Name, 1:1 zu Photo, analog PhotoScore.
 
-    `provider` (specs/features/0054-mistral-provider-option-cloud-landmark.md, decisions/0031-
-    mistral-provider-option-cloud-landmark.md Punkt 5) haelt fest, welcher Cloud-Provider diese
-    Zeile erzeugt hat - verhindert, dass die Herkunft bereits gescorter Fotos bei einem spaeteren
-    Umschalten von Settings.landmark_provider stillschweigend unklar wird. Atomar im selben
-    Upsert wie name/confidence gesetzt (worker.py::_upsert_landmark_detection). Python-seitiger
-    Default "anthropic" (analog Project.cloud_vision_detection_enabled oben) deckt bereits
-    bestehende Zeilen aus der Zeit vor dieser Spalte ab, in der Anthropic der einzige Provider
-    war - worker.py setzt den Wert im produktiven Pfad trotzdem immer explizit."""
+    `photo_id` ist Primary Key (kein separates id+Unique-Constraint-Paar wie bei
+    PhotoCriterionScore), weil dies eine optionale Detail-Zeile pro Foto ist, kein
+    Mehrfach-Kriterien-Fact. Nur angelegt, wenn tatsächlich ein Name identifiziert wurde (kein
+    Platzhalter-"unbekannt"). `confidence` dupliziert bewusst den zugehörigen
+    PhotoCriterionScore(criterion_key="landmark").value - hält diese Tabelle für eine Abfrage ohne
+    Join selbsttragend, beide Werte stammen atomar aus derselben API-Antwort.
+
+    `provider` hält fest, welcher Cloud-Provider diese Zeile erzeugt hat - sonst würde die
+    Herkunft bereits gescorter Fotos bei einem Umschalten von Settings.landmark_provider
+    stillschweigend unklar. Atomar im selben Upsert wie name/confidence gesetzt
+    (worker.py::_upsert_landmark_detection). Der Default "anthropic" deckt Zeilen aus der Zeit vor
+    dieser Spalte ab; worker.py setzt den Wert im produktiven Pfad trotzdem immer explizit."""
 
     __tablename__ = "photo_landmark_detections"
 
@@ -625,29 +545,25 @@ class PhotoLandmarkDetection(Base):
 
 
 class FineLabel(Base):
-    """Kanonische Registry der frei formulierten Feinlabels (specs/features/0055, ADR 0032 Punkt 2
-    Migration c1; in specs/features/0289-feste-kategorien.md von `CategoryLabel` umbenannt).
+    """Kanonische Registry der frei formulierten Feinlabels.
 
-    Der ZWECK hat sich mit Spec 0289 verschoben, die Struktur nicht: die Eintraege bilden keine
-    Kategorien mehr (das tut das feste Set in categories.py), sondern dienen der
-    Feinlabel-Haeufigkeitsauswertung (`GET /projects/{id}/fine-labels`) - dort macht die
-    Kanonisierung ueber Embeddings sie erst belastbar ("Hund"/"Hunde"/"dog" als ein Eintrag).
+    Die Einträge bilden keine Kategorien (das tut das feste Set in categories.py), sondern dienen
+    der Feinlabel-Häufigkeitsauswertung (`GET /projects/{id}/fine-labels`) - dort macht die
+    Kanonisierung über Embeddings sie erst belastbar ("Hund"/"Hunde"/"dog" als ein Eintrag).
 
-    Bewusst PROJEKTUEBERGREIFEND (kein project_id-Bezug, ADR 0032 Begruendung): reine
-    Vokabular-Eintraege ("hund" ist kein personenbezogenes/projektspezifisches Datum), keine
-    Fotoinhalte. Eine projektgebundene Registry wuerde bei mehreren Projekten identische Label
-    wiederholt neu anlegen und die Cluster-Qualitaet unnoetig verschlechtern (weniger Beispiele
-    pro Cluster) - fuer dieses Zwei-Personen-Familienprojekt (keine Mandantentrennung zwischen
-    Projekten noetig) eine bewusste, dokumentierte Vereinfachung. Die HAEUFIGKEITSABFRAGE ist
-    deshalb zwingend ueber `photo_fine_labels -> photos.project_id` zu skopieren (Security-
-    Abschnitt der Spec 0289, Punkt 1) - ein globales SELECT auf diese Tabelle wuerde
-    Label-Haeufigkeiten anderer Projekte ausliefern.
+    Bewusst PROJEKTÜBERGREIFEND (kein project_id-Bezug): reine Vokabular-Einträge ("hund" ist kein
+    personenbezogenes Datum), keine Fotoinhalte. Eine projektgebundene Registry würde identische
+    Label wiederholt neu anlegen und die Cluster-Qualität verschlechtern - für dieses
+    Zwei-Personen-Familienprojekt ohne Mandantentrennung eine bewusste Vereinfachung. Die
+    HÄUFIGKEITSABFRAGE ist deshalb zwingend über `photo_fine_labels -> photos.project_id` zu
+    skopieren: ein globales SELECT auf diese Tabelle würde Label-Häufigkeiten ANDERER Projekte
+    ausliefern.
 
     `canonical_key` ist ein URL-/Key-sicherer Slug (remote_classification.py::_slugify),
-    `display_name` der zuerst gesehene Roh-Label-Text in Originalschreibweise (reine Anzeige-
-    Hilfe, keine kuratierte Uebersetzung). `embedding` ist der 384-dimensionale Text-Embedding-
-    Vektor (label_embedding.py) als JSON-Liste von float - kein pgvector/Vektor-Index noetig
-    (ADR 0032: kleine, langsam wachsende Menge, ein voller Scan pro Aufloesung ist unproblematisch).
+    `display_name` der zuerst gesehene Roh-Label-Text in Originalschreibweise (reine Anzeigehilfe,
+    keine kuratierte Übersetzung). `embedding` ist der 384-dimensionale Text-Embedding-Vektor
+    (label_embedding.py) als JSON-Liste von float - kein pgvector/Vektor-Index nötig, die Menge
+    ist klein und wächst langsam, ein voller Scan pro Auflösung ist unproblematisch.
     """
 
     __tablename__ = "fine_labels"
@@ -662,20 +578,16 @@ class FineLabel(Base):
 
 
 class PhotoFineLabel(Base):
-    """Ein vom Vision-LLM frei formuliertes, auf einen kanonischen Eintrag aufgeloestes Feinlabel
-    (specs/features/0055, decisions/0032 Punkt 2 Migration c2; in
-    specs/features/0289-feste-kategorien.md von `PhotoCategoryDetection` umbenannt) - 1:N zu Photo,
-    0 bis MAX_FINE_LABELS_PER_PHOTO Zeilen pro Foto. Anders als bis Spec 0289 ist die Zeilenzahl
-    ausdruecklich auch 0 zulaessig: der Prompt erzwingt kein Feinlabel mehr, die Pflichtaussage je
-    Foto ist die Kategorie (PhotoCategoryClassification), nicht das Label.
+    """Ein vom Vision-LLM frei formuliertes, auf einen kanonischen Eintrag aufgelöstes Feinlabel
+    - 1:N zu Photo, 0 bis MAX_FINE_LABELS_PER_PHOTO Zeilen pro Foto. 0 Zeilen sind ausdrücklich
+    zulässig: der Prompt erzwingt kein Feinlabel, die Pflichtaussage je Foto ist die Kategorie
+    (PhotoCategoryClassification), nicht das Label.
 
-    `raw_label` ist der - bereits zeichensanierte (cloud_vision.py::_sanitize_label_text)
-    - vom Vision-LLM gelieferte Text (Audit-/Debug-Spur, welche konkrete Formulierung auf welchen
-    canonical_key gemappt wurde). `confidence` ist mit Spec 0289 ERSATZLOS entfallen (ADR 0049
-    Entwurfsentscheidung 7: die Zahl diente ausschliesslich der abgeloesten Score-Auswahl, eine
-    persistierte Zahl ohne Codepfad waere irrefuehrender Ballast).
+    `raw_label` ist der - bereits zeichensanierte (cloud_vision.py::_sanitize_label_text) - vom
+    Vision-LLM gelieferte Text, als Audit-/Debug-Spur, welche Formulierung auf welchen
+    canonical_key gemappt wurde.
 
-    UniqueConstraint(photo_id, fine_label_id): verhindert zwei Zeilen fuer dasselbe
+    UniqueConstraint(photo_id, fine_label_id): verhindert zwei Zeilen für dasselbe
     Foto x kanonisches-Label-Paar (relevant, falls beide Feinlabels eines Fotos auf denselben
     canonical_key clustern - dann wird nur eine Zeile geschrieben, siehe
     worker.py::run_remote_category_classification)."""
@@ -697,19 +609,19 @@ class PhotoFineLabel(Base):
 
 
 class PhotoCategoryClassification(Base):
-    """Das Ergebnis der Remote-Kategorie-Klassifizierung eines Fotos (specs/features/0289-feste-
-    kategorien.md, Umsetzungsschritt 3a) - 1:1 zu Photo, `photo_id` ist Primary Key (strukturell
-    nie mehrere Zeilen pro Foto, gleiche Begruendung wie bei PhotoScore/PhotoLandmarkDetection).
+    """Das Ergebnis der Remote-Kategorie-Klassifizierung eines Fotos - 1:1 zu Photo, `photo_id`
+    ist Primary Key (strukturell nie mehrere Zeilen pro Foto, gleiche Begründung wie bei
+    PhotoScore/PhotoLandmarkDetection).
 
-    `category_key` ist das bereits ueber `categories.py::resolve_category` aufgeloeste Ergebnis der
+    `category_key` ist das bereits über `categories.py::resolve_category` aufgelöste Ergebnis der
     remote genannten Kandidaten - also immer ein Wert aus dem festen Set, nie ein Rohwert des
-    Modells. `detected_categories` haelt die VALIDIERTE Kandidatenliste (ausschliesslich bekannte
-    Set-Keys, unbekannte Rohwerte sind bereits verworfen) als JSON-Liste; sie wird ueber
-    `PhotoOut.category_candidates` ausgeliefert. Security-Muss-Kriterium (Spec 0289, Abschnitt 5):
-    hier landet NIE die Rohliste des Modells - sonst wanderte unvalidierter Fremdtext ueber einen
-    zweiten Kanal in API-Antwort und UI.
+    Modells. `detected_categories` hält die VALIDIERTE Kandidatenliste (ausschließlich bekannte
+    Set-Keys, unbekannte Rohwerte sind bereits verworfen) als JSON-Liste; sie wird über
+    `PhotoOut.category_candidates` ausgeliefert. SICHERHEIT: hier landet NIE die Rohliste des
+    Modells - sonst wanderte unvalidierter Fremdtext über einen zweiten Kanal in API-Antwort und
+    UI.
 
-    Die PRAESENZ dieser Zeile ist zugleich das Erfolgssignal der Remote-Phase (Skip-Kriterium in
+    Die PRÄSENZ dieser Zeile ist zugleich das Erfolgssignal der Remote-Phase (Skip-Kriterium in
     worker.py::select_remote_category_candidates und Statusableitung in
     api/photos.py::_cloud_vision_status_out) - sie entsteht auch dann, wenn `category_key`
     `nicht_erkannt` lautet (kein "nichts gefunden"-Sonderfall)."""
@@ -719,31 +631,28 @@ class PhotoCategoryClassification(Base):
     photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), primary_key=True)
     category_key: Mapped[str]
     detected_categories: Mapped[list[str]] = mapped_column(SQLJSON)
-    # specs/features/0299-kategorie-konfidenz-anzeigen.md, decisions/0067-modellkonfidenz-je-
-    # kategorie-anzeige-und-auswertung.md Punkt 2/4: die Selbsteinschaetzung des Modells je
-    # Kandidat als ABBILDUNG `category_key -> Wert in [0, 1]`, ausschliesslich mit Schluesseln aus
-    # `detected_categories` (Invariante, am Parser erzwungen). Kein positionsparalleles Array und
-    # keine Paarliste - der Wert haengt am Schluessel und ueberlebt jede Umsortierung.
+    # Die Selbsteinschätzung des Modells je Kandidat als ABBILDUNG `category_key -> Wert in
+    # [0, 1]`, ausschließlich mit Schlüsseln aus `detected_categories` (Invariante, am Parser
+    # erzwungen). Kein positionsparalleles Array und keine Paarliste - der Wert hängt am Schlüssel
+    # und überlebt jede Umsortierung.
     #
-    # `category_confidence` ist die Konfidenz zur AUFGELOESTEN Kategorie DIESER Zeile, also
+    # `category_confidence` ist die Konfidenz zur AUFGELÖSTEN Kategorie DIESER Zeile, also
     # `detected_category_confidences.get(category_key)`. Bewusst redundant: die
-    # Statistik-Aggregation muss in SQL laufen (ein `AVG` ueber einen aus JSON extrahierten Wert
+    # Statistik-Aggregation muss in SQL laufen (ein `AVG` über einen aus JSON extrahierten Wert
     # ist in SQLite und PostgreSQL unterschiedlich zu schreiben, und alle Klassifizierungszeilen
-    # eines Projekts nach Python zu laden vertraegt sich nicht mit der Groessenannahme "mehrere
+    # eines Projekts nach Python zu laden verträgt sich nicht mit der Größenannahme "mehrere
     # tausend Fotos"). Tragbar, weil es genau EINE schreibende Stelle gibt
     # (worker.py::run_remote_category_classification) und beide Werte dort aus derselben Quelle in
     # derselben Transaktion entstehen; die Invariante wird getestet.
     #
-    # BEIDE nullable, ohne server_default und ohne Backfill - exakt das Muster der Kostenspalten
-    # aus ADR 0051:
-    #     NULL = "nicht erhoben" (Zeile aus der Zeit vor der Migration, oder Modell ohne Angabe)
+    # BEIDE nullable, ohne server_default und ohne Backfill - das Muster der Kostenspalten:
+    #     NULL = "nicht erhoben" (Altzeile, oder Modell ohne Angabe)
     #     0.0  = "das Modell war sich zu 0 % sicher"
-    # Ein `{}` in `detected_category_confidences` heisst wiederum "erhoben, aber keine brauchbare
-    # Zahl geliefert". Ueberall mit `is None` statt truthy zu pruefen.
+    # Ein `{}` in `detected_category_confidences` heißt wiederum "erhoben, aber keine brauchbare
+    # Zahl geliefert". Überall mit `is None` statt truthy zu prüfen.
     #
-    # KEIN Codepfad, der eine Kategorie BESTIMMT, liest diese beiden Spalten (ADR 0067 Punkt 1) -
-    # sie werden ausschliesslich von der API-Ausgabe, der Statistik-Aggregation und dem Frontend
-    # gelesen.
+    # KEIN Codepfad, der eine Kategorie BESTIMMT, liest diese beiden Spalten - sie werden
+    # ausschließlich von der API-Ausgabe, der Statistik-Aggregation und dem Frontend gelesen.
     detected_category_confidences: Mapped[dict[str, float] | None] = mapped_column(
         SQLJSON, default=None
     )
@@ -755,13 +664,11 @@ class PhotoCategoryClassification(Base):
 
 
 class RemoteCategoryClassificationRun(Base):
-    """Ein Lauf des Remote-Kategorie-Klassifizierungs-Jobs (specs/features/0055-remote-kategorie-
-    klassifizierung-mit-kostenschaetzung.md, decisions/0032, Punkt 2 Migration d) - Run-Tracking
-    analog CriterionScoringRun/ScoringRun/ScanRun, aber bewusst OHNE scoring_run_id-FK: dieser Job
-    schreibt ausschliesslich in photo_category_classifications/photo_fine_labels/fine_labels,
-    beruehrt weder cluster_key noch PhotoRanking direkt - kein 409-Staleness-Guard, kein
-    Ausschuss-Gate-
-    Erfordernis (anders als run_criterion_scoring)."""
+    """Ein Lauf des Remote-Kategorie-Klassifizierungs-Jobs - Run-Tracking analog
+    CriterionScoringRun/ScoringRun/ScanRun, aber bewusst OHNE scoring_run_id-FK: dieser Job
+    schreibt ausschließlich in photo_category_classifications/photo_fine_labels/fine_labels,
+    berührt weder cluster_key noch PhotoRanking direkt - kein 409-Staleness-Guard, kein
+    Ausschuss-Gate-Erfordernis (anders als run_criterion_scoring)."""
 
     __tablename__ = "remote_category_classification_runs"
 
@@ -773,90 +680,57 @@ class RemoteCategoryClassificationRun(Base):
     photos_total: Mapped[int] = mapped_column(default=0)
     photos_processed: Mapped[int] = mapped_column(default=0)
     error_message: Mapped[str | None] = mapped_column(default=None)
-    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md), analog
-    # ScanRun.last_progress_at/ScoringRun.last_progress_at/CriterionScoringRun.last_progress_at.
+    # Fortschritts-Watchdog, analog ScanRun.last_progress_at.
     last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
-    # specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-
-    # remote-laeufe.md Punkt 3: die IST-Kosten-Buchfuehrung des Remote-Kategorie-Anteils dieses
-    # Laufs.
-    # Kein Praefix - dieser Lauf hat genau einen Zweck.
-    #
-    # Alle vier Spalten sind NULLABLE mit Python-seitigem Default `0` - exakt das
-    # `ScanRun.total_files`-Idiom: `NULL` heisst "nicht erfasst" (Zeile aus der Zeit vor
-    # der zugehoerigen Migration), `0` heisst "erfasst, es sind keine Kosten angefallen".
-    # Ohne diese Unterscheidung waere ein Altlauf nicht von einem kostenlosen Lauf zu
-    # trennen; auf genau ihr beruht Befund (a) des Unvollstaendigkeits-Hinweises der
-    # Statistikseite (ADR 0051 Punkt 5). Ueberall mit `is None` statt truthy zu pruefen.
-    #
-    # `api_calls` zaehlt jeden STATTGEFUNDENEN Aufruf, auch wenn dessen `usage`-Block
-    # fehlte (der Tokenbeitrag ist dann 0). Das ist zugleich der Ausloeser fuer Befund (b):
-    # ein Betrag von exakt 0 bei nachweislich abgesetzten Aufrufen ist bei Token-Preisen
-    # groesser null strukturell unmoeglich und damit ein zuverlaessiger Indikator fuer eine
-    # Erfassungsluecke.
-    #
-    # `cost_usd` ist der beim Laufende EINGEFRORENE Betrag (ADR 0051 Punkt 4) - eine
-    # spaetere Preisaenderung veraendert keinen historischen Betrag. `None` trotz erfasster
-    # Tokens heisst: das Modell war in `pricing.py::MODEL_PRICING` nicht hinterlegt.
-    # `float` statt `Numeric` (ADR 0051 Punkt 3): Cent-Betraege, keine Buchhaltung,
-    # gerundet wird erst bei der Ausgabe. Tokens und Aufrufzahl werden bewusst OHNE
-    # eigenen Anzeigepfad mitgespeichert (eng begrenzte Ausnahme, ADR 0051 Punkt 3): ohne
-    # sie ist ein historischer Betrag nach einer erkannten Preiskorrektur nicht mehr
-    # nachrechenbar, und der Verbrauch existiert nur im Moment der API-Antwort.
+    # Die IST-Kosten-Buchführung des Remote-Kategorie-Anteils dieses Laufs. Kein Präfix - dieser
+    # Lauf hat genau einen Zweck. Nullable-Semantik, Zählweise von `api_calls`, das Einfrieren von
+    # `cost_usd` und die Begründung für das Mitspeichern von Tokens/Aufrufzahl sind wortgleich die
+    # der vier `landmark_*`-Kostenspalten an CriterionScoringRun.
     api_calls: Mapped[int | None] = mapped_column(default=0)
     input_tokens: Mapped[int | None] = mapped_column(default=0)
     output_tokens: Mapped[int | None] = mapped_column(default=0)
     cost_usd: Mapped[float | None] = mapped_column(default=0)
 
-    # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 6: die Modell-ID
-    # dieses Laufs, Gegenstueck zu `CriterionScoringRun.landmark_model` - Begruendung, Nullable-
-    # Semantik ("NULL = nicht erfasst") und Schreibzeitpunkt wortgleich dort. Kein Praefix wie bei
-    # den Kostenspalten dieser Tabelle: ein Lauf, ein Zweck.
+    # Die Modell-ID dieses Laufs, Gegenstück zu `CriterionScoringRun.landmark_model` -
+    # Begründung, Nullable-Semantik ("NULL = nicht erfasst") und Schreibzeitpunkt wortgleich dort.
     model: Mapped[str | None] = mapped_column(default=None)
 
-    # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 2: der LIVE-Zaehler der
-    # fehlgeschlagenen Einzelaufrufe dieser Phase - Gegenstueck zu
-    # `CriterionScoringRun.landmark_failed_calls`, Begruendung und Nullable-Semantik wortgleich
-    # dort. Geschrieben am bereits vorhandenen Block-Commit-Punkt (`photos_processed`/
-    # `last_progress_at`), NICHT im `finally`: die Story verlangt die Zahl WAEHREND des Laufs.
-    #
-    # `photos_total`/`photos_processed` dieser Tabelle existieren bereits und werden bereits je
-    # Block committet - deshalb kommt hier nur diese eine Spalte hinzu.
+    # Der LIVE-Zähler der fehlgeschlagenen Einzelaufrufe dieser Phase - Gegenstück zu
+    # `CriterionScoringRun.landmark_failed_calls`, Begründung und Nullable-Semantik wortgleich
+    # dort. Geschrieben am Block-Commit-Punkt (`photos_processed`/`last_progress_at`), NICHT im
+    # `finally`: die Zahl muss WÄHREND des Laufs stimmen.
     failed_calls: Mapped[int | None] = mapped_column(default=None)
 
     project: Mapped[Project] = relationship(back_populates="remote_category_classification_runs")
 
 
 class CloudVisionPhase(enum.StrEnum):
-    """Die beiden unabhaengigen Cloud-Vision-Laeufe, fuer die specs/features/0058-cloud-vision-
-    status-transparenz.md/decisions/0035-cloud-vision-attempt-fehler-persistierung.md pro Foto
-    einen von sechs Zustaenden ableitet - LANDMARK (ADR 0025) und REMOTE_CATEGORY (ADR 0032)."""
+    """Die beiden unabhängigen Cloud-Vision-Läufe, aus denen pro Foto einer von sechs Zuständen
+    abgeleitet wird."""
 
     LANDMARK = "landmark"
     REMOTE_CATEGORY = "remote_category"
 
 
 class PhotoCloudVisionError(Base):
-    """Der letzte bekannte Fehlschlag eines Cloud-Vision-Laufs fuer ein Foto
-    (specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
-    fehler-persistierung.md Punkt 2) - bewusst KEIN Verlauf: ein erneuter Fehlschlag ueberschreibt
-    (Upsert, worker.py::_record_cloud_vision_error) die bestehende Zeile, ein erfolgreicher Retry
-    LOESCHT sie (worker.py::_clear_cloud_vision_error). Composite PK (photo_id, phase) statt eines
-    separaten id+UniqueConstraint-Paars (wie PhotoScore/PhotoLandmarkDetection): es gibt
-    strukturell hoechstens eine sinnvolle "letzter Fehlschlag"-Zeile je Foto x CloudVisionPhase.
+    """Der letzte bekannte Fehlschlag eines Cloud-Vision-Laufs für ein Foto - bewusst KEIN
+    Verlauf: ein erneuter Fehlschlag überschreibt (Upsert, worker.py::_record_cloud_vision_error)
+    die bestehende Zeile, ein erfolgreicher Retry LÖSCHT sie
+    (worker.py::_clear_cloud_vision_error). Composite PK (photo_id, phase) statt eines separaten
+    id+UniqueConstraint-Paars: es gibt strukturell höchstens eine sinnvolle "letzter
+    Fehlschlag"-Zeile je Foto x CloudVisionPhase.
 
-    `error_type`/`error_message` sind identischer Inhalt wie der WARNING-Log-Eintrag aus
-    specs/features/0056-structured-logging-cloud-vision-errors.md/ADR 0034 (`type(exc).__name__`,
-    `str(exc)`) - an der jeweiligen worker.py-Call-Site EINMAL berechnet, an beide Senken (Logger,
-    hier) weitergereicht, keine zweite Auswertung. `error_message` wird beim Schreiben auf
-    worker.py::_MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH (500 Zeichen) gekappt - defensiver
-    Schutz gegen eine entartete Fehlermeldung, analog remote_classification.py::
-    MAX_REMOTE_LABEL_LENGTH. Die bereits in ADR 0034 verifizierte Sanitisierung von `str(exc)`
-    (keine Secrets/Rohdaten) bleibt die eigentliche Absicherung, die Kappung ist nur eine
-    Storage-/Degenerationsgrenze (Security-Abschnitt der Spec 0058).
+    `error_type`/`error_message` sind identischer Inhalt wie der WARNING-Log-Eintrag
+    (`type(exc).__name__`, `str(exc)`) - an der jeweiligen worker.py-Call-Site EINMAL berechnet,
+    an beide Senken (Logger, hier) weitergereicht, keine zweite Auswertung. `error_message` wird
+    beim Schreiben auf worker.py::_MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH (500 Zeichen)
+    gekappt - defensiver Schutz gegen eine entartete Fehlermeldung. Die eigentliche Absicherung
+    ist und bleibt die Sanitisierung von `str(exc)` (keine Secrets, keine Rohdaten); die Kappung
+    ist nur eine Storage-/Degenerationsgrenze.
 
-    `attempted_at`: Zeitpunkt des letzten Fehlschlags - keine weiteren Metadaten (kein HTTP-
-    Statuscode, kein Provider-Feld, siehe ADR 0035 Punkt 2)."""
+    `attempted_at`: Zeitpunkt des letzten Fehlschlags - bewusst keine weiteren Metadaten, kein
+    HTTP-Statuscode und kein Provider-Feld."""
 
     __tablename__ = "photo_cloud_vision_errors"
 

@@ -25,18 +25,16 @@ _GPS_LONGITUDE_TAG = 4
 # verloere eine voellig gewoehnliche Suedhalbkugel-Aufnahme ihren Ort.
 _REF_STRIP_CHARS = " \t\r\n\x00"
 
-# specs/features/0051-gps-landmark-cluster-bildung.md, Sicherheitskonzept "Standortdaten (GPS aus
-# EXIF)": FESTE Grund-Tokens statt des Rohwerts, exakt nach dem Muster von
-# remote_classification.py::_CONFIDENCE_REASON_*. Standortdaten sind seit ADR 0029 ein
-# eigenstaendiges Asset; eine Logzeile ist eine schwaecher geschuetzte, laenger lebende Oberflaeche
-# als die Datenbank. Weder ein akzeptierter noch ein verworfener Rohwert wird geloggt - die
-# FEHLERKLASSE traegt den vollen Diagnosewert, der konkrete Wert nichts darueber hinaus.
-#
-# Vier Tokens statt der drei im Sicherheitskonzept ausdruecklich genannten: `extract_gps` hat vier
-# Verwerfungsklassen. `nullinsel` unter `ausserhalb_intervall` zu fuehren waere schlicht falsch -
-# das Paar LIEGT im gueltigen Intervall, es ist ein Geraete-Artefakt bei fehlgeschlagenem Fix.
-# Die Auflage ("nur feste Grund-Tokens plus photo_id") ist damit unveraendert erfuellt: kein
-# Fremdtext, keine Koordinate, keine Log-Injection-Flaeche.
+# SICHERHEIT (Sicherheitskonzept, Abschnitt "Standortdaten (GPS aus EXIF)"): FESTE
+# Grund-Tokens statt des Rohwerts. Standortdaten sind ein eigenständiges Asset, und eine
+# Logzeile ist eine schwächer geschützte, länger lebende Oberfläche als die Datenbank. Weder
+# ein akzeptierter noch ein verworfener Rohwert wird geloggt - die FEHLERKLASSE trägt den
+# vollen Diagnosewert, der konkrete Wert nichts darüber hinaus. Vier statt der drei im
+# Sicherheitskonzept genannten Tokens, weil `extract_gps` vier Verwerfungsklassen hat:
+# `nullinsel` unter `ausserhalb_intervall` zu führen wäre falsch - das Paar LIEGT im gültigen
+# Intervall, es ist ein Geräte-Artefakt bei fehlgeschlagenem Fix. Die Auflage ("nur feste
+# Grund-Tokens plus photo_id") bleibt erfüllt: kein Fremdtext, keine Koordinate, keine
+# Log-Injection-Fläche. Abgedeckt durch test_exif.py.
 _GPS_REASON_REF_MISSING = "ref_fehlt"
 _GPS_REASON_NOT_NUMERIC = "nicht_numerisch"
 _GPS_REASON_OUT_OF_RANGE = "ausserhalb_intervall"
@@ -111,42 +109,42 @@ def _decimal_degrees(raw: Any, ref: str, negative_ref: str) -> float:
 
 
 def extract_gps(content: bytes, photo_id: int | None = None) -> tuple[float, float] | None:
-    """Best-effort EXIF-GPS-Extraktion als Pendant zu `extract_taken_at` (specs/features/0051-gps-
-    landmark-cluster-bildung.md, ADR 0029/0072) - liefert `(lat, lon)` in Dezimalgrad oder `None`.
+    """Best-effort EXIF-GPS-Extraktion als Pendant zu `extract_taken_at` - liefert
+    `(lat, lon)` in Dezimalgrad oder `None`.
 
     Liest aus demselben bereits per Range-Read geladenen Byte-Fenster wie `extract_taken_at`
-    (`worker.py::_EXIF_RANGE_BYTES`), also ohne einen einzigen zusaetzlichen Netzwerkzugriff.
+    (`worker.py::_EXIF_RANGE_BYTES`), also ohne einen einzigen zusätzlichen Netzwerkzugriff.
 
-    PAAR-INVARIANTE: BEIDE Werte oder KEINER. Scheitert eine Komponente, sind beide verworfen -
-    sonst stuende in der Datenbank ein halbes Koordinatenpaar und jede spaetere `is not None`-
-    Pruefung muesste beide Spalten einzeln kennen.
+    PAAR-INVARIANTE: BEIDE Werte oder KEINER. Scheitert eine Komponente, sind beide
+    verworfen - sonst stünde in der Datenbank ein halbes Koordinatenpaar und jede spätere
+    `is not None`-Prüfung müsste beide Spalten einzeln kennen.
 
-    Der `try` umfasst Arithmetik UND Bereichspruefung, nicht nur `Image.open`/`get_ifd` - anders
-    als bei `extract_taken_at`, wo die riskante Stelle tatsaechlich nur das Oeffnen/Parsen ist.
+    Der `try` umfasst Arithmetik UND Bereichsprüfung, nicht nur `Image.open`/`get_ifd`.
 
-    DREI Verwerfungsregeln, die KEIN Parserfehler sind und die ein `except Exception` deshalb
-    strukturell nicht sehen kann (Sicherheitskonzept, Abschnitt "Standortdaten"):
+    DREI Verwerfungsregeln, die KEIN Parserfehler sind und die ein `except Exception`
+    deshalb strukturell nicht sehen kann (Sicherheitskonzept, Abschnitt "Standortdaten (GPS
+    aus EXIF)"); alle drei sind in test_exif.py abgedeckt:
 
-    1. **Bereichspruefung als VERGLEICH, nie als Klemmen.** Verifiziert am Projektstand (Pillow
-       12.3.0): `IFDRational(x, 0)` ergibt `nan` OHNE jede Exception, und `nan` propagiert durch
-       die DMS-Arithmetik. Ein Klemmen liesse es durch, weil JEDER Vergleich mit `nan` `False`
-       ergibt. Landete `nan` in `Photo.gps_lat`, naehme PostgreSQL es an und SQLite im Testlauf
-       ebenfalls - aber Starlettes `JSONResponse.render` serialisiert mit `allow_nan=False`: ein
-       einziges betroffenes Foto legte die GESAMTE Listenantwort des Projekts dauerhaft auf 500.
-       Dieselbe Falle deckt auch den zweiten Ausgang eines abgeschnittenen Range-Read-Fensters -
-       daraus folgt naemlich NICHT verlaesslich "gar kein Wert", sondern je nach Abbruchpunkt eine
-       Ausnahme ODER ein teilgelesener Unsinnswert.
-    2. **Fehlender/abweichender `GPSLatitudeRef`/`GPSLongitudeRef` verwirft die Koordinate**, kein
-       stiller Default auf `N`/`E`. Die Referenz zu raten spiegelte eine Suedhalbkugel-Aufnahme
-       wortlos auf die Nordhalbkugel - "kein Ort" ist ueberall sauber behandelt, "falscher Ort"
-       nirgends.
-    3. **Das exakte Paar `(0.0, 0.0)` wird verworfen.** Geraete schreiben es bei fehlgeschlagenem
-       Fix; es liegt im gueltigen Bereich und risse sein Cluster bei 500 m Trennabstand gleich
-       ZWEIMAL auf (beim Hinein- und beim Hinauslaufen). Der reale Punkt im Golf von Guinea ist
-       der bewusst in Kauf genommene, dokumentierte Verlust.
+    1. **Bereichsprüfung als VERGLEICH, nie als Klemmen.** Verifiziert gegen Pillow 12.3.0:
+       `IFDRational(x, 0)` ergibt `nan` OHNE jede Exception, und `nan` propagiert durch die
+       DMS-Arithmetik. Ein Klemmen ließe es durch, weil JEDER Vergleich mit `nan` `False`
+       ergibt. Landete `nan` in `Photo.gps_lat`, nähme PostgreSQL es an und SQLite im
+       Testlauf ebenfalls - aber Starlettes `JSONResponse.render` serialisiert mit
+       `allow_nan=False`: ein einziges betroffenes Foto legte die GESAMTE Listenantwort des
+       Projekts dauerhaft auf 500. Dieselbe Falle deckt den zweiten Ausgang eines
+       abgeschnittenen Range-Read-Fensters - daraus folgt NICHT verlässlich "gar kein Wert",
+       sondern je nach Abbruchpunkt eine Ausnahme ODER ein teilgelesener Unsinnswert.
+    2. **Fehlender/abweichender `GPSLatitudeRef`/`GPSLongitudeRef` verwirft die
+       Koordinate**, kein stiller Default auf `N`/`E`. Die Referenz zu raten spiegelte eine
+       Südhalbkugel-Aufnahme wortlos auf die Nordhalbkugel - "kein Ort" ist überall sauber
+       behandelt, "falscher Ort" nirgends.
+    3. **Das exakte Paar `(0.0, 0.0)` wird verworfen.** Geräte schreiben es bei
+       fehlgeschlagenem Fix; es liegt im gültigen Bereich und risse sein Cluster bei 500 m
+       Trennabstand gleich ZWEIMAL auf. Der reale Punkt im Golf von Guinea ist der bewusst
+       in Kauf genommene, dokumentierte Verlust.
 
-    `photo_id` dient AUSSCHLIESSLICH der Logzeile (siehe `_log_discarded_gps`) und hat keinen
-    Einfluss auf das Ergebnis - deshalb optional, damit die Funktion ohne Kontext testbar bleibt.
+    `photo_id` dient AUSSCHLIESSLICH der Logzeile und hat keinen Einfluss auf das Ergebnis -
+    deshalb optional, damit die Funktion ohne Kontext testbar bleibt.
     """
     try:
         image = Image.open(io.BytesIO(content))

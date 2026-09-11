@@ -115,71 +115,60 @@ from photosort.scoring import (
 )
 from photosort.thumbnails import generate_variants, variant_path
 
-# specs/features/0056-structured-logging-cloud-vision-errors.md, ADR 0034 Punkt 2: idiomatisches
-# Standard-Pattern, Modul-Konstante direkt nach den Imports - kein Logger-Objekt wird injiziert/
-# durchgereicht. worker.py ist die einzige Stelle mit Zugriff auf sowohl die Exception als auch
-# den Foto-Kontext (landmark.py/remote_classification.py/cloud_vision.py brauchen dafuer keinen
-# eigenen Logger).
+# Idiomatisches Standard-Pattern, Modul-Konstante direkt nach den Imports - kein Logger-Objekt wird
+# injiziert/ durchgereicht. worker.py ist die einzige Stelle mit Zugriff auf sowohl die Exception
+# als auch den Foto-Kontext (landmark.py/remote_classification.py/cloud_vision.py brauchen dafuer
+# keinen eigenen Logger).
 logger = logging.getLogger(__name__)
 
 _EXIF_CANDIDATE_EXTENSIONS = {".jpg", ".jpeg"}
 _EXIF_RANGE_BYTES = 131_072
 
-# Wie oft ScoringRun.photos_processed waehrend der Verarbeitung zwischen-committet wird
-# (decisions/0006-local-scoring-datamodel.md: "mind. alle 25 Fotos", damit ein pollender Client
-# echten, monoton wachsenden Fortschritt sieht statt nur Start-/Endzustand). Modul-Konstante statt
-# Default-Parameterwert, damit Tests sie per monkeypatch.setattr(worker, "SCORE_COMMIT_BATCH_SIZE",
-# ...) verkleinern koennen, ohne echte 25+ Testfotos anlegen zu muessen (Teststrategie-Abschnitt
-# der Spec, "neues Testmuster").
+# Wie oft ScoringRun.photos_processed waehrend der Verarbeitung zwischen-committet wird ("mind. alle
+# 25 Fotos", damit ein pollender Client echten, monoton wachsenden Fortschritt sieht statt nur
+# Start-/Endzustand). Modul-Konstante statt Default-Parameterwert, damit Tests sie per
+# monkeypatch.setattr(worker, "SCORE_COMMIT_BATCH_SIZE", ...) verkleinern koennen, ohne echte 25+
+# Testfotos anlegen zu muessen (Teststrategie-Abschnitt der Spec, "neues Testmuster").
 SCORE_COMMIT_BATCH_SIZE = 25
 
-# Analog SCORE_COMMIT_BATCH_SIZE, aber fuer ScanRun.files_found (specs/features/0022-scan-live-
-# fortschrittszaehler.md, zweitmalige Anwendung des in decisions/0006-local-scoring-datamodel.md
-# etablierten Musters). Modul-Konstante statt Default-Parameterwert, damit Tests sie per
-# monkeypatch.setattr(worker, "SCAN_COMMIT_BATCH_SIZE", ...) verkleinern koennen. Urspruenglich
-# (vor specs/features/0036-scan-performance-zweiphasig-parallel.md) sass der Checkpoint-Aufruf an
-# JEDEM Ausstiegspunkt eines einzigen interleaved Loops (zwei `continue`-Zweige fuer uebersprungene
-# Endung/unveraenderten Etag) - seit der Zwei-Phasen-Umstrukturierung gilt dieselbe Kadenz jetzt
+# Analog SCORE_COMMIT_BATCH_SIZE, aber für ScanRun.files_found. Modul-Konstante statt
+# Default-Parameterwert, damit Tests sie per monkeypatch.setattr(worker,
+# "SCAN_COMMIT_BATCH_SIZE", ...) verkleinern können. Dieselbe Kadenz gilt
 # ueber den gemeinsamen Helfer _maybe_commit_progress_checkpoint (unten), einmal aufgerufen aus
 # Phase 1 (_enumerate_scan_entries, je gelistetem Eintrag) und einmal aus der Skip-Schleife von
 # Phase 2a in run_project_scan (je Skip-Entscheidung) - strukturell ausgeschlossen, dass ein
 # Skip-Fall den Checkpoint verpasst, da beide Phasen denselben einzigen Aufrufpunkt durchlaufen
 # (kein `continue`-Zweig mehr, der ihn versehentlich umgehen koennte). Ohne diese Kadenz waere der
-# Live-Zaehler im dominanten Realweltfall (Re-Scan mit ueberwiegend unveraenderten Dateien)
-# faktisch nie erreichbar (urspruenglicher Review-Fund, gilt fuer die neue Struktur unveraendert).
+# Live-Zaehler im dominanten Realweltfall (Re-Scan mit ueberwiegend unveraenderten Dateien) faktisch
+# nie erreichbar.
 #
-# Batch-Groessen-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): auf 1 statt 25
+# Batch-Groessen-Fix: auf 1 statt 25
 # gesetzt, anders als SCORE_COMMIT_BATCH_SIZE oben. run_project_scoring ist CPU-only (lokale
 # Heuristiken auf bereits gecachten Bildern) und schnell genug, dass Batching den Commit-Overhead
 # sinnvoll reduziert - run_project_scan dagegen ist netzwerkgebunden (EXIF-Range-Read und
 # Thumbnail-Generierung pro Datei ueber OpenCloud-WebDAV), ein zusaetzlicher DB-Commit pro Datei
 # faellt gegenueber der Netzwerklatenz nicht messbar ins Gewicht. Bei 25 blieb der Live-Zaehler
 # bei jedem Scan mit weniger als 25 Dateien waehrend der gesamten Laufzeit bei 0 eingefroren
-# (typischer Fall: Familienfoto-Ergaenzung, Spec 0022 nachgebessert).
+# (typischer Fall: Familienfoto-Ergänzung).
 SCAN_COMMIT_BATCH_SIZE = 1
 
-# Analog SCORE_COMMIT_BATCH_SIZE, fuer CriterionScoringRun.photos_processed
-# (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md, ersetzt das fruehere
+# Analog SCORE_COMMIT_BATCH_SIZE, fuer CriterionScoringRun.photos_processed (ersetzt das fruehere
 # TOP_SELECTION_COMMIT_BATCH_SIZE/TopSelectionRun). Kleiner als SCORE_COMMIT_BATCH_SIZE, da
 # mediapipe-Inferenz (content_people-Kriterium) pro Foto eine spuerbare Laufzeit hat (Architektur-
 # Abschnitt der Spec) - ein grober Batch von 25 wuerde den Live-Fortschritt bei typischen
-# Ausschuss-Ueberlebenden-Mengen faktisch einfrieren, aehnlich dem in Spec 0023 behobenen
-# Scan-Zaehler-Problem. Modul-Konstante statt Default-Parameterwert, damit Tests sie per
+# Ausschuss-Überlebenden-Mengen faktisch einfrieren. Modul-Konstante statt
+# Default-Parameterwert, damit Tests sie per
 # monkeypatch.setattr(worker, "CRITERION_SCORING_COMMIT_BATCH_SIZE", ...) verkleinern koennen.
 CRITERION_SCORING_COMMIT_BATCH_SIZE = 5
 
-# specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR decisions/0025-cloud-
-# landmark-erkennung.md Punkt 4: der Cloud-Aufruf nutzt ausschliesslich die bestehende
-# display-Cache-Variante, die thumbnails.py::generate_variants immer als JPEG schreibt - fester
-# Wert statt einer Format-Erkennung. Umbenannt von _LANDMARK_IMAGE_MIME_TYPE
-# (specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md): identisches
-# Bildquellen-Muss-Kriterium (ADR 0032 Punkt 5) gilt jetzt fuer BEIDE Cloud-Vision-Pfade.
+# Der Cloud-Aufruf nutzt ausschliesslich die bestehende display-Cache-Variante, die
+# thumbnails.py::generate_variants immer als JPEG schreibt - fester Wert statt einer
+# Format-Erkennung. Das Bildquellen-Muss-Kriterium gilt für BEIDE Cloud-Vision-Pfade.
 _CLOUD_VISION_IMAGE_MIME_TYPE = "image/jpeg"
 
-# Default-Gewichtung fuer ranking.py::rank_photos (Akzeptanzkriterium der Spec: "nur die
-# strukturelle Faehigkeit ist Teil dieser Spec, kein konkreter Default" - Gleichgewichtung aller
-# im Register bekannten Kriterien ist der einfachste, austauschbare Platzhalter, siehe ADR 0021
-# Punkt 3). Die eigentliche, spaetere Gewichtungs-/Formel-Entscheidung aendert nur diesen
+# Default-Gewichtung für ranking.py::rank_photos: die Gleichgewichtung aller im Register
+# bekannten Kriterien ist ein bewusst austauschbarer Platzhalter, keine kalibrierte Formel.
+# Eine spätere Gewichtungs-/Formel-Entscheidung ändert nur diesen
 # Aufrufer-Default, nie das Datenmodell oder rank_photos selbst.
 DEFAULT_CRITERION_WEIGHTS: dict[str, float] = {key: 1.0 for key in CRITERIA_REGISTRY}
 
@@ -201,10 +190,10 @@ def _extension(relative_path: str) -> str:
 
 
 class SkipReason(enum.Enum):
-    """specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020 (Phase 2a): warum ein
-    Eintrag NICHT zu einem Arbeitsposten fuer Phase 2b wird. Zwei getrennte Werte statt eines
-    einzelnen bool-Flags, weil nur UNSUPPORTED_EXTENSION zusaetzlich ScanRun.files_skipped
-    hochzaehlt (bestehende Semantik, siehe run_project_scan) - UNCHANGED_ETAG zaehlt nur in
+    """Phase 2a: warum ein Eintrag NICHT zu einem Arbeitsposten für Phase 2b wird. Zwei
+    getrennte Werte statt eines einzelnen bool-Flags, weil nur UNSUPPORTED_EXTENSION
+    zusätzlich ScanRun.files_skipped hochzählt (siehe run_project_scan) - UNCHANGED_ETAG
+    zählt nur in
     files_found (Fortschritt), nicht in files_skipped."""
 
     UNSUPPORTED_EXTENSION = "unsupported_extension"
@@ -237,7 +226,7 @@ class ScanClassification:
     """Ergebnis von _classify_scan_entries fuer die vollstaendige Phase-1-Liste.
 
     `decisions` behaelt bewusst die Eingabereihenfolge bei (run_project_scan iteriert sie fuer die
-    Checkpoint-Kadenz von files_found/files_skipped in Phase 2a, siehe ADR 0020) - `work_items` ist
+    Checkpoint-Kadenz von files_found/files_skipped in Phase 2a) - `work_items` ist
     eine reine Teilmenge davon (nur die Eintraege mit skip_reason is None), fuer Phase 2b."""
 
     decisions: list[ScanEntryDecision] = field(default_factory=list)
@@ -249,8 +238,7 @@ def _classify_scan_entries(
     entries: list[tuple[str, DavEntry]],
     existing_photos: dict[str, Photo],
 ) -> ScanClassification:
-    """specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR 0020 (Phase 2a): reine
-    Funktion, keine Session-/DB-Zugriffe - isoliert unit-testbar (siehe
+    """Phase 2a: reine Funktion, keine Session-/DB-Zugriffe - isoliert unit-testbar (siehe
     test_worker_scan_classification.py). Identische fachliche Entscheidungslogik wie der fruehere
     inline Loop-Koerper in run_project_scan (unsupported extension -> Skip + files_skipped;
     unveraenderter Etag -> Skip ohne files_skipped; sonst -> Arbeitsposten), nur ohne die
@@ -297,8 +285,8 @@ async def _fail_run(
     run: ScanRun | ScoringRun | CriterionScoringRun | RemoteCategoryClassificationRun,
     error_message: str,
 ) -> None:
-    """Gemeinsame "Lauf auf FAILED setzen"-Logik fuer alle drei run_*-Funktionen
-    (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019) - kein Decorator/Wrapper
+    """Gemeinsame "Lauf auf FAILED setzen"-Logik für alle drei run_*-Funktionen - kein
+    Decorator/Wrapper
     um die drei Funktionen (die bleiben strukturell eigenstaendig, ihre Erfolgspfade unterscheiden
     sich zu stark), nur Vermeidung von vier identischen Zeilen an sechs Call-Sites (drei
     Funktionen x je CancelledError- und Exception-Zweig). Kein Kontrollfluss (kein raise/return)
@@ -308,18 +296,17 @@ async def _fail_run(
     run.error_message = error_message
     run.finished_at = _now_utc()
     if isinstance(run, CriterionScoringRun):
-        # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 3:
         # `phase = NULL` heisst "laeuft nicht mehr" - das gilt fuer einen fehlgeschlagenen Lauf
         # genauso wie fuer einen erfolgreichen. HIER statt in run_classification/
-        # run_criterion_scoring, weil _fail_run der einzige gemeinsame "auf FAILED setzen"-Pfad
-        # ist: er wird auch vom Fortschritts-Watchdog (reap_stalled_runs -> _fail_if_stalled)
-        # benutzt, der einen haengenden Lauf abraeumt, ohne dass die Job-Coroutine je zurueckkehrt.
-        # `phase` existiert nur auf CriterionScoringRun, deshalb die isinstance-Pruefung statt
-        # eines gemeinsamen Basisklassen-Feldes (die vier Run-Modelle haben bewusst keine, ADR
+        # run_criterion_scoring, weil _fail_run der einzige gemeinsame "auf FAILED setzen"-Pfad ist:
+        # er wird auch vom Fortschritts-Watchdog (reap_stalled_runs -> _fail_if_stalled) benutzt,
+        # der einen haengenden Lauf abraeumt, ohne dass die Job-Coroutine je zurueckkehrt. `phase`
+        # existiert nur auf CriterionScoringRun, deshalb die isinstance-Pruefung statt eines
+        # gemeinsamen Basisklassen-Feldes (die vier Run-Modelle haben bewusst keine, ADR
         # 0019).
         run.phase = None
     await session.commit()
-    # Copilot-Review-Fund (PR #67): das vorangehende rollback() expired ORM-Objekte der Session -
+    # das vorangehende rollback() expired ORM-Objekte der Session -
     # ohne dieses refresh() koennte ein direkter Attributzugriff auf `run` NACH der Rueckkehr aus
     # _fail_run (z.B. `run.id` in scan_project/score_project/classify, die den
     # Rueckgabewert von run_project_scan/run_project_scoring/run_top_selection unmittelbar
@@ -336,14 +323,13 @@ async def _generate_thumbnails(
     etag: str,
     cache_dir: Path,
 ) -> None:
-    """Best-effort (specs/features/0002-manual-categorization.md): weder ein Download- noch ein
+    """Best-effort: weder ein Download- noch ein
     Dekodierfehler duerfen den Scan des Projekts abbrechen (anders als die uebrigen
     OpenCloudError-Faelle unten, die den ganzen Scan als FAILED markieren) - ein fehlendes
     Thumbnail aeussert sich nur als 404-Platzhalter im Bild-Endpunkt, siehe thumbnails.py.
 
-    Nimmt bewusst `photo_id`/`etag` statt eines `Photo`-Objekts entgegen (specs/features/0036-
-    scan-performance-zweiphasig-parallel.md, ADR 0020, Punkt 2): wird als Teil von
-    _fetch_and_thumbnail parallel zu Geschwister-Aufrufen desselben Blocks ausgefuehrt und darf
+    Nimmt bewusst `photo_id`/`etag` statt eines `Photo`-Objekts entgegen (Punkt 2): wird als Teil
+    von _fetch_and_thumbnail parallel zu Geschwister-Aufrufen desselben Blocks ausgefuehrt und darf
     deshalb keinerlei Session-Zugriff ausloesen - ein ORM-Objekt hier entgegenzunehmen wuerde dazu
     verleiten, versehentlich weitere (nicht nebenlaeufigkeitssichere) Attribute zu lesen/zu
     setzen."""
@@ -356,8 +342,8 @@ async def _generate_thumbnails(
 
 @dataclass(frozen=True)
 class ScanExifResult:
-    """Das EXIF-Ergebnis EINES Arbeitspostens (specs/features/0051-gps-landmark-cluster-
-    bildung.md): Zeitpunkt UND Koordinate aus demselben Range-Read-Fenster.
+    """Das EXIF-Ergebnis EINES Arbeitspostens: Zeitpunkt UND Koordinate aus demselben
+    Range-Read-Fenster.
 
     Eingefroren und zusammengesetzt statt zweier nackter Rueckgabewerte, damit die Typzusicherung
     nach `asyncio.gather` in `_process_scan_block` weiterhin die FORM festnageln kann - eine
@@ -381,9 +367,9 @@ async def _fetch_and_thumbnail(
     etag: str,
     cache_dir: Path,
 ) -> ScanExifResult:
-    """Der reine I/O-/CPU-Teil eines einzelnen Arbeitspostens aus Phase 2b (specs/features/0036,
-    ADR 0020, Punkt 2): EXIF-Range-Read (nur fuer JPEG-Kandidaten) fuer `taken_at` UND die
-    GPS-Koordinate (specs/features/0051), danach best-effort Download + Thumbnail-Erzeugung -
+    """Der reine I/O-/CPU-Teil eines einzelnen Arbeitspostens aus Phase 2b: EXIF-Range-Read
+    (nur für JPEG-Kandidaten) für `taken_at` UND die
+    GPS-Koordinate, danach best-effort Download + Thumbnail-Erzeugung -
     bewusst OHNE jeglichen Session-Zugriff, damit mehrere Aufrufe sicher parallel per
     asyncio.gather laufen koennen (_process_scan_block unten).
     Ein EXIF-Lesefehler wird NICHT abgefangen (identisches Verhalten wie vor der Umstrukturierung):
@@ -413,9 +399,9 @@ async def _process_scan_block(
     project_id: int,
     block: list[ScanWorkItem],
 ) -> tuple[int, int]:
-    """Verarbeitet einen einzelnen Block von Arbeitsposten (Groesse = settings.
-    scan_download_concurrency, specs/features/0036, ADR 0020, Punkt 1/4): zunaechst sequentiell
-    Photo-Zeilen anlegen/aktualisieren + flush() (Fallstrick 2 der ADR: KEIN commit() hier - ein
+    """Verarbeitet einen einzelnen Block von Arbeitsposten, Blockgröße
+    settings.scan_download_concurrency: zunächst sequentiell Photo-Zeilen
+    anlegen/aktualisieren + flush() - KEIN commit() hier, ein
     Absturz in diesem Fenster ist dadurch folgenlos, die Transaktion wird beim Neuverbinden
     verworfen), danach die reinen I/O-Coroutinen des Blocks parallel per asyncio.gather. Der
     Aufrufer (run_project_scan) committet erst NACH erfolgreicher Rueckkehr dieser Funktion - ein
@@ -470,7 +456,7 @@ async def _process_scan_block(
         return_exceptions=True,
     )
 
-    # Verifizierter Python-Async-Fallstrick (ADR 0020, siehe auch test_worker_scan_project.py::
+    # Verifizierter Python-Async-Fallstrick (siehe auch test_worker_scan_project.py::
     # test_scan_run_marked_failed_on_cancelled_error_from_a_parallel_download): mit
     # return_exceptions=True faengt asyncio.gather() ein CancelledError, das eine EINZELNE Kind-
     # Coroutine wirft, NICHT als Exception ab, sondern reicht es als gewoehnliches Element der
@@ -489,20 +475,19 @@ async def _process_scan_block(
             raise result
 
     for photo, exif_result in zip(photos, results, strict=True):
-        # Die Typzusicherung nagelt weiterhin die FORM fest (specs/features/0051, Sicherheits-
-        # konzept Punkt 4) - sie ist nach dem Wechsel auf einen zusammengesetzten Rueckgabewert
-        # NICHT entbehrlich geworden: ohne sie entpackte eine durchgereichte BaseException ihre
-        # Attribute in die Foto-Felder, statt oben als Fehler erkannt zu werden.
+        # Die Typzusicherung nagelt weiterhin die FORM fest - sie ist nach dem Wechsel auf einen
+        # zusammengesetzten Rueckgabewert NICHT entbehrlich geworden: ohne sie entpackte eine
+        # durchgereichte BaseException ihre Attribute in die Foto-Felder, statt oben als Fehler
+        # erkannt zu werden.
         assert isinstance(exif_result, ScanExifResult)  # bereits oben auf Exceptions geprueft
         photo.taken_at = exif_result.taken_at
-        # UNBEDINGT beide Felder schreiben, auch zurueck auf None (specs/features/0051-gps-
-        # landmark-cluster-bildung.md, Sicherheitskonzept Punkt 4). Das ist eine
-        # DATENSCHUTZBEDINGUNG, keine Aufraeum-Kosmetik: dies ist der einzige Pfad, ueber den das
-        # ENTFERNEN von GPS aus einer Quelldatei in PhotoSort ankommt - also genau die Handlung,
-        # die eine datenschutzbewusste Person vornimmt. Ein bedingtes Schreiben
-        # (`if gps is not None`) hielte die alte Koordinate unbegrenzt fest, und die Anwendung
-        # zeigte weiter einen Ort an, den die Datei nachweislich nicht mehr enthaelt, ohne dass
-        # das irgendwo auffiele.
+        # SICHERHEIT: UNBEDINGT beide Felder schreiben, auch zurück auf None. Das ist eine
+        # DATENSCHUTZBEDINGUNG, keine Aufräum-Kosmetik - dies ist der einzige Pfad, über den
+        # das ENTFERNEN von GPS aus einer Quelldatei in PhotoSort ankommt, also genau die
+        # Handlung, die eine datenschutzbewusste Person vornimmt. Ein bedingtes Schreiben
+        # (`if gps is not None`) hielte die alte Koordinate unbegrenzt fest, und die
+        # Anwendung zeigte weiter einen Ort an, den die Datei nachweislich nicht mehr
+        # enthält. Abgedeckt durch test_worker_scan_project.py.
         photo.gps_lat, photo.gps_lon = exif_result.gps or (None, None)
 
     return added, updated
@@ -511,9 +496,8 @@ async def _process_scan_block(
 async def _maybe_commit_progress_checkpoint(
     session: AsyncSession, run: ScanRun, count: int
 ) -> None:
-    """Gemeinsamer Zwischen-Commit-Checkpoint (specs/features/0022-scan-live-fortschrittszaehler.md,
-    ADR 0019 Schicht 2) fuer Phase 1 (Enumeration) UND Phase 2a (Skip-Faelle) - ein einziger
-    Aufrufpunkt statt der frueheren Closure mit zwei `continue`-Zweigen (specs/features/0036):
+    """Gemeinsamer Zwischen-Commit-Checkpoint für Phase 1 (Enumeration) UND Phase 2a
+    (Skip-Fälle) - ein einziger Aufrufpunkt statt zweier `continue`-Zweige:
     strukturell ausgeschlossen, dass ein Skip-Zweig den Checkpoint verpasst, da jede Iteration in
     Phase 2a denselben Aufruf durchlaeuft."""
     if count % SCAN_COMMIT_BATCH_SIZE == 0:
@@ -529,7 +513,7 @@ async def _enumerate_scan_entries(
     root_path: str,
     scan_run: ScanRun,
 ) -> list[tuple[str, DavEntry]]:
-    """Phase 1 (Enumeration, specs/features/0036-scan-performance-zweiphasig-parallel.md, ADR
+    """Phase 1 (Enumeration, ADR
     0020, Punkt 1): materialisiert `client.walk(...)` zu einer In-Memory-Liste - KEIN Photo-DB-
     Schreibzugriff, nur periodische files_found/last_progress_at-Checkpoints (bestehende
     Checkpoint-Kadenz, Zweitverwendung von _maybe_commit_progress_checkpoint). Erst nach
@@ -572,7 +556,7 @@ async def run_project_scan(
             session, client, drive.webdav_url, project.opencloud_path, scan_run
         )
 
-        # Phasenuebergang (ADR 0020, Punkt 1): total_files wird HIER einmalig gesetzt,
+        # Phasenuebergang (Punkt 1): total_files wird HIER einmalig gesetzt,
         # files_found auf 0 zurueckgesetzt - das Feld wechselt die Bedeutung von "in Phase 1
         # gelistet" auf "in Phase 2 verarbeitet" (Datenmodell-Bezug der Spec). Sofort committet,
         # damit ein zwischen Phase 1 und Phase 2 beobachtender Client (Polling) diesen konsistenten
@@ -596,14 +580,14 @@ async def run_project_scan(
 
         # Phase 2b (begrenzt parallele Verarbeitung in festen Bloecken) - siehe
         # _process_scan_block. Blockgroesse = settings.scan_download_concurrency (env-
-        # ueberschreibbar, ADR 0020 Punkt 5); ein Commit PRO BLOCK (nicht an die
+        # ueberschreibbar); ein Commit PRO BLOCK (nicht an die
         # SCAN_COMMIT_BATCH_SIZE-Kadenz von Phase 1/2a gekoppelt), das ist zugleich die
         # Crash-Sicherheits-Grenze (Fallstrick 2).
         photos_added = 0
         photos_updated = 0
         # settings.scan_download_concurrency ist per Field(ge=1) in config.py bereits gegen
-        # 0/negative Werte validiert (faellt beim Prozessstart auf, test-engineer-/security-
-        # engineer-Review-Fund) - kein zusaetzlicher Laufzeit-Clamp hier noetig.
+        # 0/negative Werte validiert und fällt beim Prozessstart auf - kein zusätzlicher
+        # Laufzeit-Clamp hier nötig.
         concurrency = settings.scan_download_concurrency
         work_items = classification.work_items
         for start in range(0, len(work_items), concurrency):
@@ -631,17 +615,16 @@ async def run_project_scan(
         scan_run.files_skipped = files_skipped
         await session.commit()
     except asyncio.CancelledError:
-        # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
-        # watchdog.md, ADR 0019): ein arq job_timeout-Ablauf, ein geplanter Worker-Shutdown und ein
-        # kuenftiger Job.abort() loesen alle denselben asyncio.CancelledError-Pfad aus (verifiziert
-        # im arq-Quellcode, siehe ADR). Anders als die fruehere Annahme (siehe Git-Historie) wird
-        # das jetzt bewusst NICHT mehr unbehandelt durchgelassen: der Lauf wird sofort auf FAILED
-        # gesetzt, danach re-raised (kein Verschlucken einer BaseException) - arqs eigene
-        # Task-/Retry-Buchhaltung funktioniert dadurch unveraendert weiter.
+        # Schicht 1 des Fortschritts-Watchdogs: ein arq job_timeout-Ablauf, ein geplanter
+        # Worker-Shutdown und ein künftiger Job.abort() lösen alle denselben
+        # asyncio.CancelledError-Pfad aus (verifiziert im arq-Quellcode). Er wird bewusst NICHT
+        # unbehandelt durchgelassen: der Lauf wird sofort auf FAILED gesetzt, danach re-raised -
+        # kein Verschlucken einer BaseException, arqs eigene Task-/Retry-Buchhaltung funktioniert
+        # dadurch unverändert weiter.
         await _fail_run(session, scan_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
         raise
     except Exception as exc:
-        # Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): vorher
+        # Terminierungs-Fix: vorher
         # wurde hier ausschliesslich OpenCloudError abgefangen - jede andere Exception (z.B. aus
         # dem WebDAV-XML-Parsing, siehe opencloud/client.py::list_folder) lief ungefangen durch
         # und liess den ScanRun dauerhaft auf status="running" haengen, ohne Watchdog/Recovery.
@@ -652,8 +635,7 @@ async def run_project_scan(
 
     # Ab hier ist der Lauf SUCCESS: der Erfolgspfad faellt aus dem `try` HERAUS (das `return` ist
     # dafuer nach unten gewandert), beide Fehlerzweige kehren oben zurueck bzw. re-raisen. Damit
-    # erreicht die Bereinigung den Abbruch- und den Fehlerpfad strukturell nicht
-    # (specs/features/0349-verwaiste-bildkopien-aufraeumen.md, ADR 0076 Punkt 1: bei
+    # erreicht die Bereinigung den Abbruch- und den Fehlerpfad strukturell nicht (bei
     # Abbruch/Fehlschlag wird nicht aufgeraeumt, der naechste erfolgreiche Scan holt es nach).
     #
     # AUSSERHALB des Fehler-Handlers und mit eigenem `except`: ein Fehler beim Aufraeumen darf
@@ -668,7 +650,7 @@ async def run_project_scan(
         # anschliessende `refresh()` liefe der Attributzugriff auf `scan_run.id` in `scan_project`
         # in einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
         # (sqlalchemy.exc.MissingGreenlet), und der Job stuerzte NACH einem erfolgreichen Scan ab.
-        # Dieselbe Fehlerklasse wie der bereits behobene Fund in `_fail_run` (PR #67).
+        # Dieselbe Fehlerklasse wie der bereits behobene Fund in `_fail_run`.
         await session.rollback()
         await session.refresh(scan_run)
         logger.warning("Bereinigung des Bild-Caches fehlgeschlagen", exc_info=True)
@@ -697,8 +679,8 @@ async def scan_project(ctx: dict[str, Any], project_id: int) -> int:
 def _compute_photo_metrics(path: Path) -> tuple[float, float, str] | None:
     """Best-effort wie thumbnails.py::generate_variants: ein nicht (mehr) dekodierbares oder
     ungewoehnliches Bild darf den ScoringRun nicht abbrechen, sondern wird fuer die Metrik-
-    Berechnung uebersprungen (Sicherheits-Muss-Kriterium der Spec, DecompressionBombError-Fund aus
-    Spec 0002)."""
+    Berechnung übersprungen. SICHERHEIT: das deckt insbesondere den
+    `DecompressionBombError` ab."""
     try:
         with Image.open(path) as opened:
             opened.load()
@@ -723,9 +705,8 @@ async def run_project_scoring(
     erneuter OpenCloud-Download. Ablauf (Architektur-Abschnitt der Spec): ScoringRun anlegen ->
     photos_total setzen -> pro Foto Heuristiken berechnen, PhotoScore upserten,
     photos_processed periodisch committen -> projektweite Duplikat-/Cluster-Erkennung ->
-    suggested_status setzen -> ScoringRun auf success/failed setzen. `local_quality_score` (Spec
-    0024) ist mit specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md entfallen -
-    Ranking-Grundlage ist jetzt die Kriterien-/Rangfolgen-Schicht (criteria.py/ranking.py).
+    suggested_status setzen -> ScoringRun auf success/failed setzen. Ranking-Grundlage ist
+    die Kriterien-/Rangfolgen-Schicht (criteria.py/ranking.py).
     """
     scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.RUNNING)
     session.add(scoring_run)
@@ -762,8 +743,7 @@ async def run_project_scoring(
         for photo in photos:
             path = variant_path(cache_dir, photo.id, photo.etag, "display")
             metrics = _compute_photo_metrics(path) if path.is_file() else None
-            # Bekannte, akzeptierte Luecke (Architektur-Review-Fund, siehe Konsequenzen-Abschnitt
-            # von decisions/0006-local-scoring-datamodel.md): wird die display-Cache-Datei eines
+            # Bekannte, akzeptierte Lücke: wird die display-Cache-Datei eines
             # bereits in einem frueheren Lauf erfolgreich gescorten Fotos bis zu diesem Lauf
             # unlesbar, bleibt dessen alte PhotoScore-Zeile unveraendert stehen statt geloescht/
             # invalidiert zu werden - dieser Zweig wird dann einfach nicht betreten. In der Praxis
@@ -793,16 +773,15 @@ async def run_project_scoring(
             processed += 1
             if processed % SCORE_COMMIT_BATCH_SIZE == 0:
                 scoring_run.photos_processed = processed
-                # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-
-                # watchdog.md, ADR 0019, Schicht 2) - analog run_project_scan oben.
+                # Fortschritts-Watchdog (Schicht 2) - analog run_project_scan oben.
                 scoring_run.last_progress_at = _now_utc()
                 await session.commit()
 
         scoring_run.photos_processed = processed
         await session.commit()
 
-        # specs/features/0051-gps-landmark-cluster-bildung.md: um die Koordinate erweitert -
-        # KEIN zusaetzlicher Query, die `photos` liegen an dieser Stelle bereits vollstaendig vor.
+        # Um die Koordinate erweitert - KEIN zusaetzlicher Query, die `photos` liegen an dieser
+        # Stelle bereits vollstaendig vor.
         cluster_input_by_id = {
             photo.id: (photo.taken_at, photo.gps_lat, photo.gps_lon) for photo in photos
         }
@@ -843,26 +822,24 @@ async def run_project_scoring(
         scoring_run.suggestions_found = len(rejected_ids)
         scoring_run.status = ScanStatus.SUCCESS
         scoring_run.finished_at = datetime.now(UTC).replace(tzinfo=None)
-        # Ausschuss-Gate-Autoset (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
-        # backfill.md): kein Ausschuss gefunden -> nichts zu sichten, das Gate blockiert dann
-        # nicht mit einer leeren Liste. Ein nachfolgender expliziter confirm-ausschuss-gate-
+        # Ausschuss-Gate-Autoset: kein Ausschuss gefunden -> nichts zu sichten, das Gate blockiert
+        # dann nicht mit einer leeren Liste. Ein nachfolgender expliziter confirm-ausschuss-gate-
         # Aufruf bleibt trotzdem fehlerfrei moeglich (Idempotenz, siehe api/projects.py).
         if scoring_run.suggestions_found == 0:
             scoring_run.gate_confirmed_at = _now_utc()
         await session.commit()
         return scoring_run
     except asyncio.CancelledError:
-        # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
-        # watchdog.md, ADR 0019) - analog run_project_scan oben.
+        # Schicht 1 des Fortschritts-Watchdogs - analog run_project_scan oben.
         await _fail_run(
             session, scoring_run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
         )
         raise
     except Exception as exc:
         # Kein Rollback bereits committeter PhotoScore-Zeilen/des letzten committeten
-        # photos_processed-Stands (Akzeptanzkriterium der Spec) - session.rollback() verwirft nur
-        # die seit dem letzten commit() offene, noch nicht persistierte Transaktion, exakt wie im
-        # OpenCloudError-Pfad von run_project_scan oben.
+        # photos_processed-Stands - session.rollback() verwirft nur die seit dem letzten commit()
+        # offene, noch nicht persistierte Transaktion, exakt wie im OpenCloudError-Pfad von
+        # run_project_scan oben.
         await _fail_run(session, scoring_run, str(exc))
         return scoring_run
 
@@ -884,21 +861,20 @@ class CriterionScoringGuardError(Exception):
     scoring_run_id ist nicht mehr der aktuell neueste erfolgreiche ScoringRun, z.B. wegen eines
     zwischenzeitlichen Re-Scan/Re-Scoring) - wird wie jede andere Exception im umgebenden
     try/except als FAILED-Lauf mit error_message behandelt (Akzeptanzkriterium der Spec: Guard im
-    Worker-Job, zusaetzlich zum eigenen 409 der API-Schicht, ADR 0021 Punkt 7)."""
+    Worker-Job, zusaetzlich zum eigenen 409 der API-Schicht)."""
 
 
-# Die von _compute_content_criteria best-effort berechneten Kriterien-Keys (specs/features/
-# 0037/0038) - eine Liste statt sechs einzelner if-Bloecke im Aufrufer, damit ein weiteres
+# Die von _compute_content_criteria best-effort berechneten Kriterien-Keys - eine Liste statt
+# sechs einzelner if-Blöcke im Aufrufer, damit ein weiteres
 # kuenftiges Bild-basiertes Kriterium keine Kopie des Upsert-Codes braucht. Die zugehoerige
 # CriterionSource wird bewusst NICHT hier dupliziert, sondern direkt aus criteria.py::
-# CRITERIA_REGISTRY abgeleitet (Copilot-Review-Fund, PR #88) - eine kuenftige Aenderung an der
+# CRITERIA_REGISTRY abgeleitet - eine kuenftige Aenderung an der
 # Registry (z.B. ein Kriterium wechselt von local_heuristic zu local_ml) bleibt so automatisch
 # konsistent, ohne dass diese Stelle separat nachgepflegt werden muss.
 #
-# Umbenannt von _CONTENT_CRITERION_KEYS/_CONTENT_CRITERION_SOURCES (specs/features/0045-
-# kategorien-aus-statistiken-ableiten.md, ADR 0023): bezeichnet weiterhin die bildbasiert
-# berechneten Kriterien fuer die Upsert-Buchhaltung (inkl. goldener_schnitt/aesthetics, die NIE
-# eine Kategorie bilden duerfen) - eine fachlich andere Menge als CriterionDefinition.
+# Umbenannt von _CONTENT_CRITERION_KEYS/_CONTENT_CRITERION_SOURCES: bezeichnet weiterhin die
+# bildbasiert berechneten Kriterien fuer die Upsert-Buchhaltung (inkl. goldener_schnitt/aesthetics,
+# die NIE eine Kategorie bilden duerfen) - eine fachlich andere Menge als CriterionDefinition.
 # category_eligible (welche Kriterien ueberhaupt eine Kategorie bilden DUERFEN). Rein kosmetische
 # Umbenennung, keine Verhaltensaenderung.
 _IMAGE_ANALYSIS_CRITERION_KEYS: tuple[str, ...] = (
@@ -907,15 +883,14 @@ _IMAGE_ANALYSIS_CRITERION_KEYS: tuple[str, ...] = (
     "tier",
     "goldener_schnitt",
     "gebaeude",
-    # specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md ab hier (zweites Kriterium
-    # aus derselben Szenen-Klassifikation, siehe _compute_content_criteria).
+    # Zweites Kriterium aus derselben Szenen-Klassifikation, siehe _compute_content_criteria.
     "landschaft",
     "aesthetics",
-    # specs/features/0289-feste-kategorien.md ab hier: zwei weitere Kriterien aus DERSELBEN
-    # COCO-Detektorausgabe wie `tier` (siehe _compute_content_criteria).
+    # Zwei weitere Kriterien aus DERSELBEN COCO-Detektorausgabe wie `tier` (siehe
+    # _compute_content_criteria).
     "fahrzeug",
     "essen_trinken",
-    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ab hier.
+    # Kompositions-Ranking-Signale ab hier.
     "symmetrie",
     "horizont",
     "freiraum",
@@ -926,7 +901,7 @@ _IMAGE_ANALYSIS_CRITERION_SOURCES: dict[str, CriterionSource] = {
 
 
 def _try_build[T](build: Callable[[], T]) -> T | None:
-    """Best-effort Modell-/Detektor-Konstruktion (Copilot-Review-Fund, PR #88): ein Fehlschlag
+    """Best-effort Modell-/Detektor-Konstruktion: ein Fehlschlag
     GENAU EINES Builders (fehlendes/defektes Asset, mediapipe-/tensorflow-Laufzeitproblem) darf
     weder den gesamten CriterionScoringRun noch die von den UEBRIGEN, erfolgreich gebauten
     Modellen abhaengigen Kriterien mit sich reissen - konsistent mit dem Best-effort-Grundsatz,
@@ -941,20 +916,18 @@ def _try_build[T](build: Callable[[], T]) -> T | None:
 def _select_landmark_candidates(
     candidate_values: dict[int, dict[str, float]], already_scored_photo_ids: set[int]
 ) -> list[int]:
-    """Vorfilterung + Skip-bereits-gescorter-Fotos fuer den landmark-Cloud-Aufruf
-    (specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR decisions/0025-
-    cloud-landmark-erkennung.md Punkt 3) - reine, DB-freie Funktion, isoliert unit-testbar (analog
-    _classify_scan_entries). Ein Foto wird nur dann Kandidat, wenn im selben Lauf content_landscape
-    ODER gebaeude die jeweils registrierte category_presence_threshold erreicht (`>=`, inklusiv,
-    Wiederverwendung der bereits vorhandenen Registry-Schwellwerte statt eines neuen, doppelt
-    gepflegten Grenzwerts) UND noch keine landmark-Zeile aus einem frueheren Lauf existiert (die
-    einzige, bewusst dokumentierte Ausnahme vom sonst projektweiten "jeder Lauf scort neu"-
-    Prinzip). Gibt die photo_id-Reihenfolge von candidate_values zurueck (Einfuege-/Verarbeitungs-
-    reihenfolge der Foto-Schleife, keine weitere Sortierung noetig).
+    """Vorfilterung + Skip-bereits-gescorter-Fotos für den landmark-Cloud-Aufruf - reine,
+    DB-freie Funktion, isoliert
+    unit-testbar (analog _classify_scan_entries). Ein Foto wird nur dann Kandidat, wenn im selben
+    Lauf content_landscape ODER gebaeude die jeweils registrierte category_presence_threshold
+    erreicht (`>=`, inklusiv, Wiederverwendung der bereits vorhandenen Registry-Schwellwerte statt
+    eines neuen, doppelt gepflegten Grenzwerts) UND noch keine landmark-Zeile aus einem frueheren
+    Lauf existiert (die einzige, bewusst dokumentierte Ausnahme vom sonst projektweiten "jeder Lauf
+    scort neu"- Prinzip). Gibt die photo_id-Reihenfolge von candidate_values zurueck
+    (Einfuege-/Verarbeitungs-reihenfolge der Foto-Schleife, keine weitere Sortierung noetig).
 
-    Die eigentliche Schwellenwert-Pruefung lebt seit specs/features/0058-cloud-vision-status-
-    transparenz.md/decisions/0035-cloud-vision-attempt-fehler-persistierung.md Punkt 4 in
-    criteria.py::is_landmark_candidate (gemeinsam mit der API-seitigen Read-Time-Ableitung
+    Die eigentliche Schwellenwert-Prüfung lebt in criteria.py::is_landmark_candidate
+    (gemeinsam mit der API-seitigen Read-Time-Ableitung
     genutzt) - hier bleibt nur noch das Skip-bereits-gescorter-Fotos-Verhalten, das worker-
     spezifisch bleibt (keine API-Entsprechung)."""
     candidates: list[int] = []
@@ -969,25 +942,23 @@ def _select_landmark_candidates(
 def _log_cloud_vision_failure(
     phase: str, photo_id: int, relative_path: str, exc_type_name: str, exc_message: str
 ) -> None:
-    """Strukturiertes WARNING-Logging fuer einen best-effort uebersprungenen Cloud-Vision-Aufruf
-    (specs/features/0056-structured-logging-cloud-vision-errors.md, ADR 0034) - gemeinsam genutzt
-    von der Landmark-Phase (run_criterion_scoring) und der Remote-Kategorie-Phase
-    (run_remote_category_classification). Level WARNING statt ERROR (ADR 0034 Punkt 3): der Skip
-    ist erwartetes, dokumentiertes best-effort-Verhalten (ADR 0025 Punkt 3/ADR 0032 Punkt 5), der
-    Lauf selbst bleibt SUCCESS. Kein exc_info=True/Traceback (ADR 0034 Punkt 5) - eine Zeile pro
-    fehlgeschlagenem Foto reicht fuer Fehlergrund + Foto-Kontext.
+    """Strukturiertes WARNING-Logging für einen best-effort übersprungenen
+    Cloud-Vision-Aufruf - gemeinsam genutzt von der
+    Landmark-Phase (run_criterion_scoring) und der Remote-Kategorie-Phase
+    (run_remote_category_classification). Level WARNING statt ERROR: der Skip ist erwartetes,
+    dokumentiertes best-effort-Verhalten, der Lauf selbst bleibt SUCCESS. Kein
+    exc_info=True/Traceback - eine Zeile pro fehlgeschlagenem Foto reicht fuer Fehlergrund +
+    Foto-Kontext.
 
-    `exc_type_name`/`exc_message` statt der rohen Exception (Copilot-Review-Fund auf PR #255,
-    specs/features/0058-cloud-vision-status-transparenz.md/ADR 0035 Punkt 3): der Aufrufer
-    berechnet `type(exc).__name__`/`str(exc)` GENAU EINMAL an der jeweiligen Call-Site und reicht
-    beide Werte sowohl hierher als auch an `_record_cloud_vision_error` durch - keine zweite,
-    potenziell abweichende Auswertung an zwei Stellen (auch wenn `type()`/`str()` reine Funktionen
-    sind und ein tatsaechliches Auseinanderlaufen hier nie beobachtbar war, war die vorherige
-    Fassung eine dokumentierte, aber nicht eingehaltene Architektur-Vorgabe). `exc_message` wird
-    ausschliesslich aus der bereits an der Exception-Konstruktionsstelle sanitierten Meldung
-    uebernommen (siehe cloud_vision.py::raise_for_vision_api_status/*_response_to_json, bestehendes
-    Sicherheits-Muss-Kriterium aus ADR 0025/0031/0032) - hier NIE erneut auf
-    response.text/.json()/.headers zugreifen."""
+    Nimmt `exc_type_name`/`exc_message` statt der rohen Exception: der Aufrufer berechnet
+    `type(exc).__name__`/`str(exc)` GENAU EINMAL an der jeweiligen Call-Site und reicht beide
+    Werte sowohl hierher als auch an `_record_cloud_vision_error` durch - keine zweite,
+    potenziell abweichende Auswertung an zwei Stellen.
+
+    SICHERHEIT: `exc_message` stammt ausschließlich aus der bereits an der
+    Exception-Konstruktionsstelle sanitierten Meldung (siehe
+    cloud_vision.py::raise_for_vision_api_status/*_response_to_json) - hier NIE erneut auf
+    `response.text`/`.json()`/`.headers` zugreifen."""
     logger.warning(
         "Cloud-Vision-Aufruf fehlgeschlagen (%s): photo_id=%s relative_path=%s %s: %s",
         phase,
@@ -1000,10 +971,7 @@ def _log_cloud_vision_failure(
 
 def _counted(count: int, singular: str, plural: str) -> str:
     """Zahlwort mit passendem Numerus - "1 Wiederholung", aber "0"/"2 Wiederholungen"
-    (Copilot-Review-Fund auf PR #385).
-
-    Erster Helfer dieser Art im Projekt: bis Spec 0382 trug keine Logzeile ein gezaehltes
-    Substantiv. Bewusst hier und nicht in einem eigenen Modul - die eine Zeile unten ist die
+    Bewusst hier und nicht in einem eigenen Modul - die eine Zeile unten ist die
     einzige Verwendung, und ein i18n-Baustein waere fuer ein einsprachiges Server-Log
     ueberdimensioniert."""
     return f"{count} {singular if count == 1 else plural}"
@@ -1011,8 +979,7 @@ def _counted(count: int, singular: str, plural: str) -> str:
 
 def _log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats) -> None:
     """Strukturiertes WARNING-Logging der VERTEILUNG eines Cloud-Teilschritts
-    (specs/features/0382-cloud-rate-limits-aussitzen.md, ADR 0074 Entscheidung 8) - der
-    Gegenpart zu _log_cloud_vision_failure daneben, an demselben Ort, an dem sich beide
+    der Gegenpart zu _log_cloud_vision_failure daneben, an demselben Ort, an dem sich beide
     Cloud-Teilschritte ihre Logzeilen schon heute teilen.
 
     Hoechstens EINE Zeile je Teilschritt, und nur wenn tatsaechlich gewartet wurde: der Helfer
@@ -1021,16 +988,16 @@ def _log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats
     Schrittmacher nie beruehren) unveraendert still - und das Logvolumen bleibt an den Ausnahmefall
     gebunden statt an jeden Lauf.
 
-    Level WARNING statt INFO (ADR 0034 Punkt 2/3, ADR 0074 Entscheidung 8): das Root-Level des
-    Projekts ist WARNING, eine INFO-Zeile erschiene in `docker compose logs` gar nicht erst - und
-    die Zusage der Story ("eine ungewoehnlich lange Laufzeit ist im Lauf-Protokoll erklaerbar")
-    waere nicht eingeloest.
+    Level WARNING statt INFO: das Root-Level des Projekts ist WARNING, eine INFO-Zeile erschiene in
+    `docker compose logs` gar nicht erst - und die Zusage der Story ("eine ungewoehnlich lange
+    Laufzeit ist im Lauf-Protokoll erklaerbar") waere nicht eingeloest.
 
-    `stats` sind ausschliesslich ZAHLEN (Sicherheits-Muss-Kriterium der Spec 0382, Punkt 4): nie
-    eine Antwort, nie ein Headerwert, nie `response.text`/`.headers`/`.json()`.
+    SICHERHEIT: `stats` sind ausschließlich ZAHLEN - nie eine Antwort, nie ein Headerwert,
+    nie `response.text`/`.headers`/`.json()`.
 
-    Die Zeile benennt den Schrittmacher ausdruecklich als ANBIETERWEIT (Restrisiko (b) der Spec
-    0382): `ThrottleStats.since()` liest prozessweite Zaehler, bei zwei gleichzeitigen Jobs
+    Die Zeile benennt den Schrittmacher ausdrücklich als ANBIETERWEIT, und das ist ein
+    bekanntes Restrisiko: `ThrottleStats.since()` liest prozessweite Zähler, bei zwei
+    gleichzeitigen Jobs
     enthaelt die Zusammenfassung des einen Laufs die Wartezeiten des anderen. Eine Zahl, die etwas
     anderes misst als ihr Label verspricht, schwaecht genau die Lauf-/Kostentransparenz, der das
     Sicherheitskonzept die Rolle eines Erkennungsmechanismus zuschreibt."""
@@ -1049,31 +1016,30 @@ def _log_cloud_vision_throttling(phase: str, provider: str, stats: ThrottleStats
     )
 
 
-# specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
-# fehler-persistierung.md Punkt 2: defensive Obergrenze fuer eine entartete Fehlermeldung, analog
-# remote_classification.py::MAX_REMOTE_LABEL_LENGTH - die eigentliche Absicherung bleibt die in
-# ADR 0034 Punkt 5 verifizierte str(exc)-Konstruktion (keine Secrets/Rohdaten), diese Kappung ist
-# nur eine Storage-/Degenerationsgrenze.
+# Defensive Obergrenze fuer eine entartete Fehlermeldung, analog
+# remote_classification.py::MAX_REMOTE_LABEL_LENGTH - die eigentliche Absicherung bleibt die in ADR
+# 0034 Punkt 5 verifizierte str(exc)-Konstruktion (keine Secrets/Rohdaten), diese Kappung ist nur
+# eine Storage-/Degenerationsgrenze.
 #
-# Sicherheits-Muss-Kriterium der Spec 0058 (Nachschaerfung von ADR 0034 Punkt 5, da die
-# Zielgruppe dieser Fehlermeldung jetzt vom Server-Log-Leser zum App-Nutzer waechst): vor der
-# Umsetzung verifiziert, ob str(exc) bei einem von httpx.HTTPError gewrappten Netzwerkfehler
+# SICHERHEIT (die Zielgruppe dieser Fehlermeldung reicht vom Server-Log-Leser bis zum
+# App-Nutzer): vor der Umsetzung verifiziert, ob str(exc) bei einem von
+# httpx.HTTPError gewrappten Netzwerkfehler
 # (landmark.py::LandmarkApiError/remote_classification.py::RemoteCategoryClassificationApiError,
-# jeweils "... API nicht erreichbar: {exc}") URL-Query-Parameter enthalten koennte. Ergebnis:
-# NEIN, aus zwei unabhaengigen Gruenden. (1) Beide Call-Sites rufen ausschliesslich die fest
-# codierten URL-Konstanten ANTHROPIC_MESSAGES_URL/MISTRAL_CHAT_COMPLETIONS_URL auf
-# (cloud_vision.py) - beide ohne Query-String, jeglicher Payload (Bilddaten/API-Key) wird per
-# POST-Body/-Header uebertragen, nie als Query-Parameter. (2) Selbst wenn eine URL Query-Parameter
-# enthielte, haengt httpx.HTTPError.__str__() diese nicht automatisch an - empirisch verifiziert
-# (httpx 0.27+): sowohl httpx.ConnectError als auch httpx.TimeoutException geben ausschliesslich
-# die dem Konstruktor uebergebene Nachricht zurueck (z.B. "Connection refused"), unabhaengig davon,
-# ob eine .request mit Query-Parametern angehaengt ist.
+# jeweils "... API nicht erreichbar: {exc}") URL-Query-Parameter enthalten koennte. Ergebnis: NEIN,
+# aus zwei unabhaengigen Gruenden. (1) Beide Call-Sites rufen ausschliesslich die fest codierten
+# URL-Konstanten ANTHROPIC_MESSAGES_URL/MISTRAL_CHAT_COMPLETIONS_URL auf (cloud_vision.py) - beide
+# ohne Query-String, jeglicher Payload (Bilddaten/API-Key) wird per POST-Body/-Header uebertragen,
+# nie als Query-Parameter. (2) Selbst wenn eine URL Query-Parameter enthielte, haengt
+# httpx.HTTPError.__str__() diese nicht automatisch an - empirisch verifiziert (httpx 0.27+): sowohl
+# httpx.ConnectError als auch httpx.TimeoutException geben ausschliesslich die dem Konstruktor
+# uebergebene Nachricht zurueck (z.B. "Connection refused"), unabhaengig davon, ob eine .request mit
+# Query-Parametern angehaengt ist.
 _MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH = 500
 
 
 async def _commit_phase_costs(session: AsyncSession) -> None:
-    """Committet die im `finally`-Block der Cloud-Phase gesetzten Ist-Kostenspalten
-    (specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 4) - und wirft dabei NIE.
+    """Committet die im `finally`-Block der Cloud-Phase gesetzten Ist-Kostenspalten - und
+    wirft dabei NIE.
 
     Der Aufruf sitzt in einem `finally`, laeuft also auch waehrend eine Exception nach oben
     laeuft. Scheitert genau dieses Commit, wuerde seine eigene Exception die urspruengliche
@@ -1088,7 +1054,7 @@ async def _commit_phase_costs(session: AsyncSession) -> None:
     Das anschliessende `rollback()` hinterlaesst eine benutzbare Session, damit `_fail_run` den
     Lauf noch auf FAILED setzen kann.
 
-    Copilot-Review-Fund (PR #311): auch dieses `rollback()` ist abgesichert. Es laeuft in genau
+    auch dieses `rollback()` ist abgesichert. Es laeuft in genau
     der Lage, in der schon das Commit gescheitert ist (Verbindungsabbruch, DBAPI-Problem) - eine
     Exception von dort verliesse den Helfer und ersetzte die urspruengliche eine Ebene tiefer,
     also genau die Maskierung, gegen die er gebaut ist. Scheitert auch das Aufraeumen, bleibt der
@@ -1122,11 +1088,11 @@ async def _record_cloud_vision_error(
     exc_message: str,
     now: datetime,
 ) -> None:
-    """Upsert der letzten bekannten Fehler-Zeile fuer dieses Foto x CloudVisionPhase (ADR 0035
-    Punkt 2/3) - bewusst getrennt von _log_cloud_vision_failure (ephemeres Log vs. dauerhafte,
-    per API abrufbare Persistenz mit Lösch-Pfad bei Erfolg, siehe dortiger Docstring). Nimmt
-    `exc_type_name`/`exc_message` bereits fertig berechnet entgegen (Copilot-Review-Fund auf PR
-    #255) - der Aufrufer berechnet `type(exc).__name__`/`str(exc)` GENAU EINMAL an der jeweiligen
+    """Upsert der letzten bekannten Fehler-Zeile für dieses Foto x CloudVisionPhase - bewusst
+    getrennt von _log_cloud_vision_failure (ephemeres Log gegen dauerhafte, per API abrufbare
+    Persistenz mit Lösch-Pfad bei Erfolg, siehe dortiger Docstring). Nimmt
+    `exc_type_name`/`exc_message` bereits fertig berechnet entgegen - der Aufrufer berechnet
+    `type(exc).__name__`/`str(exc)` GENAU EINMAL an der jeweiligen
     Call-Site und reicht beide Werte sowohl hierher als auch an _log_cloud_vision_failure durch,
     keine zweite Auswertung derselben Exception an zwei Stellen. Reines `session.add`/Attribut-
     Update, kein eigener Commit (Persistierung laeuft ueber die bereits bestehenden periodischen
@@ -1159,7 +1125,7 @@ async def _detect_landmark_for_photo(
     """Der reine I/O-/Netzwerk-Teil eines einzelnen Landmark-Kandidaten (analog
     _fetch_and_thumbnail) - bewusst OHNE Session-Zugriff, damit mehrere Aufrufe sicher parallel
     per asyncio.gather laufen koennen (siehe die Block-Schleife in run_criterion_scoring). Nutzt
-    ausschliesslich die bereits vorhandene display-Cache-Variante (ADR 0025 Punkt 4), nie das
+    ausschliesslich die bereits vorhandene display-Cache-Variante, nie das
     Original - kein erneuter OpenCloud-Zugriff. Ein fehlender/nicht lesbarer Cache-Eintrag
     propagiert als gewoehnliche Exception (best-effort ueber return_exceptions=True in der
     aufrufenden Block-Schleife abgefangen), exakt wie ein LandmarkApiError des Clients selbst."""
@@ -1172,11 +1138,10 @@ async def _upsert_landmark_detection(
     session: AsyncSession, photo_id: int, detection: LandmarkDetection, now: datetime, provider: str
 ) -> None:
     """Legt eine photo_landmark_detections-Zeile nur an, wenn tatsaechlich ein Name identifiziert
-    wurde (ADR 0025 Punkt 6, kein Platzhalter-"unbekannt") - wird nur aufgerufen, wenn
-    detection.name is not None (siehe Aufrufer). `provider` (specs/features/0054-mistral-
-    provider-option-cloud-landmark.md, ADR 0031 Punkt 5) wird atomar mit name/confidence gesetzt -
-    dieser Aufruf feuert praktisch nie fuer ein bereits gescortes Foto (Skip ueber
-    _select_landmark_candidates anhand von PhotoCriterionScore, providerunabhaengig), ein
+    wurde (kein Platzhalter-"unbekannt") - wird nur aufgerufen, wenn detection.name is not None
+    (siehe Aufrufer). `provider` wird atomar mit name/confidence gesetzt -dieser Aufruf feuert
+    praktisch nie fuer ein bereits gescortes Foto (Skip ueber _select_landmark_candidates anhand von
+    PhotoCriterionScore, providerunabhaengig), ein
     Providerwechsel ueberschreibt das Feld bei bereits gescorten Fotos deshalb nicht."""
     assert detection.name is not None
     existing = await session.get(PhotoLandmarkDetection, photo_id)
@@ -1191,8 +1156,8 @@ async def _upsert_landmark_detection(
 
 @dataclass(frozen=True)
 class RemoteCategoryEvidence:
-    """Was die Cloud-Klassifizierung zu EINEM Foto gesagt hat (specs/features/0300-
-    nebenkategorien.md): die validierte Kandidatenliste UND die Konfidenz-Abbildung.
+    """Was die Cloud-Klassifizierung zu EINEM Foto gesagt hat: die validierte
+    Kandidatenliste UND die Konfidenz-Abbildung.
 
     Beides stammt aus derselben Zeile und wird gemeinsam gelesen, weil beides gemeinsam gebraucht
     wird: die Kandidaten bestimmen (mit den lokalen Signalen) die HAUPTkategorie, die Zahlen
@@ -1217,21 +1182,18 @@ NO_REMOTE_CATEGORY_EVIDENCE = RemoteCategoryEvidence(candidates=(), confidences=
 async def _remote_category_evidence(
     session: AsyncSession, photo_ids: Collection[int]
 ) -> dict[int, RemoteCategoryEvidence]:
-    """specs/features/0289-feste-kategorien.md, Umsetzungsschritt 5: liest die bereits vorhandenen
-    `photo_category_classifications`-Zeilen (seit specs/features/0296-klassifizierung-ein-
-    ausloeser-cloud-checkbox.md im Regelfall aus Phase 1 DESSELBEN Laufs, davor aus einem
-    frueheren, separat ausgeloesten Lauf - in beiden Faellen KEIN Cloud-Aufruf hier) und liefert
-    je Foto die VALIDIERTE Remote-Kandidatenliste samt Konfidenz-Abbildung.
+    """Liest die bereits vorhandenen `photo_category_classifications`-Zeilen (im Regelfall
+    aus Phase 1 DESSELBEN Laufs, sonst aus einem früheren Lauf - in beiden Fällen KEIN
+    Cloud-Aufruf hier) und liefert je Foto die VALIDIERTE Remote-Kandidatenliste samt
+    Konfidenz-Abbildung.
 
-    Ersetzt das abgeloeste `_merge_remote_category_labels`: dort wurden Remote-Ergebnisse als
-    `remote:<canonical_key>`-PSEUDO-KRITERIEN in dieselbe Struktur gemischt, die auch die
-    Kriterien-Werte fuehrte (ADR 0032 Punkt 1) - genau die Vermischung von Mess-Signal und
-    Taxonomie, die ADR 0049 aufloest. Kandidaten gehen jetzt als reine Kategorie-Keys in
-    `resolve_category` ein, gleichberechtigt neben den lokalen Signalen.
+    Kandidaten gehen als reine Kategorie-Keys in `resolve_category` ein, gleichberechtigt
+    neben den lokalen Signalen - Mess-Signal und Taxonomie bleiben getrennt, es gibt keine
+    `remote:<canonical_key>`-Pseudo-Kriterien in der Kriterien-Struktur.
 
-    Eine Zeile aus der Zeit vor specs/features/0299-kategorie-konfidenz-anzeigen.md traegt `NULL`
-    in der Konfidenz-Spalte; daraus wird hier eine LEERE Abbildung - "keine Angabe zu jedem
-    Schluessel", also keine Nebenkategorie und keine Daempfung (Akzeptanzkriterium 18).
+    Eine Altzeile trägt `NULL` in der Konfidenz-Spalte; daraus wird hier eine LEERE
+    Abbildung - "keine Angabe zu jedem Schlüssel", also keine Nebenkategorie und keine
+    Dämpfung.
 
     Gemeinsam genutzt von `run_criterion_scoring` UND der Override-Rekonstruktion in
     `api/photos.py` (DRY) - beide leiten die Kategorie damit ueber denselben Codepfad ab."""
@@ -1260,8 +1222,8 @@ async def _landmark_names(
     session: AsyncSession, photo_ids: Collection[int]
 ) -> dict[int, str | None]:
     """Die bereits PERSISTIERTEN Sehenswuerdigkeit-Namen der Kandidaten eines Laufs
-    (specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072 Entscheidung 2) - dasselbe
-    Muster wie `_remote_category_evidence` oben, ein einzelner Lesezugriff, KEIN Cloud-Aufruf.
+    dasselbe Muster wie `_remote_category_evidence` oben, ein einzelner Lesezugriff, KEIN
+    Cloud-Aufruf.
 
     Aus der TABELLE zu lesen statt aus einer laufinternen Abbildung der Cloud-Antworten ist die
     eigentliche Aussage dieser Funktion: die Verfeinerung wirkt damit auch in einem Lauf, in dem
@@ -1270,10 +1232,11 @@ async def _landmark_names(
     Cluster wieder gleich auf. Die In-Memory-Variante haette die Aufteilung still an die Frage
     gekoppelt, ob im SELBEN Lauf zufaellig Geld ausgegeben wurde.
 
-    SANITISIERUNG IM LESEPFAD (Muss-Kriterium des Sicherheitskonzepts, Abschnitt "Standortdaten"):
-    `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl `_landmark_detection_from_json` sie
-    bereits an der Quelle anwendet. Das ist KEIN Redundanz-Fehlgriff, sondern die einzige Deckung
-    des Altbestands: unter Spec 0047 sind bereits reale, kostenpflichtig erzeugte Zeilen mit
+    SANITISIERUNG IM LESEPFAD (Muss-Kriterium des Sicherheitskonzepts, Abschnitt
+    "Standortdaten"): `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl
+    `_landmark_detection_from_json` sie bereits an der Quelle anwendet. Das ist KEIN
+    Redundanz-Fehlgriff, sondern die einzige Deckung des Altbestands: aus der Zeit vor der
+    Sanitisierung sind reale, kostenpflichtig erzeugte Zeilen mit
     unsaniertem Rohtext entstanden - sie neu zu erkennen kostet Geld, sie zu loeschen vernichtet
     bezahlte Daten, und einen kostenlosen Migrationsweg gibt es nicht. Bitte nicht als vermeintliche
     Dopplung entfernen. Fachlich wirkt sie hier zusaetzlich als Zusammenfuehrung: ein unsanierter
@@ -1295,7 +1258,7 @@ async def _landmark_names(
 def derive_photo_category(
     criterion_values: dict[str, float], remote_candidates: Sequence[str]
 ) -> str:
-    """Die EINE Kategorie eines Fotos (specs/features/0289-feste-kategorien.md, ADR 0049).
+    """Die EINE Kategorie eines Fotos.
 
     Lokale Signale und Remote-Kategorien sind zwei Zulieferer EINER Kandidatenmenge; welche
     gewinnt, entscheidet ausschliesslich die feste Vorrangreihenfolge in
@@ -1328,25 +1291,23 @@ def _compute_content_criteria(
     aesthetics_model: AestheticsModelLike | None,
     face_landmarker: FaceLandmarkerLike | None,
 ) -> dict[str, float]:
-    """Best-effort wie scoring.py::_compute_photo_metrics (Akzeptanzkriterium der Spec 0037/0038):
-    JEDES hier berechnete Kriterium hat sein EIGENES try/except - ein einzelner fehlgeschlagener
-    Berechnungsversuch (fehlende/defekte display-Cache-Datei, Modell-Ladefehler in genau einem
-    Detektor) darf weder den gesamten Lauf noch die UEBRIGEN, unabhaengig berechenbaren Kriterien
-    desselben Fotos mit sich reissen (Spec-0038-AK: "Je Kriterium mindestens ein eigener
-    Fehlerfall-Testlauf") - das jeweils betroffene Kriterium bleibt fuer dieses Foto einfach
-    ungeschrieben (kein Platzhalterwert wie 0). Die fuenf Detektoren/Modelle (face_landmarker seit
-    specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md dazugekommen) sind
-    hier bewusst `| None` typisiert (Copilot-Review-Fund, PR #88): schlug der zugehoerige
+    """Best-effort wie scoring.py::_compute_photo_metrics: JEDES hier berechnete Kriterium
+    hat sein EIGENES try/except - ein einzelner fehlgeschlagener Berechnungsversuch
+    (fehlende/defekte display-Cache-Datei, Modell-Ladefehler in genau einem Detektor) darf
+    weder den gesamten Lauf noch die ÜBRIGEN, unabhängig berechenbaren Kriterien desselben
+    Fotos mit sich reißen; je Kriterium gibt es dafür einen eigenen Fehlerfall-Testlauf. Das
+    betroffene Kriterium bleibt für dieses Foto einfach ungeschrieben (kein Platzhalterwert
+    wie 0). Die fünf Detektoren/Modelle sind bewusst `| None` typisiert: schlug der
+    zugehörige
     `_try_build`-Aufruf im Aufrufer bereits fehl, wird das betroffene Kriterium (bzw. die davon
     abhaengigen) hier einfach uebersprungen, statt mit einem ungueltigen Objekt eine Exception zu
     provozieren, die erst durch das try/except unten "zufaellig" richtig behandelt wuerde.
 
     detect_person/detect_objects werden je HOECHSTENS einmal aufgerufen und fuer mehrere davon
     abhaengige Kriterien wiederverwendet (content_people+goldener_schnitt bzw. tier+fahrzeug+
-    essen_trinken+goldener_schnitt seit specs/features/0289-feste-kategorien.md,
-    Akzeptanzkriterium der Spec: Wiederverwendungsnachweis statt Reimplementierung) - vermeidet
+    essen_trinken+goldener_schnitt) - das vermeidet
     einen zweiten, teuren detect()-Aufruf pro Foto und
-    Detektortyp (ADR 0022, Performance-Ueberlegung). goldener_schnitt wird nur dann berechnet,
+    Detektortyp (Performance-Ueberlegung). goldener_schnitt wird nur dann berechnet,
     wenn BEIDE zugrunde liegenden Detektionen (auch mit leerem Ergebnis) erfolgreich waren - ein
     fehlgeschlagener Detektor darf nicht stillschweigend als "kein Subjekt gefunden" interpretiert
     werden, das waere ein unentdeckter Fehler statt eines ungeschriebenen Kriteriums."""
@@ -1372,11 +1333,11 @@ def _compute_content_criteria(
         except Exception:
             faces = None
 
-    # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: EIN detect_objects-Aufruf
-    # speist jetzt drei Kriterien plus goldener_schnitt. Die Objekt-Erkennung und JEDE der drei
-    # Score-Berechnungen haben ein EIGENES try/except - ein Fehler in einer Score-Funktion darf
-    # die beiden anderen nicht mitreissen (dieselbe Verschaerfung wie bei gebaeude/landschaft
-    # unten, ADR 0047 Punkt 3).
+    # EIN detect_objects-Aufruf speist drei Kriterien plus goldener_schnitt. Die
+    # Objekt-Erkennung und JEDE der drei Score-Berechnungen haben ein EIGENES try/except -
+    # ein Fehler in einer Score-Funktion darf die beiden anderen nicht mitreißen (dieselbe
+    # Verschärfung wie bei gebaeude/landschaft
+    # unten).
     objects: list[ObjectDetection] | None = None
     if animal_detector is not None:
         try:
@@ -1402,27 +1363,25 @@ def _compute_content_criteria(
     except Exception:
         pass
 
-    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md, ADR 0026 Punkt 1:
-    # keine Modell-/Detektor-Abhaengigkeit - wie content_landscape UNCONDITIONAL berechnet.
+    # Keine Modell-/Detektor-Abhaengigkeit - wie content_landscape UNCONDITIONAL berechnet.
     try:
         values["symmetrie"] = compute_symmetrie_score(image)
     except Exception:
         pass
 
-    # ADR 0026 Punkt 2: klassischer cv2-Algorithmus ohne trainiertes Modell - ebenfalls
+    # klassischer cv2-Algorithmus ohne trainiertes Modell - ebenfalls
     # UNCONDITIONAL berechnet, kein injizierbarer Detektor/Builder noetig.
     try:
         values["horizont"] = compute_horizon_tilt_score(image)
     except Exception:
         pass
 
-    # specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md, ADR 0047 Punkt 1:
-    # classify_scene wird GENAU EINMAL pro Foto aufgerufen, dieselbe Label-Liste speist gebaeude
-    # UND landschaft (Wiederverwendungsmuster wie detect_person -> content_people +
-    # goldener_schnitt; Akzeptanzkriterium AK8: keine zusaetzlichen Kosten pro Foto). Die
-    # Label-Ermittlung und jede der beiden Score-Berechnungen haben ein EIGENES try/except - ein
-    # Fehler in einer Score-Funktion darf das jeweils andere Kriterium nicht mitreissen (bis zu
-    # dieser Spec stand beides in einer Anweisung).
+    # classify_scene wird GENAU EINMAL pro Foto aufgerufen, dieselbe Label-Liste speist gebaeude UND
+    # landschaft (Wiederverwendungsmuster wie detect_person -> content_people + goldener_schnitt;
+    # Akzeptanzkriterium AK8: keine zusaetzlichen Kosten pro Foto). Die Label-Ermittlung und jede
+    # der beiden Score-Berechnungen haben ein EIGENES try/except - ein Fehler in einer
+    # Score-Funktion darf das jeweils andere Kriterium nicht mitreissen (bis zu dieser Spec stand
+    # beides in einer Anweisung).
     if scene_classifier is not None:
         scene_labels: list[SceneLabel] | None = None
         try:
@@ -1447,15 +1406,14 @@ def _compute_content_criteria(
 
     if faces is not None and objects is not None:
         try:
-            # Verhaltenserhalt (specs/features/0289-feste-kategorien.md, testpflichtig): nur die
-            # TIER-Erkennungen sind Kompositions-Subjekt-Kandidaten - kein Auto, kein Teller.
+            # Verhaltenserhalt (testpflichtig): nur die TIER-Erkennungen sind
+            # Kompositions-Subjekt-Kandidaten - kein Auto, kein Teller.
             values["goldener_schnitt"] = compute_golden_ratio_score(
                 faces, animal_detections(objects)
             )
         except Exception:
             pass
 
-    # specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md, ADR 0026 Punkt 3:
     # EIGENSTAENDIGER, zusaetzlicher Modellaufruf neben dem obigen face_detector - kein Ersatz,
     # content_people/goldener_schnitt bleiben unveraendert auf dem bestehenden face_detector.
     if face_landmarker is not None:
@@ -1469,22 +1427,20 @@ def _compute_content_criteria(
     return values
 
 
-# specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-
-# klassifizierungslauf-mit-laufbezogener-cloud-freigabe.md Punkt 4: defensive Obergrenze fuer die
-# zusammengesetzte laufweite Cloud-Fehlermeldung - analog
+# Defensive Obergrenze fuer die zusammengesetzte laufweite Cloud-Fehlermeldung - analog
 # _MAX_PERSISTED_CLOUD_VISION_ERROR_MESSAGE_LENGTH. Die eigentliche Absicherung bleibt, dass jeder
 # Baustein entweder fest codiert ist oder aus einer bereits an der Exception-Konstruktionsstelle
-# sanitierten Meldung stammt (ADR 0025/0031/0032/0034); diese Kappung ist nur eine Storage-/
-# Degenerationsgrenze fuer den Fall mehrerer langer Teilmeldungen.
+# sanitierten Meldung stammt; diese Kappung ist nur eine Storage-/Degenerationsgrenze für den
+# Fall mehrerer langer Teilmeldungen.
 _MAX_RUN_CLOUD_ERROR_MESSAGE_LENGTH = 1000
 
 
 def _append_cloud_error(run: CriterionScoringRun, message: str) -> None:
-    """Haengt einen Baustein an die laufweite Cloud-Fehlermeldung an, statt sie zu ueberschreiben
-    (ADR 0050 Punkt 4): ein Lauf kann mehrere unabhaengige Cloud-Probleme haben (Phase 1
-    fehlgeschlagen UND Landmark-Client nicht konstruierbar UND einzelne Landmark-Aufrufe
-    fehlgeschlagen), und keines davon darf ein anderes verdecken. Kein eigener Commit - der
-    Aufrufer committet ohnehin an seinen bestehenden Punkten."""
+    """Hängt einen Baustein an die laufweite Cloud-Fehlermeldung an, statt sie zu überschreiben:
+    ein Lauf kann mehrere unabhängige Cloud-Probleme haben (Phase 1 fehlgeschlagen UND
+    Landmark-Client nicht konstruierbar UND einzelne Landmark-Aufrufe fehlgeschlagen), und keines
+    davon darf ein anderes verdecken. Kein eigener Commit - der Aufrufer committet ohnehin an
+    seinen bestehenden Punkten."""
     existing = run.cloud_error_message
     combined = message if existing is None else f"{existing} {message}"
     run.cloud_error_message = combined[:_MAX_RUN_CLOUD_ERROR_MESSAGE_LENGTH]
@@ -1506,32 +1462,28 @@ async def run_criterion_scoring(
     use_cloud: bool = False,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
-    abgeleitete Rangfolge je Partition (cluster_key x category_key) - ersetzt run_top_selection/
-    select_top_photos vollstaendig (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
-    backfill.md). Ablauf (Architektur-Abschnitt der Spec): CriterionScoringRun anlegen -> Guard
-    (scoring_run_id muss der aktuell neueste erfolgreiche ScoringRun sein) -> Kriterien je Foto
-    berechnen (sharpness/exposure immer, Inhalts-Kriterien best-effort, periodisch zwischen-
-    committet) -> rank_photos je Partition anwenden (reine In-Memory-Aggregation ueber die in
-    diesem Lauf berechneten Werte) -> PhotoRanking-Zeilen schreiben -> CriterionScoringRun auf
+    abgeleitete Rangfolge je Partition (cluster_key x category_key). Ablauf:
+    CriterionScoringRun
+    anlegen -> Guard (scoring_run_id muss der aktuell neueste erfolgreiche ScoringRun sein) ->
+    Kriterien je Foto berechnen (sharpness/exposure immer, Inhalts-Kriterien best-effort, periodisch
+    zwischen-committet) -> rank_photos je Partition anwenden (reine In-Memory-Aggregation ueber die
+    in diesem Lauf berechneten Werte) -> PhotoRanking-Zeilen schreiben -> CriterionScoringRun auf
     success/failed setzen. `build_detector`/`build_animal_detector`/`build_classifier`/
     `build_aesthetics`/`build_landmarker` sind injizierbar (Default: die echte, teure
     Modellkonstruktion) - Tests uebergeben stattdessen Fakes ohne echtes Modell
-    (specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-aesthetik.md:
-    build_object_detector/build_scene_classifier/build_aesthetics_model duerfen wie
-    build_face_detector NIE in einem automatisierten Test aufgerufen werden - gilt seit
-    specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md ebenso fuer
-    build_face_landmarker).
+    (build_object_detector/build_scene_classifier/build_aesthetics_model/
+    build_face_landmarker dürfen wie build_face_detector NIE in einem automatisierten Test
+    aufgerufen werden).
 
-    specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050: seit Spec 0296
-    ist dies die ZWEITE Phase eines verketteten Klassifizierungslaufs, nicht mehr ein eigenstaendig
-    ausgeloester Lauf. Zwei neue keyword-only Parameter:
+    Dies ist die ZWEITE Phase eines verketteten Klassifizierungslaufs, kein eigenständig
+    ausgelöster Lauf. Zwei keyword-only Parameter:
 
     - `run`: der bereits von run_classification angelegte Lauf-Datensatz. Wird keiner uebergeben,
       legt diese Funktion ihn wie bisher selbst an (Direktaufruf, z.B. in Tests).
     - `use_cloud`: laufbezogene Cloud-Freigabe (die Checkbox am Ausloeser). Das Gate fuer die
       Landmark-Phase ist ab hier die KONJUNKTION `use_cloud and
       project.cloud_vision_detection_enabled` - `use_cloud` kann eine fehlende Einwilligung nie
-      ersetzen, nur eine vorhandene fuer diesen einen Lauf ungenutzt lassen (ADR 0050 Punkt 2).
+      ersetzen, nur eine vorhandene fuer diesen einen Lauf ungenutzt lassen.
       Default `False` und damit FAIL-CLOSED: ein Aufrufer, der den Parameter vergisst, verliert
       die Cloud-Anreicherung, statt ungewollte Kosten und einen ungewollten Datenabfluss
       auszuloesen."""
@@ -1571,13 +1523,11 @@ async def run_criterion_scoring(
                 "Scoring-Lauf (Re-Scan/Re-Scoring waehrend der Kuratierung)."
             )
 
-        # Bekannter, akzeptierter Performance-Trade-off (ADR 0021 "Konsequenzen", architect-
-        # Review-Fund Spec 0037): anders als der fruehere run_top_selection gibt es HIER bewusst
-        # KEINEN Kandidatenpool-Vorfilter pro Cluster mehr (Spec 0024: min(cluster_size,
-        # max(N*3,6))) - N ist beim Scoren nicht mehr bekannt (wird erst beim Lesen ueber
-        # top_n_per_category angewendet), also werden ALLE Ausschuss-Ueberlebenden verarbeitet,
-        # nicht nur die aussichtsreichsten. Fuer sehr grosse Projekte potenziell spuerbar, siehe
-        # docs/architecture.md.
+        # Bekannter, akzeptierter Performance-Trade-off: es gibt HIER bewusst
+        # KEINEN Kandidatenpool-Vorfilter pro Cluster mehr (min(cluster_size, max(N*3,6))) - N ist
+        # beim Scoren nicht mehr bekannt (wird erst beim Lesen ueber top_n_per_category angewendet),
+        # also werden ALLE Ausschuss-Ueberlebenden verarbeitet, nicht nur die aussichtsreichsten.
+        # Fuer sehr grosse Projekte potenziell spuerbar, siehe docs/architecture.md.
         rows = (
             await session.execute(
                 select(Photo, PhotoScore)
@@ -1604,15 +1554,15 @@ async def run_criterion_scoring(
                 ).scalars()
             }
 
-        # Copilot-Review-Fund (PR #88): die Modell-Builder selbst liefen bisher UNGESCHUETZT vor
-        # der Foto-Schleife - ein Fehlschlag eines einzelnen Builders (fehlendes/defektes
-        # .tflite-/.hdf5-Asset, mediapipe-/tensorflow-Laufzeitproblem) haette den GESAMTEN Lauf
-        # als FAILED markiert, obwohl die Kriterien pro Foto bewusst best-effort behandelt werden
-        # (Akzeptanzkriterium der Spec 0038). Jeder Builder bekommt deshalb sein eigenes
-        # try/except: schlaegt einer fehl, bleibt der zugehoerige Detektor/Klassifikator/das
-        # Modell None, _compute_content_criteria ueberspringt dann NUR die davon abhaengigen
-        # Kriterien (siehe dortige `if ... is not None`-Wächter) - sharpness/exposure und alle
-        # anderen, unabhaengig berechenbaren Kriterien werden trotzdem geschrieben.
+        # die Modell-Builder selbst liefen bisher UNGESCHUETZT vor der
+        # Foto-Schleife - ein Fehlschlag eines einzelnen Builders (fehlendes/defektes
+        # .tflite-/.hdf5-Asset, mediapipe-/tensorflow-Laufzeitproblem) haette den GESAMTEN Lauf als
+        # FAILED markiert, obwohl die Kriterien pro Foto bewusst best-effort behandelt werden. Jeder
+        # Builder bekommt deshalb sein eigenes try/except: schlaegt einer fehl, bleibt der
+        # zugehoerige Detektor/Klassifikator/das Modell None, _compute_content_criteria ueberspringt
+        # dann NUR die davon abhaengigen Kriterien (siehe dortige `if ... is not None`-Wächter) -
+        # sharpness/exposure und alle anderen, unabhaengig berechenbaren Kriterien werden trotzdem
+        # geschrieben.
         detector = _try_build(build_detector) if rows else None
         animal_detector = _try_build(build_animal_detector) if rows else None
         scene_classifier = _try_build(build_classifier) if rows else None
@@ -1650,7 +1600,7 @@ async def run_criterion_scoring(
             _upsert_criterion(photo.id, "exposure", exposure_value, CriterionSource.LOCAL_HEURISTIC)
             values["exposure"] = exposure_value
 
-            # Kein assert-is-not-None mehr hier (Copilot-Review-Fund, PR #88): jeder der fuenf
+            # Kein assert-is-not-None mehr hier: jeder der fuenf
             # Builder oben ist ueber _try_build best-effort abgesichert und kann legitim None
             # sein - _compute_content_criteria ueberspringt die davon abhaengigen Kriterien dann
             # selbst, statt dass ein fehlgeschlagener Builder den gesamten Lauf abbricht.
@@ -1676,47 +1626,40 @@ async def run_criterion_scoring(
             processed += 1
             if processed % CRITERION_SCORING_COMMIT_BATCH_SIZE == 0:
                 run.photos_processed = processed
-                # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-
-                # watchdog.md, ADR 0019, Schicht 2) - analog run_project_scan oben.
+                # Fortschritts-Watchdog (Schicht 2) - analog run_project_scan oben.
                 run.last_progress_at = _now_utc()
                 await session.commit()
 
         run.photos_processed = processed
         await session.commit()
 
-        # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md, ADR
-        # decisions/0025-cloud-landmark-erkennung.md ab hier: erste tatsaechlich produktive
-        # Cloud-Phase im Kriterien-Scoring-Pfad, laeuft NACH der obigen (rein lokalen/synchronen)
-        # Foto-Schleife, VOR der Kategorieableitung/rank_photos (Punkt 3), damit landmark-Werte
-        # noch in die Kategorie-/Rangfolgenbildung einfliessen koennen. `project.
-        # cloud_vision_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread waehrend
-        # des Laufs, dokumentierte Vereinfachung) - ist der Schalter aus (Default), wird
-        # build_landmark_client GAR NICHT ERST aufgerufen: keine Netzwerkverbindung, kein API-Key
-        # noetig, kein Byte verlaesst den Server (Security-Muss-Kriterium der Spec).
-        # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 2:
-        # `use_cloud` ist ab hier die zweite, laufbezogene Haelfte des Gates - bei abgewaehlter
-        # Cloud-Checkbox wird build_landmark_client GAR NICHT ERST aufgerufen, selbst wenn die
-        # projektweite Einwilligung vorliegt (Security-Muss-Kriterium der Spec: "kein einziger
-        # Cloud-Aufruf im gesamten Durchlauf").
+        # Erste tatsaechlich produktive Cloud-Phase im Kriterien-Scoring-Pfad, laeuft NACH der
+        # obigen (rein lokalen/synchronen) Foto-Schleife, VOR der Kategorieableitung/rank_photos
+        # (Punkt 3), damit landmark-Werte noch in die Kategorie-/Rangfolgenbildung einfliessen
+        # können. `project.cloud_vision_detection_enabled` wird hier EINMALIG gelesen (kein
+        # Live-Reread während des Laufs, dokumentierte Vereinfachung).
+        #
+        # SICHERHEIT - das Gate ist die KONJUNKTION aus projektweiter Einwilligung UND
+        # laufbezogener `use_cloud`-Freigabe: fehlt eine der beiden, wird
+        # build_landmark_client GAR NICHT ERST aufgerufen - keine Netzwerkverbindung, kein
+        # API-Key nötig, kein Byte verlässt den Server, kein einziger Cloud-Aufruf im
+        # gesamten Durchlauf.
         if use_cloud and project.cloud_vision_detection_enabled and rows:
-            # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 1: die
-            # Sehenswuerdigkeits-Erkennung ist ab hier ein EIGENER, benannter Teilschritt statt
+            # Die Sehenswuerdigkeits-Erkennung ist ab hier ein EIGENER, benannter Teilschritt statt
             # eines unsichtbaren Teils der Kriterien-Phase. Vorher stand `phase` hier weiter auf
-            # `criteria`, waehrend `photos_processed` bereits auf `photos_total` stand - ein
-            # langer Durchlauf war in dieser Phase von einem haengengebliebenen nicht zu
-            # unterscheiden.
+            # `criteria`, waehrend `photos_processed` bereits auf `photos_total` stand - ein langer
+            # Durchlauf war in dieser Phase von einem haengengebliebenen nicht zu unterscheiden.
             run.phase = ClassificationPhase.LANDMARK
             await session.commit()
-            # specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 7: das
-            # Modell wird EINMAL je Cloud-Phase aufgeloest und danach durchgereicht - derselbe
-            # lokale Wert baut den Client, rechnet die Ist-Kosten und landet in der Modellspalte
-            # des Laufs. "Angezeigt = abgerechnet = tatsaechlich aufgerufen" ist damit
-            # strukturell wahr, nicht das Ergebnis dreier zufaellig gleicher Lesevorgaenge
-            # derselben globalen `settings`.
+            # Das Modell wird EINMAL je Cloud-Phase aufgeloest und danach durchgereicht - derselbe
+            # lokale Wert baut den Client, rechnet die Ist-Kosten und landet in der Modellspalte des
+            # Laufs. "Angezeigt = abgerechnet = tatsaechlich aufgerufen" ist damit strukturell wahr,
+            # nicht das Ergebnis dreier zufaellig gleicher Lesevorgaenge derselben globalen
+            # `settings`.
             landmark_model = settings.resolved_landmark_model()
             landmark_client = _try_build(lambda: build_landmark_client(landmark_model))
             if landmark_client is None:
-                # ADR 0050 Punkt 4: dieser Fall war bisher vollstaendig stumm - ein nicht
+                # dieser Fall war bisher vollstaendig stumm - ein nicht
                 # konstruierbarer Client liess die Sehenswuerdigkeits-Erkennung wortlos aus.
                 # Jetzt Teil der laufweiten Cloud-Fehlermeldung.
                 _append_cloud_error(
@@ -1725,15 +1668,14 @@ async def run_criterion_scoring(
                     "fehlgeschlagen).",
                 )
             if landmark_client is not None:
-                # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 6: die
-                # Modellspalte wandert vom `finally` an den PHASENANFANG. Es bleibt derselbe
+                # Die Modellspalte wandert vom `finally` an den PHASENANFANG. Es bleibt derselbe
                 # lokale Wert, der den Client gebaut hat und gleich die Kosten rechnen wird (ADR
                 # 0059 Punkt 7 unveraendert) - nur frueher committet, damit die Oberflaeche schon
-                # WAEHREND des Teilschritts sagen kann, wohin die Aufrufe gehen. Der BETRAG
-                # bleibt im `finally` und am Phasenende eingefroren (ADR 0051 Punkt 4).
+                # WAEHREND des Teilschritts sagen kann, wohin die Aufrufe gehen. Der BETRAG bleibt
+                # im `finally` und am Phasenende eingefroren.
                 run.landmark_model = landmark_model
                 await session.commit()
-                # specs/features/0382-cloud-rate-limits-aussitzen.md, K8: Zaehlerstand des
+                # Zählerstand des
                 # ANBIETERWEITEN Schrittmachers beim Betreten des Teilschritts. Die
                 # Zusammenfassung unten entsteht ausschliesslich aus der DIFFERENZ zu diesem
                 # Schnappschuss - die Zaehler selbst sind prozessweit und enthalten auch die
@@ -1742,13 +1684,12 @@ async def run_criterion_scoring(
                 landmark_throttle_before = landmark_throttle.stats()
                 landmark_failures = 0
                 landmark_attempts = 0
-                # ADR 0068 Punkt 2: der laufend fortgeschriebene Fortschritt der Phase, streng
+                # der laufend fortgeschriebene Fortschritt der Phase, streng
                 # getrennt von der Kosten-Buchfuehrung unten.
                 landmark_processed = 0
-                # specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 1: Ist-Kosten-
-                # Buchfuehrung dieser Phase. Summiert wird ueber die ERFOLGREICHEN Ergebnisse -
-                # ein fehlgeschlagener Aufruf liefert keinen auswertbaren Verbrauch (ADR 0051
-                # Punkt 6, dokumentierte Untererfassung).
+                # Ist-Kosten-Buchführung dieser Phase. Summiert wird über die ERFOLGREICHEN
+                # Ergebnisse -ein fehlgeschlagener Aufruf liefert keinen auswertbaren Verbrauch
+                # (dokumentierte Untererfassung).
                 landmark_api_calls = 0
                 landmark_input_tokens = 0
                 landmark_output_tokens = 0
@@ -1764,7 +1705,7 @@ async def run_criterion_scoring(
                     photos_by_id = {photo.id: photo for photo, _score in rows}
                     landmark_concurrency = settings.landmark_api_concurrency
                     landmark_attempts = len(landmark_candidate_ids)
-                    # ADR 0068 Punkt 2: die Live-Zaehler werden beim BETRETEN der Phase auf `0`
+                    # die Live-Zaehler werden beim BETRETEN der Phase auf `0`
                     # gesetzt (nicht bei der Zeilenanlage) - `NULL` bleibt damit die Aussage
                     # "diesen Teilschritt gab es in diesem Lauf nicht", `0` heisst "gab es,
                     # nichts zu tun". `landmark_photos_total` ist zugleich der Marker, an dem die
@@ -1786,22 +1727,21 @@ async def run_criterion_scoring(
                             ],
                             return_exceptions=True,
                         )
-                        # Derselbe verifizierte Async-Fallstrick wie in _process_scan_block (ADR
-                        # 0020, hier zum zweiten Mal zu beachten, ADR 0025 Punkt 3): ein
-                        # CancelledError einer einzelnen Kind-Coroutine wird von
-                        # return_exceptions=True sonst als gewoehnliches Ergebniselement
-                        # durchgereicht statt propagiert.
+                        # Derselbe verifizierte Async-Fallstrick wie in _process_scan_block (hier
+                        # zum zweiten Mal zu beachten): ein CancelledError einer einzelnen
+                        # Kind-Coroutine wird von return_exceptions=True sonst als gewoehnliches
+                        # Ergebniselement durchgereicht statt propagiert.
                         for result in results:
                             if isinstance(result, asyncio.CancelledError):
                                 raise result
                         for photo_id, result in zip(block_ids, results, strict=True):
                             if isinstance(result, BaseException):
-                                # Best-effort (ADR 0025 Punkt 3): ein einzelner fehlgeschlagener
+                                # Best-effort: ein einzelner fehlgeschlagener
                                 # Cloud-Aufruf (Timeout, 4xx/5xx, fehlender Cache-Eintrag) laesst
                                 # fuer dieses Foto keine landmark-Zeile entstehen, alle anderen
                                 # Kriterien dieses Fotos bleiben unberuehrt, kein Laufabbruch.
-                                # Spec 0056/ADR 0034: dennoch sichtbar ueber docker compose logs.
-                                # ADR 0035 Punkt 3/Copilot-Review-Fund PR #255: type(exc).__name__/
+                                # Dennoch sichtbar über docker compose logs.
+                                # type(exc).__name__/
                                 # str(exc) GENAU EINMAL berechnet, an beide Senken (Logger, DB)
                                 # weitergereicht - keine zweite Auswertung.
                                 landmark_failures += 1
@@ -1814,9 +1754,8 @@ async def run_criterion_scoring(
                                     exc_type_name,
                                     exc_message,
                                 )
-                                # specs/features/0058-cloud-vision-status-transparenz.md, ADR
-                                # 0035 Punkt 3: dauerhafte, per API abrufbare Persistenz desselben
-                                # Fehlschlags (getrennt vom Log oben).
+                                # Dauerhafte, per API abrufbare Persistenz desselben Fehlschlags
+                                # (getrennt vom Log oben).
                                 await _record_cloud_vision_error(
                                     session,
                                     photo_id,
@@ -1827,11 +1766,11 @@ async def run_criterion_scoring(
                                 )
                                 continue
                             detection = result
-                            # Verbindlich (Spec 0207): jeder STATTGEFUNDENE Aufruf wird gezaehlt,
+                            # Verbindlich: jeder STATTGEFUNDENE Aufruf wird gezaehlt,
                             # auch wenn sein `usage`-Block fehlte - der Tokenbeitrag ist dann 0.
                             # Sonst entstuende die stille Kombination "api_calls == 0 bei real
                             # erfolgten Aufrufen", und `api_calls > 0` ist zugleich der Ausloeser
-                            # fuer Befund (b) des Unvollstaendigkeits-Hinweises (ADR 0051 Punkt 5).
+                            # fuer Befund (b) des Unvollstaendigkeits-Hinweises.
                             landmark_api_calls += 1
                             if detection.usage is not None:
                                 landmark_input_tokens += detection.usage.input_tokens
@@ -1841,7 +1780,7 @@ async def run_criterion_scoring(
                                 photo_id, "landmark", landmark_value, CriterionSource.CLOUD
                             )
                             candidate_values[photo_id]["landmark"] = landmark_value
-                            # ADR 0035 Punkt 2 "Aufraeumen bei Erfolg": ein erfolgreicher
+                            # "Aufräumen bei Erfolg": ein erfolgreicher
                             # (Retry-)Versuch loescht eine ggf. vorhandene Fehler-Zeile.
                             await _clear_cloud_vision_error(
                                 session, photo_id, CloudVisionPhase.LANDMARK
@@ -1851,17 +1790,15 @@ async def run_criterion_scoring(
                                     session, photo_id, detection, now, settings.landmark_provider
                                 )
 
-                        # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 2:
-                        # der erste Commit-Punkt INNERHALB der Landmark-Phase - bis hierher gab
-                        # es nur den `finally` unten. Fortgeschrieben wird AM BLOCKENDE, nie beim
-                        # Betreten des Blocks: sonst stuende nach einem Abbruch mitten im Block
-                        # ein `processed` da, dem weder ein Aufruf noch ein Fehlschlag
-                        # gegenuebersteht (Invariante `photos_processed == api_calls +
-                        # failed_calls`).
+                        # Der erste Commit-Punkt INNERHALB der Landmark-Phase - bis hierher gab es
+                        # nur den `finally` unten. Fortgeschrieben wird AM BLOCKENDE, nie beim
+                        # Betreten des Blocks: sonst stuende nach einem Abbruch mitten im Block ein
+                        # `processed` da, dem weder ein Aufruf noch ein Fehlschlag gegenuebersteht
+                        # (Invariante `photos_processed == api_calls + failed_calls`).
                         #
                         # `last_progress_at` gehoert VERBINDLICH dazu und schliesst einen
                         # bestehenden Defekt: die Landmark-Phase hat den Zeitstempel bisher gar
-                        # nicht angefasst, `reap_stalled_runs` (ADR 0019) setzte einen Lauf mit
+                        # nicht angefasst, `reap_stalled_runs` setzte einen Lauf mit
                         # mehr als STALL_THRESHOLD (15 min) Landmark-Arbeit auf FAILED - OHNE die
                         # Coroutine abzubrechen. Der Lauf rief danach unveraendert weiter
                         # kostenpflichtig beim Anbieter an, waehrend die Oberflaeche
@@ -1876,8 +1813,8 @@ async def run_criterion_scoring(
                     aclose = getattr(landmark_client, "aclose", None)
                     if aclose is not None:
                         await aclose()
-                    # VERBINDLICH im finally, nicht erst vor `status = SUCCESS` (Spec 0207/ADR
-                    # 0051 Punkt 4): ein Lauf, der nach der Cloud-Phase in der Kriterien-Phase
+                    # VERBINDLICH im finally, nicht erst vor `status = SUCCESS`: ein Lauf,
+                    # der nach der Cloud-Phase in der Kriterien-Phase
                     # scheitert, hat das Geld bereits ausgegeben. Ohne das Schreiben hier verloere
                     # er den real angefallenen Betrag - und waere wegen `0` statt `NULL` nicht
                     # einmal als Luecke erkennbar. Das Commit ist ebenfalls noetig: der
@@ -1885,8 +1822,8 @@ async def run_criterion_scoring(
                     run.landmark_api_calls = landmark_api_calls
                     run.landmark_input_tokens = landmark_input_tokens
                     run.landmark_output_tokens = landmark_output_tokens
-                    # Der Betrag wird EINMAL am Phasenende berechnet und eingefroren (ADR 0051
-                    # Punkt 4) - eine spaetere Preisaenderung schreibt die Vergangenheit nicht um.
+                    # Der Betrag wird EINMAL am Phasenende berechnet und eingefroren - eine spaetere
+                    # Preisaenderung schreibt die Vergangenheit nicht um.
                     run.landmark_cost_usd = compute_cost_usd(
                         landmark_model,
                         TokenUsage(
@@ -1894,22 +1831,21 @@ async def run_criterion_scoring(
                             output_tokens=landmark_output_tokens,
                         ),
                     )
-                    # Spec 0304/ADR 0059 Punkt 6: die Preisgrundlage des eben eingefrorenen
-                    # Betrags. `run.landmark_model` steht seit Spec 0348/ADR 0068 Punkt 6 bereits
+                    # Die Preisgrundlage des eben eingefrorenen Betrags.
+                    # `run.landmark_model` steht bereits
                     # vom PHASENANFANG her da (oben, direkt nach der Client-Konstruktion) - es
                     # ist derselbe lokale `landmark_model`, aus dem hier der Betrag entsteht, nur
                     # frueher sichtbar. Deshalb keine zweite Zuweisung an dieser Stelle.
                     await _commit_phase_costs(session)
-                # Spec 0382, K8: hoechstens eine Zeile, und nur wenn in DIESEM Teilschritt
+                # Höchstens eine Zeile, und nur wenn in DIESEM Teilschritt
                 # tatsaechlich gewartet wurde.
                 _log_cloud_vision_throttling(
                     "landmark",
                     settings.landmark_provider,
                     landmark_throttle.stats().since(landmark_throttle_before),
                 )
-                # ADR 0050 Punkt 4: Zaehl-Zusammenfassung statt N Einzelmeldungen - die
-                # Einzelfehler bleiben pro Foto ueber photo_cloud_vision_errors abrufbar
-                # (ADR 0035), das hier ist die Laufebene.
+                # Zähl-Zusammenfassung statt N Einzelmeldungen - die Einzelfehler bleiben pro
+                # Foto über photo_cloud_vision_errors abrufbar, das hier ist die Laufebene.
                 if landmark_failures > 0:
                     _append_cloud_error(
                         run,
@@ -1917,30 +1853,27 @@ async def run_criterion_scoring(
                         f"{landmark_attempts} Fotos fehlgeschlagen.",
                     )
 
-        # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 1: der
-        # RANKING-Teilschritt (Kategorieableitung + rank_photos je Partition + Schreiben der
+        # Der RANKING-Teilschritt (Kategorieableitung + rank_photos je Partition + Schreiben der
         # PhotoRanking-Zeilen). Er gehoert fachlich zur Kriterien-Phase, laeuft aber NACH der
         # Landmark-Phase - ohne eigenen Namen bliebe `phase` hier auf `landmark` bei 100 %
-        # Fortschritt stehen (dasselbe "haengt oder laeuft?"-Symptom, nur eine Phase spaeter)
-        # oder muesste auf `criteria` zurueckspringen. Der vierte Wert macht die Abfolge monoton.
+        # Fortschritt stehen (dasselbe "haengt oder laeuft?"-Symptom, nur eine Phase spaeter) oder
+        # muesste auf `criteria` zurueckspringen. Der vierte Wert macht die Abfolge monoton.
         run.phase = ClassificationPhase.RANKING
         await session.commit()
 
-        # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 5: laedt die bereits
-        # vorhandenen Klassifikations-Zeilen (seit Spec 0296 im Regelfall aus Phase 1 DESSELBEN
+        # Lädt die bereits vorhandenen Klassifikations-Zeilen (im Regelfall aus Phase 1 DESSELBEN
         # Laufs, siehe run_classification - KEIN neuer Cloud-Aufruf hier). Sie liefern die
         # REMOTE-Haelfte der Kandidatenmenge; die lokale Haelfte steckt in candidate_values.
         evidence_by_photo_id = await _remote_category_evidence(session, candidate_values.keys())
 
-        # specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0029 Punkt 1 (Phase 2), ADR
-        # 0072 Entscheidung 2: die Landmark-Verfeinerung ERSETZT `cluster_by_photo` als Ganzes -
+        # Die Landmark-Verfeinerung ERSETZT `cluster_by_photo` als Ganzes -
         # bis hierhin steht dort der reine Passthrough aus `PhotoScore.cluster_key`. Die Stelle
         # ist bewusst NACH dem `finally` der Landmark-Phase (sonst fehlten die Namen, die dieser
         # Lauf gerade erst erzeugt hat) und VOR dem Aufbau von `partitions` unten (die
         # Partitionsbildung und damit `PhotoRanking.cluster_key` sollen den verfeinerten Wert
         # nutzen).
         #
-        # `PhotoScore.cluster_key` wird dabei NIE mutiert (Ownership-Grenze ADR 0021): der dort
+        # `PhotoScore.cluster_key` wird dabei NIE mutiert (Ownership-Grenze): der dort
         # stehende Phase-A-Basiswert bleibt stabil, unabhaengig davon, ob und wann Kriterien-
         # Scoring laeuft. Die Divergenz beider Felder ist gewollt und dokumentiert.
         cluster_by_photo = refine_clusters_by_landmark(
@@ -1950,28 +1883,26 @@ async def run_criterion_scoring(
         scores_by_photo_id = {photo.id: score for photo, score in rows}
 
         partitions: dict[tuple[str, str], dict[int, dict[str, float]]] = {}
-        # Die Konfidenz je Partition UND Foto - immer die zum Schluessel GENAU DIESER Partition
-        # (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 5). Dasselbe Foto geht damit in
-        # zwei Partitionen mit zwei verschiedenen Zahlen ein; zwei Kategorien werden an keiner
-        # Stelle anhand ihrer Zahlen gegeneinander abgewogen.
+        # Die Konfidenz je Partition UND Foto - immer die zum Schluessel GENAU DIESER Partition.
+        # Dasselbe Foto geht damit in zwei Partitionen mit zwei verschiedenen Zahlen ein; zwei
+        # Kategorien werden an keiner Stelle anhand ihrer Zahlen gegeneinander abgewogen.
         partition_confidences: dict[tuple[str, str], dict[int, object]] = {}
         # Ob dieses Foto in dieser Partition die Haupt- oder eine Nebenzeile bekommt.
         primary_flags: dict[tuple[str, str, int], bool] = {}
         for photo_id, values in candidate_values.items():
             evidence = evidence_by_photo_id.get(photo_id, NO_REMOTE_CATEGORY_EVIDENCE)
-            # Die HAUPTkategorie ist seit ADR 0049 eine reine PRO-FOTO-Funktion ueber einem
-            # geschlossenen Set - keine laufweite Haeufigkeitsaggregation mehr (das abgeloeste
-            # derive_active_categories/derive_category_key-Paar aus ADR 0023). Die Zuordnung ist
+            # Die HAUPTkategorie ist eine reine PRO-FOTO-Funktion über einem
+            # geschlossenen Set - keine laufweite Häufigkeitsaggregation. Die Zuordnung ist
             # damit unabhaengig davon, welche anderen Fotos im Projekt liegen. Die
-            # Selbsteinschaetzung des Modells geht hier ausdruecklich NICHT ein (ADR 0069 Punkt 2).
+            # Selbsteinschaetzung des Modells geht hier ausdruecklich NICHT ein.
             #
-            # specs/features/0055, ADR 0032 Punkt 2 Migration b: ein manueller Override ueberlebt
-            # damit automatisch jeden kuenftigen vollen Re-Scoring-Lauf, ohne Sonderfallcode.
+            # Ein manueller Override ueberlebt damit automatisch jeden kuenftigen vollen
+            # Re-Scoring-Lauf, ohne Sonderfallcode.
             override = scores_by_photo_id[photo_id].category_override
             primary_key = override or derive_photo_category(values, evidence.candidates)
             # Die NEBENkategorien entstehen ausschliesslich aus der bereits persistierten
             # Modellaussage - kein neuer Cloud-Aufruf, keine Prompt-Aenderung, keine
-            # Kostenaenderung (specs/features/0300-nebenkategorien.md).
+            # Kostenaenderung.
             memberships: list[tuple[str, bool]] = [(primary_key, True)]
             memberships += [
                 (key, False) for key in secondary_categories(evidence.confidences, primary_key)
@@ -1979,7 +1910,7 @@ async def run_criterion_scoring(
             for category_key, is_primary in memberships:
                 partition_key = (cluster_by_photo[photo_id], category_key)
                 partitions.setdefault(partition_key, {})[photo_id] = values
-                # Eine MANUELL gesetzte Hauptzeile wird nicht gedaempft (ADR 0069 Punkt 6): eine
+                # Eine MANUELL gesetzte Hauptzeile wird nicht gedaempft: eine
                 # menschliche Festlegung mit einer Modellzahl abzuwerten hiesse, den Nutzer fuer
                 # die Unsicherheit des Modells zu bestrafen - sichtbar an genau der Stelle, an der
                 # er gerade korrigiert hat.
@@ -2016,8 +1947,7 @@ async def run_criterion_scoring(
         await session.commit()
         return run
     except asyncio.CancelledError:
-        # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
-        # watchdog.md, ADR 0019) - analog run_project_scan/run_project_scoring oben.
+        # Schicht 1 des Fortschritts-Watchdogs - analog run_project_scan/run_project_scoring oben.
         await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
         raise
     except Exception as exc:
@@ -2046,9 +1976,7 @@ async def run_classification(
     ] = build_category_classification_client,
     build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
 ) -> CriterionScoringRun:
-    """Der EINE Klassifizierungslauf (specs/features/0296-klassifizierung-ein-ausloeser-cloud-
-    checkbox.md, decisions/0050-verketteter-klassifizierungslauf-mit-laufbezogener-cloud-
-    freigabe.md Punkt 1) - loest die beiden bisher getrennt ausgeloesten Laeufe ab:
+    """Der EINE, verkettete Klassifizierungslauf:
 
         Phase "remote_categories" (nur bei aktiver Cloud-Nutzung)
             -> run_remote_category_classification
@@ -2063,28 +1991,28 @@ async def run_classification(
     Codezeile.
 
     "Aktive Cloud-Nutzung" ist die Konjunktion `use_cloud and
-    project.cloud_vision_detection_enabled` (ADR 0050 Punkt 2): die laufbezogene Checkbox kann eine
+    project.cloud_vision_detection_enabled`: die laufbezogene Checkbox kann eine
     fehlende projektweite Einwilligung nie ersetzen, nur eine vorhandene fuer diesen einen Lauf
     ungenutzt lassen. Ist sie falsch, wird run_remote_category_classification GAR NICHT ERST
     aufgerufen - es entsteht dann auch kein RemoteCategoryClassificationRun.
 
     Der Lauf-Datensatz (`CriterionScoringRun`) wird HIER angelegt, vor der ersten Phase, und an
-    run_criterion_scoring durchgereicht (ADR 0050 Punkt 3): sonst zeigte
+    run_criterion_scoring durchgereicht: sonst zeigte
     `last_criterion_scoring_run` waehrend der Remote-Phase noch auf den Lauf davor und die
     Oberflaeche haette keinen Anker fuer den laufenden Vorgang.
 
-    Ein Fehlschlag der Cloud-Phase bricht den Lauf NICHT ab (ADR 0050 Punkt 4): der lokale
+    Ein Fehlschlag der Cloud-Phase bricht den Lauf NICHT ab: der lokale
     Bewertungsanteil ist der Kern des Laufs und laeuft vollstaendig durch, die Fehlermeldung
     wandert in `cloud_error_message`.
 
-    specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 3 und 5, zwei Zusaetze:
+    Zwei Zusätze:
 
     - Der `RemoteCategoryClassificationRun` wird HIER angelegt und hineingereicht, und sein
       Fremdschluessel steht an der Lauf-Zeile, BEVOR Phase 1 startet. Damit ist die Zuordnung
       "welcher Remote-Lauf gehoert zu diesem Durchlauf" ein Schluessel statt einer Sortierung -
       noetig, weil die Bilanz einen GELDBETRAG einem bestimmten Durchlauf zuschreibt.
     - `estimated_cost_usd` ist die im Ausloese-Endpunkt serverseitig berechnete Schaetzung dieses
-      Laufs (ADR 0068 Punkt 5). Sie wird hier nur DURCHGEREICHT und gespeichert, nie neu
+      Laufs. Sie wird hier nur DURCHGEREICHT und gespeichert, nie neu
       gerechnet: die Modulgrenze "API zaehlt fuer die Schaetzung, Worker selektiert fuer den
       Lauf" bleibt bestehen. Sie ist ein BELEG, keine Eingabe - kein spaeterer Rechenweg liest
       sie."""
@@ -2105,7 +2033,7 @@ async def run_classification(
     await session.refresh(run)
 
     if cloud_active:
-        # ADR 0068 Punkt 3: die Remote-Zeile entsteht hier, und der Fremdschluessel wird VOR dem
+        # die Remote-Zeile entsteht hier, und der Fremdschluessel wird VOR dem
         # ersten Cloud-Aufruf committet - sonst haette die pollende Oberflaeche waehrend der
         # gesamten Remote-Phase keinen Anker fuer den Teilschritt, der gerade Geld ausgibt.
         remote_run = RemoteCategoryClassificationRun(
@@ -2127,12 +2055,11 @@ async def run_classification(
                 run=remote_run,
             )
         except asyncio.CancelledError:
-            # Schicht 1 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
-            # watchdog.md, ADR 0019): run_remote_category_classification faellt seine EIGENE Zeile
-            # bereits ab und wirft weiter - ohne diesen Zweig bliebe der uebergeordnete
+            # Schicht 1 des Fortschritts-Watchdogs: run_remote_category_classification faellt seine
+            # EIGENE Zeile bereits ab und wirft weiter - ohne diesen Zweig bliebe der uebergeordnete
             # CriterionScoringRun, den run_classification vor Phase 1 anlegt, bis zum naechsten
-            # Cron-Tick auf RUNNING stehen. Vor Spec 0296 gab es zu diesem Zeitpunkt noch gar
-            # keine solche Zeile, deshalb ist das ein mit der Verkettung neu entstandener Fall.
+            # Cron-Tick auf RUNNING stehen. Es gibt zu diesem Zeitpunkt noch keine
+            # solche Zeile, deshalb ist das ein mit der Verkettung neu entstandener Fall.
             await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
             raise
         if remote_run.status == ScanStatus.FAILED:
@@ -2140,9 +2067,9 @@ async def run_classification(
             # anders als ein commit() (die Session laeuft mit expire_on_commit=False, siehe
             # db.py). Ohne diese beiden refresh()-Aufrufe loeste der naechste Attributzugriff
             # einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts aus
-            # (MissingGreenlet, derselbe Mechanismus wie im Copilot-Review-Fund PR #67):
+            # (MissingGreenlet, derselbe Mechanismus):
             # `run.cloud_error_message` unmittelbar hier, `project.cloud_vision_detection_enabled`/
-            # `project.id` gleich darauf in run_criterion_scoring. Bis Spec 0296 fiel das nicht
+            # `project.id` gleich darauf in run_criterion_scoring. Das fiel früher nicht
             # auf, weil der fehlgeschlagene Remote-Lauf das Ende des Jobs war - jetzt laeuft die
             # Kriterien-Phase auf derselben Session weiter.
             await session.refresh(run)
@@ -2175,13 +2102,11 @@ async def classify(
     use_cloud: bool,
     estimated_cost_usd: float | None = None,
 ) -> int:
-    """Der einzige Klassifizierungs-Job (specs/features/0296-klassifizierung-ein-ausloeser-cloud-
-    checkbox.md) - ersetzt die frueheren, getrennt ausgeloesten Jobs `score_criteria` und
-    `classify_categories_remote` vollstaendig.
+    """Der einzige Klassifizierungs-Job.
 
-    specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 5: `estimated_cost_usd`
-    ist die im Ausloese-Endpunkt berechnete Schaetzung. Der Default `None` ist verbindlich - ein
-    zum Zeitpunkt eines Deployments BEREITS EINGEREIHTER Job traegt das Argument nicht und darf
+    `estimated_cost_usd` ist die im Ausloese-Endpunkt berechnete Schaetzung. Der Default `None` ist
+    verbindlich - ein zum Zeitpunkt eines Deployments BEREITS EINGEREIHTER Job traegt das Argument
+    nicht und darf
     nicht an der Signaturaenderung scheitern."""
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
@@ -2205,24 +2130,22 @@ async def _classify_photo_for_remote_category(
     """Der reine I/O-/Netzwerk-Teil eines einzelnen Remote-Kategorie-Kandidaten (analog
     _detect_landmark_for_photo) - bewusst OHNE Session-Zugriff, damit mehrere Aufrufe sicher
     parallel per asyncio.gather laufen koennen. Nutzt ausschliesslich die bereits vorhandene,
-    auf 2048 px begrenzte display-Cache-Variante (ADR 0032 Punkt 5) - nie das OpenCloud-Original,
-    kein EXIF/GPS, kein Dateiname und kein Pfad im Request (Security-Muss-Kriterium, unveraendert
-    seit Spec 0055)."""
+    auf 2048 px begrenzte display-Cache-Variante - nie das OpenCloud-Original,
+    kein EXIF/GPS, kein Dateiname und kein Pfad im Request - SICHERHEIT, Muss-Kriterium."""
     path = variant_path(cache_dir, photo.id, photo.etag, "display")
     image_bytes = path.read_bytes()
     return await client.classify(image_bytes, _CLOUD_VISION_IMAGE_MIME_TYPE, photo.id)
 
 
 async def select_remote_category_candidates(session: AsyncSession, project_id: int) -> list[Photo]:
-    """Kandidatenmenge fuer die Remote-Kategorie-Klassifizierung (specs/features/0055-remote-
-    kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 5): der KOMPLETTE Ausschuss-
-    Ueberlebender-Bestand (PhotoScore.suggested_status IS NULL) OHNE Vorfilter (anders als
-    landmark, ADR 0021), abzueglich bereits klassifizierter Fotos (vorhandene
-    `photo_category_classifications`-Zeile - seit specs/features/0289-feste-kategorien.md ist die
-    1:1-Klassifikations-Zeile das Skip-Kriterium, nicht mehr eine Feinlabel-Zeile: ein Foto mit
+    """Kandidatenmenge für die Remote-Kategorie-Klassifizierung: der KOMPLETTE
+    Ausschuss-Überlebender-Bestand (PhotoScore.suggested_status IS NULL) OHNE Vorfilter
+    (anders als landmark), abzüglich bereits klassifizierter Fotos (vorhandene
+    `photo_category_classifications`-Zeile - die 1:1-Klassifikations-Zeile ist das
+    Skip-Kriterium, nicht eine Feinlabel-Zeile: ein Foto mit
     Kategorie, aber ohne Feinlabel, gilt als erledigt). Von `run_remote_category_classification` UND
     `GET .../classify/estimate` (api/projects.py) genutzt - "ermittelt ueber
-    dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf" (Akzeptanzkriterium der Spec)."""
+    dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf"."""
     rows = (
         (
             await session.execute(
@@ -2261,21 +2184,20 @@ async def run_remote_category_classification(
     *,
     run: RemoteCategoryClassificationRun | None = None,
 ) -> RemoteCategoryClassificationRun:
-    """Eigenstaendiger, expliziter Job (specs/features/0055-remote-kategorie-klassifizierung-mit-
-    kostenschaetzung.md, ADR 0032 Punkt 5) - KEIN Teil von run_criterion_scoring, eigene Run-
-    Tabelle, eigenes Concurrency-Setting. Best-effort ohne Retry: ein einzelner Fehlschlag bricht
-    den Lauf nicht ab, das Foto bleibt beim naechsten Lauf erneut Kandidat.
+    """Eigenständiger, expliziter Job - KEIN Teil von run_criterion_scoring, eigene
+    Run-Tabelle, eigenes Concurrency-Setting. Best-effort ohne Retry: ein einzelner
+    Fehlschlag bricht den Lauf nicht ab, das Foto bleibt beim naechsten Lauf erneut Kandidat.
     `project.cloud_vision_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread,
     dokumentierte Vereinfachung analog run_criterion_scoring) - ist der Schalter aus (Default)
     ODER der Kandidatenpool leer, wird `build_client` GAR NICHT ERST aufgerufen (Security-Muss-
     Kriterium, geteiltes Consent-Gate mit `landmark`).
 
-    specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 3: `run` ist der bereits
-    von run_classification angelegte Lauf-Datensatz - exakt das Muster, das ADR 0050 Punkt 3 fuer
-    CriterionScoringRun/run_criterion_scoring eingefuehrt hat, eine Ebene tiefer und aus demselben
-    Grund. Der uebergeordnete Klassifizierungslauf setzt seinen Fremdschluessel darauf, BEVOR
-    Phase 1 startet; ohne diesen frueheren Anlagezeitpunkt haette die Oberflaeche waehrend der
-    Remote-Phase keinen Anker fuer den laufenden Vorgang. Wird keiner uebergeben (Direktaufruf,
+    `run` ist der bereits von run_classification angelegte Lauf-Datensatz - dasselbe Muster
+    wie bei CriterionScoringRun/run_criterion_scoring, eine Ebene tiefer und aus demselben
+    Grund. Der übergeordnete Klassifizierungslauf setzt seinen
+    Fremdschluessel darauf, BEVOR Phase 1 startet; ohne diesen frueheren Anlagezeitpunkt haette die
+    Oberflaeche waehrend der Remote-Phase keinen Anker fuer den laufenden Vorgang. Wird keiner
+    uebergeben (Direktaufruf,
     Tests), legt diese Funktion die Zeile wie bisher selbst an."""
     if run is None:
         run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.RUNNING)
@@ -2296,7 +2218,7 @@ async def run_remote_category_classification(
             await session.commit()
             return run
 
-        # Spec 0304/ADR 0059 Punkt 7: eine Aufloesung je Cloud-Phase, danach durchgereicht -
+        # Eine Auflösung je Cloud-Phase, danach durchgereicht -
         # dasselbe Modell wie in der Landmark-Phase, weil `LANDMARK_MODEL` wie `LANDMARK_PROVIDER`
         # fuer beide Cloud-Anteile gilt.
         model = settings.resolved_landmark_model()
@@ -2312,11 +2234,11 @@ async def run_remote_category_classification(
             await session.commit()
             return run
 
-        # specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 1: Ist-Kosten-
-        # Buchfuehrung dieses Laufs, identisch zur Landmark-Phase in run_criterion_scoring -
-        # summiert ueber die ERFOLGREICHEN Ergebnisse, geschrieben im `finally` unten.
+        # Ist-Kosten-Buchführung dieses Laufs, identisch zur Landmark-Phase in
+        # run_criterion_scoring - summiert über die ERFOLGREICHEN Ergebnisse, geschrieben im
+        # `finally` unten.
         #
-        # VOR dem `try` gebunden (Review-Fund der ship-feature-Runde, analog zur Landmark-Phase):
+        # VOR dem `try` gebunden, analog zur Landmark-Phase:
         # der `finally`-Block liest diese drei Namen. Wuerde eine Anweisung INNERHALB des `try`
         # vor ihrer Initialisierung werfen - realistisch ein DB-Fehler beim Laden des
         # Feinlabel-Snapshots -, ersetzte ein UnboundLocalError die urspruengliche Exception, und
@@ -2324,19 +2246,18 @@ async def run_remote_category_classification(
         api_calls = 0
         input_tokens = 0
         output_tokens = 0
-        # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 2: der Live-Zaehler
-        # der Fehlschlaege - streng getrennt von `api_calls` daneben, das die Kosten-Buchfuehrung
-        # ist und einmal am Phasenende geschrieben wird.
+        # Der Live-Zaehler der Fehlschlaege - streng getrennt von `api_calls` daneben, das die
+        # Kosten-Buchfuehrung ist und einmal am Phasenende geschrieben wird.
         failed_calls = 0
-        # ADR 0068 Punkt 6: Modell und Zaehler stehen beim BETRETEN der Phase da, nicht erst im
+        # Modell und Zaehler stehen beim BETRETEN der Phase da, nicht erst im
         # `finally` - `failed_calls = 0` heisst "erfasst, noch nichts fehlgeschlagen" und
         # unterscheidet sich damit von `NULL` = "diese Phase fand nicht statt". Der BETRAG bleibt
-        # am Phasenende eingefroren (ADR 0051 Punkt 4).
+        # am Phasenende eingefroren.
         run.model = model
         run.failed_calls = failed_calls
         await session.commit()
 
-        # specs/features/0382-cloud-rate-limits-aussitzen.md, K8: Zaehlerstand des ANBIETERWEITEN
+        # Zählerstand des ANBIETERWEITEN
         # Schrittmachers beim Betreten des Teilschritts - Begruendung wortgleich zur
         # Landmark-Phase in run_criterion_scoring. Die Zusammenfassung unten entsteht
         # ausschliesslich aus der DIFFERENZ zu diesem Schnappschuss.
@@ -2367,22 +2288,21 @@ async def run_remote_category_classification(
                     ],
                     return_exceptions=True,
                 )
-                # Verifizierter Async-Fallstrick (ADR 0020/0025) - siehe run_criterion_scoring.
+                # Verifizierter Async-Fallstrick - siehe run_criterion_scoring.
                 for result in results:
                     if isinstance(result, asyncio.CancelledError):
                         raise result
 
                 for photo, result in zip(block, results, strict=True):
                     if isinstance(result, BaseException):
-                        # Best-effort (ADR 0032 Punkt 5): ein einzelner fehlgeschlagener Cloud-
+                        # Best-effort: ein einzelner fehlgeschlagener Cloud-
                         # Aufruf laesst fuer dieses Foto keine Zeile entstehen, das Foto bleibt
                         # beim naechsten Lauf erneut Kandidat.
-                        # Spec 0056/ADR 0034: dennoch sichtbar ueber docker compose logs.
-                        # ADR 0035 Punkt 3/Copilot-Review-Fund PR #255: type(exc).__name__/
+                        # Dennoch sichtbar über docker compose logs. type(exc).__name__/
                         # str(exc) GENAU EINMAL berechnet, an beide Senken (Logger, DB)
                         # weitergereicht - keine zweite Auswertung.
                         #
-                        # Spec 0348/ADR 0068 Punkt 2: das Zaehlen fuehrt AUSDRUECKLICH keine
+                        # Das Zählen führt AUSDRÜCKLICH keine
                         # weitere Logzeile ein - der Fehlergrund bleibt, wo er liegt (Logzeile
                         # unten mit fester Meldung, photo_cloud_vision_errors, laufweite
                         # cloud_error_message). Der Zaehler ist eine Anzahl, kein Fremdtext.
@@ -2396,9 +2316,8 @@ async def run_remote_category_classification(
                             exc_type_name,
                             exc_message,
                         )
-                        # specs/features/0058-cloud-vision-status-transparenz.md, ADR 0035
-                        # Punkt 3: dauerhafte, per API abrufbare Persistenz desselben Fehlschlags
-                        # (getrennt vom Log oben).
+                        # Dauerhafte, per API abrufbare Persistenz desselben Fehlschlags (getrennt
+                        # vom Log oben).
                         await _record_cloud_vision_error(
                             session,
                             photo.id,
@@ -2409,7 +2328,7 @@ async def run_remote_category_classification(
                         )
                         continue
                     classification = result
-                    # Verbindlich (Spec 0207): jeder stattgefundene Aufruf zaehlt, auch ohne
+                    # Verbindlich: jeder stattgefundene Aufruf zaehlt, auch ohne
                     # `usage`-Block (Tokenbeitrag dann 0) - `api_calls > 0` bei Betrag 0/NULL ist
                     # der Ausloeser fuer Befund (b) des Unvollstaendigkeits-Hinweises.
                     api_calls += 1
@@ -2417,15 +2336,14 @@ async def run_remote_category_classification(
                         input_tokens += classification.usage.input_tokens
                         output_tokens += classification.usage.output_tokens
 
-                    # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 5: pro Foto genau
-                    # EINE Klassifikations-Zeile. `category_key` ist bereits ueber die feste
-                    # Vorrangreihenfolge aufgeloest, `detected_categories` haelt die VALIDIERTE
-                    # Kandidatenliste - nie die Rohliste des Modells (Security-Muss-Kriterium:
-                    # sonst wanderte unvalidierter Fremdtext ueber einen zweiten Kanal in
-                    # API-Antwort und UI).
-                    # specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 3:
-                    # `resolve_category` bleibt unveraendert die Quelle des Schluessels - die
-                    # Konfidenz geht in KEINE Auswahl ein (ADR 0067 Punkt 1). Der Skalar entsteht
+                    # Pro Foto genau EINE Klassifikations-Zeile. `category_key` ist bereits
+                    # über die feste Vorrangreihenfolge aufgelöst, `detected_categories` hält
+                    # die VALIDIERTE Kandidatenliste - SICHERHEIT: nie die Rohliste des
+                    # Modells, sonst wanderte unvalidierter Fremdtext über einen zweiten
+                    # Kanal in API-Antwort und UI.
+                    #
+                    # `resolve_category` ist die alleinige Quelle des Schlüssels - die
+                    # Konfidenz geht in KEINE Auswahl ein. Der Skalar entsteht
                     # per LOOKUP aus der bereits gebauten Abbildung, nicht durch eine zweite
                     # Berechnung: eine zweite Berechnung driftet, und die Invariante
                     # `category_confidence == detected_category_confidences.get(category_key)` ist
@@ -2451,9 +2369,7 @@ async def run_remote_category_classification(
                     # wenn die Kategorie `nicht_erkannt` lautet (Akzeptanzkriterium). Loesen beide
                     # Labels auf denselben canonical_key auf, entsteht nur eine Zeile - kein
                     # IntegrityError durch UniqueConstraint(photo_id, fine_label_id). Ein
-                    # Konfidenz-Vergleich ist dafuer nicht mehr noetig (Konfidenzen sind mit
-                    # ADR 0049 Entwurfsentscheidung 7 ersatzlos entfallen), es gewinnt die
-                    # Erstnennung.
+                    # Konfidenz-Vergleich ist dafür nicht nötig, es gewinnt die Erstnennung.
                     entries_by_canonical: dict[str, tuple[FineLabelSnapshotEntry, str]] = {}
                     for raw_label in classification.fine_labels:
                         entry = resolve_canonical_label(raw_label, snapshot, embedder)
@@ -2478,7 +2394,7 @@ async def run_remote_category_classification(
                                 computed_at=now,
                             )
                         )
-                    # ADR 0035 Punkt 2 "Aufraeumen bei Erfolg": ein erfolgreicher (Retry-)Versuch
+                    # "Aufräumen bei Erfolg": ein erfolgreicher (Retry-)Versuch
                     # loescht eine ggf. vorhandene Fehler-Zeile - einmal pro Foto, nicht pro Label.
                     await _clear_cloud_vision_error(
                         session, photo.id, CloudVisionPhase.REMOTE_CATEGORY
@@ -2486,7 +2402,7 @@ async def run_remote_category_classification(
 
                 processed += len(block)
                 run.photos_processed = processed
-                # Spec 0348/ADR 0068 Punkt 2: der Live-Zaehler wird am BEREITS VORHANDENEN
+                # Der Live-Zähler wird am BEREITS VORHANDENEN
                 # Block-Commit-Punkt mitgeschrieben - am Blockende, nie beim Betreten des Blocks
                 # (sonst stuende nach einem Abbruch mitten im Block ein `processed` da, dem weder
                 # ein Aufruf noch ein Fehlschlag gegenuebersteht).
@@ -2497,8 +2413,8 @@ async def run_remote_category_classification(
             aclose = getattr(client, "aclose", None)
             if aclose is not None:
                 await aclose()
-            # Wie in der Landmark-Phase VERBINDLICH im finally und mit eigenem Commit (Spec 0207/
-            # ADR 0051 Punkt 4): ein nach begonnener Cloud-Nutzung scheiternder Lauf hat das Geld
+            # Wie in der Landmark-Phase VERBINDLICH im finally und mit eigenem Commit: ein
+            # nach begonnener Cloud-Nutzung scheiternder Lauf hat das Geld
             # bereits ausgegeben, und der Fehlerpfad laeuft ueber _fail_run, das mit einem
             # rollback() beginnt. Der Betrag wird einmal berechnet und eingefroren.
             run.api_calls = api_calls
@@ -2508,13 +2424,13 @@ async def run_remote_category_classification(
                 model,
                 TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
             )
-            # Spec 0304/ADR 0059 Punkt 6, Begruendung wortgleich zur Landmark-Phase oben:
-            # `run.model` steht seit Spec 0348/ADR 0068 Punkt 6 bereits vom Phasenanfang her da
+            # Begründung wortgleich zur Landmark-Phase oben: `run.model` steht bereits vom
+            # Phasenanfang her da
             # (derselbe lokale `model`, aus dem hier der Betrag entsteht) - keine zweite
             # Zuweisung.
             await _commit_phase_costs(session)
 
-        # Spec 0382, K8: hoechstens eine Zeile, und nur wenn in DIESEM Teilschritt tatsaechlich
+        # Höchstens eine Zeile, und nur wenn in DIESEM Teilschritt tatsächlich
         # gewartet wurde.
         _log_cloud_vision_throttling(
             "remote_category",
@@ -2541,16 +2457,16 @@ async def reassign_photo_category(
     cluster_key: str,
     new_category_key: str,
 ) -> None:
-    """Sofortige Wirkung eines manuellen Kategorie-Overrides (specs/features/0055, ADR 0032 Punkt
-    7) - stellt die GESAMTE Zugehoerigkeitsmenge eines Fotos fuer diesen Lauf her und ruft
+    """Sofortige Wirkung eines manuellen Kategorie-Overrides - stellt die GESAMTE
+    Zugehörigkeitsmenge eines Fotos für diesen Lauf her und ruft
     `ranking.py::rank_photos` nur fuer die beruehrten Partitionen erneut auf (kein neuer
     Ranking-Algorithmus, kein voller Re-Scoring-Lauf, kein Cloud-Aufruf). Nutzt ausschliesslich
     bereits persistierte `PhotoCriterionScore`-Werte fuer die Neusortierung.
 
     Die HAUPTkategorie wird hier nicht abgeleitet, sondern vom Aufrufer uebergeben (Override-Wert
     bzw. rekonstruierter Wert aus `derive_photo_category`). Die NEBENkategorien dagegen werden aus
-    der unveraenderten Modellaussage NEU abgeleitet und nicht mitverschoben
-    (specs/features/0300-nebenkategorien.md, ADR 0069 Punkt 6). Drei Folgen, alle gewollt:
+    der unveraenderten Modellaussage NEU abgeleitet und nicht mitverschoben. Drei Folgen, alle
+    gewollt:
 
     * Die bisher automatisch ermittelte Hauptkategorie wird zur Nebenkategorie, sofern sie die
       Schwelle erreicht - das Foto verschwindet nicht aus der Kategorie, aus der es umgehaengt
@@ -2559,7 +2475,7 @@ async def reassign_photo_category(
       derselben Partition: die Hauptzeile ersetzt die Nebenzeile.
     * Nach jedem Aufruf existiert wieder GENAU EINE Zeile mit `is_primary=True` je (Lauf, Foto).
 
-    KEIN frueher Ausstieg bei unveraenderter Zugehoerigkeitsmenge (Copilot-Review-Fund zu PR #373):
+    KEIN frueher Ausstieg bei unveraenderter Zugehoerigkeitsmenge:
     die Daempfung haengt zusaetzlich am OVERRIDE-ZUSTAND, den die Aufrufer vor diesem Aufruf setzen
     bzw. loeschen. Ein Override auf die bereits wirksame Hauptkategorie (Hauptzeile wird von
     automatisch zu manuell) und seine Ruecknahme auf dieselbe Kategorie (umgekehrt) lassen die
@@ -2570,7 +2486,7 @@ async def reassign_photo_category(
     beruehrten Partitionen begrenzt. Einziger Ausstieg bleibt "dieses Foto hat in diesem Lauf gar
     keine Zeile".
 
-    NEBENLAEUFIGKEIT (Security-Muss-Kriterium 5 der Spec 0300): diese Funktion schreibt UND loescht
+    NEBENLÄUFIGKEIT (SICHERHEIT): diese Funktion schreibt UND löscht
     Zeilen im Request-Pfad. Der Unique-Constraint traegt davon nur die halbe Invariante - er
     verhindert die doppelte Zugehoerigkeitszeile, nicht das Wettrennen um "genau eine Hauptzeile".
     Die Aufrufer (api/photos.py::set_category_override/delete_category_override) sperren deshalb
@@ -2663,9 +2579,9 @@ async def reassign_photo_category(
 
     # Die Daempfung braucht die Zahlen ALLER Fotos der beruehrten Partitionen, nicht nur die des
     # umgehaengten - sonst verloeren die uebrigen ihre Daempfung und rueckten still nach vorn.
-    # Ebenso den Override-Zustand: eine manuell gesetzte Hauptzeile wird nicht gedaempft
-    # (ADR 0069 Punkt 6). Fuer das gerade umgehaengte Foto steht der neue Wert bereits in der
-    # Sitzung, weil die Aufrufer ihn VOR diesem Aufruf setzen.
+    # Ebenso den Override-Zustand: eine manuell gesetzte Hauptzeile wird nicht gedämpft. Für
+    # das gerade umgehängte Foto steht der neue Wert bereits in der Sitzung, weil die Aufrufer
+    # ihn VOR diesem Aufruf setzen.
     evidence_by_photo_id = await _remote_category_evidence(session, photo_ids)
     overrides_by_photo_id: dict[int, str | None] = {
         score_photo_id: category_override
@@ -2705,15 +2621,14 @@ async def reassign_photo_category(
     await session.commit()
 
 
-# Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
-# grosszuegiger Not-Anker (24h), NICHT der primaere Terminierungsmechanismus - Schicht 2
-# (STALL_THRESHOLD, siehe reap_stalled_runs) greift fuer jeden echten Stillstand immer zuerst.
-# Begrenzt nur den Ressourcenverbrauch eines (heute nicht vorstellbaren) Defekts in Schicht 2
-# selbst. arq-Default waere 300s (5 Minuten) - deutlich zu kurz fuer legitim lange Scans grosser
+# Fortschritts-Watchdog: grosszuegiger Not-Anker (24h), NICHT der primaere Terminierungsmechanismus
+# - Schicht 2 (STALL_THRESHOLD, siehe reap_stalled_runs) greift fuer jeden echten Stillstand immer
+# zuerst. Begrenzt nur den Ressourcenverbrauch eines (heute nicht vorstellbaren) Defekts in Schicht
+# 2 selbst. arq-Default waere 300s (5 Minuten) - deutlich zu kurz fuer legitim lange Scans grosser
 # Fotobibliotheken (bindende Stakeholder-Anforderung, siehe Spec).
 JOB_TIMEOUT_SECONDS = 86400
 
-# Schicht 2 des Fortschritts-Watchdogs (ADR 0019): der eigentliche, fortschrittsbasierte
+# Schicht 2 des Fortschritts-Watchdogs: der eigentliche, fortschrittsbasierte
 # Stillstands-Schwellwert - ein RUNNING-Lauf, dessen last_progress_at strikt aelter als dieser Wert
 # ist, gilt als haengend, unabhaengig von seiner Gesamtlaufzeit (bindende Stakeholder-Anforderung:
 # "nur ein echter Stillstand ist ein Fehler, keine feste Obergrenze").
@@ -2721,7 +2636,7 @@ STALL_THRESHOLD = timedelta(minutes=15)
 
 
 def _stall_message() -> str:
-    # Copilot-Review-Fund (PR #67): die Minutenzahl wird bewusst aus STALL_THRESHOLD abgeleitet
+    # die Minutenzahl wird bewusst aus STALL_THRESHOLD abgeleitet
     # statt hart codiert - ein spaeteres Anpassen von STALL_THRESHOLD kann die Meldung damit nicht
     # mehr unbemerkt veralten lassen.
     minutes = int(STALL_THRESHOLD.total_seconds() // 60)
@@ -2735,9 +2650,9 @@ async def _fail_if_stalled(
     session: AsyncSession,
     run: ScanRun | ScoringRun | CriterionScoringRun | RemoteCategoryClassificationRun,
 ) -> bool:
-    """Setzt eine einzelne Zeile ueber _fail_run auf FAILED, isoliert von den uebrigen Zeilen/
-    Tabellen (Akzeptanzkriterium der Spec 0034: ein Fehler bei einer Zeile/Tabelle darf die
-    Bereinigung der uebrigen nicht blockieren) - ein Fehlschlag hier (z.B. ein DB-Fehler beim
+    """Setzt eine einzelne Zeile über _fail_run auf FAILED, isoliert von den übrigen
+    Zeilen/Tabellen: ein Fehler bei einer Zeile/Tabelle darf die Bereinigung der übrigen
+    nicht blockieren - ein Fehlschlag hier (z.B. ein DB-Fehler beim
     Commit dieser einen Zeile) rollt nur die aktuelle, noch nicht committete Teiltransaktion
     zurueck, bereits zuvor erfolgreich committete Zeilen bleiben unberuehrt."""
     try:
@@ -2752,8 +2667,7 @@ async def reap_stalled_runs(
     ctx: dict[str, Any],
     session_factory: async_sessionmaker[AsyncSession] = async_session_factory,
 ) -> int:
-    """Schicht 2 des Fortschritts-Watchdogs (specs/features/0034-scan-haenger-fortschritts-
-    watchdog.md, ADR 0019): periodischer arq-Cron-Job (alle 5 Minuten, siehe
+    """Schicht 2 des Fortschritts-Watchdogs: periodischer arq-Cron-Job (alle 5 Minuten, siehe
     WorkerSettings.cron_jobs), unabhaengig von einer ggf. tatsaechlich noch haengenden Coroutine -
     deckt exakt den Fall ab, den reines Exception-Handling (Schicht 1, _fail_run oben) strukturell
     nie schliessen kann (ein nie zurueckkehrender await liefert nie eine Exception, an die sich
@@ -2763,8 +2677,7 @@ async def reap_stalled_runs(
     Die vier Tabellen werden bewusst nacheinander in vier eigenstaendigen Bloecken behandelt
     statt ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/
     ScoringRun/CriterionScoringRun/RemoteCategoryClassificationRun bleiben vier eigenstaendige
-    Modelle ohne gemeinsame Basisklasse, ADR 0019). Vierter Block seit specs/features/0055-remote-
-    kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 2 Migration d."""
+    Modelle ohne gemeinsame Basisklasse)."""
     reaped = 0
     threshold = _now_utc() - STALL_THRESHOLD
     async with session_factory() as session:
@@ -2782,7 +2695,7 @@ async def reap_stalled_runs(
                 .all()
             )
         except Exception:
-            # architect-Review-Fund (Spec 0034): ohne rollback() bliebe die Transaktion auf einer
+            # Ohne rollback() bliebe die Transaktion auf einer
             # echten Postgres-Verbindung nach einem fehlgeschlagenen SELECT im Zustand "current
             # transaction is aborted" - die nachfolgenden SELECTs fuer ScoringRun/
             # CriterionScoringRun wuerden dann selbst fehlschlagen, obwohl inhaltlich nichts mit
@@ -2861,8 +2774,7 @@ async def reap_stalled_runs(
 
 
 async def _configure_worker_logging(ctx: dict[Any, Any]) -> None:
-    """arq-`on_startup`-Hook (specs/features/0056-structured-logging-cloud-vision-errors.md, ADR
-    0034 Punkt 2, erste Nutzung von arqs on_startup-Mechanismus im Projekt) - duenner Wrapper statt
+    """arq-`on_startup`-Hook - dünner Wrapper statt
     direkter Zuweisung `on_startup = configure_logging`: arq ruft on_startup IMMER mit einem
     ctx-Positionalargument auf (verifiziert in arq.worker.Worker.main: `await self.on_startup(
     self.ctx)`), waehrend `configure_logging()` bewusst als Null-Argument-Funktion spezifiziert ist
@@ -2872,30 +2784,27 @@ async def _configure_worker_logging(ctx: dict[Any, Any]) -> None:
 
 
 class WorkerSettings:
-    # arq.worker.func(...) statt nackter Funktionsreferenzen (Fortschritts-Watchdog, ADR 0019):
-    # max_tries=1 deaktiviert arqs automatischen Hintergrund-Retry vollstaendig - ein durch
-    # job_timeout abgebrochener Job erzeugt dadurch KEINE zweite Run-Zeile (arq prueft
-    # job_try > max_tries VOR dem erneuten Coroutine-Aufruf, verifiziert im arq-Quellcode). Damit
-    # gilt strukturell: ein Nutzer-Trigger -> genau ein Lauf -> ein eindeutiger Endzustand,
-    # sichtbar ueber die bestehende "Erneut versuchen"-UI (Spec 0017/0023) statt eines
-    # unsichtbaren automatischen Wiederholungsversuchs.
+    # arq.worker.func(...) statt nackter Funktionsreferenzen (Fortschritts-Watchdog): max_tries=1
+    # deaktiviert arqs automatischen Hintergrund-Retry vollstaendig - ein durch job_timeout
+    # abgebrochener Job erzeugt dadurch KEINE zweite Run-Zeile (arq prueft job_try > max_tries VOR
+    # dem erneuten Coroutine-Aufruf, verifiziert im arq-Quellcode). Damit gilt strukturell: ein
+    # Nutzer-Trigger -> genau ein Lauf -> ein eindeutiger Endzustand, sichtbar ueber die bestehende
+    # "Erneut versuchen"-UI statt eines unsichtbaren automatischen Wiederholungsversuchs.
     functions = (
         arq_func(scan_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
         arq_func(score_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
-        # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, ADR 0050 Punkt 1:
         # EIN verketteter Job (Remote-Kategorisierung -> Kriterien-Bewertung) statt der frueheren
         # zwei (score_criteria/classify_categories_remote) - die Reihenfolge, die man bis dahin
         # kennen musste, steckt jetzt in run_classification.
         arq_func(classify, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
     )
-    # Schicht 2 des Fortschritts-Watchdogs (ADR 0019), erste Nutzung von arqs Cron-Mechanismus im
+    # Schicht 2 des Fortschritts-Watchdogs, erste Nutzung von arqs Cron-Mechanismus im
     # Projekt: run_at_startup=True sorgt dafuer, dass ein Worker-Neustart sofort eine erste
     # Pruefung ausloest, statt bis zu 5 Minuten auf den naechsten regulaeren Tick zu warten (genau
     # der Bug-Report-Fall: eine bereits vor dem Neustart haengende Zeile soll nicht unnoetig lang
     # unentdeckt bleiben).
     cron_jobs = (cron(reap_stalled_runs, minute=set(range(0, 60, 5)), run_at_startup=True),)
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
-    # specs/features/0056-structured-logging-cloud-vision-errors.md, ADR 0034 Punkt 2: einer der
-    # beiden Prozess-Einstiegspunkte (Worker-Prozess) - derselbe Aufruf sitzt fuer den API-Prozess
-    # in main.py::create_app().
+    # Einer der beiden Prozess-Einstiegspunkte (Worker-Prozess) - derselbe Aufruf sitzt fuer den
+    # API-Prozess in main.py::create_app().
     on_startup = _configure_worker_logging

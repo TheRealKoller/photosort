@@ -14,9 +14,7 @@ import { Icon } from './ui/icon'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 
 /*
- * Projekt-Navigationsgruppe in der Kopfzeile (specs/features/0298-projektnavigation-in-der-
- * kopfzeile.md, specs/features/0347-navigation-nebenbereich.md,
- * specs/architecture/0004-design-system.md, Muster "Projekt-Navigationsgruppe in der Kopfzeile").
+ * Projekt-Navigationsgruppe in der Kopfzeile.
  *
  * EIN AUSLOESER, ZWEI PANEL-INHALTE - AUS EINER ZIELTABELLE IN ZWEI GRUPPEN: ab `lg:` stehen die
  * drei Hauptziele als Leiste, daneben der Ausloeser mit den zwei Nebenzielen im Panel; darunter
@@ -33,8 +31,9 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
  * ansteuern). Mit einer Instanz ist die Zusage "genau ein Ausloeser" im DOM pruefbar statt nur
  * visuell.
  *
- * DER LANDMARK UMSCHLIESST LEISTE UND AUSLOESER, nicht nur die Leiste (AK3b: genau ein
- * `navigation`-Landmark "Projektbereiche" zu jedem Zeitpunkt UND in jeder Darstellung). Laege das
+ * DER LANDMARK UMSCHLIESST LEISTE UND AUSLÖSER, nicht nur die Leiste: es muss zu jedem
+ * Zeitpunkt und in jeder Darstellung genau EIN `navigation`-Landmark "Projektbereiche"
+ * geben. Läge das
  * `aria-label` auf dem `hidden lg:flex`-Container, gaebe es unterhalb `lg:` gar keinen Landmark
  * mehr - `display: none` nimmt das Element aus dem Accessibility-Tree. So bleibt in beiden
  * Darstellungen genau einer uebrig: ab `lg:` umschliesst er die drei sichtbaren Hauptziele samt
@@ -50,8 +49,8 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
  *
  * MENUE UEBER DAS VORHANDENE RADIX-POPOVER, NICHT UEBER @radix-ui/react-dropdown-menu: dessen
  * ARIA-`menu`-Muster (`role="menu"`/`menuitem`) naehme den Zielen ihre Link-Semantik - sie waeren
- * fuer Screenreader keine Links mehr und tauchten in keiner Linkliste auf. Seit Spec 0347 gilt das
- * verschaerft: unterhalb `lg:` liegen ALLE FUENF Ziele im Panel, die Anwendung haette auf schmalen
+ * fuer Screenreader keine Links mehr und tauchten in keiner Linkliste auf. Verschärft gilt das
+ * unterhalb `lg:`: dort liegen ALLE FÜNF Ziele im Panel, die Anwendung hätte auf schmalen
  * Bildschirmen dann ueberhaupt keine Navigationslinks mehr.
  *
  * Das Popover liefert ausserdem ohne Zutun alles, was die Akzeptanzkriterien verlangen: Portal mit
@@ -62,7 +61,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 
 /*
  * DIE DREI BOARD-ZUSTAENDE DES NAVIGATIONSELEMENTS - zeichengleich zum Schrittmarker in
- * components/Stepper.tsx (Board-Referenz 0005, Abschnitt 6), nicht neu hergeleitet. Bewusst
+ * components/Stepper.tsx, nicht neu hergeleitet. Bewusst
  * DATEILOKAL und nicht mit Stepper geteilt: etablierte "erst ab dem dritten Konsumenten
  * auslagern"-Praxis dieses Projekts.
  *
@@ -70,7 +69,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
  * demselben Grund, aus dem Stepper es so haelt: ruhend/ueberfahren/aktiv sind keine
  * `Button`-Auspraegung, und der Aktiv-Zustand braucht Rand, Schnitt und Farbe GEMEINSAM.
  *
- * `--border-control` statt des rein dekorativen `--border` (Board-Abweichung 2): ein Bedienelement
+ * `--border-control` statt des rein dekorativen `--border`: ein Bedienelement
  * mit `--border` waere auf dunklem Grund unsichtbar. Zu jeder `hover:`-Variante steht eine
  * `active:`-Variante - Tailwind bindet `hover:` an `@media (hover: hover)`, am Telefon ist
  * "gedrueckt" der einzige Zustand, den es ueberhaupt gibt.
@@ -82,7 +81,7 @@ const NAV_LINK_RESTING_CLASSES =
   'border-border-control bg-surface text-text hover:bg-overlay hover:text-text-h active:bg-border active:text-text'
 
 /*
- * AKTIVSTIL DES GESCHLOSSENEN AUSLOESERS (AK6) - ein DRITTES, absichtlich abweichendes Rezept,
+ * AKTIVSTIL DES GESCHLOSSENEN AUSLÖSERS - ein DRITTES, absichtlich abweichendes Rezept,
  * das der Stepper-Bindung in designSystem.contract.test.ts bewusst NICHT hinzugefuegt wird: ein
  * Symbol-Button ist kein Board-Navigationselement.
  *
@@ -92,13 +91,13 @@ const NAV_LINK_RESTING_CLASSES =
 const NAV_TRIGGER_ACTIVE_CLASSES = 'border border-accent bg-overlay text-accent'
 
 /*
- * TRENNER AM BLOCK DER HAUPTZIELE, NICHT AM BLOCK DER NEBENZIELE (AK5): so verschwindet die Linie
+ * TRENNER AM BLOCK DER HAUPTZIELE, NICHT AM BLOCK DER NEBENZIELE: so verschwindet die Linie
  * ab `lg:` automatisch mit dem Block, den sie abtrennt. Ein Trenner am Nebenblock braeuchte eine
  * zweite, gegenlaeufige `lg:`-Regel zum Wieder-Abschalten - eine stille Fehlerquelle.
  *
  * `--separator` STATT `--border` NACH DER BENANNTEN AUSNAHME "Gruppentrenner auf
- * `--elevated`/`--overlay`" (specs/architecture/0004-design-system.md, Abschnitt "Rahmen in drei
- * Rollen"; ebenso am Token in index.css vermerkt): Innerhalb von Panels und Popovern verwenden
+ * `--elevated`/`--overlay`" des Design-Systems (ebenso am Token in index.css vermerkt):
+ * Innerhalb von Panels und Popovern verwenden
  * Gruppengrenzen `--separator`, weil die Flaechenstufe selbst nicht zur Trennung ausreicht und die
  * Regel speziell Kanten ZWISCHEN verschiedenen Flaechen adressiert, nicht Unterteilungen INNERHALB
  * einer Flaeche.
@@ -106,8 +105,9 @@ const NAV_TRIGGER_ACTIVE_CLASSES = 'border border-accent bg-overlay text-accent'
  * AUSDRUECKLICH NICHT die Regel "Linie auf dem Grund" - die trifft hier NICHT zu: das
  * `PopoverContent` steht auf `--elevated`, nicht auf `--bg`/`--surface`. Wer diesem Trugschluss
  * folgt, stellt richtig fest, dass das Panel nicht auf dem Grund steht, und wechselt auf
- * `--border` - das waere mit 1,04-1,45:1 faktisch keine Linie mehr, und AK5 truege dann allein der
- * verdoppelte Abstand. Der Korridor 2,0-2,5 ist auf die beiden Grundflaechen kalibriert und gilt
+ * `--border` - das wäre mit 1,04-1,45:1 faktisch keine Linie mehr, und die Trennung trüge dann
+ * allein der verdoppelte Abstand. Der Korridor 2,0-2,5 ist auf die beiden Grundflächen
+ * kalibriert und gilt
  * fuer diese Verwendung nicht; tragend ist die Zusicherung, dass `--separator` auf JEDER der vier
  * Flaechen sichtbarer bleibt als `--border`.
  *
@@ -123,8 +123,7 @@ interface ProjectNavLinkProps {
   /**
    * `bar` = Eintrag der Leiste, Trefferflaeche wird per `tap-target` aufgespannt.
    * `row` = Zeile des Panels; hier ist die ZEILE SELBST die Trefferflaeche und traegt `min-h-11`
-   * (Design-System-Regel "zeilenweise Listen werden nicht aufgespannt", Vorbild ProjectListPage/
-   * CurateCategoriesPage).
+   * (Design-System-Regel "zeilenweise Listen werden nicht aufgespannt").
    */
   layout: 'bar' | 'row'
   onSelect?: () => void
@@ -134,8 +133,8 @@ function ProjectNavLink({ target, projectId, isActive, layout, onSelect }: Proje
   return (
     <Link
       to={target.buildPath(projectId)}
-      // Der sichtbare Text IST der zugaengliche Name - bewusst kein zusaetzliches aria-label
-      // (AK11b), das sonst still von der Beschriftung abdriften koennte.
+      // Der sichtbare Text IST der zugängliche Name - bewusst kein zusätzliches aria-label,
+      // das sonst still von der Beschriftung abdriften könnte.
       aria-current={isActive ? 'page' : undefined}
       onClick={onSelect}
       className={cn(
@@ -157,7 +156,7 @@ export function ProjectNav({ projectId }: ProjectNavProps) {
   const { pathname } = useLocation()
   const activeTargetId = resolveActiveNavTargetId(pathname)
   // Kontrolliert gehalten: Radix schliesst bei einer Navigation nicht von selbst, ein offen
-  // zurueckbleibendes Panel ueber der neuen Seite waere ein echter Fehler (AK6).
+  // zurückbleibendes Panel über der neuen Seite wäre ein echter Fehler.
   const [open, setOpen] = useState(false)
 
   const isSecondaryActive = isSecondaryNavTargetId(activeTargetId)
@@ -166,8 +165,8 @@ export function ProjectNav({ projectId }: ProjectNavProps) {
     <nav aria-label="Projektbereiche" className="flex items-center gap-3">
       {/* gap-3 (12px) ist Pflicht, kein Geschmack: die aufgespannten Trefferflaechen ragen bis zu
           6px je Seite ueber das Sichtbare hinaus und duerfen sich nicht ueberlappen - in einer
-          Ueberlappung gewinnt das obenliegende Element. Seit Spec 0347 steht ab `lg:` auch der
-          Ausloeser unmittelbar neben "Vergleich", deshalb traegt der <nav> denselben Abstand. */}
+          Überlappung gewinnt das obenliegende Element. Ab `lg:` steht auch der Auslöser
+          unmittelbar neben "Vergleich", deshalb trägt der <nav> denselben Abstand. */}
       <div className="hidden items-center gap-3 lg:flex">
         {PROJECT_NAV_PRIMARY_TARGETS.map((target) => (
           <ProjectNavLink
@@ -208,7 +207,8 @@ export function ProjectNav({ projectId }: ProjectNavProps) {
         <PopoverContent align="start" className="w-56 p-2">
           {/* ZWEI <ul> STATT EINER LISTE MIT TRENNELEMENT: die drei Hauptzeilen brauchen ohnehin
               einen gemeinsamen `lg:hidden`-Container (sonst truege jede Zeile die Klasse einzeln),
-              und genau dieser gemeinsame Vorfahre ist die in jsdom pruefbare Struktur von AK5.
+              und genau dieser gemeinsame Vorfahre ist die in jsdom prüfbare Struktur der
+              Gruppentrennung.
               Ein `role="group"` oder ein Label kommt ausdruecklich NICHT hinzu: der Panelinhalt
               liegt im Portal ausserhalb des Landmarks, eine Gruppe braeuchte selbst eine
               Ankuendigung, und ab `lg:` bliebe sie eine sinnlose Ein-Gruppen-Struktur. */}
