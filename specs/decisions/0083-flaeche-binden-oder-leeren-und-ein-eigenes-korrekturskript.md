@@ -1,7 +1,9 @@
-# 0081 - Eine Variante bindet ihre Fläche oder leert sie ausdrücklich; der bespielte Stand wird über ein eigenes Korrekturskript nachgezogen
+# 0083 - Eine Variante bindet ihre Fläche oder leert sie ausdrücklich; der bespielte Stand wird über ein eigenes Korrekturskript nachgezogen
 
 **Status:** Accepted
 **Datum:** 2026-09-11
+**Frühere Nummer:** 0081 (bis 2026-09-11), aufgelöste Dublette mit
+`0081-dokumentnummer-ist-identitaet-die-juengere-dublette-zieht-um.md`.
 **Bezug:** [GitHub-Issue #377](https://github.com/TheRealKoller/photosort/issues/377), [`decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md`](./0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md), [`decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md`](./0065-penpot-als-design-quelle-rangfolge-umgekehrt.md)
 
 ## Kontext

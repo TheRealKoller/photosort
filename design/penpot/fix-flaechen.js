@@ -2,7 +2,7 @@
 /*
  * Zieht die FUELLUNG der Variantenbretter und die FARBE ihrer Beschriftung im bereits bespielten
  * Stand der Penpot-Datei "PhotoSort — Dark Utility Register" auf das Soll aus `components.json`
- * nach (decisions/0081-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md Abschnitt 3).
+ * nach (decisions/0083-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md Abschnitt 3).
  *
  * Der Dateikopf liegt ueber dem Richtwert von rund einem Viertel der Zeilen, weil diese Datei als
  * einzige der Nutzlast WIEDERHOLBAR AUF DAS ORIGINAL SCHREIBT und ihre Auflagen nirgends sonst im

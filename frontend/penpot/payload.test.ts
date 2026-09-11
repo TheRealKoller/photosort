@@ -1117,7 +1117,7 @@ describe('Die Kardinalitaeten von verify.js', () => {
 /**
  * Eine ungebundene Standardfuellung ist keine Bindung und taucht in `tokenBindungen` nirgends auf -
  * ein weisses Brett sieht dort aus wie ein leeres. Belegbar ist der Unterschied nur ueber zwei
- * Zaehlwerte je Baustein (ADR 0081 Abschnitt 4).
+ * Zaehlwerte je Baustein (ADR 0083 Abschnitt 4).
  *
  * ⚠ ZURUECK KOMMEN ZWEI ZAHLEN, KEIN FARBWERT - und kein gelesener Wert gelangt in eine
  * Fehlermeldung: Eine Ausnahme geht denselben Weg in den Sitzungskontext wie die Rueckgabe.
@@ -2666,7 +2666,7 @@ function alleBindungen(): { baustein: SimulationsBaustein; bindung: Bindung }[] 
 
 /**
  * Varianten, die im Produkt KEINE eigene Flaeche tragen - eingefroren, je Auspraegung, mit Grund
- * und mit der Zahl der gedeckten Varianten (ADR 0081 Abschnitt 2).
+ * und mit der Zahl der gedeckten Varianten (ADR 0083 Abschnitt 2).
  *
  * ⚠ DIE ZAHL IST TRAGEND, weil die Deckung 1:n ist: Eine Teilaenderung laesst einen Eintrag nicht
  * verwaisen, sondern nur schrumpfen - die blosse Verwaisungspruefung bliebe dabei gruen.

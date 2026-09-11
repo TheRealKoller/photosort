@@ -98,7 +98,7 @@ sind, daraus je eine Bibliotheks-Komponente, und daraus je Baustein ein Variante
 erzeugtes Board trägt eine deckend **weiße** Standardfüllung, nicht etwa keine; wo nichts gebunden
 wird, leuchtet es aus einem dunklen Entwurf heraus und die Beschriftung darauf erreicht rund 2,2:1.
 Geleert wird **nach** dem Binden und nur dort, wo die Bindungslogik nachweislich keine Fläche auf
-das Brett angewandt hat (ADR [`0081`](../../specs/decisions/0081-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md)).
+das Brett angewandt hat (ADR [`0083`](../../specs/decisions/0083-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md)).
 Eine fehlende Rolle `flaeche` in `components.json` heißt damit: **im Produkt ist diese Fläche
 transparent** — eine Aussage, die je Ausprägung namentlich mit Grund geführt wird, samt
 Gegenrichtung. Heute sind das 25 der 158 Varianten (`button/ghost`, `button/link`,

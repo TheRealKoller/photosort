@@ -643,7 +643,7 @@ Die Farbfunktions-Familie hat als einzige **keine repo-seitige Gegenprobe** (das
 
 Bisher kannte `design/penpot/` zwei Sorten Datei: **erzeugte** (`tokens.json`/`icons.json`, Positivkorpus der
 Gegenprobe) und **handgeschriebene Nutzlast** (die fünf Skripte — aufbauen, zurücklesen und seit ADR
-[`0081`](../decisions/0081-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md) **korrigieren** —
+[`0083`](../decisions/0083-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md) **korrigieren** —
 plus `components.json`, Suchraum der Wertfreiheit). `views.json` ist eine dritte: handgeschrieben, aber **keine
 Nutzlast** — sie wird nie ausgeführt und an kein Skript übergeben. Sie sagt, *dass* und *wie* ein Entwurf
 abgelegt ist, nie *wie er aussieht*.
@@ -691,7 +691,7 @@ zweite Quelle einzutragen, nur um an eine dort gesetzte Klasse heranzukommen, er
 Zustandsachse, die der Baustein gar nicht hat. Die Gegenprobe liest die Produktdatei **namentlich** im eigenen
 Testblock, statt sie in `quellen` aufzunehmen.
 
-### Zwei Regeln aus der Flächen-Story — neu für Spec [`0377`](../features/0377-penpot-bausteine-flaechen.md) / ADR [`0081`](../decisions/0081-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md)
+### Zwei Regeln aus der Flächen-Story — neu für Spec [`0377`](../features/0377-penpot-bausteine-flaechen.md) / ADR [`0083`](../decisions/0083-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md)
 
 Beide entstanden an Zusicherungen, die **grün durchgelaufen wären, statt rot zu werden**. Sie gelten über
 diese Spec hinaus, wo immer eine Testdatei eine Erzeugungslogik nachbildet oder eine Ausnahme einfriert.

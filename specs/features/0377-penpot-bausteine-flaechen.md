@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Erstellt:** 2026-09-11
-**Bezug:** [GitHub-Issue #377](https://github.com/TheRealKoller/photosort/issues/377), ADR [`0081`](../decisions/0081-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md)
+**Bezug:** [GitHub-Issue #377](https://github.com/TheRealKoller/photosort/issues/377), ADR [`0083`](../decisions/0083-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md)
 
 **Umfang:** über dem Richtwert von rund 200 Zeilen, weil die Fall-Entscheidung je betroffener
 Variante (Akzeptanzkriterium 2) und die Kontrastpaarungen (Kriterium 3) tabellarisch geführte
@@ -97,7 +97,7 @@ statischen Regeln; keine Entität, kein Endpunkt, kein Feld. `docs/architecture.
 
 ## Architektur / Umsetzung
 
-Grundlage: ADR [`0081`](../decisions/0081-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md).
+Grundlage: ADR [`0083`](../decisions/0083-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md).
 
 **Der Mechanismus.** `baueVariante` schließt jedes Brett mit genau einem von beidem ab: gebundene
 Fläche **oder** ausdrücklich geleerte Füllung (`brett.fills = []`). Geleert wird **nach** dem

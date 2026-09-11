@@ -213,7 +213,7 @@ function wendeTokenAn(formen, eigenschaften, tokenName) {
 /**
  * Bindet die Rollen einer Tabelle und GIBT ZURUECK, welche Penpot-Eigenschaften dabei auf das
  * BRETT angewandt wurden. Der Rueckgabewert traegt die Entscheidung, ob das Brett anschliessend
- * geleert wird (ADR 0081 Abschnitt 1) - er ist das Ergebnis der Bindungslogik und kann von ihr
+ * geleert wird (ADR 0083 Abschnitt 1) - er ist das Ergebnis der Bindungslogik und kann von ihr
  * deshalb nicht abweichen.
  *
  * ⚠ EIGENSCHAFTEN, NICHT ROLLENNAMEN. `schrift` bildet ebenfalls auf `fill` ab, geht aber an die
