@@ -173,6 +173,41 @@ test('penpot-entwurfsrunden nennt genau die beiden Pruefbreiten dieses Pakets', 
   }
 })
 
+test('die Schritttabelle von penpot-design fuehrt jede Nutzlast-Skriptdatei', () => {
+  const skill = repoFile('.claude/skills/penpot-design/SKILL.md')
+
+  // Die Dateimenge wird GELESEN, nicht getippt: `JS_NUTZLAST` in payload.test.ts ist die Liste,
+  // gegen die auch die Aufrufform-Regeln laufen. Eine zweite Liste hier waere ab der ersten
+  // neuen Nutzlastdatei eine andere - und genau dann faellt eine Anleitung still auseinander,
+  // die einen Schritt nicht kennt.
+  const block = /const JS_NUTZLAST = \[([\s\S]*?)\] as const/.exec(
+    repoFile('frontend/penpot/payload.test.ts'),
+  )
+  expect(block, 'JS_NUTZLAST in payload.test.ts').not.toBeNull()
+  const dateien = [...block![1]!.matchAll(/'([^']+)'/g)].map((treffer) => treffer[1]!)
+  expect(dateien.length, 'Zahl der ausfuehrbaren Nutzlastdateien').toBeGreaterThan(4)
+
+  const tabellenzeilen = skill.split('\n').filter((zeile) => zeile.trimStart().startsWith('|'))
+  for (const datei of dateien) {
+    const zeile = tabellenzeilen.find((kandidat) => kandidat.includes(`\`${datei}\``))
+    expect(zeile, `Schritttabellen-Zeile fuer ${datei}`).toBeDefined()
+
+    // Der Einfuegename steht in der Datei selbst ("Genau eine Einfuegestelle: const NAME = ...").
+    // Er wird dort gelesen statt hier wiederholt; eine Umbenennung faerbt damit die Anleitung rot.
+    const kopf = /const ([A-Z_]+) = <exakter Inhalt von ([a-z-]+\.json)>/.exec(
+      repoFile(`design/penpot/${datei}`),
+    )
+    if (kopf === null) {
+      // Eine Datei ohne Einfuegestelle sagt das in der Tabelle ausdruecklich, statt die Spalte
+      // leer zu lassen - sonst waere "vergessen" von "gibt es nicht" nicht zu unterscheiden.
+      expect(zeile, `${datei} ohne Einfuegestelle`).toContain('—')
+      continue
+    }
+    expect(zeile, `Einfuegename von ${datei}`).toContain(`\`${kopf[1]}\``)
+    expect(zeile, `Datendatei von ${datei}`).toContain(`\`${kopf[2]}\``)
+  }
+})
+
 test('die Demo-Projektnamen des Pruefsatzes stammen aus dem Seeder', () => {
   const seeder = repoFile('backend/src/photosort/demo_state.py')
 

@@ -1,6 +1,6 @@
 // LAUFREGEL: nur-auf-leerer-datei
 /*
- * Baut die elf Bausteine und ihre Varianten in der Penpot-Datei
+ * Baut die zwoelf Bausteine und ihre Varianten in der Penpot-Datei
  * "PhotoSort — Dark Utility Register" auf (decisions/0066-penpot-stand-als-erzeugte-idempotente-
  * nutzlast.md Abschnitt 4).
  *
@@ -17,11 +17,11 @@
  *   const BAUSTEINE = <exakter Inhalt von components.json>;
  * gefolgt von dieser Datei, unveraendert.
  *
- * ⚠ EINE ZEITUEBERSCHREITUNG DIESES AUFRUFS IST KEIN FEHLSCHLAG. 146 Varianten mit je rund einem
+ * ⚠ EINE ZEITUEBERSCHREITUNG DIESES AUFRUFS IST KEIN FEHLSCHLAG. 158 Varianten mit je rund einem
  * Dutzend API-Aufrufen dauern laenger, als `execute_code` auf eine Antwort wartet: Der Aufruf
  * endet mit "The operation timed out", waehrend die Arbeit vollstaendig ausgefuehrt wird - beim
- * ersten echten Lauf gemessen, alle Bausteine und alle Bindungen waren danach da. Bei 146
- * Varianten ist das der NORMALFALL, nicht der Ausnahmefall.
+ * ersten echten Lauf gemessen (damals 146 Varianten), alle Bausteine und alle Bindungen waren
+ * danach da. Bei 158 Varianten ist das der NORMALFALL, nicht der Ausnahmefall.
  *
  * Vor jeder Reaktion wird der Stand ZURUECKGELESEN (Zahl der Variantenbehaelter und ihrer
  * Auspraegungen). Erst das Ergebnis entscheidet, ob etwas fehlt - nicht die Meldung. Fehlt
@@ -32,7 +32,7 @@
  * Stand, und der ist nach ADR 0065 das Original, keine Kopie.
  *
  * `execute_code` FUEHRT DEN TEXT ALS FUNKTIONSRUMPF AUS und liefert nur zurueck, was ein `return`
- * zurueckgibt (gemessen) - deshalb endet diese Datei, wie alle vier, auf ein `return`.
+ * zurueckgibt (gemessen) - deshalb endet diese Datei, wie jede Nutzlastdatei, auf ein `return`.
  *
  * DIESES SKRIPT LOESCHT NICHTS.
  *
@@ -43,7 +43,8 @@
  * gepflegt werden muesste. In der Story, die den Platzhalter aufgenommen hat, LAEUFT dieses
  * Skript nicht: die Datei traegt bereits Bausteine, der Waechter unten greift, und der elfte
  * Baustein entsteht in Penpot von Hand. Mitgezogen wird das Skript ausschliesslich fuer seine
- * dauerhafte Rolle - die WIEDERHERSTELLUNG NACH INSTANZVERLUST, bei der es alle elf aufbaut.
+ * dauerhafte Rolle - die WIEDERHERSTELLUNG NACH INSTANZVERLUST, bei der es alle aufbaut, die
+ * `components.json` fuehrt.
  *
  * WORAN DIE BAUSTEINE WIEDERERKANNT WERDEN: an den Plugin-Daten `schluessel`, die jede
  * Variantenkomponente traegt - NICHT am Namen. `createVariantContainer` benennt die
@@ -57,7 +58,7 @@
  * `createShapeFromSvg` ist gemessen, dass die Form sonst im zuletzt angelegten Board landet - im
  * ersten echten Lauf der Symbole steckten dadurch alle zwoelf Gruppen ineinander. Ob `createBoard`
  * dieselbe Eigenschaft hat, ist NICHT gemessen; die Verankerung steht hier vorsorglich, weil sie
- * billig und in beiden Faellen richtig ist - und weil eine Verschachtelung bei 146 Auspraegungen
+ * billig und in beiden Faellen richtig ist - und weil eine Verschachtelung bei 158 Auspraegungen
  * ungleich schwerer zu entwirren waere. Aus demselben Grund bekommt jedes Brett eine Position:
  * je Baustein eine Reihe, die Bausteine untereinander. Die Abstaende ergeben sich aus den Massen
  * der Bretter selbst, nicht aus einem getippten Raster.
@@ -137,7 +138,7 @@ const TEXT_ROLLEN = ['schrift', 'schriftfamilie', 'typografie']
  * dieselbe Regel wie in `seed-icons.js`: auf die Blattformen, nicht auf die Gruppe.
  */
 
-/* GETEILTE ERKENNUNG - wortgleich auch in verify.js, statisch zugesichert. */
+/* GETEILTE ERKENNUNG - wortgleich auch in fix-flaechen.js und verify.js, statisch zugesichert. */
 function bausteinSchluesselInDatei() {
   const gefunden = []
   for (const komponente of penpot.library.local.components) {
@@ -151,7 +152,7 @@ function bausteinSchluesselInDatei() {
 
 /**
  * FAIL-CLOSED. Bricht ab, sobald die Datei bereits einen der Bausteine aus `components.json`
- * traegt - heute elf. Ein blosser Hinweis genuegte hier nicht: das Ueberschreiben waere
+ * traegt - heute zwoelf. Ein blosser Hinweis genuegte hier nicht: das Ueberschreiben waere
  * unwiederbringlich. Die Zahl steht bewusst nicht in der Bedingung: geprueft wird die Kollision
  * je Schluessel, nicht eine Anzahl.
  */
@@ -209,16 +210,64 @@ function wendeTokenAn(formen, eigenschaften, tokenName) {
   findeToken(tokenName).applyToShapes(formen, eigenschaften)
 }
 
+/**
+ * Bindet die Rollen einer Tabelle und GIBT ZURUECK, welche Penpot-Eigenschaften dabei auf das
+ * BRETT angewandt wurden. Der Rueckgabewert traegt die Entscheidung, ob das Brett anschliessend
+ * geleert wird (ADR 0083 Abschnitt 1) - er ist das Ergebnis der Bindungslogik und kann von ihr
+ * deshalb nicht abweichen.
+ *
+ * ⚠ EIGENSCHAFTEN, NICHT ROLLENNAMEN. `schrift` bildet ebenfalls auf `fill` ab, geht aber an die
+ * BESCHRIFTUNG. Wer die vorgekommenen Rollen sammelt statt der aufs Brett angewandten
+ * Eigenschaften, haelt praktisch jede Variante fuer gebunden - und der Fehler bliebe bestehen,
+ * waehrend alles gruen ist.
+ *
+ * Der Nachschlag laeuft ueber EIGENE Schluessel: `constructor` loeste an einem Objektliteral sonst
+ * auf, und aus einer unbekannten Rolle wuerde eine scheinbar bekannte.
+ */
 function bindeRollen(brett, beschriftung, rollen, herkunft, nachzubinden) {
+  const gesetzt = []
   for (const rolle of Object.keys(rollen)) {
-    const eigenschaften = ROLLE_ZU_EIGENSCHAFT[rolle]
+    const bekannt = Object.prototype.hasOwnProperty.call(ROLLE_ZU_EIGENSCHAFT, rolle)
+    const eigenschaften = bekannt ? ROLLE_ZU_EIGENSCHAFT[rolle] : null
     if (!eigenschaften) {
       nachzubinden.push(herkunft + ': ' + rolle + ' -> ' + rollen[rolle])
       continue
     }
-    const ziel = TEXT_ROLLEN.indexOf(rolle) !== -1 ? beschriftung : brett
-    wendeTokenAn([ziel], eigenschaften, rollen[rolle])
+    const aufsBrett = TEXT_ROLLEN.indexOf(rolle) === -1
+    wendeTokenAn([aufsBrett ? brett : beschriftung], eigenschaften, rollen[rolle])
+    if (aufsBrett) {
+      for (const eigenschaft of eigenschaften) {
+        if (gesetzt.indexOf(eigenschaft) === -1) {
+          gesetzt.push(eigenschaft)
+        }
+      }
+    }
   }
+  return gesetzt
+}
+
+/**
+ * GETEILTE TABELLENREIHENFOLGE - wortgleich auch in fix-flaechen.js, statisch zugesichert.
+ *
+ * Welche Rollen-Tabellen eine Variante betreffen und in welcher Reihenfolge sie angewandt werden:
+ * erst die Grundtabelle des Bausteins, dann je Achse die Tabelle ihrer Auspraegung, in der
+ * Achsenreihenfolge der Datendatei. Wer spaeter kommt, gewinnt.
+ *
+ * ⚠ DER KORREKTURLAUF LEITET SEIN SOLL AUS DERSELBEN FUNKTION AB. Zweimal geschrieben liefe die
+ * Reihenfolge irgendwann auseinander, und `fix-flaechen.js` schriebe ein anderes Soll in den
+ * bespielten Stand, als dieser Aufbau erzeugt - ohne dass ein Test das saehe.
+ */
+function rollenTabellenFuer(baustein, achsenwerte) {
+  const tabellen = [baustein.tokens]
+  const proAuspraegung = baustein.tokensProAuspraegung || {}
+  for (const achse of Object.keys(baustein.varianten)) {
+    const achsenTabelle = proAuspraegung[achse] || {}
+    const besondere = achsenTabelle[achsenwerte[achse]]
+    if (besondere) {
+      tabellen.push(besondere)
+    }
+  }
+  return tabellen
 }
 
 /**
@@ -228,8 +277,8 @@ function bindeRollen(brett, beschriftung, rollen, herkunft, nachzubinden) {
  * `auspraegung=ghost` traegt und zu `groesse`/`zustand` schweigt, ist keine wohldefinierte
  * Variante. Gebaut wird deshalb das vollstaendige Kreuzprodukt der in `components.json`
  * gefuehrten Achsen - die Achsen selbst sind eine Design-System-Aussage und werden hier NICHT
- * reduziert. Das ergibt bei der Schaltflaeche 6 x 3 x 5 = 90 Varianten und ueber alle elf
- * Bausteine 146; das ist viel, aber mechanisch und ohne Urteil abgeleitet.
+ * reduziert. Das ergibt bei der Schaltflaeche 6 x 3 x 5 = 90 Varianten und ueber alle zwoelf
+ * Bausteine 158; das ist viel, aber mechanisch und ohne Urteil abgeleitet.
  */
 function kombinationen(varianten) {
   let ergebnis = [{}]
@@ -278,15 +327,23 @@ function baueVariante(baustein, kombination, lage, nachzubinden) {
   brett.appendChild(beschriftung)
 
   const herkunft = baustein.schluessel + '/' + brett.name
-  bindeRollen(brett, beschriftung, baustein.tokens, herkunft, nachzubinden)
+  let gesetzt = []
+  for (const tabelle of rollenTabellenFuer(baustein, kombination)) {
+    gesetzt = gesetzt.concat(bindeRollen(brett, beschriftung, tabelle, herkunft, nachzubinden))
+  }
 
-  const proAuspraegung = baustein.tokensProAuspraegung || {}
-  for (const achse of Object.keys(kombination)) {
-    const achsenTabelle = proAuspraegung[achse] || {}
-    const besondere = achsenTabelle[kombination[achse]]
-    if (besondere) {
-      bindeRollen(brett, beschriftung, besondere, herkunft, nachzubinden)
-    }
+  /*
+   * BINDEN ODER LEEREN, nie weglassen: Ein neu erzeugtes Board traegt eine DECKEND WEISSE
+   * Standardfuellung, nicht etwa keine (2026-09-10 gemessen). Wo nichts gebunden wurde, leuchtet
+   * das Brett sonst weiss aus einem dunklen Entwurf heraus, und die Beschriftung darauf erreicht
+   * rund 2,2:1.
+   *
+   * NACH dem Binden und AUSSERHALB der Achsenschleife: Eine Bindung, die auf ein geleertes Brett
+   * folgt, waere unbelegt - und `button/ghost/disabled` bekommt seine Flaeche erst in der letzten
+   * Iteration. Die 133 gebundenen Bretter werden hier gar nicht erst angefasst.
+   */
+  if (gesetzt.indexOf('fill') === -1) {
+    brett.fills = []
   }
 
   // Abstand ist eine Brettbreite; die Zeilenhoehe waechst mit dem hoechsten Brett der Reihe.

@@ -7,7 +7,7 @@ description: Bespielt und prüft die Penpot-Design-Datei „PhotoSort — Dark U
 
 **GitHub-Erlaubnisstufe:** kein GitHub-Zugriff — weder lesend noch schreibend, gleich über welchen Weg und gleich mit welchem Werkzeug. Jeder Zugriff auf Issues, Board und Pull Requests dieses Repositories läuft über die Operationen des Skills `github-access` und bleibt den dort lesend bzw. schreibend eingestuften Ablauf-Skills der Hauptsession vorbehalten. Lokales `git` ist davon unberührt.
 
-**Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Auflagen des Werkzeugkanals — was ausgeführt wird, was nie gelöscht wird — hier vollständig stehen müssen.
+**Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Auflagen des Werkzeugkanals — was ausgeführt wird, was nie gelöscht wird, und was der einzige wiederholbar schreibende Schritt anfassen darf — hier vollständig stehen müssen.
 
 Die Penpot-Instanz ist ein **dritter Werkzeugkanal** neben `gh` und den GitHub-Werkzeugen. Die Erlaubnisstufe oben regelt nur den GitHub-Kanal; was den Penpot-Kanal begrenzt, ist allein die abschließende Liste im Abschnitt „Was die Nutzlast darf".
 
@@ -48,7 +48,7 @@ Eine belanglose Abfrage über `execute_code` absetzen (z.B. den Namen der offene
 - **Eine Penpot-SEITE trägt Plugin-Daten** (`setPluginData` am `Page`-Objekt) — Marken brauchen kein eigens angelegtes Trägerbrett.
 - **Bilder gehören nicht durch den Aufruftext.** `await penpot.uploadMediaData(name, Uint8Array, mimeType)` legt ein Bild dauerhaft in der Datei ab (`shape.fills = [{ fillOpacity: 1, fillImage: … }]`), aber Base64 durch den Aufruf kommt **unzuverlässig** an: Zeichen gehen verloren ODER werden bei gleicher Länge ersetzt, und ein längengeprüftes Bild war trotzdem reines Farbrauschen. Der verlässliche Weg ist Daniels Upload von Hand (Drag & Drop auf eine Seite); die Bilddaten stehen danach in `fills[0].fillImage` und sind von dort ohne Kopierrisiko und in voller Auflösung weiterverwendbar.
 - **`penpot.openPage` wirkt nicht zuverlässig im selben Aufruf.** Der Seitenwechsel und die Prüfung, ob er gegriffen hat, gehören in **getrennte** `execute_code`-Aufrufe; andernfalls scheitert eine Verifikation, obwohl der Wechsel stattfindet. Ohne Prüfung landen Formen still auf der falschen Seite, denn `penpot.root` ist die Wurzel der **aktiven** Seite.
-- **Jeder Bibliotheks-Baustein ist ein Blatt, und in eine Instanz lassen sich keine Kinder einhängen** (2026-09-09 gemessen, alle elf einzeln zurückgelesen): Ein Baustein ist ein Brett mit genau **einer** Textbeschriftung als einzigem Kind, und `appendChild` an eine Instanz scheitert mit „Cannot change the structure of a component copy". `card` und `dialog` sind im **Produkt** Behälter, in der **Bibliothek** aber Blätter — als Behälter für zusammengesetzten Inhalt sind sie damit unbrauchbar. Folge für den Entwurf: **Blatt-Elemente werden echte Instanzen** (die Beschriftung zu überschreiben funktioniert), **Behälter werden tokengebundene Rahmen** mit genau den Tokens, die der jeweilige Baustein trägt. Das ist keine Umgehung der Dauerregel, sondern die einzige verfügbare Bauform — und wird als **Lücke** in `views.json` geführt, nicht als erledigt.
+- **Jeder Bibliotheks-Baustein ist ein Blatt, und in eine Instanz lassen sich keine Kinder einhängen** (2026-09-09 gemessen, jeder damals vorhandene Baustein einzeln zurückgelesen): Ein Baustein ist ein Brett mit genau **einer** Textbeschriftung als einzigem Kind, und `appendChild` an eine Instanz scheitert mit „Cannot change the structure of a component copy". `card` und `dialog` sind im **Produkt** Behälter, in der **Bibliothek** aber Blätter — als Behälter für zusammengesetzten Inhalt sind sie damit unbrauchbar. Folge für den Entwurf: **Blatt-Elemente werden echte Instanzen** (die Beschriftung zu überschreiben funktioniert), **Behälter werden tokengebundene Rahmen** mit genau den Tokens, die der jeweilige Baustein trägt. Das ist keine Umgehung der Dauerregel, sondern die einzige verfügbare Bauform — und wird als **Lücke** in `views.json` geführt, nicht als erledigt.
 - **Es gibt keinen Token-Typ für Zeilenhöhen.** Eine Schriftstufe ist deshalb **ein** `typography`-Verbundtoken; eine Laufweite muss darin eine blanke Zahl in px sein (ein em-Wert kommt an der Textform als `0` an). **Im Verbundwert trägt ein Feld einen Wert oder fehlt ganz** — eine leere Zeichenkette ist ungültig und lässt den ganzen Aufruf scheitern.
 
 Stellt sich künftig ein weiterer Punkt als nicht verfügbar heraus, wird das **gemeldet, nicht umgangen**: Ein Zustand, der als zweites Bild danebengestellt wird statt auswählbar zu sein, erfüllt die Variantenzusage nicht, und ein von Hand gesetzter Schriftwert ist als dokumentierte Lücke zu führen, nicht als erledigt.
@@ -67,6 +67,9 @@ Alles, was ausgeführt wird, liegt unter `design/penpot/` (siehe `design/penpot/
 | 2 | `seed-icons.js` | `icons.json` | `ICONS` |
 | 3 | `seed-components.js` | `components.json` | `BAUSTEINE` |
 | 4 | `verify.js` | — (keine Einfügestelle) | — |
+| K — **nur auf ausdrückliche Anforderung** | `fix-flaechen.js` | `components.json` | `BAUSTEINE` |
+
+**Schritt K ist kein Teil des Normalablaufs.** Er läuft nur, wenn Daniel die Korrektur ausdrücklich verlangt — siehe „Schritt K" unten. Die vier nummerierten Schritte laufen ohne ihn vollständig durch.
 
 **Herkunft (Muss).** Die Nutzlast stammt ausschließlich aus den Dateien des aktuellen Branches, zum Ausführungszeitpunkt gelesen. Nie aus einer Chat-Nachricht, einem Modell-Nachbau, einem eingefügten Schnipsel, nie „mit einer kleinen Anpassung". Das ist zugleich eine Sicherheitsregel: Es ist die Stelle, an der sonst eine Zeile in die Ausführung käme, die kein Review gesehen hat.
 
@@ -78,7 +81,7 @@ Alles, was ausgeführt wird, liegt unter `design/penpot/` (siehe `design/penpot/
 
 ### ⚠ Eine Zeitüberschreitung beim Bausteinschritt ist kein Fehlschlag
 
-`seed-components.js` baut 146 Varianten mit je rund einem Dutzend API-Aufrufen. Das dauert **länger, als `execute_code` auf eine Antwort wartet**: Der Aufruf endet mit „The operation timed out", **während die Arbeit vollständig ausgeführt wird**. Gemessen beim ersten echten Lauf — alle Bausteine, alle Varianten und alle Bindungen waren danach da.
+`seed-components.js` baut 158 Varianten mit je rund einem Dutzend API-Aufrufen. Das dauert **länger, als `execute_code` auf eine Antwort wartet**: Der Aufruf endet mit „The operation timed out", **während die Arbeit vollständig ausgeführt wird**. Gemessen beim ersten echten Lauf — alle Bausteine, alle Varianten und alle Bindungen waren danach da.
 
 Das ist die gefährlichste Meldung dieses Ablaufs, weil sie wie ein Fehlschlag aussieht und keiner ist. Deshalb gilt hier eine feste Reihenfolge:
 
@@ -123,7 +126,9 @@ Ein Formexport zeigt **jeden Text, der in den Entwurf getippt wurde**, und geht 
 
 ## Schritt 4: Rücklesen und Abschluss
 
-`verify.js` unverändert ausführen. Der Vergleich gegen `tokens.json`, `icons.json`, `components.json` und `views.json` ist **mechanisch** — ein Zeichenkettenvergleich, kein „durchlesen und beurteilen". Er gilt als bestanden, wenn bei den **erzeugten** Objekten keine Abweichung bleibt: jeder erzeugte Tokenname vorhanden und wertgleich, zwölf Symbole, elf Bausteine mit den in `components.json` genannten Varianteneigenschaften und deren Anzahl Ausprägungen, dazu je Baustein die Tokenbindungen. Zusätzlich in Penpot vorhandene Objekte werden als Zahl mitgemeldet.
+`verify.js` unverändert ausführen. Der Vergleich gegen `tokens.json`, `icons.json`, `components.json` und `views.json` ist **mechanisch** — ein Zeichenkettenvergleich, kein „durchlesen und beurteilen". Er gilt als bestanden, wenn bei den **erzeugten** Objekten keine Abweichung bleibt: jeder erzeugte Tokenname vorhanden und wertgleich, zwölf Symbole, zwölf Bausteine mit den in `components.json` genannten Varianteneigenschaften und deren Anzahl Ausprägungen, dazu je Baustein die Tokenbindungen. Zusätzlich in Penpot vorhandene Objekte werden als Zahl mitgemeldet.
+
+**Zwei Zählwerte je Baustein gehören zum bestandenen Abgleich:** `variantenOhneFuellung` und `variantenMitFuellungOhneBindung`. Der zweite ist der eigentliche Befund — eine Fläche, die aus keinem Token stammt — und **muss über alle Bausteine 0 sein**. Eine ungebundene Standardfüllung ist keine Bindung und taucht in der Bindungsliste nirgends auf: Ein weißes Brett sieht dort aus wie ein leeres. Ist der Wert nicht 0, ist der Weg zurück Schritt K, nicht ein Wiederaufbau.
 
 **Die Ansichtsliste gehört zum selben Abgleich.** `verify.js` liefert je Ansichtsbrett die Plugin-Daten `ansicht`/`breite`, die Varianteneigenschaften samt Zahl ihrer Ausprägungen, die Zahl der Bibliotheks-Instanzen, die Zahl der Formen, die **keine** Instanz sind, und die Tokenbindungen des Unterbaums. Verglichen wird gegen `views.json`: die Ansichtsschlüssel, je Ansicht die zwei Breiten, die Zustände als Ausprägungen der Achse `zustand`, dazu `ERWARTETE_ANSICHTEN`, `ERWARTETE_ANSICHTSBRETTER` und `ERWARTETE_ANSICHTSBEHAELTER`. **Behälter zählen nicht als Bretter** — sie tragen `ansicht`/`breite` ebenfalls, werden aber getrennt geführt; ohne diese Trennung zählte der erste echte Lauf 16 statt 14. **Die Zahl der Nicht-Instanzen ist ein Hinweis, keine Schwelle** — Texte und Rahmen sind legitim keine Instanzen; sie wird berichtet, nicht gefahren, und die Beurteilung „zusammengesetzt statt nachgezeichnet" trifft ein Mensch.
 
@@ -138,6 +143,19 @@ Dazu eine Sichtprüfung über `export_shape` auf eine **Form**, nie ein Fenstera
 **Der Abschlussbericht ist selbst formuliert.** In ein dauerhaftes Artefakt (Pull-Request-Text, Spec, Datei) gelangt ausschließlich ein eigenes Urteil, **nie die eingefügte Ausgabe** von `verify.js` und nie eine Fehlermeldung des MCP-Servers: Rohausgaben tragen typischerweise Instanz-IDs und Pfade mit, und ein PR-Body ist öffentlich und nicht zurücknehmbar. Rohausgaben gehen in den Chat, den ein Mensch liest.
 
 **Nichts aus der Instanz wird eingecheckt:** kein `.penpot`-Export, kein Bildschirmfoto mit Adresszeile, kein Prüfbericht als Datei (er wäre eine dritte Wertekopie, veraltet ab dem Tag seiner Erstellung).
+
+## Schritt K: Flächen im bespielten Stand nachziehen — nur auf ausdrückliche Anforderung
+
+`fix-flaechen.js` zieht die **Füllung** der Variantenbretter und die **Farbe ihrer Beschriftung** auf das Soll aus `components.json` nach. Es läuft **nie** als Teil des Normalablaufs, sondern nur, wenn Daniel es verlangt oder Schritt 4 `variantenMitFuellungOhneBindung > 0` gemeldet hat.
+
+Es ist die einzige Datei der Nutzlast, die **wiederholbar auf den bespielten Stand schreibt** — und der ist nach ADR [`0065`](../../../specs/decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md) das Original. Ein Wiederaufbau zur Reparatur scheidet aus: Er kostet die von Hand entstandenen Ansichten.
+
+- **Es fasst nichts anderes an.** Keine Struktur, keine Position, keine Größe, keine Benennung, keine Plugin-Daten, keine Löschung. Erlaubt sind allein `applyToShapes` und `fills = []`; das ist statisch zugesichert.
+- **Fail-closed je Komponente.** Wer Aufbau oder Achsenwerte verfehlt, bleibt unberührt und erscheint als `strukturAbweichend`. Ein solcher Eintrag ist **kein Fehlschlag des Laufs**, sondern ein Befund: Die betroffene Komponente ist von Hand entstanden oder abgewandelt worden.
+- **Der Bericht wird gelesen, nicht quittiert (Muss).** `geaendert` ist auf dem **ersten** Lauf erwartbar. Auf jedem weiteren bedeutet ein Eintrag dort, dass jemand die Füllung in Penpot von Hand abweichend gesetzt hat; dieser Lauf hat sie überschrieben, und ihr voriger Wert steht in **keiner** Datei. Das gehört in den Abschlussbericht, mit Namen der betroffenen Varianten.
+- **Danach Schritt 4 erneut**, und `variantenMitFuellungOhneBindung` muss 0 sein.
+
+**Der Seitengrund gehört zur selben Nachführung.** Er steht in keiner Datei und wird von keinem Skript gesetzt: Die Penpot-Seite der Bausteine ist von Hand auf `color.bg` zu setzen, sonst beurteilt die Sichtprüfung einen anderen Untergrund als den, gegen den der Kontrast gerechnet ist.
 
 ## Was die Nutzlast darf — abschließend
 
