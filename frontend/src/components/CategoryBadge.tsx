@@ -17,15 +17,14 @@ interface CategoryBadgeProps {
  * statische, vollstaendige Strings; dieselbe Regel wie in ui/badge.tsx, statisch erzwungen in
  * src/designSystem.contract.test.ts.
  *
- * DAS IST EINE TEIL-RUECKNAHME. Zuvor wurde jede frontendseitige, nach `category_key`
- * geschluesselte Tabelle abgeschafft, weil Anzeigenamen zur Laufzeit vom Server kommen. Fuer
- * ANZEIGENAMEN bleibt das so (sie kommen weiterhin ueber `GET /categories`, siehe unten). Fuer
- * FARBEN entsteht hier eine neue solche Tabelle, weil der Server keine Farben liefert und auch
- * keine liefern sollte: eine Chip-Farbe ist eine Gestaltungs-, keine Fachentscheidung.
+ * Nur die FARBEN stehen hier. Fuer ANZEIGENAMEN gibt es bewusst keine nach `category_key`
+ * geschluesselte Tabelle im Frontend - sie kommen zur Laufzeit ueber `GET /categories`. Farben
+ * liefert der Server nicht und soll er nicht liefern: eine Chip-Farbe ist eine Gestaltungs-,
+ * keine Fachentscheidung.
  *
- * Die dadurch entstehende Kopplung ist real und bewusst getragen: kommt je eine vierzehnte
- * Kategorie hinzu, braucht sie hier einen Eintrag und zeigt sonst neutral. Der Fallback verhindert,
- * dass das ein Fehler wird - es bleibt eine sichtbare Luecke, kein Absturz und kein leeres Badge.
+ * Kommt je eine vierzehnte Kategorie hinzu, braucht sie hier einen Eintrag und zeigt sonst
+ * neutral. Der Fallback verhindert, dass das ein Fehler wird - es bleibt eine sichtbare Luecke,
+ * kein Absturz und kein leeres Badge.
  */
 const CHIP_CLASSES: Readonly<Record<string, string>> = {
   menschen: 'bg-chip-menschen text-chip-menschen-fg',
@@ -41,10 +40,9 @@ const CHIP_CLASSES: Readonly<Record<string, string>> = {
   kunst_kreatives: 'bg-chip-kunst-kreatives text-chip-kunst-kreatives-fg',
   sport_aktivitaet: 'bg-chip-sport-aktivitaet text-chip-sport-aktivitaet-fg',
   /* "Nicht erkannt" bekommt bewusst KEINE eigene Farbe: die Kategorie drueckt kein
-     Erkennungsergebnis aus, sondern dessen Fehlen. Eine dreizehnte Buntfarbe wuerde ihr eine
-     Aussage geben, die sie nicht hat - das neutrale Paar sagt genau das Richtige. Damit ist sie
-     zugleich die einzige Kategorie, die man auch ohne jede Farbwahrnehmung sofort von den uebrigen
-     zwoelf unterscheidet. Kein Fehler-Styling: ein fehlendes Erkennungsergebnis ist kein Fehler. */
+     Erkennungsergebnis aus, sondern dessen Fehlen - eine dreizehnte Buntfarbe gaebe ihr eine
+     Aussage, die sie nicht hat. Kein Fehler-Styling: ein fehlendes Erkennungsergebnis ist kein
+     Fehler. */
   nicht_erkannt: 'bg-chip-nicht-erkannt text-chip-nicht-erkannt-fg',
 }
 
@@ -61,8 +59,7 @@ const NEUTRAL_CHIP_CLASSES = CHIP_CLASSES.nicht_erkannt
  * ohne Nachdenken erkennbar, welches von beiden die Bewertung ist.
  *
  * Sichtbar sind drei Grossbuchstaben aus dem ANZEIGENAMEN (ueber das feste Set kollisionsfrei), der
- * vollstaendige Name steht als `aria-label`/`title`. Die Namen kommen weiterhin zur Laufzeit vom
- * Server; die Teil-Ruecknahme von 0289 gilt ausschliesslich fuer Farben.
+ * vollstaendige Name steht als `aria-label`/`title`.
  */
 export function CategoryBadge({ categoryKey, categories, className }: CategoryBadgeProps) {
   const label = formatCategoryKey(categoryKey, categories)

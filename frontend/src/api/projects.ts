@@ -63,9 +63,8 @@ export function confirmAusschussGate(id: number): Promise<TriggerScanResponse> {
 }
 
 /**
- * Der EINE Ausloeser der Klassifizierung - ersetzt triggerScoreCriteria UND
- * triggerClassifyCategoriesRemote. Der Server verkettet beide Phasen; die frueher noetige
- * Reihenfolge-Kenntnis entfaellt.
+ * Der EINE Ausloeser der Klassifizierung - der Server verkettet beide Phasen, der Aufrufer kennt
+ * ihre Reihenfolge nicht.
  *
  * `scoringRunId`: Staleness-Guard bei einem zwischenzeitlichen Re-Scan/Re-Scoring (siehe
  * ScoringRunSummary.id). `useCloud`: laufbezogene Cloud-Freigabe - erteilt KEINE Einwilligung
@@ -83,8 +82,7 @@ export function triggerClassification(
   })
 }
 
-// PUT statt POST, da ein Zustand gesetzt wird statt ein Job ausgeloest (siehe backend
-// api/projects.py-Kommentar).
+// PUT statt POST, da ein Zustand gesetzt wird statt ein Job ausgeloest.
 export function setCloudVisionConsent(
   id: number,
   enabled: boolean,
