@@ -1,6 +1,6 @@
 # 0395 - Dateiarbeit läuft über die dedizierten Werkzeuge; die Shell ist die begründete Ausnahme
 
-**Status:** Accepted
+**Status:** Implemented (PR-Verweis wird nach dem Eröffnen nachgetragen)
 **Erstellt:** 2026-09-11
 **Bezug:** GitHub-Issue [`#395`](https://github.com/TheRealKoller/photosort/issues/395), Architekturentscheidung ADR [`0077`](../decisions/0077-dateiarbeit-ueber-dedizierte-werkzeuge-als-vorgabe.md), ADR [`0061`](../decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md) (Härtungsregel 4.1 — ergänzt, nicht abgelöst), `CLAUDE.md`, `.claude/skills/github-access/SKILL.md`, `.claude/agents/developer.md`, `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`
 
@@ -435,7 +435,12 @@ an.
   Umgebungsanweisung, die ausdrücklich verlangte, Dateien über die Shell statt über die
   dedizierten Werkzeuge zu lesen und zu ändern. Der Fall, den die Vorrangklausel adressiert, ist
   damit belegt eingetreten — und **kein Test dieses Features kann ihn sehen**. Diese Zeile ist
-  der einzige Ort, an dem er aktenkundig wird.
+  einer von zwei Orten, an denen er aktenkundig wird; der zweite steht unter „Bekannte Lücken" im
+  Testkonzept. **Nachtrag aus der Umsetzung (2026-09-11):** Der umsetzende `developer`-Lauf lief
+  unter derselben Anweisung. Er hat die Vorrangklausel angewandt, bevor sie im Repository stand —
+  Dateiarbeit über die dedizierten Werkzeuge, die Shell für Testläufe, Messungen und `git`, und
+  die Abweichung vom Umgebungshinweis zu Beginn benannt statt stillschweigend vollzogen. Das ist
+  eine einzelne Beobachtung und keine Messung, aber es ist die erste, die es gibt.
 - **Der Test prüft die Verankerung, nicht die Wirkung.** Eine grüne CI ist hier keine Aussage
   über die tatsächliche Werkzeugwahl — derselbe ehrliche Vorbehalt wie bei `test_setup_docs.py`.
 - **`CLAUDE.md` wächst um einen Abschnitt.** Das ist die Datei, die bei jedem Lauf vollständig
