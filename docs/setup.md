@@ -24,7 +24,13 @@ Das Frontend ruft die API cross-origin auf und braucht dafür zwei zusammenspiel
 ```bash
 cd backend && pytest
 cd frontend && npm test
+cd scripts && pytest
 ```
+
+Der dritte Lauf ist der kleinste und betrifft am ehesten, wer nur Doku oder Specs geändert hat:
+Unter `scripts/tests/` liegen die Repo-Konsistenzprüfungen, die Texte und Dateinamen dieses
+Repositoriums gegeneinander halten (etwa Verweisnummern und die Eindeutigkeit der
+Dokumentnummern). Sie laufen in CI im Job `demo-scripts`, nicht mit den Backend-Tests.
 
 ### Formatierung
 
