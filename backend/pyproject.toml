@@ -97,7 +97,7 @@ asyncio_mode = "auto"
 line-length = 100
 src = ["src"]
 
-# Markdown bleibt ausgenommen (Akzeptanzkriterium K2, ADR 0078 Abschnitt 4): ruff formatiert seit
+# Markdown bleibt ausgenommen (Akzeptanzkriterium K2, ADR 0080 Abschnitt 4): ruff formatiert seit
 # 0.16.0 standardmaessig Python-Codebloecke INNERHALB von .md-Dateien. Heute liegt unter backend/
 # keine .md-Datei - der Ausschluss ist aktiv konfiguriert, damit der Fall nicht eintritt, sobald
 # jemand dort eine anlegt.
@@ -107,7 +107,7 @@ exclude = ["*.md"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 # Der Ausschluss von alembic/versions gilt bewusst nur fuer den LINTER, nicht fuer den Formatierer
-# (ADR 0078 Abschnitt 2): Von Alembic erzeugte Migrationen tragen UP007/UP035/I001-Befunde, der
+# (ADR 0080 Abschnitt 2): Von Alembic erzeugte Migrationen tragen UP007/UP035/I001-Befunde, der
 # Formatierer hat dagegen keine Meinung, die generierter Code verletzen koennte. Achtung, stille
 # Falle: Das schlichte "alembic/versions" wirkt hier NICHT - erst der Glob schliesst aus (unter
 # [tool.ruff] greift dieselbe Schreibweise dagegen).

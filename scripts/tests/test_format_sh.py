@@ -1,6 +1,6 @@
 r"""Verhaltenstests fuer `scripts/format.sh` gegen synthetische Spielplaetze.
 
-Geprueft wird ein Bash-Skript mit echter Verzweigungslogik (ADR 0078 Abschnitt 12, Spec 0400
+Geprueft wird ein Bash-Skript mit echter Verzweigungslogik (ADR 0080 Abschnitt 12, Spec 0400
 Abschnitt 9): Es liest den `ruff`-Pin aus der `pyproject.toml` je Python-Baum, parst die Ausgabe
 von `ruff --version`, vergleicht beides und prueft `node_modules` in beiden TypeScript-Baeumen.
 Das Formatieren selbst ist Fremdverhalten und wird ausdruecklich nicht nachgebildet - geprueft
@@ -306,7 +306,7 @@ def test_das_skript_setzt_den_gelesenen_pin_nie_in_eine_ausfuehrung_ein() -> Non
 
 
 def test_das_skript_fuehrt_keine_stiloptionen_und_keine_dateilisten() -> None:
-    """ADR 0078 Abschnitt 12: reine Bequemlichkeit, keine zweite Quelle der Wahrheit."""
+    """ADR 0080 Abschnitt 12: reine Bequemlichkeit, keine zweite Quelle der Wahrheit."""
     text = wirksamer_skripttext()
     for verboten in (
         "--line-length",

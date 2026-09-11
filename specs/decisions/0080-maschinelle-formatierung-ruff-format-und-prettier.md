@@ -1,4 +1,4 @@
-# 0078 - Maschinelle Formatierung: `ruff format` und Prettier, exakt fixiert, ohne auslösenden Automatismus
+# 0080 - Maschinelle Formatierung: `ruff format` und Prettier, exakt fixiert, ohne auslösenden Automatismus
 
 **Status:** Accepted
 **Datum:** 2026-09-11

@@ -1,4 +1,4 @@
-# Ausschlussliste fuer Prettier (specs/decisions/0078-maschinelle-formatierung-ruff-format-und-
+# Ausschlussliste fuer Prettier (specs/decisions/0080-maschinelle-formatierung-ruff-format-und-
 # prettier.md Abschnitt 7/9, specs/features/0400-einheitliche-code-formatierung.md Abschnitt 4/6).
 #
 # Diese Datei liegt im Wurzelverzeichnis und wird von beiden TypeScript-Baeumen ueber
@@ -24,7 +24,7 @@ dist/
 # Ignore-Datei-Mechanismus), der Eintrag macht die Absicht an einer Stelle nachlesbar.
 node_modules/
 
-# Penpot-Nutzlast, ein Verzeichnis mit zwei Gruenden (ADR 0078 Abschnitt 9): tokens.json und
+# Penpot-Nutzlast, ein Verzeichnis mit zwei Gruenden (ADR 0080 Abschnitt 9): tokens.json und
 # icons.json sind ERZEUGT (frontend/penpot/tokens.test.ts und icons.test.ts schreiben sie per
 # toMatchFileSnapshot), ein Formatierer darauf braechte den Snapshot-Test zu Fall; die uebrige
 # Nutzlast ist handgeschrieben und wird als Text in eine Penpot-Sitzung eingefuegt.

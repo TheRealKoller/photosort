@@ -113,7 +113,7 @@ Entität, keine Tabelle und keine Migration; `docs/architecture.md` bleibt unber
 ## Architektur / Umsetzung
 
 Die Entscheidungen dieses Abschnitts sind in ADR
-[`0078`](../decisions/0078-maschinelle-formatierung-ruff-format-und-prettier.md) festgehalten und
+[`0080`](../decisions/0080-maschinelle-formatierung-ruff-format-und-prettier.md) festgehalten und
 dort mit Messwerten belegt. Hier steht, was daraus konkret zu tun ist.
 
 ### 1. Die gewählten Werkzeuge
@@ -367,7 +367,7 @@ zum Entscheidungszeitpunkt einen Tag alt. Genau dieses Fenster ist das, in dem e
 kompromittierte Veröffentlichung am wahrscheinlichsten noch unentdeckt ist — und `ruff` landet
 über `[dev]` auf dem Entwicklerrechner, auf dem auch `gh`-Token und Repository-Schreibzugriff
 liegen. `0.16.4` ist länger verfügbar, lag bereits lokal installiert vor und ist zugleich die
-Version, mit der ADR 0078 ihre Bestandsmessungen gemacht hat: Pin und Messung decken sich damit.
+Version, mit der ADR 0080 ihre Bestandsmessungen gemacht hat: Pin und Messung decken sich damit.
 
 Dass `>=0.7` nichts fixiert, ist am Bestand messbar: in den drei real vorhandenen lokalen
 Umgebungen liefen drei verschiedene Versionen (`0.16.1` in `scripts/.venv`, `0.16.2` in
@@ -553,7 +553,7 @@ kann — und das Nachrechnen-Können ist die einzige Begründung dafür, auf ein
 
 | Commit | Dateien |
 |---|---|
-| `docs(spec): Spec 0400 und ADR 0078 anlegen` | `specs/features/0400-einheitliche-code-formatierung.md`, `specs/decisions/0078-maschinelle-formatierung-ruff-format-und-prettier.md`, `specs/architecture/0003-securitykonzept.md` (Dauerregel zur `--ignore-path`-Spiegelung — sie gilt ab PR A, nicht erst ab PR B) |
+| `docs(spec): Spec 0400 und ADR 0080 anlegen` | `specs/features/0400-einheitliche-code-formatierung.md`, `specs/decisions/0080-maschinelle-formatierung-ruff-format-und-prettier.md`, `specs/architecture/0003-securitykonzept.md` (Dauerregel zur `--ignore-path`-Spiegelung — sie gilt ab PR A, nicht erst ab PR B) |
 | `build(format): Formatierer festlegen und Versionen exakt fixieren` | `.prettierrc.json` (neu, Wurzel), `.prettierignore` (neu, Wurzel), `backend/pyproject.toml`, `scripts/pyproject.toml`, `frontend/package.json`, `frontend/package-lock.json`, `e2e/package.json`, `e2e/package-lock.json` |
 | `test(scripts): Formatier-Skript testgetrieben anlegen` | `scripts/tests/test_format_sh.py` (neu, zuerst rot), `scripts/format.sh` (neu) |
 | `chore(format): Codebasis einmalig durchformatieren` | rein maschinell, alle vier Bäume |
@@ -570,7 +570,7 @@ sind auf dem formatierten Stand nachweislich grün (siehe 7.).
 | `scripts/tests/test_keine_automatische_formatierung.py` | neu, Wächtertest gegen auslösende Dateien (siehe 9.) |
 | `scripts/tests/test_formatierer_fixierung.py` | neu, Wächtertest über die vier Versions-Pins (siehe 5.) |
 | `scripts/tests/test_prettierignore_spiegelung.py` | neu, Wächtertest über die `.gitignore`-Spiegelung (K11, siehe 4.) |
-| `specs/architecture/0002-testkonzept.md` | neue Sektion zu ADR 0078 / Spec 0400 (siehe `## Teststrategie`) |
+| `specs/architecture/0002-testkonzept.md` | neue Sektion zu ADR 0080 / Spec 0400 (siehe `## Teststrategie`) |
 | `docs/setup.md` | Formatierbefehl + was bei roter Prüfung zu tun ist |
 | `specs/features/0400-einheitliche-code-formatierung.md` | Status auf `Implemented`, beide PR-Verweise |
 
@@ -763,7 +763,7 @@ ist das die zweite Frage neben der Zeilenverankerung.
 
 **Der naheliegende Entwurf scheitert, und das ist der tragende Punkt:** Ein Volltextscan nach
 `husky`/`lefthook`/`pre-commit`/`simple-git-hooks` ist am eigenen Bestand sofort rot — genau diese
-Wörter stehen in dieser Spec, in ADR 0078 und im Testkonzept. Eine `specs/`-Ausnahme nähme
+Wörter stehen in dieser Spec, in ADR 0080 und im Testkonzept. Eine `specs/`-Ausnahme nähme
 ausgerechnet den Ort aus, an dem später jemand eine Hook-Datei ablegen könnte. Geprüft werden
 deshalb **Pfade und strukturierte Konfigurationsschlüssel**, und nur die vierte Familie ist ein
 Textscan.
@@ -1009,7 +1009,7 @@ Zwei Einschränkungen, die ehrlich benannt gehören:
   er nicht.
 
 **Zur `ruff`-Version:** Der Pin ist `0.16.4`, nicht der zum Entscheidungszeitpunkt neueste Stand
-`0.16.7` — siehe Abschnitt 5 der Umsetzung und ADR 0078.
+`0.16.7` — siehe Abschnitt 5 der Umsetzung und ADR 0080.
 
 ### S3 — Änderung an `.github/workflows/ci.yml`: geprüft, kein Befund
 
