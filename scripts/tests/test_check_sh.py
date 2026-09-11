@@ -293,6 +293,26 @@ def test_ein_sauberer_lauf_weist_zehn_abgeschlossene_pruefungen_aus(
     )
 
 
+def test_der_gute_ausgang_verspricht_die_ci_nicht(fabrik: Callable[..., Spielplatz]) -> None:
+    """Ausgang 0 heisst "Format, Lint und Typen sauber", nicht "CI wird gruen".
+
+    Der Prueflauf fuehrt keine Tests, keinen Build, kein Coverage-Gate und keine
+    `docker compose`-Pruefung. Steht das nicht in der Ausgabe, liest ein Aufrufer die 0 als
+    Freigabe - und Schritt 4 des developer-Ablaufs erschiene als Dopplung statt als eigene
+    Pruefung.
+    """
+    spielplatz = fabrik()
+    ergebnis = laufe(spielplatz)
+
+    assert ergebnis.exit_code == 0, ergebnis.meldung
+    assert "sauber" in ergebnis.meldung, ergebnis.meldung
+    for wort in ("Tests", "Build"):
+        assert wort in ergebnis.meldung, (
+            f"Die Erfolgsmeldung sagt nicht, dass {wort} nicht dazugehoeren. Meldung: "
+            f"{ergebnis.meldung!r}"
+        )
+
+
 def test_die_baeume_kommen_aus_dem_ablageort_nicht_aus_dem_cwd(
     fabrik: Callable[..., Spielplatz],
 ) -> None:

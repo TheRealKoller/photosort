@@ -11,7 +11,6 @@ set -euo pipefail
 SKRIPT_VERZEICHNIS="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 readonly REPO_WURZEL="${SKRIPT_VERZEICHNIS%/*}"
 
-readonly PYTHON_BAEUME=(backend scripts)
 readonly FRONTEND_SKRIPTE=(format:check lint typecheck)
 readonly E2E_SKRIPTE=(format:check typecheck)
 readonly PRUEFUNGEN_GESAMT=10
@@ -274,4 +273,5 @@ if [ "$GEPRUEFT" -ne "$PRUEFUNGEN_GESAMT" ]; then
     exit 1
 fi
 
-printf 'Format, Lint und Typen sauber.\n'
+printf 'Format, Lint und Typen sauber. Tests, Coverage-Gate, Build und die uebrigen\n'
+printf 'CI-Pruefungen sind hier nicht enthalten - das ist keine Zusage ueber die CI.\n'
