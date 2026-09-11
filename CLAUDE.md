@@ -55,8 +55,20 @@ PhotoSort wird in zwei Modi weiterentwickelt:
   Versionsgeschichte, Wiederholung dessen, was der Code selbst zeigt. Die Regel gilt an allen
   fünf Orten: Feature-Specs, ADRs, Skill- und Agenten-Dateien, Setup-/Architektur-Dokumentation
   (`docs/`, `specs/architecture/`), Doku-Blöcke im Code. Geschützt — und von jedem Kürzen
-  ausgenommen — sind Invarianten, Zusicherungen und bewusste Abweichungen, die aus dem Code nicht
-  ablesbar sind: die Regel selbst steht vollständig im Text, das "warum/wie kam es dazu" nicht.
+  ausgenommen — ist eine Zusicherung, Invariante oder bewusste Abweichung in drei Teilen: **was
+  gilt oder nicht gelten darf**, **wofür es gilt** (Bereich, Bedingung) und **was bei Verletzung
+  passiert**, sofern das nicht offensichtlich ist. Diese drei bleiben vollständig, auch wenn der
+  Block dadurch jeden Richtwert überschreitet. Nicht geschützt, auch nicht innerhalb eines
+  geschützten Blocks: die Abwägung gegen verworfene Alternativen; der Vorfall, aus dem die Regel
+  entstand (Datum, Review-Fund, "früher stand hier"); die Messung, die zu ihr führte; die
+  Wiederholung derselben Aussage in anderen Worten; der Verweis auf Spec/ADR/PR/Issue, der nur
+  belegt, dass es die Regel gibt. Ein Signalwort (`muss`, `nie`, `bewusst`, `Grund:`) markiert die
+  Stelle, an der die Frage zu stellen ist, nicht ihre Antwort: Steht hier die Regel, oder steht
+  hier, wie man auf sie kam? Trägt der Block eine Sicherheitsauflage, gehört das Angriffsmodell zu
+  *wofür* — der benannte Angriff und die eine dadurch untersagte Alternative bleiben stehen. Ein
+  Verweis auf eine Testdatei oder einen Testknoten ist kein belegender Verweis; erzwingt ein Test
+  die Zusicherung, nennt der Kommentar sie in einem Satz und nennt den Test, und ohne am Bestand
+  nachgewiesenen Test bleibt sie in voller Aussage stehen.
   Ein Verweis auf eine andere Datei bleibt erlaubt, wenn er funktional nötig ist (die Datei muss
   gelesen, gegen sie geprüft, oder sie muss gepflegt werden, um die Aufgabe zu erfüllen).
   Abgeschlossene Feature-Specs (`Implemented`/`Superseded`) werden nicht nachträglich gekürzt.
@@ -65,8 +77,10 @@ PhotoSort wird in zwei Modi weiterentwickelt:
   `specs/architecture/`) ~300, Doku-Block einer Quellcode-Datei ~25 % ihrer Zeilen. Gezählt wird
   in Zeilen zu höchstens 100 Zeichen, also `Zeichenzahl ÷ 100`, wo eine Datei diesem Umbruch
   nicht folgt. Ein Richtwert ist keine Grenze: Überschreitung ist zulässig, wenn sie im Dokument
-  selbst in einem Satz begründet ist. Es entsteht dafür kein CI-Check und kein
-  `review-*`-Kriterium — nichts weist eine Änderung allein wegen ihrer Länge zurück.
+  selbst in einem Satz begründet ist. Für die **Länge** entsteht dafür kein CI-Check und kein
+  `review-*`-Kriterium — nichts weist eine Änderung allein wegen ihrer Länge zurück. Für den
+  **Inhalt** gilt das nicht: `review-tests` prüft Doku-Blöcke im Code gegen diesen Punkt und meldet
+  Datei, Zeile und Inhaltsklasse, nie eine Länge und nie einen Prozentwert.
 
 ## Werkzeugwahl bei Dateiarbeit
 

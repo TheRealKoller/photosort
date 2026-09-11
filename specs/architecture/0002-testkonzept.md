@@ -11,6 +11,28 @@ Lücken, die nirgends sonst stehen.
 
 Projektweite, von der jeweiligen Feature-Implementierung unabhängige Teststrategie. Ergänzt (nicht ersetzt) die "Akzeptanzkriterien"/"Architektur"-Abschnitte der einzelnen Feature-Specs — dort steht *was* pro Feature getestet wird, hier steht *wie* projektweit konsistent getestet wird.
 
+## Nachweis ohne Rot-Grün (bereichsübergreifend)
+
+Eine Änderung, die per Zusicherung kein Verhalten ändert, hat keinen Rot-Zustand, den ein neuer Test
+einnehmen könnte. An seine Stelle tritt ein Vorher-Nachher-Vergleich auf demselben Commit-Paar
+(`origin/main` → Branch-Spitze) mit drei Gleichheitsgrößen:
+
+1. **Kein Testdiff** — der Diff enthält keine Zeile unter einem Testpfad. Eine angepasste Erwartung
+   ist ein Finding, keine Lösung.
+2. **Identische Testknoten-Menge mit identischem Ausgang** — Gleichheit, nicht „grün". Ein vorher
+   fehlschlagender Fall darf nachher fehlschlagen; er darf nur nicht verschwinden, hinzukommen oder
+   seinen Ausgang wechseln. Als Grün-Bedingung formuliert wäre jeder umgebungsbedingte Fehlschlag
+   ein Dauerhindernis.
+3. **`Stmts` je Datei unverändert**, `Cover` sinkt an keiner Datei. Kommentare und Docstrings sind
+   keine Statements: unter reiner Dokumentationsentfernung ist `Stmts` **exakt** invariant, nicht
+   nur ungefähr. Dem Frontend fehlt diese Größe mangels Coverage-Konfiguration — dort tragen (1)
+   und (2) allein.
+
+**Funktionstragende Kommentare** sind dabei ein eigener Prüfpunkt: `# pragma: no cover`,
+`# type: ignore` und `// prettier-ignore` sehen aus wie Doku und sind Code. Sie werden vor dem
+Schnitt aufgezählt und danach einzeln nachgewiesen; ihr Verlust zeigt sich in (3), in
+`mypy --strict` oder in der Formatprüfung, nie im Testausgang.
+
 ## Backend (`backend/`, `pytest`)
 
 **Stand:** etabliert seit Spec 0001, folgende Konventionen gelten für alle künftigen Endpunkte/Jobs.
