@@ -9,11 +9,10 @@ const LABELS: Record<ScanStatusLabel, string> = {
 }
 
 /*
- * Vier Zustaende in einer Form, umgestellt auf die TOAST-KONSTRUKTION des Boards
- * (decisions/0055-dark-utility-register-fundament.md Punkt 5): Flaeche `--elevated`, farbiger
- * 1px-Rand, farbige Beschriftung - statt eigener Tint-/Strong-Paare, die das Board nicht kennt.
- * Die acht `--status-*-tint`/`-strong`-Tokens sind in index.css darauf UMDEFINIERT worden statt
- * gestrichen; die Aufrufstellen hier bleiben dadurch unveraendert.
+ * Vier Zustaende in einer Form, umgestellt auf die TOAST-KONSTRUKTION des Boards: Flaeche
+ * `--elevated`, farbiger 1px-Rand, farbige Beschriftung - statt eigener Tint-/Strong-Paare, die das
+ * Board nicht kennt. Die acht `--status-*-tint`/`-strong`-Tokens sind in index.css darauf
+ * UMDEFINIERT worden statt gestrichen; die Aufrufstellen hier bleiben dadurch unveraendert.
  *
  * Alle vier Beschriftungen halten damit AA auf `#1E2230` (8.64 / 9.48 / 5.08 / 6.44), nachgerechnet
  * in src/designSystem.contract.test.ts.

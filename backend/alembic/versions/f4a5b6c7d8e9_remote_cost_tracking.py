@@ -1,13 +1,12 @@
 """Ist-Kostenerfassung der Remote-Laeufe: je vier Spalten an beiden Run-Tabellen
 
-specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
-laeufe.md Punkt 3.
+Je vier additive Spalten, keine Datenmigration.
 
 Rein additiv, keine Datenmigration:
 
 - `criterion_scoring_runs`: `landmark_api_calls`, `landmark_input_tokens`,
   `landmark_output_tokens`, `landmark_cost_usd` - der Landmark-Anteil dieses Klassifizierungs-
-  laufs. Praefix, weil die Tabelle seit ADR 0050 den GESAMTEN Lauf traegt und die Kriterien-Phase
+  laufs. Praefix, weil die Tabelle den GESAMTEN Lauf traegt und die Kriterien-Phase
   selbst nichts kostet.
 - `remote_category_classification_runs`: `api_calls`, `input_tokens`, `output_tokens`,
   `cost_usd` - der Kategorie-Anteil. Kein Praefix, dieser Lauf hat genau einen Zweck.
@@ -20,7 +19,7 @@ NULL-vs.-0-SEMANTIK (der Grund fuer "nullable, aber KEIN server_default"):
     0    = "erfasst, es sind keine Kosten angefallen" - z.B. ein Lauf ohne Cloud-Nutzung.
 
 Beides zu unterscheiden ist der ganze Zweck dieser Spaltenform: die Statistikseite weist eine
-unvollstaendige Summe ausdruecklich als solche aus (ADR 0051 Punkt 5, Befund (a)), statt "0,00
+unvollstaendige Summe ausdruecklich als solche aus, statt "0,00
 USD" wie eine belastbare Antwort aussehen zu lassen. Ein `server_default="0"` wuerde die
 Bestandszeilen genau dieser Unterscheidung berauben - deshalb bewusst KEINER. Neue Zeilen
 bekommen ihre `0` stattdessen ueber den Python-seitigen Modell-Default
@@ -29,7 +28,7 @@ bekommen ihre `0` stattdessen ueber den Python-seitigen Modell-Default
 
 `sa.Float()` fuer die beiden Betragsspalten (rendert `DOUBLE PRECISION` auf Postgres, `FLOAT` auf
 SQLite): Cent-Betraege ohne Buchhaltungsanspruch, `float` ist der im gesamten Datenmodell
-durchgehend verwendete Fliesskomma-Typ (ADR 0051 Punkt 3). Kein `sa.Numeric`.
+durchgehend verwendete Fliesskomma-Typ. Kein `sa.Numeric`.
 
 `downgrade()` ist verlustbehaftet (die acht Spaltenwerte gehen verloren), aber schema-vollstaendig
 umkehrbar - kein Datenbestand ausserhalb dieser Spalten wird beruehrt.

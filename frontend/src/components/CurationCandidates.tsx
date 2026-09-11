@@ -46,8 +46,7 @@ export interface CurationCandidatesProps {
 }
 
 /**
- * Der Auslöser "Weitere Kandidaten laden" und der aufgeklappte Bereich darunter
- * (specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071 Entscheidung 5).
+ * Der Auslöser "Weitere Kandidaten laden" und der aufgeklappte Bereich darunter.
  *
  * Ob es weitere Kandidaten gibt, steht VOR jedem Laden fest (`partition_size` gegen die Zahl der
  * angezeigten Eintraege) - es braucht keinen Probe-Request, und der Kandidaten-Request laeuft

@@ -20,13 +20,12 @@ interface CriterionDetailsPopoverProps {
    * Kachel, sonst die Hauptzugehoerigkeit des Fotos. `null`, solange kein erfolgreicher Lauf
    * existiert. */
   ranking: RankingOut | null
-  /** ALLE Zugehoerigkeiten des Fotos (specs/features/0300-nebenkategorien.md) - reine
-   * Durchreichung an die Rollen-Sektion in CriterionDetailsList.tsx. */
+  /** ALLE Zugehoerigkeiten des Fotos - reine Durchreichung an die Rollen-Sektion in
+   * CriterionDetailsList.tsx. */
   rankings?: RankingOut[]
   suggestion: SuggestionOut | null
   className?: string
-  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: reine
-  // Durchreichung an CriterionDetailsList.tsx (siehe dortige Props-Dokumentation) - dieselben
+  // Reine Durchreichung an CriterionDetailsList.tsx (siehe dortige Props-Dokumentation) - dieselben
   // neutralen Defaults, kein eigenes Verhalten hier.
   categoryCandidates?: CategoryCandidateOut[]
   fineLabels?: FineLabelOut[]
@@ -42,12 +41,11 @@ interface CriterionDetailsPopoverProps {
 }
 
 /**
- * Info-Popover mit den berechneten Bewertungsdetails eines Fotos (specs/features/0040-
- * bewertungsdetails-info-popover.md) - feature-spezifische Komposition auf ui/popover.tsx, analog
- * zum bestehenden Muster ui/badge.tsx -> CategoryBadge.tsx. Rendert bewusst nichts, wenn
- * criterionScores leer ist (Akzeptanzkriterium 1) - EINE Stelle entscheidet das statt jeder der
- * drei Einbindungsstellen einzeln. Die eigentliche `<dl>`-Darstellung des Inhalts lebt seit Spec
- * 0041 in der wiederverwendbaren Praesentationskomponente CriterionDetailsList.tsx (hier mit
+ * Info-Popover mit den berechneten Bewertungsdetails eines Fotos - feature-spezifische Komposition
+ * auf ui/popover.tsx, analog zum bestehenden Muster ui/badge.tsx -> CategoryBadge.tsx. Rendert
+ * bewusst nichts, wenn criterionScores leer ist - EINE Stelle entscheidet das statt jeder der drei
+ * Einbindungsstellen einzeln. Die eigentliche `<dl>`-Darstellung des Inhalts lebt in der
+ * wiederverwendbaren Praesentationskomponente CriterionDetailsList.tsx (hier mit
  * showSuggestion={true} eingebunden) - dieses Popover selbst traegt nur noch Trigger/Portal/
  * Oeffnungslogik.
  *
@@ -77,19 +75,19 @@ interface CriterionDetailsPopoverProps {
  * wuerde `preventDefault()` ignorieren). Escape/Aussenklick/der "×"-Button laufen dadurch
  * unveraendert direkt ueber `Popover.onOpenChange={setOpen}`.
  *
- * Hover-Auto-Close mit Grace-Bereich ueber Trigger UND Content (Akzeptanzkriterien 7-11, Spec
- * 0041): `openedByHoverRef` ist - anders als `justOpenedByHoverRef` oben, der nur den EINEN Klick
- * direkt nach einem Hover-Oeffnen unterdrueckt und danach zurueckgesetzt wird - ueber die gesamte
- * Offen-Dauer persistent und haelt fest, ob der aktuelle Offen-Zustand ueberhaupt per Hover
- * zustandegekommen ist. `handleOpenChange` setzt ihn synchron zu `justOpenedByHoverRef` beim
- * Oeffnen und setzt ihn beim Schliessen zurueck. `handlePossibleHoverClose` haengt an
- * `onMouseLeave` von Trigger-Button UND `PopoverContent` und prueft bei
- * `openedByHoverRef.current === true` per `Node.contains()` gegen `triggerRef`/`contentRef`, ob
- * `event.relatedTarget` (das neue Ziel des Pointers) ausserhalb beider liegt - nur dann schliesst
- * es. Ref-basiert statt eines naiven `event.currentTarget.contains(event.relatedTarget)`-
- * Bubbling-Checks, weil `PopoverContent` ueber `PopoverPrimitive.Portal` an einer anderen Stelle im
- * DOM-Baum liegt als der Trigger - ein Uebergang Trigger->Content wuerde sonst faelschlich als
- * "verlassen" gewertet. Kein Timer/Delay noetig.
+ * Hover-Auto-Close mit Grace-Bereich ueber Trigger UND Content: `openedByHoverRef` ist - anders als
+ * `justOpenedByHoverRef` oben, der nur den EINEN Klick direkt nach einem Hover-Oeffnen unterdrueckt
+ * und danach zurueckgesetzt wird - ueber die gesamte Offen-Dauer persistent und haelt fest, ob der
+ * aktuelle Offen-Zustand ueberhaupt per Hover zustandegekommen ist. `handleOpenChange` setzt ihn
+ * synchron zu `justOpenedByHoverRef` beim Oeffnen und setzt ihn beim Schliessen zurueck.
+ * `handlePossibleHoverClose` haengt an `onMouseLeave` von Trigger-Button UND `PopoverContent` und
+ * prueft bei `openedByHoverRef.current === true` per `Node.contains()` gegen
+ * `triggerRef`/`contentRef`, ob `event.relatedTarget` (das neue Ziel des Pointers) ausserhalb
+ * beider liegt - nur dann schliesst es. Ref-basiert statt eines naiven
+ * `event.currentTarget.contains(event.relatedTarget)`- Bubbling-Checks, weil `PopoverContent` ueber
+ * `PopoverPrimitive.Portal` an einer anderen Stelle im DOM-Baum liegt als der Trigger - ein
+ * Uebergang Trigger->Content wuerde sonst faelschlich als "verlassen" gewertet. Kein Timer/Delay
+ * noetig.
  */
 export function CriterionDetailsPopover({
   criterionScores,
@@ -140,11 +138,11 @@ export function CriterionDetailsPopover({
       openedByHoverRef.current = justOpenedByHoverRef.current
     } else {
       openedByHoverRef.current = false
-      // Copilot-Review-Fund auf PR #103 (Spec 0041): ohne diesen Reset blieb
-      // justOpenedByHoverRef nach einem Schliessen ueber einen anderen Weg als den direkt
-      // folgenden Trigger-Klick (Escape/Aussenklick/"x"-Button/Hover-Auto-Close) faelschlich
-      // `true` stehen - ein spaeterer, voellig unabhaengiger Klick (z.B. per Tastatur) haette
-      // dadurch faelschlich per preventDefault() unterdrueckt und das Popover nicht geoeffnet.
+      // Ohne diesen Reset blieb justOpenedByHoverRef nach einem Schliessen ueber einen anderen Weg
+      // als den direkt folgenden Trigger-Klick (Escape/Aussenklick/"x"-Button/Hover-Auto-Close)
+      // faelschlich `true` stehen - ein spaeterer, voellig unabhaengiger Klick (z.B. per Tastatur)
+      // haette dadurch faelschlich per preventDefault() unterdrueckt und das Popover nicht
+      // geoeffnet.
       justOpenedByHoverRef.current = false
     }
     setOpen(nextOpen)
@@ -173,9 +171,9 @@ export function CriterionDetailsPopover({
           onPointerEnter={handlePointerEnter}
           onMouseLeave={handlePossibleHoverClose}
           className={cn(
-            // Runder Backdrop ueber der Fotokachel - eine der wenigen verbleibenden Rundformen
-            // (specs/features/0320-dark-utility-register.md): der Trigger liegt auf dem Bild, ein
-            // Kreis grenzt sich dort von jeder rechteckigen Bildstruktur ab.
+            // Runder Backdrop ueber der Fotokachel - eine der wenigen verbleibenden Rundformen: der
+            // Trigger liegt auf dem Bild, ein Kreis grenzt sich dort von jeder rechteckigen
+            // Bildstruktur ab.
             'shrink-0 rounded-full border border-border-control bg-bg/85 backdrop-blur-sm',
             className,
           )}

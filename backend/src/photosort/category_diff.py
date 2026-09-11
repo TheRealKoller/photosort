@@ -1,19 +1,18 @@
 """Read-only CLI: vergleicht die Kategorie-Zuordnung zweier Kriterien-Laeufe eines Projekts.
 
-specs/features/0217-landschaft-erkennung-spezifitaets-vorrang.md (AK7), ADR decisions/0047-
-inhaltsbasierte-landschaft-spezifitaets-vorrang-nicht-erkannt.md Punkt 7: `PhotoRanking`-Zeilen
-werden pro `criterion_scoring_run_id` geschrieben und nie geloescht - der Stand VOR einer
-Umstellung liegt also bereits in der Datenbank und braucht weder Migration noch API-Erweiterung.
+`PhotoRanking`-Zeilen werden pro `criterion_scoring_run_id` geschrieben und nie geloescht - der
+Stand VOR einer Umstellung liegt also bereits in der Datenbank und braucht weder Migration noch
+API-Erweiterung.
 
 Aufruf::
 
     docker compose exec backend python -m photosort.category_diff --project-id 1
 
-Bewusst ein CLI-Werkzeug und kein Endpunkt/keine UI (ADR 0047 Punkt 7): eine einmalige
+Bewusst ein CLI-Werkzeug und kein Endpunkt/keine UI: eine einmalige
 Verifikations-/Kalibrierungshilfe fuer zwei bekannte Betreiber, keine dauerhaft zu pflegende
 Produktoberflaeche.
 
-AUSGABE-HYGIENE (Security-Abschnitt der Spec 0217, Punkt 3 - verbindlich): die Ausgabe enthaelt
+AUSGABE-HYGIENE (verbindlich): die Ausgabe enthaelt
 `relative_path`-Werte, also Dateinamen und Ordnerstruktur privater Familienfotos. Sie geht
 deshalb AUSSCHLIESSLICH nach stdout - keine Datei-Ausgabe-Option, kein Schreiben ins Repo, keine
 Ausgabe ueber den strukturierten Anwendungs-Logger (und damit nicht in persistente
@@ -50,8 +49,9 @@ class CategoryDiffError(Exception):
     """Erwarteter, benutzerseitig behebbarer Fehler (unbekanntes Projekt, zu wenige Laeufe,
     Run-ID gehoert zu einem anderen Projekt, DB nicht erreichbar) - wird in main() zu einer
     kurzen, eigenen Meldung und einem Exit-Code != 0. Bewusst KEIN durchgereichter
-    SQLAlchemy-Traceback (Security-Abschnitt der Spec 0217, Punkt 3): der wuerde die
-    DATABASE_URL inklusive Zugangsdaten in die Ausgabe schreiben (Muster analog OpenCloudError).
+    SQLAlchemy-Traceback: der wuerde die DATABASE_URL inklusive Zugangsdaten in die Ausgabe
+    schreiben (Muster analog OpenCloudError). Bricht in
+    tests/test_category_diff.py::TestMain::test_a_database_error_yields_a_short_message_without_credentials.
     """
 
 
@@ -85,7 +85,7 @@ class CategoryDiff:
 
 
 def diff_category_assignments(before: Mapping[int, str], after: Mapping[int, str]) -> CategoryDiff:
-    """Reine, DB-freie Vergleichsfunktion (ADR 0047 Punkt 7: Logik rein, I/O aussen). Fotos, die
+    """Reine, DB-freie Vergleichsfunktion (Logik rein, I/O aussen). Fotos, die
     nur in einem der beiden Laeufe eine Zuordnung haben, erscheinen mit MISSING_CATEGORY auf der
     fehlenden Seite - sie fallen nicht stillschweigend aus dem Vergleich. Sortierung nach
     photo_id (deterministisch, unabhaengig von der Dict-Reihenfolge der Aufrufer)."""
@@ -143,10 +143,10 @@ async def collect_assignments(session: AsyncSession, run_id: int) -> dict[int, s
     """Duenne DB-Leseschicht: photo_id -> category_key der HAUPTZEILE jedes Fotos in EINEM Lauf.
     Rein lesend, veraendert nichts.
 
-    Der `is_primary`-Filter ist seit specs/features/0300-nebenkategorien.md notwendig und nicht
-    nur inhaltlich richtig: das Werkzeug bildet EINE Zuordnung je Foto ab (ADR 0047 Punkt 7,
-    ADR 0069 Punkt 8), und ohne den Filter ueberschriebe eine Nebenzeile die Hauptzeile im
-    Ergebnis-Dict still - abhaengig von der Zeilenreihenfolge der Datenbank."""
+    Der `is_primary`-Filter ist notwendig, seit es Nebenkategorien gibt, und nicht nur inhaltlich
+    richtig: das Werkzeug bildet EINE Zuordnung je Foto ab, und ohne den Filter ueberschriebe eine
+    Nebenzeile die Hauptzeile im Ergebnis-Dict still - abhaengig von der Zeilenreihenfolge der
+    Datenbank."""
     rows = (
         await session.execute(
             select(PhotoRanking.photo_id, PhotoRanking.category_key).where(
@@ -177,8 +177,9 @@ async def resolve_run_ids(
 ) -> tuple[int, int]:
     """Ermittelt die zu vergleichenden Laeufe. Default: die beiden juengsten ERFOLGREICHEN Laeufe
     des Projekts. Explizit uebergebene Run-IDs muessen zum angegebenen Projekt gehoeren
-    (Konsistenz-Guard, Security-Abschnitt der Spec 0217 Punkt 3) - sonst Abbruch, statt still die
-    Daten zweier Projekte zu vermischen."""
+    (Konsistenz-Guard) - sonst Abbruch, statt still die Daten zweier Projekte zu vermischen.
+    Bricht in tests/test_category_diff.py::TestMain::test_a_run_id_of_another_project_exits_non_zero.
+    """
     project = await session.get(Project, project_id)
     if project is None:
         raise CategoryDiffError(f"Projekt {project_id} existiert nicht.")
@@ -270,7 +271,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     # type=int statt freier Strings: zusammen mit der reinen SQLAlchemy-Core-/ORM-Nutzung
     # (Parameterbindung, kein text() mit f-String) ist SQL-Injection damit strukturell
-    # ausgeschlossen, nicht nur unwahrscheinlich (Security-Abschnitt der Spec 0217, Punkt 3).
+    # ausgeschlossen, nicht nur unwahrscheinlich. Der Typzwang bricht in
+    # tests/test_category_diff.py::TestMain::test_project_id_must_be_an_integer.
     parser.add_argument("--project-id", type=int, required=True)
     parser.add_argument("--before-run-id", type=int, default=None)
     parser.add_argument("--after-run-id", type=int, default=None)
@@ -293,9 +295,9 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
     except CategoryDiffError as exc:
         # Fehlertexte gehen bewusst nach stderr, der REPORT dagegen nach stdout (Review-Fund,
         # bewusst getroffene Entscheidung): die Ausgabe-Hygiene-Vorgabe "ausschliesslich stdout"
-        # aus dem Security-Abschnitt der Spec 0217 zielt auf den Report mit den `relative_path`-
-        # Werten privater Fotos - Fehlermeldungen enthalten keine Fotopfade, und die uebliche
-        # CLI-Trennung haelt ein `... | less`/`> datei` des Reports frei von Fehlertexten.
+        # zielt auf den Report mit den `relative_path`-Werten privater Fotos - Fehlermeldungen
+        # enthalten keine Fotopfade, und die uebliche CLI-Trennung haelt ein `... | less`/`> datei`
+        # des Reports frei von Fehlertexten.
         print(f"Fehler: {exc}", file=sys.stderr)
         return 1
     except SQLAlchemyError as exc:

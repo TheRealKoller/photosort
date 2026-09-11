@@ -1,17 +1,14 @@
 """Modell-ID je Cloud-Lauf: eine Spalte an beiden Run-Tabellen
 
-specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, decisions/0059-modellwahl-je-anbieter-
-und-modellgebundene-kostenschaetzung.md Punkt 6.
-
 Rein additiv, keine Datenmigration:
 
 - `criterion_scoring_runs`: `landmark_model` - die Modell-ID der Landmark-Phase dieses Laufs.
-  Praefix analog den vier Kostenspalten derselben Tabelle (die Tabelle traegt seit ADR 0050 den
-  GESAMTEN Klassifizierungslauf).
+  Praefix analog den vier Kostenspalten derselben Tabelle (die Tabelle traegt den GESAMTEN
+  Klassifizierungslauf).
 - `remote_category_classification_runs`: `model` - die Modell-ID dieses Laufs. Kein Praefix,
   dieser Lauf hat genau einen Zweck.
 
-WARUM UEBERHAUPT: mit Spec 0304 wird die Modellwahl je Anbieter zu einer Betriebseinstellung
+WARUM UEBERHAUPT: die Modellwahl je Anbieter ist eine Betriebseinstellung
 (`LANDMARK_MODEL`). Der bereits persistierte `provider` je Foto sagt seitdem nicht mehr, WOMIT ein
 Lauf gerechnet hat - und das Modell ist die Preisgrundlage des in derselben Zeile eingefrorenen
 Betrags. Ohne diese Spalte waere ein historischer Betrag nach einer erkannten Preiskorrektur nicht

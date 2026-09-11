@@ -1,8 +1,7 @@
 import type { CategoryKey, CategoryOut } from '../api/types'
 
-// specs/features/0289-feste-kategorien.md, Umsetzungsschritt 7: die Anzeigetabelle kommt zur
-// LAUFZEIT vom Server (`GET /categories`, ADR 0049 Entwurfsentscheidung 5) - das frueher hier
-// gepflegte `CATEGORY_DISPLAY_NAME_OVERRIDES`-Woerterbuch ist ersatzlos entfallen.
+// Die Anzeigetabelle kommt zur LAUFZEIT vom Server (`GET /categories`) - das frueher hier gepflegte
+// `CATEGORY_DISPLAY_NAME_OVERRIDES`-Woerterbuch ist ersatzlos entfallen.
 //
 // Die drei Helfer sind bewusst REINE FUNKTIONEN mit dem geladenen Set als EXPLIZITEM Parameter
 // (Testvorgabe der Spec, nicht Stilfrage): eine modul-globale, vom Query-Cache befuellte Variable
@@ -47,19 +46,19 @@ function findDisplayName(categoryKey: string, categories: CategorySet): string |
  * Anzeigename eines `category_key`: der `display_name` aus dem geladenen Set, sonst der generische
  * Fallback. Bewusst eine lineare Suche ueber genau 13 Eintraege statt eines aus dem Set gebauten
  * Objekt-Lookups - damit gibt es auch keinen `Object.prototype`-Durchgriff mehr, gegen den der
- * fruehere `Object.hasOwn`-Check (Copilot-Review-Fund, PR #106) schuetzen musste. Ein Key wie
- * `"toString"` trifft hier strukturell keinen Eintrag und faellt korrekt auf den Fallback.
+ * fruehere `Object.hasOwn`-Check schuetzen musste. Ein Key wie `"toString"` trifft hier strukturell
+ * keinen Eintrag und faellt korrekt auf den Fallback.
  */
 export function formatCategoryKey(categoryKey: CategoryKey, categories: CategorySet): string {
   return findDisplayName(categoryKey, categories) ?? genericFallback(categoryKey)
 }
 
 /**
- * Kuerzel fuer die Grid-Kachel (UI/UX-Abschnitt der Spec 0289): erste drei Zeichen des
- * ANZEIGENAMENS in Grossbuchstaben - nicht mehr des rohen Keys. Ueber das feste 13er-Set ist das
- * kollisionsfrei ("MEN"/"TIE"/"PFL"/"LAN"/"GEB"/"INN"/"ESS"/"FAH"/"GEG"/"DOK"/"KUN"/"SPO"/"NIC"),
- * abgesichert durch einen parametrisierten Test ueber alle 13 Anzeigenamen. Fuer einen Altwert
- * ohne Set-Eintrag greift derselbe generische Fallback wie oben.
+ * Kuerzel fuer die Grid-Kachel: erste drei Zeichen des ANZEIGENAMENS in Grossbuchstaben - nicht
+ * mehr des rohen Keys. Ueber das feste 13er-Set ist das kollisionsfrei
+ * ("MEN"/"TIE"/"PFL"/"LAN"/"GEB"/"INN"/"ESS"/"FAH"/"GEG"/"DOK"/"KUN"/"SPO"/"NIC"), abgesichert
+ * durch einen parametrisierten Test ueber alle 13 Anzeigenamen. Fuer einen Altwert ohne Set-Eintrag
+ * greift derselbe generische Fallback wie oben.
  */
 export function categoryAbbreviation(categoryKey: CategoryKey, categories: CategorySet): string {
   return formatCategoryKey(categoryKey, categories).slice(0, 3).toUpperCase()
@@ -103,12 +102,9 @@ export function sortCategoryKeys(
   })
 }
 
-// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: Anzeigename eines
-// Cloud-Vision-Providers (backend `provider`-Feld, aktuell "anthropic"/"mistral") - geteilt
-// zwischen ClassificationSection.tsx (Erklaertext bei angewaehlter Cloud-Nutzung; bis
-// specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md der Bestaetigungsdialog in
-// RemoteCategoryClassificationSection.tsx) und der "Kategorie-Kandidaten"-Gruppe in
-// CriterionDetailsList.tsx ("Herkunft"-Chip). Fallback auf den
+// Anzeigename eines Cloud-Vision-Providers (backend `provider`-Feld, aktuell "anthropic"/"mistral")
+// - geteilt zwischen ClassificationSection.tsx (Erklaertext bei angewaehlter Cloud-Nutzung) und der
+// "Kategorie-Kandidaten"-Gruppe in CriterionDetailsList.tsx ("Herkunft"-Chip). Fallback auf den
 // rohen Wert fuer einen kuenftigen, hier noch nicht gepflegten Provider - kein Absturz.
 const PROVIDER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   anthropic: 'Anthropic',

@@ -32,10 +32,9 @@ from photosort.models import (
 )
 from photosort.thumbnails import measure_cache_usage
 
-# specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
-# laeufe.md: EIN aggregierender Nur-Lese-Endpunkt je Projekt. Ein Endpunkt statt mehrerer, weil
-# die Seite eine Momentaufnahme ohne Filter ist - mehrere Endpunkte erzeugten mehrere
-# Ladezustaende fuer einen fachlich atomaren Stand.
+# EIN aggregierender Nur-Lese-Endpunkt je Projekt. Ein Endpunkt statt mehrerer, weil die Seite eine
+# Momentaufnahme ohne Filter ist - mehrere Endpunkte erzeugten mehrere Ladezustaende fuer einen
+# fachlich atomaren Stand.
 #
 # Auth doppelt (Security-Abschnitt der Spec, Punkt 1): `current_user` als expliziter Parameter,
 # weil der Bewertungsstand das User-Objekt braucht, UND `dependencies=[Depends(get_current_user)]`
@@ -56,7 +55,7 @@ class StorageOut(BaseModel):
 
 
 class CategoryEntryOut(BaseModel):
-    """`display_name` kommt vom Server (ADR 0049): es gibt bewusst KEINE TypeScript-Spiegelung des
+    """`display_name` kommt vom Server: es gibt bewusst KEINE TypeScript-Spiegelung des
     Sets im Frontend. `share` ist ein Bruchteil zwischen 0 und 1, bezogen auf die KLASSIFIZIERTEN
     Fotos - formatiert wird erst im Frontend."""
 
@@ -76,8 +75,7 @@ class CategoriesOut(BaseModel):
 
 
 class CategoryConfidenceEntryOut(BaseModel):
-    """Ein Eintrag des Konfidenzblocks (specs/features/0299-kategorie-konfidenz-anzeigen.md,
-    Akzeptanzkriterium 6).
+    """Ein Eintrag des Konfidenzblocks.
 
     `photo_count` zaehlt die Fotos DIESER Modell-Kategorie, die tatsaechlich eine Angabe tragen -
     nicht alle Fotos der Kategorie. `average_confidence` ist das arithmetische Mittel genau dieser
@@ -92,7 +90,7 @@ class CategoryConfidenceEntryOut(BaseModel):
 
 
 class CategoryConfidenceOut(BaseModel):
-    """Der Konfidenzblock als Ganzes - eigener Block mit EIGENER Grundmenge (ADR 0067 Punkt 5).
+    """Der Konfidenzblock als Ganzes - eigener Block mit EIGENER Grundmenge.
 
     Gruppiert wird ueber die MODELL-Kategorie (`photo_category_classifications.category_key`),
     ausdruecklich nicht ueber `photo_rankings.category_key` wie `_categories_out`: der vorhandene
@@ -116,9 +114,9 @@ class CategoryConfidenceOut(BaseModel):
 
 
 class CostByPurposeOut(BaseModel):
-    """`has_unrecorded_runs` ist das Kennzeichen aus ADR 0051 Punkt 5 - wahr, wenn mindestens
-    einer der beiden Befunde zutrifft. Es wird nichts geschaetzt und nichts hochgerechnet; der
-    Betrag bleibt die Summe des tatsaechlich Erfassten."""
+    """`has_unrecorded_runs` ist wahr, wenn mindestens einer der beiden Befunde zutrifft. Es wird
+    nichts geschaetzt und nichts hochgerechnet; der Betrag bleibt die Summe des tatsaechlich
+    Erfassten."""
 
     purpose: CloudVisionPhase
     cost_usd: float
@@ -174,7 +172,7 @@ class LastSuccessfulRunsOut(BaseModel):
 
 
 class RemoteFailureOut(BaseModel):
-    """IST-Zustand, keine Historie (ADR 0035: ein erfolgreicher Retry loescht die Zeile) - die
+    """IST-Zustand, keine Historie (ein erfolgreicher Retry loescht die Zeile) - die
     Oberflaeche formuliert das entsprechend."""
 
     purpose: CloudVisionPhase
@@ -198,8 +196,8 @@ class ProjectStatsOut(BaseModel):
     taken_at_earliest: datetime | None
     taken_at_latest: datetime | None
     categories: CategoriesOut
-    # specs/features/0299-kategorie-konfidenz-anzeigen.md - eigener Block NEBEN `categories`, mit
-    # anderer Grundmenge (siehe CategoryConfidenceOut-Docstring).
+    # Eigener Block NEBEN `categories`, mit anderer Grundmenge (siehe
+    # CategoryConfidenceOut-Docstring).
     category_confidence: CategoryConfidenceOut
     manual_category_override_count: int
     cost: CostOut
@@ -290,10 +288,10 @@ async def _ranking_counts_by_category(
     was damit geschieht: sie zaehlen zum Bearbeitungsstand (`ranked`), aber nicht zur
     Kategorienverteilung.
 
-    Zaehlt AUSSCHLIESSLICH die HAUPTkategorie (`is_primary`, specs/features/0300-
-    nebenkategorien.md, ADR 0069 Punkt 8): nur so bleibt die Summe ueber alle Kategorien die
-    Fotoanzahl - die Zusage, die die Verteilung ueberhaupt lesbar macht. Die Partitionsgroesse im
-    Info-Popover (`api/photos.py::_partition_sizes`) zaehlt dagegen bewusst ALLE Zeilen. Zwei
+    Zaehlt AUSSCHLIESSLICH die HAUPTkategorie (`is_primary`): nur so bleibt die Summe ueber alle
+    Kategorien die Fotoanzahl - die Zusage, die die Verteilung ueberhaupt lesbar macht. Die
+    Partitionsgroesse im Info-Popover (`api/photos.py::_partition_sizes`) zaehlt dagegen bewusst
+    ALLE Zeilen. Zwei
     Zaehlweisen, zwei Fragen."""
     if latest_run_id is None:
         return {}
@@ -313,8 +311,8 @@ def _categories_out(counts_by_key: dict[str, int], photo_count: int) -> Categori
     erfolgreichen Laufs - nur das ist die WIRKSAME Kategorie (lokale Signale + Remote-Kandidaten +
     manueller Override zusammengefuehrt), nicht `photo_category_classifications.category_key`.
 
-    Ein Ranking-Wert ausserhalb des festen Sets (Altbestand; der Lesepfad ist laut Spec 0289
-    bewusst tolerant) erzeugt KEINE zusaetzliche Zeile in der Verteilung und faellt in
+    Ein Ranking-Wert ausserhalb des festen Sets (Altbestand; der Lesepfad ist bewusst tolerant)
+    erzeugt KEINE zusaetzliche Zeile in der Verteilung und faellt in
     `unclassified_photo_count` - er ist keine Kategorie, die die Oberflaeche benennen koennte."""
     classified_photo_count = sum(
         count for key, count in counts_by_key.items() if key in CATEGORY_REGISTRY
@@ -407,12 +405,11 @@ def _category_confidence_out(
 async def _cost_out(
     session: AsyncSession, project_id: int, landmark_results: int, remote_results: int
 ) -> CostOut:
-    """Ist-Kosten je Zweck (ADR 0051). Summiert ueber ALLE Laeufe des Projekts - auch ueber
+    """Ist-Kosten je Zweck. Summiert ueber ALLE Laeufe des Projekts - auch ueber
     fehlgeschlagene: ein Lauf, der nach der Cloud-Phase gescheitert ist, hat das Geld trotzdem
     ausgegeben. Die Vorab-Schaetzung (`COST_PER_IMAGE_USD`) fliesst an keiner Stelle ein.
 
-    `has_unrecorded_runs` ist wahr, wenn mindestens einer der beiden Befunde aus ADR 0051 Punkt 5
-    zutrifft:
+    `has_unrecorded_runs` ist wahr, wenn mindestens einer der beiden Befunde zutrifft:
 
     (a) es existiert ein Lauf ohne erfassten Betrag (`cost_usd IS NULL`, also aus der Zeit vor der
         Migration) UND das Projekt besitzt mindestens ein Ergebnis dieser Art. Die zweite
@@ -567,7 +564,7 @@ async def get_project_stats(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ProjectStatsOut:
-    """Momentaufnahme des Projektzustands (specs/features/0207-projekt-statistikseite.md).
+    """Momentaufnahme des Projektzustands.
 
     Reine Leseleistung: der Endpunkt loest keinen Lauf aus, schreibt nichts und verursacht keine
     Provider-Kosten."""

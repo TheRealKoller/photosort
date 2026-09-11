@@ -49,10 +49,10 @@ async def set_rating(
 ) -> RatingOut:
     await _get_photo_or_404(photo_id, session)
 
-    # Security-Muss-Kriterium (specs/features/0002-manual-categorization.md,
-    # architecture/0003-securitykonzept.md): user_id kommt ausschliesslich aus dem
-    # current_user-Claim, nie aus Body/Query - sonst koennte Nutzer A per manipuliertem Request
-    # die Bewertung von Nutzer B ueberschreiben (Broken Object-Level Authorization).
+    # Security-Muss-Kriterium: user_id kommt ausschliesslich aus dem current_user-Claim, nie aus
+    # Body/Query - sonst koennte Nutzer A per manipuliertem Request die Bewertung von Nutzer B
+    # ueberschreiben (Broken Object-Level Authorization). Bricht in
+    # tests/test_api_ratings.py::test_put_rating_never_overwrites_another_users_rating.
     rating = await _get_own_rating(session, photo_id, current_user.id)
     if rating is None:
         rating = Rating(photo_id=photo_id, user_id=current_user.id, status=payload.status)

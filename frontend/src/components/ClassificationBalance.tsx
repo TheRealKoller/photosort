@@ -2,8 +2,7 @@ import type { CloudPhaseSummaryOut, CriterionScoringRunSummary } from '../api/ty
 import { formatCount, formatUsd } from '../utils/formatStats'
 
 /**
- * Die Bilanz des zuletzt abgeschlossenen Durchlaufs (specs/features/0348-klassifizierungs-
- * transparenz.md, Abschnitt "Nach dem Lauf").
+ * Die Bilanz des zuletzt abgeschlossenen Durchlaufs.
  *
  * Tritt an die Stelle der Teilschrittliste, sobald der Lauf beendet ist, und beschreibt
  * AUSSCHLIESSLICH diesen einen Durchlauf - eine Historie früherer Läufe entsteht dadurch

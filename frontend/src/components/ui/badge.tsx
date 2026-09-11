@@ -7,9 +7,8 @@ export type BadgeTone = 'favorite' | 'album-worthy' | 'rejected' | 'accent' | 'n
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   tone?: BadgeTone
   /**
-   * Vorschlags-Badge-Muster (specs/architecture/0004-design-system.md): volle Fuellung = von
-   * einem Menschen entschieden, getoente Flaeche mit farbigem Rand und farbiger Beschriftung =
-   * maschineller Vorschlag, noch offen.
+   * Vorschlags-Badge-Muster: volle Fuellung = von einem Menschen entschieden, getoente Flaeche mit
+   * farbigem Rand und farbiger Beschriftung = maschineller Vorschlag, noch offen.
    */
   suggested?: boolean
 }
@@ -22,10 +21,9 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
  * src/designSystem.contract.test.ts.
  *
  * SOLID: Board-Bewertungs-Badge - voll gefuellte Flaeche mit DUNKLER TINTE. Jeder Bewertungston
- * bringt seine eigene Vordergrundfarbe mit (`--rating-<ton>-fg`); sie tragen seit
- * decisions/0055-dark-utility-register-fundament.md Punkt 4e zwar alle denselben Wert, bleiben
- * aber drei getrennte Tokens: dass eine gemeinsame Tinte auf allen drei Toenen haelt, ist eine
- * Eigenschaft dieser konkreten Palette und keine Regel - beim Vorgaengersystem war sie
+ * bringt seine eigene Vordergrundfarbe mit (`--rating-<ton>-fg`); sie tragen zwar alle denselben
+ * Wert, bleiben aber drei getrennte Tokens: dass eine gemeinsame Tinte auf allen drei Toenen haelt,
+ * ist eine Eigenschaft dieser konkreten Palette und keine Regel - beim Vorgaengersystem war sie
  * nachweislich nicht gegeben, und ein Ton-Wechsel wuerde die Kopplung sonst still brechen.
  *
  * SUGGESTED: umgestellt auf die TOAST-KONSTRUKTION des Boards (Flaeche `--elevated`, farbiger
@@ -35,8 +33,7 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
  * geblieben. Auf `--elevated` faellt jetzt jedes Paar in die Kontrastmatrix.
  *
  * `rejected` traegt als Beschriftung `--danger-text` statt `--rating-rejected`: der Board-Ton
- * erreicht auf der erhoehten Flaeche nur 4.46:1 und haelt als Fliesstext kein AA (ADR 0055
- * Punkt 4d).
+ * erreicht auf der erhoehten Flaeche nur 4.46:1 und haelt als Fliesstext kein AA.
  */
 const TONE_CLASSES: Record<Exclude<BadgeTone, 'neutral'>, { solid: string; suggested: string }> = {
   favorite: {

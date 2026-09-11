@@ -15,8 +15,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 
 /*
- * Der Zwoelfer-Symbolsatz des Boards (specs/architecture/0005-board-dark-utility-register.md
- * Abschnitt 7, decisions/0055-dark-utility-register-fundament.md Punkt 7).
+ * Der Zwoelfer-Symbolsatz des Boards.
  *
  * DIES IST DIE EINZIGE DATEI IM PROJEKT, DIE AUS `lucide-react` IMPORTIEREN DARF - statisch
  * erzwungen in src/designSystem.contract.test.ts. Gruende:
@@ -33,16 +32,15 @@ import type { LucideIcon } from 'lucide-react'
  * oder ein berechneter Zugriff auf das Paket-Objekt zoege den vollen Satz ins Bundle - bei einer
  * PWA mit Mobilfunk-Nutzung ist das die Bedingung, unter der diese Abhaengigkeit vertretbar ist.
  *
- * Alle zwoelf Board-SVGs sind nachgewiesenermassen Lucide-Pfade (ADR 0055 Punkt 7a) - der
- * Figma-Export hat lediglich Boegen in kubische Beziers aufgeloest und `star` gegenlaeufig
- * gezeichnet. Es gibt damit keine Geometrie-Abweichung zwischen Board und Paket.
+ * Alle zwoelf Board-SVGs sind nachgewiesenermassen Lucide-Pfade - der Figma-Export hat lediglich
+ * Boegen in kubische Beziers aufgeloest und `star` gegenlaeufig gezeichnet. Es gibt damit keine
+ * Geometrie-Abweichung zwischen Board und Paket.
  *
- * Der Satz wird NICHT stillschweigend erweitert. Die SIEBEN dokumentierten Luecken (`x`
- * Schliessen, `✎` Uebersteuerungs-Marker, `○` "nicht gelaufen", `●●○` Qualitaetsmesser, `–`
- * unbewertet, `↳` Nebenkategorie-Marker und - seit specs/features/0387-schrittleiste-
- * fortschritt.md - das SCHLOSS des gesperrten Pipeline-Schritts) bleiben Textzeichen, dateilokale
- * SVGs bzw. bestehende Komponenten - sie mit beliebigen weiteren Lucide-Symbolen zu fuellen waere
- * eine Gestaltungsentscheidung ohne Vorlage.
+ * Der Satz wird NICHT stillschweigend erweitert. Die SIEBEN dokumentierten Luecken (`x` Schliessen,
+ * `✎` Uebersteuerungs-Marker, `○` "nicht gelaufen", `●●○` Qualitaetsmesser, `–` unbewertet, `↳`
+ * Nebenkategorie-Marker und das SCHLOSS des gesperrten Pipeline-Schritts) bleiben Textzeichen,
+ * dateilokale SVGs bzw. bestehende Komponenten - sie mit beliebigen weiteren Lucide-Symbolen zu
+ * fuellen waere eine Gestaltungsentscheidung ohne Vorlage.
  *
  * Das Schloss lebt als dateilokales SVG in src/components/StepMarker.tsx. Ein dreizehntes Zeichen
  * haette den Board-Beleg nicht, den alle zwoelf hier haben, und beruehrte diese Datei, ihre Tests,
@@ -90,9 +88,9 @@ export function Icon({ name, size = 16, title, className }: IconProps) {
 
   return (
     <LucideComponent
-      // Semantischer Haken im Stil der bestehenden data-suggested/data-status-Konvention: die
-      // Tests selektieren darueber statt ueber einen Klassennamen und ueberleben damit die
-      // gestalterische Ueberarbeitung der Ansichten (Stufe 2, Issue #321).
+      // Semantischer Haken im Stil der bestehenden data-suggested/data-status-Konvention: die Tests
+      // selektieren darueber statt ueber einen Klassennamen und ueberleben damit die gestalterische
+      // Ueberarbeitung der Ansichten.
       data-icon={name}
       width={size}
       height={size}

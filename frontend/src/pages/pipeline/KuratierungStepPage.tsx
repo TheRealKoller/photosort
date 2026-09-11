@@ -12,17 +12,16 @@ import type { PipelineOutletContext } from './ProjectPipelineLayout'
  * in ProjectPipelineLayout rendert diese Route nur, wenn die Kriterien-Bewertung bereits
  * erfolgreich war (isReachable('kuratierung')).
  *
- * "Remote-Kategorisierung"-Section ist seit specs/features/0218-remote-kategorisierung-kriterien-
- * bewertungsseite.md nicht mehr hier eingebunden, sondern auf KriterienStepPage.tsx (fachlich
- * naeher an ihrer Wirkung: Ergebnisse fliessen erst durch einen Kriterien-Bewertungs-Lauf ein).
+ * Die "Remote-Kategorisierung"-Section ist nicht hier eingebunden, sondern auf
+ * KriterienStepPage.tsx (fachlich naeher an ihrer Wirkung: Ergebnisse fliessen erst durch einen
+ * Kriterien-Bewertungs-Lauf ein).
  */
 export function KuratierungStepPage() {
   const { project } = useOutletContext<PipelineOutletContext>()
 
-  // Standardwert und Grenzen kommen aus utils/curationTopN.ts (eine Stelle fuer beide Seiten,
-  // specs/features/0357-voller-bildvorrat-kuratierung.md) - die Grenzen sind nur clientseitige
-  // Hinweise, die eigentliche Grenze wird serverseitig durchgesetzt. `''` ist ein bewusst
-  // erlaubter Zwischenzustand fuer ein geleertes Eingabefeld (Copilot-Review-Fund, PR #51).
+  // Standardwert und Grenzen kommen aus utils/curationTopN.ts (eine Stelle fuer beide Seiten) - die
+  // Grenzen sind nur clientseitige Hinweise, die eigentliche Grenze wird serverseitig durchgesetzt.
+  // `''` ist ein bewusst erlaubter Zwischenzustand fuer ein geleertes Eingabefeld.
   const [topNPerCategory, setTopNPerCategory] = useState<number | ''>(DEFAULT_TOP_N)
   const effectiveTopNPerCategory = topNPerCategory === '' ? DEFAULT_TOP_N : topNPerCategory
 
@@ -30,9 +29,8 @@ export function KuratierungStepPage() {
     <div className="flex flex-col gap-8">
       <section className="flex flex-col items-start gap-3">
         <h2 className="text-lg">Kategorie-Kuratierung</h2>
-        {/* specs/features/0357-voller-bildvorrat-kuratierung.md, ADR 0071 Entscheidung 1: Der
-            frühere Satz "sortierst du eines aus, rückt automatisch das nächstbeste derselben
-            Kategorie nach" ist ab dieser Story unwahr — es rückt nichts mehr nach. */}
+        {/* Der frühere Satz "sortierst du eines aus, rückt automatisch das nächstbeste derselben
+            Kategorie nach" ist unwahr — es rückt nichts mehr nach. */}
         <p className="text-sm text-text">
           Zeigt pro Foto-Moment und Kategorie die besten N Fotos — verworfene Fotos bleiben an ihrer
           Stelle sichtbar, und weitere Kandidaten lassen sich bei Bedarf einblenden.

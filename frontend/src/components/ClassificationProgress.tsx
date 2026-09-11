@@ -10,8 +10,7 @@ import { Icon } from './ui/icon'
 import { Progress } from './ui/progress'
 
 /**
- * Die Teilschrittliste während eines laufenden Klassifizierungslaufs (specs/features/0348-
- * klassifizierungs-transparenz.md, Abschnitt "Während des Laufs").
+ * Die Teilschrittliste während eines laufenden Klassifizierungslaufs.
  *
  * Die Ableitung "welcher Teilschritt, welcher Zustand, welcher Fortschritt" steht vollständig in
  * `utils/classificationSteps.ts` - hier bleibt reine Darstellung.

@@ -1,6 +1,6 @@
 /**
  * Der Standardwert und die Grenzen der Kuratierungs-Auswahl ("Top-Fotos pro Kategorie"), an EINER
- * Stelle (specs/features/0357-voller-bildvorrat-kuratierung.md, Entwurfsentscheidung 10).
+ * Stelle.
  *
  * Zuvor stand die "3" dreimal im Code (`CurateCategoriesPage.tsx`, `KuratierungStepPage.tsx`
  * zweimal). Mit dem Anheben auf 10 waere das dreimal derselbe Wert gewesen, den eine kuenftige

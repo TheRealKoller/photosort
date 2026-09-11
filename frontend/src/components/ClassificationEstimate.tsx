@@ -3,8 +3,7 @@ import { formatProviderLabel } from '../utils/categoryLabels'
 import { formatUsd } from '../utils/formatStats'
 
 /**
- * Die aufgeschlüsselte Kostenvorschau vor dem Start (specs/features/0348-klassifizierungs-
- * transparenz.md, Abschnitt "Vor dem Start").
+ * Die aufgeschlüsselte Kostenvorschau vor dem Start.
  *
  * Bleibt an ihrer bisherigen Stelle VOR dem Auslöser, damit die Kosten sichtbar sind, während der
  * Nutzer ihn betätigt - das Design-System-Muster "dauerhaft sichtbare Kostenschätzung am Auslöser"
@@ -61,10 +60,10 @@ export function ClassificationEstimate({ estimate }: ClassificationEstimateProps
             unknownHint="Menge noch unbekannt — für dieses Projekt gab es noch keinen Durchlauf. Dieser Anteil verursacht trotzdem Kosten."
           />
           <p className="flex items-baseline justify-between gap-3 border-t border-separator pt-1">
-            {/* Ist ein Anteil unbekannt, ist die Summe laut ADR 0068 Punkt 7 nur eine UNTERE
-                SCHRANKE. Sie unbeschriftet als "Gesamtsumme" zu zeigen, wäre genau die
-                Fehlaussage, gegen die diese Story geschrieben ist - nur eine Zeile tiefer als
-                die `0`, die sie oben schon vermeidet (Copilot-Fund PR #367). */}
+            {/* Ist ein Anteil unbekannt, ist die Summe nur eine UNTERE SCHRANKE. Sie
+                unbeschriftet als "Gesamtsumme" zu zeigen, wäre genau die Fehlaussage, gegen die
+                diese Anzeige antritt - nur eine Zeile tiefer als die `0`, die sie oben schon
+                vermeidet. */}
             <span className="font-semibold text-text-h">
               {everythingKnown ? 'Gesamtsumme' : 'Mindestens'}
             </span>

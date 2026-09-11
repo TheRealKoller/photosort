@@ -36,50 +36,44 @@ from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 from photosort.label_embedding import LabelEmbedderLike
 
-# specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md,
-# decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 3/4: strukturell
-# analog landmark.py. Seit specs/features/0289-feste-kategorien.md/ADR 0049 ist das
-# Antwortschema wieder GESCHLOSSEN, aber anders als vor ADR 0032: das Modell nennt bis zu drei
+# Strukturell analog landmark.py. Das Antwortschema ist GESCHLOSSEN: das Modell nennt bis zu drei
 # KANDIDATEN aus dem festen Set (categories.py), die endgueltige Auswahl trifft der Code
 # (resolve_category). Frei formulierte Feinlabels bleiben als reine Zusatzinformation erhalten.
 
 logger = logging.getLogger(__name__)
 
-# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 7: die frueheren
-# Aliase ANTHROPIC_CATEGORY_MODEL/MISTRAL_CATEGORY_MODEL sind ersatzlos entfallen (Begruendung
-# wortgleich zu landmark.py) - das Modell kommt als Konstruktor-Parameter herein.
+# Die frueheren Aliase ANTHROPIC_CATEGORY_MODEL/MISTRAL_CATEGORY_MODEL sind ersatzlos entfallen
+# (Begruendung wortgleich zu landmark.py) - das Modell kommt als Konstruktor-Parameter herein.
 
-# Kurze, reine Klassifikationsantwort - 256 bleibt ausreichend (ADR 0032 Punkt 3): drei
-# Set-Schluessel (je hoechstens ~8 Tokens) plus zwei kurze deutsche Feinlabels und das
-# JSON-Geruest liegen zusammen deutlich unter 100 Ausgabe-Tokens; der mit Spec 0289 deutlich
-# groessere Prompt waechst ausschliesslich auf der EINGABEseite.
+# Kurze, reine Klassifikationsantwort - 256 bleibt ausreichend: drei Set-Schluessel (je hoechstens
+# ~8 Tokens) plus zwei kurze deutsche Feinlabels und das JSON-Geruest liegen zusammen deutlich unter
+# 100 Ausgabe-Tokens; der deutlich groessere Prompt waechst ausschliesslich auf der EINGABEseite.
 #
-# NEUHERLEITUNG mit specs/features/0299-kategorie-konfidenz-anzeigen.md (Security-Abschnitt
-# Punkt 5): der Kategorien-Eintrag ist vom nackten Schluessel zum Objekt geworden, je Kandidat
-# also rund 10 Tokens mehr ({"key": ..., "confidence": 0.92}). Die vollbesetzte Antwort liegt
-# damit ueberschlaegig bei 80-100 Ausgabe-Tokens gegenueber rund 50 bisher - 256 behaelt klare
-# Reserve und ist ausdruecklich NICHT anzuheben. Das ist hier keine reine Kostenschranke: die
-# Grenze begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und potenziell geloggt
-# werden kann. Beide Groessen sind in tests/test_remote_classification.py festgehalten.
+# NEUHERLEITUNG seit dem Konfidenzschema: der Kategorien-Eintrag ist vom nackten Schluessel zum
+# Objekt geworden, je Kandidat also rund 10 Tokens mehr ({"key": ..., "confidence": 0.92}). Die
+# vollbesetzte Antwort liegt damit ueberschlaegig bei 80-100 Ausgabe-Tokens gegenueber rund 50
+# bisher - 256 behaelt klare Reserve und ist ausdruecklich NICHT anzuheben. Das ist hier keine reine
+# Kostenschranke: die Grenze begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und
+# potenziell geloggt werden kann. Beide Groessen sind in tests/test_remote_classification.py
+# festgehalten.
 _MAX_RESPONSE_TOKENS = 256
 
-# Defensive Obergrenze gegen eine entartete Modellantwort (ADR 0032 Punkt 3) - verhindert einen
-# uebermaessig langen canonical_key/display_name, BEVOR resolve_canonical_label/_slugify aufgerufen
-# wird (Security-Abschnitt der Spec 0289, Punkt 3). Ein zu langes Label wird VERWORFEN, nicht
-# gekuerzt: ein auf 60 Zeichen abgeschnittenes Label erzeugte sonst dauerhaft einen unbrauchbaren
-# canonical_key in der projektuebergreifenden Registry, und zwei verschiedene Labels koennten auf
-# denselben Slug fallen. Storage-/Degenerationsgrenze, KEINE Sanitisierungsmassnahme (dieselbe
-# Einordnung wie die 500-Zeichen-Kappung aus Spec 0058).
+# Defensive Obergrenze gegen eine entartete Modellantwort - verhindert einen uebermaessig langen
+# canonical_key/display_name, BEVOR resolve_canonical_label/_slugify aufgerufen wird
+# (Sicherheits-Muss-Kriterium). Ein zu langes Label wird VERWORFEN, nicht gekuerzt: ein auf 60
+# Zeichen abgeschnittenes Label erzeugte sonst dauerhaft einen unbrauchbaren canonical_key in der
+# projektuebergreifenden Registry, und zwei verschiedene Labels koennten auf denselben Slug fallen.
+# Storage-/Degenerationsgrenze, KEINE Sanitisierungsmassnahme.
 MAX_FINE_LABEL_LENGTH = 60
 
-# Laengenbegrenzung fuer den in der WARNING-Zeile mitgeloggten Rohwert (Security-Abschnitt der
-# Spec 0289, Punkt 4) - zusammen mit dem %r-Format (repr escaped Zeilenumbrueche/Steuerzeichen
-# sichtbar) die Absicherung gegen Log-Injection durch eine entartete Modellantwort.
+# Laengenbegrenzung fuer den in der WARNING-Zeile mitgeloggten Rohwert (Sicherheits-Muss-Kriterium)
+# - zusammen mit dem %r-Format (repr escaped Zeilenumbrueche/Steuerzeichen sichtbar) die Absicherung
+# gegen Log-Injection durch eine entartete Modellantwort.
 _MAX_LOGGED_RAW_VALUE_LENGTH = 60
 
-# specs/features/0299-kategorie-konfidenz-anzeigen.md, Security-Abschnitt Punkt 4: FESTE
-# Grund-Tokens statt des Rohwerts. Fuer einen verworfenen Kategorieschluessel traegt der Rohwert
-# echten Diagnosewert (er zeigt ein Vokabular, das der Prompt nicht gesetzt hat) - fuer eine
+# Sicherheits-Muss-Kriterium: FESTE Grund-Tokens statt des Rohwerts. Fuer einen verworfenen
+# Kategorieschluessel traegt der Rohwert echten Diagnosewert (er zeigt ein Vokabular, das der
+# Prompt nicht gesetzt hat) - fuer eine
 # verworfene Konfidenz liegt er praktisch vollstaendig in der FEHLERKLASSE: "kein Zahlentyp" bzw.
 # "ausserhalb [0,1]" sagt alles fuer eine Prompt-/Schemakorrektur Noetige, die konkrete `1.7`
 # nichts darueber hinaus. Damit enthaelt die Zeile ueberhaupt keinen Fremdtext und die
@@ -103,8 +97,8 @@ class RemoteCategoryClassificationApiError(Exception):
 
 @dataclass(frozen=True)
 class RemoteClassification:
-    """Die validierte Antwort des Vision-LLM fuer EIN Foto (specs/features/0289-feste-
-    kategorien.md, Umsetzungsschritt 4) - ersetzt die fruehere `list[CategoryLabelDetection]`.
+    """Die validierte Antwort des Vision-LLM fuer EIN Foto - ersetzt die fruehere
+    `list[CategoryLabelDetection]`.
 
     `categories` enthaelt ausschliesslich bekannte Set-Keys (categories.py::CATEGORY_REGISTRY) in
     Erstnennungs-Reihenfolge, hoechstens MAX_REMOTE_CATEGORIES_PER_PHOTO - unbekannte Rohwerte
@@ -114,21 +108,20 @@ class RemoteClassification:
     `fine_labels` enthaelt die zeichensanierten, freien Feinlabels, hoechstens
     MAX_FINE_LABELS_PER_PHOTO.
 
-    `category_confidences` ist die Selbsteinschaetzung des Modells je Kandidat (specs/features/
-    0299-kategorie-konfidenz-anzeigen.md, ADR 0067) - eine ABBILDUNG `category_key -> Wert in
-    [0, 1]`, kein positionsparalleles Array: der Wert haengt am Schluessel und ueberlebt jede
+    `category_confidences` ist die Selbsteinschaetzung des Modells je Kandidat - eine ABBILDUNG
+    `category_key -> Wert in [0, 1]`, kein positionsparalleles Array: der Wert haengt am
+    Schluessel und ueberlebt jede
     Umsortierung. Sie ist eine TEILmenge von `categories` (Invariante
     `set(category_confidences) <= set(categories)`), darf leer sein, und ihr Fehlen an einem
-    Schluessel heisst "keine Angabe", nie `0.0`. Die frueher hier entfallenen Konfidenzen (ADR 0049
-    Entwurfsentscheidung 7) kehren damit zurueck - aber ausdruecklich OHNE die Eigenschaft, die sie
-    damals zum Ballast machte: sie beeinflussen die Kategorieauswahl an keiner Stelle."""
+    Schluessel heisst "keine Angabe", nie `0.0`. Die frueher hier entfallenen Konfidenzen kehren
+    damit zurueck - aber ausdruecklich OHNE die Eigenschaft, die sie damals zum Ballast machte:
+    sie beeinflussen die Kategorieauswahl an keiner Stelle."""
 
     categories: tuple[str, ...]
     fine_labels: tuple[str, ...]
-    # specs/features/0207-projekt-statistikseite.md, ADR 0051 Punkt 1: der reale Token-Verbrauch
-    # DIESES Aufrufs (analog LandmarkDetection.usage). MIT Default - bestehende Test-Doubles und
-    # die CategoryDetectionClientLike-Signatur bleiben unveraendert. `None` heisst "nicht
-    # ermittelbar", nicht "keine Kosten".
+    # Der reale Token-Verbrauch DIESES Aufrufs (analog LandmarkDetection.usage). MIT Default -
+    # bestehende Test-Doubles und die CategoryDetectionClientLike-Signatur bleiben unveraendert.
+    # `None` heisst "nicht ermittelbar", nicht "keine Kosten".
     usage: TokenUsage | None = None
     # `MappingProxyType({})` statt `field(default_factory=dict)`: die Zusage von `frozen=True` gilt
     # sonst nur fuer die REFERENZ, nicht fuer den Inhalt - genau wie bei den beiden Tupel-Feldern
@@ -141,9 +134,9 @@ class RemoteClassification:
 class CategoryDetectionClientLike(Protocol):
     """Schmale, injizierbare Schnittstelle (analog LandmarkClientLike).
 
-    `photo_id` ist eine technische Detailentscheidung dieser Umsetzung (Spec 0289,
-    Security-Abschnitt Punkt 4 verlangt "der einzelne verworfene Wert PLUS photo_id" in der
-    WARNING-Zeile): der Parser sitzt innerhalb von `classify`, kennt das Foto sonst aber nicht.
+    `photo_id` ist eine technische Detailentscheidung dieser Umsetzung (die WARNING-Zeile traegt
+    den einzelnen verworfenen Wert PLUS photo_id): der Parser sitzt innerhalb von `classify`,
+    kennt das Foto sonst aber nicht.
     Der Wert wird ausschliesslich fuer diese Logzeile benutzt, nie an die API gesendet."""
 
     async def classify(
@@ -152,10 +145,10 @@ class CategoryDetectionClientLike(Protocol):
 
 
 def _log_discarded_category(photo_id: int, raw: object) -> None:
-    """Ein verworfener, unbekannter Kategoriewert (ADR-0034-Muster: eine Zeile, WARNING, kein
-    exc_info/Traceback - der Lauf bleibt erfolgreich, das ist erwartetes Best-effort-Verhalten).
+    """Ein verworfener, unbekannter Kategoriewert (eine Zeile, WARNING, kein exc_info/Traceback -
+    der Lauf bleibt erfolgreich, das ist erwartetes Best-effort-Verhalten).
 
-    Security-Muss-Kriterien (Spec 0289, Abschnitt 4): geloggt wird AUSSCHLIESSLICH der einzelne
+    Security-Muss-Kriterien: geloggt wird AUSSCHLIESSLICH der einzelne
     verworfene Wert plus photo_id - nie die vollstaendige API-Antwort, nie der Request-Body, nie
     Base64-Bilddaten, nie der API-Key. Der Rohwert geht laengenbegrenzt und ueber %r (repr) ins
     Log, nie roh ueber %s: ein mehrzeiliger Modellwert koennte sonst gefaelschte Logzeilen
@@ -171,8 +164,8 @@ def _log_discarded_category(photo_id: int, raw: object) -> None:
 
 def _log_discarded_confidence(photo_id: int, reason: str) -> None:
     """Schwesterfunktion zu `_log_discarded_category` fuer einen verworfenen KONFIDENZwert
-    (specs/features/0299-kategorie-konfidenz-anzeigen.md, Security-Abschnitt Punkt 4) - eine Zeile,
-    WARNING, kein exc_info: der Lauf bleibt erfolgreich, das Foto behaelt seine Kategorie.
+    (Sicherheits-Muss-Kriterium) - eine Zeile, WARNING, kein exc_info: der Lauf bleibt
+    erfolgreich, das Foto behaelt seine Kategorie.
 
     Geloggt werden ausschliesslich `photo_id` und eines der beiden festen Grund-Tokens, NIE der
     Rohwert, nie die vollstaendige Antwort, nie der Kategorie-Key, nie Bilddaten. Kein
@@ -184,8 +177,8 @@ def _log_discarded_confidence(photo_id: int, reason: str) -> None:
 
 
 def _confidence_from_raw(raw: object, photo_id: int) -> float | None:
-    """Die Selbsteinschaetzung des Modells zu EINEM Kandidaten (specs/features/0299-kategorie-
-    konfidenz-anzeigen.md, ADR 0067 Punkt 3) - `None` heisst "keine brauchbare Zahl".
+    """Die Selbsteinschaetzung des Modells zu EINEM Kandidaten - `None` heisst "keine brauchbare
+    Zahl".
 
     Uebernommen wird ausschliesslich ein echter Zahlentyp im Band `0.0 <= v <= 1.0`. Drei
     Feinheiten, jede mit einer konkreten Ausfallfolge:
@@ -198,8 +191,7 @@ def _confidence_from_raw(raw: object, photo_id: int) -> float | None:
       beide Provider-Pfade nutzen `json.loads` mit Standardeinstellungen. Ein durchgelassenes
       `NaN` liesse ueber Starlettes `allow_nan=False` die GESAMTE Listenantwort mit `ValueError`
       scheitern (nicht nur den einen Eintrag), und PostgreSQL lehnt dasselbe Literal bereits beim
-      Schreiben der JSON-Spalte ab - verfuegbarkeitswirksam, nicht nur unsauber (Security-Abschnitt
-      der Spec 0299, Punkt 2).
+      Schreiben der JSON-Spalte ab - verfuegbarkeitswirksam, nicht nur unsauber.
     - VERWORFEN, nicht geklemmt - bewusst anders als `landmark.py::_landmark_detection_from_json`.
       `1.4 -> 1.0` waere eine Aussage, die das Modell nie getroffen hat; und ein spaeteres Klemmen
       (`if v > 1.0: v = 1.0`) liesse `NaN` wieder durch, weil der Vergleich `False` ergibt.
@@ -217,20 +209,20 @@ def _confidence_from_raw(raw: object, photo_id: int) -> float | None:
 def _categories_from_json(
     raw_categories: list[Any], photo_id: int
 ) -> tuple[tuple[str, ...], Mapping[str, float]]:
-    """Verbindliche Verarbeitungsreihenfolge (Spec 0289, Teststrategie 5): trimmen -> leere Werte
+    """Verbindliche Verarbeitungsreihenfolge: trimmen -> leere Werte
     verwerfen -> unbekannte Werte verwerfen (+ genau ein WARNING je Wert) -> deduplizieren unter
     Erhalt der Erstnennungs-Reihenfolge -> ZULETZT kuerzen. Zuerst zu kuerzen wuerde gueltige
     Werte hinter ungueltigen verlieren.
 
-    Seit specs/features/0299-kategorie-konfidenz-anzeigen.md liefert der EINE Durchlauf ein PAAR
-    (Kandidaten + Konfidenz-Abbildung) statt nur der Kandidaten. Bewusst nicht zwei getrennte
+    Der EINE Durchlauf liefert ein PAAR (Kandidaten + Konfidenz-Abbildung) statt nur der
+    Kandidaten. Bewusst nicht zwei getrennte
     Funktionen: Dedup und Kappung koennten sonst zwischen beiden Rueckgaben auseinanderlaufen.
 
     Ein Eintrag darf ein Objekt mit `key` (optional `confidence`) ODER weiterhin ein blanker String
-    sein (ADR 0067 Punkt 7) - der String-Fall liefert eine Kategorie OHNE Zahl. Alles andere geht
+    sein - der String-Fall liefert eine Kategorie OHNE Zahl. Alles andere geht
     durch denselben Verwerfen-Pfad wie bisher, kein neuer stiller Zweig.
 
-    Security-Muss-Kriterium (Spec 0299, Punkt 3): die Konfidenz-Abbildung wird ERST NACH
+    Security-Muss-Kriterium: die Konfidenz-Abbildung wird ERST NACH
     Schluesselvalidierung, Dedup und Kappung auf die verbliebenen Schluessel gefiltert. Ihre
     Schluessel sind ein zweiter Persistenzkanal - entstuende sie vor oder unabhaengig von der
     Validierung, wanderte unvalidierter Fremdtext ueber sie in API-Antwort und UI. Invariante:
@@ -301,8 +293,7 @@ def _fine_labels_from_json(raw_labels: list[Any]) -> tuple[str, ...]:
 def _classification_from_json(
     parsed: Any, photo_id: int, usage: TokenUsage | None = None
 ) -> RemoteClassification:
-    """Providerneutrale Validierung der Roh-Antwort (specs/features/0289-feste-kategorien.md,
-    Umsetzungsschritt 4) - **strukturell hart, inhaltlich tolerant**:
+    """Providerneutrale Validierung der Roh-Antwort - **strukturell hart, inhaltlich tolerant**:
 
     STRUKTURELL HART (jeweils RemoteCategoryClassificationApiError, das Foto wird auf Worker-Ebene
     best-effort uebersprungen): die Antwort ist kein JSON-Objekt, `categories` fehlt, `categories`
@@ -310,7 +301,7 @@ def _classification_from_json(
     _MAX_RESPONSE_TOKENS abgeschnittene Antwort landet ueber denselben Pfad hier - nie bei einem
     teilweise geparsten Datensatz.
 
-    INHALTLICH TOLERANT (ADR-0034-Muster): unbekannte Kategoriewerte und entartete Feinlabels
+    INHALTLICH TOLERANT: unbekannte Kategoriewerte und entartete Feinlabels
     werden VERWORFEN statt abgelehnt. Der wichtigste Grenzfall: sind ALLE Kategoriewerte
     unbekannt, ist das KEIN Fehler - das Ergebnis ist ein leeres Kategorien-Tupel, das ueber
     `resolve_category` zu `nicht_erkannt` wird, und die Feinlabels desselben Fotos bleiben
@@ -348,8 +339,8 @@ def _classification_from_json(
 
 
 class AnthropicCategoryClient:
-    """Echte, httpx-basierte Implementierung von CategoryDetectionClientLike (ADR 0032 Punkt 3),
-    strukturell analog AnthropicLandmarkClient. `transport` ist injizierbar (httpx.MockTransport in
+    """Echte, httpx-basierte Implementierung von CategoryDetectionClientLike, strukturell analog
+    AnthropicLandmarkClient. `transport` ist injizierbar (httpx.MockTransport in
     Tests) - `build_category_classification_client()` unten laeuft NIE in einem automatisierten
     Test (echtes Secret + echter Netzwerkversuch)."""
 
@@ -362,9 +353,9 @@ class AnthropicCategoryClient:
         *,
         throttle: CloudRequestThrottle,
     ) -> None:
-        # PFLICHTPARAMETER ohne Default (ADR 0059 Punkt 7), Begruendung wortgleich zu
-        # landmark.py::AnthropicLandmarkClient. Seit Spec 0382 gilt dasselbe fuer den
-        # Schrittmacher (K6): ein Aufrufer, der ihn vergisst, fiele nicht beim Typecheck auf,
+        # PFLICHTPARAMETER ohne Default, Begruendung wortgleich zu
+        # landmark.py::AnthropicLandmarkClient. Dasselbe gilt fuer den Schrittmacher: ein
+        # Aufrufer, der ihn vergisst, fiele nicht beim Typecheck auf,
         # sondern erst an der Anfragerate des Anbieters.
         self._model = model
         self._throttle = throttle
@@ -404,10 +395,9 @@ class AnthropicCategoryClient:
                 }
             ],
         }
-        # specs/features/0382-cloud-rate-limits-aussitzen.md, K6: EIN Aufruf statt des bisher
-        # viermal abgeschriebenen post/except/raise_for_status-Blocks - dieselbe Funktion, die
-        # auch die beiden Landmark-Clients benutzen. Meldungstexte und Statuslabel unveraendert
-        # (sie stecken jetzt in ANTHROPIC_ENDPOINT).
+        # EIN Aufruf statt des bisher viermal abgeschriebenen post/except/raise_for_status-Blocks -
+        # dieselbe Funktion, die auch die beiden Landmark-Clients benutzen. Meldungstexte und
+        # Statuslabel unveraendert (sie stecken jetzt in ANTHROPIC_ENDPOINT).
         response = await post_vision_request(
             self._client,
             ANTHROPIC_ENDPOINT,
@@ -423,8 +413,8 @@ class AnthropicCategoryClient:
 
 
 class MistralCategoryClient:
-    """Echte, httpx-basierte Implementierung von CategoryDetectionClientLike (ADR 0032 Punkt 3),
-    exakt analog MistralLandmarkClient."""
+    """Echte, httpx-basierte Implementierung von CategoryDetectionClientLike, exakt analog
+    MistralLandmarkClient."""
 
     def __init__(
         self,
@@ -471,7 +461,7 @@ class MistralCategoryClient:
                 }
             ],
         }
-        # Spec 0382, K6 - Begruendung wortgleich zu AnthropicCategoryClient.classify oben.
+        # Begruendung wortgleich zu AnthropicCategoryClient.classify oben.
         response = await post_vision_request(
             self._client,
             MISTRAL_ENDPOINT,
@@ -488,16 +478,15 @@ class MistralCategoryClient:
 
 def build_category_classification_client(model: str) -> CategoryDetectionClientLike:
     """Dispatch-Factory zwischen AnthropicCategoryClient (Default) und MistralCategoryClient je
-    nach settings.landmark_provider (ADR 0032 Punkt 3: KEIN neues Provider-Setting - derselbe
-    Schalter wie fuer landmark). Laeuft NIE in einem automatisierten Test (echtes Secret + echter
+    nach settings.landmark_provider (KEIN neues Provider-Setting - derselbe Schalter wie fuer
+    landmark). Laeuft NIE in einem automatisierten Test (echtes Secret + echter
     Netzwerkversuch), analog build_landmark_client/build_face_detector.
 
-    `model` ist seit Spec 0304 ein Parameter (ADR 0059 Punkt 7, Begruendung wortgleich zu
-    landmark.py::build_landmark_client) - und es ist DASSELBE Modell wie dort, weil
-    `LANDMARK_MODEL` wie `LANDMARK_PROVIDER` fuer beide Cloud-Anteile gilt (Akzeptanzkriterium:
-    "nicht zwei unterschiedliche Modelle nebeneinander")."""
-    # Spec 0382, K4: DERSELBE prozessweite Schrittmacher, den auch build_landmark_client() zieht -
-    # beide Cloud-Teilschritte teilen sich einen je Anbieter.
+    `model` ist ein Parameter (Begruendung wortgleich zu landmark.py::build_landmark_client) - und
+    es ist DASSELBE Modell wie dort, weil `LANDMARK_MODEL` wie `LANDMARK_PROVIDER` fuer beide
+    Cloud-Anteile gilt: nicht zwei unterschiedliche Modelle nebeneinander."""
+    # DERSELBE prozessweite Schrittmacher, den auch build_landmark_client() zieht - beide
+    # Cloud-Teilschritte teilen sich einen je Anbieter.
     throttle = throttle_for_provider(settings.landmark_provider)
     if settings.landmark_provider == "mistral":
         mistral_client: CategoryDetectionClientLike = MistralCategoryClient(
@@ -510,12 +499,11 @@ def build_category_classification_client(model: str) -> CategoryDetectionClientL
     return anthropic_client
 
 
-# specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 3: die frueher hier
-# stehende Konstante COST_PER_IMAGE_USD (Vorab-Schaetzung, Preis pro BILD, je PROVIDER) ist
-# ersatzlos entfallen. Sie war der Kern des von Spec 0304 behobenen Defekts: an den Anbieter
-# gebunden statt an das Modell, wurde sie bei einem Modellwechsel unbemerkt falsch. Die Schaetzung
-# lebt seitdem in `pricing.py::estimate_usd_per_image()` und wird aus derselben modell-
-# geschluesselten Preistabelle abgeleitet wie die Ist-Kosten; die dokumentierte Herleitung der
+# Die frueher hier stehende Konstante COST_PER_IMAGE_USD (Vorab-Schaetzung, Preis pro BILD, je
+# PROVIDER) ist ersatzlos entfallen: an den Anbieter gebunden statt an das Modell, wurde sie bei
+# einem Modellwechsel unbemerkt falsch. Die Schaetzung lebt seitdem in
+# `pricing.py::estimate_usd_per_image()` und wird aus derselben modell-geschluesselten
+# Preistabelle abgeleitet wie die Ist-Kosten; die dokumentierte Herleitung der
 # Token-Annahmen ist mit nach `pricing.py::ASSUMED_USAGE_BY_PROVIDER` gewandert.
 
 # Dokumentiert-unkalibrierter Startwert (developer verifiziert/kalibriert mit ein paar echten
@@ -530,8 +518,7 @@ CATEGORY_LABEL_SIMILARITY_THRESHOLD = 0.78
 
 @dataclass
 class FineLabelSnapshotEntry:
-    """Ein Eintrag des In-Memory-Snapshots der `fine_labels`-Tabelle (ADR 0032 Punkt 4/5, in
-    specs/features/0289-feste-kategorien.md mit der Tabelle umbenannt) -
+    """Ein Eintrag des In-Memory-Snapshots der `fine_labels`-Tabelle -
     worker.py::run_remote_category_classification laedt diesen Snapshot einmal zu Laufbeginn und
     reicht ihn (mutierbar) an resolve_canonical_label weiter; neu angelegte Eintraege werden sofort
     lokal ergaenzt (kein erneutes SELECT, keine Nebenlaeufigkeits-Race). Bewusst NICHT frozen
@@ -545,7 +532,7 @@ class FineLabelSnapshotEntry:
 
 
 def _normalize_label_text(raw: str) -> str:
-    """Reine String-Normalisierung (ADR 0032 Punkt 4, Schritt 1) - kein Modell-Aufruf. NFKC deckt
+    """Reine String-Normalisierung (Schritt 1) - kein Modell-Aufruf. NFKC deckt
     u.a. Ligaturen/Kompatibilitaetszeichen ab (z.B. "ﬁsch" -> "fisch"), casefold ist eine
     aggressivere, unicode-bewusste Kleinschreibung als .lower()."""
     return unicodedata.normalize("NFKC", raw).strip().casefold()
@@ -555,20 +542,20 @@ _SLUG_INVALID_CHARS = re.compile(r"[^a-z0-9]+")
 
 
 def _slugify(text: str) -> str:
-    """Bildet einen URL-/Key-sicheren Slug (ADR 0032 Punkt 4, Schritt 4): casefoldet defensiv
+    """Bildet einen URL-/Key-sicheren Slug (Schritt 4): casefoldet defensiv
     zusaetzlich selbst (funktioniert damit unabhaengig davon, ob der Aufrufer bereits normalisiert
     hat), Sonderzeichen/Leerzeichen zu `_`, doppelte `_` reduziert, fuehrende/abschliessende `_`
     entfernt - dieselbe Klasse einfacher, reiner Textfunktion wie andernorts im Projekt (z.B.
     worker.py-Cache-Key-Bildung), keine neue Bibliothek.
 
-    Hash-Fallback (Review-Fund, security-engineer): `_SLUG_INVALID_CHARS` matcht nur
-    a-z/0-9 als gueltig - ein rein nicht-lateinisches Rohlabel (z.B. japanisch/chinesisch, ein vom
-    offenen Remote-Vokabular (ADR 0032) explizit nicht ausgeschlossener Fall) wuerde sonst zu
+    Hash-Fallback: `_SLUG_INVALID_CHARS` matcht nur a-z/0-9 als gueltig - ein rein
+    nicht-lateinisches Rohlabel (z.B. japanisch/chinesisch, ein vom offenen Remote-Vokabular
+    explizit nicht ausgeschlossener Fall) wuerde sonst zu
     einem leeren String slugifien. Zwei verschiedene solche Label wuerden dann denselben (leeren)
     canonical_key produzieren und an UniqueConstraint(fine_labels.canonical_key) scheitern -
     ein Verfuegbarkeitsrisiko, das den ganzen Batch-Lauf abbricht statt nur das eine betroffene
-    Foto zu ueberspringen (ADR 0032 Punkt 5: best-effort ohne Retry gilt pro Foto, nicht fuer eine
-    IntegrityError beim Label-Anlegen). Deterministischer SHA256-Praefix statt Zufallswert -
+    Foto zu ueberspringen (best-effort ohne Retry gilt pro Foto, nicht fuer eine IntegrityError
+    beim Label-Anlegen). Deterministischer SHA256-Praefix statt Zufallswert -
     derselbe Rohtext liefert bei einem Wiederholungslauf denselben Slug, kein Duplikat-Risiko."""
     slug = _SLUG_INVALID_CHARS.sub("_", text.casefold()).strip("_")
     if slug:
@@ -578,7 +565,7 @@ def _slugify(text: str) -> str:
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Reine Vektor-Aehnlichkeitsfunktion (ADR 0032 Punkt 4, Schritt 3) - beide Embedding-Vektoren
+    """Reine Vektor-Aehnlichkeitsfunktion (Schritt 3) - beide Embedding-Vektoren
     sind bereits L2-normiert (label_embedding.py::_mean_pool_and_normalize), das Skalarprodukt
     entspricht deshalb direkt der Kosinus-Aehnlichkeit, keine erneute Normierung noetig."""
     return sum(x * y for x, y in zip(a, b, strict=True))
@@ -589,7 +576,7 @@ def resolve_canonical_label(
     existing_labels: list[FineLabelSnapshotEntry],
     embedder: LabelEmbedderLike,
 ) -> FineLabelSnapshotEntry:
-    """Reine, DB-freie Funktion (ADR 0032 Punkt 4) - loest ein einzelnes Roh-Label auf einen
+    """Reine, DB-freie Funktion - loest ein einzelnes Roh-Label auf einen
     kanonischen Eintrag auf: (1) exakter Normalisierungs-Fast-Path (KEIN embed()-Aufruf), (2)
     Kosinus-Aehnlichkeits-Fallback gegen ALLE `existing_labels` (`>=` CATEGORY_LABEL_SIMILARITY_
     THRESHOLD, inklusiv), (3) sonst ein neuer kanonischer Eintrag, der `existing_labels` sofort

@@ -1,24 +1,23 @@
 """feste kategorien: photo_category_classifications + fine_labels-Umbenennung + zwei
 datenverändernde Schritte
 
-specs/features/0289-feste-kategorien.md, decisions/0049-festes-kategorien-set-mit-
-vorrangreihenfolge-und-freien-feinlabels.md - vier Teile:
+Vier Teile:
 
 a) Neue Tabelle `photo_category_classifications` (1:1 zu `photos`): die remote ermittelte,
    bereits über `categories.py::resolve_category` aufgelöste Kategorie samt validierter
    Kandidatenliste.
 b) Umbenennung `category_labels` -> `fine_labels`, `photo_category_detections` ->
    `photo_fine_labels`, Spalte `category_label_id` -> `fine_label_id`, Constraint ->
-   `uq_fine_label_photo_label`; `photo_fine_labels.confidence` entfällt ersatzlos (ADR 0049
-   Entwurfsentscheidung 7: die Zahl speiste nur die abgelöste Score-Auswahl).
+   `uq_fine_label_photo_label`; `photo_fine_labels.confidence` entfällt ersatzlos (die Zahl
+   speiste nur die abgelöste Score-Auswahl).
 c) `DELETE FROM photo_fine_labels` - die vorhandenen Zeilen stammen aus dem alten, offenen
    Prompt ("1-3 Schlagworte als Kategoriequelle") und sind unter der neuen Bedeutung
    ("Zusatzinformation neben einer Pflicht-Kategorie") nicht sinnvoll interpretierbar. Die
    Vokabular-Registry `fine_labels` BLEIBT erhalten.
 d) `UPDATE photo_scores SET category_override = NULL` - PFLICHTSCHRITT, keine Aufräumaktion:
    der Override hat im Lesepfad Vorrang vor `resolve_category`; ein Altwert außerhalb des
-   festen Sets würde die neue Whitelist-Validierung sonst dauerhaft umgehen (Security-Abschnitt
-   der Spec 0289, Punkt 7).
+   festen Sets würde die neue Whitelist-Validierung sonst dauerhaft umgehen
+   (Sicherheits-Muss-Kriterium).
 
 `photo_rankings` bleibt bewusst UNBERÜHRT (Laufhistorie, Vorher-Stand für category_diff.py) -
 dort stehen weiterhin Altwerte außerhalb des Sets.

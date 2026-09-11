@@ -39,9 +39,9 @@ async function extractDetail(response: Response): Promise<string> {
 }
 
 /**
- * Duenner Fetch-Wrapper, der einzige Ort, der tatsaechlich HTTP-Requests an das Backend baut
- * (siehe decisions/0004-frontend-app-shell.md). Haengt bei vorhandenem Token automatisch den
- * Authorization-Header an; loescht das Token und dispatcht UNAUTHORIZED_EVENT bei 401.
+ * Duenner Fetch-Wrapper, der einzige Ort, der tatsaechlich HTTP-Requests an das Backend baut Haengt
+ * bei vorhandenem Token automatisch den Authorization-Header an; loescht das Token und dispatcht
+ * UNAUTHORIZED_EVENT bei 401.
  */
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const token = getToken()
@@ -83,7 +83,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
  * Wie apiFetch, aber liefert den rohen Response-Body als Blob statt JSON zu parsen - fuer
  * Foto-Bilddaten (siehe api/photos.ts::fetchPhotoImageBlobUrl). Ein <img src="..."> haengt
  * keinen Authorization-Header an; Bild-Anfragen muessen deshalb ueber fetch() mit Header laufen
- * und das Ergebnis als Object-URL bereitstellen (specs/features/0002-manual-categorization.md).
+ * und das Ergebnis als Object-URL bereitstellen.
  */
 export async function apiFetchBlob(path: string): Promise<Blob> {
   const token = getToken()

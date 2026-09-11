@@ -3,9 +3,9 @@ import type { HTMLAttributes } from 'react'
 import { cn } from '../../lib/utils'
 
 /**
- * Skeleton-Ladezustand (specs/architecture/0004-design-system.md): Platzhalterbloecke mit dezentem
- * Puls - kein Shimmer-Lauflicht (unnoetige Bewegungsunruhe beim zuegigen Durchsehen vieler Fotos).
- * `prefers-reduced-motion` respektiert Tailwinds `motion-reduce:animate-none`.
+ * Skeleton-Ladezustand: Platzhalterbloecke mit dezentem Puls - kein Shimmer-Lauflicht (unnoetige
+ * Bewegungsunruhe beim zuegigen Durchsehen vieler Fotos). `prefers-reduced-motion` respektiert
+ * Tailwinds `motion-reduce:animate-none`.
  *
  * FLAECHE IST `--text-disabled`, nicht `--elevated`. Das vergibt dem Token bewusst eine zweite
  * Rolle (im Design-System-Dokument als solche gefuehrt) und ist eine Sichtbarkeits-, keine

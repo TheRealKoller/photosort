@@ -21,11 +21,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
-    # additive Spalte auf allen drei Run-Tabellen, server_default=now() analog started_at. Bereits
-    # heute hängende running-Zeilen erhalten dadurch den Migrationszeitpunkt als Startwert -
-    # gewollter Nebeneffekt (siehe Spec, Abschnitt "Datenmodell-Bezug"), kein separater Backfill
-    # nötig.
+    # Fortschritts-Watchdog: additive Spalte auf allen drei Run-Tabellen, server_default=now()
+    # analog started_at. Bereits heute hängende running-Zeilen erhalten dadurch den
+    # Migrationszeitpunkt als Startwert - gewollter Nebeneffekt (siehe Spec, Abschnitt
+    # "Datenmodell-Bezug"), kein separater Backfill nötig.
     op.add_column(
         "scan_runs",
         sa.Column(

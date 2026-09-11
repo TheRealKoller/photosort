@@ -1,6 +1,5 @@
 /**
- * Wortlaut und Kennzeichnung der Modell-Konfidenz (specs/features/0299-kategorie-konfidenz-
- * anzeigen.md, Akzeptanzkriterium 7).
+ * Wortlaut und Kennzeichnung der Modell-Konfidenz.
  *
  * Eigene Datei statt eines Literals an den Anzeigestellen, weil der Hinweis an ZWEI Orten steht
  * (Bewertungsdetails und Statistikblock) und dort wortgleich sein muss - zwei Kopien liefen bei

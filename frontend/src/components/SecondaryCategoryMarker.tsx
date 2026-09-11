@@ -5,9 +5,9 @@ interface SecondaryCategoryMarkerProps {
 }
 
 /**
- * Dezenter Kachel-Marker fuer eine Kachel, die unter einer ihrer NEBENkategorien steht
- * (specs/features/0300-nebenkategorien.md, UI/UX-Abschnitt) - gleicher Aufbau und dieselbe
- * halbtransparente `--bg`-Kreis-Backdrop-Technik wie der `CategoryOverrideMarker` daneben.
+ * Dezenter Kachel-Marker fuer eine Kachel, die unter einer ihrer NEBENkategorien steht - gleicher
+ * Aufbau und dieselbe halbtransparente `--bg`-Kreis-Backdrop-Technik wie der
+ * `CategoryOverrideMarker` daneben.
  *
  * Das Zeichen ist bewusst ein VERZWEIGUNGSPFEIL `↳` und kein `↓`: es bezeichnet eine
  * Nebenzugehoerigkeit, keine Abwertung. Es ist `aria-hidden`; die Aussage traegt der `aria-label`

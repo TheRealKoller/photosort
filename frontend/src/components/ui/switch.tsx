@@ -3,16 +3,14 @@ import type { ComponentProps } from 'react'
 import { cn } from '../../lib/utils'
 
 /*
- * specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: erstes eigenes Toggle-
- * Widget im Projekt - kein @radix-ui/react-switch in package.json, natives
+ * Erstes eigenes Toggle-Widget im Projekt - kein @radix-ui/react-switch in package.json, natives
  * <button role="switch" aria-checked> statt einer neuen Abhaengigkeit fuer ein einziges
- * Bedienelement (Minimalismus-Prinzip, ADR decisions/0006). "Radix-Primitives nur dort einsetzen,
- * wo natives HTML nicht reicht" (Design-System) - ein <button> mit role="switch" deckt die volle
- * ARIA-Switch-Semantik ab, kein Portal/keine freie Positionierung noetig wie beim Popover.
+ * Bedienelement (Minimalismus-Prinzip). "Radix-Primitives nur dort einsetzen, wo natives HTML nicht
+ * reicht" (Design-System) - ein <button> mit role="switch" deckt die volle ARIA-Switch-Semantik ab,
+ * kein Portal/keine freie Positionierung noetig wie beim Popover.
  *
- * Board-Geometrie (specs/architecture/0005-board-dark-utility-register.md Abschnitt 6):
- * 48 x 24px, Knauf 20px, vollrund - eine der wenigen Rundformen, die bleiben. Farben sind
- * ergaenzt, das Board zeigt sie nicht:
+ * Board-Geometrie: 48 x 24px, Knauf 20px, vollrund - eine der wenigen Rundformen, die bleiben.
+ * Farben sind ergaenzt, das Board zeigt sie nicht:
  *   Aus:         Spur `--overlay`, Umriss `--border-control`, Knauf in Sekundaertextfarbe
  *   Ein:         Spur `--accent`, Knauf in `--accent-fg` ("gefuellt = gesetzt", dieselbe Logik
  *                wie beim Bewertungs-Badge)
@@ -30,11 +28,11 @@ export interface SwitchProps extends Omit<ComponentProps<'button'>, 'onClick' | 
 export function Switch({ checked, onCheckedChange, className, disabled, ...props }: SwitchProps) {
   return (
     <button
-      // Copilot-Review-Fund (PR #181): {...props} MUSS vor den invarianten Attributen
-      // gespreadet werden - SwitchProps omitted aus ComponentProps<'button'> aktuell nur
-      // onClick/role, nicht type/aria-checked/disabled. Kaeme der Spread zuletzt (wie zuvor),
-      // koennte ein Aufrufer versehentlich ueber `type`/`aria-checked`/`disabled` in den
-      // uebrigen Props die kontrollierte Switch-Semantik ueberschreiben.
+      // {...props} MUSS vor den invarianten Attributen gespreadet werden - SwitchProps omitted aus
+      // ComponentProps<'button'> aktuell nur onClick/role, nicht type/aria-checked/disabled. Kaeme
+      // der Spread zuletzt (wie zuvor), koennte ein Aufrufer versehentlich ueber
+      // `type`/`aria-checked`/`disabled` in den uebrigen Props die kontrollierte Switch-Semantik
+      // ueberschreiben.
       {...props}
       type="button"
       role="switch"

@@ -1,8 +1,8 @@
 import type { PhotoOut, RankingOut } from '../api/types'
 
-/* Reine Ableitungen auf `PhotoOut.rankings` (specs/features/0300-nebenkategorien.md,
- * Umsetzungsschritt 9). Bewusst ein eigenes Modul und keine Inline-Ausdruecke in den Seiten: aus
- * `photo.ranking` (genau eine oder keine) ist eine LISTE geworden, und beide naheliegenden
+/* Reine Ableitungen auf `PhotoOut.rankings`. Bewusst ein eigenes Modul und keine
+ * Inline-Ausdruecke in den Seiten: aus `photo.ranking` (genau eine oder keine) ist eine LISTE
+ * geworden, und beide naheliegenden
  * Abkuerzungen sind falsch - `rankings[0]` ist nicht "die Hauptzeile", und ein
  * Falsyness-Filter auf `curation_position` verliert die Position 0. */
 

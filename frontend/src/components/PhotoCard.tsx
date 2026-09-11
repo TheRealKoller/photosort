@@ -31,8 +31,7 @@ export interface PhotoCardProps {
 }
 
 /**
- * Die Foto-Karte des Boards (specs/features/0321-dark-utility-register-ansichten.md,
- * Entscheidungen 1-5). Sie lebt GENAU EINMAL: zuvor war die Kachel in `PhotoGridPage`,
+ * Die Foto-Karte des Boards. Sie lebt GENAU EINMAL: zuvor war die Kachel in `PhotoGridPage`,
  * `CurateCategoriesPage` und `PhotoComparePage` dreimal von Hand gebaut und dreimal verschieden -
  * vier Zustaende in drei Kopien waeren dreimal derselbe Fehler gewesen.
  *
@@ -69,13 +68,13 @@ export function PhotoCard({
 
   /*
    * AUSSORTIERT: Nur die BILDFLAECHE tritt zurueck, die Bedeutungstraeger nicht (Entscheidung 4).
-   * Das Board daempft die ganze Karte auf 40 %; ADR 0055 Abweichung 7 hat das bereits abgelehnt
-   * und ist bindend - Deckkraft auf einem Container mischt gegen den Seitengrund und ist statisch
-   * nicht nachrechenbar (weisse Schrift bei 40 % ueber `--bg` erreicht 3.79:1, die dunkle Tinte
-   * auf dem roten Badge wird praktisch unlesbar). Kennzeichen, Dateiname, die beiden Ecken-Trigger
-   * und die Fusszeilen-Aktion bleiben deshalb voll deckend; der Dateiname traegt zusaetzlich die
-   * Durchstreichung. Optisch tritt die Karte trotzdem zurueck, und die Zusage "ohne
-   * Farbwahrnehmung erkennbar" traegt ueber Deckkraft UND Durchstreichung UND Symbol UND Text.
+   * Das Board daempft die ganze Karte auf 40 %; das ist bindend abgelehnt - Deckkraft auf einem
+   * Container mischt gegen den Seitengrund und ist statisch nicht nachrechenbar (weisse Schrift bei
+   * 40 % ueber `--bg` erreicht 3.79:1, die dunkle Tinte auf dem roten Badge wird praktisch
+   * unlesbar). Kennzeichen, Dateiname, die beiden Ecken-Trigger und die Fusszeilen-Aktion bleiben
+   * deshalb voll deckend; der Dateiname traegt zusaetzlich die Durchstreichung. Optisch tritt die
+   * Karte trotzdem zurueck, und die Zusage "ohne Farbwahrnehmung erkennbar" traegt ueber Deckkraft
+   * UND Durchstreichung UND Symbol UND Text.
    *
    * Diese eine Zeile ist die einzige `opacity-`-Fundstelle der Datei und als solche im
    * Vertragstest freigegeben - ein spaeteres `opacity-40` am Kartenkoerper wuerde dort rot.
@@ -123,7 +122,7 @@ export function PhotoCard({
         {/* SICHERHEIT: Der Dateiname stammt aus dem WebDAV-Walk der OpenCloud und ist damit extern
             entstandener Text. Er wird ausschliesslich als regulaerer React-Textknoten gerendert -
             nie ueber `dangerouslySetInnerHTML`, und er fliesst in kein `href`, `src`, `style` oder
-            `url()`. Seit ADR 0005 liegt das Session-Token in `localStorage`; ein eingeschleustes
+            `url()`. Das Session-Token liegt in `localStorage`; ein eingeschleustes
             Skript laese es unmittelbar aus. Abgesichert in PhotoCard.test.tsx.
 
             `min-w-6` neben `truncate`, damit ein langes Kennzeichen den Namen nie auf null

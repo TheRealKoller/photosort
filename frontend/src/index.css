@@ -4,8 +4,7 @@
    JetBrains Mono fuer Datenausgaben). Bewusst ueber @fontsource statt ueber die Google-Fonts-CDN:
    PhotoSort ist eine PWA und muss offline vollstaendig funktionieren - ein CDN-Link waere im
    Offline-Betrieb ein Fehlschlag und zusaetzlich ein Abfluss von Nutzungsdaten (IP, Referrer) an
-   einen Dritten. Unveraendert gueltige Begruendung aus specs/features/0285-organic-design-import.md;
-   die woff2-Ergaenzung in vite.config.ts's globPatterns bleibt dadurch noetig. */
+   einen Dritten. Die woff2-Ergaenzung in vite.config.ts's globPatterns bleibt dadurch noetig. */
 @import '@fontsource/inter/400.css';
 @import '@fontsource/inter/500.css';
 @import '@fontsource/inter/600.css';
@@ -13,9 +12,7 @@
 @import '@fontsource/jetbrains-mono/400.css';
 
 /*
- * Design-Tokens (specs/architecture/0004-design-system.md, specs/features/0320-dark-utility-
- * register.md, decisions/0055-dark-utility-register-fundament.md; Board-Werteliste in
- * specs/architecture/0005-board-dark-utility-register.md).
+ * Design-Tokens.
  *
  * Die Token-Zweiteilung des Vorgaengersystems bleibt unveraendert und ist zugleich der
  * Migrationsmechanismus: Rohwerte in :root, Zuordnung zu Tailwind-Utilities im @theme-Block
@@ -24,11 +21,10 @@
  * Wert - dadurch tragen rund 175 der etwa 190 Farb-Aufrufstellen in den 91 .tsx-Dateien die
  * Umstellung, ohne angefasst zu werden.
  *
- * DUNKEL IST DAS EINZIGE FARBSCHEMA (ADR 0055 Punkt 1). Es gibt keinen hellen Grund und keinen
- * Umschalter mehr; das nimmt specs/features/0285-organic-design-import.md AK 6 und AK 7
- * ausdruecklich zurueck. Grund: Die Oberflaeche steht unmittelbar neben dem Foto und beeinflusst
- * dessen Farbwahrnehmung - ein farbneutrales, dunkles Umfeld ist fuer die Kernaufgabe die sachlich
- * bessere Wahl, nicht eine gleichwertige Alternative.
+ * DUNKEL IST DAS EINZIGE FARBSCHEMA. Es gibt keinen hellen Grund und keinen Umschalter; ein frueher
+ * vorgesehener heller Grund ist ausdruecklich zurueckgenommen. Grund: Die Oberflaeche steht
+ * unmittelbar neben dem Foto und beeinflusst dessen Farbwahrnehmung - ein farbneutrales, dunkles
+ * Umfeld ist fuer die Kernaufgabe die sachlich bessere Wahl, nicht eine gleichwertige Alternative.
  *
  * JEDES Token traegt hier einen ausgeschriebenen 6-stelligen Hexwert, nie var() oder color-mix().
  * Das ist keine Stilfrage: src/designSystem.contract.test.ts rechnet die vollstaendige
@@ -43,7 +39,7 @@
   --overlay: #262b3d;
 
   /* --- Die vier Textstufen. ---
-     --text-muted weicht bewusst vom Board-Wert #62677A ab (ADR 0055 Punkt 4a): der verfehlt
+     --text-muted weicht bewusst vom Board-Wert #62677A ab: der verfehlt
      4.5:1 auf ALLEN vier Flaechen (3.48/3.21/2.82/2.50), traegt im Board aber echten Fliesstext.
      #8D92A4 ist der dunkelste Wert derselben Farbfamilie, der AA ueberall haelt (6.31/5.82/5.11/
      4.53). Bekannte Einschraenkung: der Abstand zu --text ist dadurch klein - die Textstufen 2
@@ -60,7 +56,7 @@
   --text-muted: #8d92a4;
   --text-disabled: #3e4252;
 
-  /* --- Rahmen in zwei Rollen (ADR 0055 Punkt 4c). ---
+  /* --- Rahmen in zwei Rollen. ---
      --border ist der Board-Wert und liegt bei 1.04-1.45:1: rein dekorative Trenn-/Panellinie
      (Panelkante, Tabellenlinie, Karten- und Modalumriss). Fuer Dekoration gilt keine Schwelle.
      --border-control ist der SICHTBARE UMRISS eines Bedienelements und auf die hellste Flaeche
@@ -70,7 +66,7 @@
   --border: #2a2e3d;
   --border-control: #727891;
 
-  /* --- Dritte Rahmenrolle: die LINIE AUF DEM GRUND (Spec 0321). ---
+  /* --- Dritte Rahmenrolle: die LINIE AUF DEM GRUND. ---
      Abgeleitet aus --border, nicht frei gewaehlt: gleicher Farbton (227 Grad), praktisch gleiche
      Saettigung (18.9 % gegen 18.4 %), nur eine Helligkeitsstufe darueber - die Trennlinie ist
      sichtbar dasselbe Material wie die Panelkante, nicht ein zweiter Grauton. --border erreicht
@@ -104,7 +100,7 @@
   --accent-2-strong: #00e676;
   --info: #00e5ff;
 
-  /* --danger/--danger-text nach demselben Muster aufgeteilt (ADR 0055 Punkt 4d): der Board-Wert
+  /* --danger/--danger-text nach demselben Muster aufgeteilt: der Board-Wert
      erreicht auf --elevated/--overlay nur 4.46/3.96 - grafisch (3:1) ausreichend, als Fliesstext
      zu wenig. --danger-text (6.28/5.79/5.08/4.51) traegt Text in Aussortiert-Farbe. Kein einziger
      Board-Flaechenwert aendert sich dadurch. */
@@ -113,16 +109,16 @@
   /* Die Tinte AUF gefuellter --danger-Flaeche (5.51:1) - kein neuer Farbwert, dieselbe wie
      --accent-fg, --status-success-fg und die drei --rating-*-fg. Eigener Name statt Mitbenutzung
      von --rating-rejected-fg: dasselbe Argument, das die drei --rating-*-fg getrennt haelt - eine
-     Loeschaktion ist keine Bewertungsstufe (specs/features/0044-projekte-loeschen.md). */
+     Loeschaktion ist keine Bewertungsstufe. */
   --danger-fg: #0b0c10;
 
   /* --- Bewertungsfarben. ---
-     --accent und --rating-favorite tragen denselben Wert, aber nicht denselben Namen (ADR 0055
-     Punkt 5): das Board benennt #FFB000 gleichzeitig als "Auswahl & Favoriten", die semantische
+     --accent und --rating-favorite tragen denselben Wert, aber nicht denselben Namen: das Board
+     benennt #FFB000 gleichzeitig als "Auswahl & Favoriten", die semantische
      Unterscheidung ueberlebt dadurch im Code und ist spaeter wieder auftrennbar.
 
-     Alle drei Vordergruende tragen jetzt dieselbe dunkle Tinte (ADR 0055 Punkt 4e - Weiss auf
-     #FF3D00 erreicht nur 3.55). Sie bleiben trotzdem DREI Tokens: dass eine gemeinsame Tinte auf
+     Alle drei Vordergruende tragen dieselbe dunkle Tinte (Weiss auf #FF3D00 erreicht nur 3.55).
+     Sie bleiben trotzdem DREI Tokens: dass eine gemeinsame Tinte auf
      allen drei Toenen haelt, ist eine Eigenschaft dieser konkreten Palette, keine Regel - beim
      Vorgaengersystem war sie nachweislich nicht gegeben. Ein Ton-Wechsel wuerde die Kopplung sonst
      still brechen. */
@@ -139,7 +135,7 @@
   --status-success-fg: #0b0c10;
   --status-failed: #ff3d00;
 
-  /* Status-Pille auf der Toast-Konstruktion des Boards (ADR 0055 Punkt 5): Flaeche --elevated,
+  /* Status-Pille auf der Toast-Konstruktion des Boards: Flaeche --elevated,
      farbiger Rand, farbige Beschriftung - statt eigener Tint-/Strong-Paare, die das Board nicht
      kennt. Die acht Tokens werden darauf UMDEFINIERT statt gestrichen, ihre Aufrufstellen bleiben
      unveraendert. Alle vier Beschriftungen halten AA auf #1E2230 (8.64/9.48/5.08/6.44). */
@@ -152,7 +148,7 @@
   --status-idle-tint: #1e2230;
   --status-idle-strong: #a0a5b5;
 
-  /* --- Die dreizehn Kategorie-Chip-Farbpaare (ADR 0055 Punkt 6a). ---
+  /* --- Die dreizehn Kategorie-Chip-Farbpaare. ---
      Fuenf stammen aus dem Board, acht sind nach dessen eigener Regel abgeleitet (Flaeche = Ton
      bei S 46% / L 18%, Schrift = Ton bei S 100%, Helligkeit angehoben bis >= 4.75:1), "Nicht
      erkannt" bleibt bewusst neutral - die Kategorie drueckt kein Erkennungsergebnis aus, sondern
@@ -174,7 +170,7 @@
   --chip-pflanze-fg: #00d627;
   --chip-landschaft-bg: #1f2b49;
   --chip-landschaft-fg: #00b4d8;
-  /* Board-Schrift #FF007F erreicht auf dieser Flaeche nur 3.80 - korrigiert (ADR 0055 Punkt 4f). */
+  /* Board-Schrift #FF007F erreicht auf dieser Flaeche nur 3.80 - korrigiert. */
   --chip-gebaeude-bauwerk-bg: #3b1f43;
   --chip-gebaeude-bauwerk-fg: #ff44a1;
   --chip-innenraum-bg: #1e1943;
@@ -278,12 +274,12 @@
   --font-mono: var(--mono);
 
   /*
-   * HOEHE DER DAUERHAFT FIXIERTEN KOPFZEILE (specs/features/0387-schrittleiste-fortschritt.md).
-   * EIN Wert, ZWEI Aufrufstellen: `h-header` gibt der Kopfzeile in App.tsx ihre Hoehe,
-   * `top-header` setzt den Haftpunkt der Schrittleiste in Stepper.tsx genau darunter. Beide
-   * Utilities entstehen aus diesem einen Token - ein zweiter, freihaendiger Pixelwert an der
-   * Leiste waere die Fehlerquelle, gegen die das hier steht (er driftet still, und die Leiste
-   * ueberlappte oder hinterliesse eine Fuge, durch die Inhalt durchscrollt).
+   * HOEHE DER DAUERHAFT FIXIERTEN KOPFZEILE. EIN Wert, ZWEI Aufrufstellen: `h-header` gibt der
+   * Kopfzeile in App.tsx ihre Hoehe, `top-header` setzt den Haftpunkt der Schrittleiste in
+   * Stepper.tsx genau darunter. Beide Utilities entstehen aus diesem einen Token - ein zweiter,
+   * freihaendiger Pixelwert an der Leiste waere die Fehlerquelle, gegen die das hier steht (er
+   * driftet still, und die Leiste ueberlappte oder hinterliesse eine Fuge, durch die Inhalt
+   * durchscrollt).
    *
    * Die Kopfzeile darf deshalb NICHT umbrechen (kein `flex-wrap`, Nutzername `truncate`): mit
    * fester Hoehe waere ein Umbruch stilles Abschneiden statt sichtbaren Wachsens. 3.5rem = 56px
@@ -360,10 +356,10 @@
    * = 4/8/12/16/24/32/48/64px. Das 12-Spalten-Raster mit 12px Zwischenraum ist
    * `grid-cols-12 gap-3`. Beides ist hier nur dokumentiert, nicht redeklariert.
    *
-   * Harte Untergrenze aus dem UI/UX-Abschnitt der Spec 0320: zwischen FOKUSSIERBAREN Elementen
-   * mindestens 8px (sonst laeuft die abgesetzte Fokuskontur ins Nachbarelement) und zwischen
-   * aufgespannten Trefferflaechen mindestens 12px (sonst ueberlappen sie sich). Die 4er-Stufe ist
-   * eine Stufe fuer Innenabstaende, nicht fuer Abstaende zwischen Bedienelementen.
+   * Harte Untergrenze: zwischen FOKUSSIERBAREN Elementen mindestens 8px (sonst laeuft die
+   * abgesetzte Fokuskontur ins Nachbarelement) und zwischen aufgespannten Trefferflaechen
+   * mindestens 12px (sonst ueberlappen sie sich). Die 4er-Stufe ist eine Stufe fuer Innenabstaende,
+   * nicht fuer Abstaende zwischen Bedienelementen.
    */
 }
 
@@ -404,7 +400,7 @@
   }
 
   /*
-   * Die EINZIGE Fokusdarstellung im Projekt (UI/UX-Abschnitt der Spec 0320, Abschnitt 2).
+   * Die EINZIGE Fokusdarstellung im Projekt.
    *
    * Der Akzent ist jetzt gleichzeitig Auswahl-, Favorit- und Aktiv-Farbe. Damit ein fokussiertes
    * Element von einem ausgewaehlten unterscheidbar bleibt, traegt der Fokus zusaetzlich zur Farbe
@@ -431,15 +427,15 @@
 
 @layer utilities {
   /*
-   * Trefferflaechen-Aufspannung (ADR 0055 Punkt 8). Die bisherige 44x44px-Regel des
-   * Design-Systems war eine GROESSEN-Regel und der Grund, warum ueberall h-11 stand - die
-   * Oberflaeche war dadurch gerade nicht dicht. Sie wird zu einer TREFFERFLAECHEN-Regel:
-   * Bedienelemente tragen die kompakten Board-Masse (Standard-Schaltflaeche 32px hoch), und ein
-   * transparentes Pseudo-Element spannt die Trefferflaeche ueber die Mitte auf mindestens 44px
-   * auf. Beides wird erfuellt, statt eines gegen das andere auszuspielen.
+   * Trefferflaechen-Aufspannung. Die bisherige 44x44px-Regel des Design-Systems war eine
+   * GROESSEN-Regel und der Grund, warum ueberall h-11 stand - die Oberflaeche war dadurch gerade
+   * nicht dicht. Sie wird zu einer TREFFERFLAECHEN-Regel: Bedienelemente tragen die kompakten
+   * Board-Masse (Standard-Schaltflaeche 32px hoch), und ein transparentes Pseudo-Element spannt die
+   * Trefferflaeche ueber die Mitte auf mindestens 44px auf. Beides wird erfuellt, statt eines gegen
+   * das andere auszuspielen.
    *
    * Vier Regeln, ohne die die Aufspannung neue, schlechter auffindbare Fehler erzeugt als die,
-   * die sie behebt (UI/UX-Abschnitt der Spec 0320, Abschnitt 3):
+   * die sie behebt:
    *  1. Nur auf der KURZEN Achse aufspannen - eine beschriftete Schaltflaeche ist breit genug,
    *     dort spannt `tap-target` nur vertikal auf. Beidachsig (`tap-target-square`) nur, was
    *     tatsaechlich in beiden Achsen zu klein ist (Symbol-Schaltflaechen, Kontrollkaestchen).

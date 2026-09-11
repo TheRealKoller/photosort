@@ -3,9 +3,7 @@
 # Formatiert das ganze Repository in einem Aufruf: `ruff format` in backend/ und scripts/,
 # `npm run format` in frontend/ und e2e/.
 #
-# Begruendung und Geltungsbereich: specs/decisions/0080-maschinelle-formatierung-ruff-format-
-# und-prettier.md (Abschnitt 12) und specs/features/0400-einheitliche-code-formatierung.md
-# (Abschnitt 9). Dieses Skript enthaelt bewusst KEINE Stiloptionen und KEINE Dateilisten - es
+# Dieses Skript enthaelt bewusst KEINE Stiloptionen und KEINE Dateilisten - es
 # ruft die beiden Werkzeuge mit ihrer jeweiligen Konfigurationsdatei auf. Alles, was den Stil
 # oder den Geltungsbereich bestimmt, steht dort und nur dort: in beiden pyproject.toml
 # ([tool.ruff], [tool.ruff.format]) und in /.prettierrc.json plus /.prettierignore. Waere es

@@ -6,10 +6,9 @@ from pydantic import BaseModel
 from photosort.api.deps import get_current_user
 from photosort.categories import CATEGORY_REGISTRY, LOCAL_CATEGORY_SIGNALS
 
-# specs/features/0289-feste-kategorien.md, Umsetzungsschritt 6: das feste Kategorien-Set kommt vom
-# Server (ADR 0049, Entwurfsentscheidung 5) - es gibt bewusst KEINE TypeScript-Spiegelung im
-# Frontend. Eine zweite Liste waere eine dauerhaft driftende Kopie, und die Override-Auswahl
-# braucht das volle Set unabhaengig davon, was fuer ein einzelnes Foto erkannt wurde.
+# Das feste Kategorien-Set kommt vom Server - es gibt bewusst KEINE TypeScript-Spiegelung im
+# Frontend. Eine zweite Liste waere eine dauerhaft driftende Kopie, und die Override-Auswahl braucht
+# das volle Set unabhaengig davon, was fuer ein einzelnes Foto erkannt wurde.
 #
 # Auth am ROUTER (nicht pro Endpunkt, Muster wie api/projects.py/api/opencloud.py) - die Abweichung
 # in api/photos.py existiert nur, weil dort jeder Endpunkt das `User`-Objekt selbst braucht, hier

@@ -22,11 +22,10 @@ _PROPFIND_BODY = (
 )
 
 
-# specs/features/0050-dateianzahl-im-ordner-browser.md: umgezogen von worker.py::_IMAGE_EXTENSIONS
-# (dort ehemals privat) - api/opencloud.py darf worker.py nicht importieren (zieht dessen schwere
-# mediapipe-/tensorflow-Abhaengigkeiten in den API-Request-Pfad, siehe ADR
-# decisions/0028-ordner-browser-bilddatei-zaehlung.md Punkt 3), client.py ist dagegen der bereits
-# heute gemeinsame, leichte Baustein fuer beide Konsumenten.
+# Umgezogen von worker.py::_IMAGE_EXTENSIONS (dort ehemals privat) - api/opencloud.py darf
+# worker.py nicht importieren (zieht dessen schwere mediapipe-/tensorflow-Abhaengigkeiten in den
+# API-Request-Pfad), client.py ist dagegen der bereits heute gemeinsame, leichte Baustein fuer
+# beide Konsumenten.
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".heic", ".heif"}
 
 
@@ -45,11 +44,11 @@ class Drive:
 def _join(base_url: str, path: str) -> str:
     base = base_url.rstrip("/")
     raw_segments = [segment for segment in path.strip("/").split("/") if segment]
-    # Security-Haertung (specs/features/0005-minimal-project-frontend.md,
-    # architecture/0003-securitykonzept.md): ohne diese Pruefung wuerde ein "..''-Segment aus
+    # Security-Haertung gegen Path Traversal: ohne diese Pruefung wuerde ein "..''-Segment aus
     # dem vorgesehenen Projekt-Wurzelverzeichnis herauslaufen und andere, ueber WebDAV
     # erreichbare Bereiche des Namespace ansprechen, als die Anwendung vorsieht. Betrifft jeden
-    # Aufrufer mit nutzergesteuertem Pfad (list_folder/get_range/walk), da alle ueber _join laufen.
+    # Aufrufer mit nutzergesteuertem Pfad (list_folder/get_range/walk), da alle ueber _join
+    # laufen. Bricht in tests/test_opencloud_client.py::test_join_rejects_parent_traversal_segment.
     if any(segment == ".." for segment in raw_segments):
         raise OpenCloudError(f"Ungültiger Pfad: '{path}' enthält nicht erlaubte '..'-Segmente.")
     segments = [quote(segment) for segment in raw_segments]
@@ -77,8 +76,7 @@ def _drive_from_graph_api_item(item: Any) -> Drive:
     # unerwartete Struktur (item selbst kein dict, fehlende Pflichtfelder, "root" kein dict) als
     # gleichwertigen Fall - ein KeyError/TypeError/AttributeError an irgendeiner Stelle hier soll
     # immer als OpenCloudError propagieren, nie als roher, von api/opencloud.py::browse_folder
-    # unabgefangener Python-Fehler (der sonst zu einem 500 ohne CORS-Header fuehrt, siehe PR
-    # #12).
+    # unabgefangener Python-Fehler (der sonst zu einem 500 ohne CORS-Header fuehrt).
     try:
         return Drive(
             id=item["id"],
@@ -181,9 +179,9 @@ class OpenCloudClient:
             response, not_found_message=f"Ordner '{path}' wurde auf OpenCloud nicht gefunden."
         )
 
-        # Terminierungs-Fix (specs/features/0023-scan-fortschritt-batch-groesse-fix.md): eine
-        # unerwartete/kaputte WebDAV-Antwort (z.B. abgeschnittenes XML-Tag, nicht-numerischer
-        # content-length, unparsbares Datum in _parse_last_modified) darf hier nicht als roher
+        # Terminierungs-Fix: eine unerwartete/kaputte WebDAV-Antwort (z.B. abgeschnittenes
+        # XML-Tag, nicht-numerischer content-length, unparsbares Datum in _parse_last_modified)
+        # darf hier nicht als roher
         # ParseError/ValueError/TypeError propagieren - sonst laeuft die Exception ungefangen bis
         # in worker.py::run_project_scan durch, dessen (frueher zu enger) Fehlerbehandlungs-Block
         # den zugehoerigen ScanRun dann dauerhaft auf "running" stehen laesst. Analog zum
@@ -198,14 +196,13 @@ class OpenCloudClient:
         return [entry for entry in entries if unquote(entry.href).rstrip("/") != target_path]
 
     async def walk(self, webdav_url: str, root_path: str) -> AsyncIterator[tuple[str, DavEntry]]:
-        # Zyklenschutz (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019):
-        # ohne dieses Set wuerde ein (hypothetischer) Zyklus in der WebDAV-Verzeichnisstruktur
-        # (ein Kind-Ordner-Eintrag verweist auf einen bereits besuchten Pfad) denselben Pfad
-        # immer wieder in die BFS-Queue einreihen - files_found/last_progress_at wuerden dabei
-        # laufend "fortschreiten", ohne dass Schicht 2 (reap_stalled_runs) einen echten Stillstand
-        # erkennen wuerde. child_relative wird VOR dem queue.append geprueft, nicht erst beim
-        # Dequeuen - so wird auch eine doppelte Referenz innerhalb DERSELBEN Listing-Antwort
-        # abgefangen.
+        # Zyklenschutz: ohne dieses Set wuerde ein (hypothetischer) Zyklus in der
+        # WebDAV-Verzeichnisstruktur (ein Kind-Ordner-Eintrag verweist auf einen bereits besuchten
+        # Pfad) denselben Pfad immer wieder in die BFS-Queue einreihen -
+        # files_found/last_progress_at wuerden dabei laufend "fortschreiten", ohne dass Schicht 2
+        # (reap_stalled_runs) einen echten Stillstand erkennen wuerde. child_relative wird VOR dem
+        # queue.append geprueft, nicht erst beim Dequeuen - so wird auch eine doppelte Referenz
+        # innerhalb DERSELBEN Listing-Antwort abgefangen.
         start = root_path.strip("/")
         visited: set[str] = {start}
         queue: deque[str] = deque([start])
@@ -228,9 +225,8 @@ class OpenCloudClient:
         return response.content
 
     async def download(self, webdav_url: str, relative_path: str) -> bytes:
-        """Full-file download, used by the worker for thumbnail generation (specs/features/0002-
-        manual-categorization.md) - get_range's partial content isn't reliably enough for a
-        complete image."""
+        """Full-file download, used by the worker for thumbnail generation - get_range's partial
+        content isn't reliably enough for a complete image."""
         url = _join(webdav_url, relative_path)
         response = await self._send("GET", url)
         _raise_for_status(response)

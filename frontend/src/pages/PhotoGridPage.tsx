@@ -20,9 +20,9 @@ import { ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
 import { primaryRanking } from '../utils/rankings'
 
-// Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln"
-// (specs/architecture/0004-design-system.md) statt eines vollflaechigen Spinners - Anzahl ist
-// nur eine plausible Annaeherung an einen typischen Batch, keine harte Vorgabe.
+// Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln" statt
+// eines vollflaechigen Spinners - Anzahl ist nur eine plausible Annaeherung an einen typischen
+// Batch, keine harte Vorgabe.
 const SKELETON_TILE_COUNT = 6
 
 const FILTERS: { value: RatingFilter | ''; label: string }[] = [
@@ -41,8 +41,7 @@ export function PhotoGridPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const filterParam = parseRatingFilter(searchParams.get('filter'))
   const ratingStatus = filterParam === '' ? undefined : filterParam
-  // Ausschuss-Gate-Modus (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md,
-  // UI/UX-Abschnitt): kein neuer Screen, sondern diese bestehende Seite um `&gate=1` erweitert.
+  // Ausschuss-Gate-Modus: kein neuer Screen, sondern diese bestehende Seite um `&gate=1` erweitert.
   const isGateMode = searchParams.get('gate') === '1'
 
   const token = getToken()
@@ -52,8 +51,8 @@ export function PhotoGridPage() {
   const setRatingMutation = useSetRatingMutation(id)
   const gateMutation = useConfirmAusschussGateMutation(id)
   const categoryOverrideControls = useCategoryOverrideControls(id)
-  // specs/features/0289-feste-kategorien.md: das feste Set kommt vom Server (langlebiger Cache) -
-  // Grundlage der Anzeigenamen und der "Alle Kategorien"-Override-Auswahl.
+  // Das feste Set kommt vom Server (langlebiger Cache) - Grundlage der Anzeigenamen und der "Alle
+  // Kategorien"-Override-Auswahl.
   const categoriesQuery = useCategoriesQuery()
   const categorySet = categoriesQuery.data ?? []
   const photos = query.data?.pages.flatMap((page) => page.items) ?? []
@@ -64,9 +63,8 @@ export function PhotoGridPage() {
       return
     }
     gateMutation.mutate(undefined, {
-      // specs/features/0042-automatisierter-flow-stepper-detailseiten.md, Akzeptanzkriterium 9:
-      // Redirect-Ziel wechselt von /projects/:id (feste Einzelseite) auf /projects/:id/pipeline
-      // (ohne festen :step) - landet ueber getDefaultStepId automatisch beim naechsten sinnvollen
+      // Redirect-Ziel ist /projects/:id/pipeline statt /projects/:id (feste Einzelseite) (ohne
+      // festen :step) - landet ueber getDefaultStepId automatisch beim naechsten sinnvollen
       // Schritt, statt immer auf der (jetzt entfallenen) statischen Projekt-Detailseite.
       onSuccess: () => navigate(`/projects/${id}/pipeline`),
     })
@@ -213,9 +211,8 @@ export function PhotoGridPage() {
                     className="size-full object-cover"
                   />
                 }
-                /* specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md:
-                   Uebersteuerungs-Marker in der Ecke oben links, Info-Trigger oben rechts. Beide
-                   sind seit Spec 0321 Geschwister der Bildflaeche und liegen nie in ihr - die
+                /* Uebersteuerungs-Marker in der Ecke oben links, Info-Trigger oben rechts. Beide
+                   sind Geschwister der Bildflaeche und liegen nie in ihr - die
                    Bildflaeche beschneidet, und eine aufgespannte Trefferflaeche in einem
                    beschneidenden Container wuerde still abgeschnitten.
                    Der frueher noetige `pointer-events-none`-Kniff entfaellt ersatzlos: Das
@@ -226,7 +223,7 @@ export function PhotoGridPage() {
                   <CriterionDetailsPopover
                     criterionScores={photo.criterion_scores}
                     /* Das Raster zeigt jedes Foto genau einmal - gemeint ist seine
-                       Hauptzugehoerigkeit (specs/features/0300-nebenkategorien.md). */
+                       Hauptzugehoerigkeit. */
                     ranking={primaryRanking(photo)}
                     rankings={photo.rankings}
                     suggestion={photo.suggestion}

@@ -24,18 +24,15 @@ interface ClassificationSectionProps {
 }
 
 /**
- * Obergrenze der angezeigten Feinlabels (specs/features/0289-feste-kategorien.md, UI/UX-Abschnitt:
- * "maximal die haeufigsten 10-15 Eintraege"). Die Kuerzung sitzt bewusst HIER und nicht im
- * Backend: der Endpunkt ist eine vollstaendige Auswertung, die Begrenzung eine reine
- * Darstellungsentscheidung gegen Ueberinformation.
+ * Obergrenze der angezeigten Feinlabels (maximal die haeufigsten 10-15 Eintraege). Die Kuerzung
+ * sitzt bewusst HIER und nicht im Backend: der Endpunkt ist eine vollstaendige Auswertung, die
+ * Begrenzung eine reine Darstellungsentscheidung gegen Ueberinformation.
  */
 const MAX_FINE_LABELS_SHOWN = 15
 
 /**
- * Die EINE "Klassifizierung"-Section auf KriterienStepPage.tsx (specs/features/0296-
- * klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-klassifizierungs-
- * lauf-mit-laufbezogener-cloud-freigabe.md). Ersetzt die frueher getrennten Bedienelemente
- * "Kriterien-Bewertung" (inline auf der Seite) und "Remote-Kategorisierung"
+ * Die EINE "Klassifizierung"-Section auf KriterienStepPage.tsx. Ersetzt die frueher getrennten
+ * Bedienelemente "Kriterien-Bewertung" (inline auf der Seite) und "Remote-Kategorisierung"
  * (RemoteCategoryClassificationSection.tsx, geloescht) vollstaendig - ein Auslöser, eine
  * Statusanzeige, ein Fortschritt.
  *
@@ -48,7 +45,7 @@ const MAX_FINE_LABELS_SHOWN = 15
  *    verschwand wieder. Bewusst in Kauf genommenes Restrisiko: bei vorausgewaehlter Checkbox
  *    loest ein einzelner Klick Cloud-Kosten aus.
  * 2. Der Hinweis "Diese Ergebnisse fliessen erst durch einen (ggf. erneuten) Kriterien-
- *    Bewertungs-Lauf ein" (Spec 0218) ist ersatzlos entfallen - die Verkettung im Backend macht
+ *    Bewertungs-Lauf ein" ist ersatzlos entfallen - die Verkettung im Backend macht
  *    ihn gegenstandslos.
  * 3. Die Aussage "laeuft vollstaendig lokal auf diesem Server" haengt jetzt am Checkbox-Zustand
  *    statt absolut dazustehen. Sie war zuvor schlicht unwahr, sobald die Cloud-Bilderkennung
@@ -57,9 +54,9 @@ const MAX_FINE_LABELS_SHOWN = 15
  * `useTriggerConfirmation` (etabliert fuer Scan/Score) ueberbrueckt unveraendert das Zeitfenster
  * zwischen der 202-Antwort und dem ersten Poll, der `status="running"` bestaetigt.
  *
- * specs/features/0348-klassifizierungs-transparenz.md: diese Datei ist seither der CONTAINER -
- * Checkbox-Zustand, Consent-Gate, Mutation und Ausloeser bleiben hier, die drei Detailbloecke
- * (ClassificationEstimate, ClassificationProgress, ClassificationBalance) sind eigene Komponenten.
+ * Diese Datei ist der CONTAINER - Checkbox-Zustand, Consent-Gate, Mutation und Ausloeser bleiben
+ * hier, die drei Detailbloecke (ClassificationEstimate, ClassificationProgress,
+ * ClassificationBalance) sind eigene Komponenten.
  *
  * Unterhalb des Ausloesers steht zu jedem Zeitpunkt GENAU EINER der beiden Zustandsbloecke -
  * Fortschrittsliste ODER Bilanz, nie beide. Das ist die pruefbare Form des Akzeptanzkriteriums
@@ -115,10 +112,10 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
         ? 'Fehler beim Auslösen der Klassifizierung.'
         : null
 
-  // Die Fortschrittszahlen je Teilschritt kommen seit Spec 0348 aus `cloud_phases` bzw. dem Lauf
-  // selbst - abgeleitet in `utils/classificationSteps.ts`, dargestellt von ClassificationProgress.
-  // Die frueher hier stehende "welcher der beiden Laeufe liefert gerade die Zahlen?"-Weiche
-  // entfaellt damit ersatzlos.
+  // Die Fortschrittszahlen je Teilschritt kommen aus `cloud_phases` bzw. dem Lauf selbst -
+  // abgeleitet in `utils/classificationSteps.ts`, dargestellt von ClassificationProgress. Die
+  // frueher hier stehende "welcher der beiden Laeufe liefert gerade die Zahlen?"-Weiche entfaellt
+  // damit ersatzlos.
   const isRemotePhase = run?.phase === 'remote_categories'
 
   const providerLabel = estimate ? formatProviderLabel(estimate.provider) : ''
@@ -217,8 +214,8 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
         </Alert>
       )}
 
-      {/* Feinlabel-Haeufigkeitsliste (specs/features/0289-feste-kategorien.md, UI/UX-Abschnitt):
-          das Kategorien-Set ist geschlossen, aber nicht fuer immer festgelegt - haeufige
+      {/* Feinlabel-Haeufigkeitsliste: das Kategorien-Set ist geschlossen, aber nicht fuer immer
+          festgelegt - haeufige
           Feinlabels sind der Hinweis darauf, dass im Set eine Kategorie fehlt, und damit der
           Aenderungspfad. */}
       <div className="flex w-full max-w-sm flex-col gap-2">

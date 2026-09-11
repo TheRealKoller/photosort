@@ -15,15 +15,13 @@ interface Breadcrumb {
 interface FolderBrowserProps {
   value: string
   onChange: (path: string) => void
-  // Ueber die Spec-Prosa ("kontrollierte Komponente: value/onChange") hinausgehend, aber vom
-  // Akzeptanzkriterium "Backend-Fehler beim Browse: Submit bleibt deaktiviert" verlangt
-  // (specs/features/0005-minimal-project-frontend.md) - der Elternseite bleibt sonst keine
+  // Ueber die kontrollierte Komponente (value/onChange) hinausgehend, aber noetig, damit bei einem
+  // Backend-Fehler beim Browse der Submit deaktiviert bleibt - der Elternseite bleibt sonst keine
   // Moeglichkeit, den internen Ladefehler dieser Komponente zu kennen.
   onErrorChange?: (hasError: boolean) => void
 }
 
-// specs/features/0050-dateianzahl-im-ordner-browser.md, UI/UX-Abschnitt "Eager-Zaehler neben
-// Listeneintraegen": vier moegliche Anzeigezustaende pro gelistetem Unterordner.
+// Eager-Zaehler neben Listeneintraegen: vier moegliche Anzeigezustaende pro gelistetem Unterordner.
 type FolderCountDisplay =
   { kind: 'loading' } | { kind: 'count'; count: number } | { kind: 'at_limit' } | { kind: 'error' }
 
@@ -95,17 +93,15 @@ function breadcrumbsFor(path: string): Breadcrumb[] {
 }
 
 /**
- * Kontrollierte Ordner-Navigation per Pfad-Drilldown (decisions/0004-frontend-app-shell.md,
- * specs/features/0005-minimal-project-frontend.md). Laedt pro Aufruf nur die direkten
- * Unterordner von `value` - "Navigation" entsteht rein client-seitig, React Query cached jede
- * Ebene unter ihrem eigenen Query-Key, kein separater Bestaetigen-Schritt: der aktuell
- * angezeigte Ordner ist immer der Kandidat fuer opencloud_path.
+ * Kontrollierte Ordner-Navigation per Pfad-Drilldown. Laedt pro Aufruf nur die direkten Unterordner
+ * von `value` - "Navigation" entsteht rein client-seitig, React Query cached jede Ebene unter ihrem
+ * eigenen Query-Key, kein separater Bestaetigen-Schritt: der aktuell angezeigte Ordner ist immer
+ * der Kandidat fuer opencloud_path.
  */
 export function FolderBrowser({ value, onChange, onErrorChange }: FolderBrowserProps) {
   const query = useOpenCloudBrowseQuery(value)
-  // Loest eager parallel zum Browse-Request desselben Pfads aus (specs/features/0050-
-  // dateianzahl-im-ordner-browser.md) - kein Klick noetig, die Liste rendert unveraendert sobald
-  // browseFolder zurueck ist, die Zaehler trudeln pro Zeile nach.
+  // Loest eager parallel zum Browse-Request desselben Pfads aus - kein Klick noetig, die Liste
+  // rendert unveraendert sobald browseFolder zurueck ist, die Zaehler trudeln pro Zeile nach.
   const counts = useOpenCloudFolderCountsQuery(value)
 
   useEffect(() => {

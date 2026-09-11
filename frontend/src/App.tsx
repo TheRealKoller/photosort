@@ -30,24 +30,22 @@ import { ProjectStatsPage } from './pages/ProjectStatsPage'
 import { matchProjectId, PROJECT_ROUTE_PATHS } from './utils/projectRoutes'
 
 /**
- * Reiner Redirect (specs/features/0042-automatisierter-flow-stepper-detailseiten.md,
- * Akzeptanzkriterium 1): ersetzt die bisherige, jetzt entfernte ProjectDetailPage.tsx als Ziel
- * dieser Route - Bestandsschutz fuer bestehende Links/Bookmarks auf /projects/:projectId. Bewusst
- * absoluter Template-String statt relativem `to="pipeline"`, konsistent mit dem im Projekt
- * durchgehend etablierten Muster expliziter absoluter Pfade (Architektur-Abschnitt der Spec).
+ * Reiner Redirect: ersetzt die frueher hier stehende ProjectDetailPage.tsx als Ziel dieser Route -
+ * Bestandsschutz fuer bestehende Links/Bookmarks auf /projects/:projectId. Bewusst absoluter
+ * Template-String statt relativem `to="pipeline"`, konsistent mit dem im Projekt durchgehend
+ * etablierten Muster expliziter absoluter Pfade (Architektur-Abschnitt der Spec).
  */
 function ProjectDetailRedirect() {
   const { projectId } = useParams()
   return <Navigate to={`/projects/${projectId}/pipeline`} replace />
 }
 
-// Zuordnung Pfad -> Element fuer die flachen Routen mit Projektkontext. Die PFADE kommen seit
-// specs/features/0298-projektnavigation-in-der-kopfzeile.md aus utils/projectRoutes.ts - dort
-// liegt die einzige Quelle der Wahrheit dafuer, welche Routen Projektkontext haben; hier steht
-// nur noch, welches Element eine davon rendert. Damit kann eine neue :projectId-Route nicht mehr
-// still ohne Kopfzeilen-Navigation bleiben (Alt-Bug aus Spec 0042/PR #101, erneut bei Spec 0207).
-// `element` ist als `ReactElement` typisiert statt des global nicht verfuegbaren `JSX.Element`
-// (moduleDetection: "force", TS2503).
+// Zuordnung Pfad -> Element fuer die flachen Routen mit Projektkontext. Die PFADE kommen aus
+// utils/projectRoutes.ts - dort liegt die einzige Quelle der Wahrheit dafuer, welche Routen
+// Projektkontext haben; hier steht nur noch, welches Element eine davon rendert. Damit kann eine
+// neue :projectId-Route nicht mehr still ohne Kopfzeilen-Navigation bleiben. `element` ist als
+// `ReactElement` typisiert statt des global nicht verfuegbaren `JSX.Element` (moduleDetection:
+// "force", TS2503).
 //
 // Die verschachtelte Pipeline-Route (Layout + eigene Kind-Route fuer den Outlet-Context) kann
 // NICHT ueber dieses flache PROJECT_ROUTES.map() erzeugt werden und steht deshalb unten separat -
@@ -58,11 +56,10 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   { path: PROJECT_ROUTE_PATHS.photos, element: <PhotoGridPage /> },
   { path: PROJECT_ROUTE_PATHS.photoDetail, element: <PhotoDetailPage /> },
   { path: PROJECT_ROUTE_PATHS.compare, element: <PhotoComparePage /> },
-  // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: erste dedizierte
-  // Projekteinstellungs-Route.
+  // Erste dedizierte Projekteinstellungs-Route.
   { path: PROJECT_ROUTE_PATHS.settings, element: <ProjectSettingsPage /> },
-  // specs/features/0207-projekt-statistikseite.md: Querschnittsansicht wie die Einstellungsseite,
-  // bewusst ausserhalb der Pipeline-Schritt-Routen (sie ist kein Schritt des Ablaufs).
+  // Querschnittsansicht wie die Einstellungsseite, bewusst ausserhalb der Pipeline-Schritt-Routen
+  // (sie ist kein Schritt des Ablaufs).
   { path: PROJECT_ROUTE_PATHS.stats, element: <ProjectStatsPage /> },
 ]
 
@@ -77,26 +74,26 @@ function AppShell() {
   const projectId = useProjectIdFromRoute()
 
   function handleLogout(): void {
-    // Bestaetigungslose Aktion (siehe specs/features/0006-auth.md) - kein Backend-Aufruf, da es
-    // ohne Server-Session-Store nichts zu invalidieren gaebe.
+    // Bestaetigungslose Aktion - kein Backend-Aufruf, da es ohne Server-Session-Store nichts zu
+    // invalidieren gaebe.
     clearToken()
     navigate('/login')
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-bg text-text">
-      {/* Sticky Header (specs/features/0033-sticky-titelleiste-projekt-link.md, AK1): bleibt beim
-          Scrollen einer Seite am oberen Viewport-Rand sichtbar. z-10 ist der erste Eintrag einer
-          projektweiten Z-Index-Konvention - bleibt unter Radix-Portal-Overlays (Dialoge/Tooltips
+      {/* Sticky Header: bleibt beim Scrollen einer Seite am oberen Viewport-Rand sichtbar. z-10
+          ist der erste Eintrag einer projektweiten Z-Index-Konvention - bleibt unter
+          Radix-Portal-Overlays (Dialoge/Tooltips
           landen per Portal mit eigenen, hoeheren Werten ausserhalb des normalen Baums). bg-bg wird
           hier jetzt explizit gesetzt (bisher trug nur der aeussere Wrapper die Hintergrundfarbe),
           damit scrollender Inhalt im Sticky-Zustand nicht sichtbar durchscheinen kann, falls eine
           kuenftige Seite einen abweichenden Hintergrund einfuehrt. CSS-Sticky-Verhalten ist in
           jsdom nicht automatisiert pruefbar - `e2e/tests/sticky-header.spec.ts` misst es.
 
-          FESTE HOEHE STATT POLSTERUNG (specs/features/0387-schrittleiste-fortschritt.md): `py-3`
-          ist `h-header` gewichen. Der Wert kommt aus `--spacing-header` in index.css und ist
-          dieselbe Quelle, aus der die Schrittleiste ihren Haftpunkt `top-header` bezieht - beide
+          FESTE HOEHE STATT POLSTERUNG: `py-3` ist `h-header` gewichen. Der Wert kommt aus
+          `--spacing-header` in index.css und ist dieselbe Quelle, aus der die Schrittleiste ihren
+          Haftpunkt `top-header` bezieht - beide
           Leisten haften gleichzeitig oben, ohne sich zu ueberlagern und ohne Fuge dazwischen. Ein
           zweiter, freihaendiger Zahlenwert an einer der beiden Stellen ist deshalb verboten (im
           Design-Vertrag gebunden).
@@ -117,15 +114,14 @@ function AppShell() {
           <Button
             asChild
             variant="ghost"
-            // Kein `h-11` mehr: die Wortmarke ist weder heisser Pfad noch Zeile einer
-            // zeilenweisen Liste. Sichtbar gilt das Board-Mass 32px, die 44px kommen aus der
-            // Aufspannung, die das Button-Primitiv ohnehin mitbringt (Spec 0321).
+            // Kein `h-11` mehr: die Wortmarke ist weder heisser Pfad noch Zeile einer zeilenweisen
+            // Liste. Sichtbar gilt das Board-Mass 32px, die 44px kommen aus der Aufspannung, die
+            // das Button-Primitiv ohnehin mitbringt.
             className="justify-start px-2 text-lg font-semibold text-text-h hover:bg-transparent"
           >
             <Link to="/">PhotoSort</Link>
           </Button>
-          {/* Projekt-Navigationsgruppe (specs/features/0298-projektnavigation-in-der-kopfzeile.md,
-              AK1-AK4): loest den bisherigen einzelnen "‹ Projekt"-Link aus Spec 0033 ab. Rendert
+          {/* Projekt-Navigationsgruppe: loest den frueheren einzelnen "‹ Projekt"-Link ab. Rendert
               ausschliesslich mit Projektkontext und haengt allein am pathname, nicht an einem
               API-Aufruf - sie erscheint deshalb auch, waehrend die darunterliegende Seite noch
               laedt oder fehlgeschlagen ist. Genau dann ist ein Weg heraus am wertvollsten. */}

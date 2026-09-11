@@ -9,10 +9,9 @@ from photosort.config import settings
 from photosort.logging_config import configure_logging
 from photosort.rate_limit import limiter
 
-# Muss-Kriterium (specs/features/0006-auth.md, architecture/0003-securitykonzept.md): ein
-# Signing-Secret, das dem oeffentlich bekannten Platzhalter entspricht oder zu kurz ist, erlaubt
-# beliebige JWT-Faelschung - vollen Zugriff auf beide Accounts und damit transitiv auf alle
-# Familienfotos.
+# Muss-Kriterium: ein Signing-Secret, das dem oeffentlich bekannten Platzhalter entspricht oder zu
+# kurz ist, erlaubt beliebige JWT-Faelschung - vollen Zugriff auf beide Accounts und damit transitiv
+# auf alle Familienfotos. Bricht in tests/test_main_secret_key_guard.py (drei Faelle).
 MIN_SECRET_KEY_LENGTH = 32
 PLACEHOLDER_SECRET_KEY = "change-me"
 
@@ -26,9 +25,8 @@ def _handle_rate_limit_exceeded(request: Request, exc: Exception) -> Response:
 
 
 def create_app() -> FastAPI:
-    # specs/features/0056-structured-logging-cloud-vision-errors.md, ADR 0034 Punkt 2: einer der
-    # beiden Prozess-Einstiegspunkte (API-Prozess) - derselbe Aufruf sitzt fuer den Worker-Prozess
-    # in worker.py::WorkerSettings.on_startup.
+    # Einer der beiden Prozess-Einstiegspunkte (API-Prozess) - derselbe Aufruf sitzt fuer den
+    # Worker-Prozess in worker.py::WorkerSettings.on_startup.
     configure_logging()
 
     if (
@@ -45,12 +43,12 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _handle_rate_limit_exceeded)
     app.add_middleware(SlowAPIMiddleware)
-    # Muss-Kriterium (specs/features/0005-minimal-project-frontend.md,
-    # architecture/0003-securitykonzept.md): ohne diese Middleware koennte jede Website im
+    # Muss-Kriterium gegen Cross-Origin-Zugriff: ohne diese Middleware koennte jede Website im
     # selben Netzwerksegment Anfragen an die API stellen, sobald ein Browser-Frontend existiert.
     # Nur die konfigurierten Frontend-Origins, kein Wildcard "*". allow_credentials bleibt False
-    # (Default) - Token-Transport laeuft ueber den Authorization-Header, nie ueber Cookies
-    # (decisions/0005-auth-implementation.md), daher nicht noetig.
+    # (Default) - Token-Transport laeuft ueber den Authorization-Header, nie ueber Cookies, daher
+    # nicht noetig. Bricht in tests/test_cors.py::test_cors_does_not_allow_credentials und
+    # ::test_disallowed_origin_does_not_receive_access_control_allow_origin_header.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allowed_origins_list(),

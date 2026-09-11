@@ -21,16 +21,14 @@ interface AlertProps {
 }
 
 /*
- * Einheitliche Meldungskomponente (specs/architecture/0004-design-system.md, "Fehlerzustand mit
- * Retry"), jetzt in der Toast-Konstruktion des Boards und in drei Auspraegungen
- * (specs/architecture/0005-board-dark-utility-register.md Abschnitt 6): Flaeche `--elevated`,
- * farbiger 1px-Rand, Symbol 18px, Titel in Primaertext, Beitext in Sekundaertext.
+ * Einheitliche Meldungskomponente ("Fehlerzustand mit Retry"), in der Toast-Konstruktion des Boards
+ * und in drei Auspraegungen: Flaeche `--elevated`, farbiger 1px-Rand, Symbol 18px, Titel in
+ * Primaertext, Beitext in Sekundaertext.
  *
- * BEWUSSTE ABGRENZUNG: Uebernommen wird die OPTIK des Board-Toasts, nicht sein VERHALTEN.
- * Meldungen bleiben inline und kontextnah (Banner ueber der betroffenen Ansicht, mit "Erneut
- * versuchen", wo eine Wiederholung sinnvoll ist). Ein schwebendes, selbst verschwindendes
- * Toast-System waere neues Verhalten und damit eine funktionale Aenderung, die Spec 0320
- * ausschliesst.
+ * BEWUSSTE ABGRENZUNG: Uebernommen wird die OPTIK des Board-Toasts, nicht sein VERHALTEN. Meldungen
+ * bleiben inline und kontextnah (Banner ueber der betroffenen Ansicht, mit "Erneut versuchen", wo
+ * eine Wiederholung sinnvoll ist). Ein schwebendes, selbst verschwindendes Toast-System waere neues
+ * Verhalten und damit eine funktionale Aenderung - ausgeschlossen.
  *
  * Die frueher hier verwendete Konstruktion (`bg-status-failed/10` + `border-status-failed/40`) lag
  * ausserhalb jeder Kontrastmatrix: ueber einer Deckkraft-Tinte ist Kontrast statisch nicht
@@ -48,8 +46,7 @@ const VARIANTS: Record<
   },
   warning: {
     // `info` statt des Board-`star`: `star` ist im Produkt das Favorit-Symbol, dieselbe Form fuer
-    // "Warnung" zu verwenden braeche "Bewertungsstufen auf einen Blick unterscheidbar"
-    // (ADR 0055 Punkt 7e).
+    // "Warnung" zu verwenden braeche "Bewertungsstufen auf einen Blick unterscheidbar".
     icon: 'info',
     title: 'Hinweis',
     frame: 'border-accent text-accent',

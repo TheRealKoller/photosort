@@ -10,7 +10,7 @@ import { Input } from './ui/input'
 
 /**
  * Vergleicht die getippte Bestaetigung mit dem Projektnamen - EXAKT: kein Trim, kein
- * `toLowerCase()` (specs/features/0044-projekte-loeschen.md).
+ * `toLowerCase()`.
  *
  * Bewusst als eigene, exportierte und einzeln geprüfte Funktion statt als Ausdruck im JSX: die
  * Reibung ist hier der Zweck der Konstruktion, und ein spaeterer "Aufraeum"-Refactor, der still
@@ -47,11 +47,11 @@ function toFailure(error: unknown): DeleteFailure {
 }
 
 /**
- * Bestaetigungsdialog vor der Projektloeschung (specs/features/0044-projekte-loeschen.md).
+ * Bestaetigungsdialog vor der Projektloeschung.
  *
- * Erster Konsument des seit Spec 0320 vorhandenen `ui/dialog.tsx` - natives `<dialog>`, keine neue
- * Abhaengigkeit. Bewusst KEIN `icon`: das Grundelement zeichnet das Titelsymbol in `--accent`,
- * `x-circle` in Bernstein waere gleichzeitig das Aussortiert-Symbol in der Favoritenfarbe.
+ * Erster Konsument von `ui/dialog.tsx` - natives `<dialog>`, keine neue Abhaengigkeit. Bewusst KEIN
+ * `icon`: das Grundelement zeichnet das Titelsymbol in `--accent`, `x-circle` in Bernstein waere
+ * gleichzeitig das Aussortiert-Symbol in der Favoritenfarbe.
  *
  * Der Inhalt ist KEIN `<form>`: die Eingabetaste darf nicht ausloesen, ausgeloest wird
  * ausschliesslich ueber die Schaltflaeche. Die bewusste Reibung ist der Zweck.
@@ -87,8 +87,8 @@ export function DeleteProjectDialog({
    *     ohne die Anfrage abzubrechen, und den Nutzer auf einer Einstellungsseite zuruecklassen,
    *     deren Gegenstand gerade verschwindet.
    *  2. Das Projekt ist weg (404) -> derselbe Weg wie "Zur Projektliste": die Seite dahinter ist
-   *     gegenstandslos geworden. Der Aufrufer bekommt trotzdem sein `onClose` (Copilot-Fund,
-   *     PR #351) - sonst bliebe der Dialog bei ihm offen, und mit ihm der Zustand `isGone`.
+   *     gegenstandslos geworden. Der Aufrufer bekommt trotzdem sein `onClose` - sonst bliebe der
+   *     Dialog bei ihm offen, und mit ihm der Zustand `isGone`.
    *  3. Sonst -> regulaeres Schliessen.
    */
   function handleClose(): void {

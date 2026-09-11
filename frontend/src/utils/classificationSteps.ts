@@ -6,8 +6,7 @@ import type {
 
 /**
  * Die Ableitung "welche Teilschritte hat dieser Klassifizierungslauf, in welchem Zustand, mit
- * welchem Fortschritt" (specs/features/0348-klassifizierungs-transparenz.md,
- * decisions/0068-klassifizierungslauf-vier-teilschritte-und-laufeigene-cloud-bilanz.md).
+ * welchem Fortschritt".
  *
  * Reine Funktion in einer eigenen Datei statt Ableitungslogik im JSX - dasselbe Muster wie
  * `pipelineSteps.ts`. Die Zuordnung "welcher Zähler gehört zu welchem Teilschritt" ist der
@@ -71,10 +70,10 @@ export function deriveClassificationSteps(run: CriterionScoringRunSummary): Clas
   // dann `-1`, und ohne Abfangen laege der Zeiger vor dem ersten Schritt - jeder Schritt stuende
   // auf `pending`, waehrend der Lauf arbeitet. Das ist kein theoretischer Fall: PhotoSort ist eine
   // PWA, Bundles werden gecacht, und genau diese Aenderung haengt zwei Werte an den Enum an. Ein
-  // alter Client saehe waehrend der Landmark-Phase "nichts passiert" statt des Fortschritts.
-  // Neue Phasen werden angehaengt, also ist "alle BEKANNTEN Schritte liegen dahinter" die richtige
+  // alter Client saehe waehrend der Landmark-Phase "nichts passiert" statt des Fortschritts. Neue
+  // Phasen werden angehaengt, also ist "alle BEKANNTEN Schritte liegen dahinter" die richtige
   // Naeherung - der unbekannte Schritt selbst kann ohnehin nicht angezeigt werden, weil er in der
-  // Reihenfolge dieses Bundles fehlt (Copilot-Fund PR #367).
+  // Reihenfolge dieses Bundles fehlt.
   const phaseIndex = run.phase === null ? -1 : CLASSIFICATION_STEP_ORDER.indexOf(run.phase)
   const currentIndex = phaseIndex === -1 ? CLASSIFICATION_STEP_ORDER.length : phaseIndex
 

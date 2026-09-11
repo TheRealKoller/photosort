@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Laedt das gepinnte label_embedder.onnx-Modell-Asset (label_embedding.py, ADR
-# specs/decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 4) von
-# HuggingFace herunter und verifiziert es gegen den bereits im Code hinterlegten SHA256-Hash -
-# siehe specs/decisions/0033-modell-asset-download-statt-commit-label-embedder.md: das Asset
+# Laedt das gepinnte label_embedder.onnx-Modell-Asset (label_embedding.py) von HuggingFace
+# herunter und verifiziert es gegen den bereits im Code hinterlegten SHA256-Hash. Das Asset
 # (118.054.609 Bytes) ueberschreitet GitHubs 100-MiB-Hard-Limit fuer einen regulaeren Push und wird
 # deshalb NICHT mehr committet, sondern bei jedem Docker-Image-Build, in CI und einmalig im
 # lokalen Bare-Metal-Dev-Setup per verifiziertem Download bezogen (backend/Dockerfile,
@@ -12,7 +10,7 @@
 # render-diagrams.sh - reines Download-/Verifikations-Wrapping, keine eigene Testsuite).
 #
 # Kein stiller Fallback, kein Weiterlaufen mit einer nicht verifizierten Datei: bricht mit
-# Exit-Code != 0 ab, wenn Download oder Hash-Pruefung fehlschlagen (ADR 0033, Umsetzungspunkt 1).
+# Exit-Code != 0 ab, wenn Download oder Hash-Pruefung fehlschlagen.
 # Idempotent: ueberspringt den Download, wenn die Datei bereits mit passendem Hash vorliegt.
 set -euo pipefail
 
@@ -23,8 +21,8 @@ TARGET_FILE="$ASSETS_DIR/label_embedder.onnx"
 MODEL_URL="https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model_int8.onnx"
 
 # Der SHA256-Hash bleibt die verbindliche Integritaetsquelle in label_embedding.py
-# (LABEL_EMBEDDER_ONNX_SHA256, ADR 0033 "Entscheidung") - hier NICHT ein zweites Mal fest verdrahtet,
-# um eine kuenftige Modell-Aktualisierung nicht an zwei Stellen synchron halten zu muessen.
+# (LABEL_EMBEDDER_ONNX_SHA256) - hier NICHT ein zweites Mal fest verdrahtet, um eine kuenftige
+# Modell-Aktualisierung nicht an zwei Stellen synchron halten zu muessen.
 # sed statt "grep -P" (PCRE) - portabler, faellt nicht auf BSD-/macOS-grep ohne PCRE-Unterstuetzung
 # zurueck (dieselbe Extraktion wird 1:1 im backend/Dockerfile-RUN-Schritt wiederverwendet, dort
 # im schlanken Debian-Basisimage, wo dieselbe Portabilitaetsfrage gilt).

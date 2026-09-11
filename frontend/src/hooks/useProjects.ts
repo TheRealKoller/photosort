@@ -27,17 +27,13 @@ export function useProjectsQuery() {
 
 /**
  * Pollt, solange der letzte Scan, der letzte Scoring-Lauf ODER der letzte Kriterien-Scoring-Lauf
- * laeuft (`status === "running"`), und stoppt automatisch, sobald alle fertig sind - siehe
- * specs/features/0005-minimal-project-frontend.md, decisions/0004-frontend-app-shell.md,
- * specs/features/0003-automatic-best-photo-selection.md und
- * specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md (dritte Anwendung
- * desselben granularen Live-Fortschritt-Polling-Musters, ersetzt last_top_selection_run).
+ * laeuft (`status === "running"`), und stoppt automatisch, sobald alle fertig sind - dritte
+ * Anwendung desselben granularen Live-Fortschritt-Polling-Musters.
  *
- * specs/features/0348-klassifizierungs-transparenz.md: die vierte Bedingung
- * (`last_remote_category_classification_run`) ist mit dem Feld ersatzlos entfallen und wird NICHT
- * ersetzt - sie war redundant. Der Klassifizierungslauf ist waehrend des GESAMTEN verketteten
- * Durchlaufs `running`, also auch waehrend seiner Remote-Phase; die dritte Bedingung deckt sie
- * mit ab.
+ * Die vierte Bedingung (`last_remote_category_classification_run`) ist mit dem Feld ersatzlos
+ * entfallen und wird NICHT ersetzt - sie war redundant. Der Klassifizierungslauf ist waehrend des
+ * GESAMTEN verketteten Durchlaufs `running`, also auch waehrend seiner Remote-Phase; die dritte
+ * Bedingung deckt sie mit ab.
  */
 export function useProjectQuery(id: number) {
   return useQuery({
@@ -65,7 +61,7 @@ export function useCreateProjectMutation() {
 }
 
 /**
- * Loeschung eines Projekts (specs/features/0044-projekte-loeschen.md).
+ * Loeschung eines Projekts.
  *
  * Raeumt bei Erfolg VIER projektgebundene Cache-Eintraege ab, nicht nur den Projektstammsatz:
  * `useProjectQuery` pollt, und ein stehengebliebener Eintrag erzeugte nach der Navigation einen
@@ -118,8 +114,7 @@ export function useConfirmAusschussGateMutation(id: number) {
 }
 
 /**
- * Der EINE Ausloeser der Klassifizierung (specs/features/0296-klassifizierung-ein-ausloeser-cloud-
- * checkbox.md) - ersetzt useTriggerScoreCriteriaMutation UND
+ * Der EINE Ausloeser der Klassifizierung - ersetzt useTriggerScoreCriteriaMutation UND
  * useTriggerClassifyCategoriesRemoteMutation.
  *
  * Invalidiert neben dem Projekt auch Schaetzung und Feinlabel-Liste: beide haengen am Ergebnis der
@@ -145,7 +140,6 @@ export function useTriggerClassificationMutation(id: number) {
   })
 }
 
-// specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md
 export function useSetCloudVisionConsentMutation(id: number) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -160,12 +154,10 @@ export function classificationEstimateQueryKey(id: number) {
   return ['classification-estimate', id] as const
 }
 
-// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt:
 // "Eager-Schätzung" - beim Seitenaufruf geladen, analog dem bestehenden Eager-Zaehler-Muster.
-// Funktioniert unabhaengig vom Consent-Schalter. Seit specs/features/0296-klassifizierung-ein-
-// ausloeser-cloud-checkbox.md steht sie nicht mehr in einem Bestaetigungsdialog, sondern dauerhaft
-// an der Cloud-Checkbox - das Eager-Laden ist damit nicht mehr nur eine Optimierung, sondern
-// Voraussetzung dafuer, dass die Kosten VOR dem Start sichtbar sind.
+// Funktioniert unabhaengig vom Consent-Schalter. Sie steht nicht in einem Bestaetigungsdialog,
+// sondern dauerhaft an der Cloud-Checkbox - das Eager-Laden ist damit nicht nur eine Optimierung,
+// sondern Voraussetzung dafuer, dass die Kosten VOR dem Start sichtbar sind.
 export function useClassificationEstimateQuery(id: number) {
   return useQuery({
     queryKey: classificationEstimateQueryKey(id),
@@ -178,10 +170,9 @@ export function fineLabelsQueryKey(id: number) {
 }
 
 /**
- * Haeufigste Feinlabels des Projekts (specs/features/0289-feste-kategorien.md, UI/UX-Abschnitt) -
- * bewusst eine eigene Query statt eines Feldes an `ProjectOut`: die Liste haengt am Ergebnis des
- * Remote-Laufs, nicht am Projektstammsatz, und wuerde sonst bei jedem `useProjectQuery`-Poll
- * (POLL_INTERVAL_MS) mitgeladen.
+ * Haeufigste Feinlabels des Projekts - bewusst eine eigene Query statt eines Feldes an
+ * `ProjectOut`: die Liste haengt am Ergebnis des Remote-Laufs, nicht am Projektstammsatz, und
+ * wuerde sonst bei jedem `useProjectQuery`-Poll (POLL_INTERVAL_MS) mitgeladen.
  */
 export function useFineLabelsQuery(id: number) {
   return useQuery({
@@ -191,10 +182,10 @@ export function useFineLabelsQuery(id: number) {
 }
 
 /**
- * Wie lange das Ergebnis der Statistikseite als frisch gilt (specs/features/0207-projekt-
- * statistikseite.md, Security-Abschnitt Punkt 3). Zusammen mit `refetchOnWindowFocus: false` die
- * Frontend-Haelfte der Selbst-DoS-Gegenmassnahme: der Endpunkt misst zwei `os.stat` je Foto -
- * auf den QueryClient-Defaults stiesse jeder Tab-Wechsel eine vollstaendige neue Messung an.
+ * Wie lange das Ergebnis der Statistikseite als frisch gilt (Sicherheits-Muss-Kriterium). Zusammen
+ * mit `refetchOnWindowFocus: false` die Frontend-Haelfte der Selbst-DoS-Gegenmassnahme: der
+ * Endpunkt misst zwei `os.stat` je Foto - auf den QueryClient-Defaults stiesse jeder Tab-Wechsel
+ * eine vollstaendige neue Messung an.
  */
 export const PROJECT_STATS_STALE_TIME_MS = 60_000
 

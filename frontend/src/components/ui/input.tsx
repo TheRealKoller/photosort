@@ -3,8 +3,8 @@ import type { InputHTMLAttributes } from 'react'
 import { cn } from '../../lib/utils'
 
 /**
- * Eingabefeld in den drei Board-Zustaenden (specs/architecture/0005-board-dark-utility-register.md
- * Abschnitt 6): normal / fokussiert / fehlerhaft, Radius 6px, Flaeche `--surface`, Text 14px.
+ * Eingabefeld in den drei Board-Zustaenden: normal / fokussiert / fehlerhaft, Radius 6px, Flaeche
+ * `--surface`, Text 14px.
  *
  * - Normal: 1px `--border-control`. Bewusst NICHT der dekorative `--border` (1.34:1 auf dieser
  *   Flaeche) - der Umriss ist hier das Identifikationsmerkmal des Bedienelements und muss 3:1

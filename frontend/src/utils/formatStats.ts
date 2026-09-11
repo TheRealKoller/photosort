@@ -1,7 +1,6 @@
 /**
- * Zahlenformatierung der Projekt-Statistikseite (specs/features/0207-projekt-statistikseite.md,
- * Akzeptanzkriterien S1/K1/K4). Reine Funktionen mit eigenen Unit-Tests - die Seite selbst
- * enthaelt keine Formatierungslogik.
+ * Zahlenformatierung der Projekt-Statistikseite. Reine Funktionen mit eigenen Unit-Tests - die
+ * Seite selbst enthaelt keine Formatierungslogik.
  *
  * Durchgehend deutsches Zahlenformat (Dezimalkomma, Tausenderpunkt): die Anwendung hat genau zwei
  * deutschsprachige Nutzer, es gibt keine Lokalisierungsschicht und soll auch keine geben.
@@ -81,9 +80,8 @@ export function formatPercent(share: number): string {
  * Prozentzeichen (`92%`) - vermeidet eine Scheingenauigkeit, die die zugrundeliegenden, teils
  * heuristischen Werte nicht hergeben.
  *
- * Bis specs/features/0299-kategorie-konfidenz-anzeigen.md privat in
- * `components/CriterionDetailsList.tsx`; hierher gewandert, weil die Kandidatenliste und der
- * Konfidenzblock der Statistikseite dieselbe Darstellung brauchen (Akzeptanzkriterium 2) - zwei
+ * Frueher privat in `components/CriterionDetailsList.tsx`; hierher gewandert, weil die
+ * Kandidatenliste und der Konfidenzblock der Statistikseite dieselbe Darstellung brauchen - zwei
  * Kopien liefen unweigerlich auseinander.
  *
  * BEWUSST NICHT `formatPercent` (eine Nachkommastelle, Leerzeichen, deutsches Dezimalkomma): der

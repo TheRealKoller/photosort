@@ -284,8 +284,8 @@ OBJECT_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 # (~4,4 MB).
 _OBJECT_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "efficientdet_lite0.tflite"
 
-# Security-Muss-Kriterium (Spec-0038-Security-Abschnitt, Punkt 3: "automatisierter Test fuer jedes
-# der vier Modell-Assets, nicht nur nice to have") - siehe test_classification.py.
+# Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test. Bricht in
+# tests/test_classification.py::TestObjectDetectorModelAsset (ein Fall).
 OBJECT_DETECTOR_MODEL_SHA256 = "0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb"
 
 
@@ -421,7 +421,8 @@ SCENE_LABEL_MAX_RESULTS = 5
 # efficientnet_lite0.tflite), int8-quantisierte Variante (~5,4 MB).
 _SCENE_CLASSIFIER_MODEL_PATH = Path(__file__).parent / "assets" / "efficientnet_lite0.tflite"
 
-# Security-Muss-Kriterium (Spec-0038-Security-Abschnitt, Punkt 3).
+# Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test. Bricht in
+# tests/test_classification.py::TestSceneClassifierModelAsset (ein Fall).
 SCENE_CLASSIFIER_MODEL_SHA256 = "bc2ffe19c1118de0c0c2a9088992da5589722656e0fba81421385300a4a34b16"
 
 

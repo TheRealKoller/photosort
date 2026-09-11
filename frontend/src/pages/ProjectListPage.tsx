@@ -50,7 +50,7 @@ export function ProjectListPage() {
         Zusicherung, dass nur gelesen wird - das ist die Frage, die sich beim ersten Verbinden
         eines Fotoordners tatsaechlich stellt. Der erklaerende Text steht bewusst in `--text` und
         NICHT in `--text-muted`: ein Leerzustand ist die Hauptaussage der Seite, keine
-        Metadatenzeile (specs/features/0320-dark-utility-register.md, UI/UX-Abschnitt).
+        Metadatenzeile.
       */}
       {query.isSuccess && query.data.length === 0 && (
         // Ein einziger `flex-col gap-4` statt einer Kette einzelner `mb-*`/`mt-*` - der Abstand

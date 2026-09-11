@@ -27,10 +27,9 @@ const STATUS_LABELS: Record<CloudVisionStatus, string> = {
  * Text daneben (3:1-Schwelle statt 4.5:1). Der sichtbare Status-TEXT bleibt deshalb bewusst
  * neutral, nur das Symbol traegt die Farbe.
  *
- * Die drei "nicht gelaufen"-Zustaende bekommen den vorhandenen `StatusDot` statt eines Symbols:
- * der Zwoelfer-Satz des Boards enthaelt keinen leeren Kreis, und ihn stillschweigend um ein
- * dreizehntes Symbol zu erweitern waere eine Gestaltungsentscheidung ohne Vorlage
- * (decisions/0055-dark-utility-register-fundament.md Punkt 7e). Sie sind untereinander
+ * Die drei "nicht gelaufen"-Zustaende bekommen den vorhandenen `StatusDot` statt eines Symbols: der
+ * Zwoelfer-Satz des Boards enthaelt keinen leeren Kreis, und ihn stillschweigend um ein dreizehntes
+ * Symbol zu erweitern waere eine Gestaltungsentscheidung ohne Vorlage. Sie sind untereinander
  * ausschliesslich ueber ihren TEXT unterscheidbar - das ist der Grund, warum die Tests die
  * Unterscheidung am Text festmachen und nicht am Symbol.
  *
@@ -52,13 +51,12 @@ function formatAttemptedAt(attemptedAt: string): string {
 }
 
 /**
- * Reine Praesentationskomponente mit dem Cloud-Vision-Status beider Laeufe eines Fotos
- * (specs/features/0058-cloud-vision-status-transparenz.md, decisions/0035-cloud-vision-attempt-
- * fehler-persistierung.md) - analog CriterionDetailsList strukturiert (`<dl>`, kein Card-Rahmen,
- * "Die Fotos sind der Star"). Rendert IMMER genau die uebergebenen Eintraege ohne eigene
- * Sichtbarkeitsentscheidung (permanente Sichtbarkeit ist eine bewusste Stakeholder-Entscheidung
- * der Spec, umgesetzt vom Aufrufer PhotoDetailPage.tsx - analog CriterionDetailsList-
- * Praezedenzfall, dessen Docstring dieselbe Aufteilung dokumentiert).
+ * Reine Praesentationskomponente mit dem Cloud-Vision-Status beider Laeufe eines Fotos: analog
+ * CriterionDetailsList strukturiert (`<dl>`, kein Card-Rahmen, "Die Fotos sind der Star"). Rendert
+ * IMMER genau die uebergebenen Eintraege ohne eigene Sichtbarkeitsentscheidung (die permanente
+ * Sichtbarkeit ist eine bewusste Stakeholder-Entscheidung, umgesetzt vom Aufrufer
+ * PhotoDetailPage.tsx - analog CriterionDetailsList, dessen Docstring dieselbe Aufteilung
+ * dokumentiert).
  *
  * `error_message` wird ausschliesslich ueber einen regulaeren React-Textknoten gerendert, nie
  * `dangerouslySetInnerHTML` (Sicherheits-Muss-Kriterium der Spec, defense in depth - erste Stelle

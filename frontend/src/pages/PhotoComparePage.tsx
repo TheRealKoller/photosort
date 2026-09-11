@@ -12,11 +12,10 @@ import { usePhotoSequenceQuery } from '../hooks/usePhotos'
 import { findOwnRating } from '../utils/ownRating'
 
 /**
- * Vergleichsansicht (specs/features/0002-manual-categorization.md): zeigt pro Foto beide
- * Bewertungen nebeneinander, inkl. "unbewertet" als eigener sichtbarer Zustand. Nur lesend hier -
- * die Bearbeitung findet in der (per Deep-Link geoeffneten) Einzelbild-Ansicht statt, die
- * ohnehin ausschliesslich die eigene Bewertung des angemeldeten Nutzers editiert (user_id kommt
- * serverseitig immer aus dem JWT, nie aus der Navigation).
+ * Vergleichsansicht: zeigt pro Foto beide Bewertungen nebeneinander, inkl. "unbewertet" als eigener
+ * sichtbarer Zustand. Nur lesend hier - die Bearbeitung findet in der (per Deep-Link geoeffneten)
+ * Einzelbild-Ansicht statt, die ohnehin ausschliesslich die eigene Bewertung des angemeldeten
+ * Nutzers editiert (user_id kommt serverseitig immer aus dem JWT, nie aus der Navigation).
  */
 export function PhotoComparePage() {
   const { projectId } = useParams()
@@ -53,9 +52,9 @@ export function PhotoComparePage() {
           {photos.map((photo) => {
             const mine = findOwnRating(photo.ratings, username)
             const others = photo.ratings.filter((rating) => rating.username !== username)
-            // ADR 0006 / UI/UX-Abschnitt der Spec 0003: der Vorschlag ersetzt innerhalb der
-            // bestehenden "Ich"-Position nur die bisherige "–"-Darstellung, solange keine eigene
-            // Bewertung vorliegt - kein dritter Spalten-/Personen-Slot neben "Ich"/"Andere".
+            // Der Vorschlag ersetzt innerhalb der bestehenden "Ich"-Position nur die bisherige
+            // "–"-Darstellung, solange keine eigene Bewertung vorliegt - kein dritter
+            // Spalten-/Personen-Slot neben "Ich"/"Andere".
             const myStatus = mine?.status ?? photo.suggestion?.status ?? null
             const myStatusIsSuggested = mine === undefined && photo.suggestion !== null
             return (
@@ -64,8 +63,8 @@ export function PhotoComparePage() {
                 to={`/projects/${id}/photos/${photo.id}`}
                 relativePath={photo.relative_path}
                 image={
-                  /* Spec 0002 (Bild-Aufloesungen): "Einzelbild-/Vergleichsansicht
-                     Display-Aufloesung" - bewusst dieselbe Aufloesung wie PhotoDetailPage, nicht
+                  /* Einzelbild-/Vergleichsansicht in Display-Aufloesung - bewusst dieselbe
+                     Aufloesung wie PhotoDetailPage, nicht
                      die Raster-Thumbnail-Aufloesung. */
                   <PhotoImage
                     photoId={photo.id}

@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Rendert alle D2-Diagramm-Quellen unter specs/diagrams/*.d2 zu SVGs (--sketch-Modus).
-# Siehe ADR specs/decisions/0013-diagram-tooling-d2.md und
-# Feature-Spec specs/features/0018-diagram-tooling-migration.md.
 #
 # Eigenständiges Bash-Skript, unabhängig vom Python-Paket unter scripts/
 # (reines Binary-Wrapping, keine eigene Testsuite - siehe Teststrategie in der Spec).

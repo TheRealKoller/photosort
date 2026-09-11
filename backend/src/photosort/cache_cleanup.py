@@ -1,4 +1,4 @@
-"""Bereinigung verwaister Bildkopien nach jedem erfolgreichen Scan (Spec 0349, ADR 0076).
+"""Bereinigung verwaister Bildkopien nach jedem erfolgreichen Scan.
 
 Eigenes Modul wie `project_deletion.py` und bewusst NICHT in `worker.py`: die async-Klammer um den
 Verzeichnisdurchgang ist eine abgeschlossene Aufgabe mit einer einzigen Datenbankabfrage, und

@@ -10,11 +10,10 @@ import { deleteRating, setRating } from '../api/ratings'
 import type { CategoryKey, PhotoListOut, RatingFilter, RatingStatus } from '../api/types'
 
 /**
- * Batch-Groesse fuer das Foto-Listing (specs/features/0002-manual-categorization.md: "Fotos
- * werden paginiert geladen (Batches statt Gesamt-Reload bei tausenden Fotos)"). Grid- und
- * Einzelbild-/Swipe-Ansicht teilen sich denselben Query-Key (siehe unten) und damit dieselben
- * bereits geladenen Batches - "Navigation/Shortcuts operieren auf der zuletzt geladenen,
- * gefilterten Foto-ID-Liste", kein separater "naechstes Foto"-Endpunkt noetig.
+ * Batch-Groesse fuer das Foto-Listing: Fotos werden paginiert geladen (Batches statt Gesamt-Reload
+ * bei tausenden Fotos). Grid- und Einzelbild-/Swipe-Ansicht teilen sich denselben Query-Key (siehe
+ * unten) und damit dieselben bereits geladenen Batches - "Navigation/Shortcuts operieren auf der
+ * zuletzt geladenen, gefilterten Foto-ID-Liste", kein separater "naechstes Foto"-Endpunkt noetig.
  */
 export const PHOTOS_PAGE_SIZE = 60
 
@@ -22,11 +21,11 @@ function photosQueryKey(projectId: number, ratingStatus?: RatingFilter) {
   return ['photos', projectId, ratingStatus ?? null] as const
 }
 
-// Kategorie-Kuratierung (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md):
-// bewusst unter demselben ['photos', projectId, ...]-Praefix wie photosQueryKey oben - die
-// bestehende, breite Invalidierung in useSetRatingMutation/useDeleteRatingMutation
-// (queryKey: ['photos', projectId], ohne exact) invalidiert React-Query-seitig automatisch auch
-// diese Query, ohne dass die Kuratierungs-Ansicht einen eigenen Invalidierungs-Pfad braucht.
+// Kategorie-Kuratierung: bewusst unter demselben ['photos', projectId, ...]-Praefix wie
+// photosQueryKey oben - die bestehende, breite Invalidierung in
+// useSetRatingMutation/useDeleteRatingMutation (queryKey: ['photos', projectId], ohne exact)
+// invalidiert React-Query-seitig automatisch auch diese Query, ohne dass die Kuratierungs-Ansicht
+// einen eigenen Invalidierungs-Pfad braucht.
 function curationQueryKey(projectId: number, topN: number) {
   return ['photos', projectId, 'curate', topN] as const
 }
@@ -38,12 +37,11 @@ export function useCurationQuery(projectId: number, topN: number) {
   })
 }
 
-// specs/features/0357-voller-bildvorrat-kuratierung.md: derselbe ['photos', projectId]-Praefix wie
-// oben, und hier ist er nicht Bequemlichkeit, sondern Bedingung: die nachgeladenen Kandidaten sind
-// eine ZWEITE Query ueber demselben Datensatz auf demselben Bildschirm. Dasselbe Foto kann in
-// beiden Listen stehen; wird es in der einen verworfen, muss die andere denselben Zustand zeigen.
-// Genau das leistet die bestehende breite Invalidierung - ohne den Praefix stuenden zwei
-// Wahrheiten ueber dasselbe Foto nebeneinander.
+// Derselbe ['photos', projectId]-Praefix wie oben, und hier ist er nicht Bequemlichkeit, sondern
+// Bedingung: die nachgeladenen Kandidaten sind eine ZWEITE Query ueber demselben Datensatz auf
+// demselben Bildschirm. Dasselbe Foto kann in beiden Listen stehen; wird es in der einen verworfen,
+// muss die andere denselben Zustand zeigen. Genau das leistet die bestehende breite Invalidierung -
+// ohne den Praefix stuenden zwei Wahrheiten ueber dasselbe Foto nebeneinander.
 function curationCandidatesQueryKey(
   projectId: number,
   clusterKey: string,
@@ -134,8 +132,7 @@ export function useDeleteRatingMutation(projectId: number) {
   })
 }
 
-// specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 7:
-// wirkt sofort (worker.py::reassign_photo_category im selben API-Request) - dieselbe breite
+// Wirkt sofort (worker.py::reassign_photo_category im selben API-Request) - dieselbe breite
 // Invalidierung wie useSetRatingMutation genuegt, das Foto wechselt dadurch sichtbar in seine neue
 // Cluster x Kategorie-Sektion, sobald die Kuratierungs-Query neu geladen wird.
 export function useSetCategoryOverrideMutation(projectId: number) {

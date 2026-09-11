@@ -1,7 +1,6 @@
 """Modellkonfidenz je Kategorie: zwei Spalten an photo_category_classifications
 
-specs/features/0299-kategorie-konfidenz-anzeigen.md, decisions/0067-modellkonfidenz-je-kategorie-
-anzeige-und-auswertung.md Punkt 3/4.
+Zwei nullable Spalten, keine Datenmigration.
 
 Rein additiv, keine Datenmigration:
 
@@ -17,7 +16,7 @@ Rein additiv, keine Datenmigration:
   Fotos".
 
 NULL-SEMANTIK (der Grund fuer "nullable, aber KEIN server_default"), exakt das Muster der
-Kostenspalten aus Revision f4a5b6c7d8e9 / ADR 0051:
+Kostenspalten aus Revision f4a5b6c7d8e9:
 
     NULL = "nicht erhoben" - die Zeile stammt aus der Zeit VOR dieser Revision, oder das Modell hat
                              zu diesem Schluessel keine brauchbare Zahl geliefert.
