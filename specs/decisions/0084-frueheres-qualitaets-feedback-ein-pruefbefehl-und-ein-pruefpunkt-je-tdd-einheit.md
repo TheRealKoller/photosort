@@ -1,9 +1,11 @@
-# 0083 - Früheres Qualitäts-Feedback: ein Prüfbefehl von Hand, ein Prüfpunkt je TDD-Einheit, kein Automatismus
+# 0084 - Früheres Qualitäts-Feedback: ein Prüfbefehl von Hand, ein Prüfpunkt je TDD-Einheit, kein Automatismus
 
 **Status:** Accepted
 **Datum:** 2026-09-11
 **Frühere Nummer:** 0081 (bis 2026-09-11), aufgelöste Dublette mit
 `0081-dokumentnummer-ist-identitaet-die-juengere-dublette-zieht-um.md`.
+**Frühere Nummer:** 0083 (bis 2026-09-11), aufgelöste Dublette mit
+`0083-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md`.
 **Bezug:** [Issue #398](https://github.com/TheRealKoller/photosort/issues/398), Spec [`../features/0398-frueheres-qualitaets-feedback.md`](../features/0398-frueheres-qualitaets-feedback.md)
 
 **Umfang:** rund 195 statt der Richtwert-100 Zeilen, weil diese ADR zwei Dinge trägt, die sonst auf

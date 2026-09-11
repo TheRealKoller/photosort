@@ -1,6 +1,6 @@
 r"""Verhaltenstests fuer `scripts/check.sh` und die Verankerung des Befehls in `developer.md`.
 
-Geprueft wird ein Bash-Skript mit echter Verzweigung (ADR 0083, Spec 0398): Es stellt je Baum
+Geprueft wird ein Bash-Skript mit echter Verzweigung (ADR 0084, Spec 0398): Es stellt je Baum
 Vorbedingungen fest, ruft danach zehn Pruefbefehle auf, zaehlt die abgeschlossenen Laeufe mit und
 setzt danach einen von drei Ausgaengen. Das Pruefen selbst ist Fremdverhalten und wird nicht
 nachgebildet - geprueft werden die **Vorbedingungen**, die **abgesetzten Aufrufe**, der **Zaehler**
