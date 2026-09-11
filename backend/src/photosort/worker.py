@@ -192,9 +192,10 @@ def _extension(relative_path: str) -> str:
 
 
 class SkipReason(enum.Enum):
-    """Phase 2a: warum ein Eintrag NICHT zu einem Arbeitsposten für Phase 2b wird. Zwei getrennte Werte statt eines
-    einzelnen bool-Flags, weil nur UNSUPPORTED_EXTENSION zusaetzlich ScanRun.files_skipped
-    hochzaehlt (bestehende Semantik, siehe run_project_scan) - UNCHANGED_ETAG zaehlt nur in
+    """Phase 2a: warum ein Eintrag NICHT zu einem Arbeitsposten für Phase 2b wird. Zwei
+    getrennte Werte statt eines einzelnen bool-Flags, weil nur UNSUPPORTED_EXTENSION
+    zusätzlich ScanRun.files_skipped hochzählt (siehe run_project_scan) - UNCHANGED_ETAG
+    zählt nur in
     files_found (Fortschritt), nicht in files_skipped."""
 
     UNSUPPORTED_EXTENSION = "unsupported_extension"
@@ -1337,9 +1338,10 @@ def _compute_content_criteria(
         except Exception:
             faces = None
 
-    # EIN detect_objects-Aufruf speist drei Kriterien plus goldener_schnitt. Die Objekt-Erkennung und JEDE der drei
-    # Score-Berechnungen haben ein EIGENES try/except - ein Fehler in einer Score-Funktion darf
-    # die beiden anderen nicht mitreissen (dieselbe Verschaerfung wie bei gebaeude/landschaft
+    # EIN detect_objects-Aufruf speist drei Kriterien plus goldener_schnitt. Die
+    # Objekt-Erkennung und JEDE der drei Score-Berechnungen haben ein EIGENES try/except -
+    # ein Fehler in einer Score-Funktion darf die beiden anderen nicht mitreißen (dieselbe
+    # Verschärfung wie bei gebaeude/landschaft
     # unten).
     objects: list[ObjectDetection] | None = None
     if animal_detector is not None:
@@ -2184,8 +2186,8 @@ async def run_remote_category_classification(
     run: RemoteCategoryClassificationRun | None = None,
 ) -> RemoteCategoryClassificationRun:
     """Eigenständiger, expliziter Job - KEIN Teil von run_criterion_scoring, eigene
-    Run-Tabelle, eigenes Concurrency-Setting. Best-effort ohne Retry: ein einzelner Fehlschlag bricht
-    den Lauf nicht ab, das Foto bleibt beim naechsten Lauf erneut Kandidat.
+    Run-Tabelle, eigenes Concurrency-Setting. Best-effort ohne Retry: ein einzelner
+    Fehlschlag bricht den Lauf nicht ab, das Foto bleibt beim naechsten Lauf erneut Kandidat.
     `project.cloud_vision_detection_enabled` wird hier EINMALIG gelesen (kein Live-Reread,
     dokumentierte Vereinfachung analog run_criterion_scoring) - ist der Schalter aus (Default)
     ODER der Kandidatenpool leer, wird `build_client` GAR NICHT ERST aufgerufen (Security-Muss-

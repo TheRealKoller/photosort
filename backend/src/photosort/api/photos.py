@@ -83,9 +83,9 @@ class RatingOut(BaseModel):
 
 
 class SuggestionOut(BaseModel):
-    """Automatischer Vorschlag aus PhotoScore, bewusst getrennt von RatingOut/ratings[] - ein Vorschlag ist strukturell nie eine
-    Rating-Zeile. `reason` ist regelbasiert aus duplicate_of abgeleitet (Akzeptanzkriterium der
-    Spec), nicht separat in PhotoScore gespeichert.
+    """Automatischer Vorschlag aus PhotoScore, bewusst getrennt von RatingOut/ratings[] -
+    ein Vorschlag ist strukturell nie eine Rating-Zeile. `reason` ist regelbasiert aus
+    duplicate_of abgeleitet, nicht separat in PhotoScore gespeichert.
 
     PhotoScore.suggested_status wird "praktisch nur noch REJECTED"
     gesetzt; die Rangfolge trägt die Kriterien-Pipeline (PhotoRanking, siehe RankingOut
