@@ -7,34 +7,23 @@ from typing import Protocol
 import numpy as np
 from PIL import Image, ImageFilter, ImageStat
 
-# specs/features/0024-top-photo-selection-category-mix.md, decisions/0015-lokale-kategorie-
-# klassifikation.md: bewusst ein eigenes Modul statt Erweiterung von scoring.py, damit die neue
-# mediapipe-Abhaengigkeit nicht in den leichten Phase-A-Importpfad (worker.py::run_project_scoring,
-# laeuft fuer JEDES gescannte Foto) einsickert - classification.py wird nur von criteria.py (und
-# darueber vom neuen run_criterion_scoring-Job, specs/features/0037-gatefuehrte-bewertungs-
-# pipeline-mit-backfill.md) importiert. `classify_category`/`CategoryCandidate`/
-# `select_top_n_with_category_mix` sind mit Spec 0037 entfallen - die Kategorie-Ableitung lebt seit
-# specs/features/0289-feste-kategorien.md in categories.py::resolve_category (reine
-# Vorrangaufloesung ueber dem festen Set; die zwischenzeitliche, haeufigkeitsbasierte
-# criteria.py::derive_category_key ist mit derselben Spec entfallen), die Rangfolge in
-# ranking.py::rank_photos (ersetzt das Quotenverfahren).
+# Bewusst ein eigenes Modul statt einer Erweiterung von scoring.py, damit die
+# mediapipe-Abhängigkeit nicht in den leichten Phase-A-Importpfad
+# (worker.py::run_project_scoring, läuft für JEDES gescannte Foto) einsickert -
+# classification.py wird nur von criteria.py und darüber vom run_criterion_scoring-Job
+# importiert.
 
-# Laplace-Kernel-Varianz-Schwellwert je 8x8-Kachel, unterhalb dessen eine Kachel als "flaechig/
-# uniform" gilt - dieselbe Kennzahl wie scoring.py::compute_sharpness (Laplace-Kernel-Varianz),
-# nur pro Kachel statt ueber das gesamte Bild angewendet. Bewusst dieselbe Groessenordnung wie
-# scoring.SHARPNESS_REJECT_THRESHOLD (15.0) - beide messen dieselbe zugrunde liegende Eigenschaft
-# (lokaler Kantenkontrast), nicht kalibriert gegen einen echten Fotokorpus (kein Korpus im Repo,
-# siehe Teststrategie-Abschnitt der Spec und scoring.py-Kommentar zu SHARPNESS_REJECT_THRESHOLD).
+# Laplace-Kernel-Varianz-Schwellwert je 8x8-Kachel, unterhalb dessen eine Kachel als
+# "flächig/uniform" gilt - dieselbe Kennzahl wie scoring.py::compute_sharpness, nur pro
+# Kachel statt über das gesamte Bild. Bewusst dieselbe Größenordnung wie
+# scoring.SHARPNESS_REJECT_THRESHOLD (15.0): beide messen dieselbe zugrunde liegende
+# Eigenschaft (lokaler Kantenkontrast). Nicht gegen einen echten Fotokorpus kalibriert, es
+# gibt keinen im Repo.
 UNIFORM_TILE_VARIANCE_THRESHOLD = 15.0
 
-# Kachelraster fuer compute_uniform_area_fraction (Architektur-Abschnitt der Spec: "8x8").
+# Kachelraster für compute_uniform_area_fraction.
 _UNIFORM_TILE_GRID = 8
 
-# specs/features/0217, ADR 0047 Punkt 1: LANDSCAPE_UNIFORM_FRACTION_THRESHOLD (Anteil
-# "flaechiger" Kacheln, ab dem ein Foto frueher als "Landschaft" galt) ist hier ersatzlos
-# entfallen - der Uniform-Flaechen-Anteil ist ein Texturmass, keine Landschafts-Aussage, und
-# `content_landscape` hat seine Kategorie-Faehigkeit (und damit seine Presence-Schwelle)
-# verloren. compute_uniform_area_fraction selbst bleibt als Ranking-Signal unveraendert.
 
 # Mindest-Konfidenz einer mediapipe-Gesichtserkennung, ab der detect_person ein Gesicht als
 # tatsaechlich erkannt wertet - eigene, explizite Schwelle statt sich blind auf den Detector selbst
@@ -55,9 +44,9 @@ FACE_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 # bestehenden Modul photosort/models.py (Datenmodelle) zu erzeugen.
 _FACE_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "blaze_face_short_range.tflite"
 
-# Security-Review-Fund (Nice-to-have): ohne einen automatisierten Abgleich wuerde eine kuenftige
-# versehentliche Beschaedigung/Ersetzung der Binaerdatei (fehlerhaftes Merge, LFS-Fehlkonfiguration)
-# nicht auffallen, bevor die Erkennungsguete spuerbar leidet - siehe test_classification.py.
+# SICHERHEIT: ohne einen automatisierten Abgleich würde eine künftige versehentliche
+# Beschädigung/Ersetzung der Binärdatei (fehlerhaftes Merge, LFS-Fehlkonfiguration) nicht
+# auffallen, bevor die Erkennungsgüte spürbar leidet - siehe test_classification.py.
 FACE_DETECTOR_MODEL_SHA256 = "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f"
 
 _LAPLACE_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
@@ -71,7 +60,7 @@ def _laplace_edges_without_border_artifact(grayscale: Image.Image) -> Image.Imag
     Grossflaechen-Sharpness-Mass nicht ins Gewicht (scoring.py); hier wird das Ergebnis aber
     anschliessend in ein 8x8-Kachelraster zerschnitten - ohne Korrektur wuerde JEDE am Bildrand
     liegende Kachel (28 von 64) faelschlich eine hohe Varianz zeigen, selbst bei einem komplett
-    flaechigen Bild (Review-Fund waehrend der Umsetzung)."""
+    flächigen Bild."""
     array = np.asarray(grayscale)
     padded = np.pad(array, pad_width=1, mode="edge")
     filtered = Image.fromarray(padded).filter(_LAPLACE_KERNEL)
@@ -110,25 +99,23 @@ def compute_uniform_area_fraction(image: Image.Image) -> float:
     return uniform_tiles / total_tiles if total_tiles else 0.0
 
 
-# --- Symmetrie (specs/features/0048-kompositions-kriterien-symmetrie-horizont-freiraum.md,
-# decisions/0026-modellwahl-symmetrie-horizont-freiraum-kriterien.md Punkt 1): Quadranten-Energie-
-# Vergleich auf der bereits vorhandenen Laplace-Kantenkarte - keine neue Abhaengigkeit, reine
-# Wiederverwendung von _laplace_edges_without_border_artifact (bisher nur fuer
-# compute_uniform_area_fraction genutzt).
+# --- Symmetrie: Quadranten-Energie-Vergleich auf der bereits vorhandenen Laplace-Kantenkarte
+# - keine neue Abhängigkeit, reine Wiederverwendung von
+# _laplace_edges_without_border_artifact.
 
 
 def _mean_abs_edge_energy(edges: np.ndarray) -> float:
-    """"Energie" eines Bildbereichs (ADR 0026 Punkt 1) = mittlerer Betrag der Laplace-
-    Kantenwerte - ein Aktivitaets-/Kontrastmass, keine Positions-/Motivbewertung (Abgrenzung zu
-    goldener_schnitt). 0-geschuetzt gegen ein leeres Array (degenerierter Quadrant bei sehr
-    kleinen Bildern, analog compute_uniform_area_fraction's total_tiles-Schutz)."""
+    """"Energie" eines Bildbereichs = mittlerer Betrag der Laplace-Kantenwerte - ein
+    Aktivitäts-/Kontrastmaß, keine Positions-/Motivbewertung (Abgrenzung zu
+    goldener_schnitt). 0-geschützt gegen ein leeres Array (degenerierter Quadrant bei sehr
+    kleinen Bildern, analog dem total_tiles-Schutz in compute_uniform_area_fraction)."""
     return float(np.abs(edges).mean()) if edges.size else 0.0
 
 
 def _safe_relative_diff(a: float, b: float) -> float:
-    """0-geschuetzte relative Differenz (ADR 0026 Punkt 1: `|E_a - E_b| / (E_a + E_b)`) - liefert
-    0.0 statt ZeroDivisionError/NaN, wenn beide Seiten keine Energie haben (z.B. komplett
-    flaechiges Bild)."""
+    """0-geschützte relative Differenz `|E_a - E_b| / (E_a + E_b)` - liefert 0.0 statt
+    ZeroDivisionError/NaN, wenn beide Seiten keine Energie haben (z.B. komplett flächiges
+    Bild)."""
     total = a + b
     if total == 0:
         return 0.0
@@ -136,25 +123,23 @@ def _safe_relative_diff(a: float, b: float) -> float:
 
 
 def compute_symmetry_score(image: Image.Image) -> float:
-    """`symmetrie`-Kriterium (ADR 0026 Punkt 1): Quadranten-Energie-Vergleich auf der
-    Laplace-Kantenkarte des GESAMTEN Bildes (nicht auf einem 8x8-Kachelraster wie
-    compute_uniform_area_fraction, sondern auf einem 2x2-Quadranten-Raster). Bild wird in vier
-    Quadranten geteilt (oben-links/-rechts, unten-links/-rechts); je Quadrant die mittlere
-    Kantenenergie, danach paarweise zu E_links/E_rechts/E_oben/E_unten gemittelt (technische
-    Detailentscheidung der Umsetzung: gleichgewichtete Mittelung der beiden angrenzenden
-    Quadranten-Energien, NICHT eine flaechengewichtete Mittelung ueber alle betroffenen Pixel -
-    beide Varianten sind bei einer geraden Bildgroesse identisch, unterscheiden sich nur bei
-    ungeraden Massen geringfuegig). `score = clip(1.0 - (horizontal_diff + vertical_diff) / 2, 0,
-    1)`.
+    """`symmetrie`-Kriterium: Quadranten-Energie-Vergleich auf der Laplace-Kantenkarte des
+    GESAMTEN Bildes, auf einem 2x2-Quadranten-Raster (nicht auf dem 8x8-Kachelraster von
+    compute_uniform_area_fraction). Je Quadrant die mittlere Kantenenergie, danach paarweise
+    zu E_links/E_rechts/E_oben/E_unten gemittelt - gleichgewichtete Mittelung der beiden
+    angrenzenden Quadranten-Energien, NICHT flächengewichtet über alle betroffenen Pixel;
+    beide Varianten sind bei gerader Bildgröße identisch und unterscheiden sich bei
+    ungeraden Maßen geringfügig. `score = clip(1.0 - (horizontal_diff + vertical_diff) / 2,
+    0, 1)`.
 
-    Rundungsregel bei ungeraden Bildmassen (AK der Spec 0048, durch Testfall gepinnt): identisch
-    zu compute_uniform_area_fraction's 8x8-Kachelraster - `width // 2`/`height // 2` als Grenze
-    der ERSTEN Haelfte, die ZWEITE Haelfte nimmt den Rest (`array[mid:]` statt einer symmetrischen
-    Aufteilung um die Mitte).
+    Rundungsregel bei ungeraden Bildmaßen, durch Testfall gepinnt: identisch zum
+    8x8-Kachelraster von compute_uniform_area_fraction - `width // 2`/`height // 2` als
+    Grenze der ERSTEN Hälfte, die ZWEITE Hälfte nimmt den Rest (`array[mid:]` statt einer
+    symmetrischen Aufteilung um die Mitte).
 
-    Fallback (ADR 0026, dokumentiert, kein Bug): komplett flaechiges Bild (Gesamtenergie 0) ->
-    beide Diffs per Definition 0 (siehe _safe_relative_diff) -> score = 1.0, ein flaechiges Bild
-    ist trivial "balanciert", keine Asymmetrie messbar."""
+    Dokumentierter Fallback, kein Bug: ein komplett flächiges Bild (Gesamtenergie 0) hat per
+    Definition beide Diffs 0 (siehe _safe_relative_diff) -> score = 1.0. Ein flächiges Bild
+    ist trivial "balanciert", eine Asymmetrie ist nicht messbar."""
     grayscale = image.convert("L")
     width, height = grayscale.size
     edges = np.asarray(_laplace_edges_without_border_artifact(grayscale), dtype=np.float64)
@@ -206,12 +191,8 @@ class FaceDetectorLike(Protocol):
 
 @dataclass(frozen=True)
 class FaceBoundingBox:
-    """Auf die Bildgroesse normierte Position eines erkannten Gesichts (specs/features/0037-
-    gatefuehrte-bewertungs-pipeline-mit-backfill.md, Abschnitt "Vorgriffs-Ergaenzung" fuer die
-    kuenftige Spec 0038, ADR 0022) - `detect_person` gab bis hierhin nur `bool` zurueck; die
-    Positionsdaten braucht erst die spaetere Goldener-Schnitt-Kriterien-Spec, der guenstigste
-    Zeitpunkt fuer diese Vertragserweiterung ist aber der ohnehin bevorstehende Neubau von
-    criteria.py, nicht ein spaeterer Rework. Alle Werte in [0, 1], Ursprung oben links."""
+    """Auf die Bildgröße normierte Position eines erkannten Gesichts. Alle Werte in [0, 1],
+    Ursprung oben links."""
 
     x_center: float
     y_center: float
@@ -237,11 +218,9 @@ def detect_person(image: Image.Image, detector: FaceDetectorLike) -> list[FaceBo
     display-Variante. `detector` ist injizierbar (siehe FaceDetectorLike) - die reale
     Modellkonstruktion (build_face_detector) laeuft in keinem automatisierten Test.
 
-    Gibt seit specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md eine Liste
-    normierter FaceBoundingBox-Treffer zurueck statt eines blossen bool (Vorgriff auf die
-    Positionsdaten, die die kuenftige Goldener-Schnitt-Kriterien-Spec 0038 braucht) - fuer den
-    aktuellen content_people-Kriterien-Compute aendert sich funktional nichts
-    (`bool(detect_person(...))` als Score-Grundlage, siehe criteria.py)."""
+    Gibt eine Liste normierter FaceBoundingBox-Treffer zurück, kein bloßes bool - für den
+    content_people-Kriterien-Compute ist allein `bool(detect_person(...))` maßgeblich
+    (siehe criteria.py), die Positionsdaten braucht `goldener_schnitt`."""
     width, height = image.size
     result = detector.detect(_to_mp_image(image))
     boxes: list[FaceBoundingBox] = []
@@ -278,42 +257,31 @@ def build_face_detector() -> FaceDetectorLike:
     return detector
 
 
-# --- Tier-Erkennung (specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-
-# aesthetik.md, decisions/0022-lokale-modellwahl-tier-gebaeude-aesthetik-kriterien.md Punkt 1):
-# mediapipe Object Detector Task API, EfficientDet-Lite0 (COCO-80-Klassen) - exakt dasselbe
-# Muster wie der obige FaceDetector, nur eine andere Task-API derselben bereits vorhandenen
-# mediapipe-Abhaengigkeit. Keine neue Abhaengigkeit.
+# --- Tier-Erkennung: mediapipe Object Detector Task API, EfficientDet-Lite0
+# (COCO-80-Klassen) - exakt dasselbe Muster wie der FaceDetector oben, nur eine andere
+# Task-API derselben bereits vorhandenen mediapipe-Abhängigkeit. Keine neue Abhängigkeit.
 
-# Tier-relevante COCO-Klassen (ADR 0022 Punkt 1) - 10 von 80 COCO-Klassen. Dokumentierte, bewusst
-# akzeptierte Luecke (AK-Pflicht der Spec): COCO enthaelt KEINE Insekten- oder Fisch-Klasse, diese
-# werden mit diesem Modell strukturell nicht erkannt (waere eine eigenstaendige, spaetere
-# Ergaenzung mit einem anderen Modell, nicht Teil dieser Spec).
+# Tier-relevante COCO-Klassen - 10 von 80. Dokumentierte, bewusst akzeptierte Lücke: COCO
+# enthält KEINE Insekten- oder Fisch-Klasse, diese werden mit diesem Modell strukturell
+# nicht erkannt.
 #
-# specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: diese Allow-Liste FILTERT SEIT
-# DIESER SPEC NICHT MEHR IN detect_objects, sondern in den Konsumenten
-# (criteria.py::animal_detections/compute_tier_score) - Gegenrichtung zu ADR 0047 Punkt 1. Die
-# Liste selbst und ihre Schreibweise bleiben unveraendert (Verhaltenserhalt fuer `tier` und
-# `goldener_schnitt` ist testpflichtig).
+# Diese Allow-Liste filtert NICHT in detect_objects, sondern in den Konsumenten
+# (criteria.py::animal_detections/compute_tier_score).
 ANIMAL_CATEGORIES = frozenset(
     {"bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"}
 )
 
 # Mindest-Konfidenz, ab der eine Objekt-Erkennung gewertet wird - analog
-# FACE_DETECTION_CONFIDENCE_THRESHOLD, eigene explizite Schwelle statt sich auf den vom Detector
-# intern konfigurierten score_threshold zu verlassen (gleiche Testbarkeits-Begruendung wie dort).
-#
-# specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: umbenannt von
-# ANIMAL_DETECTION_CONFIDENCE_THRESHOLD - die Schwelle gilt seit der Verallgemeinerung
-# detect_animals -> detect_objects fuer ALLE COCO-Klassen, nicht mehr nur fuer Tiere. Der
-# Zahlenwert ist unveraendert (bewusst keine Neukalibrierung: die Spec verlangt Verhaltenserhalt
-# fuer die Tier-Konsumenten).
+# FACE_DETECTION_CONFIDENCE_THRESHOLD, eigene explizite Schwelle statt des vom Detector
+# intern konfigurierten score_threshold (gleiche Testbarkeits-Begründung wie dort). Sie gilt
+# für ALLE COCO-Klassen, nicht nur für Tiere.
 OBJECT_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 
-# Gepinnte, im Repository eingecheckte .tflite-Modelldatei (Security-Abschnitt der Spec 0038,
-# kein Laufzeit-Download) - analog zum FaceDetector-Muster oben. Quelle: offizielles
+# SICHERHEIT: gepinnte, im Repository eingecheckte .tflite-Modelldatei,
+# kein Laufzeit-Download - analog zum FaceDetector-Muster oben. Quelle: offizielles
 # mediapipe-Modell-Repository (https://storage.googleapis.com/mediapipe-models/object_detector/
-# efficientdet_lite0/int8/1/efficientdet_lite0.tflite), int8-quantisierte Variante (~4,4 MB,
-# innerhalb der von ADR 0022 erwarteten ~4-7 MB).
+# efficientdet_lite0/int8/1/efficientdet_lite0.tflite), int8-quantisierte Variante
+# (~4,4 MB).
 _OBJECT_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "efficientdet_lite0.tflite"
 
 # Security-Muss-Kriterium (Spec-0038-Security-Abschnitt, Punkt 3: "automatisierter Test fuer jedes
@@ -347,12 +315,10 @@ class ObjectDetectorLike(Protocol):
 @dataclass(frozen=True)
 class ObjectDetection:
     """Eine einzelne, oberhalb von OBJECT_DETECTION_CONFIDENCE_THRESHOLD erkannte Objekt-Instanz
-    (ADR 0022 Punkt 1, seit specs/features/0289-feste-kategorien.md von `AnimalDetection`
-    verallgemeinert - identische Felder, aber nicht mehr auf ANIMAL_CATEGORIES beschraenkt) -
-    Bounding-Box-Felder normiert wie FaceBoundingBox (auf die Bildgroesse bezogen, [0, 1], Ursprung
-    oben links), damit beide Typen strukturell denselben Kompositions-Subjekt-Vertrag
-    (criteria.py::SubjectBoxLike) erfuellen und die Goldener-Schnitt-Heuristik sie ohne Sonderfall
-    gleich behandeln kann."""
+    Bounding-Box-Felder normiert wie FaceBoundingBox (auf die Bildgröße bezogen, [0, 1],
+    Ursprung oben links), damit beide Typen strukturell denselben
+    Kompositions-Subjekt-Vertrag (criteria.py::SubjectBoxLike) erfüllen und die
+    Goldener-Schnitt-Heuristik sie ohne Sonderfall gleich behandeln kann."""
 
     category: str
     confidence: float
@@ -363,20 +329,18 @@ class ObjectDetection:
 
 
 def detect_objects(image: Image.Image, detector: ObjectDetectorLike) -> list[ObjectDetection]:
-    """mediapipe Object Detector Task-API (ADR 0022 Punkt 1) auf der bereits gecachten
-    display-Variante. `detector` ist injizierbar (siehe ObjectDetectorLike) - die reale
-    Modellkonstruktion (build_object_detector) laeuft in keinem automatisierten Test. Nur die
-    JEWEILS hoechstbewertete Kategorie pro Erkennung wird betrachtet (das Modell liefert
-    typischerweise bereits eine nach Score sortierte Kandidatenliste je erkanntem Objekt) - keine
-    zweitplatzierte Kategorie "rettet" eine primaer anders klassifizierte Erkennung.
+    """mediapipe Object Detector Task-API auf der bereits gecachten display-Variante.
+    `detector` ist injizierbar (siehe ObjectDetectorLike) - die reale Modellkonstruktion
+    (build_object_detector) läuft in keinem automatisierten Test. Nur die JEWEILS
+    höchstbewertete Kategorie pro Erkennung wird betrachtet (das Modell liefert
+    typischerweise bereits eine nach Score sortierte Kandidatenliste je erkanntem Objekt) -
+    keine zweitplatzierte Kategorie "rettet" eine primär anders klassifizierte Erkennung.
 
-    specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: KEIN Allow-Listen-Filter mehr
-    (frueher `detect_animals` mit ANIMAL_CATEGORIES). Die Funktion liefert jetzt jede erkannte
-    COCO-Klasse oberhalb der Konfidenzschwelle; die inhaltliche Filterung liegt bei den
-    Konsumenten (criteria.py::compute_tier_score/compute_fahrzeug_score/
-    compute_essen_trinken_score/animal_detections), die sie jeweils SELBST durchsetzen. Der
-    Detektorlauf selbst bleibt genau EINER pro Foto (worker.py::_compute_content_criteria) - die
-    Verallgemeinerung kostet keine zusaetzliche Inferenz."""
+    KEIN Allow-Listen-Filter: die Funktion liefert jede erkannte COCO-Klasse oberhalb der
+    Konfidenzschwelle, die inhaltliche Filterung liegt bei den Konsumenten
+    (criteria.py::compute_tier_score/compute_fahrzeug_score/compute_essen_trinken_score/
+    animal_detections), die sie jeweils SELBST durchsetzen. Der Detektorlauf selbst bleibt
+    genau EINER pro Foto (worker.py::_compute_content_criteria)."""
     width, height = image.size
     result = detector.detect(_to_mp_image(image))
     detections: list[ObjectDetection] = []
@@ -405,7 +369,7 @@ def detect_objects(image: Image.Image, detector: ObjectDetectorLike) -> list[Obj
 
 def build_object_detector() -> ObjectDetectorLike:
     """Baut den echten mediapipe ObjectDetector aus dem zur Build-Zeit gebuendelten .tflite-Modell
-    (Security-Abschnitt der Spec 0038 - kein Laufzeit-Download). Wird NIE in einem automatisierten
+    (SICHERHEIT: kein Laufzeit-Download). Wird NIE in einem automatisierten
     Test aufgerufen (Infrastruktur-/CI-Risiko, analog build_face_detector), nur vom Worker-Job."""
     from mediapipe.tasks.python import vision
     from mediapipe.tasks.python.core.base_options import BaseOptions
@@ -418,46 +382,43 @@ def build_object_detector() -> ObjectDetectorLike:
     return detector
 
 
-# --- Gebaeude-Erkennung (specs/features/0038-vier-zusaetzliche-kriterien-tier-gebaeude-schnitt-
-# aesthetik.md, decisions/0022-lokale-modellwahl-tier-gebaeude-aesthetik-kriterien.md Punkt 2):
-# mediapipe Image Classifier Task API, ImageNet-1k-Modell EfficientNet-Lite0 - drittes Task-API-
-# Paar derselben bereits vorhandenen mediapipe-Abhaengigkeit, keine neue Abhaengigkeit.
+# --- Gebäude-Erkennung: mediapipe Image Classifier Task API, ImageNet-1k-Modell
+# EfficientNet-Lite0 - drittes Task-API-Paar derselben bereits vorhandenen
+# mediapipe-Abhängigkeit, keine neue Abhängigkeit.
 #
-# WICHTIG, anders als bei Tier: classify_scene filtert NICHT auf die Architektur-Allow-Liste -
-# sie liefert alle Klassifikations-Ergebnisse oberhalb der gemeinsamen Modell-Untergrenze
-# SCENE_LABEL_MIN_CONFIDENCE unveraendert zurueck (rohe Modell-Ausgabe). Die Allow-Listen- und
-# Konfidenz-Filterung passiert bewusst erst in criteria.py::compute_gebaeude_score bzw.
-# compute_landschaft_score - Akzeptanzkriterium der Spec 0038 verlangt einen Testnachweis, "dass
-# tatsaechlich die Allow-Liste filtert und nicht nur die rohe Modell-Konfidenz durchgereicht
-# wird"; dieser Nachweis waere hier auf classify_scene-Ebene sinnlos, wenn schon hier gefiltert
-# wuerde.
+# WICHTIG, anders als bei Tier: classify_scene filtert NICHT auf die
+# Architektur-Allow-Liste - sie liefert alle Klassifikations-Ergebnisse oberhalb der
+# gemeinsamen Modell-Untergrenze SCENE_LABEL_MIN_CONFIDENCE unverändert zurück (rohe
+# Modell-Ausgabe). Die Allow-Listen- und Konfidenz-Filterung passiert bewusst erst in
+# criteria.py::compute_gebaeude_score bzw.
+# compute_landschaft_score. Dort ist testbar, dass tatsächlich die Allow-Liste filtert und
+# nicht nur die rohe Modell-Konfidenz durchgereicht wird - ein Nachweis, der auf
+# classify_scene-Ebene sinnlos wäre, wenn schon hier gefiltert würde.
 
-# Inhaltliche Konfidenzschwelle des gebaeude-Kriteriums - bis specs/features/0217 zugleich die
-# Untergrenze von classify_scene selbst. Seit ADR decisions/0047-inhaltsbasierte-landschaft-
-# spezifitaets-vorrang-nicht-erkannt.md Punkt 1 wandert die inhaltliche Entscheidung in die
-# jeweilige Kriterien-Funktion (criteria.py::compute_gebaeude_score filtert explizit hier gegen,
-# criteria.py::compute_landschaft_score gegen den niedrigeren LANDSCHAFT_LABEL_MIN_CONFIDENCE) -
-# der Wert selbst bleibt unveraendert, damit das gebaeude-Verhalten bitgenau erhalten bleibt.
+# Inhaltliche Konfidenzschwelle des gebaeude-Kriteriums. Die inhaltliche Entscheidung liegt
+# in der jeweiligen Kriterien-Funktion: criteria.py::compute_gebaeude_score filtert explizit
+# hiergegen, criteria.py::compute_landschaft_score gegen den niedrigeren
+# LANDSCHAFT_LABEL_MIN_CONFIDENCE.
 SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.5
 
-# Gemeinsame, bewusst NIEDRIGE Modell-Untergrenze der Szenen-Klassifikation (ADR 0047 Punkt 1):
-# natuerliche Szenen verteilen ihre Modellkonfidenz typischerweise ueber mehrere benachbarte
-# ImageNet-Klassen, eine harte 0.5-Grenze schon an der Modellausgabe wuerde eine echte
+# Gemeinsame, bewusst NIEDRIGE Modell-Untergrenze der Szenen-Klassifikation: natürliche
+# Szenen verteilen ihre Modellkonfidenz typischerweise über mehrere benachbarte
+# ImageNet-Klassen, eine harte 0.5-Grenze schon an der Modellausgabe würde eine echte
 # Landschafts-Erkennung strukturell verhindern. Analog FACE_DETECTION_CONFIDENCE_THRESHOLD/
-# OBJECT_DETECTION_CONFIDENCE_THRESHOLD eine eigene, explizite Schwelle statt sich blind auf die
-# Detector-Konfiguration zu verlassen (siehe FakeSceneClassifier in test_classification.py).
+# OBJECT_DETECTION_CONFIDENCE_THRESHOLD eine eigene, explizite Schwelle statt sich blind auf
+# die Detector-Konfiguration zu verlassen.
 SCENE_LABEL_MIN_CONFIDENCE = 0.2
 
-# Obergrenze der pro Foto zurueckgegebenen Labels (ADR 0047 Punkt 1) - haelt die Label-Liste trotz
-# der abgesenkten Untergrenze beschraenkt. Wird sowohl dem echten Klassifikator als Options-Wert
-# mitgegeben (build_scene_classifier) ALS AUCH in classify_scene selbst durchgesetzt (gleiche
-# Begruendung wie bei der Konfidenzschwelle: unabhaengig von der Detector-Konfiguration testbar).
-# Die Begrenzung greift immer auf die STAERKSTEN Labels, verdraengt also nie einen Treffer eines
-# Bestands-Konsumenten zugunsten eines schwaecheren Labels.
+# Obergrenze der pro Foto zurückgegebenen Labels - hält die Label-Liste trotz der
+# abgesenkten Untergrenze beschränkt. Wird sowohl dem echten Klassifikator als Options-Wert
+# mitgegeben (build_scene_classifier) ALS AUCH in classify_scene selbst durchgesetzt
+# (gleiche Begründung wie bei der Konfidenzschwelle: unabhängig von der
+# Detector-Konfiguration testbar). Die Begrenzung greift immer auf die STÄRKSTEN Labels,
+# verdrängt also nie einen Treffer eines Bestands-Konsumenten zugunsten eines schwächeren.
 SCENE_LABEL_MAX_RESULTS = 5
 
-# Gepinnte, im Repository eingecheckte .tflite-Modelldatei (Security-Abschnitt der Spec 0038,
-# kein Laufzeit-Download). Quelle: offizielles mediapipe-Modell-Repository
+# SICHERHEIT: gepinnte, im Repository eingecheckte .tflite-Modelldatei,
+# kein Laufzeit-Download. Quelle: offizielles mediapipe-Modell-Repository
 # (https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/1/
 # efficientnet_lite0.tflite), int8-quantisierte Variante (~5,4 MB).
 _SCENE_CLASSIFIER_MODEL_PATH = Path(__file__).parent / "assets" / "efficientnet_lite0.tflite"
@@ -484,27 +445,27 @@ class SceneClassifierLike(Protocol):
 @dataclass(frozen=True)
 class SceneLabel:
     """Eine einzelne, oberhalb von SCENE_LABEL_MIN_CONFIDENCE klassifizierte
-    ImageNet-1k-Szenen-/Objekt-Kategorie (ADR 0022 Punkt 2) - UNGEFILTERT, siehe Modul-Kommentar
-    oben. Kein Bounding-Box-Feld (anders als ObjectDetection/FaceBoundingBox): ein Image
-    Classifier bewertet das GESAMTE Bild, keine einzelne Bildregion."""
+    ImageNet-1k-Szenen-/Objekt-Kategorie - UNGEFILTERT, siehe Modul-Kommentar oben. Kein
+    Bounding-Box-Feld (anders als ObjectDetection/FaceBoundingBox): ein Image Classifier
+    bewertet das GESAMTE Bild, keine einzelne Bildregion."""
 
     category: str
     confidence: float
 
 
 def classify_scene(image: Image.Image, classifier: SceneClassifierLike) -> list[SceneLabel]:
-    """mediapipe Image Classifier Task-API (ADR 0022 Punkt 2) auf der bereits gecachten
-    display-Variante - liefert die (hoechstens SCENE_LABEL_MAX_RESULTS) staerksten
-    Klassifikationen ab SCENE_LABEL_MIN_CONFIDENCE, unabhaengig davon, ob sie architekturbezogen
-    sind (siehe Modul-Kommentar). `classifier` ist injizierbar (siehe SceneClassifierLike) - die
-    reale Modellkonstruktion (build_scene_classifier) laeuft in keinem automatisierten Test.
+    """mediapipe Image Classifier Task-API auf der bereits gecachten display-Variante -
+    liefert die (höchstens SCENE_LABEL_MAX_RESULTS) stärksten Klassifikationen ab
+    SCENE_LABEL_MIN_CONFIDENCE, unabhängig davon, ob sie architekturbezogen sind (siehe
+    Modul-Kommentar). `classifier` ist injizierbar (siehe SceneClassifierLike) - die reale
+    Modellkonstruktion (build_scene_classifier) läuft in keinem automatisierten Test.
 
-    specs/features/0217, ADR 0047 Punkt 1: die Untergrenze ist bewusst niedriger als die
-    inhaltlichen Kriterien-Schwellen - die Ausgabe bleibt roh (keine Allow-Listen-Filterung, kein
-    kriterienspezifischer Konfidenz-Schnitt), beides passiert in criteria.py::
-    compute_gebaeude_score bzw. compute_landschaft_score. Die Begrenzung auf die staerksten
-    Labels ist stabil sortiert (Konfidenz absteigend), damit sie nie einen starken Treffer
-    zugunsten eines schwaecheren Labels verdraengt."""
+    Die Untergrenze ist bewusst niedriger als die inhaltlichen Kriterien-Schwellen - die
+    Ausgabe bleibt roh (keine Allow-Listen-Filterung, kein kriterienspezifischer
+    Konfidenz-Schnitt), beides passiert in criteria.py::compute_gebaeude_score bzw.
+    compute_landschaft_score. Die Begrenzung auf die stärksten Labels ist stabil sortiert
+    (Konfidenz absteigend), damit sie nie einen starken Treffer zugunsten eines schwächeren
+    verdrängt."""
     result = classifier.classify(_to_mp_image(image))
     labels: list[SceneLabel] = []
     for classifications in result.classifications:
@@ -520,7 +481,7 @@ def classify_scene(image: Image.Image, classifier: SceneClassifierLike) -> list[
 
 def build_scene_classifier() -> SceneClassifierLike:
     """Baut den echten mediapipe ImageClassifier aus dem zur Build-Zeit gebuendelten .tflite-
-    Modell (Security-Abschnitt der Spec 0038 - kein Laufzeit-Download). Wird NIE in einem
+    Modell (SICHERHEIT: kein Laufzeit-Download). Wird NIE in einem
     automatisierten Test aufgerufen (Infrastruktur-/CI-Risiko, analog build_face_detector/
     build_object_detector), nur vom Worker-Job."""
     from mediapipe.tasks.python import vision
@@ -535,17 +496,16 @@ def build_scene_classifier() -> SceneClassifierLike:
     return classifier
 
 
-# --- Freiraum/Fluchtrichtung (specs/features/0048-kompositions-kriterien-symmetrie-horizont-
-# freiraum.md, decisions/0026-modellwahl-symmetrie-horizont-freiraum-kriterien.md Punkt 3):
+# --- Freiraum/Fluchtrichtung:
 # viertes mediapipe Task-API-Paar (FaceLandmarker) - EIGENSTAENDIGER, zusaetzlicher Modellaufruf
 # neben dem obigen FaceDetector, kein Ersatz (content_people/goldener_schnitt bleiben unveraendert
 # auf dem bestehenden, leichteren FaceDetector). Blickrichtung (Yaw) wird aus der von mediapipe
 # gelieferten 4x4-Kopfpose-Rotationsmatrix (`facial_transformation_matrixes`) abgeleitet, NICHT
-# aus einem selbst konstruierten Landmark-Vektor (ADR 0026 Punkt 3: robuster als ein Vektor
+# aus einem selbst konstruierten Landmark-Vektor (robuster als ein Vektor
 # zwischen zwei einzelnen, fehleranfaellig zu zitierenden Landmark-Indizes).
 
-# Gepinnte, im Repository eingecheckte .task-Modelldatei (Security-Abschnitt der Spec 0048,
-# Muss-Kriterium - kein Laufzeit-Download, analog den drei .tflite-Assets oben). Quelle:
+# SICHERHEIT: gepinnte, im Repository eingecheckte .task-Modelldatei,
+# kein Laufzeit-Download, analog den drei .tflite-Assets oben. Quelle:
 # offizielles mediapipe-Modell-Repository (https://storage.googleapis.com/mediapipe-models/
 # face_landmarker/face_landmarker/float16/1/face_landmarker.task, per direktem Download vor dem
 # TDD-Einstieg verifiziert - float16-quantisierte Variante, ~3,6 MB). output_face_blendshapes wird
@@ -555,7 +515,7 @@ _FACE_LANDMARKER_MODEL_PATH = Path(__file__).parent / "assets" / "face_landmarke
 
 FACE_LANDMARKER_MODEL_SHA256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 
-# Deadzone um einen frontalen Blick (ADR 0026 Punkt 3) - lebt in criteria.py::
+# Deadzone um einen frontalen Blick - lebt in criteria.py::
 # compute_freiraum_score (FREIRAUM_YAW_DEADZONE_DEGREES), nicht hier: detect_face_orientation
 # liefert nur die Rohdaten (Yaw + Bounding-Box), die Fallback-/Score-Logik ist criteria.py
 # vorbehalten (Trennung analog detect_objects/compute_tier_score).
@@ -572,7 +532,7 @@ class LandmarkLike(Protocol):
 class FaceLandmarkerResultLike(Protocol):
     """Die schmale Teilmenge von mediapipe.tasks.python.components.containers.
     FaceLandmarkerResult, die detect_face_orientation braucht - erlaubt einen FakeFaceLandmarker
-    in Tests ohne echte mediapipe-Typen (Teststrategie-Abschnitt der Spec 0048)."""
+    in Tests ohne echte mediapipe-Typen."""
 
     face_landmarks: list[list[LandmarkLike]]
     # Liste von 4x4-Rotations-/Transformationsmatrizen (eine je erkanntem Gesicht) - als `object`
@@ -588,17 +548,17 @@ class FaceLandmarkerLike(Protocol):
 
 @dataclass(frozen=True)
 class FaceOrientation:
-    """Blickrichtung + Bounding-Box eines erkannten Gesichts (ADR 0026 Punkt 3), Grundlage fuer
+    """Blickrichtung + Bounding-Box eines erkannten Gesichts, Grundlage fuer
     criteria.py::compute_freiraum_score.
 
     `yaw_degrees` - Vorzeichenkonvention dieser Umsetzung (mangels verfuegbarem seitlich
-    gedrehten Test-Referenzbild nicht gegen eine echte Modellausgabe verifizierbar, siehe ADR 0026
-    "offene Achsen-/Vorzeichenkonvention"; die MatrixSTRUKTUR selbst - R[0,0]/R[0,2]/R[2,0]/R[2,2]
+    gedrehten Test-Referenzbild nicht gegen eine echte Modellausgabe verifizierbar; die
+    MatrixSTRUKTUR selbst - R[0,0]/R[0,2]/R[2,0]/R[2,2]
     als Rotation-um-die-Y-Achse-Block - wurde dagegen gegen eine ECHTE FaceLandmarker-Inferenz auf
     mediapipes eigenem "portrait.jpg"-Testbild verifiziert, siehe _yaw_degrees_from_rotation_
     matrix): positiv = Gesicht Richtung steigendem x (Bild-rechte Seite) gedreht. `min_x`/`max_x`
     - kleinste/groesste normierte x-Koordinate ueber ALLE Landmarks des erkannten Gesichts (kein
-    separater Bounding-Box-Ausgabewert im FaceLandmarkerResult, ADR 0026 Punkt 3)."""
+    separater Bounding-Box-Ausgabewert im FaceLandmarkerResult)."""
 
     yaw_degrees: float
     min_x: float
@@ -620,15 +580,14 @@ def _yaw_degrees_from_rotation_matrix(matrix: object) -> float:
 def detect_face_orientation(
     image: Image.Image, landmarker: FaceLandmarkerLike
 ) -> FaceOrientation | None:
-    """mediapipe Face Landmarker Task-API (ADR 0026 Punkt 3) auf der bereits gecachten display-
+    """mediapipe Face Landmarker Task-API auf der bereits gecachten display-
     Variante. `landmarker` ist injizierbar (siehe FaceLandmarkerLike) - die reale
     Modellkonstruktion (build_face_landmarker) laeuft in keinem automatisierten Test.
 
     Kein Gesicht erkannt -> None (Fallback-Entscheidung liegt bei criteria.py::
     compute_freiraum_score, analog detect_objects/compute_tier_score). `num_faces=1` ist
     modellseitig konfiguriert (build_face_landmarker) - trotzdem defensiv nur das ERSTE Gesicht
-    verwendet, falls das Modell wider Erwarten mehrere liefert (Teststrategie-Abschnitt der Spec
-    0048)."""
+    verwendet, falls das Modell wider Erwarten mehrere liefert."""
     result = landmarker.detect(_to_mp_image(image))
     if not result.face_landmarks:
         return None
@@ -644,11 +603,11 @@ def detect_face_orientation(
 
 def build_face_landmarker() -> FaceLandmarkerLike:
     """Baut den echten mediapipe FaceLandmarker aus dem zur Build-Zeit gebuendelten .task-Modell
-    (Security-Abschnitt der Spec 0048 - kein Laufzeit-Download). Wird NIE in einem automatisierten
+    (SICHERHEIT: kein Laufzeit-Download). Wird NIE in einem automatisierten
     Test aufgerufen (Infrastruktur-/CI-Risiko, analog build_face_detector/build_object_detector/
     build_scene_classifier), nur vom Worker-Job. `num_faces=1` (modellseitige Begrenzung auf das
     prominenteste Gesicht statt einer App-seitigen Flaechen-Auswahl wie bei FaceDetector/
-    ObjectDetector - ADR 0026 Punkt 3), `output_facial_transformation_matrixes=True` (Grundlage
+    ObjectDetector), `output_facial_transformation_matrixes=True` (Grundlage
     fuer die Yaw-Extraktion), `output_face_blendshapes=False` (nicht gebraucht)."""
     from mediapipe.tasks.python import vision
     from mediapipe.tasks.python.core.base_options import BaseOptions
