@@ -6,7 +6,7 @@ statisch pruefbar sind; alles Uebrige (dass tatsaechlich gefragt wird, dass Vors
 unterschiedlich sind, die Wirkung in Penpot) bleibt Sichtpruefung und wird hier ausdruecklich
 **nicht** durch eine erfundene Kennzahl ersetzt.
 
-Vier Zusicherungen:
+Fuenf Zusicherungen:
 
 * **Kein umzaeunter Codeblock des Skills enthaelt eine Loeschanweisung.** Das ist die einzige
   mechanische Zusage, dass die Loeschmechanik nicht durch die Hintertuer zurueckkommt - und die
@@ -26,7 +26,15 @@ Vier Zusicherungen:
   geoeffnete Datei; ein Export je Runde und Vorschlag waere der teuerste Teil des Ablaufs und der
   einzige, der nichts entscheidet.
 * **Die woertlichen Zusagen** (Benennungsschema, Vorgabe "drei", Nie-Ueberschreiben-Regel,
-  Wiederaufnahme am hoechsten Rundenstand, Brett als direktes Kind der Seitenwurzel).
+  Wiederaufnahme am hoechsten Rundenstand, Brett als direktes Kind der Seitenwurzel, die
+  vollstaendig gebliebene Aufraeum-Auskunft samt der neuen Zeile zum eroeffneten Pull Request,
+  und die beiden Folgen, die die Antwort "ja" der Abschlussfrage mitnennt).
+* **Die abgeloeste Festlegung ist ersetzt, nicht ergaenzt.** Der Satz, der die Nachtraege "in die
+  Story, in deren Rahmen der Lauf stattfand" schob, steht nirgends mehr im Skilltext. Die
+  Abwesenheit eines **bekannten Literals** ist mechanisch pruefbar - im Unterschied zur
+  Abwesenheit einer Idee, und im Unterschied zu einer Prosa-Suche nach "wird nicht gefragt".
+  Wo der neue Uebergabeschritt steht und dass sein Anker genau einmal vorkommt, sichert
+  `test_ship_entwurf_skill.py` ueber Zeichenoffsets.
 
 **Zur Empfindlichkeit:** Ein Abwesenheits-Test ist per Konstruktion gruen, wenn er nichts sieht -
 auch dann, wenn er nichts sehen *kann*. Deshalb traegt **jeder** Erkenner unten eine synthetische
@@ -113,14 +121,34 @@ WOERTLICHE_ZUSAGEN: tuple[tuple[str, str], ...] = (
     ("Wiederaufnahme am hoechsten Rundenstand", "die höchste `runde` ist der Stand"),
     ("Ablage eines Vorschlags", "direktes Kind der Seitenwurzel"),
     ("Der Ablauf entfernt nichts", "Der Ablauf entfernt nichts"),
+    # Die Aufraeum-Auskunft bleibt vollstaendig und nennt zusaetzlich den Pull Request.
+    ("Zwischenstand nirgends gesichert", "Der Zwischenstand ist nirgends gesichert"),
+    (
+        "Pull Request in der Aufraeum-Auskunft",
+        "der eröffnete Pull Request, falls es einen gibt",
+    ),
+    # Die Antwortmoeglichkeit "ja" nennt ihre Folge mit - beide Zweige woertlich.
+    ("Folge mit Story", "`Closes #NNN`"),
+    ("Folge ohne Story", "keine Verknüpfung und keine Board-Bewegung"),
+)
+
+# Die abgeloeste Festlegung aus dem Abschlussschritt. Sie ist **ersetzt, nicht ergaenzt**: Ein
+# Lauf liefert seine Nachtraege ab jetzt in einem eigenen Pull Request aus, und eine Story ist
+# dafuer keine Voraussetzung mehr. Geprueft wird die Abwesenheit eines **bekannten Literals** -
+# das ist mechanisch moeglich, anders als die Abwesenheit einer Idee.
+ABGELOESTER_SATZ = (
+    "Beides gehört in denselben Pull Request wie der fertige Entwurf — in die Story, in deren "
+    "Rahmen der Lauf stattfand."
 )
 
 # Die beiden Abschnitte, in denen ein vorformulierter Aufruf am gefaehrlichsten waere. Die Zusage
 # ist schaerfer als "keine Loeschanweisung darin" und billiger zu pruefen: **ueberhaupt kein**
 # umzaeunter Codeblock.
+# Der Uebergabeschritt dazwischen steht bewusst **nicht** in dieser Liste: Er traegt den
+# Uebergabeblock, und genau deshalb ist er ein eigener Schritt zwischen den beiden geworden.
 ABSCHNITTE_OHNE_CODEBLOCK = (
     "## Schritt 6: Abschluss — das Ergebnis wird ausgearbeitet, nicht verschoben",
-    "## Schritt 7: Aufräumen ist eine Auskunft — der Ablauf entfernt nichts",
+    "## Schritt 8: Aufräumen ist eine Auskunft — der Ablauf entfernt nichts",
 )
 
 _CODEBLOCK = re.compile(r"^```[^\n]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
@@ -422,3 +450,18 @@ def test_der_skill_traegt_die_woertliche_zusage(bezeichnung: str, literal: str) 
         f"Die Zusage {bezeichnung!r} steht nicht woertlich im Skill (erwartet: {literal!r}). "
         "Der Skill ist LLM-interpretierter Text - was nicht dasteht, gilt nicht."
     )
+
+
+def test_die_abgeloeste_festlegung_steht_nicht_mehr_im_skill() -> None:
+    """Ersetzt, nicht ergaenzt - sonst stuenden zwei Auslieferwege nebeneinander im Text."""
+    assert ABGELOESTER_SATZ not in skilltext(), (
+        "Der abgeloeste Satz steht noch im Skill: " + ABGELOESTER_SATZ + " Ein Lauf liefert "
+        "seine Nachtraege ab jetzt in einem eigenen Pull Request aus; eine Story ist dafuer "
+        "keine Voraussetzung mehr. Zwei Auslieferwege nebeneinander sind schlimmer als der "
+        "alte allein - der Ablauf waehlte dann zur Laufzeit selbst."
+    )
+
+
+def test_der_erkenner_fuer_die_abgeloeste_festlegung_findet_sie() -> None:
+    """Gegenprobe: Ohne sie bestuende die Abwesenheit auch bei vertipptem Literal."""
+    assert ABGELOESTER_SATZ in f"Vorher stand hier: {ABGELOESTER_SATZ} Jetzt nicht mehr."
