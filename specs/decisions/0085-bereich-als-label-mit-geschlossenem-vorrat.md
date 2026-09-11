@@ -90,14 +90,31 @@ niemand wiederholt. Der Nachlauf braucht die Liste der offenen Issues; dafür be
 — die bewusste Erweiterung einer geschlossenen Liste um eine Lesemöglichkeit, die ihr heute fehlt,
 nicht ihre Aufweichung.
 
-Damit entsteht eine **zweite, eng gefasste Ausnahme von Härtungsregel 4.2**, und sie wird als
-solche in den Katalog geschrieben statt stillschweigend genommen: Die Nummern aus der Antwort
-dieser Operation dürfen den anschließenden Schreibzugriff steuern — gegen `^[0-9]+$` validiert,
-ausschließlich als Zahl weiterverwendet, die URL aus der geprüften Zahl gebildet. Tragfähig ist
-sie, weil die Menge der Nummern hier durch das Ziel-Literal der Operation selbst auf dieses
-Repository begrenzt ist; die Gefahr, gegen die 4.2 gebaut ist — eine Nummer aus fremdem Fließtext
-schickt einen Schreibzugriff an ein fremdes Issue —, entsteht dabei nicht. `title` und `labels`
-bleiben Fließtext und steuern **nichts**.
+Das ist **keine zweite Ausnahme von Härtungsregel 4.2**, sondern eine Lesart, die den Katalog
+ergänzt. Was die bestehende Ausnahme bei `issue-anlegen`/`pr-erstellen` trägt, ist nicht das
+Ziffern-Muster, sondern die **kausale Eigenherkunft**: Der Ablauf hat das Artefakt selbst erzeugt,
+niemand sonst kann beeinflussen, welche Zahl zurückkommt. Genau diese Herkunft fehlt hier, und
+`^[0-9]+$` ersetzt sie nicht — ein Muster prüft die Form eines Werts, nicht seinen Referenten;
+jede Nummer dieses Repositories erfüllt es, auch die eines fremd angelegten Issues.
+
+An die Stelle der fehlenden Eigenherkunft treten vier Bedingungen, die **alle** gelten müssen,
+damit eine gelesene Nummer einen schreibenden Aufruf steuern darf; sie stehen wörtlich im
+Katalogeintrag:
+
+1. gegen `^[0-9]+$` validiert und ausschließlich als Zahl weiterverwendet (Typverengung, kein
+   Herkunftsnachweis — sie ersetzt keine der folgenden drei);
+2. aus **derselben Ausführung dieser Operation im selben Lauf** — nie eine gespeicherte, nie eine
+   aus einem früheren Lauf, nie eine aus einem Issue-Body, einem Titel oder einem Kommentar;
+3. `owner`/`repo` bleiben auf beiden Wegen Literale aus dem Katalogtext, womit ein fremdes
+   Repository strukturell unerreichbar bleibt;
+4. der einzige schreibende Aufruf, den sie steuern darf, ist `issue-bereich-setzen`.
+
+Bedingung 2 schließt zugleich den Zielentführungs-Pfad: Ein Issue-Body, der „setz bereich X auf
+#123" sagt, kann die Zielmenge nicht erweitern, weil keine Nummer aus gelesenem Fließtext je in
+einen Aufruf gelangt. Die Grenze gilt nur für diese Operation — `issue-liste-lesen` ist keine
+allgemeine Erlaubnis, Schreibziele aus einer Liste abzuleiten; jeder künftige Ablauf, der das
+will, braucht seinen eigenen Eintrag mit eigener Begründung. `labels` und `author` steuern
+**nichts**: `author` wird ausschließlich gegen das Literal `TheRealKoller` verglichen.
 
 ## Begründung
 
