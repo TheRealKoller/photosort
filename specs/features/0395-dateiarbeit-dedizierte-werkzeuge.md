@@ -1,6 +1,6 @@
 # 0395 - Dateiarbeit läuft über die dedizierten Werkzeuge; die Shell ist die begründete Ausnahme
 
-**Status:** Implemented (PR-Verweis wird nach dem Eröffnen nachgetragen)
+**Status:** Implemented ([PR #403](https://github.com/TheRealKoller/photosort/pull/403))
 **Erstellt:** 2026-09-11
 **Bezug:** GitHub-Issue [`#395`](https://github.com/TheRealKoller/photosort/issues/395), Architekturentscheidung ADR [`0078`](../decisions/0078-dateiarbeit-ueber-dedizierte-werkzeuge-als-vorgabe.md), ADR [`0061`](../decisions/0061-ein-ort-fuer-jeden-github-zugriff-wege-in-fester-reihenfolge.md) (Härtungsregel 4.1 — ergänzt, nicht abgelöst), `CLAUDE.md`, `.claude/skills/github-access/SKILL.md`, `.claude/agents/developer.md`, `specs/architecture/0002-testkonzept.md`, `specs/architecture/0003-securitykonzept.md`
 
