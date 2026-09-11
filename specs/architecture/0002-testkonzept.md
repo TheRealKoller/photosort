@@ -642,9 +642,11 @@ Die Farbfunktions-Familie hat als einzige **keine repo-seitige Gegenprobe** (das
 ### Struktur-Soll ohne ausführende Nutzlast: eine sechste Datei, die nie läuft (`design/penpot/views.json`) — neu für Spec [`0358`](../features/0358-projektverwaltung-entwurf.md) / ADR [`0069`](../decisions/0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md), [`0070`](../decisions/0070-bausteinmenge-regelgebunden-offen-statt-geschlossen.md)
 
 Bisher kannte `design/penpot/` zwei Sorten Datei: **erzeugte** (`tokens.json`/`icons.json`, Positivkorpus der
-Gegenprobe) und **handgeschriebene Nutzlast** (die vier Skripte plus `components.json`, Suchraum der
-Wertfreiheit). `views.json` ist eine dritte: handgeschrieben, aber **keine Nutzlast** — sie wird nie ausgeführt
-und an kein Skript übergeben. Sie sagt, *dass* und *wie* ein Entwurf abgelegt ist, nie *wie er aussieht*.
+Gegenprobe) und **handgeschriebene Nutzlast** (die fünf Skripte — aufbauen, zurücklesen und seit ADR
+[`0081`](../decisions/0081-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md) **korrigieren** —
+plus `components.json`, Suchraum der Wertfreiheit). `views.json` ist eine dritte: handgeschrieben, aber **keine
+Nutzlast** — sie wird nie ausgeführt und an kein Skript übergeben. Sie sagt, *dass* und *wie* ein Entwurf
+abgelegt ist, nie *wie er aussieht*.
 
 **Sechs Regeln, die über diese Spec hinaus gelten**, wann immer eine Datei eine Soll-Struktur führt, deren Ist
 außerhalb des Repositoriums liegt:
@@ -688,6 +690,27 @@ Datei aus `quellen` und verlangt jede dort getragene Tailwind-Zustandsvariante a
 zweite Quelle einzutragen, nur um an eine dort gesetzte Klasse heranzukommen, erzwingt deshalb eine
 Zustandsachse, die der Baustein gar nicht hat. Die Gegenprobe liest die Produktdatei **namentlich** im eigenen
 Testblock, statt sie in `quellen` aufzunehmen.
+
+### Zwei Regeln aus der Flächen-Story — neu für Spec [`0377`](../features/0377-penpot-bausteine-flaechen.md) / ADR [`0081`](../decisions/0081-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md)
+
+Beide entstanden an Zusicherungen, die **grün durchgelaufen wären, statt rot zu werden**. Sie gelten über
+diese Spec hinaus, wo immer eine Testdatei eine Erzeugungslogik nachbildet oder eine Ausnahme einfriert.
+
+1. **Eine Ableitung sammelt das Ergebnis der Anwendung, nicht die vorgekommenen Namen — und über *alle*
+   Durchläufe, nicht den letzten.** Wer eine Bindungs-/Zuordnungslogik in einer Zusicherung nachspielt, liest
+   ihre Tabellen aus der Nutzlast (sonst entsteht eine zweite Wahrheit) und bildet das, was am *Ziel*
+   angekommen ist. Konkret: Zwei verschiedene Rollen bilden auf dieselbe Zielgröße ab (`flaeche` und `schrift`
+   beide auf `fill`), gehen aber an verschiedene Formen. Eine Prüfung „kam eine Rolle vor, die auf `fill`
+   abbildet?" ist deshalb praktisch immer wahr — und bliebe über dem unveränderten Fehler grün. Ebenso
+   trügerisch ist die Auswertung nur des letzten Aufrufs: Eine Ausprägungs-Tabelle, die *nur* die Schrift
+   setzt, machte eine längst gebundene Fläche wieder zunichte.
+2. **Ein Offset-Vergleich belegt keine Reihenfolge, und eine 1:n-Ausnahmeliste braucht ihre Zahl.** Steht eine
+   Anweisung textlich hinter der letzten Bindung, aber *innerhalb* der Schleife, ist ihr Offset größer und ihre
+   Ausführung trotzdem falsch — die Zusicherung prüft deshalb zusätzlich die **Verschachtelung** (außerhalb
+   jedes Schleifenknotens, innerhalb einer Bedingung, die den abgeleiteten Akkumulator nennt) und trägt je
+   Fehlerform eine **synthetische Gegenprobe**; ohne sie ist sie eine Beruhigung. Und wo ein eingefrorener
+   Ausnahmeeintrag *mehrere* Fälle deckt, gehört die **Zahl der gedeckten Fälle** dazu: Eine Teiländerung lässt
+   ihn nicht verwaisen, sondern nur schrumpfen, und die reine Verwaisungsprüfung bliebe dabei grün.
 
 ### Auth (seit Spec 0006)
 
