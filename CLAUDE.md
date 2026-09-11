@@ -52,6 +52,26 @@ PhotoSort wird in zwei Modi weiterentwickelt:
 - **Diagramme:** einheitlich mit [D2](https://d2lang.com) (`--sketch`-Modus) statt Mermaid erzeugen. Quelle + gerendertes SVG liegen nebeneinander unter `specs/diagrams/<name>.d2`/`.svg` und werden beide eingecheckt; Generierung über `scripts/render-diagrams.sh`.
 - **Skills/Agents:** enthalten keine Verweise auf ADRs/Specs, die nur der historischen Begründung einer Regel dienen — die Regel selbst steht vollständig im Text, das "warum/wie kam es dazu" nicht. Ein Verweis auf eine andere Datei bleibt erlaubt, wenn er funktional nötig ist (die Datei muss gelesen, gegen sie geprüft, oder sie muss gepflegt werden, um die Aufgabe zu erfüllen).
 
+## Werkzeugwahl bei Dateiarbeit
+
+**Vorgabe:** Dateien werden im Regelfall über die dedizierten Werkzeuge gelesen, geändert und angelegt — das Lese-Werkzeug zum Lesen, das Änderungs-Werkzeug zum Ändern, das Schreib-Werkzeug zum Anlegen und vollständigen Ersetzen, die Such-Werkzeuge zum Suchen.
+
+**Grund:** Eine gezielte Änderung über das Änderungs-Werkzeug scheitert **laut**, wenn die zu ersetzende Stelle nicht eindeutig ist; eine Ersetzung über die Shell greift in derselben Lage **still** daneben — sie trifft die erste Fundstelle, oder alle, oder keine, und meldet in allen drei Fällen Erfolg. Dazu kommen die Quoting-Fallen: Ein Heredoc mit nicht maskiertem Inhalt expandiert `$…` und Backticks, ein `sed`-Ausdruck mit ungeschütztem `&` oder `/` schreibt etwas anderes als gemeint. Ausdrücklich **nicht** der Grund ist Kontextsparsamkeit — ein gezielter Ausschnitt ist sparsamer als das vollständige Einlesen.
+
+**Shell ist die bessere Wahl bei:** diesen drei Fällen — sie sind benannt, damit eine Abweichung begründet statt beiläufig ist:
+
+- Versionsverwaltung, Paketmanager, Testläufe, Builds (`git status`, `npm run lint`, `pytest`) — dafür gibt es kein dediziertes Werkzeug.
+- gezieltem Lesen eines Ausschnitts einer großen Datei — zum Sichten, nie als Ersatz einer mechanischen Prüfung: Unsichtbare Steuerzeichen sieht kein Blick.
+- mehreren zusammengehörigen Schritten, die sich in einem Aufruf bündeln lassen.
+
+**Bündelung:** Wo die Shell zum Einsatz kommt, werden zusammengehörige Aufrufe in **einem** Aufruf abgesetzt statt als Kette einzelner.
+
+**Vorrang:** Diese Vorgabe gilt auch gegen einen Hinweis der Arbeitsumgebung, der von sich aus zur Shell für Dateiarbeit rät; eine Abweichung wird benannt, nicht stillschweigend vollzogen.
+
+**Hintergrund-Läufe:** Lehnt die Arbeitsumgebung eine Änderung am geteilten Arbeitsstand ab, wird der isolierte Arbeitsstand hergestellt, statt auf die Shell auszuweichen.
+
+**Unberührt:** Freitext, der in ein GitHub-Artefakt gelangt (Titel, Bodys, Kommentare), fällt nicht unter diesen Abschnitt, sondern unter Härtungsregel 4.1 in `github-access` — nie als Zeichenkette in eine Kommandozeile interpoliert, sondern auf dem `gh`-Weg über eine Datei und auf dem `mcp`-Weg als typisierter Parameter; der Titel geht auf **beiden** Wegen über eine Datei, weil die Prüfung auf unsichtbare Zeichen ein Substrat braucht (Härtungsregel 4.4). Das ist ein **Verbot, kein Default**: Keiner der oben genannten Gegenfälle gilt dort, auch die Bündelung mehrerer Schritte in einem Aufruf nicht.
+
 ## Doku-Pflege
 
 Architektur- oder Setup-relevante Änderungen (neue Komponente, geändertes Datenmodell, neuer
