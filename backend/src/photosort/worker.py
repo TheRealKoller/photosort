@@ -163,9 +163,7 @@ CRITERION_SCORING_COMMIT_BATCH_SIZE = 5
 
 # Der Cloud-Aufruf nutzt ausschliesslich die bestehende display-Cache-Variante, die
 # thumbnails.py::generate_variants immer als JPEG schreibt - fester Wert statt einer
-# Format-Erkennung. Umbenannt von _LANDMARK_IMAGE_MIME_TYPE
-#: identisches
-# Bildquellen-Muss-Kriterium gilt jetzt fuer BEIDE Cloud-Vision-Pfade.
+# Format-Erkennung. Das Bildquellen-Muss-Kriterium gilt für BEIDE Cloud-Vision-Pfade.
 _CLOUD_VISION_IMAGE_MIME_TYPE = "image/jpeg"
 
 # Default-Gewichtung für ranking.py::rank_photos: die Gleichgewichtung aller im Register

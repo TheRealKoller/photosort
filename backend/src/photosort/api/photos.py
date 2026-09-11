@@ -119,10 +119,10 @@ class RankingOut(BaseModel):
     category_key: str
     rank_score: float
     rank_position: int
-    # Groesse der GESAMTEN Cluster x Kategorie-Partition (nicht nur der angeforderten top_n),
-    # für "Rang M von N" im Info-Popover - lauf-global berechnet (siehe _partition_sizes),
-    # nicht
-    # nutzerspezifisch gefiltert. Zählt ALLE Zeilen der Partition, Haupt- wie
+    # Größe der GESAMTEN Cluster x Kategorie-Partition (nicht nur der angeforderten
+    # top_n), für "Rang M von N" im Info-Popover - lauf-global berechnet (siehe
+    # _partition_sizes), nicht nutzerspezifisch gefiltert. Zählt ALLE Zeilen der
+    # Partition, Haupt- wie
     # Nebenzeilen: die Frage lautet "wie viele Fotos stehen in dieser Kategorie dieses Clusters",
     # und dort steht ein Foto mit Nebenzugehoerigkeit tatsaechlich.
     partition_size: int
@@ -141,9 +141,8 @@ class RankingOut(BaseModel):
     # Das Feld bleibt trotz des Zusammenfallens bestehen, weil es eine ANDERE Frage beantwortet
     # als `rank_position`: jene ist die lauf-globale Rangaussage des Info-Popovers (unabhaengig
     # vom Query-Parameter), diese hier die Zugehoerigkeit zur angeforderten Auswahl ("unter
-    # welchen seiner Kategorien ist dieses Foto zu zeigen"). Es ist seit
-    # die einzige Auskunft darüber; ohne sie müsste das
-    # Frontend die Auswahlregel nachbilden.
+    # welchen seiner Kategorien ist dieses Foto zu zeigen"). Es ist die einzige Auskunft
+    # darüber; ohne sie müsste das Frontend die Auswahlregel nachbilden.
     curation_position: int | None = None
 
 
@@ -1009,9 +1008,9 @@ async def _top_n_per_category_photo_ids(
 async def _partition_sizes(
     session: AsyncSession, criterion_scoring_run_id: int
 ) -> dict[tuple[str, str], int]:
-    """Groesse jeder Cluster x Kategorie-Partition eines Laufs, fuer "Rang M von N" im Info-
-    Popover - ein
-    einzelner GROUP BY-Query pro list_photos-Aufruf (nicht pro Foto). Bewusst lauf-global, nicht
+    """Größe jeder Cluster x Kategorie-Partition eines Laufs, für "Rang M von N" im
+    Info-Popover - ein einzelner GROUP BY-Query pro list_photos-Aufruf (nicht pro Foto).
+    Bewusst lauf-global, nicht
     nutzerspezifisch gefiltert - siehe RankingOut.partition_size-Docstring.
 
     Zählt AUSDRÜCKLICH ALLE Zeilen der Partition, Haupt- wie Nebenzeilen - anders als die
