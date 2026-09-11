@@ -1,6 +1,10 @@
 # 0079 - Doku-Ballast: eine Regel an einer Stelle, Richtwerte statt Gate
 
 **Status:** Accepted
+**Teilweise abgelöst:** Abschnitt 1 (Spiegelstrich „das Geschützte") und Abschnitt 2 (der Satz über
+das fehlende `review-*`-Kriterium, nur in seiner Inhaltshälfte — die Längenhälfte gilt unverändert)
+durch ADR [`0086`](./0086-schutz-gilt-der-aussage-nicht-der-herleitung.md). Die Abschnitte 3 bis 7
+gelten unverändert.
 **Datum:** 2026-09-11
 **Bezug:** GitHub-Issue [`#397`](https://github.com/TheRealKoller/photosort/issues/397), Spec `specs/features/0397-*.md`
 **Umfang:** über dem Richtwert von rund 100 Zeilen, weil diese ADR den Regeltext für fünf Orte,
