@@ -40,6 +40,7 @@ leer wird, duerfte hier nicht gruen sein.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -62,36 +63,41 @@ SICHERHEITSRELEVANTE_VERZEICHNISSE = (
     "e2e/scratch/",
 )
 
-# Endungen, fuer die Prettier einen Parser mitbringt - gekuerzt auf die, die in einem
-# Artefaktverzeichnis dieses Projekts realistisch auftreten. Die Liste stammt aus
-# `prettier --support-info` (3.9.6) und dient nur der Datei-Glob-Entscheidung unten.
-PARSBARE_ENDUNGEN = (
-    ".js",
-    ".mjs",
-    ".cjs",
-    ".jsx",
-    ".ts",
-    ".mts",
-    ".cts",
-    ".tsx",
-    ".json",
-    ".json5",
-    ".jsonc",
-    ".css",
-    ".scss",
-    ".less",
-    ".html",
-    ".vue",
-    ".md",
-    ".mdx",
-    ".yaml",
-    ".yml",
-    ".graphql",
-    ".handlebars",
-    ".hbs",
-    ".har",
-    ".webmanifest",
-)
+# Endungen, fuer die Prettier einen Parser mitbringt. ABGELEITET, nicht gepflegt: Der Datenstand
+# wird aus `prettier --support-info` erzeugt und von `frontend/src/prettierSupportInfo.test.ts`
+# gegen das tatsaechlich installierte Prettier abgeglichen.
+#
+# **Warum ein eingecheckter Datenstand und kein Aufruf zur Laufzeit** (Copilot-Finding zu
+# PR #409): Der CI-Job `demo-scripts`, in dem dieses Modul laeuft, hat weder Node noch
+# node_modules - `prettier --support-info` ist von hier aus nicht erreichbar. Der Job `frontend`
+# erreicht es und haelt den Datenstand ehrlich. Beide Jobs laufen bei jedem Pull Request, keine
+# Haelfte haengt an einem `skip`.
+#
+# **Vorher stand hier eine handverlesene Auswahl** mit dem Kommentar "gekuerzt auf die, die in
+# einem Artefaktverzeichnis dieses Projekts realistisch auftreten" - 25 von 115 Endungen, es
+# fehlten unter anderem `.gql`, `.graphqls`, `.markdown`, `.geojson`, `.htm`, `.pcss`. Das war
+# genau die Ermessensentscheidung ueber den "realistischen" Fall, die fuer diese Story
+# ausgeschlossen ist, und sie wirkte in die **gefaehrliche** Richtung: Eine zu kurze Liste
+# fordert zu WENIG Spiegelung.
+_DATENSTAND_PFAD = Path(__file__).parent / "prettier_endungen.json"
+
+
+def parsbare_endungen() -> tuple[str, ...]:
+    if not _DATENSTAND_PFAD.is_file():
+        raise ValueError(
+            f"{_DATENSTAND_PFAD.name} fehlt. Ohne den Datenstand kann dieses Modul nicht "
+            "entscheiden, ob ein Datei-Glob eine parsbare Datei treffen kann - und eine "
+            "stillschweigend leere Menge forderte gar keine Spiegelung mehr. Neu erzeugen: "
+            "cd frontend && ./node_modules/.bin/prettier --support-info"
+        )
+    daten = json.loads(_DATENSTAND_PFAD.read_text(encoding="utf-8"))
+    endungen = daten.get("extensions")
+    if not isinstance(endungen, list) or not endungen:
+        raise ValueError(f"{_DATENSTAND_PFAD.name} fuehrt keine Endungen: {endungen!r}")
+    return tuple(endungen)
+
+
+PARSBARE_ENDUNGEN = parsbare_endungen()
 
 
 # --- Leser -------------------------------------------------------------------------------------
@@ -288,6 +294,37 @@ def test_der_gitignore_suchraum_enthaelt_die_bekannten_dateien() -> None:
     )
     for pfad, eintraege in dateien.items():
         assert eintraege, f"{pfad} wurde als leer gelesen - der Leser ist kaputt."
+
+
+def test_der_endungs_datenstand_ist_vollstaendig_statt_handverlesen() -> None:
+    """Selbstschutz gegen den Rueckfall in eine gepflegte Auswahl.
+
+    Die Zahl steht hier als Untergrenze, nicht als Gleichheit: Ein Prettier-Wechsel darf die
+    Menge veraendern, ohne diesen Test zu brechen - dafuer ist
+    `frontend/src/prettierSupportInfo.test.ts` zustaendig, und der faerbt bei einer Abweichung
+    laut rot. Was hier gefangen wird, ist der Rueckfall auf eine Handauswahl (vorher: 25 von 115)
+    und ein Leser, der still eine leere Menge liefert.
+    """
+    assert len(PARSBARE_ENDUNGEN) > 100, (
+        f"Nur {len(PARSBARE_ENDUNGEN)} Endungen im Datenstand. Vor dem Copilot-Finding zu "
+        "PR #409 standen hier 25 handverlesene von 115 - eine zu kurze Menge fordert zu WENIG "
+        "Spiegelung, und genau das ist die gefaehrliche Richtung."
+    )
+    for endung in (".gql", ".geojson", ".htm", ".markdown", ".pcss"):
+        assert endung in PARSBARE_ENDUNGEN, (
+            f"{endung} fehlt - sie gehoerte zu den 90, die die fruehere Handauswahl ausliess."
+        )
+
+
+def test_ein_glob_mit_einer_frueher_fehlenden_endung_wird_jetzt_gefordert() -> None:
+    """Mutationsprobe zum Copilot-Finding, gegen genau die Luecke von damals.
+
+    `*.gql` ist Copilots eigenes Beispiel. Mit der handverlesenen Menge war `.gql` unbekannt,
+    der Glob galt als unbedenklich, und ein `.gitignore`-Eintrag `*.gql*` haette keine
+    Spiegelung verlangt.
+    """
+    for glob in ("*.gql", "*.geojson", "*.markdown"):
+        assert _normalisiert(glob) in spiegelungspflichtig({".gitignore": [glob]}), glob
 
 
 def test_die_ableitung_liefert_eine_nicht_leere_pflichtmenge() -> None:

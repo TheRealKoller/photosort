@@ -23,9 +23,9 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  /* Der Design-Vertragstest laeuft in der Node-Umgebung (Dateisystem-Scan + Tailwind-compile) und
-     braucht Node-Typen, die die Anwendung selbst ausdruecklich NICHT haben soll - sonst waere
-     `process`/`fs` versehentlich im Browser-Code verfuegbar. Er hat deshalb ein eigenes
-     TS-Projekt (tsconfig.contract.json). */
-  "exclude": ["src/designSystem.contract.test.ts"]
+  /* Zwei Tests unter src/ laufen in der Node-Umgebung (Dateisystem-Scan + Tailwind-compile bzw.
+     Abgleich gegen `prettier --support-info`) und brauchen Node-Typen, die die Anwendung selbst
+     ausdruecklich NICHT haben soll - sonst waere `process`/`fs` versehentlich im Browser-Code
+     verfuegbar. Sie teilen sich deshalb ein eigenes TS-Projekt (tsconfig.contract.json). */
+  "exclude": ["src/designSystem.contract.test.ts", "src/prettierSupportInfo.test.ts"]
 }
