@@ -107,8 +107,12 @@ Wahrheitsort, keine Synchronisation, kein Zustand im Repository.
     Zeile fester Form (`**Bereichsvorrat (geschlossen):** …`). Gegenstand ist der **Zielzustand**
     der Label-Menge. `gh`: `--add-label`/`--remove-label`; `mcp`: `labels` als typisierte Liste mit
     der **vollständigen** Menge, sonst fallen `idee`/`bug` still weg. Der Eintrag hält beide
-    wegabhängigen Eigenheiten fest: Ein unbekannter Wert scheitert auf dem `gh`-Weg laut und wird
-    auf dem `mcp`-Weg von der Issues-API stillschweigend angelegt. Keine Nachhol-Zeile.
+    wegabhängigen Eigenheiten fest: Ein unbekannter Wert scheitert auf dem `gh`-Weg laut
+    (gemessen) und wird auf dem `mcp`-Weg von der Issues-API stillschweigend angelegt (unbelegte
+    Annahme, siehe „Teststrategie", Punkt 4). Dazu die **Drift-Prüfung** des `mcp`-Wegs: erneut
+    lesen unmittelbar vor dem Schreiben, bei Abweichung nicht schreiben — sonst stellte die
+    vollständige, veraltete Menge eine zwischenzeitlich zurückgezogene
+    `approved-for-agent`-Freigabe wieder her. Keine Nachhol-Zeile.
   - **`issue-liste-lesen`** (Wege `mcp`, `gh`). Auswertungsgrenze `number`, `labels`, `state`,
     `author` — **ohne `title`** (Begründung unter „Security"). `gh issue list --repo … --state open
     --limit <n> --json number,labels,state,author`; die Vorgabegrenze von 30 trägt hier nicht.

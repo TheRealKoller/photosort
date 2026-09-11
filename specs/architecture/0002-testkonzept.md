@@ -1409,11 +1409,19 @@ eingrenzen lässt, ist eine Eigenschaft von GitHubs Oberfläche.** Kein Test die
 erreicht sie, und ein Ersatztest, der sie behauptete, wäre grün, ohne etwas zu wissen. Die
 repo-seitige Ersatzzusicherung ist allein die **Wahl des Trägers** (ein Label reist ohne weiteren
 Schritt auf die Karte); den Rest belegt ein einziger Repro-Lauf an einem Wegwerf-Issue, dessen
-Ergebnis als benannter Nachweis in den PR-Body gehört. Derselbe Lauf misst zwei Eigenschaften, die
-bisher nur behauptet sind und die Risikoabwägung tragen: dass ein unbekannter Wert auf dem
-`gh`-Weg laut scheitert und auf dem `mcp`-Weg still angelegt wird. **Regel:** Was eine fremde
-Oberfläche zusichert, wird einmal gemessen und als Messung ausgewiesen — nicht in einen Test
-gegossen, der etwas anderes prüft als das, wonach er benannt ist.
+Ergebnis als benannter Nachweis in den PR-Body gehört. **Regel:** Was eine fremde Oberfläche
+zusichert, wird einmal gemessen und als Messung ausgewiesen — nicht in einen Test gegossen, der
+etwas anderes prüft als das, wonach er benannt ist.
+
+**Und was der Lauf *nicht* messen konnte, wird als Auslassung ausgewiesen, nicht weggelassen.**
+Zwei Eigenschaften tragen hier die Risikoabwägung: dass ein unbekannter Wert auf dem `gh`-Weg laut
+scheitert — gemessen — und dass er auf dem `mcp`-Weg still angelegt wird — **nicht gemessen und
+grundsätzlich nicht auf dem anderen Weg zu zeigen**, weil genau das die Eigenschaft des einen Wegs
+ist. **Regel:** Eine unbelegt gebliebene Messung wird an **jedem** Ort als solche gekennzeichnet,
+der die Eigenschaft behauptet — Katalog, Spec, ADR und Sicherheitskonzept sind vier Orte, und der
+letzte, der es nicht tut, ist der, dem die nächste Ausführung glaubt. Wo eine Zusicherung nicht
+daran hängt, wird auch das gesagt; hier trägt der Abgleich gegen das Wert-Literal vor dem Aufruf,
+unabhängig vom tatsächlichen Verhalten des Wegs.
 
 **Coverage-Gate: kein Bezug.** Der Wächter liegt unter `scripts/tests/` im Job `demo-scripts` ohne
 Gate; die Story fasst keine Zeile Anwendungscode an.
