@@ -50,7 +50,7 @@ Repository-Zustand.
 
 ## Architektur / Umsetzung
 
-**Diese Spec trägt eine neue ADR:** [`decisions/0073-entwurfsrunden-auf-arbeitsseite-aufraeumen-als-handgriff.md`](../decisions/0073-entwurfsrunden-auf-arbeitsseite-aufraeumen-als-handgriff.md). Sie entscheidet den Zuschnitt des Ablaufs, die Ablage der Runden auf einer Arbeitsseite, die Wiederaufnahme über Plugin-Daten und — der sicherheitskritische Punkt — dass der Ablauf **nichts löscht**. ADR [`0069`](../decisions/0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) (Ablagemuster, `views.json`, kein Generator) und ADR [`0066`](../decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md) (Nutzlast, abschließende Kanalgrenze) bleiben unverändert gültig.
+**Diese Spec trägt eine neue ADR:** [`decisions/0073-entwurfsrunden-auf-arbeitsseite-aufraeumen-als-handgriff.md`](../decisions/0073-entwurfsrunden-auf-arbeitsseite-aufraeumen-als-handgriff.md). Sie entscheidet den Zuschnitt des Ablaufs, die Ablage der Runden auf einer Arbeitsseite, die Wiederaufnahme über Plugin-Daten und — der sicherheitskritische Punkt — dass der Ablauf **nichts löscht**. ADR [`0082`](../decisions/0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md) (Ablagemuster, `views.json`, kein Generator) und ADR [`0066`](../decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md) (Nutzlast, abschließende Kanalgrenze) bleiben unverändert gültig.
 
 **In dieser Spec entsteht kein Produktcode.** Kein `.tsx`, kein Wert in `index.css`, kein Backend, kein Datenmodell — `docs/architecture.md` und `docs/setup.md` bleiben unberührt (Penpot ist Werkzeug- und keine Laufzeitabhängigkeit, ADR [`0065`](../decisions/0065-penpot-als-design-quelle-rangfolge-umgekehrt.md)). Auch `docs/ai-workflow.md` ändert sich nicht: Rollenmodell und Story-Ablauf bleiben, wie sie sind.
 
@@ -92,7 +92,7 @@ An `penpot-design` wird **eine** Stelle geändert: Schritt 3 bekommt den Satz, d
 
 **`verify.js` bleibt unverändert — keine Zeile.** Es erkennt Ansichtsbretter ausschließlich an `ansicht`; Rundenbretter tragen die nicht. Ein laufender Entwurf ist für das Rücklesen **unsichtbar** und kann den Abgleich gegen `views.json` weder rot färben noch Zählwerte verschieben. Die Alternative (Rundenbretter als Ansicht markieren und `verify.js` beibringen, sie zu ignorieren) ist verworfen: Sie erweiterte den Rückleser um eine Fallunterscheidung, deren Fehlerfall „ein halber Entwurf zählt als Ansicht" niemandem auffiele. Weil `verify.js` unangetastet bleibt, verschiebt sich auch keine der zeilennummergebundenen `FREIGABEN`.
 
-**Das Ablagemuster aus ADR 0069 Abschnitt 3 gilt für Runden nicht** — kein Verstoß, sondern die Trennung, die ADR 0073 trifft: Ein Rundenzwischenstand ist kein Ansichtsentwurf; er wird erst im Abschluss zu einem.
+**Das Ablagemuster aus ADR 0082 Abschnitt 3 gilt für Runden nicht** — kein Verstoß, sondern die Trennung, die ADR 0073 trifft: Ein Rundenzwischenstand ist kein Ansichtsentwurf; er wird erst im Abschluss zu einem.
 
 ### 4. Der Abschluss stellt das Ablagemuster her — durch Ausarbeiten, nicht durch Verschieben
 
