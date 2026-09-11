@@ -1,6 +1,6 @@
 # 0377 - Penpot-Bausteine tragen die Flächen des Produkts
 
-**Status:** Accepted
+**Status:** Implemented ([PR #413](https://github.com/TheRealKoller/photosort/pull/413))
 **Erstellt:** 2026-09-11
 **Bezug:** [GitHub-Issue #377](https://github.com/TheRealKoller/photosort/issues/377), ADR [`0083`](../decisions/0083-flaeche-binden-oder-leeren-und-ein-eigenes-korrekturskript.md)
 
