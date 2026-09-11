@@ -157,11 +157,11 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
     ),
 }
 
-# Obergrenze fuer die Normierung der unbeschraenkten Laplace-Varianz-Skala (scoring.py::
-# compute_sharpness) auf [0, 1] - technische Detailentscheidung der Umsetzung, nicht gegen einen
-# echten Fotokorpus kalibriert (gleicher Kalibrierungs-Vorbehalt wie scoring.py::
-# SHARPNESS_REJECT_THRESHOLD und classification.py::UNIFORM_TILE_VARIANCE_THRESHOLD). Werte
-# darueber werden auf 1.0 geklemmt statt die Skala zu sprengen.
+# Obergrenze fuer die Normierung der unbeschraenkten Laplace-Varianz-Skala
+# (scoring.py::compute_sharpness) auf [0, 1] - nicht gegen einen echten Fotokorpus kalibriert
+# (gleicher Kalibrierungs-Vorbehalt wie scoring.py::SHARPNESS_REJECT_THRESHOLD und
+# classification.py::UNIFORM_TILE_VARIANCE_THRESHOLD). Werte darueber werden auf 1.0 geklemmt,
+# statt die Skala zu sprengen.
 SHARPNESS_NORMALIZATION_CEILING = 200.0
 
 
@@ -190,10 +190,9 @@ def compute_content_people(image: Image.Image, detector: FaceDetectorLike) -> fl
     """`content_people`-Kriterium, Score-Grundlage `bool(detect_person(...))`.
 
     Reiner Delegations-Wrapper um content_people_from_faces, kein zweiter Logikpfad:
-    worker.py::_compute_content_criteria ruft diese Funktion NICHT auf, sondern
-    detect_person + content_people_from_faces getrennt, um die bereits erkannten faces auch
-    für goldener_schnitt zu nutzen. Die Funktion bleibt als eigenständige, getestete
-    Einheit bestehen."""
+    worker.py::_compute_content_criteria ruft diese Funktion NICHT auf, sondern detect_person +
+    content_people_from_faces getrennt, um die bereits erkannten faces auch für goldener_schnitt
+    zu nutzen."""
     return content_people_from_faces(detect_person(image, detector))
 
 
@@ -343,16 +342,14 @@ def compute_tier_score(objects: Sequence[ObjectDetection]) -> float:
     return _largest_by_area(animals).confidence
 
 
-# Kuratierte Allow-Listen der COCO-80-Klassen für die beiden Objekt-Kriterien - dasselbe
-# Muster wie ARCHITECTURE_CATEGORIES/LANDSCAPE_SCENE_CATEGORIES, ebenfalls ohne
-# modell-ladenden Test.
+# Kuratierte Allow-Listen der COCO-80-Klassen für die beiden Objekt-Kriterien - dasselbe Muster
+# wie ARCHITECTURE_CATEGORIES/LANDSCAPE_SCENE_CATEGORIES, ebenfalls ohne modell-ladenden Test.
 #
-# VERIFIZIERT (2026-08-30): die exakte Schreibweise stammt aus der im gebündelten
-# Modell-Asset mitgelieferten Label-Datei `labelmap.txt` in
-# backend/src/photosort/assets/efficientdet_lite0.tflite (die .tflite-Datei enthält ihre
-# Metadaten als angehängtes ZIP-Archiv). Mehrteilige COCO-Klassennamen stehen dort mit
-# LEERZEICHEN ("hot dog", "wine glass"), nicht mit Unterstrich - genau diesen String liefert
-# mediapipe als `category_name`.
+# Maßgeblich für die exakte Schreibweise ist die im gebündelten Modell-Asset mitgelieferte
+# Label-Datei `labelmap.txt` in backend/src/photosort/assets/efficientdet_lite0.tflite (die
+# .tflite-Datei enthält ihre Metadaten als angehängtes ZIP-Archiv). Mehrteilige COCO-Klassennamen
+# stehen dort mit LEERZEICHEN ("hot dog", "wine glass"), nie mit Unterstrich - genau diesen String
+# liefert mediapipe als `category_name`.
 VEHICLE_CATEGORIES = frozenset(
     {"bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat"}
 )
@@ -409,18 +406,17 @@ def compute_essen_trinken_score(objects: Sequence[ObjectDetection]) -> float:
     return _allow_listed_confidence_maximum(objects, FOOD_CATEGORIES)
 
 
-# Kuratierte Allow-Liste architekturbezogener ImageNet-1k-Klassen - technische
-# Detailentscheidung der Umsetzung; siehe den Modul-Kommentar in classification.py dazu,
-# warum die Filterung HIER und nicht in classify_scene selbst passiert. Dokumentierte,
-# bewusst akzeptierte Lücke: ImageNet hat kaum Innenraum-Klassen, `living_room`/`kitchen`/
-# `office` werden strukturell nicht erkannt - nur Außenarchitektur wird zuverlässig erfasst.
+# Kuratierte Allow-Liste architekturbezogener ImageNet-1k-Klassen; siehe den Modul-Kommentar in
+# classification.py dazu, warum die Filterung HIER und nicht in classify_scene selbst passiert.
+# Dokumentierte, bewusst akzeptierte Lücke: ImageNet hat kaum Innenraum-Klassen,
+# `living_room`/`kitchen`/`office` werden strukturell nicht erkannt - nur Außenarchitektur wird
+# zuverlässig erfasst.
 #
-# BEFUND (2026-08-30, bei der Verifikation von LANDSCAPE_SCENE_CATEGORIES unten
-# aufgefallen): die Label-Datei schreibt mehrteilige Klassennamen mit LEERZEICHEN, nicht mit
-# Unterstrich - die Einträge "bell_cote"/"suspension_bridge"/"triumphal_arch" (Label-Datei:
-# "bell cote", "suspension bridge", "triumphal arch") und "lighthouse" (Label-Datei:
-# "beacon") können deshalb nie matchen. Bewusst NICHT hier korrigiert: eine Korrektur wäre
-# eine Verhaltensänderung am gebaeude-Kriterium und gehört in eine eigene Story.
+# BEKANNTER BEFUND, bewusst NICHT hier korrigiert: die Label-Datei schreibt mehrteilige
+# Klassennamen mit LEERZEICHEN, nicht mit Unterstrich - die Einträge
+# "bell_cote"/"suspension_bridge"/"triumphal_arch" (Label-Datei: "bell cote", "suspension bridge",
+# "triumphal arch") und "lighthouse" (Label-Datei: "beacon") können deshalb nie matchen. Eine
+# Korrektur wäre eine Verhaltensänderung am gebaeude-Kriterium und gehört in eine eigene Story.
 ARCHITECTURE_CATEGORIES = frozenset(
     {
         "church",
@@ -470,19 +466,17 @@ def compute_gebaeude_score(labels: Sequence[SceneLabel]) -> float:
 # Kuratierte Allow-Liste natürlicher ImageNet-1k-Szenenklassen - dasselbe Muster wie
 # ARCHITECTURE_CATEGORIES oben, ebenfalls ohne modell-ladenden Test.
 #
-# VERIFIZIERT (2026-08-30): die exakte Schreibweise stammt aus der im gebündelten
-# Modell-Asset mitgelieferten Label-Datei `labels_without_background.txt` in
-# backend/src/photosort/assets/efficientnet_lite0.tflite (die .tflite-Datei enthält ihre
-# Metadaten als angehängtes ZIP-Archiv). Die zehn Klassen sind die Indizes 970 und 972-980
-# der ImageNet-1k-Label-Liste, also GENAU die natürlichen Szenenklassen des Vokabulars.
-# Schreibweise mit LEERZEICHEN, nicht mit Unterstrich ("coral reef", nicht "coral_reef") -
-# so steht es in der Label-Datei, und genau diesen String liefert mediapipe als
-# `category_name`.
+# Maßgeblich für die exakte Schreibweise ist die im gebündelten Modell-Asset mitgelieferte
+# Label-Datei `labels_without_background.txt` in
+# backend/src/photosort/assets/efficientnet_lite0.tflite. Die zehn Klassen sind die Indizes 970
+# und 972-980 der ImageNet-1k-Label-Liste, also GENAU die natürlichen Szenenklassen des
+# Vokabulars. Schreibweise mit LEERZEICHEN, nie mit Unterstrich ("coral reef", nicht
+# "coral_reef") - genau diesen String liefert mediapipe als `category_name`.
 #
-# Dokumentierte, bewusst akzeptierte Lücke: ImageNet-1k kennt KEINE Klassen für Wald, Wiese
-# oder Feld - solche Landschaften werden strukturell nicht als `landschaft` erkannt und
-# landen im "nicht erkannt"-Zustand. Eine Nachkalibrierung bleibt eine reine
-# Listen-/Konstanten-Änderung ohne Architektur-Eingriff.
+# Dokumentierte, bewusst akzeptierte Lücke: ImageNet-1k kennt KEINE Klassen für Wald, Wiese oder
+# Feld - solche Landschaften werden strukturell nicht als `landschaft` erkannt und landen im
+# "nicht erkannt"-Zustand. Eine Nachkalibrierung bleibt eine reine Listen-/Konstanten-Änderung
+# ohne Architektur-Eingriff.
 LANDSCAPE_SCENE_CATEGORIES = frozenset(
     {
         "alp",

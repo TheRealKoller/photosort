@@ -51,8 +51,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ZWEI Batch-Bloecke, nicht einer (verifiziert, nicht vermutet): `batch_alter_table` fasst
-    # unter SQLite alle Operationen eines Blocks zu EINEM Tabellen-Neuaufbau zusammen. Stuenden
+    # ZWEI Batch-Bloecke, nie einer: `batch_alter_table` fasst unter SQLite alle Operationen
+    # eines Blocks zu EINEM Tabellen-Neuaufbau zusammen. Stuenden
     # `add_column` und das Entfernen des Defaults im selben Block, haette die neu gebaute Tabelle
     # von vornherein keinen Default - und das `INSERT ... SELECT` des Altbestands scheiterte an
     # der NOT-NULL-Bedingung. Der Default muss beim ersten Aufbau existieren und beim zweiten

@@ -5,19 +5,18 @@ import math
 import numpy as np
 from PIL import Image
 
-# Neues, eigenstaendiges Modul (analog aesthetics.py) - haelt den lokalen cv2-Import (siehe
+# Eigenstaendiges Modul (analog aesthetics.py) - haelt den lokalen cv2-Import (siehe
 # compute_horizon_tilt_score) auf genau den Importpfad begrenzt, der ihn tatsaechlich braucht,
-# exakt dasselbe Muster wie der lokale tensorflow-Import in aesthetics.py bzw. der lokale
-# mediapipe-Import in
-# classification.py::_to_mp_image. `cv2.Canny`+`cv2.HoughLinesP` werden AUSSCHLIESSLICH auf einem
-# bereits ueber Pillow dekodierten Graustufen-Array angewendet - nie `cv2.imread`/`cv2.imdecode`,
-# Pillow bleibt die alleinige Bild-I/O-Bibliothek im Projekt (Security-Abschnitt der Spec: die
-# historisch CVE-traechtigsten OpenCV-Codepfade [Bild-/Video-Decoder] werden dadurch strukturell
-# nicht erreicht).
+# dasselbe Muster wie der lokale tensorflow-Import in aesthetics.py bzw. der lokale
+# mediapipe-Import in classification.py::_to_mp_image. SICHERHEIT: `cv2.Canny`+`cv2.HoughLinesP`
+# werden AUSSCHLIESSLICH auf einem bereits ueber Pillow dekodierten Graustufen-Array angewendet -
+# nie `cv2.imread`/`cv2.imdecode`, Pillow bleibt die alleinige Bild-I/O-Bibliothek im Projekt. Die
+# historisch CVE-traechtigsten OpenCV-Codepfade (Bild-/Video-Decoder) werden dadurch strukturell
+# nicht erreicht.
 
-# Canny-Schwellwerte (unkalibriert dokumentiert, gleiche Klasse wie scoring.py::
-# SHARPNESS_REJECT_THRESHOLD/classification.py::UNIFORM_TILE_VARIANCE_THRESHOLD - kein Fotokorpus
-# im Repo zur Kalibrierung).
+# Canny-Schwellwerte (unkalibriert dokumentiert, gleiche Klasse wie
+# scoring.py::SHARPNESS_REJECT_THRESHOLD und classification.py::UNIFORM_TILE_VARIANCE_THRESHOLD -
+# kein Fotokorpus im Repo zur Kalibrierung).
 _HORIZON_CANNY_LOW = 50
 _HORIZON_CANNY_HIGH = 150
 
@@ -28,19 +27,18 @@ _HOUGH_THRESHOLD = 50
 _HOUGH_MIN_LINE_LENGTH = 40
 _HOUGH_MAX_LINE_GAP = 10
 
-# Maximale Abweichung von der Horizontalen, ab der eine Hough-Linie ueberhaupt als Horizont-
-# Kandidat gilt - schliesst nahezu vertikale Strukturen (Gebaeudekanten,
-# Tuerrahmen) aus, die keine Horizont-Kandidaten sind. Grenze selbst zaehlt noch als Kandidat
-# (inklusiver Vergleich, `>` statt `>=` beim Ausschluss - konsistent mit der projektweiten
-# `>=`-Einschluss-Konvention bei Schwellwertvergleichen, heute in worker.py::derive_photo_category,
-# durch Testfall gepinnt).
+# Maximale Abweichung von der Horizontalen, ab der eine Hough-Linie ueberhaupt als
+# Horizont-Kandidat gilt - schliesst nahezu vertikale Strukturen (Gebaeudekanten, Tuerrahmen) aus,
+# die keine Horizont-Kandidaten sind. Grenze selbst zaehlt noch als Kandidat (inklusiver
+# Vergleich, `>` statt `>=` beim Ausschluss - konsistent mit der projektweiten
+# `>=`-Einschluss-Konvention bei Schwellwertvergleichen, durch Testfall gepinnt).
 HORIZON_MAX_CANDIDATE_ANGLE = 45.0
 
 # Maximale Winkelabweichung, ab der der Score auf 0.0 geklemmt wird - eine Linie exakt bei dieser
 # Grenze ergibt score == 0.0 (nicht negativ, durch Testfall gepinnt).
 HORIZON_MAX_PENALIZED_ANGLE_DEGREES = 15.0
 
-# Kein Kandidat gefunden (z.B. Portrait-Nahaufnahme ohne Linienstruktur) -> neutraler, NICHT
+# Kein Kandidat gefunden (z.B. Portrait-Nahaufnahme ohne Linienstruktur) -> neutraler, NIE
 # niedriger Fallback (bewusste Abweichung von der goldener_schnitt-Praezedenz): die Abwesenheit
 # einer geraden Struktur ist kein Hinweis auf eine schiefe Aufnahme - ein niedriger Fallback wuerde
 # eine ganze Klasse legitimer Fotos (z.B. Portraits ohne Horizont) systematisch abwerten.
@@ -62,17 +60,15 @@ def _line_angle_degrees(x1: float, y1: float, x2: float, y2: float) -> float:
 
 def _select_dominant_candidate_angle(lines: np.ndarray | None) -> float | None:
     """Filtert die von cv2.HoughLinesP gelieferten Kandidatenlinien auf
-    +-HORIZON_MAX_CANDIDATE_ANGLE und waehlt die LAENGSTE als Gewinner ("laengste
-    Kandidatenlinie gewinnt"). `lines` hat je nach cv2-Version die Form (N, 1, 4) oder
-    (N, 4) - `reshape(-1, 4)` normiert beide auf dieselbe Iteration, ohne von der genauen Form
-    abzuhaengen.
+    +-HORIZON_MAX_CANDIDATE_ANGLE und waehlt die LAENGSTE als Gewinner ("laengste Kandidatenlinie
+    gewinnt"). `lines` hat je nach cv2-Version die Form (N, 1, 4) oder (N, 4) - `reshape(-1, 4)`
+    normiert beide auf dieselbe Iteration, ohne von der genauen Form abzuhaengen.
 
-    Tie-Break bei exakt gleicher Laenge (technische Detailentscheidung): die ZUERST in `lines`
-    auftretende
-    Linie behaelt Vorrang (striktes `>`, nicht `>=`) - macht das Ergebnis deterministisch, sobald
-    `lines` feststeht, unabhaengig von einer zwischen cv2-Versionen nicht garantierten internen
-    Rueckgabereihenfolge (siehe test_horizon.py::TestSelectDominantCandidateAngle fuer den
-    expliziten Nachweis)."""
+    Tie-Break bei exakt gleicher Laenge: die ZUERST in `lines` auftretende Linie behaelt Vorrang
+    (striktes `>`, nicht `>=`) - macht das Ergebnis deterministisch, sobald `lines` feststeht,
+    unabhaengig von einer zwischen cv2-Versionen nicht garantierten internen
+    Rueckgabereihenfolge. Bricht in
+    tests/test_horizon.py::TestSelectDominantCandidateAngle."""
     if lines is None:
         return None
     best_length = -1.0
@@ -92,19 +88,18 @@ def _select_dominant_candidate_angle(lines: np.ndarray | None) -> float | None:
 
 
 def _score_from_angle_deviation(angle_degrees: float) -> float:
-    """`score = clip(1.0 - |Winkelabweichung| / HORIZON_MAX_PENALIZED_ANGLE_DEGREES, 0, 1)` - als
-    eigene, pure Funktion extrahiert (analog aesthetics.py::
-    compute_aesthetics_score), damit die Grenzfaelle exakt bei/jenseits
-    HORIZON_MAX_PENALIZED_ANGLE_DEGREES unabhaengig von der (rasterungsbedingt nie beliebig exakt
-    steuerbaren) echten Hough-Liniengeometrie gepinnt werden koennen."""
+    """`score = clip(1.0 - |Winkelabweichung| / HORIZON_MAX_PENALIZED_ANGLE_DEGREES, 0, 1)` - eine
+    eigene, pure Funktion (analog aesthetics.py::compute_aesthetics_score), damit die Grenzfaelle
+    exakt bei/jenseits HORIZON_MAX_PENALIZED_ANGLE_DEGREES unabhaengig von der (rasterungsbedingt
+    nie beliebig exakt steuerbaren) echten Hough-Liniengeometrie gepinnt werden koennen."""
     return max(0.0, min(1.0, 1.0 - abs(angle_degrees) / HORIZON_MAX_PENALIZED_ANGLE_DEGREES))
 
 
 def compute_horizon_tilt_score(image: Image.Image) -> float:
-    """`horizont`-Kriterium: cv2.Canny + cv2.HoughLinesP auf der Graustufen-
-    Variante des bereits via Pillow geladenen Bildes - lokaler cv2-Import (Modul-Kommentar oben).
-    Kein Modell-Asset, kein SHA-256-Test noetig - Canny/Hough sind deterministische, klassische
-    CV-Algorithmen ohne trainiertes Gewicht (CriterionSource.LOCAL_HEURISTIC, criteria.py)."""
+    """`horizont`-Kriterium: cv2.Canny + cv2.HoughLinesP auf der Graustufen-Variante des bereits
+    via Pillow geladenen Bildes - lokaler cv2-Import (Modul-Kommentar oben). Kein Modell-Asset,
+    kein SHA-256-Test noetig - Canny/Hough sind deterministische, klassische CV-Algorithmen ohne
+    trainiertes Gewicht (CriterionSource.LOCAL_HEURISTIC, criteria.py)."""
     import cv2
 
     grayscale = np.asarray(image.convert("L"))

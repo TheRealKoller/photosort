@@ -6,11 +6,11 @@ Verzeichnisdurchgang ist eine abgeschlossene Aufgabe mit einer einzigen Datenban
 (`collect_cache_entries`/`delete_orphaned_entries`) lebt in `thumbnails.py`, wo auch die
 Pfadbildung liegt, die das Muster wiedererkennt.
 
-Der Defekt, den das behebt: `cache_key` ist `sha256(f"{photo_id}:{etag}")`. Dieselbe Rechnung, die
-eine alte Fassung unerreichbar macht, laesst sie auch aus jeder Loeschmenge herausfallen -
-`api/photos.py`, `measure_cache_usage` und `delete_cached_variants` rechnen alle drei aus
-VORHANDENEN Zeilen. Was zu keiner Zeile mehr gehoert, ist deshalb weder sichtbar noch loeschbar.
-Wer diese Dateien finden will, muss das Verzeichnis lesen - genau einmal, an genau dieser Stelle.
+`cache_key` ist `sha256(f"{photo_id}:{etag}")`. Dieselbe Rechnung, die eine alte Fassung
+unerreichbar macht, laesst sie auch aus jeder Loeschmenge herausfallen - `api/photos.py`,
+`measure_cache_usage` und `delete_cached_variants` rechnen alle drei aus VORHANDENEN Zeilen. Was zu
+keiner Zeile mehr gehoert, ist deshalb weder sichtbar noch loeschbar. Wer diese Dateien finden
+will, muss das Verzeichnis lesen - genau einmal, an genau dieser Stelle.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 CACHE_CLEANUP_GRACE_SECONDS = 3600
 """Schonfrist: juenger als eine Stunde wird nichts entfernt.
 
-Sie traegt das Nebenlaeufigkeitskriterium der Spec. Ein paralleler Scan schreibt die Cache-Datei
+Sie traegt das Nebenlaeufigkeitskriterium. Ein paralleler Scan schreibt die Cache-Datei
 VOR dem Commit der Foto-Zeile (`_process_scan_block`: Zeile anlegen/`flush()` -> Download +
 Thumbnail -> Commit erst nach dem ganzen Block). In diesem Fenster ist die Datei da und die Zeile
 fuer uns unsichtbar - eine rein datenbankbasierte Bereinigung loeschte genau das, was der andere
@@ -60,9 +60,9 @@ async def cleanup_orphaned_cache(session: AsyncSession, cache_dir: Path) -> Cach
     der Schnappschuss wird also nach einem Commit-Rand gezogen und sieht den aktuellen Stand
     fremder Transaktionen.
 
-    Die Gueltigkeitsmenge umfasst die Fotos ALLER Projekte - `select(Photo.id, Photo.etag)` ohne
-    `where` (Security-Muss-Kriterium 4). Der Cache ist flach und projektuebergreifend; eine
-    projektbezogene Menge waere fuer ihn die falsche Frage und loeschte fremde, gueltige Kopien.
+    SICHERHEIT: Die Gueltigkeitsmenge umfasst die Fotos ALLER Projekte - `select(Photo.id,
+    Photo.etag)` ohne `where`. Der Cache ist flach und projektuebergreifend; eine projektbezogene
+    Menge waere fuer ihn die falsche Frage und loeschte fremde, gueltige Kopien.
     Jeder kuenftige Filter an dieser Abfrage (Soft-Delete-Flag, "nur aktive Projekte", eine
     Nutzergrenze) machte aus einer Bereinigung eine Loeschung fremder, gueltiger Bilddaten.
     Spalten-Tupel statt `select(Photo)`: keine ORM-Objekte, kein Identity-Map-Effekt nach dem

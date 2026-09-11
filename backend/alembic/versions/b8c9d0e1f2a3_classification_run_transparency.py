@@ -11,8 +11,7 @@ Rein additiv, keine Datenmigration, kein Backfill:
   Fehlschlaege), je asyncio.gather-Block fortgeschrieben.
 - `criterion_scoring_runs.landmark_failed_calls` - fehlgeschlagene Einzelaufrufe, ebenso live.
 - `criterion_scoring_runs.estimated_cost_usd` - die Schaetzung, mit der dieser Lauf gestartet
-  wurde; ohne sie ist "Ist gegen Schaetzung einordenbar" nach dem Lauf
-  unerfuellbar, weil derselbe Endpunkt danach nahe null schaetzt.
+  wurde; derselbe Endpunkt schaetzt danach nahe null, sie ist also nicht reproduzierbar.
 - `criterion_scoring_runs.remote_category_classification_run_id` - FK auf den Remote-Lauf DIESES
   Durchlaufs, Ersatz fuer die Heuristik "juengste Remote-Zeile des Projekts".
 - `remote_category_classification_runs.failed_calls` - dasselbe wie oben fuer die Remote-Phase.
@@ -30,11 +29,10 @@ Unterscheidung und liesse jeden Altlauf wie einen Lauf mit leerer Landmark-Phase
 KEINER - neue Zeilen bekommen ihre Werte ueber den produktiven Schreibpfad (worker.py).
 
 DER FREMDSCHLUESSEL IST EXPLIZIT BENANNT (`fk_criterion_scoring_runs_remote_category_
-classification_run_id`) - und das ist kein Stilfrage: Es ist der erste nachtraeglich an eine
-bestehende Tabelle gehaengte Fremdschluessel dieses Projekts, `Base.metadata` traegt keine
-`naming_convention`, und ein per `batch_alter_table` UNBENANNT angelegter Constraint ist im
-`downgrade()` unter SQLite nicht droppbar (`drop_constraint` braucht einen Namen). Der
-Rueckwaertsweg dieser Migration waere ohne den Namen schlicht nicht ausfuehrbar.
+classification_run_id`): `Base.metadata` traegt keine `naming_convention`, und ein per
+`batch_alter_table` UNBENANNT angelegter Constraint ist im `downgrade()` unter SQLite nicht
+droppbar (`drop_constraint` braucht einen Namen). Der Rueckwaertsweg dieser Migration waere ohne
+den Namen nicht ausfuehrbar.
 
 `batch_alter_table` fuer beide Tabellen (Muster 5ab22032843c/e2f3a4b5c6d7): unter SQLite entsteht
 ein nachtraeglicher Fremdschluessel ausschliesslich ueber den Tabellen-Neuaufbau, den `batch`

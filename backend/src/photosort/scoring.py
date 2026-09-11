@@ -7,40 +7,33 @@ from math import atan2, cos, radians, sin, sqrt
 
 from PIL import Image, ImageFilter, ImageStat
 
-# Schwellenwerte für Phase A. Bewusst als benannte Konstanten statt Magic Numbers, aber NICHT
-# gegen echte Kamerafotos kalibriert (kein Korpus im Repo) - nur die Logik "Wert
-# unter/über Schwelle -> erwartetes Verhalten" ist getestet.
-# Tatsaechliche Kalibrierung bleibt manueller Smoke-Test mit echten Projektfotos vor dem Merge.
+# Schwellenwerte für Phase A. Benannte Konstanten statt Magic Numbers, aber NICHT gegen echte
+# Kamerafotos kalibriert (kein Korpus im Repo) - nur die Logik "Wert unter/über Schwelle ->
+# erwartetes Verhalten" ist getestet. Tatsaechliche Kalibrierung bleibt manueller Smoke-Test mit
+# echten Projektfotos vor dem Merge.
 
-# Laplace-Kernel-Varianz unterhalb dieses Werts gilt als "zu unscharf fuer eine Empfehlung".
-# Ein 64x64-Schachbrettmuster (staerkster realistischer Kantenkontrast) liegt weit darueber,
-# eine komplett flaeche Farbe bei exakt 0 - der Wert liegt bewusst niedrig im Bereich dazwischen,
-# um nur eindeutig unscharfe Aufnahmen (starkes Verwackeln/Fehlfokus) zu erfassen.
+# Laplace-Kernel-Varianz unterhalb dieses Werts gilt als "zu unscharf fuer eine Empfehlung". Der
+# Wert liegt bewusst niedrig: erfasst werden soll nur eindeutiges Verwackeln/Fehlfokus.
 SHARPNESS_REJECT_THRESHOLD = 15.0
 
-# Hamming-Distanz (von 64 moeglichen Bits) unterhalb/gleich der zwei dHashes als "nahezu
-# identisch" gelten - Standardempfehlung fuer 64-Bit-dHash-Duplikaterkennung liegt bei ca. 10% der
-# Bitlaenge; 6 von 64 Bit ist etwas strenger, um Fehlalarme zwischen aehnlichen, aber
-# eigenstaendigen Motiven zu vermeiden (Burst-Serien sind praktisch bitidentisch bis auf minimales
-# Rauschen/Kompressionsartefakte).
+# Hamming-Distanz (von 64 moeglichen Bits), unterhalb/gleich derer zwei dHashes als "nahezu
+# identisch" gelten. 6 von 64 Bit ist strenger als die uebliche 10-%-Faustregel, um Fehlalarme
+# zwischen aehnlichen, aber eigenstaendigen Motiven zu vermeiden.
 DUPLICATE_HAMMING_THRESHOLD = 6
 
 # Zeitliche Luecke, ab der ein neues Zeitfenster-Cluster beginnt (cluster_key) - trennt
-# unterschiedliche Aufnahme-Anlaesse/Situationen innerhalb eines Projekts. Reine Zeitfenster-Bildung
-# ohne visuelle Ähnlichkeit - technische Detailentscheidung der Umsetzung.
+# unterschiedliche Aufnahme-Anlaesse/Situationen innerhalb eines Projekts. Reine
+# Zeitfenster-Bildung ohne visuelle Ähnlichkeit.
 TIME_CLUSTER_GAP = timedelta(hours=1)
 
-# Haversine-Distanz, ab der ein neues Cluster beginnt - gleichrangig neben TIME_CLUSTER_GAP
-# Dokumentierte, UNKALIBRIERTE Modulkonstante wie
-# TIME_CLUSTER_GAP/SHARPNESS_REJECT_THRESHOLD - bewusst kein Settings-/Env-Wert (die sind im
-# Projekt Infrastruktur-Parametern vorbehalten).
+# Haversine-Distanz, ab der ein neues Cluster beginnt - gleichrangig neben TIME_CLUSTER_GAP.
+# Dokumentierte, UNKALIBRIERTE Modulkonstante wie TIME_CLUSTER_GAP/SHARPNESS_REJECT_THRESHOLD,
+# bewusst kein Settings-/Env-Wert (die sind im Projekt Infrastruktur-Parametern vorbehalten).
 #
-# 500 m statt 2000 m: der auslösende Fall ist "zwei Sehenswürdigkeiten kurz hintereinander",
-# und die liegen innerstädtisch typischerweise
-# einige hundert Meter auseinander (Eiffelturm <-> Trocadero ca. 700 m) - 2000 m haetten genau den
-# benannten Fall nicht getrennt. 500 m liegt zugleich sicher oberhalb der Streuung eines einzelnen
-# Ortsbesuchs (Umherlaufen plus GPS-Ungenauigkeit, Groessenordnung 100-300 m). Bewusst in Kauf
-# genommene Kehrseite: Aufnahmen aus einem fahrenden Fahrzeug erzeugen viele kleine Cluster.
+# 500 m liegt sicher oberhalb der Streuung eines einzelnen Ortsbesuchs (Umherlaufen plus
+# GPS-Ungenauigkeit, Groessenordnung 100-300 m) und unterhalb des Abstands zweier
+# innerstaedtischer Sehenswuerdigkeiten. Bewusst in Kauf genommene Kehrseite: Aufnahmen aus einem
+# fahrenden Fahrzeug erzeugen viele kleine Cluster.
 #
 # ACHTUNG: die Schwelle begrenzt den SCHRITT zwischen zwei aufeinanderfolgenden Fotos, nicht den
 # DURCHMESSER eines Clusters - ein Spaziergang in 400-m-Schritten teilt nie und kann Kilometer
@@ -71,8 +64,9 @@ def compute_sharpness(image: Image.Image) -> float:
 
 
 def compute_exposure(image: Image.Image) -> float:
-    """Anteil ueber-/unterbelichteter (vollstaendig geclippter) Pixel aus dem Helligkeits-
-    Histogramm: 0.0 = kein geclippter Pixel, 1.0 = vollstaendig ueber- oder unterbelichtet."""
+    """Anteil ueber-/unterbelichteter (vollstaendig geclippter) Pixel aus dem
+    Helligkeits-Histogramm: 0.0 = kein geclippter Pixel, 1.0 = vollstaendig ueber- oder
+    unterbelichtet."""
     grayscale = image.convert("L")
     histogram = grayscale.histogram()
     total = sum(histogram)
@@ -83,9 +77,9 @@ def compute_exposure(image: Image.Image) -> float:
 
 
 def compute_dhash(image: Image.Image) -> str:
-    """Difference Hash (dHash): Graustufen-Resize auf 9x8 Pixel + bitweiser Vergleich
-    benachbarter Pixel -> 64-Bit-Hash, hex-codiert. Strukturell (nicht
-    farb-)sensitiv, ausreichend fuer Burst-/Duplikaterkennung nahezu identischer Aufnahmen."""
+    """Difference Hash (dHash): Graustufen-Resize auf 9x8 Pixel + bitweiser Vergleich benachbarter
+    Pixel -> 64-Bit-Hash, hex-codiert. Strukturell (nicht farb-)sensitiv, ausreichend fuer
+    Burst-/Duplikaterkennung nahezu identischer Aufnahmen."""
     grayscale = image.convert("L").resize((_DHASH_WIDTH, _DHASH_HEIGHT), Image.Resampling.LANCZOS)
     pixels = list(grayscale.getdata())
 
@@ -274,19 +268,18 @@ def refine_clusters_by_landmark(
     Verfeinerung statt (sonst waeren `cluster-3` und `cluster-3-1` beide belegt, ohne jeden
     Nutzen).
 
-    SICHERHEIT - kein Name im Schlüssel: `cluster_key` ist ein Partitionsschlüssel,
-    der als Query-Parameter an `GET /projects/{id}/curation-candidates` zurueckwandert und im
-    Frontend als React-Key dient - freier, extern erzeugter LLM-Text hat dort nichts zu suchen.
+    SICHERHEIT - kein Name im Schlüssel: `cluster_key` ist ein Partitionsschlüssel, der als
+    Query-Parameter an `GET /projects/{id}/curation-candidates` zurueckwandert und im Frontend als
+    React-Key dient - freier, extern erzeugter LLM-Text hat dort nichts zu suchen.
 
     Exakter Zeichenkettenvergleich, KEIN Fuzzy-Matching (bewusste Vereinfachung): zwei
     Schreibweisen-Varianten desselben Orts splitten.
 
     Das Ergebnis geht ausschliesslich nach `PhotoRanking.cluster_key`; `PhotoScore.cluster_key`
-    wird NIE mutiert (Ownership-Grenze). Die Divergenz beider Felder ist gewollt und
-    dokumentiert.
+    wird NIE mutiert (Ownership-Grenze). Die Divergenz beider Felder ist gewollt.
 
-    SICHERHEIT - OBERE SCHRANKE der Wirkung, Muss-Kriterium für jede steuernde Verwendung
-    eines Fremdwerts: der Name stammt aus einem Vision-Modell und steuert hier Kontrollfluss.
+    SICHERHEIT - OBERE SCHRANKE der Wirkung, Muss-Kriterium für jede steuernde Verwendung eines
+    Fremdwerts: der Name stammt aus einem Vision-Modell und steuert hier Kontrollfluss.
     Die Zahl der Teil-Cluster eines Basis-Clusters ist durch die Zahl der Fotos IN DIESEM Cluster
     absolut begrenzt (Extremfall: jedes Foto ein eigenes Cluster) - der Kuratierungsmodus liefert
     dann höchstens den vollen Bildvorrat des Projekts aus, also genau die Antwortgröße, die

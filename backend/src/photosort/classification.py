@@ -7,18 +7,16 @@ from typing import Protocol
 import numpy as np
 from PIL import Image, ImageFilter, ImageStat
 
-# Bewusst ein eigenes Modul statt einer Erweiterung von scoring.py, damit die
-# mediapipe-Abhängigkeit nicht in den leichten Phase-A-Importpfad
-# (worker.py::run_project_scoring, läuft für JEDES gescannte Foto) einsickert -
-# classification.py wird nur von criteria.py und darüber vom run_criterion_scoring-Job
-# importiert.
+# Ein eigenes Modul und keine Erweiterung von scoring.py, damit die mediapipe-Abhängigkeit nicht
+# in den leichten Phase-A-Importpfad (worker.py::run_project_scoring, läuft für JEDES gescannte
+# Foto) einsickert - classification.py wird nur von criteria.py und darüber vom
+# run_criterion_scoring-Job importiert.
 
 # Laplace-Kernel-Varianz-Schwellwert je 8x8-Kachel, unterhalb dessen eine Kachel als
-# "flächig/uniform" gilt - dieselbe Kennzahl wie scoring.py::compute_sharpness, nur pro
-# Kachel statt über das gesamte Bild. Bewusst dieselbe Größenordnung wie
-# scoring.SHARPNESS_REJECT_THRESHOLD (15.0): beide messen dieselbe zugrunde liegende
-# Eigenschaft (lokaler Kantenkontrast). Nicht gegen einen echten Fotokorpus kalibriert, es
-# gibt keinen im Repo.
+# "flächig/uniform" gilt - dieselbe Kennzahl wie scoring.py::compute_sharpness, nur pro Kachel
+# statt über das gesamte Bild. Dieselbe Größenordnung wie scoring.SHARPNESS_REJECT_THRESHOLD
+# (15.0): beide messen dieselbe zugrunde liegende Eigenschaft (lokaler Kantenkontrast). Nicht
+# gegen einen echten Fotokorpus kalibriert, es gibt keinen im Repo.
 UNIFORM_TILE_VARIANCE_THRESHOLD = 15.0
 
 # Kachelraster für compute_uniform_area_fraction.
@@ -26,27 +24,26 @@ _UNIFORM_TILE_GRID = 8
 
 
 # Mindest-Konfidenz einer mediapipe-Gesichtserkennung, ab der detect_person ein Gesicht als
-# tatsaechlich erkannt wertet - eigene, explizite Schwelle statt sich blind auf den Detector selbst
-# zu verlassen (der intern ebenfalls mit einem konfigurierten min_detection_confidence arbeitet),
-# damit die Entscheidungslogik unabhaengig von der konkreten Detector-Konfiguration testbar bleibt
-# (siehe FakeFaceDetector in test_classification.py).
+# tatsaechlich erkannt wertet - eigene, explizite Schwelle, nie ein blindes Verlassen auf den
+# Detector selbst (der intern ebenfalls ein min_detection_confidence fuehrt), damit die
+# Entscheidungslogik unabhaengig von der konkreten Detector-Konfiguration testbar bleibt (siehe
+# FakeFaceDetector in test_classification.py).
 FACE_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 
-# Gepinnte, direkt im Repository eingecheckte .tflite-Modelldatei (Security-Abschnitt der Spec:
-# kein Laufzeit-Download vom Worker aus einer externen CDN-URL) - technische Detailentscheidung der
-# Umsetzung: statt eines Download-Schritts WAEHREND `docker build` (der selbst wieder eine
-# Pruefsummen-Verifikation braeuchte und einen Netzwerkzugriff zur Build-Zeit voraussetzt) wird die
-# ~230KB grosse Datei wie ein normales Code-Asset direkt committet - reproduzierbar ueber die
-# Git-Historie, kein zusaetzlicher Build-Schritt. Quelle: offizielles mediapipe-Modell-Repository
+# SICHERHEIT: gepinnte, direkt im Repository eingecheckte .tflite-Modelldatei - kein
+# Laufzeit-Download vom Worker aus einer externen CDN-URL und kein Download-Schritt waehrend
+# `docker build`. Die Datei ist wie ein normales Code-Asset committet und damit ueber die
+# Git-Historie reproduzierbar. Quelle: offizielles mediapipe-Modell-Repository
 # (https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/
 # blaze_face_short_range.tflite, sha256 b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380
 # b0152f). "assets/" statt "models/" als Verzeichnisname, um keine Namenskollision mit dem
 # bestehenden Modul photosort/models.py (Datenmodelle) zu erzeugen.
 _FACE_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "blaze_face_short_range.tflite"
 
-# SICHERHEIT: ohne einen automatisierten Abgleich würde eine künftige versehentliche
-# Beschädigung/Ersetzung der Binärdatei (fehlerhaftes Merge, LFS-Fehlkonfiguration) nicht
-# auffallen, bevor die Erkennungsgüte spürbar leidet - siehe test_classification.py.
+# Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test - eine
+# versehentliche Beschaedigung oder Ersetzung der Binaerdatei faellt sonst erst auf, wenn die
+# Erkennungsguete spuerbar leidet. Bricht in
+# tests/test_classification.py::TestFaceDetectorModelAsset (ein Fall).
 FACE_DETECTOR_MODEL_SHA256 = "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f"
 
 _LAPLACE_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
@@ -70,9 +67,9 @@ def _laplace_edges_without_border_artifact(grayscale: Image.Image) -> Image.Imag
 
 def compute_uniform_area_fraction(image: Image.Image) -> float:
     """Anteil der Kacheln eines 8x8-Rasters, deren Laplace-Kernel-Varianz unterhalb von
-    UNIFORM_TILE_VARIANCE_THRESHOLD liegt - reuse derselben Technik wie
-    scoring.py::compute_sharpness, hier pro Kachel statt global angewendet (Architektur-Abschnitt
-    der Spec). 1.0 = komplett flaechiges Bild, 0.0 = durchgehend texturiert/kontrastreich."""
+    UNIFORM_TILE_VARIANCE_THRESHOLD liegt - dieselbe Technik wie scoring.py::compute_sharpness,
+    hier pro Kachel statt global angewendet. 1.0 = komplett flaechiges Bild, 0.0 = durchgehend
+    texturiert/kontrastreich."""
     grayscale = image.convert("L")
     width, height = grayscale.size
     edges = _laplace_edges_without_border_artifact(grayscale)
@@ -99,9 +96,8 @@ def compute_uniform_area_fraction(image: Image.Image) -> float:
     return uniform_tiles / total_tiles if total_tiles else 0.0
 
 
-# --- Symmetrie: Quadranten-Energie-Vergleich auf der bereits vorhandenen Laplace-Kantenkarte
-# - keine neue Abhängigkeit, reine Wiederverwendung von
-# _laplace_edges_without_border_artifact.
+# --- Symmetrie: Quadranten-Energie-Vergleich auf der bereits vorhandenen Laplace-Kantenkarte -
+# keine neue Abhängigkeit, reine Wiederverwendung von _laplace_edges_without_border_artifact.
 
 
 def _mean_abs_edge_energy(edges: np.ndarray) -> float:
@@ -179,8 +175,7 @@ class DetectionLike(Protocol):
 
 class DetectionResultLike(Protocol):
     """Die schmale Teilmenge von mediapipe.tasks.python.components.containers.DetectionResult, die
-    detect_person braucht - erlaubt einen FakeFaceDetector in Tests ohne echte mediapipe-Typen
-    (Teststrategie-Abschnitt der Spec)."""
+    detect_person braucht - erlaubt einen FakeFaceDetector in Tests ohne echte mediapipe-Typen."""
 
     detections: list[DetectionLike]
 
@@ -202,11 +197,11 @@ class FaceBoundingBox:
 
 
 def _to_mp_image(image: Image.Image) -> object:
-    # Lokaler Import (statt Modul-weit): haelt die harte mediapipe-Abhaengigkeit auf den Pfad
-    # begrenzt, der tatsaechlich ein echtes Bild klassifiziert - Tests, die detect_person mit einem
+    # Lokaler Import, nie modulweit: haelt die harte mediapipe-Abhaengigkeit auf den Pfad
+    # begrenzt, der tatsaechlich ein echtes Bild klassifiziert. Tests, die detect_person mit einem
     # FakeFaceDetector aufrufen, brauchen trotzdem eine echte mediapipe-Installation fuer diese
-    # Konvertierung (mediapipe ist ab dieser Spec eine harte Backend-Abhaengigkeit, siehe
-    # pyproject.toml), aber nie ein echtes .tflite-Modell.
+    # Konvertierung (harte Backend-Abhaengigkeit, pyproject.toml), aber nie ein echtes
+    # .tflite-Modell.
     import mediapipe as mp
 
     rgb = image.convert("RGB")
@@ -214,9 +209,9 @@ def _to_mp_image(image: Image.Image) -> object:
 
 
 def detect_person(image: Image.Image, detector: FaceDetectorLike) -> list[FaceBoundingBox]:
-    """mediapipe Face Detector Task-API (Architektur-Abschnitt der Spec) auf der bereits gecachten
-    display-Variante. `detector` ist injizierbar (siehe FaceDetectorLike) - die reale
-    Modellkonstruktion (build_face_detector) laeuft in keinem automatisierten Test.
+    """mediapipe Face Detector Task-API auf der bereits gecachten display-Variante. `detector` ist
+    injizierbar (siehe FaceDetectorLike) - die reale Modellkonstruktion (build_face_detector)
+    laeuft in keinem automatisierten Test.
 
     Gibt eine Liste normierter FaceBoundingBox-Treffer zurück, kein bloßes bool - für den
     content_people-Kriterien-Compute ist allein `bool(detect_person(...))` maßgeblich
@@ -244,8 +239,8 @@ def detect_person(image: Image.Image, detector: FaceDetectorLike) -> list[FaceBo
 
 def build_face_detector() -> FaceDetectorLike:
     """Baut den echten mediapipe FaceDetector aus dem zur Build-Zeit gebuendelten .tflite-Modell
-    (Security-Abschnitt der Spec - kein Laufzeit-Download). Wird NIE in einem automatisierten Test
-    aufgerufen (Infrastruktur-/CI-Risiko, siehe Teststrategie-Abschnitt), nur vom Worker-Job."""
+    (SICHERHEIT: kein Laufzeit-Download). Wird NIE in einem automatisierten Test aufgerufen
+    (Infrastruktur-/CI-Risiko), nur vom Worker-Job."""
     from mediapipe.tasks.python import vision
     from mediapipe.tasks.python.core.base_options import BaseOptions
 
@@ -257,9 +252,9 @@ def build_face_detector() -> FaceDetectorLike:
     return detector
 
 
-# --- Tier-Erkennung: mediapipe Object Detector Task API, EfficientDet-Lite0
-# (COCO-80-Klassen) - exakt dasselbe Muster wie der FaceDetector oben, nur eine andere
-# Task-API derselben bereits vorhandenen mediapipe-Abhängigkeit. Keine neue Abhängigkeit.
+# --- Tier-Erkennung: mediapipe Object Detector Task API, EfficientDet-Lite0 (COCO-80-Klassen) -
+# dasselbe Muster wie der FaceDetector oben, nur eine andere Task-API derselben bereits
+# vorhandenen mediapipe-Abhängigkeit. Keine neue Abhängigkeit.
 
 # Tier-relevante COCO-Klassen - 10 von 80. Dokumentierte, bewusst akzeptierte Lücke: COCO
 # enthält KEINE Insekten- oder Fisch-Klasse, diese werden mit diesem Modell strukturell
@@ -272,16 +267,14 @@ ANIMAL_CATEGORIES = frozenset(
 )
 
 # Mindest-Konfidenz, ab der eine Objekt-Erkennung gewertet wird - analog
-# FACE_DETECTION_CONFIDENCE_THRESHOLD, eigene explizite Schwelle statt des vom Detector
-# intern konfigurierten score_threshold (gleiche Testbarkeits-Begründung wie dort). Sie gilt
-# für ALLE COCO-Klassen, nicht nur für Tiere.
+# FACE_DETECTION_CONFIDENCE_THRESHOLD eine eigene explizite Schwelle, nie der vom Detector intern
+# konfigurierte score_threshold. Sie gilt für ALLE COCO-Klassen, nicht nur für Tiere.
 OBJECT_DETECTION_CONFIDENCE_THRESHOLD = 0.5
 
-# SICHERHEIT: gepinnte, im Repository eingecheckte .tflite-Modelldatei,
-# kein Laufzeit-Download - analog zum FaceDetector-Muster oben. Quelle: offizielles
-# mediapipe-Modell-Repository (https://storage.googleapis.com/mediapipe-models/object_detector/
-# efficientdet_lite0/int8/1/efficientdet_lite0.tflite), int8-quantisierte Variante
-# (~4,4 MB).
+# SICHERHEIT: gepinnte, im Repository eingecheckte .tflite-Modelldatei, kein Laufzeit-Download -
+# analog zum FaceDetector-Muster oben. Quelle: offizielles mediapipe-Modell-Repository
+# (https://storage.googleapis.com/mediapipe-models/object_detector/
+# efficientdet_lite0/int8/1/efficientdet_lite0.tflite), int8-quantisierte Variante (~4,4 MB).
 _OBJECT_DETECTOR_MODEL_PATH = Path(__file__).parent / "assets" / "efficientdet_lite0.tflite"
 
 # Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test. Bricht in
@@ -367,8 +360,8 @@ def detect_objects(image: Image.Image, detector: ObjectDetectorLike) -> list[Obj
 
 def build_object_detector() -> ObjectDetectorLike:
     """Baut den echten mediapipe ObjectDetector aus dem zur Build-Zeit gebuendelten .tflite-Modell
-    (SICHERHEIT: kein Laufzeit-Download). Wird NIE in einem automatisierten
-    Test aufgerufen (Infrastruktur-/CI-Risiko, analog build_face_detector), nur vom Worker-Job."""
+    (SICHERHEIT: kein Laufzeit-Download). Wird NIE in einem automatisierten Test aufgerufen
+    (Infrastruktur-/CI-Risiko, analog build_face_detector), nur vom Worker-Job."""
     from mediapipe.tasks.python import vision
     from mediapipe.tasks.python.core.base_options import BaseOptions
 
@@ -384,14 +377,12 @@ def build_object_detector() -> ObjectDetectorLike:
 # EfficientNet-Lite0 - drittes Task-API-Paar derselben bereits vorhandenen
 # mediapipe-Abhängigkeit, keine neue Abhängigkeit.
 #
-# WICHTIG, anders als bei Tier: classify_scene filtert NICHT auf die
-# Architektur-Allow-Liste - sie liefert alle Klassifikations-Ergebnisse oberhalb der
-# gemeinsamen Modell-Untergrenze SCENE_LABEL_MIN_CONFIDENCE unverändert zurück (rohe
-# Modell-Ausgabe). Die Allow-Listen- und Konfidenz-Filterung passiert bewusst erst in
-# criteria.py::compute_gebaeude_score bzw.
-# compute_landschaft_score. Dort ist testbar, dass tatsächlich die Allow-Liste filtert und
-# nicht nur die rohe Modell-Konfidenz durchgereicht wird - ein Nachweis, der auf
-# classify_scene-Ebene sinnlos wäre, wenn schon hier gefiltert würde.
+# WICHTIG, anders als bei Tier: classify_scene filtert NICHT auf die Architektur-Allow-Liste -
+# sie liefert alle Klassifikations-Ergebnisse oberhalb der gemeinsamen Modell-Untergrenze
+# SCENE_LABEL_MIN_CONFIDENCE unverändert zurück (rohe Modell-Ausgabe). Die Allow-Listen- und
+# Konfidenz-Filterung passiert erst in criteria.py::compute_gebaeude_score bzw.
+# compute_landschaft_score - nur dort ist testbar, dass tatsächlich die Allow-Liste filtert und
+# nicht nur die rohe Modell-Konfidenz durchgereicht wird.
 
 # Inhaltliche Konfidenzschwelle des gebaeude-Kriteriums. Die inhaltliche Entscheidung liegt
 # in der jeweiligen Kriterien-Funktion: criteria.py::compute_gebaeude_score filtert explizit
@@ -399,24 +390,22 @@ def build_object_detector() -> ObjectDetectorLike:
 # LANDSCHAFT_LABEL_MIN_CONFIDENCE.
 SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.5
 
-# Gemeinsame, bewusst NIEDRIGE Modell-Untergrenze der Szenen-Klassifikation: natürliche
-# Szenen verteilen ihre Modellkonfidenz typischerweise über mehrere benachbarte
-# ImageNet-Klassen, eine harte 0.5-Grenze schon an der Modellausgabe würde eine echte
-# Landschafts-Erkennung strukturell verhindern. Analog FACE_DETECTION_CONFIDENCE_THRESHOLD/
-# OBJECT_DETECTION_CONFIDENCE_THRESHOLD eine eigene, explizite Schwelle statt sich blind auf
-# die Detector-Konfiguration zu verlassen.
+# Gemeinsame, bewusst NIEDRIGE Modell-Untergrenze der Szenen-Klassifikation: natürliche Szenen
+# verteilen ihre Modellkonfidenz typischerweise über mehrere benachbarte ImageNet-Klassen, eine
+# harte 0.5-Grenze schon an der Modellausgabe würde eine echte Landschafts-Erkennung strukturell
+# verhindern. Analog FACE_DETECTION_CONFIDENCE_THRESHOLD/OBJECT_DETECTION_CONFIDENCE_THRESHOLD
+# eine eigene, explizite Schwelle, nie ein blindes Verlassen auf die Detector-Konfiguration.
 SCENE_LABEL_MIN_CONFIDENCE = 0.2
 
-# Obergrenze der pro Foto zurückgegebenen Labels - hält die Label-Liste trotz der
-# abgesenkten Untergrenze beschränkt. Wird sowohl dem echten Klassifikator als Options-Wert
-# mitgegeben (build_scene_classifier) ALS AUCH in classify_scene selbst durchgesetzt
-# (gleiche Begründung wie bei der Konfidenzschwelle: unabhängig von der
-# Detector-Konfiguration testbar). Die Begrenzung greift immer auf die STÄRKSTEN Labels,
-# verdrängt also nie einen Treffer eines Bestands-Konsumenten zugunsten eines schwächeren.
+# Obergrenze der pro Foto zurückgegebenen Labels - hält die Label-Liste trotz der abgesenkten
+# Untergrenze beschränkt. Wird sowohl dem echten Klassifikator als Options-Wert mitgegeben
+# (build_scene_classifier) ALS AUCH in classify_scene selbst durchgesetzt, damit sie unabhängig
+# von der Detector-Konfiguration testbar bleibt. Die Begrenzung greift immer auf die STÄRKSTEN
+# Labels, verdrängt also nie einen Treffer zugunsten eines schwächeren.
 SCENE_LABEL_MAX_RESULTS = 5
 
-# SICHERHEIT: gepinnte, im Repository eingecheckte .tflite-Modelldatei,
-# kein Laufzeit-Download. Quelle: offizielles mediapipe-Modell-Repository
+# SICHERHEIT: gepinnte, im Repository eingecheckte .tflite-Modelldatei, kein Laufzeit-Download.
+# Quelle: offizielles mediapipe-Modell-Repository
 # (https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/1/
 # efficientnet_lite0.tflite), int8-quantisierte Variante (~5,4 MB).
 _SCENE_CLASSIFIER_MODEL_PATH = Path(__file__).parent / "assets" / "efficientnet_lite0.tflite"
@@ -479,10 +468,10 @@ def classify_scene(image: Image.Image, classifier: SceneClassifierLike) -> list[
 
 
 def build_scene_classifier() -> SceneClassifierLike:
-    """Baut den echten mediapipe ImageClassifier aus dem zur Build-Zeit gebuendelten .tflite-
-    Modell (SICHERHEIT: kein Laufzeit-Download). Wird NIE in einem
-    automatisierten Test aufgerufen (Infrastruktur-/CI-Risiko, analog build_face_detector/
-    build_object_detector), nur vom Worker-Job."""
+    """Baut den echten mediapipe ImageClassifier aus dem zur Build-Zeit gebuendelten
+    .tflite-Modell (SICHERHEIT: kein Laufzeit-Download). Wird NIE in einem automatisierten Test
+    aufgerufen (Infrastruktur-/CI-Risiko, analog build_face_detector/build_object_detector), nur
+    vom Worker-Job."""
     from mediapipe.tasks.python import vision
     from mediapipe.tasks.python.core.base_options import BaseOptions
 
@@ -495,29 +484,30 @@ def build_scene_classifier() -> SceneClassifierLike:
     return classifier
 
 
-# --- Freiraum/Fluchtrichtung:
-# viertes mediapipe Task-API-Paar (FaceLandmarker) - EIGENSTAENDIGER, zusaetzlicher Modellaufruf
-# neben dem obigen FaceDetector, kein Ersatz (content_people/goldener_schnitt bleiben unveraendert
-# auf dem bestehenden, leichteren FaceDetector). Blickrichtung (Yaw) wird aus der von mediapipe
-# gelieferten 4x4-Kopfpose-Rotationsmatrix (`facial_transformation_matrixes`) abgeleitet, NICHT
-# aus einem selbst konstruierten Landmark-Vektor (robuster als ein Vektor
-# zwischen zwei einzelnen, fehleranfaellig zu zitierenden Landmark-Indizes).
+# --- Freiraum/Fluchtrichtung: viertes mediapipe Task-API-Paar (FaceLandmarker) -
+# EIGENSTAENDIGER, zusaetzlicher Modellaufruf neben dem obigen FaceDetector, kein Ersatz
+# (content_people/goldener_schnitt laufen weiter auf dem leichteren FaceDetector). Blickrichtung
+# (Yaw) wird aus der von mediapipe gelieferten 4x4-Kopfpose-Rotationsmatrix
+# (`facial_transformation_matrixes`) abgeleitet, NIE aus einem selbst konstruierten Vektor
+# zwischen zwei einzelnen, fehleranfaellig zu zitierenden Landmark-Indizes.
 
-# SICHERHEIT: gepinnte, im Repository eingecheckte .task-Modelldatei,
-# kein Laufzeit-Download, analog den drei .tflite-Assets oben. Quelle:
-# offizielles mediapipe-Modell-Repository (https://storage.googleapis.com/mediapipe-models/
-# face_landmarker/face_landmarker/float16/1/face_landmarker.task, per direktem Download vor dem
-# TDD-Einstieg verifiziert - float16-quantisierte Variante, ~3,6 MB). output_face_blendshapes wird
-# zur Laufzeit ueber ein Options-Flag desselben Bundles gesteuert (siehe build_face_landmarker
-# unten), es gibt kein separates "ohne Blendshapes"-Asset im mediapipe-Modell-Repository.
+# SICHERHEIT: gepinnte, im Repository eingecheckte .task-Modelldatei, kein Laufzeit-Download,
+# analog den drei .tflite-Assets oben. Quelle: offizielles mediapipe-Modell-Repository
+# (https://storage.googleapis.com/mediapipe-models/
+# face_landmarker/face_landmarker/float16/1/face_landmarker.task, float16-quantisierte Variante,
+# ~3,6 MB). output_face_blendshapes wird zur Laufzeit ueber ein Options-Flag desselben Bundles
+# gesteuert (siehe build_face_landmarker unten), es gibt kein separates "ohne
+# Blendshapes"-Asset im mediapipe-Modell-Repository.
 _FACE_LANDMARKER_MODEL_PATH = Path(__file__).parent / "assets" / "face_landmarker.task"
 
+# Security-Muss-Kriterium: je gepinntem Modell-Asset ein eigener Integritaets-Test. Bricht in
+# tests/test_classification.py::TestFaceLandmarkerModelAsset (ein Fall).
 FACE_LANDMARKER_MODEL_SHA256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 
-# Deadzone um einen frontalen Blick - lebt in criteria.py::
-# compute_freiraum_score (FREIRAUM_YAW_DEADZONE_DEGREES), nicht hier: detect_face_orientation
-# liefert nur die Rohdaten (Yaw + Bounding-Box), die Fallback-/Score-Logik ist criteria.py
-# vorbehalten (Trennung analog detect_objects/compute_tier_score).
+# Die Deadzone um einen frontalen Blick lebt in criteria.py::compute_freiraum_score
+# (FREIRAUM_YAW_DEADZONE_DEGREES), nicht hier: detect_face_orientation liefert nur die Rohdaten
+# (Yaw + Bounding-Box), die Fallback-/Score-Logik ist criteria.py vorbehalten (Trennung analog
+# detect_objects/compute_tier_score).
 
 
 class LandmarkLike(Protocol):
@@ -550,14 +540,13 @@ class FaceOrientation:
     """Blickrichtung + Bounding-Box eines erkannten Gesichts, Grundlage fuer
     criteria.py::compute_freiraum_score.
 
-    `yaw_degrees` - Vorzeichenkonvention dieser Umsetzung (mangels verfuegbarem seitlich
-    gedrehten Test-Referenzbild nicht gegen eine echte Modellausgabe verifizierbar; die
-    MatrixSTRUKTUR selbst - R[0,0]/R[0,2]/R[2,0]/R[2,2]
-    als Rotation-um-die-Y-Achse-Block - wurde dagegen gegen eine ECHTE FaceLandmarker-Inferenz auf
-    mediapipes eigenem "portrait.jpg"-Testbild verifiziert, siehe _yaw_degrees_from_rotation_
-    matrix): positiv = Gesicht Richtung steigendem x (Bild-rechte Seite) gedreht. `min_x`/`max_x`
-    - kleinste/groesste normierte x-Koordinate ueber ALLE Landmarks des erkannten Gesichts (kein
-    separater Bounding-Box-Ausgabewert im FaceLandmarkerResult)."""
+    `yaw_degrees` - Vorzeichenkonvention dieser Umsetzung: positiv = Gesicht Richtung steigendem x
+    (Bild-rechte Seite) gedreht. Mangels seitlich gedrehtem Test-Referenzbild ist das VORZEICHEN
+    nicht gegen eine echte Modellausgabe verifiziert; die MatrixSTRUKTUR selbst
+    (R[0,0]/R[0,2]/R[2,0]/R[2,2] als Rotation-um-die-Y-Achse-Block) dagegen schon.
+
+    `min_x`/`max_x` - kleinste/groesste normierte x-Koordinate ueber ALLE Landmarks des erkannten
+    Gesichts (kein separater Bounding-Box-Ausgabewert im FaceLandmarkerResult)."""
 
     yaw_degrees: float
     min_x: float
@@ -565,10 +554,10 @@ class FaceOrientation:
 
 
 def _yaw_degrees_from_rotation_matrix(matrix: object) -> float:
-    """Extrahiert den Gier-/Yaw-Winkel (Kopfdrehung links/rechts) aus dem Rotationsanteil (obere-
-    linke 3x3) einer 4x4-Transformationsmatrix - Standard-Rotationsmatrix-zu-Winkel-Mathematik,
-    KEIN mediapipe-spezifischer Code, isoliert mit synthetischen Matrizen testbar (siehe
-    test_classification.py::TestYawDegreesFromRotationMatrix). Konvention: Rotation um die
+    """Extrahiert den Gier-/Yaw-Winkel (Kopfdrehung links/rechts) aus dem Rotationsanteil
+    (obere-linke 3x3) einer 4x4-Transformationsmatrix - Standard-Rotationsmatrix-zu-Winkel-
+    Mathematik, KEIN mediapipe-spezifischer Code, isoliert mit synthetischen Matrizen testbar
+    (tests/test_classification.py::TestYawDegreesFromRotationMatrix). Konvention: Rotation um die
     Y-Achse mit `R[0,0] = cos(yaw)`, `R[0,2] = sin(yaw)` - `atan2(R[0,2], R[0,0])` ist robust
     gegen den entarteten Fall `cos(yaw) == 0` (90 Grad), anders als eine reine `asin`/`acos`-
     basierte Extraktion."""
@@ -579,9 +568,9 @@ def _yaw_degrees_from_rotation_matrix(matrix: object) -> float:
 def detect_face_orientation(
     image: Image.Image, landmarker: FaceLandmarkerLike
 ) -> FaceOrientation | None:
-    """mediapipe Face Landmarker Task-API auf der bereits gecachten display-
-    Variante. `landmarker` ist injizierbar (siehe FaceLandmarkerLike) - die reale
-    Modellkonstruktion (build_face_landmarker) laeuft in keinem automatisierten Test.
+    """mediapipe Face Landmarker Task-API auf der bereits gecachten display-Variante.
+    `landmarker` ist injizierbar (siehe FaceLandmarkerLike) - die reale Modellkonstruktion
+    (build_face_landmarker) laeuft in keinem automatisierten Test.
 
     Kein Gesicht erkannt -> None (Fallback-Entscheidung liegt bei criteria.py::
     compute_freiraum_score, analog detect_objects/compute_tier_score). `num_faces=1` ist
@@ -602,12 +591,12 @@ def detect_face_orientation(
 
 def build_face_landmarker() -> FaceLandmarkerLike:
     """Baut den echten mediapipe FaceLandmarker aus dem zur Build-Zeit gebuendelten .task-Modell
-    (SICHERHEIT: kein Laufzeit-Download). Wird NIE in einem automatisierten
-    Test aufgerufen (Infrastruktur-/CI-Risiko, analog build_face_detector/build_object_detector/
+    (SICHERHEIT: kein Laufzeit-Download). Wird NIE in einem automatisierten Test aufgerufen
+    (Infrastruktur-/CI-Risiko, analog build_face_detector/build_object_detector/
     build_scene_classifier), nur vom Worker-Job. `num_faces=1` (modellseitige Begrenzung auf das
-    prominenteste Gesicht statt einer App-seitigen Flaechen-Auswahl wie bei FaceDetector/
-    ObjectDetector), `output_facial_transformation_matrixes=True` (Grundlage
-    fuer die Yaw-Extraktion), `output_face_blendshapes=False` (nicht gebraucht)."""
+    prominenteste Gesicht statt einer App-seitigen Flaechen-Auswahl wie bei
+    FaceDetector/ObjectDetector), `output_facial_transformation_matrixes=True` (Grundlage fuer die
+    Yaw-Extraktion), `output_face_blendshapes=False` (nicht gebraucht)."""
     from mediapipe.tasks.python import vision
     from mediapipe.tasks.python.core.base_options import BaseOptions
 

@@ -25,16 +25,15 @@ _GPS_LONGITUDE_TAG = 4
 # verloere eine voellig gewoehnliche Suedhalbkugel-Aufnahme ihren Ort.
 _REF_STRIP_CHARS = " \t\r\n\x00"
 
-# SICHERHEIT (Sicherheitskonzept, Abschnitt "Standortdaten (GPS aus EXIF)"): FESTE
-# Grund-Tokens statt des Rohwerts. Standortdaten sind ein eigenständiges Asset, und eine
-# Logzeile ist eine schwächer geschützte, länger lebende Oberfläche als die Datenbank. Weder
-# ein akzeptierter noch ein verworfener Rohwert wird geloggt - die FEHLERKLASSE trägt den
-# vollen Diagnosewert, der konkrete Wert nichts darüber hinaus. Vier statt der drei im
-# Sicherheitskonzept genannten Tokens, weil `extract_gps` vier Verwerfungsklassen hat:
-# `nullinsel` unter `ausserhalb_intervall` zu führen wäre falsch - das Paar LIEGT im gültigen
-# Intervall, es ist ein Geräte-Artefakt bei fehlgeschlagenem Fix. Die Auflage ("nur feste
-# Grund-Tokens plus photo_id") bleibt erfüllt: kein Fremdtext, keine Koordinate, keine
-# Log-Injection-Fläche. Abgedeckt durch test_exif.py.
+# SICHERHEIT (Sicherheitskonzept, Abschnitt "Standortdaten (GPS aus EXIF)"): FESTE Grund-Tokens
+# statt des Rohwerts. Standortdaten sind ein eigenständiges Asset, und eine Logzeile ist eine
+# schwächer geschützte, länger lebende Oberfläche als die Datenbank. Weder ein akzeptierter noch
+# ein verworfener Rohwert wird geloggt - die FEHLERKLASSE trägt den vollen Diagnosewert, der
+# konkrete Wert nichts darüber hinaus. Vier Tokens, weil `extract_gps` vier Verwerfungsklassen
+# hat: `nullinsel` gehört NICHT unter `ausserhalb_intervall`, das Paar liegt im gültigen Intervall
+# und ist ein Geräte-Artefakt bei fehlgeschlagenem Fix. Die Auflage ("nur feste Grund-Tokens plus
+# photo_id") bleibt erfüllt: kein Fremdtext, keine Koordinate, keine Log-Injection-Fläche.
+# Abgedeckt durch test_exif.py.
 _GPS_REASON_REF_MISSING = "ref_fehlt"
 _GPS_REASON_NOT_NUMERIC = "nicht_numerisch"
 _GPS_REASON_OUT_OF_RANGE = "ausserhalb_intervall"

@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 
 # Providerneutrale HTTP-/Parsing-Bausteine, gemeinsam genutzt von landmark.py und
-# remote_classification.py. Bewusst KEINE feature-spezifische Logik hier - kein Prompt, kein
+# remote_classification.py. KEINE feature-spezifische Logik hier - kein Prompt, kein
 # Antwortschema-Parsing über die rohe JSON-Hülle hinaus; das bleibt in den beiden Feature-Modulen.
 
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
@@ -54,8 +54,8 @@ MISTRAL_VISION_MODEL = "ministral-3b-2512"
 #
 # Modell-ID verifiziert gegen die offizielle Modellkarte
 # (https://docs.mistral.ai/models/model-cards/mistral-small-4-0-26-03, abgerufen 2026-09-09).
-# Bewusst die datierte ID und NICHT der gleitende Alias `mistral-small-latest` - der wanderte
-# unter uns weg und machte jede Preisverifikation gegenstandslos.
+# Immer die datierte ID, nie der gleitende Alias `mistral-small-latest` - der wanderte unter uns
+# weg und machte jede Preisverifikation gegenstandslos.
 #
 # VISION-FÄHIGKEIT - Belegkette mit offen dokumentierter Lücke. Ein wählbares Modell braucht zwei
 # belegte Tatsachen: verifizierten Token-Preis UND belegte Vision-Fähigkeit.
@@ -63,17 +63,14 @@ MISTRAL_VISION_MODEL = "ministral-3b-2512"
 #   https://mistral.ai/news/mistral-small-4/ und die Modellkarte
 #   https://huggingface.co/mistralai/Mistral-Small-4-119B-2603 (beide abgerufen 2026-09-09).
 #   LÜCKE - https://docs.mistral.ai/capabilities/vision, die Seite, die die Bildeingabe über
-#   /v1/chat/completions regelt, LISTET DAS MODELL ZUM ABRUFZEITPUNKT NICHT (2026-09-09). Sie ist
-#   erkennbar einen Release-Zyklus veraltet. Der Vermerk bleibt stehen, statt geglättet zu werden:
-#   die Fähigkeitsseite als Beleg zu zitieren, obwohl sie das Modell nicht führt, wäre eine
-#   Falschaussage.
+#   /v1/chat/completions regelt, LISTET DAS MODELL ZUM ABRUFZEITPUNKT NICHT (2026-09-09). Sie darf
+#   nicht als Beleg zitiert werden, solange sie das Modell nicht führt; der Vermerk bleibt deshalb
+#   stehen, statt geglättet zu werden.
 #   RISIKO - der plausible Ausfall ist laut, nicht still: ein Modell ohne Bildunterstützung weist
 #   einen `image_url`-Content-Part mit 4xx zurück, `raise_for_vision_api_status()` macht daraus
 #   einen Fehler, der Aufruf zählt als `failed_calls` und ist in der Lauf-Bilanz sichtbar. Der
 #   stille Fall (Bild angenommen, aber nur der Prompt bewertet) ist strukturell nicht erkennbar;
-#   getragen wird er davon, dass Klassifizierungsergebnisse Vorschläge in PhotoSorts eigener
-#   Datenbank sind, der OpenCloud-Client ausschließlich lesend arbeitet und ein Lauf wiederholbar
-#   ist. `docs/setup.md` empfiehlt beim erstmaligen Umstellen einen Probelauf mit Sichtprüfung.
+#   `docs/setup.md` empfiehlt beim erstmaligen Umstellen einen Probelauf mit Sichtprüfung.
 MISTRAL_VISION_MODEL_SMALL = "mistral-small-2603"
 
 # Die kuratierte Auswahl der wählbaren Modelle je Anbieter.
@@ -126,11 +123,9 @@ def provider_for_vision_model(model: str) -> str | None:
 
     `None` (statt eines Rückfalls) bei einem Modell, das nicht (mehr) in der Registry steht -
     Altlauf, entferntes Modell: die Oberfläche zeigt dann die Modell-ID allein, statt einen
-    Anbieter zu raten. Ein geratener Anbieter wäre eine Behauptung über die Vergangenheit, die
-    diese Funktion nicht belegen kann.
+    Anbieter zu raten.
 
-    Rein wie der Rest dieses Moduls: kein `photosort.config`-Import (`config.py` importiert dieses
-    Modul, die Gegenrichtung erzeugte einen Importzyklus)."""
+    Rein wie der Rest dieses Moduls: kein `photosort.config`-Import."""
     for provider, models in VISION_MODELS_BY_PROVIDER.items():
         if model in models:
             return provider
@@ -168,8 +163,8 @@ def anthropic_response_to_json(payload: Any, error_class: type[Exception]) -> An
         text_block = next(block for block in content_blocks if block.get("type") == "text")
         return json.loads(text_block["text"])
     except (KeyError, TypeError, StopIteration, ValueError, json.JSONDecodeError) as exc:
-        # SICHERHEIT: bewusst generische Meldung OHNE die rohe Antwort - keine Base64-Bilddaten
-        # und kein Key in der Fehlermeldung.
+        # SICHERHEIT: generische Meldung OHNE die rohe Antwort - keine Base64-Bilddaten und kein
+        # Key in der Fehlermeldung.
         raise error_class("Unerwartete Antwortstruktur der Anthropic Messages API.") from exc
 
 
@@ -226,8 +221,8 @@ def _usage_from_response(
         usage = payload["usage"]
         input_tokens = usage[input_key]
         output_tokens = usage[output_key]
-        # Bewusst strikt auf int/bool-freie Ganzzahlen geprüft statt int(...) zu erzwingen: ein
-        # Gleitkomma-/String-Wert wäre hier ein struktureller Bruch der Provider-Zusage, kein zu
+        # Strikt auf int/bool-freie Ganzzahlen geprüft, nie über ein `int(...)` erzwungen: ein
+        # Gleitkomma-/String-Wert wäre ein struktureller Bruch der Provider-Zusage, kein zu
         # rettender Sonderfall - und ein still gerundeter Wert wäre als Abrechnungsbeleg wertlos.
         if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
             raise TypeError("Token-Zaehler ist keine Ganzzahl")
@@ -248,7 +243,7 @@ def _usage_from_response(
 def anthropic_usage_from_response(payload: Any, model: str) -> TokenUsage | None:
     """Liest `usage.input_tokens`/`usage.output_tokens` aus der Anthropic-Antworthülle.
 
-    Zusätzliche Felder (Cache-Zähler) werden bewusst ignoriert: die Ist-Rechnung kennt nur
+    Zusätzliche Felder (Cache-Zähler) werden ignoriert: die Ist-Rechnung kennt nur
     Basis-Input/-Output-Preise (pricing.py), kein Cache-Tarifmodell - das Projekt setzt kein
     Prompt-Caching ein."""
     return _usage_from_response(payload, model, "input_tokens", "output_tokens")
@@ -277,12 +272,11 @@ def _sanitize_label_text(raw: str) -> str:
     - sonst verschmölzen zwei Wörter über einen Zeilenumbruch hinweg zu einem; führende und
     abschließende Leerzeichen entfallen mit.
 
-    Bewusst eine BLACKLIST (Steuerzeichen), keine Zeichen-Whitelist: der Text ist freier deutscher
+    Eine BLACKLIST (Steuerzeichen), nie eine Zeichen-Whitelist: der Text ist freier deutscher
     Text, eine Whitelist aus Buchstaben/Ziffern/Leerzeichen/Bindestrich würde legitime Werte
     beschädigen. Escapetes Rendering im Frontend schützt gegen XSS, aber weder gegen optische
     Verfälschung der Oberfläche durch Bidi-/Zero-Width-Zeichen noch gegen mehrzeilige
-    Logeinträge - genau diese Lücke schließt diese Funktion. Nachrüstbar an genau dieser einen
-    Stelle, falls sich die Blacklist als zu schwach erweist."""
+    Logeinträge - genau diese Lücke schließt diese Funktion."""
     without_controls = "".join(
         (" " if char.isspace() else "") if unicodedata.category(char) in ("Cc", "Cf") else char
         for char in raw
@@ -331,8 +325,7 @@ class ThrottleStats:
 class CloudRequestThrottle:
     """Schrittmacher: hält einen MINDESTABSTAND zwischen zwei Anfragen an denselben Anbieter.
 
-    Bewusst KEIN Token-Bucket: ein Bucket erlaubt genau den Stoß, der den `429` auslöst -
-    Anthropic dokumentiert selbst, eine Minutenrate könne sekundengenau durchgesetzt werden.
+    KEIN Token-Bucket: ein Bucket erlaubt genau den Stoß, der den `429` auslöst.
 
     `clock`/`sleep` sind Konstruktor-Parameter (Voreinstellungen `time.monotonic`/`asyncio.sleep`).
     Ohne sie wäre weder diese Klasse noch `post_vision_request` ohne echte Wartezeit testbar -
@@ -376,7 +369,7 @@ class CloudRequestThrottle:
         """Reiht die aufrufende Anfrage ein - vor JEDEM Absenden, erster Versuch wie jede
         Wiederholung.
 
-        Die Reservierung ist bewusst SPERRENFREI und muss es bleiben: zwischen dem Lesen und dem
+        Die Reservierung ist SPERRENFREI und muss es bleiben: zwischen dem Lesen und dem
         Zurückschreiben von `_next_free` steht kein `await`, dadurch ist der Abschnitt im
         Einzel-Loop von asyncio atomar. Stünde dort eines, bekämen mehrere gleichzeitige Aufrufer
         denselben Startzeitpunkt und der Schrittmacher wäre wirkungslos - genau das prüft der
@@ -510,29 +503,23 @@ MISTRAL_ENDPOINT = VisionEndpoint(
 # Die VOREINSTELLUNG der Anfragerate je Anbieter - der Wert, der ohne gesetztes
 # `CLOUD_VISION_REQUESTS_PER_MINUTE` gilt.
 #
-# Warum HIER und nicht in cloud_vision_throttle.py, wo die Instanzen leben: `config.py` löst die
-# Rate auf (`resolved_cloud_vision_requests_per_minute`) und müsste die Tabelle sonst aus
-# cloud_vision_throttle.py importieren - dem Modul, das seinerseits `config.py` importiert, um die
-# Instanzen zu bauen. Das wäre ein Importzyklus. Die Tabelle gehört damit in dasselbe
-# konfigurationsfreie Modul wie VISION_MODELS_BY_PROVIDER daneben.
+# Die Tabelle steht HIER und nicht in cloud_vision_throttle.py, wo die Instanzen leben: `config.py`
+# löst die Rate auf (`resolved_cloud_vision_requests_per_minute`) und müsste sie sonst aus
+# cloud_vision_throttle.py importieren - dem Modul, das seinerseits `config.py` importiert. Das
+# wäre ein Importzyklus.
 #
 # BELEGPFLICHT je Voreinstellung - Quelle und Abrufdatum, Recherchestand 2026-09-10; die
 # vollständige Herleitung beider Zahlen steht in ADR 0074:
 #   anthropic: 60/min (1 Anfrage/s). Erstparteilich dokumentiert sind für die niedrigste
-#     VERÖFFENTLICHTE Stufe ("Start") 1.000 RPM; die Voreinstellung liegt bewusst weit darunter,
-#     weil dieselbe Doku neue Organisationen in einer Evaluation-Stufe "with limits below the
-#     standard limits shown on this page" (Zahlen nicht veröffentlicht) startet und eine
-#     Minutenrate sekundengenau durchgesetzt werden kann.
+#     VERÖFFENTLICHTE Stufe ("Start") 1.000 RPM; die Voreinstellung liegt bewusst weit darunter.
 #   mistral: 40/min (1 Anfrage alle 1,5 s). NICHT ERSTPARTEILICH BELEGBAR - Mistral veröffentlicht
 #     keine Zahlen mehr je Tarif und verweist ausschließlich auf das Admin-Panel des eigenen
-#     Kontos; der frühere Hilfeartikel liefert seit dem Recherchestand 404. Eine begründete
-#     Setzung, keine belegte Grenze - und genau der Fall, für den die Betriebsvariable existiert.
-#     Die Beleglücke bleibt hier stehen, statt geglättet zu werden.
+#     Kontos. Eine begründete Setzung, keine belegte Grenze; die Beleglücke bleibt hier stehen,
+#     statt geglättet zu werden.
 #
-# Bewusst VORSICHTIG: eine zu vorsichtige Voreinstellung macht einen Lauf langsamer und ist über
-# die Variable zu heben; eine zu großzügige führt genau den Zustand herbei, den der Schrittmacher
-# abschafft. Der verlässliche Wert für ein konkretes Konto steht nur im Admin-Panel des
-# Anbieters - `docs/setup.md` sagt, wo er nachzusehen ist.
+# VORSICHTIG gesetzt: eine zu großzügige Voreinstellung führt genau den Zustand herbei, den der
+# Schrittmacher abschafft. Der verlässliche Wert für ein konkretes Konto steht nur im Admin-Panel
+# des Anbieters - `docs/setup.md` sagt, wo er nachzusehen ist.
 #
 # Die Tabelle deckt genau die Anbieter von `Settings.landmark_provider` ab (per Test erzwungen):
 # ein neuer Anbieter ohne Eintrag wäre ein KeyError beim Prozessstart.
@@ -547,14 +534,13 @@ DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER: dict[str, int] = {
 # `last_progress_at` von hier zu schreiben verbietet sich.
 #
 # Modulkonstanten und ausdrücklich KEINE Settings-Felder: sie hängen nicht an einer Kontostufe des
-# Betreibers, sondern an der Watchdog-Rechnung unten - und sind damit gerade keine Werte, die ohne
-# Kenntnis dieser Rechnung verstellt werden sollten. Die einzige Betriebsvariable ist die RATE
+# Betreibers, sondern an der Watchdog-Rechnung unten. Die einzige Betriebsvariable ist die RATE
 # (CLOUD_VISION_REQUESTS_PER_MINUTE).
 #
 # Schlimmster Fall je Anfrage: 120 s Warten + 5 x 60 s (VISION_REQUEST_TIMEOUT_SECONDS) = 420 s
 # gegen worker.py::STALL_THRESHOLD von 15 Minuten. Diese Rechnung ist als Invariantentest
-# festgeschrieben (tests/test_cloud_vision.py) - im Produktivcode gibt es die Verbindung bewusst
-# nicht, cloud_vision.py darf worker.py nicht importieren.
+# festgeschrieben (tests/test_cloud_vision.py) - im Produktivcode gibt es die Verbindung nicht,
+# cloud_vision.py darf worker.py nicht importieren.
 VISION_MAX_RATE_LIMIT_ATTEMPTS = 5  # Versuche INSGESAMT, nicht Wiederholungen
 VISION_RETRY_BUDGET_SECONDS = 120.0  # summierte Wartezeit EINER Anfrage
 VISION_MAX_SINGLE_WAIT_SECONDS = 60.0  # je einzelnem Wartevorgang

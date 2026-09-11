@@ -95,8 +95,7 @@ class Settings(BaseSettings):
     #
     # Der Name erbt bewusst die Ungenauigkeit von `landmark_provider` daneben: beide gelten für
     # BEIDE Cloud-Anteile - Sehenswürdigkeits-Erkennung UND Kategorie-Vorschläge, nicht nur für
-    # landmark. Die Zusammengehörigkeit des Schalterpaars `LANDMARK_PROVIDER`/`LANDMARK_MODEL`
-    # wiegt schwerer als die Wortgenauigkeit, und ein Umbenennen wäre für den Betrieb breaking.
+    # landmark. Ein Umbenennen wäre für den Betrieb breaking.
     #
     # `str` + Validator statt `Literal`, anders als bei landmark_provider: die zulässigen Werte
     # hängen vom eingestellten Anbieter ab, das lässt sich in einem Feld-`Literal` nicht
