@@ -1,4 +1,4 @@
-# 0077 - Doku-Ballast: eine Regel an einer Stelle, Richtwerte statt Gate
+# 0079 - Doku-Ballast: eine Regel an einer Stelle, Richtwerte statt Gate
 
 **Status:** Accepted
 **Datum:** 2026-09-11

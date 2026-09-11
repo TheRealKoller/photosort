@@ -73,7 +73,7 @@ Gegenstand der Verdichtung angefasst, nicht wegen einer Modelländerung.
 ## Architektur / Umsetzung
 
 Gewählter Ansatz und die Festlegungen dahinter: ADR
-[`0077`](../decisions/0077-doku-ballast-eine-regel-an-einer-stelle-richtwerte-statt-gate.md).
+[`0079`](../decisions/0079-doku-ballast-eine-regel-an-einer-stelle-richtwerte-statt-gate.md).
 
 ### Die Regel
 
@@ -107,7 +107,7 @@ Zwei Anker, beide verweisen auf den Konventions-Punkt, statt die Regel zu wieder
 `.claude/skills/spec-writer/SKILL.md` (Schritt 4, vor dem Spec-Commit) und
 `.claude/agents/architect.md` (Aufgabe 1, bevor eine ADR abgeschlossen wird). `specs/TEMPLATE.md`
 wird **nicht** angefasst: ein Hinweis dort würde als Textbaustein in jede neue Spec kopiert.
-`specs/README.md` bekommt einen Satz zur Reichweite der ADR-Unveränderlichkeit (ADR 0077,
+`specs/README.md` bekommt einen Satz zur Reichweite der ADR-Unveränderlichkeit (ADR 0079,
 Abschnitt 4).
 
 ### Einmalige Verdichtung, lebende Doku — größter Hebel zuerst
@@ -142,10 +142,10 @@ in Kommentaren und Docstrings. Danach erst inhaltlich.
 
 Keine neue Datei: Jeder Verdichtungs-Commit nennt im Body die entfernte Ballast-Klasse und was
 erhalten blieb; der PR-Body trägt eine Tabelle (Doku-Art → entfernte Klassen → Zeilen
-vorher/nachher). Es sind **zwei PRs** — PR 1 trägt Spec, ADR 0077, den Konventions-Punkt, die
+vorher/nachher). Es sind **zwei PRs** — PR 1 trägt Spec, ADR 0079, den Konventions-Punkt, die
 beiden Anker und die lebende Doku (reines Markdown), PR 2 die Doku-Blöcke der Quellcode-Dateien.
 Verhältnis zu ADR [`0045`](../decisions/0045-spec-writer-legt-feature-branch-an-ein-pr-pro-story.md):
-ADR 0077, Abschnitt 7.
+ADR 0079, Abschnitt 7.
 
 ## UI/UX
 
@@ -236,7 +236,7 @@ bekommt genau einen kurzen Abschnitt (Muster „Änderung, die nur Nicht-Code-Ze
 ## Offene Fragen
 
 Keine. Die beiden Punkte, die über eine technische Detailfrage hinausgingen — die Reichweite der
-ADR-Unveränderlichkeit und der PR-Zuschnitt — sind entschieden und stehen als ADR 0077,
+ADR-Unveränderlichkeit und der PR-Zuschnitt — sind entschieden und stehen als ADR 0079,
 Abschnitt 4 und 7.
 
 ## Out of Scope
