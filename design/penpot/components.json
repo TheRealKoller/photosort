@@ -355,20 +355,23 @@
         ]
       },
       "tokens": {
-        "spur": "color.overlay",
+        "flaeche": "color.overlay",
         "umriss": "color.border-control",
+        "schrift": "color.text",
         "knauf": "color.text"
       },
       "tokensProAuspraegung": {
         "zustand": {
           "checked": {
-            "spur": "color.accent",
+            "flaeche": "color.accent",
             "umriss": "color.accent",
+            "schrift": "color.accent-fg",
             "knauf": "color.accent-fg"
           },
           "disabled": {
-            "spur": "color.surface",
+            "flaeche": "color.surface",
             "umriss": "color.border",
+            "schrift": "color.text-disabled",
             "knauf": "color.text-disabled"
           }
         }
@@ -389,13 +392,15 @@
       "tokens": {
         "radius": "radius.xs",
         "hoehe": "space.2",
-        "spur": "color.separator",
+        "flaeche": "color.separator",
+        "schrift": "color.text-h",
         "fuellung": "color.accent"
       },
       "tokensProAuspraegung": {
         "zustand": {
           "indeterminate": {
-            "flaeche": "color.accent"
+            "flaeche": "color.accent",
+            "schrift": "color.accent-fg"
           }
         }
       }

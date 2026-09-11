@@ -1985,6 +1985,350 @@ describe('Die geteilten Erkennungen', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
+// Binden oder leeren: die Flaeche jeder Variante
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Die Bindungsreihenfolge von `baueVariante` nachgespielt - gespeist aus den beiden Tabellen der
+ * Nutzlast selbst (`ROLLE_ZU_EIGENSCHAFT`, `TEXT_ROLLEN`), nie aus einer zweiten getippten Liste.
+ *
+ * ⚠ GESAMMELT WERDEN DIE EIGENSCHAFTEN, DIE AUFS BRETT GINGEN - nicht die vorgekommenen
+ * Rollennamen. `schrift` bildet EBENFALLS auf `fill` ab und traegt praktisch jede betroffene
+ * Variante; eine Ableitung "kam eine Rolle vor, die auf `fill` abbildet?" zaehlte sie mit und
+ * bliebe ueber dem unveraenderten Fehler dauerhaft gruen.
+ *
+ * ⚠ UND ZWAR UEBER ALLE AUFRUFE, nicht nur den letzten: `bindeRollen` laeuft je Variante ein- bis
+ * viermal, und eine Auspraegungs-Tabelle, die nur `schrift` fuehrt, machte sonst eine laengst
+ * gebundene Flaeche wieder zunichte.
+ */
+interface SimulationsBaustein {
+  schluessel: string
+  varianten: Record<string, string[]>
+  tokens: Record<string, string>
+  tokensProAuspraegung?: Record<string, Record<string, Record<string, string>>>
+}
+
+interface Bindung {
+  kombination: Record<string, string>
+  brettEigenschaften: string[]
+  flaeche: string | null
+  schrift: string | null
+}
+
+/** Eigene Schluessel, nie geerbte: `constructor` loeste an einem Objektliteral sonst auf und
+ * machte aus einer unbekannten Rolle eine scheinbar bekannte. */
+function eigenerWert<T>(tabelle: Record<string, T>, schluessel: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(tabelle, schluessel) ? tabelle[schluessel] : undefined
+}
+
+/** Das Kreuzprodukt in derselben Achsenreihenfolge wie `kombinationen` in seed-components.js. */
+export function kombinationenVon(varianten: Record<string, string[]>): Record<string, string>[] {
+  let ergebnis: Record<string, string>[] = [{}]
+  for (const achse of Object.keys(varianten)) {
+    const naechste: Record<string, string>[] = []
+    for (const bisher of ergebnis) {
+      for (const auspraegung of varianten[achse] ?? []) {
+        naechste.push({ ...bisher, [achse]: auspraegung })
+      }
+    }
+    ergebnis = naechste
+  }
+  return ergebnis
+}
+
+export function bindungenVon(
+  baustein: SimulationsBaustein,
+  rollenTabelle: Record<string, string[]>,
+  textRollen: readonly string[],
+): Bindung[] {
+  return kombinationenVon(baustein.varianten).map((kombination) => {
+    const brettEigenschaften: string[] = []
+    let flaeche: string | null = null
+    let schrift: string | null = null
+
+    const anwenden = (rollen: Record<string, string>): void => {
+      for (const rolle of Object.keys(rollen)) {
+        const eigenschaften = eigenerWert(rollenTabelle, rolle)
+        // Eine Rolle ohne Penpot-Eigenschaft wird von `bindeRollen` als `nachzubinden` gemeldet
+        // und fasst kein Brett an.
+        if (eigenschaften === undefined) continue
+        const aufsBrett = !textRollen.includes(rolle)
+        for (const eigenschaft of eigenschaften) {
+          if (!aufsBrett) {
+            if (eigenschaft === 'fill') schrift = rollen[rolle]!
+            continue
+          }
+          if (!brettEigenschaften.includes(eigenschaft)) brettEigenschaften.push(eigenschaft)
+          if (eigenschaft === 'fill') flaeche = rollen[rolle]!
+        }
+      }
+    }
+
+    anwenden(baustein.tokens)
+    for (const achse of Object.keys(kombination)) {
+      const besondere = baustein.tokensProAuspraegung?.[achse]?.[kombination[achse]!]
+      if (besondere) anwenden(besondere)
+    }
+    return { kombination, brettEigenschaften, flaeche, schrift }
+  })
+}
+
+/** Liest eine als Array-Literal geschriebene Konstante der Nutzlast aus dem geparsten Baum. */
+function listenKonstante(quelltext: string, name: string): string[] {
+  const deklaration = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'VariableDeclarator' &&
+      (eintrag.id as Record<string, unknown>)?.name === name,
+  )[0]
+  if (deklaration === undefined) {
+    throw new Error(`${name} nicht gefunden.`)
+  }
+  const literal = deklaration.init as Record<string, unknown>
+  if (literal?.type !== 'ArrayExpression') {
+    throw new Error(`${name} ist kein Array-Literal.`)
+  }
+  return ((literal.elements as Record<string, unknown>[]) ?? []).map(
+    (element) => element.value as string,
+  )
+}
+
+const textRollenTabelle = () => listenKonstante(dateiVon('seed-components.js').roh, 'TEXT_ROLLEN')
+
+function alleBindungen(): { baustein: SimulationsBaustein; bindung: Bindung }[] {
+  const rollen = rollenTabelle()
+  const texte = textRollenTabelle()
+  return komponenten.bausteine.flatMap((baustein) =>
+    bindungenVon(baustein, rollen, texte).map((bindung) => ({ baustein, bindung })),
+  )
+}
+
+/**
+ * Varianten, die im Produkt KEINE eigene Flaeche tragen - eingefroren, je Auspraegung, mit Grund
+ * und mit der Zahl der gedeckten Varianten (ADR 0081 Abschnitt 2).
+ *
+ * ⚠ DIE ZAHL IST TRAGEND, weil die Deckung 1:n ist: Eine Teilaenderung laesst einen Eintrag nicht
+ * verwaisen, sondern nur schrumpfen - die blosse Verwaisungspruefung bliebe dabei gruen.
+ */
+const VARIANTEN_OHNE_FLAECHE: { pfad: string; varianten: number; grund: string }[] = [
+  {
+    pfad: 'button.auspraegung.ghost',
+    varianten: 12,
+    grund:
+      'Im Produkt `bg-transparent`. Eine Flaeche zeigt die Schaltflaeche erst in hover/active ' +
+      '(`hover:bg-overlay`, `active:bg-border`); eine Achsenkombination kann die Variantenmatrix ' +
+      'nicht adressieren, weshalb `ueberfahren-flaeche`/`gedrueckt-flaeche` ungebunden dastehen.',
+  },
+  {
+    pfad: 'button.auspraegung.link',
+    varianten: 12,
+    grund:
+      'Im Produkt `bg-transparent`: Der Verweis traegt eine Unterstreichung statt einer Flaeche, ' +
+      'die Farbe steckt vollstaendig in der Schrift (`color.accent-strong`).',
+  },
+  {
+    pfad: 'badge.auspraegung.neutral',
+    varianten: 1,
+    grund:
+      'Im Produkt nur `border-border` und `text-text`, kein einziges `bg-*`: Der neutrale Ton ' +
+      'ignoriert die Fuellung vollstaendig - deshalb gibt es auch kein `neutral-suggested`.',
+  },
+]
+
+/**
+ * Rollennamen aus `components.json`, die bewusst auf KEINE Penpot-Eigenschaft abbilden - je mit
+ * Grund, beide Richtungen geprueft.
+ *
+ * Damit gibt es nur noch zwei Faelle: Eine Rolle bildet ab, oder sie steht hier. Eine dritte
+ * Moeglichkeit - eine Rolle, die still im Bericht `nachzubinden` landet, obwohl sie die Flaeche
+ * des Bretts selbst meint - gibt es nicht; genau das war `spur`.
+ */
+const ROLLEN_OHNE_EIGENSCHAFT: Record<string, string> = {
+  'ueberfahren-flaeche':
+    'Achsenkombination auspraegung x zustand; die Variantenmatrix kann sie nicht adressieren.',
+  'ueberfahren-schrift':
+    'Achsenkombination auspraegung x zustand; die Variantenmatrix kann sie nicht adressieren.',
+  'gedrueckt-flaeche':
+    'Achsenkombination auspraegung x zustand; die Variantenmatrix kann sie nicht adressieren.',
+  'gedrueckt-schrift':
+    'Achsenkombination auspraegung x zustand; die Variantenmatrix kann sie nicht adressieren.',
+  fokuskontur:
+    'Der Fokusring ist eine zweite Kontur um das Feld herum; der Aufbau setzt nur die eine.',
+  platzhalter: 'Die Platzhalterschrift ist ein Unterelement des Eingabefelds, nicht sein Brett.',
+  textmarke: 'Die Auswahlmarkierung im Eingabefeld ist kein Merkmal des Bretts.',
+  marke: 'Das Haekchen des Auswahlkaestchens ist ein Unterelement, das dieser Aufbau nicht baut.',
+  knauf: 'Der Knauf des Schalters ist ein Unterelement, das dieser Aufbau nicht baut.',
+  fuellung: 'Der Fuellbalken der Fortschrittsanzeige ist ein Unterelement, kein Brettmerkmal.',
+  symbol: 'Das Symbol im Hinweis ist eine eigene Form, die dieser Aufbau nicht anlegt.',
+  beitext: 'Der Beitext des Hinweises ist eine zweite Textform neben der Beschriftung.',
+  'titel-schrift': 'Die Titelzeile ist eine zweite Textform neben der einen Beschriftung.',
+  'titel-typografie': 'Die Titelzeile ist eine zweite Textform neben der einen Beschriftung.',
+  'beitext-typografie': 'Der Beitext ist eine zweite Textform neben der einen Beschriftung.',
+  'hinweis-schrift': 'Der Bewertungshinweis der Karte ist eine zweite Textform auf der Kachel.',
+  'dateiname-schrift': 'Der Dateiname der Karte ist eine zweite Textform auf der Kachel.',
+  'dateiname-schriftfamilie': 'Der Dateiname der Karte ist eine zweite Textform auf der Kachel.',
+  'dateiname-typografie': 'Der Dateiname der Karte ist eine zweite Textform auf der Kachel.',
+  'bildflaeche-radius': 'Die Bildflaeche der Karte ist ein Unterelement, nicht das Kartenbrett.',
+  aktionsabstand: 'Der Abstand der Dialog-Aktionen gilt einer Zeile im Dialog, nicht dem Brett.',
+}
+
+describe('Binden oder leeren: die Flaeche jeder Variante', () => {
+  function deckung(schluessel: string, kombination: Record<string, string>) {
+    return VARIANTEN_OHNE_FLAECHE.filter((eintrag) => {
+      const [baustein, achse, auspraegung] = eintrag.pfad.split('.')
+      return baustein === schluessel && kombination[achse!] === auspraegung
+    })
+  }
+
+  /* Die Simulation ist das tragende Bauteil: ohne sie waere jede Aussage hier eine zweite getippte
+     Wahrheit neben `components.json`. */
+  it('liest ihre beiden Tabellen aus der Nutzlast', () => {
+    const rollen = rollenTabelle()
+    expect(rollen.flaeche).toEqual(['fill'])
+    expect(rollen.schrift).toEqual(['fill'])
+    expect(textRollenTabelle()).toContain('schrift')
+    expect(alleBindungen()).toHaveLength(158)
+  })
+
+  it('zaehlt die Eigenschaften des BRETTS, nicht die vorgekommenen Rollen', () => {
+    // Falle 1: `schrift` bildet ebenfalls auf `fill` ab - aufs Brett geht davon nichts.
+    const probe: SimulationsBaustein = {
+      schluessel: 'probe',
+      varianten: { ton: ['a'] },
+      tokens: { schrift: 'color.text' },
+    }
+    const [bindung] = bindungenVon(probe, { flaeche: ['fill'], schrift: ['fill'] }, ['schrift'])
+    expect(bindung!.flaeche).toBeNull()
+    expect(bindung!.schrift).toBe('color.text')
+    expect(bindung!.brettEigenschaften).toEqual([])
+  })
+
+  it('sammelt ueber alle Bindungsaufrufe, nicht nur ueber den letzten', () => {
+    // Falle 2: die Auspraegungs-Tabelle fuehrt NUR `schrift` - die Grundflaeche bleibt trotzdem.
+    const probe: SimulationsBaustein = {
+      schluessel: 'probe',
+      varianten: { ton: ['a'] },
+      tokens: { flaeche: 'color.surface' },
+      tokensProAuspraegung: { ton: { a: { schrift: 'color.text' } } },
+    }
+    const [bindung] = bindungenVon(probe, { flaeche: ['fill'], schrift: ['fill'] }, ['schrift'])
+    expect(bindung!.flaeche).toBe('color.surface')
+    expect(bindung!.brettEigenschaften).toEqual(['fill'])
+  })
+
+  it('laesst die letzte Bindung gewinnen, in der Achsenreihenfolge der Datendatei', () => {
+    const probe: SimulationsBaustein = {
+      schluessel: 'probe',
+      varianten: { ton: ['a'], zustand: ['x'] },
+      tokens: { flaeche: 'color.bg' },
+      tokensProAuspraegung: {
+        ton: { a: { flaeche: 'color.surface' } },
+        zustand: { x: { flaeche: 'color.overlay' } },
+      },
+    }
+    const [bindung] = bindungenVon(probe, { flaeche: ['fill'] }, [])
+    expect(bindung!.flaeche).toBe('color.overlay')
+    expect(kombinationenVon({ ton: ['a', 'b'], zustand: ['x', 'y'] })).toHaveLength(4)
+  })
+
+  /* AKZEPTANZKRITERIUM 1, erste Haelfte: jede Variante ohne gebundene Flaeche ist namentlich
+     gefuehrt - und von GENAU EINEM Eintrag gedeckt. */
+  it('fuehrt jede ungebundene Variante namentlich und genau einmal', () => {
+    const offen: string[] = []
+    for (const { baustein, bindung } of alleBindungen()) {
+      if (bindung.flaeche !== null) continue
+      const gedeckt = deckung(baustein.schluessel, bindung.kombination)
+      if (gedeckt.length !== 1) {
+        offen.push(`${baustein.schluessel}: ${JSON.stringify(bindung.kombination)}`)
+      }
+    }
+    expect(offen).toEqual([])
+  })
+
+  /* AKZEPTANZKRITERIUM 1, zweite Haelfte: 133 gebunden, 25 ausdruecklich geleert. Beide Zahlen
+     entstehen aus der Simulation, nicht aus der Liste - sonst pruefte sie sich selbst. */
+  it('bindet 133 Flaechen und leert 25', () => {
+    const bindungen = alleBindungen()
+    const gebunden = bindungen.filter(({ bindung }) => bindung.flaeche !== null)
+    expect(gebunden).toHaveLength(133)
+    expect(bindungen.length - gebunden.length).toBe(25)
+  })
+
+  /* Die Zahl je Eintrag: eine Teilaenderung laesst ihn schrumpfen statt verwaisen. */
+  it('deckt je Eintrag genau so viele Varianten, wie er behauptet', () => {
+    const gezaehlt: Record<string, number> = {}
+    for (const { baustein, bindung } of alleBindungen()) {
+      if (bindung.flaeche !== null) continue
+      for (const eintrag of deckung(baustein.schluessel, bindung.kombination)) {
+        gezaehlt[eintrag.pfad] = (gezaehlt[eintrag.pfad] ?? 0) + 1
+      }
+    }
+    for (const eintrag of VARIANTEN_OHNE_FLAECHE) {
+      expect(gezaehlt[eintrag.pfad], eintrag.pfad).toBe(eintrag.varianten)
+    }
+    expect(VARIANTEN_OHNE_FLAECHE.reduce((summe, e) => summe + e.varianten, 0)).toBe(25)
+  })
+
+  it('verlangt je Eintrag eine Begruendung und einen Pfad, den es gibt', () => {
+    for (const eintrag of VARIANTEN_OHNE_FLAECHE) {
+      expect(eintrag.grund.length, eintrag.pfad).toBeGreaterThan(40)
+      const [schluessel, achse, auspraegung] = eintrag.pfad.split('.')
+      const baustein = komponenten.bausteine.find((kandidat) => kandidat.schluessel === schluessel)
+      expect(baustein, eintrag.pfad).toBeDefined()
+      expect(baustein!.varianten[achse!], eintrag.pfad).toContain(auspraegung)
+    }
+  })
+
+  /* GEGENPROBE ZUR BAUART: eine erfundene tokenlose Auspraegung wird gemeldet, eine gefuehrte
+     nicht. Ohne sie bestuende die Zusicherung auch mit einem Erkenner, der nie etwas findet. */
+  it('erkennt eine ungefuehrte Variante ohne Flaeche an einer synthetischen Probe', () => {
+    const probe: SimulationsBaustein = {
+      schluessel: 'probe',
+      varianten: { ton: ['mit', 'ohne'] },
+      tokensProAuspraegung: { ton: { mit: { flaeche: 'color.bg' } } },
+      tokens: {},
+    }
+    const ohne = bindungenVon(probe, { flaeche: ['fill'] }, []).filter(
+      (bindung) => bindung.flaeche === null,
+    )
+    expect(ohne).toHaveLength(1)
+    expect(ohne[0]!.kombination).toEqual({ ton: 'ohne' })
+  })
+})
+
+describe('Das Rollenvokabular bildet ab oder ist gefuehrt', () => {
+  const rollenIn = (): string[] => [
+    ...new Set(tokenSlots().map((slot) => slot.pfad.split('.').slice(-1)[0]!)),
+  ]
+
+  it('bildet jede Rolle aus components.json ab oder fuehrt sie namentlich', () => {
+    const abbildend = rollenTabelle()
+    const ungefuehrt = rollenIn().filter(
+      (rolle) =>
+        eigenerWert(abbildend, rolle) === undefined &&
+        eigenerWert(ROLLEN_OHNE_EIGENSCHAFT, rolle) === undefined,
+    )
+    expect(ungefuehrt).toEqual([])
+  })
+
+  /* GEGENRICHTUNG: ein stehengebliebener Eintrag wird verwaist und rot - genau daran faellt
+     `spur` auf, sobald die Rolle ihren Platz gewechselt hat. */
+  it('fuehrt keinen verwaisten und keinen doppelt gefuehrten Eintrag', () => {
+    const vorhanden = new Set(rollenIn())
+    const abbildend = rollenTabelle()
+    for (const [rolle, grund] of Object.entries(ROLLEN_OHNE_EIGENSCHAFT)) {
+      expect(vorhanden.has(rolle), rolle).toBe(true)
+      expect(eigenerWert(abbildend, rolle), rolle).toBeUndefined()
+      expect(grund.length, rolle).toBeGreaterThan(40)
+    }
+  })
+
+  it('sieht im Bestand ueberhaupt Rollen', () => {
+    expect(rollenIn().length).toBeGreaterThanOrEqual(20)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
 // Verdrahtung des TS-Projekts
 // ---------------------------------------------------------------------------------------------
 
