@@ -436,8 +436,9 @@ längere Anlaufzeit, aber für Stapelläufe über mehrere tausend Fotos tragbar.
 
 #### 6. Die beiden früheren Ablehnungsgründe auf heutigem Stand — als Restrisiko
 
-**(a) Zusätzliche Verarbeiter bei Gemeinschaftsmodellen.** Der Punkt muss präziser gefasst
-werden, als er ursprünglich formuliert war, und wird dadurch teils kleiner, teils anders:
+**(a) Zusätzliche Verarbeiter bei Gemeinschaftsmodellen — teils widerlegt, im Kern bestätigt.**
+Der Punkt muss präziser gefasst werden, als er ursprünglich formuliert war, und wird dadurch
+teils kleiner, teils anders:
 
 - Gemeinschaftsmodelle laufen **auf Replicates Infrastruktur**, nicht auf Rechnern der
   Modellautoren. Die Unterauftragnehmerliste von Replicate nennt als Infrastruktur AWS,
@@ -457,9 +458,12 @@ werden, als er ursprünglich formuliert war, und wird dadurch teils kleiner, tei
   gegenüber dem heutigen Zustand (Anthropic: USA; Mistral: EU) für den Mistral-Pfad eine
   Verschlechterung der Datenlage.
 
-**(b) Unklare Vertragslage zum Datenschutz.** Der Befund aus Spec 0035 gilt unverändert:
+**(b) Unklare Vertragslage zum Datenschutz — weiterhin unbestätigt.** Der Befund aus Spec 0035
+gilt unverändert; nichts daran ist widerlegt, aber auch nichts belegt:
 
-- **Eine DPA/AVV von `replicate.com` war nicht auffindbar.** Die Datenschutzerklärung unter
+- **Eine DPA/AVV von `replicate.com` war nicht auffindbar** (weiterhin unbestätigt, nicht
+  widerlegt — der Negativbefund betrifft nur das öffentlich Auffindbare, siehe offene
+  Unsicherheit 15). Die Datenschutzerklärung unter
   `replicate.com/privacy` erwähnt weder eine AVV noch Standardvertragsklauseln noch
   EU-Drittlandtransfers. Eine öffentliche Unterauftragnehmerliste existiert
   (`replicate.com/docs/topics/site-policy/subprocessors`) — eine AVV dazu aber nicht.
