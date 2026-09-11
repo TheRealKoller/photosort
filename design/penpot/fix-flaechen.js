@@ -243,7 +243,22 @@ function main() {
   const geaendert = []
   const bereitsRichtig = []
   const strukturAbweichend = []
-  for (const behaelter of penpotUtils.findShapes((form) => istVariantenBehaelter(form))) {
+  const aufDieserSeite = []
+  /*
+   * ⚠ NUR DIE AKTIVE SEITE, und das ist keine Sparsamkeit, sondern eine Vorbedingung: Penpot
+   * laesst ausschliesslich die aktive Seite beschreiben. Ohne die Wurzel `penpot.root` suchte
+   * `findShapes` ueber ALLE Seiten, faende Behaelter auch dort, wo dieser Lauf sie nicht aendern
+   * darf, und brueche beim ersten solchen Schreibzugriff ab - mitten im Bestand, mit einem halb
+   * korrigierten Stand und einer Fehlermeldung statt eines Berichts.
+   *
+   * Was auf einer anderen Seite liegt, bleibt deshalb unberuehrt und erscheint als eigener
+   * Ausgang `aufAndererSeite`. Der Lauf wird dafuer je Seite einmal angestossen - erst mit dieser
+   * Begrenzung traegt dieser Satz, denn ohne sie faende jeder Lauf wieder alle Seiten.
+   */
+  for (const behaelter of penpotUtils.findShapes(
+    (form) => istVariantenBehaelter(form),
+    penpot.root
+  )) {
     const schluessel = behaelter.getPluginData('schluessel')
     if (!schluessel) {
       continue
@@ -252,6 +267,7 @@ function main() {
     if (!baustein) {
       continue
     }
+    aufDieserSeite.push(schluessel)
     for (const komponente of behaelter.variants.variantComponents()) {
       const bezeichnung = schluessel + ': ' + varianteName(komponente)
       const wurzel = komponente.mainInstance()
@@ -270,10 +286,18 @@ function main() {
     }
   }
 
+  /* Vorhanden, aber nicht auf dieser Seite - also von diesem Lauf NICHT bearbeitet. Ohne diesen
+     Ausgang bliebe der Unterschied zwischen "nichts zu tun" und "nicht angesehen" unsichtbar. */
+  const aufAndererSeite = vorhandene.filter(
+    (schluessel) => aufDieserSeite.indexOf(schluessel) === -1
+  )
+
   return {
+    seite: penpot.currentPage.name,
     geaendert: geaendert,
     bereitsRichtig: bereitsRichtig.length,
     strukturAbweichend: strukturAbweichend,
+    aufAndererSeite: aufAndererSeite,
     nichtGefunden: nichtGefunden,
   }
 }
