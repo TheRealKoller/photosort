@@ -302,6 +302,61 @@
           "grund": "Für die Kürzung mit Auslassung gibt es kein Token. Im Entwurf steht sie als tatsächlich gekürzter Beispieltext, damit der ungünstige Fall sichtbar ist statt nur der bequeme."
         }
       ]
+    },
+    {
+      "schluessel": "einstellungen",
+      "anzeigename": "Projekteinstellungen",
+      "seite": "Ansicht — Projekteinstellungen",
+      "produktdateien": [],
+      "breiten": [
+        "mobile",
+        "desktop"
+      ],
+      "zustaende": [
+        "gefuellt",
+        "ladend",
+        "fehler"
+      ],
+      "variantenachse": "zustand",
+      "bausteine": [
+        "switch",
+        "badge",
+        "checkbox",
+        "button",
+        "alert"
+      ],
+      "luecken": [
+        {
+          "schluessel": "breakpoint",
+          "stelle": "Umbruch der Modellkarten von der einzeiligen Reihe zur gestapelten Spalte",
+          "grund": "Es gibt kein Breakpoint-Token. Die Umbruchbreite lebt allein in der Voreinstellung des Utility-Frameworks und in der Datei mit den beiden Prüfbreiten des Projekts; im Entwurf wird sie als Wert gesetzt."
+        },
+        {
+          "schluessel": "kartenbreite",
+          "stelle": "Breite einer Modellkarte innerhalb der Reihe auf dem breiten Brett",
+          "grund": "Für Breiten führt der Satz photosort kein Token. Die Kartenbreite ist aus der Innenbreite des Abschnitts und den Abständen gerechnet und steht als Wert im Entwurf; gedeckt ist allein der Zwischenraum über die Abstandsstufen."
+        },
+        {
+          "schluessel": "behaelter",
+          "stelle": "Abschnitt Modell und die einzelne Modellkarte als Behälter",
+          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Behälter sind im Entwurf deshalb tokengebundene Rahmen statt Instanzen."
+        },
+        {
+          "schluessel": "auswahlmarke",
+          "stelle": "Beschriftete Auswahlzeile je Tätigkeit am Fuß einer Modellkarte",
+          "grund": "Das Auswahlkästchen ist ein Blatt und nimmt keine Kinder auf. Seine mitgelieferte Beschriftung trägt deshalb das Häkchen der angehakten Zeile und ist in der nicht angehakten ausgeblendet; der Text der Tätigkeit steht als eigene Form daneben. Der Zusammenhalt beider ist Layout, keine Zusicherung des Bausteins."
+        },
+        {
+          "schluessel": "schalterknauf",
+          "stelle": "Schalter der Cloud-Bilderkennung",
+          "grund": "Der Schalter ist in der Bibliothek ebenfalls ein Blatt und führt keinen Knauf als eigene Form. Im Entwurf trägt er allein seine Fläche; sein Zustand ist damit an der Farbe ablesbar, nicht an der Stellung des Knaufs."
+        },
+        {
+          "schluessel": "seitengrund",
+          "stelle": "Hintergrund der Ansichtsseite",
+          "grund": "Eine Penpot-Seite ist keine Form; eine Tokenbindung greift dort nicht. Der Grund ist aus dem Flächentoken gelesen und gesetzt, damit die Sichtprüfung gegen denselben Untergrund urteilt, gegen den der Kontrast gerechnet ist."
+        }
+      ]
     }
   ]
 }
