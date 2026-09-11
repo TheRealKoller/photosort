@@ -77,11 +77,9 @@ wo sie ausgeführt wird:
 | `research-engineer` | Agent | Subagent | Standard-Modell, immer; Tool-Isolation (kein `Bash`/`Write`/`Edit`/`Agent`) — Quellenbewertung ist echtes fachliches Abwägen, kein Kandidat für eine günstigere Modellstufe. |
 
 Die fünf Fachagenten (`architect`, `test-engineer`, `security-engineer`, `requirements-engineer`,
-`ux-ui-designer`) behalten damit weiterhin ihre Konzept-Dokument-Pflege und ihre
-`spec-writer`-Konsultationsrolle (nur `architect` zusätzlich die Umsetzungsplanung) — entzogen
-wurde ihnen ausschließlich die **Feature-Branch-Review-Rolle**: die zugehörige Prüf-Methodik ist
-vollständig in den jeweiligen `review-<x>`-Skill gewandert (`.claude/skills/review-<x>/SKILL.md`),
-mit einem kurzen Verweis darauf in der jeweiligen Agenten-Datei.
+`ux-ui-designer`) pflegen ihr Konzept-Dokument und beraten `spec-writer` (nur `architect`
+zusätzlich die Umsetzungsplanung). Die Feature-Branch-Review-Methodik liegt dagegen vollständig im
+jeweiligen `review-<x>`-Skill (`.claude/skills/review-<x>/SKILL.md`).
 
 | Skill (Review-Perspektive) | Prüft | Konzept-Dokument |
 |---|---|---|
@@ -98,8 +96,7 @@ rein fachliche Schärfung (Verständnis, Prioritäts-/Reihenfolge-Einordnung üb
 `requirements-engineer`, Code-/Spec-Konfliktprüfung, Devil's-Advocate-Lohnenswert-Gate) und
 schreibt Ziel/User Story/Akzeptanzkriterien direkt in den Issue-Body (Status `Ready`) und
 schärft dabei den Issue-Titel nach, wenn er das geschärfte Ergebnis nicht mehr trifft — ohne
-technische Details und ohne lokale Zwischendatei. Dieser Schritt 1 ist von dieser Konsolidierung
-nicht berührt.
+technische Details und ohne lokale Zwischendatei.
 
 ## Der Lebenszyklus einer Story auf dem Board
 
@@ -179,30 +176,13 @@ Auth-/Secrets-Pfade, neue Abhängigkeiten, Frontend-Dateien). Sicherheitsnetz: I
 unklar, läuft die Perspektive trotzdem — die Tabelle ist bewusst konservativ statt aggressiv
 Kontingent sparend.
 
-Eine feste Modellzuweisung pro Perspektive (früher: Haiku für die beiden checklistenartigsten
-Perspektiven, Anforderungstreue und UI/UX) entfällt ersatzlos — es gibt keinen eigenen,
-modell-wählbaren Subagenten-Aufruf mehr, alle fünf Perspektiven laufen im
-Hauptsession-Modell (Standard). Das ist kein Qualitätsverlust: die beiden vormals auf Haiku
-gestellten Perspektiven waren gerade wegen ihres checklistenartigen Charakters dafür geeignet —
-im stärkeren Hauptsession-Modell geprüft ist das eher ein Qualitätsgewinn. Die Ersparnis kommt
-vollständig aus dem Wegfall der fünf Subagenten-Kaltstarts, nicht aus einer Modellstufe.
-
-**Kostenabschätzung (mit Annahmen, keine Scheinpräzision):** Ein Review-Subagenten-Kaltstart
-kostete grob 30–70k Token (CLAUDE.md + `specs/README.md` + Konzept-Dokument-Auszug + Diff + Spec
-+ Reasoning + Bericht) — fünf davon ≈ 200–350k Token pro Feature, bei jedem Feature. Die fünf
-Perspektiven-Skills laufen dagegen im bereits geladenen Hauptsession-Kontext; jeder Skill fügt
-nur seine Skill-Anweisung + Konzept-Dokument-Auszug + Reasoning + Findings hinzu ≈ 15–40k Token,
-macht zusammen mit dem dünnen Orchestrator ≈ 90–210k Token, die sich im Hauptfenster
-akkumulieren (bei einem Doku-Diff mit nur zwei zutreffenden Perspektiven entsprechend weniger,
-~40–90k). Netto rund **40–55 % Reduktion der Review-Phase** — weniger als ein einziger
-gemeinsamer Skill gebracht hätte (dort ~60–75 %), weil fünf getrennte Skill-Anweisungen geladen
-werden und jeder Skill sein Konzept-Dokument separat konsultiert; der dominierende Hebel
-(Wegfall von 5× vollständigem Agenten-Kaltstart) bleibt aber erhalten. Laufzeit/Latenz sind
-dagegen schlechter als zuvor — fünf sequenzielle Durchläufe in der Hauptsession statt einer
-parallelen Subagenten-Runde; für ein Solo-Projekt ohne Latenz-SLA bewusst akzeptiert. Insgesamt
-sinkt ein Feature-Lauf von ~8–12 auf ~3–6 Subagenten-Aufrufe (`spec-writer` + bis zu 3
-Konsultationen unverändert + `developer` + ggf. `developer`-Folgeauftrag; Review = 0
-Subagenten-Aufrufe mehr).
+Alle fünf Perspektiven laufen im Hauptsession-Modell; es gibt für sie keinen eigenen,
+modell-wählbaren Subagenten-Aufruf mehr. Die Ersparnis kommt aus dem Wegfall der fünf
+Subagenten-Kaltstarts (grob 30–70k Token je Kaltstart), nicht aus einer Modellstufe: Ein
+Feature-Lauf braucht damit rund 3–6 statt 8–12 Subagenten-Aufrufe, die Review-Phase selbst keinen
+einzigen. Bewusst in Kauf genommen ist die schlechtere Laufzeit — fünf sequenzielle Durchläufe in
+der Hauptsession statt einer parallelen Subagenten-Runde; für ein Solo-Projekt ohne Latenz-SLA ist
+das der günstigere Tausch.
 
 Dieselbe Kosten-Logik gilt unverändert für den Verfeinerungs-Ablauf selbst
 ([ADR 0018](../specs/decisions/0018-idea-sharpener-kalibrierung-und-skip-logik.md) und
@@ -234,6 +214,4 @@ Regel-Quelle, nach der sich jeder Agent/Skill richtet, ist [`CLAUDE.md`](../CLAU
 Wurzelverzeichnis des Repositories — im Verfassungsstil geschrieben und die einzige Quelle, die
 bei Widersprüchen zwischen dieser Beschreibung und der tatsächlichen Praxis maßgeblich ist. Die
 Schritt-Tabelle und die Rollen-Landkarte oben sind die aufbereitete Zusammenfassung von
-ADR [`decisions/0040-ki-workflow-schritte-2-8-konsolidiert.md`](../specs/decisions/0040-ki-workflow-schritte-2-8-konsolidiert.md),
-die als einzige konsolidierende ADR den vorher über sieben Einzel-ADRs verstreuten Workflow für
-Schritte 2–8 zusammenführt.
+ADR [`decisions/0040-ki-workflow-schritte-2-8-konsolidiert.md`](../specs/decisions/0040-ki-workflow-schritte-2-8-konsolidiert.md).
