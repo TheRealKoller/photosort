@@ -11,7 +11,7 @@
  *
  * `execute_code` FUEHRT DEN TEXT ALS FUNKTIONSRUMPF AUS und liefert nur zurueck, was ein `return`
  * zurueckgibt (gemessen). Ein blanker Ausdruck am Dateiende ginge still verloren - deshalb endet
- * diese Datei, wie alle vier, auf ein `return`.
+ * diese Datei, wie jede Nutzlastdatei, auf ein `return`.
  *
  * LAUFREGEL "jederzeit-wiederholbar": Der Inhalt dieser Datei ist vollstaendig erzeugt, in ihm
  * kann keine Gestaltungsabsicht stecken, die nicht auch im Repository stuende. Ein zweiter Lauf

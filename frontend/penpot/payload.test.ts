@@ -31,13 +31,14 @@ import { describe, expect, it } from 'vitest'
 const DESIGN_DIR = fileURLToPath(new URL('../../design/penpot/', import.meta.url))
 const FRONTEND_DIR = fileURLToPath(new URL('../', import.meta.url))
 
-/** Die sechs handgeschriebenen Dateien - NAMENTLICH behauptet, nicht "mindestens sechs Dateien
+/** Die sieben handgeschriebenen Dateien - NAMENTLICH behauptet, nicht "mindestens sieben Dateien
  * im Verzeichnis". Eine Verzeichnisaufzaehlung waere von einem kaputten Glob nicht zu
  * unterscheiden. */
 const NUTZLAST_DATEIEN = [
   'seed-tokens.js',
   'seed-icons.js',
   'seed-components.js',
+  'fix-flaechen.js',
   'verify.js',
   'components.json',
   'views.json',
@@ -329,7 +330,7 @@ describe('Musterfamilien: tabellengetriebene Erkenner-Selbsttests', () => {
 // ---------------------------------------------------------------------------------------------
 
 describe('Suchraum der Abwesenheits-Zusicherung', () => {
-  it('umfasst genau die sechs namentlich behaupteten Dateien', () => {
+  it('umfasst genau die sieben namentlich behaupteten Dateien', () => {
     expect(nutzlast.map((datei) => datei.datei)).toEqual([...NUTZLAST_DATEIEN])
   })
 
@@ -339,6 +340,7 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
     'seed-tokens.js': 2000,
     'seed-icons.js': 2500,
     'seed-components.js': 5000,
+    'fix-flaechen.js': 8000,
     'verify.js': 4000,
     'components.json': 10000,
     'views.json': 10000,
@@ -346,9 +348,9 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
 
   /* Mindestzahl gescannter Zeilen NACH der Vorbehandlung. Ohne sie ist ein kaputter
      Vorbehandlungsschritt (der alles wegstreicht) von einem sauberen Bestand nicht zu
-     unterscheiden: beide melden null Funde. Mit `views.json` im Suchraum neu gemessen (1237),
-     eingefroren auf 1100. */
-  const MINDESTZEILEN = 1100
+     unterscheiden: beide melden null Funde. Mit `fix-flaechen.js` im Suchraum neu gemessen
+     (1619), eingefroren auf 1450. */
+  const MINDESTZEILEN = 1450
 
   it('hat je Datei ueberhaupt Inhalt', () => {
     for (const datei of nutzlast) {
@@ -383,13 +385,13 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
  * `views.json` bekommt hier keine einzige Freigabe: die Datei traegt per Bauart keine Zahl.
  */
 const FREIGABEN: { datei: string; zeile: number; wert: string; ausschnitt: string }[] = [
-  { datei: 'verify.js', zeile: 54, wert: '12', ausschnitt: 'ERWARTETE_SYMBOLE = 12' },
-  { datei: 'verify.js', zeile: 55, wert: '12', ausschnitt: 'ERWARTETE_BAUSTEINE = 12' },
-  { datei: 'verify.js', zeile: 56, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
-  { datei: 'verify.js', zeile: 57, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
-  { datei: 'verify.js', zeile: 58, wert: '6', ausschnitt: 'ERWARTETE_ANSICHTEN = 6' },
-  { datei: 'verify.js', zeile: 59, wert: '24', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 24' },
-  { datei: 'verify.js', zeile: 60, wert: '4', ausschnitt: 'ERWARTETE_ANSICHTSBEHAELTER = 4' },
+  { datei: 'verify.js', zeile: 55, wert: '12', ausschnitt: 'ERWARTETE_SYMBOLE = 12' },
+  { datei: 'verify.js', zeile: 56, wert: '12', ausschnitt: 'ERWARTETE_BAUSTEINE = 12' },
+  { datei: 'verify.js', zeile: 57, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
+  { datei: 'verify.js', zeile: 58, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
+  { datei: 'verify.js', zeile: 59, wert: '6', ausschnitt: 'ERWARTETE_ANSICHTEN = 6' },
+  { datei: 'verify.js', zeile: 60, wert: '24', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 24' },
+  { datei: 'verify.js', zeile: 61, wert: '4', ausschnitt: 'ERWARTETE_ANSICHTSBEHAELTER = 4' },
 ]
 
 describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast', () => {
@@ -692,9 +694,9 @@ describe('Die zwoelf Bausteine', () => {
     expect(schrittmarke!.quellen).toEqual(['src/components/StepMarker.tsx'])
   })
 
-  /* Die Zuordnungstabelle spannt ZWEI Verzeichnisse: zehn der elf liegen unter
-     `src/components/ui/`, der Kategorie-Chip als `src/components/CategoryBadge.tsx`. Wer nur `ui/`
-     aufzaehlt, verliert den elften still. */
+  /* Die Zuordnungstabelle spannt ZWEI Verzeichnisse: zehn der zwoelf liegen unter
+     `src/components/ui/`, Kategorie-Chip und Schrittmarke unmittelbar unter `src/components/`.
+     Wer nur `ui/` aufzaehlt, verliert die beiden still. */
   it('spannt beide Verzeichnisse auf', () => {
     const quellen = komponenten.bausteine.flatMap((baustein) => baustein.quellen)
     expect(quellen).toContain('src/components/CategoryBadge.tsx')
@@ -1109,6 +1111,143 @@ describe('Die Kardinalitaeten von verify.js', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
+// Der Rueckleser belegt die Abwesenheit einer Bindung als ZAEHLWERT
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Eine ungebundene Standardfuellung ist keine Bindung und taucht in `tokenBindungen` nirgends auf -
+ * ein weisses Brett sieht dort aus wie ein leeres. Belegbar ist der Unterschied nur ueber zwei
+ * Zaehlwerte je Baustein (ADR 0083 Abschnitt 4).
+ *
+ * ⚠ ZURUECK KOMMEN ZWEI ZAHLEN, KEIN FARBWERT - und kein gelesener Wert gelangt in eine
+ * Fehlermeldung: Eine Ausnahme geht denselben Weg in den Sitzungskontext wie die Rueckgabe.
+ */
+const FLAECHEN_ZAEHLWERTE = ['variantenOhneFuellung', 'variantenMitFuellungOhneBindung'] as const
+
+/** Alle `throw new Error(...)`-Argumente einer Datei, als geparste Knoten. */
+function fehlermeldungen(quelltext: string): unknown[] {
+  return knoten(quelltext, (eintrag) => eintrag.type === 'ThrowStatement').map(
+    (eintrag) => eintrag.argument,
+  )
+}
+
+function enthaeltKnotenart(wurzel: unknown, art: string): boolean {
+  let gefunden = false
+  const gehe = (wert: unknown): void => {
+    if (gefunden || wert === null || typeof wert !== 'object') return
+    if (Array.isArray(wert)) {
+      for (const kind of wert) gehe(kind)
+      return
+    }
+    const eintrag = wert as Record<string, unknown>
+    if (eintrag.type === art) {
+      gefunden = true
+      return
+    }
+    for (const teil of Object.values(eintrag)) gehe(teil)
+  }
+  gehe(wurzel)
+  return gefunden
+}
+
+describe('Der Rueckleser zaehlt die Flaechen, statt sie zu lesen', () => {
+  const quelltext = () => dateiVon('verify.js').roh
+
+  it('gibt je Baustein beide Zaehlwerte zurueck', () => {
+    const liste = knoten(
+      quelltext(),
+      (eintrag) =>
+        eintrag.type === 'FunctionDeclaration' &&
+        (eintrag.id as Record<string, unknown> | null)?.name === 'bausteinListe',
+    )[0]
+    expect(liste, 'bausteinListe nicht gefunden').toBeDefined()
+    const befunde = knoten(
+      quelltext(),
+      (eintrag) =>
+        eintrag.type === 'ObjectExpression' &&
+        (eintrag.start as number) > (liste!.start as number) &&
+        (eintrag.end as number) < (liste!.end as number),
+    )
+    for (const name of FLAECHEN_ZAEHLWERTE) {
+      expect(
+        befunde.some((eintrag) => schluesselVon(eintrag).includes(name)),
+        name,
+      ).toBe(true)
+    }
+  })
+
+  /* Die Zaehlung selbst: der Befund traegt GENAU die beiden Schluessel, und ihre Werte sind
+     Zaehler - kein `form.fills`, kein `gesetzt.fill`, also kein Farbwert. */
+  it('gibt aus dem Befund zwei Zaehler zurueck, keinen gelesenen Wert', () => {
+    const erwartet = [...FLAECHEN_ZAEHLWERTE].sort().join(',')
+    const befunde = knoten(
+      quelltext(),
+      (eintrag) =>
+        eintrag.type === 'ObjectExpression' && schluesselVon(eintrag).join(',') === erwartet,
+    )
+    expect(befunde.length, 'Objekt mit genau den beiden Zaehlwerten').toBeGreaterThan(0)
+    for (const eintrag of befunde) {
+      for (const eigenschaft of (eintrag.properties as Record<string, unknown>[]) ?? []) {
+        const wert = eigenschaft.value as Record<string, unknown>
+        expect(wert.type, String((eigenschaft.key as Record<string, unknown>).name)).toBe(
+          'Identifier',
+        )
+      }
+    }
+  })
+
+  /* Und auf dem Weg in die Rueckgabe kommt nichts Gelesenes dazu: Die beiden Schluessel des
+     Bausteinbefunds tragen nirgends eine Fuellung oder eine Tokenzuordnung selbst. */
+  it('reicht in der Bausteinliste keine gelesene Fuellung durch', () => {
+    for (const eintrag of knoten(
+      quelltext(),
+      (kandidat) =>
+        kandidat.type === 'ObjectExpression' &&
+        FLAECHEN_ZAEHLWERTE.every((name) => schluesselVon(kandidat).includes(name)),
+    )) {
+      for (const eigenschaft of (eintrag.properties as Record<string, unknown>[]) ?? []) {
+        const name = (eigenschaft.key as Record<string, unknown>).name as string
+        if (!FLAECHEN_ZAEHLWERTE.includes(name as (typeof FLAECHEN_ZAEHLWERTE)[number])) continue
+        expect(enthaeltBezeichner(eigenschaft.value, 'fills'), name).toBe(false)
+        expect(enthaeltBezeichner(eigenschaft.value, 'tokens'), name).toBe(false)
+      }
+    }
+  })
+
+  /* AUFLAGE 5: keine Fehlermeldung traegt einen gelesenen Wert. Mechanisch gefasst als "kein
+     Argument einer Ausnahme enthaelt einen Eigenschaftszugriff" - `form.fills[0].fillColor` in
+     einer Meldung waere genau derselbe Weg in den Sitzungskontext wie die Rueckgabe. */
+  it('traegt keinen gelesenen Wert in eine Fehlermeldung', () => {
+    const meldungen = fehlermeldungen(quelltext())
+    expect(meldungen.length).toBeGreaterThan(0)
+    for (const meldung of meldungen) {
+      expect(enthaeltKnotenart(meldung, 'MemberExpression')).toBe(false)
+    }
+  })
+
+  it('erkennt eine Meldung mit gelesenem Wert an einer synthetischen Probe', () => {
+    expect(
+      enthaeltKnotenart(
+        fehlermeldungen("throw new Error('x: ' + form.fills)")[0],
+        'MemberExpression',
+      ),
+    ).toBe(true)
+    expect(
+      enthaeltKnotenart(fehlermeldungen("throw new Error('x: ' + NAME)")[0], 'MemberExpression'),
+    ).toBe(false)
+  })
+
+  /* Keine neue `ERWARTETE_*`-Konstante: Die zwei Zaehlwerte sind ein BEFUND, keine Kardinalitaet -
+     ihr Soll entsteht ausserhalb, gegen `components.json`. */
+  it('fuehrt fuer die Zaehlwerte keine neue Kardinalitaet ein', () => {
+    for (const name of Object.keys(ERWARTET)) {
+      expect(name.toLowerCase()).not.toContain('fuellung')
+      expect(name.toLowerCase()).not.toContain('flaeche')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
 // Die Soll-Struktur der Ansichten: views.json
 // ---------------------------------------------------------------------------------------------
 
@@ -1350,6 +1489,10 @@ const LAUFREGELN: Record<string, string | null> = {
   'seed-tokens.js': 'jederzeit-wiederholbar',
   'seed-icons.js': 'jederzeit-wiederholbar',
   'seed-components.js': 'nur-auf-leerer-datei',
+  /* Das Korrekturskript legt nichts an, verschiebt nichts, loescht nichts und ist
+     zielzustands-idempotent - die Schadensklasse, vor der der fail-closed-Waechter von
+     `seed-components.js` bewahrt, ist hier konstruktiv nicht erreichbar. */
+  'fix-flaechen.js': 'jederzeit-wiederholbar',
   'verify.js': null,
   /* `views.json` laeuft NICHT: sie ist eine Soll-Struktur, keine Nutzlast, und bekommt in der
      Schritttabelle keinen Einfuegenamen. Hier eingefroren, damit das eine GEPRUEFTE Aussage ist
@@ -1573,7 +1716,13 @@ const AUFRUFFORMEN: {
   },
 ]
 
-const JS_NUTZLAST = ['seed-tokens.js', 'seed-icons.js', 'seed-components.js', 'verify.js'] as const
+const JS_NUTZLAST = [
+  'seed-tokens.js',
+  'seed-icons.js',
+  'seed-components.js',
+  'fix-flaechen.js',
+  'verify.js',
+] as const
 
 describe('Die Form der Plugin-API-Aufrufe', () => {
   const alleAufrufe = JS_NUTZLAST.flatMap((datei) =>
@@ -1923,6 +2072,56 @@ const GETEILTE_SYMBOLERKENNUNG = [
   '}',
 ].join('\n')
 
+/**
+ * Dritter geteilter Block: die Tokenanwendung. `fix-flaechen.js` bindet dieselben Flaechen wie
+ * `seed-components.js` und muss sie auf dieselbe Weise binden - die Aufrufform von
+ * `applyToShapes` (Formenmenge plus Eigenschaftsliste) weicht von der Doku ab und ist gemessen.
+ */
+const GETEILTE_TOKENANWENDUNG = [
+  'function findeToken(tokenName) {',
+  '  const satz = penpot.library.local.tokens.sets.find((kandidat) => kandidat.name === SATZ_NAME)',
+  '  if (!satz) {',
+  "    throw new Error('Token-Satz fehlt - seed-tokens.js zuerst ausfuehren.')",
+  '  }',
+  '  const token = satz.tokens.find((kandidat) => kandidat.name === tokenName)',
+  '  if (!token) {',
+  "    throw new Error('Unbekanntes Token: ' + tokenName)",
+  '  }',
+  '  return token',
+  '}',
+  '',
+  '/** Aufrufform gemessen: Formenmenge plus Eigenschaftsliste. */',
+  'function wendeTokenAn(formen, eigenschaften, tokenName) {',
+  '  findeToken(tokenName).applyToShapes(formen, eigenschaften)',
+  '}',
+].join('\n')
+
+/**
+ * Vierter geteilter Block: WELCHE Rollen-Tabellen eine Variante betreffen und in WELCHER
+ * Reihenfolge sie angewandt werden.
+ *
+ * ⚠ DAS IST DIE STELLE, AN DER DIE BEIDEN WEGE AUSEINANDERLAUFEN KOENNTEN. `seed-components.js`
+ * baut daraus die Bindungen eines Wiederaufbaus, `fix-flaechen.js` daraus das Soll des bespielten
+ * Standes - Akzeptanzkriterium 4 und Akzeptanzkriterium 1 haengen also an derselben Aussage. Waere
+ * sie zweimal geschrieben, genuegte eine Iteration ueber `Object.keys(variantProps)` statt ueber
+ * die Achsen der Datendatei, und der Korrekturlauf schriebe dauerhaft ein anderes Soll, als ein
+ * Wiederaufbau erzeugt - ohne dass irgendein Test rot wuerde.
+ */
+const GETEILTE_TABELLENREIHENFOLGE = [
+  'function rollenTabellenFuer(baustein, achsenwerte) {',
+  '  const tabellen = [baustein.tokens]',
+  '  const proAuspraegung = baustein.tokensProAuspraegung || {}',
+  '  for (const achse of Object.keys(baustein.varianten)) {',
+  '    const achsenTabelle = proAuspraegung[achse] || {}',
+  '    const besondere = achsenTabelle[achsenwerte[achse]]',
+  '    if (besondere) {',
+  '      tabellen.push(besondere)',
+  '    }',
+  '  }',
+  '  return tabellen',
+  '}',
+].join('\n')
+
 const GETEILTE_BLOECKE: {
   name: string
   dateien: readonly string[]
@@ -1931,9 +2130,21 @@ const GETEILTE_BLOECKE: {
 }[] = [
   {
     name: 'Bausteinerkennung',
-    dateien: ['seed-components.js', 'verify.js'],
+    dateien: ['seed-components.js', 'fix-flaechen.js', 'verify.js'],
     block: GETEILTE_ERKENNUNG,
     aufruf: 'bausteinSchluesselInDatei',
+  },
+  {
+    name: 'Tokenanwendung',
+    dateien: ['seed-components.js', 'fix-flaechen.js'],
+    block: GETEILTE_TOKENANWENDUNG,
+    aufruf: 'wendeTokenAn',
+  },
+  {
+    name: 'Tabellenreihenfolge',
+    dateien: ['seed-components.js', 'fix-flaechen.js'],
+    block: GETEILTE_TABELLENREIHENFOLGE,
+    aufruf: 'rollenTabellenFuer',
   },
   {
     name: 'Symbolerkennung',
@@ -1981,6 +2192,1141 @@ describe('Die geteilten Erkennungen', () => {
     for (const datei of ['seed-icons.js', 'verify.js'] as const) {
       expect(dateiVon(datei).inhalt, datei).not.toContain("'symbol/'")
     }
+  })
+
+  /* Der Satzname ist eine Konstante und muss in beiden Dateien dieselbe sein - der geteilte Block
+     der Tokenanwendung liest sie, traegt sie aber nicht. */
+  it('Tokenanwendung liest denselben Satznamen in beiden Dateien', () => {
+    for (const datei of ['seed-components.js', 'fix-flaechen.js'] as const) {
+      expect(dateiVon(datei).roh, datei).toContain("const SATZ_NAME = 'photosort'")
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Das Korrekturskript: eine geschlossene Schreibflaeche
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * `fix-flaechen.js` ist die erste Datei des Projekts, die WIEDERHOLBAR AUF DEN BESPIELTEN STAND
+ * schreibt - und der ist nach ADR 0065 das Original, keine Kopie. Ein Wiederaufbau scheidet als
+ * Reparaturweg aus (er kostet die von Hand entstandenen Ansichten), also traegt die Begrenzung
+ * allein die Schreibflaeche selbst.
+ *
+ * ⚠ DIE BESTEHENDE VERBOTSLISTE SIEHT ZUWEISUNGEN NICHT. `createBoard`, `appendChild`,
+ * `setPluginData` oder ein `shape.x = …` stehen in keinem ihrer Muster. Ohne die zwei Zusicherungen
+ * hier waere "fasst ausschliesslich die Fuellung an" eine Zusage statt einer Zusicherung.
+ */
+const SCHREIB_WEISSLISTE = ['applyToShapes'] as const
+
+/** Die vier Ausgaenge des Berichts - eingefroren. "Struktur abweichend" ist ein EIGENER Ausgang:
+ * Eine Komponente, die die Vorbedingungen verfehlt, darf nie als "bereits richtig" durchgehen. */
+const BERICHT_AUSGAENGE = ['bereitsRichtig', 'geaendert', 'nichtGefunden', 'strukturAbweichend']
+
+/** Alle Zeichenketten-Literale einer Datei, aus dem geparsten Baum. */
+export function zeichenkettenAus(quelltext: string): string[] {
+  return knoten(quelltext, (eintrag) => eintrag.type === 'Literal')
+    .map((eintrag) => eintrag.value)
+    .filter((wert): wert is string => typeof wert === 'string')
+}
+
+describe('fix-flaechen.js: die Schreibflaeche ist geschlossen', () => {
+  const quelltext = () => dateiVon('fix-flaechen.js').roh
+
+  it('ruft von allen schreibenden Aufrufen ausschliesslich applyToShapes auf', () => {
+    const schreibend = aufrufe(quelltext()).filter((aufruf) => SCHREIBAUFRUFE.includes(aufruf.name))
+    // Ohne die Untergrenze bestuende die Zusage auch fuer eine Datei, die gar nichts schreibt.
+    expect(schreibend.length).toBeGreaterThan(0)
+    expect([...new Set(schreibend.map((aufruf) => aufruf.name))]).toEqual([...SCHREIB_WEISSLISTE])
+  })
+
+  it('weist an keiner Eigenschaft etwas zu ausser fills, und dort nur ein leeres Array', () => {
+    const zuweisungen = knoten(
+      quelltext(),
+      (eintrag) =>
+        eintrag.type === 'AssignmentExpression' &&
+        (eintrag.left as Record<string, unknown> | null)?.type === 'MemberExpression',
+    )
+    expect(zuweisungen.length, 'Eigenschafts-Zuweisung').toBeGreaterThan(0)
+    for (const eintrag of zuweisungen) {
+      const links = eintrag.left as Record<string, unknown>
+      const wert = eintrag.right as Record<string, unknown>
+      expect((links.property as Record<string, unknown> | null)?.name).toBe('fills')
+      expect(wert.type).toBe('ArrayExpression')
+      expect((wert.elements as unknown[]) ?? []).toHaveLength(0)
+    }
+  })
+
+  /* Dieselbe Bauart wie die Vorbedingung von `seed-components.js`: ueber die GEPARSTE
+     Aufrufstelle, nie ueber eine Zeichenkettensuche. Fail-closed je KOMPONENTE statt je Lauf -
+     Plugin-Daten sind von Hand setzbar, und mindestens ein Baustein ist in Penpot von Hand
+     entstanden. Eine Seed-Provenienz darf dieses Skript nirgends unterstellen. */
+  it('prueft die Struktur einer Komponente vor dem ersten Schreibzugriff', () => {
+    const geparst = aufrufe(quelltext())
+    const wache = geparst.find((aufruf) => aufruf.name === 'istKorrigierbaresBrett')
+    const ersterSchreibzugriff = geparst.find((aufruf) => SCHREIBAUFRUFE.includes(aufruf.name))
+    expect(wache, 'istKorrigierbaresBrett').toBeDefined()
+    expect(ersterSchreibzugriff).toBeDefined()
+    expect(wache!.start).toBeLessThan(ersterSchreibzugriff!.start)
+  })
+
+  it('berichtet genau vier Ausgaenge, darunter den abweichenden Aufbau', () => {
+    const bericht = knoten(
+      quelltext(),
+      (eintrag) =>
+        eintrag.type === 'ObjectExpression' &&
+        schluesselVon(eintrag).join(',') === BERICHT_AUSGAENGE.join(','),
+    )
+    expect(bericht, 'Bericht mit genau den vier Ausgaengen').toHaveLength(1)
+  })
+
+  /*
+   * DIE GESTALTUNGSABSICHT KANN NICHT IM SKRIPT STECKEN: kein Tokenname, kein Bausteinschluessel,
+   * kein Auspraegungsname als Literal. Das Soll kommt vollstaendig aus `components.json`; ein
+   * geratener Standard haette hier keinen Platz, an dem er stehen koennte.
+   */
+  it('nennt keinen Tokennamen', () => {
+    expect(punktierteLiteraleAus(quelltext())).toEqual([])
+  })
+
+  it('nennt keinen Bausteinschluessel und keinen Auspraegungsnamen', () => {
+    const verboten = new Set<string>()
+    for (const baustein of komponenten.bausteine) {
+      verboten.add(baustein.schluessel)
+      verboten.add(baustein.name)
+      for (const werte of Object.values(baustein.varianten)) {
+        for (const wert of werte) verboten.add(wert)
+      }
+    }
+    // Selbsttest der Sollmenge: ohne sie pruefte die Zeile darunter gegen eine leere Menge.
+    expect(verboten.has('ghost')).toBe(true)
+    expect(verboten.size).toBeGreaterThan(30)
+    expect(zeichenkettenAus(quelltext()).filter((wert) => verboten.has(wert))).toEqual([])
+  })
+
+  it('liest ueberhaupt Zeichenketten - sonst pruefte die Zeile darueber nichts', () => {
+    expect(zeichenkettenAus(quelltext()).length).toBeGreaterThan(0)
+    expect(zeichenkettenAus("const a = 'x'")).toEqual(['x'])
+  })
+})
+
+/**
+ * Die Soll-Prüfung misst das ERGEBNIS, nicht die Metadaten.
+ *
+ * ⚠ EINE BINDUNG IST KEINE FUELLUNG. Traegt ein Brett die Tokenbindung `fill`, ist sein `fills`
+ * aber leer - jemand hat die Fuellung in Penpot von Hand entfernt, die Bindung blieb stehen -,
+ * dann haelt eine Pruefung, die nur die Bindung liest, das Brett fuer richtig: Der Korrekturlauf
+ * ueberspringt es, meldet es als "bereits richtig", und die fehlende Flaeche ueberlebt. Ein
+ * zweiter Lauf heilte den Schaden nicht, sondern bestaetigte ihn.
+ *
+ * Ob Penpot diesen Zustand ueberhaupt zulaesst, ist NICHT gemessen - und genau deshalb steht die
+ * Zusicherung hier: Die einzige Datei, die wiederholbar auf das Original schreibt, ruht nicht auf
+ * einer ungemessenen Annahme ueber fremdes Verhalten.
+ */
+export function liestDieFuellung(
+  quelltext: string,
+  name: string,
+): { gefunden: boolean; rueckgaben: number; ohneFuellung: number } {
+  const funktion = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'FunctionDeclaration' &&
+      (eintrag.id as Record<string, unknown> | null)?.name === name,
+  )[0]
+  if (funktion === undefined) {
+    return { gefunden: false, rueckgaben: 0, ohneFuellung: 0 }
+  }
+  const rueckgaben = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'ReturnStatement' &&
+      (eintrag.start as number) >= (funktion.start as number) &&
+      (eintrag.end as number) <= (funktion.end as number),
+  )
+  return {
+    gefunden: true,
+    rueckgaben: rueckgaben.length,
+    ohneFuellung: rueckgaben.filter((eintrag) => !enthaeltBezeichner(eintrag.argument, 'fills'))
+      .length,
+  }
+}
+
+describe('fix-flaechen.js: die Soll-Pruefung misst die Flaeche selbst', () => {
+  it('liest auf jedem Rueckgabeweg die tatsaechliche Fuellung', () => {
+    const befund = liestDieFuellung(dateiVon('fix-flaechen.js').roh, 'flaecheIstSoll')
+    expect(befund.gefunden, 'flaecheIstSoll').toBe(true)
+    // Beide Faelle - gebunden und ausdruecklich geleert - haben einen eigenen Rueckgabeweg.
+    expect(befund.rueckgaben).toBe(2)
+    expect(befund.ohneFuellung).toBe(0)
+  })
+
+  /* GEGENPROBE: die Fassung, die nur die Bindung liest, wird gemeldet. */
+  it('meldet eine Pruefung, die nur die Bindung liest', () => {
+    const gegenprobe = liestDieFuellung(
+      [
+        'function flaecheIstSoll(brett, tokenName) {',
+        '  if (!tokenName) {',
+        '    return (brett.fills || []).length === 0',
+        '  }',
+        '  return (brett.tokens || {}).fill === tokenName',
+        '}',
+      ].join('\n'),
+      'flaecheIstSoll',
+    )
+    expect(gegenprobe.rueckgaben).toBe(2)
+    expect(gegenprobe.ohneFuellung).toBe(1)
+  })
+
+  it('meldet eine fehlende Funktion, statt leer wahr zu werden', () => {
+    expect(liestDieFuellung('const a = 1', 'flaecheIstSoll').gefunden).toBe(false)
+  })
+})
+
+/**
+ * Der zweite Teil der Bindungsregel: **es gewinnt die letzte Bindung.**
+ *
+ * WELCHE Tabellen in welcher Reihenfolge gelten, ist als wortgleicher Block geteilt und damit
+ * zwischen Wiederaufbau und Korrekturlauf nicht mehr trennbar. Was `fix-flaechen.js` daraus
+ * ableitet, ist die zweite Haelfte: In Penpot gewinnt die letzte Anwendung, weil sie die vorige
+ * ueberschreibt - `letzteBindung` muss dasselbe tun. Ein `break` beim ersten Treffer oder eine
+ * Bedingung „nur, wenn noch nichts gefunden" kehrte die Regel um, und der Korrekturlauf schriebe
+ * dauerhaft das Grundtoken statt des Auspraegungstokens.
+ */
+export function letzteGewinntBefund(
+  quelltext: string,
+  name: string,
+): { gefunden: boolean; abbrueche: number; ueberschreibt: boolean; nenntAkkumulator: boolean } {
+  const funktion = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'FunctionDeclaration' &&
+      (eintrag.id as Record<string, unknown> | null)?.name === name,
+  )[0]
+  if (funktion === undefined) {
+    return { gefunden: false, abbrueche: 0, ueberschreibt: false, nenntAkkumulator: true }
+  }
+  const innen = (eintrag: Record<string, unknown>): boolean =>
+    (eintrag.start as number) >= (funktion.start as number) &&
+    (eintrag.end as number) <= (funktion.end as number)
+
+  const schleifen = knoten(
+    quelltext,
+    (eintrag) => SCHLEIFENKNOTEN.includes(eintrag.type as string) && innen(eintrag),
+  )
+  const inSchleife = (eintrag: Record<string, unknown>): boolean =>
+    schleifen.some(
+      (schleife) =>
+        (eintrag.start as number) > (schleife.start as number) &&
+        (eintrag.end as number) < (schleife.end as number),
+    )
+
+  const abbrueche = knoten(
+    quelltext,
+    (eintrag) =>
+      innen(eintrag) &&
+      (eintrag.type === 'BreakStatement' || eintrag.type === 'ReturnStatement') &&
+      inSchleife(eintrag),
+  ).length
+
+  const zuweisungen = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'AssignmentExpression' &&
+      innen(eintrag) &&
+      inSchleife(eintrag) &&
+      (eintrag.left as Record<string, unknown> | null)?.type === 'Identifier',
+  )
+  const akkumulatoren = zuweisungen.map(
+    (eintrag) => (eintrag.left as Record<string, unknown>).name as string,
+  )
+  // Nennt die umschliessende Bedingung den Akkumulator selbst, haengt die Uebernahme daran, dass
+  // noch nichts gefunden wurde - dann gewinnt die ERSTE Bindung.
+  const nenntAkkumulator = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'IfStatement' &&
+      innen(eintrag) &&
+      zuweisungen.some(
+        (zuweisung) =>
+          (zuweisung.start as number) > (eintrag.start as number) &&
+          (zuweisung.end as number) < (eintrag.end as number),
+      ),
+  ).some((eintrag) => akkumulatoren.some((kandidat) => enthaeltBezeichner(eintrag.test, kandidat)))
+
+  return {
+    gefunden: true,
+    abbrueche,
+    ueberschreibt: zuweisungen.length > 0,
+    nenntAkkumulator,
+  }
+}
+
+describe('fix-flaechen.js: es gewinnt die letzte Bindung', () => {
+  const befund = () => letzteGewinntBefund(dateiVon('fix-flaechen.js').roh, 'letzteBindung')
+
+  it('uebernimmt jeden Treffer und bricht die Suche nie ab', () => {
+    expect(befund().gefunden, 'letzteBindung').toBe(true)
+    expect(befund().ueberschreibt).toBe(true)
+    expect(befund().abbrueche).toBe(0)
+    expect(befund().nenntAkkumulator).toBe(false)
+  })
+
+  /* DREI SYNTHETISCHE GEGENPROBEN - ohne sie bestuende der Befund auch bei umgekehrter Regel. */
+  it('meldet einen Abbruch beim ersten Treffer', () => {
+    const gegenprobe = letzteGewinntBefund(
+      [
+        'function letzteBindung(tabellen, rolle) {',
+        '  let gefunden = null',
+        '  for (const tabelle of tabellen) {',
+        '    const wert = eigenerWert(tabelle, rolle)',
+        '    if (wert) {',
+        '      gefunden = wert',
+        '      break',
+        '    }',
+        '  }',
+        '  return gefunden',
+        '}',
+      ].join('\n'),
+      'letzteBindung',
+    )
+    expect(gegenprobe.abbrueche).toBe(1)
+  })
+
+  it('meldet eine Bedingung, die am Akkumulator haengt', () => {
+    const gegenprobe = letzteGewinntBefund(
+      [
+        'function letzteBindung(tabellen, rolle) {',
+        '  let gefunden = null',
+        '  for (const tabelle of tabellen) {',
+        '    const wert = eigenerWert(tabelle, rolle)',
+        '    if (wert && !gefunden) {',
+        '      gefunden = wert',
+        '    }',
+        '  }',
+        '  return gefunden',
+        '}',
+      ].join('\n'),
+      'letzteBindung',
+    )
+    expect(gegenprobe.nenntAkkumulator).toBe(true)
+  })
+
+  it('meldet eine fehlende Funktion, statt leer wahr zu werden', () => {
+    expect(letzteGewinntBefund('const a = 1', 'letzteBindung').gefunden).toBe(false)
+  })
+})
+
+describe('Das Rollenvokabular loest ueber eigene Schluessel auf', () => {
+  /*
+   * `components.json` wird vom Test mit `JSON.parse` gelesen, von Penpot aber als Objektliteral
+   * ausgewertet - fuer `__proto__` sind die beiden NICHT aequivalent. Geprueft wird deshalb der
+   * Rohtext, nicht das geparste Ergebnis: Sonst liefe die Pruefung auf einem anderen Substrat als
+   * die Ausfuehrung.
+   */
+  it('traegt in components.json weder __proto__ noch constructor', () => {
+    for (const verboten of ['__proto__', 'constructor', 'prototype']) {
+      expect(dateiVon('components.json').roh, verboten).not.toContain(verboten)
+    }
+  })
+
+  /* Und der Nachschlag selbst faellt nicht auf ein geerbtes Feld herein: Eine Rolle `constructor`
+     loeste an einem Objektliteral zu einer Funktion auf - aus einer unbekannten Rolle wuerde eine
+     scheinbar bekannte, und `applyToShapes` bekaeme sie als Eigenschaftsliste. */
+  it('schlaegt Rollen in beiden Skripten ueber eigene Schluessel nach', () => {
+    for (const datei of ['seed-components.js', 'fix-flaechen.js'] as const) {
+      const stellen = knoten(
+        dateiVon(datei).roh,
+        (eintrag) =>
+          eintrag.type === 'MemberExpression' &&
+          (eintrag.property as Record<string, unknown> | null)?.name === 'hasOwnProperty',
+      )
+      expect(stellen.length, datei).toBeGreaterThan(0)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Binden oder leeren: die Flaeche jeder Variante
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Die Bindungsreihenfolge von `baueVariante` nachgespielt - gespeist aus den beiden Tabellen der
+ * Nutzlast selbst (`ROLLE_ZU_EIGENSCHAFT`, `TEXT_ROLLEN`), nie aus einer zweiten getippten Liste.
+ *
+ * ⚠ GESAMMELT WERDEN DIE EIGENSCHAFTEN, DIE AUFS BRETT GINGEN - nicht die vorgekommenen
+ * Rollennamen. `schrift` bildet EBENFALLS auf `fill` ab und traegt praktisch jede betroffene
+ * Variante; eine Ableitung "kam eine Rolle vor, die auf `fill` abbildet?" zaehlte sie mit und
+ * bliebe ueber dem unveraenderten Fehler dauerhaft gruen.
+ *
+ * ⚠ UND ZWAR UEBER ALLE AUFRUFE, nicht nur den letzten: `bindeRollen` laeuft je Variante ein- bis
+ * viermal, und eine Auspraegungs-Tabelle, die nur `schrift` fuehrt, machte sonst eine laengst
+ * gebundene Flaeche wieder zunichte.
+ */
+interface SimulationsBaustein {
+  schluessel: string
+  varianten: Record<string, string[]>
+  tokens: Record<string, string>
+  tokensProAuspraegung?: Record<string, Record<string, Record<string, string>>>
+}
+
+interface Bindung {
+  kombination: Record<string, string>
+  brettEigenschaften: string[]
+  flaeche: string | null
+  schrift: string | null
+}
+
+/** Eigene Schluessel, nie geerbte: `constructor` loeste an einem Objektliteral sonst auf und
+ * machte aus einer unbekannten Rolle eine scheinbar bekannte. */
+function eigenerWert<T>(tabelle: Record<string, T>, schluessel: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(tabelle, schluessel) ? tabelle[schluessel] : undefined
+}
+
+/** Das Kreuzprodukt in derselben Achsenreihenfolge wie `kombinationen` in seed-components.js. */
+export function kombinationenVon(varianten: Record<string, string[]>): Record<string, string>[] {
+  let ergebnis: Record<string, string>[] = [{}]
+  for (const achse of Object.keys(varianten)) {
+    const naechste: Record<string, string>[] = []
+    for (const bisher of ergebnis) {
+      for (const auspraegung of varianten[achse] ?? []) {
+        naechste.push({ ...bisher, [achse]: auspraegung })
+      }
+    }
+    ergebnis = naechste
+  }
+  return ergebnis
+}
+
+export function bindungenVon(
+  baustein: SimulationsBaustein,
+  rollenTabelle: Record<string, string[]>,
+  textRollen: readonly string[],
+): Bindung[] {
+  return kombinationenVon(baustein.varianten).map((kombination) => {
+    const brettEigenschaften: string[] = []
+    let flaeche: string | null = null
+    let schrift: string | null = null
+
+    const anwenden = (rollen: Record<string, string>): void => {
+      for (const rolle of Object.keys(rollen)) {
+        const eigenschaften = eigenerWert(rollenTabelle, rolle)
+        // Eine Rolle ohne Penpot-Eigenschaft wird von `bindeRollen` als `nachzubinden` gemeldet
+        // und fasst kein Brett an.
+        if (eigenschaften === undefined) continue
+        const aufsBrett = !textRollen.includes(rolle)
+        for (const eigenschaft of eigenschaften) {
+          if (!aufsBrett) {
+            if (eigenschaft === 'fill') schrift = rollen[rolle]!
+            continue
+          }
+          if (!brettEigenschaften.includes(eigenschaft)) brettEigenschaften.push(eigenschaft)
+          if (eigenschaft === 'fill') flaeche = rollen[rolle]!
+        }
+      }
+    }
+
+    anwenden(baustein.tokens)
+    for (const achse of Object.keys(kombination)) {
+      const besondere = baustein.tokensProAuspraegung?.[achse]?.[kombination[achse]!]
+      if (besondere) anwenden(besondere)
+    }
+    return { kombination, brettEigenschaften, flaeche, schrift }
+  })
+}
+
+/** Liest eine als Array-Literal geschriebene Konstante der Nutzlast aus dem geparsten Baum. */
+function listenKonstante(quelltext: string, name: string): string[] {
+  const deklaration = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'VariableDeclarator' &&
+      (eintrag.id as Record<string, unknown>)?.name === name,
+  )[0]
+  if (deklaration === undefined) {
+    throw new Error(`${name} nicht gefunden.`)
+  }
+  const literal = deklaration.init as Record<string, unknown>
+  if (literal?.type !== 'ArrayExpression') {
+    throw new Error(`${name} ist kein Array-Literal.`)
+  }
+  return ((literal.elements as Record<string, unknown>[]) ?? []).map(
+    (element) => element.value as string,
+  )
+}
+
+const textRollenTabelle = () => listenKonstante(dateiVon('seed-components.js').roh, 'TEXT_ROLLEN')
+
+function alleBindungen(): { baustein: SimulationsBaustein; bindung: Bindung }[] {
+  const rollen = rollenTabelle()
+  const texte = textRollenTabelle()
+  return komponenten.bausteine.flatMap((baustein) =>
+    bindungenVon(baustein, rollen, texte).map((bindung) => ({ baustein, bindung })),
+  )
+}
+
+/**
+ * Varianten, die im Produkt KEINE eigene Flaeche tragen - eingefroren, je Auspraegung, mit Grund
+ * und mit der Zahl der gedeckten Varianten (ADR 0083 Abschnitt 2).
+ *
+ * ⚠ DIE ZAHL IST TRAGEND, weil die Deckung 1:n ist: Eine Teilaenderung laesst einen Eintrag nicht
+ * verwaisen, sondern nur schrumpfen - die blosse Verwaisungspruefung bliebe dabei gruen.
+ */
+const VARIANTEN_OHNE_FLAECHE: { pfad: string; varianten: number; grund: string }[] = [
+  {
+    pfad: 'button.auspraegung.ghost',
+    varianten: 12,
+    grund:
+      'Im Produkt `bg-transparent`. Eine Flaeche zeigt die Schaltflaeche erst in hover/active ' +
+      '(`hover:bg-overlay`, `active:bg-border`); eine Achsenkombination kann die Variantenmatrix ' +
+      'nicht adressieren, weshalb `ueberfahren-flaeche`/`gedrueckt-flaeche` ungebunden dastehen.',
+  },
+  {
+    pfad: 'button.auspraegung.link',
+    varianten: 12,
+    grund:
+      'Im Produkt `bg-transparent`: Der Verweis traegt eine Unterstreichung statt einer Flaeche, ' +
+      'die Farbe steckt vollstaendig in der Schrift (`color.accent-strong`).',
+  },
+  {
+    pfad: 'badge.auspraegung.neutral',
+    varianten: 1,
+    grund:
+      'Im Produkt nur `border-border` und `text-text`, kein einziges `bg-*`: Der neutrale Ton ' +
+      'ignoriert die Fuellung vollstaendig - deshalb gibt es auch kein `neutral-suggested`.',
+  },
+]
+
+/**
+ * Rollennamen aus `components.json`, die bewusst auf KEINE Penpot-Eigenschaft abbilden - je mit
+ * Grund, beide Richtungen geprueft.
+ *
+ * Damit gibt es nur noch zwei Faelle: Eine Rolle bildet ab, oder sie steht hier. Eine dritte
+ * Moeglichkeit - eine Rolle, die still im Bericht `nachzubinden` landet, obwohl sie die Flaeche
+ * des Bretts selbst meint - gibt es nicht; genau das war `spur`.
+ */
+const ROLLEN_OHNE_EIGENSCHAFT: Record<string, string> = {
+  'ueberfahren-flaeche':
+    'Achsenkombination auspraegung x zustand; die Variantenmatrix kann sie nicht adressieren.',
+  'ueberfahren-schrift':
+    'Achsenkombination auspraegung x zustand; die Variantenmatrix kann sie nicht adressieren.',
+  'gedrueckt-flaeche':
+    'Achsenkombination auspraegung x zustand; die Variantenmatrix kann sie nicht adressieren.',
+  'gedrueckt-schrift':
+    'Achsenkombination auspraegung x zustand; die Variantenmatrix kann sie nicht adressieren.',
+  fokuskontur:
+    'Der Fokusring ist eine zweite Kontur um das Feld herum; der Aufbau setzt nur die eine.',
+  platzhalter: 'Die Platzhalterschrift ist ein Unterelement des Eingabefelds, nicht sein Brett.',
+  textmarke: 'Die Auswahlmarkierung im Eingabefeld ist kein Merkmal des Bretts.',
+  marke: 'Das Haekchen des Auswahlkaestchens ist ein Unterelement, das dieser Aufbau nicht baut.',
+  knauf: 'Der Knauf des Schalters ist ein Unterelement, das dieser Aufbau nicht baut.',
+  fuellung: 'Der Fuellbalken der Fortschrittsanzeige ist ein Unterelement, kein Brettmerkmal.',
+  symbol: 'Das Symbol im Hinweis ist eine eigene Form, die dieser Aufbau nicht anlegt.',
+  beitext: 'Der Beitext des Hinweises ist eine zweite Textform neben der Beschriftung.',
+  'titel-schrift': 'Die Titelzeile ist eine zweite Textform neben der einen Beschriftung.',
+  'titel-typografie': 'Die Titelzeile ist eine zweite Textform neben der einen Beschriftung.',
+  'beitext-typografie': 'Der Beitext ist eine zweite Textform neben der einen Beschriftung.',
+  'hinweis-schrift': 'Der Bewertungshinweis der Karte ist eine zweite Textform auf der Kachel.',
+  'dateiname-schrift': 'Der Dateiname der Karte ist eine zweite Textform auf der Kachel.',
+  'dateiname-schriftfamilie': 'Der Dateiname der Karte ist eine zweite Textform auf der Kachel.',
+  'dateiname-typografie': 'Der Dateiname der Karte ist eine zweite Textform auf der Kachel.',
+  'bildflaeche-radius': 'Die Bildflaeche der Karte ist ein Unterelement, nicht das Kartenbrett.',
+  aktionsabstand: 'Der Abstand der Dialog-Aktionen gilt einer Zeile im Dialog, nicht dem Brett.',
+}
+
+describe('Binden oder leeren: die Flaeche jeder Variante', () => {
+  function deckung(schluessel: string, kombination: Record<string, string>) {
+    return VARIANTEN_OHNE_FLAECHE.filter((eintrag) => {
+      const [baustein, achse, auspraegung] = eintrag.pfad.split('.')
+      return baustein === schluessel && kombination[achse!] === auspraegung
+    })
+  }
+
+  /* Die Simulation ist das tragende Bauteil: ohne sie waere jede Aussage hier eine zweite getippte
+     Wahrheit neben `components.json`. */
+  it('liest ihre beiden Tabellen aus der Nutzlast', () => {
+    const rollen = rollenTabelle()
+    expect(rollen.flaeche).toEqual(['fill'])
+    expect(rollen.schrift).toEqual(['fill'])
+    expect(textRollenTabelle()).toContain('schrift')
+    expect(alleBindungen()).toHaveLength(158)
+  })
+
+  it('zaehlt die Eigenschaften des BRETTS, nicht die vorgekommenen Rollen', () => {
+    // Falle 1: `schrift` bildet ebenfalls auf `fill` ab - aufs Brett geht davon nichts.
+    const probe: SimulationsBaustein = {
+      schluessel: 'probe',
+      varianten: { ton: ['a'] },
+      tokens: { schrift: 'color.text' },
+    }
+    const [bindung] = bindungenVon(probe, { flaeche: ['fill'], schrift: ['fill'] }, ['schrift'])
+    expect(bindung!.flaeche).toBeNull()
+    expect(bindung!.schrift).toBe('color.text')
+    expect(bindung!.brettEigenschaften).toEqual([])
+  })
+
+  it('sammelt ueber alle Bindungsaufrufe, nicht nur ueber den letzten', () => {
+    // Falle 2: die Auspraegungs-Tabelle fuehrt NUR `schrift` - die Grundflaeche bleibt trotzdem.
+    const probe: SimulationsBaustein = {
+      schluessel: 'probe',
+      varianten: { ton: ['a'] },
+      tokens: { flaeche: 'color.surface' },
+      tokensProAuspraegung: { ton: { a: { schrift: 'color.text' } } },
+    }
+    const [bindung] = bindungenVon(probe, { flaeche: ['fill'], schrift: ['fill'] }, ['schrift'])
+    expect(bindung!.flaeche).toBe('color.surface')
+    expect(bindung!.brettEigenschaften).toEqual(['fill'])
+  })
+
+  it('laesst die letzte Bindung gewinnen, in der Achsenreihenfolge der Datendatei', () => {
+    const probe: SimulationsBaustein = {
+      schluessel: 'probe',
+      varianten: { ton: ['a'], zustand: ['x'] },
+      tokens: { flaeche: 'color.bg' },
+      tokensProAuspraegung: {
+        ton: { a: { flaeche: 'color.surface' } },
+        zustand: { x: { flaeche: 'color.overlay' } },
+      },
+    }
+    const [bindung] = bindungenVon(probe, { flaeche: ['fill'] }, [])
+    expect(bindung!.flaeche).toBe('color.overlay')
+    expect(kombinationenVon({ ton: ['a', 'b'], zustand: ['x', 'y'] })).toHaveLength(4)
+  })
+
+  /* AKZEPTANZKRITERIUM 1, erste Haelfte: jede Variante ohne gebundene Flaeche ist namentlich
+     gefuehrt - und von GENAU EINEM Eintrag gedeckt. */
+  it('fuehrt jede ungebundene Variante namentlich und genau einmal', () => {
+    const offen: string[] = []
+    for (const { baustein, bindung } of alleBindungen()) {
+      if (bindung.flaeche !== null) continue
+      const gedeckt = deckung(baustein.schluessel, bindung.kombination)
+      if (gedeckt.length !== 1) {
+        offen.push(`${baustein.schluessel}: ${JSON.stringify(bindung.kombination)}`)
+      }
+    }
+    expect(offen).toEqual([])
+  })
+
+  /* AKZEPTANZKRITERIUM 1, zweite Haelfte: 133 gebunden, 25 ausdruecklich geleert. Beide Zahlen
+     entstehen aus der Simulation, nicht aus der Liste - sonst pruefte sie sich selbst. */
+  it('bindet 133 Flaechen und leert 25', () => {
+    const bindungen = alleBindungen()
+    const gebunden = bindungen.filter(({ bindung }) => bindung.flaeche !== null)
+    expect(gebunden).toHaveLength(133)
+    expect(bindungen.length - gebunden.length).toBe(25)
+  })
+
+  /* Die Zahl je Eintrag: eine Teilaenderung laesst ihn schrumpfen statt verwaisen. */
+  it('deckt je Eintrag genau so viele Varianten, wie er behauptet', () => {
+    const gezaehlt: Record<string, number> = {}
+    for (const { baustein, bindung } of alleBindungen()) {
+      if (bindung.flaeche !== null) continue
+      for (const eintrag of deckung(baustein.schluessel, bindung.kombination)) {
+        gezaehlt[eintrag.pfad] = (gezaehlt[eintrag.pfad] ?? 0) + 1
+      }
+    }
+    for (const eintrag of VARIANTEN_OHNE_FLAECHE) {
+      expect(gezaehlt[eintrag.pfad], eintrag.pfad).toBe(eintrag.varianten)
+    }
+    expect(VARIANTEN_OHNE_FLAECHE.reduce((summe, e) => summe + e.varianten, 0)).toBe(25)
+  })
+
+  it('verlangt je Eintrag eine Begruendung und einen Pfad, den es gibt', () => {
+    for (const eintrag of VARIANTEN_OHNE_FLAECHE) {
+      expect(eintrag.grund.length, eintrag.pfad).toBeGreaterThan(40)
+      const [schluessel, achse, auspraegung] = eintrag.pfad.split('.')
+      const baustein = komponenten.bausteine.find((kandidat) => kandidat.schluessel === schluessel)
+      expect(baustein, eintrag.pfad).toBeDefined()
+      expect(baustein!.varianten[achse!], eintrag.pfad).toContain(auspraegung)
+    }
+  })
+
+  /* GEGENPROBE ZUR BAUART: eine erfundene tokenlose Auspraegung wird gemeldet, eine gefuehrte
+     nicht. Ohne sie bestuende die Zusicherung auch mit einem Erkenner, der nie etwas findet. */
+  it('erkennt eine ungefuehrte Variante ohne Flaeche an einer synthetischen Probe', () => {
+    const probe: SimulationsBaustein = {
+      schluessel: 'probe',
+      varianten: { ton: ['mit', 'ohne'] },
+      tokensProAuspraegung: { ton: { mit: { flaeche: 'color.bg' } } },
+      tokens: {},
+    }
+    const ohne = bindungenVon(probe, { flaeche: ['fill'] }, []).filter(
+      (bindung) => bindung.flaeche === null,
+    )
+    expect(ohne).toHaveLength(1)
+    expect(ohne[0]!.kombination).toEqual({ ton: 'ohne' })
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Der Kontrast der Beschriftung gegen ihren Untergrund
+// ---------------------------------------------------------------------------------------------
+
+/*
+ * GERECHNET, NICHT ABGESCHRIEBEN: Die Einzelwerte werden ausdruecklich NICHT eingefroren - sie
+ * waeren die getippte Wertekopie, gegen die diese Testdatei sonst ueberall antritt. Eingefroren
+ * sind die Schwelle, die Ausnahmen und ihre Zahl.
+ *
+ * DIE HELFERFUNKTION IST DUPLIZIERT, nicht geteilt (src/designSystem.contract.test.ts rechnet
+ * dasselbe fuer index.css): Zwei getrennte Testprojekte, und eine geteilte Fassung machte aus
+ * einem Rechenfehler an einer Stelle einen gruenen Test an beiden. Der Preis ist ein eigener
+ * Selbsttest am bekannten Referenzpaar.
+ */
+function relativeLeuchtdichte(hex: string): number {
+  const kanaele = [1, 3, 5].map((versatz) => parseInt(hex.slice(versatz, versatz + 2), 16) / 255)
+  const linear = kanaele.map((kanal) =>
+    kanal <= 0.03928 ? kanal / 12.92 : Math.pow((kanal + 0.055) / 1.055, 2.4),
+  )
+  return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
+}
+
+function kontrastVerhaeltnis(a: string, b: string): number {
+  const [heller, dunkler] = [relativeLeuchtdichte(a), relativeLeuchtdichte(b)].sort((x, y) => y - x)
+  return (heller! + 0.05) / (dunkler! + 0.05)
+}
+
+const KONTRAST_SCHWELLE = 4.5
+
+/** Der Grund der Penpot-Seite steht in keiner Datei und wird von keinem Skript gesetzt; fuer die
+ * transparent bleibenden Varianten ist Kriterium 3 deshalb nur hiergegen rechenbar. Dass die Seite
+ * tatsaechlich so steht, bleibt Sichtpruefung. */
+const SEITENGRUND = 'color.bg'
+
+function hexVon(tokenName: string): string {
+  const token = tokens.find((kandidat) => kandidat.name === tokenName)
+  if (token === undefined || typeof token.value !== 'string') {
+    throw new Error(`Token ${tokenName} fehlt in tokens.json oder traegt keinen Einzelwert.`)
+  }
+  if (!/^#[0-9a-fA-F]{6}$/.test(token.value)) {
+    throw new Error(`Token ${tokenName} traegt keinen 6-stelligen Hexwert.`)
+  }
+  return token.value
+}
+
+/**
+ * Varianten, deren Beschriftung in Penpots Standardfarbe steht, weil ihr Baustein gar keine Rolle
+ * `schrift` fuehrt - eingefroren mit Zahl und Grund.
+ *
+ * ⚠ DAS IST EINE GEFUEHRTE LUECKE, KEINE ERLEDIGUNG. Es ist derselbe Defekt wie bei Schalter und
+ * Fortschrittsanzeige, nur ohne die weisse Flaeche darunter. Er steht hier, damit er unuebersehbar
+ * ist statt in einem Dokument geparkt; ein spaeterer Fix loescht einen Eintrag.
+ */
+const VARIANTEN_OHNE_SCHRIFTFARBE: { pfad: string; varianten: number; grund: string }[] = [
+  {
+    pfad: 'card',
+    varianten: 8,
+    grund:
+      'Die Karte fuehrt `dateiname-schrift` und `hinweis-schrift` - beide gelten Textformen, die ' +
+      'dieser Aufbau nicht anlegt. Eine Schriftfarbe fuer die eine Beschriftung des Bretts hat ' +
+      'sie nicht.',
+  },
+  {
+    pfad: 'alert.auspraegung.hinweis-success',
+    varianten: 1,
+    grund:
+      'Der Hinweis traegt seine Tinte als `symbol` und `beitext`; beides sind Unterelemente. Die ' +
+      'vier Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
+  },
+  {
+    pfad: 'alert.auspraegung.hinweis-warning',
+    varianten: 1,
+    grund:
+      'Der Hinweis traegt seine Tinte als `symbol` und `beitext`; beides sind Unterelemente. Die ' +
+      'vier Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
+  },
+  {
+    pfad: 'alert.auspraegung.hinweis-error',
+    varianten: 1,
+    grund:
+      'Der Hinweis traegt seine Tinte als `symbol` und `beitext`; beides sind Unterelemente. Die ' +
+      'vier Statusauspraegungen desselben Bausteins fuehren `schrift`, diese drei nicht.',
+  },
+  {
+    pfad: 'skeleton',
+    varianten: 2,
+    grund:
+      'Der Platzhalter zeigt im Produkt ueberhaupt keinen Text - seine Flaeche IST die Aussage. ' +
+      'Die Beschriftung des Bretts existiert nur, weil die Bibliothek je Variante eine fuehrt.',
+  },
+]
+
+/**
+ * Die einzige Paarung, die die Schwelle unterschreiten darf: inaktive Bedienelemente.
+ *
+ * WCAG 1.4.3/1.4.11 nehmen sie ausdruecklich aus. Die Ausnahme haengt NICHT an einer Namensliste,
+ * sondern an der Bedingung, die das Design-System ohnehin fuehrt (`--text-disabled` tritt
+ * ausschliesslich als `disabled:`-Variante auf, abgesichert in src/designSystem.contract.test.ts):
+ * Schrift `color.text-disabled` UND eine Auspraegung `disabled` in der Kombination.
+ */
+const AUSNAHME_SCHRIFT = 'color.text-disabled'
+const AUSNAHME_AUSPRAEGUNG = 'disabled'
+
+/** Die Zahl der so ausgenommenen Varianten - eingefroren, damit die Ausnahme nicht still um sich
+ * greift. 18 (Schaltflaeche) + 1 (Eingabefeld) + 1 (Auswahlkaestchen) + 1 (Schalter). */
+const AUSGENOMMENE_VARIANTEN = 21
+
+describe('Der Kontrast der Beschriftung gegen ihren Untergrund', () => {
+  it('rechnet richtig - am bekannten Referenzpaar nachgemessen', () => {
+    expect(kontrastVerhaeltnis('#FFFFFF', '#000000')).toBeCloseTo(21.0, 2)
+    expect(kontrastVerhaeltnis('#FFFFFF', '#0B0C10')).toBeCloseTo(19.55, 1)
+    // Und sie faellt nicht ueberall gruen aus: dieselbe Rechnung an einem bekannten Fehlschlag.
+    expect(kontrastVerhaeltnis('#FFFFFF', '#FF3D00')).toBeLessThan(KONTRAST_SCHWELLE)
+    expect(hexVon(SEITENGRUND)).toMatch(/^#[0-9a-f]{6}$/)
+  })
+
+  function ausnahmeFuer(schluessel: string, kombination: Record<string, string>) {
+    return VARIANTEN_OHNE_SCHRIFTFARBE.filter((eintrag) => {
+      const teile = eintrag.pfad.split('.')
+      if (teile.length === 1) return teile[0] === schluessel
+      return teile[0] === schluessel && kombination[teile[1]!] === teile[2]
+    })
+  }
+
+  /* AKZEPTANZKRITERIUM 3. Der Untergrund kommt aus der Simulation - bei den transparent
+     bleibenden Varianten aus `color.bg`, weil dort das Brett durchscheint. */
+  it('haelt an jeder Variante mit Schriftfarbe die WCAG-AA-Schwelle', () => {
+    const verfehlt: string[] = []
+    for (const { baustein, bindung } of alleBindungen()) {
+      if (bindung.schrift === null) continue
+      const untergrund = bindung.flaeche ?? SEITENGRUND
+      const verhaeltnis = kontrastVerhaeltnis(hexVon(bindung.schrift), hexVon(untergrund))
+      if (verhaeltnis >= KONTRAST_SCHWELLE) continue
+      const ausgenommen =
+        bindung.schrift === AUSNAHME_SCHRIFT &&
+        Object.values(bindung.kombination).includes(AUSNAHME_AUSPRAEGUNG)
+      if (!ausgenommen) {
+        verfehlt.push(
+          `${baustein.schluessel} ${JSON.stringify(bindung.kombination)}: ` +
+            `${bindung.schrift} auf ${untergrund} = ${verhaeltnis.toFixed(2)}`,
+        )
+      }
+    }
+    expect(verfehlt.join('\n')).toBe('')
+  })
+
+  /* Die Ausnahme greift um sich, wenn niemand sie zaehlt - und sie gilt NUR der einen Paarung. */
+  it('nimmt genau die inaktiven Bedienelemente aus, und zwar 21', () => {
+    const ausgenommen = alleBindungen().filter(({ bindung }) => {
+      if (bindung.schrift === null) return false
+      const untergrund = bindung.flaeche ?? SEITENGRUND
+      return kontrastVerhaeltnis(hexVon(bindung.schrift), hexVon(untergrund)) < KONTRAST_SCHWELLE
+    })
+    expect(ausgenommen).toHaveLength(AUSGENOMMENE_VARIANTEN)
+    for (const { baustein, bindung } of ausgenommen) {
+      const pfad = `${baustein.schluessel} ${JSON.stringify(bindung.kombination)}`
+      expect(bindung.schrift, pfad).toBe(AUSNAHME_SCHRIFT)
+      expect(Object.values(bindung.kombination), pfad).toContain(AUSNAHME_AUSPRAEGUNG)
+    }
+  })
+
+  /* Die beiden Bausteine dieser Story sind der Anlass und stehen deshalb namentlich: Ohne die
+     ergaenzte `schrift` stuenden ihre Beschriftungen in Penpots Standardfarbe. */
+  it('gibt Schalter und Fortschrittsanzeige je Zustand eine Schriftfarbe', () => {
+    for (const schluessel of ['switch', 'progress']) {
+      const baustein = komponenten.bausteine.find((kandidat) => kandidat.schluessel === schluessel)!
+      for (const bindung of bindungenVon(baustein, rollenTabelle(), textRollenTabelle())) {
+        const pfad = `${schluessel} ${JSON.stringify(bindung.kombination)}`
+        expect(bindung.schrift, pfad).not.toBeNull()
+        expect(bindung.flaeche, pfad).not.toBeNull()
+      }
+    }
+  })
+
+  /* AKZEPTANZKRITERIUM 6: die Flaeche von `progress/indeterminate` bleibt unberuehrt - nur seine
+     Beschriftungsfarbe kommt hinzu. */
+  it('laesst die Flaeche von progress/indeterminate unberuehrt', () => {
+    const progress = komponenten.bausteine.find((kandidat) => kandidat.schluessel === 'progress')!
+    expect(progress.tokensProAuspraegung?.zustand?.indeterminate?.flaeche).toBe('color.accent')
+  })
+
+  it('fuehrt jede Variante ohne Schriftfarbe namentlich, mit Zahl und Grund', () => {
+    const gezaehlt: Record<string, number> = {}
+    const offen: string[] = []
+    for (const { baustein, bindung } of alleBindungen()) {
+      if (bindung.schrift !== null) continue
+      const gedeckt = ausnahmeFuer(baustein.schluessel, bindung.kombination)
+      if (gedeckt.length !== 1) {
+        offen.push(`${baustein.schluessel}: ${JSON.stringify(bindung.kombination)}`)
+        continue
+      }
+      gezaehlt[gedeckt[0]!.pfad] = (gezaehlt[gedeckt[0]!.pfad] ?? 0) + 1
+    }
+    expect(offen).toEqual([])
+    for (const eintrag of VARIANTEN_OHNE_SCHRIFTFARBE) {
+      expect(gezaehlt[eintrag.pfad], eintrag.pfad).toBe(eintrag.varianten)
+      expect(eintrag.grund.length, eintrag.pfad).toBeGreaterThan(40)
+    }
+    expect(VARIANTEN_OHNE_SCHRIFTFARBE.reduce((summe, e) => summe + e.varianten, 0)).toBe(13)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Die Reihenfolge des Leerens - fuenfteilig ueber den geparsten Baum
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Der Befund ueber `baueVariante`: WO und UNTER WELCHER BEDINGUNG das Brett geleert wird.
+ *
+ * ⚠ EIN OFFSET-VERGLEICH ALLEIN BELEGT DIE REIHENFOLGE NICHT. Steht `brett.fills = []` textlich
+ * hinter dem letzten `bindeRollen`-Aufruf, aber INNERHALB der Achsenschleife, ist der Offset
+ * groesser und die Ausfuehrung trotzdem falsch - es traefe `button/ghost/disabled`, dessen Flaeche
+ * erst in der letzten Iteration kommt. Deshalb die Pruefung auf Verschachtelungstiefe.
+ *
+ * Der AKKUMULATOR wird nicht namentlich erwartet, sondern abgeleitet: Bezeichner, die den
+ * Rueckgabewert von `bindeRollen` aufnehmen. Ein getippter Name waere eine zweite Wahrheit.
+ */
+interface LeerungsBefund {
+  fillsZuweisungen: number
+  zuweisungen: number
+  hinterLetzterBindung: boolean
+  ausserhalbSchleife: boolean
+  inBedingungMitAkkumulator: boolean
+  blankeBindungsaufrufe: number
+}
+
+const SCHLEIFENKNOTEN = [
+  'ForStatement',
+  'ForOfStatement',
+  'ForInStatement',
+  'WhileStatement',
+  'DoWhileStatement',
+]
+
+export function leerungsBefund(quelltext: string): LeerungsBefund {
+  const funktion = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'FunctionDeclaration' &&
+      (eintrag.id as Record<string, unknown> | null)?.name === 'baueVariante',
+  )[0]
+  if (funktion === undefined) {
+    throw new Error('baueVariante nicht gefunden.')
+  }
+  const von = funktion.start as number
+  const bis = funktion.end as number
+  const innen = (eintrag: Record<string, unknown>): boolean =>
+    (eintrag.start as number) >= von && (eintrag.end as number) <= bis
+
+  const bindungen = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'CallExpression' &&
+      (eintrag.callee as Record<string, unknown> | null)?.name === 'bindeRollen' &&
+      innen(eintrag),
+  )
+  const letzteBindung = bindungen.reduce(
+    (groesster, eintrag) => Math.max(groesster, eintrag.start as number),
+    -1,
+  )
+
+  const akkumulatoren = new Set<string>()
+  for (const eintrag of knoten(
+    quelltext,
+    (kandidat) =>
+      innen(kandidat) &&
+      (kandidat.type === 'VariableDeclarator' || kandidat.type === 'AssignmentExpression'),
+  )) {
+    const ziel = (eintrag.type === 'VariableDeclarator' ? eintrag.id : eintrag.left) as Record<
+      string,
+      unknown
+    > | null
+    const wert = eintrag.type === 'VariableDeclarator' ? eintrag.init : eintrag.right
+    if (
+      ziel?.type === 'Identifier' &&
+      typeof ziel.name === 'string' &&
+      enthaeltBezeichner(wert, 'bindeRollen')
+    ) {
+      akkumulatoren.add(ziel.name)
+    }
+  }
+
+  const fillsZuweisungen = knoten(
+    quelltext,
+    (eintrag) =>
+      eintrag.type === 'AssignmentExpression' &&
+      innen(eintrag) &&
+      ((eintrag.left as Record<string, unknown> | null)?.property as Record<string, unknown> | null)
+        ?.name === 'fills',
+  )
+  const treffer = fillsZuweisungen.filter((eintrag) => {
+    const links = eintrag.left as Record<string, unknown>
+    const objekt = links.object as Record<string, unknown> | null
+    const wert = eintrag.right as Record<string, unknown> | null
+    return (
+      objekt?.type === 'Identifier' &&
+      objekt.name === 'brett' &&
+      wert?.type === 'ArrayExpression' &&
+      ((wert.elements as unknown[]) ?? []).length === 0
+    )
+  })
+  const stelle = treffer.length === 1 ? (treffer[0]!.start as number) : undefined
+
+  const umschliessend = (typen: string[]): Record<string, unknown>[] =>
+    stelle === undefined
+      ? []
+      : knoten(
+          quelltext,
+          (eintrag) =>
+            typen.includes(eintrag.type as string) &&
+            innen(eintrag) &&
+            (eintrag.start as number) < stelle &&
+            (eintrag.end as number) > stelle,
+        )
+
+  return {
+    fillsZuweisungen: fillsZuweisungen.length,
+    zuweisungen: treffer.length,
+    hinterLetzterBindung: stelle !== undefined && stelle > letzteBindung && letzteBindung >= 0,
+    ausserhalbSchleife: stelle !== undefined && umschliessend(SCHLEIFENKNOTEN).length === 0,
+    inBedingungMitAkkumulator: umschliessend(['IfStatement']).some((eintrag) =>
+      [...akkumulatoren].some((name) => enthaeltBezeichner(eintrag.test, name)),
+    ),
+    blankeBindungsaufrufe: knoten(
+      quelltext,
+      (eintrag) =>
+        eintrag.type === 'ExpressionStatement' &&
+        innen(eintrag) &&
+        (eintrag.expression as Record<string, unknown> | null)?.type === 'CallExpression' &&
+        ((eintrag.expression as Record<string, unknown>).callee as Record<string, unknown> | null)
+          ?.name === 'bindeRollen',
+    ).length,
+  }
+}
+
+describe('Geleert wird nach dem Binden, genau einmal und nur bedingt', () => {
+  const befund = () => leerungsBefund(dateiVon('seed-components.js').roh)
+
+  it('leert genau einmal, auf dem Brett, mit leerem Array-Literal', () => {
+    expect(befund().fillsZuweisungen).toBe(1)
+    expect(befund().zuweisungen).toBe(1)
+  })
+
+  it('leert hinter dem letzten Bindungsaufruf', () => {
+    expect(befund().hinterLetzterBindung).toBe(true)
+  })
+
+  it('leert ausserhalb jeder Schleife', () => {
+    expect(befund().ausserhalbSchleife).toBe(true)
+  })
+
+  it('leert nur, wenn der Akkumulator es sagt', () => {
+    expect(befund().inBedingungMitAkkumulator).toBe(true)
+  })
+
+  /* Ein Aufruf als blankes `ExpressionStatement` wirft seinen Rueckgabewert weg - der Akkumulator
+     verloere genau die Bindungen dieses Aufrufs, und 16 heute korrekte Varianten wuerden geleert. */
+  it('wirft den Rueckgabewert keines Bindungsaufrufs weg', () => {
+    expect(befund().blankeBindungsaufrufe).toBe(0)
+  })
+
+  /*
+   * VIER SYNTHETISCHE GEGENPROBEN. Ohne sie ist der Block darueber eine Beruhigung: Ein Befund,
+   * der auch bei falscher Reihenfolge gruen bliebe, sichert nichts zu.
+   */
+  const probe = (rumpf: string) => `function baueVariante(a, b) {\n${rumpf}\n}`
+
+  it('meldet eine Leerung VOR dem letzten Bindungsaufruf', () => {
+    const gegenprobe = leerungsBefund(
+      probe(
+        [
+          "  let gesetzt = bindeRollen(brett, text, a, 'h', [])",
+          "  if (gesetzt.indexOf('fill') === -1) { brett.fills = [] }",
+          "  gesetzt = gesetzt.concat(bindeRollen(brett, text, b, 'h', []))",
+        ].join('\n'),
+      ),
+    )
+    expect(gegenprobe.zuweisungen).toBe(1)
+    expect(gegenprobe.hinterLetzterBindung).toBe(false)
+  })
+
+  it('meldet eine Leerung INNERHALB der Achsenschleife, trotz groesserem Offset', () => {
+    const gegenprobe = leerungsBefund(
+      probe(
+        [
+          "  let gesetzt = bindeRollen(brett, text, a, 'h', [])",
+          '  for (const achse of achsen) {',
+          "    gesetzt = gesetzt.concat(bindeRollen(brett, text, b, 'h', []))",
+          "    if (gesetzt.indexOf('fill') === -1) { brett.fills = [] }",
+          '  }',
+        ].join('\n'),
+      ),
+    )
+    // Der Offset-Vergleich allein bliebe hier gruen - genau das ist der Punkt.
+    expect(gegenprobe.hinterLetzterBindung).toBe(true)
+    expect(gegenprobe.ausserhalbSchleife).toBe(false)
+  })
+
+  it('meldet eine UNBEDINGTE Leerung', () => {
+    const gegenprobe = leerungsBefund(
+      probe(
+        ["  let gesetzt = bindeRollen(brett, text, a, 'h', [])", '  brett.fills = []'].join('\n'),
+      ),
+    )
+    expect(gegenprobe.zuweisungen).toBe(1)
+    expect(gegenprobe.inBedingungMitAkkumulator).toBe(false)
+  })
+
+  it('meldet eine Leerung am FALSCHEN Ziel', () => {
+    const gegenprobe = leerungsBefund(
+      probe(
+        [
+          "  let gesetzt = bindeRollen(brett, text, a, 'h', [])",
+          "  if (gesetzt.indexOf('fill') === -1) { beschriftung.fills = [] }",
+        ].join('\n'),
+      ),
+    )
+    expect(gegenprobe.fillsZuweisungen).toBe(1)
+    expect(gegenprobe.zuweisungen).toBe(0)
+  })
+
+  it('meldet einen weggeworfenen Rueckgabewert', () => {
+    expect(
+      leerungsBefund(probe("  bindeRollen(brett, text, a, 'h', [])")).blankeBindungsaufrufe,
+    ).toBe(1)
+  })
+
+  /* Und die Bedingung haengt am ABGELEITETEN Akkumulator, nicht an einem beliebigen Bezeichner. */
+  it('erkennt eine Bedingung ohne den Akkumulator nicht als Bedingung', () => {
+    const gegenprobe = leerungsBefund(
+      probe(
+        [
+          "  let gesetzt = bindeRollen(brett, text, a, 'h', [])",
+          '  if (baustein.schluessel) { brett.fills = [] }',
+        ].join('\n'),
+      ),
+    )
+    expect(gegenprobe.inBedingungMitAkkumulator).toBe(false)
+  })
+})
+
+describe('Das Rollenvokabular bildet ab oder ist gefuehrt', () => {
+  const rollenIn = (): string[] => [
+    ...new Set(tokenSlots().map((slot) => slot.pfad.split('.').slice(-1)[0]!)),
+  ]
+
+  it('bildet jede Rolle aus components.json ab oder fuehrt sie namentlich', () => {
+    const abbildend = rollenTabelle()
+    const ungefuehrt = rollenIn().filter(
+      (rolle) =>
+        eigenerWert(abbildend, rolle) === undefined &&
+        eigenerWert(ROLLEN_OHNE_EIGENSCHAFT, rolle) === undefined,
+    )
+    expect(ungefuehrt).toEqual([])
+  })
+
+  /* GEGENRICHTUNG: ein stehengebliebener Eintrag wird verwaist und rot - genau daran faellt
+     `spur` auf, sobald die Rolle ihren Platz gewechselt hat. */
+  it('fuehrt keinen verwaisten und keinen doppelt gefuehrten Eintrag', () => {
+    const vorhanden = new Set(rollenIn())
+    const abbildend = rollenTabelle()
+    for (const [rolle, grund] of Object.entries(ROLLEN_OHNE_EIGENSCHAFT)) {
+      expect(vorhanden.has(rolle), rolle).toBe(true)
+      expect(eigenerWert(abbildend, rolle), rolle).toBeUndefined()
+      expect(grund.length, rolle).toBeGreaterThan(40)
+    }
+  })
+
+  it('sieht im Bestand ueberhaupt Rollen', () => {
+    expect(rollenIn().length).toBeGreaterThanOrEqual(20)
   })
 })
 
