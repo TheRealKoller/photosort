@@ -1,6 +1,6 @@
 # 0392 - Ein Entwurfsrundenlauf endet auf Wunsch mit einem eröffneten Pull Request
 
-**Status:** Accepted
+**Status:** Implemented ([PR #401](https://github.com/TheRealKoller/photosort/pull/401))
 **Erstellt:** 2026-09-11
 **Bezug:** [GitHub-Issue #392](https://github.com/TheRealKoller/photosort/issues/392), ADR [`decisions/0077-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md`](../decisions/0077-entwurfslauf-endet-im-pull-request-uebergabe-per-anker.md)
 
