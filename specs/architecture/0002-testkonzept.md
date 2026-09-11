@@ -1323,6 +1323,109 @@ Fünfte Story auf der Ebene der Repo-Konsistenztests (`scripts/tests/test_dokume
 
 **Coverage-Gate: kein Bezug.** Der Wächter liegt unter `scripts/tests/` im Job `demo-scripts` ohne Gate; die Story fasst keine Zeile Anwendungscode an.
 
+### Erweiterung für Spec [`0259`](../features/0259-bereich-am-issue.md) / ADR [`0085`](../decisions/0085-bereich-als-label-mit-geschlossenem-vorrat.md) (der Bereich eines Issues ist ein Label mit geschlossenem Vorrat): ein Vorrat an einer Formzeile, ein Präfix als Bedingung der Prüfbarkeit, und eine gewachsene Kette
+
+Sechste Story auf der Ebene der Repo-Konsistenztests (`scripts/tests/test_bereichsvorrat.py`, Job
+`demo-scripts`). Vier Regeln gelten über diesen Branch hinaus.
+
+**1. Ein geschlossener Wertvorrat wird an einer Formzeile geparst — und die Abwesenheit daneben
+hängt an einem Präfix.** Der Vorrat steht als Literal in genau einer Zeile fester Form
+(`^\*\*Bereichsvorrat`), verglichen gegen eine eingefrorene Menge; „genau eine" statt „mindestens
+eine", weil eine zweite Vorrat-Zeile ein Widerspruch ist und nicht von der ersten verdeckt werden
+darf (dieselbe Linie wie bei den Erlaubnisstufen). Die Gegenrichtung — kein Wert außerhalb dieses
+Ortes — ist überhaupt nur formulierbar, **weil die Werte ein Präfix tragen**: Ein Scan nach den
+blanken Namen wäre unmöglich, `ai-workflow` ist ein Dateiname und `design`, `backend`,
+`frontend`, `pipeline`, `infra` sind Alltagswörter dieses Projekts. Ein solches Wortverbot wäre am
+eigenen Bestand sofort rot und würde so lange abgeschwächt, bis es nichts mehr aussagt.
+**Regel:** Soll ein Wertvorrat durch eine Abwesenheit gesichert werden, ist die Präfixbindung
+Bedingung der Prüfbarkeit und gehört ins Akzeptanzkriterium, nicht in die Umsetzung. Der
+Erfolgsfall ist eine Abwesenheit, der Wächter startet also **grün**: Tragend sind allein die
+Mutationsprobe und die Untergrenze für das *Gesehene* (mindestens sechs Vorkommen des Musters am
+erlaubten Ort), nicht der triviale erste Lauf.
+
+**1b. Eine Zusicherung wird so breit formuliert, wie der Schaden reicht — nicht so eng wie der
+erwartete Wert.** Das ist die tragende Regel dieser Sektion. Ein Wächter, der nur den Fall
+abdeckt, den sein Autor vor Augen hatte, ist gegen alles andere grün, und die Probe, die genau
+diesen Fall bestätigt, belegt deshalb nichts. **Operativ wird die Regel über eine einzige Frage,
+zu beantworten, bevor ein Wächter als fertig gilt:** *Welche Änderung wäre schädlich und bliebe
+trotzdem grün?* Wer darauf eine Antwort findet, ist nicht fertig; wer keine findet, belegt das
+mit einer Probe, statt es zu behaupten.
+
+**Fünf Formen, in denen dieselbe Verengung auftritt** — ein Prüfraster, das über diese Story
+hinaus gilt:
+
+- **Positivliste statt Negativliste.** Der Suchraum zählt auf, *wo* gesucht wird, statt
+  auszunehmen, wo *nicht* gesucht wird. Jeder künftig dazukommende Ort fällt durch.
+- **Objekt statt Zeichenkette.** Die Zusicherung nennt ein Feld, die Antwort liefert eine
+  Struktur (`author` → `{id, is_bot, login, name}`); verglichen wird dann nie das, was gemeint
+  war, und der Vergleich schlägt entweder immer oder nie an.
+- **Präfix statt Form.** Geprüft wird, womit eine Zeile anfängt; zugesichert war ihre Form. Eine
+  missgebildete Zeile gilt dann als gültige Quelle, solange der herausgelöste Wert zufällig passt.
+- **Positionsaussage ohne Existenz-Zusicherung.** „X steht vor jedem Y" ist leer wahr, solange es
+  kein Y gibt — die Zusicherung überlebt das Verschwinden ihres eigenen Gegenstands.
+- **Zeitraum statt Zeitpunkt.** „im selben Lauf" schließt nicht aus, was „im selben Moment"
+  ausschlösse; ein Lauf ist kein Moment. Zwischen Lesen und Schreiben passt eine fremde Änderung.
+
+**Der konkrete Fall dieser Sektion — der Suchraum eines Abwesenheits-Tests.** Er ist alles von
+Git Verwaltete **außer** einzeln begründeten Ausschlüssen: `specs/**` (eingefrorene
+Momentaufnahmen, dieselbe Begründung wie beim Abschnittszitat-Scan) und die Wächterdatei selbst
+(sie führt die Werte als Erwartungsmenge und in jeder Gegenprobe; der Ausschluss ist an ihren
+eigenen Pfad gebunden und wird gegen ihn geprüft, damit er nicht auf einen toten Pfad verrottet).
+Eine Aufzählung des „lebenden Anweisungsraums" (`.claude/**`, `CLAUDE.md`, `docs/**`) trägt hier
+nachweislich nicht: `.github/ISSUE_TEMPLATE/*.yml` **vergibt Label** (`labels: ["bug"]`,
+`labels: ["feature", "needs-spec"]`) und ist damit ein möglicher zweiter Wahrheitsort, gegen den
+die Zusicherung gerade antritt. **Regel:** Eine Positivliste ist nur dort richtig, wo die
+*Erlaubnis* aufgezählt wird (die Formprüfungen über den Katalog), nie dort, wo eine **Abwesenheit**
+zugesichert wird. Zwei Folgen für jeden Leser dieser Bauart: Nicht als UTF-8 lesbare Dateien
+(Bilder, Modelldateien — gemessen 2026-09-11: 19 von 688) werden übersprungen statt den Lauf
+abzubrechen; und die Untergrenze allein trägt den Selbstschutz nicht mehr, weil sie erfüllt
+bleibt, während ein ganzer Zweig herausfällt — daneben gehören **namentliche Anker** für die
+belegten Orte der Labelvergabe.
+
+**2. Eine Reihenfolge-Kette wächst nur mit ihren Bedingungen.** Die Kette aus der
+Spec-0288-Sektion (Body → Titel → `Ready`) bekommt ein viertes Glied (→ Bereich → **jede**
+`board-`-Ausführungsstelle). Jedes neue Glied erbt die vier Bedingungen (a)–(d) vollständig,
+insbesondere (b) „vor *jeder*" statt „vor der ersten" und (d) die Existenz-Zusicherung mit eigener
+Meldung. Das ist kein Formalismus: Ohne (d) wäre die neue Aussage in dem Moment leer wahr, in dem
+jemand die Ausführungsstelle löscht — und genau das ist die wahrscheinliche Änderung. Ohne (b)
+wäre sie schon erfüllt, wenn das neue Glied zwischen zwei Board-Zugriffe gerät. **Regel:** Wer
+eine bestehende Kette verlängert, prüft das neue Glied nicht schwächer als die alten, auch wenn
+es „offensichtlich" richtig steht.
+
+**3. Eine Zusage, die nur an einer Stelle genannt wird, kann nicht desynchronisieren.** Die
+Kettenposition des neuen Glieds steht **nicht** im Vorrat-Wächter, sondern ausschließlich dort, wo
+die Kette ohnehin vollständig liegt; der Vorrat-Wächter nennt sie im Docstring und verweist. Eine
+zweite Fassung daneben liefe mit der nächsten Änderung auseinander, und der Test, der zuerst
+nachgezogen wird, verdeckte den anderen. Spiegelbildlich gilt das für den Gegenstand selbst: Der
+Vorrat steht als Literal im Katalog und in der eingefrorenen Erwartungsmenge — dieses **Paar** ist
+die bewusste Ergänzung, nicht die eine oder die andere Seite. Bewusst ungewacht bleibt dagegen die
+Operationszahl im Kommentar von `.github/workflows/ci.yml`: Ein Kommentar trägt keine Zusage, und
+ein Wächter darüber wäre Buchhaltung.
+
+**4. Die Board-**Ansicht** ist eine neue Klasse untestbarer Zusage.** Neben „Branch Protection ist
+eine Einstellung außerhalb des Repositoriums" und „die `main`-Workflows laufen erst nach dem
+Merge" tritt: **ob ein Label auf einer Projects-Karte erscheint und ob sich das Board danach
+eingrenzen lässt, ist eine Eigenschaft von GitHubs Oberfläche.** Kein Test dieses Repositoriums
+erreicht sie, und ein Ersatztest, der sie behauptete, wäre grün, ohne etwas zu wissen. Die
+repo-seitige Ersatzzusicherung ist allein die **Wahl des Trägers** (ein Label reist ohne weiteren
+Schritt auf die Karte); den Rest belegt ein einziger Repro-Lauf an einem Wegwerf-Issue, dessen
+Ergebnis als benannter Nachweis in den PR-Body gehört. **Regel:** Was eine fremde Oberfläche
+zusichert, wird einmal gemessen und als Messung ausgewiesen — nicht in einen Test gegossen, der
+etwas anderes prüft als das, wonach er benannt ist.
+
+**Und was der Lauf *nicht* messen konnte, wird als Auslassung ausgewiesen, nicht weggelassen.**
+Zwei Eigenschaften tragen hier die Risikoabwägung: dass ein unbekannter Wert auf dem `gh`-Weg laut
+scheitert — gemessen — und dass er auf dem `mcp`-Weg still angelegt wird — **nicht gemessen und
+grundsätzlich nicht auf dem anderen Weg zu zeigen**, weil genau das die Eigenschaft des einen Wegs
+ist. **Regel:** Eine unbelegt gebliebene Messung wird an **jedem** Ort als solche gekennzeichnet,
+der die Eigenschaft behauptet — Katalog, Spec, ADR und Sicherheitskonzept sind vier Orte, und der
+letzte, der es nicht tut, ist der, dem die nächste Ausführung glaubt. Wo eine Zusicherung nicht
+daran hängt, wird auch das gesagt; hier trägt der Abgleich gegen das Wert-Literal vor dem Aufruf,
+unabhängig vom tatsächlichen Verhalten des Wegs.
+
+**Coverage-Gate: kein Bezug.** Der Wächter liegt unter `scripts/tests/` im Job `demo-scripts` ohne
+Gate; die Story fasst keine Zeile Anwendungscode an.
+
 ## Reine Bash-Wrapper-Skripte ohne Testframework (`scripts/*.sh`)
 
 **Neu seit der Diagramm-Tooling-Richtlinie** ([ADR `0013`](../decisions/0013-diagram-tooling-d2.md)/Spec [`0018`](../features/0018-diagram-tooling-migration.md)) — erstes Bash-Skript im Projekt, `scripts/render-diagrams.sh`. Anders als `scripts/seed-opencloud-demo.py` (Spec 0009, Python mit echter Retry-/Idempotenz-Verzweigung, eigene `pytest`-Suite trotz Lage außerhalb des Coverage-Gates) ist die Verzweigungslogik hier bewusst minimal (ein PATH-Check, eine Schleife über `*.d2`, ein `d2`-Aufruf pro Datei) — genau der Unterschied, der hier eine andere Verifikationsebene rechtfertigt statt automatisch das Python-Muster zu kopieren:

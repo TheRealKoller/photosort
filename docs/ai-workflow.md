@@ -97,7 +97,9 @@ rein fachliche Schärfung (Verständnis, Prioritäts-/Reihenfolge-Einordnung üb
 `requirements-engineer`, Code-/Spec-Konfliktprüfung, Devil's-Advocate-Lohnenswert-Gate) und
 schreibt Ziel/User Story/Akzeptanzkriterien direkt in den Issue-Body (Status `Ready`) und
 schärft dabei den Issue-Titel nach, wenn er das geschärfte Ergebnis nicht mehr trifft — ohne
-technische Details und ohne lokale Zwischendatei.
+technische Details und ohne lokale Zwischendatei. Im selben Zug vergibt `refinement` über die
+Operation `issue-bereich-setzen` die Bereiche des Issues, damit das Board zeigt, woran eine Story
+rührt; beim bloßen Erfassen bleiben sie leer, weil `capture` keine inhaltliche Frage stellt.
 
 ## Der Lebenszyklus einer Story auf dem Board
 
