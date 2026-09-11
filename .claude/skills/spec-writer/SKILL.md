@@ -82,6 +82,8 @@ Falls die Story die Architektur oder das Datenmodell spürbar verändert: `docs/
 
 **Bestehendes Issue weiterverwenden, kein neues anlegen:** Das Story-Issue aus Schritt 0 *ist* durch die identische Nummer bereits das Issue der Spec — es gibt nichts zu adoptieren und nichts zuzuordnen. Der Issue-Body bleibt unangetastet: Er trägt die Story (Ziel/User Story/Akzeptanzkriterien), der technische Teil der Spec lebt ausschließlich in der Spec-Datei und wird **nicht** in den Issue gespiegelt.
 
+**Umfang prüfen, bevor die Spec committet wird:** Halte die fertige Spec gegen den Konventions-Punkt „Doku-Ballast" in `CLAUDE.md` — verbotene Inhaltsklassen und der Richtwert für eine Feature-Spec stehen dort. Ergebnis ist entweder eine kürzere Spec oder ein Satz Begründung der Überschreitung **in der Spec selbst**, nie eine Zurückweisung.
+
 **Spec-Datei lokal committen, kein Push:** Committe die neue Spec-Datei (und ggf. eine `docs/architecture.md`-Ergänzung) direkt auf dem in der Vorbedingung angelegten Branch, mit der üblichen Commit-Konvention (`CLAUDE.md`, Conventional Commits), z.B. `docs(specs): Spec NNNN anlegen (Issue #NNN)`. Push und PR-Eröffnung passieren an dieser Stelle **nicht** — das übernimmt weiterhin ausschließlich `ship-feature`, ganz am Ende des gesamten Ablaufs (Spec-Commit und alle folgenden Implementierungs-Commits landen zusammen in genau einem PR).
 
 Ein abschließender Board-Zugriff findet hier **nicht** statt: Der Statuswechsel dieses Ablaufs ist bereits in Schritt 0 passiert, bevor Branch und Spec-Datei entstanden sind. Der frühere Zwischenwert zwischen „Spec fertig" und „Umsetzung läuft" existiert nicht mehr.

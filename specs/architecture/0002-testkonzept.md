@@ -1048,6 +1048,26 @@ Gegenstandslos mit dieser Anwendung: die im vorstehenden 0008-Absatz genannte Be
 
 Der Test läuft im CI-Job `demo-scripts`, also außerhalb des Backend-Coverage-Gates; `scripts/` hat unverändert kein `--cov-fail-under`.
 
+### Eine Änderung, die nur Nicht-Code-Zeilen entfernt
+
+Verdichtung von Doku ist kein testfreier Vorgang. Drei projektweite Regeln:
+
+1. **Der Schutz ist die unveränderte Testdatei.** Kein neuer Test, keine angepasste Erwartung —
+   eine Teständerung im selben Pull Request ist ein Finding.
+2. **Presence-Assertions über Quelltext sind die Bruchstelle, Absence-Assertions nie.** Vor dem
+   Verdichten einer Datei wird geprüft, wer sie als *Text* liest:
+   `grep -rn "getsource\|read_text\|readFileSync\|repoFile" backend/tests scripts/tests e2e frontend/src`.
+   Mehrere solcher Bindungen laufen über Markdown (`docs/setup.md`, `.claude/**`, `CLAUDE.md`) —
+   ein reiner Markdown-Pull-Request kann den `backend`- und den `e2e`-Job rot färben.
+3. **Coverage ist hier kein Netz:** `coverage.py` zählt Docstrings und Kommentare nicht als
+   Statements, der Prozentwert bewegt sich in keine Richtung. Ein Körper, der nur aus seinem
+   Docstring besteht, behält ihn (sonst `SyntaxError`); `# type: ignore`/`# noqa`/`# pragma` sind
+   Code, kein Doku-Block.
+
+**Bekannte Lücke:** Die Kontrast- und Trefferflächen-Begründungen in den Frontend-Kommentaren sind
+durch keinen Test geschützt — `designSystem.contract.test.ts` bindet die *Klassenzeile*, nicht ihre
+Begründung. Das zugesagte Verhalten überlebt eine Kürzung, sein Warum nicht.
+
 ## Lokales Dev-/Demo-Tooling außerhalb des Coverage-Gates (`scripts/`)
 
 **Neu seit Spec [`0009`](../features/0009-local-opencloud-demo-stack.md)** ("Lokal ausprobieren ohne echten OpenCloud-Server") — anders als die reine Repo-Konfiguration aus Spec 0007 enthält dieses Feature echten, verzweigten Anwendungscode (`scripts/seed-opencloud-demo.py`: Warte-/Retry-Logik auf den Demo-Container, Idempotenz-Entscheidung "Ordner/Datei existiert bereits → überspringen"), nur bewusst außerhalb von `backend/src/photosort` platziert (reines Setup-Tooling, kein Produktcode) und damit außerhalb des `--cov-fail-under=80`-Gates.
