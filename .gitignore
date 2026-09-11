@@ -34,7 +34,7 @@ e2e/test-results/
 e2e/playwright-report/
 
 # Ansichtsentwuerfe aus Penpot (specs/features/0358-projektverwaltung-entwurf.md,
-# specs/decisions/0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md
+# specs/decisions/0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md
 # Abschnitt 7): Formexporte der Ansichtsbretter, die an den Pull Request gehaengt und NICHT
 # eingecheckt werden. Bewusst ein eigenes Verzeichnis statt e2e/artifacts/ - das gehoert der
 # browsergestuetzten Oberflaechenpruefung, und zwei Werkzeuge in einem Ausgabeverzeichnis waeren
