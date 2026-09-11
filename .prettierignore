@@ -45,3 +45,25 @@ e2e/test-results/
 e2e/playwright-report/
 e2e/scratch/
 frontend/dist-ssr/
+
+# Dieselbe Mechanik wie der Block darueber, geringerer Schaden, aber derselbe Grund: Der
+# Wurzel-.gitignore schliesst .vscode/ aus, frontend/.gitignore zusaetzlich .vscode/*, und
+# Prettier hat fuer .json einen Parser (VS Code legt dort settings.json, launch.json,
+# tasks.json ab). Weil --ignore-path die .gitignore-Auswertung ersetzt, erfasst ein lokaler
+# --write-Lauf diese Dateien sonst und schreibt lokale Editor-Einstellungen um. Der Fall ist
+# heute latent - kein solches Verzeichnis existiert -, und genau deshalb steht der Eintrag hier:
+# dieselbe Begruendung wie bei *.md unter backend/, wo der Ausschluss ebenfalls aktiv
+# konfiguriert wird, statt sich auf die heutige Abwesenheit zu verlassen.
+#
+# Die Schreibweise ist tragend und nachgemessen: Nur `.vscode/` - Schraegstrich ausschliesslich
+# am Ende - greift auf JEDER Ebene und damit auch auf frontend/.vscode/. Das woertlich aus
+# frontend/.gitignore uebernommene `.vscode/*` traegt einen Schraegstrich in der Mitte, ist
+# dadurch an das Verzeichnis DIESER Datei gebunden und liesse frontend/.vscode/ unberuehrt - ein
+# Eintrag, der wie eine Absicherung aussieht und keine ist.
+#
+# Der Wiedereinschluss `!.vscode/extensions.json` aus frontend/.gitignore wird bewusst NICHT
+# gespiegelt: Nachgemessen bleibt er wirkungslos, weil gitignore-Semantik eine Datei unterhalb
+# eines ausgeschlossenen Verzeichnisses nicht wieder einschliessen kann. Die Folge ist
+# hinnehmbar - eine kuenftige, dann versionierte extensions.json bliebe unformatiert; sie ist
+# eine Empfehlungsliste, kein Quelltext.
+.vscode/
