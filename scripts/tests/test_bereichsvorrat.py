@@ -106,10 +106,26 @@ MINDESTZAHL_DATEIEN_IM_SUCHRAUM = 300
 # trifft, meldet einen sauberen Bestand und einen kaputten Scanner gleich.
 MINDESTZAHL_VORKOMMEN_IM_KATALOG = 6
 
-# Die Vorrat-Zeile wird ueber ihren **Zeilenanfang** erkannt, nicht ueber ihren vollstaendigen
-# Wortlaut: Eine zweite Zeile, die den Vorrat leicht anders einleitet, soll als Dublette
-# auffallen und nicht am Muster vorbeirutschen.
-_VORRAT_ZEILE = re.compile(r"^\*\*Bereichsvorrat(?P<rest>[^\n]*)$", re.MULTILINE)
+# **Zwei Stufen, und beide werden gebraucht** - das Akzeptanzkriterium sagt "genau eine Zeile
+# **fester Form**", und das sind zwei Aussagen:
+#
+# * `_VORRAT_KANDIDAT` erkennt ueber den **Zeilenanfang**, was beansprucht, die Vorrat-Zeile zu
+#   sein. Absichtlich lose: Eine zweite Zeile, die den Vorrat leicht anders einleitet, soll als
+#   Dublette auffallen statt am Muster vorbeizurutschen.
+# * `_VORRAT_ZEILE` ist die **Form** selbst: Markierung, Klammerzusatz, Doppelpunkt, genau ein
+#   Leerzeichen, dann die Werte in Backticks mit `, ` getrennt - und nichts dahinter.
+#
+# Ohne die zweite Stufe wurde nur "genau eine Zeile, die so anfaengt" geprueft: Eine Zeile ohne
+# Doppelpunkt, ohne "(geschlossen)" oder mit beliebigem Text zwischen Markierung und Werten galt
+# als *die* eine Quelle, solange die herausgeloeste Menge zufaellig passte. Dieselbe Klasse wie
+# die Positivliste im Suchraum und der enge Aussenscan: **eine Zusicherung, die schwaecher ist
+# als das, was sie zu garantieren vorgibt.**
+_VORRAT_KANDIDAT = re.compile(r"^\*\*Bereichsvorrat[^\n]*$", re.MULTILINE)
+_VORRAT_ZEILE = re.compile(
+    r"^\*\*Bereichsvorrat \(geschlossen\):\*\* "
+    r"(?P<rest>`bereich:[a-z][a-z0-9-]*`(?:, `bereich:[a-z][a-z0-9-]*`)*)$",
+    re.MULTILINE,
+)
 
 # **Zwei Muster mit zwei Aufgaben.** Sie sehen aehnlich aus und duerfen nicht zusammengelegt
 # werden - ihre Fehlerrichtungen sind entgegengesetzt:
@@ -143,26 +159,41 @@ KEINE_NACHHOL_MARKIERUNG = "keine Nachhol-Zeile"
 # --- Reine Funktionen ---------------------------------------------------------------------
 
 
-def vorrat_zeilen(text: str) -> list[str]:
-    """Reine Funktion: die Restinhalte aller Zeilen fester Form, in Fundreihenfolge."""
-    return [treffer.group("rest") for treffer in _VORRAT_ZEILE.finditer(text)]
+def vorrat_kandidaten(text: str) -> list[str]:
+    """Reine Funktion: jede Zeile, die beansprucht, die Vorrat-Zeile zu sein.
+
+    Lose ueber den Zeilenanfang - eine abweichend eingeleitete zweite Zeile ist eine Dublette und
+    soll als solche gemeldet werden, nicht stillschweigend aus der Zaehlung fallen.
+    """
+    return [treffer.group(0) for treffer in _VORRAT_KANDIDAT.finditer(text)]
 
 
 def vorrat_aus_text(text: str) -> frozenset[str]:
-    """Reine Funktion: der Vorrat der **einen** Formzeile.
+    """Reine Funktion: der Vorrat der **einen** Zeile fester Form.
 
-    Keine Zeile und mehr als eine Zeile sind beides laute Fehlerfaelle mit eigener Meldung - ein
-    stiller Nullbefund waere hier dasselbe wie eine bestandene Pruefung.
+    Drei laute Fehlerfaelle mit je eigener Meldung - ein stiller Nullbefund waere hier dasselbe
+    wie eine bestandene Pruefung: keine Kandidatenzeile, mehr als eine Kandidatenzeile, und eine
+    Kandidatenzeile, die die Form verfehlt.
     """
-    zeilen = vorrat_zeilen(text)
-    if len(zeilen) != 1:
+    kandidaten = vorrat_kandidaten(text)
+    if len(kandidaten) != 1:
         raise ValueError(
-            f"{len(zeilen)} Zeilen der Form '**Bereichsvorrat …' gefunden, erwartet genau eine. "
-            "Null heisst: Der Vorrat steht nirgends mehr als Literal, und die Erwartungsmenge "
-            "dieses Tests prueft nichts. Mehr als eine heisst: Es gibt zwei Wahrheitsorte, die "
-            "auseinanderlaufen koennen."
+            f"{len(kandidaten)} Zeilen der Form '**Bereichsvorrat …' gefunden, erwartet genau "
+            "eine. Null heisst: Der Vorrat steht nirgends mehr als Literal, und die "
+            "Erwartungsmenge dieses Tests prueft nichts. Mehr als eine heisst: Es gibt zwei "
+            "Wahrheitsorte, die auseinanderlaufen koennen."
         )
-    return frozenset(_VORRATS_WERT.findall(zeilen[0]))
+
+    treffer = _VORRAT_ZEILE.search(text)
+    if not treffer:
+        raise ValueError(
+            f"Die Vorrat-Zeile verfehlt die feste Form ({kandidaten[0]!r}). Erwartet wird genau "
+            "'**Bereichsvorrat (geschlossen):** `bereich:…`, `bereich:…`' - Markierung, "
+            "Klammerzusatz, Doppelpunkt, ein Leerzeichen, Werte in Backticks mit ', ' getrennt, "
+            "nichts dahinter. Eine missgebildete Zeile darf nicht als *die* eine Quelle "
+            "durchgehen, nur weil die herausgeloeste Menge zufaellig passt."
+        )
+    return frozenset(_VORRATS_WERT.findall(treffer.group("rest")))
 
 
 def werte_ausserhalb_des_katalogs(abbild: Mapping[str, str]) -> list[str]:
@@ -359,7 +390,7 @@ def test_jedes_muster_findet_im_katalog_mindestens_sechs_vorkommen(muster: re.Pa
 
 
 def test_genau_eine_zeile_fester_form_traegt_den_vorrat() -> None:
-    zeilen = vorrat_zeilen(katalogtext())
+    zeilen = vorrat_kandidaten(katalogtext())
 
     assert len(zeilen) == 1, (
         f"{len(zeilen)} Zeilen der Form '**Bereichsvorrat …' im Katalog, erwartet genau eine. "
@@ -491,11 +522,59 @@ def test_eine_fehlende_vorrat_zeile_scheitert_laut_statt_still() -> None:
         vorrat_aus_text("### `issue-bereich-setzen`\n\nNur Prosa.\n")
 
 
+@pytest.mark.parametrize(
+    ("zeile", "abweichung"),
+    [
+        (
+            "**Bereichsvorrat:** `bereich:frontend`, `bereich:backend`",
+            "ohne den Klammerzusatz (geschlossen)",
+        ),
+        (
+            "**Bereichsvorrat (geschlossen)** `bereich:frontend`, `bereich:backend`",
+            "ohne Doppelpunkt",
+        ),
+        (
+            "**Bereichsvorrat (geschlossen):** heute gelten `bereich:frontend`, `bereich:backend`",
+            "Prosa zwischen Markierung und Werten",
+        ),
+        (
+            "**Bereichsvorrat (geschlossen):** `bereich:frontend`, `bereich:backend` (vorlaeufig)",
+            "Prosa hinter den Werten",
+        ),
+        (
+            "**Bereichsvorrat (geschlossen):** `bereich:frontend`; `bereich:backend`",
+            "Semikolon statt ', ' als Trenner",
+        ),
+        (
+            "**Bereichsvorrat (geschlossen):** bereich:frontend, bereich:backend",
+            "Werte ohne Backticks",
+        ),
+        (
+            "**Bereichsvorrat (geschlossen):**  `bereich:frontend`, `bereich:backend`",
+            "zwei Leerzeichen hinter der Markierung",
+        ),
+    ],
+)
+def test_eine_missgebildete_vorrat_zeile_scheitert_laut_statt_still(
+    zeile: str, abweichung: str
+) -> None:
+    """Das Kriterium sagt "genau eine Zeile fester Form" - das ist zweierlei, Anzahl und Form.
+
+    Jede dieser Zeilen wurde von der Vorgaengerfassung als *die* eine Quelle akzeptiert, weil
+    diese nur den Zeilenanfang forderte und den Rest frei parste; bei den ersten fuenf haette
+    die herausgeloeste Menge sogar gestimmt. `{abweichung}`.
+    """
+    assert len(vorrat_kandidaten(zeile + "\n")) == 1, "Kandidat, aber keine gueltige Form"
+
+    with pytest.raises(ValueError, match=r"verfehlt die feste Form"):
+        vorrat_aus_text(zeile + "\n")
+
+
 def test_eine_abweichend_eingeleitete_zweite_zeile_gilt_als_dublette() -> None:
     """Erkannt wird der Zeilenanfang, nicht der volle Wortlaut - sonst rutschte sie vorbei."""
     text = _FORMZEILE + "**Bereichsvorrat, zweite Fassung:** `bereich:doku`\n"
 
-    assert len(vorrat_zeilen(text)) == 2
+    assert len(vorrat_kandidaten(text)) == 2
 
 
 @pytest.mark.parametrize(

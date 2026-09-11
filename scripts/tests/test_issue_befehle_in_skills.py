@@ -243,6 +243,14 @@ def reihenfolge_verstoesse(text: str, datei: str = "<text>") -> list[str]:
             f"{datei}: keine Ausfuehrungsstelle von `{BODY_OPERATION}` gefunden. Der Body ist die "
             "fachliche Arbeit des Ablaufs; ohne ihn ist die Reihenfolge gegenstandslos."
         )
+    if not board:
+        befunde.append(
+            f"{datei}: keine Ausfuehrungsstelle einer `{BOARD_PRAEFIX}`-Operation gefunden. Die "
+            "Aussage 'der Bereich steht vor jeder Board-Stelle' ist ohne eine solche Stelle leer "
+            "wahr - der Ablauf koennte saemtliche Board-Zugriffe verlieren, ohne dass etwas rot "
+            "wird. Dieselbe Pflichtbeigabe wie bei den drei Gliedern davor, nur fuer das "
+            "Folgeglied."
+        )
     if not bereich:
         befunde.append(
             f"{datei}: keine Ausfuehrungsstelle von `{BEREICH_OPERATION}` gefunden. Ohne sie "
@@ -552,6 +560,20 @@ def test_eine_geloeschte_bereich_stelle_wird_gemeldet() -> None:
 
     assert len(befunde) == 1
     assert BEREICH_OPERATION in befunde[0]
+
+
+def test_verschwundene_board_stellen_werden_gemeldet() -> None:
+    """Das Folgeglied braucht seine Existenz-Zusicherung so gut wie die drei davor.
+
+    Ohne sie bleibt `board_zu_frueh` leer, weil es nichts zu vergleichen gibt - und der Test
+    waere gruen, waehrend `refinement` jeden Board-Zugriff verloren hat.
+    """
+    text = "\n".join([_BODY_STELLE, _TITEL_STELLE, _BEREICH_STELLE]) + "\n"
+
+    befunde = reihenfolge_verstoesse(text, "refinement.md")
+
+    assert len(befunde) == 1
+    assert BOARD_PRAEFIX in befunde[0]
 
 
 def test_eine_bereich_stelle_vor_der_titel_stelle_wird_gemeldet() -> None:

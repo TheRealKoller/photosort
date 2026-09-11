@@ -197,6 +197,15 @@ ERWARTETE_AUSWERTUNGSGRENZE: dict[str, tuple[str, ...]] = {
 # eine erlaeuternde Erwaehnung im Fliesstext soll sie nicht erfuellen koennen.
 NORMALISIERUNGS_MARKER = "**Normalisierung"
 _NORMALISIERUNGS_ZEILE = re.compile(r"^\*\*Normalisierung[^\n]*$", re.MULTILINE)
+
+# Dieselbe Bauart fuer die Zusage, die das Sicherheitskonzept als Muss fuehrt: Der `mcp`-Weg
+# schreibt die **vollstaendige** Label-Menge zurueck und stellte damit eine zwischenzeitlich
+# zurueckgezogene `approved-for-agent`-Freigabe wieder her - "Lesen und Schreiben im selben Lauf"
+# schliesst das nicht aus, denn ein Lauf ist kein Moment. Die Schranke ist ein Lesezugriff
+# unmittelbar vor dem Schreiben; ohne ihn ist die Zusage eine Absichtserklaerung.
+DRIFT_MARKER = "**Drift-Prüfung"
+_DRIFT_ZEILE = re.compile(r"^\*\*Drift-Prüfung[^\n]*$", re.MULTILINE)
+FREIGABE_LABEL = "approved-for-agent"
 ERWARTETE_NORMALISIERUNG: dict[str, tuple[str, ...]] = {
     "issue-liste-lesen": ("author.login", "labels[].name"),
     "issue-bereich-setzen": ("labels[].name",),
@@ -819,6 +828,23 @@ def test_beide_neuen_eintraege_benennen_ihren_normalisierten_wert() -> None:
         "; ".join(befunde) + " Ohne den normalisierten Wert vergleicht ein Ablauf gegen ein "
         "Objekt statt gegen eine Zeichenkette - der Vergleich schlaegt dann immer fehl, und die "
         "Praefix-Subtraktion ueber die Label-Menge ist gar nicht ausfuehrbar."
+    )
+
+
+def test_der_zielzustands_schreiber_fuehrt_eine_drift_pruefung() -> None:
+    """Die Freigabepolitik haengt an einer Label-Menge, die diese Operation zurueckschreibt."""
+    block = {e.id: e for e in katalog_aus_text(katalogtext())}["issue-bereich-setzen"].block
+
+    assert _DRIFT_ZEILE.search(block), (
+        f"`issue-bereich-setzen` fuehrt keine {DRIFT_MARKER}…:**-Zeile. Der `mcp`-Weg schreibt die "
+        "vollstaendige Label-Menge zurueck; ohne einen Lesezugriff unmittelbar vor dem Schreiben "
+        "kann er eine zwischenzeitlich zurueckgezogene Freigabe wiederherstellen. 'Lesen und "
+        "Schreiben im selben Lauf' reicht dafuer nicht - ein Lauf ist kein Moment."
+    )
+    assert FREIGABE_LABEL in block, (
+        f"`issue-bereich-setzen` nennt {FREIGABE_LABEL!r} nicht. Genau dieses Label macht aus "
+        "einem Lesen-Aendern-Schreiben ein Sicherheitsproblem; die Zusage muss es benennen, "
+        "nicht umschreiben."
     )
 
 

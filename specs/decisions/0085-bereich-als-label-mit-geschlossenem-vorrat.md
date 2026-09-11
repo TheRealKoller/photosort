@@ -86,9 +86,18 @@ nur, was sich nachholen lässt, ohne den Abschluss zu wiederholen.
 Ein Skript unter `scripts/` wäre eine zweite Stelle mit GitHub-Zugriff (ADR 0061), erreichte die
 MCP-Werkzeuge gar nicht und trüge danach dauerhaft Lint-, Format- und Testlast für einen Lauf, den
 niemand wiederholt. Der Nachlauf braucht die Liste der offenen Issues; dafür bekommt der Katalog
-`issue-liste-lesen` (Wege `mcp` und `gh`, Auswertungsgrenze `number`, `title`, `labels`, `state`)
+`issue-liste-lesen` (Wege `mcp` und `gh`, Auswertungsgrenze `number`, `labels`, `state`, `author`)
 — die bewusste Erweiterung einer geschlossenen Liste um eine Lesemöglichkeit, die ihr heute fehlt,
 nicht ihre Aufweichung.
+
+**`title` fehlt in dieser Liste mit Absicht**, und das ist keine Sparsamkeit, sondern die
+Sicherheitszusage der Operation: Es ist das einzige fremdbeschreibbare Feld der Antwort —
+`number` und `state` erzeugt GitHub, `labels` kann nur setzen, wer Schreib-/Triage-Recht hat, und
+`author` wird ausschließlich als `author.login` gegen das Literal `TheRealKoller` verglichen. Der
+Nachlauf holt den Titel ohnehin je Issue über `issue-lesen`, dessen Grenze ihn enthält. Ein
+früherer Entwurf dieser ADR führte `title` hier auf; die Fassung ist nachgezogen, damit aus der
+Architekturquelle nicht bei einer späteren Ausführung genau der Freitext zurückkehrt, den die
+Operation fernhalten soll.
 
 Das ist **keine zweite Ausnahme von Härtungsregel 4.2**, sondern eine Lesart, die den Katalog
 ergänzt. Was die bestehende Ausnahme bei `issue-anlegen`/`pr-erstellen` trägt, ist nicht das
