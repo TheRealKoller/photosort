@@ -1,6 +1,6 @@
 # 0259 - Issues zeigen den betroffenen Bereich
 
-**Status:** Accepted
+**Status:** Implemented ([PR #418](https://github.com/TheRealKoller/photosort/pull/418))
 **Erstellt:** 2026-09-11
 **Bezug:** GitHub-Issue [`#259`](https://github.com/TheRealKoller/photosort/issues/259), ADR
 [`0085`](../decisions/0085-bereich-als-label-mit-geschlossenem-vorrat.md)
