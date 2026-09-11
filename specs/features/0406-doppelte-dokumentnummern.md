@@ -1,6 +1,6 @@
 # 0406 - Doppelte Dokumentnummern fallen auf statt still zu bleiben
 
-**Status:** Accepted
+**Status:** Implemented ([PR #412](https://github.com/TheRealKoller/photosort/pull/412))
 **Erstellt:** 2026-09-11
 **Bezug:** GitHub-Issue [`#406`](https://github.com/TheRealKoller/photosort/issues/406)
 
