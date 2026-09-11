@@ -53,9 +53,13 @@ Zwei Vorbedingungen prüft das Skript selbst und bricht sonst mit einem Hinweis 
   `.venv` — je Baum neu installieren:
 
   ```bash
-  cd backend && uv pip install -e ".[dev]"
-  cd scripts && uv pip install -e ".[dev]"
+  (cd backend && uv pip install -e ".[dev]")
+  (cd scripts && uv pip install -e ".[dev]")
   ```
+
+  Die Klammern sind kein Zierrat: Ohne sie stünde man nach der ersten Zeile in `backend/`, und
+  die zweite löste `backend/scripts` auf und schlüge fehl — ausgerechnet beim naheliegendsten
+  Gebrauch, dem Kopieren des ganzen Blocks.
 
 Nach `alembic revision --autogenerate` ist die erzeugte Migration unformatiert; der Formatierlauf
 gehört dort zum Anlegen dazu.
