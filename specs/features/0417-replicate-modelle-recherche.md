@@ -77,7 +77,7 @@ Anbindung lohnt, statt sie auf Verdacht bauen zu lassen.
       Ablehnung bleibt. *(Rechercheergebnis Punkt 8: ja, aber schmal und nur für offizielle
       Modelle; für Gemeinschaftsmodelle bleibt es vorerst bei der Ablehnung.)*
 - [x] Arbeit, die sich aus dem Ergebnis ergibt, ist als eigene Story erfasst. Diese Story selbst
-      ändert keine Software. *(Issues #420 und #421, siehe „Entscheidungen".)*
+      ändert keine Software. *(Issues #420, #421 und #423, siehe „Entscheidungen".)*
 
 ## Der heutige Vergleichsmaßstab
 
@@ -213,14 +213,13 @@ Akzeptanzkriterium).
   wird, bevor feststeht, dass eine Umgebungsvariable das Problem nicht schon löst.
 - **Ausführung durch `research-engineer` statt `developer`** (technische Detailentscheidung): der
   TDD-Zyklus ist auf eine reine Textaufgabe nicht anwendbar; Präzedenzfall ist Spec 0035.
-- **Folgearbeit als zwei Stories erfasst, nicht drei:** Issue #420 (die stärkeren heute
-  einstellbaren Modelle an eigenen Fotos messen) und Issue #421 (Replicate als dritter Anbieter,
-  begrenzt auf token-abgerechnete offizielle Modelle). Die dritte im Ergebnis besprochene Option —
-  Kategorie-Spezialisten aus der Gemeinschaft als eigener Pipeline-Schritt — ist **nicht** als
-  Story erfasst: Sie ist im Rechercheergebnis ausdrücklich zurückgestellt, bis #420 und #421
-  gemessen sind, und ein Board-Eintrag für eine zurückgestellte Option behauptete eine Beauftragung,
-  die es nicht gibt. Sie ist im Rechercheergebnis Punkt 8.3 und im Body von #421 festgehalten.
-  **Woran die Zurückstellung *nicht* hängt:** an der Kostenvorschau. Die Beträge dieser Modelle
+- **Folgearbeit als drei Stories erfasst:** Issue #420 (die stärkeren heute einstellbaren Modelle
+  an eigenen Fotos messen), Issue #421 (Replicate als dritter Anbieter, begrenzt auf
+  token-abgerechnete offizielle Modelle) und Issue #423 (Kategorie-Spezialisten aus der
+  Gemeinschaft als eigener Pipeline-Schritt). #423 ist gegenüber #420 und #421 **nachrangig**,
+  aber erfasst: Zurückgestellt heißt später, nicht verworfen, und ein unerfasster Gedanke geht
+  verloren. Die Reihenfolge trägt die Abhängigkeit im Issue-Body, nicht das Fehlen des Eintrags.
+  **Woran die Nachrangigkeit *nicht* hängt:** an der Kostenvorschau. Die Beträge dieser Modelle
   liegen unter der heutigen Anthropic-Voreinstellung, der fehlende Vorab-Betrag ist dort ein
   Anzeigemangel und kein Risiko. Tragend sind allein der eigene Pipeline-Schritt, der fremde
   Container-Code auf Familienfotos und die Abhängigkeit von #420. Die Gewichtung steht
@@ -578,8 +577,8 @@ Gestaffelt, in dieser Reihenfolge:
 3. **Für welchen der beiden Zwecke?** Für **Sehenswürdigkeiten** ist Replicate nur als
    Gemini-Zugang interessant — Spezialisten gibt es dort nicht. Für **Kategorien** gäbe es
    echte Spezialisten (RAM, SigLIP) zu einem Zehntel bis Fünfzigstel der heutigen Kosten.
-   Diese Option ist **zurückzustellen**, bis Schritt 1 und 2 gemessen sind — aber aus
-   folgenden Gründen, in dieser Gewichtung:
+   Diese Option ist als Issue #423 erfasst, aber **nachrangig** gegenüber Schritt 1 und 2 —
+   aus folgenden Gründen, in dieser Gewichtung:
 
    1. **Es ist ein eigenes Feature, keine Anbieter-Erweiterung.** RAM und SigLIP liefern Tags
       bzw. Scores gegen eine Labelliste, keine Modellantwort im heutigen Format. Sie ersetzen
@@ -818,7 +817,8 @@ Fotos gemessen. „Container" = beliebiger Fremdcode verarbeitet das Bild (Punkt
 - **Issue #421** — Replicate als dritter Anbieter, begrenzt auf token-abgerechnete offizielle
   Modelle (`google/gemini-3-flash`, `google/gemini-3.1-pro`). Punkt 2 des Fazits, abhängig vom
   Ergebnis von #420.
+- **Issue #423** — Kategorie-Spezialisten aus der Gemeinschaft (`idea-research/ram-grounded-sam`,
+  `lucataco/siglip`) als eigener Pipeline-Schritt. Punkt 3 des Fazits, nachrangig gegenüber #420
+  und #421 und ebenfalls abhängig vom Ergebnis von #420.
 
-Die Kategorie-Spezialisten aus der Gemeinschaft (Punkt 3 des Fazits) sind bewusst **nicht** als
-Story erfasst — sie sind zurückgestellt, bis die beiden obigen gemessen sind. Diese Spec selbst
-ändert keine Software.
+Diese Spec selbst ändert keine Software.
