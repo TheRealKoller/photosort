@@ -639,7 +639,7 @@ Die Farbfunktions-Familie hat als einzige **keine repo-seitige Gegenprobe** (das
 
 **Zwei weitere Bauteile dieser Ebene, die auch anderswo taugen:** eine **Reihenfolge-Zusicherung über die geparste Aufrufstelle** statt über `text.index` (die Vorbedingung von `seed-components.js` muss vor dem ersten schreibenden Aufruf stehen; geparst wird mit `parseAst` aus `vite`, also ohne neue Abhängigkeit) — und eine **Zustandsabdeckung gegen den Produktcode statt gegen eine gepflegte Liste**: Trägt eine Produktdatei eine Tailwind-Variante aus einem geschlossenen Zustandsvokabular, muss die Matrix diesen Zustand führen. „Mindestens ein Zustand" wäre erfüllt, wenn jeder Baustein genau `default` trüge.
 
-### Struktur-Soll ohne ausführende Nutzlast: eine sechste Datei, die nie läuft (`design/penpot/views.json`) — neu für Spec [`0358`](../features/0358-projektverwaltung-entwurf.md) / ADR [`0069`](../decisions/0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md), [`0070`](../decisions/0070-bausteinmenge-regelgebunden-offen-statt-geschlossen.md)
+### Struktur-Soll ohne ausführende Nutzlast: eine sechste Datei, die nie läuft (`design/penpot/views.json`) — neu für Spec [`0358`](../features/0358-projektverwaltung-entwurf.md) / ADR [`0082`](../decisions/0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md), [`0070`](../decisions/0070-bausteinmenge-regelgebunden-offen-statt-geschlossen.md)
 
 Bisher kannte `design/penpot/` zwei Sorten Datei: **erzeugte** (`tokens.json`/`icons.json`, Positivkorpus der
 Gegenprobe) und **handgeschriebene Nutzlast** (die vier Skripte plus `components.json`, Suchraum der

@@ -127,7 +127,7 @@ ohnehin ihre Form bekommen.
 
 ## Ansichtsentwürfe: `views.json` ist die Soll-Struktur, kein Generator
 
-Seit ADR [`0069`](../../specs/decisions/0069-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md)
+Seit ADR [`0082`](../../specs/decisions/0082-ansichtsentwuerfe-als-handarbeit-mit-soll-struktur-im-repository.md)
 entsteht ein **Ansichtsentwurf von Hand in Penpot** — es gibt bewusst kein `seed-views.js` und
 keine fünfte Zeile in der Schritttabelle oben. Eine Ansicht besteht fast vollständig aus Werten
 (Position, Größe, Reihenfolge, Schachtelung, Beispieltext), und es gibt keine Quelle, aus der sie
