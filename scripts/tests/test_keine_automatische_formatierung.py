@@ -182,22 +182,60 @@ BEKANNTE_KONFIGURATIONEN = (
 # .githooks`) und die Zuweisung in git-config-Syntax (`hooksPath = .githooks` unter `[core]` bzw.
 # `core.hooksPath=...`).
 #
-# Zwei Alternativen, und beide sind an einer Mutationsprobe geschaerft worden (siehe die
-# Gegenproben unten - der erste Entwurf hatte in beide Richtungen einen Fehler):
+# **Die Wege sind ERHOBEN, nicht eingefallen** (Copilot-Finding zu PR #409). Der erste Entwurf
+# deckte zwei Formen ab, weil mir zwei eingefallen waren; eine dritte - die Umgebungsvariablen-
+# Form - lag offen im Repository (`scripts/merge-main-into-branch.sh` macht
+# `unset GIT_CONFIG_COUNT`) und wurde trotzdem uebersehen. Deshalb wurde die Frage danach in
+# einem Wegwerf-Repositorium ausgemessen statt beantwortet: Jeder Weg wurde real gefahren, bis
+# ein Hook nachweislich lief. Ergebnis (2026-09-11, git aus dem Systempfad) - ALLE SECHS
+# schalten einen Hook scharf:
 #
-#   1. `hooksPath` unmittelbar gefolgt von einer ZUWEISUNG. Das deckt `core.hooksPath=.githooks`,
-#      `core.hooksPath = .githooks` und die git-config-Dateisyntax ab, bei der `[core]` und
-#      `hooksPath = .githooks` auf VERSCHIEDENEN Zeilen stehen - ein Muster, das `core\.hooksPath`
-#      am Stueck verlangt, findet diese Form nicht.
-#   2. Der Bezeichner als Argument von `git config` (Flags dazwischen erlaubt).
+#   A  git config core.hooksPath <dir>                      -> Alternative 3
+#   B  [core] + hooksPath = <dir> in einer Konfigdatei      -> Alternative 1
+#   C  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath   -> Alternative 2  (fehlte!)
+#      GIT_CONFIG_VALUE_0=<dir>
+#   D  git -c core.hooksPath=<dir> <befehl>                 -> Alternative 1
+#   E  GIT_CONFIG_GLOBAL=<datei> mit [core] hooksPath       -> siehe unten
+#   F  Schreibzugriff nach .git/hooks/<name>                -> Alternative 4  (fehlte!)
 #
-# Ausdruecklich NICHT "Bezeichner gefolgt von irgendeinem Wort": Der erste Entwurf verlangte
+# Die vier Alternativen:
+#
+#   1. `hooksPath` unmittelbar gefolgt von einer ZUWEISUNG. Deckt `core.hooksPath=<dir>`,
+#      `git -c core.hooksPath=<dir>` und die Konfigdatei-Syntax ab, bei der `[core]` und
+#      `hooksPath = <dir>` auf VERSCHIEDENEN Zeilen stehen - ein Muster, das `core\.hooksPath` am
+#      Stueck verlangt, findet diese Form nicht.
+#   2. Der Bezeichner als WERT einer Zuweisung. Das ist die uebersehene Form C: In
+#      `GIT_CONFIG_KEY_0=core.hooksPath` steht er rechts vom Gleichheitszeichen, Alternative 1
+#      greift dort also prinzipiell nicht.
+#   3. Der Bezeichner als Argument von `git config` (Flags dazwischen erlaubt).
+#   4. Ein Pfad nach `.git/hooks/`. Form F braucht `core.hooksPath` ueberhaupt nicht - sie legt
+#      die Hook-Datei direkt an der Vorgabestelle ab. Am Bestand gemessen: 0 Treffer, keine
+#      Ausnahme noetig.
+#
+# **Form E braucht bewusst KEIN eigenes Muster, und das ist ein Argument, kein Versehen.** Das
+# Scharfschalten passiert dort nicht in der Zeile mit `GIT_CONFIG_GLOBAL=`, sondern in der Datei,
+# auf die sie zeigt - und die traegt `[core]`/`hooksPath = <dir>`, faellt also unter
+# Alternative 1, sobald sie verwaltet ist. Ist sie nicht verwaltet, liegt sie ausserhalb dessen,
+# was K8 zusichert ("keine EINGECHECKTE Datei loest aus"). Ein Muster auf `GIT_CONFIG_GLOBAL=`
+# waere zudem ein Fehlalarm auf `test_merge_main_into_branch.py`, das die Variable zur
+# Test-Isolation auf `/dev/null` setzt - defensiv, nicht scharf schaltend.
+#
+# Ausdruecklich NICHT "Bezeichner gefolgt von irgendeinem Wort": Ein frueherer Entwurf verlangte
 # `core\.hooksPath\s+\S` und meldete damit die deutsche Prosa "laesst sich core.hooksPath
 # unterschieben" als Befund - ein Fehlalarm auf genau der defensiven Erwaehnung, um derentwillen
-# das Muster ueberhaupt geschaerft wurde.
+# das Muster ueberhaupt geschaerft wurde. Beide Fehlalarm-Richtungen stehen unten als Gegenprobe.
+#
+# **Bekannte Restschwaeche, benannt statt verschwiegen:** Ein Schreibzugriff, der das
+# Hook-Verzeichnis nicht literal nennt, sondern ausrechnet
+# (`cp x "$(git rev-parse --git-path hooks)/pre-commit"`), faellt durch alle vier Alternativen.
+# Verfolgt wird das nicht - der Bedrohungsraum dieser Story ist die unabsichtliche Einfuehrung,
+# nicht die Verschleierung. Als zweite Reihe greift dort Familie 2: Die Quelldatei eines Hooks
+# traegt praktisch immer dessen Namen.
 _HOOKSPATH_SCHARF = (
-    rb"hooksPath\s*[=:]\s*\S"  # core.hooksPath=<wert>, hooksPath = <wert> unter [core]
-    rb"|git\s+config\b[^\n]*?\bcore\.hooksPath\b"  # git config [--flags] core.hooksPath <wert>
+    rb"hooksPath\s*[=:]\s*\S"  # 1: core.hooksPath=<wert>, hooksPath = <wert> unter [core]
+    rb"|=\s*[\"']?core\.hooksPath\b"  # 2: GIT_CONFIG_KEY_n=core.hooksPath
+    rb"|git\s+config\b[^\n]*?\bcore\.hooksPath\b"  # 3: git config [--flags] core.hooksPath <wert>
+    rb"|\.git/hooks/\S"  # 4: Schreibzugriff an die Vorgabestelle
 )
 
 # `CHANGELOG.md` und `specs/` duerfen den Einrichtungsbefehl woertlich zitieren - Spec 0400 tut
@@ -526,10 +564,28 @@ def test_familie3_faerbt_bei_einem_koeder_rot(
 @pytest.mark.parametrize(
     ("inhalt", "warum"),
     [
-        (b"git config core.hooksPath .githooks\n", "Einrichtungsbefehl"),
-        (b'git config --local core.hooksPath "tools/git"\n', "mit Flag und Anfuehrungszeichen"),
+        (b"git config core.hooksPath .githooks\n", "Weg A: Einrichtungsbefehl"),
+        (b'git config --local core.hooksPath "tools/git"\n', "Weg A mit Flag und Quotes"),
+        (b"[core]\n  hooksPath = .githooks\n", "Weg B: Konfigdatei, Schluessel auf eigener Zeile"),
+        (
+            b"GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=hooks-probe\n",
+            "Weg C: Umgebungsvariablen-Form - der Bezeichner steht RECHTS vom "
+            "Gleichheitszeichen, und genau daran ist der erste Entwurf vorbeigelaufen",
+        ),
+        (
+            b'GIT_CONFIG_KEY_0="core.hooksPath"\n',
+            "Weg C mit Anfuehrungszeichen",
+        ),
+        (b"git -c core.hooksPath=.githooks commit\n", "Weg D: -c am Aufruf"),
         (b"core.hooksPath=.githooks\n", "Zuweisung ohne Leerzeichen"),
-        (b"[core]\n  hooksPath = .githooks\n", "git-config-Syntax - core.hooksPath zusammen"),
+        (
+            b"cp tools/formatier-hook .git/hooks/pre-commit\n",
+            "Weg F: braucht core.hooksPath gar nicht, legt den Hook an die Vorgabestelle",
+        ),
+        (
+            b'install -m 755 x "$REPO/.git/hooks/post-merge"\n',
+            "Weg F mit anderem Hook-Namen",
+        ),
     ],
 )
 def test_familie4_faerbt_bei_einem_koeder_rot(inhalt: bytes, warum: str) -> None:
@@ -561,6 +617,17 @@ def test_der_bestand_wird_nicht_faelschlich_gemeldet() -> None:
             b'"Branch eines anderen Repositoriums, ueber GIT_CONFIG_COUNT laesst sich '
             b'core.hooksPath "\n"unterschieben."\n',
             "dieselbe Erwaehnung in test_main_abgleich_verdrahtung.py, ueber zwei Zeilen",
+        ),
+        (
+            b"unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \\\n"
+            b"    GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG_COUNT\n",
+            "das `unset` selbst - es ENTFERNT den Weg C, es oeffnet ihn nicht; ein Muster auf "
+            "dem blossen Variablennamen machte ausgerechnet die Gegenmassnahme zum Befund",
+        ),
+        (
+            b'"GIT_CONFIG_GLOBAL": "/dev/null",\n"GIT_CONFIG_SYSTEM": "/dev/null",\n',
+            "Test-Isolation in test_merge_main_into_branch.py: schneidet fremde Konfiguration "
+            "ab, statt eine unterzuschieben - Weg E wird bewusst ueber die Zieldatei erfasst",
         ),
     ],
 )
