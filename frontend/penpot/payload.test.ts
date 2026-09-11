@@ -2122,12 +2122,37 @@ const GETEILTE_TABELLENREIHENFOLGE = [
   '}',
 ].join('\n')
 
+/**
+ * Fuenfter geteilter Block: woran ein Varianten-BEHAELTER erkannt wird.
+ *
+ * ⚠ GEMESSEN AM ERSTEN ECHTEN KORREKTURLAUF (2026-09-11): `penpot.library.local.components`
+ * liefert je Baustein GENAU EINE Komponente, nicht ihre Varianten - 12 statt 158. Die
+ * Variantenkomponenten haengen am Behaelter (`behaelter.variants.variantComponents()`), und der
+ * ist ein Board und steht deshalb gar nicht in dieser Liste. Ein Korrekturlauf, der ueber
+ * `penpot.library.local.components` iteriert, erreicht ein Zwoelftel des Bestandes und meldet
+ * trotzdem Erfolg - der erste Lauf hat genau das getan.
+ *
+ * Beide Dateien, die den Bestand durchgehen, brauchen dieselbe Erkennung: `verify.js` zaehlt
+ * darueber, `fix-flaechen.js` schreibt darueber.
+ */
+const GETEILTE_BEHAELTERERKENNUNG = [
+  'function istVariantenBehaelter(form) {',
+  '  return Boolean(form.isVariantContainer) && Boolean(form.isVariantContainer())',
+  '}',
+].join('\n')
+
 const GETEILTE_BLOECKE: {
   name: string
   dateien: readonly string[]
   block: string
   aufruf: string
 }[] = [
+  {
+    name: 'Behaeltererkennung',
+    dateien: ['fix-flaechen.js', 'verify.js'],
+    block: GETEILTE_BEHAELTERERKENNUNG,
+    aufruf: 'istVariantenBehaelter',
+  },
   {
     name: 'Bausteinerkennung',
     dateien: ['seed-components.js', 'fix-flaechen.js', 'verify.js'],
@@ -2204,6 +2229,84 @@ describe('Die geteilten Erkennungen', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
+// Der Korrekturlauf erreicht den ganzen Bestand, nicht einen je Baustein
+// ---------------------------------------------------------------------------------------------
+
+/*
+ * ⚠ DIESE ZUSICHERUNG STAMMT AUS EINEM FEHLGESCHLAGENEN ECHTEN LAUF, nicht aus einer Ueberlegung.
+ * Am 2026-09-11 lief `fix-flaechen.js` zum ersten Mal gegen die bespielte Datei und meldete
+ * 2 geaendert / 9 bereits richtig / 1 strukturabweichend - zusammen ZWOELF. Das ist die Zahl der
+ * Bausteine, nicht die der 158 Varianten. Gemessen in derselben Sitzung:
+ * `penpot.library.local.components` traegt 12 Eintraege mit `schluessel`, die 12 Behaelter tragen
+ * zusammen 158 Variantenkomponenten, und alle 158 tragen den `schluessel` ebenfalls.
+ *
+ * Der Lauf war damit kein Fehlschlag, den man gesehen haette: Er lief durch, meldete Erfolg und
+ * liess fuenf Sechstel des Bestandes unberuehrt. Kein statischer Test konnte das fangen - die
+ * Nutzlast ist unausgefuehrter Code, und wie viele Objekte ein API-Aufruf liefert, steht in keiner
+ * Datei dieses Repositoriums.
+ */
+describe('fix-flaechen.js: der Lauf geht ueber die Variantenkomponenten', () => {
+  const quelltext = () => dateiVon('fix-flaechen.js').roh
+
+  it('holt die Komponenten ueber die Behaelter, nicht aus der Bibliotheksliste', () => {
+    const stellen = aufrufe(quelltext()).filter((aufruf) => aufruf.name === 'variantComponents')
+    expect(stellen.length, 'Aufruf von variantComponents').toBeGreaterThan(0)
+  })
+
+  /*
+   * Der blosse Aufrufname genuegt nicht: Ein unbenutztes `variantComponents()` irgendwo in der
+   * Datei liesse die Zusicherung darueber gruen, waehrend `main` weiter ueber die Bibliotheksliste
+   * liefe. Festgenagelt wird deshalb die tatsaechliche AUFRUFKETTE am Behaelter.
+   */
+  it('ruft variantComponents am Behaelter auf, nicht irgendwo', () => {
+    expect(quelltext()).toContain('behaelter.variants.variantComponents()')
+  })
+
+  /*
+   * ⚠ DIE SUCHE IST AUF DIE AKTIVE SEITE BEGRENZT, und das ist eine Vorbedingung des Schreibens:
+   * Penpot laesst nur die aktive Seite beschreiben. Ohne Wurzel suchte `findShapes` ueber alle
+   * Seiten, faende Behaelter auch dort, wo der Lauf sie nicht aendern darf, und brueche beim ersten
+   * solchen Schreibzugriff mitten im Bestand ab.
+   */
+  it('sucht die Behaelter nur auf der aktiven Seite', () => {
+    const stellen = aufrufe(quelltext()).filter((aufruf) => aufruf.name === 'findShapes')
+    expect(stellen.length, 'genau ein Aufruf von findShapes').toBe(1)
+    expect(stellen[0]!.argumente.length, 'findShapes mit Wurzelargument').toBe(2)
+    expect(quelltext(), 'Wurzel ist die aktive Seite').toContain('penpot.root')
+  })
+
+  /* Was auf einer anderen Seite liegt, wird gemeldet statt stillschweigend uebergangen - sonst
+     ist "nichts zu tun" von "nicht angesehen" nicht zu unterscheiden. */
+  it('fuehrt einen eigenen Ausgang fuer Behaelter anderer Seiten', () => {
+    expect(quelltext()).toContain('aufAndererSeite')
+  })
+
+  /* GEGENPROBE: Ohne sie bestuende die Zusicherung auch mit einem Erkenner, der nie etwas findet. */
+  it('erkennt eine Fassung ohne Variantenzugriff an einer synthetischen Probe', () => {
+    const ohne = 'function main() {\n  for (const k of penpot.library.local.components) {\n  }\n}'
+    expect(aufrufe(ohne).filter((aufruf) => aufruf.name === 'variantComponents')).toHaveLength(0)
+  })
+
+  /*
+   * Die Bibliotheksliste bleibt an GENAU EINER Stelle zulaessig: im geteilten Block, der die
+   * vorhandenen Bausteinschluessel einsammelt. Dort ist sie richtig - je Baustein ein Eintrag
+   * genuegt, um zu wissen, WELCHE Bausteine ueberhaupt da sind. Ueberall sonst ist sie der Fehler
+   * des ersten Laufs.
+   */
+  it('nennt die Bibliotheksliste nur innerhalb der geteilten Bausteinerkennung', () => {
+    /* Gezaehlt wird im KOMMENTARFREIEN Inhalt: Der Kopf dieser Datei beschreibt den Fehlgriff des
+       ersten Laufs ausdruecklich und nennt die Liste dabei beim Namen - eine Zaehlung im Rohtext
+       schluege genau an dieser Warnung an. */
+    const gesamt = dateiVon('fix-flaechen.js').inhalt.split(
+      'penpot.library.local.components',
+    ).length
+    const imBlock = GETEILTE_ERKENNUNG.split('penpot.library.local.components').length
+    expect(imBlock - 1, 'der geteilte Block nennt sie').toBeGreaterThan(0)
+    expect(gesamt, 'keine Nennung ausserhalb des geteilten Blocks').toBe(imBlock)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
 // Das Korrekturskript: eine geschlossene Schreibflaeche
 // ---------------------------------------------------------------------------------------------
 
@@ -2219,9 +2322,23 @@ describe('Die geteilten Erkennungen', () => {
  */
 const SCHREIB_WEISSLISTE = ['applyToShapes'] as const
 
-/** Die vier Ausgaenge des Berichts - eingefroren. "Struktur abweichend" ist ein EIGENER Ausgang:
- * Eine Komponente, die die Vorbedingungen verfehlt, darf nie als "bereits richtig" durchgehen. */
-const BERICHT_AUSGAENGE = ['bereitsRichtig', 'geaendert', 'nichtGefunden', 'strukturAbweichend']
+/**
+ * Die Ausgaenge des Berichts - eingefroren, alphabetisch.
+ *
+ * Zwei davon sind EIGENE Ausgaenge, weil sie sonst in "bereits richtig" verschwaenden und dort
+ * nicht wiederzufinden waeren: "Struktur abweichend" (eine Komponente, die die Vorbedingungen
+ * verfehlt) und "auf anderer Seite" (eine, die dieser Lauf gar nicht ansehen durfte, weil Penpot
+ * nur die aktive Seite beschreiben laesst). Dazu die Seite selbst - ohne sie sagt der Bericht
+ * nicht, WORUEBER er berichtet.
+ */
+const BERICHT_AUSGAENGE = [
+  'aufAndererSeite',
+  'bereitsRichtig',
+  'geaendert',
+  'nichtGefunden',
+  'seite',
+  'strukturAbweichend',
+]
 
 /** Alle Zeichenketten-Literale einer Datei, aus dem geparsten Baum. */
 export function zeichenkettenAus(quelltext: string): string[] {
@@ -2270,14 +2387,14 @@ describe('fix-flaechen.js: die Schreibflaeche ist geschlossen', () => {
     expect(wache!.start).toBeLessThan(ersterSchreibzugriff!.start)
   })
 
-  it('berichtet genau vier Ausgaenge, darunter den abweichenden Aufbau', () => {
+  it('berichtet genau die eingefrorenen Ausgaenge, darunter den abweichenden Aufbau', () => {
     const bericht = knoten(
       quelltext(),
       (eintrag) =>
         eintrag.type === 'ObjectExpression' &&
-        schluesselVon(eintrag).join(',') === BERICHT_AUSGAENGE.join(','),
+        schluesselVon(eintrag).sort().join(',') === [...BERICHT_AUSGAENGE].sort().join(','),
     )
-    expect(bericht, 'Bericht mit genau den vier Ausgaengen').toHaveLength(1)
+    expect(bericht, 'Bericht mit genau den eingefrorenen Ausgaengen').toHaveLength(1)
   })
 
   /*
