@@ -19,238 +19,49 @@ dem Skript entfernt blieben die naheliegenden Faelle - fehlender Pin, mehrdeutig
 und der Lauf am Unterschied gegen die nicht-leere Gegenseite abbricht. Wer diese Datei erweitert:
 Ein Leerstring-Fall, der die Gegenseite gefuellt laesst, prueft den stillen Fall nicht.
 
-**Bauform der Spielplaetze.** Ein Spielplatz ist ein temporaeres Verzeichnis mit derselben
-Struktur wie das Repositorium (`scripts/format.sh`, beide `pyproject.toml`, beide
-`package.json`, beide `node_modules/`), aber ohne jeden echten Inhalt. Das Skript leitet die vier
-Baeume aus seinem **eigenen Ablageort** ab; genau das macht diese Bauform moeglich und wird
-deshalb mitgeprueft. `ruff` und `npm` liegen als aufzeichnende Attrappen auf dem `PATH` - sie
-schreiben ihr Arbeitsverzeichnis und ihre Argumente in eine Protokolldatei, statt etwas zu tun.
-Kein Netzwerk, kein echtes `npm`, kein `bats-core`/`shunit2` (Testkonzept, Sektion "Bash-Skript
-mit echter Verzweigung").
-
-**Umgebungsisolierung.** Jeder Unterprozess bekommt ein vollstaendig gesetztes Environment mit
-einem `PATH`, der ausschliesslich auf das Attrappenverzeichnis und die Systemverzeichnisse zeigt
-- ein echtes `ruff` aus Daniels `~/.local/bin` liesse sonst die Versionsfaelle aus dem falschen
-Grund gruen werden. Jeder Aufruf traegt ein Timeout; ein haengendes Skript ist in CI ein
-Stundenjob, kein roter Test.
+**Bauform der Spielplaetze: `conftest.py`.** Ein Spielplatz ist ein temporaeres Verzeichnis mit
+derselben Struktur wie das Repositorium, aber ohne jeden echten Inhalt; `ruff` und `npm` liegen
+als aufzeichnende Attrappen auf einem isolierten `PATH`. Der Aufbau liegt in `conftest.py`, weil
+`test_check_sh.py` denselben braucht. Kein Netzwerk, kein echtes `npm`, kein
+`bats-core`/`shunit2` (Testkonzept, Sektion "Bash-Skript mit echter Verzweigung").
 """
 
 from __future__ import annotations
 
 import os
 import shutil
-import stat
-import subprocess
 import tempfile
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from conftest import (
+    GEPINNTE_VERSION,
+    PYTHON_BAEUME,
+    REPO_WURZEL,
+    SKRIPT_FORMAT_SH,
+    TS_BAEUME,
+    Spielplatz,
+    baue_spielplatz,
+    laufe,
+)
 
-REPO_WURZEL = Path(__file__).parents[2]
-SKRIPT_REPO_RELATIV = "scripts/format.sh"
+SKRIPT_REPO_RELATIV = SKRIPT_FORMAT_SH
 SKRIPT_PFAD = REPO_WURZEL / SKRIPT_REPO_RELATIV
-
-PYTHON_BAEUME = ("backend", "scripts")
-TS_BAEUME = ("frontend", "e2e")
-
-GEPINNTE_VERSION = "0.16.4"
-ZEITGRENZE_SEKUNDEN = 60
 
 # Selbstschutz gegen einen leeren Suchraum: Ein Skripttext von 0 wirksamen Zeilen liesse jede
 # statische Abwesenheitspruefung unten vakuum-gruen werden.
 MINDESTZAHL_WIRKSAMER_ZEILEN = 20
 
 
-# --- Attrappen ---------------------------------------------------------------------------------
-
-# Die Attrappen protokollieren "<Arbeitsverzeichnis>|<Programm>|<Argumente>" je Aufruf. Das
-# Arbeitsverzeichnis ist die eigentliche Zusicherung: Es belegt, dass das Skript den Formatierer
-# **im jeweiligen Baum** aufruft und nicht viermal in der Wurzel.
-_ATTRAPPE = """#!/usr/bin/env bash
-printf '%s|{name}|%s\\n' "$PWD" "$*" >> "$FORMAT_SH_PROTOKOLL"
-{koerper}
-"""
-
-_RUFF_KOERPER = """
-if [ "${1:-}" = "--version" ]; then
-  printf '%s\\n' "$FORMAT_SH_RUFF_AUSGABE"
-fi
-exit "${FORMAT_SH_RUFF_EXIT:-0}"
-"""
-
-_NPM_KOERPER = """
-exit 0
-"""
-
-
-def _schreibe_ausfuehrbar(pfad: Path, inhalt: str) -> None:
-    pfad.parent.mkdir(parents=True, exist_ok=True)
-    pfad.write_text(inhalt, encoding="utf-8")
-    pfad.chmod(pfad.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-
-def _pyproject(pin_zeile: str | None) -> str:
-    """Eine `pyproject.toml`, die nur so viel traegt, wie das Skript liest."""
-    dev = ['    "pytest>=8.3",']
-    if pin_zeile is not None:
-        dev.append(f"    {pin_zeile}")
-    zeilen = [
-        "[project]",
-        'name = "probe"',
-        'version = "0.0.0"',
-        "",
-        "[project.optional-dependencies]",
-        "dev = [",
-        *dev,
-        "]",
-        "",
-        "[tool.ruff]",
-        "line-length = 100",
-        "",
-        "# Auskommentiert und damit unwirksam - ein Leser, der den Rohtext greppt, faellt hierauf",
-        "# herein: ",
-        '#     "ruff==9.9.9",',
-        "",
-        "[tool.ruff.format]",
-        'exclude = ["*.md"]',
-        "",
-    ]
-    return "\n".join(zeilen)
-
-
-# --- Spielplatz --------------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class Spielplatz:
-    wurzel: Path
-    protokoll: Path
-    env: dict[str, str]
-
-    @property
-    def skript(self) -> Path:
-        return self.wurzel / SKRIPT_REPO_RELATIV
-
-    def aufrufe(self) -> list[tuple[str, str, str]]:
-        """Alle Attrappen-Aufrufe als (Baum, Programm, Argumente)."""
-        if not self.protokoll.exists():
-            return []
-        ergebnis: list[tuple[str, str, str]] = []
-        for zeile in self.protokoll.read_text(encoding="utf-8").splitlines():
-            if not zeile.strip():
-                continue
-            arbeitsverzeichnis, programm, argumente = zeile.split("|", 2)
-            baum = str(Path(arbeitsverzeichnis).resolve().relative_to(self.wurzel.resolve()))
-            ergebnis.append((baum, programm, argumente))
-        return ergebnis
-
-    def formatierlaeufe(self) -> list[tuple[str, str]]:
-        """Nur die Aufrufe, die tatsaechlich etwas umschreiben wuerden."""
-        return [
-            (baum, programm)
-            for baum, programm, argumente in self.aufrufe()
-            if (programm == "ruff" and argumente.startswith("format"))
-            or (programm == "npm" and argumente == "run format")
-        ]
-
-
-def baue_spielplatz(
-    wurzel: Path,
-    *,
-    pin_je_baum: dict[str, str | None] | None = None,
-    ruff_ausgabe: str = f"ruff {GEPINNTE_VERSION}",
-    ruff_exit: int = 0,
-    node_modules_je_baum: dict[str, bool] | None = None,
-    venv_ruff_ausgabe_je_baum: dict[str, str] | None = None,
-) -> Spielplatz:
-    pin_je_baum = pin_je_baum or {}
-    node_modules_je_baum = node_modules_je_baum or {}
-    venv_ruff_ausgabe_je_baum = venv_ruff_ausgabe_je_baum or {}
-
-    wurzel.mkdir(parents=True, exist_ok=True)
-    protokoll = wurzel / "attrappen.log"
-    attrappen_verzeichnis = wurzel / "attrappen"
-
-    shutil.copy2(SKRIPT_PFAD, _vorbereitet(wurzel / SKRIPT_REPO_RELATIV))
-    (wurzel / SKRIPT_REPO_RELATIV).chmod(0o755)
-
-    for baum in PYTHON_BAEUME:
-        pin = pin_je_baum.get(baum, f'"ruff=={GEPINNTE_VERSION}",')
-        _vorbereitet(wurzel / baum / "pyproject.toml").write_text(_pyproject(pin), encoding="utf-8")
-        ausgabe = venv_ruff_ausgabe_je_baum.get(baum)
-        if ausgabe is not None:
-            _schreibe_ausfuehrbar(
-                wurzel / baum / ".venv" / "bin" / "ruff",
-                _ATTRAPPE.format(name="ruff", koerper=_RUFF_KOERPER).replace(
-                    '"$FORMAT_SH_RUFF_AUSGABE"', f'"{ausgabe}"'
-                ),
-            )
-
-    for baum in TS_BAEUME:
-        _vorbereitet(wurzel / baum / "package.json").write_text(
-            '{\n  "name": "probe",\n  "scripts": { "format": "prettier --write ." }\n}\n',
-            encoding="utf-8",
-        )
-        if node_modules_je_baum.get(baum, True):
-            (wurzel / baum / "node_modules" / ".bin").mkdir(parents=True, exist_ok=True)
-
-    _schreibe_ausfuehrbar(
-        attrappen_verzeichnis / "ruff", _ATTRAPPE.format(name="ruff", koerper=_RUFF_KOERPER)
-    )
-    _schreibe_ausfuehrbar(
-        attrappen_verzeichnis / "npm", _ATTRAPPE.format(name="npm", koerper=_NPM_KOERPER)
-    )
-
-    env = {
-        "PATH": f"{attrappen_verzeichnis}:/usr/bin:/bin",
-        "HOME": str(wurzel),
-        "FORMAT_SH_PROTOKOLL": str(protokoll),
-        "FORMAT_SH_RUFF_AUSGABE": ruff_ausgabe,
-        "FORMAT_SH_RUFF_EXIT": str(ruff_exit),
-        "LC_ALL": "C",
-    }
-    return Spielplatz(wurzel=wurzel, protokoll=protokoll, env=env)
-
-
-def _vorbereitet(pfad: Path) -> Path:
-    pfad.parent.mkdir(parents=True, exist_ok=True)
-    return pfad
-
-
-@dataclass(frozen=True)
-class Ergebnis:
-    exit_code: int
-    stdout: str
-    stderr: str
-
-    @property
-    def meldung(self) -> str:
-        return f"{self.stdout}\n{self.stderr}"
-
-
-def laufe(spielplatz: Spielplatz, *, cwd: Path | None = None) -> Ergebnis:
-    fertig = subprocess.run(
-        [str(spielplatz.skript)],
-        cwd=str(cwd or spielplatz.wurzel),
-        env=spielplatz.env,
-        capture_output=True,
-        text=True,
-        timeout=ZEITGRENZE_SEKUNDEN,
-    )
-    return Ergebnis(fertig.returncode, fertig.stdout, fertig.stderr)
-
-
 @pytest.fixture
-def fabrik(tmp_path: Path) -> Iterator[Callable[..., Spielplatz]]:
-    zaehler = {"n": 0}
+def fabrik(spielplatz_fabrik: Callable[..., Spielplatz]) -> Callable[..., Spielplatz]:
+    """Spielplaetze dieses Moduls: `format.sh`, mit `ruff`- und `npm`-Attrappe."""
 
     def bauen(**kwargs: object) -> Spielplatz:
-        zaehler["n"] += 1
-        return baue_spielplatz(tmp_path / f"spielplatz{zaehler['n']}", **kwargs)  # type: ignore[arg-type]
+        return spielplatz_fabrik(skript=SKRIPT_REPO_RELATIV, attrappen=("ruff", "npm"), **kwargs)
 
-    yield bauen
+    return bauen
 
 
 # --- 1. Das Skript selbst ----------------------------------------------------------------------

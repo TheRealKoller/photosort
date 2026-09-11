@@ -74,6 +74,37 @@ Zwei Vorbedingungen prüft das Skript selbst und bricht sonst mit einem Hinweis 
 Nach `alembic revision --autogenerate` ist die erzeugte Migration unformatiert; der Formatierlauf
 gehört dort zum Anlegen dazu.
 
+### Prüfen (Formatierung, Lint, Typen)
+
+Ein Aufruf prüft alle vier Bäume mit denselben zehn Befehlen, die auch in CI stehen — und
+schreibt dabei nichts:
+
+```bash
+./scripts/check.sh
+```
+
+Vorbedingungen sind dieselben wie beim Formatierbefehl oben (`node_modules`, passende
+`ruff`-Version je Baum), dazu ein aufrufbares `mypy` und die aufgerufenen npm-Skriptnamen. Auch
+hier läuft nichts von selbst: kein Git-Hook, kein Editor-Automatismus, keine Prüfung, die nach
+einer Dateiänderung feuert (das ist Absicht, siehe
+[`specs/decisions/0084-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-tdd-einheit.md`](../specs/decisions/0084-frueheres-qualitaets-feedback-ein-pruefbefehl-und-ein-pruefpunkt-je-tdd-einheit.md)).
+Der Befehl hat deshalb nichts, was sich abschalten ließe — er tut nichts, bis ihn jemand aufruft.
+
+Je Ausgang ein Handgriff:
+
+- **`0`** — alle zehn Prüfungen gelaufen, Format, Lint und Typen sauber. Das ist **keine** Zusage
+  über die CI: Tests, Coverage-Gate, Frontend-Build, `docker compose`-Prüfungen und der e2e-Lauf
+  gehören nicht dazu.
+- **`1`** — kein Befund, aber mindestens ein Baum blieb ungeprüft. Die Bilanz nennt Baum und
+  Handgriff (meist `npm ci` im jeweiligen Baum oder eine Neuinstallation der
+  Entwicklungsabhängigkeiten, siehe oben). **Im verbundenen Arbeitsbaum
+  (`.claude/worktrees/…`) ist das der Normalfall**, weil dort weder `node_modules` noch `.venv`
+  liegen — kein Störfall, sondern die ehrliche Auskunft, dass dort weniger geprüft wurde.
+- **`2`** — mindestens ein Befund. Die Bilanz nennt jedes rote (Baum, Prüfung)-Paar. Beheben und
+  erneut laufen lassen; bei Formatbefunden reicht `./scripts/format.sh`. Ein `2` gewinnt gegen
+  ein `1`: Ein Befund verlangt eine Änderung am Arbeitsstand, ein ungeprüfter Baum nur eine an
+  der Umgebung.
+
 ## GitHub-CLI (`gh`)
 
 Der Story-Lebenszyklus des Projekts — Story-Issue anlegen, Issue-Body schreiben, Board-Status

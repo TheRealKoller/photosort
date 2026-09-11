@@ -1,4 +1,12 @@
-r"""Waechter gegen jede eingecheckte Datei, die Formatierung automatisch ausloest (K8, Spec 0400).
+r"""Waechter gegen jede eingecheckte Datei, die ein Kommando automatisch ausloest (K8, Spec 0400).
+
+**Das Modul traegt seit Spec 0398 (K5) eine zweite Zusage, und sie ist breiter als die erste:
+keine eingecheckte Datei loest ein Kommando ohne Zutun des Agenten aus** - nicht nur keine
+Formatierung. Wer dieses Modul spaeter auf "Formatierung" zurueckschneidet, nimmt die einzige
+mechanische Zusage jener Story still mit. Eine fuenfte Musterfamilie entsteht dafuer
+ausdruecklich nicht: Die vier Familien pruefen repoweite **Form**; "dieses Skript installiert
+keinen Hook" ist eine **Verhaltens**aussage ueber eine Datei und steht als Totalverbot in deren
+eigenem Test (`test_check_sh.py`).
 
 `scripts/format.sh` ist ein Handgriff, kein Automatismus. Der Grund steht in ADR 0080
 Abschnitt 12: Ein Hook, der beim Commit still Dateien umschreibt, veraendert einen Stand, den der
