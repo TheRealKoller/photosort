@@ -146,6 +146,14 @@ entsteht: Ohne sie wäre der zugesagte Wiederaufbau zwar inhaltlich vollständig
 maßgleich. Beschriftungsspalte 170, Kopfhöhe 56, Innenabstand der Zelle 12; das Zellbrett ist je
 Raster 16 schmaler und 16 niedriger als das Rasterfeld.
 
+**Ein Zeilenlabel muss in die 170 breite Beschriftungsspalte passen** — in `text.sm` sind das
+rund 22 Zeichen. Ein längeres Label ragt in die erste Zellspalte und steht dann im Baustein;
+gekürzt wird dabei die technische Klammer, nicht die deutsche Bezeichnung, denn die trägt die
+Ablesbarkeit. Betroffen waren beim ersten Lauf drei Labels (Auswahlkästchen „nicht gesetzt",
+Fortschrittsanzeige „unbestimmt", Platzhalter „ruhend"). Ein Bewegungsvermerk gehört **unter das
+Raster**, nicht unter die Zelle seiner Zeile: In der Zeile selbst überlappt er Zellbrett und
+Zeilenlabel.
+
 | Raster | Rasterfeld (Breite × Höhe) | Spalte, Ursprung (x, y) |
 |---|---|---|
 | Schaltfläche | 200 × 64 | Bedienelemente, (0, −2400) |
