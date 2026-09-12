@@ -130,11 +130,19 @@ BOARD_SCHREIBOPERATIONEN = frozenset(
     {"board-aufnahme", "board-status-setzen", "board-prioritaet-setzen"}
 )
 
+# Alle lesenden Operationen - die Menge bedeutet genau das, und ihre Fehlermeldung sagt genau
+# das. Eine **blockierende** Leseoperation mit **leerer** Feldmenge (`pr-pruefstand-abwarten`)
+# gehoert ebenfalls dazu: Sie schreibt nichts, und ihre Auswertungsgrenze ist nicht deshalb
+# entbehrlich, weil sie kein Feld nennt - die Zeile *ist* dort die Zusage, dass nichts gelesen
+# wird. Sie hier wegzulassen hiesse, die Konstante fuer eine Aussage zu verwenden, die sie nicht
+# trifft; die Aufnahme ist folgenlos ausser der Pflicht zur Grenzzeile, und die traegt der
+# Eintrag ohnehin.
 LESENDE_OPERATIONEN = frozenset(
     {
         "issue-lesen",
         "issue-liste-lesen",
         "pr-verknuepfung-lesen",
+        "pr-pruefstand-abwarten",
         "pr-pruefstand-lesen",
         "pr-reviewstand-lesen",
         "pr-reviewkommentare-lesen",

@@ -99,6 +99,7 @@ Wiederholverfahren wäre genau die ausgeschlossene Eigenentwicklung.
 | `.github/workflows/ci.yml` | Kommentar des Jobs `demo-scripts` nennt wörtlich „19 Operationen" |
 | `docs/ai-workflow.md` | neue Zeile in der Schritt-Tabelle (endet heute bei „7b") |
 | `specs/architecture/0002-testkonzept.md` | neue Sektion (siehe Teststrategie) |
+| `specs/architecture/0003-securitykonzept.md` | neuer Abschnitt unter `## Angriffsflächen` mit B1–B6 und der Klassengrenze als Auflage, dazu **eine** Zeile in der Ankerliste — im selben Pull Request, wie bei jeder vergleichbaren Änderung |
 
 **Zwei Entscheidungen, die vor der Umsetzung fallen mussten:**
 
@@ -301,6 +302,3 @@ Keine.
   nicht am Merge-Commit auf `main`.
 - Das Holen von CI-Protokollen. Nachgebessert wird nur, was sich lokal reproduzieren lässt.
 - Der Merge selbst. Er bleibt bei Daniel.
-- Eine Ergänzung des Sicherheitskonzepts (`specs/architecture/0003-securitykonzept.md`) um die
-  neue Angriffsfläche — vom `security-engineer` vorgeschlagen, gehört in einen eigenen Pull
-  Request nach dem Merge dieser Story.
