@@ -1,6 +1,6 @@
 # 0426 - Zeitversatz je Kamera korrigieren
 
-**Status:** Accepted
+**Status:** Implemented ([PR #445](https://github.com/TheRealKoller/photosort/pull/445))
 **Erstellt:** 2026-09-12
 **Bezug:** [Issue #426](https://github.com/TheRealKoller/photosort/issues/426), Story 2 des Zielbilds
 [#424](https://github.com/TheRealKoller/photosort/issues/424); ADR
