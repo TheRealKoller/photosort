@@ -1,6 +1,6 @@
 # 0404 - Signaturprüfung für jeden npm-Paketsatz
 
-**Status:** Accepted
+**Status:** Implemented ([PR #442](https://github.com/TheRealKoller/photosort/pull/442))
 **Erstellt:** 2026-09-12
 **Bezug:** [GitHub-Issue #404](https://github.com/TheRealKoller/photosort/issues/404), ADR
 [`0088`](../decisions/0088-signaturpruefung-haengt-am-paketsatz-nicht-am-installationsaufruf.md)
