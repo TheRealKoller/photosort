@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
 from photosort.api.deps import get_current_user, get_session
+from photosort.cameras import CameraIdentity, camera_label
 from photosort.categories import (
     CATEGORY_REGISTRY,
     LOCAL_CATEGORY_SIGNALS,
@@ -276,10 +277,30 @@ class EventOut(BaseModel):
     place: EventPlaceOut | None = None
 
 
+class CameraOut(BaseModel):
+    """Die Kamera eines Fotos. `label` kommt vom SERVER (`cameras.py::camera_label`) - eine
+    Stelle entscheidet, wie eine Kamera heisst, und der Wert ist dort bereits von Zeichen der
+    Unicode-Kategorien Cc/Cf befreit."""
+
+    id: int
+    label: str
+
+
 class PhotoOut(BaseModel):
     id: int
     relative_path: str
+    # Behaelt Namen und Form und liefert seit Spec 0426 die KORRIGIERTE Zeit (ADR 0090, Punkt 1).
+    # Der brechende Bedeutungswechsel ist beabsichtigt; die beiden Felder darunter treten daneben,
+    # damit eine korrigierte Anzeige als korrigiert erkennbar bleibt.
     taken_at: datetime
+    # Die aufgezeichnete Zeit (EXIF `DateTimeOriginal`, sonst `last_modified`).
+    taken_at_original: datetime
+    # Die Differenz der beiden Zeitstempel in ganzen Minuten - `0` heisst "nicht korrigiert".
+    # Aus der Differenz gerechnet statt aus `ProjectCamera.offset_minutes` gelesen: so kann die
+    # Anzeige nicht behaupten, eine Zeit sei um X verschoben, wenn sie es nicht ist (etwa bei
+    # einem Foto, dessen Versatz beim Scan an einem Ueberlauf gescheitert ist).
+    time_offset_minutes: int
+    camera: CameraOut | None = None
     ratings: list[RatingOut]
     suggestion: SuggestionOut | None
     # ALLE Zugehoerigkeiten des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi. Immer
@@ -346,6 +367,7 @@ async def _filtered_photo_ids(
     rating_status: RatingFilter | None,
     limit: int,
     offset: int,
+    camera_id: int | None = None,
 ) -> tuple[list[int], int]:
     own_rating = aliased(Rating)
     base = (
@@ -356,6 +378,12 @@ async def _filtered_photo_ids(
             and_(own_rating.photo_id == Photo.id, own_rating.user_id == current_user_id),
         )
     )
+    if camera_id is not None:
+        # SICHERHEIT (Projektgrenze): ein weiteres PRAEDIKAT neben dem vorhandenen
+        # `Photo.project_id == project_id` - nie eine vorgeschaltete Aufloesung der Kamerazeile,
+        # aus deren Fotos dann gelistet wird. Eine `camera_id` aus einem fremden Projekt trifft
+        # damit kein Foto und ergibt eine LEERE Liste, ohne den Wert zu spiegeln.
+        base = base.where(Photo.camera_id == camera_id)
     if rating_status is RatingFilter.UNRATED:
         base = base.where(own_rating.id.is_(None))
     elif rating_status is RatingFilter.SUGGESTED:
@@ -402,6 +430,10 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
             # MissingGreenlet fehl.
             selectinload(Photo.landmark_detection),
             selectinload(Photo.cloud_vision_errors),
+            # Grundlage von `PhotoOut.camera`. EINE Abfrage mehr, unabhaengig von der
+            # Fotoanzahl - ohne sie loeste `photo.camera` einen Lazy-Load aus und schluege im
+            # Async-Kontext mit MissingGreenlet fehl.
+            selectinload(Photo.camera),
         )
     )
     return {photo.id: photo for photo in result.scalars()}
@@ -762,6 +794,20 @@ def _to_photo_out(
         id=photo.id,
         relative_path=photo.relative_path,
         taken_at=photo.taken_at,
+        taken_at_original=photo.taken_at_original,
+        # Ganze Minuten VON KONSTRUKTION WEGEN: der Versatz ist eine Ganzzahl Minuten, beide
+        # Zeitstempel entstehen aus derselben Rechnung, und die Division bleibt damit ohne Rest.
+        time_offset_minutes=round((photo.taken_at - photo.taken_at_original).total_seconds() / 60),
+        camera=(
+            None
+            if photo.camera is None
+            else CameraOut(
+                id=photo.camera.id,
+                label=camera_label(
+                    CameraIdentity(make=photo.camera.make, model=photo.camera.model)
+                ),
+            )
+        ),
         ratings=[
             RatingOut(user_id=r.user_id, username=r.user.username, status=r.status)
             for r in photo.ratings
@@ -941,6 +987,25 @@ async def _rankings_by_photo_id(
     return rankings_by_photo_id
 
 
+# SICHERHEIT - Obergrenze des verbliebenen freien Partitionsschlüssels: `category_key` wird
+# bewusst NICHT gegen CATEGORY_REGISTRY geprüft - der Lesepfad ist tolerant gegenüber Altbestand,
+# und eine Allowlist waere hier ein Produkt-, kein Sicherheitsentscheid (422 statt leerer Liste).
+# Die Laengengrenze ist Verteidigung in der Tiefe, damit ein entarteter Wert gar nicht erst bis
+# zum Datenbankvergleich kommt. Der zweite Teil des Schlüssels ist seit Spec 0425 eine Objekt-Id
+# und braucht sie nicht mehr: `ge`/`le` plus Typprüfung sind enger.
+_MAX_PARTITION_KEY_LENGTH = 200
+
+# SICHERHEIT - Obergrenze von `after_rank`/`offset`/`camera_id`: ein Pydantic-`int` ist
+# unbeschraenkt und landet direkt im SQL-Vergleich; unter SQLite (Testlauf und lokale Entwicklung)
+# wirft ein Wert jenseits von 2^63 einen `OverflowError` und damit eine 500 statt einer leeren
+# Liste. Der Wert liegt weit ueber jeder realistischen Partitionsgroesse - er begrenzt einen
+# Missbrauchsfall, nicht die Benutzung.
+#
+# Steht VOR `list_photos`, nicht erst vor dem Kandidaten-Endpunkt: `Query(...)`-Vorgabewerte
+# werden zur DEFINITIONSZEIT ausgewertet, eine spaeter definierte Konstante bricht den Import.
+_MAX_QUERY_POSITION = 1_000_000_000
+
+
 @router.get("/projects/{project_id}/photos", response_model=PhotoListOut)
 async def list_photos(
     project_id: int,
@@ -951,6 +1016,11 @@ async def list_photos(
     # werden in diesem Modus ignoriert, da der volle Partitions-Pool (N x Partitionsanzahl) fuer
     # ein Zwei-Personen-Familienprojekt naturgemaess klein bleibt.
     top_n_per_category: int | None = Query(None, ge=1, le=10),
+    # Ohne diesen Filter kann die Oberflaeche die beiden Fotos fuer den Versatz-Vorschlag nicht
+    # anbieten. `ge=1` schliesst `0` und negative Werte aus, `le` verhindert, dass ein Wert
+    # jenseits von 2^63 unter SQLite einen OverflowError und damit eine 500 statt einer leeren
+    # Liste erzeugt (Muster `_MAX_QUERY_POSITION`).
+    camera_id: int | None = Query(None, ge=1, le=_MAX_QUERY_POSITION),
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
@@ -991,7 +1061,7 @@ async def list_photos(
         return PhotoListOut(items=items, total=len(items))
 
     ids, total = await _filtered_photo_ids(
-        session, project_id, current_user.id, rating_status, limit, offset
+        session, project_id, current_user.id, rating_status, limit, offset, camera_id
     )
     photos_by_id = await _photos_by_id(session, ids)
     # RankingOut wird AUCH hier im Standard-Listing-Zweig befüllt, nicht nur bei
@@ -1024,22 +1094,6 @@ async def list_photos(
         for photo_id in ids
     ]
     return PhotoListOut(items=items, total=total)
-
-
-# SICHERHEIT - Obergrenze des verbliebenen freien Partitionsschlüssels: `category_key` wird
-# bewusst NICHT gegen CATEGORY_REGISTRY geprüft - der Lesepfad ist tolerant gegenüber Altbestand,
-# und eine Allowlist waere hier ein Produkt-, kein Sicherheitsentscheid (422 statt leerer Liste).
-# Die Laengengrenze ist Verteidigung in der Tiefe, damit ein entarteter Wert gar nicht erst bis
-# zum Datenbankvergleich kommt. Der zweite Teil des Schlüssels ist seit Spec 0425 eine Objekt-Id
-# und braucht sie nicht mehr: `ge`/`le` plus Typprüfung sind enger.
-_MAX_PARTITION_KEY_LENGTH = 200
-
-# SICHERHEIT - Obergrenze von `after_rank`/`offset`: ein Pydantic-`int` ist
-# unbeschraenkt und landet direkt im SQL-Vergleich; unter SQLite (Testlauf und lokale Entwicklung)
-# wirft ein Wert jenseits von 2^63 einen `OverflowError` und damit eine 500 statt einer leeren
-# Liste. Der Wert liegt weit ueber jeder realistischen Partitionsgroesse - er begrenzt einen
-# Missbrauchsfall, nicht die Benutzung.
-_MAX_QUERY_POSITION = 1_000_000_000
 
 
 @router.get("/projects/{project_id}/curation-candidates", response_model=PhotoListOut)

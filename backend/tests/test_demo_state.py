@@ -13,7 +13,7 @@ import ast
 import asyncio
 import hashlib
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -59,6 +59,7 @@ from photosort.models import (
     PhotoRanking,
     PhotoScore,
     Project,
+    ProjectCamera,
     Rating,
     RatingStatus,
     RemoteCategoryClassificationRun,
@@ -67,6 +68,7 @@ from photosort.models import (
     User,
 )
 from photosort.thumbnails import display_path, generate_variants, thumbnail_path
+from tests.time_offset_invariant import assert_time_offset_invariant
 
 _SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 
@@ -350,6 +352,7 @@ async def _make_foreign_project(
         etag="echt-0001",
         content_length=1234,
         taken_at=datetime(2019, 7, 1, 12, 0, 0),
+        taken_at_original=datetime(2019, 7, 1, 12, 0, 0),
         last_modified=datetime(2019, 7, 1, 12, 0, 0),
     )
     session.add(photo)
@@ -833,6 +836,7 @@ def _write_rows(database_url: str, cache_dir: Path, project_names: list[str]) ->
                     etag=f"vorzustand-{offset}",
                     content_length=len(image_bytes),
                     taken_at=datetime(2020, 1, 1, 12, 0, 0),
+                    taken_at_original=datetime(2020, 1, 1, 12, 0, 0),
                     last_modified=datetime(2020, 1, 1, 12, 0, 0),
                 )
                 session.add(photo)
@@ -1393,3 +1397,108 @@ class TestDemoStateCoversAllFourHeadingStates:
         }
 
         assert first == second
+
+
+class TestDemoStateCoversEveryCameraState:
+    """specs/features/0426-zeitversatz-je-kamera.md, Umsetzungsschritt 8: Alle Zustaende, die
+    Kameraliste und Fotoansicht zeigen muessen, entstehen TATSAECHLICH - sonst ist die
+    Sichtpruefung ueber den `browse-app`-Skill fuer die Kennzeichnung "korrigiert" blind."""
+
+    async def _rated_project_id(self, db_session: AsyncSession, tmp_path: Path) -> int:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        project = await _project(db_session, RATED_PROJECT_NAME)
+        return project.id
+
+    async def test_it_seeds_one_camera_without_and_one_with_an_offset(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project_id = await self._rated_project_id(db_session, tmp_path)
+
+        cameras = (
+            (
+                await db_session.execute(
+                    select(ProjectCamera)
+                    .where(ProjectCamera.project_id == project_id)
+                    .order_by(ProjectCamera.make)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        offsets = sorted(camera.offset_minutes for camera in cameras)
+        assert len(cameras) == 2
+        assert offsets[0] < 0, "die Kamera MIT Versatz fehlt"
+        assert offsets[-1] == 0, "die Kamera OHNE Versatz fehlt"
+
+    async def test_the_photos_of_the_offset_camera_carry_a_shifted_effective_time(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project_id = await self._rated_project_id(db_session, tmp_path)
+
+        rows = (
+            await db_session.execute(
+                select(Photo.taken_at, Photo.taken_at_original, ProjectCamera.offset_minutes)
+                .join(ProjectCamera, ProjectCamera.id == Photo.camera_id)
+                .where(Photo.project_id == project_id, ProjectCamera.offset_minutes != 0)
+            )
+        ).all()
+
+        assert rows, "keine Fotos an der Kamera mit Versatz - der Zustand fehlt der Demo"
+        for taken_at, taken_at_original, offset in rows:
+            assert taken_at != taken_at_original
+            assert taken_at == taken_at_original + timedelta(minutes=offset)
+
+    async def test_some_photos_have_no_determinable_camera(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der dritte Zustand: `camera = null`, beide Zeiten gleich, kein Listeneintrag."""
+        project_id = await self._rated_project_id(db_session, tmp_path)
+
+        rows = (
+            await db_session.execute(
+                select(Photo.taken_at, Photo.taken_at_original).where(
+                    Photo.project_id == project_id, Photo.camera_id.is_(None)
+                )
+            )
+        ).all()
+
+        assert rows, "kein Foto ohne bestimmbare Kamera - der Zustand fehlt der Demo"
+        for taken_at, taken_at_original in rows:
+            assert taken_at == taken_at_original
+
+    async def test_the_effective_times_still_grow_strictly_with_the_photo_index(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Bedingung, die den Demo-Versatz klein haelt: Die vier Demo-Events sind
+        zusammenhaengende Bloecke ueber die nach `taken_at` aufsteigende Liste. Ein Versatz, der
+        Fotos ueber ihre Nachbarn schiebt, erzeugte ueberlappende Events - einen Zustand, den die
+        Anwendung selbst nie schreibt."""
+        project_id = await self._rated_project_id(db_session, tmp_path)
+
+        times = (
+            (
+                await db_session.execute(
+                    select(Photo.taken_at)
+                    .where(Photo.project_id == project_id)
+                    .order_by(Photo.relative_path)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        assert times == sorted(times)
+        assert len(set(times)) == len(times)
+
+    async def test_the_invariant_holds_over_every_seeded_project(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Nachsatz jedes Falls, der Fotos schreibt - hier ueber ALLE Demo-Projekte."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        project_ids = (await db_session.execute(select(Project.id))).scalars().all()
+
+        assert project_ids
+        for project_id in project_ids:
+            await assert_time_offset_invariant(db_session, project_id)

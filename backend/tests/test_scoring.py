@@ -274,6 +274,35 @@ class TestHaversineMeters:
         assert at_seventy_degrees < at_equator * 0.5
 
 
+class TestTheCorrectedTimeFeedsTheClustering:
+    """specs/features/0426-zeitversatz-je-kamera.md: `assign_clusters` bekommt seit ADR 0090 die
+    KORRIGIERTE Zeit uebergeben und braucht deshalb KEINE eigene Korrekturlogik.
+
+    Der Nachweis ist ein Datensatz, dessen Gruppierung mit dem Versatz ANDERS ausfaellt als mit
+    dem rohen Wert - laufe die Gruppierung weiter auf der aufgezeichneten Zeit, bliebe der Fall
+    unbemerkt falsch."""
+
+    def test_the_recorded_time_splits_what_the_corrected_time_keeps_together(self) -> None:
+        base = datetime(2023, 1, 1, 10, 0, 0)
+        offset = TIME_CLUSTER_GAP + timedelta(minutes=10)
+        # Zwei Aufnahmen DESSELBEN Moments, deren Kamerauhr um mehr als die Zeitluecke nachgeht.
+        raw = [
+            ClusterCandidate(photo_id=1, taken_at=base, gps_lat=None, gps_lon=None),
+            ClusterCandidate(photo_id=2, taken_at=base + offset, gps_lat=None, gps_lon=None),
+        ]
+        corrected = [
+            ClusterCandidate(photo_id=1, taken_at=base, gps_lat=None, gps_lon=None),
+            # dieselbe Datei, um ihren Versatz zurueckgestellt
+            ClusterCandidate(photo_id=2, taken_at=base, gps_lat=None, gps_lon=None),
+        ]
+
+        raw_result = assign_clusters(raw)
+        corrected_result = assign_clusters(corrected)
+
+        assert raw_result[1] != raw_result[2]
+        assert corrected_result[1] == corrected_result[2]
+
+
 class TestAssignClustersByLocation:
     def test_a_location_jump_starts_a_new_cluster_without_any_time_gap(self) -> None:
         """DER Kern dieser Spec, nicht die Ergaenzung: zwei Sehenswuerdigkeiten kurz

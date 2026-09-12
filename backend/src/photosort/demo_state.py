@@ -52,6 +52,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.cameras import shifted
 from photosort.categories import CATEGORY_REGISTRY, secondary_categories
 from photosort.cloud_vision import default_vision_model_for_provider
 from photosort.config import settings
@@ -70,6 +71,7 @@ from photosort.models import (
     PhotoRanking,
     PhotoScore,
     Project,
+    ProjectCamera,
     Rating,
     RatingStatus,
     RemoteCategoryClassificationRun,
@@ -239,6 +241,30 @@ _DEMO_OTHER_CELL_STEP = 0.02
 
 _DEMO_LANDMARK_NAME = "Eiffelturm"
 _DEMO_LANDMARK_CONFIDENCE = 0.91
+
+# specs/features/0426-zeitversatz-je-kamera.md, Umsetzungsschritt 8: der "bewertet"-Zustand muss
+# ALLE Zustaende hergeben, die die Kameraliste und die Fotoansicht zeigen koennen - eine Kamera
+# OHNE Versatz, eine MIT gesetztem Versatz und Fotos ohne bestimmbare Kamera. Sonst ist die
+# Sichtpruefung ueber den `browse-app`-Skill fuer die Kennzeichnung "korrigiert" blind.
+_DEMO_CAMERA_SLOT_COUNT = 3
+_DEMO_CAMERA_WITHOUT_OFFSET = ("Apple", "iPhone 15")
+_DEMO_CAMERA_WITH_OFFSET = ("Canon", "Canon EOS 5D")
+
+# KLEINER als der Abstand zweier Demo-Fotos (17 Minuten, siehe `demo_taken_at`) und damit
+# ordnungserhaltend: Die vier Demo-Events sind zusammenhaengende Bloecke ueber die nach `taken_at`
+# aufsteigende Liste und ueberschneidungsfrei. Ein groesserer Versatz schoebe die Fotos der
+# Kamera ueber ihre Nachbarn und erzeugte damit ueberlappende Events - denselben Zustand, den der
+# Kommentar zu `_demo_event_index` oben als "von der Anwendung selbst nie geschrieben" ablehnt.
+_DEMO_CAMERA_OFFSET_MINUTES = -13
+
+
+def _demo_camera_slot(index: int) -> int | None:
+    """Welcher Kamera das Demo-Foto `index` gehoert - `None` heisst "Kamera nicht bestimmbar".
+
+    ZUSAMMENHAENGENDE Bloecke sind hier nicht noetig (die Kamera bestimmt keine Event-Grenze),
+    ein Wechsel je Foto deckt die drei Zustaende dagegen schon bei wenigen Fotos ab."""
+    slot = index % _DEMO_CAMERA_SLOT_COUNT
+    return None if slot == _DEMO_CAMERA_SLOT_COUNT - 1 else slot
 
 
 def _demo_event_index(index: int, photo_count: int) -> int:
@@ -524,6 +550,7 @@ async def _create_photos(
     spec: DemoProjectSpec,
     cache_dir: Path,
     location_of: Callable[[int], tuple[float, float] | None] | None = None,
+    camera_of: Callable[[int], ProjectCamera | None] | None = None,
 ) -> list[Photo]:
     """Legt die Fotos eines Demo-Projekts an und schreibt ihre Bildvarianten ueber die ECHTE
     thumbnails.py-Logik in den Cache - kein nachgebauter Cache-Schluessel.
@@ -532,23 +559,43 @@ async def _create_photos(
     verdrahtet: nur das "bewertet"-Projekt braucht
     Ortsdaten, und nur dort ist die Cluster-Zuordnung bekannt, aus der sich die vier
     Anzeigezustaende ergeben. Ohne den Parameter bleibt jedes Foto ohne Koordinate - der
-    haeufigste reale Fall."""
+    haeufigste reale Fall.
+
+    `camera_of` liefert je Foto-Index die Kamerazeile, aus deren `offset_minutes` die WIRKSAME
+    Zeit entsteht - gerechnet ueber `cameras.py::shifted`, dieselbe reine Funktion wie in den
+    beiden produktiven Schreibstellen. Ohne den Parameter bleibt jedes Foto ohne Kamera, und
+    beide Zeiten sind gleich."""
     photos: list[Photo] = []
     for index in range(spec.photo_count):
         image_bytes = render_demo_image(slug=spec.slug, index=index)
         gps = None if location_of is None else location_of(index)
+        camera = None if camera_of is None else camera_of(index)
+        recorded = demo_taken_at(index)
+        # Ueber `shifted`, nicht ueber eine eigene Addition: der Demo-Zustand muss dieselbe
+        # Invariante erfuellen wie produktive Daten.
+        corrected = shifted(recorded, 0 if camera is None else camera.offset_minutes)
+        if corrected is None:  # pragma: no cover - die Demo-Werte liegen weit im Bereich
+            raise DemoStateError(
+                "Der Demo-Versatz ergibt eine Aufnahmezeit ausserhalb des darstellbaren "
+                "Bereichs. Abbruch."
+            )
         photo = Photo(
             project_id=project.id,
             relative_path=demo_relative_path(spec.slug, index),
             etag=demo_etag(spec.slug, index),
             content_length=len(image_bytes),
-            taken_at=demo_taken_at(index),
+            taken_at=corrected,
+            taken_at_original=recorded,
+            camera_id=None if camera is None else camera.id,
+            # Der Merker steht AUCH fuer ein Foto ohne bestimmbare Kamera: die Demo bildet den
+            # Zustand NACH dem Scan ab, und dort ist er gesetzt.
+            camera_probed=True,
             # Beide Felder oder keines - nie eine halbe Koordinate (Paar-Invariante von
             # `extract_gps`; die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie
             # schriebe).
             gps_lat=None if gps is None else gps[0],
             gps_lon=None if gps is None else gps[1],
-            last_modified=demo_taken_at(index),
+            last_modified=recorded,
         )
         session.add(photo)
         await session.flush()
@@ -706,12 +753,36 @@ async def _seed_rated_project(
 
     Rueckgabe: die Fotos und die Anzahl der Nutzer, fuer die Bewertungen geschrieben wurden."""
     project = await _create_project(session, spec)
+    # Die beiden Kamerazeilen entstehen VOR den Fotos - `Photo.camera_id` ist ein echter
+    # Fremdschluessel, und die wirksame Zeit haengt am Versatz der Zeile.
+    cameras = [
+        ProjectCamera(
+            project_id=project.id,
+            make=_DEMO_CAMERA_WITHOUT_OFFSET[0],
+            model=_DEMO_CAMERA_WITHOUT_OFFSET[1],
+            offset_minutes=0,
+        ),
+        ProjectCamera(
+            project_id=project.id,
+            make=_DEMO_CAMERA_WITH_OFFSET[0],
+            model=_DEMO_CAMERA_WITH_OFFSET[1],
+            offset_minutes=_DEMO_CAMERA_OFFSET_MINUTES,
+        ),
+    ]
+    session.add_all(cameras)
+    await session.flush()
+
+    def _camera_of(index: int) -> ProjectCamera | None:
+        slot = _demo_camera_slot(index)
+        return None if slot is None else cameras[slot]
+
     photos = await _create_photos(
         session,
         project,
         spec,
         cache_dir,
         location_of=lambda index: _demo_gps(index, spec.photo_count),
+        camera_of=_camera_of,
     )
     session.add(
         _scan_run(

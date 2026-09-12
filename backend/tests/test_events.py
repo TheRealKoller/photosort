@@ -761,3 +761,27 @@ class TestDefaultSignals:
         ]
 
         assert len(_build(candidates)) == 2
+
+
+class TestTheCorrectedTimeFeedsTheEventBoundaries:
+    """specs/features/0426-zeitversatz-je-kamera.md: `build_events` bekommt seit ADR 0090 die
+    KORRIGIERTE Zeit uebergeben und braucht deshalb KEINE eigene Korrekturlogik.
+
+    Der Nachweis ist ein Datensatz, dessen Gliederung mit dem Versatz ANDERS ausfaellt als mit dem
+    rohen Wert - liefe die Event-Bildung weiter auf der aufgezeichneten Zeit, zerrisse sie
+    Aufnahmen desselben Moments, ohne dass eine Fehlermeldung erschiene."""
+
+    def test_the_recorded_time_splits_what_the_corrected_time_keeps_together(self) -> None:
+        offset = TIME_CLUSTER_GAP + timedelta(minutes=10)
+        raw = [
+            _placeless_candidate(1, T0),
+            _placeless_candidate(2, T0 + offset),
+        ]
+        corrected = [
+            _placeless_candidate(1, T0),
+            # dieselbe Datei, um ihren Versatz zurueckgestellt
+            _placeless_candidate(2, T0),
+        ]
+
+        assert len(_build(raw)) == 2
+        assert len(_build(corrected)) == 1

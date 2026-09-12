@@ -70,6 +70,7 @@ async def _put_session_into_failed_transaction_state(session: AsyncSession) -> N
                 etag="etag-1",
                 content_length=1,
                 taken_at=now,
+                taken_at_original=now,
                 last_modified=now,
             )
         )

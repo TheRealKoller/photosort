@@ -136,6 +136,41 @@ Verarbeitungs-Cache (Thumbnails).
     läuft über eine Dialekt-Weiche (`session.get_bind().dialect.name == "postgresql"`, kein
     try/except um fehlschlagendes SQL); außerhalb Postgres ist der Wert `null`, nicht `0`. Die
     Cache-Messung (`thumbnails.py::measure_cache_usage`) läuft über `asyncio.to_thread`.
+  - neues Router-Modul `api/cameras.py` *(Spec
+    [`0426`](../specs/features/0426-zeitversatz-je-kamera.md))* mit drei Endpunkten und
+    router-weiter Auth wie `api/stats.py`: `GET /projects/{id}/cameras` (Kameraliste mit
+    Fotoanzahl und geltendem Versatz, **eine** Abfrage — der `outerjoin` trägt
+    `Photo.camera_id == ProjectCamera.id` **und** `Photo.project_id == project_id`
+    ausgeschrieben, sonst zählte dieselbe Kamera die Fotos eines fremden Projekts mit),
+    `PUT /projects/{id}/cameras/{camera_id}/time-offset` und
+    `GET /projects/{id}/camera-time-offset-suggestion` (rein lesend, speichert nichts). Dazu trägt
+    `GET /projects/{id}/photos` den optionalen Filter `camera_id` — als weiteres **Prädikat**
+    neben `Photo.project_id`, nie als vorgeschaltete Auflösung der Kamerazeile.
+    - Der Versatz-Endpunkt ist **alles oder nichts** mit genau **einem** `commit`, in dieser
+      Reihenfolge: Kamerazeile mit `id` **und** `project_id` und `with_for_update()` laden (fremde
+      Id → `404`, ohne Rückspiegelung des Werts) → `409`, solange ein `CriterionScoringRun`
+      **oder ein Scan** dieses Projekts `RUNNING` ist → alle Zeiten rechnen, ein einziger Überlauf
+      → `422` **ohne jedes Schreiben** → `taken_at` gebündelt schreiben (ein
+      `session.execute(update(Photo), [...])`) → `offset_minutes` setzen → `rebuild_run_grouping`
+      → committen. Ein `409`, ein `422`, ein Verbindungsabbruch und jeder Fehler im Neuaufbau
+      lassen den Vorzustand unverändert; es entsteht nie eine halb verschobene Fotomenge und nie
+      eine Gliederung ohne Rangzeilen — diesen Zustand weist keine Ansicht als fehlerhaft aus.
+    - **Der `409`-Wächter erfasst ausdrücklich auch den Scan**, nicht nur den Kriterien-Lauf: der
+      Scan schreibt `taken_at` ebenfalls und hält den Versatz je Lauf zwischengespeichert. Ohne
+      ihn schreibt ein nach dem `PUT` weiterlaufender Scan für jedes noch verarbeitete Foto die
+      Zeit mit dem **alten** Versatz zurück und bricht die Invariante still, bis irgendwann erneut
+      gescannt wird. Geprüft wird je Typ nur der neueste Lauf (Muster `delete_project`), damit ein
+      hängengebliebener Altlauf nicht dauerhaft blockiert.
+    - Der Ablauf ist **wiederholbar**: beide Schreibpfade rechnen `taken_at` ausschließlich aus
+      `taken_at_original`. Kein früher Ausstieg bei unverändertem Wert — ein Aufruf mit verlorener
+      Antwort darf wiederholt werden. Keine Obergrenze auf der Fotozahl (authentifiziert, beide
+      Nutzer sind die Vertrauensbasis); bewusst getragen: ein Aufruf auf einem großen Projekt
+      läuft lange und hält dabei Zeilensperren.
+    - `PhotoOut` bekommt `taken_at_original`, `time_offset_minutes` (aus der Differenz der beiden
+      Zeitstempel; `0` heißt "nicht korrigiert") und `camera: CameraOut | null`
+      (`selectinload(Photo.camera)` — eine Abfrage mehr, unabhängig von der Fotoanzahl).
+      `PhotoOut.taken_at` behält Namen und Form und liefert die korrigierte Zeit; der brechende
+      Bedeutungswechsel ist beabsichtigt.
   - `DELETE /projects/{project_id}` (`api/projects.py`, Body `{"confirm_name": "<string>"}` mit
     `max_length=500`, hängt am bestehenden Router-Level-Auth-Guard, **kein Owner-Check**) löscht ein
     Projekt und alle PhotoSort-eigenen Daten daran — die Original-Fotos auf OpenCloud bleiben
@@ -498,11 +533,12 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     auch die neue Remote-Kategorie-Klassifizierung. **Löschumfang (Spec
     [`0044`](../specs/features/0044-projekte-loeschen.md), ADR
     [`decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md`](../specs/decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md)):**
-    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller dreizehn am Projekt
-    hängenden Tabellen (`photos`, `scan_runs`, `scoring_runs`, `criterion_scoring_runs`,
-    `remote_category_classification_runs`, `ratings`, `photo_scores`, `photo_criterion_scores`,
-    `photo_rankings`, `events`, `photo_landmark_detections`, `photo_fine_labels`,
-    `photo_category_classifications`, `photo_cloud_vision_errors`) sowie das Projekt selbst, dazu
+    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller fünfzehn am Projekt
+    hängenden Tabellen (`photos`, `project_cameras`, `scan_runs`, `scoring_runs`,
+    `criterion_scoring_runs`, `remote_category_classification_runs`, `ratings`, `photo_scores`,
+    `photo_criterion_scores`, `photo_rankings`, `events`, `photo_landmark_detections`,
+    `photo_fine_labels`, `photo_category_classifications`, `photo_cloud_vision_errors`) sowie das
+    Projekt selbst, dazu
     best-effort die Cache-Varianten des aktuellen `(photo.id, photo.etag)`-Paars. `users` und
     `fine_labels` bleiben unangetastet — beide sind Fremdschlüssel-**Eltern** und fallen aus der
     Erreichbarkeitsprüfung automatisch heraus, ohne eigene Ausnahmeliste; ein `fine_labels`-Eintrag,
@@ -517,9 +553,59 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   `OPENCLOUD_BASE_URL`/`OPENCLOUD_USERNAME`/`OPENCLOUD_APP_TOKEN`/`OPENCLOUD_DRIVE_NAME` in `.env`.
   Details siehe
   [`features/0001-opencloud-project-connection.md`](../specs/features/0001-opencloud-project-connection.md).
+- **ProjectCamera** *(implementiert, Spec
+  [`0426`](../specs/features/0426-zeitversatz-je-kamera.md), ADR
+  [`decisions/0090-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md`](../specs/decisions/0090-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md),
+  `models.py`)*: eine Kamera, wie sie in **genau diesem** Projekt vorkommt, samt ihrem Zeitversatz
+  — `project_id` (echter Fremdschlüssel), `make`, `model`, `offset_minutes` (NOT NULL, Vorgabe
+  `0`), `UniqueConstraint(project_id, make, model)`. Projekteigen statt projektübergreifend: "der
+  Versatz gilt nur in diesem Projekt" ist damit **strukturell** wahr — es gibt keine Zeile, die
+  zwei Projekte sehen könnten, und kein Prädikat, das in jeder Abfrage ausgeschrieben stehen
+  müsste. Dieselbe Kamera in zwei Projekten sind zwei Zeilen mit getrennten Versätzen. Die Zeilen
+  entstehen ausschließlich beim Scan aus den Fotos selbst; der Nutzer trägt keine Kamera ein.
+  Identität ist Hersteller **und** Modell, zeichengenau und **ohne** Seriennummer — zwei baugleiche
+  Gehäuse im selben Projekt sind eine Kamera und teilen einen Versatz. `offset_minutes` ist eine
+  vorzeichenbehaftete Ganzzahl Minuten, keine Zeitzonenzugehörigkeit: abgebildet wird eine feste
+  Zeitspanne, keine Regel mit Sommer-/Winterzeit.
 - **Photo** *(implementiert, `models.py`)*: gehört zu einem Project, referenziert
   `relative_path`/`etag` auf OpenCloud, `taken_at`/`last_modified`, `content_length`. Nur
   JPEG/PNG/HEIC (MVP).
+  - **`taken_at` trägt seit Spec [`0426`](../specs/features/0426-zeitversatz-je-kamera.md) die
+    KORRIGIERTE Zeit** (Migration `a6b7c8d9e0f1`). Name und Rolle ("die Zeit, mit der die Anwendung
+    arbeitet") sind unverändert, der Inhalt hat sich gedreht: hier steht seither die um den
+    Kamera-Versatz verschobene Zeit. Daneben treten `taken_at_original: datetime` (NOT NULL, die
+    aufgezeichnete Zeit — EXIF `DateTimeOriginal`, sonst der Rückfall auf `last_modified`),
+    `camera_id: int | None` (echter, nullabler Fremdschlüssel auf `project_cameras`, explizit
+    benannt `fk_photos_camera_id`; `NULL` heißt "Kamera nicht bestimmbar" und ist ein regulärer
+    Zustand ohne Versatz) und `camera_probed: bool` (NOT NULL, `server_default` in Migration **und**
+    Modell).
+    - **Invariante, im Schreibpfad gehalten:** `taken_at == taken_at_original + offset_minutes` der
+      Kamera dieses Fotos in genau diesem Projekt; ohne Kamera oder bei `offset_minutes = 0` sind
+      beide Werte gleich. Es gibt **genau zwei** Schreibstellen —
+      `worker.py::_process_scan_block` und `api/cameras.py` —, beide über die eine reine Funktion
+      `cameras.py::shifted` und beide ausschließlich aus `taken_at_original` gerechnet, nie durch
+      Addition auf den bestehenden Wert. Eine dritte Schreibstelle gibt es nicht; ein struktureller
+      Wächtertest hält das fest, weil sie keinen Verhaltenstest röten würde. Bei Verletzung zeigt,
+      gruppiert und erbt die Anwendung nach einer Zeit, die zu keinem Versatz passt — ohne
+      Fehlermeldung.
+    - Deshalb ändert sich an **keiner** Lesestelle etwas: `assign_clusters`, `build_events`,
+      `infer_locations` (Worker und Lesepfad), die SQL-Sortierung der Fotoliste und `min`/`max` des
+      Aufnahmezeitraums der Statistik rechnen ohne eine Zeile Änderung mit dem korrigierten Wert.
+      Gruppierung, Reihenfolge und Ortsübernahme haben **keine** eigene Korrekturlogik.
+    - `taken_at_original` trägt **weder Python- noch server-seitig einen Default**: es ist die
+      einzige Kopie der aufgezeichneten Zeit, und ein unverändertes, bereits geprüftes Foto wird
+      nie wieder aus EXIF gelesen — ein Schreibpfad, der die Spalte vergisst, soll laut an der
+      NOT-NULL-Bedingung scheitern statt still einen falschen Wert zu erben. Das `downgrade` der
+      Migration schreibt `taken_at = taken_at_original` **zurück, bevor** es die Spalte entfernt;
+      ohne diesen Schritt behielte die Datenbank die korrigierten Zeiten und die aufgezeichneten
+      wären fort. Die gesetzten Versätze sind nach dem Rückweg unwiederbringlich weg.
+    - **Nachhol-Regel des Scans:** `camera_probed` ist der Merker "EXIF dieses Fotos wurde auf die
+      Kamera-Angabe geprüft". Ein Foto ohne ihn wird beim nächsten Scan **trotz unveränderten
+      Etags** erneut gelesen — nur das EXIF-Fenster, ohne Voll-Download und ohne
+      Thumbnail-Neuerzeugung (`_classify_scan_entries` erzeugt dafür einen Arbeitsposten mit
+      `probe_only=True`). Einmalig; danach steht der Merker, **auch wenn die Datei keine Kamera
+      nennt** — sonst läse jeder weitere Scan den gesamten Bestand erneut. Ohne diese Runde bliebe
+      die Kameraliste in bestehenden Projekten leer.
   - additiv `gps_lat: float | None` / `gps_lon: float | None` (Migration `d1e2f3a4b5c6`, beide
     nullable, **kein** `server_default` — `0.0` wäre eine gültige Koordinate, keine
     Abwesenheitsmarkierung —, kein Backfill). Dezimalgrad aus dem EXIF-`GPSInfo`-IFD, beim Scan über
@@ -792,8 +878,25 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Lauf-Artefakt wie `PhotoRanking`, kein reiner Funktionswert über `photos`; der Ortswert eines
     einzelnen Fotos bleibt unpersistiert.
   - **Gebildet wird in EINEM sortierten Durchlauf** (`events.py::build_events`, aufgerufen in
-    `worker.py::run_criterion_scoring` an der Stelle der früheren Landmark-Verfeinerung — nach der
-    Cloud-Phase, vor dem Aufbau der Partitionen). Die Grenzen entstehen aus einer **Liste
+    `worker.py::_build_grouping_and_rankings` an der Stelle der früheren Landmark-Verfeinerung —
+    nach der Cloud-Phase, vor dem Aufbau der Partitionen).
+  - **Zwei Aufrufer, EIN Weg zur Gliederung** *(Spec
+    [`0426`](../specs/features/0426-zeitversatz-je-kamera.md))*: Event-Bildung, Partitionen,
+    Kategorieableitung und Rangzeilen stehen seither gemeinsam in
+    `worker.py::_build_grouping_and_rankings`. Aufrufer sind der Kriterien-Lauf
+    (`run_criterion_scoring`) **und** `worker.py::rebuild_run_grouping`, das der Versatz-Endpunkt
+    nach einer Änderung ausführt: Reihenfolge, Anzeige und Ortsherleitung sind mit der Bedeutung
+    von `taken_at` sofort richtig, die **Events** sind dagegen persistierte Lauf-Artefakte und
+    wären es nicht. Der Neuaufbau **löscht und schreibt neu** statt umzuhängen —
+    `UniqueConstraint(criterion_scoring_run_id, position)` lässt alte und neue Events desselben
+    Laufs nicht gleichzeitig zu — und leitet die Kategorie-Zugehörigkeiten **neu ab** statt sie aus
+    den alten Zeilen zu übernehmen; sonst gäbe es zwei Wege zur Hauptkategorie, und ein
+    zwischenzeitlich gesetzter Override könnte still verloren gehen. Daraus folgt die prüfbare
+    Zusage: ein Neuaufbau mit Versatz `0` erzeugt denselben Zustand wie der Lauf selbst. Die
+    Funktion liest alles selbst aus persistierten Werten (zwei Abfragen mehr je Lauf) und
+    committet nicht — die Transaktionsgrenze gehört dem Aufrufer, der genau einmal committet. Ein
+    Versatzwechsel vergibt dabei **neue Event-Ids**; ein Client, der sie zwischenspeichert, hält
+    sie nicht über die Änderung hinweg. Die Grenzen entstehen aus einer **Liste
     gleichrangiger Trennsignale**: Zeitlücke (`TIME_CLUSTER_GAP`), Kalendertag (Vergleich der
     ersten zehn Zeichen des zonenlosen Zeitstempels — neu, eine Nacht ohne Zeitlücke trennt
     seither), Schrittabstand (`GPS_CLUSTER_SPLIT_DISTANCE_METERS`), **Ausdehnung**

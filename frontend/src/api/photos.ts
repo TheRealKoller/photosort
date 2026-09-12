@@ -15,6 +15,9 @@ export interface ListPhotosParams {
   // ratingStatus/limit/offset vollstaendig (eigenstaendige Kuratierungs-Ansicht, siehe backend
   // api/photos.py::list_photos-Kommentar).
   topNPerCategory?: number
+  /** Nur die Fotos DIESER Kamera. Traegt die Fotoauswahl des Versatz-Vorschlags - ohne den
+   * Filter kann die Oberflaeche die beiden Fotos desselben Moments nicht anbieten. */
+  cameraId?: number
 }
 
 export interface ListCurationCandidatesParams {
@@ -42,6 +45,9 @@ export function listPhotos(
   }
   if (params.topNPerCategory !== undefined) {
     query.set('top_n_per_category', String(params.topNPerCategory))
+  }
+  if (params.cameraId !== undefined) {
+    query.set('camera_id', String(params.cameraId))
   }
   const queryString = query.toString()
   return apiFetch<PhotoListOut>(

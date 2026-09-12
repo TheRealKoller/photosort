@@ -38,6 +38,9 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     id: 1,
     relative_path: 'a.jpg',
     taken_at: '2026-07-20T10:00:00Z',
+    taken_at_original: '2026-07-20T10:00:00Z',
+    time_offset_minutes: 0,
+    camera: null,
     ratings: [],
     suggestion: null,
     rankings: [],
@@ -1051,6 +1054,123 @@ describe('PhotoDetailPage', () => {
       fireEvent.touchEnd(image, { changedTouches: [{ clientX: 170 }] })
 
       expect(screen.getByText('1/2')).toBeInTheDocument()
+    })
+  })
+
+  // specs/features/0426-zeitversatz-je-kamera.md, UI/UX Punkt 3: eine NEUE Anzeigestelle - eine
+  // Aufnahmezeit je Foto wurde zuvor nirgends gezeigt.
+  describe('Abschnitt "Aufnahmezeit"', () => {
+    const RECORDED = '2026-08-12T14:32:00'
+    const EFFECTIVE = '2026-08-12T12:32:00'
+
+    function takenAtSection(): HTMLElement {
+      return screen.getByTestId('taken-at-section')
+    }
+
+    it('zeigt die WIRKSAME Zeit', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, taken_at: EFFECTIVE, taken_at_original: RECORDED })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      expect(takenAtSection()).toHaveTextContent('12.08.2026, 12:32')
+    })
+
+    it('traegt die Marke "korrigiert" nur im Korrekturfall', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            taken_at: EFFECTIVE,
+            taken_at_original: RECORDED,
+            time_offset_minutes: -120,
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      expect(within(takenAtSection()).getByText('korrigiert')).toBeInTheDocument()
+    })
+
+    it('traegt die Marke NICHT bei Versatz null', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, time_offset_minutes: 0 })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      expect(within(takenAtSection()).queryByText('korrigiert')).toBeNull()
+    })
+
+    it('zeigt die aufgezeichnete Zeile samt Versatz nur im Korrekturfall', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            taken_at: EFFECTIVE,
+            taken_at_original: RECORDED,
+            time_offset_minutes: -120,
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      const section = takenAtSection()
+      expect(section).toHaveTextContent(/aufgezeichnet/)
+      expect(section).toHaveTextContent('14:32')
+      expect(section).toHaveTextContent('−2:00')
+    })
+
+    it('zeigt die aufgezeichnete Zeile NICHT bei Versatz null', async () => {
+      // Bei gleichem Wert waere sie eine Wiederholung derselben Zeit - eine Aussage ohne Inhalt.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, time_offset_minutes: 0 })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      expect(takenAtSection()).not.toHaveTextContent(/aufgezeichnet/)
+    })
+
+    it('nennt die Kamera, wenn sie bestimmbar ist', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, camera: { id: 7, label: 'Canon EOS 5D' } })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      expect(within(takenAtSection()).getByText('Canon EOS 5D')).toBeInTheDocument()
+    })
+
+    it('sagt als RUHIGER Satz, wenn keine Kamera bestimmbar ist', async () => {
+      // Kein Fehlerton: `camera = null` ist ein regulaerer Zustand, kein Fehlen.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, camera: null })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      expect(
+        within(takenAtSection()).getByText('Die Kamera dieses Fotos ist nicht bestimmbar.'),
+      ).toBeInTheDocument()
+      expect(within(takenAtSection()).queryByRole('alert')).toBeNull()
     })
   })
 })

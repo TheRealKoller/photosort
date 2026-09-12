@@ -6,7 +6,8 @@ from PIL import Image
 from PIL.ExifTags import IFD
 from PIL.TiffImagePlugin import IFDRational
 
-from photosort.opencloud.exif import extract_gps, extract_taken_at
+from photosort.cameras import CameraIdentity
+from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
 
 _DATETIME_ORIGINAL_TAG = 36867
 
@@ -376,3 +377,147 @@ def test_the_null_island_pair_logs_its_own_reason_token(
 
     assert len(caplog.records) == 1
     assert "nullinsel" in caplog.records[0].getMessage()
+
+
+# ---------------------------------------------------------------------------------------------
+# specs/features/0426-zeitversatz-je-kamera.md, decisions/0090 Punkt 3: extract_camera liest
+# `Make` (271) und `Model` (272) aus DEMSELBEN Range-Read-Fenster wie Zeit und Koordinate - kein
+# zusaetzlicher Netzwerkzugriff. Best-effort wie die beiden Nachbarn: kein Lesefehler bricht
+# einen Scan ab.
+
+_MAKE_TAG = 271
+_MODEL_TAG = 272
+
+
+def _make_jpeg_with_camera(camera_values: dict[int, object]) -> bytes:
+    """JPEG, dessen Basis-IFD GENAU die uebergebenen Kamera-Tags traegt - so lassen sich auch
+    unvollstaendige und entartete Datensaetze erzeugen, wie sie reale Kameras schreiben."""
+    image = Image.new("RGB", (4, 4), color="red")
+    exif = image.getexif()
+    exif.update(camera_values)
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", exif=exif)
+    return buffer.getvalue()
+
+
+def test_extracts_make_and_model_as_a_camera_identity() -> None:
+    jpeg_bytes = _make_jpeg_with_camera({_MAKE_TAG: "Canon", _MODEL_TAG: "Canon EOS 5D"})
+
+    assert extract_camera(jpeg_bytes) == CameraIdentity(make="Canon", model="Canon EOS 5D")
+
+
+def test_reads_the_camera_from_the_same_window_as_time_and_coordinate() -> None:
+    """Die tragende Zusage von Umsetzungsschritt 3: EIN Byte-Fenster, drei Auswertungen."""
+    image = Image.new("RGB", (4, 4), color="red")
+    exif = image.getexif()
+    exif.update({_MAKE_TAG: "Canon", _MODEL_TAG: "EOS 5D"})
+    exif.get_ifd(IFD.Exif)[_DATETIME_ORIGINAL_TAG] = "2026:08:12 14:32:00"
+    exif.get_ifd(IFD.GPSInfo).update({1: "N", 2: _EIFFEL_LAT_DMS, 3: "E", 4: _EIFFEL_LON_DMS})
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", exif=exif)
+    content = buffer.getvalue()
+
+    assert extract_camera(content) == CameraIdentity(make="Canon", model="EOS 5D")
+    assert extract_taken_at(content) is not None
+    assert extract_gps(content) is not None
+
+
+def test_only_make_is_enough_for_a_camera_identity() -> None:
+    jpeg_bytes = _make_jpeg_with_camera({_MAKE_TAG: "Canon"})
+
+    assert extract_camera(jpeg_bytes) == CameraIdentity(make="Canon", model="")
+
+
+def test_only_model_is_enough_for_a_camera_identity() -> None:
+    jpeg_bytes = _make_jpeg_with_camera({_MODEL_TAG: "EOS 5D"})
+
+    assert extract_camera(jpeg_bytes) == CameraIdentity(make="", model="EOS 5D")
+
+
+def test_returns_none_when_both_make_and_model_are_missing() -> None:
+    assert extract_camera(_make_jpeg("2023:08:15 12:30:00")) is None
+
+
+def test_extract_camera_returns_none_for_a_jpeg_without_any_exif() -> None:
+    assert extract_camera(_make_jpeg(with_exif_datetime=None)) is None
+
+
+def test_extract_camera_returns_none_for_a_png() -> None:
+    assert extract_camera(_make_png()) is None
+
+
+def test_extract_camera_returns_none_for_garbage_bytes() -> None:
+    assert extract_camera(b"not-an-image") is None
+
+
+def test_extract_camera_returns_none_for_truncated_bytes_without_an_error() -> None:
+    """Ein abgeschnittenes Range-Read-Fenster ist bei grossen Dateien der Regelfall - es darf
+    keine Ausnahme nach aussen tragen."""
+    jpeg_bytes = _make_jpeg_with_camera({_MAKE_TAG: "Canon", _MODEL_TAG: "EOS 5D"})
+
+    assert extract_camera(jpeg_bytes[:20]) is None
+
+
+def test_a_numeric_value_arrives_as_its_ascii_form_because_the_tag_is_ascii() -> None:
+    """Verifiziert gegen Pillow 12.3.0: `Make`/`Model` sind ASCII-Tags, ein geschriebener `int`
+    kommt als `'42'` zurueck - nicht als `int`. Der Nicht-`str`-Zweig von `camera_identity` ist
+    deshalb ueber eine echte Datei gar nicht erreichbar und dort direkt getestet
+    (test_cameras.py); hier steht, was ueber diesen Weg tatsaechlich ankommt."""
+    jpeg_bytes = _make_jpeg_with_camera({_MAKE_TAG: 42, _MODEL_TAG: "EOS 5D"})
+
+    assert extract_camera(jpeg_bytes) == CameraIdentity(make="42", model="EOS 5D")
+
+
+def test_an_undecodable_raw_value_is_discarded_without_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Der Rohwert eines entarteten Datensatzes kann jeden Typ tragen (Pillow liefert bei einem
+    abweichenden Feldtyp z.B. `bytes`). Er wird VERWORFEN statt umgedeutet - und kein Typfehler
+    traegt nach aussen. Ueber Pillows Schreibweg nicht erzeugbar, deshalb am Leseaufruf gesetzt."""
+    jpeg_bytes = _make_jpeg_with_camera({_MAKE_TAG: "Canon", _MODEL_TAG: "EOS 5D"})
+
+    def _degenerate_get(self: object, tag: int, default: object = None) -> object:
+        return b"\x01\x02" if tag == _MAKE_TAG else "EOS 5D"
+
+    monkeypatch.setattr(Image.Exif, "get", _degenerate_get, raising=True)
+
+    assert extract_camera(jpeg_bytes) == CameraIdentity(make="", model="EOS 5D")
+
+
+def test_an_accepted_camera_logs_nothing_at_all(caplog: pytest.LogCaptureFixture) -> None:
+    jpeg_bytes = _make_jpeg_with_camera({_MAKE_TAG: "Canon", _MODEL_TAG: "EOS 5D"})
+
+    with caplog.at_level(logging.WARNING):
+        assert extract_camera(jpeg_bytes, photo_id=1) is not None
+
+    assert caplog.records == []
+
+
+def test_a_photo_without_camera_tags_logs_nothing_at_all(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Der Normalfall (keine Kamera-Angabe im EXIF) ist kein Befund - ein Scan ueber tausende
+    solcher Fotos bleibt still."""
+    with caplog.at_level(logging.WARNING):
+        assert extract_camera(_make_jpeg("2023:08:15 12:30:00"), photo_id=1) is None
+
+    assert caplog.records == []
+
+
+def test_a_discarded_camera_logs_a_fixed_reason_token_without_the_raw_value(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Nur im VERWERFUNGSFALL eine Zeile, und in ihr ausschliesslich ein festes Grund-Token plus
+    `photo_id`. `Make`/`Model` sind Fremdtext aus einer Kamera-Firmware: ein Rohwert im Log ist
+    eine Log-Injection-Flaeche, und die FEHLERKLASSE traegt den vollen Diagnosewert."""
+    jpeg_bytes = _make_jpeg_with_camera({_MAKE_TAG: "M" * 300, _MODEL_TAG: "X" * 300})
+
+    with caplog.at_level(logging.WARNING):
+        assert extract_camera(jpeg_bytes, photo_id=4711) is None
+
+    assert len(caplog.records) == 1
+    message = caplog.records[0].getMessage()
+    assert "verworfen" in message
+    assert "4711" in message
+    assert "MMM" not in message
+    assert "XXX" not in message

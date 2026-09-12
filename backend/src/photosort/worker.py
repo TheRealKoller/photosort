@@ -14,12 +14,13 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
 from photosort.cache_cleanup import cleanup_orphaned_cache
+from photosort.cameras import CameraIdentity, shifted
 from photosort.categories import LOCAL_CATEGORY_SIGNALS, resolve_category, secondary_categories
 from photosort.classification import (
     FaceBoundingBox,
@@ -91,6 +92,7 @@ from photosort.models import (
     PhotoRanking,
     PhotoScore,
     Project,
+    ProjectCamera,
     RatingStatus,
     RemoteCategoryClassificationRun,
     ScanRun,
@@ -98,7 +100,7 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
-from photosort.opencloud.exif import extract_gps, extract_taken_at
+from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.pricing import compute_cost_usd
 from photosort.ranking import rank_photos
@@ -128,6 +130,11 @@ logger = logging.getLogger(__name__)
 
 _EXIF_CANDIDATE_EXTENSIONS = {".jpg", ".jpeg"}
 _EXIF_RANGE_BYTES = 131_072
+
+# FESTES Grund-Token fuer den einen Fall, in dem der Scan den Versatz eines Fotos nicht anwenden
+# kann (das Ergebnis laege ausserhalb des darstellbaren Datumsbereichs) - Muster der
+# Grund-Tokens in `opencloud/exif.py`. Kein Rohwert, kein Zeitstempel, kein Fremdtext.
+_OFFSET_REASON_OUT_OF_RANGE = "ausserhalb_darstellbarem_bereich"
 
 # Wie oft ScoringRun.photos_processed waehrend der Verarbeitung zwischen-committet wird ("mind. alle
 # 25 Fotos", damit ein pollender Client echten, monoton wachsenden Fortschritt sieht statt nur
@@ -200,13 +207,18 @@ class SkipReason(enum.Enum):
 
 @dataclass
 class ScanWorkItem:
-    """Ein Eintrag aus Phase 1, der in Phase 2b tatsaechlich verarbeitet werden muss (neue Datei
-    oder geaenderter Etag) - `existing_photo` ist `None` fuer neue Dateien, sonst die zu
-    aktualisierende Zeile."""
+    """Ein Eintrag aus Phase 1, der in Phase 2b tatsaechlich verarbeitet werden muss (neue Datei,
+    geaenderter Etag, oder die einmalige Kamera-Nachhol-Runde) - `existing_photo` ist `None` fuer
+    neue Dateien, sonst die zu aktualisierende Zeile.
+
+    `probe_only` heisst: die Datei ist UNVERAENDERT, gelesen wird nur ihr EXIF-Fenster, um die
+    Kamera-Angabe nachzutragen. Die Thumbnails existieren bereits und waeren identisch - ihre
+    Neuerzeugung waere ein Voll-Download je Bestandsfoto."""
 
     relative_path: str
     entry: DavEntry
     existing_photo: Photo | None
+    probe_only: bool = False
 
 
 @dataclass
@@ -238,8 +250,14 @@ def _classify_scan_entries(
 ) -> ScanClassification:
     """Phase 2a: reine Funktion, keine Session-/DB-Zugriffe - isoliert unit-testbar (siehe
     test_worker_scan_classification.py). Entscheidungslogik: unsupported extension -> Skip +
-    files_skipped; unveraenderter Etag -> Skip ohne files_skipped; sonst -> Arbeitsposten. Die
-    Verarbeitung selbst gehoert nicht hierher."""
+    files_skipped; unveraenderter Etag UND Kamera bereits geprueft -> Skip ohne files_skipped;
+    unveraenderter Etag UND noch nicht geprueft -> Arbeitsposten mit `probe_only=True`; sonst ->
+    voller Arbeitsposten. Die Verarbeitung selbst gehoert nicht hierher.
+
+    Der `probe_only`-Zweig ist die EINMALIGE Nachhol-Runde fuer Bestandsfotos (ADR 0090,
+    Konsequenzen): Ohne sie bliebe die Kameraliste in bereits gescannten Projekten leer, denn ein
+    unveraendertes Foto wird nie wieder gelesen. Sie laeuft genau einmal je Foto - danach steht
+    der Merker, AUCH wenn die Datei keine Kamera nennt."""
     classification = ScanClassification()
     for relative_path, entry in entries:
         extension = _extension(relative_path)
@@ -251,13 +269,14 @@ def _classify_scan_entries(
 
         classification.seen_paths.add(relative_path)
         existing_photo = existing_photos.get(relative_path)
-        if existing_photo is not None and existing_photo.etag == entry.etag:
+        unchanged = existing_photo is not None and existing_photo.etag == entry.etag
+        if unchanged and existing_photo is not None and existing_photo.camera_probed:
             classification.decisions.append(
                 ScanEntryDecision(relative_path, SkipReason.UNCHANGED_ETAG, None)
             )
             continue
 
-        work_item = ScanWorkItem(relative_path, entry, existing_photo)
+        work_item = ScanWorkItem(relative_path, entry, existing_photo, probe_only=unchanged)
         classification.decisions.append(ScanEntryDecision(relative_path, None, work_item))
         classification.work_items.append(work_item)
 
@@ -343,10 +362,15 @@ class ScanExifResult:
     `CancelledError` einer Kind-Coroutine NICHT ab) darf nicht in die Felder entpackt werden.
 
     `gps` ist ein Paar oder `None` - nie eine halbe Koordinate (Paar-Invariante von
-    `extract_gps`)."""
+    `extract_gps`).
+
+    `taken_at` ist hier die AUFGEZEICHNETE Zeit (EXIF `DateTimeOriginal`, sonst der Rueckfall auf
+    `last_modified`) - die Korrektur um den Kamera-Versatz passiert erst im sequentiellen Teil von
+    `_process_scan_block`, wo die Kamerazeile und damit der Versatz bekannt sind."""
 
     taken_at: datetime
     gps: tuple[float, float] | None
+    camera: CameraIdentity | None
 
 
 async def _fetch_and_thumbnail(
@@ -358,28 +382,77 @@ async def _fetch_and_thumbnail(
     photo_id: int,
     etag: str,
     cache_dir: Path,
+    *,
+    probe_only: bool = False,
 ) -> ScanExifResult:
     """Der reine I/O-/CPU-Teil eines einzelnen Arbeitspostens aus Phase 2b: EXIF-Range-Read
-    (nur für JPEG-Kandidaten) für `taken_at` UND die
-    GPS-Koordinate, danach best-effort Download + Thumbnail-Erzeugung -
+    (nur für JPEG-Kandidaten) für `taken_at`, die
+    GPS-Koordinate UND die Kamera-Angabe, danach best-effort Download + Thumbnail-Erzeugung -
     bewusst OHNE jeglichen Session-Zugriff, damit mehrere Aufrufe sicher parallel per
     asyncio.gather laufen koennen (_process_scan_block unten). Ein EXIF-Lesefehler wird NICHT
     abgefangen: ein einzelner OpenCloud-Fehler hier laesst den gesamten Scan fehlschlagen.
 
-    Beide EXIF-Werte stammen aus DEMSELBEN bereits geladenen Byte-Fenster - kein zusaetzlicher
-    Netzwerkzugriff fuer die Koordinate. Fuer Nicht-JPEG-Posten wird gar kein EXIF gelesen: der
-    Zeitpunkt faellt auf `fallback_taken_at` zurueck, die Koordinate bleibt `None`."""
+    Alle DREI EXIF-Werte stammen aus DEMSELBEN bereits geladenen Byte-Fenster - kein zusaetzlicher
+    Netzwerkzugriff fuer Koordinate oder Kamera. Fuer Nicht-JPEG-Posten wird gar kein EXIF
+    gelesen: der Zeitpunkt faellt auf `fallback_taken_at` zurueck, Koordinate und Kamera bleiben
+    `None`.
+
+    `probe_only` ueberspringt AUSSCHLIESSLICH die Thumbnail-Erzeugung (die Nachhol-Runde der
+    Kamera-Angabe an einer unveraenderten Datei - die Thumbnails existieren und waeren identisch).
+    Das EXIF-Fenster wird weiterhin gelesen; genau darum geht es."""
     taken_at = fallback_taken_at
     gps: tuple[float, float] | None = None
+    camera: CameraIdentity | None = None
     if extension in _EXIF_CANDIDATE_EXTENSIONS:
         content = await client.get_range(webdav_url, relative_path, _EXIF_RANGE_BYTES)
         exif_taken_at = extract_taken_at(content)
         if exif_taken_at is not None:
             taken_at = exif_taken_at
         gps = extract_gps(content, photo_id=photo_id)
+        camera = extract_camera(content, photo_id=photo_id)
 
-    await _generate_thumbnails(client, webdav_url, relative_path, photo_id, etag, cache_dir)
-    return ScanExifResult(taken_at=taken_at, gps=gps)
+    if not probe_only:
+        await _generate_thumbnails(client, webdav_url, relative_path, photo_id, etag, cache_dir)
+    return ScanExifResult(taken_at=taken_at, gps=gps, camera=camera)
+
+
+async def _resolve_project_camera(
+    session: AsyncSession,
+    project_id: int,
+    identity: CameraIdentity,
+    cache: dict[tuple[str, str], ProjectCamera],
+) -> ProjectCamera:
+    """Die Kamerazeile DIESES Projekts zur uebergebenen Identitaet - angelegt, falls es sie noch
+    nicht gibt, mit `offset_minutes = 0`.
+
+    Der `cache` wird von `run_project_scan` ueber alle Bloecke eines Laufs durchgereicht: ohne ihn
+    entstuende eine Abfrage JE FOTO statt je Kamera, und ein Projekt hat typischerweise zwei
+    Kameras und tausende Fotos.
+
+    SICHERHEIT (Projektgrenze): `project_id` steht in derselben Anweisung, die die Zeile
+    aufloest - `Photo.camera_id` zeigt damit ausschliesslich auf eine Zeile desselben Projekts."""
+    key = (identity.make, identity.model)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    existing = (
+        await session.execute(
+            select(ProjectCamera).where(
+                ProjectCamera.project_id == project_id,
+                ProjectCamera.make == identity.make,
+                ProjectCamera.model == identity.model,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        existing = ProjectCamera(
+            project_id=project_id, make=identity.make, model=identity.model, offset_minutes=0
+        )
+        session.add(existing)
+        await session.flush()
+    cache[key] = existing
+    return existing
 
 
 async def _process_scan_block(
@@ -389,6 +462,7 @@ async def _process_scan_block(
     cache_dir: Path,
     project_id: int,
     block: list[ScanWorkItem],
+    camera_cache: dict[tuple[str, str], ProjectCamera] | None = None,
 ) -> tuple[int, int]:
     """Verarbeitet einen einzelnen Block von Arbeitsposten, Blockgröße
     settings.scan_download_concurrency: zunächst sequentiell Photo-Zeilen
@@ -417,7 +491,11 @@ async def _process_scan_block(
                 relative_path=item.relative_path,
                 etag=item.entry.etag or "",
                 content_length=item.entry.content_length or 0,
-                taken_at=last_modified,  # vorlaeufig, wird unten nach dem gather() ersetzt
+                # Beide vorlaeufig, beide werden unten nach dem gather() ersetzt - erst dort
+                # steht der EXIF-Wert fest. `taken_at_original` ist NOT NULL ohne Default und
+                # muss deshalb schon hier einen Wert tragen.
+                taken_at=last_modified,
+                taken_at_original=last_modified,
                 last_modified=last_modified,
             )
             session.add(photo)
@@ -440,6 +518,7 @@ async def _process_scan_block(
                 photos[index].id,
                 photos[index].etag,
                 cache_dir,
+                probe_only=item.probe_only,
             )
             for index, item in enumerate(block)
         ],
@@ -462,11 +541,41 @@ async def _process_scan_block(
         if isinstance(result, BaseException):
             raise result
 
+    cache = {} if camera_cache is None else camera_cache
     for photo, exif_result in zip(photos, results, strict=True):
         # Die Typzusicherung nagelt die FORM fest: ohne sie entpackte eine durchgereichte
         # BaseException ihre Attribute in die Foto-Felder, statt oben als Fehler erkannt zu werden.
         assert isinstance(exif_result, ScanExifResult)  # bereits oben auf Exceptions geprueft
-        photo.taken_at = exif_result.taken_at
+
+        # UNBEDINGT schreiben, auch zurueck auf None - dieselbe Begruendung wie bei `gps_lat`
+        # unten: verliert eine Datei ihre Kamera-Angabe, verliert das Foto sie auch. Der Merker
+        # wird AUCH OHNE FUND gesetzt, sonst liest jeder weitere Scan den Bestand erneut.
+        camera = (
+            None
+            if exif_result.camera is None
+            else await _resolve_project_camera(session, project_id, exif_result.camera, cache)
+        )
+        photo.camera_id = None if camera is None else camera.id
+        photo.camera_probed = True
+
+        # DIE ERSTE der zwei Schreibstellen der Invariante (ADR 0090, Punkt 1; die zweite ist
+        # `api/cameras.py`), und beide rechnen ueber `cameras.py::shifted` aus
+        # `taken_at_original` - NIE aus dem bestehenden `taken_at`. Eine Differenz auf den
+        # bestehenden Wert zu addieren kumulierte bei jedem weiteren Lauf.
+        photo.taken_at_original = exif_result.taken_at
+        offset_minutes = 0 if camera is None else camera.offset_minutes
+        corrected = shifted(exif_result.taken_at, offset_minutes)
+        if corrected is None:
+            # Ausfallrichtung fuer dieses EINE Foto: die unkorrigierte Zeit plus eine Warnzeile
+            # mit festem Token - kein Laufabbruch und kein Datum ausserhalb des darstellbaren
+            # Bereichs. Die Invariante ist fuer dieses Foto damit bewusst verletzt; ein Versatz,
+            # der das ausloest, ist am Endpunkt gar nicht setzbar (dort 422).
+            logger.warning(
+                "_process_scan_block: Versatz nicht anwendbar photo_id=%s grund=%s",
+                photo.id,
+                _OFFSET_REASON_OUT_OF_RANGE,
+            )
+        photo.taken_at = exif_result.taken_at if corrected is None else corrected
         # SICHERHEIT: UNBEDINGT beide Felder schreiben, auch zurück auf None. Das ist eine
         # DATENSCHUTZBEDINGUNG, keine Aufräum-Kosmetik - dies ist der einzige Pfad, über den
         # das ENTFERNEN von GPS aus einer Quelldatei in PhotoSort ankommt, also genau die
@@ -574,10 +683,14 @@ async def run_project_scan(
         # Laufzeit-Clamp hier nötig.
         concurrency = settings.scan_download_concurrency
         work_items = classification.work_items
+        # EIN Cache ueber alle Bloecke des Laufs: sonst eine Kamera-Abfrage je Foto statt je
+        # Kamera. Er haelt ORM-Objekte derselben Sitzung, die der Lauf ohnehin durchgaengig
+        # benutzt.
+        camera_cache: dict[tuple[str, str], ProjectCamera] = {}
         for start in range(0, len(work_items), concurrency):
             block = work_items[start : start + concurrency]
             added, updated = await _process_scan_block(
-                session, client, drive.webdav_url, cache_dir, project.id, block
+                session, client, drive.webdav_url, cache_dir, project.id, block, camera_cache
             )
             photos_added += added
             photos_updated += updated
@@ -1403,6 +1516,260 @@ def _append_cloud_error(run: CriterionScoringRun, message: str) -> None:
     run.cloud_error_message = combined[:_MAX_RUN_CLOUD_ERROR_MESSAGE_LENGTH]
 
 
+def _partition_confidence(
+    evidence: RemoteCategoryEvidence,
+    category_key: str,
+    *,
+    is_primary: bool,
+    category_override: str | None,
+) -> object:
+    """Die Konfidenz, mit der ein Foto in GENAU DIESE Partition eingeht - die eine Stelle, an der
+    die Daempfungsregel steht.
+
+    Eine MANUELL gesetzte Hauptzeile wird NICHT gedaempft: eine menschliche Festlegung mit einer
+    Modellzahl abzuwerten hiesse, den Nutzer fuer die Unsicherheit des Modells zu bestrafen -
+    sichtbar an genau der Stelle, an der er gerade korrigiert hat. Eine NEBENzeile wird auch bei
+    gesetztem Override gedaempft; der Override sagt nichts ueber sie.
+
+    Gemeinsam genutzt von `_build_grouping_and_rankings` UND `reassign_photo_category` - sonst
+    stuende dieselbe Regel an zwei Stellen und liefe auseinander."""
+    if is_primary and category_override is not None:
+        return None
+    return evidence.confidences.get(category_key)
+
+
+async def _build_grouping_and_rankings(
+    session: AsyncSession,
+    run: CriterionScoringRun,
+    project_id: int,
+    values_by_photo_id: Mapping[int, dict[str, float]],
+) -> None:
+    """Die Gliederung eines Laufs samt seiner Rangzeilen: Event-Bildung, Partitionen,
+    Kategorieableitung und `PhotoRanking`-Zeilen.
+
+    ZWEI Aufrufer, EIN Weg zur Gliederung und zur Hauptkategorie: der Kriterien-Lauf
+    (`run_criterion_scoring`) und der Neuaufbau nach einer Versatz-Aenderung
+    (`rebuild_run_grouping`). Ein zweiter Rechenweg fuer dasselbe liefe auseinander, und ein
+    zwischenzeitlich gesetzter Override koennte still verloren gehen.
+
+    Die Kandidatenmenge IST `values_by_photo_id.keys()`; alles Weitere liest die Funktion selbst.
+    Das kostet gegenueber dem durchgereichten Zustand zwei Abfragen mehr JE LAUF - der Preis
+    dafuer, dass beide Aufrufer garantiert dasselbe tun.
+
+    Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer (Muster
+    `project_deletion`/`reassign_photo_category`)."""
+    # Lädt die bereits vorhandenen Klassifikations-Zeilen (im Regelfall aus Phase 1 DESSELBEN
+    # Laufs, siehe run_classification - KEIN neuer Cloud-Aufruf hier). Sie liefern die
+    # REMOTE-Haelfte der Kandidatenmenge; die lokale Haelfte steckt in `values_by_photo_id`.
+    evidence_by_photo_id = await _remote_category_evidence(session, values_by_photo_id.keys())
+
+    # EINE Abfrage fuer BEIDES: die Inferenzbasis der Ortsherleitung (jedes Foto des Projekts)
+    # UND `taken_at`/`gps` der Kandidaten (eine Teilmenge davon).
+    #
+    # SICHERHEIT (M5): die Inferenzbasis ist JEDES Foto DIESES Projekts - die Bindung an
+    # `Photo.project_id` steht ausgeschrieben. Ohne sie erbte ein Foto Koordinaten aus einem
+    # fremden Projekt, und die Event-Grenzen in Projekt A haengten an Fotos aus Projekt B.
+    # Ausdruecklich NICHT auf die Kandidatenmenge eingeschraenkt: ein aussortiertes Foto traegt
+    # eine ebenso gueltige Koordinate.
+    photo_rows = (
+        await session.execute(
+            select(Photo.id, Photo.taken_at, Photo.gps_lat, Photo.gps_lon).where(
+                Photo.project_id == project_id
+            )
+        )
+    ).all()
+    effective_locations = infer_locations(
+        LocationEntry(photo_id=photo_id, taken_at=taken_at, gps_lat=gps_lat, gps_lon=gps_lon)
+        for photo_id, taken_at, gps_lat, gps_lon in photo_rows
+    )
+    time_and_place_by_photo_id = {
+        photo_id: (taken_at, gps_lat, gps_lon)
+        for photo_id, taken_at, gps_lat, gps_lon in photo_rows
+    }
+
+    # `_landmark_names` ist die EINZIGE Quelle fuer `events.landmark_name` (Sicherheitsauflage
+    # M9): kein direkter Zugriff auf `PhotoLandmarkDetection.name` an der Schreibstelle, kein
+    # Abschneiden.
+    landmark_name_by_photo = await _landmark_names(session, values_by_photo_id.keys())
+
+    # DIE EVENT-BILDUNG. Beim Kriterien-Lauf liegt die Stelle bewusst NACH dem `finally` der
+    # Landmark-Phase (sonst fehlten die Namen, die dieser Lauf gerade erst erzeugt hat) und VOR
+    # dem Aufbau von `partitions` unten (der Partitionsschluessel ist `(event_id, category_key)`).
+    #
+    # `PhotoScore.cluster_key` wird dabei NIE mutiert (Ownership-Grenze): der dort stehende
+    # Phase-A-Basiswert bleibt stabil, unabhaengig davon, ob und wann Kriterien-Scoring laeuft.
+    # Die Divergenz zu `PhotoRanking.event_id` ist gewollt.
+    built_events = build_events(
+        EventCandidate(
+            photo_id=photo_id,
+            taken_at=time_and_place_by_photo_id[photo_id][0],
+            location=effective_locations.get(photo_id),
+            gps_lat=time_and_place_by_photo_id[photo_id][1],
+            gps_lon=time_and_place_by_photo_id[photo_id][2],
+            landmark_name=landmark_name_by_photo.get(photo_id),
+        )
+        for photo_id in values_by_photo_id
+    )
+
+    event_rows = [
+        Event(
+            criterion_scoring_run_id=run.id,
+            position=built.position,
+            started_at=built.started_at,
+            ended_at=built.ended_at,
+            landmark_name=built.landmark_name,
+            place_kind=built.place_kind,
+            place_lat=built.place_lat,
+            place_lon=built.place_lon,
+        )
+        for built in built_events
+    ]
+    session.add_all(event_rows)
+    # EIN `flush` fuer alle Events, nicht einer je Event: die Ids werden unten als
+    # Partitionsschluessel gebraucht und stehen erst nach dem Schreiben fest.
+    await session.flush()
+    event_id_by_photo = {
+        photo_id: event.id
+        for built, event in zip(built_events, event_rows, strict=True)
+        for photo_id in built.photo_ids
+    }
+
+    override_by_photo_id: dict[int, str | None] = {
+        photo_id: category_override
+        for photo_id, category_override in (
+            await session.execute(
+                select(PhotoScore.photo_id, PhotoScore.category_override).where(
+                    PhotoScore.photo_id.in_(values_by_photo_id.keys())
+                )
+            )
+        ).all()
+    }
+
+    partitions: dict[tuple[int, str], dict[int, dict[str, float]]] = {}
+    # Die Konfidenz je Partition UND Foto - immer die zum Schluessel GENAU DIESER Partition.
+    # Dasselbe Foto geht damit in zwei Partitionen mit zwei verschiedenen Zahlen ein; zwei
+    # Kategorien werden an keiner Stelle anhand ihrer Zahlen gegeneinander abgewogen.
+    partition_confidences: dict[tuple[int, str], dict[int, object]] = {}
+    # Ob dieses Foto in dieser Partition die Haupt- oder eine Nebenzeile bekommt.
+    primary_flags: dict[tuple[int, str, int], bool] = {}
+    for photo_id, values in values_by_photo_id.items():
+        evidence = evidence_by_photo_id.get(photo_id, NO_REMOTE_CATEGORY_EVIDENCE)
+        # Die HAUPTkategorie ist eine reine PRO-FOTO-Funktion über einem geschlossenen Set -
+        # keine laufweite Häufigkeitsaggregation. Die Zuordnung ist damit unabhaengig davon,
+        # welche anderen Fotos im Projekt liegen. Die Selbsteinschaetzung des Modells geht
+        # hier ausdruecklich NICHT ein.
+        #
+        # Ein manueller Override ueberlebt damit automatisch jeden kuenftigen vollen
+        # Re-Scoring-Lauf, ohne Sonderfallcode.
+        override = override_by_photo_id.get(photo_id)
+        primary_key = override or derive_photo_category(values, evidence.candidates)
+        # Die NEBENkategorien entstehen ausschliesslich aus der bereits persistierten
+        # Modellaussage - kein neuer Cloud-Aufruf, keine Prompt-Aenderung, keine
+        # Kostenaenderung.
+        memberships: list[tuple[str, bool]] = [(primary_key, True)]
+        memberships += [
+            (key, False) for key in secondary_categories(evidence.confidences, primary_key)
+        ]
+        for category_key, is_primary in memberships:
+            partition_key = (event_id_by_photo[photo_id], category_key)
+            partitions.setdefault(partition_key, {})[photo_id] = values
+            partition_confidences.setdefault(partition_key, {})[photo_id] = _partition_confidence(
+                evidence, category_key, is_primary=is_primary, category_override=override
+            )
+            primary_flags[(*partition_key, photo_id)] = is_primary
+
+    for partition_key, partition_candidates in partitions.items():
+        event_id, category_key = partition_key
+        ranked_photos = rank_photos(
+            partition_candidates,
+            DEFAULT_CRITERION_WEIGHTS,
+            partition_confidences[partition_key],
+        )
+        for ranked_photo in ranked_photos:
+            session.add(
+                PhotoRanking(
+                    criterion_scoring_run_id=run.id,
+                    photo_id=ranked_photo.photo_id,
+                    event_id=event_id,
+                    category_key=category_key,
+                    rank_score=ranked_photo.rank_score,
+                    rank_position=ranked_photo.rank_position,
+                    is_primary=primary_flags[(*partition_key, ranked_photo.photo_id)],
+                )
+            )
+
+
+async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
+    """Baut Gliederung und Rangzeilen des LETZTEN ERFOLGREICHEN Kriterien-Laufs neu auf -
+    ausschliesslich aus bereits persistierten Werten, ohne Cloud-Aufruf und ohne Bildverarbeitung.
+
+    Aufgerufen vom Versatz-Endpunkt: Reihenfolge, Anzeige und Ortsherleitung sind mit der
+    Bedeutungsumkehr von `taken_at` sofort richtig, die EVENTS sind dagegen persistierte
+    Lauf-Artefakte (ADR 0087) und waeren es nicht.
+
+    LOESCHEN UND NEUSCHREIBEN statt Umhaengen: `UniqueConstraint(criterion_scoring_run_id,
+    position)` laesst alte und neue Events desselben Laufs nicht gleichzeitig zu.
+
+    Kein erfolgreicher Lauf oder keine einzige Rangzeile: nichts zu tun. Weder `commit` noch
+    eigene Transaktionsgrenze - die gehoert dem Aufrufer, der genau EINMAL committet (Muster
+    `project_deletion`)."""
+    run = (
+        await session.execute(
+            select(CriterionScoringRun)
+            .where(
+                CriterionScoringRun.project_id == project_id,
+                CriterionScoringRun.status == ScanStatus.SUCCESS,
+            )
+            .order_by(CriterionScoringRun.started_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if run is None:
+        return
+
+    # Die Kandidatenmenge des Laufs sind genau die Fotos seiner Rangzeilen - nicht die aktuellen
+    # Ausschuss-Ueberlebenden: ein zwischenzeitliches Re-Scoring darf die Zusammensetzung dieses
+    # Laufs nicht nachtraeglich veraendern.
+    candidate_ids = set(
+        (
+            await session.execute(
+                select(PhotoRanking.photo_id).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not candidate_ids:
+        return
+
+    values_by_photo_id: dict[int, dict[str, float]] = {}
+    criterion_rows = (
+        await session.execute(
+            select(
+                PhotoCriterionScore.photo_id,
+                PhotoCriterionScore.criterion_key,
+                PhotoCriterionScore.value,
+            ).where(PhotoCriterionScore.photo_id.in_(candidate_ids))
+        )
+    ).all()
+    for photo_id, criterion_key, value in criterion_rows:
+        values_by_photo_id.setdefault(photo_id, {})[criterion_key] = value
+    # Ein Kandidat ohne einen einzigen Kriterien-Wert bleibt Kandidat: er stand in einer Rangzeile
+    # des Laufs und muss auch danach in einer stehen.
+    for photo_id in sorted(candidate_ids):
+        values_by_photo_id.setdefault(photo_id, {})
+
+    await session.execute(
+        delete(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+    )
+    await session.execute(delete(Event).where(Event.criterion_scoring_run_id == run.id))
+    # Das `flush` VOR dem Neuaufbau: sonst kollidieren die neuen Events mit den alten am
+    # Unique-Constraint ueber `(Lauf, position)`.
+    await session.flush()
+
+    await _build_grouping_and_rankings(session, run, project_id, values_by_photo_id)
+
+
 async def run_criterion_scoring(
     session: AsyncSession,
     project: Project,
@@ -1809,136 +2176,7 @@ async def run_criterion_scoring(
         run.phase = ClassificationPhase.RANKING
         await session.commit()
 
-        # Lädt die bereits vorhandenen Klassifikations-Zeilen (im Regelfall aus Phase 1 DESSELBEN
-        # Laufs, siehe run_classification - KEIN neuer Cloud-Aufruf hier). Sie liefern die
-        # REMOTE-Haelfte der Kandidatenmenge; die lokale Haelfte steckt in candidate_values.
-        evidence_by_photo_id = await _remote_category_evidence(session, candidate_values.keys())
-
-        # DIE EVENT-BILDUNG. Die Stelle ist bewusst NACH dem `finally` der Landmark-Phase (sonst
-        # fehlten die Namen, die dieser Lauf gerade erst erzeugt hat) und VOR dem Aufbau von
-        # `partitions` unten (der Partitionsschluessel ist `(event_id, category_key)`).
-        #
-        # `PhotoScore.cluster_key` wird dabei NIE mutiert (Ownership-Grenze): der dort stehende
-        # Phase-A-Basiswert bleibt stabil, unabhaengig davon, ob und wann Kriterien-Scoring
-        # laeuft. Die Divergenz zu `PhotoRanking.event_id` ist gewollt.
-        #
-        # SICHERHEIT (M5): die Inferenzbasis ist JEDES Foto DIESES Projekts - die Bindung an
-        # `Photo.project_id` steht ausgeschrieben und wird aus `CriterionScoringRun.project_id`
-        # abgeleitet. Ohne sie erbte ein Foto Koordinaten aus einem fremden Projekt, und die
-        # Event-Grenzen in Projekt A haengten an Fotos aus Projekt B. Ausdruecklich NICHT auf die
-        # Kandidatenmenge eingeschraenkt: ein aussortiertes Foto traegt eine ebenso gueltige
-        # Koordinate.
-        location_rows = (
-            await session.execute(
-                select(Photo.id, Photo.taken_at, Photo.gps_lat, Photo.gps_lon).where(
-                    Photo.project_id == project.id
-                )
-            )
-        ).all()
-        effective_locations = infer_locations(
-            LocationEntry(photo_id=photo_id, taken_at=taken_at, gps_lat=gps_lat, gps_lon=gps_lon)
-            for photo_id, taken_at, gps_lat, gps_lon in location_rows
-        )
-        # `_landmark_names` ist die EINZIGE Quelle fuer `events.landmark_name` (Sicherheitsauflage
-        # M9): kein direkter Zugriff auf `PhotoLandmarkDetection.name` an der Schreibstelle, kein
-        # Abschneiden.
-        landmark_name_by_photo = await _landmark_names(session, candidate_values.keys())
-        photos_by_id = {photo.id: photo for photo, _score in rows}
-        built_events = build_events(
-            EventCandidate(
-                photo_id=photo_id,
-                taken_at=photos_by_id[photo_id].taken_at,
-                location=effective_locations.get(photo_id),
-                gps_lat=photos_by_id[photo_id].gps_lat,
-                gps_lon=photos_by_id[photo_id].gps_lon,
-                landmark_name=landmark_name_by_photo.get(photo_id),
-            )
-            for photo_id in candidate_values
-        )
-
-        event_rows = [
-            Event(
-                criterion_scoring_run_id=run.id,
-                position=built.position,
-                started_at=built.started_at,
-                ended_at=built.ended_at,
-                landmark_name=built.landmark_name,
-                place_kind=built.place_kind,
-                place_lat=built.place_lat,
-                place_lon=built.place_lon,
-            )
-            for built in built_events
-        ]
-        session.add_all(event_rows)
-        # EIN `flush` fuer alle Events, nicht einer je Event: die Ids werden unten als
-        # Partitionsschluessel gebraucht und stehen erst nach dem Schreiben fest.
-        await session.flush()
-        event_id_by_photo = {
-            photo_id: event.id
-            for built, event in zip(built_events, event_rows, strict=True)
-            for photo_id in built.photo_ids
-        }
-
-        scores_by_photo_id = {photo.id: score for photo, score in rows}
-
-        partitions: dict[tuple[int, str], dict[int, dict[str, float]]] = {}
-        # Die Konfidenz je Partition UND Foto - immer die zum Schluessel GENAU DIESER Partition.
-        # Dasselbe Foto geht damit in zwei Partitionen mit zwei verschiedenen Zahlen ein; zwei
-        # Kategorien werden an keiner Stelle anhand ihrer Zahlen gegeneinander abgewogen.
-        partition_confidences: dict[tuple[int, str], dict[int, object]] = {}
-        # Ob dieses Foto in dieser Partition die Haupt- oder eine Nebenzeile bekommt.
-        primary_flags: dict[tuple[int, str, int], bool] = {}
-        for photo_id, values in candidate_values.items():
-            evidence = evidence_by_photo_id.get(photo_id, NO_REMOTE_CATEGORY_EVIDENCE)
-            # Die HAUPTkategorie ist eine reine PRO-FOTO-Funktion über einem geschlossenen Set -
-            # keine laufweite Häufigkeitsaggregation. Die Zuordnung ist damit unabhaengig davon,
-            # welche anderen Fotos im Projekt liegen. Die Selbsteinschaetzung des Modells geht
-            # hier ausdruecklich NICHT ein.
-            #
-            # Ein manueller Override ueberlebt damit automatisch jeden kuenftigen vollen
-            # Re-Scoring-Lauf, ohne Sonderfallcode.
-            override = scores_by_photo_id[photo_id].category_override
-            primary_key = override or derive_photo_category(values, evidence.candidates)
-            # Die NEBENkategorien entstehen ausschliesslich aus der bereits persistierten
-            # Modellaussage - kein neuer Cloud-Aufruf, keine Prompt-Aenderung, keine
-            # Kostenaenderung.
-            memberships: list[tuple[str, bool]] = [(primary_key, True)]
-            memberships += [
-                (key, False) for key in secondary_categories(evidence.confidences, primary_key)
-            ]
-            for category_key, is_primary in memberships:
-                partition_key = (event_id_by_photo[photo_id], category_key)
-                partitions.setdefault(partition_key, {})[photo_id] = values
-                # Eine MANUELL gesetzte Hauptzeile wird NICHT gedaempft: eine menschliche
-                # Festlegung mit einer Modellzahl abzuwerten hiesse, den Nutzer fuer die
-                # Unsicherheit des Modells zu bestrafen - sichtbar an genau der Stelle, an der er
-                # gerade korrigiert hat.
-                partition_confidences.setdefault(partition_key, {})[photo_id] = (
-                    None
-                    if is_primary and override is not None
-                    else evidence.confidences.get(category_key)
-                )
-                primary_flags[(*partition_key, photo_id)] = is_primary
-
-        for partition_key, partition_candidates in partitions.items():
-            event_id, category_key = partition_key
-            ranked_photos = rank_photos(
-                partition_candidates,
-                DEFAULT_CRITERION_WEIGHTS,
-                partition_confidences[partition_key],
-            )
-            for ranked_photo in ranked_photos:
-                session.add(
-                    PhotoRanking(
-                        criterion_scoring_run_id=run.id,
-                        photo_id=ranked_photo.photo_id,
-                        event_id=event_id,
-                        category_key=category_key,
-                        rank_score=ranked_photo.rank_score,
-                        rank_position=ranked_photo.rank_position,
-                        is_primary=primary_flags[(*partition_key, ranked_photo.photo_id)],
-                    )
-                )
+        await _build_grouping_and_rankings(session, run, project.id, candidate_values)
 
         run.status = ScanStatus.SUCCESS
         run.phase = None
@@ -2589,10 +2827,11 @@ async def reassign_photo_category(
     }
 
     def _confidence_for(row: PhotoRanking) -> object:
-        if row.is_primary and overrides_by_photo_id.get(row.photo_id) is not None:
-            return None
-        return evidence_by_photo_id.get(row.photo_id, NO_REMOTE_CATEGORY_EVIDENCE).confidences.get(
-            row.category_key
+        return _partition_confidence(
+            evidence_by_photo_id.get(row.photo_id, NO_REMOTE_CATEGORY_EVIDENCE),
+            row.category_key,
+            is_primary=row.is_primary,
+            category_override=overrides_by_photo_id.get(row.photo_id),
         )
 
     rows_by_category: dict[str, dict[int, PhotoRanking]] = {}

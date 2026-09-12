@@ -4,7 +4,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from photosort.api import auth, categories, opencloud, photos, projects, ratings, stats
+from photosort.api import auth, cameras, categories, opencloud, photos, projects, ratings, stats
 from photosort.config import settings
 from photosort.logging_config import configure_logging
 from photosort.rate_limit import limiter
@@ -62,6 +62,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(auth.router)
+    app.include_router(cameras.router)
     app.include_router(categories.router)
     app.include_router(opencloud.router)
     app.include_router(projects.router)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -29,6 +29,7 @@ from photosort.models import (
     PhotoRanking,
     PhotoScore,
     Project,
+    ProjectCamera,
     Rating,
     RatingStatus,
     RemoteCategoryClassificationRun,
@@ -154,6 +155,7 @@ async def _add_photo(
         etag=f"etag-{project.id}-{path}",
         content_length=content_length,
         taken_at=moment,
+        taken_at_original=moment,
         last_modified=moment,
     )
     session.add(photo)
@@ -509,6 +511,33 @@ class TestScopeAndStorage:
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
 
         assert payload["taken_at_earliest"] == payload["taken_at_latest"] == "2020-01-01T08:00:00"
+
+    async def test_the_range_follows_a_camera_offset_without_a_code_change(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """specs/features/0426-zeitversatz-je-kamera.md: `min`/`max` laufen in SQL ueber
+        `Photo.taken_at`, und das traegt seit ADR 0090 die KORRIGIERTE Zeit - der
+        Aufnahmezeitraum folgt dem Versatz ohne eine Zeile Codeaenderung. Der Datensatz ist so
+        gewaehlt, dass das Ergebnis mit der aufgezeichneten Zeit ANDERS ausfaellt: ohne Versatz
+        begaenne der Zeitraum um 10:00, mit ihm um 08:00."""
+        project = await _make_project(db_session, "Costa Rica")
+        camera = ProjectCamera(
+            project_id=project.id, make="Canon", model="EOS 5D", offset_minutes=-120
+        )
+        db_session.add(camera)
+        await db_session.commit()
+        await db_session.refresh(camera)
+        recorded = datetime(2019, 4, 2, 10)
+        shifted_photo = await _add_photo(db_session, project, "a.jpg", taken_at=recorded)
+        shifted_photo.camera_id = camera.id
+        shifted_photo.taken_at = recorded - timedelta(minutes=120)
+        await _add_photo(db_session, project, "b.jpg", taken_at=datetime(2019, 4, 19, 18))
+        await db_session.commit()
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        assert payload["taken_at_earliest"] == "2019-04-02T08:00:00"
+        assert payload["taken_at_latest"] == "2019-04-19T18:00:00"
 
     async def test_the_cache_measurement_feeds_storage_and_thumbnails_ready(
         self,

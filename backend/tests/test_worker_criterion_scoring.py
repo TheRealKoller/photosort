@@ -82,6 +82,7 @@ async def _add_photo(
         etag=etag,
         content_length=100,
         taken_at=taken_at,
+        taken_at_original=taken_at,
         last_modified=taken_at,
         gps_lat=gps_lat,
         gps_lon=gps_lon,

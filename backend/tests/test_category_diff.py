@@ -121,6 +121,7 @@ async def _make_photo(session: AsyncSession, project: Project, path: str) -> Pho
         etag=f"etag-{path}",
         content_length=100,
         taken_at=datetime(2023, 1, 1, tzinfo=UTC),
+        taken_at_original=datetime(2023, 1, 1, tzinfo=UTC),
         last_modified=datetime(2023, 1, 1, tzinfo=UTC),
     )
     session.add(photo)

@@ -95,6 +95,11 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     // specs/architecture/0002-testkonzept.md) - die Fixture spiegelte das reale Format zuvor
     // fälschlich mit `Z` wider.
     taken_at: '2026-07-20T10:00:00',
+    // Spec 0426: `taken_at` traegt die WIRKSAME Zeit. Die Fixture ist unkorrigiert - beide
+    // Zeiten gleich, Versatz `0`, keine Kamera.
+    taken_at_original: '2026-07-20T10:00:00',
+    time_offset_minutes: 0,
+    camera: null,
     ratings: [],
     suggestion: null,
     rankings: [ranking()],

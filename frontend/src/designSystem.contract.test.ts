@@ -1668,6 +1668,30 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Auswahlfeld: ersetztes Element, zugleich heisser Pfad der Kategorie-Zuordnung',
     },
     {
+      file: 'src/components/CameraTimeOffsetDialog.tsx',
+      snippet: '<label key={option} className="flex min-h-11 items-center gap-2">',
+      reason:
+        'Richtungswahl des Versatz-Dialogs: Radio-Eingabe samt Beschriftung - dieselbe ' +
+        'Begruendung wie beim Kontrollkaestchen (ersetztes Element ohne Pseudo-Element)',
+    },
+    {
+      file: 'src/components/CameraTimeOffsetDialog.tsx',
+      snippet: 'className="h-11 w-full rounded-sm border border-border-control bg-surface px-3',
+      reason: 'Auswahlfeld der Referenzkamera: ersetztes Element ohne Pseudo-Element',
+    },
+    {
+      file: 'src/pages/ProjectSettingsPage.tsx',
+      snippet: '<Skeleton className="h-11 w-full rounded-lg" />',
+      reason:
+        'Platzhalter einer Kamerazeile: dieselbe Zeilenhoehe wie die spaetere echte Zeile - ' +
+        'ein niedrigerer Platzhalter liesse die Liste beim Eintreffen der Daten springen',
+    },
+    {
+      file: 'src/pages/ProjectSettingsPage.tsx',
+      snippet: 'className="flex min-h-11 flex-wrap items-center justify-between gap-3',
+      reason: 'Kamerazeile: Zeilenhoehe einer zeilenweisen Liste',
+    },
+    {
       file: 'src/pages/CurateCategoriesPage.tsx',
       snippet: 'h-auto min-h-11 w-full justify-start',
       reason: 'Aufklapp-Zeile der Kuratierung: Zeilenhoehe einer zeilenweisen Liste',

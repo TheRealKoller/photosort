@@ -70,6 +70,7 @@ async def _add_photo(
         etag=etag,
         content_length=10,
         taken_at=moment,
+        taken_at_original=moment,
         last_modified=moment,
     )
     session.add(photo)

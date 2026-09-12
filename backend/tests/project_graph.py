@@ -33,6 +33,7 @@ from photosort.models import (
     PhotoRanking,
     PhotoScore,
     Project,
+    ProjectCamera,
     Rating,
     RatingStatus,
     RemoteCategoryClassificationRun,
@@ -57,6 +58,7 @@ class ProjectGraph:
     remote_run_id: int
     fine_label_id: int
     event_id: int
+    camera_id: int
 
 
 async def get_or_create_user(session: AsyncSession, username: str = "graph-user") -> User:
@@ -92,7 +94,7 @@ async def get_or_create_fine_label(
 async def build_project_graph(
     session: AsyncSession, name: str, *, fine_label_key: str = "strand"
 ) -> ProjectGraph:
-    """Legt ein Projekt mit genau einer Zeile in jeder der vierzehn abhaengigen Tabellen an."""
+    """Legt ein Projekt mit genau einer Zeile in jeder der fuenfzehn abhaengigen Tabellen an."""
     now = datetime.now(UTC).replace(tzinfo=None)
     user = await get_or_create_user(session)
     fine_label = await get_or_create_fine_label(session, fine_label_key)
@@ -103,12 +105,23 @@ async def build_project_graph(
     session.add(project)
     await session.flush()
 
+    # specs/features/0426-zeitversatz-je-kamera.md, Umsetzungsschritt 1: die Kamerazeile steht
+    # ZWISCHEN Projekt und Foto und wird deshalb vor ihm angelegt und von ihm referenziert - ohne
+    # diese Verknuepfung pruefte kein Vollstaendigkeitstest der Suite die neue Kante
+    # `photos -> project_cameras -> projects`.
+    camera = ProjectCamera(project_id=project.id, make="Canon", model="EOS 5D")
+    session.add(camera)
+    await session.flush()
+
     photo = Photo(
         project_id=project.id,
         relative_path=f"{name}/img001.jpg",
         etag=f"etag-{name}",
         content_length=1234,
         taken_at=now,
+        taken_at_original=now,
+        camera_id=camera.id,
+        camera_probed=True,
         last_modified=now,
     )
     scan_run = ScanRun(project_id=project.id, status=ScanStatus.SUCCESS)
@@ -202,6 +215,7 @@ async def build_project_graph(
         remote_run_id=remote_run.id,
         fine_label_id=fine_label.id,
         event_id=event.id,
+        camera_id=camera.id,
     )
 
 

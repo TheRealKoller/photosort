@@ -536,6 +536,7 @@ async def test_delete_project_removes_rows_of_all_dependent_tables(
     assert await count_rows(db_session, "photo_fine_labels") == 0
     assert await count_rows(db_session, "photo_category_classifications") == 0
     assert await count_rows(db_session, "photo_cloud_vision_errors") == 0
+    assert await count_rows(db_session, "project_cameras") == 0
     assert await count_rows(db_session, "projects") == 0
 
 
@@ -856,6 +857,7 @@ async def test_delete_project_keeps_204_and_continues_after_a_cache_unlink_error
         etag="etag-zwei",
         content_length=99,
         taken_at=datetime.now(UTC).replace(tzinfo=None),
+        taken_at_original=datetime.now(UTC).replace(tzinfo=None),
         last_modified=datetime.now(UTC).replace(tzinfo=None),
     )
     db_session.add(second)
@@ -1435,6 +1437,7 @@ class TestTheRunEstimateReachesTheJob:
                 etag=f"etag-{index}",
                 content_length=1,
                 taken_at=now,
+                taken_at_original=now,
                 last_modified=now,
             )
             session.add(photo)

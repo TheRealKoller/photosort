@@ -26,6 +26,7 @@ from photosort.models import (
     PhotoRanking,
     PhotoScore,
     Project,
+    ProjectCamera,
     Rating,
     RatingStatus,
     ScanStatus,
@@ -53,6 +54,7 @@ async def _make_photo(
         etag="etag-1",
         content_length=100,
         taken_at=taken_at,
+        taken_at_original=taken_at,
         last_modified=taken_at,
     )
     session.add(photo)
@@ -2869,6 +2871,7 @@ async def _make_photo_at(
         etag=f"etag-{path}",
         content_length=100,
         taken_at=taken_at,
+        taken_at_original=taken_at,
         last_modified=taken_at,
         gps_lat=None if gps is None else gps[0],
         gps_lon=None if gps is None else gps[1],
@@ -2926,6 +2929,11 @@ _EIFFEL_40_M = (48.858450, 2.294694)
 # wie der Eiffelturm: 500 m Trennabstand und ~1,1 km Rundungsraster sind bewusst verschieden grob.
 # Fuer die Nachbarschaftstests der Herleitung ist genau das richtig; fuer "Mehrere Orte" nicht.
 _TROCADERO = (48.862000, 2.288500)
+# Ein Ort auf einem ANDEREN Kontinent (Sydney). Fuer den Nachweis der Ortsuebernahme unter einem
+# gesetzten Versatz ist genau diese Weite richtig: erbt ein Kamerafoto den falschen Anker, ist das
+# Ergebnis unuebersehbar falsch und nicht bloss um ein paar Meter verschoben - dieselbe Deutlichkeit,
+# die der Zielabsatz der Spec beschreibt ("der Ort eines ganz anderen Moments").
+_SYDNEY = (-33.856800, 151.215300)
 # Louvre - eine tatsaechlich ANDERE gerundete Stelle (48.86, 2.34 statt 48.86, 2.29). Der
 # Unterschied zu _TROCADERO ist der eigentliche Testgegenstand des "multiple"-Falls: dort wird die
 # GERUNDETE Stelle verglichen, nicht der Rohwert.
@@ -3001,6 +3009,70 @@ class TestPhotoLocationAndClusterPlace:
 
         items = {item["id"]: item for item in response.json()["items"]}
         assert items[blind.id]["location"]["lat"] == _TROCADERO[0]
+        assert items[blind.id]["location"]["source"] == "derived"
+
+    # specs/features/0426-zeitversatz-je-kamera.md, Akzeptanzkriterium 5: die ORTSUEBERNAHME ist
+    # die vierte Lesestelle der Aufnahmezeit und braucht ihren eigenen Nachweis an einem
+    # Datensatz, dessen Ergebnis mit gesetztem Versatz ANDERS ausfaellt als mit der
+    # aufgezeichneten Zeit.
+    #
+    # Gefuehrt wird der Nachweis am AUFRUFER, nicht an `infer_locations`: die reine Funktion
+    # kennt den Versatz nicht: sie bekommt `taken_at` uebergeben. Die Entscheidung, WELCHE
+    # Spalte die Inferenzbasis speist, liegt hier (`_event_and_location_by_photo_id`) und in
+    # `worker.py::_build_grouping_and_rankings` - genau dort waere ein Umbau auf
+    # `taken_at_original` plausibel formuliert und fachlich falsch.
+    async def _inheritance_fixture(
+        self, db_session: AsyncSession, *, offset_minutes: int
+    ) -> tuple[Project, Photo]:
+        """Zwei Anker mit VERSCHIEDENEN Koordinaten und ein Kamerafoto ohne eigene Koordinate,
+        dessen zeitlich naechster Anker vom Versatz abhaengt.
+
+        Aufgezeichnet 10:00 - naechster Anker ist der um 09:00 (eine Stunde gegen vier). Mit
+        +180 Minuten liegt die wirksame Zeit auf 13:00 - naechster Anker ist der um 13:00."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        camera = await _make_camera(
+            db_session, project, "Canon", "EOS 5D", offset_minutes=offset_minutes
+        )
+        early = await _make_photo_at(
+            db_session, project, "frueh.jpg", datetime(2023, 1, 1, 9, 0), gps=_EIFFEL
+        )
+        late = await _make_photo_at(
+            db_session, project, "spaet.jpg", datetime(2023, 1, 1, 13, 0), gps=_SYDNEY
+        )
+        blind = await _make_photo_of_camera(
+            db_session, project, "kamera.jpg", datetime(2023, 1, 1, 10, 0), camera
+        )
+        for index, photo in enumerate((early, blind, late), start=1):
+            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
+        return project, blind
+
+    async def test_without_an_offset_the_camera_photo_inherits_the_earlier_anchor(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, blind = await self._inheritance_fixture(db_session, offset_minutes=0)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[blind.id]["location"]["lat"] == _EIFFEL[0]
+        assert items[blind.id]["location"]["source"] == "derived"
+
+    async def test_an_offset_switches_the_inherited_place_to_the_other_anchor(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """DER Defekt, den die Story behebt (Zielabsatz): ein Kamerafoto ohne eigenen Ort erbt bei
+        falsch gehender Uhr den Ort eines ganz anderen Moments. Faellt dieser Fall weg, kann ein
+        Umbau die Inferenzbasis auf `taken_at_original` umstellen, ohne dass ein Test roetet."""
+        project, blind = await self._inheritance_fixture(db_session, offset_minutes=180)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        # Mit der AUFGEZEICHNETEN Zeit (10:00) waere es der Eiffelturm-Anker - der Unterschied
+        # zwischen beiden Faellen ist ausschliesslich der Versatz.
+        assert items[blind.id]["location"]["lat"] == _SYDNEY[0]
+        assert items[blind.id]["location"]["lon"] == _SYDNEY[1]
         assert items[blind.id]["location"]["source"] == "derived"
 
     async def test_an_exactly_equidistant_neighbour_is_resolved_towards_the_earlier_one(
@@ -3872,3 +3944,188 @@ class TestCurationCandidatesEventId:
 
         assert response.status_code == 200
         assert response.json() == {"items": [], "total": 0}
+
+
+# ---------------------------------------------------------------------------------------------
+# specs/features/0426-zeitversatz-je-kamera.md, Umsetzungsschritt 7: die drei neuen
+# PhotoOut-Felder und der camera_id-Filter. `taken_at` liefert ab hier die KORRIGIERTE Zeit -
+# derselbe Feldname, neue Bedeutung (ADR 0090, Punkt 1).
+
+
+async def _make_camera(
+    session: AsyncSession, project: Project, make: str, model: str, *, offset_minutes: int = 0
+) -> ProjectCamera:
+    camera = ProjectCamera(
+        project_id=project.id, make=make, model=model, offset_minutes=offset_minutes
+    )
+    session.add(camera)
+    await session.commit()
+    await session.refresh(camera)
+    return camera
+
+
+async def _make_photo_of_camera(
+    session: AsyncSession,
+    project: Project,
+    path: str,
+    taken_at_original: datetime,
+    camera: ProjectCamera | None,
+) -> Photo:
+    offset = 0 if camera is None else camera.offset_minutes
+    photo = Photo(
+        project_id=project.id,
+        relative_path=path,
+        etag=f"etag-{path}",
+        content_length=100,
+        taken_at=taken_at_original + timedelta(minutes=offset),
+        taken_at_original=taken_at_original,
+        camera_id=None if camera is None else camera.id,
+        camera_probed=True,
+        last_modified=taken_at_original,
+    )
+    session.add(photo)
+    await session.commit()
+    await session.refresh(photo)
+    return photo
+
+
+class TestTheCorrectedTimeInThePhotoResponse:
+    async def test_a_corrected_photo_carries_all_three_fields(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        camera = await _make_camera(db_session, project, "Canon", "EOS 5D", offset_minutes=-120)
+        recorded = datetime(2026, 8, 12, 14, 32)
+        await _make_photo_of_camera(db_session, project, "a.jpg", recorded, camera)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        item = response.json()["items"][0]
+        assert item["taken_at"] == (recorded - timedelta(minutes=120)).isoformat()
+        assert item["taken_at_original"] == recorded.isoformat()
+        assert item["time_offset_minutes"] == -120
+        assert item["camera"] == {"id": camera.id, "label": "Canon EOS 5D"}
+
+    async def test_an_uncorrected_photo_reports_offset_zero(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """`0` heisst "nicht korrigiert" - die Oberflaeche zeigt dann weder Kennzeichnung noch
+        zweite Zeile."""
+        project = await _make_project(db_session)
+        camera = await _make_camera(db_session, project, "Canon", "EOS 5D")
+        recorded = datetime(2026, 8, 12, 14, 32)
+        await _make_photo_of_camera(db_session, project, "a.jpg", recorded, camera)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        item = response.json()["items"][0]
+        assert item["time_offset_minutes"] == 0
+        assert item["taken_at"] == item["taken_at_original"] == recorded.isoformat()
+
+    async def test_a_photo_without_a_determinable_camera_reports_null_and_zero(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        recorded = datetime(2026, 8, 12, 14, 32)
+        await _make_photo_of_camera(db_session, project, "a.jpg", recorded, None)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        item = response.json()["items"][0]
+        assert item["camera"] is None
+        assert item["time_offset_minutes"] == 0
+        assert item["taken_at"] == item["taken_at_original"] == recorded.isoformat()
+
+    async def test_the_sql_ordering_follows_the_corrected_time(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Sortierung liegt in SQL ueber `Photo.taken_at` und aendert sich damit OHNE eine
+        Zeile Codeaenderung, sobald ein Versatz gesetzt ist."""
+        project = await _make_project(db_session)
+        camera = await _make_camera(db_session, project, "Canon", "EOS 5D", offset_minutes=-180)
+        # Aufgezeichnet SPAETER, wirksam FRUEHER als das kameralose Foto.
+        await _make_photo_of_camera(
+            db_session, project, "kamera.jpg", datetime(2026, 8, 12, 14, 0), camera
+        )
+        await _make_photo_of_camera(
+            db_session, project, "handy.jpg", datetime(2026, 8, 12, 13, 0), None
+        )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert [item["relative_path"] for item in response.json()["items"]] == [
+            "kamera.jpg",
+            "handy.jpg",
+        ]
+
+
+class TestTheCameraFilter:
+    async def test_it_returns_only_the_photos_of_that_camera(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        canon = await _make_camera(db_session, project, "Canon", "EOS 5D")
+        phone = await _make_camera(db_session, project, "Apple", "iPhone 15")
+        recorded = datetime(2026, 8, 12, 14, 32)
+        await _make_photo_of_camera(db_session, project, "a.jpg", recorded, canon)
+        await _make_photo_of_camera(db_session, project, "b.jpg", recorded, phone)
+        await _make_photo_of_camera(db_session, project, "c.jpg", recorded, None)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"camera_id": canon.id}
+        )
+
+        assert response.status_code == 200
+        assert [item["relative_path"] for item in response.json()["items"]] == ["a.jpg"]
+        assert response.json()["total"] == 1
+
+    async def test_a_camera_of_another_project_yields_an_empty_list(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SICHERHEIT: `camera_id` ist ein weiteres PRAEDIKAT neben `Photo.project_id`, nie eine
+        vorgeschaltete Aufloesung - eine fremde Id trifft damit kein Foto, statt die Fotos des
+        fremden Projekts zu listen."""
+        project = await _make_project(db_session, "Costa Rica")
+        other = await _make_project(db_session, "Norwegen")
+        foreign = await _make_camera(db_session, other, "Canon", "EOS 5D")
+        recorded = datetime(2026, 8, 12, 14, 32)
+        await _make_photo_of_camera(db_session, other, "b.jpg", recorded, foreign)
+        await _make_photo_of_camera(db_session, project, "a.jpg", recorded, None)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"camera_id": foreign.id}
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"items": [], "total": 0}
+
+    @pytest.mark.parametrize("camera_id", [0, -1, 2_000_000_000])
+    async def test_an_out_of_range_camera_id_is_rejected_by_validation(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        camera_id: int,
+    ) -> None:
+        project = await _make_project(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"camera_id": camera_id}
+        )
+
+        assert response.status_code == 422
+
+    async def test_the_camera_is_loaded_in_one_query_regardless_of_the_photo_count(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        camera = await _make_camera(db_session, project, "Canon", "EOS 5D")
+        recorded = datetime(2026, 8, 12, 14, 32)
+        for index in range(6):
+            await _make_photo_of_camera(db_session, project, f"p{index}.jpg", recorded, camera)
+
+        with _recorded_select_statements() as statements:
+            response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.status_code == 200
+        camera_selects = [s for s in statements if "project_cameras" in s.lower()]
+        assert len(camera_selects) == 1, camera_selects

@@ -1,4 +1,6 @@
+import ast
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -7,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
+import photosort
 from photosort.models import (
     ClassificationPhase,
     CloudVisionPhase,
@@ -22,6 +25,7 @@ from photosort.models import (
     PhotoRanking,
     PhotoScore,
     Project,
+    ProjectCamera,
     Rating,
     RatingStatus,
     RemoteCategoryClassificationRun,
@@ -67,6 +71,7 @@ async def test_photo_unique_per_project_and_path(db_session: AsyncSession) -> No
             etag="etag-1",
             content_length=123,
             taken_at=now,
+            taken_at_original=now,
             last_modified=now,
         )
     )
@@ -79,6 +84,7 @@ async def test_photo_unique_per_project_and_path(db_session: AsyncSession) -> No
             etag="etag-2",
             content_length=456,
             taken_at=now,
+            taken_at_original=now,
             last_modified=now,
         )
     )
@@ -162,6 +168,7 @@ async def _make_photo_and_user(db_session: AsyncSession) -> tuple[Photo, User]:
         etag="etag-1",
         content_length=123,
         taken_at=now,
+        taken_at_original=now,
         last_modified=now,
     )
     user = User(username="daniel", password_hash="hashed-value")
@@ -219,6 +226,7 @@ async def _make_photo(db_session: AsyncSession, project: Project | None = None) 
         etag="etag-1",
         content_length=123,
         taken_at=now,
+        taken_at_original=now,
         last_modified=now,
     )
     db_session.add(photo)
@@ -1404,3 +1412,258 @@ def test_every_classification_phase_value_fits_the_column_length() -> None:
     column_length = CriterionScoringRun.__table__.c.phase.type.length
     assert column_length == 20
     assert max(len(phase.value) for phase in ClassificationPhase) <= column_length
+
+
+# specs/features/0426-zeitversatz-je-kamera.md / decisions/0090 - die projekteigene Kamerazeile
+# und die drei neuen photos-Spalten.
+
+
+async def _project(session: AsyncSession, name: str = "Costa Rica") -> Project:
+    project = Project(name=name, opencloud_drive_id="drive-1", opencloud_path=f"/{name}")
+    session.add(project)
+    await session.flush()
+    return project
+
+
+async def test_a_new_project_camera_starts_without_an_offset(db_session: AsyncSession) -> None:
+    """Eine Kamera ohne je gesetzten Wert hat den Versatz `0` - auch eine, die erst bei einem
+    spaeteren Scan hinzukommt."""
+    project = await _project(db_session)
+    camera = ProjectCamera(project_id=project.id, make="Canon", model="EOS 5D")
+    db_session.add(camera)
+    await db_session.flush()
+    await db_session.refresh(camera)
+
+    assert camera.offset_minutes == 0
+
+
+async def test_the_same_make_and_model_may_not_repeat_within_one_project(
+    db_session: AsyncSession,
+) -> None:
+    project = await _project(db_session)
+    db_session.add(ProjectCamera(project_id=project.id, make="Canon", model="EOS 5D"))
+    await db_session.flush()
+    db_session.add(ProjectCamera(project_id=project.id, make="Canon", model="EOS 5D"))
+
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_the_same_camera_may_exist_once_per_project(db_session: AsyncSession) -> None:
+    """Der Kern von ADR 0090, Punkt 2: dieselbe Kamera in zwei Projekten sind ZWEI Zeilen mit
+    getrennten Versaetzen - "der Versatz gilt nur in diesem Projekt" ist damit strukturell wahr."""
+    first = await _project(db_session, "Costa Rica")
+    second = await _project(db_session, "Norwegen")
+    db_session.add_all(
+        [
+            ProjectCamera(project_id=first.id, make="Canon", model="EOS 5D", offset_minutes=-120),
+            ProjectCamera(project_id=second.id, make="Canon", model="EOS 5D"),
+        ]
+    )
+    await db_session.flush()
+
+    offsets = (
+        await db_session.execute(
+            select(ProjectCamera.project_id, ProjectCamera.offset_minutes).order_by(
+                ProjectCamera.project_id
+            )
+        )
+    ).all()
+
+    assert offsets == [(first.id, -120), (second.id, 0)]
+
+
+async def test_deleting_a_project_cascades_to_its_cameras(db_session: AsyncSession) -> None:
+    project = await _project(db_session)
+    db_session.add(ProjectCamera(project_id=project.id, make="Canon", model="EOS 5D"))
+    await db_session.flush()
+
+    await db_session.delete(project)
+    await db_session.flush()
+
+    assert (
+        await db_session.execute(select(func.count()).select_from(ProjectCamera.__table__))
+    ).scalar_one() == 0
+
+
+async def test_a_photo_without_a_camera_is_a_regular_state(db_session: AsyncSession) -> None:
+    """`camera_id IS NULL` heisst "Kamera nicht bestimmbar" und ist kein Fehler; `camera_probed`
+    faellt ohne Angabe auf `False`."""
+    project = await _project(db_session)
+    now = datetime.now(UTC).replace(tzinfo=None)
+    photo = Photo(
+        project_id=project.id,
+        relative_path="img001.jpg",
+        etag="etag-1",
+        content_length=100,
+        taken_at=now,
+        taken_at_original=now,
+        last_modified=now,
+    )
+    db_session.add(photo)
+    await db_session.flush()
+    await db_session.refresh(photo)
+
+    assert photo.camera_id is None
+    assert photo.camera_probed is False
+
+
+async def test_the_probed_marker_carries_the_same_server_default_as_the_migration(
+    db_session: AsyncSession,
+) -> None:
+    """Die MODELLSEITE des `server_default` - die Migrationsseite steht im Postgres-Renderpfad
+    (`test_postgres_ddl_compatibility.py`). Zwei Artefakte, zwei Assertions: fehlt diese hier,
+    bleibt alles gruen und der erste Schreibpfad, der die Spalte nicht nennt, bricht produktiv.
+
+    Geprueft wird gegen das aus `Base.metadata` erzeugte Schema, also mit einem `INSERT`, der die
+    Spalte ausdruecklich NICHT nennt."""
+    assert Photo.__table__.c.camera_probed.server_default is not None
+
+    project = await _project(db_session)
+    now = datetime.now(UTC).replace(tzinfo=None)
+    await db_session.execute(
+        Photo.__table__.insert().values(
+            project_id=project.id,
+            relative_path="img001.jpg",
+            etag="etag-1",
+            content_length=100,
+            taken_at=now,
+            taken_at_original=now,
+            last_modified=now,
+        )
+    )
+
+    probed = (
+        await db_session.execute(select(Photo.camera_probed).where(Photo.project_id == project.id))
+    ).scalar_one()
+
+    assert probed is False
+
+
+async def test_the_recorded_time_has_no_default_and_must_be_written_explicitly(
+    db_session: AsyncSession,
+) -> None:
+    """`taken_at_original` ist die EINZIGE Kopie der aufgezeichneten Zeit, und ein unveraendertes
+    Foto wird nie wieder aus EXIF gelesen. Ein Schreibpfad, der die Spalte vergisst, muss deshalb
+    LAUT an der NOT-NULL-Bedingung scheitern statt still einen falschen Wert zu erben - genau
+    dafuer traegt sie weder Python- noch server-seitig einen Default."""
+    assert Photo.__table__.c.taken_at_original.server_default is None
+    assert not Photo.__table__.c.taken_at_original.nullable
+
+    project = await _project(db_session)
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            Photo.__table__.insert().values(
+                project_id=project.id,
+                relative_path="img001.jpg",
+                etag="etag-1",
+                content_length=100,
+                taken_at=now,
+                last_modified=now,
+            )
+        )
+
+
+# Die beiden - und nur die beiden - Schreibstellen auf `Photo.taken_at` (ADR 0090, Punkt 1).
+_ALLOWED_TAKEN_AT_WRITERS = frozenset({"worker.py", "api/cameras.py"})
+
+_TAKEN_AT = "taken_at"
+
+
+def _writes_taken_at(source: str) -> bool:
+    """Ob dieses Modul `taken_at` einer BESTEHENDEN Zeile schreibt - ueber den Syntaxbaum, nicht
+    ueber ein Suchmuster.
+
+    DREI Schreibformen, weil die beiden erlaubten Stellen zwei VERSCHIEDENE benutzen und die
+    dritte im Projekt naheliegt:
+
+    1. Attributzuweisung `photo.taken_at = ...` (`worker.py::_process_scan_block`).
+    2. `taken_at` als Schluessel eines Dict-Literals - die Form des gebuendelten Bulk-Updates
+       `session.execute(update(Photo), [{"id": ..., "taken_at": ...}])` (`api/cameras.py`).
+    3. `taken_at` als Schluesselwort eines `.values(...)`-Aufrufs - die dritte im Projekt
+       naheliegende Form fuer ein Massenupdate, heute an keiner Stelle verwendet.
+
+    AUSDRUECKLICH NICHT gezaehlt wird das Konstruktor-Schluesselwort `Photo(taken_at=...)`: eine
+    neu angelegte Zeile setzt beide Zeitwerte gemeinsam, und `taken_at_original` ist NOT NULL ohne
+    Default - ein Anlegen ohne beide Werte scheitert laut. Die gefaehrliche Handlung ist das
+    VERSCHIEBEN einer bestehenden Zeile.
+
+    BEKANNTE GRENZE: Ein dynamisch gebauter Spaltenname (`{spalte: wert}` mit `spalte` als
+    Variable) ist statisch nicht erkennbar. Dagegen steht `assert_time_offset_invariant` in den
+    Verhaltenstests, nicht dieser Waechter."""
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Assign | ast.AugAssign | ast.AnnAssign):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Attribute) and target.attr == _TAKEN_AT:
+                    return True
+        elif isinstance(node, ast.Dict):
+            for key in node.keys:
+                if isinstance(key, ast.Constant) and key.value == _TAKEN_AT:
+                    return True
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "values" and any(
+                keyword.arg == _TAKEN_AT for keyword in node.keywords
+            ):
+                return True
+    return False
+
+
+def test_exactly_the_two_known_modules_write_taken_at() -> None:
+    """STRUKTURELLER Waechter, kein Verhaltenstest: Die Invariante
+    `taken_at == taken_at_original + offset_minutes` haengt daran, dass es GENAU ZWEI
+    Schreibstellen gibt, beide ueber `cameras.py::shifted`. Eine dritte Schreibstelle roetet
+    KEINEN Verhaltenstest, solange sie den Wert irgendwie setzt - sie faellt nur hier auf, und
+    `assert_time_offset_invariant` laeuft nur in Faellen, die eine neue Stelle nicht kennen.
+
+    Geprueft wird GLEICHHEIT, nicht Teilmenge, und das ist der Kern des Selbstschutzes: Findet der
+    Waechter eine der erlaubten Stellen NICHT mehr, prueft er fuer sie nichts - genau so blieb er
+    zuvor gruen, obwohl er die Bulk-Update-Form von `api/cameras.py` gar nicht sah. Wer eine
+    Schreibstelle absichtlich entfernt, zieht die Liste bewusst nach."""
+    source_root = Path(photosort.__file__).resolve().parent
+    writers = {
+        str(path.relative_to(source_root))
+        for path in source_root.rglob("*.py")
+        if _writes_taken_at(path.read_text(encoding="utf-8"))
+    }
+
+    assert writers == set(_ALLOWED_TAKEN_AT_WRITERS), (
+        "Die Menge der Module, die `Photo.taken_at` schreiben, weicht von den genau zwei "
+        f"erlaubten ab ({sorted(_ALLOWED_TAKEN_AT_WRITERS)}). Zu viel: "
+        f"{sorted(writers - set(_ALLOWED_TAKEN_AT_WRITERS))}; nicht mehr gefunden: "
+        f"{sorted(set(_ALLOWED_TAKEN_AT_WRITERS) - writers)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        pytest.param("photo.taken_at = corrected", id="attributzuweisung"),
+        pytest.param('rows.append({"id": 1, "taken_at": corrected})', id="dict-schluessel"),
+        pytest.param(
+            "session.execute(update(Photo).values(taken_at=corrected))", id="values-aufruf"
+        ),
+    ],
+)
+def test_the_guard_sees_every_write_form_it_claims_to_cover(snippet: str) -> None:
+    """Selbstschutz zum Selbstschutz: Der Waechter oben ist nur so gut wie die Formen, die er
+    tatsaechlich erkennt - und genau daran ist er zuvor gescheitert. Jede der drei Formen wird
+    hier einzeln nachgewiesen, statt sich darauf zu verlassen, dass der Bestand sie alle
+    enthaelt (er enthaelt die `values()`-Form nicht)."""
+    assert _writes_taken_at(snippet)
+
+
+def test_the_guard_ignores_a_constructor_keyword() -> None:
+    """Die Gegenprobe zur Abgrenzung: ein ANLEGEN ist keine Schreibstelle im Sinne der
+    Invariante - sonst waere `demo_state.py` ein Befund, obwohl es beide Zeitwerte gemeinsam
+    setzt."""
+    assert not _writes_taken_at("photo = Photo(taken_at=now, taken_at_original=now)")
+
+
+def test_the_guard_ignores_reading_the_column() -> None:
+    """Zweite Gegenprobe: das LESEN der Spalte (Sortierung, Auswahl, Vergleich) ist der
+    Regelfall und darf nie als Schreibstelle zaehlen."""
+    assert not _writes_taken_at("select(Photo.id).order_by(Photo.taken_at)")
+    assert not _writes_taken_at("if photo.taken_at == other.taken_at_original: pass")

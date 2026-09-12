@@ -1,18 +1,23 @@
 import asyncio
+import logging
 import os
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
-from datetime import UTC, datetime
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, func, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import worker
 from photosort.cache_cleanup import CACHE_CLEANUP_GRACE_SECONDS
+from photosort.cameras import MAX_TIME_OFFSET_MINUTES
 from photosort.db import make_session_factory
-from photosort.models import Photo, Project, ScanRun, ScanStatus
+from photosort.models import Photo, Project, ProjectCamera, ScanRun, ScanStatus
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.thumbnails import (
@@ -22,6 +27,7 @@ from photosort.thumbnails import (
     thumbnail_path,
 )
 from photosort.worker import run_project_scan
+from tests.time_offset_invariant import assert_time_offset_invariant
 
 DRIVE = Drive(
     id="drive-1",
@@ -222,6 +228,7 @@ async def test_scan_updates_photo_on_etag_change(db_session: AsyncSession, tmp_p
             etag="old-etag",
             content_length=10,
             taken_at=modified,
+            taken_at_original=modified,
             last_modified=modified,
         )
     )
@@ -254,6 +261,11 @@ async def test_scan_skips_photo_with_unchanged_etag(
             etag="same-etag",
             content_length=10,
             taken_at=modified,
+            taken_at_original=modified,
+            # Seit specs/features/0426 ist der Merker Teil der Skip-Bedingung: nur ein bereits
+            # auf die Kamera GEPRUEFTES Foto wird uebersprungen. Ohne ihn greift die einmalige
+            # Nachhol-Runde (eigene Faelle weiter unten).
+            camera_probed=True,
             last_modified=modified,
         )
     )
@@ -285,6 +297,7 @@ async def test_scan_removes_photos_no_longer_present(
             etag="etag",
             content_length=10,
             taken_at=modified,
+            taken_at_original=modified,
             last_modified=modified,
         )
     )
@@ -590,6 +603,7 @@ async def test_scan_regenerates_thumbnails_when_etag_changes(
             etag="old-etag",
             content_length=10,
             taken_at=modified,
+            taken_at_original=modified,
             last_modified=modified,
         )
     )
@@ -1013,6 +1027,7 @@ async def test_scan_resets_a_stored_coordinate_when_the_changed_file_no_longer_c
             etag="old-etag",
             content_length=10,
             taken_at=modified.replace(tzinfo=None),
+            taken_at_original=modified.replace(tzinfo=None),
             gps_lat=48.858080555555556,
             gps_lon=2.2946944444444446,
             last_modified=modified.replace(tzinfo=None),
@@ -1048,6 +1063,7 @@ async def test_scan_replaces_a_stored_coordinate_when_the_changed_file_carries_a
             etag="old-etag",
             content_length=10,
             taken_at=modified.replace(tzinfo=None),
+            taken_at_original=modified.replace(tzinfo=None),
             gps_lat=-33.8568,
             gps_lon=151.2153,
             last_modified=modified.replace(tzinfo=None),
@@ -1170,6 +1186,7 @@ async def _make_second_project_with_photo(
         etag="etag-b",
         content_length=10,
         taken_at=moment,
+        taken_at_original=moment,
         last_modified=moment,
     )
     session.add(photo)
@@ -1234,6 +1251,7 @@ async def test_cache_files_of_a_photo_removed_during_the_scan_go_in_the_same_run
         etag="etag-weg",
         content_length=10,
         taken_at=modified,
+        taken_at_original=modified,
         last_modified=modified,
     )
     db_session.add(photo)
@@ -1263,6 +1281,7 @@ async def test_cache_files_under_the_previous_etag_go_after_an_etag_change(
         etag="old-etag",
         content_length=10,
         taken_at=modified,
+        taken_at_original=modified,
         last_modified=modified,
     )
     db_session.add(photo)
@@ -1443,3 +1462,406 @@ async def test_the_directory_matches_the_reported_storage_after_a_scan(
     on_disk = sum(path.stat().st_size for path in tmp_path.iterdir() if path.is_file())
 
     assert on_disk == reported.total_bytes
+
+
+# ---------------------------------------------------------------------------------------------
+# specs/features/0426-zeitversatz-je-kamera.md, Umsetzungsschritt 4: der Scan ist die ERSTE der
+# zwei Schreibstellen der Invariante `taken_at == taken_at_original + offset_minutes`
+# (ADR 0090, Punkt 1). `assert_time_offset_invariant` laeuft als Nachsatz jedes Falls, der hier
+# Fotos schreibt.
+
+
+def _jpeg_with_camera(
+    make: str | None = "Canon",
+    model: str | None = "EOS 5D",
+    taken_at: str | None = "2026:08:12 14:32:00",
+) -> bytes:
+    """Ein JPEG, dessen Basis-IFD die uebergebenen Kamera-Tags traegt (271/272) und dessen
+    Exif-IFD den Aufnahmezeitpunkt."""
+    import io
+
+    from PIL import Image
+    from PIL.ExifTags import IFD
+
+    image = Image.new("RGB", (20, 10), color="blue")
+    exif = image.getexif()
+    if make is not None:
+        exif[271] = make
+    if model is not None:
+        exif[272] = model
+    if taken_at is not None:
+        exif.get_ifd(IFD.Exif)[36867] = taken_at
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", exif=exif)
+    return buffer.getvalue()
+
+
+_EXIF_TAKEN_AT = datetime(2026, 8, 12, 14, 32, 0)
+
+
+async def test_scan_writes_camera_recorded_time_and_corrected_time(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Eine NEU auftauchende Kamera beginnt bei `0` - beide Zeiten sind dann gleich."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_with_camera()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    camera = (await db_session.execute(select(ProjectCamera))).scalar_one()
+    assert (camera.make, camera.model, camera.offset_minutes) == ("Canon", "EOS 5D", 0)
+    assert photo.camera_id == camera.id
+    assert photo.camera_probed is True
+    assert photo.taken_at_original == _EXIF_TAKEN_AT
+    assert photo.taken_at == _EXIF_TAKEN_AT
+    await assert_time_offset_invariant(db_session, project.id)
+
+
+async def test_scan_applies_an_existing_offset_to_the_corrected_time(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der Versatz steht schon, das Foto kommt neu hinzu: `taken_at` traegt die KORRIGIERTE Zeit,
+    `taken_at_original` die aufgezeichnete."""
+    project = await _make_project(db_session)
+    db_session.add(
+        ProjectCamera(project_id=project.id, make="Canon", model="EOS 5D", offset_minutes=-120)
+    )
+    await db_session.commit()
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_with_camera()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.taken_at_original == _EXIF_TAKEN_AT
+    assert photo.taken_at == _EXIF_TAKEN_AT - timedelta(minutes=120)
+    assert (
+        await db_session.execute(select(func.count()).select_from(ProjectCamera))
+    ).scalar_one() == 1
+    await assert_time_offset_invariant(db_session, project.id)
+
+
+async def test_scan_leaves_a_photo_without_a_determinable_camera_unshifted(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """`camera_id = None` ist ein REGULAERER Zustand: beide Zeiten gleich, kein Listeneintrag,
+    kein Fehler - und der Merker steht trotzdem."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_with_camera(make=None, model=None)},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.camera_id is None
+    assert photo.camera_probed is True
+    assert photo.taken_at == photo.taken_at_original
+    assert (
+        await db_session.execute(select(func.count()).select_from(ProjectCamera))
+    ).scalar_one() == 0
+    await assert_time_offset_invariant(db_session, project.id)
+
+
+async def test_scan_clears_the_camera_when_the_changed_file_no_longer_names_one(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """UNBEDINGT schreiben, auch zurueck auf `None` - dieselbe Begruendung wie bei `gps_lat`:
+    verliert eine Datei ihre Kamera-Angabe, verliert das Foto sie auch. Ein bedingtes Schreiben
+    hielte die alte Kamera unbegrenzt fest, und der Versatz dieser Kamera verschoebe weiter die
+    Zeiten eines Fotos, das nachweislich nicht mehr von ihr stammt."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    camera = ProjectCamera(project_id=project.id, make="Canon", model="EOS 5D", offset_minutes=-120)
+    db_session.add(camera)
+    await db_session.flush()
+    db_session.add(
+        Photo(
+            project_id=project.id,
+            relative_path="CostaRica/img001.jpg",
+            etag="old-etag",
+            content_length=10,
+            taken_at=_EXIF_TAKEN_AT - timedelta(minutes=120),
+            taken_at_original=_EXIF_TAKEN_AT,
+            camera_id=camera.id,
+            camera_probed=True,
+            last_modified=modified.replace(tzinfo=None),
+        )
+    )
+    await db_session.commit()
+
+    new_modified = datetime(2023, 8, 16, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "new-etag", new_modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_with_camera(make=None, model=None)},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.camera_id is None
+    assert photo.taken_at == photo.taken_at_original == _EXIF_TAKEN_AT
+    await assert_time_offset_invariant(db_session, project.id)
+
+
+async def test_the_same_camera_in_two_projects_gets_two_rows(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """ADR 0090, Punkt 2: projekteigene Zeilen. Jedes Foto zeigt auf die seines EIGENEN
+    Projekts - der Fall, der eine fehlende Projektbedingung in `_resolve_project_camera` roetet."""
+    first = await _make_project(db_session)
+    second = Project(name="Norwegen", opencloud_drive_id="drive-1", opencloud_path="Norwegen")
+    db_session.add(second)
+    await db_session.commit()
+    await db_session.refresh(second)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+
+    for project in (first, second):
+        client = FakeOpenCloudClient(
+            entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+            file_contents={"CostaRica/img001.jpg": _jpeg_with_camera()},
+        )
+        await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    cameras = (
+        (await db_session.execute(select(ProjectCamera).order_by(ProjectCamera.project_id)))
+        .scalars()
+        .all()
+    )
+    assert [camera.project_id for camera in cameras] == [first.id, second.id]
+
+    photos = (await db_session.execute(select(Photo).order_by(Photo.project_id))).scalars().all()
+    camera_project_by_id = {camera.id: camera.project_id for camera in cameras}
+    for photo in photos:
+        assert photo.camera_id is not None
+        assert camera_project_by_id[photo.camera_id] == photo.project_id
+    await assert_time_offset_invariant(db_session, first.id)
+    await assert_time_offset_invariant(db_session, second.id)
+
+
+async def test_scan_falls_back_to_the_unshifted_time_when_the_offset_overflows(
+    db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Ausfallrichtung fuer dieses EINE Foto: unkorrigierte Zeit plus Warnzeile mit FESTEM Token,
+    kein Laufabbruch. Der Rohwert bleibt aus der Zeile."""
+    project = await _make_project(db_session)
+    db_session.add(
+        ProjectCamera(
+            project_id=project.id,
+            make="Canon",
+            model="EOS 5D",
+            offset_minutes=-MAX_TIME_OFFSET_MINUTES,
+        )
+    )
+    await db_session.commit()
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "etag-1", modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_with_camera(taken_at="0001:01:02 00:00:00")},
+    )
+
+    with caplog.at_level(logging.WARNING):
+        await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.taken_at == photo.taken_at_original == datetime(1, 1, 2, 0, 0)
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("ausserhalb_darstellbarem_bereich" in message for message in messages)
+
+
+async def test_scan_asks_the_database_once_per_camera_not_once_per_photo(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der Cache wird ueber ALLE Bloecke eines Laufs durchgereicht - ohne ihn entstuende eine
+    Abfrage je Foto, und ein Projekt hat typischerweise zwei Kameras und tausende Fotos."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    entries = [
+        (f"CostaRica/img{index:03d}.jpg", _entry(f"img{index:03d}.jpg", f"etag-{index}", modified))
+        for index in range(6)
+    ]
+    client = FakeOpenCloudClient(
+        entries=entries,
+        file_contents={path: _jpeg_with_camera() for path, _entry_value in entries},
+    )
+
+    with _recorded_camera_selects() as statements:
+        await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    assert len(statements) == 1, statements
+    assert (
+        await db_session.execute(select(func.count()).select_from(Photo.__table__))
+    ).scalar_one() == 6
+    await assert_time_offset_invariant(db_session, project.id)
+
+
+@contextmanager
+def _recorded_camera_selects() -> Iterator[list[str]]:
+    """Die TATSAECHLICH abgesetzten SELECTs auf `project_cameras` (Muster aus
+    test_project_deletion.py) - eine daneben gepflegte Zahl driftete."""
+    statements: list[str] = []
+
+    def _listener(
+        conn: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        normalized = statement.lstrip().upper()
+        if normalized.startswith("SELECT") and "PROJECT_CAMERAS" in normalized:
+            statements.append(statement)
+
+    event.listen(Engine, "before_cursor_execute", _listener)
+    try:
+        yield statements
+    finally:
+        event.remove(Engine, "before_cursor_execute", _listener)
+
+
+# --- Die einmalige Nachhol-Runde fuer Bestandsfotos ------------------------------------------
+
+
+async def _existing_unprobed_photo(session: AsyncSession, project: Project, path: str) -> Photo:
+    moment = datetime(2023, 8, 15, 10, 0)
+    photo = Photo(
+        project_id=project.id,
+        relative_path=path,
+        etag="same-etag",
+        content_length=10,
+        taken_at=moment,
+        taken_at_original=moment,
+        camera_probed=False,
+        last_modified=moment,
+    )
+    session.add(photo)
+    await session.commit()
+    await session.refresh(photo)
+    return photo
+
+
+async def test_the_catch_up_round_reads_the_exif_window_without_making_thumbnails(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die tragende Zusage der Nachhol-Runde: nur das EXIF-Fenster, KEIN Voll-Download und keine
+    Thumbnail-Neuerzeugung (Aufrufzaehler `0`) - die Thumbnails existieren und waeren identisch."""
+    project = await _make_project(db_session)
+    await _existing_unprobed_photo(db_session, project, "CostaRica/img001.jpg")
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "same-etag", modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_with_camera()},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert client.range_requests == ["CostaRica/img001.jpg"]
+    assert client.download_requests == []
+    assert scan_run.photos_updated == 1
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.camera_probed is True
+    assert photo.camera_id is not None
+    await assert_time_offset_invariant(db_session, project.id)
+
+
+async def test_the_catch_up_round_sets_the_marker_even_without_a_finding(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """AUCH OHNE FUND - sonst liest jeder weitere Scan den gesamten Bestand erneut."""
+    project = await _make_project(db_session)
+    await _existing_unprobed_photo(db_session, project, "CostaRica/img001.jpg")
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "same-etag", modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_with_camera(make=None, model=None)},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.camera_probed is True
+    assert photo.camera_id is None
+
+
+async def test_a_second_run_right_after_the_catch_up_round_touches_the_network_not_at_all(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die Runde laeuft GENAU EINMAL je Foto."""
+    project = await _make_project(db_session)
+    await _existing_unprobed_photo(db_session, project, "CostaRica/img001.jpg")
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    entries = [("CostaRica/img001.jpg", _entry("img001.jpg", "same-etag", modified))]
+    contents = {"CostaRica/img001.jpg": _jpeg_with_camera()}
+
+    await run_project_scan(
+        db_session,
+        FakeOpenCloudClient(entries=entries, file_contents=contents),
+        project,
+        drive_name=None,
+        cache_dir=tmp_path,
+    )
+    second_client = FakeOpenCloudClient(entries=entries, file_contents=contents)
+    second_run = await run_project_scan(
+        db_session, second_client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert second_client.range_requests == []
+    assert second_client.download_requests == []
+    assert second_run.photos_updated == 0
+
+
+async def test_the_catch_up_round_leaves_the_marker_of_unprocessed_blocks_alone(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Nach einem Fehlschlag tragen die ABGEARBEITETEN Bloecke ihren Merker, und der naechste Lauf
+    liest nur den Rest - der Lauf committet je Block."""
+    project = await _make_project(db_session)
+    for index in range(3):
+        await _existing_unprobed_photo(db_session, project, f"CostaRica/img{index:03d}.jpg")
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    entries = [
+        (f"CostaRica/img{index:03d}.jpg", _entry(f"img{index:03d}.jpg", "same-etag", modified))
+        for index in range(3)
+    ]
+    contents = {path: _jpeg_with_camera() for path, _value in entries}
+
+    failing = _RangeFailsAfterFirstClient(entries=entries, file_contents=contents)
+    monkeypatched_concurrency = 1
+    original_concurrency = worker.settings.scan_download_concurrency
+    worker.settings.scan_download_concurrency = monkeypatched_concurrency
+    try:
+        scan_run = await run_project_scan(
+            db_session, failing, project, drive_name=None, cache_dir=tmp_path
+        )
+    finally:
+        worker.settings.scan_download_concurrency = original_concurrency
+
+    assert scan_run.status == ScanStatus.FAILED
+    probed = (
+        (await db_session.execute(select(Photo.camera_probed).order_by(Photo.relative_path)))
+        .scalars()
+        .all()
+    )
+    assert probed == [True, False, False]
+
+
+class _RangeFailsAfterFirstClient(FakeOpenCloudClient):
+    """Scheitert beim ZWEITEN Range-Read - der erste Block ist dann bereits committet."""
+
+    async def get_range(self, webdav_url: str, relative_path: str, length: int) -> bytes:
+        if self.range_requests:
+            raise OpenCloudError("Verbindung verloren")
+        return await super().get_range(webdav_url, relative_path, length)

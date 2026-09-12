@@ -48,6 +48,7 @@ async def _make_photo(session: AsyncSession, project: Project, path: str) -> Pho
         etag="etag",
         content_length=1,
         taken_at=now,
+        taken_at_original=now,
         last_modified=now,
     )
     session.add(photo)

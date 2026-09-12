@@ -8,10 +8,24 @@ from typing import Any
 from PIL import Image
 from PIL.ExifTags import IFD
 
+from photosort.cameras import CameraIdentity, camera_identity
+
 logger = logging.getLogger(__name__)
 
 _DATETIME_ORIGINAL_TAG = 36867
 _DATETIME_FORMAT = "%Y:%m:%d %H:%M:%S"
+
+# Basis-IFD-Tags der Kamera-Angabe (EXIF-Standard) - benannte Konstanten wie bei den
+# GPSInfo-Tags unten, die nackten Zahlen 271/272 sagen an der Lesestelle nichts.
+_MAKE_TAG = 271
+_MODEL_TAG = 272
+
+# SICHERHEIT: EIN festes Grund-Token, nie der Rohwert. `Make`/`Model` sind Fremdtext aus einer
+# Kamera-Firmware; ein Rohwert in einer Logzeile ist eine Log-Injection-Flaeche, und die
+# FEHLERKLASSE traegt den vollen Diagnosewert. Nur EIN Token, weil `camera_identity` genau eine
+# Verwerfungsklasse nach aussen kennt ("nichts Verwertbares uebrig") - die Unterscheidung
+# leer/zu lang/falscher Typ hilft im Betrieb nicht weiter. Abgedeckt durch test_exif.py.
+_CAMERA_REASON_UNUSABLE = "unbrauchbar"
 
 # GPSInfo-IFD-Tags (EXIF-Standard) - bewusst als benannte Konstanten, die nackten Zahlen 1-4
 # sagen an der Lesestelle nichts.
@@ -64,6 +78,42 @@ def extract_taken_at(content: bytes) -> datetime | None:
         return datetime.strptime(raw_value, _DATETIME_FORMAT)
     except ValueError:
         return None
+
+
+def extract_camera(content: bytes, photo_id: int | None = None) -> CameraIdentity | None:
+    """Best-effort EXIF-Kamera-Extraktion als drittes Pendant zu `extract_taken_at`/`extract_gps`
+    - liefert die normalisierte Identitaet oder `None`.
+
+    Liest aus demselben bereits per Range-Read geladenen Byte-Fenster wie die beiden Nachbarn
+    (`worker.py::_EXIF_RANGE_BYTES`), also ohne einen einzigen zusaetzlichen Netzwerkzugriff.
+
+    Best-effort wie die Nachbarn: KEIN Lesefehler bricht einen Scan ab - ein abgeschnittenes
+    Fenster, undekodierbare Bytes und ein Rohwert fremden Typs ergeben alle "keine Kamera", und
+    das ist ein regulaerer Zustand ohne Versatz (`Photo.camera_id IS NULL`).
+
+    Die Normalisierung selbst liegt vollstaendig in `cameras.py::camera_identity` - diese Funktion
+    liest nur die beiden Tags und gibt sie weiter. Eine Logzeile entsteht ausschliesslich dann,
+    wenn mindestens ein Rohwert vorlag und danach nichts Verwertbares uebrig blieb: der Normalfall
+    "gar keine Kamera-Angabe" bleibt still (ein Scan ueber tausende Fotos ohne sie erzeugt keine
+    Zeile), und `photo_id` dient AUSSCHLIESSLICH der Logzeile.
+
+    `photo_id` hat keinen Einfluss auf das Ergebnis - deshalb optional, damit die Funktion ohne
+    Kontext testbar bleibt."""
+    try:
+        exif = Image.open(io.BytesIO(content)).getexif()
+        raw_make = exif.get(_MAKE_TAG)
+        raw_model = exif.get(_MODEL_TAG)
+    except Exception:
+        return None
+
+    identity = camera_identity(raw_make, raw_model)
+    if identity is None and (raw_make is not None or raw_model is not None):
+        logger.warning(
+            "extract_camera: Kamera verworfen photo_id=%s grund=%s",
+            photo_id,
+            _CAMERA_REASON_UNUSABLE,
+        )
+    return identity
 
 
 def _log_discarded_gps(photo_id: int | None, reason: str) -> None:

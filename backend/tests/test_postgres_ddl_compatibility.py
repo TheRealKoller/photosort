@@ -553,3 +553,93 @@ def test_the_events_downgrade_drops_the_temporary_default_again() -> None:
     )
 
     assert add_index < drop_default_index
+
+
+# specs/features/0426-zeitversatz-je-kamera.md, Umsetzungsschritt 1: `project_cameras` plus drei
+# Spalten an `photos`. Drei Aussagen kann SQLite strukturell nicht pruefen - der Boolean-Default
+# von `camera_probed` (dort ist BOOLEAN nur INTEGER), der Zeitstempeltyp von
+# `taken_at_original` und der EXPLIZITE Fremdschluesselname, ohne den der Rueckweg nicht
+# ausfuehrbar ist.
+
+_CAMERA_REVISION = "a6b7c8d9e0f1_kamera_zeitversatz.py"
+
+
+@pytest.fixture(scope="module")
+def camera_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_CAMERA_REVISION)
+
+
+def test_the_probed_marker_default_is_rendered_as_a_boolean_literal(
+    camera_upgrade_ddl: list[str],
+) -> None:
+    """Dieselbe Falle wie bei `cloud_requested` oben: `DEFAULT 0` auf einer BOOLEAN-Spalte laeuft
+    in SQLite durch und bricht Postgres mit `DatatypeMismatch` ab - der Backend-Container fuehrt
+    `alembic upgrade head` VOR dem Serverstart aus und wuerde nie gesund."""
+    add_column = [s for s in camera_upgrade_ddl if "camera_probed" in s]
+    assert add_column, "kein ADD COLUMN fuer camera_probed im gerenderten DDL gefunden"
+    statement = add_column[0]
+
+    assert "BOOLEAN" in statement.upper()
+    assert "DEFAULT false" in statement
+    assert "DEFAULT 0" not in statement
+
+
+def test_the_recorded_time_is_a_timestamp_without_zone_and_not_null(
+    camera_upgrade_ddl: list[str],
+) -> None:
+    """`taken_at_original` muss dieselbe Form haben wie `taken_at` - zonenlos (ADR 0090, Punkt 4)
+    und am Ende NOT NULL."""
+    add_column = [s for s in camera_upgrade_ddl if "taken_at_original" in s and "ADD COLUMN" in s]
+    assert add_column, "kein ADD COLUMN fuer taken_at_original im gerenderten DDL gefunden"
+
+    assert "TIMESTAMP" in add_column[0].upper()
+    assert "WITH TIME ZONE" not in add_column[0].upper()
+
+    rendered = " ".join(camera_upgrade_ddl).upper()
+    assert "ALTER COLUMN TAKEN_AT_ORIGINAL SET NOT NULL" in rendered
+
+
+def test_the_photo_camera_foreign_key_carries_its_explicit_name(
+    camera_upgrade_ddl: list[str],
+) -> None:
+    """Nur im Postgres-Render sichtbar - und ohne den Namen ist das `drop_constraint` des
+    `downgrade` nicht ausfuehrbar."""
+    rendered = " ".join(camera_upgrade_ddl)
+
+    assert "fk_photos_camera_id" in rendered
+    assert "FOREIGN KEY(camera_id) REFERENCES project_cameras (id)" in rendered
+
+
+def test_the_offset_column_is_an_integer(camera_upgrade_ddl: list[str]) -> None:
+    """SQLite kennt keinen Unterschied zwischen INTEGER und DOUBLE PRECISION - der Versatz ist
+    eine vorzeichenbehaftete Ganzzahl Minuten, kein Gleitkommawert."""
+    create_table = [s for s in camera_upgrade_ddl if "CREATE TABLE project_cameras" in s]
+    assert create_table, "kein CREATE TABLE fuer project_cameras im gerenderten DDL gefunden"
+
+    assert "offset_minutes INTEGER DEFAULT '0' NOT NULL" in create_table[0]
+
+
+def test_the_camera_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_CAMERA_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements)
+    upper = rendered.upper()
+    assert "DROP TABLE PROJECT_CAMERAS" in upper
+    assert "DROP COLUMN TAKEN_AT_ORIGINAL" in upper
+    assert "DROP COLUMN CAMERA_ID" in upper
+    assert "DROP COLUMN CAMERA_PROBED" in upper
+    assert "fk_photos_camera_id" in rendered
+
+
+def test_the_camera_downgrade_writes_the_times_back_before_dropping_the_column() -> None:
+    """Die REIHENFOLGE ist die eigentliche Aussage des Rueckwegs: steht das `UPDATE` nach dem
+    `DROP COLUMN`, liest es eine Spalte, die es nicht mehr gibt - und die aufgezeichneten Zeiten
+    sind unwiederbringlich fort."""
+    rendered = [s.upper() for s in _render_postgres_ddl(_CAMERA_REVISION, direction="downgrade")]
+
+    update_index = next(
+        i for i, s in enumerate(rendered) if "UPDATE PHOTOS SET TAKEN_AT = TAKEN_AT_ORIGINAL" in s
+    )
+    drop_index = next(i for i, s in enumerate(rendered) if "DROP COLUMN TAKEN_AT_ORIGINAL" in s)
+
+    assert update_index < drop_index

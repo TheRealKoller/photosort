@@ -358,10 +358,48 @@ export interface EventOut {
   place: EventPlace | null
 }
 
+/** Die Kamera eines Fotos. `label` kommt vom SERVER - eine Stelle entscheidet, wie eine Kamera
+ * heißt, und der Wert ist dort bereits von unsichtbaren Zeichen befreit. Nie aus `make`/`model`
+ * im Frontend zusammensetzen; die Felder gibt es hier gar nicht. */
+export interface CameraOut {
+  id: number
+  label: string
+}
+
+/** Ein Eintrag der Kameraliste eines Projekts. `photo_count` zählt ausschließlich die Fotos
+ * DIESES Projekts von dieser Kamera. */
+export interface ProjectCameraOut {
+  id: number
+  label: string
+  photo_count: number
+  offset_minutes: number
+}
+
+/** Ein errechneter Versatz-Vorschlag. Er GILT NOCH NICHT - erst ein `PUT` auf den
+ * Versatz-Endpunkt setzt ihn. */
+export interface CameraTimeOffsetSuggestionOut {
+  camera_id: number
+  camera_label: string
+  offset_minutes: number
+  photo_taken_at_original: string
+  reference_taken_at: string
+}
+
 export interface PhotoOut {
   id: number
   relative_path: string
+  /** Die WIRKSAME (korrigierte) Aufnahmezeit - derselbe Feldname wie zuvor, neue Bedeutung:
+   * seit Spec 0426 trägt er die um den Kamera-Versatz verschobene Zeit. Jede Anzeige einer
+   * Aufnahmezeit liest diesen Wert. */
   taken_at: string
+  /** Die AUFGEZEICHNETE Zeit. Nur im Korrekturfall anzuzeigen - bei `time_offset_minutes === 0`
+   * ist sie gleich `taken_at` und eine zweite Zeile wäre eine Aussage ohne Inhalt. */
+  taken_at_original: string
+  /** Die Differenz der beiden Zeiten in ganzen Minuten. `0` heißt "nicht korrigiert" - dann
+   * erscheint weder Kennzeichnung noch zweite Zeile. */
+  time_offset_minutes: number
+  /** `null` heißt "Kamera nicht bestimmbar" - ein regulärer Zustand, kein Fehler. */
+  camera: CameraOut | null
   ratings: RatingOut[]
   suggestion: SuggestionOut | null
   /** ALLE Zugehörigkeiten des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi.
