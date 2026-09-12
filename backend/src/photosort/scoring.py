@@ -146,7 +146,7 @@ def assign_duplicate_clusters(
     return result
 
 
-def _haversine_meters(lat_a: float, lon_a: float, lat_b: float, lon_b: float) -> float:
+def haversine_meters(lat_a: float, lon_a: float, lat_b: float, lon_b: float) -> float:
     """Großkreisdistanz zweier Koordinaten in METERN (Haversine, Stdlib-`math`).
 
     Die Einheit ist Teil des Vertrags und nicht bloss Konvention: bei einer Trennschwelle von
@@ -232,7 +232,7 @@ def assign_clusters(
         distance_boundary = (
             coordinate is not None
             and reference_coordinate is not None
-            and _haversine_meters(*reference_coordinate, *coordinate) > split_distance_meters
+            and haversine_meters(*reference_coordinate, *coordinate) > split_distance_meters
         )
 
         if time_boundary or distance_boundary:
