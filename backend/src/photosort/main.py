@@ -7,7 +7,6 @@ from slowapi.middleware import SlowAPIMiddleware
 from photosort.api import (
     auth,
     cameras,
-    categories,
     motifs,
     opencloud,
     photos,
@@ -73,7 +72,6 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(cameras.router)
-    app.include_router(categories.router)
     app.include_router(motifs.router)
     app.include_router(opencloud.router)
     app.include_router(projects.router)

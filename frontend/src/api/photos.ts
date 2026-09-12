@@ -1,7 +1,5 @@
 import { apiFetch, apiFetchBlob } from './client'
 import type {
-  CategoryKey,
-  CategoryOverrideOut,
   MotifCorrectionOut,
   MotifKey,
   PhotoListOut,
@@ -13,10 +11,10 @@ export interface ListPhotosParams {
   ratingStatus?: RatingFilter
   limit?: number
   offset?: number
-  // Kategorie-Kuratierung (ohne Backfill) - wenn gesetzt, ersetzt dieser Query-Modus
+  // Kuratierung (ohne Backfill) - wenn gesetzt, ersetzt dieser Query-Modus
   // ratingStatus/limit/offset vollstaendig (eigenstaendige Kuratierungs-Ansicht, siehe backend
   // api/photos.py::list_photos-Kommentar).
-  topNPerCategory?: number
+  topNPerEvent?: number
   /** Nur die Fotos DIESER Kamera. Traegt die Fotoauswahl des Versatz-Vorschlags - ohne den
    * Filter kann die Oberflaeche die beiden Fotos desselben Moments nicht anbieten. */
   cameraId?: number
@@ -24,8 +22,7 @@ export interface ListPhotosParams {
 
 export interface ListCurationCandidatesParams {
   eventId: number
-  categoryKey: string
-  /** Es werden nur Zugehoerigkeiten mit `rank_position > afterRank` geliefert. */
+  /** Es werden nur Fotos mit `rank_position > afterRank` geliefert. */
   afterRank: number
   limit?: number
   offset?: number
@@ -45,8 +42,8 @@ export function listPhotos(
   if (params.offset !== undefined) {
     query.set('offset', String(params.offset))
   }
-  if (params.topNPerCategory !== undefined) {
-    query.set('top_n_per_category', String(params.topNPerCategory))
+  if (params.topNPerEvent !== undefined) {
+    query.set('top_n_per_event', String(params.topNPerEvent))
   }
   if (params.cameraId !== undefined) {
     query.set('camera_id', String(params.cameraId))
@@ -71,7 +68,6 @@ export function listCurationCandidates(
 ): Promise<PhotoListOut> {
   const query = new URLSearchParams({
     event_id: String(params.eventId),
-    category_key: params.categoryKey,
     after_rank: String(params.afterRank),
   })
   if (params.limit !== undefined) {
@@ -95,21 +91,6 @@ export async function fetchPhotoImageBlobUrl(
 ): Promise<string> {
   const blob = await apiFetchBlob(`/photos/${photoId}/image?variant=${variant}`)
   return URL.createObjectURL(blob)
-}
-
-// Der gesetzte Wert wird direkt zurueckgegeben (analog PUT /photos/{id}/rating).
-export function setCategoryOverride(
-  photoId: number,
-  categoryKey: CategoryKey,
-): Promise<CategoryOverrideOut> {
-  return apiFetch<CategoryOverrideOut>(`/photos/${photoId}/category-override`, {
-    method: 'PUT',
-    body: { category_key: categoryKey },
-  })
-}
-
-export function deleteCategoryOverride(photoId: number): Promise<void> {
-  return apiFetch<void>(`/photos/${photoId}/category-override`, { method: 'DELETE' })
 }
 
 /**

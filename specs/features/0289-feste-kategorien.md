@@ -1,6 +1,6 @@
 # 0289 - Feste Kategorien statt offenem Vokabular
 
-**Status:** Implemented ([PR #293](https://github.com/TheRealKoller/photosort/pull/293))
+**Status:** Superseded — abgelöst durch Spec [`0427`](./0427-motive-mit-staerke.md) (Motive mit Stärke statt einer Hauptkategorie). Das feste Kategorien-Set, seine Vorrangreihenfolge, der gemeinsame Kandidatenpool aus lokalen und remoten Signalen und die Auffangkategorie „nicht erkannt“ entfallen vollständig; ein Foto trägt seither für jedes von acht Motiven eine Stärke. **Weiter gelten** — dort übernommen und neu begründet: die Feinlabels samt kanonischer Registry (reine Zusatzinformation, keine Kategoriequelle), der ausschließlich aus der Registry erzeugte Prompt und die Eingabevalidierung gegen ein geschlossenes Vokabular statt gegen eine foto-skopierte Menge. Umgesetzt wurde diese Spec mit [PR #293](https://github.com/TheRealKoller/photosort/pull/293).
 **Erstellt:** 2026-08-30
 **Bezug:** [Issue #289](https://github.com/TheRealKoller/photosort/issues/289)
 

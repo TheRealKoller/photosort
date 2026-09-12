@@ -127,10 +127,8 @@ async def _add_successful_run(
                 criterion_scoring_run_id=run.id,
                 photo_id=photo.id,
                 event_id=grouping_event.id,
-                category_key="nicht_erkannt",
                 rank_score=0.5,
                 rank_position=index + 1,
-                is_primary=True,
             )
         )
     await session.commit()

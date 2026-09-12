@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CriterionScoreOut, RankingOut, SuggestionOut } from '../api/types'
-import { CriterionDetailsPopover } from './CriterionDetailsPopover'
+import { MOTIF_SET } from '../test/motifSetFixture'
+import { CriterionDetailsPopover, MOTIF_CORRECTION_HINT } from './CriterionDetailsPopover'
 
 // window.matchMedia existiert in jsdom nicht (specs/architecture/0002-testkonzept.md, Sektion
 // "Radix Popover mit geraetespezifischem Hover-Verhalten") - minimaler MediaQueryList-Stub statt
@@ -28,9 +29,9 @@ function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionSc
     display_name: 'Schärfe',
     value: 0.734,
     source: 'local_heuristic',
-    // Default-Key ist `sharpness` (nicht kategoriefaehig) - der Default muss dazu passen,
-    // damit kein Bestandstest unbemerkt in den Kategorien-Block rutscht (Spec 0209).
-    category_eligible: false,
+    // Default-Key ist `sharpness` (ohne Praesenz-Schwelle) - der Default muss dazu passen,
+    // damit kein Bestandstest unbemerkt in den Bildinhalt-Block rutscht.
+    has_presence_threshold: false,
     ...overrides,
   }
 }
@@ -38,11 +39,9 @@ function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionSc
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
   return {
     event_id: 1,
-    category_key: 'landscape',
     rank_score: 0.8,
     rank_position: 2,
     partition_size: 5,
-    is_primary: true,
     curation_position: null,
     ...overrides,
   }
@@ -100,7 +99,7 @@ describe('CriterionDetailsPopover', () => {
     render(
       <CriterionDetailsPopover
         criterionScores={[criterionScore({ display_name: 'Schärfe', value: 0.734 })]}
-        ranking={ranking({ category_key: 'landscape', rank_position: 2, partition_size: 5 })}
+        ranking={ranking({ rank_position: 2, partition_size: 5 })}
         suggestion={suggestion({ reason: 'duplicate', duplicate_of: 42, status: 'rejected' })}
       />,
     )
@@ -110,38 +109,64 @@ describe('CriterionDetailsPopover', () => {
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('Schärfe')).toBeInTheDocument()
     expect(within(dialog).getByText('73%')).toBeInTheDocument()
-    expect(within(dialog).getByText('Landscape')).toBeInTheDocument()
     expect(within(dialog).getByText('Rang 2 von 5')).toBeInTheDocument()
     expect(within(dialog).getByText('Duplikat von Foto #42')).toBeInTheDocument()
   })
 
-  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md: analog schlanker
-  // Integrations-Nachweis - die volle Kategorie-Kandidaten-Matrix lebt in
-  // CriterionDetailsList.test.tsx, hier nur der Durchreichungs-Nachweis.
-  it('passes categoryCandidates/categoryOverride through to CriterionDetailsList', async () => {
-    const onOverrideCategory = vi.fn()
+  // specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt "Kachel und Raster": die
+  // Staerkeliste SCHREIBGESCHUETZT samt Verweis auf den Ort, an dem korrigiert wird. Die volle
+  // Darstellungsmatrix der Liste lebt in MotifStrengthList.test.tsx, hier nur der
+  // Durchreichungs-Nachweis samt der Zusage, dass kein Korrekturschalter mitkommt.
+  it('shows the motif strengths read-only and points to the single-photo view', async () => {
     const user = userEvent.setup()
     render(
       <CriterionDetailsPopover
         criterionScores={[criterionScore()]}
-        ranking={ranking({ category_key: 'hund' })}
+        ranking={ranking()}
         suggestion={null}
-        categoryCandidates={[
-          { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
-          { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
-        ]}
-        categoryOverride={null}
-        onOverrideCategory={onOverrideCategory}
+        motifSet={MOTIF_SET}
+        assessment={{
+          source: 'cloud',
+          provider: 'anthropic',
+          excluded_document: false,
+          computed_at: '2026-07-21T09:00:00',
+        }}
+        motifs={MOTIF_SET.items.map((item) => ({
+          key: item.key,
+          strength: 0.5,
+          correction: null,
+        }))}
       />,
     )
 
     await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByText('Kategorie-Kandidaten')).toBeInTheDocument()
-    const tierRow = within(dialog).getByTestId('category-candidate-row-tier')
-    await user.click(within(tierRow).getByRole('button', { name: /übernehmen/i }))
 
-    expect(onOverrideCategory).toHaveBeenCalledWith('tier')
+    const list = within(dialog).getByRole('list', { name: 'Motive' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(MOTIF_SET.items.length)
+    expect(within(dialog).getByText(MOTIF_CORRECTION_HINT)).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: /^Trifft zu/ })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: /^Trifft nicht zu/ })).toBeNull()
+  })
+
+  it('leaves the motif part out entirely when the caller passes no assessment', async () => {
+    /* `undefined` heisst "dieser Aufrufer kennt die Motive nicht" und ist etwas anderes als
+     * `null` ("noch nicht klassifiziert") - sonst stuende in einem Aufrufer ohne Motivdaten
+     * dauerhaft der Satz "noch nicht klassifiziert". */
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsPopover
+        criterionScores={[criterionScore()]}
+        ranking={ranking()}
+        suggestion={null}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+    const dialog = screen.getByRole('dialog')
+
+    expect(within(dialog).queryByRole('list', { name: 'Motive' })).toBeNull()
+    expect(within(dialog).queryByText(MOTIF_CORRECTION_HINT)).toBeNull()
   })
 
   // specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md, Akzeptanzkriterium 1:
@@ -157,7 +182,7 @@ describe('CriterionDetailsPopover', () => {
           criterionScore({
             criterion_key: 'content_people',
             display_name: 'Menschen erkannt',
-            category_eligible: true,
+            has_presence_threshold: true,
           }),
         ]}
         ranking={null}
@@ -170,7 +195,7 @@ describe('CriterionDetailsPopover', () => {
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByRole('heading', { name: 'Qualität', level: 3 })).toBeInTheDocument()
     expect(
-      within(dialog).getByRole('heading', { name: 'Kategorien', level: 3 }),
+      within(dialog).getByRole('heading', { name: 'Bildinhalt', level: 3 }),
     ).toBeInTheDocument()
   })
 

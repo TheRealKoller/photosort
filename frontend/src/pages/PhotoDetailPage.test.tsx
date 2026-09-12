@@ -6,7 +6,6 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
-import * as categoriesApi from '../api/categories'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import * as motifsApi from '../api/motifs'
@@ -20,14 +19,11 @@ import type {
   SuggestionOut,
 } from '../api/types'
 import { setToken } from '../auth/token'
-import { CATEGORY_SET } from '../test/categorySetFixture'
 import { MOTIF_KEYS, MOTIF_SET } from '../test/motifSetFixture'
 import { PhotoDetailPage } from './PhotoDetailPage'
 
-// specs/features/0289-feste-kategorien.md: die Seite laedt das Kategorien-Set zur Laufzeit
 // (`useCategoriesQuery`) - ohne Mock liefe diese Query in einen echten Request und die Seite
 // stuende dauerhaft im Fallback-Zustand, statt in einem bewusst gewaehlten.
-vi.mock('../api/categories')
 // specs/features/0427-motive-mit-staerke.md: dasselbe fuer das Motivset (`useMotifsQuery`) - ohne
 // Mock stuende die Staerkeliste dauerhaft im Skeleton-Zustand.
 vi.mock('../api/motifs')
@@ -50,14 +46,9 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     camera: null,
     ratings: [],
     suggestion: null,
-    rankings: [],
+    ranking: null,
     criterion_scores: [],
     fine_labels: [],
-    remote_category: null,
-    // specs/features/0299-kategorie-konfidenz-anzeigen.md: Basiswert "keine Angabe".
-    category_confidence: null,
-    category_override: null,
-    category_candidates: [],
     cloud_vision_status: [],
     ...overrides,
   }
@@ -69,9 +60,9 @@ function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionSc
     display_name: 'Schärfe',
     value: 0.8,
     source: 'local_heuristic',
-    // Default-Key ist `sharpness` (nicht kategoriefaehig) - der Default muss dazu passen,
-    // damit kein Bestandstest unbemerkt in den Kategorien-Block rutscht (Spec 0209).
-    category_eligible: false,
+    // Default-Key ist `sharpness` (ohne Praesenz-Schwelle) - der Default muss dazu passen,
+    // damit kein Bestandstest unbemerkt in den Bildinhalt-Block rutscht.
+    has_presence_threshold: false,
     ...overrides,
   }
 }
@@ -139,6 +130,11 @@ function renderPage(initialPath: string) {
   )
 }
 
+/** Die permanente Motivsektion - von mehreren Beschreibungsbloecken gebraucht. */
+function motifSection(): HTMLElement {
+  return screen.getByTestId('motifs-section')
+}
+
 describe('PhotoDetailPage', () => {
   beforeEach(() => {
     // Kein window.matchMedia-Stub mehr noetig (anders als vor Spec 0041) - CriterionDetailsPopover
@@ -148,8 +144,6 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
     vi.mocked(ratingsApi.setRating).mockReset()
-    vi.mocked(categoriesApi.listCategories).mockReset()
-    vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
     vi.mocked(motifsApi.listMotifs).mockReset()
     vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
     vi.mocked(photosApi.setMotifCorrection).mockReset()
@@ -486,23 +480,19 @@ describe('PhotoDetailPage', () => {
 
   // Spec 0041 (Bewertungsdetails permanent in der Detailansicht), Akzeptanzkriterien 1-4, 12.
   describe('permanent Bewertungsdetails section', () => {
-    it('shows criteria and category/rank directly under the photo when the photo has criterion_scores', async () => {
+    it('shows criteria and the rank directly under the photo when the photo has criterion_scores', async () => {
       const list: PhotoListOut = {
         items: [
           photo({
             id: 1,
             criterion_scores: [criterionScore({ display_name: 'Schärfe', value: 0.734 })],
-            rankings: [
-              {
-                event_id: 1,
-                category_key: 'landscape',
-                rank_score: 0.8,
-                rank_position: 2,
-                partition_size: 5,
-                is_primary: true,
-                curation_position: null,
-              },
-            ],
+            ranking: {
+              event_id: 1,
+              rank_score: 0.8,
+              rank_position: 2,
+              partition_size: 5,
+              curation_position: null,
+            },
           }),
         ],
         total: 1,
@@ -513,7 +503,6 @@ describe('PhotoDetailPage', () => {
 
       expect(await screen.findByText('Schärfe')).toBeInTheDocument()
       expect(screen.getByText('73%')).toBeInTheDocument()
-      expect(screen.getByText('Landscape')).toBeInTheDocument()
       expect(screen.getByText('Rang 2 von 5')).toBeInTheDocument()
     })
 
@@ -532,7 +521,7 @@ describe('PhotoDetailPage', () => {
               criterionScore({
                 criterion_key: 'content_people',
                 display_name: 'Menschen erkannt',
-                category_eligible: true,
+                has_presence_threshold: true,
               }),
             ],
           }),
@@ -548,7 +537,7 @@ describe('PhotoDetailPage', () => {
         within(section).getByRole('heading', { name: 'Qualität', level: 3 }),
       ).toBeInTheDocument()
       expect(
-        within(section).getByRole('heading', { name: 'Kategorien', level: 3 }),
+        within(section).getByRole('heading', { name: 'Bildinhalt', level: 3 }),
       ).toBeInTheDocument()
     })
 
@@ -666,54 +655,6 @@ describe('PhotoDetailPage', () => {
   })
 
   // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt.
-  describe('category override', () => {
-    it('overrides the category from the permanent details section', async () => {
-      const list: PhotoListOut = {
-        items: [
-          photo({
-            id: 1,
-            criterion_scores: [criterionScore()],
-            rankings: [
-              {
-                event_id: 1,
-                category_key: 'people',
-                rank_score: 0.5,
-                rank_position: 1,
-                partition_size: 1,
-                is_primary: true,
-                curation_position: null,
-              },
-            ],
-            category_candidates: [
-              { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
-              { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
-            ],
-          }),
-        ],
-        total: 1,
-      }
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
-      vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
-        photo_id: 1,
-        category_key: 'tier',
-      })
-      const user = userEvent.setup()
-
-      renderPage('/projects/1/photos/1')
-
-      await screen.findByText('Kategorie-Kandidaten')
-      // Gezielt die Zeile des Kandidaten "tier" - beide Kandidatenzeilen tragen eine
-      // "Uebernehmen"-Schaltflaeche, eine rollenweite Suche waere mehrdeutig.
-      const tierRow = screen.getByTestId('category-candidate-row-tier')
-      await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
-
-      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'tier'))
-    })
-  })
-
-  // specs/features/0370-bedienelemente-zuerst.md: Bedienelemente stehen vor jeder reinen
-  // Informationsanzeige. Die Reihenfolge IST das Feature - geprueft wird deshalb die tatsaechliche
-  // Dokumentreihenfolge in EINER Assertion, nicht das blosse Vorhandensein.
   describe('Reihenfolge: Bedienelemente zuerst', () => {
     /** Foto mit JEDEM Bereich der Seite gleichzeitig - ein fehlender Bereich koennte in der
      * Soll-Folge nicht auffallen. */
@@ -725,24 +666,16 @@ describe('PhotoDetailPage', () => {
           criterionScore({
             criterion_key: 'content_people',
             display_name: 'Menschen erkannt',
-            category_eligible: true,
+            has_presence_threshold: true,
           }),
         ],
-        rankings: [
-          {
-            event_id: 1,
-            category_key: 'tier',
-            rank_score: 0.8,
-            rank_position: 2,
-            partition_size: 5,
-            is_primary: true,
-            curation_position: null,
-          },
-        ],
-        category_candidates: [
-          { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: 0.9 },
-          { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
-        ],
+        ranking: {
+          event_id: 1,
+          rank_score: 0.8,
+          rank_position: 2,
+          partition_size: 5,
+          curation_position: null,
+        },
         fine_labels: [
           {
             canonical_key: 'urlaub',
@@ -753,6 +686,10 @@ describe('PhotoDetailPage', () => {
         ],
         cloud_vision_status: [cloudVisionStatusEntry({ phase: 'landmark', status: 'not_run' })],
         suggestion: suggestion({ reason: 'low_quality' }),
+        // Mit Kopfzeile UND Staerkevektor: sonst zeigte die Motivsektion nur den Satz "noch
+        // nicht klassifiziert", und der Abschnitt waere nicht vollstaendig.
+        motif_assessment: CLOUD_ASSESSMENT,
+        motifs: motifStrengths(),
         ...overrides,
       })
     }
@@ -776,7 +713,6 @@ describe('PhotoDetailPage', () => {
         { name: 'Zähler', element: screen.getByText('1/1') },
         { name: 'Foto', element: await screen.findByAltText('a.jpg') },
         { name: 'Bewertungsleiste', element: screen.getByRole('group', { name: 'Bewertung' }) },
-        { name: 'Kategorie-Bedienteil', element: screen.getByTestId('category-controls-section') },
         { name: 'Navigation', element: screen.getByRole('button', { name: 'Vorheriges Foto' }) },
         { name: 'Cloud-Vision-Status', element: screen.getByTestId('cloud-vision-status-section') },
         { name: 'Informationsteil', element: screen.getByTestId('criterion-details-section') },
@@ -801,7 +737,6 @@ describe('PhotoDetailPage', () => {
         'Zähler',
         'Foto',
         'Bewertungsleiste',
-        'Kategorie-Bedienteil',
         'Navigation',
         'Automatischer Vorschlag',
         'Cloud-Vision-Status',
@@ -827,7 +762,6 @@ describe('PhotoDetailPage', () => {
         'Zähler',
         'Foto',
         'Bewertungsleiste',
-        'Kategorie-Bedienteil',
         'Navigation',
         'Cloud-Vision-Status',
         'Informationsteil',
@@ -836,9 +770,9 @@ describe('PhotoDetailPage', () => {
     })
 
     /* Akzeptanzkriterium 3: die Informationsanzeigen sind ohne jede Bedienhandlung vollstaendig
-     * sichtbar. Abwesenheitszusage INNERHALB des Informationsabschnitts - seitenweit waere sie
-     * falsch, weil der Konfidenz-Erklaerhinweis bewusst ein <details> im Bedienteil bleibt. */
-    it('lässt den Informationsteil ohne aufklappbares Element und ohne Trigger', async () => {
+     * sichtbar. Abwesenheitszusage INNERHALB des Abschnitts - seitenweit waere sie falsch, weil
+     * das Glossar der Motivliste bewusst ein <details> in ihrem eigenen Abschnitt bleibt. */
+    it('lässt die Aufschlüsselung ohne aufklappbares Element und ohne Trigger', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [fullPhoto()], total: 1 })
 
       renderPage('/projects/1/photos/1')
@@ -849,27 +783,23 @@ describe('PhotoDetailPage', () => {
       expect(info.querySelector('[aria-expanded]')).toBeNull()
       expect(info.querySelector('[aria-haspopup]')).toBeNull()
       expect(within(info).queryByRole('button')).not.toBeInTheDocument()
-      // Gegenprobe: im Bedienteil steht das <details> unveraendert weiter.
-      expect(
-        screen.getByTestId('category-controls-section').querySelector('details'),
-      ).not.toBeNull()
+      // Gegenprobe: das <details> der Motivsektion steht unveraendert weiter.
+      expect(motifSection().querySelector('details')).not.toBeNull()
     })
 
-    it('zeigt die Feinlabel-Chips im Informationsteil und nicht im Bedienteil', async () => {
+    it('zeigt die Feinlabel-Chips in der Aufschlüsselung, nicht in der Motivsektion', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [fullPhoto()], total: 1 })
 
       renderPage('/projects/1/photos/1')
 
       const info = await screen.findByTestId('criterion-details-section')
       expect(within(info).getByText('Urlaub')).toBeInTheDocument()
-      expect(
-        within(screen.getByTestId('category-controls-section')).queryByText('Urlaub'),
-      ).not.toBeInTheDocument()
+      expect(within(motifSection()).queryByText('Urlaub')).not.toBeInTheDocument()
     })
 
     /* Akzeptanzkriterium 6: kein leerer Platzhalter. Ohne Kriterien erscheint KEINER der beiden
      * Bereiche, der Cloud-Vision-Status bleibt unveraendert immer sichtbar. */
-    it('rendert ohne criterion_scores weder Bedien- noch Informationsteil', async () => {
+    it('rendert ohne criterion_scores gar keine Aufschlüsselung', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [photo({ id: 1, criterion_scores: [] })],
         total: 1,
@@ -878,14 +808,13 @@ describe('PhotoDetailPage', () => {
       renderPage('/projects/1/photos/1')
       await screen.findByText('1/1')
 
-      expect(screen.queryByTestId('category-controls-section')).not.toBeInTheDocument()
       expect(screen.queryByTestId('criterion-details-section')).not.toBeInTheDocument()
       expect(screen.getByTestId('cloud-vision-status-section')).toBeInTheDocument()
     })
 
     it('rendert ohne Ranking keinen Bedienteil, den Informationsteil aber schon', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1, criterion_scores: [criterionScore()], rankings: [] })],
+        items: [photo({ id: 1, criterion_scores: [criterionScore()], ranking: null })],
         total: 1,
       })
 
@@ -899,136 +828,6 @@ describe('PhotoDetailPage', () => {
 
   /* Verdrahtung der ZWEITEN Einbindung (Bedienteil) - die Logik selbst liegt auf
    * Komponentenebene, hier wird nur geprueft, dass die Props tatsaechlich ankommen. */
-  describe('Kategorie-Bedienteil: Verdrahtung', () => {
-    function photoWithOverride(): PhotoOut {
-      return photo({
-        id: 1,
-        criterion_scores: [criterionScore()],
-        rankings: [
-          {
-            event_id: 1,
-            category_key: 'tier',
-            rank_score: 0.5,
-            rank_position: 1,
-            partition_size: 1,
-            is_primary: true,
-            curation_position: null,
-          },
-        ],
-        category_override: 'tier',
-        category_candidates: [
-          { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
-          { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
-        ],
-      })
-    }
-
-    it('setzt eine manuelle Kategorie aus dem Bedienteil zurück', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photoWithOverride()], total: 1 })
-      vi.mocked(photosApi.deleteCategoryOverride).mockResolvedValue(undefined)
-      const user = userEvent.setup()
-
-      renderPage('/projects/1/photos/1')
-
-      const controls = await screen.findByTestId('category-controls-section')
-      await user.click(within(controls).getByRole('button', { name: /^zurücksetzen$/i }))
-
-      await waitFor(() => expect(photosApi.deleteCategoryOverride).toHaveBeenCalledWith(1))
-    })
-
-    it('übernimmt eine Kategorie aus der Auswahl "Alle Kategorien" im Bedienteil', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photoWithOverride()], total: 1 })
-      vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
-        photo_id: 1,
-        category_key: 'pflanze',
-      })
-      const user = userEvent.setup()
-
-      renderPage('/projects/1/photos/1')
-
-      const controls = await screen.findByTestId('category-controls-section')
-      await user.selectOptions(within(controls).getByLabelText('Alle Kategorien'), 'pflanze')
-
-      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'pflanze'))
-    })
-  })
-
-  /* specs/features/0370-bedienelemente-zuerst.md, UI/UX-Abschnitt "Zustände" und Teststrategie
-   * ("laufende Mutation, mit der ausdrücklichen Gegenprobe, dass Bewertungs- und
-   * Override-Mutation NICHT gekoppelt sind"): Beide Busy-Quellen stehen seit dem Umbau erstmals
-   * direkt untereinander. Eine versehentliche Kopplung (ein gemeinsames `isMutating` an beiden)
-   * sähe plausibel aus und würde von keinem anderen Test bemerkt. */
-  describe('Getrennte Mutationspfade: Bewertung vs. Kategorie-Override', () => {
-    function photoWithBothPaths(): PhotoOut {
-      return photo({
-        id: 1,
-        ratings: [],
-        suggestion: suggestion({ reason: 'low_quality' }),
-        criterion_scores: [criterionScore()],
-        rankings: [
-          {
-            event_id: 1,
-            category_key: 'tier',
-            rank_score: 0.5,
-            rank_position: 1,
-            partition_size: 1,
-            is_primary: true,
-            curation_position: null,
-          },
-        ],
-        category_candidates: [
-          { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
-          { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
-        ],
-      })
-    }
-
-    it('lässt die Übernehmen-Schaltflächen des Bedienteils während einer laufenden Bewertung bedienbar', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photoWithBothPaths()],
-        total: 1,
-      })
-      // Nie aufloesende Anfrage: die Bewertungs-Mutation bleibt fuer die Dauer des Tests pending.
-      vi.mocked(ratingsApi.setRating).mockReturnValue(new Promise(() => {}))
-      const user = userEvent.setup()
-
-      renderPage('/projects/1/photos/1')
-      await screen.findByText('1/1')
-
-      await user.click(screen.getByRole('button', { name: /favorit/i }))
-
-      // Beide Bedienelemente des Bewertungspfads sind busy...
-      await waitFor(() => expect(screen.getByRole('button', { name: /favorit/i })).toBeDisabled())
-      expect(screen.getByRole('button', { name: 'Album-würdig' })).toBeDisabled()
-      expect(screen.getByRole('button', { name: /vorschlag übernehmen/i })).toBeDisabled()
-      // ...der Kategorie-Bedienteil bleibt davon unberührt (getrennter Mutationspfad).
-      const controls = screen.getByTestId('category-controls-section')
-      expect(within(controls).getByRole('button', { name: /^übernehmen$/i })).toBeEnabled()
-      expect(within(controls).getByLabelText('Alle Kategorien')).toBeEnabled()
-    })
-
-    it('lässt die Bewertungsleiste während einer laufenden Kategorie-Übernahme bedienbar', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photoWithBothPaths()],
-        total: 1,
-      })
-      vi.mocked(photosApi.setCategoryOverride).mockReturnValue(new Promise(() => {}))
-      const user = userEvent.setup()
-
-      renderPage('/projects/1/photos/1')
-
-      const controls = await screen.findByTestId('category-controls-section')
-      await user.click(within(controls).getByRole('button', { name: /^übernehmen$/i }))
-
-      await waitFor(() =>
-        expect(within(controls).getByRole('button', { name: /^übernehmen$/i })).toBeDisabled(),
-      )
-      expect(screen.getByRole('button', { name: /favorit/i })).toBeEnabled()
-      expect(screen.getByRole('button', { name: 'Verwerfen' })).toBeEnabled()
-      expect(screen.getByRole('button', { name: /vorschlag übernehmen/i })).toBeEnabled()
-    })
-  })
-
   /* Akzeptanzkriterium 5: Tastenkuerzel und Wischgesten wirken unveraendert. ArrowLeft und die
    * Wischgesten hatten bis zu dieser Spec keinen Test - ohne sie waere "unveraendert" beim
    * Umbau der Seite eine unbelegte Behauptung. */
@@ -1205,14 +1004,10 @@ describe('PhotoDetailPage', () => {
     })
   })
 
-  // specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt "Einzelbildansicht": eine NEUE
-  // permanente Sektion "Motive", nach dem Vorschlagskasten und VOR der Trennlinie. Die bestehende
-  // Kategorie-Sektion bleibt in PR 1 unberuehrt daneben stehen.
+  // specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt "Einzelbildansicht": die
+  // permanente Sektion "Motive", nach dem Vorschlagskasten und VOR der Trennlinie. Seit PR 3 ist
+  // sie der EINZIGE Bedienblock der Bewertungsdetails.
   describe('Sektion "Motive"', () => {
-    function motifSection(): HTMLElement {
-      return screen.getByTestId('motifs-section')
-    }
-
     it('zeigt die Sektion permanent, auch ohne Kopfzeile', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [photo({ id: 1 })],
@@ -1348,29 +1143,27 @@ describe('PhotoDetailPage', () => {
       expect(within(motifSection()).queryByRole('button', { name: /Trifft/ })).toBeNull()
     })
 
-    it('laesst die bestehende Kategorie-Sektion unberuehrt daneben stehen', async () => {
-      // PR 1 ist rein additiv - die Abloesung ist PR 3.
+    it('ist der EINZIGE Bedienblock der Bewertungsdetails', async () => {
+      /* specs/features/0427-motive-mit-staerke.md, PR 3: mit den Kategorien sind die
+       * Bedienelemente aus der Aufschlüsselung verschwunden. Als eigener Fall samt NEGATIVER
+       * Assertion, weil ein stehengebliebener Bedienteil ohne Datengrundlage still leer bliebe
+       * und damit von jedem Positivtest der Motivsektion unbemerkt. */
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [
           photo({
             id: 1,
             motif_assessment: CLOUD_ASSESSMENT,
             motifs: motifStrengths(),
-            remote_category: 'landschaft',
             criterion_scores: [
-              criterionScore({ criterion_key: 'landschaft', category_eligible: true }),
+              criterionScore({ criterion_key: 'landschaft', has_presence_threshold: true }),
             ],
-            rankings: [
-              {
-                event_id: 1,
-                category_key: 'landschaft',
-                rank_score: 0.8,
-                rank_position: 1,
-                partition_size: 3,
-                is_primary: true,
-                curation_position: null,
-              },
-            ],
+            ranking: {
+              event_id: 1,
+              rank_score: 0.8,
+              rank_position: 1,
+              partition_size: 3,
+              curation_position: null,
+            },
           }),
         ],
         total: 1,
@@ -1379,8 +1172,13 @@ describe('PhotoDetailPage', () => {
       renderPage('/projects/1/photos/1')
 
       await screen.findByAltText('a.jpg')
-      expect(screen.getByTestId('category-controls-section')).toBeInTheDocument()
+      expect(screen.queryByTestId('category-controls-section')).toBeNull()
       expect(motifSection()).toBeInTheDocument()
+      // Die Korrekturschalter der Motivliste sind die einzigen Bedienelemente der
+      // Bewertungsdetails.
+      expect(
+        within(motifSection()).getAllByRole('button', { name: /^Trifft zu/ }).length,
+      ).toBeGreaterThan(0)
     })
   })
 })

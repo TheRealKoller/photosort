@@ -4,7 +4,7 @@ import asyncio
 import enum
 import logging
 import os
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
 from photosort.cache_cleanup import cleanup_orphaned_cache
 from photosort.cameras import CameraIdentity, shifted
-from photosort.categories import LOCAL_CATEGORY_SIGNALS, resolve_category, secondary_categories
 from photosort.classification import (
     ANIMAL_CATEGORIES,
     FaceBoundingBox,
@@ -90,7 +89,6 @@ from photosort.models import (
     FineLabel,
     MotifAssessmentSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
@@ -974,9 +972,9 @@ class CriterionScoringGuardError(Exception):
 # diese Stelle separat nachgepflegt werden muss.
 #
 # Das ist die Menge der bildbasiert berechneten Kriterien fuer die Upsert-Buchhaltung und eine
-# fachlich ANDERE als CriterionDefinition.category_eligible (welche Kriterien ueberhaupt eine
-# Kategorie bilden DUERFEN): hier stehen auch goldener_schnitt/aesthetics, die NIE eine Kategorie
-# bilden duerfen. Die beiden Mengen nie gleichsetzen.
+# fachlich ANDERE als "traegt ein `presence_threshold`" (welche Kriterien eine Inhaltsaussage
+# treffen): hier stehen auch goldener_schnitt/aesthetics, die keine treffen. Die beiden Mengen nie
+# gleichsetzen.
 _IMAGE_ANALYSIS_CRITERION_KEYS: tuple[str, ...] = (
     "content_people",
     "content_landscape",
@@ -1019,7 +1017,7 @@ def _select_landmark_candidates(
     """Vorfilterung + Skip-bereits-gescorter-Fotos für den landmark-Cloud-Aufruf - reine, DB-freie
     Funktion, isoliert unit-testbar (analog _classify_scan_entries). Ein Foto wird nur dann
     Kandidat, wenn im selben Lauf content_landscape ODER gebaeude die jeweils registrierte
-    category_presence_threshold erreicht (`>=`, inklusiv; die Registry-Schwellwerte werden
+    presence_threshold erreicht (`>=`, inklusiv; die Registry-Schwellwerte werden
     wiederverwendet, es gibt hier KEINEN zweiten, doppelt gepflegten Grenzwert) UND noch keine
     landmark-Zeile aus einem frueheren Lauf existiert - die einzige, bewusst dokumentierte Ausnahme
     vom sonst projektweiten "jeder Lauf scort neu"-Prinzip. Gibt die photo_id-Reihenfolge von
@@ -1239,76 +1237,11 @@ async def _upsert_landmark_detection(
     existing.provider = provider
 
 
-@dataclass(frozen=True)
-class RemoteCategoryEvidence:
-    """Was die Cloud-Klassifizierung zu EINEM Foto gesagt hat: die validierte
-    Kandidatenliste UND die Konfidenz-Abbildung.
-
-    Beides stammt aus derselben Zeile und wird gemeinsam gelesen, weil beides gemeinsam gebraucht
-    wird: die Kandidaten bestimmen (mit den lokalen Signalen) die HAUPTkategorie, die Zahlen
-    bestimmen die NEBENkategorien und die Reihenfolge innerhalb einer Kategorie. Zwei getrennte
-    Abfragen waeren zwei Gelegenheiten, unterschiedliche Fotos zu erwischen.
-
-    `confidences` ist bewusst `Mapping[str, object]` und nicht `Mapping[str, float]`: der Wert
-    kommt aus einer JSON-Spalte, deren Typzusage ueber die Datenbank statt ueber den Parser laeuft
-    (Lesepfad-Haertung, siehe categories.py::usable_confidence)."""
-
-    candidates: tuple[str, ...]
-    confidences: Mapping[str, object]
-
-
-# Ein Foto ohne Klassifizierungszeile (kein Cloud-Lauf, Cloud abgelehnt, oder noch nicht
-# klassifiziert) - keine Kandidaten, keine Zahlen, damit keine Nebenkategorien und keine
-# Daempfung. Genau daraus folgt ohne Sonderfallcode: ein Projekt ohne aktivierte
-# Cloud-Klassifizierung verhaelt sich unveraendert.
-NO_REMOTE_CATEGORY_EVIDENCE = RemoteCategoryEvidence(candidates=(), confidences={})
-
-
-async def _remote_category_evidence(
-    session: AsyncSession, photo_ids: Collection[int]
-) -> dict[int, RemoteCategoryEvidence]:
-    """Liest die bereits vorhandenen `photo_category_classifications`-Zeilen (im Regelfall
-    aus Phase 1 DESSELBEN Laufs, sonst aus einem früheren Lauf - in beiden Fällen KEIN
-    Cloud-Aufruf hier) und liefert je Foto die VALIDIERTE Remote-Kandidatenliste samt
-    Konfidenz-Abbildung.
-
-    Kandidaten gehen als reine Kategorie-Keys in `resolve_category` ein, gleichberechtigt
-    neben den lokalen Signalen - Mess-Signal und Taxonomie bleiben getrennt, es gibt keine
-    `remote:<canonical_key>`-Pseudo-Kriterien in der Kriterien-Struktur.
-
-    Eine Altzeile trägt `NULL` in der Konfidenz-Spalte; daraus wird hier eine LEERE
-    Abbildung - "keine Angabe zu jedem Schlüssel", also keine Nebenkategorie und keine
-    Dämpfung.
-
-    Gemeinsam genutzt von `run_criterion_scoring` UND der Override-Rekonstruktion in
-    `api/photos.py` (DRY) - beide leiten die Kategorie damit ueber denselben Codepfad ab."""
-    if not photo_ids:
-        return {}
-
-    rows = (
-        await session.execute(
-            select(
-                PhotoCategoryClassification.photo_id,
-                PhotoCategoryClassification.detected_categories,
-                PhotoCategoryClassification.detected_category_confidences,
-            ).where(PhotoCategoryClassification.photo_id.in_(photo_ids))
-        )
-    ).all()
-    return {
-        photo_id: RemoteCategoryEvidence(
-            candidates=tuple(detected),
-            confidences=dict(confidences) if confidences else {},
-        )
-        for photo_id, detected, confidences in rows
-    }
-
-
 async def _landmark_names(
     session: AsyncSession, photo_ids: Collection[int]
 ) -> dict[int, str | None]:
-    """Die bereits PERSISTIERTEN Sehenswuerdigkeit-Namen der Kandidaten eines Laufs
-    dasselbe Muster wie `_remote_category_evidence` oben, ein einzelner Lesezugriff, KEIN
-    Cloud-Aufruf.
+    """Die bereits PERSISTIERTEN Sehenswuerdigkeit-Namen der Kandidaten eines Laufs - ein
+    einzelner Lesezugriff, KEIN Cloud-Aufruf.
 
     Gelesen wird die TABELLE, NIE eine laufinterne Abbildung der Cloud-Antworten: das Trennsignal
     wirkt damit auch in einem Lauf, in dem die Cloud-Phase gar nicht lief (Einwilligung aus,
@@ -1336,33 +1269,6 @@ async def _landmark_names(
         )
     ).all()
     return {photo_id: sanitize_landmark_name(name) for photo_id, name in rows}
-
-
-def derive_photo_category(
-    criterion_values: dict[str, float], remote_candidates: Sequence[str]
-) -> str:
-    """Die EINE Kategorie eines Fotos.
-
-    Lokale Signale und Remote-Kategorien sind zwei Zulieferer EINER Kandidatenmenge; welche
-    gewinnt, entscheidet ausschliesslich die feste Vorrangreihenfolge in
-    `categories.py::resolve_category`. Die HERKUNFT eines Kandidaten beeinflusst das Ergebnis
-    nicht - dieselbe Kandidatenmenge liefert dieselbe Kategorie, egal ob sie lokal oder remote
-    entstanden ist.
-
-    Ein lokales Signal gilt als Kandidat, wenn IRGENDEINES der in `LOCAL_CATEGORY_SIGNALS`
-    hinterlegten Kriterien seine registrierte `category_presence_threshold` erreicht (`>=`,
-    inklusiv). Ohne jeden Kandidaten ist das Ergebnis `nicht_erkannt` (kein Sonderfallcode - das
-    faellt bereits aus `resolve_category` heraus)."""
-    candidates: set[str] = set(remote_candidates)
-    for category_key, criterion_keys in LOCAL_CATEGORY_SIGNALS.items():
-        for criterion_key in criterion_keys:
-            definition = CRITERIA_REGISTRY.get(criterion_key)
-            if definition is None or definition.category_presence_threshold is None:
-                continue
-            if criterion_values.get(criterion_key, 0.0) >= definition.category_presence_threshold:
-                candidates.add(category_key)
-                break
-    return resolve_category(candidates)
 
 
 @dataclass(frozen=True)
@@ -1567,53 +1473,30 @@ def _append_cloud_error(run: CriterionScoringRun, message: str) -> None:
     run.cloud_error_message = combined[:_MAX_RUN_CLOUD_ERROR_MESSAGE_LENGTH]
 
 
-def _partition_confidence(
-    evidence: RemoteCategoryEvidence,
-    category_key: str,
-    *,
-    is_primary: bool,
-    category_override: str | None,
-) -> object:
-    """Die Konfidenz, mit der ein Foto in GENAU DIESE Partition eingeht - die eine Stelle, an der
-    die Daempfungsregel steht.
-
-    Eine MANUELL gesetzte Hauptzeile wird NICHT gedaempft: eine menschliche Festlegung mit einer
-    Modellzahl abzuwerten hiesse, den Nutzer fuer die Unsicherheit des Modells zu bestrafen -
-    sichtbar an genau der Stelle, an der er gerade korrigiert hat. Eine NEBENzeile wird auch bei
-    gesetztem Override gedaempft; der Override sagt nichts ueber sie.
-
-    Gemeinsam genutzt von `_build_grouping_and_rankings` UND `reassign_photo_category` - sonst
-    stuende dieselbe Regel an zwei Stellen und liefe auseinander."""
-    if is_primary and category_override is not None:
-        return None
-    return evidence.confidences.get(category_key)
-
-
 async def _build_grouping_and_rankings(
     session: AsyncSession,
     run: CriterionScoringRun,
     project_id: int,
     values_by_photo_id: Mapping[int, dict[str, float]],
 ) -> None:
-    """Die Gliederung eines Laufs samt seiner Rangzeilen: Event-Bildung, Partitionen,
-    Kategorieableitung und `PhotoRanking`-Zeilen.
+    """Die Gliederung eines Laufs samt seiner Rangzeilen: Event-Bildung, Partitionen und
+    `PhotoRanking`-Zeilen.
 
-    ZWEI Aufrufer, EIN Weg zur Gliederung und zur Hauptkategorie: der Kriterien-Lauf
-    (`run_criterion_scoring`) und der Neuaufbau nach einer Versatz-Aenderung
-    (`rebuild_run_grouping`). Ein zweiter Rechenweg fuer dasselbe liefe auseinander, und ein
-    zwischenzeitlich gesetzter Override koennte still verloren gehen.
+    ZWEI Aufrufer, EIN Weg zur Gliederung: der Kriterien-Lauf (`run_criterion_scoring`) und der
+    Neuaufbau nach einer Versatz-Aenderung (`rebuild_run_grouping`). Ein zweiter Rechenweg fuer
+    dasselbe liefe auseinander.
 
     Die Kandidatenmenge IST `values_by_photo_id.keys()`; alles Weitere liest die Funktion selbst.
-    Das kostet gegenueber dem durchgereichten Zustand zwei Abfragen mehr JE LAUF - der Preis
+    Das kostet gegenueber dem durchgereichten Zustand eine Abfrage mehr JE LAUF - der Preis
     dafuer, dass beide Aufrufer garantiert dasselbe tun.
 
-    Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer (Muster
-    `project_deletion`/`reassign_photo_category`)."""
-    # Lädt die bereits vorhandenen Klassifikations-Zeilen (im Regelfall aus Phase 1 DESSELBEN
-    # Laufs, siehe run_classification - KEIN neuer Cloud-Aufruf hier). Sie liefern die
-    # REMOTE-Haelfte der Kandidatenmenge; die lokale Haelfte steckt in `values_by_photo_id`.
-    evidence_by_photo_id = await _remote_category_evidence(session, values_by_photo_id.keys())
+    DIE PARTITION IST ALLEIN DAS EVENT. Ein Foto bekommt je Lauf genau eine Rangzeile; es gibt
+    keine Kategorie-Ebene und keine Uebersteuerung mehr, und die Motivstaerken bilden
+    ausdruecklich keine: eine Staerke ist eine Aussage ueber den Bildinhalt, keine Zugehoerigkeit,
+    und keine Schwelle macht daraus eine.
 
+    Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer (Muster
+    `project_deletion`)."""
     # EINE Abfrage fuer BEIDES: die Inferenzbasis der Ortsherleitung (jedes Foto des Projekts)
     # UND `taken_at`/`gps` der Kandidaten (eine Teilmenge davon).
     #
@@ -1645,7 +1528,7 @@ async def _build_grouping_and_rankings(
 
     # DIE EVENT-BILDUNG. Beim Kriterien-Lauf liegt die Stelle bewusst NACH dem `finally` der
     # Landmark-Phase (sonst fehlten die Namen, die dieser Lauf gerade erst erzeugt hat) und VOR
-    # dem Aufbau von `partitions` unten (der Partitionsschluessel ist `(event_id, category_key)`).
+    # dem Aufbau von `partitions` unten (der Partitionsschluessel IST die `event_id`).
     #
     # `PhotoScore.cluster_key` wird dabei NIE mutiert (Ownership-Grenze): der dort stehende
     # Phase-A-Basiswert bleibt stabil, unabhaengig davon, ob und wann Kriterien-Scoring laeuft.
@@ -1685,67 +1568,20 @@ async def _build_grouping_and_rankings(
         for photo_id in built.photo_ids
     }
 
-    override_by_photo_id: dict[int, str | None] = {
-        photo_id: category_override
-        for photo_id, category_override in (
-            await session.execute(
-                select(PhotoScore.photo_id, PhotoScore.category_override).where(
-                    PhotoScore.photo_id.in_(values_by_photo_id.keys())
-                )
-            )
-        ).all()
-    }
-
-    partitions: dict[tuple[int, str], dict[int, dict[str, float]]] = {}
-    # Die Konfidenz je Partition UND Foto - immer die zum Schluessel GENAU DIESER Partition.
-    # Dasselbe Foto geht damit in zwei Partitionen mit zwei verschiedenen Zahlen ein; zwei
-    # Kategorien werden an keiner Stelle anhand ihrer Zahlen gegeneinander abgewogen.
-    partition_confidences: dict[tuple[int, str], dict[int, object]] = {}
-    # Ob dieses Foto in dieser Partition die Haupt- oder eine Nebenzeile bekommt.
-    primary_flags: dict[tuple[int, str, int], bool] = {}
+    # Eine Partition je Event, ein Foto in genau einer davon.
+    partitions: dict[int, dict[int, dict[str, float]]] = {}
     for photo_id, values in values_by_photo_id.items():
-        evidence = evidence_by_photo_id.get(photo_id, NO_REMOTE_CATEGORY_EVIDENCE)
-        # Die HAUPTkategorie ist eine reine PRO-FOTO-Funktion über einem geschlossenen Set -
-        # keine laufweite Häufigkeitsaggregation. Die Zuordnung ist damit unabhaengig davon,
-        # welche anderen Fotos im Projekt liegen. Die Selbsteinschaetzung des Modells geht
-        # hier ausdruecklich NICHT ein.
-        #
-        # Ein manueller Override ueberlebt damit automatisch jeden kuenftigen vollen
-        # Re-Scoring-Lauf, ohne Sonderfallcode.
-        override = override_by_photo_id.get(photo_id)
-        primary_key = override or derive_photo_category(values, evidence.candidates)
-        # Die NEBENkategorien entstehen ausschliesslich aus der bereits persistierten
-        # Modellaussage - kein neuer Cloud-Aufruf, keine Prompt-Aenderung, keine
-        # Kostenaenderung.
-        memberships: list[tuple[str, bool]] = [(primary_key, True)]
-        memberships += [
-            (key, False) for key in secondary_categories(evidence.confidences, primary_key)
-        ]
-        for category_key, is_primary in memberships:
-            partition_key = (event_id_by_photo[photo_id], category_key)
-            partitions.setdefault(partition_key, {})[photo_id] = values
-            partition_confidences.setdefault(partition_key, {})[photo_id] = _partition_confidence(
-                evidence, category_key, is_primary=is_primary, category_override=override
-            )
-            primary_flags[(*partition_key, photo_id)] = is_primary
+        partitions.setdefault(event_id_by_photo[photo_id], {})[photo_id] = values
 
-    for partition_key, partition_candidates in partitions.items():
-        event_id, category_key = partition_key
-        ranked_photos = rank_photos(
-            partition_candidates,
-            DEFAULT_CRITERION_WEIGHTS,
-            partition_confidences[partition_key],
-        )
-        for ranked_photo in ranked_photos:
+    for event_id, partition_candidates in partitions.items():
+        for ranked_photo in rank_photos(partition_candidates, DEFAULT_CRITERION_WEIGHTS):
             session.add(
                 PhotoRanking(
                     criterion_scoring_run_id=run.id,
                     photo_id=ranked_photo.photo_id,
                     event_id=event_id,
-                    category_key=category_key,
                     rank_score=ranked_photo.rank_score,
                     rank_position=ranked_photo.rank_position,
-                    is_primary=primary_flags[(*partition_key, ranked_photo.photo_id)],
                 )
             )
 
@@ -1837,7 +1673,7 @@ async def run_criterion_scoring(
     use_cloud: bool = False,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
-    abgeleitete Rangfolge je Partition (event_id x category_key). Ablauf:
+    abgeleitete Rangfolge je Partition (event_id). Ablauf:
     CriterionScoringRun
     anlegen -> Guard (scoring_run_id muss der aktuell neueste erfolgreiche ScoringRun sein) ->
     Kriterien je Foto berechnen (sharpness/exposure immer, Inhalts-Kriterien best-effort, periodisch
@@ -1900,7 +1736,7 @@ async def run_criterion_scoring(
 
         # Bekannter, akzeptierter Performance-Trade-off: HIER gibt es bewusst KEINEN
         # Kandidatenpool-Vorfilter pro Cluster - N ist beim Scoren nicht bekannt (es wird erst beim
-        # Lesen ueber top_n_per_category angewendet), also werden ALLE Ausschuss-Ueberlebenden
+        # Lesen ueber top_n_per_event angewendet), also werden ALLE Ausschuss-Ueberlebenden
         # verarbeitet, nicht nur die aussichtsreichsten. Fuer sehr grosse Projekte potenziell
         # spuerbar, siehe docs/architecture.md.
         rows = (
@@ -2459,10 +2295,6 @@ async def select_remote_category_candidates(session: AsyncSession, project_id: i
     schickte bereits klassifizierte Fotos erneut an den Anbieter, also Kosten und wiederholte
     Datenexposition.
 
-    `photo_category_classifications` ist ausdrücklich NICHT mehr Teil des Kriteriums: die Tabelle
-    wird seit Spec 0427 (PR 2) nicht mehr geschrieben, und ein Foto mit bloßer Altzeile trägt
-    keine Motivstärken. Es ist damit wieder Kandidat.
-
     Von `run_remote_category_classification` UND `GET .../classify/estimate` (api/projects.py)
     genutzt - "ermittelt ueber dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf"."""
     rows = (
@@ -2664,13 +2496,6 @@ async def run_remote_category_classification(
                     # auseinanderhaelt: eine Cloud-Grundlage schreibt immer und ersetzt eine
                     # vorhandene lokale VOLLSTAENDIG. Die Korrekturzeilen bleiben unangetastet -
                     # sie haengen am Foto und nicht an der Kopfzeile.
-                    #
-                    # `photo_category_classifications` wird ab hier NICHT MEHR geschrieben (die
-                    # Tabelle faellt erst in PR 3). Die alte Hauptkategorie eines neu
-                    # klassifizierten Fotos entsteht dadurch nur noch aus lokalen Signalen -
-                    # bewusster Zwischenzustand von genau einer PR Laenge. Doppelte Cloud-Kosten
-                    # entstehen nicht, weil der Erledigt-Marker in
-                    # `select_remote_category_candidates` gleichzeitig mit umgezogen ist.
                     await upsert_assessment(
                         session,
                         photo.id,
@@ -2682,7 +2507,7 @@ async def run_remote_category_classification(
                     )
 
                     # Feinlabels sind reine Zusatzinformation und werden AUCH DANN geschrieben,
-                    # wenn die Kategorie `nicht_erkannt` lautet. Loesen beide
+                    # wenn das Modell kein Motiv deutlich erkennt. Loesen beide
                     # Labels auf denselben canonical_key auf, entsteht nur eine Zeile - kein
                     # IntegrityError durch UniqueConstraint(photo_id, fine_label_id). Ein
                     # Konfidenz-Vergleich ist dafür nicht nötig, es gewinnt die Erstnennung.
@@ -2760,183 +2585,6 @@ async def run_remote_category_classification(
     except Exception as exc:
         await _fail_run(session, run, str(exc))
         return run
-
-
-async def reassign_photo_category(
-    session: AsyncSession,
-    criterion_scoring_run_id: int,
-    photo_id: int,
-    event_id: int,
-    new_category_key: str,
-) -> None:
-    """Sofortige Wirkung eines manuellen Kategorie-Overrides - stellt die GESAMTE
-    Zugehörigkeitsmenge eines Fotos für diesen Lauf her und ruft
-    `ranking.py::rank_photos` nur fuer die beruehrten Partitionen erneut auf (kein neuer
-    Ranking-Algorithmus, kein voller Re-Scoring-Lauf, kein Cloud-Aufruf). Nutzt ausschliesslich
-    bereits persistierte `PhotoCriterionScore`-Werte fuer die Neusortierung.
-
-    Die HAUPTkategorie wird hier nicht abgeleitet, sondern vom Aufrufer uebergeben (Override-Wert
-    bzw. rekonstruierter Wert aus `derive_photo_category`). Die NEBENkategorien dagegen werden aus
-    der unveraenderten Modellaussage NEU abgeleitet und nicht mitverschoben. Drei Folgen, alle
-    gewollt:
-
-    * Die bisher automatisch ermittelte Hauptkategorie wird zur Nebenkategorie, sofern sie die
-      Schwelle erreicht - das Foto verschwindet nicht aus der Kategorie, aus der es umgehaengt
-      wurde.
-    * Zielt der Override auf eine bestehende NEBENkategorie, entsteht keine zweite Zeile in
-      derselben Partition: die Hauptzeile ersetzt die Nebenzeile.
-    * Nach jedem Aufruf existiert wieder GENAU EINE Zeile mit `is_primary=True` je (Lauf, Foto).
-
-    KEIN frueher Ausstieg bei unveraenderter Zugehoerigkeitsmenge: die Daempfung haengt
-    zusaetzlich am OVERRIDE-ZUSTAND, den die Aufrufer vor diesem Aufruf setzen bzw. loeschen. Ein
-    Override auf die bereits wirksame Hauptkategorie (Hauptzeile wird von automatisch zu manuell)
-    und seine Ruecknahme auf dieselbe Kategorie (umgekehrt) lassen die Menge unveraendert und
-    aendern die Reihenfolge innerhalb der Partition trotzdem - ein Mengenvergleich als
-    Abbruchbedingung uebersaehe beides und liesse `rank_position` auf dem alten Stand stehen. Die
-    Neusortierung ist deshalb bedingungslos: sie arbeitet ausschliesslich auf bereits
-    persistierten Werten, kostet keinen Cloud-Aufruf und ist auf die beruehrten Partitionen
-    begrenzt. Einziger Ausstieg bleibt "dieses Foto hat in diesem Lauf gar keine Zeile".
-
-    NEBENLÄUFIGKEIT (SICHERHEIT): diese Funktion schreibt UND löscht
-    Zeilen im Request-Pfad. Der Unique-Constraint traegt davon nur die halbe Invariante - er
-    verhindert die doppelte Zugehoerigkeitszeile, nicht das Wettrennen um "genau eine Hauptzeile".
-    Die Aufrufer (api/photos.py::set_category_override/delete_category_override) sperren deshalb
-    VOR dem Lesen der Ranking-Zeilen die `photo_scores`-Zeile des Fotos (`with_for_update()`).
-
-    SICHERHEIT (M4): `event_id` kommt SERVERSEITIG aus `ranking.event_id` der Zeile des bereits
-    aufgeloesten Laufs, nie aus Body oder Query. Die Partitionsabfrage unten traegt neben
-    `event_id` weiterhin das Lauf-Praedikat: `event_id` ist ein GLOBALER Surrogatschluessel, und
-    ohne das Praedikat sortierte die Neuvergabe der Raenge Zeilen eines fremden Laufs um."""
-    existing_rows = list(
-        (
-            await session.execute(
-                select(PhotoRanking).where(
-                    PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id,
-                    PhotoRanking.photo_id == photo_id,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    if not existing_rows:
-        return
-
-    evidence = (await _remote_category_evidence(session, [photo_id])).get(
-        photo_id, NO_REMOTE_CATEGORY_EVIDENCE
-    )
-    target: dict[str, bool] = {new_category_key: True}
-    for key in secondary_categories(evidence.confidences, new_category_key):
-        target[key] = False
-
-    touched_categories = {row.category_key for row in existing_rows} | set(target)
-
-    existing_by_category = {row.category_key: row for row in existing_rows}
-    for category_key, row in existing_by_category.items():
-        if category_key in target:
-            row.is_primary = target[category_key]
-        else:
-            await session.delete(row)
-    for category_key, is_primary in target.items():
-        if category_key in existing_by_category:
-            continue
-        # rank_score/rank_position sind hier Platzhalter - die Zeile geht unten in die
-        # Neusortierung ihrer Partition ein und bekommt beide Werte im selben Aufruf.
-        session.add(
-            PhotoRanking(
-                criterion_scoring_run_id=criterion_scoring_run_id,
-                photo_id=photo_id,
-                event_id=event_id,
-                category_key=category_key,
-                rank_score=0.0,
-                rank_position=1,
-                is_primary=is_primary,
-            )
-        )
-
-    # Autoflush (SQLAlchemy-Default) sorgt dafuer, dass die obigen Einfuegungen und Loeschungen
-    # bereits VOR dieser SELECT-Ausfuehrung an die DB gehen - die folgende Abfrage liefert deshalb
-    # schon den Zielzustand, ohne dass hier manuell zwischen "alten" und "neuen" Partitionen
-    # unterschieden werden muesste.
-    partition_rankings = list(
-        (
-            await session.execute(
-                select(PhotoRanking).where(
-                    # SICHERHEIT: das Lauf-Praedikat steht NEBEN `event_id`, nie an seiner Stelle.
-                    PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id,
-                    PhotoRanking.event_id == event_id,
-                    PhotoRanking.category_key.in_(touched_categories),
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-
-    photo_ids = {row.photo_id for row in partition_rankings}
-    criterion_rows = (
-        (
-            await session.execute(
-                select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id.in_(photo_ids))
-            )
-        )
-        .scalars()
-        .all()
-        if photo_ids
-        else []
-    )
-
-    values_by_photo_id: dict[int, dict[str, float]] = {}
-    for criterion_row in criterion_rows:
-        values_by_photo_id.setdefault(criterion_row.photo_id, {})[criterion_row.criterion_key] = (
-            criterion_row.value
-        )
-    for photo_id_in_partition in photo_ids:
-        values_by_photo_id.setdefault(photo_id_in_partition, {})
-
-    # Die Daempfung braucht die Zahlen ALLER Fotos der beruehrten Partitionen, nicht nur die des
-    # umgehaengten - sonst verloeren die uebrigen ihre Daempfung und rueckten still nach vorn.
-    # Ebenso den Override-Zustand: eine manuell gesetzte Hauptzeile wird nicht gedämpft. Für
-    # das gerade umgehängte Foto steht der neue Wert bereits in der Sitzung, weil die Aufrufer
-    # ihn VOR diesem Aufruf setzen.
-    evidence_by_photo_id = await _remote_category_evidence(session, photo_ids)
-    overrides_by_photo_id: dict[int, str | None] = {
-        score_photo_id: category_override
-        for score_photo_id, category_override in (
-            (
-                await session.execute(
-                    select(PhotoScore.photo_id, PhotoScore.category_override).where(
-                        PhotoScore.photo_id.in_(photo_ids)
-                    )
-                )
-            ).all()
-            if photo_ids
-            else []
-        )
-    }
-
-    def _confidence_for(row: PhotoRanking) -> object:
-        return _partition_confidence(
-            evidence_by_photo_id.get(row.photo_id, NO_REMOTE_CATEGORY_EVIDENCE),
-            row.category_key,
-            is_primary=row.is_primary,
-            category_override=overrides_by_photo_id.get(row.photo_id),
-        )
-
-    rows_by_category: dict[str, dict[int, PhotoRanking]] = {}
-    for row in partition_rankings:
-        rows_by_category.setdefault(row.category_key, {})[row.photo_id] = row
-    for category_rows in rows_by_category.values():
-        partition_candidates = {pid: values_by_photo_id[pid] for pid in category_rows}
-        partition_confidences = {pid: _confidence_for(row) for pid, row in category_rows.items()}
-        for ranked_photo in rank_photos(
-            partition_candidates, DEFAULT_CRITERION_WEIGHTS, partition_confidences
-        ):
-            ranking_row = category_rows[ranked_photo.photo_id]
-            ranking_row.rank_score = ranked_photo.rank_score
-            ranking_row.rank_position = ranked_photo.rank_position
-
-    await session.commit()
 
 
 # Fortschritts-Watchdog: grosszuegiger Not-Anker (24h), NICHT der primaere Terminierungsmechanismus

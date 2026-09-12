@@ -16,7 +16,7 @@ export const PIPELINE_STEPS: readonly PipelineStepDefinition[] = [
   { id: 'ausschuss', label: 'Ausschuss-Erkennung' },
   { id: 'gate', label: 'Ausschuss-Gate' },
   { id: 'kriterien', label: 'Kriterien-Bewertung' },
-  { id: 'kuratierung', label: 'Kategorie-Kuratierung' },
+  { id: 'kuratierung', label: 'Kuratierung' },
 ]
 
 export interface PipelineStepState {

@@ -12,7 +12,6 @@ from typing import Any, Protocol
 
 import httpx
 
-from photosort.categories import MAX_FINE_LABELS_PER_PHOTO
 from photosort.cloud_vision import (
     ANTHROPIC_API_VERSION,
     ANTHROPIC_ENDPOINT,
@@ -39,6 +38,15 @@ from photosort.motifs import MOTIF_REGISTRY, build_motif_prompt, is_motif_key
 # Feinlabels bleiben als reine Zusatzinformation erhalten.
 
 logger = logging.getLogger(__name__)
+
+# Obergrenze der Feinlabels je Foto - hier, weil dieses Modul der einzige Leser ist: es schreibt
+# den Wert ueber `build_motif_prompt(max_fine_labels=...)` in den Prompt UND kuerzt die geparste
+# Antwort gegen dieselbe Konstante, Prompt und Validierung koennen damit nicht auseinanderlaufen.
+#
+# Bewusst NICHT in `motifs.py`: Feinlabels sind kein Motiv. `motifs.py` nimmt den Wert deshalb als
+# Parameter entgegen, statt ihn zu importieren - das Motivregister soll nichts ueber die
+# Antwortform des Anbieters wissen.
+MAX_FINE_LABELS_PER_PHOTO = 2
 
 # Das Modell kommt als Konstruktor-Parameter herein, nie aus einer Modulkonstante.
 

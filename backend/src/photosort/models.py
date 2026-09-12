@@ -210,11 +210,6 @@ class Photo(Base):
     fine_labels: Mapped[list[PhotoFineLabel]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
     )
-    # 1:1 wie score/landmark_detection, optional - nur angelegt, wenn ein
-    # Remote-Klassifizierungslauf dieses Foto tatsächlich verarbeitet hat.
-    category_classification: Mapped[PhotoCategoryClassification | None] = relationship(
-        back_populates="photo", uselist=False, cascade="all, delete-orphan"
-    )
     # Höchstens zwei Zeilen pro Foto (eine je CloudVisionPhase), ausschließlich der jeweils
     # LETZTE bekannte Fehlschlag, kein Verlauf.
     cloud_vision_errors: Mapped[list[PhotoCloudVisionError]] = relationship(
@@ -354,15 +349,6 @@ class PhotoScore(Base):
         SQLEnum(RatingStatus, native_enum=False, length=20), default=None
     )
     computed_at: Mapped[datetime]
-    # Dauerhafte manuelle Übersteuerung des sonst automatisch abgeleiteten category_key
-    # (worker.py::run_criterion_scoring) - überlebt auch künftige volle Re-Scoring-Läufe.
-    #
-    # Der zulässige Wertebereich ist das geschlossene Set aus categories.py::CATEGORY_REGISTRY,
-    # trotzdem ein freier String ohne FK: die Whitelist-Prüfung (`is_known_category`) lebt am
-    # Override-Endpunkt, nicht hier. Der LESEPFAD bleibt tolerant gegenüber einem Altwert
-    # außerhalb des Sets - Defense in Depth gegen einen unvollständig gelaufenen
-    # Migrationsschritt.
-    category_override: Mapped[str | None] = mapped_column(default=None)
 
     photo: Mapped[Photo] = relationship(back_populates="score", foreign_keys=[photo_id])
 
@@ -592,7 +578,7 @@ class Event(Base):
     ended_at: Mapped[datetime]
     landmark_name: Mapped[str | None] = mapped_column(default=None)
     # "landmark" | "coordinate" | "multiple" (events.py::PLACE_KINDS). Freier String ohne Enum wie
-    # `category_key`: der Lesepfad prüft die Mitgliedschaft und liefert bei einem unbekannten Wert
+    # `criterion_key`: der Lesepfad prüft die Mitgliedschaft und liefert bei einem unbekannten Wert
     # "kein Ortsbezug" statt einer 500.
     place_kind: Mapped[str | None] = mapped_column(default=None)
     place_lat: Mapped[float | None] = mapped_column(default=None)
@@ -600,35 +586,26 @@ class Event(Base):
 
 
 class PhotoRanking(Base):
-    """Der volle, sortierte Kandidatenpool einer Partition (event_id x category_key) für einen
-    CriterionScoringRun - NICHT nur die Top-N. "Zeig die besten X pro Kategorie" ist damit eine
-    reine Lese-Query (GET /projects/{id}/photos?top_n_per_category=N), kein Job-Parameter, und
+    """Der volle, sortierte Kandidatenpool einer Partition (`event_id`) für einen
+    CriterionScoringRun - NICHT nur die Top-N. "Zeig die besten X pro Foto-Moment" ist damit eine
+    reine Lese-Query (GET /projects/{id}/photos?top_n_per_event=N), kein Job-Parameter, und
     Backfill ein Nebeneffekt eines erneuten Abrufs nach einer Rating-Änderung; kein Server-Code
-    "rückt" je aktiv nach. `category_key` ist wie `criterion_key` ein freier String,
-    `rank_position` ist 1-basiert innerhalb der Partition.
+    "rückt" je aktiv nach. `rank_position` ist 1-basiert innerhalb der Partition.
 
-    MEHRFACHZUGEHÖRIGKEIT: ein Foto hat pro Lauf EINE ZEILE JE KATEGORIE, zu der es gehört - genau
-    eine davon trägt `is_primary=True`. Daher der Unique-Constraint über
-    `(run, photo, category_key)`: ein Foto steht pro Lauf höchstens einmal JE KATEGORIE, nicht
-    höchstens einmal überhaupt.
+    EIN FOTO STEHT PRO LAUF IN GENAU EINER ZEILE. Daher der Unique-Constraint über
+    `(run, photo)`. Die Partition ist allein das Event; eine Kategorie-Ebene gibt es seit Spec
+    0427 nicht mehr, und ein Motiv bildet ausdrücklich keine: die Motivstärken eines Fotos sind
+    acht Zahlen, keine Zugehörigkeit, und keine Schwelle macht daraus eine.
 
-    `rank_score` ist über alle Zugehörigkeitszeilen eines Fotos IDENTISCH (der ungedämpfte
-    gewichtete Kriterien-Mittelwert). `rank_position` ist es NICHT und innerhalb einer Partition
-    auch nicht monoton in `rank_score` - die Modellkonfidenz zum Schlüssel DIESER Partition dämpft
-    den Sortierschlüssel (ranking.py::confidence_ordering_score). Gewollt, kein Defekt.
-
-    Die zweite Invariante - GENAU EINE Zeile mit `is_primary=True` je (Lauf, Foto) - ist nicht
-    als Datenbankbedingung ausdrückbar und wird stattdessen im Schreibpfad gehalten
-    (worker.py::run_criterion_scoring/reassign_photo_category, dort mit `with_for_update()` gegen
-    überlappende Overrides) und in den Tests nach jeder Schreiboperation geprüft."""
+    `rank_position` ist innerhalb einer Partition monoton in `rank_score` (Tie-Break: niedrigere
+    `photo_id`) - es gibt keinen zweiten, gedämpften Sortierschlüssel mehr."""
 
     __tablename__ = "photo_rankings"
     __table_args__ = (
         UniqueConstraint(
             "criterion_scoring_run_id",
             "photo_id",
-            "category_key",
-            name="uq_photo_ranking_run_photo_category",
+            name="uq_photo_ranking_run_photo",
         ),
     )
 
@@ -641,12 +618,8 @@ class PhotoRanking(Base):
     # "jedes Kandidatenfoto gehört zu genau einem Event" ausnahmslos gilt und weder Lesepfad noch
     # Spec einen Ausnahmezweig für einen Zustand tragen, den die Anwendung selbst nie erzeugt.
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
-    category_key: Mapped[str]
     rank_score: Mapped[float]
     rank_position: Mapped[int]
-    # BEWUSST OHNE Default, weder Python- noch Server-seitig: ein Schreibpfad, der die Spalte
-    # vergisst, soll auffallen statt still eine zweite Hauptkategorie zu erzeugen.
-    is_primary: Mapped[bool]
 
 
 class PhotoLandmarkDetection(Base):
@@ -707,8 +680,8 @@ class FineLabel(Base):
 class PhotoFineLabel(Base):
     """Ein vom Vision-LLM frei formuliertes, auf einen kanonischen Eintrag aufgelöstes Feinlabel
     - 1:N zu Photo, 0 bis MAX_FINE_LABELS_PER_PHOTO Zeilen pro Foto. 0 Zeilen sind ausdrücklich
-    zulässig: der Prompt erzwingt kein Feinlabel, die Pflichtaussage je Foto ist die Kategorie
-    (PhotoCategoryClassification), nicht das Label.
+    zulässig: der Prompt erzwingt kein Feinlabel, die Pflichtaussage je Foto ist der
+    Motivstärkevektor (PhotoMotifAssessment/PhotoMotifStrength), nicht das Label.
 
     `raw_label` ist der - bereits zeichensanierte (cloud_vision.py::_sanitize_label_text) - vom
     Vision-LLM gelieferte Text, als Audit-/Debug-Spur, welche Formulierung auf welchen
@@ -735,62 +708,11 @@ class PhotoFineLabel(Base):
     fine_label: Mapped[FineLabel] = relationship(back_populates="photo_fine_labels")
 
 
-class PhotoCategoryClassification(Base):
-    """Das Ergebnis der Remote-Kategorie-Klassifizierung eines Fotos - 1:1 zu Photo, `photo_id`
-    ist Primary Key: strukturell nie mehrere Zeilen pro Foto.
-
-    `category_key` ist das bereits über `categories.py::resolve_category` aufgelöste Ergebnis der
-    remote genannten Kandidaten - also immer ein Wert aus dem festen Set, nie ein Rohwert des
-    Modells. `detected_categories` hält die VALIDIERTE Kandidatenliste (ausschließlich bekannte
-    Set-Keys, unbekannte Rohwerte sind bereits verworfen) als JSON-Liste; sie wird über
-    `PhotoOut.category_candidates` ausgeliefert. SICHERHEIT: hier landet NIE die Rohliste des
-    Modells - sonst wanderte unvalidierter Fremdtext über einen zweiten Kanal in API-Antwort und
-    UI.
-
-    Die PRÄSENZ dieser Zeile ist zugleich das Erfolgssignal der Remote-Phase (Skip-Kriterium in
-    worker.py::select_remote_category_candidates und Statusableitung in
-    api/photos.py::_cloud_vision_status_out) - sie entsteht auch dann, wenn `category_key`
-    `nicht_erkannt` lautet (kein "nichts gefunden"-Sonderfall)."""
-
-    __tablename__ = "photo_category_classifications"
-
-    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), primary_key=True)
-    category_key: Mapped[str]
-    detected_categories: Mapped[list[str]] = mapped_column(SQLJSON)
-    # Die Selbsteinschätzung des Modells je Kandidat als ABBILDUNG `category_key -> Wert in
-    # [0, 1]`, ausschließlich mit Schlüsseln aus `detected_categories` (Invariante, am Parser
-    # erzwungen). Kein positionsparalleles Array und keine Paarliste - der Wert hängt am Schlüssel
-    # und überlebt jede Umsortierung.
-    #
-    # `category_confidence` ist die Konfidenz zur AUFGELÖSTEN Kategorie DIESER Zeile, also
-    # `detected_category_confidences.get(category_key)`. Bewusst redundant, damit die
-    # Statistik-Aggregation in SQL laufen kann. Tragbar, weil es genau EINE schreibende Stelle
-    # gibt (worker.py::run_remote_category_classification) und beide Werte dort aus derselben
-    # Quelle in derselben Transaktion entstehen; die Invariante wird getestet.
-    #
-    # BEIDE nullable, ohne server_default und ohne Backfill - das Muster der Kostenspalten:
-    #     NULL = "nicht erhoben" (Altzeile, oder Modell ohne Angabe)
-    #     0.0  = "das Modell war sich zu 0 % sicher"
-    # Ein `{}` in `detected_category_confidences` heißt wiederum "erhoben, aber keine brauchbare
-    # Zahl geliefert". Überall mit `is None` statt truthy zu prüfen.
-    #
-    # KEIN Codepfad, der eine Kategorie BESTIMMT, liest diese beiden Spalten - sie werden
-    # ausschließlich von der API-Ausgabe, der Statistik-Aggregation und dem Frontend gelesen.
-    detected_category_confidences: Mapped[dict[str, float] | None] = mapped_column(
-        SQLJSON, default=None
-    )
-    category_confidence: Mapped[float | None] = mapped_column(default=None)
-    provider: Mapped[str]
-    computed_at: Mapped[datetime]
-
-    photo: Mapped[Photo] = relationship(back_populates="category_classification")
-
-
 class RemoteCategoryClassificationRun(Base):
     """Ein Lauf des Remote-Kategorie-Klassifizierungs-Jobs - Run-Tracking analog
     CriterionScoringRun/ScoringRun/ScanRun, aber OHNE scoring_run_id-FK: dieser Job schreibt
-    ausschließlich in photo_category_classifications/photo_fine_labels/fine_labels, berührt weder
-    cluster_key noch PhotoRanking direkt - kein 409-Staleness-Guard, kein
+    ausschließlich in photo_motif_assessments/photo_motif_strengths/photo_fine_labels/fine_labels,
+    berührt weder cluster_key noch PhotoRanking direkt - kein 409-Staleness-Guard, kein
     Ausschuss-Gate-Erfordernis."""
 
     __tablename__ = "remote_category_classification_runs"

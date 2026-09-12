@@ -171,32 +171,6 @@ const GRAPHIC_THRESHOLD = 3
 
 const SURFACES = ['--bg', '--surface', '--elevated', '--overlay'] as const
 
-/** Das feste Kategorien-Set (backend `categories.py::CATEGORY_REGISTRY`, Anzeigereihenfolge).
- * Bewusst hier als unabhaengige Sollgroesse ausgeschrieben und NICHT aus der Chip-Tabelle des
- * Frontends importiert - sonst pruefte der Test die Tabelle gegen sich selbst. So kann eine
- * vierzehnte Kategorie weder in der CSS noch in `CategoryBadge` ungeprueft hinzukommen. */
-const CATEGORY_KEYS = [
-  'menschen',
-  'tier',
-  'pflanze',
-  'landschaft',
-  'gebaeude_bauwerk',
-  'innenraum',
-  'essen_trinken',
-  'fahrzeug',
-  'gegenstand',
-  'dokument_screenshot',
-  'kunst_kreatives',
-  'sport_aktivitaet',
-  'nicht_erkannt',
-] as const
-
-/** CSS-Tokennamen tragen Bindestriche statt Unterstriche, damit die daraus erzeugten Tailwind-
- * Utilities (`bg-chip-gebaeude-bauwerk-bg`) regulaere Utility-Namen bleiben. */
-function chipSlug(categoryKey: string): string {
-  return categoryKey.replace(/_/g, '-')
-}
-
 interface ContrastRow {
   foreground: string
   background: string
@@ -210,12 +184,6 @@ function textRows(foreground: string): ContrastRow[] {
 function graphicRows(foreground: string): ContrastRow[] {
   return SURFACES.map((background) => ({ foreground, background, threshold: GRAPHIC_THRESHOLD }))
 }
-
-const chipRows: ContrastRow[] = CATEGORY_KEYS.map((key) => ({
-  foreground: `--chip-${chipSlug(key)}-fg`,
-  background: `--chip-${chipSlug(key)}-bg`,
-  threshold: TEXT_THRESHOLD,
-}))
 
 const ratingRows: ContrastRow[] = ['favorite', 'album-worthy', 'rejected'].map((tone) => ({
   foreground: `--rating-${tone}-fg`,
@@ -326,7 +294,6 @@ const contrastRows: ContrastRow[] = [
   ...stateSurfaceRows,
   ...ratingRows,
   ...statusPillRows,
-  ...chipRows,
 ]
 
 /**
@@ -351,7 +318,6 @@ const FOREGROUND_PATTERNS: RegExp[] = [
   /^--rating-[a-z-]+$/,
   /^--status-(running|success|failed)$/,
   /^--status-.+-(strong|fg)$/,
-  /^--chip-.+-fg$/,
 ]
 
 describe('Design-Vertrag: Kontrastmatrix', () => {
@@ -374,17 +340,13 @@ describe('Design-Vertrag: Kontrastmatrix', () => {
     expect(offenders).toEqual([])
   })
 
-  it('deklariert genau 13 Kategorie-Chip-Paare, deckungsgleich mit dem festen Kategorien-Set', () => {
-    const declaredSlugs = [...rootTokens.keys()]
-      .map((name) => /^--chip-(.+)-bg$/.exec(name))
-      .filter((match): match is RegExpExecArray => match !== null)
-      .map((match) => match[1])
-      .sort()
-    expect(declaredSlugs).toHaveLength(13)
-    expect(declaredSlugs).toEqual([...CATEGORY_KEYS].map(chipSlug).sort())
-
-    const declaredForegrounds = [...rootTokens.keys()].filter((name) => /^--chip-.+-fg$/.test(name))
-    expect(declaredForegrounds).toHaveLength(13)
+  it('deklariert kein einziges Kategorie-Chip-Token mehr', () => {
+    /* Die dreizehn Chip-Farbpaare fallen mit den Kategorien (Spec 0427, PR 3): sie hatten
+     * ausschliesslich `CategoryBadge` als Leser. Ein stehengebliebenes Token waere von jeder
+     * Kontrastzeile unbemerkt - es stuende in keiner Matrixzeile mehr, weil die Chip-Zeilen mit
+     * ihm entfallen sind, und die Formregel (getoent gegen gefuellt, Radius 16 gegen 6,
+     * Gegenecke) beschriebe ein Bedienmerkmal, das es nicht mehr gibt. */
+    expect([...rootTokens.keys()].filter((name) => name.startsWith('--chip-'))).toEqual([])
   })
 
   it('deklariert genau 3 Bewertungspaare und 4 Status-Pillen', () => {
@@ -1143,7 +1105,7 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     expect(iconSource).not.toMatch(/require\(\s*'lucide-react'\s*\)/)
   })
 
-  it.each(['ui/badge.tsx', 'ui/icon.tsx', 'CategoryBadge.tsx'])(
+  it.each(['ui/badge.tsx', 'ui/icon.tsx'])(
     'baut in %s keine Klassennamen zusammen (Tailwind erkennt nur statische, vollstaendige Strings)',
     (name) => {
       const file = sourceFiles.find((candidate) => candidate.label.endsWith(name))
@@ -1219,8 +1181,7 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
 
 describe('Design-Vertrag: Formsprache und Skalen', () => {
   /*
-   * Das Board kennt keine vollrunden Pillen mehr - ausser den Kategorie-Chips, und die tragen
-   * Radius 16px (`rounded-xl`), nicht `rounded-full`. Diese Liste ist abschliessend: jede weitere
+   * Das Board kennt keine vollrunden Pillen mehr. Diese Liste ist abschliessend: jede weitere
    * Fundstelle ist ein Fehler.
    */
   const ROUNDED_FULL_ALLOWLIST: AllowlistEntry[] = [
@@ -1260,14 +1221,9 @@ describe('Design-Vertrag: Formsprache und Skalen', () => {
       reason: 'runder Backdrop des Popover-Triggers ueber der Fotokachel',
     },
     {
-      file: 'src/components/CategoryOverrideMarker.tsx',
+      file: 'src/components/MotifAssessmentMarker.tsx',
       snippet: 'items-center justify-center rounded-full bg-bg/85',
-      reason: 'runder Backdrop des Uebersteuerungs-Markers ueber der Fotokachel',
-    },
-    {
-      file: 'src/components/SecondaryCategoryMarker.tsx',
-      snippet: 'items-center justify-center rounded-full bg-bg/85',
-      reason: 'runder Backdrop des Nebenkategorie-Markers ueber der Fotokachel',
+      reason: 'runder Backdrop des Motiv-Markers ueber der Fotokachel',
     },
   ]
 
@@ -1567,14 +1523,9 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'durchscheinende sticky Kopfzeile der Schrittnavigation',
     },
     {
-      file: 'src/components/CategoryOverrideMarker.tsx',
+      file: 'src/components/MotifAssessmentMarker.tsx',
       snippet: 'rounded-full bg-bg/85',
-      reason: 'Backdrop des Uebersteuerungs-Markers ueber einer Fotokachel',
-    },
-    {
-      file: 'src/components/SecondaryCategoryMarker.tsx',
-      snippet: 'rounded-full bg-bg/85',
-      reason: 'Backdrop des Nebenkategorie-Markers ueber einer Fotokachel',
+      reason: 'Backdrop des Motiv-Markers ueber einer Fotokachel',
     },
     {
       file: 'src/components/CriterionDetailsPopover.tsx',
@@ -1677,11 +1628,6 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Kontrollkaestchen samt Beschriftung: dieselbe Begruendung wie beim Eingabefeld',
     },
     {
-      file: 'src/components/CategorySelect.tsx',
-      snippet: 'className="h-11 rounded-sm border',
-      reason: 'Auswahlfeld: ersetztes Element, zugleich heisser Pfad der Kategorie-Zuordnung',
-    },
-    {
       file: 'src/components/CameraTimeOffsetDialog.tsx',
       snippet: '<label key={option} className="flex min-h-11 items-center gap-2">',
       reason:
@@ -1706,7 +1652,7 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Kamerazeile: Zeilenhoehe einer zeilenweisen Liste',
     },
     {
-      file: 'src/pages/CurateCategoriesPage.tsx',
+      file: 'src/pages/CuratePage.tsx',
       snippet: 'h-auto min-h-11 w-full justify-start',
       reason: 'Aufklapp-Zeile der Kuratierung: Zeilenhoehe einer zeilenweisen Liste',
     },

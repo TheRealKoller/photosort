@@ -6,19 +6,19 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
-import * as categoriesApi from '../api/categories'
+import * as motifsApi from '../api/motifs'
 import * as photosApi from '../api/photos'
 import * as projectsApi from '../api/projects'
 import * as ratingsApi from '../api/ratings'
 import type { CriterionScoreOut, PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
 import { setToken } from '../auth/token'
-import { CATEGORY_SET } from '../test/categorySetFixture'
+import { MOTIF_SET } from '../test/motifSetFixture'
 import { PhotoGridPage } from './PhotoGridPage'
 
 // specs/features/0289-feste-kategorien.md: die Seite laedt das Kategorien-Set zur Laufzeit
 // (`useCategoriesQuery`) - ohne Mock liefe diese Query in einen echten Request und die Seite
 // stuende dauerhaft im Fallback-Zustand, statt in einem bewusst gewaehlten.
-vi.mock('../api/categories')
+vi.mock('../api/motifs')
 vi.mock('../api/photos')
 vi.mock('../api/projects')
 vi.mock('../api/ratings')
@@ -39,15 +39,18 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     camera: null,
     ratings: [],
     suggestion: null,
-    rankings: [],
+    ranking: null,
     criterion_scores: [],
     fine_labels: [],
-    remote_category: null,
-    // specs/features/0299-kategorie-konfidenz-anzeigen.md: Basiswert "keine Angabe".
-    category_confidence: null,
-    category_override: null,
-    category_candidates: [],
     cloud_vision_status: [],
+    // Basiszustand: klassifiziert per Cloud-Grundlage, ohne Ausschluss.
+    motif_assessment: {
+      source: 'cloud' as const,
+      provider: 'anthropic',
+      excluded_document: false,
+      computed_at: '2026-07-21T09:00:00',
+    },
+    motifs: MOTIF_SET.items.map((item) => ({ key: item.key, strength: 0.5, correction: null })),
     ...overrides,
   }
 }
@@ -58,9 +61,9 @@ function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionSc
     display_name: 'Schärfe',
     value: 0.8,
     source: 'local_heuristic',
-    // Default-Key ist `sharpness` (nicht kategoriefaehig) - der Default muss dazu passen,
-    // damit kein Bestandstest unbemerkt in den Kategorien-Block rutscht (Spec 0209).
-    category_eligible: false,
+    // Default-Key ist `sharpness` (ohne Praesenz-Schwelle) - der Default muss dazu passen,
+    // damit kein Bestandstest unbemerkt in den Bildinhalt-Block rutscht.
+    has_presence_threshold: false,
     ...overrides,
   }
 }
@@ -116,8 +119,8 @@ describe('PhotoGridPage', () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
     vi.mocked(ratingsApi.setRating).mockReset()
-    vi.mocked(categoriesApi.listCategories).mockReset()
-    vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
+    vi.mocked(motifsApi.listMotifs).mockReset()
+    vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
     vi.mocked(projectsApi.confirmAusschussGate).mockReset()
     vi.mocked(projectsApi.confirmAusschussGate).mockResolvedValue({ status: 'confirmed' })
     setToken(makeToken({ sub: '1', username: 'testuser' }))
@@ -551,13 +554,15 @@ describe('PhotoGridPage', () => {
     })
   })
 
-  // specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, UI/UX-Abschnitt.
-  describe('category override', () => {
-    it('shows the override marker only for a photo with an active override', async () => {
+  // specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt "Kachel und Raster".
+  describe('Motive auf der Kachel', () => {
+    it('marks an unassessed photo and leaves an assessed one unmarked', async () => {
+      /* Als PAAR geprueft: eine Einzelpruefung bestuende auch dann, wenn der Marker auf jeder
+       * Kachel stuende. */
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [
-          photo({ id: 1, category_override: 'hund' }),
-          photo({ id: 2, category_override: null }),
+          photo({ id: 1, motif_assessment: null, motifs: [] }),
+          photo({ id: 2, relative_path: 'b.jpg' }),
         ],
         total: 2,
       })
@@ -567,60 +572,51 @@ describe('PhotoGridPage', () => {
       // Beide Fotos laden asynchron ueber PhotoImage (role="status" waehrend des Ladens) - erst
       // abwarten, bis beide fertig sind, bevor die role="img"-Elemente gezaehlt werden. Sonst
       // koennte "findAllByRole('img')" (loest bereits beim ERSTEN Treffer auf, wartet NICHT bis
-      // sich nichts mehr aendert) faelschlich schon beim synchron gerenderten Override-Marker
-      // allein aufloesen, bevor die beiden async geladenen Foto-<img>-Elemente ueberhaupt
-      // existieren - Flaky-Test-Fund, entdeckt beim Nachziehen des Copilot-Accessibility-Fixes
-      // (PR #201: CategoryOverrideMarker bekam zusaetzlich role="img").
+      // sich nichts mehr aendert) faelschlich schon beim synchron gerenderten Marker allein
+      // aufloesen, bevor die beiden async geladenen Foto-<img>-Elemente ueberhaupt existieren.
       await waitFor(() => {
         expect(screen.queryAllByRole('status')).toHaveLength(0)
       })
 
       // Zwei geladene Foto-Thumbnails (role="img" ueber das native <img alt=...>) + ein
-      // Override-Marker (role="img", nur fuer das eine Foto mit aktivem Override).
+      // Motiv-Marker (role="img", nur fuer das eine Foto ohne Kopfzeile).
       expect(screen.getAllByRole('img')).toHaveLength(3)
-      expect(screen.getAllByLabelText('Kategorie manuell übersteuert')).toHaveLength(1)
+      expect(screen.getAllByLabelText('Motive noch nicht bestimmt')).toHaveLength(1)
     })
 
-    it('overrides the category from the info popover and invalidates the photo list', async () => {
+    it('shows no motif name or strength on the tile itself', async () => {
+      /* Acht Werte haben bei 158px Kachelbreite keinen Platz, und der staerkste allein
+       * behauptete wieder eine Hauptkategorie. Sie stehen ausschliesslich im Info-Popover - das
+       * hier geschlossen ist. */
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [
-          photo({
-            id: 1,
-            criterion_scores: [criterionScore()],
-            rankings: [
-              {
-                event_id: 1,
-                category_key: 'people',
-                rank_score: 0.5,
-                rank_position: 1,
-                partition_size: 1,
-                is_primary: true,
-                curation_position: null,
-              },
-            ],
-            category_candidates: [
-              { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
-              { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
-            ],
-          }),
-        ],
+        items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
         total: 1,
       })
-      vi.mocked(photosApi.setCategoryOverride).mockResolvedValue({
-        photo_id: 1,
-        category_key: 'tier',
+
+      renderPage()
+      await screen.findAllByRole('img')
+
+      for (const item of MOTIF_SET.items) {
+        expect(screen.queryByText(item.display_name)).toBeNull()
+      }
+      expect(screen.queryByRole('list', { name: 'Motive' })).toBeNull()
+    })
+
+    it('shows the read-only motif list inside the info popover', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
+        total: 1,
       })
       const user = userEvent.setup()
 
       renderPage()
       await screen.findAllByRole('img')
       await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
-      // Gezielt die Zeile des Kandidaten "tier" - beide Kandidatenzeilen tragen eine
-      // "Uebernehmen"-Schaltflaeche, eine rollenweite Suche waere mehrdeutig.
-      const tierRow = screen.getByTestId('category-candidate-row-tier')
-      await user.click(within(tierRow).getByRole('button', { name: /^übernehmen$/i }))
 
-      await waitFor(() => expect(photosApi.setCategoryOverride).toHaveBeenCalledWith(1, 'tier'))
+      const list = await screen.findByRole('list', { name: 'Motive' })
+      expect(within(list).getAllByRole('listitem')).toHaveLength(MOTIF_SET.items.length)
+      expect(screen.getByText('Korrigieren in der Einzelbildansicht.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^Trifft zu/ })).toBeNull()
     })
   })
 })

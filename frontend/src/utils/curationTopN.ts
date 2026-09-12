@@ -1,10 +1,10 @@
 /**
- * Der Standardwert und die Grenzen der Kuratierungs-Auswahl ("Top-Fotos pro Kategorie"), an EINER
- * Stelle.
+ * Der Standardwert und die Grenzen der Kuratierungs-Auswahl ("Top-Fotos pro Foto-Moment"), an
+ * EINER Stelle.
  *
- * Zuvor stand die "3" dreimal im Code (`CurateCategoriesPage.tsx`, `KuratierungStepPage.tsx`
- * zweimal). Mit dem Anheben auf 10 waere das dreimal derselbe Wert gewesen, den eine kuenftige
- * Aenderung an zwei Stellen vergisst.
+ * Zuvor stand die "3" dreimal im Code (`CuratePage.tsx`, `KuratierungStepPage.tsx` zweimal). Mit
+ * dem Anheben auf 10 waere das dreimal derselbe Wert gewesen, den eine kuenftige Aenderung an zwei
+ * Stellen vergisst.
  *
  * Die Grenzen sind deckungsgleich mit der serverseitigen Durchsetzung
  * (`Query(None, ge=1, le=10)` auf `GET /projects/{id}/photos`, backend/src/photosort/api/

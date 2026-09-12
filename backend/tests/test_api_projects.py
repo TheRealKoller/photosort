@@ -534,7 +534,6 @@ async def test_delete_project_removes_rows_of_all_dependent_tables(
     assert await count_rows(db_session, "photo_rankings") == 0
     assert await count_rows(db_session, "photo_landmark_detections") == 0
     assert await count_rows(db_session, "photo_fine_labels") == 0
-    assert await count_rows(db_session, "photo_category_classifications") == 0
     assert await count_rows(db_session, "photo_cloud_vision_errors") == 0
     assert await count_rows(db_session, "project_cameras") == 0
     assert await count_rows(db_session, "projects") == 0

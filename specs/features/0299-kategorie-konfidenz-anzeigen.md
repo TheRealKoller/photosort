@@ -1,6 +1,6 @@
 # 0299 - Kategorie-Konfidenz: Selbsteinschätzung des Modells anzeigen und auswerten
 
-**Status:** Implemented ([PR #362](https://github.com/TheRealKoller/photosort/pull/362))
+**Status:** Superseded — abgelöst durch Spec [`0427`](./0427-motive-mit-staerke.md) (Motive mit Stärke statt einer Hauptkategorie). Die angezeigte Kategoriekonfidenz entfällt mit den Kategorien selbst: `photo_category_classifications` ist gelöscht, und die Zahl je Motiv ist seither die Auswahlgrundlage selbst statt einer Aussage daneben. Mit ihr fallen der Konfidenzblock der Statistikseite und der Kuratierungsfilter „Nur unsichere Zuordnungen“. **Weiter gilt** — dort übernommen: „nicht erhoben“ ist keine Null, und eine Zahl aus einer Modellantwort wird am Parser gegen ihr Band geprüft und im Zweifel verworfen, nie geklemmt. Umgesetzt wurde diese Spec mit [PR #362](https://github.com/TheRealKoller/photosort/pull/362).
 **Erstellt:** 2026-09-09
 **Bezug:** [GitHub-Issue #299](https://github.com/TheRealKoller/photosort/issues/299) (Refinement vor dieser Spec-Erstellung abgeschlossen, Story-Inhalt unverändert übernommen und auf Testbarkeit geschärft)
 

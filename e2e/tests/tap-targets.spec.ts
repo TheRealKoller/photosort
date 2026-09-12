@@ -120,20 +120,20 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
     checked.push(label)
   }
 
-  // --- Kategorie-Zuordnung im Bewertungsdetail-Popover ---------------------------------------
+  // --- Motivkorrektur in der Einzelbildansicht ----------------------------------------------
+  // Die frueher hier gepruefte Trefferflaeche "Alle Kategorien" ist mit den Kategorien entfallen
+  // (Spec 0427). An ihre Stelle treten die Korrekturschalter der Motivliste - und sie stehen
+  // NICHT im Popover der Kachel (dort ist die Liste schreibgeschuetzt), sondern in der
+  // Einzelbildansicht. Genau diese Verschiebung macht den eigenen Testschritt noetig.
   await page.goto(`/projects/${projectId}/photos`)
   await expect(tiles.first()).toBeVisible()
-  // AUF `main` EINGEGRENZT (specs/features/0298-projektnavigation-in-der-kopfzeile.md): seit der
-  // Projekt-Navigationsgruppe steht bei 360 px der Popover-Trigger der KOPFZEILE als erster im
-  // Dokument - `.first()` traefe dokumentweit ihn statt des Bewertungsdetail-Triggers der Kachel,
-  // und die Suche nach "Alle Kategorien" im Panel liefe ins Leere.
-  await page.getByRole('main').locator('button[aria-haspopup="dialog"]').first().click()
-  const panel = page.getByRole('dialog')
-  await expect(panel).toBeVisible()
+  await tiles.nth(1).getByRole('link').first().click()
+  const motifList = page.getByRole('list', { name: 'Motive' })
+  await expect(motifList).toBeVisible()
 
-  const categorySelect = panel.getByLabel('Alle Kategorien')
-  await assertTappable(categorySelect, 'Alle Kategorien (Kategorie-Zuordnung)')
-  checked.push('Alle Kategorien')
+  const appliesButton = motifList.getByRole('button', { name: /^Trifft zu:/ }).first()
+  await assertTappable(appliesButton, 'Trifft zu (Motivkorrektur)')
+  checked.push('Trifft zu')
 
   // --- Projekt-Navigationsgruppe in der Kopfzeile (Spec 0298, AK11c) -------------------------
   // Bei 360 px ist ausschliesslich der Menue-Ausloeser sichtbar; er ist ein `size="icon"`-Button

@@ -6,7 +6,6 @@ import json
 import httpx
 import pytest
 
-from photosort.categories import MAX_FINE_LABELS_PER_PHOTO
 from photosort.cloud_vision import (
     ANTHROPIC_VISION_MODEL,
     MISTRAL_VISION_MODEL,
@@ -20,6 +19,7 @@ from photosort.remote_classification import (
     _MAX_RESPONSE_TOKENS,
     CATEGORY_LABEL_SIMILARITY_THRESHOLD,
     MAX_FINE_LABEL_LENGTH,
+    MAX_FINE_LABELS_PER_PHOTO,
     AnthropicCategoryClient,
     CategoryDetectionClientLike,
     FineLabelSnapshotEntry,
