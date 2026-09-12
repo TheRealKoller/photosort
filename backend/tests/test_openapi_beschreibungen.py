@@ -22,6 +22,12 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     ("put", "/photos/{photo_id}/category-override"),
     ("delete", "/photos/{photo_id}/category-override"),
     ("get", "/projects/{project_id}/stats"),
+    # specs/features/0426-zeitversatz-je-kamera.md: die zweite der zwei Registerstellen, die
+    # einen neuen Router still uebergehen - ein nicht eingetragener Endpunkt faellt ohne roten
+    # Test aus der Beschreibungspflicht.
+    ("get", "/projects/{project_id}/cameras"),
+    ("put", "/projects/{project_id}/cameras/{camera_id}/time-offset"),
+    ("get", "/projects/{project_id}/camera-time-offset-suggestion"),
 )
 
 
