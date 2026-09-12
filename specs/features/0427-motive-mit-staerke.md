@@ -223,7 +223,10 @@ entstehen nicht, weil der Erledigt-Marker in derselben PR umzieht.
 5. Frontend: `CategoryBadge`, `CategorySelect`, `SecondaryCategoryMarker`,
    `CategoryOverrideMarker`, `utils/categoryLabels.ts`, `hooks/useCategories.ts`,
    `hooks/useCategoryOverrideControls.ts`, `test/categorySetFixture.ts` entfallen; neu
-   `components/MotifBadge.tsx`, `test/motifSetFixture.ts`. Angepasst: `api/types.ts`,
+   `components/MotifAssessmentMarker.tsx`, `test/motifSetFixture.ts`. **Kein Motiv-Abzeichen auf
+   der Kachel:** Der Abschnitt „UI/UX" verbietet Motivnamen und Stärken dort, und der stärkste Wert
+   allein behauptete wieder die Zuordnung, die diese Spec ablöst. Der Zustandsmarker ist damit der
+   einzige neue Kachelbaustein. Angepasst: `api/types.ts`,
    `api/photos.ts`, `api/projects.ts`, `utils/rankings.ts`, `utils/formatStats.ts`,
    `utils/curationTopN.ts`, `components/CurationPhotoTile.tsx`,
    `components/CurationCandidates.tsx`, `components/PhotoCard.tsx`,
@@ -706,7 +709,7 @@ Modell. Ihre Revisionen laufen bei jedem Containerstart weiter; mitgelöscht wä
 `CurateCategoriesPage.test.tsx`, `ProjectStatsPage.test.tsx`, `PhotoGridPage.test.tsx`,
 `CurationPhotoTile.test.tsx`, `PhotoCard.test.tsx`, `ClassificationBalance.test.tsx`,
 `utils/rankings.test.ts`, `utils/formatStats.test.ts`, `utils/curationTopN.test.ts`,
-`designSystem.contract.test.ts`; neu `components/MotifBadge.test.tsx`.
+`designSystem.contract.test.ts`; neu `components/MotifAssessmentMarker.test.tsx`.
 
 - **Struktureller Wächter für die negative Hälfte:** kein Modul unter `backend/src/photosort/` und
   keine Datei unter `frontend/src/` nennt `category_key`, `is_primary`, `category_override`,
