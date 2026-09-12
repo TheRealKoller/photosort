@@ -64,7 +64,10 @@ Design-System beim Hinsehen bemerke statt erst, wenn jemand gezielt danach sucht
 - [ ] Die Bausteine erscheinen so, wie sie in der Anwendung tatsächlich aussehen — mit Fläche,
       Rahmen, Schrift und Farbe des jeweiligen Zustands, nicht als leere Rahmen oder
       Beschriftungen auf Weiß, weil jede Zelle eine Bibliotheks-Instanz enthält, nie eine
-      nachgezeichnete Form.
+      nachgezeichnete Form. **Nur so weit erfüllbar, wie die Bibliothek reicht** — siehe
+      „Was die Bibliothek nicht hergibt": Ein Baustein ist dort eine Fläche mit einer
+      Beschriftung, kein Abbild des Bedienelements. Das Register zeigt das unverfälscht und
+      führt die Differenz als Lücke, statt sie nachzuzeichnen.
 - [ ] Die zwölf Symbole stehen als eigener beschrifteter Block auf derselben Seite.
 - [ ] **Der vorhandene Variantenbestand der Bibliothek bleibt vollständig erhalten.** Die Seite
       ordnet und beschriftet; sie entfernt nichts. Das kuratierte Raster steht neben dem Bestand
@@ -101,7 +104,7 @@ steht in der Rastertabelle unten.
 | `specs/decisions/0088-...md` | neue ADR |
 | `.claude/skills/penpot-design/SKILL.md` | ein Block „Das Ablagemuster für das Register" neben dem für Ansichten |
 | `design/penpot/README.md` | ein Absatz im `views.json`-Abschnitt (das Register steht bewusst nicht darin) und ein Unterabschnitt mit den drei beim Bau gemessenen API-Befunden |
-| `specs/architecture/0004-design-system.md` | ein Punkt unter „Bekannte Lücken": das Register wird von Hand nachgezogen |
+| `specs/architecture/0004-design-system.md` | zwei Punkte unter „Bekannte Lücken": die Bausteine sind Token-Träger statt Abbilder, und das Register wird von Hand nachgezogen |
 | `specs/architecture/0002-testkonzept.md` | zwei Punkte unter „Bekannte Lücken" und ein Satz zum Suchraum der Wächter |
 
 **Unverändert, und das ist eine Zusicherung, kein Versäumnis:** `frontend/penpot/payload.test.ts`
@@ -143,59 +146,72 @@ Ausprägungen, Zeilen = Zustände" bleibt dadurch über alle zwölf Raster diese
 
 Diese Werte gehören in die Spec, weil das Register nach einem Instanzverlust allein aus ihr
 entsteht: Ohne sie wäre der zugesagte Wiederaufbau zwar inhaltlich vollständig, aber nicht
-maßgleich. Beschriftungsspalte 170, Kopfhöhe 56, Innenabstand der Zelle 12; das Zellbrett ist je
-Raster 16 schmaler und 16 niedriger als das Rasterfeld.
+maßgleich. Beschriftungsspalte 180, Kopfhöhe 56. Die Zelle ist 12 schmaler und 12 niedriger als das
+Rasterfeld und besteht aus zwei Rechtecken je halber Zellbreite; die Instanz sitzt bei einem
+Viertel der Zellbreite und 10 unter der Zellkante.
 
-**Ein Zeilenlabel muss in die 170 breite Beschriftungsspalte passen** — in `text.sm` sind das
-rund 22 Zeichen. Ein längeres Label ragt in die erste Zellspalte und steht dann im Baustein;
-gekürzt wird dabei die technische Klammer, nicht die deutsche Bezeichnung, denn die trägt die
-Ablesbarkeit. Betroffen waren beim ersten Lauf drei Labels (Auswahlkästchen „nicht gesetzt",
-Fortschrittsanzeige „unbestimmt", Platzhalter „ruhend"). Ein Bewegungsvermerk gehört **unter das
-Raster**, nicht unter die Zelle seiner Zeile: In der Zeile selbst überlappt er Zellbrett und
-Zeilenlabel.
+**Ein Zeilenlabel muss in die 180 breite Beschriftungsspalte passen** — in `text.sm` sind das
+rund 23 Zeichen. Ein längeres Label ragt in die erste Zellspalte und steht dann im Baustein;
+gekürzt wird die technische Klammer, nicht die deutsche Bezeichnung, denn die trägt die
+Ablesbarkeit. Ein Leerzellen-Vermerk steht **in** seiner Zelle (feste Breite 170, umbrechend),
+nicht darunter: Unter der letzten Zeile eines Rasters ragt er ins nächste.
 
 | Raster | Rasterfeld (Breite × Höhe) | Spalte, Ursprung (x, y) |
 |---|---|---|
 | Schaltfläche | 200 × 64 | Bedienelemente, (0, −2400) |
-| Schaltfläche — Größen | 200 × 64 | Bedienelemente, (0, −1984) |
-| Eingabefeld | 260 × 64 | Bedienelemente, (0, −1824) |
-| Auswahlkästchen | 260 × 56 | Bedienelemente, (0, −1408) |
-| Schalter | 260 × 56 | Bedienelemente, (0, −1144) |
-| Hinweis | 240 × 88 | Anzeigen, (2600, −2400) |
-| Kennzeichen | 200 × 56 | Anzeigen, (2600, −2216) |
-| Fortschrittsanzeige | 260 × 56 | Anzeigen, (2600, −2008) |
-| Kategorie-Chip | 200 × 56 | Anzeigen, (2600, −1800) |
-| Karte | 220 × 72 | Behälter und Verlauf, (5600, −2400) |
-| Dialog | 300 × 104 | Behälter und Verlauf, (5600, −2160) |
-| Schrittmarke | 180 × 64 | Behälter und Verlauf, (5600, −1872) |
-| Platzhalter | 220 × 88 | Behälter und Verlauf, (5600, −1584) |
+| Schaltfläche — Größen | 200 × 64 | Bedienelemente, (0, −1990) |
+| Eingabefeld | 260 × 64 | Bedienelemente, (0, −1830) |
+| Auswahlkästchen | 260 × 60 | Bedienelemente, (0, −1420) |
+| Schalter | 260 × 60 | Bedienelemente, (0, −1180) |
+| Hinweis | 260 × 96 | Anzeigen, (2600, −2400) |
+| Kennzeichen | 200 × 60 | Anzeigen, (2600, −2200) |
+| Fortschrittsanzeige | 260 × 60 | Anzeigen, (2600, −2020) |
+| Kategorie-Chip | 200 × 60 | Anzeigen, (2600, −1810) |
+| Karte | 240 × 76 | Behälter und Verlauf, (5600, −2400) |
+| Dialog | 300 × 96 | Behälter und Verlauf, (5600, −2180) |
+| Schrittmarke | 200 × 64 | Behälter und Verlauf, (5600, −1900) |
+| Platzhalter | 240 × 76 | Behälter und Verlauf, (5600, −1620) |
 
-Darunter, jeweils an x = 0: Symbolblock bei y = −880 (zwölf Zellen à 104 × 80 im Abstand 120) und
-der Lücken-Block bei y = −680 (1440 × 250). Seitentitel bei (0, −2600), Zonenüberschrift bei
-(0, −2520), Gruppenüberschriften bei y = −2470. Die Bestandsüberschrift steht bei (0, 420), also
-oberhalb der Symbolreihe des Bestands und außerhalb jeder Bestandsfläche.
+Die Befundzeilen stehen an x = 0 bei y = −2020 (Zustände) und y = −1866 (Größen). Symbolblock an
+x = 0: Überschrift bei y = −900, darunter zwölf Zellen aus zwei 56 × 56-Feldern im Abstand 130,
+der Symbolname unter der Zelle. Lücken-Block bei (0, −700), 2400 × 320. Seitentitel bei
+(0, −2620), Zonenüberschrift bei (0, −2540), Gruppenüberschriften bei y = −2480. Die
+Bestandsüberschrift steht bei (0, 420) und bleibt außerhalb des Rahmens.
+
+**Alles Übrige liegt in einem Rahmen-Board `Bausteine — Zustände: Register`** bei (−60, −2680),
+6760 × 2360, ohne Fläche. Es hält die Register-Zone im Ebenenbaum zusammen, ist die Form, auf
+die ein Gesamtexport geht, und trägt **keine** Plugin-Daten.
 
 **Symbolblock:** die zwölf Symbole aus `icons.json` als eigener beschrifteter Block, je Symbol
 sein Name darunter; Strichfarbe kommt aus der Bibliotheksinstanz (`color.text-h`).
 
-**Block „Benannte Lücken":** als Textliste auf derselben Seite, nicht als nachgezeichneter
-Baustein — (a) die aufklappenden Menü- und Infoflächen (`frontend/src/components/ui/popover.tsx`
-samt Verwendungen) und (b) die Schriftmuster (die sieben `text.*`-Verbundtokens ohne Baustein);
-dazu die im Bestand schon geführten Klassen, soweit hier sichtbar: **Bewegung** (Puls des
-Platzhalters, `indeterminate`, Spinner im Zustand `busy`) und **Behälter** (Karte und Dialog sind
-in der Bibliothek Blätter). Die Story schließt keine davon.
+**Block „Benannte Lücken — was die Bibliothek nicht zeigt":** eine Textliste auf
+`color.surface`, nicht als nachgezeichneter Baustein, mit sieben Einträgen. Die ersten drei sind
+beim Bau gemessen (siehe „Was die Bibliothek nicht hergibt") und in `color.text` hervorgehoben:
+kein Baustein ist ausmodelliert; die Zustände einer Schaltfläche sind nur teilweise
+unterschieden; die Größenachse trägt keine eigenen Maße. Die vier weiteren in
+`color.text-muted`: die aufklappenden Menü- und Infoflächen
+(`frontend/src/components/ui/popover.tsx` samt Verwendungen), die Schriftmuster (sieben
+`text.*`-Verbundtokens ohne Baustein), **Bewegung** (Puls, `indeterminate`, Spinner) und
+**Behälter** (Karte und Dialog sind in der Bibliothek Blätter). Die Story schließt keine davon.
 
 ### Aufbau: Zellen, Beschriftung, Layout
 
-- **Jede Zelle ist ein Brett fester, je Raster gleicher Größe**, darin **eine Bibliotheks-Instanz**
-  (`komponente.instance()`), auf die Kombination geschaltet mit `switchVariant(position, wert)` —
-  die **Position** der Achse, nicht ihr Name (`Object.keys(komponente.variantProps)`). Die feste
-  Zellgröße trägt „alle Felder gleich groß und gleich ausgerichtet": Eine Instanz schrumpft nach
-  dem Überschreiben ihrer Beschriftung auf ihre Inhaltsbreite und kann das nicht selbst leisten.
-- **Jedes Brett bindet eine Fläche oder wird ausdrücklich geleert** (`fills = []`) — nie
-  weggelassen: Ein neu erzeugtes Board ist deckend **weiß**. Zellen von `button/ghost`,
-  `button/link` und `badge/neutral` sind im Produkt transparent und bleiben leer; das ist die
-  richtige Darstellung, nicht der Weißflächen-Fehler.
+- **Jede Zelle sind zwei Rechtecke fester, je Raster gleicher Größe** (`color.bg` und
+  `color.text-h`), darüber **eine Bibliotheks-Instanz** (`komponente.instance()`), auf die
+  Kombination geschaltet mit `switchVariant(position, wert)` — die **Position** der Achse, nicht
+  ihr Name (`Object.keys(komponente.variantProps)`). Die festen Rechtecke tragen „alle Felder
+  gleich groß und gleich ausgerichtet"; die Instanz selbst ist je Kombination unterschiedlich
+  breit und könnte das nicht leisten.
+- **Die Zelle ist kein Board und die Instanz nicht ihr Kind.** Zwei Gründe, beide gemessen:
+  Penpot blendet über **jedem** Board im Canvas dessen Namen ein — bei über hundert Zellen
+  überlagert das die Spaltenüberschriften und macht das Raster unlesbar. Und ein Board
+  **beschneidet** seine Kinder, wodurch eine zu breite Instanz als Ausschnitt einer Farbfläche
+  erscheint statt als Baustein. Gruppieren löst das nicht: `penpot.group()` friert im selben
+  Aufruf die noch nicht nachgerechnete Instanzbreite ein.
+- **Jedes Board bindet eine Fläche oder wird ausdrücklich geleert** (`fills = []`) — nie
+  weggelassen: Ein neu erzeugtes Board ist deckend **weiß**. Das betrifft hier den Rahmen
+  (geleert) und den Lücken-Block (`color.surface`).
 - **Kein Flex-Layout für die Raster.** Positionen werden im Aufruf ausgerechnet und gesetzt: Flex
   rechnet nur bei wachsender Höhe, rechnet nicht nach, Kind-Sizing sitzt auf `layoutChild`, und
   ein Brett als Flex-Kind wächst nie in der Höhe. Alle vier scheitern still.
@@ -275,33 +291,37 @@ ihnen nicht allein aufbauen.
 | Spalten- und Zeilenbeschriftung | `text.sm` | `color.text-muted` |
 | Leerzellen-Vermerk, Bewegungsvermerk, Symbolname | `text.xs` | `color.text-muted` |
 
-Zonen- und Gruppenüberschrift teilen bewusst **eine** Stufe: Vier durch die Schriftgröße klar
-getrennte Ebenen (40 · 24 · 20 · 14 · 12 px) sind lesbarer als fünf, von denen zwei sich nur in
-der Textfarbe unterschieden — und genau diese Unterscheidung trägt laut Design-System nicht. Die
-Gruppenüberschrift ist durch ihre Stellung über ihrer Spalte eindeutig.
+Zonen- und Gruppenüberschrift teilen bewusst **eine** Stufe: Fünf durch die Schriftgröße klar
+getrennte Stufen (40 · 24 · 20 · 14 · 12 px) für sechs Rollen sind lesbarer als sechs Stufen, von
+denen zwei sich nur in der Textfarbe unterschieden — und genau diese Unterscheidung trägt laut
+Design-System nicht. Die Gruppenüberschrift ist durch ihre Stellung über ihrer Spalte eindeutig.
 
 Die Verbundtokens tragen Schriftfamilie, Größe, Zeilenhöhe und Gewicht bereits — es wird kein
 Gewicht, keine Kapitälchen- und keine Kursivstellung zusätzlich gesetzt.
 
-### Zellgrund: die Linie trägt die Zelle, nicht eine Fläche
+### Zellgrund: jede Zelle ist halb dunkel, halb hell
 
-Jedes Zellbrett hat **keine eigene Fläche** (`fills = []`, der Seitengrund `color.bg` bleibt
-sichtbar) und **einen 1px-Strich in `color.separator`**. Das ist die Antwort auf den
-Kontrast-Vorfall und zugleich die Bedingung, unter der ein transparenter Baustein lesbar ist:
+Eine Zelle besteht aus **zwei gleich hohen Rechtecken** — links `color.bg`, rechts
+`color.text-h` — und die Instanz liegt **über deren Grenze**. Damit ist jeder Baustein gegen
+beide Gründe zu sehen, in einem Blick.
 
-- Die Zellgrenze ist sichtbar (`color.separator` erreicht 2,38:1 auf `color.bg`), also ist
-  ablesbar, dass an dieser Stelle etwas steht — auch bei `button/ghost`, `button/link` und
-  `badge/neutral`, die im Produkt keine Fläche tragen.
-- Die Zelle behauptet dabei **nicht**, der Baustein habe eine Fläche: Sie trägt keine, und der
-  Strich gehört sichtbar zur Rasterstruktur, weil ihn jede Zelle gleich trägt.
-- Der Zellstrich ist von einem Bedienelement-Umriss unterscheidbar: `color.separator` (#474E68)
-  gegen `color.border-control` (#727891). Die Ausprägung `outline` bleibt dadurch als solche
-  erkennbar und wird nicht mit der Zellgrenze verwechselt.
+Das ist die Antwort auf den Kontrast-Vorfall, und sie geht weiter als ein Zellrahmen: Ein
+dunkler oder transparenter Baustein auf dunklem Grund ist nicht erkennbar, und eine bloße
+Zellgrenze macht ihn nicht sichtbar, sondern zeigt nur, *dass* dort etwas stehen sollte. Erst
+der Wechsel hell/dunkel unter demselben Element zeigt, was es trägt und was ihm fehlt — bei
+`button/ghost` und `button/link` wird auf der hellen Hälfte unmittelbar sichtbar, dass ihre
+Textfarbe für hellen Grund nicht gedacht ist.
 
-**Die Instanz sitzt linksbündig mit festem Innenabstand**, nicht zentriert. Zentrieren bräuchte
-die tatsächliche Instanzbreite, und die steht im bauenden Aufruf noch nicht fest — ein dort
-gelesenes Maß wäre falsch. Linksbündig ist für alle Zellen dieselbe Ausrichtung und erfüllt
-„gleich ausgerichtet", ohne von einem noch nicht gerechneten Wert abzuhängen.
+Ein Zellstrich entfällt damit: Die beiden Felder *sind* die Zelle, ihre Kanten sind die
+Zellgrenze. Das erspart je Zelle eine Form und nimmt dem Raster die Verwechslungsgefahr
+zwischen Zellrahmen und der Ausprägung `outline`.
+
+**Die Instanz wird auf ihre Inhaltsbreite gebracht** (`flex.horizontalSizing = 'auto'` am
+Instanz-Board) und sitzt bei einem Viertel der Zellbreite, sodass sie die Feldgrenze überlappt.
+Ohne diesen Schritt behält sie die Breite ihrer Hauptinstanz — rund 350 px, gespannt von der
+Debug-Beschriftung — und füllt die Zelle als abgeschnittene Farbfläche. **Bei einer Ausprägung
+ohne Beschriftung** (`groesse=icon`) greift `auto` nicht, weil der ausgeblendete Text im Layout
+verbleibt; dort wird die Instanz ausdrücklich auf `33 × 33` gesetzt.
 
 ### Leerzelle: eine Aussage, kein Versäumnis
 
@@ -339,21 +359,40 @@ gilt deshalb:
   durchgesehen und es wird bestätigt, dass jede entweder UI-Beschriftung, Achsenbeschriftung oder
   Demo-Bestand ist.
 
+### Was die Bibliothek nicht hergibt — am gebauten Register gemessen
+
+Diese drei Befunde sind beim Bau entstanden, nicht vorher bekannt, und sie sind der eigentliche
+Ertrag der Seite: Sie waren vorher nirgends sichtbar.
+
+| Befund | Messung |
+|---|---|
+| **Kein Baustein ist ausmodelliert.** Jeder ist ein Rechteck mit genau **einer** Textbeschriftung — kein Kästchen, kein Häkchen, kein Schalterknauf, kein Fortschrittsbalken. | Auswahlkästchen, Schalter und Fortschrittsanzeige haben je ein Kind, Typ `text`. |
+| **Die Zustände einer Schaltfläche sind nur teilweise unterschieden.** `normal`, `hover`, `active` und `busy` tragen dieselbe Füllung `color.accent` ohne Rahmen und ohne Deckkraftunterschied; allein `disabled` weicht ab (`color.surface` plus Rahmen). Die Regel „gedrückt ist Pflicht" ist in Penpot nicht abgebildet. | Füllung und Bindung aller fünf Zustände bei `auspraegung=default`, `groesse=default` verglichen. |
+| **Die Größenachse trägt keine eigenen Maße.** `default`, `sm` und `icon` sind alle 33 hoch; die unterschiedlichen Breiten der Hauptinstanzen stammen allein aus ihrer Debug-Beschriftung. | Maße aller drei Größen bei `auspraegung=default`, `zustand=normal`. |
+
+**Das Register zeichnet nichts davon nach.** Es zeigt, was die Bibliothek hat, und benennt die
+Differenz — beim Schaltflächen-Raster und bei der Größenreihe als Befundzeile in `color.accent`
+direkt unter dem Raster, alles Weitere im Lücken-Block. Ein nachgezeichnetes Kästchen wäre eine
+freie Form und würde die Dauerregel brechen; er wäre außerdem eine zweite Wahrheit neben dem
+Produkt.
+
 ### Zustände, die stillstehend nicht zu zeigen sind
 
 `hover` und `active` bleiben **reguläre Zeilen des Rasters** — das Akzeptanzkriterium verlangt
-jeden Zustand mindestens einmal, und beide sind statisch darstellbar (sie unterscheiden sich in
-Fläche und Umriss, nicht in Bewegung). Was Bewegung braucht, steht als Einzelbild mit einem
-Bewegungsvermerk in `text.xs` unter der Zelle:
+jeden Zustand mindestens einmal, und beide wären statisch darstellbar.
 
-| Zustand | Einzelbild | Vermerk unter der Zelle |
-|---|---|---|
-| Schaltfläche `busy` | Spinner in einer festen Winkelstellung | „dreht sich" |
-| Fortschrittsanzeige `indeterminate` | Abschnitt an einer festen Position | „läuft durch" |
-| Platzhalter (beide Ausprägungen) | volle Deckkraft, ruhend | „pulsiert" |
+**Ein Bewegungsvermerk an der einzelnen Zelle entfällt.** Die erste Fassung trug unter der
+`busy`-Zelle „dreht sich — hier als Einzelbild", unter `indeterminate` „läuft durch" und am
+Platzhalter „pulsiert". Das ist irreführend, und zwar nicht in der Formulierung, sondern in der
+Sache: Die Bibliothek enthält **keinen** Spinner, keinen durchlaufenden Abschnitt und keinen
+Puls — die Zelle zeigt kein stehendes Einzelbild einer Bewegung, sondern eine Fläche mit
+Beschriftung. Ein Vermerk „hier als Einzelbild" behauptet also ein Bild, das nicht existiert,
+und lenkt von der eigentlichen Aussage ab.
 
-Der Vermerk ist Teil der Aussage und nicht weglassbar: Ohne ihn liest ein ruhender Spinner als
-hängender Zustand, und genau das soll die Seite nicht behaupten.
+Bewegung steht deshalb **als ein Eintrag im Lücken-Block**: Puls des Platzhalters,
+durchlaufender Fortschritt und der Spinner des `busy`-Zustands fehlen in der Bibliothek und
+stehen auf dieser Seite still. Eine Aussage über die ganze Klasse an einer Stelle ist ehrlicher
+als drei Vermerke, die je Zelle etwas Falsches nahelegen.
 
 ### Lücken-Block: sichtbar getrennt vom Register
 
@@ -453,15 +492,21 @@ beurteilen will, sieht in der geöffneten Datei hin oder exportiert einen Block 
 (etwa den Lücken-Block auf `color.surface`).
 
 - [ ] Zwölf Raster mit Überschrift; Leserichtung überall Spalten = Ausprägungen, Zeilen = Zustände.
-- [ ] Zeilen und Spalten sind beschriftet und ohne Vorwissen lesbar.
-- [ ] Kein Feld ist eine weiße Fläche; `button/ghost`, `button/link` und `badge/neutral` stehen
-      transparent in ihrem Zellstrich und sind dort trotzdem als belegte Zelle erkennbar.
-- [ ] Jede Leerzelle trägt Strich **und** Vermerk — eine strich- und vermerklose Zelle ist von
-      einem abgebrochenen Aufbau nicht zu unterscheiden.
-- [ ] Die drei Bewegungsvermerke stehen unter ihrer Zelle.
-- [ ] Der Zellstrich ist von der Ausprägung `outline` unterscheidbar.
-- [ ] Die fünf Beschriftungsebenen sind als Hierarchie lesbar.
-- [ ] Symbolblock: zwölf Symbole mit Namen, Strichfarbe sichtbar auf dem Seitengrund.
+- [ ] Zeilen und Spalten sind beschriftet und ohne Vorwissen lesbar. **Keine Beschriftung
+      überlagert eine andere** — insbesondere steht über keiner Zelle ein eingeblendeter
+      Board-Name.
+- [ ] Jede Zelle ist halb dunkel, halb hell, und der Baustein liegt über der Grenze. Kein
+      Baustein verschwindet auf seinem Grund; bei `button/ghost` und `button/link` ist auf der
+      hellen Hälfte ablesbar, dass ihre Textfarbe dort nicht trägt.
+- [ ] Keine Instanz ragt aus ihrer Zelle, keine erscheint als abgeschnittene Farbfläche.
+      `groesse=icon` ist ein kleines Quadrat, nicht ein breiter Balken.
+- [ ] Jede Leerzelle trägt ihren Vermerk **innerhalb** der Zelle.
+- [ ] Die Befundzeilen in `color.accent` stehen unter dem Schaltflächen-Raster und unter der
+      Größenreihe und sind als Aussage über die Bibliothek lesbar, nicht als Beschriftung eines
+      Bausteins.
+- [ ] Die fünf Beschriftungsstufen sind als Hierarchie lesbar.
+- [ ] Symbolblock: zwölf Symbole mit Namen; auf der hellen Hälfte ist erkennbar, dass die
+      Strichfarbe für dunklen Grund gedacht ist.
 - [ ] Lücken-Block als Textliste auf `color.surface`, kein Eintrag nachgezeichnet, nicht als
       dreizehntes Raster lesbar.
 - [ ] Der Bestand ist unverändert: Variantenbretter, Symbole und das Brett
@@ -476,9 +521,18 @@ beurteilen will, sieht in der geöffneten Datei hin oder exportiert einen Block 
   Daniel benennt die Seite im Browser um — es wird kein Ersatzweg über Neuanlegen gewählt.
 - **Beschriftungshierarchie über fünf Größenstufen** (`text.2xl` bis `text.xs`) statt über die
   Textfarbstufen: `color.text` und `color.text-muted` sind nur schwach unterscheidbar.
-- **Zellbrett ohne Fläche, mit Strich in `color.separator`.** Das macht transparente Bausteine
-  sichtbar, ohne ihnen eine Fläche anzudichten, und bleibt von `color.border-control` (Umriss
-  eines Bedienelements) unterscheidbar.
+- **Zelle aus zwei Feldern, halb `color.bg` und halb `color.text-h`, Instanz über der Grenze.**
+  Erst der Wechsel unter demselben Element zeigt, was ein dunkler oder transparenter Baustein
+  trägt. Ein bloßer Zellstrich (die erste Fassung) zeigte nur, *dass* dort etwas stehen sollte —
+  und ließ sich mit der Ausprägung `outline` verwechseln.
+- **Keine Boards und keine Gruppen als Zellen.** Penpot blendet über jedem Board dessen Namen
+  ein und beschneidet dessen Kinder; `penpot.group()` friert die noch nicht nachgerechnete
+  Instanzbreite ein. Deshalb freie Rechtecke plus freie Instanz, zusammengehalten von einem
+  Rahmen-Board um die ganze Zone.
+- **Instanzen auf Inhaltsbreite** (`flex.horizontalSizing = 'auto'`), `groesse=icon` fest auf
+  33 × 33, weil `auto` bei ausgeblendeter Beschriftung nicht greift.
+- **Kein Bewegungsvermerk je Zelle.** Er behauptete ein stehendes Einzelbild einer Bewegung, die
+  in der Bibliothek gar nicht existiert; Bewegung steht als ein Eintrag im Lücken-Block.
 - **`hover` und `active` bleiben reguläre Rasterzeilen.** Beide sind statisch darstellbar; sie aus
   dem Raster zu nehmen verfehlte das Kriterium „jeder Zustand mindestens einmal".
 - **Instanz-Beschriftungen werden überschrieben**, Herkunft ausschließlich Demo-Bestand oder
