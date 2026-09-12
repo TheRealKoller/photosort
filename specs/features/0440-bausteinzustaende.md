@@ -409,6 +409,22 @@ von Plugin-Daten — nicht das Binden einer Farbe an das Token, das das Soll ohn
 Nebeneffekt ist der erwünschte: Die 37 Hinweis- und 18 Karten-Instanzen im übrigen Projekt haben
 die Korrektur mit übernommen, ohne dass eine davon angefasst wurde.
 
+### Der fünfte Befund: die Ziffer der Schrittmarke war nicht zentriert
+
+In allen sechs Ziffern-Varianten (`aktuell`, `ausstehend` × drei Zustände) saß der Text mit 16 px
+Rand links und oben in einem 32 × 32-Baustein und ragte unten 1 px heraus (`align: left`),
+während die beiden Symbol-Varianten `erledigt` und `blockiert` sauber zentriert waren. Genau
+dieser Kontrast machte es sichtbar: Nebeneinander im Raster fällt auf, was einzeln nie auffiel.
+
+Die Ursache ist dieselbe Klasse wie beim Kontrastfehler — **was das Aufbauskript nicht setzt,
+steht auf Penpots Vorgabe**, und die ist linksbündig und oben. Das Produkt macht es richtig
+(`flex items-center justify-center` in `StepMarker.tsx`), die Abweichung lag allein in Penpot.
+
+Korrigiert, indem der Text die **Bausteinfläche füllt** und `align`/`verticalAlign` auf `center`
+stehen — nicht, indem eine Position ausgerechnet wird: So bleibt die Ziffer auch dann zentriert,
+wenn sie zweistellig wird. Gemessen danach: Ränder 0/0 bei allen sechs, die Symbol-Varianten
+unverändert bei 8/8.
+
 ### Zustände, die stillstehend nicht zu zeigen sind
 
 `hover` und `active` bleiben **reguläre Zeilen des Rasters** — das Akzeptanzkriterium verlangt
