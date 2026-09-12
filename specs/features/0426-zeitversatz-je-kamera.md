@@ -480,7 +480,8 @@ Kameraanzahl. `PUT`: Erfolg samt verschobener Zeiten der eigenen und unberührte
 Fotos; `409` bei laufendem Kriterien-Lauf **und bei laufendem Scan** und `422` bei Überlauf je
 **ohne jedes Schreiben** (Zeiten, `offset_minutes` **und** Event-Zeilen unverändert); `404` für
 eine fremde Kamera-Id ohne Rückspiegelung des Werts; `±MAX` zulässig, `±MAX+1` → `422`; zweimal
-derselbe Wert ist idempotent und baut trotzdem neu auf (neue Event-Ids). Vorschlag: Erfolg mit
+derselbe Wert ist idempotent und baut trotzdem neu auf (geprüft am beobachtbaren Zustand nach dem
+Aufbau, nicht an der Neuheit der Event-Ids — siehe die Begründung unter „Edge Cases"). Vorschlag: Erfolg mit
 beiden Zeitfeldern, `422` bei Kamerafoto ohne Kamera, bei gleicher Kamera auf beiden Seiten und bei
 Ergebnis jenseits der Grenzen, `404` bei fremdem Foto, und **nichts geschrieben**.
 `test_auth_guard.py` nimmt `cameras.router` in seine 401-Vollständigkeitsprüfung auf,
@@ -541,10 +542,14 @@ Korrekturfall, ruhiger Satz ohne bestimmbare Kamera).
   Override, einem Foto mit Koordinate und einem am Ausschuss-Gate aussortierten Foto. Vollen Lauf
   fahren, Events und Rangzeilen als Tupel **ohne Ids** schnappschussen (Events nach `position`,
   Rangzeilen nach `(Event-position, category_key, rank_position)`), `rebuild_run_grouping`
-  aufrufen, erneut schnappschussen: **gleich**. Im selben Fall die Id-Mengen vorher/nachher als
-  **disjunkt** prüfen — ohne diesen zweiten Teil bestünde ein `return` am Funktionsanfang die
-  Zusage. Über einer Fixture mit einem Abschnitt und einer Kategorie ist die Gleichheit fast
-  trivial und der Fall leer.
+  aufrufen, erneut schnappschussen: **gleich**. Im selben Fall nachweisen, dass die Zeilen
+  **tatsächlich ersetzt** wurden — ohne diesen zweiten Teil bestünde ein `return` am
+  Funktionsanfang die Zusage. Der Nachweis ist ein **Marker in einem Feld, das der Neuaufbau neu
+  ableitet** (vor dem Aufruf gesetzt, danach fort), **nicht** eine Prüfung auf disjunkte
+  Id-Mengen: SQLite vergibt nach einem `DELETE` dieselben `rowid`s erneut (kein `AUTOINCREMENT`),
+  die Id-Zusage ist in dieser Suite also unerfüllbar, während sie unter PostgreSQL hielte. Über
+  einer Fixture mit einem Abschnitt und einer Kategorie ist die Gleichheit fast trivial und der
+  Fall leer.
 
 ## Entscheidungen
 

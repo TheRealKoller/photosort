@@ -1,4 +1,4 @@
-import re
+import ast
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -1566,37 +1566,104 @@ async def test_the_recorded_time_has_no_default_and_must_be_written_explicitly(
         )
 
 
-_TAKEN_AT_ASSIGNMENT = re.compile(r"\.taken_at\s*=(?!=)")
-
 # Die beiden - und nur die beiden - Schreibstellen auf `Photo.taken_at` (ADR 0088, Punkt 1).
 _ALLOWED_TAKEN_AT_WRITERS = frozenset({"worker.py", "api/cameras.py"})
 
+_TAKEN_AT = "taken_at"
 
-def test_no_module_beyond_the_two_known_ones_assigns_to_taken_at() -> None:
+
+def _writes_taken_at(source: str) -> bool:
+    """Ob dieses Modul `taken_at` einer BESTEHENDEN Zeile schreibt - ueber den Syntaxbaum, nicht
+    ueber ein Suchmuster.
+
+    DREI Schreibformen, weil die beiden erlaubten Stellen zwei VERSCHIEDENE benutzen und die
+    dritte im Projekt naheliegt:
+
+    1. Attributzuweisung `photo.taken_at = ...` (`worker.py::_process_scan_block`).
+    2. `taken_at` als Schluessel eines Dict-Literals - die Form des gebuendelten Bulk-Updates
+       `session.execute(update(Photo), [{"id": ..., "taken_at": ...}])` (`api/cameras.py`).
+    3. `taken_at` als Schluesselwort eines `.values(...)`-Aufrufs - die dritte im Projekt
+       naheliegende Form fuer ein Massenupdate, heute an keiner Stelle verwendet.
+
+    AUSDRUECKLICH NICHT gezaehlt wird das Konstruktor-Schluesselwort `Photo(taken_at=...)`: eine
+    neu angelegte Zeile setzt beide Zeitwerte gemeinsam, und `taken_at_original` ist NOT NULL ohne
+    Default - ein Anlegen ohne beide Werte scheitert laut. Die gefaehrliche Handlung ist das
+    VERSCHIEBEN einer bestehenden Zeile.
+
+    BEKANNTE GRENZE: Ein dynamisch gebauter Spaltenname (`{spalte: wert}` mit `spalte` als
+    Variable) ist statisch nicht erkennbar. Dagegen steht `assert_time_offset_invariant` in den
+    Verhaltenstests, nicht dieser Waechter."""
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Assign | ast.AugAssign | ast.AnnAssign):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Attribute) and target.attr == _TAKEN_AT:
+                    return True
+        elif isinstance(node, ast.Dict):
+            for key in node.keys:
+                if isinstance(key, ast.Constant) and key.value == _TAKEN_AT:
+                    return True
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "values" and any(
+                keyword.arg == _TAKEN_AT for keyword in node.keywords
+            ):
+                return True
+    return False
+
+
+def test_exactly_the_two_known_modules_write_taken_at() -> None:
     """STRUKTURELLER Waechter, kein Verhaltenstest: Die Invariante
     `taken_at == taken_at_original + offset_minutes` haengt daran, dass es GENAU ZWEI
     Schreibstellen gibt, beide ueber `cameras.py::shifted`. Eine dritte Schreibstelle roetet
-    KEINEN Verhaltenstest, solange sie den Wert irgendwie setzt - sie faellt nur hier auf.
+    KEINEN Verhaltenstest, solange sie den Wert irgendwie setzt - sie faellt nur hier auf, und
+    `assert_time_offset_invariant` laeuft nur in Faellen, die eine neue Stelle nicht kennen.
 
-    Gezaehlt werden ATTRIBUTZUWEISUNGEN (`irgendwas.taken_at = ...`), nicht die
-    Konstruktor-Schluesselwoerter `Photo(taken_at=...)`: eine neu angelegte Zeile setzt beide
-    Zeitwerte gemeinsam, das Verschieben einer BESTEHENDEN Zeile ist die gefaehrliche Handlung.
-
-    Die zweite Assertion ist der Selbstschutz: findet das Suchmuster gar nichts mehr (umbenannte
-    Spalte, andere Schreibweise), bestuende der Waechter leer und pruefte nichts."""
+    Geprueft wird GLEICHHEIT, nicht Teilmenge, und das ist der Kern des Selbstschutzes: Findet der
+    Waechter eine der erlaubten Stellen NICHT mehr, prueft er fuer sie nichts - genau so blieb er
+    zuvor gruen, obwohl er die Bulk-Update-Form von `api/cameras.py` gar nicht sah. Wer eine
+    Schreibstelle absichtlich entfernt, zieht die Liste bewusst nach."""
     source_root = Path(photosort.__file__).resolve().parent
     writers = {
         str(path.relative_to(source_root))
         for path in source_root.rglob("*.py")
-        if _TAKEN_AT_ASSIGNMENT.search(path.read_text(encoding="utf-8"))
+        if _writes_taken_at(path.read_text(encoding="utf-8"))
     }
 
-    assert writers <= set(_ALLOWED_TAKEN_AT_WRITERS), (
-        "Diese Module weisen Photo.taken_at zu, obwohl es nur zwei Schreibstellen geben darf "
-        f"({sorted(_ALLOWED_TAKEN_AT_WRITERS)}): "
-        f"{sorted(writers - set(_ALLOWED_TAKEN_AT_WRITERS))}"
+    assert writers == set(_ALLOWED_TAKEN_AT_WRITERS), (
+        "Die Menge der Module, die `Photo.taken_at` schreiben, weicht von den genau zwei "
+        f"erlaubten ab ({sorted(_ALLOWED_TAKEN_AT_WRITERS)}). Zu viel: "
+        f"{sorted(writers - set(_ALLOWED_TAKEN_AT_WRITERS))}; nicht mehr gefunden: "
+        f"{sorted(set(_ALLOWED_TAKEN_AT_WRITERS) - writers)}"
     )
-    assert writers, (
-        "Der Waechter findet keine einzige Zuweisung an `taken_at` mehr - das Suchmuster passt "
-        "nicht mehr zum Code, und der Waechter prueft nichts."
-    )
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        pytest.param("photo.taken_at = corrected", id="attributzuweisung"),
+        pytest.param('rows.append({"id": 1, "taken_at": corrected})', id="dict-schluessel"),
+        pytest.param(
+            "session.execute(update(Photo).values(taken_at=corrected))", id="values-aufruf"
+        ),
+    ],
+)
+def test_the_guard_sees_every_write_form_it_claims_to_cover(snippet: str) -> None:
+    """Selbstschutz zum Selbstschutz: Der Waechter oben ist nur so gut wie die Formen, die er
+    tatsaechlich erkennt - und genau daran ist er zuvor gescheitert. Jede der drei Formen wird
+    hier einzeln nachgewiesen, statt sich darauf zu verlassen, dass der Bestand sie alle
+    enthaelt (er enthaelt die `values()`-Form nicht)."""
+    assert _writes_taken_at(snippet)
+
+
+def test_the_guard_ignores_a_constructor_keyword() -> None:
+    """Die Gegenprobe zur Abgrenzung: ein ANLEGEN ist keine Schreibstelle im Sinne der
+    Invariante - sonst waere `demo_state.py` ein Befund, obwohl es beide Zeitwerte gemeinsam
+    setzt."""
+    assert not _writes_taken_at("photo = Photo(taken_at=now, taken_at_original=now)")
+
+
+def test_the_guard_ignores_reading_the_column() -> None:
+    """Zweite Gegenprobe: das LESEN der Spalte (Sortierung, Auswahl, Vergleich) ist der
+    Regelfall und darf nie als Schreibstelle zaehlen."""
+    assert not _writes_taken_at("select(Photo.id).order_by(Photo.taken_at)")
+    assert not _writes_taken_at("if photo.taken_at == other.taken_at_original: pass")
