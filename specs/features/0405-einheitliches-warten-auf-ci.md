@@ -1,6 +1,6 @@
 # 0405 - Einheitliches Warten auf den CI-Lauf
 
-**Status:** Accepted
+**Status:** Implemented ([PR #448](https://github.com/TheRealKoller/photosort/pull/448))
 **Erstellt:** 2026-09-12
 **Bezug:** [GitHub-Issue #405](https://github.com/TheRealKoller/photosort/issues/405), ADR [`0092`](../decisions/0092-ci-ergebnis-abwarten-und-begrenzt-nachbessern.md)
 
