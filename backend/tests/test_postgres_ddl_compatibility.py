@@ -643,3 +643,112 @@ def test_the_camera_downgrade_writes_the_times_back_before_dropping_the_column()
     drop_index = next(i for i, s in enumerate(rendered) if "DROP COLUMN TAKEN_AT_ORIGINAL" in s)
 
     assert update_index < drop_index
+
+
+# specs/features/0427-motive-mit-staerke.md, PR 1 Schritt 3: die drei Motiv-Tabellen. Vier
+# Aussagen kann SQLite strukturell nicht pruefen - der FLIESSKOMMA-Typ der Staerke (dort ist
+# INTEGER von DOUBLE PRECISION nicht zu unterscheiden, und eine Integer-Spalte schnitte jede
+# Staerke auf 0 oder 1 ab), der BOOLEAN-Typ der beiden Wahrheitswerte, das fehlende Default am
+# Ausschluss-Flag und die BENANNTEN Unique-Constraints, ohne die der Rueckweg nicht ausfuehrbar
+# ist.
+
+_MOTIF_REVISION = "b7c8d9e0f1a2_motivstaerken.py"
+
+
+@pytest.fixture(scope="module")
+def motif_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_MOTIF_REVISION)
+
+
+def test_the_strength_column_is_a_floating_point_column(motif_upgrade_ddl: list[str]) -> None:
+    """DER Fall, den die SQLite-Suite nicht sehen kann: dort ist der Unterschied zwischen INTEGER
+    und DOUBLE PRECISION keiner. Unter Postgres schnitte eine Integer-Spalte jede Staerke auf 0
+    oder 1 ab - und die gesamte Story bestuende aus genau zwei Werten."""
+    create_table = [s for s in motif_upgrade_ddl if "CREATE TABLE photo_motif_strengths" in s]
+    assert create_table, "kein CREATE TABLE fuer photo_motif_strengths im gerenderten DDL gefunden"
+
+    assert "strength FLOAT NOT NULL" in create_table[0]
+    assert "strength INTEGER" not in create_table[0]
+
+
+def test_both_truth_values_are_rendered_as_boolean_columns(motif_upgrade_ddl: list[str]) -> None:
+    rendered = " ".join(motif_upgrade_ddl)
+
+    assert "excluded_document BOOLEAN NOT NULL" in rendered
+    assert "applies BOOLEAN NOT NULL" in rendered
+
+
+def test_the_exclusion_flag_is_rendered_without_any_default(motif_upgrade_ddl: list[str]) -> None:
+    """Ein `DEFAULT false` machte einen Schreibpfad, der die Spalte vergisst, still erfolgreich -
+    und nahm das Foto aus jeder Motivauswahl, ohne Korrekturmoeglichkeit."""
+    create_table = [s for s in motif_upgrade_ddl if "CREATE TABLE photo_motif_assessments" in s]
+    assert create_table, "kein CREATE TABLE fuer photo_motif_assessments gefunden"
+
+    assert "excluded_document BOOLEAN NOT NULL," in create_table[0]
+    assert "excluded_document BOOLEAN DEFAULT" not in create_table[0]
+
+
+def test_both_unique_constraints_carry_their_explicit_name(motif_upgrade_ddl: list[str]) -> None:
+    rendered = " ".join(motif_upgrade_ddl)
+
+    assert "CONSTRAINT uq_motif_strength_photo_key UNIQUE (photo_id, motif_key)" in rendered
+    assert "CONSTRAINT uq_motif_correction_photo_key UNIQUE (photo_id, motif_key)" in rendered
+
+
+def test_the_correction_constraint_does_not_include_the_user(motif_upgrade_ddl: list[str]) -> None:
+    """Die Aussage gehoert zum FOTO. Mit `user_id` im Constraint entstuenden zwei
+    widersprueckliche Zeilen fuer dasselbe Paar, und welche gilt, entschiede die Sortierung."""
+    rendered = " ".join(motif_upgrade_ddl)
+
+    assert "uq_motif_correction_photo_key UNIQUE (photo_id, motif_key, user_id)" not in rendered
+
+
+def test_the_strength_foreign_key_points_at_the_header(motif_upgrade_ddl: list[str]) -> None:
+    rendered = " ".join(motif_upgrade_ddl)
+
+    assert "fk_photo_motif_strengths_photo_id" in rendered
+    assert "FOREIGN KEY(photo_id) REFERENCES photo_motif_assessments (photo_id)" in rendered
+
+
+def test_the_three_timestamps_are_zoneless(motif_upgrade_ddl: list[str]) -> None:
+    """Alle Zeitstempel des Projekts sind zonenlos (ADR 0090, Punkt 4)."""
+    rendered = " ".join(motif_upgrade_ddl).upper()
+
+    assert "COMPUTED_AT TIMESTAMP WITHOUT TIME ZONE NOT NULL" in rendered
+    assert "UPDATED_AT TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW() NOT NULL" in rendered
+    assert "WITH TIME ZONE" not in rendered
+
+
+def test_the_motif_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_MOTIF_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements).upper()
+    assert "DROP TABLE PHOTO_MOTIF_CORRECTIONS" in rendered
+    assert "DROP TABLE PHOTO_MOTIF_STRENGTHS" in rendered
+    assert "DROP TABLE PHOTO_MOTIF_ASSESSMENTS" in rendered
+
+
+def test_the_motif_downgrade_drops_the_strengths_before_their_header() -> None:
+    """Die REIHENFOLGE ist die Aussage des Rueckwegs: die Staerkezeilen haengen an der Kopfzeile.
+    Umgekehrt bricht der Rueckweg an einer echten Datenbank an der Fremdschluesselbedingung ab -
+    unter SQLite faellt das nicht auf."""
+    rendered = [s.upper() for s in _render_postgres_ddl(_MOTIF_REVISION, direction="downgrade")]
+
+    strength_index = next(
+        i for i, s in enumerate(rendered) if "DROP TABLE PHOTO_MOTIF_STRENGTHS" in s
+    )
+    header_index = next(
+        i for i, s in enumerate(rendered) if "DROP TABLE PHOTO_MOTIF_ASSESSMENTS" in s
+    )
+
+    assert strength_index < header_index
+
+
+def test_the_upgrade_touches_no_existing_table() -> None:
+    """Rein additiv - kein `ALTER TABLE`, kein `UPDATE`, kein `DELETE`. Ein versehentlich
+    mitgenommener Schritt an der Kategorie-Welt gehoerte in eine andere PR."""
+    rendered = " ".join(_render_postgres_ddl(_MOTIF_REVISION)).upper()
+
+    assert "ALTER TABLE" not in rendered
+    assert "UPDATE " not in rendered
+    assert "DELETE " not in rendered
